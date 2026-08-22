@@ -21,7 +21,7 @@ cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, ...
     "sixgr_causal_wiring_yaml_authority"));
 sixgr.config.assertRuntimeFeatureAuthority(cfg);
 
-assert(double(sixgr.util.structGet(cfg, "run.totalSlots", NaN)) == 8);
+assert(double(sixgr.util.structGet(cfg, "run.totalSlots", NaN)) == 12);
 assert(logical(sixgr.util.structGet(cfg, "run.strictMode", false)));
 assert(~logical(sixgr.util.structGet(cfg, "phy.rx.useIdealTimingSync", true)));
 assert(string(sixgr.util.structGet(cfg, "channel.model", "")) == "CDL");
@@ -37,12 +37,14 @@ assert(double(sixgr.util.structGet(cfg, ...
 assert(double(sixgr.util.structGet(cfg, "phy.mib.pdcchConfigSIB1", NaN)) == 0);
 assert(double(sixgr.util.structGet(cfg, "phy.mib.dmrsTypeAPosition", NaN)) == 2);
 
-tdd = sixgr.util.structGet(cfg, "phy.tddTiming", struct());
-assert(double(tdd.pdcchToPDSCHK0) == 0);
-assert(double(tdd.pdcchToPUSCHK2) == 1);
-assert(double(tdd.ulGrantK2) == 1);
-assert(double(tdd.dlHARQFeedbackK1) == 4);
-assert(isequal(double(tdd.dlHARQFeedbackK1Candidates(:).'), 1:8));
+timing = sixgr.util.structGet(cfg, "phy.schedulingTiming", struct());
+assert(double(timing.pdcchToPDSCHK0) == 0);
+assert(double(timing.pdcchToPUSCHK2) == 1);
+assert(double(timing.ulGrantK2) == 1);
+assert(double(timing.dlHARQFeedbackK1) == 4);
+assert(isequal(double(timing.dlHARQFeedbackK1Candidates(:).'), 1:8));
+assert(~isfield(cfg.phy, "tddTiming"), ...
+    "An FDD runtime configuration must not expose a TDD timing authority.");
 assert(double(sixgr.util.structGet(cfg, "mac.harq.numProcesses", NaN)) == 8);
 assert(double(sixgr.util.structGet(cfg, "mac.harq.maxRetx", NaN)) == 3);
 assert(double(sixgr.util.structGet(cfg, "mac.harq.k1", NaN)) == 4);
@@ -154,8 +156,8 @@ assert(isa(bsAntenna.ArrayObj, "phased.NRRectangularPanelArray") && ...
 
 fprintf(['Causal YAML authority: %d explicit leaves, K0=%d, K1=%d, K2=%d, ' ...
     '%d HARQ processes, %d unique normalized SSB beams.\n'], ...
-    numel(leafPaths), tdd.pdcchToPDSCHK0, tdd.dlHARQFeedbackK1, ...
-    tdd.pdcchToPUSCHK2, cfg.mac.harq.numProcesses, size(ssbWeights, 1));
+    numel(leafPaths), timing.pdcchToPDSCHK0, timing.dlHARQFeedbackK1, ...
+    timing.pdcchToPUSCHK2, cfg.mac.harq.numProcesses, size(ssbWeights, 1));
 ok = true;
 end
 

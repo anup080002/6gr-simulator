@@ -1,7 +1,7 @@
 function ok=testUL10523Deterministic()
 %TESTUL10523DETERMINISTIC Exact analytical identities and source coverage.
 setup6GRSimToolkit("Verbose",false,"RunToolboxChecks",false);
-out=sixgr.tdoc.ul10523.DeterministicSuite.run();
+out=sixgr.tdoc.ul10523.ULTDocStudyDeterministicSuite.run();
 assert(height(out.Checks)==6 && all(out.Checks.Pass));
 for idx=1:22
     key=sprintf("TFIG_%02d",idx);

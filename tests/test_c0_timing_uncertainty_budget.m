@@ -3,7 +3,7 @@ function test_c0_timing_uncertainty_budget()
 [cfg,~]=sixgr.phy.ia.c0.config.loadScenario( ...
     "simulator/configs/initial_access/c0/C0.yaml","tdoc_preflight");
 b=sixgr.phy.ia.c0.waveform.buildNRAnchorA(cfg,"PayloadSeed",9108);
-row=sixgr.phy.ia.c0.campaigns.runC0Trial(b,cfg,20,5,0);
+row=sixgr.phy.ia.c0.campaigns.runC0StudyTrial(b,cfg,20,5,0);
 prefix=sum(double(b.OFDMInfo.SymbolLengths(1:b.CandidateStartSymbol)));
 totalOffset=double(row.AppliedTimingSamples)-prefix;
 assert(totalOffset>=0 && ...

@@ -2043,11 +2043,11 @@ elseif contains(event, "MSG4")
 elseif contains(event, "MSG3")
     hash = string(r.RRCSetupRequestSHA256);
 else
-    hash = sixgr.rrc.asn1.sha256Hex(uint8( ...
+    hash = sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
         unicode2native(char(event), "UTF-8")));
 end
 if strlength(hash) ~= 64
-    hash = sixgr.rrc.asn1.sha256Hex(uint8( ...
+    hash = sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
         unicode2native(char(event), "UTF-8")));
 end
 end

@@ -16,9 +16,7 @@ if ~(isstruct(cfg) && isscalar(cfg))
         "cfg must be one scalar resolved configuration struct.");
 end
 
-duplexMode = upper(string(sixgr.util.structGet(cfg, ...
-    "phy.duplex.mode", ...
-    sixgr.util.structGet(cfg, "frequency.duplex_mode", ""))));
+duplexMode = sixgr.phy.frame.resolveDuplexMode(cfg);
 if duplexMode ~= "TDD"
     error("sixgr:phy:frame:TDDResolverCalledForFDD", ...
         "TDD slot partitioning requires DuplexMode=TDD.");

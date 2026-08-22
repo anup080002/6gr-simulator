@@ -410,5 +410,5 @@ end
 
 function value = localWaveformHash(waveform)
 samples = single([real(waveform(:)); imag(waveform(:))]);
-value = string(sixgr.rrc.asn1.sha256Hex(typecast(samples, "uint8")));
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(typecast(samples, "uint8")));
 end

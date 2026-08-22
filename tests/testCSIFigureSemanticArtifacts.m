@@ -15,7 +15,7 @@ assert(all(strlength(string(F.PDFSha256))==64));
 assert(all(strlength(string(F.PerceptualHash))==16));
 assert(numel(unique(string(F.PNGSha256)))==20);
 assert(numel(unique(string(F.PDFSha256)))==20);
-[A,passed]=sixgr.csi.auditTDocRun(folder);
+[A,passed]=sixgr.csi.auditTDocStudyRun(folder);
 assert(passed && all(A.Pass));
 P=readtable(fullfile(folder,"csv","lls","pdsch_anchor_trials.csv"), ...
     "VariableNamingRule","preserve");

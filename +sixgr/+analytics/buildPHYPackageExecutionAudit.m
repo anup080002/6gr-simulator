@@ -49,7 +49,18 @@ for i = 1:height(inventory)
     rows(i).Package = localAuditPackage(relativePath);
     rows(i).PrimaryFunctionOrClass = string(inventory.primary_function_or_class(i));
     rows(i).SourceRole = role;
-    rows(i).RuntimeLibraryCandidate = role == "runtime_library";
+    rows(i).RuntimeLibraryCandidate = any(role == ...
+        ["runtime_library", "waveform_runtime_campaign"]);
+    [rows(i).RuntimeEligibility, rows(i).ScenarioInputPolicy] = ...
+        localRolePolicy(role);
+    rows(i).StudyFileNamingAssessment = ...
+        localStudyFileNamingAssessment(role, ...
+        string(inventory.primary_function_or_class(i)));
+    [rows(i).DuplexReferenceDetected, ...
+        rows(i).SharedDuplexResolverUsed, ...
+        rows(i).DuplexAuthorityAssessment] = ...
+        localDuplexAuthorityAssessment(fullfile(repoRoot, ...
+        char(relativePath)), role);
     rows(i).ActuallyCalled = called;
     rows(i).CallCount = localExactCallCount(profileT, profileMask, ledgerMask);
     rows(i).TotalTime_s = localProfileSum(profileT, profileMask, "TotalTime_s");
@@ -73,6 +84,7 @@ end
 
 detailT = struct2table(rows);
 if height(detailT) > 0
+    detailT = localAnnotateBasenameCollisions(detailT);
     detailT = sortrows(detailT, {'Package','SourceRole','FilePath'});
 end
 summaryT = localBuildSummary(detailT, ledgerAvailable, profileAvailable, profileComplete, ...
@@ -89,11 +101,15 @@ sourceFilePath = fullfile(layout.ReportCSVDir, ...
     "sixgr_source_file_execution_inventory.csv");
 sourceFunctionPath = fullfile(layout.ReportCSVDir, ...
     "sixgr_source_function_execution_inventory.csv");
+studyRegistryPath = fullfile(layout.ReportCSVDir, ...
+    "study_to_runtime_measurement_registry.csv");
+studyRegistryT = sixgr.analytics.buildStudyToRuntimeMeasurementRegistry();
 sixgr.util.csvWriteTable(detailPath, detailT);
 sixgr.util.csvWriteTable(summaryOutPath, summaryT);
 sixgr.util.csvWriteTable(gatePath, gateT);
 sixgr.util.csvWriteTable(sourceFilePath, detailT);
 sixgr.util.csvWriteTable(sourceFunctionPath, functionT);
+sixgr.util.csvWriteTable(studyRegistryPath, studyRegistryT);
 
 out = struct( ...
     "DetailTable", detailT, ...
@@ -105,6 +121,8 @@ out = struct( ...
     "GatePath", string(gatePath), ...
     "SourceFileInventoryPath", string(sourceFilePath), ...
     "SourceFunctionInventoryPath", string(sourceFunctionPath), ...
+    "StudyMeasurementRegistryPath", string(studyRegistryPath), ...
+    "StudyMeasurementRegistryTable", studyRegistryT, ...
     "ProfilerAvailable", profileAvailable, ...
     "ProfilerComplete", profileComplete);
 end
@@ -117,6 +135,12 @@ row = struct( ...
     "PrimaryFunctionOrClass", "", ...
     "SourceRole", "", ...
     "RuntimeLibraryCandidate", false, ...
+    "RuntimeEligibility", "", ...
+    "ScenarioInputPolicy", "", ...
+    "StudyFileNamingAssessment", "", ...
+    "DuplexReferenceDetected", false, ...
+    "SharedDuplexResolverUsed", false, ...
+    "DuplexAuthorityAssessment", "", ...
     "ActuallyCalled", false, ...
     "CallCount", 0, ...
     "TotalTime_s", 0, ...
@@ -130,6 +154,36 @@ row = struct( ...
     "NeverUsedConclusionPermitted", false, ...
     "SourceSHA256", "", ...
     "EvidenceSource", "");
+end
+
+function T = localAnnotateBasenameCollisions(T)
+T.SameBasenameCount = ones(height(T), 1);
+T.SameBasenameAssessment = repmat("UNIQUE_PACKAGE_SYMBOL", height(T), 1);
+names = string(T.PrimaryFunctionOrClass);
+for name = unique(names, "stable").'
+    mask = names == name;
+    count = sum(mask);
+    if count <= 1
+        continue;
+    end
+    T.SameBasenameCount(mask) = count;
+    switch lower(name)
+        case "generateprachwaveform"
+            state = "PASS_PHY_FACADE_DELEGATES_TO_CANONICAL_RACH_RUNTIME";
+        case "absolutepowerledger"
+            state = "PASS_DISTINCT_LINK_BUDGET_AND_SAMPLE_REFERENCE_PLANES";
+        case {"pucchpowercontroller", "puschpowercontroller"}
+            state = "PASS_DISTINCT_PHY_FORMULA_AND_EVENT_SOURCED_RF_STATE";
+        case "schedulingrequeststate"
+            state = "PASS_DISTINCT_MAC_LIFECYCLE_AND_PHY_OCCASION_STATE";
+        case {"evidenceclass", "scenarioregistry", "runcampaign", ...
+                "validatecampaignconfig"}
+            state = "PASS_PACKAGE_QUALIFIED_ISOLATED_CAMPAIGN_SYMBOL";
+        otherwise
+            state = "UNRESOLVED_DUPLICATE_NAME";
+    end
+    T.SameBasenameAssessment(mask) = state;
+end
 end
 
 function inventory = localSixGRSourceInventory(repoRoot)
@@ -194,20 +248,130 @@ token = lower(replace(string(path), "\", "/"));
 name = lower(string(primaryName));
 if contains(token, "/+oracle/")
     role = "validation_oracle";
+elseif startsWith(token, "+sixgr/+csi/") || ...
+        contains(token, "/+tdoc") || contains(name, "tdoc")
+    role = "tdoc_campaign";
+elseif contains(token, "/+c0/+campaigns/")
+    role = "offline_study";
 elseif contains(token, "/+analysis/") || contains(name, "impact")
     role = "offline_impact_analysis";
 elseif contains(name, "phasevalidation") || contains(name, "focusedtest") || ...
+        contains(name, "validationcampaign") || ...
         contains(name, "negativecase") || startsWith(name, "runstrict")
     role = "validation_campaign";
 elseif contains(name, "artifact") || contains(name, "evidencebuilder") || ...
         contains(name, "publisher") || startsWith(name, "export")
     role = "artifact_reporting";
-elseif contains(name, "study") || contains(name, "coverageexecutor")
+elseif any(name == ["runprachlls", ...
+        "runpdschstudylls"])
+    % These are waveform-executing runtime campaigns.  They may consume a
+    % resolved YAML scenario or an explicit campaign matrix, but their
+    % built-in research vectors must never become subsystem defaults.
+    role = "waveform_runtime_campaign";
+elseif contains(name, "coverageexecutor")
     role = "offline_study";
 elseif contains(token, "/+legacy/") || contains(name, "legacy")
     role = "legacy";
 else
     role = "runtime_library";
+end
+end
+
+function assessment = localStudyFileNamingAssessment(role, primaryName)
+name = lower(string(primaryName));
+switch string(role)
+    case "tdoc_campaign"
+        if contains(name, "study")
+            assessment = "PASS_TDOC_STUDY_NAME_EXPLICIT";
+        else
+            assessment = "FAIL_TDOC_STUDY_NAME_AMBIGUOUS";
+        end
+    case "offline_study"
+        if contains(name, "study")
+            assessment = "PASS_OFFLINE_STUDY_NAME_EXPLICIT";
+        else
+            assessment = "FAIL_OFFLINE_STUDY_NAME_AMBIGUOUS";
+        end
+    case "offline_impact_analysis"
+        % Files below an explicit +analysis package are internal statistical
+        % helpers, not callable runtime entry points.  The package boundary
+        % is the unambiguous isolation marker; campaign entry points retain
+        % Impact in their own filenames.
+        if contains(name, "impact") || any(name == [ ...
+                "pairedrngstreams", "adjustpvaluesholm", ...
+                "computeclopperpearsoninterval", "computeeffectsize", ...
+                "computemcnemartest", "computepairedbootstrapci", ...
+                "computewilsoninterval", "fitfactorialeffects"])
+            assessment = "PASS_IMPACT_STUDY_NAME_EXPLICIT";
+        else
+            assessment = "FAIL_IMPACT_STUDY_NAME_AMBIGUOUS";
+        end
+    case "validation_campaign"
+        if contains(name, ["validation", "phase", "test", "strict", ...
+                "negativecase"])
+            assessment = "PASS_VALIDATION_NAME_EXPLICIT";
+        else
+            assessment = "FAIL_VALIDATION_NAME_AMBIGUOUS";
+        end
+    otherwise
+        assessment = "NOT_AN_ISOLATED_STUDY_FILE";
+end
+end
+
+function [detected, shared, assessment] = ...
+        localDuplexAuthorityAssessment(sourcePath, role)
+try
+    source = string(fileread(sourcePath));
+catch
+    source = "";
+end
+directPaths = [ ...
+    "frequency.duplex_mode", "global_radio_scope.duplex_mode", ...
+    "random_access.duplex_mode", "phy.duplex.mode", ...
+    "phy.frameStructure.DuplexMode"];
+detected = any(contains(source, directPaths));
+shared = contains(source, "sixgr.phy.frame.resolveDuplexMode");
+if ~detected
+    assessment = "NOT_A_DIRECT_DUPLEX_AUTHORITY_CONSUMER";
+elseif shared
+    assessment = "PASS_SHARED_DUPLEX_RESOLVER";
+elseif any(string(role) == ["tdoc_campaign", "validation_campaign", ...
+        "offline_impact_analysis", "validation_oracle"])
+    assessment = "ISOLATED_EXPLICIT_INPUT_NOT_RUNTIME_AUTHORITY";
+else
+    assessment = "FAIL_LOCAL_DUPLEX_AUTHORITY_PARSE";
+end
+end
+
+function [eligibility, inputPolicy] = localRolePolicy(role)
+switch string(role)
+    case "runtime_library"
+        eligibility = "PRODUCTION_RUNTIME_ELIGIBLE";
+        inputPolicy = "resolved_yaml_or_typed_runtime_input";
+    case "waveform_runtime_campaign"
+        eligibility = "PRODUCTION_RUNTIME_ELIGIBLE";
+        inputPolicy = "resolved_yaml_or_explicit_campaign_matrix_no_hidden_defaults";
+    case "tdoc_campaign"
+        eligibility = "ISOLATED_CAMPAIGN_ONLY";
+        inputPolicy = "explicit_tdoc_vector_never_runtime_default";
+    case "validation_campaign"
+        eligibility = "ISOLATED_VALIDATION_ONLY";
+        inputPolicy = "explicit_validation_input_never_runtime_default";
+    case "offline_impact_analysis"
+        eligibility = "OFFLINE_ANALYSIS_ONLY";
+        inputPolicy = "persisted_runtime_evidence_or_explicit_experiment_pair";
+    case "artifact_reporting"
+        eligibility = "REPORTING_ONLY";
+        inputPolicy = "persisted_runtime_evidence_only";
+    case "validation_oracle"
+        eligibility = "INDEPENDENT_ORACLE_ONLY";
+        inputPolicy = "pinned_independent_reference_only";
+    case "legacy"
+        eligibility = "LEGACY_NOT_PRODUCTION";
+        inputPolicy = "must_not_supply_runtime_defaults";
+    otherwise
+        eligibility = "ISOLATED_STUDY_ONLY";
+        inputPolicy = "explicit_study_input_never_runtime_default";
 end
 end
 
@@ -303,7 +467,7 @@ end
 function state = localUsageAssessment(role, called, available, complete)
 if called
     state = "executed_in_profiled_scenario";
-elseif role ~= "runtime_library"
+elseif ~any(role == ["runtime_library", "waveform_runtime_campaign"])
     state = "not_required_in_runtime_chain:" + role;
 elseif ~available
     state = "unknown_profiler_unavailable";
@@ -316,7 +480,8 @@ end
 
 function T = localBuildSummary(detailT, ledgerAvailable, available, complete, exportedCount, capturedCount)
 packages = unique(string(detailT.Package), "stable");
-roles = ["ALL";"runtime_library";"validation_oracle";"validation_campaign"; ...
+roles = ["ALL";"runtime_library";"waveform_runtime_campaign"; ...
+    "validation_oracle";"validation_campaign";"tdoc_campaign"; ...
     "offline_impact_analysis";"offline_study";"artifact_reporting";"legacy"];
 rows = repmat(struct("Package","","SourceRole","","FileCount",0, ...
     "ExecutedFileCount",0,"NotExecutedFileCount",0,"ProfilerAvailable",false, ...
@@ -362,6 +527,12 @@ for fileIndex = 1:height(inventory)
         row.Package = localAuditPackage(relativePath);
         row.SourceRole = localSourceRole(relativePath, ...
             string(inventory.primary_function_or_class(fileIndex)));
+        [row.RuntimeEligibility, row.ScenarioInputPolicy] = ...
+            localRolePolicy(row.SourceRole);
+        [row.DuplexReferenceDetected, row.SharedDuplexResolverUsed, ...
+            row.DuplexAuthorityAssessment] = ...
+            localDuplexAuthorityAssessment(fullfile(repoRoot, ...
+            char(relativePath)), row.SourceRole);
         row.DeclaredSymbol = declarations.DeclaredSymbol(declarationIndex);
         row.DeclarationKind = declarations.DeclarationKind(declarationIndex);
         row.DeclarationLine = declarations.DeclarationLine(declarationIndex);
@@ -466,6 +637,10 @@ end
 function row = localEmptyFunctionRow()
 row = struct( ...
     "FilePath", "", "Package", "", "SourceRole", "", ...
+    "RuntimeEligibility", "", "ScenarioInputPolicy", "", ...
+    "DuplexReferenceDetected", false, ...
+    "SharedDuplexResolverUsed", false, ...
+    "DuplexAuthorityAssessment", "", ...
     "DeclaredSymbol", "", "DeclarationKind", "", ...
     "DeclarationLine", NaN, "PrimaryFileSymbol", false, ...
     "StaticQualifiedName", "", "ActuallyCalled", false, ...

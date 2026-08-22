@@ -27,9 +27,9 @@ tx.RNTIType = string(strictCfg.RNTIType);
 tx.AggregationLevel = double(opt.AggregationLevel);
 tx.CandidateIndex = double(strictCfg.CandidateIndex);
 tx.CCEIndex = double(strictCfg.CandidateCCEIndex);
-tx.GridHash = sixgr.rrc.asn1.sha256Hex(localComplexBytes(tx.Grid));
-tx.WaveformHash = sixgr.rrc.asn1.sha256Hex(localComplexBytes(tx.Waveform));
-tx.PDCCHResourceHash = sixgr.rrc.asn1.sha256Hex(uint8(unicode2native(jsonencode(struct( ...
+tx.GridHash = sixgr.rrc.asn1.asn1SHA256Hex(localComplexBytes(tx.Grid));
+tx.WaveformHash = sixgr.rrc.asn1.asn1SHA256Hex(localComplexBytes(tx.Waveform));
+tx.PDCCHResourceHash = sixgr.rrc.asn1.asn1SHA256Hex(uint8(unicode2native(jsonencode(struct( ...
     "PDCCHInd", double(tx.PDCCHInd(:).'), "DMRSInd", double(tx.DMRSInd(:).'))), "UTF-8")));
 end
 

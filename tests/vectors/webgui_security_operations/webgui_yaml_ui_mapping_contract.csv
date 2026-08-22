@@ -557,7 +557,7 @@ equalization.sic_stages,simulator/configs/schema/scenario_parameter_catalog_exte
 equalization.sv_threshold,simulator/configs/schema/scenario_parameter_catalog_extension_07.yaml,number,false,,"""""",0,,number_input,Advanced_Other,Advanced,true,false,
 frame.cp_type,simulator/configs/schema/scenario_parameter_catalog.yaml,string,true,,"[""normal"", ""extended""]",,,select,Frame_Grid_Numerology,Main,true,false,
 frame.scs_khz,simulator/configs/schema/scenario_parameter_catalog.yaml,number,true,,"""""",,,number_input,Frame_Grid_Numerology,Main,true,false,
-frame.slot_format,simulator/configs/schema/scenario_parameter_catalog.yaml,string,true,,"[""dl"", ""ul"", ""flexible"", ""mixed""]",,,select,Frame_Grid_Numerology,Main,true,false,
+frame.slot_format,simulator/configs/schema/scenario_parameter_catalog.yaml,string,true,,"[""dl"", ""ul"", ""flexible"", ""mixed"", ""fdd_separate_carriers""]",,,select,Frame_Grid_Numerology,Main,true,false,
 frame.special_slot_downlink_symbols,simulator/configs/schema/scenario_parameter_catalog.yaml,integer,false,,"""""",0,,number_input,Frame_Grid_Numerology,Main,true,false,
 frame.special_slot_uplink_symbols,simulator/configs/schema/scenario_parameter_catalog.yaml,integer,false,,"""""",0,,number_input,Frame_Grid_Numerology,Main,true,false,
 frame.tdd_pattern,simulator/configs/schema/scenario_parameter_catalog.yaml,string,true,,"""""",,,text_input,Frame_Grid_Numerology,Main,true,false,

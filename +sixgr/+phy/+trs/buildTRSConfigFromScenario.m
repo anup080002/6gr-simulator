@@ -32,11 +32,12 @@ nSizeGrid = max(1, round(double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid
 nStartGrid = max(0, round(double(sixgr.util.structGet(cfg, "phy.carrier.NStartGrid", 0))));
 nCellID = max(0, round(double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 0))));
 slotNumbers = sixgr.util.structGet(cfg, "phy.trs.slotNumbers", ...
-    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.slot_numbers", [0 1]));
-slotNumbers = unique(max(0, round(double(slotNumbers(:).'))), "stable");
-if numel(slotNumbers) < 2
-    slotNumbers = [slotNumbers slotNumbers(1)+1];
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.slot_numbers", []));
+if isempty(slotNumbers)
+    error("sixgr:phy:trs:MissingSlotNumbers", ...
+        "Enabled TRS requires explicit reference_signals.trs.slot_numbers in YAML.");
 end
+slotNumbers = unique(max(0, round(double(slotNumbers(:).'))), "stable");
 
 nPorts = max(1, round(double(sixgr.util.structGet(cfg, "phy.trs.nPorts", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.num_ports", 1)))));

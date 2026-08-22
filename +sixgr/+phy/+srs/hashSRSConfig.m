@@ -15,7 +15,7 @@ for ii = 1:numel(fields)
         parts(end+1, 1) = string(f) + "=" + localValueString(srsCfg.(f)); %#ok<AGROW>
     end
 end
-hash = string(sixgr.rrc.asn1.sha256Hex(uint8(char(strjoin(parts, ";")))));
+hash = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(char(strjoin(parts, ";")))));
 end
 
 function txt = localValueString(v)

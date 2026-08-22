@@ -121,7 +121,7 @@ classdef PUCCHArtifactExporter
                     fullfile(outputDir,names(index)))));
                 bytes = [bytes;nameBytes(:);hashBytes(:)]; %#ok<AGROW>
             end
-            value = string(sixgr.rrc.asn1.sha256Hex(bytes));
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
         end
 
         function value = fileSHA256(path)
@@ -131,7 +131,7 @@ classdef PUCCHArtifactExporter
                     "Cannot open %s.",path);
             end
             cleanup = onCleanup(@() fclose(fid));
-            value = string(sixgr.rrc.asn1.sha256Hex( ...
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex( ...
                 fread(fid,inf,"*uint8")));
         end
     end

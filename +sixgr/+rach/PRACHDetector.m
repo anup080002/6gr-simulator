@@ -251,7 +251,13 @@ if ~(isstruct(prachIn) && ~isempty(fieldnames(prachIn)))
 end
 prach = nrPRACHConfig;
 prach.FrequencyRange = char(string(sixgr.util.structGet(prachIn, "FrequencyRange", "FR1")));
-prach.DuplexMode = char(string(sixgr.util.structGet(prachIn, "DuplexMode", "FDD")));
+duplexMode = sixgr.util.structGet(prachIn, "DuplexMode", []);
+if isempty(duplexMode)
+    error("sixgr:rach:PRACHDetector:MissingDuplexMode", ...
+        "A serialized PRACH runtime object must preserve DuplexMode.");
+end
+prach.DuplexMode = char(sixgr.phy.frame.resolveDuplexMode( ...
+    struct("DuplexMode", duplexMode)));
 prach.ConfigurationIndex = double(sixgr.util.structGet(prachIn, "ConfigurationIndex", 16));
 prach.SubcarrierSpacing = double(sixgr.util.structGet(prachIn, "SubcarrierSpacing", 1.25));
 prach.SequenceIndex = double(sixgr.util.structGet(prachIn, "SequenceIndex", 0));

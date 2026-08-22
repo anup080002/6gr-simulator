@@ -5,7 +5,7 @@ arguments
     runMode (1,1) string = ""
 end
 [cfg,sources] = sixgr.phy.ia.c0.config.resolveScenario(configPath,runMode);
-sixgr.phy.ia.c0.config.validateScenario(cfg);
+sixgr.phy.ia.c0.config.validateC0StudyScenario(cfg);
 canonical = jsonencode(cfg);
 meta = struct( ...
     "SourceFiles",sources, ...

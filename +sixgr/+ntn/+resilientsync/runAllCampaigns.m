@@ -71,7 +71,7 @@ for i=1:numel(names)
 end
 writetable(evidence,fullfile(runDirectory,'acceptance','evidence_registry.csv'));
 
-publicFigures=sixgr.ntn.resilientsync.report.generateTdocFigures(string(runDirectory));
+publicFigures=sixgr.ntn.resilientsync.report.generateTDocStudyFigures(string(runDirectory));
 backupFigures=sixgr.ntn.resilientsync.report.generateFigureBackups(string(runDirectory),scenario);
 figureChecks=sixgr.ntn.resilientsync.report.evaluateFigureFixRegressions(string(runDirectory),scenario);
 confidentialFigures=sixgr.ntn.resilientsync.report.generateConfidentialFigures(string(runDirectory));

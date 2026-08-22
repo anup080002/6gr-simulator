@@ -247,6 +247,11 @@ csirs.SymbolLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.symbolLocati
 csirs.SubcarrierLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.subcarrierLocations', localDefaultSubcarrierLocations(row)));
 csirs.NumRB = double(sixgr.util.structGet(cfg, 'phy.csirs.numRB', carrier.NSizeGrid));
 csirs.RBOffset = double(sixgr.util.structGet(cfg, 'phy.csirs.rbOffset', 0));
+% Slot occasion selection is enforced by the production PDSCH transmitter
+% before calling this generator.  Keep the Toolbox resource active for the
+% selected occasion rather than allowing nrCSIRSConfig to hide an empty
+% non-occasion behind an apparently enabled feature.
+csirs.CSIRSPeriod = 'on';
 try
     if isempty(densityReq)
         densityReq = localDefaultDensity(row);

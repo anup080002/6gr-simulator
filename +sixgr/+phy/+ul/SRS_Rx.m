@@ -42,8 +42,8 @@ end
 
 % SRS config
 if isempty(opt.SRS)
-    srs = nrSRSConfig;
-    srs = localApplySRSFromCfg(srs, cfg);
+    strictSRS = sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
+    srs = strictSRS.ToolboxSRS;
 else
     srs = opt.SRS;
 end
@@ -243,50 +243,3 @@ end
 end
 
 % -------------------------------------------------------------------------
-function srs = localApplySRSFromCfg(srs, cfg)
-    nPorts = sixgr.util.structGet(cfg, 'phy.srs.nPorts', []);
-    if ~isempty(nPorts) && isprop(srs,'NumSRSPorts')
-        srs.NumSRSPorts = double(nPorts);
-    end
-
-    period = sixgr.util.structGet(cfg, 'phy.srs.period_slots', []);
-    if ~isempty(period) && isprop(srs,'SRSPeriod')
-        srs.SRSPeriod = [double(period) 0];
-    end
-
-    fields = {
-        'NumSRSSymbols', 'NumSRSSymbols'
-        'SymbolStart', 'SymbolStart'
-        'Repetition', 'Repetition'
-        'NumRepetition', 'Repetition'
-        'CyclicShift', 'CyclicShift'
-        'FrequencyStart', 'FrequencyStart'
-        'FrequencyShift', 'FrequencyShift'
-        'FrequencyHopping', 'FrequencyHopping'
-        'GroupSeqHopping', 'GroupSeqHopping'
-        'GroupOrSequenceHopping', 'GroupSeqHopping'
-        'NSRSID', 'NSRSID'
-        'SequenceId', 'NSRSID'
-        'KTC', 'KTC'
-        'KBarTC', 'KBarTC'
-        'BHop', 'BHop'
-        'CSRS', 'CSRS'
-        'BSRS', 'BSRS'
-        'ResourceType', 'ResourceType'};
-
-    for k = 1:size(fields, 1)
-        cfgField = fields{k, 1};
-        srsField = fields{k, 2};
-        v = sixgr.util.structGet(cfg, ['phy.srs.' cfgField], []);
-        if isempty(v)
-            continue;
-        end
-        f = srsField;
-        if ~isempty(v) && isprop(srs, f)
-            try
-                srs.(f) = v;
-            catch
-            end
-        end
-    end
-end

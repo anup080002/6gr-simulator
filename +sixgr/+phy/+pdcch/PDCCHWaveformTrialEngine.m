@@ -603,15 +603,15 @@ value = mod(sum(parts*weights), 2^31-2) + 1;
 end
 
 function value = localBitHash(bits)
-value = string(sixgr.rrc.asn1.sha256Hex(uint8(bits(:))));
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(bits(:))));
 end
 
 function value = localComplexHash(samples)
 payload = double([real(samples(:)).'; imag(samples(:)).']);
-value = string(sixgr.rrc.asn1.sha256Hex(typecast(payload(:), "uint8")));
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(typecast(payload(:), "uint8")));
 end
 
 function value = localTextHash(text)
-value = string(sixgr.rrc.asn1.sha256Hex(uint8( ...
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
     unicode2native(char(string(text)), "UTF-8"))));
 end

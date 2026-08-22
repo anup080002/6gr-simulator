@@ -72,7 +72,7 @@ classdef CORESETDefinition
             data.NREG = nREG;
             data.NCCE = nREG / 6;
             obj.Data = orderfields(data);
-            obj.Digest = string(sixgr.rrc.asn1.sha256Hex(uint8( ...
+            obj.Digest = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
                 unicode2native(jsonencode(obj.Data), "UTF-8"))));
         end
     end

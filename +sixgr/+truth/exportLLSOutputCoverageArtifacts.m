@@ -34,6 +34,7 @@ tables.live_prb_allocation = localBuildPRBAllocationTable(src, meta);
 localCoverageLog("built_live_prb_allocation", runFolder);
 localCoverageLog("building_live_re_allocation_snapshot", runFolder);
 tables.live_re_allocation_snapshot = localBuildREAllocationSnapshotTable(src, tables.live_prb_allocation, meta, cfg);
+tables.observed_re_allocation = tables.live_re_allocation_snapshot;
 localCoverageLog("built_live_re_allocation_snapshot", runFolder);
 localCoverageLog("building_scheduler_decision", runFolder);
 tables.table_scheduler_decision = localBuildSchedulerDecisionTable(src, meta);
@@ -167,6 +168,7 @@ logicalPaths = struct( ...
     "table_scheduler_decision", "packet_flow/csv/table_scheduler_decision.csv", ...
     "live_prb_allocation", "packet_flow/csv/live_prb_allocation.csv", ...
     "live_re_allocation_snapshot", "reports/csv/live_re_allocation_snapshot.csv", ...
+    "observed_re_allocation", "frame_grid/csv/observed_re_allocation.csv", ...
     "prb_allocation_heatmap", "reports/csv/prb_allocation_heatmap.csv", ...
     "dl_resource_grid_heatmap", "reports/csv/dl_resource_grid_heatmap.csv", ...
     "ul_resource_grid_heatmap", "reports/csv/ul_resource_grid_heatmap.csv", ...
@@ -1971,6 +1973,10 @@ T.RECount = T.subcarrier_count;
 T.re_range = string(T.subcarrier_start) + "-" + string(T.subcarrier_start + T.subcarrier_count - 1);
 T.value_role = T.occupancy_role;
 T.value_source = T.evidence_kind;
+T.evidence_scope = repmat("runtime_observed", height(T), 1);
+T.coordinate_precision = repmat("rb_symbol_region", height(T), 1);
+T.lifecycle_status = repmat("observed_allocation", height(T), 1);
+T.observation_stage = repmat("runtime_export", height(T), 1);
 end
 
 function T = localVertcatTables(parts)

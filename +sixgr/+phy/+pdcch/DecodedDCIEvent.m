@@ -36,7 +36,7 @@ classdef DecodedDCIEvent
                 error("sixgr:phy:pdcch:payload_length_mismatch", ...
                     "DecodedDCIEvent payload length does not match AlignedPayloadBits.");
             end
-            actualHash = string(sixgr.rrc.asn1.sha256Hex(uint8(bits)));
+            actualHash = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(bits)));
             if actualHash ~= string(data.RawPayloadHash)
                 error("sixgr:phy:pdcch:payload_length_mismatch", ...
                     "DecodedDCIEvent payload hash does not match its payload bits.");
@@ -45,7 +45,7 @@ classdef DecodedDCIEvent
             data.RNTIType = sixgr.phy.pdcch.normalizeRNTIType(data.RNTIType);
             data.RawPayloadBits = bits;
             obj.Data = orderfields(data);
-            obj.EventID = string(sixgr.rrc.asn1.sha256Hex(uint8( ...
+            obj.EventID = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
                 unicode2native(jsonencode(localHashableData(obj.Data)), "UTF-8"))));
         end
 

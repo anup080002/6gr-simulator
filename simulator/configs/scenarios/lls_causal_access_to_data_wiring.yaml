@@ -43,8 +43,8 @@ run_control:
   num_seeds: 1
   num_drops: 1
   warmup_time_ms: 0
-  measurement_time_ms: 8
-  total_time_ms: 8
+  measurement_time_ms: 12
+  total_time_ms: 12
   slot_level_logging_enable: true
   symbol_level_logging_enable: true
   per_ue_logging_enable: true
@@ -72,9 +72,9 @@ run_control:
   debug_level: "info"
   fail_on_warning: true
   trace_capture_level: "full"
-  total_slots: 8
+  total_slots: 12
   warmup_slots: 0
-  measurement_slots: 8
+  measurement_slots: 12
 config_inheritance:
   parents: []
   merge_policy: "deep_merge_last_writer_wins"
@@ -115,17 +115,17 @@ global_radio_scope:
   duplex_mode: "FDD"
   carrier_frequency_hz: 780000000
   frequency_range_label: "FR1"
-  channel_bandwidth_hz: 20000000
-  simulation_bandwidth_hz: 20000000
-  occupied_bandwidth_hz: 18000000
+  channel_bandwidth_hz: 5000000
+  simulation_bandwidth_hz: 5000000
+  occupied_bandwidth_hz: 4500000
   scs_hz: 15000
   numerology_mu: 0
   cp_type: "normal"
-  sample_rate_hz: 30720000
-  fft_size: 2048
-  ifft_size: 2048
+  sample_rate_hz: 7680000
+  fft_size: 512
+  ifft_size: 512
   oversampling_ratio: 1
-  guard_band_hz: 2000000
+  guard_band_hz: 500000
   center_frequency_offset_hz: 0
   spectrum_sharing_mode: "none"
   multi_carrier_mode: "single_carrier"
@@ -137,14 +137,6 @@ frame_timing:
   slot_duration_ms: 1
   symbols_per_slot: 14
   slots_per_frame: 10
-  tdd_common:
-    ReferenceSubcarrierSpacingKHz: 30
-    Pattern1:
-      PeriodicityMilliseconds: 5
-      NumDownlinkSlots: 6
-      NumDownlinkSymbols: 4
-      NumUplinkSlots: 3
-      NumUplinkSymbols: 2
   mini_slot_support: false
   symbol_timing_reference: "nr_symbol_clock"
   scheduling_timeline: "slot_based"
@@ -372,8 +364,8 @@ waveform:
   dmrs_data_fd_multiplexing_mode: "baseline"
   dl_waveform: "CP-OFDM"
   ul_waveform: "CP-OFDM"
-  fft_size: 2048
-  sample_rate_hz: 30720000
+  fft_size: 512
+  sample_rate_hz: 7680000
   windowing_enabled: false
   transform_precoding_enabled: false
   experimental_dl_dfts_ofdm_enabled: false
@@ -387,7 +379,7 @@ waveform:
   ue_coherence_mode: "coherent"
   ue_power_limited: false
 resource_grid:
-  num_rbs: 106
+  num_rbs: 25
   rb_start: 0
   rb_allocation_mode: "contiguous"
   fdra_policy: "type1"
@@ -652,6 +644,13 @@ signals_and_channels_common:
     coverage_target: "baseline"
     energy_saving_policy: "none"
 reference_signals:
+  # Explicit carrier-slot schedules.  Runtime consumers must use these
+  # authored values; no hardcoded phase offsets are permitted.
+  srs_periodicity_slots: 4
+  srs_slot_within_period: 4
+  trs_periodicity_slots: 4
+  csi_rs_periodicity_slots: 4
+  csi_rs_offset_slots: 1
   pdsch_dmrs:
     enabled: true
     purpose: "pdsch_demodulation"
@@ -829,6 +828,34 @@ reference_signals:
     trp_transmission_assumption: "single_trp_only"
   srs:
     enabled: true
+    # Complete TS 38.211 / nrSRSConfig resource.  The same resolved object
+    # is consumed by Tx, Rx, exact-grid preflight and runtime evidence.
+    resource_type: "periodic"
+    resource_set_usage: "codebook"
+    period_offset: 3
+    symbol_start: 13
+    num_srs_symbols: 1
+    repetition_factor: 1
+    comb_number: 2
+    comb_offset: 0
+    cyclic_shift: 0
+    sequence_id: 1
+    group_or_sequence_hopping: "neither"
+    frequency_position: 0
+    n_rrc: 0
+    enable_start_rb_hopping: false
+    frequency_scaling_factor: 1
+    start_rb_index: 0
+    b_hop: 0
+    c_srs: 6
+    b_srs: 0
+    num_rb: 24
+    expected_rb_start: 0
+    expected_num_rb: 24
+    expected_bandwidth_coverage_percent: 96
+    coverage_requirement: "explicit_24_of_25_prb"
+    full_carrier_sounding_required: false
+    full_carrier_coverage_tolerance_rb: 1
     purpose: "ul_csi"
     baseline_or_candidate_tag: "baseline_benchmark"
     time_density: "configured"
@@ -854,6 +881,7 @@ reference_signals:
     trp_transmission_assumption: "single_trp_only"
   trs:
     enabled: true
+    slot_numbers: [0, 4, 8]
     purpose: "tracking"
     baseline_or_candidate_tag: "baseline_benchmark"
     time_density: "configured"
@@ -995,7 +1023,7 @@ reference_signals:
   csi_rs_resource_symbol_locations: 5
   csi_rs_resource_subcarrier_locations: 0
   csi_rs_resource_rb_offsets: 0
-  csi_rs_resource_num_rbs: 106
+  csi_rs_resource_num_rbs: 25
   csi_rs_precoder_codebook:
     enabled: true
     type: "dft_ura"
@@ -1006,7 +1034,6 @@ reference_signals:
   ptrs_time_density: 2
   ptrs_frequency_density: 2
   ptrs_re_offset: "00"
-  srs_periodicity_slots: 1
   ssb_Lmax: 4
   csi_rs_port_count: 2
 pdcch:
@@ -1064,7 +1091,7 @@ pdsch:
   distribution_matching_policy: "none"
   scrambling_policy: "nr_like"
   dmrs_policy: "baseline"
-  ptrs_policy: "disabled"
+  ptrs_policy: "enabled_from_yaml"
   csi_rs_association: "default"
   mimo_mode: "su_mimo"
   rank: 2
@@ -1089,7 +1116,7 @@ pdsch:
   num_antenna_ports: 2
   mapping_type: "A"
   prb_start: 0
-  num_prb: 106
+  num_prb: 25
   start_symbol: 2
   num_symbols: 12
 pusch:
@@ -1100,7 +1127,7 @@ pusch:
   ulsch_enabled: true
   uci_multiplexing_mode: "baseline"
   dmrs_policy: "baseline"
-  ptrs_policy: "disabled"
+  ptrs_policy: "enabled_from_yaml"
   codeword_count: 1
   layer_count: 2
   precoder_normalization_convention: "semi_unitary"
@@ -1130,7 +1157,7 @@ pusch:
   num_antenna_ports: 2
   mapping_type: "A"
   prb_start: 0
-  num_prb: 106
+  num_prb: 25
   start_symbol: 0
   num_symbols: 14
   num_layers: 2
@@ -4335,15 +4362,15 @@ scenario:
     noiseFigure_dB: 5
 simulation:
   link_direction: "both"
-  n_frames: 8
-  n_slots: 8
-  n_subframes: 8
+  n_frames: 2
+  n_slots: 12
+  n_subframes: 12
   monte_carlo_iterations: 1
   random_seed: 104729
   deterministic_mode: true
   snr_db: 30
   noise_operating_mode: "standalone_awgn_snr_argument"
-  min_duration_s: 0.008
+  min_duration_s: 0.012
   snr_sweep_offsets_db: 0
   reference_sweep_enabled: true
   reference_trials_per_snr: 1
@@ -4356,7 +4383,7 @@ frequency:
   range_name: "FR1"
   band_name: "n28"
   center_frequency_hz: 780000000
-  bandwidth_hz: 20000000
+  bandwidth_hz: 5000000
   bandwidth_options_hz: [5000000, 10000000, 20000000]
   duplex_mode: "FDD"
   carrier_count: 1
@@ -4371,22 +4398,14 @@ frequency:
   power_model_defaults: "coverage"
   energy_model_defaults: "coverage_energy"
   rf_impairment_defaults: "coverage_clean"
-  n_size_grid: 106
+  n_size_grid: 25
   dl_center_frequency_hz: 780000000
   ul_center_frequency_hz: 725000000
 frame:
   scs_khz: 15
   cp_type: "normal"
-  slot_format: "flexible"
-  tdd_common:
-    ReferenceSubcarrierSpacingKHz: 30
-    Pattern1:
-      PeriodicityMilliseconds: 5
-      NumDownlinkSlots: 6
-      NumDownlinkSymbols: 4
-      NumUplinkSlots: 3
-      NumUplinkSymbols: 2
-tdd_timing:
+  slot_format: "fdd_separate_carriers"
+scheduling_timing:
   pdcch_to_pdsch_k0: 0
   pdcch_to_pusch_k2: 1
   dl_harq_feedback_k1: [1, 2, 3, 4, 5, 6, 7, 8]
@@ -4483,7 +4502,8 @@ control:
     - "0_1"
   blind_decode_candidates: 16
   coreset_duration: 2
-  coreset_frequency_resources: [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]
+  coreset_frequency_resource_policy: "full_bwp_groups"
+  coreset_frequency_resources: [1, 1, 1, 1]
   search_space_num_candidates: [8, 8, 4, 2, 1]
   pdcch_payload_bits: 64
   blind_decode_list_length: 16
@@ -4530,8 +4550,10 @@ initial_access:
       beam_grid_columns: 4
       beam_indices: [0, 1, 2, 3]
     waveform_domain: "physical_element_domain"
-    n_crb_ssb: 41
-    k_ssb: 0
+    # 5 MHz / 15 kHz has 300 occupied subcarriers.  The 240-subcarrier
+    # SSB is centered with 2 CRBs plus a six-subcarrier kSSB offset.
+    n_crb_ssb: 2
+    k_ssb: 6
     selected_ssb_index: 0
     observation_subframes: 5
   mib:
@@ -4589,7 +4611,7 @@ random_access:
   duplex_mode: "FDD"
   carrier_frequency_hz: 780000000
   carrier_scs_khz: 15
-  n_size_grid: 106
+  n_size_grid: 25
   configuration_index: 95
   subcarrier_spacing_khz: 15
   sequence_index: 1
@@ -5118,27 +5140,27 @@ validation:
     parameter_bindings:
       - parameter_id: "k0_pdcch_to_pdsch"
         subsystem: "timing"
-        scenario_path: "tdd_timing.pdcch_to_pdsch_k0"
-        runtime_path: "phy.tddTiming.pdcchToPDSCHK0"
+        scenario_path: "scheduling_timing.pdcch_to_pdsch_k0"
+        runtime_path: "phy.schedulingTiming.pdcchToPDSCHK0"
         consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         required: true
       - parameter_id: "k2_pdcch_to_pusch"
         subsystem: "timing"
-        scenario_path: "tdd_timing.pdcch_to_pusch_k2"
-        runtime_path: "phy.tddTiming.pdcchToPUSCHK2"
+        scenario_path: "scheduling_timing.pdcch_to_pusch_k2"
+        runtime_path: "phy.schedulingTiming.pdcchToPUSCHK2"
         consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         required: true
       - parameter_id: "k1_dl_harq_candidates"
         subsystem: "timing"
-        scenario_path: "tdd_timing.dl_harq_feedback_k1"
-        runtime_path: "phy.tddTiming.dlHARQFeedbackK1Candidates"
+        scenario_path: "scheduling_timing.dl_harq_feedback_k1"
+        runtime_path: "phy.schedulingTiming.dlHARQFeedbackK1Candidates"
         consumer_source_files: ["+sixgr/+l2/+mac/resolveHARQFeedbackK1.m"]
         feature_authority: "harq"
         required: true
       - parameter_id: "k2_ul_grant"
         subsystem: "timing"
-        scenario_path: "tdd_timing.ul_grant_k2"
-        runtime_path: "phy.tddTiming.ulGrantK2"
+        scenario_path: "scheduling_timing.ul_grant_k2"
+        runtime_path: "phy.schedulingTiming.ulGrantK2"
         consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         required: true
       - parameter_id: "harq_process_count"
@@ -5725,7 +5747,7 @@ bwp:
     bwp_id: 0
     direction: "DL"
     n_start_bwp: 0
-    n_size_bwp: 106
+    n_size_bwp: 25
     scs_khz: 15
     cp_type: "normal"
     active: true
@@ -5733,7 +5755,7 @@ bwp:
     bwp_id: 0
     direction: "UL"
     n_start_bwp: 0
-    n_size_bwp: 106
+    n_size_bwp: 25
     scs_khz: 15
     cp_type: "normal"
     active: true
@@ -5787,7 +5809,7 @@ pucch_resources:
       intra_slot_hopping: false
       second_hop_start_prb: []
       initial_cyclic_shift: 0
-      occ_length: 1
+      occ_length: 2
       occ_index: 0
       additional_dmrs: false
       pi2_bpsk: false

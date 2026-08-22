@@ -317,10 +317,10 @@ trblkBits = int8(selected.trblk(:));
 scrblkBits = int8(selected.scrblk(:));
 pb.BCHTransportBlockNumBits = double(numel(trblkBits));
 pb.BCHTransportBlockHex = sixgr.rrc.asn1.bitsToHex(trblkBits);
-pb.BCHTransportBlockHash = sixgr.rrc.asn1.sha256Hex(uint8(trblkBits));
+pb.BCHTransportBlockHash = sixgr.rrc.asn1.asn1SHA256Hex(uint8(trblkBits));
 pb.BCHScrambledBlockNumBits = double(numel(scrblkBits));
 pb.BCHScrambledBlockHex = sixgr.rrc.asn1.bitsToHex(scrblkBits);
-pb.BCHScrambledBlockHash = sixgr.rrc.asn1.sha256Hex(uint8(scrblkBits));
+pb.BCHScrambledBlockHash = sixgr.rrc.asn1.asn1SHA256Hex(uint8(scrblkBits));
 pb.MIBDecodedBitSource = "nrBCHDecode";
 if pb.Ok
     mib = sixgr.phy.broadcast.decodeMIBTransportBlock(trblkBits);

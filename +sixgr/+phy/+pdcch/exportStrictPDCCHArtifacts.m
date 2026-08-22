@@ -432,5 +432,5 @@ if fid < 0
 end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
 data = fread(fid, Inf, "*uint8");
-hash = sixgr.rrc.asn1.sha256Hex(data);
+hash = sixgr.rrc.asn1.asn1SHA256Hex(data);
 end

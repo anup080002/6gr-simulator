@@ -9129,47 +9129,59 @@ def load_first_available_csv_rows(artifacts: list[dict[str, Any]], logical_paths
 
 
 PHY_GRID_CHANNEL_SPECS: dict[str, dict[str, Any]] = {
-    "pbch_trials": {"channel": "SSB/PBCH", "direction": "DL", "symbol_start": 0, "symbol_count": 4, "prb_start": 0, "prb_count": 20},
-    "pdcch_trials": {"channel": "PDCCH", "direction": "DL", "symbol_start": 0, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
-    "dl_trials": {"channel": "PDSCH", "direction": "DL", "symbol_start": 2, "symbol_count": 12, "prb_start": 0, "prb_count": None},
-    "trs_trials": {"channel": "TRS", "direction": "DL", "symbol_start": 10, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
-    "prach_trials": {"channel": "PRACH", "direction": "UL", "symbol_start": 0, "symbol_count": 6, "prb_start": 0, "prb_count": 12},
-    "ul_trials": {"channel": "PUSCH", "direction": "UL", "symbol_start": 0, "symbol_count": 14, "prb_start": 0, "prb_count": None},
-    "pucch_trials": {"channel": "PUCCH", "direction": "UL", "symbol_start": 12, "symbol_count": 2, "prb_start": 0, "prb_count": 1},
-    "srs_trials": {"channel": "SRS", "direction": "UL", "symbol_start": 13, "symbol_count": 1, "prb_start": 0, "prb_count": 48},
+    # Trial tables remain useful for status/provenance, but they are never
+    # converted into resource rectangles.  Only canonical allocation rows
+    # with persisted coordinates may color the grid.
+    "pbch_trials": {"channel": "SSB/PBCH", "direction": "DL"},
+    "pdcch_trials": {"channel": "PDCCH", "direction": "DL"},
+    "dl_trials": {"channel": "PDSCH", "direction": "DL"},
+    "trs_trials": {"channel": "TRS", "direction": "DL"},
+    "prach_trials": {"channel": "PRACH", "direction": "UL"},
+    "ul_trials": {"channel": "PUSCH", "direction": "UL"},
+    "pucch_trials": {"channel": "PUCCH", "direction": "UL"},
+    "srs_trials": {"channel": "SRS", "direction": "UL"},
 }
 
 
 PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
+    "planned_re_allocation": {
+        "canonical_path": "frame_grid/csv/planned_re_allocation.csv",
+        "legacy_paths": [],
+        "owner_kind": "planned_re_allocation",
+        "spec": {"channel": "Planned", "direction": ""},
+    },
+    "observed_re_allocation": {
+        "canonical_path": "frame_grid/csv/observed_re_allocation.csv",
+        "legacy_paths": ["reports/csv/live_re_allocation_snapshot.csv"],
+        "owner_kind": "observed_re_allocation",
+        "spec": {"channel": "Observed", "direction": ""},
+    },
     "slot_trace": {
         "canonical_path": "reports/csv/slot_trace.csv",
         "legacy_paths": ["packet_flow/csv/slot_trace.csv"],
         "owner_kind": "slot_trace",
         "render_events": False,
     },
-    "re_occupancy": {
-        "canonical_path": "reports/csv/live_re_allocation_snapshot.csv",
-        "legacy_paths": ["reports/csv/dl_resource_grid_heatmap.csv", "reports/csv/ul_resource_grid_heatmap.csv"],
-        "owner_kind": "live_re_allocation_snapshot",
-        "spec": {"channel": "RE Occupancy", "direction": "", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
-    },
     "csirs_trials": {
         "canonical_path": "air_interface/csv/csi_rs_trials.csv",
         "legacy_paths": ["control/csv/csi_rs_trials.csv", "reports/csv/live_csirs_stats.csv"],
         "owner_kind": "raw_control_trials",
-        "spec": {"channel": "CSI-RS", "direction": "DL", "symbol_start": 10, "symbol_count": 2, "prb_start": 0, "prb_count": 48},
+        "spec": {"channel": "CSI-RS", "direction": "DL"},
+        "render_events": False,
     },
     "dl_grants": {
         "canonical_path": "reports/csv/live_dl_scheduler_grants.csv",
         "legacy_paths": ["packet_flow/csv/live_dl_scheduler_grants.csv", "system/csv/system_scheduler_grants.csv"],
         "owner_kind": "scheduler_grants_dl",
-        "spec": {"channel": "DL Grant", "direction": "DL", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
+        "spec": {"channel": "DL Grant", "direction": "DL"},
+        "render_events": False,
     },
     "ul_grants": {
         "canonical_path": "reports/csv/live_ul_scheduler_grants.csv",
         "legacy_paths": ["packet_flow/csv/live_ul_scheduler_grants.csv", "system/csv/system_scheduler_grants.csv"],
         "owner_kind": "scheduler_grants_ul",
-        "spec": {"channel": "UL Grant", "direction": "UL", "symbol_start": 0, "symbol_count": 1, "prb_start": 0, "prb_count": None},
+        "spec": {"channel": "UL Grant", "direction": "UL"},
+        "render_events": False,
     },
 }
 
@@ -9484,11 +9496,7 @@ def build_phy_event(
         "DurationSymbols",
         "L",
     ]
-    prb_start = first_present_number(
-        row,
-        prb_start_columns,
-        float(spec.get("prb_start", 0) or 0),
-    )
+    prb_start = first_present_number(row, prb_start_columns, math.nan)
     prb_count = first_present_number(
         row,
         prb_count_columns,
@@ -9497,21 +9505,29 @@ def build_phy_event(
     prb_set_present = first_present_value(row, ["PUCCHPRBSet", "PUSCHPRBSet", "PDSCHPRBSet", "PRBSet", "PRBs", "RBSet"], "")
     if not math.isfinite(prb_count):
         prb_count = phy_grid_prb_count_from_set(prb_set_present)
-    if not math.isfinite(prb_count):
-        configured = spec.get("prb_count", None)
-        prb_count = float(configured) if configured is not None else float(nrb)
-    symbol_start_present = first_present_value(row, symbol_start_columns, "")
-    symbol_count_present = first_present_value(row, symbol_count_columns, "")
-    symbol_start = first_present_number(
-        row,
-        symbol_start_columns,
-        float(spec.get("symbol_start", 0) or 0),
+    symbol_start = first_present_number(row, symbol_start_columns, math.nan)
+    symbol_count = first_present_number(row, symbol_count_columns, math.nan)
+    subcarrier_start = first_present_number(
+        row, ["subcarrier_start", "SubcarrierStart", "REStart"], math.nan
     )
-    symbol_count = first_present_number(
-        row,
-        symbol_count_columns,
-        float(spec.get("symbol_count", 1) or 1),
+    subcarrier_count = first_present_number(
+        row, ["subcarrier_count", "SubcarrierCount", "RECount"], math.nan
     )
+    if not all(math.isfinite(value) for value in [prb_start, prb_count, symbol_start, symbol_count]):
+        return None
+    if prb_count <= 0 or symbol_count <= 0:
+        return None
+    coordinate_precision = str(
+        first_present_value(row, ["coordinate_precision", "CoordinatePrecision"], "") or ""
+    ).strip()
+    if math.isfinite(subcarrier_start) and math.isfinite(subcarrier_count) and subcarrier_count > 0:
+        if not coordinate_precision:
+            coordinate_precision = "subcarrier_symbol_region"
+    else:
+        subcarrier_start = 12.0 * prb_start
+        subcarrier_count = 12.0 * prb_count
+        if not coordinate_precision:
+            coordinate_precision = "rb_symbol_region"
     channel = str(
         derived_channel
         or first_present_value(row, ["channel_name", "signal_name", "ChannelName", "SignalFamily", "Channel"], "")
@@ -9521,20 +9537,38 @@ def build_phy_event(
     direction = str(first_present_value(row, ["Direction", "direction", "LinkDirection", "Duplex"], spec.get("direction") or ""))
     crc_value = first_present_value(row, ["CRCPass", "CRCOK", "CRC", "DecodeSuccess", "DetectionSuccess", "Pass"], "")
     status_value = first_present_value(row, ["Status", "DecodeStatus", "DetectionStatus", "ResultStatus", "SRSValidityState"], "")
-    source_note = derived_source_note or "runtime_csv_row"
-    if symbol_start_present in (None, "") or symbol_count_present in (None, ""):
-        source_note = f"{source_note};symbol_span_from_resolved_frame_fallback"
+    evidence_scope = str(first_present_value(
+        row, ["evidence_scope", "EvidenceScope"],
+        "planned_config" if table_key == "planned_re_allocation" else "runtime_observed",
+    ))
+    lifecycle = str(first_present_value(
+        row,
+        ["lifecycle_status", "LifecycleStatus", "value_status", "ValueStatus", "Status"],
+        "planned" if table_key == "planned_re_allocation" else "observed",
+    ))
+    source_note = derived_source_note or f"{evidence_scope};{coordinate_precision}"
     return {
+        "frame": bounded_int(first_present_number(row, ["frame", "Frame", "SFN"], 0), 0, 0, 1023),
         "slot": int(slot),
         "direction": direction,
         "channel": channel,
         "table_key": table_key,
         "ue_id": phy_grid_ue_value(row),
-        "symbol_start": bounded_int(symbol_start, int(spec.get("symbol_start", 0) or 0), 0, 13),
-        "symbol_count": bounded_int(symbol_count, int(spec.get("symbol_count", 1) or 1), 1, 14),
-        "prb_start": max(0, int(round(prb_start))) if math.isfinite(prb_start) else 0,
-        "prb_count": max(1, min(max(nrb, 1), int(round(prb_count)))) if math.isfinite(prb_count) else max(nrb, 1),
-        "status": str(status_value or ""),
+        "symbol_start": bounded_int(symbol_start, 0, 0, 27),
+        "symbol_count": bounded_int(symbol_count, 1, 1, 28),
+        "prb_start": max(0, int(round(prb_start))),
+        "prb_count": max(1, min(max(nrb, 1), int(round(prb_count)))),
+        "subcarrier_start": max(0, int(round(subcarrier_start))),
+        "subcarrier_count": max(1, int(round(subcarrier_count))),
+        "port_index": first_present_value(row, ["port_index", "PortIndex", "LogicalPort", "PhysicalPort"], ""),
+        "port_count": first_present_value(row, ["port_count", "PortCount", "NumPorts"], ""),
+        "layer_index": first_present_value(row, ["layer_index", "LayerIndex"], ""),
+        "layer_count": first_present_value(row, ["layer_count", "LayerCount", "Layers", "Rank"], ""),
+        "cell_id": first_present_value(row, ["cell_id", "CellID", "ServingCell"], ""),
+        "evidence_scope": evidence_scope,
+        "coordinate_precision": coordinate_precision,
+        "lifecycle_status": lifecycle,
+        "status": str(status_value or lifecycle),
         "crc": str(crc_value or ""),
         "mcs": first_present_value(row, ["MCS", "MCSIndex", "ScheduledMCS", "SelectedMCS"], ""),
         "cqi": first_present_value(row, ["WidebandCQI", "CQI", "CQIIndex"], ""),
@@ -9546,40 +9580,8 @@ def build_phy_event(
 
 
 def phy_grid_dynamic_specs(cfg: dict[str, Any], nrb: int, symbols_per_slot: int) -> dict[str, dict[str, Any]]:
-    specs = copy.deepcopy(PHY_GRID_CHANNEL_SPECS)
-    coreset_symbols = bounded_int(
-        path_get(
-            cfg,
-            "phy.frameStructure.CORESETDuration",
-            path_get(cfg, "phy.pdcch.coreset.duration", path_get(cfg, "control.coreset_duration", 2)),
-        ),
-        2,
-        1,
-        max(1, min(3, symbols_per_slot)),
-    )
-    pdsch_start = bounded_int(
-        path_get(
-            cfg,
-            "phy.frameStructure.PDSCHStartSymbol",
-            path_get(cfg, "phy.pdsch.startSymbol", coreset_symbols),
-        ),
-        coreset_symbols,
-        1,
-        max(1, symbols_per_slot - 1),
-    )
-    specs["pdcch_trials"]["symbol_count"] = coreset_symbols
-    specs["pdcch_trials"]["prb_count"] = min(max(nrb, 1), int(specs["pdcch_trials"].get("prb_count") or 48))
-    specs["dl_trials"]["symbol_start"] = pdsch_start
-    specs["dl_trials"]["symbol_count"] = max(1, symbols_per_slot - pdsch_start)
-    prach_start = coerce_numeric(path_get(cfg, "phy.frameStructure.PRACHStartSymbol", path_get(cfg, "phy.prach.startSymbol", None)))
-    prach_len = coerce_numeric(path_get(cfg, "phy.frameStructure.PRACHDurationSymbols", path_get(cfg, "phy.prach.durationSymbols", None)))
-    if prach_start is not None and math.isfinite(float(prach_start)):
-        specs["prach_trials"]["symbol_start"] = max(0, min(symbols_per_slot - 1, int(round(float(prach_start)))))
-    if prach_len is not None and math.isfinite(float(prach_len)):
-        specs["prach_trials"]["symbol_count"] = max(1, min(symbols_per_slot, int(round(float(prach_len)))))
-    specs["srs_trials"]["symbol_start"] = max(0, symbols_per_slot - 1)
-    specs["ul_trials"]["symbol_count"] = symbols_per_slot
-    return specs
+    del cfg, nrb, symbols_per_slot
+    return copy.deepcopy(PHY_GRID_CHANNEL_SPECS)
 
 
 def add_reference_signal_overlay(
@@ -9667,7 +9669,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             artifacts,
             str(info["canonical_path"]),
             legacy_paths=list(info.get("legacy_paths") or []),
-            max_rows=12000,
+            max_rows=100000,
             owner_kind=str(info.get("owner_kind") or ""),
         )
         table_rows[table_key] = rows
@@ -9737,6 +9739,8 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
 
     events: list[dict[str, Any]] = []
     for table_key, rows in table_rows.items():
+        if table_key not in {"planned_re_allocation", "observed_re_allocation"}:
+            continue
         if not bool(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("render_events", True)):
             continue
         spec = channel_specs.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
@@ -9749,19 +9753,6 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             if event is None or int(event["slot"]) not in slot_set:
                 continue
             events.append(event)
-            if table_key == "pbch_trials":
-                for ch, sym in [("PSS", 0), ("PBCH", 1), ("SSS", 2), ("PBCH", 3)]:
-                    overlay = dict(event)
-                    overlay["channel"] = ch
-                    overlay["symbol_start"] = sym
-                    overlay["symbol_count"] = 1
-                    overlay["source_note"] = "ssb_component_position_relative_to_ssb_block"
-                    events.append(overlay)
-            elif table_key == "dl_trials":
-                add_reference_signal_overlay(events, event, row, "PDSCH-DMRS", ["DMRSRECount", "DMRS_RE_Count", "PDSCHDMRSRECount"], 2)
-                add_reference_signal_overlay(events, event, row, "PDSCH-PTRS", ["PTRSRECount", "PTRS_RE_Count", "PDSCHPTRSRECount"], 6)
-            elif table_key == "ul_trials":
-                add_reference_signal_overlay(events, event, row, "PUSCH-DMRS", ["DMRSRECount", "DMRS_RE_Count", "PUSCHDMRSRECount"], 2)
 
     lane_order = [
         "PSS", "SSS", "SSB/PBCH", "PBCH", "PDCCH", "CSI-RS", "TRS", "DL Grant", "PDSCH", "PDSCH-DMRS", "PDSCH-PTRS",
@@ -9781,11 +9772,11 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         for key, meta in sorted(table_meta.items())
     ]
     provenance_notes = [
-        "Grid cells are built from run CSV artifacts only; no synthetic pass/fail or fake RE positions are created.",
+        "Grid cells are built only from canonical planned/observed allocation CSV rows; trial-table defaults never create rectangles.",
         "Slot D/U/S/F labels and idle reasons come from the canonical slot trace when available; resolved configuration is only the fallback.",
-        "PDSCH/PUSCH allocation rectangles use exported PRB/symbol columns when present; otherwise the runtime row and selected artifact are shown as unavailable/estimated.",
-        "DMRS/PTRS overlays are drawn only when exported RE counts are present. Exact per-RE index export is still required for full RE-level coloring.",
-        "PSS/SSS/PBCH component symbols are shown relative to each exported SSB/PBCH row.",
+        "planned_config rows describe the YAML-resolved schedule. runtime_observed rows describe allocations actually reached by the execution chain.",
+        "coordinate_precision distinguishes exact sparse REs from subcarrier/symbol or RB/symbol regions; the UI never upgrades a coarse region to exact evidence.",
+        "Missing, disabled, collision, transmitted, received, and decoded states are rendered from persisted lifecycle_status fields only.",
     ]
     payload = {
         "run": {
@@ -19833,8 +19824,8 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
 {message_html}
 {initial_error_html}
 <section class="panel">
-  <h2>50-Slot PHY Grid Monitor</h2>
-  <p class="muted">Artifact-backed DL/UL grid view for SSB, PSS, SSS, PBCH, PDCCH, PDSCH, DMRS/PTRS counts, CSI-RS, TRS, PRACH, PUSCH, PUCCH, and SRS. Missing exact RE indices stay explicitly marked instead of being invented.</p>
+  <h2>Planned And Observed PHY Resource Grid</h2>
+  <p class="muted">Separate YAML-resolved and runtime-observed DL/UL allocations. The detailed view is subcarrier × OFDM symbol and can be filtered by slot, port, layer, UE, and lifecycle state. Missing coordinates remain missing.</p>
   <div class="toolbar">
     <label>Run {run_selector}</label>
     <label>UE <select id="phyUeSelect"><option value="">Auto / broadcast</option></select></label>
@@ -19847,6 +19838,20 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
   <div id="phyLoadState" class="muted">Rendering initial artifact-backed grid...</div>
   <div id="phySummary" class="metric-grid"></div>
   <div class="phy-scroll"><div id="phyGridTable" class="muted">Loading PHY grid...</div></div>
+</section>
+<section class="panel">
+  <div class="toolbar">
+    <label>Direction <select id="phyDetailDirection"><option>DL</option><option>UL</option></select></label>
+    <label>Evidence <select id="phyDetailScope"><option value="runtime_observed">Observed runtime</option><option value="planned_config">Planned config</option><option value="all">Overlay both</option></select></label>
+    <label>Slot <select id="phyDetailSlot"></select></label>
+    <label>Port <select id="phyDetailPort"><option value="">All</option></select></label>
+    <label>Layer <select id="phyDetailLayer"><option value="">All</option></select></label>
+  </div>
+  <h2>Subcarrier × Symbol Detail</h2>
+  <p class="muted">Each colored cell is backed by a persisted allocation row. Hatched/coarse regions are labeled <code>rb_symbol_region</code>; exact sparse-RE evidence is never inferred from counts.</p>
+  <div class="phy-canvas-wrap"><canvas id="phyDetailCanvas" width="1200" height="430"></canvas></div>
+  <div id="phyLegend" class="phy-legend"></div>
+  <div class="table-wrap"><table id="phyDetailRows"><tbody><tr><td>No allocation selected.</td></tr></tbody></table></div>
 </section>
 <section class="panel">
   <h2>Selected UE Message And Measurement Dataflow</h2>
@@ -19881,6 +19886,11 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
 .phy-CTRL { background:#233b5d; }
 .phy-BCAST { background:#12a57a; }
 .phy-mini { display:block; font-weight:500; opacity:0.9; font-size:11px; }
+.phy-canvas-wrap { overflow:auto; border:1px solid var(--border); border-radius:14px; background:#fff; padding:10px; }
+#phyDetailCanvas { min-width:900px; width:100%; height:auto; image-rendering:pixelated; }
+.phy-legend { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+.phy-legend span { display:inline-flex; align-items:center; gap:6px; font-size:12px; }
+.phy-swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
 </style>
 """
     extra_script = f"""
@@ -19898,11 +19908,106 @@ function eventClass(event) {{
   if (ch.includes('PDCCH') || ch.includes('PUCCH') || ch.includes('PRACH') || ch.includes('GRANT')) return 'phy-CTRL';
   return String(event.direction || '').toUpperCase() === 'UL' ? 'phy-UL' : 'phy-DL';
 }}
+let PHY_DETAIL_PAYLOAD = null;
+const PHY_SIGNAL_COLORS = {{
+  'PSS':'#06b6d4','SSS':'#0ea5e9','SSB':'#14b8a6','PBCH':'#10b981','PBCH-DMRS':'#34d399',
+  'PDCCH':'#1d4ed8','PDCCH-DMRS':'#60a5fa','PDSCH':'#0891b2','PDSCH-DMRS':'#8b5cf6','PDSCH-PTRS':'#c084fc',
+  'CSI-RS':'#7c3aed','TRS':'#a855f7','PRACH':'#dc2626','PUSCH':'#f97316','PUSCH-DMRS':'#fb7185',
+  'PUSCH-PTRS':'#f43f5e','PUCCH':'#eab308','SRS':'#ca8a04','DEFAULT':'#64748b'
+}};
+function phySignalColor(channel) {{
+  const key = String(channel || '').toUpperCase();
+  return PHY_SIGNAL_COLORS[key] || PHY_SIGNAL_COLORS.DEFAULT;
+}}
+function phyUnique(values) {{ return [...new Set(values.map(v => String(v ?? '')).filter(Boolean))]; }}
+function refillPhyDetailSelectors(grid) {{
+  const events = grid.events || [];
+  const slotSelect = document.getElementById('phyDetailSlot');
+  const portSelect = document.getElementById('phyDetailPort');
+  const layerSelect = document.getElementById('phyDetailLayer');
+  const oldSlot = slotSelect?.value || '';
+  if (slotSelect) {{
+    const slots = phyUnique(events.map(e => e.slot)).sort((a,b) => Number(a)-Number(b));
+    slotSelect.innerHTML = slots.map(v => `<option value="${{escPhy(v)}}">${{escPhy(v)}}</option>`).join('') || '<option value="">No observed slot</option>';
+    if (slots.includes(oldSlot)) slotSelect.value = oldSlot;
+  }}
+  if (portSelect) {{
+    const old = portSelect.value;
+    const values = phyUnique(events.flatMap(e => [e.port_index, e.port_count])).sort((a,b) => Number(a)-Number(b));
+    portSelect.innerHTML = '<option value="">All</option>' + values.map(v => `<option value="${{escPhy(v)}}">${{escPhy(v)}}</option>`).join('');
+    if (values.includes(old)) portSelect.value = old;
+  }}
+  if (layerSelect) {{
+    const old = layerSelect.value;
+    const values = phyUnique(events.flatMap(e => [e.layer_index, e.layer_count])).sort((a,b) => Number(a)-Number(b));
+    layerSelect.innerHTML = '<option value="">All</option>' + values.map(v => `<option value="${{escPhy(v)}}">${{escPhy(v)}}</option>`).join('');
+    if (values.includes(old)) layerSelect.value = old;
+  }}
+}}
+function renderPhyDetail() {{
+  const payload = PHY_DETAIL_PAYLOAD;
+  if (!payload) return;
+  const grid = payload.grid || {{}};
+  const direction = document.getElementById('phyDetailDirection')?.value || 'DL';
+  const scope = document.getElementById('phyDetailScope')?.value || 'runtime_observed';
+  const slot = document.getElementById('phyDetailSlot')?.value || '';
+  const port = document.getElementById('phyDetailPort')?.value || '';
+  const layer = document.getElementById('phyDetailLayer')?.value || '';
+  const rows = (grid.events || []).filter(e =>
+    String(e.direction || '').toUpperCase() === direction && String(e.slot ?? '') === slot &&
+    (scope === 'all' || String(e.evidence_scope || '') === scope) &&
+    (!port || [String(e.port_index ?? ''), String(e.port_count ?? '')].includes(port)) &&
+    (!layer || [String(e.layer_index ?? ''), String(e.layer_count ?? '')].includes(layer))
+  );
+  const canvas = document.getElementById('phyDetailCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const nsc = Math.max(1, Number(grid.nrb || 1) * 12);
+  const nsym = Math.max(1, Number(grid.symbols_per_slot || 14));
+  const left = 68, top = 28, right = 18, bottom = 48;
+  const width = canvas.width - left - right, height = canvas.height - top - bottom;
+  const cw = width / nsc, ch = height / nsym;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle = '#f8fafc'; ctx.fillRect(left,top,width,height);
+  ctx.strokeStyle = '#d7e0ec'; ctx.lineWidth = 1;
+  for (let s=0; s<=nsym; s++) {{ const y=top+s*ch; ctx.beginPath(); ctx.moveTo(left,y); ctx.lineTo(left+width,y); ctx.stroke(); }}
+  for (let rb=0; rb<=Number(grid.nrb || 1); rb++) {{ const x=left+rb*12*cw; ctx.beginPath(); ctx.moveTo(x,top); ctx.lineTo(x,top+height); ctx.stroke(); }}
+  rows.forEach(event => {{
+    const x0 = Math.max(0, Number(event.subcarrier_start || 0));
+    const xN = Math.max(1, Number(event.subcarrier_count || 1));
+    const y0 = Math.max(0, Number(event.symbol_start || 0));
+    const yN = Math.max(1, Number(event.symbol_count || 1));
+    const rx = left+x0*cw, ry = top+y0*ch, rw = Math.max(1,xN*cw), rh = Math.max(1,yN*ch);
+    ctx.save(); ctx.beginPath(); ctx.rect(rx,ry,rw,rh); ctx.clip();
+    ctx.globalAlpha = String(event.evidence_scope || '') === 'planned_config' ? 0.36 : 0.86;
+    ctx.fillStyle = phySignalColor(event.channel);
+    ctx.fillRect(rx,ry,rw,rh);
+    if (String(event.coordinate_precision || '').includes('region')) {{
+      ctx.globalAlpha = 0.45; ctx.strokeStyle = '#0f172a';
+      for (let x=left+x0*cw-height; x<left+(x0+xN)*cw; x+=8) {{
+        ctx.beginPath(); ctx.moveTo(x,top+(y0+yN)*ch); ctx.lineTo(x+height,top+y0*ch); ctx.stroke();
+      }}
+    }}
+    ctx.restore(); ctx.globalAlpha = 1;
+  }});
+  ctx.fillStyle='#334155'; ctx.font='12px sans-serif';
+  ctx.fillText(`Subcarrier (0…${{nsc-1}}) / RB boundaries every 12`, left, canvas.height-12);
+  for (let s=0; s<nsym; s++) ctx.fillText(String(s), 42, top+(s+0.65)*ch);
+  ctx.save(); ctx.translate(15,top+height/2); ctx.rotate(-Math.PI/2); ctx.fillText('OFDM symbol',0,0); ctx.restore();
+  const legendKeys = phyUnique(rows.map(e => e.channel));
+  const legend = document.getElementById('phyLegend');
+  if (legend) legend.innerHTML = legendKeys.map(key => `<span><i class="phy-swatch" style="background:${{phySignalColor(key)}}"></i>${{escPhy(key)}}</span>`).join('') || '<span>No persisted coordinates for this selection.</span>';
+  const detail = document.getElementById('phyDetailRows');
+  if (detail) detail.innerHTML = `<thead><tr><th>Scope</th><th>Lifecycle</th><th>Signal</th><th>Cell / UE</th><th>Frame / slot</th><th>Symbol</th><th>RB</th><th>Subcarrier</th><th>Port</th><th>Layer</th><th>Precision</th><th>Source</th></tr></thead><tbody>${{rows.map(e => `<tr><td>${{escPhy(e.evidence_scope)}}</td><td>${{escPhy(e.lifecycle_status)}}</td><td>${{escPhy(e.channel)}}</td><td>${{escPhy(e.cell_id || '-')}} / ${{escPhy(e.ue_id || '-')}}</td><td>${{escPhy(e.frame)}} / ${{escPhy(e.slot)}}</td><td>${{escPhy(e.symbol_start)}}+${{escPhy(e.symbol_count)}}</td><td>${{escPhy(e.prb_start)}}+${{escPhy(e.prb_count)}}</td><td>${{escPhy(e.subcarrier_start)}}+${{escPhy(e.subcarrier_count)}}</td><td>${{escPhy(e.port_index || e.port_count || '-')}}</td><td>${{escPhy(e.layer_index || e.layer_count || '-')}}</td><td>${{escPhy(e.coordinate_precision)}}</td><td>${{escPhy(e.source_artifact)}}</td></tr>`).join('') || '<tr><td colspan="12">No persisted allocation rows match this selection.</td></tr>'}}</tbody>`;
+}}
 function renderPhyGrid(payload) {{
+  PHY_DETAIL_PAYLOAD = payload;
   const grid = payload.grid || {{}};
   const slots = grid.slots || [];
   const lanes = grid.lanes || [];
   const events = grid.events || [];
+  refillPhyDetailSelectors(grid);
   const byKey = new Map();
   events.forEach(event => {{
     const key = `${{event.channel}}|${{event.slot}}`;
@@ -19964,6 +20069,7 @@ function renderPhyGrid(payload) {{
   if (tableLink && payload.run?.run_id) tableLink.href = `/tables?run_id=${{payload.run.run_id}}`;
   const apiLink = document.getElementById('phyApiLink');
   if (apiLink && payload.run?.run_id) apiLink.href = `/api/run/${{payload.run.run_id}}/phy-grid?slot_limit=${{encodeURIComponent(grid.slot_limit || 50)}}&ue_id=${{encodeURIComponent(grid.selected_ue_id || '')}}`;
+  renderPhyDetail();
 }}
 async function refreshPhyGrid() {{
   const runId = document.getElementById('phyRunSelect').value || INITIAL_PHY_RUN_ID;
@@ -19981,6 +20087,9 @@ document.getElementById('phyRunSelect')?.addEventListener('change', () => {{
   refreshPhyGrid();
 }});
 document.getElementById('phyUeSelect')?.addEventListener('change', refreshPhyGrid);
+['phyDetailDirection','phyDetailScope','phyDetailSlot','phyDetailPort','phyDetailLayer'].forEach(id =>
+  document.getElementById(id)?.addEventListener('change', renderPhyDetail)
+);
 setInterval(() => refreshPhyGrid().catch(console.error), 5000);
 if (INITIAL_PHY_PAYLOAD && INITIAL_PHY_PAYLOAD.grid) {{
   try {{

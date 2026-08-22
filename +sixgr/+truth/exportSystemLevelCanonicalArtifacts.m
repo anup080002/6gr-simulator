@@ -63,12 +63,20 @@ ulRaw = sixgr.util.applyLLSRawTrialLifecycle(ulRaw);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "dl_pdsch_trials.csv"), dlRaw, "PreserveSchema", true);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), ulRaw, "PreserveSchema", true);
 
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"), localEmptyControlTrialTable("PBCH"));
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"), localEmptyControlTrialTable("PRACH"));
+% System-level execution does not manufacture waveform observations for
+% PBCH, PRACH, SRS, or TRS.  Reuse only rows supplied by an actual runtime
+% producer (or already persisted by that producer) and never overwrite
+% those rows with a header-only compatibility table.
+pbchT = localResolveObservedRuntimeTable(systemOut, details, layout, "PBCH", "pbch_trials.csv");
+prachT = localResolveObservedRuntimeTable(systemOut, details, layout, "PRACH", "prach_trials.csv");
+srsT = localResolveObservedRuntimeTable(systemOut, details, layout, "SRS", "srs_trials.csv");
+trsT = localResolveObservedRuntimeTable(systemOut, details, layout, "TRS", "trs_trials.csv");
+localWriteObservedRuntimeTable(fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"), pbchT);
+localWriteObservedRuntimeTable(fullfile(layout.AirInterfaceCSVDir, "prach_trials.csv"), prachT);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"), controlPDCCHT);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"), controlPUCCHT);
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"), localEmptyControlTrialTable("SRS"));
-sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"), localEmptyControlTrialTable("TRS"));
+localWriteObservedRuntimeTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"), srsT);
+localWriteObservedRuntimeTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"), trsT);
 
 multiUserT = localBuildMultiUserSummaryTable(dlRaw, ulRaw, cfg, details, tti_s);
 sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "multiuser_user_summary.csv"), multiUserT);
@@ -76,12 +84,12 @@ sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "multiuser_user_sum
 rawTrials = struct( ...
     "DL", dlRaw, ...
     "UL", ulRaw, ...
-    "PBCH", table(), ...
-    "PRACH", table(), ...
+    "PBCH", pbchT, ...
+    "PRACH", prachT, ...
     "PDCCH", controlPDCCHT, ...
     "PUCCH", controlPUCCHT, ...
-    "SRS", table(), ...
-    "TRS", table(), ...
+    "SRS", srsT, ...
+    "TRS", trsT, ...
     "MultiUserDL", table(), ...
     "MultiUserUL", table());
 
@@ -930,7 +938,7 @@ T = table( ...
     string(sixgr.util.structGet(s, "meta.scenario_id", "")), ...
     double(sixgr.util.structGet(cfg, "phy.fc_Hz", NaN)), ...
     double(sixgr.util.structGet(cfg, "channel.bandwidth_Hz", NaN)), ...
-    string(sixgr.util.structGet(cfg, "phy.duplex.mode", "")), ...
+    sixgr.phy.frame.resolveDuplexMode(cfg), ...
     double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", NaN)), ...
     double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN)), ...
     double(sixgr.util.structGet(cfg, "phy.numerology.configuredGridNumRBs", NaN)), ...
@@ -1500,6 +1508,50 @@ T = table( ...
 if nargin >= 1
     T.ControlStage = repmat(string(controlStage), 0, 1);
     T.SignalFamily = repmat(string(controlStage), 0, 1);
+end
+end
+
+function T = localResolveObservedRuntimeTable(systemOut, details, layout, signalName, fileName)
+% Resolve measured rows without allowing a study/config table to become
+% runtime truth.  Candidate order follows the in-memory runtime ownership
+% hierarchy; the persisted air-interface table is a recovery source only.
+T = table();
+candidates = {
+    sixgr.util.structGet(systemOut, "RawTrials." + signalName, table())
+    sixgr.util.structGet(systemOut, "ControlTrials." + signalName, table())
+    sixgr.util.structGet(details, "RawTrials." + signalName, table())
+    sixgr.util.structGet(details, "ControlTrials." + signalName, table())};
+for i = 1:numel(candidates)
+    candidate = candidates{i};
+    if istable(candidate) && height(candidate) > 0
+        T = candidate;
+        return;
+    end
+end
+
+persistedPath = fullfile(layout.AirInterfaceCSVDir, fileName);
+if ~isfile(persistedPath)
+    return;
+end
+try
+    candidate = readtable(persistedPath, "VariableNamingRule", "preserve");
+catch ME
+    error("sixgr:truth:exportSystemLevelCanonicalArtifacts:InvalidPersistedRuntimeTable", ...
+        "Cannot read persisted %s runtime table '%s': %s", ...
+        signalName, persistedPath, string(ME.message));
+end
+if height(candidate) > 0
+    T = candidate;
+end
+end
+
+function localWriteObservedRuntimeTable(path, T)
+if istable(T) && height(T) > 0
+    sixgr.util.csvWriteTable(path, T, "PreserveSchema", true);
+elseif isfile(path)
+    % A header-only table is not evidence.  Genuine persisted rows were
+    % recovered above, so removal here cannot erase measured observations.
+    delete(path);
 end
 end
 

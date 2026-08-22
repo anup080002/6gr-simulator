@@ -30,7 +30,7 @@ if numel(bytes) > 9
         "MessageType", "RRCSetup", ...
         "TransactionID", double(bytes(11)), ...
         "SRB1LCID", double(bytes(12)));
-    msg4.RRCSetupSHA256 = sixgr.rrc.asn1.sha256Hex(bytes(10:12));
+    msg4.RRCSetupSHA256 = sixgr.rrc.asn1.asn1SHA256Hex(bytes(10:12));
 end
 msg4.Valid = true;
 end

@@ -2,7 +2,7 @@ function ok=testRAN1AI10522Artifacts()
 %TESTRAN1AI10522ARTIFACTS Deterministic CSV/PNG/hash/replay gate.
 setup6GRSimToolkit("Verbose",false);
 root=fullfile(tempdir,"sixgr_ran1_10522_artifact_test"); runId="artifact_gate";
-r=sixgr.studies.ran1ai10522.runTDocSuite("deterministic", ...
+r=sixgr.studies.ran1ai10522.runRAN1AITDocStudySuite("deterministic", ...
     "OutputRoot",root,"RunId",runId);
 assert(r.Passed && ~r.PublicationQualified);
 folder=fullfile(root,runId);
@@ -21,7 +21,7 @@ sourceManifest=readtable(fullfile(folder,"manifests","resolved_config_manifest.c
     "Delimiter",",","VariableNamingRule","preserve");
 sourceEnvironment=readtable(fullfile(folder,"manifests","environment_manifest.csv"), ...
     "Delimiter",",","VariableNamingRule","preserve");
-replay=sixgr.studies.ran1ai10522.runTDocSuite("figure_replay","RunFolder",folder);
+replay=sixgr.studies.ran1ai10522.runRAN1AITDocStudySuite("figure_replay","RunFolder",folder);
 F2=readtable(fullfile(folder,"manifests","figure_manifest.csv"), ...
     "Delimiter",",","VariableNamingRule","preserve");
 assert(replay.Passed && isequal(hashes,string(F2.PNGSHA256)));

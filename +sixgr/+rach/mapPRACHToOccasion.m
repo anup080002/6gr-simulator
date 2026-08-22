@@ -217,8 +217,7 @@ if startsWith(range, "FR2")
     range = "FR2";
 end
 prach.FrequencyRange = char(range);
-prach.DuplexMode = char(upper(string(sixgr.util.structGet(cfg, ...
-    "DuplexMode", sixgr.util.structGet(cfg, "phy.duplex.mode", "")))));
+prach.DuplexMode = char(sixgr.phy.frame.resolveDuplexMode(cfg));
 prach.ConfigurationIndex = double(sixgr.util.structGet(cfg, ...
     "PRACHConfigurationIndex", ...
     sixgr.util.structGet(cfg, "phy.prach.configurationIndex", NaN)));

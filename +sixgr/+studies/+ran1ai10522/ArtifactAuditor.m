@@ -44,7 +44,7 @@ classdef ArtifactAuditor
                     decode=false; hash=false; w=0; h=0; nonblank=false;
                     try
                         info=imfinfo(path); pix=double(imread(path)); decode=true; w=info.Width; h=info.Height;
-                        nonblank=std(pix,0,"all")>0; hash=sixgr.csi.fileSHA256(path)==string(F.PNGSHA256(k));
+                        nonblank=std(pix,0,"all")>0; hash=sixgr.csi.studyFileSHA256(path)==string(F.PNGSHA256(k));
                     catch, end
                     pass=decode&&hash&&nonblank&&w>=800&&h>=450;
                     frameRows(end+1,1)=struct("FigureId",string(F.FigureId(k)), ... %#ok<AGROW>
@@ -70,7 +70,7 @@ classdef ArtifactAuditor
                 manifestHashPass=height(M)>0;
                 for k=1:height(M)
                     path=fullfile(runFolder,replace(string(M.RelativePath(k)),"/",filesep));
-                    ok=exist(path,"file")==2 && sixgr.csi.fileSHA256(path)==string(M.SHA256(k));
+                    ok=exist(path,"file")==2 && sixgr.csi.studyFileSHA256(path)==string(M.SHA256(k));
                     manifestHashPass=manifestHashPass&&ok; hashRows=hashRows+1;
                 end
             end

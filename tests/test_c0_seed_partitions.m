@@ -38,7 +38,7 @@ assert(all(abs((refined-globalOrigin)/double(cfg.snr.refinement_step_db)- ...
 bad=cfg;
 bad.run.seed_set_validation=bad.run.seed_set_calibration+200;
 try
-    sixgr.phy.ia.c0.config.validateScenario(bad);
+    sixgr.phy.ia.c0.config.validateC0StudyScenario(bad);
     error("test_c0_seed_partitions:MissingFailure", ...
         "Overlapping false-alarm seed partitions were accepted.");
 catch ME

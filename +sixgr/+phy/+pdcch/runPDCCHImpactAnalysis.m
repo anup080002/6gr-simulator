@@ -1043,7 +1043,7 @@ upper = min(1,center+radius);
 end
 
 function value = localImpactHash(text)
-value = string(sixgr.rrc.asn1.sha256Hex(uint8( ...
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
     unicode2native(char(string(text)), "UTF-8"))));
 end
 

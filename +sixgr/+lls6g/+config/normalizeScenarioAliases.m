@@ -8,6 +8,7 @@ ip.addParameter("ConfigPath", "", @(x)ischar(x) || isstring(x));
 ip.addParameter("Authority", struct(), @(x)builtin("isstruct", x) && isscalar(x));
 ip.parse(cfg, varargin{:});
 opt = ip.Results;
+authoredDuplex = localCaptureDuplexAuthorship(cfg, string(opt.ConfigPath));
 
 newBase = localNewDefaults();
 oldBase = localLegacyDefaults();
@@ -269,9 +270,138 @@ cfg = localExpandCanonicalControl(cfg, newBase);
 cfg = localNormalizeFixedLinkCalibrationMode(cfg);
 cfg = localNormalizeFixedSNRSweepRunClass(cfg);
 cfg = localEnsureOperatingPointMode(cfg);
+cfg = localEnforceDuplexIsolation(cfg, authoredDuplex);
 if isfield(cfg, "sixgrAliasAuthorityInternal")
     cfg = rmfield(cfg, "sixgrAliasAuthorityInternal");
 end
+end
+
+function authored = localCaptureDuplexAuthorship(cfg, configPath)
+% Only the leaf scenario is "authored" for contradiction diagnostics.
+% Values inherited from a generic TDD default pack are stale aliases to be
+% removed when the leaf explicitly selects FDD; they are not evidence that
+% the FDD scenario itself requested TDD behavior.
+authoredCfg = cfg;
+if strlength(strtrim(configPath)) > 0 && isfile(configPath)
+    authoredCfg = sixgr.lls6g.config.readConfigFile(configPath);
+end
+paths = [ ...
+    "frequency.duplex_mode"
+    "global_radio_scope.duplex_mode"
+    "radio.duplex_mode"
+    "random_access.duplex_mode"
+    "prach.duplex_mode"
+    "prach_lls.duplex_mode"
+    "prach_lls.DuplexMode"
+    "pdsch6gr.duplex_mode"
+    "pdsch6gr.DuplexMode"
+    "frame.duplex_mode"
+    "scenario.duplexMode"
+    "frame.tdd_common"
+    "frame_timing.tdd_common"
+    "frame.tdd_dedicated"
+    "frame_timing.tdd_dedicated"
+    "radio.tdd_common"
+    "tdd_timing"
+    "scheduling_timing"
+    "frequency.dl_center_frequency_hz"
+    "frequency.ul_center_frequency_hz"];
+authored = struct();
+for path = paths.'
+    value = sixgr.util.structGet(authoredCfg, path, []);
+    key = matlab.lang.makeValidName(char(replace(path, ".", "__")));
+    authored.(key) = ~isempty(value);
+    valueKey = char(string(key) + "__value");
+    authored.(valueKey) = value;
+end
+end
+
+function cfg = localEnforceDuplexIsolation(cfg, authored)
+mode = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "frequency.duplex_mode", ""))));
+if ~any(mode == ["FDD", "TDD"])
+    error("sixgr:lls6g:config:InvalidDuplexMode", ...
+        "frequency.duplex_mode must resolve to FDD or TDD.");
+end
+aliasPaths = [ ...
+    "global_radio_scope.duplex_mode"
+    "radio.duplex_mode"
+    "random_access.duplex_mode"
+    "prach.duplex_mode"
+    "prach_lls.duplex_mode"
+    "prach_lls.DuplexMode"
+    "pdsch6gr.duplex_mode"
+    "pdsch6gr.DuplexMode"
+    "frame.duplex_mode"
+    "scenario.duplexMode"];
+for path = aliasPaths.'
+    key = matlab.lang.makeValidName(char(replace(path, ".", "__")));
+    valueKey = char(string(key) + "__value");
+    if isfield(authored, key) && authored.(key) && ...
+            isfield(authored, valueKey)
+        leafMode = upper(strtrim(string(authored.(valueKey))));
+        if ~any(leafMode == ["FDD", "TDD"]) || leafMode ~= mode
+            error("sixgr:phy:frame:DuplexAuthorityMismatch", ...
+                "Leaf YAML duplex authority %s=%s conflicts with " + ...
+                "frequency.duplex_mode=%s.", path, leafMode, mode);
+        end
+    end
+    if ~isempty(sixgr.util.structGet(cfg, path, []))
+        cfg = sixgr.util.structSet(cfg, path, char(mode));
+    end
+end
+if mode == "FDD"
+    forbidden = [ ...
+        "frame.tdd_common"
+        "frame_timing.tdd_common"
+        "frame.tdd_dedicated"
+        "frame_timing.tdd_dedicated"
+        "radio.tdd_common"
+        "tdd_timing"];
+    for path = forbidden.'
+        key = matlab.lang.makeValidName(char(replace(path, ".", "__")));
+        if isfield(authored, key) && authored.(key)
+            error("sixgr:lls6g:config:TDDFieldAuthoredForFDD", ...
+                "FDD YAML cannot author TDD-only field %s.", path);
+        end
+        cfg = localRemoveNestedField(cfg, path);
+    end
+elseif mode == "TDD"
+    forbidden = [ ...
+        "scheduling_timing"
+        "frequency.dl_center_frequency_hz"
+        "frequency.ul_center_frequency_hz"];
+    for path = forbidden.'
+        key = matlab.lang.makeValidName(char(replace(path, ".", "__")));
+        if isfield(authored, key) && authored.(key)
+            error("sixgr:lls6g:config:FDDFieldAuthoredForTDD", ...
+                "TDD YAML cannot author FDD-only field %s.", path);
+        end
+        cfg = localRemoveNestedField(cfg, path);
+    end
+end
+end
+
+function s = localRemoveNestedField(s, path)
+parts = split(string(path), ".");
+s = localRemoveNestedParts(s, parts, 1);
+end
+
+function s = localRemoveNestedParts(s, parts, index)
+if ~(isstruct(s) && isscalar(s)) || index > numel(parts)
+    return;
+end
+name = char(parts(index));
+if ~isfield(s, name)
+    return;
+end
+if index == numel(parts)
+    s = rmfield(s, name);
+    return;
+end
+child = s.(name);
+child = localRemoveNestedParts(child, parts, index + 1);
+s.(name) = child;
 end
 
 function cfg = localEnsureOperatingPointMode(cfg)

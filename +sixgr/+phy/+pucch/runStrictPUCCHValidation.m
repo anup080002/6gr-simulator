@@ -571,7 +571,7 @@ if isempty(x)
 end
 try
     bytes = typecast(single([real(x(:)); imag(x(:))]), "uint8");
-    hash = string(sixgr.rrc.asn1.sha256Hex(bytes));
+    hash = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
 catch
     hash = "";
 end

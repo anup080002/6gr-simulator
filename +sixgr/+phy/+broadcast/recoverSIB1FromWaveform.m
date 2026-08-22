@@ -22,7 +22,13 @@ try
     sampleRate = localSampleRate(carrier);
     result.SampleRateHz = sampleRate;
     result.DCIRNTI = double(p.Results.ReceiverRNTI);
+    result.DetectionAttempted = true;
+    result.MeasurementAttempted = true;
     [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWaveform, cfg, "SampleRate_Hz", sampleRate);
+    result.ResourceExtractionAttempted = true;
+    result.ChannelEstimateAttempted = true;
+    result.EqualizationAttempted = true;
+    result.DecodeAttempted = true;
     [pbch, pbchInfo] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
     result.NCellID = double(sync.NCellID);
     result.TimingOffset = double(sixgr.util.structGet(sync, "TimingOffset", NaN));
@@ -34,6 +40,15 @@ try
     result.SSBIndex = double(sixgr.util.structGet(pbch, "SSBIndex", NaN));
     result.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     result.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
+    result.PSSMetric = double(sixgr.util.structGet(sync, "FreqInfo.Metric", NaN));
+    result.SSSMetric = double(sixgr.util.structGet(sync, "SSSInfo.Metric", NaN));
+    result.SSSMetricMargin = double(sixgr.util.structGet(sync, "SSSInfo.MetricMargin", NaN));
+    result.PSSSearchSamples = double(sixgr.util.structGet(sync, "FreqInfo.SearchSamples", NaN));
+    result.PSSTimingLagsEvaluated = double(sixgr.util.structGet(sync, "FreqInfo.TimingLagsEvaluated", NaN));
+    result.PSSSequences = double(sixgr.util.structGet(sync, "FreqInfo.PSSSequences", NaN));
+    result.PSSCorrelationVectors = double(sixgr.util.structGet(sync, "FreqInfo.PSSCorrelationVectors", NaN));
+    result.SSSSequenceHypotheses = double(sixgr.util.structGet(sync, "SSSInfo.SearchSpaceSize", NaN));
+    result.PBCHDMRSHypothesesTested = double(numel(sixgr.util.structGet(pbchInfo, "PerCandidate", struct([]))));
     result.PBCHNoiseVar = double(sixgr.util.structGet(pbch, "NoiseVar", NaN));
     result.PreEqualizationNoiseVariance = double(sixgr.util.structGet( ...
         pbch, "PreEqualizationNoiseVariance", NaN));
@@ -88,6 +103,8 @@ try
     result.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet( ...
         pbch, "PostEqualizationNoiseVarianceSource", ""));
     result.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(pbch, "StrictReceiverEvidenceOk", false));
+    result.LLRAvailable = logical(sixgr.util.structGet(pbch, "PBCHDecodeAvailable", false));
+    result.LLRFinite = result.LLRAvailable && isfinite(double(sixgr.util.structGet(pbch, "NoiseVar", NaN)));
     result.BCHCrcPass = logical(pbch.Ok) && double(pbch.ErrFlag) == 0;
     result.MIBDecoded = result.BCHCrcPass;
     if ~logical(result.MIBDecoded)
@@ -340,6 +357,10 @@ result = struct( ...
     "PostEqualizationNoiseVarianceDomain", "", ...
     "PostEqualizationNoiseVarianceSource", "", ...
     "StrictReceiverEvidenceOk", false, ...
+    "DetectionAttempted", false, "MeasurementAttempted", false, ...
+    "ResourceExtractionAttempted", false, "ChannelEstimateAttempted", false, ...
+    "EqualizationAttempted", false, "DecodeAttempted", false, ...
+    "LLRAvailable", false, "LLRFinite", false, ...
     "SIB1PDSCHChannelEstimateAvailable", false, "SIB1PDSCHEqualizationAvailable", false, ...
     "SIB1PDSCHReceiverHestSINR_dB", NaN, "SIB1PDSCHReceiverHestSINRSource", "", ...
     "SIB1PDSCHStrictReceiverEvidenceOk", false, ...

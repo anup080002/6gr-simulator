@@ -1,6 +1,6 @@
 function testCSIFigureContract()
 %TESTCSIFIGURECONTRACT Validate semantic figure and short-run contracts.
-[figures,metadata]=sixgr.csi.FigureContract.load();
+[figures,metadata]=sixgr.csi.CSITDocStudyFigureContract.load();
 assert(numel(figures)==20 && strlength(metadata.SHA256)==64);
 ids=string({figures.figure_id}); assert(numel(unique(ids))==20);
 for k=1:numel(figures)
@@ -8,16 +8,16 @@ for k=1:numel(figures)
     assert(~contains(string(figures(k).y_axis_label),"Units","IgnoreCase",true));
     assert(strlength(string(figures(k).units))>0);
     assert(strlength(string(figures(k).limitations_text))>0);
-    sixgr.csi.EvidenceClass.validateFigure(string(figures(k).evidence_class));
+    sixgr.csi.CSITDocStudyEvidenceClass.validateFigure(string(figures(k).evidence_class));
 end
-[cfg,~]=sixgr.csi.loadTDocConfig( ...
+[cfg,~]=sixgr.csi.loadTDocStudyConfig( ...
     "simulator/configs/csi_tdoc/figure_fix_short.yaml");
 assert(cfg.simulation.bounded_transport_blocks_per_point==1);
 assert(cfg.interference_age.sanity_trials==128);
 assert(cfg.event_csi.sanity_slots==128);
 assert(cfg.multislot.monte_carlo_trials==128);
-a=sixgr.csi.runAnalyticalScenarios(cfg);
-p=sixgr.csi.runProcedureScenarios(cfg);
+a=sixgr.csi.runTDocStudyAnalyticalScenarios(cfg);
+p=sixgr.csi.runTDocStudyProcedureScenarios(cfg);
 assert(all(isfinite(a.InterferenceAge.RMSECI95LowdB)) && ...
     all(isfinite(a.InterferenceAge.RMSECI95HighdB)));
 assert(all(a.InterferenceAge.N==128) && all(isfinite(a.InterferenceAge.Seed)));
@@ -35,8 +35,8 @@ first=fullfile(folder,"first.pdf"); second=fullfile(folder,"second.pdf");
 print(fig,first,"-dpdf","-painters");
 pause(1.1);
 print(fig,second,"-dpdf","-painters");
-sixgr.csi.canonicalizePDF(first); sixgr.csi.canonicalizePDF(second);
-assert(sixgr.csi.fileSHA256(first)==sixgr.csi.fileSHA256(second), ...
+sixgr.csi.canonicalizeStudyPDF(first); sixgr.csi.canonicalizeStudyPDF(second);
+assert(sixgr.csi.studyFileSHA256(first)==sixgr.csi.studyFileSHA256(second), ...
     "Canonical vector PDF hashes must be independent of export time and trailer ID.");
 fprintf("testCSIFigureContract: PASS (20 semantic figures, 128-sample short profile)\n");
 end

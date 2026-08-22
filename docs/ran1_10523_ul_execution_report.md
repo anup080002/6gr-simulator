@@ -4,7 +4,7 @@
 
 The implementation is a thin study package under `+sixgr/+tdoc/+ul10523`. It does not add or duplicate a PHY. Executed uplink evidence follows:
 
-`runRAN1UL10523 -> sixgr.tdoc.ul10523.runSuite -> sixgr.lls.runLLS -> sixgr.lls.runSNRPoint -> sixgr.lls.runTransportBlock -> existing PUSCH Tx/Rx, OFDM, channel, equalization, soft LLR, LDPC decode and CRC`.
+`runRAN1UL10523TDocStudy -> sixgr.tdoc.ul10523.runULTDocStudySuiteInternal -> sixgr.lls.runLLS -> sixgr.lls.runSNRPoint -> sixgr.lls.runTransportBlock -> existing PUSCH Tx/Rx, OFDM, channel, equalization, soft LLR, LDPC decode and CRC`.
 
 The supplied scenario catalog, proposal traceability table and figure/result contract are vendored under `simulator/configs/tdoc_ul_10523`. Their original supplied-file SHA-256 values were:
 

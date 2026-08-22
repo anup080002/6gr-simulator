@@ -39,7 +39,7 @@ rar.Bytes = bytes(:);
 rar.Bits = bits(:);
 rar.BitLength = double(numel(bits));
 rar.Hex = localBytesToHex(bytes);
-rar.PayloadHash = sixgr.rrc.asn1.sha256Hex(bytes);
+rar.PayloadHash = sixgr.rrc.asn1.asn1SHA256Hex(bytes);
 end
 
 function value = localClamp(value, lo, hi)

@@ -165,7 +165,7 @@ if fid < 0
     return;
 end
 cleanup = onCleanup(@() fclose(fid)); %#ok<NASGU>
-hash = sixgr.rrc.asn1.sha256Hex(fread(fid, Inf, "*uint8"));
+hash = sixgr.rrc.asn1.asn1SHA256Hex(fread(fid, Inf, "*uint8"));
 end
 
 function count = localToolboxMismatch(actual, expected)

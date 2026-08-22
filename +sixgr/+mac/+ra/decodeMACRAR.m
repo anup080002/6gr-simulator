@@ -32,7 +32,7 @@ rar.ULGrantHex = sixgr.rrc.asn1.bitsToHex(grantBits);
 rar.Bytes = bytes(1:8);
 rar.Bits = localBytesToBits(bytes(1:8));
 rar.Hex = upper(string(reshape(dec2hex(bytes(1:8), 2).', 1, [])));
-rar.PayloadHash = sixgr.rrc.asn1.sha256Hex(bytes(1:8));
+rar.PayloadHash = sixgr.rrc.asn1.asn1SHA256Hex(bytes(1:8));
 end
 
 function grant = localDecodeGrant(bits)

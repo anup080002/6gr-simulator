@@ -27,14 +27,12 @@ if ~isempty(slotWithinPeriod1)
     tf = ueIdx == targetUE;
     return;
 end
-
-tf = localCoupledUEControlOpportunity(slotIdx, ueIdx, periodSlots, 2);
+absoluteSlots0 = double(sixgr.util.structGet(cfg, "phy.srs.slotNumbers", []));
+absoluteSlots0 = unique(round(absoluteSlots0(isfinite(absoluteSlots0) & absoluteSlots0 >= 0)), "stable");
+if ~isempty(absoluteSlots0)
+    tf = ismember(slotIdx - 1, absoluteSlots0);
+    return;
 end
-
-function tf = localCoupledUEControlOpportunity(slotIdx, ueIdx, periodSlots, phaseOffset)
-slotIdx = max(1, round(double(slotIdx)));
-ueIdx = max(1, round(double(ueIdx)));
-periodSlots = max(1, round(double(periodSlots)));
-phaseOffset = round(double(phaseOffset));
-tf = mod(slotIdx - 1, periodSlots) == mod((ueIdx - 1) + phaseOffset, periodSlots);
+error("sixgr:truth:MissingSRSSlotAuthority", ...
+    "Enabled SRS requires phy.srs.slotWithinPeriod1Based or phy.srs.slotNumbers; no hardcoded phase is permitted.");
 end

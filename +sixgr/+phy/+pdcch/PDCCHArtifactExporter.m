@@ -118,7 +118,7 @@ classdef PDCCHArtifactExporter
                     fullfile(outputDir, sourceNames(ii)))));
                 payload = [payload; uint8(nameBytes(:)); hashBytes(:)]; %#ok<AGROW>
             end
-            value = string(sixgr.rrc.asn1.sha256Hex(payload));
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex(payload));
         end
 
         function value = fileSHA256(path)
@@ -129,7 +129,7 @@ classdef PDCCHArtifactExporter
             end
             cleanup = onCleanup(@() fclose(fileId));
             bytes = fread(fileId, inf, "*uint8");
-            value = string(sixgr.rrc.asn1.sha256Hex(bytes));
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
         end
     end
 end

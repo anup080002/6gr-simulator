@@ -36,11 +36,9 @@ try
     frameStructure = sixgr.phy.FrameStructureEngine(cfg);
     tf = logical(frameStructure.IsPRACHSlot(slotIdx));
 catch ME
-    if prachRequired
+    if prachRequired || logical(sixgr.util.structGet(cfg, "phy.prach.enable", false))
         rethrow(ME);
     end
-    partition = sixgr.util.resolveTDDSlotPartition(cfg, slotIdx);
-    tf = logical(partition.AllowUL) && ...
-        ~logical(partition.IsSpecialSlot);
+    tf = false;
 end
 end

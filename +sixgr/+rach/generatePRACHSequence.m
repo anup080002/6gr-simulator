@@ -57,8 +57,16 @@ prach = nrPRACHConfig;
 snap = sixgr.util.structGet(occasion, "PRACH", struct());
 prach.FrequencyRange = char(string(sixgr.util.structGet(snap, "FrequencyRange", ...
     sixgr.util.structGet(cfg, "FrequencyRange", "FR1"))));
-prach.DuplexMode = char(string(sixgr.util.structGet(snap, "DuplexMode", ...
-    sixgr.util.structGet(cfg, "DuplexMode", "FDD"))));
+duplexContext = struct();
+snapshotDuplex = sixgr.util.structGet(snap, "DuplexMode", []);
+configuredDuplex = sixgr.util.structGet(cfg, "DuplexMode", []);
+if ~isempty(snapshotDuplex)
+    duplexContext.DuplexMode = snapshotDuplex;
+end
+if ~isempty(configuredDuplex)
+    duplexContext.prach_lls.DuplexMode = configuredDuplex;
+end
+prach.DuplexMode = char(sixgr.phy.frame.resolveDuplexMode(duplexContext));
 prach.ConfigurationIndex = double(sixgr.util.structGet(snap, "ConfigurationIndex", ...
     sixgr.util.structGet(cfg, "PRACHConfigurationIndex", 16)));
 prach.SubcarrierSpacing = double(sixgr.util.structGet(snap, "SubcarrierSpacing", ...

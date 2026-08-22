@@ -235,9 +235,18 @@ if ~(upper(strtrim(string(direction))) == "DL" && ...
         ismember(signalFamily, ["PBCH","SSB"]))
     return;
 end
+waveformDomain = localResolveSSBWaveformDomain(cfg);
+if waveformDomain ~= "logical_rf_chain_post_analog_precoder"
+    error("sixgr:link:UnexpectedSSBSignalProjection", ...
+        ["An SSB/PBCH port-to-element projection may only be applied to " ...
+         "logical_rf_chain_post_analog_precoder waveforms; the configured " ...
+         "domain is '%s'."], char(waveformDomain));
+end
 if signalPortCount ~= 1
     error("sixgr:link:SSBBeamRequiresSingleLogicalPort", ...
-        "SSB/PBCH runtime propagation requires one logical common-channel port.");
+        ["SSB/PBCH runtime propagation in the logical RF-chain domain " ...
+         "requires one logical common-channel waveform column; observed %d."], ...
+        round(double(signalPortCount)));
 end
 matrices = sixgr.util.structGet(cfg, "phy.ssb.precoderMatrices", []);
 selectedIndex = double(sixgr.util.structGet(cfg, ...
@@ -315,8 +324,32 @@ if direction == "DL" && endpoint == "tx"
             tf = true;
             sourceToken = "pdsch_runtime_waveform_port_count";
         case {"PBCH","SSB"}
-            tf = true;
-            sourceToken = "ssb_pbch_runtime_waveform_port_count";
+            waveformDomain = localResolveSSBWaveformDomain(cfg);
+            if waveformDomain == "physical_element_domain"
+                expectedElements = localResolveSSBPhysicalElementCount(cfg);
+                if ~(isfinite(expectedElements) && ...
+                        round(double(signalPortCount)) == expectedElements)
+                    error("sixgr:link:SSBPhysicalElementCountMismatch", ...
+                        ["SSB/PBCH physical_element_domain propagation " ...
+                         "requires one waveform column per configured physical " ...
+                         "element; observed %d columns and expected %d elements."], ...
+                        round(double(signalPortCount)), expectedElements);
+                end
+                % SSB_Tx has already applied the per-candidate beam weights to
+                % the physical-element waveform.  Retain the physical runtime
+                % array and never apply the same precoder a second time.
+                tf = false;
+                sourceToken = "ssb_pbch_physical_element_waveform_already_precoded";
+            else
+                if round(double(signalPortCount)) ~= 1
+                    error("sixgr:link:SSBBeamRequiresSingleLogicalPort", ...
+                        ["SSB/PBCH logical_rf_chain_post_analog_precoder " ...
+                         "propagation requires one waveform column; observed %d."], ...
+                        round(double(signalPortCount)));
+                end
+                tf = true;
+                sourceToken = "ssb_pbch_logical_rf_chain_waveform_port_count";
+            end
         case {"TRS","CSI-RS","CSIRS"}
             tf = true;
             sourceToken = "dl_reference_signal_runtime_waveform_port_count";
@@ -342,6 +375,40 @@ switch signalFamily
         tf = true;
         sourceToken = "srs_runtime_waveform_port_count";
 end
+end
+
+function domain = localResolveSSBWaveformDomain(cfg)
+domain = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg, "phy.ssb.waveformDomain", "physical_element_domain"))));
+allowed = ["physical_element_domain", ...
+    "logical_rf_chain_post_analog_precoder"];
+if ~isscalar(domain) || ~any(domain == allowed)
+    error("sixgr:phy:ia:InvalidSSBWaveformDomain", ...
+        "phy.ssb.waveformDomain must be one of: %s.", ...
+        char(strjoin(allowed, ", ")));
+end
+end
+
+function count = localResolveSSBPhysicalElementCount(cfg)
+matrices = sixgr.util.structGet(cfg, "phy.ssb.precoderMatrices", []);
+matrixCount = NaN;
+if isnumeric(matrices) && ismatrix(matrices) && ~isempty(matrices)
+    matrixCount = size(matrices, 2);
+elseif iscell(matrices) && ~isempty(matrices) && ...
+        isnumeric(matrices{1}) && ismatrix(matrices{1})
+    matrixCount = size(matrices{1}, 2);
+end
+count = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.ssb.precoderPhysicalElementCount", []), ...
+    sixgr.util.structGet(cfg, ...
+        "initial_access.ssb.precoder_codebook.physical_element_count", []), ...
+    matrixCount);
+if ~(isfinite(count) && count == fix(count) && count >= 1)
+    error("sixgr:link:MissingSSBPhysicalElementCount", ...
+        ["physical_element_domain requires a positive integer physical " ...
+         "element count from YAML or the resolved SSB precoder matrices."]);
+end
+count = round(double(count));
 end
 function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, fs)
 padSamples = 0;

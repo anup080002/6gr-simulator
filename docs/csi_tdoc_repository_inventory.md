@@ -23,7 +23,7 @@ normalized Walsh/DFT OCC factory extend the existing `sixgr.phy.refsig`
 owner. They never reduce the requested port count.
 
 There is exactly one public execution entry point:
-`sixgr.csi.runTDocSuite`. Its `plan`, `unit`, `smoke`, `controlled`,
+`sixgr.csi.runCSITDocStudySuite`. Its `plan`, `unit`, `smoke`, `controlled`,
 `common_evm`, `figure_replay`, and `audit` modes all use the same owner
 bindings. There is no repository-root wrapper and no second CSI PHY path.
 Every run writes `manifests/execution_flow_contract.csv`; startup fails if

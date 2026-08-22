@@ -1002,7 +1002,7 @@ z = -sqrt(2)*erfcinv(2*(0.5 + confidence/2));
 end
 
 function value = localHashText(text)
-value = string(sixgr.rrc.asn1.sha256Hex(uint8( ...
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...
     unicode2native(char(string(text)), "UTF-8"))));
 end
 

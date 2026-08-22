@@ -56,5 +56,5 @@ end
 
 function value = localBitStringHash(bits)
 text = char(join(string(bits(:).'), ""));
-value = string(sixgr.rrc.asn1.sha256Hex(uint8(unicode2native(text, "UTF-8"))));
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(unicode2native(text, "UTF-8"))));
 end

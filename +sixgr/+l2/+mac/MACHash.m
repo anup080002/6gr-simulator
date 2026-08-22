@@ -12,7 +12,7 @@ classdef MACHash
                 bytes = uint8(unicode2native(jsonencode(data), "UTF-8"));
                 bytes = bytes(:);
             end
-            value = string(sixgr.rrc.asn1.sha256Hex(bytes));
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
         end
 
         function value = file(path)

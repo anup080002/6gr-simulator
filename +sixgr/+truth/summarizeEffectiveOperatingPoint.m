@@ -161,8 +161,7 @@ elseif isfinite(carrierGrid)
     activeSource = "frequency.n_size_grid";
 end
 
-duplex = upper(strtrim(string(sixgr.util.structGet(s, "frequency.duplex_mode", ...
-    sixgr.util.structGet(s, "global_radio_scope.duplex_mode", "")))));
+duplex = sixgr.phy.frame.resolveDuplexMode(s);
 configuredPattern = string(sixgr.util.structGet(s, "frame.tdd_pattern", ...
     sixgr.util.structGet(s, "frame_timing.tdd_pattern", "")));
 patternApplicable = duplex == "TDD";

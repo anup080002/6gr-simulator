@@ -119,7 +119,7 @@ try
     fid = fopen(path, "r");
     cleaner = onCleanup(@() fclose(fid)); %#ok<NASGU>
     bytes = fread(fid, inf, "*uint8");
-    hash = string(sixgr.rrc.asn1.sha256Hex(bytes));
+    hash = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
 catch
     hash = "";
 end

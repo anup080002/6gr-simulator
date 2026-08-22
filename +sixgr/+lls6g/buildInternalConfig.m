@@ -636,8 +636,34 @@ cfg = sixgr.util.structSet(cfg, "phy.numerology.numerologySource", ...
     "declared_scenario_pending_canonical_validation");
 cfg = sixgr.util.structSet(cfg, "phy.numerology.timingInterpretationSource", ...
     "declared_scenario_pending_canonical_validation");
-cfg.phy.duplex.mode = upper(char(string(s.frequency.duplex_mode)));
+[resolvedDuplexMode, duplexAuthorityEvidence] = ...
+    sixgr.phy.frame.resolveDuplexMode(s, "RequireYAMLAuthority", true);
+duplexAuthorityPaths = string(duplexAuthorityEvidence.AuthorityPath);
+cfg.phy.duplex = localClearOppositeDuplexState(cfg.phy.duplex, ...
+    resolvedDuplexMode);
+if isfield(cfg.phy, "tddTiming")
+    % K0/K1/K2 are duplex-independent scheduling parameters. Remove the
+    % legacy catalog default so it cannot compete with YAML-owned
+    % phy.schedulingTiming in either FDD or TDD production runs.
+    cfg.phy = rmfield(cfg.phy, "tddTiming");
+end
+cfg.phy.duplex.mode = char(resolvedDuplexMode);
+cfg.phy.duplex.authority = "yaml_consensus";
+cfg.phy.duplex.authorityPaths = cellstr(duplexAuthorityPaths(:));
 if strcmpi(cfg.phy.duplex.mode, "TDD")
+    localRejectConfiguredPath(s, "scheduling_timing", ...
+        "sixgr:lls6g:GenericTimingPresentForTDD", ...
+        ["TDD scenarios must use tdd_timing so that the scheduling " ...
+         "offsets and TDD slot-format authority remain explicitly related."]);
+    localRequireConfiguredStruct(s, "tdd_timing", ...
+        "sixgr:lls6g:MissingTDDTiming", ...
+        "TDD requires the tdd_timing scheduling section.");
+    localRejectConfiguredPath(s, "frequency.dl_center_frequency_hz", ...
+        "sixgr:lls6g:FDDFieldsPresentForTDD", ...
+        "TDD cannot carry an FDD-only DL center-frequency field.");
+    localRejectConfiguredPath(s, "frequency.ul_center_frequency_hz", ...
+        "sixgr:lls6g:FDDFieldsPresentForTDD", ...
+        "TDD cannot carry an FDD-only UL center-frequency field.");
     tddCommon = localGetNested(s, "frame.tdd_common", []);
     if ~(isstruct(tddCommon) && isscalar(tddCommon) && ...
             ~isempty(fieldnames(tddCommon)))
@@ -652,6 +678,25 @@ if strcmpi(cfg.phy.duplex.mode, "TDD")
             "phy.duplex.tddDedicated", tddDedicated);
     end
 elseif strcmpi(cfg.phy.duplex.mode, "FDD")
+    localRejectConfiguredPath(s, "tdd_timing", ...
+        "sixgr:lls6g:TDDTimingPresentForFDD", ...
+        ["FDD scenarios must use scheduling_timing; the tdd_timing " ...
+         "section is reserved for TDD."]);
+    localRequireConfiguredStruct(s, "scheduling_timing", ...
+        "sixgr:lls6g:MissingFDDTiming", ...
+        "FDD requires the duplex-independent scheduling_timing section.");
+    localRejectConfiguredPath(s, "frame.tdd_common", ...
+        "sixgr:lls6g:TDDPatternPresentForFDD", ...
+        "FDD uses separate DL/UL carriers and cannot contain frame.tdd_common.");
+    localRejectConfiguredPath(s, "frame_timing.tdd_common", ...
+        "sixgr:lls6g:TDDPatternPresentForFDD", ...
+        "FDD uses separate DL/UL carriers and cannot contain frame_timing.tdd_common.");
+    localRejectConfiguredPath(s, "frame.tdd_dedicated", ...
+        "sixgr:lls6g:TDDPatternPresentForFDD", ...
+        "FDD cannot contain TDD dedicated slot-format overrides.");
+    localRejectConfiguredPath(s, "frame_timing.tdd_dedicated", ...
+        "sixgr:lls6g:TDDPatternPresentForFDD", ...
+        "FDD cannot contain TDD dedicated slot-format overrides.");
     dlCenterFrequencyHz = double(localRequireNested(s, ...
         "frequency.dl_center_frequency_hz", ...
         "frequency.dl_center_frequency_hz"));
@@ -672,6 +717,20 @@ elseif strcmpi(cfg.phy.duplex.mode, "FDD")
         "phy.duplex.fdd.dlCenterFrequencyHz", dlCenterFrequencyHz);
     cfg = sixgr.util.structSet(cfg, ...
         "phy.duplex.fdd.ulCenterFrequencyHz", ulCenterFrequencyHz);
+    configuredCarrierHz = double(localRequireNested(s, ...
+        "frequency.center_frequency_hz", "frequency.center_frequency_hz"));
+    globalCarrierHz = double(localRequireNested(s, ...
+        "global_radio_scope.carrier_frequency_hz", ...
+        "global_radio_scope.carrier_frequency_hz"));
+    if configuredCarrierHz ~= dlCenterFrequencyHz || ...
+            globalCarrierHz ~= dlCenterFrequencyHz
+        error("sixgr:lls6g:FDDDownlinkCarrierMismatch", ...
+            ["For FDD, frequency.center_frequency_hz and " ...
+             "global_radio_scope.carrier_frequency_hz must both identify " ...
+             "frequency.dl_center_frequency_hz. Resolved values were " ...
+             "%.15g, %.15g, and %.15g Hz."], ...
+            configuredCarrierHz, globalCarrierHz, dlCenterFrequencyHz);
+    end
 else
     error("sixgr:config:BadEnum", ...
         "frequency.duplex_mode must resolve to TDD or FDD.");
@@ -743,7 +802,11 @@ if builtin("isstruct", initialAccess) && ~isempty(fieldnames(initialAccess))
         localGetNested(initialAccess, "ssb.waveform_domain", []));
     cfg = localStructSetIfPresent(cfg, "phy.ssb.KSSB", ...
         localGetNested(initialAccess, "ssb.k_ssb", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.kSSB", ...
+        localGetNested(initialAccess, "ssb.k_ssb", []));
     cfg = localStructSetIfPresent(cfg, "phy.ssb.NCRBSSB", ...
+        localGetNested(initialAccess, "ssb.n_crb_ssb", []));
+    cfg = localStructSetIfPresent(cfg, "phy.ssb.nCRBSSB", ...
         localGetNested(initialAccess, "ssb.n_crb_ssb", []));
     cfg = localStructSetIfPresent(cfg, "phy.ssb.runtimeSSBIndex", ...
         localGetNested(initialAccess, "ssb.selected_ssb_index", []));
@@ -777,7 +840,42 @@ cfg.phy.pdcch.operatorControl = s.control;
 cfg.phy.pdcch.configuredPayloadBits = double(localGetNested(s, "control.pdcch_payload_bits", NaN));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindDecodeCandidates", double(s.control.blind_decode_candidates));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(s.control.coreset_duration));
-cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResources", double(s.control.coreset_frequency_resources));
+coresetFrequencyPolicy = lower(string(localGetNested(s, ...
+    "control.coreset_frequency_resource_policy", "explicit_bitmap")));
+configuredCORESETBitmap = double(s.control.coreset_frequency_resources(:).');
+switch coresetFrequencyPolicy
+    case "full_bwp_groups"
+        coresetGroupCount = floor(double(cfg.phy.carrier.NSizeGrid) / 6);
+        if coresetGroupCount < 1
+            error("sixgr:lls6g:CORESETCannotFitBWP", ...
+                "The active BWP has %d PRBs and cannot contain a six-PRB CORESET group.", ...
+                double(cfg.phy.carrier.NSizeGrid));
+        end
+        resolvedCORESETBitmap = ones(1, coresetGroupCount);
+        coresetBitmapSource = "yaml_policy_full_bwp_groups";
+    case "explicit_bitmap"
+        resolvedCORESETBitmap = configuredCORESETBitmap;
+        lastEnabledGroup = find(resolvedCORESETBitmap ~= 0, 1, "last");
+        if isempty(lastEnabledGroup) || 6 * lastEnabledGroup > ...
+                double(cfg.phy.carrier.NSizeGrid)
+            error("sixgr:lls6g:CORESETBitmapOutsideBWP", ...
+                "Configured CORESET bitmap requires %d PRBs but the active BWP has %d.", ...
+                6 * max([0 lastEnabledGroup]), double(cfg.phy.carrier.NSizeGrid));
+        end
+        coresetBitmapSource = "yaml_explicit_bitmap";
+    otherwise
+        error("sixgr:lls6g:InvalidCORESETFrequencyResourcePolicy", ...
+            "Unsupported control.coreset_frequency_resource_policy '%s'.", ...
+            coresetFrequencyPolicy);
+end
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResourcePolicy", ...
+    char(coresetFrequencyPolicy));
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.configuredFrequencyResources", ...
+    configuredCORESETBitmap);
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResources", ...
+    resolvedCORESETBitmap);
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResourcesSource", ...
+    coresetBitmapSource);
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.searchSpace.numCandidates", double(s.control.search_space_num_candidates));
 strictControl = localGetNested(s, "control.pdcch_strict", struct());
 if isstruct(strictControl) && isfield(strictControl, "dci_context")
@@ -1226,6 +1324,25 @@ cfg = sixgr.util.structSet(cfg, "phy.csirs.subcarrierLocationsByResource", ...
     subcarrierLocations(:).');
 cfg = sixgr.util.structSet(cfg, "phy.csirs.rbOffsetsByResource", rbOffsets(:).');
 cfg = sixgr.util.structSet(cfg, "phy.csirs.numRBsByResource", numRBs(:).');
+csirsPeriodSlots = double(localGetNested(s, ...
+    "reference_signals.csi_rs_periodicity_slots", NaN));
+csirsOffsetSlots = double(localGetNested(s, ...
+    "reference_signals.csi_rs_offset_slots", NaN));
+if cfg.phy.csirs.enable
+    if ~(isscalar(csirsPeriodSlots) && isfinite(csirsPeriodSlots) && ...
+            csirsPeriodSlots >= 1 && csirsPeriodSlots == round(csirsPeriodSlots))
+        error("sixgr:lls6g:config:MissingCSIRSPeriodicity", ...
+            "Enabled CSI-RS requires reference_signals.csi_rs_periodicity_slots.");
+    end
+    if ~(isscalar(csirsOffsetSlots) && isfinite(csirsOffsetSlots) && ...
+            csirsOffsetSlots >= 0 && csirsOffsetSlots < csirsPeriodSlots && ...
+            csirsOffsetSlots == round(csirsOffsetSlots))
+        error("sixgr:lls6g:config:InvalidCSIRSOffset", ...
+            "Enabled CSI-RS requires an integer offset in [0, periodicity_slots-1].");
+    end
+    cfg = sixgr.util.structSet(cfg, "phy.csirs.period_slots", csirsPeriodSlots);
+    cfg = sixgr.util.structSet(cfg, "phy.csirs.offset_slots", csirsOffsetSlots);
+end
 csiMode = string(localRequireFirstNested(s, ...
     ["csi_acquisition_and_reporting.channel_state_information_mode", ...
     "reference_signals.channel_state_information_mode", ...
@@ -1528,8 +1645,14 @@ cfg = localStructSetIfPresent(cfg, "phy.srs.CyclicShift", localGetSRSParameter(s
 cfg = localStructSetIfPresent(cfg, "phy.srs.NSRSID", localGetSRSParameter(s, "sequence_id", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.GroupSeqHopping", localGetSRSParameter(s, "group_or_sequence_hopping", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyStart", localGetSRSParameter(s, "frequency_position", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyShift", localGetSRSParameter(s, "frequency_shift", []));
-cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyHopping", localGetSRSParameter(s, "frequency_hopping", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.NRRC", localGetSRSParameter(s, "n_rrc", ...
+    localGetSRSParameter(s, "frequency_shift", [])));
+cfg = localStructSetIfPresent(cfg, "phy.srs.EnableStartRBHopping", localGetSRSParameter(s, ...
+    "enable_start_rb_hopping", localGetSRSParameter(s, "frequency_hopping", [])));
+cfg = localStructSetIfPresent(cfg, "phy.srs.FrequencyScalingFactor", localGetSRSParameter(s, ...
+    "frequency_scaling_factor", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.StartRBIndex", localGetSRSParameter(s, ...
+    "start_rb_index", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.BHop", localGetSRSParameter(s, "b_hop", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.CSRS", localGetSRSParameter(s, "c_srs", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.BSRS", localGetSRSParameter(s, "b_srs", []));
@@ -1689,11 +1812,15 @@ cfg = sixgr.util.structSet(cfg, "run.saveHARQBuffers", harqSaveBuffers);
 cfg = sixgr.util.structSet(cfg, "phy.harq.stopCondition", char(harqStopCondition));
 cfg = sixgr.util.structSet(cfg, "mac.harq.stopCondition", char(harqStopCondition));
 harqFeedbackTimingSlots = max(0, round(double(s.harq.feedback_timing_slots)));
-harqK2Slots = localNumericScalarOrNaN(localGetNested(s, "harq.k2", ...
-    localGetNested(s, "tdd_timing.ul_grant_k2", NaN)));
+timingRoot = localSchedulingTimingRoot(s);
+harqK2Slots = localResolveConsistentIntegerAliases(s, [ ...
+    "harq.k2"
+    timingRoot + ".ul_grant_k2"
+    timingRoot + ".pdcch_to_pusch_k2"], ...
+    "sixgr:lls6g:ConflictingK2Authority", "K2");
 if ~(isfinite(harqK2Slots) && harqK2Slots >= 0)
     error("sixgr:lls6g:MissingHARQK2", ...
-        "harq.k2 or tdd_timing.ul_grant_k2 must be explicitly configured.");
+        "harq.k2 and the selected scheduling-timing K2 must be explicitly configured.");
 end
 harqK2Slots = max(0, round(double(harqK2Slots)));
 cfg = sixgr.util.structSet(cfg, "phy.harq.feedbackTimingSlots", double(harqFeedbackTimingSlots));
@@ -2412,7 +2539,7 @@ function cfg = localApplyConfigDrivenPHYRuntimeSurfaces(cfg, s)
 % mappings are intentionally generic; they expose reusable NR-like controls
 % without fabricating measurements or changing receiver evidence.
 for section = ["bwp","pdsch","pusch","pdcch","channel_estimation","equalization", ...
-        "synchronization","rf_hardware","tdd_timing"]
+        "synchronization","rf_hardware"]
     if isfield(s, char(section))
         cfg = sixgr.util.structSet(cfg, "lls6g." + section, s.(char(section)));
     end
@@ -2471,6 +2598,11 @@ if logical(sixgr.util.structGet(cfg, ...
         "antenna.requireSpatialDependencyContract", false))
     localValidateSpatialDependencyContract(cfg);
 end
+timingRoot = localSchedulingTimingRoot(s);
+cfg = sixgr.util.structSet(cfg, "lls6g.scheduling_timing", ...
+    localGetNested(s, timingRoot, struct()));
+cfg = sixgr.util.structSet(cfg, "lls6g.scheduling_timing_source", ...
+    char(timingRoot));
 end
 
 function cfg = localReconcileCanonicalImpairmentAuthority(cfg, s)
@@ -3148,6 +3280,7 @@ if runClass ~= "ue_placement_geometry_lls"
     return;
 end
 
+timingRoot = localSchedulingTimingRoot(s);
 requiredPaths = [ ...
     "bwp.dl"
     "bwp.ul"
@@ -3161,13 +3294,13 @@ requiredPaths = [ ...
     "pusch.num_symbols"
     "pdcch.start_symbol"
     "pdcch.num_symbols"
-    "tdd_timing.pdcch_to_pdsch_k0"
-    "tdd_timing.pdcch_to_pusch_k2"
-    "tdd_timing.dl_harq_feedback_k1"
-    "tdd_timing.ul_grant_k2"
-    "tdd_timing.n1_pdsch_processing_time_symbols"
-    "tdd_timing.n2_pusch_preparation_time_symbols"
-    "tdd_timing.capability_profile_id"];
+    timingRoot + ".pdcch_to_pdsch_k0"
+    timingRoot + ".pdcch_to_pusch_k2"
+    timingRoot + ".dl_harq_feedback_k1"
+    timingRoot + ".ul_grant_k2"
+    timingRoot + ".n1_pdsch_processing_time_symbols"
+    timingRoot + ".n2_pusch_preparation_time_symbols"
+    timingRoot + ".capability_profile_id"];
 missing = strings(0, 1);
 for index = 1:numel(requiredPaths)
     [value, found] = localTryGetNestedStrict(s, requiredPaths(index));
@@ -3381,7 +3514,8 @@ if isstruct(rfFrontend) && ~isempty(fieldnames(rfFrontend))
     end
 end
 
-tddPairs = {
+timingRoot = localSchedulingTimingRoot(s);
+timingPairs = {
     "pdcch_to_pdsch_k0", "pdcchToPDSCHK0"
     "pdcch_to_pusch_k2", "pdcchToPUSCHK2"
     "dl_harq_feedback_k1", "dlHARQFeedbackK1Candidates"
@@ -3395,8 +3529,10 @@ tddPairs = {
     "n2_pusch_preparation_time_symbols", "n2PUSCHPreparationTimeSymbols"
     "capability_profile_id", "capabilityProfileID"
     };
-for i = 1:size(tddPairs, 1)
-    cfg = localCopyRuntimeField(cfg, s, "tdd_timing." + tddPairs{i,1}, "phy.tddTiming." + tddPairs{i,2});
+for i = 1:size(timingPairs, 1)
+    cfg = localCopyRuntimeField(cfg, s, ...
+        timingRoot + "." + timingPairs{i,1}, ...
+        "phy.schedulingTiming." + timingPairs{i,2});
 end
 % Keep the configured K1 candidate set and the scalar default HARQ feedback
 % timing as separate runtime authorities.  The candidate set describes the
@@ -3408,26 +3544,29 @@ harqK1 = localNumericScalarOrNaN(localGetNested(s, ...
 if isfinite(harqK1) && harqK1 >= 0
     harqK1 = max(0, round(double(harqK1)));
     configuredK1 = double(localGetNested(s, ...
-        "tdd_timing.dl_harq_feedback_k1", []));
+        timingRoot + ".dl_harq_feedback_k1", []));
     if ~isempty(configuredK1) && ~any(configuredK1(:) == harqK1)
         error("sixgr:lls6g:config:SelectedK1OutsideCandidateSet", ...
             "harq.feedback_timing_slots=%g is not present in " + ...
-            "tdd_timing.dl_harq_feedback_k1.", harqK1);
+            "%s.dl_harq_feedback_k1.", harqK1, timingRoot);
     end
     cfg = sixgr.util.structSet(cfg, ...
-        "phy.tddTiming.dlHARQFeedbackK1", harqK1);
+        "phy.schedulingTiming.dlHARQFeedbackK1", harqK1);
 end
 % harq.k2 is the canonical scheduler/UL-grant timing authority. Do not
 % overwrite it later with a stale inherited tdd_timing alias.
-harqK2 = localNumericScalarOrNaN(localGetNested(s, "harq.k2", ...
-    localGetNested(s, "tdd_timing.ul_grant_k2", NaN)));
+harqK2 = localResolveConsistentIntegerAliases(s, [ ...
+    "harq.k2"
+    timingRoot + ".ul_grant_k2"
+    timingRoot + ".pdcch_to_pusch_k2"], ...
+    "sixgr:lls6g:ConflictingK2Authority", "K2");
 if isfinite(harqK2) && harqK2 >= 0
     harqK2 = max(0, round(double(harqK2)));
     cfg = sixgr.util.structSet(cfg, "mac.harq.k2", harqK2);
     cfg = sixgr.util.structSet(cfg, "phy.pusch.k2_slots", harqK2);
     cfg = sixgr.util.structSet(cfg, "phy.ul.grantK2Slots", harqK2);
-    cfg = sixgr.util.structSet(cfg, "phy.tddTiming.ulGrantK2", harqK2);
-    cfg = sixgr.util.structSet(cfg, "phy.tddTiming.pdcchToPUSCHK2", harqK2);
+    cfg = sixgr.util.structSet(cfg, "phy.schedulingTiming.ulGrantK2", harqK2);
+    cfg = sixgr.util.structSet(cfg, "phy.schedulingTiming.pdcchToPUSCHK2", harqK2);
 end
 end
 
@@ -3835,6 +3974,16 @@ if ~isempty(fieldnames(fs.SSBTiming))
         "phy.ssb.nBeams", configuredSSBBeamCount);
     cfg = sixgr.util.structSet(cfg, ...
         "phy.ssb.candidateSymbols", double(fs.SSBCandidateSymbols));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.burstPlan", fs.SSBBurstPlan);
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.periodCarrierSlots", double(fs.SSBPeriodCarrierSlots));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.activeCandidateIndices0Based", ...
+        double(fs.SSBActiveCandidateIndices0Based));
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.activeCarrierSlots0Based", ...
+        double(fs.SSBActiveCarrierSlots0Based));
 end
 
 localValidatePreservedAllocation(cfg, "phy.pdsch", fs.SymbolsPerSlot);
@@ -5501,6 +5650,84 @@ end
 
 function value = localGetNested(s, path, defaultValue)
 value = sixgr.util.structGet(s, path, defaultValue);
+end
+
+function duplex = localClearOppositeDuplexState(duplex, mode)
+% Prevent defaults or a previous normalization pass from leaking the
+% opposite duplex model into the resolved production configuration.
+if ~(isstruct(duplex) && isscalar(duplex))
+    duplex = struct();
+end
+if mode == "FDD"
+    stale = ["tddCommon", "tddDedicated", "tddPattern", "slotState"];
+else
+    stale = ["fdd", "fddContexts"];
+end
+for name = stale
+    if isfield(duplex, char(name))
+        duplex = rmfield(duplex, char(name));
+    end
+end
+end
+
+function localRejectConfiguredPath(s, path, identifier, message)
+[value, found] = localTryGetNestedStrict(s, path);
+if found && ~isempty(value)
+    if isstruct(value) && isempty(fieldnames(value))
+        return;
+    end
+    error(identifier, "%s", message);
+end
+end
+
+function value = localRequireConfiguredStruct(s, path, identifier, message)
+[value, found] = localTryGetNestedStrict(s, path);
+if ~found || ~(isstruct(value) && isscalar(value)) || ...
+        isempty(fieldnames(value))
+    error(identifier, "%s", message);
+end
+end
+
+function root = localSchedulingTimingRoot(s)
+mode = upper(strtrim(string(localGetNested(s, ...
+    "frequency.duplex_mode", ""))));
+if mode == "FDD"
+    root = "scheduling_timing";
+elseif mode == "TDD"
+    root = "tdd_timing";
+else
+    error("sixgr:lls6g:InvalidDuplexAuthority", ...
+        "frequency.duplex_mode must be FDD or TDD before resolving scheduling timing.");
+end
+end
+
+function value = localResolveConsistentIntegerAliases(s, paths, identifier, label)
+values = zeros(0, 1);
+sources = strings(0, 1);
+for path = paths.'
+    [candidate, found] = localTryGetNestedStrict(s, path);
+    if ~found || isempty(candidate)
+        continue;
+    end
+    if ~((isnumeric(candidate) || islogical(candidate)) && ...
+            isscalar(candidate) && isfinite(double(candidate)) && ...
+            double(candidate) >= 0 && mod(double(candidate), 1) == 0)
+        error(identifier, "%s at %s must be a nonnegative integer.", ...
+            label, path);
+    end
+    values(end + 1, 1) = double(candidate); %#ok<AGROW>
+    sources(end + 1, 1) = path; %#ok<AGROW>
+end
+if isempty(values)
+    value = NaN;
+    return;
+end
+if numel(unique(values)) ~= 1
+    pairs = sources + "=" + string(values);
+    error(identifier, "%s authorities disagree: %s.", ...
+        label, strjoin(pairs, ", "));
+end
+value = values(1);
 end
 
 function value = localGetSRSParameter(s, name, defaultValue)

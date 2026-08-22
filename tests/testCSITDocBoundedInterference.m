@@ -1,8 +1,8 @@
 function testCSITDocBoundedInterference()
 %TESTCSITDOCBOUNDEDINTERFERENCE Real receiver covariance-age qualification.
-[cfg,provenance]=sixgr.csi.loadTDocConfig( ...
+[cfg,provenance]=sixgr.csi.loadTDocStudyConfig( ...
     "simulator/configs/csi_tdoc/bounded_qualification.yaml");
-out=sixgr.csi.runInterferenceHypothesisWaveforms(cfg,provenance);
+out=sixgr.csi.runTDocStudyInterferenceHypothesisWaveforms(cfg,provenance);
 T=out.Points;
 assert(height(T)==2);
 assert(all(T.EvidenceClass=="LLS_CONTROLLED"));

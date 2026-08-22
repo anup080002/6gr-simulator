@@ -283,7 +283,7 @@ classdef DCIContext
         function value = hash(data)
             ordered = orderfields(data);
             bytes = uint8(unicode2native(jsonencode(ordered), "UTF-8"));
-            value = string(sixgr.rrc.asn1.sha256Hex(bytes));
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
         end
     end
 end

@@ -568,7 +568,7 @@ end
 function hash = localDecodedFieldHash(dci)
 hash = "";
 if isstruct(dci) && isfield(dci, "Fields")
-    hash = sixgr.rrc.asn1.sha256Hex(uint8(unicode2native(jsonencode(dci.Fields), "UTF-8")));
+    hash = sixgr.rrc.asn1.asn1SHA256Hex(uint8(unicode2native(jsonencode(dci.Fields), "UTF-8")));
 end
 end
 

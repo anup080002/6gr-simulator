@@ -6,7 +6,7 @@ relRoot="results/tdoc_ul_10523/focused_tests";
 root=fileparts(fileparts(mfilename("fullpath")));
 folder=fullfile(root,relRoot,runId);
 cleanup=onCleanup(@()localCleanup(folder)); %#ok<NASGU>
-out=runRAN1UL10523("quick","OutputRoot",relRoot,"RunId",runId);
+out=runRAN1UL10523TDocStudy("quick","OutputRoot",relRoot,"RunId",runId);
 assert(out.Passed && ~out.PublicationQualified);
 assert(out.ActualWaveform.TrialCount==1 && out.ActualWaveform.SNRPointCount==1);
 assert(height(out.FigureManifest)==22 && all(out.FigureManifest.Status=="PASS"));
@@ -24,7 +24,7 @@ truth=readtable(fullfile(out.RunFolder,replace(out.ActualWaveform.RelativeRunFol
 assert(height(trials)==1 && all(trials.CRCSource=="decoded_transport_block_crc") && ...
     ~any(truth{1,["UsesBLERLookupTable","UsesSyntheticBLER", ...
     "UsesRandomPassFailModel","UsesGeometryAsLLS"]}));
-localAssertError(@()runRAN1UL10523("sls"),"sixgr:tdoc:ul10523:GenuineSLSUnavailable");
+localAssertError(@()runRAN1UL10523TDocStudy("sls"),"sixgr:tdoc:ul10523:GenuineSLSUnavailable");
 ok=true; fprintf("UL10523QuickArtifacts: 1 actual TB, 22 source-backed TFIG PNGs, 64 blocked RFIG rows PASS.\n");
 end
 function localAssertError(f,id)

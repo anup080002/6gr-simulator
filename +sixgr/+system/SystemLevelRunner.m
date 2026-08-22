@@ -2111,13 +2111,7 @@ end
 end
 
 function duplex = localCanonicalDuplexMode(cfg)
-duplex = upper(string(sixgr.util.structGet(cfg, ...
-    "phy.frameStructure.DuplexMode", ...
-    sixgr.util.structGet(cfg, "phy.duplex.mode", ""))));
-if ~any(duplex == ["TDD", "FDD"])
-    error("sixgr:system:SystemLevelRunner:MissingDuplexMode", ...
-        "System-level scheduling requires canonical TDD or FDD mode.");
-end
+duplex = sixgr.phy.frame.resolveDuplexMode(cfg);
 end
 
 function context = localRequireFDDContext(cfg)
@@ -4240,7 +4234,7 @@ function algoProc = localBuildAlgoTable( ...
 
 scheduler = string(sixgr.util.structGet(cfg, "mac.scheduler.type", "rr"));
 pathlossModel = string(sixgr.util.structGet(cfg, "channel.pathlossModel", "nrPathLoss"));
-duplexMode = string(sixgr.util.structGet(cfg, "phy.duplex.mode", "TDD"));
+duplexMode = sixgr.phy.frame.resolveDuplexMode(cfg);
 wfDL = string(sixgr.util.structGet(cfg, "phy.waveform.dl", "CP-OFDM"));
 wfUL = string(sixgr.util.structGet(cfg, "phy.waveform.ul", "CP-OFDM"));
 uClass = unique(string(trafficClass(:)));

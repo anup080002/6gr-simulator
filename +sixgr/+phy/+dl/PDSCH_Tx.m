@@ -2235,6 +2235,24 @@ if ~configuredCSIRS
     event.UpdateOutcome = "not_scheduled";
     return;
 end
+periodSlots = double(sixgr.util.structGet(cfg, "phy.csirs.period_slots", NaN));
+offsetSlots = double(sixgr.util.structGet(cfg, "phy.csirs.offset_slots", NaN));
+if ~(isscalar(periodSlots) && isfinite(periodSlots) && periodSlots >= 1 && ...
+        periodSlots == round(periodSlots) && isscalar(offsetSlots) && ...
+        isfinite(offsetSlots) && offsetSlots >= 0 && offsetSlots < periodSlots && ...
+        offsetSlots == round(offsetSlots))
+    error("sixgr:pdsch:InvalidCSIRSOccasionConfig", ...
+        "Enabled CSI-RS requires integer phy.csirs.period_slots and offset_slots.");
+end
+absoluteSlot0 = double(carrier.NSlot);
+if mod(absoluteSlot0 - offsetSlots, periodSlots) ~= 0
+    event.Scheduled = false;
+    event.RuntimeMaterializationStatus = "configured_not_scheduled_this_slot";
+    event.Blocker = "outside_yaml_csirs_period_offset";
+    event.UpdateOutcome = "not_scheduled";
+    event.Periodicity = string(periodSlots) + ":" + string(offsetSlots);
+    return;
+end
 event.Scheduled = true;
 try
     [csirsInd, csirsSym, csirsInfo, csirsCfg] = sixgr.phy.refsig.csirs(carrier, cfg);

@@ -74,7 +74,7 @@ for p = 1:numel(scenarioPoints)
         rxTruth.PayloadMeta = truthPayloadMeta;
         rxTruth.NoiseVar = txRuntime.NoiseVar;
         rxTruth.RepetitionCount = txRuntime.RepetitionCount;
-        rxOut = sixgr.ctrl.PDCCHReceiver(rxGrid4D, pointCfg, regTable, reTable, cceMap, rxTruth);
+        rxOut = sixgr.ctrl.PDCCHStudyReceiver(rxGrid4D, pointCfg, regTable, reTable, cceMap, rxTruth);
 
         candT = rxOut.PerCandidateResults;
         slotT = rxOut.PerSlotResults;
@@ -259,7 +259,7 @@ end
 targetCandidate = table2struct(candTable(1,:));
 
 resources = localCandidateResources(targetCandidate, regTable, reTable, cceMap, cfg);
-dmrs = sixgr.ctrl.PDCCHDMRS(cfg, resources.RETable, struct("SlotNumber", 1, "CandidateIndex", targetCandidate.CandidateIndex, "SearchSpaceID", searchSpace.SearchSpaceID));
+dmrs = sixgr.ctrl.PDCCHStudyDMRS(cfg, resources.RETable, struct("SlotNumber", 1, "CandidateIndex", targetCandidate.CandidateIndex, "SearchSpaceID", searchSpace.SearchSpaceID));
 payloadT = resources.RETable(dmrs.PayloadREMask, :);
 
 crcOut = sixgr.ctrl.CRCAttachAndScramble(payload.InformationBits, cfg);

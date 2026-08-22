@@ -2380,6 +2380,17 @@ evidenceLifecycle = struct();
 try
     localDBLog("INFO", "Writing resolved snapshots.");
     localWriteResolvedSnapshots(layout, scfg);
+    localDBLog("INFO", "Resolving exact DL/UL resource allocations before slot zero.");
+    [plannedAllocationT, allocationCheckT] = ...
+        sixgr.truth.buildPlannedREAllocation(cfg);
+    frameCSVDir = layout.ComponentCSVDirs.frame_grid;
+    sixgr.util.csvWriteTable(fullfile(frameCSVDir, ...
+        "planned_re_allocation.csv"), plannedAllocationT, ...
+        "PreserveSchema", true);
+    sixgr.util.csvWriteTable(fullfile(frameCSVDir, ...
+        "allocation_resolution_preflight.csv"), allocationCheckT, ...
+        "PreserveSchema", true);
+    sixgr.truth.assertAllocationPreflight(allocationCheckT);
     localDBLog("INFO", "Exporting live geometry artifacts.");
     sixgr.truth.exportLiveGeometryArtifacts(layout, scfg, cfg);
 
@@ -6805,15 +6816,24 @@ mappings = {
     "rf_hardware.rx_gain_dB", "RF_Hardware", "rf.hardware.rxGain_dB"
     "rf_hardware.tx_gain_dB", "RF_Hardware", "rf.hardware.txGain_dB"
     "rf_hardware.mutual_coupling_matrix_enable", "RF_Hardware", "rf.hardware.mutualCouplingMatrixEnabled"
-    "tdd_timing.pdcch_to_pdsch_k0", "TDD_Timing", "phy.tddTiming.pdcchToPDSCHK0"
-    "tdd_timing.pdcch_to_pusch_k2", "TDD_Timing", "phy.tddTiming.pdcchToPUSCHK2"
-    "tdd_timing.dl_harq_feedback_k1", "TDD_Timing", "phy.tddTiming.dlHARQFeedbackK1Candidates"
-    "tdd_timing.ul_grant_k2", "TDD_Timing", "phy.tddTiming.ulGrantK2"
-    "tdd_timing.harq_roundtrip_slots", "TDD_Timing", "phy.tddTiming.harqRoundtripSlots"
-    "tdd_timing.dl_to_ul_guard_time_us", "TDD_Timing", "phy.tddTiming.dlToULGuardTime_us"
-    "tdd_timing.timing_advance_max_us", "TDD_Timing", "phy.tddTiming.timingAdvanceMax_us"
-    "tdd_timing.n1_pdsch_processing_time_symbols", "TDD_Timing", "phy.tddTiming.n1PDSCHProcessingTimeSymbols"
-    "tdd_timing.n2_pusch_preparation_time_symbols", "TDD_Timing", "phy.tddTiming.n2PUSCHPreparationTimeSymbols"
+    "scheduling_timing.pdcch_to_pdsch_k0", "Scheduling_Timing", "phy.schedulingTiming.pdcchToPDSCHK0"
+    "scheduling_timing.pdcch_to_pusch_k2", "Scheduling_Timing", "phy.schedulingTiming.pdcchToPUSCHK2"
+    "scheduling_timing.dl_harq_feedback_k1", "Scheduling_Timing", "phy.schedulingTiming.dlHARQFeedbackK1Candidates"
+    "scheduling_timing.ul_grant_k2", "Scheduling_Timing", "phy.schedulingTiming.ulGrantK2"
+    "scheduling_timing.harq_roundtrip_slots", "Scheduling_Timing", "phy.schedulingTiming.harqRoundtripSlots"
+    "scheduling_timing.dl_to_ul_guard_time_us", "Scheduling_Timing", "phy.schedulingTiming.dlToULGuardTime_us"
+    "scheduling_timing.timing_advance_max_us", "Scheduling_Timing", "phy.schedulingTiming.timingAdvanceMax_us"
+    "scheduling_timing.n1_pdsch_processing_time_symbols", "Scheduling_Timing", "phy.schedulingTiming.n1PDSCHProcessingTimeSymbols"
+    "scheduling_timing.n2_pusch_preparation_time_symbols", "Scheduling_Timing", "phy.schedulingTiming.n2PUSCHPreparationTimeSymbols"
+    "tdd_timing.pdcch_to_pdsch_k0", "Scheduling_Timing", "phy.schedulingTiming.pdcchToPDSCHK0"
+    "tdd_timing.pdcch_to_pusch_k2", "Scheduling_Timing", "phy.schedulingTiming.pdcchToPUSCHK2"
+    "tdd_timing.dl_harq_feedback_k1", "Scheduling_Timing", "phy.schedulingTiming.dlHARQFeedbackK1Candidates"
+    "tdd_timing.ul_grant_k2", "Scheduling_Timing", "phy.schedulingTiming.ulGrantK2"
+    "tdd_timing.harq_roundtrip_slots", "Scheduling_Timing", "phy.schedulingTiming.harqRoundtripSlots"
+    "tdd_timing.dl_to_ul_guard_time_us", "Scheduling_Timing", "phy.schedulingTiming.dlToULGuardTime_us"
+    "tdd_timing.timing_advance_max_us", "Scheduling_Timing", "phy.schedulingTiming.timingAdvanceMax_us"
+    "tdd_timing.n1_pdsch_processing_time_symbols", "Scheduling_Timing", "phy.schedulingTiming.n1PDSCHProcessingTimeSymbols"
+    "tdd_timing.n2_pusch_preparation_time_symbols", "Scheduling_Timing", "phy.schedulingTiming.n2PUSCHPreparationTimeSymbols"
     "coding.ldpc_lifting_size_z_selection", "PHY_Coding", "phy.ldpc.liftingSizeZSelection"
     "coding.ldpc_schedule_type", "PHY_Coding", "phy.ldpc.scheduleType"
     "coding.ldpc_min_sum_offset", "PHY_Coding", "phy.ldpc.minSumOffset"

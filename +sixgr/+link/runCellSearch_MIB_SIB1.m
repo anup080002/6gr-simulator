@@ -18,6 +18,10 @@ numSF = round(double(p.Results.NumSubframes));
 out = struct();
 out.Ok = false;
 out.Skipped = false;
+out.Crash = false;
+out.Status = "started";
+out.FailureIdentifier = "";
+out.FailureReason = "";
 out.BER = NaN;
 out.BLER = NaN;
 out.Throughput_Mbps = NaN;
@@ -50,6 +54,15 @@ out.SSBIndex = NaN;
 out.SSBBeamIndex = NaN;
 out.SSBReceivedPower_dB = NaN;
 out.PBCHDMRSMetric = NaN;
+out.PSSMetric = NaN;
+out.SSSMetric = NaN;
+out.SSSMetricMargin = NaN;
+out.PSSSearchSamples = NaN;
+out.PSSTimingLagsEvaluated = NaN;
+out.PSSSequences = NaN;
+out.PSSCorrelationVectors = NaN;
+out.SSSSequenceHypotheses = NaN;
+out.PBCHDMRSHypothesesTested = NaN;
 out.PBCHNoiseVar = NaN;
 out.PreEqualizationNoiseVariance = NaN;
 out.PreEqualizationNoiseVarianceDomain = "";
@@ -78,6 +91,14 @@ out.PostEqualizationNoiseVariance = NaN;
 out.PostEqualizationNoiseVarianceDomain = "";
 out.PostEqualizationNoiseVarianceSource = "";
 out.StrictReceiverEvidenceOk = false;
+out.DetectionAttempted = false;
+out.MeasurementAttempted = false;
+out.ResourceExtractionAttempted = false;
+out.ChannelEstimateAttempted = false;
+out.EqualizationAttempted = false;
+out.DecodeAttempted = false;
+out.LLRAvailable = false;
+out.LLRFinite = false;
 out.SIB1PDSCHChannelEstimateAvailable = false;
 out.SIB1PDSCHEqualizationAvailable = false;
 out.SIB1PDSCHReceiverHestSINR_dB = NaN;
@@ -99,6 +120,8 @@ if ~(configuredSSB && configuredPBCH)
         "Strict mode requires phy.ssb.enable=true for CellSearch_MIB_SIB1 coverage.");
     out.Skipped = true;
     out.Ok = true;
+    out.Status = "SKIPPED";
+    out.FailureReason = "ssb_or_pbch_disabled_by_configuration";
     out.Notes = "Skipped: cfg.phy.ssb.enable=false";
     return;
 end
@@ -108,6 +131,8 @@ if exist("nrWaveformGenerator","file") ~= 2
         "Strict mode requires 5G Toolbox SSB/PBCH APIs for CellSearch_MIB_SIB1 coverage.");
     out.Skipped = true;
     out.Ok = true;
+    out.Status = "SKIPPED";
+    out.FailureReason = "required_5g_toolbox_ssb_pbch_api_unavailable";
     out.Notes = "Skipped: 5G Toolbox SSB/PBCH APIs not available.";
     return;
 end
@@ -159,6 +184,16 @@ if wantSIB1
         out.AirInterfaceObservation_ms = localResolvePBCHObservationDurationMs(cfg);
         out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
         out.Ok = logical(rec.StrictOk);
+        out.Status = string(sixgr.util.structGet(rec, "Status", "FAIL"));
+        out.FailureReason = string(sixgr.util.structGet(rec, "FailureReason", ""));
+        out.DetectionAttempted = logical(sixgr.util.structGet(rec, "DetectionAttempted", false));
+        out.MeasurementAttempted = logical(sixgr.util.structGet(rec, "MeasurementAttempted", false));
+        out.ResourceExtractionAttempted = logical(sixgr.util.structGet(rec, "ResourceExtractionAttempted", false));
+        out.ChannelEstimateAttempted = logical(sixgr.util.structGet(rec, "ChannelEstimateAttempted", false));
+        out.EqualizationAttempted = logical(sixgr.util.structGet(rec, "EqualizationAttempted", false));
+        out.DecodeAttempted = logical(sixgr.util.structGet(rec, "DecodeAttempted", false));
+        out.LLRAvailable = logical(sixgr.util.structGet(rec, "LLRAvailable", false));
+        out.LLRFinite = logical(sixgr.util.structGet(rec, "LLRFinite", false));
         out.BLER = double(~out.Ok);
         out.Sync = struct("NCellID", double(rec.NCellID), "TimingOffset", double(rec.TimingOffset), ...
             "FreqOffset_Hz", double(rec.FrequencyOffsetHz));
@@ -215,6 +250,15 @@ if wantSIB1
         out.SSBBeamIndex = out.SSBIndex + 1;
         out.SSBReceivedPower_dB = double(sixgr.util.structGet(rec, "SSBReceivedPower_dB", NaN));
         out.PBCHDMRSMetric = double(sixgr.util.structGet(rec, "PBCHDMRSMetric", NaN));
+        out.PSSMetric = double(sixgr.util.structGet(rec, "PSSMetric", NaN));
+        out.SSSMetric = double(sixgr.util.structGet(rec, "SSSMetric", NaN));
+        out.SSSMetricMargin = double(sixgr.util.structGet(rec, "SSSMetricMargin", NaN));
+        out.PSSSearchSamples = double(sixgr.util.structGet(rec, "PSSSearchSamples", NaN));
+        out.PSSTimingLagsEvaluated = double(sixgr.util.structGet(rec, "PSSTimingLagsEvaluated", NaN));
+        out.PSSSequences = double(sixgr.util.structGet(rec, "PSSSequences", NaN));
+        out.PSSCorrelationVectors = double(sixgr.util.structGet(rec, "PSSCorrelationVectors", NaN));
+        out.SSSSequenceHypotheses = double(sixgr.util.structGet(rec, "SSSSequenceHypotheses", NaN));
+        out.PBCHDMRSHypothesesTested = double(sixgr.util.structGet(rec, "PBCHDMRSHypothesesTested", NaN));
         out.PBCHNoiseVar = double(sixgr.util.structGet(rec, "PBCHNoiseVar", NaN));
         out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(rec, "PreEqualizationNoiseVariance", NaN));
         out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceDomain", ""));
@@ -265,6 +309,10 @@ if wantSIB1
         out.Ok = false;
         out.BLER = 1;
         out.Skipped = false;
+        out.Crash = true;
+        out.Status = "CRASH";
+        out.FailureIdentifier = string(ME.identifier);
+        out.FailureReason = string(ME.identifier) + ":" + string(ME.message);
         out.Notes = "Strict SIB1 waveform failure: " + string(ME.message);
         if ~isempty(log)
             log.warn("runCellSearch_MIB_SIB1 strict SIB1 failed: " + string(ME.message));
@@ -286,7 +334,13 @@ try
     rxWaveRaw = localApplyCellSearchImpairments(txWave, sampleRateHz, injectedCFO_Hz, injectedTimingOffset);
     estimatedCFO_PreCorrection_Hz = localEstimateWaveformCFO(txWave, rxWaveRaw, sampleRateHz, injectedTimingOffset);
     rxWave = localApplyCFOCorrection(rxWaveRaw, sampleRateHz, estimatedCFO_PreCorrection_Hz);
+    out.DetectionAttempted = true;
+    out.MeasurementAttempted = true;
     [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWave, cfg, "SampleRate_Hz", sampleRateHz);
+    out.ResourceExtractionAttempted = true;
+    out.ChannelEstimateAttempted = true;
+    out.EqualizationAttempted = true;
+    out.DecodeAttempted = true;
     [pb, pbchInfo] = sixgr.phy.dl.PBCH_Recovery(rxSSB, sync, cfg);
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = NaN;
@@ -300,6 +354,15 @@ try
     out.SSBBeamIndex = out.SSBIndex + 1;
     out.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     out.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
+    out.PSSMetric = double(sixgr.util.structGet(sync, "FreqInfo.Metric", NaN));
+    out.SSSMetric = double(sixgr.util.structGet(sync, "SSSInfo.Metric", NaN));
+    out.SSSMetricMargin = double(sixgr.util.structGet(sync, "SSSInfo.MetricMargin", NaN));
+    out.PSSSearchSamples = double(sixgr.util.structGet(sync, "FreqInfo.SearchSamples", NaN));
+    out.PSSTimingLagsEvaluated = double(sixgr.util.structGet(sync, "FreqInfo.TimingLagsEvaluated", NaN));
+    out.PSSSequences = double(sixgr.util.structGet(sync, "FreqInfo.PSSSequences", NaN));
+    out.PSSCorrelationVectors = double(sixgr.util.structGet(sync, "FreqInfo.PSSCorrelationVectors", NaN));
+    out.SSSSequenceHypotheses = double(sixgr.util.structGet(sync, "SSSInfo.SearchSpaceSize", NaN));
+    out.PBCHDMRSHypothesesTested = double(numel(sixgr.util.structGet(pbchInfo, "PerCandidate", struct([]))));
     out.PBCHNoiseVar = double(sixgr.util.structGet(pb, "NoiseVar", NaN));
     out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(pb, "PreEqualizationNoiseVariance", NaN));
     out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(pb, "PreEqualizationNoiseVarianceDomain", ""));
@@ -328,8 +391,17 @@ try
     out.PostEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(pb, "PostEqualizationNoiseVarianceDomain", ""));
     out.PostEqualizationNoiseVarianceSource = string(sixgr.util.structGet(pb, "PostEqualizationNoiseVarianceSource", ""));
     out.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(pb, "StrictReceiverEvidenceOk", false));
+    out.LLRAvailable = logical(sixgr.util.structGet(pb, "PBCHDecodeAvailable", false));
+    out.LLRFinite = out.LLRAvailable && isfinite(double(sixgr.util.structGet(pb, "NoiseVar", NaN)));
 
     out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0);
+    if out.Ok
+        out.Status = "PASS";
+        out.FailureReason = "";
+    else
+        out.Status = "FAIL";
+        out.FailureReason = "pbch_bch_crc_failed";
+    end
     out.BLER = double(~out.Ok);
     out.InjectedCFO_Hz = injectedCFO_Hz;
     out.EstimatedCFO_PreCorrection_Hz = estimatedCFO_PreCorrection_Hz;
@@ -368,9 +440,16 @@ catch ME
             "Strict mode forbids skipping CellSearch_MIB_SIB1 coverage due to release API mismatch: " + msg);
         out.Skipped = true;
         out.Ok = true;
+        out.Status = "SKIPPED";
+        out.FailureIdentifier = string(ME.identifier);
+        out.FailureReason = "release_api_mismatch:" + msg;
         out.Notes = "Skipped: release API mismatch (" + msg + ")";
     else
         out.Ok = false;
+        out.Crash = true;
+        out.Status = "CRASH";
+        out.FailureIdentifier = string(ME.identifier);
+        out.FailureReason = string(ME.identifier) + ":" + msg;
         out.Notes = "Failure: " + msg;
     end
     if ~isempty(log)

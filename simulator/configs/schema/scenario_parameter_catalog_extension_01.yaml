@@ -190,7 +190,7 @@
       "slot_duration_ms": {"required": true, "type": "number", "min_exclusive": 0},
       "symbols_per_slot": {"required": true, "type": "integer", "min": 1},
       "slots_per_frame": {"required": true, "type": "integer", "min": 1},
-      "tdd_common": {"required": true, "type": "struct"},
+      "tdd_common": {"required": false, "type": "struct"},
       "tdd_dedicated": {"required": false, "type": "struct_array"},
       "mini_slot_support": {"required": true, "type": "boolean"},
       "symbol_timing_reference": {"required": true, "type": "string"},

@@ -94,7 +94,7 @@ end
 end
 
 function value = localHash(bits)
-value = string(sixgr.rrc.asn1.sha256Hex(uint8(bits(:))));
+value = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(bits(:))));
 end
 
 function value = ternary(condition, a, b)

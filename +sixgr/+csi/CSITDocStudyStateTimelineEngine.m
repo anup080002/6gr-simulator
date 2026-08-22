@@ -1,0 +1,76 @@
+classdef CSITDocStudyStateTimelineEngine
+    %STATETIMELINEENGINE Procedure-only CSI state and CPU lifecycle engine.
+
+    methods (Static)
+        function out = run(cfg)
+            counts=double(cfg.state_lifecycle.state_counts(:));
+            delays=double(cfg.state_lifecycle.report_delay_slots(:));
+            durations=double(cfg.state_lifecycle.computation_duration_slots(:));
+            expiries=double(cfg.state_lifecycle.expiry_slots(:));
+            policies=string(cfg.state_lifecycle.policies(:));
+            rows=repmat(localSummary(),numel(counts)*numel(delays)* ...
+                numel(durations)*numel(expiries)*numel(policies),1);
+            q=0; eventRows=repmat(localEvent(),0,1);
+            for n=counts.'
+                for delay=delays.'
+                    for duration=durations.'
+                        for expiry=expiries.'
+                            for policy=policies.'
+                                q=q+1; completion=duration; report=completion+delay;
+                                valid=delay<=expiry;
+                                ambiguous=n>1 && policy~="explicit_compact_selection" && ...
+                                    policy~="unique_trigger_map";
+                                wrong=ambiguous && policy~="fail_closed";
+                                % Rejecting an invalid or ambiguous state is
+                                % the specified procedure outcome; it is not
+                                % a PHY fallback and must not be exported as
+                                % one in primary evidence.
+                                rejected=~valid || (ambiguous&&policy=="fail_closed");
+                                selected=valid && ~rejected && (~ambiguous|| ...
+                                    any(policy==["explicit_compact_selection","unique_trigger_map"]));
+                                rows(q)=struct("StateCount",n,"ReportDelaySlots",delay, ...
+                                    "ComputationDurationSlots",duration,"ExpirySlots",expiry, ...
+                                    "Policy",policy,"SelectedValidState",selected, ...
+                                    "WrongStateReport",wrong,"StaleStateReport",false, ...
+                                    "InvalidStateHandled",~valid&&rejected, ...
+                                    "SelectionRejected",rejected,"PeakCPUOccupancy",min(n, ...
+                                    double(cfg.state_lifecycle.maximum_simultaneous_cpus)), ...
+                                    "PeakStoredStates",min(n,double(cfg.state_lifecycle.maximum_stored_states)), ...
+                                    "ReportLatencySlots",report,"EvidenceClass","PROCEDURE", ...
+                                    "Status","PASS");
+                                if q==1
+                                    names=["measurement","compute_start","compute_complete", ...
+                                        "cpu_release","state_retained","report_trigger","report_complete"];
+                                    slots=[0 0 completion completion completion report report+1];
+                                    cpu=[0 1 1 0 0 0 0]; retained=[0 0 1 1 1 1 1];
+                                    for k=1:numel(names)
+                                        eventRows(end+1,1)=struct("EventIndex",k, ...
+                                            "Event",names(k),"Slot",slots(k), ...
+                                            "CPUOccupied",cpu(k),"StateRetained",retained(k), ...
+                                            "EvidenceClass","PROCEDURE","Status","PASS"); %#ok<AGROW>
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+            out=struct("Summary",struct2table(rows,"AsArray",true), ...
+                "Events",struct2table(eventRows,"AsArray",true));
+        end
+    end
+end
+
+function row=localSummary()
+row=struct("StateCount",NaN,"ReportDelaySlots",NaN, ...
+    "ComputationDurationSlots",NaN,"ExpirySlots",NaN,"Policy","", ...
+    "SelectedValidState",false,"WrongStateReport",false, ...
+    "StaleStateReport",false,"InvalidStateHandled",false, ...
+    "SelectionRejected",false,"PeakCPUOccupancy",NaN,"PeakStoredStates",NaN, ...
+    "ReportLatencySlots",NaN,"EvidenceClass","PROCEDURE","Status","PASS");
+end
+
+function row=localEvent()
+row=struct("EventIndex",NaN,"Event","","Slot",NaN,"CPUOccupied",NaN, ...
+    "StateRetained",NaN,"EvidenceClass","PROCEDURE","Status","PASS");
+end

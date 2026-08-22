@@ -495,7 +495,7 @@ if fid < 0
 end
 cleanupObj = onCleanup(@() fclose(fid)); %#ok<NASGU>
 data = fread(fid, Inf, "*uint8");
-sha = string(sixgr.rrc.asn1.sha256Hex(data));
+sha = string(sixgr.rrc.asn1.asn1SHA256Hex(data));
 end
 
 function rel = localNormalizeRel(rootDir, absPath)

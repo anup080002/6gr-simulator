@@ -544,7 +544,7 @@ classdef PDSCHPhaseArtifactPublisher
                         family);
                 end
             end
-            integration = sixgr.pdsch.PDSCHCoverageExecutor. ...
+            integration = sixgr.pdsch.PDSCHStudyCoverageExecutor. ...
                 integrationNegativeContract();
             for i = 1:height(integration)
                 hit = families == integration.TestKind(i);

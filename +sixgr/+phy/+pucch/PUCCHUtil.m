@@ -120,7 +120,7 @@ classdef PUCCHUtil
                 encoded = jsonencode(input);
             end
             bytes = uint8(unicode2native(encoded, "UTF-8"));
-            value = string(sixgr.rrc.asn1.sha256Hex(bytes));
+            value = string(sixgr.rrc.asn1.asn1SHA256Hex(bytes));
         end
 
         function value = boolString(input)

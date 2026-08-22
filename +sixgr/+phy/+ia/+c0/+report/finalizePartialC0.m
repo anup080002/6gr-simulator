@@ -39,7 +39,7 @@ mkdir(outputFolder); mkdir(fullfile(outputFolder,"figures"));
 
 cfg=sixgr.lls6g.config.readConfigFile( ...
     fullfile(sourceRunFolder,"config_resolved.yaml"));
-sixgr.phy.ia.c0.config.validateScenario(cfg);
+sixgr.phy.ia.c0.config.validateC0StudyScenario(cfg);
 saved=load(fullfile(sourceRunFolder,"checkpoint.mat"),"checkpoint");
 if ~isfield(saved,"checkpoint")||~istable(saved.checkpoint)||isempty(saved.checkpoint)
     error("sixgr:phy:ia:c0:partial:BadCheckpoint", ...

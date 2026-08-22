@@ -1,7 +1,7 @@
 function testCSITDocExactModels()
 %TESTCSITDOCEXACTMODELS Exact 10.5.3.1 analytical and strict-state gates.
 repo=string(fileparts(fileparts(mfilename("fullpath"))));
-flow=sixgr.csi.executionFlowContract(repo);
+flow=sixgr.csi.buildTDocStudyExecutionFlowContract(repo);
 assert(all(flow.Exists & flow.CanonicalPathSelected));
 assert(nnz(flow.Role=="suite_orchestration")==1);
 lengths=[8 16 32 64]; phases=[5 15];
@@ -69,16 +69,16 @@ assert(plan.PortCount==512 && height(plan.Map)==512*64);
 shared=plan.Map(plan.Map.LogicalPort==0,:).LinearREZeroBased;
 assert(numel(shared)==64 && numel(unique(shared))==64);
 
-[resolved,~]=sixgr.csi.loadTDocConfig( ...
+[resolved,~]=sixgr.csi.loadTDocStudyConfig( ...
     "simulator/configs/csi_tdoc/bounded_qualification.yaml");
 assert(numel(resolved.csi.bounded_flow.cqi_thresholds_db)==16);
-procedure=sixgr.csi.StateTimelineEngine.run(resolved);
+procedure=sixgr.csi.CSITDocStudyStateTimelineEngine.run(resolved);
 assert(ismember("SelectionRejected",string(procedure.Summary.Properties.VariableNames)));
 assert(~ismember("FallbackUsed",string(procedure.Summary.Properties.VariableNames)), ...
     "Fail-closed state rejection must not be mislabeled as fallback use.");
 badThresholds=resolved;
 badThresholds.csi.bounded_flow.cqi_thresholds_db=[-100 -6 -7 zeros(1,13)];
-assertThrows(@()sixgr.csi.validateTDocConfig(badThresholds), ...
+assertThrows(@()sixgr.csi.validateTDocStudyConfig(badThresholds), ...
     "sixgr:csi:InvalidBoundedCQIThresholds");
 wave=sixgr.phy.refsig.HighPortCSIRSMapper.runWaveformPoint(resolved,128,8, ...
     "walsh",1,"fixed_per_port_epre",120,10531);

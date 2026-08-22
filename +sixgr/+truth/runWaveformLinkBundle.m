@@ -2159,6 +2159,10 @@ try
     payload.total_slots = localStatusScalarValue(sixgr.util.structGet(status, "TotalSlots", NaN));
     payload.current_frame = localStatusScalarValue(sixgr.util.structGet(status, "CompletedFrames", NaN));
     payload.total_frames = localStatusScalarValue(sixgr.util.structGet(status, "TotalFrames", NaN));
+    payload.completed_symbols = localStatusScalarValue(sixgr.util.structGet(status, "CompletedSymbols", NaN));
+    payload.total_symbols = localStatusScalarValue(sixgr.util.structGet(status, "TotalSymbols", NaN));
+    payload.current_slot_dl_symbols = localStatusScalarValue(sixgr.util.structGet(status, "CurrentSlotDLSymbols", NaN));
+    payload.current_slot_ul_symbols = localStatusScalarValue(sixgr.util.structGet(status, "CurrentSlotULSymbols", NaN));
     payload.run_completion = localStatusScalarValue(sixgr.util.structGet(status, "RunCompletion", NaN));
     payload.current_direction = localStatusTextValue(sixgr.util.structGet(status, "CurrentDirection", ""));
     payload.active_ue_count = localStatusMaxValue([ ...
@@ -2178,6 +2182,9 @@ try
     payload.prach_attempt_count = localStatusScalarValue(sixgr.util.structGet(status, "PRACHAttemptCount", NaN));
     payload.srs_attempt_count = localStatusScalarValue(sixgr.util.structGet(status, "SRSAttemptCount", NaN));
     payload.trs_attempt_count = localStatusScalarValue(sixgr.util.structGet(status, "TRSAttemptCount", NaN));
+    payload.ssb_occasion_active = localStatusScalarValue(sixgr.util.structGet(status, "SSBOccasionActive", NaN));
+    payload.active_ssb_indices_0based = localStatusTextValue(sixgr.util.structGet(status, "ActiveSSBIndices0Based", ""));
+    payload.ssb_period_carrier_slots = localStatusScalarValue(sixgr.util.structGet(status, "SSBPeriodCarrierSlots", NaN));
     payload.notes = localStatusTextValue(sixgr.util.structGet(status, "Notes", ""));
     payload.run_profile = "waveform_bundle";
     payload.value_role = "measured";
@@ -7877,9 +7884,7 @@ state = sixgr.truth.CoupledTruthRuntime.advanceFrame(state, cfg, multiUser, abso
 end
 
 function [allowDL, allowUL, slotLabel] = localCoupledSlotDuplexState(cfg, canonicalSlot)
-duplexMode = upper(strtrim(string(sixgr.util.structGet(cfg, ...
-    "phy.frameStructure.DuplexMode", ...
-    sixgr.util.structGet(cfg, "phy.duplex.mode", "")))));
+duplexMode = sixgr.phy.frame.resolveDuplexMode(cfg);
 switch duplexMode
     case "FDD"
         % Paired FDD carriers permit canonical DL scheduling and UL
@@ -8179,22 +8184,22 @@ slotDLAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true
     double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 0)) > 0;
 slotULAllowed = logical(sixgr.util.structGet(state, "CurrentSlotULAllowed", true)) && ...
     double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", 0)) > 0;
-pbchPeriod = max(1, round(double(sixgr.util.structGet(state, "PBCHSlotPeriod", 20))));
-prachPeriod = max(1, round(double(sixgr.util.structGet(cfg, "phy.prach.period_slots", pbchPeriod))));
 srsPeriod = max(1, round(double(sixgr.util.structGet(state, "SRSSlotPeriod", 4))));
 srsMaxUEsPerSlot = max(1, round(double(sixgr.util.structGet(cfg, "phy.srs.maxUEsPerSlot", 1))));
 srsSchedulingPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.schedulingPolicy", "round_robin_phase"))));
 trsEnabled = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
-trsPeriod = max(1, round(double(sixgr.util.structGet(state, "TRSSlotPeriod", 4))));
 prachRequired = logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false));
 prachEnabled = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
-shouldAttemptTRS = trsEnabled && slotDLAllowed && (double(sixgr.util.structGet(state, "LastTRSSlot", 0)) <= 0 || ...
-    slotIdx <= 1 || (isfinite(slotIdx) && (slotIdx - double(sixgr.util.structGet(state, "LastTRSSlot", 0))) >= trsPeriod));
+shouldAttemptTRS = trsEnabled && slotDLAllowed && ...
+    sixgr.truth.isActiveTRSOccasion(cfg, slotIdx);
 prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && ...
     sixgr.truth.isActivePRACHOccasion(cfg, slotIdx);
 prachOccasionActiveThisSlot = prachRequired && prachSignalOpportunityThisSlot;
+[ssbOccasionActiveThisSlot, ssbOccasion] = ...
+    sixgr.truth.isActiveSSBOccasion(cfg, slotIdx);
 sharedPBCHEligible = false(numUsers, 1);
-if logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false)) && slotDLAllowed
+if logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false)) && ...
+        slotDLAllowed && ssbOccasionActiveThisSlot
     pbchStateAll = string(sixgr.util.structGet(state, "CellAcquisitionState", strings(numUsers, 1)));
     sharedPBCHEligible = pbchStateAll ~= "acquired";
 end
@@ -8212,6 +8217,9 @@ localPublishCoupledControlGatingStatus(runFolder, state, struct( ...
     "PRACHAttemptCount", prachAttemptCount, ...
     "SRSAttemptCount", srsAttemptCount, ...
     "TRSAttemptCount", trsAttemptCount, ...
+    "SSBOccasionActive", ssbOccasionActiveThisSlot, ...
+    "ActiveSSBIndices0Based", localNumericVectorToken(sixgr.util.structGet(ssbOccasion, "ActiveSSBIndices0Based", [])), ...
+    "SSBPeriodCarrierSlots", double(sixgr.util.structGet(ssbOccasion, "PeriodCarrierSlots", NaN)), ...
     "Phase", "starting", ...
     "Notes", sprintf("Starting coupled pre-scheduling control gating for slot %s/%s with %d UEs.", ...
         localDisplayProgressValue(slotIdx), localDisplayProgressValue(double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN))), round(double(numUsers)))));
@@ -8463,6 +8471,9 @@ for ueIdx = 1:numUsers
             "PRACHAttemptCount", prachAttemptCount, ...
             "SRSAttemptCount", srsAttemptCount, ...
             "TRSAttemptCount", trsAttemptCount, ...
+            "SSBOccasionActive", ssbOccasionActiveThisSlot, ...
+            "ActiveSSBIndices0Based", localNumericVectorToken(sixgr.util.structGet(ssbOccasion, "ActiveSSBIndices0Based", [])), ...
+            "SSBPeriodCarrierSlots", double(sixgr.util.structGet(ssbOccasion, "PeriodCarrierSlots", NaN)), ...
             "Phase", "streaming", ...
             "Notes", sprintf("Coupled control gating progress for slot %s/%s: UE %d/%d, PBCH=%d PRACH=%d SRS=%d TRS=%d.", ...
                 localDisplayProgressValue(slotIdx), localDisplayProgressValue(double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN))), ...
@@ -8511,6 +8522,9 @@ localPublishCoupledControlGatingStatus(runFolder, state, struct( ...
     "PRACHAttemptCount", prachAttemptCount, ...
     "SRSAttemptCount", srsAttemptCount, ...
     "TRSAttemptCount", trsAttemptCount, ...
+    "SSBOccasionActive", ssbOccasionActiveThisSlot, ...
+    "ActiveSSBIndices0Based", localNumericVectorToken(sixgr.util.structGet(ssbOccasion, "ActiveSSBIndices0Based", [])), ...
+    "SSBPeriodCarrierSlots", double(sixgr.util.structGet(ssbOccasion, "PeriodCarrierSlots", NaN)), ...
     "Phase", "complete", ...
     "Notes", sprintf("Coupled control gating complete for slot %s/%s: acquired=%d/%d access=%d/%d valid_srs=%d/%d valid_trs_cells=%d/%d tracked_serving_users=%d/%d eligible=%d/%d.", ...
         localDisplayProgressValue(slotIdx), localDisplayProgressValue(double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN))), ...
@@ -8536,6 +8550,18 @@ slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
 totalSlots = double(sixgr.util.structGet(state, "CanonicalSlotsPerSweepPoint", NaN));
 completedFrames = double(sixgr.util.structGet(state, "CurrentFrameLocal", sixgr.util.structGet(state, "CurrentFrame", NaN)));
 totalFrames = double(sixgr.util.structGet(state, "FramesPerSweepPoint", NaN));
+symbolsPerSlot = double(sixgr.util.structGet(state, "SymbolsPerSlot", 14));
+if ~(isfinite(symbolsPerSlot) && symbolsPerSlot >= 1)
+    symbolsPerSlot = 14;
+end
+completedSymbols = NaN;
+totalSymbols = NaN;
+if isfinite(slotIdx)
+    completedSymbols = max(0, (double(slotIdx) - 1) * symbolsPerSlot);
+end
+if isfinite(totalSlots)
+    totalSymbols = max(0, double(totalSlots) * symbolsPerSlot);
+end
 runCompletion = NaN;
 if isfinite(totalSlots) && totalSlots > 0 && isfinite(slotIdx)
     runCompletion = min(max(double(slotIdx) / double(totalSlots), 0), 1);
@@ -8564,6 +8590,10 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "TotalUsers", totalUsers, ...
     "CurrentSlot", slotIdx, ...
     "TotalSlots", totalSlots, ...
+    "CompletedSymbols", completedSymbols, ...
+    "TotalSymbols", totalSymbols, ...
+    "CurrentSlotDLSymbols", double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", NaN)), ...
+    "CurrentSlotULSymbols", double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", NaN)), ...
     "DLCompletedFrames", double(sixgr.util.structGet(state, "DLCompletedFrames", NaN)), ...
     "ULCompletedFrames", double(sixgr.util.structGet(state, "ULCompletedFrames", NaN)), ...
     "CompletedFrames", completedFrames, ...
@@ -8591,7 +8621,20 @@ localPublishWaveformBundleStageStatus(runFolder, struct( ...
     "PRACHAttemptCount", prachAttemptCount, ...
     "SRSAttemptCount", srsAttemptCount, ...
     "TRSAttemptCount", trsAttemptCount, ...
+    "SSBOccasionActive", logical(sixgr.util.structGet(meta, "SSBOccasionActive", false)), ...
+    "ActiveSSBIndices0Based", char(string(sixgr.util.structGet(meta, "ActiveSSBIndices0Based", ""))), ...
+    "SSBPeriodCarrierSlots", double(sixgr.util.structGet(meta, "SSBPeriodCarrierSlots", NaN)), ...
     "Notes", char(notes)));
+end
+
+function token = localNumericVectorToken(values)
+values = double(values(:).');
+values = values(isfinite(values));
+if isempty(values)
+    token = "";
+else
+    token = "[" + strjoin(string(round(values)), ",") + "]";
+end
 end
 
 function count = localCountSatisfiedControlUsers(states, successState, gatingRequired)
@@ -8827,9 +8870,8 @@ if direction == "DL"
     end
     state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, ...
         localAnnotateCoupledControlTrial(localCollectPDCCHTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction, servingCell));
-    pbchPeriod = max(1, round(double(sixgr.util.structGet(state, "PBCHSlotPeriod", 20))));
-    lastPBCHSlot = double(sixgr.util.structGet(state, "LastPBCHSlot", 0));
-    if lastPBCHSlot <= 0 || slotIdx == 1 || (isfinite(slotIdx) && (slotIdx - lastPBCHSlot) >= pbchPeriod)
+    [ssbOccasionActive, ~] = sixgr.truth.isActiveSSBOccasion(cfgU, slotIdx);
+    if ssbOccasionActive
         cfgU = localApplyPBCHSSBBeamContext(cfgU, slotIdx, ueIdx);
         [state, pbchRawT, decodedSIB1] = localCollectCoupledPBCHTrials( ...
             state, cfgU, ueIdx, snr_dB, slotIdx);
@@ -8842,9 +8884,7 @@ if direction == "DL"
             state, ueIdx, decodedSIB1, slotIdx);
         state.LastPBCHSlot = slotIdx;
     end
-    trsPeriod = max(1, round(double(sixgr.util.structGet(state, "TRSSlotPeriod", 4))));
-    lastTRSSlot = double(sixgr.util.structGet(state, "LastTRSSlot", 0));
-    if lastTRSSlot <= 0 || slotIdx == 1 || (isfinite(slotIdx) && (slotIdx - lastTRSSlot) >= trsPeriod)
+    if sixgr.truth.isActiveTRSOccasion(cfgU, slotIdx)
         state.ControlTrials.TRS = localAppendCompatTable(state.ControlTrials.TRS, ...
             localAnnotateCoupledControlTrial(localCollectTRSTrials(cfgU, snr_dB, 1), slotIdx, frameIdx, ueIdx, rnti, direction, servingCell));
         state.LastTRSSlot = slotIdx;
@@ -11440,6 +11480,17 @@ for k = 1:nTrials
         r.AcquisitionTime_ms = double(sixgr.util.structGet(out, "AcquisitionTime_ms", NaN));
         r.NoiseVariance = double(sixgr.util.structGet(out, "PBCHNoiseVar", ...
             sixgr.util.structGet(pbch, "NoiseVar", NaN)));
+        r.SSBReceivedPower_dB = double(sixgr.util.structGet(out, "SSBReceivedPower_dB", NaN));
+        r.PBCHDMRSMetric = double(sixgr.util.structGet(out, "PBCHDMRSMetric", NaN));
+        r.PSSMetric = double(sixgr.util.structGet(out, "PSSMetric", NaN));
+        r.SSSMetric = double(sixgr.util.structGet(out, "SSSMetric", NaN));
+        r.SSSMetricMargin = double(sixgr.util.structGet(out, "SSSMetricMargin", NaN));
+        r.PSSSearchSamples = double(sixgr.util.structGet(out, "PSSSearchSamples", NaN));
+        r.PSSTimingLagsEvaluated = double(sixgr.util.structGet(out, "PSSTimingLagsEvaluated", NaN));
+        r.PSSSequences = double(sixgr.util.structGet(out, "PSSSequences", NaN));
+        r.PSSCorrelationVectors = double(sixgr.util.structGet(out, "PSSCorrelationVectors", NaN));
+        r.SSSSequenceHypotheses = double(sixgr.util.structGet(out, "SSSSequenceHypotheses", NaN));
+        r.PBCHDMRSHypothesesTested = double(sixgr.util.structGet(out, "PBCHDMRSHypothesesTested", NaN));
         if isfinite(r.NoiseVariance)
             r.NoiseVarStatus = "OK";
             r.NoiseVarSource = "nrChannelEstimate_pbch_dmrs_sss";
@@ -11449,14 +11500,14 @@ for k = 1:nTrials
             r.NoiseVarSource = "";
             r.NoiseVarReason = "pbch_noise_variance_not_reported_by_receiver";
         end
-        r.ChannelEstimateAttempted = true;
+        r.ChannelEstimateAttempted = logical(sixgr.util.structGet(out, "ChannelEstimateAttempted", false));
         r.ChannelEstimateAvailable = logical(sixgr.util.structGet(out, "ChannelEstimateAvailable", ...
             sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false)));
         r.ChannelEstimateSource = string(sixgr.util.structGet(out, "ChannelEstimateSource", ...
             sixgr.util.structGet(pbch, "ChannelEstimateSource", "")));
-        r.ResourceExtractionAttempted = true;
+        r.ResourceExtractionAttempted = logical(sixgr.util.structGet(out, "ResourceExtractionAttempted", false));
         r.ResourceExtractionAvailable = r.ChannelEstimateAvailable;
-        r.EqualizationAttempted = true;
+        r.EqualizationAttempted = logical(sixgr.util.structGet(out, "EqualizationAttempted", false));
         r.EqualizationAvailable = logical(sixgr.util.structGet(out, "EqualizationAvailable", ...
             sixgr.util.structGet(pbch, "EqualizationAvailable", false)));
         r.EqualizerType = string(sixgr.util.structGet(out, "EqualizerType", ...
@@ -11496,30 +11547,30 @@ for k = 1:nTrials
         r.SINRSource = r.MeasuredTrialSINRSource;
         r.SINRValueStatus = r.MeasuredTrialSINRValueStatus;
         r.SINRValueDefinition = "measured_trial_sinr_from_pbch_dmrs_channel_estimate";
-        r.LLRAvailable = true;
-        r.LLRFinite = logical(pbchAcquired);
+        r.LLRAvailable = logical(sixgr.util.structGet(out, "LLRAvailable", false));
+        r.LLRFinite = logical(sixgr.util.structGet(out, "LLRFinite", false));
         r.LLRNoiseVariance = r.NoiseVariance;
         r.StrictReceiverEvidenceOk = logical(sixgr.util.structGet(out, "StrictReceiverEvidenceOk", ...
             sixgr.util.structGet(pbch, "StrictReceiverEvidenceOk", false))) && ...
             r.ChannelEstimateAvailable && r.EqualizationAvailable && isfinite(r.ReceiverHestSINR_dB);
         r.StrictOk = logical(sib1StrictOk) && logical(r.StrictReceiverEvidenceOk);
         r.ReceiverUsable = logical(r.StrictReceiverEvidenceOk);
-        r.MeasurementAttempted = true;
+        r.MeasurementAttempted = logical(sixgr.util.structGet(out, "MeasurementAttempted", false));
         r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) || isfinite(r.MeasuredTrialSINR_dB);
         if r.StrictOk && sib1TreeEqual && sib1DciCrcPass && ...
                 sib1DlschCrcPass && sib1Asn1DecodeOk
             decodedSIB1 = localCompactDecodedSIB1Recovery(sib1);
         end
         r.TrackingFailureProbability = double(~pbchAcquired);
+        r.DetectionAttempted = logical(sixgr.util.structGet(out, "DetectionAttempted", false));
+        r.DecodeAttempted = logical(sixgr.util.structGet(out, "DecodeAttempted", false));
         if pbchAcquired
             r.DetectionMetric = 1;
-            r.DetectionAttempted = true;
             r.DetectionSuccess = true;
             r.DetectionUsable = true;
             r.MissedDetection = false;
             r.FalseAlarm = false;
             r.DetectionOutcome = "ssb_pbch_mib_acquired";
-            r.DecodeAttempted = true;
             r.DecodeUsable = true;
             if r.StrictOk
                 r.Status = "PASS";
@@ -11549,6 +11600,23 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function reason = localPBCHFailureReason(out, sib1, pbch)
+reason = string(sixgr.util.structGet(out, "FailureReason", ""));
+if strlength(strtrim(reason)) == 0
+    reason = string(sixgr.util.structGet(sib1, "FailureReason", ""));
+end
+if strlength(strtrim(reason)) == 0
+    reason = string(sixgr.util.structGet(pbch, "FailureReason", ""));
+end
+if strlength(strtrim(reason)) == 0
+    reason = string(sixgr.util.structGet(out, "FailureIdentifier", ""));
+end
+if strlength(strtrim(reason)) == 0
+    reason = string(sixgr.util.structGet(out, "Notes", "pbch_receiver_failed_without_reason"));
+end
+reason = strtrim(reason);
 end
 
 function tf = localStructLogical(s, fieldName, defaultValue)
@@ -11681,22 +11749,23 @@ end
 end
 
 function ssbIndex = localResolveRuntimePBCHSSBIndex(cfg, slotIdx, ueIdx)
-beamCount = localResolveSSBBeamCount(cfg);
-if beamCount <= 1
-    ssbIndex = 0;
+[isOccasion, occasion] = sixgr.truth.isActiveSSBOccasion(cfg, slotIdx);
+if ~isOccasion
+    ssbIndex = NaN;
     return;
 end
-slotBase = 0;
-slotVal = double(slotIdx);
-if ~isempty(slotVal) && isscalar(slotVal) && isfinite(slotVal)
-    slotBase = max(0, round(slotVal) - 1);
+indices = double(sixgr.util.structGet(occasion, "ActiveSSBIndices0Based", []));
+indices = indices(isfinite(indices));
+if isempty(indices)
+    error("sixgr:truth:MissingActiveSSBIndex", ...
+        "An active SSB carrier slot must expose at least one active SSB candidate index.");
 end
 ueBase = 0;
 ueVal = double(ueIdx);
 if ~isempty(ueVal) && isscalar(ueVal) && isfinite(ueVal)
     ueBase = max(0, round(ueVal) - 1);
 end
-ssbIndex = mod(slotBase + ueBase, beamCount);
+ssbIndex = indices(1 + mod(ueBase, numel(indices)));
 end
 
 function ssbIndex = localResolvePBCHSSBIndex(cfg, trialIdx)
@@ -13650,7 +13719,7 @@ if isempty(value)
 end
 try
     data = single([real(value(:)).'; imag(value(:)).']);
-    hash = string(sixgr.rrc.asn1.sha256Hex(typecast(data(:), "uint8")));
+    hash = string(sixgr.rrc.asn1.asn1SHA256Hex(typecast(data(:), "uint8")));
 catch
     hash = "";
 end
@@ -13660,7 +13729,7 @@ function hash = localPDCCHResourceHash(pdcchInd, dmrsInd)
 hash = "";
 try
     payload = struct("PDCCHInd", double(pdcchInd(:).'), "DMRSInd", double(dmrsInd(:).'));
-    hash = string(sixgr.rrc.asn1.sha256Hex(uint8(unicode2native(jsonencode(payload), "UTF-8"))));
+    hash = string(sixgr.rrc.asn1.asn1SHA256Hex(uint8(unicode2native(jsonencode(payload), "UTF-8"))));
 catch
     hash = "";
 end
@@ -14980,6 +15049,17 @@ row.ChannelAgingLoss_dB = NaN;
 row.InterpolationLoss_dB = NaN;
 row.MismatchSensitivity_dB = NaN;
 row.AcquisitionTime_ms = NaN;
+row.SSBReceivedPower_dB = NaN;
+row.PBCHDMRSMetric = NaN;
+row.PSSMetric = NaN;
+row.SSSMetric = NaN;
+row.SSSMetricMargin = NaN;
+row.PSSSearchSamples = NaN;
+row.PSSTimingLagsEvaluated = NaN;
+row.PSSSequences = NaN;
+row.PSSCorrelationVectors = NaN;
+row.SSSSequenceHypotheses = NaN;
+row.PBCHDMRSHypothesesTested = NaN;
 row.TrackingFailureProbability = NaN;
 row.Status = "NA";
 row.Crash = false;
@@ -15289,6 +15369,22 @@ if ~isempty(W)
             error("sixgr:truth:HybridUserBeamLayerMismatch", ...
                 "Selected user beam is %dx%d but configured DL rank is %d.", ...
                 size(W, 1), size(W, 2), nLayers);
+        else
+            r.DetectionSuccess = false;
+            r.DetectionUsable = r.DetectionAttempted;
+            r.MissedDetection = r.DetectionAttempted;
+            r.FalseAlarm = false;
+            r.DetectionOutcome = "ssb_pbch_mib_not_acquired";
+            r.DecodeUsable = false;
+            if skipped
+                r.Status = "NA";
+            elseif logical(sixgr.util.structGet(out, "Crash", false))
+                r.Status = "CRASH";
+                r.Crash = true;
+            else
+                r.Status = "FAIL";
+            end
+            r.FailureReason = localPBCHFailureReason(out, sib1, pbch);
         end
         cfgU = sixgr.util.structSet(cfgU, ...
             "phy.pdsch.hybridElementToPortMatrix", W);

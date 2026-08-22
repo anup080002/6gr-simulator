@@ -185,7 +185,7 @@ sections:
       slot_format:
         required: true
         type: string
-        allowed_values: [dl, ul, flexible, mixed]
+        allowed_values: [dl, ul, flexible, mixed, fdd_separate_carriers]
       tdd_common: {required: false, type: struct}
       tdd_dedicated: {required: false, type: struct_array}
   waveform:
@@ -325,6 +325,18 @@ sections:
         required: false
         type: integer
         min: 1
+      trs_periodicity_slots:
+        required: false
+        type: integer
+        min: 1
+      csi_rs_periodicity_slots:
+        required: false
+        type: integer
+        min: 1
+      csi_rs_offset_slots:
+        required: false
+        type: integer
+        min: 0
       srs_max_ues_per_slot:
         required: false
         type: integer
@@ -599,6 +611,10 @@ sections:
         type: number_list
         min_items: 1
         allowed_numeric_values: [0, 1]
+      coreset_frequency_resource_policy:
+        required: false
+        type: string
+        allowed_values: [explicit_bitmap, full_bwp_groups]
       candidate_aggregation_levels:
         required: false
         type: number_list

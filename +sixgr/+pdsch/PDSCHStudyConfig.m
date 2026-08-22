@@ -29,7 +29,11 @@ cfg.FrameNumber = double(sixgr.util.structGet(pdsch6gr, "FrameNumber", 0));
 cfg.SlotNumber = double(sixgr.util.structGet(pdsch6gr, "SlotNumber", 0));
 cfg.Numerology = double(sixgr.util.structGet(pdsch6gr, "Numerology", sixgr.util.structGet(phy, "numerology.mu", 1)));
 cfg.CarrierFrequencyHz = double(sixgr.util.structGet(pdsch6gr, "CarrierFrequencyHz", sixgr.util.structGet(inputCfg, "phy.fc_Hz", 2e9)));
-cfg.DuplexMode = char(upper(string(sixgr.util.structGet(pdsch6gr, "DuplexMode", sixgr.util.structGet(phy, "duplex.mode", "FDD")))));
+duplexContext = inputCfg;
+if isfield(pdsch6gr, "DuplexMode") && ~isempty(pdsch6gr.DuplexMode)
+    duplexContext.pdsch6gr.DuplexMode = pdsch6gr.DuplexMode;
+end
+cfg.DuplexMode = char(sixgr.phy.frame.resolveDuplexMode(duplexContext));
 cfg.NSizeGrid = double(sixgr.util.structGet(pdsch6gr, "NSizeGrid", sixgr.util.structGet(phy, "carrier.NSizeGrid", 52)));
 cfg.ChannelBandwidthMHz = double(sixgr.util.structGet(pdsch6gr, "ChannelBandwidthMHz", 20));
 cfg.NTx = max(1, round(double(sixgr.util.structGet(pdsch6gr, "NTx", sixgr.util.structGet(channel, "nTxAnt", 1)))));

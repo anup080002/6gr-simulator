@@ -79,8 +79,13 @@ prachCfg = struct();
 prachCfg.ScenarioName = localResolveText(localResolveField(cfg, {"ScenarioName", "scenario.name", "meta.scenario_name"}, "prach_lls"));
 prachCfg.FrequencyRange = upper(localResolveText(localFirstNonEmpty(opts.FrequencyRange, ...
     localResolveField(cfg, {"prach_lls.FrequencyRange", "random_access.frequency_range", "phy.prach.frequencyRange"}, ""))));
-prachCfg.DuplexMode = upper(localResolveText(localFirstNonEmpty(opts.DuplexMode, ...
-    localResolveField(cfg, {"prach_lls.DuplexMode", "random_access.duplex_mode", "phy.duplex.mode", "frequency.duplex_mode"}, "FDD"))));
+duplexContext = cfg;
+if ~isempty(opts.DuplexMode)
+    % Preserve an explicit standalone PRACH override as an authority that
+    % must agree with any YAML/runtime authority already present.
+    duplexContext.DuplexMode = char(upper(string(opts.DuplexMode)));
+end
+prachCfg.DuplexMode = char(sixgr.phy.frame.resolveDuplexMode(duplexContext));
 prachCfg.CarrierFrequencyHz = double(localResolveScalar(localFirstNonEmpty(opts.CarrierFrequencyHz, ...
     localResolveField(cfg, {"prach_lls.CarrierFrequencyHz", "random_access.carrier_frequency_hz", "channel.fc_Hz", "carrier.center_frequency_hz", "frequency.center_frequency_hz"}, 700e6))));
 prachCfg.CarrierSCSkHz = double(localResolveScalar(localFirstNonEmpty(opts.CarrierSCSkHz, ...

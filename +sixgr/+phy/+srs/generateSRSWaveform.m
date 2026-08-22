@@ -52,10 +52,10 @@ baseConfig = sixgr.util.structGet(srsCfg, "BaseConfig", struct());
 end
 
 function h = localHashNumeric(x)
-h = string(sixgr.rrc.asn1.sha256Hex(typecast(double(x(:)).', "uint8")));
+h = string(sixgr.rrc.asn1.asn1SHA256Hex(typecast(double(x(:)).', "uint8")));
 end
 
 function h = localHashComplex(x)
 data = single([real(x(:)).'; imag(x(:)).']);
-h = string(sixgr.rrc.asn1.sha256Hex(typecast(data(:).', "uint8")));
+h = string(sixgr.rrc.asn1.asn1SHA256Hex(typecast(data(:).', "uint8")));
 end

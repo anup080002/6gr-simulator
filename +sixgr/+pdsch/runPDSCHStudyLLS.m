@@ -158,7 +158,10 @@ cfg.ChannelModel = char(string(point.ChannelModel));
 cfg.DelaySpread_s = double(point.DelaySpread_ns) * 1e-9;
 cfg.CarrierFrequencyHz = double(sixgr.util.structGet(point, "CarrierFrequencyHz", cfg.CarrierFrequencyHz));
 cfg.Numerology = double(sixgr.util.structGet(point, "Numerology", cfg.Numerology));
-cfg.DuplexMode = char(string(sixgr.util.structGet(point, "DuplexMode", cfg.DuplexMode)));
+pointDuplex = sixgr.util.structGet(point, "DuplexMode", cfg.DuplexMode);
+duplexContext = struct("DuplexMode", cfg.DuplexMode, ...
+    "pdsch6gr", struct("DuplexMode", pointDuplex));
+cfg.DuplexMode = char(sixgr.phy.frame.resolveDuplexMode(duplexContext));
 cfg.ChannelBandwidthMHz = double(sixgr.util.structGet(point, "ChannelBandwidthMHz", cfg.ChannelBandwidthMHz));
 cfg.NSizeGrid = double(sixgr.util.structGet(point, "NSizeGrid", cfg.NSizeGrid));
 cfg.CodewordLayer.Rank = double(point.Rank);
