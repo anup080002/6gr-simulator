@@ -30,13 +30,6 @@ scsKHz = double(sixgr.util.structGet(cfg, "phy.numerology.scs_kHz", 30));
 nPorts = max(1, round(double(sixgr.util.structGet(cfg, "phy.srs.nPorts", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.num_ports", ...
     sixgr.util.structGet(cfg, "reference_signals.srs_ports", 1))))));
-slotNumbers = sixgr.util.structGet(cfg, "phy.srs.slotNumbers", ...
-    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.slot_numbers", [0 4]));
-slotNumbers = unique(max(0, round(double(slotNumbers(:).'))), "stable");
-if isempty(slotNumbers)
-    slotNumbers = 0;
-end
-
 resourceType = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.resourceType", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.resource_type", "periodic")))));
 usage = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.resourceSetUsage", ...
@@ -75,6 +68,9 @@ strictCfg.Periodicity = double(sixgr.util.structGet(cfg, "phy.srs.period_slots",
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.periodicity_slots", 4)));
 strictCfg.Offset = double(sixgr.util.structGet(cfg, "phy.srs.period_offset", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.period_offset", 0)));
+[slotNumbers, slotAuthority] = localResolveExpectedSlotSet( ...
+    cfg, resourceType, strictCfg.Periodicity, strictCfg.Offset);
+strictCfg.ExpectedSlotSetSource = string(slotAuthority);
 strictCfg.AperiodicTriggerState = string(sixgr.util.structGet(cfg, "phy.srs.aperiodicTriggerState", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.aperiodic_trigger_state", "")));
 strictCfg.DCITriggerReferenceId = string(sixgr.util.structGet(cfg, "phy.srs.dciTriggerReferenceId", ...
@@ -106,9 +102,16 @@ strictCfg.FrequencyPosition = double(sixgr.util.structGet(cfg, "phy.srs.Frequenc
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.frequency_position", 0)));
 strictCfg.NRRC = double(sixgr.util.structGet(cfg, "phy.srs.NRRC", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.n_rrc", 0)));
-strictCfg.EnableStartRBHopping = logical(sixgr.util.structGet(cfg, ...
+startRBHopping = sixgr.util.structGet(cfg, ...
     "phy.srs.EnableStartRBHopping", sixgr.util.structGet(cfg, ...
-    "lls6g.reference_signals.srs.enable_start_rb_hopping", false)));
+    "lls6g.reference_signals.srs.enable_start_rb_hopping", false));
+if ~((islogical(startRBHopping) || isnumeric(startRBHopping)) && ...
+        isscalar(startRBHopping) && isfinite(double(startRBHopping)) && ...
+        any(double(startRBHopping) == [0 1]))
+    error("sixgr:phy:srs:InvalidEnableStartRBHopping", ...
+        "Strict SRS EnableStartRBHopping must be a scalar boolean.");
+end
+strictCfg.EnableStartRBHopping = logical(startRBHopping);
 strictCfg.FrequencyScalingFactor = double(sixgr.util.structGet(cfg, ...
     "phy.srs.FrequencyScalingFactor", sixgr.util.structGet(cfg, ...
     "lls6g.reference_signals.srs.frequency_scaling_factor", 1)));
@@ -197,6 +200,73 @@ strictCfg.ConfigHash = sixgr.phy.srs.hashSRSConfig(strictCfg);
 strictCfg.StrictValidation = sixgr.phy.srs.validateSRSConfigStrict(strictCfg);
 strictCfg.ConfigExport = rmfield(strictCfg, intersect(fieldnames(strictCfg), ...
     {'ToolboxCarrier','ToolboxSRS','BaseConfig','ConfigExport','StrictValidation'}));
+end
+
+function [slots0, source] = localResolveExpectedSlotSet(cfg, resourceType, periodicity, offset)
+% Resolve the exact carrier slots used by strict waveform validation from
+% the same schedule authority as the coupled runtime.  Slot numbers are
+% zero-based here because nrCarrierConfig.NSlot is zero-based; the public
+% slotWithinPeriod1Based surface remains one-based for operator clarity.
+explicitSlots = sixgr.util.structGet(cfg, "phy.srs.slotNumbers", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.srs.slot_numbers", []));
+if ~isempty(explicitSlots)
+    slots0 = unique(round(double(explicitSlots(:).')), "stable");
+    if any(~isfinite(slots0) | slots0 < 0)
+        error("sixgr:phy:srs:InvalidExplicitSlotSet", ...
+            "Configured SRS slotNumbers must contain finite zero-based carrier slots >= 0.");
+    end
+    source = "phy.srs.slotNumbers";
+    return;
+end
+
+resourceType = lower(strtrim(string(resourceType)));
+if resourceType ~= "periodic"
+    % Aperiodic execution is triggered by decoded DCI rather than a
+    % periodic offset.  Slot zero is only the deterministic waveform-test
+    % carrier context; it is not advertised as a periodic opportunity.
+    slots0 = 0;
+    source = "aperiodic_dci_trigger_test_context";
+    return;
+end
+
+periodicity = round(double(periodicity));
+offset = round(double(offset));
+if ~(isscalar(periodicity) && isfinite(periodicity) && periodicity >= 1)
+    error("sixgr:phy:srs:InvalidPeriodicity", ...
+        "Periodic SRS requires a finite integer period_slots >= 1.");
+end
+if ~(isscalar(offset) && isfinite(offset) && offset >= 0 && offset < periodicity)
+    error("sixgr:phy:srs:InvalidPeriodOffset", ...
+        "Periodic SRS period_offset=%g must be an integer in [0,%d].", ...
+        double(offset), periodicity - 1);
+end
+
+withinPeriod1 = sixgr.util.structGet(cfg, ...
+    "phy.srs.slotWithinPeriod1Based", []);
+withinPeriod1 = unique(round(double(withinPeriod1(:).')), "stable");
+if ~isempty(withinPeriod1)
+    if any(~isfinite(withinPeriod1) | withinPeriod1 < 1 | ...
+            withinPeriod1 > periodicity)
+        error("sixgr:phy:srs:InvalidSlotWithinPeriod", ...
+            ["Configured SRS slotWithinPeriod1Based must contain finite " + ...
+             "integers in [1,%d] for period_slots=%d."], ...
+            periodicity, periodicity);
+    end
+    positions0 = withinPeriod1 - 1;
+    matching = positions0(mod(positions0 - offset, periodicity) == 0);
+    if isempty(matching)
+        error("sixgr:phy:srs:ScheduleAuthorityMismatch", ...
+            ["Periodic SRS period_offset=%d does not identify any YAML " + ...
+             "slotWithinPeriod1Based value (%s) within period_slots=%d."], ...
+            offset, char(strjoin(string(withinPeriod1), ",")), periodicity);
+    end
+    slots0 = matching;
+    source = "phy.srs.slotWithinPeriod1Based+period_offset";
+    return;
+end
+
+slots0 = offset;
+source = "phy.srs.period_offset";
 end
 
 function value = localFirstFiniteScalar(s, paths, defaultValue)

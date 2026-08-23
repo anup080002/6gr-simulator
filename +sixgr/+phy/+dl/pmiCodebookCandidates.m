@@ -91,6 +91,15 @@ end
 
 B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams, mode);
 numBeams = size(B, 2);
+if mode == "type1_su_mimo" && nLayers > 1
+    % An oversampled DFT/dual-polarized beam catalog is not itself a
+    % multi-layer precoder catalog.  Adjacent beams are generally
+    % correlated (for example, a two-port four-beam catalog), so walking
+    % it with stride one can freeze a full-rank but non-semi-unitary
+    % matrix into a scheduler grant.  Enumerate all deterministic beam
+    % spacings and retain only valid semi-unitary layer sets below.
+    strides = 1:max(1, numBeams - 1);
+end
 candidateList = repmat(struct( ...
     "PMI", NaN, ...
     "BeamIndices", [], ...
@@ -129,7 +138,8 @@ for s = 1:numel(strides)
                 Wcand = Wbase .* phaseVariants(pv, :);
                 Wcand = localNormalizeColumns(Wcand);
             end
-            if rank(Wcand) < nLayers
+            if rank(Wcand) < nLayers || ...
+                    (nLayers > 1 && ~localIsSemiUnitary(Wcand))
                 continue;
             end
             key = localCandidateKey(beamIdx, [phaseVariants(pv, :) localCoefficientTokenVector(coeffPattern)]);
@@ -156,6 +166,13 @@ for s = 1:numel(strides)
             idx0 = idx0 + 1;
         end
     end
+end
+
+if isempty(candidateList)
+    error("sixgr:phy:dl:PMICodebook:NoSemiUnitaryCandidates", ...
+        ["No semi-unitary %s precoder candidate could be resolved for " ...
+         "%d logical port(s), %d layer(s), and %d beam(s)."], ...
+        char(mode), numTxPorts, nLayers, numBeams);
 end
 
 candidateList = localLimitCandidates(candidateList, maxCandidates);
@@ -348,6 +365,16 @@ for i = 1:size(W, 2)
         W(:, i) = W(:, i) ./ nrm;
     end
 end
+end
+
+function tf = localIsSemiUnitary(W)
+W = double(W);
+if isempty(W) || size(W, 1) < size(W, 2) || any(~isfinite(W(:)))
+    tf = false;
+    return;
+end
+gram = W' * W;
+tf = norm(gram - eye(size(gram)), "fro") <= 1e-10;
 end
 
 function phaseVariants = localPhaseVariants(nLayers)

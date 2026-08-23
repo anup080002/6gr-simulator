@@ -574,6 +574,17 @@ matrixLogicalPorts = [];
 elementDomainApplied = false;
 waveformDomain = "logical_port";
 hybridElementToPortMatrix = [];
+dlPMIMeta = struct( ...
+    "PMI", localFirstFiniteScalar( ...
+        sixgr.util.structGet(grant, "AppliedPrecoderPMI", []), ...
+        sixgr.util.structGet(grant, "PMI", []), ...
+        sixgr.util.structGet(grant, "TPMI", []), NaN), ...
+    "PMIType", string(localFirstNonempty( ...
+        sixgr.util.structGet(grant, "AppliedPrecoderPMIType", ""), "")), ...
+    "CodebookMode", string(localFirstNonempty( ...
+        sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""), ...
+        sixgr.util.structGet(grant, "PMICodebookMode", ""), "")), ...
+    "BeamIndices", double(sixgr.util.structGet(grant, "BeamIndices", [])));
 if isUL
     txEntity = "UE";
     rxEntity = "gNB";
@@ -700,9 +711,20 @@ else
     matrixSourceOverride = "";
     inputMatrixUsed = false;
     if isempty(wRaw) && isempty(wLogicalRaw)
-        matrixLogicalPorts = localRectIdentity(logicalPorts, numLayers, ...
-            localResolvePrecoderNormalizationConvention(cfg, grant, "bs", "PDSCH"));
-        matrixSourceOverride = "frozen_identity_ports";
+        scheduledPMI = localFirstFiniteScalar( ...
+            sixgr.util.structGet(grant, "AppliedPrecoderPMI", []), ...
+            sixgr.util.structGet(grant, "PMI", []), ...
+            sixgr.util.structGet(grant, "TPMI", []), ...
+            sixgr.util.structGet(cfg, "phy.pdsch.PMI", []), ...
+            sixgr.util.structGet(cfg, "phy.pdsch.pmi", []), NaN);
+        if isfinite(scheduledPMI)
+            [matrixLogicalPorts, matrixSourceOverride, dlPMIMeta] = ...
+                localResolveDLLogicalPrecoder(cfg, grant, numLayers, logicalPorts);
+        else
+            matrixLogicalPorts = localRectIdentity(logicalPorts, numLayers, ...
+                localResolvePrecoderNormalizationConvention(cfg, grant, "bs", "PDSCH"));
+            matrixSourceOverride = "frozen_identity_ports_no_scheduled_pmi";
+        end
     elseif ~isempty(wLogicalRaw)
         matrixLogicalPorts = localNormalizeDLMatrix(wLogicalRaw, logicalPorts, numLayers);
         inputMatrixUsed = true;
@@ -710,7 +732,8 @@ else
         matrixLogicalPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
         inputMatrixUsed = true;
     elseif isfinite(matrixPortCount) && matrixPortCount > logicalPorts && ~localDLHybridElementDomainEnabled(cfg)
-        [matrixLogicalPorts, matrixSourceOverride] = localResolveDLLogicalPrecoder(cfg, grant, numLayers, logicalPorts);
+        [matrixLogicalPorts, matrixSourceOverride, dlPMIMeta] = ...
+            localResolveDLLogicalPrecoder(cfg, grant, numLayers, logicalPorts);
     else
         matrixLogicalPorts = [];
         inputMatrixUsed = true;
@@ -817,6 +840,11 @@ if isUL
         prec.SRSMeasurementSlot = double(sixgr.util.structGet( ...
             grant, "LastSuccessfulSRSSlot", NaN));
     end
+else
+    prec.PMI = double(dlPMIMeta.PMI);
+    prec.PMIType = char(string(dlPMIMeta.PMIType));
+    prec.CodebookMode = char(string(dlPMIMeta.CodebookMode));
+    prec.BeamIndices = double(dlPMIMeta.BeamIndices);
 end
 end
 
@@ -1063,9 +1091,9 @@ function nPorts = localMaxNRLogicalPDSCHPorts()
 nPorts = 32;
 end
 
-function [W, source] = localResolveDLLogicalPrecoder(cfg, grant, nLayers, nPorts)
-source = "frozen_logical_identity_ports_from_element_domain_matrix";
-W = localRectIdentity(nPorts, nLayers);
+function [W, source, meta] = localResolveDLLogicalPrecoder(cfg, grant, nLayers, nPorts)
+source = "";
+W = [];
 pmi = localFirstFiniteScalar( ...
     sixgr.util.structGet(grant, "AppliedPrecoderPMI", []), ...
     sixgr.util.structGet(grant, "PMI", []), ...
@@ -1077,27 +1105,69 @@ mode = localFirstNonempty( ...
     sixgr.util.structGet(grant, "PMICodebookMode", ""), ...
     sixgr.util.structGet(cfg, "phy.csi.pmiCodebookMode", ""), ...
     "type1_su_mimo");
+meta = struct("PMI", double(pmi), "PMIType", "", ...
+    "CodebookMode", string(mode), "BeamIndices", zeros(1, 0));
+if ~isfinite(pmi)
+    error("sixgr:phy:grant:MissingDLPMI", ...
+        ["A scheduled multi-port DL grant without an explicit precoding matrix " ...
+         "requires a finite PMI/TPMI. The frozen grant cannot substitute identity precoding."]);
+end
 try
-    [candidates, ~] = sixgr.phy.dl.pmiCodebookCandidates(cfg, nLayers, nPorts, "Mode", mode);
+    [candidates, info] = sixgr.phy.dl.pmiCodebookCandidates( ...
+        cfg, nLayers, nPorts, "Mode", mode);
     if isempty(candidates)
-        return;
+        error("sixgr:phy:grant:EmptyDLPMICodebook", ...
+            "No DL PMI candidates exist for %d port(s), %d layer(s), mode '%s'.", ...
+            nPorts, nLayers, char(string(mode)));
     end
-    idx = 1;
-    if isfinite(pmi)
-        pmi0 = round(double(pmi));
-        if pmi0 >= 0 && pmi0 < numel(candidates)
-            idx = pmi0 + 1;
-        end
+    pmi0 = round(double(pmi));
+    if pmi0 ~= double(pmi) || pmi0 < 0 || pmi0 >= numel(candidates)
+        error("sixgr:phy:grant:DLPMIOutOfRange", ...
+            "Scheduled DL PMI=%g is invalid for mode '%s' with %d candidate(s).", ...
+            double(pmi), char(string(mode)), numel(candidates));
     end
+    idx = pmi0 + 1;
     Wcand = double(candidates(idx).W);
-    if isequal(size(Wcand), [nPorts nLayers])
-        W = Wcand;
-        source = "frozen_logical_pmi_codebook_from_element_domain_matrix";
+    if ~isequal(size(Wcand), [nPorts nLayers])
+        error("sixgr:phy:grant:DLPMICodebookShapeMismatch", ...
+            ["Scheduled DL PMI=%d resolved to a %dx%d matrix; the frozen grant " ...
+             "requires %dx%d (logical ports by layers)."], ...
+            pmi0, size(Wcand, 1), size(Wcand, 2), nPorts, nLayers);
     end
-catch
-    % Keep the grant executable with a logical-port identity. The input
-    % element-domain matrix cannot define NR PDSCH waveform ports unless
-    % explicit hybrid element-domain waveform generation is enabled.
+    W = localNormalizeScheduledDLCodebookMatrix(Wcand, ...
+        localResolvePrecoderNormalizationConvention(cfg, grant, "bs", "PDSCH"));
+    source = "frozen_dl_pmi_codebook_from_scheduled_grant";
+    meta.PMI = double(pmi0);
+    meta.PMIType = string(sixgr.util.structGet(candidates(idx), "PMIType", ""));
+    meta.CodebookMode = string(sixgr.util.structGet(candidates(idx), ...
+        "CodebookMode", sixgr.util.structGet(info, "Mode", mode)));
+    meta.BeamIndices = double(sixgr.util.structGet(candidates(idx), ...
+        "BeamIndices", []));
+catch ME
+    if startsWith(string(ME.identifier), "sixgr:phy:grant:")
+        rethrow(ME);
+    end
+    wrapped = MException("sixgr:phy:grant:DLPMIMaterializationFailed", ...
+        "Failed to materialize scheduled DL PMI=%g: %s", double(pmi), ME.message);
+    wrapped = addCause(wrapped, ME);
+    throwAsCaller(wrapped);
+end
+end
+
+function W = localNormalizeScheduledDLCodebookMatrix(W, convention)
+convention = lower(strtrim(string(convention)));
+W = double(W);
+if convention == "unit_frobenius"
+    scale = norm(W, "fro");
+    if ~(isscalar(scale) && isfinite(scale) && scale > 0)
+        error("sixgr:phy:grant:DLPMICodebookNormalizationFailure", ...
+            "Scheduled DL PMI resolved to a zero or non-finite precoding matrix.");
+    end
+    W = W ./ scale;
+elseif ~any(convention == ["semi_unitary", "explicit_no_normalization"])
+    error("sixgr:mimo:PrecoderNormalizationConventionUnsupported", ...
+        "Unsupported frozen PDSCH precoder normalization convention '%s'.", ...
+        char(convention));
 end
 end
 

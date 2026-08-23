@@ -43,6 +43,44 @@ assert(size(txDL.Grid, 3) == 2, "DL grid must have exactly two primary pages for
 assert(infoDL.Precoding.NumPorts == 2 && infoDL.Precoding.NumLayers == 2, ...
     "DL runtime precoding must preserve the frozen 2-port/2-layer contract.");
 
+% A scheduled PMI is an applied-precoder request, not a reporting hint.  If
+% the scheduler has not already attached a matrix, the common grant freezer
+% must materialize that exact codebook candidate instead of silently using
+% an identity matrix.
+cfgPMIDL = cfgDL;
+cfgPMIDL.phy.pdsch.precoding = rmfield(cfgPMIDL.phy.pdsch.precoding, "matrix");
+cfgPMIDL.phy.pdsch = rmfield(cfgPMIDL.phy.pdsch, ["precodingMatrix", "W"]);
+cfgPMIDL.phy.csi.pmiCodebookMode = "type1_su_mimo";
+cfgPMIDL.phy.beamManagement.beamCount = 8;
+pmiDLGrant = localGrant("DL", 102, 2);
+pmiDLGrant.NumLogicalPorts = 2;
+pmiDLGrant.PMI = 3;
+[pmiCandidates, ~] = sixgr.phy.dl.pmiCodebookCandidates( ...
+    cfgPMIDL, 2, 2, "Mode", "type1_su_mimo");
+assert(numel(pmiCandidates) >= 4, ...
+    "Rank-2 two-port Type-1 anchor must expose scheduled PMI=3.");
+expectedPMIW = double(pmiCandidates(4).W);
+expectedPMIW = expectedPMIW ./ norm(expectedPMIW, "fro");
+pmiDLPHYGrant = sixgr.phy.grant.freezePHYGrant( ...
+    cfgPMIDL, "DL", pmiDLGrant, "SNR_dB", 30, "Frame", 1, "Slot", 1);
+assert(norm(double(pmiDLPHYGrant.PrecodingState.MatrixLogicalPorts) - ...
+        expectedPMIW, "fro") <= 1e-12, ...
+    "Frozen DL grant must materialize the exact scheduled PMI matrix.");
+assert(double(pmiDLPHYGrant.PrecodingState.PMI) == 3 && ...
+        string(pmiDLPHYGrant.PrecodingState.PMIType) == ...
+        string(pmiCandidates(4).PMIType) && ...
+        string(pmiDLPHYGrant.PrecodingState.CodebookMode) == ...
+        string(pmiCandidates(4).CodebookMode), ...
+    "Frozen DL grant must retain scheduled PMI/codebook identity.");
+assert(string(pmiDLPHYGrant.PrecodingState.Source) == ...
+        "frozen_dl_pmi_codebook_from_scheduled_grant", ...
+    "Frozen DL PMI source must identify scheduled codebook materialization.");
+[txPMIDL, infoPMIDL] = sixgr.phy.dl.PDSCH_Tx( ...
+    cfgPMIDL, "PHYGrant", pmiDLPHYGrant);
+assert(norm(double(infoPMIDL.Precoding.MatrixLogicalPorts) - ...
+        expectedPMIW, "fro") <= 1e-12 && size(txPMIDL.Waveform, 2) == 2, ...
+    "PDSCH transmitter must apply the frozen scheduled PMI matrix unchanged.");
+
 cfgHybridDL = cfgDL;
 cfgHybridDL.phy.beamManagement.hybridBeamformingEnabled = true;
 cfgHybridDL.mimo.strict = true;
@@ -181,6 +219,8 @@ cfgHybridUL.phy.pusch.numPorts = 2;
 cfgHybridUL.phy.pusch.nPorts = 2;
 cfgHybridUL.phy.pusch.transmissionScheme = "nonCodebook";
 cfgHybridUL.phy.pusch.transformPrecoding = false;
+cfgHybridUL.phy.pusch.dmrs.DMRSPortSet = [0 1];
+cfgHybridUL.phy.pusch.dmrs.portSet = [0 1];
 cfgHybridUL.phy.beamManagement.hybridBeamformingEnabled = true;
 cfgHybridUL.antenna.ue.numRFChains = 2;
 cfgHybridUL.rf.ue.numRFChains = 2;

@@ -47,6 +47,7 @@ cfg = struct();
 cfg.run.seed = 240619;
 cfg.channel.model = "AWGN";
 cfg.channel.snr_dB = 35;
+cfg.frequency.duplex_mode = "FDD";
 cfg.phy.carrier.NCellID = 7;
 cfg.phy.carrier.NSizeGrid = 273;
 cfg.phy.carrier.NStartGrid = 0;

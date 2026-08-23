@@ -112,6 +112,12 @@ out.RISource = "";
 out.TPMISource = "";
 out.TPMICandidateCount = NaN;
 out.TPMIMutualInformation = NaN;
+out.PredictedPUSCHPostEqSINRPerLayer_dB = [];
+out.PredictedPUSCHMinimumLayerSINR_dB = NaN;
+out.PredictedPUSCHWidebandMeanSINR_dB = NaN;
+out.PredictedPUSCHPostEqSINRSource = "";
+out.PredictedPUSCHPostEqSINRValueRole = "";
+out.PredictedPUSCHPostEqSINRValueStatus = "NOT_AVAILABLE";
 out.SRSConditionNumber_dB = NaN;
 out.SRSOccupiedPRBCount = NaN;
 out.SRSCarrierPRBCount = NaN;
@@ -314,6 +320,18 @@ try
     out.TPMISource = char(string(sixgr.util.structGet(srsULCSI, "TPMISource", "")));
     out.TPMICandidateCount = double(sixgr.util.structGet(srsULCSI, "TPMICandidateCount", NaN));
     out.TPMIMutualInformation = double(sixgr.util.structGet(srsULCSI, "TPMIMutualInformation", NaN));
+    out.PredictedPUSCHPostEqSINRPerLayer_dB = double(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRPerLayer_dB", []));
+    out.PredictedPUSCHMinimumLayerSINR_dB = double(sixgr.util.structGet( ...
+        srsULCSI, "SelectedMinimumLayerMeanPostEqSINR_dB", NaN));
+    out.PredictedPUSCHWidebandMeanSINR_dB = double(sixgr.util.structGet( ...
+        srsULCSI, "SelectedWidebandMeanPostEqSINR_dB", NaN));
+    out.PredictedPUSCHPostEqSINRSource = char(string(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRSource", "")));
+    out.PredictedPUSCHPostEqSINRValueRole = char(string(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRValueRole", "")));
+    out.PredictedPUSCHPostEqSINRValueStatus = char(string(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRValueStatus", "NOT_AVAILABLE")));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
     spatialSignatureMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
         "phy.mimo.muMimoSpatialSignatureMode", ...

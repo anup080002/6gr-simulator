@@ -19,6 +19,12 @@ estimate = struct( ...
     "RankCandidateCount", NaN, ...
     "TPMICandidateCount", NaN, ...
     "TPMIMutualInformation", NaN, ...
+    "SelectedPostEqSINRPerLayer_dB", [], ...
+    "SelectedMinimumLayerMeanPostEqSINR_dB", NaN, ...
+    "SelectedWidebandMeanPostEqSINR_dB", NaN, ...
+    "SelectedPostEqSINRSource", "", ...
+    "SelectedPostEqSINRValueRole", "", ...
+    "SelectedPostEqSINRValueStatus", "NOT_AVAILABLE", ...
     "SelectedBeamIndices", [], ...
     "PRBCount", NaN, ...
     "SRSSymbolCount", NaN, ...
@@ -77,7 +83,9 @@ end
 estimate.NumTxPorts = double(tpmiNumPorts);
 estimate.PUSCHCodebookNumPorts = double(tpmiNumPorts);
 estimate.PortSelectionSource = char(portSource);
-[riJoint, tpmi, metric, candidateCount, beamIndices] = localEstimateRankTPMI(Htpmi, max(double(nVar), eps), cfg, tpmiNumPorts, transformPrecoding);
+[riJoint, tpmi, metric, candidateCount, beamIndices, layerSINR_dB, ...
+    minimumLayerSINR_dB, widebandMeanSINR_dB] = localEstimateRankTPMI( ...
+    Htpmi, max(double(nVar), eps), cfg, tpmiNumPorts, transformPrecoding);
 if isfinite(riJoint)
     estimate.RI = double(riJoint);
     estimate.RankMutualInformation = double(metric);
@@ -89,6 +97,16 @@ estimate.TPMI = double(tpmi);
 estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
 estimate.SelectedBeamIndices = double(beamIndices);
+estimate.SelectedPostEqSINRPerLayer_dB = double(layerSINR_dB);
+estimate.SelectedMinimumLayerMeanPostEqSINR_dB = double(minimumLayerSINR_dB);
+estimate.SelectedWidebandMeanPostEqSINR_dB = double(widebandMeanSINR_dB);
+if ~isempty(layerSINR_dB) && all(isfinite(layerSINR_dB))
+    estimate.SelectedPostEqSINRSource = ...
+        "measured_srs_hest_selected_ri_tpmi_mmse_post_equalization";
+    estimate.SelectedPostEqSINRValueRole = ...
+        "predicted_pusch_data_channel_scheduling_input";
+    estimate.SelectedPostEqSINRValueStatus = "PASS";
+end
 if isfinite(tpmi)
     estimate.TPMISource = "ul_srs_mmse_post_equalization_mi_tpmi_estimator";
 else
@@ -320,12 +338,17 @@ if count > 0
 end
 end
 
-function [ri, tpmi, metricBest, candidateCount, beamIndices] = localEstimateRankTPMI(Hprb, nVar, cfg, numTxPorts, transformPrecoding)
+function [ri, tpmi, metricBest, candidateCount, beamIndices, ...
+        layerSINR_dB, minimumLayerSINR_dB, widebandMeanSINR_dB] = ...
+        localEstimateRankTPMI(Hprb, nVar, cfg, numTxPorts, transformPrecoding)
 ri = NaN;
 tpmi = NaN;
 metricBest = NaN;
 candidateCount = 0;
 beamIndices = [];
+layerSINR_dB = [];
+minimumLayerSINR_dB = NaN;
+widebandMeanSINR_dB = NaN;
 if ~(numTxPorts >= 2)
     return;
 end
@@ -336,6 +359,9 @@ end
 bestMetric = -inf;
 bestBeamIndices = [];
 bestRI = NaN;
+bestLayerSINR_dB = [];
+bestMinimumLayerSINR_dB = NaN;
+bestWidebandMeanSINR_dB = NaN;
 maxRank = localResolveMaxRank(cfg, numTxPorts);
 for rankIdx = 1:maxRank
     catalog = sixgr.phy.ul.puschCodebookCatalog(rankIdx, numTxPorts, transformPrecoding);
@@ -350,12 +376,17 @@ for rankIdx = 1:maxRank
             continue;
         end
         candidateCount = candidateCount + 1;
-        metric = localAverageMutualInformation(Hprb, W, nVar);
+        [metric, candidateLayerSINR_dB, candidateMinimumLayerSINR_dB, ...
+            candidateWidebandMeanSINR_dB] = ...
+            localAverageMutualInformation(Hprb, W, nVar);
         if isfinite(metric) && metric > bestMetric
             bestMetric = metric;
             bestRI = rankIdx;
             tpmi = double(tpmiIdx);
             bestBeamIndices = candidateBeamIndices;
+            bestLayerSINR_dB = candidateLayerSINR_dB;
+            bestMinimumLayerSINR_dB = candidateMinimumLayerSINR_dB;
+            bestWidebandMeanSINR_dB = candidateWidebandMeanSINR_dB;
         end
     end
 end
@@ -364,16 +395,24 @@ if isfinite(bestMetric)
     ri = double(bestRI);
     metricBest = bestMetric;
     beamIndices = bestBeamIndices;
+    layerSINR_dB = bestLayerSINR_dB;
+    minimumLayerSINR_dB = bestMinimumLayerSINR_dB;
+    widebandMeanSINR_dB = bestWidebandMeanSINR_dB;
 end
 end
 
-function metric = localAverageMutualInformation(Hprb, W, nVar)
+function [metric, layerMeanSINR_dB, minimumLayerMeanSINR_dB, ...
+        widebandMeanSINR_dB] = localAverageMutualInformation(Hprb, W, nVar)
 metric = NaN;
+layerMeanSINR_dB = [];
+minimumLayerMeanSINR_dB = NaN;
+widebandMeanSINR_dB = NaN;
 if isempty(Hprb) || isempty(W)
     return;
 end
 acc = 0;
 count = 0;
+layerSINRAccumulator = [];
 for prb = 1:size(Hprb, 3)
     for sym = 1:size(Hprb, 4)
         H = double(Hprb(:, :, prb, sym));
@@ -393,12 +432,23 @@ for prb = 1:size(Hprb, 3)
         postEqCov = regularized \ eye(nLayers);
         sinr = 1 ./ max(real(diag(postEqCov)), eps) - 1;
         sinr = max(real(sinr), 0);
+        if isempty(layerSINRAccumulator)
+            layerSINRAccumulator = zeros(size(sinr));
+        end
+        if numel(sinr) ~= numel(layerSINRAccumulator)
+            continue;
+        end
         acc = acc + sum(log2(1 + sinr));
+        layerSINRAccumulator = layerSINRAccumulator + sinr;
         count = count + 1;
     end
 end
 if count > 0
     metric = acc / count;
+    layerMeanSINRLinear = max(layerSINRAccumulator ./ count, 0);
+    layerMeanSINR_dB = 10 .* log10(max(layerMeanSINRLinear(:).', eps));
+    minimumLayerMeanSINR_dB = min(layerMeanSINR_dB);
+    widebandMeanSINR_dB = 10 .* log10(max(mean(layerMeanSINRLinear), eps));
 end
 end
 

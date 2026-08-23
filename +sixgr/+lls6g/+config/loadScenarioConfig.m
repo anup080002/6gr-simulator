@@ -3,8 +3,17 @@ function scfg = loadScenarioConfig(configPath)
 
 configPath = localResolvePath(configPath);
 [resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+% Preserve last-writer authority across legacy/modern alias pairs.  The
+% merged tree alone cannot distinguish a child-authored value from an
+% inherited alias, so an inherited nested true could otherwise reverse a
+% leaf flat false during normalization.
+leafAuthority = sixgr.lls6g.config.readConfigFile(configPath);
+if isfield(leafAuthority, "inherits")
+    leafAuthority = rmfield(leafAuthority, "inherits");
+end
 resolved = sixgr.lls6g.config.normalizeScenarioAliases(resolved, ...
-    "SourceFiles", chain, "ConfigPath", configPath);
+    "SourceFiles", chain, "ConfigPath", configPath, ...
+    "Authority", leafAuthority);
 sixgr.lls6g.config.validateScenarioConfig(resolved, ...
     "Kind", "scenario", "AllowPartial", false, "Context", configPath);
 cfgHash = sixgr.lls6g.config.hashResolvedScenario(resolved);

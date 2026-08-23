@@ -370,6 +370,7 @@ sections:
       dl_bootstrap_min_cqi_for_scheduling: {required: false, type: integer, min: 1, max: 15}
       ul_bootstrap_min_cqi_for_scheduling: {required: false, type: integer, min: 1, max: 15}
       ul_srs_to_pusch_sinr_backoff_db: {required: false, type: number, min: 0}
+      ul_srs_to_pusch_layer_sinr_policy: {required: false, type: string, allowed_values: [minimum_layer_mean_post_equalization]}
       ul_reference_signal_scheduling_backoff_db: {required: false, type: number, min: 0}
       mu_mimo_first_data_bootstrap_enabled: {required: false, type: boolean}
       mu_mimo_first_data_bootstrap_policy: {required: false, type: string, allowed_values: [yaml_mcs_until_first_data_feedback]}

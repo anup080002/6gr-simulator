@@ -859,7 +859,9 @@ if ~ismember(aggr, [1 2 4 8 16])
     aggr = 4;
 end
 idxAgg = find([1 2 4 8 16] == aggr, 1, 'first');
-numCand = sixgr.util.structGet(cfg, 'phy.pdcch.searchSpace.numCandidates', []);
+numCand = sixgr.util.structGet(cfg, ...
+    'phy.pdcch.searchSpace.configuredNumCandidates', ...
+    sixgr.util.structGet(cfg, 'phy.pdcch.searchSpace.numCandidates', []));
 numCand = double(numCand(:).');
 if isempty(numCand)
     numCand = zeros(1,5);

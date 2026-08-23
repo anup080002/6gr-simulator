@@ -90,6 +90,7 @@ out.DecoderComplexityUnits = NaN;
 out.NormalizedDecoderComplexity = NaN;
 out.AreaEfficiencyProxy = NaN;
 out.TrialTable = localEmptyTrialTable();
+out.ObservedREAllocationTable = table();
 out.ConstellationSamples = table();
 out.SignalDiagnostic = struct( ...
     "Available", false, ...
@@ -623,6 +624,7 @@ trialGrantWorkerSafe = false(numFrames,1);
 trialGrantSharedStateCommitMode = strings(numFrames,1);
 constellationChunks = cell(numFrames,1);
 waveformChunks = cell(numFrames,1);
+observedREChunks = cell(numFrames,1);
 signalDiagnostic = out.SignalDiagnostic;
 trialRuntimeEvidence = cell(numFrames,1);
 trialMeasuredPHYEvidence = cell(numFrames,1);
@@ -737,6 +739,13 @@ for n = 1:numFrames
                 "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
         end
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
+        observedREChunks{n} = sixgr.truth.buildObservedREAllocation(tx, ...
+            "Direction", "UL", "AbsoluteSlot", trialSlot(n) - 1, ...
+            "CellID", trialBaseStationID(n), "UEID", trialUEIndex(n), ...
+            "LayerCount", trialLayers(n), "AllocationID", ...
+            string(sixgr.util.structGet(grantSnapshotOverride, ...
+                "PHYGrantContextId", sixgr.util.structGet( ...
+                grantSnapshotOverride, "GrantContextId", ""))));
         trialTxWaveformColumns(n) = double(size(tx.Waveform, 2));
         trialPhysicalTxAntennas(n) = double(sixgr.util.structGet(txInfo, ...
             "UEPhysicalTxAntennas", size(tx.Waveform, 2)));
@@ -1815,6 +1824,7 @@ if isstruct(out.HARQ)
 end
 out.ChannelState = chState;
 out.TxWaveformCapture = txWaveformCapture;
+out.ObservedREAllocationTable = localCombineObservedREChunks(observedREChunks);
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
@@ -2359,7 +2369,21 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T = localApplyRuntimeEvidenceColumns(T, trialRuntimeEvidence(idx));
         T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
         T = localDecorateTrialTruthFields(T, "UL", cfg);
-    end
+end
+end
+
+function T = localCombineObservedREChunks(chunks)
+if isempty(chunks)
+    T = table();
+    return;
+end
+keep = cellfun(@(x) istable(x) && ~isempty(x), chunks);
+chunks = chunks(keep);
+if isempty(chunks)
+    T = table();
+else
+    T = vertcat(chunks{:});
+end
 end
 
 function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier)

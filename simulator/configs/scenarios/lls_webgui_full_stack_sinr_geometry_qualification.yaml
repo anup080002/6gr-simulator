@@ -3,6 +3,12 @@
 # sixgr.integration.qualification.FullStackQualificationRunner.
 inherits: master_sinr_sweep.yaml
 
+# This scenario changes the inherited carrier to a 51-PRB BWP.  Resolve the
+# common CORESET from the active BWP instead of inheriting the master's
+# explicit 72-PRB bitmap, which cannot exist inside this carrier.
+control:
+  coreset_frequency_resource_policy: full_bwp_groups
+
 canonical_control:
   identity:
     scenario_id: lls_webgui_full_stack_sinr_geometry_qualification

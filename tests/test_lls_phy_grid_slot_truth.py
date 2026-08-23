@@ -192,3 +192,18 @@ def test_exact_planned_re_rows_render_without_inventing_coordinates(
     assert event["ue_id"] == "7"
     assert event["coordinate_precision"] == "exact_sparse_re_span"
     assert "display_slot_offset=+1" in event["source_note"]
+    assert grid["axis_contract"] == {
+        "x": "absolute slot / OFDM symbol",
+        "y": "physical resource block / subcarrier span",
+        "subcarriers_per_prb": 12,
+    }
+    assert grid["time_frequency_cell_count"] == 1
+    display_cell = grid["time_frequency_cells"][0]
+    assert display_cell["slot"] == 1
+    assert display_cell["symbol"] == 2
+    assert display_cell["prb"] == 20
+    assert display_cell["subcarrier_start"] == 240
+    assert display_cell["subcarrier_stop"] == 251
+    assert display_cell["channels"] == ["PDSCH-DMRS"]
+    assert display_cell["port_indices"] == ["1"]
+    assert display_cell["layer_counts"] == ["2"]

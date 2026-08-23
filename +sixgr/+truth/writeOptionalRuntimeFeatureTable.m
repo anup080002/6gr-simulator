@@ -1,5 +1,5 @@
 function written = writeOptionalRuntimeFeatureTable(cfg, featureName, paths, T, options)
-%WRITEOPTIONALRUNTIMEFEATURETABLE Persist only enabled or observed truth tables.
+%WRITEOPTIONALRUNTIMEFEATURETABLE Persist only observed primary truth tables.
 
 arguments
     cfg (1,1) struct
@@ -10,13 +10,15 @@ arguments
 end
 
 paths = paths(:);
-feature = sixgr.util.structGet(cfg, ...
-    "runtime.features." + featureName, struct());
-authorityPresent = isstruct(feature) && isscalar(feature) && ...
-    isfield(feature, "Enabled");
-enabled = logical(sixgr.util.structGet(feature, "Enabled", false));
+% Read the authority path so misspelled/non-scalar feature entries still
+% fail through the ordinary configuration validators before this writer;
+% this writer itself decides only from observed row count.
+sixgr.util.structGet(cfg, "runtime.features." + featureName, struct());
 hasRows = height(T) > 0;
-written = ~authorityPresent || enabled || hasRows;
+% Feature intent is exported by the resolved config and runtime authority
+% ledger.  An enabled-but-not-yet-observed signal must not create an empty
+% primary CSV that the browser could mistake for executed evidence.
+written = hasRows;
 
 for path = paths.'
     if written

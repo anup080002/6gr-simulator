@@ -222,7 +222,7 @@ function [perCodewordCQI, perCodewordSINR_dB] = localPerCodewordCQI(ri, perLayer
 perCodewordCQI = [];
 perCodewordSINR_dB = [];
 ri = double(ri);
-if ~(isscalar(ri) && isfinite(ri) && ri > 1)
+if ~(isscalar(ri) && isfinite(ri) && ri >= 1)
     return;
 end
 ri = max(1, round(ri));
@@ -232,9 +232,17 @@ if numel(vals) < ri
     return;
 end
 vals = vals(1:ri);
+lin = 10 .^ (vals ./ 10);
+if ri <= 4
+    % TS 38.211 maps ranks 1--4 to one PDSCH/PUSCH codeword.  Per-layer
+    % SINR must therefore reduce to one codeword quality, not two.
+    cw0 = 10 * log10(max(mean(lin, "omitnan"), eps));
+    perCodewordSINR_dB = cw0;
+    perCodewordCQI = sixgr.phy.dl.mapSINRToCQI(cw0, cqiTable);
+    return;
+end
 nCW0 = max(1, floor(ri / 2));
 nCW1 = max(1, ri - nCW0);
-lin = 10 .^ (vals ./ 10);
 cw0 = 10 * log10(max(mean(lin(1:nCW0), "omitnan"), eps));
 cw1 = 10 * log10(max(mean(lin((nCW0+1):(nCW0+nCW1)), "omitnan"), eps));
 perCodewordSINR_dB = [cw0 cw1];

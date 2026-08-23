@@ -853,7 +853,10 @@ reference_signals:
     expected_rb_start: 0
     expected_num_rb: 24
     expected_bandwidth_coverage_percent: 96
-    coverage_requirement: "explicit_24_of_25_prb"
+    # The standardized SRS allocation occupies 24 of this 25-PRB carrier.
+    # "configured_band" makes the explicit expected_num_rb=24 and 96%
+    # target authoritative without falsely claiming full-carrier sounding.
+    coverage_requirement: "configured_band"
     full_carrier_sounding_required: false
     full_carrier_coverage_tolerance_rb: 1
     purpose: "ul_csi"
@@ -1348,6 +1351,11 @@ link_adaptation:
   feedback_delay_slots: 4
   cqi_smoothing_alpha: 0.2
   cqi_smoothing_mode: "doppler_adaptive"
+  # SRS RI/TPMI scoring produces a measured MMSE post-equalization SINR
+  # for every selected layer.  Scheduling uses the weakest selected layer
+  # so a collapsed spatial layer cannot be hidden by wideband pilot power.
+  ul_srs_to_pusch_layer_sinr_policy: "minimum_layer_mean_post_equalization"
+  ul_srs_to_pusch_sinr_backoff_db: 0.0
   olla_step_down: 0.3
   olla_step_up: 0.03
   bootstrap_cqi_mode: "conservative"

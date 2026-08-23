@@ -345,7 +345,21 @@
     "phase_noise_std_rad": 0.001,
     "inter_cell_relative_power_db": -3,
     "target_false_alarm_probability": 0.001,
-    "timing_tolerance_us": 0.25
+    "timing_tolerance_us": 0.25,
+    "msg2_pdsch": {
+      "ptrs_enabled": false
+    },
+    "msg4_pdsch": {
+      "ptrs_enabled": false
+    },
+    "msg3_pusch": {
+      "ptrs_enabled": false,
+      "transform_precoding": false
+    },
+    "setup_complete_pusch": {
+      "ptrs_enabled": false,
+      "transform_precoding": false
+    }
   },
   "impairments": {
     "cfo_enabled": false,

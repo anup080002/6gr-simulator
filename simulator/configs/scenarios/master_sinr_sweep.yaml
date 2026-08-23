@@ -611,6 +611,11 @@ canonical_control:
     pbch_enabled: false
     pdcch_dmrs_enabled: false
     csi_rs_enabled: false
+    # Retain an explicit legal periodic schedule even while disabled so a
+    # scenario override can enable CSI-RS without inheriting an implicit
+    # runtime default.  The enable flag remains the execution authority.
+    csi_rs_periodicity_slots: 5
+    csi_rs_offset_slots: 0
     srs_enabled: false
     trs_enabled: false
     tracking_rs_enabled: false
@@ -654,6 +659,23 @@ canonical_control:
     srs_ports: 1
     trs_ports: 1
     trs_scrambling_id: 1
+    # Complete TRS surface is retained even while TRS is disabled in this
+    # fixed-link master, so enabling it requires no hidden MATLAB defaults.
+    trs:
+      enabled: false
+      slot_numbers: [1, 21, 41]
+      num_ports: 1
+      scrambling_id: 1
+      row_number: 2
+      symbol_location: 4
+      subcarrier_location: 0
+      rb_offset: 0
+      num_rb: 273
+      detection_threshold: 0.55
+      min_coverage_ratio: 0.95
+      timing_tolerance_samples: 2
+      frequency_tolerance_hz: 50
+      channel_nmse_threshold_db: -8
     srs_periodicity_ms: 10
     srs_slot_within_period:
     - 5
@@ -1632,6 +1654,33 @@ validation:
   RunClass: fixed_snr_sweep_lls
   run_class: fixed_snr_sweep_lls
   publication_mode: strict_actual_evidence
+  # The exhaustive access-to-data wiring audit is owned by the dedicated
+  # causal scenario.  Keep its operator-master policy explicit and disabled;
+  # strict component/FRC publication gates below remain authoritative here.
+  causal_phy_chain_audit:
+    enabled: false
+    required: false
+    fail_on_enabled_bypass: true
+    require_config_mapping_match: true
+    require_runtime_consumer: true
+    require_measurement_evidence: true
+    stages:
+    - stage_id: frame_grid_runtime
+      order: 10
+      subsystem: frame_grid
+      always_required: true
+      required: true
+      consumer_source_files: ["+sixgr/+phy/+frame/FrameRuntimeStateBuilder.m"]
+      measurement_artifact: reports/csv/slot_trace.csv
+      measured_fields: [Frame, Slot]
+      measurement_min_rows: 1
+    parameter_bindings:
+    - parameter_id: validation_run_class
+      subsystem: orchestration
+      scenario_path: validation.run_class
+      runtime_path: validation.RunClass
+      required: true
+      consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m"]
   independent_reference_qualification:
     # Independent waveform campaign. Descendant diagnostic scenarios must
     # explicitly disable it; this publication master executes it.

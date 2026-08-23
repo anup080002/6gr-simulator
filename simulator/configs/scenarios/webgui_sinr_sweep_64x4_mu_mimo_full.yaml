@@ -285,6 +285,10 @@ canonical_control:
     pbch_enabled: true
     pdcch_dmrs_enabled: true
     csi_rs_enabled: true
+    # Explicit RRC-style periodic resource authority; never inferred from
+    # the number of CSI-RS beams/resources.
+    csi_rs_periodicity_slots: 5
+    csi_rs_offset_slots: 0
     srs_enabled: true
     trs_enabled: true
     tracking_rs_enabled: true

@@ -123,6 +123,23 @@ control:
   # 24-PRB carrier.
   coreset_frequency_resource_policy: full_bwp_groups
 
+# The shared RA baseline is inherited for schema completeness only.  This
+# SRS-only anchor must explicitly disable every RA waveform branch so the
+# runtime authority cannot inherit an enabled Msg1--Msg4 procedure or an
+# implicit PT-RS/transform-precoding policy from another scenario.
+random_access:
+  enabled: false
+  msg2_pdsch:
+    ptrs_enabled: false
+  msg3_pusch:
+    ptrs_enabled: false
+    transform_precoding: false
+  msg4_pdsch:
+    ptrs_enabled: false
+  setup_complete_pusch:
+    ptrs_enabled: false
+    transform_precoding: false
+
 reference_signals:
   ssb_enabled: false
   pbch_enabled: false

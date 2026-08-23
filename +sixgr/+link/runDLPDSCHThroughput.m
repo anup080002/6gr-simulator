@@ -99,6 +99,7 @@ out.NormalizedDecoderComplexity = NaN;
 out.AreaEfficiencyProxy = NaN;
 out.TrialTable = localEmptyTrialTable();
 out.CSIRSTrialTable = localEmptyCSIRSTrialTable();
+out.ObservedREAllocationTable = table();
 out.ConstellationSamples = table();
 out.SignalDiagnostic = struct( ...
     "Available", false, ...
@@ -614,6 +615,7 @@ trialMeasuredPHYEvidence = cell(numFrames,1);
 csirsRows = repmat(localEmptyCSIRSRuntimeTrialRow(), 0, 1);
 constellationChunks = cell(numFrames,1);
 waveformChunks = cell(numFrames,1);
+observedREChunks = cell(numFrames,1);
 signalDiagnostic = out.SignalDiagnostic;
 trialStatus = strings(numFrames,1);
 trialStatus(:) = "FAIL";
@@ -733,6 +735,13 @@ for n = 1:numFrames
             trialMCS(n), trialLayers(n));
         stageTic = tic;
         [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgFrame, txArgs{:});
+        observedREChunks{n} = sixgr.truth.buildObservedREAllocation(tx, ...
+            "Direction", "DL", "AbsoluteSlot", trialSlot(n) - 1, ...
+            "CellID", trialBaseStationID(n), "UEID", trialUEIndex(n), ...
+            "LayerCount", trialLayers(n), "AllocationID", ...
+            string(sixgr.util.structGet(grantSnapshotOverride, ...
+                "PHYGrantContextId", sixgr.util.structGet( ...
+                grantSnapshotOverride, "GrantContextId", ""))));
         trialTxWaveformColumns(n) = double(size(tx.Waveform, 2));
         trialPhysicalTxAntennas(n) = double(sixgr.util.structGet(tx, ...
             "NPhysicalTxAntennas", size(tx.Waveform, 2)));
@@ -1247,7 +1256,9 @@ for n = 1:numFrames
             continue;
         end
         pilotTrack = localPilotTrackingMetrics(rx);
-        metrics = localAnalyzeChannelMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), trialNoise(n), cfgFrame, rx);
+        metrics = localAnalyzeChannelMetrics( ...
+            sixgr.util.structGet(rx, "ChannelEstimate", []), ...
+            trialNoise(n), cfgFrame, rx, dlPrecoding);
         trialNMSE(n) = metrics.NMSE_dB;
         trialDet(n) = metrics.DetectionMetric;
         if isfinite(trialPostEqSINR(n))
@@ -1796,6 +1807,7 @@ out.HARQ = lastHARQ;
 out.ChannelState = chState;
 out.ISACWaveformCapture = isacWaveformCapture;
 out.TxWaveformCapture = txWaveformCapture;
+out.ObservedREAllocationTable = localCombineObservedREChunks(observedREChunks);
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
@@ -2349,7 +2361,21 @@ end
         T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
         T = localDecorateTrialTruthFields(T, "DL", cfg);
         T = localDecoratePDSCHExecutionContract(T, executionContract);
-    end
+end
+end
+
+function T = localCombineObservedREChunks(chunks)
+if isempty(chunks)
+    T = table();
+    return;
+end
+keep = cellfun(@(x) istable(x) && ~isempty(x), chunks);
+chunks = chunks(keep);
+if isempty(chunks)
+    T = table();
+else
+    T = vertcat(chunks{:});
+end
 end
 
 function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier)
@@ -5185,9 +5211,12 @@ end
 token = join(parts, "|");
 end
 
-function metrics = localAnalyzeChannelMetrics(Hest, nVar, cfg, rx)
+function metrics = localAnalyzeChannelMetrics(Hest, nVar, cfg, rx, appliedPrecoding)
 if nargin < 4
     rx = struct();
+end
+if nargin < 5 || ~isstruct(appliedPrecoding)
+    appliedPrecoding = struct();
 end
 metrics = struct( ...
     "NMSE_dB", NaN, ...
@@ -5217,6 +5246,8 @@ metrics = struct( ...
     "NumRxAnt", NaN, ...
     "NumTxPorts", NaN, ...
     "SelectedBeamIndices", [], ...
+    "AppliedBeamIndices", [], ...
+    "AppliedPrecoderPMI", NaN, ...
     "SelectedBeamIndex", NaN, ...
     "BestBeamIndex", NaN, ...
     "BeamHit", NaN, ...
@@ -5244,6 +5275,10 @@ metrics.SubbandCount = NaN;
 metrics.WidebandOrSubband = "wideband_only";
 metrics.SubbandCQISource = "";
 metrics.SubbandCQIValueStatus = "NOT_AVAILABLE";
+metrics.AppliedBeamIndices = localParseIndexSet(sixgr.util.structGet( ...
+    appliedPrecoding, "AppliedBeamIndexSet", ""));
+metrics.AppliedPrecoderPMI = double(sixgr.util.structGet( ...
+    appliedPrecoding, "AppliedPrecoderPMI", NaN));
 
 if isempty(Hest)
     return;
@@ -5617,9 +5652,7 @@ metricDb = 10 * log10(max(metric, eps));
 [bestMetric, bestIdx] = max(metric);
 selectedSet = localResolveSelectedBeamSet(cfg, W, metrics);
 selectedSet = localClampBeamIndexSet(selectedSet, size(W, 2));
-if isempty(selectedSet)
-    selectedSet = 1;
-end
+hasSelected = ~isempty(selectedSet);
 
 order = find(isfinite(metric));
 [~, ordLocal] = sort(metric(order), "descend");
@@ -5627,7 +5660,10 @@ ord = order(ordLocal);
 topK = max(1, min(2, numel(ord)));
 traceK = max(1, min(8, numel(ord)));
 beamStrategy = lower(string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamSelectionStrategy", "")));
-if beamStrategy == "fixed_first_beam"
+if ~hasSelected
+    selectedIdx = NaN;
+    selectedMetric = NaN;
+elseif beamStrategy == "fixed_first_beam"
     selectedIdx = selectedSet(1);
     selectedMetric = metric(selectedIdx);
 else
@@ -5646,13 +5682,17 @@ else
     beam.BeamHit = double(any(selectedSet == bestIdx));
     beam.TopKBeamHit = double(any(ismember(ord(1:topK), selectedSet)));
 end
+if ~hasSelected
+    beam.BeamHit = NaN;
+    beam.TopKBeamHit = NaN;
+end
 beam.SelectedBeamGain_dB = 10 * log10(max(selectedMetric, eps));
 beam.BestBeamGain_dB = 10 * log10(max(bestMetric, eps));
 beam.BeamGainGap_dB = beam.BestBeamGain_dB - beam.SelectedBeamGain_dB;
 beam.BeamScoreVector_dB = localFormatNumericVector(metricDb);
 beam.TopBeamIndexSet = localFormatIndexSet(ord(1:traceK));
 beam.TopBeamGainSet_dB = localFormatNumericVector(metricDb(ord(1:traceK)));
-beam.BeamScoreSource = "wideband_hest_codebook_projection";
+beam.BeamScoreSource = "applied_precoder_vs_current_wideband_hest_codebook_projection";
 end
 
 function beam = localComputePMICodebookCandidateMetrics(Hwb, cfg, metrics)
@@ -5708,7 +5748,7 @@ beam = struct( ...
     "BeamScoreVector_dB", localFormatNumericVector(metricDb), ...
     "TopBeamIndexSet", localFormatIndexSet(ord(1:traceK)), ...
     "TopBeamGainSet_dB", localFormatNumericVector(metricDb(ord(1:traceK))), ...
-    "BeamScoreSource", "wideband_hest_3gpp_type1_pmi_candidate_projection");
+    "BeamScoreSource", "applied_pmi_vs_current_wideband_hest_3gpp_type1_candidate_projection");
 end
 
 function out = localNaNWhenFalse(hasValue, value)
@@ -5721,10 +5761,7 @@ end
 
 function selectedIdx = localResolveSelectedPMICandidateIndex(cfg, metrics, candidates)
 selectedIdx = NaN;
-pmi = double(sixgr.util.structGet(metrics, "PMI", NaN));
-if ~isfinite(pmi)
-    pmi = double(sixgr.util.structGet(cfg, "phy.pdsch.PMI", NaN));
-end
+pmi = double(sixgr.util.structGet(metrics, "AppliedPrecoderPMI", NaN));
 if isfinite(pmi)
     idx = round(pmi) + 1;
     if idx >= 1 && idx <= numel(candidates)
@@ -5732,7 +5769,7 @@ if isfinite(pmi)
         return;
     end
 end
-selectedBeams = double(sixgr.util.structGet(metrics, "SelectedBeamIndices", []));
+selectedBeams = double(sixgr.util.structGet(metrics, "AppliedBeamIndices", []));
 selectedBeams = selectedBeams(isfinite(selectedBeams));
 if isempty(selectedBeams)
     return;
@@ -5794,69 +5831,32 @@ end
 
 function selectedSet = localResolveSelectedBeamSet(cfg, W, metrics)
 selectedSet = [];
-beamSet = string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamIndexSet", ""));
-if strlength(beamSet) > 0
-    toks = regexp(char(beamSet), "\d+", "match");
-    if ~isempty(toks)
-        selectedSet = localClampBeamIndexSet(str2double(string(toks)), size(W, 2));
-    end
-end
+selectedSet = localClampBeamIndexSet(sixgr.util.structGet( ...
+    metrics, "AppliedBeamIndices", []), size(W, 2));
 if ~isempty(selectedSet)
     return;
 end
-
-selectedSet = localClampBeamIndexSet(sixgr.util.structGet(metrics, "SelectedBeamIndices", []), size(W, 2));
+appliedPMI = double(sixgr.util.structGet(metrics, "AppliedPrecoderPMI", NaN));
+selectedSet = localResolveBeamSetFromPMI(cfg, ...
+    struct("PMI", appliedPMI, "RI", metrics.RI), size(W, 1), size(W, 2));
 if ~isempty(selectedSet)
     return;
 end
-
-selectedIdx = double(sixgr.util.structGet(cfg, "phy.beamManagement.selectedBeamIndex", NaN));
-if isfinite(selectedIdx)
-    selectedSet = localClampBeamIndexSet(selectedIdx, size(W, 2));
-    if ~isempty(selectedSet)
-        return;
-    end
 end
 
-selectedSet = localResolveBeamSetFromPMI(cfg, metrics, size(W, 1), size(W, 2));
-if ~isempty(selectedSet)
+function values = localParseIndexSet(token)
+if isnumeric(token)
+    values = double(token(:).');
+    values = values(isfinite(values));
     return;
 end
-
-configuredPMI = double(sixgr.util.structGet(cfg, "phy.pdsch.PMI", sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN)));
-if isfinite(configuredPMI)
-    selectedSet = localResolveBeamSetFromPMI(cfg, struct("PMI", configuredPMI, "RI", metrics.RI), size(W, 1), size(W, 2));
-    if ~isempty(selectedSet)
-        return;
-    end
+parts = regexp(char(string(token)), '-?\d+(?:\.\d+)?', 'match');
+if isempty(parts)
+    values = [];
+else
+    values = str2double(string(parts));
+    values = double(values(isfinite(values)));
 end
-
-selectedIdx = NaN;
-try
-    prec = sixgr.util.structGet(cfg, "phy.pdsch.precoding.matrix", []);
-    if ~isempty(prec) && size(prec, 1) == size(W, 1)
-        refVec = double(prec(:, 1));
-        proj = abs((refVec' * double(W))).^2;
-        [~, selectedIdx] = max(proj);
-    end
-catch
-    selectedIdx = NaN;
-end
-if isfinite(selectedIdx)
-    selectedSet = localClampBeamIndexSet(selectedIdx, size(W, 2));
-    if ~isempty(selectedSet)
-        return;
-    end
-end
-
-if isfinite(metrics.CRI)
-    selectedSet = localClampBeamIndexSet(metrics.CRI + 1, size(W, 2));
-    if ~isempty(selectedSet)
-        return;
-    end
-end
-
-selectedSet = 1;
 end
 
 function [nmseLin, detectionMetric] = localPilotResidualChannelMetrics(rx, Hest)

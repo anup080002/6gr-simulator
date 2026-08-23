@@ -3565,6 +3565,7 @@ profileCtl = localResolveCoupledProfileControl(runFolder, nFramesPerPoint);
 profileCtl.StartTic = tic;
 stopCoupledProfile = false;
 
+try
 for sweepIdx = 1:numel(snrGrid)
     snrVal = double(snrGrid(sweepIdx));
     if sweepIdx > 1 && sweepStatePolicy == "independent_link_state_per_point"
@@ -3679,6 +3680,12 @@ for sweepIdx = 1:numel(snrGrid)
     if stopCoupledProfile
         break;
     end
+end
+catch ME
+    ME = localPersistCoupledRuntimeFailureCheckpoint( ...
+        ME, runtimeState, rootRunFolder, cfg, dlTrials, ulTrials, ...
+        dlTablePath, ulTablePath);
+    rethrow(ME);
 end
 
 controlTrials = runtimeState.ControlTrials;
@@ -4089,6 +4096,9 @@ for chunkStart = 1:chunkSize:numel(grants)
         userT = sixgr.link.applyScheduledOperatingPointEvidence(userT);
         primaryTrials = localAppendCompatTable(primaryTrials, userT);
         primaryConstT = localAppendCompatTable(primaryConstT, sixgr.util.structGet(chunk(bi), "ConstellationTable", table()));
+        runtimeState.ObservedREAllocationTable = localAppendCompatTable( ...
+            sixgr.util.structGet(runtimeState, "ObservedREAllocationTable", table()), ...
+            sixgr.util.structGet(chunk(bi).Result, "ObservedREAllocationTable", table()));
         runtimeState = localRecordPHYSignalDiagnostic(runtimeState, direction, ...
             sixgr.util.structGet(chunk(bi).Result, "SignalDiagnostic", struct()));
         if direction == "DL"
@@ -4465,7 +4475,7 @@ out = struct();
 if ~(isstruct(res) && ~isempty(fieldnames(res)))
     return;
 end
-keepFields = ["HARQ", "CSIRSTrialTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", "ISACWaveformCapture", "TxWaveformCapture", ...
+keepFields = ["HARQ", "CSIRSTrialTable", "ObservedREAllocationTable", "LinkAdaptationState", "ChannelState", "SignalDiagnostic", "ISACWaveformCapture", "TxWaveformCapture", ...
     "Throughput_Mbps", "Goodput_Mbps", "BLER", "BER", "Ok", "Notes"];
 for i = 1:numel(keepFields)
     f = char(keepFields(i));
@@ -7955,6 +7965,76 @@ function state = localWriteCoupledRuntimeTables(state, runFolder)
 state = sixgr.truth.CoupledTruthRuntime.writeTables(state, runFolder);
 end
 
+function ME = localPersistCoupledRuntimeFailureCheckpoint( ...
+        ME, state, rootRunFolder, cfg, dlTrials, ulTrials, ...
+        dlTablePath, ulTablePath)
+% Persist only observations completed before a coupled-runtime exception.
+% The checkpoint is diagnostic evidence, never a successful finalization,
+% and the original exception is always rethrown after persistence attempts.
+slotNow = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
+frameNow = double(sixgr.util.structGet(state, "CurrentFrame", NaN));
+state.RuntimeFailure = struct( ...
+    "Identifier", string(ME.identifier), ...
+    "Message", string(ME.message), ...
+    "Slot", slotNow, ...
+    "Frame", frameNow, ...
+    "DLTrialRows", localSafeTableHeight(dlTrials), ...
+    "ULTrialRows", localSafeTableHeight(ulTrials), ...
+    "EvidenceScope", "completed_runtime_observations_before_failure");
+state.ProfileStopReason = "runtime_failure_checkpoint";
+
+try
+    state = localWriteCoupledRuntimeTables(state, rootRunFolder);
+catch checkpointME
+    ME = addCause(ME, checkpointME);
+end
+try
+    localWriteNonemptyFailureTrialTable( ...
+        dlTablePath, dlTrials, "DL", cfg);
+    localWriteNonemptyFailureTrialTable( ...
+        ulTablePath, ulTrials, "UL", cfg);
+catch checkpointME
+    ME = addCause(ME, checkpointME);
+end
+try
+    layout = sixgr.report.resultLayout(rootRunFolder);
+    checkpointT = table( ...
+        string(ME.identifier), string(ME.message), frameNow, slotNow, ...
+        localSafeTableHeight(dlTrials), localSafeTableHeight(ulTrials), ...
+        "failed_runtime_checkpoint_not_finalized", ...
+        "completed_runtime_observations_before_failure", ...
+        'VariableNames', { ...
+        'ErrorIdentifier','ErrorMessage','Frame','Slot', ...
+        'DLTrialRows','ULTrialRows','RunState','EvidenceScope'});
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
+        "runtime_failure_checkpoint.csv"), checkpointT);
+catch checkpointME
+    ME = addCause(ME, checkpointME);
+end
+localAppendRuntimeLog("ERROR", ...
+    ["Coupled truth runtime failed after measured checkpoint: " ...
+     "slot=%g frame=%g dl_rows=%d ul_rows=%d error=%s %s"], ...
+    slotNow, frameNow, localSafeTableHeight(dlTrials), ...
+    localSafeTableHeight(ulTrials), char(string(ME.identifier)), ...
+    char(string(ME.message)));
+end
+
+function localWriteNonemptyFailureTrialTable(pathText, T, direction, cfg)
+if strlength(strtrim(string(pathText))) == 0 || ...
+        ~(istable(T) && ~isempty(T))
+    return;
+end
+T = localCanonicalizeLinkTrialExport(T, direction, cfg);
+sixgr.util.csvWriteTable(pathText, T, "PreserveSchema", true);
+end
+
+function n = localSafeTableHeight(T)
+n = 0;
+if istable(T)
+    n = double(height(T));
+end
+end
+
 function ctl = localResolveCoupledProfileControl(runFolder, totalSlots)
 mode = strtrim(string(getenv("SIXGR_PROFILE_MODE")));
 ctl = struct();
@@ -9718,7 +9798,7 @@ end
 
 function tf = localShouldMirrorCoupledRuntimeTables(cfg, opt, meta, refreshHeavyArtifacts, writeRawTablesNow)
 tf = false;
-if ~(isstruct(opt) && localIsMySQLWebMode(cfg))
+if ~(isstruct(opt) && localCoupledLiveRuntimePublicationEnabled(cfg))
     return;
 end
 if nargin < 3 || ~isstruct(meta)
@@ -9740,6 +9820,18 @@ tf = logical(writeRawTablesNow) || ...
     logical(sixgr.util.structGet(opt, "SlotComplete", false)) || ...
     logical(sixgr.util.structGet(opt, "FinalDirectionChunk", false)) || ...
     any(reason == ["post_grant_chunk", "slot_pre_schedule_status"]);
+end
+
+function tf = localCoupledLiveRuntimePublicationEnabled(cfg)
+% Runtime control/PHY evidence is part of the canonical results folder,
+% not a MySQL-only side effect.  The browser reads these tables directly
+% for filesystem-backed runs, so withholding them until finalization makes
+% a live truth run indistinguishable from an idle run and loses evidence if
+% execution is interrupted.  Honour either supported persistence backend,
+% while retaining the global persistence guard used by CoreOnly tests.
+tf = logical(sixgr.util.persistenceEnabled()) && ( ...
+    localIsMySQLWebMode(cfg) || ...
+    logical(sixgr.util.structGet(cfg, "outputs.persistToResultsFolder", true)));
 end
 
 function artifacts = localRefreshLiveDerivedArtifacts(cfg, runFolder, rawTrials, multiUser, mobilityArtifacts, runtimeState)
@@ -11365,13 +11457,90 @@ if sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
     [state, chState] = ...
         sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
         state, cfg, ueIdx, "DL");
-    [T, chState, decodedSIB1] = localCollectPBCHTrials( ...
-        cfg, snr_dB, 1, chState, slotIdx);
+    [T, chState, decodedSIB1] = localCollectCoupledPBCHBeamSweep( ...
+        cfg, snr_dB, chState, slotIdx);
     state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
         state, chState);
 else
-    [T, ~, decodedSIB1] = localCollectPBCHTrials( ...
-        cfg, snr_dB, 1, struct(), slotIdx);
+    [T, ~, decodedSIB1] = localCollectCoupledPBCHBeamSweep( ...
+        cfg, snr_dB, struct(), slotIdx);
+end
+end
+
+function [T, selectedAdvancedState, selectedDecodedSIB1] = ...
+        localCollectCoupledPBCHBeamSweep(cfg, snr_dB, initialDLState, slotIdx)
+% Execute every active SSB candidate against the same channel time origin.
+% Each candidate gets an independent value-copy of initialDLState.  For a
+% fading channel, runCellSearch materializes that copy from the same link
+% key/seed/sample origin, so the comparison changes the applied SSB
+% precoder without advancing or randomizing the propagation realization.
+[isOccasion, occasion] = sixgr.truth.isActiveSSBOccasion(cfg, slotIdx);
+indices = double(sixgr.util.structGet(occasion, ...
+    "ActiveSSBIndices0Based", []));
+indices = unique(round(indices(isfinite(indices))), "stable");
+if ~isOccasion || isempty(indices)
+    error("sixgr:truth:MissingActiveSSBIndex", ...
+        "A coupled PBCH beam sweep requires active SSB candidates at slot %g.", ...
+        double(slotIdx));
+end
+
+candidateTables = cell(numel(indices), 1);
+candidateStates = cell(numel(indices), 1);
+candidateSIB1 = cell(numel(indices), 1);
+for beamOrdinal = 1:numel(indices)
+    ssbIndex = double(indices(beamOrdinal));
+    cfgBeam = sixgr.util.structSet(cfg, ...
+        "phy.ssb.runtimeSSBIndex", ssbIndex);
+    cfgBeam = sixgr.util.structSet(cfgBeam, ...
+        "phy.ssb.SSBIndex", ssbIndex);
+    [candidateTables{beamOrdinal}, candidateStates{beamOrdinal}, ...
+        candidateSIB1{beamOrdinal}] = localCollectPBCHTrials( ...
+        cfgBeam, snr_dB, 1, initialDLState, slotIdx);
+end
+
+T = table();
+for beamOrdinal = 1:numel(candidateTables)
+    T = localAppendCompatTable(T, candidateTables{beamOrdinal});
+end
+n = height(T);
+T.SelectedBeamFlag = false(n, 1);
+T.SelectedSSBIndex = nan(n, 1);
+T.SelectedBeamIndex = nan(n, 1);
+T.SelectionMetric = repmat("SSBReceivedPower_dB", n, 1);
+T.SelectionMetricValue_dB = nan(n, 1);
+T.SelectionSource = repmat( ...
+    "coupled_receiver_measured_same_channel_origin_ssb_pbch_sweep", n, 1);
+T.SelectionStatus = repmat( ...
+    "unavailable_no_successful_finite_measurement", n, 1);
+
+power_dB = double(T.SSBReceivedPower_dB);
+eligible = logical(T.CRCPass) & isfinite(power_dB) & ...
+    logical(T.ChannelEstimateAvailable) & logical(T.EqualizationAvailable) & ...
+    logical(T.StrictReceiverEvidenceOk);
+if any(eligible)
+    eligibleRows = find(eligible);
+    [bestPower_dB, relativeOrdinal] = max(power_dB(eligibleRows));
+    selectedRow = eligibleRows(relativeOrdinal);
+    selectedSSBIndex = double(T.SSBIndex(selectedRow));
+    T.SelectedBeamFlag(selectedRow) = true;
+    T.SelectedSSBIndex(:) = selectedSSBIndex;
+    T.SelectedBeamIndex(:) = double(T.BeamIndex(selectedRow));
+    T.SelectionMetricValue_dB(:) = double(bestPower_dB);
+    T.SelectionStatus(:) = "selected_from_successful_receiver_measurements";
+else
+    % No candidate is promoted to a selected beam.  The final failed row is
+    % retained as the state-machine input, while all receiver failures stay
+    % visible in the primary PBCH trial table.
+    selectedRow = n;
+end
+
+selectedAdvancedState = candidateStates{selectedRow};
+selectedDecodedSIB1 = candidateSIB1{selectedRow};
+% CoupledTruthRuntime consumes the last row as the state transition.  Move
+% the measured winner to that position without deleting any candidate row.
+if selectedRow ~= n
+    order = [setdiff(1:n, selectedRow, "stable"), selectedRow];
+    T = T(order, :);
 end
 end
 
@@ -11852,6 +12021,7 @@ end
 function [state, T, correlationTraceT, raEvidenceTables] = ...
         localCollectCoupledPRACHTrials( ...
         state, cfg, ueIdx, snr_dB, slotIdx)
+cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx);
 [state, dlState] = ...
     sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
     state, cfg, ueIdx, "DL");
@@ -11866,6 +12036,61 @@ state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
     state, dlState);
 state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
     state, ulState);
+end
+
+function cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx)
+policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "random_access.msg1_beam_policy", ""))));
+commonDLBeamSource = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+    "random_access.common_downlink_beam_source", ""))));
+requiresMeasuredSelection = policy == "ssb_beam" || ...
+    commonDLBeamSource == "selected_ssb_beam";
+selected = localStateNumericAt(state, "SelectedSSBIndexByUE", ueIdx, NaN);
+source = localStateStringAt(state, "SelectedSSBSelectionSourceByUE", ...
+    ueIdx, "");
+metric_dB = localStateNumericAt(state, ...
+    "SelectedSSBMeasurement_dBByUE", ueIdx, NaN);
+if requiresMeasuredSelection && (~isfinite(selected) || ...
+        strlength(strtrim(source)) == 0)
+    error("sixgr:truth:MeasuredSSBSelectionRequiredForPRACH", ...
+        ["PRACH/RA policy requires a receiver-measured SSB beam, but UE %d " ...
+         "has no successful coupled SSB/PBCH sweep selection."], ...
+        round(double(ueIdx)));
+end
+if isfinite(selected)
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.ssb.runtimeSSBIndex", double(selected));
+    cfg = sixgr.util.structSet(cfg, ...
+        "random_access.associated_ssb_index", double(selected));
+    cfg = sixgr.util.structSet(cfg, ...
+        "random_access.associated_ssb_selection_source", char(source));
+    cfg = sixgr.util.structSet(cfg, ...
+        "random_access.associated_ssb_measurement_db", double(metric_dB));
+end
+end
+
+function value = localStateNumericAt(state, fieldName, index, defaultValue)
+value = double(defaultValue);
+raw = sixgr.util.structGet(state, string(fieldName), []);
+index = round(double(index));
+if isnumeric(raw) && isfinite(index) && index >= 1 && index <= numel(raw)
+    candidate = double(raw(index));
+    if isfinite(candidate)
+        value = candidate;
+    end
+end
+end
+
+function value = localStateStringAt(state, fieldName, index, defaultValue)
+value = string(defaultValue);
+raw = string(sixgr.util.structGet(state, string(fieldName), strings(0, 1)));
+index = round(double(index));
+if isfinite(index) && index >= 1 && index <= numel(raw)
+    candidate = string(raw(index));
+    if strlength(strtrim(candidate)) > 0
+        value = candidate;
+    end
+end
 end
 
 function [T, correlationTraceT, raEvidenceTables, ...
@@ -12117,6 +12342,9 @@ r.RAAttemptId = double(sixgr.util.structGet(ra, "AttemptId", trialIdx));
     fields = ["RAProcedureType","RABindingSource", ...
     "SIB1RACHBindingApplied","SIB1RACHBindingSource", ...
     "SIB1RACHPayloadHash","SIB1RACHTreeHash","RACHConfigHash", ...
+    "AssociatedSSBIndex","AssociatedSSBSelectionSource", ...
+    "AssociatedSSBMeasurement_dB","Msg1BeamPolicy", ...
+    "SSBToPRACHAssociationApplied", ...
     "PRACHOccasionFrame","PRACHOccasionSlot","PRACHOccasionSymbol", ...
     "PRACHFrequencyIndex","PRACHOccasionID", ...
     "PreambleIndexTx","PreambleIndexDetected","PreambleDetectionMetric", ...
@@ -14114,6 +14342,18 @@ for k = 1:nTrials
         r.CQIDerivedModulation = string(sixgr.util.structGet(outSRS, "Modulation", ""));
         r.CQIDerivedTargetCodeRate = double(sixgr.util.structGet(outSRS, "TargetCodeRate", NaN));
         r.RankEstimate = double(sixgr.util.structGet(outSRS, "RankEstimate", NaN));
+        r.PredictedPUSCHPostEqSINRPerLayer_dB = localFormatNumericVector( ...
+            sixgr.util.structGet(outSRS, "PredictedPUSCHPostEqSINRPerLayer_dB", []));
+        r.PredictedPUSCHMinimumLayerSINR_dB = double(sixgr.util.structGet( ...
+            outSRS, "PredictedPUSCHMinimumLayerSINR_dB", NaN));
+        r.PredictedPUSCHWidebandMeanSINR_dB = double(sixgr.util.structGet( ...
+            outSRS, "PredictedPUSCHWidebandMeanSINR_dB", NaN));
+        r.PredictedPUSCHPostEqSINRSource = string(sixgr.util.structGet( ...
+            outSRS, "PredictedPUSCHPostEqSINRSource", ""));
+        r.PredictedPUSCHPostEqSINRValueRole = string(sixgr.util.structGet( ...
+            outSRS, "PredictedPUSCHPostEqSINRValueRole", ""));
+        r.PredictedPUSCHPostEqSINRValueStatus = string(sixgr.util.structGet( ...
+            outSRS, "PredictedPUSCHPostEqSINRValueStatus", "NOT_AVAILABLE"));
         r.SRSOccupiedPRBCount = double(sixgr.util.structGet(outSRS, "SRSOccupiedPRBCount", NaN));
         r.SRSCarrierPRBCount = double(sixgr.util.structGet(outSRS, "SRSCarrierPRBCount", NaN));
         r.SRSBandwidthFraction = double(sixgr.util.structGet(outSRS, "SRSBandwidthFraction", NaN));
@@ -14490,6 +14730,11 @@ row.SIB1RACHBindingSource = "";
 row.SIB1RACHPayloadHash = "";
 row.SIB1RACHTreeHash = "";
 row.RACHConfigHash = "";
+row.AssociatedSSBIndex = NaN;
+row.AssociatedSSBSelectionSource = "";
+row.AssociatedSSBMeasurement_dB = NaN;
+row.Msg1BeamPolicy = "";
+row.SSBToPRACHAssociationApplied = false;
 row.PRACHOccasionFrame = NaN;
 row.PRACHOccasionSlot = NaN;
 row.PRACHOccasionSymbol = NaN;
@@ -14983,6 +15228,12 @@ row.TAOutOfRangeReason = "";
 row.TAMaxValid_samples = NaN;
 row.TAMaxValid_us = NaN;
 row.RankEstimate = NaN;
+row.PredictedPUSCHPostEqSINRPerLayer_dB = "";
+row.PredictedPUSCHMinimumLayerSINR_dB = NaN;
+row.PredictedPUSCHWidebandMeanSINR_dB = NaN;
+row.PredictedPUSCHPostEqSINRSource = "";
+row.PredictedPUSCHPostEqSINRValueRole = "";
+row.PredictedPUSCHPostEqSINRValueStatus = "NOT_AVAILABLE";
 row.SRSOccupiedPRBCount = NaN;
 row.SRSCarrierPRBCount = NaN;
 row.SRSBandwidthFraction = NaN;

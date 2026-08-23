@@ -80,6 +80,7 @@ methods(Static)
             "LastCompositeSummary", struct());
         state.RunState = sixgr.truth.CoupledTruthRuntime.initializeRunState(cfgMob, multiUser, totalTrafficFrames);
         state.SlotTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptySlotTraceRow(), 0, 1));
+        state.ObservedREAllocationTable = table();
         state.SlotDuration_s = ...
             double(canonicalFrame.Numerology.SlotDurationSeconds);
         state.SlotsPerFrame = ...
@@ -121,6 +122,11 @@ methods(Static)
         state.CoverageEligibility = true(nUsers, 1);
         state.CoverageOutageState = repmat("not_evaluated", nUsers, 1);
         state.LastSuccessfulPBCHSlotByUE = nan(nUsers, 1);
+        state.SelectedSSBIndexByUE = nan(nUsers, 1);
+        state.SelectedSSBBeamIndexByUE = nan(nUsers, 1);
+        state.SelectedSSBMeasurement_dBByUE = nan(nUsers, 1);
+        state.SelectedSSBSelectionSourceByUE = repmat("", nUsers, 1);
+        state.SelectedSSBSelectionSlotByUE = nan(nUsers, 1);
         % Receiver-owned SIB1 evidence is retained per UE so that a later
         % PRACH occasion consumes the exact decoded rach-ConfigCommon from
         % the preceding PBCH/SIB1 waveform trial.  This is deliberately an
@@ -288,6 +294,11 @@ methods(Static)
             state.ControlEligibility = false(nUsers, 1);
             state.SchedulingEligibility = false(nUsers, 1);
             state.LastSuccessfulPBCHSlotByUE = nan(nUsers, 1);
+            state.SelectedSSBIndexByUE = nan(nUsers, 1);
+            state.SelectedSSBBeamIndexByUE = nan(nUsers, 1);
+            state.SelectedSSBMeasurement_dBByUE = nan(nUsers, 1);
+            state.SelectedSSBSelectionSourceByUE = repmat("", nUsers, 1);
+            state.SelectedSSBSelectionSlotByUE = nan(nUsers, 1);
             state.LastSuccessfulPRACHSlotByUE = nan(nUsers, 1);
             state.LastSuccessfulPDCCHSlotByUE = nan(nUsers, 1);
             state.LastSuccessfulPUCCHSlotByUE = nan(nUsers, 1);
@@ -2045,6 +2056,23 @@ methods(Static, Access=private)
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "run_state.csv"), runStateTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "slot_trace.csv"), slotTraceTable);
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "slot_trace.csv"), slotTraceTable);
+        observedRET = sixgr.util.structGet(state, "ObservedREAllocationTable", table());
+        observedREPath = fullfile(layout.ComponentCSVDirs.frame_grid, ...
+            "observed_re_allocation.csv");
+        observedRELivePath = fullfile(layout.ReportCSVDir, ...
+            "live_re_allocation_snapshot.csv");
+        if istable(observedRET) && ~isempty(observedRET)
+            sixgr.util.csvWriteTable(observedREPath, observedRET);
+            sixgr.util.csvWriteTable(observedRELivePath, observedRET);
+        else
+            % Never leave a previous checkpoint's occupancy in a run that
+            % currently has no executed TX evidence.
+            for staleObservedPath = [string(observedREPath), string(observedRELivePath)]
+                if isfile(staleObservedPath)
+                    delete(staleObservedPath);
+                end
+            end
+        end
         receiverTrackingStateT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("receiver_tracking_state", ...
             sixgr.truth.CoupledTruthRuntime.buildReceiverTrackingStateTable(state));
         receiverTrackingTraceT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("receiver_tracking_trace", ...
@@ -4311,6 +4339,34 @@ methods(Static, Access=private)
         if ok
             state.CellAcquisitionState(ueIdx) = "acquired";
             state.LastSuccessfulPBCHSlotByUE(ueIdx) = double(slotIdx);
+            selectionColumns = ["SelectedBeamFlag","SelectedSSBIndex", ...
+                "SelectionMetricValue_dB","SelectionSource"];
+            hasSelectionContract = all(ismember(selectionColumns, ...
+                string(trialT.Properties.VariableNames)));
+            if hasSelectionContract
+                selectedSSBIndex = sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
+                    trialT(end, :), ["SelectedSSBIndex","SSBIndex"], NaN);
+                selectedBeamIndex = sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
+                    trialT(end, :), ["SelectedBeamIndex","BeamIndex"], NaN);
+                selectedMeasurement_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
+                    trialT(end, :), ["SelectionMetricValue_dB","SSBReceivedPower_dB"], NaN);
+                selectionSource = string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+                    trialT(end, :), "SelectionSource", ""));
+                selectedFlag = logical(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+                    trialT(end, :), "SelectedBeamFlag", false));
+                if ~(selectedFlag && isfinite(selectedSSBIndex) && ...
+                        isfinite(selectedMeasurement_dB) && ...
+                        strlength(strtrim(selectionSource)) > 0)
+                    error("sixgr:truth:PBCHPassedWithoutMeasuredBeamSelection", ...
+                        ["PBCH acquisition passed for UE %d without a complete " ...
+                         "receiver-measured SSB beam selection."], round(double(ueIdx)));
+                end
+                state.SelectedSSBIndexByUE(ueIdx) = double(selectedSSBIndex);
+                state.SelectedSSBBeamIndexByUE(ueIdx) = double(selectedBeamIndex);
+                state.SelectedSSBMeasurement_dBByUE(ueIdx) = double(selectedMeasurement_dB);
+                state.SelectedSSBSelectionSourceByUE(ueIdx) = string(selectionSource);
+                state.SelectedSSBSelectionSlotByUE(ueIdx) = double(slotIdx);
+            end
             state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "SSB_DETECTED", "DL", ...
                 "control/csv/pbch_trials.csv", "PBCH", slotIdx, ...
                 "slot_coupled_pbch_cell_search_observation", "SSB detection observed in the coupled PBCH/cell-search runtime gate.");
@@ -5103,6 +5159,41 @@ methods(Static, Access=private)
         if nargin < 4
             row = struct();
         end
+        layerPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
+            "phy.linkAdaptation.ulSRSToPUSCHLayerSINRPolicy", ...
+            "reference_signal_wideband_with_backoff"))));
+        schedulerSINR_dB = double(sinrDb);
+        if layerPolicy == "minimum_layer_mean_post_equalization"
+            schedulerSINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
+                row, ["PredictedPUSCHMinimumLayerSINR_dB", ...
+                "SelectedMinimumLayerMeanPostEqSINR_dB"], NaN));
+            predictedSource = lower(strtrim(string( ...
+                sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+                ["PredictedPUSCHPostEqSINRSource", ...
+                "SelectedPostEqSINRSource"], ""))));
+            predictedRole = lower(strtrim(string( ...
+                sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+                ["PredictedPUSCHPostEqSINRValueRole", ...
+                "SelectedPostEqSINRValueRole"], ""))));
+            predictedStatus = upper(strtrim(string( ...
+                sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+                ["PredictedPUSCHPostEqSINRValueStatus", ...
+                "SelectedPostEqSINRValueStatus"], ""))));
+            provenanceOK = contains(predictedSource, ...
+                "measured_srs_hest_selected_ri_tpmi_mmse_post_equalization") && ...
+                predictedRole == "predicted_pusch_data_channel_scheduling_input" && ...
+                predictedStatus == "PASS";
+            if ~(isscalar(schedulerSINR_dB) && isfinite(schedulerSINR_dB) && provenanceOK)
+                source = "ul_srs_selected_layer_posteq_sinr_unavailable_or_untrusted";
+                return;
+            end
+            source = "ul_srs_selected_ri_tpmi_minimum_layer_post_equalization";
+        elseif layerPolicy == "reference_signal_wideband_with_backoff"
+            source = "ul_srs_wideband_reference_signal_with_configured_backoff";
+        else
+            error("sixgr:truth:UnsupportedULSRSToPUSCHLayerSINRPolicy", ...
+                "Unsupported UL SRS-to-PUSCH layer-SINR policy '%s'.", layerPolicy);
+        end
         backoff_dB = double(sixgr.truth.CoupledTruthRuntime.firstFiniteScalar( ...
             sixgr.util.structGet(cfg, "phy.linkAdaptation.ulReferenceSignalSchedulingBackoff_dB", NaN), ...
             sixgr.util.structGet(cfg, "phy.linkAdaptation.ulSRSToPUSCHSINRBackoff_dB", NaN), ...
@@ -5113,7 +5204,7 @@ methods(Static, Access=private)
         if ~(isfinite(backoff_dB) && backoff_dB >= 0)
             backoff_dB = 0;
         end
-        adjustedSINR_dB = double(sinrDb) - double(backoff_dB);
+        adjustedSINR_dB = double(schedulerSINR_dB) - double(backoff_dB);
         ri = double(sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["RIEstimate","RankEstimate","EstimatedRI","RI","RankIndicator","Layers"], NaN));
         if ~(isfinite(ri) && ri >= 1)
@@ -11495,11 +11586,13 @@ methods(Static, Access=private)
             sixgr.util.csvWriteTable(airPath, T, "PreserveSchema", preserveSchema);
             return;
         end
-        if exist(controlPath, "file") ~= 2
-            sixgr.util.csvWriteTable(controlPath, T, "PreserveSchema", preserveSchema);
-        end
-        if exist(airPath, "file") ~= 2
-            sixgr.util.csvWriteTable(airPath, T, "PreserveSchema", preserveSchema);
+        % Zero observations have no primary truth artifact.  The resolved
+        % configuration and feature-execution ledger retain intent/status;
+        % an empty CSV must never stand in for measured runtime evidence.
+        for stalePath = [string(controlPath), string(airPath)]
+            if isfile(stalePath)
+                delete(stalePath);
+            end
         end
     end
 

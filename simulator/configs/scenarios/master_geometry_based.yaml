@@ -580,6 +580,11 @@ canonical_control:
     pbch_enabled: true
     pdcch_dmrs_enabled: true
     csi_rs_enabled: true
+    # Canonical CSI-RS occasion authority. Keep these values explicit so the
+    # PHY mapper, scheduler and receiver cannot silently choose different
+    # occasions when carrier/BWP settings change.
+    csi_rs_periodicity_slots: 20
+    csi_rs_offset_slots: 1
     srs_enabled: true
     trs_enabled: true
     tracking_rs_enabled: true
@@ -629,6 +634,24 @@ canonical_control:
     srs_ports: 4
     trs_ports: 1
     trs_scrambling_id: 1
+    # One explicit NZP-CSI-RS/TRS occasion every 20 slots (10 ms at 30 kHz).
+    # Multiple authored occasions give the tracking receiver real time-separated
+    # phase observations; the strict waveform path must not invent slot indices.
+    trs:
+      enabled: true
+      slot_numbers: [1, 21, 41]
+      num_ports: 1
+      scrambling_id: 1
+      row_number: 2
+      symbol_location: 4
+      subcarrier_location: 0
+      rb_offset: 0
+      num_rb: 273
+      detection_threshold: 0.55
+      min_coverage_ratio: 0.95
+      timing_tolerance_samples: 2
+      frequency_tolerance_hz: 50
+      channel_nmse_threshold_db: -8
     srs_periodicity_ms: 10
     srs_slot_within_period:
     - 5
@@ -1594,13 +1617,40 @@ canonical_control:
   - path: link_adaptation.pusch_link_adaptation_policy
     value: baseline
   pdsch:
-    execution_profile: connected_strict
+    execution_profile: scheduler_truth
     layer_count: 2
     modulation: 256QAM
 validation:
   RunClass: ue_placement_geometry_lls
   run_class: ue_placement_geometry_lls
   publication_mode: strict_actual_evidence
+  # The exhaustive access-to-data wiring audit is owned by the dedicated
+  # causal scenario.  Keep its operator-master policy explicit and disabled;
+  # strict geometry/component publication gates below remain authoritative.
+  causal_phy_chain_audit:
+    enabled: false
+    required: false
+    fail_on_enabled_bypass: true
+    require_config_mapping_match: true
+    require_runtime_consumer: true
+    require_measurement_evidence: true
+    stages:
+    - stage_id: frame_grid_runtime
+      order: 10
+      subsystem: frame_grid
+      always_required: true
+      required: true
+      consumer_source_files: ["+sixgr/+phy/+frame/FrameRuntimeStateBuilder.m"]
+      measurement_artifact: reports/csv/slot_trace.csv
+      measured_fields: [Frame, Slot]
+      measurement_min_rows: 1
+    parameter_bindings:
+    - parameter_id: validation_run_class
+      subsystem: orchestration
+      scenario_path: validation.run_class
+      runtime_path: validation.RunClass
+      required: true
+      consumer_source_files: ["+sixgr/+lls6g/buildInternalConfig.m"]
   independent_reference_qualification:
     # Kept separate from geometry placement/channel evidence and selected
     # explicitly only for a release/publication campaign.
@@ -1902,7 +1952,7 @@ pdsch:
   mtrp_policy: noncoherent_configured_trp_selection
   mrss_constraints: measured_reference_signal_only
   throughput_eval_policy: first_success_decoded_transport_block_bits
-  execution_profile: connected_strict
+  execution_profile: scheduler_truth
   # prb_set is mutually exclusive with the authoritative prb_start/num_prb
   # allocation below and is therefore intentionally not instantiated.
   prb_start: 0
@@ -1927,7 +1977,7 @@ pdsch:
   cbg_transmission: false
 pusch:
   enabled: true
-  execution_profile: connected_strict
+  execution_profile: scheduler_truth
   waveform: CP-OFDM
   tbs_policy: allocation_based_exact_38214
   ulsch_enabled: true
@@ -2680,6 +2730,7 @@ execution_scales:
         fixed_link_campaign:
           profile: diagnostic
           snr_db: [-20, 0, 20]
+          seeds: [104729]
           min_tb_per_point: 40
           max_tb_per_point: 40
           min_errors_for_ci: 0

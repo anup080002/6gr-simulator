@@ -212,7 +212,7 @@
       "expected_rb_start": {"required": false, "type": "integer", "min": 0},
       "expected_num_rb": {"required": false, "type": "integer", "min": 1},
       "expected_bandwidth_coverage_percent": {"required": false, "type": "number", "min": 0},
-      "coverage_requirement": {"required": false, "type": "string"},
+      "coverage_requirement": {"required": false, "type": "string", "allowed_values": ["full_carrier", "configured_band", "partial_band_allowed"]},
       "full_carrier_sounding_required": {"required": false, "type": "boolean"},
       "full_carrier_coverage_tolerance_rb": {"required": false, "type": "integer", "min": 0},
       "detection_threshold": {"required": false, "type": "number", "min": 0},

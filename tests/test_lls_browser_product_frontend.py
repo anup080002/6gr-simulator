@@ -222,6 +222,20 @@ def main() -> None:
         assert "function eventElement(target)" in realtime_page
         assert "payload_version" in realtime_page
         assert "Each PHY/procedure channel has its own six-column view" in realtime_page
+        assert "live.runtime_context || live.realtime" in realtime_page
+        assert "live.logs_recent || live.logs" in realtime_page
+        assert "realtimeComponentPanel()" in realtime_page
+        assert "realtimeUEStatusPanel()" in realtime_page
+        assert "realtimeLogPanel()" in realtime_page
+        assert "Execution status" in realtime_page
+        assert "No live runtime evidence has been published." in realtime_page
+        assert "The status alone is not treated as proof that MATLAB is executing." in realtime_page
+        assert "Live evidence is stale." in realtime_page
+        assert "This stored incomplete snapshot is not proof that MATLAB is still executing." in realtime_page
+        assert "Full runtime stage audit record" in realtime_page
+        assert "Open time-frequency grid" in realtime_page
+        assert realtime_page.index("${realtimeComponentPanel()}") < realtime_page.index("Full runtime stage audit record")
+        assert "${realtimeComponentPanel()}\n      ${realtimeLogPanel()}\n      ${realtimeUEStatusPanel()}" in realtime_page
         for channel_title in (
             "SSB / PBCH",
             "PRACH / RACH",
@@ -243,6 +257,13 @@ def main() -> None:
         phy_grid_page = pages["phy_grid"]
         assert "Symbols / slot" in phy_grid_page
         assert "without inventing resource assignments" in phy_grid_page
+        assert "time domain — absolute slot / OFDM symbol" in phy_grid_page
+        assert "frequency domain — PRB / subcarrier span" in phy_grid_page
+        assert "X — Time domain" in phy_grid_page
+        assert "Y — Frequency domain" in phy_grid_page
+        assert "grid.time_frequency_cells" in phy_grid_page
+        assert "Planned only — not observed" in phy_grid_page
+        assert "const plannedOnly" in phy_grid_page
         assert "/phy-grid" in phy_grid_page
 
         plots_page = pages["plots"]

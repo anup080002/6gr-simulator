@@ -9725,6 +9725,91 @@ def add_reference_signal_overlay(
     events.append(overlay)
 
 
+def build_phy_time_frequency_cells(
+    events: list[dict[str, Any]],
+    *,
+    nrb: int,
+    symbols_per_slot: int,
+) -> list[dict[str, Any]]:
+    """Aggregate persisted allocation events by slot, OFDM symbol and PRB.
+
+    No empty or inferred allocation is emitted. Each returned display cell
+    exists only because one or more persisted planned/observed allocation
+    events overlap that exact time-frequency coordinate.
+    """
+    cells: dict[tuple[int, int, int], dict[str, Any]] = {}
+    for event in events:
+        slot = bounded_int(event.get("slot"), 0, -1_000_000_000, 1_000_000_000)
+        symbol_start = bounded_int(
+            event.get("symbol_start"), 0, 0, max(symbols_per_slot - 1, 0)
+        )
+        symbol_count = bounded_int(
+            event.get("symbol_count"), 1, 1, max(symbols_per_slot, 1)
+        )
+        symbol_stop = min(symbols_per_slot, symbol_start + symbol_count)
+        prb_start = bounded_int(event.get("prb_start"), 0, 0, max(nrb - 1, 0))
+        prb_count = bounded_int(event.get("prb_count"), 1, 1, max(nrb, 1))
+        prb_stop = min(nrb, prb_start + prb_count)
+        if symbol_stop <= symbol_start or prb_stop <= prb_start:
+            continue
+        for symbol in range(symbol_start, symbol_stop):
+            for prb in range(prb_start, prb_stop):
+                key = (slot, symbol, prb)
+                cell = cells.setdefault(
+                    key,
+                    {
+                        "slot": slot,
+                        "symbol": symbol,
+                        "prb": prb,
+                        "subcarrier_start": prb * 12,
+                        "subcarrier_stop": min(nrb * 12 - 1, prb * 12 + 11),
+                        "channels": set(),
+                        "directions": set(),
+                        "ue_ids": set(),
+                        "cell_ids": set(),
+                        "port_indices": set(),
+                        "layer_counts": set(),
+                        "lifecycle_statuses": set(),
+                        "coordinate_precisions": set(),
+                        "source_artifacts": set(),
+                        "event_count": 0,
+                    },
+                )
+                for target, field in (
+                    ("channels", "channel"),
+                    ("directions", "direction"),
+                    ("ue_ids", "ue_id"),
+                    ("cell_ids", "cell_id"),
+                    ("port_indices", "port_index"),
+                    ("layer_counts", "layer_count"),
+                    ("lifecycle_statuses", "lifecycle_status"),
+                    ("coordinate_precisions", "coordinate_precision"),
+                    ("source_artifacts", "source_artifact"),
+                ):
+                    value = event.get(field)
+                    if value not in (None, ""):
+                        cell[target].add(str(value))
+                cell["event_count"] += 1
+
+    rows: list[dict[str, Any]] = []
+    for key in sorted(cells):
+        cell = cells[key]
+        for field in (
+            "channels",
+            "directions",
+            "ue_ids",
+            "cell_ids",
+            "port_indices",
+            "layer_counts",
+            "lifecycle_statuses",
+            "coordinate_precisions",
+            "source_artifacts",
+        ):
+            cell[field] = sorted(cell[field])
+        rows.append(cell)
+    return rows
+
+
 def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | None = None) -> dict[str, Any]:
     run_row = fetch_run(int(run_id))
     if run_row is None:
@@ -9903,6 +9988,11 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
     ]
     present_lanes = sorted({str(event.get("channel") or "") for event in events if str(event.get("channel") or "")})
     lanes = [lane for lane in lane_order if lane in present_lanes] + [lane for lane in present_lanes if lane not in lane_order]
+    time_frequency_cells = build_phy_time_frequency_cells(
+        events,
+        nrb=nrb,
+        symbols_per_slot=symbols_per_slot,
+    )
     dataflow = sorted(events, key=lambda item: (int(item.get("slot") or 0), int(item.get("symbol_start") or 0), str(item.get("channel") or "")))
     table_status = [
         {
@@ -9919,6 +10009,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         "Slot D/U/S/F labels and idle reasons come from the canonical slot trace when available; resolved configuration is only the fallback.",
         "planned_config rows describe the YAML-resolved schedule. runtime_observed rows describe allocations actually reached by the execution chain.",
         "coordinate_precision distinguishes exact sparse REs from subcarrier/symbol or RB/symbol regions; the UI never upgrades a coarse region to exact evidence.",
+        "The time-frequency view uses absolute slot plus OFDM symbol on X and PRB plus its 12-subcarrier span on Y; occupied cells are aggregated only from persisted allocation events.",
         "Zero-based absolute-slot allocation rows are shifted by +1 only when the canonical slot trace explicitly uses one-based slots; source_slot and the offset remain visible on every affected event.",
         "Missing, disabled, collision, transmitted, received, and decoded states are rendered from persisted lifecycle_status fields only.",
     ]
@@ -9941,6 +10032,13 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             "lanes": lanes,
             "events": events[:6000],
             "event_count": len(events),
+            "time_frequency_cells": time_frequency_cells,
+            "time_frequency_cell_count": len(time_frequency_cells),
+            "axis_contract": {
+                "x": "absolute slot / OFDM symbol",
+                "y": "physical resource block / subcarrier span",
+                "subcarriers_per_prb": 12,
+            },
         },
         "dataflow": dataflow[:1000],
         "table_status": table_status,
@@ -17165,9 +17263,14 @@ button,.button-link,select,input,textarea{font:inherit;border-radius:10px}button
 .workflow{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px}.workflow .tile{cursor:pointer;min-height:148px}.workflow .tile:hover,.block-card:hover{border-color:var(--blue)}.badge{display:inline-flex;align-items:center;border:1px solid var(--strong);border-radius:8px;padding:4px 8px;font-size:12px;color:var(--muted);background:#f7f9fc;margin:3px 4px 3px 0}.badge.good{color:var(--green);border-color:#a9d5b7;background:#f2fbf5}.badge.warn{color:var(--amber);border-color:#e3c78d;background:#fff8e8}.badge.bad{color:var(--red);border-color:#e3a8b2;background:#fff3f5}
 .form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.param-editor{display:grid;gap:5px}.param-editor label{color:var(--muted);font-size:12px;font-weight:700}.config-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:12px}.config-group{overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#fbfdfc}.config-group[open]{grid-column:1/-1}.config-group summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:11px 13px;cursor:pointer;color:#315650;font-weight:800;list-style:none}.config-group summary::-webkit-details-marker{display:none}.config-group summary::before{content:"›";display:inline-grid;place-items:center;width:20px;height:20px;margin-right:-3px;border-radius:6px;background:#e5f4f0;color:var(--blue);font-size:18px;line-height:1;transition:transform .15s ease}.config-group[open] summary::before{transform:rotate(90deg)}.config-group[open] summary{border-bottom:1px solid var(--line);background:#f3faf7}.config-group summary>span:first-of-type{flex:1}.config-group>.form-grid{padding:12px}.config-group .param-editor{padding:10px;border:1px solid #e4eeeb;border-radius:10px;background:#fff;min-width:0}.config-group .param-editor .mono{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.diagram{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.diagram-step{padding:9px 11px;border:1px solid var(--strong);border-radius:8px;background:#f4faf7;font-size:13px;font-weight:700}.diagram-arrow{color:var(--muted);font-weight:800}.phy-layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:12px}.family-list{display:grid;gap:8px;align-content:start}.family-button.active{background:#e7f5ef;color:var(--blue);border-color:#a6d6c3}.block-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.block-card{background:#fff;border:1px solid var(--line);border-radius:8px;padding:12px;cursor:pointer;min-height:150px}.block-card.active{border-color:var(--blue);box-shadow:0 0 0 2px rgba(8,127,91,.12)}.block-panel{margin-top:0}.block-panel table{font-size:13px}.config-dock .table-wrap{max-height:48vh}
 .table-wrap{overflow:auto;max-height:calc(100vh - 270px);overscroll-behavior:contain;min-width:0}.table-wrap.page-table{max-height:calc(100vh - 300px)}.table-wrap.tall-scroll{max-height:calc(100vh - 330px)}table{width:100%;border-collapse:collapse}th,td{padding:8px 9px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{position:sticky;top:0;background:#f3f8f7;z-index:1;color:#405d58}.stream{max-height:280px;overflow:auto;overscroll-behavior:contain;display:grid;gap:8px}.stream-item{border:1px solid var(--line);border-radius:10px;padding:9px;background:#fff}.log-warn{border-left:3px solid var(--amber)}.log-error{border-left:3px solid var(--red)}.warning{border-left:3px solid var(--amber);padding:9px 11px;background:#fff8e8;color:#6b4500;border-radius:10px}.map-box{min-height:420px;overflow:hidden}#geometryMap,#realtimeMap{height:420px;width:100%}.chart-box{height:calc(100vh - 310px);min-height:300px;border:1px solid var(--line);border-radius:12px;background:#fff}.chart-empty{display:grid;place-items:center;height:100%;padding:18px;color:var(--muted);text-align:center}.toolbar{display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:10px}.toolbar label{display:grid;gap:5px;font-size:12px;color:var(--muted);font-weight:700;min-width:130px}.toolbar label select{width:100%}.toolbar select[multiple]{min-height:112px}.metric-explorer-note{margin:7px 0 0;color:var(--muted);font-size:12px;line-height:1.4}.artifact-gallery{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.artifact-card{border:1px solid var(--line);border-radius:12px;padding:10px;background:#fff}.artifact-card h4{margin:0 0 7px}.artifact-card img{display:block;width:100%;max-height:280px;object-fit:contain;border:1px solid var(--line);border-radius:10px;background:#f7f9fc}.interactive-image-shell{display:grid;gap:10px}.interactive-image-stage{position:relative;height:calc(100vh - 300px);min-height:320px;overflow:hidden;border:1px solid var(--line);border-radius:12px;background:#f7f9fc;touch-action:none;cursor:grab}.interactive-image-stage.dragging{cursor:grabbing}.interactive-image-stage img{position:absolute;top:50%;left:50%;max-width:none;max-height:none;transform-origin:center center;user-select:none;-webkit-user-drag:none;border:none;background:transparent}.mini-note{font-size:12px;color:var(--muted);line-height:1.4}.split{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:10px}.small{font-size:12px;color:var(--muted)}.mono{font-family:var(--mono)}.user-host{margin-bottom:10px}.user-strip{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.profile-chip{display:inline-flex;gap:8px;align-items:center;padding:6px 8px;border:1px solid var(--line);border-radius:9px}.profile-avatar{width:28px;height:28px;display:grid;place-items:center;border-radius:8px;background:#eaf2ff;color:var(--blue);font-weight:800}.profile-role{display:block;color:var(--muted);font-size:12px}.inline-form{display:inline}.section-tabs{display:flex;gap:6px;overflow:auto;margin:0 0 10px;padding-bottom:2px}.section-tabs .button-link{padding:7px 10px;font-size:13px}.section-tabs .active{background:#e5f4f0;color:var(--blue);border-color:#9acdc2}.step-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.step-card{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:center;padding:15px;border:1px solid var(--line);border-radius:14px;background:#fff}.step-number{width:34px;height:34px;display:grid;place-items:center;border-radius:11px;background:#e5f4f0;color:var(--blue);font-weight:900}.action-menu{position:relative}.action-menu summary{cursor:pointer;font-weight:700}.action-menu[open]{z-index:3}.action-menu-body{position:absolute;right:0;top:calc(100% + 5px);display:grid;gap:5px;width:190px;padding:8px;background:#fff;border:1px solid var(--line);border-radius:11px;box-shadow:var(--shadow)}.rg-scroll{overflow:auto;border:1px solid var(--line);border-radius:12px;background:#f8fbfa}.resource-grid{display:grid;gap:3px;min-width:max-content;padding:8px}.rg-label,.rg-head,.rg-cell{min-height:30px;display:flex;align-items:center;justify-content:center;border-radius:6px;font-size:11px}.rg-label{position:sticky;left:0;z-index:2;justify-content:flex-start;padding:0 8px;background:#eef5f3;color:#315650;font-weight:700}.rg-head{position:sticky;top:0;z-index:1;flex-direction:column;background:#e8f1ef;font-weight:800}.rg-head span{font-size:9px;color:var(--muted)}.rg-head.tdd-D,.rg-cell.tdd-D:not(.active){background:#e8f3fa}.rg-head.tdd-U,.rg-cell.tdd-U:not(.active){background:#f3eafa}.rg-head.tdd-S,.rg-cell.tdd-S:not(.active){background:#fff4d9}.rg-head.tdd-F,.rg-cell.tdd-F:not(.active){background:#edf7ef}.rg-head.activity-idle{box-shadow:inset 0 -3px 0 #d89b2b}.rg-cell{background:#eef3f2;border:1px solid #e4ecea}.rg-cell.active{color:#fff;font-weight:800}.rg-cell.dl{background:#2679a8;border-color:#2679a8}.rg-cell.ul{background:#9b5cc2;border-color:#9b5cc2}.rg-cell.ref{background:#0d8c72;border-color:#0d8c72}
-.realtime-component-grid{display:grid;grid-template-columns:repeat(7,minmax(135px,1fr));gap:8px}.realtime-component{padding:11px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(145deg,#fff,#f7fbfa);min-width:0}.realtime-component.evidence_available,.realtime-component.active_evidence{border-top:3px solid var(--green)}.realtime-component.not_published{border-top:3px solid var(--amber)}.realtime-component h4,.ue-status-card h4{margin:0 0 6px}.realtime-component .counts{font-size:12px;color:var(--muted)}.realtime-component .source-link{display:block;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--blue)}.realtime-channel-table-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.realtime-channel-table{min-width:0;padding:11px;border:1px solid var(--line);border-radius:13px;background:#fff}.realtime-channel-table h4{margin:0}.realtime-channel-table .source-link{display:block;max-width:58%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--blue)}.realtime-channel-table table{font-size:11px}.realtime-channel-table th,.realtime-channel-table td{padding:6px 7px}.ue-status-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:9px}.ue-status-card{padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}.ue-status-card.evidence_available{border-left:4px solid var(--green)}.ue-status-card.attention{border-left:4px solid var(--amber)}.ue-status-card.blocked{border-left:4px solid var(--red)}.ue-status-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;font-size:12px}.ue-status-metrics span{padding:5px 7px;border-radius:7px;background:#f3f8f7;overflow:hidden;text-overflow:ellipsis}.live-log-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) 180px 150px;gap:8px;margin-bottom:10px}.live-log-meta{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:11px}.live-log-component{font-weight:800;color:var(--blue)}
+.rg-scroll{max-height:calc(100vh - 300px)}.rg-time-frequency{gap:2px}.rg-time-frequency .rg-label,.rg-time-frequency .rg-head,.rg-time-frequency .rg-slot-head,.rg-time-frequency .rg-cell{min-height:27px;border-radius:5px;font-size:10px}.rg-time-frequency .rg-label{z-index:4;justify-content:space-between;gap:7px}.rg-time-frequency .rg-label span{font-size:9px;color:var(--muted);white-space:nowrap}.rg-time-frequency .rg-head{top:27px;z-index:3}.rg-slot-head{position:sticky;top:0;z-index:3;display:flex;align-items:center;justify-content:center;min-height:27px;background:#dfeceb;font-weight:800;border-bottom:2px solid #b8d2cc}.rg-slot-head.tdd-D{background:#dcecf7}.rg-slot-head.tdd-U{background:#eadcf2}.rg-slot-head.tdd-S{background:#faebc5}.rg-slot-head.tdd-F{background:#dfefe2}.rg-axis-corner{top:0;z-index:6}.rg-time-frequency .rg-cell{min-height:22px;overflow:hidden}.rg-legend{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;font-size:11px;color:var(--muted)}.rg-legend span{padding:4px 7px;border-radius:7px;background:#eef3f2}.rg-legend .dl{background:#2679a8;color:#fff}.rg-legend .ul{background:#9b5cc2;color:#fff}.rg-legend .ref{background:#0d8c72;color:#fff}
+.rg-axis-contract{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:8px 0}.rg-axis-contract div{display:grid;gap:2px;padding:9px 11px;border:1px solid var(--line);border-radius:10px;background:#f7fbfa}.rg-axis-contract strong{color:var(--blue)}.rg-axis-contract span{font-size:12px;color:var(--muted)}.live-progress-summary{margin-top:10px}.live-progress-track{height:9px;overflow:hidden;border-radius:999px;background:#e4eeec;margin:7px 0}.live-progress-track span{display:block;height:100%;border-radius:inherit;background:linear-gradient(90deg,var(--green),#35b9a4);transition:width .25s ease}.live-stage-audit summary{cursor:pointer}.live-stage-audit[open] summary{margin-bottom:8px}.realtime-component-grid{display:grid;grid-template-columns:repeat(7,minmax(135px,1fr));gap:8px}.realtime-component{padding:11px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(145deg,#fff,#f7fbfa);min-width:0}.realtime-component.evidence_available,.realtime-component.active_evidence{border-top:3px solid var(--green)}.realtime-component.not_published{border-top:3px solid var(--amber)}.realtime-component h4,.ue-status-card h4{margin:0 0 6px}.realtime-component .counts{font-size:12px;color:var(--muted)}.realtime-component .source-link{display:block;margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--blue)}.realtime-channel-table-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.realtime-channel-table{min-width:0;padding:11px;border:1px solid var(--line);border-radius:13px;background:#fff}.realtime-channel-table h4{margin:0}.realtime-channel-table .source-link{display:block;max-width:58%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--blue)}.realtime-channel-table table{font-size:11px}.realtime-channel-table th,.realtime-channel-table td{padding:6px 7px}.ue-status-grid{display:grid;grid-template-columns:repeat(4,minmax(220px,1fr));gap:9px}.ue-status-card{padding:12px;border:1px solid var(--line);border-radius:13px;background:#fff}.ue-status-card.evidence_available{border-left:4px solid var(--green)}.ue-status-card.attention{border-left:4px solid var(--amber)}.ue-status-card.blocked{border-left:4px solid var(--red)}.ue-status-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;font-size:12px}.ue-status-metrics span{padding:5px 7px;border-radius:7px;background:#f3f8f7;overflow:hidden;text-overflow:ellipsis}.live-log-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) 180px 150px;gap:8px;margin-bottom:10px}.live-log-meta{display:flex;gap:7px;align-items:center;color:var(--muted);font-size:11px}.live-log-component{font-weight:800;color:var(--blue)}
 .scenario-mode-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}.scenario-mode-card{position:relative;display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;width:100%;padding:15px;text-align:left;border:1px solid var(--line);border-radius:14px;background:linear-gradient(145deg,#fff,#f7fbfa);box-shadow:none;white-space:normal}.scenario-mode-card:hover{transform:translateY(-1px);border-color:#82bfb2;box-shadow:0 10px 24px rgba(8,122,112,.1)}.scenario-mode-card.active{border-color:var(--blue);background:linear-gradient(145deg,#effaf6,#fff);box-shadow:0 0 0 2px rgba(8,122,112,.1)}.scenario-mode-card .mode-icon{width:48px;height:48px;display:grid;place-items:center;border-radius:13px;background:#e1f4ef;color:var(--blue);font-size:13px;font-weight:900;letter-spacing:.03em}.scenario-mode-card h4{margin:0 0 3px;font-size:16px}.scenario-mode-card p{margin:0;color:var(--muted);font-size:13px;line-height:1.35}.scenario-mode-card .mode-check{width:24px;height:24px;display:grid;place-items:center;border-radius:50%;border:1px solid var(--strong);color:transparent}.scenario-mode-card.active .mode-check{border-color:var(--blue);background:var(--blue);color:#fff}.upload-dropzone{display:grid;place-items:center;min-height:94px;margin-top:10px;padding:14px;border:1.5px dashed #8abcb2;border-radius:13px;background:#f5fbf9;color:#315650;text-align:center;cursor:pointer;transition:.15s ease}.upload-dropzone:hover{border-color:var(--blue);background:#edf9f5;color:var(--blue)}.upload-dropzone strong{display:block;margin-bottom:3px;color:var(--ink)}.launch-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(280px,.7fr);gap:10px;margin-top:10px}.launch-actions{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}.launch-actions .param-editor{flex:1 1 220px}.run-history-header{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}.run-history-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.check-label{display:inline-flex;align-items:center;gap:7px;color:var(--muted);font-size:13px;font-weight:700}.check-label input,.run-select{width:17px;height:17px;margin:0;accent-color:var(--blue)}.run-table th:first-child,.run-table td:first-child{width:42px;text-align:center}.run-table tbody tr:hover{background:#f7fbfa}.run-table .run-title{font-weight:800}.status-pill{display:inline-flex;align-items:center;padding:4px 8px;border-radius:999px;background:#eef3f2;color:#536a65;font-size:12px;font-weight:800}.status-pill.good{background:#e8f7ef;color:var(--green)}.status-pill.warn{background:#fff4d9;color:var(--amber)}.status-pill.bad{background:#fff0f2;color:var(--red)}button.danger,.button-link.danger{border-color:#e8a7b1;background:#fff5f6;color:var(--red)}button.danger:hover,.button-link.danger:hover{border-color:var(--red);background:var(--red);color:#fff}.action-menu-body .button-link,.action-menu-body button{width:100%;justify-content:flex-start}.empty-state{display:grid;place-items:center;min-height:180px;padding:24px;text-align:center;color:var(--muted)}
 @media(max-width:1300px){.realtime-component-grid{grid-template-columns:repeat(4,minmax(150px,1fr))}.realtime-channel-table-grid{grid-template-columns:1fr}.ue-status-grid{grid-template-columns:repeat(2,minmax(220px,1fr))}}@media(max-width:1100px){.app-shell{grid-template-columns:190px minmax(0,1fr)}.top-actions select{width:240px}.block-grid,.config-groups{grid-template-columns:repeat(2,minmax(0,1fr))}.launch-grid{grid-template-columns:1fr}}@media(max-width:760px){html,body{height:auto;overflow:auto}.app-shell,.product-header,.split,.phy-layout,.grid.two,.grid.three,.grid.four,.form-grid,.workflow,.block-grid,.step-grid,.config-groups,.scenario-mode-grid,.launch-grid,.realtime-component-grid,.realtime-channel-table-grid,.ue-status-grid,.live-log-toolbar{display:block;height:auto}.sidebar{height:auto}.workspace{display:block;height:auto}.product-header{margin:10px}.top-actions{justify-content:flex-start;flex-wrap:wrap;margin-top:10px}.top-actions select{width:100%}#productMain{overflow:visible;padding:0 10px 10px}.tile,.panel,.config-dock,.step-card,.config-group,.scenario-mode-card,.realtime-component,.realtime-channel-table,.ue-status-card{margin-bottom:10px}.run-history-header{align-items:flex-start;flex-direction:column}}
+</style>
+<style>
+.rg-cell.planned{color:#315650;border-color:#9dbab4;background:repeating-linear-gradient(135deg,#f7fbfa 0,#f7fbfa 4px,#dceae7 4px,#dceae7 8px)}
+.rg-legend .planned{color:#315650;border:1px solid #9dbab4;background:repeating-linear-gradient(135deg,#f7fbfa 0,#f7fbfa 4px,#dceae7 4px,#dceae7 8px)}
 </style>
 """
 
@@ -19321,24 +19424,68 @@ window.addEventListener('DOMContentLoaded', function () {
       return;
     }
     const summary = live.summary || {};
-    const realtimeData = live.realtime || {};
-    const logs = (live.logs || []).slice(-30).reverse();
+    const realtimeData = live.runtime_context || live.realtime || {};
+    const dashboard = live.realtime_dashboard || {};
+    const logs = (Array.isArray(dashboard.logs) && dashboard.logs.length
+      ? dashboard.logs
+      : (live.logs_recent || live.logs || [])).slice(-30).reverse();
     const stage = realtimeData.stage || {};
     const run = live.run || {};
+    const stageValue = (...names) => {
+      for (const name of names) {
+        const value = stage[name];
+        if (value !== null && value !== undefined && value !== '') return value;
+      }
+      return null;
+    };
+    const currentSlot = Number(stageValue('CurrentSlot','SlotIndex','CompletedFrames'));
+    const totalSlots = Number(stageValue('TotalSlots','RequestedFrames'));
+    const progressKnown = Number.isFinite(currentSlot) && Number.isFinite(totalSlots) && totalSlots > 0;
+    const progressPercent = progressKnown ? Math.max(0, Math.min(100, 100 * currentSlot / totalSlots)) : null;
+    const compactStage = {
+      Stage: stageValue('Stage','CurrentStage') || run.status_text || 'unavailable',
+      'Slot progress': progressKnown ? `${currentSlot} / ${totalSlots}` : 'unavailable',
+      'OFDM symbols completed': stageValue('CompletedSymbols','CurrentSymbol') ?? 'unavailable',
+      Direction: stageValue('CurrentDirection','Direction') ?? 'unavailable',
+      'Operating SNR dB': stageValue('CurrentSNR_dB','SNR_dB') ?? 'unavailable',
+      'DL / UL trial rows': `${stageValue('DLTrialRows','DLPDSCHTrialRows') ?? 0} / ${stageValue('ULTrialRows','ULPUSCHTrialRows') ?? 0}`,
+      'Control ready': stageValue('ControlReady') ?? 'unavailable',
+      'Data ready': stageValue('DataReady') ?? 'unavailable',
+    };
+    const progressBar = progressPercent === null
+      ? '<div class="live-progress-track"><span style="width:0%"></span></div><p class="mini-note">Waiting for a persisted total-slot denominator.</p>'
+      : `<div class="live-progress-track" title="${esc(progressPercent.toFixed(1))}%"><span style="width:${esc(progressPercent.toFixed(2))}%"></span></div><p class="mini-note">${esc(progressPercent.toFixed(1))}% of scheduled slots reached.</p>`;
     const canStop = /queued|launching|running|finalizing|retry/i.test(String(run.status_text || '')) && String(run.run_tag || '');
     const stopForm = canStop ? `<form method="post" action="/run/stop" class="inline-form" onsubmit="return confirm('Stop this MATLAB run?')"><input type="hidden" name="run_tag" value="${esc(run.run_tag)}"><input type="hidden" name="next" value="/realtime"><button type="submit">Stop</button></form>` : '';
+    const publishedArtifactCount = Number((live.counts || {}).artifacts_total || 0);
+    const hasRuntimeStage = Object.keys(stage).some(key => stage[key] !== null && stage[key] !== undefined && stage[key] !== '');
+    const activeStatus = /queued|launching|running|finalizing|retry/i.test(String(run.status_text || ''));
+    const updatedAtMs = Date.parse(String(run.updated_utc || ''));
+    const staleActiveStatus = activeStatus
+      && Number.isFinite(updatedAtMs)
+      && (Date.now() - updatedAtMs) > (15 * 60 * 1000);
+    const activeStatusWithoutEvidence = activeStatus
+      && !hasRuntimeStage
+      && publishedArtifactCount === 0;
+    const liveEvidenceWarning = staleActiveStatus
+      ? `<section class="panel warning-panel"><strong>Live evidence is stale.</strong><p class="subtle">The run record is marked ${esc(run.status_text || 'active')}, but its last persisted update was ${esc(run.updated_utc || 'unavailable')}. This stored incomplete snapshot is not proof that MATLAB is still executing.</p></section>`
+      : (activeStatusWithoutEvidence
+        ? '<section class="panel warning-panel"><strong>No live runtime evidence has been published.</strong><p class="subtle">The run record is marked active, but there is no atomic stage row and no registered runtime artifact. The status alone is not treated as proof that MATLAB is executing.</p></section>'
+        : '');
     main.innerHTML = `${liveTabs('realtime')}
       <section class="panel"><div class="toolbar" style="justify-content:space-between">${pageRunSelector('realtimeRunSelect', 'Run', {runningOnly:false})}${stopForm}</div></section>
       <div class="grid four">
         <div class="tile metric"><h4>Status</h4><div class="value">${esc((live.run || {}).status_text || '—')}</div></div>
-        <div class="tile metric"><h4>Result</h4><div class="value">${esc(text(summary.result_ok ?? '—'))}</div></div>
+        <div class="tile metric"><h4>Slot progress</h4><div class="value">${esc(progressKnown ? `${currentSlot}/${totalSlots}` : '—')}</div></div>
         <div class="tile metric"><h4>UEs</h4><div class="value">${esc(text(summary.configured_users ?? '—'))}</div></div>
-        <div class="tile metric"><h4>Issues</h4><div class="value">${esc(text(summary.required_failure_count ?? 0))}</div></div>
+        <div class="tile metric"><h4>Live events</h4><div class="value">${esc(logs.length)}</div></div>
       </div>
-      <div class="grid two" style="margin-top:10px">
-        <section class="panel"><h3>Progress</h3>${objectTable(stage, 'Waiting for progress data.')}</section>
-        <section class="panel"><div class="toolbar" style="justify-content:space-between"><h3 style="margin:0">Events</h3><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div><div class="stream">${logs.map(log => `<div class="stream-item"><strong>${esc(log.source || log.module || log.created_utc || 'Event')}</strong><br>${esc(log.message || log.line_text || log.log_message || '')}</div>`).join('') || '<p class="subtle">No events yet.</p>'}</div></section>
-      </div>`;
+      ${liveEvidenceWarning}
+      <section class="panel live-progress-summary"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Execution status</h3><p class="subtle">Compact values from the atomic live-stage row; no configured value is substituted for an unavailable measurement.</p></div><a class="button-link" data-page="phy_grid" href="/phy-grid">Open time-frequency grid</a></div>${progressBar}${objectTable(compactStage, 'Waiting for progress data.')}</section>
+      ${realtimeComponentPanel()}
+      ${realtimeLogPanel()}
+      ${realtimeUEStatusPanel()}
+      <details class="panel live-stage-audit"><summary><strong>Full runtime stage audit record</strong> <span class="small">all persisted columns</span></summary><div style="margin-top:10px">${objectTable(stage, 'Waiting for progress data.')}</div></details>`;
   }
   function qualificationKeywords(section) {
     const map = {
@@ -19466,32 +19613,56 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function renderPhyGridPayload(payload) {
     const grid = (payload || {}).grid || {};
-    const slots = (grid.slots || []).slice(0, 24);
-    const lanes = (grid.lanes || []).slice(0, 18);
+    const slots = (grid.slots || []).slice(0, 50);
     const events = grid.events || [];
-    const byCell = new Map();
-    events.forEach(event => {
-      const key = `${String(event.channel || '')}|${String(event.slot ?? '')}`;
-      if (!byCell.has(key)) byCell.set(key, []);
-      byCell.get(key).push(event);
-    });
-    const header = `<div class="rg-label"></div>${slots.map(slot => {
+    const symbolsPerSlot = Math.max(1, Number(grid.symbols_per_slot || 14));
+    const nrb = Math.max(1, Number(grid.nrb || 1));
+    const columns = slots.flatMap(slot => Array.from({length:symbolsPerSlot}, (_, symbol) => ({slot, symbol})));
+    const sourceCells = Array.isArray(grid.time_frequency_cells) ? grid.time_frequency_cells : [];
+    const byCell = new Map(sourceCells.map(cell => [`${String(cell.slot)}|${String(cell.symbol)}|${String(cell.prb)}`, cell]));
+    const slotHeader = `<div class="rg-label rg-axis-corner">Time →</div>${slots.map(slot => {
       const slotTitle = `${slot.state_label || 'Slot state'}${slot.reason ? ` · ${slot.reason}` : ''} · symbols D/G/U ${slot.dl_symbols ?? '?'} / ${slot.guard_symbols ?? '?'} / ${slot.ul_symbols ?? '?'}`;
       const activity = slot.activity === 'allocated' ? 'active' : (slot.activity || '');
-      return `<div class="rg-head tdd-${esc(slot.tdd || '?')} activity-${esc(slot.activity || '')}" title="${esc(slotTitle)}">${esc(slot.slot)}<span>${esc(slot.tdd || '?')}${activity ? ` · ${esc(activity)}` : ''}</span></div>`;
+      return `<div class="rg-slot-head tdd-${esc(slot.tdd || '?')} activity-${esc(slot.activity || '')}" style="grid-column:span ${symbolsPerSlot}" title="${esc(slotTitle)}">Slot ${esc(slot.slot)} · ${esc(slot.tdd || '?')}${activity ? ` · ${esc(activity)}` : ''}</div>`;
     }).join('')}`;
-    const rowsHtml = lanes.map(lane => `<div class="rg-label">${esc(lane)}</div>${slots.map(slot => {
-      const cellEvents = byCell.get(`${lane}|${slot.slot}`) || [];
-      const titleText = cellEvents.length
-        ? cellEvents.map(event => `${event.channel} · slot ${event.slot} · PRB ${event.prb_start ?? '?'}+${event.prb_count ?? '?'}`).join('\\n')
-        : `${slot.state_label || 'No exported allocation'}${slot.reason ? ` · ${slot.reason}` : ''}`;
-      const flavor = /PUSCH|PUCCH|PRACH|SRS|UL/i.test(lane) ? 'ul' : (/PDSCH|PDCCH|PBCH|SSB|PSS|SSS|DL/i.test(lane) ? 'dl' : 'ref');
-      return `<div class="rg-cell tdd-${esc(slot.tdd || '?')} ${cellEvents.length ? `active ${flavor}` : ''}" title="${esc(titleText)}">${cellEvents.length ? esc(cellEvents.length) : ''}</div>`;
-    }).join('')}`).join('');
-    const emptyNote = events.length
+    const symbolHeader = `<div class="rg-label rg-axis-corner">PRB / subcarrier ↑</div>${columns.map(({slot,symbol}) => `<div class="rg-head tdd-${esc(slot.tdd || '?')}" title="Absolute slot ${esc(slot.slot)}, OFDM symbol ${esc(symbol)}"><strong>${esc(symbol)}</strong><span>S${esc(slot.slot)}</span></div>`).join('')}`;
+    const prbRows = Array.from({length:nrb}, (_, index) => nrb - 1 - index);
+    const rowsHtml = prbRows.map(prb => {
+      const scStart = prb * 12;
+      const scStop = scStart + 11;
+      const cells = columns.map(({slot,symbol}) => {
+        const cell = byCell.get(`${String(slot.slot)}|${String(symbol)}|${String(prb)}`);
+        if (!cell) {
+          const stateText = `${slot.state_label || 'No exported allocation'}${slot.reason ? ` · ${slot.reason}` : ''}`;
+          return `<div class="rg-cell tdd-${esc(slot.tdd || '?')}" title="${esc(`Slot ${slot.slot}, symbol ${symbol}, PRB ${prb}, subcarriers ${scStart}-${scStop} · ${stateText}`)}"></div>`;
+        }
+        const channels = Array.isArray(cell.channels) ? cell.channels : [];
+        const directions = Array.isArray(cell.directions) ? cell.directions : [];
+        const lifecycleStatuses = Array.isArray(cell.lifecycle_statuses)
+          ? cell.lifecycle_statuses.map(value => String(value).toLowerCase())
+          : [];
+        const plannedOnly = lifecycleStatuses.length > 0
+          && lifecycleStatuses.every(value => value === 'planned' || value === 'configured');
+        const joined = channels.join('|');
+        const flavor = directions.length === 1 && directions[0] === 'UL' ? 'ul' : (directions.length === 1 && directions[0] === 'DL' ? 'dl' : 'ref');
+        const label = channels.length === 1 ? String(channels[0]).replace(/-DMRS|-PTRS/g,'R').slice(0,4) : String(channels.length);
+        const titleText = [
+          `Slot ${cell.slot}, symbol ${cell.symbol}, PRB ${cell.prb}, subcarriers ${cell.subcarrier_start}-${cell.subcarrier_stop}`,
+          `Channels: ${joined || 'unavailable'}`,
+          `UE: ${(cell.ue_ids || []).join(',') || 'broadcast'} · cell: ${(cell.cell_ids || []).join(',') || '—'}`,
+          `Ports: ${(cell.port_indices || []).join(',') || '—'} · layers: ${(cell.layer_counts || []).join(',') || '—'}`,
+          `Lifecycle: ${(cell.lifecycle_statuses || []).join(',') || '—'} · precision: ${(cell.coordinate_precisions || []).join(',') || '—'}`,
+          `Persisted rows: ${cell.event_count || 0}`
+        ].join('\\n');
+        return `<div class="rg-cell ${plannedOnly ? 'planned' : `active ${flavor}`}" title="${esc(titleText)}"><span>${esc(label)}</span></div>`;
+      }).join('');
+      return `<div class="rg-label" title="Physical resource block ${prb}, subcarriers ${scStart} through ${scStop}"><strong>PRB ${prb}</strong><span>SC ${scStart}–${scStop}</span></div>${cells}`;
+    }).join('');
+    const emptyNote = sourceCells.length
       ? ''
-      : '<p class="mini-note">No exported allocation events are available for this run; the slot-format row remains visible without inventing resource assignments.</p>';
-    return `${emptyNote}<div class="rg-scroll"><div class="resource-grid" style="grid-template-columns:140px repeat(${Math.max(slots.length,1)},minmax(36px,1fr))">${header}${rowsHtml}</div></div>`;
+      : '<p class="mini-note">No exported time-frequency allocation events are available for this run; the slot-format row remains visible without inventing resource assignments.</p>';
+    const legend = '<div class="rg-legend"><span class="dl">Observed DL allocation</span><span class="ul">Observed UL allocation</span><span class="ref">Observed mixed/reference/control</span><span class="planned">Planned only — not observed</span><span>Cell text is channel code or the number of overlapping channels.</span></div>';
+    return `${emptyNote}<div class="rg-axis-contract" aria-label="X time domain — absolute slot / OFDM symbol; Y frequency domain — PRB / subcarrier span"><div><strong>X — Time domain</strong><span>absolute slot → OFDM symbol</span></div><div><strong>Y — Frequency domain</strong><span>physical PRB → 12-subcarrier span</span></div></div>${legend}<div class="rg-scroll"><div class="resource-grid rg-time-frequency" style="grid-template-columns:165px repeat(${Math.max(columns.length,1)},23px)">${slotHeader}${symbolHeader}${rowsHtml}</div></div>`;
   }
   function loadPhyGrid() {
     const runId = selectedRunId();
@@ -20099,6 +20270,8 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
 .phy-legend { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
 .phy-legend span { display:inline-flex; align-items:center; gap:6px; font-size:12px; }
 .phy-swatch { width:14px; height:14px; border-radius:3px; display:inline-block; }
+.rg-cell.planned{color:#315650;border-color:#9dbab4;background:repeating-linear-gradient(135deg,#f7fbfa 0,#f7fbfa 4px,#dceae7 4px,#dceae7 8px)}
+.rg-legend .planned{color:#315650;border:1px solid #9dbab4;background:repeating-linear-gradient(135deg,#f7fbfa 0,#f7fbfa 4px,#dceae7 4px,#dceae7 8px)}
 </style>
 """
     extra_script = f"""
