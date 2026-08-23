@@ -116,7 +116,10 @@ function prof = localFromFlatConfig(cfg, scenarioName)
 
     dep = lower(char(string(sixgr.util.structGet(sc, 'geometry.deployment', ''))));
     if ~isempty(dep)
-        if contains(dep, 'hex')
+        depToken = regexprep(strtrim(dep), '[\s-]+', '_');
+        if ismember(string(depToken), ["single","single_site","single_cell"])
+            prof.layoutType = 'single_site';
+        elseif contains(dep, 'hex')
             prof.layoutType = 'hex_grid';
         elseif contains(dep, 'indoor')
             prof.layoutType = 'indoor_grid';
@@ -295,6 +298,15 @@ function prof = localNormalizeProfile(prof, cfg)
     if prof.nSites <= 0, prof.nSites = 1; end
     if prof.nSectors <= 0, prof.nSectors = 1; end
     prof.nTRxP = double(sixgr.util.structGet(prof, 'nTRxP', prof.nSites * prof.nSectors));
+    if strcmpi(strtrim(prof.layoutType), 'single_site')
+        if prof.nSites ~= 1
+            error('sixgr:scenario:SingleSiteCardinalityMismatch', ...
+                'single_site layout requires exactly one site; observed %g.', prof.nSites);
+        end
+        prof.wraparoundEnabled = false;
+        prof.wraparoundMode = 'disabled';
+        prof.nTRxP = prof.nSectors;
+    end
 
     % bs
     if ~isfield(prof, 'bs') || ~isstruct(prof.bs), prof.bs = struct(); end

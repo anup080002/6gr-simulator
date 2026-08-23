@@ -861,16 +861,25 @@ def _audit_link_table(
         offered_rate = _number(row, "OfferedThroughput_Mbps")
         goodput = _number(row, "Goodput_Mbps")
         code_rate = _number(row, "TargetCodeRate")
+        retransmission = _kpi_retransmission(row)
         if tbs is None or tbs <= 0 or not _close(tbs, round(tbs), atol=0):
             transport_failures.append(prefix + ":invalid_tbs")
-        if not _close(offered, tbs, atol=0):
-            transport_failures.append(prefix + ":offered_bits_not_tbs")
+        if retransmission:
+            # A HARQ retransmission repeats an already admitted transport
+            # block.  It consumes air-interface resources but must not be
+            # counted as newly offered traffic a second time.
+            if not _close(offered, 0.0, atol=0):
+                transport_failures.append(prefix + ":retransmission_offered_bits_nonzero")
+        elif not _close(offered, tbs, atol=0):
+            transport_failures.append(prefix + ":new_data_offered_bits_not_tbs")
         if compared is None or compared <= 0 or errors is None or errors < 0 or errors > compared:
             transport_failures.append(prefix + ":invalid_bit_error_counts")
         elif not _close(ber, errors / compared, atol=1e-12, rtol=1e-9):
             transport_failures.append(prefix + ":ber_arithmetic_mismatch")
-        if crc is True and not _close(good, offered, atol=0):
-            transport_failures.append(prefix + ":crc_pass_good_bits_mismatch")
+        if crc is True and not _close(good, tbs, atol=0):
+            # A successful retransmission delivers the original TB even
+            # though OfferedBits is zero on that retransmission row.
+            transport_failures.append(prefix + ":crc_pass_delivered_bits_not_tbs")
         if crc is False and good not in {0, 0.0}:
             transport_failures.append(prefix + ":crc_fail_good_bits_nonzero")
         if duration_ms is None or duration_ms <= 0:

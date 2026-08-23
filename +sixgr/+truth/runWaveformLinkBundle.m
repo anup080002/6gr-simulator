@@ -44,6 +44,7 @@ sixgr.util.ensureFolder(fullfile(runFolder, "image"));
 
 ctx = sixgr.core.SimContext(cfgExec, "RunFolder", runFolder);
 ctx.Logger.EchoToConsole = false;
+localRuntimeLogPath("set", fullfile(runFolder, "logs", "run.log"));
 
 slotDur_s = localSlotDuration(cfgExec);
 reqFrames = ceil(double(sixgr.util.structGet(opt, "LinkDuration_s", 0.02)) / max(slotDur_s, eps));
@@ -9982,6 +9983,26 @@ try
     fprintf(1, "[%s] %s %s\n", char(timeStamp), upper(char(string(levelStr))), char(string(messageText)));
 catch
 end
+runtimeLogPath = localRuntimeLogPath("get", "");
+if strlength(runtimeLogPath) > 0
+    fid = -1;
+    try
+        fid = fopen(char(runtimeLogPath), "a");
+        if fid >= 0
+            fprintf(fid, "[%s] %s %s\n", char(timeStamp), ...
+                upper(char(string(levelStr))), char(string(messageText)));
+            fclose(fid);
+            fid = -1;
+        end
+    catch
+        if fid >= 0
+            try
+                fclose(fid);
+            catch
+            end
+        end
+    end
+end
 if ~sixgr.db.isArtifactStoreActive()
     return;
 end
@@ -9989,6 +10010,29 @@ try
     sixgr.db.appendLogLine(string(levelStr), timeStamp, string(messageText));
 catch
 end
+end
+
+function pathOut = localRuntimeLogPath(action, value)
+persistent runtimePath
+if isempty(runtimePath)
+    runtimePath = "";
+end
+switch lower(string(action))
+    case "set"
+        runtimePath = string(value);
+        parent = string(fileparts(char(runtimePath)));
+        if strlength(parent) > 0
+            sixgr.util.ensureFolder(char(parent));
+        end
+    case "clear"
+        runtimePath = "";
+    case "get"
+        % Read-only operation.
+    otherwise
+        error("sixgr:truth:runWaveformLinkBundle:UnknownRuntimeLogAction", ...
+            "Unknown runtime log action '%s'.", char(string(action)));
+end
+pathOut = runtimePath;
 end
 
 function opt = localResolveLivePublishOptions(varargin)
@@ -11469,15 +11513,21 @@ end
 
 function [T, selectedAdvancedState, selectedDecodedSIB1] = ...
         localCollectCoupledPBCHBeamSweep(cfg, snr_dB, initialDLState, slotIdx)
-% Execute every active SSB candidate against the same channel time origin.
+% Execute every candidate in the configured active SS burst set during the
+% cell-search observation window.  A burst set can span multiple carrier
+% slots (for example, four Case-A candidates occupy two slots).  Restricting
+% the receiver sweep to the candidates in the first runtime slot causes the
+% first successful PBCH to advance the state machine to PRACH before the
+% remaining beams are measured.
+%
 % Each candidate gets an independent value-copy of initialDLState.  For a
 % fading channel, runCellSearch materializes that copy from the same link
-% key/seed/sample origin, so the comparison changes the applied SSB
-% precoder without advancing or randomizing the propagation realization.
+% key/seed/sample origin, so beam selection compares the configured
+% precoders under one channel realization rather than different random
+% drops.  The candidate's true carrier-slot and OFDM-symbol coordinates are
+% persisted below; the coupled slot is the start of the acquisition window.
 [isOccasion, occasion] = sixgr.truth.isActiveSSBOccasion(cfg, slotIdx);
-indices = double(sixgr.util.structGet(occasion, ...
-    "ActiveSSBIndices0Based", []));
-indices = unique(round(indices(isfinite(indices))), "stable");
+indices = localResolveActiveSSBurstSetIndices(cfg, occasion);
 if ~isOccasion || isempty(indices)
     error("sixgr:truth:MissingActiveSSBIndex", ...
         "A coupled PBCH beam sweep requires active SSB candidates at slot %g.", ...
@@ -11503,6 +11553,20 @@ for beamOrdinal = 1:numel(candidateTables)
     T = localAppendCompatTable(T, candidateTables{beamOrdinal});
 end
 n = height(T);
+[candidateSlots0, candidateSymbols0] = ...
+    localResolveSSBCandidateCoordinates(cfg, double(T.SSBIndex));
+observedIndices = unique(round(double(T.SSBIndex(isfinite(T.SSBIndex)))), ...
+    "stable");
+coverageComplete = numel(observedIndices) == numel(indices) && ...
+    all(ismember(indices, observedIndices));
+T.SSBCandidateCarrierSlot0Based = candidateSlots0;
+T.SSBCandidateSymbolWithinSlot0Based = candidateSymbols0;
+T.SSBBurstSweepExpectedCandidateCount = repmat(double(numel(indices)), n, 1);
+T.SSBBurstSweepObservedCandidateCount = repmat(double(numel(observedIndices)), n, 1);
+T.SSBBurstSweepObservedIndices0Based = repmat( ...
+    string(localNumericVectorToken(observedIndices)), n, 1);
+T.SSBBurstSweepCoverageComplete = repmat(logical(coverageComplete), n, 1);
+T.SSBBurstSweepScope = repmat("configured_active_ss_burst_set", n, 1);
 T.SelectedBeamFlag = false(n, 1);
 T.SelectedSSBIndex = nan(n, 1);
 T.SelectedBeamIndex = nan(n, 1);
@@ -11541,6 +11605,56 @@ selectedDecodedSIB1 = candidateSIB1{selectedRow};
 if selectedRow ~= n
     order = [setdiff(1:n, selectedRow, "stable"), selectedRow];
     T = T(order, :);
+end
+end
+
+function indices = localResolveActiveSSBurstSetIndices(cfg, occasion)
+indices = double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.activeCandidateIndices0Based", []));
+if isempty(indices)
+    timing = sixgr.util.structGet(cfg, "phy.ssb.timing", struct());
+    indices = double(sixgr.util.structGet(timing, ...
+        "ActiveIndices0Based", []));
+end
+if isempty(indices)
+    indices = double(sixgr.util.structGet(occasion, ...
+        "ActiveSSBIndices0Based", []));
+end
+indices = unique(round(indices(isfinite(indices))), "stable");
+lmax = double(sixgr.util.structGet(cfg, "phy.ssb.Lmax", NaN));
+if isfinite(lmax) && lmax >= 1
+    indices = indices(indices >= 0 & indices < round(lmax));
+else
+    indices = indices(indices >= 0);
+end
+end
+
+function [carrierSlots0, symbolsWithinSlot0] = ...
+        localResolveSSBCandidateCoordinates(cfg, ssbIndices0)
+ssbIndices0 = double(ssbIndices0(:));
+carrierSlots0 = nan(size(ssbIndices0));
+symbolsWithinSlot0 = nan(size(ssbIndices0));
+activeIndices0 = double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.activeCandidateIndices0Based", []));
+activeSlots0 = double(sixgr.util.structGet(cfg, ...
+    "phy.ssb.activeCarrierSlots0Based", []));
+timing = sixgr.util.structGet(cfg, "phy.ssb.timing", struct());
+candidateStarts0 = double(sixgr.util.structGet(timing, ...
+    "CandidateStartSymbols", []));
+symbolsPerSlot = double(sixgr.util.structGet(timing, ...
+    "SymbolsPerSlot", 14));
+for rowIdx = 1:numel(ssbIndices0)
+    ssbIndex0 = ssbIndices0(rowIdx);
+    aliasOrdinal = find(activeIndices0 == ssbIndex0, 1, "first");
+    if ~isempty(aliasOrdinal) && aliasOrdinal <= numel(activeSlots0)
+        carrierSlots0(rowIdx) = activeSlots0(aliasOrdinal);
+    end
+    timingOrdinal = round(ssbIndex0) + 1;
+    if timingOrdinal >= 1 && timingOrdinal <= numel(candidateStarts0) && ...
+            isfinite(symbolsPerSlot) && symbolsPerSlot >= 1
+        symbolsWithinSlot0(rowIdx) = mod( ...
+            candidateStarts0(timingOrdinal), symbolsPerSlot);
+    end
 end
 end
 
@@ -11702,6 +11816,11 @@ for k = 1:nTrials
         r.PSSMetric = double(sixgr.util.structGet(out, "PSSMetric", NaN));
         r.SSSMetric = double(sixgr.util.structGet(out, "SSSMetric", NaN));
         r.SSSMetricMargin = double(sixgr.util.structGet(out, "SSSMetricMargin", NaN));
+        r.PSSDetected = logical(sixgr.util.structGet(out, "PSSDetected", false));
+        r.SSSDetected = logical(sixgr.util.structGet(out, "SSSDetected", false));
+        r.NCellIDRecovered = logical(sixgr.util.structGet(out, "NCellIDRecovered", false));
+        r.PSSDetectionSource = string(sixgr.util.structGet(out, "PSSDetectionSource", ""));
+        r.SSSDetectionSource = string(sixgr.util.structGet(out, "SSSDetectionSource", ""));
         r.PSSSearchSamples = double(sixgr.util.structGet(out, "PSSSearchSamples", NaN));
         r.PSSTimingLagsEvaluated = double(sixgr.util.structGet(out, "PSSTimingLagsEvaluated", NaN));
         r.PSSSequences = double(sixgr.util.structGet(out, "PSSSequences", NaN));
@@ -15363,6 +15482,11 @@ row.PBCHDMRSMetric = NaN;
 row.PSSMetric = NaN;
 row.SSSMetric = NaN;
 row.SSSMetricMargin = NaN;
+row.PSSDetected = false;
+row.SSSDetected = false;
+row.NCellIDRecovered = false;
+row.PSSDetectionSource = "";
+row.SSSDetectionSource = "";
 row.PSSSearchSamples = NaN;
 row.PSSTimingLagsEvaluated = NaN;
 row.PSSSequences = NaN;

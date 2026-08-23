@@ -24,6 +24,7 @@ ulT = sixgr.util.structGet(rawTrials, "UL", table());
 srsT = sixgr.util.structGet(rawTrials, "SRS", table());
 trsT = sixgr.util.structGet(rawTrials, "TRS", table());
 csirsRuntimeT = sixgr.util.structGet(rawTrials, "CSIRS", table());
+pbchT = sixgr.util.structGet(rawTrials, "PBCH", table());
 multiUserDL = sixgr.util.structGet(rawTrials, "MultiUserDL", table());
 multiUserUL = sixgr.util.structGet(rawTrials, "MultiUserUL", table());
 
@@ -54,7 +55,7 @@ artifacts.ChannelImpulseResponsePath = fullfile(layout.ReportCSVDir, "channel_im
 
 channelT = localBuildChannelStatsTable(dlT, ulT, srsT, trsT);
 rankT = localBuildRankStatsTable(dlT, ulT);
-[beamT, beamP1T, beamP2T] = localBuildBeamStatsTable(dlT, ulT, runFolder);
+[beamT, beamP1T, beamP2T] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(csirsRuntimeT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
@@ -212,11 +213,14 @@ if isempty(T)
 end
 end
 
-function [T, p1T, p2T] = localBuildBeamStatsTable(dlT, ulT, runFolder)
-if nargin < 3
+function [T, p1T, p2T] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder)
+if nargin < 3 || ~(istable(pbchT))
+    pbchT = table();
+end
+if nargin < 4
     runFolder = "";
 end
-p1T = localBuildP1BeamAcquisitionStats(runFolder);
+p1T = localBuildP1BeamAcquisitionStats(pbchT, runFolder);
 p2T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder);
 T = localVertcat({p1T, p2T});
 if isempty(T)
@@ -224,8 +228,17 @@ if isempty(T)
 end
 end
 
-function T = localBuildP1BeamAcquisitionStats(runFolder)
-T = localBuildSSBBeamSweepStats(localReadSSBBeamSweepTable(runFolder));
+function T = localBuildP1BeamAcquisitionStats(pbchT, runFolder)
+% Prefer the canonical PBCH rows from this exact coupled execution.  A
+% separately requested component sweep remains a valid secondary source,
+% but it must never displace same-scenario in-path receiver evidence.
+if istable(pbchT) && ~isempty(pbchT)
+    ssbT = pbchT;
+    traceSource = "air_interface/csv/pbch_trials.csv";
+else
+    [ssbT, traceSource] = localReadSSBBeamSweepTable(runFolder);
+end
+T = localBuildSSBBeamSweepStats(ssbT, traceSource);
 T = localAnnotateBeamSummaryTable(T, "P1_SSB_beam_sweep", "SSB_PBCH_SIB1");
 if isempty(T)
     T = localEmptyBeamSummaryTable();
@@ -292,8 +305,9 @@ ulT = localReadFirstDerivedTable({ ...
     fullfile(layout.AirInterfaceCSVDir, "ul_fixed_link_campaign_trials.csv")});
 end
 
-function T = localReadSSBBeamSweepTable(runFolder)
+function [T, traceSource] = localReadSSBBeamSweepTable(runFolder)
 T = table();
+traceSource = "";
 if strlength(strtrim(string(runFolder))) == 0
     return;
 end
@@ -302,8 +316,24 @@ candidates = { ...
     fullfile(layout.BeamformingCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
     fullfile(layout.BeamformingCSVDir, "ssb_beam_sweep.csv"), ...
     fullfile(layout.ControlCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
-    fullfile(layout.AirInterfaceCSVDir, "ssb_pbch_sib1_beam_sweep.csv")};
-T = localReadFirstDerivedTable(candidates);
+    fullfile(layout.AirInterfaceCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
+    fullfile(layout.AirInterfaceCSVDir, "pbch_trials.csv"), ...
+    fullfile(layout.ControlCSVDir, "pbch_trials.csv")};
+sources = [ ...
+    "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", ...
+    "beamforming/csv/ssb_beam_sweep.csv", ...
+    "control/csv/ssb_pbch_sib1_beam_sweep.csv", ...
+    "air_interface/csv/ssb_pbch_sib1_beam_sweep.csv", ...
+    "air_interface/csv/pbch_trials.csv", ...
+    "control/csv/pbch_trials.csv"];
+for candidateIndex = 1:numel(candidates)
+    candidateT = localReadOptionalDerivedTable(candidates{candidateIndex});
+    if istable(candidateT) && ~isempty(candidateT)
+        T = candidateT;
+        traceSource = sources(candidateIndex);
+        return;
+    end
+end
 end
 
 function T = localReadBeamArtifactTable(runFolder, fileName)
@@ -351,13 +381,20 @@ if ~(istable(T) && ~isempty(T))
 end
 end
 
-function T = localBuildSSBBeamSweepStats(ssbT)
+function T = localBuildSSBBeamSweepStats(ssbT, traceSource)
+if nargin < 2 || strlength(strtrim(string(traceSource))) == 0
+    traceSource = "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv";
+end
 if ~(istable(ssbT) && ~isempty(ssbT))
     T = localEmptySummaryTable();
     return;
 end
 specs = [ ...
-    localBeamMetricSpec("P1SSBConfiguredBeamCount", ["ConfiguredSSBBeamCount","SSBLmax"]); ...
+    localBeamMetricSpec("P1SSBConfiguredBeamCount", ["SSBBurstConfiguredBeamCount","ConfiguredSSBBeamCount","SSBLmax"]); ...
+    localBeamMetricSpec("P1SSBExecutedBeamCount", ["SSBBurstExecutedBeamCount","ExecutedSSBBeamCount"]); ...
+    localBeamMetricSpec("P1SSBBurstSweepCoverageRate", "SSBBurstSweepCoverageComplete"); ...
+    localBeamMetricSpec("P1PSSDetectionRate", "PSSDetected"); ...
+    localBeamMetricSpec("P1SSSDetectionRate", "SSSDetected"); ...
     localBeamMetricSpec("P1PBCHDetectionRate", "DetectionSuccess"); ...
     localBeamMetricSpec("P1PBCHCRCPassRate", "BCHCrcPass"); ...
     localBeamMetricSpec("P1MIBDecodeRate", "MIBDecoded"); ...
@@ -368,17 +405,21 @@ specs = [ ...
     localBeamMetricSpec("P1TimingOffset_samples", "TimingOffset_samples"); ...
     localBeamMetricSpec("P1AcquisitionTime_ms", "AcquisitionTime_ms"); ...
     localBeamMetricSpec("P1ComputeLatency_ms", "ComputeLatency_ms")];
-rowsT = localBuildBeamSummaryRows(ssbT, "SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", specs, ...
-    "measured_ssb_pbch_sib1_sweep");
+if contains(string(traceSource), "pbch_trials.csv")
+    qualityRole = "measured_same_scenario_in_path_ssb_pbch_sweep";
+else
+    qualityRole = "measured_ssb_pbch_sib1_component_sweep";
+end
+rowsT = localBuildBeamSummaryRows(ssbT, "SSB_DL", traceSource, specs, qualityRole);
 
-selectedT = localBuildSSBSelectedBeamRows(ssbT);
+selectedT = localBuildSSBSelectedBeamRows(ssbT, traceSource, qualityRole);
 T = localVertcat({rowsT, selectedT});
 if isempty(T)
     T = localEmptySummaryTable();
 end
 end
 
-function T = localBuildSSBSelectedBeamRows(ssbT)
+function T = localBuildSSBSelectedBeamRows(ssbT, traceSource, qualityRole)
 T = localEmptySummaryTable();
 if ~(istable(ssbT) && ~isempty(ssbT))
     return;
@@ -400,14 +441,14 @@ for i = 1:numel(groups)
         mask = abs(snrBin - groups(i)) < 1e-9;
         snrValue = double(groups(i));
         qualityAxis = "SNR_dB";
-        qualityRole = "measured_ssb_pbch_sib1_sweep";
+        selectedQualityRole = string(qualityRole);
         qualitySource = "SNR_dB";
     else
         mask = true(height(ssbT), 1);
         snrValue = NaN;
         qualityAxis = "runtime_beam_sample";
-        qualityRole = "measured_ssb_pbch_sib1_sweep";
-        qualitySource = "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv";
+        selectedQualityRole = string(qualityRole);
+        qualitySource = string(traceSource);
     end
     valid = mask & isfinite(score) & isfinite(beam);
     if ~any(valid)
@@ -418,12 +459,12 @@ for i = 1:numel(groups)
     selectedIdx = validIdx(relIdx);
     selectedBeam = beam(selectedIdx);
     selectedScore = score(selectedIdx);
-    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", snrValue, ...
-        qualityAxis, qualityRole, qualitySource, "P1SelectedSSBBeamIndex", selectedBeam, selectedBeam, selectedBeam, 1); %#ok<AGROW>
-    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", snrValue, ...
-        qualityAxis, qualityRole, qualitySource, "P1SelectedSSBBeamScore", selectedScore, selectedScore, selectedScore, 1); %#ok<AGROW>
-    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv", snrValue, ...
-        qualityAxis, qualityRole, qualitySource, "P1SSBSweptBeamCount", double(nnz(valid)), double(nnz(valid)), double(nnz(valid)), 1); %#ok<AGROW>
+    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", traceSource, snrValue, ...
+        qualityAxis, selectedQualityRole, qualitySource, "P1SelectedSSBBeamIndex", selectedBeam, selectedBeam, selectedBeam, 1); %#ok<AGROW>
+    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", traceSource, snrValue, ...
+        qualityAxis, selectedQualityRole, qualitySource, "P1SelectedSSBBeamScore", selectedScore, selectedScore, selectedScore, 1); %#ok<AGROW>
+    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", traceSource, snrValue, ...
+        qualityAxis, selectedQualityRole, qualitySource, "P1SSBSweptBeamCount", double(nnz(valid)), double(nnz(valid)), double(nnz(valid)), 1); %#ok<AGROW>
 end
 if ~isempty(rows)
     T = struct2table(rows, "AsArray", true);

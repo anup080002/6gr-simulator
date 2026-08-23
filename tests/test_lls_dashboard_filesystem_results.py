@@ -118,6 +118,53 @@ def test_dashboard_discovers_active_filesystem_run_before_terminal_manifest(
     assert dash.count_logs(int(active["run_id"])) == 2
 
 
+def test_filesystem_logs_combine_runtime_and_high_level_sources(tmp_path) -> None:
+    run_folder = tmp_path / "run"
+    air_log = run_folder / "air_interface" / "logs" / "run.log"
+    runtime_log = run_folder / "logs" / "run.log"
+    air_log.parent.mkdir(parents=True)
+    runtime_log.parent.mkdir(parents=True)
+    air_log.write_text(
+        "[2026-08-23 00:00:01.000] INFO high-level stage\n",
+        encoding="utf-8",
+    )
+    runtime_log.write_text(
+        "[2026-08-23 00:00:02.000] INFO slot 2/12 PDSCH transmitted\n",
+        encoding="utf-8",
+    )
+    event_log = run_folder / "runtime" / "journal" / "runtime_events.jsonl"
+    event_log.parent.mkdir(parents=True)
+    event_log.write_text(
+        json.dumps(
+            {
+                "timestamp_utc": "2026-08-23T00:00:03Z",
+                "event_type": "HEARTBEAT",
+                "status": "progress",
+                "message": "frame-grid artifact committed",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    rows = dash.filesystem_log_rows(
+        {"run_folder": str(run_folder), "updated_utc": "2026-08-23T00:00:02Z"},
+        limit=10,
+        descending=False,
+    )
+
+    assert [row["message_text"] for row in rows] == [
+        "[2026-08-23 00:00:01.000] INFO high-level stage",
+        "[2026-08-23 00:00:02.000] INFO slot 2/12 PDSCH transmitted",
+        "[2026-08-23T00:00:03Z] HEARTBEAT progress frame-grid artifact committed",
+    ]
+    assert [row["source"] for row in rows] == [
+        "air_interface/logs/run.log:1",
+        "logs/run.log:1",
+        "runtime/journal/runtime_events.jsonl:1",
+    ]
+
+
 def test_dashboard_discovers_filesystem_only_result_run(tmp_path, monkeypatch) -> None:
     results_root = tmp_path / "results"
     run_folder = results_root / "lls" / "scenario_a" / "run_a"

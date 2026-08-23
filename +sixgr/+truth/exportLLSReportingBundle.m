@@ -3705,8 +3705,8 @@ switch string(metricKey)
     case "top_k_beam_hit_rate"
         specs(end+1) = localBeamManagementLiveMetricSpec("P2TopKBeamHitRate", "runtime_p2_beam_refinement", "p2_top_k_hit_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
     case "beam_switch_latency"
-        specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatencySlots", "runtime_p2_beam_event", "p2_switch_latency", "slots", "beamforming/csv/beam_management_event_trace.csv");
-        specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatency_s", "runtime_p2_beam_event", "p2_switch_latency", "s", "beamforming/csv/beam_management_event_trace.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatencySlots", "runtime_p2_beam_event", "p2_switch_latency_slots", "slots", "beamforming/csv/beam_management_event_trace.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatency_s", "runtime_p2_beam_event", "p2_switch_latency_s", "s", "beamforming/csv/beam_management_event_trace.csv");
     case "beam_misalignment_probability"
         specs(end+1) = localBeamManagementLiveMetricSpec("P2MisalignmentRate", "runtime_p2_beam_state", "p2_misalignment_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
     case "beam_prediction_accuracy"

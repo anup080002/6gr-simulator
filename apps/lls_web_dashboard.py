@@ -305,6 +305,7 @@ MAX_TABLE_PREVIEW_ROWS = 200
 MAX_TABLE_FULL_VIEW_ROWS = 50000
 MAX_LIVE_LOG_ROWS = 160
 MAX_ACTIVITY_POINTS = 200
+MAX_PHY_GRID_DETAIL_EVENTS = 12000
 POLL_INTERVAL_MS = 1000
 RUNTIME_LOG_DIR = REPO_ROOT / "tmp_web_runs"
 PROCESSING_CHAIN_CATALOG_PATH = REPO_ROOT / "simulator" / "configs" / "defaults" / "processing_chains.yaml"
@@ -5485,6 +5486,7 @@ def filesystem_log_rows(run_row: dict[str, Any] | None, limit: int = MAX_LIVE_LO
         folder / "logs" / "matlab_diary.log",
         folder / "logs" / "run.log",
         folder / "matlab_diary.log",
+        folder / "runtime" / "journal" / "runtime_events.jsonl",
     ]
     lines: list[tuple[str, str]] = []
     for path in candidates:
@@ -5494,9 +5496,34 @@ def filesystem_log_rows(run_row: dict[str, Any] | None, limit: int = MAX_LIVE_LO
             raw_lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
         except OSError:
             continue
+        try:
+            source_path = path.relative_to(folder).as_posix()
+        except ValueError:
+            source_path = path.name
         for idx, line in enumerate(raw_lines, start=1):
-            if line.strip():
-                lines.append((f"{path.name}:{idx}", line.strip()))
+            message = line.strip()
+            if not message:
+                continue
+            if path.suffix.lower() == ".jsonl":
+                try:
+                    event = json.loads(message)
+                    message = " ".join(
+                        part
+                        for part in (
+                            f"[{str(event.get('timestamp_utc') or '').strip()}]"
+                            if str(event.get("timestamp_utc") or "").strip()
+                            else "",
+                            str(event.get("event_type") or "EVENT").strip(),
+                            str(event.get("status") or "").strip(),
+                            str(event.get("message") or "").strip(),
+                        )
+                        if part
+                    )
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    # Preserve the persisted row verbatim when a partially
+                    # written JSONL tail is observed during an active run.
+                    pass
+            lines.append((f"{source_path}:{idx}", message))
     if descending:
         lines = list(reversed(lines))
     lines = lines[: max(0, int(limit))]
@@ -9209,8 +9236,11 @@ PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
         "spec": {"channel": "Planned", "direction": ""},
     },
     "observed_re_allocation": {
-        "canonical_path": "frame_grid/csv/observed_re_allocation.csv",
-        "legacy_paths": ["reports/csv/live_re_allocation_snapshot.csv"],
+        "canonical_path": "components/frame_grid/csv/observed_re_allocation.csv",
+        "legacy_paths": [
+            "frame_grid/csv/observed_re_allocation.csv",
+            "reports/csv/live_re_allocation_snapshot.csv",
+        ],
         "owner_kind": "observed_re_allocation",
         "spec": {"channel": "Observed", "direction": ""},
     },
@@ -9769,6 +9799,7 @@ def build_phy_time_frequency_cells(
                         "cell_ids": set(),
                         "port_indices": set(),
                         "layer_counts": set(),
+                        "evidence_scopes": set(),
                         "lifecycle_statuses": set(),
                         "coordinate_precisions": set(),
                         "source_artifacts": set(),
@@ -9782,6 +9813,7 @@ def build_phy_time_frequency_cells(
                     ("cell_ids", "cell_id"),
                     ("port_indices", "port_index"),
                     ("layer_counts", "layer_count"),
+                    ("evidence_scopes", "evidence_scope"),
                     ("lifecycle_statuses", "lifecycle_status"),
                     ("coordinate_precisions", "coordinate_precision"),
                     ("source_artifacts", "source_artifact"),
@@ -9801,6 +9833,7 @@ def build_phy_time_frequency_cells(
             "cell_ids",
             "port_indices",
             "layer_counts",
+            "evidence_scopes",
             "lifecycle_statuses",
             "coordinate_precisions",
             "source_artifacts",
@@ -9993,7 +10026,40 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
         nrb=nrb,
         symbols_per_slot=symbols_per_slot,
     )
-    dataflow = sorted(events, key=lambda item: (int(item.get("slot") or 0), int(item.get("symbol_start") or 0), str(item.get("channel") or "")))
+    def event_display_priority(item: dict[str, Any]) -> tuple[int, int, int, int, str]:
+        scope = str(item.get("evidence_scope") or "").strip().lower()
+        lifecycle = str(item.get("lifecycle_status") or "").strip().lower()
+        observed = scope.startswith("runtime_observed") or lifecycle in {
+            "transmitted",
+            "received",
+            "decoded",
+            "failed",
+            "collision",
+            "missed",
+        }
+        return (
+            0 if observed else 1,
+            int(item.get("slot") or 0),
+            int(item.get("symbol_start") or 0),
+            int(item.get("prb_start") or 0),
+            str(item.get("channel") or ""),
+        )
+
+    # The browser detail payload is bounded, but observed runtime allocations
+    # must never be displaced by the generally larger planned schedule.  The
+    # complete planned+observed overlay remains represented by
+    # time_frequency_cells, which is built before this bounded serialization.
+    display_events = sorted(events, key=event_display_priority)
+    event_payload_limit = MAX_PHY_GRID_DETAIL_EVENTS
+    returned_events = display_events[:event_payload_limit]
+    dataflow = sorted(
+        events,
+        key=lambda item: (
+            int(item.get("slot") or 0),
+            int(item.get("symbol_start") or 0),
+            str(item.get("channel") or ""),
+        ),
+    )
     table_status = [
         {
             "table_key": key,
@@ -10030,8 +10096,10 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             "selected_ue_id": selected_ue,
             "ue_options": ue_values[:500],
             "lanes": lanes,
-            "events": events[:6000],
+            "events": returned_events,
             "event_count": len(events),
+            "returned_event_count": len(returned_events),
+            "truncated_event_count": max(0, len(events) - len(returned_events)),
             "time_frequency_cells": time_frequency_cells,
             "time_frequency_cell_count": len(time_frequency_cells),
             "axis_contract": {
@@ -19426,9 +19494,11 @@ window.addEventListener('DOMContentLoaded', function () {
     const summary = live.summary || {};
     const realtimeData = live.runtime_context || live.realtime || {};
     const dashboard = live.realtime_dashboard || {};
-    const logs = (Array.isArray(dashboard.logs) && dashboard.logs.length
+    const allLogs = (Array.isArray(dashboard.logs) && dashboard.logs.length
       ? dashboard.logs
-      : (live.logs_recent || live.logs || [])).slice(-30).reverse();
+      : (live.logs_recent || live.logs || []));
+    const logs = allLogs.slice(-30).reverse();
+    const persistedLogCount = Number((live.counts || {}).logs_total || allLogs.length || 0);
     const stage = realtimeData.stage || {};
     const run = live.run || {};
     const stageValue = (...names) => {
@@ -19478,7 +19548,7 @@ window.addEventListener('DOMContentLoaded', function () {
         <div class="tile metric"><h4>Status</h4><div class="value">${esc((live.run || {}).status_text || '—')}</div></div>
         <div class="tile metric"><h4>Slot progress</h4><div class="value">${esc(progressKnown ? `${currentSlot}/${totalSlots}` : '—')}</div></div>
         <div class="tile metric"><h4>UEs</h4><div class="value">${esc(text(summary.configured_users ?? '—'))}</div></div>
-        <div class="tile metric"><h4>Live events</h4><div class="value">${esc(logs.length)}</div></div>
+        <div class="tile metric"><h4>Persisted events</h4><div class="value">${esc(persistedLogCount)}</div><p>${esc(logs.length)} newest shown below</p></div>
       </div>
       ${liveEvidenceWarning}
       <section class="panel live-progress-summary"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Execution status</h3><p class="subtle">Compact values from the atomic live-stage row; no configured value is substituted for an unavailable measurement.</p></div><a class="button-link" data-page="phy_grid" href="/phy-grid">Open time-frequency grid</a></div>${progressBar}${objectTable(compactStage, 'Waiting for progress data.')}</section>
@@ -19680,10 +19750,11 @@ window.addEventListener('DOMContentLoaded', function () {
     main.innerHTML = `${liveTabs('phy_grid')}
       <section class="panel">
         ${pageRunSelector('phyGridRunSelect', 'Run', {runningOnly:false})}
-        <div class="grid three" style="margin-bottom:10px">
+        <div class="grid four" style="margin-bottom:10px">
           <div class="tile metric"><h4>PRBs</h4><div class="value">${esc(grid.nrb || '—')}</div></div>
           <div class="tile metric"><h4>Symbols / slot</h4><div class="value">${esc(grid.symbols_per_slot || '—')}</div></div>
           <div class="tile metric"><h4>Events</h4><div class="value">${esc(grid.event_count ?? '—')}</div></div>
+          <div class="tile metric"><h4>Detailed RE rows</h4><div class="value">${esc(grid.returned_event_count ?? (grid.events || []).length)} / ${esc(grid.event_count ?? '—')}</div><p>${Number(grid.truncated_event_count || 0) > 0 ? `${esc(grid.truncated_event_count)} lower-priority planned rows omitted from detail only` : 'complete detail payload'}</p></div>
         </div>
         ${state.phyGrid ? renderPhyGridPayload(state.phyGrid) : `<div class="chart-empty">${runId ? 'Loading resource grid…' : 'Select a run.'}</div>`}
       </section>`;

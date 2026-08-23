@@ -207,3 +207,88 @@ def test_exact_planned_re_rows_render_without_inventing_coordinates(
     assert display_cell["channels"] == ["PDSCH-DMRS"]
     assert display_cell["port_indices"] == ["1"]
     assert display_cell["layer_counts"] == ["2"]
+
+
+def test_runtime_observed_re_rows_are_not_displaced_by_planned_payload_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_rows = [_trace_row(1, "D", grants=1)]
+    planned_rows = [
+        {
+            "absolute_slot": 0,
+            "direction": "DL",
+            "channel": "PDSCH",
+            "component": "PDSCH",
+            "subcarrier_start": 12 * (index + 1),
+            "subcarrier_count": 12,
+            "symbol_index": index + 1,
+            "symbol_count": 1,
+            "re_count": 12,
+            "coordinate_precision": "exact_rb_symbol_region",
+            "evidence_scope": "planned_config",
+        }
+        for index in range(2)
+    ]
+    observed_rows = [
+        {
+            "absolute_slot": 0,
+            "direction": "DL",
+            "channel": "PDSCH",
+            "component": "PDSCH",
+            "subcarrier_start": 120,
+            "subcarrier_count": 12,
+            "symbol_index": 3,
+            "symbol_count": 1,
+            "re_count": 12,
+            "coordinate_precision": "exact_rb_symbol_region",
+            "evidence_scope": "runtime_observed_tx_occupancy",
+            "lifecycle_status": "transmitted",
+        }
+    ]
+    run_row = {
+        "run_id": 79,
+        "run_tag": "runtime-grid-priority",
+        "scenario_id": "runtime-grid-priority",
+        "status_text": "running",
+        "status_json": "{}",
+        "config_json": json.dumps(
+            {
+                "resolved_runtime_view": {"active_grid_num_rbs": 25},
+                "frame_timing": {"symbols_per_slot": 14},
+            }
+        ),
+        "updated_utc": "2026-08-23T00:00:00Z",
+    }
+    monkeypatch.setattr(dash, "fetch_run", lambda _run_id: run_row)
+    monkeypatch.setattr(dash, "fetch_artifacts", lambda _run_id: [])
+    monkeypatch.setattr(dash, "merge_db_and_filesystem_artifacts", lambda _artifacts, _run: [])
+    monkeypatch.setattr(dash, "MAX_PHY_GRID_DETAIL_EVENTS", 2)
+
+    def select_rows(_artifacts, logical_path, **_kwargs):
+        selected = []
+        if logical_path == "reports/csv/slot_trace.csv":
+            selected = trace_rows
+        elif logical_path == "components/frame_grid/csv/planned_re_allocation.csv":
+            selected = planned_rows
+        elif logical_path == "components/frame_grid/csv/observed_re_allocation.csv":
+            selected = observed_rows
+        return selected, {
+            "selected_logical_path": logical_path,
+            "canonical_logical_path": logical_path,
+            "selection_status": "selected" if selected else "unavailable",
+            "selected_artifact_id": None,
+        }
+
+    monkeypatch.setattr(dash, "select_canonical_csv_rows", select_rows)
+    dash.PHY_GRID_PAYLOAD_CACHE.clear()
+    grid = dash.build_phy_grid_payload(79, slot_limit=1)["grid"]
+
+    assert grid["event_count"] == 3
+    assert grid["returned_event_count"] == 2
+    assert grid["truncated_event_count"] == 1
+    assert grid["events"][0]["evidence_scope"] == "runtime_observed_tx_occupancy"
+    assert grid["events"][0]["lifecycle_status"] == "transmitted"
+    assert any(
+        "runtime_observed_tx_occupancy" in cell["evidence_scopes"]
+        for cell in grid["time_frequency_cells"]
+    )

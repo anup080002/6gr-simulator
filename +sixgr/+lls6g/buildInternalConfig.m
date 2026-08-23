@@ -4712,9 +4712,26 @@ if nSites * nSectorsPerSite < numCells
     nSites = max(1, ceil(numCells / nSectorsPerSite));
 end
 
+deploymentLayoutType = localResolveDeploymentLayoutType(s, nSites, nSectorsPerSite);
+if strcmpi(char(deploymentLayoutType), "single_site")
+    if isfinite(nSitesRequested) && round(nSitesRequested) ~= 1
+        error("sixgr:lls6g:config:SingleSiteCardinalityMismatch", ...
+            "deployment_topology.layout_type=single_site requires deployment_topology.num_sites=1; observed %g.", ...
+            nSitesRequested);
+    end
+    if isfinite(nSectorsRequested) && round(nSectorsRequested) ~= numCells
+        error("sixgr:lls6g:config:SingleSiteSectorCardinalityMismatch", ...
+            "A single-site deployment with %d configured cells requires num_sectors_per_site=%d; observed %g.", ...
+            numCells, numCells, nSectorsRequested);
+    end
+    % A single site can still contain multiple co-located sectors/cells.
+    % Preserve that distinction instead of silently converting the layout
+    % to a multi-site hexagonal deployment.
+    nSites = 1;
+    nSectorsPerSite = numCells;
+end
 cfg = sixgr.util.structSet(cfg, "scenario.layout.nSites", nSites);
 cfg = sixgr.util.structSet(cfg, "scenario.layout.nSectorsPerSite", nSectorsPerSite);
-deploymentLayoutType = localResolveDeploymentLayoutType(s, nSites, nSectorsPerSite);
 if strlength(deploymentLayoutType) > 0
     cfg = sixgr.util.structSet(cfg, "scenario.geometry.deployment", char(deploymentLayoutType));
 end
@@ -5309,6 +5326,11 @@ deploymentCandidate = string(localGetNested(s, "deployment_topology.layout_type"
     localGetNested(s, "scenario.geometry.deployment", "")))));
 if strlength(strtrim(deploymentCandidate)) > 0
     token = lower(strtrim(char(deploymentCandidate)));
+    normalizedToken = regexprep(token, "[\s-]+", "_");
+    if ismember(string(normalizedToken), ["single", "single_site", "single_cell"])
+        deploymentType = "single_site";
+        return;
+    end
     if contains(token, "indoor")
         deploymentType = "indoor_grid";
         return;
@@ -5321,6 +5343,9 @@ if strlength(strtrim(deploymentCandidate)) > 0
         deploymentType = "rect_grid";
         return;
     end
+    error("sixgr:lls6g:config:UnsupportedDeploymentLayout", ...
+        "Unsupported deployment_topology layout token '%s'.", ...
+        deploymentCandidate);
 end
 
 scenarioClass = localNormalizeScenarioClass(string(localGetNested(s, "deployment_topology.cell_type", ...

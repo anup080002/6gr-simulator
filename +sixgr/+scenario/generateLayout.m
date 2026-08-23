@@ -46,6 +46,13 @@ layout.nTRxP = prof.nTRxP;
 bsH = prof.bs.height_m;
 
 switch lower(string(prof.layoutType))
+    case {"single","single_site","single-site","single site"}
+        if double(prof.nSites) ~= 1
+            error("sixgr:scenario:SingleSiteCardinalityMismatch", ...
+                "single_site layout requires exactly one site; observed %g.", ...
+                double(prof.nSites));
+        end
+        siteXY = [0 0];
     case {"hex","hex_grid","hexgrid"}
         siteXY = localHexSites(prof.nSites, prof.isd_m);
     case {"indoor_grid","grid","rect","rect_grid","rectgrid"}

@@ -184,6 +184,17 @@ sync.NCellID = double(NCellID);
 sync.NCellIDSource = 'blind_pss_sss_correlation';
 sync.ConfiguredCellIDUsed = false;
 sync.UsedConfiguredCellID = false;
+% These are stage outcomes, not values inferred later by a report.  This
+% function only reaches the sync construction after the blind PSS search
+% returned a finite timing/NID2 hypothesis and the exhaustive SSS search
+% returned a valid NID1/physical-cell-ID hypothesis.  Preserve those two
+% receiver decisions explicitly so downstream initial-access tables do not
+% have to guess success from PBCH CRC or from nonzero correlation metrics.
+sync.PSSDetected = true;
+sync.PSSDetectionSource = 'blind_pss_candidate_window_correlation';
+sync.SSSDetected = true;
+sync.SSSDetectionSource = 'blind_sss_336_hypothesis_correlation';
+sync.NCellIDRecovered = true;
 
 % Attach debug info
 sync.FreqInfo = finfo;

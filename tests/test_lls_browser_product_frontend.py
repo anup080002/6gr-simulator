@@ -233,6 +233,7 @@ def main() -> None:
         assert "Live evidence is stale." in realtime_page
         assert "This stored incomplete snapshot is not proof that MATLAB is still executing." in realtime_page
         assert "Full runtime stage audit record" in realtime_page
+        assert "Persisted events" in realtime_page
         assert "Open time-frequency grid" in realtime_page
         assert realtime_page.index("${realtimeComponentPanel()}") < realtime_page.index("Full runtime stage audit record")
         assert "${realtimeComponentPanel()}\n      ${realtimeLogPanel()}\n      ${realtimeUEStatusPanel()}" in realtime_page
@@ -261,6 +262,7 @@ def main() -> None:
         assert "frequency domain — PRB / subcarrier span" in phy_grid_page
         assert "X — Time domain" in phy_grid_page
         assert "Y — Frequency domain" in phy_grid_page
+        assert "Detailed RE rows" in phy_grid_page
         assert "grid.time_frequency_cells" in phy_grid_page
         assert "Planned only — not observed" in phy_grid_page
         assert "const plannedOnly" in phy_grid_page

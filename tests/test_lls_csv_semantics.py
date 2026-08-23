@@ -937,6 +937,59 @@ def _mu_check(direction: str, row: dict[str, str]):
     return next(check for check in checks if check.check_id == "mu_mimo_receiver_execution")
 
 
+def _transport_check(row: dict[str, str]):
+    checks = _audit_link_table("trial.csv", list(row), [row], "UL", 1)
+    return next(
+        check for check in checks
+        if check.check_id == "transport_crc_ber_goodput_arithmetic"
+    )
+
+
+def _transport_row(*, retransmission: bool, crc_pass: bool) -> dict[str, str]:
+    tbs = 1000
+    offered = 0 if retransmission else tbs
+    good = tbs if crc_pass else 0
+    duration_ms = 1.0
+    return {
+        "Direction": "UL", "Frame": "1", "Slot": "2", "UEID": "1",
+        "HARQRound": "2" if retransmission else "1",
+        "ExecutionID": "execution-1", "TBSize_bits": str(tbs),
+        "OfferedBits": str(offered), "GoodBits": str(good),
+        "BitErrors": "0" if crc_pass else "100",
+        "BitsCompared": str(tbs), "RawBER": "0" if crc_pass else "0.1",
+        "CRCPass": "1" if crc_pass else "0",
+        "AirInterfaceObservation_ms": str(duration_ms),
+        "OfferedThroughput_Mbps": str(offered / duration_ms / 1000.0),
+        "Goodput_Mbps": str(good / duration_ms / 1000.0),
+        "TargetCodeRate": "0.5",
+        "HARQIsRetransmission": "1" if retransmission else "0",
+        "RV": "2" if retransmission else "0",
+    }
+
+
+def test_transport_accounting_accepts_zero_new_offered_bits_on_harq_retransmission() -> None:
+    check = _transport_check(_transport_row(retransmission=True, crc_pass=True))
+    assert check.passed, check.details
+
+
+def test_transport_accounting_rejects_double_counted_harq_retransmission_offer() -> None:
+    row = _transport_row(retransmission=True, crc_pass=False)
+    row["OfferedBits"] = row["TBSize_bits"]
+    row["OfferedThroughput_Mbps"] = "1"
+    check = _transport_check(row)
+    assert not check.passed
+    assert "retransmission_offered_bits_nonzero" in check.details
+
+
+def test_transport_accounting_rejects_new_data_offer_that_differs_from_tbs() -> None:
+    row = _transport_row(retransmission=False, crc_pass=False)
+    row["OfferedBits"] = "0"
+    row["OfferedThroughput_Mbps"] = "0"
+    check = _transport_check(row)
+    assert not check.passed
+    assert "new_data_offered_bits_not_tbs" in check.details
+
+
 def test_dl_mu_requires_measured_joint_irc_processing_not_fake_combiner() -> None:
     row = {
         "MUMIMOEnabled": "1",
