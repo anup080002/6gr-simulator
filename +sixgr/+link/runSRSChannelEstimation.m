@@ -35,6 +35,14 @@ out.AirInterfaceObservation_ms = NaN;
 out.AcquisitionTime_ms = NaN;
 out.TrackingFailure = 1;
 out.NoiseVariance = NaN;
+out.NoiseVarianceSource = "";
+out.SignalEnergyPerOccupiedRE = NaN;
+out.ReferenceAWGNGridNoiseVariance = NaN;
+out.ReferenceAWGNSampleNoiseVariance = NaN;
+out.SampleToGridNoiseVarianceGain = NaN;
+out.SNRReferencePlane = "";
+out.AppliedNoiseSNR_dB = NaN;
+out.WaveformPowerUsedForAWGN = false;
 out.NoiseVarStatus = "";
 out.NoiseVarSource = "";
 out.NoiseVarReason = "";
@@ -228,7 +236,8 @@ try
     noiseVarArgs = {};
     if isnumeric(injectedNoiseVariance) && isscalar(injectedNoiseVariance) && ...
             isfinite(double(injectedNoiseVariance)) && double(injectedNoiseVariance) >= 0
-        noiseVarArgs = {"NoiseVar", double(injectedNoiseVariance)};
+        noiseVarArgs = {"NoiseVar", double(injectedNoiseVariance), ...
+            "NoiseVarDomain", "time"};
     end
     [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
@@ -242,6 +251,28 @@ try
     out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
     out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
     out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
+    out.NoiseVarianceSource = char(string(sixgr.util.structGet( ...
+        replay,"NoiseVarianceSource",out.NoiseVarSource)));
+    out.SignalEnergyPerOccupiedRE = double(sixgr.util.structGet( ...
+        replay,"SignalEnergyPerOccupiedRE",NaN));
+    out.ReferenceAWGNGridNoiseVariance = double(sixgr.util.structGet( ...
+        replay,"ReferenceAWGNGridNoiseVariance",NaN));
+    out.ReferenceAWGNSampleNoiseVariance = double(sixgr.util.structGet( ...
+        replay,"ReferenceAWGNSampleNoiseVariance",NaN));
+    out.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
+        replay,"SampleToGridNoiseVarianceGain",NaN));
+    out.SNRReferencePlane = char(string(sixgr.util.structGet( ...
+        replay,"SNRReferencePlane","")));
+    out.WaveformPowerUsedForAWGN = logical(sixgr.util.structGet( ...
+        replay,"WaveformPowerUsedForAWGN",false));
+    if isfinite(out.SignalEnergyPerOccupiedRE) && ...
+            out.SignalEnergyPerOccupiedRE > 0 && ...
+            isfinite(out.ReferenceAWGNGridNoiseVariance) && ...
+            out.ReferenceAWGNGridNoiseVariance > 0
+        out.AppliedNoiseSNR_dB = 10 .* log10( ...
+            out.SignalEnergyPerOccupiedRE ./ ...
+            out.ReferenceAWGNGridNoiseVariance);
+    end
     if isfinite(double(injectedNoiseVariance)) && double(injectedNoiseVariance) > 0 && ...
             (~isfinite(out.NoiseVariance) || out.NoiseVariance <= 0)
         rx.NoiseVar = double(injectedNoiseVariance);
@@ -571,12 +602,23 @@ replay.ChannelModelApplied = char(string(sixgr.util.structGet(cfg, "channel.mode
 replay.ChannelFadingApplied = logical(useFading);
 desiredWaveform = y;
 referenceWaveform = desiredWaveform;
-[preFrontEndWaveform, preFrontEndNVar] = ...
-    localAddAwgnFromReplay(y,replay,desiredWaveform);
-replay.InjectedNoiseVariance = double(preFrontEndNVar);
-if isfinite(preFrontEndNVar) && preFrontEndNVar > 0
-    replay.NoiseVarianceSource = "srs_replay_reference_waveform_awgn";
-end
+    txInfo.PowerContext = sixgr.util.structGet(cfg, ...
+        "lls6g.runtimePowerContext", struct());
+    [preFrontEndWaveform, preFrontEndNVar, awgnEvidence] = ...
+        localAddAwgnFromReplay(y,replay,desiredWaveform,txInfo,tx.Carrier,tx.SRSIndices);
+    replay.InjectedNoiseVariance = double(preFrontEndNVar);
+    if isfinite(preFrontEndNVar) && preFrontEndNVar > 0
+        replay.NoiseVarianceSource = char(string(sixgr.util.structGet( ...
+            awgnEvidence,"NoiseVarianceSource", ...
+            "srs_replay_reference_waveform_awgn")));
+    end
+    if isstruct(awgnEvidence)
+        evidenceFields = fieldnames(awgnEvidence);
+        for evidenceIdx = 1:numel(evidenceFields)
+            replay.(evidenceFields{evidenceIdx}) = ...
+                awgnEvidence.(evidenceFields{evidenceIdx});
+        end
+    end
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     preFrontEndWaveform,cfgReplay,sampleRateHz,replay,"Direction","UL");
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
@@ -808,13 +850,16 @@ catch
 end
 end
 
-function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
+function [y, nVar, evidence] = localAddAwgnFromReplay( ...
+        x, replay, referenceWaveform, txInfo, carrier, occupiedIndices)
+evidence = struct();
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
     nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
     if isfinite(nVar) && nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
+        evidence.NoiseVarianceSource = "thermal_noise_relative_to_runtime_serving_rx_power";
         return;
     end
     y = x;
@@ -822,30 +867,37 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
     return;
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
-if isfinite(nVar) && nVar >= 0
-    if nVar > 0
-        n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
-        y = x + cast(n, "like", x);
-    else
-        y = x;
-    end
-    return;
+if isempty(carrier)
+    error("sixgr:link:SRS:MissingOFDMNoiseCalibration", ...
+        "Standalone SRS AWGN requires the transmitting carrier for occupied-grid noise calibration.");
 end
-[y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
-end
-
-function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
-nVar = NaN;
-snr_dB = double(snr_dB);
-if ~(isscalar(snr_dB) && isfinite(snr_dB)) || isempty(referenceWaveform)
-    return;
-end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
-if ~(isfinite(refPower) && refPower >= 0)
-    return;
-end
-nVar = refPower / max(10.^(snr_dB / 10), eps);
+[signalEnergyPerOccupiedRE, receivedEnergyEvidence] = ...
+    sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
+        carrier,referenceWaveform,occupiedIndices,"SignalFamily","SRS");
+[y, referenceNoise] = sixgr.phy.waveform.addOccupiedREAWGN( ...
+    x,carrier,appliedSNR_dB, ...
+    "SignalEnergyPerOccupiedRE",signalEnergyPerOccupiedRE);
+nVar = double(referenceNoise.SampleNoiseVariance);
+evidence.NoiseVarianceSource = ...
+    "standalone_awgn_measured_received_occupied_grid_esn0_reference";
+evidence.SignalEnergyMeasurementSource = char(string(receivedEnergyEvidence.Source));
+evidence.SignalEnergyMeasurementPlane = char(string(receivedEnergyEvidence.MeasurementPlane));
+evidence.SignalEnergyObservationCount = double(receivedEnergyEvidence.ObservationCount);
+evidence.SignalEnergyReceiveBranchCount = double(receivedEnergyEvidence.ReceiveBranchCount);
+evidence.SNRReferencePlane = char(string(referenceNoise.SNRReferencePlane));
+evidence.SNRDefinition = char(string(referenceNoise.SNRDefinition));
+evidence.SignalEnergyPerOccupiedRE = ...
+    double(referenceNoise.SignalEnergyPerOccupiedRE);
+evidence.ReferenceAWGNGridNoiseVariance = ...
+    double(referenceNoise.GridNoiseVariance);
+evidence.ReferenceAWGNSampleNoiseVariance = ...
+    double(referenceNoise.SampleNoiseVariance);
+evidence.SampleToGridNoiseVarianceGain = ...
+    double(referenceNoise.SampleToGridNoiseVarianceGain);
+evidence.NoiseCalibrationVersion = char(string(referenceNoise.Version));
+evidence.WaveformPowerUsedForAWGN = false;
+evidence.CyclicPrefixPowerUsedForAWGN = false;
+evidence.UnusedFFTBinPowerUsedForAWGN = false;
 end
 
 function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)

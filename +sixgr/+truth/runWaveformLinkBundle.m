@@ -3642,6 +3642,23 @@ for sweepIdx = 1:numel(snrGrid)
                 runtimeState, cfg, runFolder, multiUser, userCfg, dlGrants, "DL", snrVal, absoluteFrame, dlStates, ...
                 dlTrials, ulTrials, dlConstT, ulConstT, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ...
                 sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
+            % The K2 PUSCH grant above is frozen before this PDSCH decode,
+            % while the HARQ-ACK reservation is created by the decode. Bind
+            % that newly measured ACK/NACK to the already queued future
+            % PUSCH now. Waiting until the due UL slot is incorrect because
+            % startSlot emits standalone PUCCH before queued PUSCH lookup.
+            [runtimeState, pendingULGrants, lateFeedbackBlockedPUSCH] = ...
+                sixgr.truth.CoupledTruthRuntime. ...
+                reconcileQueuedPUSCHAfterDLFeedbackRuntime( ...
+                runtimeState, pendingULGrants, ...
+                localPUSCHUCIOnPUSCHAvailable(cfg));
+            if istable(lateFeedbackBlockedPUSCH) && ...
+                    ~isempty(lateFeedbackBlockedPUSCH)
+                localAppendRuntimeLog("INFO", ...
+                    "Suppressed queued PUSCH after post-PDSCH HARQ-ACK creation: source_slot=%d blocked=%d pending=%d.", ...
+                    round(double(absoluteFrame)), ...
+                    height(lateFeedbackBlockedPUSCH), numel(pendingULGrants));
+            end
         end
         if allowUL
             if allowDL
@@ -3657,6 +3674,33 @@ for sweepIdx = 1:numel(snrGrid)
                 "Coupled UL queued grant lookup complete: sweep=%d/%d slot=%d/%d due_grants=%d pending_grants=%d.", ...
                 round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
                 numel(ulGrants), numel(pendingULGrants));
+            if ~isempty(ulGrants)
+                % The K2 UL grant was frozen at an earlier control
+                % occasion.  A DL HARQ-ACK due in this UL slot can be
+                % created only after the originating PDSCH is decoded,
+                % which is later than that control decision.  Reconcile
+                % the now-complete due-slot state before executing either
+                % PUSCH or PUCCH.  Otherwise the same UE can incorrectly
+                % emit a standalone PUCCH and a PUSCH on overlapping UL
+                % resources even though TS 38.212 UCI-on-PUSCH
+                % multiplexing is available.
+                if localPUSCHUCIOnPUSCHAvailable(cfg)
+                    [runtimeState, ulGrants] = sixgr.truth.CoupledTruthRuntime. ...
+                        multiplexDueHARQACKOnPUSCHRuntime( ...
+                        runtimeState, ulGrants, absoluteFrame);
+                end
+                [ulGrants, latePUCCHCollisionBlocked] = ...
+                    sixgr.truth.CoupledTruthRuntime. ...
+                    excludeULGrantsCollidingWithPUCCHRuntime( ...
+                    runtimeState, ulGrants, absoluteFrame);
+                if istable(latePUCCHCollisionBlocked) && ...
+                        ~isempty(latePUCCHCollisionBlocked)
+                    localAppendRuntimeLog("INFO", ...
+                        "Suppressed queued PUSCH grants after due-slot PUCCH reconciliation: slot=%d blocked=%d remaining=%d.", ...
+                        round(double(absoluteFrame)), ...
+                        height(latePUCCHCollisionBlocked), numel(ulGrants));
+                end
+            end
             runtimeState = localRecordQueuedULScheduleForCurrentSlot(runtimeState, ulGrants);
             if ~isempty(ulGrants)
                 [runtimeState, ulTrials, ulConstT, ulStates] = localExecuteCoupledDirectionBatch( ...
@@ -5782,7 +5826,10 @@ userMeta.RuntimeServingBasePathloss_dB = localLargeScaleMatrixValue(ls, "BasePat
 userMeta.RuntimeServingPathloss_dB = localLargeScaleMatrixValue(ls, "Pathloss_dB", metricUE, metricCell);
 userMeta.RuntimeServingShadowFading_dB = localLargeScaleMatrixValue(ls, "Shadow_dB", metricUE, metricCell);
 userMeta.RuntimeServingO2I_dB = localLargeScaleMatrixValue(ls, "O2I_dB", metricUE, metricCell);
-userMeta.RuntimeServingRSRP_dBm = localLargeScaleMatrixValue(ls, "RSRP_dBm", metricUE, metricCell);
+[userMeta.RuntimeServingRSRP_dBm, runtimeServingRSRPSource] = ...
+    sixgr.truth.CoupledTruthRuntime.reportableServingRSRP( ...
+    runtimeState, metricUE, metricCell);
+userMeta.RuntimeServingRSRPSource = char(runtimeServingRSRPSource);
 userMeta.RuntimeServingRxPower_dBm = localLargeScaleMatrixValue(ls, "RxPower_dBm", metricUE, metricCell);
 userMeta.RuntimeServingDistance2D_m = localLargeScaleMatrixValue(ls, "d2d_m", metricUE, metricCell);
 userMeta.RuntimeServingDistance3D_m = localLargeScaleMatrixValue(ls, "d3d_m", metricUE, metricCell);
@@ -11812,6 +11859,18 @@ for k = 1:nTrials
         r.NoiseVariance = double(sixgr.util.structGet(out, "PBCHNoiseVar", ...
             sixgr.util.structGet(pbch, "NoiseVar", NaN)));
         r.SSBReceivedPower_dB = double(sixgr.util.structGet(out, "SSBReceivedPower_dB", NaN));
+        r.SS_RSRP_dBm = double(sixgr.util.structGet(out, "SS_RSRP_dBm", NaN));
+        r.SS_RSRPPerReceiveAntenna_dBm = string(sixgr.util.structGet( ...
+            out, "SS_RSRPPerReceiveAntenna_dBm", ""));
+        r.SS_SINR_dB = double(sixgr.util.structGet(out, "SS_SINR_dB", NaN));
+        r.SS_SINRPerReceiveAntenna_dB = string(sixgr.util.structGet( ...
+            out, "SS_SINRPerReceiveAntenna_dB", ""));
+        r.SSMeasurementSource = string(sixgr.util.structGet( ...
+            out, "SSMeasurementSource", ""));
+        r.SSPhysicalMeasurementStatus = string(sixgr.util.structGet( ...
+            out, "SSPhysicalMeasurementStatus", "unavailable"));
+        r.SSSINRFailureReason = string(sixgr.util.structGet( ...
+            out, "SSSINRFailureReason", ""));
         r.PBCHDMRSMetric = double(sixgr.util.structGet(out, "PBCHDMRSMetric", NaN));
         r.PSSMetric = double(sixgr.util.structGet(out, "PSSMetric", NaN));
         r.SSSMetric = double(sixgr.util.structGet(out, "SSSMetric", NaN));
@@ -14422,6 +14481,18 @@ for k = 1:nTrials
         r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(outSRS, "CompositeSignalPowerBeforeNoise", NaN));
         r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(outSRS, "AppliedNoiseSNR_dB", NaN));
         r.NoiseVarianceSource = string(sixgr.util.structGet(outSRS, "NoiseVarianceSource", ""));
+        r.SignalEnergyPerOccupiedRE = double(sixgr.util.structGet( ...
+            outSRS,"SignalEnergyPerOccupiedRE",NaN));
+        r.ReferenceAWGNGridNoiseVariance = double(sixgr.util.structGet( ...
+            outSRS,"ReferenceAWGNGridNoiseVariance",NaN));
+        r.ReferenceAWGNSampleNoiseVariance = double(sixgr.util.structGet( ...
+            outSRS,"ReferenceAWGNSampleNoiseVariance",NaN));
+        r.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
+            outSRS,"SampleToGridNoiseVarianceGain",NaN));
+        r.SNRReferencePlane = string(sixgr.util.structGet( ...
+            outSRS,"SNRReferencePlane",""));
+        r.WaveformPowerUsedForAWGN = logical(sixgr.util.structGet( ...
+            outSRS,"WaveformPowerUsedForAWGN",false));
         r.ChannelModelApplied = string(sixgr.util.structGet(outSRS, "ChannelModelApplied", ""));
         r.ChannelFadingApplied = logical(sixgr.util.structGet(outSRS, "ChannelFadingApplied", false));
         r.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(outSRS, "AppliedLargeScaleGain_dB", NaN));
@@ -15245,6 +15316,12 @@ row.DesiredSignalPowerBeforeNoise = NaN;
 row.CompositeSignalPowerBeforeNoise = NaN;
 row.AppliedNoiseSNR_dB = NaN;
 row.NoiseVarianceSource = "";
+row.SignalEnergyPerOccupiedRE = NaN;
+row.ReferenceAWGNGridNoiseVariance = NaN;
+row.ReferenceAWGNSampleNoiseVariance = NaN;
+row.SampleToGridNoiseVarianceGain = NaN;
+row.SNRReferencePlane = "";
+row.WaveformPowerUsedForAWGN = false;
 row.NoiseOperatingMode = "";
 row.NoisePowerSource = "";
 row.ThermalNoisePower_dBm = NaN;
@@ -15478,6 +15555,13 @@ row.InterpolationLoss_dB = NaN;
 row.MismatchSensitivity_dB = NaN;
 row.AcquisitionTime_ms = NaN;
 row.SSBReceivedPower_dB = NaN;
+row.SS_RSRP_dBm = NaN;
+row.SS_RSRPPerReceiveAntenna_dBm = "";
+row.SS_SINR_dB = NaN;
+row.SS_SINRPerReceiveAntenna_dB = "";
+row.SSMeasurementSource = "";
+row.SSPhysicalMeasurementStatus = "unavailable";
+row.SSSINRFailureReason = "";
 row.PBCHDMRSMetric = NaN;
 row.PSSMetric = NaN;
 row.SSSMetric = NaN;
@@ -16499,8 +16583,12 @@ end
 if ~ismember("ServingRSRP_dBm", string(T.Properties.VariableNames)) || all(~isfinite(double(T.ServingRSRP_dBm)))
     T.ServingRSRP_dBm = repmat(double(sixgr.util.structGet(userMeta, "RuntimeServingRSRP_dBm", NaN)), n, 1);
 end
-if (~ismember("ServingRSRPSource", string(T.Properties.VariableNames)) || all(strlength(string(T.ServingRSRPSource)) == 0)) && any(isfinite(double(T.ServingRSRP_dBm)))
-    T.ServingRSRPSource = repmat("large_scale_per_reference_re_power", n, 1);
+runtimeServingRSRPSource = string(sixgr.util.structGet( ...
+    userMeta, "RuntimeServingRSRPSource", ""));
+if (~ismember("ServingRSRPSource", string(T.Properties.VariableNames)) || ...
+        all(strlength(string(T.ServingRSRPSource)) == 0)) && ...
+        strlength(strtrim(runtimeServingRSRPSource)) > 0
+    T.ServingRSRPSource = repmat(runtimeServingRSRPSource, n, 1);
 end
 if ~ismember("LargeScaleSINR_dB", string(T.Properties.VariableNames)) || all(~isfinite(double(T.LargeScaleSINR_dB)))
     T.LargeScaleSINR_dB = repmat(double(sixgr.util.structGet(userMeta, "RuntimeServingLargeScaleSINR_dB", NaN)), n, 1);

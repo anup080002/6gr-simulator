@@ -4,6 +4,9 @@ function result = recoverSIB1FromWaveform(rxWaveform, cfg, varargin)
 p = inputParser;
 p.addParameter("ReceiverRNTI", 65535, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("FaultMode", "", @(x) ischar(x) || isstring(x));
+p.addParameter("CandidateSSBIndex", [], ...
+    @(x) isempty(x) || (isnumeric(x) && isscalar(x) && isfinite(x) && ...
+    x >= 0 && x == round(x)));
 p.parse(varargin{:});
 
 result = localEmptyResult();
@@ -24,7 +27,9 @@ try
     result.DCIRNTI = double(p.Results.ReceiverRNTI);
     result.DetectionAttempted = true;
     result.MeasurementAttempted = true;
-    [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWaveform, cfg, "SampleRate_Hz", sampleRate);
+    [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWaveform, cfg, ...
+        "SampleRate_Hz", sampleRate, ...
+        "CandidateSSBIndex", p.Results.CandidateSSBIndex);
     result.PSSDetected = logical(sixgr.util.structGet(sync, "PSSDetected", false));
     result.SSSDetected = logical(sixgr.util.structGet(sync, "SSSDetected", false));
     result.NCellIDRecovered = logical(sixgr.util.structGet(sync, "NCellIDRecovered", false));
@@ -80,6 +85,7 @@ try
     result.MIBDMRSTypeAPosition = double(sixgr.util.structGet(pbch, "MIBDMRSTypeAPosition", NaN));
     result.PBCHiBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
     result.PBCHv = double(sixgr.util.structGet(pbch, "v", NaN));
+    result = localMeasurePhysicalSSB(result, rxSSB, sync, pbch, cfg);
     result.ChannelEstimateAvailable = logical(sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false));
     result.ChannelEstimateSource = string(sixgr.util.structGet(pbch, "ChannelEstimateSource", ""));
     result.EqualizationAvailable = logical(sixgr.util.structGet(pbch, "EqualizationAvailable", false));
@@ -333,7 +339,16 @@ result = struct( ...
     "TimingOffset", NaN, "FrequencyOffsetHz", NaN, ...
     "SSBCenterFrequencyOffsetHz", NaN, ...
     "SSBPlacementCorrectionAppliedHz", NaN, "SSBIndex", NaN, ...
-    "SSBReceivedPower_dB", NaN, "PBCHDMRSMetric", NaN, "PBCHNoiseVar", NaN, ...
+    "SSBReceivedPower_dB", NaN, ...
+    "SS_RSRP_dBm", NaN, "SS_RSRPPerReceiveAntenna_dBm", "", ...
+    "SS_SINR_dB", NaN, "SS_SINRPerReceiveAntenna_dB", "", ...
+    "SSMeasurementSource", "", ...
+    "SSSINRFailureReason", "", ...
+    "SSPhysicalMeasurementStatus", "unavailable", ...
+    "SSMeasurementAntennaAggregation", "", ...
+    "SSMeasurementFFTSize", NaN, ...
+    "SSMeasurementGridScaleToSqrtW", NaN, ...
+    "PBCHDMRSMetric", NaN, "PBCHNoiseVar", NaN, ...
     "PreEqualizationNoiseVariance", NaN, ...
     "PreEqualizationNoiseVarianceDomain", "", ...
     "PreEqualizationNoiseVarianceSource", "", ...
@@ -396,6 +411,136 @@ result = struct( ...
     "UsedOracleFields", strings(0, 1), "ProxyUsed", false, "Skipped", false, ...
     "ToolboxMissing", false, "Errors", "", "FailureReason", "", ...
     "CandidateTable", table(), "SampleRateHz", NaN, "SIB1RxTree", struct());
+end
+
+function result = localMeasurePhysicalSSB(result, rxSSB, sync, pbch, cfg)
+% Measure SS-RSRP on SSS REs using the TS 38.215 Toolbox implementation.
+% The normalized detection metric remains SSBReceivedPower_dB and is never
+% substituted for an absolute UE measurement.
+powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
+amplitudeUnit = string(sixgr.util.structGet( ...
+    powerContext, "WaveformAmplitudeUnit", ""));
+result.SSPhysicalMeasurementStatus = ...
+    "unavailable_missing_sqrt_mw_power_context";
+if ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW")
+    return;
+end
+nfft = double(sixgr.util.structGet(sync, "Nfft", NaN));
+if ~(isscalar(nfft) && isfinite(nfft) && nfft >= 1 && ...
+        nfft == round(nfft))
+    result.SSPhysicalMeasurementStatus = "unavailable_missing_ssb_fft_size";
+    return;
+end
+ncellid = double(sixgr.util.structGet(sync, "NCellID", NaN));
+if ~(isscalar(ncellid) && isfinite(ncellid) && ncellid >= 0 && ...
+        ncellid <= 1007 && ncellid == round(ncellid))
+    result.SSPhysicalMeasurementStatus = ...
+        "unavailable_missing_blind_recovered_ncellid";
+    return;
+end
+
+scale = nfft * sqrt(1000);
+physicalGrid = rxSSB ./ cast(scale, "like", rxSSB);
+iBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
+try
+    if isfinite(iBarSSB) && iBarSSB >= 0 && iBarSSB <= 7 && ...
+            iBarSSB == round(iBarSSB)
+        measured = nrSSBMeasurements( ...
+            physicalGrid, ncellid, iBarSSB);
+    else
+        measured = nrSSBMeasurements(physicalGrid, ncellid);
+    end
+    branchRSRP = double(measured.RSRPPerAntenna(:).');
+    branchRSRP = branchRSRP(isfinite(branchRSRP));
+catch ME
+    result.SSPhysicalMeasurementStatus = ...
+        "unavailable_nr_ssb_measurement_failed:" + string(ME.identifier);
+    return;
+end
+if isempty(branchRSRP)
+    result.SSPhysicalMeasurementStatus = ...
+        "unavailable_empty_ss_rsrp_per_antenna";
+    return;
+end
+
+result.SS_RSRP_dBm = max(branchRSRP);
+result.SS_RSRPPerReceiveAntenna_dBm = ...
+    localNumericVectorToken(branchRSRP);
+result.SSMeasurementFFTSize = nfft;
+result.SSMeasurementGridScaleToSqrtW = scale;
+result.SSMeasurementAntennaAggregation = ...
+    "maximum_per_receive_antenna_rsrp_ts_38_215_diversity_rule";
+result.SSMeasurementSource = ...
+    "nrSSBMeasurements_runtime_received_sss_resource_elements";
+result.SSPhysicalMeasurementStatus = "available_rsrp";
+
+% SS-SINR uses the same detected SSS resources.  A practical channel
+% estimate supplies both the resource-selective SSS channel and measured
+% noise/interference variance; PBCH post-equalization SINR is not reused or
+% relabeled as SS-SINR.
+try
+    sssInd = nrSSSIndices;
+    sssSym = nrSSS(ncellid);
+    % nrChannelEstimate requires a complete slot grid.  rxSSB is the
+    % canonical four-symbol SS/PBCH block extracted by SSB_Rx, so embed it
+    % at a local slot origin without inventing any additional RE values.
+    % SSS indices are local to the same four-symbol block and therefore
+    % retain their exact linear coordinates in the padded grid.
+    rxSlot = zeros(size(rxSSB, 1), 14, size(rxSSB, 3), "like", rxSSB);
+    rxSlot(:, 1:size(rxSSB, 2), :) = rxSSB;
+    [hEst, nVar] = nrChannelEstimate(rxSlot, sssInd, sssSym);
+    nVar = mean(double(nVar(:)), "omitnan");
+    nrx = size(rxSSB, 3);
+    branchSINR = nan(1, nrx);
+    for rxIdx = 1:nrx
+        if ndims(hEst) >= 4
+            hBranch = hEst(:, :, rxIdx, 1);
+        elseif ndims(hEst) == 3
+            hBranch = hEst(:, :, rxIdx);
+        else
+            hBranch = hEst;
+        end
+        hSSS = hBranch(double(sssInd(:)));
+        signalPower = mean(abs(hSSS).^2, "omitnan");
+        if isfinite(signalPower) && signalPower > 0 && ...
+                isfinite(nVar) && nVar > 0
+            branchSINR(rxIdx) = 10 * log10(signalPower / nVar);
+        end
+    end
+    finiteSINR = branchSINR(isfinite(branchSINR));
+    if ~isempty(finiteSINR)
+        result.SS_SINR_dB = max(finiteSINR);
+        result.SS_SINRPerReceiveAntenna_dB = ...
+            localNumericVectorToken(branchSINR);
+        result.SSPhysicalMeasurementStatus = "available_rsrp_and_sinr";
+        result.SSMeasurementSource = ...
+            "nrSSBMeasurements_rsrp_and_sss_hest_over_measured_noise_interference";
+    end
+catch ME
+    % RSRP remains valid even if practical SSS noise estimation is not
+    % available for this waveform length. Preserve the typed reason so a
+    % missing SS-SINR cannot be mistaken for a successful measurement.
+    result.SSPhysicalMeasurementStatus = ...
+        "available_rsrp_sinr_failed:" + string(ME.identifier);
+    result.SSSINRFailureReason = string(ME.message);
+end
+end
+
+function token = localNumericVectorToken(values)
+values = double(values(:).');
+if isempty(values)
+    token = "";
+    return;
+end
+parts = strings(1, numel(values));
+for idx = 1:numel(values)
+    if isfinite(values(idx))
+        parts(idx) = string(sprintf("%.15g", values(idx)));
+    else
+        parts(idx) = "NaN";
+    end
+end
+token = char(strjoin(parts, "|"));
 end
 
 function bits = localHexToBits(hex)

@@ -292,3 +292,12 @@ def test_runtime_observed_re_rows_are_not_displaced_by_planned_payload_limit(
         "runtime_observed_tx_occupancy" in cell["evidence_scopes"]
         for cell in grid["time_frequency_cells"]
     )
+
+    live_grid = dash.build_phy_grid_payload(
+        79, slot_limit=1, include_details=False
+    )["grid"]
+    assert live_grid["detail_payload_mode"] == "aggregated_cells_only"
+    assert live_grid["events"] == []
+    assert live_grid["returned_event_count"] == 0
+    assert live_grid["truncated_event_count"] == 3
+    assert live_grid["time_frequency_cells"] == grid["time_frequency_cells"]

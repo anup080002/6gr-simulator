@@ -267,6 +267,9 @@ function cfg = localBasicControlCfg(runFolder)
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "configs", "lls", "lls_srs_strict_mini_anchor.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
+assert(strcmpi(string(sixgr.util.structGet( ...
+    cfg, "scenario.geometry.deployment", "")), "single_site"), ...
+    "The inherited legacy single_pair topology must normalize to the canonical single_site runtime layout.");
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;

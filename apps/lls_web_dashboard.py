@@ -337,7 +337,7 @@ DB_POOLS: dict[str, object] = {}
 LIVE_PAYLOAD_CACHE: dict[int, dict[str, Any]] = {}
 CACHED_PAYLOAD_VERSION: dict[int, str] = {}
 SECTION_PAYLOAD_CACHE: dict[tuple[int, str, str, str], dict[str, Any]] = {}
-PHY_GRID_PAYLOAD_CACHE: dict[tuple[int, int, str], dict[str, Any]] = {}
+PHY_GRID_PAYLOAD_CACHE: dict[tuple[int, int, str, bool], dict[str, Any]] = {}
 TABLE_BROWSER_PAYLOAD_CACHE: dict[tuple[int, str], dict[str, Any]] = {}
 FILESYSTEM_ARTIFACT_CACHE: dict[str, list[dict[str, Any]]] = {}
 RUN_LAUNCH_LOCK = threading.Lock()
@@ -9725,7 +9725,7 @@ def build_phy_event(
         "mcs": first_present_value(row, ["MCS", "MCSIndex", "ScheduledMCS", "SelectedMCS"], ""),
         "cqi": first_present_value(row, ["WidebandCQI", "CQI", "CQIIndex"], ""),
         "sinr_dB": first_present_value(row, ["PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "ReceiverHestSINR_dB"], ""),
-        "rsrp_dBm": first_present_value(row, ["ServingRSRP_dBm", "RSRP_dBm", "CSI_RSRP_dBm"], ""),
+        "rsrp_dBm": first_present_value(row, ["ServingRSRP_dBm", "RSRP_dBm"], ""),
         "source_artifact": selected_path,
         "source_note": source_note,
     }
@@ -9843,14 +9843,21 @@ def build_phy_time_frequency_cells(
     return rows
 
 
-def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | None = None) -> dict[str, Any]:
+def build_phy_grid_payload(
+    run_id: int,
+    *,
+    slot_limit: int = 50,
+    ue_id: str | None = None,
+    include_details: bool = True,
+) -> dict[str, Any]:
     run_row = fetch_run(int(run_id))
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
     cfg = parse_config_json(run_row)
     slot_limit = max(1, min(200, int(slot_limit or 50)))
     selected_ue = str(ue_id or "").strip()
-    cache_key = (int(run_id), int(slot_limit), selected_ue)
+    include_details = bool(include_details)
+    cache_key = (int(run_id), int(slot_limit), selected_ue, include_details)
     cache_version = "|".join(
         [
             str(run_row.get("updated_utc") or ""),
@@ -10051,7 +10058,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
     # time_frequency_cells, which is built before this bounded serialization.
     display_events = sorted(events, key=event_display_priority)
     event_payload_limit = MAX_PHY_GRID_DETAIL_EVENTS
-    returned_events = display_events[:event_payload_limit]
+    returned_events = display_events[:event_payload_limit] if include_details else []
     dataflow = sorted(
         events,
         key=lambda item: (
@@ -10100,6 +10107,7 @@ def build_phy_grid_payload(run_id: int, *, slot_limit: int = 50, ue_id: str | No
             "event_count": len(events),
             "returned_event_count": len(returned_events),
             "truncated_event_count": max(0, len(events) - len(returned_events)),
+            "detail_payload_mode": "full" if include_details else "aggregated_cells_only",
             "time_frequency_cells": time_frequency_cells,
             "time_frequency_cell_count": len(time_frequency_cells),
             "axis_contract": {
@@ -14116,8 +14124,127 @@ def build_realtime_component_dashboard(
     return rows
 
 
+def load_realtime_ue_measurement_sources(
+    artifacts: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Load only canonical runtime producers used by the UE measurement card."""
+    return {
+        "cell_paths": load_first_available_csv_rows(
+            artifacts, ["reports/csv/live_cell_measurement_trace.csv"], max_rows=50000
+        ),
+        "serving": load_first_available_csv_rows(
+            artifacts, ["reports/csv/live_rsrp_serving_trace.csv"], max_rows=50000
+        ),
+        "csi": load_first_available_csv_rows(
+            artifacts,
+            ["air_interface/csv/csi_rs_trials.csv", "control/csv/csi_rs_trials.csv"],
+            max_rows=50000,
+        ),
+        "ssb": load_first_available_csv_rows(
+            artifacts,
+            ["air_interface/csv/pbch_trials.csv", "control/csv/pbch_trials.csv"],
+            max_rows=50000,
+        ),
+        "ul": load_first_available_csv_rows(
+            artifacts, ["air_interface/csv/ul_pusch_trials.csv"], max_rows=50000
+        ),
+        "dl": load_first_available_csv_rows(
+            artifacts, ["air_interface/csv/dl_pdsch_trials.csv"], max_rows=50000
+        ),
+    }
+
+
+def realtime_measurement_ue_id(row: dict[str, Any]) -> str:
+    raw = first_present_value(row, ["UEID", "UEIndex", "UEId", "RNTI"], "")
+    numeric = coerce_numeric(raw)
+    if numeric is None or numeric <= 0:
+        return ""
+    return str(int(numeric))
+
+
+def realtime_measurement_order(row: dict[str, Any]) -> tuple[float, float, float]:
+    frame = coerce_numeric(first_present_value(row, ["SFN", "Frame"], 0)) or 0.0
+    slot = coerce_numeric(first_present_value(row, ["Slot", "AbsoluteSlot"], 0)) or 0.0
+    time_s = coerce_numeric(first_present_value(row, ["Time_s", "Timestamp_s"], 0)) or 0.0
+    return (float(frame), float(slot), float(time_s))
+
+
+def latest_realtime_measurement_by_ue(
+    rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ue_id = realtime_measurement_ue_id(row)
+        if not ue_id:
+            continue
+        if ue_id not in latest or realtime_measurement_order(row) >= realtime_measurement_order(latest[ue_id]):
+            latest[ue_id] = row
+    return latest
+
+
+def realtime_pathloss_rows_by_ue(
+    rows: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    latest_by_path: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        ue_id = realtime_measurement_ue_id(row)
+        if not ue_id:
+            continue
+        cell = str(first_present_value(row, ["CellID", "ServingCell"], "") or "")
+        rank = str(first_present_value(row, ["CandidateRank", "PathIndex"], "") or "")
+        key = (ue_id, cell, rank)
+        if key not in latest_by_path or realtime_measurement_order(row) >= realtime_measurement_order(latest_by_path[key]):
+            latest_by_path[key] = row
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for (ue_id, _cell, _rank), row in latest_by_path.items():
+        status = str(first_present_value(row, ["PathlossComplianceStatus"], "") or "").strip()
+        source = str(first_present_value(row, ["PathlossModelSource"], "") or "").strip()
+        raw_pathloss = coerce_numeric(first_present_value(row, ["Pathloss_dB", "AppliedPathloss_dB"], None))
+        status_token = status.lower()
+        source_token = source.lower()
+        unavailable = (
+            raw_pathloss is None
+            or "unavailable" in status_token
+            or "unsupported" in status_token
+            or "disabled" in source_token
+        )
+        grouped.setdefault(ue_id, []).append(
+            {
+                "candidate_rank": coerce_numeric(first_present_value(row, ["CandidateRank", "PathIndex"], None)),
+                "cell_id": coerce_numeric(first_present_value(row, ["CellID", "ServingCell"], None)),
+                "pathloss_db": None if unavailable else raw_pathloss,
+                "raw_pathloss_db": raw_pathloss,
+                "rsrp_dbm": coerce_numeric(first_present_value(row, ["RSRP_dBm"], None)),
+                "rx_power_dbm": coerce_numeric(first_present_value(row, ["RxPower_dBm"], None)),
+                "beam_index": coerce_numeric(first_present_value(row, ["BeamIndex"], None)),
+                "beam_gain_db": coerce_numeric(first_present_value(row, ["BeamGain_dB"], None)),
+                "los": first_present_value(row, ["LOSFlag"], ""),
+                "shadow_fading_db": coerce_numeric(first_present_value(row, ["ShadowFading_dB"], None)),
+                "o2i_db": coerce_numeric(first_present_value(row, ["O2I_dB"], None)),
+                "status": status or ("unavailable" if unavailable else "available"),
+                "model_source": source,
+                "source_table": "reports/csv/live_cell_measurement_trace.csv",
+            }
+        )
+    for ue_id in grouped:
+        grouped[ue_id].sort(
+            key=lambda item: (
+                item["candidate_rank"] is None,
+                item["candidate_rank"] if item["candidate_rank"] is not None else 0,
+                item["cell_id"] if item["cell_id"] is not None else 0,
+            )
+        )
+    return grouped
+
+
 def build_realtime_ue_status(
-    metric_explorer: dict[str, Any], runtime_context: dict[str, Any]
+    metric_explorer: dict[str, Any],
+    runtime_context: dict[str, Any],
+    measurement_sources: dict[str, list[dict[str, Any]]] | None = None,
 ) -> list[dict[str, Any]]:
     summaries = metric_explorer.get("ue_summaries") if isinstance(metric_explorer, dict) else {}
     if not isinstance(summaries, dict):
@@ -14135,11 +14262,24 @@ def build_realtime_ue_status(
             ue_text = ue_text[:-2]
         if ue_text and ue_text.lower() != "nan":
             control_by_ue[ue_text] = row
-    ue_ids = sorted(set(str(key) for key in summaries) | set(control_by_ue), key=lambda value: (coerce_numeric(value) is None, coerce_numeric(value) or 0, value))
+    measurement_sources = measurement_sources if isinstance(measurement_sources, dict) else {}
+    serving_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("serving", []))
+    csi_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("csi", []))
+    ssb_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("ssb", []))
+    ul_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("ul", []))
+    dl_by_ue = latest_realtime_measurement_by_ue(measurement_sources.get("dl", []))
+    pathloss_by_ue = realtime_pathloss_rows_by_ue(measurement_sources.get("cell_paths", []))
+    measured_ue_ids = set(serving_by_ue) | set(csi_by_ue) | set(ssb_by_ue) | set(ul_by_ue) | set(dl_by_ue) | set(pathloss_by_ue)
+    ue_ids = sorted(set(str(key) for key in summaries) | set(control_by_ue) | measured_ue_ids, key=lambda value: (coerce_numeric(value) is None, coerce_numeric(value) or 0, value))
     rows: list[dict[str, Any]] = []
     for ue_id in ue_ids:
         perf = summaries.get(ue_id) or summaries.get(str(int(float(ue_id))) if coerce_numeric(ue_id) is not None else ue_id) or {}
         control = control_by_ue.get(ue_id, {})
+        serving = serving_by_ue.get(ue_id, {})
+        csi = csi_by_ue.get(ue_id, {})
+        ssb = ssb_by_ue.get(ue_id, {})
+        ul = ul_by_ue.get(ue_id, {})
+        dl = dl_by_ue.get(ue_id, {})
         eligible = first_present_value(control, ["SchedulingEligibility", "SharedSchedulingEligibility"], None)
         eligible_bool = is_truthy_value(eligible) if eligible not in {None, ""} else None
         failure_fields = ("PBCHFailureCount", "PRACHFailureCount", "ControlDecodeFailureCount", "PUCCHDecodeFailureCount", "TRSFailureCount")
@@ -14151,10 +14291,30 @@ def build_realtime_ue_status(
             health = "blocked"
         elif needs_attention:
             health = "attention"
-        elif perf or control:
+        elif perf or control or serving or csi or ssb or ul or dl or pathloss_by_ue.get(ue_id):
             health = "evidence_available"
         else:
             health = "unavailable"
+        csi_rsrp_dbm = coerce_numeric(first_present_value(csi, ["MeasurementRSRP_dBm", "CSI_RSRP_dBm"], None))
+        if csi_rsrp_dbm is None:
+            csi_rsrp_dbm = coerce_numeric(first_present_value(dl, ["CSI_RSRP_dBm"], None))
+        csi_relative_db = coerce_numeric(first_present_value(csi, ["MeasurementRelativeRSRP_dB", "MeasurementRSRP_dB"], None))
+        if csi_relative_db is None:
+            csi_relative_db = coerce_numeric(first_present_value(dl, ["CSI_RSRP_dB"], None))
+        csi_domain = str(first_present_value(csi, ["SINRMeasurementDomain"], "") or "").lower()
+        csi_sinr_db = coerce_numeric(first_present_value(csi, ["ReferenceMeasuredSINR_dB", "PilotSINR_dB"], None))
+        if csi_sinr_db is None and "csi" in csi_domain:
+            csi_sinr_db = coerce_numeric(first_present_value(csi, ["SINR_dB"], None))
+        ss_rsrp_dbm = coerce_numeric(first_present_value(ssb, ["SS_RSRP_dBm", "SSRSRP_dBm"], None))
+        ss_relative_db = coerce_numeric(first_present_value(ssb, ["SSBReceivedPower_dB"], None))
+        ss_sinr_db = coerce_numeric(first_present_value(ssb, ["SS_SINR_dB", "SSSINR_dB"], None))
+        pbch_dmrs_sinr_db = coerce_numeric(first_present_value(ssb, ["MeasuredTrialSINR_dB", "ReceiverHestSINR_dB"], None))
+        phr_db = coerce_numeric(first_present_value(ul, ["PUSCHPowerHeadroom_dB", "PowerHeadroom_dB", "PHR_dB"], None))
+        serving_rsrp_dbm = coerce_numeric(first_present_value(serving, ["ServingRSRP_dBm", "RSRP_dBm"], None))
+        if serving_rsrp_dbm is None:
+            serving_rsrp_dbm = coerce_numeric(first_present_value(dl, ["ServingRSRP_dBm"], None))
+        paths = pathloss_by_ue.get(ue_id, [])
+        pathloss_status = "available" if any(path.get("pathloss_db") is not None for path in paths) else ("unavailable_or_disabled" if paths else "not_published")
         rows.append(
             {
                 "ue_id": ue_id,
@@ -14173,6 +14333,22 @@ def build_realtime_ue_status(
                 "ul_sinr_db": coerce_numeric(perf.get("ul_mean_measured_sinr_dB")),
                 "dl_throughput_mbps": coerce_numeric(perf.get("dl_throughput_mbps")),
                 "ul_throughput_mbps": coerce_numeric(perf.get("ul_throughput_mbps")),
+                "serving_rsrp_dbm": serving_rsrp_dbm,
+                "ss_rsrp_dbm": ss_rsrp_dbm,
+                "ss_rsrp_relative_db": ss_relative_db,
+                "ss_sinr_db": ss_sinr_db,
+                "pbch_dmrs_sinr_db": pbch_dmrs_sinr_db,
+                "csi_rsrp_dbm": csi_rsrp_dbm,
+                "csi_rsrp_relative_db": csi_relative_db,
+                "csi_sinr_db": csi_sinr_db,
+                "csi_rsrp_per_antenna_dbm": first_present_value(csi, ["MeasurementRSRPPerReceiveAntenna_dBm"], ""),
+                "csi_measurement_status": first_present_value(csi, ["PhysicalMeasurementStatus", "CSIComputationStatus"], "not_published"),
+                "csi_measurement_source": first_present_value(csi, ["MeasurementSource", "SINRSource"], ""),
+                "csi_slot": coerce_numeric(first_present_value(csi, ["Slot"], None)),
+                "ue_phr_db": phr_db,
+                "phr_source": "air_interface/csv/ul_pusch_trials.csv" if phr_db is not None else "",
+                "pathloss_paths": paths,
+                "pathloss_status": pathloss_status,
                 "failure_count": failure_count,
                 "last_pdcch_slot": coerce_numeric(control.get("LastSuccessfulPDCCHSlot")),
                 "last_pucch_slot": coerce_numeric(control.get("LastSuccessfulPUCCHSlot")),
@@ -14181,6 +14357,9 @@ def build_realtime_ue_status(
                 "performance_source": str(perf.get("source_table") or ""),
                 "performance_fidelity": str(perf.get("fidelity_level") or "unavailable"),
                 "control_source": "reports/csv/live_control_gating_state.csv" if control else "",
+                "ss_source": "air_interface/csv/pbch_trials.csv" if ssb else "",
+                "csi_source": "air_interface/csv/csi_rs_trials.csv" if csi else "",
+                "serving_measurement_source": "reports/csv/live_rsrp_serving_trace.csv" if serving else "",
             }
         )
     return rows
@@ -16066,7 +16245,9 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
             public_artifacts, status_text
         ),
         "ue_status": build_realtime_ue_status(
-            metric_explorer, runtime_context
+            metric_explorer,
+            runtime_context,
+            load_realtime_ue_measurement_sources(artifacts),
         ),
         "logs": annotate_realtime_logs(logs_recent[-200:]),
         "folder_policy": {
@@ -18636,7 +18817,7 @@ window.addEventListener('DOMContentLoaded', function () {
       ...recent(controlPreviews.pbch_trials).map(row => ({Procedure:'SSB/PBCH',Frame:row.Frame,Slot:row.Slot,Endpoint:row.Cell,Outcome:row['CRC pass'],Status:row.Status})),
       ...recent(controlPreviews.prach_trials).map(row => ({Procedure:'PRACH/RACH',Frame:row.Frame,Slot:row.Slot,Endpoint:row.UE,Outcome:row.Metric,Status:row.Status})),
     ].slice(0, 8);
-    const csiRows = recent(metricRows.filter(row => row.cqi !== null && row.cqi !== undefined)).map(row => ({Slot:row.slot,UE:row.ueid,Cell:row.serving_cell,CQI:row.cqi,'RSRP dBm':row.rsrp_dBm,'Measured SINR dB':row.measured_trial_sinr_dB}));
+    const csiRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).map(ue => ({Slot:ue.csi_slot,UE:ue.ue_id,Cell:ue.serving_cell,'CSI-RSRP dBm':ue.csi_rsrp_dbm,'CSI-SINR dB':ue.csi_sinr_db,Status:ue.csi_measurement_status}));
     const beamRows = recent([...(dataPreviews.dl_trials || []), ...(dataPreviews.ul_trials || [])]
       .filter(row => (row['Applied beam'] !== null && row['Applied beam'] !== undefined && row['Applied beam'] !== 'N/A') || (row['Applied PMI'] !== null && row['Applied PMI'] !== undefined && row['Applied PMI'] !== 'N/A')))
       .map(row => ({Slot:row.Slot,UE:row.UE,Direction:row.Direction,'Applied beam':row['Applied beam'],'Applied PMI':row['Applied PMI'],'Quality dB':row['Quality dB']}));
@@ -18655,7 +18836,7 @@ window.addEventListener('DOMContentLoaded', function () {
       {id:'pucch', title:'PUCCH / UCI', columns:['Slot','UE','Format','Bits','Decode ok','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
       {id:'pdsch', title:'PDSCH / DL-SCH', columns:['Slot','UE','MCS','Modulation','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'pusch', title:'PUSCH / UL-SCH', columns:['Slot','UE','MCS','Modulation','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
-      {id:'csi', title:'CSI / CSI-RS / CQI', columns:['Slot','UE','Cell','CQI','RSRP dBm','Measured SINR dB'], rows:csiRows, sourcePath:'source-labelled runtime metric rows'},
+      {id:'csi', title:'CSI / CSI-RS measurements', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-SINR dB','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
       {id:'srs', title:'SRS', columns:['Slot','UE','Metric','NMSE dB','Timing off','Status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
       {id:'trs', title:'TRS / Tracking', columns:['Slot','UE','Metric','Est Doppler Hz','TRSValidityState','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
       {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS'], rows:trafficRows, sourcePath:'source-labelled runtime metric rows'},
@@ -18676,7 +18857,10 @@ window.addEventListener('DOMContentLoaded', function () {
     if (!items.length) return `<section class="panel"><h3>UE Status</h3>${unavailable('No per-UE performance/control evidence is available for the selected run.')}</section>`;
     const cards = items.map(ue => {
       const badgeClass = ue.health === 'blocked' ? 'bad' : (ue.health === 'attention' ? 'warn' : 'good');
-      return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>Eligible <strong>${esc(ue.scheduling_eligible === null ? '—' : (ue.scheduling_eligible ? 'yes' : 'no'))}</strong></span><span>DL SINR <strong>${esc(realtimeValue(ue.dl_sinr_db, ' dB'))}</strong></span><span>UL SINR <strong>${esc(realtimeValue(ue.ul_sinr_db, ' dB'))}</strong></span><span>DL BLER <strong>${esc(realtimeValue(ue.dl_bler, '', 3))}</strong></span><span>UL BLER <strong>${esc(realtimeValue(ue.ul_bler, '', 3))}</strong></span><span>DL rate <strong>${esc(realtimeValue(ue.dl_throughput_mbps, ' Mbps'))}</strong></span><span>UL rate <strong>${esc(realtimeValue(ue.ul_throughput_mbps, ' Mbps'))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
+      const pathRows = (Array.isArray(ue.pathloss_paths) ? ue.pathloss_paths : []).map(path => `<tr><td>${esc(realtimeValue(path.candidate_rank,'',0))}</td><td>${esc(realtimeValue(path.cell_id,'',0))}</td><td>${esc(realtimeValue(path.pathloss_db,' dB'))}</td><td>${esc(realtimeValue(path.rsrp_dbm,' dBm'))}</td><td>${esc(realtimeValue(path.beam_index,'',0))}</td><td>${esc(String(path.status || 'unavailable').replaceAll('_',' '))}</td></tr>`).join('');
+      const ssRelative = ue.ss_rsrp_relative_db === null || ue.ss_rsrp_relative_db === undefined ? '' : ` · normalized SS/PBCH grid power ${realtimeValue(ue.ss_rsrp_relative_db,' dB')}`;
+      const csiRelative = ue.csi_rsrp_relative_db === null || ue.csi_rsrp_relative_db === undefined ? '' : ` · legacy normalized CSI power ${realtimeValue(ue.csi_rsrp_relative_db,' dB')}`;
+      return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>Eligible <strong>${esc(ue.scheduling_eligible === null ? '—' : (ue.scheduling_eligible ? 'yes' : 'no'))}</strong></span><span>Serving RSRP <strong>${esc(realtimeValue(ue.serving_rsrp_dbm, ' dBm'))}</strong></span><span>UE PHR <strong>${esc(realtimeValue(ue.ue_phr_db, ' dB'))}</strong></span><span>SS-RSRP <strong>${esc(realtimeValue(ue.ss_rsrp_dbm, ' dBm'))}</strong></span><span>SS-SINR <strong>${esc(realtimeValue(ue.ss_sinr_db, ' dB'))}</strong></span><span>CSI-RSRP <strong>${esc(realtimeValue(ue.csi_rsrp_dbm, ' dBm'))}</strong></span><span>CSI-SINR <strong>${esc(realtimeValue(ue.csi_sinr_db, ' dB'))}</strong></span><span>DL SINR <strong>${esc(realtimeValue(ue.dl_sinr_db, ' dB'))}</strong></span><span>UL SINR <strong>${esc(realtimeValue(ue.ul_sinr_db, ' dB'))}</strong></span><span>DL BLER <strong>${esc(realtimeValue(ue.dl_bler, '', 3))}</strong></span><span>UL BLER <strong>${esc(realtimeValue(ue.ul_bler, '', 3))}</strong></span><span>DL rate <strong>${esc(realtimeValue(ue.dl_throughput_mbps, ' Mbps'))}</strong></span><span>UL rate <strong>${esc(realtimeValue(ue.ul_throughput_mbps, ' Mbps'))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div><div class="mini-note">CSI: ${esc(String(ue.csi_measurement_status || 'not published').replaceAll('_',' '))}${esc(csiRelative)} · PBCH-DMRS SINR ${esc(realtimeValue(ue.pbch_dmrs_sinr_db,' dB'))}${esc(ssRelative)}</div><details style="margin-top:8px"><summary>Per-path measurement evidence (${(ue.pathloss_paths || []).length}) · ${esc(String(ue.pathloss_status || 'unavailable').replaceAll('_',' '))}</summary><div class="table-wrap"><table><thead><tr><th>Rank</th><th>Cell</th><th>Pathloss</th><th>RSRP</th><th>Beam</th><th>Status</th></tr></thead><tbody>${pathRows || '<tr><td colspan="6">No per-path runtime measurement rows were published.</td></tr>'}</tbody></table></div></details><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
     }).join('');
     return `<section class="panel"><h3>UE Status</h3><p class="subtle">Control eligibility and measured performance remain source-labeled; abstraction-level summaries are not presented as waveform truth.</p><div class="ue-status-grid">${cards}</div></section>`;
   }
@@ -19289,6 +19473,21 @@ window.addEventListener('DOMContentLoaded', function () {
     stickyKeys.forEach((key) => {
       if (incoming[key] === undefined) merged[key] = previous[key];
     });
+    // Lite polling intentionally carries only the atomic stage/truth subset of
+    // runtime_context.  Preserve the canonical trial previews from the most
+    // recent full payload while allowing the atomic stage row to advance.  A
+    // shallow replacement here made every PHY table disappear between full
+    // refreshes even though its persisted runtime CSV remained available.
+    const previousRuntime = previous.runtime_context || {};
+    const incomingRuntime = incoming.runtime_context || {};
+    merged.runtime_context = {
+      ...previousRuntime,
+      ...incomingRuntime,
+      stage: {
+        ...(previousRuntime.stage || {}),
+        ...(incomingRuntime.stage || {}),
+      },
+    };
     merged.charts = { ...(previous.charts || {}), ...(incoming.charts || {}) };
     return merged;
   }
@@ -19738,7 +19937,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const runId = selectedRunId();
     if (!runId || state.phyGridLoading) return;
     state.phyGridLoading = true;
-    fetch(`/api/run/${encodeURIComponent(runId)}/phy-grid?slot_limit=50`, {cache:'no-store'})
+    fetch(`/api/run/${encodeURIComponent(runId)}/phy-grid?slot_limit=50&details=0`, {cache:'no-store'})
       .then(response => response.ok ? response.json() : Promise.reject(new Error(`resource grid HTTP ${response.status}`)))
       .then(payload => { state.phyGrid = payload; state.phyGridLoading = false; if (state.page === 'phy_grid') phyGridWorkspace(); })
       .catch(() => { state.phyGridLoading = false; });
@@ -19754,7 +19953,7 @@ window.addEventListener('DOMContentLoaded', function () {
           <div class="tile metric"><h4>PRBs</h4><div class="value">${esc(grid.nrb || '—')}</div></div>
           <div class="tile metric"><h4>Symbols / slot</h4><div class="value">${esc(grid.symbols_per_slot || '—')}</div></div>
           <div class="tile metric"><h4>Events</h4><div class="value">${esc(grid.event_count ?? '—')}</div></div>
-          <div class="tile metric"><h4>Detailed RE rows</h4><div class="value">${esc(grid.returned_event_count ?? (grid.events || []).length)} / ${esc(grid.event_count ?? '—')}</div><p>${Number(grid.truncated_event_count || 0) > 0 ? `${esc(grid.truncated_event_count)} lower-priority planned rows omitted from detail only` : 'complete detail payload'}</p></div>
+          <div class="tile metric"><h4>Detailed RE rows</h4><div class="value">${esc(grid.returned_event_count ?? (grid.events || []).length)} / ${esc(grid.event_count ?? '—')}</div><p>${grid.detail_payload_mode === 'aggregated_cells_only' ? 'live view uses the complete aggregated time-frequency cells; raw event rows stay downloadable through the detailed API' : (Number(grid.truncated_event_count || 0) > 0 ? `${esc(grid.truncated_event_count)} lower-priority planned rows omitted from detail only` : 'complete detail payload')}</p></div>
         </div>
         ${state.phyGrid ? renderPhyGridPayload(state.phyGrid) : `<div class="chart-empty">${runId ? 'Loading resource grid…' : 'Select a run.'}</div>`}
       </section>`;
@@ -23788,6 +23987,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                         run_id,
                         slot_limit=bounded_int(params.get("slot_limit", ["50"])[0], 50, 1, 200),
                         ue_id=params.get("ue_id", [""])[0],
+                        include_details=str(params.get("details", ["1"])[0]).strip().lower()
+                        not in {"0", "false", "no", "off"},
                     )
                 )
                 return

@@ -53,6 +53,13 @@ out.PBCH = struct();
 out.SSBIndex = NaN;
 out.SSBBeamIndex = NaN;
 out.SSBReceivedPower_dB = NaN;
+out.SS_RSRP_dBm = NaN;
+out.SS_RSRPPerReceiveAntenna_dBm = "";
+out.SS_SINR_dB = NaN;
+out.SS_SINRPerReceiveAntenna_dB = "";
+out.SSMeasurementSource = "";
+out.SSPhysicalMeasurementStatus = "unavailable";
+out.SSSINRFailureReason = "";
 out.PBCHDMRSMetric = NaN;
 out.PSSMetric = NaN;
 out.SSSMetric = NaN;
@@ -113,6 +120,7 @@ out.RuntimeDLChannelState = sixgr.channel.ChannelFactory.emptyRuntimeChannelStat
 out.RuntimeChannelReplay = struct();
 out.RuntimeChannelStateUsed = false;
 out.SSBTxEvidence = struct();
+out.PowerContext = struct();
 
 configuredSSB = logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "ssb", configuredSSB, ...
@@ -160,10 +168,26 @@ if wantSIB1
             "Seed", double(sixgr.util.structGet(cfg, "run.seed", 1501)));
         out.SSBTxEvidence = localBuildSSBTxEvidence(tx);
         rxWaveform = tx.Waveform;
+        receiverCfg = cfg;
         if logical(p.Results.UseRuntimeChannel)
             txInfo = struct("OFDM", struct("SampleRate", double(tx.SampleRateHz)));
+            try
+                if isfield(tx, "Carrier") && ~isempty(tx.Carrier)
+                    txInfo.OFDM = nrOFDMInfo(tx.Carrier);
+                end
+            catch
+            end
+            [runtimeTxWaveform, powerContext] = sixgr.rf.applyPowerContext( ...
+                tx.Waveform, cfg, "DL", txInfo);
+            out.PowerContext = powerContext;
+            receiverCfg = sixgr.util.structSet( ...
+                receiverCfg, "lls6g.runtimePowerContext", powerContext);
+            runtimeTx = tx;
+            runtimeTx.Waveform = runtimeTxWaveform;
+            runtimeTx.PowerContext = powerContext;
+            txInfo.PowerContext = powerContext;
             truthState = sixgr.link.initWaveformTruthChannelState( ...
-                cfg, tx, txInfo, ...
+                receiverCfg, runtimeTx, txInfo, ...
                 "InitialRuntimeChannelState", p.Results.InitialDLChannelState);
             runtimeSlot = double(p.Results.RuntimeSlot);
             if isfinite(runtimeSlot) && runtimeSlot >= 0 && ...
@@ -173,18 +197,28 @@ if wantSIB1
                 truthState.RuntimeChannelState = ...
                     sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime( ...
                     truthState.RuntimeChannelState, slotStart_s, ...
-                    size(tx.Waveform, 2), tx.Waveform);
+                    size(runtimeTxWaveform, 2), runtimeTxWaveform);
             end
             [rxWaveform, channelReplay, truthState] = ...
                 sixgr.link.applyWaveformTruthImpairments( ...
-                tx.Waveform, requestedSNR_dB, truthState, cfg, tx, txInfo);
+                runtimeTxWaveform, requestedSNR_dB, truthState, ...
+                receiverCfg, runtimeTx, txInfo);
             out.RuntimeDLChannelState = truthState.RuntimeChannelState;
             out.RuntimeChannelReplay = channelReplay;
             out.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
                 channelReplay, "RuntimeChannelStateUsed", false));
         end
+        receiverArgs = {};
+        if ~isempty(p.Results.SSBIndex)
+            % A coupled P1 sweep transmits the configured active SS burst
+            % set once and measures each exact SS/PBCH occasion.  Preserve
+            % blind acquisition when no candidate is requested, but gate a
+            % sweep row to the requested canonical candidate window.
+            receiverArgs = {"CandidateSSBIndex", ...
+                round(double(p.Results.SSBIndex))};
+        end
         rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
-            rxWaveform, cfg);
+            rxWaveform, receiverCfg, receiverArgs{:});
         rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
         out.ComputeLatency_ms = 1e3 * toc(tStart);
         out.ProcedureDelay_ms = NaN;
@@ -226,6 +260,18 @@ if wantSIB1
             "MIBSSBIndex", double(sixgr.util.structGet(rec, "MIBSSBIndex", NaN)), ...
             "PBCHiBarSSB", double(sixgr.util.structGet(rec, "PBCHiBarSSB", NaN)), ...
             "PBCHv", double(sixgr.util.structGet(rec, "PBCHv", NaN)), ...
+            "SS_RSRP_dBm", double(sixgr.util.structGet(rec, "SS_RSRP_dBm", NaN)), ...
+            "SS_RSRPPerReceiveAntenna_dBm", string(sixgr.util.structGet( ...
+                rec, "SS_RSRPPerReceiveAntenna_dBm", "")), ...
+            "SS_SINR_dB", double(sixgr.util.structGet(rec, "SS_SINR_dB", NaN)), ...
+            "SS_SINRPerReceiveAntenna_dB", string(sixgr.util.structGet( ...
+                rec, "SS_SINRPerReceiveAntenna_dB", "")), ...
+            "SSMeasurementSource", string(sixgr.util.structGet( ...
+                rec, "SSMeasurementSource", "")), ...
+            "SSPhysicalMeasurementStatus", string(sixgr.util.structGet( ...
+                rec, "SSPhysicalMeasurementStatus", "unavailable")), ...
+            "SSSINRFailureReason", string(sixgr.util.structGet( ...
+                rec, "SSSINRFailureReason", "")), ...
             "ChannelEstimateSource", string(sixgr.util.structGet(rec, "ChannelEstimateSource", "")), ...
             "EqualizationAvailable", logical(sixgr.util.structGet(rec, "EqualizationAvailable", false)), ...
             "EqualizerType", string(sixgr.util.structGet(rec, "EqualizerType", "")), ...
@@ -261,6 +307,18 @@ if wantSIB1
         out.SSBIndex = double(rec.SSBIndex);
         out.SSBBeamIndex = out.SSBIndex + 1;
         out.SSBReceivedPower_dB = double(sixgr.util.structGet(rec, "SSBReceivedPower_dB", NaN));
+        out.SS_RSRP_dBm = double(sixgr.util.structGet(rec, "SS_RSRP_dBm", NaN));
+        out.SS_RSRPPerReceiveAntenna_dBm = string(sixgr.util.structGet( ...
+            rec, "SS_RSRPPerReceiveAntenna_dBm", ""));
+        out.SS_SINR_dB = double(sixgr.util.structGet(rec, "SS_SINR_dB", NaN));
+        out.SS_SINRPerReceiveAntenna_dB = string(sixgr.util.structGet( ...
+            rec, "SS_SINRPerReceiveAntenna_dB", ""));
+        out.SSMeasurementSource = string(sixgr.util.structGet( ...
+            rec, "SSMeasurementSource", ""));
+        out.SSPhysicalMeasurementStatus = string(sixgr.util.structGet( ...
+            rec, "SSPhysicalMeasurementStatus", "unavailable"));
+        out.SSSINRFailureReason = string(sixgr.util.structGet( ...
+            rec, "SSSINRFailureReason", ""));
         out.PBCHDMRSMetric = double(sixgr.util.structGet(rec, "PBCHDMRSMetric", NaN));
         out.PSSMetric = double(sixgr.util.structGet(rec, "PSSMetric", NaN));
         out.SSSMetric = double(sixgr.util.structGet(rec, "SSSMetric", NaN));
@@ -348,7 +406,15 @@ try
     rxWave = localApplyCFOCorrection(rxWaveRaw, sampleRateHz, estimatedCFO_PreCorrection_Hz);
     out.DetectionAttempted = true;
     out.MeasurementAttempted = true;
-    [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWave, cfg, "SampleRate_Hz", sampleRateHz);
+    rxArgs = {"SampleRate_Hz", sampleRateHz};
+    if ~isempty(p.Results.SSBIndex)
+        % A sweep measurement is time-gated to its configured SS/PBCH
+        % candidate occasion.  Ordinary acquisition leaves this empty and
+        % retains the fully blind search across the entire burst set.
+        rxArgs = [rxArgs, {"CandidateSSBIndex", ...
+            round(double(p.Results.SSBIndex))}]; %#ok<AGROW>
+    end
+    [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWave, cfg, rxArgs{:});
     out.PSSDetected = logical(sixgr.util.structGet(sync, "PSSDetected", false));
     out.SSSDetected = logical(sixgr.util.structGet(sync, "SSSDetected", false));
     out.NCellIDRecovered = logical(sixgr.util.structGet(sync, "NCellIDRecovered", false));

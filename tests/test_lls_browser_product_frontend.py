@@ -227,6 +227,10 @@ def main() -> None:
         assert "realtimeComponentPanel()" in realtime_page
         assert "realtimeUEStatusPanel()" in realtime_page
         assert "realtimeLogPanel()" in realtime_page
+        assert "const previousRuntime = previous.runtime_context || {}" in realtime_page
+        assert "const incomingRuntime = incoming.runtime_context || {}" in realtime_page
+        assert "...(previousRuntime.stage || {})" in realtime_page
+        assert "...(incomingRuntime.stage || {})" in realtime_page
         assert "Execution status" in realtime_page
         assert "No live runtime evidence has been published." in realtime_page
         assert "The status alone is not treated as proof that MATLAB is executing." in realtime_page
@@ -266,6 +270,7 @@ def main() -> None:
         assert "grid.time_frequency_cells" in phy_grid_page
         assert "Planned only — not observed" in phy_grid_page
         assert "const plannedOnly" in phy_grid_page
+        assert "slot_limit=50&details=0" in phy_grid_page
         assert "/phy-grid" in phy_grid_page
 
         plots_page = pages["plots"]

@@ -116,6 +116,8 @@ function row = localRowTemplate(cfg, snr_dB)
 row = struct();
 row.SSBIndex = NaN;
 row.BeamIndex = NaN;
+row.RecoveredSSBIndex = NaN;
+row.SSBIndexMatch = false;
 row.BeamManagementProcedure = "P1_SSB_beam_sweep";
 row.SNR_dB = double(snr_dB);
 row.NCellID = double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", NaN));
@@ -177,6 +179,13 @@ row.SIB1ASN1DecodeOk = false;
 row.DetectionSuccess = false;
 row.DetectionOutcome = "";
 row.SSBReceivedPower_dB = NaN;
+row.SS_RSRP_dBm = NaN;
+row.SS_RSRPPerReceiveAntenna_dBm = "";
+row.SS_SINR_dB = NaN;
+row.SS_SINRPerReceiveAntenna_dB = "";
+row.SSMeasurementSource = "";
+row.SSPhysicalMeasurementStatus = "unavailable";
+row.SSSINRFailureReason = "";
 row.PBCHDMRSMetric = NaN;
 row.PBCHNoiseVar = NaN;
 row.PreEqualizationNoiseVariance = NaN;
@@ -242,10 +251,9 @@ sib1 = sixgr.util.structGet(acq, "SIB1", struct());
 row.Ok = logical(sixgr.util.structGet(acq, "Ok", false));
 row.Skipped = logical(sixgr.util.structGet(acq, "Skipped", false));
 row.NCellID = double(sixgr.util.structGet(pbch, "NCellID", sixgr.util.structGet(acq, "Sync.NCellID", row.NCellID)));
-row.SSBIndex = localFiniteOrDefault( ...
-    sixgr.util.structGet(acq, "SSBIndex", NaN), row.SSBIndex);
-row.BeamIndex = localFiniteOrDefault( ...
-    sixgr.util.structGet(acq, "SSBBeamIndex", NaN), row.BeamIndex);
+row.RecoveredSSBIndex = double(sixgr.util.structGet(acq, "SSBIndex", NaN));
+row.SSBIndexMatch = isfinite(row.RecoveredSSBIndex) && ...
+    row.RecoveredSSBIndex == row.SSBIndex;
 runtimeReplay = sixgr.util.structGet(acq, "RuntimeChannelReplay", struct());
 row.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
     acq, "RuntimeChannelStateUsed", false));
@@ -329,6 +337,18 @@ else
 end
 row.TimingOffset_samples = double(sixgr.util.structGet(acq, "TimingOffset_samples", NaN));
 row.SSBReceivedPower_dB = double(sixgr.util.structGet(acq, "SSBReceivedPower_dB", NaN));
+row.SS_RSRP_dBm = double(sixgr.util.structGet(acq, "SS_RSRP_dBm", NaN));
+row.SS_RSRPPerReceiveAntenna_dBm = string(sixgr.util.structGet( ...
+    acq, "SS_RSRPPerReceiveAntenna_dBm", ""));
+row.SS_SINR_dB = double(sixgr.util.structGet(acq, "SS_SINR_dB", NaN));
+row.SS_SINRPerReceiveAntenna_dB = string(sixgr.util.structGet( ...
+    acq, "SS_SINRPerReceiveAntenna_dB", ""));
+row.SSMeasurementSource = string(sixgr.util.structGet( ...
+    acq, "SSMeasurementSource", ""));
+row.SSPhysicalMeasurementStatus = string(sixgr.util.structGet( ...
+    acq, "SSPhysicalMeasurementStatus", "unavailable"));
+row.SSSINRFailureReason = string(sixgr.util.structGet( ...
+    acq, "SSSINRFailureReason", ""));
 row.PBCHDMRSMetric = double(sixgr.util.structGet(acq, "PBCHDMRSMetric", NaN));
 row.PBCHNoiseVar = double(sixgr.util.structGet(acq, "PBCHNoiseVar", NaN));
 row.PreEqualizationNoiseVariance = double(sixgr.util.structGet(acq, "PreEqualizationNoiseVariance", NaN));

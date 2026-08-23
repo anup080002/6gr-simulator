@@ -38,10 +38,21 @@ if isstruct(state)
     end
 end
 
-gain_dB = double(sixgr.util.structGet(state, "LargeScaleGain_dB", 0));
-if isfinite(gain_dB) && gain_dB ~= 0
-    y = y .* cast(10 .^ (gain_dB / 20), "like", y);
+% Initial-access/control waveforms must use the same absolute-power and
+% noise-mode authority as PDSCH/PUSCH.  The earlier implementation scaled
+% the waveform by pathloss and then added AWGN at (configured SNR + gain),
+% which made pathloss reduce SNR a second time.  Bind the runtime
+% large-scale state into the canonical impairment replay instead.
+cfgReplay = localBindRuntimeLargeScaleContext(cfg, state);
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments( ...
+    y, cfgReplay, fs, "ApplyRFChain", false);
+impairmentFields = fieldnames(impairmentReplay);
+for impairmentIdx = 1:numel(impairmentFields)
+    replay.(impairmentFields{impairmentIdx}) = ...
+        impairmentReplay.(impairmentFields{impairmentIdx});
 end
+gain_dB = double(sixgr.util.structGet( ...
+    replay, "AppliedLargeScaleGain_dB", 0));
 
 timingOffset = localResolveInjectedTimingOffsetSamples(cfg);
 replay.InjectedTimingOffset_samples = timingOffset;
@@ -81,12 +92,67 @@ if isfinite(sir_dB)
     end
 end
 
-effectiveSnr_dB = double(snr_dB) + gain_dB;
-[y, replay.InjectedNoiseVariance] = localAddAwgnAtEffectiveSNR(y, effectiveSnr_dB);
+noiseMode = lower(strtrim(string(sixgr.util.structGet( ...
+    replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"))));
+if noiseMode == "receiver_noise_figure_thermal_noise"
+    thermalNoisePower_dBm = double(sixgr.util.structGet( ...
+        replay, "ThermalNoisePower_dBm", NaN));
+    if ~(isfinite(thermalNoisePower_dBm))
+        error("sixgr:link:MissingInitialAccessThermalNoisePower", ...
+            ["Initial-access thermal-noise mode requires a finite " ...
+             "bandwidth and receiver noise figure."]);
+    end
+    replay.InjectedNoiseVariance = 10 .^ (thermalNoisePower_dBm / 10);
+    y = localAddComplexNoiseVariance(y, replay.InjectedNoiseVariance);
+    replay.NoisePowerSource = "thermal_noise_plus_receiver_nf_absolute_sqrt_mW_samples";
+else
+    appliedSnr_dB = double(sixgr.util.structGet( ...
+        replay, "AppliedAWGNSNR_dB", snr_dB));
+    [y, replay.InjectedNoiseVariance] = ...
+        localAddAwgnAtEffectiveSNR(y, appliedSnr_dB);
+end
 end
 
 function [y, nVar] = localAddAwgnAtEffectiveSNR(x, snr_dB)
 [y, nVar] = sixgr.util.addAwgnComplex(x, snr_dB);
+end
+
+function y = localAddComplexNoiseVariance(x, noiseVariance)
+if ~(isscalar(noiseVariance) && isfinite(noiseVariance) && noiseVariance >= 0)
+    error("sixgr:link:InvalidInitialAccessNoiseVariance", ...
+        "Initial-access noise variance must be one finite nonnegative scalar.");
+end
+if noiseVariance == 0
+    y = x;
+    return;
+end
+n = sqrt(noiseVariance / 2) .* ( ...
+    randn(size(x), "like", real(x)) + ...
+    1i .* randn(size(x), "like", real(x)));
+y = x + cast(n, "like", x);
+end
+
+function cfgOut = localBindRuntimeLargeScaleContext(cfgIn, state)
+cfgOut = cfgIn;
+userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
+if ~(isstruct(userMeta) && isscalar(userMeta))
+    userMeta = struct();
+end
+userMeta.RuntimeCurrentDirection = "DL";
+userMeta.Direction = "DL";
+userMeta.RuntimeServingBasePathloss_dB = double(sixgr.util.structGet( ...
+    state, "Pathloss_dB", NaN));
+userMeta.RuntimeServingPathloss_dB = double(sixgr.util.structGet( ...
+    state, "Pathloss_dB", NaN));
+userMeta.RuntimeServingShadowFading_dB = double(sixgr.util.structGet( ...
+    state, "ShadowFading_dB", NaN));
+userMeta.RuntimeServingO2I_dB = double(sixgr.util.structGet( ...
+    state, "O2ILoss_dB", NaN));
+userMeta.RuntimePathlossModelSource = char(string(sixgr.util.structGet( ...
+    state, "PathlossModelSource", "waveform_truth_channel_state")));
+userMeta.RuntimePathlossComplianceStatus = char(string(sixgr.util.structGet( ...
+    state, "PathlossComplianceStatus", "runtime_state_resolved")));
+cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
 end
 
 function fs = localResolveSampleRate(tx, txInfo)

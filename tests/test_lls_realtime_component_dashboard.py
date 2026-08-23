@@ -123,6 +123,89 @@ def test_ue_status_merges_control_and_performance_without_upgrading_fidelity() -
     assert rows[0]["control_source"] == "reports/csv/live_control_gating_state.csv"
 
 
+def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
+    sources = {
+        "serving": [{"UEID": 1, "Slot": 8, "ServingRSRP_dBm": -82.5}],
+        "csi": [
+            {
+                "UEIndex": 1,
+                "Slot": 8,
+                "MeasurementRSRP_dBm": -86.25,
+                "MeasurementRelativeRSRP_dB": 23.0,
+                "MeasurementRSRPPerReceiveAntenna_dBm": "[-85.5,-87.2]",
+                "SINR_dB": 11.75,
+                "SINRMeasurementDomain": "csi_rs_resource_selective_channel_estimate",
+                "PhysicalMeasurementStatus": "available",
+                "MeasurementSource": "nrCSIRSMeasurements_runtime_received_grid",
+            }
+        ],
+        "ssb": [
+            {
+                "UEID": 1,
+                "Slot": 2,
+                "SS_RSRP_dBm": -91.0,
+                "SS_SINR_dB": 7.5,
+                "SSBReceivedPower_dB": -3.0,
+                "MeasuredTrialSINR_dB": 9.25,
+            }
+        ],
+        "ul": [{"UEID": 1, "Slot": 9, "PUSCHPowerHeadroom_dB": 13.5}],
+        "dl": [{"UEID": 1, "Slot": 8, "CSI_RSRP_dB": 99.0}],
+        "cell_paths": [
+            {
+                "UEID": 1,
+                "Slot": 8,
+                "CandidateRank": 1,
+                "CellID": 3,
+                "Pathloss_dB": 104.0,
+                "RSRP_dBm": -82.5,
+                "BeamIndex": 2,
+                "PathlossModelSource": "nrPathLoss",
+                "PathlossComplianceStatus": "available",
+            },
+            {
+                "UEID": 1,
+                "Slot": 8,
+                "CandidateRank": 2,
+                "CellID": 4,
+                "Pathloss_dB": 0,
+                "RSRP_dBm": -110.0,
+                "PathlossModelSource": "pathloss_disabled",
+                "PathlossComplianceStatus": "unsupported_pathloss_configuration",
+            },
+        ],
+    }
+    rows = dashboard.build_realtime_ue_status({}, {}, sources)
+    assert len(rows) == 1
+    ue = rows[0]
+    assert ue["serving_rsrp_dbm"] == -82.5
+    assert ue["ss_rsrp_dbm"] == -91.0
+    assert ue["ss_sinr_db"] == 7.5
+    assert ue["pbch_dmrs_sinr_db"] == 9.25
+    assert ue["csi_rsrp_dbm"] == -86.25
+    assert ue["csi_rsrp_relative_db"] == 23.0
+    assert ue["csi_sinr_db"] == 11.75
+    assert ue["ue_phr_db"] == 13.5
+    assert ue["pathloss_paths"][0]["pathloss_db"] == 104.0
+    assert ue["pathloss_paths"][1]["pathloss_db"] is None
+    assert ue["pathloss_paths"][1]["raw_pathloss_db"] == 0
+
+
+def test_post_equalization_csi_row_is_not_relabelled_as_csi_sinr() -> None:
+    sources = {
+        "csi": [
+            {
+                "UEIndex": 1,
+                "Slot": 1,
+                "SINR_dB": 18.0,
+                "SINRMeasurementDomain": "pdsch_post_equalization_data_re",
+            }
+        ]
+    }
+    ue = dashboard.build_realtime_ue_status({}, {}, sources)[0]
+    assert ue["csi_sinr_db"] is None
+
+
 def test_runtime_log_component_annotation_preserves_original_message() -> None:
     source = [{"level_str": "INFO", "message_text": "PDCCH DCI decoded for UE 2"}]
     rows = dashboard.annotate_realtime_logs(source)

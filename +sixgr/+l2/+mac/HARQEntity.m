@@ -168,7 +168,8 @@ classdef HARQEntity < handle
             end
             p = procs(pid);
             harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
-                'RV', p.RV, 'IsRetransmission', true);
+                'RV', p.RV, 'HARQRound', max(0, double(p.TxCount)), ...
+                'IsRetransmission', true);
             retx = struct('HARQ',harq,'TBSBytes',p.TBSBytes,'LastGrant',p.LastGrant, ...
                 'TB',p.TB,'TBContext',p.TBContext);
         end
@@ -220,7 +221,8 @@ classdef HARQEntity < handle
             if ~isRetx
                 if ~newDataRequested
                     txp = struct();
-                    txp.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
+                    txp.HARQ = struct('HarqID',[],'NDI',[],'RV',[], ...
+                        'HARQRound',[],'IsRetransmission',false);
                     txp.ProcessIndex = [];
                     txp.ExpectTBSizeBytes = 0;
                     txp.NoFreeProcess = false;
@@ -231,7 +233,8 @@ classdef HARQEntity < handle
                 pid = find(~[procs.Active], 1, 'first');
                 if isempty(pid)
                     txp = struct();
-                    txp.HARQ = struct('HarqID',[],'NDI',[],'RV',[],'IsRetransmission',false);
+                    txp.HARQ = struct('HarqID',[],'NDI',[],'RV',[], ...
+                        'HARQRound',[],'IsRetransmission',false);
                     txp.ProcessIndex = [];
                     txp.ExpectTBSizeBytes = 0;
                     txp.NoFreeProcess = true;
@@ -260,7 +263,8 @@ classdef HARQEntity < handle
             p = procs(pid);
             obj.assertStoredTBContract(double(rnti), pid - 1, p);
             harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
-                'RV', p.RV, 'IsRetransmission', isRetx);
+                'RV', p.RV, 'HARQRound', max(0, double(p.TxCount)), ...
+                'IsRetransmission', isRetx);
             txp = struct('HARQ',harq,'ProcessIndex',pid,'ExpectTBSizeBytes',p.TBSBytes,'NoFreeProcess',false);
 
             % Write back

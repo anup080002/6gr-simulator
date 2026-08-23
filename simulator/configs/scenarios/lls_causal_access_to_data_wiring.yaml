@@ -1128,7 +1128,7 @@ pusch:
   transform_precoding: false
   tbs_policy: "allocation_based"
   ulsch_enabled: true
-  uci_multiplexing_mode: "baseline"
+  uci_multiplexing_mode: "harq_ack_on_pusch_when_pucch_collides"
   dmrs_policy: "baseline"
   ptrs_policy: "enabled_from_yaml"
   codeword_count: 1
@@ -4435,9 +4435,9 @@ channels:
   mobility_kmph: 3
   los_enabled: true
   spatial_consistency_enabled: false
-  pathloss_enabled: false
+  pathloss_enabled: true
   shadow_fading_enabled: false
-  pathloss_model: "none"
+  pathloss_model: "nrPathLoss"
   shadow_fading_std_db: 0
   runtime_element_expansion_chunk_samples: 4096
   carrier_frequency_hz: 780000000
@@ -5834,6 +5834,10 @@ pucch_resources:
   sr_resource_ids: 0
   csi_resource_ids: 10
   sps_pucch_an_resource_ids: 0
+  overlap_policy:
+    detect_pucch_pusch_overlap: true
+    uci_on_pusch_enabled: true
+    unsupported_overlap_policy: "reject_before_waveform"
   power_control:
     mu: 0
     m_rb: 1

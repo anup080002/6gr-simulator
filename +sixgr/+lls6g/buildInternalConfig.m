@@ -5327,7 +5327,7 @@ deploymentCandidate = string(localGetNested(s, "deployment_topology.layout_type"
 if strlength(strtrim(deploymentCandidate)) > 0
     token = lower(strtrim(char(deploymentCandidate)));
     normalizedToken = regexprep(token, "[\s-]+", "_");
-    if ismember(string(normalizedToken), ["single", "single_site", "single_cell"])
+    if ismember(string(normalizedToken), ["single", "single_site", "single_cell", "single_pair"])
         deploymentType = "single_site";
         return;
     end

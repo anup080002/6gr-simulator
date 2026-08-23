@@ -688,6 +688,17 @@ methods(Static)
             multiplexDueHARQACKOnPUSCHImpl(state, grantsIn, dueSlot);
     end
 
+    function [state, grantsOut, blockedT] = reconcileQueuedPUSCHAfterDLFeedbackRuntime( ...
+            state, grantsIn, uciOnPUSCHAvailable)
+        % Reconcile feedback created after a future K2 PUSCH grant was
+        % frozen.  This boundary must run immediately after the originating
+        % PDSCH decode and before the due UL slot starts; startSlot executes
+        % standalone PUCCH and is therefore too late for collision repair.
+        [state, grantsOut, blockedT] = sixgr.truth.CoupledTruthRuntime. ...
+            reconcileQueuedPUSCHAfterDLFeedbackImpl( ...
+            state, grantsIn, uciOnPUSCHAvailable);
+    end
+
     function state = applyDecodedPUSCHHARQACKRuntime(state, harqOut)
         state = sixgr.truth.CoupledTruthRuntime. ...
             consumeDecodedPUSCHHARQACK(state, harqOut);
@@ -956,7 +967,11 @@ methods(Static, Access=private)
         userMeta.RuntimeServingSector = double(state.Layout.bs.sectorId(servingCell));
         userMeta.RuntimeServingBeamIndex = double(state.LargeScaleState.BeamIndex(ueIdx, servingCell));
         userMeta.RuntimeServingBeamGain_dB = double(state.LargeScaleState.BeamGain_dB(ueIdx, servingCell));
-        userMeta.RuntimeServingRSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
+        [runtimeServingRSRP_dBm, runtimeServingRSRPSource] = ...
+            sixgr.truth.CoupledTruthRuntime.reportableServingRSRP( ...
+            state, ueIdx, servingCell);
+        userMeta.RuntimeServingRSRP_dBm = runtimeServingRSRP_dBm;
+        userMeta.RuntimeServingRSRPSource = char(runtimeServingRSRPSource);
         userMeta.RuntimeServingRxPower_dBm = double(state.LargeScaleState.RxPower_dBm(ueIdx, servingCell));
         userMeta.RuntimeServingBasePathloss_dB = double(state.LargeScaleState.BasePathloss_dB(ueIdx, servingCell));
         userMeta.RuntimeServingPathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, servingCell));
@@ -1169,7 +1184,10 @@ methods(Static, Access=private)
         end
         retx = harq.peekRetx(rnti, sixgr.util.structGet(state, "CurrentSlot", NaN));
         if isempty(retx)
-            context.HARQContext = struct("Direction", char(direction), "UEIndex", double(ueIdx), "RNTI", double(rnti), "IsRetransmission", false, "FeedbackDelaySlots", double(state.HARQFeedbackSlots));
+            context.HARQContext = struct("Direction", char(direction), ...
+                "UEIndex", double(ueIdx), "RNTI", double(rnti), ...
+                "HARQRound", 0, "IsRetransmission", false, ...
+                "FeedbackDelaySlots", double(state.HARQFeedbackSlots));
             return;
         end
         pid = double(retx.HARQ.HarqID) + 1;
@@ -1209,6 +1227,8 @@ methods(Static, Access=private)
             "NDI", logical(retx.HARQ.NDI), ...
             "NDIEpoch", double(sixgr.util.structGet(retx.HARQ, "NDIEpoch", ...
                 sixgr.util.structGet(tbContext, "NDIEpoch", NaN))), ...
+            "HARQRound", double(sixgr.util.structGet(retx.HARQ, ...
+                "HARQRound", 1)), ...
             "IsRetransmission", true, ...
             "FeedbackDelaySlots", double(state.HARQFeedbackSlots), ...
             "RV", double(retx.HARQ.RV), ...
@@ -1691,6 +1711,7 @@ methods(Static, Access=private)
                     sixgr.util.structGet(harq, "HarqID", NaN))), ...
                 "NDI", logical(sixgr.util.structGet(harq, "NDI", true)), ...
                 "NDIEpoch", double(sixgr.util.structGet(harq, "NDIEpoch", NaN)), ...
+                "HARQRound", 0, ...
                 "IsRetransmission", false, ...
                 "FeedbackDelaySlots", double(state.HARQFeedbackSlots), ...
                 "RV", double(sixgr.util.structGet(harq, "RV", 0)), ...
@@ -1962,6 +1983,7 @@ methods(Static, Access=private)
         state.ControlTrials.PDCCH = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "PDCCH", sixgr.util.structGet(state.ControlTrials, "PDCCH", table()));
         state.ControlTrials.PUCCH = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "PUCCH", sixgr.util.structGet(state.ControlTrials, "PUCCH", table()));
         state.ControlTrials.SRS = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "SRS", sixgr.util.structGet(state.ControlTrials, "SRS", table()));
+        state.ControlTrials.CSIRS = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "CSI-RS", sixgr.util.structGet(state.ControlTrials, "CSIRS", table()));
         state.ControlTrials.TRS = sixgr.truth.CoupledTruthRuntime.annotateControlReferenceTrialTable(state, "TRS", sixgr.util.structGet(state.ControlTrials, "TRS", table()));
         state.PUCCHGrantTraceTable = sixgr.truth.CoupledTruthRuntime.annotatePUCCHGrantTraceTable(state, sixgr.util.structGet(state, "PUCCHGrantTraceTable", table()));
         if ~sixgr.util.persistenceEnabled()
@@ -2537,6 +2559,17 @@ methods(Static, Access=private)
                 end
             end
         end
+        if istable(csiMeasurementRow) && ~isempty(csiMeasurementRow)
+            % The waveform runner owns the CSI-RS producer.  Preserve its
+            % measured resource row in the coupled runtime before the same
+            % row is consumed to create delayed CSI feedback.  Previously
+            % the feedback state was updated while the canonical
+            % csi_rs_trials.csv producer table stayed empty.
+            state.ControlTrials.CSIRS = ...
+                sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                sixgr.util.structGet(state.ControlTrials, "CSIRS", table()), ...
+                csiMeasurementRow);
+        end
         state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
             state, ueIdx, direction, trialT(end, :), cfgU, csiMeasurementRow);
         state = sixgr.truth.CoupledTruthRuntime.appendTelemetry(state, ueIdx, trialT(end, :));
@@ -2861,6 +2894,9 @@ methods(Static, Access=private)
         grantHarq.NDIEpoch = double(sixgr.util.structGet(context, "NDIEpoch", ...
             sixgr.util.structGet(tbContext, "NDIEpoch", NaN)));
         grantHarq.RV = double(rv);
+        harqRound = double(sixgr.util.structGet(context, "HARQRound", ...
+            double(logical(isRetx))));
+        grantHarq.HARQRound = harqRound;
         grantHarq.IsRetransmission = logical(isRetx);
         grantSnapshot.HARQ = grantHarq;
         grantSnapshot.IsRetransmission = logical(isRetx);
@@ -2972,6 +3008,7 @@ methods(Static, Access=private)
         t.NDIEpoch = double(sixgr.util.structGet(grantSnapshot, "HARQ.NDIEpoch", ...
             sixgr.util.structGet(grantSnapshot, "HARQTBContext.NDIEpoch", NaN)));
         t.RV = double(rv);
+        t.HARQRound = harqRound;
         t.IsRetransmission = logical(isRetx);
         t.FeedbackMechanism = char(feedbackMechanism);
         t.FeedbackEvidenceSource = char(feedbackEvidenceSource);
@@ -3018,7 +3055,8 @@ methods(Static, Access=private)
         state = sixgr.truth.CoupledTruthRuntime.updatePacketDeliveryFromHARQ( ...
             state, direction, grantSnapshot, t, decodedTbBits);
 
-        harqFields = struct("HARQProcess", double(harqId0), "HARQNDI", double(ndi), "HARQRV", double(rv), ...
+        harqFields = struct("HARQProcess", double(harqId0), ...
+            "HARQRound", double(harqRound), "HARQNDI", double(ndi), "HARQRV", double(rv), ...
             "HARQIsRetransmission", logical(isRetx), "HARQFeedbackDueSlot", double(feedbackDueSlot), ...
             "HARQFeedbackMechanism", string(feedbackMechanism), ...
             "HARQFeedbackEvidenceSource", string(feedbackEvidenceSource), ...
@@ -3159,8 +3197,10 @@ methods(Static, Access=private)
         r.ServingBeamGain_dB = double(state.LargeScaleState.BeamGain_dB(ueIdx, servingCell));
         r.ConfiguredSNR_dB = double(configuredSNR);
         r.ConfiguredSNRSource = "configured_operating_point_metadata";
-        r.ServingRSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
-        r.RSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
+        [r.ServingRSRP_dBm, servingRSRPSource] = ...
+            sixgr.truth.CoupledTruthRuntime.reportableServingRSRP( ...
+            state, ueIdx, servingCell);
+        r.RSRP_dBm = r.ServingRSRP_dBm;
         r.RxPower_dBm = double(state.LargeScaleState.RxPower_dBm(ueIdx, servingCell));
         r.BasePathloss_dB = double(state.LargeScaleState.BasePathloss_dB(ueIdx, servingCell));
         r.Pathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, servingCell));
@@ -3204,8 +3244,8 @@ methods(Static, Access=private)
         r.CSI_RSRP_dB = double(csiRSRP);
         r.CSI_RSRPSource = char(csiRSRPSource);
         r.AppliedLargeScaleGain_dB = double(appliedLargeScaleGain);
-        r.RSRPSource = "large_scale_per_reference_re_power";
-        r.ServingRSRPSource = "large_scale_per_reference_re_power";
+        r.RSRPSource = char(servingRSRPSource);
+        r.ServingRSRPSource = char(servingRSRPSource);
         r.WidebandSINRSource = char(widebandSINRSource);
         r.WidebandSINRValueRole = char(widebandSINRValueRole);
         r.InterferenceMode = char(interferenceMode);
@@ -3217,7 +3257,9 @@ methods(Static, Access=private)
         r = sixgr.truth.CoupledTruthRuntime.normalizeStructRowToPrototype(r, sixgr.truth.CoupledTruthRuntime.emptyServingRow());
         state = sixgr.truth.CoupledTruthRuntime.upsertServingTraceRow(state, r);
 
-        [sortedRSRP, sortIdx] = sort(double(state.LargeScaleState.RSRP_dBm(ueIdx, :)), "descend");
+        reportableRSRP = sixgr.truth.CoupledTruthRuntime. ...
+            reportableRSRPMatrix(state);
+        [sortedRSRP, sortIdx] = sort(double(reportableRSRP(ueIdx, :)), "descend");
         keepIdx = sortIdx(1:min(double(state.TopCellCount), numel(sortIdx)));
         rows = repmat(sixgr.truth.CoupledTruthRuntime.emptyMeasurementRow(), 0, 1);
         for k = 1:numel(keepIdx)
@@ -5876,8 +5918,10 @@ methods(Static, Access=private)
             r.ServingBeamGain_dB = double(state.LargeScaleState.BeamGain_dB(ueIdx, servingCell));
             r.ConfiguredSNR_dB = double(state.CurrentSNR_dB);
             r.ConfiguredSNRSource = "configured_operating_point_metadata";
-            r.ServingRSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
-            r.RSRP_dBm = double(state.CurrentServingMetric_dBm(ueIdx));
+            [r.ServingRSRP_dBm, servingRSRPSource] = ...
+                sixgr.truth.CoupledTruthRuntime.reportableServingRSRP( ...
+                state, ueIdx, servingCell);
+            r.RSRP_dBm = r.ServingRSRP_dBm;
             r.RxPower_dBm = double(state.LargeScaleState.RxPower_dBm(ueIdx, servingCell));
             r.BasePathloss_dB = double(state.LargeScaleState.BasePathloss_dB(ueIdx, servingCell));
             r.Pathloss_dB = double(state.LargeScaleState.Pathloss_dB(ueIdx, servingCell));
@@ -5908,8 +5952,8 @@ methods(Static, Access=private)
             r.WidebandSINRSource = "large_scale_interference_budget_runtime_state";
             r.WidebandSINRValueRole = "runtime_large_scale_state_not_receiver_measurement";
             r.InterferenceMode = char(string(interferenceMode));
-            r.RSRPSource = "large_scale_per_reference_re_power";
-            r.ServingRSRPSource = "large_scale_per_reference_re_power";
+            r.RSRPSource = char(servingRSRPSource);
+            r.ServingRSRPSource = char(servingRSRPSource);
             r.CoverageScore = sixgr.truth.CoupledTruthRuntime.coverageScore( ...
                 r.ServingRSRP_dBm, r.LargeScaleWidebandSINR_dB);
             r = sixgr.truth.CoupledTruthRuntime.normalizeStructRowToPrototype( ...
@@ -11082,6 +11126,26 @@ methods(Static, Access=private)
         decodeSuccess(~isfinite(crcPass) & status == "PASS") = true;
         pendingMask = status == "PENDING" | contains(status, "PENDING");
         failureFlag = (status == "FAIL" | status == "CRASH") | (~decodeSuccess & ~pendingMask & status ~= "" & status ~= "NA");
+        observationAvailable = ~pendingMask;
+        if signalName == "CSI-RS"
+            scheduled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "Scheduled", false(n, 1)));
+            transmitted = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "Transmitted", false(n, 1)));
+            observed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "Observed", false(n, 1)));
+            consumed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "Consumed", false(n, 1)));
+            measuredCSI = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "CSIMeasurementAvailable", false(n, 1)));
+            channelEstimate = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "ChannelEstimateAvailable", false(n, 1)));
+            observationAvailable = transmitted & observed;
+            decodeSuccess = observationAvailable & channelEstimate & ...
+                (consumed | measuredCSI);
+            pendingMask = scheduled & ~transmitted;
+            failureFlag = scheduled & transmitted & ~decodeSuccess;
+        end
 
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "SignalFamily", signalName, true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "SourceClassification", classification, true);
@@ -11093,7 +11157,7 @@ methods(Static, Access=private)
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "DecodeSuccess", decodeSuccess);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "SuccessFlag", decodeSuccess);
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FailureFlag", failureFlag);
-        T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "ControlObservationAvailable", ~pendingMask);
+        T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "ControlObservationAvailable", observationAvailable);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueSource", "runtime_control_reference_signal_observation", false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueRole", "control_reference_signal_runtime_evidence", false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueStatus", "available_runtime_observation", false);
@@ -11254,6 +11318,9 @@ methods(Static, Access=private)
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ScenarioID", string(meta.ScenarioID), false);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ConfigHash", string(meta.ConfigHash), false);
         artifact = "air_interface/csv/" + lower(string(signalName)) + "_trials.csv";
+        if upper(string(signalName)) == "CSI-RS"
+            artifact = "air_interface/csv/csi_rs_trials.csv";
+        end
         if upper(string(signalName)) == "PUCCH" && ismember("PUCCHGrantState", string(T.Properties.VariableNames))
             artifact = "packet_flow/csv/live_pucch_grants.csv";
         end
@@ -11291,6 +11358,11 @@ methods(Static, Access=private)
                 materialization = "active_integrated_waveform_srs_channel_estimation_gate";
                 gatingEffect = "srs_freshness_csi_gate";
                 consumer = "CoupledTruthRuntime.applySRSTrial";
+            case "CSI-RS"
+                classification = "active_integrated";
+                materialization = "active_integrated_waveform_csirs_channel_estimation_feedback";
+                gatingEffect = "dl_csi_feedback_and_link_adaptation_update";
+                consumer = "CoupledTruthRuntime.enqueueCSIReport";
             case "TRS"
                 classification = "active_integrated";
                 materialization = "active_integrated_waveform_trs_shared_receiver_tracking_state";
@@ -11806,6 +11878,50 @@ methods(Static, Access=private)
         end
     end
 
+    function [state, grantsOut, blockedT] = reconcileQueuedPUSCHAfterDLFeedbackImpl( ...
+            state, grantsIn, uciOnPUSCHAvailable)
+        grantsOut = repmat(struct(), 0, 1);
+        blockedT = struct2table(repmat( ...
+            sixgr.truth.CoupledTruthRuntime.emptyPUSCHPUCCHCollisionRow(), 0, 1));
+        if ~(isstruct(grantsIn) && ~isempty(grantsIn))
+            return;
+        end
+        uciOnPUSCHAvailable = logical(uciOnPUSCHAvailable);
+        dueSlots = arrayfun(@(g) double(sixgr.util.structGet(g, ...
+            "ScheduledAbsoluteSlot", sixgr.util.structGet(g, "Slot", NaN))), ...
+            grantsIn(:));
+        if any(~isfinite(dueSlots) | dueSlots < 1 | ...
+                abs(dueSlots - round(dueSlots)) > 1e-9)
+            error("sixgr:truth:InvalidQueuedPUSCHDueSlot", ...
+                "Every queued PUSCH grant must carry a finite integer ScheduledAbsoluteSlot before late HARQ-ACK reconciliation.");
+        end
+
+        uniqueDueSlots = unique(round(dueSlots), "stable");
+        for slotIdx = 1:numel(uniqueDueSlots)
+            dueSlot = uniqueDueSlots(slotIdx);
+            slotGrants = grantsIn(round(dueSlots) == dueSlot);
+            if uciOnPUSCHAvailable
+                [state, slotGrants] = sixgr.truth.CoupledTruthRuntime. ...
+                    multiplexDueHARQACKOnPUSCHImpl(state, slotGrants, dueSlot);
+            end
+            [slotGrants, slotBlockedT] = sixgr.truth.CoupledTruthRuntime. ...
+                excludeULGrantsCollidingWithPUCCHImpl(state, slotGrants, dueSlot);
+            if ~isempty(slotGrants)
+                if isempty(grantsOut)
+                    grantsOut = slotGrants;
+                else
+                    [grantsOut, slotGrants] = sixgr.truth.CoupledTruthRuntime. ...
+                        harmonizeStructArray(grantsOut, slotGrants);
+                    grantsOut = vertcat(grantsOut, slotGrants);
+                end
+            end
+            if istable(slotBlockedT) && ~isempty(slotBlockedT)
+                blockedT = sixgr.truth.CoupledTruthRuntime. ...
+                    appendCompatTable(blockedT, slotBlockedT);
+            end
+        end
+    end
+
     function state = markFeedbackRowsReservedForPUSCH(state, grantIds, contextId)
         grantIds = string(grantIds(:));
         pending = sixgr.util.structGet(state, "PendingFeedbackTable", table());
@@ -12254,6 +12370,7 @@ methods(Static, Access=private)
             "Direction", "", "UEIndex", NaN, "RNTI", NaN, ...
             "Slot", NaN, "Frame", NaN, "SweepPointIndex", NaN, "ConfiguredSNR_dB", NaN, ...
             "HarqID", NaN, "NDI", NaN, "NDIEpoch", NaN, "RV", NaN, ...
+            "HARQRound", NaN, ...
             "IsRetransmission", false, "FeedbackDueSlot", NaN, ...
             "FeedbackMechanism", "", "FeedbackEvidenceSource", "", ...
             "TBId", "", "OriginalTBSBits", NaN, "CurrentTBSBits", NaN, ...
@@ -13946,7 +14063,10 @@ methods(Static, Access=private)
         userMeta.RuntimeServingPathloss_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "Pathloss_dB", ueIdx, victimCell);
         userMeta.RuntimeServingShadowFading_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "Shadow_dB", ueIdx, victimCell);
         userMeta.RuntimeServingO2I_dB = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "O2I_dB", ueIdx, victimCell);
-        userMeta.RuntimeServingRSRP_dBm = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "RSRP_dBm", ueIdx, victimCell);
+        [userMeta.RuntimeServingRSRP_dBm, runtimeServingRSRPSource] = ...
+            sixgr.truth.CoupledTruthRuntime.reportableServingRSRP( ...
+            state, ueIdx, victimCell);
+        userMeta.RuntimeServingRSRPSource = char(runtimeServingRSRPSource);
         userMeta.RuntimeServingRxPower_dBm = sixgr.truth.CoupledTruthRuntime.largeScaleValue(ls, "RxPower_dBm", ueIdx, victimCell);
         userMeta.RuntimeChannelComplianceMode = "runtime_coupled_shared_slot_pucch_contribution";
         userMeta.RuntimePathlossModelSource = "CoupledTruthRuntime.LargeScaleState";
@@ -13980,6 +14100,47 @@ methods(Static, Access=private)
         if isfinite(rowIdx) && isfinite(colIdx) && rowIdx >= 1 && colIdx >= 1 && ...
                 rowIdx <= size(M, 1) && colIdx <= size(M, 2)
             value = double(M(rowIdx, colIdx));
+        end
+    end
+
+    function M = reportableRSRPMatrix(state)
+        % RSRP in dBm is an absolute receiver-reference-plane quantity.
+        % The large-scale cache deliberately retains a zero-loss power
+        % score when pathloss is disabled so fixed-link cell selection can
+        % still operate, but that score must never be exported as field
+        % serving RSRP.  Only expose the per-reference-RE value when the
+        % configured propagation loss was actually applied.
+        ls = sixgr.util.structGet(state, "LargeScaleState", struct());
+        raw = sixgr.util.structGet(ls, "RSRP_dBm", []);
+        M = double(raw);
+        pathlossApplied = logical(sixgr.util.structGet( ...
+            ls, "PathlossEnabled", false));
+        if ~pathlossApplied
+            M(:) = NaN;
+        end
+    end
+
+    function [value, source] = reportableServingRSRP(state, ueIdx, cellIdx)
+        value = NaN;
+        source = "unavailable_pathloss_disabled_no_field_rsrp";
+        ls = sixgr.util.structGet(state, "LargeScaleState", struct());
+        if ~logical(sixgr.util.structGet(ls, "PathlossEnabled", false))
+            return;
+        end
+        M = sixgr.truth.CoupledTruthRuntime.reportableRSRPMatrix(state);
+        ueIdx = round(double(ueIdx));
+        cellIdx = round(double(cellIdx));
+        if ~(isfinite(ueIdx) && isfinite(cellIdx) && ueIdx >= 1 && ...
+                cellIdx >= 1 && ueIdx <= size(M, 1) && ...
+                cellIdx <= size(M, 2))
+            source = "unavailable_invalid_serving_link_index";
+            return;
+        end
+        value = double(M(ueIdx, cellIdx));
+        if isfinite(value)
+            source = "large_scale_pathloss_applied_per_reference_re_power";
+        else
+            source = "unavailable_nonfinite_pathloss_applied_rsrp";
         end
     end
 

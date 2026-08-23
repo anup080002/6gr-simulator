@@ -1799,7 +1799,7 @@ switch mode
         if direction == "new_to_old"
             out = localKPIListToStruct(value);
         else
-            out = value;
+            out = localKPIStructToList(value);
         end
     case "numeric_string"
         if direction == "new_to_old"
@@ -1994,6 +1994,25 @@ if isstring(value) || iscellstr(value)
 elseif builtin("isstruct", value)
     s = value;
 end
+end
+
+function items = localKPIStructToList(value)
+if isstring(value) || iscellstr(value)
+    items = string(value(:));
+    return;
+end
+if ~builtin("isstruct", value) || ~isscalar(value)
+    items = strings(0, 1);
+    return;
+end
+names = string(fieldnames(value));
+enabled = false(size(names));
+for i = 1:numel(names)
+    raw = value.(char(names(i)));
+    enabled(i) = (islogical(raw) || isnumeric(raw)) && isscalar(raw) && ...
+        isfinite(double(raw)) && logical(raw);
+end
+items = names(enabled);
 end
 
 function cfg = localNewDefaults()

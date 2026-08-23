@@ -121,6 +121,8 @@
     "pdsch_dmrs_ports": 2,
     "pusch_dmrs_ports": 2,
     "csi_rs_enabled": true,
+    "csi_rs_periodicity_slots": 4,
+    "csi_rs_offset_slots": 0,
     "csi_rs_num_resources": 1,
     "csi_rs_resource_set_id": 0,
     "csi_rs_resource_ids": [0],
@@ -266,10 +268,14 @@
     "combining_mode": "soft"
   },
   "tdd_timing": {
+    "pdcch_to_pdsch_k0": 0,
     "pdcch_to_pusch_k2": 4,
+    "dl_harq_feedback_k1": [4],
     "ul_grant_k2": 4,
     "n1_pdsch_processing_time_symbols": 10,
-    "n2_pusch_preparation_time_symbols": 12
+    "n2_pusch_preparation_time_symbols": 12,
+    "capability_profile_id": "38.214-v18-explicit-k1-k2",
+    "k1_selection_policy": "first_valid_configured"
   },
   "control_gating": {
     "pbch_required": false,

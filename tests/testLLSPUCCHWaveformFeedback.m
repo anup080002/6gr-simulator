@@ -9,6 +9,10 @@ c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
 scfg = sixgr.lls6g.config.loadScenarioConfig( ...
     fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml"));
+mandatoryKPIs = scfg.get("kpi_spec.mandatory_kpis", strings(0, 1));
+assert(isstring(mandatoryKPIs) && all(ismember( ...
+    ["bler","throughput_mbps","sinr"], mandatoryKPIs)), ...
+    "Legacy KPI boolean authority must normalize into the modern mandatory KPI string list.");
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
 cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;

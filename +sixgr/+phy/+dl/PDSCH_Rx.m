@@ -949,7 +949,7 @@ rx.PDSCHAntennaIndices = pdschAntInd;
 rx.PDSCHIndices = pdschInd;
 [csirsInd, csirsSym, csirsInfo, csirsObservation] = ...
     localObserveCSIRSRuntimeResource( ...
-    carrier, cfg, canonical.OFDMGrid, opt);
+    carrier, cfg, canonical.OFDMGrid, opt, canonical.OFDMInfo);
 rx.CSIRSIndices = csirsInd;
 rx.CSIRSSymbols = csirsSym;
 rx.CSIRSInfo = csirsInfo;
@@ -1007,11 +1007,18 @@ csirsObservation.PilotResidualPower = double(sixgr.util.structGet( ...
     csirsEstimateInfo, "PilotResidualPower", NaN));
 csirsObservation.PilotResidualNMSE_dB = double(sixgr.util.structGet( ...
     csirsEstimateInfo, "PilotResidualNMSE_dB", NaN));
+[csirsObservation.ReferenceMeasuredSINR_dB, ...
+    csirsObservation.ReferenceMeasuredSINRSource, ...
+    csirsObservation.ReferenceMeasuredSINRStatus] = ...
+    localCSIRSReferenceSINR(csirsHest, csirsNoiseVar, csirsEstimateInfo);
 csirsObservation.HestDimensions = localSizeToken(csirsHest);
 csirsObservation.HestRxPorts = localArrayDimension(csirsHest, 3);
 csirsObservation.HestTxPorts = localArrayDimension(csirsHest, 4);
 csirsObservation.SINRMeasurementDomain = "csi_rs_resource_selective_channel_estimate";
-csirsObservation.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_synchronization";
+if ~isfinite(csirsObservation.MeasurementRSRP_dBm)
+    csirsObservation.PowerReferencePlane = ...
+        "normalized_ofdm_resource_grid_after_receiver_synchronization";
+end
 csirsObservation.CSIMeasurementStateAvailable = ~isempty(csiMeasurementState);
 csirsObservation.CSIMeasurementStatus = string(sixgr.util.structGet( ...
     csiMeasurementInfo, "Status", "not_required"));
@@ -1036,6 +1043,8 @@ csirsObservation.ResourceObjectiveValues = string(sixgr.util.structGet( ...
     csirsEstimateInfo, "ResourceObjectiveToken", ""));
 csirsObservation.CRISelectionSource = string(sixgr.util.structGet( ...
     csirsEstimateInfo, "SelectionSource", ""));
+csirsObservation = localSelectCSIRSRSPResource( ...
+    csirsObservation, csirsEstimateInfo);
 if csirsObservation.ChannelEstimateAvailable
     csirsObservation.Consumed = true;
     csirsObservation.Consumer = "dl_csi_ri_pmi_cri_measurement";
@@ -2839,10 +2848,11 @@ else
 end
 end
 
-function [csirsInd, csirsSym, csirsInfo, obs] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt)
+function [csirsInd, csirsSym, csirsInfo, obs] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt, ofdmInfo)
 csirsInd = opt.CSIRSIndices;
 csirsSym = opt.CSIRSSymbols;
 csirsInfo = opt.CSIRSInfo;
+measurementConfig = opt.CSIRSConfig;
 obs = localEmptyCSIRSObservation(cfg);
 if isempty(csirsInfo) || ~isstruct(csirsInfo)
     csirsInfo = struct("Channel", "CSI-RS", "Enabled", false);
@@ -2862,7 +2872,8 @@ if isempty(csirsInd) || isempty(csirsSym)
         return;
     end
     try
-        [csirsInd, csirsSym, csirsInfo] = sixgr.phy.refsig.csirs(carrier, cfg);
+        [csirsInd, csirsSym, csirsInfo, measurementConfig] = ...
+            sixgr.phy.refsig.csirs(carrier, cfg);
     catch ME
         obs.RuntimeMaterializationStatus = "blocked_generation_failed";
         obs.Blocker = string(ME.identifier) + ":" + string(ME.message);
@@ -2900,10 +2911,129 @@ obs.ResourceExtractionAvailable = true;
 powerLin = mean(abs(rxRef(:)).^2, "omitnan");
 obs.Observed = isfinite(powerLin) && powerLin > 0;
 obs.MeasurementRSRP_dB = 10 * log10(max(double(powerLin), eps));
-obs.MeasurementSource = "received_csirs_reference_signal_power";
+obs.MeasurementRelativeRSRP_dB = obs.MeasurementRSRP_dB;
+obs.MeasurementSource = "received_csirs_reference_signal_power_normalized_grid";
+obs = localMeasurePhysicalCSIRSRSP( ...
+    obs, carrier, cfg, rxGrid, csirsInfo, measurementConfig, ofdmInfo);
 obs.RuntimeMaterializationStatus = "runtime_observed";
 obs.UpdateOutcome = "observed_after_ofdm_demodulation";
 obs.RuntimeEvidenceSource = "sixgr.phy.dl.PDSCH_Rx:csirs_runtime_observation";
+end
+
+function obs = localMeasurePhysicalCSIRSRSP(obs, carrier, cfg, rxGrid, csirsInfo, defaultConfig, ofdmInfo)
+% Convert the Toolbox OFDM grid back to physical sqrt(W) before calling the
+% TS 38.215 CSI-RS measurement implementation.  nrOFDMDemodulate uses an
+% unnormalised FFT, so a grid bin is Nfft times the time-domain sample
+% amplitude.  The production PowerContext defines abs(sample)^2 in mW.
+powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
+amplitudeUnit = string(sixgr.util.structGet( ...
+    powerContext, "WaveformAmplitudeUnit", ""));
+obs.PhysicalMeasurementStatus = "unavailable_missing_sqrt_mw_power_context";
+obs.PhysicalMeasurementStandard = "3GPP_TS_38.215_via_nrCSIRSMeasurements";
+if ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW")
+    return;
+end
+nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+if ~(isscalar(nfft) && isfinite(nfft) && nfft >= 1 && nfft == round(nfft))
+    try
+        derivedOFDM = nrOFDMInfo(carrier);
+        nfft = double(derivedOFDM.Nfft);
+    catch
+        obs.PhysicalMeasurementStatus = "unavailable_missing_ofdm_fft_size";
+        return;
+    end
+end
+
+configs = cell(0,1);
+resourceIDs = zeros(0,1);
+resources = sixgr.util.structGet(csirsInfo, "Resources", []);
+if ~isempty(resources)
+    for ordinal = 1:numel(resources)
+        candidate = sixgr.util.structGet(resources(ordinal), "Configuration", []);
+        if isa(candidate, "nrCSIRSConfig")
+            configs{end+1,1} = candidate; %#ok<AGROW>
+            resourceIDs(end+1,1) = double(sixgr.util.structGet( ...
+                resources(ordinal), "ResourceID", ordinal - 1)); %#ok<AGROW>
+        end
+    end
+elseif isa(defaultConfig, "nrCSIRSConfig")
+    configs = {defaultConfig};
+    resourceIDs = double(sixgr.util.structGet(csirsInfo, "ResourceID", ...
+        sixgr.util.structGet(cfg, "phy.csirs.resourceID", 0)));
+end
+if isempty(configs)
+    obs.PhysicalMeasurementStatus = "unavailable_missing_runtime_csirs_configuration";
+    return;
+end
+
+scale = nfft * sqrt(1000); % sqrt(mW) grid -> sqrt(W) resource grid
+physicalGrid = rxGrid ./ cast(scale, "like", rxGrid);
+resourceAverage = nan(numel(configs),1);
+perAntenna = cell(numel(configs),1);
+measurementErrors = strings(numel(configs),1);
+for ordinal = 1:numel(configs)
+    try
+        measured = nrCSIRSMeasurements(carrier, configs{ordinal}, physicalGrid);
+        branchRSRP = double(measured.RSRPPerAntenna(:).');
+        branchRSRP = branchRSRP(isfinite(branchRSRP));
+        if isempty(branchRSRP)
+            measurementErrors(ordinal) = "empty_rsrp_per_antenna";
+            continue;
+        end
+        perAntenna{ordinal} = branchRSRP;
+        % TS 38.215 receiver-diversity reporting requires the reported
+        % CSI-RSRP to be no lower than the CSI-RSRP of any individual
+        % receive branch.  Preserve every branch value for audit and use
+        % the strongest measured branch for the UE-level report; averaging
+        % branches can violate that normative lower bound.
+        resourceAverage(ordinal) = max(branchRSRP);
+    catch ME
+        measurementErrors(ordinal) = string(ME.identifier);
+    end
+end
+obs.MeasurementFFTSize = nfft;
+obs.MeasurementGridScaleToSqrtW = scale;
+obs.MeasurementResourceIDs = localNumericVectorToken(resourceIDs);
+obs.MeasurementRSRPPerResource_dBm = localNumericVectorToken(resourceAverage);
+obs.MeasurementRSRPPerResourceValues_dBm = resourceAverage;
+obs.MeasurementRSRPPerAntennaByResource_dBm = perAntenna;
+obs.MeasurementErrors = strjoin(measurementErrors(strlength(measurementErrors) > 0), "|");
+valid = find(isfinite(resourceAverage), 1, "first");
+if isempty(valid)
+    obs.PhysicalMeasurementStatus = "unavailable_nr_csirs_measurement_failed";
+    return;
+end
+obs.MeasurementSelectedResourceOrdinal = double(valid);
+obs.MeasurementRSRP_dBm = resourceAverage(valid);
+obs.MeasurementRSRPPerReceiveAntenna_dBm = ...
+    localNumericVectorToken(perAntenna{valid});
+obs.MeasurementAntennaAggregation = ...
+    "maximum_per_receive_antenna_rsrp_ts_38_215_diversity_rule";
+obs.MeasurementSource = "nrCSIRSMeasurements_runtime_received_grid";
+obs.PowerReferencePlane = ...
+    "receiver_ofdm_grid_physical_sqrt_w_after_synchronization";
+obs.PhysicalMeasurementStatus = "available";
+end
+
+function obs = localSelectCSIRSRSPResource(obs, estimateInfo)
+values = sixgr.util.structGet(obs, "MeasurementRSRPPerResourceValues_dBm", []);
+perAntenna = sixgr.util.structGet(obs, ...
+    "MeasurementRSRPPerAntennaByResource_dBm", {});
+ordinal = double(sixgr.util.structGet(estimateInfo, ...
+    "SelectedResourceOrdinal", sixgr.util.structGet(obs, ...
+    "MeasurementSelectedResourceOrdinal", 1)));
+if ~(isscalar(ordinal) && isfinite(ordinal) && ordinal >= 1 && ...
+        ordinal == round(ordinal) && ordinal <= numel(values))
+    return;
+end
+if isfinite(values(ordinal))
+    obs.MeasurementSelectedResourceOrdinal = ordinal;
+    obs.MeasurementRSRP_dBm = double(values(ordinal));
+    if ordinal <= numel(perAntenna) && ~isempty(perAntenna{ordinal})
+        obs.MeasurementRSRPPerReceiveAntenna_dBm = ...
+            localNumericVectorToken(perAntenna{ordinal});
+    end
+end
 end
 
 function [Hest, nVar, estInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, strictMode, channelModelToken, numTxPorts)
@@ -3032,6 +3162,7 @@ objective = -inf;
 if isempty(H) || ndims(H) > 3 || any(~isfinite(real(H(:))) | ~isfinite(imag(H(:))))
     return;
 end
+
 nVar = double(nVar);
 if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
     return;
@@ -3052,6 +3183,49 @@ end
 if any(isfinite(snapshotObjective))
     objective = mean(snapshotObjective,"omitnan");
 end
+end
+
+function [sinrDb, source, status] = localCSIRSReferenceSINR(Hest, nVar, estimateInfo)
+% Report CSI-RS-domain SINR from the same resource-selective channel
+% estimate used by CRI/RI/PMI/CQI.  This is deliberately distinct from
+% PDSCH post-equalization SINR: signal power is the average received power
+% of unit-energy orthogonal CSI-RS ports and the denominator is the noise
+% plus interference variance measured by the CSI-RS estimator.
+sinrDb = NaN;
+source = "";
+status = "unavailable";
+if ~logical(sixgr.util.structGet(estimateInfo, "Available", false)) || ...
+        isempty(Hest)
+    status = "unavailable_missing_csirs_channel_estimate";
+    return;
+end
+nVar = double(nVar);
+if ~(isscalar(nVar) && isfinite(nVar) && nVar > 0)
+    status = "unavailable_invalid_csirs_noise_variance";
+    return;
+end
+if any(~isfinite(real(Hest(:))) | ~isfinite(imag(Hest(:))))
+    status = "unavailable_nonfinite_csirs_channel_estimate";
+    return;
+end
+Hwb = localCSIRSWidebandChannelMatrix(Hest, estimateInfo);
+if isempty(Hwb)
+    status = "unavailable_empty_csirs_wideband_channel";
+    return;
+end
+if ismatrix(Hwb)
+    Hwb = reshape(Hwb, size(Hwb,1), size(Hwb,2), 1);
+end
+nPorts = max(1, size(Hwb,2));
+signalPowerPerRxSnapshot = squeeze(sum(abs(Hwb).^2, 2) ./ nPorts);
+signalPower = mean(double(signalPowerPerRxSnapshot(:)), "omitnan");
+if ~(isscalar(signalPower) && isfinite(signalPower) && signalPower > 0)
+    status = "unavailable_invalid_csirs_signal_power";
+    return;
+end
+sinrDb = 10 .* log10(signalPower ./ nVar);
+source = "csirs_resource_selective_hest_over_measured_noise_interference_variance";
+status = "available";
 end
 
 function value = localEmptyCSIRSResourceMeasurement()
@@ -3090,6 +3264,20 @@ obs.Blocker = "";
 obs.UpdateOutcome = "";
 obs.RuntimeEvidenceSource = "";
 obs.MeasurementRSRP_dB = NaN;
+obs.MeasurementRelativeRSRP_dB = NaN;
+obs.MeasurementRSRP_dBm = NaN;
+obs.MeasurementRSRPPerReceiveAntenna_dBm = "";
+obs.MeasurementRSRPPerResource_dBm = "";
+obs.MeasurementRSRPPerResourceValues_dBm = [];
+obs.MeasurementRSRPPerAntennaByResource_dBm = {};
+obs.MeasurementResourceIDs = "";
+obs.MeasurementSelectedResourceOrdinal = NaN;
+obs.MeasurementAntennaAggregation = "";
+obs.MeasurementFFTSize = NaN;
+obs.MeasurementGridScaleToSqrtW = NaN;
+obs.MeasurementErrors = "";
+obs.PhysicalMeasurementStatus = "not_attempted";
+obs.PhysicalMeasurementStandard = "";
 obs.MeasurementSource = "";
 obs.ResourceExtractionAttempted = false;
 obs.ResourceExtractionAvailable = false;
@@ -3103,6 +3291,9 @@ obs.ChannelEstimateNoiseVariance = NaN;
 obs.PilotRECount = NaN;
 obs.PilotResidualPower = NaN;
 obs.PilotResidualNMSE_dB = NaN;
+obs.ReferenceMeasuredSINR_dB = NaN;
+obs.ReferenceMeasuredSINRSource = "";
+obs.ReferenceMeasuredSINRStatus = "not_attempted";
 obs.HestDimensions = "";
 obs.HestRxPorts = NaN;
 obs.HestTxPorts = NaN;
