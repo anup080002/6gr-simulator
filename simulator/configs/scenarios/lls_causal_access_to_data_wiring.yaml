@@ -342,6 +342,22 @@ power_and_rf_frontend:
   noise_figure: 5
   rx_gain_control: "fixed"
   saturation_model: "none"
+
+# Canonical RF runtime authority shared with the TDD wiring profile.  The
+# measured serving-link pathloss remains runtime evidence; configured SNR
+# is explicitly prohibited from masquerading as pathloss.
+rf_frontend:
+  configuration_epoch: 1
+  ul_power_control:
+    require_measured_reference_rs: true
+    configured_snr_pathloss_forbidden: true
+    tpc_source: decoded_control_event
+    tpc_mode: accumulation
+    state_epoch_required: true
+    pusch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 waveform:
   transform_precoding: false
   dft_size: 1024

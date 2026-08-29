@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-08-20-contract-v43-harq-rtt-pucch-format"
+MATERIALIZER_VERSION = "2026-08-24-contract-v44-yaml-raster-authority"
 MAX_PREVIEW_ROWS = 180
 MIN_EXPLANATORY_CHART_POINTS = 2
 MIN_TREND_CHART_POINTS = 3
@@ -136,6 +136,16 @@ def contract_artifact_is_policy_filtered(
     path = str(logical_path or "").strip().lower().replace("\\", "/")
     name = str(contract_name or "").strip().lower()
     identity = f"{path}|{name}"
+
+    # Raster output is controlled by the resolved YAML.  Chart contract
+    # entries use a generated ``contract__`` CSV plus its PNG, so filtering
+    # the chart dataset here disables the complete chart pair without hiding
+    # any primary runtime table.  Publication-enabled runs remain strict.
+    if (
+        policy.get("raster_output_enabled") is False
+        and "/csv/contract__" in path
+    ):
+        return True
 
     feature_key = OPTIONAL_6G_TABLE_POLICY.get(name)
     if feature_key is None:

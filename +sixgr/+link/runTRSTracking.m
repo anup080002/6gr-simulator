@@ -89,6 +89,7 @@ out.TxRFStageOrder = "";
 out.TxRFAppliedStageCount = NaN;
 out.CompositeReceiverFrontEndApplied = false;
 out.CompositeReceiverFrontEndStatus = "";
+out.ObservedREAllocationTable = table();
 
 configuredTRS = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
 configuredTracking = logical(sixgr.util.structGet(cfg, ...
@@ -108,6 +109,7 @@ try
     tStart = tic;
     [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
         localRunStrictRuntimeTRSEvidence(cfg,snr_dB,p.Results.ChannelState);
+    out.ObservedREAllocationTable = localObservedTRSAllocation(tx);
     out.ChannelState = channelState;
     trial = score.TrialRow;
     runtimeEvidenceOk = localRuntimeTRSEvidenceComplete(trial, strictCfg);
@@ -229,6 +231,26 @@ catch ME
     if ~isempty(log)
         log.warn("runTRSTracking failed: " + string(ME.message));
     end
+end
+
+function T = localObservedTRSAllocation(tx)
+T = table();
+slots = sixgr.util.structGet(tx, "GridSlots", struct([]));
+for ii = 1:numel(slots)
+    slotTx = struct("Carrier", slots(ii).Carrier, ...
+        "Grid", slots(ii).Grid, "Indices", slots(ii).Indices);
+    chunk = sixgr.truth.buildObservedREAllocation(slotTx, ...
+        "Direction", "DL", "Channel", "TRS", ...
+        "AbsoluteSlot", double(slots(ii).Slot), ...
+        "CellID", double(slots(ii).Carrier.NCellID), ...
+        "LayerCount", size(slots(ii).Grid, 3), ...
+        "AllocationID", "trs_slot_" + string(slots(ii).Slot));
+    if isempty(T)
+        T = chunk;
+    else
+        T = [T; chunk]; %#ok<AGROW>
+    end
+end
 end
 end
 

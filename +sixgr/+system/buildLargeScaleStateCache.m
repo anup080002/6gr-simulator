@@ -6,6 +6,7 @@ opt = struct();
 opt.NumRB = 1;
 opt.PreviousState = struct();
 opt.ReusePropagation = false;
+opt.PreserveRandomComponents = true;
 opt.IndoorDistance_m = [];
 
 if mod(numel(varargin), 2) ~= 0
@@ -17,6 +18,7 @@ for i = 1:2:numel(varargin)
         case "numrb", opt.NumRB = double(value);
         case "previousstate", opt.PreviousState = value;
         case "reusepropagation", opt.ReusePropagation = logical(value);
+        case "preserverandomcomponents", opt.PreserveRandomComponents = logical(value);
         case {"indoordistance_m","dindoor_m","dindoor"}, opt.IndoorDistance_m = double(value);
         otherwise, error("sixgr:system:buildLargeScaleStateCache:UnknownOpt", "Unknown option: %s", name);
     end
@@ -43,7 +45,8 @@ if isempty(beamGain_dB), beamGain_dB = zeros(K, nCells); end
 state.BeamIndex = double(beamIdx); state.BeamGain_dB = double(beamGain_dB);
 
 geom = sixgr.system.GeometryEngine.buildLargeScaleState(cfg, layout, ue, plModel, ...
-    "PreviousState", opt.PreviousState, "ReusePropagation", opt.ReusePropagation, "IndoorDistance_m", opt.IndoorDistance_m);
+    "PreviousState", opt.PreviousState, "ReusePropagation", opt.ReusePropagation, ...
+    "PreserveRandomComponents", opt.PreserveRandomComponents, "IndoorDistance_m", opt.IndoorDistance_m);
 geomFields = fieldnames(geom);
 for i = 1:numel(geomFields)
     state.(geomFields{i}) = geom.(geomFields{i});

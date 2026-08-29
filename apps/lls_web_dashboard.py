@@ -11218,6 +11218,17 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "lls6g.resolvedConfig.link_adaptation.operating_point_mode",
         default="fixed",
     ).lower() in {"fixed", "calibration_only", "fixed_mcs"}
+    save_figures = config_bool(
+        "output.save_figures",
+        "lls6g.resolvedConfig.output.save_figures",
+        default=True,
+    )
+    save_png = config_bool(
+        "output.save_png",
+        "lls6g.resolvedConfig.output.save_png",
+        default=True,
+    )
+    raster_output_enabled = bool(save_figures and save_png)
     profiler_enabled = config_bool(
         "run.timeProfilingEnabled",
         "lls6g.resolvedConfig.output.profiler_enabled",
@@ -11510,6 +11521,9 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "rank_adaptation_enabled": rank_adaptation_enabled,
         "max_spatial_rank": int(round(max_spatial_rank)),
         "fixed_mcs_mode": fixed_mcs_mode,
+        "save_figures": save_figures,
+        "save_png": save_png,
+        "raster_output_enabled": raster_output_enabled,
         "profiler_enabled": profiler_enabled,
         "comparison_enabled": comparison_enabled,
         "active_pucch_formats": [str(value).strip() for value in active_pucch_formats],

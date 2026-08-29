@@ -3,8 +3,11 @@ function raw = loadDirectionRawTables(details, varargin)
 
 ip = inputParser;
 ip.addParameter("RunFolder", "", @(x) ischar(x) || isstring(x));
+ip.addParameter("PreferPersistedPrimary", false, ...
+    @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.parse(varargin{:});
 runFolder = string(ip.Results.RunFolder);
+preferPersistedPrimary = logical(ip.Results.PreferPersistedPrimary);
 
 raw = struct();
 raw.DL = table();
@@ -18,6 +21,7 @@ raw.SlotTrace = table();
 raw.GridNumRBs = NaN;
 raw.NumResourceCells = NaN;
 raw.SymbolsPerSlot = NaN;
+raw.PrimarySourceReconciliation = table();
 raw.Paths = struct("DL", "", "UL", "", "PacketSDU", "", ...
     "ApplicationPackets", "", "HARQTimeline", "", ...
     "DLGrants", "", "ULGrants", "", "SlotTrace", "");
@@ -119,6 +123,124 @@ if strlength(runFolder) > 0
         p = localCandidatePath(runFolder, "packet_flow/csv/slot_trace.csv", "reports/csv/slot_trace.csv");
         [raw.SlotTrace, raw.Paths.SlotTrace] = localResolveTable(p, string(p));
     end
+
+    if preferPersistedPrimary
+        [raw.DL, raw.Paths.DL, dlAudit] = localSelectPersistedPrimary( ...
+            raw.DL, raw.Paths.DL, runFolder, "DL", ...
+            "air_interface/csv/dl_pdsch_trials.csv");
+        [raw.UL, raw.Paths.UL, ulAudit] = localSelectPersistedPrimary( ...
+            raw.UL, raw.Paths.UL, runFolder, "UL", ...
+            "air_interface/csv/ul_pusch_trials.csv");
+        raw.PrimarySourceReconciliation = [dlAudit; ulAudit];
+    end
+end
+end
+
+function [selected, selectedPath, auditT] = localSelectPersistedPrimary( ...
+        inMemory, inMemoryPath, runFolder, direction, relativePath)
+% Final reducers must consume the canonical rows already published for the
+% run.  Live callbacks can retain an earlier, narrower table schema while
+% the persisted primary table has subsequently been finalized.  Selecting
+% that stale table loses real runtime fields and is not a valid fallback.
+selected = inMemory;
+selectedPath = string(inMemoryPath);
+persistedPath = fullfile(char(runFolder), char(relativePath));
+persisted = table();
+if isfile(persistedPath)
+    persisted = readtable(persistedPath, "VariableNamingRule", "preserve");
+end
+
+memoryRows = localHeight(inMemory);
+persistedRows = localHeight(persisted);
+memoryHash = localTableHash(inMemory);
+persistedHash = localTableHash(persisted);
+status = "in_memory_only";
+
+if persistedRows > 0
+    if memoryRows > 0 && memoryRows ~= persistedRows
+        error("sixgr:kpi:PersistedPrimaryRowCountMismatch", ...
+            ["Canonical %s primary rows (%d) disagree with the in-memory " ...
+             "runtime snapshot (%d). Refusing to reduce mismatched evidence."], ...
+            char(direction), persistedRows, memoryRows);
+    end
+    if memoryRows > 0
+        localAssertSamePrimaryIdentity(inMemory, persisted, direction);
+        if memoryHash == persistedHash
+            status = "canonical_persisted_matches_in_memory";
+        else
+            status = "canonical_persisted_selected_after_schema_finalization";
+        end
+    else
+        status = "canonical_persisted_selected";
+    end
+    selected = persisted;
+    selectedPath = string(relativePath);
+end
+
+auditT = table(string(direction), memoryRows, persistedRows, memoryHash, ...
+    persistedHash, string(selectedPath), status, ...
+    'VariableNames', {'Direction','InMemoryRowCount','PersistedRowCount', ...
+    'InMemoryRowsHash','PersistedRowsHash','SelectedSourcePath','Status'});
+end
+
+function localAssertSamePrimaryIdentity(inMemory, persisted, direction)
+memoryKey = localPrimaryIdentity(inMemory);
+persistedKey = localPrimaryIdentity(persisted);
+if isempty(memoryKey) || isempty(persistedKey)
+    return;
+end
+if numel(memoryKey) ~= numel(persistedKey) || ...
+        ~isequal(sort(memoryKey), sort(persistedKey))
+    error("sixgr:kpi:PersistedPrimaryIdentityMismatch", ...
+        ["Canonical %s primary trial identities disagree with the in-memory " ...
+         "runtime snapshot. Refusing to reduce a different trial set."], ...
+        char(direction));
+end
+end
+
+function key = localPrimaryIdentity(T)
+key = strings(0, 1);
+if ~(istable(T) && height(T) > 0)
+    return;
+end
+frame = localIdentityColumn(T, ["Frame","SFN"]);
+slot = localIdentityColumn(T, ["Slot","AbsoluteSlot"]);
+ue = localIdentityColumn(T, ["UEID","UEId","UEIndex"]);
+if isempty(frame) || isempty(slot) || isempty(ue) || ...
+        any(~isfinite(frame)) || any(~isfinite(slot)) || any(~isfinite(ue))
+    return;
+end
+key = "frame=" + string(frame) + "|slot=" + string(slot) + ...
+    "|ue=" + string(ue);
+end
+
+function value = localIdentityColumn(T, candidates)
+value = [];
+vars = string(T.Properties.VariableNames);
+for candidate = string(candidates)
+    if ismember(candidate, vars)
+        try
+            value = double(T.(candidate));
+        catch
+            value = str2double(string(T.(candidate)));
+        end
+        value = value(:);
+        return;
+    end
+end
+end
+
+function n = localHeight(T)
+n = 0;
+if istable(T)
+    n = height(T);
+end
+end
+
+function hash = localTableHash(T)
+hash = "empty";
+if istable(T) && height(T) > 0
+    hash = string(sixgr.kpi.hashKPISourceRows(T));
 end
 end
 

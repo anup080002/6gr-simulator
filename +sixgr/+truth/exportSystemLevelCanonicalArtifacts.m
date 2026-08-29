@@ -433,8 +433,17 @@ T.FullInterfererChannelTruthUsed = repmat(localConfiguredInterferenceMode(cfg) =
 T.NoiseVariance = localNoiseVarianceFromdBm(noisePower);
 T.ServingRSRP_dBm = rsrp;
 T.ServingRSRPSource = repmat("system_level_serving_cell_trace", n, 1);
-T.CSI_RSRP_dB = rsrp;
-T.CSI_RSRPSource = repmat("system_level_serving_cell_trace", n, 1);
+% Do not relabel link-budget serving RSRP or a normalized FFT-grid power as
+% measured CSI-RSRP.  The physical value below is populated only when the
+% real PDSCH receiver exported a PowerContext-calibrated CSI-RS observation.
+T.CSI_RSRP_dB = localNumericColumn(grantT, "MeasuredCSIRSRPRelative_dB", NaN);
+T.CSI_RSRPSource = localStringColumn(grantT, "MeasuredCSIRSRPSource", ...
+    "unavailable_no_measured_csirs_receiver_observation");
+T.CSI_RSRP_dBm = localNumericColumn(grantT, "MeasuredCSIRSRP_dBm", NaN);
+T.CSI_RSRPPhysicalStatus = localStringColumn(grantT, ...
+    "MeasuredCSIRSRPPhysicalStatus", "not_attempted");
+T.CSI_RSRPPowerReferencePlane = localStringColumn(grantT, ...
+    "MeasuredCSIRSRPPowerReferencePlane", "");
 T.AppliedLargeScaleGain_dB = -pathloss;
 T.AppliedLargeScaleGainSource = repmat("system_level_pathloss_and_beam_gain_state", n, 1);
 T.ChannelGain_dB = -pathloss;
@@ -445,8 +454,11 @@ T.BeamHit = double(isfinite(servingBeam));
 T.TopKBeamHit = double(isfinite(servingBeam));
 T.BeamCandidateCount = repmat(double(sixgr.util.structGet(cfg, "system.beam.numBeams", sixgr.util.structGet(cfg, "phy.ssb.nBeams", 8))), n, 1);
 T.SelectedBeamGain_dB = servingBeamGain;
-T.BestBeamGain_dB = servingBeamGain;
-T.BeamGainGap_dB = zeros(n, 1);
+% A serving-beam link-budget gain does not constitute a counterfactual
+% sweep over every candidate.  Best/gap remain unavailable unless a real
+% receiver/codebook scorer supplies them later.
+T.BestBeamGain_dB = nan(n, 1);
+T.BeamGainGap_dB = nan(n, 1);
 T.ConfiguredBeamSelectionStrategy = repmat(string(sixgr.util.structGet(scfg.toStruct(), "users.beam_selection_strategy", "")), n, 1);
 T.BeamSelectionStrategy = repmat("runtime_best_beam_per_link", n, 1);
 T.BeamSelectionAuthority = repmat("system_level_beam_selection_state", n, 1);

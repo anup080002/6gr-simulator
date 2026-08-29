@@ -26,6 +26,8 @@ base = localBaseState(cfg, direction);
 adaptationState = localInitAdaptationState(cfg, direction, opt.AdaptationState);
 adaptationDomain = sixgr.link.resolveLinkAdaptationDomain(cfg, direction);
 [ackKnown, ackObserved, ackSource] = localResolveAckOutcome(metrics);
+[ollaUpdateAuthorized, ollaFeedbackEventType, ollaAuthoritySource] = ...
+    localResolveOLLAUpdateAuthority(metrics, ackKnown);
 [instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, cqiSource, calibrationProfile, cqiMeta] = ...
     localResolveInstantaneousAMC(cfg, direction, metrics, adaptationDomain);
 [resetState, resetReason] = localShouldResetState(adaptationState, metrics, cfg);
@@ -78,6 +80,12 @@ decision = struct( ...
     "OLLATargetRequiredSINR_dB", NaN, ...
     "OLLAThresholdSource", "", ...
     "OLLAUpdateCount", double(adaptationState.OLLAUpdateCount), ...
+    "OLLAUpdateCountBeforeEvent", double(adaptationState.OLLAUpdateCount), ...
+    "OLLAUpdateCountAfterEvent", double(adaptationState.OLLAUpdateCount), ...
+    "OLLAUpdateAppliedAtThisEvent", false, ...
+    "OLLAUpdateAuthorized", logical(ollaUpdateAuthorized), ...
+    "OLLAFeedbackEventType", char(ollaFeedbackEventType), ...
+    "OLLAUpdateAuthoritySource", char(ollaAuthoritySource), ...
     "OLLAFeedbackEligible", false, ...
     "OLLAFeedbackExclusionReason", "no_ack_nack_feedback", ...
     "CalibrationProfile", char(calibrationProfile), ...
@@ -141,7 +149,8 @@ if localPolicyEnabled(policy)
     end
     [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, ...
         instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ...
-        ackKnown, ackObserved, resetState, resetReason);
+        ackKnown, ackObserved, ollaUpdateAuthorized, ollaFeedbackEventType, ...
+        resetState, resetReason);
     if ~decision.MCSUpdated && ~(isfinite(decision.CQIBasedMCS) || adaptationState.Initialized) && ...
             strlength(string(decision.Reason)) == 0
         decision.Reason = "missing_cqi";
@@ -202,7 +211,7 @@ else
 end
 end
 
-function [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ackKnown, ackObserved, resetState, resetReason)
+function [decision, adaptationState] = localResolveMCSDecision(decision, adaptationState, cfg, direction, metrics, instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ackKnown, ackObserved, ollaUpdateAuthorized, ollaFeedbackEventType, resetState, resetReason)
 previousMCS = double(decision.MCSIndex);
 previousCodeRate = double(decision.TargetCodeRate);
 previousModulation = char(string(decision.Modulation));
@@ -272,12 +281,18 @@ if resetState
 end
 
 feedbackEvent = metrics;
-feedbackEvent.AckObservedValid = logical(ackKnown);
+ollaCountBefore = double(adaptationState.OLLAUpdateCount);
+feedbackEvent.AckObservedValid = logical(ackKnown) && logical(ollaUpdateAuthorized);
 feedbackEvent.AckObserved = logical(ackObserved);
 [adaptationState, ollaEvent] = sixgr.link.updateOLLAStateFromHARQFeedback( ...
     cfg, direction, feedbackEvent, adaptationState);
 ollaFeedbackEligible = logical(ollaEvent.Eligible);
 ollaFeedbackExclusionReason = string(ollaEvent.ExclusionReason);
+if ~logical(ollaUpdateAuthorized)
+    ollaFeedbackEligible = false;
+    ollaFeedbackExclusionReason = "event_not_authorized_for_olla:" + string(ollaFeedbackEventType);
+end
+ollaCountAfter = double(adaptationState.OLLAUpdateCount);
 
 maxMCS = localMaxValidMCS(mcsTable);
 cqiCeilingMCS = double(instantMCS);
@@ -327,6 +342,10 @@ decision.OLLABaseRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "Base
 decision.OLLATargetRequiredSINR_dB = double(sixgr.util.structGet(ollaDetail, "TargetRequiredSINR_dB", NaN));
 decision.OLLAThresholdSource = char(string(sixgr.util.structGet(ollaDetail, "ThresholdSource", "")));
 decision.OLLAUpdateCount = double(adaptationState.OLLAUpdateCount);
+decision.OLLAUpdateCountBeforeEvent = double(ollaCountBefore);
+decision.OLLAUpdateCountAfterEvent = double(ollaCountAfter);
+decision.OLLAUpdateAppliedAtThisEvent = logical(ollaFeedbackEligible) && ...
+    double(ollaCountAfter) == double(ollaCountBefore) + 1;
 decision.OLLAFeedbackEligible = logical(ollaFeedbackEligible);
 decision.OLLAFeedbackExclusionReason = char(ollaFeedbackExclusionReason);
 if string(adaptationDomain) == "legacy_mcs"
@@ -1163,7 +1182,38 @@ else
         sixgr.util.structGet(cfg, "phy.pusch.nLayers", ...
         sixgr.util.structGet(cfg, "phy.nTxAnt", 1))))));
 end
+
 maxLayers = max(1, round(maxLayers));
+end
+
+function [authorized, eventType, authoritySource] = localResolveOLLAUpdateAuthority(metrics, ackKnown)
+% OLLA is driven only by a causal HARQ ACK/NACK delivery event.  CSI
+% measurement rows can legitimately carry colocated decoder fields, but
+% those fields are not HARQ feedback and must not move the outer loop.
+eventType = lower(strtrim(string(sixgr.util.structGet( ...
+    metrics, "FeedbackEventType", "legacy_unspecified"))));
+rawAuthority = sixgr.util.structGet(metrics, "AllowOLLAUpdate", []);
+if ~isempty(rawAuthority)
+    if ~(isscalar(rawAuthority) && (islogical(rawAuthority) || ...
+            (isnumeric(rawAuthority) && isfinite(double(rawAuthority)))))
+        error("sixgr:link:LinkAdaptation:InvalidOLLAUpdateAuthority", ...
+            "AllowOLLAUpdate must be a finite scalar logical/numeric value.");
+    end
+    authorized = logical(rawAuthority) && logical(ackKnown);
+    authoritySource = "metrics.AllowOLLAUpdate";
+    return;
+end
+if eventType ~= "legacy_unspecified"
+    authorizedEventTypes = ["harq_feedback", "harq_ack_nack_delivery", ...
+        "pucch_harq_feedback", "pusch_uci_harq_feedback"];
+    authorized = logical(ackKnown) && any(eventType == authorizedEventTypes);
+    authoritySource = "metrics.FeedbackEventType";
+    return;
+end
+% Compatibility for direct component callers that predate the explicit
+% event contract. Production coupled runtime always supplies authority.
+authorized = logical(ackKnown);
+authoritySource = "legacy_ack_field_compatibility";
 end
 
 function cqiBasedMCS = localSmoothCQIBasedMCS(previousCQIBasedMCS, instantMCS, alpha)

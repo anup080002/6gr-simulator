@@ -72,6 +72,10 @@ def main() -> int:
             if not run_folder.is_dir():
                 raise SystemExit(f"Filesystem run folder does not exist: {run_folder}")
         _, policy = _filesystem_run_policy(run_folder)
+        raster_output_enabled = bool(policy.get("raster_output_enabled", True))
+        replace_existing_rasters = bool(
+            args.replace_existing_rasters_from_csv and raster_output_enabled
+        )
 
         def policy_filter(path: str, name: str) -> bool:
             return materializer.contract_artifact_is_policy_filtered(
@@ -81,7 +85,7 @@ def main() -> int:
         removed_rasters: list[dict[str, object]] = []
         declared_artifact_rasters: list[dict[str, str]] = []
         declared_report_rasters: list[dict[str, str]] = []
-        if args.replace_existing_rasters_from_csv:
+        if replace_existing_rasters:
             # A previous interrupted replacement can leave report-ledger
             # image claims without their declared CSV-backed rasters. Rebuild
             # only those explicitly available/counting aliases first so the
@@ -137,7 +141,7 @@ def main() -> int:
             feature_policy=policy,
             force=bool(args.force),
         )
-        if args.replace_existing_rasters_from_csv:
+        if replace_existing_rasters:
             # The browser materializer owns contract_plot_lineage.csv. Seal
             # the additional report aliases only after that file has reached
             # its final browser-contract representation.
@@ -145,14 +149,14 @@ def main() -> int:
                 run_folder, seal_lineage=True
             )
         frc_reference_rasters: list[dict[str, str]] = []
-        if args.replace_existing_rasters_from_csv:
+        if replace_existing_rasters:
             # FRC reference-point plots are outside the browser chart catalog,
             # but their lineage is a required scientific contract. Rebuild
             # them from the exact persisted per-entry CSVs before stale
             # lineage reconciliation runs.
             frc_reference_rasters = materialize_frc_reference_rasters(run_folder)
         retired_lineage_rows = []
-        if args.replace_existing_rasters_from_csv:
+        if replace_existing_rasters:
             retired_lineage_rows = reconcile_removed_raster_lineage(run_folder)
         # Terminal filesystem runs are cached by the dashboard.  The cache
         # necessarily reflects the pre-materialization file set unless it is
@@ -166,6 +170,11 @@ def main() -> int:
             "run_folder": str(run_folder),
             "storage_backend": "results_folder",
             "verification_only": False,
+            "raster_output_enabled": raster_output_enabled,
+            "raster_replacement_requested": bool(
+                args.replace_existing_rasters_from_csv
+            ),
+            "raster_replacement_executed": replace_existing_rasters,
             "materializer_version": materializer.MATERIALIZER_VERSION,
             "created_count": len(result.get("created") or []),
             "old_rasters_removed": len(removed_rasters),

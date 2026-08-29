@@ -428,7 +428,7 @@ classdef TR38901Plus < handle
     end
 
     methods
-        function [pl_dB, los, ex] = pathlossFromGeometryState(obj, geometryState, cellIdx)
+        function [pl_dB, los, ex] = pathlossFromGeometryState(obj, geometryState, cellIdx, varargin)
             % Evaluate pathloss using one canonical GeometryEngine state.
             if ~(isstruct(geometryState) && isfield(geometryState, "UEPosition_m") && isfield(geometryState, "BSPosition_m"))
                 error("TR38901Plus:pathlossFromGeometryState:BadGeometryState", ...
@@ -444,13 +444,28 @@ classdef TR38901Plus < handle
             K = size(uePos, 1);
             txPos = repmat(bsPos(cellIdx, :).', 1, K);
             rxPos = uePos.';
+            passthrough = {};
+            if mod(numel(varargin), 2) ~= 0
+                error("TR38901Plus:pathlossFromGeometryState:BadNV", ...
+                    "Name-value inputs must come in pairs.");
+            end
+            allowed = ["los", "shadow_db", "shadowfading_db", "o2iloss_db", "o2i_db"];
+            for optionIndex = 1:2:numel(varargin)
+                optionName = lower(string(varargin{optionIndex}));
+                if ~ismember(optionName, allowed)
+                    error("TR38901Plus:pathlossFromGeometryState:UnknownOpt", ...
+                        "Unknown preserved-state option: %s", optionName);
+                end
+                passthrough(end+1:end+2) = varargin(optionIndex:optionIndex+1); %#ok<AGROW>
+            end
             [pl_dB, los, ex] = obj.pathloss(txPos, rxPos, ...
                 "Scenario", string(sixgr.util.structGet(geometryState, "PropagationScenario", obj.Scenario)), ...
                 "IndoorRx", reshape(logical(geometryState.IndoorRx(:, cellIdx)), 1, []), ...
                 "IndoorDistance_m", reshape(double(geometryState.IndoorDistance_m(:, cellIdx)), 1, []), ...
                 "PathlossEnabled", logical(sixgr.util.structGet(geometryState, "PathlossEnabled", obj.PathlossEnabled)), ...
                 "ShadowFadingEnabled", logical(sixgr.util.structGet(geometryState, "ShadowFadingEnabled", obj.ShadowFadingEnabled)), ...
-                "LOSEnabled", logical(sixgr.util.structGet(geometryState, "LOSEnabled", obj.LOSEnabled)));
+                "LOSEnabled", logical(sixgr.util.structGet(geometryState, "LOSEnabled", obj.LOSEnabled)), ...
+                passthrough{:});
             ex.geometrySource = string(sixgr.util.structGet(geometryState, "GeometrySource", ""));
             ex.distance2D_m = reshape(double(geometryState.d2d_m(:, cellIdx)), 1, []);
             ex.distance3D_m = reshape(double(geometryState.d3d_m(:, cellIdx)), 1, []);

@@ -4,7 +4,8 @@ classdef GeometryEngine
 
 methods(Static)
     function state = buildLargeScaleState(cfg, layout, ue, plModel, varargin)
-        opt = struct("PreviousState", struct(), "ReusePropagation", false, "IndoorDistance_m", []);
+        opt = struct("PreviousState", struct(), "ReusePropagation", false, ...
+            "PreserveRandomComponents", true, "IndoorDistance_m", []);
         if mod(numel(varargin), 2) ~= 0
             error("sixgr:system:GeometryEngine:BadNV", "Name-value inputs must come in pairs.");
         end
@@ -13,6 +14,7 @@ methods(Static)
             switch name
                 case "previousstate", opt.PreviousState = val;
                 case "reusepropagation", opt.ReusePropagation = logical(val);
+                case "preserverandomcomponents", opt.PreserveRandomComponents = logical(val);
                 case {"indoordistance_m","dindoor_m","dindoor"}, opt.IndoorDistance_m = double(val);
                 otherwise, error("sixgr:system:GeometryEngine:UnknownOpt", "Unknown option: %s", char(name));
             end
@@ -79,8 +81,17 @@ methods(Static)
         if isempty(plModel)
             error("sixgr:system:GeometryEngine:MissingPathlossModel", "A TR38901Plus pathloss model is required for physical geometry evaluation.");
         end
+        preserveRandom = logical(opt.PreserveRandomComponents) && ...
+            sixgr.system.GeometryEngine.hasReusableRandomComponents(opt.PreviousState, K, nCells);
         for c = 1:nCells
-            [pl_dB, los, ex] = plModel.pathlossFromGeometryState(state, c);
+            if preserveRandom
+                [pl_dB, los, ex] = plModel.pathlossFromGeometryState(state, c, ...
+                    "LOS", logical(opt.PreviousState.LOS(:, c)).', ...
+                    "Shadow_dB", double(opt.PreviousState.Shadow_dB(:, c)).', ...
+                    "O2ILoss_dB", double(opt.PreviousState.O2I_dB(:, c)).');
+            else
+                [pl_dB, los, ex] = plModel.pathlossFromGeometryState(state, c);
+            end
             state.Pathloss_dB(:,c) = double(pl_dB(:));
             state.LOS(:,c) = logical(los(:));
             state.Shadow_dB(:,c) = double(ex.shadow_dB(:));
@@ -96,6 +107,7 @@ methods(Static)
         state.LOSProbabilitySource = sixgr.system.GeometryEngine.objectStringProp(plModel, "LOSProbabilitySource", "");
         state.LOSComplianceStatus = sixgr.system.GeometryEngine.objectStringProp(plModel, "LOSComplianceStatus", "");
         state.LOSComplianceReason = sixgr.system.GeometryEngine.objectStringProp(plModel, "LOSComplianceReason", "");
+        state.RandomComponentsPreserved = logical(preserveRandom);
     end
 
     function [d2d, dxy] = distanceAndDelta(uePos, layout)
@@ -203,6 +215,20 @@ methods(Static)
         if ~isequal(size(value), expected)
             error("sixgr:system:GeometryEngine:BadPreviousStateShape", "PreviousState.%s must have size %s.", fieldName, mat2str(expected));
         end
+    end
+
+    function tf = hasReusableRandomComponents(previousState, K, nCells)
+        tf = isstruct(previousState) && ...
+            all(isfield(previousState, {'LOS', 'Shadow_dB', 'O2I_dB'}));
+        if ~tf
+            return;
+        end
+        expected = [K, nCells];
+        tf = isequal(size(previousState.LOS), expected) && ...
+            isequal(size(previousState.Shadow_dB), expected) && ...
+            isequal(size(previousState.O2I_dB), expected) && ...
+            all(isfinite(double(previousState.Shadow_dB(:)))) && ...
+            all(isfinite(double(previousState.O2I_dB(:))));
     end
 
     function pos = positionMatrix(pos, label)

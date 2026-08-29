@@ -242,6 +242,11 @@ reference_signals:
   pdsch_dmrs_ports: 2
   pusch_dmrs_ports: 2
   csi_rs_enabled: true
+  # Explicit slot-domain authority.  Enabled CSI-RS must never inherit an
+  # undocumented MATLAB default; duplex-specific execution still gates
+  # these occasions against the resolved FDD/TDD slot direction.
+  csi_rs_periodicity_slots: 4
+  csi_rs_offset_slots: 0
   # The inherited 700 MHz seed carries a two-element CSI-RS codebook. This
   # 64-element family must replace that physical-domain authority together
   # with its antenna configuration; the logical two CSI ports remain

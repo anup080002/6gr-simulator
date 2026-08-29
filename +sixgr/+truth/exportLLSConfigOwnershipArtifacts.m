@@ -1814,13 +1814,31 @@ if strlength(summaryValue) == 0
     row.ConsistencyStatus = "summary_value_unavailable";
 elseif strlength(rawDerivedValue) == 0
     row.ConsistencyStatus = "raw_value_unavailable";
-elseif localStringValuesEqual(summaryValue, rawDerivedValue)
+elseif localSummaryValuesEqual(fieldName, summaryValue, rawDerivedValue)
     row.ConsistencyStatus = "consistent";
 else
     row.ConsistencyStatus = "mismatch";
 end
 row.BrowserDisplayedValue = string(summaryValue);
 row.Definition = "Scenario summary fields must match values re-derived from raw DL/UL runtime tables.";
+end
+
+function tf = localSummaryValuesEqual(fieldName, summaryValue, rawDerivedValue)
+tf = localStringValuesEqual(summaryValue, rawDerivedValue);
+if tf
+    return;
+end
+% CSV display precision must not turn the same runtime statistic into a
+% truth-contract failure.  Apply tolerance only to explicitly rate-valued
+% summary fields; counts, identifiers, states, and text remain exact.
+if ~endsWith(string(fieldName), "Rate", "IgnoreCase", true)
+    return;
+end
+a = str2double(strtrim(localScalarToString(summaryValue)));
+b = str2double(strtrim(localScalarToString(rawDerivedValue)));
+if isfinite(a) && isfinite(b)
+    tf = abs(a - b) <= max(5e-5, 32 * eps(max(abs([a b]))));
+end
 end
 
 function T = localBuildValueSourceAudit(ctx, dictT)

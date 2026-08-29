@@ -116,6 +116,7 @@ out.ChannelModelApplied = "";
 out.ChannelFadingApplied = false;
 out.Notes = "";
 out.CorrelationTraceTable = table();
+out.ObservedREAllocationTable = table();
 
 configuredPRACH = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "prach", configuredPRACH, ...
@@ -149,6 +150,19 @@ try
         return;
     end
     tx = sixgr.rach.generatePRACHWaveform(prachCfg, "Occasion", occasion, "PreambleIndex", preambleIndex);
+    % CanonicalSlot is one-based throughout the LLS runner; carrierSlot is
+    % the corresponding zero-based slot actually installed in the PRACH
+    % carrier object and is therefore the observed-grid coordinate.
+    observedSlot = double(carrierSlot);
+    cellID = double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", NaN));
+    ueID = double(sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", ...
+        sixgr.util.structGet(cfg, "ue.id", NaN)));
+    out.ObservedREAllocationTable = sixgr.truth.buildObservedREAllocation(tx, ...
+        "Direction", "UL", "Channel", "PRACH", ...
+        "AbsoluteSlot", observedSlot, "CellID", cellID, "UEID", ueID, ...
+        "LayerCount", 1, ...
+        "AllocationID", "prach_slot_" + string(observedSlot) + ...
+        "_preamble_" + string(double(tx.PreambleIndex)));
     out.RequestedPreambleIndex = localScalarOrNaN(tx.PreambleIndex);
     out.PRACHRootSequenceIndex = double(sixgr.util.structGet(prachCfg, "SequenceIndex", NaN));
     out.PRACHZeroCorrelationZone = double(sixgr.util.structGet(prachCfg, "ZeroCorrelationZone", NaN));

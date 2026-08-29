@@ -64,12 +64,15 @@ matrixInfo = sixgr.phy.mimo.MatrixContract.validate( ...
     W_UL,size(W_UL,1),size(W_UL,2));
 beamIdx = tpmi;
 beamHit = NaN;
-gainGap_dB = 0;
+gainGap_dB = NaN;
 info = estimate;
 info.SelectedBeamIndex = tpmi;
 info.SelectedBeamGain_dB = NaN;
+info.BestBeamGain_dB = NaN;
 info.BeamHit = NaN;
-info.BeamGainGap_dB = 0;
+info.BeamGainGap_dB = NaN;
+info.BeamGainValueStatus = ...
+    "not_available_srs_tpmi_objective_is_mutual_information_not_antenna_gain";
 info.RuntimeEvidenceSource = "measured_srs_posteq_mi_ri_tpmi";
 info.MeasurementAuthoritative = true;
 info.ConfiguredOverrideUsed = false;

@@ -1425,6 +1425,8 @@ if isempty(precoders)
     [physicalSymbols, trace] = dataPrecoderBundle.apply( ...
         logicalSymbols, prb, symbolNumber, "Domain", "csirs");
     grid = localMapCSIRSPhysicalPortSymbols(grid, baseIndices, physicalSymbols);
+    [waveformIndices, waveformSymbols] = localCSIRSPhysicalMapping( ...
+        baseIndices, physicalSymbols, plane);
     resourceEvents = repmat(localEmptyMappedCSIRSResourceEvent(), 1, 1);
     resourceEvents(1).ResourceID = resources(1).ResourceID;
     resourceEvents(1).MappedRE = nnz(logicalSymbols);
@@ -1442,6 +1444,9 @@ if isempty(precoders)
     resourceEvents(1).PRBSpan = [min(prb) max(prb)];
     resourceEvents(1).SymbolSet = unique(symbolNumber(:)).';
     resourceEvents(1).MappingStatus = "physical_element_grid_mapped";
+    resourceEvents(1).WaveformIndices = waveformIndices;
+    resourceEvents(1).WaveformSymbols = waveformSymbols;
+    resourceEvents(1).WaveformMappedRE = numel(waveformIndices);
 else
     % MATLAB removes trailing singleton dimensions, so a one-resource
     % [Nphysical x Nlogical x 1] codebook is reported as a 2-D matrix.
@@ -1493,6 +1498,8 @@ else
         localAssertFiniteCSIRSPrecoder( ...
             waveformPrecoder, waveformSymbols, resource.ResourceID);
         grid = localMapCSIRSPhysicalPortSymbols(grid, baseIndices, waveformSymbols);
+        [waveformIndices, mappedWaveformSymbols] = ...
+            localCSIRSPhysicalMapping(baseIndices, waveformSymbols, plane);
         resourceEvents(ordinal).ResourceID = double(resource.ResourceID);
         resourceEvents(ordinal).MappedRE = double(nnz(logicalSymbols));
         resourceEvents(ordinal).PhysicalRE = double(numel(physicalSymbols));
@@ -1515,6 +1522,9 @@ else
         resourceEvents(ordinal).SymbolSet = unique(symbolNumber(:)).';
         resourceEvents(ordinal).MappingStatus = ...
             "logical_port_grid_mapped_with_exact_physical_element_projection";
+        resourceEvents(ordinal).WaveformIndices = waveformIndices;
+        resourceEvents(ordinal).WaveformSymbols = mappedWaveformSymbols;
+        resourceEvents(ordinal).WaveformMappedRE = numel(waveformIndices);
     end
 end
 ofdmOptions = canonical.ReferenceConfig.get("OFDMOptions");
@@ -1551,6 +1561,13 @@ event.PortToElementMatrixDigests = string( ...
 event.PrecoderSource = strjoin(unique(string({resourceEvents.PrecoderSource}), ...
     "stable"), "|");
 event.PrecoderDigests = string({resourceEvents.PrecoderDigest});
+event.WaveformIndices = vertcat(resourceEvents.WaveformIndices);
+event.WaveformSymbols = vertcat(resourceEvents.WaveformSymbols);
+event.WaveformMappedRE = numel(event.WaveformIndices);
+if any(abs(grid(event.WaveformIndices) - event.WaveformSymbols) > 1e-12)
+    error("sixgr:pdsch:CSIRSExecutedGridEvidenceMismatch", ...
+        "Executed CSI-RS physical indices/symbols do not match the transmitted resource grid.");
+end
 canonical.StageTrace = [canonical.StageTrace; table( ...
     "physical_csirs_resource_set_mapping_via_runtime_port_domain", "PASS", numel(symbols), ...
     'VariableNames', canonical.StageTrace.Properties.VariableNames)];
@@ -1632,6 +1649,7 @@ if size(values,1) ~= size(grid,3) || size(values,2) ~= numel(baseIndices)
     error("sixgr:pdsch:CSIRSPhysicalMappingShapeMismatch", ...
         "Physical CSI-RS symbols do not match the grid port/resource shape.");
 end
+
 for port = 1:size(grid,3)
     plane = grid(:,:,port);
     if any(plane(baseIndices) ~= 0)
@@ -1640,6 +1658,30 @@ for port = 1:size(grid,3)
     end
     plane(baseIndices) = values(port,:).';
     grid(:,:,port) = plane;
+end
+end
+
+function [indices, symbols] = localCSIRSPhysicalMapping(baseIndices, values, plane)
+% Return the exact nonzero waveform-port REs written into the TX grid.
+% The Toolbox CSI-RS indices describe logical CSI ports.  After the YAML
+% spatial filter is applied, runtime occupancy must instead follow the
+% physical waveform-port pages that actually contain transmitted samples.
+portCount = size(values, 1);
+indexMatrix = double(baseIndices(:)) + ...
+    double(plane) .* (0:(portCount - 1));
+symbolMatrix = transpose(values);
+mask = abs(symbolMatrix) > 0;
+indices = indexMatrix(mask);
+symbols = symbolMatrix(mask);
+indices = double(indices(:));
+symbols = complex(symbols(:));
+if isempty(indices)
+    error("sixgr:pdsch:EmptyCSIRSPhysicalMapping", ...
+        "A scheduled CSI-RS resource produced no nonzero physical waveform-port REs.");
+end
+if numel(unique(indices)) ~= numel(indices)
+    error("sixgr:pdsch:DuplicateCSIRSPhysicalMapping", ...
+        "A scheduled CSI-RS resource produced duplicate physical waveform-port RE indices.");
 end
 end
 
@@ -1662,7 +1704,8 @@ event = struct("ResourceID",NaN,"MappedRE",NaN,"PhysicalRE",NaN, ...
     "PrecoderSource","","PrecoderDigest","", ...
     "WaveformPrecoderDigest","","PortToElementMatrixDigest","", ...
     "PortProjectionSource","","PortProjectionResidual",NaN, ...
-    "BeamIndices",[], ...
+    "BeamIndices",[],"WaveformIndices",zeros(0,1), ...
+    "WaveformSymbols",complex(zeros(0,1)),"WaveformMappedRE",0, ...
     "PRBSpan",[],"SymbolSet",[],"MappingStatus","");
 end
 
@@ -1856,6 +1899,10 @@ tx.PTRSAntennaIndices = ptrsAntInd;
 tx.PTRSAntennaSymbols = ptrsAntSym;
 tx.CSIRSIndices = csirsInd;
 tx.CSIRSSymbols = csirsSym;
+tx.CSIRSPhysicalIndices = double(sixgr.util.structGet( ...
+    csirsEvent, "WaveformIndices", zeros(0,1)));
+tx.CSIRSPhysicalSymbols = complex(sixgr.util.structGet( ...
+    csirsEvent, "WaveformSymbols", complex(zeros(0,1))));
 tx.CSIRSInfo = csirsInfo;
 tx.CSIRS = csirsCfg;
 tx.CSIRSRuntimeEvent = csirsEvent;

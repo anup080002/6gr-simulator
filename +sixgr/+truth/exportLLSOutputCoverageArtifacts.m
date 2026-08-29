@@ -370,6 +370,9 @@ src.ScenarioSummary = localReadOptionalTable(fullfile(layout.ReportCSVDir, "scen
 src.SlotTrace = localReadFirstOptionalTable( ...
     fullfile(layout.PacketFlowCSVDir, "slot_trace.csv"), ...
     fullfile(layout.ReportCSVDir, "slot_trace.csv"));
+src.ObservedREAllocation = localReadFirstOptionalTable( ...
+    fullfile(layout.ComponentCSVDirs.frame_grid, "observed_re_allocation.csv"), ...
+    fullfile(layout.ReportCSVDir, "live_re_allocation_snapshot.csv"));
 src.DLGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"));
 src.ULGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"));
 src.DLTrialsSourceArtifact = localFirstExistingArtifactRef(layout.Root, [ ...
@@ -1685,42 +1688,17 @@ T = base;
 end
 
 function T = localBuildREAllocationSnapshotTable(src, prbTable, meta, cfg)
-parts = {};
-part = localBuildRERowsFromPRBAllocation(prbTable);
-if istable(part) && ~isempty(part)
-    parts{end+1} = part; %#ok<AGROW>
-end
-part = localBuildSSBComponentRows(src.PBCHTrials, meta, cfg);
-if istable(part) && ~isempty(part)
-    parts{end+1} = part; %#ok<AGROW>
-end
-part = localBuildPDCCHCORESETRows(src.PDCCHTrials, cfg);
-if istable(part) && ~isempty(part)
-    parts{end+1} = part; %#ok<AGROW>
-end
-trialSpecs = { ...
-    src.PDCCHTrials, "DL", "PDCCH", ["PRBStart","RBStart","CORESETRBStart"], ["AllocatedPRBCount","PRBCount","NumRB","CORESETRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/pdcch_trials.csv"; ...
-    src.PUCCHTrials, "UL", "PUCCH", ["PUCCHPRBStart","PRBStart","RBStart"], ["PUCCHPRBCount","AllocatedPRBCount","PRBCount","NumRB"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/pucch_trials.csv"; ...
-    src.SRSTrials, "UL", "SRS", ["RBOffset","PRBStart","RBStart"], ["NumRB","AllocatedPRBCount","PRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/srs_trials.csv"; ...
-    src.CSIRSTrials, "DL", "CSI-RS", ["RBOffset","PRBStart","RBStart"], ["NumRB","AllocatedPRBCount","PRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/csi_rs_trials.csv"; ...
-    src.TRSTrials, "DL", "TRS", ["RBOffset","PRBStart","RBStart"], ["NumRB","AllocatedPRBCount","PRBCount"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/trs_trials.csv"; ...
-    src.PBCHTrials, "DL", "PBCH", ["PRBStart","RBStart"], ["AllocatedPRBCount","PRBCount","NumRB"], ["SymbolStart"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/pbch_trials.csv"; ...
-    src.PRACHTrials, "UL", "PRACH", ["PRBStart","RBStart","FrequencyIndex"], ["AllocatedPRBCount","PRBCount","NumRB"], ["SymbolStart","TimeIndex"], ["NumSymbols","SymbolLength"], ["SymbolLocations"], "control/csv/prach_trials.csv"};
-for iSpec = 1:size(trialSpecs, 1)
-    part = localBuildRERowsFromTrialAllocation(trialSpecs{iSpec, 1}, trialSpecs{iSpec, 2}, trialSpecs{iSpec, 3}, ...
-        trialSpecs{iSpec, 4}, trialSpecs{iSpec, 5}, trialSpecs{iSpec, 6}, trialSpecs{iSpec, 7}, trialSpecs{iSpec, 8}, trialSpecs{iSpec, 9});
-    if istable(part) && ~isempty(part)
-        parts{end+1} = part; %#ok<AGROW>
-    end
-end
-if isempty(parts)
+% This primary table is a claim about the exact grid that reached OFDM
+% modulation.  Scheduler PRB rectangles and trial metadata are plans, not
+% observations, and therefore cannot be promoted into this artifact.
+T = sixgr.util.structGet(src, "ObservedREAllocation", table());
+if ~(istable(T) && ~isempty(T))
     T = table();
     return;
 end
-T = vertcat(parts{:});
 T = localFinalizeOutputTable(T, meta, "sixgr.truth.exportLLSOutputCoverageArtifacts/localBuildREAllocationSnapshotTable", ...
-    "packet_flow/csv/live_prb_allocation.csv|control/csv/*_trials.csv", "implemented", ...
-    "resource_grid_rows_from_runtime_allocation_evidence", true, true);
+    "components/frame_grid/csv/observed_re_allocation.csv", "implemented", ...
+    "exact_executed_tx_re_coordinates_before_ofdm_modulation", true, true);
 end
 
 function T = localBuildRERowsFromPRBAllocation(prbTable)

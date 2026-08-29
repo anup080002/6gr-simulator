@@ -16,6 +16,29 @@ sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_contract_materializer as materializer  # noqa: E402
 
 
+def test_yaml_disabled_raster_output_filters_charts_not_primary_tables() -> None:
+    policy = {"raster_output_enabled": False}
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/contract__receiver__llr-histograms.csv",
+        policy,
+        contract_name="LLR histograms",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "air_interface/csv/dl_pdsch_trials.csv",
+        policy,
+        contract_name="live_pdsch_trials",
+    )
+
+
+def test_filesystem_materializer_honors_yaml_raster_authority() -> None:
+    source = (
+        REPO_ROOT / "scripts" / "materialize_lls_contract_artifacts.py"
+    ).read_text(encoding="utf-8")
+    assert 'raster_output_enabled = bool(policy.get("raster_output_enabled", True))' in source
+    assert "args.replace_existing_rasters_from_csv and raster_output_enabled" in source
+    assert '"raster_replacement_executed": replace_existing_rasters' in source
+
+
 def test_image_artifact_audit_is_materialized_after_contract_charts() -> None:
     source = (REPO_ROOT / "apps" / "lls_contract_materializer.py").read_text(
         encoding="utf-8"

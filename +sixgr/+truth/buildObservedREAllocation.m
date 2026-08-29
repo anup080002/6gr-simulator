@@ -10,6 +10,7 @@ function T = buildObservedREAllocation(tx, varargin)
 
 p = inputParser;
 p.addParameter("Direction", "", @(x) ischar(x) || isstring(x));
+p.addParameter("Channel", "", @(x) ischar(x) || isstring(x));
 p.addParameter("AbsoluteSlot", NaN, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("CellID", NaN, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("UEID", NaN, @(x) isnumeric(x) && isscalar(x));
@@ -28,43 +29,99 @@ if ~(isfinite(slot0) && slot0 >= 0 && slot0 == fix(slot0))
 end
 
 direction = upper(strtrim(string(p.Results.Direction)));
+channel = upper(strtrim(string(p.Results.Channel)));
 if strlength(direction) == 0
     if isfield(tx, "PDSCH")
         direction = "DL";
-    elseif isfield(tx, "PUSCH")
+    elseif isfield(tx, "PUSCH") || isfield(tx, "PUCCH") || ...
+            isfield(tx, "SRS")
         direction = "UL";
+    elseif isfield(tx, "PDCCH")
+        direction = "DL";
     end
 end
+if strlength(channel) == 0
+    channel = localInferChannel(tx);
+end
 
-switch direction
-    case "DL"
+parts = {};
+switch channel
+    case "PDSCH"
+        if direction ~= "DL"
+            error("sixgr:truth:ObservedREDirectionMismatch", ...
+                "Executed PDSCH allocation must have Direction='DL'.");
+        end
         if ~isfield(tx, "PDSCH")
             error("sixgr:truth:MissingExecutedPDSCHConfig", ...
                 "DL observed allocation requires tx.PDSCH.");
         end
         result = sixgr.phy.frame.ChannelAllocationMaterializer.materializePDSCH( ...
             tx.Carrier, tx.PDSCH, "AbsoluteSlot", slot0);
-        channel = "PDSCH";
         localAssertExecutedIndices(tx, result, ...
             ["PDSCHIndices", "DMRSIndices", "PTRSIndices"]);
         defaultLayers = double(tx.PDSCH.NumLayers);
         resolver = "executed_PDSCH_Tx+nrPDSCHIndices+nrPDSCHDMRSIndices+nrPDSCHPTRSIndices";
-    case "UL"
+        parts = {result.Data, result.DMRS, result.PTRS};
+        csirsEvent = sixgr.util.structGet(tx, "CSIRSRuntimeEvent", struct());
+        if logical(sixgr.util.structGet(csirsEvent, "Transmitted", false))
+            if ~isfield(tx, "CSIRSPhysicalIndices") || ...
+                    isempty(tx.CSIRSPhysicalIndices)
+                error("sixgr:truth:MissingExecutedCSIRSPhysicalIndices", ...
+                    ["A transmitted CSI-RS must publish its exact nonzero " ...
+                     "waveform-port indices; logical CSI-port indices are not " ...
+                     "physical TX-grid occupancy evidence."]);
+            end
+            parts = localAppendExecutedPart(parts, tx, ...
+                "CSIRSPhysicalIndices", "CSI-RS", ...
+                "executed_PDSCH_Tx_physical_waveform_port_csirs_indices");
+        end
+    case "PUSCH"
+        if direction ~= "UL"
+            error("sixgr:truth:ObservedREDirectionMismatch", ...
+                "Executed PUSCH allocation must have Direction='UL'.");
+        end
         if ~isfield(tx, "PUSCH")
             error("sixgr:truth:MissingExecutedPUSCHConfig", ...
                 "UL observed allocation requires tx.PUSCH.");
         end
         result = sixgr.phy.frame.ChannelAllocationMaterializer.materializePUSCH( ...
             tx.Carrier, tx.PUSCH, "AbsoluteSlot", slot0);
-        channel = "PUSCH";
         localAssertExecutedIndices(tx, result, ...
             ["PUSCHIndices", "DMRSIndices", "PTRSIndices"]);
         defaultLayers = double(tx.PUSCH.NumLayers);
         resolver = "executed_PUSCH_Tx+nrPUSCHIndices+nrPUSCHDMRSIndices+nrPUSCHPTRSIndices";
+        parts = {result.Data, result.DMRS, result.PTRS};
+    case "PDCCH"
+        localRequireDirection(direction, "DL", channel);
+        parts = {localExecutedPart(tx, "PDCCHIndices", "DATA"), ...
+            localExecutedPart(tx, "DMRSIndices", "DM-RS")};
+        defaultLayers = 1;
+        resolver = "executed_PDCCH_Tx_indices";
+    case "PUCCH"
+        localRequireDirection(direction, "UL", channel);
+        parts = {localExecutedPart(tx, "PUCCHIndices", "DATA"), ...
+            localExecutedPart(tx, "DMRSIndices", "DM-RS")};
+        defaultLayers = 1;
+        resolver = "executed_PUCCHTransmitter_indices";
+    case "SRS"
+        localRequireDirection(direction, "UL", channel);
+        parts = {localExecutedPart(tx, "SRSIndices", "SRS")};
+        defaultLayers = localPositiveObjectProperty(tx, "SRS", "NumSRSPorts", 1);
+        resolver = "executed_SRS_Tx_nrSRSIndices";
+    case "TRS"
+        localRequireDirection(direction, "DL", channel);
+        parts = {localExecutedPart(tx, "Indices", "TRS")};
+        defaultLayers = size(tx.Grid, 3);
+        resolver = "executed_generateTRSWaveform_nrCSIRSIndices";
+    case "PRACH"
+        localRequireDirection(direction, "UL", channel);
+        parts = {localExecutedPart(tx, "Indices", "PRACH")};
+        defaultLayers = size(tx.Grid, 3);
+        resolver = "executed_PRACH_transmitter_indices";
     otherwise
-        error("sixgr:truth:UnsupportedObservedREDirection", ...
-            "Observed RE allocation supports DL PDSCH or UL PUSCH, not '%s'.", ...
-            char(direction));
+        error("sixgr:truth:UnsupportedObservedREChannel", ...
+            "Observed RE allocation does not support executed channel '%s'.", ...
+            char(channel));
 end
 
 layerCount = double(p.Results.LayerCount);
@@ -82,7 +139,6 @@ if strlength(allocationID) == 0
         "_ue_" + string(ueID);
 end
 
-parts = {result.Data, result.DMRS, result.PTRS};
 rows = repmat(localEmptyRow(), 0, 1);
 for partIndex = 1:numel(parts)
     part = parts{partIndex};
@@ -90,9 +146,13 @@ for partIndex = 1:numel(parts)
             ~isempty(part.Coordinates0Based))
         continue;
     end
+    partResolver = resolver;
+    if isfield(part, "Resolver") && strlength(strtrim(string(part.Resolver))) > 0
+        partResolver = string(part.Resolver);
+    end
     rows = [rows; localRows(double(part.Coordinates0Based), slot0, ... %#ok<AGROW>
         direction, channel, string(part.Label), cellID, ueID, ...
-        layerCount, resolver, allocationID)];
+        layerCount, partResolver, allocationID)];
 end
 if isempty(rows)
     error("sixgr:truth:EmptyObservedREAllocation", ...
@@ -100,11 +160,97 @@ if isempty(rows)
 end
 
 T = struct2table(rows, "AsArray", true);
-slotsPerFrame = 10 * round(double(tx.Carrier.SlotsPerSubframe));
+slotsPerFrame = localSlotsPerFrame(tx.Carrier);
 T.sfn = floor(T.absolute_slot ./ slotsPerFrame);
 T.slot_within_frame = mod(T.absolute_slot, slotsPerFrame);
 T = sortrows(T, ["absolute_slot", "direction", "symbol_index", ...
     "subcarrier_start", "port_index", "channel", "component"]);
+end
+
+function channel = localInferChannel(tx)
+channel = "";
+tests = {"PDSCH","PDSCH"; "PUSCH","PUSCH"; "PDCCHIndices","PDCCH"; ...
+    "PUCCHIndices","PUCCH"; "SRSIndices","SRS"};
+for ii = 1:size(tests, 1)
+    if isfield(tx, tests{ii, 1})
+        channel = string(tests{ii, 2});
+        return;
+    end
+end
+end
+
+function localRequireDirection(actual, expected, channel)
+if actual ~= expected
+    error("sixgr:truth:ObservedREDirectionMismatch", ...
+        "Executed %s allocation must have Direction='%s'.", ...
+        char(channel), char(expected));
+end
+end
+
+function parts = localAppendExecutedPart(parts, tx, fieldName, label, resolver)
+if isfield(tx, fieldName) && ~isempty(tx.(fieldName))
+    part = localExecutedPart(tx, fieldName, label);
+    part.Resolver = string(resolver);
+    parts{end + 1} = part;
+end
+end
+
+function part = localExecutedPart(tx, fieldName, label)
+if ~isfield(tx, fieldName) || isempty(tx.(fieldName))
+    part = struct("Coordinates0Based", zeros(0, 3), ...
+        "Label", string(label), "Resolver", "");
+    return;
+end
+if ~isfield(tx, "Grid") || isempty(tx.Grid)
+    error("sixgr:truth:MissingExecutedTXGrid", ...
+        "Executed TX field %s cannot be resolved without its mapped resource grid.", ...
+        fieldName);
+end
+gridSize = size(tx.Grid);
+if numel(gridSize) < 3
+    gridSize(3) = 1;
+end
+rawIndices = tx.(fieldName);
+indices = round(double(rawIndices(:)));
+if any(~isfinite(indices)) || any(indices < 1) || any(indices > prod(gridSize(1:3)))
+    error("sixgr:truth:InvalidExecutedREIndices", ...
+        "Executed TX field %s contains indices outside its mapped resource grid.", ...
+        fieldName);
+end
+mapped = tx.Grid(indices);
+if any(~isfinite(real(mapped))) || any(~isfinite(imag(mapped))) || any(abs(mapped) == 0)
+    error("sixgr:truth:ExecutedRENotMapped", ...
+        "Executed TX field %s contains a nonfinite or zero-valued mapped RE.", ...
+        fieldName);
+end
+[subcarrier, symbol, port] = ind2sub(gridSize(1:3), indices);
+part = struct("Coordinates0Based", ...
+    [double(subcarrier(:))-1 double(symbol(:))-1 double(port(:))-1], ...
+    "Label", string(label), "Resolver", "");
+end
+
+function value = localPositiveObjectProperty(tx, fieldName, propertyName, fallback)
+value = fallback;
+if isfield(tx, fieldName) && isobject(tx.(fieldName)) && ...
+        isprop(tx.(fieldName), propertyName)
+    candidate = double(tx.(fieldName).(propertyName));
+    if isfinite(candidate) && candidate >= 1
+        value = candidate;
+    end
+end
+end
+
+function value = localSlotsPerFrame(carrier)
+value = NaN;
+if isprop(carrier, "SlotsPerSubframe")
+    value = 10 * round(double(carrier.SlotsPerSubframe));
+elseif isprop(carrier, "SubcarrierSpacing")
+    value = 10 * round(double(carrier.SubcarrierSpacing) / 15);
+end
+if ~(isfinite(value) && value >= 10)
+    error("sixgr:truth:MissingCarrierTiming", ...
+        "Executed carrier does not expose a valid slots-per-frame timing contract.");
+end
 end
 
 function localAssertExecutedIndices(tx, result, txFields)

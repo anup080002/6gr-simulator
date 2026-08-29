@@ -77,6 +77,24 @@ end
 assert(didThrow, ...
     "A runtime link must reject waveform-port dimension changes after channel materialization.");
 
+% The channel-state contract is duplex-neutral.  Repeat an exact state
+% creation/application under explicit TDD authority so this fixture cannot
+% accidentally depend on an FDD default while the shared state machine is
+% used by both profiles.
+cfgTDD = cfg;
+cfgTDD.phy.duplex.mode = "TDD";
+stateTDD = sixgr.channel.ChannelFactory.createRuntimeChannelState( ...
+    cfgTDD, "DL", ...
+    "LinkKey", "dir=DL;tx=gNB1;rx=UE1;carrier=test_tdd", ...
+    "Seed", 12031);
+stateTDD = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+    stateTDD, cfgTDD, x, txInfo, "NumTxAnt", 1, "NumRxAnt", 1);
+[yTDD, replayTDD] = ...
+    sixgr.channel.ChannelFactory.applyRuntimeChannelState(stateTDD, x);
+assert(replayTDD.RuntimeChannelStateUsed && ...
+    all(isfinite(real(yTDD(:)))) && all(isfinite(imag(yTDD(:)))), ...
+    "Explicit TDD authority must use the same finite runtime channel path.");
+
 ok = true;
 end
 
@@ -92,6 +110,7 @@ cfg.channel.normalizePathGains = true;
 cfg.phy.fc_Hz = 4.0e9;
 cfg.phy.carrier.NSizeGrid = 24;
 cfg.phy.carrier.SubcarrierSpacing = 30;
+cfg.phy.duplex.mode = "FDD";
 end
 
 function x = localDeterministicWaveform(n, p, seed)

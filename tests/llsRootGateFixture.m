@@ -78,6 +78,9 @@ scfg = sixgr.util.structSet(scfg, "scenario.claim_profile", claimProfile);
 scfg = sixgr.util.structSet(scfg, "users.execution_model", "slot_coupled_truth");
 scfg = sixgr.util.structSet(scfg, "users.n_users", 1);
 scfg = sixgr.util.structSet(scfg, "simulation.link_direction", "both");
+scfg = sixgr.util.structSet(scfg, "frequency.duplex_mode", "FDD");
+scfg = sixgr.util.structSet(scfg, "frequency.dl_center_frequency_hz", 700e6);
+scfg = sixgr.util.structSet(scfg, "frequency.ul_center_frequency_hz", 730e6);
 scfg = sixgr.util.structSet(scfg, "mimo.n_layers", target.Layers);
 scfg = sixgr.util.structSet(scfg, "modulation.dl_mcs_index", target.MCS);
 scfg = sixgr.util.structSet(scfg, "modulation.ul_mcs_index", target.MCS);
@@ -101,6 +104,8 @@ if caseName == "adaptive_fixed_rank"
 end
 
 cfg = struct();
+cfg = sixgr.util.structSet(cfg, "frequency.duplex_mode", "FDD");
+cfg = sixgr.util.structSet(cfg, "phy.duplex.mode", "FDD");
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.mode", string(scenarioMode));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.dlPolicy", string(scfg.link_adaptation.pdsch_link_adaptation_policy));
 cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.ulPolicy", string(scfg.link_adaptation.pusch_link_adaptation_policy));

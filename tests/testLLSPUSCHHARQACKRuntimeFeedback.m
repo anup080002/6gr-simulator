@@ -141,6 +141,43 @@ assert(string(traceT.Status(1)) == "PASS" && string(traceT.Status(2)) == "FAIL" 
     all(string(traceT.RuntimeStateConsumer) == ...
     "HARQEntity.onFeedback_from_PUSCH_UCI"), ...
     "Transferred UCI evidence must expose exact match and false-ACK outcomes per bit.");
+
+% Reproduce UL HARQ grant-snapshot reuse.  The retransmission grant carries
+% the previous occasion's transient UCI fields, but a new DL feedback row is
+% due on the new occasion.  Production must discard the stale binding and
+% bind the new grant identity; replaying the already processed ACK is a
+% causal runtime error.
+nextDueSlot = dueSlot + 2;
+nextFeedback = feedbackRows(1);
+nextFeedback.SourceSlot = dueSlot + 1;
+nextFeedback.DueSlot = nextDueSlot;
+nextFeedback.HarqID = 2;
+nextFeedback.Ack = true;
+nextFeedback.CurrentDecodeOK = true;
+nextFeedback.CombinedDecodeOK = true;
+nextFeedback.PUCCHGrantId = "PUCCH-GRANT-REUSED-NEXT";
+nextFeedback.DeliveryMechanism = "pucch";
+nextFeedback.PUSCHGrantContextId = "";
+nextFeedback.MultiplexedBitIndex = NaN;
+nextFeedback.Processed = false;
+state.PendingFeedbackTable = [state.PendingFeedbackTable; ...
+    struct2table(nextFeedback, "AsArray", true)];
+state = sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime( ...
+    state, state.PendingFeedbackTable(end, :));
+staleReusedGrant = puschGrant;
+staleReusedGrant.Slot = nextDueSlot;
+staleReusedGrant.ScheduledAbsoluteSlot = nextDueSlot;
+staleReusedGrant.GrantContextId = "UL-PUSCH-UCI-REUSED-7";
+[state, reboundGrant] = sixgr.truth.CoupledTruthRuntime. ...
+    multiplexDueHARQACKOnPUSCHRuntime(state, staleReusedGrant, nextDueSlot);
+assert(string(reboundGrant.UCIOnPUSCHFeedbackGrantIds) == ...
+    "PUCCH-GRANT-REUSED-NEXT" && ...
+    isequal(int8(reboundGrant.ExpectedUCIBits(:)), int8(1)) && ...
+    double(reboundGrant.UCIOnPUSCHFeedbackSourceSlots) == dueSlot + 1 && ...
+    double(reboundGrant.UCIOnPUSCHFeedbackHARQIds) == 2, ...
+    ["A reused UL HARQ grant must clear the previous occasion's transient " ...
+    "UCI binding and bind only the current due-slot feedback row."]);
+
 canonicalTrace = sixgr.truth.CoupledTruthRuntime. ...
     canonicalizePersistedPUCCHGrantTraceTable(traceT);
 assert(all(string(canonicalTrace.SourceClassification) == "active_integrated") && ...

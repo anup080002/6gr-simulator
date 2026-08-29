@@ -26,6 +26,7 @@ cfg = sixgr.util.structSet(cfg, "phy.trs.nPorts", 1);
 cfg = sixgr.util.structSet(cfg, "phy.trs.scramblingID", 7);
 cfg = sixgr.util.structSet(cfg, "phy.trs.symbolLocations", [2 11]);
 cfg = sixgr.util.structSet(cfg, "phy.trs.subcarrierComb", 4);
+cfg = sixgr.util.structSet(cfg, "phy.trs.slotNumbers", [0 1]);
 
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
 [trsInd, trsSym, info] = sixgr.phy.refsig.trs(carrier, cfg);

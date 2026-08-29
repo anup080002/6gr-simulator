@@ -29,6 +29,24 @@ assert(localMaxAbsDiff(state1.Pathloss_dB, state2.Pathloss_dB) < 1e-12, ...
 assert(localMaxAbsDiff(state1.RSRP_dBm, state2.RSRP_dBm) < 1e-12, ...
     "Reused large-scale cache must preserve RSRP exactly.");
 
+% Mobility must refresh deterministic geometry without independently
+% redrawing the same-drop LOS, shadowing, or O2I realization. This shared
+% cache invariant applies identically to FDD and TDD runtimes.
+ueMoved = ue;
+ueMoved.pos_m(:, 1) = ueMoved.pos_m(:, 1) + 1e-3;
+stateMoved = sixgr.system.buildLargeScaleStateCache(cfg, layout, ueMoved, beamIdx, beamGain_dB, plModel, ...
+    "NumRB", nRB, "PreviousState", state1, "ReusePropagation", false);
+assert(isequal(state1.LOS, stateMoved.LOS), ...
+    "A millimetre-scale mobility update must not redraw LOS/NLOS state.");
+assert(localMaxAbsDiff(state1.Shadow_dB, stateMoved.Shadow_dB) < 1e-12, ...
+    "A same-drop mobility update must preserve its shadow-fading realization.");
+assert(localMaxAbsDiff(state1.O2I_dB, stateMoved.O2I_dB) < 1e-12, ...
+    "A same-drop mobility update must preserve its O2I realization.");
+assert(logical(stateMoved.RandomComponentsPreserved), ...
+    "The cache must disclose that random large-scale components were preserved.");
+assert(localMaxAbsDiff(state1.d2d_m, stateMoved.d2d_m) > 0, ...
+    "Mobility must still update deterministic geometry while preserving random LSP state.");
+
 cfgOff = localBaseCfg(23);
 cfgOff.channel.pathlossEnabled = false;
 cfgOff.channel.shadowFadingEnabled = false;
@@ -50,6 +68,7 @@ assert(localMaxAbsDiff(stateOff.RxPower_dBm, expectedRxPower) < 1e-12, ...
     "With pathloss disabled, Rx power must reduce to transmit power plus beam gain only.");
 
 cfgRun = localBaseCfg(31);
+cfgRun = withCanonicalSchedulerTiming(cfgRun);
 ctx = sixgr.core.SimContext(cfgRun);
 numTTI = 12;
 offeredDL = repmat(4000, numTTI, cfgRun.scenario.ue.nUE);
@@ -62,6 +81,9 @@ res = sixgr.system.SystemLevelRunner.run(ctx, struct( ...
 
 assert(res.Ok, "SystemLevelRunner failed in large-scale state stability regression.");
 D = res.Details;
+assert(sum(double(D.GrantCountDL)) > 0 && sum(double(D.GrantCountUL)) > 0, ...
+    "The stability regression must exercise real DL and UL scheduled grants; " + ...
+    "a timing-rejected zero-grant run is not valid evidence.");
 assert(nnz(logical(D.LargeScalePropagationUpdateMask)) == 1, ...
     "With mobility disabled and no explicit large-scale refresh, propagation state should update once only.");
 assert(all(isfinite(D.Pathloss_dB(:))), "Pathloss history must remain finite.");
@@ -86,8 +108,15 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.outputs.savePNG = false;
-cfg.scenario.nUE = 8;
-cfg.scenario.ue.nUE = 8;
+cfg.scenario.layout.nSites = 1;
+cfg.scenario.layout.nSectorsPerSite = 1;
+cfg.scenario.layout.wrapAround = false;
+cfg.scenario.nUE = 1;
+cfg.scenario.ue.nUE = 1;
+cfg.scenario.bs.nTxAnt = 1;
+cfg.scenario.bs.nRxAnt = 1;
+cfg.scenario.ue.nTxAnt = 1;
+cfg.scenario.ue.nRxAnt = 1;
 cfg.scenario.mobility.enable = false;
 cfg.system.beam.enable = false;
 cfg.system.handover.enable = false;
@@ -102,6 +131,23 @@ cfg.channel.shadowFadingEnabled = true;
 cfg.channel.losEnabled = true;
 cfg.channel.shadowSigma_dB = 7;
 cfg.channel.shadowFadingStd_dB = 7;
+cfg.channel.awgnOnly = true;
+cfg.channel.model = "AWGN";
+cfg.channel.fading.enable = false;
+cfg.phy.pdsch.modulation = "QPSK";
+cfg.phy.pdsch.codeRate = 0.35;
+cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.nLayers = 1;
+cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pdsch.mappingType = "A";
+cfg.phy.pdsch.dmrs.portSet = 0;
+cfg.phy.pusch.modulation = "QPSK";
+cfg.phy.pusch.codeRate = 0.35;
+cfg.phy.pusch.numLayers = 1;
+cfg.phy.pusch.nLayers = 1;
+cfg.phy.pusch.symbolAllocation = [2 12];
+cfg.phy.pusch.mappingType = "A";
+cfg.phy.pusch.dmrs.portSet = 0;
 cfg = sixgr.config.normalizeConfig(cfg);
 sixgr.config.validateConfig(cfg);
 end

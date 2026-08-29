@@ -22,6 +22,13 @@ function [rx, info] = PDSCH_Rx(rxWaveform, cfg, varargin)
 %     "CodingPlan"  : immutable TX DLSCHCodingPlan object(s), required
 %     "TrueChannel" : exact physical K-by-L-by-NRx-by-NTx channel tensor
 %     "OracleTestMode": explicitly permit perfect-CSI calibration input
+%     "PhysicalMeasurementWaveform": antenna-plane waveform used only for
+%         calibrated absolute-power measurements; decoding still uses the
+%         primary post-front-end RXWAVEFORM
+%     "PhysicalMeasurementReferencePlane": declared reference plane for
+%         PhysicalMeasurementWaveform
+%     "PhysicalMeasurementSource": producer/provenance token for that
+%         waveform
 %
 %   CFG.phy.pdsch.dmrs.dataToDMRSEPREDifference_dB controls the PDSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -55,6 +62,9 @@ ip.addParameter('CSIRSSymbols', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('CSIRSInfo', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('CSIRSConfig', [], @(x) isempty(x) || isa(x, 'nrCSIRSConfig'));
 ip.addParameter('CSIRSTransmitted', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('PhysicalMeasurementWaveform', [], @(x) isempty(x) || isnumeric(x));
+ip.addParameter('PhysicalMeasurementReferencePlane', "", @(x) ischar(x) || isstring(x));
+ip.addParameter('PhysicalMeasurementSource', "", @(x) ischar(x) || isstring(x));
 ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>0)));
 ip.addParameter('TargetCodeRate', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>0 & x(:)<1)));
 ip.addParameter('RV', [], @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x(:)>=0 & x(:)<=3)));
@@ -325,6 +335,11 @@ localAssertCalibrationCodingLayoutMatchesPlan( ...
 opt.RuntimeTrackingCorrection = trackingCorrection;
 opt.RuntimeTimingResolution = timingResolution;
 opt.RuntimeSynchronizationState = syncState;
+[opt.PhysicalMeasurementGrid, opt.PhysicalMeasurementOFDMInfo, ...
+    opt.PhysicalMeasurementGridStatus] = ...
+    localPreparePhysicalMeasurementGrid( ...
+    opt.PhysicalMeasurementWaveform, carrier, trackingCorrection, ...
+    timingResolution);
 
 appliedTimingCorrection = double(sixgr.util.structGet( ...
     timingResolution, "AppliedCorrection_samples", 0));
@@ -2343,7 +2358,11 @@ tracking = struct( ...
     "CFONAReason", "", ...
     "TrackingState", "", ...
     "AgeSlots", NaN, ...
-    "KnownTimingDelay_samples", NaN);
+    "KnownTimingDelay_samples", NaN, ...
+    "MeasurementDirection", "", ...
+    "ConsumerDirection", "DL", ...
+    "DirectionCompatible", true, ...
+    "AuthorityStatus", "legacy_untagged_tracking_state");
 
 raw = explicitState;
 usingRuntimeUserContext = isempty(raw);
@@ -2362,6 +2381,33 @@ tracking.Source = localFirstString(raw, ["RuntimeTRSRuntimeEvidenceSource","Runt
     "trs_receiver_tracking_state");
 if ~processed
     tracking.NAReason = "trs_tracking_state_not_processed";
+    return;
+end
+
+measurementDirection = upper(strtrim(localFirstString(raw, ...
+    ["TrackingMeasurementDirection","RuntimeTRSMeasurementDirection"], "")));
+consumerDirection = upper(strtrim(localFirstString(raw, ...
+    ["TrackingConsumerDirection","RuntimeReceiverTrackingConsumerDirection"], "DL")));
+directionCompatibilityDeclared = localFirstLogical(raw, ...
+    ["TrackingDirectionCompatible","RuntimeReceiverTrackingDirectionCompatible"], true);
+authorityStatus = localFirstString(raw, ...
+    ["TrackingAuthorityStatus","RuntimeReceiverTrackingAuthorityStatus"], ...
+    "legacy_untagged_tracking_state");
+authorityReason = localFirstString(raw, ...
+    ["TrackingAuthorityReason","RuntimeReceiverTrackingAuthorityReason"], "");
+tracking.MeasurementDirection = char(measurementDirection);
+tracking.ConsumerDirection = char(consumerDirection);
+tracking.DirectionCompatible = logical(directionCompatibilityDeclared);
+tracking.AuthorityStatus = char(authorityStatus);
+if (~directionCompatibilityDeclared) || ...
+        (strlength(measurementDirection) > 0 && measurementDirection ~= "DL") || ...
+        (strlength(consumerDirection) > 0 && consumerDirection ~= "DL")
+    tracking.Status = "rejected_cross_direction_receiver_state";
+    if strlength(strtrim(authorityReason)) > 0
+        tracking.NAReason = char(authorityReason);
+    else
+        tracking.NAReason = "measurement_and_dl_receiver_directions_differ";
+    end
     return;
 end
 
@@ -2422,14 +2468,13 @@ end
 function tf = localRuntimeAlignedTimingBypass(cfg)
 runtimeAligned = logical(sixgr.util.structGet(cfg, ...
     "lls6g.receiverSync.RuntimeWaveformSampleAligned", false));
-forceApply = logical(sixgr.util.structGet(cfg, ...
-    "phy.rx.applyTimingCorrectionOnAlignedRuntimeWaveform", false));
 injectedTiming = localResolveInjectedTimingOffsetSamples(cfg);
 hasInjectedTiming = isfinite(injectedTiming) && abs(double(injectedTiming)) > 1e-9;
-runtimeTrim = double(sixgr.util.structGet(cfg, "lls6g.receiverSync.ChannelFilterDelay_samples", ...
-    sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeChannelTrimSamples", 0)));
-hasRuntimeTrim = isfinite(runtimeTrim) && abs(runtimeTrim) > 1e-9;
-tf = runtimeAligned && hasRuntimeTrim && ~forceApply && ~hasInjectedTiming;
+% A zero-delay AWGN path and a fading path with an explicitly trimmed
+% filter delay are both aligned producer outputs.  Requiring a nonzero
+% trim made the behavior channel-profile dependent and allowed a second
+% timing correction in the coupled FDD/TDD runtime.
+tf = runtimeAligned && ~hasInjectedTiming;
 end
 
 function value = localFirstFiniteValue(varargin)
@@ -2721,6 +2766,11 @@ end
 rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
+% RuntimeWaveformSampleAligned is a producer contract shared by FDD and
+% TDD: the materialized channel delay has already been trimmed before this
+% receiver boundary.  Preserve the TRS observation for audit, but do not
+% shift the same waveform twice.  An explicitly injected YAML timing
+% offset disables the bypass and exercises the receiver correction path.
 if localRuntimeAlignedTimingBypass(cfg)
     timingEstimateSource = ...
         "runtime_aligned_waveform_no_timing_reacquisition";
@@ -2848,6 +2898,63 @@ else
 end
 end
 
+function [measurementGrid, measurementOFDMInfo, status] = ...
+        localPreparePhysicalMeasurementGrid( ...
+        measurementWaveform, carrier, tracking, timingResolution)
+measurementGrid = [];
+measurementOFDMInfo = struct();
+status = "unavailable_missing_pre_front_end_measurement_waveform";
+if isempty(measurementWaveform)
+    return;
+end
+if size(measurementWaveform, 2) < 1 || ...
+        any(~isfinite(real(measurementWaveform(:)))) || ...
+        any(~isfinite(imag(measurementWaveform(:))))
+    status = "unavailable_invalid_pre_front_end_measurement_waveform";
+    return;
+end
+
+corrected = measurementWaveform;
+sampleRateHz = localCarrierSampleRateHz(carrier);
+cfoApplied = logical(sixgr.util.structGet( ...
+    tracking, "CFOCorrectionApplied", false));
+cfoCorrectionHz = double(sixgr.util.structGet( ...
+    tracking, "CFOCorrectionApplied_Hz", NaN));
+if cfoApplied
+    if ~(isfinite(sampleRateHz) && sampleRateHz > 0 && ...
+            isfinite(cfoCorrectionHz))
+        status = "unavailable_missing_applied_cfo_correction_contract";
+        return;
+    end
+    corrected = localApplyFrequencyCorrection( ...
+        corrected, sampleRateHz, -cfoCorrectionHz);
+end
+
+timingCorrection = double(sixgr.util.structGet( ...
+    timingResolution, "AppliedCorrection_samples", NaN));
+timingUsed = logical(sixgr.util.structGet( ...
+    timingResolution, "EstimateUsed", false));
+if timingUsed && ~isfinite(timingCorrection)
+    status = "unavailable_missing_applied_timing_correction_contract";
+    return;
+end
+if isfinite(timingCorrection)
+    corrected = localApplyTimingCorrection(corrected, timingCorrection);
+end
+
+try
+    [measurementGrid, measurementOFDMInfo] = ...
+        sixgr.phy.waveform.ofdmDemodulate(carrier, corrected);
+    status = "available_exact_pre_front_end_grid";
+catch ME
+    measurementGrid = [];
+    measurementOFDMInfo = struct( ...
+        "ErrorIdentifier", string(ME.identifier), ...
+        "ErrorMessage", string(ME.message));
+    status = "unavailable_pre_front_end_ofdm_demodulation_failed";
+end
+end
+
 function [csirsInd, csirsSym, csirsInfo, obs] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt, ofdmInfo)
 csirsInd = opt.CSIRSIndices;
 csirsSym = opt.CSIRSSymbols;
@@ -2912,15 +3019,34 @@ powerLin = mean(abs(rxRef(:)).^2, "omitnan");
 obs.Observed = isfinite(powerLin) && powerLin > 0;
 obs.MeasurementRSRP_dB = 10 * log10(max(double(powerLin), eps));
 obs.MeasurementRelativeRSRP_dB = obs.MeasurementRSRP_dB;
-obs.MeasurementSource = "received_csirs_reference_signal_power_normalized_grid";
+obs.MeasurementRelativeSource = ...
+    "received_csirs_reference_signal_power_post_front_end_normalized_grid";
+physicalGrid = [];
+physicalOFDMInfo = struct();
+physicalGridStatus = "unavailable_missing_pre_front_end_measurement_waveform";
+if isfield(opt, "PhysicalMeasurementGrid")
+    physicalGrid = opt.PhysicalMeasurementGrid;
+end
+if isfield(opt, "PhysicalMeasurementOFDMInfo")
+    physicalOFDMInfo = opt.PhysicalMeasurementOFDMInfo;
+end
+if isfield(opt, "PhysicalMeasurementGridStatus")
+    physicalGridStatus = string(opt.PhysicalMeasurementGridStatus);
+end
 obs = localMeasurePhysicalCSIRSRSP( ...
-    obs, carrier, cfg, rxGrid, csirsInfo, measurementConfig, ofdmInfo);
+    obs, carrier, cfg, rxGrid, physicalGrid, csirsInfo, ...
+    measurementConfig, ofdmInfo, physicalOFDMInfo, physicalGridStatus, ...
+    string(opt.PhysicalMeasurementReferencePlane), ...
+    string(opt.PhysicalMeasurementSource));
 obs.RuntimeMaterializationStatus = "runtime_observed";
 obs.UpdateOutcome = "observed_after_ofdm_demodulation";
 obs.RuntimeEvidenceSource = "sixgr.phy.dl.PDSCH_Rx:csirs_runtime_observation";
 end
 
-function obs = localMeasurePhysicalCSIRSRSP(obs, carrier, cfg, rxGrid, csirsInfo, defaultConfig, ofdmInfo)
+function obs = localMeasurePhysicalCSIRSRSP(obs, carrier, cfg, rxGrid, ...
+        physicalGrid, csirsInfo, defaultConfig, ofdmInfo, ...
+        physicalOFDMInfo, physicalGridStatus, physicalReferencePlane, ...
+        physicalSource)
 % Convert the Toolbox OFDM grid back to physical sqrt(W) before calling the
 % TS 38.215 CSI-RS measurement implementation.  nrOFDMDemodulate uses an
 % unnormalised FFT, so a grid bin is Nfft times the time-domain sample
@@ -2933,7 +3059,31 @@ obs.PhysicalMeasurementStandard = "3GPP_TS_38.215_via_nrCSIRSMeasurements";
 if ~strcmpi(strtrim(amplitudeUnit), "sqrt_mW")
     return;
 end
-nfft = double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN));
+receiverMeasurement = sixgr.util.structGet( ...
+    cfg, "lls6g.receiverMeasurement", struct());
+frontEndApplied = logical(sixgr.util.structGet( ...
+    receiverMeasurement, "CompositeReceiverFrontEndApplied", false));
+if isempty(physicalGrid)
+    if frontEndApplied
+        obs.PhysicalMeasurementStatus = ...
+            "unavailable_post_front_end_grid_without_antenna_plane_waveform";
+        obs.MeasurementErrors = char(string(physicalGridStatus));
+        return;
+    end
+    % Direct PHY callers without a composite receiver front end already
+    % provide an antenna-plane grid.  This is the only permitted fallback;
+    % a post-AGC/ADC grid is never reverse-labeled as physical dBm.
+    physicalGrid = rxGrid;
+    physicalOFDMInfo = ofdmInfo;
+    physicalGridStatus = "available_direct_receiver_grid_no_composite_front_end";
+    physicalReferencePlane = "receiver_antenna_connector_no_composite_front_end";
+    physicalSource = "PDSCH_Rx_direct_receiver_waveform";
+end
+if ~startsWith(string(physicalGridStatus), "available")
+    obs.PhysicalMeasurementStatus = string(physicalGridStatus);
+    return;
+end
+nfft = double(sixgr.util.structGet(physicalOFDMInfo, "Nfft", NaN));
 if ~(isscalar(nfft) && isfinite(nfft) && nfft >= 1 && nfft == round(nfft))
     try
         derivedOFDM = nrOFDMInfo(carrier);
@@ -2967,7 +3117,7 @@ if isempty(configs)
 end
 
 scale = nfft * sqrt(1000); % sqrt(mW) grid -> sqrt(W) resource grid
-physicalGrid = rxGrid ./ cast(scale, "like", rxGrid);
+physicalGrid = physicalGrid ./ cast(scale, "like", physicalGrid);
 resourceAverage = nan(numel(configs),1);
 perAntenna = cell(numel(configs),1);
 measurementErrors = strings(numel(configs),1);
@@ -2993,6 +3143,11 @@ for ordinal = 1:numel(configs)
 end
 obs.MeasurementFFTSize = nfft;
 obs.MeasurementGridScaleToSqrtW = scale;
+obs.MeasurementReceiverGainCorrection_dB = 0;
+obs.MeasurementReceiverGainCorrectionSource = ...
+    "not_required_exact_pre_front_end_measurement_waveform";
+obs.PhysicalMeasurementWaveformStatus = string(physicalGridStatus);
+obs.PhysicalMeasurementWaveformSource = string(physicalSource);
 obs.MeasurementResourceIDs = localNumericVectorToken(resourceIDs);
 obs.MeasurementRSRPPerResource_dBm = localNumericVectorToken(resourceAverage);
 obs.MeasurementRSRPPerResourceValues_dBm = resourceAverage;
@@ -3009,9 +3164,9 @@ obs.MeasurementRSRPPerReceiveAntenna_dBm = ...
     localNumericVectorToken(perAntenna{valid});
 obs.MeasurementAntennaAggregation = ...
     "maximum_per_receive_antenna_rsrp_ts_38_215_diversity_rule";
-obs.MeasurementSource = "nrCSIRSMeasurements_runtime_received_grid";
-obs.PowerReferencePlane = ...
-    "receiver_ofdm_grid_physical_sqrt_w_after_synchronization";
+obs.MeasurementSource = ...
+    "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid";
+obs.PowerReferencePlane = string(physicalReferencePlane);
 obs.PhysicalMeasurementStatus = "available";
 end
 
@@ -3265,6 +3420,7 @@ obs.UpdateOutcome = "";
 obs.RuntimeEvidenceSource = "";
 obs.MeasurementRSRP_dB = NaN;
 obs.MeasurementRelativeRSRP_dB = NaN;
+obs.MeasurementRelativeSource = "";
 obs.MeasurementRSRP_dBm = NaN;
 obs.MeasurementRSRPPerReceiveAntenna_dBm = "";
 obs.MeasurementRSRPPerResource_dBm = "";
@@ -3275,6 +3431,10 @@ obs.MeasurementSelectedResourceOrdinal = NaN;
 obs.MeasurementAntennaAggregation = "";
 obs.MeasurementFFTSize = NaN;
 obs.MeasurementGridScaleToSqrtW = NaN;
+obs.MeasurementReceiverGainCorrection_dB = NaN;
+obs.MeasurementReceiverGainCorrectionSource = "";
+obs.PhysicalMeasurementWaveformStatus = "not_attempted";
+obs.PhysicalMeasurementWaveformSource = "";
 obs.MeasurementErrors = "";
 obs.PhysicalMeasurementStatus = "not_attempted";
 obs.PhysicalMeasurementStandard = "";

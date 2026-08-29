@@ -72,6 +72,8 @@ advancedUL.phy.pusch.numLayers = 2;
 advancedUL.phy.pusch.nLayers = 2;
 advancedUL.phy.pusch.numPorts = 2;
 advancedUL.phy.pusch.nPorts = 2;
+advancedUL.phy.pusch.dmrs.portSet = [0 1];
+advancedUL.phy.pusch.dmrs.DMRSPortSet = [0 1];
 advancedUL.phy.pusch.transformPrecoding = false;
 advancedULGrant = sixgr.link.resolveWaveformGrant(advancedUL, "UL", 0);
 assert(advancedULGrant.K2 == 1 && ...

@@ -51,7 +51,8 @@ if opt.SaveCSV
     end
 
     rawKPI = sixgr.kpi.loadDirectionRawTables(details, ...
-        "RunFolder", localRunRootFolder(runFolder));
+        "RunFolder", localRunRootFolder(runFolder), ...
+        "PreferPersistedPrimary", true);
     rawKPI.Paths = localPortableKPISourcePaths( ...
         rawKPI.Paths, localRunRootFolder(runFolder));
     kpiRecon = sixgr.kpi.reconstructLLSKPISummaryFromRaw(rawKPI, ...
@@ -70,6 +71,7 @@ if opt.SaveCSV
     kpiSidecars = {
         "kpi_formula_registry.csv", kpiRecon.FormulaRegistry;
         "kpi_source_table_manifest.csv", kpiRecon.SourceManifest;
+        "kpi_primary_trial_source_reconciliation.csv", rawKPI.PrimarySourceReconciliation;
         "kpi_raw_table_schema_audit.csv", kpiRecon.SchemaAudit;
         "kpi_reconstruction_summary.csv", kpiRecon.ReconstructionSummary;
         "kpi_row_contributions_ul.csv", kpiRecon.RowContributionsUL;

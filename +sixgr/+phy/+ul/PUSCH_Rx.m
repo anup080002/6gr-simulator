@@ -273,6 +273,11 @@ rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
 runtimeAlignedTimingBypass = localRuntimeAlignedTimingBypass(cfg);
+% The link wrapper sets RuntimeWaveformSampleAligned only after applying
+% the materialized channel and its exact sample trim.  That boundary owns
+% alignment for both FDD and TDD.  A receiver-side RS observation remains
+% valuable evidence, but it must not be applied a second time unless YAML
+% explicitly injects a timing offset (which disables this bypass).
 if runtimeAlignedTimingBypass
     timingEstimateSource = "runtime_aligned_waveform_no_timing_reacquisition";
     trackingCorrection.TimingCorrectionApplied = false;
@@ -1608,7 +1613,11 @@ tracking = struct( ...
     "CFONAReason", "", ...
     "TrackingState", "", ...
     "AgeSlots", NaN, ...
-    "KnownTimingDelay_samples", NaN);
+    "KnownTimingDelay_samples", NaN, ...
+    "MeasurementDirection", "", ...
+    "ConsumerDirection", "UL", ...
+    "DirectionCompatible", true, ...
+    "AuthorityStatus", "legacy_untagged_tracking_state");
 
 raw = explicitState;
 usingRuntimeUserContext = isempty(raw);
@@ -1627,6 +1636,33 @@ tracking.Source = localFirstString(raw, ["RuntimeTRSRuntimeEvidenceSource","Runt
     "trs_receiver_tracking_state");
 if ~processed
     tracking.NAReason = "trs_tracking_state_not_processed";
+    return;
+end
+
+measurementDirection = upper(strtrim(localFirstString(raw, ...
+    ["TrackingMeasurementDirection","RuntimeTRSMeasurementDirection"], "")));
+consumerDirection = upper(strtrim(localFirstString(raw, ...
+    ["TrackingConsumerDirection","RuntimeReceiverTrackingConsumerDirection"], "UL")));
+directionCompatibilityDeclared = localFirstLogical(raw, ...
+    ["TrackingDirectionCompatible","RuntimeReceiverTrackingDirectionCompatible"], true);
+authorityStatus = localFirstString(raw, ...
+    ["TrackingAuthorityStatus","RuntimeReceiverTrackingAuthorityStatus"], ...
+    "legacy_untagged_tracking_state");
+authorityReason = localFirstString(raw, ...
+    ["TrackingAuthorityReason","RuntimeReceiverTrackingAuthorityReason"], "");
+tracking.MeasurementDirection = char(measurementDirection);
+tracking.ConsumerDirection = char(consumerDirection);
+tracking.DirectionCompatible = logical(directionCompatibilityDeclared);
+tracking.AuthorityStatus = char(authorityStatus);
+if (~directionCompatibilityDeclared) || ...
+        (strlength(measurementDirection) > 0 && measurementDirection ~= "UL") || ...
+        (strlength(consumerDirection) > 0 && consumerDirection ~= "UL")
+    tracking.Status = "rejected_cross_direction_receiver_state";
+    if strlength(strtrim(authorityReason)) > 0
+        tracking.NAReason = char(authorityReason);
+    else
+        tracking.NAReason = "measurement_and_ul_receiver_directions_differ";
+    end
     return;
 end
 
