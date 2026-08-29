@@ -237,7 +237,7 @@ for i = 1:numel(candidates)
         continue;
     end
     try
-        T = readtable(fullPath, "TextType", "string", "VariableNamingRule", "preserve");
+        T = sixgr.util.csvReadTable(fullPath, "TextType", "string");
     catch
         continue;
     end

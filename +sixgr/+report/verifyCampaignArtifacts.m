@@ -106,7 +106,7 @@ if ~isfile(summaryFile)
     return;
 end
 try
-    summaryT = readtable(summaryFile, "VariableNamingRule", "preserve");
+    summaryT = sixgr.util.csvReadTable(summaryFile);
 catch ME
     if ~isempty(idx)
         T.Status(idx) = "invalid_unreadable";

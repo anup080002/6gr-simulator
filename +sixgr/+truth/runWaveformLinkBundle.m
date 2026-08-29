@@ -2135,7 +2135,7 @@ if exist(statusPath, "file") ~= 2
     return;
 end
 try
-    T = readtable(statusPath, "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(statusPath);
     if istable(T) && ~isempty(T)
         status = table2struct(T(1, :), "ToScalar", true);
     end
@@ -19427,7 +19427,7 @@ end
 if isstring(v) || ischar(v)
     p = char(string(v));
     if exist(p, "file") == 2
-        T = readtable(p, "VariableNamingRule", "preserve");
+        T = sixgr.util.csvReadTable(p);
     end
 end
 end

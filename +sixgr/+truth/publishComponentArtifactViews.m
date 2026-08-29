@@ -275,8 +275,7 @@ if ~isfile(manifestPath)
     return;
 end
 try
-    prior = readtable(manifestPath, "TextType", "string", ...
-        "VariableNamingRule", "preserve");
+    prior = sixgr.util.csvReadTable(manifestPath, "TextType", "string");
 catch ME
     error("sixgr:truth:componentViews:PriorManifestUnreadable", ...
         "Unable to read prior component publication manifest: %s", ME.message);
@@ -425,8 +424,7 @@ if ~isfile(summaryPath)
     return;
 end
 try
-    summary = readtable(summaryPath, "TextType", "string", ...
-        "VariableNamingRule", "preserve");
+    summary = sixgr.util.csvReadTable(summaryPath, "TextType", "string");
 catch ME
     error("sixgr:truth:componentViews:ScenarioSummaryUnreadable", ...
         "Unable to read canonical scenario identity: %s", ME.message);

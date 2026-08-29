@@ -249,7 +249,7 @@ if exist(path, "file") ~= 2
     return;
 end
 try
-    T = readtable(path, "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(path);
 catch
     T = table();
 end
@@ -6946,8 +6946,8 @@ if any(isfinite(thr)) || any(isfinite(bler))
     independentScenarioCount = 0;
     if exist(sourcePath, "file") == 2
         try
-            sourceT = readtable(sourcePath, ...
-                "VariableNamingRule", "preserve", "TextType", "string");
+            sourceT = sixgr.util.csvReadTable(sourcePath, ...
+                "TextType", "string");
             if ismember("ScenarioID", string(sourceT.Properties.VariableNames))
                 scenarioIds = strtrim(string(sourceT.ScenarioID));
                 independentScenarioCount = numel(unique( ...

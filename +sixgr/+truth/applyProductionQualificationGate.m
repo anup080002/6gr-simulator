@@ -522,7 +522,7 @@ end
 function T = localRead(path)
 if ~isfile(path), T = table(); return; end
 try
-    T = readtable(path, "VariableNamingRule", "preserve", "TextType", "string");
+    T = sixgr.util.csvReadTable(path, "TextType", "string");
 catch
     T = table();
 end

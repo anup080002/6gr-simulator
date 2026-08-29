@@ -147,7 +147,7 @@ selectedPath = string(inMemoryPath);
 persistedPath = fullfile(char(runFolder), char(relativePath));
 persisted = table();
 if isfile(persistedPath)
-    persisted = readtable(persistedPath, "VariableNamingRule", "preserve");
+    persisted = sixgr.util.csvReadTable(persistedPath);
 end
 
 memoryRows = localHeight(inMemory);
@@ -347,7 +347,7 @@ end
 if ischar(value) || (isstring(value) && isscalar(value))
     path = string(value);
     if strlength(path) > 0 && exist(char(path), "file") == 2
-        T = readtable(char(path), "VariableNamingRule", "preserve");
+        T = sixgr.util.csvReadTable(path);
     end
 end
 end

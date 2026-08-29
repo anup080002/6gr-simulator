@@ -87,7 +87,7 @@ end
 if isstring(v) || ischar(v)
     p = char(string(v));
     if exist(p, "file") == 2
-        T = readtable(p, "VariableNamingRule", "preserve");
+        T = sixgr.util.csvReadTable(p);
     end
     return;
 end
@@ -105,7 +105,7 @@ if isstruct(v) && isscalar(v)
             p = string(v.File);
         end
         if strlength(p) > 0 && exist(char(p), "file") == 2
-            T = readtable(char(p), "VariableNamingRule", "preserve");
+            T = sixgr.util.csvReadTable(p);
         end
     end
 end

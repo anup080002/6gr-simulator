@@ -1546,7 +1546,7 @@ if ~isfile(persistedPath)
     return;
 end
 try
-    candidate = readtable(persistedPath, "VariableNamingRule", "preserve");
+    candidate = sixgr.util.csvReadTable(persistedPath);
 catch ME
     error("sixgr:truth:exportSystemLevelCanonicalArtifacts:InvalidPersistedRuntimeTable", ...
         "Cannot read persisted %s runtime table '%s': %s", ...

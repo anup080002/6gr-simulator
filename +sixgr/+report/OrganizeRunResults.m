@@ -272,7 +272,7 @@ out.MirrorLayout = char(string(mirrorLayout));
             return;
         end
         try
-            T = readtable(syncFile, "VariableNamingRule", "preserve");
+            T = sixgr.util.csvReadTable(syncFile);
         catch
             return;
         end
@@ -296,7 +296,7 @@ out.MirrorLayout = char(string(mirrorLayout));
             return;
         end
         try
-            T = readtable(inFile, "VariableNamingRule", "preserve");
+            T = sixgr.util.csvReadTable(inFile);
         catch
             return;
         end
@@ -331,7 +331,7 @@ out.MirrorLayout = char(string(mirrorLayout));
         slotFile = fullfile(runFolder, "packet_flow", "csv", "probe_e2e_slot_metrics.csv");
         if exist(sumFile, "file") == 2
             try
-                S = readtable(sumFile, "VariableNamingRule", "preserve");
+                S = sixgr.util.csvReadTable(sumFile);
                 localWriteSubset(S, ["Scheduler","HARQ_RetxProbability","ACKRate","NACKRate","NumUE","NumSlots","SlotDuration_ms"], ...
                     "protocol/mac/mac_scheduler_harq_summary.csv", "csv", "packet_flow/csv/probe_e2e_summary.csv", "MAC scheduler/HARQ summary");
                 localWriteSubset(S, ["RLCMode","DeliveryRatio","Goodput_Mbps","Offered_Mbps"], ...
@@ -348,7 +348,7 @@ out.MirrorLayout = char(string(mirrorLayout));
 
         if exist(slotFile, "file") == 2
             try
-                T = readtable(slotFile, "VariableNamingRule", "preserve");
+                T = sixgr.util.csvReadTable(slotFile);
                 localWriteSubset(T, ["Slot","NumGrants","NumACK","NumNACK","NumRetx","MeanCQI","QueueBits"], ...
                     "protocol/mac/mac_slot_metrics.csv", "csv", "packet_flow/csv/probe_e2e_slot_metrics.csv", "Per-slot MAC metrics");
                 localWriteSubset(T, ["Slot","OfferedBits","DeliveredBits","NumGrants","NumACK","NumNACK","QueueBits","Goodput_Mbps"], ...
@@ -366,7 +366,7 @@ out.MirrorLayout = char(string(mirrorLayout));
         goodputTxt = "not available";
         deliveryTxt = "not available";
         try
-            S = readtable(fullfile(runFolder, "packet_flow", "csv", "probe_e2e_summary.csv"), "VariableNamingRule", "preserve");
+            S = sixgr.util.csvReadTable(fullfile(runFolder, "packet_flow", "csv", "probe_e2e_summary.csv"));
             if ~isempty(S)
                 if ismember("AttachSuccess", string(S.Properties.VariableNames))
                     attachTxt = string(S.AttachSuccess(1));
@@ -431,7 +431,7 @@ out.MirrorLayout = char(string(mirrorLayout));
             return;
         end
         try
-            T = readtable(auditFile, "VariableNamingRule", "preserve");
+            T = sixgr.util.csvReadTable(auditFile);
         catch
             return;
         end

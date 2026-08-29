@@ -66,7 +66,7 @@ attachTrace = table();
 attachTrace = sixgr.util.structGet(e2e, "AttachTraceTable", table());
 if ~(istable(attachTrace) && ~isempty(attachTrace)) && ~(istable(controlState) && ~isempty(controlState))
     try
-        attachTrace = readtable(fullfile(layout.PacketFlowCSVDir, "e2e_attach_trace.csv"), "VariableNamingRule", "preserve");
+        attachTrace = sixgr.util.csvReadTable(fullfile(layout.PacketFlowCSVDir, "e2e_attach_trace.csv"));
     catch
         attachTrace = table();
     end
@@ -200,7 +200,7 @@ if exist(char(string(filePath)), "file") ~= 2
     return;
 end
 try
-    T = readtable(char(string(filePath)), "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(filePath);
 catch
     T = table();
 end

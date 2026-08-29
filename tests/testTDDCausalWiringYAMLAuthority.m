@@ -28,6 +28,21 @@ assert(double(raw.tdd_timing.n1_pdsch_processing_time_symbols) == 8);
 assert(double(raw.tdd_timing.n2_pusch_preparation_time_symbols) == 10);
 assert(double(raw.run_control.total_slots) == 15);
 assert(double(raw.run_control.measurement_slots) == 15);
+assert(double(raw.link_adaptation.feedback_delay_slots) == 1);
+assert(~logical(raw.random_access.statistical_qualification.enabled));
+assert(string(raw.validation.strict_component_evidence.execution_scope) == ...
+    "in_path");
+assert(all(ismember(["prach","srs","trs","sib1"], ...
+    string(raw.validation.strict_component_evidence.required_components))));
+assert(logical(raw.random_access_evidence.four_step_ra_required));
+assert(logical(raw.random_access_evidence.msg1_prach_required));
+assert(logical(raw.random_access_evidence.msg2_rar_pdcch_pdsch_required));
+assert(logical(raw.random_access_evidence.msg3_pusch_required));
+assert(logical(raw.random_access_evidence.msg4_contention_resolution_required));
+assert(logical(raw.random_access_evidence.require_runtime_stage_waveforms));
+assert(logical(raw.random_access_evidence.allow_runtime_stage_waveform_composition));
+assert(~logical(raw.random_access_evidence.false_alarm_test_enabled));
+assert(~logical(raw.random_access_evidence.missed_detection_test_enabled));
 
 cfg = sixgr.lls6g.buildInternalConfig(scenario, string(tempname));
 assert(string(cfg.phy.duplex.mode) == "TDD");
@@ -36,6 +51,10 @@ assert(~isfield(cfg.phy.duplex, "fdd"));
 assert(double(cfg.phy.carrier.NSizeGrid) == 25);
 assert(double(cfg.run.totalSlots) == 15);
 assert(double(cfg.run.measurementSlots) == 15);
+assert(double(cfg.phy.linkAdaptation.feedbackDelaySlots) == 1);
+assert(double(cfg.phy.csi.feedbackDelaySlots) == 1);
+assert(string(cfg.validation.strict_component_evidence.execution_scope) == ...
+    "in_path");
 timingPolicy = cfg.phy.frameStructure.TimingContext.Policy;
 resolvedTimingPolicy = sixgr.phy.frame.TimingPolicyCatalog.resolveProduction( ...
     timingPolicy, 0, 0, ["K0","K1","K2"]);

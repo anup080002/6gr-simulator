@@ -101,8 +101,7 @@ for fileIndex = 1:numel(files)
         continue;
     end
     try
-        T = readtable(lineagePath, "VariableNamingRule", "preserve", ...
-            "TextType", "string");
+        T = sixgr.util.csvReadTable(lineagePath, "TextType", "string");
     catch
         continue;
     end

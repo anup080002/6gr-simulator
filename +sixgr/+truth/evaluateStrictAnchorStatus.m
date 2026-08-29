@@ -303,8 +303,8 @@ if engineEnabled
             "not_evaluated:artifact_generation_results_missing";
     else
         try
-            audit = readtable(engineAuditPath, "TextType", "string", ...
-                "VariableNamingRule", "preserve");
+            audit = sixgr.util.csvReadTable(engineAuditPath, ...
+                "TextType", "string");
             names = string(audit.Properties.VariableNames);
             if height(audit) == 0 || ~all(ismember(["Required", "Status"], names))
                 gate.DuplicateArtifactGateOk = false;
@@ -348,7 +348,7 @@ if exist(pathValue, "file") ~= 2
     return;
 end
 try
-    T = readtable(pathValue, "TextType", "string", "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(pathValue, "TextType", "string");
 catch ME
     reason = "not_evaluated:" + string(pathValue) + ":unreadable:" + string(ME.identifier);
     return;
@@ -2759,7 +2759,7 @@ if exist(pathValue, "file") ~= 2
     return;
 end
 try
-    T = readtable(pathValue, "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(pathValue);
 catch
     T = table();
 end

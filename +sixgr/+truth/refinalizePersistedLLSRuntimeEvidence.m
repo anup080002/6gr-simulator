@@ -477,8 +477,7 @@ if exist(char(string(pathValue)), "file") ~= 2
     return;
 end
 try
-    T = readtable(char(string(pathValue)), ...
-        "VariableNamingRule", "preserve", "TextType", "string");
+    T = sixgr.util.csvReadTable(pathValue, "TextType", "string");
 catch
     T = table();
 end

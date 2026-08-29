@@ -368,10 +368,10 @@ if strlength(string(pathStr)) == 0 || exist(pathStr, "file") ~= 2
     return;
 end
 try
-    T = readtable(pathStr, "VariableNamingRule", "preserve", "TextType", "string");
+    T = sixgr.util.csvReadTable(pathStr, "TextType", "string");
 catch
     try
-        T = readtable(pathStr, "VariableNamingRule", "preserve");
+        T = sixgr.util.csvReadTable(pathStr);
     catch
         T = table();
     end

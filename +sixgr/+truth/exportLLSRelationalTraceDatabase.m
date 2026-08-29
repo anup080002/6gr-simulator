@@ -389,7 +389,7 @@ if exist(pathIn, "file") ~= 2
     return;
 end
 try
-    T = readtable(pathIn, "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(pathIn);
 catch
     T = table();
 end

@@ -165,8 +165,7 @@ if ~isfile(pathValue)
     return;
 end
 try
-    T = readtable(pathValue, "TextType", "string", ...
-        "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(pathValue, "TextType", "string");
 catch
     T = table();
 end

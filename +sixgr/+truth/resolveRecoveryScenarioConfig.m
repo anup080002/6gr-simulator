@@ -380,7 +380,7 @@ if exist(path, "file") ~= 2
     return;
 end
 try
-    T = readtable(path, "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(path);
     if ismember("SourceConfigFile", string(T.Properties.VariableNames))
         files = string(T.SourceConfigFile(:));
         files = files(strlength(strtrim(files)) > 0);

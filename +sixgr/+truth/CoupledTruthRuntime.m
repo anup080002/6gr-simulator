@@ -202,7 +202,8 @@ methods(Static)
         state.DLCombinedLLR = cell(nUsers, numHarqProc);
         state.ULCombinedLLR = cell(nUsers, numHarqProc);
         state.HARQFeedbackSlots = max(1, round(double(sixgr.util.structGet(cfg, "phy.harq.feedbackTimingSlots", 4))));
-        state.CSIFeedbackSlots = sixgr.truth.CoupledTruthRuntime.resolveCSIFeedbackSlots(cfg);
+        state.CSIFeedbackSlots = ...
+            sixgr.truth.CoupledTruthRuntime.resolveConfiguredCSIFeedbackSlots(cfg);
         state.LastPRACHSlotByUE = zeros(nUsers, 1);
         state.LastSRSSlotByUE = zeros(nUsers, 1);
         state.DLStats = repmat(sixgr.truth.CoupledTruthRuntime.emptyDirectionStatRow(), nUsers, 1);
@@ -808,6 +809,14 @@ methods(Static)
 
     function mode = resolveChannelArrayModelRuntime(cfg)
         mode = sixgr.truth.CoupledTruthRuntime.resolveChannelArrayModel(cfg);
+    end
+
+    function slots = resolveConfiguredCSIFeedbackSlots(cfg)
+        % Public production authority shared by initialization and focused
+        % regression tests.  No runtime-specific floor may override the
+        % normalized numeric YAML delay.
+        delay = sixgr.link.resolveLinkAdaptationFeedbackDelay(cfg);
+        slots = double(delay.FeedbackDelaySlots);
     end
 
     function state = finalizeFiniteHorizonRuntime(state, terminalSlot, reason)
@@ -3690,22 +3699,6 @@ methods(Static, Access=private)
                 end
             end
         end
-
-    function slots = resolveCSIFeedbackSlots(cfg)
-        minNRProcessingSlots = 4;
-        explicitSlots = double(sixgr.util.structGet(cfg, "phy.csi.feedbackDelaySlots", NaN));
-        if isfinite(explicitSlots) && explicitSlots >= 0
-            slots = max(minNRProcessingSlots, round(explicitSlots));
-            return;
-        end
-        delayModel = lower(string(sixgr.util.structGet(cfg, "phy.linkAdaptation.delayModel", "baseline")));
-        switch delayModel
-            case {"zero","none","instant","immediate"}
-                slots = minNRProcessingSlots;
-            otherwise
-                slots = minNRProcessingSlots;
-        end
-    end
 
     function state = enqueueTrafficForFrame(state, absoluteFrame)
         absoluteFrame = max(1, round(double(absoluteFrame)));
