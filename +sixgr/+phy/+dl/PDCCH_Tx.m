@@ -155,6 +155,20 @@ info.K = K;
 info.E = E;
 info.NumPDCCHRE = numel(pdcchInd);
 info.NumDMRSRE  = numel(dmrsInd);
+% Preserve the exact port-domain grid and OFDM metadata used to create the
+% waveform.  Downstream RF normalization must bind to this observed grid;
+% reconstructing occupancy from PDCCH configuration would make sparse
+% control allocations consume the complete configured cell-power budget.
+info.PortGrid = txGrid;
+info.PowerNormalizationGridSource = ...
+    'exact_pdcch_tx_port_grid';
+try
+    info.OFDM = nrOFDMInfo(carrier);
+catch exception
+    error("sixgr:phy:pdcch:OFDMMetadataUnavailable", ...
+        "The PDCCH transmit OFDM metadata could not be resolved: %s", ...
+        exception.message);
+end
 info.NCellID = nCellID;
 info.RNTI = rnti;
 info.DCICrcRNTI = rnti;

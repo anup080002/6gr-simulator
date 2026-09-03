@@ -16,10 +16,14 @@ if ~(isstruct(ctx) && isfield(ctx, "ContractVersion"))
 end
 
 [inputTotal_mW, inputPerPort_mW, refInfo] = localTotalActivePower_mW(x, txInfo);
+[normalization, normalizationInfo] = localResolveNormalizationReference( ...
+    x, cfg, direction, txInfo, inputTotal_mW, refInfo);
 scale = 1;
-if isfinite(inputTotal_mW) && inputTotal_mW > 0 && ...
+if isfinite(normalization.ReferenceInputPower_mW) && ...
+        normalization.ReferenceInputPower_mW > 0 && ...
         isfinite(double(ctx.TotalTxPower_mW)) && double(ctx.TotalTxPower_mW) >= 0
-    scale = sqrt(double(ctx.TotalTxPower_mW) / max(inputTotal_mW, realmin));
+    scale = sqrt(double(ctx.TotalTxPower_mW) / ...
+        max(normalization.ReferenceInputPower_mW, realmin));
 end
 y = x .* cast(scale, "like", x);
 [y, paInfo] = localApplyPAContext(y, cfg, ctx, txInfo);
@@ -38,13 +42,168 @@ ctx.OutputPerPortPower_dBm = localmWToDbm(outputPerPort_mW);
 ctx.ActivePortCount = double(nnz(outputPerPort_mW > eps(max([outputPerPort_mW(:); 1]))));
 ctx.ReferencePowerDomain = char(string(sixgr.util.structGet(refInfo, "ReferenceDomain", "")));
 ctx.ReferenceSampleCount = double(sixgr.util.structGet(refInfo, "SampleCount", numel(x)));
-ctx.PowerClosureError_dB = double(ctx.OutputTotalPower_dBm) - double(ctx.TotalTxPower_dBm);
+ctx.PowerNormalizationPolicy = char(normalization.Policy);
+ctx.PowerNormalizationSource = char(normalization.Source);
+ctx.FullBWPActivityFactor = double(normalization.FullBWPActivityFactor);
+ctx.ReferenceInputPower_mW = double(normalization.ReferenceInputPower_mW);
+ctx.ReferenceInputPower_dBm = localmWToDbm(normalization.ReferenceInputPower_mW);
+ctx.ReferenceOutputPower_mW = double(outputTotal_mW) ./ ...
+    max(double(normalization.FullBWPActivityFactor), realmin);
+ctx.ReferenceOutputPower_dBm = localmWToDbm(ctx.ReferenceOutputPower_mW);
+ctx.ActualEmittedPowerBackoffFromBudget_dB = ...
+    double(ctx.OutputTotalPower_dBm) - double(ctx.TotalTxPower_dBm);
+ctx.PowerClosureError_dB = double(ctx.ReferenceOutputPower_dBm) - ...
+    double(ctx.TotalTxPower_dBm);
 ctx.PerPortPowerSum_mW = sum(double(outputPerPort_mW), "omitnan");
-ctx.PerPortPowerSumError_mW = double(ctx.PerPortPowerSum_mW) - double(ctx.TotalTxPower_mW);
-ctx.ConversionEquation = "x_scaled=x*sqrt(Ptx_mW/mean_sum_abs2_active_samples)";
+ctx.ExpectedEmittedPower_mW = double(ctx.TotalTxPower_mW) .* ...
+    double(normalization.FullBWPActivityFactor);
+ctx.PerPortPowerSumError_mW = double(ctx.PerPortPowerSum_mW) - ...
+    double(ctx.ExpectedEmittedPower_mW);
+ctx.ConversionEquation = char(normalization.Equation);
+normalizationFields = fieldnames(normalizationInfo);
+for normalizationIdx = 1:numel(normalizationFields)
+    ctx.(normalizationFields{normalizationIdx}) = ...
+        normalizationInfo.(normalizationFields{normalizationIdx});
+end
 paFields = fieldnames(paInfo);
 for paIdx = 1:numel(paFields)
     ctx.(paFields{paIdx}) = paInfo.(paFields{paIdx});
+end
+
+function [normalization, info] = localResolveNormalizationReference( ...
+        x, cfg, direction, txInfo, inputTotal_mW, refInfo)
+% Resolve the physical reference plane used by the amplitude scaler.
+%
+% A gNB cell-power setting is a maximum full-band budget.  It must not be
+% concentrated into a sparse PDSCH/CSI-RS allocation, because that makes
+% reference-signal EPRE depend on the number of scheduled PRBs.  Under the
+% full-BWP policy the exact transmitted port grid supplies the occupancy
+% factor and the emitted power falls with occupied bandwidth.  UL remains
+% allocation-aware because PUSCH/PUCCH/SRS power is resolved by 38.213
+% signal-specific power control before this common scaling stage.
+
+direction = upper(strtrim(string(direction)));
+[policy, source] = localConfiguredNormalizationPolicy(cfg, direction);
+normalization = struct( ...
+    "Policy", policy, ...
+    "Source", source, ...
+    "FullBWPActivityFactor", 1, ...
+    "ReferenceInputPower_mW", double(inputTotal_mW), ...
+    "Equation", "x_scaled=x*sqrt(Ptx_mW/mean_sum_abs2_active_samples)");
+info = struct( ...
+    "NormalizationGridSource", "not_required", ...
+    "NormalizationGridSubcarrierCount", NaN, ...
+    "NormalizationGridActiveSymbolCount", NaN, ...
+    "NormalizationGridMeanEnergyPerRE", NaN);
+
+if policy == "active_ofdm_total_power"
+    return;
+end
+if direction ~= "DL" || policy ~= "fixed_epre_over_configured_bwp"
+    error("sixgr:rf:UnsupportedPowerNormalizationPolicy", ...
+        "Unsupported %s waveform-power normalization policy '%s'.", ...
+        direction, policy);
+end
+
+[portGrid, gridSource] = localExactTransmitPortGrid(txInfo);
+if isempty(portGrid) || ndims(portGrid) < 2
+    error("sixgr:rf:DLFullBWPReferenceGridUnavailable", ...
+        "DL fixed-EPRE normalization requires the exact transmitted " + ...
+        "port-domain resource grid. The waveform must not be normalized " + ...
+        "from scheduled occupancy or reconstructed configuration.");
+end
+nSubcarriers = size(portGrid, 1);
+nSymbols = size(portGrid, 2);
+activeSymbols0 = double(sixgr.util.structGet( ...
+    refInfo, "ActiveSymbolIndices", zeros(0, 1)));
+activeSymbols = unique(activeSymbols0(:) + 1, "stable");
+activeSymbols = activeSymbols(isfinite(activeSymbols) & ...
+    activeSymbols >= 1 & activeSymbols <= nSymbols & ...
+    activeSymbols == fix(activeSymbols));
+if isempty(activeSymbols)
+    error("sixgr:rf:DLFullBWPActiveSymbolsUnavailable", ...
+        "DL fixed-EPRE normalization could not bind the waveform's " + ...
+        "active OFDM symbols to the exact transmitted port grid.");
+end
+
+grid = double(portGrid(:, activeSymbols, :));
+totalGridEnergy = sum(abs(grid).^2, "all", "omitnan");
+meanEnergyPerRE = totalGridEnergy / ...
+    max(1, nSubcarriers * numel(activeSymbols));
+if ~(isfinite(meanEnergyPerRE) && meanEnergyPerRE > 0)
+    error("sixgr:rf:DLFullBWPReferenceEnergyInvalid", ...
+        "The exact DL transmit grid has no finite positive active-RE energy.");
+end
+
+normalization.FullBWPActivityFactor = double(meanEnergyPerRE);
+normalization.ReferenceInputPower_mW = double(inputTotal_mW) ./ ...
+    double(meanEnergyPerRE);
+normalization.Equation = ...
+    "x_scaled=x*sqrt(Pcell_full_bwp_mW/(Pactive_mW/grid_mean_energy_per_re))";
+info.NormalizationGridSource = char(gridSource);
+info.NormalizationGridSubcarrierCount = double(nSubcarriers);
+info.NormalizationGridActiveSymbolCount = double(numel(activeSymbols));
+info.NormalizationGridMeanEnergyPerRE = double(meanEnergyPerRE);
+end
+
+function [policy, source] = localConfiguredNormalizationPolicy(cfg, direction)
+direction = upper(strtrim(string(direction)));
+if direction == "DL"
+    candidates = {
+        sixgr.util.structGet(cfg, ...
+            "lls6g.resolvedConfig.power_and_rf_frontend.downlink_power_normalization_policy", []), ...
+            "resolved_config.power_and_rf_frontend.downlink_power_normalization_policy";
+        sixgr.util.structGet(cfg, ...
+            "powerAndRF.downlinkPowerNormalizationPolicy", []), ...
+            "cfg.powerAndRF.downlinkPowerNormalizationPolicy";
+        sixgr.util.structGet(cfg, ...
+            "rf.downlinkPowerNormalizationPolicy", []), ...
+            "cfg.rf.downlinkPowerNormalizationPolicy"};
+else
+    candidates = {
+        sixgr.util.structGet(cfg, ...
+            "lls6g.resolvedConfig.power_and_rf_frontend.uplink_power_normalization_policy", []), ...
+            "resolved_config.power_and_rf_frontend.uplink_power_normalization_policy";
+        sixgr.util.structGet(cfg, ...
+            "powerAndRF.uplinkPowerNormalizationPolicy", []), ...
+            "cfg.powerAndRF.uplinkPowerNormalizationPolicy";
+        sixgr.util.structGet(cfg, ...
+            "rf.uplinkPowerNormalizationPolicy", []), ...
+            "cfg.rf.uplinkPowerNormalizationPolicy"};
+end
+policy = "active_ofdm_total_power";
+source = "legacy_active_ofdm_total_power_default";
+for idx = 1:size(candidates, 1)
+    raw = lower(strtrim(string(candidates{idx, 1})));
+    raw = raw(strlength(raw) > 0 & ~ismissing(raw));
+    if ~isempty(raw)
+        policy = raw(1);
+        source = string(candidates{idx, 2});
+        break;
+    end
+end
+aliases = struct( ...
+    "full_bwp_reference_epre", "fixed_epre_over_configured_bwp", ...
+    "fixed_full_bwp_epre", "fixed_epre_over_configured_bwp", ...
+    "scheduled_active_power", "active_ofdm_total_power");
+key = matlab.lang.makeValidName(char(policy));
+if isfield(aliases, key)
+    policy = string(aliases.(key));
+end
+end
+
+function [portGrid, source] = localExactTransmitPortGrid(txInfo)
+portGrid = sixgr.util.structGet(txInfo, "PortGrid", []);
+source = string(sixgr.util.structGet(txInfo, ...
+    "PowerNormalizationGridSource", "tx_info.PortGrid"));
+if isempty(portGrid)
+    portGrid = sixgr.util.structGet(txInfo, "TxContext.PortGrid", []);
+    source = "tx_info.TxContext.PortGrid";
+end
+if isempty(portGrid)
+    portGrid = sixgr.util.structGet(txInfo, "ResourceGrid", []);
+    source = "tx_info.ResourceGrid";
+end
 end
 end
 
@@ -124,50 +283,8 @@ else
 end
 end
 function [total_mW, perPort_mW, info] = localTotalActivePower_mW(x, txInfo)
-if isempty(x)
-    total_mW = NaN;
-    perPort_mW = zeros(1, 0);
-    info = struct("ReferenceDomain", "empty", "SampleCount", 0);
-    return;
-end
-idx = localUsefulSampleIndices(size(x, 1), sixgr.util.structGet(txInfo, "OFDM", struct()));
-if isempty(idx)
-    xRef = x;
-    info = struct("ReferenceDomain", "all_waveform_samples_metadata_unavailable", ...
-        "SampleCount", double(numel(x)));
-else
-    xRef = x(idx, :);
-    info = struct("ReferenceDomain", "active_samples_excluding_cp", ...
-        "SampleCount", double(numel(xRef)));
-end
-perPort_mW = mean(abs(double(xRef)).^2, 1, "omitnan");
-total_mW = sum(perPort_mW, "omitnan");
-end
-
-function idx = localUsefulSampleIndices(nSamples, ofdmInfo)
-idx = [];
-if nargin < 2 || ~isstruct(ofdmInfo)
-    return;
-end
-nfft = round(double(sixgr.util.structGet(ofdmInfo, "Nfft", NaN)));
-cpLens = round(double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", [])));
-if ~(isfinite(nfft) && nfft > 0 && ~isempty(cpLens))
-    return;
-end
-offset = 0;
-while offset < nSamples
-    for s = 1:numel(cpLens)
-        cp = max(0, cpLens(s));
-        useful = offset + cp + (1:nfft);
-        useful = useful(useful <= nSamples);
-        idx = [idx, useful]; %#ok<AGROW>
-        offset = offset + cp + nfft;
-        if offset >= nSamples
-            break;
-        end
-    end
-end
-idx = idx(:);
+[total_mW, perPort_mW, info] = ...
+    sixgr.rf.measureActiveOFDMTotalPower(x, txInfo);
 end
 
 function dbm = localmWToDbm(power_mW)

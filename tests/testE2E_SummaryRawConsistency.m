@@ -8,6 +8,11 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.run.seed = 29;
+% SystemLevelRunner intentionally fails closed when the control-region
+% allocation is absent.  This packet-accounting fixture therefore carries
+% a concrete two-symbol PDCCH allocation instead of relying on a hidden
+% runtime default.
+cfg.phy.pdcch.symbolAllocation = [0 2];
 
 tmp = tempname;
 mkdir(tmp);

@@ -259,7 +259,7 @@ mimo:
   max_ul_layers: 2
   precoder_type: wideband
   codebook_type: type1
-  reciprocity_mode: FDD
+  reciprocity_mode: TDD
   beam_sweep_enabled: true
   beam_count: 32
   mtrp_ready: false

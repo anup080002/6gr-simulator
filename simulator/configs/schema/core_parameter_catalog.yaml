@@ -256,6 +256,14 @@
         }
       },
       "tddTiming": {
+        "allowedK0": {"value_type": "integer_vector", "default": [1], "min": 0},
+        "pdcchToPDSCHK0": {"value_type": "integer", "default": 1, "min": 0},
+        "dlHARQFeedbackK1Candidates": {"value_type": "integer_vector", "default": [1, 2, 3, 4, 5, 6, 7, 8], "min": 1},
+        "allowedK2": {"value_type": "integer_vector", "default": [1, 2, 3, 4, 5, 6, 7, 8], "min": 0},
+        "capabilityProfileID": {"value_type": "string", "default": "38.214-v18.8.0-cap1-dmrs-pos0-mu1"},
+        "n1PDSCHProcessingTimeSymbols": {"value_type": "integer", "default": 10, "min": 0},
+        "n2PUSCHPreparationTimeSymbols": {"value_type": "integer", "default": 12, "min": 0},
+        "timingAdvanceTicks": {"value_type": "integer", "default": 0, "min": 0},
         "k1SelectionPolicy": {"value_type": "string", "default": "first_valid_configured", "allowed_values": ["first_valid_configured", "fixed_configured_default"]}
       },
       "waveform": {
@@ -286,6 +294,7 @@
         "searchSpaceType": {"value_type": "string", "default": "ue", "allowed_values": ["ue", "common"]},
         "aggregationLevel": {"value_type": "integer", "default": 8, "min": 1},
         "dciFormat": {"value_type": "string", "default": "1_0", "allowed_values": ["0_0", "0_1", "1_0", "1_1"]},
+        "symbolAllocation": {"value_type": "integer_vector", "default": [0, 2]},
         "dmrs": {
           "enable": {"value_type": "boolean", "default": true}
         }
@@ -358,7 +367,8 @@
       },
       "pucch": {
         "enable": {"value_type": "boolean", "default": true},
-        "format": {"value_type": "integer", "default": 2, "allowed_values": [0, 1, 2, 3, 4]}
+        "format": {"value_type": "integer", "default": 2, "allowed_values": [0, 1, 2, 3, 4]},
+        "symbolAllocation": {"value_type": "integer_vector", "default": [12, 2]}
       },
       "pusch": {
         "enable": {"value_type": "boolean", "default": true},
@@ -387,7 +397,7 @@
         "measurements": {
           "dmrsResidualPostEqSINRBoundEnabled": {"value_type": "boolean", "default": true},
           "decisionDirectedPostEqSINRBoundEnabled": {"value_type": "boolean", "default": true},
-          "decoderNoiseVarianceMode": {"value_type": "string", "default": "post_equalization", "allowed_values": ["post_equalization", "pre_equalization"]}
+          "decoderNoiseVarianceMode": {"value_type": "string", "default": "pre_equalization", "allowed_values": ["post_equalization", "pre_equalization"]}
         }
       },
       "srs": {

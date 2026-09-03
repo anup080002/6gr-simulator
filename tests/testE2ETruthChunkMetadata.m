@@ -7,10 +7,15 @@ tmp = tempname;
 mkdir(tmp);
 c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
-cfg = sixgr.config.defaultConfig();
+scfg = sixgr.lls6g.config.loadScenarioConfig(fullfile("simulator", "configs", ...
+    "scenarios", "lls_causal_access_to_data_wiring_tdd.yaml"));
+cfg = sixgr.lls6g.buildInternalConfig(scfg, tmp);
 cfg.run.strictMode = true;
 cfg.channel.model = "TDL-C";
 cfg.channel.awgnOnly = false;
+cfg.channel.delayProfile = "TDL-C";
+cfg.channel.tdlProfile = "TDL-C";
+cfg.channel.cdlProfile = "";
 cfg.channel.dopplerHz = 70;
 cfg.channel.fading.enable = true;
 cfg.channel.fading.model = "TDL";

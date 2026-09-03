@@ -80,6 +80,25 @@ if ~rawEvidencePresent
     return;
 end
 
+% Canonicalize the primary persisted rows before any derived reconciliation
+% consumes them.  Running this only after the derived exporter allowed a
+% legacy auto-generated categorical token to survive into Phase-7 tables
+% even though the finalized primary CSV was later corrected.  This pass is
+% row-count preserving and cannot create waveform observations.
+out.PreDerivedSourceCSVFinalization = ...
+    sixgr.truth.sanitizeLLSArtifactCSVs(runFolder);
+preDerivedTrialData = sixgr.analytics.loadAllTrialData(runFolder);
+preDerivedRawTrials = localRawTrialBundle(preDerivedTrialData);
+if localHeight(preDerivedRawTrials.DL) ~= dlRows || ...
+        localHeight(preDerivedRawTrials.UL) ~= ulRows
+    error("sixgr:truth:refinalize:PreDerivedSourceFinalizationRowCountChanged", ...
+        ["Canonical source finalization changed primary DL/UL row counts " ...
+        "from %d/%d to %d/%d before derived-table generation."], ...
+        dlRows, ulRows, localHeight(preDerivedRawTrials.DL), ...
+        localHeight(preDerivedRawTrials.UL));
+end
+rawTrials = preDerivedRawTrials;
+
 mobilityArtifacts = localMobilityArtifacts(layout);
 slotTrace = localSlotTrace(trialData);
 out.DerivedArtifacts = sixgr.truth.exportLLSLiveDerivedTables( ...
@@ -381,6 +400,26 @@ pathValue = fullfile(layout.Root, "mobility", "csv", "trajectory_resolution.csv"
 T = localReadOptionalTable(pathValue);
 if istable(T) && height(T) > 0
     mobility.Resolution = T;
+end
+% The coupled runtime has already persisted its measured mobility and
+% coverage state before this re-finalization pass.  Re-finalization must
+% consume those exact rows; passing an empty mobility struct causes the
+% shared derived exporter to replace valid runtime coverage with a
+% zero-row schema.  These are read-only primary runtime inputs, not a
+% fallback or a reconstruction from configured values.
+runtimeSpecs = {
+    "ServingTraceTable", fullfile(layout.ReportCSVDir, "live_rsrp_serving_trace.csv");
+    "MeasurementTraceTable", fullfile(layout.ReportCSVDir, "live_cell_measurement_trace.csv");
+    "ReselectionEventTable", fullfile(layout.ReportCSVDir, "live_cell_reselection_events.csv");
+    "CoverageSnapshotTable", fullfile(layout.ReportCSVDir, "live_coverage_snapshot.csv");
+    "CoverageLayerTable", fullfile(layout.ReportCSVDir, "live_coverage_layer.csv");
+    "UserPerformanceTable", fullfile(layout.ReportCSVDir, "live_user_performance_snapshot.csv")
+    };
+for i = 1:size(runtimeSpecs, 1)
+    runtimeTable = localReadOptionalTable(runtimeSpecs{i, 2});
+    if istable(runtimeTable) && height(runtimeTable) > 0
+        mobility.(runtimeSpecs{i, 1}) = runtimeTable;
+    end
 end
 end
 

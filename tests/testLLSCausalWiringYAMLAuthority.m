@@ -22,11 +22,21 @@ cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, ...
 sixgr.config.assertRuntimeFeatureAuthority(cfg);
 
 assert(double(sixgr.util.structGet(cfg, "run.totalSlots", NaN)) == 12);
+strictEvidence = sixgr.util.structGet(cfg, ...
+    "validation.strict_component_evidence", struct());
+assert(logical(sixgr.util.structGet(strictEvidence, "enabled", false)));
+assert(string(sixgr.util.structGet(strictEvidence, "execution_scope", "")) == "in_path");
+assert(all(ismember(["prach","pdcch","srs","trs","sib1","channel_rf"], ...
+    string(sixgr.util.structGet(strictEvidence, "required_components", strings(0,1))))));
 assert(logical(sixgr.util.structGet(cfg, "run.strictMode", false)));
 assert(~logical(sixgr.util.structGet(cfg, "phy.rx.useIdealTimingSync", true)));
 assert(string(sixgr.util.structGet(cfg, "channel.model", "")) == "CDL");
 assert(string(sixgr.util.structGet(cfg, "channel.cdlProfile", "")) == "CDL-A");
-assert(~logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", true)));
+% This causal scenario intentionally exercises the absolute receive-power
+% plane.  The self-contained YAML explicitly enables pathloss, and the
+% resolved runtime must preserve that authority so SS/CSI RSRP and UL power
+% control are derived from the same physical link budget.
+assert(logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", false)));
 
 assert(isequal(double(sixgr.util.structGet(cfg, "phy.bsArray", [])), [1 2 1 1 1]));
 assert(isequal(double(sixgr.util.structGet(cfg, "phy.ueArray", [])), [1 2 1 1 1]));
@@ -34,7 +44,11 @@ assert(double(sixgr.util.structGet(cfg, "phy.pdsch.nLayers", NaN)) == 2);
 assert(double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", NaN)) == 2);
 assert(double(sixgr.util.structGet(cfg, ...
     "initial_access.type0.monitoring_occasion_ordinal", NaN)) == 1);
-assert(double(sixgr.util.structGet(cfg, "phy.mib.pdcchConfigSIB1", NaN)) == 0);
+% pdcch-ConfigSIB1=2 encodes CORESET0 index 0 and SearchSpace0 index 2.
+% For this 5 MHz/15 kHz profile that moves the first Type-0 monitoring
+% occasion out of the slot-0/1 four-beam SS/PBCH burst.  Guard the actual
+% decoded-MIB authority rather than the obsolete colliding value 0.
+assert(double(sixgr.util.structGet(cfg, "phy.mib.pdcchConfigSIB1", NaN)) == 2);
 assert(double(sixgr.util.structGet(cfg, "phy.mib.dmrsTypeAPosition", NaN)) == 2);
 
 timing = sixgr.util.structGet(cfg, "phy.schedulingTiming", struct());

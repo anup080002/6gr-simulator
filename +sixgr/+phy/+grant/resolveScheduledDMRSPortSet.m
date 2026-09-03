@@ -29,7 +29,16 @@ if ~isempty(explicitGrantPorts)
     return;
 end
 
+frozenScheduledPorts = localFirstNonemptyNumeric( ...
+    sixgr.util.structGet(cfg, root + ".dmrs.scheduledPortSet", []));
+if ~isempty(frozenScheduledPorts)
+    portSet = localValidateExact(frozenScheduledPorts, numLayers, errorID);
+    source = "frozen_phy_grant_dmrs_port_set";
+    return;
+end
+
 configuredPorts = localFirstNonemptyNumeric( ...
+    sixgr.util.structGet(cfg, root + ".dmrs.availablePortSet", []), ...
     sixgr.util.structGet(cfg, root + ".dmrs.portSet", []), ...
     sixgr.util.structGet(cfg, root + ".dmrs.DMRSPortSet", []), ...
     sixgr.util.structGet(cfg, root + ".DMRSPortSet", []));

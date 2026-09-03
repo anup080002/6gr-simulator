@@ -246,7 +246,8 @@ replay = struct( ...
     "NoiseBandwidth_Hz", noiseBandwidth_Hz, ...
     "ThermalNoisePower_dBm", thermalNoisePower_dBm, ...
     "NoisePowerSource", char(noiseSource), ...
-    "AbsolutePowerReferencePlane", "receiver_input_equivalent_link_budget_before_adc", ...
+    "AbsolutePowerReferencePlane", char(localAbsolutePowerReferencePlane( ...
+        servingRxPower_dBm, pathloss_dB, basePathloss_dB)), ...
     "SamplePowerReferencePlane", "complex_baseband_receiver_samples_before_noise_and_frontend", ...
     "AppliedLargeScaleLoss_dB", loss_dB, ...
     "AppliedLargeScaleGain_dB", gain_dB, ...
@@ -338,13 +339,34 @@ end
 function [servingRxPower_dBm, source, referenceTxPower_dBm, referenceTxPowerSource] = ...
         localResolveServingRxPower(cfg, userMeta, loss_dB, pathloss_dB, basePathloss_dB, powerContext)
 servingRxPower_dBm = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingRxPower_dBm", NaN));
-source = "runtime_serving_rx_power";
+direction = localResolveDirection(userMeta);
+runtimePowerDirection = upper(strtrim(string(sixgr.util.structGet( ...
+    userMeta, "RuntimeServingRxPowerDirection", ""))));
+runtimePowerSource = strtrim(string(sixgr.util.structGet( ...
+    userMeta, "RuntimeServingRxPowerSource", "runtime_serving_rx_power")));
+if strlength(runtimePowerDirection) == 0
+    % Legacy coupled LargeScaleState.RxPower_dBm is a DL gNB-to-UE power
+    % plane.  It must never be consumed as a PUSCH/PUCCH receive anchor.
+    if contains(lower(runtimePowerSource), "largescalestate.rxpower") || ...
+            runtimePowerSource == "runtime_serving_rx_power"
+        runtimePowerDirection = "DL";
+    else
+        runtimePowerDirection = direction;
+    end
+end
+if runtimePowerDirection ~= direction
+    servingRxPower_dBm = NaN;
+    source = "unavailable_runtime_rx_power_direction_mismatch";
+else
+    source = runtimePowerSource;
+end
 referenceTxPower_dBm = NaN;
 referenceTxPowerSource = "";
 if isstruct(powerContext) && isfield(powerContext, "TotalTxPower_dBm")
     referenceTxPower_dBm = double(powerContext.TotalTxPower_dBm);
     referenceTxPowerSource = "sixgr.rf.PowerContext.TotalTxPower_dBm";
 end
+
 % Signal-specific power control (notably PUCCH) supersedes the generic UE
 % maximum-power receive anchor carried by the system-level state.  Derive
 % the receive power from the exact assignment-owned transmit power and the
@@ -370,7 +392,9 @@ if ~(isfinite(loss_dB) && loss_dB >= 0)
     return;
 end
 if ~(isfinite(pathloss_dB) || isfinite(basePathloss_dB))
-    source = "unavailable_missing_pathloss_or_runtime_rx_power";
+    if source ~= "unavailable_runtime_rx_power_direction_mismatch"
+        source = "unavailable_missing_pathloss_or_runtime_rx_power";
+    end
     return;
 end
 if ~(isfinite(referenceTxPower_dBm))
@@ -385,6 +409,14 @@ rxGain_dB = double(sixgr.util.structGet(powerContext, "RxGain_dB", 0));
 additionalLoss_dB = double(sixgr.util.structGet(powerContext, "AdditionalLoss_dB", 0));
 servingRxPower_dBm = referenceTxPower_dBm + txGain_dB + rxGain_dB - loss_dB - additionalLoss_dB;
 source = "power_context_link_budget";
+end
+
+function plane = localAbsolutePowerReferencePlane(servingRxPower_dBm, pathloss_dB, basePathloss_dB)
+if isfinite(servingRxPower_dBm) && (isfinite(pathloss_dB) || isfinite(basePathloss_dB))
+    plane = "receiver_input_equivalent_link_budget_before_adc";
+else
+    plane = "unavailable_normalized_waveform_without_absolute_pathloss_anchor";
+end
 end
 
 function [txPower_dBm, source] = localResolveReferenceTxPower(cfg, userMeta)

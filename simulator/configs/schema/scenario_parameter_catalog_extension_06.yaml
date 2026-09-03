@@ -193,6 +193,7 @@
       "period_offset": {"required": false, "type": "integer", "min": 0},
       "symbol_start": {"required": false, "type": "integer", "min": 0},
       "num_srs_symbols": {"required": false, "type": "integer", "min": 1},
+      "pucch_collision_policy": {"required": false, "type": "string", "allowed_values": ["preserve_due_pucch_defer_srs", "require_disjoint_symbols_for_first_measurement"]},
       "repetition_factor": {"required": false, "type": "integer", "min": 1},
       "comb_number": {"required": false, "type": "integer", "min": 2},
       "comb_offset": {"required": false, "type": "integer", "min": 0},
@@ -228,6 +229,7 @@
       "ptrs_ul_density": {"required": false, "type": "string"},
       "ptrs_min_mcs_threshold": {"required": false, "type": "integer", "min": 0},
       "csi_report_periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "csi_report_offset_slots": {"required": false, "type": "integer", "min": 0},
       "csi_reporting_delay_slots": {"required": false, "type": "integer", "min": 0},
       "cqi_table": {"required": false, "type": "string"},
       "receiver_type": {"required": false, "type": "string"}
@@ -408,6 +410,7 @@
       "ul_csi_mode": {"required": false, "type": "string"},
       "csi_report_type": {"required": false, "type": "string"},
       "csi_report_periodicity_slots": {"required": false, "type": "integer", "min": 1},
+      "csi_report_offset_slots": {"required": false, "type": "integer", "min": 0},
       "csi_reporting_delay_slots": {"required": false, "type": "integer", "min": 0},
       "pmilayour": {"required": false, "type": "string"},
       "max_feedback_overhead_pct": {"required": false, "type": "number", "min": 0},
@@ -481,7 +484,11 @@
       "channel_nmse_threshold_db": {"required": false, "type": "number"},
       "low_snr_sweep_db": {"required": false, "type": "number_list"},
       "timing_offset_sweep_samples": {"required": false, "type": "number_list"},
-      "frequency_offset_sweep_hz": {"required": false, "type": "number_list"}
+      "frequency_offset_sweep_hz": {"required": false, "type": "number_list"},
+      "pusch_collision_policy": {"required": false, "type": "string", "allowed_values": ["preserve_pusch_defer_srs", "prioritize_srs_until_first_valid_measurement"]},
+      "pucch_collision_policy": {"required": false, "type": "string", "allowed_values": ["preserve_due_pucch_defer_srs", "require_disjoint_symbols_for_first_measurement"]},
+      "symbol_start": {"required": false, "type": "integer", "min": 0},
+      "num_srs_symbols": {"required": false, "type": "integer", "min": 1}
     }},
     "csirs_precoder_codebook": {"parameters": {
       "enabled": {"required": true, "type": "boolean"},

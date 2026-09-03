@@ -12,6 +12,10 @@ end
 
 cfg = struct();
 cfg.run.seed = 707;
+% This standalone fixture exercises only persistent channel state.  It
+% must nevertheless declare the same unambiguous duplex authority required
+% by production channel materialization.
+cfg.frequency.duplex_mode = "FDD";
 cfg.channel.model = "TDL";
 cfg.channel.tdlProfile = "TDL-C";
 cfg.channel.delaySpread_s = 30e-9;

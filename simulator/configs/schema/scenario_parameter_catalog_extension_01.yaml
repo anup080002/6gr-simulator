@@ -315,6 +315,8 @@
     "power_and_rf_frontend": {"required": true, "parameters": {
       "bs_tx_power_dbm": {"required": true, "type": "number"},
       "ue_tx_power_dbm": {"required": true, "type": "number"},
+      "downlink_power_normalization_policy": {"required": false, "type": "string", "allowed_values": ["active_ofdm_total_power", "fixed_epre_over_configured_bwp"]},
+      "uplink_power_normalization_policy": {"required": false, "type": "string", "allowed_values": ["active_ofdm_total_power"]},
       "ue_noise_figure_db": {"required": false, "type": "number", "min": 0},
       "power_backoff_db": {"required": true, "type": "number", "min": 0},
       "pa_model": {"required": true, "type": "string"},
@@ -416,6 +418,7 @@
       "configuration_epoch": {"required": false, "type": "integer", "min": 0},
       "resource_sets": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_resource_set_object"},
       "resources": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_resource_object"},
+      "multi_user_assignment": {"required": false, "type": "struct", "nested_rule": "pucch_multi_user_assignment_object"},
       "dl_data_to_ul_ack": {"required": false, "type": "number_list"},
       "sr_resource_ids": {"required": false, "type": "number_list"},
       "csi_resource_ids": {"required": false, "type": "number_list"},
@@ -454,6 +457,7 @@
       "require_runtime_stage_waveforms": {"required": false, "type": "boolean"},
       "allow_runtime_stage_waveform_composition": {"required": false, "type": "boolean"},
       "preamble_collision_test_enabled": {"required": false, "type": "boolean"},
+      "four_step_negative_test_enabled": {"required": false, "type": "boolean"},
       "false_alarm_test_enabled": {"required": false, "type": "boolean"},
       "missed_detection_test_enabled": {"required": false, "type": "boolean"}
     }},
@@ -600,7 +604,14 @@
     "pucch_overlap_policy_object": {"parameters": {
       "detect_pucch_pusch_overlap": {"required": false, "type": "boolean"},
       "uci_on_pusch_enabled": {"required": false, "type": "boolean"},
+      "reserve_configured_pucch_prbs_from_pusch": {"required": false, "type": "boolean"},
       "unsupported_overlap_policy": {"required": false, "type": "string"}
+    }},
+    "pucch_multi_user_assignment_object": {"parameters": {
+      "mode": {"required": true, "type": "string", "allowed_values": ["rnti_modulo_resource_set", "ue_ordinal_modulo_resource_set"]},
+      "resource_set_id": {"required": true, "type": "integer", "min": 0},
+      "max_simultaneous_ues": {"required": false, "type": "integer", "min": 1},
+      "require_unique_simultaneous_ues": {"required": true, "type": "boolean"}
     }},
     "decoder_output_capture_direction_object": {"parameters": {
       "require_dlsch_decoder_output": {"required": false, "type": "boolean"},

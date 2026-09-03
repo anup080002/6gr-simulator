@@ -222,7 +222,14 @@ c.channel.seed=double(masterSeed)+index*1000+17;
 c.receiver.channelEstimation='practical';
 c.receiver.postEqualizationSINR.dmrsResidualBoundEnabled=false;
 c.receiver.postEqualizationSINR.decisionDirectedResidualBoundEnabled=false;
-c.receiver.decoderNoiseVariance.mode='post_equalization';
+if strcmpi(char(string(row.Link)), 'UL')
+    c.receiver.decoderNoiseVariance.mode='pre_equalization';
+else
+    % The canonical PDSCH receiver uses per-equalized-symbol variance in
+    % its resource-selective soft demapper rather than nrPDSCHDecode's
+    % scalar-noise plus CSI convention.
+    c.receiver.decoderNoiseVariance.mode='post_equalization';
+end
 c.provenance.requireCleanWorktree=false;
 c.provenance.requireStableSourceThroughoutRun=false;
 c.results.generatePlots=true;

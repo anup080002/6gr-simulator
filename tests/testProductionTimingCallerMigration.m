@@ -3,6 +3,16 @@ function ok = testProductionTimingCallerMigration()
 
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 cfg = withCanonicalSchedulerTiming(sixgr.config.defaultConfig());
+% This baseline exercises timing migration with the configured basic DCI
+% 1_0 search space.  Make the spatial operating point explicit instead of
+% inheriting defaultConfig's rank-four study preference, which correctly
+% requires DCI 1_1 in production.
+cfg.phy.pdsch.numLayers = 1;
+cfg.phy.pdsch.nLayers = 1;
+cfg.phy.pdsch.numPorts = 1;
+cfg.phy.pdsch.nPorts = 1;
+cfg.phy.pdsch.dmrs.portSet = 0;
+cfg.phy.pdsch.dmrs.DMRSPortSet = 0;
 
 dlGrant = localGrant("DL");
 dl = sixgr.phy.frame.TimingRelationEngine. ...
@@ -75,6 +85,7 @@ advancedUL.phy.pusch.nPorts = 2;
 advancedUL.phy.pusch.dmrs.portSet = [0 1];
 advancedUL.phy.pusch.dmrs.DMRSPortSet = [0 1];
 advancedUL.phy.pusch.transformPrecoding = false;
+advancedUL.phy.pdcch.dciFormats = ["1_0", "0_1"];
 advancedULGrant = sixgr.link.resolveWaveformGrant(advancedUL, "UL", 0);
 assert(advancedULGrant.K2 == 1 && ...
     advancedULGrant.DCI.Format == "DCI_0_1" && ...

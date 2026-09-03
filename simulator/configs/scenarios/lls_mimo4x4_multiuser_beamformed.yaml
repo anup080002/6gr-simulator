@@ -11,17 +11,90 @@
     "link_direction": "both",
     "snr_db": 42
   },
+  "link_adaptation": {
+    "mu_mimo_first_data_bootstrap_enabled": true,
+    "mu_mimo_first_data_bootstrap_policy": "yaml_mcs_until_first_data_feedback",
+    "dl_mu_mimo_first_data_mcs_index": 1,
+    "ul_mu_mimo_first_data_mcs_index": 1,
+    "ul_srs_to_pusch_layer_sinr_policy": "minimum_layer_mean_post_equalization",
+    "ul_srs_to_pusch_sinr_backoff_db": 0
+  },
+  "receiver_algorithms": {
+    "equalizer": "IRC",
+    "ul_single_user_equalizer": "MMSE",
+    "ul_mu_mimo_equalizer": "IRC",
+    "interference_cancellation": "IRC"
+  },
+  "equalization": {
+    "irc_covariance_estimation": "per_prb_symbol_contribution_sample_covariance",
+    "irc_covariance_frequency_window_prbs": 1,
+    "irc_covariance_time_window_symbols": 1,
+    "irc_covariance_shrinkage_factor": 0.05,
+    "irc_covariance_minimum_samples": 4,
+    "per_prb_equalization": true,
+    "per_symbol_equalization": true
+  },
+  "interference": {
+    "inter_cell_interference_flag": false,
+    "intra_cell_interference_flag": true,
+    "mu_mimo_interference_flag": true,
+    "inter_cell_execution_mode": "none",
+    "intra_cell_execution_mode": "shared_slot_waveform_superposition"
+  },
   "scenario": {
     "runner_profile": "waveform_bundle",
     "target_cases": ["dl", "ul", "pdsch", "pusch"],
     "bundle_anchor_cases": ["dl_pdsch_throughput", "ul_pusch_throughput"],
     "notes": "Config-driven multi-user beamformed 4x4 waveform LLS."
   },
+  "control": {
+    "dci_formats": ["1_1", "0_1"]
+  },
   "antenna_and_array": {
     "bs_num_txrus": 4,
     "bs_num_rxrus": 4,
     "ue_num_txrus": 4,
     "ue_num_rxrus": 4
+  },
+  "rf_frontend": {
+    "configuration_epoch": 1,
+    "ul_power_control": {
+      "enabled": true,
+      "open_loop_enabled": true,
+      "closed_loop_enabled": false,
+      "phr_report_enabled": true,
+      "require_measured_reference_rs": false,
+      "max_pathloss_measurement_age_slots": 20,
+      "configured_snr_pathloss_forbidden": true,
+      "tpc_source": "decoded_control_event",
+      "tpc_mode": "accumulation",
+      "state_epoch_required": true,
+      "pusch": {
+        "p0_dbm": -80,
+        "p0_ue_db": 0,
+        "alpha": 0.8,
+        "delta_tf_db": 0,
+        "pcmax_dbm": 23
+      },
+      "pucch": {
+        "p0_dbm": -80,
+        "alpha": 0.8,
+        "delta_tf_db": 0,
+        "pcmax_dbm": 23
+      },
+      "srs": {
+        "p0_dbm": -80,
+        "alpha": 0.8,
+        "delta_tf_db": 0,
+        "pcmax_dbm": 23
+      },
+      "prach": {
+        "p0_dbm": -100,
+        "alpha": 1.0,
+        "delta_tf_db": 0,
+        "pcmax_dbm": 23
+      }
+    }
   },
   "mimo": {
     "n_tx_ant": 4,
@@ -32,13 +105,82 @@
     "reciprocity_mode": "TDD",
     "mu_mimo_enable": true,
     "ul_mu_mimo_enable": true,
-    "beam_sweep_enabled": true,
+    "mu_mimo_spatial_signature_mode": "dominant_scheduled_rank",
+    "ul_mu_mimo_receive_processing_mode": "full_dimensional_per_re_irc",
+    "beam_sweep_enabled": false,
     "beam_count": 8,
     "mtrp_ready": false,
     "multi_panel_ready": false,
-    "panel_count": 1
+    "panel_count": 1,
+    "phase07_strict": {
+      "enabled": false,
+      "profile_id": "fr1_typeI_single_panel_strict",
+      "specification_profile": "3GPP_R18_MIMO_CSI_V1",
+      "direction": "DL",
+      "codebook_type": "typeI-SinglePanel",
+      "ports": 4,
+      "panels": 1,
+      "n1": 2,
+      "n2": 1,
+      "o1": 4,
+      "o2": 1,
+      "max_rank": 2,
+      "rank_domain": [1, 2],
+      "receiver": "MMSE",
+      "precoder_prg_size_rbs": 106,
+      "require_active_tci_state": false,
+      "measurement_max_age_slots": 8,
+      "covariance": {
+        "min_samples": 16,
+        "max_age_slots": 8,
+        "shrinkage_factor": 0.05,
+        "condition_number_limit": 1000000000000
+      },
+      "csi_report": {
+        "report_config_id": "csi-report-mu4t4r-0",
+        "epoch": 0,
+        "codebook_mode": 1,
+        "report_quantity": "cri-RI-PMI-CQI",
+        "num_csi_resources": 1,
+        "frequency_granularity": "wideband",
+        "uci_channel": "PUCCH",
+        "num_subbands": 1,
+        "number_of_beams": 1,
+        "phase_alphabet_size": 4
+      },
+      "ul_srs_authority": {
+        "enabled": true,
+        "max_age_slots": 8,
+        "configured_override_forbidden": true
+      }
+    }
+  },
+  "csi_acquisition_and_reporting": {
+    "report_configuration": {
+      "report_config_id": "csi-report-mu4t4r-0",
+      "epoch": 0,
+      "codebook_mode": 1,
+      "report_quantity": "cri-RI-PMI-CQI",
+      "frequency_granularity": "wideband",
+      "uci_channel": "PUCCH",
+      "n1": 2,
+      "n2": 1,
+      "o1": 4,
+      "o2": 1,
+      "panels": 1,
+      "num_subbands": 1,
+      "number_of_beams": 1,
+      "phase_alphabet_size": 4
+    }
   },
   "reference_signals": {
+    "ssb_enabled": false,
+    "pbch_enabled": false,
+    "csi_reporting_enabled": true,
+    "cqi_reporting_enabled": true,
+    "pmi_reporting_enabled": true,
+    "ri_reporting_enabled": true,
+    "cri_reporting_enabled": true,
     "pdsch_dmrs_ports": 4,
     "pusch_dmrs_ports": 4,
     "pdsch_dmrs": {
@@ -57,7 +199,11 @@
     },
     "srs": {
       "num_ports": 4,
-      "port_set": [0, 1, 2, 3]
+      "port_set": [0, 1, 2, 3],
+      "pusch_collision_policy": "prioritize_srs_until_first_valid_measurement",
+      "pucch_collision_policy": "require_disjoint_symbols_for_first_measurement",
+      "symbol_start": 11,
+      "num_srs_symbols": 1
     },
     "csi_rs_num_resources": 1,
     "csi_rs_resource_set_id": 0,
@@ -89,7 +235,7 @@
     "validation_snr_db": 34,
     "validation_seed": 1501,
     "ssb": {
-      "enabled": true,
+      "enabled": false,
       "case": "Case C",
       "scs_khz": 30,
       "lmax": 8,
@@ -104,7 +250,7 @@
       "observation_subframes": 5
     },
     "mib": {
-      "enabled": true,
+      "enabled": false,
       "pdcch_config_sib1": 0,
       "dmrs_type_a_position": 2
     },
@@ -145,6 +291,10 @@
       "eredcap_access": false
     }
   },
+  "random_access": {
+    "enabled": false,
+    "msg3_enabled": false
+  },
   "modulation": {
     "dl_modulation_order": 4,
     "ul_modulation_order": 4,
@@ -182,6 +332,7 @@
     "num_symbols": 12
   },
   "pusch": {
+    "execution_profile": "scheduler_truth",
     "layer_count": 2,
     "num_layers": 2,
     "num_antenna_ports": 4,
@@ -196,12 +347,15 @@
   },
   "pdcch": {
     "start_symbol": 0,
-    "num_symbols": 2
+    "num_symbols": 2,
+    "coreset_duration_symbols": 2
   },
   "control_gating": {
     "pbch_required": false,
     "prach_required": false,
     "pdcch_required": false,
+    "pucch_required": false,
+    "pusch_uci_required": true,
     "srs_required": false,
     "trs_required": false
   },
@@ -209,16 +363,28 @@
     "enabled": true,
     "profile": "nr_rel18_pucch_strict",
     "configuration_epoch": 1,
+    "overlap_policy": {
+      "detect_pucch_pusch_overlap": true,
+      "uci_on_pusch_enabled": true,
+      "reserve_configured_pucch_prbs_from_pusch": true,
+      "unsupported_overlap_policy": "reject_before_waveform"
+    },
+    "multi_user_assignment": {
+      "mode": "rnti_modulo_resource_set",
+      "resource_set_id": 0,
+      "max_simultaneous_ues": 2,
+      "require_unique_simultaneous_ues": true
+    },
     "resource_sets": [
       {
         "id": 0,
         "max_payload_bits": 2,
-        "resource_ids": [0]
+        "resource_ids": [0, 1]
       },
       {
         "id": 1,
         "max_payload_bits": 1706,
-        "resource_ids": [10]
+        "resource_ids": [10, 11]
       }
     ],
     "resources": [
@@ -244,6 +410,40 @@
         "format": 2,
         "starting_prb": 4,
         "nrof_prbs": 2,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 2,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      },
+      {
+        "id": 11,
+        "format": 2,
+        "starting_prb": 6,
+        "nrof_prbs": 2,
+        "starting_symbol": 12,
+        "nrof_symbols": 2,
+        "intra_slot_hopping": false,
+        "second_hop_start_prb": null,
+        "initial_cyclic_shift": 0,
+        "occ_length": 2,
+        "occ_index": 0,
+        "additional_dmrs": false,
+        "pi2_bpsk": false,
+        "nid": 1,
+        "hopping_id": 1
+      },
+      {
+        "id": 1,
+        "format": 0,
+        "starting_prb": 1,
+        "nrof_prbs": 1,
         "starting_symbol": 12,
         "nrof_symbols": 2,
         "intra_slot_hopping": false,
@@ -319,7 +519,7 @@
     "n_users": 2,
     "rnti_start": 101,
     "seed_stride": 37,
-    "execution_model": "independent_link_sweep",
+    "execution_model": "slot_coupled_truth",
     "beam_selection_strategy": "fixed_first_beam",
     "save_user_tables": true
   },

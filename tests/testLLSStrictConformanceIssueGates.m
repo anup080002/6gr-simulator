@@ -30,7 +30,8 @@ localWriteEvidence(layout2, true);
 verdict2 = sixgr.truth.evaluateLLSRuntimeTruthContract(fullfile(tmp, "objective_gate"), scfg, cfg);
 assert(~logical(verdict2.Ok), "Fixed operating-point collapse must fail strict scenario objective gating.");
 assert(any(contains(string(verdict2.Failures), "configured_effective_match_rate_below_required")), ...
-    "Fixed-point mismatch failures must name the configured/effective match gate.");
+    "Fixed-point mismatch failures must name the configured/effective match gate. Observed failures: " + ...
+    strjoin(string(verdict2.Failures), " | "));
 summaryT2 = readtable(fullfile(layout2.ReportCSVDir, "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
 assert(~logical(summaryT2.ScenarioObjectiveOk(1)), ...
     "Truth-contract summary must expose ScenarioObjectiveOk=false for fixed-point collapse.");
@@ -46,6 +47,7 @@ scfg = sixgr.util.structSet(scfg, "scenario.honesty_mode", "strict");
 scfg = sixgr.util.structSet(scfg, "users.execution_model", "slot_coupled_truth");
 scfg = sixgr.util.structSet(scfg, "users.n_users", 1);
 scfg = sixgr.util.structSet(scfg, "simulation.link_direction", "both");
+scfg = sixgr.util.structSet(scfg, "frequency.duplex_mode", "FDD");
 scfg = sixgr.util.structSet(scfg, "mimo.n_layers", 2);
 scfg = sixgr.util.structSet(scfg, "modulation.dl_mcs_index", 20);
 scfg = sixgr.util.structSet(scfg, "modulation.ul_mcs_index", 20);

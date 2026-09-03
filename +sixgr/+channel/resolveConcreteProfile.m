@@ -45,6 +45,25 @@ if model == "CDL" && numel(cdl) == 1
     profile = cdl(1);
     return;
 end
+% TR 38.901 and ray-tracing describe the large-scale/spatial propagation
+% authority, not an executable tapped-delay profile for the waveform
+% receiver.  A waveform run may therefore combine either token with one
+% explicitly configured concrete TDL/CDL small-scale profile.  Resolve that
+% composition here so every caller hands the receiver the same executable
+% profile; never invent a profile when the configuration omitted it.
+if any(model == ["TR38901", "RAYTRACING"])
+    if numel(tdl) == 1 && isempty(cdl)
+        profile = tdl(1);
+        return;
+    end
+    if numel(cdl) == 1 && isempty(tdl)
+        profile = cdl(1);
+        return;
+    end
+    error("sixgr:config:BadChannelProfile", ...
+        "channel.model='%s' requires exactly one explicitly configured concrete TDL-*/CDL-* waveform profile.", ...
+        char(model));
+end
 if strlength(model) == 0 && numel(tdl) == 1 && isempty(cdl)
     profile = tdl(1);
     return;

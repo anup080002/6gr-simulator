@@ -277,7 +277,9 @@ receiver:
     dmrsResidualBoundEnabled: true
     decisionDirectedResidualBoundEnabled: true
   decoderNoiseVariance:
-    mode: post_equalization
+    # nrPUSCHDecode consumes the pre-equalization channel-estimator noise
+    # variance; MMSE equalizer CSI is then applied exactly once to LLRs.
+    mode: pre_equalization
 
 provenance:
   requireGitCommit: true

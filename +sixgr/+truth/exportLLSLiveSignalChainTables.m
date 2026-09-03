@@ -228,6 +228,7 @@ if ~(istable(T) && ~isempty(T))
     return;
 end
 scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
+T = sixgr.truth.normalizeDisabledInterferenceIdentity(T, string(scopeToken));
 names = string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
@@ -257,6 +258,14 @@ end
 function mask = localCompanionAvailabilityMask(T, fieldName)
 nRows = height(T);
 mask = false(nRows, 1);
+if strcmpi(fieldName, "InterferencePowerSource")
+    names = string(T.Properties.VariableNames);
+    powerName = names(strcmpi(names, "InterferenceAggregatedRxPower_dBm"));
+    if ~isempty(powerName)
+        mask = localColumnAvailabilityMask(T.(char(powerName(1))));
+    end
+    return;
+end
 base = regexprep(lower(char(string(fieldName))), "(source|valuerole|valuestatus|nareason|definition)$", "");
 if strlength(string(base)) == 0
     return;

@@ -43,13 +43,26 @@ if isstruct(raTables) && ~isempty(fieldnames(raTables))
     names = string(fieldnames(raTables));
     count = 0;
     for i = 1:numel(names)
-        value = raTables.(char(names(i)));
+        name = names(i);
+        value = raTables.(char(name));
         if ~istable(value)
             continue;
         end
-        sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, names(i) + ".csv"), value);
+        % Older completed Result MAT files can contain a zero-column table
+        % for an optional campaign that was disabled.  Restoring that
+        % object verbatim destroys the producer-owned CSV schema and leaves
+        % a two-byte file.  A typed zero-row table is schema metadata, not a
+        % fabricated observation, so normalize only these two optional
+        % interfaces before publishing the immutable completed-run result.
+        if ismember(name, ["ra_negative_trials", "ra_collision_trials"]) && ...
+                height(value) == 0 && width(value) == 0
+            value = sixgr.phy.ra.emptyOptionalEvidenceTable(name);
+        end
+        sixgr.util.csvWriteTable( ...
+            fullfile(layout.ControlCSVDir, name + ".csv"), value, ...
+            "PreserveSchema", height(value) == 0);
         count = count + 1;
-        if names(i) == "msg4_contention_resolution"
+        if name == "msg4_contention_resolution"
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "msg4_trials.csv"), value);
             count = count + 1;
         end

@@ -196,8 +196,8 @@ canonical_control:
     max_simultaneous_ue_dl: 2
     max_simultaneous_ue_ul: 2
     precoder_type: wideband
-    codebook_type: type2
-    beam_codebook_type: type2_mu_mimo
+    codebook_type: type1
+    beam_codebook_type: type1_su_mimo
     beam_sweep_enabled: true
     beam_count: 8
     panel_count: 2
@@ -218,23 +218,31 @@ canonical_control:
     mu_mimo_hybrid_rf_design_policy: fixed_configured_matrix
     mu_mimo_spatial_signature_mode: complete_detectable_subspace
     ul_mu_mimo_receive_processing_mode: full_dimensional_per_re_irc
-    mu_mimo_spatial_subspace_noise_margin_db: 6
+    # Retain every peer spatial mode whose measured singular value exceeds
+    # the complex-noise spectral-norm bound.  A positive margin raises that
+    # bound and previously discarded real weak CDL modes that later produced
+    # -6 to -8 dB peer leakage on the exact reciprocal FIR.  Zero dB is the
+    # conservative admission setting: more measured peer modes are nulled,
+    # and a pair is rejected if the remaining RF-domain nullspace is too
+    # small.
+    mu_mimo_spatial_subspace_noise_margin_db: 0
     mu_mimo_phase_only_projection_max_iterations: 500
     mu_mimo_phase_only_projection_tolerance: 1.0e-6
     phase07_strict:
       enabled: true
-      # Four logical CSI ports use the supported single-panel Type-I
-      # N1=2,N2=1 tuple. The 64-element, two-physical-panel hybrid expansion
-      # is applied below this logical NR codebook boundary.
+      # The runtime precoder uses the independently frozen two-port Type-I
+      # rank-2 codebook. The 64-element, two-physical-panel hybrid expansion
+      # is applied below this logical NR port boundary; physical elements are
+      # not mislabeled as CSI-RS/PDSCH antenna ports.
       profile_id: fr1_typeI_single_panel_strict
       specification_profile: 3GPP_R18_MIMO_CSI_V1
       direction: DL
       codebook_type: typeI-SinglePanel
-      ports: 4
+      ports: 2
       panels: 1
-      n1: 2
+      n1: 1
       n2: 1
-      o1: 4
+      o1: 1
       o2: 1
       max_rank: 2
       rank_domain: [1, 2]
@@ -309,21 +317,19 @@ canonical_control:
     cri_reporting_enabled: true
     pdsch_dmrs_ports: 2
     pusch_dmrs_ports: 2
-    # Eight beamformed NZP CSI-RS resources are measured through a four-port
-    # Type-I codebook.  Four logical CSI-RS ports expose the UE's complete
-    # four-branch measurement space; this remains intentionally separate from
-    # the two scheduled PDSCH layers and the 64 radiating elements used by the
-    # element-domain hybrid array.
-    csi_rs_ports: 4
+    # Eight beamformed NZP CSI-RS resources are measured through the same
+    # independently frozen two-port Type-I interface used by rank-2 PDSCH.
+    # The UE still observes those ports on four physical receive branches and
+    # the gNB expands each port over its 64 radiating elements.
+    csi_rs_ports: 2
     csi_rs_num_resources: 8
     csi_rs_resource_set_id: 0
     csi_rs_resource_ids: [0, 1, 2, 3, 4, 5, 6, 7]
-    # A four-port row-4 resource occupies four adjacent subcarriers per PRB.
-    # Therefore eight NZP resources require three symbols with disjoint
-    # k0={0,4,8} placements; k0={0,3,6,9} would overlap and k0=9 is invalid.
+    # A two-port row-3 resource uses fd-CDM2. Eight resources are distributed
+    # across three symbols with disjoint k0={0,4,8} placements.
     # Each resource spans the complete 273-PRB BWP. Placement remains an
     # explicit operator input and is never inferred from resource ordinal.
-    csi_rs_resource_row_numbers: [4, 4, 4, 4, 4, 4, 4, 4]
+    csi_rs_resource_row_numbers: [3, 3, 3, 3, 3, 3, 3, 3]
     csi_rs_resource_symbol_locations: [9, 9, 9, 10, 10, 10, 11, 11]
     csi_rs_resource_subcarrier_locations: [0, 4, 8, 0, 4, 8, 0, 4]
     csi_rs_resource_rb_offsets: [0, 0, 0, 0, 0, 0, 0, 0]
@@ -332,14 +338,12 @@ canonical_control:
       enabled: true
       type: dft_ura
       physical_element_count: 64
-      # Rows identify CSI-RS resources; columns identify the four logical CSI
-      # ports. Every row selects four distinct orthogonal DFT vectors on the
-      # configured 4x4 spatial grid. The builder replicates them over
-      # panels/polarizations while retaining an orthonormal 64x4 precoder.
+      # Rows identify CSI-RS resources; columns identify the two logical CSI
+      # ports. Each row selects two distinct orthogonal DFT vectors on the
+      # configured spatial grid. The builder expands them over the physical
+      # panels/polarizations while retaining an orthonormal 64x2 precoder.
       beam_indices_port_0: [0, 2, 4, 6, 8, 10, 12, 14]
       beam_indices_port_1: [1, 3, 5, 7, 9, 11, 13, 15]
-      beam_indices_port_2: [4, 6, 8, 10, 12, 14, 0, 2]
-      beam_indices_port_3: [5, 7, 9, 11, 13, 15, 1, 3]
     srs_ports: 4
     trs_ports: 1
     srs_max_ues_per_slot: 4
@@ -503,7 +507,7 @@ canonical_control:
     pmi_policy: adaptive
     ri_policy: adaptive
     cri_policy: adaptive
-    pmi_codebook_mode: type2_mu_mimo
+    pmi_codebook_mode: type1_su_mimo
   energy:
     enabled: true
     tx_power_dbm: 46
@@ -632,7 +636,7 @@ analytics:
 csi_acquisition_and_reporting:
   # This is the production buildInternalConfig authority consumed by
   # SchedulerPF and the waveform precoder path.
-  pmi_codebook_mode: type2_mu_mimo
+  pmi_codebook_mode: type1_su_mimo
   joint_dl_ul_csi_enabled: true
   joint_port_mapping_policy: explicit_joint_port_map
   joint_timeline_policy: scheduler_defined_joint_timeline
@@ -644,6 +648,18 @@ pucch_resources:
   # symbol 13 for UL. Resource 0 is therefore a one-symbol Format-0
   # HARQ-ACK resource; the remaining resources retain the master catalog
   # allocations for full-UL-slot SR/CSI operation.
+  resource_sets:
+  - id: 0
+    max_payload_bits: 2
+    resource_ids: [0, 1, 2, 3]
+  - id: 1
+    max_payload_bits: 1706
+    resource_ids: [10, 11, 12]
+  multi_user_assignment:
+    mode: rnti_modulo_resource_set
+    resource_set_id: 0
+    max_simultaneous_ues: 2
+    require_unique_simultaneous_ues: true
   resources:
   - id: 0
     format: 0
@@ -661,14 +677,44 @@ pucch_resources:
     nid: 1
     hopping_id: 1
   - id: 1
-    format: 1
+    format: 0
     starting_prb: 1
     nrof_prbs: 1
-    starting_symbol: 10
-    nrof_symbols: 4
+    starting_symbol: 13
+    nrof_symbols: 1
     intra_slot_hopping: false
     second_hop_start_prb: null
-    initial_cyclic_shift: 3
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 2
+    format: 0
+    starting_prb: 2
+    nrof_prbs: 1
+    starting_symbol: 13
+    nrof_symbols: 1
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
+    occ_length: 1
+    occ_index: 0
+    additional_dmrs: false
+    pi2_bpsk: false
+    nid: 1
+    hopping_id: 1
+  - id: 3
+    format: 0
+    starting_prb: 3
+    nrof_prbs: 1
+    starting_symbol: 13
+    nrof_symbols: 1
+    intra_slot_hopping: false
+    second_hop_start_prb: null
+    initial_cyclic_shift: 0
     occ_length: 1
     occ_index: 0
     additional_dmrs: false
@@ -684,7 +730,7 @@ pucch_resources:
     intra_slot_hopping: false
     second_hop_start_prb: null
     initial_cyclic_shift: 0
-    occ_length: 1
+    occ_length: 2
     occ_index: 0
     additional_dmrs: false
     pi2_bpsk: false
@@ -772,7 +818,7 @@ pdsch:
   rank: 2
   num_antenna_ports: 2
   transmission_scheme: codebook
-  codebook_type: type2
+  codebook_type: type1
   pmi: 0
   modulation: 256QAM
   xoh_pdsch: 18
@@ -803,6 +849,15 @@ pusch:
 # buildInternalConfig consumes this resolved section after inheritance; keep
 # it explicit so the SINR master cannot silently leave PT-RS disabled.
 reference_signals:
+  srs:
+    # UL MU-MIMO requires a causal SRS spatial measurement.  If the first
+    # configured SRS occasion collides with an already queued PUSCH, the
+    # exact scheduler cancels only that not-yet-executed PUSCH so the first
+    # measurement can be obtained; later collisions preserve data.
+      pusch_collision_policy: prioritize_srs_until_first_valid_measurement
+      pucch_collision_policy: require_disjoint_symbols_for_first_measurement
+      symbol_start: 9
+      num_srs_symbols: 1
   ptrs_enabled: true
   ptrs_port_association_policy: first_scheduled_dmrs_port
   ptrs_time_density: 2

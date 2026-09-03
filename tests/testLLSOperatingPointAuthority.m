@@ -21,6 +21,11 @@ cfg.phy.pdsch.dmrs.typeAPosition = 3;
 cfg.phy.pusch.dmrs.DMRSTypeAPosition = 3;
 cfg.phy.pusch.dmrs.typeAPosition = 3;
 cfg.phy.dmrs.typeAPosition = 3;
+% This focused fixture validates operating-point lineage only.  Do not
+% inherit an enabled TRS service without its YAML-owned slot occasions:
+% production resource accounting must remain fail-closed in that case.
+cfg.phy.trs.enable = false;
+cfg.phy.trackingRS.enable = false;
 
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfg, fullfile(tmp, "runtime"), multiUser, struct(), 1);
@@ -101,6 +106,13 @@ lineageGrant.CQIUsed = 7;
 lineageGrant.RawCQIDerivedMCS = 11;
 lineageGrant.CQIProvenance = "runtime_reported_cqi";
 lineageGrant.MCSSelectionSource = "runtime_link_adaptation_decision";
+lineageGrant.LinkAdaptationFeedbackApplied = true;
+lineageGrant.LinkAdaptationAppliedFeedbackSourceSlot = 0;
+lineageGrant.LinkAdaptationAppliedFeedbackDeliveredSlot = 1;
+lineageGrant.LinkAdaptationAppliedFeedbackAgeSlots = 1;
+lineageGrant.AppliedLinkAdaptationResolvedCQI = 7;
+lineageGrant.AppliedLinkAdaptationCQIBasedMCS = 11;
+lineageGrant.AppliedLinkAdaptationMCS = 10;
 lineageGrant.GrantReason = "authoritative_scheduler_cqi_lineage";
 lineageGrant = localFinalizeSchedulerTruthGrant(cfgDL, lineageGrant, "DL", 24);
 dlLineageCQI = sixgr.link.runDLPDSCHThroughput(cfgDL, ...
@@ -210,7 +222,9 @@ end
 function localAssertSchedulerCQILineagePrecedesReceiverDiagnostics(T)
 assert(istable(T) && height(T) == 1, ...
     "Expected a single DL row for scheduler-CQI lineage validation.");
-requiredVars = {'WidebandCQI','CQISource','CQIDerivedMCS','MCS','MCSAuthority'};
+requiredVars = {'WidebandCQI','CQISource','CQIDerivedMCS','MCS','MCSAuthority', ...
+    'InnerLoopEnabled','InnerLoopApplied','LinkAdaptationApplied', ...
+    'AppliedLinkAdaptationResolvedCQI','AppliedLinkAdaptationCQIBasedMCS'};
 assert(all(ismember(requiredVars, T.Properties.VariableNames)), ...
     "Raw DL trial row must expose CQI lineage fields.");
 assert(double(T.WidebandCQI(1)) == 7 && double(T.CQIDerivedMCS(1)) == 11, ...
@@ -219,4 +233,10 @@ assert(contains(lower(string(T.CQISource(1))), "scheduler_grant"), ...
     "Scheduler-lineage CQISource must disclose scheduler grant authority.");
 assert(double(T.MCS(1)) == 10 && strcmpi(char(string(T.MCSAuthority(1))), "scheduler_grant"), ...
     "Applied DL MCS must remain the finalized scheduler grant while CQI lineage reports the grant-driving CQI.");
+assert(logical(T.InnerLoopEnabled(1)) && logical(T.InnerLoopApplied(1)) && ...
+    logical(T.LinkAdaptationApplied(1)) && ...
+    double(T.AppliedLinkAdaptationResolvedCQI(1)) == 7 && ...
+    double(T.AppliedLinkAdaptationCQIBasedMCS(1)) == 11, ...
+    ["A frozen scheduler grant driven by measured CQI must retain applied " + ...
+     "inner-loop lineage in the canonical waveform trial row."]);
 end

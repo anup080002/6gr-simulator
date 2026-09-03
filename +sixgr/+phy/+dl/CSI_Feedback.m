@@ -59,19 +59,44 @@ if ~isfinite(nVar) || nVar < 0
     nVar = 0;
 end
 
-[numRxAnt, numTxPorts] = size(Hwb);
+% Hwb can retain an explicit CSI-RS snapshot axis.  MATLAB's two-output
+% SIZE form folds all trailing dimensions into the second output, which
+% would misreport Nport*Nsnapshot as the transmit-port count.  Port and
+% receiver dimensions are always the first two axes of the canonical
+% measurement state.
+numRxAnt = size(Hwb, 1);
+numTxPorts = size(Hwb, 2);
 if isempty(Hwb)
     numRxAnt = 1;
     numTxPorts = 1;
 end
 
-maxRank = opt.MaxRank;
-if isempty(maxRank)
-    cfgMaxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", min(numRxAnt, numTxPorts)));
-    maxRank = max(1, min([cfgMaxRank, numRxAnt, numTxPorts]));
-else
-    maxRank = max(1, min([double(maxRank), numRxAnt, numTxPorts]));
+% RI is bounded by every active authority, not only by the measured matrix
+% dimensions.  In particular, a 4-port channel can have four detectable
+% singular modes while the configured CSI report and scheduled PDSCH are
+% permitted to describe at most rank two.  Selecting RI=4 and truncating it
+% later would make the receiver report internally inconsistent and can
+% create an unencodable Type-I payload.  Apply the common minimum here, at
+% the CSI producer, for both direct FDD CSI-RS and reciprocal TDD use.
+rankLimits = double([numRxAnt, numTxPorts]);
+if ~isempty(opt.MaxRank)
+    rankLimits(end + 1) = double(opt.MaxRank); %#ok<AGROW>
 end
+cfgMaxRank = double(sixgr.util.structGet(cfg, "phy.csi.maxRank", NaN));
+if isscalar(cfgMaxRank) && isfinite(cfgMaxRank)
+    rankLimits(end + 1) = cfgMaxRank; %#ok<AGROW>
+end
+reportMaxRank = double(sixgr.util.structGet( ...
+    opt.ReportConfiguration, "MaxRank", NaN));
+if isscalar(reportMaxRank) && isfinite(reportMaxRank)
+    rankLimits(end + 1) = reportMaxRank; %#ok<AGROW>
+end
+if any(~isfinite(rankLimits) | rankLimits < 1 | ...
+        rankLimits ~= round(rankLimits))
+    error("sixgr:phy:csi:InvalidRankAuthority", ...
+        "CSI rank authorities must be finite positive integers.");
+end
+maxRank = max(1, min(rankLimits));
 svdRank = localEstimateRIFromSVD(hEst, cfg, maxRank);
 
 csiMode = string(sixgr.util.structGet(cfg, "phy.csi.channelStateInformationMode", ...
@@ -81,6 +106,21 @@ codebookType = string(sixgr.util.structGet(cfg, "phy.csi.codebookType", localPMI
 
 best = localSelectBestWidebandPrecoder(Hwb, nVar, cfg, maxRank, codebookMode);
 criInfo = localSelectCRI(Hwb, nVar, cfg);
+
+measurement = opt.MeasurementState;
+hasMeasuredState = isa(measurement, "sixgr.phy.mimo.CSIMeasurementState");
+if hasMeasuredState
+    if sixgr.phy.mimo.MatrixContract.digest(hEst) ~= measurement.Digest
+        error("sixgr:mimo:MeasurementIdentityMismatch", ...
+            "CSI input channel differs from the immutable measured state.");
+    end
+    measuredNoise = double(measurement.NoiseVariance);
+    if ~(isscalar(measuredNoise) && isfinite(measuredNoise) && measuredNoise >= 0) || ...
+            abs(nVar - measuredNoise) > 1e-12 * max(1, abs(measuredNoise))
+        error("sixgr:mimo:MeasurementIdentityMismatch", ...
+            "CSI input noise variance differs from the immutable measured state.");
+    end
+end
 
 modelSinrLin = double(best.EffectiveSINR);
 if ~isfinite(modelSinrLin) || modelSinrLin < 0
@@ -96,7 +136,19 @@ end
     localMeasureReferenceSINR(hEst, nVar, opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols, cfg);
 [postEqSINR_dB, postEqSINRSource, postEqSINRRole, postEqSINRStatus, postEqSINRReason] = ...
     localResolveSchedulerEligiblePostEqSINR(opt);
-if isfinite(postEqSINR_dB)
+if hasMeasuredState && isfinite(modelSinr_dB)
+    % A CSI report must be self-consistent: RI, PMI and CQI are all
+    % selected from the same immutable CSI-RS channel/noise observation.
+    % Raw pilot-reconstruction SINR is a useful receiver diagnostic, but
+    % it is a pre-codebook quantity and cannot be substituted for the
+    % selected-layer receiver objective.  Likewise, PDSCH DM-RS SINR from
+    % an earlier data allocation must not override a current CSI-RS report.
+    sinr_dB = double(modelSinr_dB);
+    sinrSource = "measured_csi_state_receiver_objective";
+    sinrRole = "measured_post_equalization_scheduling_input";
+    sinrStatus = "OK";
+    sinrReason = "";
+elseif isfinite(postEqSINR_dB)
     sinr_dB = double(postEqSINR_dB);
     sinrSource = string(postEqSINRSource);
     sinrRole = string(postEqSINRRole);
@@ -328,7 +380,7 @@ Hwb = localWidebandChannelMatrix(hEst, cfg);
 if isempty(Hwb)
     return;
 end
-sv = svd(double(Hwb));
+sv = localSnapshotSingularValues(Hwb);
 sv = sv(isfinite(sv) & sv > 0);
 if isempty(sv)
     return;
@@ -510,7 +562,7 @@ end
 rankThreshold = double(sixgr.util.structGet(cfg, "phy.linkAdaptation.rankThreshold", ...
     sixgr.util.structGet(cfg, "phy.mimo.svRankThreshold", NaN)));
 if isfinite(rankThreshold) && rankThreshold > 0
-    sv = svd(double(Hwb));
+    sv = localSnapshotSingularValues(Hwb);
     sv = sv(isfinite(sv) & sv > 0);
     if numel(sv) < rankIdx || double(sv(rankIdx)) < double(rankThreshold) * max(double(sv(1)), eps)
         tf = false;
@@ -621,6 +673,21 @@ end
 function sinrs = localLayerMMSESINR(Hwb, W, nVar)
 H = double(Hwb);
 W = double(W);
+if ndims(H) == 3
+    snapshotCount = size(H, 3);
+    rankW = size(W, 2);
+    snapshotSINR = nan(snapshotCount, rankW);
+    for snapshot = 1:snapshotCount
+        snapshotSINR(snapshot, :) = localLayerMMSESINR( ...
+            H(:, :, snapshot), W, nVar);
+    end
+    % Preserve the mean mutual information of every layer across the
+    % measured CSI-RS snapshots.  Averaging complex channel matrices would
+    % cancel physically valid phase rotations and can collapse rank.
+    meanLayerMI = mean(log2(1 + max(snapshotSINR, 0)), 1, "omitnan");
+    sinrs = max(2 .^ meanLayerMI - 1, 0);
+    return;
+end
 HW = H * W;
 [nRx, rankW] = size(HW);
 nVarSafe = max(double(nVar), 1e-12 * (norm(H, 'fro')^2 / max(numel(H), 1) + eps));
@@ -635,7 +702,21 @@ end
 end
 
 function W = localDominantRightSingularVectors(Hwb, rankIdx)
-[~, ~, V] = svd(double(Hwb), "econ");
+H = double(Hwb);
+if ndims(H) == 3
+    covariance = complex(zeros(size(H, 2)));
+    for snapshot = 1:size(H, 3)
+        Hs = H(:, :, snapshot);
+        covariance = covariance + Hs' * Hs;
+    end
+    covariance = covariance ./ max(size(H, 3), 1);
+    covariance = (covariance + covariance') / 2;
+    [V, D] = eig(covariance, "vector");
+    [~, order] = sort(real(D), "descend");
+    V = V(:, order);
+else
+    [~, ~, V] = svd(H, "econ");
+end
 rankIdx = max(1, min(rankIdx, size(V, 2)));
 W = V(:, 1:rankIdx);
 W = localNormalizeColumns(W);
@@ -658,12 +739,21 @@ if nd >= 4
     end
     Hwb = squeeze(Havg);
 elseif nd == 3
-    try
-        Havg = mean(mean(Hest, 1, "omitnan"), 2, "omitnan");
-    catch
-        Havg = mean(mean(Hest, 1), 2);
+    [expectedRx, expectedTx] = localExpectedWidebandMatrixSize(cfg);
+    if size(Hest, 1) == expectedRx && size(Hest, 2) == expectedTx
+        % Immutable CSI-RS measurement-state convention:
+        % Nrx-by-Nport-by-Nsnapshot.  Preserve the snapshot axis so rank,
+        % PMI and layer SINR use the measured spatial channel rather than
+        % a phase-canceling complex mean.
+        Hwb = double(Hest);
+    else
+        try
+            Havg = mean(mean(Hest, 1, "omitnan"), 2, "omitnan");
+        catch
+            Havg = mean(mean(Hest, 1), 2);
+        end
+        Hwb = reshape(squeeze(Havg), [], 1);
     end
-    Hwb = reshape(squeeze(Havg), [], 1);
 elseif ismatrix(Hest)
     [expectedRx, expectedTx] = localExpectedWidebandMatrixSize(cfg);
     if size(Hest, 1) == expectedRx && size(Hest, 2) == expectedTx
@@ -680,8 +770,25 @@ end
 if isvector(Hwb)
     Hwb = reshape(Hwb, numel(Hwb), 1);
 end
-if ~ismatrix(Hwb)
+if ~(ismatrix(Hwb) || ndims(Hwb) == 3)
     Hwb = [];
+end
+end
+
+function singularValues = localSnapshotSingularValues(H)
+H = double(H);
+if ndims(H) == 3
+    covariance = complex(zeros(size(H, 2)));
+    for snapshot = 1:size(H, 3)
+        Hs = H(:, :, snapshot);
+        covariance = covariance + Hs' * Hs;
+    end
+    covariance = covariance ./ max(size(H, 3), 1);
+    covariance = (covariance + covariance') / 2;
+    eigenvalues = sort(real(eig(covariance)), "descend");
+    singularValues = sqrt(max(eigenvalues, 0));
+else
+    singularValues = svd(H);
 end
 end
 
@@ -1181,6 +1288,13 @@ end
 payload = sixgr.phy.dl.packCSIFeedbackPayload(core,runtime);
 csi = core;
 csi.SINR_dB = double(core.WidebandSINR_dB);
+reportedCQI = double(sixgr.util.structGet(core,"CQI",NaN));
+if isfinite(reportedCQI) && ~isfinite(csi.SINR_dB)
+    error("sixgr:phy:csi:IncoherentMeasuredReport", ...
+        char("A finite receiver-generated CQI requires the finite measured " + ...
+        "effective SINR produced by the same CSI report engine. " + ...
+        "Configured SNR and report-side substitution are not permitted."));
+end
 csi.NumRxAnt = double(size(Hwb,1));
 csi.NumTxPorts = double(size(Hwb,2));
 csi.ReportCQI = contains(lower(string(core.ChannelStateInformationMode)),"cqi");

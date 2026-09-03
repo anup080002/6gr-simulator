@@ -21,8 +21,12 @@ T = sixgr.util.structGet(rawTrials, tableField, table());
 if component == "pusch_uci" && istable(T) && ~isempty(T)
     % A PUSCH table also contains data-only transmissions. The strict UCI
     % component is limited to rows where the same receiver actually
-    % demultiplexed a configured UCI payload from that PUSCH waveform.
-    T = T(localLogicalColumn(T, "UCIOnPUSCHApplied", false(height(T), 1)), :);
+    % demultiplexed a configured HARQ-ACK payload from that PUSCH waveform.
+    % CSI-only UCI multiplexing and data-only rows are not HARQ-ACK attempts.
+    feedbackCount = localNumericColumn(T, ...
+        "UCIOnPUSCHFeedbackBitCount", nan(height(T), 1));
+    T = T(localLogicalColumn(T, "UCIOnPUSCHApplied", ...
+        false(height(T), 1)) & isfinite(feedbackCount) & feedbackCount > 0, :);
 end
 if ~(istable(T) && ~isempty(T))
     result = localResult(component, table(), artifactField, false, ...
@@ -234,19 +238,22 @@ switch component
             localLogicalColumn(T, "ReceiverUsable", false(n, 1)) & ...
             localLogicalColumn(T, "StrictReceiverEvidenceOk", false(n, 1));
     case "pusch_uci"
+        % UL-SCH and UCI are independently encoded and decoded on the same
+        % PUSCH waveform. A valid HARQ-ACK may therefore decode when the
+        % transport block CRC fails. Gate this component on the actual UCI
+        % demultiplex/decode evidence, not the unrelated UL-SCH CRC/status.
+        mask = true(n, 1);
         feedbackCount = localNumericColumn(T, "UCIOnPUSCHFeedbackBitCount", nan(n, 1));
         expected = localStringColumn(T, "ExpectedHARQACKBits", repmat("", n, 1));
         decoded = localStringColumn(T, "DecodedHARQACKBits", repmat("", n, 1));
         decodeStatus = lower(localStringColumn(T, "HARQACKDecodeStatus", repmat("", n, 1)));
         evidenceSource = lower(localStringColumn(T, "UCIOnPUSCHEvidenceSource", repmat("", n, 1)));
-        transportBlockCRC = localTransportBlockCRCMask(T);
         mask = mask & localLogicalColumn(T, "UCIOnPUSCHApplied", false(n, 1)) & ...
             isfinite(feedbackCount) & feedbackCount > 0 & ...
             strlength(expected) > 0 & decoded == expected & ...
             localLogicalColumn(T, "HARQACKContentMatch", false(n, 1)) & ...
             decodeStatus == "decoded_match" & ...
-            contains(evidenceSource, "same_waveform_pusch_rx") & ...
-            transportBlockCRC;
+            contains(evidenceSource, "same_waveform_pusch_rx");
     case "srs"
         mask = mask & localLogicalColumn(T, "StrictOk", false(n, 1)) & ...
             localLogicalColumn(T, "DetectionSuccess", false(n, 1)) & ...

@@ -200,6 +200,7 @@ end
 
 function cfg = localProductionSwitchContext()
 cfg = withCanonicalSchedulerTiming(sixgr.config.defaultConfig());
+cfg.phy.pdcch.dciFormats = ["1_1", "0_1"];
 nrb = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 273));
 cfg.phy.bwp.dl = [ ...
     localRuntimeBWP(0, "DL", true, 0, 0, nrb); ...

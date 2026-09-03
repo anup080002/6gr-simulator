@@ -84,6 +84,11 @@ out.Config = scfg;
 out.Manifest = execOut.Manifest;
 out.Profile = string(execOut.Profile);
 out.Result = execOut.Result;
+% Preserve the terminal status reduction on the public runner result.  The
+% status is already computed and persisted by localExecutePreparedScenario;
+% omitting it here forced callers to reopen a CSV/MAT file and caused a
+% successful waveform execution to look like an API failure.
+out.ScenarioStatus = execOut.ScenarioStatus;
 end
 
 function scfg = localApplyOutputBackendOverride(scfg, backend)
@@ -439,9 +444,9 @@ if localShouldRunPDCCHStatisticalCampaign(scfg, cfg)
         scfg, cfg, "pdcch", runFolder);
     if ~pdcchPolicy.SameScenarioInPathEligible
         error("sixgr:lls6g:PDCCHStatisticalCampaignNotInPath", ...
-            ["A runtime PDCCH statistical qualification request requires " ...
-            "validation.strict_component_evidence to include pdcch with " ...
-            "execution_scope=in_path."]);
+            "A runtime PDCCH statistical qualification request requires " + ...
+            "validation.strict_component_evidence to include pdcch with " + ...
+            "execution_scope=in_path.");
     end
     campaignRoot = fullfile(runFolder, "statistical_campaigns", "pdcch");
     localDBLog("INFO", [ ...
@@ -1438,6 +1443,28 @@ canonicalTrialT.RunTag = repmat(executionIdentity.RunID, ...
     height(canonicalTrialT), 1);
 study.PDCCHTrials = canonicalTrialT;
 
+% Auxiliary PDCCH study matrices describe the same execution campaign, but
+% their producer-local ScenarioID denotes the individual matrix case (for
+% example pdcch6gr_001), not the outer scenario execution. Preserve that
+% component identifier explicitly, then bind the immutable outer identity
+% before any report CSV is written. This keeps cross-artifact reconciliation
+% exact without mislabelling study rows as in-path data-channel evidence.
+studyAuxiliaryFields = [ ...
+    "SummaryByScenario","CORESETMap","SearchSpaceMap","REGIndexMap", ...
+    "CCERegMap","CandidateHashTrace","DMRSLocations", ...
+    "PerCandidateResults","PerSlotResults","SummaryBySNR", ...
+    "SummaryByAL","SummaryByMapping","SummaryByRepetition", ...
+    "SummaryByCORESETDuration","SummaryByFrequencyAllocation", ...
+    "SummaryByMRSSMode","ComplexitySummary","MRSSOverlapEvents"];
+for auxiliaryField = studyAuxiliaryFields
+    fieldName = char(auxiliaryField);
+    if ~isfield(study, fieldName) || ~istable(study.(fieldName))
+        continue;
+    end
+    study.(fieldName) = localBindPDCCHStudyIdentity( ...
+        study.(fieldName), executionIdentity);
+end
+
 controlTrace = struct();
 if localShouldWriteCSV(scfg)
     sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"), study.PDCCHTrials);
@@ -1532,6 +1559,13 @@ study = sixgr.rach.runPRACHLLS(cfg, ...
     "Verbose", false);
 
 [controlTrialT, initialAccessT, correlationTraceT] = localBuildPRACHRunnerTables(study, cfg);
+executionIdentity = struct( ...
+    "RunID", string(sixgr.util.structGet(cfg, "run.runTag", "")), ...
+    "ExecutionID", string(sixgr.util.structGet(cfg, "run.executionID", "")), ...
+    "ScenarioID", string(scfg.ScenarioID), ...
+    "ConfigHash", string(scfg.ConfigHash));
+controlTrialT = localBindCanonicalRuntimeIdentity( ...
+    controlTrialT, executionIdentity, "in_path");
 probabilitySweepT = localBuildPRACHProbabilitySweepTable(study);
 controlTrace = struct();
 if localShouldWriteCSV(scfg)
@@ -1570,10 +1604,18 @@ result.SummaryTable = study.SummaryBySNR;
 end
 
 function result = localRunStrictPRACHValidationScenario(cfg, scfg, runFolder)
+prachExecutionIdentity = struct( ...
+    "RunID", string(sixgr.util.structGet(cfg, "run.runTag", "")), ...
+    "ExecutionID", string(sixgr.util.structGet(cfg, "run.executionID", "")), ...
+    "ScenarioID", string(scfg.ScenarioID), ...
+    "ConfigHash", string(scfg.ConfigHash));
 prach = sixgr.phy.prach.runStrictPRACHValidation(cfg, ...
     "RunFolder", runFolder, ...
-    "RunId", string(scfg.ScenarioID), ...
+    "RunId", prachExecutionIdentity.RunID, ...
     "ScenarioName", string(scfg.ScenarioID), ...
+    "ExecutionID", prachExecutionIdentity.ExecutionID, ...
+    "ScenarioConfigHash", prachExecutionIdentity.ConfigHash, ...
+    "EvidenceScope", "in_path", ...
     "WriteArtifacts", true);
 
 if logical(prach.StrictOk)
@@ -1978,10 +2020,139 @@ end
 summaryT = struct2table(rows);
 if localShouldWriteCSV(scfg)
     sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", "sweep_summary.csv"), summaryT);
+    artifactIndexT = localBuildSweepArtifactIndex( ...
+        runFolder, summaryT, baseProfile, scfg);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", ...
+        "sweep_artifact_index.csv"), artifactIndexT);
+    if baseProfile == "ai_benchmark"
+        localAggregateAISweepEvidence(runFolder, summaryT, scfg);
+    end
+else
+    artifactIndexT = table();
 end
 result = struct();
 result.Ok = all(summaryT.Ok);
 result.SummaryTable = summaryT;
+result.ArtifactIndexTable = artifactIndexT;
+end
+
+function indexT = localBuildSweepArtifactIndex(runFolder, summaryT, baseProfile, scfg)
+% Index exact child evidence without promoting child PHY rows to parent truth.
+rows = repmat(struct( ...
+    "Label", "", "PointRunID", "", "PointConfigHash", "", ...
+    "ArtifactRole", "", "RelativePath", "", "Bytes", 0, ...
+    "SHA256", "", "EvidenceClass", "measured_child_run_artifact", ...
+    "ParentPrimaryWaveformRowsCopied", false), 0, 1);
+for idx = 1:height(summaryT)
+    childFolder = char(string(summaryT.RunFolder(idx)));
+    roles = ["scenario_identity", "resolved_configuration", "scenario_summary"];
+    paths = [ ...
+        "meta/scenario_config_identity.json", ...
+        "meta/scenario_config_resolved.json", ...
+        "reports/csv/scenario_summary.csv"];
+    if baseProfile == "ai_benchmark"
+        roles(end+1:end+2) = ["ai_metadata", "ai_use_case_measurement"];
+        paths(end+1:end+2) = ["reports/csv/ai_benchmark_metadata.csv", ...
+            localAIBenchmarkRelativePath(scfg)];
+    else
+        direction = lower(strtrim(string(scfg.get("simulation.link_direction"))));
+        if any(direction == ["", "all", "both", "dl", "downlink"])
+            roles(end+1) = "dl_waveform_trials";
+            paths(end+1) = "air_interface/csv/dl_pdsch_trials.csv";
+        end
+        if any(direction == ["", "all", "both", "ul", "uplink"])
+            roles(end+1) = "ul_waveform_trials";
+            paths(end+1) = "air_interface/csv/ul_pusch_trials.csv";
+        end
+    end
+    for artifactIndex = 1:numel(paths)
+        relativeToChild = paths(artifactIndex);
+        fullPath = fullfile(childFolder, char(replace(relativeToChild, "/", filesep)));
+        if ~isfile(fullPath)
+            error("sixgr:lls6g:runner:SweepChildEvidenceMissing", ...
+                "Sweep point '%s' did not persist required measured child artifact %s.", ...
+                string(summaryT.Label(idx)), relativeToChild);
+        end
+        info = dir(fullPath);
+        relativeToParent = replace(string(fullPath), string(runFolder) + filesep, "");
+        relativeToParent = replace(relativeToParent, "\", "/");
+        rows(end+1,1) = struct( ... %#ok<AGROW>
+            "Label", string(summaryT.Label(idx)), ...
+            "PointRunID", string(summaryT.RunID(idx)), ...
+            "PointConfigHash", string(summaryT.ConfigHash(idx)), ...
+            "ArtifactRole", roles(artifactIndex), ...
+            "RelativePath", relativeToParent, ...
+            "Bytes", double(info(1).bytes), ...
+            "SHA256", localFileSHA256ForSnapshot(fullPath), ...
+            "EvidenceClass", "measured_child_run_artifact", ...
+            "ParentPrimaryWaveformRowsCopied", false);
+    end
+end
+indexT = struct2table(rows);
+end
+
+function localAggregateAISweepEvidence(runFolder, summaryT, scfg)
+relativePath = localAIBenchmarkRelativePath(scfg);
+aggregate = table();
+metadataAggregate = table();
+for idx = 1:height(summaryT)
+    childFolder = char(string(summaryT.RunFolder(idx)));
+    childPath = fullfile(childFolder, char(replace(relativePath, "/", filesep)));
+    childT = readtable(childPath, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+    if height(childT) == 0
+        error("sixgr:lls6g:runner:EmptySweepChildEvidence", ...
+            "AI sweep point '%s' produced a header-only benchmark table.", ...
+            string(summaryT.Label(idx)));
+    end
+    childT.SweepLabel = repmat(string(summaryT.Label(idx)), height(childT), 1);
+    childT.SweepPointRunID = repmat(string(summaryT.RunID(idx)), height(childT), 1);
+    childT.SweepPointConfigHash = repmat(string(summaryT.ConfigHash(idx)), height(childT), 1);
+    childT.SweepPointSourceRelativePath = repmat( ...
+        replace(string(childPath), string(runFolder) + filesep, ""), height(childT), 1);
+    childT.SweepPointSourceSHA256 = repmat( ...
+        localFileSHA256ForSnapshot(childPath), height(childT), 1);
+    aggregate = [aggregate; childT]; %#ok<AGROW>
+
+    metadataPath = fullfile(childFolder, "reports", "csv", "ai_benchmark_metadata.csv");
+    metadataT = readtable(metadataPath, "VariableNamingRule", "preserve", ...
+        "TextType", "string");
+    metadataT.SweepLabel = repmat(string(summaryT.Label(idx)), height(metadataT), 1);
+    metadataT.SweepPointRunID = repmat(string(summaryT.RunID(idx)), height(metadataT), 1);
+    metadataT.SweepPointConfigHash = repmat(string(summaryT.ConfigHash(idx)), height(metadataT), 1);
+    metadataT.SweepPointSourceSHA256 = repmat( ...
+        localFileSHA256ForSnapshot(metadataPath), height(metadataT), 1);
+    metadataAggregate = [metadataAggregate; metadataT]; %#ok<AGROW>
+end
+targetPath = fullfile(runFolder, char(replace(relativePath, "/", filesep)));
+sixgr.util.csvWriteTable(targetPath, aggregate);
+sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", ...
+    "ai_benchmark_metadata.csv"), metadataAggregate);
+end
+
+function relativePath = localAIBenchmarkRelativePath(scfg)
+useCase = lower(strtrim(string(scfg.get("ai_ml.use_case"))));
+switch useCase
+    case "channel_estimation_enhancement"
+        relativePath = "reports/csv/ai_channel_estimation_benchmark.csv";
+    case "csi_compression_reconstruction"
+        relativePath = "reports/csv/ai_csi_compression_benchmark.csv";
+    case "link_adaptation_mcs_selection"
+        relativePath = "reports/csv/ai_link_adaptation_benchmark.csv";
+    case "interference_classification"
+        relativePath = "reports/csv/ai_interference_classification_benchmark.csv";
+    case "detector_selection"
+        relativePath = "reports/csv/ai_detector_selection_benchmark.csv";
+    case "impairment_mitigation"
+        relativePath = "reports/csv/ai_impairment_mitigation_benchmark.csv";
+    case "beam_prediction"
+        relativePath = "beamforming/csv/ai_beam_prediction_benchmark.csv";
+    case "energy_aware_mode_selection"
+        relativePath = "reports/csv/ai_energy_mode_selection.csv";
+    otherwise
+        error("sixgr:lls6g:runner:UnsupportedAIUseCase", ...
+            "Unsupported ai_ml.use_case '%s' for sweep evidence aggregation.", useCase);
+end
 end
 
 function result = localRunAIBenchmark(cfg, scfg, runFolder)
@@ -2283,6 +2454,34 @@ end
 result = struct("Ok", true, "DecisionTable", T);
 end
 
+function T = localBindCanonicalRuntimeIdentity(T, identity, evidenceScope)
+% Bind the immutable execution identity before a primary CSV is written.
+% ScenarioConfigHash is the binder's unambiguous cross-artifact authority;
+% ConfigHash and RunTag are retained as canonical compatibility columns used
+% by the browser and semantic auditors. All values originate from the same
+% resolved execution identity, so contradictory producer rows fail closed.
+T = sixgr.runtime.bindInPathArtifactIdentity(T, identity, evidenceScope);
+n = height(T);
+T.RunTag = repmat(string(identity.RunID), n, 1);
+T.ConfigHash = repmat(lower(string(identity.ConfigHash)), n, 1);
+end
+
+function T = localBindPDCCHStudyIdentity(T, identity)
+% Keep the component matrix identity separate from the scenario identity.
+names = string(T.Properties.VariableNames);
+scenarioColumn = names(strcmpi(names, "ScenarioID"));
+if ~isempty(scenarioColumn)
+    if any(strcmpi(names, "ComponentScenarioID"))
+        error("sixgr:lls6g:PDCCHStudyIdentityCollision", ...
+            "PDCCH study table contains both ScenarioID and ComponentScenarioID.");
+    end
+    T.Properties.VariableNames{char(scenarioColumn(1))} = ...
+        "ComponentScenarioID";
+end
+T = localBindCanonicalRuntimeIdentity(T, identity, ...
+    "same_execution_campaign");
+end
+
 function execOut = localExecutePreparedScenario(scfg, runFolder, runTag, publicRunFolder, executionOptions)
 if nargin < 3
     runTag = "";
@@ -2389,8 +2588,10 @@ try
     localDBLog("INFO", "Writing resolved snapshots.");
     localWriteResolvedSnapshots(layout, scfg);
     localDBLog("INFO", "Resolving exact DL/UL resource allocations before slot zero.");
+    allocationTargets = localAllocationPreflightTargets(profile, scfg);
     [plannedAllocationT, allocationCheckT] = ...
-        sixgr.truth.buildPlannedREAllocation(cfg);
+        sixgr.truth.buildPlannedREAllocation(cfg, ...
+        "TargetChannels", allocationTargets);
     frameCSVDir = layout.ComponentCSVDirs.frame_grid;
     sixgr.util.csvWriteTable(fullfile(frameCSVDir, ...
         "planned_re_allocation.csv"), plannedAllocationT, ...
@@ -2973,6 +3174,36 @@ try
         scenarioStatus, geometryScenarioAudit);
     scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
         scenarioStatus, artifactContractResult);
+    % The first browser materialization deliberately precedes the truth
+    % evaluator because artifact completeness is one of the truth gates.
+    % That means direct contract aliases such as
+    % analytics/csv/truth_policy_analytics.csv initially contain the
+    % pre-materialization verdict. Rebuild the browser-owned tables and
+    % charts now, from the just-written terminal truth summary, before the
+    % final recursive filesystem audit and Phase-7 reducers consume them.
+    % This is a deterministic derived-view refresh only; primary waveform
+    % evidence is never regenerated, filled, or relabelled.
+    localDBLog("INFO", ...
+        "Refreshing browser truth/status mirrors from the terminal truth verdict.");
+    terminalContractRefresh = sixgr.artifact.materializeBrowserContractArtifacts( ...
+        runFolder, "Force", true, ...
+        "ReplaceExistingRastersFromCSV", false);
+    reportBundle.TerminalBrowserContractRefresh = terminalContractRefresh;
+    if ~logical(sixgr.util.structGet(terminalContractRefresh, "Ok", false))
+        refreshIdentifier = char(string(sixgr.util.structGet( ...
+            terminalContractRefresh, "Identifier", "unknown")));
+        refreshMessage = char(string(sixgr.util.structGet( ...
+            terminalContractRefresh, "Message", "")));
+        refreshFailureMessage = sprintf([ ...
+            'Terminal browser contract refresh failed after the final ' ...
+            'truth verdict: %s | %s'], refreshIdentifier, refreshMessage);
+        % Pass the rendered message as data.  A traceback or Windows path can
+        % contain percent/backslash tokens and must never be reinterpreted as
+        % an error() format string, which would mask the original terminal
+        % materialization failure with MATLAB:error:badMessageArgument.
+        error("sixgr:lls6g:TerminalContractRefreshFailed", "%s", ...
+            refreshFailureMessage);
+    end
     artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
     reportBundle.ArtifactAudit = artifactAudit;
     scenarioStatus = localApplyArtifactAuditStatus(scenarioStatus, artifactAudit);
@@ -3008,6 +3239,100 @@ try
     localWriteMarkdownReport(fullfile(layout.ReportDir, ...
         "scenario_report.md"), scfg, cfg, profile, runFolder, result, ...
         manifest, reportBundle, scenarioStatus);
+    % The root status/summary above are themselves browser-chart sources.
+    % Seal terminal artifacts as a fixed point so normal TDD and FDD runs
+    % cannot finish with chart hashes describing an earlier status tree.
+    terminalGeneratedAt = string(localUTCStamp());
+    terminalPreviousSignature = "";
+    terminalArtifactConverged = false;
+    for terminalArtifactPass = 1:3
+        if componentViewsEnabled
+            componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
+                "Enabled", true, ...
+                "Required", componentViewsRequired, ...
+                "RequiredComponents", componentViewsRequiredComponents(:));
+            reportBundle.ComponentArtifactViews = componentViews;
+        end
+        terminalClosure = sixgr.artifact.sealBrowserArtifactClosure( ...
+            string(runFolder), "RunID", string(runTag), ...
+            "GeneratedAtUTC", terminalGeneratedAt, "MaxPasses", 3);
+        reportBundle.TerminalArtifactClosure = terminalClosure;
+        outputCoverage.VisualArtifactIntegrity = ...
+            terminalClosure.VisualAudit.Integrity;
+        outputCoverage.VisualArtifactAudit = terminalClosure.VisualAudit.Audit;
+        reportBundle.OutputCoverageArtifacts = outputCoverage;
+
+        scenarioStatus = localApplyRuntimeTruthContract( ...
+            preTruthScenarioStatus, result, scfg, cfg, runFolder);
+        scenarioStatus = localApplyCausalPHYChainAuditStatus( ...
+            scenarioStatus, causalPHYChainAudit);
+        scenarioStatus = localApplyVisualArtifactIntegrityStatus( ...
+            scenarioStatus, terminalClosure.VisualAudit.Integrity);
+        scenarioStatus = localApplyFixedSNRSweepAuditStatus( ...
+            scenarioStatus, fixedSNRSweepAudit);
+        scenarioStatus = localApplyGeometryScenarioAuditStatus( ...
+            scenarioStatus, geometryScenarioAudit);
+        scenarioStatus = sixgr.artifact.applyFinalizationGate( ...
+            scenarioStatus, artifactContractResult);
+        artifactAudit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg);
+        reportBundle.ArtifactAudit = artifactAudit;
+        scenarioStatus = localApplyArtifactAuditStatus( ...
+            scenarioStatus, artifactAudit);
+        finalQualificationEvidence = localRefreshFinalQualificationEvidence( ...
+            runFolder, scfg, cfg);
+        reportBundle.FinalQualificationEvidence = finalQualificationEvidence;
+        % The closure pass rewrites the canonical Phase-7/publication
+        % evidence.  Republish its byte-identical component mirrors before
+        % reducing root qualification; otherwise the sealed browser tree
+        % can describe the preceding closure pass rather than these exact
+        % scientific-evidence bytes.
+        if componentViewsEnabled
+            componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
+                "Enabled", true, ...
+                "Required", componentViewsRequired, ...
+                "RequiredComponents", componentViewsRequiredComponents(:));
+            reportBundle.ComponentArtifactViews = componentViews;
+        end
+        scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
+            scenarioStatus, runFolder);
+        sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
+        result = localApplyScenarioStatus(result, scenarioStatus);
+        summaryT = localBuildScenarioSummaryTable( ...
+            scfg, cfg, profile, result, scenarioStatus);
+        if logical(scfg.get("output.save_csv"))
+            sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
+                "scenario_summary.csv"), summaryT);
+        end
+        manifest = localBuildManifest(scfg, publicRunFolder, profile, ...
+            result, runtimeSummary, environmentSummary, scenarioStatus, ...
+            sourceProvenance);
+        manifest.ArtifactManifestPath = char(localWriteArtifactManifest( ...
+            runFolder, scfg, profile, manifest, reportBundle, scenarioStatus));
+        localWriteScenarioManifest(layout, manifest);
+        localWriteMarkdownReport(fullfile(layout.ReportDir, ...
+            "scenario_report.md"), scfg, cfg, profile, runFolder, result, ...
+            manifest, reportBundle, scenarioStatus);
+
+        terminalSignature = localTerminalArtifactStatusSignature( ...
+            scenarioStatus);
+        terminalLineageClosure = ...
+            sixgr.artifact.verifyContractPlotLineageSources( ...
+                string(runFolder));
+        if terminalArtifactPass >= 2 && ...
+                terminalSignature == terminalPreviousSignature && ...
+                logical(terminalLineageClosure.Ok) && ...
+                logical(sixgr.util.structGet(scenarioStatus, ...
+                    "VisualArtifactGateOk", false))
+            terminalArtifactConverged = true;
+            break;
+        end
+        terminalPreviousSignature = terminalSignature;
+    end
+    if ~terminalArtifactConverged
+        error("sixgr:lls6g:TerminalArtifactFixedPointFailed", "%s", ...
+            ["Terminal status and exact plot-source hashes did not " ...
+            "converge within three publication passes."]);
+    end
     truthGatedCompletionPublished = true;
     hydration = localHydratePublicRunFolderIfNeeded(runFolder, publicRunFolder);
     hydrationNotes = string(sixgr.util.structGet(hydration, "Notes", ""));
@@ -3816,8 +4141,7 @@ for index = 1:numel(paths)
     end
     normalizedPath = replace(relativePath, "\", "/");
     normalizedLower = lower(normalizedPath);
-    if startsWith(normalizedLower, "artifacts/focused_audits/") || ...
-            startsWith(normalizedLower, "artifacts/focused_logs/")
+    if localIsGeneratedEvidencePath(normalizedLower)
         info = dir(absolutePath);
         byteSize = NaN;
         if ~isempty(info)
@@ -3848,6 +4172,18 @@ for index = 1:numel(paths)
 end
 end
 
+function tf = localIsGeneratedEvidencePath(normalizedLower)
+% Generated audit products describe prior executions; they are not source
+% inputs and must not be base64-embedded in a dirty-tree source patch.  Keep
+% this list narrow so an untracked oracle/configuration file is still
+% captured and the run remains reproducible.
+generatedPrefixes = [ ...
+    "artifacts/focused_audits/", ...
+    "artifacts/focused_logs/", ...
+    "artifacts/lls_run_audits/"];
+tf = any(startsWith(normalizedLower, generatedPrefixes));
+end
+
 function [overlay, overlayPath] = localDetectConfigOverlay(scfg)
 overlay = "none_detected";
 overlayPath = "";
@@ -3867,6 +4203,20 @@ end
 function txt = localUTCStamp()
 dt = datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd HH:mm:ss");
 txt = char(replace(string(dt), " ", "T") + "Z");
+end
+
+function signature = localTerminalArtifactStatusSignature(status)
+payload = struct( ...
+    "RunCompletion", string(sixgr.util.structGet(status, "RunCompletion", "")), ...
+    "ResultOk", logical(sixgr.util.structGet(status, "ResultOk", false)), ...
+    "RuntimeTruthContractOk", logical(sixgr.util.structGet(status, "RuntimeTruthContractOk", false)), ...
+    "RequiredFailureCount", double(sixgr.util.structGet(status, "RequiredFailureCount", 0)), ...
+    "VisualArtifactGateOk", logical(sixgr.util.structGet(status, "VisualArtifactGateOk", false)), ...
+    "VisualArtifactFailureCount", double(sixgr.util.structGet(status, "VisualArtifactFailureCount", 0)), ...
+    "VisualArtifactFailureReason", string(sixgr.util.structGet(status, "VisualArtifactFailureReason", "")), ...
+    "RuntimeTruthContractFailures", string(sixgr.util.structGet(status, "RuntimeTruthContractFailures", strings(0, 1))));
+encoded = unicode2native(jsonencode(payload), "UTF-8");
+signature = lower(string(sixgr.util.sha256Hex(uint8(encoded))));
 end
 
 function localDBLog(levelStr, messageText, varargin)
@@ -4124,6 +4474,73 @@ if profile == "system_level_lls" && executionModel == "slot_coupled_truth" && co
     localDBLog("INFO", ...
         "Effective runner promoted from system_level_lls to waveform_bundle because users.execution_model=slot_coupled_truth and runtime control/reference gating is required.");
 end
+end
+
+function targets = localAllocationPreflightTargets(profile, scfg)
+% A component runner must resolve the exact REs that it actually executes,
+% while a full waveform/system runner remains responsible for every enabled
+% PHY channel.  This prevents inherited full-stack defaults from turning a
+% PRACH-only study into guessed SSB/PDCCH/PUCCH allocations.
+profile = lower(strtrim(string(profile)));
+switch profile
+    case {"prach_detection", "prach_strict_validation"}
+        targets = ["FRAME"; "PRACH"];
+    case {"pdcch_blind_decode_sweep", "pdcch_strict_validation", ...
+            "ctrl6gr_pdcch_study"}
+        targets = ["FRAME"; "PDCCH"];
+    case "pdsch6gr_truth_study"
+        targets = ["FRAME"; "PDSCH"];
+    case "trs_strict_validation"
+        targets = ["FRAME"; "TRS"];
+    case "srs_strict_validation"
+        targets = ["FRAME"; "SRS"];
+    case "channel_rf_strict_validation"
+        targets = ["FRAME"; "PDSCH"; "PUSCH"];
+    case "generic_sweep"
+        % The parent is an orchestration container and emits no waveform.
+        % Each child re-enters runSingle with its effective runner profile
+        % and performs its own exact allocation preflight.
+        targets = "FRAME";
+    case "ai_benchmark"
+        % AI benchmarks are component studies.  Their declared target cases
+        % identify the real reference-signal/data waveform used to produce
+        % the benchmark observations; inherited full-stack features must not
+        % become implicit execution requirements.
+        targets = localAllocationTargetsFromScenario(scfg);
+    otherwise
+        targets = strings(0, 1);
+end
+end
+
+function targets = localAllocationTargetsFromScenario(scfg)
+targetCases = upper(strtrim(string(scfg.get("scenario.target_cases", {}))));
+targetCases = targetCases(strlength(targetCases) > 0);
+aliases = struct( ...
+    "SSB", "SSB_PBCH", ...
+    "PBCH", "SSB_PBCH", ...
+    "TYPE0", "TYPE0_PDCCH", ...
+    "SIB1", "SIB1_PDSCH", ...
+    "CSIRS", "CSI_RS", ...
+    "CSI_RS", "CSI_RS");
+supported = ["SSB_PBCH","TYPE0_PDCCH","SIB1_PDSCH","PDCCH", ...
+    "PDSCH","CSI_RS","TRS","PRACH","PUCCH","PUSCH","SRS"];
+resolved = strings(0, 1);
+for i = 1:numel(targetCases)
+    token = targetCases(i);
+    field = char(token);
+    if isfield(aliases, field)
+        token = string(aliases.(field));
+    end
+    if any(token == supported)
+        resolved(end+1, 1) = token; %#ok<AGROW>
+    end
+end
+if isempty(resolved)
+    error("sixgr:lls6g:runner:MissingComponentAllocationTarget", ...
+        "Component runner '%s' has no supported scenario.target_cases allocation authority.", ...
+        string(scfg.ScenarioID));
+end
+targets = unique(["FRAME"; resolved], "stable");
 end
 
 function [codeVersion, detail] = localDetectCodeVersion(includeGitHash)
@@ -5888,10 +6305,7 @@ audit = struct( ...
     "Identifier", "", ...
     "Message", "");
 
-runClass = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "validation.RunClass", ...
-    localRunnerScenarioGet(scfg, cfg, "validation.run_class", "")))));
-required = runClass == "ue_placement_geometry_lls" || ...
-    logical(localRunnerScenarioGetBool(scfg, cfg, "validation.geometry_evidence_required", false));
+required = localGeometryEvidenceRequired(scfg, cfg);
 audit.Required = logical(required);
 if ~audit.Required
     return;
@@ -5925,10 +6339,7 @@ plotInfo = struct( ...
     "Identifier", "", ...
     "Message", "");
 
-runClass = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "validation.RunClass", ...
-    localRunnerScenarioGet(scfg, cfg, "validation.run_class", "")))));
-required = runClass == "ue_placement_geometry_lls" || ...
-    logical(localRunnerScenarioGetBool(scfg, cfg, "validation.geometry_evidence_required", false));
+required = localGeometryEvidenceRequired(scfg, cfg);
 plotInfo.Required = logical(required);
 if ~plotInfo.Required || ~logical(sixgr.util.structGet(geometryAudit, "Ok", true)) || ~usejava("jvm")
     if plotInfo.Required && ~usejava("jvm")
@@ -5955,6 +6366,20 @@ catch ME
     plotInfo.Identifier = string(ME.identifier);
     plotInfo.Message = string(ME.message);
 end
+end
+
+function required = localGeometryEvidenceRequired(scfg, cfg)
+% Geometry evidence follows the resolved runtime launch authority.  A run
+% may deliberately use an adaptive diagnostic run class while still
+% executing position, pathloss, angle, mobility, and Doppler models.  Such
+% a run must not silently skip the audit/plots merely because its run-class
+% label is not the dedicated geometry-campaign label.
+runClass = lower(strtrim(string(localRunnerScenarioGet(scfg, cfg, "validation.RunClass", ...
+    localRunnerScenarioGet(scfg, cfg, "validation.run_class", "")))));
+required = runClass == "ue_placement_geometry_lls" || ...
+    logical(localRunnerScenarioGetBool(scfg, cfg, "validation.geometry_evidence_required", false)) || ...
+    logical(localRunnerScenarioGetBool(scfg, cfg, "canonical_control.launch.geometry_enabled", false));
+required = logical(required);
 end
 
 function audit = localRunArtifactAuditIfNeeded(runFolder, scfg, cfg)
@@ -6106,8 +6531,13 @@ function value = localRunnerScenarioGet(scfg, cfg, pathValue, defaultValue)
 value = defaultValue;
 try
     if isobject(scfg) && ismethod(scfg, "get")
-        value = scfg.get(pathValue, defaultValue);
-        return;
+        % Only let the scenario object win when it actually owns this
+        % path.  Internal-only resolved fields must remain discoverable in
+        % cfg instead of being hidden behind the caller's default value.
+        if ~ismethod(scfg, "has") || scfg.has(pathValue)
+            value = scfg.get(pathValue, defaultValue);
+            return;
+        end
     end
 catch
 end

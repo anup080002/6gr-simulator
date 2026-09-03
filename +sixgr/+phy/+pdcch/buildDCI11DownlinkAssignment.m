@@ -32,8 +32,8 @@ fields.antenna_ports = double(opt.NumLayers) - 1;
 fields.transmission_configuration_indication = double(opt.PMI);
 fields.srs_request = 0;
 fields.csi_request = 0;
-fields.cbg_transmission_information = 0;
-fields.cbg_flushing_information = 0;
 fields.dmrs_sequence_initialization = 0;
+context = sixgr.phy.pdcch.resolveDCIContext(pdcchCfg, "1_1");
+fields = sixgr.phy.pdcch.completeDCIFields(fields, context);
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "1_1", pdcchCfg);
 end

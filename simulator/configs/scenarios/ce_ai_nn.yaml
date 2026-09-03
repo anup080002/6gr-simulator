@@ -22,5 +22,8 @@
   "scenario": {
     "runner_profile": "ai_benchmark",
     "target_cases": ["srs"]
+  },
+  "mimo": {
+    "reciprocity_mode": "TDD"
   }
 }

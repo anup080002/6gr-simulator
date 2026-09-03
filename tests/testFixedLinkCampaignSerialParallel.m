@@ -16,6 +16,17 @@ campaignCfg.max_tb_per_point = 1;
 campaignCfg.min_errors_for_ci = 0;
 campaignCfg.max_ci_half_width = 1;
 campaignCfg.trials_per_drop = 1;
+configuredSeeds = double(campaignCfg.seeds(:));
+assert(~isempty(configuredSeeds), ...
+    "The master YAML must provide a fixed-link seed list.");
+% Serial/parallel equivalence is an execution-topology check.  Bind it to
+% one YAML-owned seed so the one-TB fixture remains internally valid; the
+% independent multi-seed tests retain responsibility for seed coverage and
+% statistical adequacy.
+campaignCfg.seeds = configuredSeeds(1);
+if isfield(campaignCfg, "Seeds")
+    campaignCfg.Seeds = configuredSeeds(1);
+end
 
 serialCfg = campaignCfg;
 serialCfg.parallel_workers = 0;
@@ -105,7 +116,8 @@ end
 function T = localScientificTable(T)
 excluded = intersect(string(T.Properties.VariableNames), ...
     ["DecodeLatency_ms","DL_DecodeLatency_ms","UL_DecodeLatency_ms", ...
-    "ComputeLatency_ms","ReceiverPipelineLatency_ms"], "stable");
+    "ComputeLatency_ms","ReceiverPipelineLatency_ms", ...
+    "ChannelEstimationLatency_ms","EqualizationLatency_ms"], "stable");
 if ~isempty(excluded)
     T(:, cellstr(excluded)) = [];
 end

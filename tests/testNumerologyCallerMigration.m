@@ -23,7 +23,7 @@ paths = [ ...
     "+sixgr/+ctrl/ControlChannelConfig.m"
     "+sixgr/+ctrl/PDCCHBlindDetector.m"
     "+sixgr/+ctrl/PDCCHCandidateGenerator.m"
-    "+sixgr/+ctrl/PDCCHDMRS.m"
+    "+sixgr/+phy/+pdcch/PDCCHDMRS.m"
     "+sixgr/+l3/+rrc/RACHProcedure.m"
     "+sixgr/+link/deriveModulationTrackingMetrics.m"
     "+sixgr/+link/computeLinkAdaptationDecision.m"

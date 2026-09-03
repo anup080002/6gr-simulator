@@ -162,6 +162,28 @@ rows.IValue = real(rxTime);
 rows.QValue = imag(rxTime);
 sourceT = [sourceT; rows]; %#ok<AGROW>
 
+postChannelWave = localFirstWaveformColumn(sixgr.util.structGet( ...
+    context, "PostChannelWaveform", []));
+if ~isempty(postChannelWave)
+    nPostChannel = min(numel(postChannelWave), maxWaveformSamples);
+    postChannelIndex = (1:nPostChannel).';
+    postChannelTime_s = (double(postChannelIndex) - 1) ./ sampleRateHz;
+    postChannelUse = postChannelWave(postChannelIndex);
+    rows = localBaseRows(meta, "time_domain", "post_channel", nPostChannel);
+    rows.PointIndex = double(postChannelIndex);
+    rows.SampleIndex = double(postChannelIndex);
+    rows.XValue = postChannelTime_s;
+    rows.YValue = abs(postChannelUse);
+    rows.XUnit(:) = "s";
+    rows.YUnit(:) = "complex_baseband_amplitude_before_receiver_impairments";
+    rows.IValue = real(postChannelUse);
+    rows.QValue = imag(postChannelUse);
+    rows.GridKind(:) = "exact_runtime_channel_output_waveform";
+    rows.GridSHA256(:) = string(sixgr.util.structGet(context, ...
+        "PostChannelWaveformSHA256", localComplexTensorHash(postChannelWave)));
+    sourceT = [sourceT; rows]; %#ok<AGROW>
+end
+
 rows = localBaseRows(meta, "spectrum", "tx", numel(frequencyOffsetHz));
 rows.PointIndex = (1:numel(frequencyOffsetHz)).';
 rows.XValue = frequencyOffsetHz;
@@ -169,6 +191,89 @@ rows.YValue = txSpectrum_dB;
 rows.XUnit(:) = "Hz_offset";
 rows.YUnit(:) = "relative_magnitude_dB_common_reference";
 sourceT = [sourceT; rows]; %#ok<AGROW>
+
+% The inverse transform below is an explicitly bandwidth-limited impulse
+% response of the receiver's own DM-RS channel estimate.  It is labelled
+% Hhat(tau), never true H(tau), and does not consume channel-oracle state.
+nHhat = numel(hSlice);
+if nHhat >= 2 && isfinite(meta.SCS_kHz) && meta.SCS_kHz > 0
+    hhatTau = ifft(ifftshift(hSlice(:)), nHhat);
+    hhatDelay_s = (0:nHhat-1).' ./ (double(nHhat) .* double(meta.SCS_kHz) .* 1e3);
+    rows = localBaseRows(meta, "estimated_channel_impulse_response", ...
+        "receiver_hhat_tau_rx1_tx1", nHhat);
+    rows.PointIndex = (1:nHhat).';
+    rows.XValue = hhatDelay_s;
+    rows.YValue = abs(hhatTau);
+    rows.XUnit(:) = "s_excess_delay_bandlimited";
+    rows.YUnit(:) = "estimated_channel_magnitude_linear";
+    rows.IValue = real(hhatTau);
+    rows.QValue = imag(hhatTau);
+    rows.MagnitudeLinear = abs(hhatTau);
+    rows.Magnitude_dB = 20 .* log10(max(rows.MagnitudeLinear, realmin));
+    rows.PowerLinear = abs(hhatTau).^2;
+    rows.Power_dB = 10 .* log10(max(rows.PowerLinear, realmin));
+    rows.Phase_deg = rad2deg(angle(hhatTau));
+    rows.WrappedPhase_rad = angle(hhatTau);
+    rows.GridKind(:) = "receiver_estimated_bandlimited_impulse_response";
+    rows.GridSHA256(:) = localComplexTensorHash(hhatTau);
+    sourceT = [sourceT; rows]; %#ok<AGROW>
+end
+
+[truePathGain, truePathDelay_s, truePathStatus] = ...
+    localSelectExecutedPathGain(context);
+if truePathStatus == "available"
+    nPath = numel(truePathGain);
+    rows = localBaseRows(meta, "true_channel_impulse_response", ...
+        "executed_path_gain_rx1_tx1", nPath);
+    rows.PointIndex = (1:nPath).';
+    rows.XValue = truePathDelay_s;
+    rows.YValue = abs(truePathGain);
+    rows.XUnit(:) = "s_excess_delay";
+    rows.YUnit(:) = "executed_complex_path_gain_magnitude";
+    rows.IValue = real(truePathGain);
+    rows.QValue = imag(truePathGain);
+    rows.MagnitudeLinear = abs(truePathGain);
+    rows.Magnitude_dB = 20 .* log10(max(rows.MagnitudeLinear, realmin));
+    rows.PowerLinear = abs(truePathGain).^2;
+    rows.Power_dB = 10 .* log10(max(rows.PowerLinear, realmin));
+    rows.Phase_deg = rad2deg(angle(truePathGain));
+    rows.WrappedPhase_rad = angle(truePathGain);
+    rows.GridKind(:) = "executed_runtime_channel_path_gain_tensor_slice";
+    rows.GridSHA256(:) = string(sixgr.util.structGet(context, ...
+        "RuntimeChannelPathGainsSHA256", localComplexTensorHash(truePathGain)));
+    sourceT = [sourceT; rows]; %#ok<AGROW>
+
+    if isfinite(meta.SCS_kHz) && meta.SCS_kHz > 0
+        nFrequency = max(2, numel(hSlice));
+        frequencyOffset_Hz = ((0:nFrequency-1).' - (nFrequency-1)./2) .* ...
+            double(meta.SCS_kHz) .* 1e3;
+        trueHf = exp(-1i .* 2 .* pi .* frequencyOffset_Hz .* ...
+            reshape(truePathDelay_s, 1, [])) * reshape(truePathGain, [], 1);
+        rows = localBaseRows(meta, "true_channel_frequency_response", ...
+            "executed_h_f_rx1_tx1", nFrequency);
+        rows.PointIndex = (1:nFrequency).';
+        rows.XValue = frequencyOffset_Hz;
+        rows.YValue = 20 .* log10(max(abs(trueHf), realmin));
+        rows.XUnit(:) = "Hz_offset";
+        rows.YUnit(:) = "executed_channel_magnitude_dB";
+        rows.FrequencyOffset_Hz = frequencyOffset_Hz;
+        if isfinite(meta.CarrierFrequency_Hz)
+            rows.AbsoluteFrequency_Hz = meta.CarrierFrequency_Hz + frequencyOffset_Hz;
+        end
+        rows.IValue = real(trueHf);
+        rows.QValue = imag(trueHf);
+        rows.MagnitudeLinear = abs(trueHf);
+        rows.Magnitude_dB = 20 .* log10(max(rows.MagnitudeLinear, realmin));
+        rows.PowerLinear = abs(trueHf).^2;
+        rows.Power_dB = 10 .* log10(max(rows.PowerLinear, realmin));
+        rows.Phase_deg = rad2deg(unwrap(angle(trueHf)));
+        rows.WrappedPhase_rad = angle(trueHf);
+        rows.UnwrappedPhaseFrequency_rad = unwrap(angle(trueHf));
+        rows.GridKind(:) = "frequency_response_from_executed_path_gains_and_delays";
+        rows.GridSHA256(:) = localComplexTensorHash(trueHf);
+        sourceT = [sourceT; rows]; %#ok<AGROW>
+    end
+end
 
 rows = localBaseRows(meta, "spectrum", "rx", numel(frequencyOffsetHz));
 rows.PointIndex = (1:numel(frequencyOffsetHz)).';
@@ -505,6 +610,11 @@ meta.CellID = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "carrier.nCellId", NaN));
 meta.SCS_kHz = localFirstFiniteScalar( ...
     sixgr.util.structGet(tx, "Carrier.SubcarrierSpacing", NaN), ...
+    sixgr.util.structGet(tx, "Carrier.SubcarrierSpacing_kHz", NaN), ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN), ...
+    sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing_kHz", NaN), ...
+    sixgr.util.structGet(cfg, "channel.subcarrierSpacing_kHz", NaN), ...
+    sixgr.util.structGet(cfg, "frame.scs_khz", NaN), ...
     sixgr.util.structGet(cfg, "frame.scs_kHz", NaN), ...
     sixgr.util.structGet(cfg, "carrier.scs_kHz", NaN));
 meta.NStartGrid = localFirstFiniteScalar( ...
@@ -512,7 +622,12 @@ meta.NStartGrid = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "carrier.nStartGrid", 0));
 meta.CarrierFrequency_Hz = localFirstFiniteScalar( ...
     sixgr.util.structGet(context, "CarrierFrequency_Hz", NaN), ...
+    sixgr.util.structGet(cfg, "phy.fc_Hz", NaN), ...
+    sixgr.util.structGet(cfg, "channel.fc_Hz", NaN), ...
     sixgr.util.structGet(cfg, "channel.carrierFrequencyHz", NaN), ...
+    sixgr.util.structGet(cfg, "frequency.centerFrequencyHz", NaN), ...
+    sixgr.util.structGet(cfg, "frequency.center_frequency_hz", NaN), ...
+    sixgr.util.structGet(cfg, "global_radio_scope.carrier_frequency_hz", NaN), ...
     sixgr.util.structGet(cfg, "carrier.frequencyHz", NaN), ...
     1e9 .* sixgr.util.structGet(cfg, "frame.carrierFrequencyGHz", NaN));
 if isfinite(meta.SCS_kHz) && meta.SCS_kHz > 0
@@ -594,6 +709,10 @@ T.Slot = repmat(double(meta.Slot), n, 1);
 T.SFN = repmat(double(meta.SFN), n, 1);
 T.AbsoluteSlot = repmat(double(meta.AbsoluteSlot), n, 1);
 T.CellID = repmat(double(meta.CellID), n, 1);
+T.SCS_kHz = repmat(double(meta.SCS_kHz), n, 1);
+T.NStartGrid = repmat(double(meta.NStartGrid), n, 1);
+T.CarrierFrequency_Hz = repmat(double(meta.CarrierFrequency_Hz), n, 1);
+T.SlotsPerFrame = repmat(double(meta.SlotsPerFrame), n, 1);
 T.TBId = repmat(string(meta.TBId), n, 1);
 T.LayerIndex = repmat(double(meta.LayerIndex), n, 1);
 T.Layers = repmat(double(meta.Layers), n, 1);
@@ -732,6 +851,34 @@ function digest = localComplexTensorHash(value)
 bytes = [typecast(real(double(value(:))), "uint8"); ...
     typecast(imag(double(value(:))), "uint8")];
 digest = sixgr.util.sha256Hex(bytes);
+end
+
+function [gain, delay_s, status] = localSelectExecutedPathGain(context)
+gain = complex([]);
+delay_s = [];
+status = "unavailable";
+pathGains = sixgr.util.structGet(context, "RuntimeChannelPathGains", []);
+pathDelays = double(sixgr.util.structGet(context, "RuntimeChannelPathDelays_s", []));
+if isempty(pathGains) || isempty(pathDelays)
+    return;
+end
+sz = size(pathGains);
+sz(end+1:4) = 1;
+if sz(2) ~= numel(pathDelays)
+    return;
+end
+pathGains = reshape(pathGains, sz(1), sz(2), sz(3), sz(4));
+gain = reshape(pathGains(1,:,1,1), [], 1);
+delay_s = reshape(pathDelays, [], 1);
+finiteMask = isfinite(real(gain)) & isfinite(imag(gain)) & isfinite(delay_s);
+gain = gain(finiteMask);
+delay_s = delay_s(finiteMask);
+if isempty(gain)
+    gain = complex([]);
+    delay_s = [];
+    return;
+end
+status = "available";
 end
 
 function T = localKPIRows(meta)

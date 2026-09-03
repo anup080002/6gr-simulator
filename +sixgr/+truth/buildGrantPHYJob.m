@@ -68,6 +68,8 @@ job.TransportBlockBits = sixgr.util.structGet(trialContext, "TransportBlockBits"
 job.RV = sixgr.util.structGet(trialContext, "RV", []);
 job.ExpectedUCIBits = sixgr.util.structGet(trialContext, "ExpectedUCIBits", ...
     sixgr.util.structGet(grant, "ExpectedUCIBits", []));
+job.ExpectedUCIPayload = sixgr.util.structGet(trialContext, "ExpectedUCIPayload", ...
+    sixgr.util.structGet(grant, "ExpectedUCIPayload", []));
 job.HARQContext = sixgr.util.structGet(trialContext, "HARQContext", struct());
 tbContext = localReplayTBContext(grant, trialContext);
 if isstruct(tbContext) && ~isempty(fieldnames(tbContext))

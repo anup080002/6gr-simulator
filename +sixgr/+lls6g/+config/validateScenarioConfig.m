@@ -194,6 +194,7 @@ if ~ismember(linkDir, localCatalogAllowedStrings(catalog.sections.simulation.par
     error("sixgr:lls6g:config:BadLinkDirection", ...
         "simulation.link_direction in %s must be dl, ul, or both.", localCtx(ctx));
 end
+localValidatePrecodingAuthority(cfg, linkDir, ctx);
 
 scs = double(cfg.frame.scs_khz);
 allowedSCS = double(sixgr.util.structGet(cfg, "frequency.numerology_options_khz", scs));
@@ -694,9 +695,9 @@ if usersEnabled && ~ismember(beamStrategy, localCatalogAllowedStrings(catalog.se
     error("sixgr:lls6g:config:BadBeamSelectionStrategy", ...
         "users.beam_selection_strategy in %s is unsupported.", localCtx(ctx));
 end
-if usersEnabled && nTx <= 1
+if usersEnabled && nUsers > 1 && nTx <= 1
     error("sixgr:lls6g:config:UsersRequireMultiAntennaTx", ...
-        "users.enabled in %s requires mimo.n_tx_ant > 1 for beamformed link sweeps.", localCtx(ctx));
+        "Multi-user execution in %s requires mimo.n_tx_ant > 1 for beamformed link sweeps.", localCtx(ctx));
 end
 if usersEnabled && string(cfg.mimo.precoder_type) == "none"
     error("sixgr:lls6g:config:UsersRequirePrecoding", ...
@@ -1972,6 +1973,46 @@ end
 function tf = localIsUnsetPolicy(value)
 txt = lower(strtrim(string(value)));
 tf = strlength(txt) == 0 || any(txt == ["none", "disabled", "unspecified", "false", "off"]);
+end
+
+function localValidatePrecodingAuthority(cfg, linkDir, ctx)
+% A scalar PMI/TPMI selects a codebook entry.  It is not meaningful for
+% non-codebook transmission, where the scheduled precoding matrix is the
+% authority.  Reject the contradiction before a waveform or grant is built.
+if ismember(linkDir, ["dl", "both"])
+    dlScheme = localCanonicalTransmissionScheme(localOptionalStructValue( ...
+        cfg, "pdsch.transmission_scheme", ""));
+    dlPMI = localOptionalStructValue(cfg, "pdsch.pmi", []);
+    if dlScheme == "noncodebook" && localHasConfiguredScalarIndex(dlPMI)
+        error("sixgr:lls6g:config:NonCodebookPMIAuthorityConflict", ...
+            "%s", sprintf([ ...
+            'pdsch.transmission_scheme=nonCodebook in %s cannot also ' ...
+            'configure pdsch.pmi. Remove the scalar PMI and let the ' ...
+            'scheduled non-codebook precoding matrix own the waveform.'], ...
+            localCtx(ctx)));
+    end
+end
+if ismember(linkDir, ["ul", "both"])
+    ulScheme = localCanonicalTransmissionScheme(localOptionalStructValue( ...
+        cfg, "pusch.transmission_scheme", ""));
+    ulTPMI = localOptionalStructValue(cfg, "pusch.tpmi", []);
+    if ulScheme == "noncodebook" && localHasConfiguredScalarIndex(ulTPMI)
+        error("sixgr:lls6g:config:NonCodebookTPMIAuthorityConflict", ...
+            "%s", sprintf([ ...
+            'pusch.transmission_scheme=nonCodebook in %s cannot also ' ...
+            'configure pusch.tpmi. Remove the scalar TPMI and let the ' ...
+            'scheduled non-codebook precoding matrix own the waveform.'], ...
+            localCtx(ctx)));
+    end
+end
+end
+
+function scheme = localCanonicalTransmissionScheme(raw)
+scheme = lower(regexprep(strtrim(string(raw)), "[^a-zA-Z0-9]", ""));
+end
+
+function tf = localHasConfiguredScalarIndex(value)
+tf = isnumeric(value) && isscalar(value) && isfinite(double(value));
 end
 
 function localValidateRandomAccessCompatibility(cfg, ctx)

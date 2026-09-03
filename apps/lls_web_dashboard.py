@@ -3965,6 +3965,10 @@ def scenario_user_count(config_payload: dict[str, Any]) -> int:
     values = [
         path_get(config_payload, "users.n_users", 0),
         path_get(config_payload, "deployment_topology.num_ues", 0),
+        path_get(config_payload, "scenario.ue.nUE", 0),
+        path_get(config_payload, "lls6g.resolvedConfig.users.n_users", 0),
+        path_get(config_payload, "lls6g.resolvedConfig.deployment_topology.num_ues", 0),
+        path_get(config_payload, "lls6g.resolvedConfig.scenario.ue.nUE", 0),
     ]
     numeric: list[int] = []
     for item in values:
@@ -4657,21 +4661,23 @@ def _dashboard_result_roots() -> list[Path]:
 
 
 def _read_json_file(path: Path) -> dict[str, Any]:
-    if not path.is_file():
+    io_path = _windows_extended_path(path)
+    if not io_path.is_file():
         return {}
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(io_path.read_text(encoding="utf-8"))
     except Exception:
         return {}
     return payload if isinstance(payload, dict) else {}
 
 
 def _read_first_csv_record(path: Path) -> dict[str, Any]:
-    if not path.is_file():
+    io_path = _windows_extended_path(path)
+    if not io_path.is_file():
         return {}
     try:
-        with csv_field_limit_for_payload(path.stat().st_size):
-            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        with csv_field_limit_for_payload(io_path.stat().st_size):
+            with io_path.open("r", encoding="utf-8-sig", newline="") as handle:
                 reader = csv.DictReader(handle)
                 row = next(reader, None)
     except Exception:
@@ -4680,11 +4686,12 @@ def _read_first_csv_record(path: Path) -> dict[str, Any]:
 
 
 def _read_csv_records(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file():
+    io_path = _windows_extended_path(path)
+    if not io_path.is_file():
         return []
     try:
-        with csv_field_limit_for_payload(path.stat().st_size):
-            with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        with csv_field_limit_for_payload(io_path.stat().st_size):
+            with io_path.open("r", encoding="utf-8-sig", newline="") as handle:
                 return [dict(row) for row in csv.DictReader(handle)]
     except Exception:
         return []
@@ -4712,10 +4719,11 @@ def _int_value(value: Any) -> int | None:
 def _max_mtime_utc(paths: list[Path]) -> str:
     mtimes: list[float] = []
     for path in paths:
-        if not path.exists():
+        io_path = _windows_extended_path(path)
+        if not io_path.exists():
             continue
         try:
-            mtimes.append(path.stat().st_mtime)
+            mtimes.append(io_path.stat().st_mtime)
         except OSError:
             continue
     if not mtimes:
@@ -4780,44 +4788,27 @@ def _is_nested_execution_artifact(run_folder: Path, candidate: Path) -> bool:
 
 def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
     """Return true only for a folder with a recognized atomic run authority."""
+    def is_file(relative_path: Path) -> bool:
+        return _windows_extended_path(run_dir / relative_path).is_file()
+
     return (
-        (run_dir / "meta" / "scenario_manifest.json").is_file()
-        or (run_dir / "reports" / "csv" / "scenario_summary.csv").is_file()
+        is_file(Path("meta") / "scenario_manifest.json")
+        or is_file(Path("reports") / "csv" / "scenario_summary.csv")
+        or is_file(Path("artifact_generation") / "component_qualification_manifest.csv")
+        or is_file(Path("reports") / "csv" / "full_stack_run_manifest.csv")
+        or is_file(Path("reports") / "json" / "phase18_reanalysis_manifest.json")
+        or is_file(Path("meta") / "recovery_manifest.json")
         or (
-            run_dir
-            / "artifact_generation"
-            / "component_qualification_manifest.csv"
-        ).is_file()
-        or (
-            run_dir
-            / "reports"
-            / "csv"
-            / "full_stack_run_manifest.csv"
-        ).is_file()
-        or (
-            run_dir
-            / "reports"
-            / "json"
-            / "phase18_reanalysis_manifest.json"
-        ).is_file()
-        or (run_dir / "meta" / "recovery_manifest.json").is_file()
-        or (
-            (run_dir / "run_provenance.json").is_file()
-            and (run_dir / "artifact_manifest.csv").is_file()
-            and (run_dir / "result_validity.csv").is_file()
-            and (run_dir / "truth_contract.csv").is_file()
+            is_file(Path("run_provenance.json"))
+            and is_file(Path("artifact_manifest.csv"))
+            and is_file(Path("result_validity.csv"))
+            and is_file(Path("truth_contract.csv"))
         )
         or (
-            (
-                run_dir
-                / "air_interface"
-                / "reports"
-                / "csv"
-                / "live_stage_status.csv"
-            ).is_file()
+            is_file(Path("air_interface") / "reports" / "csv" / "live_stage_status.csv")
             and (
-                (run_dir / "meta" / "scenario_config_identity.json").is_file()
-                or (run_dir / "meta" / "scenario_config_resolved.json").is_file()
+                is_file(Path("meta") / "scenario_config_identity.json")
+                or is_file(Path("meta") / "scenario_config_resolved.json")
             )
         )
     )
@@ -4852,7 +4843,7 @@ def _filesystem_run_folders() -> list[Path]:
 
 
 def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
-    if not run_folder.is_dir():
+    if not _windows_extended_path(run_folder).is_dir():
         return None
     manifest_path = run_folder / "meta" / "scenario_manifest.json"
     summary_path = run_folder / "reports" / "csv" / "scenario_summary.csv"
@@ -10984,6 +10975,32 @@ def _config_get_nested(config: dict[str, Any], path: str, default: Any = None) -
 
 def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
     config = parse_config_json(run_row)
+    runner_profile = ""
+    for runner_path in (
+        "scenario.runner_profile",
+        "lls6g.resolvedConfig.scenario.runner_profile",
+        "simulation.runner_profile",
+        "lls6g.resolvedConfig.simulation.runner_profile",
+    ):
+        value = _config_get_nested(config, runner_path, None)
+        if value is not None and not isinstance(value, (dict, list, tuple, set)):
+            runner_value = str(value).strip()
+            if runner_value:
+                runner_profile = runner_value.lower()
+                break
+    if not runner_profile:
+        runner_profile = str(run_row.get("profile_name") or "").strip().lower()
+    sweep_base_profile = ""
+    for sweep_base_path in (
+        "scenario.sweep.base_profile",
+        "lls6g.resolvedConfig.scenario.sweep.base_profile",
+    ):
+        value = _config_get_nested(config, sweep_base_path, None)
+        if value is not None and not isinstance(value, (dict, list, tuple, set)):
+            sweep_value = str(value).strip()
+            if sweep_value:
+                sweep_base_profile = sweep_value.lower()
+                break
     compact_lls_run = (
         str(run_row.get("profile_name") or "").strip().lower()
         == "ran1_waveform_truth"
@@ -11043,9 +11060,15 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
                 return token
         return str(default)
 
-    ai_enabled = bool(
-        _config_get_nested(config, "ai.enable", False)
-        or _config_get_nested(config, "lls6g.resolvedConfig.ai.enable", False)
+    ai_enabled = config_bool(
+        "ai.enable",
+        "ai.enabled",
+        "ai_ml.enable",
+        "ai_ml.enabled",
+        "lls6g.resolvedConfig.ai.enable",
+        "lls6g.resolvedConfig.ai.enabled",
+        "lls6g.resolvedConfig.ai_ml.enable",
+        "lls6g.resolvedConfig.ai_ml.enabled",
     )
     ntn_enabled = config_bool(
         "ntn.enabled",
@@ -11201,14 +11224,45 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "mimo.rank_adaptation_enable",
         "lls6g.resolvedConfig.mimo.rank_adaptation_enable",
     ) or rank_policy not in {"", "fixed", "none", "disabled", "off"}
-    max_spatial_rank = max(
+    active_spatial_rank = max(
         1.0,
         config_number("mimo.n_layers", default=1.0),
-        config_number("mimo.max_dl_layers", default=1.0),
-        config_number("mimo.max_ul_layers", default=1.0),
-        config_number("mimo_and_beam_management.rank_set", default=1.0),
         config_number("pdsch.rank", default=1.0),
         config_number("pusch.layer_count", default=1.0),
+    )
+    if rank_adaptation_enabled:
+        # Maximum-layer capability is an executed objective only when the
+        # resolved run enables rank adaptation.  A fixed-rank-one waveform
+        # can use a two-element/two-port array while still exposing only one
+        # effective spatial mode to the DM-RS/CSI receiver.  Treating the
+        # hardware capability as an executed rank-two objective incorrectly
+        # makes a matrix condition-number plot mandatory even though the
+        # authoritative receiver reports not_applicable_rank1.
+        max_spatial_rank = max(
+            active_spatial_rank,
+            config_number("mimo.max_dl_layers", default=1.0),
+            config_number("mimo.max_ul_layers", default=1.0),
+            config_number("mimo_and_beam_management.rank_set", default=1.0),
+        )
+    else:
+        max_spatial_rank = active_spatial_rank
+    csi_rs_port_count = config_number(
+        "reference_signals.csi_rs_ports",
+        "reference_signals.nzp_csi_rs.n_ports",
+        "phy.csirs.nPorts",
+        "lls6g.resolvedConfig.reference_signals.csi_rs_ports",
+        "lls6g.resolvedConfig.reference_signals.nzp_csi_rs.n_ports",
+        "lls6g.resolvedConfig.phy.csirs.nPorts",
+        default=1.0,
+    )
+    # Data rank and channel-observation rank are different authorities. A
+    # fixed rank-one PDSCH may sound two or more CSI-RS ports and therefore
+    # measure a genuine multi-column channel condition number. Keep data-rank
+    # charts governed by max_spatial_rank while condition-number evidence is
+    # governed by the executed CSI-RS probe dimension.
+    max_spatial_measurement_rank = max(
+        max_spatial_rank,
+        csi_rs_port_count if csi_enabled else 1.0,
     )
     fixed_mcs_mode = config_text(
         "link_adaptation.fixed_or_amc",
@@ -11234,17 +11288,76 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "lls6g.resolvedConfig.output.profiler_enabled",
         "output.profiler_enabled",
     )
+    resource_profiler_enabled = config_bool(
+        "run_control.resource_profiling_enable",
+        "output.resource_profiler_enabled",
+        "lls6g.resolvedConfig.run_control.resource_profiling_enable",
+        "lls6g.resolvedConfig.output.resource_profiler_enabled",
+    )
+    worker_profiler_enabled = config_bool(
+        "run_control.worker_profiling_enable",
+        "output.worker_profiler_enabled",
+        "lls6g.resolvedConfig.run_control.worker_profiling_enable",
+        "lls6g.resolvedConfig.output.worker_profiler_enabled",
+    )
+    database_profiler_enabled = config_bool(
+        "run_control.database_profiling_enable",
+        "output.database_profiler_enabled",
+        "lls6g.resolvedConfig.run_control.database_profiling_enable",
+        "lls6g.resolvedConfig.output.database_profiler_enabled",
+    )
+    artifact_timing_enabled = config_bool(
+        "run_control.artifact_timing_enable",
+        "output.artifact_timing_enabled",
+        "lls6g.resolvedConfig.run_control.artifact_timing_enable",
+        "lls6g.resolvedConfig.output.artifact_timing_enabled",
+    )
+    api_profiler_enabled = config_bool(
+        "run_control.api_profiling_enable",
+        "output.api_profiler_enabled",
+        "lls6g.resolvedConfig.run_control.api_profiling_enable",
+        "lls6g.resolvedConfig.output.api_profiler_enabled",
+    )
+    parallel_determinism_enabled = config_bool(
+        "validation.parallel_determinism.enabled",
+        "validation.serial_parallel_determinism.enabled",
+        "lls6g.resolvedConfig.validation.parallel_determinism.enabled",
+        "lls6g.resolvedConfig.validation.serial_parallel_determinism.enabled",
+    )
     comparison_enabled = bool(
         str(_config_get_nested(config, "run.comparisonBaselineRunID", "")).strip()
         or str(_config_get_nested(config, "lls6g.resolvedConfig.comparison.baseline_run_id", "")).strip()
     )
+    # The browser contract must follow the same explicit PUCCH-format
+    # authority as the waveform runtime.  A browser-only override is allowed
+    # for multi-format campaigns; otherwise derive the active format from the
+    # resolved/original control configuration.  Defaulting every run to F0
+    # incorrectly required a fabricated Format-0 table for Format-2-only
+    # waveform runs.
     active_pucch_formats = _config_get_nested(
         config,
         "lls6g.resolvedConfig.output.browser_contract.active_pucch_formats",
-        _config_get_nested(config, "output.browser_contract.active_pucch_formats", [0]),
+        None,
     )
+    if active_pucch_formats is None:
+        active_pucch_formats = _config_get_nested(
+            config, "output.browser_contract.active_pucch_formats", None
+        )
+    if active_pucch_formats is None:
+        active_pucch_formats = _config_get_nested(
+            config, "lls6g.resolvedConfig.control.pucch_format", None
+        )
+    if active_pucch_formats is None:
+        active_pucch_formats = _config_get_nested(config, "control.pucch_format", 0)
     if not isinstance(active_pucch_formats, (list, tuple, set)):
         active_pucch_formats = [active_pucch_formats]
+    canonical_pucch_formats: list[str] = []
+    for value in active_pucch_formats:
+        token = str(value).strip().lower().replace("format", "").lstrip("f")
+        if token in {"0", "1", "2", "3", "4"} and token not in canonical_pucch_formats:
+            canonical_pucch_formats.append(token)
+    if not canonical_pucch_formats:
+        canonical_pucch_formats = ["0"]
     harq_enabled = config_any_bool(
         "harq.enabled",
         "canonical_control.harq.enabled",
@@ -11348,6 +11461,14 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "channel.shadowFadingEnabled",
         "lls6g.resolvedConfig.channel.shadow_fading_enabled",
         "lls6g.resolvedConfig.channels.shadow_fading_enabled",
+        default=False,
+    )
+    o2i_enabled = config_bool(
+        "canonical_control.channel.o2i_enabled",
+        "channels.o2i_enabled",
+        "channel.o2i_enabled",
+        "lls6g.resolvedConfig.channel.o2i_enabled",
+        "lls6g.resolvedConfig.channels.o2i_enabled",
         default=False,
     )
     interference_execution = config_text(
@@ -11500,7 +11621,10 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         or "AWGN"
     ).strip().upper()
     fading_enabled = channel_model not in {"", "AWGN", "NONE", "OFF"}
+    num_ues = scenario_user_count(config)
     return {
+        "runner_profile": runner_profile,
+        "sweep_base_profile": sweep_base_profile,
         "cross_feature_qualification": cross_feature_qualification,
         "ai_enabled": ai_enabled,
         "ntn_enabled": ntn_enabled,
@@ -11520,13 +11644,20 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "csi_enabled": csi_enabled,
         "rank_adaptation_enabled": rank_adaptation_enabled,
         "max_spatial_rank": int(round(max_spatial_rank)),
+        "max_spatial_measurement_rank": int(round(max_spatial_measurement_rank)),
         "fixed_mcs_mode": fixed_mcs_mode,
         "save_figures": save_figures,
         "save_png": save_png,
         "raster_output_enabled": raster_output_enabled,
         "profiler_enabled": profiler_enabled,
+        "resource_profiler_enabled": resource_profiler_enabled,
+        "worker_profiler_enabled": worker_profiler_enabled,
+        "database_profiler_enabled": database_profiler_enabled,
+        "artifact_timing_enabled": artifact_timing_enabled,
+        "api_profiler_enabled": api_profiler_enabled,
+        "parallel_determinism_enabled": parallel_determinism_enabled,
         "comparison_enabled": comparison_enabled,
-        "active_pucch_formats": [str(value).strip() for value in active_pucch_formats],
+        "active_pucch_formats": canonical_pucch_formats,
         "harq_enabled": harq_enabled,
         "rf_impairments_enabled": rf_impairments_enabled,
         "power_control_enabled": power_control_enabled,
@@ -11537,6 +11668,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "noise_operating_mode": noise_operating_mode,
         "absolute_rx_power_calibrated": absolute_rx_power_calibrated,
         "shadowing_enabled": shadowing_enabled,
+        "o2i_enabled": o2i_enabled,
         "interference_enabled": interference_enabled,
         "initial_access_enabled": initial_access_enabled,
         "prach_enabled": prach_enabled,
@@ -11556,6 +11688,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "prach_threshold_sweep_enabled": prach_threshold_sweep_enabled,
         "reciprocity_calibration_enabled": reciprocity_calibration_enabled,
         "fading_enabled": fading_enabled,
+        "num_ues": int(num_ues),
     }
 
 

@@ -22,6 +22,27 @@ assert(isequal(double(bs.ElementObj.SidelobeLevel), [30 30]));
 assert(double(bs.ElementObj.MaximumAttenuation) == 30);
 assert(double(bs.ElementObj.MaximumGain) == 8);
 
+bsSampleMeta = localMeta(bs, "BS");
+bsSampleMeta.BaseStationID = 1;
+ueSampleMeta = localMeta(ue, "UE");
+ueSampleMeta.UEIndex = 1;
+patternT = sixgr.truth.buildRuntimeAntennaPatternSampleTable(cfg, ...
+    struct("Antenna", bs, "Metadata", bsSampleMeta), ...
+    struct("Antenna", ue, "Metadata", ueSampleMeta));
+assert(~isempty(patternT));
+assert(all(isfinite(patternT.Directivity_dBi)));
+assert(all(patternT.ArrayClass == "phased.NRRectangularPanelArray"));
+assert(all(patternT.ElementClass == "phased.NRAntennaElement"));
+assert(all(patternT.PatternSource == ...
+    "actual_CoupledTruthRuntime_phased_NRRectangularPanelArray"));
+assert(all(patternT.truth_status == "real_runtime_object_evidence"));
+assert(all(~patternT.SelectedBeamApplied));
+assert(all(ismember(["BS","UE"], unique(patternT.NodeType))));
+expectedSamplesPerNode = ...
+    numel(-180:5:180) * numel(-90:5:90);
+assert(height(patternT) == 2 * expectedSamplesPerNode);
+assert(all(strlength(patternT.PatternSHA256) == 64));
+
 bsMeta = localMeta(bs, "BS");
 ueMeta = localMeta(ue, "UE");
 [channel, meta] = sixgr.channel.ChannelFactory.create(cfg, ...
@@ -131,6 +152,15 @@ variantUEMeta = localMeta(variantUE, "UE");
 variantCleanup = onCleanup(@() localRelease(variantChannel)); %#ok<NASGU>
 assert(isequal(double(variantMeta.TransmitArrayOrientation_deg(:).'), [12 3 5]));
 assert(isequal(double(variantMeta.ReceiveArrayOrientation_deg(:).'), [-7 -4 -6]));
+
+variantPatternT = sixgr.truth.buildRuntimeAntennaPatternSampleTable( ...
+    variantCfg, struct("Antenna", variantBS, ...
+    "Metadata", localMeta(variantBS, "BS")), ...
+    struct("Antenna", variantUE, ...
+    "Metadata", localMeta(variantUE, "UE")));
+assert(~isempty(variantPatternT));
+assert(~isequal(unique(patternT.PatternSHA256), ...
+    unique(variantPatternT.PatternSHA256)));
 
 % Strict pattern coupling must fail closed when a required YAML authority
 % is removed; it must never substitute the former 65/30/8 defaults.

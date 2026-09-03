@@ -1,10 +1,28 @@
-function estimate = estimateSRSRITPMI(Hest, nVar, cfg)
+function estimate = estimateSRSRITPMI(Hest, nVar, cfg, varargin)
 %ESTIMATESRSRITPMI Estimate UL RI and TPMI from SRS channel observations.
 %
 % This helper keeps the estimator explicitly in the SRS / UL sounding path:
 %   1. Form PRB-averaged channel observations from the measured Hest grid.
 %   2. Derive RI from post-equalization mutual information across PRBs
 %      and SRS symbols.
+%
+% The channel-estimate/noise pair is sufficient to rank spatial candidates,
+% but it is not, by itself, an absolute PUSCH data-channel power reference.
+% Callers that need a scheduler-facing SINR must therefore supply the
+% receiver-measured SRS reference-SINR and its provenance.  The estimator
+% preserves the relative per-layer MMSE prediction and anchors its linear
+% wideband mean to that measured receiver quantity.  Unanchored layer SINRs
+% remain diagnostic and are never labelled as scheduling truth.
+
+ip = inputParser;
+ip.addParameter("AbsoluteSINRAnchor_dB", NaN, ...
+    @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("AbsoluteSINRAnchorSource", "", ...
+    @(x) ischar(x) || isstring(x));
+ip.addParameter("AbsoluteSINRAnchorPowerReferencePlane", "", ...
+    @(x) ischar(x) || isstring(x));
+ip.parse(varargin{:});
+opt = ip.Results;
 %   3. Score TPMI codebook candidates with the same MI objective across PRBs
 %      and SRS symbols.
 
@@ -25,6 +43,10 @@ estimate = struct( ...
     "SelectedPostEqSINRSource", "", ...
     "SelectedPostEqSINRValueRole", "", ...
     "SelectedPostEqSINRValueStatus", "NOT_AVAILABLE", ...
+    "SelectedPostEqSINRCalibrationOffset_dB", NaN, ...
+    "SelectedPostEqSINRAnchor_dB", NaN, ...
+    "SelectedPostEqSINRAnchorSource", "", ...
+    "SelectedPostEqSINRPowerReferencePlane", "", ...
     "SelectedBeamIndices", [], ...
     "PRBCount", NaN, ...
     "SRSSymbolCount", NaN, ...
@@ -97,15 +119,53 @@ estimate.TPMI = double(tpmi);
 estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
 estimate.SelectedBeamIndices = double(beamIndices);
+anchor_dB = double(opt.AbsoluteSINRAnchor_dB);
+anchorSource = strtrim(string(opt.AbsoluteSINRAnchorSource));
+anchorPlane = strtrim(string(opt.AbsoluteSINRAnchorPowerReferencePlane));
+anchorSourceLower = lower(anchorSource);
+anchorPlaneLower = lower(anchorPlane);
+measuredREAnchor = anchorSourceLower == ...
+    "measured_ul_srs_pilot_reconstruction_sinr" && ...
+    anchorPlaneLower == "receiver_srs_resource_elements_after_ofdm_demodulation";
+runtimePowerAnchor = anchorSourceLower == ...
+    "runtime_ul_srs_power_control_link_budget_sinr" && ...
+    anchorPlaneLower == ...
+    "receiver_input_equivalent_srs_total_power_over_noise_bandwidth_before_adc";
+anchorUsable = isfinite(anchor_dB) && (measuredREAnchor || runtimePowerAnchor);
+if anchorUsable && ~isempty(layerSINR_dB) && isfinite(widebandMeanSINR_dB)
+    calibrationOffset_dB = anchor_dB - double(widebandMeanSINR_dB);
+    layerSINR_dB = double(layerSINR_dB) + calibrationOffset_dB;
+    minimumLayerSINR_dB = min(layerSINR_dB);
+    layerLinear = 10.^(double(layerSINR_dB) ./ 10);
+    widebandMeanSINR_dB = 10 .* log10(max(mean(layerLinear), eps));
+    estimate.SelectedPostEqSINRCalibrationOffset_dB = double(calibrationOffset_dB);
+    estimate.SelectedPostEqSINRAnchor_dB = double(anchor_dB);
+    estimate.SelectedPostEqSINRAnchorSource = char(anchorSource);
+    estimate.SelectedPostEqSINRPowerReferencePlane = char(anchorPlane);
+end
 estimate.SelectedPostEqSINRPerLayer_dB = double(layerSINR_dB);
 estimate.SelectedMinimumLayerMeanPostEqSINR_dB = double(minimumLayerSINR_dB);
 estimate.SelectedWidebandMeanPostEqSINR_dB = double(widebandMeanSINR_dB);
 if ~isempty(layerSINR_dB) && all(isfinite(layerSINR_dB))
-    estimate.SelectedPostEqSINRSource = ...
-        "measured_srs_hest_selected_ri_tpmi_mmse_post_equalization";
-    estimate.SelectedPostEqSINRValueRole = ...
-        "predicted_pusch_data_channel_scheduling_input";
-    estimate.SelectedPostEqSINRValueStatus = "PASS";
+    if anchorUsable
+        if runtimePowerAnchor
+            estimate.SelectedPostEqSINRSource = ...
+                "receiver_power_plane_srs_sinr_anchored_selected_ri_tpmi_mmse_relative_layer_prediction";
+        else
+            estimate.SelectedPostEqSINRSource = ...
+                "receiver_measured_srs_sinr_anchored_selected_ri_tpmi_mmse_relative_layer_prediction";
+        end
+        estimate.SelectedPostEqSINRValueRole = ...
+            "power_plane_calibrated_predicted_pusch_data_channel_scheduling_input";
+        estimate.SelectedPostEqSINRValueStatus = "PASS";
+    else
+        estimate.SelectedPostEqSINRSource = ...
+            "measured_srs_hest_selected_ri_tpmi_mmse_unanchored_relative_layer_metric";
+        estimate.SelectedPostEqSINRValueRole = ...
+            "diagnostic_relative_spatial_metric_not_data_scheduler_input";
+        estimate.SelectedPostEqSINRValueStatus = ...
+            "DIAGNOSTIC_ONLY_UNCALIBRATED_POWER_PLANE";
+    end
 end
 if isfinite(tpmi)
     estimate.TPMISource = "ul_srs_mmse_post_equalization_mi_tpmi_estimator";

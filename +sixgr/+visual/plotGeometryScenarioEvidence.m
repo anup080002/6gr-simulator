@@ -40,6 +40,11 @@ skipped = repmat(struct("PlotStem", "", "Reason", ""), 0, 1);
 [paths, reason] = localPlotGeometryDashboard(reportImageDir, topologyT, trajT, sinrT);
 [generated, skipped] = localAccumulate(generated, skipped, paths, "geometry_scenario_dashboard", reason);
 
+% Every generated raster is evidence only when it is bound to the exact
+% runtime CSV bytes used to render it. This also makes later re-finalization
+% verifiable without rerunning the PHY.
+sixgr.visual.writeGeometryPlotLineage(string(rootRunFolder));
+
 plotInfo = struct();
 plotInfo.RootRunFolder = string(rootRunFolder);
 plotInfo.GeneratedPlots = generated;

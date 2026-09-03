@@ -677,6 +677,10 @@ canonical_control:
       frequency_tolerance_hz: 50
       channel_nmse_threshold_db: -8
     srs_periodicity_ms: 10
+    # NR periodic SRS offset is zero-based. Offset 4 binds the strict
+    # waveform resource to the first authored one-based occasion (slot 5);
+    # remaining occasions are retained for multi-UE runtime scheduling.
+    period_offset: 4
     srs_slot_within_period:
     - 5
     - 10
@@ -2032,7 +2036,6 @@ pdsch:
   num_antenna_ports: 1
   transmission_scheme: nonCodebook
   codebook_type: type1
-  pmi: 0
   modulation: 256QAM
   modulation_table: qam256_table2
   mixed_modulation_flag: false
@@ -2040,6 +2043,10 @@ pdsch:
   distribution_matching_policy: none
   scrambling_policy: nr_38211
   dmrs_policy: configured_type1_mapping_a
+  # Optional measured-DMRS LS shortcut for an explicitly flat, static,
+  # rank-one PRG channel only. The receiver rejects ineligible use rather
+  # than expanding a scalar estimate across a fading resource grid.
+  use_exact_flat_static_mimo_prg_estimator: false
   ptrs_policy: disabled
   csi_rs_association: disabled_fixed_link
   mimo_mode: su_mimo
@@ -2077,6 +2084,9 @@ pdsch:
   xoh_pdsch: 0
   tbs_scaling: 1
   cbg_transmission: false
+  dmrs_residual_post_eq_sinr_bound_enabled: false
+  decision_directed_post_eq_sinr_bound_enabled: false
+  decoder_noise_variance_mode: post_equalization
 pusch:
   enabled: true
   execution_profile: phy_calibration
@@ -2125,7 +2135,6 @@ pusch:
   num_antenna_ports: 1
   transmission_scheme: nonCodebook
   codebook_type: codebook1_ng1n4n1
-  tpmi: 0
   sri: 0
   rv_per_codeword:
   - 0
@@ -2165,7 +2174,7 @@ pusch:
   repetition_count: 1
   dmrs_residual_post_eq_sinr_bound_enabled: false
   decision_directed_post_eq_sinr_bound_enabled: false
-  decoder_noise_variance_mode: post_equalization
+  decoder_noise_variance_mode: pre_equalization
   power_control:
     enabled: false
     open_loop_enabled: false
@@ -2454,12 +2463,17 @@ rf_frontend:
     averaging_windows: 4
     carrier_leakage_removal: true
   ul_power_control:
+    enabled: false
+    open_loop_enabled: false
+    closed_loop_enabled: false
+    phr_report_enabled: false
     require_measured_reference_rs: true
+    max_pathloss_measurement_age_slots: 40
     configured_snr_pathloss_forbidden: true
     tpc_source: decoded_control_event
     tpc_mode: accumulation
     state_epoch_required: true
-    pusch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
@@ -2474,6 +2488,10 @@ pucch_resources:
   - id: 1
     max_payload_bits: 1706
     resource_ids: [10, 11, 12]
+  multi_user_assignment:
+    mode: rnti_modulo_resource_set
+    resource_set_id: 0
+    require_unique_simultaneous_ues: false
   resources:
   - id: 0
     format: 0
@@ -2514,7 +2532,7 @@ pucch_resources:
     intra_slot_hopping: false
     second_hop_start_prb: null
     initial_cyclic_shift: 0
-    occ_length: 1
+    occ_length: 2
     occ_index: 0
     additional_dmrs: false
     pi2_bpsk: false
@@ -3002,3 +3020,80 @@ execution_scales:
           error_target: 0
   full:
     overlay: {}
+csi_acquisition_and_reporting:
+  # Fixed-SNR calibration intentionally disables adaptive CSI feedback while
+  # still declaring the entire operator surface.  These fields are retained
+  # so a child YAML can enable CSI without falling back to MATLAB defaults.
+  dl_csi_enabled: false
+  ul_csi_enabled: false
+  joint_dl_ul_csi_enabled: false
+  csi_rs_baseline_flag: false
+  dmrs_based_csi_flag: false
+  srs_based_csi_flag: false
+  reciprocity_based_flag: false
+  feedback_based_flag: false
+  cqi_policy: fixed
+  pmi_policy: fixed
+  ri_policy: fixed
+  cri_policy: disabled
+  channel_state_information_mode: none
+  pmi_codebook_mode: noncodebook
+  l1_sinr_policy: configured_snr
+  max_trusted_reference_sinr_db: 45
+  rsrp_policy: disabled
+  delta_mcs_policy: disabled
+  dmrs_port_selection_policy: scheduled_port_set
+  report_trigger: periodic
+  report_periodicity: 20ms
+  report_payload_mode: compressed
+  compression_mode: none
+  sscc_mode: false
+  jscc_mode: false
+  jscm_mode: false
+  analog_feedback_mode: false
+  crc_attached_mode: true
+  crc_free_mode: false
+  multiplexing_with_uci_policy: baseline
+  report_latency_model: baseline
+  measurement_timeline: slot_based
+  application_timeline: slot_plus_one
+  codebook_framework: nr_type1
+  sparse_csi_rs_policy: disabled
+  downloadable_model_policy: disabled
+  report_overhead_policy: disabled
+  joint_port_mapping_policy: disabled
+  joint_timeline_policy: disabled
+  rf_papr_assumption: unspecified
+  dl_csi_mode: disabled
+  ul_csi_mode: disabled
+  csi_report_type: disabled
+  csi_report_periodicity_slots: 20
+  csi_report_offset_slots: 0
+  csi_reporting_delay_slots: 0
+  pmilayour: fixed_rank
+  max_feedback_overhead_pct: 0.0
+  cqi_table: table1
+  sinr_to_cqi_mode: disabled
+  effective_sinr_method: none
+  eesm_beta_db: 1.5
+  eesm_beta_by_mcs_db: []
+  eesm_beta_mcs_index: []
+  target_bler: 0.1
+  target_bler_dl: 0.1
+  target_bler_ul: 0.1
+  bler_curve_slope_db: 1.5
+  report_configuration:
+    report_config_id: csi-report-master-sinr-disabled-0
+    epoch: 0
+    codebook_mode: 1
+    report_quantity: cri-RI-PMI-CQI
+    frequency_granularity: wideband
+    uci_channel: PUCCH
+    n1: 1
+    n2: 1
+    o1: 1
+    o2: 1
+    panels: 1
+    num_subbands: 1
+    number_of_beams: 1
+    phase_alphabet_size: 4

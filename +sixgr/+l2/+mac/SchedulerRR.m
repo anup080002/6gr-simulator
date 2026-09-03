@@ -452,6 +452,21 @@ g.OLLAState = "";
 g.MCSSelectionSource = "";
 g.CQIProvenance = "";
 g.MCSValueStatus = "";
+% Runtime link-adaptation lineage is part of every grant's schema.  A
+% scalar false/NaN value means "not applied"; an empty value is malformed
+% and must never be introduced while aligning grants from different UEs.
+g.LinkAdaptationFeedbackApplied = false;
+g.LinkAdaptationAppliedFeedbackSourceSlot = NaN;
+g.LinkAdaptationAppliedFeedbackDeliveredSlot = NaN;
+g.LinkAdaptationAppliedFeedbackAgeSlots = NaN;
+g.AppliedLinkAdaptationResolvedCQI = NaN;
+g.AppliedLinkAdaptationCQIBasedMCS = NaN;
+g.AppliedLinkAdaptationMCS = NaN;
+g.AppliedLinkAdaptationOLLADeltaDb = NaN;
+g.AppliedLinkAdaptationOLLAUpdateCount = NaN;
+g.AppliedLinkAdaptationOLLAFeedbackEligible = false;
+g.LinkAdaptationDecisionReason = "";
+g.LinkAdaptationMCSIndex = NaN;
 g.ConfiguredInitialMCSIndex = NaN;
 g.ConfiguredMaximumMCSIndex = NaN;
 g.MaximumMCSBoundApplied = false;

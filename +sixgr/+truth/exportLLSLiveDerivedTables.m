@@ -88,7 +88,18 @@ if ~(istable(userPerfT) && ~isempty(userPerfT))
 end
 coverageT = sixgr.util.structGet(slotTrace, "CoverageLayerTable", table());
 if ~(istable(coverageT) && ~isempty(coverageT))
-    coverageT = localBuildCoverageLayerTable(mobilityArtifacts, userPerfT);
+    % CoupledTruthRuntime owns the most recent in-path coverage snapshot.
+    % Do not discard it merely because the richer layer table was not built
+    % before finalization.  Promote the measured snapshot through the normal
+    % coverage-layer join so throughput/HARQ fields retain the same runtime
+    % lineage as the user-performance table.
+    coverageInputs = mobilityArtifacts;
+    runtimeCoverageSnapshot = sixgr.util.structGet( ...
+        slotTrace, "CoverageSnapshotTable", table());
+    if istable(runtimeCoverageSnapshot) && ~isempty(runtimeCoverageSnapshot)
+        coverageInputs.CoverageSnapshotTable = runtimeCoverageSnapshot;
+    end
+    coverageT = localBuildCoverageLayerTable(coverageInputs, userPerfT);
 end
 coverageT = localEnsureCoverageLayerSINRContract(coverageT);
 errorRateT = localBuildErrorRateSummaryTable(dlT, ulT);
@@ -399,7 +410,8 @@ specs = [ ...
     localBeamMetricSpec("P1PBCHCRCPassRate", "BCHCrcPass"); ...
     localBeamMetricSpec("P1MIBDecodeRate", "MIBDecoded"); ...
     localBeamMetricSpec("P1SIB1StrictDecodeRate", "SIB1StrictOk"); ...
-    localBeamMetricSpec("P1SSBReceivedPower_dB", "SSBReceivedPower_dB"); ...
+    localBeamMetricSpec("P1SS_RSRP_dBm", "SS_RSRP_dBm"); ...
+    localBeamMetricSpec("P1SS_RSRPRawObserved_dBm", "SS_RSRPRawObserved_dBm"); ...
     localBeamMetricSpec("P1PBCHDMRSMetric", "PBCHDMRSMetric"); ...
     localBeamMetricSpec("P1PBCHNoiseVar", "PBCHNoiseVar"); ...
     localBeamMetricSpec("P1TimingOffset_samples", "TimingOffset_samples"); ...
@@ -424,7 +436,7 @@ T = localEmptySummaryTable();
 if ~(istable(ssbT) && ~isempty(ssbT))
     return;
 end
-score = localBeamNumericColumn(ssbT, ["SSBReceivedPower_dB","PBCHDMRSMetric"]);
+score = localBeamNumericColumn(ssbT, ["SS_RSRP_dBm","PBCHDMRSMetric"]);
 beam = localBeamNumericColumn(ssbT, ["BeamIndex","SSBIndex"]);
 if ~any(isfinite(score)) || ~any(isfinite(beam))
     return;

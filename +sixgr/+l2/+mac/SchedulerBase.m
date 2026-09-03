@@ -658,7 +658,13 @@ classdef (Abstract) SchedulerBase < handle
                         amc.MCSValueStatus = "measured_cqi_mapped";
                     end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
-                    amc.InnerLoopApplied = logical(feedbackValid && ~isBootstrapCQI);
+                    % CausalFeedbackUsable is the authoritative admission
+                    % result after feedback age/source validation.  The
+                    % legacy FeedbackValid bit alone is too narrow for
+                    % measured SRS/CSI feedback installed by the coupled
+                    % runtime and caused executed CQI decisions to be
+                    % mislabeled as unapplied.
+                    amc.InnerLoopApplied = logical(causalFeedbackUsable && ~isBootstrapCQI);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 else
@@ -717,7 +723,7 @@ classdef (Abstract) SchedulerBase < handle
                         amc.MCSValueStatus = "measured_cqi_mapped";
                     end
                     amc.RawCQIDerivedMCS = double(cqiDecision.MCSIndex);
-                    amc.InnerLoopApplied = logical(feedbackValid && ~isBootstrapCQI);
+                    amc.InnerLoopApplied = logical(causalFeedbackUsable && ~isBootstrapCQI);
                     modStr = char(string(cqiDecision.MCSProfile.Modulation));
                     targetCodeRate = double(cqiDecision.MCSProfile.TargetCodeRate);
                 elseif localAMCBlocksGrant(amc)
@@ -1222,6 +1228,11 @@ classdef (Abstract) SchedulerBase < handle
             if ~isfield(grantOut, "Direction") || strlength(string(grantOut.Direction)) == 0
                 grantOut.Direction = obj.Direction;
             end
+            % A DL DCI owns the PUCCH resource indicator used by the UE for
+            % HARQ-ACK.  Resolve it before DCI packing and before the grant
+            % is frozen so the exact value survives the complete
+            % scheduler -> PDCCH -> PDSCH -> HARQ -> PUCCH causal chain.
+            grantOut = obj.attachPUCCHResourceAuthorityToGrant(grantOut);
             % A retransmission preserves the TB, coding, allocation shape,
             % and HARQ process, but it is a new transmission occasion.  K0,
             % K1/K2 and their absolute-slot results belong to the previous
@@ -1322,6 +1333,31 @@ classdef (Abstract) SchedulerBase < handle
                 grantOut.SRI = double(round(sri));
                 grantOut.SRSResourceIndicator = double(round(sri));
             end
+        end
+
+        function grantOut = attachPUCCHResourceAuthorityToGrant(obj, grantIn)
+            % Bind a YAML-authorized PUCCH PRI to every DL scheduling grant.
+            % The mapping policy is a scheduler policy (not a PHY proxy):
+            % 38.212/38.213 define how the DCI PRI selects a configured
+            % resource, while the gNB is responsible for choosing that PRI.
+            grantOut = grantIn;
+            if upper(string(sixgr.util.structGet(grantOut, "Direction", obj.Direction))) ~= "DL"
+                return;
+            end
+            section = sixgr.util.structGet(obj.Cfg, "validation.pucch_resources", struct());
+            if ~(isstruct(section) && logical(sixgr.util.structGet(section, "enabled", false)))
+                return;
+            end
+            explicitPRI = double(sixgr.util.structGet(grantOut, "PUCCHResourceIndicator", NaN));
+            authority = sixgr.phy.pucch.resolveConfiguredPRI(obj.Cfg, ...
+                double(sixgr.util.structGet(grantOut, "UEIndex", NaN)), ...
+                double(sixgr.util.structGet(grantOut, "RNTI", NaN)), ...
+                explicitPRI);
+            grantOut.PUCCHResourceIndicator = authority.PRIValue;
+            grantOut.PUCCHResourceSetId = authority.ResourceSetId;
+            grantOut.PUCCHResourceId = authority.ResourceId;
+            grantOut.PUCCHResourceIndicatorSource = authority.Source;
+            grantOut.PUCCHResourceAuthority = authority.Authority;
         end
 
         function grantOut = attachCanonicalTimingDecision(obj, grantIn)
@@ -1638,16 +1674,15 @@ classdef (Abstract) SchedulerBase < handle
                 error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
                     "DCI packing requires an explicit two-value SymbolAllocation.");
             end
+            fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
             sliv = localTimeDomainAssignIndex( ...
                 symbolAllocation, obj.SymbolsPerSlot);
-            tdaIndex = max(0, min(15, round(double(sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", ...
-                sixgr.util.structGet(grant, "TDRAIndex", 0))))));
-
-            fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
-            pdcchCfg = struct("NSizeGrid", double(nRB));
+            [dciContext, tdaIndex, dciContextSource] = ...
+                sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant( ...
+                obj.Cfg, grant, fmt);
             dciFields = localBuildSupportedDCIFields(obj.Cfg, grant, direction, fmt, riv, tdaIndex, ...
-                rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2);
-            dciPayload = sixgr.phy.pdcch.encodeDCIPayload(dciFields, fmt, pdcchCfg);
+                rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2, dciContext);
+            dciPayload = sixgr.phy.pdcch.encodeDCIPayload(dciFields, fmt, dciContext);
             fmap = localDCIFieldMapFromTable(dciPayload.FieldTable);
             fvals = localDCILegacyFieldValues(dciPayload.Fields, riv, tdaIndex, sliv, mcs, ndi, rv, harqId, dai, k1, k2);
 
@@ -1663,6 +1698,9 @@ classdef (Abstract) SchedulerBase < handle
             dci.RBLength = double(rbLen);
             dci.SLIV = double(sliv);
             dci.TimeDomainAssignmentIndex = double(tdaIndex);
+            dci.ContextData = dciContext.Data;
+            dci.ContextDigest = char(string(dciContext.Digest));
+            dci.ContextSource = char(string(dciContextSource));
             dci.BitLength = double(numel(dci.Bits));
             dci.StandardProfile = "ts38212_supported_dci_payload";
             dci.BitExactPDCCHPayload = true;
@@ -2045,22 +2083,55 @@ end
 function fmt = localResolveDCIFormat(cfg, grant, direction)
 direction = upper(string(direction));
 if direction == "UL"
-    if localNeedsAdvancedULDci(cfg, grant)
-        fmt = "DCI_0_1";
-    else
-        fmt = "DCI_0_0";
-    end
+    needsAdvanced = localNeedsAdvancedULDci(cfg, grant);
+    advancedFormat = "0_1";
+    basicFormat = "0_0";
 else
-    if localNeedsAdvancedDLDci(cfg, grant)
-        fmt = "DCI_1_1";
+    needsAdvanced = localNeedsAdvancedDLDci(cfg, grant);
+    advancedFormat = "1_1";
+    basicFormat = "1_0";
+end
+if needsAdvanced
+    selected = advancedFormat;
+else
+    selected = basicFormat;
+end
+
+% Search-space monitoring is RRC/YAML authority.  A scheduler must never
+% silently manufacture an unmonitored DCI format merely because a finite
+% PMI/CRI/SRI is present in its internal state.  Conversely, when dynamic
+% spatial fields are required, silently falling back to the basic format
+% would omit causal grant information.  Fail closed on that conflict.
+configured = localConfiguredDCIFormats(cfg);
+if ~isempty(configured)
+    compatible = configured(startsWith(configured, extractBefore(selected, "_") + "_"));
+    if ismember(selected, compatible)
+        % Exact intended format is monitored.
+    elseif ~needsAdvanced && ismember(advancedFormat, compatible)
+        selected = advancedFormat;
     else
-        fmt = "DCI_1_0";
+        error("sixgr:SchedulerBase:RequiredDCIFormatNotMonitored", ...
+            'The %s scheduler requires DCI %s, but the configured search space monitors only [%s] for that direction.', ...
+            char(direction), char(selected), char(strjoin(compatible, ",")));
     end
 end
+fmt = "DCI_" + selected;
+end
+
+function formats = localConfiguredDCIFormats(cfg)
+raw = sixgr.util.structGet(cfg, "phy.pdcch.dciFormats", ...
+    sixgr.util.structGet(cfg, "phy.pdcch.dciFormat", []));
+formats = string(raw);
+formats = formats(:).';
+formats = formats(strlength(strtrim(formats)) > 0);
+for ii = 1:numel(formats)
+    formats(ii) = sixgr.phy.pdcch.normalizeDCIFormat(formats(ii));
+end
+formats = unique(formats, "stable");
 end
 
 function fields = localBuildSupportedDCIFields(cfg, grant, direction, fmt, riv, tdaIndex, ...
-        rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2)
+        rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2, dciContext)
 direction = upper(string(direction));
 fmt = sixgr.phy.pdcch.normalizeDCIFormat(fmt);
 fields = struct();
@@ -2098,14 +2169,25 @@ switch fmt
         fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
         fields.pdsch_to_harq_feedback_timing = double(k1);
         fields.antenna_ports = localDLAntennaPortField(grant);
-        fields.transmission_configuration_indication = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
-            sixgr.util.structGet(cfg, "phy.pdsch.TCIState", 0)), 3);
+        if logical(dciContext.Data.TCIPresent)
+            fields.transmission_configuration_indication = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
+                sixgr.util.structGet(cfg, "phy.pdsch.TCIState", 0)), dciContext.Data.TCIWidth);
+        end
         fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
         fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", ...
             double(isfinite(double(sixgr.util.structGet(grant, "CRI", NaN))))), 2);
-        fields.cbg_transmission_information = localClampDCIValue(sixgr.util.structGet(grant, "CBGTI", 0), 8);
-        fields.cbg_flushing_information = localClampDCIValue(sixgr.util.structGet(grant, "CBGFI", 0), 1);
-        fields.dmrs_sequence_initialization = localClampDCIValue(sixgr.util.structGet(grant, "DMRSSequenceInitialization", 0), 1);
+        if logical(dciContext.Data.CBGFieldsPresent)
+            fields.cbg_transmission_information = localClampDCIValue( ...
+                sixgr.util.structGet(grant, "CBGTI", 0), ...
+                dciContext.Data.CBGTransmissionWidth);
+            fields.cbg_flushing_information = localClampDCIValue( ...
+                sixgr.util.structGet(grant, "CBGFI", 0), ...
+                dciContext.Data.CBGFlushWidth);
+        end
+        if logical(dciContext.Data.DMRSSequenceInitializationPresent)
+            fields.dmrs_sequence_initialization = localClampDCIValue( ...
+                sixgr.util.structGet(grant, "DMRSSequenceInitialization", 0), 1);
+        end
     case "0_1"
         fields.frequency_hopping = localClampDCIValue(sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
         fields.first_dai = double(dai);
@@ -2121,7 +2203,15 @@ switch fmt
         fields.antenna_ports = localULAntennaPortField(grant);
         fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
         fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", 0), 2);
+        if logical(dciContext.Data.CBGFieldsPresent)
+            fields.cbg_transmission_information = localClampDCIValue( ...
+                sixgr.util.structGet(grant, "CBGTI", 0), ...
+                dciContext.Data.CBGTransmissionWidth);
+            fields.ptrs_dmrs_association = localClampDCIValue( ...
+                sixgr.util.structGet(grant, "PTRSDMRSAssociation", 0), 2);
+        end
 end
+fields = sixgr.phy.pdcch.completeDCIFields(fields, dciContext);
 end
 
 function fmap = localDCIFieldMapFromTable(fieldTable)
@@ -3129,8 +3219,9 @@ root = localPHYRoot(direction);
 cfg = sixgr.util.structSet(cfg, root + ".nLayers", nLayers);
 cfg = sixgr.util.structSet(cfg, root + ".numLayers", nLayers);
 
-ports = sixgr.util.structGet(cfg, root + ".dmrs.portSet", ...
-    sixgr.util.structGet(cfg, root + ".dmrs.DMRSPortSet", []));
+ports = sixgr.util.structGet(cfg, root + ".dmrs.availablePortSet", ...
+    sixgr.util.structGet(cfg, root + ".dmrs.portSet", ...
+    sixgr.util.structGet(cfg, root + ".dmrs.DMRSPortSet", [])));
 if isempty(ports) && direction == "DL"
     ports = sixgr.util.structGet(cfg, "pdsch6gr.DMRSPortSet", []);
 end

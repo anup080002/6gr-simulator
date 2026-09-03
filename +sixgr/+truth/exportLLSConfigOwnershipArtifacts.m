@@ -1678,7 +1678,12 @@ token = replace(token, " ", "_");
 switch string(parameterName)
     case "deployment_topology.layout_type"
         if ismember(token, ["single_pair","single_link","singlelink","single","link_pair"])
-            token = "indoor_grid";
+            % These tokens all describe the same one-site/one-link runtime
+            % topology resolved by buildInternalConfig.  Treating them as
+            % indoor_grid made the round-trip verifier report a false
+            % authority mismatch even though the active runtime correctly
+            % instantiated single_site.
+            token = "single_site";
         elseif contains(token, "hex")
             token = "hex_grid";
         elseif contains(token, "indoor")

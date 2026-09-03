@@ -982,7 +982,11 @@ switch key
         T = localMetricTableRow(cat, metric, "trace", "pdcch_trials", localTableAvailability(ctx.Tables.PDCCH), NaN, "air_interface/csv/pdcch_trials.csv", "", "air_interface/csv/pdcch_trials.csv", "");
     case "prach_correlation_traces"
         csvPath = localDebugArtifactPath(ctx, "PRACHCorrelationCSV");
-        imgPath = localDebugArtifactPath(ctx, "PRACHCorrelationImage");
+        % The canonical raster is rendered after MATLAB finalization by the
+        % strict contract materializer from the persisted lag-domain CSV.  Do
+        % not point coverage at the suppressed legacy MATLAB figure path.
+        imgPath = fullfile(char(ctx.RunFolder), "analytics", "image", ...
+            "contract__detection-control-analytics__prach-correlation-peak-distributions.png");
         T = localPrachCorrelationMetricRows(cat, metric, ctx, csvPath, imgPath);
     case "beam_score_traces"
         T = [T; ...

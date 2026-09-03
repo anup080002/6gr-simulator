@@ -213,6 +213,7 @@ catch
 end
 
 pdsch = localReserveCSIRSResources(carrier, pdsch, cfg);
+pdsch = localReserveTRSResources(carrier, pdsch, cfg);
 
 end
 
@@ -705,5 +706,101 @@ try
 catch ME
     error("sixgr:phy:grid:allocREsPDSCH:CSIRSReservationApplyFailed", ...
         "CSI-RS runtime resources were generated but could not be reserved in the PDSCH allocation: %s", ME.message);
+end
+end
+
+function pdsch = localReserveTRSResources(carrier, pdsch, cfg)
+% TRS is an NZP-CSI-RS resource and owns exact REs on its configured
+% occasions. The PDSCH encoder must rate-match around those REs before G
+% and TBS are frozen; removing collisions only from an exported grid would
+% leave the transmitted codeword and receiver allocation inconsistent.
+if ~(isstruct(cfg) && logical(sixgr.util.structGet(cfg, ...
+        "phy.trs.enable", false)))
+    return;
+end
+
+try
+    strictTRS = sixgr.phy.trs.buildTRSConfigFromScenario(cfg, ...
+        "RunId", "pdsch_exact_trs_reservation", ...
+        "ScenarioName", "pdsch_exact_trs_reservation");
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:TRSReservationFailed", ...
+        "TRS is enabled but its exact NZP-CSI-RS resource could not be resolved for PDSCH reservation: %s", ...
+        ME.message);
+end
+
+slotsPerFrame = round(double(carrier.SlotsPerFrame));
+slot0 = mod(round(double(carrier.NSlot)), slotsPerFrame);
+configuredSlots0 = unique(mod(round(double(strictTRS.SlotNumbers(:))), ...
+    slotsPerFrame), "stable");
+if ~ismember(slot0, configuredSlots0)
+    return;
+end
+
+try
+    trsCarrier = carrier;
+    trsCarrier.NSlot = slot0;
+    trsIndices = nrCSIRSIndices(trsCarrier, strictTRS.ToolboxCSIRS, ...
+        "IndexStyle", "index", "IndexBase", "0based");
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:TRSReservationFailed", ...
+        "The active TRS occasion in carrier slot %d could not be materialized for exact PDSCH reservation: %s", ...
+        slot0, ME.message);
+end
+
+if isempty(trsIndices)
+    error("sixgr:phy:grid:allocREsPDSCH:EmptyActiveTRSReservation", ...
+        "TRS is active in carrier slot %d but produced no exact REs.", slot0);
+end
+
+plane = double(carrier.NSizeGrid) * 12 * double(carrier.SymbolsPerSlot);
+trsBaseZero = unique(mod(double(trsIndices(:)), plane), "sorted");
+reservedZero = localReferenceREInsidePDSCHAllocation( ...
+    trsBaseZero, carrier, pdsch);
+if isempty(reservedZero)
+    return;
+end
+
+localRejectReferenceDMRSCollision( ...
+    reservedZero, carrier, pdsch, "TRS", ...
+    "sixgr:phy:grid:allocREsPDSCH:TRSDMRSCollision");
+try
+    pdsch.ReservedRE = unique([double(pdsch.ReservedRE(:)); ...
+        reservedZero(:)], "sorted");
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:TRSReservationApplyFailed", ...
+        "Exact TRS REs were resolved but could not be installed in PDSCH ReservedRE: %s", ...
+        ME.message);
+end
+end
+
+function reservedZero = localReferenceREInsidePDSCHAllocation( ...
+        referenceBaseZero, carrier, pdsch)
+prbs = double(pdsch.PRBSet(:).');
+symbolAllocation = double(pdsch.SymbolAllocation(:).');
+subcarriers = reshape(12 .* prbs + (0:11).', 1, []);
+scheduledSymbols = symbolAllocation(1) + ...
+    (0:(symbolAllocation(2) - 1));
+[k, l] = ndgrid(subcarriers, scheduledSymbols);
+allocationZero = double(k(:) + ...
+    12 .* double(carrier.NSizeGrid) .* l(:));
+reservedZero = intersect(double(referenceBaseZero(:)), ...
+    allocationZero, "sorted");
+end
+
+function localRejectReferenceDMRSCollision( ...
+        reservedZero, carrier, pdsch, signalName, identifier)
+dmrsSub = nrPDSCHDMRSIndices(carrier, pdsch, ...
+    "IndexStyle", "subscript", "IndexBase", "0based");
+dmrsBaseZero = unique(double(dmrsSub(:,1) + ...
+    12 .* double(carrier.NSizeGrid) .* dmrsSub(:,2)), "sorted");
+dmrsCollision = intersect(double(reservedZero(:)), ...
+    dmrsBaseZero, "sorted");
+if ~isempty(dmrsCollision)
+    error(identifier, ...
+        ['Configured %s overlaps %d active PDSCH DM-RS RE(s) in slot %d. ' ...
+         'Move the YAML-owned reference resource off the DM-RS symbols; ' ...
+         'DM-RS puncturing is not permitted.'], ...
+        signalName, numel(dmrsCollision), double(carrier.NSlot));
 end
 end

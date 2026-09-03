@@ -122,6 +122,9 @@ if direction == "DL"
     cfg.phy.pdsch.nLayers = numLayers;
     cfg.phy.pdsch.numPorts = numLayers;
     cfg.phy.pdsch.nPorts = numLayers;
+    cfg.phy.pdsch.dmrs.nPorts = numLayers;
+    cfg.phy.pdsch.dmrs.portSet = 0:(numLayers - 1);
+    cfg.phy.pdsch.dmrs.availablePortSet = 0:(numLayers - 1);
     cfg.phy.pdsch.codeRate = codeRate;
     cfg.phy.pdsch.xOverhead = 0;
     cfg.phy.pdsch.executionProfile = "phy_calibration";
@@ -139,6 +142,9 @@ else
     cfg.phy.pusch.numPorts = numLayers;
     cfg.phy.pusch.nPorts = numLayers;
     cfg.phy.pusch.numAntennaPorts = numLayers;
+    cfg.phy.pusch.dmrs.nPorts = numLayers;
+    cfg.phy.pusch.dmrs.portSet = 0:(numLayers - 1);
+    cfg.phy.pusch.dmrs.availablePortSet = 0:(numLayers - 1);
     cfg.phy.pusch.codeRate = codeRate;
     cfg.phy.pusch.xOverhead = 0;
     cfg.phy.pusch.mcsIndex = 4 + mod(idx, 10);

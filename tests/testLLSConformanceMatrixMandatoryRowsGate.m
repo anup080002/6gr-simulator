@@ -15,11 +15,16 @@ ulT = readtable(fullfile(ctx.Layout.AirInterfaceCSVDir, "ul_pusch_trials.csv"), 
 opSummary = sixgr.truth.summarizeEffectiveOperatingPoint(ctx.ScenarioConfig, dlT, ulT);
 rootBad = sixgr.truth.evaluateStrictAnchorStatus(ctx.RunFolder, ctx.ScenarioConfig, ctx.InternalConfig, bad, dlT, ulT, opSummary);
 auditT = readtable(fullfile(ctx.Layout.ReportCSVDir, "conformance_matrix_runtime_audit.csv"), "VariableNamingRule", "preserve");
+objectiveT = readtable(fullfile(ctx.Layout.ReportCSVDir, "scenario_objective_gates.csv"), "VariableNamingRule", "preserve");
 
 assert(~logical(rootBad.Status.MandatorySubsystemsOk), "Required unavailable SRS evidence must fail MandatorySubsystemsOk.");
 assert(~logical(rootBad.Status.StandardsConformanceOk), "Mandatory unavailable runtime evidence must fail StandardsConformanceOk.");
 assert(any(string(auditT.Subsystem) == "srs" & ~logical(auditT.Pass)), ...
     "conformance_matrix_runtime_audit.csv must include the failing SRS row.");
+standardsRow = objectiveT(string(objectiveT.ObjectiveName) == "standards_claim", :);
+assert(height(standardsRow) == 1 && ~logical(standardsRow.Pass(1)) && ...
+    contains(string(standardsRow.FailureReason(1)), "srs:unavailable"), ...
+    "A failed standards row must identify the actual mandatory subsystem proof failure.");
 
 ok = true;
 end

@@ -33,11 +33,30 @@ nStartGrid = max(0, round(double(sixgr.util.structGet(cfg, "phy.carrier.NStartGr
 nCellID = max(0, round(double(sixgr.util.structGet(cfg, "phy.carrier.NCellID", 0))));
 slotNumbers = sixgr.util.structGet(cfg, "phy.trs.slotNumbers", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.slot_numbers", []));
+slotAuthority = "explicit_slot_numbers";
 if isempty(slotNumbers)
-    error("sixgr:phy:trs:MissingSlotNumbers", ...
-        "Enabled TRS requires explicit reference_signals.trs.slot_numbers in YAML.");
+    periodSlots = double(sixgr.util.structGet(cfg, "phy.trs.period_slots", NaN));
+    periodOffset = double(sixgr.util.structGet(cfg, "phy.trs.period_offset", 0));
+    if ~(isscalar(periodSlots) && isfinite(periodSlots) && periodSlots >= 1 && ...
+            periodSlots == round(periodSlots) && isscalar(periodOffset) && ...
+            isfinite(periodOffset) && periodOffset >= 0 && ...
+            periodOffset < periodSlots && periodOffset == round(periodOffset))
+        error("sixgr:phy:trs:MissingSlotAuthority", ...
+            ["Enabled TRS requires either explicit zero-based slot_numbers " + ...
+             "or an integer period_slots/period_offset pair resolved from YAML."]);
+    end
+    slotNumbers = periodOffset;
+    slotAuthority = "periodic_offset";
+else
+    rawSlotNumbers = double(slotNumbers(:).');
+    if any(~isfinite(rawSlotNumbers)) || any(rawSlotNumbers < 0) || ...
+            any(rawSlotNumbers ~= round(rawSlotNumbers))
+        error("sixgr:phy:trs:InvalidSlotNumbers", ...
+            "TRS slot_numbers must be finite nonnegative zero-based integers.");
+    end
+    slotNumbers = rawSlotNumbers;
 end
-slotNumbers = unique(max(0, round(double(slotNumbers(:).'))), "stable");
+slotNumbers = unique(slotNumbers, "stable");
 
 nPorts = max(1, round(double(sixgr.util.structGet(cfg, "phy.trs.nPorts", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.num_ports", 1)))));
@@ -71,6 +90,9 @@ strictCfg.NStartGrid = double(nStartGrid);
 strictCfg.SubcarrierSpacingKHz = double(scsKHz);
 strictCfg.FrameNumber = 0;
 strictCfg.SlotNumbers = double(slotNumbers);
+strictCfg.SlotAuthority = slotAuthority;
+strictCfg.PeriodSlots = double(sixgr.util.structGet(cfg, "phy.trs.period_slots", NaN));
+strictCfg.PeriodOffset = double(sixgr.util.structGet(cfg, "phy.trs.period_offset", NaN));
 strictCfg.CSIRSType = "nzp";
 strictCfg.CSIRSPeriod = "on";
 strictCfg.RowNumber = double(rowNumber);

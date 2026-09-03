@@ -12,6 +12,7 @@ if nargin < 2 || ~istable(T) || isempty(T)
 end
 
 scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
+T = sixgr.truth.normalizeDisabledInterferenceIdentity(T, string(scopeToken));
 names = string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
@@ -54,11 +55,15 @@ end
 
 function tf = localPreserveDeclaredSchema(scopeToken)
 scope = lower(string(scopeToken));
-tf = any(scope == ["dl_pdsch_trials", "ul_pusch_trials", "pdcch_trials", ...
+tf = any(scope == ["dl_pdsch_trials", "ul_pusch_trials", ...
+    "dl_fixed_link_campaign_trials", "ul_fixed_link_campaign_trials", ...
+    "pdcch_trials", ...
     "pucch_trials", "pucch_grant_trace", "prach_trials", "pbch_trials", "srs_trials", "trs_trials", ...
     "pdcch", "pucch", "prach", "pbch", "srs", "trs", ...
     "channel_state", "channel_estimation", "modulation_demodulation", "tx_rx_stage_trace", ...
-    "csirs_stats"]);
+    "csirs_stats", "csi_rs_trials", "rank_layer_trials", ...
+    "mimo_config_strict", "mimo_configured_vs_effective", ...
+    "beam_precoder_table"]);
 end
 
 function tf = localIsStringLikeColumn(col)
@@ -68,6 +73,19 @@ end
 function mask = localCompanionAvailabilityMask(T, fieldName)
 nRows = height(T);
 mask = false(nRows, 1);
+if strcmpi(fieldName, "InterferencePowerSource")
+    % A textual reference-plane description is not evidence that an
+    % interferer contributed power.  Bind this source field only to the
+    % measured aggregate interference power.  Otherwise a configured-off
+    % path with NaN power and zero contributors is mislabeled as an active
+    % runtime interference source during CSV canonicalization.
+    names = string(T.Properties.VariableNames);
+    powerName = names(strcmpi(names, "InterferenceAggregatedRxPower_dBm"));
+    if ~isempty(powerName)
+        mask = localColumnAvailabilityMask(T.(char(powerName(1))));
+    end
+    return;
+end
 base = regexprep(lower(char(string(fieldName))), "(source|valuerole|valuestatus|nareason|definition)$", "");
 if strlength(string(base)) == 0
     return;

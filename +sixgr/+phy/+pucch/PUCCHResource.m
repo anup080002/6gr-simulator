@@ -39,19 +39,33 @@ classdef PUCCHResource
             end
             value.PRBSet = d.StartPRB + (0:d.NumPRBs-1);
             value.SymbolAllocation = [d.StartSymbol d.NumSymbols];
-            localSet(value,"RNTI",d.RNTI);
-            localSet(value,"NID",d.NID);
-            localSet(value,"NID0",d.NID);
-            localSet(value,"HoppingID",d.HoppingID);
-            localSet(value,"FrequencyHopping",localHopping(d.IntraSlotHopping));
+            value = localSet(value,"RNTI",d.RNTI);
+            value = localSet(value,"NID",d.NID);
+            value = localSet(value,"NID0",d.NID);
+            value = localSet(value,"HoppingID",d.HoppingID);
+            value = localSet(value,"FrequencyHopping",localHopping(d.IntraSlotHopping));
             if d.IntraSlotHopping
-                localSet(value,"SecondHopStartPRB",d.SecondHopStartPRB);
+                value = localSet(value,"SecondHopStartPRB",d.SecondHopStartPRB);
             end
-            localSet(value,"InitialCyclicShift",d.InitialCyclicShift);
-            localSet(value,"OCCI",d.OCCIndex);
-            localSet(value,"SpreadingFactor",d.OCCLength);
-            localSet(value,"AdditionalDMRS",logical(d.AdditionalDMRS));
-            localSet(value,"Pi2BPSK",logical(d.Pi2BPSK));
+            % These names are not interchangeable across PUCCH formats.
+            % In the repository schema OCCLength is the configured
+            % orthogonal-cover/spreading factor.  MATLAB R2026 exposes it
+            % as SpreadingFactor for formats 2/3/4 and rejects the legacy
+            % value one for formats 2/4.  Do not copy it blindly to every
+            % Toolbox object.
+            if ismember(d.Format,[0 1])
+                value = localSet(value,"InitialCyclicShift",d.InitialCyclicShift);
+            end
+            if ismember(d.Format,[1 2 3 4])
+                value = localSet(value,"OCCI",d.OCCIndex);
+            end
+            if ismember(d.Format,[2 3 4])
+                value = localSet(value,"SpreadingFactor",d.OCCLength);
+            end
+            if ismember(d.Format,[3 4])
+                value = localSet(value,"AdditionalDMRS",logical(d.AdditionalDMRS));
+                value = localSet(value,"Pi2BPSK",logical(d.Pi2BPSK));
+            end
             if isprop(value,"Modulation")
                 if logical(d.Pi2BPSK)
                     value.Modulation = "pi/2-BPSK";
@@ -63,7 +77,7 @@ classdef PUCCHResource
     end
 end
 
-function localSet(object,name,value)
+function object = localSet(object,name,value)
 if isprop(object,name) && ~isempty(value) && ...
         ~(isnumeric(value) && isscalar(value) && isnan(value))
     object.(name) = value;

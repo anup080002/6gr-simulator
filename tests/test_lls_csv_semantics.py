@@ -44,6 +44,7 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_production_qualification_reducer,
     _audit_gate_row_table,
     _audit_measurement_sidecar_manifest,
+    _audit_observed_re_allocation,
     _audit_canonical_component_manifest,
     _audit_mcs_cqi_reference_tables,
     _audit_dut_reference_comparison,
@@ -59,6 +60,169 @@ from lls_csv_semantics import (  # noqa: E402
 )
 
 
+def _observed_re_row(
+    direction: str, channel: str, allocation_id: str, ue_id: int = 1
+) -> dict[str, str]:
+    return {
+        "ScenarioID": "fdd_re_ownership",
+        "ConfigHash": "a" * 64,
+        "absolute_slot": "0",
+        "sfn": "0",
+        "slot_within_frame": "0",
+        "direction": direction,
+        "channel": channel,
+        "subcarrier_start": "0",
+        "subcarrier_count": "1",
+        "symbol_index": "0",
+        "port_index": "0",
+        "re_count": "1",
+        "cell_id": "1",
+        "ue_id": str(ue_id),
+        "authority": "executed_tx_toolbox_config_and_indices",
+        "resolver": "focused_exact_test",
+        "allocation_id": allocation_id,
+        "coordinate_precision": "exact_contiguous_re_run",
+        "evidence_scope": "runtime_observed_tx_occupancy",
+        "run_tag": "focused",
+        "status_classification": "implemented",
+        "active_flag": "1",
+    }
+
+
+def test_fdd_opposite_direction_re_coordinates_are_distinct_rf_carriers(
+    tmp_path: Path,
+) -> None:
+    config = {
+        "frame": {"duplex": "FDD", "scs_khz": 15},
+        "bwp": {"dl": {"n_size_bwp": 1}},
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _write_rows(
+        tmp_path / "frame_grid/csv/observed_re_allocation.csv",
+        [
+            _observed_re_row("DL", "PDSCH", "dl_grant"),
+            _observed_re_row("UL", "PUSCH", "ul_grant"),
+        ],
+    )
+    checks = _audit_observed_re_allocation(tmp_path)
+    assert checks and all(check.passed for check in checks), [
+        check.details for check in checks
+    ]
+
+
+def test_same_direction_distinct_allocations_cannot_claim_the_same_re(
+    tmp_path: Path,
+) -> None:
+    config = {
+        "frame": {"duplex": "FDD", "scs_khz": 15},
+        "bwp": {"dl": {"n_size_bwp": 1}},
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _write_rows(
+        tmp_path / "frame_grid/csv/observed_re_allocation.csv",
+        [
+            _observed_re_row("DL", "PDSCH", "grant_a"),
+            _observed_re_row("DL", "PDCCH", "grant_b"),
+        ],
+    )
+    checks = _audit_observed_re_allocation(tmp_path)
+    collision = next(
+        check for check in checks
+        if check.check_id == "exact_RE_bounds_direction_and_collision"
+    )
+    assert not collision.passed
+    assert "RE_collision_with=PDSCH:grant_a" in collision.details
+
+
+def test_complete_finalized_mu_group_may_share_exact_data_res(
+    tmp_path: Path,
+) -> None:
+    config = {
+        "frame": {"duplex": "FDD", "scs_khz": 15},
+        "bwp": {"dl": {"n_size_bwp": 1}},
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _write_rows(
+        tmp_path / "frame_grid/csv/observed_re_allocation.csv",
+        [
+            _observed_re_row("DL", "PDSCH", "grant_ue1", 1),
+            _observed_re_row("DL", "PDSCH", "grant_ue2", 2),
+        ],
+    )
+    trial_rows = []
+    for ue_id in (1, 2):
+        trial_rows.append(
+            {
+                "Direction": "DL",
+                "Slot": "1",
+                "UEIndex": str(ue_id),
+                "GrantContextId": f"grant_ue{ue_id}",
+                "MUMIMOEnabled": "1",
+                "MUMIMOGroupId": "5000001",
+                "MUMIMOGroupSize": "2",
+                "FinalizedFlag": "1",
+                "FallbackFlag": "0",
+                "PlaceholderFlag": "0",
+            }
+        )
+    _write_rows(
+        tmp_path / "air_interface/csv/dl_pdsch_trials.csv", trial_rows
+    )
+    checks = _audit_observed_re_allocation(tmp_path)
+    assert checks and all(check.passed for check in checks), [
+        check.details for check in checks
+    ]
+
+
+def test_incomplete_mu_group_cannot_excuse_exact_re_collision(
+    tmp_path: Path,
+) -> None:
+    config = {
+        "frame": {"duplex": "FDD", "scs_khz": 15},
+        "bwp": {"dl": {"n_size_bwp": 1}},
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    _write_rows(
+        tmp_path / "frame_grid/csv/observed_re_allocation.csv",
+        [
+            _observed_re_row("DL", "PDSCH", "grant_ue1", 1),
+            _observed_re_row("DL", "PDSCH", "grant_ue2", 2),
+        ],
+    )
+    _write_rows(
+        tmp_path / "air_interface/csv/dl_pdsch_trials.csv",
+        [
+            {
+                "Direction": "DL",
+                "Slot": "1",
+                "UEIndex": "1",
+                "GrantContextId": "grant_ue1",
+                "MUMIMOEnabled": "1",
+                "MUMIMOGroupId": "5000001",
+                "MUMIMOGroupSize": "2",
+                "FinalizedFlag": "1",
+                "FallbackFlag": "0",
+                "PlaceholderFlag": "0",
+            }
+        ],
+    )
+    checks = _audit_observed_re_allocation(tmp_path)
+    collision = next(
+        check for check in checks
+        if check.check_id == "exact_RE_bounds_direction_and_collision"
+    )
+    assert not collision.passed
+    assert "RE_collision_with=PDSCH:grant_ue1" in collision.details
+
+
 def test_optional_runtime_tables_follow_resolved_feature_applicability(
     tmp_path: Path,
 ) -> None:
@@ -66,6 +230,10 @@ def test_optional_runtime_tables_follow_resolved_feature_applicability(
     disabled: dict[str, object] = {
         "initial_access": {"enabled": False},
         "random_access": {"enabled": False},
+        "random_access_evidence": {
+            "preamble_collision_test_enabled": False,
+            "four_step_negative_test_enabled": False,
+        },
         "control_gating": {
             "pbch_required": False,
             "prach_required": False,
@@ -92,6 +260,8 @@ def test_optional_runtime_tables_follow_resolved_feature_applicability(
         "reports/csv/access_transition_ledger.csv",
         "control/csv/pbch_trials.csv",
         "control/csv/prach_trials.csv",
+        "control/csv/ra_collision_trials.csv",
+        "control/csv/ra_negative_trials.csv",
         "control/csv/csi_rs_trials.csv",
         "control/csv/srs_trials.csv",
         "control/csv/trs_trials.csv",
@@ -137,6 +307,8 @@ def test_optional_runtime_tables_follow_resolved_feature_applicability(
     enabled = json.loads(json.dumps(disabled))
     enabled["initial_access"]["enabled"] = True
     enabled["random_access"]["enabled"] = True
+    enabled["random_access_evidence"]["preamble_collision_test_enabled"] = True
+    enabled["random_access_evidence"]["four_step_negative_test_enabled"] = True
     enabled["control_gating"].update({
         "pbch_required": True,
         "prach_required": True,
@@ -151,6 +323,76 @@ def test_optional_runtime_tables_follow_resolved_feature_applicability(
         assert _domain_table_applicability(
             relative, tmp_path, summary, enabled
         ) == (True, True)
+
+
+def test_geometry_plot_lineage_is_required_only_when_governed_raster_exists(
+    tmp_path: Path,
+) -> None:
+    relative = "reports/csv/geometry_plot_lineage.csv"
+    summary: dict[str, str] = {}
+    assert _domain_table_applicability(
+        relative, tmp_path, summary, {}
+    ) == (False, False)
+
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        "PlotId,ImagePath,SourceCSV,SourceCSV_SHA256,ImageSHA256,Status,Producer,SourceRows\n",
+        encoding="utf-8",
+    )
+    check = next(
+        item for item in _audit_domain_runtime_tables(tmp_path, summary)
+        if item.artifact_path == relative
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert not check.required and not check.evaluated
+    assert check.failure_count == 0 and check.details == ""
+
+    raster = tmp_path / "geometry/image/topology_map.png"
+    raster.parent.mkdir(parents=True, exist_ok=True)
+    raster.write_bytes(b"runtime-raster")
+    assert _domain_table_applicability(
+        relative, tmp_path, summary, {}
+    ) == (True, True)
+    failed = next(
+        item for item in _audit_domain_runtime_tables(tmp_path, summary)
+        if item.artifact_path == relative
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert failed.required and failed.evaluated and not failed.passed
+    assert "missing_runtime_rows" in failed.details
+
+
+def test_cdlc_realization_table_requires_exact_cdlc_profile(tmp_path: Path) -> None:
+    summary: dict[str, str] = {}
+    relatives = (
+        "reports/csv/channel_rf_cdlc_realization_table.csv",
+        "component_anchors/channel_rf/reports/csv/channel_rf_cdlc_realization_table.csv",
+    )
+    for relative in relatives:
+        assert _domain_table_applicability(
+            relative, tmp_path, summary, {"channels": {"profile": "CDL-A"}}
+        ) == (False, False)
+        assert _domain_table_applicability(
+            relative, tmp_path, summary, {"channels": {"profile": "CDL-C"}}
+        ) == (True, True)
+
+    relative = relatives[1]
+    path = tmp_path / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("RunId,PathIndex,Delay_s,AveragePathGain_dB\n", encoding="utf-8")
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(
+        json.dumps({"channels": {"profile": "CDL-A"}}), encoding="utf-8"
+    )
+    check = next(
+        item for item in _audit_domain_runtime_tables(tmp_path, summary)
+        if item.artifact_path == relative
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert not check.required and not check.evaluated
+    assert check.failure_count == 0 and check.details == ""
 
 
 def _component_primary_rows(direction: str) -> list[dict[str, str]]:
@@ -279,6 +521,10 @@ def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
         "Slot": "2", "ConfiguredRank": "1", "ConfiguredLayers": "1",
         "ScheduledRank": "1", "ScheduledLayers": "1", "TransmittedRank": "1",
         "TransmittedLayers": "1", "ReceiverEstimatedRank": "1",
+        "SpatialChannelRankEstimate": "1", "SpatialChannelTxPorts": "2",
+        "SpatialChannelRxAntennas": "2",
+        "SpatialChannelRankDomain": "dl_scheduled_data_port_channel",
+        "SpatialChannelRankSource": "runtime_dmrs_channel_estimate",
         "EffectiveDecodedRank": "0", "EffectiveDecodedLayers": "0",
         "NumRxAntennas": "2", "NumTxPorts": "2", "TxWaveformColumns": "2",
         "PhysicalTxAntennas": "2", "RxWaveformBranches": "2",
@@ -325,6 +571,40 @@ def test_mimo_rank_semantics_keep_crc_failure_separate_from_execution() -> None:
     checks = _audit_mimo_rank_layer_table(
         "beamforming/csv/rank_layer_trials.csv", list(row), [row],
         {"DL": [raw], "UL": []},
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_mimo_configured_effective_decoded_rank_ignores_crc_failure_sentinel() -> None:
+    _raw, failed = _mimo_source_and_rank_row()
+    failed["EffectiveDecodedRank"] = "0"
+    failed["EffectiveDecodedLayers"] = "0"
+    failed["DecodeCrcPass"] = "0"
+    failed["DecodeReliabilityOk"] = "0"
+    failed["DecodeReliabilityStatus"] = "crc_fail"
+
+    successful = dict(failed)
+    successful["TrialId"] = "2"
+    successful["EffectiveDecodedRank"] = "1"
+    successful["EffectiveDecodedLayers"] = "1"
+    successful["DecodeCrcPass"] = "1"
+    successful["DecodeReliabilityOk"] = "1"
+    successful["DecodeReliabilityStatus"] = "crc_pass"
+
+    summary = _mimo_configured_effective_row()
+    summary["DominantEffectiveDecodedRank"] = "1"
+    summary["DominantEffectiveDecodedLayers"] = "1"
+    summary["StrictEligibleRowCount"] = "2"
+    summary["RuntimeTrialCount"] = "2"
+    summary["ExactMatchRowCount"] = "2"
+    summary["ExactSpatialMatchRowCount"] = "2"
+    summary["ExactOperatingPointMatchRowCount"] = "2"
+    summary["AdaptivePolicyMatchRowCount"] = "2"
+    summary["ExecutionContractMatchRowCount"] = "2"
+
+    checks = _audit_mimo_configured_effective_table(
+        "beamforming/csv/mimo_configured_vs_effective.csv",
+        list(summary), [summary], [failed, successful],
     )
     assert all(check.passed for check in checks), [check.details for check in checks]
 
@@ -477,6 +757,49 @@ def test_mimo_companion_semantics_reconcile_all_direct_rank_derivatives() -> Non
     }
     checks = _audit_mimo_beam_codebook_table(
         "beamforming/csv/beam_codebook.csv", list(codebook), [codebook], [rank]
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_mimo_summary_accepts_causal_bootstrap_before_complete_shared_mu_group() -> None:
+    _raw, bootstrap = _mimo_source_and_rank_row()
+    bootstrap.update({
+        "UEId": "1", "TrialId": "1", "MUExecutionRequired": "1",
+        "RequiredMUExecutionMode": "shared_slot_waveform_superposition",
+        "MUMIMOEnabled": "0", "MUMIMOGroupSize": "1",
+        "MUMIMOGroupId": "", "MUExecutionMatch": "0",
+        "PRBStart": "0", "PRBCount": "24", "SymbolStart": "2",
+        "NumSymbols": "12",
+    })
+    mu_ue1 = dict(bootstrap)
+    mu_ue1.update({
+        "TrialId": "2", "UEId": "1", "MUMIMOEnabled": "1",
+        "MUMIMOGroupSize": "2", "MUMIMOGroupId": "7",
+        "MUExecutionMatch": "1",
+    })
+    mu_ue2 = dict(mu_ue1)
+    mu_ue2.update({"TrialId": "3", "UEId": "2"})
+    rank_rows = [bootstrap, mu_ue1, mu_ue2]
+
+    summary = _mimo_configured_effective_row()
+    summary.update({
+        "StrictEligibleRowCount": "3", "RuntimeTrialCount": "3",
+        "ExactMatchRowCount": "3", "ExactMatchPercent": "1",
+        "ExactSpatialMatchRowCount": "3", "ExactSpatialMatchPercent": "1",
+        "ExactOperatingPointMatchRowCount": "3",
+        "ExactOperatingPointMatchPercent": "1",
+        "AdaptivePolicyMatchRowCount": "3", "AdaptivePolicyMatchPercent": "1",
+        "ExecutionContractMatchRowCount": "3",
+        "ExecutionContractMatchPercent": "1",
+        "MUExecutionRequired": "1", "RequiredMUUserCount": "2",
+        "RequiredMUExecutionMode": "shared_slot_waveform_superposition",
+        "MUExecutedTrialRowCount": "2", "MUExecutedDistinctGroupCount": "1",
+        "MUExecutionMatch": "1", "MUExecutionFailureReason": "",
+        "ScenarioObjectivePass": "1", "Status": "pass", "FailureReason": "",
+    })
+    checks = _audit_mimo_configured_effective_table(
+        "beamforming/csv/mimo_configured_vs_effective.csv",
+        list(summary), [summary], rank_rows,
     )
     assert all(check.passed for check in checks), [check.details for check in checks]
 
@@ -919,6 +1242,12 @@ def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path)
             "FalseAlarmFlag": "0",
         }],
     )
+    binding_path = tmp_path / "reports/csv/pdcch_grant_binding_evidence.csv"
+    binding_path.parent.mkdir(parents=True, exist_ok=True)
+    binding_path.write_text(
+        "Direction,Slot,UEIndex,BindingStatus,FailureCode\n",
+        encoding="utf-8",
+    )
 
     audit = audit_run(tmp_path)
     checks = audit["canonical_csv_semantic_audit"]
@@ -930,6 +1259,79 @@ def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path)
     ]
     assert pdcch_checks
     assert all(row["passed"] for row in pdcch_checks), pdcch_checks
+    binding_checks = [
+        row for row in checks
+        if row["artifact_path"] == "reports/csv/pdcch_grant_binding_evidence.csv"
+    ]
+    assert binding_checks
+    assert all(
+        not row["required"] and not row["evaluated"] and not row["details"]
+        for row in binding_checks
+    ), binding_checks
+
+
+def test_prach_component_semantics_require_identity_but_not_full_link_outputs(
+    tmp_path: Path,
+) -> None:
+    scenario_hash = "b" * 64
+    identity = {
+        "RunID": "prach-run-1",
+        "RunTag": "prach-run-1",
+        "ScenarioID": "prach-component",
+        "ScenarioConfigHash": scenario_hash,
+        "ConfigHash": scenario_hash,
+        "ExecutionID": "prach-execution-1",
+    }
+    _write_rows(
+        tmp_path / "reports/csv/scenario_summary.csv",
+        [{
+            **identity,
+            "RunnerProfile": "prach_detection",
+            "RunCompletion": "completed",
+            "EffectiveDLTrialCount": "0",
+            "EffectiveULTrialCount": "0",
+        }],
+    )
+    _write_rows(
+        tmp_path / "air_interface/csv/prach_trials.csv",
+        [{
+            **identity,
+            "DetectionMetric": "12.75",
+            "Status": "PASS",
+            "CRCPass": "1",
+            "FalseAlarmFlag": "0",
+            "MissDetectionFlag": "0",
+        }],
+    )
+    # A generic finalizer may emit a fail-closed DUT row, but it is not a DUT
+    # comparison claim for an independent PRACH component runner.
+    _write_rows(
+        tmp_path / "reports/csv/dut_reference_comparison.csv",
+        [{"ReferenceAvailable": "0", "Pass": "0", "FailureReason": "not_applicable"}],
+    )
+
+    audit = audit_run(tmp_path)
+    failures = [
+        row for row in audit["canonical_csv_semantic_audit"]
+        if row["required"] and (not row["evaluated"] or not row["passed"])
+    ]
+    incorrectly_required = [
+        row for row in failures
+        if row["artifact_path"] in {
+            "reports/csv/dut_reference_comparison.csv",
+            "reports/csv/lls_reference_comparison_summary.csv",
+            "reports/csv/mcs_table_reference.csv",
+            "reports/csv/cqi_table_reference.csv",
+        }
+        or row["check_id"] == "outcome_matches_phase7_and_rows_are_coherent"
+    ]
+    assert not incorrectly_required, incorrectly_required
+    prach_checks = [
+        row for row in audit["canonical_csv_semantic_audit"]
+        if row["artifact_path"] == "air_interface/csv/prach_trials.csv"
+    ]
+    assert prach_checks
+    assert all(row["passed"] for row in prach_checks), prach_checks
 
 
 def _mu_check(direction: str, row: dict[str, str]):
@@ -997,10 +1399,13 @@ def test_dl_mu_requires_measured_joint_irc_processing_not_fake_combiner() -> Non
         "InterferenceContributorCount": "1",
         "FullInterfererChannelTruthUsed": "1",
         "InterferenceCovarianceAvailable": "1",
-        "InterferenceCovarianceSource": "shared_slot_contribution_grid_covariance",
+        "InterferenceCovarianceSource": (
+            "oracle_separated_shared_slot_per_prb_symbol_"
+            "contribution_grid_covariance"
+        ),
         "EqualizerType": "MMSE-IRC",
         "MUMIMOReceiveProcessingApplied": "1",
-        "MUMIMOReceiveProcessingStatus": "applied_shared_slot_covariance_resource_selective_per_re_mmse_irc",
+        "MUMIMOReceiveProcessingStatus": "applied_oracle_separated_shared_slot_covariance_resource_selective_per_re_mmse_irc",
         "MUMIMOReceiveProcessingSource": "sixgr.phy.dl.PDSCH_Rx.EqualizationInfo",
         "MUMIMOReceiveProcessingModeApplied": "resource_selective_per_re_mmse_irc",
         "MUMIMOReceiverAlgorithmApplied": "MMSE-IRC",
@@ -1379,6 +1784,59 @@ def test_derived_link_summary_reconciles_weighted_ber_and_trial_count() -> None:
         {"DL": raw, "UL": []},
     )
     assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_throughput_curve_checks_harq_conservation_over_complete_population() -> None:
+    # The retransmission bin can deliver previously offered bits and therefore
+    # exceed the new traffic offered in that individual bin.  The full
+    # direction/UE population must nevertheless conserve delivered traffic.
+    common = {
+        "Direction": "UL",
+        "UEIndex": "1",
+        "PostEqSINR_dB_BinMin": "0",
+        "PostEqSINR_dB_BinMax": "1",
+        "Throughput_Mbps_mean": "10",
+        "SourceArtifact": "ul_pusch_trials.csv",
+    }
+    rows = [
+        {
+            **common,
+            "PostEqSINR_dB_BinCenter": "0.25",
+            "Goodput_Mbps_mean": "0",
+            "OfferedThroughput_Mbps_mean": "10",
+            "TrialCount": "1",
+        },
+        {
+            **common,
+            "PostEqSINR_dB_BinCenter": "0.75",
+            "Goodput_Mbps_mean": "10",
+            "OfferedThroughput_Mbps_mean": "0",
+            "TrialCount": "1",
+        },
+    ]
+    checks = _audit_derived_link_table(
+        "air_interface/csv/ul_measured_sinr_throughput_curve.csv",
+        list(rows[0]),
+        rows,
+        {"DL": [], "UL": []},
+    )
+    range_check = next(
+        check for check in checks if check.check_id == "physical_ranges_and_arithmetic"
+    )
+    assert range_check.passed, range_check.details
+
+    rows[1]["Goodput_Mbps_mean"] = "11"
+    checks = _audit_derived_link_table(
+        "air_interface/csv/ul_measured_sinr_throughput_curve.csv",
+        list(rows[0]),
+        rows,
+        {"DL": [], "UL": []},
+    )
+    range_check = next(
+        check for check in checks if check.check_id == "physical_ranges_and_arithmetic"
+    )
+    assert not range_check.passed
+    assert "population_goodput_exceeds_offered" in range_check.details
 
 
 def test_artifact_manifest_rejects_pass_claim_for_missing_png(tmp_path: Path) -> None:
@@ -1910,7 +2368,23 @@ def test_empty_truth_contract_failure_ledger_requires_matching_pass_receipts(
     )
     assert check.required and check.evaluated and check.passed
 
+    # A later terminal/browser gate may fail the overall run after the PHY
+    # truth contract has already evaluated cleanly.  The zero-event truth
+    # failure ledger remains valid; no fake failure row may be inserted.
     summary["ResultOk"] = "0"
+    _write_rows(tmp_path / "reports/csv/scenario_summary.csv", [summary])
+    terminal_failed_checks = _audit_domain_runtime_tables(tmp_path, summary)
+    terminal_failed = next(
+        item for item in terminal_failed_checks
+        if item.artifact_path == "reports/csv/truth_contract_failures.csv"
+        and item.check_id == "schema_and_runtime_rows"
+    )
+    assert terminal_failed.required and terminal_failed.evaluated and terminal_failed.passed
+
+    # A failed PHY truth verdict is different: an empty failure ledger is then
+    # contradictory and must fail closed.
+    summary["RuntimeTruthContractOk"] = "0"
+    summary["TruthContractOk"] = "0"
     _write_rows(tmp_path / "reports/csv/scenario_summary.csv", [summary])
     failed_checks = _audit_domain_runtime_tables(tmp_path, summary)
     failed = next(
@@ -2329,7 +2803,12 @@ def test_production_gate_cannot_promote_missing_reference_to_pass(tmp_path: Path
     )
     _write_rows(
         tmp_path / "reports/csv/publication_readiness_gate_summary.csv",
-        [{"TerminalPublicationGatesOk": "1"}],
+        [{
+            "TerminalPublicationGatesOk": "1",
+            # For a non-campaign run this is the publication roll-up's
+            # not-applicable satisfaction, not an executed comparison.
+            "PublicationReferenceComparisonOk": "1",
+        }],
     )
     expected = {gate: True for gate in PRODUCTION_GATE_ORDER}
     expected["IndependentFRCQualification"] = False

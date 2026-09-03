@@ -27,6 +27,9 @@
     "link_direction": "ul",
     "snr_db": 18
   },
+  "mimo": {
+    "reciprocity_mode": "TDD"
+  },
   "modulation": {
     "ul_modulation_order": 1,
     "ul_mcs_index": 0

@@ -1,0 +1,94 @@
+{
+  "inherits": [
+    "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_validation.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_8slot_gate",
+    "description": "Bounded exact-waveform FDD gate for causal CSI-RS, UCI, HARQ and two-user shared-PRB MU-MIMO wiring.",
+    "version": "1",
+    "owner": "qualification",
+    "maturity_tag": "regression"
+  },
+  "simulation": {
+    "n_frames": 1,
+    "n_slots": 8,
+    "monte_carlo_iterations": 1,
+    "random_seed": 19,
+    "snr_db": 34
+  },
+  "run_control": {
+    "total_slots": 8,
+    "total_time_ms": 4,
+    "warmup_slots": 0,
+    "measurement_slots": 8,
+    "raw_iq_capture_enable": true,
+    "raw_grid_capture_enable": true,
+    "save_constellations": true,
+    "save_channel_tensors": true,
+    "save_reference_signal_maps": true,
+    "save_beam_weights": true
+  },
+  "output_control": {
+    "save_raw_waveforms": true,
+    "save_channel_snapshots": true,
+    "save_constellations": true,
+    "save_plots": true,
+    "save_report": true,
+    "impairment_visibility": "full"
+  },
+  "pdsch": {
+    "execution_profile": "scheduler_truth"
+  },
+  "pusch": {
+    "execution_profile": "scheduler_truth"
+  },
+  "rf_frontend": {
+    "ul_power_control": {
+      "pusch": {
+        "p0_ue_db": 0
+      }
+    }
+  },
+  "csi_acquisition_and_reporting": {
+    "csi_report_periodicity_slots": 4,
+    "csi_report_offset_slots": 0
+  },
+  "reference_signals": {
+    "srs_periodicity_slots": 1,
+    "srs_slot_within_period": [1],
+    "srs_max_ues_per_slot": 1,
+    "srs_scheduling_policy": "round_robin_phase",
+    "srs": {
+      "period_offset": 0
+    }
+  },
+  "control_gating": {
+    "pbch_required": false,
+    "prach_required": false,
+    "pdcch_required": false,
+    "srs_required": false,
+    "srs_max_age_slots": 4,
+    "trs_required": false
+  },
+  "users": {
+    "enabled": true,
+    "n_users": 2,
+    "rnti_start": 101,
+    "seed_stride": 29,
+    "execution_model": "slot_coupled_truth",
+    "beam_selection_strategy": "round_robin_codebook",
+    "save_user_tables": true
+  },
+  "output": {
+    "save_figures": true,
+    "save_png": true,
+    "save_mat": true,
+    "phy_signal_diagnostic_enabled": true,
+    "phy_signal_diagnostic_full_channel_grid": true,
+    "phy_signal_diagnostic_waveform_samples": 512,
+    "phy_signal_diagnostic_fft_length": 512,
+    "phy_signal_diagnostic_channel_points": 512,
+    "phy_signal_diagnostic_constellation_points": 512,
+    "profile": "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_8slot_gate"
+  }
+}

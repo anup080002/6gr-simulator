@@ -88,7 +88,10 @@
     }},
     "receiver_algorithms": {"required": true, "parameters": {
       "channel_estimator": {"required": true, "type": "string"}, "interpolation_method": {"required": true, "type": "string"},
-      "equalizer": {"required": true, "type": "string"}, "detector": {"required": true, "type": "string"},
+      "equalizer": {"required": true, "type": "string"},
+      "ul_single_user_equalizer": {"required": false, "type": "string", "allowed_values": ["MMSE", "ZF", "IRC", "MMSE-IRC"]},
+      "ul_mu_mimo_equalizer": {"required": false, "type": "string", "allowed_values": ["MMSE", "ZF", "IRC", "MMSE-IRC"]},
+      "detector": {"required": true, "type": "string"},
       "list_size": {"required": true, "type": "integer", "min": 1}, "iterative_receiver_flag": {"required": true, "type": "boolean"},
       "interference_cancellation": {"required": true, "type": "string"}, "soft_demapper": {"required": true, "type": "string"},
       "llr_quantization": {"required": true, "type": "string"}, "descrambling": {"required": true, "type": "string"},

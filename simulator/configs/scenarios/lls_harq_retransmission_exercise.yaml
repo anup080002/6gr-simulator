@@ -94,6 +94,18 @@
     "num_symbols": 14
   },
   "reference_signals": {
+    "pdsch_dmrs_ports": 2,
+    "pusch_dmrs_ports": 2,
+    "pdsch_dmrs": {
+      "enabled": true,
+      "num_ports": 2,
+      "port_set": [0, 1]
+    },
+    "pusch_dmrs": {
+      "enabled": true,
+      "num_ports": 2,
+      "port_set": [0, 1]
+    },
     "csi_rs_enabled": false,
     "csi_reporting_enabled": false,
     "cqi_reporting_enabled": false,

@@ -8,6 +8,12 @@ snrGrid = [0 5 10 15 20];
 tmp = tempname;
 mkdir(tmp);
 c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+sixgr.runtime.RuntimeCallLedger.reset();
+ledgerCleanup = onCleanup(@() sixgr.runtime.RuntimeCallLedger.reset()); %#ok<NASGU>
+sixgr.runtime.RuntimeCallLedger.configure(tmp, struct( ...
+    "RunId", string(cfg.run.runTag), ...
+    "ExecutionID", string(cfg.run.executionID), ...
+    "ConfigHash", string(cfg.meta.configHash)));
 
 opt = localCampaignOptions(cfg, snrGrid, 2, 99123);
 out = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(tmp, "air_interface"), opt);

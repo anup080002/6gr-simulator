@@ -69,10 +69,27 @@ frequency:
   rf_impairment_defaults: disabled
   n_size_grid: 52
 
+scheduling_timing:
+  pdcch_to_pdsch_k0: 0
+  pdcch_to_pusch_k2: 1
+  dl_harq_feedback_k1: [1, 2, 3, 4]
+  ul_grant_k2: 1
+  harq_roundtrip_slots: 4
+  dl_to_ul_guard_time_us: 0
+  timing_advance_max_us: 667
+  timing_advance_ticks: 0
+  n1_pdsch_processing_time_symbols: 8
+  n2_pusch_preparation_time_symbols: 10
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
+  k1_selection_policy: first_valid_configured
+
 frame:
   scs_khz: 15
   cp_type: normal
   slot_format: ul
+
+control:
+  coreset_frequency_resource_policy: full_bwp_groups
 
 reference_signals:
   ssb_enabled: true

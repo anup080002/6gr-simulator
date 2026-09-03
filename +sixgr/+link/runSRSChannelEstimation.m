@@ -110,6 +110,10 @@ out.SINRSource = "";
 out.SINRValueStatus = "";
 out.SINRMeasurementDomain = "";
 out.PowerReferencePlane = "";
+out.PUSCHSchedulingSINRAnchor_dB = NaN;
+out.PUSCHSchedulingSINRAnchorSource = "";
+out.PUSCHSchedulingSINRAnchorPowerReferencePlane = "";
+out.PUSCHSchedulingSINRAnchorValueStatus = "NOT_AVAILABLE";
 out.CQI = NaN;
 out.CQISource = "";
 out.CQIValueStatus = "";
@@ -126,6 +130,10 @@ out.PredictedPUSCHWidebandMeanSINR_dB = NaN;
 out.PredictedPUSCHPostEqSINRSource = "";
 out.PredictedPUSCHPostEqSINRValueRole = "";
 out.PredictedPUSCHPostEqSINRValueStatus = "NOT_AVAILABLE";
+out.PredictedPUSCHPostEqSINRCalibrationOffset_dB = NaN;
+out.PredictedPUSCHPostEqSINRAnchor_dB = NaN;
+out.PredictedPUSCHPostEqSINRAnchorSource = "";
+out.PredictedPUSCHPostEqSINRPowerReferencePlane = "";
 out.SRSConditionNumber_dB = NaN;
 out.SRSOccupiedPRBCount = NaN;
 out.SRSCarrierPRBCount = NaN;
@@ -353,7 +361,27 @@ try
     if isfinite(out.EstimatedDopplerHz) && isfinite(out.InjectedDoppler_Hz)
         out.DopplerError_Hz = out.EstimatedDopplerHz - out.InjectedDoppler_Hz;
     end
-    srsULCSI = sixgr.phy.ul.estimateSRSRITPMI(rx.Hest, rx.NoiseVar, cfgSRS);
+    linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
+        "ReceivedGrid", rx.RxGrid, ...
+        "ReferenceIndices", tx.SRSIndices, ...
+        "ReferenceSymbols", tx.SRSSymbols, ...
+        "ChannelEstimateDomain", "srs_port_domain");
+    out.SINR_dB = double(sixgr.util.structGet(linkState, "SINR_dB", NaN));
+    out.SINRSource = char(string(sixgr.util.structGet(linkState, "SINRSource", "")));
+    out.SINRValueStatus = char(string(sixgr.util.structGet(linkState, "SINRValueStatus", "")));
+    out.SINRMeasurementDomain = char(string(sixgr.util.structGet(linkState, "SINRMeasurementDomain", "")));
+    out.PowerReferencePlane = char(string(sixgr.util.structGet(linkState, "PowerReferencePlane", "")));
+    [schedulingAnchor_dB, schedulingAnchorSource, schedulingAnchorPlane, ...
+            schedulingAnchorStatus] = localResolvePUSCHSchedulingSINRAnchor( ...
+            replay, linkState);
+    out.PUSCHSchedulingSINRAnchor_dB = double(schedulingAnchor_dB);
+    out.PUSCHSchedulingSINRAnchorSource = char(schedulingAnchorSource);
+    out.PUSCHSchedulingSINRAnchorPowerReferencePlane = char(schedulingAnchorPlane);
+    out.PUSCHSchedulingSINRAnchorValueStatus = char(schedulingAnchorStatus);
+    srsULCSI = sixgr.phy.ul.estimateSRSRITPMI(rx.Hest, rx.NoiseVar, cfgSRS, ...
+        "AbsoluteSINRAnchor_dB", schedulingAnchor_dB, ...
+        "AbsoluteSINRAnchorSource", schedulingAnchorSource, ...
+        "AbsoluteSINRAnchorPowerReferencePlane", schedulingAnchorPlane);
     out.EstimatedRI = double(sixgr.util.structGet(srsULCSI, "RI", NaN));
     out.EstimatedTPMI = double(sixgr.util.structGet(srsULCSI, "TPMI", NaN));
     out.RankEstimate = out.EstimatedRI;
@@ -375,6 +403,14 @@ try
         srsULCSI, "SelectedPostEqSINRValueRole", "")));
     out.PredictedPUSCHPostEqSINRValueStatus = char(string(sixgr.util.structGet( ...
         srsULCSI, "SelectedPostEqSINRValueStatus", "NOT_AVAILABLE")));
+    out.PredictedPUSCHPostEqSINRCalibrationOffset_dB = double(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRCalibrationOffset_dB", NaN));
+    out.PredictedPUSCHPostEqSINRAnchor_dB = double(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRAnchor_dB", NaN));
+    out.PredictedPUSCHPostEqSINRAnchorSource = char(string(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRAnchorSource", "")));
+    out.PredictedPUSCHPostEqSINRPowerReferencePlane = char(string(sixgr.util.structGet( ...
+        srsULCSI, "SelectedPostEqSINRPowerReferencePlane", "")));
     out.SRSConditionNumber_dB = double(sixgr.util.structGet(srsULCSI, "ConditionNumber_dB", NaN));
     spatialSignatureMode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
         "phy.mimo.muMimoSpatialSignatureMode", ...
@@ -423,16 +459,6 @@ try
         out.SpatialSignatureSource = ...
             "measured_srs_receiver_channel_estimate_dominant_rank_subspace";
     end
-    linkState = sixgr.phy.ul.measureULLinkState(rx.Hest, rx.NoiseVar, cfgSRS, ...
-        "ReceivedGrid", rx.RxGrid, ...
-        "ReferenceIndices", tx.SRSIndices, ...
-        "ReferenceSymbols", tx.SRSSymbols, ...
-        "ChannelEstimateDomain", "srs_port_domain");
-    out.SINR_dB = double(sixgr.util.structGet(linkState, "SINR_dB", NaN));
-    out.SINRSource = char(string(sixgr.util.structGet(linkState, "SINRSource", "")));
-    out.SINRValueStatus = char(string(sixgr.util.structGet(linkState, "SINRValueStatus", "")));
-    out.SINRMeasurementDomain = char(string(sixgr.util.structGet(linkState, "SINRMeasurementDomain", "")));
-    out.PowerReferencePlane = char(string(sixgr.util.structGet(linkState, "PowerReferencePlane", "")));
     if localThermalNoiseSINRUnavailable(replay)
         out.SINR_dB = NaN;
         out.SINRSource = "ul_srs_sinr_unavailable_without_runtime_rx_power_or_pathloss";
@@ -443,14 +469,8 @@ try
         out.CQISource = "";
         out.CQIValueStatus = "unavailable";
     else
-        rawCQI = double(sixgr.util.structGet(linkState, "CQI", NaN));
-        if isfinite(rawCQI)
-            out.CQI = double(max(0, min(15, round(rawCQI))));
-        else
-            out.CQI = NaN;
-        end
-        out.CQISource = char(string(sixgr.util.structGet(linkState, "CQISource", "")));
-        out.CQIValueStatus = char(string(sixgr.util.structGet(linkState, "CQIValueStatus", "")));
+        [out.CQI, out.CQISource, out.CQIValueStatus] = ...
+            localResolvePowerPlaneCalibratedPUSCHCQI(srsULCSI, cfgSRS);
     end
     if isfinite(out.CQI) && out.CQI >= 0
         [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(out.CQI, "", NaN, cfgSRS, "UL");
@@ -494,6 +514,55 @@ catch ME
     if ~isempty(log)
         log.warn("runSRSChannelEstimation failed: " + string(ME.message));
     end
+end
+
+function [cqi, source, status] = ...
+        localResolvePowerPlaneCalibratedPUSCHCQI(srsEstimate, cfg)
+% SRS channel-estimation residuals include pilot processing gain and are not
+% a PUSCH data-channel CQI input.  Convert only the absolute-power-anchored
+% weakest-layer prediction produced by estimateSRSRITPMI.
+cqi = NaN;
+source = "";
+status = "unavailable_power_plane_calibrated_pusch_prediction";
+sinr_dB = double(sixgr.util.structGet( ...
+    srsEstimate, "SelectedMinimumLayerMeanPostEqSINR_dB", NaN));
+sinrSource = string(sixgr.util.structGet( ...
+    srsEstimate, "SelectedPostEqSINRSource", ""));
+sinrRole = string(sixgr.util.structGet( ...
+    srsEstimate, "SelectedPostEqSINRValueRole", ""));
+sinrStatus = string(sixgr.util.structGet( ...
+    srsEstimate, "SelectedPostEqSINRValueStatus", ""));
+trusted = isfinite(sinr_dB) && ...
+    contains(lower(sinrSource), "anchored_selected_ri_tpmi") && ...
+    lower(sinrRole) == ...
+        "power_plane_calibrated_predicted_pusch_data_channel_scheduling_input" && ...
+    upper(sinrStatus) == "PASS";
+if ~trusted
+    source = "rejected_unanchored_srs_spatial_prediction";
+    return;
+end
+try
+    feedback = sixgr.link.resolveWidebandCQI(struct( ...
+        "WidebandSINR_dB", sinr_dB, ...
+        "SINRSource", char(sinrSource), ...
+        "SINRValueRole", ...
+            "measured_data_channel_scheduling_input_after_srs_to_pusch_margin", ...
+        "SINRValueStatus", "PASS", ...
+        "RankIndicator", double(sixgr.util.structGet(srsEstimate, "RI", NaN))), ...
+        cfg, "UL");
+    cqi = double(sixgr.util.normalizeReportedCQI( ...
+        sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
+catch
+    cqi = NaN;
+end
+if isfinite(cqi) && cqi > 0
+    cqi = double(max(1, min(15, round(cqi))));
+    source = "power_plane_calibrated_srs_to_pusch_minimum_layer_sinr_to_cqi";
+    status = "OK";
+else
+    cqi = NaN;
+    source = "power_plane_calibrated_srs_to_pusch_cqi_unavailable";
+end
 end
 end
 
@@ -569,6 +638,68 @@ servingSource = lower(strtrim(string(sixgr.util.structGet(replay, "ServingRxPowe
 noiseSource = lower(strtrim(string(sixgr.util.structGet(replay, "NoisePowerSource", ""))));
 tf = servingSource == "unavailable_missing_pathloss_or_runtime_rx_power" || ...
     noiseSource == "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
+end
+
+function [anchor_dB, source, plane, status] = ...
+        localResolvePUSCHSchedulingSINRAnchor(replay, linkState)
+% Resolve the absolute SINR plane used to translate an SRS spatial
+% observation into a PUSCH data-channel prediction.  A channel-estimation
+% residual can be useful as an SRS quality diagnostic, but coherent pilot
+% reconstruction/despreading gain is not a PUSCH Es/(I+N) reference.
+anchor_dB = NaN;
+source = "";
+plane = "";
+status = "NOT_AVAILABLE";
+noiseMode = lower(strtrim(string(sixgr.util.structGet( ...
+    replay, "NoiseOperatingMode", ""))));
+
+if noiseMode == "receiver_noise_figure_thermal_noise"
+    servingRxPower_dBm = double(sixgr.util.structGet( ...
+        replay, "ServingRxPower_dBm", NaN));
+    thermalNoisePower_dBm = double(sixgr.util.structGet( ...
+        replay, "ThermalNoisePower_dBm", NaN));
+    servingSource = lower(strtrim(string(sixgr.util.structGet( ...
+        replay, "ServingRxPowerSource", ""))));
+    noiseSource = lower(strtrim(string(sixgr.util.structGet( ...
+        replay, "NoisePowerSource", ""))));
+    interferenceMode = lower(strtrim(string(sixgr.util.structGet( ...
+        replay, "InterferenceMode", "none"))));
+    noInterference = any(interferenceMode == ["", "none", "off", "disabled"]);
+    powerPlaneValid = isfinite(servingRxPower_dBm) && ...
+        isfinite(thermalNoisePower_dBm) && ...
+        contains(servingSource, "signal_specific_power_context_link_budget") && ...
+        contains(noiseSource, "thermal_noise_plus_receiver_nf") && ...
+        noInterference;
+    if powerPlaneValid
+        anchor_dB = servingRxPower_dBm - thermalNoisePower_dBm;
+        source = "runtime_ul_srs_power_control_link_budget_sinr";
+        plane = "receiver_input_equivalent_srs_total_power_over_noise_bandwidth_before_adc";
+        status = "PASS";
+    elseif ~noInterference
+        source = "unavailable_without_measured_total_interference_plus_noise_power";
+    else
+        source = "unavailable_without_signal_specific_srs_receive_power_and_thermal_noise";
+    end
+    return;
+end
+
+if noiseMode == "standalone_awgn_snr_argument"
+    candidate = double(sixgr.util.structGet(linkState, "SINR_dB", NaN));
+    candidateSource = strtrim(string(sixgr.util.structGet( ...
+        linkState, "SINRSource", "")));
+    candidatePlane = strtrim(string(sixgr.util.structGet( ...
+        linkState, "PowerReferencePlane", "")));
+    candidateStatus = string(sixgr.util.structGet( ...
+        linkState, "SINRValueStatus", ""));
+    if isfinite(candidate) && strlength(candidateSource) > 0 && ...
+            strlength(candidatePlane) > 0 && ...
+            sixgr.util.isAcceptableSINRStatus(candidateStatus)
+        anchor_dB = candidate;
+        source = candidateSource;
+        plane = candidatePlane;
+        status = "PASS";
+    end
+end
 end
 
 function [y, nVar, replay, referenceWaveform, state] = localApplySRSChannelAndNoise(x, cfg, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, state, trialIdx)
@@ -872,7 +1003,7 @@ function [y, nVar, evidence] = localAddAwgnFromReplay( ...
 evidence = struct();
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform);
+    nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo);
     if isfinite(nVar) && nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
@@ -917,19 +1048,21 @@ evidence.CyclicPrefixPowerUsedForAWGN = false;
 evidence.UnusedFFTBinPowerUsedForAWGN = false;
 end
 
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
 nVar = NaN;
 thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
 servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
 if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
     return;
 end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
-if ~(isfinite(refPower) && refPower >= 0)
+[~, perBranchPower_mW] = sixgr.rf.measureActiveOFDMTotalPower( ...
+    referenceWaveform, txInfo);
+refPowerPerBranch = mean(double(perBranchPower_mW), "omitnan");
+if ~(isfinite(refPowerPerBranch) && refPowerPerBranch >= 0)
     return;
 end
 relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
-nVar = refPower * 10.^(relativeNoise_dB / 10);
+nVar = refPowerPerBranch * 10.^(relativeNoise_dB / 10);
 end
 
 function sampleRateHz = localResolveSampleRate(info, tx, cfg)

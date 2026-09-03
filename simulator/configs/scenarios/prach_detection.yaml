@@ -28,6 +28,9 @@
     "snr_db": 12,
     "monte_carlo_iterations": 10
   },
+  "mimo": {
+    "reciprocity_mode": "TDD"
+  },
   "random_access": {
     "frequency_range": "FR1",
     "duplex_mode": "TDD",

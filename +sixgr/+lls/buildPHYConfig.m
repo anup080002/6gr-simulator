@@ -139,6 +139,12 @@ else
     cfg.phy.pdsch.dmrs.length = double(linkCfg.dmrs.length);
     cfg.phy.pdsch.dmrs.numCDMGroupsWithoutData = double(linkCfg.dmrs.numCDMGroupsWithoutData);
     cfg.phy.pdsch.dmrs.portSet = double(linkCfg.dmrs.portSet(:).');
+    cfg.phy.pdsch.measurements.dmrsResidualPostEqSINRBoundEnabled = logical( ...
+        llsCfg.receiver.postEqualizationSINR.dmrsResidualBoundEnabled);
+    cfg.phy.pdsch.measurements.decisionDirectedPostEqSINRBoundEnabled = logical( ...
+        llsCfg.receiver.postEqualizationSINR.decisionDirectedResidualBoundEnabled);
+    cfg.phy.pdsch.measurements.decoderNoiseVarianceMode = char(string( ...
+        llsCfg.receiver.decoderNoiseVariance.mode));
     cfg.phy.csirs.enable = false;
     cfg.phy.csirs.enabled = false;
 end

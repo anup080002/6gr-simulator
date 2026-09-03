@@ -3869,9 +3869,12 @@ else
     schedUL = sixgr.l2.mac.SchedulerPF(cfgE, "Direction", "UL", "HARQ", harqUL);
 end
 
-[attachOK, attachSlots, attachMsgCount, attachRNTI, attachTraceRows] = localRunRRCAttachProcedure(cfgE);
+[attachOK, attachSlots, attachMsgCount, attachRNTI, attachTraceRows] = ...
+    localRunRRCAttachProcedure(cfgE, snr_dB);
 if strictValidation && ~attachOK
-    error("sixgr:e2e:AttachFailedStrict", "Strict validation requires successful attach before data scheduling.");
+    error("sixgr:e2e:AttachFailedStrict", ...
+        "Strict validation requires successful attach before data scheduling. %s", ...
+        localStrictAttachFailureSummary(attachTraceRows));
 end
 if logical(attachOK) && isfinite(double(attachSlots))
     attachGateSlots = min(nSlots, max(0, round(double(attachSlots))));
@@ -4910,9 +4913,12 @@ for t = 1:nSlots
     end
 end
 
-[attachOK, attachSlots, attachMsgCount, attachRNTI, attachTraceRows] = localRunRRCAttachProcedure(cfgE);
+[attachOK, attachSlots, attachMsgCount, attachRNTI, attachTraceRows] = ...
+    localRunRRCAttachProcedure(cfgE, snr_dB);
 if strictValidation && ~attachOK
-    error("sixgr:e2e:AttachFailedStrict", "Strict validation requires successful attach before data scheduling.");
+    error("sixgr:e2e:AttachFailedStrict", ...
+        "Strict validation requires successful attach before data scheduling. %s", ...
+        localStrictAttachFailureSummary(attachTraceRows));
 end
 if logical(attachOK) && isfinite(double(attachSlots))
     attachGateSlots = min(nSlots, max(0, round(double(attachSlots))));
@@ -7703,7 +7709,10 @@ switch md
 end
 end
 
-function [ok, slots, msgCount, rnti, attachRows] = localRunRRCAttachProcedure(cfg)
+function [ok, slots, msgCount, rnti, attachRows] = localRunRRCAttachProcedure(cfg, runtimeNoiseSNR_dB)
+if nargin < 2 || ~(isnumeric(runtimeNoiseSNR_dB) && isscalar(runtimeNoiseSNR_dB))
+    runtimeNoiseSNR_dB = Inf;
+end
 ok = false;
 slots = NaN;
 msgCount = 0;
@@ -7749,7 +7758,8 @@ if ~logical(sixgr.util.structGet(cfg, "phy.ul.pucch.Enable", logical(sixgr.util.
 end
 
 if strict
-    [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach(cfg, cellId, ueId, slotDur_s);
+    [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach( ...
+        cfg, cellId, ueId, slotDur_s, runtimeNoiseSNR_dB);
     return;
 end
 
@@ -7901,7 +7911,8 @@ catch
 end
 end
 
-function [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach(cfg, cellId, ueId, slotDur_s)
+function [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach( ...
+        cfg, cellId, ueId, slotDur_s, runtimeNoiseSNR_dB)
 ok = false;
 slots = NaN;
 msgCount = 0;
@@ -7909,12 +7920,34 @@ rnti = 1;
 attachRows = repmat(struct("Slot",NaN,"Time_s",NaN,"Direction","","Event","","Message","", ...
     "UE",NaN,"CellID",NaN,"TempCRNTI",NaN,"Success",false,"Cause",""), 0, 1);
 try
-    raResult = sixgr.phy.ra.runFourStepRA(cfg, ...
+    % Strict attach must consume the same geometry, large-scale power,
+    % physical antenna and thermal-noise context as the coupled data path.
+    % Calling the RA waveform chain with a bare config leaves receive power
+    % undefined and is correctly rejected by the physical noise boundary.
+    multiUser = struct("Enabled", true, "NumUsers", 1, ...
+        "RNTIStart", max(1, round(double(ueId))), ...
+        "ExecutionModel", "slot_coupled_truth");
+    traceDL = sixgr.util.structGet(cfg, "traffic.trace.offeredBitsDL", []);
+    traceUL = sixgr.util.structGet(cfg, "traffic.trace.offeredBitsUL", []);
+    runtimeFrameCount = max([1, size(traceDL, 1), size(traceUL, 1)]);
+    runtimeState = sixgr.truth.CoupledTruthRuntime.initialize( ...
+        cfg, tempname, multiUser, struct(), runtimeFrameCount);
+    runtimeState.CurrentSlot = 2;
+    runtimeState.CurrentServingIdx(:) = 1;
+    [cfgRA, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContext( ...
+        cfg, runtimeState, 1, "UL");
+    cellId = double(sixgr.util.structGet(cfgRA, ...
+        "lls6g.userContext.RuntimeServingNCellID", ...
+        sixgr.util.structGet(cfgRA, "phy.carrier.NCellID", cellId)));
+    raResult = sixgr.phy.ra.runFourStepRA(cfgRA, ...
         "RunId", "e2e_strict_attach", ...
         "ScenarioName", string(sixgr.util.structGet(cfg, "scenario.name", "e2e_strict_attach")), ...
         "UEId", ueId, ...
         "CellId", cellId, ...
         "AttemptId", 1, ...
+        "RuntimeIntegrationMode", "coupled_truth_runtime", ...
+        "UseRuntimeChannel", true, ...
+        "RuntimeNoiseSNR_dB", double(runtimeNoiseSNR_dB), ...
         "WriteArtifacts", false);
     ok = logical(sixgr.util.structGet(raResult, "RACompleted", false)) && ...
         logical(sixgr.util.structGet(raResult, "StrictOk", false));
@@ -7994,8 +8027,31 @@ ev = upper(string(events.Event));
 n = sum(contains(ev, "MSG1") | contains(ev, "MSG2") | contains(ev, "MSG3") | contains(ev, "MSG4"));
 end
 
+function summary = localStrictAttachFailureSummary(attachRows)
+summary = "No strict attach event evidence was returned.";
+if isempty(attachRows)
+    return;
+end
+if istable(attachRows)
+    T = attachRows;
+elseif isstruct(attachRows)
+    T = struct2table(attachRows(:), "AsArray", true);
+else
+    return;
+end
+if isempty(T)
+    return;
+end
+last = T(end, :);
+eventName = string(sixgr.util.structGet(table2struct(last), "Event", "unknown"));
+messageName = string(sixgr.util.structGet(table2struct(last), "Message", "unknown"));
+cause = string(sixgr.util.structGet(table2struct(last), "Cause", "unspecified"));
+summary = sprintf("Last attach event=%s, message=%s, cause=%s.", ...
+    eventName, messageName, cause);
+end
+
 function [ok, slots, msgCount, rnti, attachRows] = localRunRRCMiniAttach(cfg)
-[ok, slots, msgCount, rnti, attachRows] = localRunRRCAttachProcedure(cfg);
+[ok, slots, msgCount, rnti, attachRows] = localRunRRCAttachProcedure(cfg, Inf);
 end
 
 function [ueAttach, gnbAttach] = localCreateAttachProcedures(cfg, cellId, ueId)

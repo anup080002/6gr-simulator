@@ -35,6 +35,21 @@ for i = 1:numel(dirs)
         "Normalized tap powers must sum to one per direction.");
 end
 
+% A rank-one logical PUSCH over a two-element UE array is the regression
+% that previously disappeared behind the exporter's catch block.  Both
+% directions must materialize from the same physical element-domain arrays.
+tddScenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
+    "lls_causal_access_to_data_wiring_tdd.yaml");
+tddScenario = sixgr.lls6g.config.loadScenarioConfig(tddScenarioPath);
+tddCfg = sixgr.lls6g.buildInternalConfig(tddScenario, fullfile(tmp, "tdd_run"));
+tddT = sixgr.truth.buildChannelImpulseResponseTable(tddCfg);
+assert(all(ismember(["DL","UL"], unique(string(tddT.Direction)))), ...
+    "Rank-one PUSCH over a multi-element UE must retain its UL CDL profile.");
+ulT = tddT(string(tddT.Direction) == "UL", :);
+assert(~isempty(ulT) && all(string(ulT.ChannelObjectClass) == "nrCDLChannel"));
+assert(all(isfinite(double(ulT.NormalizedTapPower))) && ...
+    abs(sum(double(ulT.NormalizedTapPower)) - 1) < 1e-9);
+
 runFolder = fullfile(tmp, "live");
 liveArtifacts = sixgr.truth.exportLLSLiveDerivedTables(cfg, runFolder, struct(), struct(), struct(), struct());
 assert(isfield(liveArtifacts, "ChannelImpulseResponsePath") && ...

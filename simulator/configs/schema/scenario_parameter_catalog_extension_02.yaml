@@ -132,6 +132,7 @@
       "rsrp_policy": {"required": true, "type": "string"}, "delta_mcs_policy": {"required": true, "type": "string"},
       "dmrs_port_selection_policy": {"required": true, "type": "string"}, "report_trigger": {"required": true, "type": "string"},
       "report_periodicity": {"required": true, "type": "string"}, "report_payload_mode": {"required": true, "type": "string"},
+      "report_configuration": {"required": false, "type": "struct", "nested_rule": "csi_report_configuration"},
       "compression_mode": {"required": true, "type": "string"}, "sscc_mode": {"required": true, "type": "boolean"},
       "jscc_mode": {"required": true, "type": "boolean"}, "jscm_mode": {"required": true, "type": "boolean"},
       "analog_feedback_mode": {"required": true, "type": "boolean"}, "crc_attached_mode": {"required": true, "type": "boolean"},
@@ -143,6 +144,22 @@
     }}
   },
   "nested_sections": {
+    "csi_report_configuration": {"parameters": {
+      "report_config_id": {"required": true, "type": "string", "nonempty": true},
+      "epoch": {"required": true, "type": "integer", "min": 0},
+      "codebook_mode": {"required": true, "type": "integer", "allowed_values": [1, 2]},
+      "report_quantity": {"required": true, "type": "string", "nonempty": true},
+      "frequency_granularity": {"required": true, "type": "string", "allowed_values": ["wideband", "subband"]},
+      "uci_channel": {"required": true, "type": "string", "allowed_values": ["PUCCH", "PUSCH"]},
+      "n1": {"required": true, "type": "integer", "min": 1},
+      "n2": {"required": true, "type": "integer", "min": 1},
+      "o1": {"required": true, "type": "integer", "min": 1},
+      "o2": {"required": true, "type": "integer", "min": 1},
+      "panels": {"required": true, "type": "integer", "min": 1},
+      "num_subbands": {"required": true, "type": "integer", "min": 1},
+      "number_of_beams": {"required": true, "type": "integer", "min": 1},
+      "phase_alphabet_size": {"required": true, "type": "integer", "min": 2}
+    }},
     "common_signal_object": {"parameters": {
       "enable_flag": {"required": true, "type": "boolean"}, "baseline_or_candidate_tag": {"required": true, "type": "string", "allowed_values": ["baseline_benchmark", "agreed_starting_point", "study_item_candidate", "optional_research_experiment"]},
       "periodicity": {"required": true, "type": "string"}, "time_window": {"required": true, "type": "string"},

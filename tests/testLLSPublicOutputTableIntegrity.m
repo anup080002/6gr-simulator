@@ -3,7 +3,9 @@ function ok = testLLSPublicOutputTableIntegrity()
 
 setup6GRSimToolkit("Verbose", false);
 
-meta = struct("run_id", "unit_public_output_integrity");
+meta = struct( ...
+    "logical_run_id", "unit_public_output_integrity", ...
+    "run_id", 17);
 contract = sixgr.truth.llsOutputContract();
 
 baseTables = struct();
@@ -45,8 +47,10 @@ assert(~isempty(noiseEvidence) && ~any(ismember(upper(string(noiseEvidence.Noise
     "Noise evidence must keep status separate from source/reason tokens.");
 assert(all(ismember(upper(string(noiseEvidence.NoiseVarStatus)), ["OK","NOT_AVAILABLE"])), ...
     "Noise evidence statuses must use the receiver status vocabulary.");
-assert(all(string(noiseEvidence.RunId) == string(meta.run_id)), ...
-    "Noise evidence RunId must preserve textual run IDs instead of numeric NaN coercion.");
+assert(all(string(noiseEvidence.RunId) == string(meta.logical_run_id)), ...
+    "Noise evidence RunId must preserve the logical filesystem/WebGUI run identity.");
+assert(all(double(noiseEvidence.run_id) == double(meta.run_id)), ...
+    "Noise evidence run_id must preserve the numeric database identity separately.");
 
 ok = true;
 end

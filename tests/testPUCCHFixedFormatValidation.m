@@ -45,5 +45,50 @@ assert(logical(strict.Ok) && strict.RequestedFormat == 0 && ...
     strict.ResolvedFormat == 0 && ~logical(strict.FormatAdapted), ...
     "Connected PUCCH must never silently promote a requested format.");
 
+% OCCLength is exposed as the Toolbox spreading factor only for formats
+% 2/3/4.  R2026 rejects one for formats 2/4; catch this at the typed
+% production boundary with the repository error identifier.
+format2Data = fixture.Assignment.Resource.Data;
+format2Data.OCCLength = 1;
+assertInvalidOCC(format2Data, numel(bits), ...
+    "Format-2 spreading factor one must fail before Toolbox execution.");
+format2Data.OCCLength = 2;
+sixgr.phy.pucch.PUCCHFormatValidator.validateResource(format2Data, numel(bits));
+format2Toolbox = sixgr.phy.pucch.PUCCHResource(format2Data).toolboxConfig();
+assert(double(format2Toolbox.SpreadingFactor) == 2, ...
+    "A valid Format-2 spreading factor must reach the Toolbox object unchanged.");
+
+format3Fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected(3, bits, ...
+    "RNTI", 322);
+format3Data = format3Fixture.Assignment.Resource.Data;
+format3Data.OCCLength = 1;
+format3Data.OCCIndex = 0;
+sixgr.phy.pucch.PUCCHFormatValidator.validateResource(format3Data, numel(bits));
+format3Toolbox = sixgr.phy.pucch.PUCCHResource(format3Data).toolboxConfig();
+assert(double(format3Toolbox.SpreadingFactor) == 1, ...
+    "Format-3 spreading factor one is valid and must remain unchanged.");
+
+format4Fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected(4, bits, ...
+    "RNTI", 323);
+format4Data = format4Fixture.Assignment.Resource.Data;
+format4Data.OCCLength = 1;
+assertInvalidOCC(format4Data, numel(bits), ...
+    "Format-4 spreading factor one must fail before Toolbox execution.");
+
+format0Toolbox = fixtureShort.Assignment.Resource.toolboxConfig();
+assert(~isprop(format0Toolbox, "SpreadingFactor"), ...
+    "Format-0 resources must not receive a format-2/3/4 spreading-factor mapping.");
+
 ok = true;
+end
+
+function assertInvalidOCC(resourceData, informationBits, message)
+threw = false;
+try
+    sixgr.phy.pucch.PUCCHFormatValidator.validateResource( ...
+        resourceData, informationBits);
+catch ME
+    threw = strcmp(string(ME.identifier), "sixgr:phy:pucch:InvalidOCC");
+end
+assert(threw, message);
 end

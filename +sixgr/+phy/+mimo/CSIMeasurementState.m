@@ -10,6 +10,7 @@ classdef CSIMeasurementState
         Slot (1,1) double
         MaxAgeSlots (1,1) double
         ChannelEstimate
+        ChannelEstimateConvention (1,1) string
         NoiseVariance
         InterferenceCovariance
         Provenance (1,1) string
@@ -27,6 +28,7 @@ classdef CSIMeasurementState
                 options.Slot (1,1) double {mustBeInteger,mustBeNonnegative}
                 options.MaxAgeSlots (1,1) double {mustBeInteger,mustBeNonnegative}
                 options.ChannelEstimate
+                options.ChannelEstimateConvention (1,1) string = "rx_by_tx_by_snapshot"
                 options.NoiseVariance
                 options.InterferenceCovariance = []
                 options.Provenance (1,1) string = "measured_runtime_reference_signal"
@@ -38,6 +40,18 @@ classdef CSIMeasurementState
             if ~startsWith(options.Provenance, "measured_")
                 error("sixgr:mimo:BeamMeasurementOracleForbidden", ...
                     "Strict measurement provenance must begin with measured_.");
+            end
+            convention = lower(strtrim(options.ChannelEstimateConvention));
+            if convention ~= "rx_by_tx_by_snapshot"
+                error("sixgr:mimo:InvalidMeasurementConvention", ...
+                    "CSI measurement state requires the canonical Nrx-by-Nport-by-Nsnapshot channel convention.");
+            end
+            channelEstimate = double(options.ChannelEstimate);
+            if ndims(channelEstimate) > 3 || ...
+                    ~all(isfinite(real(channelEstimate(:)))) || ...
+                    ~all(isfinite(imag(channelEstimate(:))))
+                error("sixgr:mimo:InvalidMeasurementState", ...
+                    "Canonical CSI measurement state must be a finite matrix or Nrx-by-Nport-by-Nsnapshot tensor.");
             end
             obj.MeasurementID = options.MeasurementID;
             obj.UEID = options.UEID;
@@ -51,11 +65,12 @@ classdef CSIMeasurementState
             obj.ResourceOrdinal = ordinal;
             obj.Slot = options.Slot;
             obj.MaxAgeSlots = options.MaxAgeSlots;
-            obj.ChannelEstimate = options.ChannelEstimate;
+            obj.ChannelEstimate = channelEstimate;
+            obj.ChannelEstimateConvention = convention;
             obj.NoiseVariance = options.NoiseVariance;
             obj.InterferenceCovariance = options.InterferenceCovariance;
             obj.Provenance = options.Provenance;
-            obj.Digest = sixgr.phy.mimo.MatrixContract.digest(options.ChannelEstimate);
+            obj.Digest = sixgr.phy.mimo.MatrixContract.digest(channelEstimate);
         end
 
         function validateAt(obj, slotValue)

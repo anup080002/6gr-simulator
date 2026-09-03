@@ -18,11 +18,12 @@ cfg.mac.harq.maxRetx = 3;
 
 harq = sixgr.l2.mac.HARQEntity(cfg, "Direction", "DL");
 rnti = 101;
+grant = localHARQGrant(800);
 
 txp1 = harq.allocate(rnti, 1, 100, "NewData", true);
-harq.onTx(rnti, txp1.HARQ.HarqID, uint8(ones(800, 1)), struct("TBSBits", 800), 1);
+harq.onTx(rnti, txp1.HARQ.HarqID, uint8(ones(800, 1)), grant, 1);
 txp2 = harq.allocate(rnti, 2, 100, "NewData", true);
-harq.onTx(rnti, txp2.HARQ.HarqID, uint8(ones(800, 1)), struct("TBSBits", 800), 2);
+harq.onTx(rnti, txp2.HARQ.HarqID, uint8(ones(800, 1)), grant, 2);
 
 assert(~harq.hasFreeProcess(rnti, 3), ...
     "HARQ must report no free process while both processes await feedback.");
@@ -47,6 +48,24 @@ assert(double(harq.Stats.StaleFeedbackIgnored) == staleBefore + 1, ...
     "Late feedback for a released and reused HARQ process must be ignored.");
 end
 
+function grant = localHARQGrant(tbsBits)
+modulation = "QPSK";
+numLayers = 1;
+targetCodeRate = 0.3;
+rateMatchedBits = 2 * ceil((double(tbsBits) + 24) / targetCodeRate / 2);
+layout = sixgr.phy.phycode.resolveCodingLayout( ...
+    "Direction", "DL", ...
+    "TransportBlockSize", double(tbsBits), ...
+    "TargetCodeRate", targetCodeRate, ...
+    "RV", 0, ...
+    "Modulation", modulation, ...
+    "NumLayers", numLayers, ...
+    "RateMatchedBitCount", rateMatchedBits);
+grant = struct("TBSBits", double(tbsBits), "Direction", "DL", ...
+    "Modulation", modulation, "NumLayers", numLayers, ...
+    "TargetCodeRate", targetCodeRate, "CodingLayout", layout);
+end
+
 function localAssertPFCandidateLineage()
 cfg = sixgr.config.defaultConfig();
 assert(string(cfg.run.interferenceExecutionMode) == "none", ...
@@ -56,7 +75,8 @@ cfg.mac.scheduler.maxUEPerSlot = 1;
 cfg.mac.scheduler.minPRBPerUE = 4;
 cfg.mac.scheduler.maxPRBAllocationPerUE = 12;
 cfg.mac.scheduler.muMimoEnabled = false;
-cfg.mac.harq.enable = false;
+cfg.mac.harq.enable = true;
+cfg.phy.harq.enable = true;
 cfg = withCanonicalSchedulerTiming(cfg);
 
 sched = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL", "HARQ", []);

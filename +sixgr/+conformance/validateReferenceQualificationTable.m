@@ -317,8 +317,8 @@ expectedPass = fullExact & expectedReferencePass & ...
     lower(strtrim(string(rows.ApproximationMode))) == "none";
 decisionConsistencyPass = all(reportedPass == expectedPass & ...
     reportedPass & upper(strtrim(string(rows.Status))) == "PASS" & ...
-    strlength(strtrim(string(rows.FailureIdentifier))) == 0 & ...
-    strlength(strtrim(string(rows.FailureReason))) == 0);
+    localBlankCSVText(rows.FailureIdentifier) & ...
+    localBlankCSVText(rows.FailureReason));
 details.DecisionConsistencyPass = logical(decisionConsistencyPass);
 baseContractPass = ...
     entryIdentityPass && entrySetPass && catalogMembershipPass && ...
@@ -362,6 +362,19 @@ if passed
 else
     failure = "frc_reference_qualification_required_row_failed";
 end
+end
+
+function tf = localBlankCSVText(raw)
+% readtable represents an empty persisted CSV field as <missing>.  Both a
+% missing string token and, for an all-empty inferred column, numeric NaN
+% mean that no failure was reported. Any populated token remains a
+% decision-consistency failure.
+if isnumeric(raw)
+    tf = isnan(double(raw(:)));
+    return;
+end
+text = strtrim(string(raw(:)));
+tf = ismissing(text) | strlength(text) == 0;
 end
 
 function [values, valid] = localLogicalColumn(raw)

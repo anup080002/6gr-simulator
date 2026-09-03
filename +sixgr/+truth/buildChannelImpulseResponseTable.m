@@ -53,8 +53,22 @@ try
         "ReceiveAntennaRuntime", rxRuntime, ...
         "TransmitAntennaMeta", txMeta, ...
         "ReceiveAntennaMeta", rxMeta);
-catch
-    return;
+catch ME
+    % A configured fading link is required evidence.  Suppressing a runtime
+    % array/channel construction failure here previously removed the entire
+    % UL profile while allowing finalization to continue.  Keep AWGN's
+    % explicit empty-table behavior below, but fail closed for a channel
+    % that was requested and could not be materialized.
+    model = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", ""))));
+    awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
+    if awgnOnly || any(model == ["", "AWGN", "NONE", "OFF"])
+        return;
+    end
+    wrapped = MException("sixgr:truth:ChannelImpulseResponseUnavailable", ...
+        "Unable to materialize the %s runtime channel profile: %s", ...
+        char(direction), ME.message);
+    wrapped = addCause(wrapped, ME);
+    throwAsCaller(wrapped);
 end
 if ~(isstruct(ch) && isfield(ch, "Object") && ~isempty(ch.Object))
     return;
@@ -221,8 +235,64 @@ rxRuntime = sixgr.rf.AntennaArrayFactory.build(cfg, rxRole, ...
     "signal", signal, "numPorts", rxPorts, "numRFChains", rxRF);
 txMeta = localRuntimeAntennaMeta(txRuntime, upper(txRole));
 rxMeta = localRuntimeAntennaMeta(rxRuntime, upper(rxRole));
-numTxAnt = double(txRuntime.NumWaveformColumns);
-numRxAnt = double(rxRuntime.NumWaveformColumns);
+[txRuntime, txMeta, numTxAnt] = localMaterializePhysicalEndpoint( ...
+    txRuntime, txMeta);
+[rxRuntime, rxMeta, numRxAnt] = localMaterializePhysicalEndpoint( ...
+    rxRuntime, rxMeta);
+end
+
+function [runtime, meta, channelPorts] = localMaterializePhysicalEndpoint(runtime, meta)
+% Match the runtime ChannelFactory's logical-port-to-element expansion.
+%
+% nrCDLChannel consumes physical array elements.  A rank-one waveform can
+% therefore have one logical port while its endpoint still has two or more
+% physical elements.  The live path expands that port through the persisted
+% PortToElementMatrix before channel filtering.  This profile exporter must
+% present the same element-domain endpoint to ChannelFactory; using the
+% logical waveform-column count silently dropped valid UL profiles.
+numElements = double(sixgr.util.structGet(runtime, "NumElements", NaN));
+numWaveformColumns = double(sixgr.util.structGet(runtime, ...
+    "NumWaveformColumns", NaN));
+portToElement = sixgr.util.structGet(runtime, "PortToElementMatrix", []);
+requiresPhysicalPattern = logical(sixgr.util.structGet(runtime, ...
+    "RequireElementPatternInChannel", false));
+hasValidProjection = isnumeric(portToElement) && ismatrix(portToElement) && ...
+    size(portToElement, 1) == round(numElements) && ...
+    size(portToElement, 2) == round(numWaveformColumns) && ...
+    all(isfinite(real(portToElement(:)))) && ...
+    all(isfinite(imag(portToElement(:))));
+
+if requiresPhysicalPattern && isfinite(numElements) && numElements >= 1 && ...
+        isfinite(numWaveformColumns) && numWaveformColumns >= 1 && ...
+        round(numElements) ~= round(numWaveformColumns)
+    if ~hasValidProjection
+        error("sixgr:truth:MissingAntennaPortToElementProjection", ...
+            ["A required physical antenna endpoint has %d elements and %d " ...
+             "logical waveform columns but no compatible PortToElementMatrix."], ...
+            round(numElements), round(numWaveformColumns));
+    end
+    gram = portToElement' * portToElement;
+    residual = norm(gram - eye(size(gram), "like", gram), "fro");
+    if residual > 1e-9 * max(1, size(portToElement, 2))
+        error("sixgr:truth:NonPowerPreservingAntennaProjection", ...
+            "PortToElementMatrix is not power preserving (residual %.3g).", residual);
+    end
+    runtime.SourceLogicalWaveformColumns = double(numWaveformColumns);
+    runtime.NumWaveformColumns = double(numElements);
+    runtime.WaveformDomain = "element";
+    runtime.PortToElementExpansionEnabled = true;
+    meta.SourceLogicalWaveformColumns = double(numWaveformColumns);
+    meta.NumWaveformColumns = double(numElements);
+    meta.WaveformDomain = "element";
+    meta.PortToElementExpansionEnabled = true;
+    channelPorts = double(numElements);
+else
+    channelPorts = double(numWaveformColumns);
+end
+if ~(isscalar(channelPorts) && isfinite(channelPorts) && channelPorts >= 1)
+    error("sixgr:truth:InvalidRuntimeAntennaEndpoint", ...
+        "Runtime antenna endpoint has no finite positive channel-port count.");
+end
 end
 
 function meta = localRuntimeAntennaMeta(arr, role)

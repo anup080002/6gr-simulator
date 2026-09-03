@@ -15,6 +15,7 @@ classdef PUCCHReceiver
                 @(x) ischar(x)||isstring(x));
             parse(p,varargin{:});
             opt = p.Results;
+            receiverPipelineTic = tic;
             if ~isfinite(opt.NoiseVariance) || opt.NoiseVariance < 0
                 error("sixgr:phy:pucch:InvalidNoiseVariance", ...
                     "PUCCH noise variance must be a finite nonnegative scalar.");
@@ -37,8 +38,10 @@ classdef PUCCHReceiver
             [indices,~] = nrPUCCHIndices(carrier,pucch);
             dmrs = sixgr.phy.pucch.PUCCHDMRS.generate( ...
                 carrier,assignment.Resource);
+            ofdmTic = tic;
             [grid,ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate( ...
                 carrier,waveform);
+            ofdmDemodulationLatency_ms = 1e3 .* toc(ofdmTic);
             channel = upper(string(opt.ChannelProfile));
             sampleNoiseVariance = max(double(opt.NoiseVariance),eps);
             [nVar,noiseTransform] = ...
@@ -52,6 +55,8 @@ classdef PUCCHReceiver
                 max(1,size(grid,3)));
             gridDisturbanceVariance = effectiveScalarNVar;
             equalizerInfo = struct();
+            channelEstimationLatency_ms = NaN;
+            equalizationLatency_ms = NaN;
             format0Noncoherent = assignment.Format == 0 && isempty(dmrs.Indices);
             if channel == "AWGN"
                 eq = nrExtractResources(indices,grid);
@@ -72,8 +77,10 @@ classdef PUCCHReceiver
                     error("sixgr:phy:pucch:DMRSGenerationFailed", ...
                         "Fading-channel PUCCH Formats 1-4 require their configured DM-RS resources.");
                 end
+                channelEstimationTic = tic;
                 [hest,estimatedNoise] = sixgr.phy.rx.channelEstimate( ...
                     carrier,grid,dmrs.Indices,dmrs.Symbols);
+                channelEstimationLatency_ms = 1e3 .* toc(channelEstimationTic);
                 if isempty(hest) || isscalar(hest)
                     error("sixgr:phy:pucch:DMRSGenerationFailed", ...
                         "Fading PUCCH requires a per-resource channel estimate.");
@@ -88,8 +95,10 @@ classdef PUCCHReceiver
                     eqArgs = [eqArgs {"Rint",rintGrid+nVar*eye(size(rintGrid,1)), ...
                         "RIncludesNoise",true}]; %#ok<AGROW>
                 end
+                equalizationTic = tic;
                 [eq,~,equalizerInfo] = sixgr.phy.rx.equalizeMMSE( ...
                     grid,hest,nVar,eqArgs{:});
+                equalizationLatency_ms = 1e3 .* toc(equalizationTic);
                 channelEstimationMode = "dmrs_per_resource_mmse_equalization";
             end
             totalA = reportContext.Sequence1Length + ...
@@ -98,6 +107,7 @@ classdef PUCCHReceiver
                 nVar,rintGrid,max(1,size(grid,3)));
             decodeNoiseVariance = localEqualizedNoiseVariance( ...
                 equalizerInfo,gridDisturbanceVariance);
+            decodeTic = tic;
             try
                 [soft,constellation,metric] = nrPUCCHDecode( ...
                     carrier,pucch,totalA,eq,decodeNoiseVariance, ...
@@ -114,6 +124,7 @@ classdef PUCCHReceiver
                 decoded = decodedResult.Bits;
                 crcPassed = decodedResult.CRCPassed;
             end
+            decodeLatency_ms = 1e3 .* toc(decodeTic);
             energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
             energyMetric = max(0,(energyRatio-1)/(energyRatio+1));
             if assignment.Format <= 1 && isscalar(metric) && isfinite(metric)
@@ -167,7 +178,14 @@ classdef PUCCHReceiver
                 "ChannelEstimate",hest,"OFDMInfo",ofdmInfo, ...
                 "ChannelEstimateApplicable",logical(~format0Noncoherent && channel ~= "AWGN"), ...
                 "NoncoherentSequenceDetection",logical(format0Noncoherent), ...
-                "ChannelEstimationMode",char(channelEstimationMode));
+                "ChannelEstimationMode",char(channelEstimationMode), ...
+                "OFDMDemodulationLatency_ms",double(ofdmDemodulationLatency_ms), ...
+                "ChannelEstimationLatency_ms",double(channelEstimationLatency_ms), ...
+                "EqualizationLatency_ms",double(equalizationLatency_ms), ...
+                "DecodeLatency_ms",double(decodeLatency_ms), ...
+                "ReceiverPipelineLatency_ms",1e3 .* toc(receiverPipelineTic), ...
+                "ReceiverStageLatencySource", ...
+                "matlab_tic_toc_canonical_pucch_receiver_stages");
         end
     end
 end

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,40 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
+
+
+def test_dashboard_reads_run_authority_beyond_windows_max_path(tmp_path) -> None:
+    """Deep result metadata must remain visible to terminal finalization."""
+    if os.name != "nt":
+        return
+
+    run_folder = tmp_path
+    while len(str(run_folder.absolute())) <= 275:
+        run_folder /= "deep_runtime_qualification_segment"
+    meta_dir = dash._windows_extended_path(run_folder / "meta")
+    csv_dir = dash._windows_extended_path(run_folder / "reports" / "csv")
+    meta_dir.mkdir(parents=True)
+    csv_dir.mkdir(parents=True)
+    (meta_dir / "scenario_manifest.json").write_text(
+        json.dumps(
+            {
+                "ScenarioID": "long_path_runtime",
+                "RunCompletion": "completed",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (csv_dir / "scenario_summary.csv").write_text(
+        "ScenarioID,RunCompletion,Status\n"
+        "long_path_runtime,completed,PASS\n",
+        encoding="utf-8",
+    )
+
+    assert dash._is_discoverable_filesystem_run_folder(run_folder)
+    row = dash.filesystem_run_row_from_folder(run_folder)
+    assert row is not None
+    assert row["scenario_id"] == "long_path_runtime"
+    assert row["status_text"] == "completed"
 
 
 def _write_compact_manifest(run_folder: Path, relative_paths: list[str]) -> None:

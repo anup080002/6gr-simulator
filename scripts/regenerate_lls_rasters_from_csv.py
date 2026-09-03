@@ -3,11 +3,13 @@ from __future__ import annotations
 """Replace one LLS run's raster tree with CSV-derived scientific charts.
 
 The command is intentionally fail-closed and destructive only inside one
-validated ``results/lls/<scenario>/<run>`` folder.  It first proves that the
-primary runtime CSV semantics pass, inventories every old raster, removes
-those rasters, forces the canonical browser contract materializer to rebuild
-eligible PNG charts from exact CSV sources, verifies chart lineage, and then
-publishes hash-identical component-facing mirrors.
+validated ``results/lls/<scenario>/<run>`` folder, or inside the single
+explicit ``SIXGR_REGRESSION_SCRATCH_ROOT`` used by isolated regression
+workers.  It first proves that the primary runtime CSV semantics pass,
+inventories every old raster, removes those rasters, forces the canonical
+browser contract materializer to rebuild eligible PNG charts from exact CSV
+sources, verifies chart lineage, and then publishes hash-identical
+component-facing mirrors.
 
 No placeholder/reason-card image is generated.  A chart without sufficient
 runtime samples remains policy-disabled in contract coverage.
@@ -28,6 +30,27 @@ from pathlib import Path
 from typing import Any, Callable
 
 from PIL import Image
+
+
+def _configure_csv_field_size_limit() -> int:
+    """Permit canonical runtime fields larger than Python's 128 KiB default.
+
+    Exact waveform/trial evidence can legitimately contain serialized arrays.
+    The C ``long`` accepted by :func:`csv.field_size_limit` differs by platform,
+    so reduce ``sys.maxsize`` only when the interpreter reports overflow.
+    """
+
+    candidate = sys.maxsize
+    while candidate > 0:
+        try:
+            csv.field_size_limit(candidate)
+            return candidate
+        except OverflowError:
+            candidate //= 10
+    raise RuntimeError("Unable to configure a usable CSV field-size limit")
+
+
+CSV_FIELD_SIZE_LIMIT = _configure_csv_field_size_limit()
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -64,6 +87,9 @@ COMPONENTS = (
 
 
 COMPONENT_RUN_AUTHORITY: dict[str, tuple[str, ...]] = {
+    # Component/study runners have their own measured primary evidence and
+    # must not be rejected merely because they intentionally do not execute
+    # the coupled PDSCH/PUSCH waveform bundle.
     "pdcch_blind_decode_sweep": ("air_interface/csv/pdcch_trials.csv",),
     "pdcch_strict_validation": ("air_interface/csv/pdcch_trials.csv",),
     "ctrl6gr_pdcch_study": ("air_interface/csv/pdcch_trials.csv",),
@@ -72,6 +98,39 @@ COMPONENT_RUN_AUTHORITY: dict[str, tuple[str, ...]] = {
     "srs_strict_validation": ("air_interface/csv/srs_trials.csv",),
     "trs_strict_validation": ("air_interface/csv/trs_trials.csv",),
 }
+
+AI_USE_CASE_AUTHORITY: dict[str, str] = {
+    "channel_estimation_enhancement": "reports/csv/ai_channel_estimation_benchmark.csv",
+    "csi_compression_reconstruction": "reports/csv/ai_csi_compression_benchmark.csv",
+    "link_adaptation_mcs_selection": "reports/csv/ai_link_adaptation_benchmark.csv",
+    "interference_classification": "reports/csv/ai_interference_classification_benchmark.csv",
+    "detector_selection": "reports/csv/ai_detector_selection_benchmark.csv",
+    "impairment_mitigation": "reports/csv/ai_impairment_mitigation_benchmark.csv",
+    "beam_prediction": "beamforming/csv/ai_beam_prediction_benchmark.csv",
+    "energy_aware_mode_selection": "reports/csv/ai_energy_mode_selection.csv",
+}
+
+
+def component_run_authority(config: dict[str, Any], profile: str) -> tuple[str, ...] | None:
+    """Resolve the exact primary evidence owned by a component runner."""
+
+    if profile == "ai_benchmark":
+        ai = config.get("ai_ml", {}) if isinstance(config, dict) else {}
+        use_case = str(ai.get("use_case") or "").strip().lower() \
+            if isinstance(ai, dict) else ""
+        marker = AI_USE_CASE_AUTHORITY.get(use_case)
+        if marker is None:
+            raise SystemExit(
+                "AI benchmark has no supported ai_ml.use_case evidence authority: "
+                + (use_case or "<missing>")
+            )
+        return ("reports/csv/ai_benchmark_metadata.csv", marker)
+    if profile == "generic_sweep":
+        return (
+            "reports/csv/sweep_summary.csv",
+            "reports/csv/sweep_artifact_index.csv",
+        )
+    return COMPONENT_RUN_AUTHORITY.get(profile)
 
 
 def io_path(path: Path) -> Path:
@@ -1436,16 +1495,39 @@ def missing_chart_contract_inventory(run_root: Path) -> list[dict[str, str]]:
 
 def validate_run_root(run_root: Path) -> Path:
     resolved = run_root.resolve()
-    allowed = (REPO_ROOT / "results" / "lls").resolve()
-    try:
-        relative = resolved.relative_to(allowed)
-    except ValueError as error:
+    production_root = (REPO_ROOT / "results" / "lls").resolve()
+    allowed_roots = [(production_root, 2)]
+    scratch_token = os.environ.get("SIXGR_REGRESSION_SCRATCH_ROOT", "").strip()
+    if scratch_token:
+        scratch_root = Path(scratch_token).expanduser().resolve()
+        # Regression output uses additional worker/LLS/scenario/run segments.
+        # Requiring at least two descendants prevents an accidentally broad
+        # deletion at the configured scratch root while still allowing the
+        # exact isolated run folders accepted by resolveResultsRoot.m.
+        allowed_roots.append((scratch_root, 2))
+
+    relative = None
+    authority_root = None
+    minimum_parts = 0
+    for candidate_root, candidate_minimum in allowed_roots:
+        try:
+            candidate_relative = resolved.relative_to(candidate_root)
+        except ValueError:
+            continue
+        relative = candidate_relative
+        authority_root = candidate_root
+        minimum_parts = candidate_minimum
+        break
+    if relative is None or authority_root is None:
+        allowed_text = "; ".join(str(root) for root, _ in allowed_roots)
         raise SystemExit(
-            f"Refusing raster replacement outside {allowed}: {resolved}"
-        ) from error
-    if len(relative.parts) < 2 or resolved == allowed:
+            f"Refusing raster replacement outside trusted run roots "
+            f"[{allowed_text}]: {resolved}"
+        )
+    if len(relative.parts) < minimum_parts or resolved == authority_root:
         raise SystemExit(
-            "Raster replacement requires one exact results/lls/<scenario>/<run> folder."
+            "Raster replacement requires one exact scenario/run folder below "
+            "its trusted results authority root."
         )
     resolved_config_path = resolved / "meta" / "scenario_config_resolved.json"
     required_markers = [
@@ -1465,7 +1547,7 @@ def validate_run_root(run_root: Path) -> Path:
         simulation = config.get("simulation", {}) if isinstance(config, dict) else {}
         profile = str(scenario.get("runner_profile") or "").strip().lower() \
             if isinstance(scenario, dict) else ""
-        component_markers = COMPONENT_RUN_AUTHORITY.get(profile)
+        component_markers = component_run_authority(config, profile)
         if component_markers is not None:
             required_markers.extend(resolved / marker for marker in component_markers)
         else:
@@ -1508,6 +1590,23 @@ def validate_run_root(run_root: Path) -> Path:
     missing = [str(path) for path in required_markers if not io_path(path).is_file()]
     if missing:
         raise SystemExit("Run folder is missing required authority files: " + "; ".join(missing))
+    empty_csv_authorities: list[str] = []
+    for authority_path in required_markers:
+        if authority_path.suffix.lower() != ".csv":
+            continue
+        try:
+            row_count, column_count = read_csv_shape(authority_path)
+        except (OSError, UnicodeError, csv.Error) as error:
+            raise SystemExit(
+                f"Run authority CSV is unreadable: {authority_path}: {error}"
+            ) from error
+        if column_count <= 0 or row_count <= 0:
+            empty_csv_authorities.append(str(authority_path))
+    if empty_csv_authorities:
+        raise SystemExit(
+            "Run folder contains header-only or empty authority CSVs: "
+            + "; ".join(empty_csv_authorities)
+        )
     return resolved
 
 

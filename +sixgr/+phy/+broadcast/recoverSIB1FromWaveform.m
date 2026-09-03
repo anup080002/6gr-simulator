@@ -341,8 +341,15 @@ result = struct( ...
     "SSBPlacementCorrectionAppliedHz", NaN, "SSBIndex", NaN, ...
     "SSBReceivedPower_dB", NaN, ...
     "SS_RSRP_dBm", NaN, "SS_RSRPPerReceiveAntenna_dBm", "", ...
+    "SS_RSRPRawObserved_dBm", NaN, ...
+    "SS_RSRPRawObservedPerReceiveAntenna_dBm", "", ...
     "SS_SINR_dB", NaN, "SS_SINRPerReceiveAntenna_dB", "", ...
     "SSMeasurementSource", "", ...
+    "SSSINRMeasurementMethod", "", ...
+    "SSSINRReferencePlane", "", ...
+    "SSSINRNoiseInterferencePowerPerReceiveAntenna_W", "", ...
+    "SSSINRDesiredPowerPerReceiveAntenna_W", "", ...
+    "SSSINRNoiseInterferenceRECount", NaN, ...
     "SSSINRFailureReason", "", ...
     "SSPhysicalMeasurementStatus", "unavailable", ...
     "SSMeasurementAntennaAggregation", "", ...
@@ -463,8 +470,8 @@ if isempty(branchRSRP)
     return;
 end
 
-result.SS_RSRP_dBm = max(branchRSRP);
-result.SS_RSRPPerReceiveAntenna_dBm = ...
+result.SS_RSRPRawObserved_dBm = max(branchRSRP);
+result.SS_RSRPRawObservedPerReceiveAntenna_dBm = ...
     localNumericVectorToken(branchRSRP);
 result.SSMeasurementFFTSize = nfft;
 result.SSMeasurementGridScaleToSqrtW = scale;
@@ -474,47 +481,38 @@ result.SSMeasurementSource = ...
     "nrSSBMeasurements_runtime_received_sss_resource_elements";
 result.SSPhysicalMeasurementStatus = "available_rsrp";
 
-% SS-SINR uses the same detected SSS resources.  A practical channel
-% estimate supplies both the resource-selective SSS channel and measured
-% noise/interference variance; PBCH post-equalization SINR is not reused or
-% relabeled as SS-SINR.
+% SS-SINR uses the same detected SS/PBCH block and the same physical UE
+% antenna-connector reference plane.  The practical TS 38.215 estimator
+% measures noise plus interference on unoccupied REs in that same 240-RE
+% bandwidth; configured SNR and PBCH post-equalization SINR are forbidden.
 try
-    sssInd = nrSSSIndices;
-    sssSym = nrSSS(ncellid);
-    % nrChannelEstimate requires a complete slot grid.  rxSSB is the
-    % canonical four-symbol SS/PBCH block extracted by SSB_Rx, so embed it
-    % at a local slot origin without inventing any additional RE values.
-    % SSS indices are local to the same four-symbol block and therefore
-    % retain their exact linear coordinates in the padded grid.
-    rxSlot = zeros(size(rxSSB, 1), 14, size(rxSSB, 3), "like", rxSSB);
-    rxSlot(:, 1:size(rxSSB, 2), :) = rxSSB;
-    [hEst, nVar] = nrChannelEstimate(rxSlot, sssInd, sssSym);
-    nVar = mean(double(nVar(:)), "omitnan");
-    nrx = size(rxSSB, 3);
-    branchSINR = nan(1, nrx);
-    for rxIdx = 1:nrx
-        if ndims(hEst) >= 4
-            hBranch = hEst(:, :, rxIdx, 1);
-        elseif ndims(hEst) == 3
-            hBranch = hEst(:, :, rxIdx);
-        else
-            hBranch = hEst;
-        end
-        hSSS = hBranch(double(sssInd(:)));
-        signalPower = mean(abs(hSSS).^2, "omitnan");
-        if isfinite(signalPower) && signalPower > 0 && ...
-                isfinite(nVar) && nVar > 0
-            branchSINR(rxIdx) = 10 * log10(signalPower / nVar);
-        end
-    end
-    finiteSINR = branchSINR(isfinite(branchSINR));
-    if ~isempty(finiteSINR)
-        result.SS_SINR_dB = max(finiteSINR);
-        result.SS_SINRPerReceiveAntenna_dB = ...
-            localNumericVectorToken(branchSINR);
+    ssSinr = sixgr.phy.refsig.measureSSSINRFromSSBGrid( ...
+        physicalGrid, ncellid, iBarSSB);
+    result.SSSINRMeasurementMethod = string(ssSinr.MeasurementMethod);
+    result.SSSINRReferencePlane = string(ssSinr.ReferencePlane);
+    result.SSSINRNoiseInterferencePowerPerReceiveAntenna_W = ...
+        localNumericVectorToken(ssSinr.NoiseInterferencePowerPerReceiveAntenna_W);
+    result.SSSINRDesiredPowerPerReceiveAntenna_W = ...
+        localNumericVectorToken(ssSinr.DesiredPowerPerReceiveAntenna_W);
+    result.SSSINRNoiseInterferenceRECount = ...
+        double(ssSinr.NoiseInterferenceRECount);
+    result.SS_RSRPRawObserved_dBm = double(ssSinr.RawObservedSS_RSRP_dBm);
+    result.SS_RSRPRawObservedPerReceiveAntenna_dBm = ...
+        localNumericVectorToken(ssSinr.RawObservedSS_RSRPPerReceiveAntenna_dBm);
+    result.SS_RSRP_dBm = double(ssSinr.NoiseDebiasedSS_RSRP_dBm);
+    result.SS_RSRPPerReceiveAntenna_dBm = localNumericVectorToken( ...
+        ssSinr.NoiseDebiasedSS_RSRPPerReceiveAntenna_dBm);
+    if logical(ssSinr.Available)
+        result.SS_SINR_dB = double(ssSinr.SS_SINR_dB);
+        result.SS_SINRPerReceiveAntenna_dB = localNumericVectorToken( ...
+            ssSinr.SS_SINRPerReceiveAntenna_dB);
         result.SSPhysicalMeasurementStatus = "available_rsrp_and_sinr";
         result.SSMeasurementSource = ...
-            "nrSSBMeasurements_rsrp_and_sss_hest_over_measured_noise_interference";
+            "noise_debiased_nrSSBMeasurements_sss_rsrp_and_same_ssb_bandwidth_null_re_noise_interference";
+    else
+        result.SSPhysicalMeasurementStatus = ...
+            "available_rsrp_sinr_failed:" + string(ssSinr.Status);
+        result.SSSINRFailureReason = string(ssSinr.FailureReason);
     end
 catch ME
     % RSRP remains valid even if practical SSS noise estimation is not

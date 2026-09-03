@@ -324,6 +324,10 @@ antenna_and_array:
 power_and_rf_frontend:
   bs_tx_power_dbm: 26
   ue_tx_power_dbm: 23
+  # FDD and TDD share the same physical DL reference plane: configured gNB
+  # power is a full-BWP budget, while sparse DL resources retain fixed EPRE.
+  downlink_power_normalization_policy: fixed_epre_over_configured_bwp
+  uplink_power_normalization_policy: active_ofdm_total_power
   ue_noise_figure_db: 5
   power_backoff_db: 0
   pa_model: "ideal"
@@ -349,12 +353,17 @@ power_and_rf_frontend:
 rf_frontend:
   configuration_epoch: 1
   ul_power_control:
+    enabled: true
+    open_loop_enabled: true
+    closed_loop_enabled: false
+    phr_report_enabled: true
     require_measured_reference_rs: true
+    max_pathloss_measurement_age_slots: 20
     configured_snr_pathloss_forbidden: true
     tpc_source: decoded_control_event
     tpc_mode: accumulation
     state_epoch_required: true
-    pusch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
@@ -1096,8 +1105,9 @@ pdcch:
   non_qpsk_candidate_enabled: false
   start_symbol: 0
   num_symbols: 2
-  dci_format_dl: "1_0"
+  dci_format_dl: "1_1"
 pdsch:
+  use_exact_flat_static_mimo_prg_estimator: false
   enabled: true
   tbs_policy: "allocation_based"
   codeword_count: 1
@@ -1115,12 +1125,18 @@ pdsch:
   mimo_mode: "su_mimo"
   rank: 2
   precoder_family: "wideband"
-  precoder_normalization_convention: "semi_unitary"
+  # NR codebook matrices preserve total scheduled transmit power across rank.
+  # Their Frobenius norm is one; per-layer-unit-power/semi-unitary scaling
+  # would increase aggregate radiated power with the number of layers.
+  precoder_normalization_convention: "unit_frobenius"
   prg_policy: "prg_wideband"
   link_adaptation_mode: "amc"
   mcs_table: "qam64_table1"
   fixed_mcs: 10
   amc_policy: "baseline"
+  dmrs_residual_post_eq_sinr_bound_enabled: true
+  decision_directed_post_eq_sinr_bound_enabled: true
+  decoder_noise_variance_mode: "post_equalization"
   harq_id_space: 8
   rv_sequence: [0, 2, 3, 1]
   retransmission_policy: "baseline"
@@ -1149,7 +1165,7 @@ pusch:
   ptrs_policy: "enabled_from_yaml"
   codeword_count: 1
   layer_count: 2
-  precoder_normalization_convention: "semi_unitary"
+  precoder_normalization_convention: "unit_frobenius"
   modulation: "16QAM"
   modulation_table: "qam64_table1"
   shaping_policy: "none"
@@ -1157,6 +1173,7 @@ pusch:
   mcs_table: "qam64_table1"
   fixed_mcs: 10
   amc_policy: "baseline"
+  decoder_noise_variance_mode: "pre_equalization"
   low_papr_mode: "none"
   dft_size: 1024
   fd_mapping: "localized"
@@ -1269,6 +1286,8 @@ csi_acquisition_and_reporting:
   dmrs_port_selection_policy: "baseline"
   report_trigger: "periodic"
   report_periodicity: "20ms"
+  csi_report_periodicity_slots: 20
+  csi_report_offset_slots: 1
   report_payload_mode: "compressed"
   compression_mode: "none"
   sscc_mode: false
@@ -1355,7 +1374,7 @@ link_adaptation:
   dmrs_based_tracking_flag: false
   csi_rs_based_tracking_flag: true
   delta_cqi_policy: "none"
-  delta_mcs_policy: "baseline"
+  delta_mcs_policy: "ack_nack_olla"
   pdcch_link_adaptation_policy: "fixed"
   pdsch_link_adaptation_policy: "baseline"
   pusch_link_adaptation_policy: "baseline"
@@ -1373,7 +1392,8 @@ link_adaptation:
   ul_srs_to_pusch_layer_sinr_policy: "minimum_layer_mean_post_equalization"
   ul_srs_to_pusch_sinr_backoff_db: 0.0
   olla_step_down: 0.3
-  olla_step_up: 0.03
+  # ACK/NACK OLLA equilibrium: 0.033333.../(0.3+0.033333...)=0.1.
+  olla_step_up: 0.0333333333333333
   bootstrap_cqi_mode: "conservative"
   operating_point_mode: "adaptive"
 harq:
@@ -4352,6 +4372,7 @@ processing_chains:
     notes: "Exact AI/ML ordering for optional PHY hooks."
 scenario:
   runner_profile: "waveform_bundle"
+  honesty_mode: "strict"
   target_cases:
     - "bundle"
     - "dl"
@@ -4477,6 +4498,45 @@ mimo:
   beam_management_enable: true
   beam_codebook_size_dl: 8
   max_dl_layers: 2
+  max_ul_layers: 2
+  phase07_strict:
+    enabled: true
+    profile_id: "fr1_typeI_single_panel_strict"
+    specification_profile: "3GPP_R18_MIMO_CSI_V1"
+    direction: "DL"
+    codebook_type: "typeI-SinglePanel"
+    ports: 2
+    panels: 1
+    n1: 1
+    n2: 1
+    o1: 1
+    o2: 1
+    max_rank: 2
+    rank_domain: [1, 2]
+    receiver: "MMSE"
+    precoder_prg_size_rbs: 25
+    require_active_tci_state: false
+    measurement_max_age_slots: 8
+    covariance:
+      min_samples: 4
+      max_age_slots: 8
+      shrinkage_factor: 0.05
+      condition_number_limit: 1000000000000
+    csi_report:
+      report_config_id: "csi-report-0"
+      epoch: 0
+      codebook_mode: 1
+      report_quantity: "cri-RI-PMI-CQI"
+      num_csi_resources: 1
+      frequency_granularity: "wideband"
+      uci_channel: "PUCCH"
+      num_subbands: 1
+      number_of_beams: 1
+      phase_alphabet_size: 4
+    ul_srs_authority:
+      enabled: true
+      max_age_slots: 8
+      configured_override_forbidden: true
 users:
   enabled: true
   n_users: 1
@@ -4522,8 +4582,8 @@ control:
   search_space_type: "ue"
   aggregation_levels: [1, 2, 4, 8]
   dci_formats:
-    - "1_0"
     - "0_1"
+    - "1_1"
   blind_decode_candidates: 16
   coreset_duration: 2
   coreset_frequency_resource_policy: "full_bwp_groups"
@@ -4582,7 +4642,11 @@ initial_access:
     observation_subframes: 5
   mib:
     enabled: true
-    pdcch_config_sib1: 0
+    # CORESET0 index 0 / SearchSpace0 index 2 resolves the first Type-0
+    # monitoring occasion to absolute slot 2 for this 15 kHz profile.  The
+    # previous value 0 resolved slot 0 and caused the SIB1 PDSCH allocation
+    # to overwrite the four-beam SS/PBCH burst in the first two slots.
+    pdcch_config_sib1: 2
     dmrs_type_a_position: 2
   type0:
     monitoring_occasion_ordinal: 1
@@ -4827,6 +4891,13 @@ logging:
   include_git_hash: true
   echo_to_console: false
 validation:
+  # Component validators listed here execute under the immutable scenario
+  # identity and bind their positive evidence to this run's raw waveform
+  # trials.  They are not reusable component-anchor substitutes.
+  strict_component_evidence:
+    enabled: true
+    execution_scope: "in_path"
+    required_components: [prach, pdcch, srs, trs, sib1, channel_rf]
   fixed_link_campaign:
     enabled: false
     profile: "diagnostic"
@@ -4858,7 +4929,7 @@ validation:
         required: true
         consumer_source_files: ["+sixgr/+phy/+frame/FrameRuntimeStateBuilder.m"]
         measurement_artifact: "reports/csv/slot_trace.csv"
-        measured_fields: ["Frame", "Slot"]
+        measured_fields: ["Frame", "CanonicalSlot"]
         measurement_min_rows: 1
       - stage_id: "ssb_waveform_tx"
         order: 20
@@ -4912,7 +4983,7 @@ validation:
         dependency_stages: ["pss_sss_cell_search"]
         feature_authority: "beam_sweep"
         required: true
-        consumer_source_files: ["+sixgr/+link/runSSBBeamSweep.m"]
+        consumer_source_files: ["+sixgr/+truth/runWaveformLinkBundle.m", "+sixgr/+system/selectBestBeamPerLink.m"]
         measurement_artifact: "beamforming/csv/beam_sweep_measurements.csv"
         measured_fields: ["SelectedBeamId", "MeasurementSource"]
         measurement_min_rows: 1
@@ -5018,10 +5089,11 @@ validation:
         consumer_functions: ["sixgr.phy.dl.PDCCH_Tx", "sixgr.phy.dl.PDCCH_Rx"]
         consumer_source_files: ["+sixgr/+phy/+dl/PDCCH_Tx.m", "+sixgr/+phy/+dl/PDCCH_Rx.m"]
         measurement_artifact: "reports/csv/pdcch_grant_binding_evidence.csv"
-        measured_fields: ["GrantContextId", "PDCCHGrantBindingOk"]
+        measured_fields: ["GrantId", "DecodedPDCCHCRCOK", "BindingStatus"]
         measurement_min_rows: 1
-        success_field: "PDCCHGrantBindingOk"
-        success_mode: "any_true"
+        success_field: "BindingStatus"
+        success_mode: "all_equals"
+        success_value: "bound"
       - stage_id: "pdsch_tx_rx"
         order: 160
         subsystem: "pdsch"
@@ -5031,7 +5103,7 @@ validation:
         consumer_functions: ["sixgr.phy.dl.PDSCH_Tx", "sixgr.phy.dl.PDSCH_Rx"]
         consumer_source_files: ["+sixgr/+phy/+dl/PDSCH_Tx.m", "+sixgr/+phy/+dl/PDSCH_Rx.m"]
         measurement_artifact: "air_interface/csv/dl_pdsch_trials.csv"
-        measured_fields: ["CRCPass", "PostEqSINR_dB", "MeasuredPreEqualizationNoiseVariance", "Layers"]
+        measured_fields: ["CRCPass", "PostEqSINR_dB", "PreEqualizationNoiseVariance", "Layers"]
         measurement_min_rows: 1
         success_field: "CRCPass"
         success_mode: "any_true"
@@ -5043,15 +5115,18 @@ validation:
         required: true
         consumer_source_files: ["+sixgr/+phy/+refsig/csirs.m", "+sixgr/+phy/+rsla/CSIRSResourceEngine.m"]
         measurement_artifact: "air_interface/csv/csi_rs_trials.csv"
-        measured_fields: ["MeasurementAttempted", "MeasurementUsable"]
+        measured_fields: ["Scheduled", "Transmitted", "Observed", "Consumed", "ChannelEstimateAvailable"]
         measurement_min_rows: 1
+        success_field: "CSIComputationStatus"
+        success_mode: "all_equals"
+        success_value: "runtime_measured_csi_complete"
       - stage_id: "csi_feedback_cqi_ri_pmi_cri"
         order: 180
         subsystem: "csi"
         dependency_stages: ["csi_rs_measurement"]
         feature_authority: "csi_reporting"
         required: true
-        consumer_source_files: ["+sixgr/+mimo/buildCSIFeedback.m", "+sixgr/+phy/+rsla/CSIReport.m"]
+        consumer_source_files: ["+sixgr/+phy/+dl/CSI_Feedback.m", "+sixgr/+link/computeLinkAdaptationDecision.m"]
         measurement_artifact: "control/csv/csi_feedback_reports.csv"
         measured_fields: ["CQI", "RI", "PMI", "CRI", "SINR_dB"]
         measurement_min_rows: 1
@@ -5082,8 +5157,8 @@ validation:
         dependency_stages: ["rrc_setup_complete"]
         feature_authority: "srs"
         required: true
-        consumer_functions: ["sixgr.phy.srs.estimateULChannelFromSRS"]
-        consumer_source_files: ["+sixgr/+phy/+srs/estimateULChannelFromSRS.m", "+sixgr/+phy/+srs/generateSRSWaveform.m"]
+        consumer_functions: ["sixgr.phy.ul.SRS_Tx", "sixgr.phy.ul.SRS_Rx"]
+        consumer_source_files: ["+sixgr/+phy/+ul/SRS_Tx.m", "+sixgr/+phy/+ul/SRS_Rx.m"]
         measurement_artifact: "air_interface/csv/srs_trials.csv"
         measured_fields: ["SRSChannelEstimateAvailable", "MeasuredSINR_dB"]
         measurement_min_rows: 1
@@ -5096,7 +5171,7 @@ validation:
         consumer_functions: ["sixgr.phy.ul.PUSCH_Tx", "sixgr.phy.ul.PUSCH_Rx"]
         consumer_source_files: ["+sixgr/+phy/+ul/PUSCH_Tx.m", "+sixgr/+phy/+ul/PUSCH_Rx.m"]
         measurement_artifact: "air_interface/csv/ul_pusch_trials.csv"
-        measured_fields: ["CRCPass", "PostEqSINR_dB", "MeasuredPreEqualizationNoiseVariance", "Layers"]
+        measured_fields: ["CRCPass", "PostEqSINR_dB", "PreEqualizationNoiseVariance", "Layers"]
         measurement_min_rows: 1
         success_field: "CRCPass"
         success_mode: "any_true"
@@ -5118,7 +5193,7 @@ validation:
         dependency_stages: ["pdsch_tx_rx", "pucch_harq_feedback", "pusch_tx_rx"]
         feature_authority: "harq"
         required: true
-        consumer_source_files: ["+sixgr/+pdsch/PDSCHHARQManager.m", "+sixgr/+l2/+mac/HARQProcess.m"]
+        consumer_source_files: ["+sixgr/+l2/+mac/HARQEntity.m"]
         measurement_artifact: "harq/csv/live_harq_observation_timeline.csv"
         measured_fields: ["HarqID", "RV", "CurrentDecodeOK", "CombinedDecodeOK"]
         measurement_min_rows: 1
@@ -5182,7 +5257,7 @@ validation:
         subsystem: "timing"
         scenario_path: "scheduling_timing.dl_harq_feedback_k1"
         runtime_path: "phy.schedulingTiming.dlHARQFeedbackK1Candidates"
-        consumer_source_files: ["+sixgr/+l2/+mac/resolveHARQFeedbackK1.m"]
+        consumer_source_files: ["+sixgr/+phy/+frame/TimingRelationEngine.m"]
         feature_authority: "harq"
         required: true
       - parameter_id: "k2_ul_grant"
@@ -5195,28 +5270,21 @@ validation:
         subsystem: "harq"
         scenario_path: "harq.process_count"
         runtime_path: "mac.harq.numProcesses"
-        consumer_source_files: ["+sixgr/+l2/+mac/HARQProcess.m"]
+        consumer_source_files: ["+sixgr/+l2/+mac/HARQEntity.m"]
         feature_authority: "harq"
         required: true
       - parameter_id: "harq_max_retx"
         subsystem: "harq"
         scenario_path: "harq.max_retx"
         runtime_path: "mac.harq.maxRetx"
-        consumer_source_files: ["+sixgr/+l2/+mac/HARQProcess.m"]
+        consumer_source_files: ["+sixgr/+l2/+mac/HARQEntity.m"]
         feature_authority: "harq"
         required: true
       - parameter_id: "harq_rv_sequence"
         subsystem: "harq"
         scenario_path: "harq.rv_sequence"
         runtime_path: "phy.harq.rvSequence"
-        consumer_source_files: ["+sixgr/+pdsch/PDSCHHARQManager.m"]
-        feature_authority: "harq"
-        required: true
-      - parameter_id: "harq_k1"
-        subsystem: "harq"
-        scenario_path: "harq.k1"
-        runtime_path: "mac.harq.k1"
-        consumer_source_files: ["+sixgr/+l2/+mac/resolveHARQFeedbackK1.m"]
+        consumer_source_files: ["+sixgr/+l2/+mac/HARQEntity.m"]
         feature_authority: "harq"
         required: true
       - parameter_id: "harq_k2"
@@ -5357,7 +5425,7 @@ validation:
       - parameter_id: "dl_dmrs_port_set"
         subsystem: "pdsch"
         scenario_path: "reference_signals.pdsch_dmrs.port_set"
-        runtime_path: "phy.pdsch.dmrs.portSet"
+        runtime_path: "phy.pdsch.dmrs.availablePortSet"
         consumer_source_files: ["+sixgr/+phy/+grid/allocREsPDSCH.m", "+sixgr/+phy/+dl/PDSCH_Tx.m", "+sixgr/+phy/+dl/PDSCH_Rx.m"]
         feature_authority: "scheduled_pdsch"
         required: true
@@ -5413,7 +5481,7 @@ validation:
       - parameter_id: "ul_dmrs_port_set"
         subsystem: "pusch"
         scenario_path: "reference_signals.pusch_dmrs.port_set"
-        runtime_path: "phy.pusch.dmrs.portSet"
+        runtime_path: "phy.pusch.dmrs.availablePortSet"
         consumer_source_files: ["+sixgr/+phy/+grid/allocREsPUSCH.m", "+sixgr/+phy/+ul/PUSCH_Tx.m", "+sixgr/+phy/+ul/PUSCH_Rx.m"]
         feature_authority: "scheduled_pusch"
         required: true
@@ -5734,6 +5802,13 @@ output:
   phy_signal_diagnostic_fft_length: 1024
   phy_signal_diagnostic_channel_points: 1024
   phy_signal_diagnostic_constellation_points: 512
+  antenna_pattern_samples_enabled: true
+  antenna_pattern_azimuth_min_deg: -180
+  antenna_pattern_azimuth_max_deg: 180
+  antenna_pattern_azimuth_step_deg: 5
+  antenna_pattern_elevation_min_deg: -90
+  antenna_pattern_elevation_max_deg: 90
+  antenna_pattern_elevation_step_deg: 5
   live_publish_frame_interval: 1
   live_heavy_refresh_interval_frames: 4
   live_heavy_refresh_each_sweep_point: true
@@ -5853,12 +5928,17 @@ pucch_resources:
   overlap_policy:
     detect_pucch_pusch_overlap: true
     uci_on_pusch_enabled: true
+    reserve_configured_pucch_prbs_from_pusch: true
     unsupported_overlap_policy: "reject_before_waveform"
   power_control:
     mu: 0
     m_rb: 1
     p0_dbm: -80
+    # Static value is retained only for isolated calibration fixtures.
+    # Coupled truth execution must consume the causally measured SSB-0
+    # pathloss selected by the spatial relation below.
     pathloss_db: 77
+    require_measured_reference_rs: true
     delta_f_db: 0
     delta_tf_db: 0
     closed_loop_adjustment_db: 0
@@ -5903,6 +5983,7 @@ random_access_evidence:
   require_runtime_stage_waveforms: true
   allow_runtime_stage_waveform_composition: true
   preamble_collision_test_enabled: false
+  four_step_negative_test_enabled: false
   false_alarm_test_enabled: false
   missed_detection_test_enabled: false
 air_interface:

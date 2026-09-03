@@ -147,6 +147,13 @@ cfg.channel.model = "AWGN";
 cfg.channel.awgnOnly = true;
 cfg.channel.fading.enable = false;
 cfg.channel.snr_dB = 18;
+cfg.run.runTag = "fixed_snr_sweep_audit_fixture";
+cfg.run.executionID = "fixed_snr_sweep_audit_fixture_execution";
+cfg.run.scenarioID = "fixed_snr_sweep_audit_fixture";
+cfg.meta.executionID = cfg.run.executionID;
+cfg.meta.configHash = "";
+cfg.meta.configHash = string(sixgr.util.sha256Hex(uint8( ...
+    unicode2native(jsonencode(cfg), "UTF-8"))));
 end
 
 function opt = localCampaignOptions(cfg, snrGrid, trialsPerPoint, seed)

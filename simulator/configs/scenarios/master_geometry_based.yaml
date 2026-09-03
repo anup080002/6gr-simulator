@@ -653,6 +653,10 @@ canonical_control:
       frequency_tolerance_hz: 50
       channel_nmse_threshold_db: -8
     srs_periodicity_ms: 10
+    # NR periodic SRS offset is zero-based. Offset 4 binds the strict
+    # waveform resource to the first authored one-based occasion (slot 5);
+    # remaining occasions are retained for multi-UE runtime scheduling.
+    period_offset: 4
     srs_slot_within_period:
     - 5
     - 10
@@ -1931,6 +1935,10 @@ pdsch:
   distribution_matching_policy: none
   scrambling_policy: nr_38211
   dmrs_policy: configured_type1_mapping_a
+  # Geometry channels are frequency/time selective; retain full
+  # per-resource channel estimation unless an operator explicitly selects
+  # an independently qualified flat/static calibration case.
+  use_exact_flat_static_mimo_prg_estimator: false
   ptrs_policy: enabled_from_yaml
   csi_rs_association: measured_periodic_nzp_csi_rs
   mimo_mode: mu_mimo
@@ -1975,6 +1983,9 @@ pdsch:
   xoh_pdsch: 0
   tbs_scaling: 1
   cbg_transmission: false
+  dmrs_residual_post_eq_sinr_bound_enabled: true
+  decision_directed_post_eq_sinr_bound_enabled: true
+  decoder_noise_variance_mode: post_equalization
 pusch:
   enabled: true
   execution_profile: scheduler_truth
@@ -2064,7 +2075,7 @@ pusch:
   repetition_count: 1
   dmrs_residual_post_eq_sinr_bound_enabled: true
   decision_directed_post_eq_sinr_bound_enabled: true
-  decoder_noise_variance_mode: post_equalization
+  decoder_noise_variance_mode: pre_equalization
   power_control:
     enabled: true
     open_loop_enabled: true
@@ -2353,12 +2364,17 @@ rf_frontend:
     averaging_windows: 4
     carrier_leakage_removal: true
   ul_power_control:
+    enabled: true
+    open_loop_enabled: true
+    closed_loop_enabled: false
+    phr_report_enabled: true
     require_measured_reference_rs: true
+    max_pathloss_measurement_age_slots: 40
     configured_snr_pathloss_forbidden: true
     tpc_source: decoded_control_event
     tpc_mode: accumulation
     state_epoch_required: true
-    pusch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
+    pusch: {p0_dbm: -80, p0_ue_db: 0, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     pucch: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
@@ -2373,6 +2389,10 @@ pucch_resources:
   - id: 1
     max_payload_bits: 1706
     resource_ids: [10, 11, 12]
+  multi_user_assignment:
+    mode: rnti_modulo_resource_set
+    resource_set_id: 0
+    require_unique_simultaneous_ues: false
   resources:
   - id: 0
     format: 0
@@ -2413,7 +2433,7 @@ pucch_resources:
     intra_slot_hopping: false
     second_hop_start_prb: null
     initial_cyclic_shift: 0
-    occ_length: 1
+    occ_length: 2
     occ_index: 0
     additional_dmrs: false
     pi2_bpsk: false
@@ -2505,7 +2525,7 @@ tdd_timing:
   - 6
   - 7
   - 8
-  k1_selection_policy: fixed_configured_default
+  k1_selection_policy: first_valid_configured
   ul_grant_k2: 1
   harq_roundtrip_slots: 8
   dl_to_ul_guard_time_us: 16.276
@@ -2712,7 +2732,7 @@ execution_scales:
           min_transport_blocks: 40
           max_transport_blocks: 40
           batch_size: 40
-          minimum_block_errors: 0
+          minimum_block_errors: 1
           max_confidence_half_width: 0.5
           sampling_by_entry:
           - entry_id: dl_r_pdsch_1_1_4_fdd_awgn
@@ -2823,3 +2843,80 @@ execution_scales:
           error_target: 0
   full:
     overlay: {}
+# Explicit resolved-runtime CSI authority. canonical_control currently owns
+# the legacy reference-signal enable fields; this typed payload is kept at
+# the schema-defined top level until that canonical surface is versioned.
+csi_acquisition_and_reporting:
+  dl_csi_enabled: true
+  ul_csi_enabled: true
+  joint_dl_ul_csi_enabled: false
+  csi_rs_baseline_flag: true
+  dmrs_based_csi_flag: true
+  srs_based_csi_flag: true
+  reciprocity_based_flag: true
+  feedback_based_flag: true
+  cqi_policy: baseline
+  pmi_policy: baseline
+  ri_policy: baseline
+  cri_policy: baseline
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  pmi_codebook_mode: type1_su_mimo
+  l1_sinr_policy: measured_reference_signal
+  max_trusted_reference_sinr_db: 45
+  rsrp_policy: measured_reference_signal
+  delta_mcs_policy: ack_nack_olla
+  dmrs_port_selection_policy: scheduled_port_set
+  report_trigger: periodic
+  report_periodicity: 5ms
+  report_payload_mode: compressed
+  compression_mode: none
+  sscc_mode: false
+  jscc_mode: false
+  jscm_mode: false
+  analog_feedback_mode: false
+  crc_attached_mode: true
+  crc_free_mode: false
+  multiplexing_with_uci_policy: uci_on_pusch_when_overlapping
+  report_latency_model: configured
+  measurement_timeline: slot_based
+  application_timeline: slot_plus_one
+  codebook_framework: nr_type1
+  sparse_csi_rs_policy: disabled
+  downloadable_model_policy: disabled
+  report_overhead_policy: enforce_configured_limit
+  joint_port_mapping_policy: disabled
+  joint_timeline_policy: disabled
+  rf_papr_assumption: baseline_nr_like_crc_coded_feedback
+  dl_csi_mode: type1_codebook
+  ul_csi_mode: srs_reciprocity
+  csi_report_type: periodic
+  csi_report_periodicity_slots: 5
+  csi_report_offset_slots: 1
+  csi_reporting_delay_slots: 1
+  pmilayour: rank_adaptive
+  max_feedback_overhead_pct: 5.0
+  cqi_table: table1
+  sinr_to_cqi_mode: threshold_table
+  effective_sinr_method: eesm
+  eesm_beta_db: 1.5
+  eesm_beta_by_mcs_db: []
+  eesm_beta_mcs_index: []
+  target_bler: 0.1
+  target_bler_dl: 0.1
+  target_bler_ul: 0.1
+  bler_curve_slope_db: 1.5
+  report_configuration:
+    report_config_id: csi-report-master-geometry-0
+    epoch: 0
+    codebook_mode: 1
+    report_quantity: cri-RI-PMI-CQI
+    frequency_granularity: subband
+    uci_channel: PUCCH
+    n1: 2
+    n2: 1
+    o1: 4
+    o2: 1
+    panels: 1
+    num_subbands: 16
+    number_of_beams: 4
+    phase_alphabet_size: 4

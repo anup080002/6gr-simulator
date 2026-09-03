@@ -6,17 +6,28 @@ function [llrOut, info] = applyCSIToCodewordLLR(llrIn, csi, modScheme, varargin)
 %   reliability and would collapse otherwise valid decoder soft bits.
 
 postEqSINR_dB = NaN;
+codewordIndex = 1;
 for i = 1:2:numel(varargin)
     key = lower(string(varargin{i}));
     val = varargin{i+1};
     switch key
         case "posteqsinr_db"
             postEqSINR_dB = double(val);
+        case "codewordindex"
+            codewordIndex = double(val);
     end
+end
+
+if ~(isscalar(codewordIndex) && isfinite(codewordIndex) && ...
+        codewordIndex >= 1 && codewordIndex == fix(codewordIndex))
+    error("sixgr:phy:rx:InvalidCSICodewordIndex", ...
+        "CodewordIndex must be a positive integer, not %s.", ...
+        mat2str(codewordIndex));
 end
 
 info = localDefaultInfo();
 info.PostEqSINR_dB = localScalarOrNaN(postEqSINR_dB);
+info.CodewordIndex = double(codewordIndex);
 llrOut = double(llrIn(:));
 info.InputLLRMeanAbs = localMeanAbs(llrOut);
 info.OutputLLRMeanAbs = info.InputLLRMeanAbs;
@@ -27,7 +38,7 @@ if isempty(csi)
     return;
 end
 
-csiVec = localCodewordCSI(csi);
+csiVec = localCodewordCSI(csi, codewordIndex);
 csiVec = double(real(csiVec(:)));
 csiVec(~isfinite(csiVec) | csiVec < 0) = 0;
 if isempty(csiVec) || ~any(csiVec > 0)
@@ -102,15 +113,33 @@ info = struct( ...
     "Qm", NaN);
 end
 
-function csiVec = localCodewordCSI(csi)
+function csiVec = localCodewordCSI(csi, codewordIndex)
 try
     csiCW = nrLayerDemap(csi);
     if iscell(csiCW)
-        csiVec = csiCW{1};
+        if codewordIndex > numel(csiCW)
+            error("sixgr:phy:rx:MissingCSICodeword", ...
+                "Equalizer CSI has %d codeword stream(s); codeword %d was requested.", ...
+                numel(csiCW), codewordIndex);
+        end
+        csiVec = csiCW{codewordIndex};
     else
+        if codewordIndex ~= 1
+            error("sixgr:phy:rx:MissingCSICodeword", ...
+                "Equalizer CSI is a single stream; codeword %d was requested.", ...
+                codewordIndex);
+        end
         csiVec = csiCW;
     end
-catch
+catch ME
+    if startsWith(string(ME.identifier), "sixgr:phy:rx:")
+        rethrow(ME);
+    end
+    if codewordIndex ~= 1
+        error("sixgr:phy:rx:MissingCSICodeword", ...
+            "Could not de-layer-map equalizer CSI for codeword %d: %s", ...
+            codewordIndex, ME.message);
+    end
     csiVec = csi;
 end
 end

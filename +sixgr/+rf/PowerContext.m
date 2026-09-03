@@ -56,10 +56,37 @@ ctx.State = char(string(opt.State));
 ctx.ReferenceImpedance_Ohm = double(r0);
 ctx.WaveformAmplitudeUnit = "sqrt_mW";
 ctx.SamplePowerConvention = "mean_sum_abs2_over_active_ofdm_samples_equals_total_mW";
+ctx.PowerNormalizationPolicy = "active_ofdm_total_power";
+ctx.PowerNormalizationSource = "unresolved_until_applyPowerContext";
+ctx.FullBWPActivityFactor = 1;
+ctx.ReferenceInputPower_mW = NaN;
+ctx.ReferenceOutputPower_mW = NaN;
+ctx.ReferenceOutputPower_dBm = NaN;
+ctx.ExpectedEmittedPower_mW = NaN;
+ctx.ActualEmittedPowerBackoffFromBudget_dB = NaN;
 ctx.TotalTxPower_dBm = double(txPower_dBm);
 ctx.TotalTxPower_mW = double(txPower_mW);
 ctx.TotalTxPower_W = double(txPower_W);
 ctx.TotalTxPowerSource = char(txPowerSource);
+scheduled = sixgr.util.structGet(cfg, "lls6g.runtimeScheduledPowerContext", struct());
+ctx.ScheduledPowerContractVersion = char(string(sixgr.util.structGet(scheduled, "ContractVersion", "")));
+ctx.ScheduledPowerPolicy = char(string(sixgr.util.structGet(scheduled, "Policy", "")));
+ctx.ScheduledPowerAuthority = char(string(sixgr.util.structGet(scheduled, "Authority", "")));
+defaultCellPower_dBm = NaN;
+if direction == "DL"
+    defaultCellPower_dBm = txPower_dBm;
+end
+ctx.CellTotalTxPower_dBm = double(sixgr.util.structGet(scheduled, "CellTotalTxPower_dBm", defaultCellPower_dBm));
+ctx.EndpointPowerBudget_dBm = double(sixgr.util.structGet(scheduled, "EndpointPowerBudget_dBm", txPower_dBm));
+ctx.ConcurrentTransmitterGrantCount = double(sixgr.util.structGet(scheduled, "ConcurrentTransmitterGrantCount", 1));
+ctx.GrantPowerFraction = double(sixgr.util.structGet(scheduled, "GrantPowerFraction", 1));
+ctx.GrantTargetTxPower_dBm = double(sixgr.util.structGet(scheduled, "GrantTargetTxPower_dBm", txPower_dBm));
+ctx.SharedCellBudgetApplied = logical(sixgr.util.structGet(scheduled, "SharedCellBudgetApplied", false));
+ctx.SignalSpecificPowerControl = logical( ...
+    strlength(strtrim(string(ctx.ScheduledPowerContractVersion))) > 0);
+ctx.SignalSpecificPowerControlSource = char(string(ternaryString( ...
+    ctx.SignalSpecificPowerControl, ...
+    "scheduled_grant_power_budget", "not_signal_specific")));
 ctx.TxGain_dB = double(txGain_dB);
 ctx.TxGainSource = char(txGainSource);
 ctx.RxGain_dB = double(rxGain_dB);
@@ -87,6 +114,14 @@ ctx.OutputPerPortPower_dBm = [];
 ctx.ActivePortCount = NaN;
 end
 
+function value = ternaryString(condition, ifTrue, ifFalse)
+if condition
+    value = string(ifTrue);
+else
+    value = string(ifFalse);
+end
+end
+
 function [txPower_dBm, source] = localResolveTxPower(cfg, direction)
 resolved = sixgr.util.structGet(cfg, "lls6g.resolvedConfig", struct());
 if direction == "UL"
@@ -98,6 +133,7 @@ if direction == "UL"
         23, "default_ue_23_dBm");
 else
     [txPower_dBm, source] = localFirstFiniteWithSource( ...
+        sixgr.util.structGet(cfg, "lls6g.runtimeScheduledPowerContext.GrantTargetTxPower_dBm", []), "runtime_scheduled_power_context.grant_target_tx_power_dbm", ...
         sixgr.util.structGet(resolved, "power_and_rf_frontend.bs_tx_power_dbm", []), "resolved_config.power_and_rf_frontend.bs_tx_power_dbm", ...
         sixgr.util.structGet(cfg, "powerAndRF.bsTxPower_dBm", []), "cfg.powerAndRF.bsTxPower_dBm", ...
         sixgr.util.structGet(cfg, "scenario.bs.txPower_dBm", []), "cfg.scenario.bs.txPower_dBm", ...

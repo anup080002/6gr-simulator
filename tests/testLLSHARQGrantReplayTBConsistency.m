@@ -91,6 +91,11 @@ cfg.phy.pusch.transformPrecoding = true;
 cfg.phy.pusch.powerControl.enabled = false;
 cfg.phy.pusch.equalizer = "MMSE";
 cfg.phy.channelEstimation.method = "LS";
+% This fixture exercises both scheduler directions.  Declare the monitored
+% common-search-space formats explicitly so the production grant resolver
+% builds real DCI 1_0/0_0 contexts; an empty/default search space is not a
+% valid substitute for decoded-control authority.
+cfg.phy.pdcch.dciFormats = {'1_0', '0_0'};
 mcsContext = struct( ...
     "UECapability1024QAM", false, ...
     "RRCEnabled1024QAM", false, ...

@@ -202,6 +202,7 @@ mimo:
   codebook_type: type2
   mu_mimo_enable: true
   mu_mimo_max_users_per_prb: 2
+  mu_mimo_spatial_signature_mode: dominant_scheduled_rank
   reciprocity_mode: TDD
   beam_sweep_enabled: true
   beam_count: 32
@@ -235,6 +236,8 @@ csi_acquisition_and_reporting:
   crc_free_mode: false
   joint_port_mapping_policy: explicit_joint_port_map
   joint_timeline_policy: scheduler_defined_joint_timeline
+  report_configuration:
+    frequency_granularity: subband
 
 link_adaptation:
   fixed_or_amc: amc

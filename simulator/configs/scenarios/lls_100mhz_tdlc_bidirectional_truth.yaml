@@ -58,6 +58,18 @@
     "min_duration_s": 0.008,
     "snr_sweep_offsets_db": [-24, -18, -12, -6, 0]
   },
+  "run_control": {
+    "raw_iq_capture_enable": true,
+    "raw_grid_capture_enable": true,
+    "save_channel_tensors": true,
+    "save_constellations": true
+  },
+  "output_control": {
+    "save_raw_waveforms": true,
+    "save_channel_snapshots": true,
+    "save_constellations": true,
+    "save_plots": true
+  },
   "frequency": {
     "range_name": "FR1",
     "band_name": "4ghz",
@@ -116,10 +128,20 @@
   },
   "reference_signals": {
     "ssb_enabled": true,
+    "ssb_case": "Case C",
+    "ssb_scs_khz": 30,
+    "ssb_lmax": 8,
+    "ssb_beam_count": 8,
     "pbch_enabled": true,
     "pdcch_dmrs_enabled": true,
-    "pdsch_dmrs_ports": 2,
-    "pusch_dmrs_ports": 2,
+    "pdsch_dmrs_ports": 1,
+    "pdsch_dmrs": {
+      "port_set": [0]
+    },
+    "pusch_dmrs_ports": 1,
+    "pusch_dmrs": {
+      "port_set": [0]
+    },
     "csi_rs_enabled": true,
     "csi_rs_periodicity_slots": 4,
     "csi_rs_offset_slots": 0,
@@ -139,7 +161,48 @@
       "beam_indices_port_1": [1]
     },
     "srs_enabled": true,
+    "srs_ports": 1,
+    "srs_periodicity_slots": 5,
+    "srs_slot_within_period": 4,
+    "srs_scheduling_policy": "multiplex_due_users",
+    "srs": {
+      "enabled": true,
+      "resource_type": "periodic",
+      "resource_set_usage": "codebook",
+      "period_offset": 3,
+      "symbol_start": 13,
+      "num_srs_symbols": 1,
+      "repetition_factor": 1,
+      "comb_number": 2,
+      "comb_offset": 0,
+      "cyclic_shift": 0,
+      "sequence_id": 1,
+      "group_or_sequence_hopping": "neither",
+      "frequency_position": 0,
+      "n_rrc": 0,
+      "enable_start_rb_hopping": false,
+      "frequency_scaling_factor": 1,
+      "start_rb_index": 0,
+      "b_hop": 0,
+      "c_srs": 6,
+      "b_srs": 0,
+      "num_rb": 24,
+      "expected_rb_start": 0,
+      "expected_num_rb": 24,
+      "expected_bandwidth_coverage_percent": 100,
+      "coverage_requirement": "configured_band",
+      "full_carrier_sounding_required": false,
+      "full_carrier_coverage_tolerance_rb": 0,
+      "num_ports": 1,
+      "port_set": 0,
+      "purpose": "ul_csi",
+      "baseline_or_candidate_tag": "baseline_benchmark"
+    },
     "trs_enabled": false,
+    "trs": {
+      "enabled": false,
+      "slot_numbers": [2]
+    },
     "ptrs_enabled": false,
     "csi_feedback_mode": "PMI+CQI+RI+CRI",
     "csi_reporting_enabled": true,
@@ -158,11 +221,95 @@
     "precoder_type": "wideband",
     "codebook_type": "type1",
     "reciprocity_mode": "TDD",
-    "beam_sweep_enabled": false,
-    "beam_count": 4,
+    "beam_sweep_enabled": true,
+    "beam_count": 8,
     "mtrp_ready": false,
     "multi_panel_ready": false,
-    "panel_count": 1
+    "panel_count": 1,
+    "phase07_strict": {
+      "enabled": false,
+      "profile_id": "fr1_typeI_single_panel_runtime",
+      "specification_profile": "3GPP_R18_MIMO_CSI_V1",
+      "direction": "DL",
+      "codebook_type": "typeI-SinglePanel",
+      "ports": 2,
+      "n1": 1,
+      "n2": 1,
+      "o1": 1,
+      "o2": 1,
+      "panels": 1,
+      "max_rank": 1,
+      "rank_domain": [1],
+      "receiver": "MMSE",
+      "precoder_prg_size_rbs": 24,
+      "require_active_tci_state": false,
+      "measurement_max_age_slots": 8,
+      "covariance": {
+        "min_samples": 8,
+        "max_age_slots": 8,
+        "shrinkage_factor": 0.05,
+        "condition_number_limit": 1000000000000
+      },
+      "csi_report": {
+        "report_config_id": "csi-report-runtime-0",
+        "epoch": 0,
+        "codebook_mode": 1,
+        "report_quantity": "cri-RI-PMI-CQI",
+        "num_csi_resources": 1,
+        "frequency_granularity": "wideband",
+        "uci_channel": "PUCCH",
+        "num_subbands": 1,
+        "number_of_beams": 1,
+        "phase_alphabet_size": 4
+      },
+      "ul_srs_authority": {
+        "enabled": false,
+        "max_age_slots": 8,
+        "configured_override_forbidden": true
+      }
+    }
+  },
+  "antenna_and_array": {
+    "bs_num_antenna_elements": 2,
+    "bs_num_txrus": 2,
+    "bs_num_rxrus": 2,
+    "ue_num_antenna_elements": 2,
+    "ue_num_txrus": 2,
+    "ue_num_rxrus": 2,
+    "require_spatial_dependency_contract": true
+  },
+  "initial_access": {
+    "enabled": true,
+    "ssb": {
+      "enabled": true,
+      "case": "Case C",
+      "scs_khz": 30,
+      "lmax": 8,
+      "beam_count": 8,
+      "periodicity_ms": 20,
+      "positions_in_burst": "11111111",
+      "n_crb_ssb": 253,
+      "k_ssb": 0,
+      "selected_ssb_index": 0,
+      "observation_subframes": 20,
+      "precoder_codebook": {
+        "enabled": true,
+        "type": "dft_ura",
+        "physical_element_count": 2,
+        "beam_grid_rows": 1,
+        "beam_grid_columns": 8,
+        "beam_indices": [0, 1, 2, 3, 4, 5, 6, 7]
+      }
+    },
+    "mib": {
+      "enabled": true,
+      "pdcch_config_sib1": 2,
+      "dmrs_type_a_position": 2
+    },
+    "type0": {
+      "monitoring_occasion_ordinal": 1,
+      "note17_band": false
+    }
   },
   "coding": {
     "data_code_type": "LDPC",
@@ -237,7 +384,10 @@
     "codebook_based_transmission": true,
     "codebook_type": "codebook1_ng1n4n1",
     "tpmi": 0,
-    "transform_precoding": false
+    "transform_precoding": false,
+    "dmrs_residual_post_eq_sinr_bound_enabled": true,
+    "decision_directed_post_eq_sinr_bound_enabled": true,
+    "decoder_noise_variance_mode": "pre_equalization"
   },
   "pdcch": {
     "start_symbol": 0,
@@ -274,7 +424,7 @@
     "ul_grant_k2": 4,
     "n1_pdsch_processing_time_symbols": 10,
     "n2_pusch_preparation_time_symbols": 12,
-    "capability_profile_id": "38.214-v18-explicit-k1-k2",
+    "capability_profile_id": "38.214-v18.8.0-cap1-dmrs-pos0-mu1",
     "k1_selection_policy": "first_valid_configured"
   },
   "control_gating": {
@@ -283,7 +433,7 @@
     "pdcch_required": false,
     "pucch_required": false,
     "srs_required": false,
-    "srs_max_age_slots": 0,
+    "srs_max_age_slots": 8,
     "trs_required": false,
     "trs_max_age_slots": 0,
     "pre_attach_ues_before_measurement": true
@@ -324,7 +474,7 @@
         "intra_slot_hopping": false,
         "second_hop_start_prb": null,
         "initial_cyclic_shift": 0,
-        "occ_length": 1,
+        "occ_length": 2,
         "occ_index": 0,
         "additional_dmrs": false,
         "pi2_bpsk": false,
@@ -408,6 +558,24 @@
     "descriptor_type": "plugin_descriptor",
     "benchmark_observations": 8
   },
+  "csi_acquisition_and_reporting": {
+    "report_configuration": {
+      "report_config_id": "csi-report-runtime-0",
+      "epoch": 0,
+      "codebook_mode": 1,
+      "report_quantity": "cri-RI-PMI-CQI",
+      "frequency_granularity": "wideband",
+      "uci_channel": "PUCCH",
+      "n1": 1,
+      "n2": 1,
+      "o1": 1,
+      "o2": 1,
+      "panels": 1,
+      "num_subbands": 1,
+      "number_of_beams": 1,
+      "phase_alphabet_size": 4
+    }
+  },
   "energy_efficiency": {
     "enabled": true,
     "tx_power_dbm": 23,
@@ -452,6 +620,12 @@
     "save_yaml_snapshot": true,
     "save_json_snapshot": true,
     "organize_by_block": true,
-    "generate_summary_plots": true
+    "generate_summary_plots": true,
+    "phy_signal_diagnostic_enabled": true,
+    "phy_signal_diagnostic_full_channel_grid": true,
+    "phy_signal_diagnostic_waveform_samples": 1024,
+    "phy_signal_diagnostic_fft_length": 1024,
+    "phy_signal_diagnostic_channel_points": 1024,
+    "phy_signal_diagnostic_constellation_points": 512
   }
 }

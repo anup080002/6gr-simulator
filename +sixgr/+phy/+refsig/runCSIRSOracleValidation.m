@@ -109,16 +109,8 @@ end
 end
 
 function cdmLengths = localCSIRSCDMLengths(info)
-token = upper(strtrim(string(sixgr.util.structGet(info, "CDMType", ""))));
-if contains(token, "CDM8")
-    cdmLengths = [2 4];
-elseif contains(token, "CDM4")
-    cdmLengths = [2 2];
-elseif contains(token, "FD-CDM2") || contains(token, "FD_CDM2")
-    cdmLengths = [2 1];
-else
-    cdmLengths = [1 1];
-end
+cdmLengths = sixgr.phy.refsig.csirsCDMLengths( ...
+    sixgr.util.structGet(info, "CDMType", ""));
 end
 
 function status = localValidationStatus(row)
@@ -144,4 +136,3 @@ row = struct("RunId", "", "TrialIndex", NaN, "NSizeGrid", NaN, ...
     "OracleNMSE_dB", NaN, "PilotResidualNMSE_dB", NaN, ...
     "EffectiveChannelConvention", "", "ValidationStatus", "");
 end
-

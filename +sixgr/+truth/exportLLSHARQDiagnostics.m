@@ -197,7 +197,8 @@ for pkt = 1:numPackets
     [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, [], 0, []);
     observeMetrics = localExtractLinkAdaptationMetrics(cfgPkt, rx, diag);
     txp = harq.allocate(rnti, slotBase, ceil(double(tx.TransportBlockSize) / 8), "NewData", true);
-    harq.onTx(rnti, txp.HARQ.HarqID, uint8(tx.TransportBlock(:)), struct("Direction", char(direction)), slotBase);
+    txGrant = localHARQGrantFromExecutedTx(tx, direction, slotBase, txp.HARQ, struct());
+    harq.onTx(rnti, txp.HARQ.HarqID, uint8(tx.TransportBlock(:)), txGrant, slotBase);
 
     packetRows(end+1, 1) = localMakePacketRow(direction, snr_dB, pkt, 1, slotBase, txp.HARQ, diag, feedbackSlots, slotDur_s, "pending", tx.TransportBlockSize, mode); %#ok<AGROW>
     harq.onFeedback(rnti, txp.HARQ.HarqID, diag.CombinedDecodeOK);
@@ -219,7 +220,10 @@ for pkt = 1:numPackets
         attempt = attempt + 1;
         cfgPkt.run.seed = seedBase + pkt - 1 + 37 * attempt;
         [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, int8(retx.TB(:)), retx.HARQ.RV, diag.HARQSoftBuffer);
-        harq.onTx(rnti, retx.HARQ.HarqID, uint8(tx.TransportBlock(:)), struct("Direction", char(direction)), slotBase + attempt - 1);
+        txSlot = slotBase + attempt - 1;
+        txGrant = localHARQGrantFromExecutedTx(tx, direction, txSlot, ...
+            retx.HARQ, sixgr.util.structGet(retx, "TBContext", struct()));
+        harq.onTx(rnti, retx.HARQ.HarqID, uint8(tx.TransportBlock(:)), txGrant, txSlot);
         packetRows(end+1, 1) = localMakePacketRow(direction, snr_dB, pkt, attempt, slotBase + attempt - 1, retx.HARQ, diag, feedbackSlots * attempt, slotDur_s, "pending", tx.TransportBlockSize, mode); %#ok<AGROW>
         harq.onFeedback(rnti, retx.HARQ.HarqID, diag.CombinedDecodeOK);
         finalSuccess(pkt) = diag.CombinedDecodeOK;
@@ -301,6 +305,46 @@ summaryT = [summaryT; ... %#ok<AGROW>
     localProbeMetricRow("harq_gain_per_retransmission", entity, "recovered_after_retx_rate", retxClaimAvailability, recoveryRate, ...
         localRetxClaimText(mode, retxObserved), "fraction", mode, ...
         localHARQRetxClaimNote(mode, "Recovered packets attributable to HARQ retransmissions.", retxObserved))];
+end
+
+function grant = localHARQGrantFromExecutedTx(tx, direction, slot, harqState, tbContext)
+% The executed PHY transmitter owns the immutable coding/TBS authority.
+% Never rebuild a HARQ layout from nominal scenario fields in diagnostics.
+layout = sixgr.util.structGet(tx, "CodingLayout", struct());
+if ~(isstruct(layout) && ~isempty(fieldnames(layout)))
+    layouts = sixgr.util.structGet(tx, "CodingLayouts", {});
+    if iscell(layouts) && ~isempty(layouts) && isstruct(layouts{1})
+        layout = layouts{1};
+    end
+end
+if ~(isstruct(layout) && ~isempty(fieldnames(layout)))
+    error("sixgr:truth:HARQDiagnosticMissingCodingLayout", ...
+        "Executed %s HARQ probe did not expose its coding layout.", ...
+        char(upper(string(direction))));
+end
+
+direction = upper(string(direction));
+if direction == "DL"
+    channelCfg = sixgr.util.structGet(tx, "PDSCH", struct());
+else
+    channelCfg = sixgr.util.structGet(tx, "PUSCH", struct());
+end
+grant = struct( ...
+    "Direction", char(direction), ...
+    "Slot", double(slot), ...
+    "TBSBits", double(tx.TransportBlockSize), ...
+    "TransportBlockSize", double(tx.TransportBlockSize), ...
+    "Modulation", sixgr.util.structGet(layout, "Modulation", ...
+        sixgr.util.structGet(channelCfg, "Modulation", "")), ...
+    "NumLayers", double(sixgr.util.structGet(layout, "NumLayers", ...
+        sixgr.util.structGet(channelCfg, "NumLayers", 1))), ...
+    "TargetCodeRate", double(sixgr.util.structGet(layout, "TargetCodeRate", ...
+        sixgr.util.structGet(tx, "TargetCodeRate", NaN))), ...
+    "CodingLayout", layout, ...
+    "HARQ", harqState);
+if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
+    grant.HARQTBContext = tbContext;
+end
 end
 
 function [tx, rx, diag] = localRunAttempt(cfg, direction, snr_dB, tbBits, rv, combinedPrev)

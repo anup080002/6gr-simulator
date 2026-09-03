@@ -23,8 +23,15 @@ if ~isempty(slotWithinPeriod1)
         tf = true;
         return;
     end
-    targetUE = mod(double(matchIdx) - 1, numUsers) + 1;
-    tf = ueIdx == targetUE;
+    % Rotate by the absolute occasion ordinal. Using only matchIdx selects
+    % UE 1 forever when a period contains one occasion and leaves every
+    % other UE without causal SRS authority for codebook PUSCH.
+    periodIndex = floor((slotIdx - 1) / periodSlots);
+    occasionOrdinal0 = periodIndex * numel(slotWithinPeriod1) + ...
+        (double(matchIdx) - 1);
+    firstUE0 = mod(occasionOrdinal0 * maxUEsPerSlot, numUsers);
+    scheduledUEs = mod(firstUE0 + (0:(maxUEsPerSlot - 1)), numUsers) + 1;
+    tf = any(ueIdx == scheduledUEs);
     return;
 end
 absoluteSlots0 = double(sixgr.util.structGet(cfg, "phy.srs.slotNumbers", []));

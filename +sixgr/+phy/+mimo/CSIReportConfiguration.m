@@ -135,6 +135,20 @@ classdef CSIReportConfiguration
                     numel(part2Bits),obj.part2BitCount());
             end
         end
+
+        function values = decode(obj, part1Bits, part2Bits)
+            %DECODE Reconstruct CSI fields from receiver-decoded UCI bits.
+            % The scheduler must consume this result rather than the
+            % transmitter-side values used to construct the report.
+            obj.validateDecoded(part1Bits, part2Bits);
+            values = localDeserializeFields(obj.Part1Fields, ...
+                obj.Part1Widths, int8(part1Bits(:)), struct());
+            values = localDeserializeFields(obj.Part2Fields, ...
+                obj.Part2Widths, int8(part2Bits(:)), values);
+            values.ReportConfigID = obj.ReportConfigID;
+            values.ConfigurationEpoch = obj.Epoch;
+            values.UCIChannel = obj.UCIChannel;
+        end
     end
 end
 
@@ -143,6 +157,18 @@ cb = lower(codebookType);
 q = lower(quantity);
 criWidth = localBits(nResources-1);
 riWidth = localBits(min(8,ports)-1);
+if contains(cb,"typei") && contains(cb,"single") && ports == 1
+    % A single CSI-RS port has no spatial choice: RI is identically one
+    % and PMI/LI carry no information.  Keep only the resource selector
+    % (when multiple CSI-RS resources exist) and wideband CQI in Part 1.
+    % Emitting a fabricated PMI for SISO would make the scheduler appear
+    % spatially adaptive when no codebook decision exists.
+    p1f = ["CRI","CQI_CW0"];
+    p1w = [criWidth,4];
+    p2f = strings(1,0);
+    p2w = zeros(1,0);
+    return;
+end
 if contains(cb,"typei") && contains(cb,"single") && ports == 2
     p1f = ["CRI","RI","CQI_CW0"];
     p1w = [criWidth,1,4];
@@ -239,6 +265,39 @@ for index = 1:numel(fields)
     fieldBits = int8(sixgr.l2.mac.SchedulerBase.uintToBits(value,width));
     bits = [bits;fieldBits(:)]; %#ok<AGROW>
     owners = [owners;repmat(name,width,1)]; %#ok<AGROW>
+end
+end
+
+function values = localDeserializeFields(fields,widths,bits,values)
+offset = 0;
+for index = 1:numel(fields)
+    width = widths(index);
+    name = char(fields(index));
+    if width == 0
+        if strcmp(name,"RI")
+            values.(name) = 1;
+        else
+            values.(name) = 0;
+        end
+        continue;
+    end
+    fieldBits = double(bits(offset + (1:width))).';
+    if any(fieldBits ~= 0 & fieldBits ~= 1)
+        error("sixgr:mimo:CSIDeserializationMismatch", ...
+            "Decoded CSI field %s contains non-binary values.", name);
+    end
+    weights = 2.^((width-1):-1:0);
+    value = sum(fieldBits .* weights);
+    if strcmp(name,"RI")
+        value = value + 1;
+    end
+    values.(name) = double(value);
+    offset = offset + width;
+end
+if offset ~= numel(bits)
+    error("sixgr:mimo:CSIDeserializationMismatch", ...
+        "Decoded CSI bit consumption %d differs from payload length %d.", ...
+        offset,numel(bits));
 end
 end
 

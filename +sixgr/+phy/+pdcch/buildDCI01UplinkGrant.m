@@ -31,5 +31,7 @@ fields.antenna_ports = double(opt.NumLayers) - 1;
 fields.srs_request = 0;
 fields.csi_request = 0;
 
+context = sixgr.phy.pdcch.resolveDCIContext(pdcchCfg, "0_1");
+fields = sixgr.phy.pdcch.completeDCIFields(fields, context);
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "0_1", pdcchCfg);
 end

@@ -85,6 +85,7 @@ ip.addParameter('ExecutionProfile', "data_pusch", ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+receiverPipelineTic = tic;
 executionProfile = lower(strtrim(string(opt.ExecutionProfile)));
 sixgr.config.assertRuntimeFeatureUse(cfg, "cfo_correction", ...
     sixgr.util.structGet(cfg, "phy.rx.cfoCorrectionEnabled", false), ...
@@ -273,11 +274,11 @@ rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
 runtimeAlignedTimingBypass = localRuntimeAlignedTimingBypass(cfg);
-% The link wrapper sets RuntimeWaveformSampleAligned only after applying
-% the materialized channel and its exact sample trim.  That boundary owns
-% alignment for both FDD and TDD.  A receiver-side RS observation remains
-% valuable evidence, but it must not be applied a second time unless YAML
-% explicitly injects a timing offset (which disables this bypass).
+% RuntimeWaveformSampleAligned is asserted only after the channel wrapper
+% has removed the materialized channel delay.  Preserve a receiver-local
+% tracking observation in the tracking state, but do not apply that same
+% delay a second time.  This boundary is identical for FDD and TDD; an
+% explicitly injected timing offset disables the aligned-waveform bypass.
 if runtimeAlignedTimingBypass
     timingEstimateSource = "runtime_aligned_waveform_no_timing_reacquisition";
     trackingCorrection.TimingCorrectionApplied = false;
@@ -374,6 +375,7 @@ syncState = sixgr.phy.sync.resolveSynchronizationState( ...
 Hest = [];
 nVarEst = [];
 estInfo = struct();
+channelEstimationTic = tic;
 useFastChEstMex = logical(sixgr.util.structGet(cfg, 'phy.rx.useFastChannelEstMex', false)) ...
     && logical(sixgr.util.structGet(cfg, 'run.useMex', false));
 if useFastAWGNPath
@@ -402,6 +404,7 @@ else
         "Config", cfg, ...
         "ContextLabel", "PUSCH_Rx");
 end
+channelEstimationLatency_ms = 1e3 .* toc(channelEstimationTic);
 
 % Noise variance
 noiseCandidate = opt.NoiseVar;
@@ -454,6 +457,11 @@ if ~logical(noiseStatus.IsValid)
     info.DMRS = dmrsInfo;
     info.DMRSEPREDifference = dmrsPowerInfo;
     rx = localAnnotateReceiveCombiner(rx, receiveCombinerInfo);
+    rx.ChannelEstimationLatency_ms = double(channelEstimationLatency_ms);
+    rx.EqualizationLatency_ms = NaN;
+    rx.ReceiverPipelineLatency_ms = 1e3 .* toc(receiverPipelineTic);
+    rx.ReceiverStageLatencySource = ...
+        "matlab_tic_toc_production_pusch_receiver_stages";
     info.ReceiveCombiner = receiveCombinerInfo;
     return;
 end
@@ -471,11 +479,12 @@ sinrProjectionInfo = struct( ...
     "TPMI", double(effectiveRxInfo.TPMI));
 
 % Equalize
-[equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL");
+[equalizerAlg, equalizerRequested] = localResolveEqualizerAlgorithm(cfg, "UL", phyGrant);
 RIncludesNoise = false;
 if equalizerAlg == "IRC"
     [Rint, rintInfo, RIncludesNoise] = localResolvePUSCHInterferenceCovariance(opt, carrier, ...
-        rxPUSCHInd, timingResolution.AppliedCorrection_samples, nVar, rxGrid, Hest, chEstDMRSInd, chEstDMRSSym);
+        rxPUSCHInd, cfg, timingResolution.AppliedCorrection_samples, nVar, rxGrid, Hest, ...
+        chEstDMRSInd, chEstDMRSSym);
 else
     Rint = [];
     rintInfo = struct("Available", false, "Source", "irc_not_requested", ...
@@ -487,8 +496,10 @@ if equalizerAlg == "IRC" && ~logical(rintInfo.Available)
         "PUSCH strict IRC requested, but no qualified covariance is available (%s).", ...
         char(string(sixgr.util.structGet(rintInfo, "NAReason", "unknown"))));
 end
+equalizationTic = tic;
 [eqSym, csi, equalizerInfo] = sixgr.phy.rx.mimoDetect(rxSym, hestSym, nVar, ...
     "Algorithm", equalizerAlg, "Rint", Rint, "RIncludesNoise", RIncludesNoise);
+equalizationLatency_ms = 1e3 .* toc(equalizationTic);
 [ptrsInd, ptrsSym, ptrsInfo] = localResolvePUSCHPTRS(carrier, pusch, cfg);
 enablePTRSCPECorrection = logical(sixgr.util.structGet(cfg, "phy.pusch.ptrs.enableCPECorrection", ...
     sixgr.util.structGet(cfg, "phy.ptrs.enableCPECorrection", false)));
@@ -606,24 +617,10 @@ end
 [cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHCodewordLLR(cwLLR, nCodewords);
 codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract( ...
     pusch, cwLLRCell, codingLayouts, eqSym);
-if nCodewords == 1
-    [cwLLR, llrCSIInfo] = localApplyCSIToCodewordLLR(cwLLR, csi, ...
-        pusch.Modulation, postEqSINR_dB, nVarForDecode, nVarDecodeInfo);
-    cwLLRCell = {cwLLR};
-else
-    llrCSIInfo = struct( ...
-        "Source", "nrPUSCHDecode_native_per_codeword_llr_scaling", ...
-        "Convention", "toolbox_demapper_llr_per_codeword", ...
-        "NoiseVarianceConvention", "explicit_decoder_noise_variance", ...
-        "OutputDomain", "two_ulsch_codeword_llr_cells", ...
-        "NoSecondCSIWeighting", true, ...
-        "Applied", false, ...
-        "Status", "native_high_rank_scaling_retained", ...
-        "InputKind", "two_codeword_cell", ...
-        "RawCSIMedian", NaN, ...
-        "WeightMedianBeforeNormalization", NaN, ...
-        "NormalizationScale", 1);
-end
+[cwLLRCell, llrCSIInfo] = localApplyCSIToPUSCHCodewordLLRs( ...
+    cwLLRCell, csi, pusch.Modulation, postEqSINR_dB, ...
+    nVarForDecode, nVarDecodeInfo);
+cwLLR = cwLLRCell{1};
 [cwLLRForULSCH, uciOnPUSCH] = localDemultiplexTypedUCIFromPUSCH( ...
     localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
     expectedUCIPayload, initialIMCS);
@@ -649,7 +646,7 @@ if nCodewords == 2
         tbBitsCell, crcErr, trBlkSize, cwLLRCell, cwLLRForULSCH, ...
         codingLayouts, codewordLayerMapping, codewordLLRInfo, ...
         carrier, pusch, puschInfo, puschInd, puschRxSym, ...
-        Hest, estInfo, eqSym, layerEqSym, decoderInputSym, decoderInputInfo, ...
+        Hest, estInfo, eqSym, layerEqSym, csi, decoderInputSym, decoderInputInfo, ...
         qamEqSym, qamEqInfo, dmrsInd, dmrsSym, dmrsInfo, dmrsPowerInfo, ...
         ptrsInd, ptrsSym, ptrsInfo, cpeCorrInfo, nVar, nVarForDecode, ...
         noiseStatus, noiseTransformInfo, postEqSINR_dB, postEqSINRInfo, ...
@@ -662,6 +659,11 @@ if nCodewords == 2
         rx.PHYGrantDimensionContract = phyGrantContract;
     end
     rx = localAnnotateReceiveCombiner(rx, receiveCombinerInfo);
+    rx.ChannelEstimationLatency_ms = double(channelEstimationLatency_ms);
+    rx.EqualizationLatency_ms = double(equalizationLatency_ms);
+    rx.ReceiverPipelineLatency_ms = 1e3 .* toc(receiverPipelineTic);
+    rx.ReceiverStageLatencySource = ...
+        "matlab_tic_toc_production_pusch_receiver_stages";
     info = struct( ...
         "CarrierInfo", cinfo, ...
         "PUSCHInfo", puschInfo, ...
@@ -838,6 +840,11 @@ rx.TimingEstimateApplicationPolicy = char(string(timingResolution.ApplicationPol
 rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
 rx.SynchronizationState = syncState;
 rx.DecodeLatency_s = double(decodeLatency_s);
+rx.ChannelEstimationLatency_ms = double(channelEstimationLatency_ms);
+rx.EqualizationLatency_ms = double(equalizationLatency_ms);
+rx.ReceiverPipelineLatency_ms = 1e3 .* toc(receiverPipelineTic);
+rx.ReceiverStageLatencySource = ...
+    "matlab_tic_toc_production_pusch_receiver_stages";
 rx.UseMexLDPC = logical(useMexLDPC);
 if useMexLDPC
     if exist("sixgr_ldpc_decode_batch_kernel_mex","file") == 3
@@ -929,6 +936,14 @@ rx.InterferenceCovarianceSource = char(string(rintInfo.Source));
 rx.InterferenceCovarianceStatus = char(string(rintInfo.Status));
 rx.InterferenceCovarianceIncludesNoise = logical(sixgr.util.structGet(rintInfo, "CovarianceIncludesNoise", RIncludesNoise));
 rx.InterferenceCovarianceDomain = char(string(sixgr.util.structGet(rintInfo, "Domain", "")));
+% Persist the receiver matrix actually consumed by IRC.  The source/status
+% fields alone proved that a covariance path was selected, but left the
+% common measured-PHY trace column as NaN for every PUSCH trial.  The mean
+% trace works for both one wideband matrix and the per-RE covariance tensor
+% used by the exact shared-slot receiver; it is measured receiver evidence,
+% not a value reconstructed by reporting.
+rx.MeasuredInterferenceCovarianceTrace = localCovarianceTraceMean(Rint);
+rx.MeasuredPreEqualizationNoiseVariance = double(nVar);
 rx.ChannelEstimateAttempted = true;
 rx.ChannelEstimateAvailable = ~isempty(Hest);
 rx.ChannelEstimateSource = "pusch_dmrs_channel_estimate";
@@ -973,6 +988,7 @@ rx.LayerEqualizedSymbols = layerEqSym;
 rx.PortEqualizedSymbolsForEvidence = eqSym;
 rx.PortEqualizedSymbols = eqSym;
 rx.DecoderInputSymbolsForEvidence = decoderInputSym;
+rx.EqualizerCSIForEvidence = csi;
 rx.DecoderInputSymbolDomain = char(string(decoderInputInfo.Domain));
 rx.DecoderInputSymbolSource = char(string(decoderInputInfo.Status));
 rx.EqualizedSymbolDomain = "layer";
@@ -1017,6 +1033,7 @@ if rx.UCIOnPUSCHApplied
 else
     rx.UCIOnPUSCHEvidenceSource = "";
 end
+
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
 rx.ExpectedHARQACKBits = int8(uciOnPUSCH.ExpectedHARQACKBits(:));
 rx.DecodedHARQACKBits = int8(uciOnPUSCH.DecodedHARQACKBits(:));
@@ -1129,6 +1146,35 @@ if hasPHYGrant
     info.PHYGrantDimensionContract = phyGrantContract;
 end
 
+end
+
+function value = localCovarianceTraceMean(R)
+value = NaN;
+if isempty(R) || ~isnumeric(R)
+    return;
+end
+R = double(R);
+if ndims(R) == 2
+    if size(R,1) ~= size(R,2) || any(~isfinite(R(:)))
+        return;
+    end
+    value = real(trace(R));
+    return;
+end
+if ndims(R) ~= 3 || size(R,2) ~= size(R,3)
+    return;
+end
+traces = NaN(size(R,1),1);
+for reIndex = 1:size(R,1)
+    slice = squeeze(R(reIndex,:,:));
+    if all(isfinite(slice(:)))
+        traces(reIndex) = real(trace(slice));
+    end
+end
+traces = traces(isfinite(traces));
+if ~isempty(traces)
+    value = mean(traces);
+end
 end
 
 function [cwLLR, cwLLRCell, info] = localNormalizePUSCHCodewordLLR(cwLLRRaw, expectedCount)
@@ -1451,12 +1497,25 @@ end
 obs = eqPTRS(:, bestCol);
 end
 
-function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction)
+function [alg, requested] = localResolveEqualizerAlgorithm(cfg, direction, phyGrant)
 direction = upper(string(direction));
+if nargin < 3 || isempty(phyGrant)
+    phyGrant = struct();
+end
 if direction == "UL"
-    requested = string(sixgr.util.structGet(cfg, "phy.pusch.equalizer", ...
+    configuredDefault = string(sixgr.util.structGet(cfg, "phy.pusch.equalizer", ...
         sixgr.util.structGet(cfg, "phy.rx.equalizer", ...
         sixgr.util.structGet(cfg, "phy.rx.algorithm", "MMSE"))));
+    legacy = sixgr.util.structGet(phyGrant, "LegacyGrantSnapshot", struct());
+    muMIMOGrant = logical(sixgr.util.structGet(legacy, "MUMIMOEnabled", ...
+        sixgr.util.structGet(phyGrant, "MUMIMOEnabled", false)));
+    if muMIMOGrant
+        requested = string(sixgr.util.structGet(cfg, ...
+            "phy.pusch.muMIMOEqualizer", configuredDefault));
+    else
+        requested = string(sixgr.util.structGet(cfg, ...
+            "phy.pusch.singleUserEqualizer", configuredDefault));
+    end
 else
     requested = string(sixgr.util.structGet(cfg, "phy.pdsch.equalizer", ...
         sixgr.util.structGet(cfg, "phy.rx.equalizer", ...
@@ -1476,11 +1535,22 @@ end
 end
 
 function [Rint, info, includesNoise] = localResolvePUSCHInterferenceCovariance(opt, carrier, ...
-        puschInd, appliedTimingCorrection, nVar, rxGrid, hEst, dmrsInd, dmrsSym)
+        puschInd, cfg, appliedTimingCorrection, nVar, rxGrid, hEst, dmrsInd, dmrsSym)
 includesNoise = false;
 [Rint, info] = sixgr.phy.rx.estimateContributionGridCovariance(opt.InterferenceContributionTensor, ...
     carrier, puschInd, appliedTimingCorrection, opt.InterferenceContributionSource, ...
-    opt.InterferenceContributionDomain, "pusch");
+    opt.InterferenceContributionDomain, "pusch", ...
+    "EstimatorMode", sixgr.util.structGet(cfg, ...
+        "phy.equalization.ircCovarianceEstimation", ...
+        "per_prb_symbol_contribution_sample_covariance"), ...
+    "FrequencyWindowPRBs", sixgr.util.structGet(cfg, ...
+        "phy.equalization.ircCovarianceFrequencyWindowPRBs", 1), ...
+    "TimeWindowSymbols", sixgr.util.structGet(cfg, ...
+        "phy.equalization.ircCovarianceTimeWindowSymbols", 1), ...
+    "ShrinkageFactor", sixgr.util.structGet(cfg, ...
+        "phy.equalization.ircCovarianceShrinkageFactor", 0.05), ...
+    "MinimumSamples", sixgr.util.structGet(cfg, ...
+        "phy.equalization.ircCovarianceMinimumSamples", 4));
 if logical(info.Available)
     return;
 end
@@ -2656,7 +2726,7 @@ postSource = char(string(sixgr.util.structGet(postInfo, "Source", "")));
 postMethod = char(string(sixgr.util.structGet(postInfo, "ReductionMethod", "")));
 postSampleCount = double(sixgr.util.structGet(postInfo, "SampleCount", 0));
 configuredMode = lower(string(sixgr.util.structGet(cfg, ...
-    "phy.pusch.measurements.decoderNoiseVarianceMode", "post_equalization")));
+    "phy.pusch.measurements.decoderNoiseVarianceMode", "pre_equalization")));
 if ~any(configuredMode == ["post_equalization","pre_equalization"])
     error("sixgr:phy:ul:InvalidDecoderNoiseVarianceMode", ...
         "phy.pusch.measurements.decoderNoiseVarianceMode must be " + ...
@@ -2673,6 +2743,7 @@ info = struct( ...
     "SampleCount", 0, ...
     "Convention", configuredMode + "_variance_only", ...
     "ConfiguredMode", configuredMode, ...
+    "EffectiveMode", "unavailable", ...
     "PostEqualizationDiagnosticSource", postSource, ...
     "PostEqualizationDiagnosticReductionMethod", postMethod, ...
     "PostEqualizationDiagnosticSampleCount", double(postSampleCount), ...
@@ -2685,6 +2756,7 @@ if configuredMode == "post_equalization" && localValidNoiseScalar(post)
     info.NAReason = "";
     info.ReductionMethod = postMethod;
     info.SampleCount = double(max(postSampleCount, 1));
+    info.EffectiveMode = "post_equalization";
     return;
 end
 
@@ -2696,6 +2768,8 @@ if configuredMode == "pre_equalization" && localValidNoiseScalar(pre)
     info.ReductionMethod = "configured_pre_equalization_noise_variance";
     info.SampleCount = 1;
     info.Domain = "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode";
+    info.Convention = "pre_equalization_noise_plus_equalizer_csi";
+    info.EffectiveMode = "pre_equalization";
     return;
 end
 
@@ -2713,6 +2787,7 @@ if localValidNoiseScalar(post)
     info.NAReason = "configured_domain_unavailable";
     info.ReductionMethod = postMethod;
     info.SampleCount = double(max(postSampleCount,1));
+    info.EffectiveMode = "post_equalization";
 elseif localValidNoiseScalar(pre)
     nVarForDecode = double(pre);
     info.ValueStatus = "OK_non_strict_fallback";
@@ -2721,6 +2796,8 @@ elseif localValidNoiseScalar(pre)
     info.ReductionMethod = "explicit_non_strict_pre_equalization_fallback";
     info.SampleCount = 1;
     info.Domain = "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode";
+    info.Convention = "pre_equalization_noise_plus_equalizer_csi";
+    info.EffectiveMode = "pre_equalization";
 else
     nVarForDecode = double(max(eps,realmin));
 end
@@ -3063,7 +3140,46 @@ else
 end
 end
 
-function [llrOut, info] = localApplyCSIToCodewordLLR(llrIn, csi, modScheme, postEqSINR_dB, nVarForDecode, nVarDecodeInfo)
+function [llrCellsOut, info] = localApplyCSIToPUSCHCodewordLLRs( ...
+        llrCellsIn, csi, modScheme, postEqSINR_dB, nVarForDecode, nVarDecodeInfo)
+llrCellsOut = reshape(llrCellsIn, 1, []);
+effectiveMode = lower(string(sixgr.util.structGet( ...
+    nVarDecodeInfo, "EffectiveMode", ...
+    sixgr.util.structGet(nVarDecodeInfo, "ConfiguredMode", "pre_equalization"))));
+if effectiveMode == "pre_equalization"
+    perCodeword = cell(1, numel(llrCellsOut));
+    modulations = string(modScheme);
+    if isscalar(modulations)
+        modulations = repmat(modulations, 1, numel(llrCellsOut));
+    end
+    if numel(modulations) ~= numel(llrCellsOut)
+        error("sixgr:phy:ul:PUSCHCodewordModulationMismatch", ...
+            "PUSCH exposes %d modulation entries for %d codewords.", ...
+            numel(modulations), numel(llrCellsOut));
+    end
+    for cw = 1:numel(llrCellsOut)
+        [llrCellsOut{cw}, perCodeword{cw}] = ...
+            sixgr.phy.rx.applyCSIToCodewordLLR( ...
+            llrCellsOut{cw}, csi, modulations(cw), ...
+            "PostEqSINR_dB", postEqSINR_dB, ...
+            "CodewordIndex", cw);
+        if ~logical(perCodeword{cw}.Applied)
+            error("sixgr:phy:ul:PUSCHCSIWeightingUnavailable", ...
+                ["The standard PUSCH receiver convention requires one MMSE " ...
+                 "CSI weighting operation per codeword, but codeword %d " ...
+                 "reported status '%s'."], cw - 1, ...
+                char(string(perCodeword{cw}.Status)));
+        end
+    end
+    info = localSummarizePUSCHCSIWeighting(perCodeword, nVarForDecode, nVarDecodeInfo);
+    return;
+end
+
+% Legacy explicit post-equalization-variance mode is retained only when a
+% configuration asks for it. In that convention nrPUSCHDecode has already
+% consumed effective symbol-domain variance, so applying CSI again would
+% double-count reliability.
+llrIn = llrCellsOut{1};
 llrOut = double(llrIn(:));
 rawCSI = double(csi(:));
 rawCSI = rawCSI(isfinite(rawCSI));
@@ -3097,11 +3213,44 @@ info = struct( ...
     "OutputLLRMeanAbs", double(meanAbsLLR));
 end
 
+function info = localSummarizePUSCHCSIWeighting(perCodeword, nVarForDecode, nVarDecodeInfo)
+n = numel(perCodeword);
+rawMedian = cellfun(@(x) double(x.RawCSIMedian), perCodeword);
+weightMedian = cellfun(@(x) double(x.WeightMedianBeforeNormalization), perCodeword);
+normScale = cellfun(@(x) double(x.NormalizationScale), perCodeword);
+inputMean = cellfun(@(x) double(x.InputLLRMeanAbs), perCodeword);
+outputMean = cellfun(@(x) double(x.OutputLLRMeanAbs), perCodeword);
+info = struct( ...
+    "ContractVersion", "PUSCHDemapperLLRScaling/v2", ...
+    "Convention", "pre_equalization_noise_plus_mmse_equalizer_csi", ...
+    "NoiseVarianceConvention", "channel_estimator_pre_equalization_noise_passed_to_nrPUSCHDecode_then_equalizer_csi_once", ...
+    "Source", "nrPUSCHDecode_pre_equalization_noise_then_mmse_csi_weighting", ...
+    "NoiseVarianceSource", char(string(sixgr.util.structGet(nVarDecodeInfo, "Source", "configured_pre_equalization_noise_variance"))), ...
+    "OutputDomain", "rate_matched_codeword_llr", ...
+    "Applied", true, ...
+    "Status", "applied_once_per_codeword", ...
+    "Reason", "3GPP NR Toolbox receiver convention: noise-scaled soft bits followed by MMSE CSI weighting.", ...
+    "InputKind", char(strjoin(unique(string(cellfun(@(x) string(x.InputKind), perCodeword))), "+")), ...
+    "NoSecondCSIWeighting", true, ...
+    "DemapperOutputAlreadyWeightedByNoiseVariance", true, ...
+    "CodewordCount", double(n), ...
+    "Modulation", "per_codeword", ...
+    "LLRCount", double(sum(cellfun(@(x) double(x.LLRCount), perCodeword))), ...
+    "NoiseVariance", double(nVarForDecode), ...
+    "PostEqSINR_dB", double(cellfun(@(x) double(x.PostEqSINR_dB), perCodeword(1))), ...
+    "RawCSIMedian", double(median(rawMedian, "omitnan")), ...
+    "WeightMedianBeforeNormalization", double(median(weightMedian, "omitnan")), ...
+    "NormalizationScale", double(median(normScale, "omitnan")), ...
+    "InputLLRMeanAbs", double(mean(inputMean, "omitnan")), ...
+    "OutputLLRMeanAbs", double(mean(outputMean, "omitnan")), ...
+    "PerCodeword", {perCodeword});
+end
+
 function rx = localBuildHighRankPUSCHRx( ...
         tbBitsCell, crcErr, trBlkSize, cwLLRCell, ulschLLRCell, ...
         codingLayouts, codewordLayerMapping, codewordLLRInfo, ...
         carrier, pusch, puschInfo, puschInd, puschRxSym, ...
-        Hest, estInfo, eqSym, layerEqSym, decoderInputSym, decoderInputInfo, ...
+        Hest, estInfo, eqSym, layerEqSym, csi, decoderInputSym, decoderInputInfo, ...
         qamEqSym, qamEqInfo, dmrsInd, dmrsSym, dmrsInfo, dmrsPowerInfo, ...
         ptrsInd, ptrsSym, ptrsInfo, cpeCorrInfo, nVar, nVarForDecode, ...
         noiseStatus, noiseTransformInfo, postEqSINR_dB, postEqSINRInfo, ...
@@ -3192,6 +3341,7 @@ rx.EqualizedSymbolsForEvidence = layerEqSym;
 rx.LayerEqualizedSymbolsForEvidence = layerEqSym;
 rx.PortEqualizedSymbolsForEvidence = eqSym;
 rx.DecoderInputSymbolsForEvidence = decoderInputSym;
+rx.EqualizerCSIForEvidence = csi;
 rx.DecoderInputSymbolDomain = char(string(decoderInputInfo.Domain));
 rx.QAMEqualizedSymbolsForEvidence = qamEqSym;
 rx.QAMEqualizedSymbolSource = char(string(qamEqInfo.Status));

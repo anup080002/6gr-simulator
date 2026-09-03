@@ -1,4 +1,4 @@
-function artifacts = exportPHYSignalDiagnostic(runFolder, cfg, diagnostics)
+function artifacts = exportPHYSignalDiagnostic(runFolder, cfg, diagnostics, renderImages)
 %EXPORTPHYSIGNALDIAGNOSTIC Export truthful same-trial PHY diagnostic figures.
 %
 % Normal images are emitted only for snapshots that contain contiguous
@@ -11,6 +11,10 @@ end
 if nargin < 3 || ~isstruct(diagnostics)
     diagnostics = struct();
 end
+if nargin < 4
+    renderImages = true;
+end
+renderImages = logical(renderImages);
 
 layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
@@ -53,6 +57,12 @@ for i = 1:numel(directions)
     end
     localDeleteIfExists(imagePath);
     localDeleteIfExists(sixgr.visual.unavailableArtifactPath(imagePath));
+    if ~renderImages
+        % Exact CSV evidence is still exported above.  A later contract
+        % materializer may render that source, but no placeholder or
+        % legacy raster is created here.
+        continue;
+    end
     if isempty(fieldnames(snapshots{i}))
         sixgr.visual.writeUnavailablePlotCard(imagePath, direction + " PHY Signal Diagnostic", ...
             "No normal diagnostic image was emitted: " + reasons(i) + ".");
@@ -70,6 +80,7 @@ artifacts = struct( ...
     "SourceTable", sourceT, ...
     "DLImage", imagePaths(1), ...
     "ULImage", imagePaths(2), ...
+    "ImagesRendered", renderImages, ...
     "DLAvailable", ~isempty(fieldnames(snapshots{1})), ...
     "ULAvailable", ~isempty(fieldnames(snapshots{2})), ...
     "DLReason", reasons(1), ...

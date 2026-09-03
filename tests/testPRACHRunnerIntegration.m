@@ -18,6 +18,10 @@ scenarioCfg.meta = struct( ...
 scenarioCfg.simulation = struct( ...
     "monte_carlo_iterations", 1, ...
     "snr_db", 18);
+% The inherited PRACH scenario resolves a TDD carrier. Declare the matching
+% reciprocity authority explicitly so this integration fixture cannot inherit
+% an unrelated FDD MIMO policy from a shared base profile.
+scenarioCfg.mimo = struct("reciprocity_mode", "TDD");
 scenarioCfg.random_access = struct( ...
     "min_detection_trials", 1, ...
     "num_prach_occasions", 1, ...
@@ -31,6 +35,8 @@ localWriteJSON(scenarioPath, scenarioCfg);
 
 out = sixgr.lls6g.runners.runSingle(scenarioPath, tmp, "prach_runner_smoke");
 assert(logical(out.Ok), "PRACH runner integration smoke must complete successfully.");
+assert(isfield(out, "ScenarioStatus") && isstruct(out.ScenarioStatus), ...
+    "runSingle must return its persisted terminal ScenarioStatus to callers.");
 
 runFolder = char(out.RunFolder);
 ctrlPath = fullfile(runFolder, "control", "csv", "prach_trials.csv");
@@ -40,11 +46,14 @@ summaryBySNRPath = fullfile(runFolder, "reports", "csv", "prach_summary_by_snr.c
 corrPath = fullfile(runFolder, "reports", "csv", "prach_correlation_trace.csv");
 corrLegacyPath = fullfile(runFolder, "reports", "csv", "prach_correlation_traces.csv");
 probabilitySweepPath = fullfile(runFolder, "reports", "csv", "prach_probability_sweeps.csv");
+canonicalCorrelationImagePath = fullfile(runFolder, "analytics", "image", ...
+    "contract__detection-control-analytics__prach-correlation-peak-distributions.png");
 rawTrialPath = fullfile(runFolder, "control", "csv", "prach_detection_trials.csv");
 evidencePath = fullfile(runFolder, "reports", "csv", "runtime_config_application_evidence.csv");
 bindingPath = fullfile(runFolder, "reports", "csv", "parameter_binding_matrix.csv");
 surfacePath = fullfile(runFolder, "reports", "csv", "browser_config_surface_matrix.csv");
 featureIndexPath = fullfile(runFolder, "reports", "csv", "feature_parameter_index.csv");
+kpiGatePath = fullfile(runFolder, "reports", "csv", "kpi_consistency_gate.csv");
 
 assert(exist(ctrlPath, "file") == 2, "Runner must export control/csv/prach_trials.csv.");
 assert(exist(airPath, "file") == 2, "Runner must export air_interface/csv/prach_trials.csv.");
@@ -53,11 +62,14 @@ assert(exist(summaryBySNRPath, "file") == 2, "Runner must export reports/csv/pra
 assert(exist(corrPath, "file") == 2, "Runner must export reports/csv/prach_correlation_trace.csv.");
 assert(exist(corrLegacyPath, "file") == 2, "Runner must preserve legacy reports/csv/prach_correlation_traces.csv mirror.");
 assert(exist(probabilitySweepPath, "file") == 2, "Runner must export probability sweeps when a real PRACH sweep axis exists.");
+assert(exist(canonicalCorrelationImagePath, "file") == 2, ...
+    "Strict materialization must render the canonical PRACH correlation PNG from persisted runtime samples.");
 assert(exist(rawTrialPath, "file") == 2, "Runner must preserve control/csv/prach_detection_trials.csv.");
 assert(exist(evidencePath, "file") == 2, "Runner must export reports/csv/runtime_config_application_evidence.csv.");
 assert(exist(bindingPath, "file") == 2, "Runner must export reports/csv/parameter_binding_matrix.csv.");
 assert(exist(surfacePath, "file") == 2, "Runner must export reports/csv/browser_config_surface_matrix.csv.");
 assert(exist(featureIndexPath, "file") == 2, "Runner must export reports/csv/feature_parameter_index.csv.");
+assert(exist(kpiGatePath, "file") == 2, "Runner must export reports/csv/kpi_consistency_gate.csv.");
 
 ctrlT = readtable(ctrlPath, "VariableNamingRule", "preserve");
 airT = readtable(airPath, "VariableNamingRule", "preserve");
@@ -70,6 +82,7 @@ evidenceT = readtable(evidencePath, "VariableNamingRule", "preserve");
 bindingT = readtable(bindingPath, "VariableNamingRule", "preserve");
 surfaceT = readtable(surfacePath, "VariableNamingRule", "preserve");
 featureIndexT = readtable(featureIndexPath, "VariableNamingRule", "preserve");
+kpiGateT = readtable(kpiGatePath, "VariableNamingRule", "preserve");
 
 assert(~isempty(ctrlT), "PRACH control trial export must not be empty.");
 assert(~isempty(airT), "PRACH air-interface trial export must not be empty.");
@@ -84,6 +97,20 @@ assert(all(ismember(["Status","ComputeLatency_ms","AirInterfaceObservation_ms","
     "CRCPass","TrueTimingOffset_samples","DetectionMetric","FalseAlarmFlag","CollisionFlag"], ...
     string(ctrlT.Properties.VariableNames))), ...
     "PRACH control export must include truthful control and detection semantics.");
+identityColumns = ["RunID","RunTag","ScenarioID","ScenarioConfigHash", ...
+    "ConfigHash","ExecutionID","EvidenceScope"];
+assert(all(ismember(identityColumns, string(ctrlT.Properties.VariableNames))), ...
+    "Canonical PRACH trials must bind the full outer execution identity before export.");
+assert(all(strlength(strtrim(string(ctrlT.RunID))) > 0) && ...
+    all(string(ctrlT.RunID) == string(ctrlT.RunTag)), ...
+    "PRACH RunID and RunTag must be single, nonblank, and identical.");
+assert(all(strlength(string(ctrlT.ExecutionID)) > 0), ...
+    "PRACH ExecutionID must be nonblank on every measured row.");
+assert(all(string(ctrlT.ConfigHash) == string(ctrlT.ScenarioConfigHash)) && ...
+    all(strlength(string(ctrlT.ConfigHash)) == 64), ...
+    "PRACH scenario ConfigHash aliases must identify the same resolved YAML execution.");
+assert(all(string(ctrlT.EvidenceScope) == "in_path"), ...
+    "PRACH primary rows must remain explicitly classified as in-path waveform evidence.");
 assert(all(ismember(["CategoryKey","MetricKey","Availability","SourceArtifact"], ...
     string(reportT.Properties.VariableNames))), ...
     "PRACH report metric table must expose category/metric/source semantics.");
@@ -116,6 +143,10 @@ assert(any(strcmp(string(surfaceT.ParameterId), "random_access.configuration_ind
     "Browser surface matrix must expose PRACH configuration_index as runtime applied.");
 assert(any(strcmp(string(featureIndexT.FeatureFamily), "Random_Access_PRACH")), ...
     "Feature index must include the PRACH family.");
+optionalMissing = ~logical(kpiGateT.Required) & ...
+    ~isfile(fullfile(runFolder, replace(string(kpiGateT.EvidenceArtifact), "/", filesep)));
+assert(all(~logical(kpiGateT.Pass(optionalMissing))), ...
+    "An optional missing KPI artifact must remain Pass=false; optionality must not fabricate evidence.");
 
 ok = true;
 end

@@ -31,7 +31,13 @@ qam64 = sixgr.conformance.runFRCPoint( ...
 required = double(qam64.RequiredSNR_dB);
 requiredIndex = find(abs(qam64.Sweep.SNR_dB-required) < 1e-12, 1);
 detail = qam64.PointDetails{requiredIndex};
-localAssertFrame(detail, [1 2 3 4], [0 2 3 1]);
+% This FDD FRC uses the four-process round-robin timing required by the
+% catalog.  Retransmissions of the same TB therefore occupy slots
+% 1,5,9,13 of the 20-slot standard period, not four adjacent slots.
+localAssertFrame(detail, [1 5 9 13], [0 2 3 1]);
+assert(isequal(double(detail.Propagation.StandardDownlinkFrame.TargetAbsoluteSlot(:).'), ...
+    double(detail.Propagation.StandardDownlinkFrame.TargetSlotWithinPeriod(:).')), ...
+    "The materialized FRC frame must use the exact HARQ timeline slots.");
 assert(detail.FirstTransmission.StandardDownlinkAuxiliary.PDCCH.ScheduledLayers == 1);
 assert(all(abs(detail.FirstTransmission.StandardDownlinkAuxiliary.PDCCH.PrecoderPower-1) < 1e-12));
 

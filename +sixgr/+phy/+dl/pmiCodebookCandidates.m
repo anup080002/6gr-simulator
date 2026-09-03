@@ -5,7 +5,8 @@ function [candidates, info] = pmiCodebookCandidates(cfg, nLayers, numTxPorts, va
 %   returns a struct array of wideband precoder candidates for the
 %   configured PMI mode. Each element contains:
 %     - PMI        : 0-based candidate index
-%     - BeamIndices: selected beam indices within the underlying codebook
+%     - BeamIndices: one-based selected beam indices within the underlying
+%       codebook (PMI remains the 3GPP zero-based candidate identifier)
 %     - W          : normalized Ntx-by-Nlayers precoder
 %     - PMIType    : "type1", "type2", "etype2", or "noncodebook"
 %     - CodebookMode, NumPorts, NumLayers
@@ -66,6 +67,14 @@ if mode == "noncodebook"
     return;
 end
 
+if mode == "type1_su_mimo" && nLayers > 1 && mod(numTxPorts, 2) ~= 0
+    error("sixgr:phy:dl:PMICodebook:UnsupportedTypeIPortTuple", ...
+        ['Multi-layer NR Type-I precoding requires an even logical CSI/PDSCH ' ...
+         'antenna-port count so the two polarization port groups can be ' ...
+         'materialized. Received %d port(s) and %d layer(s).'], ...
+        numTxPorts, nLayers);
+end
+
 beamCountCfg = round(double(sixgr.util.structGet(cfg, ...
     "phy.beamManagement.dlCodebookSize", ...
     sixgr.util.structGet(cfg, "phy.beamManagement.beamCount", numTxPorts))));
@@ -74,6 +83,18 @@ beamCountCfg = max(numTxPorts, beamCountCfg);
 switch mode
     case "type1_su_mimo"
         numBeams = max(numTxPorts, beamCountCfg);
+        if nLayers > 2
+            % A Type-I single-panel precoder is built over two polarization
+            % groups.  Rank three and above therefore requires more than
+            % one spatial DFT vector.  The beam-management sweep size is
+            % not the dimensionality of that CSI codebook: materialize at
+            % least the complete orthogonal spatial basis (four co-phases
+            % per spatial vector) before enumerating high-rank matrices.
+            % This keeps the ordinary runtime and FRC paths on the same
+            % port-domain construction and prevents a 4-port/rank-4 request
+            % from being reduced to the rank-two span of one spatial beam.
+            numBeams = max(numBeams, 2 * numTxPorts);
+        end
         strides = 1;
         phaseVariants = ones(1, nLayers);
     case "type2_mu_mimo"
@@ -89,7 +110,7 @@ switch mode
             "Unsupported PMI codebook mode '%s'.", mode);
 end
 
-B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams, mode);
+B = localBuildRuntimeAwareCodebook(cfg, nLayers, numTxPorts, numBeams, mode);
 numBeams = size(B, 2);
 if mode == "type1_su_mimo" && nLayers > 1
     % An oversampled DFT/dual-polarized beam catalog is not itself a
@@ -222,7 +243,12 @@ candidates = repmat(struct( ...
     "MatrixSHA256",""),n,1);
 for index = 1:n
     candidates(index).PMI = double(enumeration.CandidateIndices(index));
-    candidates(index).BeamIndices = double(enumeration.CandidateIndices(index));
+    % CandidateIndices is the externally visible, zero-based PMI domain.
+    % Runtime array/codebook indexing is deliberately one-based everywhere
+    % downstream (MATLAB indexing, beam-score vectors and persisted selected
+    % beam rows).  Keeping those domains distinct prevents PMI=0 from being
+    % discarded as an invalid/missing beam selection.
+    candidates(index).BeamIndices = double(enumeration.CandidateIndices(index)) + 1;
     candidates(index).W = enumeration.Matrices(:,:,index);
     candidates(index).PMIType = char(string(enumeration.CodebookType));
     candidates(index).CodebookMode = char(mode);
@@ -395,13 +421,28 @@ B = exp(-1j * 2 * pi * (n * m) / max(numBeams, 1));
 B = B ./ sqrt(max(numTxPorts, 1));
 end
 
-function B = localBuildRuntimeAwareCodebook(cfg, numTxPorts, numBeams, mode)
+function B = localBuildRuntimeAwareCodebook(cfg, nLayers, numTxPorts, numBeams, mode)
 B = [];
 if string(mode) == "type1_su_mimo"
-    B = localBuildType1DualPolarizedCodebook(cfg, numTxPorts, numBeams, false);
+    % NR Type-I multi-port codebooks are defined over two polarization
+    % port groups.  This is a logical CSI/PDSCH port-domain property and
+    % must not be disabled by an element-array polarization label.  In
+    % particular, treating four Type-I ports as a single-polarization
+    % oversampled DFT basis can leave an odd-sized beam catalog with no
+    % valid semi-unitary rank-2 candidate.
+    forceTypeIPolarizationPairing = nLayers > 1 && numTxPorts >= 2;
+    B = localBuildType1DualPolarizedCodebook(cfg, numTxPorts, numBeams, ...
+        forceTypeIPolarizationPairing);
 elseif any(string(mode) == ["type2_mu_mimo", "etype2_candidate"])
-    B = localBuildType1DualPolarizedCodebook(cfg, numTxPorts, numBeams, true);
+    % Type-II coefficients are defined over polarization-separated spatial
+    % beams.  Reusing the Type-I co-phased columns here couples the two
+    % polarizations before coefficient construction and can leave no valid
+    % rank-2 semi-unitary candidate.  Build the block-polarized basis first;
+    % localBuildType2CompositeCandidate then applies the configured Type-II
+    % or enhanced-Type-II coefficient alphabet across that physical basis.
+    B = localBuildType2DualPolarizedBasis(cfg, numTxPorts, numBeams);
 end
+
 if ~isempty(B)
     return;
 end
@@ -430,6 +471,52 @@ for i = 1:size(B, 2)
     if nrm > 0
         B(:, i) = B(:, i) ./ nrm;
     end
+end
+end
+
+function B = localBuildType2DualPolarizedBasis(cfg, numTxPorts, numBeams)
+B = [];
+if mod(numTxPorts, 2) ~= 0
+    return;
+end
+numSpatialPorts = numTxPorts / 2;
+arr = localResolveRuntimeBSAntenna(cfg, numTxPorts);
+[nRow, nCol] = localResolveArrayDims(arr, numSpatialPorts);
+if nRow * nCol ~= numSpatialPorts
+    nRow = 1;
+    nCol = numSpatialPorts;
+end
+numSpatialBeams = max(1, ceil(double(numBeams) / 2));
+[nBeamsRow, nBeamsCol] = localResolveBeamGrid( ...
+    nRow, nCol, numSpatialBeams);
+try
+    spatial = sixgr.rf.AntennaArrayFactory.dftCodebookURA( ...
+        nRow, nCol, nBeamsRow, nBeamsCol);
+catch
+    spatial = localOversampledDFTCodebook( ...
+        numSpatialPorts, numSpatialBeams);
+end
+if size(spatial, 1) > numSpatialPorts
+    spatial = spatial(1:numSpatialPorts, :);
+elseif size(spatial, 1) < numSpatialPorts
+    spatial(end+1:numSpatialPorts, :) = 0;
+end
+spatial = spatial(:, 1:min(size(spatial, 2), numSpatialBeams));
+B = complex(zeros(numTxPorts, 2 * size(spatial, 2)));
+for beamIdx = 1:size(spatial, 2)
+    v = spatial(:, beamIdx);
+    vNorm = norm(v);
+    if vNorm > 0
+        v = v ./ vNorm;
+    end
+    % Interleave the two polarization bases for each spatial beam.  The
+    % resulting support is disjoint, so paired rank-2 columns retain exact
+    % orthogonality before the receiver evaluates them.
+    B(:, 2 * beamIdx - 1) = [v; zeros(numSpatialPorts, 1)];
+    B(:, 2 * beamIdx) = [zeros(numSpatialPorts, 1); v];
+end
+if size(B, 2) > numBeams
+    B = B(:, 1:numBeams);
 end
 end
 
@@ -466,7 +553,13 @@ if size(spatial, 1) > numSpatialPorts
 elseif size(spatial, 1) < numSpatialPorts
     spatial(end+1:numSpatialPorts, :) = 0;
 end
-coPhase = exp(1j * [0 pi/2 pi 3*pi/2]);
+% Keep the first two polarization co-phases antipodal.  A caller may
+% legitimately request only two Type-I beams (notably the 2-port/rank-2
+% FRC).  Ordering the alphabet as 0,pi,pi/2,3pi/2 guarantees that this
+% smallest catalog already contains the orthogonal polarization pair;
+% the former 0,pi/2 prefix was correlated and left no semi-unitary
+% rank-2 candidate.
+coPhase = exp(1j * [0 pi pi/2 3*pi/2]);
 B = complex(zeros(numTxPorts, size(spatial, 2) * numel(coPhase)));
 col = 0;
 for b = 1:size(spatial, 2)

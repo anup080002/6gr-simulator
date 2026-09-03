@@ -66,6 +66,42 @@ def test_live_scenario_overview_adapts_master_yaml_schema_without_blank_radio_fi
     assert row["honesty_mode"] == "strict"
 
 
+def test_live_scenario_overview_uses_prach_runtime_window_not_inherited_frame_default() -> None:
+    config = {
+        "scenario": {"honesty_mode": "strict"},
+        "simulation": {"n_frames": 8, "n_slots": 8},
+        "random_access": {
+            "carrier_scs_khz": 30,
+            "num_slots": 40,
+        },
+        "frequency": {
+            "center_frequency_hz": 4.0e9,
+            "bandwidth_hz": 40.0e6,
+            "duplex_mode": "TDD",
+        },
+        "resource_grid": {"num_rbs": 106},
+        "logging": {"strict_validation": True},
+    }
+    result = materializer._specialized_live_report_table(  # noqa: SLF001
+        "live_scenario_overview",
+        {},
+        lambda _artifact_id: b"",
+        23,
+        {
+            "scenario_id": "prach_runner",
+            "profile_name": "prach_detection",
+            "config_json": json.dumps(config),
+        },
+        {},
+    )
+    assert result is not None
+    _header, rows = materializer._decode_csv_dicts(result["data"])  # noqa: SLF001
+    assert len(rows) == 1
+    assert rows[0]["total_slots"] == "40"
+    assert rows[0]["num_frames"] == "2"
+    assert rows[0]["honesty_mode"] == "strict"
+
+
 def test_contract_chart_persistence_is_raster_png_only() -> None:
     chart_spec = {
         "kind": "analytics",
@@ -141,6 +177,261 @@ def test_config_driven_contract_applicability_does_not_enable_optional_6g() -> N
     )
 
 
+def test_pdcch_component_runner_keeps_pdcch_contract_strict_without_claiming_full_stack() -> None:
+    run_row = {
+        "profile_name": "pdcch_blind_decode_sweep",
+        "config_json": json.dumps(
+            {
+                "scenario": {"runner_profile": "pdcch_blind_decode_sweep"},
+                "control": {"pdcch_enabled": True},
+                "output": {"save_figures": True, "save_png": True},
+            }
+        ),
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+
+    assert policy["runner_profile"] == "pdcch_blind_decode_sweep"
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_ul_scheduler_grants.csv",
+        policy,
+        contract_name="live_ul_scheduler_grants",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/harq_analytics.csv",
+        policy,
+        contract_name="harq_analytics",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_pdcch_summary.csv",
+        policy,
+        contract_name="live_pdcch_summary",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/detection_analytics.csv",
+        policy,
+        contract_name="detection_analytics",
+    )
+    # A raw component artifact is outside the browser catalog and must not
+    # be hidden by the component-scope policy.
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "control/csv/pdcch_blind_decode_sweep.csv",
+        policy,
+        contract_name="pdcch_blind_decode_sweep",
+    )
+    for name in ("P_FA", "FAR", "P_MD", "P_D", "CCE usage heatmap", "PDCCH DMRS occupancy"):
+        assert not materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__detection-control-analytics__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        ), name
+    for name in (
+        "config vs measured conflict dashboard",
+        "PRACH correlation peak distributions",
+        "PRACH noise floor distributions",
+        "PRACH peak search results",
+        "PUCCH DTX statistics",
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__detection-control-analytics__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        ), name
+
+
+def test_prach_component_runner_keeps_random_access_contract_strict_only() -> None:
+    policy = dash.extract_run_feature_policy(
+        {
+            "config_json": json.dumps(
+                {
+                    "scenario": {"runner_profile": "prach_detection"},
+                    "random_access": {"enabled": True},
+                    "output": {"save_figures": True},
+                }
+            )
+        }
+    )
+
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_prach_detection_table.csv",
+        policy,
+        contract_name="live_prach_detection_table",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/random_access_analytics.csv",
+        policy,
+        contract_name="random_access_analytics",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_pdsch_mapping_table.csv",
+        policy,
+        contract_name="live_pdsch_mapping_table",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/parallelism_analytics.csv",
+        policy,
+        contract_name="parallelism_analytics",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__detection-control-analytics__prach-correlation-peak-distributions.csv",
+        policy,
+        contract_name="PRACH correlation peak distributions",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/contract__scheduler-mac-queue-qos-power-control-uci-flow__mcs-over-time.csv",
+        policy,
+        contract_name="MCS over time",
+    )
+
+
+def test_prach_component_coverage_does_not_require_unrelated_charts() -> None:
+    policy = dash.extract_run_feature_policy(
+        {
+            "config_json": json.dumps(
+                {
+                    "scenario": {"runner_profile": "prach_detection"},
+                    "random_access": {"enabled": True},
+                    "output": {"save_figures": True},
+                }
+            )
+        }
+    )
+
+    coverage = materializer.coverage_summary([], policy)
+    missing = {str(name).lower() for name in coverage["missing_chart_names"]}
+    assert "prach correlation peak distributions" in missing
+    assert "prach peak search timeline" in missing
+    assert "mcs over time" not in missing
+    assert "harq process timeline" not in missing
+
+
+def test_prach_component_filters_only_non_prach_control_charts() -> None:
+    policy = dash.extract_run_feature_policy(
+        {
+            "config_json": json.dumps(
+                {
+                    "scenario": {"runner_profile": "prach_detection"},
+                    "random_access": {"enabled": True},
+                    "output": {"save_figures": True},
+                }
+            )
+        }
+    )
+
+    for name in ("PUCCH DTX statistics", "control decode success/failure tables"):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__detection-control-analytics__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        )
+
+    for name in ("noise floor trend", "TA estimate trend", "PRACH peak search timeline"):
+        assert not materializer.contract_artifact_is_policy_filtered(
+            f"analytics/csv/contract__random-access-prach-analytics__{materializer.slugify(name)}.csv",
+            policy,
+            contract_name=name,
+        )
+
+
+def test_ai_component_and_ai_sweep_keep_only_ai_channel_contracts_strict() -> None:
+    assert materializer._table_sources("ai_inference_analytics")[0] == (
+        "reports/csv/ai_channel_estimation_benchmark.csv"
+    )
+    assert set(materializer._table_sources("ai_inference_analytics")[:5]) == {
+        "reports/csv/ai_channel_estimation_benchmark.csv",
+        "reports/csv/ai_link_adaptation_benchmark.csv",
+        "reports/csv/ai_interference_classification_benchmark.csv",
+        "reports/csv/ai_detector_selection_benchmark.csv",
+        "reports/csv/ai_impairment_mitigation_benchmark.csv",
+    }
+    for scenario in (
+        {
+            "runner_profile": "ai_benchmark",
+        },
+        {
+            "runner_profile": "generic_sweep",
+            "sweep": {"base_profile": "ai_benchmark"},
+        },
+    ):
+        policy = dash.extract_run_feature_policy(
+            {
+                "config_json": json.dumps(
+                    {
+                        "scenario": scenario,
+                        "ai_ml": {"enabled": True},
+                        "output": {"save_figures": False},
+                    }
+                )
+            }
+        )
+        assert policy["ai_enabled"] is True
+        assert not materializer.contract_artifact_is_policy_filtered(
+            "analytics/csv/ai_inference_analytics.csv",
+            policy,
+            contract_name="ai_inference_analytics",
+        )
+        assert not materializer.contract_artifact_is_policy_filtered(
+            "analytics/csv/channel_estimation_analytics.csv",
+            policy,
+            contract_name="channel_estimation_analytics",
+        )
+        assert materializer.contract_artifact_is_policy_filtered(
+            "analytics/csv/propagation_analytics.csv",
+            policy,
+            contract_name="propagation_analytics",
+        )
+        assert materializer.contract_artifact_is_policy_filtered(
+            "reports/csv/live_ul_scheduler_grants.csv",
+            policy,
+            contract_name="live_ul_scheduler_grants",
+        )
+        assert materializer.contract_artifact_is_policy_filtered(
+            "analytics/csv/harq_analytics.csv",
+            policy,
+            contract_name="harq_analytics",
+        )
+
+
+def test_pucch_contract_uses_waveform_control_format_without_browser_override() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "control": {"pucch_enabled": True, "pucch_format": "Format2"},
+            }
+        )
+    }
+
+    policy = dash.extract_run_feature_policy(run_row)
+
+    assert policy["active_pucch_formats"] == ["2"]
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_pucch_f0_table.csv",
+        policy,
+        contract_name="live_pucch_f0_table",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/live_pucch_f2_table.csv",
+        policy,
+        contract_name="live_pucch_f2_table",
+    )
+
+
+def test_pucch_browser_contract_override_supports_multi_format_campaign() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "control": {"pucch_enabled": True, "pucch_format": 2},
+                "output": {
+                    "browser_contract": {"active_pucch_formats": ["F0", "format2"]}
+                },
+            }
+        )
+    }
+
+    policy = dash.extract_run_feature_policy(run_row)
+
+    assert policy["active_pucch_formats"] == ["0", "2"]
+
+
 def test_resolved_fixed_link_campaign_authority_and_geometry_exclusion() -> None:
     run_row = {
         "config_json": json.dumps(
@@ -174,6 +465,26 @@ def test_resolved_fixed_link_campaign_authority_and_geometry_exclusion() -> None
         "air_interface/csv/distance_vs_sinr.csv",
         policy,
         contract_name="distance_vs_sinr",
+    )
+
+
+def test_inter_ue_distance_contract_uses_yaml_user_count_only() -> None:
+    one_ue = {
+        "config_json": json.dumps({"scenario": {"ue": {"nUE": 1}}})
+    }
+    two_ue = {
+        "config_json": json.dumps({"scenario": {"ue": {"nUE": 2}}})
+    }
+    one_policy = dash.extract_run_feature_policy(one_ue)
+    two_policy = dash.extract_run_feature_policy(two_ue)
+    path = "reports/csv/inter_ue_distance_validation.csv"
+    assert one_policy["num_ues"] == 1
+    assert two_policy["num_ues"] == 2
+    assert materializer.contract_artifact_is_policy_filtered(
+        path, one_policy, contract_name="inter_ue_distance_validation"
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        path, two_policy, contract_name="inter_ue_distance_validation"
     )
 
 
@@ -358,6 +669,108 @@ def test_enabled_csi_beam_and_geometry_tables_remain_required() -> None:
             policy,
             contract_name=Path(path).stem,
         )
+
+
+def test_rank_one_runtime_disables_only_undefined_condition_number_chart() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "canonical_control": {
+                    "launch": {
+                        "fixed_link_campaign_enabled": False,
+                        "geometry_enabled": False,
+                    },
+                    "run": {"fixed_link_campaign_only": False},
+                },
+                "mimo": {"beam_count": 4, "n_layers": 1},
+                "mimo_and_beam_management": {
+                    "beam_sweeping": True,
+                    "rank_set": [1],
+                },
+                "csi_acquisition_and_reporting": {"dl_csi_enabled": True},
+            }
+        )
+    }
+    policy = dash.extract_run_feature_policy(run_row)
+    assert policy["fixed_link_campaign_only"] is False
+    assert policy["beam_adaptation_enabled"] is True
+    assert policy["max_spatial_rank"] == 1
+    assert policy["max_spatial_measurement_rank"] == 1
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__beam-mimo__condition-number-distribution.csv",
+        policy,
+        contract_name="condition number distribution",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__beam-mimo__rank-distribution.csv",
+        policy,
+        contract_name="rank distribution",
+    )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__beam-mimo__selected-vs-best-beam-timeline.csv",
+        policy,
+        contract_name="selected vs best beam timeline",
+    )
+
+
+def test_fixed_rank_one_does_not_promote_max_layer_capability_to_runtime_rank() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "mimo": {
+                    "n_layers": 1,
+                    "max_dl_layers": 2,
+                    "max_ul_layers": 1,
+                    "rank_adaptation_enable": False,
+                },
+                "link_adaptation": {"rank_adaptation_policy": "fixed"},
+                "pdsch": {"rank": 1},
+                "pusch": {"layer_count": 1},
+                "mimo_and_beam_management": {"rank_set": [1, 2]},
+            }
+        )
+    }
+
+    policy = dash.extract_run_feature_policy(run_row)
+
+    assert policy["rank_adaptation_enabled"] is False
+    assert policy["max_spatial_rank"] == 1
+    assert policy["max_spatial_measurement_rank"] == 1
+    assert materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__beam-mimo__condition-number-distribution.csv",
+        policy,
+        contract_name="condition number distribution",
+    )
+
+
+def test_fixed_rank_one_two_port_csirs_requires_condition_number_evidence() -> None:
+    run_row = {
+        "config_json": json.dumps(
+            {
+                "mimo": {
+                    "n_layers": 1,
+                    "max_dl_layers": 2,
+                    "rank_adaptation_enable": False,
+                },
+                "link_adaptation": {"rank_adaptation_policy": "fixed"},
+                "pdsch": {"rank": 1},
+                "reference_signals": {
+                    "csi_rs_enabled": True,
+                    "csi_rs_ports": 2,
+                },
+            }
+        )
+    }
+
+    policy = dash.extract_run_feature_policy(run_row)
+
+    assert policy["max_spatial_rank"] == 1
+    assert policy["max_spatial_measurement_rank"] == 2
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/csv/contract__beam-mimo__condition-number-distribution.csv",
+        policy,
+        contract_name="condition number distribution",
+    )
 
 
 def test_disabled_runtime_capabilities_filter_only_their_own_contracts() -> None:
@@ -1109,6 +1522,44 @@ def test_runtime_grid_spectrum_and_audit_charts_use_exact_sources() -> None:
     assert status is not None and "x_value,y_value" in status["csv_bytes"].decode("utf-8")
 
 
+def test_runtime_re_occupancy_projects_exact_subcarrier_symbol_port_rows() -> None:
+    re_csv = materializer._encode_csv(  # noqa: SLF001
+        [
+            "absolute_slot",
+            "symbol_index",
+            "subcarrier_start",
+            "subcarrier_count",
+            "port_index",
+            "channel",
+            "cell_id",
+        ],
+        [
+            [2, 4, 10, 4, 0, "TRS", 1],
+            [2, 4, 10, 4, 1, "TRS", 1],
+            [2, 5, 24, 12, 0, "PDSCH", 1],
+        ],
+    )
+    existing = {
+        "reports/csv/live_re_allocation_snapshot.csv": {
+            "artifact_id": 71,
+            "logical_path": "reports/csv/live_re_allocation_snapshot.csv",
+        }
+    }
+
+    grid = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "RE occupancy heatmap", existing, lambda _: re_csv, 97
+    )
+
+    assert grid is not None
+    csv_text = grid["csv_bytes"].decode("utf-8")
+    assert "time_symbol,absolute_slot,symbol_index,rb_index" in csv_text
+    assert "port_count,channels" in csv_text
+    # Two ports each occupy two REs in PRB 0 and two in PRB 1.
+    assert ",32,2,4,0,4.0,2,TRS," in csv_text
+    assert ",32,2,4,1,4.0,2,TRS," in csv_text
+    assert b"Absolute OFDM symbol" in grid["img_bytes"]
+
+
 def test_pucch_format_table_prefers_matching_runtime_trials() -> None:
     control_csv = materializer._encode_csv(  # noqa: SLF001
         ["RequestedFormat", "ResolvedFormat", "Source"],
@@ -1273,8 +1724,8 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
             "RAUEId", "PRACHOccasionID", "PRACHOccasionFrame", "PRACHOccasionSlot",
             "PRACHOccasionSymbol", "PreambleIndexTx", "PreambleIndexDetected",
             "PreambleAttemptNumber", "PreambleDetected", "PRACHTrueTimingOffset_samples",
-            "PRACHRawTimingEstimate_samples", "PRACHTimingError_samples", "TimingAdvanceCommand",
-            "SetupCompleteScheduledSlot", "PDPAverageNoiseFloor",
+            "EstimatedTimingOffset_samples", "PRACHTimingError_samples", "TimingAdvanceCommand",
+            "SetupCompleteScheduledSlot", "DetectorNoiseFloor",
         ],
         [[1, "frame=0|slot=0|symbol=0|frequency=0", 0, 0, 0, 3, 3, 1, 1, 0, 5, 5, 0, 4, 0.02]],
     )
@@ -1305,6 +1756,8 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
 
     for chart_name in (
         "PRACH occasion timeline",
+        "TA estimate trend",
+        "noise floor trend",
         "DMRS/PTRS occupancy map",
         "PAPR histogram / CDF",
         "RV usage distribution",

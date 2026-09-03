@@ -31,7 +31,15 @@ if ~isempty(rv)
     args = [args {"RV", rv}]; %#ok<AGROW>
 end
 expectedUCIBits = sixgr.util.structGet(job, "ExpectedUCIBits", []);
-if ~isempty(expectedUCIBits)
+expectedUCIPayload = sixgr.util.structGet(job, "ExpectedUCIPayload", []);
+if ~isempty(expectedUCIPayload)
+    if direction ~= "UL" || ~isa(expectedUCIPayload, ...
+            "sixgr.phy.ul.pusch.PUSCHUCIPayload")
+        error("sixgr:truth:InvalidGrantExpectedUCIPayload", ...
+            "Only UL grant jobs may carry a typed PUSCHUCIPayload.");
+    end
+    args = [args {"ExpectedUCIPayload", expectedUCIPayload}]; %#ok<AGROW>
+elseif ~isempty(expectedUCIBits)
     args = [args {"ExpectedUCIBits", expectedUCIBits}]; %#ok<AGROW>
 end
 grant = sixgr.util.structGet(job, "GrantSnapshot", struct());

@@ -134,6 +134,12 @@ cfg.phy.nRxAnt = rankValue;
 cfg.phy.pdsch.nLayers = rankValue;
 cfg.phy.pdsch.numLayers = rankValue;
 cfg.phy.csi.maxRank = rankValue;
+% This test covers receiver reconstruction for arbitrary rank/port counts,
+% including the valid rank-3 data case.  A three-port Type-I dual-polarized
+% CSI codebook is not a valid NR codebook geometry, so keep this diagnostic
+% on the explicitly declared non-codebook SVD receiver.
+cfg.phy.csi.pmiCodebookMode = "noncodebook";
+cfg.phy.csi.codebookType = "noncodebook";
 cfg.phy.csi.maxTrustedReferenceSINR_dB = 300;
 cfg.phy.csi.reportCQI = true;
 cfg.phy.csi.reportPMI = true;

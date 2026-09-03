@@ -113,7 +113,12 @@ cfg = localSyncValue(cfg, newBase, oldBase, "channel_model.scenario_label", "cha
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo.beam_codebook_size_dl", "system.beam.numBeams", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo.beam_update_period_ms", "system.beam.updatePeriod_ms", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo.digital_precoder_family", "mimo.precoder_type", "identity");
-  cfg = localSyncValue(cfg, newBase, oldBase, "mimo.max_dl_layers", "mimo.n_layers", "identity");
+  % mimo.n_layers is the configured active layer count, whereas
+  % mimo.max_dl_layers is a capability ceiling used by rank adaptation.
+  % They are intentionally independent authorities and must not be
+  % synchronized as aliases.  A rank-one transmission can legitimately
+  % advertise rank-two capability (for example, two-port CSI-RS followed
+  % by RI-driven rank promotion).
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo.max_simultaneous_ue_dl", "system.scheduler.maxActiveUEsPerCellPerSlotDL", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "mimo.max_simultaneous_ue_ul", "system.scheduler.maxActiveUEsPerCellPerSlotUL", "identity");
   cfg = localSyncValue(cfg, newBase, oldBase, "scheduler.type", "system.scheduler.type", "scheduler_type");
@@ -218,7 +223,7 @@ cfg = localSyncValue(cfg, newBase, oldBase, "pdcch.coreset_duration_symbols", "c
 cfg = localApplyPDCCHCoresetBandwidthAlias(cfg);
 cfg = localSyncValue(cfg, newBase, oldBase, "pdcch.aggregation_levels", "control.aggregation_levels", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "pdcch.search_space_type", "control.search_space_type", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "pdcch.dci_format_dl", "control.dci_formats", "single_to_cell");
+cfg = localSyncPDCCHFormats(cfg, newBase, oldBase);
 cfg = localSyncValue(cfg, newBase, oldBase, "pucch.enabled", "control.pucch_enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "prach.enabled", "random_access.enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "prach.enable", "random_access.enabled", "identity");
@@ -857,6 +862,7 @@ mappings = {
     "reference_signals.trs.channel_nmse_threshold_db", "reference_signals.trs.channel_nmse_threshold_db", "identity"
     "reference_signals.srs_periodicity_ms", "reference_signals.srs_periodicity_ms", "identity"
     "reference_signals.srs_periodicity_slots", "reference_signals.srs_periodicity_slots", "identity"
+    "reference_signals.period_offset", "reference_signals.period_offset", "identity"
     "reference_signals.srs_slot_within_period", "reference_signals.srs_slot_within_period", "identity"
     "reference_signals.srs_max_ues_per_slot", "reference_signals.srs_max_ues_per_slot", "identity"
     "reference_signals.srs_scheduling_policy", "reference_signals.srs_scheduling_policy", "identity"
@@ -1994,6 +2000,56 @@ if isstring(value) || iscellstr(value)
 elseif builtin("isstruct", value)
     s = value;
 end
+end
+
+function cfg = localSyncPDCCHFormats(cfg, newBase, oldBase)
+% Synchronize a scalar DL compatibility alias without destroying the
+% bidirectional RRC search-space format list.  The historical generic
+% single_to_cell conversion collapsed an explicit [0_1,1_1] list to the DL
+% scalar and silently removed the UL monitored format.
+newPath = "pdcch.dci_format_dl";
+oldPath = "control.dci_formats";
+newVal = sixgr.util.structGet(cfg, newPath, []);
+oldVal = sixgr.util.structGet(cfg, oldPath, []);
+newBaseVal = sixgr.util.structGet(newBase, newPath, []);
+oldBaseVal = sixgr.util.structGet(oldBase, oldPath, []);
+authority = sixgr.util.structGet(cfg, "sixgrAliasAuthorityInternal", struct());
+[~, newAuthoritative] = localTryGetNestedValue(authority, newPath);
+[~, oldAuthoritative] = localTryGetNestedValue(authority, oldPath);
+
+newDiff = ~isequaln(newVal, newBaseVal);
+oldDiff = ~isequaln(oldVal, oldBaseVal);
+formats = localPDCCHFormatList(oldVal);
+dlFormats = formats(startsWith(formats, "1_"));
+
+if oldAuthoritative || (oldDiff && ~newAuthoritative)
+    % The full monitored-format list owns both directions.  Reflect its DL
+    % member into the scalar compatibility alias while preserving the list.
+    if ~isempty(dlFormats)
+        cfg = sixgr.util.structSet(cfg, newPath, char(dlFormats(1)));
+    end
+    cfg = sixgr.util.structSet(cfg, oldPath, cellstr(formats(:)));
+    return;
+end
+
+if newAuthoritative || newDiff
+    dl = localPDCCHFormatList(newVal);
+    dl = dl(startsWith(dl, "1_"));
+    if isempty(dl)
+        return;
+    end
+    formats = formats(~startsWith(formats, "1_"));
+    formats(end+1,1) = dl(1); %#ok<AGROW>
+    cfg = sixgr.util.structSet(cfg, oldPath, cellstr(formats(:)));
+end
+end
+
+function formats = localPDCCHFormatList(raw)
+formats = string(raw);
+formats = lower(strtrim(formats(:)));
+formats = erase(formats, "dci_");
+formats = formats(strlength(formats) > 0);
+formats = unique(formats, "stable");
 end
 
 function items = localKPIStructToList(value)

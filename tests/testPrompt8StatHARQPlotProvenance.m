@@ -76,7 +76,9 @@ cfg.mobility.ue_speed_kmh = 100;
 cfg.run_control.total_slots = n;
 
 report = run_analysis(tmp, cfg);
-assert(report.Validation.Ok, "Prompt 8 analysis validation failed.");
+missingArtifacts = string(report.Validation.Table.Artifact(~report.Validation.Table.Exists));
+assert(report.Validation.Ok, "Prompt 8 analysis validation failed; missing: %s", ...
+    strjoin(missingArtifacts, ", "));
 
 mob = readtable(fullfile(layout.ReportCSVDir, "mobility_adequacy_report.csv"), "VariableNamingRule", "preserve");
 assert(logical(mob.MobilityAdequate(1)), "Mobility report did not pass configured 500-slot evidence.");

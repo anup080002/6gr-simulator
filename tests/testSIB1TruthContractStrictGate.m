@@ -24,6 +24,30 @@ assert(~logical(vMissing.Ok), "Strict contract must fail when mandatory SIB1 art
 assert(any(contains(string(vMissing.Failures), "sib1_strict_waveform_evidence")), ...
     "Missing SIB1 evidence must be named in truth-contract failures.");
 
+% Production runners pass an immutable ScenarioConfig plus a separately
+% normalized internal cfg.  Verify that an internal-only enable flag is not
+% masked by ScenarioConfig.get(..., false) when the source YAML does not
+% carry the same internal path.
+scenarioData = scfg;
+scenarioData.meta.scenario_id = "sib1_object_precedence_fixture";
+scenarioObject = sixgr.lls6g.config.ScenarioConfig(scenarioData, ...
+    "ConfigHash", "sib1_object_precedence_hash");
+tmpObject = fullfile(tempdir, "sixgr_test_sib1_object_precedence_gate");
+if exist(tmpObject, "dir")
+    rmdir(tmpObject, "s");
+end
+sixgr.util.ensureFolder(tmpObject);
+vObject = sixgr.truth.evaluateLLSRuntimeTruthContract( ...
+    tmpObject, scenarioObject, cfg);
+objectSummary = readtable(fullfile(tmpObject, "reports", "csv", ...
+    "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
+assert(logical(objectSummary.SIB1Required(1)), ...
+    ["An absent ScenarioConfig path must fall through to the resolved " ...
+     "runtime cfg instead of masking phy.sib1.enable."]);
+assert(any(contains(string(vObject.Failures), ...
+    "sib1_strict_waveform_evidence")), ...
+    "Object-backed truth reduction must fail closed on missing SIB1 evidence.");
+
 if exist("nrWaveformGenerator", "file") == 2 && sixgr.phy.broadcast.siRNTIWaveformSupported()
     tmpPass = fullfile(tempdir, "sixgr_test_sib1_gate_pass");
     if exist(tmpPass, "dir")

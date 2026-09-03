@@ -6,7 +6,7 @@ function metrics = measureULLinkState(Hest, nVar, cfg, varargin)
 % receive chain:
 %   - DMRS-reference Hest/noise-variance SINR estimate
 %   - received reference-signal power
-%   - CQI derived from the UL SINR estimate
+%   - CQI derived only from a data-channel scheduling SINR estimate
 %   - rank estimate from the wideband channel estimate
 %   - TPMI/beam metadata only when the active UL path is codebook-based
 
@@ -149,14 +149,17 @@ metrics.PilotSINRValueRole = "diagnostic_reference_signal_quality_not_for_schedu
 metrics.PilotSINRValueStatus = char(string(sinrStatus));
 if isfinite(sinr_dB)
     metrics.SINR_dB = double(sinr_dB);
-    metrics.SINRSource = "measured_ul_rs_sinr";
-    metrics.SINRValueRole = "measured_ul_rs_cqi_input";
     metrics.SINRValueStatus = char(string(sinrStatus));
     metrics.SINRNAReason = "";
     if channelEstimateDomain == "srs_port_domain"
+        metrics.SINRSource = "measured_ul_srs_pilot_reconstruction_sinr";
+        metrics.SINRValueRole = ...
+            "diagnostic_reference_signal_quality_not_for_scheduling";
         metrics.SINRMeasurementDomain = "srs_pilot_resource_elements_channel_reconstruction_residual";
         metrics.PowerReferencePlane = "receiver_srs_resource_elements_after_ofdm_demodulation";
     else
+        metrics.SINRSource = "measured_ul_pusch_dmrs_reconstruction_sinr";
+        metrics.SINRValueRole = "measured_ul_data_channel_cqi_input";
         metrics.SINRMeasurementDomain = "pusch_dmrs_resource_elements_effective_layer_channel_reconstruction_residual";
         metrics.PowerReferencePlane = "receiver_pusch_dmrs_resource_elements_after_ofdm_demodulation";
     end
@@ -194,7 +197,8 @@ if isfinite(referencePower) && referencePower > 0 && isfinite(rssiPower) && rssi
     metrics.CSI_RSRQSource = "ts38215_n_times_rsrp_over_rssi";
 end
 
-if measuredSINRAvailable && reportCQI
+if measuredSINRAvailable && reportCQI && ...
+        channelEstimateDomain == "pusch_dmrs_effective_layer_domain"
     feedback = sixgr.link.resolveWidebandCQI(struct( ...
         "WidebandSINR_dB", metrics.SINR_dB, ...
         "PerRBSINR_dB", double(perRBSINR_dB), ...
@@ -215,6 +219,13 @@ if measuredSINRAvailable && reportCQI
         metrics.CQISource = "ul_measured_rs_sinr_rejected_for_cqi:" + string(sixgr.util.structGet(feedback, "SINRInputRejectionReason", ""));
         metrics.CQIValueStatus = "unavailable_non_scheduling_sinr_input";
     end
+end
+if reportCQI && channelEstimateDomain == "srs_port_domain"
+    metrics.CQI = NaN;
+    metrics.CQISource = ...
+        "not_derived_from_srs_pilot_reconstruction_residual";
+    metrics.CQIValueStatus = ...
+        "unavailable_until_power_plane_calibrated_pusch_prediction";
 end
 
 metrics = localResolveULPrecoderMeasurementFields(metrics, cfg, opt.PrecoderInfo, srsEstimate);

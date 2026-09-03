@@ -28,6 +28,9 @@
     "snr_db": 20,
     "monte_carlo_iterations": 6
   },
+  "mimo": {
+    "reciprocity_mode": "TDD"
+  },
   "run_control": {
     "auto_start_parallel_pool": false,
     "num_workers": 1

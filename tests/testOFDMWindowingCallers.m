@@ -115,6 +115,7 @@ cfg.phy.carrier.NSizeGrid = 24;
 cfg.phy.carrier.NStartGrid = 0;
 cfg.phy.numerology.scs_kHz = 30;
 cfg.phy.numerology.cyclicPrefix = "normal";
+cfg.phy.frameStructure.DuplexMode = "FDD";
 cfg.phy.srs.enable = true;
 cfg.phy.srs.nPorts = 1;
 cfg.phy.srs.bandwidthRB = 24;

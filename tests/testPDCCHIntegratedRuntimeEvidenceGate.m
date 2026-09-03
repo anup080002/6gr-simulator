@@ -23,6 +23,10 @@ scfg = sixgr.util.structSet(scfg, "users.execution_model", "slot_coupled_truth")
 scfg = sixgr.util.structSet(scfg, "simulation.link_direction", "none");
 scfg = sixgr.util.structSet(scfg, "control_gating.pdcch_required", true);
 cfg = struct();
+% The generic builder derives this objective from pdcch_required.  It must
+% not select the standalone-study contract when the raw scenario did not.
+cfg = sixgr.util.structSet(cfg, "validation.objectives", ...
+    "pdcch_strict_validation");
 
 verdict = sixgr.truth.evaluateLLSRuntimeTruthContract(tmp, scfg, cfg);
 summaryT = readtable(fullfile(layout.ReportCSVDir, "truth_contract_summary.csv"), ...
@@ -38,6 +42,16 @@ auditT = readtable(fullfile(layout.ReportCSVDir, "conformance_matrix_runtime_aud
 pdcchRow = auditT(string(auditT.Subsystem) == "pdcch", :);
 assert(height(pdcchRow) == 1 && logical(pdcchRow.Pass(1)), ...
     "Conformance matrix must recognize integrated PDCCH runtime evidence.");
+
+% Conversely, an explicit scenario objective must retain the standalone
+% evidence requirement and may not be satisfied by integrated rows alone.
+standaloneScfg = sixgr.util.structSet(scfg, "validation.objectives", ...
+    "pdcch_strict_validation");
+sixgr.truth.evaluateLLSRuntimeTruthContract(tmp, standaloneScfg, cfg);
+standaloneSummary = readtable(fullfile(layout.ReportCSVDir, ...
+    "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
+assert(~logical(standaloneSummary.PDCCHStrictOk(1)), ...
+    "An explicitly requested standalone PDCCH study must require its standalone artifacts.");
 ok = true;
 end
 

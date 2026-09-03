@@ -46,9 +46,9 @@ assert(isequal(rm(:), refRM(:)), "Rate matching must be bit-exact with direct To
 grid = complex(zeros(carrier.NSizeGrid * 12, 14, 1));
 grid(1:48, :) = exp(1j * pi/4) .* ((-1) .^ reshape(0:(48*14-1), 48, 14));
 [waveform, modInfo] = sixgr.phy.waveform.ofdmModulate(carrier, grid);
-[refWaveform, ~] = nrOFDMModulate(carrier, grid);
+[refWaveform, ~] = nrOFDMModulate(carrier, grid, "Windowing", 0);
 assert(max(abs(waveform(:) - refWaveform(:))) < 1e-12, ...
-    "OFDM wrapper waveform must match nrOFDMModulate sample-for-sample.");
+    "Strict zero-window OFDM wrapper must match nrOFDMModulate sample-for-sample.");
 [rxGrid, demodInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, waveform);
 rxGrid = rxGrid(1:size(grid, 1), 1:size(grid, 2), :);
 assert(max(abs(rxGrid(:) - grid(:))) < 1e-11, ...

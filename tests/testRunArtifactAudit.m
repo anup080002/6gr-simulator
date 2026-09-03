@@ -140,6 +140,8 @@ scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "variants", "S
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 scfg = scfg.toStruct();
 scfg.harq.k2 = 2;
+scfg.tdd_timing.ul_grant_k2 = 2;
+scfg.tdd_timing.pdcch_to_pusch_k2 = 2;
 scfg.random_access.enabled = false;
 scfg.channels.model_type = "AWGN";
 scfg.channels.profile = "AWGN";
@@ -310,6 +312,13 @@ cfg = sixgr.util.structSet(cfg, "antenna.ue.numRFChains", 1);
 % explicit overrides so waveform execution cannot observe stale 64x4/2-port
 % metadata from the inherited scenario.
 cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, scfg);
+cfg.run.runTag = "run_artifact_audit_fixture";
+cfg.run.executionID = "run_artifact_audit_fixture_execution";
+cfg.run.scenarioID = "run_artifact_audit_fixture";
+cfg.meta.executionID = cfg.run.executionID;
+cfg.meta.configHash = "";
+cfg.meta.configHash = string(sixgr.util.sha256Hex(uint8( ...
+    unicode2native(jsonencode(cfg), "UTF-8"))));
 end
 
 function opt = localCampaignOptions(cfg, snrGrid, trialsPerPoint, seed)

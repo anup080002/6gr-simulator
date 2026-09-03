@@ -73,6 +73,9 @@ mimo:
   n_rx_ant: 4
   beam_count: 8
   trp_count: 6
+  # This bounded variant overrides its inherited profile with an explicit
+  # TDD frame. Reciprocity authority must follow the resolved duplex mode.
+  reciprocity_mode: tdd
 
 antenna_and_array:
   bs_num_txrus: 16

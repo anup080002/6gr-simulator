@@ -270,7 +270,7 @@
         "intra_slot_hopping": false,
         "second_hop_start_prb": null,
         "initial_cyclic_shift": 0,
-        "occ_length": 1,
+        "occ_length": 2,
         "occ_index": 0,
         "additional_dmrs": false,
         "pi2_bpsk": false,

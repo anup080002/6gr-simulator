@@ -16,7 +16,17 @@ cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
 cfg.frequency = struct( ...
     "range_name","FR1", ...
     "band_name","n78", ...
+    "center_frequency_hz",3.5e9, ...
     "bandwidth_hz",20e6);
+% Keep every carrier/bandwidth alias on the same physical operating point.
+% FrameStructureEngine legitimately consumes the scenario-frequency fields,
+% while strict PHY/channel validation and noise-power accounting consume the
+% normalized channel aliases.  Leaving the default 4 GHz/100 MHz values here
+% made one test configuration describe two different carriers.
+cfg.channel.fc_Hz = 3.5e9;
+cfg.channel.bandwidth_Hz = 20e6;
+cfg.channel.subcarrierSpacing_kHz = 30;
+cfg.channel.propagationScenario = "UMa";
 cfg.phy.channelBandwidth_MHz = 20;
 cfg.phy.pdcch.enable = true;
 cfg.phy.pdcch.blindSearch = true;

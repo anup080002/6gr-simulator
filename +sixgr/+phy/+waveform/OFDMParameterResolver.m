@@ -14,7 +14,8 @@ classdef OFDMParameterResolver
                     carrier,varargin{:});
             catch exception
                 identifier = string(exception.identifier);
-                if identifier == "WAVEFORM:InvalidOFDMParameters"
+                if identifier == "WAVEFORM:InvalidOFDMParameters" || ...
+                        startsWith(identifier, "sixgr:phy:frame:")
                     rethrow(exception);
                 end
                 wrapped = MException("WAVEFORM:InvalidOFDMParameters", ...

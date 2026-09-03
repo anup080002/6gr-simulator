@@ -37,5 +37,19 @@ badTransfer.PUSCHUCIDecodeOk = false;
 result = sixgr.truth.classifyPUCCHGrantDisposition(badTransfer, table());
 assert(~result.AllScheduledResolved && result.UnresolvedCount == 1, ...
     "A transfer reservation without receiver decode must fail closed.");
+
+bundledGrants = grants(2:3,:);
+bundledGrants.PUCCHGrantId = ["g-bundle-1";"g-bundle-2"];
+bundledGrants.GrantExecutedFlag(:) = true;
+bundledGrants.CanceledAtSweepBoundary(:) = false;
+bundledGrants.PUCCHGrantState(:) = "waveform_observed_feedback_applied";
+bundledTrials = trials;
+bundledTrials.PUCCHGrantId = "pucchoccasion:due=14:ue=1";
+bundledTrials.LogicalPUCCHGrantIdSet = "g-bundle-1|g-bundle-2|CSI:REPORT-1";
+result = sixgr.truth.classifyPUCCHGrantDisposition(bundledGrants, bundledTrials);
+assert(result.AllScheduledResolved && result.StandaloneTrialCount == 2 && ...
+    all(result.Rows.StandalonePUCCHTrialMatched), ...
+    ['A successfully decoded physical PUCCH occasion must resolve every ' ...
+     'logical HARQ-ACK grant explicitly listed in its codebook identity set.']);
 ok = true;
 end

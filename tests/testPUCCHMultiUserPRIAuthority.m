@@ -1,0 +1,93 @@
+function ok = testPUCCHMultiUserPRIAuthority()
+%TESTPUCCHMULTIUSERPRIAUTHORITY Prove YAML PRI selection survives DCI/grant freeze.
+
+setup6GRSimToolkit("Verbose", false);
+tmp = tempname;
+mkdir(tmp);
+cleanup = onCleanup(@() localRemove(tmp)); %#ok<NASGU>
+
+scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
+    "simulator", "configs", "scenarios", ...
+    "lls_mimo4x4_multiuser_beamformed.yaml"));
+cfg = sixgr.lls6g.buildInternalConfig(scenario, fullfile(tmp, "run"));
+section = cfg.validation.pucch_resources;
+assert(string(section.multi_user_assignment.mode) == ...
+    "rnti_modulo_resource_set");
+
+scheduler = sixgr.l2.mac.SchedulerRR(cfg, "Direction", "DL");
+seed = struct("Direction", "DL", "Slot", 0, "Frame", 0, ...
+    "PRBSet", 0:9, "SymbolAllocation", [2 10], ...
+    "Modulation", "QPSK", "NumLayers", 1, ...
+    "TargetCodeRate", 0.3, "MCSIndex", 1);
+grant1 = seed;
+grant1.UEIndex = 1;
+grant1.RNTI = 101;
+grant2 = seed;
+grant2.UEIndex = 2;
+grant2.RNTI = 102;
+
+grant1 = scheduler.attachPUCCHResourceAuthorityToGrant(grant1);
+grant2 = scheduler.attachPUCCHResourceAuthorityToGrant(grant2);
+assert(grant1.PUCCHResourceIndicator ~= grant2.PUCCHResourceIndicator, ...
+    "Simultaneous UEs must receive distinct configured PUCCH PRI values.");
+assert(grant1.PUCCHResourceId ~= grant2.PUCCHResourceId, ...
+    "Distinct PRI values must resolve to distinct configured resources.");
+assert(all(string({grant1.PUCCHResourceIndicatorSource, ...
+    grant2.PUCCHResourceIndicatorSource}) == ...
+    "yaml_rnti_modulo_resource_set"));
+
+% The same DCI PRI must remain valid when a known CSI report enlarges the
+% K1 UCI occasion and selects the next configured resource set.  Silently
+% wrapping/remapping PRI here would sever the decoded-DCI causal contract.
+ueData = struct("UEID", 1, "RNTI", 101, "ServingCell", 1, ...
+    "PUCCHCell", 1, "ComponentCarrier", 0, "ActiveULBWP", 0);
+frameState = struct("K1", 4, "K1Source", "decoded_dci", ...
+    "PDSCHEndSlot", 0, "TargetSlot", 4, ...
+    "DecodedPRI", grant1.PUCCHResourceIndicator, ...
+    "PRIFieldWidth", 3, ...
+    "PRIProvenance", grant1.PUCCHResourceIndicatorSource, ...
+    "FirstCCE", 0, "NumCCE", 24, ...
+    "SlotSymbolOwnership", "UUUUUUUUUUUUUU", ...
+    "FlexibleResolutionProvided", false, ...
+    "TriggeringEventID", "test_combined_harq_csi");
+combined = sixgr.phy.pucch.PUCCHConfigBuilder.connectedCombined( ...
+    cfg, ueData, int8(1), int8([1; 0; 1; 0]), int8([]), frameState);
+assert(double(combined.Assignment.Data.ResourceSetID) == 1);
+assert(double(combined.Assignment.Data.PRIValue) == ...
+    double(grant1.PUCCHResourceIndicator));
+assert(double(combined.Assignment.Data.ResourceID) == 11, ...
+    "PRI 1 must select the second configured resource in resource set 1.");
+
+undersized = scenario.toStruct();
+undersized.pucch_resources.resource_sets(2).resource_ids = 10;
+rejected = false;
+try
+    sixgr.lls6g.buildInternalConfig(undersized, fullfile(tmp, "undersized"));
+catch ME
+    rejected = strcmp(ME.identifier, ...
+        "sixgr:lls6g:config:InsufficientPUCCHMultiUserResources");
+end
+assert(rejected, ...
+    "Every payload-selectable PUCCH set must support max_simultaneous_ues.");
+
+grant1 = scheduler.freezePHYGrantForGrant(grant1);
+grant2 = scheduler.freezePHYGrantForGrant(grant2);
+dci1 = scheduler.buildDCIBitfield(grant1);
+dci2 = scheduler.buildDCIBitfield(grant2);
+assert(double(dci1.FieldValues.pucch_resource_indicator) == ...
+    double(grant1.PUCCHResourceIndicator));
+assert(double(dci2.FieldValues.pucch_resource_indicator) == ...
+    double(grant2.PUCCHResourceIndicator));
+assert(double(dci1.FieldValues.pucch_resource_indicator) ~= ...
+    double(dci2.FieldValues.pucch_resource_indicator), ...
+    "Encoded DCI must retain the per-UE YAML-authorized PRI.");
+
+ok = true;
+fprintf("[PASS] PUCCH multi-user PRI authority retained through DCI.\n");
+end
+
+function localRemove(root)
+if isfolder(root)
+    rmdir(root, "s");
+end
+end

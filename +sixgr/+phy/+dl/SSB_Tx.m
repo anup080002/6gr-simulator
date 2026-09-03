@@ -328,6 +328,7 @@ end
 
 waveform = complex(zeros(0, burstPlan.NumTransmitAntennas));
 waveInfo = struct();
+compositeSSBGrid = [];
 for ordinal = 1:numel(activeIndices)
     ssbPosition = activeIndices(ordinal);
     componentCfg = cfgDL;
@@ -338,6 +339,15 @@ for ordinal = 1:numel(activeIndices)
         double(burstPlan.PerSSBPowerDB(ssbPosition));
     [componentWaveform, componentInfo] = ...
         nrWaveformGenerator(componentCfg);
+    componentSSBGrid = localExactSSBurstGrid(componentInfo);
+    if isempty(compositeSSBGrid)
+        compositeSSBGrid = zeros(size(componentSSBGrid), ...
+            "like", componentSSBGrid);
+    elseif ~isequal(size(compositeSSBGrid), size(componentSSBGrid))
+        error("sixgr:phy:ia:InvalidCarrierGrid", ...
+            "Per-SSB component resource grids do not share one shape.");
+    end
+    compositeSSBGrid = compositeSSBGrid + componentSSBGrid;
     if size(componentWaveform, 2) ~= 1
         error("sixgr:phy:ia:InvalidCarrierGrid", ...
             "SSB component generator returned %d ports; expected one " + ...
@@ -363,6 +373,12 @@ for ordinal = 1:numel(activeIndices)
     waveform = waveform + precoded;
 end
 if isstruct(waveInfo)
+    % nrWaveformGenerator keeps SS/PBCH on its dedicated SSB numerology
+    % grid; ResourceGridInCarrier is zero for this composed waveform.  The
+    % union below is therefore the canonical transmitted SS/PBCH grid used
+    % by collision validation and evidence export.  It is assembled from
+    % the actual per-beam Toolbox grids, not reconstructed from YAML.
+    waveInfo.ResourceGridSSBurst.ResourceGrid = compositeSSBGrid;
     waveInfo.SSBComposite = struct( ...
         "Composed", true, ...
         "ActiveSSBIndices0Based", activeIndices - 1, ...
@@ -373,7 +389,17 @@ if isstruct(waveInfo)
         "PerSSBPowerDB", burstPlan.PerSSBPowerDB(activeIndices), ...
         "PrecoderMatrixSHA256", ...
             burstPlan.PrecoderMatrixSHA256(activeIndices), ...
-        "CompositeResourceGridAvailable", false);
+        "CompositeResourceGridAvailable", true);
+end
+end
+
+function grid = localExactSSBurstGrid(info)
+grid = sixgr.util.structGet(info, ...
+    "ResourceGridSSBurst.ResourceGrid", []);
+if isempty(grid) || ~isnumeric(grid) || ndims(grid) > 3
+    error("sixgr:phy:ia:MissingSSBResourceGrid", ...
+        "nrWaveformGenerator did not return the exact SS/PBCH resource " + ...
+        "grid required for composed-beam waveform evidence.");
 end
 end
 

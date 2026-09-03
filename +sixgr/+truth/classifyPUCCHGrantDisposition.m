@@ -81,6 +81,23 @@ crcApplicable = localLogical(trials, "CRCApplicable", ...
 crcPass = localLogical(trials, "CRCPass", false(height(trials), 1));
 trialPass = trialPass & (~crcApplicable | crcPass);
 validIds = trialId(trialPass & strlength(trialId) > 0);
+% One physical PUCCH occasion can carry a codebook containing several
+% logical HARQ-ACK grants.  In that case PUCCHGrantId identifies the
+% physical occasion and LogicalPUCCHGrantIdSet preserves the exact logical
+% grants consumed by the decoded bit vector.  Match both identity domains;
+% requiring only the physical identifier incorrectly leaves every bundled
+% logical grant unresolved even after a successful waveform decode.
+if ismember("LogicalPUCCHGrantIdSet", trialVars)
+    logicalSets = localString(trials, "LogicalPUCCHGrantIdSet", ...
+        repmat("", height(trials), 1));
+    passingRows = find(trialPass & strlength(logicalSets) > 0);
+    for rowIdx = reshape(passingRows, 1, [])
+        tokens = strtrim(split(logicalSets(rowIdx), "|"));
+        tokens = tokens(strlength(tokens) > 0);
+        validIds = [validIds; tokens(:)]; %#ok<AGROW>
+    end
+end
+validIds = unique(validIds(strlength(validIds) > 0), "stable");
 grantId = localString(grants, "PUCCHGrantId", repmat("", n, 1));
 matched = strlength(grantId) > 0 & ismember(grantId, validIds);
 end

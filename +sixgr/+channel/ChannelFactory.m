@@ -435,7 +435,9 @@ classdef ChannelFactory
                 "TargetFrame", NaN, ...
                 "TargetUEIndex", NaN, ...
                 "TargetServingCell", NaN, ...
-                "LastPathGainsAvailable", false);
+                "LastPathGainsAvailable", false, ...
+                "RuntimeDiagnosticPathGainCaptureCompleted", false, ...
+                "RuntimeDiagnosticPathGainMaxElements", 1024);
         end
 
         function state = createRuntimeChannelState(cfg, direction, varargin)
@@ -465,6 +467,13 @@ classdef ChannelFactory
             state.Initialized = true;
             state.CurrentSampleIndex = max(0, round(double(opt.AbsoluteSampleIndex)));
             state.CurrentTime_s = 0;
+            diagnosticLimit = double(sixgr.util.structGet(cfg, ...
+                "outputs.phySignalDiagnosticChannelPoints", 1024));
+            if ~(isscalar(diagnosticLimit) && isfinite(diagnosticLimit) && diagnosticLimit >= 1)
+                diagnosticLimit = 1024;
+            end
+            state.RuntimeDiagnosticPathGainMaxElements = ...
+                min(4096, max(1, round(diagnosticLimit)));
         end
 
         function forkedState = forkRuntimeChannelState(state)
@@ -755,7 +764,12 @@ classdef ChannelFactory
             state.LastIdleAdvancedSamples = n;
         end
 
-        function [y, replay, state] = applyRuntimeChannelState(state, x)
+        function [y, replay, state] = applyRuntimeChannelState(state, x, varargin)
+            ip = inputParser;
+            ip.addParameter("CapturePathGains", [], @(v) isempty(v) || ...
+                (isscalar(v) && (islogical(v) || isnumeric(v))));
+            ip.parse(varargin{:});
+            explicitPathGainCapture = ip.Results.CapturePathGains;
             y = x;
             replay = struct( ...
                 "ChannelRealizationId", "", ...
@@ -783,7 +797,15 @@ classdef ChannelFactory
                 "RuntimeChannelOutputWaveformSHA256", "", ...
                 "RuntimeChannelPathGainsSHA256", "", ...
                 "RuntimeChannelPathGainElementCount", 0, ...
-                "RuntimeChannelPathGainDimensions", "");
+                "RuntimeChannelPathGainDimensions", "", ...
+                "RuntimeChannelPathGainsPreview", complex([]), ...
+                "RuntimeChannelPathGainSampleTimes_s", [], ...
+                "RuntimeChannelPathDelays_s", [], ...
+                "RuntimeChannelPathGainPreviewElementCount", 0, ...
+                "RuntimeChannelPathGainPreviewTruncated", false, ...
+                "RuntimeChannelPathGainCaptureRequested", false, ...
+                "RuntimeChannelPathGainCapturePolicy", "not_requested", ...
+                "RuntimeChannelPathGainCaptureSatisfied", false);
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 return;
             end
@@ -844,17 +866,62 @@ classdef ChannelFactory
             if padSamples > 0
                 xIn = [xChannel; zeros(padSamples, size(xChannel, 2), 'like', xChannel)];
             end
-            if elementExpansion
-                [yRaw, pathGains] = ...
-                    sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
-                    state, xIn);
-            else
-                try
-                    [yRaw, pathGains] = state.Obj(xIn);
-                catch
-                    yRaw = state.Obj(xIn);
-                    pathGains = [];
+            pathGainCaptureEnabled = double(sixgr.util.structGet(state, ...
+                "RuntimeDiagnosticPathGainMaxElements", 0)) > 0;
+            if isempty(explicitPathGainCapture)
+                capturePathGains = pathGainCaptureEnabled && ...
+                    ~logical(sixgr.util.structGet(state, ...
+                    "RuntimeDiagnosticPathGainCaptureCompleted", false));
+                if capturePathGains
+                    replay.RuntimeChannelPathGainCapturePolicy = ...
+                        "automatic_first_executed_waveform";
+                else
+                    replay.RuntimeChannelPathGainCapturePolicy = ...
+                        "automatic_capture_already_completed_or_disabled";
                 end
+            else
+                capturePathGains = pathGainCaptureEnabled && ...
+                    logical(explicitPathGainCapture);
+                if capturePathGains
+                    replay.RuntimeChannelPathGainCapturePolicy = ...
+                        "explicit_same_trial_runtime_request";
+                elseif logical(explicitPathGainCapture)
+                    replay.RuntimeChannelPathGainCapturePolicy = ...
+                        "explicit_request_disabled_by_zero_capture_budget";
+                else
+                    replay.RuntimeChannelPathGainCapturePolicy = ...
+                        "explicitly_not_requested";
+                end
+            end
+            replay.RuntimeChannelPathGainCaptureRequested = logical(capturePathGains);
+            if elementExpansion
+                [yRaw, pathGains, sampleTimes] = ...
+                    sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
+                    state, xIn, capturePathGains);
+                if capturePathGains
+                    state.RuntimeDiagnosticPathGainCaptureCompleted = true;
+                end
+            elseif capturePathGains
+                try
+                    [yRaw, pathGains, sampleTimes] = state.Obj(xIn);
+                catch
+                    try
+                        [yRaw, pathGains] = state.Obj(xIn);
+                        sampleTimes = [];
+                    catch
+                        yRaw = state.Obj(xIn);
+                        pathGains = [];
+                        sampleTimes = [];
+                    end
+                end
+                % Request the potentially large Ns-by-Npath-by-Nt-by-Nr
+                % tensor once per persistent link/drop. Evidence collection
+                % must not add this allocation to every subsequent grant.
+                state.RuntimeDiagnosticPathGainCaptureCompleted = true;
+            else
+                yRaw = state.Obj(xIn);
+                pathGains = [];
+                sampleTimes = [];
             end
             if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
                 y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
@@ -869,6 +936,8 @@ classdef ChannelFactory
             replay.ChannelFadingApplied = true;
             replay.ChannelFadingExecutionStatus = "applied_persistent_runtime_channel_object";
             replay.ChannelPathGainsAvailable = ~isempty(pathGains);
+            replay.RuntimeChannelPathGainCaptureSatisfied = ...
+                logical(capturePathGains) && ~isempty(pathGains);
             replay.RuntimeChannelOutputWaveformSHA256 = ...
                 sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(y);
             if ~isempty(pathGains)
@@ -876,6 +945,17 @@ classdef ChannelFactory
                     sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(pathGains);
                 replay.RuntimeChannelPathGainElementCount = double(numel(pathGains));
                 replay.RuntimeChannelPathGainDimensions = char(join(string(size(pathGains)), "x"));
+                maxPreviewElements = max(1, round(double(sixgr.util.structGet( ...
+                    state, "RuntimeDiagnosticPathGainMaxElements", 1024))));
+                [preview, previewTimes, wasTruncated] = ...
+                    sixgr.channel.ChannelFactory.localBoundPathGainPreview( ...
+                    pathGains, sampleTimes, maxPreviewElements);
+                replay.RuntimeChannelPathGainsPreview = preview;
+                replay.RuntimeChannelPathGainSampleTimes_s = previewTimes;
+                replay.RuntimeChannelPathDelays_s = ...
+                    sixgr.channel.ChannelFactory.localRuntimePathDelays(state.Obj);
+                replay.RuntimeChannelPathGainPreviewElementCount = double(numel(preview));
+                replay.RuntimeChannelPathGainPreviewTruncated = logical(wasTruncated);
             end
             state.LastPathGainsAvailable = replay.ChannelPathGainsAvailable;
             state.LastApplyStartSample = replay.RuntimeChannelStartSample;
@@ -1049,8 +1129,11 @@ classdef ChannelFactory
             runtimeMeta.PortToElementExpansionEnabled = true;
         end
 
-        function [yRaw, pathGains] = ...
-                localApplyElementExpandedChannel(state, xLogical)
+        function [yRaw, pathGains, sampleTimes] = ...
+                localApplyElementExpandedChannel(state, xLogical, capturePathGains)
+            if nargin < 3
+                capturePathGains = false;
+            end
             matrix = sixgr.util.structGet(state, "PortToElementMatrix", []);
             if isempty(matrix) || size(matrix, 2) ~= size(xLogical, 2)
                 error("ChannelFactory:ElementExpansionDimensionMismatch", ...
@@ -1062,17 +1145,82 @@ classdef ChannelFactory
             nChunks = ceil(nRows / chunkSamples);
             parts = cell(nChunks, 1);
             matrixLike = cast(matrix, "like", xLogical);
+            pathGains = [];
+            sampleTimes = [];
             for chunkIndex = 1:nChunks
                 firstRow = (chunkIndex - 1) * chunkSamples + 1;
                 lastRow = min(nRows, chunkIndex * chunkSamples);
                 xPhysical = xLogical(firstRow:lastRow, :) * matrixLike.';
-                parts{chunkIndex} = state.Obj(xPhysical);
+                if logical(capturePathGains) && chunkIndex == 1
+                    try
+                        [parts{chunkIndex}, pathGains, sampleTimes] = ...
+                            state.Obj(xPhysical);
+                    catch
+                        try
+                            [parts{chunkIndex}, pathGains] = state.Obj(xPhysical);
+                            sampleTimes = [];
+                        catch
+                            parts{chunkIndex} = state.Obj(xPhysical);
+                            pathGains = [];
+                            sampleTimes = [];
+                        end
+                    end
+                else
+                    parts{chunkIndex} = state.Obj(xPhysical);
+                end
             end
             yRaw = vertcat(parts{:});
-            % Path-gain tensors are deliberately not requested here: they
-            % scale with physical elements and samples and are not receiver
-            % inputs.  All receiver samples still traverse the exact object.
-            pathGains = [];
+            % Capture only the first executed chunk once per persistent
+            % link/drop.  This is the exact tensor produced while filtering
+            % the same element-domain samples consumed by the receiver; it
+            % is subsequently bounded by localBoundPathGainPreview.  Never
+            % reconstruct this evidence from the configured PDP.
+        end
+
+        function [preview, previewTimes, truncated] = ...
+                localBoundPathGainPreview(pathGains, sampleTimes, maxElements)
+            % Preserve a bounded, exact subset of the executed channel
+            % tensor for evidence generation.  This never enters a receiver
+            % and therefore cannot become a perfect-CSI oracle.
+            sz = size(pathGains);
+            sz(end+1:4) = 1;
+            nTime = max(1, sz(1));
+            perTime = prod(sz(2:end));
+            keepTime = max(1, min(nTime, floor(double(maxElements) / max(1, perTime))));
+            if perTime > maxElements
+                % Preserve the first exact path/antenna elements if a single
+                % complete temporal slice exceeds the configured evidence cap.
+                flat = pathGains(:);
+                preview = reshape(flat(1:min(numel(flat), maxElements)), [], 1);
+                previewTimes = [];
+                truncated = numel(preview) < numel(pathGains);
+                return;
+            end
+            subs = repmat({':'}, 1, max(2, ndims(pathGains)));
+            subs{1} = 1:keepTime;
+            preview = pathGains(subs{:});
+            previewTimes = double(sampleTimes(:));
+            if ~isempty(previewTimes)
+                previewTimes = previewTimes(1:min(numel(previewTimes), keepTime));
+            end
+            truncated = numel(preview) < numel(pathGains);
+        end
+
+        function delays = localRuntimePathDelays(channelObject)
+            delays = [];
+            try
+                channelInfo = info(channelObject);
+                delays = double(sixgr.util.structGet(channelInfo, "PathDelays", []));
+            catch
+            end
+            if isempty(delays)
+                try
+                    delays = double(channelObject.PathDelays);
+                catch
+                    delays = [];
+                end
+            end
+            delays = reshape(delays, 1, []);
         end
 
         function key = localRuntimeSeedKey(cfg, linkKey)
@@ -1313,6 +1461,18 @@ classdef ChannelFactory
                     end
                 end
             end
+            map = sixgr.util.structGet(runtimeAntenna, "PortToElementMatrix", []);
+            if isnumeric(map) && ismatrix(map) && size(map, 1) >= 1
+                count = size(map, 1);
+                source = "runtime_antenna.PortToElementMatrix_rows";
+                return;
+            end
+            map = sixgr.util.structGet(runtimeAntenna, "ElementToPortMatrix", []);
+            if isnumeric(map) && ismatrix(map) && size(map, 2) >= 1
+                count = size(map, 2);
+                source = "runtime_antenna.ElementToPortMatrix_columns";
+                return;
+            end
             sizeVec = double(sixgr.util.structGet(runtimeAntenna, "Size", []));
             if ~isempty(sizeVec)
                 sizeVec = sizeVec(:).';
@@ -1504,6 +1664,16 @@ classdef ChannelFactory
 
             arrayRuntimeMeta = sixgr.channel.ChannelFactory.localEmptyTDLGeometryAdapterMeta();
             tdl = nrTDLChannel;
+
+            % R2026a exposes path gains through ChannelResponseOutput;
+            % older 5G Toolbox releases use PathGainsOutputPort.  Keep the
+            % executed response available to the evidence path without ever
+            % feeding it into a receiver or relabelling it as estimated CSI.
+            if isprop(tdl, "ChannelResponseOutput")
+                tdl.ChannelResponseOutput = "path-gains";
+            elseif isprop(tdl, "PathGainsOutputPort")
+                tdl.PathGainsOutputPort = true;
+            end
 
             % Basic profile parameters
             tdl.DelayProfile = delayProfile;
@@ -1787,6 +1957,11 @@ classdef ChannelFactory
                 arrayRuntimeMeta.(losFields{losIdx}) = losMeta.(losFields{losIdx});
             end
             cdl = nrCDLChannel;
+            if isprop(cdl, "ChannelResponseOutput")
+                cdl.ChannelResponseOutput = "path-gains";
+            elseif isprop(cdl, "PathGainsOutputPort")
+                cdl.PathGainsOutputPort = true;
+            end
             cdl.DelayProfile = delayProfile;
             cdl.DelaySpread = sixgr.util.structGet(cfg, "channel.delaySpread_s", 300e-9);
             cdl.MaximumDopplerShift = sixgr.util.structGet(cfg, "channel.doppler_Hz", 30);

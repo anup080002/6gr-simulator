@@ -18,6 +18,7 @@ import math
 import os
 import sys
 from collections import Counter
+from itertools import chain
 from pathlib import Path
 from statistics import fmean
 from typing import Iterable
@@ -144,8 +145,8 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
     try:
         with source_path.open("r", encoding="utf-8-sig", newline="") as handle:
             reader = csv.reader(handle)
-            header = next(reader, None)
-            if header is None:
+            first_record = next(reader, None)
+            if first_record is None:
                 issues.append("empty_file_no_header")
                 file_row["issues"] = "|".join(issues)
                 file_row["issue_count"] = len(issues)
@@ -162,6 +163,23 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
                     "values_json": "[]",
                 })
                 return file_row, columns, first_rows
+            headerless_iq = (
+                relative.startswith("waveform/csv/final_tx_iq_")
+                and relative.endswith("_keysight.csv")
+            )
+            if headerless_iq:
+                # These files intentionally contain exactly I,Q numeric pairs
+                # with no header so Keysight VSG can import every line as a
+                # sample.  Audit with an in-memory schema; never rewrite or
+                # discard the first waveform sample.
+                if len(first_record) != 2:
+                    issues.append("headerless_keysight_iq_width_mismatch")
+                header = ["I", "Q"]
+                data_rows = chain([first_record], reader)
+                observations.append("headerless_keysight_iq_contract")
+            else:
+                header = first_record
+                data_rows = reader
             file_row["column_count"] = len(header)
             file_row["duplicate_header_count"] = len(header) - len(set(header))
             if not header:
@@ -204,7 +222,7 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
             required_missing_counts: Counter[str] = Counter()
             scheduled_na_counts: Counter[str] = Counter()
             cell_count = 0
-            for row in reader:
+            for row in data_rows:
                 file_row["row_count"] += 1
                 if file_row["row_count"] <= 3:
                     normalized = row[: len(header)] + [""] * max(0, len(header) - len(row))
@@ -453,6 +471,79 @@ def write_csv(path: Path, rows: Iterable[dict]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+TERMINAL_TRUTH_FIELDS = (
+    "ScenarioID", "RunTag", "ConfigHash", "TruthContractVersion",
+    "StatusAuthority", "ContractApplicability", "RuntimeTruthContractOk",
+    "ResultOk", "StrictTruthFailureCount", "StrictProxyGuardFailureCount",
+    "CanonicalArtifactGapCount", "RoundtripMismatchCount",
+    "RequiredRuntimeEvidenceMissingCount", "NoProxyPHYOk",
+    "SyntheticBLERFallbackOk", "RawLifecycleOk", "ScenarioObjectiveOk",
+    "ClaimProfile", "ClaimStatus", "ClaimAllowed", "StandardsConformanceOk",
+    "ConfiguredEffectiveOk", "MandatorySubsystemsOk", "ActiveIssueGateOk",
+    "StrictAnchorEligible", "StrictAnchorPass", "ResultStatusReason",
+)
+
+
+def audit_terminal_status_mirrors(run_root: Path) -> list[dict]:
+    """Compare finalized truth authority with every known terminal mirror.
+
+    The evaluator may publish the canonical truth summary before browser
+    materialization.  A later finalization pass must never leave analytics
+    carrying an earlier status.  Compare explicit shared terminal fields;
+    absent optional fields are not invented and therefore are not checked.
+    """
+
+    authority_relative = "reports/csv/truth_contract_summary.csv"
+    mirror_relatives = ("analytics/csv/truth_policy_analytics.csv",)
+    authority_path = run_root / authority_relative
+    if not io_path(authority_path).is_file():
+        return []
+
+    def last_row(path: Path) -> dict[str, str] | None:
+        with io_path(path).open("r", encoding="utf-8-sig", newline="") as handle:
+            rows = list(csv.DictReader(handle))
+        return rows[-1] if rows else None
+
+    authority = last_row(authority_path)
+    if authority is None:
+        return []
+    rows: list[dict] = []
+    for mirror_relative in mirror_relatives:
+        mirror_path = run_root / mirror_relative
+        if not io_path(mirror_path).is_file():
+            continue
+        mirror = last_row(mirror_path)
+        if mirror is None:
+            rows.append({
+                "authority_path": authority_relative,
+                "mirror_path": mirror_relative,
+                "field": "<row>",
+                "authority_value": "present",
+                "mirror_value": "missing",
+                "match": False,
+                "status": "FAIL_EMPTY_TERMINAL_MIRROR",
+            })
+            continue
+        common_fields = [
+            field for field in TERMINAL_TRUTH_FIELDS
+            if field in authority and field in mirror
+        ]
+        for field in common_fields:
+            authority_value = str(authority.get(field, "")).strip()
+            mirror_value = str(mirror.get(field, "")).strip()
+            matched = authority_value == mirror_value
+            rows.append({
+                "authority_path": authority_relative,
+                "mirror_path": mirror_relative,
+                "field": field,
+                "authority_value": authority_value,
+                "mirror_value": mirror_value,
+                "match": matched,
+                "status": "PASS" if matched else "FAIL_STALE_TERMINAL_MIRROR",
+            })
+    return rows
 
 
 def build_csv_file_dispositions(
@@ -830,6 +921,8 @@ def main() -> int:
 
     semantic_audit = audit_csv_semantics(run_root)
     write_csv_semantic_audit(output_root, semantic_audit)
+    terminal_status_rows = audit_terminal_status_mirrors(run_root)
+    write_csv(output_root / "terminal_status_mirror_audit.csv", terminal_status_rows)
     semantic_summary = semantic_audit["summary"][0]
     file_dispositions = build_csv_file_dispositions(
         run_root, csv_rows, column_rows, semantic_audit
@@ -922,6 +1015,10 @@ def main() -> int:
             for row in file_dispositions
         ),
         "strict_value_closure_requested": bool(args.strict_value_closure),
+        "terminal_status_mirror_check_count": len(terminal_status_rows),
+        "terminal_status_mirror_mismatch_count": sum(
+            not bool(row["match"]) for row in terminal_status_rows
+        ),
     }
     summary["csv_value_review_gate_pass"] = bool(
         summary["csv_header_only_unresolved_files"] == 0
@@ -955,6 +1052,7 @@ def main() -> int:
         or summary["svg_file_count"]
         or summary["csv_semantic_required_failures"]
         or summary["chart_semantic_required_failures"]
+        or summary["terminal_status_mirror_mismatch_count"]
         or (args.strict_value_closure and not summary["csv_value_review_gate_pass"])
     ) else 0
 

@@ -62,7 +62,14 @@ csvSpecs = {
     fullfile(layout.ReportCSVDir, "mimo_rank_utilization_table.csv"), evidence.RankUtilization
     };
 for i = 1:size(csvSpecs, 1)
-    sixgr.util.csvWriteTable(csvSpecs{i, 1}, csvSpecs{i, 2});
+    % MIMO evidence tables are versioned interfaces.  Columns that are
+    % deliberately not applicable in the current operating mode (for
+    % example RequiredExactMatchPercent during AMC, or an empty adaptive
+    % failure reason on a passing row) still describe the contract.  The
+    % generic CSV writer otherwise prunes those all-missing/all-empty
+    % columns before the later sanitizer has a chance to preserve them.
+    sixgr.util.csvWriteTable(csvSpecs{i, 1}, csvSpecs{i, 2}, ...
+        "PreserveSchema", true);
     artifacts.csv{end+1} = csvSpecs{i, 1}; %#ok<AGROW>
 end
 jsonPath = fullfile(layout.ReportDir, "json", "mimo_toolbox_capabilities.json");

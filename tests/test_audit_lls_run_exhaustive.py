@@ -88,6 +88,22 @@ def test_row_width_mismatch_remains_a_structural_failure(tmp_path: Path) -> None
     assert summary["csv_structural_issue_files"] == 1
 
 
+def test_headerless_keysight_iq_preserves_first_sample(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    source = run / "waveform" / "csv" / "final_tx_iq_dl_port1_keysight.csv"
+    source.parent.mkdir(parents=True)
+    source.write_text("0,0\n0.25,-0.5\n", encoding="utf-8")
+
+    file_row, columns, first_rows = AUDIT_MODULE.audit_csv(source, run)
+    assert file_row["parse_ok"] is True
+    assert file_row["row_count"] == 2
+    assert file_row["column_count"] == 2
+    assert file_row["duplicate_header_count"] == 0
+    assert "headerless_keysight_iq_contract" in file_row["observations"]
+    assert [column["column_name"] for column in columns] == ["I", "Q"]
+    assert json.loads(first_rows[0]["values_json"]) == ["0", "0"]
+
+
 def test_zero_and_nan_columns_are_classified_not_hidden(tmp_path: Path) -> None:
     run = tmp_path / "run"
     output = tmp_path / "audit"
@@ -400,3 +416,46 @@ def test_frc_reference_contract_receives_explicit_pass_disposition(
         run, csv_rows, [], semantic_audit
     )
     assert rows[0]["audit_disposition"] == "PASS_FRC_REFERENCE_SEMANTICS"
+
+
+def test_terminal_truth_mirror_mismatch_fails_audit(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    output = tmp_path / "audit"
+    authority = run / "reports" / "csv" / "truth_contract_summary.csv"
+    mirror = run / "analytics" / "csv" / "truth_policy_analytics.csv"
+    authority.parent.mkdir(parents=True)
+    mirror.parent.mkdir(parents=True)
+    header = "ScenarioID,RunTag,RuntimeTruthContractOk,ResultOk,StrictTruthFailureCount\n"
+    authority.write_text(header + "scenario,run,1,1,0\n", encoding="utf-8")
+    mirror.write_text(header + "scenario,run,0,0,2\n", encoding="utf-8")
+
+    rows = AUDIT_MODULE.audit_terminal_status_mirrors(run)
+    mismatches = [row for row in rows if not row["match"]]
+    assert {row["field"] for row in mismatches} == {
+        "RuntimeTruthContractOk", "ResultOk", "StrictTruthFailureCount"
+    }
+
+    proc = run_audit(run, output)
+    assert proc.returncode == 1
+    summary = json.loads((output / "audit_summary.json").read_text(encoding="utf-8"))
+    assert summary["terminal_status_mirror_mismatch_count"] == 3
+    with (output / "terminal_status_mirror_audit.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        persisted = list(csv.DictReader(handle))
+    assert any(row["status"] == "FAIL_STALE_TERMINAL_MIRROR" for row in persisted)
+
+
+def test_terminal_truth_mirror_exact_common_fields_pass(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    authority = run / "reports" / "csv" / "truth_contract_summary.csv"
+    mirror = run / "analytics" / "csv" / "truth_policy_analytics.csv"
+    authority.parent.mkdir(parents=True)
+    mirror.parent.mkdir(parents=True)
+    header = "ScenarioID,RunTag,RuntimeTruthContractOk,ResultOk,ResultStatusReason\n"
+    value = "scenario,run,1,1,all_required_root_gates_passed\n"
+    authority.write_text(header + value, encoding="utf-8")
+    mirror.write_text(header + value, encoding="utf-8")
+
+    rows = AUDIT_MODULE.audit_terminal_status_mirrors(run)
+    assert rows and all(row["match"] for row in rows)

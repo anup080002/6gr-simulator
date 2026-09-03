@@ -80,6 +80,12 @@
     "srs_based_csi_flag": true, "reciprocity_based_flag": false, "feedback_based_flag": true, "cqi_policy": "baseline", "pmi_policy": "baseline",
     "ri_policy": "baseline", "cri_policy": "disabled", "channel_state_information_mode": "PMI+CQI+RI", "pmi_codebook_mode": "type1_su_mimo", "l1_sinr_policy": "baseline", "rsrp_policy": "baseline", "delta_mcs_policy": "baseline", "dmrs_port_selection_policy": "baseline",
     "report_trigger": "periodic", "report_periodicity": "20ms", "report_payload_mode": "compressed", "compression_mode": "none", "sscc_mode": false,
+    "report_configuration": {
+      "report_config_id": "csi-report-default-0", "epoch": 0, "codebook_mode": 1,
+      "report_quantity": "cri-RI-PMI-CQI", "frequency_granularity": "wideband", "uci_channel": "PUCCH",
+      "n1": 1, "n2": 1, "o1": 1, "o2": 1, "panels": 1,
+      "num_subbands": 1, "number_of_beams": 1, "phase_alphabet_size": 4
+    },
     "jscc_mode": false, "jscm_mode": false, "analog_feedback_mode": false, "crc_attached_mode": true, "crc_free_mode": false,
     "multiplexing_with_uci_policy": "baseline", "report_latency_model": "baseline", "measurement_timeline": "slot_based", "application_timeline": "slot_plus_one",
     "joint_port_mapping_policy": "disabled", "joint_timeline_policy": "disabled", "rf_papr_assumption": "unspecified",

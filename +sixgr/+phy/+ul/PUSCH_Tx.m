@@ -676,6 +676,14 @@ if actualHopMode ~= "none"
 end
 localAssertSameScalar(localObjectValue(pusch, "NumLayers", NaN), sixgr.util.structGet(cl, "NumLayers", NaN), ...
     "sixgr:phy:ul:PUSCHGrantLayerMismatch", "PUSCH NumLayers does not match frozen PHYGrant.");
+frozenDMRSPortSet = double(sixgr.util.structGet(cl, "DMRSPortSet", []));
+if ~isempty(frozenDMRSPortSet)
+    dmrs = localObjectValue(pusch, "DMRS", []);
+    actualDMRSPortSet = double(localObjectValue(dmrs, "DMRSPortSet", []));
+    localAssertSameVector(actualDMRSPortSet, frozenDMRSPortSet, ...
+        "sixgr:phy:ul:PUSCHGrantDMRSPortMismatch", ...
+        "PUSCH DM-RS port set does not match frozen PHYGrant.");
+end
 grantMod = char(string(sixgr.util.structGet(cl, "Modulation", "")));
 puschMod = char(string(localObjectValue(pusch, "Modulation", "")));
 if strlength(string(grantMod)) > 0 && ~strcmpi(strtrim(puschMod), strtrim(grantMod))

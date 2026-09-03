@@ -89,6 +89,120 @@ classdef DCIContextFactory
                 "LegacyCompatibility", false);
             context = sixgr.phy.pdcch.DCIContext(data);
         end
+
+        function [context, timeDomainAssignmentIndex, source] = fromScheduledGrant(cfg, grant, dciFormat)
+            %FROMSCHEDULEDGRANT Bind DCI semantics to the active YAML TDRA.
+            %
+            % A DCI time-domain field is an index into the active RRC
+            % PDSCH/PUSCH-TimeDomainResourceAllocationList; it is not a
+            % SLIV.  The same immutable context returned here must therefore
+            % be used by both the scheduler packer and the receiver-side
+            % semantic decoder.  This prevents a grant built from a
+            % scenario-specific allocation (for example [0 13] when the
+            % last UL symbol is reserved for SRS) from being decoded through
+            % the legacy [0 14] table.
+            if ~(isstruct(cfg) && isscalar(cfg))
+                error("sixgr:phy:pdcch:missing_dci_context", ...
+                    "Scheduled-grant DCI context requires one runtime config structure.");
+            end
+            if ~(isstruct(grant) && isscalar(grant) && ~isempty(fieldnames(grant)))
+                error("sixgr:phy:pdcch:missing_dci_context", ...
+                    "Scheduled-grant DCI context requires one finalized scheduler grant.");
+            end
+
+            fmt = sixgr.phy.pdcch.normalizeDCIFormat(dciFormat);
+            direction = localDirectionFromFormat(fmt);
+            symbolAllocation = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
+            symbolAllocation = reshape(symbolAllocation, 1, []);
+            if numel(symbolAllocation) ~= 2 || any(~isfinite(symbolAllocation)) || ...
+                    any(symbolAllocation ~= fix(symbolAllocation)) || ...
+                    symbolAllocation(1) < 0 || symbolAllocation(2) < 1
+                error("sixgr:phy:pdcch:missing_dci_context", ...
+                    "Scheduled-grant DCI context requires integer SymbolAllocation=[start,count].");
+            end
+
+            operatorControl = sixgr.util.structGet(cfg, "phy.pdcch.operatorControl", struct());
+            strict = sixgr.util.structGet(operatorControl, "pdcch_strict", struct());
+            hasOperatorContext = isstruct(strict) && isscalar(strict) && ...
+                isfield(strict, "dci_context") && ~isempty(strict.dci_context);
+            if hasOperatorContext
+                context = sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg, fmt);
+                source = "operator_rrc_dci_context";
+            else
+                nGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
+                if ~(isscalar(nGrid) && isfinite(nGrid) && nGrid >= 1 && nGrid == fix(nGrid))
+                    error("sixgr:phy:pdcch:missing_dci_context", ...
+                        "Scheduled-grant DCI context requires integer phy.carrier.NSizeGrid.");
+                end
+                rnti = double(sixgr.util.structGet(grant, "RNTI", ...
+                    sixgr.util.structGet(cfg, "phy.pdcch.rnti", NaN)));
+                if ~(isscalar(rnti) && isfinite(rnti) && rnti >= 0 && rnti <= 65535)
+                    error("sixgr:phy:pdcch:missing_dci_context", ...
+                        "Scheduled-grant DCI context requires a finite RNTI in [0,65535].");
+                end
+                legacy = sixgr.phy.pdcch.DCIContext.fromLegacy(struct( ...
+                    "NSizeGrid", nGrid, ...
+                    "RNTIValue", rnti, ...
+                    "SearchSpaceId", double(sixgr.util.structGet(cfg, ...
+                        "phy.pdcch.searchSpace.id", 1)), ...
+                    "CORESETId", double(sixgr.util.structGet(cfg, ...
+                        "phy.pdcch.coreset.id", 0)), ...
+                    "MonitoredFormats", string(sixgr.util.structGet(cfg, ...
+                        "phy.pdcch.dciFormats", fmt))), fmt);
+                data = legacy.Data;
+                data.RNTIValue = rnti;
+                data.SearchSpaceID = double(sixgr.util.structGet(cfg, ...
+                    "phy.pdcch.searchSpace.id", data.SearchSpaceID));
+                data.CORESETID = double(sixgr.util.structGet(cfg, ...
+                    "phy.pdcch.coreset.id", data.CORESETID));
+                data.ConfigurationEpoch = double(sixgr.util.structGet(cfg, ...
+                    "phy.pdcch.configurationEpoch", data.ConfigurationEpoch));
+                data.ExecutionProfile = "yaml_derived_active_tdra";
+                data.LegacyCompatibility = false;
+                [data.DLTimeDomainAllocations, dlSource] = ...
+                    localActiveTDRA(cfg, grant, "DL", data.DLTimeDomainAllocations);
+                [data.ULTimeDomainAllocations, ulSource] = ...
+                    localActiveTDRA(cfg, grant, "UL", data.ULTimeDomainAllocations);
+                context = sixgr.phy.pdcch.DCIContext(data);
+                if direction == "DL"
+                    source = dlSource;
+                else
+                    source = ulSource;
+                end
+            end
+
+            if direction == "DL"
+                allocations = context.Data.DLTimeDomainAllocations;
+            else
+                allocations = context.Data.ULTimeDomainAllocations;
+            end
+            matches = find(double(allocations(:,2)) == symbolAllocation(1) & ...
+                double(allocations(:,3)) == symbolAllocation(2));
+            if isempty(matches)
+                error("sixgr:phy:pdcch:grant_tdra_not_configured", ...
+                    ["The finalized %s grant SymbolAllocation=[%d %d] is absent " ...
+                     "from the active %s time-domain allocation list."], ...
+                    direction, symbolAllocation(1), symbolAllocation(2), direction);
+            end
+
+            requestedIndex = localFirstFinite([ ...
+                sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", NaN), ...
+                sixgr.util.structGet(grant, "TDRAIndex", NaN), ...
+                sixgr.util.structGet(grant, "TimeResourceAssignment", NaN)], NaN);
+            if isfinite(requestedIndex)
+                selected = matches(double(allocations(matches,1)) == requestedIndex);
+                if isempty(selected)
+                    error("sixgr:phy:pdcch:grant_tdra_index_mismatch", ...
+                        ["Configured TDRA index %d does not identify the finalized %s " ...
+                         "grant SymbolAllocation=[%d %d]."], ...
+                        round(requestedIndex), direction, symbolAllocation(1), symbolAllocation(2));
+                end
+                rowIndex = selected(1);
+            else
+                rowIndex = matches(1);
+            end
+            timeDomainAssignmentIndex = double(allocations(rowIndex,1));
+        end
     end
 end
 
@@ -101,5 +215,104 @@ value = source.(name);
 if isempty(value)
     error("sixgr:phy:pdcch:missing_dci_context", ...
         "Operator PDCCH configuration field '%s' is empty.", name);
+end
+end
+
+function direction = localDirectionFromFormat(fmt)
+if startsWith(string(fmt), "0_")
+    direction = "UL";
+else
+    direction = "DL";
+end
+end
+
+function [rows, source] = localActiveTDRA(cfg, grant, direction, defaults)
+direction = upper(string(direction));
+grantDirection = upper(string(sixgr.util.structGet(grant, "Direction", "")));
+if direction == "DL"
+    root = "phy.pdsch";
+    listNames = [root + ".timeDomainAllocations", ...
+        root + ".time_domain_allocations", ...
+        root + ".TimeDomainAllocations"];
+    offset = localFirstFinite([ ...
+        sixgr.util.structGet(grant, "TimingDecision.K0", NaN), ...
+        sixgr.util.structGet(grant, "K0Slots", NaN), ...
+        sixgr.util.structGet(cfg, "mac.timing.k0", NaN)], 0);
+else
+    root = "phy.pusch";
+    listNames = [root + ".timeDomainAllocations", ...
+        root + ".time_domain_allocations", ...
+        root + ".TimeDomainAllocations"];
+    offset = localFirstFinite([ ...
+        sixgr.util.structGet(grant, "TimingDecision.K2", NaN), ...
+        sixgr.util.structGet(grant, "K2Slots", NaN), ...
+        sixgr.util.structGet(cfg, "mac.timing.k2", NaN)], 1);
+end
+
+rows = [];
+for ii = 1:numel(listNames)
+    candidate = sixgr.util.structGet(cfg, listNames(ii), []);
+    if ~isempty(candidate)
+        rows = double(candidate);
+        break;
+    end
+end
+if ~isempty(rows)
+    if ~(ismatrix(rows) && size(rows,2) >= 3 && all(isfinite(rows(:))))
+        error("sixgr:phy:pdcch:missing_dci_context", ...
+            "%s time-domain allocation list must be a finite matrix [index,start,count,...].", ...
+            direction);
+    end
+    source = "yaml_explicit_active_tdra_list";
+    return;
+end
+
+allocation = double(sixgr.util.structGet(cfg, root + ".symbolAllocation", []));
+if isempty(allocation)
+    startSymbol = sixgr.util.structGet(cfg, root + ".startSymbol", []);
+    numSymbols = sixgr.util.structGet(cfg, root + ".numSymbols", []);
+    if ~isempty(startSymbol) && ~isempty(numSymbols)
+        allocation = [double(startSymbol), double(numSymbols)];
+    end
+end
+allocation = reshape(allocation, 1, []);
+if numel(allocation) ~= 2 || any(~isfinite(allocation))
+    % The opposite direction may be disabled in a direction-specific unit
+    % scenario.  Preserve its complete legacy table; the scheduled
+    % direction is still validated below against its active allocation.
+    rows = double(defaults);
+    source = "legacy_opposite_direction_tdra_not_scheduled";
+    return;
+end
+
+rows = double(defaults);
+if grantDirection == direction || strlength(grantDirection) == 0
+    requestedIndex = localFirstFinite([ ...
+        sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", NaN), ...
+        sixgr.util.structGet(grant, "TDRAIndex", NaN), ...
+        sixgr.util.structGet(grant, "TimeResourceAssignment", NaN)], 0);
+else
+    requestedIndex = 0;
+end
+requestedIndex = max(0, round(requestedIndex));
+rowIndex = find(rows(:,1) == requestedIndex, 1, "first");
+if isempty(rowIndex)
+    rows(end+1,:) = [requestedIndex, allocation(1), allocation(2), offset]; %#ok<AGROW>
+else
+    rows(rowIndex,2:4) = [allocation(1), allocation(2), offset];
+end
+source = "yaml_symbol_allocation_derived_active_tdra";
+end
+
+function value = localFirstFinite(values, defaultValue)
+value = double(defaultValue);
+try
+    values = double(values(:));
+catch
+    return;
+end
+values = values(isfinite(values));
+if ~isempty(values)
+    value = double(values(1));
 end
 end

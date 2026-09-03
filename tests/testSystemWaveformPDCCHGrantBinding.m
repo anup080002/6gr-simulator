@@ -95,5 +95,51 @@ assert(contains(string(blocked.PDCCHGrantBindingFailureCode), ...
     "mismatch"), ...
     "The corrupted DCI failure did not disclose its mismatch class.");
 
+% Regression for the causal TDD failure that motivated the scheduled-grant
+% context: reserving the final symbol for SRS changes PUSCH TDRA from the
+% legacy [0 14] row to the active YAML [0 13] row.  The DCI packer and
+% receiver must use that same allocation list in both TDD and FDD.
+for duplexMode = ["TDD", "FDD"]
+    cfgUL = cfg;
+    cfgUL.phy.duplex.mode = char(duplexMode);
+    cfgUL.phy.pusch.enable = true;
+    cfgUL.phy.pusch.modulation = "QPSK";
+    cfgUL.phy.pusch.codeRate = 0.3;
+    cfgUL.phy.pusch.nLayers = 1;
+    cfgUL.phy.pusch.numLayers = 1;
+    cfgUL.phy.pusch.symbolAllocation = [0 13];
+    cfgUL.phy.pusch.dmrs.portSet = 0;
+    cfgUL.phy.pusch.transformPrecoding = false;
+    cfgUL.phy.pdcch.dciFormats = {'0_1', '1_1'};
+    cfgUL.phy.pdcch.dciFormat = '0_1';
+    cfgUL.run.controlGating.pdcchRequired = true;
+    cfgUL = sixgr.config.normalizeConfig(cfgUL);
+    cfgUL = withCanonicalSchedulerTiming(cfgUL);
+
+    ueUL = struct( ...
+        "RNTI", 42, "ULBufferBytes", 1200, "CQI", 7, "RI", 1, ...
+        "HeadOfLineDelay_ms", 1);
+    schedulerUL = sixgr.l2.mac.SchedulerRR(cfgUL, "Direction", "UL");
+    [ulGrants, ~] = schedulerUL.schedule(1, ueUL, struct( ...
+        "PRBSet", 0:23, "SymbolAllocation", [0 13], ...
+        "ControlAbsoluteSlot", 0, "ControlSymbolAllocation", [0 2]));
+    assert(numel(ulGrants) == 1, ...
+        "%s must create one finalized UL grant.", duplexMode);
+    dciRows = double(ulGrants(1).DCI.ContextData.ULTimeDomainAllocations);
+    dciIndex = double(ulGrants(1).DCI.TimeDomainAssignmentIndex);
+    activeRow = dciRows(dciRows(:,1) == dciIndex, :);
+    assert(size(activeRow, 1) == 1 && ...
+        isequal(activeRow(1,2:3), [0 13]), ...
+        "%s UL DCI did not bind the YAML PUSCH TDRA [0 13].", duplexMode);
+
+    ulReplay = sixgr.system.waveform.replayGrant( ...
+        cfgUL, "UL", ulGrants(1), [], 35, "StrictMode", true, ...
+        "CompactPHYIO", true, "FastAWGNPath", false);
+    assert(logical(ulReplay.PDCCHGrantBindingOk) && ...
+        logical(ulReplay.WaveformReplayExecuted), ...
+        "%s UL DCI/PUSCH exact binding failed: %s", duplexMode, ...
+        string(ulReplay.PDCCHGrantBindingFailureCode));
+end
+
 ok = true;
 end

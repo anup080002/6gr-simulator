@@ -956,6 +956,22 @@ g.OLLAState = "";
 g.MCSSelectionSource = "";
 g.CQIProvenance = "";
 g.MCSValueStatus = "";
+% Runtime link-adaptation lineage is part of the grant schema, including
+% grants for which no feedback decision has yet been applied.  Keeping
+% these fields in the template prevents heterogeneous multi-UE grant-array
+% alignment from manufacturing empty values at the PHY execution boundary.
+g.LinkAdaptationFeedbackApplied = false;
+g.LinkAdaptationAppliedFeedbackSourceSlot = NaN;
+g.LinkAdaptationAppliedFeedbackDeliveredSlot = NaN;
+g.LinkAdaptationAppliedFeedbackAgeSlots = NaN;
+g.AppliedLinkAdaptationResolvedCQI = NaN;
+g.AppliedLinkAdaptationCQIBasedMCS = NaN;
+g.AppliedLinkAdaptationMCS = NaN;
+g.AppliedLinkAdaptationOLLADeltaDb = NaN;
+g.AppliedLinkAdaptationOLLAUpdateCount = NaN;
+g.AppliedLinkAdaptationOLLAFeedbackEligible = false;
+g.LinkAdaptationDecisionReason = "";
+g.LinkAdaptationMCSIndex = NaN;
 g.ConfiguredInitialMCSIndex = NaN;
 g.ConfiguredMaximumMCSIndex = NaN;
 g.MaximumMCSBoundApplied = false;
@@ -1157,8 +1173,17 @@ if isempty(wA) || isempty(wB)
     evidenceSource = "measured_spatial_signature_unavailable";
     return;
 end
+authorityA = lower(strtrim(string(sixgr.util.structGet( ...
+    ueA, "MUMIMOSpatialSignatureReciprocityMode", ""))));
+authorityB = lower(strtrim(string(sixgr.util.structGet( ...
+    ueB, "MUMIMOSpatialSignatureReciprocityMode", ""))));
+if strlength(authorityA) == 0 || authorityA ~= authorityB
+    evidenceSource = "measured_spatial_authority_mismatch";
+    return;
+end
 try
-    design = sixgr.phy.mimo.designMeasuredMUMIMOPair(wA, wB, cfg, direction, riA, riB);
+    design = sixgr.phy.mimo.designMeasuredMUMIMOPair( ...
+        wA, wB, cfg, direction, riA, riB, authorityA);
 catch ME
     evidenceSource = "measured_spatial_design_error:" + string(ME.identifier);
     return;
@@ -1186,6 +1211,8 @@ grant.MUMIMODesiredSubspaceGain_dB = double(design.MemberDesiredGain_dB(memberIn
 grant.MUMIMORequiredMinimumDesiredGain_dB = double(design.RequiredMinimumDesiredGain_dB);
 grant.MUMIMOSpatialDesignStatus = char(string(design.Status));
 grant.MUMIMOSpatialDesignContractVersion = char(string(design.ContractVersion));
+grant.MUMIMOSpatialSignatureSubspaceMode = char(string( ...
+    design.SpatialSignatureSubspaceMode));
 grant.MUMIMOSpatialDesignEvidenceSource = char(string(design.EvidenceSource));
 grant.MUMIMOSpatialFilterMatrixSHA256 = char(string( ...
     design.("Member" + string(memberIndex) + "MatrixSHA256")));
@@ -1206,11 +1233,30 @@ if direction == "DL"
         design.BaseHybridElementToPortMatrixSHA256));
     grant.MUMIMOHybridRFDesignPolicy = char(string(design.HybridRFDesignPolicy));
     grant.MUMIMOHybridRFDesignStatus = char(string(design.HybridRFDesignStatus));
+    grant.MUMIMOTransmitArchitecture = char(string(design.TransmitArchitecture));
     grant.PrecodingActive = true;
-    grant.PrecodingMode = "measured_tdd_srs_block_diagonalization";
-    grant.PrecoderSource = "causal_measured_srs_mu_block_diagonalization";
-    grant.PrecodingApplicationStage = "hybrid_rf_bb_before_nrPDSCH_RE_mapping";
-    grant.MUMIMOPrecoderType = "measured_block_diagonalization";
+    spatialAuthorityMode = lower(strtrim(string( ...
+        sixgr.util.structGet(design, "SpatialAuthorityMode", ""))));
+    if spatialAuthorityMode == "direct_dl_csirs"
+        grant.PrecodingMode = "measured_fdd_csirs_block_diagonalization";
+        grant.PrecoderSource = "causal_measured_csirs_mu_block_diagonalization";
+        grant.MUMIMOPrecoderType = "measured_csirs_block_diagonalization";
+    elseif spatialAuthorityMode == "tdd_reciprocity"
+        grant.PrecodingMode = "measured_tdd_srs_block_diagonalization";
+        grant.PrecoderSource = "causal_measured_srs_mu_block_diagonalization";
+        grant.MUMIMOPrecoderType = "measured_srs_block_diagonalization";
+    else
+        error("sixgr:l2:mac:InvalidDLMUMIMOSpatialAuthority", ...
+            "DL MU-MIMO design has unsupported spatial authority '%s'.", ...
+            char(spatialAuthorityMode));
+    end
+    if string(design.TransmitArchitecture) == "fully_digital_element_control"
+        grant.PrecodingApplicationStage = ...
+            "fully_digital_baseband_before_nrPDSCH_RE_mapping";
+    else
+        grant.PrecodingApplicationStage = ...
+            "hybrid_rf_bb_before_nrPDSCH_RE_mapping";
+    end
 else
     receiveCombiner = design.("Member" + string(memberIndex) + "ReceiveCombiner");
     admissionCombiner = design.("Member" + string(memberIndex) + "AdmissionReceiveCombiner");
@@ -1257,11 +1303,6 @@ if isempty(w) || strlength(digest) ~= 64 || ...
     reason = "measured_spatial_signature_digest_mismatch";
     return;
 end
-if ~startsWith(source, "measured_srs_receiver_channel_estimate") || ...
-        measurementDirection ~= "UL"
-    reason = "measured_spatial_signature_source_invalid";
-    return;
-end
 if ~(isscalar(sourceSlot) && isfinite(sourceSlot) && sourceSlot >= 0 && ...
         isscalar(ageSlots) && isfinite(ageSlots) && ageSlots >= 0 && ...
         isscalar(maxAgeSlots) && isfinite(maxAgeSlots) && maxAgeSlots >= 0 && ...
@@ -1275,12 +1316,19 @@ if ~(isscalar(sourceSlot) && isfinite(sourceSlot) && sourceSlot >= 0 && ...
 end
 direction = upper(strtrim(string(direction)));
 if direction == "DL"
-    if reciprocityMode ~= "tdd_reciprocity"
-        reason = "measured_spatial_signature_missing_tdd_reciprocity";
+    directFDD = startsWith(source, ...
+        "measured_csirs_receiver_channel_estimate_transmit_subspace") && ...
+        measurementDirection == "DL" && reciprocityMode == "direct_dl_csirs";
+    reciprocalTDD = startsWith(source, ...
+        "measured_srs_receiver_channel_estimate") && ...
+        measurementDirection == "UL" && reciprocityMode == "tdd_reciprocity";
+    if ~(directFDD || reciprocalTDD)
+        reason = "measured_dl_spatial_signature_source_or_authority_invalid";
         return;
     end
 elseif direction == "UL"
-    if reciprocityMode ~= "direct_ul_srs"
+    if ~startsWith(source, "measured_srs_receiver_channel_estimate") || ...
+            measurementDirection ~= "UL" || reciprocityMode ~= "direct_ul_srs"
         reason = "measured_spatial_signature_not_direct_ul_srs";
         return;
     end
@@ -1289,7 +1337,7 @@ else
     return;
 end
 tf = true;
-reason = "causal_measured_srs_spatial_signature";
+reason = "causal_measured_spatial_signature:" + reciprocityMode;
 end
 
 function grant = localMarkUnpairedRetransmission(grant)

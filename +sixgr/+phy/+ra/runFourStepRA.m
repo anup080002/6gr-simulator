@@ -241,7 +241,11 @@ try
     localProgress(opt, "msg3_channel_done", "");
     result = localAppendRuntimeStage(result, stageInfo, runtime);
     if faultMode == "msg3_pusch_corrupted"
-        msg3Wave = localCorruptWaveform(msg3Wave, 1.5);
+        % Apply a deterministic waveform-domain impairment relative to the
+        % actual post-power-control Msg3 RMS power.  An absolute noise
+        % amplitude is invalid here because open-loop power control may scale
+        % otherwise identical Msg3 waveforms by many tens of decibels.
+        msg3Wave = localCorruptWaveformAtSNR(msg3Wave, -20);
     end
     cfgMsg3Rx = localApplyRuntimeReceiverSyncContext(cfg, runtime, "UL");
     localProgress(opt, "msg3_pusch_start", "");
@@ -504,6 +508,38 @@ end
 
 if logical(opt.RunNegativeSuite)
     result.NegativeResults = localRunNegativeSuite(cfg, opt, faultMode);
+    result.ArtifactTables = localMergeNegativeSuiteTables( ...
+        result.ArtifactTables, result.NegativeResults);
+    if logical(opt.WriteArtifacts)
+        result.Artifacts = sixgr.phy.ra.exportRAEvidenceArtifacts( ...
+            result.RunFolder, result);
+    end
+end
+end
+
+function tables = localMergeNegativeSuiteTables(tables, negativeResults)
+% Merge only the genuine child waveform outcomes. No campaign row is
+% synthesized from configuration or from the parent successful attempt.
+if isempty(negativeResults)
+    return;
+end
+fields = ["ra_negative_trials", "ra_collision_trials"];
+for ii = 1:numel(negativeResults)
+    child = sixgr.util.structGet(negativeResults(ii), "Result", struct());
+    childTables = sixgr.util.structGet(child, "ArtifactTables", struct());
+    for jj = 1:numel(fields)
+        name = char(fields(jj));
+        if ~isfield(childTables, name) || ~istable(childTables.(name)) || ...
+                isempty(childTables.(name))
+            continue;
+        end
+        if ~isfield(tables, name) || ~istable(tables.(name)) || ...
+                width(tables.(name)) == 0
+            tables.(name) = childTables.(name);
+        else
+            tables.(name) = [tables.(name); childTables.(name)]; %#ok<AGROW>
+        end
+    end
 end
 end
 
@@ -948,7 +984,7 @@ cfgStage = sixgr.util.structSet(cfgStage,"channel.snr_dB", ...
     rxWave,cfgStage,sampleRateHz,"ApplyRFChain",false);
 replay = localMergeRuntimeStageReplay(replay,replayLargeScale);
 [rxWave,nVar,noiseReplay] = localAddRuntimeStageNoise( ...
-    desiredWave,cfgStage,runtime.RuntimeNoiseSNR_dB,replay);
+    desiredWave,txInfo,cfgStage,runtime.RuntimeNoiseSNR_dB,replay);
 replay = localMergeRuntimeStageReplay(replay,noiseReplay);
 [rxWave,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     rxWave,cfgStage,sampleRateHz,replay,"Direction",char(direction));
@@ -976,10 +1012,10 @@ row.RxRFAppliedStageCount = double(sixgr.util.structGet( ...
 end
 
 function [waveform,nVar,info] = localAddRuntimeStageNoise( ...
-        desiredWaveform,cfg,snr_dB,replay)
+        desiredWaveform,txInfo,cfg,snr_dB,replay)
 mode = lower(strtrim(string(sixgr.util.structGet(cfg, ...
     "run.noiseOperatingMode","receiver_noise_figure_thermal_noise"))));
-referencePower = localFiniteWaveformPower(desiredWaveform);
+referencePower = localFiniteWaveformPower(desiredWaveform,txInfo);
 switch mode
     case "standalone_awgn_snr_argument"
         if ~(isfinite(double(snr_dB)) && isfinite(referencePower) && referencePower > 0)
@@ -1081,8 +1117,9 @@ for idx = 1:numel(names)
 end
 end
 
-function value = localFiniteWaveformPower(waveform)
-value = mean(abs(double(waveform(:))).^2,"omitnan");
+function value = localFiniteWaveformPower(waveform,txInfo)
+[~, perPortPower_mW] = sixgr.rf.measureActiveOFDMTotalPower(waveform,txInfo);
+value = mean(double(perPortPower_mW),"omitnan");
 if ~(isfinite(value) && value >= 0)
     value = NaN;
 end
@@ -1259,12 +1296,38 @@ end
 function txInfo = localStageTxInfo(txStruct)
 txInfo = struct("OFDM", struct());
 if isstruct(txStruct)
+    if isfield(txStruct, "Grid") && isnumeric(txStruct.Grid) && ...
+            ~isempty(txStruct.Grid)
+        txInfo.PortGrid = txStruct.Grid;
+        txInfo.PowerNormalizationGridSource = ...
+            "exact_ra_stage_composite_pdcch_pdsch_grid";
+    elseif isfield(txStruct, "TxContext") && ...
+            isstruct(txStruct.TxContext)
+        candidateGrid = sixgr.util.structGet( ...
+            txStruct.TxContext, "PortGrid", []);
+        if isnumeric(candidateGrid) && ~isempty(candidateGrid)
+            txInfo.PortGrid = candidateGrid;
+            txInfo.PowerNormalizationGridSource = ...
+                "exact_ra_stage_tx_context_port_grid";
+        end
+    end
     if isfield(txStruct, "OFDMInfo") && isstruct(txStruct.OFDMInfo)
         txInfo.OFDM = txStruct.OFDMInfo;
     elseif isfield(txStruct, "Info") && isstruct(txStruct.Info)
         candidate = sixgr.util.structGet(txStruct.Info, "OFDM", struct());
         if isstruct(candidate) && ~isempty(fieldnames(candidate))
             txInfo.OFDM = candidate;
+        end
+    end
+    if isfield(txStruct, "Carrier") && ~isempty(txStruct.Carrier) && ...
+            (~isfield(txInfo.OFDM, "Nfft") || ...
+             ~isfield(txInfo.OFDM, "CyclicPrefixLengths"))
+        try
+            txInfo.OFDM = nrOFDMInfo(txStruct.Carrier);
+        catch exception
+            error("sixgr:phy:ra:StageOFDMMetadataUnavailable", ...
+                "The exact RA stage OFDM metadata could not be resolved: %s", ...
+                exception.message);
         end
     end
     if ~isfield(txInfo.OFDM, "SampleRate") || isempty(txInfo.OFDM.SampleRate)
@@ -2384,8 +2447,7 @@ end
 
 function T = localNegativeRow(r)
 if string(r.FaultMode) == "none"
-    T = table('Size', [0 8], 'VariableTypes', {'string','string','string','string','string','logical','logical','string'}, ...
-        'VariableNames', {'RunId','NegativeTrialType','InjectedFault','ExpectedFailureStage','ObservedFailureStage','RACompleted','StrictOk','FailureReason'});
+    T = sixgr.phy.ra.emptyOptionalEvidenceTable("ra_negative_trials");
     return;
 end
 T = table(string(r.RunId), string(r.FaultMode), string(r.FaultMode), localExpectedStage(r.FaultMode), ...
@@ -2395,8 +2457,7 @@ end
 
 function T = localCollisionRow(r, raCfg)
 if string(r.FaultMode) ~= "collision_same_preamble"
-    T = table('Size', [0 12], 'VariableTypes', {'string','string','double','double','double','double','logical','string','logical','logical','string','string'}, ...
-        'VariableNames', {'RunId','CollisionGroupId','UEId','PreambleIndex','PRACHOccasion','RARNTI','Msg3CrcPass','ContentionIdentity','Msg4IdentityMatched','RACompleted','CollisionOutcome','Status'});
+    T = sixgr.phy.ra.emptyOptionalEvidenceTable("ra_collision_trials");
     return;
 end
 T = table(string(r.RunId), "collision_group_1", double(raCfg.UEId), double(raCfg.PreambleIndex), ...
@@ -2449,9 +2510,17 @@ else
 end
 end
 
-function y = localCorruptWaveform(x, scale)
+function y = localCorruptWaveformAtSNR(x, targetSNRdB)
 rng(271828, "twister");
-noise = (randn(size(x)) + 1i * randn(size(x))) * scale;
+signalPower = mean(abs(double(x(:))).^2);
+if ~(isscalar(signalPower) && isfinite(signalPower) && signalPower > 0)
+    error("sixgr:phy:ra:InvalidMsg3WaveformPower", ...
+        "Msg3 corruption requires a finite nonzero transmitted waveform.");
+end
+unitNoise = (randn(size(x)) + 1i * randn(size(x))) / sqrt(2);
+unitNoisePower = mean(abs(unitNoise(:)).^2);
+noisePower = signalPower / (10^(double(targetSNRdB) / 10));
+noise = unitNoise * sqrt(noisePower / unitNoisePower);
 y = x + noise;
 end
 

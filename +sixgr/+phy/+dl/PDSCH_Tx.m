@@ -2297,7 +2297,8 @@ if ~(isscalar(periodSlots) && isfinite(periodSlots) && periodSlots >= 1 && ...
     error("sixgr:pdsch:InvalidCSIRSOccasionConfig", ...
         "Enabled CSI-RS requires integer phy.csirs.period_slots and offset_slots.");
 end
-absoluteSlot0 = double(carrier.NSlot);
+absoluteSlot0 = double(sixgr.util.structGet(cfg, ...
+    "lls6g.runtime.AbsoluteSlotIndex0", double(carrier.NSlot)));
 if mod(absoluteSlot0 - offsetSlots, periodSlots) ~= 0
     event.Scheduled = false;
     event.RuntimeMaterializationStatus = "configured_not_scheduled_this_slot";

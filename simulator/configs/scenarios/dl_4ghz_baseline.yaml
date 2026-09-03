@@ -26,5 +26,8 @@
   "simulation": {
     "link_direction": "dl",
     "snr_db": 20
+  },
+  "mimo": {
+    "reciprocity_mode": "TDD"
   }
 }

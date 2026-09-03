@@ -25,12 +25,16 @@ if isa(v, "string")
     if isscalar(v)
         txt = localScalarString(v, inline);
     else
-        txt = localSerializeCell(cellstr(v(:)), indentLevel);
+        txt = localSerializeStringArray(v);
     end
     return;
 end
 if ischar(v)
-    txt = localScalarString(string(v), inline);
+    if isrow(v) || isempty(v)
+        txt = localScalarString(string(v), inline);
+    else
+        txt = localSerializeStringArray(string(cellstr(v)));
+    end
     return;
 end
 if islogical(v)
@@ -41,6 +45,7 @@ if islogical(v)
     end
     return;
 end
+
 if isnumeric(v)
     if isempty(v)
         txt = "[]";
@@ -56,6 +61,35 @@ if isempty(v)
     return;
 end
 txt = localScalarString(string(evalc("disp(v)")), inline);
+end
+
+function txt = localSerializeStringArray(v)
+v = string(v);
+if ndims(v) > 2
+    error("sixgr:lls6g:config:UnsupportedStringArrayRank", ...
+        "YAML serialization supports string scalars, vectors, and two-dimensional matrices only.");
+end
+if isempty(v)
+    txt = "[]";
+    return;
+end
+if isvector(v)
+    items = strings(1, numel(v));
+    for ii = 1:numel(v)
+        items(ii) = localScalarString(v(ii), true);
+    end
+    txt = "[" + strjoin(items, ", ") + "]";
+    return;
+end
+rows = strings(1, size(v,1));
+for rowIndex = 1:size(v,1)
+    items = strings(1, size(v,2));
+    for columnIndex = 1:size(v,2)
+        items(columnIndex) = localScalarString(v(rowIndex,columnIndex), true);
+    end
+    rows(rowIndex) = "[" + strjoin(items, ", ") + "]";
+end
+txt = "[" + strjoin(rows, ", ") + "]";
 end
 
 function txt = localSerializeNumericArray(v)
@@ -181,7 +215,11 @@ end
 
 function txt = localScalarString(v, ~)
 v = string(v);
-if isempty(v) || ismissing(v)
+if ~isscalar(v)
+    error("sixgr:lls6g:config:NonScalarStringToken", ...
+        "String YAML token helper requires a scalar value.");
+end
+if ismissing(v)
     txt = "null";
 elseif strlength(v) == 0
     txt = '""';

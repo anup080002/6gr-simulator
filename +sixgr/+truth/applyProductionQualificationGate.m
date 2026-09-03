@@ -19,15 +19,18 @@ persistedStatus = localRead(fullfile(layout.ReportCSVDir, ...
 % The post-finalization reducer receives an in-memory scenario status plus
 % the already-persisted strict root status.  Several lifecycle fields (most
 % notably ExecutionCompleted) are owned only by the canonical root status.
-% Resolve a missing in-memory value from that one-row artifact instead of
-% silently defaulting it to false; an explicitly supplied in-memory value
-% remains authoritative.
-functionalOk = localResolvedLogical(status, persistedStatus, "ResultOk", false) && ...
-    localResolvedLogical(status, persistedStatus, "ExecutionCompleted", false) && ...
-    localResolvedLogical(status, persistedStatus, "RuntimeTruthContractOk", false) && ...
-    localResolvedLogical(status, persistedStatus, "MandatorySubsystemsOk", false) && ...
-    localResolvedLogical(status, persistedStatus, "KpiConsistencyOk", false);
-scenarioObjectiveOk = localResolvedLogical(status, persistedStatus, ...
+% Resolve terminal lifecycle fields from the persisted one-row root status
+% first.  Recovery/finalization may legitimately update that authority after
+% the in-memory runtime struct was created (for example, when a terminal
+% artifact refresh fails).  Allowing the stale in-memory value to override
+% the canonical root artifact produced a contradictory FunctionalRun=PASS
+% row for an explicitly failed run.
+functionalOk = localRootResolvedLogical(status, persistedStatus, "ResultOk", false) && ...
+    localRootResolvedLogical(status, persistedStatus, "ExecutionCompleted", false) && ...
+    localRootResolvedLogical(status, persistedStatus, "RuntimeTruthContractOk", false) && ...
+    localRootResolvedLogical(status, persistedStatus, "MandatorySubsystemsOk", false) && ...
+    localRootResolvedLogical(status, persistedStatus, "KpiConsistencyOk", false);
+scenarioObjectiveOk = localRootResolvedLogical(status, persistedStatus, ...
     "ScenarioObjectiveOk", false);
 
 [phase7Ok, phase7Status, phase7Reason] = localScalarGate( ...
@@ -253,6 +256,28 @@ if ismember(runClass, campaignRunClasses)
             strjoin(requiredColumns(~passes), "|");
     end
     return;
+end
+
+% Component statistical evidence owns applicability for non-campaign
+% diagnostic runs.  When the persisted table explicitly says that no
+% component is required for a standards claim, statistics were not
+% evaluated for production; a stale root FAIL must not be reported as an
+% executed statistical miss.  This does not waive production qualification
+% (ok remains false), and it cannot affect sweep/geometry/hybrid campaigns,
+% whose Phase-7 campaign gates are handled above.
+componentStatistics = localRead(fullfile(layout.ReportCSVDir, ...
+    "statistical_qualification_gate.csv"));
+requiredColumn = "RequiredForStandardsClaim";
+if height(componentStatistics) > 0 && ismember(requiredColumn, ...
+        string(componentStatistics.Properties.VariableNames))
+    componentRequired = arrayfun(@localToLogical, ...
+        componentStatistics.(char(requiredColumn)));
+    if ~any(componentRequired)
+        ok = false;
+        state = "NOT_EVALUATED";
+        reason = "production_statistical_qualification_not_required_for_diagnostic_components";
+        return;
+    end
 end
 
 ok = localResolvedLogical(status, persistedStatus, ...
@@ -497,6 +522,17 @@ if istable(persistedStatus) && height(persistedStatus) == 1 && ...
     return;
 end
 value = logical(defaultValue);
+end
+
+function value = localRootResolvedLogical(status, persistedStatus, name, defaultValue)
+% Canonical terminal lifecycle authority is the persisted root status.  The
+% in-memory struct remains the fallback for pre-persistence/unit-test calls.
+if istable(persistedStatus) && height(persistedStatus) == 1 && ...
+        ismember(string(name), string(persistedStatus.Properties.VariableNames))
+    value = localToLogical(persistedStatus.(char(name))(1));
+    return;
+end
+value = localResolvedLogical(status, table(), name, defaultValue);
 end
 
 function value = localResolvedString(status, persistedStatus, name, defaultValue)

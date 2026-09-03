@@ -67,6 +67,10 @@ COMPONENT_ONLY_RUNNER_PROFILES = {
     "channel_rf_strict_validation",
     "random_access_four_step",
     "ai_benchmark",
+    # A generic sweep is an orchestration run.  Exact child evidence is
+    # indexed below sweeps/* and parent aggregate tables are measured
+    # reductions; it must never be required to invent parent waveform rows.
+    "generic_sweep",
 }
 DERIVED_LINK_TABLES = (
     "air_interface/csv/distance_vs_sinr.csv",
@@ -187,6 +191,7 @@ DOMAIN_RUNTIME_PREFIXES = (
     "analytics/csv/",
     "beamforming/csv/",
     "channel/csv/",
+    "component_anchors/channel_rf/",
     "component_anchors/protocol/protocol_stack/csv/",
     "configuration/csv/",
     "control/csv/",
@@ -208,6 +213,8 @@ DOMAIN_RUNTIME_PREFIXES = (
 DOMAIN_RUNTIME_EXACT = {
     "air_interface/reports/csv/live_stage_status.csv",
     "components/contract_plot_lineage.csv",
+    "components/prach/csv/prach_detection_trials.csv",
+    "frame_grid/csv/observed_re_allocation.csv",
     "reports/csv/channel_snapshots.csv",
     "reports/csv/doppler_reconciliation.csv",
     "reports/csv/live_dl_scheduler_grants.csv",
@@ -218,6 +225,9 @@ DOMAIN_RUNTIME_EXACT = {
     "reports/csv/trajectory_geometry.csv",
     "reports/csv/trs_receiver_tracking_table.csv",
     "validation/csv/contract_plot_lineage.csv",
+    "waveform/csv/final_tx_iq_capture_manifest.csv",
+    "waveform/csv/final_tx_iq_dl.csv",
+    "waveform/csv/final_tx_iq_ul.csv",
     "reports/csv/all_csv_artifact_audit.csv",
     "reports/csv/all_image_artifact_audit.csv",
     "reports/csv/artifact_issue_registry.csv",
@@ -255,6 +265,8 @@ DOMAIN_RUNTIME_EXACT = {
     "reports/csv/antenna_config_resolved.csv",
     "reports/csv/beam_management_outputs.csv",
     "reports/csv/channel_impulse_response.csv",
+    "reports/csv/channel_rf_cdlc_realization_table.csv",
+    "component_anchors/channel_rf/reports/csv/channel_rf_cdlc_realization_table.csv",
     "reports/csv/dl_pdsch_objective_failures.csv",
     "reports/csv/equalized_constellations.csv",
     "reports/csv/pdcch_grant_binding_evidence.csv",
@@ -278,6 +290,10 @@ LOCAL_CONFIG_HASH_TABLES = {
     # to validation and configured/effective evidence for each direction.
     "beamforming/csv/mimo_config_strict.csv",
     "beamforming/csv/mimo_config_validation.csv",
+    # This is the normalized channel/RF sub-configuration hash.  It is
+    # intentionally narrower than the complete scenario hash and is
+    # reconciled by the dedicated channel/RF configuration audit.
+    "component_anchors/channel_rf/channel/csv/channel_rf_config_strict.csv",
 }
 LINK_REQUIRED_COLUMNS = (
     "Direction",
@@ -813,6 +829,12 @@ def _audit_link_table(
                 mimo_failures.append(prefix + ":full_interferer_channel_truth_not_used")
             if _boolean(row, "InterferenceCovarianceAvailable") is not True:
                 mimo_failures.append(prefix + ":mu_interference_covariance_unavailable")
+            covariance_source = _text(row, "InterferenceCovarianceSource").lower()
+            if covariance_source != (
+                "oracle_separated_shared_slot_per_prb_symbol_"
+                "contribution_grid_covariance"
+            ):
+                mimo_failures.append(prefix + ":mu_covariance_source_not_explicit_oracle_per_re")
             if "irc" not in _text(row, "EqualizerType").lower():
                 mimo_failures.append(prefix + ":mu_equalizer_not_irc")
             if direction.upper() == "DL":
@@ -1429,7 +1451,10 @@ def _audit_mimo_rank_layer_table(
         "Frame", "Slot", "ConfiguredRank", "ConfiguredLayers",
         "ScheduledRank", "ScheduledLayers", "TransmittedRank",
         "TransmittedLayers", "ReceiverEstimatedRank", "EffectiveDecodedRank",
-        "EffectiveDecodedLayers", "NumRxAntennas", "NumTxPorts",
+        "SpatialChannelRankEstimate", "SpatialChannelTxPorts",
+        "SpatialChannelRxAntennas", "SpatialChannelRankDomain",
+        "SpatialChannelRankSource", "EffectiveDecodedLayers",
+        "NumRxAntennas", "NumTxPorts",
         "TxWaveformColumns", "PhysicalTxAntennas", "RxWaveformBranches",
         "PhysicalRxAntennas", "LogicalTxPortCount", "LogicalRxBranchCount",
         "ConfiguredModulation", "ScheduledModulation", "TransmittedModulation",
@@ -1514,6 +1539,9 @@ def _audit_mimo_rank_layer_table(
             transmitted_rank = _number(row, "TransmittedRank")
             transmitted_layers = _number(row, "TransmittedLayers")
             receiver_rank = _number(row, "ReceiverEstimatedRank")
+            spatial_rank = _number(row, "SpatialChannelRankEstimate")
+            spatial_tx_ports = _number(row, "SpatialChannelTxPorts")
+            spatial_rx_antennas = _number(row, "SpatialChannelRxAntennas")
             decoded_rank = _number(row, "EffectiveDecodedRank")
             decoded_layers = _number(row, "EffectiveDecodedLayers")
             tx_ports = _number(row, "NumTxPorts")
@@ -1535,6 +1563,16 @@ def _audit_mimo_rank_layer_table(
                 and logical_rx >= 1
             ):
                 value_failures.append(prefix + ":rank_layer_exceeds_runtime_dimensions")
+            if not all(_whole(value, 1) for value in (
+                spatial_rank, spatial_tx_ports, spatial_rx_antennas,
+            )):
+                value_failures.append(prefix + ":spatial_channel_rank_or_dimension_invalid")
+            elif spatial_rank > min(spatial_tx_ports, spatial_rx_antennas):
+                value_failures.append(prefix + ":spatial_channel_rank_exceeds_measurement_dimensions")
+            if not _text(row, "SpatialChannelRankDomain") or not _text(
+                row, "SpatialChannelRankSource"
+            ):
+                value_failures.append(prefix + ":spatial_channel_rank_lineage_missing")
             for name in (
                 "TxWaveformColumns", "PhysicalTxAntennas", "RxWaveformBranches",
                 "PhysicalRxAntennas",
@@ -1804,15 +1842,32 @@ def _audit_mimo_configured_effective_table(
             failures.append(prefix + ":RunId_not_rank_source")
         if any(_text(item, "ScenarioName") != _text(row, "ScenarioName") for item in subset):
             failures.append(prefix + ":ScenarioName_not_rank_source")
+        # EffectiveDecodedRank/EffectiveDecodedLayers are deliberately zero on
+        # CRC-failed transport blocks.  Those zeroes are reliability evidence,
+        # not observations that the executed spatial rank changed to zero.
+        # Match the MATLAB producer: reduce decoded rank/layers over successful
+        # receiver rows and report zero only when no successful row exists.
+        decoded_subset = [
+            item for item in subset
+            if _boolean(item, "DecodeCrcPass") is True
+            and (_number(item, "EffectiveDecodedRank") or 0.0) > 0.0
+            and (_number(item, "EffectiveDecodedLayers") or 0.0) > 0.0
+        ]
         expected_modes = {
             "ConfiguredRank": _mode_number(subset, "ConfiguredRank"),
             "DominantScheduledRank": _mode_number(subset, "ScheduledRank"),
             "DominantTransmittedRank": _mode_number(subset, "TransmittedRank"),
-            "DominantEffectiveDecodedRank": _mode_number(subset, "EffectiveDecodedRank"),
+            "DominantEffectiveDecodedRank": (
+                _mode_number(decoded_subset, "EffectiveDecodedRank")
+                if decoded_subset else 0.0
+            ),
             "ConfiguredLayers": _mode_number(subset, "ConfiguredLayers"),
             "DominantScheduledLayers": _mode_number(subset, "ScheduledLayers"),
             "DominantTransmittedLayers": _mode_number(subset, "TransmittedLayers"),
-            "DominantEffectiveDecodedLayers": _mode_number(subset, "EffectiveDecodedLayers"),
+            "DominantEffectiveDecodedLayers": (
+                _mode_number(decoded_subset, "EffectiveDecodedLayers")
+                if decoded_subset else 0.0
+            ),
             "ConfiguredMCS": _mode_number(subset, "ConfiguredMCS"),
             "ConfiguredInitialMCS": _mode_number(subset, "ConfiguredInitialMCS"),
             "ConfiguredMaximumMCS": _mode_number(subset, "ConfiguredMaximumMCS"),
@@ -1860,7 +1915,12 @@ def _audit_mimo_configured_effective_table(
             and (not adaptive or feedback_count > 0)
         )
         mu_required = any(_boolean(item, "MUExecutionRequired") is True for item in subset)
-        mu_execution_match = all(_boolean(item, "MUExecutionMatch") is True for item in subset)
+        (
+            mu_execution_match,
+            mu_executed_rows,
+            mu_executed_groups,
+            mu_failure_reason,
+        ) = _recompute_mu_summary_execution(subset, row, mu_required)
         expected_booleans = {
             "AdaptiveMode": adaptive,
             "SpatialContractRequired": fixed_anchor,
@@ -1887,29 +1947,17 @@ def _audit_mimo_configured_effective_table(
         if not _close(_number(row, "RuntimeExactMatchFraction"), exact_fraction, atol=1e-12):
             failures.append(prefix + ":RuntimeExactMatchFraction_mismatch")
 
-        if not mu_required:
-            if (
-                _number(row, "MUExecutedTrialRowCount") != 0
-                or _number(row, "MUExecutedDistinctGroupCount") != 0
-                or _text(row, "MUExecutionFailureReason") != "not_applicable_mu_disabled"
-            ):
-                failures.append(prefix + ":mu_disabled_summary_invalid")
-        else:
-            group_ids = {
-                _number(item, "MUMIMOGroupId") for item in subset
-                if _number(item, "MUMIMOGroupId") is not None
-                and _boolean(item, "MUExecutionMatch") is True
-            }
-            executed_rows = sum(
-                _boolean(item, "MUExecutionMatch") is True
-                and _number(item, "MUMIMOGroupId") is not None
-                for item in subset
+        if (
+            not _close(_number(row, "MUExecutedTrialRowCount"), float(mu_executed_rows), atol=0)
+            or not _close(
+                _number(row, "MUExecutedDistinctGroupCount"),
+                float(mu_executed_groups),
+                atol=0,
             )
-            if (
-                not _close(_number(row, "MUExecutedTrialRowCount"), float(executed_rows), atol=0)
-                or not _close(_number(row, "MUExecutedDistinctGroupCount"), float(len(group_ids)), atol=0)
-            ):
-                failures.append(prefix + ":mu_execution_counts_not_rank_source")
+        ):
+            failures.append(prefix + ":mu_execution_counts_not_rank_source")
+        if _text(row, "MUExecutionFailureReason") != mu_failure_reason:
+            failures.append(prefix + ":MUExecutionFailureReason_mismatch")
 
         exact_threshold = _number(row, "RequiredExactMatchPercent")
         execution_threshold = _number(row, "RequiredExecutionContractMatchPercent")
@@ -1944,6 +1992,89 @@ def _audit_mimo_configured_effective_table(
         "configured_effective_summary_recomputed_from_rank_trials", rows, failures,
     ))
     return checks
+
+
+def _recompute_mu_summary_execution(
+    subset: list[dict[str, str]],
+    summary: dict[str, str],
+    mu_required: bool,
+) -> tuple[bool, int, int, str]:
+    """Rebuild the scenario MU objective from complete physical MU groups.
+
+    Bootstrap and single-user trials are valid causal precursors to measured
+    pairing and therefore do not make a scenario-level MU objective fail.
+    Conversely, every row in a group that claims shared-slot MU execution must
+    satisfy the per-trial waveform/receiver contract and share the exact
+    allocation with the other users in that group.
+    """
+    if not mu_required:
+        return True, 0, 0, "not_applicable_mu_disabled"
+
+    required_users_value = _number(summary, "RequiredMUUserCount")
+    required_users = max(2, int(round(required_users_value or 2)))
+    required_mode = _text(summary, "RequiredMUExecutionMode").strip().lower()
+    if required_mode != "shared_slot_waveform_superposition":
+        return False, 0, 0, "configured_mu_execution_mode_is_not_shared_waveform_superposition"
+
+    candidates: list[dict[str, str]] = []
+    for item in subset:
+        group_id = _number(item, "MUMIMOGroupId")
+        group_size = _number(item, "MUMIMOGroupSize")
+        if (
+            _boolean(item, "MUMIMOEnabled") is True
+            and group_id is not None
+            and group_size is not None
+            and group_size >= required_users
+        ):
+            candidates.append(item)
+    if not candidates:
+        return False, 0, 0, "no_shared_prb_mu_trial_rows"
+
+    grouped: dict[float, list[dict[str, str]]] = {}
+    for item in candidates:
+        group_id = _number(item, "MUMIMOGroupId")
+        assert group_id is not None
+        grouped.setdefault(group_id, []).append(item)
+
+    executed_rows = 0
+    passed_groups = 0
+    invalid_groups = 0
+    for group_rows in grouped.values():
+        ue_ids = {
+            ue_id for item in group_rows
+            if (ue_id := _number(item, "UEId")) is not None
+        }
+        allocation_matches = all(
+            _all_same_finite(group_rows, field)
+            for field in ("PRBStart", "PRBCount", "SymbolStart", "NumSymbols")
+        )
+        group_ok = (
+            len(group_rows) >= required_users
+            and len(ue_ids) >= required_users
+            and all(_boolean(item, "MUExecutionMatch") is True for item in group_rows)
+            and allocation_matches
+        )
+        if group_ok:
+            passed_groups += 1
+            executed_rows += len(group_rows)
+        else:
+            invalid_groups += 1
+
+    match = passed_groups > 0 and invalid_groups == 0
+    if match:
+        reason = ""
+    elif passed_groups == 0:
+        reason = "no_complete_physical_mu_group"
+    else:
+        reason = "one_or_more_labeled_mu_groups_failed_shared_resource_or_waveform_contract"
+    return match, executed_rows, passed_groups, reason
+
+
+def _all_same_finite(rows: list[dict[str, str]], field: str) -> bool:
+    values = [_number(item, field) for item in rows]
+    return bool(values) and all(value is not None for value in values) and all(
+        value == values[0] for value in values
+    )
 
 
 def _audit_mimo_per_trial_companion(
@@ -3943,9 +4074,39 @@ def _audit_derived_link_table(
         if "Goodput_Mbps" in header and "OfferedThroughput_Mbps" in header:
             if (_number(row, "Goodput_Mbps") or 0.0) > (_number(row, "OfferedThroughput_Mbps") or 0.0) + 1e-9:
                 range_failures.append(prefix + ":goodput_exceeds_offered")
-        if "Goodput_Mbps_mean" in header and "OfferedThroughput_Mbps_mean" in header:
+        if (
+            "Goodput_Mbps_mean" in header
+            and "OfferedThroughput_Mbps_mean" in header
+            and not name.endswith("_measured_sinr_throughput_curve.csv")
+        ):
             if (_number(row, "Goodput_Mbps_mean") or 0.0) > (_number(row, "OfferedThroughput_Mbps_mean") or 0.0) + 1e-9:
                 range_failures.append(prefix + ":mean_goodput_exceeds_offered")
+
+    # A successful HARQ retransmission can deliver a TB in a different SINR
+    # bin from the original transmission.  Consequently, per-bin goodput may
+    # legitimately exceed newly offered traffic in that bin.  Conservation is
+    # still mandatory over the complete population for each direction/UE
+    # scope, weighted by the exact number of persisted trials in every bin.
+    if name.endswith("_measured_sinr_throughput_curve.csv"):
+        grouped_throughput: dict[tuple[str, str], list[dict[str, str]]] = {}
+        for row in rows:
+            key = (_text(row, "Direction").upper(), _text(row, "UEIndex"))
+            grouped_throughput.setdefault(key, []).append(row)
+        for key, group in grouped_throughput.items():
+            weighted_goodput = sum(
+                (_number(row, "Goodput_Mbps_mean") or 0.0)
+                * (_number(row, "TrialCount") or 0.0)
+                for row in group
+            )
+            weighted_offered = sum(
+                (_number(row, "OfferedThroughput_Mbps_mean") or 0.0)
+                * (_number(row, "TrialCount") or 0.0)
+                for row in group
+            )
+            if weighted_goodput > weighted_offered + 1e-9:
+                range_failures.append(
+                    f"group={key}:population_goodput_exceeds_offered"
+                )
 
     if name.endswith("_measured_sinr_bler_curve.csv"):
         for row in rows:
@@ -4814,6 +4975,483 @@ def _audit_domain_runtime_tables(
     return checks
 
 
+def _audit_prach_detection_trials(run_root: Path) -> list[AuditCheck]:
+    relative = "components/prach/csv/prach_detection_trials.csv"
+    header, rows = _read_rows(run_root / relative)
+    if not header and not rows:
+        return []
+    required_columns = {
+        "TrialID", "OccasionID", "PreambleIndexTx", "PreambleIndexDetected",
+        "Detected", "PeakMetric", "Threshold", "TimingEstimate_samples",
+        "TimingError_samples", "FalseAlarm", "MissedDetection", "Ambiguous",
+        "Status", "ScenarioID", "ConfigHash", "EvidenceScope", "RunID",
+        "ExecutionID", "EvidenceOrigin",
+    }
+    schema_failures = [
+        "missing_columns=" + ",".join(sorted(required_columns - set(header)))
+    ] if required_columns - set(header) else []
+    value_failures: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        detected = _boolean(row, "Detected")
+        false_alarm = _boolean(row, "FalseAlarm")
+        missed = _boolean(row, "MissedDetection")
+        ambiguous = _boolean(row, "Ambiguous")
+        peak = _number(row, "PeakMetric")
+        threshold = _number(row, "Threshold")
+        tx_index = _number(row, "PreambleIndexTx")
+        rx_index = _number(row, "PreambleIndexDetected")
+        if None in {detected, false_alarm, missed, ambiguous}:
+            value_failures.append(prefix + ":invalid_detection_boolean")
+        if peak is None or threshold is None or peak < 0 or threshold < 0:
+            value_failures.append(prefix + ":invalid_peak_or_threshold")
+        elif detected is not (peak >= threshold):
+            value_failures.append(prefix + ":Detected_not_equal_peak_threshold_decision")
+        expected_missed = detected is False
+        if missed is not expected_missed:
+            value_failures.append(prefix + ":MissedDetection_inconsistent")
+        expected_false_alarm = bool(detected) and (
+            tx_index is None or rx_index is None or tx_index != rx_index
+        )
+        if false_alarm is not expected_false_alarm:
+            value_failures.append(prefix + ":FalseAlarm_inconsistent")
+        if detected and not ambiguous and tx_index != rx_index:
+            value_failures.append(prefix + ":detected_unambiguous_preamble_mismatch")
+        if not _text(row, "TrialID") or not _text(row, "OccasionID"):
+            value_failures.append(prefix + ":runtime_identity_missing")
+        if _text(row, "EvidenceScope").lower() != "in_path":
+            value_failures.append(prefix + ":EvidenceScope_not_in_path")
+        if _text(row, "Status").upper() != "MEASURED":
+            value_failures.append(prefix + ":Status_not_MEASURED")
+        if not _text(row, "EvidenceOrigin"):
+            value_failures.append(prefix + ":EvidenceOrigin_missing")
+    return [
+        _check("domain_runtime", relative, "prach_detection_schema", rows, schema_failures),
+        _check("domain_runtime", relative, "prach_detection_decision_reconciliation", rows, value_failures),
+    ]
+
+
+def _configured_tdd_symbol_direction(
+    resolved_config: dict[str, Any], absolute_slot: int, symbol: int
+) -> str | None:
+    frequency = resolved_config.get("frequency", {})
+    if not isinstance(frequency, dict) or str(
+        frequency.get("duplex_mode", "")
+    ).strip().upper() != "TDD":
+        return None
+    frame = resolved_config.get("frame", {})
+    if not isinstance(frame, dict):
+        return None
+    common = frame.get("tdd_common", {})
+    if not isinstance(common, dict):
+        return None
+    pattern = common.get("Pattern1", common.get("pattern1", {}))
+    if not isinstance(pattern, dict):
+        return None
+
+    def value(*names: str) -> float | None:
+        for name in names:
+            raw = pattern.get(name)
+            if isinstance(raw, (int, float)) and math.isfinite(float(raw)):
+                return float(raw)
+        return None
+
+    scs = frequency.get("numerology_options_khz", frame.get("scs_khz"))
+    if isinstance(scs, list):
+        scs = scs[0] if len(scs) == 1 else None
+    try:
+        scs = float(scs)
+    except (TypeError, ValueError):
+        return None
+    periodicity = value("PeriodicityMilliseconds", "periodicity_milliseconds")
+    n_dl_slots = value("NumDownlinkSlots", "num_downlink_slots")
+    n_dl_symbols = value("NumDownlinkSymbols", "num_downlink_symbols")
+    n_ul_slots = value("NumUplinkSlots", "num_uplink_slots")
+    n_ul_symbols = value("NumUplinkSymbols", "num_uplink_symbols")
+    values = (periodicity, n_dl_slots, n_dl_symbols, n_ul_slots, n_ul_symbols)
+    if any(item is None for item in values):
+        return None
+    period_slots_float = periodicity * scs / 15
+    if not math.isclose(period_slots_float, round(period_slots_float), abs_tol=1e-9):
+        return None
+    period_slots = int(round(period_slots_float))
+    slot = absolute_slot % period_slots
+    n_dl_slots_i = int(n_dl_slots)
+    n_ul_slots_i = int(n_ul_slots)
+    n_dl_symbols_i = int(n_dl_symbols)
+    n_ul_symbols_i = int(n_ul_symbols)
+    if slot < n_dl_slots_i:
+        return "DL"
+    if slot >= period_slots - n_ul_slots_i:
+        return "UL"
+    if slot == n_dl_slots_i and symbol < n_dl_symbols_i:
+        return "DL"
+    ul_partial_slot = period_slots - n_ul_slots_i - 1
+    if slot == ul_partial_slot and symbol >= 14 - n_ul_symbols_i:
+        return "UL"
+    return "GUARD"
+
+
+def _exact_mu_context_authority(
+    run_root: Path,
+) -> dict[str, tuple[str, int, str, int]]:
+    """Return contexts belonging to complete finalized exact MU groups."""
+    candidates = (
+        ("DL", "air_interface/csv/dl_pdsch_trials.csv"),
+        ("UL", "air_interface/csv/ul_pusch_trials.csv"),
+    )
+    groups: dict[
+        tuple[str, int, str], list[tuple[str, int, int]]
+    ] = {}
+    for expected_direction, relative in candidates:
+        _, trial_rows = _read_rows(run_root / relative)
+        for row in trial_rows:
+            context = _text(row, "GrantContextId").strip()
+            if not context:
+                context = _text(row, "FrozenGrantContextId").strip()
+            group_token = _text(row, "MUMIMOGroupId").strip().lower()
+            slot = _number(row, "Slot")
+            ue_id = _number(row, "UEIndex")
+            group_size = _number(row, "MUMIMOGroupSize")
+            direction = _text(row, "Direction").strip().upper()
+            if not direction:
+                direction = expected_direction
+            if (
+                not context
+                or direction != expected_direction
+                or _boolean(row, "MUMIMOEnabled") is not True
+                or group_token in {"", "nan", "na", "n/a", "none"}
+                or not _whole(slot)
+                or not _whole(ue_id, minimum=1)
+                or not _whole(group_size, minimum=2)
+                or _boolean(row, "FinalizedFlag") is not True
+                or _boolean(row, "FallbackFlag") is True
+                or _boolean(row, "PlaceholderFlag") is True
+            ):
+                continue
+            key = (direction, int(slot), group_token)
+            groups.setdefault(key, []).append(
+                (context, int(ue_id), int(group_size))
+            )
+
+    authority: dict[str, tuple[str, int, str, int]] = {}
+    for key, members in groups.items():
+        expected_sizes = {member[2] for member in members}
+        contexts = {member[0] for member in members}
+        ue_ids = {member[1] for member in members}
+        if len(expected_sizes) != 1:
+            continue
+        expected_size = next(iter(expected_sizes))
+        if (
+            len(members) != expected_size
+            or len(contexts) != expected_size
+            or len(ue_ids) != expected_size
+        ):
+            continue
+        for context, ue_id, _ in members:
+            authority[context] = (key[0], key[1], key[2], ue_id)
+    return authority
+
+
+def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
+    relative = "frame_grid/csv/observed_re_allocation.csv"
+    header, rows = _read_rows(run_root / relative)
+    if not header and not rows:
+        return []
+    required_columns = {
+        "ScenarioID", "ConfigHash", "absolute_slot", "sfn",
+        "slot_within_frame", "direction", "channel", "subcarrier_start",
+        "subcarrier_count", "symbol_index", "port_index", "re_count",
+        "cell_id", "ue_id", "authority", "resolver", "allocation_id", "coordinate_precision",
+        "evidence_scope", "run_tag", "status_classification", "active_flag",
+    }
+    schema_failures = [
+        "missing_columns=" + ",".join(sorted(required_columns - set(header)))
+    ] if required_columns - set(header) else []
+    resolved = _load_resolved_config(run_root)
+    frequency = resolved.get("frequency", {}) if isinstance(resolved, dict) else {}
+    frame = resolved.get("frame", {}) if isinstance(resolved, dict) else {}
+    bwp = resolved.get("bwp", {}) if isinstance(resolved, dict) else {}
+    dl_bwp = bwp.get("dl", {}) if isinstance(bwp, dict) else {}
+    resource_grid = resolved.get("resource_grid", {}) if isinstance(resolved, dict) else {}
+    # The frequency catalog may advertise several supported numerologies;
+    # that list is not the numerology executed by this run.  Audit exact RE
+    # coordinates against the resolved active frame/BWP first and use the
+    # catalog only when it contains a single unambiguous value.
+    n_rb_raw = (
+        dl_bwp.get("n_size_bwp") if isinstance(dl_bwp, dict) else None
+    )
+    if n_rb_raw is None and isinstance(resource_grid, dict):
+        n_rb_raw = resource_grid.get("num_rbs")
+    if n_rb_raw is None and isinstance(frequency, dict):
+        n_rb_raw = frequency.get("n_size_grid")
+    scs_raw = frame.get("scs_khz") if isinstance(frame, dict) else None
+    if scs_raw is None and isinstance(dl_bwp, dict):
+        scs_raw = dl_bwp.get("scs_khz")
+    if scs_raw is None and isinstance(frequency, dict):
+        scs_raw = frequency.get("numerology_options_khz")
+    if isinstance(scs_raw, list):
+        scs_raw = scs_raw[0] if len(scs_raw) == 1 else None
+    try:
+        n_subcarriers = 12 * int(n_rb_raw)
+        slots_per_frame = int(round(10 * float(scs_raw) / 15))
+    except (TypeError, ValueError):
+        n_subcarriers = 0
+        slots_per_frame = 0
+    value_failures: list[str] = []
+    # DL and UL occupy distinct RF carriers in FDD, so identical numerical
+    # slot/symbol/subcarrier coordinates are not a collision across
+    # directions.  In TDD the configured symbol-direction check above is the
+    # authority that prevents simultaneous opposite-direction ownership.
+    occupied: dict[
+        tuple[str, int, int, int, int], tuple[str, str, int | None]
+    ] = {}
+    mu_authority = _exact_mu_context_authority(run_root)
+    dl_channels = {"PSS", "SSS", "PBCH", "SSB", "PDCCH", "PDSCH", "CSI-RS", "CSIRS", "TRS"}
+    ul_channels = {"PRACH", "PUCCH", "PUSCH", "SRS"}
+    for index, row in enumerate(rows, start=1):
+        prefix = f"row={index}"
+        absolute_slot = _number(row, "absolute_slot")
+        sfn = _number(row, "sfn")
+        slot_in_frame = _number(row, "slot_within_frame")
+        symbol = _number(row, "symbol_index")
+        start = _number(row, "subcarrier_start")
+        count = _number(row, "subcarrier_count")
+        port = _number(row, "port_index")
+        re_count = _number(row, "re_count")
+        direction = _text(row, "direction").upper()
+        channel = _text(row, "channel").upper()
+        ue_id = _number(row, "ue_id")
+        if not all(_whole(value) for value in (absolute_slot, sfn, slot_in_frame, symbol, start, port)):
+            value_failures.append(prefix + ":noninteger_or_negative_coordinate")
+            continue
+        if not _whole(count, minimum=1) or not _whole(re_count, minimum=1):
+            value_failures.append(prefix + ":nonpositive_RE_run")
+            continue
+        if count != re_count:
+            value_failures.append(prefix + ":re_count_not_equal_contiguous_subcarrier_count")
+        if symbol >= 14:
+            value_failures.append(prefix + ":symbol_outside_normal_CP_slot")
+        if n_subcarriers <= 0 or start + count > n_subcarriers:
+            value_failures.append(prefix + ":subcarrier_run_outside_configured_grid")
+        if slots_per_frame <= 0 or slot_in_frame != absolute_slot % slots_per_frame:
+            value_failures.append(prefix + ":slot_within_frame_mismatch")
+        if slots_per_frame > 0 and sfn != (absolute_slot // slots_per_frame) % 1024:
+            value_failures.append(prefix + ":sfn_mismatch")
+        if channel in dl_channels and direction != "DL":
+            value_failures.append(prefix + ":DL_channel_direction_mismatch")
+        if channel in ul_channels and direction != "UL":
+            value_failures.append(prefix + ":UL_channel_direction_mismatch")
+        if channel in {"PDSCH", "PUSCH"} and not _whole(ue_id, minimum=1):
+            value_failures.append(prefix + ":data_allocation_missing_UE_identity")
+        allowed = _configured_tdd_symbol_direction(resolved, int(absolute_slot), int(symbol))
+        if allowed is not None and allowed != direction:
+            value_failures.append(prefix + f":TDD_symbol_direction={allowed};observed={direction}")
+        if not _text(row, "authority").lower().startswith("executed_"):
+            value_failures.append(prefix + ":authority_not_executed_runtime")
+        if _text(row, "coordinate_precision") != "exact_contiguous_re_run":
+            value_failures.append(prefix + ":coordinate_precision_not_exact")
+        if _text(row, "evidence_scope") != "runtime_observed_tx_occupancy":
+            value_failures.append(prefix + ":evidence_scope_not_runtime_observed")
+        if _boolean(row, "active_flag") is not True:
+            value_failures.append(prefix + ":active_flag_not_true")
+        allocation = _text(row, "allocation_id")
+        for subcarrier in range(int(start), int(start + count)):
+            key = (direction, int(absolute_slot), int(symbol), int(port), subcarrier)
+            previous = occupied.get(key)
+            current_ue = int(ue_id) if _whole(ue_id, minimum=1) else None
+            current = (channel, allocation, current_ue)
+            if previous is not None and previous != current:
+                previous_mu = mu_authority.get(previous[1])
+                current_mu = mu_authority.get(allocation)
+                legal_mu_reuse = (
+                    channel in {"PDSCH", "PUSCH"}
+                    and previous[0] == channel
+                    and previous_mu is not None
+                    and current_mu is not None
+                    and previous_mu[:3] == current_mu[:3]
+                    and previous_mu[0] == direction
+                    and previous_mu[1] == int(absolute_slot) + 1
+                    and previous_mu[3] != current_mu[3]
+                    and previous[2] == previous_mu[3]
+                    and current_ue == current_mu[3]
+                )
+                if legal_mu_reuse:
+                    continue
+                value_failures.append(prefix + f":RE_collision_with={previous[0]}:{previous[1]}")
+                break
+            if previous is not None:
+                value_failures.append(prefix + ":duplicate_RE_run")
+                break
+            occupied[key] = current
+    return [
+        _check("domain_runtime", relative, "exact_RE_allocation_schema", rows, schema_failures),
+        _check("domain_runtime", relative, "exact_RE_bounds_direction_and_collision", rows, value_failures),
+    ]
+
+
+def _read_headerless_iq(path: Path) -> list[tuple[float, float]] | None:
+    source = _io_path(path)
+    if not source.is_file():
+        return None
+    values: list[tuple[float, float]] = []
+    try:
+        with source.open("r", encoding="utf-8-sig", newline="") as handle:
+            for row in csv.reader(handle):
+                if len(row) != 2:
+                    return None
+                i_value, q_value = float(row[0]), float(row[1])
+                if not math.isfinite(i_value) or not math.isfinite(q_value):
+                    return None
+                values.append((i_value, q_value))
+    except (OSError, UnicodeError, ValueError):
+        return None
+    return values
+
+
+def _audit_final_tx_iq(run_root: Path) -> list[AuditCheck]:
+    manifest_rel = "waveform/csv/final_tx_iq_capture_manifest.csv"
+    header, rows = _read_rows(run_root / manifest_rel)
+    if not header and not rows:
+        return []
+    required_columns = {
+        "Direction", "SampleRateHz", "CenterFrequencyHz", "SampleCount",
+        "PortCount", "CapturePoint", "WaveformAuthority",
+        "CommonNormalizationFullScale", "NormalizedPeak", "NormalizedRMS",
+        "CanonicalCSV", "CanonicalCSV_SHA256", "KeysightCSVPerPort",
+        "KeysightCSV_SHA256", "MATFile", "MATFileSHA256", "ProxyUsed",
+        "FallbackFlag", "PlaceholderFlag", "CaptureStatus",
+    }
+    schema_failures = [
+        "missing_columns=" + ",".join(sorted(required_columns - set(header)))
+    ] if required_columns - set(header) else []
+    checks = [_check("domain_runtime", manifest_rel, "VSG_IQ_manifest_schema", rows, schema_failures)]
+    manifest_failures: list[str] = []
+    for row_index, row in enumerate(rows, start=1):
+        prefix = f"row={row_index}"
+        direction = _text(row, "Direction").upper()
+        sample_rate = _number(row, "SampleRateHz")
+        sample_count = _number(row, "SampleCount")
+        port_count = _number(row, "PortCount")
+        full_scale = _number(row, "CommonNormalizationFullScale")
+        if direction not in {"DL", "UL"}:
+            manifest_failures.append(prefix + ":invalid_direction")
+            continue
+        if not _whole(sample_count, minimum=1) or not _whole(port_count, minimum=1):
+            manifest_failures.append(prefix + ":invalid_sample_or_port_count")
+            continue
+        if sample_rate is None or sample_rate <= 0 or full_scale is None or full_scale <= 0:
+            manifest_failures.append(prefix + ":invalid_sample_rate_or_full_scale")
+            continue
+        if any(_boolean(row, name) is not False for name in ("ProxyUsed", "FallbackFlag", "PlaceholderFlag")):
+            manifest_failures.append(prefix + ":proxy_fallback_or_placeholder_capture")
+        if _text(row, "CaptureStatus").upper() != "PASS":
+            manifest_failures.append(prefix + ":CaptureStatus_not_PASS")
+        if not _text(row, "WaveformAuthority").startswith("exact_runtime_"):
+            manifest_failures.append(prefix + ":WaveformAuthority_not_exact_runtime")
+
+        canonical = _run_relative_path(run_root, _text(row, "CanonicalCSV"))
+        if canonical is None or not _io_path(canonical).is_file():
+            manifest_failures.append(prefix + ":canonical_csv_missing_or_unsafe")
+            continue
+        canonical_rel = canonical.relative_to(run_root).as_posix()
+        canonical_header, canonical_rows = _read_rows(canonical)
+        expected_header = ["SampleIndex", "Time_s"] + [
+            name
+            for port_index in range(1, int(port_count) + 1)
+            for name in (f"I_Port{port_index}", f"Q_Port{port_index}")
+        ]
+        canonical_failures: list[str] = []
+        if canonical_header != expected_header:
+            canonical_failures.append("canonical_schema_mismatch")
+        if len(canonical_rows) != int(sample_count):
+            canonical_failures.append(
+                f"sample_count={len(canonical_rows)};expected={int(sample_count)}"
+            )
+        if _sha256(canonical).lower() != _text(row, "CanonicalCSV_SHA256").lower():
+            canonical_failures.append("canonical_csv_sha256_mismatch")
+        power_sum = 0.0
+        component_peak = 0.0
+        complex_samples: list[list[complex]] = []
+        for sample_index, sample in enumerate(canonical_rows):
+            observed_index = _number(sample, "SampleIndex")
+            observed_time = _number(sample, "Time_s")
+            if observed_index != sample_index:
+                canonical_failures.append(f"sample={sample_index}:index_not_contiguous")
+                break
+            if not _close(observed_time, sample_index / sample_rate, atol=1e-14, rtol=1e-11):
+                canonical_failures.append(f"sample={sample_index}:time_axis_mismatch")
+                break
+            ports: list[complex] = []
+            for port_index in range(1, int(port_count) + 1):
+                i_value = _number(sample, f"I_Port{port_index}")
+                q_value = _number(sample, f"Q_Port{port_index}")
+                if i_value is None or q_value is None:
+                    canonical_failures.append(f"sample={sample_index}:nonfinite_port_{port_index}")
+                    break
+                value = complex(i_value, q_value)
+                ports.append(value)
+                power_sum += abs(value) ** 2
+                component_peak = max(component_peak, abs(i_value), abs(q_value))
+            complex_samples.append(ports)
+        if component_peak <= 0:
+            canonical_failures.append("waveform_has_no_nonzero_runtime_samples")
+        elif not _close(component_peak, full_scale, atol=1e-10, rtol=1e-10):
+            canonical_failures.append("common_normalization_full_scale_mismatch")
+        sample_denominator = max(1, int(sample_count) * int(port_count))
+        normalized_rms = math.sqrt(power_sum / sample_denominator) / full_scale
+        if not _close(_number(row, "NormalizedPeak"), 1.0, atol=1e-12):
+            canonical_failures.append("normalized_peak_not_unity")
+        if not _close(_number(row, "NormalizedRMS"), normalized_rms, atol=1e-12, rtol=1e-10):
+            canonical_failures.append("normalized_rms_mismatch")
+        checks.append(_check(
+            "domain_runtime", canonical_rel, "VSG_IQ_sample_time_power_and_hash",
+            canonical_rows, canonical_failures,
+        ))
+
+        key_paths = [item for item in _text(row, "KeysightCSVPerPort").split("|") if item]
+        key_hashes = [item for item in _text(row, "KeysightCSV_SHA256").split("|") if item]
+        if len(key_paths) != int(port_count) or len(key_hashes) != int(port_count):
+            manifest_failures.append(prefix + ":Keysight_port_manifest_count_mismatch")
+        for port_index, key_relative in enumerate(key_paths, start=1):
+            key_path = _run_relative_path(run_root, key_relative)
+            key_failures: list[str] = []
+            values = _read_headerless_iq(key_path) if key_path is not None else None
+            if key_path is None or values is None:
+                key_failures.append("headerless_keysight_file_missing_or_invalid")
+                values = []
+            if len(values) != int(sample_count):
+                key_failures.append(f"row_count={len(values)};expected={int(sample_count)}")
+            if key_path is not None and port_index <= len(key_hashes) and _io_path(key_path).is_file():
+                if _sha256(key_path).lower() != key_hashes[port_index - 1].lower():
+                    key_failures.append("keysight_csv_sha256_mismatch")
+            if port_index <= int(port_count):
+                for sample_index, (i_value, q_value) in enumerate(values):
+                    if sample_index >= len(complex_samples) or port_index > len(complex_samples[sample_index]):
+                        break
+                    expected = complex_samples[sample_index][port_index - 1] / full_scale
+                    if not math.isclose(i_value, expected.real, abs_tol=1e-12, rel_tol=1e-10) or not math.isclose(q_value, expected.imag, abs_tol=1e-12, rel_tol=1e-10):
+                        key_failures.append(f"sample={sample_index}:normalized_IQ_mismatch")
+                        break
+            checks.append(_check(
+                "domain_runtime", key_relative,
+                "Keysight_headerless_normalized_IQ_matches_canonical",
+                [{"I": str(value[0]), "Q": str(value[1])} for value in values],
+                key_failures,
+            ))
+
+        mat_path = _run_relative_path(run_root, _text(row, "MATFile"))
+        if mat_path is None or not _io_path(mat_path).is_file():
+            manifest_failures.append(prefix + ":MAT_file_missing_or_unsafe")
+        elif _sha256(mat_path).lower() != _text(row, "MATFileSHA256").lower():
+            manifest_failures.append(prefix + ":MAT_file_sha256_mismatch")
+    checks.append(_check(
+        "domain_runtime", manifest_rel, "VSG_IQ_manifest_files_and_authority",
+        rows, manifest_failures,
+    ))
+    return checks
+
+
 def _load_resolved_config(run_root: Path) -> dict[str, Any]:
     for relative in (
         "meta/scenario_config_resolved.json",
@@ -4888,12 +5526,15 @@ def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bo
 
 
 def _evaluated_empty_truth_contract_failures_is_valid(run_root: Path) -> bool:
-    """Accept an empty failure ledger only when both verdict authorities pass.
+    """Accept an empty failure ledger only when the PHY-truth authorities pass.
 
     A header-only failure table is positive zero-event evidence only when the
     independently persisted scenario status and truth-contract summary agree
-    on the same run identity and explicitly report zero failures.  Merely
-    naming a table ``truth_contract_failures`` never makes it valid.
+    on the same run identity and explicitly report zero *truth* failures.  The
+    enclosing run may still fail a later, independent terminal publication or
+    browser-materialization gate; that must not manufacture a PHY-truth
+    failure row or make the already evaluated zero-event ledger invalid.
+    Merely naming a table ``truth_contract_failures`` never makes it valid.
     """
 
     _summary_header, summary_rows = _read_rows(
@@ -4906,13 +5547,9 @@ def _evaluated_empty_truth_contract_failures_is_valid(run_root: Path) -> bool:
         return False
     summary = summary_rows[0]
     truth = truth_rows[0]
-    if _boolean(summary, "ResultOk") is not True:
-        return False
     if _boolean(summary, "RuntimeTruthContractOk") is not True:
         return False
     if _boolean(summary, "TruthContractOk") is not True:
-        return False
-    if _boolean(truth, "ResultOk") is not True:
         return False
     if _boolean(truth, "RuntimeTruthContractOk") is not True:
         return False
@@ -5042,6 +5679,122 @@ def _domain_table_applicability(
     required and fail closed.
     """
 
+    if relative == "reports/csv/geometry_plot_lineage.csv":
+        # This is a lineage ledger for producer-owned geometry rasters, not
+        # an unconditional runtime measurement table.  A fixed-link run can
+        # legitimately produce no geometry rasters; in that case its typed
+        # zero-row ledger is explicit non-applicability.  If any governed
+        # raster exists, rows are mandatory and the generic schema/runtime
+        # audit below remains fail-closed.
+        governed_images = (
+            "geometry/image/topology_map.png",
+            "geometry/image/ue_trajectory_xy.png",
+            "geometry/image/distance_vs_slot.png",
+            "mobility/image/doppler_vs_slot.png",
+            "mobility/image/pathloss_vs_slot.png",
+            "reports/image/measured_sinr_vs_slot.png",
+            "reports/image/mcs_rank_vs_slot.png",
+            "reports/image/geometry_scenario_dashboard.png",
+        )
+        enabled = any(_io_path(run_root / item).is_file() for item in governed_images)
+        return enabled, enabled
+
+    runner_profile = _text(scenario_summary, "RunnerProfile").strip().lower()
+    if runner_profile in COMPONENT_ONLY_RUNNER_PROFILES:
+        _header, observed_rows = _read_rows(run_root / relative)
+        component_prefixes: tuple[str, ...] = ()
+        if runner_profile in {"prach_detection", "prach_strict_validation"}:
+            component_prefixes = (
+                "air_interface/csv/prach_",
+                "control/csv/prach_",
+                "reports/csv/prach_",
+                "reports/csv/initial_access_random_access_outputs.csv",
+            )
+        elif runner_profile in {
+            "pdcch_blind_decode_sweep", "pdcch_strict_validation",
+            "ctrl6gr_pdcch_study",
+        }:
+            component_prefixes = (
+                "air_interface/csv/pdcch_",
+                "control/csv/pdcch_",
+                "reports/csv/pdcch_",
+            )
+        elif runner_profile == "srs_strict_validation":
+            component_prefixes = (
+                "air_interface/csv/srs_", "control/csv/srs_",
+                "reports/csv/srs_",
+            )
+        elif runner_profile == "trs_strict_validation":
+            component_prefixes = (
+                "air_interface/csv/trs_", "control/csv/trs_",
+                "reports/csv/trs_",
+            )
+        # A component runner may still emit a populated shared runtime table;
+        # populated evidence is audited normally. Header-only tables owned by
+        # another PHY component are explicit non-applicability, not missing
+        # waveform evidence for this run profile.
+        full_link_only_tables = {
+            DUT_REFERENCE_DETAIL,
+            DUT_REFERENCE_SUMMARY,
+            "reports/csv/mcs_table_reference.csv",
+            "reports/csv/cqi_table_reference.csv",
+            "reports/csv/configured_effective_operating_point.csv",
+            "reports/csv/lls_link_performance_summary.csv",
+            "reports/csv/measured_sinr_timeseries.csv",
+            # Standalone PDCCH waveform/blind-decode campaigns have no
+            # scheduled PDSCH/PUSCH grant to bind. Their PDCCH trial tables
+            # are the component evidence; an empty data-grant binding ledger
+            # is explicit non-applicability. Full link runners remain subject
+            # to the stronger populated data-link binding checks above.
+            "reports/csv/pdcch_grant_binding_evidence.csv",
+        }
+        if relative in full_link_only_tables:
+            return False, False
+        if not observed_rows and not any(
+            relative.startswith(prefix) for prefix in component_prefixes
+        ):
+            return False, False
+
+    if relative == "mobility/csv/inter_ue_distance_validation.csv":
+        num_ues = _nested_value(
+            resolved_config,
+            "canonical_control.topology.num_ues",
+            _nested_value(
+                resolved_config,
+                "deployment_topology.num_ues",
+                _nested_value(resolved_config, "scenario.ue.nUE", math.nan),
+            ),
+        )
+        try:
+            if int(num_ues) < 2:
+                return False, False
+        except (TypeError, ValueError, OverflowError):
+            pass
+    if relative in {
+        "reports/csv/channel_rf_cdlc_realization_table.csv",
+        "component_anchors/channel_rf/reports/csv/channel_rf_cdlc_realization_table.csv",
+    }:
+        profile = str(
+            _nested_value(
+                resolved_config,
+                "channels.profile",
+                _nested_value(
+                    resolved_config,
+                    "channel_model.scenario_label",
+                    _nested_value(
+                        resolved_config,
+                        "channel_model.delay_profile",
+                        "",
+                    ),
+                ),
+            )
+        ).strip().upper().replace("_", "-")
+        # This artifact is intentionally the exact CDL-C 24-path table.  A
+        # header-only result is correct for every other concrete channel
+        # profile; those profiles are represented by the generic runtime
+        # channel-realization and impulse-response tables instead.
+        enabled = profile == "CDL-C"
+        return enabled, enabled
     if relative in {
         "control/csv/access_state_timeline.csv",
         "control/csv/access_transition_ledger.csv",
@@ -5068,6 +5821,22 @@ def _domain_table_applicability(
             resolved_config,
             "random_access.enabled",
             "control_gating.prach_required",
+        )
+        return enabled, enabled
+    if relative == "control/csv/ra_collision_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "validation.random_access_evidence.preamble_collision_test_enabled",
+            "random_access_evidence.preamble_collision_test_enabled",
+            "random_access.enable_collision_mode",
+        )
+        return enabled, enabled
+    if relative == "control/csv/ra_negative_trials.csv":
+        enabled = _truthy_config(
+            resolved_config,
+            "validation.random_access_evidence.four_step_negative_test_enabled",
+            "random_access_evidence.four_step_negative_test_enabled",
+            "random_access.run_negative_suite",
         )
         return enabled, enabled
     if relative == "control/csv/csi_rs_trials.csv":
@@ -6555,9 +7324,26 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     return checks
 
 
-def _audit_provenance_and_reference_tables(run_root: Path) -> list[AuditCheck]:
+def _audit_provenance_and_reference_tables(
+    run_root: Path, *, component_only: bool = False
+) -> list[AuditCheck]:
     checks: list[AuditCheck] = []
     checks.extend(_audit_measurement_sidecar_manifest(run_root))
+    if component_only:
+        for relative, check_id in (
+            (CANONICAL_COMPONENT_MANIFEST, "not_applicable_without_artifact_contract"),
+            (CONTRACT_CATALOG_SNAPSHOT, "not_applicable_without_artifact_contract"),
+            ("reports/csv/mcs_table_reference.csv", "not_applicable_without_data_channel"),
+            ("reports/csv/cqi_table_reference.csv", "not_applicable_without_data_channel"),
+            (DUT_REFERENCE_DETAIL, "not_applicable_without_dut_reference_campaign"),
+            (DUT_REFERENCE_SUMMARY, "not_applicable_without_dut_reference_campaign"),
+        ):
+            _header, rows = _read_rows(run_root / relative)
+            checks.append(_check(
+                "manifest_integrity" if "artifact_" in relative else "domain_runtime",
+                relative, check_id, rows, [], required=False, evaluated=False,
+            ))
+        return checks
     checks.extend(_audit_canonical_component_manifest(run_root))
     checks.extend(_audit_mcs_cqi_reference_tables(run_root))
     checks.extend(_audit_dut_reference_comparison(run_root))
@@ -7063,7 +7849,14 @@ def _audit_production_qualification_reducer(run_root: Path) -> list[AuditCheck]:
         if len(publication_rows) == 1
         else None
     )
-    reference_comparison = reference_comparison_value is True
+    # Publication readiness represents a non-applicable comparison as a
+    # satisfied roll-up.  The production evidence row has stricter
+    # semantics: Pass means that an independent comparison actually ran.
+    # Therefore a run class that does not require the comparison must remain
+    # Pass=false/NOT_EVALUATED rather than inheriting the N/A roll-up.
+    reference_comparison = (
+        reference_comparison_required and reference_comparison_value is True
+    )
     reference_comparison_satisfied = (
         not reference_comparison_required or reference_comparison
     )
@@ -7126,12 +7919,21 @@ def _audit_production_qualification_reducer(run_root: Path) -> list[AuditCheck]:
     return [_check("status_reduction", relative, "production_exact_reduction", rows, failures)]
 
 
-def _audit_qualification_status_tables(run_root: Path) -> list[AuditCheck]:
+def _audit_qualification_status_tables(
+    run_root: Path, *, component_only: bool = False
+) -> list[AuditCheck]:
     """Audit terminal reducers and their exact persisted evidence inputs."""
 
     checks: list[AuditCheck] = []
     checks.extend(_audit_phase7_reducer(run_root))
-    checks.extend(_audit_reconciliation_reducers(run_root))
+    if component_only:
+        checks.append(_check(
+            "cross_table_reconciliation", "reports/csv/phase7_truth_gates.csv",
+            "full_link_reconciliation_not_applicable_to_component_runner", [], [],
+            required=False, evaluated=False,
+        ))
+    else:
+        checks.extend(_audit_reconciliation_reducers(run_root))
     checks.extend(_audit_publication_reducer(run_root))
     checks.extend(_audit_production_qualification_reducer(run_root))
     checks.extend(
@@ -7262,10 +8064,15 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     checks.extend(_audit_kpi_reporting_tables(run_root))
     checks.extend(_audit_runtime_call_ledger(run_root, summary, link_rows))
     checks.extend(_audit_manifest_integrity(run_root))
-    checks.extend(_audit_provenance_and_reference_tables(run_root))
+    checks.extend(_audit_provenance_and_reference_tables(
+        run_root, component_only=component_only,
+    ))
     checks.extend(_audit_metric_output_tables(run_root))
     checks.extend(_audit_metric_coverage_table(run_root))
     checks.extend(_audit_domain_runtime_tables(run_root, summary))
+    checks.extend(_audit_prach_detection_trials(run_root))
+    checks.extend(_audit_observed_re_allocation(run_root))
+    checks.extend(_audit_final_tx_iq(run_root))
     checks.extend(
         _audit_reconciliation(
             summary_rel,
@@ -7275,7 +8082,9 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         )
     )
     checks.extend(_audit_status_reduction(run_root, summary_rel, summary))
-    checks.extend(_audit_qualification_status_tables(run_root))
+    checks.extend(_audit_qualification_status_tables(
+        run_root, component_only=component_only,
+    ))
     chart_checks = _audit_chart_lineage(run_root)
     required_failures = sum(check.required and (not check.evaluated or not check.passed) for check in checks)
     chart_failures = sum(check.required and (not check.evaluated or not check.passed) for check in chart_checks)

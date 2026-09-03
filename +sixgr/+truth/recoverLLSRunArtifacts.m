@@ -81,6 +81,7 @@ cfg.meta.configHash = char(localFirstNonEmptyString( ...
 recoveryStore = localActivateRecoveryArtifactStore(runFolder, publicRunFolder, cfg, scfg, recoveryRunTag, double(p.Results.RunID));
 cleanupStore = onCleanup(@() sixgr.db.deactivateArtifactStore()); %#ok<NASGU>
 
+localRepairOptionalRAEvidenceSchemas(layout);
 localEnsureResolvedSnapshots(layout, scfg);
 sixgr.truth.exportLiveGeometryArtifacts(layout, scfg, cfg);
 localRepairRuntimeOperatingMode(layout, cfg);
@@ -243,17 +244,83 @@ postMaterializationPublication = ...
 reportBundle.PostMaterializationPhase7 = postMaterializationPhase7;
 reportBundle.PostMaterializationPublicationReadiness = ...
     postMaterializationPublication;
-% Sanitization and component publication are mutating finalization stages.
-% Re-evaluate the exact persisted tree after both so the root verdict never
-% describes an earlier intermediate filesystem state.
-scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
-    sixgr.truth.evaluateLLSRuntimeTruthContract(runFolder, scfg, cfg, "Result", result), ...
-    runFolder, cfg, finalizationMode);
-result.Ok = logical(scenarioStatus.ResultOk);
-summaryT = localBuildScenarioSummaryTable(scfg, cfg, profile, result, scenarioStatus, runFolder);
-sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_summary.csv"), summaryT);
-manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, environmentSummary, scenarioStatus);
-localWriteScenarioManifest(layout, manifest);
+% Status reduction changes source CSV bytes that themselves drive browser
+% charts.  Close that dependency as a bounded fixed point: publish exact
+% current sources, audit them, reduce status, and repeat until both status
+% and every recorded source hash are stable.  This is deliberately
+% fail-closed; a non-convergent publication tree is not a completed run.
+terminalGeneratedAt = string(sixgr.util.utcNowISO8601());
+terminalPreviousSignature = "";
+terminalConverged = false;
+terminalClosure = struct();
+for terminalPass = 1:3
+    componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
+        "Enabled", logical(scfg.get( ...
+            "output.component_artifact_views.enabled", false)), ...
+        "Required", logical(scfg.get( ...
+            "output.component_artifact_views.required", false)), ...
+        "RequiredComponents", componentViewsRequiredComponents(:));
+    terminalClosure = sixgr.artifact.sealBrowserArtifactClosure( ...
+        string(runFolder), "RunID", recoveryRunTag, ...
+        "GeneratedAtUTC", terminalGeneratedAt, "MaxPasses", 3);
+    contractMaterialization = terminalClosure.Materialization;
+    browserReceipt = terminalClosure.Receipt;
+    finalVisualAudit = terminalClosure.VisualAudit;
+    outputCoverage.VisualArtifactIntegrity = finalVisualAudit.Integrity;
+    outputCoverage.VisualArtifactAudit = finalVisualAudit.Audit;
+    reportBundle.BrowserContractMaterialization = contractMaterialization;
+    reportBundle.BrowserPublicationReceipt = browserReceipt;
+    reportBundle.OutputCoverageArtifacts = outputCoverage;
+
+    postMaterializationArtifactAudit = sixgr.validation.auditRunArtifacts( ...
+        runFolder, "Strict", false, "WriteOutputs", true);
+    postMaterializationPhase7 = ...
+        sixgr.analytics.buildPhase7ReadinessArtifacts(scfg, runFolder);
+    postMaterializationPublication = ...
+        sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
+    reportBundle.PostMaterializationArtifactAudit = ...
+        postMaterializationArtifactAudit;
+    reportBundle.PostMaterializationPhase7 = postMaterializationPhase7;
+    reportBundle.PostMaterializationPublicationReadiness = ...
+        postMaterializationPublication;
+
+    scenarioStatus = localApplyTruthVerdict(scenarioStatus, ...
+        sixgr.truth.evaluateLLSRuntimeTruthContract( ...
+            runFolder, scfg, cfg, "Result", result), ...
+        runFolder, cfg, finalizationMode);
+    % Production qualification reads the just-persisted canonical root
+    % status.  Reduce it inside the same terminal fixed point so its gate
+    % table can never describe an earlier failed-recovery state while the
+    % final root status describes a completed functional run.
+    scenarioStatus = sixgr.truth.applyProductionQualificationGate( ...
+        scenarioStatus, runFolder);
+    sixgr.artifact.updateRootStatusArtifacts(runFolder, scenarioStatus);
+    result.Ok = logical(scenarioStatus.ResultOk);
+    summaryT = localBuildScenarioSummaryTable( ...
+        scfg, cfg, profile, result, scenarioStatus, runFolder);
+    sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
+        "scenario_summary.csv"), summaryT);
+    manifest = localBuildManifest(scfg, publicRunFolder, profile, ...
+        runtimeSummary, environmentSummary, scenarioStatus);
+    localWriteScenarioManifest(layout, manifest);
+
+    terminalSignature = localTerminalStatusSignature(scenarioStatus);
+    lineageClosure = sixgr.artifact.verifyContractPlotLineageSources( ...
+        string(runFolder));
+    if terminalPass >= 2 && terminalSignature == terminalPreviousSignature && ...
+            logical(lineageClosure.Ok) && ...
+            logical(sixgr.util.structGet(scenarioStatus, ...
+                "VisualArtifactGateOk", false))
+        terminalConverged = true;
+        break;
+    end
+    terminalPreviousSignature = terminalSignature;
+end
+if ~terminalConverged
+    error("sixgr:truth:recover:TerminalArtifactFixedPointFailed", ...
+        ["Terminal status and exact plot-source hashes did not converge " ...
+        "within three publication passes."]);
+end
 if logical(sixgr.util.structGet(recoveryStore, "Active", false))
     sixgr.db.markRunStatus(char(string(scenarioStatus.RunCompletion)), struct( ...
         "status_authority", char(string(scenarioStatus.StatusAuthority)), ...
@@ -288,12 +355,27 @@ out.RuntimeEvidenceRefinalization = runtimeEvidenceRefinalization;
 out.BrowserContractMaterialization = contractMaterialization;
 out.BrowserPublicationReceipt = browserReceipt;
 out.FinalVisualAudit = finalVisualAudit;
+out.TerminalArtifactClosure = terminalClosure;
 out.PostMaterializationArtifactAudit = postMaterializationArtifactAudit;
 out.PostMaterializationPhase7 = postMaterializationPhase7;
 out.PostMaterializationPublicationReadiness = ...
     postMaterializationPublication;
 out.FinalizationMode = finalizationMode;
 out.RecoveryConfigAuthority = recoveryConfigAuthority;
+end
+
+function signature = localTerminalStatusSignature(status)
+payload = struct( ...
+    "RunCompletion", string(sixgr.util.structGet(status, "RunCompletion", "")), ...
+    "ResultOk", logical(sixgr.util.structGet(status, "ResultOk", false)), ...
+    "RuntimeTruthContractOk", logical(sixgr.util.structGet(status, "RuntimeTruthContractOk", false)), ...
+    "RequiredFailureCount", double(sixgr.util.structGet(status, "RequiredFailureCount", 0)), ...
+    "VisualArtifactGateOk", logical(sixgr.util.structGet(status, "VisualArtifactGateOk", false)), ...
+    "VisualArtifactFailureCount", double(sixgr.util.structGet(status, "VisualArtifactFailureCount", 0)), ...
+    "VisualArtifactFailureReason", string(sixgr.util.structGet(status, "VisualArtifactFailureReason", "")), ...
+    "RuntimeTruthContractFailures", string(sixgr.util.structGet(status, "RuntimeTruthContractFailures", strings(0, 1))));
+encoded = unicode2native(jsonencode(payload), "UTF-8");
+signature = lower(string(sixgr.util.sha256Hex(uint8(encoded))));
 end
 
 function localEnsureDirs(layout)
@@ -309,6 +391,7 @@ jsonPath = fullfile(layout.MetaDir, "scenario_config_resolved.json");
 if exist(jsonPath, "file") ~= 2
     sixgr.util.jsonWrite(jsonPath, resolvedStruct);
 end
+
 yamlPath = fullfile(layout.MetaDir, "scenario_config_resolved.yaml");
 if exist(yamlPath, "file") ~= 2
     try
@@ -340,6 +423,31 @@ if exist(jsonPath, "file") == 2 && exist(identityPath, "file") ~= 2
         "ResolvedYAMLSHA256", "", ...
         "GeneratedUTC", string(sixgr.util.utcNowISO8601()));
     sixgr.util.jsonWrite(identityPath, identity);
+end
+end
+
+function localRepairOptionalRAEvidenceSchemas(layout)
+% Repair schema-only legacy files without inventing an RA observation.
+names = ["ra_negative_trials", "ra_collision_trials"];
+for index = 1:numel(names)
+    pathValue = fullfile(layout.ControlCSVDir, names(index) + ".csv");
+    needsSchema = exist(pathValue, "file") ~= 2;
+    if ~needsSchema
+        info = dir(pathValue);
+        needsSchema = isempty(info) || double(info(1).bytes) == 0;
+        if ~needsSchema
+            try
+                existing = sixgr.util.csvReadTable(pathValue);
+                needsSchema = width(existing) == 0;
+            catch
+                needsSchema = true;
+            end
+        end
+    end
+    if needsSchema
+        schema = sixgr.phy.ra.emptyOptionalEvidenceTable(names(index));
+        sixgr.util.csvWriteTable(pathValue, schema, "PreserveSchema", true);
+    end
 end
 end
 
@@ -411,6 +519,11 @@ status.ActiveIssueGateOk = false;
 status.KpiConsistencyOk = false;
 status.VisualArtifactGateOk = false;
 status.VisualArtifactGateStatus = "NOT_EVALUATED";
+status.VisualArtifactFailureCount = 0;
+status.VisualArtifactFailureReason = "not_evaluated";
+status.VisualArtifactIntegrityOk = false;
+status.VisualArtifactIntegrityFailureCount = 0;
+status.VisualArtifactIntegrityFailures = "not_evaluated";
 status.DuplicateArtifactGateOk = false;
 status.DuplicateArtifactGateStatus = "NOT_EVALUATED";
 status.StrictAnchorEligible = false;
@@ -473,6 +586,16 @@ status.VisualArtifactGateOk = logical(sixgr.util.structGet(rootStatus, ...
     "VisualArtifactGateOk", false));
 status.VisualArtifactGateStatus = string(sixgr.util.structGet(rootStatus, ...
     "VisualArtifactGateStatus", "NOT_EVALUATED"));
+status.VisualArtifactFailureCount = double(sixgr.util.structGet(rootStatus, ...
+    "VisualArtifactFailureCount", 0));
+status.VisualArtifactFailureReason = string(sixgr.util.structGet(rootStatus, ...
+    "VisualArtifactFailureReason", ""));
+status.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(rootStatus, ...
+    "VisualArtifactIntegrityOk", status.VisualArtifactGateOk));
+status.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(rootStatus, ...
+    "VisualArtifactIntegrityFailureCount", status.VisualArtifactFailureCount));
+status.VisualArtifactIntegrityFailures = string(sixgr.util.structGet(rootStatus, ...
+    "VisualArtifactIntegrityFailures", status.VisualArtifactFailureReason));
 status.DuplicateArtifactGateOk = logical(sixgr.util.structGet(rootStatus, ...
     "DuplicateArtifactGateOk", false));
 status.DuplicateArtifactGateStatus = string(sixgr.util.structGet(rootStatus, ...
@@ -550,6 +673,16 @@ manifest.VisualArtifactGateOk = logical(sixgr.util.structGet(scenarioStatus, ...
     "VisualArtifactGateOk", false));
 manifest.VisualArtifactGateStatus = char(string(sixgr.util.structGet(scenarioStatus, ...
     "VisualArtifactGateStatus", "NOT_EVALUATED")));
+manifest.VisualArtifactFailureCount = double(sixgr.util.structGet(scenarioStatus, ...
+    "VisualArtifactFailureCount", 0));
+manifest.VisualArtifactFailureReason = char(string(sixgr.util.structGet(scenarioStatus, ...
+    "VisualArtifactFailureReason", "")));
+manifest.VisualArtifactIntegrityOk = logical(sixgr.util.structGet(scenarioStatus, ...
+    "VisualArtifactIntegrityOk", manifest.VisualArtifactGateOk));
+manifest.VisualArtifactIntegrityFailureCount = double(sixgr.util.structGet(scenarioStatus, ...
+    "VisualArtifactIntegrityFailureCount", manifest.VisualArtifactFailureCount));
+manifest.VisualArtifactIntegrityFailures = char(strjoin(string(sixgr.util.structGet( ...
+    scenarioStatus, "VisualArtifactIntegrityFailures", "")), "; "));
 manifest.DuplicateArtifactGateOk = logical(sixgr.util.structGet(scenarioStatus, ...
     "DuplicateArtifactGateOk", false));
 manifest.DuplicateArtifactGateStatus = char(string(sixgr.util.structGet(scenarioStatus, ...

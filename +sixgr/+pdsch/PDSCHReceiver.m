@@ -70,6 +70,10 @@ ip.addParameter("InterferenceCovarianceIncludesNoise", false, ...
     @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter("EnablePTRSCPECorrection", true, ...
     @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("EnableDMRSResidualPostEqSINRBound", false, ...
+    @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter("EnableDecisionDirectedPostEqSINRBound", false, ...
+    @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter("TrueChannel", [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter("OracleTestMode", false, ...
     @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -103,8 +107,11 @@ end
     assignment, resourcePlan, referenceRuntime, receiverConfig);
 plans = localRXCodingPlans( ...
     opt.CodingPlans, contract, resourcePlan, receiver);
+receiverPipelineTic = tic;
+ofdmTic = tic;
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate( ...
     carrier, rxWaveform, referenceRuntime.OFDMOptions{:});
+ofdmLatency_ms = 1e3 .* toc(ofdmTic);
 if size(rxGrid, 3) ~= receiver.NPhysicalRxAntennas
     error("sixgr:pdsch:PDSCHReceiver:ReceivePortCountMismatch", ...
         "OFDM grid has %d ports; receiver config requires %d.", ...
@@ -123,6 +130,7 @@ end
 resourceSelectiveChannel = receiver.IsResourceSelective ...
     || logical(opt.OracleTestMode);
 if resourceSelectiveChannel
+    channelEstimationTic = tic;
     if logical(opt.OracleTestMode)
         [channelGain, estimatedNoiseVariance, dmrsResidual, ...
             channelEstimationInfo, channelEstimateNMSE] = ...
@@ -136,12 +144,15 @@ if resourceSelectiveChannel
             referenceRuntime, carrier, contract, receiver, ...
             opt.PrecoderBundle);
     end
+    channelEstimationLatency_ms = 1e3 .* toc(channelEstimationTic);
+    equalizationTic = tic;
     [layerValues, dataPortSymbols, equalizedGrid, equalizationInfo] = ...
         localEqualizeFadingResources(rxGrid, channelGain, ...
         resourcePlan.DataIndices, estimatedNoiseVariance, ...
         receiver.NoiseVariance, contract.NumLayers, ...
         opt.InterferenceCovariance, ...
         logical(opt.InterferenceCovarianceIncludesNoise));
+    equalizationLatency_ms = 1e3 .* toc(equalizationTic);
     [expectedPTRS, ptrsIndices] = localRXLogicalReferences( ...
         resourcePlan.PTRSIndicesPerPort, ...
         referenceRuntime.PTRSSymbolsPerPort, "ptrs", ...
@@ -169,14 +180,17 @@ if resourceSelectiveChannel
         channelEstimateScope = ...
             "dmrs_backed_resource_selective_effective_layer_channel";
     end
-    measuredPostEqualizationSINR = double( ...
+    rawMeasuredPostEqualizationSINR = double( ...
         equalizationInfo.MeasuredPostEqualizationSINRdBPerLayer);
+    measuredPostEqualizationSINR = rawMeasuredPostEqualizationSINR;
     layerSymbolNoiseVariance = double( ...
         equalizationInfo.PostEqualizationNoiseVariancePerResourceLayer);
     noiseVariance = mean(layerSymbolNoiseVariance,"all","omitnan");
 else
+    channelEstimationTic = tic;
     [channelGain, estimatedNoiseVariance, dmrsResidual] = ...
         localEstimateAWGNChannel(rxGrid, dmrsIndices, expectedDMRS);
+    channelEstimationLatency_ms = 1e3 .* toc(channelEstimationTic);
     channelEstimationInfo = struct( ...
         "EngineUsed","explicit_awgn_scalar_per_physical_port_ls", ...
         "ChannelModel","AWGN", ...
@@ -184,7 +198,9 @@ else
         "EstimatorUsesTrueChannel",false);
     channelEstimateNMSE = localNormalizedResidual( ...
         dmrsResidual, localExtractPortSymbols(rxGrid,dmrsIndices));
+    equalizationTic = tic;
     equalizedGrid = localApplyPortChannelInverse(rxGrid, channelGain);
+    equalizationLatency_ms = 1e3 .* toc(equalizationTic);
     [expectedPTRS, ptrsIndices] = localRXReferencePorts( ...
         resourcePlan.PTRSIndicesPerPort, ...
         referenceRuntime.PTRSSymbolsPerPort, "ptrs", ...
@@ -225,8 +241,9 @@ else
     measuredLayerNoiseVariance = localAWGNLayerNoiseVariance( ...
         estimatedNoiseVariance,channelGain,opt.PrecoderBundle, ...
         dataPRB,dataSymbol,contract.NumLayers);
-    measuredPostEqualizationSINR = 10*log10( ...
+    rawMeasuredPostEqualizationSINR = 10*log10( ...
         1./max(measuredLayerNoiseVariance,eps));
+    measuredPostEqualizationSINR = rawMeasuredPostEqualizationSINR;
     configuredPreEqualizationNoise = localEffectiveNoiseVariance( ...
         estimatedNoiseVariance,receiver.NoiseVariance);
     decoderLayerNoiseVariance = localAWGNLayerNoiseVariance( ...
@@ -237,6 +254,44 @@ else
         size(layerValues,2),1);
     noiseVariance = mean(decoderLayerNoiseVariance,"omitnan");
 end
+
+dmrsPostEqResidual = localUnavailablePDSCHResidual( ...
+    "dmrs_residual", contract.NumLayers);
+if logical(opt.EnableDMRSResidualPostEqSINRBound) && resourceSelectiveChannel
+    dmrsPostEqResidual = localEstimatePDSCHDMRSPostEqResidual( ...
+        rxGrid, channelGain, resourcePlan, referenceRuntime, carrier, ...
+        contract, estimatedNoiseVariance, receiver.NoiseVariance, ...
+        opt.InterferenceCovariance, ...
+        logical(opt.InterferenceCovarianceIncludesNoise));
+    [measuredPostEqualizationSINR, layerSymbolNoiseVariance, ...
+        dmrsPostEqResidual] = localApplyPDSCHResidualBound( ...
+        measuredPostEqualizationSINR, layerSymbolNoiseVariance, ...
+        dmrsPostEqResidual);
+end
+decisionPostEqResidual = localUnavailablePDSCHResidual( ...
+    "decision_directed", contract.NumLayers);
+if logical(opt.EnableDecisionDirectedPostEqSINRBound)
+    decisionPostEqResidual = ...
+        localEstimatePDSCHDecisionDirectedPostEqResidual( ...
+        layerValues, contract);
+    [measuredPostEqualizationSINR, layerSymbolNoiseVariance, ...
+        decisionPostEqResidual] = localApplyPDSCHResidualBound( ...
+        measuredPostEqualizationSINR, layerSymbolNoiseVariance, ...
+        decisionPostEqResidual);
+end
+noiseVariance = mean(layerSymbolNoiseVariance,"all","omitnan");
+equalizationInfo.RawMeasuredPostEqualizationSINRdBPerLayer = ...
+    double(rawMeasuredPostEqualizationSINR);
+equalizationInfo.MeasuredPostEqualizationSINRdBPerLayer = ...
+    double(measuredPostEqualizationSINR);
+equalizationInfo.PostEqualizationNoiseVariancePerResourceLayer = ...
+    double(layerSymbolNoiseVariance);
+equalizationInfo.DMRSResidualBound = dmrsPostEqResidual;
+equalizationInfo.DecisionDirectedResidualBound = decisionPostEqResidual;
+equalizationInfo.DMRSResidualBoundEnabled = ...
+    logical(opt.EnableDMRSResidualPostEqSINRBound);
+equalizationInfo.DecisionDirectedResidualBoundEnabled = ...
+    logical(opt.EnableDecisionDirectedPostEqSINRBound);
 layerSymbols = layerValues.';
 codewordSymbols = sixgr.pdsch.CodewordLayerMapper( ...
     layerSymbols, contract.NumLayers, "Operation", "demap");
@@ -291,6 +346,11 @@ metrics = localStrictMetrics(resourcePlan, dmrsIndices, ptrsIndices, ...
     decode, contract, noiseVariance, crcPass, receiverConfig, ...
     channelGain, channelEstimateNMSE,measuredPostEqualizationSINR);
 
+receiverPipelineLatency_ms = 1e3 .* toc(receiverPipelineTic);
+decodeLatency_ms = 1e3 .* double(sixgr.util.structGet( ...
+    decode,"DecodeLatency_s",NaN));
+decodeLatency_ms = mean(decodeLatency_ms(:),"omitnan");
+
 stageTrace = table( ...
     ["ofdm_demodulation";"dmrs_extraction";"channel_noise_estimation"; ...
      "ptrs_correction";"data_extraction";"equalization"; ...
@@ -303,7 +363,10 @@ stageTrace = table( ...
      sum(cellfun(@numel,scrambledLLR)); ...
      sum(cellfun(@numel,descrambledLLR)); ...
      sum(cellfun(@numel,transportBlocks))], ...
-    'VariableNames', {'Stage','Status','MaterializedElementCount'});
+    [ofdmLatency_ms;NaN;channelEstimationLatency_ms;NaN;NaN; ...
+     equalizationLatency_ms;NaN;NaN;NaN;decodeLatency_ms], ...
+    'VariableNames', {'Stage','Status','MaterializedElementCount', ...
+    'StageLatency_ms'});
 
 rx = struct();
 rx.ContractVersion = "ExplicitPDSCHReceiver/v1";
@@ -338,6 +401,18 @@ rx.NoiseVarianceUsedForLLRPerCodewordSymbol = codewordNoiseVariance;
 rx.NoiseVarianceUsedForLLRConvention = ...
     "per_equalized_symbol_after_layer_to_codeword_mapping";
 rx.DMRSResidual = dmrsResidual;
+rx.DMRSPostEqualizationResidual = dmrsPostEqResidual;
+rx.DecisionDirectedPostEqualizationResidual = decisionPostEqResidual;
+rx.PostEqSINRRawEqualizerPerLayer_dB = ...
+    double(rawMeasuredPostEqualizationSINR);
+rx.PostEqSINRDMRSResidualBoundApplied = ...
+    logical(dmrsPostEqResidual.Applied);
+rx.PostEqSINRDecisionResidualBoundApplied = ...
+    logical(decisionPostEqResidual.Applied);
+rx.DMRSResidualPostEqSINRBoundEnabled = ...
+    logical(opt.EnableDMRSResidualPostEqSINRBound);
+rx.DecisionDirectedPostEqSINRBoundEnabled = ...
+    logical(opt.EnableDecisionDirectedPostEqSINRBound);
 rx.PTRSCorrection = ptrsInfo;
 rx.EqualizedGrid = equalizedGrid;
 rx.DataPortSymbols = dataPortSymbols;
@@ -355,6 +430,11 @@ rx.DecodeLatencyPerCodeword_s = double(sixgr.util.structGet( ...
     decode,"DecodeLatencyPerCodeword_s",rx.DecodeLatency_s));
 rx.DecodeLatencySource = string(sixgr.util.structGet( ...
     decode,"DecodeLatencySource","unavailable"));
+rx.OFDMDemodulationLatency_ms = double(ofdmLatency_ms);
+rx.ChannelEstimationLatency_ms = double(channelEstimationLatency_ms);
+rx.EqualizationLatency_ms = double(equalizationLatency_ms);
+rx.ReceiverPipelineLatency_ms = double(receiverPipelineLatency_ms);
+rx.ReceiverStageLatencySource = "matlab_tic_toc_canonical_pdsch_receiver_stages";
 rx.TransportBlocks = transportBlocks;
 rx.TransportBlock = vertcat(transportBlocks{:});
 rx.CRCPassPerCodeword = logical(crcPass);
@@ -557,6 +637,12 @@ if receiver.IsResourceSelective ...
         "Fading reception requires at least NumLayers independent " + ...
         "receive observations for the scheduled spatial rank.");
 end
+receiver.UseExactFlatPRGEstimator = logical(sixgr.util.structGet( ...
+    receiverConfig, "UseExactFlatPRGEstimator", false));
+if ~isscalar(receiver.UseExactFlatPRGEstimator)
+    error("sixgr:pdsch:PDSCHReceiver:InvalidFlatPRGEstimatorAuthority", ...
+        "UseExactFlatPRGEstimator must be a scalar logical authority.");
+end
 receiver.NoiseVariance = [];
 if isfield(receiverConfig,"NoiseVariance") ...
         && ~isempty(receiverConfig.NoiseVariance)
@@ -755,8 +841,26 @@ for layer = 1:contract.NumLayers
     refSym(:,layer) = symbols;
 end
 if ~isempty(precoderBundle) && precoderBundle.NPRG > 1
-    [hest,noiseVariance,info] = localEstimateFadingChannelPerPRG( ...
-        grid,carrier,refInd,refSym,receiver,contract,precoderBundle);
+    flatPRGEligible = receiver.UseExactFlatPRGEstimator ...
+        && receiver.ChannelModel == "STATIC-MIMO" ...
+        && contract.NumLayers == 1;
+    if flatPRGEligible
+        [hest,noiseVariance,info] = localEstimateFlatChannelPerPRG( ...
+            grid,carrier,refInd,refSym,receiver,contract,precoderBundle);
+    else
+        [hest,noiseVariance,info] = localEstimateFadingChannelPerPRG( ...
+            grid,carrier,refInd,refSym,receiver,contract,precoderBundle);
+        info.ExactFlatPRGEstimatorRequested = ...
+            logical(receiver.UseExactFlatPRGEstimator);
+        info.ExactFlatPRGEstimatorEligible = false;
+        info.ExactFlatPRGEstimatorUsed = false;
+        if receiver.UseExactFlatPRGEstimator
+            info.ExactFlatPRGEstimatorDisabledReason = ...
+                "requires_static_mimo_rank_one_prg_bundle";
+        else
+            info.ExactFlatPRGEstimatorDisabledReason = "disabled_by_config";
+        end
+    end
 else
     [hest,noiseVariance,info] = localEstimateFadingChannelKernel( ...
         grid,carrier,refInd,refSym,receiver,contract, ...
@@ -790,6 +894,100 @@ end
 info.PilotReconstructionNMSE = double(pilotNMSE);
 info.PilotReconstructionNMSESource = ...
     "received_dmrs_minus_estimated_effective_channel_times_known_dmrs";
+end
+
+function [hest,noiseVariance,info] = localEstimateFlatChannelPerPRG( ...
+        grid,carrier,refInd,refSym,receiver,contract,bundle)
+% Exact measured-DMRS LS for flat MIMO with PRG-discontinuous precoding.
+if receiver.ChannelModel ~= "STATIC-MIMO" || contract.NumLayers ~= 1 ...
+        || bundle.NLayerPorts ~= 1 || bundle.NPRG <= 1
+    error("sixgr:pdsch:PDSCHReceiver:FlatPRGEstimatorIneligible", ...
+        "Exact flat PRG LS requires STATIC-MIMO, rank one, and multiple PRGs.");
+end
+K = double(carrier.NSizeGrid) * 12;
+L = double(carrier.SymbolsPerSlot);
+nRx = size(grid, 3);
+hest = complex(zeros(K, L, nRx, 1, "like", grid));
+noiseValues = NaN(double(bundle.NPRG), 1);
+pilotCounts = zeros(double(bundle.NPRG), 1);
+coefficients = complex(NaN(double(bundle.NPRG), nRx));
+covered = false(K, 1);
+for prgIndex = 1:double(bundle.NPRG)
+    prbs = double(bundle.PRGToPRBMap{prgIndex}(:).');
+    zeroBased = double(refInd(:,1) - 1);
+    subcarrier = mod(zeroBased, K);
+    mask = ismember(floor(subcarrier / 12), prbs);
+    indices = double(refInd(mask,1));
+    symbols = complex(double(refSym(mask,1)));
+    if isempty(indices) || numel(indices) ~= numel(symbols)
+        error("sixgr:pdsch:PDSCHReceiver:IncompleteFlatPRGDMRSEvidence", ...
+            "Flat PRG %d has no aligned DM-RS evidence.", prgIndex - 1);
+    end
+    observations = nrExtractResources(indices, grid);
+    if isvector(observations)
+        observations = observations(:);
+    end
+    if size(observations, 1) ~= numel(symbols)
+        error("sixgr:pdsch:PDSCHReceiver:FlatPRGDMRSShapeMismatch", ...
+            "Flat PRG %d observation/reference dimensions differ.", prgIndex - 1);
+    end
+    energy = sum(abs(symbols).^2);
+    if ~(isfinite(energy) && energy > 0)
+        error("sixgr:pdsch:PDSCHReceiver:MissingFlatPRGDMRSEvidence", ...
+            "Flat PRG %d has zero DM-RS energy.", prgIndex - 1);
+    end
+    coefficient = (conj(symbols).' * observations) ./ energy;
+    residual = observations - symbols * coefficient;
+    dof = numel(residual) - numel(coefficient);
+    if dof > 0
+        noiseValues(prgIndex) = sum(abs(residual(:)).^2) ./ dof;
+    else
+        noiseValues(prgIndex) = mean(abs(residual(:)).^2);
+    end
+    if ~isfinite(noiseValues(prgIndex)) || noiseValues(prgIndex) < 0 ...
+            || any(~isfinite(real(coefficient)) | ~isfinite(imag(coefficient)))
+        error("sixgr:pdsch:PDSCHReceiver:InvalidFlatPRGEstimate", ...
+            "Flat PRG %d produced a nonfinite channel/noise estimate.", prgIndex - 1);
+    end
+    targetSubcarriers = reshape((12 * prbs(:).' + (0:11).'), [], 1);
+    for rxPort = 1:nRx
+        hest(targetSubcarriers + 1, :, rxPort, 1) = ...
+            cast(coefficient(rxPort), "like", grid);
+    end
+    covered(targetSubcarriers + 1) = true;
+    pilotCounts(prgIndex) = numel(symbols);
+    coefficients(prgIndex, :) = coefficient;
+end
+scheduledSubcarriers = false(K, 1);
+scheduledPRBs = double(bundle.PRBSet(:).');
+scheduled = reshape((12 * scheduledPRBs(:).' + (0:11).'), [], 1);
+scheduledSubcarriers(scheduled + 1) = true;
+if any(scheduledSubcarriers & ~covered) || any(pilotCounts <= 0)
+    error("sixgr:pdsch:PDSCHReceiver:IncompleteFlatPRGEstimate", ...
+        "Flat PRG LS did not cover every scheduled subcarrier.");
+end
+noiseVariance = sum(noiseValues .* pilotCounts) ./ sum(pilotCounts);
+info = struct( ...
+    "EngineUsed", "exact_flat_static_mimo_ls_per_prg_stitched", ...
+    "ChannelModel", char(receiver.ChannelModel), ...
+    "HestSize", size(hest), ...
+    "NoiseVar", double(noiseVariance), ...
+    "ScalarFastPathUsed", false, ...
+    "PRGAware", true, ...
+    "PRGCount", double(bundle.NPRG), ...
+    "PRGSet", localReceiverPRGSet(carrier, bundle), ...
+    "PRGBundleSizeRB", double(bundle.PRGSize), ...
+    "PRGPilotCounts", double(pilotCounts), ...
+    "EstimatedCoefficients", coefficients, ...
+    "PrecoderBundleDigest", string(bundle.ImmutableBundleDigest), ...
+    "InterpolationMethod", ...
+        "constant_within_each_prg_from_prg_local_received_dmrs_ls", ...
+    "EffectiveChannelConvention", ...
+        "received_effective_layer_channel_after_frozen_prg_precoding", ...
+    "ExactFlatPRGEstimatorRequested", true, ...
+    "ExactFlatPRGEstimatorEligible", true, ...
+    "ExactFlatPRGEstimatorUsed", true, ...
+    "ExactFlatPRGEstimatorDisabledReason", "");
 end
 
 function [hest,noiseVariance,residual,info,pilotNMSE] = ...
@@ -960,10 +1158,32 @@ info = struct( ...
     "ScalarFastPathUsed",false, ...
     "PRGAware",true, ...
     "PRGCount",double(bundle.NPRG), ...
+    "PRGSet",localReceiverPRGSet(carrier,bundle), ...
+    "PRGBundleSizeRB",double(bundle.PRGSize), ...
     "PRGPilotCounts",double(pilotCounts), ...
     "PrecoderBundleDigest",string(bundle.ImmutableBundleDigest), ...
     "InterpolationMethod", ...
         "independent_nrChannelEstimate_within_frozen_prg_boundaries");
+end
+
+function prgSet = localReceiverPRGSet(carrier,bundle)
+% Return the standards-facing one-based PRG page assigned to every BWP PRB.
+% Unscheduled PRBs remain zero; no page is inferred beyond the frozen
+% precoder bundle carried by the grant.
+prgSet = zeros(double(carrier.NSizeGrid),1);
+for prgIndex = 1:double(bundle.NPRG)
+    prbs = double(bundle.PRGToPRBMap{prgIndex}(:));
+    if isempty(prbs) || any(prbs < 0 | prbs >= double(carrier.NSizeGrid)) ...
+            || any(prgSet(prbs + 1) ~= 0)
+        error("sixgr:pdsch:PDSCHReceiver:InvalidPrecoderPRGPartition", ...
+            "The frozen precoder bundle contains an empty, overlapping, or out-of-BWP PRG page.");
+    end
+    prgSet(prbs + 1) = prgIndex;
+end
+if any(prgSet(double(bundle.PRBSet(:)) + 1) == 0)
+    error("sixgr:pdsch:PDSCHReceiver:IncompletePrecoderPRGPartition", ...
+        "The frozen precoder bundle does not map every scheduled PDSCH PRB to a PRG page.");
+end
 end
 
 function [hest,noiseVariance,info] = localEstimateFadingChannelKernel( ...
@@ -1008,7 +1228,7 @@ nResources = size(rxValues,1);
 nRx = size(rxValues,2);
 [disturbanceCovariance, covarianceInfo] = ...
     localRXDisturbanceCovariance(Rinterference, ...
-    covarianceIncludesNoise, noiseVariance, nRx);
+    covarianceIncludesNoise, noiseVariance, nRx, nResources);
 equalized = complex(zeros(nResources,numLayers));
 postEqNoise = NaN(nResources,numLayers);
 desiredAccumulator = zeros(1,numLayers);
@@ -1016,7 +1236,9 @@ interferenceNoiseAccumulator = zeros(1,numLayers);
 for resource = 1:nResources
     H = reshape(hValues(resource,:,:),nRx,numLayers);
     y = reshape(rxValues(resource,:),nRx,1);
-    whitenedH = disturbanceCovariance\H;
+    resourceCovariance = localRXCovarianceAtResource( ...
+        disturbanceCovariance, resource, nRx);
+    whitenedH = resourceCovariance\H;
     G = (H'*whitenedH + eye(numLayers))\whitenedH';
     A = G*H;
     z = G*y;
@@ -1030,7 +1252,7 @@ for resource = 1:nResources
         interferencePower = sum(abs(A(layer,:)).^2) ...
             - abs(desiredGain)^2;
         transformedNoisePower = real( ...
-            G(layer,:)*disturbanceCovariance*G(layer,:)');
+            G(layer,:)*resourceCovariance*G(layer,:)');
         interferenceNoisePower = max(0,real(interferencePower)) ...
             + max(0,real(transformedNoisePower));
         equalized(resource,layer) = z(layer)/desiredGain;
@@ -1071,19 +1293,44 @@ info = struct( ...
 end
 
 function [C, info] = localRXDisturbanceCovariance(Rinterference, ...
-        includesNoise, noiseVariance, nRx)
+        includesNoise, noiseVariance, nRx, nResources)
 info = struct("Available",false,"IncludesNoise",false, ...
+    "PerRE",false, ...
     "EngineUsed","explicit_unbiased_layer_domain_lmmse");
 if isempty(Rinterference)
     C = max(double(noiseVariance),eps)*eye(nRx);
     return;
 end
 R = double(Rinterference);
-if ~(ismatrix(R) && size(R,1) == nRx && size(R,2) == nRx) ...
-        || any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+isStatic = ismatrix(R) && size(R,1) == nRx && size(R,2) == nRx;
+isPerRE = ndims(R) == 3 && size(R,1) == nResources && ...
+    size(R,2) == nRx && size(R,3) == nRx;
+if ~(isStatic || isPerRE) || any(~isfinite(real(R(:)))) ...
+        || any(~isfinite(imag(R(:))))
     error("sixgr:pdsch:PDSCHReceiver:InvalidInterferenceCovariance", ...
-        "Interference covariance must be a finite NRx-by-NRx matrix.");
+        ['Interference covariance must be a finite NRx-by-NRx matrix or ' ...
+         'an NRE-by-NRx-by-NRx tensor aligned to the PDSCH data REs.']);
 end
+if isStatic
+    C = localPrepareRXCovariance(R, includesNoise, noiseVariance, nRx);
+else
+    C = complex(zeros(size(R)));
+    for resource = 1:nResources
+        C(resource,:,:) = localPrepareRXCovariance( ...
+            squeeze(R(resource,:,:)), includesNoise, noiseVariance, nRx);
+    end
+end
+info.Available = true;
+info.IncludesNoise = logical(includesNoise);
+info.PerRE = logical(isPerRE);
+if isPerRE
+    info.EngineUsed = "explicit_unbiased_layer_domain_per_re_lmmse_irc";
+else
+    info.EngineUsed = "explicit_unbiased_layer_domain_lmmse_irc";
+end
+end
+
+function C = localPrepareRXCovariance(R, includesNoise, noiseVariance, nRx)
 R = (R + R')/2;
 if logical(includesNoise)
     C = R;
@@ -1095,9 +1342,212 @@ floorValue = max(eps(max(1,norm(C,"fro"))),eps);
 D = max(real(D),floorValue);
 C = V*diag(D)*V';
 C = (C + C')/2;
+end
+
+function C = localRXCovarianceAtResource(covariance, resource, nRx)
+if ismatrix(covariance)
+    C = covariance;
+else
+    C = reshape(covariance(resource,:,:),nRx,nRx);
+end
+end
+
+function info = localUnavailablePDSCHResidual(kind,numLayers)
+info = struct( ...
+    "Available",false, ...
+    "Applied",false, ...
+    "Kind",char(string(kind)), ...
+    "Source",char("post_equalization_" + string(kind) + "_unavailable"), ...
+    "Status","unavailable", ...
+    "NAReason","not_enabled_or_not_computed", ...
+    "NoiseVariancePerLayer",NaN(1,double(numLayers)), ...
+    "SINRdBPerLayer",NaN(1,double(numLayers)), ...
+    "SampleCountPerLayer",zeros(1,double(numLayers)), ...
+    "RawEqualizerSINRdBPerLayer",NaN(1,double(numLayers)));
+end
+
+function info = localEstimatePDSCHDMRSPostEqResidual( ...
+        rxGrid,hest,plan,referenceConfig,carrier,contract, ...
+        estimatedNoise,configuredNoise,Rinterference,covarianceIncludesNoise)
+info = localUnavailablePDSCHResidual("dmrs_residual",contract.NumLayers);
+if ndims(Rinterference) == 3
+    % A data-RE covariance tensor has no implied coordinate mapping to the
+    % DM-RS REs. Reusing it by row order or averaging would fabricate a
+    % receiver quantity, so leave this optional bound explicitly unavailable.
+    info.NAReason = "data_re_covariance_not_defined_on_dmrs_re";
+    return;
+end
+try
+    [logicalDMRS,unionIndices] = localRXLogicalReferences( ...
+        plan.DMRSIndicesPerPort,referenceConfig.DMRSSymbolsPerPort, ...
+        "dmrs",carrier,contract);
+    [equalizedDMRS,~,~,~] = localEqualizeFadingResources( ...
+        rxGrid,hest,unionIndices,estimatedNoise,configuredNoise, ...
+        contract.NumLayers,Rinterference,covarianceIncludesNoise);
+catch ME
+    info.NAReason = char("dmrs_post_equalization_failed:" + string(ME.identifier));
+    return;
+end
+noise = NaN(1,contract.NumLayers);
+sinr = NaN(1,contract.NumLayers);
+counts = zeros(1,contract.NumLayers);
+for layer = 1:contract.NumLayers
+    active = abs(logicalDMRS(layer,:)) > 0;
+    valid = active & isfinite(real(logicalDMRS(layer,:))) ...
+        & isfinite(imag(logicalDMRS(layer,:))) ...
+        & isfinite(real(equalizedDMRS(layer,:))) ...
+        & isfinite(imag(equalizedDMRS(layer,:)));
+    if ~any(valid)
+        continue;
+    end
+    reference = logicalDMRS(layer,valid);
+    received = equalizedDMRS(layer,valid);
+    referencePower = mean(abs(reference).^2,"omitnan");
+    residualPower = mean(abs(received-reference).^2,"omitnan");
+    if isfinite(referencePower) && referencePower > 0 ...
+            && isfinite(residualPower) && residualPower >= 0
+        noise(layer) = max(residualPower/referencePower,eps);
+        sinr(layer) = 10*log10(1/noise(layer));
+        counts(layer) = nnz(valid);
+    end
+end
+if ~any(isfinite(noise))
+    info.NAReason = "no_finite_active_layer_dmrs_pairs";
+    return;
+end
 info.Available = true;
-info.IncludesNoise = logical(includesNoise);
-info.EngineUsed = "explicit_unbiased_layer_domain_lmmse_irc";
+info.Source = "canonical_pdsch_dmrs_post_equalization_residual";
+info.Status = "OK";
+info.NAReason = "";
+info.NoiseVariancePerLayer = double(noise);
+info.SINRdBPerLayer = double(sinr);
+info.SampleCountPerLayer = double(counts);
+end
+
+function info = localEstimatePDSCHDecisionDirectedPostEqResidual( ...
+        layerValues,contract)
+info = localUnavailablePDSCHResidual( ...
+    "decision_directed",contract.NumLayers);
+noise = NaN(1,contract.NumLayers);
+sinr = NaN(1,contract.NumLayers);
+counts = zeros(1,contract.NumLayers);
+firstLayer = 1;
+for codeword = 1:contract.NumCodewords
+    constellation = localPDSCHDecisionConstellation( ...
+        contract.Modulation(codeword));
+    lastLayer = firstLayer + contract.LayerCount(codeword) - 1;
+    if isempty(constellation)
+        firstLayer = lastLayer + 1;
+        continue;
+    end
+    for layer = firstLayer:lastLayer
+        received = reshape(layerValues(layer,:),[],1);
+        valid = isfinite(real(received)) & isfinite(imag(received));
+        received = received(valid);
+        if isempty(received)
+            continue;
+        end
+        % Bound peak memory for wide allocations and high-order QAM.  The
+        % decision remains an exact nearest-neighbour decision; chunking
+        % only changes how the distance matrix is materialized.
+        nearest = complex(zeros(size(received)));
+        chunkSize = max(1,floor(2^20/max(numel(constellation),1)));
+        for first = 1:chunkSize:numel(received)
+            last = min(numel(received),first+chunkSize-1);
+            distance = abs(received(first:last) - ...
+                reshape(constellation,1,[])).^2;
+            [~,nearestIndex] = min(distance,[],2);
+            nearest(first:last) = constellation(nearestIndex);
+        end
+        referencePower = mean(abs(nearest).^2,"omitnan");
+        residualPower = mean(abs(received-nearest).^2,"omitnan");
+        if isfinite(referencePower) && referencePower > 0 ...
+                && isfinite(residualPower) && residualPower >= 0
+            noise(layer) = max(residualPower/referencePower,eps);
+            sinr(layer) = 10*log10(1/noise(layer));
+            counts(layer) = numel(received);
+        end
+    end
+    firstLayer = lastLayer + 1;
+end
+if ~any(isfinite(noise))
+    info.NAReason = "no_finite_equalized_symbols_for_supported_modulation";
+    return;
+end
+info.Available = true;
+info.Source = "canonical_pdsch_decision_directed_post_equalization_residual";
+info.Status = "OK";
+info.NAReason = "";
+info.NoiseVariancePerLayer = double(noise);
+info.SINRdBPerLayer = double(sinr);
+info.SampleCountPerLayer = double(counts);
+end
+
+function constellation = localPDSCHDecisionConstellation(modulation)
+constellation = complex([]);
+token = upper(strrep(strrep(char(string(modulation)),"-","")," ",""));
+switch token
+    case "QPSK"
+        qm = 2;
+    case "16QAM"
+        qm = 4;
+    case "64QAM"
+        qm = 6;
+    case "256QAM"
+        qm = 8;
+    case "1024QAM"
+        qm = 10;
+    otherwise
+        return;
+end
+M = 2^qm;
+bits = zeros(M*qm,1,"int8");
+for symbol = 0:M-1
+    offset = symbol*qm;
+    for bit = 1:qm
+        bits(offset+bit) = int8(bitget(uint32(symbol),qm-bit+1));
+    end
+end
+try
+    constellation = complex(nrSymbolModulate(bits,token));
+catch
+    constellation = complex([]);
+end
+end
+
+function [sinrPerLayer,noisePerResourceLayer,info] = ...
+        localApplyPDSCHResidualBound(sinrPerLayer,noisePerResourceLayer,info)
+if ~logical(info.Available)
+    return;
+end
+raw = double(sinrPerLayer(:).');
+unbounded = raw;
+boundSINR = double(info.SINRdBPerLayer(:).');
+boundNoise = double(info.NoiseVariancePerLayer(:).');
+if numel(raw) ~= numel(boundSINR) ...
+        || size(noisePerResourceLayer,2) ~= numel(boundNoise)
+    error("sixgr:pdsch:PDSCHReceiver:ResidualBoundLayerMismatch", ...
+        "Post-equalization residual evidence must match the scheduled layer count.");
+end
+applied = false(size(raw));
+for layer = 1:numel(raw)
+    if isfinite(boundSINR(layer)) ...
+            && (~isfinite(raw(layer)) || boundSINR(layer) < raw(layer))
+        raw(layer) = boundSINR(layer);
+        applied(layer) = true;
+    end
+    if isfinite(boundNoise(layer)) && boundNoise(layer) > 0
+        noisePerResourceLayer(:,layer) = max( ...
+            double(noisePerResourceLayer(:,layer)),boundNoise(layer));
+    end
+end
+sinrPerLayer = double(raw);
+info.Applied = any(applied);
+info.AppliedPerLayer = logical(applied);
+info.RawEqualizerSINRdBPerLayer = double(unbounded);
+if info.Applied
+    info.Status = "OK_BOUND_APPLIED";
+end
 end
 
 function [layerValues,info] = localPTRSCorrectionLayers( ...

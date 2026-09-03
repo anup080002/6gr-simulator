@@ -216,9 +216,11 @@ sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "public_output_claim_sca
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "pdcch_grant_binding_evidence.csv"), bindingGate.Rows);
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "pdcch_grant_binding_evidence.json"), bindingGate.Summary);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "scenario_objective_gates.csv"), ...
-    localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, mandatoryGate, activeIssueGate));
+    localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, ...
+    mandatoryGate, conformanceGate, statisticalGate, activeIssueGate));
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "scenario_objective_gates.json"), ...
-    localTableJsonPayload(localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, mandatoryGate, activeIssueGate)));
+    localTableJsonPayload(localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, ...
+    mandatoryGate, conformanceGate, statisticalGate, activeIssueGate)));
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "kpi_consistency_gate.csv"), kpiGate.Rows);
 sixgr.util.jsonWrite(fullfile(layout.ReportDir, "json", "kpi_consistency_gate.json"), kpiGate.Summary);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "active_issue_gate_summary.csv"), activeIssueGate.Rows);
@@ -983,17 +985,17 @@ schemaNames = {'RunId','ScenarioName','GateName','Required','Pass','EvidenceArti
 schemaTypes = {'string','string','string','logical','logical','string','double','string'};
 rows = table('Size', [0 numel(schemaNames)], 'VariableTypes', schemaTypes, 'VariableNames', schemaNames);
 rows = localAppendKpiGateRow(rows, meta, "kpi_summary_present", required, ...
-    ~required || (istable(summaryT) && height(summaryT) > 0), summaryPath, 0, "missing_lls_kpi_summary");
+    istable(summaryT) && height(summaryT) > 0, summaryPath, 1, "missing_lls_kpi_summary");
 rows = localAppendKpiGateRow(rows, meta, "kpi_reconstruction_present", required, ...
-    ~required || (istable(reconT) && height(reconT) > 0), reconPath, 0, "missing_kpi_reconstruction_summary");
+    istable(reconT) && height(reconT) > 0, reconPath, 1, "missing_kpi_reconstruction_summary");
 rows = localAppendKpiGateRow(rows, meta, "kpi_objective_binding_present", required, ...
-    ~required || (istable(bindingT) && height(bindingT) > 0), bindingPath, 0, "missing_kpi_objective_binding");
+    istable(bindingT) && height(bindingT) > 0, bindingPath, 1, "missing_kpi_objective_binding");
 summaryColumns = ["StrictOk","KPIReconciliationPass","Status"];
 summarySchemaOk = istable(summaryT) && height(summaryT) > 0 && ...
     all(ismember(summaryColumns, string(summaryT.Properties.VariableNames)));
-if ~(required && summarySchemaOk)
-    summaryOk = ~required;
-    summaryFail = double(required && ~summarySchemaOk);
+if ~summarySchemaOk
+    summaryOk = false;
+    summaryFail = 1;
 else
     summaryStrict = localToLogical(summaryT.StrictOk);
     summaryRecon = localToLogical(summaryT.KPIReconciliationPass);
@@ -1011,9 +1013,9 @@ reconColumns = ["StrictOk","ReconciliationPass","FormulaExecuted", ...
     "SchemaValid","MissingRawData","DurationSource","Status"];
 reconSchemaOk = istable(reconT) && height(reconT) > 0 && ...
     all(ismember(reconColumns, string(reconT.Properties.VariableNames)));
-if ~(required && reconSchemaOk)
-    reconOk = ~required;
-    reconFail = double(required && ~reconSchemaOk);
+if ~reconSchemaOk
+    reconOk = false;
+    reconFail = 1;
 else
     reconStrict = localToLogical(reconT.StrictOk);
     reconPass = localToLogical(reconT.ReconciliationPass);
@@ -1067,8 +1069,11 @@ end
 
 function [ok, failureCount] = localMandatoryKPIObjectiveBindingStatus(T, required)
 if ~required
-    ok = true;
-    failureCount = 0;
+    % Optionality changes root-gate authority, not the factual observation.
+    % An absent binding table must remain Pass=false so consumers cannot
+    % mistake "not required" for "evidence exists".
+    ok = istable(T) && height(T) > 0;
+    failureCount = double(~ok);
     return;
 end
 requiredNames = ["Scenario_Total_UL_DeliveredBits"; ...
@@ -2287,10 +2292,12 @@ for name = required
 end
 end
 
-function T = localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, mandatoryGate, activeIssueGate)
+function T = localScenarioObjectiveGateTable(meta, status, configuredGate, runClassGate, claimGate, bindingGate, mandatoryGate, conformanceGate, statisticalGate, activeIssueGate)
 names = {'RunId','ScenarioName','ObjectiveName','ObjectiveType','Mandatory','ScenarioMode','RequiredValue','ObservedValue','Threshold','Pass','IssueIdIfFailed','FailureReason','SourceCsv','SourceRowCount','SourceHash'};
 exactMandatory = string(status.RunClass) == "fixed_lls_anchor";
 pdcchBindingMandatory = logical(bindingGate.Required);
+standardsFailureReason = localStandardsGateFailureReason(status, claimGate, ...
+    mandatoryGate, conformanceGate, bindingGate, statisticalGate);
 T = table( ...
     repmat(meta.RunId, 8, 1), repmat(meta.ScenarioName, 8, 1), ...
     ["runtime_truth_contract"; "standards_claim"; "configured_effective_exact_match"; "configured_effective_policy"; "run_classification"; "pdcch_grant_binding"; "mandatory_subsystems"; "active_issue_gate"], ...
@@ -2301,11 +2308,56 @@ T = table( ...
     [""; ""; string(configuredGate.RequiredConfiguredMatchRate); ""; ""; string(bindingGate.RequiredGrantCount); ""; ""], ...
     [status.RuntimeTruthContractOk; status.StandardsConformanceOk; configuredGate.ConfiguredEffectiveOk; configuredGate.ConfiguredEffectivePolicyOk; status.RunClassGateOk; status.PDCCHGrantBindingOk; mandatoryGate.MandatorySubsystemsOk; activeIssueGate.ActiveIssueGateOk], ...
     ["", ternary(status.StandardsConformanceOk, "", "AUD-001"), ternary(configuredGate.ConfiguredEffectiveOk, "", "AUD-002"), ternary(configuredGate.ConfiguredEffectivePolicyOk, "", "AUD-002"), "", "", ternary(mandatoryGate.MandatorySubsystemsOk, "", "AUD-001"), ""].', ...
-    [ternary(status.RuntimeTruthContractOk, "", string(status.ResultStatusReason)), claimGate.ClaimFailureReason, strjoin(configuredGate.FailureReasons, "; "), strjoin(configuredGate.PolicyFailureReasons, "; "), string(runClassGate.Reason), strjoin(bindingGate.FailureReasons, "; "), strjoin(mandatoryGate.FailureReasons, "; "), strjoin(activeIssueGate.BlockingIssueIds, "|")].', ...
+    [ternary(status.RuntimeTruthContractOk, "", string(status.ResultStatusReason)), standardsFailureReason, strjoin(configuredGate.FailureReasons, "; "), strjoin(configuredGate.PolicyFailureReasons, "; "), string(runClassGate.Reason), strjoin(bindingGate.FailureReasons, "; "), strjoin(mandatoryGate.FailureReasons, "; "), strjoin(activeIssueGate.BlockingIssueIds, "|")].', ...
     ["reports/csv/truth_contract_summary.csv"; "reports/csv/standards_claim_audit.csv"; "reports/csv/configured_effective_operating_point.csv"; "reports/csv/configured_effective_operating_point.csv"; "reports/csv/run_classification.csv"; "reports/csv/pdcch_grant_binding_evidence.csv"; "reports/csv/conformance_matrix_runtime_audit.csv"; "reports/csv/active_issue_gate_summary.csv"], ...
     [1; height(claimGate.ClaimAudit); height(configuredGate.Rows); height(configuredGate.Rows); height(runClassGate.Table); height(bindingGate.Rows); size(mandatoryGate.Rows, 1); height(activeIssueGate.Rows)], ...
     repmat("", 8, 1), ...
     'VariableNames', names);
+end
+
+function reason = localStandardsGateFailureReason(status, claimGate, mandatoryGate, conformanceGate, bindingGate, statisticalGate)
+% Explain the exact proof boundary that made StandardsConformanceOk false.
+% Claim acceptance is only one conjunct of the standards gate; using only
+% ClaimFailureReason produced blank reasons when mandatory runtime,
+% conformance, grant-binding, or statistical evidence failed.
+if logical(status.StandardsConformanceOk)
+    reason = "";
+    return;
+end
+parts = strings(0, 1);
+if ~logical(claimGate.ClaimAllowed) || logical(claimGate.ForbiddenBroadClaimRejected)
+    claimReason = strtrim(string(claimGate.ClaimFailureReason));
+    if strlength(claimReason) == 0
+        claimReason = "standards_claim_rejected";
+    end
+    parts(end+1, 1) = claimReason; %#ok<AGROW>
+end
+if ~logical(mandatoryGate.MandatorySubsystemsOk)
+    values = string(mandatoryGate.FailureReasons(:));
+    values = values(strlength(strtrim(values)) > 0);
+    if isempty(values)
+        values = "mandatory_subsystem_evidence_incomplete";
+    end
+    parts(end+1, 1) = "mandatory_subsystems:" + strjoin(values, "|"); %#ok<AGROW>
+end
+if ~logical(conformanceGate.MandatoryMatrixOk)
+    parts(end+1, 1) = "mandatory_conformance_matrix_incomplete"; %#ok<AGROW>
+end
+if ~logical(bindingGate.BindingGateOk)
+    values = string(bindingGate.FailureReasons(:));
+    values = values(strlength(strtrim(values)) > 0);
+    if isempty(values)
+        values = "required_pdcch_grant_binding_incomplete";
+    end
+    parts(end+1, 1) = "pdcch_grant_binding:" + strjoin(values, "|"); %#ok<AGROW>
+end
+if ~logical(statisticalGate.StatisticalQualificationOk)
+    parts(end+1, 1) = "statistical_qualification:" + lower(string(statisticalGate.Status)); %#ok<AGROW>
+end
+if isempty(parts)
+    parts = "standards_conformance_required_proof_failed";
+end
+reason = strjoin(unique(parts, "stable"), "; ");
 end
 
 function gate = localPDCCHGrantBindingGate(layout, cfg, dlTrials, ulTrials, requiredDataDirections)

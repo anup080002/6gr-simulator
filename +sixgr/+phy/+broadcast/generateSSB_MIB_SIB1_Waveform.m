@@ -61,6 +61,8 @@ siGrid = localAddGrids(pdcchTx.Grid, pdschTx.Grid);
 siWaveform = sixgr.phy.waveform.ofdmModulate(carrierSI, siGrid);
 [ssbWaveform, ssbWaveInfo, ssbInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", localSSBObservationSubframes(cfg), ...
     "SSBIndex", double(sixgr.util.structGet(cfg, "phy.ssb.runtimeSSBIndex", 0)));
+localAssertNoSSBSIResourceCollision( ...
+    ssbWaveInfo, ssbInfo, siGrid, sib1AbsoluteSlot, carrierSI);
 sampleRate = double(sixgr.util.structGet(ssbInfo, "SampleRate_Hz", localSampleRate(carrier)));
 sib1StartSample = localAbsoluteSlotStartSample( ...
     sib1AbsoluteSlot, carrierSI, sampleRate);
@@ -487,6 +489,105 @@ waveform = complex(zeros(numSamples, numCols, "like", ssbWaveform));
 waveform(1:size(ssbWaveform, 1), :) = ssbWaveform;
 siRows = siStartSample + (1:size(siWaveform, 1));
 waveform(siRows, :) = waveform(siRows, :) + siWaveform;
+end
+
+function localAssertNoSSBSIResourceCollision( ...
+        ssbWaveInfo, ssbInfo, siGrid, siAbsoluteSlot, carrier)
+% Fail before OFDM composition when common SI overwrites an SS/PBCH RE.
+%
+% Both inputs are the exact production transmitter grids.  This check does
+% not infer occupancy from YAML ranges and therefore remains valid when the
+% band, BWP, SCS, SSB frequency offset, beam count, CORESET0, or SIB1
+% allocation changes.  A gNB may time- or frequency-multiplex the signals,
+% but it may never silently add two independently encoded channels onto the
+% same antenna-port RE.
+ssbCarrierGrid = localSSBGridInCarrierNumerology( ...
+    ssbWaveInfo, ssbInfo, carrier);
+symbolsPerSlot = double(carrier.SymbolsPerSlot);
+if ~(isscalar(symbolsPerSlot) && isfinite(symbolsPerSlot) && ...
+        symbolsPerSlot >= 1 && symbolsPerSlot == round(symbolsPerSlot))
+    error("sixgr:phy:broadcast:InvalidCarrierSymbolsPerSlot", ...
+        "SIB1/SSB collision validation requires a valid SymbolsPerSlot.");
+end
+
+if size(ssbCarrierGrid, 1) ~= size(siGrid, 1)
+    error("sixgr:phy:broadcast:SSBSICarrierGridMismatch", ...
+        ["SSB carrier grid has %d subcarriers while the Type-0/SIB1 grid " ...
+         "has %d; both must share the resolved initial DL BWP."], ...
+        size(ssbCarrierGrid, 1), size(siGrid, 1));
+end
+firstSymbol = round(double(siAbsoluteSlot)) * symbolsPerSlot + 1;
+lastSymbol = firstSymbol + size(siGrid, 2) - 1;
+if firstSymbol < 1 || lastSymbol > size(ssbCarrierGrid, 2)
+    % The observation waveform can legitimately end before a later Type-0
+    % occasion.  Timeline composition extends it; there is then no SSB RE
+    % at that absolute slot with which SI can collide.
+    return;
+end
+ssbSlice = ssbCarrierGrid(:, firstSymbol:lastSymbol, :);
+ssbOccupied = any(abs(ssbSlice) > 0, 3);
+siOccupied = any(abs(siGrid) > 0, 3);
+collisionMask = ssbOccupied & siOccupied;
+if any(collisionMask, "all")
+    [subcarrierOneBased, symbolOneBased] = find(collisionMask, 1, "first");
+    error("sixgr:phy:broadcast:SIB1SSBResourceCollision", ...
+        "The resolved Type-0 PDCCH/SIB1 PDSCH allocation collides with " + ...
+        "the transmitted SS/PBCH burst at absolute slot %d, symbol %d, " + ...
+        "subcarrier %d. Select a standards-valid pdcch-ConfigSIB1/TDRA " + ...
+        "combination; transmitter waveforms will not be superposed.", ...
+        round(double(siAbsoluteSlot)), symbolOneBased - 1, ...
+        subcarrierOneBased - 1);
+end
+end
+
+function carrierGrid = localSSBGridInCarrierNumerology( ...
+        ssbWaveInfo, ssbInfo, carrier)
+% Map the exact Toolbox SS/PBCH grid onto the common carrier grid.  The
+% mapping is exact for equal numerologies and uses the Point-A offsets
+% already validated by SSBGridValidator.  Unsupported mixed-numerology
+% composition fails closed instead of guessing an occupancy map.
+ssbGrid = sixgr.util.structGet(ssbWaveInfo, ...
+    "ResourceGridSSBurst.ResourceGrid", []);
+if isempty(ssbGrid)
+    error("sixgr:phy:broadcast:MissingSSBResourceGrid", ...
+        "Strict SIB1 composition requires the exact SS/PBCH resource " + ...
+        "grid returned by SSB_Tx.");
+end
+ssbSCSKHz = double(sixgr.util.structGet( ...
+    ssbInfo, "SSBTiming.SSBSubcarrierSpacingKHz", NaN));
+carrierSCSKHz = double(carrier.SubcarrierSpacing);
+if ~(isscalar(ssbSCSKHz) && isfinite(ssbSCSKHz) && ...
+        abs(ssbSCSKHz - carrierSCSKHz) < 1e-12)
+    error("sixgr:phy:broadcast:MixedNumerologyCollisionValidationRequired", ...
+        "SSB SCS %.15g kHz and initial-BWP SCS %.15g kHz differ. " + ...
+        "Strict SIB1 composition requires an exact mixed-numerology " + ...
+        "time-frequency collision resolver; the grids will not be " + ...
+        "superposed without one.", ssbSCSKHz, carrierSCSKHz);
+end
+validation = sixgr.util.structGet(ssbInfo, "SSBGridValidation", struct());
+ssbLowHz = double(sixgr.util.structGet( ...
+    validation, "SSBLowOffsetFromPointAHz", NaN));
+carrierLowHz = double(sixgr.util.structGet( ...
+    validation, "CarrierLowOffsetFromPointAHz", NaN));
+spacingHz = carrierSCSKHz * 1e3;
+startZeroBased = (ssbLowHz - carrierLowHz) / spacingHz;
+if ~(isscalar(startZeroBased) && isfinite(startZeroBased) && ...
+        startZeroBased >= 0 && ...
+        abs(startZeroBased - round(startZeroBased)) < 1e-9)
+    error("sixgr:phy:broadcast:SSBGridAlignmentMismatch", ...
+        "The validated SS/PBCH low edge cannot be represented on the " + ...
+        "initial-BWP subcarrier grid.");
+end
+startOneBased = round(startZeroBased) + 1;
+stopOneBased = startOneBased + size(ssbGrid, 1) - 1;
+numCarrierSubcarriers = 12 * double(carrier.NSizeGrid);
+if stopOneBased > numCarrierSubcarriers
+    error("sixgr:phy:broadcast:SSBGridOutsideCarrier", ...
+        "The exact SS/PBCH grid exceeds the resolved initial DL BWP.");
+end
+carrierGrid = complex(zeros(numCarrierSubcarriers, size(ssbGrid, 2), ...
+    size(ssbGrid, 3), "like", ssbGrid));
+carrierGrid(startOneBased:stopOneBased, :, :) = ssbGrid;
 end
 
 function wave = localPadWaveformColumns(wave, numCols)

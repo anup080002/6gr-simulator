@@ -136,7 +136,11 @@ classdef SystemLevelRunner
             scheduler = lower(char(string(sixgr.util.structGet(cfg, "mac.scheduler.type", "rr"))));
             ulSinrOffset_dB = double(sixgr.util.structGet(cfg, "system.ulSinrOffset_dB", -1.0));
             scs_kHz = double(canonicalFrame.SCSkHz);
-            channelModel = string(sixgr.util.structGet(cfg, "channel.model", "TDL"));
+            % Large-scale channel authorities such as TR38901 are not
+            % executable waveform delay profiles.  Resolve the explicitly
+            % configured concrete TDL/CDL profile once and propagate that
+            % same token into every DL/UL replay context.
+            channelModel = string(sixgr.channel.resolveConcreteProfile(cfg));
             dopplerHz = double(sixgr.util.structGet(cfg, "channel.dopplerHz", 0));
             nLayersDL = max(1, round(double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", ...
                 sixgr.util.structGet(cfg, "phy.pdsch.nLayers", 1)))));
@@ -1691,7 +1695,8 @@ classdef SystemLevelRunner
                     out.OutputCatalog = sixgr.report.exportSLSOutputCatalog( ...
                         ctx.RunFolder, cfg, out, runtimeSummary, environmentSummary);
                 catch MEcat
-                    out.Errors(end+1,1) = "SLS output catalog export failed: " + string(MEcat.message);
+                    out.Errors(end+1,1) = "SLS output catalog export failed: " + ...
+                        string(getReport(MEcat, "extended", "hyperlinks", "off"));
                 end
             else
                 out.OutputCatalog = struct();
@@ -3011,9 +3016,13 @@ userMeta.RuntimeLOSComplianceReason = char(string(sixgr.util.structGet(largeScal
 
 if direction == "UL"
     userMeta.RuntimeServingRxPower_dBm = localVectorValue(powerState, "DesiredPowerUL_dBm", ueIdx);
+    userMeta.RuntimeServingRxPowerDirection = "UL";
+    userMeta.RuntimeServingRxPowerSource = "SystemLevelRunner.powerState.DesiredPowerUL_dBm";
     userMeta.RuntimeServingLargeScaleSINR_dB = localVectorValue(powerState, "SINR_UL_dB", ueIdx);
 else
     userMeta.RuntimeServingRxPower_dBm = localVectorValue(powerState, "DesiredPowerDL_dBm", ueIdx);
+    userMeta.RuntimeServingRxPowerDirection = "DL";
+    userMeta.RuntimeServingRxPowerSource = "SystemLevelRunner.powerState.DesiredPowerDL_dBm";
     userMeta.RuntimeServingLargeScaleSINR_dB = localVectorValue(powerState, "SINR_DL_dB", ueIdx);
 end
 end

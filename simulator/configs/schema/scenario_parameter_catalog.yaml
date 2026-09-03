@@ -1172,6 +1172,13 @@ sections:
       phy_signal_diagnostic_channel_points: {required: false, type: integer, min: 8, max: 4096}
       phy_signal_diagnostic_constellation_points: {required: false, type: integer, min: 16, max: 2048}
       phy_signal_diagnostic_full_channel_grid: {required: false, type: boolean}
+      antenna_pattern_samples_enabled: {required: false, type: boolean}
+      antenna_pattern_azimuth_min_deg: {required: false, type: number, min: -180, max: 180}
+      antenna_pattern_azimuth_max_deg: {required: false, type: number, min: -180, max: 180}
+      antenna_pattern_azimuth_step_deg: {required: false, type: number, min_exclusive: 0, max: 360}
+      antenna_pattern_elevation_min_deg: {required: false, type: number, min: -90, max: 90}
+      antenna_pattern_elevation_max_deg: {required: false, type: number, min: -90, max: 90}
+      antenna_pattern_elevation_step_deg: {required: false, type: number, min_exclusive: 0, max: 180}
       publication_mode:
         required: false
         type: string

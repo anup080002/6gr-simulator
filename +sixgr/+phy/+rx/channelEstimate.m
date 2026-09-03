@@ -514,13 +514,25 @@ try
     pilotMask = false(K, L);
     pilotMask(pilotLinear) = true;
 
-    [hLS, hHatPilot] = localPilotLSAndEstimate(rxGrid, Hest, k, l, p, refValues, R, P);
-    [residualPower, signalPower, nmseDb] = localPowerMetrics(hLS, hHatPilot);
+    % Reconstruct each physical pilot RE from every simultaneously active
+    % reference port.  Dividing y by one port's symbol is only valid for a
+    % single-port pilot; on FD/CDM multi-port DM-RS or CSI-RS it folds the
+    % other ports into a false residual and can corrupt receiver-quality
+    % diagnostics.  The common receiver metric preserves the actual
+    % K-by-L-by-port index geometry and performs the coherent sum.
+    referenceMetrics = sixgr.phy.rx.referenceSignalMetrics( ...
+        rxGrid, Hest, refInd, refSym, ...
+        "NoiseVariance", nVar, ...
+        "ContextLabel", string(sixgr.util.structGet(info, "ContextLabel", ...
+            "channel_estimate_pilot_diagnostics")));
+    residualPower = double(referenceMetrics.ResidualPower);
+    signalPower = double(referenceMetrics.SignalPower);
+    nmseDb = double(referenceMetrics.NMSEdB);
     info.PilotMask = pilotMask;
     info.PilotMaskLinearIndices = double(pilotLinear(:));
     info.PilotRECount = double(numel(k));
     info.PilotRxAntennaCount = double(R);
-    info.PilotReferencePortCount = double(max(p));
+    info.PilotReferencePortCount = double(referenceMetrics.ReferencePortCount);
     info.PilotResidualPower = double(residualPower);
     info.PilotSignalPower = double(signalPower);
     info.PilotResidualNMSE_dB = double(nmseDb);
@@ -528,6 +540,7 @@ try
     info.PilotNoiseVarianceFromEstimator = double(nVar);
 
     if logical(oracleTestMode) && ~isempty(trueChannel)
+        hHatPilot = localExtractPilotEstimate(Hest, k, l, p, R, P);
         hTruePilot = localExtractPilotEstimate(trueChannel, k, l, p, R, P);
         [oracleMSE, oracleSignal, oracleNMSE] = localPowerMetrics(hTruePilot, hHatPilot);
         oracleMask = isfinite(real(hTruePilot)) & isfinite(imag(hTruePilot)) & ...
@@ -577,19 +590,6 @@ k = double(k(:));
 l = double(l(:));
 p = max(1, min(double(P), double(p(:))));
 refValues = refValues(:);
-end
-
-function [hLS, hHatPilot] = localPilotLSAndEstimate(rxGrid, Hest, k, l, p, refValues, R, P)
-N = numel(k);
-hLS = complex(NaN(N, R));
-hHatPilot = complex(NaN(N, R));
-for ii = 1:N
-    for rr = 1:R
-        y = rxGrid(k(ii), l(ii), rr);
-        hLS(ii, rr) = y ./ refValues(ii);
-        hHatPilot(ii, rr) = Hest(k(ii), l(ii), rr, min(p(ii), P));
-    end
-end
 end
 
 function hPilot = localExtractPilotEstimate(grid, k, l, p, R, P)

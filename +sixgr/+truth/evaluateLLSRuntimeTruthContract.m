@@ -2084,7 +2084,14 @@ end
 
 function tf = localPDCCHStandaloneStrictRequired(scfg, cfg)
 runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-tf = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
+% buildInternalConfig adds pdcch_strict_validation to the resolved objective
+% list whenever connected control gating requires PDCCH.  That derived
+% objective must not turn a complete, grant-coupled runtime into the
+% standalone PDCCH study contract.  The standalone contract is selected
+% only by an explicit scenario declaration (or its dedicated runner).
+% Integrated evidence remains subject to localIntegratedPDCCHRuntimeEvidenceOk.
+tf = runnerProfile == "pdcch_strict_validation" || ...
+    localScenarioHasExplicitObjective(scfg, "pdcch_strict_validation");
 end
 
 function [ok, status] = localIntegratedPDCCHRuntimeEvidenceOk(T)
@@ -2777,6 +2784,7 @@ evmT = localReadTable(evmPath);
 negativeT = localReadTable(negativePath);
 oracleT = localReadTable(oraclePath);
 downstreamT = localReadTable(downstreamPath);
+componentAnchorRun = localIsChannelRFOnlyScenario(scfg, cfg);
 
 stats.ChannelRFConfigRows = height(configT);
 stats.ChannelRFGeometryRows = height(geometryT);
@@ -2817,10 +2825,17 @@ configOk = localHasColumn(configT, "ConfigValidationOk") && all(localColumnBool(
     localHasColumn(configT, "ProxyAllowed") && all(~localColumnBool(configT, "ProxyAllowed"));
 positiveMask = localColumnBool(configuredAppliedT, "ExpectedOk");
 negativeMask = ~positiveMask;
+positiveExpectedScope = "in_path";
+positiveExpectedEligibility = true;
+if componentAnchorRun
+    positiveExpectedScope = "component_anchor";
+    positiveExpectedEligibility = false;
+end
 positiveIdentityOk = localHasColumn(configuredAppliedT, "EvidenceScope") && ...
-    all(lower(strtrim(string(configuredAppliedT.EvidenceScope(positiveMask)))) == "in_path") && ...
+    all(lower(strtrim(string(configuredAppliedT.EvidenceScope(positiveMask)))) == positiveExpectedScope) && ...
     localHasColumn(configuredAppliedT, "SameScenarioInPathEligible") && ...
-    all(localColumnBool(configuredAppliedT(positiveMask, :), "SameScenarioInPathEligible")) && ...
+    all(localColumnBool(configuredAppliedT(positiveMask, :), "SameScenarioInPathEligible") == ...
+        positiveExpectedEligibility) && ...
     localHasColumn(configuredAppliedT, "ExecutionID") && ...
     all(strlength(strtrim(string(configuredAppliedT.ExecutionID(positiveMask)))) > 0) && ...
     localHasColumn(configuredAppliedT, "ScenarioConfigHash") && ...
@@ -2844,9 +2859,10 @@ realizationBaseOk = localHasColumn(realizationT, "ChannelRealizationId") && ...
     localHasColumn(realizationT, "TruthStatus") && ...
     all(string(realizationT.TruthStatus) == "real_lls_evidence") && ...
     localHasColumn(realizationT, "EvidenceScope") && ...
-    all(lower(strtrim(string(realizationT.EvidenceScope))) == "in_path") && ...
+    all(lower(strtrim(string(realizationT.EvidenceScope))) == positiveExpectedScope) && ...
     localHasColumn(realizationT, "SameScenarioInPathEligible") && ...
-    all(localColumnBool(realizationT, "SameScenarioInPathEligible")) && ...
+    all(localColumnBool(realizationT, "SameScenarioInPathEligible") == ...
+        positiveExpectedEligibility) && ...
     localHasColumn(realizationT, "ExecutionID") && ...
     all(strlength(strtrim(string(realizationT.ExecutionID))) > 0) && ...
     any(upper(string(realizationT.ChannelModelType)) == configuredChannelModel) && ...
@@ -2901,9 +2917,10 @@ downstreamOk = localHasColumn(downstreamT, "ChannelRealizationId") && localHasCo
     all(strlength(strtrim(string(downstreamT.ChannelRealizationId))) > 0) && ...
     all(strlength(strtrim(string(downstreamT.RFImpairmentChainId))) > 0) && ...
     localHasColumn(downstreamT, "EvidenceScope") && ...
-    all(lower(strtrim(string(downstreamT.EvidenceScope))) == "in_path") && ...
+    all(lower(strtrim(string(downstreamT.EvidenceScope))) == positiveExpectedScope) && ...
     localHasColumn(downstreamT, "SameScenarioInPathEligible") && ...
-    all(localColumnBool(downstreamT, "SameScenarioInPathEligible"));
+    all(localColumnBool(downstreamT, "SameScenarioInPathEligible") == ...
+        positiveExpectedEligibility);
 oracleViolations = 0;
 if ~isempty(oracleT) && localHasColumn(oracleT, "Violation")
     oracleViolations = sum(localColumnBool(oracleT, "Violation"));
@@ -2911,6 +2928,19 @@ end
 stats.ChannelRFOracleGuardViolationCount = double(oracleViolations);
 truthStatusOk = all(string(configuredAppliedT.TruthStatus(positiveMask)) == "real_lls_evidence") && ...
     all(string(configuredAppliedT.TruthStatus(negativeMask)) == "executed_negative_contract_evidence");
+stats.ChannelRFArtifactRowsOk = logical(artifactRowsOk);
+stats.ChannelRFConfigOk = logical(configOk);
+stats.ChannelRFPositiveCasesOk = logical(positiveOk);
+stats.ChannelRFNegativeCasesOk = logical(negativeOk);
+stats.ChannelRFRealizationOk = logical(realizationOk);
+stats.ChannelRFLargeScaleOk = logical(largeScaleOk);
+stats.ChannelRFInterferenceOk = logical(interferenceOk);
+stats.ChannelRFRFOk = logical(rfOk);
+stats.ChannelRFNoiseOk = logical(noiseOk);
+stats.ChannelRFDownstreamReferencesOk = logical(downstreamOk);
+stats.ChannelRFTruthStatusOk = logical(truthStatusOk);
+stats.ChannelRFPositiveIdentityOk = logical(positiveIdentityOk);
+stats.ChannelRFNegativeIdentityOk = logical(negativeIdentityOk);
 stats.ChannelRFStrictOk = artifactRowsOk && configOk && positiveOk && negativeOk && ...
     realizationOk && largeScaleOk && interferenceOk && rfOk && noiseOk && downstreamOk && ...
     oracleViolations == 0 && truthStatusOk && positiveIdentityOk && negativeIdentityOk;
@@ -2935,6 +2965,50 @@ if isempty(values)
 end
 values = lower(strtrim(values(:)));
 tf = any(values == objectiveToken);
+end
+
+function tf = localScenarioHasExplicitObjective(scfg, objectiveToken)
+% Read only the immutable scenario authority.  Do not consult cfg here:
+% cfg.validation.objectives also contains objectives derived by the generic
+% builder from enabled runtime features.
+objectiveToken = lower(strtrim(string(objectiveToken)));
+values = strings(0, 1);
+for pathValue = ["scenario.bundle_anchor_cases", "scenario.objectives", ...
+        "scenario_objectives", "objectives", "meta.objectives", ...
+        "validation.objectives"]
+    [present, raw] = localExplicitScenarioValue(scfg, pathValue);
+    if present
+        values = [values; localStringList(raw)]; %#ok<AGROW>
+    end
+end
+values = lower(strtrim(values(:)));
+tf = any(values == objectiveToken);
+end
+
+function [present, value] = localExplicitScenarioValue(scfg, pathValue)
+present = false;
+value = [];
+try
+    if isobject(scfg) && ismethod(scfg, "has") && scfg.has(pathValue)
+        present = true;
+        value = scfg.get(pathValue, []);
+        return;
+    end
+catch
+end
+if ~isstruct(scfg)
+    return;
+end
+parts = strsplit(char(string(pathValue)), ".");
+cursor = scfg;
+for ii = 1:numel(parts)
+    if ~(isstruct(cursor) && isscalar(cursor) && isfield(cursor, parts{ii}))
+        return;
+    end
+    cursor = cursor.(parts{ii});
+end
+present = true;
+value = cursor;
 end
 
 function values = localStringList(raw)
@@ -2973,9 +3047,12 @@ minTrialsPerAggregateBin = round(minTrialsPerAggregateBin);
 runClass = lower(strtrim(string(localScenarioGet(scfg, cfg, ...
     "validation.run_class", localScenarioGet(scfg, cfg, ...
     "validation.RunClass", "")))));
-functionalWaveformValidation = runClass == "functional_waveform_validation";
+boundedDiagnosticValidation = any(runClass == [ ...
+    "functional_waveform_validation", ...
+    "adaptive_system_diagnostic", ...
+    "hybrid_validation"]);
 requiredTrialsPerAggregateBin = minTrialsPerAggregateBin;
-if functionalWaveformValidation
+if boundedDiagnosticValidation
     % A bounded functional validation still requires a measured aggregate
     % SINR bin backed by actual waveform trials.  It does not claim the
     % sample adequacy required for a publication waterfall.
@@ -2985,7 +3062,7 @@ stats = struct( ...
     "MeasuredSINRRequired", logical(strictTruthRequired) && ~logical(isControlOnly), ...
     "MeasuredSINRCurveOk", true, ...
     "RunClass", string(runClass), ...
-    "PublicationSampleAdequacyRequired", ~logical(functionalWaveformValidation), ...
+    "PublicationSampleAdequacyRequired", ~logical(boundedDiagnosticValidation), ...
     "DistanceSINRApplicable", ~logical(isFixedSNRSweep), ...
     "DistanceSINREvidenceOk", true, ...
     "SINRSummaryOk", true, ...
@@ -3615,8 +3692,15 @@ function value = localScenarioGet(scfg, cfg, pathValue, defaultValue)
 value = defaultValue;
 try
     if isobject(scfg) && ismethod(scfg, "get")
-        value = scfg.get(pathValue, defaultValue);
-        return;
+        % ScenarioConfig and the resolved internal runtime config are two
+        % distinct authorities.  A path absent from the scenario object
+        % must fall through to cfg; returning the supplied default here
+        % made enabled runtime features (notably phy.sib1.enable) appear
+        % disabled in terminal truth reduction.
+        if ~ismethod(scfg, "has") || scfg.has(pathValue)
+            value = scfg.get(pathValue, defaultValue);
+            return;
+        end
     end
 catch
 end

@@ -49,7 +49,8 @@ assert(~logical(badInfo.Applied) && contains(string(badInfo.Reason), "coding_lay
     "Same-shape but different CodingLayoutHash must reject instead of adding.");
 assert(isequal(badOut, cur0), "Rejected combine must keep the current observation.");
 
-localAssertHARQEntityLifecycle(info0.SoftBuffer, info3.SoftBuffer, cfg.A);
+localAssertHARQEntityLifecycle(info0.SoftBuffer, info3.SoftBuffer, ...
+    layout0, layout3, cfg.A);
 
 fprintf("HARQSoftBufferPositionAware: rv0Positions=%d rv3Positions=%d overlap=%d\n", ...
     nnz(info0.SoftBuffer.ObservationWeight(:) > 0), ...
@@ -82,12 +83,15 @@ idx = idx(isfinite(idx) & idx >= 1 & idx <= double(layout.MotherCodeLength) * do
 idx = unique(round(idx), "stable");
 end
 
-function localAssertHARQEntityLifecycle(buffer0, buffer3, tbsBits)
+function localAssertHARQEntityLifecycle(buffer0, buffer3, layout0, layout3, tbsBits)
 harq = sixgr.l2.mac.HARQEntity(struct(), "Direction", "DL", ...
     "NumProcesses", 1, "MaxRetx", 2);
 rnti = 101;
 txp = harq.allocate(rnti, 0, ceil(tbsBits / 8), "NewData", true);
-harq.onTx(rnti, txp.HARQ.HarqID, uint8(zeros(tbsBits, 1)), struct("TBSBits", tbsBits), 0);
+grant0 = struct("TBSBits", tbsBits, "Direction", "DL", ...
+    "Modulation", "16QAM", "NumLayers", 2, "TargetCodeRate", 0.48, ...
+    "CodingLayout", layout0);
+harq.onTx(rnti, txp.HARQ.HarqID, uint8(zeros(tbsBits, 1)), grant0, 0);
 harq.storeSoftBuffer(rnti, txp.HARQ.HarqID, buffer0);
 stored = harq.getSoftBuffer(rnti, txp.HARQ.HarqID);
 assert(isfield(stored, "LLRSum"), "HARQEntity must store the canonical soft buffer.");
@@ -97,14 +101,16 @@ stored = harq.getSoftBuffer(rnti, txp.HARQ.HarqID);
 assert(isfield(stored, "LLRSum"), "NACK must preserve the soft buffer for retransmission.");
 
 retx = harq.allocate(rnti, 1, ceil(tbsBits / 8), "NewData", false);
-harq.onTx(rnti, retx.HARQ.HarqID, uint8(zeros(tbsBits, 1)), struct("TBSBits", tbsBits), 1);
+grant3 = grant0;
+grant3.CodingLayout = layout3;
+harq.onTx(rnti, retx.HARQ.HarqID, uint8(zeros(tbsBits, 1)), grant3, 1);
 harq.storeSoftBuffer(rnti, retx.HARQ.HarqID, buffer3);
 harq.onFeedback(rnti, retx.HARQ.HarqID, true, "SourceSlot", 1);
 stored = harq.getSoftBuffer(rnti, retx.HARQ.HarqID);
 assert(isempty(fieldnames(stored)), "ACK must clear the matching HARQ soft buffer.");
 
 txp2 = harq.allocate(rnti, 3, ceil(tbsBits / 8), "NewData", true);
-harq.onTx(rnti, txp2.HARQ.HarqID, uint8(zeros(tbsBits, 1)), struct("TBSBits", tbsBits), 3);
+harq.onTx(rnti, txp2.HARQ.HarqID, uint8(zeros(tbsBits, 1)), grant0, 3);
 harq.storeSoftBuffer(rnti, txp2.HARQ.HarqID, buffer0);
 tf = harq.hasFreeProcess(rnti, 6); %#ok<NASGU> trigger stale expiry
 stored = harq.getSoftBuffer(rnti, txp2.HARQ.HarqID);

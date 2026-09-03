@@ -418,7 +418,8 @@ replay.PDCCHFalseAlarm = logical(sixgr.util.structGet( ...
     rx, "FalseAlarm", replay.DCICrcPass && ...
     ~replay.PDCCHPayloadMatch));
 
-decoded = localDecodePDCCHPayload(rx, tx, replay.PDCCHGrantDCIFormat);
+decoded = localDecodePDCCHPayload( ...
+    rx, tx, replay.PDCCHGrantDCIFormat, grant, cfgControl);
 grantPayload = localPDCCHGrantPayload(grant, direction);
 decodedPayload = localPDCCHDecodedPayload(decoded, rnti, direction);
 replay.PDCCHGrantFieldsHash = localPDCCHPayloadHash(grantPayload);
@@ -518,17 +519,30 @@ end
 format = string(sixgr.phy.pdcch.normalizeDCIFormat(format));
 end
 
-function decoded = localDecodePDCCHPayload(rx, tx, format)
+function decoded = localDecodePDCCHPayload(rx, tx, format, grant, cfg)
 decoded = struct();
 bits = int8(sixgr.util.structGet(rx, "DCIBits", int8([])));
 if isempty(bits)
     return;
 end
 try
-    decoded = sixgr.phy.pdcch.decodeDCIPayload(bits, format, ...
-        struct("NSizeGrid", double(tx.Carrier.NSizeGrid)));
-catch
-    decoded = struct();
+    contextData = sixgr.util.structGet(grant, "DCI.ContextData", struct());
+    if isstruct(contextData) && isscalar(contextData) && ...
+            isfield(contextData, "SpecRelease")
+        context = sixgr.phy.pdcch.DCIContext(contextData);
+    else
+        % A scheduled replay is not a standalone PDCCH decode: reconstruct
+        % the context from the same finalized grant and runtime YAML used by
+        % the packer.  Falling back to the legacy full-slot TDRA list would
+        % silently reinterpret valid UL/DL assignments.
+        context = sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant( ...
+            cfg, grant, format);
+    end
+    decoded = sixgr.phy.pdcch.decodeDCIPayload(bits, format, context);
+catch ME
+    decoded = struct( ...
+        "DecodeErrorIdentifier", string(ME.identifier), ...
+        "DecodeErrorMessage", string(ME.message));
 end
 end
 
@@ -2189,26 +2203,11 @@ tf = any(strcmp(channelToken, ["AWGN","NONE","OFF"])) && numLayers <= 1 && numTx
 end
 
 function token = localResolveChannelToken(cfg)
-paths = { ...
-    "channel.tdlProfile", ...
-    "channel.cdlProfile", ...
-    "channel.delayProfile", ...
-    "channel.fading.profile", ...
-    "channel.model", ...
-    "channel.fading.model" ...
-    };
-token = "AWGN";
-for i = 1:numel(paths)
-    raw = string(sixgr.util.structGet(cfg, paths{i}, ""));
-    raw = upper(strtrim(raw));
-    if startsWith(raw, "TDL") || startsWith(raw, "CDL")
-        token = raw;
-        return;
-    end
-    if strlength(raw) > 0 && token == "AWGN"
-        token = raw;
-    end
-end
+% Use the shared strict resolver.  The former first-match scan could return
+% a bare TDL/CDL family or the large-scale TR38901 token depending on field
+% order, causing identical configurations to reach different receivers
+% with different channel semantics.
+token = string(sixgr.channel.resolveConcreteProfile(cfg));
 end
 
 function fs = localResolveSampleRate(tx, txInfo)

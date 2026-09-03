@@ -150,9 +150,26 @@ for partIndex = 1:numel(parts)
     if isfield(part, "Resolver") && strlength(strtrim(string(part.Resolver))) > 0
         partResolver = string(part.Resolver);
     end
+    partChannel = channel;
+    partUEID = ueID;
+    partLayerCount = layerCount;
+    partAllocationID = allocationID;
+    if string(part.Label) == "CSI-RS"
+        % CSI-RS is a cell transmission.  PDSCH_Tx carries the executed
+        % CSI-RS grid so the physical indices can be audited, but invoking
+        % this producer once per scheduled UE must not turn that one cell
+        % resource into one CSI-RS allocation per PDSCH grant.  Canonicalize
+        % its identity independently of the UE grant while retaining the
+        % exact executed physical-port coordinates.
+        partChannel = "CSI-RS";
+        partUEID = NaN;
+        partLayerCount = NaN;
+        partAllocationID = "csirs_cell_" + string(cellID) + ...
+            "_slot_" + string(slot0);
+    end
     rows = [rows; localRows(double(part.Coordinates0Based), slot0, ... %#ok<AGROW>
-        direction, channel, string(part.Label), cellID, ueID, ...
-        layerCount, partResolver, allocationID)];
+        direction, partChannel, string(part.Label), cellID, partUEID, ...
+        partLayerCount, partResolver, partAllocationID)];
 end
 if isempty(rows)
     error("sixgr:truth:EmptyObservedREAllocation", ...

@@ -81,7 +81,9 @@ strictScenario.reference_signals.csi_rs_precoder_codebook = struct( ...
     "beam_indices_port_0",[0 0],"beam_indices_port_1",[1 1]);
 strictCfg = sixgr.lls6g.buildInternalConfig(strictScenario,tempdir);
 assert(logical(strictCfg.phy.mimo.strict));
-assert(double(strictCfg.phy.pdsch.numPorts)==2);
+assert(double(strictCfg.phy.pdsch.numPorts)==2, ...
+    "Strict Phase-07 PDSCH port count resolved to %s instead of 2.", ...
+    mat2str(double(strictCfg.phy.pdsch.numPorts)));
 assert(~logical(strictCfg.phy.pdsch.normalizePrecodingMatrix));
 assert(isequal(double(strictCfg.phy.csi.rankDomain),[1 2]));
 

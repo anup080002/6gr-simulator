@@ -1,0 +1,3 @@
+relative_path,extension,bytes,sha256,decode_ok,format,width_px,height_px,mode,grayscale_min,grayscale_max,grayscale_stddev,blank_or_constant,issue
+component_anchors/channel_rf/channel/image/channel_configured_vs_applied.png,.png,123772,526400d2d29a05237323cbec369726762c02142e0c88cc80db7638c9648bc493,True,PNG,1275,815,RGB,39,255,73.064852543814482,False,
+component_anchors/channel_rf/reports/image/rf_impairment_chain.png,.png,39822,e480578d06c5c21546c1d276e96ede1c2cc73889502ef79cf0ff6f8c58ee9534,True,PNG,1346,744,RGB,39,255,60.948978364897826,False,

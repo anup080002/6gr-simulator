@@ -71,7 +71,7 @@ def main() -> int:
             run_folder = Path(args.run_folder).resolve()
             if not run_folder.is_dir():
                 raise SystemExit(f"Filesystem run folder does not exist: {run_folder}")
-        _, policy = _filesystem_run_policy(run_folder)
+        run_row, policy = _filesystem_run_policy(run_folder)
         raster_output_enabled = bool(policy.get("raster_output_enabled", True))
         replace_existing_rasters = bool(
             args.replace_existing_rasters_from_csv and raster_output_enabled
@@ -82,10 +82,20 @@ def main() -> int:
                 path, policy, contract_name=name
             )
 
+        initial_artifacts = dash.filesystem_artifacts_for_run(run_row)
+        exact_cache_hit = bool(
+            not args.force
+            and materializer.filesystem_contract_cache_current(
+                run_folder, initial_artifacts, policy
+            )
+        )
+        raster_replacement_executed = bool(
+            replace_existing_rasters and not exact_cache_hit
+        )
         removed_rasters: list[dict[str, object]] = []
         declared_artifact_rasters: list[dict[str, str]] = []
         declared_report_rasters: list[dict[str, str]] = []
-        if replace_existing_rasters:
+        if raster_replacement_executed:
             # A previous interrupted replacement can leave report-ledger
             # image claims without their declared CSV-backed rasters. Rebuild
             # only those explicitly available/counting aliases first so the
@@ -135,13 +145,23 @@ def main() -> int:
                 f"Filesystem run metadata was not found under {run_folder}."
             )
         artifacts = dash.filesystem_artifacts_for_run(run_row)
-        result = materializer.materialize_filesystem_run_contract_artifacts(
-            run_row,
-            artifacts,
-            feature_policy=policy,
-            force=bool(args.force),
-        )
-        if replace_existing_rasters:
+        if exact_cache_hit:
+            result = {
+                "created": [],
+                "manifest_path": materializer.manifest_logical_path(),
+                "coverage_path": materializer.coverage_logical_path(),
+                "coverage": materializer.coverage_summary(artifacts, policy),
+                "skipped": True,
+                "exact_cache_hit": True,
+            }
+        else:
+            result = materializer.materialize_filesystem_run_contract_artifacts(
+                run_row,
+                artifacts,
+                feature_policy=policy,
+                force=bool(args.force),
+            )
+        if raster_replacement_executed:
             # The browser materializer owns contract_plot_lineage.csv. Seal
             # the additional report aliases only after that file has reached
             # its final browser-contract representation.
@@ -149,14 +169,14 @@ def main() -> int:
                 run_folder, seal_lineage=True
             )
         frc_reference_rasters: list[dict[str, str]] = []
-        if replace_existing_rasters:
+        if raster_replacement_executed:
             # FRC reference-point plots are outside the browser chart catalog,
             # but their lineage is a required scientific contract. Rebuild
             # them from the exact persisted per-entry CSVs before stale
             # lineage reconciliation runs.
             frc_reference_rasters = materialize_frc_reference_rasters(run_folder)
         retired_lineage_rows = []
-        if replace_existing_rasters:
+        if raster_replacement_executed:
             retired_lineage_rows = reconcile_removed_raster_lineage(run_folder)
         # Terminal filesystem runs are cached by the dashboard.  The cache
         # necessarily reflects the pre-materialization file set unless it is
@@ -165,6 +185,12 @@ def main() -> int:
         run_row = dash.filesystem_run_row_from_folder(run_folder) or run_row
         refreshed = dash.filesystem_artifacts_for_run(run_row)
         coverage = materializer.coverage_summary(refreshed, policy)
+        if not exact_cache_hit and not (
+            coverage.get("missing_table_paths") or coverage.get("missing_chart_names")
+        ):
+            materializer.write_filesystem_contract_cache(
+                run_folder, refreshed, policy
+            )
         payload = {
             "run_id": int(run_row.get("run_id") or 0),
             "run_folder": str(run_folder),
@@ -174,9 +200,10 @@ def main() -> int:
             "raster_replacement_requested": bool(
                 args.replace_existing_rasters_from_csv
             ),
-            "raster_replacement_executed": replace_existing_rasters,
+            "raster_replacement_executed": raster_replacement_executed,
             "materializer_version": materializer.MATERIALIZER_VERSION,
             "created_count": len(result.get("created") or []),
+            "exact_source_cache_hit": exact_cache_hit,
             "old_rasters_removed": len(removed_rasters),
             "declared_artifact_rasters_regenerated": len(declared_artifact_rasters),
             "declared_report_rasters_regenerated": len(declared_report_rasters),

@@ -131,6 +131,7 @@ cfg.phy.pdsch.numLayers = nLayers;
 cfg.phy.pdsch.nLayers = nLayers;
 cfg.phy.pdsch.numPorts = nLayers;
 cfg.phy.pdsch.nPorts = nLayers;
+cfg.phy.pdsch.dmrs.availablePortSet = 0:(nLayers - 1);
 cfg.phy.pdsch.RNTI = 1000 + nLayers;
 cfg.phy.pdsch.NID = 42 + nLayers;
 if nLayers > 4

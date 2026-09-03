@@ -28,6 +28,23 @@ assert(~zeroPlan.Valid && double(zeroPlan.TBSBits) == 0 && ...
     "blocked_measured_cqi_zero_out_of_range", ...
     "The executable grant boundary must reject measured CQI 0.");
 
+% Coupled-runtime SRS/CSI installation can carry a typed causal-admission
+% result independently of the legacy feedback-valid flag.  When that
+% measured feedback is admitted and is not a bootstrap preview, CQI mapping
+% genuinely executed and must be labelled as inner-loop applied.
+causalScheduler = sixgr.l2.mac.SchedulerRR(cfg, "Direction", "UL");
+causalMeasuredUE = struct("RNTI", 702, "CQI", 12, "RI", 1, ...
+    "FeedbackValid", false, "CausalFeedbackUsable", true, ...
+    "CausalFeedbackStatus", "measured_ul_srs_feedback_available", ...
+    "BootstrapCQIUsableForScheduling", false, ...
+    "BootstrapCQISource", "", ...
+    "SchedulerCQISource", "measured_ul_srs_wideband");
+[~, ~, ~, causalAMC] = causalScheduler.selectAMC(causalMeasuredUE);
+assert(logical(causalAMC.InnerLoopApplied) && ...
+    string(causalAMC.MCSSelectionSource) == "runtime_cqi_table", ...
+    ["A causally admitted measured SRS/CSI CQI decision must be labelled " + ...
+     "as an applied inner-loop decision."]);
+
 ctx = sixgr.core.SimContext(cfg);
 nTTI = 7;
 res = sixgr.system.SystemLevelRunner.run(ctx, struct( ...
@@ -88,8 +105,8 @@ assert(all(string(grantT.OLLAStateAuthority(ollaRows)) == ...
     "scheduler_local_state"), ...
     "Standalone system-level scheduling must expose its sole OLLA state authority.");
 
-localAssertFeedbackTimeline(res.Details.CQIFeedbackDL, "DL");
-localAssertFeedbackTimeline(res.Details.CQIFeedbackUL, "UL");
+localAssertFeedbackTimeline(res.Details.CQIFeedbackDL, "DL", grantT);
+localAssertFeedbackTimeline(res.Details.CQIFeedbackUL, "UL", grantT);
 
 tmp = tempname;
 mkdir(tmp);
@@ -105,8 +122,8 @@ persistedDL = localRead(fullfile(tmp, "system", "csv", ...
     "dl_cqi_feedback_timeline.csv"));
 persistedUL = localRead(fullfile(tmp, "system", "csv", ...
     "ul_cqi_feedback_timeline.csv"));
-localAssertFeedbackTimeline(persistedDL, "DL persisted");
-localAssertFeedbackTimeline(persistedUL, "UL persisted");
+localAssertFeedbackTimeline(persistedDL, "DL persisted", grantT);
+localAssertFeedbackTimeline(persistedUL, "UL persisted", grantT);
 
 ok = true;
 end
@@ -165,6 +182,10 @@ cfg.phy.duplex.fdd = struct( ...
     "dlCenterFrequencyHz", 4.0e9, "ulCenterFrequencyHz", 3.9e9);
 cfg.phy.pdcch.symbolAllocation = [0 2];
 cfg.phy.pdcch.SymbolAllocation = [0 2];
+% Exercise both directions through a real monitored common-DCI pair.  The
+% production scheduler correctly refuses to manufacture an UL DCI 0_0
+% grant when the search-space authority does not monitor it.
+cfg.phy.pdcch.dciFormats = {'1_0', '0_0'};
 cfg.phy.pdsch.symbolAllocation = [2 12];
 cfg.phy.pdsch.SymbolAllocation = [2 12];
 cfg.phy.pdsch.modulation = "QPSK";
@@ -230,9 +251,10 @@ cfg = sixgr.phy.frame.FrameRuntimeStateBuilder.attachTimingContext(cfg);
 sixgr.config.validateConfig(cfg);
 end
 
-function localAssertFeedbackTimeline(T, label)
+function localAssertFeedbackTimeline(T, label, grantT)
 assert(istable(T) && height(T) > 0, ...
-    "%s CQI timeline must contain receiver measurements.", label);
+    "%s CQI timeline must contain receiver measurements. %s", ...
+    label, localGrantReceiverDiagnostic(grantT, label));
 assert(all(double(T.AvailableTTI) - double(T.SourceTTI) == 2), ...
     "%s CQI timeline must enforce the exact configured delay.", label);
 assert(all(isfinite(double(T.PostEqSINR_dB))) && ...
@@ -241,6 +263,46 @@ assert(all(isfinite(double(T.PostEqSINR_dB))) && ...
 assert(all(~contains(lower(string(T.PostEqSINRSource)), ...
     ["configured","system_level","proxy","fallback","evm"])), ...
     "%s CQI timeline must not contain configured/proxy SINR.", label);
+end
+
+function text = localGrantReceiverDiagnostic(T, label)
+text = "No grant diagnostics available.";
+if ~istable(T) || height(T) == 0 || ...
+        ~ismember("Direction", string(T.Properties.VariableNames))
+    return;
+end
+direction = "DL";
+if contains(upper(string(label)), "UL")
+    direction = "UL";
+end
+rows = upper(string(T.Direction)) == direction;
+if ~any(rows)
+    text = direction + " grant rows=0.";
+    return;
+end
+source = localDiagnosticColumn(T, "PostEqSINRSource", rows);
+role = localDiagnosticColumn(T, "PostEqSINRValueRole", rows);
+ce = localDiagnosticColumn(T, "ChannelEstimateAvailable", rows);
+eq = localDiagnosticColumn(T, "EqualizationAvailable", rows);
+status = localDiagnosticColumn(T, "PostEqSINRValueStatus", rows);
+sinr = localDiagnosticColumn(T, "PostEqSINR_dB", rows);
+text = sprintf(["%s grant rows=%d; source=%s; role=%s; status=%s; " + ...
+    "CE=%s; EQ=%s; SINR=%s."], direction, nnz(rows), source, role, ...
+    status, ce, eq, sinr);
+end
+
+function value = localDiagnosticColumn(T, name, rows)
+if ~ismember(name, string(T.Properties.VariableNames))
+    value = "<missing>";
+    return;
+end
+raw = T.(char(name));
+raw = raw(rows, :);
+if isnumeric(raw) || islogical(raw)
+    value = mat2str(unique(double(raw(:))).');
+else
+    value = char(strjoin(unique(string(raw(:))), "|"));
+end
 end
 
 function T = localRead(pathStr)

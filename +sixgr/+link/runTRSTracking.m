@@ -89,6 +89,19 @@ out.TxRFStageOrder = "";
 out.TxRFAppliedStageCount = NaN;
 out.CompositeReceiverFrontEndApplied = false;
 out.CompositeReceiverFrontEndStatus = "";
+out.PowerNormalizationPolicy = "";
+out.PowerNormalizationSource = "";
+out.PowerNormalizationGridSource = "";
+out.PowerNormalizationGridSubcarrierCount = NaN;
+out.PowerNormalizationGridActiveSymbolCount = NaN;
+out.PowerNormalizationGridMeanEnergyPerRE = NaN;
+out.FullBWPActivityFactor = NaN;
+out.ReferenceInputPower_dBm = NaN;
+out.PowerReferenceOutput_dBm = NaN;
+out.ActualEmittedPower_dBm = NaN;
+out.ActualEmittedPowerBackoffFromBudget_dB = NaN;
+out.PowerClosureError_dB = NaN;
+out.PowerConversionEquation = "";
 out.ObservedREAllocationTable = table();
 
 configuredTRS = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
@@ -152,6 +165,33 @@ try
         replay,"CompositeReceiverFrontEndApplied",false));
     out.CompositeReceiverFrontEndStatus = char(string(sixgr.util.structGet( ...
         replay,"CompositeReceiverFrontEndStatus","")));
+    powerContext = sixgr.util.structGet(replay,"PowerContext",struct());
+    out.PowerNormalizationPolicy = string(sixgr.util.structGet( ...
+        powerContext,"PowerNormalizationPolicy",""));
+    out.PowerNormalizationSource = string(sixgr.util.structGet( ...
+        powerContext,"PowerNormalizationSource",""));
+    out.PowerNormalizationGridSource = string(sixgr.util.structGet( ...
+        powerContext,"NormalizationGridSource",""));
+    out.PowerNormalizationGridSubcarrierCount = double(sixgr.util.structGet( ...
+        powerContext,"NormalizationGridSubcarrierCount",NaN));
+    out.PowerNormalizationGridActiveSymbolCount = double(sixgr.util.structGet( ...
+        powerContext,"NormalizationGridActiveSymbolCount",NaN));
+    out.PowerNormalizationGridMeanEnergyPerRE = double(sixgr.util.structGet( ...
+        powerContext,"NormalizationGridMeanEnergyPerRE",NaN));
+    out.FullBWPActivityFactor = double(sixgr.util.structGet( ...
+        powerContext,"FullBWPActivityFactor",NaN));
+    out.ReferenceInputPower_dBm = double(sixgr.util.structGet( ...
+        powerContext,"ReferenceInputPower_dBm",NaN));
+    out.PowerReferenceOutput_dBm = double(sixgr.util.structGet( ...
+        powerContext,"ReferenceOutputPower_dBm",NaN));
+    out.ActualEmittedPower_dBm = double(sixgr.util.structGet( ...
+        powerContext,"OutputTotalPower_dBm",NaN));
+    out.ActualEmittedPowerBackoffFromBudget_dB = double(sixgr.util.structGet( ...
+        powerContext,"ActualEmittedPowerBackoffFromBudget_dB",NaN));
+    out.PowerClosureError_dB = double(sixgr.util.structGet( ...
+        powerContext,"PowerClosureError_dB",NaN));
+    out.PowerConversionEquation = string(sixgr.util.structGet( ...
+        powerContext,"ConversionEquation",""));
     out.QCLAccuracy = double(trial.QCLAccuracy);
     out.DetectionMetric = double(trial.DetectionMetric);
     out.AppliedAWGNSNR_dB = double(trial.AppliedAWGNSNR_dB);
@@ -528,7 +568,7 @@ replay.TxRFStageOrder = char(string(sixgr.util.structGet( ...
 replay.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
     txRfOut.Replay,"RFAppliedStageCount",0));
 [preFrontEndWaveform,preFrontEndNVar] = ...
-    localAddTrackingNoise(y,replay,snr_dB);
+    localAddTrackingNoise(y,replay,snr_dB,txInfo);
 replay.InjectedNoiseVariance = double(preFrontEndNVar);
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     preFrontEndWaveform,cfg,sampleRateHz,replay,"Direction","DL");
@@ -574,6 +614,28 @@ if ~isempty(carrier)
     end
 end
 txInfo = struct("OFDM",ofdm);
+slots = sixgr.util.structGet(tx,"GridSlots",struct([]));
+if ~isempty(slots)
+    exactGrids = arrayfun(@(slot) {sixgr.util.structGet( ...
+        slot,"Grid",[])},slots);
+    if any(cellfun(@isempty,exactGrids))
+        error("sixgr:link:TRSExactPowerGridUnavailable", ...
+            "Every TRS waveform slot must retain its exact transmitted " + ...
+            "port-domain resource grid for physical power normalization.");
+    end
+    referenceSubcarriers = size(exactGrids{1},1);
+    referencePorts = size(exactGrids{1},3);
+    compatible = cellfun(@(grid) ...
+        size(grid,1) == referenceSubcarriers && ...
+        size(grid,3) == referencePorts,exactGrids);
+    if ~all(compatible)
+        error("sixgr:link:TRSPowerGridDimensionMismatch", ...
+            "TRS slot grids have incompatible subcarrier or port dimensions.");
+    end
+    txInfo.PortGrid = cat(2,exactGrids{:});
+    txInfo.PowerNormalizationGridSource = ...
+        "exact_trs_multislot_port_grids";
+end
 end
 
 function replay = localMergeTRSReplay(varargin)
@@ -590,10 +652,10 @@ for argIdx = 1:nargin
 end
 end
 
-function [y, nVar] = localAddTrackingNoise(x, replay, snr_dB)
+function [y, nVar] = localAddTrackingNoise(x, replay, snr_dB, txInfo)
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
-    nVar = localResolveThermalNoiseVariance(replay, x);
+    nVar = localResolveThermalNoiseVariance(replay, x, txInfo);
     if isfinite(nVar) && nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
         y = x + cast(n, "like", x);
@@ -713,11 +775,13 @@ else
 end
 end
 
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform)
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
 nVar = NaN;
 servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
 thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-referencePower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+[~, perPortPower_mW] = sixgr.rf.measureActiveOFDMTotalPower( ...
+    referenceWaveform, txInfo);
+referencePower = mean(double(perPortPower_mW), "omitnan");
 if ~(isfinite(servingRxPower_dBm) && isfinite(thermalNoisePower_dBm) && isfinite(referencePower) && referencePower > 0)
     return;
 end

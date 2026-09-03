@@ -542,9 +542,11 @@ end
 
 [y, replay] = localApplyPRACHSampleImpairments(y, replay, sampleRateHz, cfg);
 desiredWaveform = y;
-[y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform);
+[y, nVar] = localAddAwgnFromReplay(y, replay, desiredWaveform, txInfo);
 replay.InjectedNoiseVariance = double(nVar);
-desiredPower = localEstimateWaveformPower(desiredWaveform);
+[~, desiredPerPortPower] = sixgr.rf.measureActiveOFDMTotalPower( ...
+    desiredWaveform, txInfo);
+desiredPower = mean(double(desiredPerPortPower), "omitnan");
 replay.DesiredSignalPowerBeforeNoise = double(desiredPower);
 replay.CompositeSignalPowerBeforeNoise = double(desiredPower);
 replay.PRACHNoiseReferencePower = double(desiredPower);
@@ -630,9 +632,10 @@ if ~isa(y, class(x))
 end
 end
 
-function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform)
+function [y, nVar] = localAddAwgnFromReplay(x, replay, referenceWaveform, txInfo)
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB);
+nVar = localResolveConfiguredSNRNoiseVariance( ...
+    referenceWaveform, txInfo, appliedSNR_dB);
 if isfinite(nVar) && nVar >= 0
     if nVar > 0
         n = sqrt(nVar / 2) .* (randn(size(x), "like", real(x)) + 1i * randn(size(x), "like", real(x)));
@@ -645,13 +648,15 @@ end
 [y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
 end
 
-function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, snr_dB)
+function nVar = localResolveConfiguredSNRNoiseVariance(referenceWaveform, txInfo, snr_dB)
 nVar = NaN;
 snr_dB = double(snr_dB);
 if ~(isscalar(snr_dB) && isfinite(snr_dB)) || isempty(referenceWaveform)
     return;
 end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
+[~, perPortPower_mW] = sixgr.rf.measureActiveOFDMTotalPower( ...
+    referenceWaveform, txInfo);
+refPower = mean(double(perPortPower_mW), "omitnan");
 if ~(isfinite(refPower) && refPower >= 0)
     return;
 end

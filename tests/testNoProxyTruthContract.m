@@ -52,9 +52,19 @@ catch ME
 end
 assert(threwFastLink, "No-proxy truth contract must reject fast-link proxy execution.");
 
-cfg = sixgr.config.defaultConfig();
+% Strict E2E truth executes the actual four-step RA and typed control/data
+% chain.  Start from a fully resolved scenario so carrier/frame, PRACH,
+% CORESET/search-space and PDCCH allocations all share one YAML authority.
+scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
+    "simulator", "configs", "scenarios", ...
+    "lls_causal_access_to_data_wiring_tdd.yaml"));
+cfg = sixgr.lls6g.buildInternalConfig(scenario, ...
+    fullfile(tmp, "no_proxy_truth_runtime"));
 cfg.run.strictMode = true;
 cfg.channel.model = "TDL-C";
+cfg.channel.tdlProfile = "TDL-C";
+cfg.channel.cdlProfile = "";
+cfg.channel.delayProfile = "TDL-C";
 cfg.channel.awgnOnly = false;
 cfg.channel.dopplerHz = 70;
 cfg.channel.fading.enable = true;

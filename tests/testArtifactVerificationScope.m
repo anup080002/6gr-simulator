@@ -3,11 +3,17 @@ function ok = testArtifactVerificationScope()
 
 setup6GRSimToolkit("Verbose", false);
 
-cfg = sixgr.config.defaultConfig();
+% The strict E2E runner always establishes a real RRC connection before it
+% schedules data.  Start from the fully specified four-step-RA fixture so
+% this artifact-scope test cannot accidentally rely on default/incomplete
+% RACH state.
+cfg = raStrictAnchorConfig();
+cfg.scenario.objectives = "e2e_truth_artifact_scope";
 cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+cfg = localConfigureExplicitUngatedControl(cfg);
 
 tmp = tempname;
 mkdir(tmp);
@@ -55,4 +61,22 @@ assert(~any(sysMask), "Mode-scoped artifact checklist should not require system 
 assert(~any(linkMask), "Mode-scoped artifact checklist should not require link artifacts for E2E-only runs.");
 
 ok = true;
+end
+
+function cfg = localConfigureExplicitUngatedControl(cfg)
+% This test scopes artifact requirements; it does not qualify access gating.
+% Keep every post-attach coupled-runtime gating decision explicit.  The
+% strict E2E entry point still executes the real configured Msg1--Msg4/RRC
+% attach above; none of its RACH inputs are bypassed or synthesized here.
+cfg.run.controlGating = struct( ...
+    "pbchRequired", false, ...
+    "prachRequired", false, ...
+    "pdcchRequired", false, ...
+    "srsRequired", false, ...
+    "trsRequired", false, ...
+    "srsMaxAgeSlots", 4, ...
+    "trsMaxAgeSlots", 4, ...
+    "timingAdvanceUpdateMode", "measurement_only", ...
+    "timingAdvanceUpdateThresholdSamples", 1, ...
+    "preAttachUEsBeforeMeasurement", false);
 end

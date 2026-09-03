@@ -91,6 +91,7 @@ cfgOn = localBaseCfg();
 cfgOff.pdsch6gr.CarrierFrequencyHz = 30e9;
 cfgOff.pdsch6gr.Numerology = 3;
 cfgOff.pdsch6gr.DuplexMode = "TDD";
+cfgOff.phy.duplex.mode = "TDD";
 cfgOff.pdsch6gr.ChannelBandwidthMHz = 100;
 cfgOff.pdsch6gr.NSizeGrid = 66;
 cfgOff.pdsch6gr.ChannelModel = "AWGN";

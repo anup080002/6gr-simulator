@@ -46,7 +46,13 @@ elseif isstruct(cfgOrCsirs)
         error('sixgr:phy:csirs:InvalidResourceCount', ...
             'phy.csirs.numResources must be a positive integer.');
     end
-    if numResources > 1
+    % A one-resource set is still a configured resource set.  The prior
+    % branch only consumed the per-resource YAML vectors when count > 1,
+    % so a perfectly valid one-resource configuration silently fell back
+    % to nrCSIRSConfig defaults (notably symbol 0).  Treat any nonempty
+    % resource-vector authority as a set and let the strict set resolver
+    % fail closed if one of the companion vectors is missing.
+    if numResources > 1 || localHasConfiguredResourceSet(cfgOrCsirs)
         [csirsInd, csirsSym, info, csirs] = ...
             localGenerateConfiguredResourceSet(carrier, cfgOrCsirs, opts.IndexBase, numResources);
         return;
@@ -80,11 +86,29 @@ try
 catch
     info.Density = "";
 end
+
+function tf = localHasConfiguredResourceSet(cfg)
+paths = [ ...
+    "phy.csirs.resourceIDs"
+    "phy.csirs.rowNumbers"
+    "phy.csirs.symbolLocationsByResource"
+    "phy.csirs.subcarrierLocationsByResource"
+    "phy.csirs.rbOffsetsByResource"
+    "phy.csirs.numRBsByResource"];
+tf = false;
+for pathIndex = 1:numel(paths)
+    if ~isempty(sixgr.util.structGet(cfg, paths(pathIndex), []))
+        tf = true;
+        return;
+    end
+end
+end
 try
     info.CDMType = string(csirs.CDMType);
 catch
     info.CDMType = "";
 end
+info.CDMLengths = sixgr.phy.refsig.csirsCDMLengths(info.CDMType);
 resourceID = 0;
 if isstruct(cfgOrCsirs)
     resourceID = double(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.resourceID', 0));
@@ -173,6 +197,9 @@ for ordinal = 1:numResources
     resources(ordinal).RBOffset = double(resourceConfig.RBOffset);
     resources(ordinal).NumRB = double(resourceConfig.NumRB);
     resources(ordinal).NumPorts = double(resourceConfig.NumCSIRSPorts);
+    resources(ordinal).CDMType = string(resourceConfig.CDMType);
+    resources(ordinal).CDMLengths = ...
+        sixgr.phy.refsig.csirsCDMLengths(resources(ordinal).CDMType);
     indexParts{ordinal} = indices;
     symbolParts{ordinal} = symbols;
     mappingParts{ordinal} = mapping;
@@ -198,6 +225,7 @@ info.SymbolLocations = symbolLocations(:).';
 info.SubcarrierLocations = subcarrierLocations(:).';
 info.Density = "one";
 info.CDMType = "FD-CDM2";
+info.CDMLengths = resources(1).CDMLengths;
 info.ResourceMappingTable = vertcat(mappingParts{:});
 info.CausalMeasurementRole = "CSI-RS resource set -> measured CRI/RI/PMI/CQI";
 info.MeasurementStateContract = ...
@@ -217,7 +245,7 @@ resource = struct('ResourceID',NaN,'ResourceSetID',NaN,'Configuration',[], ...
     'Indices',[],'Symbols',[],'IndicesInfo',struct(), ...
     'ResourceMappingTable',table(),'NRE',NaN,'RowNumber',NaN, ...
     'SymbolLocations',[],'SubcarrierLocations',[],'RBOffset',NaN, ...
-    'NumRB',NaN,'NumPorts',NaN);
+    'NumRB',NaN,'NumPorts',NaN,'CDMType',"",'CDMLengths',[]);
 end
 
 function csirs = localBuildFromCfg(carrier, cfg)

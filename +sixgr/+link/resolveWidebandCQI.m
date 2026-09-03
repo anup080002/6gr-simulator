@@ -232,23 +232,39 @@ if numel(vals) < ri
     return;
 end
 vals = vals(1:ri);
-lin = 10 .^ (vals ./ 10);
 if ri <= 4
     % TS 38.211 maps ranks 1--4 to one PDSCH/PUSCH codeword.  Per-layer
-    % SINR must therefore reduce to one codeword quality, not two.
-    cw0 = 10 * log10(max(mean(lin, "omitnan"), eps));
+    % SINR must therefore reduce to one codeword quality, not two.  The
+    % coded bits are distributed across layers, so an arithmetic mean of
+    % linear SINR is non-physical: a strong layer would conceal a weak
+    % layer.  Use a mutual-information-equivalent reduction, matching the
+    % LLS effective-SINR domain used for link adaptation.
+    cw0 = localLayerMutualInformationEquivalentSINR(vals);
     perCodewordSINR_dB = cw0;
     perCodewordCQI = sixgr.phy.dl.mapSINRToCQI(cw0, cqiTable);
     return;
 end
 nCW0 = max(1, floor(ri / 2));
 nCW1 = max(1, ri - nCW0);
-cw0 = 10 * log10(max(mean(lin(1:nCW0), "omitnan"), eps));
-cw1 = 10 * log10(max(mean(lin((nCW0+1):(nCW0+nCW1)), "omitnan"), eps));
+cw0 = localLayerMutualInformationEquivalentSINR(vals(1:nCW0));
+cw1 = localLayerMutualInformationEquivalentSINR(vals((nCW0+1):(nCW0+nCW1)));
 perCodewordSINR_dB = [cw0 cw1];
 perCodewordCQI = [ ...
     sixgr.phy.dl.mapSINRToCQI(cw0, cqiTable), ...
     sixgr.phy.dl.mapSINRToCQI(cw1, cqiTable)];
+end
+
+function effectiveSINR_dB = localLayerMutualInformationEquivalentSINR(layerSINR_dB)
+%LOCALLAYERMUTUALINFORMATIONEQUIVALENTSINR Reduce equal-bit layers to one CQI input.
+layerSINR_dB = double(layerSINR_dB(:));
+layerSINR_dB = layerSINR_dB(isfinite(layerSINR_dB));
+if isempty(layerSINR_dB)
+    effectiveSINR_dB = NaN;
+    return;
+end
+layerSINRLinear = 10 .^ (layerSINR_dB ./ 10);
+meanMutualInformation = mean(log2(1 + max(layerSINRLinear, 0)), "omitnan");
+effectiveSINR_dB = 10 * log10(max(2 .^ meanMutualInformation - 1, eps));
 end
 
 function spectralEfficiency = localSINRToSpectralEfficiency(sinr_dB)

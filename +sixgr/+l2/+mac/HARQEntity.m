@@ -57,12 +57,28 @@ classdef HARQEntity < handle
 
     methods
         function obj = HARQEntity(cfg, varargin)
-            %#ok<INUSD> cfg (reserved for future)
             if nargin < 1
-                cfg = struct(); %#ok<NASGU>
+                cfg = struct();
             end
 
-            % Parse overrides
+            % Resolve the production configuration before applying explicit
+            % name-value overrides.  The live coupled runner constructs the
+            % entity from cfg only, so the YAML-derived RV sequence must be
+            % consumed here rather than coincidentally matching this class's
+            % historical default.
+            obj.MaxRetx = double(sixgr.util.structGet(cfg, ...
+                "mac.harq.maxRetx", obj.MaxRetx));
+            obj.NumProcesses = double(sixgr.util.structGet(cfg, ...
+                "mac.harq.numProcesses", sixgr.util.structGet(cfg, ...
+                "phy.harq.nProcesses", obj.NumProcesses)));
+            obj.RVSequence = double(sixgr.util.structGet(cfg, ...
+                "phy.harq.rvSequence", sixgr.util.structGet(cfg, ...
+                "mac.harq.rvSequence", obj.RVSequence)));
+
+            % Explicit call-site overrides remain useful for isolated unit
+            % tests and direction-specific construction.  They deliberately
+            % take precedence over cfg because their use is visible at the
+            % constructor boundary.
             if ~isempty(varargin)
                 if mod(numel(varargin),2) ~= 0
                     error('sixgr:HARQEntity:BadNV','Name-value inputs must come in pairs.');
@@ -93,18 +109,30 @@ classdef HARQEntity < handle
                 end
             end
 
-            obj.NumProcesses = max(1, round(obj.NumProcesses));
-            obj.MaxRetx = max(0, round(obj.MaxRetx));
-
-            % If cfg has mac.harq.*, use it as defaults unless overridden above
-            try
-                obj.MaxRetx = double(sixgr.util.structGet(cfg,"mac.harq.maxRetx",obj.MaxRetx));
-                obj.NumProcesses = double(sixgr.util.structGet(cfg,"mac.harq.numProcesses", ...
-                    sixgr.util.structGet(cfg,"phy.harq.nProcesses",obj.NumProcesses)));
-            catch
+            if ~(isscalar(obj.NumProcesses) && isfinite(obj.NumProcesses) && ...
+                    obj.NumProcesses >= 1 && obj.NumProcesses == round(obj.NumProcesses))
+                error("sixgr:mac:InvalidHARQProcessCount", ...
+                    "HARQ process count must be a positive integer, observed %s.", ...
+                    mat2str(obj.NumProcesses));
+            end
+            if ~(isscalar(obj.MaxRetx) && isfinite(obj.MaxRetx) && ...
+                    obj.MaxRetx >= 0 && obj.MaxRetx == round(obj.MaxRetx))
+                error("sixgr:mac:InvalidHARQMaxRetx", ...
+                    "HARQ maxRetx must be a nonnegative integer, observed %s.", ...
+                    mat2str(obj.MaxRetx));
             end
             obj.NumProcesses = max(1, round(obj.NumProcesses));
             obj.MaxRetx = max(0, round(obj.MaxRetx));
+            obj.RVSequence = double(obj.RVSequence(:).');
+            if isempty(obj.RVSequence) || any(~isfinite(obj.RVSequence)) || ...
+                    any(obj.RVSequence ~= round(obj.RVSequence)) || ...
+                    any(obj.RVSequence < 0 | obj.RVSequence > 3) || ...
+                    obj.RVSequence(1) ~= 0
+                error("sixgr:mac:InvalidHARQRVSequence", ...
+                    "HARQ RV sequence must be a nonempty integer vector in " + ...
+                    "[0,3] whose first new-data RV is 0; observed %s.", ...
+                    mat2str(obj.RVSequence));
+            end
             obj.StaleProcessTimeoutSlots = NaN;
         end
 

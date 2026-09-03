@@ -103,6 +103,7 @@ sections:
       transmission_scheme: {required: false, type: string, allowed_values: [codebook, nonCodebook]}
       codebook_type: {required: false, type: string, allowed_values: [type1, type2, etype2]}
       pmi: {required: false, type: integer, min: 0}
+      use_exact_flat_static_mimo_prg_estimator: {required: false, type: boolean}
       vrb_to_prb_mapping: {required: false, type: string}
       prb_bundling_type: {required: false, type: string}
       prb_bundle_size: {required: false, type: string_or_number}
@@ -110,6 +111,9 @@ sections:
       xoh_pdsch: {required: false, type: number}
       tbs_scaling: {required: false, type: number, min_exclusive: 0}
       cbg_transmission: {required: false, type: boolean}
+      dmrs_residual_post_eq_sinr_bound_enabled: {required: false, type: boolean}
+      decision_directed_post_eq_sinr_bound_enabled: {required: false, type: boolean}
+      decoder_noise_variance_mode: {required: false, type: string, allowed_values: [post_equalization, pre_equalization]}
   pusch:
     required: false
     parameters:
@@ -216,6 +220,10 @@ sections:
       post_equalization_snr_estimation: {required: false, type: string}
       irc_interference_covariance_window_slots: {required: false, type: integer, min: 1}
       irc_covariance_estimation: {required: false, type: string}
+      irc_covariance_frequency_window_prbs: {required: false, type: integer, min: 1}
+      irc_covariance_time_window_symbols: {required: false, type: integer, min: 1}
+      irc_covariance_shrinkage_factor: {required: false, type: number, min: 0, max_exclusive: 1}
+      irc_covariance_minimum_samples: {required: false, type: integer, min: 2}
       sv_threshold: {required: false, type: number, min: 0}
       condition_number_cap: {required: false, type: number, min_exclusive: 0}
       per_prb_equalization: {required: false, type: boolean}

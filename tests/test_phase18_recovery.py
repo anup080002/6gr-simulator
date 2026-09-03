@@ -7,11 +7,16 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_web_dashboard as dash  # noqa: E402
+
+
+pytestmark = pytest.mark.phase18_recovery
 
 
 DEFAULT_SOURCE_ROOT = (

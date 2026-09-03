@@ -1,0 +1,28 @@
+{
+  "inherits": [
+    "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_8slot_gate.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_12slot_gate",
+    "description": "Bounded exact-waveform FDD closure gate long enough for shared-PRB MU-MIMO CSI feedback to return and affect a later scheduling decision.",
+    "version": "1",
+    "owner": "qualification",
+    "maturity_tag": "regression"
+  },
+  "simulation": {
+    "n_frames": 1,
+    "n_slots": 12,
+    "monte_carlo_iterations": 1,
+    "random_seed": 19,
+    "snr_db": 34
+  },
+  "run_control": {
+    "total_slots": 12,
+    "total_time_ms": 6,
+    "warmup_slots": 0,
+    "measurement_slots": 12
+  },
+  "output": {
+    "profile": "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_12slot_gate"
+  }
+}

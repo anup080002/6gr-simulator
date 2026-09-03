@@ -16,6 +16,19 @@ MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(MODULE)
 
 
+def test_canonical_csv_reader_accepts_large_runtime_fields(tmp_path: Path) -> None:
+    authority = tmp_path / "dl_pdsch_trials.csv"
+    serialized_runtime_array = "x" * 200_000
+    authority.write_text(
+        "TrialId,ExactRuntimeArray\n1," + serialized_runtime_array + "\n",
+        encoding="utf-8",
+    )
+
+    assert MODULE.read_csv_shape(authority) == (1, 2)
+    rows = MODULE.read_csv(authority)
+    assert rows[0]["ExactRuntimeArray"] == serialized_runtime_array
+
+
 def _semantic_row(category: str, *, passed: bool) -> dict[str, object]:
     return {
         "category": category,
@@ -143,8 +156,54 @@ def test_component_mapping_routes_contract_plots_to_requested_folders() -> None:
 
 
 def test_run_root_guard_rejects_paths_outside_results_lls(tmp_path: Path) -> None:
+    os.environ.pop("SIXGR_REGRESSION_SCRATCH_ROOT", None)
     with pytest.raises(SystemExit, match="Refusing raster replacement outside"):
         MODULE.validate_run_root(tmp_path)
+
+
+def test_run_root_guard_accepts_only_exact_regression_scratch_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    scratch = tmp_path / "isolated_regression"
+    run = scratch / "scenario" / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "air_interface" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "ctrl6gr_pdcch_study"},
+                "simulation": {"link_direction": "dl"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    (run / "air_interface" / "csv" / "pdcch_trials.csv").write_text(
+        "TrialId,CRCOK\n1,1\n", encoding="utf-8"
+    )
+    monkeypatch.setenv("SIXGR_REGRESSION_SCRATCH_ROOT", str(scratch))
+
+    assert MODULE.validate_run_root(run) == run.resolve()
+    with pytest.raises(SystemExit, match="exact scenario/run folder"):
+        MODULE.validate_run_root(scratch)
+
+
+def test_run_root_guard_does_not_trust_scratch_siblings(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    scratch = tmp_path / "isolated_regression"
+    monkeypatch.setenv("SIXGR_REGRESSION_SCRATCH_ROOT", str(scratch))
+
+    with pytest.raises(SystemExit, match="Refusing raster replacement outside"):
+        MODULE.validate_run_root(tmp_path / "isolated_regression_sibling" / "scenario" / "run_1")
 
 
 def test_run_root_guard_uses_component_waveform_authority(
@@ -177,6 +236,119 @@ def test_run_root_guard_uses_component_waveform_authority(
     assert MODULE.validate_run_root(run) == run.resolve()
     assert not (run / "air_interface" / "csv" / "dl_pdsch_trials.csv").exists()
     assert not (run / "air_interface" / "csv" / "ul_pusch_trials.csv").exists()
+
+
+def test_run_root_guard_uses_ai_benchmark_authority(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results" / "lls" / "ai_component" / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "ai_benchmark"},
+                "ai_ml": {"use_case": "channel_estimation_enhancement"},
+                "simulation": {"link_direction": "both"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    (run / "reports" / "csv" / "ai_benchmark_metadata.csv").write_text(
+        "ScenarioID,AIEnabled\nai_component,1\n", encoding="utf-8"
+    )
+    (run / "reports" / "csv" / "ai_channel_estimation_benchmark.csv").write_text(
+        "TrialID,NMSE\n1,0.1\n", encoding="utf-8"
+    )
+
+    assert MODULE.validate_run_root(run) == run.resolve()
+    assert not (run / "air_interface" / "csv" / "dl_pdsch_trials.csv").exists()
+    assert not (run / "air_interface" / "csv" / "ul_pusch_trials.csv").exists()
+
+
+@pytest.mark.parametrize(
+    ("use_case", "artifact"),
+    sorted(MODULE.AI_USE_CASE_AUTHORITY.items()),
+)
+def test_ai_run_root_guard_requires_the_exact_use_case_artifact(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    use_case: str,
+    artifact: str,
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results" / "lls" / use_case / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text("{}", encoding="utf-8")
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "ai_benchmark"},
+                "ai_ml": {"use_case": use_case},
+                "simulation": {"link_direction": "both"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    (run / "reports" / "csv" / "ai_benchmark_metadata.csv").write_text(
+        "UseCase\n" + use_case + "\n", encoding="utf-8"
+    )
+    target = run / artifact
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text("TrialID,Value\n1,1\n", encoding="utf-8")
+    assert MODULE.validate_run_root(run) == run.resolve()
+
+    target.unlink()
+    wrong = run / "reports" / "csv" / "ai_channel_estimation_benchmark.csv"
+    wrong.write_text("TrialID,Value\n1,1\n", encoding="utf-8")
+    if target.resolve() != wrong.resolve():
+        with pytest.raises(SystemExit, match="missing required authority"):
+            MODULE.validate_run_root(run)
+
+
+def test_ai_run_root_guard_rejects_header_only_selected_authority(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results" / "lls" / "detector_selection" / "run_1"
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text(
+        "{}", encoding="utf-8"
+    )
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "scenario": {"runner_profile": "ai_benchmark"},
+                "ai_ml": {"use_case": "detector_selection"},
+                "simulation": {"link_direction": "both"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\ncompleted\n", encoding="utf-8"
+    )
+    (run / "reports" / "csv" / "ai_benchmark_metadata.csv").write_text(
+        "UseCase\ndetector_selection\n", encoding="utf-8"
+    )
+    (run / "reports" / "csv" / "ai_detector_selection_benchmark.csv").write_text(
+        "Observation,SelectedDetector\n", encoding="utf-8"
+    )
+
+    with pytest.raises(SystemExit, match="header-only or empty authority CSVs"):
+        MODULE.validate_run_root(run)
 
 
 def test_run_root_guard_requires_configured_link_direction_authority(

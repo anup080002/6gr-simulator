@@ -86,6 +86,7 @@ for i = 1:numel(vectors)
 
     if i == 1
         localAssertNoiselessRoundtrip(tx, tbBits, cfg);
+        localAssertDMRSPortMismatchFails(cfg, tx, phyGrant, tbBits, v.RV);
     end
 end
 
@@ -94,6 +95,24 @@ localAssertInvalidCombinationsFail();
 fprintf("PUSCH grant-driven exact vectors=%d maxLayerErr=%.3g maxPortErr=%.3g maxGridErr=%.3g maxDftErr=%.3g\n", ...
     numel(vectors), maxLayerErr, maxPortErr, maxGridErr, maxDftErr);
 ok = true;
+end
+
+function localAssertDMRSPortMismatchFails(cfg, tx, phyGrant, tbBits, rv)
+badPUSCH = tx.PUSCH;
+scheduledPorts = double(sixgr.util.structGet( ...
+    phyGrant, "CodingLayout.DMRSPortSet", []));
+assert(~isempty(scheduledPorts), ...
+    "Focused frozen grant must carry an authoritative DM-RS port set.");
+badPUSCH.DMRS.DMRSPortSet = scheduledPorts + 1;
+thrown = false;
+try
+    sixgr.phy.ul.PUSCH_Tx(cfg, "PUSCH", badPUSCH, ...
+        "PHYGrant", phyGrant, "TransportBlockBits", tbBits, "RV", rv);
+catch ME
+    thrown = strcmp(ME.identifier, "sixgr:phy:ul:PUSCHGrantDMRSPortMismatch");
+end
+assert(thrown, ...
+    "An explicit PUSCH whose DM-RS ports differ from the frozen grant must fail closed.");
 end
 
 function vectors = localVectorSet()

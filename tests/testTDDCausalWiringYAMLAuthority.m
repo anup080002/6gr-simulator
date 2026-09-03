@@ -26,13 +26,22 @@ assert(double(raw.global_radio_scope.fft_size) == 512);
 assert(double(raw.global_radio_scope.sample_rate_hz) == 7.68e6);
 assert(double(raw.tdd_timing.n1_pdsch_processing_time_symbols) == 8);
 assert(double(raw.tdd_timing.n2_pusch_preparation_time_symbols) == 10);
-assert(double(raw.run_control.total_slots) == 15);
-assert(double(raw.run_control.measurement_slots) == 15);
+assert(double(raw.run_control.total_slots) == 25);
+assert(double(raw.run_control.measurement_slots) == 25);
 assert(double(raw.link_adaptation.feedback_delay_slots) == 1);
+assert(double(raw.reference_signals.pdsch_dmrs_ports) == 2);
+assert(isequal(double(raw.reference_signals.pdsch_dmrs.port_set(:).'), [0 1]));
+assert(double(raw.reference_signals.pusch_dmrs_ports) == 1);
+assert(isequal(double(raw.reference_signals.pusch_dmrs.port_set(:).'), 0));
 assert(~logical(raw.random_access.statistical_qualification.enabled));
 assert(string(raw.validation.strict_component_evidence.execution_scope) == ...
     "in_path");
-assert(all(ismember(["prach","srs","trs","sib1"], ...
+assert(string(raw.validation.run_class) == "adaptive_system_diagnostic");
+assert(logical(raw.validation.causal_phy_chain_audit.enabled));
+assert(logical(raw.validation.causal_phy_chain_audit.required));
+assert(numel(raw.validation.causal_phy_chain_audit.stages) >= 20);
+assert(numel(raw.validation.causal_phy_chain_audit.parameter_bindings) >= 10);
+assert(all(ismember(["prach","pdcch","srs","trs","sib1","channel_rf"], ...
     string(raw.validation.strict_component_evidence.required_components))));
 assert(logical(raw.random_access_evidence.four_step_ra_required));
 assert(logical(raw.random_access_evidence.msg1_prach_required));
@@ -49,10 +58,22 @@ assert(string(cfg.phy.duplex.mode) == "TDD");
 assert(isfield(cfg.phy.duplex, "tddCommon"));
 assert(~isfield(cfg.phy.duplex, "fdd"));
 assert(double(cfg.phy.carrier.NSizeGrid) == 25);
-assert(double(cfg.run.totalSlots) == 15);
-assert(double(cfg.run.measurementSlots) == 15);
+assert(double(cfg.run.totalSlots) == 25);
+assert(double(cfg.run.measurementSlots) == 25);
 assert(double(cfg.phy.linkAdaptation.feedbackDelaySlots) == 1);
 assert(double(cfg.phy.csi.feedbackDelaySlots) == 1);
+assert(double(cfg.phy.pdsch.nLayers) == 1);
+assert(double(cfg.phy.pdsch.numPorts) == 2);
+assert(isequal(double(cfg.phy.pdsch.dmrs.portSet(:).'), 0));
+assert(isequal(double(cfg.phy.pdsch.dmrs.availablePortSet(:).'), [0 1]));
+assert(double(cfg.phy.pusch.nLayers) == 1);
+assert(double(cfg.phy.pusch.NumAntennaPorts) == 1);
+assert(isequal(double(cfg.phy.pusch.dmrs.portSet(:).'), 0));
+assert(double(cfg.phy.csirs.nPorts) == 2);
+assert(double(cfg.antenna.bs.numElements) == 2);
+assert(double(cfg.antenna.bs.numRFChains) == 2);
+assert(double(cfg.phy.pdsch.numPorts) >= double(cfg.phy.pdsch.nLayers));
+assert(double(cfg.phy.csirs.nPorts) <= double(cfg.phy.pdsch.numPorts));
 assert(string(cfg.validation.strict_component_evidence.execution_scope) == ...
     "in_path");
 timingPolicy = cfg.phy.frameStructure.TimingContext.Policy;
@@ -96,16 +117,33 @@ assert(~isempty(allocations));
 
 assert(raw.reference_signals.csi_rs_offset_slots == 1);
 assert(raw.reference_signals.srs.period_offset == 4);
+assert(double(raw.pusch.start_symbol) + double(raw.pusch.num_symbols) <= ...
+    double(raw.reference_signals.srs.symbol_start), ...
+    "The YAML-owned scheduled PUSCH allocation must leave the periodic SRS symbol collision-free.");
+assert(string(raw.link_adaptation.ul_srs_to_pusch_layer_sinr_policy) == ...
+    "minimum_layer_mean_post_equalization");
+assert(double(raw.link_adaptation.ul_reference_signal_scheduling_backoff_db) == 0);
 assert(isequal(double(raw.reference_signals.trs.slot_numbers(:)).', [2 7]));
 assert(frame.IsDLSlot(1) && frame.IsULSlot(4));
 assert(all(arrayfun(@(slot0) frame.IsDLSlot(slot0), ...
     double(raw.reference_signals.trs.slot_numbers))));
 assert(logical(raw.pucch_resources.overlap_policy.uci_on_pusch_enabled));
+assert(~logical(raw.interference.inter_cell_interference_flag));
+assert(~logical(raw.interference.intra_cell_interference_flag));
+assert(~logical(raw.interference.mu_mimo_interference_flag));
+assert(string(raw.interference.inter_cell_execution_mode) == "none");
+assert(string(raw.interference.interference_measurement_policy) == "disabled");
 assert(isequal(double(raw.control.search_space_num_candidates(:)).', ...
     [4 2 1 1 0]));
 assert(double(raw.pucch_resources.resources(2).occ_length) == 2);
 assert(logical(raw.link_adaptation.inner_loop_flag));
 assert(logical(raw.link_adaptation.outer_loop_flag));
+assert(string(raw.link_adaptation.delta_mcs_policy) == "ack_nack_olla");
+assert(string(raw.link_adaptation.cqi_smoothing_mode) == "fixed");
+ollaPolicy = sixgr.link.resolveOLLAConfig(cfg);
+assert(logical(ollaPolicy.Enabled));
+assert(abs(double(ollaPolicy.ImpliedTargetBLER) - 0.1) < 1e-12);
+assert(abs(double(ollaPolicy.ConfiguredTargetBLER) - 0.1) < 1e-12);
 assert(logical(raw.rf_frontend.ul_power_control.require_measured_reference_rs));
 assert(logical(raw.rf_frontend.ul_power_control.configured_snr_pathloss_forbidden));
 assert(double(raw.rf_frontend.ul_power_control.srs.p0_dbm) == -80);
@@ -126,6 +164,7 @@ assert(string(raw.output.artifact_contract_engine.raster_authority) == ...
     "post_run_csv_contract_materializer");
 assert(logical(raw.output.artifact_contract_engine.fail_on_missing_required));
 assert(~logical(raw.output.artifact_contract_engine.allow_placeholder_evidence));
+assert(logical(raw.output.profiler_enabled));
 
 ok = true;
 fprintf("[PASS] testTDDCausalWiringYAMLAuthority rows=%d exactRE=%d\n", ...

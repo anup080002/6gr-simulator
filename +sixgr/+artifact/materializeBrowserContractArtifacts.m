@@ -1,4 +1,4 @@
-function out = materializeBrowserContractArtifacts(runFolder)
+function out = materializeBrowserContractArtifacts(runFolder, options)
 %MATERIALIZEBROWSERCONTRACTARTIFACTS Run the canonical CSV raster publisher.
 %
 % Filesystem publication is always authoritative and precedes an optional
@@ -7,6 +7,8 @@ function out = materializeBrowserContractArtifacts(runFolder)
 
 arguments
     runFolder {mustBeTextScalar}
+    options.Force (1,1) logical = false
+    options.ReplaceExistingRastersFromCSV (1,1) logical = true
 end
 
 out = struct( ...
@@ -58,9 +60,12 @@ if exist(runFolder, "dir") ~= 7
 end
 
 filesystemCmd = sprintf( ...
-    '"%s" "%s" --run-folder "%s" --strict --replace-existing-rasters-from-csv', ...
+    '"%s" "%s" --run-folder "%s" --strict%s%s', ...
     localShellEscapeArg(pythonExe), localShellEscapeArg(scriptPath), ...
-    localShellEscapeArg(runFolder));
+    localShellEscapeArg(runFolder), ...
+    localFlag(options.Force, " --force"), ...
+    localFlag(options.ReplaceExistingRastersFromCSV, ...
+    " --replace-existing-rasters-from-csv"));
 filesystemResult = localExecuteMaterializerCommand(filesystemCmd);
 out.Status = double(filesystemResult.Status);
 out.CreatedCount = double(filesystemResult.CreatedCount);
@@ -112,9 +117,10 @@ if ~(isfinite(runID) && runID > 0)
 end
 out.DatabaseRunID = double(runID);
 out.PublicationBackend = "mysql_web";
-databaseCmd = sprintf('"%s" "%s" --run-id %d --strict', ...
+databaseCmd = sprintf('"%s" "%s" --run-id %d --strict%s', ...
     localShellEscapeArg(string(mysqlPython.Executable)), ...
-    localShellEscapeArg(scriptPath), round(runID));
+    localShellEscapeArg(scriptPath), round(runID), ...
+    localFlag(options.Force, " --force"));
 databaseResult = localExecuteMaterializerCommand(databaseCmd);
 out.Status = double(databaseResult.Status);
 out.CreatedCount = out.CreatedCount + double(databaseResult.CreatedCount);
@@ -202,6 +208,14 @@ end
 
 function out = localShellEscapeArg(value)
 out = strrep(char(string(value)), '"', '""');
+end
+
+function out = localFlag(enabled, value)
+if enabled
+    out = char(string(value));
+else
+    out = '';
+end
 end
 
 function root = localRepoRoot()

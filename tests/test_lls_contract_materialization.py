@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import hashlib
+import json
 import shutil
 import sys
 import tempfile
@@ -14,6 +15,226 @@ REPO_ROOT = Path(__file__).absolute().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 
 import lls_contract_materializer as materializer  # noqa: E402
+
+
+def _filesystem_artifacts(root: Path) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for index, path in enumerate(sorted(p for p in root.rglob("*") if p.is_file()), 1):
+        rows.append(
+            {
+                "artifact_id": index,
+                "logical_path": path.relative_to(root).as_posix().lower(),
+                "artifact_kind": "table_csv" if path.suffix == ".csv" else "image_png",
+                "mime_type": "text/csv" if path.suffix == ".csv" else "image/png",
+                "byte_size": path.stat().st_size,
+                "filesystem_path": str(path),
+                "metadata_json": "{}",
+            }
+        )
+    return rows
+
+
+def test_exact_filesystem_cache_detects_source_and_contract_byte_changes(monkeypatch) -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source = root / "air_interface" / "csv" / "measured.csv"
+        contract_csv = root / "reports" / "csv" / "contract__x__plot.csv"
+        contract_png = root / "reports" / "image" / "contract__x__plot.png"
+        manifest = root / materializer.manifest_logical_path()
+        coverage = root / materializer.coverage_logical_path()
+        lineage = root / materializer.plot_lineage_logical_path()
+        for path, payload in (
+            (source, b"x,y\n1,2\n"),
+            (contract_csv, b"x,y\n1,2\n"),
+            (contract_png, b"png-bytes"),
+            (manifest, b"manifest\n"),
+            (coverage, b"coverage\n"),
+            (lineage, b"lineage\n"),
+        ):
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(payload)
+        monkeypatch.setattr(materializer, "_table_specs", lambda: [])
+        monkeypatch.setattr(
+            materializer,
+            "_chart_specs",
+            lambda: [{"chart_name": "plot", "section_slug": "x"}],
+        )
+        artifacts = _filesystem_artifacts(root)
+        payload = materializer.write_filesystem_contract_cache(root, artifacts, {})
+        assert payload["source_artifact_count"] == 1
+        assert materializer.filesystem_contract_cache_current(
+            root, _filesystem_artifacts(root), {}
+        )
+
+        source.write_bytes(b"x,y\n1,3\n")
+        assert not materializer.filesystem_contract_cache_current(
+            root, _filesystem_artifacts(root), {}
+        )
+        source.write_bytes(b"x,y\n1,2\n")
+        contract_png.write_bytes(b"tampered-png")
+        assert not materializer.filesystem_contract_cache_current(
+            root, _filesystem_artifacts(root), {}
+        )
+
+
+def test_specialized_config_measured_view_uses_runtime_units_and_snr() -> None:
+    dl_path = "air_interface/csv/dl_pdsch_trials.csv"
+    payload = (
+        b"ConfiguredSNR_dB,MeasuredSINR_dB,ServingRSRP_dBm,CSI_RSRP_dBm,CSI_RSRP_dB\n"
+        b"12,18,-89,-75,24\n"
+    )
+    artifacts = {
+        dl_path: {
+            "artifact_id": 1,
+            "logical_path": dl_path,
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv",
+        }
+    }
+    result = materializer._specialized_live_report_table(
+        "reports_config_vs_measured_conflicts_v",
+        artifacts,
+        fetch_artifact_bytes=lambda artifact_id: payload,
+        run_id=7,
+        run_row={},
+        feature_policy={},
+    )
+    assert result is not None
+    header, rows = materializer._decode_csv_dicts(result["data"])
+    assert "mean_csi_rsrp_dbm" in header
+    assert "mean_csi_rsrp_db" not in header
+    assert rows[0]["configured_snr_db"] == "12.0"
+    assert rows[0]["mean_csi_rsrp_dbm"] == "-75.0"
+    assert rows[0]["measured_minus_configured_snr_db"] == "6.0"
+
+
+def test_prach_component_filters_inapplicable_config_measured_view() -> None:
+    policy = {"runner_profile": "prach_detection"}
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/reports_config_vs_measured_conflicts_v.csv",
+        policy,
+        contract_name="reports_config_vs_measured_conflicts_v",
+    )
+    assert materializer.contract_artifact_is_policy_filtered(
+        "reports/csv/contract__generic-investigator-views__config-vs-measured-conflict-dashboard.csv",
+        policy,
+        contract_name="config vs measured conflict dashboard",
+    )
+
+
+def test_prach_value_semantics_uses_native_runtime_categories() -> None:
+    prach_path = "air_interface/csv/prach_trials.csv"
+    payload = (
+        b"Status,ThresholdMode,Notes,EvidenceScope,ChannelModelApplied,PRACHDesign\n"
+        b"PASS,fixed,correct_detection,in_path,AWGN,nr_baseline\n"
+    )
+    artifacts = {
+        prach_path: {
+            "artifact_id": 1,
+            "logical_path": prach_path,
+            "artifact_kind": "table_csv",
+            "mime_type": "text/csv",
+        }
+    }
+    result = materializer._specialized_live_report_table(
+        "reports_value_semantics_coverage_v",
+        artifacts,
+        fetch_artifact_bytes=lambda artifact_id: payload,
+        run_id=11,
+        run_row={"profile_name": "prach_detection"},
+        feature_policy={"runner_profile": "prach_detection"},
+    )
+    assert result is not None
+    _, rows = materializer._decode_csv_dicts(result["data"])
+    observed = {(row["artifact_family"], row["field_name"], row["enum_value"])
+                for row in rows}
+    assert ("prach", "Status", "PASS") in observed
+    assert ("prach", "ThresholdMode", "fixed") in observed
+    assert ("prach", "EvidenceScope", "in_path") in observed
+
+
+def test_ai_benchmark_filters_inapplicable_connected_link_investigator_views() -> None:
+    policy = {"runner_profile": "ai_benchmark"}
+    for path, contract_name in (
+        (
+            "reports/csv/reports_config_vs_measured_conflicts_v.csv",
+            "reports_config_vs_measured_conflicts_v",
+        ),
+        (
+            "reports/csv/reports_value_semantics_coverage_v.csv",
+            "reports_value_semantics_coverage_v",
+        ),
+        (
+            "reports/csv/contract__generic-investigator-views__config-vs-measured-conflict-dashboard.csv",
+            "config vs measured conflict dashboard",
+        ),
+        (
+            "reports/csv/contract__generic-investigator-views__value-semantics-coverage-chart.csv",
+            "value semantics coverage chart",
+        ),
+    ):
+        assert materializer.contract_artifact_is_policy_filtered(
+            path,
+            policy,
+            contract_name=contract_name,
+        )
+
+
+def test_forced_filesystem_refresh_replaces_stale_derived_truth_alias(
+    monkeypatch,
+) -> None:
+    """Terminal force-refresh must not preserve a pre-finalization verdict."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        source_path = "reports/csv/truth_contract_summary.csv"
+        target_path = "analytics/csv/truth_policy_analytics.csv"
+        source_bytes = b"RuntimeTruthContractOk,ResultOk,StrictTruthFailureCount\n1,1,0\n"
+        stale_bytes = b"RuntimeTruthContractOk,ResultOk,StrictTruthFailureCount\n0,0,4\n"
+        (root / source_path).parent.mkdir(parents=True, exist_ok=True)
+        (root / target_path).parent.mkdir(parents=True, exist_ok=True)
+        (root / source_path).write_bytes(source_bytes)
+        (root / target_path).write_bytes(stale_bytes)
+
+        table_spec = {
+            "table_name": "truth_policy_analytics",
+            "logical_path": target_path,
+            "section_title": "Truth analytics",
+            "section_slug": "truth-analytics",
+        }
+        monkeypatch.setattr(materializer, "_table_specs", lambda: [table_spec])
+        monkeypatch.setattr(materializer, "_chart_specs", lambda: [])
+        monkeypatch.setitem(
+            materializer.CONTRACT_TABLE_ALIAS_PATHS,
+            "truth_policy_analytics",
+            [source_path],
+        )
+        payloads = {1: source_bytes, 2: stale_bytes}
+        artifacts = [
+            {
+                "artifact_id": 1,
+                "logical_path": source_path,
+                "artifact_kind": "table_csv",
+                "mime_type": "text/csv",
+                "metadata_json": "{}",
+            },
+            {
+                "artifact_id": 2,
+                "logical_path": target_path,
+                "artifact_kind": "table_csv",
+                "mime_type": "text/csv",
+                "metadata_json": "{}",
+            },
+        ]
+        materializer.materialize_run_contract_artifacts(
+            {"run_id": 1, "run_folder": str(root), "status_text": "completed"},
+            artifacts,
+            fetch_artifact_bytes=lambda artifact_id: payloads[int(artifact_id)],
+            db_connection_factory=None,
+            feature_policy={},
+            force=True,
+            filesystem_only=True,
+        )
+        assert (root / target_path).read_bytes() == source_bytes
 
 
 def test_yaml_disabled_raster_output_filters_charts_not_primary_tables() -> None:
@@ -36,7 +257,8 @@ def test_filesystem_materializer_honors_yaml_raster_authority() -> None:
     ).read_text(encoding="utf-8")
     assert 'raster_output_enabled = bool(policy.get("raster_output_enabled", True))' in source
     assert "args.replace_existing_rasters_from_csv and raster_output_enabled" in source
-    assert '"raster_replacement_executed": replace_existing_rasters' in source
+    assert "raster_replacement_executed = bool(" in source
+    assert '"raster_replacement_executed": raster_replacement_executed' in source
 
 
 def test_image_artifact_audit_is_materialized_after_contract_charts() -> None:
@@ -68,6 +290,73 @@ def test_filesystem_replacement_restores_declared_artifact_pngs_before_indexing(
     assert '"declared_report_rasters_regenerated"' in source
 
 
+def test_runtime_geometry_profile_prach_and_single_ue_adapters_use_exact_rows() -> None:
+    payloads = {
+        701: materializer._encode_csv(  # noqa: SLF001
+            ["CanonicalSlot", "UEID", "X_m", "Y_m", "Distance2D_m", "Distance3D_m", "Pathloss_dB", "AppliedDopplerHz"],
+            [[0, 1, 10.0, 20.0, 22.36, 23.0, 91.5, 31.0], [1, 1, 11.0, 21.0, 23.71, 24.2, 92.0, 32.0]],
+        ),
+        702: materializer._encode_csv(  # noqa: SLF001
+            ["StageOrder", "StageName", "StageElapsed_s", "BundleElapsed_s"],
+            [[1, "frame", 0.01, 0.01], [2, "pdsch", 0.02, 0.03]],
+        ),
+        703: materializer._encode_csv(  # noqa: SLF001
+            ["RAUEId", "CorrelationPeak", "DetectionThreshold", "PDPAverageNoiseFloor", "DetectorPeakLagSamples"],
+            [[1, 0.75, 0.5, 0.02, 3]],
+        ),
+        704: materializer._encode_csv(  # noqa: SLF001
+            ["UEID", "UserThroughput_Mbps"], [[1, 12.5]],
+        ),
+    }
+    existing = {
+        "geometry/csv/trajectory_geometry.csv": {"artifact_id": 701, "logical_path": "geometry/csv/trajectory_geometry.csv"},
+        "reports/csv/runtime_stage_profile.csv": {"artifact_id": 702, "logical_path": "reports/csv/runtime_stage_profile.csv"},
+        "air_interface/csv/prach_trials.csv": {"artifact_id": 703, "logical_path": "air_interface/csv/prach_trials.csv"},
+        "reports/csv/live_user_performance_snapshot.csv": {"artifact_id": 704, "logical_path": "reports/csv/live_user_performance_snapshot.csv"},
+    }
+    fetch = lambda artifact_id: payloads[artifact_id]
+
+    trajectory = materializer._specialized_chart_materialization("UE trajectory overlay", existing, fetch, 55)  # noqa: SLF001
+    assert trajectory is not None
+    assert "10.0,20.0" in trajectory["csv_bytes"].decode("utf-8")
+    assert "Runtime UE trajectory" in trajectory["img_bytes"].decode("utf-8")
+
+    profile = materializer._specialized_chart_materialization("stage latency", existing, fetch, 55)  # noqa: SLF001
+    assert profile is not None
+    profile_text = profile["csv_bytes"].decode("utf-8")
+    assert "frame,10.0" in profile_text and "pdsch,20.0" in profile_text
+
+    prach = materializer._specialized_chart_materialization("PRACH peak search timeline", existing, fetch, 55)  # noqa: SLF001
+    assert prach is not None
+    prach_text = prach["csv_bytes"].decode("utf-8")
+    assert "0.75,0.5,0.02,3.0" in prach_text
+
+    per_ue = materializer._specialized_chart_materialization("per-UE throughput", existing, fetch, 55)  # noqa: SLF001
+    assert per_ue is not None
+    assert "Evidence shape: operating point" in per_ue["img_bytes"].decode("utf-8")
+
+
+def test_single_ue_distribution_and_uninstrumented_resource_charts_are_policy_disabled() -> None:
+    policy = {
+        "num_ues": 1,
+        "traffic_runtime_enabled": True,
+        "profiler_enabled": True,
+        "resource_profiler_enabled": False,
+        "worker_profiler_enabled": False,
+        "database_profiler_enabled": False,
+        "artifact_timing_enabled": False,
+        "api_profiler_enabled": False,
+        "parallel_determinism_enabled": False,
+    }
+    for chart_name in ("throughput CDF", "throughput percentile plots", "CPU cycles", "memory usage", "worker timelines", "DB write latency", "export lag", "API message rate", "single-thread vs multi-thread determinism"):
+        assert materializer.contract_artifact_is_policy_filtered(
+            f"analytics/image/{chart_name}.png", policy, contract_name=chart_name
+        )
+    assert not materializer.contract_artifact_is_policy_filtered(
+        "analytics/image/per-UE throughput.png", policy, contract_name="per-UE throughput"
+    )
+
+
 def test_contract_plot_lineage_binds_exact_raster_and_dataset_bytes() -> None:
     image_buffer = io.BytesIO()
     Image.new("RGB", (37, 23), color=(12, 34, 56)).save(
@@ -91,6 +380,25 @@ def test_contract_plot_lineage_binds_exact_raster_and_dataset_bytes() -> None:
     assert row[8:12] == [1, 1, "apps.lls_contract_materializer", "pass"]
 
 
+def test_filesystem_contract_alias_png_gets_exact_lineage() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        csv_rel = "analytics/csv/contract__section__metric.csv"
+        png_rel = "analytics/image/contract__section__metric.png"
+        (root / csv_rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / png_rel).parent.mkdir(parents=True, exist_ok=True)
+        (root / csv_rel).write_bytes(b"x,y\n1,2\n")
+        image = Image.new("RGB", (16, 16), "white")
+        image.save(root / png_rel, format="PNG")
+        rows: list[list[object]] = []
+        materializer._append_filesystem_contract_alias_lineage(  # noqa: SLF001
+            str(root), rows
+        )
+        assert len(rows) == 1
+        assert rows[0][1] == png_rel
+        assert rows[0][2] == csv_rel
+        assert rows[0][3] == hashlib.sha256((root / csv_rel).read_bytes()).hexdigest()
+        assert rows[0][4] == hashlib.sha256((root / png_rel).read_bytes()).hexdigest()
 def test_prb_heatmap_and_dl_power_use_explicit_runtime_mappings() -> None:
     payloads = {
         1: materializer._encode_csv(  # noqa: SLF001
@@ -663,7 +971,11 @@ def main() -> None:
         12,
     )
     assert csirs_stripe is not None
-    assert "visual_gate=single_axis_resource_occupancy" in csirs_stripe["img_bytes"].decode("utf-8")
+    csirs_stripe_svg = csirs_stripe["img_bytes"].decode("utf-8")
+    assert "view=exact_1d_projection" in csirs_stripe_svg
+    assert "visual_gate=" not in csirs_stripe_svg
+    assert csirs_stripe["image_status"] == "generated_specialized_runtime_projection_svg"
+    assert csirs_stripe["uniform_runtime_evidence_is_valid"] is True
 
     srs_csv = materializer._encode_csv(  # noqa: SLF001
         ["Slot", "UEIndex", "NMSE_dB", "SuccessFlag", "Status"],
@@ -996,6 +1308,297 @@ def main() -> None:
     finally:
         dash.load_cached_csv_preview = original_loader
         dash.artifact_url = original_artifact_url
+
+
+def test_exact_phy_signal_diagnostic_materializes_only_observed_array_boundaries() -> None:
+    header = [
+        "SnapshotID", "Panel", "Series", "PointIndex", "XValue", "YValue",
+        "Direction", "UEIndex", "CellID", "SFN", "Slot", "SampleIndex",
+        "SubcarrierIndex", "OFDMSymbolIndex", "ResourceBlockIndex",
+        "SubcarrierInResourceBlock", "RxPortIndex0Based", "TxPortIndex0Based",
+        "IValue", "QValue", "Magnitude_dB", "Phase_deg", "WrappedPhase_rad",
+        "UnwrappedPhaseFrequency_rad", "UnwrappedPhaseTime_rad",
+        "PhaseDeltaFrequency_rad", "PhaseDeltaTime_rad", "SampleRate_Hz",
+        "ChannelEstimateSource", "ChannelEstimateMethod", "GridSHA256",
+        "truth_status", "SourceArtifact", "Status",
+    ]
+    rows = [
+        ["snap_dl", "time_domain", "tx", 1, 0.0, 1.0, "DL", 1, 42, 0, 3, 1, "", "", "", "", "", "", 1.0, 0.0, "", "", "", "", "", "", "", 7.68e6, "nrChannelEstimate", "practical", "", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "time_domain", "tx", 2, 1 / 7.68e6, 1.0, "DL", 1, 42, 0, 3, 2, "", "", "", "", "", "", 0.0, 1.0, "", "", "", "", "", "", "", 7.68e6, "nrChannelEstimate", "practical", "", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "time_domain", "rx", 1, 0.0, 0.5, "DL", 1, 42, 0, 3, 1, "", "", "", "", "", "", 0.5, 0.0, "", "", "", "", "", "", "", 7.68e6, "nrChannelEstimate", "practical", "", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "time_domain", "rx", 2, 1 / 7.68e6, 0.5, "DL", 1, 42, 0, 3, 2, "", "", "", "", "", "", 0.0, 0.5, "", "", "", "", "", "", "", 7.68e6, "nrChannelEstimate", "practical", "", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "channel_estimate", "hest", 1, 0, -3.0, "DL", 1, 42, 0, 3, "", 0, 0, 0, 0, 0, 0, 0.7, 0.1, -3.0, 8.13, 0.142, 0.142, 0.142, "", "", 7.68e6, "nrChannelEstimate", "practical", "abc", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "channel_estimate", "hest", 2, 1, -4.0, "DL", 1, 42, 0, 3, "", 1, 0, 0, 1, 0, 0, 0.6, -0.2, -4.0, -18.43, -0.322, -0.322, -0.322, -0.464, "", 7.68e6, "nrChannelEstimate", "practical", "abc", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "channel_estimate_grid", "receiver_hest_exact_tensor", 1, 0, 0, "DL", 1, 42, 0, 3, "", 0, 0, 0, 0, 0, 0, 0.7, 0.1, -3.0, 8.13, 0.142, 0.142, 0.142, "", "", 7.68e6, "nrChannelEstimate", "practical", "abc", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "channel_estimate_grid", "receiver_hest_exact_tensor", 2, 1, 0, "DL", 1, 42, 0, 3, "", 1, 0, 0, 1, 0, 0, 0.6, -0.2, -4.0, -18.43, -0.322, -0.322, -0.322, -0.464, "", 7.68e6, "nrChannelEstimate", "practical", "abc", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "channel_estimate_grid", "receiver_hest_exact_tensor", 3, 0, 1, "DL", 1, 42, 0, 3, "", 0, 1, 0, 0, 0, 0, 0.5, 0.3, -4.65, 30.96, 0.540, 0.540, 0.540, "", 0.398, 7.68e6, "nrChannelEstimate", "practical", "abc", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+        ["snap_dl", "channel_estimate_grid", "receiver_hest_exact_tensor", 4, 1, 1, "DL", 1, 42, 0, 3, "", 1, 1, 0, 1, 0, 0, 0.4, -0.4, -4.95, -45.0, -0.785, -0.785, -0.785, "", -1.325, 7.68e6, "nrChannelEstimate", "practical", "abc", "real_lls_evidence", "runtime_phy_arrays_same_trial", "available"],
+    ]
+    def diagnostic_row(**values):
+        return [values.get(name, "") for name in header]
+
+    rows.extend([
+        diagnostic_row(SnapshotID="snap_dl", Panel="time_domain", Series="post_channel", PointIndex=1, XValue=0.0, YValue=0.8, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, SampleIndex=1, IValue=0.8, QValue=0.0, SampleRate_Hz=7.68e6, truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="time_domain", Series="post_channel", PointIndex=2, XValue=1 / 7.68e6, YValue=0.8, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, SampleIndex=2, IValue=0.0, QValue=0.8, SampleRate_Hz=7.68e6, truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="true_channel_impulse_response", Series="executed_path_gain_rx1_tx1", PointIndex=1, XValue=0.0, IValue=1.0, QValue=0.0, Magnitude_dB=0.0, Phase_deg=0.0, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="pathhash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="true_channel_impulse_response", Series="executed_path_gain_rx1_tx1", PointIndex=2, XValue=100e-9, IValue=0.2, QValue=0.1, Magnitude_dB=-13.0103, Phase_deg=26.565, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="pathhash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="estimated_channel_impulse_response", Series="receiver_hhat_tau_rx1_tx1", PointIndex=1, XValue=0.0, IValue=0.9, QValue=0.0, Magnitude_dB=-0.91515, Phase_deg=0.0, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="hhathash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="estimated_channel_impulse_response", Series="receiver_hhat_tau_rx1_tx1", PointIndex=2, XValue=100e-9, IValue=0.18, QValue=0.08, Magnitude_dB=-14.116, Phase_deg=23.962, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="hhathash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="true_channel_frequency_response", Series="executed_h_f_rx1_tx1", PointIndex=1, XValue=-15000.0, IValue=1.2, QValue=0.1, Magnitude_dB=1.611, Phase_deg=4.764, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="pathhash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+        diagnostic_row(SnapshotID="snap_dl", Panel="true_channel_frequency_response", Series="executed_h_f_rx1_tx1", PointIndex=2, XValue=15000.0, IValue=1.18, QValue=-0.1, Magnitude_dB=1.468, Phase_deg=-4.844, Direction="DL", UEIndex=1, CellID=42, SFN=0, Slot=3, GridSHA256="pathhash", truth_status="real_lls_evidence", SourceArtifact="runtime_phy_arrays_same_trial", Status="available"),
+    ])
+    payload = materializer._encode_csv(header, rows)  # noqa: SLF001
+    existing = {
+        "reports/csv/phy_signal_diagnostic_source.csv": {"artifact_id": 8801}
+    }
+    fetch = lambda artifact_id: payload if int(artifact_id) == 8801 else b""
+
+    pre_channel = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "pre-channel waveform", existing, fetch, 77
+    )
+    assert pre_channel is not None
+    assert pre_channel["source_mapping_status"] == "exact"
+    assert pre_channel["source_row_count"] == 2
+    assert b"runtime_same_trial_phy_arrays" in pre_channel["img_bytes"]
+
+    post_impairment = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "post-impairment waveform", existing, fetch, 77
+    )
+    assert post_impairment is not None
+    assert post_impairment["source_row_count"] == 2
+
+    post_channel = materializer._runtime_phy_signal_diagnostic_chart(  # noqa: SLF001
+        "post-channel waveform", existing, fetch, 77
+    )
+    assert post_channel is not None
+    assert post_channel["source_mapping_status"] == "exact"
+    assert post_channel["source_row_count"] == 2
+    post_header, post_rows = materializer._decode_csv_dicts(post_channel["csv_bytes"])  # noqa: SLF001
+    assert "endpoint" in post_header
+    assert {row["endpoint"] for row in post_rows} == {"post_channel"}
+
+    link_waveforms = materializer._runtime_phy_signal_diagnostic_chart(  # noqa: SLF001
+        "UE-wise / link-wise waveform comparison", existing, fetch, 77
+    )
+    assert link_waveforms is not None
+    assert link_waveforms["source_row_count"] == 6
+
+    true_htau = materializer._runtime_phy_signal_diagnostic_chart(  # noqa: SLF001
+        "true H(tau) if available", existing, fetch, 77
+    )
+    assert true_htau is not None
+    assert true_htau["source_mapping_status"] == "exact"
+    assert true_htau["source_row_count"] == 2
+    assert b"executed_runtime_path_gain_tensor" in true_htau["img_bytes"]
+    routed_true_htau = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "true H(tau) if available", existing, fetch, 77
+    )
+    assert routed_true_htau is not None
+    assert routed_true_htau["source_mapping_status"] == "exact"
+    assert b"executed_runtime_path_gain_tensor" in routed_true_htau["img_bytes"]
+
+    estimated_htau = materializer._runtime_phy_signal_diagnostic_chart(  # noqa: SLF001
+        "estimated Hhat(tau)", existing, fetch, 77
+    )
+    assert estimated_htau is not None
+    assert estimated_htau["source_row_count"] == 2
+    assert b"receiver_channel_estimate_ifft" in estimated_htau["img_bytes"]
+    routed_estimated_htau = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "estimated Hhat(tau)", existing, fetch, 77
+    )
+    assert routed_estimated_htau is not None
+    assert routed_estimated_htau["source_mapping_status"] == "exact"
+    assert b"receiver_channel_estimate_ifft" in routed_estimated_htau["img_bytes"]
+
+    true_hf = materializer._runtime_phy_signal_diagnostic_chart(  # noqa: SLF001
+        "true H(f) if available", existing, fetch, 77
+    )
+    assert true_hf is not None
+    assert true_hf["source_mapping_status"] == "exact"
+    assert true_hf["source_row_count"] == 2
+    routed_true_hf = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "true H(f) if available", existing, fetch, 77
+    )
+    assert routed_true_hf is not None
+    assert routed_true_hf["source_mapping_status"] == "exact"
+    assert routed_true_hf["source_row_count"] == 2
+
+    hhat = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "estimated Hhat(f)", existing, fetch, 77
+    )
+    assert hhat is not None
+    assert hhat["source_row_count"] == 2
+    assert b"receiver_Hest" in hhat["img_bytes"]
+
+    phase = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "channel phase heatmap", existing, fetch, 77
+    )
+    assert phase is not None
+    assert phase["source_row_count"] == 4
+    decoded_header, decoded_rows = materializer._decode_csv_dicts(phase["csv_bytes"])  # noqa: SLF001
+    assert "phase_deg" in decoded_header
+    assert {row["grid_sha256"] for row in decoded_rows} == {"abc"}
+
+
+def test_runtime_antenna_pattern_uses_actual_sampled_array_object() -> None:
+    header = [
+        "NodeType", "NodeIndex", "BaseStationID", "UEIndex",
+        "Frequency_Hz", "Azimuth_deg", "Elevation_deg", "Directivity_dBi",
+        "ArrayClass", "ElementClass", "ElementModel",
+        "BoresightAzimuth_deg", "BoresightElevation_deg",
+        "BoresightSlant_deg", "CoordinateFrame", "PatternKind",
+        "PatternSource", "SelectedBeamApplied", "SelectedBeamEvidenceSource",
+        "PatternSHA256", "truth_status",
+    ]
+    rows = []
+    for elevation in (-5, 5):
+        for azimuth in (-10, 10):
+            rows.append([
+                "BS", 1, 1, "", 3.5e9, azimuth, elevation,
+                8.0 - abs(azimuth) / 10.0 - abs(elevation) / 5.0,
+                "phased.NRRectangularPanelArray", "phased.NRAntennaElement",
+                "3gpp_nr_element", 0, 0, 0,
+                "local_array_coordinate_frame_before_runtime_orientation",
+                "physical_array_element_directivity_without_selected_precoder_taper",
+                "actual_CoupledTruthRuntime_phased_NRRectangularPanelArray",
+                0, "separate_runtime_beam_precoder_tables", "abc123",
+                "real_runtime_object_evidence",
+            ])
+    payload = materializer._encode_csv(header, rows)  # noqa: SLF001
+    existing = {"reports/csv/antenna_pattern_samples.csv": {"artifact_id": 9901}}
+    fetch = lambda artifact_id: payload if int(artifact_id) == 9901 else b""
+
+    chart = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "antenna radiation pattern", existing, fetch, 88
+    )
+    assert chart is not None
+    assert chart["source_mapping_status"] == "exact"
+    assert chart["source_row_count"] == 4
+    assert chart["csv_status"] == "specialized_actual_runtime_antenna_pattern_dataset"
+    csv_header, csv_rows = materializer._decode_csv_dicts(chart["csv_bytes"])  # noqa: SLF001
+    assert "directivity_dbi" in csv_header
+    assert {row["pattern_sha256"] for row in csv_rows} == {"abc123"}
+    assert {row["truth_status"] for row in csv_rows} == {"real_runtime_object_evidence"}
+    svg = chart["img_bytes"].decode("utf-8")
+    assert "actual phased.NRRectangularPanelArray" in svg
+    assert "selected_beam_taper=not_applied" in svg
+
+
+def test_receiver_stage_latency_charts_use_only_measured_stage_fields() -> None:
+    payloads = {
+        9911: materializer._encode_csv(  # noqa: SLF001
+            ["Slot", "UEIndex", "ChannelEstimationLatency_ms", "EqualizationLatency_ms", "ReceiverStageLatencySource"],
+            [[1, 1, 0.31, 0.12, "matlab_tic_toc_canonical_pdsch_receiver_stages"]],
+        ),
+        9912: materializer._encode_csv(  # noqa: SLF001
+            ["Slot", "UEIndex", "ChannelEstimationLatency_ms", "EqualizationLatency_ms", "ReceiverStageLatencySource"],
+            [[2, 1, 0.42, 0.18, "matlab_tic_toc_canonical_pusch_receiver_stages"]],
+        ),
+        9913: materializer._encode_csv(  # noqa: SLF001
+            ["Slot", "UEIndex", "ChannelEstimationLatency_ms", "ReceiverPipelineLatency_ms", "ReceiverStageLatencySource"],
+            [[3, 1, 0.27, 0.51, "matlab_tic_toc_csirs_runtime_observation_and_estimation"]],
+        ),
+        9914: materializer._encode_csv(  # noqa: SLF001
+            ["Slot", "UEIndex", "PUCCHFormat", "ReceiverPipelineLatency_ms", "ChannelEstimationLatency_ms", "EqualizationLatency_ms", "ReceiverStageLatencySource"],
+            [[4, 1, 0, 0.21, "", "", "matlab_tic_toc_canonical_pucch_receiver_stages"],
+             [5, 1, 2, 0.63, 0.19, 0.11, "matlab_tic_toc_canonical_pucch_receiver_stages"]],
+        ),
+    }
+    existing = {
+        "air_interface/csv/dl_pdsch_trials.csv": {"artifact_id": 9911},
+        "air_interface/csv/ul_pusch_trials.csv": {"artifact_id": 9912},
+        "air_interface/csv/csi_rs_trials.csv": {"artifact_id": 9913},
+        "air_interface/csv/pucch_trials.csv": {"artifact_id": 9914},
+    }
+    fetch = lambda artifact_id: payloads[int(artifact_id)]
+
+    csirs = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CSI-RS latency trend", existing, fetch, 91
+    )
+    assert csirs is not None
+    assert csirs["source_row_count"] == 1
+
+    channel_estimation = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "channel estimation latency", existing, fetch, 91
+    )
+    assert channel_estimation is not None
+    assert channel_estimation["source_row_count"] == 4
+
+    equalizer = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "equalizer latency", existing, fetch, 91
+    )
+    assert equalizer is not None
+    assert equalizer["source_row_count"] == 3
+
+    per_format = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "per-format latency histograms", existing, fetch, 91
+    )
+    assert per_format is not None
+    assert per_format["source_mapping_status"] == "exact"
+    assert per_format["source_row_count"] == 2
+    header, rows = materializer._decode_csv_dicts(per_format["csv_bytes"])  # noqa: SLF001
+    assert "latency_ms" in header
+    assert {row["pucch_format"] for row in rows} == {"0", "2"}
+
+
+def test_pdcch_component_charts_use_exact_study_evidence() -> None:
+    candidate_csv = materializer._encode_csv(  # noqa: SLF001
+        ["TrialIndex", "start_cce", "AL", "candidate_detected"],
+        [[1, 0, 2, 1], [2, 2, 4, 0]],
+    )
+    dmrs_csv = materializer._encode_csv(  # noqa: SLF001
+        ["SlotIndex", "Symbol", "Subcarrier", "Port", "DMRSIndex"],
+        [[0, 1, 12, 0, 1], [0, 1, 16, 0, 2], [1, 2, 12, 0, 3]],
+    )
+    summary_csv = materializer._encode_csv(  # noqa: SLF001
+        ["SNRdB", "mean_DetectionProbability", "mean_MissProbability", "mean_FalseAlarmProbability"],
+        [[-5, 0.75, 0.25, 0.02], [0, 0.98, 0.02, 0.001]],
+    )
+    existing = {
+        "reports/csv/pdcch6gr_per_candidate_results.csv": {
+            "artifact_id": 501,
+            "logical_path": "reports/csv/pdcch6gr_per_candidate_results.csv",
+        },
+        "reports/csv/pdcch6gr_dmrs_locations.csv": {
+            "artifact_id": 502,
+            "logical_path": "reports/csv/pdcch6gr_dmrs_locations.csv",
+        },
+        "reports/csv/pdcch6gr_summary_by_snr.csv": {
+            "artifact_id": 503,
+            "logical_path": "reports/csv/pdcch6gr_summary_by_snr.csv",
+        },
+    }
+    payloads = {501: candidate_csv, 502: dmrs_csv, 503: summary_csv}
+    fetch = lambda artifact_id: payloads[artifact_id]
+
+    cce = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CCE usage heatmap", existing, fetch, 99
+    )
+    assert cce is not None
+    assert cce["source_row_count"] == 2
+    _header, cce_rows = materializer._decode_csv_dicts(cce["csv_bytes"])  # noqa: SLF001
+    assert len(cce_rows) == 6
+    assert {row["cce_index"] for row in cce_rows} == {"0", "1", "2", "3", "4", "5"}
+
+    dmrs = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "PDCCH DMRS occupancy", existing, fetch, 99
+    )
+    assert dmrs is not None
+    assert dmrs["csv_status"] == "specialized_runtime_pdcch_exact_dmrs_dataset"
+    _header, dmrs_rows = materializer._decode_csv_dicts(dmrs["csv_bytes"])  # noqa: SLF001
+    assert {(row["slot_index"], row["symbol_index"], row["subcarrier_index"]) for row in dmrs_rows} == {
+        ("0", "1", "12"), ("0", "1", "16"), ("1", "2", "12")
+    }
+
+    expected = {"P_FA": "0.02", "FAR": "0.02", "P_MD": "0.25", "P_D": "0.75"}
+    for name, first_value in expected.items():
+        result = materializer._specialized_chart_materialization(  # noqa: SLF001
+            name, existing, fetch, 99
+        )
+        assert result is not None, name
+        assert result["csv_status"] == "specialized_runtime_pdcch_probability_dataset"
+        _header, rows = materializer._decode_csv_dicts(result["csv_bytes"])  # noqa: SLF001
+        assert rows[0]["probability"] == first_value
 
 
 if __name__ == "__main__":

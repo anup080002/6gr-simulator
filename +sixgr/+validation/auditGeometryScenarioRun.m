@@ -95,8 +95,20 @@ req.RunClass = localFirstText([
     localGetText(cfg, "validation.RunClass", "")
     localRunClassFromTable(runClassT)
     ]);
+req.GeometryEnabled = localFirstLogical([
+    localGetLogical(cfg, "canonical_control.launch.geometry_enabled", false)
+    localGetLogical(cfg, "channel.geometry_enabled", false)
+    localGetLogical(cfg, "geometry.enabled", false)
+    ], false);
 req.Required = req.RunClass == "ue_placement_geometry_lls" || ...
-    localGetLogical(cfg, "validation.geometry_evidence_required", false);
+    localGetLogical(cfg, "validation.geometry_evidence_required", false) || ...
+    logical(req.GeometryEnabled);
+% Requiring geometry evidence is not the same semantic claim as running
+% the dedicated geometry qualification campaign.  Adaptive connected
+% truth runs can legitimately execute the same position/pathloss/Doppler
+% chain.  Only an explicitly dedicated geometry campaign is required to
+% carry the ue_placement_geometry_lls classification.
+req.DedicatedGeometryCampaign = req.RunClass == "ue_placement_geometry_lls";
 req.FixedSNRSweepClaimed = req.RunClass == "fixed_snr_sweep_lls" || ...
     localGetLogical(cfg, "validation.fixed_snr_sweep_required", false);
 req.ExpectedCells = localFirstFinite([
@@ -163,12 +175,19 @@ end
 
 function rows = localRunClassRows(req)
 rows = repmat(localEmptyAuditRow(), 0, 1);
-bad = req.RunClass ~= "ue_placement_geometry_lls";
+bad = logical(req.DedicatedGeometryCampaign) && ...
+    req.RunClass ~= "ue_placement_geometry_lls";
+if logical(req.DedicatedGeometryCampaign)
+    details = "Dedicated geometry qualification runs must resolve to ue_placement_geometry_lls.";
+    expected = "ue_placement_geometry_lls";
+else
+    details = "Geometry evidence is audited without relabeling this connected runtime as a dedicated geometry campaign.";
+    expected = "not_required_for_geometry_enabled_connected_runtime";
+end
 rows(end+1, 1) = localAuditRow( ...
     "run_class_is_geometry", "reports/csv/run_classification.csv", ...
     localStatusFromFail(bad), localFailureToken(bad, "run_class_not_geometry"), ...
-    "Geometry validation runs must resolve to ue_placement_geometry_lls.", ...
-    string(req.RunClass), "ue_placement_geometry_lls"); %#ok<AGROW>
+    details, string(req.RunClass), expected); %#ok<AGROW>
 
 bad = logical(req.FixedSNRSweepClaimed);
 rows(end+1, 1) = localAuditRow( ...

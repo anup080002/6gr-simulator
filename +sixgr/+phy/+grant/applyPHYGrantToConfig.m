@@ -49,6 +49,11 @@ cfgOut = sixgr.util.structSet(cfgOut, root + ".nPRB", numel(double(ra.PRBSet(:))
 cfgOut = sixgr.util.structSet(cfgOut, root + ".symbolAllocation", double(ra.SymbolAllocation(:).'));
 dmrsPortSet = double(sixgr.util.structGet(cl, "DMRSPortSet", []));
 if ~isempty(dmrsPortSet)
+    % Keep the scenario-wide availablePortSet intact for scheduling.  A
+    % frozen grant carries the active subset selected for this one
+    % transmission, which must outrank that pool during exact replay.
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".dmrs.scheduledPortSet", ...
+        double(dmrsPortSet(:).'));
     cfgOut = sixgr.util.structSet(cfgOut, root + ".dmrs.portSet", ...
         double(dmrsPortSet(:).'));
     cfgOut = sixgr.util.structSet(cfgOut, root + ".dmrs.DMRSPortSet", ...

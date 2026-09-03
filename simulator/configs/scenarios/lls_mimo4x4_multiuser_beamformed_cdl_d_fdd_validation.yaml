@@ -1,0 +1,38 @@
+{
+  "inherits": [
+    "simulator/configs/scenarios/lls_mimo4x4_multiuser_beamformed.yaml",
+    "simulator/configs/channels/cdl_d.yaml"
+  ],
+  "meta": {
+    "scenario_id": "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_validation",
+    "description": "Runtime-array CDL-D validation profile for four-element fully-digital, rank-two, two-user FDD MU-MIMO using causal measured CSI-RS.",
+    "research_class": "baseline_benchmark",
+    "scenario_group": "group_a_baseline_dl"
+  },
+  "simulation": {
+    "snr_db": 34,
+    "noise_operating_mode": "standalone_awgn_snr_argument"
+  },
+  "frequency": {
+    "duplex_mode": "FDD",
+    "dl_center_frequency_hz": 4000000000,
+    "ul_center_frequency_hz": 3900000000
+  },
+  "scheduling_timing": {
+    "pdcch_to_pdsch_k0": 0,
+    "pdcch_to_pusch_k2": 1,
+    "dl_harq_feedback_k1": [1, 2, 3, 4, 5, 6, 7, 8],
+    "k1_selection_policy": "first_valid_configured",
+    "ul_grant_k2": 1,
+    "n1_pdsch_processing_time_symbols": 10,
+    "n2_pusch_preparation_time_symbols": 12,
+    "capability_profile_id": "38.214-v18.8.0-cap1-dmrs-pos0-mu1"
+  },
+  "mimo": {
+    "reciprocity_mode": "FDD",
+    "ul_mu_mimo_receive_processing_mode": "full_dimensional_per_re_irc"
+  },
+  "output": {
+    "profile": "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_validation"
+  }
+}

@@ -22,7 +22,6 @@ expected = [
     "air_interface/csv/dl_measured_sinr_bler_curve.csv"
     "air_interface/csv/ul_measured_sinr_bler_curve.csv"
     "air_interface/csv/distance_vs_sinr.csv"
-    "reports/csv/contract_plot_lineage.csv"
     "reports/csv/nmse_vs_measured_sinr.csv"
     "reports/csv/energy_vs_throughput.csv"
     "reports/csv/tbs_reference_comparison.csv"
@@ -43,6 +42,14 @@ expected = [
     "reports/html/harq_combining_gain.html"
     "reports/html/master_dashboard.html"
     ];
+% Plot lineage is mandatory whenever a raster was actually published.  A
+% table/HTML-only analysis run must not receive a fabricated empty lineage
+% row merely to satisfy shape validation; absence is truthful until a PNG
+% or JPEG exists.  Publication-readiness gates independently require the
+% full raster contract for publication campaigns.
+if localHasPersistedRaster(runDir)
+    expected(end+1, 1) = "reports/csv/contract_plot_lineage.csv";
+end
 rows = repmat(struct("Artifact", "", "Exists", false, "RowCount", NaN, "ColumnCount", NaN, "Status", ""), numel(expected), 1);
 for i = 1:numel(expected)
     logicalPath = expected(i);
@@ -53,7 +60,7 @@ for i = 1:numel(expected)
     if rows(i).Exists
         if endsWith(logicalPath, ".csv")
             try
-                T = readtable(fullPath, "VariableNamingRule", "preserve");
+                T = sixgr.util.csvReadTable(fullPath);
                 rows(i).RowCount = height(T);
                 rows(i).ColumnCount = width(T);
                 rows(i).Status = "present";
@@ -70,6 +77,13 @@ end
 T = struct2table(rows, "AsArray", true);
 sixgr.analytics.writeAnalysisTable(fullfile(layout.ReportCSVDir, "analysis_output_validation.csv"), T);
 report = struct("Table", T, "Ok", all(T.Exists));
+end
+
+function tf = localHasPersistedRaster(runDir)
+pngFiles = dir(fullfile(char(runDir), "**", "*.png"));
+jpgFiles = dir(fullfile(char(runDir), "**", "*.jpg"));
+jpegFiles = dir(fullfile(char(runDir), "**", "*.jpeg"));
+tf = ~isempty(pngFiles) || ~isempty(jpgFiles) || ~isempty(jpegFiles);
 end
 
 function mustBeTextScalar(x)

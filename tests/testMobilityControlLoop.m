@@ -12,8 +12,12 @@ cfg.outputs.saveFigures = false;
 cfg.mac.scheduler.type = "pf";
 
 % Force mobility and aggressive HO so events happen in regression runtime.
-nUE = 24;
-numTTI = 96;
+% This is a causal control-loop regression, not a mobility-statistics
+% campaign. Keep the real waveform backend and enough moving UEs/slots to
+% prove trigger, interruption and completion, without replaying thousands
+% of transport blocks inside the repository-wide unit suite.
+nUE = 8;
+numTTI = 8;
 cfg.scenario.nUE = nUE;
 cfg.scenario.ue.nUE = nUE;
 cfg.scenario.mobility.enable = true;
