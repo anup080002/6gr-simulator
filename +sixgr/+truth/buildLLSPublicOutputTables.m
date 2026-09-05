@@ -866,17 +866,24 @@ function [status, selectedSE, boundSE, detail] = iMCSStatus(row, selected, deriv
 selectedSE = NaN;
 boundSE = NaN;
 detail = "";
-if ~(isfinite(selected) && isfinite(bound))
+if ~isfinite(selected)
     status = "unavailable";
-    detail = "missing_selected_or_bound_mcs";
+    detail = "missing_selected_mcs";
     return;
 end
 mcsTable = iFirstText(row, ["MCSTable", "mcs_table", "MCS_Table"], "qam64_table1");
 selectedProfile = sixgr.link.resolveMCSProfile(char(mcsTable), selected);
-boundProfile = sixgr.link.resolveMCSProfile(char(mcsTable), bound);
-if logical(sixgr.util.structGet(selectedProfile, "Valid", false)) && ...
-        logical(sixgr.util.structGet(boundProfile, "Valid", false))
+if logical(sixgr.util.structGet(selectedProfile, "Valid", false))
     selectedSE = double(selectedProfile.SpectralEfficiency);
+end
+if ~isfinite(bound)
+    status = "unavailable";
+    detail = "selected_mcs_spectral_efficiency_available_bound_mcs_missing";
+    return;
+end
+boundProfile = sixgr.link.resolveMCSProfile(char(mcsTable), bound);
+if isfinite(selectedSE) && ...
+        logical(sixgr.util.structGet(boundProfile, "Valid", false))
     boundSE = double(boundProfile.SpectralEfficiency);
     if selectedSE <= boundSE + 1e-9
         if isfinite(derived) && abs(double(selected) - double(derived)) < 0.5

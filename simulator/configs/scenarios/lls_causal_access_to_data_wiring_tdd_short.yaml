@@ -4,7 +4,7 @@ inherits:
 meta:
   scenario_id: lls_causal_access_to_data_wiring_tdd_short
   description: >
-    Ten-slot, two-period TDD diagnostic derived from the production causal
+    Fifteen-slot, three-period TDD diagnostic derived from the production causal
     access-to-data wiring profile. It preserves the complete measured
     scheduler-truth PHY, initial-access, beam, CSI/SRS/TRS, HARQ, link-
     adaptation, antenna, channel, IQ, CSV, MAT and PNG contracts while
@@ -17,22 +17,22 @@ meta:
   tags: [lls, truth, tdd, 5mhz, short, causal, initial_access, beam, csi, amc]
 
 run_control:
-  total_slots: 10
+  total_slots: 15
   warmup_slots: 0
-  measurement_slots: 10
-  total_time_ms: 10
+  measurement_slots: 15
+  total_time_ms: 15
   warmup_time_ms: 0
-  measurement_time_ms: 10
+  measurement_time_ms: 15
 
 simulation:
-  n_frames: 1
-  n_slots: 10
-  n_subframes: 10
-  min_duration_s: 0.010
+  n_frames: 2
+  n_slots: 15
+  n_subframes: 15
+  min_duration_s: 0.015
 
 random_access:
-  num_slots: 10
-  num_subframes: 10
+  num_slots: 15
+  num_subframes: 15
 
 output:
   profile: lls_causal_access_to_data_wiring_tdd_short

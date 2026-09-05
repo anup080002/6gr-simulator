@@ -42,7 +42,10 @@ for i = 1:numel(directions)
 end
 
 if istable(sourceT) && ~isempty(sourceT)
-    sixgr.util.csvWriteTable(sourcePath, sourceT);
+    % One file carries several heterogeneous runtime panels. A column may
+    % be intentionally blank outside its owning panel, so the declared
+    % schema is part of the evidence contract and must survive export.
+    sixgr.util.csvWriteTable(sourcePath, sourceT, "PreserveSchema", true);
 else
     localDeleteIfExists(sourcePath);
 end
