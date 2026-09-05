@@ -2916,19 +2916,23 @@ try
     % all source-table annotations and artifact-contract sanitization are
     % complete so the strict visual audit compares stable final bytes.
     sixgr.lls.refreshISACPlotLineage(runFolder, cfg);
-    localDBLog("INFO", "Exporting output-coverage and honest-unavailable artifacts.");
+    localDBLog("INFO", "Binding YAML causal-chain declarations to exact runtime calls and measured artifacts.");
     sixgr.runtime.RuntimeCallLedger.flush();
+    causalPHYChainAudit = sixgr.truth.exportCausalPHYChainAudit( ...
+        runFolder, scfg, cfg, "RunId", string(runTag));
+    reportBundle.CausalPHYChainAudit = causalPHYChainAudit;
+    localDBLog("INFO", "Exporting output-coverage and honest-unavailable artifacts.");
+    % The output-coverage exporter also evaluates the Top-50 visual source
+    % inventory.  The causal audit must therefore exist before this call;
+    % otherwise the inventory is permanently stale and falsely reports the
+    % end-to-end chain-status source as missing even though the same run
+    % writes it a few statements later.
     outputCoverage = sixgr.truth.exportLLSOutputCoverageArtifacts(runFolder, scfg, cfg);
     reportBundle.OutputCoverageArtifacts = outputCoverage;
     reportBundle.Inventory = sixgr.util.structGet(outputCoverage, "UpdatedArtifactInventory", sixgr.util.structGet(reportBundle, "Inventory", table()));
     localDBLog("INFO", "Refreshing config-ownership artifacts after final runtime/report exports.");
     configOwnership = sixgr.truth.exportLLSConfigOwnershipArtifacts(runFolder, scfg, cfg);
     reportBundle.ConfigOwnershipArtifacts = configOwnership;
-    localDBLog("INFO", "Binding YAML causal-chain declarations to exact runtime calls and measured artifacts.");
-    sixgr.runtime.RuntimeCallLedger.flush();
-    causalPHYChainAudit = sixgr.truth.exportCausalPHYChainAudit( ...
-        runFolder, scfg, cfg, "RunId", string(runTag));
-    reportBundle.CausalPHYChainAudit = causalPHYChainAudit;
     geometryScenarioAudit = localRunGeometryScenarioAuditIfNeeded(runFolder, scfg, cfg);
     geometryScenarioPlots = localRunGeometryScenarioPlotsIfNeeded(runFolder, geometryScenarioAudit, scfg, cfg);
     reportBundle.GeometryScenarioAudit = geometryScenarioAudit;

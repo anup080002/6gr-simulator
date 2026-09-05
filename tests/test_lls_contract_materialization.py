@@ -34,6 +34,13 @@ def _filesystem_artifacts(root: Path) -> list[dict[str, object]]:
     return rows
 
 
+def test_direct_contract_aliases_remain_producer_owned_cache_inputs() -> None:
+    contract_paths = materializer._contract_artifact_paths()
+    assert "reports/csv/all_csv_artifact_audit.csv" not in contract_paths
+    assert "reports/csv/all_image_artifact_audit.csv" not in contract_paths
+    assert materializer.manifest_logical_path() in contract_paths
+
+
 def test_exact_filesystem_cache_detects_source_and_contract_byte_changes(monkeypatch) -> None:
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)

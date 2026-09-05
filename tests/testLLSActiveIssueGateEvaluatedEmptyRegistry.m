@@ -39,6 +39,12 @@ assert(string(statusT.RunId(1)) == runId);
 assert(string(statusT.IssueRegistryStatus(1)) == "PASS");
 assert(double(statusT.IssueRegistryRowCount(1)) == 0);
 assert(logical(statusT.IssueRegistryEvaluationValid(1)));
+truthT = readtable(fullfile(ctx.Layout.ReportCSVDir, ...
+    "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
+assert(string(truthT.IssueRegistryStatus(1)) == "PASS", ...
+    "Truth summary must preserve the evaluated-empty issue-registry PASS state.");
+assert(double(truthT.IssueRegistryRows(1)) == 0, ...
+    "Truth summary must report zero evaluated issue rows without calling the registry missing.");
 
 ok = true;
 fprintf("PASS testLLSActiveIssueGateEvaluatedEmptyRegistry: explicit zero-issue scan accepted.\n");

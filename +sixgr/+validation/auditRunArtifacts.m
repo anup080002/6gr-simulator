@@ -38,6 +38,12 @@ lineageMap = localBuildPlotLineageMap(rootRunFolder, layout.ReportCSVDir);
 
 csvFiles = localListRelativeFiles(rootRunFolder, ["*.csv"]);
 imageFiles = localListRelativeFiles(rootRunFolder, ["*.png", "*.jpg", "*.jpeg", "*.svg"]);
+% The recursive audit products cannot truthfully audit their own previous
+% bytes.  Including them makes every invocation change the recorded hash of
+% the preceding invocation and prevents the terminal artifact graph from
+% reaching a fixed point.  They remain published outputs; they are excluded
+% only from their own input domain.
+csvFiles = setdiff(csvFiles, localGeneratedAuditCSVPaths(), "stable");
 csvTargets = unique([csvFiles(:); req.RequiredCSV(:)], "stable");
 imageTargets = unique([imageFiles(:); req.RequiredImages(:)], "stable");
 
@@ -999,6 +1005,14 @@ for i = 1:numel(patterns)
     end
 end
 relPaths = unique(relPaths, "stable");
+end
+
+function paths = localGeneratedAuditCSVPaths()
+paths = [
+    "reports/csv/all_csv_artifact_audit.csv"
+    "reports/csv/all_image_artifact_audit.csv"
+    "reports/csv/artifact_issue_registry.csv"
+    ];
 end
 
 function value = localResolveRunClass(cfg, runClassTable)

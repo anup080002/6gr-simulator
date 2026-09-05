@@ -3125,6 +3125,15 @@ def _summary_csv_rows(
 
 
 def _contract_artifact_paths() -> set[str]:
+    """Return artifacts whose bytes are owned by this materializer.
+
+    Some catalog tables intentionally use their MATLAB producer path as the
+    canonical browser path (for example the recursive CSV/image audits).  A
+    forced materialization preserves those direct aliases, so the filesystem
+    cache must classify them as producer inputs as well.  Treating them as
+    derived outputs hides producer changes from the source digest and makes
+    the cache disagree with the replacement transaction.
+    """
     paths = {
         manifest_logical_path(),
         coverage_logical_path(),
@@ -3133,7 +3142,12 @@ def _contract_artifact_paths() -> set[str]:
     }
     for table_spec in _table_specs():
         target = table_contract_path(table_spec)
-        if target:
+        table_name = str(table_spec.get("table_name") or "")
+        direct_sources = {
+            str(path or "").strip().lower()
+            for path in _table_sources(table_name)
+        }
+        if target and str(target).strip().lower() not in direct_sources:
             paths.add(target)
     for chart_spec in _chart_specs():
         paths.add(chart_contract_csv_path(chart_spec))

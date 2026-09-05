@@ -104,6 +104,10 @@ cfg.channel.awgnOnly = true;
 cfg.phy.carrier.NSizeGrid = 273;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.pdcch.symbolAllocation = [0 2];
+% Exercise exact TBS with a search space that actually monitors every DCI
+% family the generated DL/UL grants can require.  The scheduler remains
+% fail-closed when a production scenario omits a required format.
+cfg.phy.pdcch.dciFormats = {'0_0','0_1','1_0','1_1'};
 cfg.phy.pucch.symbolAllocation = [12 2];
 
 prbStart = mod(2 * idx, 20);

@@ -179,7 +179,7 @@ antenna_and_array:
   mutual_coupling_model: none
   analog_beam_codebook: dft
   digital_precoder_family: wideband
-  reciprocity_assumption: fdd_feedback
+  reciprocity_assumption: tdd_reciprocity
   amplitude_phase_mismatch: none
   srs_power_imbalance_model: none
 
@@ -296,7 +296,7 @@ mimo:
   hybrid_beamforming_flag: true
   precoder_type: wideband
   codebook_type: type1
-  reciprocity_mode: FDD
+  reciprocity_mode: TDD
   beam_sweep_enabled: true
   beam_count: 32
   mtrp_ready: false

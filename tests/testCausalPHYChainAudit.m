@@ -50,6 +50,17 @@ assert(out.DetailTable.StageOutcome(1) == "PASS");
 assert(out.ParameterBindingTable.Status(1) == "PASS");
 assert(all(isfile([out.DetailPath; out.ParameterBindingPath; out.GatePath])));
 
+% The Top-50 inventory consumes the persisted causal audit as the exact
+% source for its end-to-end chain-status visual.  This guards both the
+% explicit semantic schema and the production ordering requirement that
+% exportCausalPHYChainAudit runs before output-coverage finalization.
+top50 = sixgr.truth.exportTop50VisualizationEvidenceInventory(runFolder, cfg);
+chainRow = top50.InventoryTable(top50.InventoryTable.VisualID == 2, :);
+assert(height(chainRow) == 1);
+assert(chainRow.AvailabilityStatus == "validated_reconstructible");
+assert(chainRow.ResolvedSourceArtifact == "reports/csv/causal_phy_chain_audit.csv");
+assert(chainRow.SourceRowCount == 1);
+
 % Enabled stage, exact consumer call, but no measured artifact must fail as
 % CALLED_NO_MEASUREMENT rather than being inferred from configuration.
 scfg.validation.causal_phy_chain_audit.stages.measurement_artifact = ...

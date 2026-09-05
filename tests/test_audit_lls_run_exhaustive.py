@@ -459,3 +459,37 @@ def test_terminal_truth_mirror_exact_common_fields_pass(tmp_path: Path) -> None:
 
     rows = AUDIT_MODULE.audit_terminal_status_mirrors(run)
     assert rows and all(row["match"] for row in rows)
+
+
+def test_interference_runtime_csv_is_covered_by_domain_semantics(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    relative = "interference/csv/interference_topology.csv"
+    source = run / relative
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "ComputedSINRDb,InterferenceConfigured,InterferenceApplied,StrictOk,"
+        "TruthStatus,EvidenceScope\n"
+        "8.25,0,0,1,real_lls_evidence,in_path\n",
+        encoding="utf-8",
+    )
+    summary = run / "reports" / "csv" / "scenario_summary.csv"
+    summary.parent.mkdir(parents=True)
+    summary.write_text(
+        "RunnerProfile,ScenarioID\nprach_detection,interference-audit-test\n",
+        encoding="utf-8",
+    )
+
+    file_row, _columns, _previews = AUDIT_MODULE.audit_csv(source, run)
+    semantic_audit = AUDIT_MODULE.audit_csv_semantics(run)
+    matching_checks = [
+        check for check in semantic_audit["canonical_csv_semantic_audit"]
+        if check["artifact_path"] == relative
+        and check["category"] == "domain_runtime"
+    ]
+    assert matching_checks and all(check["passed"] for check in matching_checks)
+    rows = AUDIT_MODULE.build_csv_file_dispositions(
+        run, [file_row], [], semantic_audit
+    )
+    assert rows[0]["audit_disposition"] == "PASS_DOMAIN_RUNTIME_SEMANTICS"

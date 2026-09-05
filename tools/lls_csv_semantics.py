@@ -197,6 +197,7 @@ DOMAIN_RUNTIME_PREFIXES = (
     "control/csv/",
     "geometry/csv/",
     "harq/csv/",
+    "interference/csv/",
     "meta/",
     "mobility/csv/",
     "packet_flow/csv/",

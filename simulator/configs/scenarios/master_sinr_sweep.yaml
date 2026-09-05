@@ -2052,6 +2052,7 @@ pdsch:
   mimo_mode: su_mimo
   rank: 1
   precoder_family: wideband_identity
+  pmi: []
   precoder_normalization_convention: unit_frobenius
   prg_policy: wideband
   link_adaptation_mode: fixed
@@ -2135,6 +2136,7 @@ pusch:
   num_antenna_ports: 1
   transmission_scheme: nonCodebook
   codebook_type: codebook1_ng1n4n1
+  tpmi: []
   sri: 0
   rv_per_codeword:
   - 0

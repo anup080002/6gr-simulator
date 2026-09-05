@@ -260,6 +260,11 @@ cfg.phy.csirs.density = "three";
 cfg.phy.csirs.cdmType = "noCDM";
 cfg.phy.csirs.subcarrierLocations = 0;
 cfg.phy.trs.numPorts = 1;
+% Preserve an exact zero-based TRS timing authority in this focused SISO
+% fixture.  Enabled TRS is not allowed to inherit an implicit occasion.
+cfg.phy.trs.slotNumbers = 0;
+cfg.phy.trs.period_slots = 20;
+cfg.phy.trs.period_offset = 0;
 cfg.pdsch6gr.NTx = 1;
 cfg.pdsch6gr.NRx = 1;
 cfg.pdsch6gr.NumLayers = 1;

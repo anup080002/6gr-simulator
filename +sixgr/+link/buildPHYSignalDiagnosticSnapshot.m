@@ -140,6 +140,13 @@ meta = localMetadata(cfg, direction, tx, rx, context, constellationUse, ...
     sampleRateHz, nFFT, channelModel, delayProfile, channelSource, channelMethod, hSymbolIndex);
 sourceT = localEmptySourceTable();
 
+% Retain the exact sample ownership implied by the OFDM modulator metadata.
+% These rows identify CP and useful-symbol samples in the same contiguous
+% TX waveform captured below; they do not recreate an OFDM waveform from
+% configuration.
+ofdmRows = localOFDMSymbolSampleRows(meta, tx, txWave, nTime);
+sourceT = [sourceT; ofdmRows]; %#ok<AGROW>
+
 rows = localBaseRows(meta, "time_domain", "tx", numel(timeIndex));
 rows.PointIndex = double(timeIndex);
 rows.SampleIndex = double(timeIndex);
@@ -275,6 +282,13 @@ if truePathStatus == "available"
     end
 end
 
+% Preserve the bounded executed path-gain tensor across time.  This is the
+% actual tensor returned by the runtime fading object while filtering this
+% waveform, never a configured PDP reconstruction or a receiver oracle.
+[timeVaryingRows, dopplerRows] = ...
+    localExecutedTimeVaryingChannelRows(meta, context);
+sourceT = [sourceT; timeVaryingRows; dopplerRows]; %#ok<AGROW>
+
 rows = localBaseRows(meta, "spectrum", "rx", numel(frequencyOffsetHz));
 rows.PointIndex = (1:numel(frequencyOffsetHz)).';
 rows.XValue = frequencyOffsetHz;
@@ -318,7 +332,15 @@ if logical(sixgr.util.structGet(cfg, ...
         "outputs.phySignalDiagnosticFullChannelGrid", false))
     fullGridRows = localFullChannelGridRows(meta, hest);
     sourceT = [sourceT; fullGridRows]; %#ok<AGROW>
+
+    % Spatial correlation is calculated from that same measured Hest
+    % tensor.  No configured correlation matrix is substituted.
+    spatialRows = localMeasuredSpatialCorrelationRows(meta, hest);
+    sourceT = [sourceT; spatialRows]; %#ok<AGROW>
 end
+
+equalizerRows = localEqualizerRows(meta, rx, maxChannelPoints);
+sourceT = [sourceT; equalizerRows]; %#ok<AGROW>
 
 rows = localBaseRows(meta, "pre_equalization_re_cloud", "rx_antenna_1", numel(preEq));
 rows.PointIndex = (1:numel(preEq)).';
@@ -353,6 +375,9 @@ rows.EqualizedQ = imag(eq);
 rows.HardDecisionI = real(hard);
 rows.HardDecisionQ = imag(hard);
 sourceT = [sourceT; rows]; %#ok<AGROW>
+
+decoderRows = localDecoderBERRows(meta, tx, rx);
+sourceT = [sourceT; decoderRows]; %#ok<AGROW>
 
 kpiRows = localKPIRows(meta);
 sourceT = [sourceT; kpiRows]; %#ok<AGROW>
@@ -760,6 +785,27 @@ T.PhaseDeltaFrequency_rad = nan(n, 1);
 T.PhaseDeltaTime_rad = nan(n, 1);
 T.GridKind = strings(n, 1);
 T.GridSHA256 = strings(n, 1);
+T.SymbolSampleIndex = nan(n, 1);
+T.CyclicPrefixLength_samples = nan(n, 1);
+T.UsefulSymbolLength_samples = nan(n, 1);
+T.IsCyclicPrefix = false(n, 1);
+T.OFDMWindowingSamples = nan(n, 1);
+T.TimeIndex = nan(n, 1);
+T.Time_s = nan(n, 1);
+T.PathIndex = nan(n, 1);
+T.PathDelay_s = nan(n, 1);
+T.DopplerFrequency_Hz = nan(n, 1);
+T.MatrixRowIndex0Based = nan(n, 1);
+T.MatrixColumnIndex0Based = nan(n, 1);
+T.CorrelationDomain = strings(n, 1);
+T.EqualizerREIndex = nan(n, 1);
+T.EqualizerPostEqSINR_dB = nan(n, 1);
+T.EqualizerAlgorithm = strings(n, 1);
+T.DecoderStage = strings(n, 1);
+T.BitErrors = nan(n, 1);
+T.BitsCompared = nan(n, 1);
+T.BER = nan(n, 1);
+T.BitComparisonSource = strings(n, 1);
 T.ReferenceI = nan(n, 1);
 T.ReferenceQ = nan(n, 1);
 T.EqualizedI = nan(n, 1);
@@ -845,6 +891,331 @@ T.PhaseDeltaFrequency_rad = deltaFrequency(:);
 T.PhaseDeltaTime_rad = deltaTime(:);
 T.GridKind(:) = "receiver_channel_estimate";
 T.GridSHA256(:) = localComplexTensorHash(h4);
+end
+
+function T = localOFDMSymbolSampleRows(meta, tx, txWave, maxSamples)
+T = localEmptySourceTable();
+ofdm = sixgr.util.structGet(tx, "OFDMInfo", ...
+    sixgr.util.structGet(tx, "OFDM", struct()));
+nfft = round(double(sixgr.util.structGet(ofdm, "Nfft", NaN)));
+cp = round(double(sixgr.util.structGet(ofdm, "CyclicPrefixLengths", [])));
+symbolLengths = round(double(sixgr.util.structGet(ofdm, "SymbolLengths", [])));
+if isempty(symbolLengths) && isfinite(nfft) && nfft > 0 && ~isempty(cp)
+    symbolLengths = nfft + cp;
+end
+symbolLengths = symbolLengths(:);
+cp = cp(:);
+if isempty(symbolLengths) || isempty(cp) || numel(cp) < numel(symbolLengths) || ...
+        any(~isfinite(symbolLengths) | symbolLengths <= 0) || ...
+        any(~isfinite(cp(1:numel(symbolLengths))) | cp(1:numel(symbolLengths)) < 0)
+    return;
+end
+if ~(isfinite(nfft) && nfft > 0)
+    useful = symbolLengths - cp(1:numel(symbolLengths));
+    if isempty(useful) || any(useful <= 0) || any(useful ~= useful(1))
+        return;
+    end
+    nfft = useful(1);
+end
+n = min([numel(txWave), maxSamples, sum(symbolLengths)]);
+if n < 1
+    return;
+end
+sample = (1:n).';
+symbolIndex = nan(n, 1);
+sampleWithin = nan(n, 1);
+cpLength = nan(n, 1);
+isCP = false(n, 1);
+cursor = 1;
+for symbol = 1:numel(symbolLengths)
+    stop = min(n, cursor + symbolLengths(symbol) - 1);
+    if stop < cursor
+        break;
+    end
+    idx = (cursor:stop).';
+    within = (0:numel(idx)-1).';
+    symbolIndex(idx) = symbol - 1;
+    sampleWithin(idx) = within;
+    cpLength(idx) = cp(symbol);
+    isCP(idx) = within < cp(symbol);
+    cursor = stop + 1;
+    if cursor > n
+        break;
+    end
+end
+valid = isfinite(symbolIndex);
+sample = sample(valid);
+symbolIndex = symbolIndex(valid);
+sampleWithin = sampleWithin(valid);
+cpLength = cpLength(valid);
+isCP = isCP(valid);
+wave = txWave(sample);
+T = localBaseRows(meta, "ofdm_symbol_cp_samples", "tx", numel(sample));
+T.PointIndex = double(sample);
+T.SampleIndex = double(sample);
+T.OFDMSymbolIndex = double(symbolIndex);
+T.SymbolSampleIndex = double(sampleWithin);
+T.CyclicPrefixLength_samples = double(cpLength);
+T.UsefulSymbolLength_samples(:) = double(nfft);
+T.IsCyclicPrefix = logical(isCP);
+T.OFDMWindowingSamples(:) = double(sixgr.util.structGet(tx, ...
+    "OFDMWindowingSamples", 0));
+T.XValue = (double(sample) - 1) ./ double(meta.SampleRate_Hz);
+T.YValue = abs(wave);
+T.XUnit(:) = "s";
+T.YUnit(:) = "complex_baseband_amplitude";
+T.IValue = real(wave);
+T.QValue = imag(wave);
+T.GridKind(:) = "executed_tx_waveform_with_modulator_symbol_boundaries";
+T.GridSHA256(:) = localComplexTensorHash(txWave);
+end
+
+function [timeRows, dopplerRows] = localExecutedTimeVaryingChannelRows(meta, context)
+timeRows = localEmptySourceTable();
+dopplerRows = localEmptySourceTable();
+pathGains = sixgr.util.structGet(context, "RuntimeChannelPathGains", []);
+sampleTimes = double(sixgr.util.structGet(context, ...
+    "RuntimeChannelPathGainSampleTimes_s", []));
+pathDelays = double(sixgr.util.structGet(context, "RuntimeChannelPathDelays_s", []));
+if isempty(pathGains) || isempty(sampleTimes) || isempty(pathDelays)
+    return;
+end
+sz = size(pathGains);
+sz(end+1:4) = 1;
+pathGains = reshape(complex(double(pathGains)), sz(1), sz(2), sz(3), sz(4));
+if numel(sampleTimes) ~= sz(1) || numel(pathDelays) ~= sz(2) || sz(1) < 2
+    return;
+end
+sampleTimes = sampleTimes(:);
+pathDelays = pathDelays(:);
+if any(~isfinite(sampleTimes)) || any(diff(sampleTimes) <= 0) || ...
+        any(~isfinite(pathDelays))
+    return;
+end
+[time0, path0, tx0, rx0] = ndgrid(0:sz(1)-1, 0:sz(2)-1, ...
+    0:sz(3)-1, 0:sz(4)-1);
+gain = pathGains(:);
+n = numel(gain);
+timeRows = localBaseRows(meta, "time_varying_channel_impulse_response", ...
+    "executed_path_gain_tensor", n);
+timeRows.PointIndex = (1:n).';
+timeRows.TimeIndex = double(time0(:));
+timeRows.PathIndex = double(path0(:));
+timeRows.TxPortIndex0Based = double(tx0(:));
+timeRows.RxPortIndex0Based = double(rx0(:));
+timeRows.TxPortIndex = double(tx0(:) + 1);
+timeRows.RxAntennaIndex = double(rx0(:) + 1);
+timeRows.Time_s = sampleTimes(time0(:) + 1);
+timeRows.PathDelay_s = pathDelays(path0(:) + 1);
+timeRows.XValue = timeRows.Time_s;
+timeRows.YValue = timeRows.PathDelay_s;
+timeRows.XUnit(:) = "s_runtime_channel_time";
+timeRows.YUnit(:) = "s_excess_delay";
+timeRows.IValue = real(gain);
+timeRows.QValue = imag(gain);
+timeRows.MagnitudeLinear = abs(gain);
+timeRows.Magnitude_dB = 20 .* log10(max(abs(gain), realmin));
+timeRows.PowerLinear = abs(gain).^2;
+timeRows.Power_dB = 10 .* log10(max(timeRows.PowerLinear, realmin));
+timeRows.WrappedPhase_rad = angle(gain);
+timeRows.Phase_deg = rad2deg(angle(gain));
+timeRows.GridKind(:) = "executed_runtime_channel_path_gain_tensor";
+timeRows.GridSHA256(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelPathGainsSHA256", localComplexTensorHash(pathGains)));
+
+dt = median(diff(sampleTimes));
+if ~(isfinite(dt) && dt > 0) || sz(1) < 4
+    return;
+end
+pair = reshape(pathGains(:, :, 1, 1), sz(1), sz(2));
+[~, strongestPath] = max(mean(abs(pair).^2, 1, "omitnan"));
+series = pair(:, strongestPath);
+if any(~isfinite(real(series)) | ~isfinite(imag(series)))
+    return;
+end
+nFFT = 2 ^ nextpow2(numel(series));
+window = 0.5 - 0.5 .* cos(2 .* pi .* (0:numel(series)-1).' ./ ...
+    max(1, numel(series)-1));
+spectrum = fftshift(fft(series .* window, nFFT));
+power = abs(spectrum).^2;
+freq = ((0:nFFT-1).' - floor(nFFT/2)) ./ (nFFT .* dt);
+dopplerRows = localBaseRows(meta, "doppler_spectrum", ...
+    "strongest_executed_path_rx1_tx1", nFFT);
+dopplerRows.PointIndex = (1:nFFT).';
+dopplerRows.PathIndex(:) = double(strongestPath - 1);
+dopplerRows.DopplerFrequency_Hz = freq;
+dopplerRows.XValue = freq;
+dopplerRows.YValue = 10 .* log10(max(power, realmin));
+dopplerRows.XUnit(:) = "Hz_doppler";
+dopplerRows.YUnit(:) = "relative_power_dB";
+dopplerRows.PowerLinear = power;
+dopplerRows.Power_dB = dopplerRows.YValue;
+dopplerRows.GridKind(:) = "fft_of_executed_runtime_path_gain_time_series";
+dopplerRows.GridSHA256(:) = localComplexTensorHash(series);
+end
+
+function T = localMeasuredSpatialCorrelationRows(meta, hest)
+T = localEmptySourceTable();
+h4 = complex(double(hest));
+sz = size(h4);
+sz(end+1:4) = 1;
+h4 = reshape(h4, sz(1), sz(2), sz(3), sz(4));
+if any(~isfinite(real(h4(:))) | ~isfinite(imag(h4(:))))
+    return;
+end
+rows = cell(0, 1);
+rxObservations = reshape(permute(h4, [1 2 4 3]), [], sz(3));
+rows{end+1,1} = localCorrelationRows(meta, rxObservations, ...
+    "rx_port_correlation", "rx");
+txObservations = reshape(h4, [], sz(4));
+rows{end+1,1} = localCorrelationRows(meta, txObservations, ...
+    "tx_port_correlation", "tx");
+T = vertcat(rows{:});
+end
+
+function T = localCorrelationRows(meta, observations, seriesName, domain)
+observations = complex(double(observations));
+nPorts = size(observations, 2);
+R = (observations' * observations) ./ max(1, size(observations, 1));
+d = sqrt(max(real(diag(R)), eps));
+R = R ./ max(d * d.', eps);
+[row0, col0] = ndgrid(0:nPorts-1, 0:nPorts-1);
+T = localBaseRows(meta, "spatial_correlation_matrix", seriesName, numel(R));
+T.PointIndex = (1:numel(R)).';
+T.MatrixRowIndex0Based = double(row0(:));
+T.MatrixColumnIndex0Based = double(col0(:));
+T.CorrelationDomain(:) = string(domain);
+T.XValue = T.MatrixColumnIndex0Based;
+T.YValue = T.MatrixRowIndex0Based;
+T.XUnit(:) = "zero_based_matrix_column";
+T.YUnit(:) = "zero_based_matrix_row";
+T.IValue = real(R(:));
+T.QValue = imag(R(:));
+T.MagnitudeLinear = abs(R(:));
+T.Phase_deg = rad2deg(angle(R(:)));
+T.WrappedPhase_rad = angle(R(:));
+T.GridKind(:) = "correlation_from_receiver_channel_estimate_samples";
+T.GridSHA256(:) = localComplexTensorHash(R);
+end
+
+function T = localEqualizerRows(meta, rx, maxPoints)
+T = localEmptySourceTable();
+result = sixgr.util.structGet(rx, "EqualizerInfo.EqualizerResult", struct());
+W = sixgr.util.structGet(result, "W", []);
+sinr = double(sixgr.util.structGet(result, "PostEqSINRPerRE_dB", []));
+if isempty(W) || isempty(sinr)
+    return;
+end
+W = complex(double(W));
+sz = size(W);
+sz(end+1:3) = 1;
+W = reshape(W, sz(1), sz(2), sz(3));
+if size(sinr, 1) ~= sz(1) || size(sinr, 2) ~= sz(2)
+    return;
+end
+keepRE = (1:min(sz(1), maxPoints)).';
+W = W(keepRE, :, :);
+sinr = sinr(keepRE, :);
+[re0, layer0, rx0] = ndgrid(keepRE - 1, 0:sz(2)-1, 0:sz(3)-1);
+weights = W(:);
+T = localBaseRows(meta, "equalizer_weights", ...
+    "executed_linear_equalizer", numel(weights));
+T.PointIndex = (1:numel(weights)).';
+T.EqualizerREIndex = double(re0(:));
+T.LayerIndex = double(layer0(:) + 1);
+T.RxPortIndex0Based = double(rx0(:));
+T.RxAntennaIndex = double(rx0(:) + 1);
+sinrByWeight = repmat(reshape(sinr, [], 1), sz(3), 1);
+T.EqualizerPostEqSINR_dB = sinrByWeight;
+T.XValue = T.EqualizerREIndex;
+T.YValue = abs(weights);
+T.XUnit(:) = "zero_based_data_re_index";
+T.YUnit(:) = "equalizer_weight_magnitude";
+T.IValue = real(weights);
+T.QValue = imag(weights);
+T.MagnitudeLinear = abs(weights);
+T.Magnitude_dB = 20 .* log10(max(abs(weights), realmin));
+T.WrappedPhase_rad = angle(weights);
+T.Phase_deg = rad2deg(angle(weights));
+T.EqualizerAlgorithm(:) = string(sixgr.util.structGet(result, ...
+    "AlgorithmUsed", sixgr.util.structGet(rx, "EqualizerType", "")));
+T.GridKind(:) = "executed_receiver_equalizer_weight_tensor";
+T.GridSHA256(:) = localComplexTensorHash(W);
+end
+
+function T = localDecoderBERRows(meta, tx, rx)
+T = localEmptySourceTable();
+rows = cell(0, 1);
+[codedBits, codedOK] = localBinaryVector(sixgr.util.structGet(tx, ...
+    "Codewords", sixgr.util.structGet(tx, "Codeword", [])));
+[llr, llrOK] = localNumericVector(sixgr.util.structGet(rx, ...
+    "CodewordLLRCell", sixgr.util.structGet(rx, "CodewordLLR", [])));
+if codedOK && llrOK && numel(codedBits) == numel(llr)
+    rows{end+1,1} = localDecoderBERRow(meta, "pre_decoder_rate_matched", ...
+        codedBits, int8(llr < 0), ...
+        "tx_rate_matched_bits_vs_hard_descrambled_demapper_llr"); %#ok<AGROW>
+end
+[txTB, txOK] = localBinaryVector(sixgr.util.structGet(tx, ...
+    "TransportBlocks", sixgr.util.structGet(tx, "TransportBlock", [])));
+[rxTB, rxOK] = localBinaryVector(sixgr.util.structGet(rx, ...
+    "TransportBlocks", sixgr.util.structGet(rx, "TransportBlock", [])));
+if txOK && rxOK && numel(txTB) == numel(rxTB)
+    rows{end+1,1} = localDecoderBERRow(meta, "post_decoder_transport_block", ...
+        txTB, rxTB, "tx_transport_block_vs_receiver_decoded_transport_block"); %#ok<AGROW>
+end
+if ~isempty(rows)
+    T = vertcat(rows{:});
+end
+end
+
+function T = localDecoderBERRow(meta, stage, referenceBits, observedBits, source)
+bitErrors = nnz(referenceBits ~= observedBits);
+bitsCompared = numel(referenceBits);
+T = localBaseRows(meta, "decoder_ber", stage, 1);
+T.PointIndex = 1;
+T.DecoderStage = string(stage);
+T.BitErrors = double(bitErrors);
+T.BitsCompared = double(bitsCompared);
+T.BER = double(bitErrors) ./ double(bitsCompared);
+T.BitComparisonSource = string(source);
+T.XValue = 1;
+T.YValue = T.BER;
+T.XUnit = "decoder_stage";
+T.YUnit = "bit_error_rate";
+T.GridKind = "exact_aligned_runtime_bit_comparison";
+T.GridSHA256 = localComplexTensorHash(double([referenceBits(:); observedBits(:)]));
+end
+
+function [value, ok] = localBinaryVector(value)
+if iscell(value)
+    try
+        value = vertcat(value{:});
+    catch
+        value = [];
+    end
+end
+try
+    value = int8(value(:));
+catch
+    value = int8([]);
+end
+ok = ~isempty(value) && all(value == 0 | value == 1);
+end
+
+function [value, ok] = localNumericVector(value)
+if iscell(value)
+    try
+        value = vertcat(value{:});
+    catch
+        value = [];
+    end
+end
+try
+    value = double(value(:));
+catch
+    value = [];
+end
+ok = ~isempty(value) && all(isfinite(value));
 end
 
 function digest = localComplexTensorHash(value)
