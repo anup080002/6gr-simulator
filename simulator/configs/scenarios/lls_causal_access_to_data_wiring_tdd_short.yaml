@@ -1,0 +1,38 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
+
+meta:
+  scenario_id: lls_causal_access_to_data_wiring_tdd_short
+  description: >
+    Ten-slot, two-period TDD diagnostic derived from the production causal
+    access-to-data wiring profile. It preserves the complete measured
+    scheduler-truth PHY, initial-access, beam, CSI/SRS/TRS, HARQ, link-
+    adaptation, antenna, channel, IQ, CSV, MAT and PNG contracts while
+    bounding runtime for defect isolation.
+  version: "1.0.0"
+  owner: sixgr
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: causal_access_to_data_wiring
+  tags: [lls, truth, tdd, 5mhz, short, causal, initial_access, beam, csi, amc]
+
+run_control:
+  total_slots: 10
+  warmup_slots: 0
+  measurement_slots: 10
+  total_time_ms: 10
+  warmup_time_ms: 0
+  measurement_time_ms: 10
+
+simulation:
+  n_frames: 1
+  n_slots: 10
+  n_subframes: 10
+  min_duration_s: 0.010
+
+random_access:
+  num_slots: 10
+  num_subframes: 10
+
+output:
+  profile: lls_causal_access_to_data_wiring_tdd_short
