@@ -67,7 +67,7 @@ sampleRate = double(sixgr.util.structGet(ssbInfo, "SampleRate_Hz", localSampleRa
 sib1StartSample = localAbsoluteSlotStartSample( ...
     sib1AbsoluteSlot, carrierSI, sampleRate);
 waveform = localComposeAbsoluteTimeline( ...
-    ssbWaveform, siWaveform, sib1StartSample);
+    ssbWaveform, siWaveform, sib1StartSample, sampleRate);
 [waveform, referenceNoise] = localApplyAWGN( ...
     waveform, carrier, p.Results.SNRdB);
 
@@ -477,7 +477,7 @@ grid(1:size(b,1), 1:size(b,2), 1:size(b,3)) = grid(1:size(b,1), 1:size(b,2), 1:s
 end
 
 function waveform = localComposeAbsoluteTimeline( ...
-        ssbWaveform, siWaveform, siStartSample)
+        ssbWaveform, siWaveform, siStartSample, sampleRate)
 numCols = max(size(ssbWaveform, 2), size(siWaveform, 2));
 ssbWaveform = localPadWaveformColumns(ssbWaveform, numCols);
 siWaveform = localPadWaveformColumns(siWaveform, numCols);
@@ -485,10 +485,13 @@ siStartSample = localNonnegativeInteger( ...
     siStartSample, "SIB1 absolute start sample");
 numSamples = max(size(ssbWaveform, 1), ...
     siStartSample + size(siWaveform, 1));
-waveform = complex(zeros(numSamples, numCols, "like", ssbWaveform));
-waveform(1:size(ssbWaveform, 1), :) = ssbWaveform;
-siRows = siStartSample + (1:size(siWaveform, 1));
-waveform(siRows, :) = waveform(siRows, :) + siWaveform;
+stream = sixgr.phy.waveform.WaveformStreamComposer(sampleRate, numCols, 0);
+stream.enqueue("SSB-burst", ...
+    sixgr.phy.waveform.WaveformChunk(ssbWaveform, 0), sampleRate);
+stream.enqueue("SI-RNTI-SIB1", ...
+    sixgr.phy.waveform.WaveformChunk(siWaveform, siStartSample), sampleRate);
+composite = stream.readThrough(numSamples);
+waveform = composite.Samples;
 end
 
 function localAssertNoSSBSIResourceCollision( ...

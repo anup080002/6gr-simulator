@@ -1456,3 +1456,31 @@ scenario was launched. The prior failed scenario session 45796 has now
 terminated with exit code 1. Full-suite and export qualification remain
 deferred under the user's restricted short-run scope; no production-grade
 or complete-artifact qualification is claimed.
+
+### Absolute-sample waveform queue implemented
+
+`WaveformStreamComposer` now accepts immutable, identified waveform chunks
+on an explicit common sample clock and physical antenna mapping. It sums
+overlapping contributors and consumes bounded half-open sample intervals,
+retaining unconsumed samples across slot boundaries. Duplicate identities,
+late submissions, backward reads, incompatible sample rates/antenna counts,
+and mixed precision are rejected. Broadcast SSB/SIB1 generation now uses
+this composer; its existing resource-collision validation is unchanged.
+
+Focused session 75713 exited 0 with `BROADCAST_STREAM_FOCUSED_PASS` in
+`logs/broadcast_stream_composition_20260906.log`. The registered
+`testWaveformStreamComposition` verifies exact addition, boundary behavior,
+rejection atomicity, and all 38,400 actual TDD broadcast samples across both
+physical antennas. Slot-partitioned reads exactly equal the full generated
+waveform, including real SIB1 and trailing observation samples. The shared
+received-burst regression also passed unchanged, including all four actual
+BCH/SIB1 decoders and identical measured SS-RSRPs.
+
+This is the TX composition primitive, not completed coupled slot dispatch.
+The caller must enqueue all applicable physical contributors before consuming
+a window. The current per-grant channel API also performs delay alignment
+using a zero-input tail on a disposable fork; a continuous RX stream must
+instead retain the raw delayed samples across read boundaries. Incremental
+channel/RF reception, RX buffering, and deferred acquisition completion remain
+to be integrated before another scenario can be claimed to fix the clock
+failure. Full qualification and a replacement TDD run remain outstanding.
