@@ -2073,3 +2073,70 @@ SSB/TRS/control/data contributors into the shared chronological sample stream.
 No new TDD/FDD scenario, full testAll, optional image expansion or OFDM
 windowing change was performed. The previous 12 dB scenario remains failed
 and unqualified.
+
+### Short TDD rerun and new-attempt PRACH epoch binding
+
+Run `tdd_12db_minimal_20260906_222553` used clean commit `d3974331`,
+the existing 25-slot TDD YAML and thermal-NF/geometry noise authority. The
+12 dB value remains a configured operating-point label, not forced received
+SINR. SSB acquisition was withheld until slot 6, but the slot-3 TRS row
+recorded `CRASH`: its requested 2 ms channel time followed an eager SSB
+capture that had already advanced the physical channel to 5 ms.
+
+Waveform execution failed at slot 15 with `RAAttemptInitializationFailed`,
+wrapping `RuntimeChannelTimeReversal`: the channel was at sample 99840
+(13 ms), while RA requested sample 30720 (4 ms). The failure checkpoint
+contains zero DL and UL trial rows. Session 15609 subsequently exited 1;
+failed-run report recovery also reported `TerminalBrowserClosureFailed`
+after three passes at 17:12:37 UTC. The readiness report remains explicitly
+not publication-ready. These artifacts must not be treated as a successful
+data-channel run.
+
+The RA failure includes a separate producer defect: `RuntimeSlot` reached
+`runFourStepRA` but was never passed into `RAConfig`. A new attempt therefore
+reused the configured frame-zero PRACH occasion. The pre-patch transmitter
+preparation check in `logs/ra_runtime_occasion_baseline_20260906.log`
+(session 66971, exit 0) reproduced this independently: runtime slot 23
+prepared Msg1 at absolute slot 2 rather than in the next repetition. This
+was a deliberate defect witness, not a passing simulation qualification.
+
+`RAConfig` now consumes the one-based new-attempt runtime slot. It selects
+the next repetition of the same validated configured resource using the
+canonical `PeriodCarrierSlots` and occasion count, then derives absolute
+slot, frame, within-frame slot and all dependent RA timers. It does not
+alter the received/configured RACH hash, substitute another resource,
+reset a channel clock or rebind a retained continuation. Invalid runtime
+coordinates or missing repetition authority fail explicitly. The actual
+Msg1 producer rejects a materialized occasion whose coordinates differ
+from its RA configuration. Msg2 ordering validation now compares absolute
+slots, not an absolute Msg2 slot with a within-frame Msg1 slot.
+
+The initial focused checks passed in session 2726:
+`testRARuntimeOccasionBinding` and `testRARNTIUsesSlotWithinSystemFrame`.
+They cover repetition boundaries, unchanged resource/RA-RNTI authority,
+actual TDD Msg1 preparation, retained continuations and configuration-only
+binding for both authored profiles. For the production TDD profile, runtime
+slot 15 now selects and materializes absolute slot 14, frame 1, slot 4.
+
+Session 74466 exited 0 with `RA_REPEATED_TDD_CDL_CHAIN_PASS` in
+`logs/ra_repeated_tdd_cdl_chain_20260906.log`. It ran the existing physical
+CDL-A TDD RA/RRC chain at runtime starts 2 and 15. Both retained the real
+receiver, CRC, TA, sample-clock and lifecycle assertions through all five
+RA/RRC stages. Session 79569 exited 0 after the two existing TDD runtime
+channel/composer fixtures; their stale `RuntimeSlot=0` inputs were corrected
+to one-based slot 1, without weakening their assertions. The preceding
+session 94988 failed on command-line quoting before any test executed.
+
+The final guard batch, session 36338, exited 0 with
+`RA_RUNTIME_OCCASION_FINAL_PASS` in
+`logs/ra_runtime_occasion_final_20260906.log`. In addition to the original
+binding checks, it requires explicit rejection of a missing repetition
+period and a mismatch between the configured absolute slot and the actual
+materialized Msg1 occasion.
+
+This patch does not integrate SSB, TRS, control and data waveforms into one
+chronological shared sample stream. The slot-3 TRS failure remains a required
+runtime repair. No scenario was rerun after this patch, and no FDD waveform
+run, 25 dB scenario, full testAll, optional plot expansion or windowing change
+was performed. The new regression is registered in testAll for later full
+verification; the focused results are not a claim that the full suite passes.

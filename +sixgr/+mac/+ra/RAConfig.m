@@ -15,8 +15,15 @@ p.addParameter("ScenarioName", "", @(x)ischar(x) || isstring(x));
 p.addParameter("UEId", 1, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("CellId", [], @(x)isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("AttemptId", 1, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("RuntimeSlot", NaN, @(x)isnumeric(x) && isreal(x) && isscalar(x));
 p.parse(varargin{:});
 opt = p.Results;
+runtimeSlot = double(opt.RuntimeSlot);
+if ~isnan(runtimeSlot) && ~(isfinite(runtimeSlot) && runtimeSlot >= 1 && ...
+        runtimeSlot <= flintmax && runtimeSlot == fix(runtimeSlot))
+    error("sixgr:mac:ra:InvalidRuntimeSlot", ...
+        "RuntimeSlot must be a positive one-based integer, or NaN for an offline configured occasion.");
+end
 
 strict = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
 raNode = sixgr.util.structGet(cfg, "random_access", struct());
@@ -190,6 +197,30 @@ end
 ra.PRACHOccasionOrdinal = double(resolvedOccasion.Ordinal);
 frame = sixgr.phy.FrameStructureEngine(cfg,"FrameCoreOnly",true);
 ra.PRACHAbsoluteSlot = double(resolvedOccasion.AbsoluteSlot);
+% A configured occasion identifies a resource in the canonical repetition,
+% not permission to replay frame zero when a UE starts a later attempt.
+% Bind only a NEW attempt to the next repetition of that same resource.
+% Continuations retain their already selected occasion and decoded timers.
+if isfinite(runtimeSlot)
+    period = double(sixgr.util.structGet( ...
+        ra.PRACHOccasionResolution, "PeriodCarrierSlots", NaN));
+    if ~(isscalar(period) && isfinite(period) && period >= 1 && ...
+            period <= flintmax && period == fix(period))
+        error("sixgr:mac:ra:InvalidPRACHRepetitionPeriod", ...
+            "Runtime RA requires an exact canonical PRACH repetition period in carrier slots.");
+    end
+    repeats = max(0, ceil((runtimeSlot - 1 - ra.PRACHAbsoluteSlot) / period));
+    ra.PRACHAbsoluteSlot = ra.PRACHAbsoluteSlot + repeats * period;
+    ra.PRACHOccasionOrdinal = ra.PRACHOccasionOrdinal + ...
+        repeats * height(ra.PRACHOccasionResolution.Occasions);
+    if any(~isfinite([ra.PRACHAbsoluteSlot ra.PRACHOccasionOrdinal])) || ...
+            any([ra.PRACHAbsoluteSlot ra.PRACHOccasionOrdinal] > flintmax)
+        error("sixgr:mac:ra:InvalidRuntimeSlot", ...
+            "The selected PRACH repetition exceeds exactly representable runtime coordinates.");
+    end
+    ra.PRACHOccasionFrame = floor(ra.PRACHAbsoluteSlot / frame.SlotsPerFrame);
+    ra.PRACHOccasionSlot = mod(ra.PRACHAbsoluteSlot, frame.SlotsPerFrame);
+end
 startSymbol = double(resolvedOccasion.StartSymbol);
 durationSymbols = double(resolvedOccasion.DurationSymbols);
 ra.PRACHOccasionEndSlot = ra.PRACHAbsoluteSlot + ...
@@ -425,7 +456,7 @@ if any(~isfinite(values)) || any(values < 0) || ...
         "%s must be explicit nonnegative integer coordinates.", ...
         strjoin(names, ", "));
 end
-if ra.Msg2Slot <= ra.PRACHOccasionSlot || ...
+if ra.Msg2Slot <= ra.PRACHAbsoluteSlot || ...
         ra.Msg3Slot <= ra.Msg2Slot || ra.Msg4Slot < ra.Msg3Slot
     error("sixgr:mac:ra:InvalidProcedureTiming", ...
         "Configured RA events must satisfy PRACH < Msg2 < Msg3 <= Msg4.");

@@ -1,4 +1,4 @@
-function ok = testTDDCausalFourStepRARuntimeTiming()
+function ok = testTDDCausalFourStepRARuntimeTiming(runtimeSlot)
 %TESTTDDCAUSALFOURSTEPRARUNTIMETIMING Guard the shared RA timing boundary.
 %
 % The test uses the production TDD causal-wiring YAML, a concrete CDL-A
@@ -7,6 +7,7 @@ function ok = testTDDCausalFourStepRARuntimeTiming()
 % that decoded Msg1 timing advance establishes Msg3 timing and that the
 % PUSCH receiver does not apply a second DM-RS timing shift.
 
+if nargin < 1, runtimeSlot = 2; end
 scenarioPath = fullfile("simulator", "configs", "scenarios", ...
     "lls_causal_access_to_data_wiring_tdd.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
@@ -27,7 +28,7 @@ multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 1, ...
     "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize( ...
     cfg, runRoot, multiUser, struct(), 1);
-state.CurrentSlot = 2;
+state.CurrentSlot = runtimeSlot;
 state.CurrentServingIdx(:) = 1;
 [cfgRuntime, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContext( ...
     cfg, state, 1, "UL");
@@ -57,7 +58,9 @@ state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(state, dlState
     "UEId", 1, "CellId", 1, "AttemptId", 1, ...
     "RuntimeNoiseSNR_dB", 12, ...
     "InitialDLChannelState", dlState, "InitialULChannelState", ulState, ...
-    "RuntimeSlot", 2, "WriteArtifacts", false, "StageAction", "prepare_next_stage");
+    "RuntimeSlot", runtimeSlot, "WriteArtifacts", false, "StageAction", "prepare_next_stage");
+assert(result.PreparedTransmission.AbsoluteSlot >= runtimeSlot-1, ...
+    "A new RA attempt must not prepare an already elapsed PRACH occasion.");
 assert(result.RuntimeExecutionState == "pending_stage_receive" && ...
     isempty(result.RuntimeStageRows) && ~result.RACompleted && ~result.RRCConnected && ...
     result.RuntimeDLChannelState.CurrentSampleIndex == dlState.CurrentSampleIndex, ...
@@ -179,7 +182,7 @@ for k = 1:numel(raEvents)
 end
 
 % Physical clock agreement must be paired with legal duplex allocations.
-ra = sixgr.mac.ra.RAConfig(cfgRuntime);
+ra = sixgr.mac.ra.RAConfig(cfgRuntime, "RuntimeSlot", runtimeSlot);
 frame = sixgr.phy.FrameStructureEngine(cfgRuntime,"FrameCoreOnly",true);
 assert(frame.IsDLAllocation(ra.Msg2Slot,[ra.Msg2PDSCH.SymbolStart ra.Msg2PDSCH.NumSymbols]));
 assert(frame.IsULAllocation(ra.Msg3Slot,[ra.Msg3PUSCH.SymbolStart ra.Msg3PUSCH.NumSymbols]));
