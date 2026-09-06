@@ -138,6 +138,13 @@ runtime = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
 assert(numel(runtime.RuntimeChannelStates) == 1, ...
     "Moving TDD DL/UL must not create independent runtime fading states.");
 
+% A control waveform can use fewer logical ports than the physical array.
+% Retarget both with and without a direction change, retaining the real
+% physical dimensions and applying the supplied complex projection exactly.
+localLogicalPortRetarget(sharedUL, cfg, txInfo, "UL", [1; 1i]/sqrt(2), 4);
+localLogicalPortRetarget(sharedUL, cfg, txInfo, "DL", ...
+    [1 0; 1i 0; 0 1; 0 -1i]/sqrt(2), 2);
+
 % FDD remains physically independent even if a stale reciprocity token is
 % present elsewhere in the configuration.
 cfgFDD = cfg;
@@ -162,6 +169,38 @@ localAssertThrows(@() sixgr.channel.ChannelFactory.materializeRuntimeChannelStat
     "ChannelFactory:DynamicTDDOutputNormalizationForbidden");
 
 ok = true;
+end
+
+function localLogicalPortRetarget(initial, cfg, txInfo, direction, projection, numRx)
+state = sixgr.channel.ChannelFactory.forkRuntimeChannelState(initial);
+state.Direction = char(direction);
+numLogical = size(projection, 2);
+numPhysical = size(projection, 1);
+t = (0:127).';
+x = exp(1i * (t * (1:numLogical)) / 13);
+antenna = struct("PortToElementExpansionEnabled", true, ...
+    "PortToElementMatrix", projection);
+state = sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+    state, cfg, x, txInfo, "NumTxAnt", numLogical, "NumRxAnt", numRx, ...
+    "TransmitAntennaRuntime", antenna);
+assert(state.NumTxAnt == numPhysical && state.NumRxAnt == numRx && ...
+    state.ElementExpansionApplied && state.ExternalLogicalTxPorts == numLogical, ...
+    "Logical waveform ports must not overwrite the physical reciprocal array dimensions.");
+state = sixgr.channel.ChannelFactory.advanceRuntimeChannelState( ...
+    state, 17, numLogical, x);
+reference = sixgr.channel.ChannelFactory.forkRuntimeChannelState(state);
+reference.ElementExpansionApplied = false;
+reference.PortToElementMatrix = [];
+reference.ExternalLogicalTxPorts = numPhysical;
+[expected, ~] = sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
+    reference, x * projection.');
+[observed, replay] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(state, x);
+assert(isequal(size(observed), [size(x, 1), numRx]) && ...
+    norm(observed - expected, "fro") <= 1e-12 * max(norm(expected, "fro"), eps), ...
+    "Logical-port execution must equal explicit complex element-domain projection.");
+assert(replay.RuntimeChannelElementExpansionApplied && ...
+    ~replay.RuntimeChannelInputPaddedToMaterializedPorts, ...
+    "Exact beam projection must not be replaced by zero-padded logical ports.");
 end
 
 function localAssertThrows(fcn, expectedIdentifier)

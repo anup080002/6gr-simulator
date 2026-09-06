@@ -934,6 +934,31 @@ if direction == "UL"
     stateField = "ULChannelState";
 end
 chState = runtime.(stateField);
+sharedTDD = sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfgStage);
+if sharedTDD
+    otherField = "ULChannelState";
+    if direction == "UL"
+        otherField = "DLChannelState";
+    end
+    otherState = runtime.(otherField);
+    if logical(sixgr.util.structGet(otherState, "Initialized", false))
+        if ~logical(sixgr.util.structGet(chState, "Initialized", false))
+            chState = otherState;
+        else
+            if string(chState.StateKey) ~= string(otherState.StateKey) || ...
+                    double(chState.Seed) ~= double(otherState.Seed)
+                error("sixgr:phy:ra:InconsistentTDDChannelAuthority", ...
+                    "Four-step TDD RA requires one canonical link state and seed for both directions.");
+            end
+            if double(otherState.CurrentSampleIndex) > double(chState.CurrentSampleIndex)
+                chState = otherState;
+            end
+        end
+    end
+    if logical(sixgr.util.structGet(chState, "Initialized", false))
+        chState = localStageChannelDirectionView(chState, cfgStage, direction, runtime);
+    end
+end
 if ~(isstruct(chState) && isfield(chState, "ContractVersion") && logical(sixgr.util.structGet(chState, "Initialized", false)))
     linkKey = sixgr.channel.ChannelFactory.runtimeChannelKey(cfgStage, direction, ...
         "UEIndex", runtime.UEIndex, "ServingCell", runtime.ServingCell);
@@ -961,6 +986,13 @@ if isfinite(slotStart_s)
 end
 [rxWave, replay, chState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(chState, txWave);
 runtime.(stateField) = chState;
+if sharedTDD
+    % These are directional views of one physical object, not independent
+    % fading clocks. Publish the advanced counters with BOTH views before
+    % the next alternating RA stage can consume stale timing or metadata.
+    runtime.DLChannelState = localStageChannelDirectionView(chState, cfgStage, "DL", runtime);
+    runtime.ULChannelState = localStageChannelDirectionView(chState, cfgStage, "UL", runtime);
+end
 row.WaveformSource = "runtime_channel_state";
 row.SelfLoopWaveformUsed = false;
 row.RuntimeChannelStateUsed = logical(sixgr.util.structGet(replay, "RuntimeChannelStateUsed", false));
@@ -1150,6 +1182,14 @@ keys = keys(strlength(strtrim(keys)) > 0);
 result.RuntimeChannelLinkKeys = strjoin(unique(keys, "stable"), "|");
 result.RuntimeDLChannelState = runtime.DLChannelState;
 result.RuntimeULChannelState = runtime.ULChannelState;
+end
+
+function state = localStageChannelDirectionView(state, cfg, direction, runtime)
+state.Direction = char(direction);
+state.LinkKey = sixgr.channel.ChannelFactory.runtimeChannelKey(cfg, direction, ...
+    "UEIndex", runtime.UEIndex, "ServingCell", runtime.ServingCell);
+% Meta.RuntimeTDDReciprocityDirection describes the CURRENT physical object,
+% whereas Direction is the requested orientation for the next execution.
 end
 
 function state = localInitialRuntimeChannelState(candidate)

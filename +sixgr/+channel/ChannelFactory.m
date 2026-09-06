@@ -557,7 +557,7 @@ classdef ChannelFactory
 
             if logical(sixgr.util.structGet(state, "Materialized", false))
                 state = sixgr.channel.ChannelFactory.localRetargetDynamicTDDChannelState( ...
-                    state, cfg, waveform, opt);
+                    state, cfg);
                 expectedPhysicalTx = double(sixgr.util.structGet( ...
                     state, "NumTxAnt", NaN));
                 observedTx = size(waveform, 2);
@@ -1405,7 +1405,7 @@ classdef ChannelFactory
             end
         end
 
-        function state = localRetargetDynamicTDDChannelState(state, cfg, waveform, opt)
+        function state = localRetargetDynamicTDDChannelState(state, cfg)
             if ~sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg) || ...
                     ~logical(sixgr.util.structGet(state, ...
                     "Meta.RuntimeTDDReciprocityExact", false))
@@ -1429,22 +1429,36 @@ classdef ChannelFactory
                 error("ChannelFactory:DynamicTDDReciprocityDirectionUnavailable", ...
                     "Materialized dynamic reciprocal channel has no current direction authority.");
             end
-            if desiredDirection ~= currentDirection
+            objectSwapped = logical(state.Obj.TransmitAndReceiveSwapped);
+            if objectSwapped ~= (desiredDirection == "UL")
                 swapTransmitAndReceive(state.Obj);
+            end
+            if desiredDirection ~= currentDirection
                 state.Meta = sixgr.channel.ChannelFactory.localSwapDirectionalChannelMeta( ...
                     state.Meta);
             end
 
-            requestedTx = double(opt.NumTxAnt);
-            if ~(isscalar(requestedTx) && isfinite(requestedTx) && requestedTx >= 1)
-                requestedTx = max(1, size(waveform, 2));
+            % A direction swap changes the physical channel endpoints, not
+            % their sizes to match the next waveform's logical port count.
+            % In particular one-port PRACH still excites the configured UE
+            % array through its explicit port-to-element projection. Read
+            % the actual swapped object's dimensions before resolving that
+            % projection in materializeRuntimeChannelState.
+            channelInfo = info(state.Obj);
+            physicalTx = double(sixgr.util.structGet(channelInfo, ...
+                "NumInputSignals", sixgr.util.structGet(channelInfo, ...
+                "NumTransmitAntennas", NaN)));
+            physicalRx = double(sixgr.util.structGet(channelInfo, ...
+                "NumOutputSignals", sixgr.util.structGet(channelInfo, ...
+                "NumReceiveAntennas", NaN)));
+            counts = [physicalTx physicalRx];
+            if numel(counts) ~= 2 || any(~isfinite(counts)) || ...
+                    any(counts < 1 | counts ~= fix(counts))
+                error("ChannelFactory:DynamicTDDPhysicalDimensionsUnavailable", ...
+                    "The reciprocal channel object must expose exact input/output antenna dimensions.");
             end
-            requestedRx = double(opt.NumRxAnt);
-            if ~(isscalar(requestedRx) && isfinite(requestedRx) && requestedRx >= 1)
-                requestedRx = double(sixgr.util.structGet(state, "NumRxAnt", requestedTx));
-            end
-            state.NumTxAnt = max(1, round(requestedTx));
-            state.NumRxAnt = max(1, round(requestedRx));
+            state.NumTxAnt = physicalTx;
+            state.NumRxAnt = physicalRx;
             state.Meta.NumTxAnt = double(state.NumTxAnt);
             state.Meta.NumRxAnt = double(state.NumRxAnt);
             state.Meta.RuntimeTDDReciprocityDirection = char(desiredDirection);

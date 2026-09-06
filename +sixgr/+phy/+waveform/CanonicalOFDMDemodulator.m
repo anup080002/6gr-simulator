@@ -29,6 +29,8 @@ classdef CanonicalOFDMDemodulator
                     "OFDM options must be name-value pairs.");
             end
             resolver={}; args={}; windowing=0;
+            cpFraction=0.5;
+            fftWindowSource="documented_toolbox_default";
             seen=strings(0,1);
             for i=1:2:numel(varargin)
                 name=lower(strtrim(string(varargin{i}))); value=varargin{i+1};
@@ -44,9 +46,16 @@ classdef CanonicalOFDMDemodulator
                         resolver=[resolver {"SampleRate",value}];args=[args varargin(i:i+1)]; %#ok<AGROW>
                     case "windowing"
                         windowing=value; resolver=[resolver {"WindowingSamples",value}]; %#ok<AGROW>
+                    case "cyclicprefixfraction"
+                        cpFraction=value;
+                        fftWindowSource="explicit_cyclic_prefix_fraction";
+                        args=[args varargin(i:i+1)]; %#ok<AGROW>
                     otherwise
                         args=[args varargin(i:i+1)]; %#ok<AGROW>
                 end
+            end
+            if ~any(seen=="cyclicprefixfraction")
+                args=[args {"CyclicPrefixFraction",cpFraction}];
             end
             resolution=sixgr.phy.waveform.OFDMParameterResolver.resolve(carrier,resolver{:});
             try
@@ -56,11 +65,16 @@ classdef CanonicalOFDMDemodulator
                     "nrOFDMDemodulate rejected the resolved parameters: %s",exception.message);
                 wrapped=addCause(wrapped,exception);throwAsCaller(wrapped);
             end
-            info=nrOFDMInfo(carrier,"Windowing",double(windowing));
+            infoArgs={};
+            for i=1:2:numel(args)
+                if ~strcmpi(string(args{i}),"CyclicPrefixFraction")
+                    infoArgs=[infoArgs args(i:i+1)]; %#ok<AGROW>
+                end
+            end
+            info=nrOFDMInfo(carrier,infoArgs{:}, ...
+                "Windowing",double(resolution.WindowingSamples));
             calibration=sixgr.phy.waveform.calibrateOFDMNoiseTransform( ...
-                carrier, ...
-                "Nfft",double(resolution.Nfft), ...
-                "SampleRate",double(resolution.SampleRate), ...
+                carrier,args{:}, ...
                 "Windowing",double(resolution.WindowingSamples));
             info.NoiseTransform=calibration;
             info.SampleToGridNoiseVarianceGain=double(calibration.SampleToGridNoiseVarianceGain);
@@ -71,6 +85,8 @@ classdef CanonicalOFDMDemodulator
             info.OFDMSamplingResolution=resolution;
             info.OFDMWindowingSamples=double(resolution.WindowingSamples);
             info.OFDMWindowingSource="canonical_explicit";
+            info.CyclicPrefixFraction=double(cpFraction);
+            info.FFTWindowPositionSource=fftWindowSource;
             info.EngineUsed="canonical_nrOFDMDemodulate";
             info.WaveformSize=size(waveform);info.GridSize=size(grid);
             info.WaveformSHA256=sixgr.phy.waveform.WaveformHash.numeric(waveform);

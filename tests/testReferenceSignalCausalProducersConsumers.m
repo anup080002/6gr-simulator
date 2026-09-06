@@ -10,8 +10,29 @@ end
 localCSIRSResourceGridMapping();
 localSRSSharedSlotMultiUE();
 localCausalMeasurementLedger();
+localSSBMeasurementBinding();
 
 ok = true;
+end
+
+function localSSBMeasurementBinding()
+row = table(-89, 37, 41, 42, ...
+    'VariableNames', {'SS_RSRP_dBm','SS_SINR_dB','MeasuredSINR_dB','SINR_dB'});
+state = struct("CurrentSlot", 1);
+state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+    state, "SSB", "UE", 1, row, "Valid", true, "Direction", "DL");
+T = state.ReferenceSignalMeasurementTable;
+assert(T.SINR_dB(end) == 37 && T.RSRP_dBm(end) == -89, ...
+    "An SSB measurement must bind SS-SINR, not PBCH DM-RS or generic SINR.");
+assert(string(T.SINRSourceField(end)) == "SS_SINR_dB", ...
+    "The ledger must retain the exact source field for its reported SINR.");
+row.SS_SINR_dB = NaN;
+state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+    state, "SSB", "UE", 1, row, "Valid", true, "Direction", "DL");
+assert(isnan(state.ReferenceSignalMeasurementTable.SINR_dB(end)), ...
+    "Missing SS-SINR must remain unavailable, without substitution from another signal.");
+assert(string(state.ReferenceSignalMeasurementTable.SINRValueStatus(end)) == "unavailable", ...
+    "Missing SS-SINR must be explicitly marked unavailable.");
 end
 
 function localCSIRSResourceGridMapping()

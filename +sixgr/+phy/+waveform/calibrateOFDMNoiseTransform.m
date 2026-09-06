@@ -21,13 +21,14 @@ end
 
 [modArgs, demodArgs, infoArgs] = localClassifyOFDMArgs(ofdmArgs);
 baseInfo = localResolveOFDMInfo(carrier, infoArgs);
-key = localCalibrationKey(carrier, baseInfo, opt.NumNoiseRE);
+key = localCalibrationKey(carrier, baseInfo, opt, modArgs, demodArgs);
 if logical(opt.UseCache) && ~logical(opt.ForceRecompute) && isKey(cache, key)
     calibration = cache(key);
     return;
 end
 
 calibration = localRunCalibration(carrier, modArgs, demodArgs, infoArgs, baseInfo, opt);
+calibration.CalibrationKey = key;
 if logical(opt.UseCache)
     cache(key) = calibration;
 end
@@ -148,6 +149,13 @@ calibration = struct( ...
     "CyclicPrefixExcludedFromTimeReference", true, ...
     "UnusedSubcarriersExcludedFromGridReference", true, ...
     "WindowingIncludedInCalibrationKey", true);
+calibration.CyclicPrefixFraction = 0.5;
+for idx = 1:2:numel(demodArgs)
+    if strcmpi(string(demodArgs{idx}), "CyclicPrefixFraction")
+        calibration.CyclicPrefixFraction = double(demodArgs{idx+1});
+    end
+end
+calibration.FFTWindowIncludedInCalibrationKey = true;
 end
 
 function [ofdmArgs, opt] = localSplitOptions(varargin)
@@ -226,7 +234,7 @@ else
 end
 end
 
-function key = localCalibrationKey(carrier, ofdmInfo, numNoiseRE)
+function key = localCalibrationKey(carrier, ofdmInfo, opt, modArgs, demodArgs)
 cp = double(sixgr.util.structGet(ofdmInfo, "CyclicPrefixLengths", []));
 key = sprintf("nrb=%g;scs=%g;cp=%s;nfft=%g;fs=%.15g;win=%g;L=%g;cpLens=%s;noiseRE=%d", ...
     localCarrierValue(carrier, "NSizeGrid", NaN), ...
@@ -236,7 +244,15 @@ key = sprintf("nrb=%g;scs=%g;cp=%s;nfft=%g;fs=%.15g;win=%g;L=%g;cpLens=%s;noiseR
     double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN)), ...
     double(sixgr.util.structGet(ofdmInfo, "Windowing", NaN)), ...
     double(sixgr.util.structGet(ofdmInfo, "SymbolsPerSlot", NaN)), ...
-    mat2str(cp(:).'), round(double(numNoiseRE)));
+    mat2str(cp(:).'), round(double(opt.NumNoiseRE)));
+% FFT placement changes the sampled noise realization and reconstruction
+% probe. Include every executed OFDM option and probe setting rather than
+% reusing a result solely because Nfft/sample rate/window taper match.
+key = char(string(key) + ";execution=" + string(jsonencode(struct( ...
+    "ModulatorArguments", {modArgs}, "DemodulatorArguments", {demodArgs}, ...
+    "NSlot", localCarrierValue(carrier, "NSlot", 0), ...
+    "WhiteNoiseSeed", opt.WhiteNoiseSeed, ...
+    "TimeNoiseVariance", opt.TimeNoiseVariance))));
 end
 
 function value = localCarrierValue(carrier, name, defaultValue)

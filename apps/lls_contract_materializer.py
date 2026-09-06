@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-01-contract-v52-pdcch-exact-study-charts"
+MATERIALIZER_VERSION = "2026-09-06-contract-v53-paired-evm-and-sinr-points"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -1789,6 +1789,7 @@ def _render_multi_series_svg(
     y_label: str,
     mode: str = "line",
     target_line: float | None = None,
+    evidence_shape_policy: str = "",
 ) -> bytes:
     width = 1280
     height = 720
@@ -1797,19 +1798,24 @@ def _render_multi_series_svg(
     plot_w = 820
     plot_h = 458
     info_x = 930
+    legend_limit = len(series) if evidence_shape_policy == "operating_point" else 8
+    info_h = max(plot_h, 100 + 22 * (min(len(summary_lines) + 6, 14) + legend_limit))
+    height = max(height, top + info_h + 64)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
-        '<rect x="0" y="0" width="10" height="720" fill="#0f766e"/>',
+        f'<rect x="0" y="0" width="10" height="{height}" fill="#0f766e"/>',
         '<rect x="40" y="24" width="190" height="24" rx="12" fill="#ccfbf1"/>',
         '<text x="135" y="41" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="700" letter-spacing="1.2" fill="#115e59">RUNTIME MEASUREMENT</text>',
         f'<text x="40" y="76" font-family="Segoe UI,Arial,sans-serif" font-size="29" font-weight="700" fill="#0f172a">{html.escape(_display_chart_title(title))}</text>',
         f'<text x="40" y="99" font-family="Segoe UI,Arial,sans-serif" font-size="14" fill="#475569">{html.escape(_ellipsize_svg_text(subtitle, 132))}</text>',
         f'<rect x="{left}" y="{top}" width="{plot_w}" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
-        f'<rect x="{info_x}" y="{top}" width="310" height="{plot_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
+        f'<rect x="{info_x}" y="{top}" width="310" height="{info_h}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>',
     ]
     prepared: list[dict[str, Any]] = []
-    palette = ["#0f766e", "#2563eb", "#dc2626", "#7c3aed", "#d97706", "#0891b2"]
+    palette = ["#0f766e", "#2563eb", "#dc2626", "#7c3aed", "#d97706", "#0891b2",
+               "#4d7c0f", "#db2777", "#78350f", "#334155", "#4338ca", "#be185d",
+               "#15803d", "#a16207", "#075985", "#a21caf"]
     all_points: list[tuple[float, float]] = []
     for idx, item in enumerate(series):
         raw_points = [
@@ -1844,7 +1850,8 @@ def _render_multi_series_svg(
     if not prepared or not all_points:
         return _render_reason_svg(title, subtitle, summary_lines + ["No numeric multi-series rows were available for this chart."])
     low_info_reason, low_info_lines = _dataset_low_information_reason(
-        {"mode": mode, "points": [[x_val, y_val] for x_val, y_val in all_points]}
+        {"mode": mode, "points": [[x_val, y_val] for x_val, y_val in all_points],
+         "evidence_shape_policy": evidence_shape_policy}
     )
     if low_info_reason:
         return _render_reason_svg(
@@ -1888,9 +1895,10 @@ def _render_multi_series_svg(
             coords.append((x_px, y_px))
         if mode == "scatter":
             for x_px, y_px in coords:
-                parts.append(
-                    f'<circle cx="{x_px:.2f}" cy="{y_px:.2f}" r="2.6" fill="{prepared_series["color"]}" fill-opacity="0.7" />'
-                )
+                if prepared_series["marker"] == "square":
+                    parts.append(f'<rect x="{x_px - 3:.2f}" y="{y_px - 3:.2f}" width="6" height="6" fill="none" stroke="{prepared_series["color"]}" stroke-width="1.4"/>')
+                else:
+                    parts.append(f'<circle cx="{x_px:.2f}" cy="{y_px:.2f}" r="2.6" fill="{prepared_series["color"]}" fill-opacity="0.7" />')
         else:
             poly = " ".join(f"{x:.1f},{y:.1f}" for x, y in coords)
             dash_attr = (
@@ -1934,20 +1942,26 @@ def _render_multi_series_svg(
     parts.append(f'<text x="{info_x + 18}" y="{top + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Evidence Summary</text>')
     y_cursor = top + 58
     evidence_lines = list(summary_lines) + _dataset_evidence_summary(
-        {"evidence_shape_policy": "observed_relation"},
+        {"evidence_shape_policy": evidence_shape_policy or "observed_relation"},
         [[point[0], point[1]] for point in all_points],
     )
     for line in evidence_lines[:14]:
         parts.append(f'<text x="{info_x + 18}" y="{y_cursor}" font-family="Segoe UI,Arial,sans-serif" font-size="12.5" fill="#334155">{html.escape(_ellipsize_svg_text(line, 42))}</text>')
         y_cursor += 22
     y_cursor += 12
-    for prepared_series in prepared[:8]:
+    for prepared_series in prepared[:legend_limit]:
         dash_attr = (
             f' stroke-dasharray="{html.escape(prepared_series["dasharray"])}"'
             if prepared_series["dasharray"]
             else ""
         )
-        parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"{dash_attr}/>')
+        if mode == "scatter":
+            if prepared_series["marker"] == "square":
+                parts.append(f'<rect x="{info_x + 23}" y="{y_cursor - 4}" width="8" height="8" fill="none" stroke="{prepared_series["color"]}" stroke-width="1.4"/>')
+            else:
+                parts.append(f'<circle cx="{info_x + 27}" cy="{y_cursor}" r="3" fill="{prepared_series["color"]}"/>')
+        else:
+            parts.append(f'<line x1="{info_x + 18}" y1="{y_cursor}" x2="{info_x + 36}" y2="{y_cursor}" stroke="{prepared_series["color"]}" stroke-width="3"{dash_attr}/>')
         parts.append(f'<text x="{info_x + 46}" y="{y_cursor + 4}" font-family="Segoe UI,Arial,sans-serif" font-size="13" fill="#334155">{html.escape(_ellipsize_svg_text(prepared_series["name"], 28))}</text>')
         y_cursor += 22
     parts.append('</svg>')
@@ -10259,6 +10273,249 @@ def _runtime_phy_signal_diagnostic_chart(
     }
 
 
+def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_id):
+    required_direction = "DL" if chart_name.startswith("PDSCH ") else "UL" if chart_name.startswith("PUSCH ") else ""
+    profile_name = chart_name.removeprefix("PDSCH ").removeprefix("PUSCH ")
+    axis_field = {
+        "EVM per symbol": "OFDMSymbolIndex",
+        "EVM per subcarrier": "SubcarrierIndex",
+        "EVM per layer": "LayerIndex",
+    }[profile_name]
+    sources = _all_available_rows(existing, fetch_artifact_bytes, [
+        "air_interface/csv/dl_constellation_samples.csv",
+        "air_interface/csv/ul_constellation_samples.csv",
+        "air_interface/csv/dl_constellation_preview.csv",
+        "air_interface/csv/ul_constellation_preview.csv",
+        "reports/csv/equalized_constellations.csv",
+    ])
+    # Canonical captures and report aliases can contain the same samples.
+    # Choose one source per direction, without counting aliases twice.
+    selected_source = {}
+    buckets = {}
+    for source_path, rows in sources:
+        default_direction = "DL" if "/dl_" in source_path else "UL" if "/ul_" in source_path else ""
+        for row in rows:
+            direction = _row_text(row, "Direction", "RuntimeDirection").upper() or default_direction
+            if direction not in {"DL", "UL"}:
+                continue
+            if required_direction and direction != required_direction:
+                continue
+            selected_source.setdefault(direction, source_path)
+            if selected_source[direction] != source_path:
+                continue
+            values = [_row_float(row, name) for name in (
+                axis_field, "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"
+            )]
+            if any(value is None for value in values):
+                return None  # Scalar EVM is not enough to recover energy sums or peaks.
+            x_value, eq_r, eq_i, ref_r, ref_i = values
+            if x_value != int(x_value):
+                return None
+            slot = _row_text(row, "RuntimeSlot", "Slot")
+            ue = _row_text(row, "UEIndex", "UEID", "ue_id")
+            frame = _row_text(row, "Frame")
+            sfn = _row_text(row, "SFN")
+            cell = _row_text(row, "CellID", "ServingCell", "BaseStationID")
+            layer = _row_text(row, "LayerIndex")
+            codeword = _row_text(row, "CodewordIndex")
+            tb = _row_text(row, "TBId", "tb_id")
+            normalization = _row_text(row, "RuntimeNormalization", "normalization")
+            truth = _row_text(row, "TruthStatus", "truth_status").lower()
+            comparison_domain = _row_text(row, "SymbolComparisonDomain")
+            ordering = _row_text(row, "SymbolOrdering")
+            ordering_status = _row_text(row, "SymbolOrderingStatus")
+            if not slot or not ue or not (frame or sfn) or not layer or codeword == "":
+                return None
+            if any(token in truth for token in ("proxy", "fallback", "synthetic", "unavailable")):
+                return None
+            if any(token in ordering_status.lower() for token in ("unmatched", "mismatch", "unavailable", "invalid")):
+                return None
+            key = (direction, ue, frame, sfn, slot, cell, tb,
+                   layer if axis_field != "LayerIndex" else "", codeword, normalization,
+                   comparison_domain, ordering, ordering_status, int(x_value))
+            bucket = buckets.setdefault(key, {
+                "run_id": run_id, "chart_name": chart_name, "direction": direction,
+                "ue_index": ue, "frame": frame, "sfn": sfn, "slot": slot,
+                "cell_id": cell, "tb_id": tb, "layer_index": layer,
+                "codeword_index": codeword, axis_field: int(x_value),
+                "sample_count": 0, "error_energy": 0.0, "reference_energy": 0.0,
+                "peak_error_power": 0.0, "input_normalization": normalization,
+                "comparison_domain": comparison_domain, "symbol_ordering": ordering,
+                "symbol_ordering_status": ordering_status,
+                "measurement_scope": "persisted_paired_sample_subset",
+                "evm_normalization": "average_reference_signal_power_in_bucket",
+                "source_table_logical_path": source_path,
+            })
+            error_power = (eq_r - ref_r) ** 2 + (eq_i - ref_i) ** 2
+            bucket["sample_count"] += 1
+            bucket["error_energy"] += error_power
+            bucket["reference_energy"] += ref_r ** 2 + ref_i ** 2
+            bucket["peak_error_power"] = max(bucket["peak_error_power"], error_power)
+    if not buckets:
+        return None
+    csv_rows = list(buckets.values())
+    plot_points = defaultdict(list)
+    for row in csv_rows:
+        if row["reference_energy"] <= 0:
+            return None
+        row["rms_evm_pct"] = 100 * math.sqrt(row["error_energy"] / row["reference_energy"])
+        row["peak_evm_pct"] = 100 * math.sqrt(
+            row["peak_error_power"] / (row["reference_energy"] / row["sample_count"])
+        )
+        # Keep slots separate; a symbol index repeats in every slot. No
+        # hardcoded 14-symbol numerology or fabricated absolute time axis.
+        label = (f"{row['direction']} U{row['ue_index']} S{row['slot']} "
+                 f"F{row['frame'] or row['sfn']} CW{row['codeword_index']}")
+        if axis_field != "LayerIndex":
+            label += f" L{row['layer_index']}"
+        if row["cell_id"]:
+            label += f" C{row['cell_id']}"
+        if row["tb_id"]:
+            label += f" TB{row['tb_id']}"
+        for metric, name in (("rms_evm_pct", "RMS"), ("peak_evm_pct", "Peak")):
+            plot_points[f"{name} {label}"].append([row[axis_field], row[metric]])
+    series = [{"name": name, "points": sorted(points), "marker": "circle" if name.startswith("RMS") else "square"}
+              for name, points in plot_points.items()]
+    note = ("RMS and Peak EVM from paired persisted samples; average reference-power normalization "
+            "within each UE/frame/slot/TB/codeword/layer bucket. Sample subset, not full-allocation or RF conformance EVM.")
+    summary = [f"paired_samples={sum(row['sample_count'] for row in csv_rows)}",
+               "normalization=average reference power", "scope=persisted sample subset"]
+    image_bytes = _render_multi_series_svg(chart_name, note, series, summary,
+        x_label={"OFDMSymbolIndex": "OFDM symbol index (within slot)",
+                 "SubcarrierIndex": "Subcarrier index", "LayerIndex": "Layer index"}[axis_field],
+        y_label="EVM (%)", mode="scatter",
+        evidence_shape_policy="operating_point")
+    return {
+        "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
+        "img_bytes": image_bytes,
+        "csv_status": "specialized_runtime_evm_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": "|".join(sorted(set(row["source_table_logical_path"] for row in csv_rows))),
+        "source_row_count": sum(row["sample_count"] for row in csv_rows),
+        "note": note,
+    }
+
+
+def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
+    """Preserve individual scheduled-TB/goodput observations, including failures.
+
+    Throughput_Mbps is the runtime scheduled TB bitrate, not delivered traffic.
+    Never pool equal-SINR trials across directions, ranks, MCSs or HARQ states.
+    """
+    chart_name = "throughput vs SINR"
+    sources = _all_available_rows(existing, fetch_artifact_bytes, [
+        "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv",
+    ])
+    csv_rows = []
+    plot_points = defaultdict(list)
+    for source_path, rows in sources:
+        source_direction = "DL" if "dl_pdsch" in source_path else "UL"
+        for row_index, row in enumerate(rows, 1):
+            direction = _row_text(row, "RuntimeDirection", "Direction").upper() or source_direction
+            truth = _row_text(row, "TruthStatus", "truth_status").lower()
+            reason = ""
+            if direction != source_direction:
+                reason = "direction_conflicts_with_canonical_trial_source"
+            elif any(token in truth for token in ("proxy", "fallback", "synthetic", "unavailable")):
+                reason = "non_runtime_evidence"
+            if reason:
+                # Reject the chart at its source boundary. Non-runtime values
+                # must not become numeric rows in a primary measured dataset.
+                return {
+                    "csv_bytes": _encode_csv(["run_id", "chart_name", "status", "reason", "source_table_logical_path", "source_row_index"],
+                        [[run_id, chart_name, "unavailable_exact_reason", reason, source_path, row_index]]),
+                    "img_bytes": _render_reason_svg(chart_name, "Runtime source integrity check failed.",
+                        [reason, source_path, f"source_row_index={row_index}"]),
+                    "csv_status": "unavailable_exact_reason", "image_status": "generated_unavailable_reason_svg",
+                    "source_table_path": source_path, "source_row_count": 0, "note": reason,
+                }
+            sinr, sinr_field = None, ""
+            # No configured SNR, geometry-only SINR, or inferred EVM-to-SINR.
+            for field in ("PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "MeasuredWidebandSINR_dB"):
+                candidate = _row_float(row, field)
+                if candidate is not None:
+                    sinr, sinr_field = candidate, field
+                    break
+            throughput = _row_float(row, "Throughput_Mbps")
+            goodput = _row_float(row, "Goodput_Mbps")
+            source_fields = {
+                "PostEqSINR_dB": ("PostEqSINRSource", "PostEqSINRValueStatus"),
+                "MeasuredTrialSINR_dB": ("MeasuredTrialSINRSource", "MeasuredTrialSINRValueStatus"),
+                "MeasuredSINR_dB": ("SINRSource", "SINRValueStatus"),
+                "MeasuredWidebandSINR_dB": ("MeasuredWidebandSINRSource", "MeasuredWidebandSINRValueStatus"),
+            }
+            sinr_source, sinr_status = ([_row_text(row, name) for name in source_fields[sinr_field]]
+                                        if sinr_field else ["", ""])
+            if sinr is None:
+                reason = reason or "measured_sinr_unavailable"
+            elif throughput is None and goodput is None:
+                reason = reason or "runtime_bitrates_unavailable"
+            elif any(value is not None and value < 0 for value in (throughput, goodput)):
+                reason = reason or "negative_runtime_bitrate"
+            if any(token in (sinr_source + " " + sinr_status).lower()
+                   for token in ("proxy", "synthetic", "fallback", "unavailable", "not_available")):
+                reason = reason or "sinr_source_not_measured_evidence"
+                sinr = None  # Do not carry a proxy value into the measured SINR column.
+            output = {
+                "run_id": run_id, "chart_name": chart_name, "direction": direction,
+                "ue_index": _row_text(row, "UEIndex", "UEID", "ue_id"),
+                "frame": _row_text(row, "Frame"), "sfn": _row_text(row, "SFN"),
+                "slot": _row_text(row, "RuntimeSlot", "Slot"),
+                "cell_id": _row_text(row, "CellID", "ServingCell", "BaseStationID"),
+                "tb_id": _row_text(row, "TBId", "tb_id"),
+                "grant_id": _row_text(row, "GrantID"),
+                "mcs": _row_text(row, "MCS", "MCSIndex"),
+                "layers": _row_text(row, "Layers", "NumLayers"),
+                "crc_pass": _row_text(row, "CRCPass"),
+                "sinr_db": sinr, "sinr_source_field": sinr_field,
+                "sinr_measurement_source": sinr_source, "sinr_value_status": sinr_status,
+                "sinr_measurement_domain": _row_text(row, "SINRMeasurementDomain"),
+                "throughput_mbps": throughput, "goodput_mbps": goodput,
+                "throughput_value_status": "available" if throughput is not None else "unavailable_in_source",
+                "goodput_value_status": "available" if goodput is not None else "unavailable_in_source",
+                "rate_semantics": "scheduled_TB_bitrate_and_runtime_goodput",
+                "measurement_scope": "individual_runtime_trial_not_sweep_curve",
+                "value_status": reason or "available",
+                "source_truth_status": truth,
+                "source_table_logical_path": source_path, "source_row_index": row_index,
+            }
+            csv_rows.append(output)
+            if reason:
+                continue
+            for metric, name in ((throughput, "TB bitrate"), (goodput, "Goodput")):
+                if metric is not None:
+                    domain = {"PostEqSINR_dB": "post-EQ", "MeasuredTrialSINR_dB": "trial",
+                              "MeasuredSINR_dB": "measured", "MeasuredWidebandSINR_dB": "wideband"}[sinr_field]
+                    plot_points[f"{direction} {name} [{domain}]"].append([sinr, metric])
+    note = ("Individual DL/UL trial observations: scheduled TB bitrate and delivered goodput. "
+            "No fitted curve, no DL/UL averaging; SINR field, MCS, layers and CRC retained in CSV.")
+    summary = [f"runtime_trials={len(csv_rows)}",
+               f"unplotted_trials={sum(row['value_status'] != 'available' for row in csv_rows)}",
+               "TB bitrate is not delivered goodput", "No interpolation or sweep claim"]
+    series = [{"name": name, "points": points, "marker": "square" if "Goodput" in name else "circle"}
+              for name, points in plot_points.items()]
+    if not series:
+        return {
+            "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows) if csv_rows else
+                _encode_csv(["run_id", "chart_name", "status", "reason"], [[run_id, chart_name,
+                    "unavailable_exact_reason", "No runtime trial with a measured SINR and bitrate was exported."]]),
+            "img_bytes": _render_reason_svg(chart_name, "Measured trial evidence unavailable.", summary),
+            "csv_status": "unavailable_exact_reason", "image_status": "generated_unavailable_reason_svg",
+            "source_table_path": "|".join(path for path, _ in sources),
+            "source_row_count": len(csv_rows), "note": note,
+        }
+    return {
+        "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
+        "img_bytes": _render_multi_series_svg(chart_name, note, series, summary,
+            x_label="Measured SINR (dB); source domain in legend/CSV", y_label="Bitrate / goodput (Mbit/s)",
+            mode="scatter", evidence_shape_policy="operating_point"),
+        "csv_status": "specialized_runtime_throughput_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": "|".join(path for path, _ in sources),
+        "source_row_count": len(csv_rows), "note": note,
+    }
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -10266,6 +10523,8 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    if chart_name == "throughput vs SINR":
+        return _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id)
     phy_signal_chart = _runtime_phy_signal_diagnostic_chart(
         chart_name, existing, fetch_artifact_bytes, run_id
     )
@@ -11894,7 +12153,6 @@ def _specialized_chart_materialization(
         "throughput over time",
         "goodput over time",
         "throughput vs SNR",
-        "throughput vs SINR",
         "throughput vs load",
         "goodput vs retransmissions",
         "per-UE throughput",
@@ -11939,14 +12197,11 @@ def _specialized_chart_materialization(
                         "source_row_count": len(csv_rows),
                         "note": "Summary derived from truthful trial throughput/goodput fields.",
                     }
-            if chart_name in {"throughput vs SNR", "throughput vs SINR", "throughput vs load", "goodput vs retransmissions"}:
+            if chart_name in {"throughput vs SNR", "throughput vs load", "goodput vs retransmissions"}:
                 pairs: list[tuple[float, float]] = []
                 source_token = ""
                 if chart_name == "throughput vs SNR":
                     x_label = "AppliedAWGNSNR_dB"
-                    y_label = "Throughput_Mbps"
-                elif chart_name == "throughput vs SINR":
-                    x_label = "PostEqSINR_dB"
                     y_label = "Throughput_Mbps"
                 elif chart_name == "throughput vs load":
                     x_label = "AllocatedPRBCount"
@@ -11961,10 +12216,6 @@ def _specialized_chart_materialization(
                             x_val, row_x_label = _row_snr_axis_value(row)
                             if row_x_label:
                                 selected_x_labels[row_x_label] += 1
-                        elif chart_name == "throughput vs SINR":
-                            x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
-                            if row_x_label:
-                                selected_x_labels[row_x_label] += 1
                         elif chart_name == "throughput vs load":
                             x_val = _row_float(row, "AllocatedPRBCount", "PRBCount", "NumPRB", "ScheduledPRBs")
                         else:
@@ -11977,7 +12228,7 @@ def _specialized_chart_materialization(
                         pairs.append((float(x_val), float(y_val)))
                         source_token = source_token or source_path
                 if pairs:
-                    if chart_name in {"throughput vs SNR", "throughput vs SINR"} and selected_x_labels:
+                    if chart_name == "throughput vs SNR" and selected_x_labels:
                         x_label = selected_x_labels.most_common(1)[0][0]
                     csv_bytes, dataset = _metric_rows_by_exact_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=source_token or "multiple_runtime_trials")
                     dataset["sample_count"] = len(pairs)
@@ -12488,95 +12739,10 @@ def _specialized_chart_materialization(
                 "source_row_count": len(csv_rows),
                 "note": "Constellation grouping uses codeword/layer coordinates exported by the PHY runtime preview.",
             }
-    if chart_name in {"EVM per symbol", "EVM per subcarrier", "EVM per layer"}:
-        preview_sources = _all_available_rows(
-            existing,
-            fetch_artifact_bytes,
-            ["air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv", "reports/csv/equalized_constellations.csv"],
-        )
-        axis_field = {
-            "EVM per symbol": "OFDMSymbolIndex",
-            "EVM per subcarrier": "SubcarrierIndex",
-            "EVM per layer": "LayerIndex",
-        }[chart_name]
-        grouped: dict[str, dict[float, list[float]]] = defaultdict(lambda: defaultdict(list))
-        csv_rows: list[dict[str, Any]] = []
-        for source_path, rows in preview_sources:
-            default_direction = "DL" if "/dl_" in source_path else ("UL" if "/ul_" in source_path else "")
-            for row in rows:
-                x_val = _row_float(row, axis_field)
-                evm = _row_float(row, "SymbolEVM_rms")
-                if evm is None:
-                    eq_r = _row_float(row, "EqualizedReal")
-                    eq_i = _row_float(row, "EqualizedImag")
-                    ref_r = _row_float(row, "ReferenceSymbolReal")
-                    ref_i = _row_float(row, "ReferenceSymbolImag")
-                    if None not in {eq_r, eq_i, ref_r, ref_i}:
-                        ref_power = max(float(ref_r) ** 2 + float(ref_i) ** 2, 1e-12)
-                        evm = math.sqrt(((float(eq_r) - float(ref_r)) ** 2 + (float(eq_i) - float(ref_i)) ** 2) / ref_power)
-                if x_val is None or evm is None:
-                    continue
-                direction = _row_text(row, "Direction") or default_direction or "link"
-                x_bucket = float(int(round(float(x_val))))
-                grouped[direction][x_bucket].append(float(evm))
-                csv_rows.append(
-                    {
-                        "run_id": run_id,
-                        "chart_name": chart_name,
-                        "direction": direction,
-                        axis_field: x_bucket,
-                        "symbol_evm_rms": float(evm),
-                        "source_table_logical_path": source_path,
-                    }
-                )
-        if csv_rows:
-            series: list[dict[str, Any]] = []
-            for direction, buckets in grouped.items():
-                points = [[float(x_val), float(sum(values) / len(values))] for x_val, values in sorted(buckets.items()) if values]
-                if points:
-                    series.append({"name": direction, "points": _downsample_points(points, 180)})
-            if series:
-                unique_profile_x = {
-                    round(float(point[0]), 9)
-                    for item in series
-                    for point in item.get("points", [])
-                }
-                if len(unique_profile_x) < 3:
-                    named_values: list[tuple[str, float]] = []
-                    for item in series:
-                        for point in item.get("points", []):
-                            named_values.append(
-                                (f"{item['name']} {axis_field}={_format_axis_tick(float(point[0]))}", float(point[1]))
-                            )
-                    dataset, summary = _bar_dataset_from_named_values(
-                        f"Direction / {axis_field}", "Mean EVM RMS", named_values
-                    )
-                    dataset["tick_labels"] = [name for name, _value in named_values]
-                    dataset["sample_count"] = len(csv_rows)
-                    image_bytes = _render_svg_plot(
-                        chart_name,
-                        "Measured EVM by the exported symbol/layer buckets; no unobserved trend is inferred.",
-                        dataset,
-                        summary + [f"samples={len(csv_rows)}"],
-                    )
-                else:
-                    image_bytes = _render_multi_series_svg(
-                        chart_name,
-                        "EVM profile derived from symbol-level equalized/reference runtime preview samples.",
-                        series,
-                        [f"samples={len(csv_rows)}"],
-                        x_label=axis_field,
-                        y_label="EVM RMS",
-                    )
-                return {
-                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", axis_field, "symbol_evm_rms", "source_table_logical_path"], csv_rows),
-                    "img_bytes": image_bytes,
-                    "csv_status": "specialized_runtime_evm_dataset",
-                    "image_status": "generated_specialized_runtime_summary_svg",
-                    "source_table_path": "|".join(source_path for source_path, _rows in preview_sources),
-                    "source_row_count": len(csv_rows),
-                    "note": "Per-symbol/per-subcarrier/per-layer EVM is computed from exported PHY runtime preview coordinates and equalized/reference symbols.",
-                }
+    if chart_name in {"EVM per symbol", "PDSCH EVM per symbol", "PUSCH EVM per symbol", "EVM per subcarrier", "EVM per layer"}:
+        evm_chart = _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+        if evm_chart is not None:
+            return evm_chart
     unavailable_reasons = {
         "pre-equalization constellation": "The run does not export raw pre-equalization I/Q sample clouds, so a pre-equalization constellation plot cannot be reconstructed honestly.",
         "pre-channel waveform": "The run does not export stage-resolved pre-channel sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",
@@ -12586,7 +12752,9 @@ def _specialized_chart_materialization(
         "UE-wise / link-wise waveform comparison": "The run exports a single runtime waveform preview, not a full UE-by-UE waveform sample bank suitable for an honest comparison chart.",
         "constellation per codeword": "No codeword identifier is exported in the runtime constellation preview rows for this run.",
         "constellation per layer": "No per-layer equalized constellation samples are exported in the runtime preview rows for this run.",
-        "EVM per symbol": "The run does not export OFDM-symbol-indexed equalized/reference preview rows.",
+        "EVM per symbol": "No complete finite paired-sample evidence with UE/frame/slot/layer/codeword and OFDM-symbol coordinates is available; scalar EVM cannot recover energy sums or peaks.",
+        "PDSCH EVM per symbol": "No complete DL paired-sample evidence with UE/frame/slot/layer/codeword and OFDM-symbol coordinates is available.",
+        "PUSCH EVM per symbol": "No complete UL paired-sample evidence with UE/frame/slot/layer/codeword and OFDM-symbol coordinates is available.",
         "EVM per subcarrier": "The run does not export subcarrier-indexed equalized/reference preview rows.",
         "EVM per layer": "The run does not export layer-indexed equalized/reference preview rows.",
     }

@@ -12648,6 +12648,7 @@ for k = 1:nTrials
                 r.ReceiverUsable = false;
                 r.Status = "CRASH";
                 r.FailureReason = string(raRunFailure);
+                r.Crash = true;
                 r.RAFailureReason = string(raRunFailure);
                 r.Notes = "strict_four_step_ra_failed_before_complete_runtime_evidence:" + string(raRunFailure);
                 r.RuntimeMaterializationStatus = "four_step_ra_runtime_failed";

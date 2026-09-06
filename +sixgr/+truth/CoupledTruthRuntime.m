@@ -5382,8 +5382,21 @@ methods(Static, Access=private)
         meas.RI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["RIEstimate","RankIndicator","RI","Rank"], NaN);
         meas.PMI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["TPMIEstimate","PMI"], NaN);
         meas.CRI = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["CRI"], NaN);
-        meas.SINR_dB = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
-            ["WidebandSRSSINR_dB","SINR_dB","MeasuredSINR_dB","PostEqSINR_dB"], NaN);
+        sinrFields = ["WidebandSRSSINR_dB","SINR_dB","MeasuredSINR_dB","PostEqSINR_dB"];
+        if signalType == "SSB"
+            % PBCH DM-RS and post-equalization SINR are different measurements
+            % from SS-SINR. Never substitute them when SSS evidence is absent.
+            sinrFields = "SS_SINR_dB";
+        end
+        for sinrField = sinrFields
+            value = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, sinrField, NaN);
+            if isfinite(value)
+                meas.SINR_dB = value;
+                meas.SINRSourceField = char(sinrField);
+                meas.SINRValueStatus = "available_runtime_measurement";
+                break;
+            end
+        end
         meas.RSRP_dBm = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["MeasurementRSRP_dBm","RSRP_dBm","SS_RSRP_dBm"], NaN);
         meas.ReferenceSignalTxEPRE_dBm = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
@@ -12144,7 +12157,7 @@ methods(Static, Access=private)
         decodeSuccess(~isfinite(crcPass) & status == "PASS") = true;
         pendingMask = status == "PENDING" | contains(status, "PENDING");
         failureFlag = (status == "FAIL" | status == "CRASH") | (~decodeSuccess & ~pendingMask & status ~= "" & status ~= "NA");
-        observationAvailable = ~pendingMask;
+        observationAvailable = ~pendingMask & status ~= "CRASH";
         if signalName == "CSI-RS"
             scheduled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 T, "Scheduled", false(n, 1)));
@@ -12433,6 +12446,21 @@ methods(Static, Access=private)
             preambleDetected | msg2Ok | msg3Ok | msg4Ok;
         hasExplicitFullRA = raProcedure == "contention_based_four_step" | strlength(fullSource) > 0;
         fullAttemptMask = hasExplicitFullRA & hasMsgEvidence;
+        failedBeforeEvidence = ...
+            upper(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "Status", repmat("", n, 1))))) == "CRASH" & ...
+            string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "RuntimeEvidenceSource", repmat("", n, 1))) == ...
+                "sixgr.phy.ra.runFourStepRA" & ~hasMsgEvidence;
+        if any(failedBeforeEvidence)
+            % An exception from the strict four-step producer is not an
+            % executed simplified PRACH model, nor a receiver measurement.
+            T.SourceClassification(failedBeforeEvidence) = "execution_failed";
+            T.RuntimeMaterializationStatus(failedBeforeEvidence) = "four_step_ra_runtime_failed";
+            T.ControlGatingEffect(failedBeforeEvidence) = "random_access_gate_runtime_execution_failed";
+            T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueStatus", "", false);
+            T.ValueStatus(failedBeforeEvidence) = "unavailable_runtime_execution_failed";
+        end
         rrcRequired = sixgr.truth.CoupledTruthRuntime.logicalVectorOrDefault( ...
             sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, ...
             "RequireRRCSetupComplete", false(n, 1)), n, false);
@@ -14218,6 +14246,7 @@ methods(Static, Access=private)
             "MeasurementSource", "", "EvidenceSource", "", ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "NMSE_dB", NaN, ...
+            "SINRSourceField", "", "SINRValueStatus", "unavailable", ...
             "RSRP_dBm", NaN, "ReferenceSignalTxEPRE_dBm", NaN, ...
             "Pathloss_dB", NaN, "PathlossReferenceRS", "", ...
             "PathlossSource", "", "PowerReferencePlane", "", ...
