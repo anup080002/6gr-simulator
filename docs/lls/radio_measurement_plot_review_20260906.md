@@ -1579,3 +1579,32 @@ covers a one-sample chunk and boundaries at 17, 255, 512, and 1024 samples
 over two RF chains. These checks prove process-level partition invariance;
 they are not a full RF spectral-mask/PSD qualification or a scenario pass.
 Persistent RF process ownership in the coupled caller remains unintegrated.
+
+### Receiver full-scale wiring, I/Q rails, and noise continuity repaired
+
+Three new focused regressions failed against the previous RF implementation
+(session 38928, `logs/receiver_frontend_chunk_baseline_20260906.log`, exit 1):
+the slot number was passed as AGC full scale; AGC treated complex magnitude
+as an ADC rail and rejected legal I/Q values; chunked noise changed 2,034 of
+2,048 quantized samples even with fixed gain. A real-valued first chunk also
+lost its Q noise through an input-dependent real-noise branch.
+
+`ReceiverFrontEnd` now validates and passes `ADCProfile.FullScale` to AGC.
+Slot remains metadata only. `AGCState` uses independent I/Q rails matching
+the complex ADC and exposes that reference in its trace. Receiver noise uses
+time-major I/Q draws from the persistent stream, including I/Q noise during
+real-valued or silent complex-baseband input, so chunk boundaries do not
+change the seeded realization.
+
+Session 39023 exited 0 with `RECEIVER_FRONTEND_CHUNK_FIX_PASS` in
+`logs/receiver_frontend_chunk_fixed_20260906.log`. Four receiver tests and two
+existing AGC tests executed as real TestSuite entries and passed. The new
+checks verify slot 0 versus slot 99 does not alter identical receiver output,
+legal 0.8+j0.8 samples do not cause overload at unit I/Q rails, actual
+overload remains rejected, and irregular two-chain chunks have exactly the
+same ADC output as a one-shot execution under explicitly fixed gain.
+
+The fixed-gain regression deliberately isolates filter/mixer/noise behavior.
+It does not validate adaptive AGC update cadence, ADC jitter/dither streaming,
+or persistent RF ownership in coupled scenario dispatch. Those remain open;
+this is not a successful replacement TDD run or full RF qualification.

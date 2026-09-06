@@ -174,6 +174,54 @@ intermod=sixgr.rf.runtime.IntermodulationScenario.run(1e6,1024, ...
 verifyEqual(t,intermod.IM3Frequencies_Hz,[20e3 110e3]);
 end
 
+function testReceiverSlotIsNotADCFullScale(t)
+cfg=localReceiverConfiguration();
+a=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
+b=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
+x=0.02*exp(1j*2*pi*0.03*(0:127).');
+[first,e1]=a.apply(x,0,6);
+[later,e2]=b.apply(x,99,6);
+verifyEqual(t,first,later);
+verifyEqual(t,e1.AGC.ClippingRatio,e2.AGC.ClippingRatio);
+verifyEqual(t,e1.ADC.FullScale,cfg.ADCProfile.FullScale);
+verifyEqual(t,e1.AGC.FullScale,cfg.ADCProfile.FullScale);
+end
+
+function testAGCClippingUsesSeparateIQRails(t)
+cfg=localReceiverConfiguration();
+cfg.AGCProfile.MinGain_dB=0;
+cfg.AGCProfile.MaxGain_dB=0;
+agc=sixgr.rf.runtime.AGCState(cfg.AGCProfile,6);
+x=repmat(0.8+0.8j,128,1);
+[y,evidence]=agc.apply(x,1,6);
+verifyEqual(t,y,x);
+verifyEqual(t,evidence.ClippingRatio,0);
+verifyError(t,@()agc.apply(repmat(1.1+0.1j,128,1),1,6),"RF:AGCOverload");
+end
+
+function testReceiverNoiseChunkContinuityFixedGain(t)
+% Fixed gain isolates RF filtering/noise continuity from AGC update policy.
+cfg=localReceiverConfiguration();
+cfg.AGCProfile.MinGain_dB=0;
+cfg.AGCProfile.MaxGain_dB=0;
+cfg.ADCProfile.Bits=24;
+cfg.MixerProfile.LOFrequency_Hz=137;
+whole=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
+chunks=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
+n=(0:1023).';
+x=[0.02*exp(1j*2*pi*0.03*n),0.01*exp(-1j*2*pi*0.02*n)];
+[expected,~]=whole.apply(x,1,6);
+actual=zeros(size(x),'like',expected);
+first=1;
+for last=[1,17,255,512,1024]
+    [actual(first:last,:),~]=chunks.apply(x(first:last,:),1,6);
+    first=last+1;
+end
+verifyEqual(t,actual,expected);
+verifyEqual(t,chunks.MixerSampleIndex,whole.MixerSampleIndex);
+verifyEqual(t,chunks.FilterState,whole.FilterState,"AbsTol",1e-12);
+end
+
 function testTransmitterFrontEnd(t)
 rng(7); training=0.2*(randn(512,1)+1j*randn(512,1));
 paProfile=struct("ProfileID","RAPP_TX","Model","rapp", ...

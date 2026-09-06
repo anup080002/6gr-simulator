@@ -20,6 +20,13 @@ classdef ReceiverFrontEnd < handle
                 error("RF:ReceiverFrontEndIncomplete", ...
                     "Receiver front end requires every explicit stage profile.");
             end
+            adcProfile=configuration.ADCProfile;
+            if ~isstruct(adcProfile)||~isfield(adcProfile,"FullScale")|| ...
+                    ~isnumeric(adcProfile.FullScale)||~isreal(adcProfile.FullScale)|| ...
+                    ~isscalar(adcProfile.FullScale)||~isfinite(adcProfile.FullScale)|| ...
+                    adcProfile.FullScale<=0
+                error("RF:ADCProfileMissing","Receiver AGC requires the explicit ADC full scale.");
+            end
             obj.Configuration=configuration;
             obj.ConfigurationEpoch=configurationEpoch;
             obj.AGC=sixgr.rf.runtime.AGCState(configuration.AGCProfile, ...
@@ -62,12 +69,15 @@ classdef ReceiverFrontEnd < handle
             outputNoisePower_dBm=noiseLedger.NoisePower_dBm+ ...
                 cfg.LNAProfile.Gain_dB+cfg.MixerProfile.ConversionGain_dB;
             outputNoisePower_mW=10^(outputNoisePower_dBm/10);
+            % Time-major I/Q draws preserve the same realization across
+            % arbitrary chunks and RX chains. This is a complex-baseband
+            % receiver: a real-valued/silent chunk still has I AND Q noise.
+            draws=randn(obj.NoiseStream,2*size(filtered,2),size(filtered,1));
             noise=sqrt(outputNoisePower_mW/2).* ...
-                (randn(obj.NoiseStream,size(filtered))+ ...
-                1j*randn(obj.NoiseStream,size(filtered)));
-            if isreal(filtered), noise=real(noise)*sqrt(2); end
+                (draws(1:2:end,:).'+1j*draws(2:2:end,:).');
             noisy=filtered+cast(noise,"like",filtered);
-            [agcOutput,agcEvidence]=obj.AGC.apply(noisy,slot,expectedEpoch);
+            % Slot is scheduling metadata, not an analog voltage/amplitude.
+            [agcOutput,agcEvidence]=obj.AGC.apply(noisy,cfg.ADCProfile.FullScale,expectedEpoch);
             adc=sixgr.rf.runtime.ADCModel.quantize(agcOutput,cfg.ADCProfile);
             output=adc.Output;
             evidence=struct("LNA",lnaEvidence,"Mixer",mixerEvidence, ...
@@ -81,7 +91,7 @@ classdef ReceiverFrontEnd < handle
                 (adc.QuantizationError'*adc.QuantizationError)/ ...
                 max(size(adc.QuantizationError,1),1), ...
                 "ReferencePlane","ADC_OUTPUT", ...
-                "StateEpoch",obj.ConfigurationEpoch);
+                "StateEpoch",obj.ConfigurationEpoch,"Slot",double(slot));
         end
     end
 end
