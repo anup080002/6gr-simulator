@@ -1,9 +1,6 @@
 function trial = runPUCCHWaveformTrial(cfg, varargin)
 %RUNPUCCHWAVEFORMTRIAL Execute one canonical typed-report PUCCH trial.
 
-sixgr.runtime.RuntimeCallLedger.record("sixgr.link.runPUCCHWaveformTrial", ...
-    "PUCCH", "UL", struct("Stage","TX_RX_TRIAL"));
-
 p = inputParser;
 p.FunctionName = "sixgr.link.runPUCCHWaveformTrial";
 addRequired(p,"cfg",@(x) isstruct(x)||isobject(x));
@@ -30,8 +27,36 @@ addParameter(p,"InitialRuntimeChannelState",struct(), ...
     @(x) isempty(x)||isstruct(x));
 addParameter(p,"InterferenceBundle",struct([]), ...
     @(x) isempty(x)||isstruct(x));
+addParameter(p,"PrepareOnly",false,@(x)islogical(x)&&isscalar(x));
+addParameter(p,"ReceivedContext",struct(),@(x)isstruct(x)&&isscalar(x));
+addParameter(p,"TimingAdvanceSamples",NaN,@(x)isnumeric(x)&&isscalar(x));
 parse(p,cfg,varargin{:});
 opt = p.Results;
+prepareOnly=opt.PrepareOnly;
+received=~isempty(fieldnames(opt.ReceivedContext));
+assert(~(prepareOnly && received),'sixgr:link:InvalidULControlStreamRequest','Select exactly one execution stage.');
+if prepareOnly || received
+    assert(isempty(opt.InterferenceBundle),'sixgr:link:ULControlInterferenceAlreadyComposed', ...
+        'Shared-stream interference belongs to the physical receiver composition.');
+    assert(opt.SignalPresent,'sixgr:link:AbsentPUCCHNeedsReceiveOnlyWindow', ...
+        'An absent PUCCH requires a receive-only observation, not an active prepared transmitter.');
+end
+prepared=[];
+if received
+    receivedContext=opt.ReceivedContext;
+    assert(isfield(receivedContext,'Prepared') && isa(receivedContext.Prepared,'sixgr.link.PreparedUplinkControlTransmission'), ...
+        'sixgr:link:IncompleteULControlReceivedContext','Retain the actual prepared PUCCH transmission.');
+    prepared=receivedContext.Prepared;
+    prepared.validateReceived('PUCCH',cfg,opt);
+    assert(isfield(receivedContext,'Channel') && isstruct(receivedContext.Channel) && ...
+        isscalar(receivedContext.Channel) && isfield(receivedContext.Channel,'Profile') && ...
+        string(receivedContext.Channel.Profile)==string(opt.ChannelProfile), ...
+        'sixgr:link:ULControlChannelMismatch','Retain the actual configured channel execution metadata.');
+end
+stage="TX_RX_TRIAL";
+if prepareOnly, stage="TX_PREPARATION"; elseif received, stage="RX_COMPLETION"; end
+sixgr.runtime.RuntimeCallLedger.record("sixgr.link.runPUCCHWaveformTrial", ...
+    "PUCCH", "UL", struct("Stage",stage));
 trialPipelineTic = tic;
 
 trial = localEmptyTrial(opt);
@@ -61,10 +86,15 @@ if isempty(carrier)
 end
 
 try
-    tx = sixgr.phy.pucch.PUCCHTransmitter.transmit( ...
-        carrier,opt.Assignment,opt.Report);
+    if received
+        tx=prepared.Tx;
+    else
+        tx = sixgr.phy.pucch.PUCCHTransmitter.transmit( ...
+            carrier,opt.Assignment,opt.Report);
+    end
     trial.WaveformGenerated = true;
 catch ME
+    if prepareOnly || received, rethrow(ME); end
     trial.WaveformGenerationFailed = true;
     trial.ErrorID = string(ME.identifier);
     trial.ErrorMessage = string(ME.message);
@@ -74,19 +104,52 @@ catch ME
     return;
 end
 
-rng(double(opt.Seed),"twister");
 cfgRuntime = localRuntimeConfig(cfg,carrier,opt);
-[rxWaveform, desiredWaveform, injectedNoise, noiseVariance, ...
-    channelMeta, replay, runtimeState] = localRuntimeWaveformPath( ...
-    cfgRuntime,tx,opt);
+if prepareOnly
+    [tx.Waveform,cfgRuntime,powerEvidence]=sixgr.link.preparePUCCHTransmitWaveform( ...
+        tx,cfgRuntime,'ApplyNodeRF',false);
+    tx.PowerContext=cfgRuntime.lls6g.runtimePowerContext;
+    tx.WaveformSHA256=sixgr.phy.pucch.PUCCHUtil.hash([real(tx.Waveform(:)).' imag(tx.Waveform(:)).']);
+    trial.PreparedTransmission=sixgr.link.PreparedUplinkControlTransmission( ...
+        'PUCCH',cfg,opt,tx,struct('OFDMInfo',tx.OFDMInfo),cfgRuntime, ...
+        opt.Assignment.DueSlot-1,struct('PowerEvidence',powerEvidence));
+    trial.ExecutionStage="transmit_prepared_not_received";
+    trial.ExecutionBackend="pucch_transmitter_pre_node_rf";
+    trial.EvidenceClass="prepared_transmission_not_received";
+    trial.Status="PREPARED_NOT_RECEIVED";
+    return;
+elseif received
+    cfgRuntime=prepared.ReceiverConfig;
+    rxWaveform=prepared.readObservation(receivedContext.Observation,"receiver");
+    desiredWaveform=[]; injectedNoise=[];
+    if isfield(receivedContext,'DesiredReferenceObservation')
+        desiredWaveform=prepared.readObservation(receivedContext.DesiredReferenceObservation,"receiver");
+    end
+    replay=receivedContext.Replay; runtimeState=receivedContext.ChannelState;
+    noiseVariance=double(replay.SampleNoiseVariance);
+    channelMeta=receivedContext.Channel;
+    trial.ExecutionStage="received_shared_stream_completed";
+    trial.ExecutionBackend="pucch_shared_stream_receiver";
+else
+    rng(double(opt.Seed),"twister");
+    [rxWaveform, desiredWaveform, injectedNoise, noiseVariance, ...
+        channelMeta, replay, runtimeState] = localRuntimeWaveformPath( ...
+        cfgRuntime,tx,opt);
+end
 [signalPower, activeSymbolIndices] = localActiveOFDMMeanPower( ...
     desiredWaveform,tx);
 measuredNoisePower = localActiveOFDMMeanPower( ...
     injectedNoise,tx,activeSymbolIndices);
 measuredInterferencePower = double(sixgr.util.structGet( ...
     replay,"InterferenceWaveformVariance",0));
+if received
+    % A variance parameter is not a measured noise-only waveform. A nonlinear
+    % composite cannot be separated into desired/noise components by guessing.
+    measuredNoisePower=NaN;
+    measuredInterferencePower=double(sixgr.util.structGet(replay,'InterferenceWaveformVariance',NaN));
+end
 if ~(isfinite(measuredInterferencePower) && measuredInterferencePower >= 0)
-    measuredInterferencePower = 0;
+    measuredInterferencePower = NaN;
 end
 measuredDisturbancePower = measuredNoisePower+measuredInterferencePower;
 if isfinite(signalPower) && signalPower > 0 && ...
@@ -128,6 +191,7 @@ try
     rx = sixgr.phy.pucch.PUCCHReceiver.receive( ...
         rxWaveform,carrier,opt.Assignment,context,rxArgs{:});
 catch ME
+    if received, rethrow(ME); end
     trial.ReceiverDecodeFailed = true;
     trial.ErrorID = string(ME.identifier);
     trial.ErrorMessage = string(ME.message);
@@ -262,6 +326,11 @@ trial.UsedOracleFields = "";
 trial.Notes = "Waveform-backed PUCCH through typed report, assignment and oracle-free receiver.";
 trial.RuntimeIntegrationMode = "coupled_slot_runtime";
 trial.RuntimeTransportMode = "pucch_tx_runtime_channel_rf_noise_pucch_rx";
+if received
+    trial.RuntimeTransportMode="prepared_pucch_shared_stream_receiver";
+    trial.TransmitterCompositeObservation=receivedContext.TransmitterObservation;
+    trial.PUCCHWaveformReferencePlane="pre_node_rf_transmitter_contribution";
+end
 trial.RuntimeStageWaveformsRequired = true;
 trial.RuntimeStageWaveformsUsed = true;
 trial.RuntimeSelfLoopWaveformsUsed = false;

@@ -42,11 +42,11 @@ for caseIndex = 1:numel(directions)
     frame = floor((slot-1)/(10*double(cfg.phy.carrier.SubcarrierSpacing)/15))+1;
     cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot,frame);
     if direction == "DL"
-        runner = @sixgr.link.runDLPDSCHThroughput;
+        runner = @localDLJob;
         txName = "sixgr.phy.dl.PDSCH_Tx"; rxName = "sixgr.phy.dl.PDSCH_Rx";
         grant.ControlDecodeOk = false; grant.PDCCHGrantBindingOk = false;
     else
-        runner = @sixgr.link.runULPUSCHThroughput;
+        runner = @localULJob;
         txName = "sixgr.phy.ul.PUSCH_Tx"; rxName = "sixgr.phy.ul.PUSCH_Rx";
         % Dynamic UL transmission needs an actually decoded control waveform.
         grant = localReceiveControl(cfg,grant);
@@ -260,6 +260,31 @@ end
 
 function n = localCount(t,name)
 n = sum(string(t.FunctionName)==name);
+end
+
+function out=localDLJob(cfg,varargin)
+out=localJob(cfg,'DL',varargin{:});
+end
+
+function out=localULJob(cfg,varargin)
+out=localJob(cfg,'UL',varargin{:});
+end
+
+function out=localJob(cfg,direction,varargin)
+context=struct(varargin{:});
+job=sixgr.truth.buildGrantPHYJob(cfg,direction,cfg.channel.snr_dB, ...
+    context.StartFrameIndex,[],context);
+% This isolated grant fixture retains the scheduler's zero-based allocation
+% coordinates; the throughput entry point takes a one-based runtime slot.
+job.StartSlotIndex=context.StartSlotIndex;
+result=sixgr.truth.executeGrantPHYJob(job);
+out=result.Result;
+if job.PrepareOnly
+    assert(~job.WorkerSafe && ~result.ReadyForReceiverCommit && ...
+        isempty(result.LinkAdaptationState) && isequaln(result.ChannelState,job.ChannelState));
+elseif ~isempty(fieldnames(job.ReceivedContext))
+    assert(~job.WorkerSafe && result.ReadyForReceiverCommit);
+end
 end
 
 function localReject(call,identifier)

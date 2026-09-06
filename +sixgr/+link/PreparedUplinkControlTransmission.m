@@ -1,0 +1,114 @@
+classdef PreparedUplinkControlTransmission
+    % Retained SRS/PUCCH contribution, before shared node RF and propagation.
+    % The nominal-slot interface deliberately does not claim nonzero TA.
+    properties (SetAccess=private)
+        Channel (1,1) string
+        InputConfig
+        RequestBinding struct
+        Tx struct
+        TxInfo struct
+        ReceiverConfig struct
+        Metadata struct
+        SampleRateHz (1,1) double
+        StartSample (1,1) double
+        EndSampleExclusive (1,1) double
+        NumPhysicalTransmitAntennas (1,1) double
+        NumReceiveAntennas (1,1) double
+    end
+    methods
+        function obj=PreparedUplinkControlTransmission(channel,cfg,options,tx,info,rxCfg,slot0,metadata)
+            assert(any(string(channel)==["SRS","PUCCH"]), ...
+                'sixgr:link:InvalidULControlChannel','Use a typed SRS or PUCCH contribution.');
+            validateattributes(slot0,{'numeric'},{'scalar','finite','integer','nonnegative'});
+            fs=double(info.OFDMInfo.SampleRate);
+            validateattributes(fs,{'numeric'},{'scalar','real','finite','positive'});
+            validateattributes(tx.Waveform,{'single','double'},{'2d','nonempty','finite'});
+            assert(isfield(options,'TimingAdvanceSamples') && isfinite(options.TimingAdvanceSamples), ...
+                'sixgr:link:MissingPreparedULControlTiming','Explicit timing-advance authority is required.');
+            assert(options.TimingAdvanceSamples==0, ...
+                'sixgr:link:SharedULControlTimingAdvanceNotIntegrated', ...
+                'Nonzero timing advance needs distinct UE TX and gNB RX origins; do not silently ignore it.');
+            pc=rxCfg.lls6g.runtimePowerContext;
+            assert(~pc.PAApplied && (~pc.PAEnabled || pc.PAExecutionDeferred), ...
+                'sixgr:link:ULControlPreparationAppliedRF','Defer PA until node composition.');
+            origin=double(slot0)*1e-3*15/double(tx.Carrier.SubcarrierSpacing)*fs;
+            slotsPerFrame=10*double(tx.Carrier.SubcarrierSpacing)/15;
+            assert(mod(double(tx.Carrier.NSlot),slotsPerFrame)==mod(double(slot0),slotsPerFrame), ...
+                'sixgr:link:ULControlPreparationClockMismatch', ...
+                'OFDM carrier slot and scheduled UL occasion must agree.');
+            declared=sixgr.util.structGet(rxCfg,'lls6g.userContext.RuntimeSlotStartTime_s',origin/fs);
+            assert(abs(origin-round(origin))<1e-6 && isscalar(declared) && ...
+                isfinite(declared) && abs(double(declared)*fs-origin)<1e-6, ...
+                'sixgr:link:ULControlPreparationClockMismatch', ...
+                'The control occasion and runtime sample origin must agree.');
+            array=sixgr.rf.AntennaArrayFactory.build(rxCfg,'ue', ...
+                'signal',lower(string(channel)),'numPorts',size(tx.Waveform,2));
+            obj.Channel=string(channel); obj.InputConfig=cfg;
+            obj.RequestBinding=obj.requestBinding(options);
+            obj.Tx=tx; obj.TxInfo=info; obj.ReceiverConfig=rxCfg; obj.Metadata=metadata;
+            obj.SampleRateHz=fs; obj.StartSample=round(origin);
+            obj.EndSampleExclusive=obj.StartSample+size(tx.Waveform,1);
+            obj.NumPhysicalTransmitAntennas=size(array.PortToElementMatrix,1);
+            obj.NumReceiveAntennas=sixgr.phy.ul.resolveULDirectionalAntennaCount(rxCfg,'rx',size(tx.Waveform,2));
+        end
+
+        function validateReceived(obj,channel,cfg,options)
+            assert(obj.Channel==string(channel) && isequaln(obj.InputConfig,cfg) && ...
+                isequaln(obj.RequestBinding,obj.requestBinding(options)), ...
+                'sixgr:link:PreparedULControlRequestMismatch', ...
+                'Retain the prepared configuration, occasion, resource, UCI and receiver context.');
+            context=options.ReceivedContext;
+            required={'Observation','PhysicalMeasurementObservation','TransmitterObservation','Replay','ChannelState'};
+            assert(all(isfield(context,required)) && isstruct(context.Replay) && ...
+                isscalar(context.Replay) && isstruct(context.ChannelState) && isscalar(context.ChannelState), ...
+                'sixgr:link:IncompleteULControlReceivedContext','Retain actual samples and execution evidence.');
+            obj.readObservation(context.Observation,"receiver");
+            obj.readObservation(context.PhysicalMeasurementObservation,"receiver");
+            obj.readObservation(context.TransmitterObservation,"transmitter");
+            assert(context.Observation.EndSampleExclusive==context.PhysicalMeasurementObservation.EndSampleExclusive, ...
+                'sixgr:link:ULControlObservationPlaneMismatch','Pre/post RF observations must cover the same interval.');
+            if isfield(context,'DesiredReferenceObservation')
+                obj.readObservation(context.DesiredReferenceObservation,"receiver");
+                assert(context.DesiredReferenceObservation.EndSampleExclusive==context.Observation.EndSampleExclusive, ...
+                    'sixgr:link:ULControlObservationPlaneMismatch','Reference and received intervals must agree.');
+            end
+            for name=["ApproximationMode","RuntimeChannelReciprocityApproximationMode"]
+                value=lower(strtrim(string(sixgr.util.structGet(context.Replay,name,""))));
+                assert(isscalar(value) && any(value==["","none","exact"]), ...
+                    'sixgr:link:ProxyULControlStreamForbidden','Do not relabel approximate samples as truth.');
+            end
+            for name=["FallbackUsedForPathloss","FallbackUsed","ProxyUsed","SyntheticUsed"]
+                value=sixgr.util.structGet(context.Replay,name,false);
+                assert((isnumeric(value)||islogical(value)) && isscalar(value) && isequal(double(value),0), ...
+                    'sixgr:link:ProxyULControlStreamForbidden','No proxy/fallback primary control evidence.');
+            end
+            noise=sixgr.util.structGet(context.Replay,'SampleNoiseVariance',NaN);
+            domain=string(sixgr.util.structGet(context.Replay,'SampleNoiseVarianceDomain',''));
+            assert(isnumeric(noise) && isreal(noise) && isscalar(noise) && isfinite(noise) && noise>=0 && ...
+                isscalar(domain) && domain=="receiver_sample_waveform_post_composite_front_end", ...
+                'sixgr:link:ULControlNoisePlaneMismatch', ...
+                'Declare actual post-front-end sample noise variance; grid variance is not interchangeable.');
+        end
+
+        function samples=readObservation(obj,buffer,plane)
+            assert(isa(buffer,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(buffer), ...
+                'sixgr:link:ULControlObservationRequired','Supply contiguous actual sample observations.');
+            antennas=obj.NumReceiveAntennas;
+            intervalOK=buffer.EndSampleExclusive>=obj.EndSampleExclusive;
+            if string(plane)=="transmitter"
+                antennas=obj.NumPhysicalTransmitAntennas;
+                intervalOK=buffer.EndSampleExclusive==obj.EndSampleExclusive;
+            end
+            assert(buffer.StartSample==obj.StartSample && buffer.SampleRateHz==obj.SampleRateHz && ...
+                buffer.NumReceiveAntennas==antennas && intervalOK, ...
+                'sixgr:link:ULControlObservationMismatch','Observation clock, coverage and physical branches must match.');
+            samples=buffer.readComplete();
+        end
+    end
+    methods (Static)
+        function binding=requestBinding(options)
+            excluded={'Logger','PrepareOnly','ReceivedContext','ChannelState','InitialRuntimeChannelState'};
+            binding=rmfield(options,intersect(fieldnames(options),excluded));
+        end
+    end
+end

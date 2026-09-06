@@ -85,11 +85,26 @@ job.PreviousCombinedLLR = sixgr.util.structGet(trialContext, "PreviousCombinedLL
 job.InterferenceBundle = sixgr.util.structGet(trialContext, "InterferenceBundle", struct([]));
 job.ChannelState = sixgr.util.structGet(trialContext, "ChannelState", struct());
 job.AbsoluteSampleTime_s = double(sixgr.util.structGet(trialContext, "AbsoluteSampleTime_s", NaN));
+job.PrepareOnly = sixgr.util.structGet(trialContext,"PrepareOnly",false);
+job.ReceivedContext = sixgr.util.structGet(trialContext,"ReceivedContext",struct());
+assert(islogical(job.PrepareOnly) && isscalar(job.PrepareOnly) && ...
+    isstruct(job.ReceivedContext) && isscalar(job.ReceivedContext) && ...
+    ~(job.PrepareOnly && ~isempty(fieldnames(job.ReceivedContext))), ...
+    'sixgr:truth:InvalidGrantPHYStage','Select preparation or reception, never both.');
 hasRuntimeChannelState = isstruct(job.ChannelState) && isfield(job.ChannelState, "ContractVersion");
 job.WorkerSafe = ~hasRuntimeChannelState;
 job.SharedStateCommitMode = "serial_coordinator_commit";
 if hasRuntimeChannelState
     job.SharedStateCommitMode = "serial_runtime_channel_state_commit";
+end
+if job.PrepareOnly || ~isempty(fieldnames(job.ReceivedContext))
+    % Observation buffers and retained transmitter state belong to the
+    % chronological coordinator, not independent per-grant worker clocks.
+    job.WorkerSafe = false;
+    job.SharedStateCommitMode = "serial_shared_stream_receiver_commit";
+    if job.PrepareOnly
+        job.SharedStateCommitMode = "prepared_transmission_no_receiver_commit";
+    end
 end
 end
 

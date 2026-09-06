@@ -4,6 +4,8 @@ function result = executeGrantPHYJob(job)
 
 job = localNormalizeHARQReplayJob(job);
 direction = upper(string(sixgr.util.structGet(job, "Direction", "DL")));
+assert(isscalar(direction) && any(direction==["DL","UL"]), ...
+    'sixgr:truth:InvalidGrantDirection','A PHY job must explicitly resolve to DL or UL.');
 cfg = sixgr.util.structGet(job, "Cfg", struct());
 interferenceBundle = sixgr.util.structGet(job, "InterferenceBundle", struct([]));
 sixgr.truth.CoupledTruthRuntime.assertSharedSlotInterferenceBundle(interferenceBundle, "executeGrantPHYJob");
@@ -60,6 +62,9 @@ if strlength(executionProfile) == 0
         direction);
 end
 args = [args {"ExecutionProfile", char(executionProfile)}]; %#ok<AGROW>
+prepareOnly=sixgr.util.structGet(job,'PrepareOnly',false);
+receivedContext=sixgr.util.structGet(job,'ReceivedContext',struct());
+args=[args {'PrepareOnly',prepareOnly,'ReceivedContext',receivedContext}];
 if direction == "UL"
     res = sixgr.link.runULPUSCHThroughput(cfg, args{:});
 else
@@ -77,6 +82,17 @@ result.LinkAdaptationState = sixgr.util.structGet(res, "LinkAdaptationState", si
 result.ChannelState = sixgr.util.structGet(res, "ChannelState", channelState);
 result.WorkerSafe = logical(sixgr.util.structGet(job, "WorkerSafe", true));
 result.SharedStateCommitMode = char(string(sixgr.util.structGet(job, "SharedStateCommitMode", "serial_coordinator_commit")));
+% Readiness means a real receive attempt can be committed, not that CRC or
+% qualification passed. A failed CRC remains genuine receiver evidence.
+result.ReadyForReceiverCommit = ~prepareOnly && ...
+    istable(sixgr.util.structGet(res,'TrialTable',[])) && ~isempty(res.TrialTable);
+if prepareOnly
+    assert(string(sixgr.util.structGet(res,'ExecutionStage',''))=="transmit_prepared_not_received" && ...
+        isempty(res.TrialTable) && ~res.Ok, ...
+        'sixgr:truth:PreparedGrantClaimedReception','A prepared waveform is not a completed PHY trial.');
+    result.LinkAdaptationState=sixgr.util.structGet(job,'InitialLinkAdaptationState',[]);
+    result.ChannelState=channelState;
+end
 end
 
 function job = localNormalizeHARQReplayJob(job)

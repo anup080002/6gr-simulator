@@ -1,12 +1,17 @@
-function [waveform, cfgOut, evidence] = preparePUCCHTransmitWaveform(tx, cfg)
+function [waveform, cfgOut, evidence] = preparePUCCHTransmitWaveform(tx, cfg, varargin)
 %PREPAREPUCCHTRANSMITWAVEFORM Bind PUCCH power and TX RF before channel use.
 %
 % The typed PUCCH assignment owns the applied UE transmit power.  This
 % boundary converts the generated waveform to the repository-wide sqrt(mW)
 % sample convention, applies the YAML-authoritative PA exactly once through
 % applyPowerContext, and then applies the remaining transmitter RF stages.
-% Both desired and same-slot interfering PUCCH signals must call this
-% function before entering their independent runtime channel objects.
+% Shared streams use ApplyNodeRF=false: retain linear power allocation here
+% and apply the physical node's PA/RF once, after all contributors are summed.
+
+p=inputParser;
+p.addParameter('ApplyNodeRF',true,@(x)islogical(x)&&isscalar(x));
+p.parse(varargin{:});
+applyNodeRF=p.Results.ApplyNodeRF;
 
 if ~(isstruct(tx) && isfield(tx,"Waveform") && isfield(tx,"Power") && ...
         isfield(tx,"OFDMInfo"))
@@ -36,7 +41,7 @@ powerContext.TotalTxPowerSource = ...
 powerContext.SignalSpecificPowerControl = true;
 powerContext.SignalFamily = "PUCCH";
 [waveform,powerContext] = sixgr.rf.applyPowerContext( ...
-    tx.Waveform,cfg,"UL",txInfo,"PowerContext",powerContext);
+    tx.Waveform,cfg,"UL",txInfo,"PowerContext",powerContext,"ApplyPA",applyNodeRF);
 
 cfgOut = sixgr.util.structSet(cfg, ...
     "lls6g.runtimePowerContext",powerContext);
@@ -46,6 +51,14 @@ if ~(isfinite(sampleRateHz) && sampleRateHz > 0)
         "PUCCH transmitter RF execution requires a finite OFDM sample rate.");
 end
 
+if ~applyNodeRF
+    evidence=struct('ContractVersion','sixgr.link.PUCCHTransmitContribution/v1', ...
+        'SignalFamily','PUCCH','WaveformAmplitudeUnit','sqrt_mW', ...
+        'PowerContext',powerContext,'AppliedPower_dBm',appliedPower_dBm, ...
+        'TXRFExecutionStatus','deferred_until_node_composition', ...
+        'ReferencePlane','pre_node_rf_transmitter_contribution');
+    return;
+end
 rfOut = sixgr.rf.applyRFImpairmentChain(waveform,cfgOut, ...
     "SampleRateHz",sampleRateHz, ...
     "Direction","UL", ...

@@ -1,5 +1,97 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Uplink control and scheduler job boundary checkpoint (2026-09-07)
+
+The main chronological scheduler integration is **still incomplete**. Its last
+full-run evidence remains the failed 25-slot-horizon run below, with zero DL
+and UL data trial rows. No new TDD/FDD/25 dB scenario was launched here.
+
+Repairs made in this checkpoint:
+
+- Added retained, linearly power-allocated SRS and typed PUCCH transmit stages,
+  before node PA/RF/channel execution. Receive stages consume complete actual
+  observations without regenerating the transmitter, resetting the RNG,
+  executing propagation or consuming power-control state a second time.
+- Bound the control occasion, physical antenna dimensions, configuration,
+  UCI/receiver context, sample rate and observation interval. Reject incomplete
+  coverage, changed requests, proxy/fallback replay and mislabeled noise
+  domains before decoding. Separate pre/post-front-end and physical transmitter
+  observations remain required. Missing isolated noise samples do not become
+  purported measured PUCCH input noise or EVM values. Absent PUCCH is rejected
+  by this active-transmitter staging API; receive-only DTX monitoring must be
+  integrated separately, not replaced by an active TX contribution.
+- Removed SRS's synthetic-Doppler reference rescue. Missing noiseless reference
+  samples leave true-channel NMSE unavailable and fail the existing strict gate.
+- Corrected SRS NMSE to `mean(abs(Hest-Href).^2)/mean(abs(Href).^2)` in its
+  retained pilot-reference domain. The previous fitted complex multiplier hid
+  gain/phase errors; it was a shape residual, not absolute channel NMSE.
+- This exposed a second SRS defect: the immediate runner compared a pre-AGC
+  reference with a post-AGC estimate (wideband regression NMSE -2.6588 dB,
+  despite reference correlation 0.9998). It now carries the gain recorded by
+  the actual RX AGC into the reference plane. No gain is fitted from Hest,
+  no RF/channel is rerun, and other receiver impairments remain in the residual.
+  The source string identifies that reference convention; the applied gain is
+  available as `NMSEReferenceAGCGain_dB` in the runner result.
+- Removed the SRS branch that replaced rejected grid-domain noise variance with
+  unconverted time-sample variance and cleared its failure flag. `SRS_Rx` owns
+  the OFDM noise transform and strict validation.
+- Routed preparation/completion options through `buildGrantPHYJob` and
+  `executeGrantPHYJob`. Prepared jobs cannot commit receiver/LA/channel results
+  and are not worker-safe; readiness after reception is not CRC/qualification
+  success. The old immediate main batch explicitly rejects a prepared-only job
+  instead of passing an empty trial into the normal commit path.
+
+Ten focused checks passed on the final executable revision:
+
+- Session 97036, exit 0, `logs/ul_control_stream_stages_20260907_final_focused.log`:
+  `testUplinkControlStreamStages`, `testDataChannelStreamStages`,
+  `testSRSRuntimeCanonicalWidebandResource`, `testPreparedWaveformPAOwnership`,
+  `testPUCCHMeasuredReferencePowerControl`, `testNoiseDomainEvidenceContract`,
+  plus a main-runner parsing check.
+- Session 25037, exit 0, `logs/ul_control_scheduler_job_regressions_20260907.log`:
+  `testSchedulerGrantConsistency`, `testSchedulerPDSCHTransmitAuthority`,
+  `testULPUSCHThroughputExecutionContract`,
+  `testDLPDSCHThroughputExecutionContract`.
+
+No `testAll` or new E2E qualification campaign was run under the bounded-test
+request. Existing FDD/TDD unit fixtures in the power-control checks are not
+new production scenario launches. Historical outputs were not deleted or
+regenerated. The NR-validation/result-integrity constraints kept missing
+measurements and timing support as explicit failures, not replacement rows.
+
+Failed diagnostics are preserved: session 23468 passed SRS then failed the new
+PUCCH fixture's nonexistent `cfg.phy.rnti` field (corrected to the configured
+PUSCH RNTI). Session 90530 passed both new stage tests and the data-job test,
+then exposed the SRS AGC-reference mismatch. Session 99354 recorded that NMSE
+failure and independently passed PA ownership, PUCCH power control and noise
+domain checks. Session 86724 subsequently passed the six-check set after the
+AGC-plane repair; session 97036 repeated it with the final absent-PUCCH guard.
+
+The control tests use the TDD profile's full-UL slot, actual generated SRS and
+HARQ-ACK PUCCH samples, physical antenna projection, an explicitly analytic
+connector and standalone occupied-RE 12 dB AWGN. They test wrong noise planes,
+incomplete coverage, configuration changes, proxies, missing SRS reference and
+an intentionally wrong reference gain. These are bounded codec/measurement
+tests, not measured access, production thermal-noise calibration, CSI report
+transport, fading qualification, or full scheduler execution.
+
+Still open, not skipped or claimed fixed: main node-composite chronological
+execution; PRACH/Msg1-4 integration on that clock; nonzero UL timing advance
+(the staging interfaces reject it explicitly); due PUCCH/PUSCH-UCI arbitration
+and feedback delivery; measured SRS-to-UL scheduling and CSI/PMI report transport;
+actual QCL/TCI activation and applied beam/precoder lineage; physical RSSI
+measurement/export with bandwidth, antenna and reference-plane authority;
+production 12 dB reference calibration; waveform IQ playback; and a fresh
+complete CSV/PNG semantic audit. The legacy SRS `QCLAccuracy` scalar remains a
+waveform-reference correlation diagnostic, not proof of standardized QCL/TCI
+state activation. Strict CSI still does not publish RSSI; its legacy helper
+sums RX branches in normalized grid units. Neither is a qualified RSSI export.
+
+Noise-plane rationale: [MathWorks NR SNR definition](https://www.mathworks.com/help/5g/ug/snr-definition-used-in-link-simulations.html).
+RSSI must include total received power over its specified measurement resources,
+not a substituted RSRP or sum of unlabeled antenna branches; see
+[TS 38.215](https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.02.00_60/ts_138215v180200p.pdf).
+
 ## Data-channel stream boundary checkpoint (2026-09-07)
 
 The main scheduler is **not yet repaired or qualified**. Its last full run

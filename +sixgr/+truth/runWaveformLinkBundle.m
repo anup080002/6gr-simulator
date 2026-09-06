@@ -4073,6 +4073,11 @@ cfgU = localApplyHARQGrantContext(cfgU, upper(string(direction)), sixgr.util.str
 cfgU = localApplyExecutionGrantSnapshot(cfgU, upper(string(direction)), sixgr.util.structGet(trialContext, "GrantSnapshot", struct()));
     job = sixgr.truth.buildGrantPHYJob(cfgU, upper(string(direction)), snr_dB, frameIdx, laStateIn, trialContext);
     jobResult = sixgr.truth.executeGrantPHYJob(job);
+    if job.PrepareOnly
+        error('sixgr:truth:DeferredGrantNeedsStreamCoordinator', ...
+            ['The immediate grant batch cannot commit a prepared transmission. ' ...
+             'Retain it in the stream coordinator and complete reception first.']);
+    end
     res = sixgr.util.structGet(jobResult, "Result", struct());
     laState = sixgr.util.structGet(jobResult, "LinkAdaptationState", laStateIn);
 Tu = localEnsureLinkTrialTable(sixgr.util.structGet(res, "TrialTable", table()), upper(string(direction)), snr_dB, cfgU);

@@ -7,7 +7,21 @@ p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) i
 p.addParameter("ChannelState", [], @(x) isempty(x) || isstruct(x));
 p.addParameter("TrialIndex", 1, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("SlotIndex", NaN, @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
+p.addParameter("PrepareOnly",false,@(x)islogical(x)&&isscalar(x));
+p.addParameter("ReceivedContext",struct(),@(x)isstruct(x)&&isscalar(x));
+p.addParameter("TimingAdvanceSamples",NaN,@(x)isnumeric(x)&&isscalar(x));
 p.parse(varargin{:});
+prepareOnly=p.Results.PrepareOnly;
+received=~isempty(fieldnames(p.Results.ReceivedContext));
+assert(~(prepareOnly && received),'sixgr:link:InvalidULControlStreamRequest','Select exactly one execution stage.');
+prepared=[];
+if received
+    context=p.Results.ReceivedContext;
+    assert(isfield(context,'Prepared') && isa(context.Prepared,'sixgr.link.PreparedUplinkControlTransmission'), ...
+        'sixgr:link:IncompleteULControlReceivedContext','Retain the actual prepared SRS transmission.');
+    prepared=context.Prepared;
+    prepared.validateReceived("SRS",cfg,p.Results);
+end
 log = p.Results.Logger;
 snr_dB = double(p.Results.SNR_dB);
 trialIdx = max(1, round(double(p.Results.TrialIndex)));
@@ -23,6 +37,7 @@ out.EVM_rms = NaN;
 out.Notes = "";
 out.NMSE_dB = NaN;
 out.NMSEReferenceSource = "";
+out.NMSEReferenceAGCGain_dB = NaN;
 out.TrueChannelOracleAvailable = false;
 out.TrueChannelNMSE_dB = NaN;
 out.ChannelNMSEThreshold_dB = NaN;
@@ -181,10 +196,15 @@ end
 
 try
     tStart = tic;
-    [cfgSRS, srsCfg] = localBindRuntimeSRSConfig(cfg, slotIdx);
-    [tx, info] = sixgr.phy.ul.SRS_Tx(cfgSRS, ...
-        "Carrier", srsCfg.ToolboxCarrier, ...
-        "SRS", srsCfg.ToolboxSRS);
+    if received
+        cfgSRS=prepared.ReceiverConfig; srsCfg=prepared.Metadata.SRSConfig;
+        tx=prepared.Tx; info=prepared.TxInfo;
+    else
+        [cfgSRS, srsCfg] = localBindRuntimeSRSConfig(cfg, slotIdx);
+        [tx, info] = sixgr.phy.ul.SRS_Tx(cfgSRS, ...
+            "Carrier", srsCfg.ToolboxCarrier, ...
+            "SRS", srsCfg.ToolboxSRS);
+    end
     observedSlot0 = double(tx.Carrier.NSlot);
     if isfinite(slotIdx) && slotIdx >= 1
         observedSlot0 = round(slotIdx) - 1;
@@ -206,9 +226,32 @@ try
     out.SRSBandwidthCoverageStatus = char(string(srsCoverage.BandwidthCoverageStatus));
     sampleRateHz = localResolveSampleRate(info, tx, cfg);
     injectedDopplerHz = localResolveInjectedDopplerHz(cfg);
-    rng(localTrialSeed(cfg, trialIdx), "twister");
-    [rxWave, injectedNoiseVariance, replay, txWaveForReference, chState] = ...
-        localApplySRSChannelAndNoise(tx.Waveform, cfgSRS, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, p.Results.ChannelState, trialIdx);
+    if prepareOnly
+        [tx.Waveform,cfgSRS,powerEvidence]=localPrepareSRSTransmitter( ...
+            tx.Waveform,cfgSRS,struct('OFDM',info.OFDMInfo),tx,false);
+        tx.PowerContext=cfgSRS.lls6g.runtimePowerContext;
+        out.PreparedTransmission=sixgr.link.PreparedUplinkControlTransmission( ...
+            'SRS',cfg,p.Results,tx,info,cfgSRS,observedSlot0, ...
+            struct('SRSConfig',srsCfg,'PowerEvidence',powerEvidence));
+        out.ExecutionStage="transmit_prepared_not_received";
+        out.ExecutionBackend="srs_transmitter_pre_node_rf";
+        return;
+    elseif received
+        rxWave=prepared.readObservation(context.Observation,"receiver");
+        txWaveForReference=[];
+        if isfield(context,'DesiredReferenceObservation')
+            txWaveForReference=prepared.readObservation(context.DesiredReferenceObservation,"receiver");
+        end
+        replay=context.Replay; chState=context.ChannelState;
+        replay.SRSPowerControl=prepared.Metadata.PowerEvidence;
+        injectedNoiseVariance=double(replay.SampleNoiseVariance);
+        out.ExecutionStage="received_shared_stream_completed";
+        out.ExecutionBackend="srs_shared_stream_receiver";
+    else
+        rng(localTrialSeed(cfg, trialIdx), "twister");
+        [rxWave, injectedNoiseVariance, replay, txWaveForReference, chState] = ...
+            localApplySRSChannelAndNoise(tx.Waveform, cfgSRS, tx, info, sampleRateHz, injectedDopplerHz, snr_dB, p.Results.ChannelState, trialIdx);
+    end
     out.ChannelState = chState;
     out.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
     out.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
@@ -293,16 +336,8 @@ try
             out.SignalEnergyPerOccupiedRE ./ ...
             out.ReferenceAWGNGridNoiseVariance);
     end
-    if isfinite(double(injectedNoiseVariance)) && double(injectedNoiseVariance) > 0 && ...
-            (~isfinite(out.NoiseVariance) || out.NoiseVariance <= 0)
-        rx.NoiseVar = double(injectedNoiseVariance);
-        out.NoiseVariance = double(injectedNoiseVariance);
-        out.NoiseVarStatus = "OK";
-        out.NoiseVarSource = char(string(sixgr.util.structGet(replay, "NoiseVarianceSource", ...
-            "srs_replay_reference_waveform_awgn")));
-        out.NoiseVarReason = "calibrated_injected_noise_variance_from_receiver_noise_bridge";
-        out.NoiseVarStrictFailure = false;
-    end
+    % SRS_Rx owns sample-to-grid noise conversion and strict validation.
+    % Never rescue a rejected grid variance with an unconverted time variance.
     out.MeasurementAttempted = logical(sixgr.util.structGet(rx, "MeasurementAttempted", false));
     out.MeasurementUsable = logical(sixgr.util.structGet(rx, "MeasurementUsable", false));
     out.FailureReason = char(string(sixgr.util.structGet(rx, "FailureReason", "")));
@@ -336,12 +371,20 @@ try
         return;
     end
     [hTrue, symTimes_s, symIdx, nmseReferenceSource] = localReferencePilotChannel( ...
-        txWaveForReference, tx.Carrier, tx.SRSIndices, tx.SRSSymbols, tx.SRS, sampleRateHz, injectedDopplerHz);
+        txWaveForReference, tx.Carrier, tx.SRSIndices, tx.SRSSymbols, tx.SRS, sampleRateHz);
+    if localHasFiniteComplexData(hTrue) && isfield(replay,'NMSEReferenceSource')
+        nmseReferenceSource=string(replay.NMSEReferenceSource);
+    end
+    out.NMSEReferenceAGCGain_dB=double(sixgr.util.structGet(replay,'NMSEReferenceAGCGain_dB',NaN));
     nmse = localNormalizedMSE(hEst, hTrue);
     estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
     out.DopplerEstimateCRLB_Hz = localDopplerCRLBHz(hEst, symTimes_s, rx.NoiseVar);
 
-    out.NMSE_dB = 10*log10(max(nmse, eps));
+    if isnan(nmse)
+        out.NMSE_dB=NaN;
+    else
+        out.NMSE_dB = 10*log10(max(nmse, eps));
+    end
     out.TrueChannelNMSE_dB = double(out.NMSE_dB);
     out.NMSEReferenceSource = char(string(nmseReferenceSource));
     out.TrueChannelOracleAvailable = startsWith(string(nmseReferenceSource), "applied_channel_gain_truth");
@@ -351,7 +394,7 @@ try
     out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = 0;
-    out.AirInterfaceObservation_ms = 1e3 * (size(txWaveForReference, 1) / max(sampleRateHz, eps));
+    out.AirInterfaceObservation_ms = 1e3 * (size(rxWave, 1) / sampleRateHz);
     % Legacy alias preserved for backward compatibility with older exports.
     % It mirrors radio-time observation duration, not wall-clock compute runtime.
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
@@ -492,7 +535,9 @@ try
     out.StrictOk = logical(out.SRSRuntimeEvidenceUsable);
     out.Ok = logical(out.StrictOk);
     if ~logical(out.Ok) && strlength(strtrim(string(out.FailureReason))) == 0
-        if ~logical(nmseStrictOk)
+        if ~out.TrueChannelOracleAvailable
+            out.FailureReason = "srs_channel_nmse_reference_unavailable";
+        elseif ~logical(nmseStrictOk)
             out.FailureReason = "srs_channel_nmse_above_threshold";
         else
             out.FailureReason = "srs_runtime_evidence_incomplete";
@@ -507,6 +552,7 @@ try
             string(out.NoiseVarReason);
     end
 catch ME
+    if prepareOnly || received, rethrow(ME); end
     out.Ok = false;
     out.TrackingFailure = 1;
     out.FailureReason = char(string(ME.identifier));
@@ -765,12 +811,26 @@ referenceWaveform = desiredWaveform;
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     preFrontEndWaveform,cfgReplay,sampleRateHz,replay,"Direction","UL");
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
+% The channel reference above precedes RX AGC, whereas SRS_Rx observes its
+% output. Carry the RECORDED gain into that reference; do not estimate a
+% best-fit multiplier from Hest. Other receiver impairments/errors remain in
+% the NMSE residual. This is not a second RF execution or a noiseless replay.
+referenceGain_dB=0;
+if logical(sixgr.util.structGet(replay,'AGCApplied',false))
+    referenceGain_dB=double(sixgr.util.structGet(replay,'AGCGain_dB',NaN));
+    assert(isscalar(referenceGain_dB) && isfinite(referenceGain_dB), ...
+        'sixgr:link:SRS:MissingReferenceAGCGain','NMSE requires the actual applied RX AGC gain.');
+end
+referenceWaveform=referenceWaveform.*cast(10^(referenceGain_dB/20),'like',referenceWaveform);
+replay.NMSEReferenceAGCGain_dB=referenceGain_dB;
+replay.NMSEReferenceSource='applied_channel_gain_truth_before_receiver_impairments_with_recorded_agc_gain';
 nVar = double(sixgr.util.structGet(replay, ...
     "InjectedNoiseVariancePostCompositeFrontEnd",preFrontEndNVar));
 end
 
 function [waveform,cfgOut,powerEvidence,txRfReplay] = ...
-        localPrepareSRSTransmitter(waveform,cfg,txInfo,tx)
+        localPrepareSRSTransmitter(waveform,cfg,txInfo,tx,applyNodeRF)
+if nargin<5, applyNodeRF=true; end
 cfgOut = cfg;
 pathloss_dB = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingPathloss_dB",[]), ...
@@ -851,9 +911,13 @@ powerContext.TotalTxPower_mW = 10.^(powerContext.TotalTxPower_dBm/10);
 powerContext.TotalTxPower_W = powerContext.TotalTxPower_mW*1e-3;
 powerContext.SignalFamily = "SRS";
 [waveform,powerContext] = sixgr.rf.applyPowerContext( ...
-    waveform,cfg,"UL",txInfo,"PowerContext",powerContext);
+    waveform,cfg,"UL",txInfo,"PowerContext",powerContext,"ApplyPA",applyNodeRF);
 cfgOut = sixgr.util.structSet(cfgOut, ...
     "lls6g.runtimePowerContext",powerContext);
+if ~applyNodeRF
+    txRfReplay=struct();
+    return;
+end
 sampleRateHz = double(sixgr.util.structGet(txInfo,"OFDM.SampleRate",NaN));
 txRfOut = sixgr.rf.applyRFImpairmentChain(waveform,cfgOut, ...
     "SampleRateHz",sampleRateHz,"Direction","UL", ...
@@ -1304,7 +1368,7 @@ if isempty(pilotH)
 end
 end
 
-function [hTrue, symTimes_s, symIdx, source] = localReferencePilotChannel(referenceWaveform, carrier, pilotInd, pilotSym, srs, sampleRateHz, dopplerHz)
+function [hTrue, symTimes_s, symIdx, source] = localReferencePilotChannel(referenceWaveform, carrier, pilotInd, pilotSym, srs, sampleRateHz)
 nPorts = max(1, round(double(sixgr.util.structGet(srs, "NumSRSPorts", 1))));
 symIdx = localPilotSymbolIndices(carrier, pilotInd, nPorts);
 symbolTimes = localSymbolCenterTimes(carrier, sampleRateHz);
@@ -1318,8 +1382,8 @@ if localHasFiniteComplexData(hTrue)
     symIdx = symIdx(1:N);
     return;
 end
-hTrue = exp(1j * 2 * pi * dopplerHz .* symTimes_s(:));
-source = "synthetic_doppler_reference_fallback";
+hTrue = complex([]);
+source = "not_available_no_observed_noiseless_channel_reference";
 end
 
 function hTrue = localReferencePilotChannelFromWaveform(referenceWaveform, carrier, pilotInd, pilotSym, nPorts)
@@ -1425,14 +1489,13 @@ if ~any(mask)
     nmse = NaN;
     return;
 end
-err = hEst(mask) - hTrue(mask);
 hEst = hEst(mask);
 hTrue = hTrue(mask);
-alpha = (hTrue' * hEst) / max(hTrue' * hTrue, eps);
-ref = alpha * hTrue;
-err = hEst - ref;
-den = mean(abs(ref).^2, "omitnan");
-nmse = mean(abs(err).^2, "omitnan") / max(den, eps);
+% True NMSE retains gain/phase errors, including absolute power errors.
+% Fitting alpha to the estimate would measure shape agreement instead.
+den = mean(abs(hTrue).^2);
+if ~(isfinite(den) && den>0), nmse=NaN; return; end
+nmse = mean(abs(hEst-hTrue).^2) / den;
 end
 
 function qcl = localReferenceCorrelation(hEst, hTrue)
