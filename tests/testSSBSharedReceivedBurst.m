@@ -27,6 +27,10 @@ localAssertCalls(stats, "recoverSIB1FromWaveform", numel(indices));
 first = out.CandidateResults{1};
 assert(first.RuntimeChannelStateUsed && first.PBCH.Ok, ...
     "The first candidate must traverse fading and actual BCH decoding.");
+actualRx=first.RuntimeChannelReplay.ReceiverInputWaveform;
+assert(first.RuntimeChannelReplay.InjectedNoiseVariance>0 && ...
+    norm(actualRx-first.RuntimeChannelReplay.CorrectedWaveform,'fro')>0, ...
+    "The actual decoder input must retain the noise added after synchronization-stage snapshots.");
 for k = 1:numel(indices)
     candidate = out.CandidateResults{k};
     assert(isequaln(candidate.RuntimeChannelReplay, first.RuntimeChannelReplay), ...
@@ -52,6 +56,28 @@ single = sixgr.link.runCellSearch_MIB_SIB1(cfg, "NumSubframes", 5, ...
 assert(isequaln(single.RuntimeChannelReplay, first.RuntimeChannelReplay));
 assert(isequaln(single.PBCH, first.PBCH));
 assert(single.Ok == first.Ok);
+% Reassemble the exact noisy receiver input in partial chunks. The canonical
+% decoder must reject the incomplete observation, then match array decoding.
+start=first.RuntimeChannelReplay.RuntimeChannelStartSample;
+fs=first.RuntimeChannelReplay.SampleRate_Hz;
+observation=sixgr.phy.waveform.WaveformObservationBuffer( ...
+    start,start+size(actualRx,1),fs,size(actualRx,2));
+cut=floor(size(actualRx,1)/2);
+observation.append(sixgr.phy.waveform.WaveformChunk(actualRx(1:cut,:),start),fs);
+try
+    sixgr.phy.broadcast.recoverSIB1FromWaveform(observation,cfg);
+    error('test:PrematureAcquisition','An incomplete observation reached the decoder.');
+catch exception
+    assert(string(exception.identifier)=="WAVEFORM:IncompleteObservation");
+end
+observation.append(sixgr.phy.waveform.WaveformChunk(actualRx(cut+1:end,:),start+cut),fs);
+receiverCfg=sixgr.util.structSet(cfg,"lls6g.runtimePowerContext",first.PowerContext);
+buffered=sixgr.phy.broadcast.recoverSIB1FromWaveform(observation,receiverCfg, ...
+    "CandidateSSBIndex",indices(1));
+direct=sixgr.phy.broadcast.recoverSIB1FromWaveform(actualRx,receiverCfg, ...
+    "CandidateSSBIndex",indices(1));
+assert(isequaln(buffered,direct) && buffered.BCHCrcPass, ...
+    "Buffering must preserve actual receiver results exactly.");
 fprintf('SSB_SHARED_RECEIVED_BURST_PASS: one TX/channel, %d receivers.\n', numel(indices));
 ok = true;
 end

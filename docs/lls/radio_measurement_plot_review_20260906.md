@@ -1522,3 +1522,34 @@ The continuous API is not yet integrated with coupled slot dispatch and RF
 state. Full qualification, multi-slot RX buffering/deferred acquisition, and
 a successful replacement TDD scenario remain outstanding. No FDD scenario,
 25 dB scenario, or broad full-suite batch was launched.
+
+### Received-observation buffering and exact decoder-input evidence
+
+`WaveformObservationBuffer` now retains actual contiguous received chunks
+with an explicit sample interval, clock, and receive-antenna count. It rejects
+gaps, replay overlap, overruns, incompatible sample clocks/precision, and
+nonfinite samples. `readComplete` refuses access until every sample in the
+observation has arrived; it never fills missing samples with zeros.
+`recoverSIB1FromWaveform` accepts this buffer and checks completeness outside
+decoder error recovery, so an incomplete observation cannot become a failed
+CRC/BLER trial. The shared-burst cell-search path now uses this buffer.
+
+An evidence gap was also corrected: `applyWaveformTruthImpairments` now
+preserves `ReceiverInputWaveform`, its exact returned samples after final
+interference/noise addition. The existing RawWaveform/CorrectedWaveform
+snapshots retain their earlier synchronization-stage meaning; they must not
+be substituted for the actual decoder input.
+
+Focused session 42255 exited 0 with `OBSERVATION_BUFFER_FOCUSED_PASS` in
+`logs/waveform_observation_buffer_20260906.log`. The new registered buffer
+regression proves incomplete reads and discontinuous chunks are rejected.
+The extended shared-burst regression proves the stored final input contains
+the injected noise, rejects decoding its half-filled buffer, and obtains
+identical receiver results from the completed buffer and original sample
+array. All four actual BCH/SIB1 decoders pass under per-sample CDL authority;
+SS-RSRPs are -85.7286, -90.2846, -100.796, and -87.4317 dBm.
+
+The current cell-search caller still appends its completed one-shot capture.
+Incremental slot dispatch and continuous RF state remain to be integrated;
+buffer correctness alone does not resolve early acquisition completion in
+the scenario. No replacement scenario or full qualification is claimed.

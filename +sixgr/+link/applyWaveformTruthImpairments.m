@@ -111,6 +111,10 @@ else
     [y, replay.InjectedNoiseVariance] = ...
         localAddAwgnAtEffectiveSNR(y, appliedSnr_dB);
 end
+% These are the exact final samples handed to the decoder. RawWaveform and
+% CorrectedWaveform above retain their earlier synchronization-stage roles.
+replay.ReceiverInputWaveform = y;
+replay.ReceiverInputWaveformSource = "sixgr.link.applyWaveformTruthImpairments:returned_receiver_samples";
 end
 
 function [y, nVar] = localAddAwgnAtEffectiveSNR(x, snr_dB)

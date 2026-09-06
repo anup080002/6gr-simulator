@@ -1,6 +1,13 @@
 function result = recoverSIB1FromWaveform(rxWaveform, cfg, varargin)
 %RECOVERSIB1FROMWAVEFORM Recover MIB, SI-RNTI DCI, PDSCH/DL-SCH, and SIB1.
 
+% Streaming callers may submit a completed observation. Keep this guard
+% outside decoder error recovery: an incomplete capture is not a failed
+% BCH/SIB1 trial, and must not create a CRC/BLER row.
+if isa(rxWaveform, 'sixgr.phy.waveform.WaveformObservationBuffer')
+    rxWaveform = rxWaveform.readComplete();
+end
+
 p = inputParser;
 p.addParameter("ReceiverRNTI", 65535, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("FaultMode", "", @(x) ischar(x) || isstring(x));
