@@ -3,12 +3,15 @@ function [y, ctx] = applyPowerContext(x, cfg, direction, txInfo, varargin)
 %
 % Output samples use the PowerContext convention: abs(sample)^2 is mW
 % and mean(sum(abs(x_active).^2, ports)) equals total transmit power.
+% ApplyPA=false defers the configured nonlinear device to the transmitter's
+% composed waveform owner. It does not disable PA in the resolved config.
 
 if nargin < 4
     txInfo = struct();
 end
 ip = inputParser;
 ip.addParameter("PowerContext", struct(), @(v) isempty(v) || isstruct(v));
+ip.addParameter("ApplyPA", true, @(v) islogical(v) && isscalar(v));
 ip.parse(varargin{:});
 ctx = ip.Results.PowerContext;
 if ~(isstruct(ctx) && isfield(ctx, "ContractVersion"))
@@ -26,7 +29,7 @@ if isfinite(normalization.ReferenceInputPower_mW) && ...
         max(normalization.ReferenceInputPower_mW, realmin));
 end
 y = x .* cast(scale, "like", x);
-[y, paInfo] = localApplyPAContext(y, cfg, ctx, txInfo);
+[y, paInfo] = localApplyPAContext(y, cfg, ctx, txInfo, ip.Results.ApplyPA);
 [outputTotal_mW, outputPerPort_mW] = localTotalActivePower_mW(y, txInfo);
 
 ctx.ScaleApplied = true;
@@ -207,13 +210,14 @@ end
 end
 end
 
-function [y, info] = localApplyPAContext(x, cfg, ctx, txInfo)
+function [y, info] = localApplyPAContext(x, cfg, ctx, txInfo, applyPA)
 y = x;
 enabled = logical(sixgr.util.structGet(cfg, "rf.pa.enable", ...
     sixgr.util.structGet(cfg, "phy.impairments.paNonlinearityEnabled", false)));
 info = struct( ...
     "PAEnabled", logical(enabled), ...
     "PAApplied", false, ...
+    "PAExecutionDeferred", enabled && ~applyPA, ...
     "PAModel", "disabled", ...
     "PABackoff_dB", double(sixgr.util.structGet(cfg, "rf.pa.backoff_dB", ...
         sixgr.util.structGet(cfg, "lls6g.impairments.pa_output_backoff_dB", 0))), ...
@@ -225,6 +229,11 @@ info = struct( ...
     "PAPowerRestorationApplied", false, ...
     "PAAmplitudeUnit", "sqrt_mW", ...
     "PAExecutionStatus", "disabled");
+if enabled && ~applyPA
+    info.PAModel = "configured_not_executed";
+    info.PAExecutionStatus = "deferred_until_transmitter_waveform_composition";
+    return;
+end
 if ~enabled || isempty(x)
     return;
 end
@@ -274,7 +283,7 @@ end
 
 function status = localPAExecutionStatus(paModel)
 token = lower(strtrim(string(paModel)));
-if contains(token, "memory")
+if any(token == ["memorypolynomial","memory_polynomial"])
     status = "applied_memory_polynomial_pa_in_physical_sample_units";
 elseif contains(token, "soft")
     status = "applied_soft_limiter_pa_in_physical_sample_units";

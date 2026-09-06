@@ -1,10 +1,13 @@
 function prepared = prepareTRSTransmission(cfg, snr_dB, options)
 %PREPARETRSTRANSMISSION Prepare real TRS samples without RF/channel/RX execution.
 % The slot scheduler owns waveform composition and physical transmission.
+% ApplyPA=true is reserved for the existing immediate, single-waveform
+% caller. Prepared shared-stream contributions must leave it false.
 arguments
     cfg (1,1) struct
     snr_dB (1,1) double
     options.RuntimeSlot = []
+    options.ApplyPA (1,1) logical = false
 end
 runId = string(sixgr.util.structGet(cfg, "run.id", ...
     sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
@@ -26,7 +29,7 @@ tx = sixgr.phy.trs.generateTRSWaveform(strictCfg);
 receiverCfg = localPrepareTRSReceiverObservationConfig(cfg, snr_dB);
 txInfo = localTRSTxInfo(tx, strictCfg);
 [transmitSamples, powerContext] = sixgr.rf.applyPowerContext( ...
-    tx.Waveform, receiverCfg, "DL", txInfo);
+    tx.Waveform, receiverCfg, "DL", txInfo,"ApplyPA",options.ApplyPA);
 receiverCfg = sixgr.util.structSet(receiverCfg, ...
     "lls6g.runtimePowerContext", powerContext);
 prepared = struct("ExecutionStage", "trs_waveform_prepared_not_received", ...
@@ -34,7 +37,9 @@ prepared = struct("ExecutionStage", "trs_waveform_prepared_not_received", ...
     "ReceiverConfig", receiverCfg, "PowerContext", powerContext, ...
     "TransmitSamples", transmitSamples, "SampleRateHz", double(tx.SampleRateHz), ...
     "NumSamples", size(transmitSamples,1), "RequestedSNR_dB", snr_dB, ...
-    "RFExecutionDeferred", true, "ChannelExecutionDeferred", true);
+    "RFExecutionDeferred", ~logical(powerContext.PAApplied), ...
+    "PAExecutionDeferred", logical(powerContext.PAExecutionDeferred), ...
+    "ChannelExecutionDeferred", true);
 end
 
 function cfgOut = localPrepareTRSReceiverObservationConfig(cfg, snr_dB)

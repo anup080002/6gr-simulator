@@ -113,6 +113,63 @@ chronologically and dispatch actual received samples into these buffers.
 It has not yet been wired to this new receive-boundary path. No replacement
 full TDD run or instrument playback was launched following this patch.
 
+## Transmit preparation and PA correctness repair
+
+SSB/TRS shared-stream preparation previously ran the configured PA inside
+`applyPowerContext`, despite advertising RF deferral. `ApplyPA=false` now
+retains exact generated samples plus linear power scaling; configured PA
+enablement remains intact. `PAExecutionDeferred` and its status distinguish
+pending execution from a disabled device. Unexecuted PA output/compression
+remain NaN. The immediate single-waveform callers explicitly retain their
+existing PA execution; this does not yet move the main run to node-level RF.
+
+Further numerical/model audit found and repaired:
+
+1. The legacy `softlimiter` used a square root over a fourth-power envelope
+   term. Its large-input amplitude folded back toward zero. It now implements
+   normalized Rapp smoothness 2, `y=x/(1+abs(x)^4)^(1/4)`, using reciprocal
+   ratios above saturation to avoid overflow. Tests compare the independent
+   equation, monotonic saturation, phase, port independence and single/double
+   precision, including finite amplitudes of 1e200. This is an explicit
+   engineering amplifier model, not a claim of 3GPP hardware conformance.
+2. A substring check incorrectly classified `memoryless` as a memory model.
+   Model selection and explicit memory enablement must now agree. The power
+   ledger also no longer labels memoryless execution as memory polynomial.
+3. The native memoryless object applied AM/PM internally, then the wrapper
+   applied a second conversion. Native AM/PM now executes once; an independent
+   native-object comparison verifies authored backoff/gain and complex output.
+4. A missing/failed native backend or unknown model no longer silently selects
+   the soft limiter. Initialization failures retain their original cause.
+
+The [MathWorks amplifier documentation](https://www.mathworks.com/help/comm/ref/comm.memorylessnonlinearity-system-object.html)
+defines the normalized Rapp exponent and native AM/PM property. The installed
+backend warns that AMPMConversion will be removed in a future release; the
+warning was retained, not suppressed. Future backend migration needs its own
+equivalence validation.
+
+Verification, with no replacement full scenario run:
+
+- Session 73260 exited 0 (`logs/prepared_pa_ownership_20260907_retry1.log`):
+  `testPreparedWaveformPAOwnership`, `testPowerContextPhysicalUnits`,
+  `testTRSPreparationAuthority`, `testTRSReceiveCompletion`,
+  `testSSBSharedReceivedBurst`, `testBroadcastTRSNoisyStream`.
+- Session 10630 exited 0 (`logs/pa_response_math_20260907.log`): new limiter
+  response test, power-unit test and PA-enabled preparation test.
+- Session 36410 exited 0 (`logs/pa_model_authority_20260907_retry1.log`):
+  `testPAModelSelectionAuthority`, `testPASoftLimiterResponse`,
+  `testPowerContextPhysicalUnits`, `testRFImpairmentOrderedChain`,
+  `testPreparedWaveformPAOwnership` on the final model changes.
+- The first preparation fixture incorrectly treated immutable ScenarioConfig
+  as a struct; it was corrected via toStruct and full scenario validation.
+  The first ordered-RF regression reproduced the old square-root equation;
+  its expected equation was corrected, retaining the same numerical tolerance,
+  power-delta check and EVM check. Both failed attempts remain in their logs.
+
+No historical CSV/PNG was rewritten. Composite per-transmitter RF ordering,
+continuous PA memory, calibrated absolute input/reference planes, receiver
+noise/interference composition and the main scheduler remain separate work.
+These bounded tests do not establish all-impairment or instrument qualification.
+
 ## Ordered work still required
 
 1. **P0: main scheduler sample ownership.** Replace eager multi-slot physical

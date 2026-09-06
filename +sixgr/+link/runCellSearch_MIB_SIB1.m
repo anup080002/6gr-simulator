@@ -191,7 +191,7 @@ if wantSIB1
     try
         tStart = tic;
         prepared = sixgr.link.prepareCellSearchBroadcast(cfg, ...
-            logical(p.Results.UseRuntimeChannel));
+            logical(p.Results.UseRuntimeChannel),"ApplyPA",~logical(p.Results.PrepareOnly));
         cfg = prepared.Config;
         receiverCfg = prepared.ReceiverConfig;
         tx = prepared.Tx;

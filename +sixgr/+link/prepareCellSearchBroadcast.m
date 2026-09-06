@@ -1,12 +1,15 @@
-function prepared = prepareCellSearchBroadcast(cfg, useRuntimeChannel)
+function prepared = prepareCellSearchBroadcast(cfg, useRuntimeChannel, options)
 %PREPARECELLSEARCHBROADCAST Prepare broadcast waveform and power context.
 % The runtime may enqueue TransmitSamples without consuming future samples
 % or asserting acquisition. All resource/coding/power policy remains in cfg.
 % Runtime mode generates noiseless TX; standalone mode preserves the
 % existing generator's configured AWGN behavior. Neither executes a decoder.
+% Shared-stream preparation defers PA; the immediate legacy caller may
+% explicitly apply it while preparing its single complete waveform.
 arguments
     cfg (1,1) struct
     useRuntimeChannel (1,1) logical
+    options.ApplyPA (1,1) logical = false
 end
 cfg = localSanitizeSIB1PrecodingConfig(cfg);
 requestedSNR_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf));
@@ -53,7 +56,7 @@ if useRuntimeChannel
         end
     end
     [runtimeTxWaveform, powerContext] = sixgr.rf.applyPowerContext( ...
-        tx.Waveform, cfg, "DL", txInfo);
+        tx.Waveform, cfg, "DL", txInfo,"ApplyPA",options.ApplyPA);
     receiverCfg = sixgr.util.structSet( ...
         receiverCfg, "lls6g.runtimePowerContext", powerContext);
     runtimeTx = tx;
@@ -67,7 +70,9 @@ prepared = struct("ExecutionStage", "broadcast_waveform_prepared_not_decoded", .
     "TransmitSamples", runtimeTxWaveform, "PowerContext", powerContext, ...
     "RequestedSNR_dB", requestedSNR_dB, "SampleRateHz", double(tx.SampleRateHz), ...
     "NumSamples", size(runtimeTxWaveform,1), ...
-    "RuntimeChannelDeferred", useRuntimeChannel);
+    "RuntimeChannelDeferred", useRuntimeChannel, ...
+    "RFExecutionDeferred", ~logical(sixgr.util.structGet(powerContext,"PAApplied",false)), ...
+    "PAExecutionDeferred", logical(sixgr.util.structGet(powerContext,"PAExecutionDeferred",false)));
 end
 
 function cfgOut = localSanitizeSIB1PrecodingConfig(cfgIn)

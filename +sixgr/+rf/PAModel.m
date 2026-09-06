@@ -1,8 +1,9 @@
 classdef PAModel < handle
 %PAMODEL Power amplifier model for baseband simulation.
 %
-% Primary implementation uses comm.MemorylessNonlinearity (COMM Toolbox).
-% Fallback implementation uses a smooth soft limiter.
+% The memoryless method uses comm.MemorylessNonlinearity (COMM Toolbox).
+% Soft limiter and memory polynomial are explicit model selections, never
+% substitutions for a missing or failed requested implementation.
 %
 % Configuration fields (cfg.rf.pa.*):
 %   enable       : true/false
@@ -47,7 +48,16 @@ classdef PAModel < handle
             obj.IIP3_dBm = double(sixgr.util.structGet(cfg, "rf.pa.iip3_dBm", 45));
             obj.AMPMConversion = double(sixgr.util.structGet(cfg, "rf.pa.ampm_deg", 0));
             obj.MemoryEnabled = logical(sixgr.util.structGet(cfg, "rf.pa.memory.enable", ...
-                contains(lower(string(obj.Method)), "memory")));
+                strcmpi(string(obj.Method), "memorypolynomial")));
+            if obj.Enable
+                if ~any(strcmpi(string(obj.Method),["memoryless","softlimiter","memorypolynomial"]))
+                    error("PAModel:UnsupportedMethod","Unsupported PA method '%s'.",obj.Method);
+                end
+                if obj.MemoryEnabled ~= strcmpi(string(obj.Method),"memorypolynomial")
+                    error("PAModel:ConflictingMemoryAuthority", ...
+                        "rf.pa.memory.enable must agree with the selected rf.pa.method '%s'.",obj.Method);
+                end
+            end
             obj.MemoryTaps = obj.localFiniteVector(sixgr.util.structGet(cfg, "rf.pa.memory.taps", obj.MemoryTaps), obj.MemoryTaps);
             obj.MemoryOrders = obj.localFiniteVector(sixgr.util.structGet(cfg, "rf.pa.memory.orders", obj.MemoryOrders), obj.MemoryOrders);
             obj.MemoryOrders = obj.MemoryOrders(mod(round(obj.MemoryOrders), 2) == 1 & obj.MemoryOrders >= 1);
@@ -64,20 +74,24 @@ classdef PAModel < handle
         end
 
         function obj = reset(obj)
-            obj.UseCommObj = (exist("comm.MemorylessNonlinearity","class") == 8);
-
-            if obj.UseCommObj && obj.Enable && strcmpi(string(obj.Method),"memoryless") && ~obj.MemoryEnabled
+            obj.UseCommObj = false;
+            obj.Obj = [];
+            if obj.Enable && strcmpi(string(obj.Method),"memoryless") && ~obj.MemoryEnabled
+                if exist("comm.MemorylessNonlinearity","class") ~= 8
+                    error("PAModel:BackendUnavailable", ...
+                        "The requested memoryless PA requires comm.MemorylessNonlinearity; no substitute model is allowed.");
+                end
                 try
                     obj.Obj = comm.MemorylessNonlinearity( ...
+                        "Method", "Cubic polynomial", ...
                         "IIP3", obj.IIP3_dBm, ...
                         "AMPMConversion", obj.AMPMConversion);
+                    obj.UseCommObj = true;
                 catch ME
-                    obj.UseCommObj = false;
-                    obj.Obj = [];
-                    warning("PAModel:CommFailed","comm.MemorylessNonlinearity init failed: %s", ME.message);
+                    failure = MException("PAModel:BackendInitializationFailed", ...
+                        "The requested memoryless PA could not initialize: %s",ME.message);
+                    throwAsCaller(addCause(failure,ME));
                 end
-            else
-                obj.Obj = [];
             end
         end
 
@@ -103,7 +117,11 @@ classdef PAModel < handle
                 ypa = obj.softLimiter(xin);
             end
 
-            ypa = obj.applyAMPM(ypa, xin);
+            % The native memoryless object already owns AM/PM conversion.
+            % Applying the separate envelope law again double-counts it.
+            if ~obj.UseCommObj
+                ypa = obj.applyAMPM(ypa, xin);
+            end
             y = ypa .* 10.^(obj.Gain_dB/20);
         end
 
@@ -112,12 +130,20 @@ classdef PAModel < handle
     methods(Access=private)
 
         function y = softLimiter(~, x)
-            %SOFTLIMITER Smooth AM/AM (and mild AM/PM) limiter.
+            %SOFTLIMITER Explicit normalized p=2 Rapp AM/AM limiter.
             %
-            % This is a fallback when COMM Toolbox PA object is not available.
             A = 1.0; % saturation level in normalized units
             r = abs(x);
-            g = 1 ./ sqrt(1 + (r./A).^4);
+            % Normalized Rapp smoothness p=2: the denominator exponent is
+            % 1/(2*p), not 1/2. A square root makes large inputs fold back
+            % toward zero instead of approaching the saturation amplitude.
+            % Evaluate reciprocal ratios above saturation to avoid r.^4
+            % overflowing while preserving the same transfer function.
+            g = zeros(size(r),"like",r);
+            below = r <= A;
+            g(below) = (1 + (r(below)./A).^4).^(-1/4);
+            inverseRatio = A ./ r(~below);
+            g(~below) = inverseRatio .* (1 + inverseRatio.^4).^(-1/4);
             y = x .* g;
         end
 

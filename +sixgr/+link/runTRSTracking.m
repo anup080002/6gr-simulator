@@ -375,7 +375,8 @@ if nargin < 3 || ~isstruct(initialChannelState)
     initialChannelState = struct();
 end
 if isempty(fieldnames(reception))
-    prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB,"RuntimeSlot",runtimeSlot);
+    prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB, ...
+        "RuntimeSlot",runtimeSlot,"ApplyPA",true);
     [rxWave,replay,channelState] = localApplyTrackingChannelAndNoise( ...
         prepared,initialChannelState);
     origin = double(sixgr.util.structGet(replay,"RuntimeChannelStartSample",NaN));
