@@ -2,7 +2,6 @@ function [y, replay, state] = applyWaveformTruthImpairments(x, snr_dB, state, cf
 %APPLYWAVEFORMTRUTHIMPAIRMENTS Apply the authoritative waveform impairment path.
 
 fs = double(sixgr.util.structGet(state, "SampleRate_Hz", localResolveSampleRate(tx, txInfo)));
-truthMode = string(sixgr.util.structGet(state, "TruthMode", sixgr.link.resolveTruthMode(cfg)));
 y = x;
 
 replay = struct( ...
@@ -70,15 +69,13 @@ if localPhaseNoiseConfigured(cfg)
 end
 replay.RawWaveform = y;
 
-estCfoHz = localEstimateWaveformCFO(x, y, fs, timingOffset);
-replay.EstimatedCFO_PreCorrection_Hz = estCfoHz;
-if localShouldCorrectCFO(cfg, truthMode) && isfinite(estCfoHz) && estCfoHz ~= 0
-    y = localApplyCFO(y, fs, -estCfoHz);
-    replay.CFOCorrectionApplied = true;
-    replay.ResidualCFO_PostCorrection_Hz = localEstimateWaveformCFO(x, y, fs, timingOffset);
-else
-    replay.ResidualCFO_PostCorrection_Hz = estCfoHz;
-end
+% The impairment producer has no receiver observations or decoded reference
+% symbols. Comparing y with the exact transmitted x here is a genie-aided
+% estimator, especially before noise has been added. Leave CFO in the samples;
+% SSB_Rx performs PSS/CP synchronization on the final noisy receiver input.
+replay.CFOCorrectionAuthority = "receiver_synchronization_after_noise";
+replay.CFOEstimateSource = "unavailable_in_impairment_producer";
+replay.CorrectedWaveformRole = "legacy_alias_uncorrected_pre_noise_waveform";
 replay.CorrectedWaveform = y;
 
 sir_dB = double(sixgr.util.structGet(state, "InterferenceSIR_dB", NaN));
@@ -182,13 +179,6 @@ else
 end
 end
 
-function tf = localShouldCorrectCFO(cfg, truthMode)
-tf = logical(sixgr.util.structGet(cfg, "phy.rx.cfoCompensation", false));
-if truthMode == "abstract_fast"
-    tf = false;
-end
-end
-
 function cfoHz = localResolveInjectedCFOHz(cfg)
 cfoHz = double(sixgr.util.structGet(cfg, "phy.impairments.cfoHz", ...
     sixgr.util.structGet(cfg, "impairments.cfo_hz", 0)));
@@ -243,68 +233,4 @@ replay.PhaseNoiseApplied = true;
 replay.PhaseNoiseBackend = char(pn.Backend);
 replay.PhaseNoiseTruthClassification = char(pn.TruthClassification);
 replay.PhaseNoiseExecutionStatus = "applied_sample_domain_phase_noise";
-end
-
-function estCFO_Hz = localEstimateWaveformCFO(txWave, rxWave, sampleRateHz, timingOffset)
-estCFO_Hz = NaN;
-if ~(isfinite(sampleRateHz) && sampleRateHz > 0) || isempty(txWave) || isempty(rxWave)
-    return;
-end
-
-txRef = localCollapseAntennas(txWave);
-rxRef = localCollapseAntennas(rxWave);
-startTx = 1;
-startRx = 1;
-if timingOffset > 0
-    startRx = 1 + timingOffset;
-elseif timingOffset < 0
-    startTx = 1 + abs(timingOffset);
-end
-if startTx > numel(txRef) || startRx > numel(rxRef)
-    estCFO_Hz = 0;
-    return;
-end
-
-N = min(numel(txRef) - startTx + 1, numel(rxRef) - startRx + 1);
-if N < 16
-    estCFO_Hz = 0;
-    return;
-end
-txRef = double(txRef(startTx:startTx+N-1));
-rxRef = double(rxRef(startRx:startRx+N-1));
-prodSig = rxRef .* conj(txRef);
-mask = isfinite(real(prodSig)) & isfinite(imag(prodSig));
-prodSig = prodSig(mask);
-if numel(prodSig) < 16
-    estCFO_Hz = 0;
-    return;
-end
-
-n = (0:numel(prodSig)-1).';
-phase = unwrap(angle(prodSig(:)));
-if numel(phase) < 16
-    estCFO_Hz = 0;
-    return;
-end
-try
-    p = polyfit(double(n) ./ double(sampleRateHz), double(phase), 1);
-    estCFO_Hz = double(p(1)) / (2 * pi);
-catch
-    estCFO_Hz = 0;
-end
-if ~isfinite(estCFO_Hz)
-    estCFO_Hz = 0;
-end
-end
-
-function y = localCollapseAntennas(x)
-if isempty(x)
-    y = zeros(0, 1);
-    return;
-end
-if isvector(x)
-    y = x(:);
-else
-    y = mean(x, 2, "omitnan");
-end
 end

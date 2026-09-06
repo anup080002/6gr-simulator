@@ -25,6 +25,12 @@ localAssertCalls(stats, "applyWaveformTruthImpairments", 1);
 localAssertCalls(stats, "recoverSIB1FromWaveform", numel(indices));
 
 first = out.CandidateResults{1};
+assert(~first.RuntimeChannelReplay.CFOCorrectionApplied && ...
+    isnan(first.RuntimeChannelReplay.EstimatedCFO_PreCorrection_Hz));
+assert(first.TrueCFO_Hz==first.RuntimeChannelReplay.InjectedCFO_Hz && ...
+    first.CFOError_Hz==first.FreqOffsetEstimate_Hz-first.TrueCFO_Hz);
+assert(first.EstimatedCFO_PreCorrection_Hz==first.FreqOffsetEstimate_Hz && ...
+    string(first.CFOEstimateSource)=="SSB_Rx_pss_cp_synchronization_on_received_samples");
 assert(first.RuntimeChannelStateUsed && first.PBCH.Ok, ...
     "The first candidate must traverse fading and actual BCH decoding.");
 actualRx=first.RuntimeChannelReplay.ReceiverInputWaveform;
@@ -152,6 +158,40 @@ clockState.CurrentSlot=due;
 [~,delivered]=sixgr.truth.BroadcastResultDelivery.takeAvailable(clockState);
 assert(numel(delivered)==1 && ...
     isequaln(delivered.Trial(:,measuredRows.Properties.VariableNames),measuredRows));
+% A nonzero CFO applied to actual noisy received samples must be estimated
+% by the receiver, and its audit reference must not be overwritten with zero.
+% This is an explicit receiver test vector, not a new scenario operating point.
+injected=7500;
+shifted=actualRx.*exp(1j*2*pi*injected/fs*(0:size(actualRx,1)-1).');
+shiftedBuffer=sixgr.phy.waveform.WaveformObservationBuffer( ...
+    start,start+size(shifted,1),fs,size(shifted,2));
+shiftedBuffer.append(sixgr.phy.waveform.WaveformChunk(shifted,start),fs);
+cfoPrepared=prepared;
+cfoPrepared.ReceiverConfig.phy.sync.freqSearchBW_Hz=15000;
+cfoPrepared.ReceiverConfig.phy.sync.cfoHypothesesHz=[-15000 -7500 0 7500 15000];
+cfoPrepared.ReceiverConfig.phy.sync.fineCFOEnabled=false;
+cfoPrototype=first;
+cfoPrototype.RuntimeChannelReplay.InjectedCFO_Hz=first.TrueCFO_Hz+injected;
+cfoPrototype.RuntimeChannelReplay.ReceiverInputWaveform=shifted;
+singleOptions=completionOptions;
+singleOptions.CandidateSSBIndices=[];
+withCFO=sixgr.link.completeCellSearchBroadcast( ...
+    cfoPrepared,shiftedBuffer,cfoPrototype,singleOptions,tic);
+assert(withCFO.PBCH.Ok && withCFO.Ok && withCFO.TrueCFO_Hz==injected, ...
+    "Nonzero CFO: BCH=%d SIB1=%d true=%g estimated=%g status=%s reason=%s", ...
+    withCFO.PBCH.Ok,withCFO.Ok,withCFO.TrueCFO_Hz, ...
+    withCFO.EstimatedCFO_PreCorrection_Hz,withCFO.Status,withCFO.FailureReason);
+assert(withCFO.EstimatedCFO_PreCorrection_Hz==injected && withCFO.CFOError_Hz==0);
+assert(withCFO.SIB1CFOCorrectionApplied_Hz==withCFO.EstimatedCFO_PreCorrection_Hz && ...
+    withCFO.SIB1CFOCorrectionSource=="received_ssb_pss_cp_frequency_estimate");
+assert(isnan(withCFO.ResidualCFO_PostCorrection_Hz), ...
+    "Known injection minus correction is an audit error, not a measured residual CFO.");
+unknownPrototype=first;
+unknownPrototype.RuntimeChannelReplay=rmfield( ...
+    unknownPrototype.RuntimeChannelReplay,"InjectedCFO_Hz");
+unknown=sixgr.link.completeCellSearchBroadcast( ...
+    prepared,observation,unknownPrototype,singleOptions,tic);
+assert(unknown.PBCH.Ok && isnan(unknown.TrueCFO_Hz) && isnan(unknown.CFOError_Hz));
 fprintf('SSB_SHARED_RECEIVED_BURST_PASS: one TX/channel, %d receivers.\n', numel(indices));
 ok = true;
 end

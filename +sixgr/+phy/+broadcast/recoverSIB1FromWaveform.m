@@ -165,8 +165,21 @@ try
     result.SearchSpace0AggregationLevel = double(type0.SearchSpace0.AggregationLevel);
     result.PDCCHConfigSIB1Source = "decoded_mib_bch_transport_block";
 
+    % SSB_Rx corrects its own extraction, not the caller's full capture.
+    % Transfer that RECEIVER estimate to the same noisy full-carrier samples
+    % before SI-RNTI PDCCH/PDSCH demodulation. The deterministic SSB placement
+    % shift is deliberately not applied to the full carrier.
+    cfoHz=double(result.FrequencyOffsetHz);
+    if ~(isscalar(cfoHz) && isfinite(cfoHz))
+        error("sixgr:phy:broadcast:MissingSIB1FrequencyEstimate", ...
+            "SIB1 reception requires the finite frequency estimate recovered from received SSB samples.");
+    end
+    sampleTime=(0:size(rxWaveform,1)-1).'/sampleRate;
+    correctedSI=rxWaveform.*cast(exp(-1j*2*pi*cfoHz*sampleTime),"like",rxWaveform);
+    result.SIB1CFOCorrectionApplied_Hz=cfoHz;
+    result.SIB1CFOCorrectionSource="received_ssb_pss_cp_frequency_estimate";
     siWave = localExtractSIB1Waveform( ...
-        rxWaveform, carrier, sampleRate, sib1AbsoluteSlot);
+        correctedSI, carrier, sampleRate, sib1AbsoluteSlot);
     faultMode = lower(strtrim(string(p.Results.FaultMode)));
     if faultMode == "nosignal"
         siWave(:) = 0;
@@ -344,6 +357,7 @@ function result = localEmptyResult()
 result = struct( ...
     "StrictOk", false, "Status", "", "Detail", "", "NCellID", NaN, ...
     "TimingOffset", NaN, "FrequencyOffsetHz", NaN, ...
+    "SIB1CFOCorrectionApplied_Hz", NaN, "SIB1CFOCorrectionSource", "", ...
     "SSBCenterFrequencyOffsetHz", NaN, ...
     "SSBPlacementCorrectionAppliedHz", NaN, "SSBIndex", NaN, ...
     "SSBReceivedPower_dB", NaN, ...

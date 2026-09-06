@@ -1991,3 +1991,45 @@ that channel execution causal. No reset, clock clamp, replay, disabled signal,
 or substituted measurement was added. No new scenario, FDD run, full testAll,
 optional plot expansion or windowing change was performed. The prior 12 dB TDD
 scenario remains failed and unqualified; this patch does not claim otherwise.
+
+### Initial-access CFO receiver authority and SIB1 wiring
+
+The waveform impairment producer compared received samples with the exact
+transmitted waveform to estimate CFO before adding receiver noise. With
+`phy.rx.cfoCompensation` enabled it applied that genie-aided estimate to the
+physical waveform. That estimator/correction path is removed. CFO remains in
+the noisy samples supplied to `SSB_Rx`; unavailable producer-side estimates
+and post-correction residuals remain NaN. The legacy `CorrectedWaveform`
+snapshot is retained with an explicit uncorrected/pre-noise role, not claimed
+as a corrected receiver observation.
+
+A new actual-received-waveform test then exposed a second causal wiring defect:
+PBCH recovered an injected 7500 Hz offset, but SI-RNTI PDCCH received the
+original uncorrected waveform. Session 6248 exited 1; its diagnostic log
+`logs/ssb_nonzero_cfo_failure_20260906.log` records
+`BCH=1 SIB1=0 true=7500 estimated=7500 status=PDCCH_DECODE_FAILED`.
+
+`recoverSIB1FromWaveform` now transfers that received-SSB frequency estimate
+to the same noisy full-carrier samples before SIB1 PDCCH/PDSCH demodulation.
+It does not consume the injected CFO reference and does not apply the separate
+SSB frequency-placement shift to the whole carrier. SIB1 correction value and
+source are carried into the runtime trial schema. Broadcast completion now
+reports the actual receiver estimate and takes its injection reference from
+the producer replay, rather than hardcoding `TrueCFO_Hz=0`. The estimate-minus-
+injection error is explicitly an audit value; no measured residual CFO is
+fabricated when a post-correction residual estimator has not run.
+
+The focused final batch in `logs/initial_access_cfo_wiring_final_20260906.log`
+passed the no-genie producer test, four-beam waveform/decoder regression,
+7500 Hz receiver/SIB1 correction test, unknown-injection-reference check and
+broadcast delivery-boundary regression. The nonzero-CFO check requires both
+actual BCH and SIB1 decoding to pass; its assertion was not weakened after
+the failure. The tests also load the edited main runner. The receiver test
+vector is not a new scenario, a sweep qualification, or a claim that all
+impairments have been validated.
+
+Chronological SSB/TRS waveform composition remains unfinished. In particular,
+the broadcast path still invokes whole-capture channel execution and legacy
+grant-delay alignment; continuous raw-sample channel APIs have not yet replaced
+that path. No new TDD/FDD scenario or full testAll was run. The 12 dB TDD
+scenario is still unqualified and was not restarted.
