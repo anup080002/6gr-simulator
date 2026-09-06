@@ -904,6 +904,7 @@ if builtin("isstruct", initialAccess) && ~isempty(fieldnames(initialAccess))
 end
 
 cfg.phy.pdcch.enable = logical(s.control.pdcch_enabled);
+cfg.phy.pdcch.listLength = double(s.control.blind_decode_list_length);
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindSearch", ...
     logical(localRequireNested(s, "control.blind_search_enabled", ...
     "control.blind_search_enabled")));

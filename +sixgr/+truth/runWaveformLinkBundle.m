@@ -13455,7 +13455,9 @@ for k = 1:nTrials
         if reserveControlResources
             txArgs = [txArgs {"ReservedRECoordinates", occupiedRECoordinates}]; %#ok<AGROW>
         end
-        [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfgTrial, txArgs{:});
+        preparedPDCCH = sixgr.link.preparePDCCHTransmission(cfgTrial,txArgs{:});
+        tx = preparedPDCCH.Tx;
+        txInfo = preparedPDCCH.TxInfo;
         allocatedRECoordinates = txInfo.AllocatedRECoordinates;
         observedSlot0 = double(sixgr.util.structGet(cfgTrial, ...
             "lls6g.runtime.AbsoluteSlotIndex0", tx.Carrier.NSlot));
@@ -13469,23 +13471,29 @@ for k = 1:nTrials
             "AllocationID", "pdcch_slot_" + string(observedSlot0));
         observedRET = localAppendCompatTable(observedRET, pdcchRET);
         [rxWave,nVar,replay,noiseOnly,updatedRuntimeChannelState] = ...
-            localApplyPDCCHChannelAndNoise(tx.Waveform,cfgTrial,tx, ...
-            txInfo,snr_dB,updatedRuntimeChannelState);
+            localApplyPDCCHChannelAndNoise(preparedPDCCH,snr_dB,updatedRuntimeChannelState);
         tDecode = tic;
-        rxArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", 16, "NoiseOnlyWaveform", noiseOnly, ...
-            "ExpectedDCIBits", tx.DCIBits};
-        if isfinite(grantRNTI)
-            rxArgs = [rxArgs {"RNTI", grantRNTI}]; %#ok<AGROW>
+        origin = double(sixgr.util.structGet(replay,"RuntimeChannelStartSample",NaN));
+        if ~isfinite(origin) && ~logical(sixgr.util.structGet(replay,"RuntimeChannelStateUsed",false))
+            origin = preparedPDCCH.RuntimeStartSample;
+            if ~isfinite(origin)
+                origin = 0; % Standalone capture without a scheduled absolute origin.
+            end
         end
+        observation = sixgr.phy.waveform.WaveformObservationBuffer( ...
+            origin,origin+size(rxWave,1),preparedPDCCH.SampleRateHz,size(rxWave,2));
+        observation.append(sixgr.phy.waveform.WaveformChunk(rxWave,origin),preparedPDCCH.SampleRateHz);
+        noiseVariance = [];
         if isfinite(double(nVar)) && double(nVar) >= 0
-            rxArgs = [rxArgs {"NoiseVar", nVar}]; %#ok<AGROW>
+            noiseVariance = nVar;
         end
-        [rx, rxInfo] = sixgr.phy.dl.PDCCH_Rx(rxWave, cfgTrial, rxArgs{:});
+        [rx,rxInfo] = sixgr.link.completePDCCHReception(preparedPDCCH,observation, ...
+            "NoiseVariance",noiseVariance,"NoiseOnlyWaveform",noiseOnly);
         controlLatency_ms = toc(tDecode) * 1e3;
         radioTTI_ms = localSlotDuration(cfgTrial) * 1e3;
         noiseArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", 16, "ExpectedDCIBits", tx.DCIBits};
+            "ListLength", sixgr.util.structGet(cfgTrial,"phy.pdcch.listLength",[]), ...
+            "ExpectedDCIBits", tx.DCIBits};
         if isfinite(grantRNTI)
             noiseArgs = [noiseArgs {"RNTI", grantRNTI}]; %#ok<AGROW>
         end
@@ -13824,11 +13832,12 @@ r.SINRValueDefinition = "no_control_sinr_observation_available_without_runtime_n
 end
 
 function [y,nVar,replay,noiseOnlyWave,updatedRuntimeChannelState] = ...
-        localApplyPDCCHChannelAndNoise(x,cfg,tx,txInfo,snr_dB,initialRuntimeChannelState)
-if nargin < 4 || ~isstruct(txInfo)
-    txInfo = struct();
-end
-if nargin < 6 || ~isstruct(initialRuntimeChannelState)
+        localApplyPDCCHChannelAndNoise(prepared,snr_dB,initialRuntimeChannelState)
+cfg = prepared.ReceiverConfig;
+tx = prepared.Tx;
+txInfo = prepared.TxInfo;
+x = prepared.TransmitSamples;
+if nargin < 3 || ~isstruct(initialRuntimeChannelState)
     initialRuntimeChannelState = struct();
 end
 if ~isfield(txInfo, "OFDM")

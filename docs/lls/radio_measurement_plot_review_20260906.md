@@ -2284,3 +2284,57 @@ windows; queuing completed results does not fix that channel ownership
 defect. Shared-stream integration, full scenario qualification and broader
 regression coverage remain required. No new 12 dB scenario, FDD waveform
 run, full testAll, optional windowing or plot expansion was performed.
+
+## PDCCH preparation and received-buffer completion
+
+The main PDCCH adapter now uses separate `preparePDCCHTransmission` and
+`completePDCCHReception` stages around its existing physical executor. The
+first retains the real coded DCI, exact REs, transmitter configuration and
+OFDM samples without executing power scaling, PA, RF, channel or receiver.
+Its sample domain is explicitly Toolbox-normalized logical ports, not
+physical antenna samples. This matters because `applyPowerContext` includes
+PA processing: calling it while preparing independent contributors would
+not honestly defer nonlinear node-level transmission. The existing eager
+executor still applies the original power/PA and RF path once.
+
+Receive completion accepts only a complete contiguous sample buffer with
+the prepared sample rate, extent and, when runtime-bound, control-slot
+origin. It runs the canonical PDCCH receiver using the retained actual
+payload, RNTI and scrambling identity. Completion does not regenerate the
+transmitter or reexecute RF/channel propagation. Non-fading runtime captures
+retain their authored control-slot origin; only standalone unbound captures
+use a local zero origin.
+
+The already-declared `control.blind_decode_list_length` is now mapped to
+`phy.pdcch.listLength`; the coupled receiver no longer overwrites it with a
+literal 16. PDCCH TX now retains the metadata returned by the actual OFDM
+modulation call, including sampling/windowing resolution and waveform hash,
+instead of replacing it with independently reconstructed default metadata.
+No windowing setting was changed.
+
+The first two focused launches failed on new fixture setup errors: session
+95798 treated ScenarioConfig as a struct, and session 2154 assumed the
+optional context-specific `KBits` field was present. The fixture now uses
+the scenario accessor and its declared standalone codec payload length;
+the production grant payload is still supplied by the scheduler's DCI bits.
+Session 14240 exited 0 with `PDCCH_PREPARATION_RECEPTION_FOCUSED_PASS` in
+`logs/pdcch_preparation_reception_final_20260907.log`. Preparation/receiver
+separation, exact direct-receiver equivalence, incomplete/wrong-origin
+rejection, decoder list-length propagation, control-slot authority and
+physical-array projection checks passed.
+
+Session 90502 exited 0 with `PDCCH_SHARED_STREAM_FOCUSED_PASS` in
+`logs/pdcch_ssb_trs_shared_receiver_20260907.log`. Actual power-scaled,
+physical-antenna PDCCH and TRS contributions shared the same slot in a
+continuous noisy CDL stream also carrying SSB. PDCCH recovered the exact
+transmitted DCI payload; SSB/SIB1 and TRS receivers passed their retained
+checks. The whole-versus-chunk noise/channel comparison and no-channel-
+advance-on-receiver-completion assertions passed. This is a component
+integration check using the authored PA-disabled profile, not qualification
+of nonlinear composite RF or of the main scheduler.
+
+The main runtime still invokes its physical executor eagerly. Full adoption
+of chronological shared TX composition/RX dispatch, including scheduled
+data and RA stages, remains required before claiming the 12 dB scenario
+correct. No new production scenario, FDD scenario, 25 dB run, full testAll
+or optional plot expansion was performed for this patch.

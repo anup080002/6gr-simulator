@@ -1,8 +1,9 @@
-function [ok,evidence] = testBroadcastTRSNoisyStream(trsRuntimeSlot)
+function [ok,evidence] = testBroadcastTRSNoisyStream(trsRuntimeSlot,includePDCCH)
 % Actual composed TDD samples, noisy CDL stream and completed receivers.
 % This is not qualification of the main slot scheduler or full RF chain.
 setup6GRSimToolkit('Verbose',false);
 if nargin < 1, trsRuntimeSlot = 3; end
+if nargin < 2, includePDCCH = false; end
 s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
 root = tempname;
@@ -26,12 +27,33 @@ fs = trs.SampleRateHz;
 assert(fs==broadcast.SampleRateHz && cfg.phy.carrier.SubcarrierSpacing==15);
 firstTRS = round(trs.Tx.FirstSlot0Based*fs*1e-3);
 stop = max(broadcast.NumSamples,firstTRS+trs.NumSamples);
+if includePDCCH
+    cfgP = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,trsRuntimeSlot);
+    cfgP = sixgr.util.structSet(cfgP,'lls6g.userContext.RuntimeSlotStartTime_s',firstTRS/fs);
+    cfgP = sixgr.util.structSet(cfgP,'lls6g.userContext.RuntimeSignalFamily','PDCCH');
+    cfgP = sixgr.util.structSet(cfgP,'phy.runtimeSignalFamily','PDCCH');
+    bits = int8(mod((0:cfgP.phy.pdcch.configuredPayloadBits-1).',2));
+    pdcch = sixgr.link.preparePDCCHTransmission(cfgP,'DCIBits',bits,'RNTI',1);
+    assert(pdcch.SampleRateHz==fs && pdcch.RuntimeStartSample==firstTRS);
+    [powerPDCCH,powerContext] = sixgr.rf.applyPowerContext( ...
+        pdcch.TransmitSamples,cfgP,'DL',pdcch.TxInfo);
+    assert(~powerContext.PAApplied, ...
+        'This shared-stream test uses the authored PA-disabled profile, not per-component PA processing.');
+    [physicalPDCCH,~] = sixgr.channel.projectRuntimeTransmitSamples(truth.RuntimeChannelState,powerPDCCH);
+    stop = max(stop,firstTRS+pdcch.NumSamples);
+end
 composer = sixgr.phy.waveform.WaveformStreamComposer(fs,size(xTRS,2),0);
 composer.enqueue('ssb',sixgr.phy.waveform.WaveformChunk(broadcast.TransmitSamples,0),fs);
 composer.enqueue('trs',sixgr.phy.waveform.WaveformChunk(xTRS,firstTRS),fs);
+if includePDCCH
+    composer.enqueue('pdcch',sixgr.phy.waveform.WaveformChunk(physicalPDCCH,firstTRS),fs);
+end
 wholeTX = complex(zeros(stop,size(xTRS,2)));
 wholeTX(1:broadcast.NumSamples,:) = broadcast.TransmitSamples;
 wholeTX(firstTRS+(1:trs.NumSamples),:) = wholeTX(firstTRS+(1:trs.NumSamples),:)+xTRS;
+if includePDCCH
+    wholeTX(firstTRS+(1:pdcch.NumSamples),:) = wholeTX(firstTRS+(1:pdcch.NumSamples),:)+physicalPDCCH;
+end
 % Test-only independent clone for whole-vs-chunk comparison. Production
 % sample execution below uses one retained fading object without replay.
 referenceState = truth;
@@ -42,6 +64,9 @@ referenceState.RuntimeChannelState = sixgr.channel.ChannelFactory.forkRuntimeCha
 receiver = sixgr.phy.waveform.WaveformReceiveDispatcher(fs,size(reference,2),0);
 receiver.register('ssb',0,broadcast.NumSamples);
 receiver.register('trs',firstTRS,firstTRS+trs.NumSamples);
+if includePDCCH
+    receiver.register('pdcch',firstTRS,firstTRS+pdcch.NumSamples);
+end
 received = zeros(size(reference),'like',reference);
 first = 0;
 ids = strings(0,1);
@@ -74,7 +99,9 @@ end
 assert(norm(received-reference,'fro')<=1e-12*max(norm(reference,'fro'),realmin));
 assert(isequaln(truth.ReceiverNoiseState,referenceState.ReceiverNoiseState));
 assert(truth.RuntimeChannelState.CurrentSampleIndex==stop);
-assert(isequal(sort(ids),sort(["ssb";"trs"])));
+expectedIDs = ["ssb";"trs"];
+if includePDCCH, expectedIDs(end+1,1)="pdcch"; end
+assert(isequal(sort(ids),sort(expectedIDs)));
 assert(norm(reference-wholeReplay.RawWaveform,'fro')>0);
 % Each capture is a real subinterval of the same contiguous noisy stream.
 % Copy only invariant channel/noise fields, never first-chunk power metrics
@@ -114,6 +141,17 @@ assert(tracked.Ok && tracked.StrictOk && ~tracked.Crash, ...
 assert(isfinite(tracked.MeasuredTrialSINR_dB) && isfinite(tracked.NMSE_dB));
 evidence = struct('TRS',tracked,'Runtime',runtime,'Config',cfg, ...
     'SourceSlot',trsRuntimeSlot,'SampleRateHz',fs);
+if includePDCCH
+    [control,controlInfo] = sixgr.link.completePDCCHReception(pdcch,observations.pdcch, ...
+        'NoiseVariance',firstReplay.InjectedNoiseVariance);
+    assert(control.Ok && isequal(control.DCIBits,bits), ...
+        'PDCCH did not recover the actual DCI payload from the shared noisy CDL stream.');
+    assert(controlInfo.ObservationStartSample==firstTRS);
+    assert(controlInfo.ListLength==cfgP.phy.pdcch.listLength);
+    evidence.PDCCH = control;
+    evidence.PDCCHInfo = controlInfo;
+    disp('PDCCH_SSB_TRS_SHARED_RECEIVER_PASS');
+end
 assert(truth.RuntimeChannelState.CurrentSampleIndex==clockBefore, ...
     'Completing received observations must not propagate their channel again.');
 stale = truth;

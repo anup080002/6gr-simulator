@@ -144,7 +144,7 @@ txGrid(dmrsInd)  = dmrsSym;
 
 % OFDM modulate
 if opt.OFDMModulate
-    txWaveform = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
+    [txWaveform,ofdmInfo] = sixgr.phy.waveform.ofdmModulate(carrier, txGrid);
 else
     txWaveform = [];
 end
@@ -175,7 +175,11 @@ info.PortGrid = txGrid;
 info.PowerNormalizationGridSource = ...
     'exact_pdcch_tx_port_grid';
 try
-    info.OFDM = nrOFDMInfo(carrier);
+    if opt.OFDMModulate
+        info.OFDM = ofdmInfo;
+    else
+        info.OFDM = nrOFDMInfo(carrier);
+    end
 catch exception
     error("sixgr:phy:pdcch:OFDMMetadataUnavailable", ...
         "The PDCCH transmit OFDM metadata could not be resolved: %s", ...
