@@ -45,7 +45,9 @@ elseif endsWith(name, "valuestatus")
     token = "not_emitted_by_active_" + string(scopeToken) + "_runtime";
 elseif endsWith(name, "nareason") || strcmp(name, "nareason") || ...
         strcmp(name, "unavailablereason")
-    token = "field_not_emitted_by_active_" + string(scopeToken) + "_runtime";
+    % An empty reason is legitimate for a valid measurement. Only its
+    % producer can state why a value is unavailable; never invent a cause.
+    token = "";
 elseif contains(name, "blocker")
     token = "not_blocked_in_active_" + string(scopeToken) + "_runtime";
 elseif contains(name, "definition")

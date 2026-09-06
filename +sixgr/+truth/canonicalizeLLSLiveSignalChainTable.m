@@ -167,11 +167,12 @@ elseif endsWith(fieldName, "valuestatus")
     fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
 elseif strcmp(fieldName, "nareason")
     % Row-level lifecycle NAReason is intentionally blank for finalized
-    % rows; only field-specific *NAReason columns should receive sentinels.
+    % rows. Field-specific reasons must also remain producer-owned.
     return;
 elseif endsWith(fieldName, "nareason")
-    fill(companionMask) = "not_required_when_metric_present";
-    fill(~companionMask) = "field_not_emitted_by_active_" + scope + "_runtime";
+    % Preserve the producer's empty reason; do not diagnose missing values
+    % from column shape or mark a successful measurement as unobserved.
+    return;
 elseif endsWith(fieldName, "definition")
     fill(companionMask) = "derived_from_active_" + scope + "_runtime_table";
     fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";

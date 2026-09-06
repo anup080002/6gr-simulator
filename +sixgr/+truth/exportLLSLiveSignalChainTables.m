@@ -320,8 +320,8 @@ elseif endsWith(fieldName, "valuestatus")
     fill(companionMask) = "available";
     fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
 elseif endsWith(fieldName, "nareason") || strcmp(fieldName, "nareason")
-    fill(companionMask) = "not_required_when_metric_present";
-    fill(~companionMask) = "field_not_emitted_by_active_" + scope + "_runtime";
+    % A reason is producer evidence, not a categorical filler.
+    return;
 elseif endsWith(fieldName, "definition")
     fill(companionMask) = "derived_from_active_" + scope + "_runtime_table";
     fill(~companionMask) = "not_emitted_by_active_" + scope + "_runtime";
