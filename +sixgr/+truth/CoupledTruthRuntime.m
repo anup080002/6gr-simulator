@@ -2090,6 +2090,11 @@ methods(Static, Access=private)
             "UEIndex", ueIdx, "ServingCell", servingCell);
         [state, channelState] = sixgr.truth.CoupledTruthRuntime.resolveRuntimeChannelState( ...
             state, cfg, direction, linkKey, ueIdx, servingCell);
+        % LinkKey remains direction-specific evidence, while StateKey is
+        % canonical for a moving reciprocal TDD link.  This lets one
+        % mutable fading clock serve alternating DL and UL slots without
+        % obscuring which direction each trial executed.
+        channelState.LinkKey = char(string(linkKey));
         slotDuration_s = double(sixgr.util.structGet(state, "SlotDuration_s", NaN));
         if ~(isscalar(slotDuration_s) && isfinite(slotDuration_s) && slotDuration_s > 0)
             slotDuration_s = sixgr.time.slotDurationSec(cfg);
@@ -2142,9 +2147,11 @@ methods(Static, Access=private)
         if ~isfield(state, "RuntimeChannelStates") || ~isstruct(state.RuntimeChannelStates)
             state.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
         end
-        idx = sixgr.truth.CoupledTruthRuntime.findRuntimeChannelStateIndex(state, linkKey);
+        stateKey = sixgr.channel.ChannelFactory.runtimeChannelStateKey(cfg, linkKey);
+        idx = sixgr.truth.CoupledTruthRuntime.findRuntimeChannelStateIndex(state, stateKey);
         if isfinite(idx)
             chState = state.RuntimeChannelStates(idx);
+            chState.StateKey = char(string(stateKey));
             return;
         end
         seed = sixgr.channel.ChannelFactory.runtimeChannelSeed(cfg, linkKey);
@@ -2157,14 +2164,15 @@ methods(Static, Access=private)
         if ~(isstruct(channelState) && isfield(channelState, "ContractVersion"))
             return;
         end
-        linkKey = char(string(sixgr.util.structGet(channelState, "LinkKey", "")));
-        if strlength(strtrim(string(linkKey))) == 0
+        stateKey = char(string(sixgr.util.structGet(channelState, "StateKey", ...
+            sixgr.util.structGet(channelState, "LinkKey", ""))));
+        if strlength(strtrim(string(stateKey))) == 0
             return;
         end
         if ~isfield(state, "RuntimeChannelStates") || ~isstruct(state.RuntimeChannelStates)
             state.RuntimeChannelStates = repmat(sixgr.channel.ChannelFactory.emptyRuntimeChannelState(), 0, 1);
         end
-        idx = sixgr.truth.CoupledTruthRuntime.findRuntimeChannelStateIndex(state, linkKey);
+        idx = sixgr.truth.CoupledTruthRuntime.findRuntimeChannelStateIndex(state, stateKey);
         if isfinite(idx)
             state.RuntimeChannelStates(idx) = channelState;
         else
@@ -2172,14 +2180,15 @@ methods(Static, Access=private)
         end
     end
 
-    function idx = findRuntimeChannelStateIndex(state, linkKey)
+    function idx = findRuntimeChannelStateIndex(state, stateKey)
         idx = NaN;
         states = sixgr.util.structGet(state, "RuntimeChannelStates", repmat(struct(), 0, 1));
         if ~(isstruct(states) && ~isempty(states))
             return;
         end
-        keys = arrayfun(@(s) string(sixgr.util.structGet(s, "LinkKey", "")), states(:));
-        hit = find(keys == string(linkKey), 1, "first");
+        keys = arrayfun(@(s) string(sixgr.util.structGet(s, "StateKey", ...
+            sixgr.util.structGet(s, "LinkKey", ""))), states(:));
+        hit = find(keys == string(stateKey), 1, "first");
         if ~isempty(hit)
             idx = double(hit);
         end
@@ -3096,6 +3105,9 @@ methods(Static, Access=private)
             latest.TargetCodeRate = double(row.TargetCodeRate);
             latest.ServingCell = double(row.ServingCell);
             latest.Slot = double(row.SourceSlot);
+            latest.SourceSlot = double(row.SourceSlot);
+            latest.DueSlot = double(row.DueSlot);
+            latest.DeliveredSlot = double(row.DeliveredSlot);
             latest.Modulation = char(string(row.Modulation));
             latest.Direction = char(rowDirection);
             latest.RawCQIDerivedMCS = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RawCQIDerivedMCS", NaN));
@@ -5550,6 +5562,9 @@ methods(Static, Access=private)
             latest.Valid = true;
             latest.Direction = "UL";
             latest.Slot = double(slotIdx);
+            latest.SourceSlot = double(slotIdx);
+            latest.DueSlot = double(slotIdx);
+            latest.DeliveredSlot = double(slotIdx);
             latest.FeedbackSourceSignal = "SRS";
             latest.FeedbackCRCPass = NaN;
             if srsAdaptationApplied
@@ -5675,6 +5690,9 @@ methods(Static, Access=private)
                     dlAdaptationApplied = true;
                 end
                 if isfinite(dlMCS) && dlMCS >= 0
+                    dlLatest.SourceSlot = double(slotIdx);
+                    dlLatest.DueSlot = double(slotIdx);
+                    dlLatest.DeliveredSlot = double(slotIdx);
                     dlLatest.MCSIndex = double(round(dlMCS));
                     dlLatest.Modulation = char(string(dlMod));
                     dlLatest.TargetCodeRate = double(dlRate);
@@ -8874,6 +8892,9 @@ methods(Static, Access=private)
             latest.Modulation = report.Modulation;
             latest.ServingCell = report.ServingCell;
             latest.Slot = report.SourceSlot;
+            latest.SourceSlot = report.SourceSlot;
+            latest.DueSlot = report.DueSlot;
+            latest.DeliveredSlot = report.DeliveredSlot;
             latest.Direction = report.Direction;
             latest.RawCQIDerivedMCS = report.RawCQIDerivedMCS;
             latest.RawCQIDerivedTargetCodeRate = report.RawCQIDerivedTargetCodeRate;
@@ -14770,6 +14791,7 @@ methods(Static, Access=private)
     function row = emptyLatestFeedbackRow()
         row = struct( ...
             "Valid", false, "Direction", "", "Slot", NaN, ...
+            "SourceSlot", NaN, "DueSlot", NaN, "DeliveredSlot", NaN, ...
             "CQI", NaN, "RI", NaN, "PMI", NaN, "CRI", NaN, ...
             "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", "SINRValueStatus", "", ...
             "MCSIndex", NaN, "TargetCodeRate", NaN, ...

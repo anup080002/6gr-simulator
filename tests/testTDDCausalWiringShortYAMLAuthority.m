@@ -25,6 +25,7 @@ assert(logical(raw.reference_signals.csi_rs_enabled));
 assert(logical(raw.reference_signals.srs_enabled));
 assert(logical(raw.reference_signals.trs_enabled));
 assert(logical(raw.mimo.beam_sweep_enabled));
+assert(~logical(raw.channels.normalize_channel_outputs));
 assert(logical(raw.link_adaptation.inner_loop_flag));
 assert(logical(raw.link_adaptation.outer_loop_flag));
 assert(logical(raw.output.save_csv));
@@ -45,6 +46,8 @@ assert(~isfield(cfg.phy.duplex, "fdd"));
 assert(double(cfg.run.totalSlots) == 15);
 assert(double(cfg.run.measurementSlots) == 15);
 assert(double(cfg.phy.carrier.NSizeGrid) == 25);
+assert(~logical(cfg.channel.normalizeChannelOutputs));
+assert(sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg));
 
 frame = sixgr.phy.FrameStructureEngine(cfg, "FrameCoreOnly", true);
 assert(frame.DuplexMode == "TDD");

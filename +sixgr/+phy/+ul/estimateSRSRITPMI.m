@@ -94,7 +94,7 @@ estimate.RankMutualInformation = double(rankMetric);
 estimate.RankCandidateCount = double(rankCandidateCount);
 estimate.RISource = "ul_srs_post_equalization_mi_rank_estimator";
 
-if scheme ~= "codebook" || transformPrecoding || numTxPorts < 2
+if scheme ~= "codebook" || transformPrecoding
     estimate.Valid = isfinite(estimate.RI);
     estimate.TPMISource = "ul_srs_tpmi_not_required_for_noncodebook_or_transform_precoding";
     return;
@@ -409,7 +409,7 @@ beamIndices = [];
 layerSINR_dB = [];
 minimumLayerSINR_dB = NaN;
 widebandMeanSINR_dB = NaN;
-if ~(numTxPorts >= 2)
+if ~(numTxPorts >= 1)
     return;
 end
 if exist("nrPUSCHCodebook", "file") ~= 2

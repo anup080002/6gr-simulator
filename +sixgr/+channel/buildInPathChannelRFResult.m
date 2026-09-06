@@ -171,8 +171,16 @@ for si = 1:size(sets, 1)
         snap.TrialId = trialId;
         snap.ChannelRealizationId = rid;
         snap.SnapshotIndex = ii;
-        snap.SampleTimeSec = double(T.RuntimeChannelStartSample(ii)) / ...
-            max(double(localValue(T, "SampleRate_Hz", ii, NaN)), eps);
+        [sampleRateHz, sampleRateSource] = localResolveRuntimeSampleRateHz(cfg, T, ii);
+        startSample = double(T.RuntimeChannelStartSample(ii));
+        if ~(isscalar(startSample) && isfinite(startSample) && startSample >= 0)
+            error("sixgr:channel:InvalidRuntimeChannelSampleOffset", ...
+                "RuntimeChannelStartSample must be a finite nonnegative scalar for %s.", ...
+                trialId);
+        end
+        snap.SampleTimeSec = startSample / sampleRateHz;
+        snap.SampleRateHz = sampleRateHz;
+        snap.SampleRateSource = sampleRateSource;
         snap.ChannelSnapshotHash = outputHash;
         snap.TruthStatus = "real_lls_evidence";
         snap = localBindRow(snap, identity, "in_path", true);
@@ -570,6 +578,55 @@ else
     out=defaultValue;
 end
 end
+
+function [sampleRateHz, source] = localResolveRuntimeSampleRateHz(cfg,T,row)
+% Resolve the physical sample clock without manufacturing a denominator.
+% An explicit trial value is authoritative when present and must agree with
+% the normalized scenario authority.  Otherwise the runtime uses the
+% sample rate resolved by buildInternalConfig from the active numerology.
+trialNames = ["SampleRate_Hz","SampleRateHz"];
+configPaths = ["phy.waveform.sampleRate_Hz","waveform.sample_rate_hz", ...
+    "phy.sampleRate_Hz"];
+[configuredRate, configuredSource] = localFirstPositiveConfigValue(cfg,configPaths);
+for name = trialNames
+    if ~ismember(name,string(T.Properties.VariableNames))
+        continue
+    end
+    sampleRateHz = double(localValue(T,name,row,NaN));
+    if ~(isscalar(sampleRateHz) && isfinite(sampleRateHz) && sampleRateHz > 0)
+        error("sixgr:channel:InvalidRuntimeSampleRate", ...
+            "Runtime trial field %s must contain a finite positive sample rate.",name);
+    end
+    if isfinite(configuredRate) && abs(sampleRateHz-configuredRate) > ...
+            max(1e-9*configuredRate,1e-6)
+        error("sixgr:channel:RuntimeSampleRateMismatch", ...
+            "Runtime trial sample rate %.15g Hz does not match %s %.15g Hz.", ...
+            sampleRateHz,configuredSource,configuredRate);
+    end
+    source = "runtime_trial." + name;
+    return
+end
+if ~(isfinite(configuredRate) && configuredRate > 0)
+    error("sixgr:channel:RuntimeSampleRateUnavailable", ...
+        "Channel snapshot timing requires a runtime trial sample rate or " + ...
+        "the normalized scenario sample-rate authority.");
+end
+sampleRateHz = configuredRate;
+source = configuredSource;
+end
+
+function [value, source] = localFirstPositiveConfigValue(cfg,paths)
+value = NaN;
+source = "";
+for path = paths
+    candidate = double(sixgr.util.structGet(cfg,path,NaN));
+    if isscalar(candidate) && isfinite(candidate) && candidate > 0
+        value = candidate;
+        source = "resolved_config." + path;
+        return
+    end
+end
+end
 function localRequireColumns(T,names,label)
 missing=names(~ismember(names,string(T.Properties.VariableNames)));
 if ~isempty(missing)
@@ -642,7 +699,8 @@ row=struct("RunId","","ScenarioName","","TrialId","","ChannelRealizationId","", 
 row=localIdentityFields(row); end
 function row=localSnapshotRow()
 row=struct("RunId","","TrialId","","ChannelRealizationId","","SnapshotIndex",NaN,"SampleTimeSec",NaN, ...
-"MagnitudeMean",NaN,"PhaseMeanRad",NaN,"ChannelSnapshotHash","","TruthStatus",""); row=localIdentityFields(row); end
+"SampleRateHz",NaN,"SampleRateSource","","MagnitudeMean",NaN,"PhaseMeanRad",NaN, ...
+"ChannelSnapshotHash","","TruthStatus",""); row=localIdentityFields(row); end
 function row=localPathGainRow()
 row=struct("RunId","","TrialId","","ChannelRealizationId","","PathGainHash","","SampleTimeHash","", ...
 "PathGainElementCount",NaN,"SampleTimeCount",NaN,"PathGainDimensions","","TruthStatus",""); row=localIdentityFields(row); end

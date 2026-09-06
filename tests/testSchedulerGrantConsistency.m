@@ -114,6 +114,11 @@ cfgGuard = sixgr.util.structSet(cfgGuard, "scenario.ue.nTxAnt", 2);
 cfgGuard = sixgr.util.structSet(cfgGuard, "scenario.bs.nRxAnt", 2);
 cfgGuard = sixgr.util.structSet(cfgGuard, "mac.scheduler.maxUEPerSlot", 1);
 cfgGuard = sixgr.util.structSet(cfgGuard, "mac.scheduler.minPRBPerUE", 1);
+% Exercise both legal UL control encodings used by this fixture: the
+% initial queue-aware grant can use 0_0, while a measured spatial decision
+% is allowed to promote the frozen grant to 0_1.  Production search-space
+% authority remains fail-closed when either format is not monitored.
+cfgGuard = sixgr.util.structSet(cfgGuard, "phy.pdcch.dciFormats", {'0_0', '0_1'});
 cfgGuard = withCanonicalSchedulerTiming(cfgGuard);
 schGuard = sixgr.l2.mac.SchedulerPF(cfgGuard, "Direction", "UL");
 ueGuard = struct( ...

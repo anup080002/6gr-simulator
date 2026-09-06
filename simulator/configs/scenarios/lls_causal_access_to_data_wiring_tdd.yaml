@@ -32,6 +32,71 @@ canonical_control:
     configured_snr_is_link_authority: false
     common_pipeline_required: true
     measured_sinr_required: true
+  isac:
+    # This short causal access/data diagnostic records exact frequency/time/
+    # port phase grids, but it does not execute a sensing scene.  Keep the
+    # complete ISAC authority explicit so delay-Doppler evidence is reported
+    # as feature-disabled rather than inferred, unknown, or fabricated.
+    enabled: false
+    researchTaxonomy: study_item_candidate
+    approach: communication_centric_nr_ofdm
+    sensingMode: monostatic_gnb
+    waveformAuthority: exact_runtime_pdsch_waveform
+    executionScope: first_committed_dl_grant
+    channelModel: phased_scattering_mimo
+    seed: 4702601
+    coherentRepetitions: 4
+    transmitPowerDbm: 46
+    receiver:
+      noiseFigureDb: 5
+      referenceTemperatureK: 290
+      gainDb: 0
+    channel:
+      simulateDirectPath: false
+      warmupPulses: 1
+    scene:
+      nodePositionAuthority: coupled_runtime_topology
+      numberTargets: 1
+      targetPositionsM: [40, 10, 24]
+      targetVelocitiesMps: [8, 0, 0]
+      reflectionCoefficientReal: [1]
+      reflectionCoefficientImag: [0]
+    processing:
+      observationSource: known_runtime_waveform_matched_filter
+      matchedFilterImplementation: frequency_domain_exact_reference
+      beamformer: conventional_phase_shift
+      includeElementResponse: false
+      backgroundRemoval: none
+      maximumRangeM: 150
+      rangeFFTSize: 131072
+      dopplerFFTSize: 8
+      azimuthGrid:
+        minimumDeg: -90
+        maximumDeg: 90
+        stepDeg: 2
+    detection:
+      algorithm: ca_cfar_2d
+      trainingCellsRange: 4
+      trainingCellsAngle: 4
+      guardCellsRange: 1
+      guardCellsAngle: 1
+      probabilityFalseAlarm: 0.01
+      maximumDetections: 8
+      nonMaximumSuppressionRangeBins: 3
+      nonMaximumSuppressionAngleBins: 2
+    acceptance:
+      minimumMatchedTargets: 1
+      maximumRangeErrorM: 15
+      maximumAzimuthErrorDeg: 15
+    output:
+      enabled: true
+      componentFolder: isac
+      structuredComponentFolders: true
+      saveCSV: true
+      savePNG: true
+      imageFormat: png
+      imageResolutionDPI: 180
+      prohibitSVG: true
 
 run_control:
   seed: 4702601
@@ -318,6 +383,11 @@ channels:
   doppler_hz: 7.838756
   doppler_source_mode: derive_from_ue_speed
   mobility_kmph: 3
+  # Preserve physical per-connector voltage and power. MATLAB's optional
+  # receive-antenna-count normalization would apply a different scale after
+  # reversing unequal endpoint arrays and is therefore incompatible with
+  # exact moving-TDD reciprocity.
+  normalize_channel_outputs: false
   los_enabled: false
   spatial_consistency_enabled: true
   pathloss_enabled: true

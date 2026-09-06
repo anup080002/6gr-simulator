@@ -282,6 +282,9 @@ if truePathStatus == "available"
     end
 end
 
+angleRows = localExecutedRuntimeAngleRows(meta, context);
+sourceT = [sourceT; angleRows]; %#ok<AGROW>
+
 % Preserve the bounded executed path-gain tensor across time.  This is the
 % actual tensor returned by the runtime fading object while filtering this
 % waveform, never a configured PDP reconstruction or a receiver oracle.
@@ -795,6 +798,20 @@ T.Time_s = nan(n, 1);
 T.PathIndex = nan(n, 1);
 T.PathDelay_s = nan(n, 1);
 T.DopplerFrequency_Hz = nan(n, 1);
+T.AzimuthDeparture_deg = nan(n, 1);
+T.AzimuthArrival_deg = nan(n, 1);
+T.ZenithDeparture_deg = nan(n, 1);
+T.ZenithArrival_deg = nan(n, 1);
+T.AngleCoordinateFrame = strings(n, 1);
+T.AngleEvidenceSource = strings(n, 1);
+T.RuntimeChannelStateKey = strings(n, 1);
+T.RuntimeChannelLinkKey = strings(n, 1);
+T.RuntimeChannelSeed = nan(n, 1);
+T.RuntimeChannelReciprocityExact = false(n, 1);
+T.RuntimeChannelReciprocityDirection = strings(n, 1);
+T.RuntimeChannelReciprocitySource = strings(n, 1);
+T.RuntimeChannelReciprocityApproximationMode = strings(n, 1);
+T.RuntimeChannelTransmitAndReceiveSwapped = false(n, 1);
 T.MatrixRowIndex0Based = nan(n, 1);
 T.MatrixColumnIndex0Based = nan(n, 1);
 T.CorrelationDomain = strings(n, 1);
@@ -968,6 +985,77 @@ T.IValue = real(wave);
 T.QValue = imag(wave);
 T.GridKind(:) = "executed_tx_waveform_with_modulator_symbol_boundaries";
 T.GridSHA256(:) = localComplexTensorHash(txWave);
+end
+
+function T = localExecutedRuntimeAngleRows(meta, context)
+T = localEmptySourceTable();
+if ~logical(sixgr.util.structGet(context, ...
+        "RuntimeChannelAngleEvidenceAvailable", false))
+    return;
+end
+[pathGain, pathDelay_s, pathStatus] = localSelectExecutedPathGain(context);
+if pathStatus ~= "available"
+    return;
+end
+angles = { ...
+    double(sixgr.util.structGet(context, "RuntimeChannelAnglesAoD_deg", [])), ...
+    double(sixgr.util.structGet(context, "RuntimeChannelAnglesAoA_deg", [])), ...
+    double(sixgr.util.structGet(context, "RuntimeChannelAnglesZoD_deg", [])), ...
+    double(sixgr.util.structGet(context, "RuntimeChannelAnglesZoA_deg", []))};
+n = numel(pathGain);
+if n < 1 || any(cellfun(@numel, angles) ~= n) || ...
+        any(cellfun(@(v) any(~isfinite(v(:))), angles))
+    return;
+end
+aoD = reshape(angles{1}, [], 1);
+aoA = reshape(angles{2}, [], 1);
+zoD = reshape(angles{3}, [], 1);
+zoA = reshape(angles{4}, [], 1);
+pathGain = reshape(pathGain, [], 1);
+pathDelay_s = reshape(pathDelay_s, [], 1);
+
+T = localBaseRows(meta, "runtime_channel_angles", ...
+    "same_executed_path_gain_angles_rx1_tx1", n);
+T.PointIndex = (1:n).';
+T.PathIndex = (1:n).';
+T.PathDelay_s = pathDelay_s;
+T.XValue = aoD;
+T.YValue = aoA;
+T.XUnit(:) = "azimuth_departure_deg";
+T.YUnit(:) = "azimuth_arrival_deg";
+T.AzimuthDeparture_deg = aoD;
+T.AzimuthArrival_deg = aoA;
+T.ZenithDeparture_deg = zoD;
+T.ZenithArrival_deg = zoA;
+T.AngleCoordinateFrame(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelAngleCoordinateFrame", ""));
+T.AngleEvidenceSource(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelAngleEvidenceSource", ""));
+T.RuntimeChannelStateKey(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelStateKey", ""));
+T.RuntimeChannelLinkKey(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelLinkKey", ""));
+T.RuntimeChannelSeed(:) = double(sixgr.util.structGet(context, ...
+    "RuntimeChannelSeed", NaN));
+T.RuntimeChannelReciprocityExact(:) = logical(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocityExact", false));
+T.RuntimeChannelReciprocityDirection(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocityDirection", ""));
+T.RuntimeChannelReciprocitySource(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocitySource", ""));
+T.RuntimeChannelReciprocityApproximationMode(:) = string(sixgr.util.structGet( ...
+    context, "RuntimeChannelReciprocityApproximationMode", ""));
+T.RuntimeChannelTransmitAndReceiveSwapped(:) = logical(sixgr.util.structGet( ...
+    context, "RuntimeChannelTransmitAndReceiveSwapped", false));
+T.IValue = real(pathGain);
+T.QValue = imag(pathGain);
+T.MagnitudeLinear = abs(pathGain);
+T.Magnitude_dB = 20 .* log10(max(T.MagnitudeLinear, realmin));
+T.PowerLinear = abs(pathGain).^2;
+T.Power_dB = 10 .* log10(max(T.PowerLinear, realmin));
+T.GridKind(:) = "angles_from_same_executed_runtime_channel_object";
+T.GridSHA256(:) = string(sixgr.util.structGet(context, ...
+    "RuntimeChannelPathGainsSHA256", localComplexTensorHash(pathGain)));
 end
 
 function [timeRows, dopplerRows] = localExecutedTimeVaryingChannelRows(meta, context)

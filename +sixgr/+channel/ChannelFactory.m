@@ -178,6 +178,9 @@ classdef ChannelFactory
             meta.ChannelNormalizePathGains = false;
             meta.ChannelNormalizationMode = "";
             meta.ChannelNormalizationSource = "";
+            meta.ChannelNormalizeOutputs = false;
+            meta.ChannelOutputNormalizationMode = "";
+            meta.ChannelOutputNormalizationSource = "";
 
             % Create channel
             if any(model == ["awgn","none","off",""])
@@ -212,6 +215,9 @@ classdef ChannelFactory
                 meta.ChannelNormalizePathGains = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizePathGains", false));
                 meta.ChannelNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationMode", ""));
                 meta.ChannelNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationSource", ""));
+                meta.ChannelNormalizeOutputs = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizeChannelOutputs", false));
+                meta.ChannelOutputNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelOutputNormalizationMode", ""));
+                meta.ChannelOutputNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelOutputNormalizationSource", ""));
                 if logical(sixgr.util.structGet(arrayRuntimeMeta, "RuntimeGeometryCorrelationApplied", false))
                     meta.ChannelArrayModel = "nrtdl_runtime_geometry_correlation_channel";
                     meta.ChannelArrayHandlingStatus = "adapted_geometry_backed_reduced_representation";
@@ -237,6 +243,9 @@ classdef ChannelFactory
                 meta.ChannelNormalizePathGains = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizePathGains", false));
                 meta.ChannelNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationMode", ""));
                 meta.ChannelNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelNormalizationSource", ""));
+                meta.ChannelNormalizeOutputs = logical(sixgr.util.structGet(arrayRuntimeMeta, "NormalizeChannelOutputs", false));
+                meta.ChannelOutputNormalizationMode = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelOutputNormalizationMode", ""));
+                meta.ChannelOutputNormalizationSource = string(sixgr.util.structGet(arrayRuntimeMeta, "ChannelOutputNormalizationSource", ""));
                 meta.LOSProbabilitySource = string(sixgr.util.structGet(arrayRuntimeMeta, "LOSProbabilitySource", ""));
                 meta.LOSComplianceStatus = string(sixgr.util.structGet(arrayRuntimeMeta, "LOSComplianceStatus", ""));
                 meta.LOSComplianceReason = string(sixgr.util.structGet(arrayRuntimeMeta, "LOSComplianceReason", ""));
@@ -395,10 +404,23 @@ classdef ChannelFactory
             end
         end
 
+        function key = runtimeChannelStateKey(cfg, linkKey)
+            % A moving TDD link is one physical reciprocal channel whose
+            % direction changes with the slot.  Store it once so DL and UL
+            % cannot advance independent fading clocks.  FDD and static
+            % reciprocal adapters retain per-direction state because their
+            % endpoint implementations are intentionally independent.
+            key = char(string(linkKey));
+            if sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg)
+                key = sixgr.channel.ChannelFactory.localRuntimeSeedKey(cfg, linkKey);
+            end
+        end
+
         function state = emptyRuntimeChannelState()
             state = struct( ...
                 "ContractVersion", "sixgr.channel.RuntimeChannelState/v1", ...
                 "LinkKey", "", ...
+                "StateKey", "", ...
                 "Direction", "", ...
                 "Seed", NaN, ...
                 "Initialized", false, ...
@@ -462,6 +484,7 @@ classdef ChannelFactory
             end
             state = sixgr.channel.ChannelFactory.emptyRuntimeChannelState();
             state.LinkKey = char(key);
+            state.StateKey = sixgr.channel.ChannelFactory.runtimeChannelStateKey(cfg, key);
             state.Direction = char(upper(string(direction)));
             state.Seed = double(seed);
             state.Initialized = true;
@@ -533,6 +556,8 @@ classdef ChannelFactory
             opt = ip.Results;
 
             if logical(sixgr.util.structGet(state, "Materialized", false))
+                state = sixgr.channel.ChannelFactory.localRetargetDynamicTDDChannelState( ...
+                    state, cfg, waveform, opt);
                 expectedPhysicalTx = double(sixgr.util.structGet( ...
                     state, "NumTxAnt", NaN));
                 observedTx = size(waveform, 2);
@@ -646,7 +671,10 @@ classdef ChannelFactory
             opt.TransmitAntennaRuntime = txRuntimeForChannel;
             opt.TransmitAntennaMeta = txMetaForChannel;
 
-            if sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfgCh)
+            if sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfgCh)
+                ch = sixgr.channel.ChannelFactory.localCreateDynamicTDDReciprocalChannel( ...
+                    cfgCh,state,fs,max(1,round(numTx)),max(1,round(numRx)),opt);
+            elseif sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfgCh)
                 ch = sixgr.channel.ChannelFactory.localCreateStaticTDDReciprocalChannel( ...
                     cfgCh,state,fs,max(1,round(numTx)),max(1,round(numRx)),opt);
             else
@@ -779,7 +807,13 @@ classdef ChannelFactory
                 "ChannelPathGainsAvailable", false, ...
                 "RuntimeChannelStateUsed", false, ...
                 "RuntimeChannelLinkKey", "", ...
+                "RuntimeChannelStateKey", "", ...
                 "RuntimeChannelSeed", NaN, ...
+                "RuntimeChannelReciprocityExact", false, ...
+                "RuntimeChannelReciprocityDirection", "", ...
+                "RuntimeChannelReciprocitySource", "", ...
+                "RuntimeChannelReciprocityApproximationMode", "", ...
+                "RuntimeChannelTransmitAndReceiveSwapped", false, ...
                 "RuntimeChannelResetCount", NaN, ...
                 "RuntimeChannelStartSample", NaN, ...
                 "RuntimeChannelEndSample", NaN, ...
@@ -801,6 +835,17 @@ classdef ChannelFactory
                 "RuntimeChannelPathGainsPreview", complex([]), ...
                 "RuntimeChannelPathGainSampleTimes_s", [], ...
                 "RuntimeChannelPathDelays_s", [], ...
+                "RuntimeChannelAngleEvidenceAvailable", false, ...
+                "RuntimeChannelAnglesAoD_deg", [], ...
+                "RuntimeChannelAnglesAoA_deg", [], ...
+                "RuntimeChannelAnglesZoD_deg", [], ...
+                "RuntimeChannelAnglesZoA_deg", [], ...
+                "RuntimeChannelAngleCoordinateFrame", "", ...
+                "RuntimeChannelAngleEvidenceSource", "", ...
+                "RuntimeChannelCanonicalInputSamples", NaN, ...
+                "RuntimeChannelAlignmentLookaheadSamples", 0, ...
+                "RuntimeChannelAlignmentLookaheadExecutedOnFork", false, ...
+                "RuntimeChannelObjectClockExact", false, ...
                 "RuntimeChannelPathGainPreviewElementCount", 0, ...
                 "RuntimeChannelPathGainPreviewTruncated", false, ...
                 "RuntimeChannelPathGainCaptureRequested", false, ...
@@ -811,7 +856,22 @@ classdef ChannelFactory
             end
             replay.RuntimeChannelStateUsed = true;
             replay.RuntimeChannelLinkKey = char(string(sixgr.util.structGet(state, "LinkKey", "")));
+            replay.RuntimeChannelStateKey = char(string(sixgr.util.structGet(state, ...
+                "StateKey", replay.RuntimeChannelLinkKey)));
             replay.RuntimeChannelSeed = double(sixgr.util.structGet(state, "Seed", NaN));
+            replay.RuntimeChannelReciprocityExact = logical(sixgr.util.structGet( ...
+                state, "Meta.RuntimeTDDReciprocityExact", false));
+            replay.RuntimeChannelReciprocityDirection = char(string(sixgr.util.structGet( ...
+                state, "Meta.RuntimeTDDReciprocityDirection", "")));
+            replay.RuntimeChannelReciprocitySource = char(string(sixgr.util.structGet( ...
+                state, "Meta.RuntimeTDDReciprocitySource", "")));
+            replay.RuntimeChannelReciprocityApproximationMode = char(string( ...
+                sixgr.util.structGet(state, ...
+                "Meta.RuntimeTDDReciprocityApproximationMode", "")));
+            replay.RuntimeChannelTransmitAndReceiveSwapped = logical( ...
+                sixgr.channel.ChannelFactory.localObjectLogicalProperty( ...
+                sixgr.util.structGet(state, "Obj", []), ...
+                "TransmitAndReceiveSwapped", false));
             replay.RuntimeChannelResetCount = double(sixgr.util.structGet(state, "ResetCount", NaN));
             replay.RuntimeChannelStartSample = double(sixgr.util.structGet(state, "CurrentSampleIndex", 0));
             replay.RuntimeChannelIdleAdvancedSamples = double(sixgr.util.structGet(state, "LastIdleAdvancedSamples", 0));
@@ -860,12 +920,10 @@ classdef ChannelFactory
                 replay.RuntimeChannelInputPaddedToMaterializedPorts = true;
                 replay.RuntimeChannelInputPaddingColumns = double(expectedActiveTx - activeTx);
             end
-            xIn = xChannel;
             padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
             trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
-            if padSamples > 0
-                xIn = [xChannel; zeros(padSamples, size(xChannel, 2), 'like', xChannel)];
-            end
+            replay.RuntimeChannelCanonicalInputSamples = double(size(xChannel, 1));
+            replay.RuntimeChannelAlignmentLookaheadSamples = double(padSamples);
             pathGainCaptureEnabled = double(sixgr.util.structGet(state, ...
                 "RuntimeDiagnosticPathGainMaxElements", 0)) > 0;
             if isempty(explicitPathGainCapture)
@@ -894,34 +952,53 @@ classdef ChannelFactory
                 end
             end
             replay.RuntimeChannelPathGainCaptureRequested = logical(capturePathGains);
+            % Advance the authoritative channel object by exactly the real
+            % waveform samples.  Alignment needs a bounded causal tail after
+            % the grant, but feeding those zeros into the canonical object
+            % corrupts the fading clock and inserts an artificial idle gap
+            % before the next slot.  Clone the post-grant object and execute
+            % the zero lookahead only on that disposable branch.
             if elementExpansion
-                [yRaw, pathGains, sampleTimes] = ...
+                [yHead, pathGains, sampleTimes] = ...
                     sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
-                    state, xIn, capturePathGains);
-                if capturePathGains
-                    state.RuntimeDiagnosticPathGainCaptureCompleted = true;
-                end
+                    state, xChannel, capturePathGains);
             elseif capturePathGains
                 try
-                    [yRaw, pathGains, sampleTimes] = state.Obj(xIn);
+                    [yHead, pathGains, sampleTimes] = state.Obj(xChannel);
                 catch
                     try
-                        [yRaw, pathGains] = state.Obj(xIn);
+                        [yHead, pathGains] = state.Obj(xChannel);
                         sampleTimes = [];
                     catch
-                        yRaw = state.Obj(xIn);
+                        yHead = state.Obj(xChannel);
                         pathGains = [];
                         sampleTimes = [];
                     end
                 end
+            else
+                yHead = state.Obj(xChannel);
+                pathGains = [];
+                sampleTimes = [];
+            end
+            if capturePathGains
                 % Request the potentially large Ns-by-Npath-by-Nt-by-Nr
                 % tensor once per persistent link/drop. Evidence collection
                 % must not add this allocation to every subsequent grant.
                 state.RuntimeDiagnosticPathGainCaptureCompleted = true;
-            else
-                yRaw = state.Obj(xIn);
-                pathGains = [];
-                sampleTimes = [];
+            end
+            yRaw = yHead;
+            if padSamples > 0
+                tailState = sixgr.channel.ChannelFactory.forkRuntimeChannelState(state);
+                tailInput = zeros(padSamples, size(xChannel, 2), 'like', xChannel);
+                if elementExpansion
+                    [yTail, ~, ~] = ...
+                        sixgr.channel.ChannelFactory.localApplyElementExpandedChannel( ...
+                        tailState, tailInput, false);
+                else
+                    yTail = tailState.Obj(tailInput);
+                end
+                yRaw = [yHead; yTail];
+                replay.RuntimeChannelAlignmentLookaheadExecutedOnFork = true;
             end
             if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
                 y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
@@ -954,6 +1031,16 @@ classdef ChannelFactory
                 replay.RuntimeChannelPathGainSampleTimes_s = previewTimes;
                 replay.RuntimeChannelPathDelays_s = ...
                     sixgr.channel.ChannelFactory.localRuntimePathDelays(state.Obj);
+                angleEvidence = sixgr.channel.ChannelFactory.localRuntimeAngleEvidence( ...
+                    state.Obj, size(pathGains, 2));
+                replay.RuntimeChannelAngleEvidenceAvailable = angleEvidence.Available;
+                replay.RuntimeChannelAnglesAoD_deg = angleEvidence.AnglesAoD_deg;
+                replay.RuntimeChannelAnglesAoA_deg = angleEvidence.AnglesAoA_deg;
+                replay.RuntimeChannelAnglesZoD_deg = angleEvidence.AnglesZoD_deg;
+                replay.RuntimeChannelAnglesZoA_deg = angleEvidence.AnglesZoA_deg;
+                replay.RuntimeChannelAngleCoordinateFrame = ...
+                    angleEvidence.CoordinateFrame;
+                replay.RuntimeChannelAngleEvidenceSource = angleEvidence.Source;
                 replay.RuntimeChannelPathGainPreviewElementCount = double(numel(preview));
                 replay.RuntimeChannelPathGainPreviewTruncated = logical(wasTruncated);
             end
@@ -966,7 +1053,18 @@ classdef ChannelFactory
                 state.CurrentTime_s = double(state.CurrentSampleIndex) / fs;
             end
             state.TotalAppliedSamples = double(sixgr.util.structGet(state, "TotalAppliedSamples", 0)) + size(x, 1);
-            state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + size(xIn, 1);
+            state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + size(xChannel, 1);
+            expectedObjectSamples = double(sixgr.util.structGet(state, "WarmupSamples", 0)) + ...
+                double(state.CurrentSampleIndex);
+            replay.RuntimeChannelObjectClockExact = ...
+                double(state.TotalObjectInputSamples) == expectedObjectSamples;
+            if ~replay.RuntimeChannelObjectClockExact
+                error("ChannelFactory:RuntimeChannelObjectClockMismatch", ...
+                    ['Runtime channel canonical object consumed %d samples, but its ' ...
+                     'warmup plus logical clock requires %d samples.'], ...
+                    round(double(state.TotalObjectInputSamples)), ...
+                    round(double(expectedObjectSamples)));
+            end
             replay.RuntimeChannelEndSample = double(state.CurrentSampleIndex);
             replay.ChannelRealizationId = ...
                 sixgr.channel.ChannelFactory.runtimeChannelRealizationId(state, replay);
@@ -1046,24 +1144,33 @@ classdef ChannelFactory
             % consumer.  A channel must not select one alias and silently
             % ignore a contradictory value held by another subsystem.
             duplexMode = lower(sixgr.phy.frame.resolveDuplexMode(cfg));
-            orientation = sixgr.channel.ChannelFactory.localFirstConfigToken(cfg, ...
-                ["lls6g.reference_signals.operation_orientation", ...
-                 "referenceSignals.operationOrientation", ...
-                 "reference_signals.operation_orientation", ...
-                 "phy.csi.operationOrientation"]);
-            reciprocityMode = sixgr.channel.ChannelFactory.localFirstConfigToken(cfg, ...
-                ["lls6g.mimo.reciprocity_mode","mimo.reciprocity_mode", ...
-                 "antenna_and_array.reciprocity_assumption"]);
             model = upper(strtrim(string(sixgr.util.structGet(cfg, ...
                 "channel.model", "AWGN"))));
             doppler = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
                 sixgr.util.structGet(cfg, "channel.dopplerHz", ...
                 sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", NaN))));
-            tddRequested = duplexMode == "tdd" || reciprocityMode == "tdd" || ...
-                contains(reciprocityMode,"tdd_reciprocity") || contains(orientation,"tdd");
-            tf = logical(tddRequested && (startsWith(model,"TDL") || startsWith(model,"CDL") ...
-                || any(model == ["NRTDL","NRCDL"])) && isscalar(doppler) && ...
-                isfinite(doppler) && abs(doppler) <= eps);
+            % Duplex mode is the governing authority.  A stale TDD token
+            % must never make an FDD channel share state or seeds.
+            tddRequested = duplexMode == "tdd";
+            validDoppler = ~isempty(doppler) && all(isfinite(doppler(:))) && ...
+                all(doppler(:) >= 0);
+            % Physical propagation reciprocity follows the resolved duplex
+            % carrier, not a CSI-use policy.  A scenario may disable SRS-
+            % based CSI transfer or calibration assumptions, but that must
+            % not create two unrelated over-the-air fading realizations on
+            % one TDD carrier. RF-chain non-reciprocity is applied by the
+            % explicit Tx/Rx impairment stages outside this channel object.
+            tf = logical(tddRequested && ...
+                (startsWith(model,"TDL") || startsWith(model,"CDL") || ...
+                any(model == ["NRTDL","NRCDL"])) && validDoppler);
+        end
+
+        function tf = supportsDynamicRuntimeTDDReciprocity(cfg)
+            doppler = double(sixgr.util.structGet(cfg, "channel.doppler_Hz", ...
+                sixgr.util.structGet(cfg, "channel.dopplerHz", ...
+                sixgr.util.structGet(cfg, "channel.fading.maxDoppler_Hz", NaN))));
+            tf = sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg) && ...
+                any(abs(doppler(:)) > eps);
         end
     end
 
@@ -1223,6 +1330,48 @@ classdef ChannelFactory
             delays = reshape(delays, 1, []);
         end
 
+        function evidence = localRuntimeAngleEvidence(channelObject, expectedPathCount)
+            evidence = struct( ...
+                "Available", false, ...
+                "AnglesAoD_deg", [], ...
+                "AnglesAoA_deg", [], ...
+                "AnglesZoD_deg", [], ...
+                "AnglesZoA_deg", [], ...
+                "CoordinateFrame", "", ...
+                "Source", "");
+            if nargin < 2 || ~(isscalar(expectedPathCount) && ...
+                    isfinite(expectedPathCount) && expectedPathCount >= 1)
+                expectedPathCount = NaN;
+            end
+            try
+                channelInfo = info(channelObject);
+            catch
+                return;
+            end
+            names = ["AnglesAoD","AnglesAoA","AnglesZoD","AnglesZoA"];
+            values = cell(1, numel(names));
+            for i = 1:numel(names)
+                raw = double(sixgr.util.structGet(channelInfo, names(i), []));
+                raw = reshape(raw, 1, []);
+                if isempty(raw) || any(~isfinite(raw))
+                    return;
+                end
+                values{i} = raw;
+            end
+            lengths = cellfun(@numel, values);
+            if any(lengths ~= lengths(1)) || ...
+                    (isfinite(expectedPathCount) && lengths(1) ~= round(expectedPathCount))
+                return;
+            end
+            evidence.Available = true;
+            evidence.AnglesAoD_deg = values{1};
+            evidence.AnglesAoA_deg = values{2};
+            evidence.AnglesZoD_deg = values{3};
+            evidence.AnglesZoA_deg = values{4};
+            evidence.CoordinateFrame = "3gpp_tr38901_global_coordinate_system";
+            evidence.Source = "info_on_same_executed_runtime_channel_object";
+        end
+
         function key = localRuntimeSeedKey(cfg, linkKey)
             key = char(string(linkKey));
             if ~sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg)
@@ -1253,6 +1402,177 @@ classdef ChannelFactory
                     token = value(1);
                     return;
                 end
+            end
+        end
+
+        function state = localRetargetDynamicTDDChannelState(state, cfg, waveform, opt)
+            if ~sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg) || ...
+                    ~logical(sixgr.util.structGet(state, ...
+                    "Meta.RuntimeTDDReciprocityExact", false))
+                return;
+            end
+            if ~(isfield(state, "Obj") && ~isempty(state.Obj) && ...
+                    ismethod(state.Obj, "swapTransmitAndReceive"))
+                error("ChannelFactory:DynamicTDDReciprocitySwapUnavailable", ...
+                    ['Dynamic TDD reciprocity requires a channel object with ' ...
+                     'swapTransmitAndReceive support; runtime object is %s.'], ...
+                    class(sixgr.util.structGet(state, "Obj", [])));
+            end
+            desiredDirection = upper(strtrim(string(sixgr.util.structGet( ...
+                state, "Direction", "DL"))));
+            if desiredDirection ~= "UL"
+                desiredDirection = "DL";
+            end
+            currentDirection = upper(strtrim(string(sixgr.util.structGet( ...
+                state, "Meta.RuntimeTDDReciprocityDirection", ""))));
+            if ~any(currentDirection == ["DL","UL"])
+                error("ChannelFactory:DynamicTDDReciprocityDirectionUnavailable", ...
+                    "Materialized dynamic reciprocal channel has no current direction authority.");
+            end
+            if desiredDirection ~= currentDirection
+                swapTransmitAndReceive(state.Obj);
+                state.Meta = sixgr.channel.ChannelFactory.localSwapDirectionalChannelMeta( ...
+                    state.Meta);
+            end
+
+            requestedTx = double(opt.NumTxAnt);
+            if ~(isscalar(requestedTx) && isfinite(requestedTx) && requestedTx >= 1)
+                requestedTx = max(1, size(waveform, 2));
+            end
+            requestedRx = double(opt.NumRxAnt);
+            if ~(isscalar(requestedRx) && isfinite(requestedRx) && requestedRx >= 1)
+                requestedRx = double(sixgr.util.structGet(state, "NumRxAnt", requestedTx));
+            end
+            state.NumTxAnt = max(1, round(requestedTx));
+            state.NumRxAnt = max(1, round(requestedRx));
+            state.Meta.NumTxAnt = double(state.NumTxAnt);
+            state.Meta.NumRxAnt = double(state.NumRxAnt);
+            state.Meta.RuntimeTDDReciprocityDirection = char(desiredDirection);
+            state.Meta.LinkDirection = lower(char(desiredDirection));
+            state.Meta.RuntimeTDDChannelObjectSwapped = ...
+                logical(sixgr.channel.ChannelFactory.localObjectLogicalProperty( ...
+                state.Obj, "TransmitAndReceiveSwapped", desiredDirection == "UL"));
+            [state.ChannelPadSamples, state.ChannelTrimSamples] = ...
+                sixgr.channel.ChannelFactory.resolveChannelDelaySamples( ...
+                state.Obj, double(state.SampleRate_Hz));
+        end
+
+        function ch = localCreateDynamicTDDReciprocalChannel(cfg,state,fs,numTx,numRx,opt)
+            direction = upper(strtrim(string(sixgr.util.structGet(state,"Direction","DL"))));
+            if direction ~= "UL"
+                direction = "DL";
+            end
+            if direction == "DL"
+                canonicalTx = numTx;
+                canonicalRx = numRx;
+                txRuntime = opt.TransmitAntennaRuntime;
+                rxRuntime = opt.ReceiveAntennaRuntime;
+                txMeta = opt.TransmitAntennaMeta;
+                rxMeta = opt.ReceiveAntennaMeta;
+            else
+                canonicalTx = numRx;
+                canonicalRx = numTx;
+                txRuntime = opt.ReceiveAntennaRuntime;
+                rxRuntime = opt.TransmitAntennaRuntime;
+                txMeta = opt.ReceiveAntennaMeta;
+                rxMeta = opt.TransmitAntennaMeta;
+            end
+            ch = sixgr.channel.ChannelFactory.create(cfg, ...
+                "Model", cfg.channel.model, "SampleRate", fs, ...
+                "NumTxAnt", canonicalTx, "NumRxAnt", canonicalRx, ...
+                "Seed", double(state.Seed), "LinkDirection", "DL", ...
+                "TransmitAntennaRuntime", txRuntime, ...
+                "ReceiveAntennaRuntime", rxRuntime, ...
+                "TransmitAntennaMeta", txMeta, ...
+                "ReceiveAntennaMeta", rxMeta);
+            if ~(isfield(ch, "Object") && ~isempty(ch.Object) && ...
+                    ismethod(ch.Object, "swapTransmitAndReceive"))
+                error("ChannelFactory:DynamicTDDReciprocitySwapUnavailable", ...
+                    ['Exact moving TDD reciprocity requires the selected %s backend ' ...
+                     'to implement swapTransmitAndReceive.'], ...
+                    class(sixgr.util.structGet(ch, "Object", [])));
+            end
+            if sixgr.channel.ChannelFactory.localObjectLogicalProperty( ...
+                    ch.Object, "NormalizeChannelOutputs", true)
+                error("ChannelFactory:DynamicTDDOutputNormalizationForbidden", ...
+                    ['Exact moving TDD reciprocity requires ' ...
+                     'channels.normalize_channel_outputs=false. Toolbox output ' ...
+                     'normalization scales by the receive-array size and therefore ' ...
+                     'breaks reciprocal amplitude for unequal endpoint arrays.']);
+            end
+            if direction == "UL"
+                swapTransmitAndReceive(ch.Object);
+                ch.Meta = sixgr.channel.ChannelFactory.localSwapDirectionalChannelMeta( ...
+                    ch.Meta);
+            end
+            ch.Type = char(string(ch.Type) + "_DynamicTDDReciprocal");
+            ch.Meta.NumTxAnt = double(numTx);
+            ch.Meta.NumRxAnt = double(numRx);
+            ch.Meta.LinkDirection = lower(char(direction));
+            ch.Meta.RuntimeTDDReciprocityExact = true;
+            ch.Meta.RuntimeTDDReciprocityDirection = char(direction);
+            ch.Meta.RuntimeTDDReciprocitySource = ...
+                "matlab_nr_channel_swapTransmitAndReceive_shared_fading_timeline";
+            ch.Meta.RuntimeTDDReciprocityApproximationMode = "none_dynamic_exact";
+            ch.Meta.RuntimeTDDCanonicalSeed = double(state.Seed);
+            ch.Meta.RuntimeTDDStateKey = string(sixgr.util.structGet( ...
+                state, "StateKey", ""));
+            ch.Meta.RuntimeTDDChannelObjectSwapped = ...
+                logical(sixgr.channel.ChannelFactory.localObjectLogicalProperty( ...
+                ch.Object, "TransmitAndReceiveSwapped", direction == "UL"));
+        end
+
+        function meta = localSwapDirectionalChannelMeta(meta)
+            if ~(isstruct(meta) && isscalar(meta))
+                meta = struct();
+                return;
+            end
+            pairs = [ ...
+                "NumTxAnt", "NumRxAnt"; ...
+                "TransmitAntennaNumElements", "ReceiveAntennaNumElements"; ...
+                "TransmitAntennaNumPorts", "ReceiveAntennaNumPorts"; ...
+                "TransmitAntennaNumWaveformColumns", "ReceiveAntennaNumWaveformColumns"; ...
+                "TransmitAntennaWaveformDomain", "ReceiveAntennaWaveformDomain"; ...
+                "TransmitAntennaNumRFChains", "ReceiveAntennaNumRFChains"; ...
+                "TransmitAntennaPortCountSource", "ReceiveAntennaPortCountSource"; ...
+                "TransmitElementPatternApplied", "ReceiveElementPatternApplied"; ...
+                "TransmitElementPatternSource", "ReceiveElementPatternSource"; ...
+                "TransmitArrayOrientation_deg", "ReceiveArrayOrientation_deg"; ...
+                "TransmitAntennaArraySize", "ReceiveAntennaArraySize"; ...
+                "TransmitAntennaElementSpacing_lambda", "ReceiveAntennaElementSpacing_lambda"; ...
+                "TransmitAntennaElementClass", "ReceiveAntennaElementClass"; ...
+                "TDLTransmitCorrelationMatrixSource", "TDLReceiveCorrelationMatrixSource"; ...
+                "TDLTransmitCorrelationMatrixSize", "TDLReceiveCorrelationMatrixSize" ...
+                ];
+            for i = 1:size(pairs, 1)
+                left = char(pairs(i, 1));
+                right = char(pairs(i, 2));
+                hasLeft = isfield(meta, left);
+                hasRight = isfield(meta, right);
+                if ~(hasLeft || hasRight)
+                    continue;
+                end
+                leftValue = [];
+                rightValue = [];
+                if hasLeft
+                    leftValue = meta.(left);
+                end
+                if hasRight
+                    rightValue = meta.(right);
+                end
+                meta.(left) = rightValue;
+                meta.(right) = leftValue;
+            end
+        end
+
+        function value = localObjectLogicalProperty(obj, propertyName, fallback)
+            value = logical(fallback);
+            try
+                if isprop(obj, char(propertyName))
+                    value = logical(obj.(char(propertyName)));
+                end
+            catch
+                value = logical(fallback);
             end
         end
 
@@ -1686,9 +2006,17 @@ classdef ChannelFactory
             if isprop(tdl, "NormalizePathGains")
                 tdl.NormalizePathGains = normalizePathGains;
             end
+            [normalizeOutputs, outputNormalizationMode, outputNormalizationSource] = ...
+                sixgr.channel.ChannelFactory.localResolveNormalizeChannelOutputs(cfg, "TDL");
+            if isprop(tdl, "NormalizeChannelOutputs")
+                tdl.NormalizeChannelOutputs = normalizeOutputs;
+            end
             arrayRuntimeMeta.NormalizePathGains = normalizePathGains;
             arrayRuntimeMeta.ChannelNormalizationMode = normalizationMode;
             arrayRuntimeMeta.ChannelNormalizationSource = normalizationSource;
+            arrayRuntimeMeta.NormalizeChannelOutputs = normalizeOutputs;
+            arrayRuntimeMeta.ChannelOutputNormalizationMode = outputNormalizationMode;
+            arrayRuntimeMeta.ChannelOutputNormalizationSource = outputNormalizationSource;
 
             if ~isempty(opt.SampleRate)
                 tdl.SampleRate = opt.SampleRate;
@@ -1726,7 +2054,10 @@ classdef ChannelFactory
                 "GeometryCorrelationDistance_lambda", NaN, ...
                 "NormalizePathGains", false, ...
                 "ChannelNormalizationMode", "", ...
-                "ChannelNormalizationSource", "");
+                "ChannelNormalizationSource", "", ...
+                "NormalizeChannelOutputs", false, ...
+                "ChannelOutputNormalizationMode", "", ...
+                "ChannelOutputNormalizationSource", "");
         end
 
         function [tdl, meta] = localConfigureTDLGeometryAdapter(tdl, cfg, opt, meta)
@@ -1970,9 +2301,17 @@ classdef ChannelFactory
             if isprop(cdl, "NormalizePathGains")
                 cdl.NormalizePathGains = normalizePathGains;
             end
+            [normalizeOutputs, outputNormalizationMode, outputNormalizationSource] = ...
+                sixgr.channel.ChannelFactory.localResolveNormalizeChannelOutputs(cfg, "CDL");
+            if isprop(cdl, "NormalizeChannelOutputs")
+                cdl.NormalizeChannelOutputs = normalizeOutputs;
+            end
             arrayRuntimeMeta.NormalizePathGains = normalizePathGains;
             arrayRuntimeMeta.ChannelNormalizationMode = normalizationMode;
             arrayRuntimeMeta.ChannelNormalizationSource = normalizationSource;
+            arrayRuntimeMeta.NormalizeChannelOutputs = normalizeOutputs;
+            arrayRuntimeMeta.ChannelOutputNormalizationMode = outputNormalizationMode;
+            arrayRuntimeMeta.ChannelOutputNormalizationSource = outputNormalizationSource;
             [cdl.TransmitAntennaArray, txRuntimeCoupled, txArrayAdapterMeta] = sixgr.channel.ChannelFactory.localConfigureCDLAntennaArray( ...
                 cdl.TransmitAntennaArray, opt.NumTxAnt, ...
                 sixgr.util.structGet(cfg, "antenna_and_array.bs_array_geometry", "ura"), ...
@@ -2484,6 +2823,48 @@ classdef ChannelFactory
                     source = "default_for_" + noiseMode;
                 end
             end
+        end
+
+        function [normalizeOutputs, mode, source] = localResolveNormalizeChannelOutputs(cfg, family)
+            familyToken = lower(strtrim(char(string(family))));
+            explicitPaths = { ...
+                "channel.normalizeChannelOutputs", ...
+                "channel.NormalizeChannelOutputs", ...
+                "channel.normalize_channel_outputs", ...
+                "channel.fading.normalizeChannelOutputs", ...
+                "channel.fading.normalize_channel_outputs", ...
+                sprintf("channel.%s.normalizeChannelOutputs", familyToken), ...
+                sprintf("channel.%s.normalize_channel_outputs", familyToken) ...
+                };
+            for i = 1:numel(explicitPaths)
+                path = char(explicitPaths{i});
+                raw = sixgr.util.structGet(cfg, path, []);
+                if isempty(raw)
+                    continue;
+                end
+                [normalizeOutputs, ok] = sixgr.channel.ChannelFactory.localParseLogical(raw);
+                if ~ok
+                    error("ChannelFactory:BadNormalizeChannelOutputs", ...
+                        "%s must be a boolean-like value; got '%s'.", path, char(string(raw)));
+                end
+                if normalizeOutputs
+                    mode = "receive_antenna_count_normalized_config_explicit";
+                else
+                    mode = "physical_per_connector_power_config_explicit";
+                end
+                source = string(path);
+                return;
+            end
+
+            % Per-connector voltage and power must remain unchanged by a
+            % reporting convenience normalization.  This is also required
+            % for exact TDD reciprocity when the two endpoints have unequal
+            % array sizes.  Scenarios may explicitly request normalized
+            % outputs, but such a setting is rejected by the exact dynamic
+            % TDD reciprocal adapter below.
+            normalizeOutputs = false;
+            mode = "physical_per_connector_power_default";
+            source = "ChannelFactory_physical_channel_default";
         end
 
         function [tf, ok] = localParseLogical(value)

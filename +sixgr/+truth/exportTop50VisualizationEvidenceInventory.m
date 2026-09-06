@@ -45,7 +45,15 @@ for i = 1:n
         inventory.AuditNotes(i) = "The owning feature is explicitly disabled; no output was manufactured.";
     else
         inventory.AvailabilityStatus(i) = "missing_runtime_capture";
-        inventory.AuditNotes(i) = "No non-empty same-run runtime source satisfied this evidence requirement.";
+        if inventory.VisualID(i) == 22
+            inventory.AuditNotes(i) = ...
+                "No measured Doppler spectrum is available. This panel requires " + ...
+                "a same-run executed path-gain time series with sufficient temporal " + ...
+                "samples and observation aperture; a configured/scalar mobility " + ...
+                "Doppler value is not accepted as a spectrum.";
+        else
+            inventory.AuditNotes(i) = "No non-empty same-run runtime source satisfied this evidence requirement.";
+        end
     end
 end
 
@@ -148,9 +156,9 @@ candidate(18) = "rf/csv/aclr_vs_pa_backoff.csv";
 candidate(19) = "channel/csv/channel_power_delay_profile.csv|reports/csv/channel_impulse_response.csv";
 candidate(20) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=time_varying_channel_impulse_response|channel/csv/time_varying_channel_impulse_response.csv";
 candidate(21) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=channel_estimate_grid";
-candidate(22) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=doppler_spectrum|channel/csv/doppler_spectrum.csv|reports/csv/doppler_time_variation_plot.csv";
+candidate(22) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=doppler_spectrum|channel/csv/doppler_spectrum.csv";
 candidate(23) = "isac/csv/delay_doppler_map.csv";
-candidate(24) = "channel/csv/angular_power_spectrum.csv|reports/csv/channel_impulse_response.csv";
+candidate(24) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=runtime_channel_angles|channel/csv/angular_power_spectrum.csv|reports/csv/channel_impulse_response.csv";
 candidate(25) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=channel_estimate_grid";
 candidate(26) = "control/csv/csi_rs_trials.csv|mimo/csv/channel_singular_values.csv";
 candidate(27) = "reports/csv/phy_signal_diagnostic_source.csv#Panel=spatial_correlation_matrix|mimo/csv/spatial_correlation_matrix.csv";
@@ -195,7 +203,7 @@ required(19) = "Direction|TapIndex|TapDelay_s|TapPower_dB|NormalizedTapPower|Del
 required(20) = identity + "|TimeIndex|Time_s|PathIndex|PathDelay_s|RxPortIndex0Based|TxPortIndex0Based|IValue|QValue|GridSHA256";
 required([21,25,35]) = identity + "|SubcarrierIndex|OFDMSymbolIndex|ResourceBlockIndex|SubcarrierInResourceBlock|RxPortIndex0Based|TxPortIndex0Based|IValue|QValue|WrappedPhase_rad|UnwrappedPhaseFrequency_rad|UnwrappedPhaseTime_rad|GridSHA256";
 required(22) = identity + "|PathIndex|DopplerFrequency_Hz|PowerLinear|Power_dB|GridSHA256";
-required(24) = "Direction|PathPower_dB|AzimuthDeparture_deg|AzimuthArrival_deg|ZenithDeparture_deg|ZenithArrival_deg|AngleCoordinateFrame|AngleStatus";
+required(24) = identity + "|PathIndex|PathDelay_s|AzimuthDeparture_deg|AzimuthArrival_deg|ZenithDeparture_deg|ZenithArrival_deg|PowerLinear|Power_dB|AngleCoordinateFrame|AngleEvidenceSource|RuntimeChannelStateKey|RuntimeChannelLinkKey|RuntimeChannelSeed|RuntimeChannelReciprocityExact|RuntimeChannelReciprocityDirection|RuntimeChannelReciprocitySource|RuntimeChannelReciprocityApproximationMode|GridSHA256";
 required(26) = "Frame|Slot|CellID|UEIndex|NumPorts|HestRxPorts|HestTxPorts|ConditionNumber_dB|RankEstimate|SingularValues|SpatialChannelEstimateConvention|PhysicalMeasurementStatus";
 required(27) = identity + "|CorrelationDomain|MatrixRowIndex0Based|MatrixColumnIndex0Based|IValue|QValue|MagnitudeLinear|GridSHA256";
 required(28) = "Direction|Frame|Slot|UEIndex|SelectedBeamIndex|BestBeamIndex|BeamCandidateCount|SelectedBeamGain_dB|BestBeamGain_dB|BeamGainGap_dB|BeamSweepEnabled|BeamCountConfigured";

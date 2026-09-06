@@ -332,6 +332,22 @@ LINK_REQUIRED_COLUMNS = (
     "MeasuredTrialSINRSource",
     "EVM_rms",
     "EVMProxySINR_dB",
+    "RuntimeChannelStateKey",
+    "RuntimeChannelLinkKey",
+    "RuntimeChannelSeed",
+    "RuntimeChannelReciprocityExact",
+    "RuntimeChannelReciprocityDirection",
+    "RuntimeChannelReciprocitySource",
+    "RuntimeChannelReciprocityApproximationMode",
+    "RuntimeChannelTransmitAndReceiveSwapped",
+    "RuntimeChannelAngleEvidenceAvailable",
+    "RuntimeChannelAngleEvidenceSource",
+    "RuntimeChannelAnglePathCount",
+    "RuntimeChannelCanonicalInputSamples",
+    "RuntimeChannelAlignmentLookaheadSamples",
+    "RuntimeChannelAlignmentLookaheadExecutedOnFork",
+    "RuntimeChannelObjectClockExact",
+    "RuntimeChannelPathGainsSHA256",
     "StrictReceiverEvidenceOk",
     "StrictOk",
     "TruthStatus",
@@ -4869,6 +4885,23 @@ def _audit_domain_runtime_tables(
         truth_failures: list[str] = []
         expected_scenario = _text(scenario_summary, "ScenarioID")
         expected_hash = _text(scenario_summary, "ConfigHash")
+        snapshot_time_limit_s: float | None = None
+        if relative == "channel/csv/channel_snapshots.csv":
+            overview_header, overview_rows = _read_rows(
+                run_root / "reports/csv/live_scenario_overview.csv"
+            )
+            if overview_header and overview_rows:
+                total_slots = _number(overview_rows[0], "total_slots")
+                scs_khz = _number(overview_rows[0], "scs_khz")
+                if (
+                    total_slots is not None
+                    and total_slots > 0
+                    and scs_khz is not None
+                    and scs_khz > 0
+                ):
+                    # NR slot duration is 1 ms / 2^mu and SCS=15*2^mu kHz.
+                    slot_duration_s = 1e-3 * 15.0 / scs_khz
+                    snapshot_time_limit_s = (total_slots + 1.0) * slot_duration_s
         for index, row in enumerate(rows, start=1):
             prefix = f"row={index}"
             if "ScenarioID" in header:
@@ -4920,6 +4953,20 @@ def _audit_domain_runtime_tables(
                     value_failures.append(prefix + ":correlation_abs_missing")
                 if _text(row, "truth_status").lower() != "real_lls_evidence":
                     truth_failures.append(prefix + ":truth_status_not_real_lls_evidence")
+            if relative == "channel/csv/channel_snapshots.csv":
+                sample_time_s = _number(row, "SampleTimeSec")
+                sample_rate_hz = _number(row, "SampleRateHz")
+                sample_rate_source = _text(row, "SampleRateSource")
+                if sample_time_s is None or not math.isfinite(sample_time_s) or sample_time_s < 0:
+                    value_failures.append(prefix + ":SampleTimeSec_missing_nonfinite_or_negative")
+                elif snapshot_time_limit_s is not None and sample_time_s > snapshot_time_limit_s + 1e-12:
+                    value_failures.append(
+                        prefix + f":SampleTimeSec_outside_run_duration:{sample_time_s}>{snapshot_time_limit_s}"
+                    )
+                if sample_rate_hz is None or not math.isfinite(sample_rate_hz) or sample_rate_hz <= 0:
+                    value_failures.append(prefix + ":SampleRateHz_missing_or_nonpositive")
+                if not sample_rate_source:
+                    value_failures.append(prefix + ":SampleRateSource_missing")
 
             for column in header:
                 normalized = _normalized_column(column)
@@ -4973,6 +5020,223 @@ def _audit_domain_runtime_tables(
                     application_identity_failures,
                 )
             )
+    return checks
+
+
+def _audit_dynamic_tdd_runtime_channel_reciprocity(
+    run_root: Path,
+    link_rows: dict[str, list[dict[str, str]]],
+) -> list[AuditCheck]:
+    """Require one exact moving-TDD fading state and executed-path angles.
+
+    A TDD CDL/TDL link at nonzero Doppler must not instantiate unrelated DL
+    and UL fading processes. The persisted primary rows prove state/seed
+    sharing and direction reversal; when the scenario requests the PHY signal
+    diagnostic, angle rows must bind to the same executed path-gain tensor.
+    """
+
+    relative = "reports/csv/phy_signal_diagnostic_source.csv"
+    resolved = _load_resolved_config(run_root)
+    frequency = resolved.get("frequency", {}) if isinstance(resolved, dict) else {}
+    frame = resolved.get("frame", {}) if isinstance(resolved, dict) else {}
+    channels = resolved.get("channels", {}) if isinstance(resolved, dict) else {}
+    channel_model = resolved.get("channel_model", {}) if isinstance(resolved, dict) else {}
+    output = resolved.get("output", {}) if isinstance(resolved, dict) else {}
+    duplex = str(
+        frequency.get("duplex_mode", frame.get("duplex", ""))
+        if isinstance(frequency, dict) and isinstance(frame, dict)
+        else ""
+    ).strip().upper()
+    model = str(
+        channels.get("model_type", channel_model.get("model_type", ""))
+        if isinstance(channels, dict) and isinstance(channel_model, dict)
+        else ""
+    ).strip().upper()
+    profile = str(
+        channels.get("profile", channel_model.get("profile", ""))
+        if isinstance(channels, dict) and isinstance(channel_model, dict)
+        else ""
+    ).strip().upper()
+    doppler_raw = None
+    if isinstance(channels, dict):
+        doppler_raw = channels.get("max_doppler_hz", channels.get("doppler_hz"))
+    if doppler_raw is None and isinstance(channel_model, dict):
+        doppler_raw = channel_model.get("max_doppler_hz", channel_model.get("doppler_hz"))
+    try:
+        doppler_hz = float(doppler_raw)
+    except (TypeError, ValueError):
+        doppler_hz = math.nan
+    fading = model in {"CDL", "TDL"} or profile.startswith(("CDL-", "TDL-"))
+    required = duplex == "TDD" and fading and math.isfinite(doppler_hz) and doppler_hz > 0
+    if not required:
+        return []
+
+    rows = [row for direction in ("DL", "UL") for row in link_rows.get(direction, [])]
+    provenance_failures: list[str] = []
+    state_keys: set[str] = set()
+    seeds: set[int] = set()
+    trial_hashes: set[str] = set()
+    for direction in ("DL", "UL"):
+        for index, row in enumerate(link_rows.get(direction, []), start=1):
+            prefix = f"{direction}:row={index}"
+            state_key = _text(row, "RuntimeChannelStateKey")
+            link_key = _text(row, "RuntimeChannelLinkKey")
+            seed = _number(row, "RuntimeChannelSeed")
+            path_hash = _text(row, "RuntimeChannelPathGainsSHA256")
+            if not state_key:
+                provenance_failures.append(prefix + ":state_key_missing")
+            else:
+                state_keys.add(state_key)
+            if not link_key or direction.lower() not in link_key.lower():
+                provenance_failures.append(prefix + ":directional_link_key_missing_or_mismatched")
+            if not _whole(seed, minimum=1):
+                provenance_failures.append(prefix + ":seed_missing_or_invalid")
+            else:
+                seeds.add(int(seed))
+            if _boolean(row, "RuntimeChannelReciprocityExact") is not True:
+                provenance_failures.append(prefix + ":exact_reciprocity_not_true")
+            if _text(row, "RuntimeChannelReciprocityDirection").upper() != direction:
+                provenance_failures.append(prefix + ":reciprocity_direction_mismatch")
+            if _text(row, "RuntimeChannelReciprocitySource") != (
+                "matlab_nr_channel_swapTransmitAndReceive_shared_fading_timeline"
+            ):
+                provenance_failures.append(prefix + ":reciprocity_source_not_exact_runtime_swap")
+            if _text(row, "RuntimeChannelReciprocityApproximationMode") != "none_dynamic_exact":
+                provenance_failures.append(prefix + ":reciprocity_approximation_mode_not_none_dynamic_exact")
+            canonical_samples = _number(row, "RuntimeChannelCanonicalInputSamples")
+            start_sample = _number(row, "RuntimeChannelStartSample")
+            end_sample = _number(row, "RuntimeChannelEndSample")
+            if canonical_samples is None or canonical_samples <= 0:
+                provenance_failures.append(prefix + ":canonical_input_sample_count_missing_or_nonpositive")
+            elif not _close(end_sample, (start_sample or 0) + canonical_samples, atol=0):
+                provenance_failures.append(prefix + ":logical_channel_clock_interval_mismatch")
+            if _boolean(row, "RuntimeChannelObjectClockExact") is not True:
+                provenance_failures.append(prefix + ":canonical_object_clock_not_exact")
+            expected_swapped = direction == "UL"
+            if _boolean(row, "RuntimeChannelTransmitAndReceiveSwapped") is not expected_swapped:
+                provenance_failures.append(prefix + ":transmit_receive_swap_state_mismatch")
+            if not _is_sha256(path_hash):
+                provenance_failures.append(prefix + ":executed_path_gain_hash_missing_or_invalid")
+            else:
+                trial_hashes.add(path_hash.lower())
+    if len(state_keys) != 1:
+        provenance_failures.append(f"shared_state_key_count={len(state_keys)};expected=1")
+    if len(seeds) != 1:
+        provenance_failures.append(f"shared_seed_count={len(seeds)};expected=1")
+
+    checks = [_check(
+        "runtime_channel_reciprocity",
+        "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv",
+        "dynamic_TDD_shared_exact_fading_state",
+        rows,
+        provenance_failures,
+    )]
+
+    diagnostic_requested = bool(
+        isinstance(output, dict) and output.get("phy_signal_diagnostic_enabled", False)
+    )
+    if not diagnostic_requested:
+        return checks
+    header, all_diagnostic_rows = _read_rows(run_root / relative)
+    angle_rows = [
+        row for row in all_diagnostic_rows
+        if _text(row, "Panel") == "runtime_channel_angles"
+    ]
+    required_columns = {
+        "SnapshotID", "Direction", "CellID", "UEIndex", "RNTI", "SFN",
+        "Slot", "AbsoluteSlot", "PathIndex", "PathDelay_s",
+        "AzimuthDeparture_deg", "AzimuthArrival_deg", "ZenithDeparture_deg",
+        "ZenithArrival_deg", "PowerLinear", "Power_dB",
+        "AngleCoordinateFrame", "AngleEvidenceSource",
+        "RuntimeChannelStateKey", "RuntimeChannelLinkKey",
+        "RuntimeChannelSeed", "RuntimeChannelReciprocityExact",
+        "RuntimeChannelReciprocityDirection", "RuntimeChannelReciprocitySource",
+        "RuntimeChannelReciprocityApproximationMode",
+        "RuntimeChannelTransmitAndReceiveSwapped", "GridSHA256",
+    }
+    angle_failures = [
+        "missing_columns=" + ",".join(sorted(required_columns - set(header)))
+    ] if required_columns - set(header) else []
+    by_direction: dict[str, list[dict[str, str]]] = {"DL": [], "UL": []}
+    for index, row in enumerate(angle_rows, start=1):
+        prefix = f"row={index}"
+        direction = _text(row, "Direction").upper()
+        if direction not in by_direction:
+            angle_failures.append(prefix + ":invalid_direction")
+            continue
+        by_direction[direction].append(row)
+        path_index = _number(row, "PathIndex")
+        delay_s = _number(row, "PathDelay_s")
+        azd = _number(row, "AzimuthDeparture_deg")
+        aza = _number(row, "AzimuthArrival_deg")
+        zd = _number(row, "ZenithDeparture_deg")
+        za = _number(row, "ZenithArrival_deg")
+        power_linear = _number(row, "PowerLinear")
+        power_db = _number(row, "Power_dB")
+        if not _whole(path_index, minimum=1):
+            angle_failures.append(prefix + ":invalid_path_index")
+        if delay_s is None or delay_s < 0:
+            angle_failures.append(prefix + ":invalid_path_delay")
+        if azd is None or not -180 <= azd <= 180 or aza is None or not -180 <= aza <= 180:
+            angle_failures.append(prefix + ":azimuth_outside_3gpp_global_angle_range")
+        if zd is None or not 0 <= zd <= 180 or za is None or not 0 <= za <= 180:
+            angle_failures.append(prefix + ":zenith_outside_3gpp_global_angle_range")
+        if power_linear is None or power_linear <= 0 or power_db is None:
+            angle_failures.append(prefix + ":invalid_executed_path_power")
+        elif not _close(power_db, 10.0 * math.log10(power_linear), atol=1e-9, rtol=1e-9):
+            angle_failures.append(prefix + ":path_power_db_formula_mismatch")
+        if _text(row, "AngleCoordinateFrame") != "3gpp_tr38901_global_coordinate_system":
+            angle_failures.append(prefix + ":angle_coordinate_frame_mismatch")
+        if _text(row, "AngleEvidenceSource") != "info_on_same_executed_runtime_channel_object":
+            angle_failures.append(prefix + ":angle_source_not_same_executed_channel_object")
+        if _text(row, "RuntimeChannelStateKey") not in state_keys:
+            angle_failures.append(prefix + ":angle_state_key_not_primary_trial_state")
+        if _text(row, "RuntimeChannelReciprocityDirection").upper() != direction:
+            angle_failures.append(prefix + ":angle_reciprocity_direction_mismatch")
+        if _boolean(row, "RuntimeChannelReciprocityExact") is not True:
+            angle_failures.append(prefix + ":angle_exact_reciprocity_not_true")
+        if _text(row, "RuntimeChannelReciprocityApproximationMode") != "none_dynamic_exact":
+            angle_failures.append(prefix + ":angle_approximation_mode_not_none_dynamic_exact")
+        if _text(row, "GridSHA256").lower() not in trial_hashes:
+            angle_failures.append(prefix + ":angle_path_gain_hash_not_primary_trial_hash")
+    if not angle_rows:
+        angle_failures.append("runtime_channel_angles_rows_missing")
+    if rows and any(
+        not by_direction[direction]
+        for direction in ("DL", "UL")
+        if link_rows.get(direction)
+    ):
+        angle_failures.append("runtime_channel_angles_missing_active_direction")
+
+    if by_direction["DL"] and by_direction["UL"]:
+        dl_by_path = {int(_number(row, "PathIndex") or -1): row for row in by_direction["DL"]}
+        ul_by_path = {int(_number(row, "PathIndex") or -1): row for row in by_direction["UL"]}
+        if set(dl_by_path) != set(ul_by_path):
+            angle_failures.append("DL_UL_path_index_set_mismatch")
+        else:
+            for path_index in sorted(dl_by_path):
+                dl = dl_by_path[path_index]
+                ul = ul_by_path[path_index]
+                for lhs, rhs, label in (
+                    ("AzimuthDeparture_deg", "AzimuthArrival_deg", "AoD_to_AoA"),
+                    ("AzimuthArrival_deg", "AzimuthDeparture_deg", "AoA_to_AoD"),
+                    ("ZenithDeparture_deg", "ZenithArrival_deg", "ZoD_to_ZoA"),
+                    ("ZenithArrival_deg", "ZenithDeparture_deg", "ZoA_to_ZoD"),
+                ):
+                    if not _close(
+                        _number(dl, lhs), _number(ul, rhs), atol=1e-12, rtol=1e-12
+                    ):
+                        angle_failures.append(
+                            f"path={path_index}:{label}_reciprocal_swap_mismatch"
+                        )
+
+    checks.append(_check(
+        "runtime_channel_reciprocity",
+        relative,
+        "executed_path_AoA_AoD_reciprocity_and_power",
+        angle_rows,
+        angle_failures,
+    ))
     return checks
 
 
@@ -6059,7 +6323,24 @@ def _audit_chart_lineage(run_root: Path) -> list[AuditCheck]:
                     if modes.intersection({"line", "scatter", "relation", "vs", "cdf"}):
                         unique_x = {_number(point, "x_value") for point in point_rows}
                         unique_x.discard(None)
-                        if len(unique_x) < 2:
+                        shape_policies = {
+                            _text(point, "evidence_shape_policy").lower()
+                            for point in point_rows
+                        }
+                        sample_counts = [
+                            _number(point, "source_sample_count")
+                            for point in point_rows
+                        ]
+                        explicit_scalar_observation = (
+                            shape_policies.issubset({"operating_point", "measured_scalar"})
+                            and bool(shape_policies)
+                            and "" not in shape_policies
+                            and all(
+                                count is not None and count >= 1
+                                for count in sample_counts
+                            )
+                        )
+                        if len(unique_x) < 2 and not explicit_scalar_observation:
                             item_failures.append("insufficient_independent_x_values")
             else:
                 # Specialized chart datasets deliberately use domain columns
@@ -8071,6 +8352,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     checks.extend(_audit_metric_output_tables(run_root))
     checks.extend(_audit_metric_coverage_table(run_root))
     checks.extend(_audit_domain_runtime_tables(run_root, summary))
+    checks.extend(_audit_dynamic_tdd_runtime_channel_reciprocity(run_root, link_rows))
     checks.extend(_audit_prach_detection_trials(run_root))
     checks.extend(_audit_observed_re_allocation(run_root))
     checks.extend(_audit_final_tx_iq(run_root))

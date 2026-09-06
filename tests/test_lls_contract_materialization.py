@@ -1491,6 +1491,31 @@ def test_runtime_antenna_pattern_uses_actual_sampled_array_object() -> None:
     assert "selected_beam_taper=not_applied" in svg
 
 
+def test_cqi_mcs_single_runtime_state_is_labelled_operating_point() -> None:
+    payload = materializer._encode_csv(  # noqa: SLF001
+        ["slot", "direction", "mcs_index", "wideband_cqi"],
+        [[6, "DL", 1, "NaN"], [11, "DL", 15, 9], [12, "DL", 15, 9]],
+    )
+    existing = {
+        "reports/csv/live_scheduler_cycle.csv": {
+            "artifact_id": 9910,
+            "logical_path": "reports/csv/live_scheduler_cycle.csv",
+        }
+    }
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "CQI vs selected MCS", existing, lambda _artifact_id: payload, 88
+    )
+
+    assert result is not None
+    header, rows = materializer._decode_csv_dicts(result["csv_bytes"])  # noqa: SLF001
+    assert rows and "x_value" in header and "y_value" in header
+    assert {float(row["x_value"]) for row in rows} == {9.0}
+    assert {float(row["y_value"]) for row in rows} == {15.0}
+    assert {row["evidence_shape_policy"] for row in rows} == {"operating_point"}
+    assert {int(row["source_sample_count"]) for row in rows} == {2}
+    assert b"no relation or sweep is inferred" in result["csv_bytes"]
+
+
 def test_receiver_stage_latency_charts_use_only_measured_stage_fields() -> None:
     payloads = {
         9911: materializer._encode_csv(  # noqa: SLF001

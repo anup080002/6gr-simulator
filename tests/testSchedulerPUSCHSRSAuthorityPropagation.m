@@ -71,6 +71,10 @@ cfg.phy.pusch.mcsIndex = 1;
 cfg.phy.pusch.mappingType = "A";
 cfg.phy.pusch.symbolAllocation = [0 14];
 cfg.phy.pusch.dmrs.portSet = [0 1];
+% The SRS-owned RI/TPMI fields require the advanced UL DCI format.  Keep
+% this production-scheduler fixture bound to an explicit monitored search
+% space instead of relying on an empty legacy default.
+cfg.phy.pdcch.dciFormats = {'0_1', '1_1'};
 cfg.phy.linkAdaptation.mode = "fixed";
 cfg.phy.linkAdaptation.rankPolicy = "fixed_rank_anchor";
 cfg.mimo.rank_adaptation_policy = "fixed_rank_anchor";

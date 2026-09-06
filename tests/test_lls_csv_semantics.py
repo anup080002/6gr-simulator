@@ -14,6 +14,7 @@ from lls_csv_semantics import (  # noqa: E402
     audit_run,
     _audit_derived_link_table,
     _audit_domain_runtime_tables,
+    _audit_dynamic_tdd_runtime_channel_reciprocity,
     _audit_frc_point_table,
     _audit_component_bler_curve,
     _audit_link_table,
@@ -48,6 +49,7 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_canonical_component_manifest,
     _audit_mcs_cqi_reference_tables,
     _audit_dut_reference_comparison,
+    _audit_chart_lineage,
     _domain_table_applicability,
     _empty_domain_table_is_valid_zero_event,
     _audit_fixed_snr_reporting_tables,
@@ -58,6 +60,153 @@ from lls_csv_semantics import (  # noqa: E402
     PRODUCTION_GATE_ORDER,
     RECONCILIATION_PHASE7_FLAGS,
 )
+
+
+def _dynamic_tdd_channel_trial(direction: str) -> dict[str, str]:
+    direction = direction.upper()
+    return {
+        "Direction": direction,
+        "RuntimeChannelStateKey": "tdd_reciprocal;endpoint_a=gnb1;endpoint_b=ue1",
+        "RuntimeChannelLinkKey": f"dir={direction};tx={'gnb1' if direction == 'DL' else 'ue1'};rx={'ue1' if direction == 'DL' else 'gnb1'}",
+        "RuntimeChannelSeed": "4702601",
+        "RuntimeChannelReciprocityExact": "1",
+        "RuntimeChannelReciprocityDirection": direction,
+        "RuntimeChannelReciprocitySource": "matlab_nr_channel_swapTransmitAndReceive_shared_fading_timeline",
+        "RuntimeChannelReciprocityApproximationMode": "none_dynamic_exact",
+        "RuntimeChannelTransmitAndReceiveSwapped": "1" if direction == "UL" else "0",
+        "RuntimeChannelStartSample": "1024" if direction == "UL" else "0",
+        "RuntimeChannelEndSample": "2048" if direction == "UL" else "1024",
+        "RuntimeChannelCanonicalInputSamples": "1024",
+        "RuntimeChannelAlignmentLookaheadSamples": "17",
+        "RuntimeChannelAlignmentLookaheadExecutedOnFork": "1",
+        "RuntimeChannelObjectClockExact": "1",
+        "RuntimeChannelPathGainsSHA256": ("b" if direction == "UL" else "a") * 64,
+    }
+
+
+def _dynamic_tdd_angle_row(
+    direction: str,
+    *,
+    aod: float,
+    aoa: float,
+    zod: float,
+    zoa: float,
+) -> dict[str, str]:
+    direction = direction.upper()
+    return {
+        "Panel": "runtime_channel_angles",
+        "SnapshotID": f"snapshot-{direction.lower()}",
+        "Direction": direction,
+        "CellID": "1",
+        "UEIndex": "1",
+        "RNTI": "1",
+        "SFN": "0",
+        "Slot": "1" if direction == "DL" else "5",
+        "AbsoluteSlot": "1" if direction == "DL" else "5",
+        "PathIndex": "1",
+        "PathDelay_s": "1e-7",
+        "AzimuthDeparture_deg": str(aod),
+        "AzimuthArrival_deg": str(aoa),
+        "ZenithDeparture_deg": str(zod),
+        "ZenithArrival_deg": str(zoa),
+        "PowerLinear": "0.25",
+        "Power_dB": "-6.020599913279624",
+        "AngleCoordinateFrame": "3gpp_tr38901_global_coordinate_system",
+        "AngleEvidenceSource": "info_on_same_executed_runtime_channel_object",
+        "RuntimeChannelStateKey": "tdd_reciprocal;endpoint_a=gnb1;endpoint_b=ue1",
+        "RuntimeChannelLinkKey": f"dir={direction};tx={'gnb1' if direction == 'DL' else 'ue1'};rx={'ue1' if direction == 'DL' else 'gnb1'}",
+        "RuntimeChannelSeed": "4702601",
+        "RuntimeChannelReciprocityExact": "1",
+        "RuntimeChannelReciprocityDirection": direction,
+        "RuntimeChannelReciprocitySource": "matlab_nr_channel_swapTransmitAndReceive_shared_fading_timeline",
+        "RuntimeChannelReciprocityApproximationMode": "none_dynamic_exact",
+        "RuntimeChannelTransmitAndReceiveSwapped": "1" if direction == "UL" else "0",
+        "GridSHA256": ("b" if direction == "UL" else "a") * 64,
+    }
+
+
+def test_dynamic_tdd_reciprocity_requires_shared_state_and_executed_path_angles(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(json.dumps({
+        "frequency": {"duplex_mode": "TDD"},
+        "channels": {"model_type": "CDL", "profile": "CDL-A", "max_doppler_hz": 6.5},
+        "output": {"phy_signal_diagnostic_enabled": True},
+    }), encoding="utf-8")
+    link_rows = {
+        "DL": [_dynamic_tdd_channel_trial("DL")],
+        "UL": [_dynamic_tdd_channel_trial("UL")],
+    }
+    _write_rows(
+        tmp_path / "reports/csv/phy_signal_diagnostic_source.csv",
+        [
+            _dynamic_tdd_angle_row("DL", aod=-32, aoa=18, zod=92, zoa=88),
+            _dynamic_tdd_angle_row("UL", aod=18, aoa=-32, zod=88, zoa=92),
+        ],
+    )
+    checks = _audit_dynamic_tdd_runtime_channel_reciprocity(tmp_path, link_rows)
+    assert len(checks) == 2
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+    link_rows["UL"][0]["RuntimeChannelStateKey"] = "independent-ul-state"
+    angle_rows = [
+        _dynamic_tdd_angle_row("DL", aod=-32, aoa=18, zod=92, zoa=88),
+        _dynamic_tdd_angle_row("UL", aod=19, aoa=-32, zod=88, zoa=92),
+    ]
+    _write_rows(tmp_path / "reports/csv/phy_signal_diagnostic_source.csv", angle_rows)
+    checks = _audit_dynamic_tdd_runtime_channel_reciprocity(tmp_path, link_rows)
+    failed = {check.check_id: check.details for check in checks if not check.passed}
+    assert "shared_state_key_count=2" in failed["dynamic_TDD_shared_exact_fading_state"]
+    assert "reciprocal_swap_mismatch" in failed[
+        "executed_path_AoA_AoD_reciprocity_and_power"
+    ]
+
+
+def test_chart_lineage_accepts_explicit_measured_operating_point(
+    tmp_path: Path,
+) -> None:
+    from PIL import Image, PngImagePlugin
+
+    source_rel = "reports/csv/cqi_mcs_operating_point.csv"
+    image_rel = "reports/image/cqi_mcs_operating_point.png"
+    source_path = tmp_path / source_rel
+    image_path = tmp_path / image_rel
+    _write_rows(source_path, [{
+        "run_id": "run",
+        "chart_name": "CQI vs selected MCS",
+        "chart_mode": "scatter",
+        "x_label": "CQI",
+        "y_label": "Mean selected MCS",
+        "point_index": "1",
+        "x_value": "9",
+        "y_value": "15",
+        "source_mapping_status": "exact",
+        "evidence_shape_policy": "operating_point",
+        "source_sample_count": "3",
+    }])
+    image_path.parent.mkdir(parents=True, exist_ok=True)
+    png_info = PngImagePlugin.PngInfo()
+    png_info.add_text(
+        "sixgr_visual_semantics",
+        "evidence_shape_policy=operating_point; no relation or sweep is inferred",
+    )
+    Image.new("RGB", (16, 16), "white").save(image_path, pnginfo=png_info)
+    _write_rows(tmp_path / "reports/csv/contract_plot_lineage.csv", [{
+        "PlotId": "cqi_mcs_operating_point",
+        "ImagePath": image_rel,
+        "SourceCSV": source_rel,
+        "Status": "PASS",
+        "ImageSHA256": hashlib.sha256(image_path.read_bytes()).hexdigest(),
+        "SourceCSV_SHA256": hashlib.sha256(source_path.read_bytes()).hexdigest(),
+    }])
+
+    checks = _audit_chart_lineage(tmp_path)
+    point_check = next(
+        item for item in checks if item.check_id == "cqi_mcs_operating_point"
+    )
+    assert point_check.passed, point_check.details
 
 
 def _observed_re_row(
@@ -1957,6 +2106,62 @@ def test_domain_runtime_contract_checks_identity_probability_and_truth(tmp_path:
     assert "ScenarioID_mismatch_or_missing" in failed["scenario_execution_identity"]
     assert "BLER_outside_unit_interval" in failed["populated_physical_value_ranges"]
     assert "FallbackFlag_true_in_path" in failed["in_path_truth_proxy_separation"]
+
+
+def test_channel_snapshot_time_requires_physical_sample_clock_and_run_bound(
+    tmp_path: Path,
+) -> None:
+    summary = {"ScenarioID": "scenario", "ConfigHash": "a" * 64}
+    _write_rows(
+        tmp_path / "reports/csv/live_scenario_overview.csv",
+        [{"total_slots": "15", "scs_khz": "15"}],
+    )
+    relative = "channel/csv/channel_snapshots.csv"
+    _write_rows(
+        tmp_path / relative,
+        [{
+            "ScenarioID": "scenario",
+            "ScenarioConfigHash": "a" * 64,
+            "RunId": "run",
+            "ExecutionID": "execution",
+            "SampleTimeSec": "5.534023222112865e20",
+            "SampleRateHz": "",
+            "SampleRateSource": "",
+            "EvidenceScope": "in_path",
+            "TruthStatus": "real_lls_evidence",
+        }],
+    )
+    checks = _audit_domain_runtime_tables(tmp_path, summary)
+    failed = {
+        check.check_id: check.details
+        for check in checks
+        if check.artifact_path == relative and not check.passed
+    }
+    details = failed["populated_physical_value_ranges"]
+    assert "SampleTimeSec_outside_run_duration" in details
+    assert "SampleRateHz_missing_or_nonpositive" in details
+    assert "SampleRateSource_missing" in details
+
+    _write_rows(
+        tmp_path / relative,
+        [{
+            "ScenarioID": "scenario",
+            "ScenarioConfigHash": "a" * 64,
+            "RunId": "run",
+            "ExecutionID": "execution",
+            "SampleTimeSec": "0.006",
+            "SampleRateHz": "7680000",
+            "SampleRateSource": "resolved_config.phy.waveform.sampleRate_Hz",
+            "EvidenceScope": "in_path",
+            "TruthStatus": "real_lls_evidence",
+        }],
+    )
+    checks = _audit_domain_runtime_tables(tmp_path, summary)
+    assert all(
+        check.passed
+        for check in checks
+        if check.artifact_path == relative
+    )
 
 
 def test_packet_flow_and_report_csvs_cannot_escape_baseline_domain_semantics(

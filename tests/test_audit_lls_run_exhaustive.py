@@ -17,11 +17,17 @@ SPEC.loader.exec_module(AUDIT_MODULE)
 
 
 def run_audit(
-    run: Path, output: Path, *, strict_value_closure: bool = False
+    run: Path,
+    output: Path,
+    *,
+    strict_value_closure: bool = False,
+    preview_rows: int = 3,
 ) -> subprocess.CompletedProcess[str]:
     command = [sys.executable, str(AUDIT_TOOL), str(run), str(output)]
     if strict_value_closure:
         command.append("--strict-value-closure")
+    if preview_rows != 3:
+        command.extend(["--preview-rows", str(preview_rows)])
     return subprocess.run(
         command,
         cwd=REPO_ROOT,
@@ -141,6 +147,33 @@ def test_zero_and_nan_columns_are_classified_not_hidden(tmp_path: Path) -> None:
     assert assessment["value_review_status"] == (
         "VALUES_PRESENT_BUT_DOMAIN_CONTRACT_MISSING"
     )
+
+
+def test_five_row_preview_persists_exactly_five_leading_rows(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    output = tmp_path / "audit"
+    source = run / "reports" / "csv" / "measurements.csv"
+    source.parent.mkdir(parents=True)
+    source.write_text(
+        "Sample,Value\n" + "".join(f"{index},{index * 2}\n" for index in range(1, 8)),
+        encoding="utf-8",
+    )
+
+    proc = run_audit(run, output, preview_rows=5)
+    assert proc.returncode == 0, proc.stderr + proc.stdout
+    with (output / "all_csv_first_five_rows.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        previews = list(csv.DictReader(handle))
+    assert [int(row["source_row_number"]) for row in previews] == [1, 2, 3, 4, 5]
+    assert json.loads(previews[-1]["values_json"]) == ["5", "10"]
+    with (output / "first_five_row_value_assessment.csv").open(
+        "r", encoding="utf-8", newline=""
+    ) as handle:
+        assessment = next(csv.DictReader(handle))
+    assert assessment["observed_preview_row_count"] == "5"
+    summary = json.loads((output / "audit_summary.json").read_text(encoding="utf-8"))
+    assert summary["csv_preview_row_limit"] == 5
 
 
 def test_fixed_link_unscheduled_fields_respect_explicit_not_applicable_status(

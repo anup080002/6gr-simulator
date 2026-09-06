@@ -110,8 +110,11 @@ def risk_counts(value: str) -> Counter[str]:
     return result
 
 
-def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
+def audit_csv(
+    path: Path, root: Path, preview_row_limit: int = 3
+) -> tuple[dict, list[dict], list[dict]]:
     relative = path.relative_to(root).as_posix()
+    preview_row_limit = max(1, int(preview_row_limit))
     source_path = io_path(path)
     file_row = {
         "relative_path": relative,
@@ -224,7 +227,7 @@ def audit_csv(path: Path, root: Path) -> tuple[dict, list[dict], list[dict]]:
             cell_count = 0
             for row in data_rows:
                 file_row["row_count"] += 1
-                if file_row["row_count"] <= 3:
+                if file_row["row_count"] <= preview_row_limit:
                     normalized = row[: len(header)] + [""] * max(0, len(header) - len(row))
                     missing = 0
                     finite_numeric = 0
@@ -754,11 +757,11 @@ def build_first_three_row_value_assessment(
     first_row_previews: list[dict],
     file_dispositions: list[dict],
 ) -> list[dict]:
-    """Summarize actual first-row values for every CSV without calling shape a pass.
+    """Summarize the captured leading-row values without calling shape a pass.
 
-    The raw values remain in ``all_csv_first_three_rows.csv``.  This table
-    makes their value population reviewable per file, including header-only,
-    mostly-missing and mostly-zero previews, and keeps semantic-contract
+    The caller controls how many leading rows were captured. This table makes
+    their value population reviewable per file, including header-only,
+    mostly-missing and mostly-zero previews, while keeping semantic-contract
     coverage separate from structural parsing.
     """
     previews_by_path: dict[str, list[dict]] = {}
@@ -860,7 +863,15 @@ def main() -> int:
             "has no explicit disabled/zero-event applicability disposition."
         ),
     )
+    parser.add_argument(
+        "--preview-rows",
+        type=int,
+        default=3,
+        help="Number of leading data rows to persist and assess for every CSV (default: 3).",
+    )
     args = parser.parse_args()
+    if args.preview_rows < 1 or args.preview_rows > 100:
+        parser.error("--preview-rows must be between 1 and 100")
     run_root = args.run_root.resolve()
     output_root = args.output_root.resolve()
     if not run_root.is_dir():
@@ -872,7 +883,9 @@ def main() -> int:
     for path in sorted(run_root.rglob("*.csv")):
         if is_nested_execution_path(run_root, path):
             continue
-        file_row, columns, first_rows = audit_csv(path, run_root)
+        file_row, columns, first_rows = audit_csv(
+            path, run_root, preview_row_limit=args.preview_rows
+        )
         csv_rows.append(file_row)
         column_rows.extend(columns)
         first_row_previews.extend(first_rows)
@@ -906,7 +919,13 @@ def main() -> int:
 
     write_csv(output_root / "all_csv_file_audit.csv", csv_rows)
     write_csv(output_root / "all_csv_column_audit.csv", column_rows)
-    write_csv(output_root / "all_csv_first_three_rows.csv", first_row_previews)
+    preview_label = {3: "three", 5: "five"}.get(
+        args.preview_rows, str(args.preview_rows)
+    )
+    write_csv(
+        output_root / f"all_csv_first_{preview_label}_rows.csv",
+        first_row_previews,
+    )
     zero_nan_rows = [
         row for row in column_rows
         if int(row["blank_count"]) > 0
@@ -932,12 +951,13 @@ def main() -> int:
         csv_rows, first_row_previews, file_dispositions
     )
     write_csv(
-        output_root / "first_three_row_value_assessment.csv",
+        output_root / f"first_{preview_label}_row_value_assessment.csv",
         first_row_value_assessments,
     )
 
     summary = {
         "run_root": str(run_root),
+        "csv_preview_row_limit": int(args.preview_rows),
         "csv_file_count": len(csv_rows),
         "csv_total_rows": sum(int(row["row_count"]) for row in csv_rows),
         "csv_total_columns": sum(int(row["column_count"]) for row in csv_rows),

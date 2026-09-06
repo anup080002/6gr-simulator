@@ -2145,6 +2145,8 @@ def _chart_dataset_csv(
         "materialization_status",
         "lineage_note",
         "source_mapping_status",
+        "evidence_shape_policy",
+        "source_sample_count",
     ]
     rows: list[list[Any]] = []
     if dataset and dataset.get("points"):
@@ -2169,6 +2171,8 @@ def _chart_dataset_csv(
                     materialization_status,
                     note,
                     mapping_status,
+                    str(dataset.get("evidence_shape_policy") or ""),
+                    int(max(0, _coerce_float(dataset.get("sample_count")) or source_row_count)),
                 ]
             )
     else:
@@ -2189,6 +2193,8 @@ def _chart_dataset_csv(
                 materialization_status,
                 note,
                 mapping_status,
+                str(dataset.get("evidence_shape_policy") or "") if isinstance(dataset, dict) else "",
+                int(max(0, _coerce_float(dataset.get("sample_count")) or source_row_count)) if isinstance(dataset, dict) else int(max(0, source_row_count)),
             ]
         )
     return _encode_csv(header, rows)
@@ -10541,14 +10547,27 @@ def _specialized_chart_materialization(
                 dataset = {"mode": _honest_chart_mode(points), "x_label": "Grant sample", "y_label": "MCSIndex", "points": points}
             elif chart_name == "CQI vs selected MCS":
                 grouped: dict[int, list[float]] = defaultdict(list)
+                paired_observation_count = 0
                 for row in records:
                     cqi = _row_float(row, "CQIUsed", "WidebandCQI")
                     mcs = _row_float(row, "MCSIndex")
                     if cqi is None or mcs is None:
                         continue
+                    paired_observation_count += 1
                     grouped[int(round(cqi))].append(float(mcs))
                 points = [[float(cqi), sum(vals) / len(vals)] for cqi, vals in sorted(grouped.items())]
-                dataset = {"mode": _honest_chart_mode(points), "x_label": "CQI", "y_label": "Mean selected MCS", "points": points}
+                dataset = {
+                    "mode": _honest_chart_mode(points),
+                    "x_label": "CQI",
+                    "y_label": "Mean selected MCS",
+                    "points": points,
+                    "evidence_shape_policy": (
+                        "observed_relation" if len(points) >= 2 else "operating_point"
+                    ),
+                    "sample_count": paired_observation_count,
+                }
+                if len(points) == 1:
+                    note += " One measured CQI/MCS operating point is shown as a scalar observation; no relation or sweep is inferred."
             elif chart_name == "queue depth over time":
                 grouped: dict[int, list[float]] = defaultdict(list)
                 for row in records:
@@ -10606,7 +10625,7 @@ def _specialized_chart_materialization(
                 note += " x-axis buckets correspond to the listed grant-reason order in the SVG summary."
                 dataset = {"mode": "bar", "x_label": "Grant-reason bucket", "y_label": "Count", "points": points}
             if dataset and dataset.get("points"):
-                dataset["sample_count"] = len(records)
+                dataset.setdefault("sample_count", len(records))
                 if chart_name in {"PHR distribution", "grant reason distribution"}:
                     dataset["evidence_shape_policy"] = "observed_distribution"
                 elif chart_name != "CQI vs selected MCS":

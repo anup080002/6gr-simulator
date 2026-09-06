@@ -186,7 +186,14 @@ defs(end+1, 1) = localRegistryRow("SRS", "reference_signal", "TS 38.211 SRS chan
 defs(end+1, 1) = localRegistryRow("TRS", "reference_signal", "TS 38.211 TRS tracking", trsEnabled, trsEnabled, ...
     ["sixgr.link.runTRSTracking","sixgr.phy.trs.estimateTRSChannel"], "reference_signals/csv/trs_trials.csv", "reference_signals/csv/trs_trials.csv|reference_signals/csv/trs_negative_trials.csv", "reference_signals/csv/trs_trials.csv"); %#ok<AGROW>
 defs(end+1, 1) = localRegistryRow("MIMO", "mimo_beamforming", "TS 38.214 rank/layer/precoder evidence", mimoEnabled, mimoEnabled, ...
-    ["sixgr.mimo.executeSpatialComposite"], "beamforming/csv/rank_layer_trials.csv", "beamforming/csv/rank_layer_trials.csv", "beamforming/csv/rank_layer_trials.csv"); %#ok<AGROW>
+    ["sixgr.mimo.executeSpatialComposite", ...
+     "sixgr.mimo.resolveRankExecutionPolicy", ...
+     "sixgr.phy.dl.resolvePDSCHPrecoding", ...
+     "sixgr.pdsch.CodewordLayerMapper", ...
+     "sixgr.pdsch.PDSCHPrecoderBundle.apply", ...
+     "sixgr.phy.mimo.precoder", ...
+     "sixgr.phy.ul.estimateSRSRITPMI"], ...
+    "beamforming/csv/rank_layer_trials.csv", "beamforming/csv/rank_layer_trials.csv", "beamforming/csv/rank_layer_trials.csv"); %#ok<AGROW>
 defs(end+1, 1) = localRegistryRow("MAC_HARQ", "mac_harq", "TS 38.321 HARQ timing and process state", harqEnabled, harqEnabled, ...
     ["sixgr.truth.exportLLSHARQDiagnostics"], "harq/csv/live_harq_observation_timeline.csv", "harq/csv/live_harq_observation_timeline.csv", "harq/csv/live_harq_observation_timeline.csv"); %#ok<AGROW>
 defs(end+1, 1) = localRegistryRow("KPI", "kpi", "Derived link performance KPIs from raw runtime rows", kpiEnabled, kpiEnabled, ...
@@ -1297,8 +1304,9 @@ end
 
 function tf = localBlockUsesOracle(ctx, blockId)
 T = localBlockPrimaryTable(ctx, blockId);
-tf = localAnyStringColumnContains(T, ["UsedOracleFields","Notes","FailureReason"], "oracle") || ...
-    localAnyLogicalColumn(T, "OracleUsed");
+tf = localAnyLogicalColumn(T, "OracleUsed") || ...
+    localAnyNonEmptyStringColumn(T, "UsedOracleFields") || ...
+    localAnyAffirmativeOracleDisclosure(T, ["Notes","FailureReason"]);
 end
 
 function tf = localBlockUsesProxy(ctx, blockId)
@@ -1524,17 +1532,24 @@ tokens = unique(tokens(strlength(tokens) > 0), "stable");
 end
 
 function tf = localFunctionRequiresExplicitCallEvidence(functionName)
+% A primary result row proves that some producer wrote evidence; it does
+% not prove that a particular PHY/link/spatial implementation executed.
+% These packages therefore require profiler or call-edge evidence and may
+% never fall back to "artifact exists, therefore implementation ran".
 strictPrefixes = [ ...
     "sixgr.phy."; ...
     "sixgr.channel."; ...
     "sixgr.mimo."; ...
+    "sixgr.pdsch."; ...
+    "sixgr.pusch."; ...
+    "sixgr.link."; ...
     "sixgr.rach."; ...
     "sixgr.truth.exportControlPlaneTraces" ...
     ];
-name = string(functionName);
+name = lower(strtrim(string(functionName)));
 tf = false;
 for i = 1:numel(strictPrefixes)
-    if startsWith(name, strictPrefixes(i))
+    if startsWith(name, lower(strictPrefixes(i)))
         tf = true;
         return;
     end
@@ -2056,6 +2071,56 @@ for i = 1:numel(names)
     txt = lower(string(T.(char(names(i)))));
     for j = 1:numel(patterns)
         if any(contains(txt, lower(patterns(j))))
+            tf = true;
+            return;
+        end
+    end
+end
+end
+
+function tf = localAnyNonEmptyStringColumn(T, name)
+tf = false;
+if ~(istable(T) && ~isempty(T) && ...
+        ismember(string(name), string(T.Properties.VariableNames)))
+    return;
+end
+values = lower(strtrim(string(T.(char(name)))));
+missing = ismissing(values) | values == "" | ...
+    ismember(values, ["none","n/a","na","not_applicable","not applicable","[]"]);
+tf = any(~missing);
+end
+
+function tf = localAnyAffirmativeOracleDisclosure(T, names)
+% Free-text provenance may explicitly state that an oracle was not used.
+% Treat only affirmative disclosures as oracle use; structured OracleUsed
+% and UsedOracleFields columns remain the primary fail-closed authorities.
+tf = false;
+if ~(istable(T) && ~isempty(T))
+    return;
+end
+affirmativePatterns = [ ...
+    "oracle_used", "oracle used", "used oracle", "oracle-assisted", ...
+    "oracle assisted", "oracle=true", "oracle = true", "oracle: true", ...
+    "receiver oracle", "geometry oracle"];
+negativePatterns = [ ...
+    "oracle-free", "oracle free", "oracle_free", "without oracle", ...
+    "no oracle", "oracle=false", "oracle = false", "oracle: false", ...
+    "oracle not used", "not use oracle"];
+names = string(names);
+for i = 1:numel(names)
+    if ~ismember(names(i), string(T.Properties.VariableNames))
+        continue;
+    end
+    values = lower(string(T.(char(names(i)))));
+    for rowIdx = 1:numel(values)
+        value = values(rowIdx);
+        if ismissing(value) || value == ""
+            continue;
+        end
+        for j = 1:numel(negativePatterns)
+            value = replace(value, negativePatterns(j), "");
+        end
+        if any(contains(value, affirmativePatterns))
             tf = true;
             return;
         end

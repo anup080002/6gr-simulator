@@ -558,6 +558,10 @@ cfg.channel.maxDoppler_Hz = double(resolvedDopplerHz);
 cfg.channel.maxDopplerHz = double(resolvedDopplerHz);
 cfg.channel.runtimeElementExpansionChunkSamples = double(localGetNested( ...
     s, "channels.runtime_element_expansion_chunk_samples", 4096));
+cfg = localStructSetIfPresent(cfg, "channel.normalizePathGains", ...
+    localGetNested(s, "channels.normalize_path_gains", []));
+cfg = localStructSetIfPresent(cfg, "channel.normalizeChannelOutputs", ...
+    localGetNested(s, "channels.normalize_channel_outputs", []));
 cfg.channel.awgnOnly = upper(string(s.channels.model_type)) == "AWGN";
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
