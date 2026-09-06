@@ -1,5 +1,75 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Data-channel stream boundary checkpoint (2026-09-07)
+
+The main scheduler is **not yet repaired or qualified**. Its last full run
+remains the failed execution below. No replacement TDD, FDD or 25 dB scenario
+was launched during this checkpoint.
+
+Implemented opt-in `PrepareOnly` / `ReceivedContext` stages in both
+`runDLPDSCHThroughput` and `runULPUSCHThroughput`:
+
+- Prepare actual coded OFDM samples once, retain the frozen grant, payload,
+  receiver configuration, power allocation and UL power-control state.
+  Defer node PA/RF/channel execution until after transmitter composition.
+  Preparation returns empty received-trial tables and does not claim RX success.
+- Complete the existing receiver/metrics path from actual contiguous sample
+  buffers, without rerunning TX, rescaling power, resetting the TX RNG,
+  reapplying TPC, or advancing the channel. Retain separate physical TX,
+  pre-RX-front-end and post-RX-front-end observations.
+- Validate request identity, physical antenna counts, sample rate/origin,
+  complete received coverage and equal pre/post-front-end intervals. Actual
+  channel-delay tails may extend beyond the TX slot; they are not cropped or
+  replaced with receiver padding by the new stage interface.
+- Reject altered UCI/payload/configuration, proxy/fallback replay, incomplete
+  observations and mismatched clocks before receiver execution. Stage errors
+  propagate; they do not become fabricated CRC-failure rows.
+- DL preparation retains authored-DCI authority; reception still requires
+  decoded control binding. UL requires decoded DCI even before preparation.
+- Physical transmitter-composite captures are labeled as such, not as an
+  isolated channel's post-PA waveform. A nonlinear composite cannot generally
+  be decomposed into unique per-contributor post-PA samples.
+
+Eight focused checks passed in MATLAB session 46857 (exit 0):
+`testDataChannelStreamStages`, `testSchedulerPDSCHTransmitAuthority`,
+`testULPUSCHThroughputExecutionContract`,
+`testDLPDSCHThroughputExecutionContract`, `testNoiseDomainEvidenceContract`,
+`testPUSCHMeasuredReferencePowerControl`, `testPreparedWaveformPAOwnership`,
+and `testSchedulerPDSCHTimingAuthority`.
+Log: `logs/data_channel_stream_stages_20260907_delayed_focused.log`.
+
+The new stage test executes actual PDSCH, PUSCH, and PUSCH plus two HARQ-ACK
+bits with physical antenna projection, a declared attenuating integer-delay
+test channel, fixed independently generated complex noise and complete late
+samples. Exact TB recovery, HARQ-ACK recovery, sample/grid-noise identities,
+one TX/one RX invocation and unchanged completion-side RNG/channel/power-control
+state are asserted. The UL grant follows an actual isolated SRS waveform,
+practical channel estimate and RI/TPMI selection, then actual PDCCH decoding
+in a legal later TDD occasion. The analytic pathloss input and known HARQ bits
+are explicitly codec-test fixtures, not measured access or scheduler feedback
+from the failed production run. DL's missing channel/RF qualification-reference
+gate intentionally remains failed for this component test.
+
+An existing DL execution-contract fixture disabled PDSCH while expecting a
+downstream assignment error. It now separately asserts the disabled-coverage
+error and enables PDSCH for the assignment-ownership check. No production
+validation or CRC assertion was weakened. Earlier failed diagnostic logs are
+preserved; the earlier MU profile K0/K2 authority conflict also remains open.
+
+**Still required:** wire these stages into the main chronological composer,
+node RF and receive dispatcher alongside SSB/TRS/RA/control/SRS. Nonzero UL
+timing advance is explicitly rejected by the new staging path until separate
+UE-transmit and gNB-observation origins are integrated; it is not ignored or
+declared fixed. Main PRACH/PUCCH timing, late-ACK collision resolution, measured
+CSI feedback transport, QCL/TCI activation/use, full RF/noise reference closure,
+RSSI CSV/PNG publication and the full-run output audit remain open. The legacy
+CSI RSSI helper sums receive branches in normalized grid units; strict CSI
+feedback instead leaves RSSI unrequested. Neither is evidence of a completed,
+bandwidth/antenna/reference-plane-qualified runtime RSSI export.
+
+No `testAll` or full E2E qualification claim is made under the bounded-test
+request. Historical run outputs were not deleted, regenerated or relabeled.
+
 ## Frozen execution evidence
 
 Run `tdd_12db_verify_20260907_0018` executed revision `9fd99e55` using

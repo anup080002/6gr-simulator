@@ -22,6 +22,8 @@ p.addParameter("ExpectedUCIBits", [], @(x) isempty(x) || isnumeric(x) || islogic
 p.addParameter("ExpectedUCIPayload", [], @(x) isempty(x) || ...
     isa(x, "sixgr.phy.ul.pusch.PUSCHUCIPayload"));
 p.addParameter("ChannelState", struct(), @(x) isempty(x) || isstruct(x));
+p.addParameter("PrepareOnly", false, @(x) islogical(x) && isscalar(x));
+p.addParameter("ReceivedContext", struct(), @(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numFrames = max(1, round(double(p.Results.NumFrames)));
@@ -90,6 +92,13 @@ end
 % was assigned only by the legacy raw-bit conversion branch and the real
 % UCI-on-PUSCH path crashed after decoding.
 expectedUCIBits = int8(expectedUCIPayload.HARQACK(:));
+
+[prepareOnly, receivedCompletion, preparedTransmission, preparedBinding] = ...
+    sixgr.link.validateDataStreamRequest(cfg,p.Results,"UL", ...
+    executionContract.Profile,grantSnapshotOverride,phyGrantOverride);
+if receivedCompletion
+    executionContract.Backend = "scheduler_shared_stream_receiver";
+end
 
 out = struct();
 out.Ok = false;
@@ -721,7 +730,9 @@ for n = 1:numFrames
     trialPipelineTic = tic;
     frameIdx = double(trialFrame(n));
     trialSeed(n) = seedBase + frameIdx - 1;
-    rng(localRNGSeed(trialSeed(n)), 'twister');
+    if ~receivedCompletion
+        rng(localRNGSeed(trialSeed(n)), 'twister');
+    end
     try
         if isRetransmission || schedulerDrivenGrant
             cfgFrame = cfgDyn;
@@ -836,7 +847,12 @@ for n = 1:numFrames
             txArgs = [txArgs {"UCIPayload", expectedUCIPayload, ...
                 "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
         end
-        [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
+        if receivedCompletion
+            tx = preparedTransmission.Tx;
+            txInfo = preparedTransmission.TxInfo;
+        else
+            [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
+        end
         trialRuntimeAbsoluteSlot0(n) = double(sixgr.util.structGet(cfgFrame, ...
             "lls6g.runtime.AbsoluteSlotIndex0", NaN));
         trialCarrierNSlot(n) = double(tx.Carrier.NSlot);
@@ -1040,17 +1056,27 @@ for n = 1:numFrames
         if isfield(tx, "TargetCodeRate")
             trialCodeRate(n) = double(tx.TargetCodeRate);
         end
-        if externalChannelState
-            chState = localPrepareRuntimeChannelState(chState, cfgFrame, tx, txInfo, "UL");
-        elseif ~chState.Initialized
-            chState = localInitChannelState(cfgFrame, tx, txInfo, snr_dB, trialSeed(n));
+        if ~(prepareOnly || receivedCompletion)
+            % Preserve the legacy call ordering for the immediate path.
+            if externalChannelState
+                chState = localPrepareRuntimeChannelState(chState, cfgFrame, tx, txInfo, "UL");
+            elseif ~chState.Initialized
+                chState = localInitChannelState(cfgFrame, tx, txInfo, snr_dB, trialSeed(n));
+            end
         end
         useIdealTimingSync = localUseIdealTimingSync(cfgFrame);
+        if receivedCompletion
+            powerCtrl = preparedTransmission.PowerControl;
+            puschPowerControlState = preparedTransmission.PowerControlState;
+            cfgFrameRx = preparedTransmission.ReceiverConfig;
+            powerContext = tx.PowerContext;
+        else
         [txWaveformPC, powerCtrl, cfgFrameRx, puschPowerControlState] = ...
             sixgr.link.bindPUSCHPowerControlContext(tx.Waveform, cfgFrame, tx, ...
             grantSnapshot, puschPowerControlState);
         tx.Waveform = txWaveformPC;
-        [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext(tx.Waveform, cfgFrameRx, "UL", txInfo);
+        [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext( ...
+            tx.Waveform, cfgFrameRx, "UL", txInfo,"ApplyPA",~prepareOnly);
         if logical(powerCtrl.Enabled)
             powerCtrl.AmplitudeScale = double(powerContext.AmplitudeScale);
             powerCtrl.MeasuredWaveformPower_dBm = double(powerContext.OutputTotalPower_dBm);
@@ -1076,10 +1102,29 @@ for n = 1:numFrames
                 "ts_38_213_pusch_power_control";
         end
         powerContext.PowerControlAmplitudeScale = double(powerCtrl.AmplitudeScale);
+        end
         tx.PowerContext = powerContext;
         txInfo.PowerContext = powerContext;
         cfgFrameRx = sixgr.util.structSet(cfgFrameRx, "lls6g.runtimePowerContext", powerContext);
-        if sixgr.rf.hasExplicitTransmitConfig(cfgFrameRx)
+        if prepareOnly
+            out.PreparedTransmission = sixgr.link.PreparedDataTransmission( ...
+                "UL",cfg,preparedBinding,tx,txInfo,cfgFrameRx, ...
+                localResolveSampleRate(tx,txInfo),1e3*toc(trialPipelineTic), ...
+                powerCtrl,puschPowerControlState);
+            out.ExecutionStage = "transmit_prepared_not_received";
+            out.ExecutionTaxonomy = "decoded_ul_grant_coded_transmission";
+            out.ExecutionBackend = "scheduler_coded_transmitter_pre_node_rf";
+            out.Notes = "Coded PUSCH/UCI prepared; no node RF, channel, decoder or received trial executed.";
+            out.ChannelState = chStateIn;
+            return;
+        end
+        if receivedCompletion
+            tx.Waveform = preparedTransmission.readObservation( ...
+                p.Results.ReceivedContext.TransmitterObservation,preparedTransmission.NumPhysicalTransmitAntennas,"transmitter");
+            trialTxWaveformColumns(n) = size(tx.Waveform,2);
+            trialPhysicalTxAntennas(n) = size(tx.Waveform,2);
+            trialTxWaveformDomain(n) = "physical_antenna_transmitter_composite";
+        elseif sixgr.rf.hasExplicitTransmitConfig(cfgFrameRx)
             txRfOut = sixgr.rf.applyRFImpairmentChain(tx.Waveform, cfgFrameRx, ...
                 "SampleRateHz", localResolveSampleRate(tx, txInfo), ...
                 "Direction", "UL", ...
@@ -1103,6 +1148,9 @@ for n = 1:numFrames
                 "CapturePoint","post_power_control_power_context_and_tx_rf_pre_channel", ...
                 "WaveformAuthority","exact_runtime_pusch_waveform");
         end
+        if receivedCompletion && ~isempty(fieldnames(txWaveformCapture))
+            txWaveformCapture.WaveformAuthority = "actual_transmitter_composite_observation";
+        end
         trialPUSCHPowerControlEnabled(n) = logical(powerCtrl.Enabled);
         trialPUSCHPowerControlStatus(n) = string(powerCtrl.Status);
         trialPUSCHTxPower(n) = double(powerCtrl.TxPower_dBm);
@@ -1119,9 +1167,15 @@ for n = 1:numFrames
         captureDiagnosticPathGains = logical(sixgr.util.structGet( ...
             cfgFrameRx, "outputs.phySignalDiagnosticEnabled", false)) && ...
             ~logical(sixgr.util.structGet(signalDiagnostic, "Available", false));
-        [rxWave, replay, chState] = localApplyChannelAndAwgn( ...
-            tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, ...
-            interferenceBundle, captureDiagnosticPathGains);
+        if receivedCompletion
+            chState = p.Results.ReceivedContext.ChannelState;
+            rxWave = p.Results.ReceivedContext.Observation.readComplete();
+            replay = p.Results.ReceivedContext.Replay;
+        else
+            [rxWave, replay, chState] = localApplyChannelAndAwgn( ...
+                tx.Waveform, snr_dB, chState, cfgFrameRx, tx, txInfo, ...
+                interferenceBundle, captureDiagnosticPathGains);
+        end
         trialRxWaveformBranches(n) = double(size(rxWave, 2));
         trialPhysicalRxAntennas(n) = double(size(rxWave, 2));
         localAssertULHybridReceiveElementDomain(cfgFrameRx, rxWave);
@@ -1956,6 +2010,9 @@ for n = 1:numFrames
             "HARQContextStatus", char(string(sixgr.util.structGet(harqContext, "HARQContextStatus", ""))), ...
             "Context", harqContext);
     catch ME
+        if prepareOnly || receivedCompletion
+            rethrow(ME); % Never turn an invalid stream context into a decoded trial.
+        end
         blockErr = blockErr + 1;
         frameCrash = frameCrash + 1;
         crashIdentifier = string(ME.identifier);
@@ -2061,6 +2118,12 @@ end
 out.ChannelState = chState;
 out.TxWaveformCapture = txWaveformCapture;
 out.ObservedREAllocationTable = localCombineObservedREChunks(observedREChunks);
+if receivedCompletion
+    out.ExecutionStage = "received_shared_stream_completed";
+    out.PreparationComputeTime_ms = preparedTransmission.PreparationComputeTime_ms;
+    out.TransmitWaveformAuthority = "actual_transmitter_composite_observation";
+    out.PUSCHPowerControlState = puschPowerControlState;
+end
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...

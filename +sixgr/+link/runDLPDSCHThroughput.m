@@ -27,6 +27,8 @@ p.addParameter("ReceiverConfig", struct(), @(x) true);
 p.addParameter("PrecoderBundle", [], @(x) true);
 p.addParameter("IntegrationContext", struct(), @(x) true);
 p.addParameter("HARQManager", [], @(x) true);
+p.addParameter("PrepareOnly", false, @(x) islogical(x) && isscalar(x));
+p.addParameter("ReceivedContext", struct(), @(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numFrames = max(1, round(double(p.Results.NumFrames)));
@@ -84,6 +86,13 @@ else
     if isRetransmission
         harqContext.IsRetransmission = true;
     end
+end
+
+[prepareOnly, receivedCompletion, preparedTransmission, preparedBinding] = ...
+    sixgr.link.validateDataStreamRequest(cfg,p.Results,"DL", ...
+    executionContract.Profile,grantSnapshotOverride,phyGrantOverride);
+if receivedCompletion
+    executionContract.Backend = "scheduler_shared_stream_receiver";
 end
 
 out = struct();
@@ -671,7 +680,9 @@ for n = 1:numFrames
     trialPipelineTic = tic;
     frameIdx = double(trialFrame(n));
     trialSeed(n) = seedBase + frameIdx - 1;
-    rng(localRNGSeed(trialSeed(n)), 'twister');
+    if ~receivedCompletion
+        rng(localRNGSeed(trialSeed(n)), 'twister');
+    end
     try
         if isRetransmission || schedulerDrivenGrant
             cfgFrame = cfgDyn;
@@ -793,7 +804,12 @@ for n = 1:numFrames
             double(sixgr.util.structGet(grantSnapshotOverride, "TBSBits", NaN)), ...
             trialMCS(n), trialLayers(n));
         stageTic = tic;
-        [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgFrame, txArgs{:});
+        if receivedCompletion
+            tx = preparedTransmission.Tx;
+            txInfo = preparedTransmission.TxInfo;
+        else
+            [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfgFrame, txArgs{:});
+        end
         trialRuntimeAbsoluteSlot0(n) = double(sixgr.util.structGet(cfgFrame, ...
             "lls6g.runtime.AbsoluteSlotIndex0", NaN));
         trialCarrierNSlot(n) = double(tx.Carrier.NSlot);
@@ -825,11 +841,34 @@ for n = 1:numFrames
         localDLStageProgressLog(cfgFrame, ...
             "frame=%g slot=%g stage=tx_done elapsed_s=%.3f waveform_samples=%g", ...
             frameIdx, trialSlot(n), toc(stageTic), double(size(tx.Waveform, 1)));
-        [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext(tx.Waveform, cfgFrame, "DL", txInfo);
+        if receivedCompletion
+            powerContext = tx.PowerContext;
+            cfgFrame = preparedTransmission.ReceiverConfig;
+        else
+            [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext( ...
+                tx.Waveform, cfgFrame, "DL", txInfo,"ApplyPA",~prepareOnly);
+        end
         tx.PowerContext = powerContext;
         txInfo.PowerContext = powerContext;
         cfgFrame = sixgr.util.structSet(cfgFrame, "lls6g.runtimePowerContext", powerContext);
-        if sixgr.rf.hasExplicitTransmitConfig(cfgFrame)
+        if prepareOnly
+            out.PreparedTransmission = sixgr.link.PreparedDataTransmission( ...
+                "DL",cfg,preparedBinding,tx,txInfo,cfgFrame, ...
+                localResolveSampleRate(tx,txInfo),1e3*toc(trialPipelineTic));
+            out.ExecutionStage = "transmit_prepared_not_received";
+            out.ExecutionTaxonomy = "authored_scheduler_grant_coded_transmission";
+            out.ExecutionBackend = "scheduler_coded_transmitter_pre_node_rf";
+            out.Notes = "Coded PDSCH prepared; no node RF, channel, decoder or received trial executed.";
+            out.ChannelState = chStateIn;
+            return;
+        end
+        if receivedCompletion
+            tx.Waveform = preparedTransmission.readObservation( ...
+                p.Results.ReceivedContext.TransmitterObservation,preparedTransmission.NumPhysicalTransmitAntennas,"transmitter");
+            trialTxWaveformColumns(n) = size(tx.Waveform,2);
+            trialPhysicalTxAntennas(n) = size(tx.Waveform,2);
+            trialTxWaveformDomain(n) = "physical_antenna_transmitter_composite";
+        elseif sixgr.rf.hasExplicitTransmitConfig(cfgFrame)
             txRfOut = sixgr.rf.applyRFImpairmentChain(tx.Waveform, cfgFrame, ...
                 "SampleRateHz", localResolveSampleRate(tx, txInfo), ...
                 "Direction", "DL", ...
@@ -865,6 +904,14 @@ for n = 1:numFrames
                 "Slot",double(trialSlot(n)), ...
                 "CapturePoint","post_power_and_tx_rf_pre_channel", ...
                 "WaveformAuthority","exact_runtime_pdsch_waveform");
+        end
+        if receivedCompletion
+            if ~isempty(fieldnames(isacWaveformCapture))
+                isacWaveformCapture.WaveformAuthority = "actual_transmitter_composite_observation";
+            end
+            if ~isempty(fieldnames(txWaveformCapture))
+                txWaveformCapture.WaveformAuthority = "actual_transmitter_composite_observation";
+            end
         end
         grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, ...
             grantSnapshotOverride, frameIdx, trialSlot(n), trialSeed(n));
@@ -1036,7 +1083,9 @@ for n = 1:numFrames
             trialCodeRate(n) = localCommonFiniteScalar( ...
                 tx.TargetCodeRate);
         end
-        if externalChannelState
+        if receivedCompletion
+            chState = p.Results.ReceivedContext.ChannelState;
+        elseif externalChannelState
             chState = localPrepareRuntimeChannelState(chState, cfgFrame, tx, txInfo, "DL");
         elseif ~chState.Initialized
             chState = localInitChannelState(cfgFrame, tx, txInfo, snr_dB, trialSeed(n));
@@ -1049,10 +1098,17 @@ for n = 1:numFrames
         captureDiagnosticPathGains = logical(sixgr.util.structGet( ...
             cfgFrame, "outputs.phySignalDiagnosticEnabled", false)) && ...
             ~logical(sixgr.util.structGet(signalDiagnostic, "Available", false));
-        [rxWave, replay, chState, physicalMeasurementWaveform] = ...
-            localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, ...
-            cfgFrame, tx, txInfo, interferenceBundle, ...
-            captureDiagnosticPathGains);
+        if receivedCompletion
+            rxWave = p.Results.ReceivedContext.Observation.readComplete();
+            physicalMeasurementWaveform = ...
+                p.Results.ReceivedContext.PhysicalMeasurementObservation.readComplete();
+            replay = p.Results.ReceivedContext.Replay;
+        else
+            [rxWave, replay, chState, physicalMeasurementWaveform] = ...
+                localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, ...
+                cfgFrame, tx, txInfo, interferenceBundle, ...
+                captureDiagnosticPathGains);
+        end
         trialRxWaveformBranches(n) = double(size(rxWave, 2));
         trialPhysicalRxAntennas(n) = double(size(rxWave, 2));
         localDLStageProgressLog(cfgFrame, ...
@@ -1060,6 +1116,10 @@ for n = 1:numFrames
             frameIdx, trialSlot(n), toc(stageTic), double(size(rxWave, 1)));
         cfgFrame = localAttachReceiverSyncRuntimeContext(cfgFrame, chState, replay);
 
+        physicalMeasurementSource = "runDLPDSCHThroughput_post_channel_interference_noise_pre_rx_rf_adc";
+        if receivedCompletion
+            physicalMeasurementSource = "shared_stream_receiver_antenna_connector_observation";
+        end
         rxArgs = {"ExecutionProfile", char(executionContract.Profile), ...
             "Carrier", tx.Carrier, ...
             "PDSCH", tx.PDSCH, ...
@@ -1074,7 +1134,7 @@ for n = 1:numFrames
             "PhysicalMeasurementReferencePlane", ...
                 "receiver_antenna_connector_pre_composite_front_end", ...
             "PhysicalMeasurementSource", ...
-                "runDLPDSCHThroughput_post_channel_interference_noise_pre_rx_rf_adc", ...
+                physicalMeasurementSource, ...
             "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, ...
             "RV", tx.RV, ...
@@ -1907,6 +1967,9 @@ for n = 1:numFrames
             "HARQContextStatus", char(string(sixgr.util.structGet(harqContext, "HARQContextStatus", ""))), ...
             "Context", harqContext);
     catch ME
+        if prepareOnly || receivedCompletion
+            rethrow(ME); % A broken stage cannot become a received CRC-failure row.
+        end
         blockErr = blockErr + 1;
         frameCrash = frameCrash + 1;
         crashIdentifier = string(ME.identifier);
@@ -1985,6 +2048,11 @@ out.ChannelState = chState;
 out.ISACWaveformCapture = isacWaveformCapture;
 out.TxWaveformCapture = txWaveformCapture;
 out.ObservedREAllocationTable = localCombineObservedREChunks(observedREChunks);
+if receivedCompletion
+    out.ExecutionStage = "received_shared_stream_completed";
+    out.PreparationComputeTime_ms = preparedTransmission.PreparationComputeTime_ms;
+    out.TransmitWaveformAuthority = "actual_transmitter_composite_observation";
+end
 
 if frameCrash == numFrames
     sixgr.link.failIfStrictCoverageGap(cfg, "sixgr:link:StrictCoverageUnsupported", ...
@@ -8247,6 +8315,11 @@ if ~(isstruct(dci) && ~isempty(fieldnames(dci)) && ...
         logical(sixgr.util.structGet(dci, "BitExactPDCCHPayload", false)))
     error("sixgr:pdsch:MissingSchedulerTruthDCI", ...
         "scheduler_truth requires the bit-exact DCI payload used by PDCCH.");
+end
+if options.PrepareOnly
+    % TX validates the authored bit-exact DCI against the frozen allocation.
+    % Successful UE control reception is still mandatory at completion.
+    return;
 end
 if ~logical(sixgr.util.structGet(grant, "ControlDecodeOk", false)) || ...
         ~logical(sixgr.util.structGet(grant, ...
