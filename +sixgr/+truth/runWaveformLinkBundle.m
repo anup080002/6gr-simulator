@@ -11852,12 +11852,12 @@ function [T, selectedAdvancedState, selectedDecodedSIB1] = ...
 % first successful PBCH to advance the state machine to PRACH before the
 % remaining beams are measured.
 %
-% Each candidate gets an independent value-copy of initialDLState.  For a
-% fading channel, runCellSearch materializes that copy from the same link
-% key/seed/sample origin, so beam selection compares the configured
-% precoders under one channel realization rather than different random
-% drops.  The candidate's true carrier-slot and OFDM-symbol coordinates are
-% persisted below; the coupled slot is the start of the acquisition window.
+% All candidates consume one physically received burst. Replaying the
+% channel separately for each candidate can change noise and fading and
+% cannot represent measurements of one SS burst set. The candidate's true
+% carrier-slot and OFDM-symbol coordinates are persisted below; the coupled
+% slot is the start of the acquisition window (multi-slot dispatch remains
+% a separate chronological-composition responsibility).
 [isOccasion, occasion] = sixgr.truth.isActiveSSBOccasion(cfg, slotIdx);
 indices = localResolveActiveSSBurstSetIndices(cfg, occasion);
 if ~isOccasion || isempty(indices)
@@ -11869,15 +11869,36 @@ end
 candidateTables = cell(numel(indices), 1);
 candidateStates = cell(numel(indices), 1);
 candidateSIB1 = cell(numel(indices), 1);
+burstOut = struct();
+sharedCapture = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
 for beamOrdinal = 1:numel(indices)
     ssbIndex = double(indices(beamOrdinal));
     cfgBeam = sixgr.util.structSet(cfg, ...
         "phy.ssb.runtimeSSBIndex", ssbIndex);
     cfgBeam = sixgr.util.structSet(cfgBeam, ...
         "phy.ssb.SSBIndex", ssbIndex);
-    [candidateTables{beamOrdinal}, candidateStates{beamOrdinal}, ...
-        candidateSIB1{beamOrdinal}] = localCollectPBCHTrials( ...
-        cfgBeam, snr_dB, 1, initialDLState, slotIdx);
+    if ~sharedCapture
+        % Preserve the existing PBCH-only path. It does not yet implement
+        % the SIB1 receiver's shared-capture API and must not claim it does.
+        [candidateTables{beamOrdinal}, candidateStates{beamOrdinal}, ...
+            candidateSIB1{beamOrdinal}] = localCollectPBCHTrials( ...
+            cfgBeam, snr_dB, 1, initialDLState, slotIdx);
+    elseif beamOrdinal == 1
+        [candidateTables{beamOrdinal}, candidateStates{beamOrdinal}, ...
+            candidateSIB1{beamOrdinal}, burstOut] = localCollectPBCHTrials( ...
+            cfgBeam, snr_dB, 1, initialDLState, slotIdx, indices);
+        if ~isfield(burstOut, "CandidateResults") || ...
+                numel(burstOut.CandidateResults) ~= numel(indices)
+            error("sixgr:truth:IncompleteSharedSSBBurstReception", ...
+                "The shared burst receiver did not return every requested candidate: %s", ...
+                string(sixgr.util.structGet(burstOut, "FailureReason", "missing candidate results")));
+        end
+    else
+        [candidateTables{beamOrdinal}, candidateStates{beamOrdinal}, ...
+            candidateSIB1{beamOrdinal}] = localCollectPBCHTrials( ...
+            cfgBeam, snr_dB, 1, initialDLState, slotIdx, [], ...
+            burstOut.CandidateResults{beamOrdinal});
+    end
 end
 
 T = table();
@@ -11904,8 +11925,11 @@ T.SelectedSSBIndex = nan(n, 1);
 T.SelectedBeamIndex = nan(n, 1);
 T.SelectionMetric = repmat("SS_RSRP_dBm", n, 1);
 T.SelectionMetricValue_dB = nan(n, 1);
-T.SelectionSource = repmat( ...
-    "coupled_receiver_measured_same_channel_origin_ssb_pbch_sweep", n, 1);
+selectionSource = "coupled_receiver_measured_same_channel_origin_ssb_pbch_sweep";
+if sharedCapture
+    selectionSource = "coupled_receiver_measured_single_received_ssb_pbch_burst";
+end
+T.SelectionSource = repmat(selectionSource, n, 1);
 T.SelectionStatus = repmat( ...
     "unavailable_no_successful_finite_measurement", n, 1);
 
@@ -11996,14 +12020,21 @@ for rowIdx = 1:numel(ssbIndices0)
 end
 end
 
-function [T, advancedDLState, decodedSIB1] = localCollectPBCHTrials( ...
-        cfg, snr_dB, nTrials, initialDLState, runtimeSlot)
+function [T, advancedDLState, decodedSIB1, cellSearchOutput] = localCollectPBCHTrials( ...
+        cfg, snr_dB, nTrials, initialDLState, runtimeSlot, candidateIndices, receivedResult)
 if nargin < 4 || isempty(initialDLState)
     initialDLState = struct();
 end
 if nargin < 5
     runtimeSlot = NaN;
 end
+if nargin < 6
+    candidateIndices = [];
+end
+if nargin < 7
+    receivedResult = struct();
+end
+cellSearchOutput = struct();
 advancedDLState = initialDLState;
 decodedSIB1 = struct();
 nTrials = max(1, round(double(nTrials)));
@@ -12034,7 +12065,15 @@ for k = 1:nTrials
             "UseRuntimeChannel", useRuntimeChannel, ...
             "InitialDLChannelState", advancedDLState, ...
             "RuntimeSlot", runtimeSlot - 1}; % Coupled slot is one based; cell-search origin is zero based.
-        out = sixgr.link.runCellSearch_MIB_SIB1(cfgTrial, cellSearchArgs{:});
+        if isempty(fieldnames(receivedResult))
+            out = sixgr.link.runCellSearch_MIB_SIB1(cfgTrial, cellSearchArgs{:}, ...
+                "CandidateSSBIndices", candidateIndices);
+        else
+            % Receiver result produced above from the same physical capture;
+            % this branch only normalizes its row, never executes a waveform.
+            out = receivedResult;
+        end
+        cellSearchOutput = out;
         if useRuntimeChannel
             advancedDLState = sixgr.util.structGet( ...
                 out, "RuntimeDLChannelState", advancedDLState);

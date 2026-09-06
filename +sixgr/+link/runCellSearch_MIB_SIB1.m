@@ -5,6 +5,10 @@ p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x,"sixgr.core.Logger"));
 p.addParameter("NumSubframes", 10, @(x) isnumeric(x) && isscalar(x) && x >= 1);
 p.addParameter("SSBIndex", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && isfinite(x) && x >= 0));
+p.addParameter("CandidateSSBIndices", [], @(x) isempty(x) || ...
+    (isnumeric(x) && isreal(x) && isvector(x) && ...
+    all(isfinite(x)) && all(x >= 0) && all(x == fix(x)) && ...
+    numel(unique(x)) == numel(x)));
 p.addParameter("RunFolder", "", @(x) ischar(x) || isstring(x));
 p.addParameter("RunId", "sib1_runtime", @(x) ischar(x) || isstring(x));
 p.addParameter("WriteArtifacts", false, @(x) islogical(x) || isnumeric(x));
@@ -170,6 +174,11 @@ if exist("nrWaveformGenerator","file") ~= 2
 end
 
 wantSIB1 = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
+if ~isempty(p.Results.CandidateSSBIndices) && ...
+        (~wantSIB1 || logical(p.Results.WriteArtifacts))
+    error("sixgr:link:InvalidSharedBurstReceiverRequest", ...
+        "Shared-burst candidate decoding requires the SIB1 capture path and in-memory artifact ownership.");
+end
 sixgr.config.assertRuntimeFeatureUse(cfg, "sib1", wantSIB1, ...
     "runCellSearch_MIB_SIB1.SIB1");
 if wantSIB1
@@ -249,14 +258,27 @@ if wantSIB1
             out.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
                 channelReplay, "RuntimeChannelStateUsed", false));
         end
+        % Materialize and receive the physical burst once. Candidate search
+        % windows must not regenerate TX, fading, RF impairments, or noise.
+        observationOut = out;
+        candidateIndices = double(p.Results.CandidateSSBIndices(:).');
+        if isempty(candidateIndices)
+            candidateIndices = double(p.Results.SSBIndex);
+        end
+        if isempty(candidateIndices)
+            candidateIndices = NaN; % Original blind receiver, no candidate hint.
+        end
+        candidateOutputs = cell(1, numel(candidateIndices));
+        for candidateOrdinal = 1:numel(candidateIndices)
+        out = observationOut;
         receiverArgs = {};
-        if ~isempty(p.Results.SSBIndex)
+        if isfinite(candidateIndices(candidateOrdinal))
             % A coupled P1 sweep transmits the configured active SS burst
             % set once and measures each exact SS/PBCH occasion.  Preserve
             % blind acquisition when no candidate is requested, but gate a
             % sweep row to the requested canonical candidate window.
             receiverArgs = {"CandidateSSBIndex", ...
-                round(double(p.Results.SSBIndex))};
+                candidateIndices(candidateOrdinal)};
         end
         rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
             rxWaveform, receiverCfg, receiverArgs{:});
@@ -487,6 +509,13 @@ if wantSIB1
         out.Notes = "Strict SIB1 waveform path: " + string(rec.Status) + ...
             "; DCI=" + string(rec.DCIPayloadHex) + ...
             "; SIB1TreeEqual=" + string(logical(rec.SIB1TreeEqual));
+        candidateOutputs{candidateOrdinal} = out;
+        end
+        out = candidateOutputs{1};
+        if ~isempty(p.Results.CandidateSSBIndices)
+            out.CandidateResults = candidateOutputs;
+            out.CandidateSSBIndices = candidateIndices;
+        end
         return;
     catch ME
         out.Ok = false;

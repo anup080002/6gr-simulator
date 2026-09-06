@@ -1429,3 +1429,30 @@ The required repair is chronological shared-waveform composition and
 buffering, followed by receiver completion at the actual observation end;
 beam candidates must consume the same received burst rather than cause
 separate channel executions. This remains unimplemented and unqualified.
+
+### Shared received-burst candidate decoding implemented
+
+The SIB1-enabled coupled beam sweep now invokes the transmitter and waveform
+channel once, then decodes each requested SSB candidate from the identical
+received burst. `runCellSearch_MIB_SIB1.CandidateSSBIndices` returns the actual
+per-candidate receiver results; the coupled collector normalizes those
+results without re-executing TX/channel/noise. Selection provenance explicitly
+identifies a single received burst. The PBCH-only legacy path is unchanged
+and does not claim this new provenance. Missing candidate results fail closed.
+
+Focused MATLAB session 3362 exited 0 with `SHARED_BURST_FOCUSED_PASS` in
+`logs/ssb_shared_received_burst_20260906.log`. The new registered regression
+`testSSBSharedReceivedBurst` uses the TDD YAML and runtime fading. Profiler
+assertions prove one broadcast TX, one impairment/channel invocation, and
+four receiver invocations. It also checks identical received-waveform replay
+and channel end-sample across all candidates, and equality with the original
+single-candidate execution using the same seed. All four BCH/SIB1 decoders
+passed; measured SS-RSRPs were -85.7227, -90.2984, -100.796, and -87.4135 dBm.
+`testSIB1PhysicalElementTDLCausalRecovery` also passed in that same batch.
+
+This closes repeated channel execution within a beam sweep, not multi-slot
+acquisition dispatch or shared control/data composition. No replacement TDD
+scenario was launched. The prior failed scenario session 45796 has now
+terminated with exit code 1. Full-suite and export qualification remain
+deferred under the user's restricted short-run scope; no production-grade
+or complete-artifact qualification is claimed.
