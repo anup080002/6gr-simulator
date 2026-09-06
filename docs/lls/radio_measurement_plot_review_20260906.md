@@ -2185,3 +2185,56 @@ Full RF frontend integration and full scenario qualification remain open.
 No new 12 dB scenario, FDD waveform run, 25 dB run, full testAll, optional
 plot expansion or windowing change was performed for this patch. No output
 was fabricated and historical failure evidence was not deleted.
+
+## TRS observation epochs versus individual resource occasions
+
+Further scheduler tracing found a producer/consumer cardinality mismatch.
+The authored TDD `slot_numbers: [2, 7]` produces one six-slot TRS observation
+containing both resources and their actual intervening idle samples. The
+main runtime previously triggered that entire observation at both resource
+slots. The second trigger therefore repeated an already-included resource
+set with a shifted physical origin. Subsequent frames also retained
+frame-zero resource labels in the generated TRS grids.
+
+`resolveTRSObservationWindow` now distinguishes resource activity from the
+start of the complete observation. For three frames, active resources remain
+absolute slots `[2, 7, 12, 17, 22, 27]`; complete observation starts are
+`[2, 12, 22]`. PDSCH resource reservation still sees every resource. The
+runtime passes its actual one-based slot through TRS preparation, which
+materializes the corresponding absolute slot set and rejects preparation
+at a later member of the same observation. Missing/contradictory frame
+timing, fractional/out-of-frame resources and duplicates fail explicitly.
+No duplex-specific constants or alternate FDD waveform path were added.
+
+Toolbox carrier objects now carry within-frame slot and wrapped system-frame
+coordinates while exported resource slots retain the absolute epoch. These
+coordinate conventions follow the documented NSlot, NFrame and SlotsPerFrame
+properties of [nrCarrierConfig](https://www.mathworks.com/help/5g/ref/nrcarrierconfig.html).
+This is not evidence that every TRS configuration is a conformant 3GPP
+tracking-resource set; it corrects the timeline of the authored resources.
+
+Session 45342 exited 1 at the new fixture's initial row-vector comparison:
+the YAML slot list was column-oriented. The assertion was changed to compare
+the same exact values after orientation normalization. Session 56723 exited
+0 with `TRS_RUNTIME_BINDING_FOCUSED_PASS` in
+`logs/trs_runtime_observation_binding_verified_20260906.log`, covering
+`testTRSRuntimeObservationBinding`, `testTRSSlotTimeline` and
+`testPDSCHTRSExactReservation`. The existing timing/CFO and exact reservation
+assertions were retained.
+
+After adding the carrier-numerology consistency guard, session 35927 exited
+0 with `TRS_RUNTIME_EPOCH_SHARED_RECEIVER_PASS` in
+`logs/trs_runtime_epoch_shared_receiver_20260906.log`. It reran those three
+checks and `testBroadcastTRSNoisyStream(13)`. The latter prepares actual TRS
+at absolute slots 12 and 17, propagates the composed chronological samples
+through the noisy CDL stream, and completes the real SSB/SIB1 and TRS
+receivers from buffered samples. Its whole-versus-chunk, noise-state,
+channel-clock and receiver-success assertions all passed. This is a focused
+component integration test, not execution of the main scenario scheduler.
+No FDD waveform run, full testAll or new 12 dB scenario was performed.
+
+The main shared-sample execution repair remains unfinished. In particular,
+the eager SSB capture still conflicts with the first TRS window, and TRS
+tracking/measurement availability is still applied at the source slot rather
+than deferred to complete reception. Avoiding duplicate windows does not
+repair either boundary and must not be used to claim the scenario passes.

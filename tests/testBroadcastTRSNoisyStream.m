@@ -1,7 +1,8 @@
-function ok = testBroadcastTRSNoisyStream()
+function ok = testBroadcastTRSNoisyStream(trsRuntimeSlot)
 % Actual composed TDD samples, noisy CDL stream and completed receivers.
 % This is not qualification of the main slot scheduler or full RF chain.
 setup6GRSimToolkit('Verbose',false);
+if nargin < 1, trsRuntimeSlot = 3; end
 s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
 root = tempname;
@@ -11,7 +12,8 @@ runtime = sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),1);
 runtime.CurrentSlot = 1;
 runtime.CurrentServingIdx(:) = 1;
 [cfg,~] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,runtime,1,'DL');
-trs = sixgr.link.prepareTRSTransmission(cfg,12);
+trs = sixgr.link.prepareTRSTransmission(cfg,12,'RuntimeSlot',trsRuntimeSlot);
+assert(trs.Tx.FirstSlot0Based==trsRuntimeSlot-1);
 prototype = sixgr.link.runCellSearch_MIB_SIB1(cfg, 'PrepareOnly',true, ...
     'UseRuntimeChannel',true,'RuntimeSlot',0);
 assert(prototype.Status=="prepared_not_received");

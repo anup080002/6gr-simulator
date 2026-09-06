@@ -14,7 +14,9 @@ carrier.NCellID = double(cfg.NCellID);
 carrier.NSizeGrid = double(cfg.NSizeGrid);
 carrier.NStartGrid = double(cfg.NStartGrid);
 carrier.SubcarrierSpacing = double(cfg.SubcarrierSpacingKHz);
-carrier.NSlot = double(cfg.SlotNumbers(1));
+absoluteSlot = double(cfg.SlotNumbers(1));
+carrier.NSlot = mod(absoluteSlot,double(carrier.SlotsPerFrame));
+carrier.NFrame = mod(floor(absoluteSlot/double(carrier.SlotsPerFrame)),1024);
 
 csirs = nrCSIRSConfig;
 csirs.CSIRSType = char(string(cfg.CSIRSType));

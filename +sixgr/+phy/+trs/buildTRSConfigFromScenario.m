@@ -7,6 +7,7 @@ addRequired(p, "baseCfg", @(x) isstruct(x) || isobject(x));
 addParameter(p, "RunFolder", "", @(x) ischar(x) || isstring(x));
 addParameter(p, "RunId", "trs_strict_validation", @(x) ischar(x) || isstring(x));
 addParameter(p, "ScenarioName", "trs_strict_validation", @(x) ischar(x) || isstring(x));
+addParameter(p, "RuntimeSlot", [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 parse(p, baseCfg, varargin{:});
 opt = p.Results;
 
@@ -57,6 +58,15 @@ else
     slotNumbers = rawSlotNumbers;
 end
 slotNumbers = unique(slotNumbers, "stable");
+runtimeWindow = struct();
+if ~isempty(opt.RuntimeSlot)
+    runtimeWindow = sixgr.truth.resolveTRSObservationWindow(cfg,opt.RuntimeSlot);
+    if ~runtimeWindow.ObservationStarts
+        error("sixgr:phy:trs:NotObservationStart", ...
+            "Runtime slot %g is not the first resource of this TRS observation window.",opt.RuntimeSlot);
+    end
+    slotNumbers = runtimeWindow.AbsoluteSlotNumbers;
+end
 
 nPorts = max(1, round(double(sixgr.util.structGet(cfg, "phy.trs.nPorts", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.num_ports", 1)))));
@@ -89,6 +99,10 @@ strictCfg.NSizeGrid = double(nSizeGrid);
 strictCfg.NStartGrid = double(nStartGrid);
 strictCfg.SubcarrierSpacingKHz = double(scsKHz);
 strictCfg.FrameNumber = 0;
+if ~isempty(fieldnames(runtimeWindow))
+    strictCfg.FrameNumber = runtimeWindow.FrameNumber;
+    strictCfg.RuntimeObservationWindow = runtimeWindow;
+end
 strictCfg.SlotNumbers = double(slotNumbers);
 strictCfg.SlotAuthority = slotAuthority;
 strictCfg.PeriodSlots = double(sixgr.util.structGet(cfg, "phy.trs.period_slots", NaN));
@@ -121,6 +135,11 @@ strictCfg.ChannelModel = string(sixgr.util.structGet(cfg, "channel.model", "AWGN
 strictCfg.BaseConfig = cfg;
 
 resourceSet = sixgr.phy.trs.buildNZPCSIRSResourceSetForTRS(strictCfg);
+if ~isempty(fieldnames(runtimeWindow)) && runtimeWindow.Authority == "explicit_slot_numbers" && ...
+        runtimeWindow.SlotsPerFrame ~= double(resourceSet.Carrier.SlotsPerFrame)
+    error("sixgr:phy:trs:RuntimeFrameTimingMismatch", ...
+        "Resolved TRS slotsPerFrame must match the actual carrier numerology.");
+end
 strictCfg.ToolboxCarrier = resourceSet.Carrier;
 strictCfg.ToolboxCSIRS = resourceSet.CSIRS;
 strictCfg.NumCSIRSPorts = double(resourceSet.CSIRS.NumCSIRSPorts);

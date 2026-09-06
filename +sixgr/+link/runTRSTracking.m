@@ -6,6 +6,7 @@ p.addParameter("Logger", [], @(x) isempty(x) || isa(x, "sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) isnumeric(x) && isscalar(x));
 p.addParameter("ChannelState",struct(),@(x) isempty(x) || isstruct(x));
 p.addParameter("PrepareOnly",false,@(x) islogical(x) && isscalar(x));
+p.addParameter("RuntimeSlot",[],@(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("ReceivedContext",struct(),@(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
@@ -14,6 +15,10 @@ reception = struct();
 initialChannelState = p.Results.ChannelState;
 receivedContext = p.Results.ReceivedContext;
 if ~isempty(fieldnames(receivedContext))
+    if ~isempty(p.Results.RuntimeSlot)
+        error("sixgr:link:ConflictingTRSExecutionStages", ...
+            "A retained received TRS observation cannot be rebound to a new runtime slot.");
+    end
     if p.Results.PrepareOnly
         error("sixgr:link:ConflictingTRSExecutionStages", ...
             "TRS transmit preparation and receive completion are separate stages.");
@@ -140,13 +145,14 @@ end
 try
     tStart = tic;
     if p.Results.PrepareOnly
-        out.PreparedTransmission = sixgr.link.prepareTRSTransmission(cfg,snr_dB);
+        out.PreparedTransmission = sixgr.link.prepareTRSTransmission(cfg,snr_dB, ...
+            "RuntimeSlot",p.Results.RuntimeSlot);
         out.Notes = "TRS transmit samples prepared; RF, channel and receiver execution deferred.";
         out.ComputeLatency_ms = 1e3*toc(tStart);
         return;
     end
     [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState,reception] = ...
-        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,receivedContext);
+        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,receivedContext,p.Results.RuntimeSlot);
     out.RuntimeStageCount = 5;
     out.ObservedREAllocationTable = localObservedTRSAllocation(tx);
     out.ChannelState = channelState;
@@ -363,12 +369,12 @@ end
 end
 
 function [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState,reception] = ...
-        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,reception)
+        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,reception,runtimeSlot)
 if nargin < 3 || ~isstruct(initialChannelState)
     initialChannelState = struct();
 end
 if isempty(fieldnames(reception))
-    prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB);
+    prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB,"RuntimeSlot",runtimeSlot);
     [rxWave,replay,channelState] = localApplyTrackingChannelAndNoise( ...
         prepared,initialChannelState);
     origin = double(sixgr.util.structGet(replay,"RuntimeChannelStartSample",NaN));

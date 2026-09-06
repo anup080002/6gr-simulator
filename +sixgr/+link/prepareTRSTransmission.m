@@ -1,16 +1,17 @@
-function prepared = prepareTRSTransmission(cfg, snr_dB)
+function prepared = prepareTRSTransmission(cfg, snr_dB, options)
 %PREPARETRSTRANSMISSION Prepare real TRS samples without RF/channel/RX execution.
 % The slot scheduler owns waveform composition and physical transmission.
 arguments
     cfg (1,1) struct
     snr_dB (1,1) double
+    options.RuntimeSlot = []
 end
 runId = string(sixgr.util.structGet(cfg, "run.id", ...
     sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
 scenarioName = string(sixgr.util.structGet(cfg, "scenario.name", ...
     sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
 strictCfg = sixgr.phy.trs.buildTRSConfigFromScenario(cfg, ...
-    "RunId", runId, "ScenarioName", scenarioName);
+    "RunId", runId, "ScenarioName", scenarioName,"RuntimeSlot",options.RuntimeSlot);
 if isfield(strictCfg, "StrictValidation") && ...
         isfield(strictCfg.StrictValidation, "StrictValid") && ...
         ~logical(strictCfg.StrictValidation.StrictValid)

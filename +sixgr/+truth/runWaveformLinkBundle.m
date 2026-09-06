@@ -8416,8 +8416,13 @@ srsSchedulingPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.sc
 trsEnabled = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
 prachRequired = logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false));
 prachEnabled = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
-shouldAttemptTRS = trsEnabled && slotDLAllowed && ...
-    sixgr.truth.isActiveTRSOccasion(cfg, slotIdx);
+shouldAttemptTRS = false;
+if trsEnabled && slotDLAllowed
+    trsWindow = sixgr.truth.resolveTRSObservationWindow(cfg,slotIdx);
+    % The producer includes every authored resource in this multi-slot
+    % observation. Do not retransmit that complete window at each member.
+    shouldAttemptTRS = trsWindow.ObservationStarts;
+end
 prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && ...
     sixgr.truth.isActivePRACHOccasion(cfg, slotIdx);
 prachOccasionActiveThisSlot = prachRequired && prachSignalOpportunityThisSlot;
@@ -15281,7 +15286,8 @@ for k = 1:nTrials
     r.Status = "FAIL";
     try
         out = sixgr.link.runTRSTracking(cfg,"SNR_dB",snr_dB, ...
-            "ChannelState",chState);
+            "ChannelState",chState,"RuntimeSlot", ...
+            sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeCurrentSlot",[]));
         observedRET = localAppendCompatTable(observedRET, ...
             sixgr.util.structGet(out, "ObservedREAllocationTable", table()));
         chState = sixgr.util.structGet(out,"ChannelState",chState);
