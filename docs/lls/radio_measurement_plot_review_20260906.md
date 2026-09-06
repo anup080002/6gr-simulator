@@ -2033,3 +2033,43 @@ the broadcast path still invokes whole-capture channel execution and legacy
 grant-delay alignment; continuous raw-sample channel APIs have not yet replaced
 that path. No new TDD/FDD scenario or full testAll was run. The 12 dB TDD
 scenario is still unqualified and was not restarted.
+
+### Broadcast raw channel samples and explicit timing-search authority
+
+The fading branch of `applyWaveformTruthImpairments` now requests
+`continuous_raw_samples`. Broadcast reception no longer trims channel delay
+or appends a zero-input alignment tail obtained from a cloned channel object.
+The explicit AWGN/no-fading branch is unchanged. The continuous-channel
+validation remains active, including the authored per-sample CDL requirement.
+
+The raw-sample test initially failed BCH decoding. The diagnostic in
+`logs/broadcast_raw_timing_diagnostic_retry_20260906.log` showed that the
+profile supplied neither a synchronization section nor a timing-search budget:
+the zero-guard receiver stayed at nominal sample 1100 and selected a false
+300000 Hz CFO hypothesis. The channel's configured alignment trim was seven
+samples; restoring that trim was not used as a remedy.
+
+Both authored causal profiles now explicitly declare
+`synchronization.max_timing_uncertainty_us: 10`. This is a bounded receiver
+search budget, not a measured delay or a normative 3GPP constant. The new
+catalog field is mapped by the builder and converted at the receiver's actual
+sample rate (77 samples at 7.68 MHz). Simultaneous sample-count and time-based
+budgets are rejected by the builder and receiver helper. Legacy callers that
+declare only a sample-count budget retain that authority. Search-budget value
+and source are propagated from SSB reception to the runtime trial schema.
+
+Session 10659 exited 0 with `BROADCAST_CONTINUOUS_RAW_FINAL_PASS` in
+`logs/broadcast_continuous_raw_final_20260906.log`. It verified time-to-sample
+conversion at four sample rates, configuration mapping and conflicting-unit
+rejection for both authored profiles (configuration only, no FDD simulation),
+four actual BCH/SIB1 beam decodes using raw channel samples, the nonzero-CFO
+and missing-reference tests, and causal result delivery. The raw-channel checks
+require zero applied alignment trim and zero cloned-tail lookahead. The edited
+main runner also loaded successfully.
+
+This supersedes the preceding note that broadcast still uses grant-delay
+alignment. It does not resolve whole-capture eager execution or integrate all
+SSB/TRS/control/data contributors into the shared chronological sample stream.
+No new TDD/FDD scenario, full testAll, optional image expansion or OFDM
+windowing change was performed. The previous 12 dB scenario remains failed
+and unqualified.

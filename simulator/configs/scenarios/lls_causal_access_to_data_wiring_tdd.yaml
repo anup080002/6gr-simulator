@@ -16,6 +16,11 @@ meta:
   scenario_group: causal_access_to_data_wiring
   tags: [lls, truth, tdd, 5mhz, causal, initial_access, beam, csi, amc]
 
+synchronization:
+  # Bounded acquisition window around each SS/PBCH occasion, resolved at
+  # the actual waveform sample rate; channel delay is not trimmed away.
+  max_timing_uncertainty_us: 10
+
 canonical_control:
   launch:
     scenario_mode: ue_placement_geometry

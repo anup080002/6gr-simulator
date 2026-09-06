@@ -3978,6 +3978,11 @@ end
 end
 
 function cfg = localApplyTimingAndRFHardwareSurface(cfg, s)
+if ~isempty(localGetNested(s,"synchronization.max_timing_uncertainty_samples",[])) && ...
+        ~isempty(localGetNested(s,"synchronization.max_timing_uncertainty_us",[]))
+    error("sixgr:lls6g:config:AmbiguousTimingSearchBudget", ...
+        "Declare synchronization.max_timing_uncertainty_samples or synchronization.max_timing_uncertainty_us, not both.");
+end
 syncPairs = {
     "timing_sync_algorithm", "timingSyncAlgorithm"
     "frequency_sync_algorithm", "frequencySyncAlgorithm"
@@ -3989,6 +3994,7 @@ syncPairs = {
     "pss_detection_threshold", "pssDetectionThreshold"
     "sss_hypothesis_test_threshold", "sssHypothesisTestThreshold"
     "max_timing_uncertainty_samples", "maxTimingUncertaintySamples"
+    "max_timing_uncertainty_us", "maxTimingUncertainty_us"
     "ota_timing_advance_enable", "otaTimingAdvanceEnabled"
     "timing_advance_granularity_ts", "timingAdvanceGranularityTs"
     };

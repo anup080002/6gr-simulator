@@ -30,7 +30,16 @@ replay = struct( ...
     "PhaseNoiseExecutionStatus", "not_configured");
 
 if isstruct(state)
-    [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x, state);
+    if sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg) || ...
+            logical(sixgr.util.structGet(state,"UseFading",false))
+        % Broadcast acquisition observes physical sample time. Do not trim
+        % channel delay or synthesize a future zero tail on a cloned fading
+        % object as the legacy grant-aligned interface does.
+        [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel( ...
+            x,state,"OutputSampleAlignment","continuous_raw_samples");
+    else
+        [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x,state);
+    end
     chFields = fieldnames(channelReplay);
     for chIdx = 1:numel(chFields)
         replay.(chFields{chIdx}) = channelReplay.(chFields{chIdx});

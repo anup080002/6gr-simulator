@@ -31,6 +31,11 @@ meta:
     - "precoding"
   schema_version: "2.0.0"
   schemaVersion: "2.0.0"
+synchronization:
+  # Bounded acquisition window around each SS/PBCH occasion, resolved at
+  # the actual waveform sample rate; channel delay is not trimmed away.
+  max_timing_uncertainty_us: 10
+
 run_control:
   seed: 104729
   deterministic_mode: true
