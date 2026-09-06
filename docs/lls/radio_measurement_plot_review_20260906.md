@@ -1639,3 +1639,22 @@ The coupled collector does not yet select this preparation-only mode: its
 incremental receive/complete phase and slot-level composition must be wired
 before that switch. Therefore the original scenario clock failure remains
 unresolved, and no replacement TDD or broad qualification run is claimed.
+
+### Minimal 12 dB rerun checkpoint: TRS exception provenance
+
+The TRS exception path now preserves its actual exception identifier and
+message and reports `Crash=true`. A runtime exception is not a measured
+tracking-failure trial: its tracking-failure probability remains unavailable.
+The five-stage completion count is published only after the actual runtime
+chain returns. The coupled TRS row preserves the crash and failure reason
+instead of claiming an executed waveform chain on an early exception.
+
+`testTRSRuntimeExceptionEvidence` exercises the production initial-channel
+state validator. It and `testTRSReferenceSignalExecution` passed in
+`logs/trs_exception_evidence_20260906.log` (`TRS_FOCUSED_CHECKS_PASS`).
+Full-suite/export qualification is deferred under the requested narrow scope.
+This patch does not resolve the multi-slot broadcast/channel ordering defect.
+The next short TDD run is diagnostic, not a claimed qualification pass.
+The YAML retains thermal-noise authority: 12 dB is the configured operating
+point label, not a forced measured SINR. No FDD/25 dB scenario or optional
+windowing/plot expansion is included in this checkpoint.

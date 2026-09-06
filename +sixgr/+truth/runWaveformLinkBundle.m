@@ -15357,24 +15357,30 @@ for k = 1:nTrials
         r.RuntimeIntegrationMode = "coupled_slot_runtime";
         r.RuntimeTransportMode = "trs_tx_power_rf_runtime_channel_noise_rx_rf_trs_rx";
         r.RuntimeStageWaveformsRequired = true;
-        r.RuntimeStageWaveformsUsed = true;
+        r.RuntimeStageWaveformsUsed = isfinite(double(sixgr.util.structGet( ...
+            out, "RuntimeStageCount", NaN)));
         r.RuntimeSelfLoopWaveformsUsed = false;
         r.RuntimeChannelStateUsed = logical(sixgr.util.structGet(out, "RuntimeChannelStateUsed", false));
         r.RuntimeChannelLinkKeys = string(sixgr.util.structGet(out, "RuntimeChannelLinkKeys", ""));
         r.RuntimeNoiseApplied = logical(sixgr.util.structGet(out, "RuntimeNoiseApplied", false));
         r.RuntimeNoiseVarianceMean = double(sixgr.util.structGet(out, "RuntimeNoiseVarianceMean", NaN));
-        r.RuntimeStageCount = double(sixgr.util.structGet(out, "RuntimeStageCount", 5));
+        r.RuntimeStageCount = double(sixgr.util.structGet(out, "RuntimeStageCount", NaN));
         if ~ok && strlength(strtrim(string(sixgr.util.structGet(out, "FailureReason", "")))) > 0
             r.FailureReason = string(sixgr.util.structGet(out, "FailureReason", ""));
         end
         if ok
             r.Status = "PASS";
         end
+        r.Crash = logical(sixgr.util.structGet(out, "Crash", false));
+        if r.Crash
+            r.Status = "CRASH";
+        end
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
     catch ME
         r.Crash = true;
         r.CRCPass = NaN;
         r.Status = "CRASH";
+        r.FailureReason = string(ME.identifier) + ": " + string(ME.message);
         r.Notes = string(ME.message);
     end
     rows(k) = r;

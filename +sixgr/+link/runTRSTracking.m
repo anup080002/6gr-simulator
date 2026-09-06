@@ -12,6 +12,8 @@ snr_dB = double(p.Results.SNR_dB);
 out = struct();
 out.Ok = false;
 out.Skipped = false;
+out.Crash = false;
+out.FailureIdentifier = "";
 out.NMSE_dB = NaN;
 out.PhaseError_deg = NaN;
 out.EstimatedDoppler_Hz = NaN;
@@ -83,7 +85,7 @@ out.RuntimeChannelStateUsed = false;
 out.RuntimeChannelLinkKeys = "";
 out.RuntimeNoiseApplied = false;
 out.RuntimeNoiseVarianceMean = NaN;
-out.RuntimeStageCount = 5;
+out.RuntimeStageCount = NaN;
 out.TxRFExecutionStatus = "";
 out.TxRFStageOrder = "";
 out.TxRFAppliedStageCount = NaN;
@@ -122,6 +124,7 @@ try
     tStart = tic;
     [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
         localRunStrictRuntimeTRSEvidence(cfg,snr_dB,p.Results.ChannelState);
+    out.RuntimeStageCount = 5;
     out.ObservedREAllocationTable = localObservedTRSAllocation(tx);
     out.ChannelState = channelState;
     trial = score.TrialRow;
@@ -266,7 +269,11 @@ try
         ", runtimeEvidenceOk=" + string(runtimeEvidenceOk);
 catch ME
     out.Ok = false;
-    out.TrackingFailure = 1;
+    out.Crash = true;
+    out.FailureIdentifier = string(ME.identifier);
+    out.FailureReason = string(ME.identifier) + ": " + string(ME.message);
+    % An execution exception is not a measured tracking failure trial.
+    out.TrackingFailure = NaN;
     out.Notes = "Failure: " + string(ME.message);
     if ~isempty(log)
         log.warn("runTRSTracking failed: " + string(ME.message));
