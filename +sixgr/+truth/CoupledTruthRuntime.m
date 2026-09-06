@@ -425,6 +425,56 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.startSlotImpl(state, cfg, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB);
     end
 
+    function plan = futureULPlanningView(state, targetSlot)
+        % A K2 grant is decided now for a later resource occasion. Changing
+        % that resource calendar must not execute future feedback, advance
+        % propagation, or inject traffic not yet arrived at the decision.
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
+        decisionSlot = sixgr.util.structGet(state,"CurrentSlot",NaN);
+        canonicalSlot = sixgr.util.structGet(state,"CurrentCanonicalSlot",NaN);
+        trafficSlot = sixgr.util.structGet(state,"LastTrafficFrameApplied",NaN);
+        validateattributes(targetSlot,{'numeric'}, ...
+            {'real','scalar','finite','integer','positive'});
+        clocks = [decisionSlot canonicalSlot trafficSlot];
+        if ~isnumeric(clocks) || numel(clocks)~=3 || any(~isfinite(clocks)) || ...
+                any(clocks~=fix(clocks)) || decisionSlot<1 || ...
+                canonicalSlot~=decisionSlot || trafficSlot<0 || ...
+                trafficSlot>decisionSlot || targetSlot<decisionSlot
+            error("sixgr:truth:InvalidULPlanningClock", ...
+                "UL planning requires the current decision clock, past/current traffic and a non-past target slot.");
+        end
+        plan = sixgr.truth.CoupledTruthRuntime.bindSlotCalendarImpl( ...
+            state,"UL",state.CurrentSweepPointIndex,state.CurrentSweepPointCount, ...
+            targetSlot,state.CanonicalSlotsPerSweepPoint,state.CurrentSNR_dB);
+        if ~plan.CurrentSlotULAllowed
+            error("sixgr:truth:InvalidULPlanningOccasion", ...
+                "The configured target resource slot has no UL symbols.");
+        end
+        plan.RuntimeViewMode = "future_ul_grant_planning";
+        plan.PlanningDecisionSlot = double(decisionSlot);
+        plan.PlanningTrafficThroughSlot = double(trafficSlot);
+        plan.TimingControlAbsoluteSlot0Based = double(decisionSlot)-1;
+        % Keep physical runtime time unchanged. CurrentSlot/CurrentFrame and
+        % symbol partitions in this tagged view identify planned resources.
+        plan.CurrentCanonicalSlot = double(canonicalSlot);
+        % Latest delivered feedback must be genuinely available now. A
+        % future pending report belongs in PendingCSITable, not this cache.
+        for name = ["LatestDLFeedback","LatestULFeedback"]
+            reports = sixgr.util.structGet(state,name,struct([]));
+            for k = 1:numel(reports)
+                if ~logical(sixgr.util.structGet(reports(k),"Valid",false)), continue; end
+                produced = sixgr.util.structGet(reports(k),"SourceSlot",NaN);
+                delivered = sixgr.util.structGet(reports(k),"DeliveredSlot",NaN);
+                times = [produced delivered];
+                if numel(times)~=2 || any(~isfinite(times)) || ...
+                        produced>delivered || delivered>decisionSlot
+                    error("sixgr:truth:NoncausalULPlanningFeedback", ...
+                        "Valid cached feedback must have a source and delivery no later than the UL grant decision.");
+                end
+            end
+        end
+    end
+
     function state = setCurrentUE(state, ueIdx, direction)
         state.CurrentDirection = upper(string(direction));
         state.CurrentUEIndex = double(ueIdx);
@@ -708,6 +758,7 @@ methods(Static)
     end
 
     function [state, observed] = observePUCCHFeedbackRuntime(state, feedbackRow, csiReport)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         if nargin < 3
             csiReport = struct();
         end
@@ -972,6 +1023,7 @@ methods(Static, Access=private)
     end
 
     function state = advanceFrameImpl(state, absoluteFrame, snr_dB)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         canonicalSlot = max(1, round(double(absoluteFrame(1))));
         snr_dB = double(snr_dB(1));
         beamUpdateSlots = sixgr.truth.CoupledTruthRuntime.scalarOrDefault(sixgr.util.structGet(state, "BeamUpdateSlots", 4), 4);
@@ -1013,6 +1065,34 @@ methods(Static, Access=private)
 
     function state = startSlotImpl(state, cfg, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB)
         %#ok<INUSD>
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
+        state = sixgr.truth.CoupledTruthRuntime.bindSlotCalendarImpl( ...
+            state,direction,sweepIdx,sweepCount,absoluteFrame,totalFrames,snr_dB);
+        state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceStart( ...
+            state,direction,sweepIdx,sweepCount,state.CurrentSlot, ...
+            state.CanonicalSlotsPerSweepPoint,snr_dB);
+        state = sixgr.truth.CoupledTruthRuntime.processDueFeedback(state);
+    end
+
+    function assertRuntimeExecutionView(state)
+        if string(sixgr.util.structGet(state,"RuntimeViewMode","execution")) ...
+                == "future_ul_grant_planning"
+            error("sixgr:truth:ExecutionFromPlanningView", ...
+                "A future UL resource-planning view cannot execute or commit PHY, feedback or traffic events.");
+        end
+    end
+
+    function slot = schedulingKnowledgeSlot(state)
+        slot = double(sixgr.util.structGet(state,"CurrentSlot",0));
+        if string(sixgr.util.structGet(state,"RuntimeViewMode","execution")) ...
+                == "future_ul_grant_planning"
+            slot = double(state.PlanningDecisionSlot);
+        end
+    end
+
+    function state = bindSlotCalendarImpl(state, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB)
+        % Pure value-only calendar binding shared by actual slot entry and
+        % future grant planning. No handle invocation, trace or delivery.
         canonicalSlot = max(1, round(double(absoluteFrame)));
         totalCanonicalSlots = round(double(totalFrames));
         if ~(isfinite(totalCanonicalSlots) && totalCanonicalSlots >= 1)
@@ -1043,11 +1123,10 @@ methods(Static, Access=private)
         state.CurrentSNR_dB = double(snr_dB);
         state.CurrentSweepPointIndex = double(sweepIdx);
         state.CurrentSweepPointCount = double(sweepCount);
-        state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceStart(state, direction, sweepIdx, sweepCount, canonicalSlot, totalCanonicalSlots, snr_dB);
-        state = sixgr.truth.CoupledTruthRuntime.processDueFeedback(state);
     end
 
     function state = beginSlotImpl(state, ueIdx, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         canonicalSlot = max(1, round(double(absoluteFrame)));
         totalCanonicalSlots = round(double(totalFrames));
         if ~(isfinite(totalCanonicalSlots) && totalCanonicalSlots >= 1)
@@ -1801,6 +1880,7 @@ methods(Static, Access=private)
     end
 
     function [state, context, grantRow] = buildTrialContextFromGrantImpl(state, cfg, ueIdx, direction, grant)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         direction = upper(string(direction));
         grant = sixgr.truth.CoupledTruthRuntime.normalizeGrantSnapshot(grant, direction, state, ueIdx);
         isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
@@ -2080,6 +2160,7 @@ methods(Static, Access=private)
     end
 
     function [state, channelState] = acquireRuntimeChannelStateForControlImpl(state, cfg, ueIdx, direction, servingCell)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         channelState = [];
         if ~sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
             return;
@@ -2166,6 +2247,7 @@ methods(Static, Access=private)
     end
 
     function state = commitRuntimeChannelStateImpl(state, channelState)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         if ~(isstruct(channelState) && isfield(channelState, "ContractVersion"))
             return;
         end
@@ -2880,6 +2962,7 @@ methods(Static, Access=private)
     end
 
     function state = processDueFeedback(state)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         currentSlot = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
         lastProcessedSlot = double(sixgr.util.structGet(state, "LastDueFeedbackProcessedSlot", NaN));
         if ~(isfinite(currentSlot) && isfinite(lastProcessedSlot) && ...
@@ -4052,6 +4135,7 @@ methods(Static, Access=private)
         end
 
     function state = enqueueTrafficForFrame(state, absoluteFrame)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         absoluteFrame = max(1, round(double(absoluteFrame)));
         if double(state.LastTrafficFrameApplied) >= absoluteFrame
             return;
@@ -4786,14 +4870,20 @@ methods(Static, Access=private)
         maxAgeSlots = max(0, round(double(sixgr.util.structGet(state.ControlGating, "SRSMaxAgeSlots", 0))));
         nUsers = double(sixgr.util.structGet(state, "NumUsers", 0));
         currentSlot = double(sixgr.util.structGet(state, "CurrentSlot", 0));
+        knowledgeSlot = sixgr.truth.CoupledTruthRuntime.schedulingKnowledgeSlot(state);
         for ueIdx = 1:nUsers
             lastSuccess = sixgr.truth.CoupledTruthRuntime.numericStateAt(state, "LastSuccessfulSRSSlotByUE", ueIdx, NaN);
             prevState = sixgr.truth.CoupledTruthRuntime.controlStateAt(state, "SRSValidityState", ueIdx, "invalid");
-            if isfinite(lastSuccess) && isfinite(currentSlot) && (currentSlot - lastSuccess) <= maxAgeSlots
+            if isfinite(lastSuccess) && isfinite(currentSlot) && ...
+                    lastSuccess<=knowledgeSlot && (currentSlot-lastSuccess)>=0 && ...
+                    (currentSlot - lastSuccess) <= maxAgeSlots
                 state.SRSValidityState(ueIdx) = "valid";
                 state.CSIValidityState(ueIdx) = "fresh_srs";
             else
-                if isfinite(lastSuccess)
+                if isfinite(lastSuccess) && lastSuccess>knowledgeSlot
+                    nextState = "invalid";
+                    nextCSI = "invalid_srs_not_usable";
+                elseif isfinite(lastSuccess)
                     nextState = "stale";
                     nextCSI = "stale_srs_not_usable";
                 elseif srsRequired
@@ -4820,15 +4910,20 @@ methods(Static, Access=private)
         maxAgeSlots = max(0, round(double(sixgr.util.structGet(state.ControlGating, "TRSMaxAgeSlots", 0))));
         nCells = numel(sixgr.util.structGet(state, "TRSValidityStateByCell", strings(0, 1)));
         currentSlot = double(sixgr.util.structGet(state, "CurrentSlot", 0));
+        knowledgeSlot = sixgr.truth.CoupledTruthRuntime.schedulingKnowledgeSlot(state);
         for cellIdx = 1:nCells
             lastSuccess = sixgr.truth.CoupledTruthRuntime.numericServingStateAt(state, "LastSuccessfulTRSSlotByCell", cellIdx, NaN);
             lastObserved = sixgr.truth.CoupledTruthRuntime.numericServingStateAt(state, "LastTRSObservedSlotByCell", cellIdx, NaN);
-            if isfinite(lastSuccess) && isfinite(currentSlot) && (currentSlot - lastSuccess) <= maxAgeSlots
+            if isfinite(lastSuccess) && isfinite(currentSlot) && ...
+                    lastSuccess<=knowledgeSlot && (currentSlot-lastSuccess)>=0 && ...
+                    (currentSlot - lastSuccess) <= maxAgeSlots
                 state.TRSValidityStateByCell(cellIdx) = "valid";
                 state.TrackingEligibilityByCell(cellIdx) = true;
                 state = sixgr.truth.CoupledTruthRuntime.updateReceiverTrackingFreshnessImpl(state, cellIdx, "valid");
             else
-                if isfinite(lastSuccess)
+                if isfinite(lastSuccess) && lastSuccess>knowledgeSlot
+                    nextState = "invalid";
+                elseif isfinite(lastSuccess)
                     nextState = "stale";
                 elseif isfinite(lastObserved)
                     nextState = "failed";
@@ -5468,9 +5563,16 @@ methods(Static, Access=private)
                 ismember("ProducerSlot", string(T.Properties.VariableNames))
             T = T(double(T.ProducerSlot) >= pointStartSlot, :);
         end
+        knowledgeSlot = double(consumerSlot);
+        if string(sixgr.util.structGet(state,"RuntimeViewMode","execution")) ...
+                == "future_ul_grant_planning"
+            knowledgeSlot = min(knowledgeSlot, ...
+                sixgr.truth.CoupledTruthRuntime.schedulingKnowledgeSlot(state));
+        end
         result = sixgr.phy.refsig.causalMeasurementState(T, consumerSlot, ...
             "SignalType", signalType, "TargetType", targetType, ...
-            "TargetId", targetId, "MaxAgeSlots", maxAgeSlots);
+            "TargetId", targetId, "MaxAgeSlots", maxAgeSlots, ...
+            "KnownAtSlot",knowledgeSlot);
     end
 
     function result = consumeReferenceSignalPathlossImpl(state, signalType, targetType, targetId, consumerSlot, maxAgeSlots, referenceSignalId)
@@ -15085,6 +15187,7 @@ methods(Static, Access=private)
     end
 
     function [state, observed] = observePUCCHFeedback(state, feedbackRow, csiReport)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         if nargin < 3 || ~isstruct(csiReport)
             csiReport = struct();
         end

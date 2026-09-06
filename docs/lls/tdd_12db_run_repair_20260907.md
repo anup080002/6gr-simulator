@@ -1,5 +1,74 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Future-UL decision-clock checkpoint (2026-09-07)
+
+The main shared-stream owner remains **incomplete**. This checkpoint repairs
+an additional real main-scheduler look-ahead defect; it does not establish a
+successful production run. The last production run still has zero committed
+DL and UL data trial rows. No production scenario or CSV/PNG regeneration was
+launched, and no historical outputs or failure logs were deleted.
+
+The future-PUSCH planner previously called `startSlot` for its target K2 slot
+and enqueued traffic through that future slot. `startSlot` processes due
+feedback, including waveform receivers. A copied MATLAB struct does not clone
+its handle-valued PHY, HARQ, scheduler and protocol objects: discarding the
+planning struct could therefore leave real shared objects advanced. Future
+traffic arrivals also leaked information into an earlier grant decision.
+
+Implemented repairs:
+
+- Main future-UL scheduling now calls `futureULPlanningView`, which binds only
+  the configured target resource calendar. Physical/decision time and the
+  traffic-arrival watermark remain at the actual control decision. Existing
+  canonical TDD partitions and separate FDD contexts remain the authority;
+  there is no hardcoded UL slot or duplex-specific replacement path.
+- PHY context/channel acquisition and commit, physical slot entry, traffic
+  delivery and PUCCH observation reject a tagged planning view. The helper
+  does not execute future feedback or enqueue future traffic. It also rejects
+  a valid latest-feedback cache entry with missing/noncausal source or
+  delivery timestamps. This is not a claim that every possible public
+  mutation of shared handles is now guarded.
+- Reference-signal selection now distinguishes `KnownAtSlot` from its
+  resource-consumer slot. Future planning selects only already-available
+  measurements, while testing freshness at the future transmission. The
+  default preserves ordinary consumer-slot queries. Impossible valid rows
+  whose availability precedes production fail rather than being repaired.
+- SRS/TRS freshness no longer accepts a future success because its computed
+  age is negative. Planning checks also reject success after the control
+  decision even when it precedes the resource occasion.
+- Future-UL decision exports include `SchedulingKnowledgeSlot` and
+  `TrafficKnowledgeThroughSlot`. These express simulator queue knowledge,
+  not proof of an over-the-air SR/BSR transaction.
+
+`testFutureULPlanningCausality` exercises the production helper with the real
+TDD calendar and explicitly constructed pending/queue records. It verifies
+unchanged RNG/HARQ stats, no profiled future receiver or arrival execution,
+preserved pending records, current-queue demand, knowledge-time selection,
+freshness, invalid-timestamp rejection and blocked execution entry points. A
+source-level guard verifies the main planner uses this helper. These are
+component and wiring checks, not a completed scheduled air-interface trial.
+
+Final verification on this executable revision: session 58770, exit 0,
+`logs/future_ul_planning_20260907_verified.log`, all nine focused tests passed:
+`testFutureULPlanningCausality`, `testSchedulerGrantConsistency`,
+`testReferenceSignalCausalProducersConsumers`, `testGrantCacheLiveUCIAuthority`,
+`testUplinkTruthImpairmentDirection`, `testPDCCHPreparationReception`,
+`testTRSResultDelivery`, `testTRSMeasuredResultDelivery`, and
+`testCoupledTruthFeedbackDelayAuthority`. `git diff --check` also passed.
+No `testAll` or full campaign was run. The earlier failed guard-placement
+check remains in `logs/future_ul_planning_20260907_focused.log`: the public
+PUCCH wrapper initially validated the empty fixture before reaching the
+private planning guard. The public guard is now before that validation;
+the final rerun passes without weakening the PUCCH contract.
+
+Remaining acceptance order is unchanged: integrate chronological shared TX/RX
+processing, qualify all UL channels and UCI/control decisions on it, implement
+separate TX/RX origins for nonzero timing advance, qualify delivered CSI and
+active QCL/TCI/precoding, finish source-bound physical RSSI CSV/PNG exports,
+then calibrate and run the short TDD diagnostic. Neither the original channel
+time-reversal guard nor any measurement/CRC gate was weakened. Required full
+campaign claims remain unverified under the user's bounded-test scope.
+
 ## UL clock, access observation tail and PUCCH CCE checkpoint (2026-09-07)
 
 The main shared-clock/shared-stream integration remains **incomplete**. These

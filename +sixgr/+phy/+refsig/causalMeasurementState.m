@@ -3,13 +3,16 @@ function out = causalMeasurementState(measurements, consumerSlot, varargin)
 %
 % Measurements must carry at least SignalType, ProducerSlot, AvailableSlot
 % and Valid fields/columns. A consumer may use only rows with
-% AvailableSlot <= consumerSlot and age <= MaxAgeSlots.
+% AvailableSlot <= KnownAtSlot and age at consumerSlot <= MaxAgeSlots.
+% KnownAtSlot defaults to consumerSlot. A future grant can require freshness
+% at transmission while using only information available at its decision.
 
 opt = struct( ...
     "SignalType", "", ...
     "TargetType", "", ...
     "TargetId", NaN, ...
-    "MaxAgeSlots", inf);
+    "MaxAgeSlots", inf, ...
+    "KnownAtSlot", []);
 if ~isempty(varargin)
     if mod(numel(varargin), 2) ~= 0
         error("sixgr:phy:refsig:CausalMeasurementBadNV", ...
@@ -26,6 +29,8 @@ if ~isempty(varargin)
                 opt.TargetId = double(varargin{ii + 1});
             case "maxageslots"
                 opt.MaxAgeSlots = double(varargin{ii + 1});
+            case "knownatslot"
+                opt.KnownAtSlot = double(varargin{ii + 1});
             otherwise
                 error("sixgr:phy:refsig:CausalMeasurementUnknownOption", ...
                     "Unknown causal measurement option '%s'.", key);
@@ -40,11 +45,18 @@ if ~(isscalar(consumerSlot) && isfinite(consumerSlot))
         "consumerSlot must be a finite scalar.");
 end
 maxAge = double(opt.MaxAgeSlots);
+knownAtSlot = opt.KnownAtSlot;
+if isempty(knownAtSlot), knownAtSlot = consumerSlot; end
+if ~(isscalar(knownAtSlot) && isreal(knownAtSlot) && isfinite(knownAtSlot) && knownAtSlot<=consumerSlot)
+    error("sixgr:phy:refsig:CausalMeasurementBadKnowledgeSlot", ...
+        "KnownAtSlot must be finite and no later than the resource-consumer slot.");
+end
 if ~(isscalar(maxAge) && isfinite(maxAge) && maxAge >= 0)
     maxAge = inf;
 end
 
 out = localEmptyResult(consumerSlot, maxAge);
+out.KnownAtSlot = double(knownAtSlot);
 if isempty(T) || height(T) == 0
     out.Status = "no_measurements";
     out.Blocker = "no_reference_signal_measurements_available";
@@ -71,10 +83,17 @@ candidate = T(mask, :);
 valid = localLogicalColumn(candidate, "Valid", false);
 availableSlot = localNumericColumn(candidate, "AvailableSlot", NaN);
 producerSlot = localNumericColumn(candidate, "ProducerSlot", NaN);
-notFuture = valid & isfinite(availableSlot) & availableSlot <= consumerSlot;
+if any(valid & isfinite(availableSlot) & isfinite(producerSlot) & availableSlot < producerSlot)
+    error("sixgr:phy:refsig:CausalMeasurementInvalidTiming", ...
+        "A valid measurement cannot be available before its producer slot.");
+end
+notFuture = valid & isfinite(availableSlot) & availableSlot <= knownAtSlot;
 if ~any(notFuture)
     out.Status = "future_measurement_not_available";
     out.Blocker = "reference_signal_measurement_available_after_consumer_slot";
+    if knownAtSlot < consumerSlot
+        out.Blocker = "reference_signal_measurement_available_after_knowledge_slot";
+    end
     futureSlots = availableSlot(valid & isfinite(availableSlot));
     if ~isempty(futureSlots)
         out.NextAvailableSlot = min(futureSlots);

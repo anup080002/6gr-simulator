@@ -3824,17 +3824,14 @@ if localHasPendingCoupledULGrantForSlot(pendingULGrants, dueSlot)
     return;
 end
 
-planState = sixgr.truth.CoupledTruthRuntime.startSlot( ...
-    state, cfg, "UL", sweepIdx, sweepCount, dueSlot, ...
-    nFramesPerPoint * sweepCount, snr_dB);
+planState = sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,dueSlot);
 decisionRowsBefore = height(sixgr.util.structGet( ...
     planState, "SchedulerDecisionTable", table()));
 planState.TimingControlAbsoluteSlot0Based = controlSlot - 1;
 planState.TimingControlSymbolAllocation = ...
     localCoupledControlSymbolAllocation(state, cfg);
-% K2 scheduling decides for the future UL slot, so its MAC buffer view must
-% include traffic that arrived up to that due slot.
-planState = sixgr.truth.CoupledTruthRuntime.enqueueTrafficForFrameRuntime(planState, dueSlot);
+% Queue and feedback knowledge remain frozen at this control decision.
+% The target slot supplies a resource calendar, not future traffic/PHY data.
 pucchDueUEs = sixgr.truth.CoupledTruthRuntime.pucchFeedbackDueUEsRuntime(state, dueSlot);
 uciOnPUSCHAvailable = localPUSCHUCIOnPUSCHAvailable(cfg);
 if ~isempty(pucchDueUEs) && ~uciOnPUSCHAvailable
@@ -4670,6 +4667,8 @@ newRows.Direction = repmat("UL", n, 1);
 newRows.ControlSlot = repmat(double(controlSlot), n, 1);
 newRows.ScheduledDataSlot = repmat(double(dueSlot), n, 1);
 newRows.K2Slots = repmat(double(k2Slots), n, 1);
+newRows.SchedulingKnowledgeSlot = repmat(double(planState.PlanningDecisionSlot),n,1);
+newRows.TrafficKnowledgeThroughSlot = repmat(double(planState.PlanningTrafficThroughSlot),n,1);
 newRows.SchedulingTimingMode = repmat("dci_k2_future_ul", n, 1);
 newRows.ValueSource = repmat( ...
     "sixgr.l2.mac.SchedulerPF.schedule:k2_future_slot_plan", n, 1);
