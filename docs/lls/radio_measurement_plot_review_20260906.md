@@ -1484,3 +1484,41 @@ instead retain the raw delayed samples across read boundaries. Incremental
 channel/RF reception, RX buffering, and deferred acquisition completion remain
 to be integrated before another scenario can be claimed to fix the clock
 failure. Full qualification and a replacement TDD run remain outstanding.
+
+### Continuous fading samples and explicit coefficient-sampling authority
+
+`ChannelFactory.applyRuntimeChannelState` now supports the explicit sample
+reference plane `OutputSampleAlignment="continuous_raw_samples"`. It retains
+the persistent filter's raw delayed output, does not trim each chunk, and
+does not manufacture a zero-input alignment tail. Unmaterialized state,
+missing fading objects, invalid inputs, and unexpected output lengths fail
+closed. The existing grant-aligned API remains the default, with its output
+alignment now explicit in replay evidence.
+
+The first real-CDL partition test failed with relative error 0.0236803.
+Inspection of the installed R2026a `getCDLSampleTimes` and channel filtering
+code showed that finite CDL snapshot sampling is tied to each call's time
+origin and length. Full-rate coefficient sampling is now an explicit YAML
+boolean, `channels.per_sample_fading_enabled`, mapped by the builder to
+`channel.perSampleFadingEnabled` and to the actual CDL object's
+`SampleDensity=Inf`. Both causal duplex profiles declare it. TDL has no
+CDL-style SampleDensity property and retains its native per-sample path gains.
+Continuous CDL requests without full-rate authority are rejected; the API
+does not silently override configuration. This setting is supported by the
+[MathWorks CDL channel reference](https://www.mathworks.com/help/5g/ref/nrcdlchannel-system-object.html).
+
+Final focused session 73019 exited 0 with `CONTINUOUS_CHANNEL_VALIDATED_PASS`
+in `logs/runtime_channel_continuous_samples_20260906_04.log`. The registered
+`testRuntimeChannelContinuousSamples` sends all 38,400 actual TDD broadcast
+samples through the configured CDL channel. Irregular partitions, including
+boundaries inside OFDM symbols, match full-waveform raw output with relative
+error 2.01144e-16 and match direct backend execution. Sample clocks, reset
+counts, absence of alignment lookahead, and invalid-state/config rejection
+are asserted. `testRuntimeChannelContinuity` and
+`testSIB1PhysicalElementTDLCausalRecovery` also pass. Earlier failed logs are
+preserved, not counted as passes.
+
+The continuous API is not yet integrated with coupled slot dispatch and RF
+state. Full qualification, multi-slot RX buffering/deferred acquisition, and
+a successful replacement TDD scenario remain outstanding. No FDD scenario,
+25 dB scenario, or broad full-suite batch was launched.

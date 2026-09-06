@@ -238,6 +238,7 @@ sections:
         allowed_values: [AWGN, TDL-A, TDL-B, TDL-C, TDL-D, TDL-E, CDL-A, CDL-B, CDL-C, CDL-D, CDL-E]
       delay_spread_ns: {required: true, type: number, min: 0}
       doppler_hz: {required: true, type: number, min: 0}
+      per_sample_fading_enabled: {required: false, type: boolean}
       doppler_source_mode: {required: false, type: string, allowed_values: [configured, derive_from_ue_speed]}
       mobility_kmph: {required: true, type: number, min: 0}
       los_enabled: {required: true, type: boolean}

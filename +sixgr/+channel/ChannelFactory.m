@@ -827,8 +827,42 @@ classdef ChannelFactory
             ip = inputParser;
             ip.addParameter("CapturePathGains", [], @(v) isempty(v) || ...
                 (isscalar(v) && (islogical(v) || isnumeric(v))));
+            % This selects the API's sample reference plane, not a fading
+            % approximation. Continuous consumers retain channel/filter
+            % delay and must perform timing recovery on their RX buffer.
+            ip.addParameter("OutputSampleAlignment", "grant_delay_aligned", ...
+                @(v) ischar(v) || isstring(v));
             ip.parse(varargin{:});
             explicitPathGainCapture = ip.Results.CapturePathGains;
+            outputAlignment = string(ip.Results.OutputSampleAlignment);
+            if ~isscalar(outputAlignment) || ismissing(outputAlignment) || ...
+                    ~any(outputAlignment == ["grant_delay_aligned", "continuous_raw_samples"])
+                error("ChannelFactory:InvalidOutputSampleAlignment", ...
+                    "OutputSampleAlignment must be grant_delay_aligned or continuous_raw_samples.");
+            end
+            continuousOutput = outputAlignment == "continuous_raw_samples";
+            if continuousOutput && (~isstruct(state) || ~isscalar(state) || ...
+                    ~isfield(state, "ContractVersion") || ...
+                    ~logical(sixgr.util.structGet(state, "Initialized", false)) || ...
+                    ~logical(sixgr.util.structGet(state, "Materialized", false)))
+                error("ChannelFactory:UninitializedContinuousChannel", ...
+                    "Continuous samples require an initialized and materialized authoritative runtime channel.");
+            end
+            if continuousOutput && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
+                    isempty(sixgr.util.structGet(state, "Obj", []))
+                error("ChannelFactory:MissingContinuousFadingObject", ...
+                    "A continuous fading stream cannot pass samples through without its channel object.");
+            end
+            if continuousOutput && isa(sixgr.util.structGet(state, "Obj", []), "nrCDLChannel") && ...
+                    ~isinf(state.Obj.SampleDensity)
+                error("ChannelFactory:ContinuousCDLRequiresPerSampleFading", ...
+                    "Continuous CDL reception requires channels.per_sample_fading_enabled=true; finite snapshot sampling depends on chunk boundaries.");
+            end
+            if continuousOutput && (~isnumeric(x) || ~ismatrix(x) || ...
+                    isempty(x) || any(~isfinite(x(:))))
+                error("ChannelFactory:InvalidContinuousSamples", ...
+                    "Continuous channel input must be a finite, nonempty sample matrix.");
+            end
             y = x;
             replay = struct( ...
                 "ChannelRealizationId", "", ...
@@ -876,6 +910,8 @@ classdef ChannelFactory
                 "RuntimeChannelCanonicalInputSamples", NaN, ...
                 "RuntimeChannelAlignmentLookaheadSamples", 0, ...
                 "RuntimeChannelAlignmentLookaheadExecutedOnFork", false, ...
+                "RuntimeChannelOutputSampleAlignment", outputAlignment, ...
+                "RuntimeChannelAppliedAlignmentTrimSamples", 0, ...
                 "RuntimeChannelObjectClockExact", false, ...
                 "RuntimeChannelPathGainPreviewElementCount", 0, ...
                 "RuntimeChannelPathGainPreviewTruncated", false, ...
@@ -959,6 +995,13 @@ classdef ChannelFactory
             end
             padSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelPadSamples", 0))));
             trimSamples = max(0, round(double(sixgr.util.structGet(state, "ChannelTrimSamples", 0))));
+            if continuousOutput
+                % No fabricated future silence at each chunk boundary:
+                % delayed energy must emerge when the NEXT real samples
+                % traverse this same persistent object.
+                padSamples = 0;
+                trimSamples = 0;
+            end
             replay.RuntimeChannelCanonicalInputSamples = double(size(xChannel, 1));
             replay.RuntimeChannelAlignmentLookaheadSamples = double(padSamples);
             pathGainCaptureEnabled = double(sixgr.util.structGet(state, ...
@@ -1037,8 +1080,16 @@ classdef ChannelFactory
                 yRaw = [yHead; yTail];
                 replay.RuntimeChannelAlignmentLookaheadExecutedOnFork = true;
             end
-            if trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
+            if continuousOutput
+                if size(yRaw, 1) ~= size(x, 1)
+                    error("ChannelFactory:ContinuousSampleCountMismatch", ...
+                        "Continuous channel produced %d samples for %d real inputs; padding/trimming is forbidden.", ...
+                        size(yRaw, 1), size(x, 1));
+                end
+                y = yRaw;
+            elseif trimSamples > 0 && size(yRaw, 1) >= (trimSamples + size(x, 1))
                 y = yRaw(1+trimSamples:trimSamples+size(x, 1), :);
+                replay.RuntimeChannelAppliedAlignmentTrimSamples = trimSamples;
             else
                 y = yRaw;
                 if size(y, 1) > size(x, 1)
@@ -2095,6 +2146,8 @@ classdef ChannelFactory
             if ~isempty(opt.SampleRate)
                 tdl.SampleRate = opt.SampleRate;
             end
+            % nrTDLChannel already returns per-input-sample path gains and
+            % has no CDL-style SampleDensity property to override.
 
             % Disable channel filtering if caller wants raw path gains (optional)
             tdl.ChannelFiltering = logical(sixgr.util.structGet(cfg, "channel.channelFiltering", true));
@@ -2446,6 +2499,9 @@ classdef ChannelFactory
 
             if ~isempty(opt.SampleRate)
                 cdl.SampleRate = opt.SampleRate;
+            end
+            if logical(sixgr.util.structGet(cfg, "channel.perSampleFadingEnabled", false))
+                cdl.SampleDensity = Inf;
             end
             if ~isempty(opt.Fc_Hz)
                 cdl.CarrierFrequency = double(opt.Fc_Hz);

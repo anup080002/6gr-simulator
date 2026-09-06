@@ -109,6 +109,7 @@
       "shadowing_enabled": {"required": false, "type": "boolean"},
       "normalize_path_gains": {"required": false, "type": "boolean"},
       "normalize_channel_outputs": {"required": false, "type": "boolean"},
+      "per_sample_fading_enabled": {"required": false, "type": "boolean"},
       "pathloss_scenario": {"required": false, "type": "string"},
       "pathloss_los_mode": {"required": false, "type": "string"},
       "shadow_fading_std_db_los": {"required": false, "type": "number", "min": 0},

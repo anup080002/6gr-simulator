@@ -379,6 +379,8 @@ channels:
   # geometry, element pattern, polarization and orientation assumptions.
   model_type: CDL
   profile: CDL-A
+  # Evaluate fading on the waveform clock, independent of runtime chunk boundaries.
+  per_sample_fading_enabled: true
   delay_spread_ns: 100
   doppler_hz: 7.838756
   doppler_source_mode: derive_from_ue_speed

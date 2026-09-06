@@ -554,6 +554,8 @@ dopplerSourceMode = localResolveDopplerSourceMode(s);
 resolvedDopplerHz = localResolveChannelDopplerHz(s, mobilitySpeedKmh, dopplerSourceMode);
 cfg.channel.dopplerSourceMode = char(dopplerSourceMode);
 cfg.channel.dopplerConfigured_Hz = double(localRequireNested(s, "channels.doppler_hz", "channels.doppler_hz"));
+cfg = localStructSetIfPresent(cfg, "channel.perSampleFadingEnabled", ...
+    localGetNested(s, "channels.per_sample_fading_enabled", []));
 cfg.channel.doppler_Hz = double(resolvedDopplerHz);
 cfg.channel.dopplerHz = double(resolvedDopplerHz);
 cfg.channel.maxDoppler_Hz = double(resolvedDopplerHz);

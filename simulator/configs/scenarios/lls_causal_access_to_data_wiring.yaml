@@ -4466,6 +4466,8 @@ scheduling_timing:
 channels:
   model_type: "CDL"
   profile: "CDL-A"
+  # Same continuous-sample fading authority for both duplex profiles.
+  per_sample_fading_enabled: true
   delay_spread_ns: 100
   doppler_hz: 30
   doppler_source_mode: "configured"
