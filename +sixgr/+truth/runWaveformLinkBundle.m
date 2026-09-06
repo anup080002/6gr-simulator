@@ -8401,6 +8401,7 @@ function [state, pendingULGrants] = localRunCoupledPreSchedulingControlGating( .
 if nargin < 6 || ~isstruct(pendingULGrants)
     pendingULGrants = repmat(struct(), 0, 1);
 end
+state = localDeliverCoupledBroadcastResults(state);
 state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
 numUsers = numel(userCfg);
 slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
@@ -8443,6 +8444,11 @@ if ssbWaveformObservationRequired && slotDLAllowed && ssbOccasionActiveThisSlot
         servingSSBMeasurementRequired;
 end
 trsObservedServingCells = [];
+for pendingUE = 1:numUsers
+    if sixgr.truth.BroadcastResultDelivery.hasPending(state,pendingUE)
+        sharedPBCHEligible(pendingUE)=false;
+    end
+end
 pbchAttemptCount = 0;
 prachAttemptCount = 0;
 srsAttemptCount = 0;
@@ -8608,14 +8614,8 @@ for ueIdx = 1:numUsers
                     "initial_cell_search_pbch_acquisition",height(pbchT),1);
             end
             pbchAttemptCount = pbchAttemptCount + 1;
-            state.ControlTrials.PBCH = localAppendCompatTable(state.ControlTrials.PBCH, pbchT);
-            if wasAcquired || measurementOnly
-                state = sixgr.truth.CoupledTruthRuntime. ...
-                    applyServingSSBTrackingTrial(state,ueIdx,pbchT);
-            else
-                state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, ueIdx, pbchT);
-                state = localStoreDecodedSIB1Recovery(state, ueIdx, decodedSIB1, slotIdx);
-            end
+            state = sixgr.truth.BroadcastResultDelivery.enqueue( ...
+                state,ueIdx,pbchT,decodedSIB1,logical(wasAcquired || measurementOnly));
         end
     end
 
@@ -8638,7 +8638,10 @@ for ueIdx = 1:numUsers
             if ueIdx <= numel(lastSuccessfulPBCH)
                 lastPbchSuccess = double(lastSuccessfulPBCH(ueIdx));
             end
-            shouldAttemptPRACH = shouldAttemptPRACH && pbchAcquired && isfinite(lastPbchSuccess) && slotIdx > lastPbchSuccess;
+            % PBCH is delivered before this slot's scheduling boundary.
+            % Its delivery slot is already usable; adding another whole
+            % slot here would introduce an unconfigured processing delay.
+            shouldAttemptPRACH = shouldAttemptPRACH && pbchAcquired && isfinite(lastPbchSuccess) && slotIdx >= lastPbchSuccess;
             shouldAttemptPRACH = shouldAttemptPRACH && prachOccasionActiveThisSlot;
         else
             lastAttempt = 0;
@@ -12187,6 +12190,11 @@ for k = 1:nTrials
         r.ProcedureDelay_ms = double(sixgr.util.structGet(out, "ProcedureDelay_ms", NaN));
         r.AirInterfaceObservation_ms = double(sixgr.util.structGet(out, "AirInterfaceObservation_ms", NaN));
         r.AcquisitionTime_ms = double(sixgr.util.structGet(out, "AcquisitionTime_ms", NaN));
+        r.ObservationStartSample = double(sixgr.util.structGet(out, "ObservationStartSample", NaN));
+        r.ObservationEndSampleExclusive = double(sixgr.util.structGet(out, "ObservationEndSampleExclusive", NaN));
+        r.ObservationSampleRateHz = double(sixgr.util.structGet(out, "ObservationSampleRateHz", NaN));
+        r.ObservationCompletionTime_s = double(sixgr.util.structGet(out, "ObservationCompletionTime_s", NaN));
+        r.ObservationCoverageSource = string(sixgr.util.structGet(out, "ObservationCoverageSource", ""));
         r.NoiseVariance = double(sixgr.util.structGet(out, "PBCHNoiseVar", ...
             sixgr.util.structGet(pbch, "NoiseVar", NaN)));
         r.SSBReceivedPower_dB = double(sixgr.util.structGet(out, "SSBReceivedPower_dB", NaN));
@@ -12426,6 +12434,34 @@ for i = 1:numel(fields)
     name = char(fields(i));
     if isfield(sib1, name)
         recovery.(name) = sib1.(name);
+    end
+end
+end
+
+function state = localDeliverCoupledBroadcastResults(state)
+% No primary PBCH row, beam measurement or SIB1 authority is published at
+% the start of a multi-slot capture. Preserve the source slot in each row;
+% the separate delivery fields describe when consumers can use its result.
+[state,ready] = sixgr.truth.BroadcastResultDelivery.takeAvailable(state);
+for k=1:numel(ready)
+    item=ready(k);
+    if ~ismember("ServingCell",string(item.Trial.Properties.VariableNames)) || ...
+            any(~isfinite(item.Trial.ServingCell)) || ...
+            any(item.Trial.ServingCell~=state.CurrentServingIdx(item.UEIndex))
+        error("sixgr:truth:BroadcastServingContextChangedBeforeDelivery", ...
+            "UE %d broadcast reception must not acquire or update a different serving cell at delivery.", ...
+            item.UEIndex);
+    end
+    state.ControlTrials.PBCH=localAppendCompatTable( ...
+        state.ControlTrials.PBCH,item.Trial);
+    if item.TrackingOnly
+        state=sixgr.truth.CoupledTruthRuntime.applyServingSSBTrackingTrial( ...
+            state,item.UEIndex,item.Trial);
+    else
+        state=sixgr.truth.CoupledTruthRuntime.applyPBCHTrial( ...
+            state,item.UEIndex,item.Trial);
+        state=localStoreDecodedSIB1Recovery( ...
+            state,item.UEIndex,item.Recovery,state.CurrentSlot);
     end
 end
 end
@@ -16131,6 +16167,14 @@ row.ComputeLatencySource = "";
 row.ProcedureDelay_ms = NaN;
 row.AirInterfaceTTI_ms = NaN;
 row.AirInterfaceObservation_ms = NaN;
+row.ObservationStartSample = NaN;
+row.ObservationEndSampleExclusive = NaN;
+row.ObservationSampleRateHz = NaN;
+row.ObservationCompletionTime_s = NaN;
+row.ObservationCoverageSource = "";
+row.ObservationDeliverySlot = NaN;
+row.ObservationDeliveryTime_s = NaN;
+row.ObservationDeliverySource = "";
 row.Latency_ms = NaN;
 row.DecodeLatency_ms = NaN;
 row.DecodeLatencySource = "";

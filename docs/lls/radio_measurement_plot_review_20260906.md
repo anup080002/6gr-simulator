@@ -1948,3 +1948,46 @@ contract axis labels without binding them to those columns. That is an open
 semantic plotting defect; those RF images are not qualified. The coupled
 scheduler/shared RF integration and the rest of the RF evidence builder still
 need audit. No new TDD/FDD scenario or full testAll was launched.
+
+### Coupled broadcast result-delivery boundary
+
+The main pre-scheduling control gate now queues a decoded SS/PBCH/SIB1
+observation instead of immediately publishing its rows, acquisition, beam
+measurements and SIB1 configuration at the beginning of the capture. It checks
+the queue before scheduling each subsequent slot. An undelivered observation
+also prevents a duplicate sweep for the same UE. This is integrated in
+`runWaveformLinkBundle`, not only in an isolated waveform helper.
+
+`BroadcastResultDelivery` requires the receiver's complete sample-window
+metadata; it does not infer a capture length from the YAML. The source slot
+and measurement values are retained. Separate delivery slot/time/source fields
+record when consumers may use the result. Reference measurements retain their
+producer slot and now have the later available slot; acquisition events are
+recorded at delivery. PRACH can use a result delivered at the current slot's
+start, without an extra unconfigured one-slot delay. A changed serving-cell
+context is rejected rather than acquiring the wrong cell. Undelivered results
+at an independent link-state sweep boundary are retained as censored internal
+evidence, not applied to the next point.
+
+Focused session 8949 exited 0: `testBroadcastResultDelivery` and
+`testPrachAccessStateMachine` passed. Session 19655 exited 0 with
+`BROADCAST_DELIVERY_RECEIVER_FOCUSED_PASS` in
+`logs/broadcast_delivery_receiver_20260906.log`: delivery-boundary checks,
+the actual four-candidate `testSSBSharedReceivedBurst` waveform/decoder
+regression, and `testLLSControlAccessGating` passed. Session 44273 exited 0
+after the final sample-origin validation addition, with
+`BROADCAST_DELIVERY_FINAL_PASS` in `logs/broadcast_delivery_final_20260906.log`.
+The delivery test uses explicitly labeled scheduling fixtures; the shared-burst
+test separately verifies unchanged actual measured candidate rows.
+Final session 69112 exited 0 with `BROADCAST_DELIVERY_COMMIT_CHECK_PASS` in
+`logs/broadcast_delivery_commit_check_20260906.log`: MATLAB loaded the edited
+main runner, and the delivery/control-gating checks passed after all code edits.
+
+This fixes early result use, not eager channel execution. The existing SSB
+producer still executes its full multi-slot waveform before other contributors
+are composed. TRS and subsequent channel users still require integration into
+the single chronological sample stream. Queuing a future result does not make
+that channel execution causal. No reset, clock clamp, replay, disabled signal,
+or substituted measurement was added. No new scenario, FDD run, full testAll,
+optional plot expansion or windowing change was performed. The prior 12 dB TDD
+scenario remains failed and unqualified; this patch does not claim otherwise.

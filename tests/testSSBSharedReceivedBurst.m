@@ -122,6 +122,36 @@ wrongOrigin=completionOptions;
 wrongOrigin.RuntimeSlot=1;
 localAssertCompletionError(prepared,observation,first,wrongOrigin, ...
     "sixgr:link:BroadcastObservationOriginMismatch");
+% The actual decoded candidate rows remain private until the canonical
+% runtime reaches the complete capture boundary. Copy measured values, do
+% not regenerate metrics or infer timing from a configured capture length.
+deliveryRows=cell(numel(indices),1);
+for k=1:numel(indices)
+    candidate=completed.CandidateResults{k};
+    deliveryRows{k}=table(1,candidate.SSBIndex,candidate.SS_RSRP_dBm, ...
+        candidate.SS_SINR_dB,logical(candidate.PBCH.Ok), ...
+        candidate.ObservationStartSample,candidate.ObservationEndSampleExclusive, ...
+        candidate.ObservationSampleRateHz,candidate.ObservationCompletionTime_s, ...
+        string(candidate.ObservationCoverageSource), ...
+        'VariableNames',{'Slot','SSBIndex','SS_RSRP_dBm','SS_SINR_dB','CRCPass', ...
+        'ObservationStartSample','ObservationEndSampleExclusive', ...
+        'ObservationSampleRateHz','ObservationCompletionTime_s','ObservationCoverageSource'});
+end
+measuredRows=vertcat(deliveryRows{:});
+clockState=struct("NumUsers",1,"CurrentSlot",1, ...
+    "SlotDuration_s",sixgr.time.slotDurationSec(cfg));
+clockState=sixgr.truth.BroadcastResultDelivery.enqueue( ...
+    clockState,1,measuredRows,struct(),false);
+due=ceil(measuredRows.ObservationCompletionTime_s(1)/clockState.SlotDuration_s)+1;
+for slot=1:due-1
+    clockState.CurrentSlot=slot;
+    [clockState,early]=sixgr.truth.BroadcastResultDelivery.takeAvailable(clockState);
+    assert(isempty(early));
+end
+clockState.CurrentSlot=due;
+[~,delivered]=sixgr.truth.BroadcastResultDelivery.takeAvailable(clockState);
+assert(numel(delivered)==1 && ...
+    isequaln(delivered.Trial(:,measuredRows.Properties.VariableNames),measuredRows));
 fprintf('SSB_SHARED_RECEIVED_BURST_PASS: one TX/channel, %d receivers.\n', numel(indices));
 ok = true;
 end
