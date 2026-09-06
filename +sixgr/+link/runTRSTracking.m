@@ -1,4 +1,4 @@
-function out = runTRSTracking(cfg, varargin)
+function [out, reception] = runTRSTracking(cfg, varargin)
 %RUNTRSTRACKING TRS generation/observation smoke case.
 
 p = inputParser;
@@ -6,9 +6,25 @@ p.addParameter("Logger", [], @(x) isempty(x) || isa(x, "sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) isnumeric(x) && isscalar(x));
 p.addParameter("ChannelState",struct(),@(x) isempty(x) || isstruct(x));
 p.addParameter("PrepareOnly",false,@(x) islogical(x) && isscalar(x));
+p.addParameter("ReceivedContext",struct(),@(x) isstruct(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 snr_dB = double(p.Results.SNR_dB);
+reception = struct();
+initialChannelState = p.Results.ChannelState;
+receivedContext = p.Results.ReceivedContext;
+if ~isempty(fieldnames(receivedContext))
+    if p.Results.PrepareOnly
+        error("sixgr:link:ConflictingTRSExecutionStages", ...
+            "TRS transmit preparation and receive completion are separate stages.");
+    end
+    % Reject incomplete/invalid captures outside the measurement catch: a
+    % scheduler waiting for samples has not observed a failed TRS trial.
+    localValidateTRSReception(receivedContext);
+    cfg = receivedContext.Prepared.ReceiverConfig;
+    snr_dB = receivedContext.Prepared.RequestedSNR_dB;
+    initialChannelState = receivedContext.ChannelState;
+end
 
 out = struct();
 out.Ok = false;
@@ -81,7 +97,7 @@ out.NoiseVariance = NaN;
 out.StrictOk = false;
 out.FailureReason = "";
 out.Notes = "";
-out.ChannelState = p.Results.ChannelState;
+out.ChannelState = initialChannelState;
 out.RuntimeChannelStateUsed = false;
 out.RuntimeChannelLinkKeys = "";
 out.RuntimeNoiseApplied = false;
@@ -129,8 +145,8 @@ try
         out.ComputeLatency_ms = 1e3*toc(tStart);
         return;
     end
-    [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
-        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,p.Results.ChannelState);
+    [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState,reception] = ...
+        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,receivedContext);
     out.RuntimeStageCount = 5;
     out.ObservedREAllocationTable = localObservedTRSAllocation(tx);
     out.ChannelState = channelState;
@@ -253,7 +269,13 @@ try
     out.MismatchSensitivity_dB = NaN;
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = NaN;
-    out.AirInterfaceObservation_ms = 1e3 * (size(tx.Waveform, 1) / max(double(tx.SampleRateHz), eps));
+    observation = reception.Observation;
+    out.ObservationStartSample = observation.StartSample;
+    out.ObservationEndSampleExclusive = observation.EndSampleExclusive;
+    out.ObservationSampleRateHz = observation.SampleRateHz;
+    out.ObservationCompletionTime_s = observation.EndSampleExclusive / observation.SampleRateHz;
+    out.AirInterfaceObservation_ms = 1e3 * ...
+        (observation.EndSampleExclusive-observation.StartSample) / observation.SampleRateHz;
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
     out.TrackingFailure = double(~runtimeEvidenceOk);
     if isfinite(out.EstimatedCFO_Hz)
@@ -340,18 +362,36 @@ else
 end
 end
 
-function [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
-        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState)
+function [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState,reception] = ...
+        localRunStrictRuntimeTRSEvidence(cfg,snr_dB,initialChannelState,reception)
 if nargin < 3 || ~isstruct(initialChannelState)
     initialChannelState = struct();
 end
-prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB);
+if isempty(fieldnames(reception))
+    prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB);
+    [rxWave,replay,channelState] = localApplyTrackingChannelAndNoise( ...
+        prepared,initialChannelState);
+    origin = double(sixgr.util.structGet(replay,"RuntimeChannelStartSample",NaN));
+    if ~isfinite(origin)
+        origin = 0; % Standalone non-runtime-channel capture has a local sample origin.
+    end
+    receiver = sixgr.phy.waveform.WaveformReceiveDispatcher( ...
+        prepared.SampleRateHz,size(rxWave,2),origin);
+    receiver.register("trs",origin,origin+size(rxWave,1));
+    completed = receiver.dispatch(sixgr.phy.waveform.WaveformChunk( ...
+        rxWave,origin),prepared.SampleRateHz);
+    reception = struct("Prepared",prepared,"Observation",completed(1).Observation, ...
+        "Replay",replay,"ChannelState",channelState);
+    localValidateTRSReception(reception);
+else
+    prepared = reception.Prepared;
+    replay = reception.Replay;
+    channelState = reception.ChannelState;
+end
 strictCfg = prepared.StrictConfig;
 tx = prepared.Tx;
-[rxWave,replay,channelState] = localApplyTrackingChannelAndNoise( ...
-    prepared,initialChannelState);
 rx = struct();
-rx.Waveform = rxWave;
+rx.Waveform = reception.Observation.readComplete();
 rx.NoiseOnlyWaveform = [];
 rx.NoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
 rx.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
@@ -373,6 +413,38 @@ ch = sixgr.phy.trs.estimateTRSChannel(rx, strictCfg, tx, det);
 tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg);
 score = sixgr.phy.trs.scoreTRSDetection(strictCfg, rx, det, timing, freq, ch, tracking, ...
     "TrialId", 1, "TrialType", "runtime_coupled_trs", "NegativeExpected", false);
+end
+
+function localValidateTRSReception(reception)
+required=["Prepared","Observation","Replay","ChannelState"];
+if ~all(isfield(reception,required)) || ...
+        ~isa(reception.Observation,"sixgr.phy.waveform.WaveformObservationBuffer") || ...
+        ~isscalar(reception.Observation) || ~isstruct(reception.Prepared) || ...
+        ~isscalar(reception.Prepared) || ~isstruct(reception.Replay) || ...
+        ~isscalar(reception.Replay) || ~isstruct(reception.ChannelState) || ...
+        ~isscalar(reception.ChannelState)
+    error("sixgr:link:InvalidTRSReception","TRS completion requires prepared TX context and actual received samples/replay.");
+end
+observation=reception.Observation;
+if ~observation.isComplete()
+    error("WAVEFORM:IncompleteObservation", ...
+        "TRS reception is incomplete: received through %.0f; required through %.0f.", ...
+        observation.ReceivedThroughSample,observation.EndSampleExclusive);
+end
+p=reception.Prepared;
+if ~all(isfield(p,["SampleRateHz","NumSamples","ReceiverConfig","StrictConfig","Tx","RequestedSNR_dB"])) || ...
+        observation.SampleRateHz~=p.SampleRateHz || ...
+        observation.EndSampleExclusive-observation.StartSample~=p.NumSamples
+    error("sixgr:link:TRSObservationLayoutMismatch","Received TRS rate and extent must match its prepared waveform.");
+end
+origin=double(sixgr.util.structGet(reception.Replay,"RuntimeChannelStartSample",NaN));
+runtimeUsed=logical(sixgr.util.structGet(reception.Replay,"RuntimeChannelStateUsed",false));
+if ~isscalar(origin) || ~isreal(origin) || (runtimeUsed && ~isfinite(origin))
+    error("sixgr:link:TRSObservationOriginMismatch","Runtime TRS reception requires its actual channel sample origin.");
+end
+if isfinite(origin) && observation.StartSample~=origin
+    error("sixgr:link:TRSObservationOriginMismatch","Received TRS origin does not match channel execution evidence.");
+end
 end
 
 function timing = localRejectTimingIfDetectionFailed(timing, det)

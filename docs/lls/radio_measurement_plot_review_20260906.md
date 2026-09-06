@@ -1777,3 +1777,25 @@ slot representation also requires an explicit slot-to-sample mapping before it
 is used for nonconsecutive scheduled slots. This checkpoint does not claim to
 repair the coupled scenario's premature multi-slot execution; no scenario rerun
 was launched.
+
+### Minimal TRS receive-completion checkpoint
+
+`completeTRSReception` now accepts a complete actual receive buffer and invokes
+the existing TRS estimators and result mapping without repeating waveform
+generation, RF processing, noise injection, or channel advancement. Incomplete
+buffers and inconsistent sample extents/origins throw before measurement rows
+can be produced. The ordinary tracking path uses the same completion logic.
+
+The focused batch in `logs/trs_receive_completion_20260906.log` reached
+`TRS_RECEIVE_COMPLETION_FOCUSED_PASS`: receive completion, transmit preparation,
+runtime exception integrity, and reference-signal execution passed. The new
+regression compares all measured output fields (excluding compute latency) for
+15,360 actual received samples and checks execution provenance with the profiler.
+Full testAll, FDD scenarios, optional windowing, and extra plots remain deferred
+under the user's minimal-change instruction.
+
+This is not a repair of the remaining coupled scheduler's eager multi-slot
+broadcast/TRS execution. The next requested 25-slot TDD diagnostic retains all
+strict clock and publication checks; any repeated failure remains a failure,
+not a qualified result. Its 12 dB configured operating-point label is not a
+claim that thermal-noise/geometry-derived measured SINR equals 12 dB.
