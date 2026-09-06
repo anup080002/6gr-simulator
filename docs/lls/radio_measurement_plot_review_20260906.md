@@ -1608,3 +1608,34 @@ The fixed-gain regression deliberately isolates filter/mixer/noise behavior.
 It does not validate adaptive AGC update cadence, ADC jitter/dither streaming,
 or persistent RF ownership in coupled scenario dispatch. Those remain open;
 this is not a successful replacement TDD run or full RF qualification.
+
+### Broadcast TX preparation separated from reception
+
+The SIB1 branch of `runCellSearch_MIB_SIB1` now delegates its existing real
+waveform generation, broadcast precoding context, and exact-grid power
+normalization to `prepareCellSearchBroadcast`. The common preparation code
+was moved, not replaced with a synthetic allocation or a second policy path.
+Its runtime-mode output contains real noiseless TX samples, coding/resource
+objects, sample rate/count, and receiver power context, but no channel state
+or receiver decision. Standalone mode preserves its existing generator AWGN
+behavior and is not accepted for the new preparation-only entry point.
+
+`PrepareOnly=true` requires the SIB1 runtime-channel path and in-memory
+artifact ownership. It returns `prepared_not_received`, leaves `Ok=false`
+and BLER unavailable, and does not create a BCH result. This allows a future
+slot dispatcher to enqueue the actual multi-slot TX capture without running
+its channel or receiver prematurely. The regular one-shot path uses the same
+preparation function before its existing reception stages.
+
+Focused session 58046 exited 0 with `CELL_SEARCH_PREPARATION_FOCUSED_PASS`
+in `logs/cell_search_preparation_20260906.log`. The new registered regression
+proves by executed profiler calls that preparation generates one real burst
+and does not materialize/advance a channel or invoke SIB1 recovery. It verifies
+all 38,400 prepared samples and the actual power/grid/coding context, and
+consumes only their first slot through the TX queue. The complete shared-burst
+regression also passes, with unchanged four-candidate noisy decoder results.
+
+The coupled collector does not yet select this preparation-only mode: its
+incremental receive/complete phase and slot-level composition must be wired
+before that switch. Therefore the original scenario clock failure remains
+unresolved, and no replacement TDD or broad qualification run is claimed.

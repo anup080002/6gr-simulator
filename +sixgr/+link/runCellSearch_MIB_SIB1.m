@@ -13,6 +13,7 @@ p.addParameter("RunFolder", "", @(x) ischar(x) || isstring(x));
 p.addParameter("RunId", "sib1_runtime", @(x) ischar(x) || isstring(x));
 p.addParameter("WriteArtifacts", false, @(x) islogical(x) || isnumeric(x));
 p.addParameter("UseRuntimeChannel", false, @(x) islogical(x) || isnumeric(x));
+p.addParameter("PrepareOnly", false, @(x) islogical(x) && isscalar(x));
 p.addParameter("InitialDLChannelState", struct(), @(x) isempty(x) || isstruct(x));
 % Explicit zero-based absolute slot, independent of the coupled runner's
 % one-based loop index. NaN means no explicit runtime origin was supplied.
@@ -174,6 +175,11 @@ if exist("nrWaveformGenerator","file") ~= 2
 end
 
 wantSIB1 = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
+if p.Results.PrepareOnly && (~wantSIB1 || ...
+        ~logical(p.Results.UseRuntimeChannel) || logical(p.Results.WriteArtifacts))
+    error("sixgr:link:InvalidBroadcastPreparationRequest", ...
+        "PrepareOnly requires the SIB1 runtime-channel path with in-memory artifact ownership.");
+end
 if ~isempty(p.Results.CandidateSSBIndices) && ...
         (~wantSIB1 || logical(p.Results.WriteArtifacts))
     error("sixgr:link:InvalidSharedBurstReceiverRequest", ...
@@ -183,59 +189,26 @@ sixgr.config.assertRuntimeFeatureUse(cfg, "sib1", wantSIB1, ...
     "runCellSearch_MIB_SIB1.SIB1");
 if wantSIB1
     try
-        cfg = localSanitizeSIB1PrecodingConfig(cfg);
         tStart = tic;
-        requestedSNR_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf));
-        generatorSNR_dB = requestedSNR_dB;
-        if logical(p.Results.UseRuntimeChannel)
-            generatorSNR_dB = Inf;
-        end
-        tx = sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg, ...
-            "SNRdB", generatorSNR_dB, ...
-            "Seed", double(sixgr.util.structGet(cfg, "run.seed", 1501)));
+        prepared = sixgr.link.prepareCellSearchBroadcast(cfg, ...
+            logical(p.Results.UseRuntimeChannel));
+        cfg = prepared.Config;
+        receiverCfg = prepared.ReceiverConfig;
+        tx = prepared.Tx;
+        requestedSNR_dB = prepared.RequestedSNR_dB;
         out.SSBTxEvidence = localBuildSSBTxEvidence(tx);
         rxWaveform = tx.Waveform;
-        receiverCfg = cfg;
+        if logical(p.Results.PrepareOnly)
+            out.PreparedBroadcast = prepared;
+            out.Status = "prepared_not_received";
+            out.ComputeLatency_ms = 1e3 * toc(tStart);
+            return;
+        end
         if logical(p.Results.UseRuntimeChannel)
-            txInfo = struct("OFDM", struct("SampleRate", double(tx.SampleRateHz)));
-            try
-                if isfield(tx, "Carrier") && ~isempty(tx.Carrier)
-                    txInfo.OFDM = nrOFDMInfo(tx.Carrier);
-                    % Bind fixed-EPRE normalization to the exact composite
-                    % waveform that carries SS/PBCH and SI-RNTI SIB1.  The
-                    % grid is recovered from the unscaled generated
-                    % waveform on the same carrier; it is not regenerated
-                    % from YAML or inferred from planned allocations.
-                    txInfo.PortGrid = nrOFDMDemodulate( ...
-                        tx.Carrier, tx.Waveform);
-                    txInfo.PowerNormalizationGridSource = ...
-                        "exact_composite_ssb_pbch_sib1_waveform_demodulation";
-                end
-            catch exception
-                policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
-                    "lls6g.resolvedConfig.power_and_rf_frontend.downlink_power_normalization_policy", ...
-                    sixgr.util.structGet(cfg, ...
-                    "powerAndRF.downlinkPowerNormalizationPolicy", "")))));
-                if any(policy == ["fixed_epre_over_configured_bwp", ...
-                        "full_bwp_reference_epre", "fixed_full_bwp_epre"])
-                    wrapped = MException( ...
-                        "sixgr:link:BroadcastPowerNormalizationGridUnavailable", ...
-                        ["The exact SS/PBCH/SIB1 composite resource grid " ...
-                         "could not be recovered for configured fixed-EPRE " ...
-                         "normalization: %s"], exception.message);
-                    wrapped = addCause(wrapped, exception);
-                    throwAsCaller(wrapped);
-                end
-            end
-            [runtimeTxWaveform, powerContext] = sixgr.rf.applyPowerContext( ...
-                tx.Waveform, cfg, "DL", txInfo);
-            out.PowerContext = powerContext;
-            receiverCfg = sixgr.util.structSet( ...
-                receiverCfg, "lls6g.runtimePowerContext", powerContext);
-            runtimeTx = tx;
-            runtimeTx.Waveform = runtimeTxWaveform;
-            runtimeTx.PowerContext = powerContext;
-            txInfo.PowerContext = powerContext;
+            runtimeTx = prepared.RuntimeTx;
+            runtimeTxWaveform = prepared.TransmitSamples;
+            txInfo = prepared.TxInfo;
+            out.PowerContext = prepared.PowerContext;
             truthState = sixgr.link.initWaveformTruthChannelState( ...
                 receiverCfg, runtimeTx, txInfo, ...
                 "InitialRuntimeChannelState", p.Results.InitialDLChannelState);
@@ -808,26 +781,6 @@ values = reshape(double(values), 1, []);
 token = "[" + strjoin(string(compose("%.15g", values)), ",") + "]";
 end
 
-function cfgOut = localSanitizeSIB1PrecodingConfig(cfgIn)
-cfgOut = cfgIn;
-% SI-RNTI SIB1 is a common, single-layer broadcast allocation.  The
-% scenario data-PDSCH rank and immutable UE-specific precoder are not part
-% of that allocation's context.  Establish the broadcast context before
-% Type-0/PDSCH materialization so a rank-2 data matrix cannot become a
-% stale explicit matrix after deriveType0PDCCHFromMIB sets NumLayers=1.
-nLayers = 1;
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numLayers", nLayers);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nLayers", nLayers);
-paths = ["phy.pdsch.precoding.matrix", "phy.pdsch.precodingMatrix", "phy.pdsch.W"];
-for i = 1:numel(paths)
-    cfgOut = sixgr.util.structSet(cfgOut, paths(i), []);
-end
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", nLayers);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", nLayers);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.enabled", false);
-cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.precoding.mode", ...
-    "broadcast_single_port");
-end
 
 function durationMs = localResolvePBCHObservationDurationMs(cfg)
 durationMs = double(sixgr.util.structGet(cfg, "phy.sib1.ssbObservationSubframes", ...
