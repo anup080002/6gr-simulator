@@ -2,7 +2,7 @@ classdef ADCModel
 %ADCMODEL Explicit signed-midtread complex quantizer.
 
     methods(Static)
-        function result = quantize(input, profile)
+        function [result,state] = quantize(input, profile, state)
             if ~isstruct(profile) || ~all(isfield(profile, ...
                     ["Bits","FullScale","Convention"]))
                 error("RF:ADCProfileMissing", ...
@@ -18,7 +18,7 @@ classdef ADCModel
                 error("RF:ADCProfileMissing", ...
                     "ADC profile is invalid or unsupported.");
             end
-            if any(~isfinite(input(:)))
+            if ~isfloat(input) || ~ismatrix(input) || isempty(input) || any(~isfinite(input(:)))
                 error("RF:NonFiniteSamples", ...
                     "ADC input samples must be finite.");
             end
@@ -33,21 +33,53 @@ classdef ADCModel
                 error("RF:ADCProfileMissing", ...
                     "ADC dither, jitter, INL/DNL and seed must be explicit finite values.");
             end
-            stream=RandStream("Threefry","Seed",seed);
+            sampleRate=double(sixgr.util.structGet(profile,"SampleRate_Hz",NaN));
+            if apertureJitter>0 && ~(isscalar(sampleRate)&&isfinite(sampleRate)&&sampleRate>0)
+                error("RF:ADCProfileMissing", ...
+                    "ADC aperture jitter requires an explicit sample rate.");
+            end
+            if nargin<3 || (isstruct(state) && isscalar(state) && isempty(fieldnames(state)))
+                ditherStream=RandStream("Threefry","Seed",seed);
+                jitterStream=RandStream("Threefry","Seed",seed);
+                jitterStream.Substream=2;
+                state=struct("Profile",profile,"InputColumns",size(input,2), ...
+                    "InputClass",string(class(input)),"ComplexInput",~isreal(input), ...
+                    "SamplesProcessed",0,"PreviousInput",[], ...
+                    "DitherStream",ditherStream,"JitterStream",jitterStream);
+            elseif ~isstruct(state) || ~isscalar(state) || ...
+                    ~all(isfield(state,["Profile","InputColumns","InputClass", ...
+                    "ComplexInput","SamplesProcessed","PreviousInput","DitherStream","JitterStream"])) || ...
+                    ~isequaln(state.Profile,profile) || ...
+                    state.InputColumns~=size(input,2) || state.InputClass~=string(class(input)) || ...
+                    state.ComplexInput~=(~isreal(input)) || ...
+                    ~isa(state.DitherStream,"RandStream") || ~isa(state.JitterStream,"RandStream") || ...
+                    ~isnumeric(state.SamplesProcessed) || ~isscalar(state.SamplesProcessed) || ...
+                    ~isreal(state.SamplesProcessed) || ~isfinite(state.SamplesProcessed) || ...
+                    state.SamplesProcessed<0 || state.SamplesProcessed~=fix(state.SamplesProcessed) || ...
+                    (state.SamplesProcessed>0 && (~isequal(size(state.PreviousInput),[1 size(input,2)]) || ...
+                    any(~isfinite(state.PreviousInput(:)))))
+                error("RF:ADCStateMismatch", ...
+                    "ADC profile, input domain and channel layout must remain fixed within one stream.");
+            end
+            startSample=state.SamplesProcessed;
             working=double(input);
-            dither=ditherRMS/sqrt(2).*(randn(stream,size(working))+ ...
-                1j*randn(stream,size(working)));
-            if isreal(input),dither=real(dither)*sqrt(2);end
+            % Independent stochastic stages and time-major draws keep the
+            % realization unchanged when an observation is split into chunks.
+            if isreal(input)
+                dither=ditherRMS.*randn(state.DitherStream,size(input,2),size(input,1)).';
+            else
+                draws=randn(state.DitherStream,2*size(input,2),size(input,1));
+                dither=ditherRMS/sqrt(2).*(draws(1:2:end,:).'+1j*draws(2:2:end,:).');
+            end
             working=working+dither;
             apertureError=zeros(size(working));
-            sampleRate=double(sixgr.util.structGet(profile,"SampleRate_Hz",NaN));
             if apertureJitter>0
-                if ~(isscalar(sampleRate)&&isfinite(sampleRate)&&sampleRate>0)
-                    error("RF:ADCProfileMissing", ...
-                        "ADC aperture jitter requires an explicit sample rate.");
+                previous=state.PreviousInput;
+                if isempty(previous)
+                    previous=double(input(1,:));
                 end
-                derivative=[zeros(1,size(working,2));diff(double(input),1,1)]*sampleRate;
-                timeError=apertureJitter.*randn(stream,size(working,1),1);
+                derivative=diff([previous;double(input)],1,1)*sampleRate;
+                timeError=apertureJitter.*randn(state.JitterStream,size(working,1),1);
                 apertureError=derivative.*timeError;
                 working=working+apertureError;
             end
@@ -68,9 +100,18 @@ classdef ADCModel
                 clipped = realClip|imagClip;
             end
             if inl>0||dnl>0
-                output=output+inl*step.*sin(pi*double(code)/max(maxCode,1))+ ...
+                realError=inl*step.*sin(pi*real(double(code))/maxCode)+ ...
                     dnl*step/2.*(-1).^round(real(double(code)));
+                if isreal(input)
+                    output=output+realError;
+                else
+                    imagError=inl*step.*sin(pi*imag(double(code))/maxCode)+ ...
+                        dnl*step/2.*(-1).^round(imag(double(code)));
+                    output=output+complex(realError,imagError);
+                end
             end
+            state.PreviousInput=double(input(end,:));
+            state.SamplesProcessed=startSample+size(input,1);
             errorSamples = output-double(input);
             result = struct( ...
                 "Output",cast(output,"like",input), ...
@@ -86,7 +127,9 @@ classdef ADCModel
                 "Step",step, ...
                 "Convention",convention, ...
                 "INL_LSB",inl,"DNL_LSB",dnl, ...
-                "ApertureJitter_s",apertureJitter);
+                "ApertureJitter_s",apertureJitter, ...
+                "ApertureJitterModel","first_order_backward_difference", ...
+                "StartSample",startSample,"EndSampleExclusive",state.SamplesProcessed);
         end
     end
 

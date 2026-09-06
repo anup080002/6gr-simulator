@@ -8,6 +8,7 @@ classdef ReceiverFrontEnd < handle
         FilterState double = zeros(0,1)
         AGC sixgr.rf.runtime.AGCState
         NoiseStream
+        ADCState struct = struct()
     end
 
     methods
@@ -78,7 +79,7 @@ classdef ReceiverFrontEnd < handle
             noisy=filtered+cast(noise,"like",filtered);
             % Slot is scheduling metadata, not an analog voltage/amplitude.
             [agcOutput,agcEvidence]=obj.AGC.apply(noisy,cfg.ADCProfile.FullScale,expectedEpoch);
-            adc=sixgr.rf.runtime.ADCModel.quantize(agcOutput,cfg.ADCProfile);
+            [adc,obj.ADCState]=sixgr.rf.runtime.ADCModel.quantize(agcOutput,cfg.ADCProfile,obj.ADCState);
             output=adc.Output;
             evidence=struct("LNA",lnaEvidence,"Mixer",mixerEvidence, ...
                 "SelectivityFilter",filterEvidence,"AGC",agcEvidence, ...

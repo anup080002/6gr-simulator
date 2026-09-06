@@ -1873,3 +1873,35 @@ resource-collision or scheduler qualification. Shared node RF/noise processing
 and chronological coupled-runtime integration remain unfinished. No further
 scenario, FDD run, full testAll, optional plot expansion or impairment enablement
 was launched at this checkpoint.
+
+### Continuous ADC state and independent I/Q transfer errors
+
+`ADCModel.quantize` previously restarted its random stream on every call and
+set the first aperture-jitter derivative to zero at every chunk boundary.
+It now accepts/returns explicit converter state: separate dither and jitter
+streams, previous input sample, input layout/profile identity, and sample count.
+`ReceiverFrontEnd` owns this state across successive calls. Time-major draws
+preserve real/complex multi-channel realizations across arbitrary partitions;
+profile/layout/sample-clock mismatches are rejected before random-state mutation.
+Standalone calls without supplied state remain independent converter invocations.
+Nonzero stochastic converter profiles intentionally use the corrected stream
+ordering; old seeded stochastic sequences are not claimed byte-identical.
+
+The existing INL/DNL transfer-error equations also incorrectly evaluated a
+complex sine and applied DNL only to the I code. Each converter rail now applies
+its own real transfer-error function. Aperture-jitter evidence explicitly names
+the `first_order_backward_difference` model; this is not a claim of an exact
+continuous-time hardware model or a normative 3GPP receiver implementation.
+
+Final focused session 90818 exited 0 with `ADC_CONTINUOUS_STATE_FOCUSED_PASS`
+in `logs/adc_continuous_state_final_20260906.log`. The converter regression
+compares every output/dither/jitter sample and final random-stream state for
+whole versus irregular chunks, checks both quantizer conventions and I/Q rails,
+and verifies rejection without RNG mutation. The canonical RF component suite
+also passes; its receiver continuity test now enables nonzero dither and jitter
+with fixed gain to isolate this behavior.
+
+Variable-gain AGC remains block-based and its hold duration is not yet consumed;
+that behavior must be resolved before claiming general RF chunk invariance.
+The coupled slot scheduler/shared RF integration remains unfinished. No scenario
+or full testAll was launched, and the last TDD run remains failed and unqualified.

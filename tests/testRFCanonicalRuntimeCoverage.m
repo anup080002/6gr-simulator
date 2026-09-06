@@ -205,6 +205,9 @@ cfg=localReceiverConfiguration();
 cfg.AGCProfile.MinGain_dB=0;
 cfg.AGCProfile.MaxGain_dB=0;
 cfg.ADCProfile.Bits=24;
+cfg.ADCProfile.DitherRMS=0.0002;
+cfg.ADCProfile.ApertureJitter_s=3e-9;
+cfg.ADCProfile.SampleRate_Hz=cfg.SampleRate_Hz;
 cfg.MixerProfile.LOFrequency_Hz=137;
 whole=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
 chunks=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
@@ -220,6 +223,8 @@ end
 verifyEqual(t,actual,expected);
 verifyEqual(t,chunks.MixerSampleIndex,whole.MixerSampleIndex);
 verifyEqual(t,chunks.FilterState,whole.FilterState,"AbsTol",1e-12);
+verifyEqual(t,chunks.ADCState.SamplesProcessed,whole.ADCState.SamplesProcessed);
+verifyEqual(t,chunks.ADCState.DitherStream.State,whole.ADCState.DitherStream.State);
 end
 
 function testTransmitterFrontEnd(t)
