@@ -311,7 +311,7 @@ end
 function localAGCCheck(t)
 a=sixgr.rf.runtime.AGCState(struct("TargetRMS",0.5, ...
     "MinGain_dB",-40,"MaxGain_dB",40,"Attack",0.8, ...
-    "Release",0.2,"HoldSamples",4),1);
+    "Release",0.2,"HoldSamples",4,"UpdatePeriodSamples",128),1);
 [~,r1]=a.apply(2*ones(128,1),1,1);
 [~,r2]=a.apply(0.05*ones(128,1),1,1);
 verifyEqual(t,r1.State,"ATTACK"); verifyEqual(t,r2.State,"RELEASE");

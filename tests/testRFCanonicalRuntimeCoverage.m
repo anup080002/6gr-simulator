@@ -227,6 +227,32 @@ verifyEqual(t,chunks.ADCState.SamplesProcessed,whole.ADCState.SamplesProcessed);
 verifyEqual(t,chunks.ADCState.DitherStream.State,whole.ADCState.DitherStream.State);
 end
 
+function testReceiverChunkContinuityWithAdaptiveGain(t)
+cfg=localReceiverConfiguration();
+cfg.ADCProfile.DitherRMS=0.0002;
+cfg.ADCProfile.ApertureJitter_s=3e-9;
+cfg.ADCProfile.SampleRate_Hz=cfg.SampleRate_Hz;
+cfg.MixerProfile.LOFrequency_Hz=137;
+whole=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
+chunks=sixgr.rf.runtime.ReceiverFrontEnd(cfg,6);
+n=(0:1023).';
+amplitude=[.003*ones(400,1);.04*ones(300,1);.01*ones(324,1)];
+x=[amplitude.*exp(1j*.03*n),.7*amplitude.*exp(-1j*.02*n)];
+[expected,evidence]=whole.apply(x,1,6);
+actual=zeros(size(x),'like',expected);
+first=1;
+for last=[1 17 255 512 1024]
+    actual(first:last,:)=chunks.apply(x(first:last,:),1,6);
+    first=last+1;
+end
+verifyEqual(t,actual,expected);
+verifyGreaterThan(t,numel(unique(evidence.AGC.AppliedGain_dB)),2);
+verifyEqual(t,chunks.AGC.Gain_dB,whole.AGC.Gain_dB);
+verifyEqual(t,chunks.AGC.SamplesProcessed,whole.AGC.SamplesProcessed);
+verifyEqual(t,chunks.AGC.HoldRemainingSamples,whole.AGC.HoldRemainingSamples);
+verifyEqual(t,chunks.ADCState.SamplesProcessed,whole.ADCState.SamplesProcessed);
+end
+
 function testTransmitterFrontEnd(t)
 rng(7); training=0.2*(randn(512,1)+1j*randn(512,1));
 paProfile=struct("ProfileID","RAPP_TX","Model","rapp", ...
@@ -321,7 +347,8 @@ cfg=struct("SampleRate_Hz",1e6,"InputPower_dBm",-30, ...
     "Version","1.0.0","Taps",[0.25;0.5;0.25], ...
     "Passband_Hz",100e3,"Stopband_Hz",300e3,"ENBW_Hz",150e3), ...
     "AGCProfile",struct("TargetRMS",0.25,"MinGain_dB",-20, ...
-    "MaxGain_dB",20,"Attack",0.8,"Release",0.2,"HoldSamples",4), ...
+    "MaxGain_dB",20,"Attack",0.8,"Release",0.2,"HoldSamples",4, ...
+    "UpdatePeriodSamples",16), ...
     "ADCProfile",struct("Bits",10,"FullScale",1, ...
     "Convention","signed_midtread"), ...
     "Temperature_K",290,"NoiseSeed",17,"ReferenceImpedance_Ohm",50);

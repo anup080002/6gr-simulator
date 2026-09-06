@@ -1905,3 +1905,46 @@ Variable-gain AGC remains block-based and its hold duration is not yet consumed;
 that behavior must be resolved before claiming general RF chunk invariance.
 The coupled slot scheduler/shared RF integration remains unfinished. No scenario
 or full testAll was launched, and the last TDD run remains failed and unqualified.
+
+### Causal AGC and RF receiver-evidence cleanup
+
+`AGCState` now requires an explicit `UpdatePeriodSamples` in its input profile.
+Its RMS detector accumulates fixed sample windows across calls, applies each
+gain update only to subsequent samples, and consumes `HoldSamples` on the
+sample clock. Attack/release coefficients are explicitly per completed detector
+window. The overload decision also uses the fixed detector window rather than
+the caller's chunk size. Known component/evidence fixtures supply their window
+length explicitly; no hidden default or scenario override was added. A full
+YAML-to-shared-runtime RF profile adapter remains part of the unfinished integration.
+
+The trace retains the actual per-sample applied gain separately from `Gain_dB`,
+which is labeled as next-sample gain. State counters, layout rejection, hold
+behavior, and causality are checked by `testAGCContinuousState`. The canonical
+receiver regression now verifies chunk invariance with adaptive gain, filtering,
+thermal noise, dither and aperture jitter together, in addition to fixed-gain
+coverage. This validates the declared discrete-time control model, not a
+normative 3GPP hardware AGC or device conformance.
+
+Two unrelated but explicit evidence fabrications were found in
+`RFPhaseEvidenceBuilder`: dynamic-range BLER came from a logistic function,
+and joint receiver rows invented SINR/IRR/runtime/BLER while joining independent
+EVM/CFO/timing vectors by row number. The inferred BLER and joint rows are now
+removed. Dynamic-range rows expose actual input-to-quantization-error SQNR,
+leave SINR/BLER unavailable, disclose the missing decoder/channel evidence, and
+have `Status=PARTIAL` with a separate quantization check status. The joint
+receiver table is empty and its unavailability is recorded in metadata. No
+minimum-row or PASS requirements in the RF artifact contract were weakened.
+Historical RF artifacts were not regenerated or relabeled as repaired outputs.
+
+Focused session 99634 exited 0 (`logs/agc_evidence_final_20260906.log`): AGC,
+ADC, receiver-evidence integrity, canonical RF coverage and Phase-11 component
+tests passed. After the final partial-status/ratio labeling change, session
+24176 exited 0 with `RF_RECEIVER_EVIDENCE_FINAL_PASS`
+(`logs/rf_receiver_evidence_integrity_20260906.log`).
+
+Further audit found `RFArtifactExporter.localGenerateImages` selects arbitrary
+numeric columns and repeats them to satisfy a minimum-series count, then uses
+contract axis labels without binding them to those columns. That is an open
+semantic plotting defect; those RF images are not qualified. The coupled
+scheduler/shared RF integration and the rest of the RF evidence builder still
+need audit. No new TDD/FDD scenario or full testAll was launched.
