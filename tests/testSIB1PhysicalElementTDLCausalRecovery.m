@@ -3,6 +3,9 @@ function ok = testSIB1PhysicalElementTDLCausalRecovery()
 
 setup6GRSimToolkit("Verbose", false);
 root = fileparts(fileparts(mfilename("fullpath")));
+runnerSource = fileread(fullfile(root,"+sixgr","+truth","runWaveformLinkBundle.m"));
+assert(contains(runnerSource,'"RuntimeSlot", runtimeSlot - 1}'), ...
+    "Coupled one-based slots must be converted at the zero-based cell-search boundary.");
 scenarioPath = fullfile(root, "simulator", "configs", "scenarios", ...
     "lls_causal_access_to_data_wiring.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);

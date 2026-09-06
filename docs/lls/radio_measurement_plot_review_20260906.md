@@ -1397,3 +1397,13 @@ known same-slot PDCCH/PDSCH shared-channel ordering defect is still open:
 a diagnostic run may expose it and must not bypass it to claim success.
 Windowing remains disabled. Further optional work and 25 dB/FDD scenarios
 are deferred; no old output directories are removed.
+
+The checkpoint TDD diagnostic subsequently failed at slot 6: TRS requested
+2 ms and PRACH requested 4 ms after the reciprocal channel had advanced to
+6 ms. The broadcast collector passes a one-based coupled slot into the
+zero-based cell-search RuntimeSlot API; this boundary is now corrected.
+The focused physical-element TDL SIB1 waveform regression passed (session
+69888, `logs/sib1_runtime_slot_boundary_20260906.log`, marker
+`SIB1_RUNTIME_SLOT_BOUNDARY_PASS`). The separate multi-slot acquisition
+capture/commit ordering problem remains open. This correction is not a
+claim that the TDD scenario now passes; no repeat scenario was launched.

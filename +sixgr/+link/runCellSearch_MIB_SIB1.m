@@ -10,7 +10,10 @@ p.addParameter("RunId", "sib1_runtime", @(x) ischar(x) || isstring(x));
 p.addParameter("WriteArtifacts", false, @(x) islogical(x) || isnumeric(x));
 p.addParameter("UseRuntimeChannel", false, @(x) islogical(x) || isnumeric(x));
 p.addParameter("InitialDLChannelState", struct(), @(x) isempty(x) || isstruct(x));
-p.addParameter("RuntimeSlot", NaN, @(x) isnumeric(x) && isscalar(x));
+% Explicit zero-based absolute slot, independent of the coupled runner's
+% one-based loop index. NaN means no explicit runtime origin was supplied.
+p.addParameter("RuntimeSlot", NaN, @(x) isnumeric(x) && isreal(x) && isscalar(x) && ...
+    (isnan(x) || (isfinite(x) && x >= 0 && x == fix(x))));
 p.parse(varargin{:});
 log = p.Results.Logger;
 numSF = round(double(p.Results.NumSubframes));
