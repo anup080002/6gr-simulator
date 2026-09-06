@@ -1407,3 +1407,25 @@ The focused physical-element TDL SIB1 waveform regression passed (session
 `SIB1_RUNTIME_SLOT_BOUNDARY_PASS`). The separate multi-slot acquisition
 capture/commit ordering problem remains open. This correction is not a
 claim that the TDD scenario now passes; no repeat scenario was launched.
+
+### Acquisition sample-span check: padding is not the causal repair
+
+A production-transmitter-only probe using the unchanged TDD YAML completed
+with exit code 0 (session 44482,
+`logs/tdd_broadcast_sample_span_20260906.log`). No channel, noise, or receiver
+success was inferred from this probe. The generated capture has 38,400
+samples at 7.68 MHz (5 ms). Zero-based slots 0 and 1 each contain 4,384
+nonzero transmitted samples; Type-0 SIB1 occupies slot 2, starting at sample
+15,360 and spanning 7,680 samples. Slots 3 and 4 contain zero TX samples.
+
+Consequently, trimming the trailing two milliseconds cannot make this a
+single-slot acquisition. SIB1 samples through 3 ms are genuinely transmitted,
+while the coupled caller invokes acquisition in its first slot. The failed
+run also schedules TRS in one-based slot 3, within that broadcast capture.
+Zero TX samples must not be confused with absent channel tails or receiver
+noise. Do not fix this by clipping real SIB1, skipping TRS/PRACH, resetting
+the channel clock, or declaring acquisition complete before its samples.
+The required repair is chronological shared-waveform composition and
+buffering, followed by receiver completion at the actual observation end;
+beam candidates must consume the same received burst rather than cause
+separate channel executions. This remains unimplemented and unqualified.
