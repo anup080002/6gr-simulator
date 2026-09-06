@@ -6,7 +6,8 @@ function [state, pendingULGrants, decisionTable, collisionRemains, cancelledGran
 % Exact RE collision detection is performed before this function. This
 % function owns only the causal decision that needs runtime measurement
 % state: before a UE has one valid SRS measurement, a configured policy may
-% cancel exact queued PUSCH grants so the real SRS waveform can execute.
+% discard exact tentative PUSCH candidates BEFORE their DCI transmission.
+% An already authorized PUSCH (including its bound UCI) is not tentative.
 % Due PUCCH/UCI is never cancelled here. The same decision applies in FDD
 % and TDD after the duplex engine has established a legal UL occasion.
 
@@ -86,14 +87,31 @@ if ~any(puschCollisionMask)
     return;
 end
 
-grantOrdinals = unique(round(double( ...
-    decisionTable.GrantOrdinal(puschCollisionMask))));
-grantOrdinals = grantOrdinals(isfinite(grantOrdinals) & ...
-    grantOrdinals >= 1 & grantOrdinals <= numel(pendingULGrants));
-if isempty(grantOrdinals)
+grantOrdinals = unique(double(decisionTable.GrantOrdinal(puschCollisionMask)));
+if isempty(grantOrdinals) || any(~isfinite(grantOrdinals) | ...
+        grantOrdinals~=fix(grantOrdinals) | grantOrdinals<1 | ...
+        grantOrdinals>numel(pendingULGrants))
     error("sixgr:truth:MissingCollidingQueuedPUSCHGrant", ...
-        ["Exact SRS/PUSCH collision rows did not identify a queued grant; " ...
-         "the runtime cannot safely prioritize either signal."]);
+        "Exact SRS/PUSCH collision rows did not identify a queued grant; " + ...
+        "the runtime cannot safely prioritize either signal.");
+end
+
+% Validate the entire decision before mutating any shared HARQ handle.
+for ordinal = reshape(grantOrdinals,1,[])
+    grant = pendingULGrants(ordinal);
+    scheduled = sixgr.util.structGet(grant,"ScheduledAbsoluteSlot",NaN);
+    if ~isequal(double(scheduled),slotIdx)
+        error("sixgr:truth:SRSPUSCHCollisionSlotMismatch", ...
+            "SRS arbitration cannot cancel a grant from a different UL occasion.");
+    end
+    protected = sixgr.truth.puschHasCommittedControlOrUCI(state,grant);
+    if protected
+        decisionTable.Action(puschCollisionMask) = "defer_srs_preserve_committed_pusch";
+        decisionTable.Status(puschCollisionMask) = "COLLISION_RESOLVED_PRESERVE_COMMITTED_UL";
+        decisionTable.RuntimePriorityReason(puschCollisionMask) = ...
+            "pusch_dci_or_uci_already_committed_requires_pre_dci_resource_planning";
+        return;
+    end
 end
 
 for ordinal = reshape(grantOrdinals, 1, [])

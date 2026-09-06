@@ -1,5 +1,85 @@
 # Short TDD run: measured failures and remaining integration work
 
+## SRS priority versus committed UL control checkpoint (2026-09-07)
+
+The main chronological waveform owner is **still incomplete**. No new
+production TDD/FDD/25 dB run was launched and no production CSV/PNG was
+regenerated. The failed production run and all earlier failure evidence remain
+unchanged. This checkpoint repairs another actual scheduler ordering defect,
+not the original whole-stream time reversal.
+
+Reproduction: `logs/srs_ul_commit_boundary_20260907_repro.log`, session 75127,
+exit 1. The first-measurement SRS policy deleted an already DCI-authorized
+PUSCH candidate while its HARQ feedback remained reserved for PUSCH UCI. The
+runtime had already passed standalone PUCCH dispatch for that slot. The unit
+fixture demonstrated lost transmission ownership; it is not a newly observed
+production waveform or proof that the current preserve-PUSCH TDD policy took
+this alternate-policy branch.
+
+Implemented repairs:
+
+- Main future-UL scheduling now evaluates the existing YAML first-SRS policy
+  **before** PDCCH qualification. `planFirstSRSULResources` compares the
+  actual Toolbox SRS/PUSCH allocations and removes only colliding tentative
+  candidates. The caller releases their tentative HARQ reservations before
+  transmitting DCI, rather than retracting a decoded grant later.
+- `puschHasCommittedControlOrUCI` protects received DCI/binding authority,
+  expected UCI including a zero-valued NACK, and live HARQ/CSI reservations
+  identified in the pending/trace tables. A stale grant copy cannot erase
+  a live reservation merely by omitting its UCI flag. Completed old table
+  entries do not themselves protect an unrelated tentative candidate.
+- Due-slot SRS arbitration now preserves these committed grants. It also
+  rejects a malformed ordinal or a different-slot grant before any candidate
+  HARQ cancellation. Previously ordinal rounding/filtering could silently
+  discard an invalid collision record.
+- Current execution and pre-DCI planning use the same SRS eligibility helper.
+  Future access/attempt/success records cannot authorize an earlier decision.
+  Disjoint PUSCH allocations and the default preserve-PUSCH policy remain
+  unchanged. Known overlapping standalone PUCCH prevents a first-SRS resource
+  reservation. A blocked measured UE's SRS does not consume the planning
+  quota and starve a later UE's first measurement.
+- `SRSResourceDecisions` retains the actual allocation sources, overlapping
+  coordinates, control and target slots, pre-DCI stage and candidate-deferral
+  flag. These rows explicitly describe planning, not received PHY samples;
+  they are not inserted into the primary SRS/PUSCH trial tables. No new YAML
+  mode, fixed MCS/rank, proxy measurement or success gate was introduced.
+
+The first combined rerun, session 39718, remains failed in
+`logs/srs_ul_commit_boundary_20260907_focused.log`: six tests passed, while the
+new invalid-ordinal case exposed an existing two-element string used as an
+`error` message. Its text is now one scalar message so the intended strict
+error identifier is preserved; no assertion was weakened.
+
+Final focused verification: session 42692, exit 0,
+`logs/srs_ul_commit_boundary_20260907_verified.log`, all eight passed:
+`testSRSPUSCHRuntimePriority`, `testFirstSRSULPreDCI`,
+`testFutureULPlanningCausality`, `testSRSPUSCHExactCollisionFDDTDD`,
+`testSRSPUCCHExactCollisionFDDTDD`, `testGrantCacheLiveUCIAuthority`,
+`testRecoveredPUSCHUCIEvidence` and `testSchedulerGrantConsistency`.
+`git diff --check` passed. The duplex tests materialize configured allocations;
+they do not launch FDD or TDD production simulations. The UCI recovery test
+checks constructed table semantics, not a new received waveform. No `testAll`
+or full campaign was run. The NR-validation/result-integrity skills kept those
+scope boundaries and failed evidence explicit.
+
+Additional open issues identified during this review, not repaired here:
+
+- Same-UE SRS/PUCCH arbitration currently compares exact time/frequency RE
+  intersections. The same-carrier UE rule uses overlapping **symbols**, even
+  on disjoint PRBs, and drops only the overlapping SRS symbols in the stated
+  cases. Partial-symbol suppression and the aperiodic-SRS/CSI-only exception
+  require producer/receiver integration; do not call the existing RE-only
+  decision a complete implementation of
+  [TS 38.214 v18.6.0 section 6.2.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.06.00_60/ts_138214v180600p.pdf).
+- `CoupledTruthRuntime.updateHARQState` still has a missing-TB branch that
+  constructs zero bits from the reported size. That branch needs a strict
+  actual-payload contract and focused fixture review, not promotion to truth.
+  Its execution in the last failed production run has not been established.
+- Shared TX/RX origins, persistent composite node RF, complete UCI timing,
+  runtime QCL/TCI/PMI application, physical RSSI exports and operating-point
+  calibration remain on the acceptance path below. Component tests cannot
+  qualify those remaining requirements.
+
 ## Future-UL decision-clock checkpoint (2026-09-07)
 
 The main shared-stream owner remains **incomplete**. This checkpoint repairs

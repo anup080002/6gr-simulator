@@ -22,6 +22,72 @@ assert(string(resolved.Action) == ...
     "first_valid_srs_measurement_missing", ...
     "SRS measurement-priority decision did not preserve its causal evidence.");
 
+% A queued grant already authorized by DCI is no longer a tentative MAC
+% candidate. Cancelling it here also strands HARQ/CSI reserved on PUSCH,
+% because this slot's standalone PUCCH dispatch has already passed.
+announced = pending;
+announced(1).PDCCHGatingActive = true;
+announced(1).ControlDecodeOk = true;
+announced(1).PDCCHGrantBindingOk = true;
+announced(1).GrantContextId = 'accepted-ul';
+announced(1).UCIOnPUSCHApplied = true;
+bound = state;
+bound.PendingFeedbackTable = table("accepted-ul",false,"pusch_uci", ...
+    'VariableNames',{'PUSCHGrantContextId','Processed','DeliveryMechanism'});
+[after, unchanged, protected, collisionRemains, cancelled] = ...
+    sixgr.truth.resolveSRSPUSCHRuntimePriority( ...
+    bound, announced, decision, cfg, 2, 2);
+assert(collisionRemains && cancelled==0 && isequaln(unchanged,announced) && ...
+    isequaln(after,bound) && ~any(protected.PUSCHGrantCancelled), ...
+    'A decoded PUSCH grant and its bound UCI must survive SRS arbitration.');
+
+% Isolate control commitment from UCI, and UCI from control commitment.
+for mode=1:4
+    candidate=pending;
+    if mode==1
+        candidate(1).PDCCHGatingActive=true; candidate(1).ControlDecodeOk=true;
+    elseif mode==2
+        candidate(1).PDCCHGrantBindingOk=true;
+    elseif mode==3
+        candidate(1).UCIOnPUSCHApplied=true;
+    else
+        candidate(1).ExpectedUCIBits=int8(0); % A NACK bit is still UCI.
+    end
+    [~,unchanged,~,collisionRemains,cancelled]= ...
+        sixgr.truth.resolveSRSPUSCHRuntimePriority(state,candidate,decision,cfg,2,2);
+    assert(collisionRemains && cancelled==0 && isequaln(unchanged,candidate));
+end
+
+% Live pending tables are authoritative even if a stale grant copy omits
+% the UCI flag. Exercise HARQ on both ledgers and a CSI-only reservation.
+for contract={ ...
+        {'PendingFeedbackTable','PUSCHGrantContextId','Processed'}, ...
+        {'PUCCHGrantTraceTable','PUSCHGrantContextId','GrantExecutedFlag'}, ...
+        {'PendingCSITable','CSIUCIPUSCHGrantContextId','Processed'}}
+    names=contract{1};
+    live=state; candidate=pending;
+    candidate(1).GrantContextId='live-uci';
+    live.(names{1})=table("live-uci",false, ...
+        'VariableNames',{names{2},names{3}});
+    [after,unchanged,~,collisionRemains,cancelled]= ...
+        sixgr.truth.resolveSRSPUSCHRuntimePriority(live,candidate,decision,cfg,2,2);
+    assert(collisionRemains && cancelled==0 && isequaln(after,live) && ...
+        isequaln(unchanged,candidate),'Live UCI ownership was lost.');
+    live.(names{1}).(names{3})(:)=true;
+    assert(~sixgr.truth.puschHasCommittedControlOrUCI(live,candidate(1)), ...
+        'Completed old feedback must not block an unrelated tentative candidate.');
+end
+
+for invalidOrdinal=[0,1.5,NaN,3]
+    invalid=[decision;decision]; invalid.GrantOrdinal(2)=invalidOrdinal;
+    localReject(@()sixgr.truth.resolveSRSPUSCHRuntimePriority( ...
+        state,pending,invalid,cfg,2,2), ...
+        'sixgr:truth:MissingCollidingQueuedPUSCHGrant');
+end
+wrongSlot=pending; wrongSlot(1).ScheduledAbsoluteSlot=3;
+localReject(@()sixgr.truth.resolveSRSPUSCHRuntimePriority( ...
+    state,wrongSlot,decision,cfg,2,2),'sixgr:truth:SRSPUSCHCollisionSlotMismatch');
+
 [~, unchanged, measured, collisionRemains, cancelled] = ...
     sixgr.truth.resolveSRSPUSCHRuntimePriority( ...
     state, pending, decision, cfg, 2, 1);
@@ -53,6 +119,14 @@ assert(collisionRemains && cancelled == 0 && numel(unchanged) == 2 && ...
 
 ok = true;
 fprintf("[PASS] testSRSPUSCHRuntimePriority causal ownership retained.\n");
+end
+
+function localReject(fn,id)
+try, fn(); catch ME
+    assert(string(ME.identifier)==id,'Expected %s; got %s.',id,ME.identifier);
+    return;
+end
+error('testSRSPUSCHRuntimePriority:MissingError','Expected %s.',id);
 end
 
 function grant = localGrant(ueIndex)

@@ -3871,6 +3871,28 @@ for gi = 1:numel(grants)
     grants(gi).ULGrantTimingMode = "dci_k2_queued_grant";
 end
 
+% First-measurement SRS priority belongs before the UL DCI is transmitted.
+% A later SRS opportunity cannot silently retract a decoded PUSCH grant or
+% strand UCI already reserved on it. Inspect actual allocations while all
+% of these grants are still tentative candidates at the control decision.
+[srsKeep, srsPlanT] = sixgr.truth.planFirstSRSULResources( ...
+    planState, cfg, userCfg, grants);
+if ~isempty(srsPlanT)
+    state.ControlTrials.SRSResourceDecisions = localAppendCompatTable( ...
+        sixgr.util.structGet(state.ControlTrials,"SRSResourceDecisions",table()),srsPlanT);
+end
+for gi=reshape(find(~srsKeep),1,[])
+    state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime( ...
+        state,grants(gi),"UL");
+end
+if any(~srsKeep)
+    localAppendRuntimeLog("INFO", ...
+        "Deferred PUSCH candidates before UL DCI for authored first-SRS priority: control_slot=%d data_slot=%d deferred=%d.", ...
+        controlSlot,dueSlot,nnz(~srsKeep));
+end
+grants=grants(srsKeep);
+if isempty(grants), return; end
+
 [state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH(state, userCfg, grants, "UL", snr_dB);
 if uciOnPUSCHAvailable && ~isempty(qualifiedGrants)
     % Reserve the exact pending DL HARQ feedback only after the future UL
@@ -8415,9 +8437,7 @@ slotDLAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true
     double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 0)) > 0;
 slotULAllowed = logical(sixgr.util.structGet(state, "CurrentSlotULAllowed", true)) && ...
     double(sixgr.util.structGet(state, "CurrentSlotULNumSymbols", 0)) > 0;
-srsPeriod = max(1, round(double(sixgr.util.structGet(state, "SRSSlotPeriod", 4))));
 srsMaxUEsPerSlot = max(1, round(double(sixgr.util.structGet(cfg, "phy.srs.maxUEsPerSlot", 1))));
-srsSchedulingPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.srs.schedulingPolicy", "round_robin_phase"))));
 trsEnabled = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
 prachRequired = logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false));
 prachEnabled = logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
@@ -8674,27 +8694,9 @@ for ueIdx = 1:numUsers
 
     srsEnabled = logical(sixgr.util.structGet(cfgU, "phy.srs.enable", ...
         sixgr.util.structGet(cfg, "phy.srs.enable", false)));
-    srsGatingActive = logical(sixgr.util.structGet(state.ControlGating, "SRSRequired", false));
     if srsEnabled && slotULAllowed
-        accessState = string(sixgr.util.structGet(state, "AccessState", strings(numUsers,1)));
-        lastSRSAttempt = double(sixgr.util.structGet(state, "LastSRSSlotByUE", zeros(numUsers,1)));
-        lastSuccessfulPRACH = double(sixgr.util.structGet(state, "LastSuccessfulPRACHSlotByUE", nan(numUsers,1)));
-        lastAttempt = 0;
-        if ueIdx <= numel(lastSRSAttempt)
-            lastAttempt = double(lastSRSAttempt(ueIdx));
-        end
-        shouldAttemptSRS = ~isfinite(lastAttempt) || lastAttempt == 0 || (isfinite(slotIdx) && (slotIdx - lastAttempt) >= srsPeriod);
-        accessSucceeded = ueIdx <= numel(accessState) && accessState(ueIdx) == "succeeded";
-        lastPrachSuccess = NaN;
-        if ueIdx <= numel(lastSuccessfulPRACH)
-            lastPrachSuccess = double(lastSuccessfulPRACH(ueIdx));
-        end
-        if srsGatingActive
-            shouldAttemptSRS = shouldAttemptSRS && accessSucceeded && isfinite(lastPrachSuccess) && slotIdx > lastPrachSuccess;
-        end
-        srsResourceOpportunity = localCoupledSRSResourceOpportunity( ...
-            cfg, slotIdx, ueIdx, numUsers, srsPeriod, srsSchedulingPolicy, srsMaxUEsPerSlot);
-        shouldAttemptSRS = shouldAttemptSRS && srsResourceOpportunity && srsScheduledThisSlot < srsMaxUEsPerSlot;
+        shouldAttemptSRS = sixgr.truth.coupledSRSAttemptDue(state,cfgU,slotIdx,ueIdx) && ...
+            srsScheduledThisSlot < srsMaxUEsPerSlot;
         if shouldAttemptSRS
             [cfgSRSU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, "UL"); %#ok<ASGLU>
             [srsPuschCollision, srsResourceDecisionT] = ...
