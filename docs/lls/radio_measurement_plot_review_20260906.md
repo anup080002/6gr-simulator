@@ -1694,3 +1694,33 @@ slot dispatcher. The remaining blocker is still chronological TX composition,
 continuous channel/RF execution, and delivery of received chunks before any
 acquisition/control state is made available. No replacement scenario or full
 qualification suite was launched for this refactor.
+
+### Receive-window dispatch across physical chunks
+
+`WaveformReceiveDispatcher` now routes one contiguous received sample stream
+into independently scheduled, possibly overlapping observation windows. It
+splits actual samples at observation boundaries, returns each completed window
+once in completion-time order, and never pads a gap or releases a partial
+window. Late/duplicate registrations and discontinuous, wrong-rate, wrong-port,
+or changed-precision chunks are rejected. The existing one-shot broadcast
+caller now uses this dispatcher before calling broadcast completion.
+
+Focused session 92289 exited 0 (`logs/receive_dispatch_20260906.log`): dispatcher
+unit checks, continuous CDL channel execution, and shared-burst decoding all
+passed. The channel test routes actual faded broadcast samples across irregular
+boundaries into full and overlapping windows; the reconstructed channel output
+matches the one-shot reference to relative error 2.01144e-16. Fresh session
+86331 exited 0 (`logs/receive_dispatch_order_20260906.log`), including windows
+registered out of completion order. These are receive-routing/channel checks,
+not proof that coupled TX/RF execution is already slot-driven.
+
+The failed short-run session 98194 has now exited 1. Its final artifact check
+also failed (`TerminalBrowserClosureFailed`, materialization=0, visual=1,
+lineage=1). It retained 426 CSVs and 66 PNGs; counts do not establish correctness.
+The readiness report explicitly rejects publication readiness and flags both
+artifact completeness and plot lineage. Visual inspection of
+`analytics/image/contract__throughput-goodput-spectral-efficiency-analytics__per-ue-throughput.png`
+found a remaining rendering defect: an all-zero throughput sample is drawn as
+a filled bar from -1 to 0 Mbit/s. The renderer's zero baseline and incomplete-run
+measurement labels require follow-up; this image is not a valid throughput
+performance result. No optional plot expansion or additional scenario was run.

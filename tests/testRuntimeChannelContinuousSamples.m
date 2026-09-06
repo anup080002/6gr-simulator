@@ -49,6 +49,10 @@ assert(~replay.RuntimeChannelAlignmentLookaheadExecutedOnFork && ...
 ends=[13,4099,16384,size(x,1)];
 first=0;
 received=complex(zeros(size(one),'like',one));
+receiver=sixgr.phy.waveform.WaveformReceiveDispatcher(tx.SampleRateHz,size(one,2),0);
+receiver.register("broadcast",0,size(x,1));
+receiver.register("overlapping_window",ends(1)-1,ends(3)-1);
+releasedIDs=strings(0,1);
 for stop=ends
     [part,r,state]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
         state,x(first+1:stop,:),"OutputSampleAlignment","continuous_raw_samples");
@@ -57,6 +61,20 @@ for stop=ends
     assert(r.RuntimeChannelAppliedAlignmentTrimSamples==0);
     assert(size(part,1)==stop-first);
     received(first+1:stop,:)=part;
+    completed=receiver.dispatch(sixgr.phy.waveform.WaveformChunk(part,first),tx.SampleRateHz);
+    for observationIdx=1:numel(completed)
+        item=completed(observationIdx);
+        assert(~any(releasedIDs==item.ID),"An observation must be released exactly once.");
+        releasedIDs(end+1,1)=item.ID; %#ok<AGROW>
+        assert(item.CompletionSample<=stop && item.ReceivedThroughSample==stop);
+        a=item.Observation.StartSample;
+        b=item.Observation.EndSampleExclusive;
+        assert(isequal(item.Observation.readComplete(),received(a+1:b,:)), ...
+            "Receive-window dispatch must preserve every actual faded sample.");
+        if item.ID=="broadcast"
+            assert(stop==size(x,1),"A broadcast cannot complete during an earlier slot/chunk.");
+        end
+    end
     referencePart=directChunks.Obj(x(first+1:stop,:));
     fprintf('Samples [%d,%d): API-vs-object=%g; partition-vs-whole=%g.\n', ...
         first,stop,norm(part-referencePart,'fro'),norm(part-one(first+1:stop,:),'fro'));
@@ -70,6 +88,8 @@ assert(state.CurrentSampleIndex==whole.CurrentSampleIndex && ...
     state.TotalObjectInputSamples==whole.TotalObjectInputSamples);
 assert(state.ResetCount==whole.ResetCount, ...
     "Streaming must not reset or rewind the fading process.");
+assert(isequal(sort(releasedIDs),sort(["broadcast";"overlapping_window"])));
+assert(receiver.NextSampleIndex==state.CurrentSampleIndex);
 localError(@() sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
     struct(),x,"OutputSampleAlignment","continuous_raw_samples"), ...
     "ChannelFactory:UninitializedContinuousChannel");
