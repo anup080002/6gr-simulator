@@ -14,11 +14,13 @@ p.addParameter("BackoffIndicator", NaN, @(x)isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 opt = p.Results;
 
-rapid = localClamp(round(double(opt.RAPID)), 0, 63);
-ta = localClamp(round(double(opt.TimingAdvanceCommand)), 0, 3846);
-tcRnti = localClamp(round(double(opt.TemporaryCRNTI)), 1, 65519);
+rapid = localInteger(opt.RAPID, 0, 63, "RAPID");
+ta = localInteger(opt.TimingAdvanceCommand, 0, 3846, "TimingAdvanceCommand");
+tcRnti = localInteger(opt.TemporaryCRNTI, 1, 65519, "TemporaryCRNTI");
 grant = opt.ULGrant;
-if ~isfield(grant, "BitVector") || numel(grant.BitVector) ~= 27
+if ~isfield(grant, "BitVector") || numel(grant.BitVector) ~= 27 || ...
+        ~isreal(grant.BitVector) || any(~isfinite(grant.BitVector(:))) || ...
+        any(grant.BitVector(:) ~= 0 & grant.BitVector(:) ~= 1)
     error("sixgr:mac:ra:InvalidULGrantBits", "MAC RAR requires a 27-bit UL grant.");
 end
 
@@ -42,8 +44,12 @@ rar.Hex = localBytesToHex(bytes);
 rar.PayloadHash = sixgr.rrc.asn1.asn1SHA256Hex(bytes);
 end
 
-function value = localClamp(value, lo, hi)
-value = max(lo, min(hi, value));
+function value = localInteger(value, lo, hi, name)
+if ~isreal(value) || ~isscalar(value) || ~isfinite(value) || ...
+        value ~= fix(value) || value < lo || value > hi
+    error("sixgr:mac:ra:InvalidMACRARField", "%s must be an integer in [%d,%d].", name, lo, hi);
+end
+value = double(value);
 end
 
 function bits = localIntToBits(value, nBits)

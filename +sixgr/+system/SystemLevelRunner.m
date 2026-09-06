@@ -747,9 +747,10 @@ classdef SystemLevelRunner
                         try
                             [gCell, ~] = schedDLCells{cellId}.schedule(t-1, ueStateDL, dlBudget);
                         catch MEs
+                            out.Ok = false;
                             gCell = struct([]);
                             schedulingError = "DL scheduling failed at slot " + string(t) + ...
-                                " cell " + string(cellId) + ": " + string(MEs.message);
+                                " cell " + string(cellId) + ": " + string(MEs.identifier) + ": " + string(MEs.message);
                             out.Errors(end+1,1) = schedulingError;
                             log.warn(char(schedulingError));
                         end
@@ -807,8 +808,9 @@ classdef SystemLevelRunner
                                 t-1, ueStateUL, ulSchedulingBudget);
                         catch MEs
                             gCell = struct([]);
+                            out.Ok = false;
                             schedulingError = "UL scheduling failed at slot " + string(t) + ...
-                                " cell " + string(cellId) + ": " + string(MEs.message);
+                                " cell " + string(cellId) + ": " + string(MEs.identifier) + ": " + string(MEs.message);
                             out.Errors(end+1,1) = schedulingError;
                             log.warn(char(schedulingError));
                         end

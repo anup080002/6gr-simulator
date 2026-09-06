@@ -3,10 +3,7 @@ function [rx, info] = blindDecodeRARPDCCH(rxWaveform, cfg, raCfg, sched, varargi
 p = inputParser;
 p.addParameter("RNTIAttempted", sched.RNTI, @(x)isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
-cfgRx = cfg;
-cfgRx.phy.carrier.NCellID = double(raCfg.NCellID);
-cfgRx.phy.carrier.NSizeGrid = double(raCfg.NSizeGrid);
-cfgRx.phy.carrier.SubcarrierSpacing = double(raCfg.CarrierSCSkHz);
+cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg2Slot);
 cfgRx.phy.pdcch.rnti = double(p.Results.RNTIAttempted);
 cfgRx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
 cfgRx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);

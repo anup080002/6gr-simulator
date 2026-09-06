@@ -133,8 +133,9 @@ assert(double(ra.PRACHOccasionSlot) == 1);
 assert(double(ra.PRACHOccasionSymbol) == 0);
 assert(double(ra.PRACHFrequencyIndex) == 0);
 assert(double(ra.RARNTI) == 15);
-assert(double(ra.Msg2Slot) == 2 && double(ra.Msg3Slot) == 3 && ...
-    double(ra.Msg4Slot) == 4 && double(ra.SetupCompleteSlot) == 5);
+assert(double(ra.Msg2Slot) == 2 && double(ra.Msg3Slot) == 5 && ...
+    double(ra.Msg4Slot) == 6 && double(ra.SetupCompleteSlot) == 7);
+assert(ra.TimingSchedule.Msg3K2Slots == 1 && ra.TimingSchedule.Msg3AdditionalDelaySlots == 2);
 
 assert(logical(sixgr.util.structGet(cfg, "outputs.rawIQCaptureEnabled", false)));
 assert(logical(sixgr.util.structGet(cfg, "outputs.rawGridCaptureEnabled", false)));

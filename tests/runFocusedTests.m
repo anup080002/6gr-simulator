@@ -34,7 +34,7 @@ for k = 1:numel(tests)
     r = struct("name", name, "ok", false, "msg", "", "duration_s", NaN);
     testStart = tic;
     try
-        feval(fn);
+        executeRegressionTest(fn);
         r.ok = true;
     catch ME
         r.ok = false;
@@ -51,6 +51,9 @@ for k = 1:numel(tests)
 end
 report.total_duration_s = toc(suiteStart);
 localPrintSlowest(report.results, showSlowest);
+if nargout == 0 && ~report.ok
+    error('sixgr:tests:RegressionFailed', 'One or more focused regressions failed; see per-test diagnostics.');
+end
 end
 
 function y = localTernary(cond, a, b)

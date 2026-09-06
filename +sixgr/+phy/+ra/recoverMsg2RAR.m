@@ -1,6 +1,6 @@
 function [rx, rar] = recoverMsg2RAR(rxWaveform, cfg, raCfg, sched, tx)
 %RECOVERMSG2RAR Decode RAR PDSCH after RA-RNTI PDCCH has been recovered.
-cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
+cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg2Slot);
 cfgRx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgRx, sched.PDSCH);
 [controlRx, controlInfo] = sixgr.phy.ra.blindDecodeRARPDCCH( ...
     rxWaveform, cfgRx, raCfg, sched, ...
@@ -47,7 +47,7 @@ rx.PDCCHControlEvent = strict.ControlEvent;
 rx.PDCCHInfo = controlInfo;
 if logical(pdschRx.Ok)
     payloadBits = int8(pdschRx.TransportBlock(1:double(tx.RARBitLength)));
-    rar = sixgr.mac.ra.decodeMACRAR(payloadBits);
+    rar = sixgr.mac.ra.decodeMACRAR(payloadBits, raCfg);
 else
     rar = struct();
 end

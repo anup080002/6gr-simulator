@@ -1094,6 +1094,11 @@ canonical_control:
       redcap_access: false
       eredcap_access: false
   random_access:
+    rar_grant:
+      field_layout: licensed_27bit
+      frequency_hopping: false
+      time_resource_assignment: 0
+      tpc_command: 3
     enabled: true
     common_downlink_beam_source: runtime_antenna_mapping
     four_step_ra_required: true

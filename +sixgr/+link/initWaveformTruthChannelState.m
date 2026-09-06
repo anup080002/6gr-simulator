@@ -69,6 +69,19 @@ if ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
         "ReceiveAntennaRuntime", rxRuntimeAntenna, ...
         "TransmitAntennaMeta", txRuntimeMeta, ...
         "ReceiveAntennaMeta", rxRuntimeMeta);
+    slotStart = sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeSlotStartTime_s", []);
+    if ~isempty(slotStart)
+        if ~(isnumeric(slotStart) && isreal(slotStart) && isscalar(slotStart) && ...
+                isfinite(slotStart) && slotStart >= 0)
+            error("sixgr:link:InvalidRuntimeWaveformStartTime", ...
+                "RuntimeSlotStartTime_s must be a finite nonnegative absolute time.");
+        end
+        % Control and reference waveforms share the same absolute origin
+        % contract as data. Never append a declared slot to whichever time
+        % another control waveform happened to leave behind.
+        runtimeState = sixgr.channel.ChannelFactory.advanceRuntimeChannelStateToTime( ...
+            runtimeState, double(slotStart), runtimeNumTx, tx.Waveform);
+    end
     state.RuntimeChannelState = runtimeState;
     state.RuntimeChannelStateUsed = true;
     state.RuntimeChannelObjectSource = "sixgr.channel.ChannelFactory.materializeRuntimeChannelState";

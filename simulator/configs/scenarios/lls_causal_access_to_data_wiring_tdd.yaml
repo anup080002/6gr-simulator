@@ -848,6 +848,11 @@ initial_access:
   extensions: {}
 
 random_access:
+  rar_grant:
+    field_layout: licensed_27bit
+    frequency_hopping: false
+    time_resource_assignment: 0
+    tpc_command: 3
   enabled: true
   ssb_unit_mode: baseline_periodic_ssb
   ssb_periodicity_ms: 20
@@ -920,7 +925,8 @@ random_access:
     rar_processing_delay_slots: 1
     msg3_k2_slots: 1
     msg4_processing_delay_slots: 1
-    setup_complete_k2_slots: 1
+    # Full-slot UL is separated from the last full DL slot by the mixed slot.
+    setup_complete_k2_slots: 2
   dci_payload_bits: 32
   msg2_pdsch: {prb_start: 0, num_prb: 24, symbol_start: 2, num_symbols: 12, mcs: 0, mcs_table: qam64, modulation: QPSK, target_code_rate: 0.1171875, rv: 0, n_layers: 1, ptrs_enabled: false}
   msg3_pusch: {prb_start: 0, num_prb: 24, symbol_start: 0, num_symbols: 14, mcs: 0, mcs_table: qam64, modulation: QPSK, target_code_rate: 0.1171875, rv: 0, n_layers: 1, transform_precoding: false, ptrs_enabled: false}
@@ -1983,6 +1989,7 @@ traffic:
       ue_count: 1
 
 output:
+  constellation_capture_scope: full_allocation
   bucket: lls
   profile: lls_causal_access_to_data_wiring_tdd
   backend: filesystem

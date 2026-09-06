@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from lls_radio_measurement_plots import CHART_SOURCES as _RADIO_CHART_SOURCES
 
 CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     # The AI benchmark runner persists its measured per-method results under
@@ -352,6 +353,11 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
         "isac/csv/isac_cfar_thresholds.csv",
     ],
 }
+
+
+# These source dependencies also invalidate the browser's exact-source cache
+# when fresh CSI, precoder or independently paired control evidence arrives.
+CONTRACT_CHART_ALIAS_PATHS.update({name: list(paths) for name, paths in _RADIO_CHART_SOURCES.items()})
 
 
 OPTIONAL_6G_TABLES = {

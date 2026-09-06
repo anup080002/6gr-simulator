@@ -124,14 +124,20 @@ classdef PDSCHAssignmentFactory
 
             rntiType = upper(strtrim(string(scheduledDCI.RNTIType)));
             format = string(scheduledDCI.Format);
-            if ~any(rntiType == ["SI-RNTI","P-RNTI","RA-RNTI","TC-RNTI"]) || ...
-                    ~sixgr.pdsch.PDSCHAssignmentFactory.validDCIRNTIProcedure(format, rntiType)
+            if ~sixgr.pdsch.PDSCHAssignmentFactory.validDCIRNTIProcedure(format, rntiType)
                 error("sixgr:pdsch:InvalidDCIRNTIProcedure", ...
-                    "Scheduled common-procedure DCI '%s' is invalid for '%s'.", ...
+                    "Scheduled DCI '%s' is invalid for '%s'.", ...
                     format, rntiType);
             end
+            if any(rntiType == ["SI-RNTI","P-RNTI","RA-RNTI","TC-RNTI"])
+                profile = "ra_si_strict";
+                source = "scheduled_dci+procedure_context";
+            else
+                profile = "connected_strict";
+                source = "scheduled_dci+ue_context";
+            end
             data = sixgr.pdsch.PDSCHAssignmentFactory.baseData( ...
-                "ra_si_strict", "scheduled_dci+procedure_context");
+                profile, source);
             data = sixgr.pdsch.PDSCHAssignmentFactory.populateCommon( ...
                 data, scheduledDCI, ueContext, frameState, harqState);
             data.ScheduledDCIId = string(scheduledDCI.Id);

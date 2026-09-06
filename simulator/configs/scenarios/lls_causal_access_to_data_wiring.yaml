@@ -4669,6 +4669,11 @@ initial_access:
     srb1_lcid: 1
   extensions: {}
 random_access:
+  rar_grant:
+    field_layout: licensed_27bit
+    frequency_hopping: false
+    time_resource_assignment: 0
+    tpc_command: 3
   enabled: true
   ssb_unit_mode: "baseline_periodic_ssb"
   ssb_periodicity_ms: 20
@@ -5786,6 +5791,7 @@ validation:
         consumer_source_files: ["+sixgr/+truth/exportRuntimeTxIQCapture.m"]
         required: true
 output:
+  constellation_capture_scope: full_allocation
   bucket: "lls"
   profile: "lls_causal_access_to_data_wiring"
   backend: "filesystem"

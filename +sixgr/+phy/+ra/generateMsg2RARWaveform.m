@@ -1,6 +1,6 @@
 function [tx, sched] = generateMsg2RARWaveform(cfg, raCfg, rar)
 %GENERATEMSG2RARWAVEFORM Carry MAC RAR bytes on PDCCH/PDSCH DL-SCH.
-cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
+cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg2Slot);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTx);
 sched = sixgr.phy.ra.scheduleMsg2RAR(raCfg, "RNTI", double(raCfg.RARNTI));
 cfgTx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgTx, sched.PDSCH);

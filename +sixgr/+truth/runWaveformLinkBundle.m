@@ -1346,6 +1346,10 @@ liveSweepPath = "";
 if isLiveDBMode
     dlLiveConstellationPath = fullfile(csvDir, "dl_constellation_preview.csv");
     ulLiveConstellationPath = fullfile(csvDir, "ul_constellation_preview.csv");
+    if string(sixgr.util.structGet(cfg, "outputs.constellationCaptureScope", "preview")) == "full_allocation"
+        dlLiveConstellationPath = fullfile(csvDir, "dl_constellation_samples.csv");
+        ulLiveConstellationPath = fullfile(csvDir, "ul_constellation_samples.csv");
+    end
 end
 if isLiveDBMode
     emptyTrials = localEmptyLinkTrialTable(0);
@@ -1801,7 +1805,7 @@ if coupledTruth
 end
 
 if istable(dlConst) && ~isempty(dlConst)
-    if isLiveDBMode
+    if isLiveDBMode && string(sixgr.util.structGet(cfg, "outputs.constellationCaptureScope", "preview")) ~= "full_allocation"
         outDLConst = fullfile(csvDir, "dl_constellation_preview.csv");
         sixgr.util.csvWriteTable(outDLConst, localDownsampleConstellationTable(dlConst, 2500));
     else
@@ -1813,7 +1817,7 @@ else
 end
 
 if istable(ulConst) && ~isempty(ulConst)
-    if isLiveDBMode
+    if isLiveDBMode && string(sixgr.util.structGet(cfg, "outputs.constellationCaptureScope", "preview")) ~= "full_allocation"
         outULConst = fullfile(csvDir, "ul_constellation_preview.csv");
         sixgr.util.csvWriteTable(outULConst, localDownsampleConstellationTable(ulConst, 2500));
     else
@@ -1935,6 +1939,12 @@ end
 function T = localDownsampleConstellationTable(Tin, maxRows)
 T = Tin;
 if ~(istable(Tin) && ~isempty(Tin))
+    return;
+end
+% A preview limit cannot silently downgrade an explicit full observation.
+% Live callbacks and final persistence share this rule.
+if ismember("CaptureScope", string(Tin.Properties.VariableNames)) && ...
+        any(string(Tin.CaptureScope) == "full_allocation_paired_symbols")
     return;
 end
 maxRows = max(1, round(double(maxRows)));
@@ -8465,6 +8475,24 @@ for ueIdx = 1:numUsers
         servingCell = NaN;
     end
 
+    % Resume prior RA attempts before this slot's control/data consumers.
+    % Msg2/Msg4 are DL stages and must not wait for another PRACH occasion.
+    hadPendingRA = localHasPendingRA(state, ueIdx);
+    if hadPendingRA
+        [state, raRawT, raCorrT, raEvidenceT] = localCollectCoupledPRACHTrials( ...
+            state, cfgU, ueIdx, snr_dB, slotIdx);
+        raT = localAnnotateCoupledControlTrial(raRawT, slotIdx, frameIdx, ...
+            ueIdx, rnti, "UL", servingCell);
+        state.ControlTrials.PRACH = localAppendCompatTable(state.ControlTrials.PRACH, raT);
+        state.ControlTrials.PRACHCorrelationTrace = localAppendCompatTable( ...
+            sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table()), raCorrT);
+        state.ControlTrials.RAEvidenceTables = localAppendRAEvidenceTables( ...
+            sixgr.util.structGet(state.ControlTrials, "RAEvidenceTables", struct()), raEvidenceT);
+        if ~isempty(raT)
+            state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, ueIdx, raT);
+        end
+    end
+
     if shouldAttemptTRS && isfinite(servingCell) && servingCell >= 1 && ~ismember(servingCell, trsObservedServingCells)
         trsSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "DL", snr_dB);
         [state,trsChannelState] = ...
@@ -8591,7 +8619,7 @@ for ueIdx = 1:numUsers
         end
     end
 
-    if prachSignalOpportunityThisSlot
+    if prachSignalOpportunityThisSlot && ~hadPendingRA
         pbchState = string(sixgr.util.structGet(state, "CellAcquisitionState", strings(numUsers,1)));
         accessState = string(sixgr.util.structGet(state, "AccessState", strings(numUsers,1)));
         lastPrachAttempt = double(sixgr.util.structGet(state, "LastPRACHSlotByUE", zeros(numUsers,1)));
@@ -9044,8 +9072,6 @@ end
 pdcchRequired = true;
 slotDLControlAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true)) && ...
     double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 0)) > 0;
-pdcchCCEUsedByResource = containers.Map('KeyType', 'char', 'ValueType', 'double');
-pdcchCCEBudgetByResource = containers.Map('KeyType', 'char', 'ValueType', 'double');
 for gi = 1:numel(grants)
     grant = grants(gi);
     ueIdx = localResolveGrantUEIndex(grant, state.MultiUser);
@@ -9057,7 +9083,9 @@ for gi = 1:numel(grants)
     [cfgU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, direction); %#ok<ASGLU>
     slotIdx = double(sixgr.util.structGet(grant, "Slot", sixgr.util.structGet(state, "CurrentSlot", NaN)));
     frameIdx = double(sixgr.util.structGet(grant, "Frame", sixgr.util.structGet(state, "CurrentFrame", NaN)));
-    controlSlotIdx = double(sixgr.util.structGet(grant, "ControlSlot", sixgr.util.structGet(state, "CurrentSlot", slotIdx)));
+    controlSlotIdx = sixgr.truth.resolvePDCCHControlSlot(grant, ...
+        sixgr.util.structGet(state, "CurrentSlot", NaN));
+    grant.ControlSlot = controlSlotIdx;
     controlFrameIdx = double(sixgr.util.structGet(grant, "ControlFrame", sixgr.util.structGet(state, "CurrentFrame", frameIdx)));
     rnti = double(sixgr.util.structGet(grant, "RNTI", localUserRNTI(state.MultiUser, ueIdx)));
     servingCell = double(sixgr.util.structGet(grant, "ServingCell", NaN));
@@ -9086,27 +9114,6 @@ for gi = 1:numel(grants)
         continue;
     end
     pdcchSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "DL", snr_dB);
-    plannedAggLevel = localResolveGrantPDCCHAggregationLevelForCapacity(cfgU, pdcchSNR_dB, grant);
-    controlResourceKey = localPDCCHControlResourceKey(grant, controlFrameIdx, controlSlotIdx);
-    pdcchCCEUsedThisSlot = localMapGetDouble(pdcchCCEUsedByResource, controlResourceKey, 0);
-    pdcchCCEBudgetThisSlot = localMapGetDouble(pdcchCCEBudgetByResource, controlResourceKey, NaN);
-    cfgCCEBudget = localResolvePDCCHCCEBudgetFromConfig(cfgU);
-    if ~isfinite(pdcchCCEBudgetThisSlot) && isfinite(cfgCCEBudget)
-        pdcchCCEBudgetThisSlot = cfgCCEBudget;
-        localMapSetDouble(pdcchCCEBudgetByResource, controlResourceKey, pdcchCCEBudgetThisSlot);
-    end
-    if pdcchRequired && isfinite(plannedAggLevel) && isfinite(pdcchCCEBudgetThisSlot) && ...
-            (pdcchCCEUsedThisSlot + plannedAggLevel) > pdcchCCEBudgetThisSlot
-        reason = "control_blocked_coreset_cce_capacity_exhausted";
-        [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial(state, grant, direction, reason);
-        state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
-        pdcchT = localBuildPDCCHCapacityBlockedTrial(cfgU, pdcchSNR_dB, plannedAggLevel, ...
-            pdcchCCEBudgetThisSlot, pdcchCCEUsedThisSlot, reason);
-        pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction, servingCell);
-        [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
-        state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
-        continue;
-    end
     if localPDCCHPreAttachAssumptionApplies(state, cfgU, ueIdx, controlSlotIdx)
         grant.PDCCHGatingActive = true;
         grant.ControlDecodeOk = true;
@@ -9135,11 +9142,27 @@ for gi = 1:numel(grants)
         end
         continue;
     end
+    % Reserve exact payload + DM-RS coordinates across both scheduling
+    % passes. A search-space/CORESET ID or the scheduled data direction does
+    % not create a separate physical resource pool.
+    cfgControl = localResolvePDCCHTrialConfig(cfgU, pdcchSNR_dB, 1, 1, grant);
+    [controlCarrier, ~] = sixgr.phy.grid.makeCarrier(cfgControl);
+    [state.PDCCHResourceLedger, occupiedControlREs] = ...
+        sixgr.truth.PDCCHSlotResourceLedger.lookup( ...
+        sixgr.util.structGet(state, "PDCCHResourceLedger", struct()), ...
+        controlSlotIdx, servingCell, controlCarrier);
     [state,pdcchChannelState] = ...
         sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
         state,cfgU,ueIdx,"DL");
-    [pdcchRaw,pdcchUpdatedChannelState,pdcchObservedRET] = localCollectPDCCHTrials( ...
-        cfgU,pdcchSNR_dB,1,grant,pdcchChannelState);
+    [pdcchRaw,pdcchUpdatedChannelState,pdcchObservedRET,allocatedControlREs] = localCollectPDCCHTrials( ...
+        cfgU,pdcchSNR_dB,1,grant,pdcchChannelState,occupiedControlREs);
+    if ~isempty(allocatedControlREs)
+        % A transmitted/allocated candidate stays occupied even if its DCI
+        % subsequently fails decoding; CRC failure does not release RF REs.
+        state.PDCCHResourceLedger = sixgr.truth.PDCCHSlotResourceLedger.reserve( ...
+            state.PDCCHResourceLedger, controlSlotIdx, servingCell, ...
+            controlCarrier, allocatedControlREs);
+    end
     state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
         state,pdcchUpdatedChannelState);
     state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
@@ -9147,16 +9170,6 @@ for gi = 1:numel(grants)
         pdcchObservedRET);
     pdcchT = localAnnotateCoupledControlTrial(pdcchRaw, ...
         controlSlotIdx,controlFrameIdx,ueIdx,rnti,direction,servingCell);
-    attemptedCCEs = localTrialTableScalar(pdcchT, "UsedCCECount", plannedAggLevel);
-    attemptedBudget = localTrialTableScalar(pdcchT, "AvailableCCECount", pdcchCCEBudgetThisSlot);
-    if isfinite(attemptedBudget)
-        pdcchCCEBudgetThisSlot = attemptedBudget;
-        localMapSetDouble(pdcchCCEBudgetByResource, controlResourceKey, pdcchCCEBudgetThisSlot);
-    end
-    if pdcchRequired && isfinite(attemptedCCEs) && attemptedCCEs > 0
-        pdcchCCEUsedThisSlot = pdcchCCEUsedThisSlot + attemptedCCEs;
-        localMapSetDouble(pdcchCCEUsedByResource, controlResourceKey, pdcchCCEUsedThisSlot);
-    end
     % Exact DCI/grant binding is part of execution authority.  Resolve it
     % before applyPDCCHGrantTrial so a CRC-valid DCI with mismatched TDRA,
     % PRB, MCS, HARQ or identity fields can never authorize a waveform.
@@ -9558,6 +9571,12 @@ if ismember("Slot", string(T.Properties.VariableNames))
     T.Slot(:) = double(slotIdx);
 else
     T.Slot = repmat(double(slotIdx), n, 1);
+end
+if all(ismember(["SourceObservationSlot", "SourceObservationFrame"], string(T.Properties.VariableNames)))
+    % Deferred RA completion is published now but still measures its
+    % original Msg1 occasion. Do not move that measurement to the RRC slot.
+    T.Frame = double(T.SourceObservationFrame);
+    T.Slot = double(T.SourceObservationSlot);
 end
 % These values are execution context, not optional schema decoration. The
 % trial templates already contain NaN identity columns, so only filling
@@ -12519,6 +12538,11 @@ end
 function [state, T, correlationTraceT, raEvidenceTables] = ...
         localCollectCoupledPRACHTrials( ...
         state, cfg, ueIdx, snr_dB, slotIdx)
+if localShouldRunFourStepRAForPRACH(cfg) || localHasPendingRA(state, ueIdx)
+    [state, T, correlationTraceT, raEvidenceTables] = ...
+        localAdvanceCoupledRAAttempt(state, cfg, ueIdx, snr_dB, slotIdx);
+    return;
+end
 cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx);
 [state, dlState] = ...
     sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
@@ -12537,6 +12561,94 @@ state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
     state, dlState);
 state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
     state, ulState);
+end
+
+function tf = localHasPendingRA(state, ueIdx)
+queue = sixgr.util.structGet(state, "PendingRAAttempts", {});
+tf = iscell(queue) && ueIdx <= numel(queue) && ~isempty(queue{ueIdx});
+end
+
+function [state, T, correlationTraceT, evidence] = ...
+        localAdvanceCoupledRAAttempt(state, cfg, ueIdx, snr_dB, slotIdx)
+T = table();
+correlationTraceT = table();
+evidence = localEmptyRAEvidenceTables();
+if ~(isscalar(slotIdx) && isfinite(slotIdx) && slotIdx >= 1 && slotIdx == fix(slotIdx))
+    error("sixgr:truth:InvalidRARuntimeSlot", "Coupled RA requires a positive one-based runtime slot.");
+end
+pending = localHasPendingRA(state, ueIdx);
+if pending
+    attempt = state.PendingRAAttempts{ueIdx};
+    cfg = attempt.Config;
+else
+    cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx);
+    attempt = struct("Config", cfg, "StartSlot", slotIdx, "SNR_dB", snr_dB, ...
+        "PublishedStageRows", 0, "Continuation", struct());
+end
+% Pre-scheduling observes completed samples strictly before the current
+% slot, not samples from the slot whose grants are about to be decided.
+receiveThrough = (slotIdx - 1) * sixgr.time.slotDurationSec(cfg);
+[state, dlState] = sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl(state, cfg, ueIdx, "DL");
+[state, ulState] = sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl(state, cfg, ueIdx, "UL");
+if pending
+    [ra, checkpoint] = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfg, ...
+        "Continuation", attempt.Continuation, "RuntimeSlot", slotIdx, ...
+        "ReceiveThroughTime_s", receiveThrough, ...
+        "InitialDLChannelState", dlState, "InitialULChannelState", ulState);
+else
+    decodedSIB1 = localDecodedSIB1RecoveryForUE(state, ueIdx);
+    [ra, ok, failure, checkpoint] = localRunFourStepRAForPRACHTrial(cfg, 1, ...
+        slotIdx, snr_dB, dlState, ulState, decodedSIB1, receiveThrough);
+    if ~ok
+        error("sixgr:truth:RAAttemptInitializationFailed", "%s", failure);
+    end
+end
+dlState = sixgr.util.structGet(ra, "RuntimeDLChannelState", dlState);
+ulState = sixgr.util.structGet(ra, "RuntimeULChannelState", ulState);
+state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(state, dlState);
+state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(state, ulState);
+stages = sixgr.util.structGet(ra, "RuntimeStageRows", table());
+previousCount = attempt.PublishedStageRows;
+if height(stages) < previousCount
+    error("sixgr:truth:RAStageEvidenceRegressed", "An RA continuation lost previously received stage rows.");
+end
+terminal = isempty(fieldnames(checkpoint));
+if terminal
+    evidence = localAppendRAEvidenceTables(evidence, sixgr.util.structGet(ra, "ArtifactTables", struct()));
+end
+% Only append newly executed stages; finalization must not duplicate the
+% earlier live waveform rows already committed for this attempt.
+evidence.ra_runtime_stage_waveforms = stages(previousCount+1:end, :);
+if previousCount == 0 && ~isempty(stages)
+    state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
+        sixgr.util.structGet(state, "ObservedREAllocationTable", table()), ...
+        sixgr.util.structGet(ra, "ObservedREAllocationTable", table()));
+    measured = localApplyFourStepRAEvidenceToPRACHRow( ...
+        localMakeLinkTrialRow(cfg, "UL", attempt.SNR_dB, 1), ra, 1, attempt.StartSlot);
+    correlationTraceT = localBuildFourStepRACorrelationTraceTable(ra, measured, cfg, attempt.SNR_dB, 1);
+end
+if ~isfield(state, "PendingRAAttempts")
+    state.PendingRAAttempts = cell(numel(state.AccessState), 1);
+end
+if terminal
+    state.PendingRAAttempts{ueIdx} = [];
+    row = localApplyFourStepRAEvidenceToPRACHRow( ...
+        localMakeLinkTrialRow(cfg, "UL", attempt.SNR_dB, 1), ra, 1, attempt.StartSlot);
+    sourceSlot = double(ra.Msg1ScheduledSlot);
+    if string(ra.RASlotTimeBase) ~= "absolute_zero_based" || ...
+            ~isscalar(sourceSlot) || ~isfinite(sourceSlot) || sourceSlot < 0 || sourceSlot ~= fix(sourceSlot)
+        error("sixgr:truth:InvalidDeferredRASourceSlot", "Deferred RA must retain the producer's absolute Msg1 coordinate.");
+    end
+    row.SourceObservationSlot = sourceSlot + 1;
+    row.SourceObservationFrame = 1 + floor(sourceSlot / round(0.01 / sixgr.time.slotDurationSec(cfg)));
+    row.RuntimeEvidenceAvailableSlot = slotIdx;
+    T = struct2table(row);
+else
+    attempt.Continuation = checkpoint;
+    attempt.PublishedStageRows = height(stages);
+    state.PendingRAAttempts{ueIdx} = attempt;
+    state.AccessState(ueIdx) = "pending";
+end
 end
 
 function cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx)
@@ -12619,6 +12731,9 @@ observedRET = table();
 fourStepRequired = localShouldRunFourStepRAForPRACH(cfg);
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "UL", snr_dB, k);
+    r.CRCPass = NaN;
+    r.CRCApplicable = false;
+    r.CRCOutcome = "not_applicable";
     r.Status = "FAIL";
     try
         if fourStepRequired
@@ -12640,7 +12755,6 @@ for k = 1:nTrials
                 observedRET = localAppendCompatTable(observedRET, ...
                     sixgr.util.structGet(ra, "ObservedREAllocationTable", table()));
             else
-                r.CRCPass = 0;
                 r.StrictOk = false;
                 r.StrictReceiverEvidenceOk = false;
                 r.DecodeAttempted = true;
@@ -12669,9 +12783,8 @@ for k = 1:nTrials
         end
         completed = logical(sixgr.util.structGet(out, "Ok", false)) && ~logical(sixgr.util.structGet(out, "Skipped", false));
         detected = logical(sixgr.util.structGet(out, "Detected", false));
-        r.CRCPass = double(detected);
         r.DetectionSuccess = detected;
-        r.DetectionMetric = double(sixgr.util.structGet(out, "DetectionMetric", double(detected)));
+        r.DetectionMetric = double(sixgr.util.structGet(out, "DetectionMetric", NaN));
         r.CorrelationPeak = double(sixgr.util.structGet(out, "CorrelationPeak", r.DetectionMetric));
         r.DetectionThreshold = double(sixgr.util.structGet(out, "DetectionThreshold", NaN));
         r.DetectionThresholdMode = string(sixgr.util.structGet(out, "DetectionThresholdMode", ""));
@@ -12764,7 +12877,6 @@ for k = 1:nTrials
         r.Notes = string(sixgr.util.structGet(out, "Notes", ""));
     catch ME
         r.Crash = true;
-        r.CRCPass = 0;
         r.Status = "CRASH";
         failure = string(ME.identifier) + ":" + string(ME.message);
         r.FailureReason = failure;
@@ -12788,8 +12900,10 @@ tf = prachEnabled && ( ...
     logical(sixgr.util.structGet(cfg, "validation.random_access_evidence.msg3_pusch_required", false)));
 end
 
-function [ra, ok, failure] = localRunFourStepRAForPRACHTrial( ...
-        cfg, trialIdx, slotIdx, snr_dB, initialDLState, initialULState, decodedSIB1)
+function [ra, ok, failure, continuation] = localRunFourStepRAForPRACHTrial( ...
+        cfg, trialIdx, slotIdx, snr_dB, initialDLState, initialULState, decodedSIB1, receiveThrough)
+if nargin < 8, receiveThrough = Inf; end
+continuation = struct();
 ra = struct();
 ok = false;
 failure = "";
@@ -12826,7 +12940,7 @@ try
         ["validation.random_access_evidence.four_step_negative_test_enabled", ...
          "lls6g.random_access_evidence.four_step_negative_test_enabled", ...
          "random_access.run_negative_suite"], false);
-    ra = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfg, ...
+    [ra, continuation] = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfg, ...
         "RunFolder", char(raRunFolder), ...
         "RunId", runId, ...
         "ScenarioName", scenarioName, ...
@@ -12834,6 +12948,7 @@ try
         "CellId", double(cellId), ...
         "AttemptId", double(trialIdx), ...
         "RuntimeSlot", double(slotIdx), ...
+        "ReceiveThroughTime_s", receiveThrough, ...
         "RuntimeNoiseSNR_dB", double(snr_dB), ...
         "SIB1Recovery", decodedSIB1, ...
         "RequireDecodedSIB1", requireDecodedSIB1, ...
@@ -12855,7 +12970,7 @@ r.RAScenarioName = string(sixgr.util.structGet(ra, "ScenarioName", ""));
 r.RACellId = double(sixgr.util.structGet(ra, "CellId", NaN));
 r.RAUEId = double(sixgr.util.structGet(ra, "UEId", NaN));
 r.RAAttemptId = double(sixgr.util.structGet(ra, "AttemptId", trialIdx));
-    fields = ["RAProcedureType","RABindingSource", ...
+    fields = ["RAProcedureType","RABindingSource","RASlotTimeBase","Msg1ScheduledSlot", ...
     "SIB1RACHBindingApplied","SIB1RACHBindingSource", ...
     "SIB1RACHPayloadHash","SIB1RACHTreeHash","RACHConfigHash", ...
     "AssociatedSSBIndex","AssociatedSSBSelectionSource", ...
@@ -12992,13 +13107,12 @@ r.FalseAlarm = preambleDetected && isfinite(r.DetectedPreambleIndex) && isfinite
     round(double(r.DetectedPreambleIndex)) ~= round(double(r.PreambleIndex));
 r.FalseAlarmFlag = double(logical(r.FalseAlarm));
 r.MissedDetection = ~preambleDetected;
-r.CRCPass = double(strictOk);
-r.CRCApplicable = true;
-if strictOk
-    r.CRCOutcome = "pass";
-else
-    r.CRCOutcome = "fail";
-end
+% Msg1 is preamble detection, not a CRC-protected transport block. Overall
+% procedure acceptance belongs in StrictOk/RACompleted; the actual Msg2,
+% Msg3, Msg4 and SetupComplete CRCs remain in their named receiver fields.
+r.CRCPass = NaN;
+r.CRCApplicable = false;
+r.CRCOutcome = "not_applicable";
 r.DetectionSuccess = preambleDetected;
 r.DetectionAttempted = true;
 r.DetectionUsable = preambleDetected && isfinite(double(r.DetectionMetric));
@@ -13178,8 +13292,8 @@ names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
     "ra_collision_trials","ra_oracle_guard","ra_runtime_stage_waveforms"];
 end
 
-function [T,updatedRuntimeChannelState,observedRET] = localCollectPDCCHTrials( ...
-        cfg,snr_dB,nTrials,grantContext,initialRuntimeChannelState)
+function [T,updatedRuntimeChannelState,observedRET,allocatedRECoordinates] = localCollectPDCCHTrials( ...
+        cfg,snr_dB,nTrials,grantContext,initialRuntimeChannelState,occupiedRECoordinates)
 nTrials = max(1, round(double(nTrials)));
 rows = repmat(localMakeLinkTrialRow(cfg, "DL", snr_dB, 1), nTrials, 1);
 if nargin < 4 || ~isstruct(grantContext)
@@ -13190,6 +13304,12 @@ if nargin < 5 || ~isstruct(initialRuntimeChannelState)
 end
 updatedRuntimeChannelState = initialRuntimeChannelState;
 observedRET = table();
+allocatedRECoordinates = zeros(0,2);
+reserveControlResources = nargin >= 6;
+if reserveControlResources && nTrials ~= 1
+    error("sixgr:truth:PDCCHReservationTrialScope", ...
+        "A shared control-slot reservation must execute one scheduled DCI at a time.");
+end
 dciFormatSeed = localResolvePDCCHGrantDCIFormat(grantContext, "DL");
 dciBitsSeed = int8([]);
 if isstruct(sixgr.util.structGet(grantContext, "DCI", struct()))
@@ -13198,6 +13318,9 @@ end
 for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "DL", snr_dB, k);
     r.Status = "FAIL";
+    % A generation/propagation exception is not a measured CRC failure.
+    r.CRCPass = NaN;
+    r.CRCApplicable = false;
     try
         cfgTrial = localResolvePDCCHTrialConfig(cfg, snr_dB, k, nTrials, grantContext);
         grantRNTI = double(sixgr.util.structGet(grantContext, "RNTI", ...
@@ -13212,8 +13335,13 @@ for k = 1:nTrials
         else
             txArgs = [txArgs {"K", 64}]; %#ok<AGROW>
         end
+        if reserveControlResources
+            txArgs = [txArgs {"ReservedRECoordinates", occupiedRECoordinates}]; %#ok<AGROW>
+        end
         [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfgTrial, txArgs{:});
-        observedSlot0 = double(tx.Carrier.NSlot);
+        allocatedRECoordinates = txInfo.AllocatedRECoordinates;
+        observedSlot0 = double(sixgr.util.structGet(cfgTrial, ...
+            "lls6g.runtime.AbsoluteSlotIndex0", tx.Carrier.NSlot));
         pdcchTx = struct("Carrier", tx.Carrier, "Grid", tx.Grid, ...
             "PDCCHIndices", tx.PDCCHInd, "DMRSIndices", tx.DMRSInd);
         pdcchRET = sixgr.truth.buildObservedREAllocation(pdcchTx, ...
@@ -13522,9 +13650,25 @@ for k = 1:nTrials
         end
     catch ME
         r.Crash = true;
-        r.CRCPass = 0;
         r.Status = "CRASH";
+        r.FailureReason = string(ME.identifier);
         r.Notes = string(ME.message);
+        if strcmp(ME.identifier, 'sixgr:phy:pdcch:NoFreeCandidate')
+            r.Crash = false;
+            r.Status = "BLOCKED";
+            r.CRCPass = NaN;
+            r.CRCApplicable = false;
+            r.DecodeAttempted = false;
+            r.DecodeUsable = false;
+            r.DetectionAttempted = false;
+            r.DetectionUsable = false;
+            r.MeasurementAttempted = false;
+            r.MeasurementUsable = false;
+            r.ReceiverUsable = false;
+            r.BlockingFlag = 1;
+            r.UsedCCECount = 0;
+            r.FailureReason = "control_blocked_no_nonoverlapping_pdcch_candidate";
+        end
     end
     rows(k) = r;
 end
@@ -13809,40 +13953,6 @@ if isfinite(double(nVar)) && double(nVar) > 0
 end
 end
 
-function T = localBuildPDCCHCapacityBlockedTrial(cfg, snr_dB, aggLevel, availableCCEs, usedBefore, reason)
-r = localMakeLinkTrialRow(cfg, "DL", snr_dB, 1);
-r.Status = "BLOCKED";
-r.CRCPass = NaN;
-r.CRCApplicable = false;
-r.DetectionMetric = NaN;
-r.DecodeAttempted = false;
-r.DecodeUsable = false;
-r.DetectionAttempted = false;
-r.DetectionUsable = false;
-r.MeasurementAttempted = false;
-r.MeasurementUsable = false;
-r.ReceiverUsable = false;
-r.BlockingFlag = 1;
-r.AggregationLevel = double(aggLevel);
-r.UsedCCECount = double(aggLevel);
-r.AvailableCCECount = double(availableCCEs);
-r.NonOverlappedCCEUsage = double(usedBefore + aggLevel) / max(double(availableCCEs), 1);
-r.CORESETUtilization = double(usedBefore) / max(double(availableCCEs), 1);
-r.ControlCapacityUtilization = r.NonOverlappedCCEUsage;
-r.FailureReason = string(reason);
-r.NoiseVarStatus = "NOT_APPLICABLE";
-r.NoiseVarSource = "pdcch_decode_not_attempted";
-r.NoiseVarReason = string(reason);
-r.ReceiverHestSINRValueStatus = "not_applicable";
-r.ReceiverHestSINRNAReason = string(reason);
-r.MeasuredTrialSINRValueStatus = "not_applicable";
-r.MeasuredTrialSINRNAReason = string(reason);
-r.RuntimeMaterializationStatus = "active_integrated_grant_coupled_dci_control_capacity_gate";
-r.ValueStatus = "blocked_no_control_channel_resource";
-r.Notes = "PDCCH decode was not attempted because the configured CORESET/search-space CCE budget was exhausted before this grant.";
-T = struct2table(r, "AsArray", true);
-end
-
 function T = localBuildMissingPDCCHGrantBindingTrial(cfg, snr_dB, reason)
 r = localMakeLinkTrialRow(cfg, "DL", snr_dB, 1);
 r.Status = "NA";
@@ -13876,35 +13986,6 @@ r.FailureReason = string(reason);
 r.TruthStatus = "runtime_pdcch_binding_missing";
 r.Notes = "Decoded PDCCH/DCI evidence was not available for this scheduled grant.";
 T = struct2table(r, "AsArray", true);
-end
-
-function key = localPDCCHControlResourceKey(grant, controlFrameIdx, controlSlotIdx)
-servingCell = double(sixgr.util.structGet(grant, "ServingCell", ...
-    sixgr.util.structGet(grant, "BaseStationID", NaN)));
-if ~(isfinite(servingCell) && servingCell >= 1)
-    servingCell = 0;
-end
-key = sprintf("frame_%d_slot_%d_cell_%d", ...
-    round(double(controlFrameIdx)), round(double(controlSlotIdx)), round(double(servingCell)));
-end
-
-function value = localMapGetDouble(mapObj, key, defaultValue)
-value = double(defaultValue);
-try
-    key = char(string(key));
-    if isKey(mapObj, key)
-        value = double(mapObj(key));
-    end
-catch
-    value = double(defaultValue);
-end
-end
-
-function localMapSetDouble(mapObj, key, value)
-try
-    mapObj(char(string(key))) = double(value);
-catch
-end
 end
 
 function reason = localPDCCHDecodeFailureReason(rx, bitErrors, bitsCompared)
@@ -13974,37 +14055,6 @@ end
 reason = strjoin(parts, ";");
 end
 
-function aggLevel = localResolveGrantPDCCHAggregationLevelForCapacity(cfg, snr_dB, grantContext)
-grantAggLevel = double(sixgr.util.structGet(grantContext, "PDCCHAggregationLevel", NaN));
-policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
-grantAggAuthority = lower(strtrim(string(sixgr.util.structGet(grantContext, "PDCCHAggregationLevelAuthority", ""))));
-trustedGrantAL = any(grantAggAuthority == ["runtime_pdcch_decode", "measured_pdcch_decode", "explicit_grant_control"]);
-if isfinite(grantAggLevel) && any(grantAggLevel == [1 2 4 8 16]) && ...
-        (trustedGrantAL || policy == "configured_scheduler_level")
-    aggLevel = double(grantAggLevel);
-    return;
-end
-cfgTrial = localResolvePDCCHTrialConfig(cfg, snr_dB, 1, 1, grantContext);
-aggLevel = double(sixgr.util.structGet(cfgTrial, "phy.pdcch.aggregationLevel", NaN));
-if ~(isfinite(aggLevel) && any(aggLevel == [1 2 4 8 16]))
-    aggLevel = 4;
-end
-end
-
-function availCCEs = localResolvePDCCHCCEBudgetFromConfig(cfg)
-freqResources = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.frequencyResources", []));
-if isempty(freqResources)
-    freqResources = ones(1, 6);
-end
-duration = double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.duration", 2));
-if ~(isfinite(duration) && duration > 0)
-    availCCEs = NaN;
-    return;
-end
-numREG = 6 * sum(freqResources(:) ~= 0) * duration;
-availCCEs = floor(numREG / 6);
-end
-
 function cfgTrial = localResolvePDCCHTrialConfig(cfg, snr_dB, trialIdx, nTrials, grantContext)
 cfgTrial = cfg;
 levels = double(sixgr.util.structGet(cfg, "phy.pdcch.aggregationLevels", ...
@@ -14039,6 +14089,16 @@ cfgTrial = sixgr.util.structSet(cfgTrial, ...
     "lls6g.userContext.RuntimeCurrentDirection","DL");
 cfgTrial = sixgr.util.structSet(cfgTrial, ...
     "lls6g.userContext.Direction","DL");
+if nargin >= 5 && isstruct(grantContext) && ~isempty(fieldnames(grantContext))
+    % An UL DCI is carried in its DL control slot, not the future PUSCH
+    % data slot. Bind waveform construction, channel time and RE evidence
+    % to that same absolute control occasion, including frame wrap.
+    controlSlot = sixgr.truth.resolvePDCCHControlSlot(grantContext, ...
+        sixgr.util.structGet(cfg, "lls6g.runtime.AbsoluteSlotIndexOneBased", NaN));
+    cfgTrial = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfgTrial, controlSlot);
+    cfgTrial = sixgr.util.structSet(cfgTrial, "lls6g.userContext.RuntimeSlotStartTime_s", ...
+        (double(controlSlot) - 1) * sixgr.time.slotDurationSec(cfgTrial));
+end
 end
 
 function aggLevel = localSelectGrantPDCCHAggregationLevel(cfg, levels, snr_dB)
@@ -15432,6 +15492,8 @@ row.PRACHOccasionIndex = NaN;
 row.PRACHCarrierSlot = NaN;
 row.RAProcedureType = "";
 row.RABindingSource = "";
+row.RASlotTimeBase = "";
+row.Msg1ScheduledSlot = NaN;
 row.SIB1RACHBindingApplied = false;
 row.SIB1RACHBindingSource = "";
 row.SIB1RACHPayloadHash = "";
@@ -17336,9 +17398,9 @@ end
 if ~ismember("Normalization", string(T.Properties.VariableNames))
     if any(ismember(["normalization","RuntimeNormalization"], string(T.Properties.VariableNames)))
         T.Normalization = localConstellationStringColumn(T, ["normalization","RuntimeNormalization"], ...
-            repmat("post_equalized_and_reference_unit_power_constellation", n, 1));
+            repmat("unavailable_normalization_not_recorded", n, 1));
     else
-        T.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", n, 1);
+        T.Normalization = repmat("unavailable_normalization_not_recorded", n, 1);
     end
 end
 if ~ismember("TruthStatus", string(T.Properties.VariableNames))
@@ -17363,7 +17425,7 @@ T.equalized_q = localConstellationNumericColumn(T, ["equalized_q","EqualizedImag
 T.evm_rms_pct = localConstellationNumericColumn(T, ["evm_rms_pct","EVM_rms_pct","RuntimeEVMRms_pct"]);
 T.evm_db = localConstellationNumericColumn(T, ["evm_db","EVM_dB","RuntimeEVM_dB"]);
 T.normalization = localConstellationStringColumn(T, ["Normalization","normalization","RuntimeNormalization"], ...
-    repmat("post_equalized_and_reference_unit_power_constellation", n, 1));
+    repmat("unavailable_normalization_not_recorded", n, 1));
 T.truth_status = localConstellationStringColumn(T, ["TruthStatus","truth_status","RuntimeTruthStatus"], ...
     repmat("real_lls_evidence", n, 1));
 T = localDisambiguateConstellationCaseCollisionColumns(T);

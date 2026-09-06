@@ -490,6 +490,14 @@ classdef ChannelFactory
             state.Initialized = true;
             state.CurrentSampleIndex = max(0, round(double(opt.AbsoluteSampleIndex)));
             state.CurrentTime_s = 0;
+            % A nonzero initial clock is elapsed input time, not merely a
+            % reporting offset. Consume that idle interval when the object
+            % is materialized, without moving the logical clock again.
+            state.PendingIdleSamples = state.CurrentSampleIndex;
+            state.TotalIdleAdvancedSamples = state.CurrentSampleIndex;
+            if state.CurrentSampleIndex > 0
+                state.CurrentTime_s = NaN; % Sample rate is not known yet.
+            end
             diagnosticLimit = double(sixgr.util.structGet(cfg, ...
                 "outputs.phySignalDiagnosticChannelPoints", 1024));
             if ~(isscalar(diagnosticLimit) && isfinite(diagnosticLimit) && diagnosticLimit >= 1)
@@ -608,6 +616,12 @@ classdef ChannelFactory
             if awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF"
                 state.Materialized = true;
                 state.UseFading = false;
+                fsObserved = sixgr.util.structGet(txInfo, "OFDM.SampleRate", NaN);
+                if isnumeric(fsObserved) && isscalar(fsObserved) && isfinite(fsObserved) && fsObserved > 0
+                    state.SampleRate_Hz = double(fsObserved);
+                    state.CurrentTime_s = double(state.CurrentSampleIndex) / double(fsObserved);
+                end
+                state.PendingIdleSamples = 0; % There is no fading object to warm.
                 return;
             end
 
@@ -724,10 +738,14 @@ classdef ChannelFactory
                 end
                 pendingIdle = max(0, round(double(sixgr.util.structGet(state, "PendingIdleSamples", 0))));
                 if pendingIdle > 0
-                    state = sixgr.channel.ChannelFactory.advanceRuntimeChannelState(state, pendingIdle, max(1, round(numTx)), waveform);
+                    % The logical clock already includes these samples.
+                    % Advance only the newly created physical object.
+                    state = sixgr.channel.ChannelFactory.localConsumeRuntimeIdleSamples( ...
+                        state, pendingIdle, max(1, round(numTx)), waveform);
                     state.PendingIdleSamples = 0;
                 end
             end
+            state.CurrentTime_s = double(state.CurrentSampleIndex) / double(fs);
         end
 
         function state = advanceRuntimeChannelStateToTime(state, targetTime_s, numTx, prototype)
@@ -738,11 +756,28 @@ classdef ChannelFactory
                 return;
             end
             fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
-            if ~(isfinite(fs) && fs > 0 && isfinite(double(targetTime_s)) && double(targetTime_s) >= 0)
-                return;
+            if ~(isnumeric(targetTime_s) && isscalar(targetTime_s) && ...
+                    isreal(targetTime_s) && isfinite(targetTime_s) && targetTime_s >= 0)
+                error("sixgr:channel:InvalidRuntimeTargetTime", ...
+                    "A runtime channel target time must be a finite nonnegative scalar in seconds.");
             end
-            targetSample = max(0, round(double(targetTime_s) * fs));
-            currentSample = max(0, round(double(sixgr.util.structGet(state, "CurrentSampleIndex", 0))));
+            if ~(isscalar(fs) && isfinite(fs) && fs > 0)
+                error("sixgr:channel:UnresolvedRuntimeSampleClock", ...
+                    "Absolute-time channel advancement requires a resolved positive sample rate.");
+            end
+            targetSample = round(double(targetTime_s) * fs);
+            currentSample = double(sixgr.util.structGet(state, "CurrentSampleIndex", NaN));
+            if ~(isscalar(currentSample) && isfinite(currentSample) && currentSample >= 0 && currentSample == round(currentSample))
+                error("sixgr:channel:InvalidRuntimeSampleClock", ...
+                    "CurrentSampleIndex must be an actual nonnegative integer sample count.");
+            end
+            if targetSample < currentSample
+                error("sixgr:channel:RuntimeChannelTimeReversal", ...
+                    "Channel '%s' is already at sample %.0f (%.12g s); requested sample %.0f (%.12g s). " + ...
+                    "Execute or compose waveforms on the causal timeline; do not reset, clamp, or replay the channel clock.", ...
+                    string(sixgr.util.structGet(state, "StateKey", "")), ...
+                    currentSample, currentSample/fs, targetSample, double(targetTime_s));
+            end
             state = sixgr.channel.ChannelFactory.advanceRuntimeChannelState(state, targetSample - currentSample, numTx, prototype);
         end
 
@@ -753,42 +788,38 @@ classdef ChannelFactory
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 return;
             end
-            n = max(0, round(double(numSamples)));
+            if ~(isnumeric(numSamples) && isscalar(numSamples) && isreal(numSamples) && ...
+                    isfinite(numSamples) && numSamples >= 0 && numSamples == round(numSamples))
+                error("sixgr:channel:InvalidRuntimeAdvanceSamples", ...
+                    "Runtime channel idle advancement requires a nonnegative integer sample count.");
+            end
+            n = double(numSamples);
             if n <= 0
                 state.LastIdleAdvancedSamples = 0;
                 return;
             end
             if ~(logical(sixgr.util.structGet(state, "Materialized", false)) && ...
                     logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
-                state.PendingIdleSamples = max(0, round(double(sixgr.util.structGet(state, "PendingIdleSamples", 0)))) + n;
+                if ~logical(sixgr.util.structGet(state, "Materialized", false))
+                    state.PendingIdleSamples = max(0, round(double(sixgr.util.structGet(state, "PendingIdleSamples", 0)))) + n;
+                end
                 state.CurrentSampleIndex = max(0, round(double(sixgr.util.structGet(state, "CurrentSampleIndex", 0)))) + n;
+                state.TotalIdleAdvancedSamples = double(sixgr.util.structGet(state, "TotalIdleAdvancedSamples", 0)) + n;
+                fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
+                state.CurrentTime_s = NaN;
+                if isfinite(fs) && fs > 0
+                    state.CurrentTime_s = double(state.CurrentSampleIndex) / fs;
+                end
                 state.LastIdleAdvancedSamples = n;
                 return;
             end
-            if ~(isfinite(double(numTx)) && double(numTx) >= 1)
-                numTx = double(sixgr.util.structGet(state, "NumTxAnt", 1));
-            end
-            materializedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
-            if isfinite(materializedTx) && materializedTx >= 1
-                numTx = max(double(numTx), round(materializedTx));
-            end
-            if isempty(prototype)
-                z = zeros(n, max(1, round(double(numTx))));
-            else
-                z = zeros(n, max(1, round(double(numTx))), 'like', prototype);
-            end
-            try
-                state.Obj(z);
-            catch
-                [~, ~] = state.Obj(z);
-            end
+            state = sixgr.channel.ChannelFactory.localConsumeRuntimeIdleSamples(state, n, numTx, prototype);
             state.CurrentSampleIndex = max(0, round(double(sixgr.util.structGet(state, "CurrentSampleIndex", 0)))) + n;
             fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
             if isfinite(fs) && fs > 0
                 state.CurrentTime_s = double(state.CurrentSampleIndex) / fs;
             end
             state.TotalIdleAdvancedSamples = double(sixgr.util.structGet(state, "TotalIdleAdvancedSamples", 0)) + n;
-            state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + n;
             state.LastIdleAdvancedSamples = n;
         end
 
@@ -897,6 +928,12 @@ classdef ChannelFactory
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
                 replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
                 state.CurrentSampleIndex = replay.RuntimeChannelEndSample;
+                state.TotalAppliedSamples = double(sixgr.util.structGet(state, "TotalAppliedSamples", 0)) + size(x, 1);
+                fs = double(sixgr.util.structGet(state, "SampleRate_Hz", NaN));
+                state.CurrentTime_s = NaN;
+                if isfinite(fs) && fs > 0
+                    state.CurrentTime_s = double(state.CurrentSampleIndex) / fs;
+                end
                 replay.RuntimeChannelOutputWaveformSHA256 = ...
                     replay.RuntimeChannelInputWaveformSHA256;
                 replay.ChannelRealizationId = ...
@@ -1175,6 +1212,29 @@ classdef ChannelFactory
     end
 
     methods(Static, Access=private)
+        function state = localConsumeRuntimeIdleSamples(state, n, numTx, prototype)
+            % Physical input consumption only. Callers own the logical clock
+            % so deferred materialization cannot count the interval twice.
+            if ~(isfinite(double(numTx)) && double(numTx) >= 1)
+                numTx = double(sixgr.util.structGet(state, "NumTxAnt", 1));
+            end
+            materializedTx = double(sixgr.util.structGet(state, "NumTxAnt", NaN));
+            if isfinite(materializedTx) && materializedTx >= 1
+                numTx = max(double(numTx), round(materializedTx));
+            end
+            if isempty(prototype)
+                z = zeros(n, max(1, round(double(numTx))));
+            else
+                z = zeros(n, max(1, round(double(numTx))), 'like', prototype);
+            end
+            try
+                state.Obj(z);
+            catch
+                [~, ~] = state.Obj(z);
+            end
+            state.TotalObjectInputSamples = double(sixgr.util.structGet(state, "TotalObjectInputSamples", 0)) + n;
+        end
+
         function [matrix, enabled] = ...
                 localResolvePortToElementExpansion( ...
                 runtimeAntenna, runtimeMeta, waveformColumns)

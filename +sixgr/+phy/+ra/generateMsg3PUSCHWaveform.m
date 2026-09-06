@@ -1,6 +1,7 @@
 function [tx, pusch] = generateMsg3PUSCHWaveform(cfg, raCfg, grant, msg3)
 %GENERATEMSG3PUSCHWAVEFORM Transmit Msg3 using the decoded RAR UL grant.
-cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
+slot = sixgr.phy.ra.resolveMsg3SlotFromRAR(raCfg,grant);
+cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, slot);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTx);
 pusch = sixgr.phy.ra.localPUSCHConfigFromGrant(raCfg, grant);
 probe = sixgr.phy.ul.PUSCH_Tx(cfgTx, "Carrier", carrier, "PUSCH", pusch, ...

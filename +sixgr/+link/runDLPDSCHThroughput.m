@@ -532,6 +532,7 @@ trialClipEvents = NaN(numFrames,1);
 trialSymErr = NaN(numFrames,1);
 trialSymTot = NaN(numFrames,1);
 trialSER = NaN(numFrames,1);
+trialSymbolDecisionStatus = repmat("unavailable_not_measured", numFrames, 1);
 trialResidualInterference = NaN(numFrames,1);
 trialLLRMeanAbs = NaN(numFrames,1);
 trialLLRStdAbs = NaN(numFrames,1);
@@ -1598,6 +1599,7 @@ for n = 1:numFrames
         trialSymErr(n) = double(sixgr.util.structGet(modTrack, "SymbolErrors", NaN));
         trialSymTot(n) = double(sixgr.util.structGet(modTrack, "SymbolsCompared", NaN));
         trialSER(n) = double(sixgr.util.structGet(modTrack, "SymbolErrorRate", NaN));
+        trialSymbolDecisionStatus(n) = string(modTrack.SymbolDecisionStatus);
         trialResidualInterference(n) = double(sixgr.util.structGet(modTrack, "ResidualInterferencePower_dB", NaN));
         trialLLRMeanAbs(n) = double(sixgr.util.structGet(modTrack, "LLRMeanAbs", NaN));
         trialLLRStdAbs(n) = double(sixgr.util.structGet(modTrack, "LLRStdAbs", NaN));
@@ -1676,7 +1678,7 @@ for n = 1:numFrames
             constT.EVM_rms = repmat(double(trialEVM(n)), nConst, 1);
             constT.EVM_rms_pct = repmat(double(trialEVM(n)) * 100, nConst, 1);
             constT.EVM_dB = repmat(20 * log10(max(double(trialEVM(n)), realmin)), nConst, 1);
-            constT.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", nConst, 1);
+            constT.Normalization = repmat(string(modTrack.EVMComputationDomain), nConst, 1);
             constT.TruthStatus = repmat("real_lls_evidence", nConst, 1);
             constT.direction = string(constT.Direction);
             constT.ue_id = nan(nConst, 1);
@@ -2151,6 +2153,7 @@ end
             'Status','Crash', ...
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.SymbolDecisionStatus = trialSymbolDecisionStatus(idx);
         T.RuntimeAbsoluteSlotIndex0 = trialRuntimeAbsoluteSlot0(idx);
         T.CarrierNSlot = trialCarrierNSlot(idx);
         T.CarrierNFrame = trialCarrierNFrame(idx);
@@ -4956,6 +4959,7 @@ assert(numel(varTypes) == numel(varNames), ...
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConditionNumberStatus = strings(0,1);
 T.ComputeLatencySource = strings(0,1);
+T.SymbolDecisionStatus = strings(0,1);
 T.RuntimeAbsoluteSlotIndex0 = zeros(0,1);
 T.CarrierNSlot = zeros(0,1);
 T.CarrierNFrame = zeros(0,1);

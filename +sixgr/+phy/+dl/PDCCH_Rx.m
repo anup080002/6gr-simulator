@@ -410,6 +410,11 @@ if ~isempty(fieldnames(candidateResolution))
         char(candidateResolution.Source);
 end
 info.ValidHypothesisCount = numel(passingRx);
+% Preserve measured CRC-valid observations for a composite-slot consumer.
+% The scalar RX contract still rejects ambiguous single-DCI selection; do
+% not choose a payload using ExpectedDCIBits or discard other valid DCIs.
+% These are raw hypotheses, not yet independently validated scheduler grants.
+info.CRCValidHypotheses = passingRx;
 info.HypothesisReductionClass = char(hypothesisClass);
 info.MultipleEquivalentValidHypotheses = logical(rx.MultipleEquivalentValidHypotheses);
 info.EquivalentValidHypothesisCount = double(rx.EquivalentValidHypothesisCount);

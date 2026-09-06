@@ -11,14 +11,14 @@ assert(state.CellAcquisitionState(1) == "acquired", "PBCH pass must acquire the 
 assert(any(string(state.AccessTransitionLedgerTable.new_state) == "PBCH_DECODED"), ...
     "PBCH transition must be recorded in access_transition_ledger.");
 
-prachPass = localPrachRow("PASS", 1, true, 0.84, "");
+prachPass = localPrachRow("PASS", NaN, true, 0.84, "");
 state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, 1, prachPass);
 assert(state.AccessState(1) == "succeeded", "PRACH pass must move UE access to succeeded.");
 assert(state.LastSuccessfulPRACHSlotByUE(1) == 5, "PRACH success slot must be retained.");
 assert(any(string(state.AccessTransitionLedgerTable.new_state) == "ACCESS_SUCCEEDED"), ...
     "PRACH success must be recorded in access_transition_ledger.");
 
-prachFail = localPrachRow("FAIL", 0, false, 0.05, "prach_correlation_below_threshold");
+prachFail = localPrachRow("FAIL", NaN, false, 0.05, "prach_correlation_below_threshold");
 state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, 2, prachFail);
 assert(state.AccessState(2) == "failed", "PRACH failure must not be promoted to success.");
 assert(any(string(state.AccessTransitionLedgerTable.new_state) == "ACCESS_FAILED"), ...
@@ -28,9 +28,11 @@ state.CfgMobility.initial_access.rrc.require_setup_complete = true;
 pbch.Slot(1) = 1;
 pbch.RNTI(1) = 4603;
 state = sixgr.truth.CoupledTruthRuntime.applyPBCHTrial(state, 3, pbch);
-rrcPrach = localPrachRow("PASS", 1, true, 0.91, "");
+rrcPrach = localPrachRow("PASS", NaN, true, 0.91, "");
 rrcPrach.RACompleted = true;
 rrcPrach.FullRAEvidenceSource = "sixgr.phy.ra.runFourStepRA";
+rrcPrach.RASlotTimeBase = "absolute_one_based";
+rrcPrach.Msg1ScheduledSlot = 5;
 rrcPrach.RequireRRCSetupComplete = true;
 rrcPrach.Msg2ScheduledSlot = 6;
 rrcPrach.Msg3ScheduledSlot = 7;
@@ -53,12 +55,63 @@ assert(nnz(terminal) == 1 && logical(trace.CompleteFlag(terminal)) && ...
     "Required RRCSetupComplete must be the terminal coupled-runtime event at its actual scheduled slot.");
 assert(string(trace.SourceArtifact(terminal)) == "control/csv/rrc_setup_complete.csv", ...
     "The terminal lifecycle event must bind to canonical RRCSetupComplete waveform evidence.");
+
+% Both explicit time bases must produce the same canonical coordinates.
+% The caller's current slot is deliberately unrelated to the Msg1 source.
+for timeBase = ["absolute_zero_based", "absolute_one_based"]
+    fresh = localMinimalAccessState(3);
+    fresh.CurrentSlot = 40;
+    trial = rrcPrach;
+    trial.RASlotTimeBase = timeBase;
+    trial.Slot = 40;
+    sourceFields = ["Msg1ScheduledSlot", "Msg2ScheduledSlot", "Msg3ScheduledSlot", ...
+        "Msg4ScheduledSlot", "SetupCompleteScheduledSlot"];
+    for name = sourceFields
+        trial.(name) = rrcPrach.(name) - double(timeBase == "absolute_zero_based");
+    end
+    applied = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(fresh, 3, trial);
+    events = applied.InitialAccessLifecycleTraceTable;
+    assert(isequal(double(events.Slot), (5:9).') && ...
+        isequal(double(events.SourceRASlot), (5:9).' - double(timeBase == "absolute_zero_based")), ...
+        "RA event coordinates must follow the declared source, never the caller slot or an inferred offset.");
+    assert(all(string(events.SourceRASlotTimeBase) == timeBase) && all(isnan(events.LocalRASlot)));
+    bad = trial;
+    bad.RASlotTimeBase = "";
+    localRejectRA(fresh, bad, "sixgr:truth:MissingRASlotTimeBase");
+    bad = trial;
+    bad.Msg2ScheduledSlot = NaN;
+    bad.RAResponseWindowStartSlot = 6;
+    localRejectRA(fresh, bad, "sixgr:truth:InvalidRAStageSlot");
+    bad = trial;
+    bad.Msg3ScheduledSlot = trial.Msg1ScheduledSlot;
+    localRejectRA(fresh, bad, "sixgr:truth:NonCausalRASlot");
+    bad = trial;
+    bad.Msg4ScheduledSlot = trial.Msg4ScheduledSlot + 0.5;
+    localRejectRA(fresh, bad, "sixgr:truth:InvalidRAStageSlot");
+    % Equal source slots are retained, not shifted by the event projector.
+    % This unit check does not qualify any particular intra-slot PHY timing.
+    sameSlot = trial;
+    sameSlot.Msg3ScheduledSlot = trial.Msg2ScheduledSlot;
+    applied = sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(fresh, 3, sameSlot);
+    assert(isequal(double(applied.InitialAccessLifecycleTraceTable.Slot), [5;6;6;8;9]));
+end
+end
+
+function localRejectRA(state, trial, expected)
+try
+    sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state, 3, trial);
+catch ME
+    assert(string(ME.identifier) == expected, 'Unexpected RA coordinate rejection: %s', ME.message);
+    return;
+end
+error('testPrachAccessStateMachine:MissingRejection', 'Expected %s.', expected);
 end
 
 function T = localPrachRow(status, crcPass, detected, metric, failureReason)
 row = struct( ...
     "Status", string(status), ...
     "CRCPass", double(crcPass), ...
+    "CRCApplicable", false, "CRCOutcome", "not_applicable", ...
     "Slot", 5, ...
     "RNTI", 4601, ...
     "DetectionSuccess", logical(detected), ...

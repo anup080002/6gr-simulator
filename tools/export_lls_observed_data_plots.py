@@ -16,12 +16,13 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
 import lls_contract_materializer as materializer
+from lls_radio_measurement_plots import CHARTS as RADIO_CHARTS, SOURCE_PATHS as RADIO_SOURCES
 
 CHARTS = (
     "PDSCH EVM per symbol", "PUSCH EVM per symbol", "EVM per symbol",
     "EVM per subcarrier", "EVM per layer", "throughput vs SINR",
-)
-SOURCES = (
+) + RADIO_CHARTS
+SOURCES = tuple(dict.fromkeys((
     "air_interface/csv/dl_constellation_samples.csv",
     "air_interface/csv/ul_constellation_samples.csv",
     "air_interface/csv/dl_constellation_preview.csv",
@@ -29,7 +30,7 @@ SOURCES = (
     "reports/csv/equalized_constellations.csv",
     "air_interface/csv/dl_pdsch_trials.csv",
     "air_interface/csv/ul_pusch_trials.csv",
-)
+) + RADIO_SOURCES))
 
 
 def export_observed_plots(run_root: Path, output_root: Path) -> dict:
@@ -63,7 +64,7 @@ def export_observed_plots(run_root: Path, output_root: Path) -> dict:
                  "source_rows": result["source_row_count"], "note": result["note"],
                  "source_paths": result["source_table_path"].split("|"), "artifacts": {}}
         if result["csv_status"] != "unavailable_exact_reason":
-            stem = chart_name.lower().replace(" ", "_")
+            stem = chart_name.lower().replace(" ", "_").replace("/", "_")
             generated[f"{stem}.csv"] = result["csv_bytes"]
             generated[f"{stem}.png"] = materializer._rasterize_contract_png(
                 result["img_bytes"], source_mime_type="image/svg+xml",
@@ -78,6 +79,8 @@ def export_observed_plots(run_root: Path, output_root: Path) -> dict:
         "artifact_kind": "post_run_measured_observation_review_not_new_phy_execution",
         "materializer_version": materializer.MATERIALIZER_VERSION,
         "producer_sha256": hashlib.sha256((REPO_ROOT / "apps/lls_contract_materializer.py").read_bytes()).hexdigest(),
+        "producer_files_sha256": {name: hashlib.sha256((REPO_ROOT / name).read_bytes()).hexdigest()
+            for name in ("apps/lls_contract_materializer.py", "apps/lls_radio_measurement_plots.py")},
         "source_sha256": source_hashes, "outputs": outputs,
     }
     output_root.mkdir(parents=True, exist_ok=False)

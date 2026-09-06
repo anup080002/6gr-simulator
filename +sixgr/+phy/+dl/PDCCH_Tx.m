@@ -26,6 +26,9 @@ function [tx, info] = PDCCH_Tx(cfg, varargin)
 %     "NumTxAnt"    : number of TX antennas/ports for resource grid (default: 1)
 %     "OFDMModulate": true/false (default: true)
 %     "AllowRandomDCI": true/false legacy standalone random payload opt-in
+%     "ReservedRECoordinates": occupied zero-based [CRB0 subcarrier, symbol]
+%                    pairs in the same cell/control slot; when supplied,
+%                    select a free configured candidate using exact REs.
 %
 %   Outputs:
 %     TX: struct with fields:
@@ -52,6 +55,7 @@ p.addParameter('NCellID', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter('NumTxAnt', 1, @(x) isnumeric(x) && isscalar(x) && x>=1);
 p.addParameter('OFDMModulate', true, @(x) islogical(x) && isscalar(x));
 p.addParameter('AllowRandomDCI', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+p.addParameter('ReservedRECoordinates', zeros(0,2), @isnumeric);
 p.parse(varargin{:});
 opt = p.Results;
 % An explicit low-level/unit call historically means "execute PDCCH".  A
@@ -96,6 +100,13 @@ if isempty(opt.PDCCH)
 else
     pdcch = opt.PDCCH;
     candidateResolution = struct();
+end
+
+allocatedCoordinates = zeros(0,2);
+if ~ismember('ReservedRECoordinates', p.UsingDefaults)
+    [pdcch, allocatedCoordinates] = ...
+        sixgr.phy.pdcch.allocateNonoverlappingCandidate( ...
+        carrier, pdcch, opt.ReservedRECoordinates);
 end
 
 % Indices and DMRS for this PDCCH allocation.
@@ -155,6 +166,7 @@ info.K = K;
 info.E = E;
 info.NumPDCCHRE = numel(pdcchInd);
 info.NumDMRSRE  = numel(dmrsInd);
+info.AllocatedRECoordinates = allocatedCoordinates;
 % Preserve the exact port-domain grid and OFDM metadata used to create the
 % waveform.  Downstream RF normalization must bind to this observed grid;
 % reconstructing occupancy from PDCCH configuration would make sparse

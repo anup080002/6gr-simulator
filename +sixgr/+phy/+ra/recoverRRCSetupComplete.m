@@ -1,8 +1,7 @@
 function [rx, message] = recoverRRCSetupComplete( ...
         rxWaveform, cfg, raCfg, tx)
 %RECOVERRRCSETUPCOMPLETE Decode UL-DCCH/SRB1 from PUSCH/UL-SCH at the gNB.
-cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
-cfgRx.phy.carrier.NSlot = double(raCfg.SetupCompleteSlot);
+cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.SetupCompleteSlot);
 grant = tx.Grant;
 [puschRx, info] = sixgr.phy.ul.PUSCH_Rx(rxWaveform, cfgRx, ...
     "Carrier", tx.Carrier, ...

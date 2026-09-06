@@ -56,9 +56,14 @@ assert(double(sixgr.util.structGet(cfgCell1, "phy.carrier.NCellID", NaN)) ~= ...
     double(sixgr.util.structGet(cfgCell2, "phy.carrier.NCellID", NaN)), ...
     "Two-cell coupled runtime must not reuse one global PHY NCellID for both cells.");
 state = localPrepareBootstrapSchedulingState(state);
-[state, grantsSlot11] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
+[~, noMeasurementGrants, noMeasurementInfo] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
+assert(isempty(noMeasurementGrants) && string(noMeasurementInfo.NoGrantReason) == "no_active_eligible_users", ...
+    "Legacy SRS-valid flags alone must not bypass the required causal SRS availability record.");
+state = localPublishSchedulerFixtureSRSAvailability(state, cfg);
+[state, grantsSlot11, scheduleInfoSlot11] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");
 assert(numel(grantsSlot11) == 1 && double(grantsSlot11(1).ServingCell) == 1, ...
-    "First conservative-bootstrap full-reuse DL slot must allow only the selected clean cell.");
+    "First conservative-bootstrap full-reuse DL slot must allow only the selected clean cell. Got %s. State %s. Scheduling %s.", ...
+    localGrantSummary(grantsSlot11), localStateSummary(state), jsonencode(scheduleInfoSlot11));
 % Use the next DL control slot whose configured K1=4 feedback lands in the
 % full UL slot of the five-slot TDD period.
 state.CurrentSlot = 16;
@@ -106,6 +111,27 @@ assert(logical(prachStrict.StrictValidation.StrictValid), ...
     "Strict PRACH validation must pass for the resolved 4 GHz UMa/CDL-C configuration.");
 
 ok = true;
+end
+
+function state = localPublishSchedulerFixtureSRSAvailability(state, cfg)
+% This is a scheduler state-machine fixture, not a waveform measurement or
+% primary result artifact. Supply its causal event through the production
+% publisher; leave every unmeasured radio KPI unavailable. Waveform SRS is
+% exercised separately by testReferenceSignalCausalProducersConsumers.
+srs = sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
+producerSlot = 1 + double(srs.Offset);
+assert(producerSlot < double(state.CurrentSlot), ...
+    "The scheduler fixture requires a configured SRS occasion before its first DL slot.");
+event = table(producerSlot, 'VariableNames', {'Slot'});
+for ueIdx = 1:double(state.NumUsers)
+    state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+        state, "SRS", "UE", ueIdx, event, "ProducerSlot", producerSlot, ...
+        "AvailableSlot", producerSlot, "Valid", true, "Direction", "UL", ...
+        "SourceSignal", "SRS", "MeasurementSource", "scheduler_unit_test_availability_event_not_waveform_KPI");
+end
+assert(all(isnan(state.ReferenceSignalMeasurementTable.SINR_dB)) && ...
+    all(isnan(state.ReferenceSignalMeasurementTable.CQI)), ...
+    "The availability-only scheduler fixture must not manufacture measured SRS quality or CQI.");
 end
 
 function state = localPrepareBootstrapSchedulingState(state)

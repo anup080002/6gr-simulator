@@ -11,6 +11,16 @@ for ii = 1:numel(required)
         out.FailureReason = "rar_invalid_ul_grant";
         return;
     end
+    value = grant.(required(ii));
+    if ~isnumeric(value) || ~isreal(value) || ~isscalar(value) || ...
+            ~isfinite(value) || value ~= fix(value)
+        out.FailureReason = "rar_invalid_ul_grant_noninteger_field";
+        return;
+    end
+end
+if grant.MCS < 0 || grant.MCS > 15
+    out.FailureReason = "rar_invalid_ul_grant_mcs";
+    return;
 end
 if grant.NumPRB <= 0 || grant.PRBStart < 0 || grant.PRBStart + grant.NumPRB > raCfg.NSizeGrid
     out.FailureReason = "rar_invalid_ul_grant_frequency_allocation";

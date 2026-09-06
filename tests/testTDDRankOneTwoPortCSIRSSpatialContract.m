@@ -42,6 +42,7 @@ carrier = sixgr.phy.grid.makeCarrier(cfg);
 % the source-labelled bootstrap PMI into an immutable matrix.  The
 % transmitter is not permitted to invent that matrix from configuration.
 grant = localGrant(cfg, []);
+grant.K0 = 0; % Explicit same-slot control for this spatial-only fixture.
 phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, "DL", grant, ...
     "SNR_dB", double(cfg.channel.snr_dB), "Frame", 1, "Slot", 2);
 frozenLogicalW = double(phyGrant.PrecodingState.MatrixLogicalPorts);

@@ -13,6 +13,12 @@ cfg.phy.carrier.NCellID = 17;
 cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
+% The long PRACH occasion starts in slot 2 and spans UL symbols. Keep the
+% explicit unit fixture's common map consistent with that actual waveform.
+cfg.phy.duplex.tddCommon.Pattern1.NumDownlinkSlots = 2;
+cfg.phy.duplex.tddCommon.Pattern1.NumDownlinkSymbols = 0;
+cfg.phy.duplex.tddCommon.Pattern1.NumUplinkSlots = 8;
+cfg.phy.duplex.tddCommon.Pattern1.NumUplinkSymbols = 0;
 cfg.frequency = struct( ...
     "range_name","FR1", ...
     "band_name","n78", ...
@@ -43,6 +49,8 @@ cfg.initial_access.rrc = struct( ...
     "srb1_lcid", 1);
 cfg.random_access = struct();
 cfg.random_access.enabled = true;
+cfg.random_access.rar_grant = struct("field_layout", "licensed_27bit", ...
+    "frequency_hopping", false, "time_resource_assignment", 0, "tpc_command", 3);
 cfg.random_access.binding_source = "scenario_config_pending_sib1";
 cfg.random_access.prach_format = "0";
 cfg.random_access.configuration_index = 16;

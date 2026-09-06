@@ -828,6 +828,7 @@ sections:
     parameters:
       enabled: {required: true, type: boolean}
       binding_source: {required: false, type: string}
+      rar_grant: {required: false, type: struct}
       procedure_type:
         required: false
         type: string
@@ -1171,6 +1172,11 @@ sections:
       phy_signal_diagnostic_fft_length: {required: false, type: integer, min: 64, max: 4096}
       phy_signal_diagnostic_channel_points: {required: false, type: integer, min: 8, max: 4096}
       phy_signal_diagnostic_constellation_points: {required: false, type: integer, min: 16, max: 2048}
+      constellation_capture_scope:
+        required: false
+        type: string
+        allowed_values: [preview, full_allocation]
+        description: Retain a bounded constellation preview or every paired TX/receiver data symbol; full_allocation forbids persistence downsampling.
       phy_signal_diagnostic_full_channel_grid: {required: false, type: boolean}
       antenna_pattern_samples_enabled: {required: false, type: boolean}
       antenna_pattern_azimuth_min_deg: {required: false, type: number, min: -180, max: 180}

@@ -117,6 +117,12 @@
     },
     "random_access": {
       "enabled": {"value_type": "boolean", "default": true},
+      "rar_grant": {
+        "field_layout": {"value_type": "string", "default": "licensed_27bit", "allowed_values": ["licensed_27bit"]},
+        "frequency_hopping": {"value_type": "boolean", "default": false},
+        "time_resource_assignment": {"value_type": "integer", "default": 0, "min": 0, "max": 15},
+        "tpc_command": {"value_type": "integer", "default": 3, "min": 0, "max": 7}
+      },
       "common_downlink_beam_source": {"value_type": "string", "default": "runtime_antenna_mapping", "allowed_values": ["selected_ssb_beam", "runtime_antenna_mapping"]},
       "binding_source": {"value_type": "string", "default": "scenario_config_pending_sib1", "allowed_values": ["decoded_sib1_rach_config_common", "scenario_config_pending_sib1"]},
       "prach_format": {"value_type": "string", "default": "A2"},
@@ -136,10 +142,10 @@
       "temp_crnti": {"value_type": "integer", "default": 4660, "min": 1},
       "final_crnti": {"value_type": "integer", "default": 4660, "min": 1},
       "timing": {
-        "rar_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 1},
-        "msg3_k2_slots": {"value_type": "integer", "default": 1, "min": 1},
-        "msg4_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 0},
-        "setup_complete_k2_slots": {"value_type": "integer", "default": 1, "min": 1}
+        "rar_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 1, "description": "Minimum processing delay after the final PRACH slot; the planner selects a legal RAR allocation within the response window."},
+        "msg3_k2_slots": {"value_type": "integer", "default": 1, "min": 1, "description": "Expected K2 of the signalled RAR TDRA row. The normative Msg3 additional delay is applied separately; this field cannot override the row."},
+        "msg4_processing_delay_slots": {"value_type": "integer", "default": 1, "min": 0, "description": "Minimum Msg3-to-Msg4 processing offset, subject to completed Msg3 reception, duplex allocation and the contention window."},
+        "setup_complete_k2_slots": {"value_type": "integer", "default": 1, "min": 1, "description": "Explicit configured SRB1 timing offset; allocation legality does not by itself qualify an on-air UL grant."}
       },
       "msg2_pdsch": {
         "prb_start": {"value_type": "integer", "default": 0, "min": 0},
@@ -293,7 +299,8 @@
         "enable": {"value_type": "boolean", "default": true},
         "searchSpaceType": {"value_type": "string", "default": "ue", "allowed_values": ["ue", "common"]},
         "aggregationLevel": {"value_type": "integer", "default": 8, "min": 1},
-        "dciFormat": {"value_type": "string", "default": "1_0", "allowed_values": ["0_0", "0_1", "1_0", "1_1"]},
+        "dciFormat": {"value_type": "string", "default": "1_1", "allowed_values": ["0_0", "0_1", "1_0", "1_1"]},
+        "dciFormats": {"value_type": "string_list", "default": ["1_1", "0_1"], "allowed_values": ["0_0", "0_1", "1_0", "1_1"]},
         "symbolAllocation": {"value_type": "integer_vector", "default": [0, 2]},
         "dmrs": {
           "enable": {"value_type": "boolean", "default": true}

@@ -151,14 +151,16 @@ for ii = 1:height(input)
 end
 end
 
-function testRAConfigUsesConfiguredEventDelays(testCase)
+function testRAConfigUsesRARAndDuplexTiming(testCase)
 cfg = raStrictAnchorConfig();
 actual = sixgr.mac.ra.RAConfig(cfg);
 verifyEqual(testCase, ...
     [actual.Msg2Slot, actual.Msg3Slot, actual.Msg4Slot, ...
-    actual.SetupCompleteSlot], [1 2 3 4]);
+    actual.SetupCompleteSlot], [10 14 21 22]);
 verifyEqual(testCase, actual.TimingSchedule.Source, ...
-    "configured_event_delays");
+    "rar_tdra_and_canonical_duplex_allocations");
+verifyEqual(testCase, actual.TimingSchedule.Msg3AdditionalDelaySlots, 3);
+verifyTrue(testCase, actual.TimingSchedule.DuplexAllocationsValidated);
 
 missing = cfg;
 missing.random_access.timing = rmfield( ...
@@ -168,11 +170,15 @@ localVerifyError(testCase, @() sixgr.mac.ra.RAConfig(missing), ...
 
 shifted = cfg;
 shifted.random_access.timing.msg3_k2_slots = 3;
+localVerifyError(testCase,@() sixgr.mac.ra.RAConfig(shifted), ...
+    "sixgr:phy:ia:RARConfiguredK2Mismatch");
+% Default-A row 11 has K2=j+2. The signalled row must change with K2.
+shifted.random_access.rar_grant.time_resource_assignment = 10;
 shifted.random_access.timing.msg4_processing_delay_slots = 2;
 resolved = sixgr.mac.ra.RAConfig(shifted);
 verifyEqual(testCase, ...
     [resolved.Msg2Slot, resolved.Msg3Slot, resolved.Msg4Slot, ...
-    resolved.SetupCompleteSlot], [1 4 6 7]);
+    resolved.SetupCompleteSlot], [10 16 21 22]);
 
 outside = cfg;
 outside.random_access.timing.rar_processing_delay_slots = ...

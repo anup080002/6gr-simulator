@@ -64,6 +64,16 @@ for nLayers = 1:8
         "NoiseVarDomain", "grid", ...
         "SkipTimingEstimate", true);
     assert(logical(rx.Ok) && ~logical(rx.CRCError), "Rank-%d no-noise PDSCH must pass CRC.", nLayers);
+    cfg.outputs.constellationCaptureScope = "full_allocation";
+    [~, samples] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "DL");
+    assert(height(samples) == numel(tx.PDSCHLayerSymbolsForEvidence) && ...
+        all(samples.CaptureScope == "full_allocation_paired_symbols"), ...
+        "Rank-%d must export the complete measured allocation.", nLayers);
+    expectedIndices = reshape(tx.CodewordLayerMapping.CodewordIndexByLayer(samples.LayerIndex), [], 1);
+    assert(isequal(samples.CodewordIndex, expectedIndices), ...
+        "Rank-%d capture must preserve the actual codeword-to-layer mapping.", nLayers);
+    assert(size(samples.Modulation, 2) == 1 && all(samples.Modulation == "QPSK"), ...
+        "Rank-%d must preserve one modulation label per sample, not a vector-valued CSV cell.", nLayers);
     ber = sum(int8(rx.TransportBlock(:)) ~= int8(tx.TransportBlock(:))) / numel(tx.TransportBlock);
     maxBER = max(maxBER, ber);
     assert(ber == 0, "Rank-%d no-noise PDSCH must recover the exact TB.", nLayers);

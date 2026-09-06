@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-06-contract-v53-paired-evm-and-sinr-points"
+MATERIALIZER_VERSION = "2026-09-06-contract-v56-full-paired-allocation-evidence"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -10292,6 +10292,7 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
     # Choose one source per direction, without counting aliases twice.
     selected_source = {}
     buckets = {}
+    observations = {}
     for source_path, rows in sources:
         default_direction = "DL" if "/dl_" in source_path else "UL" if "/ul_" in source_path else ""
         for row in rows:
@@ -10303,8 +10304,19 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             selected_source.setdefault(direction, source_path)
             if selected_source[direction] != source_path:
                 continue
+            # Older producers stored payload-gain-fitted values in Equalized*,
+            # but preserved the real receiver output in RawEqualized*. Never
+            # mistake that fitted constellation for a receiver measurement.
+            if "RawEqualizedReal" in row or "RawEqualizedImag" in row:
+                measured_fields = ("RawEqualizedReal", "RawEqualizedImag")
+                sample_source = "raw_receiver_equalized_before_reporter_payload_fit"
+            elif _row_text(row, "EqualizationSource") == "receiver_output_without_payload_gain_or_phase_fit":
+                measured_fields = ("EqualizedReal", "EqualizedImag")
+                sample_source = "explicit_receiver_output_without_payload_fit"
+            else:
+                return None
             values = [_row_float(row, name) for name in (
-                axis_field, "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"
+                axis_field, *measured_fields, "ReferenceSymbolReal", "ReferenceSymbolImag"
             )]
             if any(value is None for value in values):
                 return None  # Scalar EVM is not enough to recover energy sums or peaks.
@@ -10324,15 +10336,40 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             comparison_domain = _row_text(row, "SymbolComparisonDomain")
             ordering = _row_text(row, "SymbolOrdering")
             ordering_status = _row_text(row, "SymbolOrderingStatus")
+            coordinate_domain = _row_text(row, "SymbolCoordinateDomain")
+            if axis_field == "SubcarrierIndex" and coordinate_domain == "pre_transform_qam_positions":
+                return None  # Inverse-DFT QAM positions are not per-subcarrier measurements.
             if not slot or not ue or not (frame or sfn) or not layer or codeword == "":
                 return None
             if any(token in truth for token in ("proxy", "fallback", "synthetic", "unavailable")):
                 return None
             if any(token in ordering_status.lower() for token in ("unmatched", "mismatch", "unavailable", "invalid")):
                 return None
+            scope = _row_text(row, "CaptureScope")
+            full = scope == "full_allocation_paired_symbols"
+            observation_key = (direction, ue, frame, sfn, slot, cell, tb)
+            observation = observations.setdefault(observation_key, {"full": full, "expected": None, "indices": set(), "resources": set()})
+            if observation["full"] != full:
+                return None  # Mixed full/preview rows cannot establish coverage.
+            if full:
+                count = _row_float(row, "ObservationSymbolCount")
+                captured = _row_float(row, "CapturedSymbolCount")
+                index = _row_float(row, "SampleIndex")
+                resource = tuple(_row_float(row, f) for f in ("LayerIndex", "OFDMSymbolIndex", "SubcarrierIndex"))
+                if count is None or count < 1 or count != int(count) or captured != count:
+                    return None
+                if index is None or index != int(index) or not 1 <= index <= count:
+                    return None
+                if any(v is None or v < 1 or v != int(v) for v in resource):
+                    return None
+                if observation["expected"] not in (None, count) or index in observation["indices"] or resource in observation["resources"]:
+                    return None
+                observation["expected"] = count
+                observation["indices"].add(index)
+                observation["resources"].add(resource)
             key = (direction, ue, frame, sfn, slot, cell, tb,
                    layer if axis_field != "LayerIndex" else "", codeword, normalization,
-                   comparison_domain, ordering, ordering_status, int(x_value))
+                   comparison_domain, ordering, ordering_status, sample_source, coordinate_domain, int(x_value))
             bucket = buckets.setdefault(key, {
                 "run_id": run_id, "chart_name": chart_name, "direction": direction,
                 "ue_index": ue, "frame": frame, "sfn": sfn, "slot": slot,
@@ -10342,7 +10379,9 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
                 "peak_error_power": 0.0, "input_normalization": normalization,
                 "comparison_domain": comparison_domain, "symbol_ordering": ordering,
                 "symbol_ordering_status": ordering_status,
-                "measurement_scope": "persisted_paired_sample_subset",
+                "measured_sample_source": sample_source,
+                "symbol_coordinate_domain": coordinate_domain,
+                "measurement_scope": "full_allocation_paired_symbols" if full else "persisted_paired_sample_subset",
                 "evm_normalization": "average_reference_signal_power_in_bucket",
                 "source_table_logical_path": source_path,
             })
@@ -10351,6 +10390,8 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             bucket["error_energy"] += error_power
             bucket["reference_energy"] += ref_r ** 2 + ref_i ** 2
             bucket["peak_error_power"] = max(bucket["peak_error_power"], error_power)
+    if any(obs["full"] and len(obs["indices"]) != obs["expected"] for obs in observations.values()):
+        return None  # Missing rows invalidate full coverage; do not relabel as a subset.
     if not buckets:
         return None
     csv_rows = list(buckets.values())
@@ -10376,10 +10417,12 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
             plot_points[f"{name} {label}"].append([row[axis_field], row[metric]])
     series = [{"name": name, "points": sorted(points), "marker": "circle" if name.startswith("RMS") else "square"}
               for name, points in plot_points.items()]
-    note = ("RMS and Peak EVM from paired persisted samples; average reference-power normalization "
-            "within each UE/frame/slot/TB/codeword/layer bucket. Sample subset, not full-allocation or RF conformance EVM.")
+    all_full = all(obs["full"] for obs in observations.values())
+    coverage = "Full paired-allocation coverage verified by sample/resource identities and transmitter counts." if all_full else "Contains persisted sample subsets; not full-allocation coverage."
+    note = ("RMS and Peak EVM from actual receiver symbols without reporter payload gain/phase fitting; average reference-power normalization "
+            "within each UE/frame/slot/TB/codeword/layer bucket. " + coverage + " Not RF conformance EVM.")
     summary = [f"paired_samples={sum(row['sample_count'] for row in csv_rows)}",
-               "normalization=average reference power", "scope=persisted sample subset"]
+               "normalization=average reference power", "scope=full paired allocation" if all_full else "scope=contains sample subsets"]
     image_bytes = _render_multi_series_svg(chart_name, note, series, summary,
         x_label={"OFDMSymbolIndex": "OFDM symbol index (within slot)",
                  "SubcarrierIndex": "Subcarrier index", "LayerIndex": "Layer index"}[axis_field],
@@ -10523,6 +10566,10 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    from lls_radio_measurement_plots import radio_measurement_chart
+    radio_chart = radio_measurement_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+    if radio_chart is not None:
+        return radio_chart
     if chart_name == "throughput vs SINR":
         return _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id)
     phy_signal_chart = _runtime_phy_signal_diagnostic_chart(

@@ -67,7 +67,10 @@ assert(logical(rx.Ok) && ~logical(rx.CRCError), "%s no-noise PUSCH must pass CRC
 ber = sum(int8(tx.TransportBlock(:)) ~= int8(rx.TransportBlock(:))) / numel(tx.TransportBlock);
 assert(ber == 0, "%s no-noise PUSCH must have BER=0.", label);
 
-[metrics, ~] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "UL");
+[metrics, samples] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "UL");
+assert(height(samples) == double(tx.QAMSymbolCount) && ...
+    all(samples.CaptureScope == "full_allocation_paired_symbols"), ...
+    "%s must retain every executed receiver QAM symbol, not a preview.", label);
 assert(double(metrics.SymbolErrorRate) == 0 && double(metrics.SymbolErrors) == 0, ...
     "%s no-noise PUSCH must have layer-domain SER=0.", label);
 assert(strcmpi(string(metrics.SymbolComparisonDomain), "layer"), ...
@@ -207,6 +210,7 @@ end
 
 function cfg = localCfg(scheme, transformPrecoding, nLayers, nPorts, tpmi)
 cfg = sixgr.config.defaultConfig();
+cfg.outputs.constellationCaptureScope = "full_allocation";
 cfg.run.shortRun = true;
 cfg.run.strictNoiseVarianceRequired = false;
 cfg.outputs.saveCSV = false;

@@ -970,6 +970,11 @@ harq:
   harq_disable_mode: none
 
 random_access:
+  rar_grant:
+    field_layout: licensed_27bit
+    frequency_hopping: false
+    time_resource_assignment: 0
+    tpc_command: 3
   enabled: true
   prach_format: B4
   preamble_length_mode: short

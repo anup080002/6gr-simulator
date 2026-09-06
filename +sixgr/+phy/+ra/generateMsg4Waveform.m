@@ -1,6 +1,6 @@
 function [tx, sched] = generateMsg4Waveform(cfg, raCfg, msg4)
 %GENERATEMSG4WAVEFORM Carry contention resolution on temp C-RNTI PDSCH.
-cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
+cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg4Slot);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTx);
 sched = localMsg4Schedule(raCfg);
 cfgTx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgTx, sched.PDSCH);

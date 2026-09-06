@@ -5936,10 +5936,18 @@ if ismember("DecisionImag", string(T.Properties.VariableNames)) && ~ismember("Ha
     T.HardDecisionImag = T.DecisionImag;
 end
 if ismember("EqualizedReal", string(T.Properties.VariableNames)) && ~ismember("RawEqualizedReal", string(T.Properties.VariableNames))
-    T.RawEqualizedReal = T.EqualizedReal;
+    T.RawEqualizedReal = nan(height(T), 1);
+    if ismember("EqualizationSource", string(T.Properties.VariableNames))
+        direct = string(T.EqualizationSource) == "receiver_output_without_payload_gain_or_phase_fit";
+        T.RawEqualizedReal(direct) = T.EqualizedReal(direct);
+    end
 end
 if ismember("EqualizedImag", string(T.Properties.VariableNames)) && ~ismember("RawEqualizedImag", string(T.Properties.VariableNames))
-    T.RawEqualizedImag = T.EqualizedImag;
+    T.RawEqualizedImag = nan(height(T), 1);
+    if ismember("EqualizationSource", string(T.Properties.VariableNames))
+        direct = string(T.EqualizationSource) == "receiver_output_without_payload_gain_or_phase_fit";
+        T.RawEqualizedImag(direct) = T.EqualizedImag(direct);
+    end
 end
 if ~ismember("DetectorOutputReal", string(T.Properties.VariableNames))
     T.DetectorOutputReal = nan(height(T), 1);
@@ -6042,7 +6050,7 @@ if ~ismember("EVM_dB", string(T.Properties.VariableNames))
 end
 if ~ismember("Normalization", string(T.Properties.VariableNames))
     T.Normalization = localConstellationStringColumn(T, ["normalization","RuntimeNormalization"], ...
-        repmat("post_equalized_and_reference_unit_power_constellation", n, 1));
+        repmat("unavailable_normalization_not_recorded", n, 1));
 end
 if ~ismember("TruthStatus", string(T.Properties.VariableNames))
     T.TruthStatus = localConstellationStringColumn(T, ["truth_status","RuntimeTruthStatus"], repmat("real_lls_evidence", n, 1));
@@ -6064,7 +6072,7 @@ T.equalized_q = localConstellationNumericColumn(T, ["equalized_q","EqualizedImag
 T.evm_rms_pct = localConstellationNumericColumn(T, ["evm_rms_pct","EVM_rms_pct","RuntimeEVMRms_pct"]);
 T.evm_db = localConstellationNumericColumn(T, ["evm_db","EVM_dB","RuntimeEVM_dB"]);
 T.normalization = localConstellationStringColumn(T, ["normalization","Normalization","RuntimeNormalization"], ...
-    repmat("post_equalized_and_reference_unit_power_constellation", n, 1));
+    repmat("unavailable_normalization_not_recorded", n, 1));
 T.truth_status = localConstellationStringColumn(T, ["truth_status","TruthStatus","RuntimeTruthStatus"], repmat("real_lls_evidence", n, 1));
 T = localDisambiguateConstellationCaseCollisionColumns(T);
 end

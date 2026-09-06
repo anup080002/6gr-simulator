@@ -79,7 +79,7 @@ cfg.phy.channelEstimation.method = "LS";
 end
 
 function localAssertOneInjectedSymbolError(cfg)
-ref = 0.5 * [1+1i; -1+1i; 1-1i; -1-1i];
+ref = nrSymbolModulate(int8([0;0;1;0;0;1;1;1]), 'QPSK');
 est = ref;
 est(2) = ref(3);
 tx = struct( ...

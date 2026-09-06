@@ -97,11 +97,15 @@
     "ue_noise_figure_db": 9
   },
   "control": {
+    "dci_formats": ["1_1", "0_1"],
     "pucch_enabled": true,
     "pucch_format": 2
   },
   "reference_signals": {
     "trs_enabled": true,
+    "trs": {
+      "slot_numbers": [2, 7]
+    },
     "tracking_rs_enabled": true,
     "ptrs_enabled": true,
     "ptrs_port_association_policy": "first_scheduled_dmrs_port",

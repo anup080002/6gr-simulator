@@ -56,7 +56,47 @@ assert(double(state.RuntimeChannelState.CurrentSampleIndex) == 2 * size(x, 1), .
 assert(localRelativeNorm(y2 - y1) > 1e-6, ...
     "Adjacent standalone applications must not replay an identical reset channel response.");
 
+for duplex = ["TDD", "FDD"]
+    for direction = ["DL", "UL"]
+        timedCfg = cfg;
+        timedCfg.frequency.duplex_mode = duplex;
+        timedCfg.phy.duplex.mode = duplex;
+        timedCfg.lls6g.userContext.RuntimeCurrentDirection = direction;
+        % Compare with actual idle samples through the same seeded fading
+        % object, not with a scalar channel or invented expected response.
+        reference = sixgr.link.initWaveformTruthChannelState(timedCfg, tx, txInfo);
+        startTime = 0.002;
+        startSample = round(startTime * txInfo.OFDM.SampleRate);
+        [~, ~, reference] = sixgr.link.applyRuntimeFadingChannel( ...
+            complex(zeros(startSample, size(x,2))), reference);
+        [expected, ~, ~] = sixgr.link.applyRuntimeFadingChannel(x, reference);
+        timedCfg.lls6g.userContext.RuntimeSlotStartTime_s = startTime;
+        timed = sixgr.link.initWaveformTruthChannelState(timedCfg, tx, txInfo);
+        [actual, replay, timed] = sixgr.link.applyRuntimeFadingChannel(x, timed);
+        assert(replay.RuntimeChannelStartSample == startSample && ...
+            replay.RuntimeChannelEndSample == startSample + size(x,1) && ...
+            localRelativeNorm(actual - expected) < 1e-10, ...
+            'Declared %s/%s waveform time must match an actual idle-advanced fading realization.', duplex, direction);
+        localReject(@() sixgr.link.initWaveformTruthChannelState(timedCfg, tx, txInfo, ...
+            "InitialRuntimeChannelState", timed.RuntimeChannelState), ...
+            "sixgr:channel:RuntimeChannelTimeReversal");
+        timedCfg.lls6g.userContext.RuntimeSlotStartTime_s = NaN;
+        localReject(@() sixgr.link.initWaveformTruthChannelState(timedCfg, tx, txInfo), ...
+            "sixgr:link:InvalidRuntimeWaveformStartTime");
+    end
+end
+
 ok = true;
+end
+
+function localReject(action, id)
+try
+    action();
+catch ME
+    assert(string(ME.identifier) == id, 'Expected %s, received %s: %s', id, ME.identifier, ME.message);
+    return;
+end
+error('testStandaloneRuntimeChannelState:MissingError', 'Expected %s.', id);
 end
 
 function x = localWaveform(n, p, seed)

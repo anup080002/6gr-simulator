@@ -1,9 +1,16 @@
-function result = runFourStepRA(cfg, varargin)
+function [result, continuation] = runFourStepRA(cfg, varargin)
 %RUNFOURSTEPRA Execute an NR-style contention-based four-step RA anchor.
 %
 % The receiver side consumes only decoded runtime evidence: PRACH waveform
 % correlation, RA-RNTI PDCCH, RAR PDSCH bytes, RAR UL grant, Msg3 PUSCH, and
 % Msg4 PDSCH contention identity.
+% StopAfterStage returns a continuation after the selected decoded stage.
+% Resuming consumes that state; it does not rerun completed PHY stages.
+% StageAction=prepare_next_stage returns generated TX samples without
+% propagation or receiver evidence. Resume with execute to receive them.
+% ReceiveThroughTime_s bounds stage reception on the absolute runtime clock.
+% A stage whose complete sample interval is not due remains prepared.
+% This is a stage boundary API, not yet a per-sample/slot waveform scheduler.
 
 sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.runFourStepRA", ...
     "INITIAL_ACCESS", "BIDIRECTIONAL", struct("Stage","FOUR_STEP_RA"));
@@ -29,8 +36,135 @@ p.addParameter("RuntimeNoiseSNR_dB", Inf, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("RuntimeSlot", NaN, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("InitialDLChannelState", struct(), @(x)isempty(x) || isstruct(x));
 p.addParameter("InitialULChannelState", struct(), @(x)isempty(x) || isstruct(x));
+p.addParameter("StopAfterStage", "complete_attempt", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
+p.addParameter("Continuation", struct(), @(x)isstruct(x) && isscalar(x));
+p.addParameter("StageAction", "execute", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
+p.addParameter("ReceiveThroughTime_s", Inf, @(x)isnumeric(x) && isreal(x) && ...
+    isscalar(x) && ~isnan(x) && x >= 0);
 p.parse(varargin{:});
 opt = p.Results;
+prepareOnly = strcmpi(string(opt.StageAction), "prepare_next_stage");
+if ~prepareOnly && ~strcmpi(string(opt.StageAction), "execute")
+    error("sixgr:phy:ra:InvalidRAStageAction", "StageAction must be execute or prepare_next_stage.");
+end
+continuation = struct();
+stageNames = ["Msg1", "Msg2", "Msg3", "Msg4", "RRCSetupComplete"];
+stopStage = find(strcmpi(string(opt.StopAfterStage), stageNames), 1);
+if strcmpi(string(opt.StopAfterStage), "complete_attempt")
+    stopStage = 5;
+elseif isempty(stopStage)
+    error("sixgr:phy:ra:InvalidRAStageBoundary", ...
+        "StopAfterStage must name Msg1, Msg2, Msg3, Msg4, RRCSetupComplete, or complete_attempt.");
+end
+if (stopStage < 5 || prepareOnly || isfinite(opt.ReceiveThroughTime_s)) && nargout < 2
+    error("sixgr:phy:ra:MissingRAContinuationOutput", ...
+        "A stopped RA attempt requires the second output to retain its receiver-owned continuation.");
+end
+inputConfig = cfg;
+nextStage = 1;
+reusePreparedStage = 0;
+if ~isempty(fieldnames(opt.Continuation))
+    saved = opt.Continuation;
+    required = ["ContractVersion", "InputConfig", "Config", "Options", "NextStage", ...
+        "Result", "RAConfig", "Timing", "Runtime", "PowerState", "Events", "OracleRows", "TimerRows", ...
+        "Msg1Tx", "Detection", "TimingAdvance", "Msg2Tx", "PDCCHInfo", "PDSCHRx2", "RARRx", ...
+        "GrantRx", "Msg3Tx", "Msg3Rx", "Msg3Decoded", "UEIdentity", "Msg4Tx", ...
+        "ResumePhase", "PreparedContext"];
+    if ~all(isfield(saved, required)) || saved.ContractVersion ~= "ra_stage_continuation_v2" || ...
+            ~isscalar(saved.NextStage) || ~ismember(saved.NextStage, 1:5) || ...
+            ~isscalar(saved.ResumePhase) || ~any(saved.ResumePhase == ["decoded", "prepared"]) || ...
+            (saved.NextStage == 1 && saved.ResumePhase ~= "prepared")
+        error("sixgr:phy:ra:InvalidRAContinuation", "Invalid decoded-stage RA continuation contract.");
+    end
+    if ~isequaln(cfg, saved.InputConfig)
+        error("sixgr:phy:ra:RAContinuationConfigChanged", ...
+            "The attempt's validated configuration cannot change while resuming its decoded state.");
+    end
+    if stopStage < saved.NextStage
+        error("sixgr:phy:ra:RAStageAlreadyExecuted", ...
+            "The requested stage was already executed; the next stage is %s.", stageNames(saved.NextStage));
+    end
+    dynamicOptions = ["Continuation", "StopAfterStage", "StageAction", "InitialDLChannelState", ...
+        "InitialULChannelState", "RuntimeStageWaveforms", "RuntimeSlot", "ReceiveThroughTime_s"];
+    for name = setdiff(string(p.Parameters), [string(p.UsingDefaults), dynamicOptions])
+        if ~isequaln(opt.(name), saved.Options.(name))
+            error("sixgr:phy:ra:RAContinuationOptionChanged", ...
+                "Attempt option %s changed across a decoded-stage continuation.", name);
+        end
+    end
+    supplied = opt;
+    opt = saved.Options;
+    if ~isfield(opt, "ReceiveThroughTime_s")
+        opt.ReceiveThroughTime_s = Inf; % Older checkpoints are unbounded offline attempts.
+    end
+    if ~ismember("ReceiveThroughTime_s", string(p.UsingDefaults))
+        if isfinite(opt.ReceiveThroughTime_s) && supplied.ReceiveThroughTime_s < opt.ReceiveThroughTime_s
+            error("sixgr:phy:ra:RAReceiveClockMovedBackward", ...
+                "ReceiveThroughTime_s cannot move backward across a continuation.");
+        end
+        opt.ReceiveThroughTime_s = supplied.ReceiveThroughTime_s;
+    end
+    if isfinite(opt.ReceiveThroughTime_s) && nargout < 2
+        error("sixgr:phy:ra:MissingRAContinuationOutput", ...
+            "A receive-time-bounded RA attempt requires its continuation output.");
+    end
+    cfg = saved.Config;
+    nextStage = saved.NextStage;
+    result = saved.Result;
+    raCfg = saved.RAConfig;
+    raTiming = saved.Timing;
+    runtime = saved.Runtime;
+    for direction = ["DL", "UL"]
+        optionName = "Initial" + direction + "ChannelState";
+        if ~ismember(optionName, string(p.UsingDefaults))
+            runtime.(direction + "ChannelState") = localResumeChannelState( ...
+                runtime.(direction + "ChannelState"), supplied.(optionName));
+        end
+    end
+    if ~ismember("RuntimeStageWaveforms", string(p.UsingDefaults))
+        runtime.StageWaveforms = supplied.RuntimeStageWaveforms;
+    end
+    if ~ismember("RuntimeSlot", string(p.UsingDefaults))
+        opt.RuntimeSlot = supplied.RuntimeSlot;
+        runtime.RuntimeSlot = supplied.RuntimeSlot;
+    end
+    powerState = saved.PowerState;
+    events = saved.Events;
+    oracleRows = saved.OracleRows;
+    timerRows = saved.TimerRows;
+    msg1Tx = saved.Msg1Tx; det = saved.Detection; ta = saved.TimingAdvance;
+    msg2Tx = saved.Msg2Tx; pdcchInfo = saved.PDCCHInfo;
+    pdschRx2 = saved.PDSCHRx2; rarRx = saved.RARRx; grantRx = saved.GrantRx;
+    msg3Tx = saved.Msg3Tx; msg3Rx = saved.Msg3Rx; msg3Decoded = saved.Msg3Decoded;
+    ueIdentity = saved.UEIdentity; msg4Tx = saved.Msg4Tx;
+    if saved.ResumePhase == "prepared"
+        reusePreparedStage = nextStage;
+        prepared = saved.PreparedContext;
+        switch nextStage
+            case 1
+                occasion = prepared.Occasion;
+            case 2
+                msg2Sched = prepared.Msg2Schedule;
+                withinWindow = prepared.WithinWindow;
+                attemptedRNTI = prepared.AttemptedRNTI;
+                rarTx = prepared.RARTx;
+            case 3
+                msg3TxPayload = prepared.Msg3Payload;
+                pusch = prepared.PUSCH;
+                msg3TA = prepared.TimingAdvanceWaveform;
+            case 4
+                msg4Sched = prepared.Msg4Schedule;
+                msg4TxPayload = prepared.Msg4Payload;
+            case 5
+                setupCompleteTx = prepared.Tx;
+                setupCompleteTxPayload = prepared.Payload;
+                setupCompletePUSCH = prepared.PUSCH;
+                setupCompleteTA = prepared.TimingAdvanceWaveform;
+        end
+    end
+    faultMode = lower(strtrim(string(opt.FaultMode)));
+else
+opt = rmfield(opt, "Continuation");
 localProgress(opt, "start", "runFourStepRA entered");
 
 localRequireToolboxFunctions();
@@ -65,7 +199,7 @@ end
 mu = double(numerology.Mu);
 raTiming = sixgr.phy.ia.RATimingService.resolve( ...
     "NumerologyMu", mu, ...
-    "PRACHOccasionEndSlot", double(raCfg.PRACHOccasionSlot), ...
+    "PRACHOccasionEndSlot", double(raCfg.PRACHOccasionEndSlot), ...
     "RAResponseWindowSlots", double(raCfg.RAResponseWindowSlots), ...
     "RARCompletionSlot", double(raCfg.Msg2Slot), ...
     "Msg3CompletionSlot", double(raCfg.Msg3Slot), ...
@@ -113,8 +247,19 @@ result = localApplyPowerStateToResult(result, powerState);
 events = localInitialEvents(raCfg);
 oracleRows = localOracleGuardRows(raCfg);
 timerRows = localTimerRowsStart(raCfg);
+msg1Tx = struct(); det = struct(); ta = struct(); msg2Tx = struct();
+pdcchInfo = struct(); pdschRx2 = struct(); rarRx = struct(); grantRx = struct();
+msg3Tx = struct(); msg3Rx = struct(); msg3Decoded = struct();
+ueIdentity = ""; msg4Tx = struct();
+end
+result.RuntimeExecutionState = "executing";
+result.NextRuntimeStage = "";
+result.NextRuntimeStageSlot = NaN;
+result.PreparedTransmission = struct();
 
 try
+    if nextStage <= 1
+    if reusePreparedStage ~= 1
     localProgress(opt, "msg1_tx_start", "");
     [msg1Tx, occasion] = sixgr.phy.ra.generateMsg1PRACHWaveform(cfg, raCfg);
     localProgress(opt, "msg1_tx_done", sprintf("samples=%d", size(msg1Tx.Waveform, 1)));
@@ -123,6 +268,12 @@ try
     msg1Tx.PowerControl = powerState;
     msg1Tx.PowerControl.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
     result.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
+    end
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg1", msg1Tx.Waveform, msg1Tx, opt)
+        [result, continuation] = captureContinuation(1, struct("Occasion", occasion), ...
+            msg1Tx.Waveform, msg1Tx, "UL");
+        return;
+    end
     localProgress(opt, "msg1_channel_start", "");
     [msg1RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg1", "UL", msg1Tx.Waveform, cfg, raCfg, msg1Tx, runtime);
     localProgress(opt, "msg1_channel_done", "");
@@ -152,6 +303,14 @@ try
         return;
     end
 
+    if stopStage == 1
+        [result, continuation] = captureContinuation(2);
+        return;
+    end
+    end
+
+    if nextStage <= 2
+    if reusePreparedStage ~= 2
     grantTx = sixgr.mac.ra.buildRARULGrant(raCfg);
     rapid = double(raCfg.PreambleIndex);
     if faultMode == "wrong_rapid_in_rar"
@@ -177,6 +336,13 @@ try
     if faultMode == "wrong_ra_rnti"
         attemptedRNTI = double(raCfg.RARNTI) + 1;
     end
+    end
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg2", msg2Tx.Waveform, msg2Tx, opt)
+        prepared = struct("Msg2Schedule", msg2Sched, "WithinWindow", withinWindow, ...
+            "AttemptedRNTI", attemptedRNTI, "RARTx", rarTx);
+        [result, continuation] = captureContinuation(2, prepared, msg2Tx.Waveform, msg2Tx, "DL");
+        return;
+    end
     localProgress(opt, "msg2_channel_start", "");
     [msg2RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg2", "DL", msg2Tx.Waveform, cfg, raCfg, msg2Tx, runtime);
     localProgress(opt, "msg2_channel_done", "");
@@ -200,12 +366,8 @@ try
     rapidMatches = isstruct(rarRx) && isfield(rarRx, "RAPID") && double(rarRx.RAPID) == double(raCfg.PreambleIndex);
     if isstruct(rarRx) && isfield(rarRx, "ULGrant")
         grantRx = rarRx.ULGrant;
-        grantRx.Modulation = string(raCfg.Msg3PUSCH.Modulation);
-        grantRx.TargetCodeRate = double(raCfg.Msg3PUSCH.TargetCodeRate);
-        grantRx.RV = double(raCfg.Msg3PUSCH.RV);
-        grantRx.NLayers = double(raCfg.Msg3PUSCH.NLayers);
-        grantRx.EnablePTRS = logical(sixgr.util.structGet( ...
-            raCfg.Msg3PUSCH, "EnablePTRS", false));
+        % Preserve the MCS/modulation/rate and allocation decoded from RAR;
+        % never overwrite them with the transmitter's scheduled values.
         grantRx.TemporaryCRNTI = double(rarRx.TemporaryCRNTI);
     else
         grantRx = struct();
@@ -218,11 +380,21 @@ try
         return;
     end
     events = [events; localEvent(raCfg, "MSG2_RAR_TX", "MSG2_RAR_RX", "rar_pdcch_pdsch_decode", "ra-ResponseWindow", ...
-        double(raCfg.RAResponseWindowSlots), double(raCfg.RARNTI), double(raCfg.PreambleIndex), "")]; %#ok<AGROW>
-    timerRows = [timerRows; localTimer(raCfg, "ra-ResponseWindow", "stop", double(raCfg.PRACHOccasionSlot + 1), double(raCfg.Msg2Slot), ...
-        double(raCfg.PRACHOccasionSlot + raCfg.RAResponseWindowSlots), false, double(raCfg.RAResponseWindowSlots), "OK")]; %#ok<AGROW>
+        double(raCfg.RAResponseWindowSlots), double(raCfg.RARNTI), double(raCfg.PreambleIndex), "", double(raCfg.Msg2Slot))]; %#ok<AGROW>
+    timerRows = [timerRows; localTimer(raCfg, "ra-ResponseWindow", "stop", double(raCfg.PRACHOccasionEndSlot + 1), double(raCfg.Msg2Slot), ...
+        double(raCfg.PRACHOccasionEndSlot + raCfg.RAResponseWindowSlots), false, double(raCfg.RAResponseWindowSlots), "OK")]; %#ok<AGROW>
 
+    if stopStage == 2
+        [result, continuation] = captureContinuation(3);
+        return;
+    end
+    end
+
+    if nextStage <= 3
+    if reusePreparedStage ~= 3
     localProgress(opt, "msg3_tx_start", "");
+    powerState = sixgr.mac.ra.applyRARGrantPowerCommand(powerState, grantRx);
+    result = localApplyPowerStateToResult(result, powerState);
     ueIdentity = "UE-" + string(round(double(raCfg.UEId)));
     msg3TxPayload = sixgr.mac.ra.buildMsg3Payload( ...
         "UEId", double(raCfg.UEId), ...
@@ -236,6 +408,12 @@ try
     msg3Tx.PowerControl.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     result.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     msg3TA = sixgr.phy.ra.applyMsg3TimingAdvance(msg3Tx.Waveform, double(result.TimingAdvanceSamples));
+    end
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg3", msg3TA.Waveform, msg3Tx, opt)
+        prepared = struct("Msg3Payload", msg3TxPayload, "PUSCH", pusch, "TimingAdvanceWaveform", msg3TA);
+        [result, continuation] = captureContinuation(3, prepared, msg3TA.Waveform, msg3Tx, "UL");
+        return;
+    end
     localProgress(opt, "msg3_channel_start", "");
     [msg3Wave, runtime, stageInfo] = localResolveStageRxWaveform("Msg3", "UL", msg3TA.Waveform, cfg, raCfg, msg3Tx, runtime);
     localProgress(opt, "msg3_channel_done", "");
@@ -262,8 +440,16 @@ try
         return;
     end
     events = [events; localEvent(raCfg, "MSG3_PUSCH_TX", "MSG3_PUSCH_RX", "pusch_ulsch_decode", "", NaN, ...
-        double(raCfg.TempCRNTI), double(raCfg.PreambleIndex), "")]; %#ok<AGROW>
+        double(raCfg.TempCRNTI), double(raCfg.PreambleIndex), "", double(raCfg.Msg3Slot))]; %#ok<AGROW>
 
+    if stopStage == 3
+        [result, continuation] = captureContinuation(4);
+        return;
+    end
+    end
+
+    if nextStage <= 4
+    if reusePreparedStage ~= 4
     msg4Identity = msg3Decoded.ContentionIdentity;
     if faultMode == "msg4_identity_mismatch"
         msg4Identity = "FFFFFFFFFFFF";
@@ -294,6 +480,12 @@ try
     msg4Tx.PowerControl = powerState;
     msg4Tx.PowerControl.Msg4TxAmplitudeScale = double(msg4Power.AmplitudeScale);
     result.Msg4TxAmplitudeScale = double(msg4Power.AmplitudeScale);
+    end
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg4", msg4Tx.Waveform, msg4Tx, opt)
+        prepared = struct("Msg4Schedule", msg4Sched, "Msg4Payload", msg4TxPayload);
+        [result, continuation] = captureContinuation(4, prepared, msg4Tx.Waveform, msg4Tx, "DL");
+        return;
+    end
     localProgress(opt, "msg4_channel_start", "");
     [msg4RxWave, runtime, stageInfo] = localResolveStageRxWaveform("Msg4", "DL", msg4Tx.Waveform, cfg, raCfg, msg4Tx, runtime);
     localProgress(opt, "msg4_channel_done", "");
@@ -328,7 +520,7 @@ try
         events = [events; localEvent(raCfg, "MSG4_CONTENTION_RESOLUTION_RX", "RA_SUCCESS", ...
             "contention_resolution_identity_match", "ra-ContentionResolutionTimer", ...
             double(raCfg.RAContentionResolutionTimerSlots), double(raCfg.TempCRNTI), ...
-            double(raCfg.PreambleIndex), "")]; %#ok<AGROW>
+            double(raCfg.PreambleIndex), "", double(raCfg.Msg4Slot))]; %#ok<AGROW>
         timerRows = [timerRows; localTimer(raCfg, "ra-ContentionResolutionTimer", "stop", double(raCfg.Msg3Slot), double(raCfg.Msg4Slot), ...
             double(raTiming.ContentionExpirySlotExclusive), false, double(raCfg.RAContentionResolutionTimerSlots), "OK")]; %#ok<AGROW>
     end
@@ -339,9 +531,15 @@ try
     result.RRCSetupDecoded = logical(rrcSetupDecoded);
     result.RRCSetupSHA256 = string(sixgr.util.structGet( ...
         msg4Decoded, "RRCSetupSHA256", ""));
+    if stopStage == 4 && logical(result.RACompleted) && logical(raCfg.RequireRRCSetupComplete)
+        [result, continuation] = captureContinuation(5);
+        return;
+    end
+    end
 
     if logical(result.RACompleted) && ...
             logical(raCfg.RequireRRCSetupComplete)
+        if reusePreparedStage ~= 5
         localProgress(opt, "rrc_setup_complete_tx_start", "");
         setupCompleteTxPayload = sixgr.mac.ra.buildRRCSetupComplete( ...
             "TransactionID", double(raCfg.RRCTransactionID), ...
@@ -367,6 +565,15 @@ try
         setupCompleteTA = sixgr.phy.ra.applyMsg3TimingAdvance( ...
             setupCompleteTx.Waveform, ...
             double(result.TimingAdvanceSamples));
+        end
+        if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "RRCSetupComplete", ...
+                setupCompleteTA.Waveform, setupCompleteTx, opt)
+            prepared = struct("Tx", setupCompleteTx, "Payload", setupCompleteTxPayload, ...
+                "PUSCH", setupCompletePUSCH, "TimingAdvanceWaveform", setupCompleteTA);
+            [result, continuation] = captureContinuation(5, prepared, ...
+                setupCompleteTA.Waveform, setupCompleteTx, "UL");
+            return;
+        end
         [setupCompleteWave, runtime, stageInfo] = ...
             localResolveStageRxWaveform( ...
             "RRCSetupComplete", "UL", ...
@@ -481,7 +688,7 @@ try
                 "pusch_ulsch_srb1_ul_dcch_decode", "T300", ...
                 double(raCfg.SetupCompleteSlot - raCfg.Msg4Slot), ...
                 double(raCfg.FinalCRNTI), ...
-                double(raCfg.PreambleIndex), "")]; %#ok<AGROW>
+                double(raCfg.PreambleIndex), "", double(raCfg.SetupCompleteSlot))]; %#ok<AGROW>
         end
         localProgress(opt, "rrc_setup_complete_rx_done", ...
             sprintf("crc=%d connected=%d", ...
@@ -490,6 +697,7 @@ try
         result.RRCConnected = false;
     end
     result.StrictOk = localStrictOk(result);
+    result.RuntimeExecutionState = "terminal";
     if ~logical(result.StrictOk) && strlength(string(result.FailureReason)) == 0
         result.FailureReason = "strict_ra_acceptance_condition_failed";
     end
@@ -515,6 +723,109 @@ if logical(opt.RunNegativeSuite)
             result.RunFolder, result);
     end
 end
+
+    function [pending, checkpoint] = captureContinuation(next, preparedContext, txWave, tx, direction)
+        pending = result;
+        % Preparation adds no receiver row, so localAppendRuntimeStage has
+        % not published the canonical states yet (notably before Msg1).
+        % Return the exact retained states, including any caller-supplied
+        % advancement on resume; never expose the empty result defaults.
+        pending.RuntimeDLChannelState = runtime.DLChannelState;
+        pending.RuntimeULChannelState = runtime.ULChannelState;
+        phase = "decoded";
+        if nargin < 2, preparedContext = struct(); else, phase = "prepared"; end
+        pending.RuntimeExecutionState = "pending_next_stage";
+        pending.NextRuntimeStage = stageNames(next);
+        pending.NextRuntimeStageSlot = localStageSlot(raCfg, stageNames(next));
+        pending.Events = sixgr.mac.ra.RAEventLog(events);
+        pending.TimerEvents = struct2table(timerRows(:), "AsArray", true);
+        if next > 1
+            pending.Msg1Tx = msg1Tx;
+            pending.ObservedREAllocationTable = localMsg1ObservedAllocation(msg1Tx, raCfg, result);
+        else
+            % Generated buffers are not received/transmitted observations.
+            pending.Events = sixgr.mac.ra.RAEventLog([]);
+            pending.TimerEvents = pending.TimerEvents([],:);
+        end
+        if next > 2
+            pending.Msg2Tx = msg2Tx;
+            pending.Msg2Rx = pdschRx2;
+        end
+        if next > 3
+            pending.Msg3Tx = msg3Tx;
+            pending.Msg3Rx = msg3Rx;
+        end
+        if next > 4
+            pending.Msg4Tx = msg4Tx;
+        end
+        % Do not run the final exporter: its full-attempt tables are not
+        % valid while later stages have not executed. RuntimeStageRows here
+        % contain only propagated/received stages that actually completed.
+        if phase == "prepared"
+            pending.RuntimeExecutionState = "pending_stage_receive";
+            fs = localStageSampleRate(localStageTxInfo(tx), tx);
+            [startTime, endTime] = localStageSampleInterval(cfg, raCfg, stageNames(next), txWave, tx);
+            pending.PreparedTransmission = struct("StageName", stageNames(next), ...
+                "Direction", direction, "AbsoluteSlot", localStageSlot(raCfg, stageNames(next)), ...
+                "Waveform", txWave, "SampleRate_Hz", fs, "SampleCount", size(txWave,1), ...
+                "PortCount", size(txWave,2), "Duration_s", size(txWave,1)/fs, ...
+                "StartTime_s", startTime, "EndTimeExclusive_s", endTime, ...
+                "TimeReference", "absolute_runtime_seconds", ...
+                "ExecutionStatus", "generated_not_propagated", ...
+                "WaveformPlane", "after_rach_power_and_ta_before_runtime_power_context_and_tx_rf");
+        end
+        checkpoint = struct("ContractVersion", "ra_stage_continuation_v2", ...
+            "ResumePhase", phase, "PreparedContext", preparedContext, ...
+            "InputConfig", inputConfig, "Config", cfg, "Options", opt, "NextStage", next, ...
+            "Result", pending, "RAConfig", raCfg, "Timing", raTiming, "Runtime", runtime, ...
+            "PowerState", powerState, "Events", events, "OracleRows", oracleRows, "TimerRows", timerRows, ...
+            "Msg1Tx", msg1Tx, "Detection", det, "TimingAdvance", ta, ...
+            "Msg2Tx", msg2Tx, "PDCCHInfo", pdcchInfo, "PDSCHRx2", pdschRx2, ...
+            "RARRx", rarRx, "GrantRx", grantRx, "Msg3Tx", msg3Tx, "Msg3Rx", msg3Rx, ...
+            "Msg3Decoded", msg3Decoded, "UEIdentity", ueIdentity, "Msg4Tx", msg4Tx);
+end
+end
+
+function ready = localStageReceiveReady(cfg, raCfg, name, waveform, tx, opt)
+if isinf(opt.ReceiveThroughTime_s)
+    ready = true;
+    return;
+end
+[~, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx);
+ready = endTime <= double(opt.ReceiveThroughTime_s);
+end
+
+function [startTime, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx)
+fs = localStageSampleRate(localStageTxInfo(tx), tx);
+startTime = localStageSlotStartTime(cfg, localStageSlot(raCfg, name));
+endTime = startTime + size(waveform, 1) / fs;
+if ~(isfinite(startTime) && startTime >= 0 && isfinite(endTime) && endTime > startTime)
+    error("sixgr:phy:ra:InvalidRAStageSampleInterval", ...
+        "Stage %s must have a finite absolute start and a nonempty sample interval.", name);
+end
+end
+
+function state = localResumeChannelState(previous, replacement)
+if ~isstruct(replacement) || ~isscalar(replacement) || ...
+        ~all(isfield(replacement, ["ContractVersion", "StateKey", "Seed", "CurrentSampleIndex"])) || ...
+        ~isscalar(replacement.CurrentSampleIndex) || ~isfinite(replacement.CurrentSampleIndex) || ...
+        replacement.CurrentSampleIndex < 0 || replacement.CurrentSampleIndex ~= round(replacement.CurrentSampleIndex)
+    error("sixgr:phy:ra:InvalidRAContinuationChannel", ...
+        "A resumed stage requires a typed canonical channel state.");
+end
+if isstruct(previous) && isfield(previous, "ContractVersion")
+    for key = ["ContractVersion", "StateKey", "Seed"]
+        if ~isequaln(sixgr.util.structGet(previous, key, []), sixgr.util.structGet(replacement, key, []))
+            error("sixgr:phy:ra:RAContinuationChannelChanged", ...
+                "Resuming RA cannot replace its channel identity (%s).", key);
+        end
+    end
+    if double(replacement.CurrentSampleIndex) < double(previous.CurrentSampleIndex)
+        error("sixgr:phy:ra:RAContinuationChannelRewound", ...
+            "The resumed canonical channel state predates the last decoded stage.");
+    end
+end
+state = replacement;
 end
 
 function tables = localMergeNegativeSuiteTables(tables, negativeResults)
@@ -588,6 +899,9 @@ end
 end
 
 function result = localFinalize(result, raCfg, events, timerRows, oracleRows, msg1Tx, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, msg4Tx, opt)
+result.RuntimeExecutionState = "terminal";
+result.NextRuntimeStage = "";
+result.NextRuntimeStageSlot = NaN;
 if ~logical(result.RACompleted)
     result.StrictOk = false;
 else
@@ -598,15 +912,7 @@ result.TimerEvents = struct2table(timerRows(:), "AsArray", true);
 result.OracleGuard = struct2table(oracleRows(:), "AsArray", true);
 result.ArtifactTables = localBuildArtifactTables(result, raCfg, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, msg4Tx);
 result.Msg1Tx = msg1Tx;
-observedSlot = double(opt.RuntimeSlot) - 1;
-if ~(isfinite(observedSlot) && observedSlot >= 0 && observedSlot == fix(observedSlot))
-    observedSlot = double(msg1Tx.Carrier.NSlot);
-end
-result.ObservedREAllocationTable = sixgr.truth.buildObservedREAllocation(msg1Tx, ...
-    "Direction", "UL", "Channel", "PRACH", ...
-    "AbsoluteSlot", observedSlot, "CellID", double(result.CellId), ...
-    "UEID", double(result.UEId), "LayerCount", 1, ...
-    "AllocationID", string(result.RunId) + "_msg1");
+result.ObservedREAllocationTable = localMsg1ObservedAllocation(msg1Tx, raCfg, result);
 result.Msg2Tx = msg2Tx;
 result.Msg2Rx = pdschRx2;
 result.Msg3Tx = msg3Tx;
@@ -615,6 +921,17 @@ result.Msg4Tx = msg4Tx;
 if logical(opt.WriteArtifacts)
     result.Artifacts = sixgr.phy.ra.exportRAEvidenceArtifacts(result.RunFolder, result);
 end
+end
+
+function allocation = localMsg1ObservedAllocation(msg1Tx, raCfg, result)
+% The caller may be resuming a later stage or reporting after a frame wrap.
+% Its current slot is not the absolute slot of the measured Msg1 waveform.
+observedSlot = double(raCfg.PRACHAbsoluteSlot);
+allocation = sixgr.truth.buildObservedREAllocation(msg1Tx, ...
+    "Direction", "UL", "Channel", "PRACH", ...
+    "AbsoluteSlot", observedSlot, "CellID", double(result.CellId), ...
+    "UEID", double(result.UEId), "LayerCount", 1, ...
+    "AllocationID", string(result.RunId) + "_msg1");
 end
 
 function [cfg, evidenceT] = localApplyDecodedSIB1IfPresent(cfg, sib1Recovery)
@@ -638,6 +955,7 @@ fields = { ...
     "RunId", raCfg.RunId, "ScenarioName", raCfg.ScenarioName, "CellId", double(raCfg.CellId), ...
     "UEId", double(raCfg.UEId), "AttemptId", double(raCfg.AttemptId), ...
     "RAProcedureType", raCfg.RAProcedureType, "RABindingSource", raCfg.BindingSource, ...
+    "RASlotTimeBase", "absolute_zero_based", "Msg1ScheduledSlot", double(raCfg.PRACHAbsoluteSlot), ...
     "SIB1RACHBindingApplied", false, "SIB1RACHBindingSource", "", ...
     "SIB1RACHPayloadHash", "", "SIB1RACHTreeHash", "", ...
     "RACHConfigHash", raCfg.RACHConfigHash, "PRACHOccasionFrame", double(raCfg.PRACHOccasionFrame), ...
@@ -681,8 +999,8 @@ fields = { ...
     "Msg2TxPower_dBm", NaN, "Msg2TxAmplitudeScale", NaN, ...
     "Msg4TxPower_dBm", NaN, "Msg4TxAmplitudeScale", NaN, ...
     "TimingAdvanceSamples", NaN, "RARNTI", double(raCfg.RARNTI), ...
-    "RAResponseWindowStartSlot", double(raCfg.PRACHOccasionSlot + 1), ...
-    "RAResponseWindowEndSlot", double(raCfg.PRACHOccasionSlot + raCfg.RAResponseWindowSlots), ...
+    "RAResponseWindowStartSlot", double(raCfg.PRACHOccasionEndSlot + 1), ...
+    "RAResponseWindowEndSlot", double(raCfg.PRACHOccasionEndSlot + raCfg.RAResponseWindowSlots), ...
     "ContentionResolutionExpirySlotExclusive", ...
         double(raCfg.Msg3Slot + raCfg.RAContentionResolutionTimerSlots), ...
     "RARWindowExpired", false, "Msg2PDCCHCandidatesAttempted", 0, "Msg2RARNTIDetected", false, ...
@@ -819,7 +1137,11 @@ function result = localApplyRuntimeTransportToResult(result, runtime)
 result.RuntimeIntegrationMode = string(runtime.Mode);
 result.RuntimeTransportMode = string(runtime.TransportMode);
 result.RuntimeStageWaveformsRequired = logical(runtime.RequireStageWaveforms);
-result.RuntimeStageRows = struct2table(runtime.StageRows, "AsArray", true);
+% An empty struct array does not preserve scalar field types when converted
+% to a table. Establish the canonical schema, then remove its template row;
+% preparation publishes zero observations, with the same types as reception.
+result.RuntimeStageRows = struct2table(localEmptyRuntimeStageRow(), "AsArray", true);
+result.RuntimeStageRows = result.RuntimeStageRows([],:);
 end
 
 function [rxWave, runtime, row] = localResolveStageRxWaveform(stageName, direction, txWave, cfg, raCfg, txStruct, runtime)
@@ -1568,7 +1890,7 @@ end
 function slot = localStageSlot(raCfg, stageName)
 switch string(stageName)
     case "Msg1"
-        slot = double(raCfg.PRACHOccasionSlot);
+        slot = double(raCfg.PRACHAbsoluteSlot);
     case "Msg2"
         slot = double(raCfg.Msg2Slot);
     case "Msg3"
@@ -1857,11 +2179,19 @@ events = [ ...
     localEvent(raCfg, "MSG1_RESOURCE_SELECTION", "MSG1_PRACH_TX", "msg1_prach_waveform_tx", "", NaN, NaN, double(raCfg.PreambleIndex), "")];
 end
 
-function row = localEvent(raCfg, before, after, event, timerName, timerValue, rnti, preamble, failure)
+function row = localEvent(raCfg, before, after, event, timerName, timerValue, rnti, preamble, failure, sourceSlot)
+% Event coordinates identify the source waveform, not a host-clock timestamp.
+% Later decoded stages must never inherit the original PRACH frame/slot.
+symbol = NaN;
+if nargin < 10
+    sourceSlot = double(raCfg.PRACHAbsoluteSlot);
+    symbol = double(raCfg.PRACHOccasionSymbol);
+end
+slotsPerFrame = 10 * double(raCfg.CarrierSCSkHz) / 15;
 row = struct( ...
     "RunId", string(raCfg.RunId), "CellId", double(raCfg.CellId), "UEId", double(raCfg.UEId), ...
-    "AttemptId", double(raCfg.AttemptId), "Frame", double(raCfg.PRACHOccasionFrame), ...
-    "Slot", double(raCfg.PRACHOccasionSlot), "Symbol", double(raCfg.PRACHOccasionSymbol), ...
+    "AttemptId", double(raCfg.AttemptId), "Frame", floor(sourceSlot/slotsPerFrame), ...
+    "Slot", mod(sourceSlot, slotsPerFrame), "Symbol", symbol, ...
     "StateBefore", string(before), "StateAfter", string(after), "Event", string(event), ...
     "TimerName", string(timerName), "TimerValueSlots", double(timerValue), ...
     "RNTI", double(rnti), "PreambleIndex", double(preamble), ...
@@ -1870,8 +2200,8 @@ end
 
 function rows = localTimerRowsStart(raCfg)
 rows = [ ...
-    localTimer(raCfg, "ra-ResponseWindow", "start", double(raCfg.PRACHOccasionSlot + 1), NaN, ...
-    double(raCfg.PRACHOccasionSlot + raCfg.RAResponseWindowSlots), false, double(raCfg.RAResponseWindowSlots), "running"); ...
+    localTimer(raCfg, "ra-ResponseWindow", "start", double(raCfg.PRACHOccasionEndSlot + 1), NaN, ...
+    double(raCfg.PRACHOccasionEndSlot + raCfg.RAResponseWindowSlots), false, double(raCfg.RAResponseWindowSlots), "running"); ...
     localTimer(raCfg, "preambleTransMax", "start", double(raCfg.PRACHOccasionSlot), NaN, ...
     double(raCfg.PRACHOccasionSlot), false, double(raCfg.PreambleTransMax), "attempt_1_of_configured_max")];
 end

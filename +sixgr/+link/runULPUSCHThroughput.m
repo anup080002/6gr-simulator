@@ -570,6 +570,7 @@ trialClipEvents = NaN(numFrames,1);
 trialSymErr = NaN(numFrames,1);
 trialSymTot = NaN(numFrames,1);
 trialSER = NaN(numFrames,1);
+trialSymbolDecisionStatus = repmat("unavailable_not_measured", numFrames, 1);
 trialResidualInterference = NaN(numFrames,1);
 trialLLRMeanAbs = NaN(numFrames,1);
 trialLLRStdAbs = NaN(numFrames,1);
@@ -806,7 +807,11 @@ for n = 1:numFrames
         end
         trialCQITable(n) = string(localResolveCQITable(cfgFrame, "UL"));
         trialMCSTable(n) = string(localResolveMCSTable(cfgFrame, "UL"));
-        trialCfgPMI(n) = double(sixgr.util.structGet(cfgFrame, "phy.pusch.PMI", NaN));
+        % Non-codebook PUSCH legitimately has no scalar TPMI/PMI. Preserve
+        % an unavailable value without assigning an empty RHS
+        % into one trial cell or inventing codebook index zero. The actual
+        % precoding matrix remains the transmitter's unchanged authority.
+        trialCfgPMI(n) = localOptionalPUSCHPMI(sixgr.util.structGet(cfgFrame, "phy.pusch.PMI", []));
         trialCfgCRI(n) = double(sixgr.util.structGet(cfgFrame, "phy.beamManagement.selectedCRI", NaN));
         trialConfiguredBeamSelectionStrategy(n) = string(sixgr.util.structGet(cfgFrame, "lls6g.userContext.BeamSelectionStrategy", ""));
         if isRetransmission
@@ -1630,6 +1635,7 @@ for n = 1:numFrames
         trialSymErr(n) = double(sixgr.util.structGet(modTrack, "SymbolErrors", NaN));
         trialSymTot(n) = double(sixgr.util.structGet(modTrack, "SymbolsCompared", NaN));
         trialSER(n) = double(sixgr.util.structGet(modTrack, "SymbolErrorRate", NaN));
+        trialSymbolDecisionStatus(n) = string(modTrack.SymbolDecisionStatus);
         trialResidualInterference(n) = double(sixgr.util.structGet(modTrack, "ResidualInterferencePower_dB", NaN));
         trialLLRMeanAbs(n) = double(sixgr.util.structGet(modTrack, "LLRMeanAbs", NaN));
         trialLLRStdAbs(n) = double(sixgr.util.structGet(modTrack, "LLRStdAbs", NaN));
@@ -1708,7 +1714,7 @@ for n = 1:numFrames
             constT.EVM_rms = repmat(double(trialEVM(n)), nConst, 1);
             constT.EVM_rms_pct = repmat(double(trialEVM(n)) * 100, nConst, 1);
             constT.EVM_dB = repmat(20 * log10(max(double(trialEVM(n)), realmin)), nConst, 1);
-            constT.Normalization = repmat("post_equalized_and_reference_unit_power_constellation", nConst, 1);
+            constT.Normalization = repmat(string(modTrack.EVMComputationDomain), nConst, 1);
             constT.TruthStatus = repmat("real_lls_evidence", nConst, 1);
             constT.direction = string(constT.Direction);
             constT.ue_id = nan(nConst, 1);
@@ -2206,6 +2212,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
             'Status','Crash', ...
              'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.SymbolDecisionStatus = trialSymbolDecisionStatus(idx);
         T.RuntimeAbsoluteSlotIndex0 = trialRuntimeAbsoluteSlot0(idx);
         T.CarrierNSlot = trialCarrierNSlot(idx);
         T.CarrierNFrame = trialCarrierNFrame(idx);
@@ -4515,6 +4522,7 @@ assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ComputeLatencySource = strings(0,1);
+T.SymbolDecisionStatus = strings(0,1);
 T.RuntimeAbsoluteSlotIndex0 = zeros(0,1);
 T.CarrierNSlot = zeros(0,1);
 T.CarrierNFrame = zeros(0,1);
@@ -5221,8 +5229,8 @@ prec = sixgr.util.structGet(tx, "PrecodeInfo", struct());
 transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", sixgr.util.structGet(grant, "TransformPrecodingApplied", false)));
 precodingActive = logical(sixgr.util.structGet(prec, "Active", transformPrecoding));
 beamformingApplied = logical(sixgr.util.structGet(prec, "BeamformingApplied", sixgr.util.structGet(grant, "BeamformingApplied", false)));
-appliedPMI = double(sixgr.util.structGet(prec, "PMI", sixgr.util.structGet(grant, "AppliedPrecoderPMI", NaN)));
-requestedPMI = double(sixgr.util.structGet(grant, "PMI", ...
+appliedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(prec, "PMI", sixgr.util.structGet(grant, "AppliedPrecoderPMI", NaN)));
+requestedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(grant, "PMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.TPMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN))));
 digestEvidence = sixgr.phy.grant.resolvePrecoderDigestEvidence(grant, prec);
@@ -5441,9 +5449,25 @@ end
 token = join(string(double(bits)), "|");
 end
 
+function value = localOptionalPUSCHPMI(raw)
+% Scalar reporting contract only; do not alter the native PUSCH configuration.
+if isempty(raw)
+    value = NaN;
+    return;
+end
+if ~(isnumeric(raw) && isreal(raw) && isscalar(raw) && ...
+        (isnan(raw) || (isfinite(raw) && raw >= 0 && raw == fix(raw))))
+    error("sixgr:link:InvalidPUSCHPMIEvidence", ...
+        "PUSCH PMI evidence must be empty, NaN, or one nonnegative integer; non-scalar indices cannot be truncated into a TPMI.");
+end
+value = double(raw);
+end
+
 function status = localRequestedVsAppliedPMIStatus(requestedPMI, appliedPMI)
-requestedFinite = isfinite(double(requestedPMI));
-appliedFinite = isfinite(double(appliedPMI));
+requestedPMI = localOptionalPUSCHPMI(requestedPMI);
+appliedPMI = localOptionalPUSCHPMI(appliedPMI);
+requestedFinite = isfinite(requestedPMI);
+appliedFinite = isfinite(appliedPMI);
 if requestedFinite && appliedFinite
     if round(double(requestedPMI)) == round(double(appliedPMI))
         status = "requested_matches_runtime_applied";
@@ -6488,8 +6512,8 @@ acctLayerRE = double(sixgr.util.structGet(acct, "LayerDataRE", sixgr.util.struct
 acctPortRE = double(sixgr.util.structGet(acct, "PortMappedRE", sixgr.util.structGet(tx, "PortMappedRE", NaN)));
 acctModSymbols = double(sixgr.util.structGet(acct, "ModulationSymbolCount", sixgr.util.structGet(tx, "ModulationSymbolCount", NaN)));
 xOverhead = double(sixgr.util.structGet(tx, "XOverhead", sixgr.util.structGet(cfg, "phy.pusch.xOverhead", 0)));
-appliedPMI = double(sixgr.util.structGet(prec, "PMI", NaN));
-requestedPMI = double(sixgr.util.structGet(seedGrant, "PMI", sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN)));
+appliedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(prec, "PMI", NaN));
+requestedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(seedGrant, "PMI", sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN)));
 grant = struct( ...
     "MCS", double(mcsIndex), ...
     "MCSIndex", double(sixgr.util.structGet(seedGrant, "MCSIndex", mcsIndex)), ...

@@ -6,8 +6,7 @@ function [tx, pusch] = generateRRCSetupCompleteWaveform( ...
 % Its allocation is resolved from the explicit setup-complete PUSCH
 % configuration, not inferred from aggregate served bits.
 
-cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg);
-cfgTx.phy.carrier.NSlot = double(raCfg.SetupCompleteSlot);
+cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.SetupCompleteSlot);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTx);
 setupGrant = localSetupGrant(raCfg, grant);
 pusch = sixgr.phy.ra.localPUSCHConfigFromGrant(raCfg, setupGrant);
@@ -39,6 +38,9 @@ grant.PRBStart = double(s.PRBStart);
 grant.NumPRB = double(s.NumPRB);
 grant.SymbolStart = double(s.SymbolStart);
 grant.NumSymbols = double(s.NumSymbols);
+% This configured SRB1 allocation is distinct from the RAR's Msg3 TDRA.
+% Do not inherit a Msg3 mapping-B value into a full-slot setup allocation.
+grant.MappingType = string(sixgr.util.structGet(s, "MappingType", "A"));
 grant.MCS = double(s.MCS);
 grant.Modulation = string(s.Modulation);
 grant.TargetCodeRate = double(s.TargetCodeRate);

@@ -1,8 +1,10 @@
 classdef TimeDomainResourceAllocationCatalog
     %TIMEDOMAINRESOURCEALLOCATIONCATALOG Pinned selected Release-18 TDRA rows.
     %
-    % This is deliberately a small production anchor, not a fabricated
-    % complete table.  Every supported identifier names one exact row from
+    % selectedRows/resolve retain a small, explicitly pinned ID-based anchor.
+    % resolvePUSCHDefaultA additionally supports the complete default-A PUSCH
+    % normal/extended-CP tables across their specified numerologies.
+    % Every supported identifier names one exact row from
     % ETSI TS 138 214 V18.8.0 (3GPP TS 38.214 Release 18).  A configured
     % row outside this selected set must be supplied as an explicit,
     % validated test/configuration grant.
@@ -15,6 +17,56 @@ classdef TimeDomainResourceAllocationCatalog
     end
 
     methods (Static)
+        function row = resolvePUSCHDefaultA(tdraIndex, scsKHz, cyclicPrefix)
+            % Full default-A lookup for a zero-based on-air TDRA index.
+            % TS 38.214 V18.8.0 tables 6.1.2.1.1-2/-3/-4/-5.
+            % This is applicable when pusch-ConfigCommon supplies no TDRA
+            % list. It does not replace or infer a configured common list.
+            if ~(isnumeric(tdraIndex) && isreal(tdraIndex) && ...
+                    isscalar(tdraIndex) && isfinite(tdraIndex) && ...
+                    tdraIndex == fix(tdraIndex) && tdraIndex >= 0 && tdraIndex <= 15)
+                error("sixgr:phy:frame:InvalidPUSCHDefaultATDRAIndex", ...
+                    "Default-A TDRA index must be an integer from 0 through 15.");
+            end
+            num = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+                scsKHz, cyclicPrefix, "generic_waveform_test", "");
+            mus = [0 1 2 3 5 6];
+            jValues = [1 1 2 3 11 21];
+            deltaValues = [2 3 4 6 24 48];
+            muIndex = find(mus == num.Mu, 1);
+            if isempty(muIndex)
+                error("sixgr:phy:frame:UnsupportedPUSCHDefaultANumerology", ...
+                    "PUSCH default-A j and Msg3 delta are not specified for mu=%d in the pinned table.", num.Mu);
+            end
+            % Columns: K2 offset from j, start symbol S, length L.
+            normal = [0 0 14; 0 0 12; 0 0 10; 0 2 10; 0 4 10; ...
+                0 4 8; 0 4 6; 1 0 14; 1 0 12; 1 0 10; ...
+                2 0 14; 2 0 12; 2 0 10; 0 8 6; 3 0 14; 3 0 10];
+            extended = [0 0 8; 0 0 12; 0 0 10; 0 2 10; 0 4 4; ...
+                0 4 8; 0 4 6; 1 0 8; 1 0 12; 1 0 10; ...
+                2 0 6; 2 0 12; 2 0 10; 0 8 4; 3 0 8; 3 0 10];
+            entries = normal;
+            tableNumber = "6.1.2.1.1-2";
+            if string(num.CyclicPrefix) == "extended"
+                entries = extended;
+                tableNumber = "6.1.2.1.1-3";
+            end
+            index = double(tdraIndex) + 1;
+            mapping = "A";
+            if ismember(index, [4 5 6 7 14]), mapping = "B"; end
+            row = struct("TimeResourceAssignment", double(tdraIndex), ...
+                "RowIndex", index, "MappingType", mapping, ...
+                "StartSymbol", entries(index,2), "NumSymbols", entries(index,3), ...
+                "K2", jValues(muIndex) + entries(index,1), ...
+                "Msg3AdditionalDelaySlots", deltaValues(muIndex), ...
+                "Mu", double(num.Mu), "CyclicPrefix", string(num.CyclicPrefix), ...
+                "SymbolsPerSlot", double(num.SymbolsPerSlot), ...
+                "TableNumber", tableNumber, ...
+                "StandardReference", "3GPP TS 38.214 V18.8.0 tables 6.1.2.1.1-2 through -5", ...
+                "SourceKind", "default_A_no_common_tdra_list", ...
+                "SpecificationURI", sixgr.phy.frame.TimeDomainResourceAllocationCatalog.SpecificationURI);
+        end
+
         function rows = selectedRows()
             %SELECTEDROWS Return the intentionally supported catalog rows.
             %

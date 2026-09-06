@@ -1,13 +1,22 @@
-function rar = decodeMACRAR(bitsOrBytes)
+function rar = decodeMACRAR(bitsOrBytes, raCfg)
 %DECODEMACRAR Decode MAC RAR bytes recovered from MSG2 DL-SCH.
 
 if isempty(bitsOrBytes)
     error("sixgr:mac:ra:EmptyRAR", "Cannot decode empty MAC RAR.");
 end
 raw = bitsOrBytes(:);
-if all(raw == 0 | raw == 1) && numel(raw) > 8
+if ~(isnumeric(raw) || islogical(raw)) || ~isreal(raw) || any(~isfinite(raw))
+    error("sixgr:mac:ra:InvalidMACRARInput", "MAC RAR input must contain finite real bits or octets.");
+end
+if ~isa(raw,"uint8") && all(raw == 0 | raw == 1) && numel(raw) > 8
+    if mod(numel(raw),8) ~= 0
+        error("sixgr:mac:ra:InvalidMACRARInput", "MAC RAR bit input must contain complete octets.");
+    end
     bytes = localBitsToBytes(int8(raw));
 else
+    if any(raw < 0 | raw > 255 | raw ~= fix(raw)) || isa(raw,"int8")
+        error("sixgr:mac:ra:InvalidMACRARInput", "MAC RAR octets must be integers in [0,255]; int8 input is a bit vector.");
+    end
     bytes = uint8(raw);
 end
 if numel(bytes) < 8
@@ -15,12 +24,23 @@ if numel(bytes) < 8
 end
 
 subheader = bytes(1);
+if bitand(subheader,uint8(192)) ~= 64
+    error("sixgr:mac:ra:UnsupportedMACRARSubheader", ...
+        "This parser requires one E=0,T=1 RAPID subPDU; BI and multiple RAR subPDUs are not silently reinterpreted.");
+end
 rapid = double(bitand(subheader, uint8(63)));
 payloadBits = localBytesToBits(bytes(2:8));
 ta = localBitsToInt(payloadBits(2:13));
 grantBits = int8(payloadBits(14:40));
 tcRnti = localBitsToInt(payloadBits(41:56));
-grant = localDecodeGrant(grantBits);
+if payloadBits(1) ~= 0 || ta > 3846 || tcRnti < 1 || tcRnti > 65519
+    error("sixgr:mac:ra:InvalidMACRARField", "Reserved bit, TA command, or Temporary C-RNTI is invalid.");
+end
+if nargin < 2
+    error("sixgr:mac:ra:MissingRARReceiverContext", ...
+        "Interpreting decoded RAR fields requires the receiver's initial UL BWP and PUSCH common context.");
+end
+grant = sixgr.mac.ra.RARULGrantCodec.decode(grantBits, raCfg);
 grant.TemporaryCRNTI = double(tcRnti);
 
 rar = struct();
@@ -35,38 +55,6 @@ rar.Hex = upper(string(reshape(dec2hex(bytes(1:8), 2).', 1, [])));
 rar.PayloadHash = sixgr.rrc.asn1.asn1SHA256Hex(bytes(1:8));
 end
 
-function grant = localDecodeGrant(bits)
-bits = int8(bits(:) ~= 0);
-freqAssignment = localBitsToInt(bits(2:11));
-prbStart = floor(freqAssignment / 32);
-numPRB = mod(freqAssignment, 32);
-if numPRB < 1
-    numPRB = 1;
-end
-timeAssignment = localBitsToInt(bits(12:15));
-mcs = localBitsToInt(bits(16:20));
-tpc = localBitsToInt(bits(21:23));
-grant = struct();
-grant.FrequencyHoppingFlag = logical(bits(1));
-grant.FrequencyAssignment = double(freqAssignment);
-grant.PRBStart = double(prbStart);
-grant.NumPRB = double(numPRB);
-grant.TimeResourceAssignment = double(timeAssignment);
-grant.SymbolStart = 0;
-grant.NumSymbols = 14;
-grant.MCS = double(mcs);
-grant.Modulation = "QPSK";
-grant.TargetCodeRate = 120/1024;
-grant.TPCCommand = double(tpc);
-grant.CSIRequest = logical(bits(24));
-grant.TransformPrecoding = logical(bits(25));
-grant.RV = 0;
-grant.NLayers = 1;
-grant.BitVector = bits;
-grant.ULGrantHex = sixgr.rrc.asn1.bitsToHex(bits);
-grant.Valid = true;
-grant.ValidationStatus = "OK";
-end
 
 function bytes = localBitsToBytes(bits)
 bits = int8(bits(:) ~= 0);

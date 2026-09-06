@@ -45,6 +45,25 @@ for i = 1:numel(seeds)
     assert(istable(rep.E2E.PacketIntegrityTable) && height(rep.E2E.PacketIntegrityTable) >= 3, "Packet integrity table missing.");
     assert(istable(rep.E2E.CheckTable) && ~isempty(rep.E2E.CheckTable), "E2E component checks missing.");
 
+    % Accounting alone can pass an empty run. This bidirectional fixture
+    % must exercise actual grants and receiver CRC outcomes in both paths.
+    G = rep.E2E.SchedulerTraceTable;
+    H = rep.E2E.HARQTraceTable;
+    assert(istable(G) && ~isempty(G) && istable(H) && ~isempty(H), ...
+        "Truth semantic coverage requires nonempty scheduler and HARQ traces.");
+    for direction = ["DL", "UL"]
+        gd = upper(string(G.Direction)) == direction;
+        hd = upper(string(H.Direction)) == direction;
+        assert(any(gd) && any(hd), ...
+            "Seed %d did not execute %s grants and receiver CRC outcomes.", s, direction);
+        assert(all(isfinite(G.TBSBytes(gd)) & G.TBSBytes(gd) > 0) && ...
+            all(isfinite(G.NumPRB(gd)) & G.NumPRB(gd) > 0), ...
+            "Seed %d has invalid %s grant allocation evidence.", s, direction);
+        crc = double(H.CRCResult(hd));
+        assert(all(isfinite(crc) & (crc == 0 | crc == 1)), ...
+            "Seed %d has missing or invalid %s receiver CRC outcomes.", s, direction);
+    end
+
     S = rep.E2E.SummaryTable(1,:);
     assert(lower(string(S.E2EAirModel)) == "truth", "Truth campaign summary must report truth air model.");
     assert(lower(string(S.ExecutionBackend)) == "full_stack_replay_system_coupled", ...

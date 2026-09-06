@@ -611,8 +611,8 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.applyPRACHTrialImpl(state, ueIdx, trialT);
     end
 
-    function result = runFourStepRARuntime(cfg, varargin)
-        result = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntimeImpl(cfg, varargin{:});
+    function varargout = runFourStepRARuntime(cfg, varargin)
+        [varargout{1:nargout}] = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntimeImpl(cfg, varargin{:});
     end
 
     function state = applySRSTrial(state, ueIdx, trialT)
@@ -4676,10 +4676,10 @@ methods(Static, Access=private)
             tf = configuredRequired || ...
                 sixgr.truth.CoupledTruthRuntime.ulRequiresCausalSRS(state);
         elseif direction == "DL"
-            % SRS is a causal DL scheduling authority only when the active
-            % waveform channel can reuse the same static TDD realization.
-            % A moving TDD channel must use direct DL CSI-RS feedback; a
-            % stale/missed SRS must never suppress otherwise-valid DL CSI.
+            % Physical TDD reciprocity and CSI acquisition policy are
+            % separate authorities. Requiring reciprocal SRS must follow
+            % the selected CSI policy, not merely the presence of a shared
+            % fading object. SRS freshness is validated independently.
             tf = configuredRequired && ...
                 sixgr.truth.CoupledTruthRuntime.srsReciprocityFeedsDLFeedback( ...
                 sixgr.util.structGet(state, "CfgMobility", struct()));
@@ -4959,6 +4959,14 @@ methods(Static, Access=private)
         end
         ok = sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
+        fullRA = logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RACompleted", false)) || ...
+            strlength(strtrim(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "FullRAEvidenceSource", "")))) > 0;
+        raTimeBase = string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RASlotTimeBase", ""));
+        msg1SourceSlot = NaN;
+        if ok && fullRA
+            msg1SourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Msg1ScheduledSlot", NaN));
+            slotIdx = sixgr.truth.CoupledTruthRuntime.canonicalRASlot(1, msg1SourceSlot, raTimeBase);
+        end
         if ok
             state.AccessState(ueIdx) = "succeeded";
             state.LastSuccessfulPRACHSlotByUE(ueIdx) = double(slotIdx);
@@ -4988,31 +4996,29 @@ methods(Static, Access=private)
             end
             state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "PRACH_MSG1_DETECTED", "UL", ...
                 "control/csv/prach_trials.csv", "PRACH", slotIdx, ...
-                eventSource, eventNote);
+                eventSource, eventNote, msg1SourceSlot, raTimeBase);
             if fullRA
                 msg2LocalSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
-                    ["Msg2ScheduledSlot","RAResponseWindowStartSlot"], NaN);
+                    ["Msg2ScheduledSlot"], NaN);
                 msg3LocalSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
                     ["Msg3ScheduledSlot"], NaN);
                 msg4LocalSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
                     ["Msg4ScheduledSlot"], NaN);
                 msg2Slot = sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
-                    slotIdx, msg2LocalSlot, 1);
-                msg3Slot = max(msg2Slot + 1, ...
-                    sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
-                    slotIdx, msg3LocalSlot, 2));
-                msg4Slot = max(msg3Slot + 1, ...
-                    sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
-                    slotIdx, msg4LocalSlot, 3));
+                    slotIdx, msg2LocalSlot, raTimeBase);
+                msg3Slot = sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
+                    msg2Slot, msg3LocalSlot, raTimeBase);
+                msg4Slot = sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
+                    msg3Slot, msg4LocalSlot, raTimeBase);
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG2_RAR_DECODED", "DL", ...
                     "control/csv/msg2_rar_trials.csv", "RAR", msg2Slot, ...
-                    eventSource, "Msg2 RAR PDCCH/PDSCH decode observed inside the four-step RA chain.", msg2LocalSlot);
+                    eventSource, "Msg2 RAR PDCCH/PDSCH decode observed inside the four-step RA chain.", msg2LocalSlot, raTimeBase);
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG3_PUSCH_COMPLETED", "UL", ...
                     "control/csv/msg3_pusch_trials.csv", "PUSCH", msg3Slot, ...
-                    eventSource, "Msg3 PUSCH decoded from the RAR UL grant inside the four-step RA chain.", msg3LocalSlot);
+                    eventSource, "Msg3 PUSCH decoded from the RAR UL grant inside the four-step RA chain.", msg3LocalSlot, raTimeBase);
                 state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, "MSG4_CONTENTION_RESOLUTION_COMPLETED", "DL", ...
                     "control/csv/msg4_contention_resolution.csv", "PDSCH", msg4Slot, ...
-                    eventSource, "Msg4 contention-resolution identity matched and final C-RNTI assigned inside the four-step RA chain.", msg4LocalSlot);
+                    eventSource, "Msg4 contention-resolution identity matched and final C-RNTI assigned inside the four-step RA chain.", msg4LocalSlot, raTimeBase);
                 if rrcSetupCompleteRequired
                     rrcOk = logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCSetupRequestDecoded", false)) && ...
                         logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RRCSetupDecoded", false)) && ...
@@ -5029,15 +5035,14 @@ methods(Static, Access=private)
                     end
                     setupCompleteLocalSlot = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
                         ["SetupCompleteScheduledSlot"], NaN);
-                    setupCompleteSlot = max(msg4Slot + 1, ...
-                        sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
-                        slotIdx, setupCompleteLocalSlot, 4));
+                    setupCompleteSlot = sixgr.truth.CoupledTruthRuntime.canonicalRASlot( ...
+                        msg4Slot, setupCompleteLocalSlot, raTimeBase);
                     state = sixgr.truth.CoupledTruthRuntime.recordInitialAccessEvent(state, ueIdx, ...
                         "RRC_SETUP_COMPLETE_ACCEPTED", "UL", ...
                         "control/csv/rrc_setup_complete.csv", "RRCSetupComplete", ...
                         setupCompleteSlot, eventSource, ...
                         "SRB1 UL-DCCH RRCSetupComplete was recovered from PUSCH/UL-SCH, identity and transaction matched, and both endpoints entered RRC_CONNECTED.", ...
-                        setupCompleteLocalSlot);
+                        setupCompleteLocalSlot, raTimeBase);
                 end
             end
         else
@@ -5094,7 +5099,7 @@ methods(Static, Access=private)
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
     end
 
-    function result = runFourStepRARuntimeImpl(cfg, varargin)
+    function [result, continuation] = runFourStepRARuntimeImpl(cfg, varargin)
         p = inputParser;
         p.addParameter("RunFolder", "", @(x)ischar(x) || isstring(x));
         p.addParameter("RunId", "ra_coupled_runtime", @(x)ischar(x) || isstring(x));
@@ -5119,8 +5124,29 @@ methods(Static, Access=private)
         p.addParameter("InitialULChannelState", struct(), @(x)isempty(x) || isstruct(x));
         p.addParameter("WriteArtifacts", false, @(x)islogical(x) || isnumeric(x));
         p.addParameter("RunNegativeSuite", false, @(x)islogical(x) || isnumeric(x));
+        p.addParameter("StopAfterStage", "complete_attempt", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
+        p.addParameter("Continuation", struct(), @(x)isstruct(x) && isscalar(x));
+        p.addParameter("StageAction", "execute", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
+        p.addParameter("ReceiveThroughTime_s", Inf, @(x)isnumeric(x) && isreal(x) && ...
+            isscalar(x) && ~isnan(x) && x >= 0);
         p.parse(varargin{:});
         opt = p.Results;
+        if nargout < 2 && (isfinite(opt.ReceiveThroughTime_s) || ...
+                strcmpi(string(opt.StageAction), "prepare_next_stage") || ...
+                ~any(strcmpi(string(opt.StopAfterStage), ["complete_attempt", "RRCSetupComplete"])))
+            error("sixgr:phy:ra:MissingRAContinuationOutput", ...
+                "The coupled stage API requires a second output for pending decoded state.");
+        end
+        resuming = ~isempty(fieldnames(opt.Continuation));
+        if resuming && isfield(opt.Continuation, "Options")
+            % Defaults must not change an existing UE/run identity, nor
+            % replace its decoded SIB1 with an empty parser default.
+            for name = string(p.UsingDefaults)
+                if isfield(opt.Continuation.Options, name) && ~any(name == ["StopAfterStage", "StageAction"])
+                    opt.(name) = opt.Continuation.Options.(name);
+                end
+            end
+        end
 
         cfgRuntime = cfg;
         cfgRuntime = sixgr.util.structSet(cfgRuntime, "random_access.use_runtime_channel", true);
@@ -5130,7 +5156,13 @@ methods(Static, Access=private)
             cfgRuntime = sixgr.util.structSet(cfgRuntime, "lls6g.userContext.RuntimeServingCell", double(opt.CellId));
             cfgRuntime = sixgr.util.structSet(cfgRuntime, "lls6g.userContext.RuntimeServingCellIndex", double(opt.CellId));
         end
-        result = sixgr.phy.ra.runFourStepRA(cfgRuntime, ...
+        channelArgs = {};
+        for name = ["InitialDLChannelState", "InitialULChannelState", "RuntimeStageWaveforms"]
+            if ~resuming || ~ismember(name, string(p.UsingDefaults))
+                channelArgs(end+1:end+2) = {char(name), opt.(name)}; %#ok<AGROW>
+            end
+        end
+        [result, continuation] = sixgr.phy.ra.runFourStepRA(cfgRuntime, ...
             "RunFolder", opt.RunFolder, ...
             "RunId", opt.RunId, ...
             "ScenarioName", opt.ScenarioName, ...
@@ -5141,15 +5173,16 @@ methods(Static, Access=private)
             "UseRuntimeChannel", true, ...
             "RuntimeNoiseSNR_dB", double(opt.RuntimeNoiseSNR_dB), ...
             "RuntimeSlot", double(opt.RuntimeSlot), ...
-            "RuntimeStageWaveforms", opt.RuntimeStageWaveforms, ...
             "RequireRuntimeStageWaveforms", logical(opt.RequireRuntimeStageWaveforms), ...
             "SIB1Recovery", opt.SIB1Recovery, ...
             "RequireDecodedSIB1", logical(opt.RequireDecodedSIB1), ...
-            "InitialDLChannelState", opt.InitialDLChannelState, ...
-            "InitialULChannelState", opt.InitialULChannelState, ...
             "AllowRuntimeStageWaveformComposition", logical(opt.AllowRuntimeStageWaveformComposition), ...
             "RunNegativeSuite", logical(opt.RunNegativeSuite), ...
-            "WriteArtifacts", logical(opt.WriteArtifacts));
+            "WriteArtifacts", logical(opt.WriteArtifacts), ...
+            "StopAfterStage", opt.StopAfterStage, ...
+            "StageAction", opt.StageAction, ...
+            "ReceiveThroughTime_s", opt.ReceiveThroughTime_s, ...
+            "Continuation", opt.Continuation, channelArgs{:});
     end
 
     function state = updateTimingAdvanceFromReceiverTrialImpl(state, ueIdx, row, sourceLabel)
@@ -6093,7 +6126,12 @@ methods(Static, Access=private)
             ["lls6g.mimo.reciprocity_mode","mimo.reciprocity_mode"]);
 
         hasTDDReciprocity = duplexMode == "tdd" || reciprocityMode == "tdd" || contains(orientation, "tdd");
-        hasJointCSI = contains(orientation, "reciprocity") || contains(csiMode, "joint") || contains(csiMode, "dl_ul");
+        hasJointCSI = contains(csiMode, "joint") || contains(csiMode, "dl_ul") || csiMode == "ul_based";
+        if strlength(csiMode) == 0
+            % Older validated configs may declare only the orientation.
+            % Never let that orientation override an explicit DL-only mode.
+            hasJointCSI = contains(orientation, "reciprocity");
+        end
         runtimeReciprocityAvailable = ...
             sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg);
         tf = logical(hasTDDReciprocity && hasJointCSI && ...
@@ -6596,10 +6634,11 @@ methods(Static, Access=private)
         end
     end
 
-    function state = recordInitialAccessEvent(state, ueIdx, eventName, direction, sourceArtifact, stageName, slotIdx, valueSource, notes, localRASlot)
+    function state = recordInitialAccessEvent(state, ueIdx, eventName, direction, sourceArtifact, stageName, slotIdx, valueSource, notes, sourceRASlot, raTimeBase)
         if nargin < 10
-            localRASlot = NaN;
+            sourceRASlot = NaN;
         end
+        if nargin < 11, raTimeBase = ""; end
         if ~(isfield(state, "InitialAccessLifecycleTraceTable") && istable(state.InitialAccessLifecycleTraceTable))
             state.InitialAccessLifecycleTraceTable = struct2table(repmat(sixgr.truth.CoupledTruthRuntime.emptyInitialAccessLifecycleRow(), 0, 1));
         end
@@ -6626,7 +6665,8 @@ methods(Static, Access=private)
             row.FrameSlot = NaN;
         end
         row.CanonicalSlot = double(slotIdx);
-        row.LocalRASlot = double(localRASlot);
+        row.SourceRASlot = double(sourceRASlot);
+        row.SourceRASlotTimeBase = string(raTimeBase);
         row.Slot = double(slotIdx);
         row.Time_s = max(0, double(slotIdx) - 1) * double(sixgr.util.structGet(state, "SlotDuration_s", NaN));
         row.Direction = char(direction);
@@ -6640,6 +6680,9 @@ methods(Static, Access=private)
         row.ValueRole = 'measured_runtime_procedure_event';
         row.ValueStatus = 'available_runtime_observation';
         row.ValueDefinition = 'initial-access event timestamp recorded from the slot-coupled runtime evidence path';
+        if strlength(string(raTimeBase)) > 0
+            row.ValueDefinition = 'RA source-waveform slot coordinate with explicit index-base conversion; not an intra-slot decoder-completion timestamp';
+        end
         row.SlotDuration_s = double(sixgr.util.structGet(state, "SlotDuration_s", NaN));
         row.ProcedureStartSlot = NaN;
         row.ProcedureEndSlot = NaN;
@@ -6781,27 +6824,32 @@ methods(Static, Access=private)
         tf = any(mask);
     end
 
-    function canonicalSlot = canonicalRASlot(prachCanonicalSlot, candidateSlot, minimumOffset)
-        prachCanonicalSlot = double(prachCanonicalSlot);
+    function canonicalSlot = canonicalRASlot(previousCanonicalSlot, candidateSlot, timeBase)
+        previousCanonicalSlot = double(previousCanonicalSlot);
         candidateSlot = double(candidateSlot);
-        minimumOffset = max(1, round(double(minimumOffset)));
-        if ~(isscalar(prachCanonicalSlot) && isfinite(prachCanonicalSlot) && prachCanonicalSlot >= 1)
+        if ~(isscalar(previousCanonicalSlot) && isfinite(previousCanonicalSlot) && ...
+                previousCanonicalSlot >= 1 && previousCanonicalSlot == fix(previousCanonicalSlot))
             error("sixgr:truth:InvalidPRACHCanonicalSlot", ...
-                "PRACH canonical slot must be a positive finite 1-based slot.");
+                "The preceding canonical slot must be a positive finite integer 1-based slot.");
         end
-        if ~(isscalar(candidateSlot) && isfinite(candidateSlot))
-            canonicalSlot = prachCanonicalSlot + minimumOffset;
-        elseif candidateSlot > prachCanonicalSlot
-            % The RA producer already supplied a canonical absolute slot.
-            canonicalSlot = round(candidateSlot);
-        else
-            % Bundled four-step RA producers use a local Msg1=0 time base.
-            canonicalSlot = prachCanonicalSlot + max(minimumOffset, round(candidateSlot));
+        if ~(isscalar(timeBase) && any(string(timeBase) == ["absolute_zero_based", "absolute_one_based"]))
+            error("sixgr:truth:MissingRASlotTimeBase", ...
+                "RA evidence must declare absolute_zero_based or absolute_one_based slot coordinates.");
         end
-        if canonicalSlot <= prachCanonicalSlot
+        firstSlot = double(string(timeBase) == "absolute_one_based");
+        if ~(isscalar(candidateSlot) && isfinite(candidateSlot) && ...
+                candidateSlot >= firstSlot && candidateSlot == fix(candidateSlot))
+            error("sixgr:truth:InvalidRAStageSlot", ...
+                "Executed RA stage evidence requires a finite integer source slot in its declared time base.");
+        end
+        canonicalSlot = candidateSlot + double(string(timeBase) == "absolute_zero_based");
+        % Slot resolution cannot establish intra-slot processing order. Do
+        % not invent another slot for equal-slot events; PHY allocation and
+        % sample-time validation own the finer-grained causality checks.
+        if canonicalSlot < previousCanonicalSlot
             error("sixgr:truth:NonCausalRASlot", ...
-                "Translated RA slot %g must follow PRACH canonical slot %g.", ...
-                canonicalSlot, prachCanonicalSlot);
+                "RA source slot %g predates preceding canonical slot %g; do not shift measured events.", ...
+                canonicalSlot, previousCanonicalSlot);
         end
     end
 
@@ -14908,7 +14956,8 @@ methods(Static, Access=private)
             "Step", NaN, "SweepPointIndex", NaN, ...
             "UEIndex", NaN, "RNTI", NaN, "ServingCell", NaN, ...
             "Frame", NaN, "FrameSlot", NaN, "CanonicalSlot", NaN, ...
-            "LocalRASlot", NaN, "Slot", NaN, "Time_s", NaN, ...
+            "LocalRASlot", NaN, "SourceRASlot", NaN, "SourceRASlotTimeBase", "", ...
+            "Slot", NaN, "Time_s", NaN, ...
             "Direction", "", "StageName", "", "EventName", "", "LifecycleState", "", "StageStatus", "", ...
             "SourceArtifact", "", "SourceRow", NaN, ...
             "ValueSource", "", "ValueRole", "", "ValueStatus", "", "ValueDefinition", "", ...

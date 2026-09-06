@@ -3,6 +3,7 @@ function pusch = localPUSCHConfigFromGrant(raCfg, grant)
 pusch = nrPUSCHConfig;
 pusch.PRBSet = double(grant.PRBStart):(double(grant.PRBStart) + double(grant.NumPRB) - 1);
 pusch.SymbolAllocation = [double(grant.SymbolStart) double(grant.NumSymbols)];
+pusch.MappingType = char(string(sixgr.util.structGet(grant, "MappingType", "A")));
 pusch.Modulation = char(string(grant.Modulation));
 pusch.NumLayers = double(grant.NLayers);
 pusch.RNTI = double(raCfg.TempCRNTI);

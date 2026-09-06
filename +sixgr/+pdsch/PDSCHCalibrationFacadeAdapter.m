@@ -1110,8 +1110,9 @@ request.SearchSpaceId = double(sixgr.util.structGet(grant, ...
 request.CORESETId = double(sixgr.util.structGet(grant, ...
     "PDCCHGrantCORESETId", sixgr.util.structGet(grant, ...
     "CORESETID", NaN)));
-request.PDCCHAbsoluteSlot = double(absoluteSlot);
-request.K0 = 0;
+timing = sixgr.pdsch.resolveSchedulerPDSCHTiming(grant, absoluteSlot);
+request.PDCCHAbsoluteSlot = timing.PDCCHAbsoluteSlot;
+request.K0 = timing.K0;
 request.DecodedRNTI = request.RNTI;
 request.DCICRCPass = true;
 request.DCIRNTIMatch = true;
