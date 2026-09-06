@@ -79,7 +79,41 @@ the physical scheduler overlap. Export regression session 29847 also exited
 are in `logs/pbch_evidence_export_regressions_20260907.log`. The full `testAll`
 suite was not run, following the user's bounded-test instruction.
 
-## Ordered work still required (not implemented by the evidence repair)
+## Random-access receive-boundary repair
+
+`runFourStepRA` now accepts a `WaveformObservationBuffer` in each existing
+`RuntimeStageWaveforms.<Stage>RxWaveform` field. Before decoding, it checks
+the actual sample rate, scheduled absolute sample origin, window extent and
+complete contiguous received coverage. The existing receive-time bound still
+prevents early decoding even when a complete buffer is supplied. This path
+does not execute TX/RF/noise/channel processing again. It publishes observed
+sample coordinates separately from channel/noise provenance; coverage alone
+does not assert that fading or noise was applied. Non-finite or malformed
+legacy numeric RX inputs are now rejected rather than passed to a receiver.
+
+The checkpoint contract is `ra_stage_continuation_v3`, reflecting the added
+observation schema. Old v2 checkpoints are rejected; begin a fresh attempt
+instead of silently interpreting old state under the new contract.
+
+Focused session 3796 exited 0, logged in
+`logs/ra_received_observation_boundary_20260907.log`:
+
+- `testRAReceivedObservationBoundary`: all five actual coded TDD stages
+  decoded through externally supplied unit-channel sample buffers; incomplete
+  coverage, wrong origin/rate/length, malformed values and stale checkpoints
+  were rejected. This unit-channel fixture does not claim RF qualification.
+- `testWaveformObservationBuffer`, `testWaveformReceiveDispatcher`, and
+  `testFourStepRARequireRuntimeWaveformsFailClosed` passed.
+- `testTDDCausalFourStepRARuntimeTiming(15)` passed the existing measured
+  CDL-A/thermal-noise RA chain at the later PRACH epoch. This remains an
+  isolated RA test, not the combined SSB/TRS/access/data scheduler.
+
+The main scheduler still must prepare and propagate all due contributors
+chronologically and dispatch actual received samples into these buffers.
+It has not yet been wired to this new receive-boundary path. No replacement
+full TDD run or instrument playback was launched following this patch.
+
+## Ordered work still required
 
 1. **P0: main scheduler sample ownership.** Replace eager multi-slot physical
    execution with prepared TX contributions, one chronological node/carrier
@@ -92,8 +126,8 @@ suite was not run, following the user's bounded-test instruction.
    rewind, clamp clocks, clone future tails or disable conflicting resources.
 2. **P0: RA reception integration.** The existing prepared-stage continuation
    API does not yet connect its waveform to the common sample owner. Its
-   bare `RuntimeStageWaveforms` input also lacks the typed sample-clock,
-   receiver-noise and transport evidence of SSB/TRS/PDCCH received buffers.
+   typed receive-buffer path now validates sample-clock and coverage, but
+   still needs the common owner's receiver-noise and transport evidence.
    Complete each stage from the actual stream, then expose decoded RAR,
    timing advance, contention identity and RRC state at the correct deadline.
 3. **P0: reference-SNR authority.** The current YAML resolves physical thermal

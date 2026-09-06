@@ -11,6 +11,9 @@ function [result, continuation] = runFourStepRA(cfg, varargin)
 % RuntimeSlot is the one-based scheduler slot at which a new attempt starts.
 % ReceiveThroughTime_s bounds stage reception on the absolute runtime clock.
 % A stage whose complete sample interval is not due remains prepared.
+% RuntimeStageWaveforms can supply a WaveformObservationBuffer per stage:
+% its rate, absolute origin and received coverage must match the preparation.
+% Such completion does not propagate samples or advance channel/RF state.
 % This is a stage boundary API, not yet a per-sample/slot waveform scheduler.
 
 sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ra.runFourStepRA", ...
@@ -71,7 +74,7 @@ if ~isempty(fieldnames(opt.Continuation))
         "Msg1Tx", "Detection", "TimingAdvance", "Msg2Tx", "PDCCHInfo", "PDSCHRx2", "RARRx", ...
         "GrantRx", "Msg3Tx", "Msg3Rx", "Msg3Decoded", "UEIdentity", "Msg4Tx", ...
         "ResumePhase", "PreparedContext"];
-    if ~all(isfield(saved, required)) || saved.ContractVersion ~= "ra_stage_continuation_v2" || ...
+    if ~all(isfield(saved, required)) || saved.ContractVersion ~= "ra_stage_continuation_v3" || ...
             ~isscalar(saved.NextStage) || ~ismember(saved.NextStage, 1:5) || ...
             ~isscalar(saved.ResumePhase) || ~any(saved.ResumePhase == ["decoded", "prepared"]) || ...
             (saved.NextStage == 1 && saved.ResumePhase ~= "prepared")
@@ -776,7 +779,7 @@ end
                 "ExecutionStatus", "generated_not_propagated", ...
                 "WaveformPlane", "after_rach_power_and_ta_before_runtime_power_context_and_tx_rf");
         end
-        checkpoint = struct("ContractVersion", "ra_stage_continuation_v2", ...
+        checkpoint = struct("ContractVersion", "ra_stage_continuation_v3", ...
             "ResumePhase", phase, "PreparedContext", preparedContext, ...
             "InputConfig", inputConfig, "Config", cfg, "Options", opt, "NextStage", next, ...
             "Result", pending, "RAConfig", raCfg, "Timing", raTiming, "Runtime", runtime, ...
@@ -1165,11 +1168,39 @@ rxWave = txWave;
 
 [provided, providedField] = localRuntimeProvidedWaveform(runtime.StageWaveforms, stageName);
 if ~isempty(provided)
-    localAssertRuntimeWaveformCompatible(provided, txWave, stageName, providedField);
-    rxWave = provided;
+    if isa(provided, 'sixgr.phy.waveform.WaveformObservationBuffer')
+        [startTime, ~] = localStageSampleInterval(cfg, raCfg, stageName, txWave, txStruct);
+        fs = localStageSampleRate(localStageTxInfo(txStruct), txStruct);
+        startSample = startTime * fs;
+        if abs(startSample-round(startSample)) > 8*eps(max(1,abs(startSample)))
+            error("sixgr:phy:ra:RAObservationOriginOffSampleGrid", ...
+                "Stage %s origin must lie on its actual waveform sample clock.", stageName);
+        end
+        if provided.SampleRateHz ~= fs || ...
+                provided.EndSampleExclusive-provided.StartSample ~= size(txWave,1)
+            error("sixgr:phy:ra:RAObservationLayoutMismatch", ...
+                "Stage %s receive rate and extent must match its prepared waveform.", stageName);
+        end
+        if provided.StartSample ~= round(startSample)
+            error("sixgr:phy:ra:RAObservationOriginMismatch", ...
+                "Stage %s requires received samples from its scheduled absolute origin.", stageName);
+        end
+        % readComplete rejects a planned but incompletely received window.
+        % No channel, TX, RF or noise operation belongs on this path.
+        rxWave = provided.readComplete();
+        row.ObservationStartSample = provided.StartSample;
+        row.ObservationEndSampleExclusive = provided.EndSampleExclusive;
+        row.ObservationSampleRateHz = provided.SampleRateHz;
+        row.ObservationCompletionTime_s = provided.EndSampleExclusive / provided.SampleRateHz;
+        row.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
+        row.WaveformSource = "provided_contiguous_received_sample_buffer";
+    else
+        rxWave = provided;
+        row.WaveformSource = "provided_runtime_stage_waveform";
+    end
+    localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, providedField);
     row.RxSampleCount = size(rxWave, 1);
     row.RxPortCount = size(rxWave, 2);
-    row.WaveformSource = "provided_runtime_stage_waveform";
     row.ProvidedWaveformField = providedField;
     row.RuntimeStageWaveformUsed = true;
     row.SelfLoopWaveformUsed = false;
@@ -1617,7 +1648,12 @@ for i = 1:numel(candidates)
     f = char(candidates(i));
     if isfield(stageWaveforms, f)
         candidate = stageWaveforms.(f);
-        if isnumeric(candidate) && ~isempty(candidate)
+        if ~isempty(candidate)
+            if ~(isnumeric(candidate) || ...
+                    (isa(candidate,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(candidate)))
+                error("sixgr:phy:ra:BadRuntimeStageWaveform", ...
+                    "Runtime stage %s needs numeric RX samples or one received observation buffer.", stageName);
+            end
             wave = candidate;
             fieldName = string(f);
             return;
@@ -1627,9 +1663,10 @@ end
 end
 
 function localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, fieldName)
-if ~(isnumeric(rxWave) && ndims(rxWave) <= 2)
+if ~((isa(rxWave,'single') || isa(rxWave,'double')) && ...
+        ismatrix(rxWave) && all(isfinite(rxWave(:))))
     error("sixgr:phy:ra:BadRuntimeStageWaveform", ...
-        "Runtime waveform %s for %s must be a numeric sample-by-port matrix.", string(fieldName), string(stageName));
+        "Runtime waveform %s for %s must be a finite floating-point sample-by-port matrix.", string(fieldName), string(stageName));
 end
 if size(rxWave, 1) ~= size(txWave, 1)
     error("sixgr:phy:ra:RuntimeStageWaveformLengthMismatch", ...
@@ -1921,6 +1958,9 @@ row = struct( ...
     "StageName", "", "Direction", "", "StageSlot", NaN, ...
     "RuntimeIntegrationMode", "", "RuntimeTransportMode", "", ...
     "WaveformSource", "", "ProvidedWaveformField", "", ...
+    "ObservationStartSample", NaN, "ObservationEndSampleExclusive", NaN, ...
+    "ObservationSampleRateHz", NaN, "ObservationCompletionTime_s", NaN, ...
+    "ObservationCoverageSource", "", ...
     "RuntimeStageWaveformUsed", false, "SelfLoopWaveformUsed", false, ...
     "RuntimeChannelStateUsed", false, "ChannelFadingApplied", false, ...
     "ChannelFadingExecutionStatus", "", "RuntimeChannelLinkKey", "", ...
