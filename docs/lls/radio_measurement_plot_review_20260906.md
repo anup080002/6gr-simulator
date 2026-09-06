@@ -1553,3 +1553,29 @@ The current cell-search caller still appends its completed one-shot capture.
 Incremental slot dispatch and continuous RF state remain to be integrated;
 buffer correctness alone does not resolve early acquisition completion in
 the scenario. No replacement scenario or full qualification is claimed.
+
+### Phase-noise process partition invariance repaired
+
+The previous `testPhaseNoiseChunkContinuity` only checked a phase identity
+and sample count; it did not compare chunked execution with a full waveform.
+It now compares every complex output sample, generated phase sample, final
+phase, and clock across irregular chunks against an independent one-shot
+process using the same oscillator profile and seed.
+
+The strengthened baseline (session 37794,
+`logs/phase_noise_chunk_baseline_20260906.log`) exited 1: a one-sample,
+multi-chain chunk crashed in correlation reporting. `PhaseNoiseProcess`
+now reports unavailable correlation as NaN when there are insufficient
+samples. Component-specific Threefry substreams and time-major innovation
+draws also make the seeded phase realization independent of chunk partition,
+without resetting filter state or changing the configured mask/correlation.
+This intentionally changes the old seeded realization, not its configured
+stochastic model; old and new run artifacts must retain their code versions.
+
+Focused session 18206 exited 0 with `PHASE_NOISE_CHUNK_CONTINUITY_PASS` in
+`logs/phase_noise_chunk_fixed_20260906.log`. Five selected phase-noise tests
+were actually executed as MATLAB TestSuite entries. The strengthened test
+covers a one-sample chunk and boundaries at 17, 255, 512, and 1024 samples
+over two RF chains. These checks prove process-level partition invariance;
+they are not a full RF spectral-mask/PSD qualification or a scenario pass.
+Persistent RF process ownership in the coupled caller remains unintegrated.

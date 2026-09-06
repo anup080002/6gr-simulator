@@ -30,7 +30,25 @@ function testSCOAntiAlias(t), localSCOCheck(t); end
 function testResamplerChunkContinuity(t), localSCOChunkCheck(t); end
 function testPhaseNoiseMaskPSD(t), localPhaseNoiseCheck(t); end
 function testPhaseNoiseIntegratedVariance(t), localPhaseNoiseCheck(t); end
-function testPhaseNoiseChunkContinuity(t), localPhaseNoiseCheck(t); end
+function testPhaseNoiseChunkContinuity(t)
+p=localPNProfile(0.5);
+whole=sixgr.rf.runtime.PhaseNoiseProcess(p,2,1);
+chunks=sixgr.rf.runtime.PhaseNoiseProcess(p,2,1);
+x=ones(1024,2);
+[expected,reference]=whole.apply(x,1);
+actual=zeros(size(x),'like',expected);
+actualPhase=zeros(size(x));
+first=1;
+for last=[1,17,255,512,1024]
+    [actual(first:last,:),trace]=chunks.apply(x(first:last,:),1);
+    actualPhase(first:last,:)=trace.Phase_rad;
+    first=last+1;
+end
+verifyEqual(t,actual,expected,"AbsTol",1e-12);
+verifyEqual(t,actualPhase,reference.Phase_rad,"AbsTol",1e-12);
+verifyEqual(t,chunks.SampleIndex,whole.SampleIndex);
+verifyEqual(t,chunks.Phase_rad,whole.Phase_rad,"AbsTol",1e-12);
+end
 function testPhaseNoiseLOCorrelation(t), localPhaseNoiseCorrelationCheck(t); end
 function testPhaseNoiseCPEICI(t), localPhaseNoiseCheck(t); end
 function testIQAnalyticalModel(t), localIQCheck(t); end

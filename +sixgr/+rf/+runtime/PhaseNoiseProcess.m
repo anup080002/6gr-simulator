@@ -9,7 +9,7 @@ classdef PhaseNoiseProcess < handle
     end
 
     properties(Access=private)
-        Stream
+        ComponentStreams
         PoleCoefficients double
         ComponentWeights double
         ComponentState double
@@ -25,13 +25,20 @@ classdef PhaseNoiseProcess < handle
             obj.Profile=sixgr.rf.runtime.PhaseNoiseProfile.validate(profile);
             obj.Phase_rad=zeros(1,chainCount);
             obj.StateEpoch=stateEpoch;
-            obj.Stream=RandStream("Threefry","Seed",double(obj.Profile.Seed));
             correlationState=sixgr.rf.runtime.PhaseNoiseCorrelationState. ...
                 factor(chainCount,double(obj.Profile.LOCorrelation)); %#ok<NASGU>
             [obj.PoleCoefficients,obj.ComponentWeights]= ...
                 sixgr.rf.runtime.PhaseNoiseProcess. ...
                 designMaskComponents(obj.Profile);
             obj.ComponentState=zeros(numel(obj.PoleCoefficients),chainCount);
+            % Independent component substreams prevent interleaving draws
+            % differently when the same signal is divided into chunks.
+            obj.ComponentStreams=cell(numel(obj.PoleCoefficients),1);
+            for component=1:numel(obj.PoleCoefficients)
+                stream=RandStream("Threefry","Seed",double(obj.Profile.Seed));
+                stream.Substream=component;
+                obj.ComponentStreams{component}=stream;
+            end
         end
 
         function [y,trace]=apply(obj,x,expectedEpoch)
@@ -48,7 +55,10 @@ classdef PhaseNoiseProcess < handle
             phase=zeros(n,chains);
             nextState=zeros(size(obj.ComponentState));
             for component=1:numel(obj.PoleCoefficients)
-                independent=randn(obj.Stream,n,chains);
+                % MATLAB fills columns first: draw chains-by-time, then
+                % transpose, so every sample owns the same random values
+                % regardless of the caller's chunk lengths.
+                independent=randn(obj.ComponentStreams{component},chains,n).';
                 innovations=sixgr.rf.runtime.PhaseNoiseCorrelationState.apply( ...
                     independent,rho);
                 pole=obj.PoleCoefficients(component);
@@ -65,8 +75,10 @@ classdef PhaseNoiseProcess < handle
             obj.Phase_rad=phase(end,:);
             obj.SampleIndex=obj.SampleIndex+n;
             y=x.*cast(exp(1j.*phase),"like",x);
-            measuredCorrelation=1;
-            if chains>1
+            measuredCorrelation=NaN;
+            if n>1 && chains==1
+                measuredCorrelation=1;
+            elseif n>1
                 C=corrcoef(phase);
                 measuredCorrelation=mean(C(triu(true(chains),1)),"omitnan");
             end
