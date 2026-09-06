@@ -2238,3 +2238,49 @@ the eager SSB capture still conflicts with the first TRS window, and TRS
 tracking/measurement availability is still applied at the source slot rather
 than deferred to complete reception. Avoiding duplicate windows does not
 repair either boundary and must not be used to claim the scenario passes.
+
+## TRS received-result delivery boundary
+
+The premature TRS result-availability issue noted above is now repaired at
+the runtime consumer boundary. `runTRSTracking` exposes its actual complete
+received-buffer coverage and sample clock. The main adapter carries those
+fields into the canonical row and queues the row together with its original
+UE/cell configuration and observed RE table. Neither the primary TRS table,
+grid evidence, tracking object nor reference-measurement availability is
+updated before the first slot-start boundary at or after reception ends.
+
+At delivery, source slot/frame remain attached to the measurement, while
+tracking update time, last-success slot and `AvailableSlot` use the actual
+delivery boundary. An observation ending one sample after a boundary is not
+rounded back into that boundary. Wrong owners, duplicate pending results,
+invalid sample clocks and runtime-tagged measurements with omitted clocks
+are rejected. Actual crashed attempts remain explicit failures without
+invented observation times. Serving-cell changes and finite-run/sweep
+boundaries preserve undelivered items as censored state evidence rather than
+promoting them to available measurements.
+
+Session 34241 exited 0 with `TRS_DELIVERY_FOCUSED_PASS` in
+`logs/trs_result_delivery_20260906.log`: `testTRSResultDelivery`,
+`testBroadcastResultDelivery`, and `testTRSReceiveCompletion` passed. The
+first two are state-machine fixtures, not PHY conformance evidence; the
+third compared canonical receiver completion on 46,080 actual samples.
+
+Session 41133 exited 0 with `TRS_MEASURED_DELIVERY_FOCUSED_PASS` in
+`logs/trs_measured_result_delivery_20260906.log`: the queue/finite-horizon
+checks, `testTRSMeasuredResultDelivery`, and the existing runtime-exception
+evidence regression passed. The measured test executes real noisy CDL
+SSB/TRS reception with TRS at absolute slots 12 and 17. Its actual NMSE,
+timing and CFO measurements are withheld through slot 18, delivered at slot
+19, and preserved unchanged in the receiver tracking object. The canonical
+reference-measurement row retains producer slot 13 and availability slot 19.
+
+Session 42053 exited 0 with `TRS_DELIVERY_ADAPTER_FINAL_PASS`, validating
+production-adapter parsing and rerunning the TRS/broadcast delivery guards.
+Session 68841 exited 0 with `TRS_DELIVERY_CLOCK_GUARD_PASS` in
+`logs/trs_delivery_clock_guard_20260906.log` after adding explicit rejection
+of runtime-tagged non-crash rows that omit their observation clock.
+The full main scheduler still eagerly executes overlapping physical sample
+windows; queuing completed results does not fix that channel ownership
+defect. Shared-stream integration, full scenario qualification and broader
+regression coverage remain required. No new 12 dB scenario, FDD waveform
+run, full testAll, optional windowing or plot expansion was performed.

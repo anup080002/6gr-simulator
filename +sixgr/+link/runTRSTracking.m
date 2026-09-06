@@ -280,6 +280,7 @@ try
     out.ObservationEndSampleExclusive = observation.EndSampleExclusive;
     out.ObservationSampleRateHz = observation.SampleRateHz;
     out.ObservationCompletionTime_s = observation.EndSampleExclusive / observation.SampleRateHz;
+    out.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
     out.AirInterfaceObservation_ms = 1e3 * ...
         (observation.EndSampleExclusive-observation.StartSample) / observation.SampleRateHz;
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;

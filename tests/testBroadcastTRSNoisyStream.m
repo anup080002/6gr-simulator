@@ -1,4 +1,4 @@
-function ok = testBroadcastTRSNoisyStream(trsRuntimeSlot)
+function [ok,evidence] = testBroadcastTRSNoisyStream(trsRuntimeSlot)
 % Actual composed TDD samples, noisy CDL stream and completed receivers.
 % This is not qualification of the main slot scheduler or full RF chain.
 setup6GRSimToolkit('Verbose',false);
@@ -112,6 +112,8 @@ tracked = sixgr.link.completeTRSReception(trs,observations.trs,trsReplay,truth.R
 assert(tracked.Ok && tracked.StrictOk && ~tracked.Crash, ...
     'Shared noisy stream TRS receiver failed: %s',tracked.FailureReason);
 assert(isfinite(tracked.MeasuredTrialSINR_dB) && isfinite(tracked.NMSE_dB));
+evidence = struct('TRS',tracked,'Runtime',runtime,'Config',cfg, ...
+    'SourceSlot',trsRuntimeSlot,'SampleRateHz',fs);
 assert(truth.RuntimeChannelState.CurrentSampleIndex==clockBefore, ...
     'Completing received observations must not propagate their channel again.');
 stale = truth;

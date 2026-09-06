@@ -283,6 +283,7 @@ methods(Static)
             "independent_snr_point_boundary_state_reset", ...
             "independent_sweep_point");
         state = sixgr.truth.BroadcastResultDelivery.censorAtSweepBoundary(state);
+        state = sixgr.truth.TRSResultDelivery.censorAtSweepBoundary(state);
         state.LastDueFeedbackProcessedSlot = NaN;
         state.LatestDLFeedback = repmat( ...
             sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow(), nUsers, 1);
@@ -927,6 +928,8 @@ methods(Static)
         end
         state = sixgr.truth.CoupledTruthRuntime.rightCensorPendingCausalEventsImpl( ...
             state, round(double(terminalSlot)), string(reason), "terminal_horizon");
+        state = sixgr.truth.TRSResultDelivery.censorAtBoundary(state, ...
+            "terminal_horizon_before_trs_delivery:" + string(reason));
     end
 
     function [value, source] = resolveReportableServingRSRPRuntime( ...
@@ -6158,11 +6161,12 @@ methods(Static, Access=private)
         if ~(isfinite(servingCell) && servingCell >= 1 && servingCell <= numel(sixgr.util.structGet(state, "TRSValidityStateByCell", strings(0, 1))))
             return;
         end
+        availableSlot = sixgr.truth.TRSResultDelivery.deliverySlot(state,trialT);
         state = sixgr.truth.CoupledTruthRuntime.ensureReceiverTrackingStateImpl(state);
         row = trialT(end, :);
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         estDopplerHz = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "EstimatedDopplerHz", NaN));
-        state.LastTRSObservedSlotByCell(servingCell) = double(slotIdx);
+        state.LastTRSObservedSlotByCell(servingCell) = double(availableSlot);
         rowPass = sixgr.truth.CoupledTruthRuntime.trialPassed(trialT);
         gatingActive = logical(sixgr.util.structGet(state.ControlGating, "TRSRequired", false));
         strictEvidenceOk = sixgr.truth.CoupledTruthRuntime.trsRuntimeEvidenceComplete(row);
@@ -6170,7 +6174,7 @@ methods(Static, Access=private)
         if ok
             state.TRSValidityStateByCell(servingCell) = "valid";
             state.TrackingEligibilityByCell(servingCell) = true;
-            state.LastSuccessfulTRSSlotByCell(servingCell) = double(slotIdx);
+            state.LastSuccessfulTRSSlotByCell(servingCell) = double(availableSlot);
         else
             state.TRSValidityStateByCell(servingCell) = "failed";
             state.TrackingEligibilityByCell(servingCell) = false;
@@ -6182,7 +6186,7 @@ methods(Static, Access=private)
         state = sixgr.truth.CoupledTruthRuntime.updateReceiverTrackingFromTRSImpl(state, servingCell, row, ok);
         state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
             state, "TRS", "CELL", servingCell, row, ...
-            "ProducerSlot", slotIdx, "AvailableSlot", slotIdx, ...
+            "ProducerSlot", slotIdx, "AvailableSlot", availableSlot, ...
             "Valid", ok, "Direction", "DL", "SourceSignal", "TRS", ...
             "MeasurementSource", "CoupledTruthRuntime.applyTRSTrial");
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
@@ -6350,8 +6354,13 @@ methods(Static, Access=private)
         if strlength(strtrim(beforeState)) == 0
             beforeState = "not_initialized";
         end
-        slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
+        slotIdx = sixgr.truth.TRSResultDelivery.deliverySlot(state,row);
         frameIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Frame", state.CurrentFrame));
+        sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row,"Slot",state.CurrentSlot));
+        sourceFrame = frameIdx;
+        if ismember("ObservationDeliverySlot",string(row.Properties.VariableNames))
+            frameIdx = double(state.CurrentFrame);
+        end
         updateTime = max(0, double(slotIdx) - 1) * double(sixgr.util.structGet(state, "SlotDuration_s", NaN));
         estDopplerHz = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["EstimatedDopplerHz","EstimatedDoppler_Hz"], NaN);
         nmse = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ["NMSE_dB"], NaN);
@@ -6418,7 +6427,7 @@ methods(Static, Access=private)
         tracked.LastUpdateFrame = double(frameIdx);
         tracked.LastUpdateSlot = double(slotIdx);
         tracked.TRSTrackingUpdateTime_s = double(updateTime);
-        tracked.MeasurementSFNSlot = sprintf("frame=%g,slot=%g", frameIdx, slotIdx);
+        tracked.MeasurementSFNSlot = sprintf("frame=%g,slot=%g", sourceFrame, sourceSlot);
         tracked.ChannelTrackingFreshnessState = char(channelFreshness);
         tracked.FrequencyTrackingState = char(frequencyState);
         tracked.TimingTrackingState = char(timingState);
@@ -6463,7 +6472,7 @@ methods(Static, Access=private)
         traceRow.TRSRuntimeEvidenceSource = char(string(evidenceSource));
         traceRow.Frame = double(frameIdx);
         traceRow.Slot = double(slotIdx);
-        traceRow.MeasurementSFNSlot = sprintf("frame=%g,slot=%g", frameIdx, slotIdx);
+        traceRow.MeasurementSFNSlot = sprintf("frame=%g,slot=%g", sourceFrame, sourceSlot);
         traceRow.EstimatedDopplerHz = double(estDopplerHz);
         traceRow.NMSE_dB = double(nmse);
         traceRow.PhaseError_deg = double(phaseErr);

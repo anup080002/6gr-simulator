@@ -8402,6 +8402,7 @@ if nargin < 6 || ~isstruct(pendingULGrants)
     pendingULGrants = repmat(struct(), 0, 1);
 end
 state = localDeliverCoupledBroadcastResults(state);
+state = localDeliverCoupledTRSResults(state);
 state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
 numUsers = numel(userCfg);
 slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
@@ -8513,68 +8514,21 @@ for ueIdx = 1:numUsers
             cfgU,trsSNR_dB,1,trsChannelState);
         state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
             state,trsUpdatedChannelState);
-        state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
-            sixgr.util.structGet(state, "ObservedREAllocationTable", table()), ...
-            trsObservedRET);
         trsT = localAnnotateCoupledControlTrial(trsRawT, ...
             slotIdx,frameIdx,ueIdx,rnti,"DL",servingCell);
         if istable(trsT) && ~isempty(trsT)
             trsAttemptCount = trsAttemptCount + 1;
-            state = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state, servingCell, trsT);
-            trsStates = string(sixgr.util.structGet(state, "TRSValidityStateByCell", strings(0, 1)));
-            trackingEligibility = logical(sixgr.util.structGet(state, "TrackingEligibilityByCell", false(0, 1)));
-            lastTRSSuccess = double(sixgr.util.structGet(state, "LastSuccessfulTRSSlotByCell", nan(0, 1)));
-            lastTRSDoppler = double(sixgr.util.structGet(state, "LastEstimatedTRSDopplerHzByCell", nan(0, 1)));
-            trsStateToken = "unknown";
-            trackingEligible = false;
-            lastTRSSlot = NaN;
-            trackedDoppler = NaN;
-            if servingCell <= numel(trsStates)
-                trsStateToken = string(trsStates(servingCell));
+            if all(isfinite(trsT.ObservationEndSampleExclusive))
+                state = sixgr.truth.TRSResultDelivery.enqueue( ...
+                    state,servingCell,ueIdx,trsT,cfgU,trsObservedRET);
+            else
+                if ~all(trsT.Crash == 1)
+                    error("sixgr:truth:MissingTRSObservationClock", ...
+                        "A received TRS trial cannot bypass its actual sample-window delivery boundary.");
+                end
+                % Preserve the real exception, not a fabricated observation.
+                state = localCommitCoupledTRSTrial(state,trsT,servingCell,cfgU,ueIdx,trsObservedRET);
             end
-            if servingCell <= numel(trackingEligibility)
-                trackingEligible = logical(trackingEligibility(servingCell));
-            end
-            if servingCell <= numel(lastTRSSuccess)
-                lastTRSSlot = double(lastTRSSuccess(servingCell));
-            end
-            if servingCell <= numel(lastTRSDoppler)
-                trackedDoppler = double(lastTRSDoppler(servingCell));
-            end
-            trsContext = sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContextRuntime(state, cfgU, ueIdx, servingCell);
-            trsT.ServingCell = repmat(servingCell, height(trsT), 1);
-            trsT.TraceRole = repmat("runtime_shared_receiver_tracking_state_update", height(trsT), 1);
-            trsT.TRSGatingActive = repmat(logical(sixgr.util.structGet(state.ControlGating, "TRSRequired", false)), height(trsT), 1);
-            trsT.TRSValidityState = repmat(trsStateToken, height(trsT), 1);
-            trsT.TrackingEligibility = repmat(trackingEligible, height(trsT), 1);
-            trsT.LastSuccessfulTRSSlot = repmat(lastTRSSlot, height(trsT), 1);
-            trsT.LastEstimatedTRSDopplerHz = repmat(trackedDoppler, height(trsT), 1);
-            trsT.TRSAgeSlots = repmat(double(sixgr.truth.CoupledTruthRuntime.trsAgeSlotsRuntime(state, servingCell)), height(trsT), 1);
-            trsT.RuntimeStateUpdated = true(height(trsT), 1);
-            trsT.RuntimeStateConsumer = repmat(string(trsContext.TRSReceiverConsumerType), height(trsT), 1);
-            trsT.TrackingStateSource = repmat(string(trsContext.TRSStateSource), height(trsT), 1);
-            trsT.TRSStateSource = repmat(string(trsContext.TRSStateSource), height(trsT), 1);
-            trsT.TRSRuntimeConsumer = repmat(string(trsContext.TRSRuntimeConsumer), height(trsT), 1);
-            trsT.TRSInfluencedDecision = repmat(logical(trsContext.TRSInfluencedDecision), height(trsT), 1);
-            trsT.TRSInfluenceDefinition = repmat(string(trsContext.TRSInfluenceDefinition), height(trsT), 1);
-            trsT.TRSReceiverIntegrationStatus = repmat(string(trsContext.TRSReceiverIntegrationStatus), height(trsT), 1);
-            trsT.TRSReceiverIntegrationBlocker = repmat(string(trsContext.TRSReceiverIntegrationBlocker), height(trsT), 1);
-            trsT.TRSProcessed = repmat(logical(trsContext.TRSProcessed), height(trsT), 1);
-            trsT.TRSReceiverConsumerType = repmat(string(trsContext.TRSReceiverConsumerType), height(trsT), 1);
-            trsT.TRSTrackingStateBefore = repmat(string(trsContext.TRSTrackingStateBefore), height(trsT), 1);
-            trsT.TRSTrackingStateAfter = repmat(string(trsContext.TRSTrackingStateAfter), height(trsT), 1);
-            trsT.TRSTrackingUpdateTime_s = repmat(double(trsContext.TRSTrackingUpdateTime_s), height(trsT), 1);
-            trsT.TRSAssociatedCell = repmat(double(trsContext.TRSAssociatedCell), height(trsT), 1);
-            trsT.TRSUpdateOutcome = repmat(string(trsContext.TRSUpdateOutcome), height(trsT), 1);
-            trsT.TRSChannelTrackingFreshnessState = repmat(string(trsContext.TRSChannelTrackingFreshnessState), height(trsT), 1);
-            trsT.TRSFrequencyTrackingState = repmat(string(trsContext.TRSFrequencyTrackingState), height(trsT), 1);
-            trsT.TRSTimingTrackingState = repmat(string(trsContext.TRSTimingTrackingState), height(trsT), 1);
-            trsT.TRSTimingEstimateAvailable = repmat(logical(trsContext.TRSTimingEstimateAvailable), height(trsT), 1);
-            trsT.TRSTimingEstimate_samples = repmat(double(trsContext.TRSTimingEstimate_samples), height(trsT), 1);
-            trsT.TRSCFOEstimateAvailable = repmat(logical(trsContext.TRSCFOEstimateAvailable), height(trsT), 1);
-            trsT.TRSEstimatedCFO_Hz = repmat(double(trsContext.TRSEstimatedCFO_Hz), height(trsT), 1);
-            trsT.TRSRuntimeEvidenceSource = repmat(string(trsContext.TRSRuntimeEvidenceSource), height(trsT), 1);
-            state.ControlTrials.TRS = localAppendCompatTable(state.ControlTrials.TRS, trsT);
             trsObservedServingCells(end + 1, 1) = servingCell; %#ok<AGROW>
         end
     end
@@ -12450,6 +12404,82 @@ for i = 1:numel(fields)
 end
 end
 
+function state = localDeliverCoupledTRSResults(state)
+[state,ready] = sixgr.truth.TRSResultDelivery.takeAvailable(state);
+for k = 1:numel(ready)
+    item = ready(k);
+    serving = double(sixgr.util.structGet(state,"CurrentServingIdx",[]));
+    if item.UEIndex>numel(serving) || serving(item.UEIndex)~=item.ServingCell
+        state = sixgr.truth.TRSResultDelivery.censor(state,item, ...
+            "serving_cell_changed_before_trs_delivery");
+        continue;
+    end
+    state = localCommitCoupledTRSTrial(state,item.Trial,item.ServingCell, ...
+        item.Config,item.UEIndex,item.ObservedRE);
+end
+end
+
+function state = localCommitCoupledTRSTrial(state,trsT,servingCell,cfgU,ueIdx,observedRET)
+state = sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state, servingCell, trsT);
+trsStates = string(sixgr.util.structGet(state, "TRSValidityStateByCell", strings(0, 1)));
+trackingEligibility = logical(sixgr.util.structGet(state, "TrackingEligibilityByCell", false(0, 1)));
+lastTRSSuccess = double(sixgr.util.structGet(state, "LastSuccessfulTRSSlotByCell", nan(0, 1)));
+lastTRSDoppler = double(sixgr.util.structGet(state, "LastEstimatedTRSDopplerHzByCell", nan(0, 1)));
+trsStateToken = "unknown";
+trackingEligible = false;
+lastTRSSlot = NaN;
+trackedDoppler = NaN;
+if servingCell <= numel(trsStates)
+    trsStateToken = string(trsStates(servingCell));
+end
+if servingCell <= numel(trackingEligibility)
+    trackingEligible = logical(trackingEligibility(servingCell));
+end
+if servingCell <= numel(lastTRSSuccess)
+    lastTRSSlot = double(lastTRSSuccess(servingCell));
+end
+if servingCell <= numel(lastTRSDoppler)
+    trackedDoppler = double(lastTRSDoppler(servingCell));
+end
+trsContext = sixgr.truth.CoupledTruthRuntime.resolveTRSRuntimeContextRuntime(state, cfgU, ueIdx, servingCell);
+trsT.ServingCell = repmat(servingCell, height(trsT), 1);
+trsT.TraceRole = repmat("runtime_shared_receiver_tracking_state_update", height(trsT), 1);
+trsT.TRSGatingActive = repmat(logical(sixgr.util.structGet(state.ControlGating, "TRSRequired", false)), height(trsT), 1);
+trsT.TRSValidityState = repmat(trsStateToken, height(trsT), 1);
+trsT.TrackingEligibility = repmat(trackingEligible, height(trsT), 1);
+trsT.LastSuccessfulTRSSlot = repmat(lastTRSSlot, height(trsT), 1);
+trsT.LastEstimatedTRSDopplerHz = repmat(trackedDoppler, height(trsT), 1);
+trsT.TRSAgeSlots = repmat(double(sixgr.truth.CoupledTruthRuntime.trsAgeSlotsRuntime(state, servingCell)), height(trsT), 1);
+trsT.RuntimeStateUpdated = true(height(trsT), 1);
+trsT.RuntimeStateConsumer = repmat(string(trsContext.TRSReceiverConsumerType), height(trsT), 1);
+trsT.TrackingStateSource = repmat(string(trsContext.TRSStateSource), height(trsT), 1);
+trsT.TRSStateSource = repmat(string(trsContext.TRSStateSource), height(trsT), 1);
+trsT.TRSRuntimeConsumer = repmat(string(trsContext.TRSRuntimeConsumer), height(trsT), 1);
+trsT.TRSInfluencedDecision = repmat(logical(trsContext.TRSInfluencedDecision), height(trsT), 1);
+trsT.TRSInfluenceDefinition = repmat(string(trsContext.TRSInfluenceDefinition), height(trsT), 1);
+trsT.TRSReceiverIntegrationStatus = repmat(string(trsContext.TRSReceiverIntegrationStatus), height(trsT), 1);
+trsT.TRSReceiverIntegrationBlocker = repmat(string(trsContext.TRSReceiverIntegrationBlocker), height(trsT), 1);
+trsT.TRSProcessed = repmat(logical(trsContext.TRSProcessed), height(trsT), 1);
+trsT.TRSReceiverConsumerType = repmat(string(trsContext.TRSReceiverConsumerType), height(trsT), 1);
+trsT.TRSTrackingStateBefore = repmat(string(trsContext.TRSTrackingStateBefore), height(trsT), 1);
+trsT.TRSTrackingStateAfter = repmat(string(trsContext.TRSTrackingStateAfter), height(trsT), 1);
+trsT.TRSTrackingUpdateTime_s = repmat(double(trsContext.TRSTrackingUpdateTime_s), height(trsT), 1);
+trsT.TRSAssociatedCell = repmat(double(trsContext.TRSAssociatedCell), height(trsT), 1);
+trsT.TRSUpdateOutcome = repmat(string(trsContext.TRSUpdateOutcome), height(trsT), 1);
+trsT.TRSChannelTrackingFreshnessState = repmat(string(trsContext.TRSChannelTrackingFreshnessState), height(trsT), 1);
+trsT.TRSFrequencyTrackingState = repmat(string(trsContext.TRSFrequencyTrackingState), height(trsT), 1);
+trsT.TRSTimingTrackingState = repmat(string(trsContext.TRSTimingTrackingState), height(trsT), 1);
+trsT.TRSTimingEstimateAvailable = repmat(logical(trsContext.TRSTimingEstimateAvailable), height(trsT), 1);
+trsT.TRSTimingEstimate_samples = repmat(double(trsContext.TRSTimingEstimate_samples), height(trsT), 1);
+trsT.TRSCFOEstimateAvailable = repmat(logical(trsContext.TRSCFOEstimateAvailable), height(trsT), 1);
+trsT.TRSEstimatedCFO_Hz = repmat(double(trsContext.TRSEstimatedCFO_Hz), height(trsT), 1);
+trsT.TRSRuntimeEvidenceSource = repmat(string(trsContext.TRSRuntimeEvidenceSource), height(trsT), 1);
+state.ControlTrials.TRS = localAppendCompatTable(state.ControlTrials.TRS, trsT);
+state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
+    sixgr.util.structGet(state,"ObservedREAllocationTable",table()),observedRET);
+end
+
+
 function state = localDeliverCoupledBroadcastResults(state)
 % No primary PBCH row, beam measurement or SIB1 authority is published at
 % the start of a multi-slot capture. Preserve the source slot in each row;
@@ -15288,6 +15318,11 @@ for k = 1:nTrials
         out = sixgr.link.runTRSTracking(cfg,"SNR_dB",snr_dB, ...
             "ChannelState",chState,"RuntimeSlot", ...
             sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeCurrentSlot",[]));
+        r.ObservationStartSample = double(sixgr.util.structGet(out,"ObservationStartSample",NaN));
+        r.ObservationEndSampleExclusive = double(sixgr.util.structGet(out,"ObservationEndSampleExclusive",NaN));
+        r.ObservationSampleRateHz = double(sixgr.util.structGet(out,"ObservationSampleRateHz",NaN));
+        r.ObservationCompletionTime_s = double(sixgr.util.structGet(out,"ObservationCompletionTime_s",NaN));
+        r.ObservationCoverageSource = string(sixgr.util.structGet(out,"ObservationCoverageSource",""));
         observedRET = localAppendCompatTable(observedRET, ...
             sixgr.util.structGet(out, "ObservedREAllocationTable", table()));
         chState = sixgr.util.structGet(out,"ChannelState",chState);
