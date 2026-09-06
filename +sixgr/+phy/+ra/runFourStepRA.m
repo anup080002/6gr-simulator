@@ -274,7 +274,7 @@ try
     msg1Tx.PowerControl.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
     result.PreambleTxAmplitudeScale = double(msg1Power.AmplitudeScale);
     end
-    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg1", msg1Tx.Waveform, msg1Tx, opt)
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg1", msg1Tx.Waveform, msg1Tx, opt, runtime.StageWaveforms)
         [result, continuation] = captureContinuation(1, struct("Occasion", occasion), ...
             msg1Tx.Waveform, msg1Tx, "UL");
         return;
@@ -342,7 +342,7 @@ try
         attemptedRNTI = double(raCfg.RARNTI) + 1;
     end
     end
-    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg2", msg2Tx.Waveform, msg2Tx, opt)
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg2", msg2Tx.Waveform, msg2Tx, opt, runtime.StageWaveforms)
         prepared = struct("Msg2Schedule", msg2Sched, "WithinWindow", withinWindow, ...
             "AttemptedRNTI", attemptedRNTI, "RARTx", rarTx);
         [result, continuation] = captureContinuation(2, prepared, msg2Tx.Waveform, msg2Tx, "DL");
@@ -414,7 +414,7 @@ try
     result.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     msg3TA = sixgr.phy.ra.applyMsg3TimingAdvance(msg3Tx.Waveform, double(result.TimingAdvanceSamples));
     end
-    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg3", msg3TA.Waveform, msg3Tx, opt)
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg3", msg3TA.Waveform, msg3Tx, opt, runtime.StageWaveforms)
         prepared = struct("Msg3Payload", msg3TxPayload, "PUSCH", pusch, "TimingAdvanceWaveform", msg3TA);
         [result, continuation] = captureContinuation(3, prepared, msg3TA.Waveform, msg3Tx, "UL");
         return;
@@ -486,7 +486,7 @@ try
     msg4Tx.PowerControl.Msg4TxAmplitudeScale = double(msg4Power.AmplitudeScale);
     result.Msg4TxAmplitudeScale = double(msg4Power.AmplitudeScale);
     end
-    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg4", msg4Tx.Waveform, msg4Tx, opt)
+    if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "Msg4", msg4Tx.Waveform, msg4Tx, opt, runtime.StageWaveforms)
         prepared = struct("Msg4Schedule", msg4Sched, "Msg4Payload", msg4TxPayload);
         [result, continuation] = captureContinuation(4, prepared, msg4Tx.Waveform, msg4Tx, "DL");
         return;
@@ -572,7 +572,7 @@ try
             double(result.TimingAdvanceSamples));
         end
         if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "RRCSetupComplete", ...
-                setupCompleteTA.Waveform, setupCompleteTx, opt)
+                setupCompleteTA.Waveform, setupCompleteTx, opt, runtime.StageWaveforms)
             prepared = struct("Tx", setupCompleteTx, "Payload", setupCompleteTxPayload, ...
                 "PUSCH", setupCompletePUSCH, "TimingAdvanceWaveform", setupCompleteTA);
             [result, continuation] = captureContinuation(5, prepared, ...
@@ -791,13 +791,40 @@ end
 end
 end
 
-function ready = localStageReceiveReady(cfg, raCfg, name, waveform, tx, opt)
+function ready = localStageReceiveReady(cfg, raCfg, name, waveform, tx, opt, stageWaveforms)
+[~, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx);
+[provided, ~] = localRuntimeProvidedWaveform(stageWaveforms,name);
+if isa(provided,'sixgr.phy.waveform.WaveformObservationBuffer')
+    localAssertRAObservationLayout(provided,cfg,raCfg,name,waveform,tx);
+    % TX duration is only the minimum observation extent. Actual received
+    % channel/filter tails may finish later. Use the retained runtime
+    % observation, including on resume, not the original options snapshot.
+    endTime = provided.EndSampleExclusive/provided.SampleRateHz;
+end
 if isinf(opt.ReceiveThroughTime_s)
     ready = true;
     return;
 end
-[~, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx);
 ready = endTime <= double(opt.ReceiveThroughTime_s);
+end
+
+function localAssertRAObservationLayout(provided,cfg,raCfg,name,waveform,tx)
+[startTime,~] = localStageSampleInterval(cfg,raCfg,name,waveform,tx);
+fs = localStageSampleRate(localStageTxInfo(tx),tx);
+startSample = startTime*fs;
+if abs(startSample-round(startSample)) > 8*eps(max(1,abs(startSample)))
+    error("sixgr:phy:ra:RAObservationOriginOffSampleGrid", ...
+        "Stage %s origin must lie on its actual waveform sample clock.",name);
+end
+if provided.SampleRateHz~=fs || ...
+        provided.EndSampleExclusive-provided.StartSample<size(waveform,1)
+    error("sixgr:phy:ra:RAObservationLayoutMismatch", ...
+        "Stage %s requires the prepared rate and at least its full sample extent.",name);
+end
+if provided.StartSample~=round(startSample)
+    error("sixgr:phy:ra:RAObservationOriginMismatch", ...
+        "Stage %s requires received samples from its scheduled absolute origin.",name);
+end
 end
 
 function [startTime, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx)
@@ -1169,22 +1196,7 @@ rxWave = txWave;
 [provided, providedField] = localRuntimeProvidedWaveform(runtime.StageWaveforms, stageName);
 if ~isempty(provided)
     if isa(provided, 'sixgr.phy.waveform.WaveformObservationBuffer')
-        [startTime, ~] = localStageSampleInterval(cfg, raCfg, stageName, txWave, txStruct);
-        fs = localStageSampleRate(localStageTxInfo(txStruct), txStruct);
-        startSample = startTime * fs;
-        if abs(startSample-round(startSample)) > 8*eps(max(1,abs(startSample)))
-            error("sixgr:phy:ra:RAObservationOriginOffSampleGrid", ...
-                "Stage %s origin must lie on its actual waveform sample clock.", stageName);
-        end
-        if provided.SampleRateHz ~= fs || ...
-                provided.EndSampleExclusive-provided.StartSample ~= size(txWave,1)
-            error("sixgr:phy:ra:RAObservationLayoutMismatch", ...
-                "Stage %s receive rate and extent must match its prepared waveform.", stageName);
-        end
-        if provided.StartSample ~= round(startSample)
-            error("sixgr:phy:ra:RAObservationOriginMismatch", ...
-                "Stage %s requires received samples from its scheduled absolute origin.", stageName);
-        end
+        localAssertRAObservationLayout(provided,cfg,raCfg,stageName,txWave,txStruct);
         % readComplete rejects a planned but incompletely received window.
         % No channel, TX, RF or noise operation belongs on this path.
         rxWave = provided.readComplete();
@@ -1198,7 +1210,8 @@ if ~isempty(provided)
         rxWave = provided;
         row.WaveformSource = "provided_runtime_stage_waveform";
     end
-    localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, providedField);
+    localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, providedField, ...
+        isa(provided,'sixgr.phy.waveform.WaveformObservationBuffer'));
     row.RxSampleCount = size(rxWave, 1);
     row.RxPortCount = size(rxWave, 2);
     row.ProvidedWaveformField = providedField;
@@ -1662,13 +1675,13 @@ for i = 1:numel(candidates)
 end
 end
 
-function localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, fieldName)
+function localAssertRuntimeWaveformCompatible(rxWave, txWave, stageName, fieldName, allowReceivedTail)
 if ~((isa(rxWave,'single') || isa(rxWave,'double')) && ...
         ismatrix(rxWave) && all(isfinite(rxWave(:))))
     error("sixgr:phy:ra:BadRuntimeStageWaveform", ...
         "Runtime waveform %s for %s must be a finite floating-point sample-by-port matrix.", string(fieldName), string(stageName));
 end
-if size(rxWave, 1) ~= size(txWave, 1)
+if size(rxWave,1)<size(txWave,1) || (~allowReceivedTail && size(rxWave,1)~=size(txWave,1))
     error("sixgr:phy:ra:RuntimeStageWaveformLengthMismatch", ...
         "Runtime waveform %s for %s has %d samples; expected %d.", ...
         string(fieldName), string(stageName), size(rxWave, 1), size(txWave, 1));

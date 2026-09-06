@@ -4,6 +4,10 @@ function [y, replay, state] = applyWaveformTruthImpairments(x, snr_dB, state, cf
 ip = inputParser;
 ip.addParameter("InputSampleDomain", "logical_ports", @(v)ischar(v) || isstring(v));
 ip.parse(varargin{:});
+% Resolve ownership before a mutable fading object consumes samples. A
+% reciprocal propagation object does not make gNB/UE noise figures, power
+% contexts or receiver random streams interchangeable.
+direction = localResolveDirection(cfg,state);
 fs = sixgr.util.structGet(state, "SampleRate_Hz", []);
 if isempty(fs), fs = localResolveSampleRate(tx, txInfo); end
 validateattributes(fs, {'numeric'}, {'real','scalar','finite','positive'});
@@ -36,6 +40,7 @@ replay = struct( ...
     "EstimatedTimingOffset_PreCorrection_samples", NaN, ...
     "ResidualTimingError_PostCorrection_samples", NaN, ...
     "SampleRate_Hz", fs, ...
+    "WaveformLinkDirection", direction, ...
     "CFOCorrectionApplied", false, ...
     "InjectedNoiseVariance", NaN, ...
     "LargeScaleGain_dB", double(sixgr.util.structGet(state, "LargeScaleGain_dB", 0)), ...
@@ -144,7 +149,8 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         "ServingCell",sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingCellIndex",[]), ...
         "CarrierFrequencyHz",sixgr.util.structGet(cfg,"phy.fc_Hz", ...
             sixgr.util.structGet(cfg,"channel.fc_Hz",[])), ...
-        "OriginSample",origin,"SampleRateHz",fs,"Role","broadcast_receiver_thermal_noise");
+        "OriginSample",origin,"SampleRateHz",fs,"Direction",direction, ...
+        "Role","physical_receiver_thermal_noise");
     digest = sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(identity),"UTF-8")));
     noiseSeed = hex2dec(extractBefore(digest,9));
     [y, state.ReceiverNoiseState] = sixgr.link.addRuntimeComplexNoise( ...
@@ -179,8 +185,9 @@ userMeta = sixgr.util.structGet(cfgOut, "lls6g.userContext", struct());
 if ~(isstruct(userMeta) && isscalar(userMeta))
     userMeta = struct();
 end
-userMeta.RuntimeCurrentDirection = "DL";
-userMeta.Direction = "DL";
+direction = localResolveDirection(cfgIn,state);
+userMeta.RuntimeCurrentDirection = direction;
+userMeta.Direction = direction;
 userMeta.RuntimeServingBasePathloss_dB = double(sixgr.util.structGet( ...
     state, "Pathloss_dB", NaN));
 userMeta.RuntimeServingPathloss_dB = double(sixgr.util.structGet( ...
@@ -196,10 +203,32 @@ userMeta.RuntimePathlossComplianceStatus = char(string(sixgr.util.structGet( ...
 cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext", userMeta);
 end
 
+function direction = localResolveDirection(cfg,state)
+direction = upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    "lls6g.userContext.RuntimeCurrentDirection", ...
+    sixgr.util.structGet(cfg,"lls6g.userContext.Direction","DL")))));
+if ~isscalar(direction) || ismissing(direction) || ~any(direction == ["DL","UL"])
+    error("sixgr:link:InvalidWaveformLinkDirection", ...
+        "Waveform impairment execution requires an explicit valid DL/UL direction.");
+end
+bindings = {sixgr.util.structGet(state,"Direction",[]), ...
+    sixgr.util.structGet(state,"RuntimeChannelState.Direction",[]), ...
+    sixgr.util.structGet(cfg,"lls6g.runtimePowerContext.Direction",[])};
+for k = 1:numel(bindings)
+    if isempty(bindings{k}), continue; end
+    bound = upper(strtrim(string(bindings{k})));
+    if ~isscalar(bound) || ismissing(bound) || bound ~= direction
+        error("sixgr:link:WaveformLinkDirectionMismatch", ...
+            "Receiver, power and materialized link contexts must agree on direction before sample execution.");
+    end
+end
+end
+
 function fs = localResolveSampleRate(tx, txInfo)
 fs = [];
 if nargin >= 2 && isstruct(txInfo)
     fs = sixgr.util.structGet(txInfo, "OFDM.SampleRate", []);
+    if isempty(fs), fs=sixgr.util.structGet(txInfo,"OFDMInfo.SampleRate",[]); end
 end
 if isempty(fs) && isstruct(tx)
     carrier = sixgr.util.structGet(tx, "Carrier", []);
@@ -212,11 +241,11 @@ if isempty(fs) && isstruct(tx)
         end
     end
 end
-if isempty(fs) || ~isfinite(double(fs)) || double(fs) <= 0
-    fs = 30.72e6;
-else
-    fs = double(fs);
+if ~isnumeric(fs) || ~isreal(fs) || ~isscalar(fs) || ~isfinite(fs) || fs<=0
+    error("sixgr:link:WaveformSampleRateUnavailable", ...
+        "Waveform impairment execution requires the actual producer sample clock.");
 end
+fs = double(fs);
 end
 
 function cfoHz = localResolveInjectedCFOHz(cfg)

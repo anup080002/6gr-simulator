@@ -72,6 +72,10 @@ for i=1:height(v)
     r=sixgr.phy.pucch.PUCCHResourceIndicatorResolver.resolveVector(v(i,:));
     verifyEqual(t,string(r.ErrorID),text(e.ExpectedErrorID(i)));
     verifyEqual(t,r.Valid,truth(e.ExpectedValid(i)));
+    if r.Valid
+        verifyTrue(t,isfinite(str2double(string(e.ExpectedOrdinal(i)))));
+        verifyEqual(t,r.Ordinal,str2double(string(e.ExpectedOrdinal(i))));
+    end
 end
 end
 
@@ -80,7 +84,7 @@ r=sixgr.phy.pucch.PUCCHResourceIndicatorResolver.resolveVector(struct( ...
     "ResourceSetID",0,"ResourceListSize",16,"PRIFieldWidth",3, ...
     "PRIValue",2,"FirstCCE",8,"NumCCE",24, ...
     "RequiresSet0CCEFormula",true));
-verifyTrue(t,r.Valid);verifyGreaterThan(t,r.Ordinal,0);
+verifyTrue(t,r.Valid);verifyEqual(t,r.Ordinal,5);
 end
 
 function testPUCCHDynamicHARQAssignment(t)
@@ -241,7 +245,20 @@ end
 
 function trial=waveTrial(format,snr,channel,present)
 f=fixture(format);
-trial=sixgr.link.runPUCCHWaveformTrial(f.Carrier, ...
+% Explicit radio identity for this isolated codec/fading fixture. A carrier
+% object alone does not specify RF frequency or duplex ownership.
+cfg=struct();
+cfg.run=struct('seed',1800+format, ...
+    'noiseOperatingMode','standalone_awgn_snr_argument', ...
+    'interferenceExecutionMode','none');
+cfg.frequency.duplex_mode='TDD';
+cfg.phy.fc_Hz=4e9;
+cfg.phy.carrier=struct('NSizeGrid',double(f.Carrier.NSizeGrid), ...
+    'SubcarrierSpacing',double(f.Carrier.SubcarrierSpacing), ...
+    'CyclicPrefix',char(f.Carrier.CyclicPrefix),'NCellID',double(f.Carrier.NCellID));
+cfg.phy.nTxAnt=1; cfg.phy.nRxAnt=1;
+cfg.scenario=struct('ue',struct('nTxAnt',1),'bs',struct('nRxAnt',1));
+trial=sixgr.link.runPUCCHWaveformTrial(cfg, ...
     "Carrier",f.Carrier,"Assignment",f.Assignment,"Report",f.Report, ...
     "ReceiverContext",f.Context,"ChannelProfile",channel, ...
     "SNR_dB",snr,"SignalPresent",logical(present),"Seed",1800+format);
@@ -253,7 +270,8 @@ end
 
 function t=readS(name)
 t=readtable(fullfile(vectorRoot(),name),"TextType","string", ...
-    "VariableNamingRule","preserve");
+    "VariableNamingRule","preserve","Delimiter",",", ...
+    "NumHeaderLines",0,"ReadVariableNames",true);
 end
 
 function value=truth(input)

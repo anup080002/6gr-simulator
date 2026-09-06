@@ -1,5 +1,127 @@
 # Short TDD run: measured failures and remaining integration work
 
+## UL clock, access observation tail and PUCCH CCE checkpoint (2026-09-07)
+
+The main shared-clock/shared-stream integration remains **incomplete**. These
+repairs do not qualify the last full run, which still failed with zero DL and
+UL data trial rows. No new production TDD, FDD or 25 dB scenario was launched.
+Historical CSV/PNG outputs and failed diagnostic logs were preserved.
+
+Implemented producer/consumer repairs:
+
+- The shared waveform impairment helper now binds the actual DL/UL direction
+  into power and receiver-noise context. Previously its large-scale-context
+  helper unconditionally wrote `DL`, including for UL samples. Direction
+  conflicts with the retained link or power context now fail before mutable
+  fading execution. Thermal-noise stream identity includes receiver direction.
+- The new SRS/CDL test exposed a separate real sample-clock defect: the SRS
+  producer supplied `OFDMInfo.SampleRate`, while the wrapper/channel boundary
+  expected `OFDM.SampleRate`. A 7.68 MHz waveform could therefore materialize
+  a 30.72 MHz channel. Initialization now forwards the resolved producer rate
+  explicitly, rejects conflicting metadata or a changed retained-channel
+  rate, and no longer substitutes a default rate when producer timing is absent.
+- Four-step access continuation now waits for the actual complete received
+  observation, including a channel/filter delay tail. It validates the exact
+  producer rate and origin, permits a genuine longer typed RX observation,
+  rejects a shorter one, and uses retained observations on later resumptions.
+  It does not crop the tail, pad a receiver buffer, or rerun propagation.
+- Corrected the PUCCH resource-set-0 mapping for more than eight resources.
+  The previous modulo-full-list expression was not the normative equation.
+  The implementation now uses the piecewise PRI-group/CCE mapping in
+  [TS 38.213 v18.8.0, section 9.2.3](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+  Four vectors previously containing `SPEC_FORMULA` now contain independently
+  calculated expected ordinals; production validation rejects a missing
+  numeric oracle rather than accepting a placeholder. Additional cases cover
+  resource counts not divisible by eight and CCE boundaries.
+- Main grant annotation now retains the received PDCCH's first CCE and actual
+  CORESET capacity. These values flow into the DL HARQ feedback reservation,
+  PUCCH grant trace, resource assignment and interfering-PUCCH context, replacing
+  fixed `0/24` operands. Retransmission-cache merging copies live operands or
+  clears stale ones. Small direct-mapped resource sets do not require unused
+  CCE operands; a large set fails when real CCE evidence is missing. The main
+  annotation/feedback path is wired in code, not yet qualified by a full run.
+
+Final focused verification on the executable checkpoint:
+
+- Session 50308, exit 0, `logs/pucch_cce_20260907_final.log`: all **40**
+  `testPUCCHPhase05` checks, `testPUCCHResourceIndicatorNumeric`,
+  `testUplinkTruthImpairmentDirection`, `testRAReceivedObservationBoundary`,
+  `testUplinkControlStreamStages`, and main-runner parsing passed.
+- Session 71951, exit 0, `logs/beam_feedback_contracts_20260907_focused.log`:
+  `testPDSCHTCIStateBinding`, `testPDSCHQCLStatePropagation`,
+  `testPMIPrecodingRuntime`, and `testLLSULSRSRITPMIEstimator` passed.
+  These establish isolated binding/precoding/estimator contracts, not delivered
+  runtime CSI, live TCI activation, or complete scheduler beamforming.
+- Earlier session 4860, exit 0,
+  `logs/ul_clock_ra_tail_20260907_focused.log`, also passed access continuation,
+  noisy broadcast/TRS stream and noise-domain checks on the clock/RA revision.
+- Earlier session 92629 passed live-UCI cache authority, standalone retained
+  channel state, actual staged PDSCH/PUSCH reception, measured PUCCH power
+  control and canonical wideband SRS checks, but the combined batch failed
+  later. Its overall result remains **failed**, not a successful batch.
+
+Failure history remains available: session 16194 first exposed the SRS/channel
+sample-rate mismatch; session 10588 exposed CSV header auto-detection in the new
+test; session 92629 exposed a misplaced new assertion and two fading fixtures
+without carrier-frequency context. The fixtures now supply explicit RF/carrier
+identity, the assertion is in the PRI test, and the final rerun passes without
+weakening production validation. Phase-05 artifact tests use explicitly
+non-qualified temporary test artifacts; they are not new production CSV/PNGs.
+
+The UL clock test uses actual prepared SRS, reciprocal CDL propagation and
+thermal receiver noise, with an explicitly analytic pathloss fixture. Whole
+and partitioned processing agree to the asserted tolerance on independent test
+streams; failed preflight checks leave the tested stream unconsumed. The access
+test uses all five coded TDD stages and an actual FIR delay tail, and checks
+that even a complete retained buffer cannot be decoded before its sample end.
+Neither fixture is a field calibration or a successful full scheduling run.
+
+### Remaining work and acceptance order
+
+1. Integrate one chronological physical-stream owner into the main scheduler.
+   Compose each node's real TX contributions before PA/RF, advance each
+   persistent physical link monotonically, and deliver actual receiver windows
+   only after complete coverage. Current eager SSB/TRS/RA/control execution can
+   still consume future samples before an earlier UL request; the original
+   time-reversal guard must not be disabled, rewound or bypassed.
+2. Bind PRACH, Msg3, PUCCH, PUSCH and SRS transmit/receive origins and processing
+   deadlines on that clock. Nonzero UL timing advance remains explicitly
+   unsupported by the prepared interfaces; separate UE TX and gNB observation
+   origins are required, not waveform-head trimming and RX zero padding.
+3. Qualify late HARQ-ACK creation against already queued PUSCH, PUCCH/PUSCH UCI
+   arbitration, decoded DCI authority, K1/K2, CSI payload delivery, SRS-to-UL
+   scheduling and HARQ/LA updates in the complete TDD run. Component codec and
+   mapping checks are not a substitute for this causal test.
+4. Qualify QCL/TCI activation and the actually applied receive beam/precoder.
+   This TDD YAML currently sets `mimo.phase07_strict.require_active_tci_state`
+   to `false`; isolated TCI validation passing does not prove that the run
+   activates or consumes TCI. SRS `QCLAccuracy` remains a correlation diagnostic.
+   Do not just enable a gate or label a correlation as standardized TCI state.
+5. Export physical RSSI with its resource, bandwidth, symbol window, RX branch
+   and reference plane. The physical CSI receiver already calls
+   `nrCSIRSMeasurements` but retains only RSRP, discarding its per-antenna RSSI
+   and RSRQ. Strict CSI sets RSSI unavailable; legacy DL/UL helpers sum RX
+   branches in normalized grid units. Those legacy values must not be renamed
+   dBm. Carry the actual measurement through resource selection, canonical CSV
+   and source-bound PNG generation; test antenna count, AGC invariance,
+   bandwidth/noise changes and RSSI/RSRQ closure.
+6. Complete independent 12 dB operating-point calibration, then execute the
+   short TDD-only diagnostic and audit every resulting primary CSV and PNG.
+   Geometry/thermal noise mode does not make a configured `12 dB` label the
+   measured SINR. Shared RF state and any finite-SIR Gaussian interference path
+   still require review; this checkpoint does not certify all legacy paths.
+7. Prepare traceable complete-channel IQ/playback for the specified Keysight
+   instruments only after the LLS stream and measurements qualify.
+
+RSSI reference: [MathWorks CSI-RS physical measurements](https://www.mathworks.com/help/5g/ref/nrcsirsmeasurements.html)
+returns separate antenna/resource RSSI in dBm and RSRQ in dB; see also
+[TS 38.215 sections 5.1.2 and 5.1.4](https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.02.00_60/ts_138215v180200p.pdf).
+No RSSI export repair or RSSI plot is claimed in this checkpoint. No `testAll`
+or new full qualification campaign was run under the earlier bounded-test
+request. The NR-validation and result-integrity skills kept unavailable
+measurements, unsupported timing and failed runs explicit instead of supplying
+replacement values or successful-looking artifacts.
+
 ## Uplink control and scheduler job boundary checkpoint (2026-09-07)
 
 The main chronological scheduler integration is **still incomplete**. Its last

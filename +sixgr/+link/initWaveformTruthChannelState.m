@@ -8,6 +8,10 @@ ip.parse(varargin{:});
 initialRuntimeState = ip.Results.InitialRuntimeChannelState;
 
 fs = localResolveSampleRate(tx, txInfo);
+% ChannelFactory receives the numeric waveform below, not tx.Carrier. Bind
+% the already resolved producer clock explicitly so it cannot fall back to
+% a different rate when an SRS/PUCCH producer names this field OFDMInfo.
+txInfo = sixgr.util.structSet(txInfo,"OFDM.SampleRate",fs);
 numTx = max(1, size(sixgr.util.structGet(tx, "Waveform", zeros(1, 1)), 2));
 direction = localResolveDirection(cfg);
 runtimeNumTx = localResolveRuntimeTxPortCapacity(cfg, direction, numTx);
@@ -16,6 +20,7 @@ truthMode = sixgr.link.resolveTruthMode(cfg);
 
 state = struct( ...
     "Initialized", true, ...
+    "Direction", direction, ...
     "TruthMode", string(truthMode), ...
     "SampleRate_Hz", double(fs), ...
     "UseFading", false, ...
@@ -55,6 +60,16 @@ if ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
                 "InitialRuntimeChannelState must be an initialized ChannelFactory state.");
         end
         runtimeState = initialRuntimeState;
+    end
+    if logical(sixgr.util.structGet(runtimeState,"Materialized",false))
+        if ~isequal(double(runtimeState.SampleRate_Hz),fs)
+            error("sixgr:link:WaveformSampleRateConflict", ...
+                "A retained physical channel cannot consume a waveform on a different sample clock.");
+        end
+        if string(runtimeState.Direction)~=direction
+            error("sixgr:link:WaveformLinkDirectionMismatch", ...
+                "The scheduler must bind the correct reciprocal direction before channel materialization.");
+        end
     end
     % Build the antenna view from the signal's actual logical-port count,
     % while retaining runtimeNumTx as the physical channel capacity.  This
@@ -111,6 +126,12 @@ function fs = localResolveSampleRate(tx, txInfo)
 fs = [];
 if nargin >= 2 && isstruct(txInfo)
     fs = sixgr.util.structGet(txInfo, "OFDM.SampleRate", []);
+    infoRate = sixgr.util.structGet(txInfo,"OFDMInfo.SampleRate",[]);
+    if ~isempty(fs) && ~isempty(infoRate) && ~isequal(double(fs),double(infoRate))
+        error("sixgr:link:WaveformSampleRateConflict", ...
+            "OFDM and OFDMInfo must not declare different clocks for the same samples.");
+    end
+    if isempty(fs), fs=infoRate; end
 end
 if isempty(fs) && isstruct(tx)
     carrier = sixgr.util.structGet(tx, "Carrier", []);
@@ -123,18 +144,19 @@ if isempty(fs) && isstruct(tx)
         end
     end
 end
-if isempty(fs) || ~isfinite(double(fs)) || double(fs) <= 0
-    fs = 30.72e6;
-else
-    fs = double(fs);
+if ~isnumeric(fs) || ~isreal(fs) || ~isscalar(fs) || ~isfinite(fs) || fs<=0
+    error("sixgr:link:WaveformSampleRateUnavailable", ...
+        "The actual waveform producer must provide its sample rate or carrier; no default sample clock is permitted.");
 end
+fs = double(fs);
 end
 
 function direction = localResolveDirection(cfg)
 direction = upper(strtrim(string(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeCurrentDirection", ...
     sixgr.util.structGet(cfg, "lls6g.userContext.Direction", "DL")))));
-if direction ~= "UL"
-    direction = "DL";
+if ~isscalar(direction) || ismissing(direction) || ~any(direction == ["DL","UL"])
+    error("sixgr:link:InvalidWaveformLinkDirection", ...
+        "Waveform channel initialization requires DL or UL, not an inferred replacement direction.");
 end
 end
 

@@ -1,5 +1,5 @@
 function ok = testRAReceivedObservationBoundary()
-% Real coded TDD RA over an external unit channel tests buffer ownership,
+% Real coded TDD RA over an explicit short FIR tests buffer ownership,
 % not fading, RF qualification or the combined production scheduler.
 setup6GRSimToolkit('Verbose',false);
 cfg = raStrictAnchorConfig();
@@ -20,9 +20,13 @@ for index = 1:numel(stages)
     assert(tx.StageName == stages(index) && height(prepared.RuntimeStageRows) == index-1);
     fs = tx.SampleRate_Hz;
     first = round(tx.StartTime_s*fs);
-    last = first+tx.SampleCount;
-    % This test's external propagation is an explicit noiseless unit channel.
-    received = tx.Waveform;
+    tailSamples = 7;
+    last = first+tx.SampleCount+tailSamples;
+    % Actual causal FIR output, including the response to real subsequent
+    % transmitter silence. Not copied TX samples with a fabricated RX tail.
+    taps = [1 zeros(1,tailSamples-1) 0.025];
+    input = [tx.Waveform; zeros(tailSamples,size(tx.Waveform,2),'like',tx.Waveform)];
+    received = filter(taps,1,input);
     observation = sixgr.phy.waveform.WaveformObservationBuffer(first,last,fs,size(received,2));
     cut = max(1,floor(tx.SampleCount/3));
     observation.append(sixgr.phy.waveform.WaveformChunk(received(1:cut,:),first),fs);
@@ -33,7 +37,7 @@ for index = 1:numel(stages)
         localReject(@() localComplete(cfg,checkpoint,wrong,tx), 'sixgr:phy:ra:RAObservationOriginMismatch');
         wrong = sixgr.phy.waveform.WaveformObservationBuffer(first,last,2*fs,size(received,2));
         localReject(@() localComplete(cfg,checkpoint,wrong,tx), 'sixgr:phy:ra:RAObservationLayoutMismatch');
-        wrong = sixgr.phy.waveform.WaveformObservationBuffer(first,last+1,fs,size(received,2));
+        wrong = sixgr.phy.waveform.WaveformObservationBuffer(first,first+tx.SampleCount-1,fs,size(received,2));
         localReject(@() localComplete(cfg,checkpoint,wrong,tx), 'sixgr:phy:ra:RAObservationLayoutMismatch');
         badSamples = received;
         badSamples(1) = NaN;
@@ -49,15 +53,22 @@ for index = 1:numel(stages)
     streams.(stages(index)+"RxWaveform") = observation;
     [held, heldCheckpoint] = sixgr.phy.ra.runFourStepRA(cfg, ...
         'Continuation',checkpoint,'RuntimeStageWaveforms',streams, ...
-        'StopAfterStage',stages(index),'ReceiveThroughTime_s',tx.EndTimeExclusive_s-1/fs);
+        'StopAfterStage',stages(index),'ReceiveThroughTime_s',tx.EndTimeExclusive_s);
     assert(height(held.RuntimeStageRows) == index-1 && held.RuntimeExecutionState == "pending_stage_receive", ...
-        'Having a complete buffer must not release decode before the scheduler receive clock is due.');
+        'The nominal TX end must not release a later-ending received channel tail.');
+    [held, heldCheckpoint] = sixgr.phy.ra.runFourStepRA(cfg, ...
+        'Continuation',heldCheckpoint, ...
+        'StopAfterStage',stages(index),'ReceiveThroughTime_s',(last-1)/fs);
+    assert(height(held.RuntimeStageRows)==index-1 && ...
+        held.RuntimeExecutionState=="pending_stage_receive", ...
+        'Resuming without re-supplying the buffer must retain its actual receive-completion boundary.');
     [decoded, checkpoint] = localComplete(cfg,heldCheckpoint,observation,tx);
     rows = decoded.RuntimeStageRows;
     row = rows(end,:);
     assert(height(rows) == index && row.StageName == stages(index));
     assert(row.ObservationStartSample == first && row.ObservationEndSampleExclusive == last && ...
         row.ObservationSampleRateHz == fs && row.ObservationCompletionTime_s == last/fs);
+    assert(row.RxSampleCount==tx.SampleCount+tailSamples && row.TxSampleCount==tx.SampleCount);
     assert(row.ObservationCoverageSource == "complete_contiguous_received_sample_buffer" && ...
         row.WaveformSource == "provided_contiguous_received_sample_buffer" && ...
         row.RuntimeStageWaveformUsed && ~row.SelfLoopWaveformUsed);
@@ -82,9 +93,13 @@ end
 function [result, checkpoint] = localComplete(cfg,checkpoint,observation,tx)
 streams = struct();
 streams.(tx.StageName+"RxWaveform") = observation;
+through=tx.EndTimeExclusive_s;
+if isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer')
+    through=max(through,observation.EndSampleExclusive/observation.SampleRateHz);
+end
 [result, checkpoint] = sixgr.phy.ra.runFourStepRA(cfg, ...
     'Continuation',checkpoint,'RuntimeStageWaveforms',streams, ...
-    'StopAfterStage',tx.StageName,'ReceiveThroughTime_s',tx.EndTimeExclusive_s);
+    'StopAfterStage',tx.StageName,'ReceiveThroughTime_s',through);
 end
 
 function localReject(action,identifier)

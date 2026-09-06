@@ -316,7 +316,11 @@ for index=1:height(input)
     expectedOrdinal=sixgr.phy.pucch.PUCCHUtil.text( ...
         expected(index,:),"ExpectedOrdinal","");
     mismatch=actual.Valid~=localTruth(expected.ExpectedValid(index));
-    if actual.Valid&&expectedOrdinal~="SPEC_FORMULA"
+    if actual.Valid
+        if ~isfinite(str2double(expectedOrdinal))
+            error("sixgr:phy:pucch:MissingNumericPRIReference", ...
+                "PRI validation requires an independent numeric ordinal, not a placeholder.");
+        end
         mismatch=mismatch||actual.Ordinal~=str2double(expectedOrdinal);
     end
     value.RunID(index)=runID; value.CaseID(index)=input.CaseID(index);
