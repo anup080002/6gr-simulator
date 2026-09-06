@@ -1658,3 +1658,39 @@ The next short TDD run is diagnostic, not a claimed qualification pass.
 The YAML retains thermal-noise authority: 12 dB is the configured operating
 point label, not a forced measured SINR. No FDD/25 dB scenario or optional
 windowing/plot expansion is included in this checkpoint.
+
+### Short TDD rerun and separated broadcast completion
+
+Run `tdd_12db_minimal_20260906_195307` failed in waveform execution at slot 2:
+the first shared broadcast consumed samples through 38,400 (5 ms), while the
+next scheduled SSB observation requested sample 7,680 (1 ms). The failure
+checkpoint records zero DL and UL data trial rows. Report recovery remains
+separate from waveform success; this is not a qualified scenario result.
+
+The four persisted PBCH rows select SSB 0, the strongest measured candidate
+at -84.7116905684027 dBm. Arithmetic checks against the exported per-antenna
+signal/noise powers close within 3.56e-14 dB; TX EPRE minus RSRP agrees with
+reported pathloss within 5.26e-13 dB. These are arithmetic checks only, not
+proof of absolute power calibration or valid availability times. In particular,
+slot-1 rows include candidate observations from the next carrier slot.
+
+`completeCellSearchBroadcast` now contains the existing SIB1 receiver and
+result mapping, moved from the one-shot caller without changing the decoder
+or beam measurement algorithms. It accepts prepared TX context plus a complete
+received-sample buffer. It cannot generate or channel a broadcast and rejects
+incomplete captures, mismatched sample rates/extents, and mismatched scheduled
+origins before decoding. Observation duration and completion time are derived
+from the received buffer's actual sample coordinates.
+
+Focused session 48006 (`logs/broadcast_completion_20260906.log`) passed
+`testCellSearchPreparationAuthority` and the extended `testSSBSharedReceivedBurst`.
+The latter compares every candidate's PBCH/SIB1 result to the one-shot path,
+checks the completion sample/time evidence, and verifies executed profiler
+calls contain no TX generation or channel advancement during completion.
+Negative checks exercise incomplete reception and incompatible layout/origin.
+
+This completes the separate preparation/completion APIs, not the coupled
+slot dispatcher. The remaining blocker is still chronological TX composition,
+continuous channel/RF execution, and delivery of received chunks before any
+acquisition/control state is made available. No replacement scenario or full
+qualification suite was launched for this refactor.

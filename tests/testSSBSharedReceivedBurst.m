@@ -62,8 +62,19 @@ start=first.RuntimeChannelReplay.RuntimeChannelStartSample;
 fs=first.RuntimeChannelReplay.SampleRate_Hz;
 observation=sixgr.phy.waveform.WaveformObservationBuffer( ...
     start,start+size(actualRx,1),fs,size(actualRx,2));
+prepared=sixgr.link.prepareCellSearchBroadcast(cfg,true);
+completionOptions=struct("UseRuntimeChannel",true,"RuntimeSlot",0, ...
+    "CandidateSSBIndices",indices,"SSBIndex",indices(1), ...
+    "WriteArtifacts",false,"RunFolder","","RunId","buffer_completion_test");
 cut=floor(size(actualRx,1)/2);
 observation.append(sixgr.phy.waveform.WaveformChunk(actualRx(1:cut,:),start),fs);
+try
+    sixgr.link.completeCellSearchBroadcast(prepared,observation,first, ...
+        completionOptions,tic);
+    error('test:PrematureCompletion','Incomplete reception produced a completed broadcast result.');
+catch exception
+    assert(string(exception.identifier)=="WAVEFORM:IncompleteObservation");
+end
 try
     sixgr.phy.broadcast.recoverSIB1FromWaveform(observation,cfg);
     error('test:PrematureAcquisition','An incomplete observation reached the decoder.');
@@ -78,8 +89,51 @@ direct=sixgr.phy.broadcast.recoverSIB1FromWaveform(actualRx,receiverCfg, ...
     "CandidateSSBIndex",indices(1));
 assert(isequaln(buffered,direct) && buffered.BCHCrcPass, ...
     "Buffering must preserve actual receiver results exactly.");
+% Completion must use received samples only, never regenerate or re-channel
+% the prepared broadcast. Compare all decoder results, not only CRC flags.
+profile clear;
+profile on;
+completed=sixgr.link.completeCellSearchBroadcast(prepared,observation,first, ...
+    completionOptions,tic);
+profile off;
+completionStats=profile('info');
+completionNames=string({completionStats.FunctionTable.FunctionName});
+assert(~any(contains(completionNames,"generateSSB_MIB_SIB1_Waveform") | ...
+    contains(completionNames,"applyWaveformTruthImpairments") | ...
+    contains(completionNames,"initWaveformTruthChannelState") | ...
+    contains(completionNames,"applyRuntimeChannelState") | ...
+    contains(completionNames,"advanceRuntimeChannelState")));
+localAssertCalls(completionStats,"recoverSIB1FromWaveform",numel(indices));
+for k=1:numel(indices)
+    assert(isequaln(completed.CandidateResults{k}.PBCH,out.CandidateResults{k}.PBCH));
+    assert(isequaln(completed.CandidateResults{k}.SIB1,out.CandidateResults{k}.SIB1));
+    assert(completed.CandidateResults{k}.RuntimeDLChannelState.CurrentSampleIndex == ...
+        first.RuntimeDLChannelState.CurrentSampleIndex);
+end
+assert(completed.ObservationStartSample==start && ...
+    completed.ObservationEndSampleExclusive==start+size(actualRx,1));
+assert(completed.ObservationCompletionTime_s==(start+size(actualRx,1))/fs);
+assert(completed.AirInterfaceObservation_ms==1e3*size(actualRx,1)/fs);
+badLayout=prepared;
+badLayout.NumSamples=prepared.NumSamples+1;
+localAssertCompletionError(badLayout,observation,first,completionOptions, ...
+    "sixgr:link:BroadcastObservationLayoutMismatch");
+wrongOrigin=completionOptions;
+wrongOrigin.RuntimeSlot=1;
+localAssertCompletionError(prepared,observation,first,wrongOrigin, ...
+    "sixgr:link:BroadcastObservationOriginMismatch");
 fprintf('SSB_SHARED_RECEIVED_BURST_PASS: one TX/channel, %d receivers.\n', numel(indices));
 ok = true;
+end
+
+function localAssertCompletionError(prepared,observation,prototype,options,identifier)
+try
+    sixgr.link.completeCellSearchBroadcast(prepared,observation,prototype,options,tic);
+    error("test:MissingCompletionError","Expected completion to reject incompatible reception.");
+catch exception
+    assert(string(exception.identifier)==identifier, ...
+        "Expected %s; got %s: %s",identifier,exception.identifier,exception.message);
+end
 end
 
 function localAssertCalls(stats, functionSuffix, expected)
