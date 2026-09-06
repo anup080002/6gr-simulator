@@ -90,6 +90,7 @@ assert(double(pdsch.NumLayers) == dlLayers && ...
 % this also carries its matrix digest and active context into the resolver.
 dlGrant = localFrozenGrantInput(cfg, "DL", dlLayers, dlPorts, expectedRankTwo(:,:,1));
 dlGrant.K0 = 0; % Explicit same-slot control for this spatial-only fixture.
+dlGrant = withAuthoredPDSCHDCI(cfg, dlGrant);
 dlPHYGrant = sixgr.phy.grant.freezePHYGrant(cfg, "DL", dlGrant, ...
     "SNR_dB", double(cfg.channel.snr_dB), "Frame", 0, "Slot", 1);
 cfgDLFrozen = sixgr.phy.grant.applyPHYGrantToConfig(cfg, dlPHYGrant);

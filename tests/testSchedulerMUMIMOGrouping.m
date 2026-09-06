@@ -316,21 +316,10 @@ assert(abs(norm(replayPrecoding.MatrixPorts, "fro")^2 - 1) <= 1e-12 && ...
     isequal(double(replayPrecoding.HybridElementToPortMatrix), ...
         double(grants(1).PHYGrant.PrecodingState.HybridElementToPortMatrix)), ...
     "Frozen MU replay must preserve the exact logical, hybrid and unit-total-power physical matrix through the transmitter resolver.");
-% The production scheduler-truth adapter requires the causal PDCCH decode
-% context that CoupledTruthRuntime supplies before dispatch.  Preserve that
-% guard in this focused transmitter test instead of selecting a calibration
-% profile that would bypass the control-plane contract.
+% TX uses the actual authored scheduler DCI, not manufactured UE reception.
 decodedGrant = grants(1);
-decodedGrant.ControlDecodeOk = true;
-decodedGrant.PDCCHGrantBindingRequired = true;
-decodedGrant.PDCCHGrantBindingOk = true;
-decodedGrant.PDCCHGrantBindingStatus = "pass";
-decodedGrant.PDCCHCausalGrantDecodeOk = true;
-decodedGrant.PDCCHGrantDCIId = "mu-grouping-unit-dci";
-decodedGrant.PDCCHGrantDCIFieldsHash = "mu_grouping_unit_binding";
-decodedGrant.PDCCHGrantFieldsHash = "mu_grouping_unit_binding";
-decodedGrant.DCICrcPass = true;
-decodedGrant.PDCCHPayloadMatch = true;
+decodedGrant.ControlDecodeOk = false;
+decodedGrant.PDCCHGrantBindingOk = false;
 [muTx, muTxInfo] = sixgr.phy.dl.PDSCH_Tx( ...
     projectedMUConfig, "PHYGrant", decodedGrant.PHYGrant, ...
     "SchedulerGrantContext", decodedGrant, "CompactOutput", true);

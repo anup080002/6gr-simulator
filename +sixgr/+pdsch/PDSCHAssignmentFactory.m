@@ -303,9 +303,23 @@ classdef PDSCHAssignmentFactory
         end
 
         function assignment = forSchedulerTruth(request, frameState)
+            assignment = sixgr.pdsch.PDSCHAssignmentFactory.schedulerAssignment( ...
+                request, frameState, true);
+        end
+
+        function assignment = forSchedulerTransmission(request, frameState)
+            % The gNB's authored schedule is not a UE decode result.
+            assignment = sixgr.pdsch.PDSCHAssignmentFactory.schedulerAssignment( ...
+                request, frameState, false);
+        end
+    end
+
+    methods (Static, Access = private)
+        function assignment = schedulerAssignment(request, frameState, receiverOwned)
             arguments
                 request (1,1) struct
                 frameState (1,1) struct
+                receiverOwned (1,1) logical
             end
 
             required = [ ...
@@ -317,8 +331,13 @@ classdef PDSCHAssignmentFactory
                 "TargetCodeRatePerCodeword","TBScalingPerCodeword","XOverhead", ...
                 "NumLayers","NumCodewords","LayerCountPerCodeword", ...
                 "DMRSPortSet","NDIPerCodeword","RVPerCodeword","HARQProcessId", ...
-                "DecodedDCIId","DCIFormat","PDCCHAbsoluteSlot","K0", ...
-                "DecodedRNTI","DCICRCPass","DCIRNTIMatch"];
+                "DCIFormat","PDCCHAbsoluteSlot","K0"];
+            if receiverOwned
+                required = [required, "DecodedDCIId", "DecodedRNTI", ...
+                    "DCICRCPass", "DCIRNTIMatch"];
+            else
+                required = [required, "ScheduledDCIId"];
+            end
             required = [required, ...
                 "UECapability1024QAM","RRCEnabled1024QAM", ...
                 "DCIEnabled1024QAM","DeploymentAllows1024QAM", ...
@@ -345,15 +364,23 @@ classdef PDSCHAssignmentFactory
                 error("sixgr:pdsch:IncompleteSchedulerTruthFrameState", ...
                     "Scheduler-truth frame state requires a nonnegative-integer AbsoluteSlot.");
             end
-            if strlength(strtrim(string(request.DecodedDCIId))) == 0 || ...
+            if receiverOwned && (strlength(strtrim(string(request.DecodedDCIId))) == 0 || ...
                     ~isequal(logical(request.DCICRCPass), true) || ...
-                    ~isequal(logical(request.DCIRNTIMatch), true)
+                    ~isequal(logical(request.DCIRNTIMatch), true))
                 error("sixgr:pdsch:UnvalidatedSchedulerTruthDCI", ...
                     "Scheduler-truth assignment requires a decoded CRC-valid, RNTI-matched DCI.");
             end
 
-            data = sixgr.pdsch.PDSCHAssignmentFactory.baseData( ...
-                "scheduler_truth", "decoded_scheduler_grant+pdcch_binding");
+            source = "decoded_scheduler_grant+pdcch_binding";
+            if ~receiverOwned
+                if ~isscalar(string(request.ScheduledDCIId)) || ...
+                        strlength(strtrim(string(request.ScheduledDCIId))) == 0
+                    error("sixgr:pdsch:MissingSchedulerTruthDCIId", ...
+                        "Scheduler transmission requires the authored DCI identity.");
+                end
+                source = "scheduled_scheduler_grant+authored_dci";
+            end
+            data = sixgr.pdsch.PDSCHAssignmentFactory.baseData("scheduler_truth", source);
             names = fieldnames(request);
             for idx = 1:numel(names)
                 if isfield(data, names{idx})
@@ -363,13 +390,22 @@ classdef PDSCHAssignmentFactory
             data.PDSCHAbsoluteSlot = double(frameState.AbsoluteSlot);
             data.PDCCHAbsoluteSlot = double(request.PDCCHAbsoluteSlot);
             data.K0 = double(request.K0);
-            data.DecodedDCIId = string(request.DecodedDCIId);
-            data.ScheduledDCIId = "";
-            data.ControlAuthority = "receiver_crc_valid_decode";
             data.DCIFormat = string(request.DCIFormat);
-            data.DCICRCPass = true;
-            data.DCIRNTIMatch = true;
-            data.DecodedRNTI = double(request.DecodedRNTI);
+            if receiverOwned
+                data.DecodedDCIId = string(request.DecodedDCIId);
+                data.ScheduledDCIId = "";
+                data.ControlAuthority = "receiver_crc_valid_decode";
+                data.DCICRCPass = true;
+                data.DCIRNTIMatch = true;
+                data.DecodedRNTI = double(request.DecodedRNTI);
+            else
+                data.DecodedDCIId = "";
+                data.ScheduledDCIId = string(request.ScheduledDCIId);
+                data.ControlAuthority = "transmitter_scheduled_dci";
+                data.DCICRCPass = false;
+                data.DCIRNTIMatch = false;
+                data.DecodedRNTI = NaN;
+            end
             data.AssignmentId = sixgr.pdsch.PDSCHAssignmentFactory.assignmentId(data);
             assignment = sixgr.pdsch.PDSCHSchedulingAssignment(data);
         end

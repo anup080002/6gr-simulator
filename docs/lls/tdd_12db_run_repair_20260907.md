@@ -170,6 +170,77 @@ continuous PA memory, calibrated absolute input/reference planes, receiver
 noise/interference composition and the main scheduler remain separate work.
 These bounded tests do not establish all-impairment or instrument qualification.
 
+## Scheduler transmitter authority and DCI timing repair
+
+The configuration-oriented `scheduler_truth` PDSCH transmitter previously
+required `ControlDecodeOk` and `PDCCHGrantBindingOk` before generating gNB
+samples. That is the wrong causal boundary for a composed downlink stream.
+The receiver still requires those checks; they were not removed from RX.
+
+- `PDSCHAssignmentFactory.forSchedulerTransmission` now creates an immutable,
+  explicitly transmitter-owned scheduler assignment. It carries the authored
+  DCI identity, empty decoded identity, false decode/CRC flags and no decoded
+  RNTI. Canonical PDSCH reception rejects this transmitter assignment.
+- The active `PDSCH_Tx` adapter now validates actual authored DCI bits and
+  their immutable serialization context against the materialized allocation,
+  MCS/RV, RNTI, HARQ/NDI, frozen HARQ identity and absolute control/data timing.
+  It produces actual coded/precoded/OFDM samples without claiming reception.
+  RX retains separate decoded-grant assignment materialization. TX source
+  labels no longer describe its assignment as a decoded PDCCH result.
+- `DCIContextFactory.fromScheduledGrant` now binds connected DCI contexts to
+  the actual scheduled UE RNTI, preserving the installed RRC layout without
+  mutating its shared template. The stricter check exposed the prior use of
+  template RNTI 4660 for a grant addressed to a different UE.
+- TDRA selection now matches K0 for DL and K2 for UL as well as the symbol
+  allocation. Conflicting timing aliases, an incompatible explicit row index,
+  or no matching row fail before DCI serialization. Symbol-identical rows
+  with different future-slot offsets are no longer interchangeable.
+- The active DCI schema still has one TB's MCS/NDI/RV. Two-codeword scheduler
+  signaling is explicitly rejected, not implemented by duplicating TB1's
+  fields. This limitation does not alter the canonical calibration chain's
+  separately supported codeword geometry.
+
+Verification on the final code:
+
+- `logs/scheduler_pdsch_transmit_authority_20260907_final_focused.log`, MATLAB
+  exit 0: seven assertion-based checks executed: TDRA failure diagnostics,
+  per-UE DCI context identity, scheduler TX authority, TX/RX separation,
+  scheduler PDSCH timing, TDD rank-one/two-port CSI-RS and YAML PT-RS execution.
+- `logs/scheduler_dci_context_matlab_unittest_20260907.log`, MATLAB exit 0:
+  `testDCIWrongContextRejection` and `testDCIPackParseRoundTrip` executed using
+  `runtests` with `assertSuccess`; `testCausalSpatialPortRankDependency` also
+  passed actual PDSCH/PUSCH layer-to-port waveform checks. Earlier direct
+  calls to those two function-based suites only constructed test objects;
+  they are not counted as test execution.
+- Ten focused checks passed. This is not `testAll`, a full TDD/FDD scenario,
+  or the failed MU-MIMO regression described below. No new complete run was
+  launched while its known shared-clock failure remains unresolved.
+
+The focused coded TDD boundary test generates PDSCH before PDCCH reception,
+verifies rejection without decoded control, then executes the actual PDCCH
+decoder and recovers the same PDSCH TB bit-exactly using its immutable coding
+plans. This is a unit-channel codec/authority check, not a new complete run
+or a physical SINR, interference, RF, or link-adaptation qualification.
+
+Failed attempts remain in `logs/scheduler_pdsch_transmit_authority_20260907*.log`.
+They exposed two implementation integration mistakes (a missing source-label
+argument and an unnormalized `DCI_1_1` alias), corrected TX-only fixtures that
+previously invented reception flags, and stale PT-RS fixture symbol/K0 values.
+The fixtures now pack actual DCI and use the installed TDRA allocation.
+
+**Open regression:** `testSchedulerMUMIMOGrouping` reaches an actual
+configuration conflict in the older 64x4 repair profile: the scheduler's
+K0=0 differs from the active operator DCI table's K0=4. Static inspection of
+its inherited UL table also finds K2=1 while the derived profile selects K2=4. Neither conflict
+has been rewritten or bypassed to make a test pass. Align the profile's
+canonical timing declarations and legal TDD occasions before rerunning that
+profile. The current 5 MHz causal TDD profile is a different configuration.
+
+PDSCH time-domain allocation includes the DCI-selected K0 and symbol span;
+matching symbols alone does not establish a matching transmission occasion
+([TS 38.214 V18.8.0, section 5.1.2.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.08.00_60/ts_138214v180800p.pdf)).
+No standard edition was changed by these repairs.
+
 ## Ordered work still required
 
 1. **P0: main scheduler sample ownership.** Replace eager multi-slot physical
@@ -214,3 +285,50 @@ Keep waveform receiver estimates separate from standardized SS/CSI quantities
 Reference-SNR normalization must document RE/antenna and FFT conventions
 ([MathWorks SNR definition](https://www.mathworks.com/help/5g/ug/snr-definition-used-in-link-simulations.html)).
 No full-simulator, all-impairment, instrument, or 6G conformance claim is made.
+
+## Explicit uplink, spatial-control and RSSI acceptance scope
+
+User-requested extension: after closing the shared-clock failure and main
+stream integration, verify all of the following on the actual same run.
+These are OPEN checks, not claims of already implemented or qualified output.
+The last complete attempt produced zero PUSCH trial rows; isolated PRACH
+tests cannot substitute for that missing run-level evidence.
+
+- PRACH: actual scheduled occasion, waveform sample origin/duration, UE TX
+  versus gNB receive timing, detection/correlation, timing advance, decoded
+  RAR and subsequent Msg3/Msg4/RRC availability. Trace each stage through the
+  common stream, without legacy self-loop, future-tail or proxy substitution.
+- PUSCH: decoded UL DCI authority, actual K2/N2/TA timing, exact frozen TBS,
+  LDPC/rate matching, RV/NDI/HARQ state, DM-RS/precoder/rank, practical channel
+  estimates, CRC, power control/PHR and offered-versus-delivered payload bits.
+  Check both TDD symbol ownership and FDD directional/carrier separation in
+  code; do not launch a FDD scenario without a new user request.
+- PUCCH and UCI: actual scheduled SR, CSI and HARQ-ACK bits, format/resource
+  selection, K1/N1 and codebook timing, coding/CRC applicability and complete
+  receiver outcomes. Trace late ACK reservations onto already queued PUSCH,
+  exact UCI-on-PUSCH coding/multiplexing/rate matching and receiver recovery;
+  do not count one feedback payload as both standalone PUCCH and multiplexed
+  UCI. Verify policy-driven suppression is explicit and cannot silently
+  starve UL data.
+- SRS: configured occasions, comb/cyclic shift/port mapping, physical antenna
+  samples, actual gNB estimation, feedback age and UL rank/TPMI/precoder use.
+  Do not use an unavailable future SRS result or relabel a DL estimate as an
+  observed UL sounding result. Preserve TDD reciprocity versus FDD separation.
+- QCL/TCI and beamforming: trace source RS identity, configured QCL type,
+  activated TCI state and effective slot through spatial processing. Keep
+  spatial receive-filter assumptions separate from a PMI transmit matrix.
+  Export actual activation/selection/use evidence to CSV and evidence-backed
+  plots; distinguish configured states from states actually used.
+- CSI feedback/PMI: trace measured CSI-RS through RI/PMI/CQI selection,
+  reporting/transport delay, decoded feedback availability, scheduler
+  decisions and frozen applied precoders. Flag stale or bootstrap values
+  explicitly, and reconcile CSV/PNG identities with executed samples.
+- RSSI: verify the applicable NR measurement definition, measurement symbols
+  and bandwidth, antenna/branch aggregation, linear total received power,
+  receiver reference plane and units. Export the actual value plus that
+  context to CSV and runtime PNG; do not substitute RSRP, a link-budget
+  prediction, a plotted SNR setting, or fabricated unavailable values.
+
+Audit legacy callers and shortcuts for every channel above. Preserve absent
+or inapplicable evidence with explicit reasons; never create primary rows or
+plots simply to make channel coverage appear complete.

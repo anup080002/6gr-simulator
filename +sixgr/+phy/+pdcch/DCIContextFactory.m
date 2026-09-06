@@ -127,6 +127,25 @@ classdef DCIContextFactory
                 isfield(strict, "dci_context") && ~isempty(strict.dci_context);
             if hasOperatorContext
                 context = sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg, fmt);
+                % The operator context declares the RRC layout and RNTI
+                % type. For connected scheduling its RNTI value is a
+                % template, not the identity of every scheduled UE. Bind
+                % the authored payload context to the actual grant without
+                % mutating the installed configuration/shared template.
+                rnti = sixgr.util.structGet(grant, "RNTI", []);
+                if ~(isnumeric(rnti) && isscalar(rnti) && isreal(rnti) && ...
+                        isfinite(rnti) && rnti == fix(rnti) && rnti >= 0 && rnti <= 65535)
+                    error("sixgr:phy:pdcch:missing_dci_context", ...
+                        "Scheduled-grant DCI context requires an explicit integer RNTI in [0,65535].");
+                end
+                data = context.Data;
+                if any(upper(string(data.RNTIType)) == ["C-RNTI","CS-RNTI","MCS-C-RNTI"])
+                    data.RNTIValue = double(rnti);
+                    context = sixgr.phy.pdcch.DCIContext(data);
+                elseif double(data.RNTIValue) ~= double(rnti)
+                    error("sixgr:phy:pdcch:wrong_dci_context", ...
+                        "Common-procedure RNTI differs from its installed DCI context.");
+                end
                 source = "operator_rrc_dci_context";
             else
                 nGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
@@ -185,6 +204,24 @@ classdef DCIContextFactory
                     direction, symbolAllocation(1), symbolAllocation(2), direction);
             end
 
+            % Equal S/L allocations can occupy different future slots.
+            % Select the row by the actual K0/K2 as well, not merely by
+            % symbol span. Otherwise the DCI can advertise a different
+            % data slot from the frozen scheduler decision.
+            requestedOffset = localScheduledTimingOffset(grant,direction);
+            if isfinite(requestedOffset)
+                if size(allocations,2) < 4
+                    error("sixgr:phy:pdcch:grant_tdra_timing_mismatch", ...
+                        "Scheduled %s DCI requires an explicit TDRA timing-offset column.",direction);
+                end
+                matches = matches(double(allocations(matches,4)) == requestedOffset);
+                if isempty(matches)
+                    error("sixgr:phy:pdcch:grant_tdra_timing_mismatch", ...
+                        "No active %s TDRA row matches SymbolAllocation=[%d %d] and offset %d.", ...
+                        direction,symbolAllocation(1),symbolAllocation(2),requestedOffset);
+                end
+            end
+
             requestedIndex = localFirstFinite([ ...
                 sixgr.util.structGet(grant, "TimeDomainResourceAssignmentIndex", NaN), ...
                 sixgr.util.structGet(grant, "TDRAIndex", NaN), ...
@@ -204,6 +241,26 @@ classdef DCIContextFactory
             timeDomainAssignmentIndex = double(allocations(rowIndex,1));
         end
     end
+end
+
+function value = localScheduledTimingOffset(grant,direction)
+if direction == "DL", name = "K0"; else, name = "K2"; end
+value = NaN;
+for path = ["TimingDecision."+name, name, name+"Slots"]
+    candidate = sixgr.util.structGet(grant,path,[]);
+    if isempty(candidate), continue; end
+    if ~(isnumeric(candidate) && isscalar(candidate) && isreal(candidate) && ...
+            (isnan(candidate) || (isfinite(candidate) && candidate >= 0 && candidate == fix(candidate))))
+        error("sixgr:phy:pdcch:grant_tdra_timing_mismatch", ...
+            "Scheduled %s must be a nonnegative integer or unset NaN.",path);
+    end
+    if isnan(candidate), continue; end
+    if isfinite(value) && value ~= double(candidate)
+        error("sixgr:phy:pdcch:grant_tdra_timing_mismatch", ...
+            "Conflicting %s scheduler timing aliases.",name);
+    end
+    value = double(candidate);
+end
 end
 
 function value = localRequired(source, name)

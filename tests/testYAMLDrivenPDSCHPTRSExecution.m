@@ -13,7 +13,7 @@ assert(logical(scenario.get("reference_signals.ptrs_enabled")) && ...
 grant = struct( ...
     "Direction", "DL", "Frame", 1, "Slot", 6, ...
     "RNTI", 1, "UEIndex", 1, "ServingCell", 1, ...
-    "PRBSet", 0:11, "SymbolAllocation", [0 14], ...
+    "PRBSet", 0:11, "SymbolAllocation", double(cfg.phy.pdsch.symbolAllocation), ...
     "Modulation", "QPSK", "NumLayers", 2, "Layers", 2, ...
     "TargetCodeRate", 0.1884765625, "MCSIndex", 1, "MCS", 1, ...
     "MCSTable", "qam256_table2", "XOverhead", 0, ...
@@ -26,25 +26,12 @@ grant.PTRSEnabled = ptrsEnabled;
 grant.PTRSPortSet = ptrsPorts;
 grant.PTRSPortSetSource = ptrsSource;
 grant.DMRSPortSet = 0:1;
-grant.K0 = 0;
+[dciContext, tdraIndex] = sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant(cfg,grant,'1_1');
+tdra = dciContext.Data.DLTimeDomainAllocations;
+grant.K0 = double(tdra(tdra(:,1)==tdraIndex,4));
+grant.TimeDomainResourceAssignmentIndex = tdraIndex;
 cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg, grant.Slot);
-grant.ControlDecodeOk = true;
-grant.PDCCHGrantBindingRequired = true;
-grant.PDCCHGrantBindingOk = true;
-grant.PDCCHGrantBindingStatus = "pass";
-grant.PDCCHGrantDCIId = "phase19-yaml-pdsch-ptrs-dci";
-grant.PDCCHGrantDCIFieldsHash = "phase19_yaml_pdsch_ptrs_binding";
-grant.PDCCHGrantFieldsHash = grant.PDCCHGrantDCIFieldsHash;
-grant.DCICrcPass = true;
-grant.PDCCHPayloadMatch = true;
-grant.PDCCHCausalGrantDecodeOk = true;
-grant.PDCCHMissedDetection = false;
-grant.PDCCHFalseAlarm = false;
-grant.GrantValid = true;
-grant.PDCCHBlindSearchEnabled = true;
-grant.PDCCHREGMappingAvailable = true;
-grant.PDCCHControlEvidenceSource = "pdcch_waveform_dci_crc_and_payload_match";
-grant.ControlDecodeSource = grant.PDCCHControlEvidenceSource;
+grant.HARQ = struct('HarqID',0,'NDI',true,'RV',0,'IsRetransmission',false);
 
 % Let exact resource accounting derive the legal transport-block size from
 % the YAML-driven DM-RS/PT-RS allocation; do not inject a made-up TBS.
@@ -66,6 +53,7 @@ grant.TBSBits = double(nrTBS(pdsch.Modulation, pdsch.NumLayers, ...
 
 phyGrant = sixgr.phy.grant.freezePHYGrant( ...
     cfg, "DL", grant, "SNR_dB", 20, "Frame", 1, "Slot", 6);
+grant = withAuthoredPDSCHDCI(cfg, grant);
 [tx, ~] = sixgr.phy.dl.PDSCH_Tx( ...
     cfg, "PHYGrant", phyGrant, "SchedulerGrantContext", grant, ...
     "CompactOutput", true);
