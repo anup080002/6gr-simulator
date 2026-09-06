@@ -2140,3 +2140,48 @@ runtime repair. No scenario was rerun after this patch, and no FDD waveform
 run, 25 dB scenario, full testAll, optional plot expansion or windowing change
 was performed. The new regression is registered in testAll for later full
 verification; the focused results are not a claim that the full suite passes.
+
+## Broadcast receiver noise and CFO continuity
+
+The thermal-noise broadcast path now retains a value-state Threefry stream
+with time-major complex draws across receive chunks. Its variance comes
+from the absolute receiver thermal-noise/NF ledger, including during quiet
+intervals, not from measured signal power. Configured run seed, receiver/link,
+carrier and stream origin identify the sequence. Independent UE receivers
+are not assigned identical standalone noise streams. Constant CFO phase uses
+absolute sample coordinates instead of restarting at each call.
+
+The impairment entry point accepts explicitly materialized physical antenna
+samples and rejects a stale retained receiver clock before consuming the
+mutable fading channel. These are prerequisites for the shared stream, not
+integration of that stream into the main scheduling loop.
+
+The frozen-source focused batch reached `BROADCAST_NOISY_STREAM_VERIFIED_PASS`
+in `logs/broadcast_noisy_stream_verified_20260906.log`. It ran:
+
+- `testRuntimeComplexNoiseStream`: chunk/copy reproducibility, complex noise
+  moments, receiver-chain independence and strict authority/clock guards.
+- `testBroadcastThermalNoiseCFOContinuity`: actual producer samples, absolute
+  CFO phase, thermal variance, quiet intervals and distinct UE noise seeds.
+- `testInitialAccessImpairmentNoGenieCFO`: injected CFO reaches the noisy
+  receiver without transmitter-oracle correction.
+- `testBroadcastTRSNoisyStream`: composed physical SSB/TRS samples through
+  one continuous CDL/noise stream; completed SSB/SIB1 and TRS receivers use
+  their actual buffered samples without advancing the channel again.
+- `testSSBSharedReceivedBurst`: all four configured candidates decode from
+  one shared received broadcast and retain replay equivalence.
+
+The preceding batch in `logs/broadcast_noisy_stream_final_20260906.log`
+failed the existing replay-equivalence assertion while a noise seed-identity
+edit overlapped execution. That assertion was not weakened. The subsequent
+frozen-source batch passed it; the earlier failed log is preserved. The final
+session handle was unavailable on later polling, so completion evidence here
+is the end-of-batch success marker, not a newly observed process exit code.
+
+Remaining limits: the main scheduler still eagerly executes overlapping SSB
+and TRS captures. Fixed-SNR noise, white-interference, fractional timing and
+phase-noise paths are not qualified for chunk equivalence by these tests.
+Full RF frontend integration and full scenario qualification remain open.
+No new 12 dB scenario, FDD waveform run, 25 dB run, full testAll, optional
+plot expansion or windowing change was performed for this patch. No output
+was fabricated and historical failure evidence was not deleted.

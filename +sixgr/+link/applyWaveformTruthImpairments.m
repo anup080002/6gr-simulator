@@ -1,7 +1,29 @@
-function [y, replay, state] = applyWaveformTruthImpairments(x, snr_dB, state, cfg, tx, txInfo)
+function [y, replay, state] = applyWaveformTruthImpairments(x, snr_dB, state, cfg, tx, txInfo, varargin)
 %APPLYWAVEFORMTRUTHIMPAIRMENTS Apply the authoritative waveform impairment path.
 
-fs = double(sixgr.util.structGet(state, "SampleRate_Hz", localResolveSampleRate(tx, txInfo)));
+ip = inputParser;
+ip.addParameter("InputSampleDomain", "logical_ports", @(v)ischar(v) || isstring(v));
+ip.parse(varargin{:});
+fs = sixgr.util.structGet(state, "SampleRate_Hz", []);
+if isempty(fs), fs = localResolveSampleRate(tx, txInfo); end
+validateattributes(fs, {'numeric'}, {'real','scalar','finite','positive'});
+fs = double(fs);
+startSample = double(sixgr.util.structGet(state, "WaveformImpairmentNextSample", ...
+    sixgr.util.structGet(state, "RuntimeChannelState.CurrentSampleIndex", 0)));
+validateattributes(startSample, {'numeric'}, {'real','scalar','finite','integer','nonnegative'});
+if isfield(state,"WaveformImpairmentNextSample") && ...
+        logical(sixgr.util.structGet(state,"RuntimeChannelState.Initialized",false)) && ...
+        startSample ~= double(state.RuntimeChannelState.CurrentSampleIndex)
+    % Reject before the mutable fading object consumes even one sample.
+    % Another consumer cannot advance a shared channel behind this receiver.
+    error("sixgr:link:ImpairmentClockDiscontinuity", ...
+        "Retained receiver clock %.0f differs from the physical channel clock %.0f.", ...
+        startSample,double(state.RuntimeChannelState.CurrentSampleIndex));
+end
+if isfield(state, "WaveformImpairmentSampleRate") && state.WaveformImpairmentSampleRate ~= fs
+    error("sixgr:link:ImpairmentSampleRateChanged", ...
+        "A retained waveform impairment stream cannot change sample rate.");
+end
 y = x;
 
 replay = struct( ...
@@ -36,13 +58,18 @@ if isstruct(state)
         % channel delay or synthesize a future zero tail on a cloned fading
         % object as the legacy grant-aligned interface does.
         [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel( ...
-            x,state,"OutputSampleAlignment","continuous_raw_samples");
+            x,state,"OutputSampleAlignment","continuous_raw_samples", ...
+            "InputSampleDomain",ip.Results.InputSampleDomain);
     else
-        [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel(x,state);
+        [y, channelReplay, state] = sixgr.link.applyRuntimeFadingChannel( ...
+            x,state,"InputSampleDomain",ip.Results.InputSampleDomain);
     end
     chFields = fieldnames(channelReplay);
     for chIdx = 1:numel(chFields)
         replay.(chFields{chIdx}) = channelReplay.(chFields{chIdx});
+    end
+    if isfinite(channelReplay.RuntimeChannelStartSample)
+        startSample = double(channelReplay.RuntimeChannelStartSample);
     end
 end
 
@@ -59,9 +86,6 @@ for impairmentIdx = 1:numel(impairmentFields)
     replay.(impairmentFields{impairmentIdx}) = ...
         impairmentReplay.(impairmentFields{impairmentIdx});
 end
-gain_dB = double(sixgr.util.structGet( ...
-    replay, "AppliedLargeScaleGain_dB", 0));
-
 timingOffset = localResolveInjectedTimingOffsetSamples(cfg);
 replay.InjectedTimingOffset_samples = timingOffset;
 if timingOffset ~= 0
@@ -71,7 +95,7 @@ end
 cfoHz = localResolveInjectedCFOHz(cfg);
 replay.InjectedCFO_Hz = cfoHz;
 if isfinite(cfoHz) && cfoHz ~= 0
-    y = localApplyCFO(y, fs, cfoHz);
+    y = localApplyCFO(y, fs, cfoHz, startSample);
 end
 if localPhaseNoiseConfigured(cfg)
     [y, replay] = localApplyPhaseNoise(y, replay, cfg, fs);
@@ -109,8 +133,26 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
              "bandwidth and receiver noise figure."]);
     end
     replay.InjectedNoiseVariance = 10 .^ (thermalNoisePower_dBm / 10);
-    y = localAddComplexNoiseVariance(y, replay.InjectedNoiseVariance);
+    noiseState = sixgr.util.structGet(state, "ReceiverNoiseState", struct());
+    origin = double(sixgr.util.structGet(noiseState, "OriginSample", startSample));
+    runSeed = sixgr.util.structGet(cfg, "run.seed", []);
+    validateattributes(runSeed, {'numeric'}, {'real','scalar','finite','integer','nonnegative'});
+    identity = struct("RunSeed",runSeed,"LinkKey", ...
+        string(sixgr.util.structGet(state,"RuntimeChannelState.LinkKey","standalone_receiver")), ...
+        "UEIndex",sixgr.util.structGet(cfg,"lls6g.userContext.UEIndex", ...
+            sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeUEIndex",[])), ...
+        "ServingCell",sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeServingCellIndex",[]), ...
+        "CarrierFrequencyHz",sixgr.util.structGet(cfg,"phy.fc_Hz", ...
+            sixgr.util.structGet(cfg,"channel.fc_Hz",[])), ...
+        "OriginSample",origin,"SampleRateHz",fs,"Role","broadcast_receiver_thermal_noise");
+    digest = sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(identity),"UTF-8")));
+    noiseSeed = hex2dec(extractBefore(digest,9));
+    [y, state.ReceiverNoiseState] = sixgr.link.addRuntimeComplexNoise( ...
+        y,replay.InjectedNoiseVariance,noiseSeed,startSample,noiseState);
     replay.NoisePowerSource = "thermal_noise_plus_receiver_nf_absolute_sqrt_mW_samples";
+    replay.NoiseSequenceSource = "persistent_threefry_time_major_complex_draws";
+    replay.NoiseStreamSeed = noiseSeed;
+    replay.NoiseStreamOriginSample = origin;
 else
     appliedSnr_dB = double(sixgr.util.structGet( ...
         replay, "AppliedAWGNSNR_dB", snr_dB));
@@ -121,25 +163,14 @@ end
 % CorrectedWaveform above retain their earlier synchronization-stage roles.
 replay.ReceiverInputWaveform = y;
 replay.ReceiverInputWaveformSource = "sixgr.link.applyWaveformTruthImpairments:returned_receiver_samples";
+replay.ImpairmentStartSample = startSample;
+replay.ImpairmentEndSampleExclusive = startSample+size(y,1);
+state.WaveformImpairmentNextSample = replay.ImpairmentEndSampleExclusive;
+state.WaveformImpairmentSampleRate = fs;
 end
 
 function [y, nVar] = localAddAwgnAtEffectiveSNR(x, snr_dB)
 [y, nVar] = sixgr.util.addAwgnComplex(x, snr_dB);
-end
-
-function y = localAddComplexNoiseVariance(x, noiseVariance)
-if ~(isscalar(noiseVariance) && isfinite(noiseVariance) && noiseVariance >= 0)
-    error("sixgr:link:InvalidInitialAccessNoiseVariance", ...
-        "Initial-access noise variance must be one finite nonnegative scalar.");
-end
-if noiseVariance == 0
-    y = x;
-    return;
-end
-n = sqrt(noiseVariance / 2) .* ( ...
-    randn(size(x), "like", real(x)) + ...
-    1i .* randn(size(x), "like", real(x)));
-y = x + cast(n, "like", x);
 end
 
 function cfgOut = localBindRuntimeLargeScaleContext(cfgIn, state)
@@ -208,12 +239,12 @@ function y = localApplyTimingOffset(x, timingOffset)
 y = sixgr.util.applyFractionalSampleDelay(x, timingOffset);
 end
 
-function y = localApplyCFO(x, sampleRateHz, cfoHz)
+function y = localApplyCFO(x, sampleRateHz, cfoHz, startSample)
 y = x;
 if ~(isfinite(sampleRateHz) && sampleRateHz > 0 && isfinite(cfoHz) && cfoHz ~= 0)
     return;
 end
-n = (0:size(y, 1)-1).';
+n = startSample + (0:size(y, 1)-1).';
 rot = exp(1j * 2 * pi * (cfoHz / sampleRateHz) * n);
 y = y .* cast(rot, "like", y);
 end
