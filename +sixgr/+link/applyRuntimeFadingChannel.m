@@ -1,5 +1,26 @@
-function [y, replay, state] = applyRuntimeFadingChannel(x, state)
+function [y, replay, state] = applyRuntimeFadingChannel(x, state, varargin)
 %APPLYRUNTIMEFADINGCHANNEL Apply persistent runtime fading state when available.
+% Continuous receivers retain channel/filter delay on their absolute sample
+% clock. Only the legacy grant interface may use delay-aligned output.
+
+ip = inputParser;
+ip.addParameter("OutputSampleAlignment", "grant_delay_aligned", ...
+    @(v) ischar(v) || isstring(v));
+ip.parse(varargin{:});
+alignment = string(ip.Results.OutputSampleAlignment);
+if ~isscalar(alignment) || ismissing(alignment) || ...
+        ~any(alignment == ["grant_delay_aligned", "continuous_raw_samples"])
+    error("ChannelFactory:InvalidOutputSampleAlignment", ...
+        "OutputSampleAlignment must be grant_delay_aligned or continuous_raw_samples.");
+end
+if alignment == "continuous_raw_samples"
+    runtime = sixgr.util.structGet(state, "RuntimeChannelState", struct());
+    if ~isstruct(state) || ~isscalar(state) || ~isstruct(runtime) || ...
+            ~isscalar(runtime) || ~isfield(runtime, "ContractVersion")
+        error("ChannelFactory:UninitializedContinuousChannel", ...
+            "Continuous reception requires authoritative runtime channel state; legacy or missing state cannot bypass fading.");
+    end
+end
 
 y = x;
 replay = struct( ...
@@ -22,7 +43,8 @@ end
 
 runtimeState = sixgr.util.structGet(state, "RuntimeChannelState", struct());
 if isstruct(runtimeState) && isfield(runtimeState, "ContractVersion")
-    [y, replay, runtimeState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState(runtimeState, x);
+    [y, replay, runtimeState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
+        runtimeState, x, "OutputSampleAlignment", alignment);
     state.RuntimeChannelState = runtimeState;
     state.UseFading = logical(sixgr.util.structGet(runtimeState, "UseFading", false));
     state.Obj = sixgr.util.structGet(runtimeState, "Obj", []);

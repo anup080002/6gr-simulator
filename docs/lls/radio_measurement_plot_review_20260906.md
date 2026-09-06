@@ -1724,3 +1724,26 @@ found a remaining rendering defect: an all-zero throughput sample is drawn as
 a filled bar from -1 to 0 Mbit/s. The renderer's zero baseline and incomplete-run
 measurement labels require follow-up; this image is not a valid throughput
 performance result. No optional plot expansion or additional scenario was run.
+
+### Continuous fading exposed through the production link wrapper
+
+`applyRuntimeFadingChannel` now accepts the channel backend's explicit
+`OutputSampleAlignment` contract. The default remains `grant_delay_aligned`;
+slot-stream callers can request `continuous_raw_samples` without going around
+the production wrapper. Continuous mode rejects missing/legacy state and
+retains the backend's initialized/materialized-object and per-sample CDL guards.
+It cannot enter the old pass-through, padding, or trimming rescue branches.
+
+Focused session 89499 exited 0 (`logs/continuous_fading_wrapper_20260906.log`,
+`CONTINUOUS_FADING_WRAPPER_PASS`). The continuous test now routes all four real
+CDL chunks through the production wrapper and then the receive dispatcher.
+All 38,400 samples retain the same 2.01144e-16 relative agreement with the
+one-shot channel reference, with exact clocks and no additional resets or
+alignment lookahead. Missing-state, legacy-state, and unknown-alignment negative
+checks pass. The shared-burst regression also passes through the unchanged
+default wrapper interface, including all four BCH/SIB1 decoder comparisons.
+
+The full coupled caller still needs TX composition and persistent RF/channel
+execution on each slot before dispatching RX chunks. This wrapper change alone
+does not fix the scenario's premature multi-slot acquisition, and no further
+scenario or broad qualification batch was launched.
