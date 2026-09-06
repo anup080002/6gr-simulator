@@ -1747,3 +1747,33 @@ The full coupled caller still needs TX composition and persistent RF/channel
 execution on each slot before dispatching RX chunks. This wrapper change alone
 does not fix the scenario's premature multi-slot acquisition, and no further
 scenario or broad qualification batch was launched.
+
+### TRS transmit preparation separated for shared-slot composition
+
+The saved 12 dB scenario resolves CFO, phase noise, IQ imbalance, and timing
+offset switches to disabled. Their nonzero nominal parameters are not authority
+to enable them. No additional RF feature was enabled during this checkpoint.
+
+TRS shares the initial broadcast observation interval, so its TX waveform must
+be available for composition before its receiver executes. `prepareTRSTransmission`
+now owns the existing strict TRS config build, actual waveform generation,
+exact slot-grid power reference, and power normalization. These operations were
+moved from `runTRSTracking`, not replaced with a synthetic signal. Preparation
+returns original slot grids/tables and normalized samples before TX RF. The
+regular tracking path uses the same prepared samples, then performs its existing
+RF, channel, noise, receiver, and measurement stages.
+
+`runTRSTracking(...,"PrepareOnly",true)` leaves receiver measurements unavailable,
+keeps `Ok=false`, and does not advance channel state. Focused session 70117 exited
+0 (`logs/trs_preparation_20260906.log`, `TRS_PREPARATION_FOCUSED_PASS`). The new
+preparation regression checks all 15,360 samples, their exact power/grid context,
+unchanged channel state, one executed waveform generator, and no RF/channel or
+receiver calls. `testTRSRuntimeExceptionEvidence` and
+`testTRSReferenceSignalExecution` also pass. Broad qualification remains deferred.
+
+TRS receive completion must still be separated, and all scheduled contributions
+must then enter one chronological slot pipeline. The existing concatenated TRS
+slot representation also requires an explicit slot-to-sample mapping before it
+is used for nonconsecutive scheduled slots. This checkpoint does not claim to
+repair the coupled scenario's premature multi-slot execution; no scenario rerun
+was launched.

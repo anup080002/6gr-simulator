@@ -5,6 +5,7 @@ p = inputParser;
 p.addParameter("Logger", [], @(x) isempty(x) || isa(x, "sixgr.core.Logger"));
 p.addParameter("SNR_dB", sixgr.util.structGet(cfg, "channel.snr_dB", 20), @(x) isnumeric(x) && isscalar(x));
 p.addParameter("ChannelState",struct(),@(x) isempty(x) || isstruct(x));
+p.addParameter("PrepareOnly",false,@(x) islogical(x) && isscalar(x));
 p.parse(varargin{:});
 log = p.Results.Logger;
 snr_dB = double(p.Results.SNR_dB);
@@ -122,6 +123,12 @@ end
 
 try
     tStart = tic;
+    if p.Results.PrepareOnly
+        out.PreparedTransmission = sixgr.link.prepareTRSTransmission(cfg,snr_dB);
+        out.Notes = "TRS transmit samples prepared; RF, channel and receiver execution deferred.";
+        out.ComputeLatency_ms = 1e3*toc(tStart);
+        return;
+    end
     [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState] = ...
         localRunStrictRuntimeTRSEvidence(cfg,snr_dB,p.Results.ChannelState);
     out.RuntimeStageCount = 5;
@@ -338,26 +345,11 @@ function [strictCfg,tx,rx,replay,timing,det,freq,ch,tracking,score,channelState]
 if nargin < 3 || ~isstruct(initialChannelState)
     initialChannelState = struct();
 end
-runId = string(sixgr.util.structGet(cfg, "run.id", ...
-    sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
-scenarioName = string(sixgr.util.structGet(cfg, "scenario.name", ...
-    sixgr.util.structGet(cfg, "meta.scenario_id", "trs_runtime_tracking")));
-strictCfg = sixgr.phy.trs.buildTRSConfigFromScenario(cfg, ...
-    "RunId", runId, "ScenarioName", scenarioName);
-if isfield(strictCfg, "StrictValidation") && ...
-        isfield(strictCfg.StrictValidation, "StrictValid") && ...
-        ~logical(strictCfg.StrictValidation.StrictValid)
-    reason = string(sixgr.util.structGet(strictCfg.StrictValidation, "StrictUnsupportedReason", ...
-        "strict_trs_config_invalid"));
-    error("sixgr:link:TRSStrictConfigInvalid", ...
-        "Strict TRS runtime config is invalid: %s", char(reason));
-end
-
-tx = sixgr.phy.trs.generateTRSWaveform(strictCfg);
-[rxWave,replay,channelState] = localApplyTrackingChannelAndNoise(tx, ...
-    localPrepareTRSReceiverObservationConfig(cfg, snr_dB), ...
-    double(tx.SampleRateHz),snr_dB,double(strictCfg.NumCSIRSPorts), ...
-    initialChannelState,strictCfg);
+prepared = sixgr.link.prepareTRSTransmission(cfg, snr_dB);
+strictCfg = prepared.StrictConfig;
+tx = prepared.Tx;
+[rxWave,replay,channelState] = localApplyTrackingChannelAndNoise( ...
+    prepared,initialChannelState);
 rx = struct();
 rx.Waveform = rxWave;
 rx.NoiseOnlyWaveform = [];
@@ -537,12 +529,14 @@ function [y, nVar] = localAddAwgn(x, snr_dB)
 end
 
 function [y,replay,updatedChannelState] = localApplyTrackingChannelAndNoise( ...
-        tx,cfg,sampleRateHz,snr_dB,nPorts,initialChannelState,strictCfg) %#ok<INUSD>
-txWave = tx.Waveform;
-txInfo = localTRSTxInfo(tx,strictCfg);
-[txWave,powerContext] = sixgr.rf.applyPowerContext( ...
-    txWave,cfg,"DL",txInfo);
-cfg = sixgr.util.structSet(cfg,"lls6g.runtimePowerContext",powerContext);
+        prepared,initialChannelState)
+tx = prepared.Tx;
+cfg = prepared.ReceiverConfig;
+sampleRateHz = prepared.SampleRateHz;
+snr_dB = prepared.RequestedSNR_dB;
+txWave = prepared.TransmitSamples;
+txInfo = prepared.TxInfo;
+powerContext = prepared.PowerContext;
 txRfOut = sixgr.rf.applyRFImpairmentChain(txWave,cfg, ...
     "SampleRateHz",sampleRateHz,"Direction","DL", ...
     "MeasurementPoint","tx_output","Endpoint","tx", ...
@@ -590,60 +584,6 @@ updatedChannelState = sixgr.util.structGet( ...
     truthState,"RuntimeChannelState",struct());
 end
 
-function cfgOut = localPrepareTRSReceiverObservationConfig(cfg, snr_dB)
-cfgOut = cfg;
-resolved = sixgr.util.structGet(cfgOut,"lls6g.resolvedConfig",struct());
-hasYAMLAuthority = isstruct(resolved) && ~isempty(fieldnames(resolved));
-noiseMode = strtrim(string(sixgr.util.structGet( ...
-    cfgOut,"run.noiseOperatingMode","")));
-if ~hasYAMLAuthority && strlength(noiseMode) == 0
-    cfgOut = sixgr.util.structSet(cfgOut,"run.noiseOperatingMode", ...
-        "standalone_awgn_snr_argument");
-end
-cfgOut = sixgr.util.structSet(cfgOut, "channel.snr_dB", double(snr_dB));
-cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeSignalFamily", "TRS");
-cfgOut = sixgr.util.structSet(cfgOut, "phy.runtimeSignalFamily", "TRS");
-cfgOut = sixgr.util.structSet(cfgOut, ...
-    "lls6g.userContext.RuntimeCurrentDirection","DL");
-cfgOut = sixgr.util.structSet(cfgOut, ...
-    "lls6g.userContext.Direction","DL");
-cfgOut = sixgr.util.structSet(cfgOut,"channel.linkDirection","DL");
-end
-
-function txInfo = localTRSTxInfo(tx,strictCfg)
-ofdm = struct("SampleRate",double(sixgr.util.structGet( ...
-    tx,"SampleRateHz",NaN)));
-carrier = sixgr.util.structGet(strictCfg,"ToolboxCarrier",[]);
-if ~isempty(carrier)
-    try
-        ofdm = nrOFDMInfo(carrier);
-    catch
-    end
-end
-txInfo = struct("OFDM",ofdm);
-slots = sixgr.util.structGet(tx,"GridSlots",struct([]));
-if ~isempty(slots)
-    exactGrids = arrayfun(@(slot) {sixgr.util.structGet( ...
-        slot,"Grid",[])},slots);
-    if any(cellfun(@isempty,exactGrids))
-        error("sixgr:link:TRSExactPowerGridUnavailable", ...
-            "Every TRS waveform slot must retain its exact transmitted " + ...
-            "port-domain resource grid for physical power normalization.");
-    end
-    referenceSubcarriers = size(exactGrids{1},1);
-    referencePorts = size(exactGrids{1},3);
-    compatible = cellfun(@(grid) ...
-        size(grid,1) == referenceSubcarriers && ...
-        size(grid,3) == referencePorts,exactGrids);
-    if ~all(compatible)
-        error("sixgr:link:TRSPowerGridDimensionMismatch", ...
-            "TRS slot grids have incompatible subcarrier or port dimensions.");
-    end
-    txInfo.PortGrid = cat(2,exactGrids{:});
-    txInfo.PowerNormalizationGridSource = ...
-        "exact_trs_multislot_port_grids";
-end
-end
 
 function replay = localMergeTRSReplay(varargin)
 replay = struct();
