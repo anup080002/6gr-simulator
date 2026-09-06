@@ -1799,3 +1799,39 @@ broadcast/TRS execution. The next requested 25-slot TDD diagnostic retains all
 strict clock and publication checks; any repeated failure remains a failure,
 not a qualified result. Its 12 dB configured operating-point label is not a
 claim that thermal-noise/geometry-derived measured SINR equals 12 dB.
+
+### TDD retry and configured TRS slot-spacing repair
+
+Run `tdd_12db_minimal_20260906_204140` reproduced the slot-2 waveform failure
+at 15:13:50 UTC. Its persisted `runtime_failure_checkpoint.csv` contains
+`IncompleteSharedSSBBurstReception` wrapping `RuntimeChannelTimeReversal`:
+channel sample 38400 (5 ms), requested sample 7680 (1 ms), DLTrialRows=0,
+ULTrialRows=0. Report recovery was still running at this checkpoint. No repeat
+scenario was launched, and its outputs are not qualified.
+
+The actual TDD YAML specifies TRS slots `[2,7]`. The producer previously
+concatenated their samples as adjacent slots, turning a 5 ms start-to-start
+interval into 1 ms. This also corrupted the elapsed-time basis consumed by
+frequency tracking. `generateTRSWaveform` now modulates one chronological
+grid, retaining zero transmit contribution in intervening unscheduled TRS
+slots. These are real transmitter-idle samples, not padded receiver evidence.
+The exact full grid and corresponding CP/sample metadata drive power
+normalization, so late-slot REs are not mistaken for absent grid entries.
+The receiver's existing table offsets now select the actual transmitted spans.
+
+Sample boundaries use the Toolbox OFDM symbol lengths and their sample-rate
+reference, rather than assuming equal slot sample counts at every numerology:
+[nrOFDMModulate reference](https://www.mathworks.com/help/5g/ref/nrofdmmodulate.html).
+The original slot resource tables remain resource-only; the added full port
+grid explicitly carries their temporal placement.
+
+Focused batch `logs/trs_slot_timeline_20260906.log` reached
+`TRS_SLOT_TIMELINE_FOCUSED_PASS`: slot timing at 15/30/60/120 kHz, preparation,
+receive-only completion, exception evidence, and reference-signal execution.
+Tests compare active slot waveforms against independent Toolbox modulation,
+verify idle TX samples, check the 5 ms separation, and recover an injected
+37 Hz offset from actual received reference samples. Preparation and receive
+completion now cover 46,080 samples, versus the incorrect 15,360-sample compact
+observation. This does not claim general 3GPP conformance or fix the shared
+scheduler's premature broadcast/TRS execution. Chronological TX composition
+and deferred receive completion in the coupled runtime remain necessary.

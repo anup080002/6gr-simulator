@@ -57,6 +57,11 @@ cfgOut = sixgr.util.structSet(cfgOut,"channel.linkDirection","DL");
 end
 
 function txInfo = localTRSTxInfo(tx,strictCfg)
+if isfield(tx,"PortGrid") && isfield(tx,"OFDM")
+    txInfo = struct("OFDM",tx.OFDM,"PortGrid",tx.PortGrid, ...
+        "PowerNormalizationGridSource","exact_trs_multislot_port_grids");
+    return;
+end
 ofdm = struct("SampleRate",double(sixgr.util.structGet( ...
     tx,"SampleRateHz",NaN)));
 carrier = sixgr.util.structGet(strictCfg,"ToolboxCarrier",[]);

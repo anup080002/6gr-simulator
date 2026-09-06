@@ -34,7 +34,13 @@ assert(p.NumSamples==size(p.TransmitSamples,1) && p.SampleRateHz>0);
 assert(all(isfinite(p.TransmitSamples(:))) && any(p.TransmitSamples(:)~=0));
 assert(p.TxInfo.PowerNormalizationGridSource=="exact_trs_multislot_port_grids");
 assert(isequaln(p.PowerContext,p.ReceiverConfig.lls6g.runtimePowerContext));
-assert(isequal(p.TxInfo.PortGrid,cat(2,p.Tx.GridSlots.Grid)));
+assert(isequal(p.TxInfo.PortGrid,p.Tx.PortGrid));
+for k=1:numel(p.Tx.GridSlots)
+    slot=p.Tx.GridSlots(k);
+    symbols=(slot.Slot-p.Tx.FirstSlot0Based)*slot.Carrier.SymbolsPerSlot+ ...
+        (1:slot.Carrier.SymbolsPerSlot);
+    assert(isequal(p.TxInfo.PortGrid(:,symbols,:),slot.Grid));
+end
 expected=sixgr.rf.applyPowerContext(p.Tx.Waveform,p.ReceiverConfig,"DL",p.TxInfo);
 assert(isequal(expected,p.TransmitSamples));
 assert(height(p.Tx.SlotTable)==numel(p.Tx.GridSlots));
