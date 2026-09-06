@@ -1835,3 +1835,41 @@ completion now cover 46,080 samples, versus the incorrect 15,360-sample compact
 observation. This does not claim general 3GPP conformance or fix the shared
 scheduler's premature broadcast/TRS execution. Chronological TX composition
 and deferred receive completion in the coupled runtime remain necessary.
+
+### Materialized antenna-domain composition checkpoint
+
+The TDD process for `tdd_12db_minimal_20260906_204140` is now terminal:
+session 48203 exited 1. Its final recovery warning at 15:27:21 UTC was
+`TerminalBrowserClosureFailed` after three passes (`materialization=0`,
+`visual=1`, `lineage=1`). The primary waveform error remains the slot-2
+channel time reversal. `final_publication_readiness.md` says not publication-ready.
+
+Physical composition must happen after each contributor's antenna mapping,
+not by summing unrelated logical ports and applying whichever map was last
+stored in channel state. `projectRuntimeTransmitSamples` now uses the actual
+materialized map and records its canonical matrix hash without advancing the
+channel. `applyRuntimeFadingChannel` and `ChannelFactory.applyRuntimeChannelState`
+accept explicit `InputSampleDomain="materialized_channel_ports"`; this requires
+the exact materialized input width and forbids implicit padding or another
+element projection. Default logical-port behavior remains unchanged. Composite
+replay does not attribute all contributors to one last-used logical precoder.
+No new physical parameter or scenario override was introduced.
+
+Focused session 57874 exited 0 with `MATERIALIZED_CHANNEL_COMPOSITION_FOCUSED_PASS`
+in `logs/materialized_channel_composition_retry_20260906.log`. The regression
+projects actual TRS samples, composes them with the actual physical-beam
+broadcast at their configured times, then filters all 61,440 composite samples
+through one persistent CDL object using irregular receive boundaries. It verifies
+the composite against an independent test-only channel clone, exact sample
+counts including configured initialization warm-up, unchanged reset count,
+once-only observation completion, and rejection of wrong input domains/widths.
+The first fixture attempt incorrectly assumed zero initialization warm-up;
+the corrected assertion requires unchanged pre-existing warm-up and exactly
+the real transmitted samples thereafter. Continuous-channel and TRS
+receive-completion regressions also pass.
+
+This is channel/antenna composition evidence, not an end-to-end RF, decoding,
+resource-collision or scheduler qualification. Shared node RF/noise processing
+and chronological coupled-runtime integration remain unfinished. No further
+scenario, FDD run, full testAll, optional plot expansion or impairment enablement
+was launched at this checkpoint.

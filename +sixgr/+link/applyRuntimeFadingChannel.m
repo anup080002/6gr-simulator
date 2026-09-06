@@ -6,14 +6,22 @@ function [y, replay, state] = applyRuntimeFadingChannel(x, state, varargin)
 ip = inputParser;
 ip.addParameter("OutputSampleAlignment", "grant_delay_aligned", ...
     @(v) ischar(v) || isstring(v));
+ip.addParameter("InputSampleDomain", "logical_ports", ...
+    @(v) ischar(v) || isstring(v));
 ip.parse(varargin{:});
+inputDomain = string(ip.Results.InputSampleDomain);
+if ~isscalar(inputDomain) || ismissing(inputDomain) || ...
+        ~any(inputDomain == ["logical_ports", "materialized_channel_ports"])
+    error("ChannelFactory:InvalidInputSampleDomain", ...
+        "InputSampleDomain must be logical_ports or materialized_channel_ports.");
+end
 alignment = string(ip.Results.OutputSampleAlignment);
 if ~isscalar(alignment) || ismissing(alignment) || ...
         ~any(alignment == ["grant_delay_aligned", "continuous_raw_samples"])
     error("ChannelFactory:InvalidOutputSampleAlignment", ...
         "OutputSampleAlignment must be grant_delay_aligned or continuous_raw_samples.");
 end
-if alignment == "continuous_raw_samples"
+if alignment == "continuous_raw_samples" || inputDomain == "materialized_channel_ports"
     runtime = sixgr.util.structGet(state, "RuntimeChannelState", struct());
     if ~isstruct(state) || ~isscalar(state) || ~isstruct(runtime) || ...
             ~isscalar(runtime) || ~isfield(runtime, "ContractVersion")
@@ -44,7 +52,8 @@ end
 runtimeState = sixgr.util.structGet(state, "RuntimeChannelState", struct());
 if isstruct(runtimeState) && isfield(runtimeState, "ContractVersion")
     [y, replay, runtimeState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
-        runtimeState, x, "OutputSampleAlignment", alignment);
+        runtimeState, x, "OutputSampleAlignment", alignment, ...
+        "InputSampleDomain", inputDomain);
     state.RuntimeChannelState = runtimeState;
     state.UseFading = logical(sixgr.util.structGet(runtimeState, "UseFading", false));
     state.Obj = sixgr.util.structGet(runtimeState, "Obj", []);
