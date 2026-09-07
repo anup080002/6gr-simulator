@@ -3230,17 +3230,20 @@ scale = nfft * sqrt(1000); % sqrt(mW) grid -> sqrt(W) resource grid
 physicalGrid = physicalGrid ./ cast(scale, "like", physicalGrid);
 resourceAverage = nan(numel(configs),1);
 perAntenna = cell(numel(configs),1);
+physicalResources = cell(numel(configs),1);
 measurementErrors = strings(numel(configs),1);
 for ordinal = 1:numel(configs)
     try
-        measured = nrCSIRSMeasurements(carrier, configs{ordinal}, physicalGrid);
-        branchRSRP = double(measured.RSRPPerAntenna(:).');
-        branchRSRP = branchRSRP(isfinite(branchRSRP));
-        if isempty(branchRSRP)
-            measurementErrors(ordinal) = "empty_rsrp_per_antenna";
+        measured = sixgr.phy.refsig.measureCSIRSPhysicalResource( ...
+            carrier,configs{ordinal},physicalGrid);
+        measured.ResourceID=resourceIDs(ordinal);
+        physicalResources{ordinal}=measured;
+        branchRSRP = measured.RSRPPerAntenna_dBm;
+        perAntenna{ordinal} = branchRSRP;
+        if ~measured.Available
+            measurementErrors(ordinal) = "unavailable_physical_resource_measurement";
             continue;
         end
-        perAntenna{ordinal} = branchRSRP;
         % TS 38.215 receiver-diversity reporting requires the reported
         % CSI-RSRP to be no lower than the CSI-RSRP of any individual
         % receive branch.  Preserve every branch value for audit and use
@@ -3262,6 +3265,8 @@ obs.MeasurementResourceIDs = localNumericVectorToken(resourceIDs);
 obs.MeasurementRSRPPerResource_dBm = localNumericVectorToken(resourceAverage);
 obs.MeasurementRSRPPerResourceValues_dBm = resourceAverage;
 obs.MeasurementRSRPPerAntennaByResource_dBm = perAntenna;
+obs.MeasurementPhysicalResources = physicalResources;
+obs.MeasurementPhysicalResourcesJSON = string(jsonencode(physicalResources));
 obs.MeasurementErrors = strjoin(measurementErrors(strlength(measurementErrors) > 0), "|");
 valid = find(isfinite(resourceAverage), 1, "first");
 if isempty(valid)
@@ -3278,6 +3283,7 @@ obs.MeasurementSource = ...
     "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid";
 obs.PowerReferencePlane = string(physicalReferencePlane);
 obs.PhysicalMeasurementStatus = "available";
+obs = localSelectCSIRSRSPResource(obs,struct('SelectedResourceOrdinal',valid));
 end
 
 function obs = localSelectCSIRSRSPResource(obs, estimateInfo)
@@ -3298,6 +3304,43 @@ if isfinite(values(ordinal))
         obs.MeasurementRSRPPerReceiveAntenna_dBm = ...
             localNumericVectorToken(perAntenna{ordinal});
     end
+    resources=sixgr.util.structGet(obs,"MeasurementPhysicalResources",{});
+    if ordinal<=numel(resources) && ~isempty(resources{ordinal})
+        measured=resources{ordinal};
+        [~,branch]=max(measured.RSRPPerAntenna_dBm);
+        % RSSI and RSRQ must come from the SAME resource and receive branch
+        % as the reported RSRP, not independently chosen maxima.
+        obs.MeasurementReceiveAntennaIndex1Based=double(branch);
+        obs.MeasurementRSSI_dBm=measured.RSSIPerAntenna_dBm(branch);
+        obs.MeasurementRSRQ_dB=measured.RSRQPerAntenna_dB(branch);
+        obs.MeasurementRSSIPerReceiveAntenna_dBm=localNumericVectorToken(measured.RSSIPerAntenna_dBm);
+        obs.MeasurementRSRQPerReceiveAntenna_dB=localNumericVectorToken(measured.RSRQPerAntenna_dB);
+        obs.MeasurementNumRB=measured.NumRB;
+        obs.MeasurementFirstPRB0Based=measured.FirstPRB0Based;
+        obs.MeasurementSymbolIndices0Based=localNumericVectorToken(measured.SymbolIndices0Based);
+        obs.MeasurementSubcarrierSpacing_kHz=measured.SubcarrierSpacing_kHz;
+        obs.MeasurementBandwidth_Hz=measured.Bandwidth_Hz;
+        obs.MeasurementRSSIAntennaAggregation="same_branch_as_reported_rsrp";
+        obs.MeasurementRSSIStatus="available";
+    end
+else
+    % Never retain the first valid resource's power under a different CRI.
+    obs.MeasurementSelectedResourceOrdinal=ordinal;
+    obs.MeasurementRSRP_dBm=NaN;
+    obs.MeasurementRSRPPerReceiveAntenna_dBm="";
+    obs.MeasurementRSSI_dBm=NaN;
+    obs.MeasurementRSRQ_dB=NaN;
+    obs.MeasurementRSSIPerReceiveAntenna_dBm="";
+    obs.MeasurementRSRQPerReceiveAntenna_dB="";
+    obs.MeasurementReceiveAntennaIndex1Based=NaN;
+    obs.MeasurementNumRB=NaN;
+    obs.MeasurementFirstPRB0Based=NaN;
+    obs.MeasurementSymbolIndices0Based="";
+    obs.MeasurementSubcarrierSpacing_kHz=NaN;
+    obs.MeasurementBandwidth_Hz=NaN;
+    obs.MeasurementRSSIAntennaAggregation="";
+    obs.MeasurementRSSIStatus="unavailable_selected_resource_not_measured";
+    obs.PhysicalMeasurementStatus="unavailable_selected_resource_not_measured";
 end
 end
 
@@ -3550,6 +3593,20 @@ obs.MeasurementRSRP_dB = NaN;
 obs.MeasurementRelativeRSRP_dB = NaN;
 obs.MeasurementRelativeSource = "";
 obs.MeasurementRSRP_dBm = NaN;
+obs.MeasurementRSSI_dBm = NaN;
+obs.MeasurementRSRQ_dB = NaN;
+obs.MeasurementRSSIPerReceiveAntenna_dBm = "";
+obs.MeasurementRSRQPerReceiveAntenna_dB = "";
+obs.MeasurementReceiveAntennaIndex1Based = NaN;
+obs.MeasurementRSSIAntennaAggregation = "";
+obs.MeasurementRSSIStatus = "not_attempted";
+obs.MeasurementNumRB = NaN;
+obs.MeasurementFirstPRB0Based = NaN;
+obs.MeasurementSymbolIndices0Based = "";
+obs.MeasurementSubcarrierSpacing_kHz = NaN;
+obs.MeasurementBandwidth_Hz = NaN;
+obs.MeasurementPhysicalResources = {};
+obs.MeasurementPhysicalResourcesJSON = "";
 obs.MeasurementRSRPPerReceiveAntenna_dBm = "";
 obs.MeasurementRSRPPerResource_dBm = "";
 obs.MeasurementRSRPPerResourceValues_dBm = [];

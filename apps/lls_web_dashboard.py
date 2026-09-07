@@ -400,7 +400,7 @@ REFERENCE_PLOT_GALLERY_SPECS: list[dict[str, Any]] = [
     {"id": "rank_layer_histogram", "label": "rank_layer_histogram", "chart_tokens": ["rank distribution"], "image_tokens": ["rank-distribution"]},
     {"id": "resource_grid_ul", "label": "resource_grid_ul", "chart_tokens": ["pusch map", "ul resource grid equalized symbol summaries", "ul resource grid"], "image_tokens": ["pusch-map", "ul resource-grid", "resource_grid_ul"]},
     {"id": "scheduler_timeline", "label": "scheduler_timeline", "chart_tokens": ["scheduled prbs per ue over time", "sr bsr event timeline", "scheduler fairness over time"], "image_tokens": ["scheduled-prbs-per-ue-over-time", "sr-bsr-event-timeline", "scheduler_timeline"]},
-    {"id": "sector_coverage_footprint", "label": "sector_coverage_footprint", "chart_tokens": ["serving cell map"], "image_tokens": ["serving-cell-map"]},
+    {"id": "sector_coverage_footprint", "label": "sector_coverage_footprint", "chart_tokens": ["sector coverage footprint"], "image_tokens": ["sector-coverage-footprint", "sector_coverage_footprint"]},
     {"id": "sinr_vs_time", "label": "sinr_vs_time", "chart_tokens": ["applied vs measured runtime snr sinr comparison", "servingrsrp rsrp csi rsrp trends", "sinr timeline"], "image_tokens": ["sinr_vs_time"]},
     {"id": "snr_vs_time", "label": "snr_vs_time", "chart_tokens": ["applied vs measured runtime snr sinr comparison", "applied awgn snr vs measured runtime sinr comparison", "snr timeline"], "image_tokens": ["snr_vs_time"]},
     {"id": "ssb_burst_beam", "label": "ssb_burst_beam", "chart_tokens": ["ssb index timeline", "pbch ssb map"], "image_tokens": ["ssb-index-timeline", "ssb_burst_beam"]},

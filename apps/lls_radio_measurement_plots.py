@@ -21,14 +21,17 @@ CONTROL_EVM = {
 }
 CSI_FIELDS = {"CSI CQI timeline": "CQI", "CSI RI timeline": "RI",
               "CSI PMI components timeline": "PMI", "CSI SINR timeline": "SINR_dB"}
+CSI_POWER_FIELDS = {"CSI-RS RSSI timeline": ("RSSIPerAntenna_dBm", "RSSI (dBm)"),
+                    "CSI-RS RSRQ timeline": ("RSRQPerAntenna_dB", "RSRQ (dB)")}
 PRECODER_CHARTS = {"reported versus applied PMI", "precoder ports and layers", "precoder matrix integrity"}
-CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(sorted(PRECODER_CHARTS)) + (
+CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tuple(sorted(PRECODER_CHARTS)) + (
     "throughput vs SNR", "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
     "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR",
 )
 CHART_SOURCES = {name: (path, "air_interface/csv/control_evm_samples.csv")
                  for name, (_, path) in CONTROL_EVM.items()}
 CHART_SOURCES.update({name: (FEEDBACK,) for name in CSI_FIELDS})
+CHART_SOURCES.update({name: ("air_interface/csv/csi_rs_trials.csv",) for name in CSI_POWER_FIELDS})
 CHART_SOURCES.update({name: TRIALS + (FEEDBACK,) for name in PRECODER_CHARTS})
 CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS,
     "PDSCH BLER vs measured SINR": TRIALS[:1], "PUSCH BLER vs measured SINR": TRIALS[1:],
@@ -399,6 +402,79 @@ def _relationships(m, name, existing, fetch, run_id):
         "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "True-channel NMSE (dB)" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths))
 
 
+def _csi_physical_power(m, name, existing, fetch, run_id):
+    sources = CHART_SOURCES[name]
+    path, samples = m._first_available_rows(existing, fetch, sources)
+    field, units = CSI_POWER_FIELDS[name]
+    rows, series = [], defaultdict(list)
+    seen = set()
+    for index, row in enumerate(samples, 1):
+        if m._row_text(row, "PhysicalMeasurementStatus") != "available":
+            continue
+        identity = _identity(m, row, path, index)
+        plane = m._row_text(row, "PowerReferencePlane")
+        if plane not in {"receiver_antenna_connector_pre_composite_front_end",
+                         "receiver_antenna_connector_no_composite_front_end"}:
+            raise ValueError("CSI-RS physical power requires an explicit antenna-connector measurement plane.")
+        if (m._row_text(row, "MeasurementSource") !=
+                "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid"):
+            raise ValueError("CSI-RS physical power has no supported actual measurement source.")
+        try:
+            resources = json.loads(m._row_text(row, "MeasurementPhysicalResourcesJSON"))
+        except (ValueError, TypeError) as exc:
+            raise ValueError("CSI-RS RSSI requires retained resource and receive-antenna measurements.") from exc
+        if not isinstance(resources, list):
+            raise ValueError("CSI-RS physical resource evidence must be an explicit resource list.")
+        for resource in resources:
+            if not resource:
+                continue
+            if not isinstance(resource, dict):
+                raise ValueError("CSI-RS resource evidence must retain named measurement fields.")
+            if resource.get("Available") is not True:
+                continue
+            if resource.get("Source") != "nrCSIRSMeasurements_actual_physical_grid":
+                raise ValueError("CSI-RS resource has no supported physical-grid source.")
+            rid = resource.get("ResourceID")
+            n_rx, n_rb = resource.get("NumReceiveAntennas"), resource.get("NumRB")
+            scs, bandwidth = resource.get("SubcarrierSpacing_kHz"), resource.get("Bandwidth_Hz")
+            first_prb = resource.get("FirstPRB0Based")
+            def integer(value, minimum):
+                return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value >= minimum and value == int(value)
+            if not all(integer(v, minimum) for v, minimum in ((rid, 0), (n_rx, 1), (n_rb, 1), (first_prb, 0))):
+                raise ValueError("CSI-RS physical resource/branch/bandwidth identity is incomplete.")
+            if (not isinstance(scs, (int, float)) or not math.isfinite(scs) or scs <= 0 or
+                    not isinstance(bandwidth, (int, float)) or not math.isclose(bandwidth, 12*n_rb*scs*1000, rel_tol=1e-12)):
+                raise ValueError("CSI-RS RSSI bandwidth does not match its retained PRBs and subcarrier spacing.")
+            vectors = {}
+            for metric in ("RSRPPerAntenna_dBm", "RSSIPerAntenna_dBm", "RSRQPerAntenna_dB", "SymbolIndices0Based"):
+                token = resource.get(metric)
+                vectors[metric] = _numbers(json.dumps(token), integers=metric == "SymbolIndices0Based")
+            if any(len(vectors[v]) != n_rx for v in ("RSRPPerAntenna_dBm", "RSSIPerAntenna_dBm", "RSRQPerAntenna_dB")) or not vectors["SymbolIndices0Based"]:
+                raise ValueError("CSI-RS physical measurement vectors or measurement-symbol window are missing.")
+            for branch in range(int(n_rx)):
+                rsrp, rssi, rsrq = (vectors[v][branch] for v in
+                    ("RSRPPerAntenna_dBm", "RSSIPerAntenna_dBm", "RSRQPerAntenna_dB"))
+                if abs(rsrq - (10*math.log10(n_rb)+rsrp-rssi)) > 1e-6:
+                    raise ValueError("CSI-RS same-branch RSRP/RSSI/RSRQ closure fails.")
+                bwp = m._row_text(row, "BWPID")
+                measurement_id = m._row_text(row, "CSIMeasurementID")
+                key = (identity["ue_index"], identity["cell_id"], bwp, identity["frame"], identity["slot"], measurement_id, rid, branch)
+                if key in seen:
+                    raise ValueError("Duplicate CSI-RS physical measurement identity; refusing double-counting.")
+                seen.add(key)
+                value = vectors[field][branch]
+                rows.append({**identity, "bwp_id": bwp, "measurement_id": measurement_id,
+                    "resource_id": rid, "receive_antenna_index_1based": branch+1,
+                    "metric_value": value, "metric_source_field": field, "power_reference_plane": plane,
+                    "num_rb": n_rb, "first_prb_0based": first_prb, "subcarrier_spacing_khz": scs,
+                    "bandwidth_hz": bandwidth, "symbol_indices_0based": json.dumps(vectors["SymbolIndices0Based"]),
+                    "rsrp_dbm": rsrp, "rssi_dbm": rssi, "rsrq_db": rsrq})
+                if identity["slot"] is not None:
+                    series[f"U{identity['ue_index']} C{identity['cell_id']} R{rid} Rx{branch+1}"].append([identity["slot"], value])
+    return _finish(m, name, run_id, rows, series, "Measurement slot", units,
+        "Actual CSI-RS antenna-plane measurements; every receive branch and resource retained. RSSI uses only the recorded bandwidth and CSI-RS symbol window, not normalized grid power.", sources)
+
+
 def radio_measurement_chart(name, existing, fetch, run_id):
     if name not in CHARTS:
         return None
@@ -410,6 +486,8 @@ def radio_measurement_chart(name, existing, fetch, run_id):
             return _control_evm(m, name, existing, fetch, run_id)
         if name in CSI_FIELDS:
             return _csi(m, name, existing, fetch, run_id)
+        if name in CSI_POWER_FIELDS:
+            return _csi_physical_power(m, name, existing, fetch, run_id)
         if name in PRECODER_CHARTS:
             return _precoding(m, name, existing, fetch, run_id)
         return _relationships(m, name, existing, fetch, run_id)

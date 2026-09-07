@@ -97,11 +97,18 @@ def main() -> None:
                 else:
                     enriched.setdefault("mime_type", "image/svg+xml")
                 rows.append(enriched)
+            # This fixture uses the legacy published-layout contract. The
+            # production browser now requires an explicit publication
+            # authority; bare files alone must remain diagnostics.
+            rows.append({"artifact_id": 777, "artifact_kind": "table_csv",
+                "logical_path": "reports/csv/component_artifact_publication_manifest.csv",
+                "mime_type": "text/csv; charset=UTF-8", "byte_size": 128,
+                "created_utc": "2026-05-25T00:00:00Z"})
             return rows
 
         def fake_build_numeric(_artifacts, limit: int = 12):
             _ = limit
-            return [
+            charts = [
                 {
                     "artifact_id": 101,
                     "title": "analytics/csv/contract__waveform-time-domain-analytics__rx-waveform.csv",
@@ -130,6 +137,8 @@ def main() -> None:
                     "yaxis_title": "Value",
                 },
             ]
+            allowed = {int(a["artifact_id"]) for a in _artifacts}
+            return [chart for chart in charts if chart["artifact_id"] in allowed]
 
         dash.build_live_payload = fake_build_live
         dash.build_numeric_charts_from_artifacts = fake_build_numeric
@@ -139,6 +148,10 @@ def main() -> None:
         dash.extract_run_feature_policy = lambda _run_row: {}
         dash.contract_materializer.materialize_run_contract_artifacts = lambda *args, **kwargs: {"created": [], "skipped": True}
 
+        unaccepted = [row for row in fake_artifacts(77) if row["artifact_id"] != 777]
+        assert dash.select_primary_result_artifacts(unaccepted)[0] == [], (
+            "A plot-browser fixture must not bypass atomic publication authority."
+        )
         payload = dash.build_plot_browser_payload(77)
         assert payload["mode"] == "canonical_plus_published_artifacts"
         assert payload["suppressed_raw_count"] == 0, "Default plot browser must expose published raw chart/image artifacts."
@@ -147,6 +160,9 @@ def main() -> None:
         )
 
         item_map = {str(item["label"]): item for item in payload["items"]}
+        assert item_map["sector_coverage_footprint"]["kind"] == "unavailable", (
+            "A serving-cell topology map does not establish a measured sector coverage footprint."
+        )
         assert item_map["rx_waveform"]["kind"] == "interactive", "Waveform family must prefer the truthful interactive chart over the duplicate SVG."
         assert item_map["rx_waveform"]["source"].endswith("__rx-waveform.csv")
         assert any("fairness index trend" in label for label in item_map), (

@@ -1,5 +1,111 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Chronological coordinator and physical CSI-RSSI checkpoint (2026-09-07)
+
+**The main scheduler's shared-clock/shared-stream integration is still open.**
+No new production TDD, FDD or 25 dB simulation was launched. The failed
+`tdd_12db_verify_20260907_0018` run and its failure evidence were not rewritten.
+This checkpoint adds verified infrastructure and repairs measurement/report
+producers; it does not establish a completed or production-qualified 12 dB run.
+
+Implemented:
+
+- `WaveformEventRuntime` composes each physical transmitter, invokes one
+  retained processing callback per consumed interval, and dispatches its
+  actual samples to registered receiver planes. Consumption stops at the
+  earliest receiver completion or scheduler decision boundary. Every
+  transmitter must explicitly commit all contributors (or intentional
+  silence) through that interval; unknown future scheduling cannot silently
+  become zero-valued TX samples. Past/committed contributions cannot change.
+  Missing RX planes, interval mismatches, nonfinite samples and contradictory
+  proxy/fallback evidence fail. A processing exception permanently faults the
+  instance: no automatic replay, channel clone or RX-padding rescue occurs.
+  Physical fading, RF, noise, power and duplex policy remain the callback
+  owner's responsibility; the coordinator does not invent those policies.
+- The actual noisy-CDL broadcast/TRS/PDCCH diagnostic now uses this coordinator.
+  It decodes each complete observation before consuming later samples. SSB/
+  SIB1 at 0--5 ms, PDCCH at 12--13 ms and the TRS capture at 12--18 ms complete
+  without time reversal. Chunked samples match an independent whole-stream
+  test reference within relative `1e-12`; the receiver-noise state also agrees.
+  The independent channel clone exists only for that test comparison, never
+  to replay a failed production interval. This is a **pre-RF DL diagnostic**,
+  not the complete main scheduler or a shared UL/nonzero-TA execution.
+- PDSCH's physical CSI measurement now retains the actual per-resource,
+  per-receive-antenna RSSI and RSRQ returned alongside RSRP. It no longer
+  filters finite branch values into a vector that loses branch identity.
+  A configuration bundle cannot silently flatten multiple resources into
+  one antenna vector. The scalar RSSI/RSRQ comes from the same selected
+  resource and strongest-RSRP branch, not independent maxima. A selected
+  unmeasured resource cannot inherit another resource's measured power.
+  CSI CSV rows retain branch vectors, resource JSON, bandwidth, PRB origin,
+  SCS, symbol window, selection and existing physical-plane/source metadata.
+  [Toolbox measurement definition](https://www.mathworks.com/help/5g/ref/nrcsirsmeasurements.html)
+  references TS 38.215; RSSI is not legacy normalized CSI grid power.
+- Registered CSI-RS RSSI and RSRQ timeline producers in the existing CSV/PNG
+  output contract. They retain every measured resource/branch and check
+  same-branch `RSRQ = 10*log10(N_RB) + RSRP - RSSI`, bandwidth and source
+  identity. Missing evidence yields an explicit unavailable result, not a
+  fabricated measurement plot. PNG rasterization was tested with declared
+  schema fixtures; **new production-run PNG publication remains unverified**.
+- Repaired a pre-existing browser source alias that labeled a serving-cell
+  topology map as a sector coverage footprint. A footprint now requires its
+  own source. The browser regression also lacked the publication manifest
+  required by the current acceptance gate; its legacy-layout unit fixture
+  now supplies that authority, rejects the manifest-free case, and cannot
+  invent numeric charts for artifacts excluded by the production selector.
+
+Verification:
+
+| Terminal batch | Result and scope |
+| --- | --- |
+| 9235; `logs/waveform_event_runtime_20260907_focused.log` | Exit 0: `testWaveformEventRuntime`, `testWaveformStreamComposition`, `testWaveformReceiveDispatcher`, `testBroadcastTRSNoisyStream(13,true)`. |
+| 21882; `logs/waveform_event_proxy_guard_20260907_verified.log` | Exit 0: coordinator regression repeated after extending rejection to approximation source labels and prefixed flags such as `FallbackUsedForPathloss`. |
+| 3399; `logs/csi_rssi_physical_20260907_verified.log` | Exit 0: `testCSIRSPhysicalResourceMeasurements`, `testCSIRSRPPhysicalMeasurement`, `testCSIRSMultiResourceYAMLAuthority`, `testCSIRSPhysicalRuntimePortProjection`. Includes real DL receiver/AGC checks, CSI CSV round-trip, 15/30/60 kHz analytic measurement tests and physical-port projection tests. |
+| 47392; `logs/event_rssi_ul_control_20260907_verified.log` | Exit 0: `testUplinkControlStreamStages`, `testDataChannelStreamStages`, `testRARTimingAdvanceAuthority`, `testTDDCausalFourStepRARuntimeTiming`, `testSRSPUSCHRuntimePriority`, `testPUSCHCausalSRSFrozenGrant`, `testPDSCHQCLStatePropagation`, `testPDSCHTCIStateBinding`. |
+| Python | 69 pytest cases passed in `test_lls_radio_measurement_plots.py` and `test_lls_contract_materialization.py`; `python tests/test_lls_browser_plot_browser.py` passed separately. |
+
+The first RSSI batch (14661) failed on a newly written unit fixture's illegal
+CSI-RS period of 2 slots. It was corrected to a legal 4-slot period before the
+same four-test batch passed; production CSI configuration validation was not
+weakened. The browser failure was reproduced against the prior Python code
+before correcting the source alias and test publication inputs.
+
+The actual TDD RA test again measured **RAR TA = 0** at 7.68 MHz and decoded
+Msg3 successfully. Nonzero TA is covered only by conversion/codec tests,
+not a complete shared-stream UL waveform. PUSCH HARQ-ACK and standalone
+PUCCH payloads are actual codec executions with explicitly known unit
+payloads; these are not fabricated main-run feedback results. QCL/TCI tests
+prove their local propagation/binding contracts, not runtime activation in
+the failed production profile. The physical-power test's coupled AWGN case
+measured CSI-RSRP -74.66894 dBm versus power-closure expectation -74.68345 dBm;
+this is a separate calibration test, not the requested 12 dB operating point.
+
+No `testAll`, full campaign, production PNG regeneration, hardware IQ export
+or FDD waveform run was performed. The earlier bounded-testing request was
+retained; the repository's complete regression qualification is outstanding.
+The config-driven, NR-validation and result-integrity skills guided the
+explicit configuration/clock authorities, fail-closed checks and limited
+evidence claims.
+
+Next required work (still open, not silently skipped):
+
+1. Integrate the coordinator into the **main** access/TRS/SRS/control/data
+   scheduler, replacing eager whole-window propagation rather than merely
+   delaying delivery of already computed future results.
+2. Give physical node TX/RX RF processing retained streaming state, apply it
+   once to summed node samples, and preserve separate pre-/post-RF planes.
+   Several legacy RF timing/SCO/AGC paths remain per-call/block-based.
+3. Complete shared UL timing with received-DL/UE-TX/gNB-RX origins,
+   `N_TA,offset`, nonzero TA and actual received tails. Prepared UL stages
+   still reject unsupported nonzero TA instead of trimming/padding samples.
+4. Qualify all runtime UCI feedback deadlines and same-UE SRS/PUCCH symbol
+   arbitration; qualify QCL/TCI activation and measured CSI PMI/RI consumption
+   through the complete scheduler, not only isolated calls.
+5. Calibrate the requested 12 dB operating point against actual physical
+   signal/noise measurements, then execute the short TDD run and audit its
+   actual CSV/PNG values and publication manifests. SS-/UL-specific RSSI
+   coverage is not established by the CSI-RS addition above.
+
 ## Executed HARQ and decoded RAR timing checkpoint (2026-09-07)
 
 The main scheduler shared-clock/shared-stream repair is **not complete**.

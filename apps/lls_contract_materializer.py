@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-06-contract-v56-full-paired-allocation-evidence"
+MATERIALIZER_VERSION = "2026-09-07-contract-v57-physical-csi-rssi-evidence"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )

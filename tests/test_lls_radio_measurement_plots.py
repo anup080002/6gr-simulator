@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import math
 import sys
 from pathlib import Path
@@ -20,6 +21,47 @@ def chart(name, sources):
     result = m._specialized_chart_materialization(name, existing, data.__getitem__, 9)
     rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
     return result, rows
+
+
+def csi_power_payload(change=""):
+    resource = {"ResourceID": 3, "NumReceiveAntennas": 2, "NumRB": 24,
+        "FirstPRB0Based": 6, "SubcarrierSpacing_kHz": 30, "Bandwidth_Hz": 8640000,
+        "SymbolIndices0Based": [6, 7], "RSRPPerAntenna_dBm": [-80, -85],
+        "RSSIPerAntenna_dBm": [-50, -53],
+        "RSRQPerAntenna_dB": [10*math.log10(24)-30, 10*math.log10(24)-32],
+        "Available": True, "Source": "nrCSIRSMeasurements_actual_physical_grid"}
+    record = {"Direction": "DL", "UEIndex": 1, "CellID": 1, "Slot": 5,
+        "PhysicalMeasurementStatus": "available", "PowerReferencePlane": "receiver_antenna_connector_pre_composite_front_end",
+        "MeasurementSource": "nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid"}
+    if change == "plane": record["PowerReferencePlane"] = "post_agc_normalized_grid"
+    if change == "closure": resource["RSRQPerAntenna_dB"][0] += 3
+    if change == "bandwidth": resource["Bandwidth_Hz"] *= 2
+    if change == "branches": resource["RSSIPerAntenna_dBm"] = [-50]
+    if change == "missing": resource["SymbolIndices0Based"] = []
+    if change == "proxy": record["Source"] = "fast_proxy"
+    if change == "absent": record["PhysicalMeasurementStatus"] = "unavailable"
+    record["MeasurementPhysicalResourcesJSON"] = json.dumps([resource])
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, list(record)); writer.writeheader(); writer.writerow(record)
+    if change == "duplicate": writer.writerow(record)
+    return stream.getvalue().encode()
+
+
+@pytest.mark.parametrize("name", radio.CSI_POWER_FIELDS)
+def test_csi_rssi_and_rsrq_retain_each_branch_and_actual_scope(name):
+    result, rows = chart(name, {"air_interface/csv/csi_rs_trials.csv": csi_power_payload()})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == 2 and [r["receive_antenna_index_1based"] for r in rows] == ["1", "2"]
+    assert all(r["resource_id"] == "3" and r["bandwidth_hz"] == "8640000" for r in rows)
+    assert all(r["symbol_indices_0based"] == "[6, 7]" for r in rows)
+    png = m._rasterize_contract_png(result["img_bytes"], source_mime_type="image/svg+xml", source_logical_path="test://actual_schema.svg")
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+@pytest.mark.parametrize("change", ["plane", "closure", "bandwidth", "branches", "missing", "proxy", "absent", "duplicate"])
+def test_csi_physical_power_rejects_inconsistent_or_absent_evidence(change):
+    result, _ = chart("CSI-RS RSSI timeline", {"air_interface/csv/csi_rs_trials.csv": csi_power_payload(change)})
+    assert result["csv_status"] == "unavailable_exact_reason"
 
 
 @pytest.mark.parametrize("name", radio.CONTROL_EVM)

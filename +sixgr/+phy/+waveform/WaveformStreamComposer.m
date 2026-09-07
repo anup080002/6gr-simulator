@@ -27,6 +27,19 @@ classdef WaveformStreamComposer < handle
             obj.NextSampleIndex=double(startSample);
         end
 
+        function declareSamplePrecision(obj,precision)
+            % An idle physical transmitter emits zeros; declaring its type
+            % does not fabricate a transmitted component or an RX sample.
+            precision=string(precision);
+            if ~isscalar(precision) || ismissing(precision) || ~any(precision==["single","double"])
+                error("WAVEFORM:InvalidSamplePrecision","Declare single or double samples.");
+            end
+            if obj.SampleClass~="" && obj.SampleClass~=precision
+                error("WAVEFORM:SamplePrecisionMismatch","Cannot change a materialized stream's precision.");
+            end
+            obj.SampleClass=precision;
+        end
+
         function enqueue(obj,componentID,chunk,sampleRateHz)
             id=string(componentID);
             if ~isscalar(id)||ismissing(id)||strlength(strtrim(id))==0
