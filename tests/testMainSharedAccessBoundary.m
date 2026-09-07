@@ -1,9 +1,9 @@
-function ok=testMainSharedAccessBoundary()
+function ok=testMainSharedAccessBoundary(folder)
 % Execute the actual main entry point through its migrated access boundary.
 % This is deliberately NOT a full-run pass. Verify actual SSB/TRS and Msg1
 % publication while retaining a genuine failed-access/no-data result.
 setup6GRSimToolkit('Verbose',false);
-folder=diagnoseMainSharedRA(16);
+if nargin<1, folder=diagnoseMainSharedRA(36); end
 files=dir(fullfile(folder,'**','*pbch*trials*.csv'));
 found=false;
 for f=files(:).'
@@ -15,11 +15,17 @@ for f=files(:).'
             rss=jsondecode(t.SSBWindowPowerMeasurementJSON(row));
             assert(rss.Available && all(isfinite(rss.RSSIPerAntenna_dBm)));
         end
-        assert(height(t)==4); found=true;
+        assert(height(t)==8 && isequal(unique(t.Slot),[1;21]));
+        for slot=[1 21]
+            burst=t(t.Slot==slot,:);
+            assert(isequal(sort(burst.SSBIndex),[0;1;2;3]) && ...
+                all(burst.ObservationStartSample==(slot-1)*7680));
+        end
+        found=true;
     end
 end
 assert(found,'The main scheduler must publish its actual four-candidate burst, not only component-test results.');
-files=dir(fullfile(folder,'**','ra_received_observations','*Msg1*.mat'));
+files=dir(fullfile(folder,'air_interface','mat','ra_received_observations','*Msg1*.mat'));
 assert(numel(files)==1,'Actual main Msg1 planes must be retained.');
 data=load(fullfile(files.folder,files.name),'capture'); c=data.capture;
 % The receiver's broadcast capsule must carry both decoded MIB and SIB1
@@ -40,13 +46,36 @@ assert(row.CompositeReceiverFrontEndApplied && row.RxRFAppliedStageCount>0 && ..
 assert(ra.RARNTI==127,'Mixed-numerology RA-RNTI must address PRACH slot 9/symbol 0.');
 assert(~ra.PreambleDetected && ~ra.RACompleted && ~ra.StrictOk, ...
     'Do not turn this low-detection-margin physical observation into an access pass.');
-assert(isempty(ra.ArtifactTables.msg2_pdcch_candidates) && ...
-    isempty(ra.ArtifactTables.msg2_dci_fields), ...
-    'Unexecuted Msg2 must not publish a dummy candidate or decoded DCI row.');
+assert(ra.RuntimeExecutionState=="pending_next_stage" && ra.NextRuntimeStage=="Msg2" && ...
+    strlength(ra.FailureReason)==0 && ~ra.RARWindowExpired, ...
+    'A gNB detector miss cannot become an immediate UE RAR failure.');
+monitor=readtable(fullfile(folder,'control','csv','rar_monitoring_observations.csv'),'TextType','string');
+window=c.ReceiverContinuation.RAConfig.RARMonitoringWindow;
+assert(isequal(monitor.AbsoluteSlot,window.MonitoringSlots) && all(monitor.CandidatesAttempted>0));
+assert(all(~monitor.RARAccepted & ~monitor.ProxyUsed & ~monitor.FallbackUsed));
+assert(all(monitor.Source=="actual_received_samples_ue_rar_monitoring"));
+assert(all(monitor.ObservationEndSampleExclusive*c.SampleRateHz^-1 <= double(window.ExpiryTicksExclusive)/1966080000));
+timers=readtable(fullfile(folder,'control','csv','ra_timer_events.csv'),'TextType','string');
+expired=timers(timers.TimerName=="ra-ResponseWindow" & timers.Action=="expire",:);
+assert(height(expired)==1 && expired.Expired && expired.ExpiryTicksExclusive==double(window.ExpiryTicksExclusive));
+for name=["msg2_rar_trials","msg3_pusch_trials","msg4_contention_resolution"]
+    assert(isempty(readtable(fullfile(folder,'control','csv',name+'.csv'))), ...
+        'A response-window timeout cannot create unexecuted stage trials.');
+end
+captures=dir(fullfile(folder,'air_interface','mat','rar_monitoring_observations','*.mat'));
+assert(numel(captures)==height(monitor));
+for f=captures(:).'
+    data=load(fullfile(f.folder,f.name),'capture'); record=data.capture;
+    assert(size(record.RXBeforeRF,1)==record.EndSampleExclusive-record.StartSample);
+    assert(record.ReceiverObservation.ObservationStartSample==record.StartSample && ...
+        all(isfinite(record.RXBeforeRF),'all') && record.ExecutionReplay.RuntimeChannelStateUsed);
+end
 for name=["dl_pdsch_trials","ul_pusch_trials"]
     file=fullfile(folder,'air_interface','csv',name+'.csv');
     if isfile(file), assert(isempty(readtable(file)),'Failed access cannot produce data trials.'); end
 end
-disp('MAIN_SHARED_ACCESS_BOUNDARY_PASS: actual SSB/SIB1 and PRACH evidence; failed access, no data qualification.');
+assert(~isfolder(fullfile(folder,'air_interface','air_interface')), ...
+    'A component folder must not be used as the canonical run root.');
+disp('MAIN_SHARED_ACCESS_BOUNDARY_PASS: actual SSB/SIB1, PRACH and every receive occasion without a RAR transmission before expiry; no data qualification.');
 ok=true;
 end

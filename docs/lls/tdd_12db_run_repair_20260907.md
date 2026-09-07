@@ -1,6 +1,114 @@
 # Short TDD run: measured failures and remaining integration work
 
-## Type1 RAR window planning and uplink regression checkpoint (current, 2026-09-07)
+## Executed UE RAR window and canonical IQ checkpoint (current, 2026-09-07)
+
+**The main run remains NOT qualified.** This checkpoint closes the immediate
+gNB-miss-to-UE-failure defect for the authored TDD diagnostic. It does not
+claim completed shared-stream access, uplink data, all-channel measurements,
+PNG publication, or instrument-ready continuous playback.
+
+Implemented and verified:
+
+- The UE arms actual Type1 receive observations before Msg1 propagation.
+  No gNB detector result or generated Msg2 waveform is accepted as receiver
+  evidence. Every applicable occasion runs the blind PDCCH/RAR receiver on
+  actual gain-compensated shared-stream samples, including occasions with
+  no RAR transmission. Other real SSB/TRS transmissions remain in the stream.
+- A gNB PRACH miss now leaves the UE waiting. Failure occurs at the exact
+  response-window expiry; missing earlier receiver observations are an
+  error, not an excuse to finalize a delayed stored gNB failure. Actual
+  receive completions at a deadline are handled before the timer event.
+- A decoded response for another RAPID does not stop monitoring. Accepted
+  responses require actual CRC-valid control/data, matching RAPID, valid
+  decoded UL grant, covered PDSCH allocation and response-window timing.
+  Subsequent slot fields are bound to the received RAR/TDRA rather than the
+  initially planned Msg2 slot. The shared path uses one blind decoder per
+  observation, with Msg2 transmission separate from UE monitoring.
+- Shared physical advancement, downlink preparation origins and RA stage
+  timestamps use exact CP-OFDM slot sample boundaries. Independent public
+  `nrOFDMInfo` comparisons pass for mu 0 through 4 and 60-kHz extended CP,
+  including the unequal normal-CP slot extents at higher numerologies.
+  This does not qualify every other scheduler/time-origin caller.
+- Three source-labelled RAR monitoring CSVs are registered in both live and
+  final writers. Actual TX-after-RF, RX-before/after-RF and digital-gain-
+  compensated RX samples are retained per observation under
+  `air_interface/mat/rar_monitoring_observations`. These MATs are diagnostic
+  receive windows, **not** complete continuous instrument-playback files.
+- Shared captures and RA result folders now consume the explicit configured
+  run root. The discovered `air_interface/air_interface/mat` nesting defect
+  was fixed at the caller, not by moving or concealing old diagnostic files.
+- Unexecuted Msg1/Msg2/Msg3/Msg4 primary trial tables retain their schema but
+  no invented rows. The preamble-transmission event now uses the absolute
+  PRACH slot and actual attempt identifier instead of within-frame slot 4
+  and a hardcoded attempt-1 status. Actual main retry counters remain open.
+
+References:
+[TS 38.321 V18.8.0, clauses 5.1.3 and 5.1.4](https://www.etsi.org/deliver/etsi_ts/138300_138399/138321/18.08.00_60/ts_138321v180800p.pdf),
+[TS 38.213 V18.8.0, clause 8.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+
+### Tests and retained failures
+
+- `logs/rar_receive_window_component_20260907.log`: exit 0. Actual coded
+  TDD/FDD unit-channel RAR windows, wrong-RAPID then valid-RAPID reception,
+  no-RAR decoding through expiry, skipped/premature observation guards, and
+  all five coded TDD received-buffer stages.
+- `logs/rar_receive_window_main_20260907.log`: exit 1. The 36-slot main run
+  completed, but its inherited test still expected four SSB rows. Inspection
+  proved two distinct real four-beam bursts at slots 1 and 21. The fixture
+  now requires all eight rows with exact burst origins and identities; its
+  CRC assertions were not weakened.
+- `logs/rar_receive_clock_ul_regressions_20260907.log`: exit 1 at the final
+  main capture-location assertion. Before that, the clock/window/stage and
+  RA artifact tests, `testConfig`, `testLLS_DL`, `testLLS_UL`,
+  `testLLS_ReferencePoints`, `testStrictProxyGuards`, `testE2E_FastVsTruth`,
+  `testE2E_TruthPacketSemanticCampaign`, `testSchedulerGrantConsistency`,
+  `testUplinkControlStreamStages`, `testDataChannelStreamStages`,
+  `testLLSULSRSRITPMIEstimator`, `testRecoveredPUSCHUCIEvidence`,
+  `testPUSCHCausalSRSFrozenGrant`, `testPDSCHQCLStatePropagation`,
+  `testPDSCHTCIStateBinding`, `testPMIPrecodingRuntime`, and
+  `testCSIRSPhysicalResourceMeasurements` completed. The misplaced captures
+  exposed a real producer-path defect. This entire batch is not a pass.
+- `logs/rar_receive_canonical_export_20260907.log`: exit 0 after correcting
+  that producer. Re-ran the exact clock, RAR receiver/window and five-stage
+  received-buffer checks, followed by a fresh full 36-slot main diagnostic.
+  It verifies canonical capture paths/counts and forbids nested component
+  roots and unexecuted primary-stage rows. No `testAll`, authored FDD
+  scenario, or 25 dB run was launched. Existing compatibility fixtures
+  exercised FDD separately from the TDD main diagnostic.
+
+Latest main run: `%LOCALAPPDATA%/Temp/main_shared_ra_20260907_153343`.
+It completed 36 scheduling slots and two four-beam SSB/SIB1 bursts with all
+BCH/DCI/DL-SCH CRCs passing. PRACH detection remains 0.340461277865219 versus
+the unchanged 0.5 threshold. The UE executed all 16 Type1 monitoring
+occasions: zero-based slots 15-18, 20-23, 25-28 and 30-33. All had actual
+candidate decoding and no accepted RAR. There are 16 matching receive-IQ
+captures, and actual expiry at 35 ms (68,812,800 Tc). DL/UL data trial counts
+are both zero. The 12 dB number is still a noncontrolling label, not a
+measured physical SINR claim.
+
+Final first-five-row audit:
+`results/lls/qualification_working/reviews/rar_receive_canonical_first5_20260907/`.
+All 164 CSVs were inspected: 16,257 rows, 8,682 columns, zero parse errors or
+infinities; 61 empty files, six structural-issue files, 125 required CSV
+semantic failures and one chart failure. No synthetic tokens were found;
+proxy/fallback token counts alone are not proof of proxy execution. The
+qualification gate remains FAIL. `SaveFigures=false` was explicit for these
+diagnostics, so no runtime PNG publication is claimed.
+
+### Remaining main-runtime work (not waived by component passes)
+
+| Area | Open repair / acceptance evidence |
+| --- | --- |
+| PRACH detection and retry | Investigate measured DL reference pathloss versus the actual UL beam/spatial filter and detector margin. Implement separate UE transmission/power-ramping counters, maximum-attempt handling, decoded BI/backoff and the next legal PRACH occasion after actual expiry. The main caller still defaults to attempt 1. Do not lower the detector threshold merely to obtain access. |
+| Shared timing | Complete acquired UE-DL timing-origin and nonzero-TA UE-TX/gNB-RX handling, including filter/propagation tails at the final FDD receive deadline. Qualify successful shared Msg2/Msg3 reception, stopped-window cancellation, and remaining nominal-slot callers. |
+| Msg3 / Msg4 / SRB1 | Start contention timing from actual Msg3 transmission completion; replace private Msg4 control/framing assumptions; validate all real receiver deadlines. |
+| Main data/control stream | Complete chronological PDCCH/PDSCH/PUSCH/PUCCH/UCI/SRS ownership. The legacy-execution guard must stay enabled; zero data here is not successful integration. |
+| PUCCH / PUSCH UCI | Demonstrate late DL ACK reservations reaching already queued PUSCH, actual UCI multiplexing or justified suppression, frozen grant/TB/coding layouts and recovered feedback on the main stream. |
+| SRS / CSI / PMI / TCI / QCL | Prove measured/reported state, timing, age, beam association and actual precoders are connected to main grants and their CSV/PNG evidence. Focused component checks passed; main end-to-end use is not yet qualified. |
+| RSSI / RSRP / SINR / PHR | Preserve antenna, reference, bandwidth, power-plane and window definitions. Existing measured SSB-window RSSI is not universal carrier/SMTC RSSI. Verify actual UL/CSI/PHR measurements and plots once their transmissions execute. |
+| Exports / calibration / playback | Resolve remaining CSV applicability/semantic failures and actual PNG generation; establish independent fixed-reference 12 dB calibration; only then qualify continuous all-channel IQ for the specified Keysight instruments. |
+
+## Type1 RAR window planning and uplink regression checkpoint (previous, 2026-09-07)
 
 **The main run is still NOT qualified.** This checkpoint repairs the RAR
 opportunity planner and backoff arithmetic, not the remaining main UE

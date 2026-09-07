@@ -11,7 +11,7 @@ if ~logical(sixgr.util.structGet(controlRx, "CausalGrantDecodeOk", false))
         "PDCCHCrcPass", logical(sixgr.util.structGet(controlRx, "Ok", false)), ...
         "PDCCHPayloadMatch", logical(sixgr.util.structGet( ...
             controlRx, "DCIPayloadMatch", false)), ...
-        "PDCCHInfo", controlInfo, ...
+        "PDCCHInfo", controlInfo, "PDCCHReceiver", controlRx, ...
         "FailureReason", "msg2_control_dci_not_crc_valid_and_matched");
     rar = struct();
     return;
@@ -47,6 +47,8 @@ rx = pdschRx;
 rx.Info = info;
 rx.PDCCHControlEvent = strict.ControlEvent;
 rx.PDCCHInfo = controlInfo;
+rx.PDCCHReceiver = controlRx;
+rx.RecoveredSchedule = sched;
 rx.RARDCIFieldTable = sched.DCIFieldTable;
 rx.RARDCIContextDigest = context.Digest;
 rx.RARDCIReferenceSource = context.Data.FrequencyReferenceSource;

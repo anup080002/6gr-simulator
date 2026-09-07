@@ -12375,11 +12375,12 @@ end
 
 function state=localCompleteSharedControlObservations(state,received)
 for item=received
-    context=item.Context; p=context.Prepared;
-    if item.Kind=="RA"
+    context=item.Context;
+    if any(item.Kind==["RA","RAR","RARExpiry"])
         state=localCompleteSharedRAObservation(state,item);
         continue;
     end
+    p=context.Prepared;
     [~,pre,tx,replay,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
     ch=state.SharedWaveformStream.channelState(item.UE,"DL");
     if item.Kind=="PBCH"
@@ -12707,7 +12708,8 @@ if pending
 else
     cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx);
     attempt = struct("Config", cfg, "StartSlot", slotIdx, "SNR_dB", snr_dB, ...
-        "PublishedStageRows", 0, "Continuation", struct());
+        "PublishedStageRows", 0, "PublishedRARObservations",0,"PublishedRARCandidates",0, ...
+        "PublishedRARFields",0,"Continuation", struct());
 end
 % Pre-scheduling observes completed samples strictly before the current
 % slot, not samples from the slot whose grants are about to be decided.
@@ -12724,7 +12726,7 @@ if shared
         dlState=state.SharedWaveformStream.directionalChannelState(ueIdx,"DL");
         ulState=state.SharedWaveformStream.directionalChannelState(ueIdx,"UL");
         [prepared,checkpoint]=sixgr.phy.ra.runFourStepRA(cfg, ...
-            'RunFolder',state.RunFolder,'RunId',"shared_ra_ue"+ueIdx+"_slot"+slotIdx, ...
+            'RunFolder',cfg.run.rootRunFolder,'RunId',"shared_ra_ue"+ueIdx+"_slot"+slotIdx, ...
             'UEId',ueIdx,'RuntimeSlot',slotIdx,'WriteArtifacts',false, ...
             'RuntimeIntegrationMode','shared_physical_waveform_stream', ...
             'UseRuntimeChannel',true,'RequireRuntimeStageWaveforms',true, ...
@@ -12736,6 +12738,7 @@ if shared
         attempt.Continuation=checkpoint; attempt.Received=[];
         if ~isfield(state,'PendingRAAttempts'), state.PendingRAAttempts=cell(numel(state.AccessState),1); end
         state.PendingRAAttempts{ueIdx}=attempt; state.AccessState(ueIdx)="pending";
+        state.SharedWaveformStream.armRARWindow(ueIdx,checkpoint.RAConfig);
         state.SharedWaveformStream.queueRA(ueIdx,prepared.PreparedTransmission,struct('Config',cfg));
         return;
     end
@@ -12772,6 +12775,16 @@ end
 % Only append newly executed stages; finalization must not duplicate the
 % earlier live waveform rows already committed for this attempt.
 evidence.ra_runtime_stage_waveforms = stages(previousCount+1:end, :);
+for mapping={ ...
+        {'RARMonitoringObservations','rar_monitoring_observations','PublishedRARObservations'}, ...
+        {'RARMonitoringCandidates','rar_monitoring_candidates','PublishedRARCandidates'}, ...
+        {'RARMonitoringDecodedFields','rar_monitoring_decoded_fields','PublishedRARFields'}}
+    keys=mapping{1}; values=sixgr.util.structGet(ra,keys{1},table());
+    count=sixgr.util.structGet(attempt,keys{3},0);
+    if height(values)<count, error('sixgr:truth:RARMonitoringEvidenceRegressed','Receiver rows were lost.'); end
+    evidence.(keys{2})=values(count+1:end,:);
+    attempt.(keys{3})=height(values);
+end
 if previousCount == 0 && ~isempty(stages)
     state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
         sixgr.util.structGet(state, "ObservedREAllocationTable", table()), ...
@@ -12805,11 +12818,33 @@ end
 end
 
 function state=localCompleteSharedRAObservation(state,item)
-ue=item.UE; attempt=state.PendingRAAttempts{ue}; p=item.Context.Prepared;
-ids=string({item.Planes.ReceiverID});
-post=item.Planes(find(endsWith(ids,':post_rf'),1)).Observation;
-streams=struct(); streams.(p.StageName+"RxWaveform")=post;
-streams.(p.StageName+"PhysicalExecution")=struct('Planes',item.Planes,'Prepared',p);
+ue=item.UE;
+if item.Kind~="RA"
+    % Stopping a matched window is allowed; its already armed observations
+    % must not be decoded as a new attempt or delivered after access ends.
+    if ~localHasPendingRA(state,ue), return; end
+    cp=state.PendingRAAttempts{ue}.Continuation;
+    if cp.RAConfig.RunId~=item.Context.RunId || cp.NextStage~=2, return; end
+end
+attempt=state.PendingRAAttempts{ue};
+streams=struct(); action="execute"; stage="Msg2"; extra={};
+if item.Kind=="RARExpiry"
+    action="expire_rar_window"; extra={'EventTicks',item.Context.ExpiryTicks};
+    through=double(item.Context.ExpiryTicks)/double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
+else
+    ids=string({item.Planes.ReceiverID});
+    post=item.Planes(find(endsWith(ids,':post_rf'),1)).Observation;
+    through=post.EndSampleExclusive/post.SampleRateHz;
+    if item.Kind=="RAR"
+        action="receive_rar_observation";
+        streams.RARPhysicalExecution=struct('Planes',item.Planes);
+        extra={'RARObservationSlot',item.Context.AbsoluteSlot};
+    else
+        p=item.Context.Prepared; stage=p.StageName;
+        streams.(p.StageName+"RxWaveform")=post;
+        streams.(p.StageName+"PhysicalExecution")=struct('Planes',item.Planes,'Prepared',p);
+    end
+end
 dl=state.SharedWaveformStream.directionalChannelState(ue,"DL");
 ul=state.SharedWaveformStream.directionalChannelState(ue,"UL");
 if ~isempty(attempt.Received)
@@ -12818,9 +12853,13 @@ end
 [ra,checkpoint]=sixgr.phy.ra.runFourStepRA(attempt.Config, ...
     'Continuation',attempt.Continuation,'RuntimeStageWaveforms',streams, ...
     'InitialDLChannelState',dl,'InitialULChannelState',ul, ...
-    'StopAfterStage',p.StageName,'ReceiveThroughTime_s',post.EndSampleExclusive/post.SampleRateHz);
-sixgr.truth.exportSharedRAObservation(state.RunFolder,attempt.Config, ...
-    attempt.Continuation,p,item.Planes,ra);
+    'StopAfterStage',stage,'StageAction',action,'ReceiveThroughTime_s',through,extra{:});
+if item.Kind=="RA"
+    sixgr.truth.exportSharedRAObservation(attempt.Config.run.rootRunFolder,attempt.Config, ...
+        attempt.Continuation,p,item.Planes,ra);
+elseif item.Kind=="RAR"
+    sixgr.truth.exportSharedRARObservation(attempt.Config.run.rootRunFolder,attempt.Config,item.Context,item.Planes,ra);
+end
 attempt.Received=ra;
 % Publish the received stage even at the final configured slot. Eligibility
 % is consumed by the next scheduler decision; retaining receiver evidence
@@ -12845,7 +12884,10 @@ if ~isempty(fieldnames(checkpoint))
         'Continuation',checkpoint,'StageAction','prepare_next_stage');
     attempt.Continuation=checkpoint;
     state.PendingRAAttempts{ue}=attempt;
-    state.SharedWaveformStream.queueRA(ue,next.PreparedTransmission,struct('Config',attempt.Config));
+    if ~isempty(fieldnames(next.PreparedTransmission))
+        state.SharedWaveformStream.queueRA(ue,next.PreparedTransmission, ...
+            struct('Config',attempt.Config),next.PreparedTransmission.StageName=="Msg2");
+    end
 end
 end
 
@@ -13490,6 +13532,7 @@ end
 
 function names = localRAEvidenceTableNames()
 names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
+    "rar_monitoring_observations","rar_monitoring_candidates","rar_monitoring_decoded_fields", ...
     "msg2_rar_trials","msg2_pdcch_candidates","msg2_dci_fields","msg3_pusch_trials", ...
     "msg4_contention_resolution","rrc_connection_events","rrc_setup_complete", ...
     "ra_timer_events","ra_negative_trials", ...

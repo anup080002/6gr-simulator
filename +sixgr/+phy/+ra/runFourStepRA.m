@@ -43,13 +43,18 @@ p.addParameter("InitialULChannelState", struct(), @(x)isempty(x) || isstruct(x))
 p.addParameter("StopAfterStage", "complete_attempt", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
 p.addParameter("Continuation", struct(), @(x)isstruct(x) && isscalar(x));
 p.addParameter("StageAction", "execute", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
+p.addParameter("RARObservationSlot", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("EventTicks", int64(0), @(x)isa(x,'int64') && isscalar(x));
 p.addParameter("ReceiveThroughTime_s", Inf, @(x)isnumeric(x) && isreal(x) && ...
     isscalar(x) && ~isnan(x) && x >= 0);
 p.parse(varargin{:});
 opt = p.Results;
 prepareOnly = strcmpi(string(opt.StageAction), "prepare_next_stage");
-if ~prepareOnly && ~strcmpi(string(opt.StageAction), "execute")
-    error("sixgr:phy:ra:InvalidRAStageAction", "StageAction must be execute or prepare_next_stage.");
+receiveRAR = strcmpi(string(opt.StageAction), "receive_rar_observation");
+expireRAR = strcmpi(string(opt.StageAction), "expire_rar_window");
+rarObservationSlot=opt.RARObservationSlot; eventTicks=opt.EventTicks;
+if ~prepareOnly && ~receiveRAR && ~expireRAR && ~strcmpi(string(opt.StageAction), "execute")
+    error("sixgr:phy:ra:InvalidRAStageAction", "Unsupported RA stage action.");
 end
 continuation = struct();
 stageNames = ["Msg1", "Msg2", "Msg3", "Msg4", "RRCSetupComplete"];
@@ -73,8 +78,8 @@ if ~isempty(fieldnames(opt.Continuation))
         "Result", "RAConfig", "Timing", "Runtime", "PowerState", "Events", "OracleRows", "TimerRows", ...
         "Msg1Tx", "Detection", "TimingAdvance", "Msg2Tx", "PDCCHInfo", "PDSCHRx2", "RARRx", ...
         "GrantRx", "Msg3Tx", "Msg3Rx", "Msg3Decoded", "UEIdentity", "Msg4Tx", ...
-        "ResumePhase", "PreparedContext"];
-    if ~all(isfield(saved, required)) || saved.ContractVersion ~= "ra_stage_continuation_v3" || ...
+        "ResumePhase", "PreparedContext", "RARReceiver", "RARPreparedTransmission"];
+    if ~all(isfield(saved, required)) || saved.ContractVersion ~= "ra_stage_continuation_v4" || ...
             ~isscalar(saved.NextStage) || ~ismember(saved.NextStage, 1:5) || ...
             ~isscalar(saved.ResumePhase) || ~any(saved.ResumePhase == ["decoded", "prepared"]) || ...
             (saved.NextStage == 1 && saved.ResumePhase ~= "prepared")
@@ -89,7 +94,8 @@ if ~isempty(fieldnames(opt.Continuation))
             "The requested stage was already executed; the next stage is %s.", stageNames(saved.NextStage));
     end
     dynamicOptions = ["Continuation", "StopAfterStage", "StageAction", "InitialDLChannelState", ...
-        "InitialULChannelState", "RuntimeStageWaveforms", "RuntimeSlot", "ReceiveThroughTime_s"];
+        "InitialULChannelState", "RuntimeStageWaveforms", "RuntimeSlot", "ReceiveThroughTime_s", ...
+        "RARObservationSlot", "EventTicks"];
     for name = setdiff(string(p.Parameters), [string(p.UsingDefaults), dynamicOptions])
         if ~isequaln(opt.(name), saved.Options.(name))
             error("sixgr:phy:ra:RAContinuationOptionChanged", ...
@@ -141,6 +147,7 @@ if ~isempty(fieldnames(opt.Continuation))
     pdschRx2 = saved.PDSCHRx2; rarRx = saved.RARRx; grantRx = saved.GrantRx;
     msg3Tx = saved.Msg3Tx; msg3Rx = saved.Msg3Rx; msg3Decoded = saved.Msg3Decoded;
     ueIdentity = saved.UEIdentity; msg4Tx = saved.Msg4Tx;
+    rarReceiver=saved.RARReceiver; rarPreparedTransmission=saved.RARPreparedTransmission;
     if saved.ResumePhase == "prepared"
         reusePreparedStage = nextStage;
         prepared = saved.PreparedContext;
@@ -261,6 +268,10 @@ msg1Tx = struct(); det = struct(); ta = struct(); msg2Tx = struct();
 pdcchInfo = struct(); pdschRx2 = struct(); rarRx = struct(); grantRx = struct();
 msg3Tx = struct(); msg3Rx = struct(); msg3Decoded = struct();
 ueIdentity = ""; msg4Tx = struct();
+rarReceiver=[]; rarPreparedTransmission=struct();
+if string(runtime.Mode)=="shared_physical_waveform_stream"
+    rarReceiver=sixgr.phy.ra.RARReceiveWindow(cfg,raCfg);
+end
 end
 result.RuntimeExecutionState = "executing";
 result.NextRuntimeStage = "";
@@ -268,6 +279,67 @@ result.NextRuntimeStageSlot = NaN;
 result.PreparedTransmission = struct();
 
 try
+    if receiveRAR || expireRAR
+        if nextStage~=2 || ~isa(rarReceiver,'sixgr.phy.ra.RARReceiveWindow')
+            error('sixgr:phy:ra:RARReceiverNotWaiting','Only a shared-stream UE waiting for Msg2 accepts a RAR event.');
+        end
+        if expireRAR
+            rarReceiver=rarReceiver.expire(eventTicks);
+            result.RARWindowExpired=true;
+            events=[events;localEvent(raCfg,"WAIT_RAR","RA_FAILURE", ...
+                "actual_ue_response_window_expiry","ra-ResponseWindow", ...
+                raCfg.RAResponseWindowSlots,raCfg.RARNTI,raCfg.PreambleIndex, ...
+                "ra_response_window_expired",raCfg.RARMonitoringWindow.LastSlot)];
+            timerRows=[timerRows;localTimer(raCfg,"ra-ResponseWindow","expire", ...
+                raCfg.RARMonitoringWindow.StartSlot,raCfg.RARMonitoringWindow.LastSlot, ...
+                raCfg.RARMonitoringWindow.LastSlot,true,raCfg.RAResponseWindowSlots,"actual_receiver_window_expired")];
+            result=localFail(result,"ra_response_window_expired","MSG2_RAR_RX");
+            result=localFinalize(result,raCfg,events,timerRows,oracleRows,msg1Tx,det, ...
+                msg2Tx,pdcchInfo,pdschRx2,rarRx,struct(),struct(),struct(),opt);
+            return;
+        end
+        physical=runtime.StageWaveforms.RARPhysicalExecution;
+        [~,~,~,~,observation]=sixgr.truth.sharedObservationEvidence(physical.Planes);
+        refreshed=localApplyRuntimeReceiverSyncContext(cfg,runtime,"DL");
+        cfgRx=cfg; cfgRx.lls6g.receiverSync=refreshed.lls6g.receiverSync;
+        [rarReceiver,received]=rarReceiver.receive(rarObservationSlot,observation,cfgRx);
+        result.RARMonitoringObservations=rarReceiver.Observations;
+        result.RARMonitoringCandidates=rarReceiver.Candidates;
+        result.RARMonitoringDecodedFields=rarReceiver.DecodedFields;
+        if ~received.Accepted
+            [result,continuation]=captureContinuation(2);
+            return;
+        end
+        pdschRx2=received.Receiver; pdcchInfo=pdschRx2.PDCCHInfo;
+        pdcchRx=pdschRx2.PDCCHReceiver; rarRx=received.RAR;
+        raCfg=sixgr.phy.ra.bindReceivedRARTiming(cfg,received.RAConfig,rarRx.ULGrant,pdschRx2.RecoveredSchedule);
+        raTiming=sixgr.phy.ia.RATimingService.fromRAPlan(raCfg);
+        result.Msg2ScheduledSlot=raCfg.Msg2Slot;
+        result.Msg3ScheduledSlot=raCfg.Msg3Slot;
+        result.Msg4ScheduledSlot=raCfg.Msg4Slot;
+        result.SetupCompleteScheduledSlot=raCfg.SetupCompleteSlot;
+        grantRx=rarRx.ULGrant; grantRx.TemporaryCRNTI=rarRx.TemporaryCRNTI;
+        grantValidation=sixgr.mac.ra.validateRARULGrant(grantRx,raCfg);
+        % A real gNB transmission may have provided this accepted RAR. Its
+        % stage row is not fabricated for silent or unrelated transmissions.
+        if ~isempty(fieldnames(rarPreparedTransmission)) && ...
+                rarPreparedTransmission.AbsoluteSlot==rarObservationSlot
+            runtime.StageWaveforms.Msg2RxWaveform=observation;
+            runtime.StageWaveforms.Msg2PhysicalExecution=struct('Planes',physical.Planes,'Prepared',rarPreparedTransmission);
+            [~,runtime,stageInfo]=localResolveStageRxWaveform("Msg2","DL",msg2Tx.Waveform,cfg,raCfg,msg2Tx,runtime);
+            result=localAppendRuntimeStage(result,stageInfo,runtime);
+        end
+        result=localApplyMsg2(result,raCfg,true,pdcchRx,pdcchInfo,pdschRx2,msg2Tx, ...
+            struct(),rarRx,true,grantValidation);
+        result.RARBytesHex=string(rarRx.Hex);
+        events=[events;localEvent(raCfg,"WAIT_RAR","MSG2_RAR_RX","actual_blind_rar_decode", ...
+            "ra-ResponseWindow",raCfg.RAResponseWindowSlots,raCfg.RARNTI,raCfg.PreambleIndex,"",raCfg.Msg2Slot)];
+        timerRows=[timerRows;localTimer(raCfg,"ra-ResponseWindow","stop", ...
+            raCfg.RARMonitoringWindow.StartSlot,raCfg.Msg2Slot,raCfg.RARMonitoringWindow.LastSlot, ...
+            false,raCfg.RAResponseWindowSlots,"actual_matching_rar_received")];
+        [result,continuation]=captureContinuation(3);
+        return;
+    end
     if nextStage <= 1
     if reusePreparedStage ~= 1
     localProgress(opt, "msg1_tx_start", "");
@@ -308,10 +380,12 @@ try
     % accepts/rejects the decoded RAPID against its own transmitted index.
     preambleDetected = logical(det.Detected) && ~collisionDetected;
     result = localApplyMsg1(result, raCfg, det, ta, collisionDetected, preambleDetected, detectorAmbiguity);
-    events = [events; localEvent(raCfg, "MSG1_PRACH_TX", ternary(preambleDetected, "MSG1_PRACH_DETECTED", "RA_FAILURE"), ...
+    missState="RA_FAILURE";
+    if string(runtime.Mode)=="shared_physical_waveform_stream", missState="GNB_PRACH_NOT_DETECTED_UE_WAIT_RAR"; end
+    events = [events; localEvent(raCfg, "MSG1_PRACH_TX", ternary(preambleDetected, "MSG1_PRACH_DETECTED", missState), ...
         "prach_correlation_detection", "", NaN, double(raCfg.RARNTI), double(raCfg.PreambleIndex), ...
         ternary(preambleDetected, "", localFailureForMsg1(collisionDetected)))]; %#ok<AGROW>
-    if ~preambleDetected
+    if ~preambleDetected && string(runtime.Mode)~="shared_physical_waveform_stream"
         result = localFail(result, localFailureForMsg1(collisionDetected), "MSG1_PRACH_DETECTED");
         result = localFinalize(result, raCfg, events, timerRows, oracleRows, msg1Tx, det, struct(), struct(), struct(), struct(), struct(), struct(), struct(), opt);
         return;
@@ -324,6 +398,14 @@ try
     end
 
     if nextStage <= 2
+    if string(runtime.Mode)=="shared_physical_waveform_stream" && ~prepareOnly
+        error('sixgr:phy:ra:SharedRARObservationRequired','Msg2 reception belongs to the UE monitoring window, not a paired gNB TX callback.');
+    end
+    if string(runtime.Mode)=="shared_physical_waveform_stream" && ...
+            (~result.PreambleDetected || ~isempty(fieldnames(rarPreparedTransmission)))
+        [result,continuation]=captureContinuation(2);
+        return;
+    end
     if reusePreparedStage ~= 2
     grantTx = sixgr.mac.ra.buildRARULGrant(raCfg);
     rapid = double(det.DetectedPreambleIndex);
@@ -800,9 +882,11 @@ end
                 end
                 pending.PreparedTransmission=localPrepareSharedStage( ...
                     pending.PreparedTransmission,cfg,tx,runtime);
+                if next==2, rarPreparedTransmission=pending.PreparedTransmission; end
             end
         end
-        checkpoint = struct("ContractVersion", "ra_stage_continuation_v3", ...
+        checkpoint = struct("ContractVersion", "ra_stage_continuation_v4", ...
+            "RARReceiver",rarReceiver,"RARPreparedTransmission",rarPreparedTransmission, ...
             "ResumePhase", phase, "PreparedContext", preparedContext, ...
             "InputConfig", inputConfig, "Config", cfg, "Options", opt, "NextStage", next, ...
             "Result", pending, "RAConfig", raCfg, "Timing", raTiming, "Runtime", runtime, ...
@@ -2034,8 +2118,8 @@ t = NaN;
 if ~(isfinite(slot) && slot >= 0)
     return;
 end
-slotDuration_s = sixgr.time.slotDurationSec(cfg);
-t = double(slot) * slotDuration_s;
+carrier=sixgr.phy.grid.makeCarrier(cfg); info=nrOFDMInfo(carrier);
+t=sixgr.phy.frame.slotStartSample(carrier,slot,double(info.SampleRate))/double(info.SampleRate);
 end
 
 function row = localEmptyRuntimeStageRow()
@@ -2446,8 +2530,9 @@ function rows = localTimerRowsStart(raCfg)
 rows = [ ...
     localTimer(raCfg, "ra-ResponseWindow", "start", raCfg.RARMonitoringWindow.StartSlot, NaN, ...
     raCfg.RARMonitoringWindow.LastSlot, false, double(raCfg.RAResponseWindowSlots), "planned_not_timer_execution"); ...
-    localTimer(raCfg, "preambleTransMax", "start", double(raCfg.PRACHOccasionSlot), NaN, ...
-    double(raCfg.PRACHOccasionSlot), false, double(raCfg.PreambleTransMax), "attempt_1_of_configured_max")];
+    localTimer(raCfg, "preambleTransMax", "start", double(raCfg.PRACHAbsoluteSlot), NaN, ...
+    double(raCfg.PRACHAbsoluteSlot), false, double(raCfg.PreambleTransMax), ...
+    "attempt_"+string(raCfg.AttemptId)+"_of_"+string(raCfg.PreambleTransMax))];
 end
 
 function row = localTimer(raCfg, name, action, startSlot, stopSlot, expirySlot, expired, duration, status)
@@ -2626,6 +2711,9 @@ tables.msg1_prach_detection = struct2table(localMsg1Row(result, raCfg, det), "As
 tables.msg2_rar_trials = struct2table(localMsg2Row(result, raCfg, msg2Tx, pdschRx2, rarRx), "AsArray", true);
 tables.msg2_pdcch_candidates = sixgr.phy.ra.rarPDCCHCandidateEvidence(result, raCfg, pdcchInfo);
 tables.msg2_dci_fields = sixgr.phy.ra.rarDCIFieldEvidence(result,raCfg,msg2Tx,pdschRx2);
+tables.rar_monitoring_observations=sixgr.util.structGet(result,'RARMonitoringObservations',table());
+tables.rar_monitoring_candidates=sixgr.util.structGet(result,'RARMonitoringCandidates',table());
+tables.rar_monitoring_decoded_fields=sixgr.util.structGet(result,'RARMonitoringDecodedFields',table());
 tables.msg3_pusch_trials = struct2table(localMsg3Row(result, raCfg, msg3Rx), "AsArray", true);
 tables.msg4_contention_resolution = struct2table(localMsg4Row(result, raCfg), "AsArray", true);
 tables.rrc_connection_events = localRRCConnectionRows(result);
@@ -2635,6 +2723,19 @@ tables.ra_negative_trials = localNegativeRow(result);
 tables.ra_collision_trials = localCollisionRow(result, raCfg);
 tables.ra_oracle_guard = result.OracleGuard;
 tables.ra_runtime_stage_waveforms = localRuntimeStageTable(result);
+% Schema is retained, but a planned/generated stage is not a received
+% trial. In particular a RAR timeout must not invent Msg2/Msg3/Msg4 rows.
+observed=strings(0,1);
+if ismember('StageName',tables.ra_runtime_stage_waveforms.Properties.VariableNames)
+    observed=string(tables.ra_runtime_stage_waveforms.StageName);
+end
+mapping=["Msg1","msg1_prach_detection";"Msg2","msg2_rar_trials"; ...
+    "Msg3","msg3_pusch_trials";"Msg4","msg4_contention_resolution"];
+for k=1:size(mapping,1)
+    if ~ismember(mapping(k,1),observed)
+        tables.(mapping(k,2))=tables.(mapping(k,2))([],:);
+    end
+end
 end
 
 function T = localRRCConnectionRows(r)
