@@ -120,6 +120,12 @@ cfgOut.random_access = ra;
 cfgOut.UECommonCellConfiguration = localBuildUECommonCellConfiguration(serving, ra, payloadHash, treeHash);
 cfgOut.ue_common_cell_configuration = cfgOut.UECommonCellConfiguration;
 commonCell = cfgOut.UECommonCellConfiguration;
+offsetStatus="absent_IE_requires_standard_frequency_range_default";
+if commonCell.TimingAdvanceOffsetPresent, offsetStatus="decoded"; end
+[ra, rows] = localApply(rows,ra,"n_timing_advance_offset",commonCell.TimingAdvanceOffset, ...
+    "SIB1.servingCellConfigCommon.n-TimingAdvanceOffset", ...
+    "IE presence retained; installation does not assert waveform timing application", ...
+    "enum","TS 38.133 V18.8.0 Table 7.1.2-2",offsetStatus);
 [ra, rows] = localApply(rows, ra, "initial_ul_bwp_scs_khz", initialUlBwpSCSkHz, ...
     "SIB1.servingCellConfigCommon.uplinkConfigCommon.initialUplinkBWP.genericParameters.subcarrierSpacing", ...
     "UL BWP SCS is independent of msg1-SubcarrierSpacing", "kHz", "mandatory", "decoded");
@@ -232,6 +238,13 @@ cfg.Source = "decoded_sib1";
 cfg.PayloadHash = string(payloadHash);
 cfg.TreeHash = string(treeHash);
 cfg.SSPBCHBlockPower_dBm = double(serving.ss_PBCH_BlockPower);
+% Preserve absence through the receiver boundary. An absent IE does not
+% mean zero and cannot inherit a transmitter-side scenario value.
+cfg.TimingAdvanceOffsetPresent = isfield(serving,'n_TimingAdvanceOffset');
+cfg.TimingAdvanceOffset = "";
+if cfg.TimingAdvanceOffsetPresent
+    cfg.TimingAdvanceOffset = string(serving.n_TimingAdvanceOffset);
+end
 cfg.InitialULBWP = struct( ...
     "StartRB", double(sixgr.util.structGet(ra, "initial_ul_bwp_start", NaN)), ...
     "SizeRB", double(sixgr.util.structGet(ra, "initial_ul_bwp_size", NaN)), ...

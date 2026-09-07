@@ -118,6 +118,11 @@ end
 
 servingCommon.ss_PBCH_BlockPower = localFirstFinite(sixgr.util.structGet(cfg, ...
     "rrc.sib1.ss_pbch_block_power_dbm", []), -25);
+timingOffset = sixgr.util.structGet(cfg, 'rrc.sib1.n_timing_advance_offset', ...
+    sixgr.util.structGet(cfg, 'initial_access.n_timing_advance_offset', []));
+if ~isempty(timingOffset)
+    servingCommon.n_TimingAdvanceOffset = string(timingOffset);
+end
 % MIB-only parameters and absent common-channel IEs must not be invented in
 % this SIB1 tree. The UE must obtain MIB context from its own BCH decoder.
 for direction = ["dl", "ul"]

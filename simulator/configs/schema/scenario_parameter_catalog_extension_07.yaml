@@ -58,6 +58,8 @@ sections:
       enabled: {required: true, type: boolean}
       profile: {required: true, type: string}
       configuration_epoch: {required: true, type: integer, min: 0}
+      # Optional ServingCellConfigCommonSIB IE, TS 38.331. Omission is not n0.
+      n_timing_advance_offset: {required: false, type: string, allowed_values: [n0, n25600, n39936]}
       band_context: {required: true, type: string}
       spectrum: {required: true, type: string}
       shared_spectrum: {required: true, type: boolean}

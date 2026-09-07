@@ -116,6 +116,9 @@ end
 if isfield(dl.initialDownlinkBWP, "pdcch_ConfigCommon")
     semantic.pdcch_config_common = dl.initialDownlinkBWP.pdcch_ConfigCommon;
 end
+if isfield(serv,'n_TimingAdvanceOffset')
+    semantic.n_timing_advance_offset=char(string(serv.n_TimingAdvanceOffset));
+end
 end
 
 function value = localSCSValue(name)

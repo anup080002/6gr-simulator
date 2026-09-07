@@ -1,5 +1,167 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Received uplink timing-offset authority (2026-09-07, following d4c979a6)
+
+The preceding turn made verified progress (PRACH/RAR repair and regression
+evidence). The repository was clean at `d4c979a6` before this change.
+The slot-21 failure is **not closed** by adding a timing-offset field.
+
+Implemented the actual optional `n-TimingAdvanceOffset` SIB1 IE through
+authoring schema, MATLAB tree construction, UPER encoding, actual UPER
+decoding, and UE common-cell installation. The generic YAML input is
+`initial_access.n_timing_advance_offset`, with `n0`, `n25600`, `n39936`;
+omit it to omit the broadcast IE. The current causal profiles are unchanged
+and omit it. A newly received absent IE clears any stale transmitter-side
+value. The binding evidence labels absence separately from a decoded value.
+
+At the main scheduler's actual SIB1 delivery boundary, the installed UE
+configuration now resolves `ULTimingAdvanceOffset` using the received IE
+and the tuned carrier's standard frequency range. `WaveformTimingApplied`
+is explicitly **false**: no completed physical timing migration is implied.
+This receiver binding supports both FR1 TDD and FDD; it does not infer zero
+from an FDD label or 39936 from a TDD label.
+
+Normative evidence was read directly:
+
+- [TS 38.211 V18.6.0 clause 4.3.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138211/18.06.00_60/ts_138211v180600p.pdf):
+  UL frame origin is advanced relative to the UE's received DL reference.
+- [TS 38.213 V18.8.0 clause 4.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf):
+  received TA and offset apply consistently to PUSCH/SRS/PUCCH in a TAG.
+- [TS 38.133 V18.8.0 clause 7.1.2, table 7.1.2-2](https://www.etsi.org/deliver/etsi_ts/138100_138199/138133/18.08.00_60/ts_138133v180800p.pdf),
+  printed pages 469-470: PRACH uses N_TA=0, not N_TA,offset=0. Absent IE
+  defaults to 25600 Tc for FR1, including FDD; the pinned FR2 table gives
+  13792 Tc. A signalled 39936 is also permitted for FDD. The full PDF was
+  retrieved locally because its size exceeded the web reader's limit.
+- [TS 38.331 V18.9.0 ServingCellConfigCommonSIB](https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.09.00_60/ts_138331v180900p.pdf):
+  the offset is an optional, three-valued enumeration. Unsupported explicit
+  FR2 offset-IE combinations fail closed in this bounded implementation.
+
+### Verification and current integration boundary
+
+`python -m pytest tests/test_sib1_common_control.py -q`: **22 passed**;
+181 existing ASN.1 parser deprecation warnings, not PHY failures.
+Independent official-schema qualification compiled the hash-checked
+`38331-i90.zip` using `asn1tools`, independently constructed four full SIB1
+messages, decoded them with the production pycrate implementation, and
+verified exact byte equality and independent reverse decoding. All four
+passed. Schema SHA256:
+`b54f593035fbdb90c79398ed85d718cce3c8c5dbcf44e084bdb6fb25b91363b9`.
+Each payload is 58 bytes; payload SHA256 values:
+
+| Offset IE | Independent UPER SHA256 |
+| --- | --- |
+| absent | `0e5acb583eb8a2191270a061f9ed30f4540a8c8faff956aa949d43de20f9a0a5` |
+| n0 | `bc7e228f84158b710f197a92937d2da1c8cc33f5772e3b044823ee1d380a5daf` |
+| n25600 | `be5e6a6db2b358b00ce6a585c9cf493915120b1d69a547ec0d2c791d96874bd9` |
+| n39936 | `45ecb0d4133ea2c6fedd1ce1e5280256e31744ebc4999d674fc433059da7a55d` |
+
+The first MATLAB batch exited 1 solely because the new fixture accessed
+`cfg.initial_access` before creating that optional section. Its other 12
+tests passed: decoded common authority, shared PRACH power, ASN.1 round-trip,
+no-oracle SIB1, independent frozen UPER vectors, config, DL, UL, reference
+points, grant consistency and both strict proxy/no-fallback guards. Log:
+`logs/ul_timing_offset_authority_20260907.log`. The fixture was corrected
+after the process ended; production source remained frozen during execution.
+The corrected timing-offset fixture, scenario schema, parameter catalog and
+both E2E/export-integrity tests passed in
+`logs/ul_timing_offset_authority_verified_20260907.log`. That batch exited 1
+because the older WebGUI scenario exposed the real DCI timing mismatch
+described below. No production assertion was weakened to clear it.
+
+### Repaired authored DCI timing mismatch
+
+`test6GScenarioPromptCompliance` failed in
+`DCIContextFactory.fromScheduledGrant`: the finalized DL allocation `[2 12]`
+had K0=0, but the inherited configured TDRA row advertised K0=4. Both master
+profiles had this disagreement with their explicit scheduling timing. The
+WebGUI child additionally requested UL K2=4 while inheriting master K2=1
+TDRA rows.
+
+- Corrected the DL rows in `master_geometry_based.yaml` and
+  `master_sinr_sweep.yaml` to the already authored K0=0.
+- Added explicit UL TDRA rows with K2=4 to
+  `webgui_sinr_sweep_64x4_mu_mimo_full.yaml`, matching its existing scheduling
+  relation. Allocation indices, start symbols and lengths are unchanged.
+- No runtime auto-rewrite of DCI rows, offset guessing, or relaxed grant
+  validation was added. This is configuration consistency, not proof that
+  every listed allocation is legal in every TDD slot; the timing engine
+  still decides slot/symbol legality.
+- New `testConfiguredDCITimingOffsets` executes all 96 DL/UL table bindings
+  across the three profiles, verifies immutable tables, and checks that
+  mismatched scheduler offsets still fail closed.
+
+All six follow-up tests passed, exit 0, in
+`logs/configured_dci_timing_20260907.log`: configured DCI offsets, unchanged
+scenario prompt compliance, received UL timing-offset authority, scenario
+schema, parameter catalog, and scheduler grant consistency. No `testAll`,
+25 dB run, or new FDD campaign was launched. The E2E/component tests include
+their existing explicitly scoped FDD compatibility fixtures.
+
+The fresh 25-slot nominal-12 dB main TDD diagnostic exited **1** at scheduler
+slot 21 with `WAVEFORM:TDDChannelTailNotConsumed`: 16 actual zero-input
+samples required, zero observed. Actual SIB1 delivery passed the newly
+installed offset resolver; PRACH was detected, and RAR at absolute slot 16
+had DCI CRC, PDSCH CRC, RAPID match and UL-grant validation all equal to 1.
+Msg3's 7,680 samples were generated, but the UL-to-DL reversal happened
+before its receiver completed. No Msg3 CRC, completed access, or connected
+DL/UL trial is claimed. The strict guard remains intact.
+
+Run: `C:/Users/anup0/AppData/Local/Temp/main_shared_ra_20260907_204106`;
+log: `logs/timing_offset_main_tdd_20260907.log`. Source was frozen throughout
+this execution. The trace-unit repair below was made **after** it terminated.
+
+The exhaustive first-five-row/all-CSV audit is in
+`results/lls/qualification_working/reviews/timing_offset_main_first5_20260907`.
+All 54 CSVs parsed: 11,288 rows, 3,452 columns, no structural or infinity
+failures. Strict value closure still **fails**: 42 populated files lack
+applicable domain contracts and 12 header-only tables lack completed
+applicability classification. These counts are not physical qualification.
+There are no PNGs because this diagnostic explicitly uses `SaveFigures=false`.
+The measured SSB SINRs span 36.31-48.86 dB, so the configured 12 dB label is
+not evidence of a calibrated 12 dB received operating point. That calibration
+and full CSV/PNG acceptance remain open.
+
+### PRACH trace RAR command/sample unit repair
+
+The four-step adapter incorrectly placed `TimingAdvanceCommand` in
+`timing_advance_samples`. It now calls `receivedRARTimingOnTraceClock`, using
+the actual received RAR N_TA in Tc and the correlation trace's actual sample
+rate. The helper checks the source and consistency with the original
+PUSCH-clock TA samples. Missing received timing remains NaN; a gNB estimate
+is not substituted. This duration excludes N_TA,offset and does not claim
+that an absolute UE transmit origin or shared timing has been applied.
+
+`testRARTimingTraceUnits` passed actual MAC RAR decoding plus independent
+PRACH/PUSCH clock arithmetic, provenance rejection and inconsistent-unit
+rejection. RAR timing authority, production adapter binding, correlation
+normalization and primary truth-table tests also passed. Both final
+E2E/export-integrity regressions passed; the seven-test batch exited 0 in
+`logs/rar_trace_units_verified_20260907.log`. This does not change the failed
+main-run result or qualify the missing shared UL transmissions.
+The three new regression functions are registered in `tests/testAll.m` for
+future suite execution; the full suite was not invoked, per the focused-test
+restriction for this work.
+
+Next coupled change must include all of these boundaries together:
+
+1. Derive the UE DL reference from actual decoded SSB timing/index and
+   received sample-clock evidence, with explicit implementation-delay
+   calibration and cell/beam/epoch/availability lineage. A PSS candidate's
+   within-burst timestamp is not itself a propagation delay.
+2. Advance the **complete, uncropped** UE TX waveform by received/default
+   offset plus applicable received TA, retaining distinct gNB observation
+   origins. PRACH, Msg3 and subsequent UL need consistent time units.
+3. Schedule direction-switch events at actual TX boundaries, including
+   starts advanced into nominal guard intervals. `advanceSlot` currently
+   retargets at nominal symbol boundaries; changing a timestamp alone can
+   route early UL samples through the wrong directional channel.
+4. Keep observation completion, RAR window timing, processing deadlines and
+   pending channel/RF tails causal on that clock. Never lower the tail guard,
+   crop a transmitted prefix, append fake received zeros, or switch early
+   merely to make slot 21 pass.
+5. Rerun the main TDD access chain, then qualify connected PUSCH/PUCCH/SRS,
+   UCI, beam/CSI and measurement outputs on actual shared observations.
+
 ## PRACH receiver policy and identity repair (2026-09-07)
 
 This repair does **not** qualify all uplink channels or the complete shared

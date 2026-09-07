@@ -57,6 +57,31 @@ def test_absent_control_stays_absent():
     assert "pdcch_config_common" not in codec.semantic_from_object(value)
 
 
+@pytest.mark.parametrize("offset", [None, "n0", "n25600", "n39936"])
+def test_timing_offset_actual_uper_presence_and_value(offset):
+    s = semantic()
+    if offset is not None:
+        s["n_timing_advance_offset"] = offset
+    payload = codec.CODEC.to_uper(codec.bounded_object(s))
+    codec.CODEC.from_uper(payload)
+    raw = codec.CODEC.get_val()
+    serving = raw["message"][1][1]["servingCellConfigCommon"]
+    assert ("n-TimingAdvanceOffset" in serving) == (offset is not None)
+    recovered = codec.semantic_from_object(raw)
+    assert ("n_timing_advance_offset" in recovered) == (offset is not None)
+    if offset is not None:
+        assert serving["n-TimingAdvanceOffset"] == recovered["n_timing_advance_offset"] == offset
+    assert codec.CODEC.to_uper(codec.bounded_object(recovered)) == payload
+
+
+@pytest.mark.parametrize("offset", ["", "n13792", "spare1", 0, 25600, None])
+def test_invalid_present_timing_offset_rejected(offset):
+    s = semantic()
+    s["n_timing_advance_offset"] = offset
+    with pytest.raises(ValueError, match="n-TimingAdvanceOffset"):
+        codec.bounded_object(s)
+
+
 def test_unrepresented_ul_carrier_is_rejected_not_replaced_with_dl():
     value = codec.bounded_object(semantic())
     ul = value["message"][1][1]["servingCellConfigCommon"]["uplinkConfigCommon"]

@@ -17,6 +17,13 @@ for i = 1:numel(required)
     end
 end
 serving = sib1.servingCellConfigCommon;
+if isfield(serving,'n_TimingAdvanceOffset')
+    value=string(serving.n_TimingAdvanceOffset);
+    if ~isscalar(value) || ~any(value==["n0","n25600","n39936"])
+        error('sixgr:rrc:asn1:UnsupportedSIB1IE', ...
+            'n-TimingAdvanceOffset must be n0, n25600 or n39936; omit the IE for its standards default.');
+    end
+end
 for name = ["downlinkConfigCommon","uplinkConfigCommon","ssb_PositionsInBurst","ssb_periodicityServingCell"]
     if ~isfield(serving, name)
         error("sixgr:rrc:asn1:MissingSIB1IE", "Required servingCellConfigCommon IE '%s' is missing.", name);

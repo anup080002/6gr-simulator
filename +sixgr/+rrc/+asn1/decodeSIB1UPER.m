@@ -96,6 +96,9 @@ end
 if isfield(s, "pdcch_config_common")
     cfg.rrc.sib1.pdcch_config_common = s.pdcch_config_common;
 end
+if isfield(s,'n_timing_advance_offset')
+    cfg.rrc.sib1.n_timing_advance_offset=string(s.n_timing_advance_offset);
+end
 cfg.phy.prach.configurationIndex = ...
     double(s.prach_configuration_index);
 cfg.phy.prach.rootSeqIndex = double(s.root_sequence_index);

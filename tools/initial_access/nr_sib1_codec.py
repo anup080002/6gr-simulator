@@ -229,6 +229,11 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
         )
     }
     serving = message["message"][1][1]["servingCellConfigCommon"]
+    if "n_timing_advance_offset" in semantic:
+        offset = semantic["n_timing_advance_offset"]
+        if offset not in ("n0", "n25600", "n39936"):
+            raise ValueError("n-TimingAdvanceOffset requires n0, n25600 or n39936")
+        serving["n-TimingAdvanceOffset"] = offset
     for direction, common, bwp in (("dl", "downlinkConfigCommon", "initialDownlinkBWP"),
                                    ("ul", "uplinkConfigCommon", "initialUplinkBWP")):
         generic = serving[common][bwp]["genericParameters"]
@@ -342,6 +347,8 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
         semantic[f"initial_{direction}_bwp_riv"] = generic_bwp["locationAndBandwidth"]
         semantic[f"initial_{direction}_bwp_scs_khz"] = int(generic_bwp["subcarrierSpacing"].replace("kHz", ""))
         semantic[f"initial_{direction}_bwp_cyclic_prefix"] = generic_bwp.get("cyclicPrefix", "normal")
+    if "n-TimingAdvanceOffset" in serving:
+        semantic["n_timing_advance_offset"] = serving["n-TimingAdvanceOffset"]
     if "pdcch-ConfigCommon" in dl["initialDownlinkBWP"]:
         kind, common_control = dl["initialDownlinkBWP"]["pdcch-ConfigCommon"]
         if kind != "setup":
