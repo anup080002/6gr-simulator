@@ -248,8 +248,17 @@ ra.PRACHActiveEndTicksExclusive=int64(resolvedOccasion.PRACHActiveEndTicksExclus
     selectedTime.Ticks-baseTime.Ticks;
 carrier=sixgr.phy.grid.makeCarrier(cfg);
 [~,control]=sixgr.phy.ra.resolveRARCommonControl(cfg,carrier);
+clockOffsetTicks=int64(0);
+if isfield(cfg,'SharedULTimingContext')
+    ref=cfg.SharedULTimingContext.DLReference;
+    tc=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/ref.SampleRateHz;
+    assert(tc==fix(tc),'sixgr:mac:ra:SharedClockResolution','Received clock must preserve Tc exactly.');
+    clockOffsetTicks=int64(ref.DLPhaseOffsetSamples)*int64(tc);
+    ra.PRACHActiveEndTicksExclusive=ra.PRACHActiveEndTicksExclusive+clockOffsetTicks- ...
+        cfg.SharedULTimingContext.Offset.NTAOffset_Tc;
+end
 ra.RARMonitoringWindow=sixgr.phy.ia.RARMonitoringWindow.resolve( ...
-    frame,control,ra.PRACHActiveEndTicksExclusive,ra.RAResponseWindowSlots);
+    frame,control,ra.PRACHActiveEndTicksExclusive,ra.RAResponseWindowSlots,clockOffsetTicks);
 ra.RAContentionResolutionTimerSlots = double(sixgr.util.structGet(raNode, "ra_contention_resolution_timer_slots", 64));
 timingNode = raNode.timing;
 rrcNode = sixgr.util.structGet(cfg, "initial_access.rrc", struct());

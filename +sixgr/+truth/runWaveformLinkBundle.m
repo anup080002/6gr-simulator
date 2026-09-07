@@ -12387,7 +12387,7 @@ fields = ["StrictOk","SIB1TreeEqual","DCICrcPass","DLSCHCrcPass", ...
     "SIB1ASN1DecodeOk","SIB1SemanticValid","SIB1PayloadHashRx", ...
     "SIB1RxTreeHash","SIB1TxTreeHash","SIB1RxTree", ...
     "MIBDecoded","BCHCrcPass","MIBDMRSTypeAPosition", ...
-    "CORESET0Present","CORESET0NumRB","CORESET0RBStart"];
+    "CORESET0Present","CORESET0NumRB","CORESET0RBStart","ReceivedDLTimingReference"];
 for i = 1:numel(fields)
     name = char(fields(i));
     if isfield(sib1, name)
@@ -12417,6 +12417,13 @@ for item=received
             'SSBIndex',[],'WriteArtifacts',false,'RunFolder','','RunId','shared_runtime', ...
             'PhysicalMeasurementObservation',pre,'TransmitObservation',tx);
         output=sixgr.link.completeCellSearchBroadcast(p,post,prototype,options,tic);
+        for candidate=1:numel(output.CandidateResults)
+            received=output.CandidateResults{candidate}.SIB1;
+            if received.BCHCrcPass && received.MIBDecoded
+                output.CandidateResults{candidate}.SIB1.ReceivedDLTimingReference = ...
+                    sixgr.phy.frame.receivedDLTimingReference(p.ReceiverConfig,received,post,ch.ChannelTrimSamples);
+            end
+        end
         [raw,~,recovery]=localCollectCoupledPBCHBeamSweep(context.Config,context.SNR,ch,context.Slot,output);
         trial=localAnnotateCoupledControlTrial(raw,context.Slot,context.Frame,item.UE,context.RNTI,"DL",context.ServingCell);
         trial.ObservationPurpose=repmat("initial_cell_search_pbch_acquisition",height(trial),1);
@@ -12587,6 +12594,9 @@ range=sixgr.phy.frame.FrequencyRangeResolver.resolve( ...
     'CenterFrequencyHz',state.CfgMobility.phy.fc_Hz);
 common.ULTimingAdvanceOffset=sixgr.phy.frame.resolveULTimingAdvanceOffset( ...
     common,range.FrequencyRange);
+if isfield(recovery,'ReceivedDLTimingReference')
+    common.ReceivedDLTimingReference=recovery.ReceivedDLTimingReference;
+end
 if ~isfield(state,'UECommonCellConfigurationByUE')
     state.UECommonCellConfigurationByUE = repmat({struct()},nUsers,1);
 end
@@ -12766,6 +12776,12 @@ if shared
         attempt.Received=[];
     else
         cfg=sixgr.util.structSet(cfg,'random_access.use_runtime_channel',true);
+        common=state.UECommonCellConfigurationByUE{ueIdx};
+        assert(common.ServingCell==state.CurrentServingIdx(ueIdx) && ...
+            common.ReceivedDLTimingReference.SSBIndex==cfg.random_access.associated_ssb_index, ...
+            'sixgr:truth:ULTimingReferenceIdentity','UL clock must belong to the selected received serving beam.');
+        cfg.SharedULTimingContext=struct('DLReference',common.ReceivedDLTimingReference, ...
+            'Offset',common.ULTimingAdvanceOffset);
         attempt.Config=cfg;
         if ~isfield(state,'RARetryByUE'), state.RARetryByUE=cell(numel(state.AccessState),1); end
         if isempty(state.RARetryByUE{ueIdx})

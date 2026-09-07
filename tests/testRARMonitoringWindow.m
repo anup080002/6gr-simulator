@@ -20,6 +20,20 @@ assert(w.LastSlot==8,'A nonzero start symbol leaves a partial final slot inside 
 late=sixgr.phy.ia.RARMonitoringWindow.resolve(frame,c,prior.Ticks+1,3);
 assert(late.StartSlot==6 && isequal(late.MonitoringSlots,6));
 assert(~w.ReceiverExecutionQualified && ~w.ProxyUsed && ~w.FallbackUsed);
+% A received DL phase shifts physical timestamps, not the radio-frame
+% occasion coordinates. Check both signs and the exact one-Tc boundary.
+for phase=int64([-1792 1792])
+    shifted=sixgr.phy.ia.RARMonitoringWindow.resolve(frame,c,prior.Ticks+phase,3,phase);
+    assert(isequal(shifted.MonitoringSlots,w.MonitoringSlots) && ...
+        shifted.StartSlot==w.StartSlot && shifted.StartSymbol==w.StartSymbol && ...
+        shifted.LastSlot==w.LastSlot && shifted.ClockOffsetTicks==phase);
+    for field=["PRACHActiveEndTicksExclusive","StartTicks","ExpiryTicksExclusive","MonitoringStartTicks"]
+        assert(isequal(shifted.(field),w.(field)+phase));
+    end
+    shiftedLate=sixgr.phy.ia.RARMonitoringWindow.resolve(frame,c,prior.Ticks+phase+1,3,phase);
+    assert(isequal(shiftedLate.MonitoringSlots,late.MonitoringSlots) && ...
+        shiftedLate.StartTicks==late.StartTicks+phase);
+end
 
 for suffix=["_tdd", ""]
     s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...

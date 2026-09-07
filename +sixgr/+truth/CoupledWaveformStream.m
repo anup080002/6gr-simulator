@@ -85,6 +85,14 @@ classdef CoupledWaveformStream < handle
                     '%s must enqueue its prepared TX and consume actual RX completion; eager execution would advance the stream-owned channel twice.',family);
             end
         end
+        function assertULTransmitTime(cfg,sample,fs)
+            validateattributes(sample,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+            validateattributes(fs,{'numeric'},{'scalar','real','finite','positive'});
+            if localFixedDLAtSample(cfg,sample,fs)
+                error('sixgr:truth:PhysicalTDDDirectionCollision', ...
+                    'A real advanced UL transmission overlaps a fixed DL symbol.');
+            end
+        end
     end
     methods
         function tf=hasPending(obj,kind,ue)
@@ -116,11 +124,24 @@ classdef CoupledWaveformStream < handle
             end
             obj.Serial=obj.Serial+1; id="ra_observation_"+obj.Serial;
             obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
+            if prepared.Direction=="UL"
+                active=find(any(samples~=0,2),1,'first');
+                if ~isempty(active)
+                    boundary=id+"_ul_start";
+                    obj.Events.decisionBoundary(boundary,first+active-1);
+                    obj.Decisions(end+1)=struct('ID',boundary,'Kind',"ULTransmitBoundary", ...
+                        'UE',ue,'Context',struct());
+                end
+            end
             if transmitOnly, return; end
             % Observe actual subsequent physical samples, including the
             % filter tail. No zeros are appended to a received waveform.
             ch=obj.channelState(ue,string(prepared.Direction));
             stop=first+size(samples,1)+double(ch.ChannelPadSamples);
+            if prepared.Direction=="UL"
+                first=prepared.ReceiveStartSample;
+                stop=prepared.ReceiveEndSampleExclusive;
+            end
             for plane=[tx+":tx",rx+":pre_rf",rx+":post_rf"]
                 obj.Events.observe(plane,id,first,stop);
             end
@@ -140,8 +161,9 @@ classdef CoupledWaveformStream < handle
             for slot=reshape(window.MonitoringSlots,1,[])
                 start=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot,0,window.Numerology);
                 finish=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot+1,0,window.Numerology);
-                first=localTicksSample(start.Ticks,fs);
-                stop=min(localTicksSample(finish.Ticks,fs)+double(ch.ChannelPadSamples),expiry);
+                clockOffset=sixgr.util.structGet(window,'ClockOffsetTicks',int64(0));
+                first=localTicksSample(start.Ticks+clockOffset,fs);
+                stop=min(localTicksSample(finish.Ticks+clockOffset,fs)+double(ch.ChannelPadSamples),expiry);
                 obj.Serial=obj.Serial+1; id="rar_monitor_"+obj.Serial;
                 for plane=["gnb_"+link.Cell+":tx","ue_"+ue+"_rx:pre_rf","ue_"+ue+"_rx:post_rf"]
                     obj.Events.observe(plane,id,first,stop);
@@ -253,6 +275,12 @@ classdef CoupledWaveformStream < handle
                         k=find(string({obj.Decisions.ID})==id,1);
                         if isempty(k), error('sixgr:truth:UnknownSharedDecision','No receiver owns this timer.'); end
                         d=obj.Decisions(k); obj.Decisions(k)=[];
+                        if d.Kind=="ULTransmitBoundary"
+                            sixgr.truth.CoupledWaveformStream.assertULTransmitTime( ...
+                                cfg,obj.Events.NextSampleIndex,obj.SampleRateHz);
+                            obj.retarget("UL",d.UE);
+                            continue;
+                        end
                         completed(end+1)=struct('Kind',d.Kind,'UE',d.UE,'Context',d.Context,'Planes',struct([])); %#ok<AGROW>
                     end
                     if ~isempty(onReceived) && numel(completed)>previousCount
@@ -302,9 +330,11 @@ classdef CoupledWaveformStream < handle
             if numel(choices)~=1, error('sixgr:truth:AmbiguousSharedLink','The prepared receiver needs one physical serving link.'); end
             link=obj.Links(choices);
         end
-        function retarget(obj,direction)
+        function retarget(obj,direction,ue)
+            if nargin<3, ue=[]; end
             for k=1:numel(obj.Links)
                 link=obj.Links(k);
+                if ~isempty(ue) && link.UE~=ue, continue; end
                 if sum([obj.Links.UE]==link.UE)>1 || link.Direction==direction, continue; end
                 if direction=="UL"
                     obj.Physical.retargetTDDLink(link.ID,"ue_"+link.UE,"gnb_"+link.Cell+"_rx",link.ULConfig);
@@ -315,6 +345,22 @@ classdef CoupledWaveformStream < handle
             end
         end
     end
+end
+
+function tf=localFixedDLAtSample(cfg,sample,fs)
+tc=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/fs;
+assert(tc==fix(tc),'sixgr:truth:NonIntegralSchedulerSample','The physical sample clock must preserve integer Tc.');
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+t=sixgr.phy.frame.AbsoluteTime.fromTicks(int64(sample)*int64(tc));
+% An advanced transmission may begin inside a symbol. Inspect the actual
+% containing symbol; the three-output overload requires exact alignment.
+[frame,slot,symbol,~]=t.toNumerology(log2(double(carrier.SubcarrierSpacing)/15));
+absoluteSlot=double(frame)*carrier.SlotsPerFrame+double(slot);
+[~,~,~,partition]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,absoluteSlot+1);
+dl=partition.DLSymbolAllocation; ul=partition.ULSymbolAllocation;
+inDL=double(symbol)>=dl(1) && double(symbol)<sum(dl);
+inUL=double(symbol)>=ul(1) && double(symbol)<sum(ul);
+tf=inDL && ~inUL;
 end
 
 function sample=localTicksSample(ticks,fs)

@@ -1,5 +1,181 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Latest verified checkpoint: main shared-stream access completes
+
+Run `C:/Users/anup0/AppData/Local/Temp/main_shared_ra_20260907_214328`
+completed with MATLAB exit **0**. Source/evidence log:
+`logs/shared_ul_prach_origin_main_tdd_20260907.log`. The actual main
+scheduler, TDD only, consumed 25 slots at the existing nominal 12 dB label.
+This is **access-clock qualification**, not complete LLS qualification.
+
+The previous slot-21 `TDDChannelTailNotConsumed` failure is closed for this
+executed profile without weakening the channel-tail guard. Actual PRACH
+detection, RAR PDCCH/PDSCH reception, Msg3 PUSCH, Msg4 PDCCH/PDSCH and
+RRCSetupComplete all completed. Final persisted `RACompleted=1`,
+`RRCConnected=1`, `StrictOk=1`. All sample indices below are zero-based;
+receive stops are exclusive. The physical sampling rate is 7.68 MHz.
+
+| Actual stage | Absolute radio slot | RX start sample | RX stop sample | Complete TX samples |
+| --- | ---: | ---: | ---: | ---: |
+| PRACH / Msg1 | 14 | 111183 | 115192 | 3840 |
+| RAR / Msg2 | 16 | 122880 | 130575 | 7680 |
+| Msg3 / PUSCH | 19 | 145743 | 153592 | 7680 |
+| Msg4 | 22 | 168960 | 176655 | 7680 |
+| RRCSetupComplete / PUSCH | 24 | 184143 | 191992 | 7680 |
+
+The retained actual Msg3 capture proves nominal origin 145920 samples,
+complete UE transmission [145820,153500), independent gNB receive window
+[145743,153592), received DL phase 0, N_TA=0 Tc and N_TA,offset=25600 Tc
+(100 samples). `WaveformTimingApplied=1`, `FiniteWaveformCropped=0`.
+The full 7680-sample transmitted buffer remains present. Detector raw
+PRACH timing is 84 samples (77-sample capture pre-guard + 7-sample
+implementation filter delay); calibrated radio delay and received RAR
+TA command are both 0. The Msg3 DM-RS synchronizer independently estimated
+and applied 84 samples on the actual received buffer. No channel delay
+was subtracted twice and no zero-valued TA was substituted for a failure.
+Nonzero-TA main-stream reception remains to be qualified separately.
+
+Persisted Msg3 PUSCH CRC=1, post-equalization SINR=11.5708847598003 dB;
+Msg4 PDSCH CRC=1; RRCSetupComplete CRC=1, post-equalization
+SINR=11.5871953734265 dB. These are actual receiver results, not the
+configured 12 dB label. The final UE access state is `succeeded`; SRS is
+still `invalid`, and scheduling eligibility remains false.
+
+All **27 distinct focused regression tests** used for this checkpoint
+passed by the end of the repair, including the corrected tests rerun
+after their failures. The last four (shared PRACH receive origin, RAR TA,
+received-observation boundary and isolated TDD four-step timing) passed
+before this main run. Earlier broad tests include both required E2E
+regressions, config/DL/UL/reference points, no-proxy/grant guards, actual
+staged SRS/PUCCH/PUSCH-UCI and TCI/QCL/PMI bindings. Test scope remains
+explicit: isolated fixtures are not main-run connected-channel evidence.
+`testAll` was not run, per the user's focused-test restriction.
+
+Exhaustive first-five-row audit:
+`results/lls/qualification_working/reviews/shared_ul_access_first5_20260907`.
+All 168 CSVs (16,175 rows, 9,026 columns) parsed, with no infinity tokens.
+The strict gate **failed**: 118 required CSV semantic checks and one chart
+check failed; 54 files are empty. Six files have an empty header rather
+than a typed zero-event schema: multiuser summary, both PDCCH mirrors,
+CSI-RS, SRS, and live LA input. Seven duplicate rows need classification.
+The four `fallback` and three `placeholder` token hits are metric names
+in `metric_unit_catalog.csv`, not proof of generated fallback measurements.
+No synthetic tokens were found. There are zero PNGs because SaveFigures
+was explicitly false for this bounded diagnostic; no all-plot claim.
+
+The main data tables have DL=0 and UL=0 rows: access completed during the
+last slot, so there was no later connected scheduling opportunity. The
+SRS/PUCCH/data adapters still need main shared-clock integration. Another
+reporting issue is now evidenced: final live status retains the previous
+pre-slot `CompletedSymbols=336` despite consuming all 350 physical symbols;
+repair that from the actual consumed clock, not by forcing a completion
+percentage. Do not infer complete data, UCI, beam-feedback or RSSI/PNG
+qualification from MATLAB exit 0 or `FinalBundleReady=1`.
+
+## Complete UL waveform origins and received DL phase (following af199291)
+
+Access timing is verified above; full main-run qualification remains open.
+The preceding turn made progress and committed received SIB1 timing-offset
+authority. This turn consumes that authority in actual shared RA scheduling.
+
+- `receivedDLTimingReference` derives the UE frame phase from the actual
+  received SSB synchronizer and CRC-valid BCH index/half-frame/SFN. It
+  calibrates known implementation filter delay, not geometric path delay,
+  and rejects an epoch outside the declared receiver search budget.
+- Shared Msg1, Msg3 and RRCSetupComplete preserve the complete generated
+  post-IFFT waveform. Their UE origin is nominal slot + received DL phase
+  minus received N_TA and common N_TA,offset, in exact integer samples.
+  PRACH uses N_TA=0. The independent gNB window uses its nominal clock,
+  common offset and declared search guard; it does not follow the UE's
+  measured phase or an oracle TX origin. Unrepresentable TA fails closed.
+- PRACH arrival calibration accounts for the actual observation pre-guard
+  and implementation filter delay before constructing the RAR command.
+  Shared Msg3/RRCSetupComplete no longer call the finite-buffer TA shifter.
+- RAR Type1 monitoring timestamps include received DL phase without
+  changing radio-frame occasion coordinates. Both positive and negative
+  phase tests preserve the exact one-Tc monitoring eligibility boundary.
+- The physical owner changes TDD direction at actual UL energy onset, even
+  inside a guard symbol. The outgoing-channel tail guard is unchanged;
+  no fabricated receive padding or channel reset was added.
+
+Focused tests passed: separate UL origins, real CDL/RF split invariance and
+tail-safe reversal, RAR monitoring and actual receive-window decoding, RAR
+TA authority, actual four-beam shared SSB reception, staged RA continuation,
+and the existing isolated TDD four-step waveform test. The same-sample
+event-registration contract was corrected while retaining past-time
+rejection. A stale continuation test compared two floating representations
+of 4.5 ms; it now verifies the exact integer-sample origin, not a relaxed
+physical timing tolerance.
+
+First main diagnostic: `main_shared_ra_20260907_211923`, log
+`logs/shared_ul_origins_main_tdd_20260907.log`, nominal 12 dB TDD, 25-slot
+budget, SaveFigures=false. It stopped at scheduler slot 15 before PRACH
+reception: the new collision adapter used the exact-boundary overload of
+`AbsoluteTime.toNumerology` for an actual in-symbol UL start (28482560 Tc).
+The fix must use the containing-symbol overload; do not round the TX time
+or remove the fixed-DL collision check. The broad focused regression batch
+was left source-frozen before making that follow-up repair.
+
+All 48 CSVs from that failed diagnostic were parsed and their first five
+rows audited: 11,115 rows, no parse/structural errors, no duplicate rows,
+no infinity tokens. Strict value closure **failed**: 36 populated files
+lacked a domain contract and 12 header-only files remained unclassified.
+Zero PNGs is the explicit diagnostic setting, not artifact completion.
+Audit: `results/lls/qualification_working/reviews/shared_ul_origins_main_first5_20260907`.
+No previous output was deleted or overwritten.
+
+Follow-up evidence: all 15 tests in
+`logs/shared_ul_origins_regression_20260907.log` passed, including config,
+DL/UL/reference points, strict proxy/grant guards, both required E2E
+regressions, staged actual SRS/PUCCH and PDSCH/PUSCH (including coded UCI),
+PUCCH/PUSCH reservation, TCI, QCL and PMI bindings. The in-symbol classifier
+was repaired and `testSharedULTDDDirectionBoundary` passed exact and
+in-symbol TDD edges plus FDD independence. No `testAll` was run.
+
+Second main diagnostic: `main_shared_ra_20260907_213344`, log
+`logs/shared_ul_origins_main_tdd_retry_20260907.log`, stopped at PRACH
+calibration with `NegativeMeasuredPRACHRoundTrip`. An isolated actual
+PRACH diagnostic (`diagnoseSharedPRACHReceiveGuard`, log
+`logs/shared_prach_receive_guard_diagnostic_20260907.log`) reproduced the
+root cause independently of the physical channel: at 7.68 MHz, the actual
+B4 preamble 0 is decoded as 0 at explicit delays 0/7 samples, but as 7 at
+77/84 samples (reported offsets 14.3813/21.3813). The capture's known
+77-sample pre-guard was incorrectly entering the cyclic-shift detector as
+radio delay, changing both identity and arrival estimate.
+
+The receiver now extracts from its known gNB PRACH origin within the
+retained capture, not from the transmitted identity, a measured arrival,
+or geometric delay. All 64 preambles remain searched. Detector-input and
+capture-relative offsets remain distinct, and filter delay is calibrated
+only once. The shared observation extent guard now requires the complete
+declared receive window, including its pre/post guards; no actual RX tail
+is fabricated. This follows the documented
+[nrPRACHDetect input-relative timing convention](https://www.mathworks.com/help/5g/ref/nrprachdetect.html).
+`testSharedPRACHReceiveOrigin` and the main retry passed, as recorded in
+the latest checkpoint above.
+
+Still required, in dependency order (none is claimed skipped or complete):
+
+1. Extend the now-passing main shared PRACH/RAR/Msg3/Msg4/RRCSetupComplete
+   reception qualification to nonzero measured TA and additional declared
+   timing-offset/sample-clock combinations. Do not claim those from the
+   current zero-command main run or analytic unit tests alone.
+2. Integrate connected PDCCH/PDSCH/PUSCH, SRS and PUCCH with the same
+   received UL clock and actual preparation/receive-completion boundary.
+   `PreparedUplinkControlTransmission` still explicitly rejects nonzero TA;
+   its nominal-slot fixtures are not main-run UL qualification.
+3. Qualify late HARQ feedback binding to queued PUSCH, actual recovered UCI
+   on PUSCH and PUCCH, SRS/PUSCH/PUCCH resource collisions and scheduler
+   timing/transport-block/precoder lineage. Do not lift the legacy-stream
+acquisition guard to make an eager PHY execution pass.
+4. Verify main-run CSI PMI/RI/CQI, SRS rank/TPMI and QCL/TCI source,
+   activation, age and actual applied precoder against CSV/PNG evidence.
+5. Finish scoped RSSI/SS/CSI RSRP/SINR, UE PHR and physical noise/power
+   calibration. The nominal 12 dB label is not measured 12 dB SINR;
+   SSB-window RSSI is not a full-carrier/SMTC RSSI measurement.
+6. Qualify all CSV/PNG mathematical contracts on a completed actual run,
+   then prepare traceable continuous IQ and Keysight playback separately.
+
 ## Received uplink timing-offset authority (2026-09-07, following d4c979a6)
 
 The preceding turn made verified progress (PRACH/RAR repair and regression

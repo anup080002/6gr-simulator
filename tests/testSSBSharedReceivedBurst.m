@@ -121,6 +121,19 @@ localAssertCalls(completionStats,"recoverSIB1FromWaveform",numel(indices));
 for k=1:numel(indices)
     assert(isequaln(completed.CandidateResults{k}.PBCH,out.CandidateResults{k}.PBCH));
     assert(isequaln(completed.CandidateResults{k}.SIB1,out.CandidateResults{k}.SIB1));
+    recovered=completed.CandidateResults{k}.SIB1;
+    if recovered.BCHCrcPass && recovered.MIBDecoded
+        reference=sixgr.phy.frame.receivedDLTimingReference(prepared.ReceiverConfig, ...
+            recovered,observation,first.RuntimeDLChannelState.ChannelTrimSamples);
+        assert(reference.SSBIndex==indices(k) && reference.AvailableAtSample==observation.EndSampleExclusive);
+        assert(reference.RawSSBTiming_samples==recovered.TimingOffset && ...
+            abs(reference.DLPhaseOffsetSamples)<=reference.SearchGuardSamples);
+        altered=prepared.ReceiverConfig;
+        altered.phy.ssb.SSBIndex=mod(indices(k)+1,numel(indices));
+        unchanged=sixgr.phy.frame.receivedDLTimingReference(altered,recovered,observation, ...
+            first.RuntimeDLChannelState.ChannelTrimSamples);
+        assert(isequaln(reference,unchanged),'Configured SSB index must not override received timing identity.');
+    end
     assert(completed.CandidateResults{k}.RuntimeDLChannelState.CurrentSampleIndex == ...
         first.RuntimeDLChannelState.CurrentSampleIndex);
 end

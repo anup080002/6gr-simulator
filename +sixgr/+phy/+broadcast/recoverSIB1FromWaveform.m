@@ -155,6 +155,7 @@ try
         return;
     end
     mib = sixgr.phy.broadcast.decodeMIBTransportBlock(pbch.TransportBlock);
+    result.MIBSystemFrameNumber = 16*double(mib.SystemFrameNumberMSB6) + result.MIBSFN4LSBValue;
     [type0, cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB(carrier, cfg, mib, ...
         "RNTI", double(p.Results.ReceiverRNTI));
     monitoringOccasionOrdinal = localMonitoringOccasionOrdinal(cfg);

@@ -2,9 +2,11 @@ classdef RARMonitoringWindow
     % Type1 CSS occasions on the 38.211 Tc clock (38.213 clause 8.2).
     % This is a receive-opportunity plan, never evidence of a decoder attempt.
     methods (Static)
-        function window=resolve(frame,control,prachEndTicks,windowSlots)
+        function window=resolve(frame,control,prachEndTicks,windowSlots,clockOffsetTicks)
+            if nargin<5, clockOffsetTicks=int64(0); end
+            validateattributes(clockOffsetTicks,{'int64'},{'scalar'});
             validateattributes(windowSlots,{'numeric'},{'scalar','integer','positive','finite'});
-            finish=sixgr.phy.frame.AbsoluteTime.fromTicks(prachEndTicks);
+            finish=sixgr.phy.frame.AbsoluteTime.fromTicks(prachEndTicks-clockOffsetTicks);
             spec=sixgr.phy.frame.AbsoluteTime.resolveNumerology(frame.Numerology);
             period=control.SlotPeriodAndOffset;
             validateattributes(period,{'numeric'},{'vector','numel',2,'integer','nonnegative','finite'});
@@ -61,6 +63,12 @@ classdef RARMonitoringWindow
                 'MonitoringStartTicks',ticks,'CORESETDurationSymbols',duration, ...
                 'SearchSpaceID',control.SearchSpaceID,'CORESETID',control.CORESETID, ...
                 'ReceiverExecutionQualified',false,'ProxyUsed',false,'FallbackUsed',false);
+            % Slot/symbol coordinates remain in the UE's received radio
+            % frame. Physical event timestamps include its measured phase.
+            window.ClockOffsetTicks=clockOffsetTicks;
+            for field=["PRACHActiveEndTicksExclusive","StartTicks","ExpiryTicksExclusive","MonitoringStartTicks"]
+                window.(field)=window.(field)+clockOffsetTicks;
+            end
         end
     end
 end

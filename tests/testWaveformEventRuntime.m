@@ -41,6 +41,10 @@ assert(event.Completed(1).Segments{1}.StartSample==0 && ...
 
 % A receiver result can now cause an actual future UE transmission before
 % any samples of that transmission have been consumed.
+r.decisionBoundary('same_sample_action',4);
+same=r.advanceUntilEvent(12);
+assert(same.Decisions=="same_sample_action" && same.StartSample==4 && ...
+    same.EndSampleExclusive==4 && ~same.PhysicalExecutionPerformed && r.NextSampleIndex==4);
 u=complex(-ones(3,2),2*ones(3,2));
 r.enqueue('ue','causal_response',chunk(u,4));
 expected(5:7,:)=expected(5:7,:)+u;
@@ -59,6 +63,7 @@ assert(isequal(event.Completed.Observation.readComplete(),r.ProcessorState.Outpu
 assert(r.ProcessorState.Calls==4 && numel(r.ExecutionTrace)==4);
 assert(isequal(rng,initialRNG),'Pure orchestration must not use the global random stream.');
 localError(@()r.observe('rx','past',11,14),'WAVEFORM:LateObservation');
+localError(@()r.decisionBoundary('past_action',11),'MATLAB:notGreaterEqual');
 localError(@()r.decisionBoundary('feedback',14),'WAVEFORM:DuplicateDecisionBoundary');
 assert(~r.Faulted && r.NextSampleIndex==12);
 

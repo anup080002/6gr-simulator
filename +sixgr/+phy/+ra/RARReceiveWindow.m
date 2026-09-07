@@ -45,9 +45,10 @@ classdef RARReceiveWindow
             start=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot,0,spec);
             fs=observation.SampleRateHz;
             tc=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/fs;
+            clockOffsetTicks=sixgr.util.structGet(obj.Window,'ClockOffsetTicks',int64(0));
             carrier=sixgr.phy.grid.makeCarrier(obj.Config); info=nrOFDMInfo(carrier);
             if fs~=double(info.SampleRate) || tc~=fix(tc) || ...
-                    int64(observation.StartSample)*int64(tc)~=start.Ticks || ...
+                    int64(observation.StartSample)*int64(tc)~=start.Ticks+clockOffsetTicks || ...
                     observation.EndSampleExclusive<=obj.LastCompletionSample
                 error('sixgr:phy:ra:RARObservationClockMismatch','RAR samples must retain their physical slot, rate and chronological completion.');
             end
@@ -81,9 +82,9 @@ classdef RARReceiveWindow
                 allocation=double(rx.RecoveredSchedule.PDSCH.SymbolAllocation);
                 pdschStart=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot,allocation(1),spec);
                 pdschEnd=pdschStart.plusSymbols(allocation(2),spec);
-                allocationComplete=completeTicks>=pdschEnd.Ticks;
-                within=within && pdschStart.Ticks>=obj.Window.StartTicks && ...
-                    pdschEnd.Ticks<=obj.Window.ExpiryTicksExclusive;
+                allocationComplete=completeTicks>=pdschEnd.Ticks+clockOffsetTicks;
+                within=within && pdschStart.Ticks+clockOffsetTicks>=obj.Window.StartTicks && ...
+                    pdschEnd.Ticks+clockOffsetTicks<=obj.Window.ExpiryTicksExclusive;
             end
             accepted=dciOK && tbOK && rapidOK && grant.Valid && within && allocationComplete;
             if dciOK && tbOK && within && allocationComplete

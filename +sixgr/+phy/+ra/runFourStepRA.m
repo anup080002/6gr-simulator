@@ -225,7 +225,7 @@ rarEnd=rarStart.plusSymbols(raCfg.Msg2PDSCH.NumSymbols,numerology);
 raTiming = sixgr.phy.ia.RATimingService.resolve( ...
     "NumerologyMu", mu, ...
     "RARMonitoringWindow", raCfg.RARMonitoringWindow, ...
-    "RARReceptionEndTicksExclusive", rarEnd.Ticks, ...
+    "RARReceptionEndTicksExclusive", rarEnd.Ticks+sixgr.util.structGet(raCfg.RARMonitoringWindow,'ClockOffsetTicks',int64(0)), ...
     "PRACHOccasionEndSlot", double(raCfg.PRACHOccasionEndSlot), ...
     "RAResponseWindowSlots", double(raCfg.RAResponseWindowSlots), ...
     "RARCompletionSlot", double(raCfg.Msg2Slot), ...
@@ -517,8 +517,9 @@ try
     msg3Tx.PowerControl = powerState;
     msg3Tx.PowerControl.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
     result.Msg3TxAmplitudeScale = double(msg3Power.AmplitudeScale);
-    msg3TA = sixgr.phy.ra.applyDecodedRARTimingAdvance(msg3Tx.Waveform, ...
-        rarRx,raCfg.CarrierSCSkHz,localStageSampleRate(localStageTxInfo(msg3Tx),msg3Tx));
+    msg3TA = localApplyTAForTransport(msg3Tx.Waveform,rarRx,raCfg.CarrierSCSkHz, ...
+        localStageSampleRate(localStageTxInfo(msg3Tx),msg3Tx),runtime);
+    msg3Tx.ReceivedRARTiming=msg3TA.RARTiming;
     result.TimingAdvanceSamples = msg3TA.RARTiming.Samples;
     result.TimingAdvanceSampleRate_Hz = msg3TA.RARTiming.SampleRateHz;
     result.TimingAdvanceNTA_Tc = msg3TA.RARTiming.NTA_Tc;
@@ -677,9 +678,10 @@ try
             double(setupPower.AmplitudeScale);
         result.SetupCompleteTxAmplitudeScale = ...
             double(setupPower.AmplitudeScale);
-        setupCompleteTA = sixgr.phy.ra.applyDecodedRARTimingAdvance( ...
+        setupCompleteTA = localApplyTAForTransport( ...
             setupCompleteTx.Waveform,rarRx,raCfg.CarrierSCSkHz, ...
-            localStageSampleRate(localStageTxInfo(setupCompleteTx),setupCompleteTx));
+            localStageSampleRate(localStageTxInfo(setupCompleteTx),setupCompleteTx),runtime);
+        setupCompleteTx.ReceivedRARTiming=setupCompleteTA.RARTiming;
         end
         if prepareOnly || ~localStageReceiveReady(cfg, raCfg, "RRCSetupComplete", ...
                 setupCompleteTA.Waveform, setupCompleteTx, opt, runtime.StageWaveforms)
@@ -879,7 +881,7 @@ end
         if phase == "prepared"
             pending.RuntimeExecutionState = "pending_stage_receive";
             fs = localStageSampleRate(localStageTxInfo(tx), tx);
-            [startTime, endTime] = localStageSampleInterval(cfg, raCfg, stageNames(next), txWave, tx);
+            [startTime, endTime, physicalTiming] = localStageSampleInterval(cfg, raCfg, stageNames(next), txWave, tx);
             pending.PreparedTransmission = struct("StageName", stageNames(next), ...
                 "Direction", direction, "AbsoluteSlot", localStageSlot(raCfg, stageNames(next)), ...
                 "Waveform", txWave, "SampleRate_Hz", fs, "SampleCount", size(txWave,1), ...
@@ -889,13 +891,16 @@ end
                 "ExecutionStatus", "generated_not_propagated", ...
                 "WaveformPlane", "after_rach_power_and_ta_before_runtime_power_context_and_tx_rf");
             if string(runtime.Mode)=="shared_physical_waveform_stream"
-                if isfield(preparedContext,'TimingAdvanceWaveform') && ...
-                        preparedContext.TimingAdvanceWaveform.RARTiming.Samples~=0
-                    error('sixgr:phy:ra:SharedRATimingOriginsRequired', ...
-                        'Nonzero received RAR TA requires distinct UE TX/gNB RX origins; a cropped finite waveform cannot enter the shared stream.');
-                end
                 pending.PreparedTransmission=localPrepareSharedStage( ...
                     pending.PreparedTransmission,cfg,tx,runtime);
+                if direction=="UL"
+                    assert(~isempty(fieldnames(physicalTiming)), ...
+                        'sixgr:phy:ra:MissingSharedULTiming','No implicit nominal-origin shared UL transmission.');
+                    pending.PreparedTransmission.PhysicalTiming=physicalTiming;
+                    pending.PreparedTransmission.ReceiveStartSample=physicalTiming.ReceiveStartSample;
+                    pending.PreparedTransmission.ReceiveEndSampleExclusive=physicalTiming.ReceiveEndWithoutChannelTail + ...
+                        runtime.ULChannelState.ChannelPadSamples;
+                end
                 if next==2, rarPreparedTransmission=pending.PreparedTransmission; end
             end
         end
@@ -930,15 +935,17 @@ ready = endTime <= double(opt.ReceiveThroughTime_s);
 end
 
 function localAssertRAObservationLayout(provided,cfg,raCfg,name,waveform,tx)
-[startTime,~] = localStageSampleInterval(cfg,raCfg,name,waveform,tx);
+[startTime,~,physicalTiming] = localStageSampleInterval(cfg,raCfg,name,waveform,tx);
 fs = localStageSampleRate(localStageTxInfo(tx),tx);
 startSample = startTime*fs;
+if ~isempty(fieldnames(physicalTiming)), startSample=physicalTiming.ReceiveStartSample; end
 if abs(startSample-round(startSample)) > 8*eps(max(1,abs(startSample)))
     error("sixgr:phy:ra:RAObservationOriginOffSampleGrid", ...
         "Stage %s origin must lie on its actual waveform sample clock.",name);
 end
 if provided.SampleRateHz~=fs || ...
-        provided.EndSampleExclusive-provided.StartSample<size(waveform,1)
+        provided.EndSampleExclusive-provided.StartSample<size(waveform,1) || ...
+        (~isempty(fieldnames(physicalTiming)) && provided.EndSampleExclusive<physicalTiming.ReceiveEndWithoutChannelTail)
     error("sixgr:phy:ra:RAObservationLayoutMismatch", ...
         "Stage %s requires the prepared rate and at least its full sample extent.",name);
 end
@@ -948,8 +955,9 @@ if provided.StartSample~=round(startSample)
 end
 end
 
-function [startTime, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx)
+function [startTime, endTime, physicalTiming] = localStageSampleInterval(cfg, raCfg, name, waveform, tx)
 fs = localStageSampleRate(localStageTxInfo(tx), tx);
+physicalTiming=struct();
 startTime = localStageSlotStartTime(cfg, localStageSlot(raCfg, name));
 if string(name)=="Msg1"
     % nrPRACHOFDMModulate returns one PRACH-slot waveform, including its
@@ -957,11 +965,30 @@ if string(name)=="Msg1"
     % boundary (e.g. 30-kHz PRACH on a 15-kHz carrier).
     startTime=double(tx.PRACH.NPRACHSlot)*double(tx.PRACH.SubframesPerPRACHSlot)*1e-3;
 end
+if isfield(cfg,'SharedULTimingContext') && any(string(name)==["Msg1","Msg3","RRCSetupComplete"])
+    ntaTicks=0;
+    if string(name)~="Msg1", ntaTicks=tx.ReceivedRARTiming.NTA_Tc; end
+    physicalTiming=sixgr.phy.ra.sharedULStageTiming(cfg,startTime,fs,size(waveform,1),ntaTicks);
+    startTime=physicalTiming.TransmitStartSample/fs;
+end
 endTime = startTime + size(waveform, 1) / fs;
 if ~(isfinite(startTime) && startTime >= 0 && isfinite(endTime) && endTime > startTime)
     error("sixgr:phy:ra:InvalidRAStageSampleInterval", ...
         "Stage %s must have a finite absolute start and a nonempty sample interval.", name);
 end
+end
+
+function out=localApplyTAForTransport(waveform,rar,scs,fs,runtime)
+if string(runtime.Mode)~="shared_physical_waveform_stream"
+    out=sixgr.phy.ra.applyDecodedRARTimingAdvance(waveform,rar,scs,fs);
+    return;
+end
+timing=sixgr.phy.ra.resolveRARTimingAdvance(rar.TimingAdvanceCommand,scs,fs);
+% Physical scheduling moves the complete waveform. Do not call the legacy
+% finite-buffer shifter, which would discard a real prefix for nonzero TA.
+out=struct('Waveform',waveform,'RARTiming',timing,'TimingAdvanceSamples',timing.Samples, ...
+    'TimingAdvanceSource',"received_MAC_RAR_absolute_command_ts_38_213_4_2", ...
+    'FiniteWaveformCropped',false);
 end
 
 function state = localResumeChannelState(previous, replacement)
@@ -1771,6 +1798,10 @@ cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeChannelTrimSampl
 if isfinite(padSamples)
     cfgOut = sixgr.util.structSet(cfgOut, "lls6g.receiverSync.ChannelPadSamples", max(0, double(padSamples)));
     cfgOut = sixgr.util.structSet(cfgOut, "lls6g.userContext.RuntimeChannelPadSamples", max(0, double(padSamples)));
+end
+if string(runtime.Mode)=="shared_physical_waveform_stream" && direction=="UL"
+    [guard,~]=sixgr.phy.sync.resolveTimingSearchGuard(cfg,double(chState.SampleRate_Hz));
+    cfgOut=sixgr.util.structSet(cfgOut,'lls6g.receiverSync.ULObservationSearchGuard_samples',guard);
 end
 if isfinite(pathDelaySamples)
     cfgOut = sixgr.util.structSet(cfgOut, "lls6g.receiverSync.ChannelPathDelay_samples", double(pathDelaySamples));

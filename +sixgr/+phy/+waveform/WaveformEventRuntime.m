@@ -91,7 +91,7 @@ classdef WaveformEventRuntime < handle
 
         function decisionBoundary(obj,id,sample)
             obj.assertMutable(); id=obj.validID(id);
-            validateattributes(sample,{'numeric'},{'real','scalar','finite','integer','>',obj.NextSampleIndex});
+            validateattributes(sample,{'numeric'},{'real','scalar','finite','integer','>=',obj.NextSampleIndex});
             if any(obj.BoundaryIDs==id)
                 error('WAVEFORM:DuplicateDecisionBoundary','Boundary %s already exists.',id);
             end
@@ -111,7 +111,14 @@ classdef WaveformEventRuntime < handle
                 'RequestedStopSample',double(requestedStop),'Decisions',strings(0,1), ...
                 'Completed',struct('ReceiverID',{},'ID',{},'Observation',{},'Segments',{}), ...
                 'Execution',struct(),'PhysicalExecutionPerformed',false);
-            if stop==first, return; end
+            if stop==first
+                % A scheduled action may be due exactly at the current
+                % sample. Deliver it once without consuming future samples.
+                hit=[obj.Boundaries.Sample]==first;
+                event.Decisions=string({obj.Boundaries(hit).ID}).';
+                obj.Boundaries=obj.Boundaries(~hit);
+                return;
+            end
             if any([obj.Transmitters.CommittedThroughSample]<stop)
                 error('WAVEFORM:UncommittedTransmissionInterval', ...
                     'Every physical transmitter must commit its complete schedule through sample %.0f.',stop);
