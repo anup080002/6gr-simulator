@@ -16,11 +16,13 @@ p.addParameter("StrictMutationRequired", true, @(x) islogical(x) || (isnumeric(x
 p.addParameter("UseLegacyGlobalConfig", true, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("ApplyPA", true, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 p.addParameter("ApplyADC", true, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+p.addParameter("ResolveOnly",false,@(v)islogical(v)&&isscalar(v));
+p.addParameter("Stream",[],@(v)isempty(v)||isa(v,'sixgr.rf.runtime.RFImpairmentStream'));
 p.parse(varargin{:});
 opt = p.Results;
 
 fs = double(opt.SampleRateHz);
-if ~(isfinite(fs) && fs > 0)
+if ~isscalar(fs) || ~isreal(fs) || ~isfinite(fs) || fs <= 0
     error("sixgr:rf:BadSampleRate", "RF impairment chain requires a positive sample rate.");
 end
 
@@ -35,33 +37,43 @@ if ~any(endpoint == ["tx","rx","txrx"])
     error("sixgr:rf:BadEndpoint", "RF impairment endpoint must be tx, rx, txrx, or all.");
 end
 
+stream=opt.Stream;
+if isempty(stream)
+    chain = localResolveChainConfig(cfg, fs, endpoint, string(opt.Direction), logical(opt.UseLegacyGlobalConfig), ...
+        logical(opt.ApplyPA), logical(opt.ApplyADC));
+else
+    stream.assertApplying();
+    chain=stream.Chain;
+end
+if opt.ResolveOnly
+    out=struct('Config',chain,'ExecutionStage',"configured_not_executed");
+    return;
+end
 xRef = x;
 y = x;
 beforeHash = localWaveformHash(y);
-chain = localResolveChainConfig(cfg, fs, endpoint, string(opt.Direction), logical(opt.UseLegacyGlobalConfig), ...
-    logical(opt.ApplyPA), logical(opt.ApplyADC));
 
 stageRows = repmat(localStageRowTemplate(), 0, 1);
 stageOrder = strings(0, 1);
 if chain.IncludeTx
     [y, stageRows] = localApplyIQStage(y, chain.TxIQ, "tx_iq", "tx", stageRows);
-    [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows);
-    [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows);
+    [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows,stream);
+    [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows,stream);
     [y, stageRows] = localApplyPhaseNoiseStage(y, chain.TxPhaseNoise, "tx_phase_noise", "tx", stageRows);
-    [y, stageRows] = localApplyCFOStage(y, chain.TxCFO, "tx_cfo", "tx", stageRows);
-    [y, stageRows] = localApplyTimingStage(y, chain.TxTiming, "tx_timing", "tx", stageRows);
+    [y, stageRows] = localApplyCFOStage(y, chain.TxCFO, "tx_cfo", "tx", stageRows,stream);
+    [y, stageRows] = localApplyTimingStage(y, chain.TxTiming, "tx_timing", "tx", stageRows,stream);
     [y, stageRows] = localApplySampleClockOffsetStage(y, chain.TxSampleClockOffset, "tx_sample_clock_offset", "tx", stageRows);
     stageOrder = [stageOrder; "tx_iq"; "tx_element_rf"; "tx_pa"; "tx_phase_noise"; "tx_cfo"; "tx_timing"; "tx_sample_clock_offset"]; %#ok<AGROW>
 end
 if chain.IncludeRx
-    [y, stageRows] = localApplyTimingStage(y, chain.RxTiming, "rx_timing", "rx", stageRows);
-    [y, stageRows] = localApplyCFOStage(y, chain.RxCFO, "rx_lo_cfo", "rx", stageRows);
+    [y, stageRows] = localApplyTimingStage(y, chain.RxTiming, "rx_timing", "rx", stageRows,stream);
+    [y, stageRows] = localApplyCFOStage(y, chain.RxCFO, "rx_lo_cfo", "rx", stageRows,stream);
     [y, stageRows] = localApplyPhaseNoiseStage(y, chain.RxPhaseNoise, "rx_phase_noise", "rx", stageRows);
     [y, stageRows] = localApplyIQStage(y, chain.RxIQ, "rx_iq", "rx", stageRows);
-    [y, stageRows] = localApplyElementRFStage(y, chain.RxElementRF, cfg, "rx_element_rf", "rx", stageRows);
+    [y, stageRows] = localApplyElementRFStage(y, chain.RxElementRF, cfg, "rx_element_rf", "rx", stageRows,stream);
     [y, stageRows] = localApplySampleClockOffsetStage(y, chain.RxSampleClockOffset, "rx_sample_clock_offset", "rx", stageRows);
-    [y, stageRows] = localApplyAGCStage(y, chain.RxAGC, "rx_agc", "rx", stageRows);
-    [y, stageRows] = localApplyADCStage(y, chain.RxADC, "rx_adc", "rx", stageRows);
+    [y, stageRows] = localApplyAGCStage(y, chain.RxAGC, "rx_agc", "rx", stageRows,stream);
+    [y, stageRows] = localApplyADCStage(y, chain.RxADC, "rx_adc", "rx", stageRows,stream);
     stageOrder = [stageOrder; "rx_timing"; "rx_lo_cfo"; "rx_phase_noise"; "rx_iq"; "rx_element_rf"; "rx_sample_clock_offset"; "rx_agc"; "rx_adc"]; %#ok<AGROW>
 end
 if strlength(string(chain.CarrierPhase.StageName)) > 0
@@ -72,6 +84,27 @@ end
 afterHash = localWaveformHash(y);
 evm = localEVM(xRef, y);
 replay = localBuildReplay(chain, stageRows, stageOrder, xRef, y);
+replay.RFProcessingMode="independent_block";
+replay.AGCControlModel="disabled";
+replay.AGCDecisionCausal=~logical(chain.RxAGC.Enabled && chain.IncludeRx);
+if chain.IncludeRx && chain.RxAGC.Enabled
+    replay.AGCControlModel="noncausal_same_block_rms";
+end
+if ~isempty(stream)
+    replay.RFProcessingMode="retained_sample_stream";
+    replay.RFStreamStartSample=stream.NextSampleIndex;
+    replay.RFStreamEndSampleExclusive=stream.NextSampleIndex+size(y,1);
+    replay.RFConfigurationEpoch=stream.ConfigurationEpoch;
+    replay.AGCDecisionCausal=true;
+    if ~isempty(fieldnames(stream.LastAGCTrace))
+        replay.AGCControlModel=string(stream.LastAGCTrace.ControlModel);
+        replay.AGCStreamTrace=stream.LastAGCTrace;
+        gains=stream.LastAGCTrace.AppliedGain_dB;
+        replay.AGCGainIsTimeVarying=any(gains~=gains(1));
+        replay.AGCGain_dB=NaN;
+        if ~replay.AGCGainIsTimeVarying, replay.AGCGain_dB=gains(1); end
+    end
+end
 rfChainId = "rf_" + localShortHash(afterHash);
 replay.RFImpairmentChainId = char(rfChainId);
 replay.RFInputWaveformSHA256 = char(string(beforeHash));
@@ -96,6 +129,9 @@ out.Row = struct( ...
     "Direction", string(opt.Direction), ...
     "TxOrRxSide", string(opt.MeasurementPoint), ...
     "Endpoint", string(endpoint), ...
+    "RFProcessingMode",string(replay.RFProcessingMode), ...
+    "AGCControlModel",string(replay.AGCControlModel), ...
+    "AGCDecisionCausal",logical(replay.AGCDecisionCausal), ...
     "StageOrder", strjoin(stageOrder, ">"), ...
     "CFOEnabled", logical(replay.CFOApplied), ...
     "CFOHzConfigured", double(replay.InjectedCFO_Hz), ...
@@ -424,7 +460,10 @@ enabled = logical(applyADC) && enableExplicit && localFirstLogical( ...
 if ~isfinite(bits)
     bits = NaN;
 end
-enabled = logical(enabled) && isfinite(bits) && bits > 0 && bits < 32;
+if enabled && (~isfinite(bits) || bits < 2 || bits > 24 || bits ~= fix(bits))
+    error('RF:ADCProfileMissing', ...
+        'An enabled ADC requires the canonical quantizer range of 2 through 24 integer bits; it cannot silently become disabled.');
+end
 dacBits = localFirstFinite( ...
     sixgr.util.structGet(cfg, "rf.dacBits", NaN), ...
     sixgr.util.structGet(cfg, "phy.impairments.dacQuantizationBits", NaN), ...
@@ -527,8 +566,9 @@ end
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyPAStage(x, stageCfg, cfg, stageName, endpoint, rows)
+function [y, rows] = localApplyPAStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
 fn = @(z) localApplyPAWithConfig(z, cfg);
+if ~isempty(stream), fn=@(z)stream.applyPA(z); end
 [y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
 row.Parameter1Name = "backoff_dB";
 row.Parameter1Value = double(stageCfg.Backoff_dB);
@@ -538,15 +578,15 @@ row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_pa_model", r
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyElementRFStage(x, stageCfg, cfg, stageName, endpoint, rows)
-fn = @(z) localApplyElementRFModel(z, stageCfg, cfg);
+function [y, rows] = localApplyElementRFStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
+fn = @(z) localApplyElementRFModel(z, stageCfg, cfg,~isempty(stream));
 [y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
 row.Parameter1Name = "element_gain_dB_rms";
 row.Parameter1Value = localRMSFinite(stageCfg.Gain_dB);
 row.Parameter2Name = "element_phase_deg_rms";
 row.Parameter2Value = localRMSFinite(stageCfg.Phase_deg);
 row.Parameter3Name = "element_count";
-if stageCfg.Enabled
+if stageCfg.Enabled && isempty(stream)
     row.Parameter3Value = localResolveElementCountForStage(x, stageCfg, cfg);
 else
     row.Parameter3Value = size(x, 2);
@@ -576,8 +616,9 @@ row.TruthClassification = string(stageCfg.TruthClassification);
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyCFOStage(x, stageCfg, stageName, endpoint, rows)
+function [y, rows] = localApplyCFOStage(x, stageCfg, stageName, endpoint, rows,stream)
 fn = @(z) localApplyCFO(z, stageCfg.CFO_Hz, stageCfg.SampleRate_Hz);
+if ~isempty(stream), fn=@(z)stream.applyCFO(z,stageCfg.CFO_Hz); end
 [y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
 row.Parameter1Name = "cfo_Hz";
 row.Parameter1Value = double(stageCfg.CFO_Hz);
@@ -585,8 +626,9 @@ row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_cfo_rotation
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyTimingStage(x, stageCfg, stageName, endpoint, rows)
+function [y, rows] = localApplyTimingStage(x, stageCfg, stageName, endpoint, rows,stream)
 fn = @(z) sixgr.util.applyFractionalSampleDelay(z, stageCfg.TimingOffset_samples);
+if ~isempty(stream), fn=@(z)stream.applyTiming(z,stageCfg.TimingOffset_samples); end
 [y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
 row.Parameter1Name = "timing_offset_samples";
 row.Parameter1Value = double(stageCfg.TimingOffset_samples);
@@ -603,9 +645,14 @@ row.Status = localTernary(stageCfg.Enabled && row.Applied, "applied_sample_clock
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyAGCStage(x, stageCfg, stageName, endpoint, rows)
-[gainLinear, gainDb] = localResolveAGCGain(x, stageCfg);
-fn = @(z) z .* cast(gainLinear, "like", z);
+function [y, rows] = localApplyAGCStage(x, stageCfg, stageName, endpoint, rows,stream)
+if isempty(stream)
+    [gainLinear, gainDb] = localResolveAGCGain(x, stageCfg);
+    fn = @(z) z .* cast(gainLinear, "like", z);
+else
+    gainDb=NaN; % A variable sample gain has no single applied dB value.
+    fn=@(z)stream.applyAGC(z);
+end
 [y, row] = localApplyGenericStage(x, stageCfg.Enabled, stageName, endpoint, fn);
 row.Parameter1Name = "agc_gain_dB";
 row.Parameter1Value = double(gainDb);
@@ -618,11 +665,15 @@ end
 rows(end + 1, 1) = row;
 end
 
-function [y, rows] = localApplyADCStage(x, stageCfg, stageName, endpoint, rows)
+function [y, rows] = localApplyADCStage(x, stageCfg, stageName, endpoint, rows,stream)
 if stageCfg.Enabled
-    result = sixgr.rf.runtime.ADCModel.quantize(x, struct( ...
-        "Bits",stageCfg.Bits,"FullScale",stageCfg.FullScale, ...
-        "Convention","signed_midtread"));
+    if isempty(stream)
+        result = sixgr.rf.runtime.ADCModel.quantize(x, struct( ...
+            "Bits",stageCfg.Bits,"FullScale",stageCfg.FullScale, ...
+            "Convention","signed_midtread"));
+    else
+        result=stream.applyADC(x);
+    end
     y = result.Output;
     [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
     row.ErrorVariance = double(result.ErrorVariance);
@@ -877,8 +928,14 @@ pa = sixgr.rf.PAModel(cfg);
 y = pa.apply(x);
 end
 
-function y = localApplyElementRFModel(x, stageCfg, cfg)
-M = localResolvePortToElementMatrixForStage(x, stageCfg, cfg);
+function y = localApplyElementRFModel(x, stageCfg, cfg,physicalSamples)
+if physicalSamples
+    % The stream composer has already projected logical ports. Applying
+    % that matrix again would corrupt physical antenna gains/coupling.
+    M=eye(size(x,2));
+else
+    M = localResolvePortToElementMatrixForStage(x, stageCfg, cfg);
+end
 g = localElementComplexGain(stageCfg, size(M, 1));
 coupling = localElementMutualCouplingMatrix(stageCfg, size(M, 1));
 if size(x, 2) == size(M, 1)
@@ -1114,16 +1171,19 @@ end
 function out = localExpandVector(values, n, defaultValue)
 n = max(1, round(double(n)));
 values = double(values(:).');
-values = values(isfinite(values));
+if ~isreal(values) || any(~isfinite(values))
+    error('sixgr:rf:InvalidElementRFVector','Element gain/phase values must be finite real data.');
+end
 if isempty(values)
     values = double(defaultValue);
 end
 if numel(values) == 1
     out = repmat(values, 1, n);
-elseif numel(values) < n
-    out = [values, repmat(values(end), 1, n - numel(values))];
+elseif numel(values) == n
+    out = values;
 else
-    out = values(1:n);
+    error('sixgr:rf:ElementRFVectorSizeMismatch', ...
+        'Declare one shared value or exactly %d physical element values; do not truncate or repeat the last entry.',n);
 end
 end
 
@@ -1180,11 +1240,14 @@ function value = localFirstVector(varargin)
 value = [];
 for i = 1:nargin
     raw = varargin{i};
-    if isempty(raw) || ~isnumeric(raw)
+    if isempty(raw)
         continue;
     end
+    if ~isnumeric(raw) || ~isreal(raw) || ~isvector(raw) || any(~isfinite(raw(:)))
+        error('sixgr:rf:InvalidElementRFVector', ...
+            'Configured element gain/phase must be a finite real scalar or vector.');
+    end
     raw = double(raw(:).');
-    raw = raw(isfinite(raw));
     if ~isempty(raw)
         value = raw;
         return;

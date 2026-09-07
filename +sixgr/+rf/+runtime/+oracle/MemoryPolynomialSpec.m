@@ -4,8 +4,10 @@ classdef MemoryPolynomialSpec
         function output=apply(input,coefficients,orders)
             coefficients=double(coefficients);
             orders=double(orders(:));
-            if isvector(coefficients), coefficients=coefficients(:); end
-            if size(coefficients,1)~=numel(orders)|| ...
+            if isvector(coefficients) && numel(orders)>1 && numel(coefficients)==numel(orders)
+                coefficients=coefficients(:);
+            end
+            if isempty(coefficients)||isempty(orders)||~ismatrix(coefficients)||size(coefficients,1)~=numel(orders)|| ...
                     any(~isfinite(coefficients(:)))||any(~isfinite(orders))
                 error("RFOracle:PAInvalid", ...
                     "Memory-polynomial reference dimensions are invalid.");

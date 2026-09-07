@@ -1,5 +1,125 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Retained RF and main UL slot-entry checkpoint (2026-09-07)
+
+**The production shared-clock failure is not fully repaired.** This checkpoint
+does not assert a successful 12 dB run, fully qualified UL, device conformance,
+or a 10/10 simulator. The failed production outputs remain unchanged. No FDD,
+25 dB or new production TDD waveform run was launched.
+
+Implemented in the main scheduler:
+
+- Slot entry now receives the queued UL grants and reconciles them with all
+  currently pending HARQ/CSI before standalone PUCCH processing. Previously,
+  `startSlot` could execute PUCCH before the caller inspected queued PUSCH;
+  the earlier post-PDSCH reconciliation did not protect reservations arriving
+  from another reducer between that boundary and slot entry. The new
+  `startSlotWithQueuedUL` uses the existing typed UCI/overlap resolver, not a
+  second payload implementation. Disabled UCI multiplexing retains the
+  collision rejection. This fixes that **ordering boundary only**; PUCCH
+  propagation itself is still eager, not integrated into the shared stream.
+- The HARQ/UCI reducer regression had another stale `HARQEntityDL.onTx`
+  fixture without a coding layout. It now supplies a 64-bit TBS and real
+  resolved LDPC/rate-matching layout. Its deliberately known test payload
+  remains a test fixture, not a measured production transmission. No HARQ
+  validation was weakened.
+
+Implemented in the RF producer and retained-stream API:
+
+- `RFImpairmentStream` retains one endpoint's ordered RF state, sample clock,
+  configuration epoch and physical antenna layout. It uses the existing
+  ordered RF implementation: absolute-index CFO, retained integer delay,
+  explicit-mask oscillator state, supported PA memory, causal sample-window
+  AGC and persistent ADC dither/jitter state. Invalid clocks/epochs are rejected
+  before processing; an execution exception permanently faults the owner.
+- AGC decisions use completed prior detector windows. Replay retains the
+  actual per-sample applied gain; a time-varying gain is not misrepresented
+  as one scalar. Legacy same-block RMS AGC is explicitly labeled noncausal.
+  Both replay and RF CSV rows disclose the processing mode and AGC causality.
+  The common receiver can accept this retained owner, but **the main runtime
+  has not yet been switched to retained RF**. Separate physical pre-RF power
+  measurements and correct post-gain noise accounting remain required.
+- RX processing now rejects missing sample rate and invalid direction instead
+  of bypassing RF or silently selecting DL. An enabled ADC with invalid or
+  unsupported bit depth now fails instead of becoming disabled. Zero-valued
+  startup intervals retain complex I/Q at the ADC boundary, preventing an
+  accidental ADC state-domain change when nonzero samples arrive.
+- Physical stream samples are not projected through logical antenna ports
+  again inside element RF. Gain/phase vectors must be finite and either scalar
+  or exactly match the element count; no dropping NaNs, truncation, or repeated
+  last-element values. The legacy logical-port interface remains distinct.
+- Fixed the one-order/multiple-memory-tap PA matrix orientation. Also fixed
+  canonical PA input backoff: it now attenuates the drive **before** the
+  nonlinear function, not its compressed output. Analytic tests distinguish
+  those operations. Retained PA memory contains the backed-off input history;
+  no output-power restoration is applied. This is model correctness, not
+  calibration against a measured hardware PA. See the
+  [MathWorks memory-PA model documentation](https://www.mathworks.com/help/simrf/ref/poweramplifier.html)
+  for the measured-coefficient modeling context.
+- Added explicit AGC implementation coefficients through a reusable TDD YAML
+  catalog and equivalent self-contained FDD configuration. These are labeled
+  implementation/research choices, not 3GPP-mandated AGC coefficients. Merely
+  declaring them does not enable an impairment or select a new execution mode.
+
+Verified terminal batches:
+
+| Batch / diary | Result and scope |
+| --- | --- |
+| 43436; `logs/causal_rf_stream_20260907_verified.log` | Exit 0: RF stream, causal AGC, ordered RF and common-RX ordering tests. |
+| 45845; `logs/rf_slot_entry_uci_20260907_verified.log` | Exit 0: RF memory/phase, RF stream, HARQ-on-PUSCH reducer and CSI source/binding tests, including the main slot-entry method. |
+| 95293; `logs/rf_retained_final_20260907_verified.log` | Exit 0: final PA-backoff/element-vector changes; five focused RF tests and all 17 `testRFCanonicalRuntimeCoverage` cases. |
+| 22885; `logs/slot_entry_ul_tdd_20260907_verified.log` | Exit 0: all 12 focused RF/config-parity, HARQ/CSI slot-entry, future-UL planning, SRS priority, actual staged UL/data, RAR conversion, TDD four-step RA, frozen SRS/PUSCH and QCL/TCI binding checks. |
+| 57533; `logs/rf_export_mode_20260907_verified.log` | Exit 0: actual RF execution CSV round-trip retains legacy/causal mode labels; receiver evidence integrity and ordered RF regressions passed. |
+| 77998; `logs/rf_adc_range_final_20260907_verified.log` | Exit 0: RF stream/config-parity/export checks repeated with ADC constructor rejection aligned to the canonical 2--24-bit quantizer support. |
+
+The actual four-step TDD test measured decoded RAR **TA = 0**, at 7.68 MHz,
+and passed the CDL-A Msg3 CRC check without a duplicate timing correction.
+This does not qualify nonzero-TA continuous UL transmission. FDD parity above
+is configuration/reducer coverage, not a FDD waveform execution.
+
+Earlier failures are retained: the first ADC test exposed loss of complex
+storage after an all-zero delay interval; the next negative test used the
+wrong SCO configuration key. An oscillator test mask could not meet the
+existing 1 dB fit bound. A supported explicit mask is used for positive state
+retention tests, and the rejected mask remains a **negative** test requiring
+the original failure and faulted owner. The fit tolerance was not relaxed.
+An element-vector negative test exposed the legacy truncation behavior and
+now requires the production dimension error. Test diaries may contain prior
+failed entries because MATLAB diary appends; terminal batches above identify
+the completed checks.
+
+Remaining work, not skipped or claimed complete:
+
+1. One chronological main owner for access, TRS, PDCCH, SRS, PUCCH and data,
+   with each physical TX summed before RF, each link consumed once, and RX
+   noise/RF applied once after summing links. The present main scheduler
+   still eagerly propagates entire observation windows; slot-entry UCI
+   reconciliation does not repair that shared-channel time reversal.
+2. Complete UE received-DL, UE-TX and gNB-RX clock relations, nonzero RAR TA,
+   `N_TA,offset`, fractional timing/SCO bridges and actual received tails.
+   Prepared UL stages still reject unsupported nonzero TA. Retained RF
+   rejects advancing/fractional finite-buffer timing, SCO and enabled DAC
+   rather than silently substituting an unsupported implementation.
+3. Fully qualify UCI processing deadlines and SRS/PUCCH symbol arbitration
+   through actual complete UL execution. Reducer fixtures are not waveform
+   decode evidence. The existing actual coded UL component tests have a
+   separate, explicitly limited scope.
+4. QCL/TCI activation and CSI PMI/RI use through the completed main stream;
+   component binding tests do not establish complete run behavior.
+5. SS- and UL-specific RSSI measurement definitions, physical reference planes
+   and CSV/PNG publication. Earlier CSI-RS RSSI/RSRQ producer work does not
+   establish RSSI coverage for every signal. No generic sample power is being
+   relabeled as a standardized RSSI measurement.
+6. Calibrate the requested 12 dB operating point from actual physical power/
+   noise, run the short TDD scenario, then audit actual CSV/PNG artifacts and
+   prepare traceable hardware I/Q. No replacement plots or measurement rows
+   were fabricated during this checkpoint.
+
+The config-driven, NR-validation, result-integrity and MATLAB-kernel skills
+guided explicit authorities, analytic comparisons and narrowed evidence
+claims. Broad repository regression qualification remains outstanding; the
+earlier user request for bounded testing was retained instead of `testAll`.
+
 ## Chronological coordinator and physical CSI-RSSI checkpoint (2026-09-07)
 
 **The main scheduler's shared-clock/shared-stream integration is still open.**

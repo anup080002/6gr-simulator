@@ -1,5 +1,6 @@
 inherits:
   - ./lls_6g_4ghz_100mhz_19site_3sector_100ue_uma.yaml
+  - ../impairments/causal_rf_stream.yaml
 
 meta:
   scenario_id: lls_causal_access_to_data_wiring_tdd

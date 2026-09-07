@@ -425,6 +425,23 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.startSlotImpl(state, cfg, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB);
     end
 
+    function [state, queuedUL, blockedT] = startSlotWithQueuedUL(state, cfg, direction, sweepIdx, sweepCount, absoluteSlot, totalSlots, snr_dB, queuedUL, uciOnPUSCHAvailable)
+        % The queued PUSCH and all currently pending HARQ/CSI must meet at
+        % slot entry BEFORE any standalone PUCCH waveform is emitted.
+        % Post-PDSCH reconciliation alone misses reservations arriving from
+        % other reducers between that decode and the due-slot boundary.
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
+        validateattributes(uciOnPUSCHAvailable,{'logical'},{'scalar'});
+        state=sixgr.truth.CoupledTruthRuntime.bindSlotCalendarImpl( ...
+            state,direction,sweepIdx,sweepCount,absoluteSlot,totalSlots,snr_dB);
+        state=sixgr.truth.CoupledTruthRuntime.recordSlotTraceStart( ...
+            state,direction,sweepIdx,sweepCount,state.CurrentSlot, ...
+            state.CanonicalSlotsPerSweepPoint,snr_dB);
+        [state,queuedUL,blockedT]=sixgr.truth.CoupledTruthRuntime. ...
+            reconcileQueuedPUSCHAfterDLFeedbackImpl(state,queuedUL,uciOnPUSCHAvailable);
+        state=sixgr.truth.CoupledTruthRuntime.processDueFeedback(state);
+    end
+
     function plan = futureULPlanningView(state, targetSlot)
         % A K2 grant is decided now for a later resource occasion. Changing
         % that resource calendar must not execute future feedback, advance

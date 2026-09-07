@@ -357,6 +357,17 @@ power_and_rf_frontend:
 # is explicitly prohibited from masquerading as pathloss.
 rf_frontend:
   configuration_epoch: 1
+  receiver:
+    agc:
+      # Same implementation profile as the TDD stream catalog. This file
+      # remains self-contained; this does not enable a new RF stage.
+      stream_profile:
+        control_model: causal_windowed_joint_rms_attack_hold_release
+        research_class: agreed_starting_point
+        attack: 1.0
+        release: 0.5
+        hold_samples: 128
+        update_period_samples: 64
   ul_power_control:
     enabled: true
     open_loop_enabled: true

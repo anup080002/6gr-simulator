@@ -5,17 +5,19 @@ function [y, replay] = applyCompositeReceiverFrontEnd(x, cfg, sampleRateHz, repl
 if nargin < 4 || ~isstruct(replay)
     replay = struct();
 end
-if nargin < 3 || ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
-    y = x;
-    replay.CompositeReceiverFrontEndApplied = false;
-    replay.CompositeReceiverFrontEndStatus = "not_applied_sample_rate_unavailable";
-    return;
+if nargin < 3 || ~isnumeric(sampleRateHz) || ~isscalar(sampleRateHz) || ...
+        ~isreal(sampleRateHz) || ~isfinite(sampleRateHz) || sampleRateHz <= 0
+    error('RF:CompositeSampleRateRequired', ...
+        'The common receiver requires its actual positive sample rate; RF processing cannot be bypassed.');
 end
 
 p = inputParser;
 p.addParameter("Direction", "", @(v) ischar(v) || isstring(v));
 p.addParameter("UseLegacyGlobalConfig", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
 p.addParameter("ApplyADC", true, @(v) islogical(v) || (isnumeric(v) && isscalar(v)));
+p.addParameter("Stream",[],@(v)isempty(v)||isa(v,'sixgr.rf.runtime.RFImpairmentStream'));
+p.addParameter("StartSample",NaN,@(v)isnumeric(v)&&isscalar(v));
+p.addParameter("ConfigurationEpoch",NaN,@(v)isnumeric(v)&&isscalar(v));
 p.parse(varargin{:});
 opt = p.Results;
 
@@ -28,13 +30,14 @@ if strlength(direction) == 0
     direction = upper(strtrim(string(sixgr.util.structGet(userMeta, "RuntimeCurrentDirection", ...
         sixgr.util.structGet(userMeta, "Direction", "DL")))));
 end
-if direction ~= "UL"
-    direction = "DL";
+if ~isscalar(direction) || ~any(direction == ["DL","UL"])
+    error('RF:InvalidCompositeDirection','The common receiver direction must resolve to DL or UL.');
 end
 
 [cfgFE, autoAGC] = localEnsureCompositeReceiverAGC(cfg, logical(opt.ApplyADC));
 
-rfOut = sixgr.rf.applyRFImpairmentChain(x, cfgFE, ...
+if isempty(opt.Stream)
+  rfOut = sixgr.rf.applyRFImpairmentChain(x, cfgFE, ...
     "SampleRateHz", double(sampleRateHz), ...
     "Direction", char(direction), ...
     "MeasurementPoint", "rx_composite_front_end", ...
@@ -43,6 +46,20 @@ rfOut = sixgr.rf.applyRFImpairmentChain(x, cfgFE, ...
     "UseLegacyGlobalConfig", logical(opt.UseLegacyGlobalConfig), ...
     "ApplyPA", false, ...
     "ApplyADC", logical(opt.ApplyADC));
+else
+    stream=opt.Stream;
+    if stream.Chain.Endpoint~="rx" || stream.Chain.Direction~=direction || ...
+            stream.SampleRateHz~=double(sampleRateHz) || ~logical(opt.ApplyADC) || ...
+            logical(stream.Chain.UseLegacyGlobalConfig)~=logical(opt.UseLegacyGlobalConfig) || ...
+            ~isequaln(sixgr.util.structGet(stream.Configuration,"rf",struct()), ...
+                sixgr.util.structGet(cfgFE,"rf",struct())) || ...
+            ~isequaln(sixgr.util.structGet(stream.Configuration,"phy.impairments",struct()), ...
+                sixgr.util.structGet(cfgFE,"phy.impairments",struct()))
+        error('RF:CompositeStreamConfigurationMismatch', ...
+            'The common receiver must use its declared stream, direction, sample rate and frozen RF configuration.');
+    end
+    rfOut=stream.apply(sixgr.phy.waveform.WaveformChunk(x,opt.StartSample),opt.ConfigurationEpoch);
+end
 
 y = cast(rfOut.Waveform, "like", x);
 replay = localMergeRFReplay(replay, rfOut.Replay, rfOut.Row);
