@@ -27,6 +27,20 @@ cfg = prepared.Config;
 receiverCfg = prepared.ReceiverConfig;
 tx = prepared.Tx;
 runtimeTxWaveform = prepared.TransmitSamples;
+physicalObservation=sixgr.util.structGet(options,'PhysicalMeasurementObservation',[]);
+transmitObservation=sixgr.util.structGet(options,'TransmitObservation',[]);
+for candidate={physicalObservation,transmitObservation}
+    buffer=candidate{1};
+    if isempty(buffer), continue; end
+    if ~isa(buffer,'sixgr.phy.waveform.WaveformObservationBuffer') || ...
+            ~buffer.isComplete() || buffer.StartSample~=observation.StartSample || ...
+            buffer.EndSampleExclusive~=observation.EndSampleExclusive || ...
+            buffer.SampleRateHz~=observation.SampleRateHz
+        error('sixgr:link:BroadcastMeasurementPlaneMismatch', ...
+            'TX and connector-power measurements need actual complete observations on the decode clock.');
+    end
+end
+if ~isempty(transmitObservation), runtimeTxWaveform=transmitObservation.readComplete(); end
 if isfinite(options.RuntimeSlot)
     expectedStart = round(double(options.RuntimeSlot) * ...
         sixgr.time.slotDurationSec(cfg) * observation.SampleRateHz);
@@ -41,6 +55,8 @@ out.ObservationEndSampleExclusive = observation.EndSampleExclusive;
 out.ObservationSampleRateHz = observation.SampleRateHz;
 out.ObservationCompletionTime_s = observation.EndSampleExclusive / observation.SampleRateHz;
 out.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
+gainComp=sixgr.util.structGet(out,'RuntimeChannelReplay.ReceiverGainCompensation',struct());
+out.ReceiverGainCompensation=gainComp;
 observationOut = out;
 candidateIndices = double(options.CandidateSSBIndices(:).');
 if isempty(candidateIndices)
@@ -62,7 +78,7 @@ if isfinite(candidateIndices(candidateOrdinal))
         candidateIndices(candidateOrdinal)};
 end
 rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
-    observation, receiverCfg, receiverArgs{:});
+    observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation);
 if logical(options.UseRuntimeChannel)
     txSSBPower = localMeasureTransmitSSBEPRE( ...
         runtimeTxWaveform, receiverCfg, double(tx.SampleRateHz), ...
@@ -72,9 +88,15 @@ if logical(options.UseRuntimeChannel)
     rec.ReferenceSignalTxEPREPerAntenna_dBm = string( ...
         txSSBPower.PerTransmitPortEPREToken_dBm);
     rec.ReferenceSignalTxMeasurementSource = string(txSSBPower.Source);
+    if ~isempty(transmitObservation)
+        rec.ReferenceSignalTxMeasurementSource="actual_shared_post_tx_rf_composite_sss_epre";
+    end
     rec.PathlossReferenceRS = "SSB-" + string(rec.ReferenceSignalId);
     rec.PowerReferencePlane = ...
         "generated_tx_sss_epre_to_ue_antenna_connector_sss_rsrp";
+    if ~isempty(transmitObservation) && ~isempty(physicalObservation)
+        rec.PowerReferencePlane="actual_post_tx_rf_sss_epre_to_actual_pre_rx_rf_connector_sss_rsrp";
+    end
     if logical(txSSBPower.Available) && ...
             isfinite(double(sixgr.util.structGet(rec, "SS_RSRP_dBm", NaN)))
         rec.MeasuredReferenceSignalPathloss_dB = ...
@@ -82,6 +104,9 @@ if logical(options.UseRuntimeChannel)
             double(rec.SS_RSRP_dBm);
         rec.MeasuredReferenceSignalPathlossSource = ...
             "exact_generated_tx_sss_epre_minus_ue_measured_noise_debiased_ss_rsrp";
+        if ~isempty(transmitObservation)
+            rec.MeasuredReferenceSignalPathlossSource="actual_post_tx_rf_sss_epre_minus_pre_rx_rf_noise_debiased_ss_rsrp";
+        end
     else
         rec.MeasuredReferenceSignalPathloss_dB = NaN;
         rec.MeasuredReferenceSignalPathlossSource = "";
@@ -183,6 +208,10 @@ out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.
     "PostEqualizationNoiseVarianceSource", string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceSource", "")), ...
     "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false)));
 out.SIB1 = rec;
+for field=["SSBWindowRSSIPerReceiveAntenna_dBm","SSBWindowPowerMeasurementJSON"]
+    out.(field)=string(sixgr.util.structGet(rec,field,""));
+    out.PBCH.(field)=out.(field);
+end
 if logical(options.WriteArtifacts) && strlength(string(options.RunFolder)) > 0
     tx.RunId = string(options.RunId);
     out.SIB1Artifacts = sixgr.phy.broadcast.exportSIB1EvidenceArtifacts( ...

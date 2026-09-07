@@ -11,10 +11,19 @@ end
 p = inputParser;
 p.addParameter("ReceiverRNTI", 65535, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("FaultMode", "", @(x) ischar(x) || isstring(x));
+p.addParameter('PhysicalMeasurementObservation',[],@(x)isempty(x) || ...
+    (isa(x,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(x)));
 p.addParameter("CandidateSSBIndex", [], ...
     @(x) isempty(x) || (isnumeric(x) && isscalar(x) && isfinite(x) && ...
     x >= 0 && x == round(x)));
 p.parse(varargin{:});
+physicalSamples=[];
+if ~isempty(p.Results.PhysicalMeasurementObservation)
+    physicalSamples=p.Results.PhysicalMeasurementObservation.readComplete();
+    if ~isequal(size(physicalSamples),size(rxWaveform))
+        error('sixgr:phy:broadcast:MeasurementPlaneLayout','Physical and decoder observations need identical receive antenna and sample layouts.');
+    end
+end
 
 result = localEmptyResult();
 result.Status = "started";
@@ -94,7 +103,19 @@ try
     result.MIBDMRSTypeAPosition = double(sixgr.util.structGet(pbch, "MIBDMRSTypeAPosition", NaN));
     result.PBCHiBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
     result.PBCHv = double(sixgr.util.structGet(pbch, "v", NaN));
-    result = localMeasurePhysicalSSB(result, rxSSB, sync, pbch, cfg);
+    if isempty(physicalSamples)
+        result = localMeasurePhysicalSSB(result, rxSSB, sync, pbch, cfg);
+    else
+        % Decode remains on post-RF samples. Connector power is measured on
+        % the retained pre-RF plane, with its own measured synchronization;
+        % AGC/ADC/CFO are not inverted using a guessed scalar gain.
+        [physicalSSB,physicalSync]=sixgr.phy.dl.SSB_Rx(physicalSamples,cfg, ...
+            'SampleRate_Hz',sampleRate,'CandidateSSBIndex',p.Results.CandidateSSBIndex);
+        if physicalSync.NCellID~=sync.NCellID
+            error('sixgr:phy:broadcast:MeasurementCellMismatch','Connector measurement detected a different cell from the decoded PBCH.');
+        end
+        result=localMeasurePhysicalSSB(result,physicalSSB,physicalSync,pbch,cfg);
+    end
     result.ChannelEstimateAvailable = logical(sixgr.util.structGet(pbch, "ChannelEstimateAvailable", false));
     result.ChannelEstimateSource = string(sixgr.util.structGet(pbch, "ChannelEstimateSource", ""));
     result.EqualizationAvailable = logical(sixgr.util.structGet(pbch, "EqualizationAvailable", false));
@@ -367,6 +388,7 @@ result = struct( ...
     "SS_RSRP_dBm", NaN, "SS_RSRPPerReceiveAntenna_dBm", "", ...
     "SS_RSRPRawObserved_dBm", NaN, ...
     "SS_RSRPRawObservedPerReceiveAntenna_dBm", "", ...
+    "SSBWindowRSSIPerReceiveAntenna_dBm", "", "SSBWindowPowerMeasurementJSON", "", ...
     "SS_SINR_dB", NaN, "SS_SINRPerReceiveAntenna_dB", "", ...
     "SSMeasurementSource", "", ...
     "SSSINRMeasurementMethod", "", ...
@@ -445,7 +467,7 @@ result = struct( ...
 end
 
 function result = localMeasurePhysicalSSB(result, rxSSB, sync, pbch, cfg)
-% Measure SS-RSRP on SSS REs using the TS 38.215 Toolbox implementation.
+% Measure linear SSS RE power and practical received-reference disturbance.
 % The normalized detection metric remains SSBReceivedPower_dB and is never
 % substituted for an absolute UE measurement.
 powerContext = sixgr.util.structGet(cfg, "lls6g.runtimePowerContext", struct());
@@ -476,39 +498,33 @@ iBarSSB = double(sixgr.util.structGet(pbch, "iBar_SSB", NaN));
 try
     if isfinite(iBarSSB) && iBarSSB >= 0 && iBarSSB <= 7 && ...
             iBarSSB == round(iBarSSB)
-        measured = nrSSBMeasurements( ...
-            physicalGrid, ncellid, iBarSSB);
+        [measured,rssiEvidence] = sixgr.phy.refsig.measureSSBWindowPower( ...
+            physicalGrid, ncellid, iBarSSB, sync.SCS_SSB_kHz);
     else
-        measured = nrSSBMeasurements(physicalGrid, ncellid);
+        [measured,rssiEvidence] = sixgr.phy.refsig.measureSSBWindowPower( ...
+            physicalGrid, ncellid, NaN, sync.SCS_SSB_kHz);
     end
-    branchRSRP = double(measured.RSRPPerAntenna(:).');
-    branchRSRP = branchRSRP(isfinite(branchRSRP));
+    result.SSBWindowRSSIPerReceiveAntenna_dBm = localNumericVectorToken(measured.RSSIPerAntenna);
+    result.SSBWindowPowerMeasurementJSON = string(jsonencode(rssiEvidence));
 catch ME
     result.SSPhysicalMeasurementStatus = ...
         "unavailable_nr_ssb_measurement_failed:" + string(ME.identifier);
     return;
 end
-if isempty(branchRSRP)
-    result.SSPhysicalMeasurementStatus = ...
-        "unavailable_empty_ss_rsrp_per_antenna";
-    return;
-end
-
-result.SS_RSRPRawObserved_dBm = max(branchRSRP);
-result.SS_RSRPRawObservedPerReceiveAntenna_dBm = ...
-    localNumericVectorToken(branchRSRP);
+% The toolbox's coherent-mean RSRP remains only in the explicitly scoped
+% RSSI reference record. Do not seed primary RSRP with that different
+% estimator, even temporarily on a later estimation-failure path.
 result.SSMeasurementFFTSize = nfft;
 result.SSMeasurementGridScaleToSqrtW = scale;
 result.SSMeasurementAntennaAggregation = ...
     "maximum_per_receive_antenna_rsrp_ts_38_215_diversity_rule";
 result.SSMeasurementSource = ...
-    "nrSSBMeasurements_runtime_received_sss_resource_elements";
-result.SSPhysicalMeasurementStatus = "available_rsrp";
+    "noise_debiased_linear_sss_re_power_and_received_reference_disturbance";
+result.SSPhysicalMeasurementStatus = "unavailable_sss_measurement";
 
 % SS-SINR uses the same detected SS/PBCH block and the same physical UE
-% antenna-connector reference plane.  The practical TS 38.215 estimator
-% measures noise plus interference on unoccupied REs in that same 240-RE
-% bandwidth; configured SNR and PBCH post-equalization SINR are forbidden.
+% antenna-connector reference plane. Disturbance is estimated from SSS
+% reference REs, not an unconfigured null-RE interference resource.
 try
     ssSinr = sixgr.phy.refsig.measureSSSINRFromSSBGrid( ...
         physicalGrid, ncellid, iBarSSB);
@@ -532,18 +548,22 @@ try
             ssSinr.SS_SINRPerReceiveAntenna_dB);
         result.SSPhysicalMeasurementStatus = "available_rsrp_and_sinr";
         result.SSMeasurementSource = ...
-            "noise_debiased_nrSSBMeasurements_sss_rsrp_and_same_ssb_bandwidth_null_re_noise_interference";
+            "noise_debiased_linear_sss_re_power_and_received_reference_disturbance";
     else
-        result.SSPhysicalMeasurementStatus = ...
-            "available_rsrp_sinr_failed:" + string(ssSinr.Status);
+        if isfinite(result.SS_RSRP_dBm)
+            result.SSPhysicalMeasurementStatus = ...
+                "available_rsrp_sinr_failed:" + string(ssSinr.Status);
+        else
+            result.SSPhysicalMeasurementStatus = ...
+                "unavailable_ss_rsrp_and_sinr:" + string(ssSinr.Status);
+        end
         result.SSSINRFailureReason = string(ssSinr.FailureReason);
     end
 catch ME
-    % RSRP remains valid even if practical SSS noise estimation is not
-    % available for this waveform length. Preserve the typed reason so a
-    % missing SS-SINR cannot be mistaken for a successful measurement.
+    % Missing received-reference evidence must not be promoted to an
+    % available RSRP or replaced by coherent-mean reference power.
     result.SSPhysicalMeasurementStatus = ...
-        "available_rsrp_sinr_failed:" + string(ME.identifier);
+        "unavailable_sss_measurement:" + string(ME.identifier);
     result.SSSINRFailureReason = string(ME.message);
 end
 end

@@ -3,6 +3,10 @@ classdef CoupledTruthRuntime
 % Keep this file ASCII-only.
 
 methods(Static)
+    function [allowDL,allowUL,label,partition] = resolveSlotPartition(cfg,slot)
+        [allowDL,allowUL,label,partition] = ...
+            sixgr.truth.CoupledTruthRuntime.slotDuplexState(cfg,slot);
+    end
     function state = initialize(cfg, runFolder, multiUser, controlTrials, totalTrafficFrames)
         if nargin < 4 || ~isstruct(controlTrials)
             controlTrials = struct();
@@ -2178,6 +2182,7 @@ methods(Static, Access=private)
 
     function [state, channelState] = acquireRuntimeChannelStateForControlImpl(state, cfg, ueIdx, direction, servingCell)
         sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
+        sixgr.truth.CoupledWaveformStream.rejectLegacy(state,"control/channel acquisition");
         channelState = [];
         if ~sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
             return;

@@ -3638,6 +3638,10 @@ for sweepIdx = 1:numel(snrGrid)
                 "Suppressed queued UL before standalone feedback execution: slot=%d blocked=%d.", ...
                 absoluteFrame,height(entryBlockedUL));
         end
+        if ~isfield(runtimeState,'SharedWaveformStream') && ...
+                sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg)
+            [runtimeState,~]=sixgr.truth.CoupledWaveformStream.initialize(runtimeState,cfg,userCfg);
+        end
         [runtimeState, pendingULGrants] = localRunCoupledPreSchedulingControlGating( ...
             runtimeState, cfg, runFolder, userCfg, snrVal, pendingULGrants);
         liveRawTrials = localBuildCoupledTruthRawTrialsAggregate(dlTrials, ulTrials, multiUser, runtimeState.ControlTrials, cfg);
@@ -3747,6 +3751,10 @@ for sweepIdx = 1:numel(snrGrid)
                     ulTrials, dlTrials, ulConstT, dlConstT, ulTablePath, dlTablePath, ulConstellationPath, dlConstellationPath, ...
                     sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
             end
+        end
+        if isfield(runtimeState,'SharedWaveformStream')
+            [runtimeState,~]=runtimeState.SharedWaveformStream.advanceSlot( ...
+                runtimeState,cfg,@localCompleteSharedControlObservations);
         end
         [runtimeState, profileCtl] = localMaybeFlushCoupledProfileSnapshot(runtimeState, rootRunFolder, profileCtl, absoluteFrame);
         [stopCoupledProfile, stopReason] = localShouldStopCoupledProfile(runtimeState, profileCtl, absoluteFrame, dlTrials, ulTrials);
@@ -8484,7 +8492,9 @@ if ssbWaveformObservationRequired && slotDLAllowed && ssbOccasionActiveThisSlot
 end
 trsObservedServingCells = [];
 for pendingUE = 1:numUsers
-    if sixgr.truth.BroadcastResultDelivery.hasPending(state,pendingUE)
+    if sixgr.truth.BroadcastResultDelivery.hasPending(state,pendingUE) || ...
+            (isfield(state,'SharedWaveformStream') && ...
+            state.SharedWaveformStream.hasPending("PBCH",pendingUE))
         sharedPBCHEligible(pendingUE)=false;
     end
 end
@@ -8538,8 +8548,16 @@ for ueIdx = 1:numUsers
         end
     end
 
-    if shouldAttemptTRS && isfinite(servingCell) && servingCell >= 1 && ~ismember(servingCell, trsObservedServingCells)
+    if shouldAttemptTRS && isfinite(servingCell) && servingCell >= 1 && ...
+            (isfield(state,'SharedWaveformStream') || ~ismember(servingCell, trsObservedServingCells))
         trsSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "DL", snr_dB);
+        if isfield(state,'SharedWaveformStream')
+            prepared=sixgr.link.prepareTRSTransmission(cfgU,trsSNR_dB,'RuntimeSlot',slotIdx);
+            context=struct('Config',cfgU,'Slot',slotIdx,'Frame',frameIdx, ...
+                'RNTI',rnti,'ServingCell',servingCell,'SNR',trsSNR_dB);
+            state.SharedWaveformStream.queueDownlink("TRS",ueIdx,prepared,context);
+            trsAttemptCount=trsAttemptCount+1;
+        else
         [state,trsChannelState] = ...
             sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
             state,cfgU,ueIdx,"DL");
@@ -8564,6 +8582,7 @@ for ueIdx = 1:numUsers
             end
             trsObservedServingCells(end + 1, 1) = servingCell; %#ok<AGROW>
         end
+        end
     end
 
     if ssbWaveformObservationRequired && slotDLAllowed
@@ -8573,6 +8592,22 @@ for ueIdx = 1:numUsers
                 state,"CellAcquisitionState",strings(numUsers,1)));
             wasAcquired = ueIdx <= numel(priorPBCHState) && ...
                 priorPBCHState(ueIdx) == "acquired";
+            measurementOnly = servingSSBMeasurementRequired && ~pbchAcquisitionRequired;
+            if isfield(state,'SharedWaveformStream')
+                pbchSNR_dB=localResolveCoupledRuntimeLinkSNR(state,cfgU,ueIdx,"DL",snr_dB);
+                cfgU=localApplyPBCHSSBBeamContext(cfgU,slotIdx,ueIdx);
+                prototype=sixgr.link.runCellSearch_MIB_SIB1(cfgU,'PrepareOnly',true, ...
+                    'UseRuntimeChannel',true,'RuntimeSlot',slotIdx-1, ...
+                    'NumSubframes',localResolvePBCHObservationSubframes(cfgU));
+                if ~isfield(prototype,'PreparedBroadcast')
+                    error('sixgr:truth:BroadcastPreparationFailed','%s',string(prototype.FailureReason));
+                end
+                context=struct('Config',cfgU,'Slot',slotIdx,'Frame',frameIdx, ...
+                    'RNTI',rnti,'ServingCell',servingCell,'SNR',pbchSNR_dB, ...
+                    'Prototype',prototype,'TrackingOnly',logical(wasAcquired || measurementOnly));
+                state.SharedWaveformStream.queueDownlink("PBCH",ueIdx,prototype.PreparedBroadcast,context);
+                pbchAttemptCount=pbchAttemptCount+1;
+            else
             pbchT = table();
             decodedSIB1 = struct();
             if ueIdx <= numel(pbchTrialCache) && isstruct(pbchTrialCache{ueIdx}) && ...
@@ -8608,6 +8643,7 @@ for ueIdx = 1:numUsers
             pbchAttemptCount = pbchAttemptCount + 1;
             state = sixgr.truth.BroadcastResultDelivery.enqueue( ...
                 state,ueIdx,pbchT,decodedSIB1,logical(wasAcquired || measurementOnly));
+            end
         end
     end
 
@@ -11758,7 +11794,8 @@ end
 end
 
 function [T, selectedAdvancedState, selectedDecodedSIB1] = ...
-        localCollectCoupledPBCHBeamSweep(cfg, snr_dB, initialDLState, slotIdx)
+        localCollectCoupledPBCHBeamSweep(cfg, snr_dB, initialDLState, slotIdx, receivedBurst)
+if nargin<5, receivedBurst=struct(); end
 % Execute every candidate in the configured active SS burst set during the
 % cell-search observation window.  A burst set can span multiple carrier
 % slots (for example, four Case-A candidates occupy two slots).  Restricting
@@ -11791,7 +11828,13 @@ for beamOrdinal = 1:numel(indices)
         "phy.ssb.runtimeSSBIndex", ssbIndex);
     cfgBeam = sixgr.util.structSet(cfgBeam, ...
         "phy.ssb.SSBIndex", ssbIndex);
-    if ~sharedCapture
+    if ~isempty(fieldnames(receivedBurst))
+        if ~isfield(receivedBurst,'CandidateResults') || numel(receivedBurst.CandidateResults)~=numel(indices)
+            error('sixgr:truth:IncompleteSharedSSBBurstReception','Every configured candidate needs its actual receiver result.');
+        end
+        [candidateTables{beamOrdinal},candidateStates{beamOrdinal},candidateSIB1{beamOrdinal}] = ...
+            localCollectPBCHTrials(cfgBeam,snr_dB,1,initialDLState,slotIdx,[],receivedBurst.CandidateResults{beamOrdinal});
+    elseif ~sharedCapture
         % Preserve the existing PBCH-only path. It does not yet implement
         % the SIB1 receiver's shared-capture API and must not claim it does.
         [candidateTables{beamOrdinal}, candidateStates{beamOrdinal}, ...
@@ -11988,6 +12031,9 @@ for k = 1:nTrials
             out = receivedResult;
         end
         cellSearchOutput = out;
+        gainComp=sixgr.util.structGet(out,'ReceiverGainCompensation',struct());
+        r.ReceiverGainCompensationApplied=logical(sixgr.util.structGet(gainComp,'Applied',false));
+        r.ReceiverGainCompensationSource=string(sixgr.util.structGet(gainComp,'Source',""));
         if useRuntimeChannel
             advancedDLState = sixgr.util.structGet( ...
                 out, "RuntimeDLChannelState", advancedDLState);
@@ -12117,6 +12163,9 @@ for k = 1:nTrials
             sixgr.util.structGet(pbch, "NoiseVar", NaN)));
         r.SSBReceivedPower_dB = double(sixgr.util.structGet(out, "SSBReceivedPower_dB", NaN));
         r.SS_RSRP_dBm = double(sixgr.util.structGet(out, "SS_RSRP_dBm", NaN));
+        for field=["SSBWindowRSSIPerReceiveAntenna_dBm","SSBWindowPowerMeasurementJSON"]
+            r.(field)=string(sixgr.util.structGet(out,field,""));
+        end
         r.SS_RSRPPerReceiveAntenna_dBm = string(sixgr.util.structGet( ...
             out, "SS_RSRPPerReceiveAntenna_dBm", ""));
         r.SS_RSRPRawObserved_dBm = double(sixgr.util.structGet( ...
@@ -12318,6 +12367,40 @@ for i = 1:numel(fields)
     name = char(fields(i));
     if isfield(sib1, name)
         recovery.(name) = sib1.(name);
+    end
+end
+end
+
+function state=localCompleteSharedControlObservations(state,received)
+for item=received
+    context=item.Context; p=context.Prepared;
+    [~,pre,tx,replay,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
+    ch=state.SharedWaveformStream.channelState(item.UE,"DL");
+    if item.Kind=="PBCH"
+        prototype=context.Prototype;
+        prototype.RuntimeChannelReplay=replay;
+        prototype.RuntimeDLChannelState=ch;
+        prototype.RuntimeChannelStateUsed=true;
+        prototype.PowerContext=p.PowerContext;
+        options=struct('UseRuntimeChannel',true,'RuntimeSlot',context.Slot-1, ...
+            'CandidateSSBIndices',localResolveActiveSSBurstSetIndices(context.Config,struct()), ...
+            'SSBIndex',[],'WriteArtifacts',false,'RunFolder','','RunId','shared_runtime', ...
+            'PhysicalMeasurementObservation',pre,'TransmitObservation',tx);
+        output=sixgr.link.completeCellSearchBroadcast(p,post,prototype,options,tic);
+        [raw,~,recovery]=localCollectCoupledPBCHBeamSweep(context.Config,context.SNR,ch,context.Slot,output);
+        trial=localAnnotateCoupledControlTrial(raw,context.Slot,context.Frame,item.UE,context.RNTI,"DL",context.ServingCell);
+        trial.ObservationPurpose=repmat("initial_cell_search_pbch_acquisition",height(trial),1);
+        if context.TrackingOnly
+            trial.ObservationPurpose(:)="periodic_serving_ssb_beam_and_pathloss_tracking";
+        end
+        state=sixgr.truth.BroadcastResultDelivery.enqueue(state,item.UE,trial,recovery,context.TrackingOnly);
+    elseif item.Kind=="TRS"
+        output=sixgr.link.completeTRSReception(p,post,replay,ch);
+        [raw,~,observed]=localCollectTRSTrials(context.Config,context.SNR,1,ch,output);
+        trial=localAnnotateCoupledControlTrial(raw,context.Slot,context.Frame,item.UE,context.RNTI,"DL",context.ServingCell);
+        state=sixgr.truth.TRSResultDelivery.enqueue(state,context.ServingCell,item.UE,trial,context.Config,observed);
+    else
+        error('sixgr:truth:MissingSharedReceiverReducer','No canonical row reducer for completed %s.',item.Kind);
     end
 end
 end
@@ -15248,10 +15331,11 @@ state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
 state.SRSChannelStateByUE{ueIdx, 1} = chState;
 end
 
-function [T,chState,observedRET] = localCollectTRSTrials(cfg,snr_dB,nTrials,chState)
+function [T,chState,observedRET] = localCollectTRSTrials(cfg,snr_dB,nTrials,chState,receivedOut)
 if nargin < 4 || ~isstruct(chState)
     chState = struct();
 end
+if nargin<5, receivedOut=struct(); end
 observedRET = table();
 if ~logical(sixgr.util.structGet(cfg, "phy.trs.enable", false))
     T = localEmptyLinkTrialTable(0);
@@ -15263,9 +15347,14 @@ for k = 1:nTrials
     r = localMakeLinkTrialRow(cfg, "DL", snr_dB, k);
     r.Status = "FAIL";
     try
+        if isempty(fieldnames(receivedOut))
         out = sixgr.link.runTRSTracking(cfg,"SNR_dB",snr_dB, ...
             "ChannelState",chState,"RuntimeSlot", ...
             sixgr.util.structGet(cfg,"lls6g.userContext.RuntimeCurrentSlot",[]));
+        else
+            if nTrials~=1, error('sixgr:truth:ReceivedTRSTrialCount','One observation produces one TRS trial.'); end
+            out=receivedOut;
+        end
         r.ObservationStartSample = double(sixgr.util.structGet(out,"ObservationStartSample",NaN));
         r.ObservationEndSampleExclusive = double(sixgr.util.structGet(out,"ObservationEndSampleExclusive",NaN));
         r.ObservationSampleRateHz = double(sixgr.util.structGet(out,"ObservationSampleRateHz",NaN));
@@ -16287,6 +16376,10 @@ row.MismatchSensitivity_dB = NaN;
 row.AcquisitionTime_ms = NaN;
 row.SSBReceivedPower_dB = NaN;
 row.SS_RSRP_dBm = NaN;
+row.SSBWindowRSSIPerReceiveAntenna_dBm = "";
+row.SSBWindowPowerMeasurementJSON = "";
+row.ReceiverGainCompensationApplied = false;
+row.ReceiverGainCompensationSource = "";
 row.SS_RSRPPerReceiveAntenna_dBm = "";
 row.SS_RSRPRawObserved_dBm = NaN;
 row.SS_RSRPRawObservedPerReceiveAntenna_dBm = "";

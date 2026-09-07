@@ -11,30 +11,33 @@ function tf = isActivePRACHOccasion(cfg, slotIdx)
 tf = false;
 prachRequired = logical(sixgr.util.structGet( ...
     cfg, "run.controlGating.prachRequired", false));
-if ~(isnumeric(slotIdx) && isscalar(slotIdx) && ...
-        isfinite(double(slotIdx)) && double(slotIdx) >= 1)
-    return;
-end
+validateattributes(slotIdx,{'numeric'},{'real','scalar','finite','integer','positive'});
 
 validSlots1 = double(sixgr.util.structGet( ...
     cfg, "phy.prach.validSlots1Based", []));
-validSlots1 = validSlots1(isfinite(validSlots1) & validSlots1 >= 1);
 if ~isempty(validSlots1)
-    slotsPerFrame = double(sixgr.util.structGet( ...
-        cfg, "phy.numerology.slotsPerFrame", ...
-        sixgr.util.structGet(cfg, "frame_timing.slots_per_frame", ...
-        max(validSlots1))));
-    slotsPerFrame = max(1, round(double(slotsPerFrame)));
-    canonicalSlotInFrame = mod(round(double(slotIdx)) - 1, ...
-        slotsPerFrame) + 1;
-    tf = ismember(canonicalSlotInFrame, ...
-        round(validSlots1(:).'));
+    % These aliases cover the joint PRACH-table/TDD repetition period,
+    % which is not necessarily one 10 ms radio frame. Frame modulo can
+    % erase every valid occasion (e.g. slot 15 in a 20-slot period).
+    period=double(sixgr.util.structGet(cfg,'phy.prach.timing.PeriodCarrierSlots', ...
+        sixgr.util.structGet(cfg,'phy.prach.period_slots',NaN)));
+    if ~isscalar(period)||~isfinite(period)||period<1||period~=fix(period) || ...
+            any(~isfinite(validSlots1))||any(validSlots1<1|validSlots1>period|validSlots1~=fix(validSlots1))
+        error('sixgr:truth:InvalidPRACHOccasionAuthority', ...
+            'Resolved PRACH carrier-slot aliases need their exact integer repetition period and in-period slot coordinates.');
+    end
+    aliasPeriod=sixgr.util.structGet(cfg,'phy.prach.period_slots',period);
+    if ~isequal(double(aliasPeriod),period)
+        error('sixgr:truth:PRACHPeriodAuthorityConflict','PRACH period alias contradicts canonical timing.');
+    end
+    canonicalSlotInPeriod=mod(double(slotIdx)-1,period)+1;
+    tf=ismember(canonicalSlotInPeriod,validSlots1(:).');
     return;
 end
 
 try
     frameStructure = sixgr.phy.FrameStructureEngine(cfg);
-    tf = logical(frameStructure.IsPRACHSlot(slotIdx));
+    tf = logical(frameStructure.IsPRACHSlot(double(slotIdx)-1));
 catch ME
     if prachRequired || logical(sixgr.util.structGet(cfg, "phy.prach.enable", false))
         rethrow(ME);

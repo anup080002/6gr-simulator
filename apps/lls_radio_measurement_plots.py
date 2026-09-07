@@ -23,8 +23,9 @@ CSI_FIELDS = {"CSI CQI timeline": "CQI", "CSI RI timeline": "RI",
               "CSI PMI components timeline": "PMI", "CSI SINR timeline": "SINR_dB"}
 CSI_POWER_FIELDS = {"CSI-RS RSSI timeline": ("RSSIPerAntenna_dBm", "RSSI (dBm)"),
                     "CSI-RS RSRQ timeline": ("RSRQPerAntenna_dB", "RSRQ (dB)")}
+SSB_POWER_CHART = "SSB-window RSSI timeline"
 PRECODER_CHARTS = {"reported versus applied PMI", "precoder ports and layers", "precoder matrix integrity"}
-CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tuple(sorted(PRECODER_CHARTS)) + (
+CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + (SSB_POWER_CHART,) + tuple(sorted(PRECODER_CHARTS)) + (
     "throughput vs SNR", "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
     "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR",
 )
@@ -32,6 +33,7 @@ CHART_SOURCES = {name: (path, "air_interface/csv/control_evm_samples.csv")
                  for name, (_, path) in CONTROL_EVM.items()}
 CHART_SOURCES.update({name: (FEEDBACK,) for name in CSI_FIELDS})
 CHART_SOURCES.update({name: ("air_interface/csv/csi_rs_trials.csv",) for name in CSI_POWER_FIELDS})
+CHART_SOURCES[SSB_POWER_CHART] = ("air_interface/csv/pbch_trials.csv",)
 CHART_SOURCES.update({name: TRIALS + (FEEDBACK,) for name in PRECODER_CHARTS})
 CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS,
     "PDSCH BLER vs measured SINR": TRIALS[:1], "PUSCH BLER vs measured SINR": TRIALS[1:],
@@ -475,6 +477,77 @@ def _csi_physical_power(m, name, existing, fetch, run_id):
         "Actual CSI-RS antenna-plane measurements; every receive branch and resource retained. RSSI uses only the recorded bandwidth and CSI-RS symbol window, not normalized grid power.", sources)
 
 
+def _ssb_window_power(m, name, existing, fetch, run_id):
+    sources = CHART_SOURCES[name]
+    path, samples = m._first_available_rows(existing, fetch, sources)
+    rows, series, seen = [], defaultdict(list), set()
+    for index, row in enumerate(samples, 1):
+        token = m._row_text(row, "SSBWindowPowerMeasurementJSON")
+        if not token:
+            continue
+        identity = _identity(m, row, path, index)
+        plane = m._row_text(row, "PowerReferencePlane")
+        if plane not in {"receiver_antenna_connector_pre_composite_front_end",
+                         "receiver_antenna_connector_no_composite_front_end"}:
+            if plane != "actual_post_tx_rf_sss_epre_to_actual_pre_rx_rf_connector_sss_rsrp":
+                raise ValueError("SSB-window RSSI requires the actual antenna-connector plane, not AGC-normalized power.")
+        try:
+            evidence = json.loads(token)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Missing structured SSB received-power evidence.") from exc
+        if not isinstance(evidence, dict) or evidence.get("Available") is not True:
+            continue
+        if (evidence.get("Source") != "nrSSBMeasurements_actual_antenna_plane_ssb_grid" or
+                evidence.get("Scope") != "ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI" or
+                evidence.get("AmplitudeUnit") != "sqrt_W" or evidence.get("CPIncluded") is not False or
+                evidence.get("NumRB") != 20 or evidence.get("NumSubcarriers") != 240 or
+                evidence.get("SymbolIndicesWithinSSB0Based") != [0, 1, 2, 3]):
+            raise ValueError("SSB RSSI requires its exact received 240-subcarrier/four-symbol scope and physical units.")
+        n_rx = evidence.get("NumReceiveAntennas")
+        if not isinstance(n_rx, (int, float)) or isinstance(n_rx, bool) or not math.isfinite(n_rx) or n_rx < 1 or n_rx != int(n_rx):
+            raise ValueError("SSB RSSI requires exact receive-branch identities.")
+        scs, bandwidth = evidence.get("SubcarrierSpacing_kHz"), evidence.get("Bandwidth_Hz")
+        if (not isinstance(scs, (int, float)) or not math.isfinite(scs) or scs <= 0 or
+                not isinstance(bandwidth, (int, float)) or not math.isclose(bandwidth, 240*scs*1000, rel_tol=1e-12)):
+            raise ValueError("SSB RSSI bandwidth disagrees with the received SSB numerology.")
+        rssis = _numbers(json.dumps(evidence.get("RSSIPerAntenna_dBm")))
+        mirrors = _numbers(m._row_text(row, "SSBWindowRSSIPerReceiveAntenna_dBm"))
+        powers = evidence.get("SymbolPowerPerAntenna_W")
+        if int(n_rx) == 1 and isinstance(powers, list) and all(isinstance(v, (int, float)) for v in powers):
+            powers = [[v] for v in powers]
+        if (len(rssis) != n_rx or len(mirrors) != n_rx or
+                not isinstance(powers, list) or len(powers) != 4 or
+                any(not isinstance(v, list) or len(v) != n_rx for v in powers)):
+            raise ValueError("SSB RSSI is missing branch powers or its complete four-symbol window.")
+        ssb = m._row_float(row, "SSBIndex")
+        first, stop, fs = (m._row_float(row, f) for f in
+                          ("ObservationStartSample", "ObservationEndSampleExclusive", "ObservationSampleRateHz"))
+        if (identity["direction"] != "DL" or not identity["ue_index"] or ssb is None or ssb < 0 or ssb != int(ssb) or
+                any(v is None for v in (first, stop, fs)) or first < 0 or first != int(first) or
+                stop <= first or stop != int(stop) or fs <= 0):
+            raise ValueError("SSB RSSI requires UE/beam identity and the actual received burst interval.")
+        for branch in range(int(n_rx)):
+            values = [p[branch] for p in powers]
+            if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v < 0 for v in values) or sum(values) <= 0:
+                raise ValueError("SSB symbol powers must be finite physical powers with positive window energy.")
+            expected = 10*math.log10(sum(values)/4)+30
+            if abs(rssis[branch]-expected) > 1e-4 or abs(mirrors[branch]-rssis[branch]) > 1e-4:
+                raise ValueError("SSB RSSI fails same-branch linear symbol-power / dBm closure.")
+            key = (identity["ue_index"], identity["cell_id"], first, stop, ssb, branch)
+            if key in seen:
+                raise ValueError("Duplicate received SSB/branch RSSI identity.")
+            seen.add(key)
+            rows.append({**identity, "ssb_index_0based": int(ssb), "receive_antenna_index_1based": branch+1,
+                "rssi_dbm": rssis[branch], "bandwidth_hz": bandwidth, "subcarrier_spacing_khz": scs,
+                "symbol_indices_within_ssb_0based": "[0, 1, 2, 3]", "symbol_powers_w": json.dumps(values),
+                "burst_observation_start_sample": first, "burst_observation_end_sample_exclusive": stop,
+                "sample_rate_hz": fs, "power_reference_plane": plane, "measurement_scope": evidence["Scope"]})
+            if identity["slot"] is not None:
+                series[f"U{identity['ue_index']} SSB{int(ssb)} Rx{branch+1}"].append([identity["slot"], rssis[branch]])
+    return _finish(m, name, run_id, rows, series, "Burst source slot", "SSB-window RSSI (dBm)",
+        "Actual 20-PRB/four-symbol SSB received power, including observed noise/interference, per receive branch. Not full carrier/SMTC RSSI or a UE carrier-RSSI report.", sources)
+
+
 def radio_measurement_chart(name, existing, fetch, run_id):
     if name not in CHARTS:
         return None
@@ -488,6 +561,8 @@ def radio_measurement_chart(name, existing, fetch, run_id):
             return _csi(m, name, existing, fetch, run_id)
         if name in CSI_POWER_FIELDS:
             return _csi_physical_power(m, name, existing, fetch, run_id)
+        if name == SSB_POWER_CHART:
+            return _ssb_window_power(m, name, existing, fetch, run_id)
         if name in PRECODER_CHARTS:
             return _precoding(m, name, existing, fetch, run_id)
         return _relationships(m, name, existing, fetch, run_id)

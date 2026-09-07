@@ -23,6 +23,51 @@ def chart(name, sources):
     return result, rows
 
 
+def ssb_power_payload(change="", n_rx=2):
+    powers = [[1e-8*(symbol+1)*(branch+1) for branch in range(n_rx)] for symbol in range(4)]
+    rssis = [10*math.log10(sum(p[b] for p in powers)/4)+30 for b in range(n_rx)]
+    evidence = {"Available": True, "Source": "nrSSBMeasurements_actual_antenna_plane_ssb_grid",
+        "Scope": "ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI",
+        "AmplitudeUnit": "sqrt_W", "CPIncluded": False, "NumRB": 20, "NumSubcarriers": 240,
+        "SymbolIndicesWithinSSB0Based": [0, 1, 2, 3], "NumReceiveAntennas": n_rx,
+        "SubcarrierSpacing_kHz": 15, "Bandwidth_Hz": 3600000,
+        "RSSIPerAntenna_dBm": rssis if n_rx > 1 else rssis[0],
+        "SymbolPowerPerAntenna_W": powers if n_rx > 1 else [p[0] for p in powers]}
+    record = {"Direction": "DL", "UEIndex": 1, "CellID": 1, "Slot": 1, "SSBIndex": 3,
+        "ObservationStartSample": 0, "ObservationEndSampleExclusive": 38400, "ObservationSampleRateHz": 7680000,
+        "PowerReferencePlane": "receiver_antenna_connector_pre_composite_front_end",
+        "SSBWindowRSSIPerReceiveAntenna_dBm": json.dumps(rssis)}
+    if change == "plane": record["PowerReferencePlane"] = "post_agc"
+    if change == "closure": powers[0][0] *= 2
+    if change == "mirror": record["SSBWindowRSSIPerReceiveAntenna_dBm"] = "[0, 0]"
+    if change == "bandwidth": evidence["Bandwidth_Hz"] *= 2
+    if change == "symbols": evidence["SymbolIndicesWithinSSB0Based"] = [0, 1, 2]
+    if change == "branches": evidence["NumReceiveAntennas"] += 1
+    if change == "scope": evidence["Scope"] = "full_carrier_RSSI"
+    if change == "proxy": record["Source"] = "fast_proxy"
+    record["SSBWindowPowerMeasurementJSON"] = json.dumps(evidence)
+    stream = io.StringIO(); writer = csv.DictWriter(stream, list(record))
+    writer.writeheader(); writer.writerow(record)
+    if change == "duplicate": writer.writerow(record)
+    return stream.getvalue().encode()
+
+
+@pytest.mark.parametrize("n_rx", [1, 2, 4])
+def test_ssb_rssi_has_real_window_each_branch_and_png(n_rx):
+    result, rows = chart(radio.SSB_POWER_CHART, {"air_interface/csv/pbch_trials.csv": ssb_power_payload(n_rx=n_rx)})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == n_rx and all(r["ssb_index_0based"] == "3" for r in rows)
+    assert all(r["measurement_scope"].endswith("not_full_carrier_RSSI") for r in rows)
+    png = m._rasterize_contract_png(result["img_bytes"], source_mime_type="image/svg+xml", source_logical_path="test://ssb.svg")
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+@pytest.mark.parametrize("change", ["plane", "closure", "mirror", "bandwidth", "symbols", "branches", "scope", "proxy", "duplicate"])
+def test_ssb_rssi_rejects_incomplete_inconsistent_or_proxy_evidence(change):
+    result, _ = chart(radio.SSB_POWER_CHART, {"air_interface/csv/pbch_trials.csv": ssb_power_payload(change)})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
 def csi_power_payload(change=""):
     resource = {"ResourceID": 3, "NumReceiveAntennas": 2, "NumRB": 24,
         "FirstPRB0Based": 6, "SubcarrierSpacing_kHz": 30, "Bandwidth_Hz": 8640000,

@@ -1,6 +1,149 @@
 # Short TDD run: measured failures and remaining integration work
 
-## Actual PDCCH receive boundary and legacy grant shortcuts (latest checkpoint)
+## Main physical owner, receiver gain and SS power repair (current checkpoint)
+
+**Not a completed/qualified production run. The actual main scheduler reaches
+slot 15, then rejects its unmigrated eager RA channel acquisition. It retains
+zero DL/UL data trial rows; these are not filled with stand-ins.**
+
+The main scheduler now owns one retained sample stream for the prepared
+SSB/SIB1 and TRS transmissions. RF/channel/noise execute chronologically at
+actual OFDM symbol boundaries, including TDD guard intervals. Completed
+received buffers, not precomputed decoder results, reach the receiver reducer.
+The initial main-clock error is not declared fully repaired while RA and the
+data/control producers still require migration.
+
+Changes and evidence:
+
+- Real retained SIB1 IQ decoded before RX RF but failed after AGC/ADC. The
+  applied gain changed within OFDM symbols. Digital compensation now uses
+  the actual recorded per-sample analogue gain **after the ADC**. It does
+  not remove noise, replay fading/RF, or undo clipping/quantization. The
+  previously failing retained IQ decodes after this receiver repair.
+- Main execution publishes all four measured PBCH/SIB1 candidates at delivery
+  slot 6 and completes the multi-slot TRS window at delivery slot 9. The
+  first ten-slot test's missing PRACH was not proof of a multi-frame bug:
+  this profile uses period 10, occasion 5, so acquisition at slot 6 must
+  wait until slot 15. The main boundary test was extended accordingly.
+- Independently, generic PRACH gating did use a radio-frame modulo instead
+  of the resolved repetition period, and its canonical-engine path had a
+  one-based/zero-based mismatch. Both are repaired. A real FR1 unpaired
+  configuration-0 fixture resolves period 160 / one-based occasion 20;
+  two periods now agree with the canonical engine. The authored profile
+  remains unchanged at configuration 157 / period 10 / occasion 5.
+- The SS power audit found a genuine estimator mismatch: squared coherent
+  reference averaging was being treated as linear per-RE power, then a full
+  per-RE noise variance was subtracted. SS-RSRP now uses linear SSS RE power;
+  disturbance is estimated per RX branch from the received SSS reference
+  REs using `nrChannelEstimate`. An unconfigured null-RE window is no longer
+  substituted for the SS-SINR measurement resources. This is a practical
+  receiver estimator, **not proof of UE measurement-accuracy conformance**.
+- A phase-selective fixture proves phase rotation cannot erase measured
+  per-RE SSS power. Common amplitude scaling preserves SINR and shifts dBm
+  correctly. Poisoning non-SSS REs leaves this reference-scoped estimate
+  unchanged. The previous source-string assertion was changed to the new
+  actual estimator, not weakened to accept arbitrary sources.
+- SSB-window RSSI now retains each receive branch, all four symbol powers,
+  exact 240-subcarrier/20-PRB bandwidth, units and source in the PBCH CSV.
+  Its specialized chart is wired into the normal CSV/PNG materializer.
+  Linear symbol-power/dBm closure, branches, scope and duplicates are
+  validated. It is deliberately **not** labeled a full SMTC/carrier-RSSI
+  report. No new scenario-specific policy or synthetic plot points were added.
+- The final SSB/RA artifact regression exposed a separate RA producer defect:
+  applying the received RAR power command copied planned power state over
+  completed Msg1/Msg2 amplitude evidence, resetting their actual scales to
+  NaN; the CSV writer subsequently pruned those empty columns. Applied
+  transmission scales have now been removed from the *planned* power state
+  (they remain in the actual transmitter/result records). A staged RA
+  regression requires each scale to survive all later received stages.
+  This repairs provenance, not PHY power by substituting a display value.
+
+Definitions used: [TS 38.215 V18.2.0, 5.1.1/5.1.3/5.1.5](https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.02.00_60/ts_138215v180200p.pdf)
+and [MathWorks SSB measurement API](https://www.mathworks.com/help/5g/ref/nrssbmeasurements.html).
+The latter's coherent RSRP estimator is retained only as explicitly scoped
+reference evidence inside the RSSI measurement record; it is not the repaired
+primary SS-RSRP value.
+
+Bounded verification:
+
+- `logs/coupled_waveform_stream_gain_fixed_20260907.log`: session 66891 exited
+  0; applied-gain compensation, actual SSB/SIB1/TRS stream, and the retained
+  physical-owner CDL/RF/noise clock and tail-safe reciprocal reversal passed.
+- `logs/main_shared_access_boundary_r4_20260907.log`: session 75064 exited 0.
+  PRACH period/index guards; main SSB/TRS-to-unmigrated-RA boundary; staged
+  SRS/PUCCH; PUCCH formats 1–4 after retained AGC/ADC; actual HARQ-ACK on
+  PUSCH; five received-buffer RA stages; TDD CDL-A RA with decoded TA=0,
+  Msg3 CRC and no duplicate timing correction; QCL, activated TCI, and
+  SRS RI/TPMI estimator checks completed. These component checks do not
+  qualify the combined main scheduler.
+- `logs/main_shared_access_boundary_r3_20260907.log` failed before any UL
+  tests: its new multi-frame test initially selected a single-frame fixture.
+  This test-input error was corrected using the actual multi-frame table.
+- `logs/shared_stream_rssi_regressions_20260907.log`: session 46202 was
+  deliberately stopped after discovery of the SS estimator defect. Its
+  initial RSSI/AGC/physical-owner checks passed, but it is not a full batch pass.
+- `logs/sss_linear_measurement_20260907.log`: session 74129 exited 0 after
+  the repaired SSS/RSSI, actual composed stream and main boundary tests;
+  `testConfig`, strict proxy/fallback guards, `testLLS_DL`, `testLLS_UL`,
+  `testLLS_ReferencePoints`, grant consistency, both required E2E truth/packet
+  regressions, link export, artifact integrity and E2E artifact preservation.
+  Existing E2E FDD fixtures are not production-run qualification evidence.
+- 53 Python radio-measurement chart tests and 32 output-contract/running
+  materialization tests passed (85 total). An integration check on
+  the actual latest main diagnostic PBCH CSV produced eight branch records
+  and valid PNG bytes (57,644 bytes), not simulated plot points. The existing
+  materializer persisted `reports/diagnostics/ssb_window_rssi_received.csv`
+  and `.png` under that diagnostic folder; the PNG was visually inspected.
+  It shows the actual eight SSB/RX-branch observations at burst source slot
+  1, without a fitted line or invented time samples. This is not a complete
+  production-run plot set. All eight exported SS-SINR ratios
+  closed on their recorded desired/disturbance powers within 4.27e-14 dB.
+- `logs/ssb_artifact_measurement_regression_20260907.log` failed at the
+  missing Msg1 amplitude column, after the acquisition/beam checks.
+  `logs/ra_power_evidence_regression_20260907.log` exited 0 (session 96191)
+  after staged TDD RA and the same complete SSB/RA artifact regression.
+  Final review also removed the coherent RSRP initialization from the primary
+  measurement reducer's failure path; unavailable received-reference power
+  must remain unavailable, not be labeled `available_rsrp`.
+- `logs/ss_power_availability_final_20260907.log` exited 0 (session 54624):
+  linear SS power (including silent-observation rejection), SSB-window RSSI,
+  the complete SSB/RA artifact regression and strict proxy/fallback guards
+  passed after the final measurement-availability change. No `testAll` or
+  new production FDD/25 dB run was launched.
+
+The latest main diagnostic source is
+`C:/Users/anup0/AppData/Local/Temp/main_shared_access_20260907_102144`.
+Its four SS-RSRP values (SSB indices 1,2,3,0) are approximately
+-80.696, -89.059, -77.265, -75.817 dBm. Their SS-SINRs are approximately
+44.523, 36.541, 48.227, 49.083 dB. **The YAML's 12 dB label is not a measured
+12 dB condition in geometry/thermal-noise mode.** Arithmetic consistency
+does not establish interference completeness, measurement accuracy, or
+end-to-end qualification.
+
+### Remaining work: none of the requested areas is silently waived
+
+| Area | Current evidence / remaining repair |
+| --- | --- |
+| Main shared clock/stream | SSB/SIB1 and TRS use the owner; RA, PDCCH, data, PUCCH and SRS still need main-queue migration. Legacy acquisition is rejected, not bypassed. |
+| Capture duration / run horizon | Check the five-subframe broadcast receive extent against the actual last required SIB1 sample and timing uncertainty. With first usable PRACH at slot 15, the 25-slot scenario may leave insufficient post-access data time. Prove the timeline before extending the horizon; do not hide an avoidable receive delay by simply lengthening the run. |
+| PRACH / Msg1–4 / RRC | Canonical PRACH timing fixed; actual standalone staged RA passed. Prepare and queue every main RA stage, attach received execution/noise evidence, and reduce only at actual RX completion. |
+| UL timing advance | Decoded TA=0 tested. Nonzero TA still needs distinct UE TX / gNB RX sample origins instead of finite-buffer cropping/zero filling. |
+| PUCCH / UCI | Formats 1–4 received-DM-RS tests passed. Format 0 still needs valid received disturbance evidence; main UCI timing/delivery and collision resolution remain open. |
+| PUSCH / HARQ / adaptation | Component UCI-on-PUSCH passes; queued grants must consume late-created ACKs and actual decoded DCI at the right boundary. No new main PUSCH rows exist yet. |
+| SRS / UL PMI-rank | Staged reception and RI/TPMI component checks passed. Main preparation, receive completion and delayed scheduler consumption still required; independently qualified true-channel NMSE is not replaced by pilot residual. |
+| CSI feedback / power | Main CSI delivery and consumed precoder identity remain unverified. CSI power callers still use `nrCSIRSMeasurements` coherent resource averaging; audit phase-selective/CDM/port-specific behavior before claiming CSI-RSRP correct. |
+| QCL / TCI / beamforming | Component propagation and activated-TCI binding pass. Main activation timing, source-RS identity, actual applied beam/PMI matrices and their CSV/PNG lineage still need joined validation. |
+| RSSI | Actual SSB-window RSSI is implemented; CSI-window charts already exist. Full configured carrier/SMTC RSSI and separately defined UL measurement windows are not supplied by these narrower captures. |
+| Multiple UEs / channel ownership | Resolve per-UE TRS state vs old per-cell delivery, initial-UL TDD binding, TX projection before direction switches, dynamic loss/mobility updates, interference cross-links and sweep-epoch ownership. |
+| Output / instrument capture | Fresh complete TDD CSV/PNG inventory, RE-collision audit and continuous post-IFFT TX IQ/playback are pending. No qualified Keysight capture is claimed. |
+
+Next order: migrate main RA with absolute TX/RX timing and actual execution
+evidence; migrate main control/data/SRS/PUCCH and timed feedback; close the
+CSI/beam/RSSI measurement domains; run the short TDD scenario and inspect its
+real tables/images; only then prepare continuous IQ for the named instruments.
+No production FDD/25 dB run or `testAll` was launched at this checkpoint.
+
+## Actual PDCCH receive boundary and legacy grant shortcuts (earlier checkpoint)
 
 **The main chronological shared-stream scheduler is still incomplete. No new
 production 12 dB TDD run, FDD run, 25 dB run or instrument capture is qualified

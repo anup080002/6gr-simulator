@@ -44,5 +44,33 @@ assert(logical(scaled.Available) && ...
 assert(abs(double(scaled.NoiseDebiasedSS_RSRP_dBm) - ...
     (double(measured.NoiseDebiasedSS_RSRP_dBm) - 40)) < 1e-9, ...
     "Noise-debiased SS-RSRP must preserve the exact common power scaling.");
+% Known phase-selective unit fixture: a linear frequency phase ramp leaves
+% RE energy unchanged but cancels a coherent frequency-wide average.
+phased=rxGrid.*exp(1j*2*pi*reshape((0:239)/127,[],1));
+selective=sixgr.phy.refsig.measureSSSINRFromSSBGrid(phased,nCellID,iBarSSB);
+assert(selective.Available,selective.FailureReason);
+assert(max(abs(selective.RawObservedSS_RSRPPerReceiveAntenna_dBm- ...
+    measured.RawObservedSS_RSRPPerReceiveAntenna_dBm))<1e-10, ...
+    'A pure frequency phase ramp must not erase per-RE SSS received power.');
+coherent=nrSSBMeasurements(phased,nCellID);
+assert(measured.RawObservedSS_RSRP_dBm-max(coherent.RSRPPerAntenna)>10, ...
+    'Fixture must expose cancellation of the obsolete coherent-mean estimator.');
+% Non-SSS energy is not an authorized interference measurement resource.
+% Poison it while preserving every actual SSS sample.
+outside=rxGrid;
+sss=nrSSSIndices;
+mask=true(240,4); mask(sss)=false;
+for branch=1:nRx
+    plane=outside(:,:,branch); plane(mask)=plane(mask)*1000; outside(:,:,branch)=plane;
+end
+same=sixgr.phy.refsig.measureSSSINRFromSSBGrid(outside,nCellID,iBarSSB);
+assert(isequaln(same.DesiredPowerPerReceiveAntenna_W,measured.DesiredPowerPerReceiveAntenna_W) && ...
+    isequaln(same.NoiseInterferencePowerPerReceiveAntenna_W,measured.NoiseInterferencePowerPerReceiveAntenna_W));
+assert(measured.NoiseInterferenceRECount==numel(sss) && measured.ReferenceSignals=="SSS_only");
+silent=sixgr.phy.refsig.measureSSSINRFromSSBGrid(complex(zeros(240,4,2)),nCellID,iBarSSB);
+assert(~silent.Available && ~isfinite(silent.NoiseDebiasedSS_RSRP_dBm) && ...
+    ~isfinite(silent.SS_SINR_dB), ...
+    'A complete but silent observation cannot manufacture desired power or finite SINR.');
+disp('SSS_PHYSICAL_MEASUREMENT_PASS: linear RE power, phase selectivity, reference-scoped disturbance and absolute units.');
 ok = true;
 end

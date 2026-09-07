@@ -1,9 +1,10 @@
 function out = measureSSSINRFromSSBGrid(ssbGrid, nCellID, iBarSSB)
 %MEASURESSSINRFROMSSBGRID Measure practical TS 38.215 SS-SINR evidence.
-%   The desired-power term is the SSS RSRP returned by nrSSBMeasurements.
-%   Noise plus interference is measured from genuinely unoccupied REs in
-%   the same 240-by-4 SS/PBCH block bandwidth.  No configured SNR, PBCH
-%   post-equalization SINR, or padded resource-grid samples are used.
+%   Linear per-RE SSS power (38.215 5.1.1/5.1.5), not squared coherent
+%   frequency averaging. Disturbance is estimated on the received SSS
+%   reference REs by nrChannelEstimate, separately per receive branch.
+%   No unconfigured null-RE interference resource, oracle channel, fixed
+%   SNR or padded receive samples are substituted for that measurement.
 
 if nargin < 3
     iBarSSB = NaN;
@@ -30,50 +31,37 @@ out = struct( ...
     "DesiredPowerPerReceiveAntenna_W", nan(1, size(ssbGrid, 3)), ...
     "NoiseInterferenceRECount", 0, ...
     "MeasurementMethod", ...
-        "ts38215_sss_rsrp_over_same_ssb_bandwidth_unoccupied_re_noise_interference", ...
+        "ts38215_sss_linear_re_power_received_reference_disturbance_same_ssb_bandwidth", ...
+    "NoiseInterferenceEstimator", "nrChannelEstimate_on_SSS_reference_REs_per_receive_branch", ...
+    "ReferenceSignals", "SSS_only", ...
     "ReferencePlane", "ue_antenna_connector_received_ssb_grid", ...
     "AntennaAggregation", "maximum_valid_receive_branch_ts38215_diversity_rule", ...
     "Status", "not_attempted", ...
     "FailureReason", "");
 
 try
-    if isfinite(iBarSSB) && iBarSSB >= 0 && iBarSSB <= 7 && iBarSSB == round(iBarSSB)
-        measurements = nrSSBMeasurements(ssbGrid, nCellID, iBarSSB);
-    else
-        measurements = nrSSBMeasurements(ssbGrid, nCellID);
-    end
-
-    occupied = false(240, 4);
-    occupied(nrPSSIndices) = true;
-    occupied(nrSSSIndices) = true;
-    occupied(nrPBCHIndices(nCellID)) = true;
-    occupied(nrPBCHDMRSIndices(nCellID)) = true;
-    noiseIndices = find(~occupied);
-    out.NoiseInterferenceRECount = numel(noiseIndices);
-    if isempty(noiseIndices)
-        error("sixgr:refsig:NoSSBNoiseInterferenceREs", ...
-            "The received SS/PBCH block has no unoccupied REs for noise/interference measurement.");
-    end
-
-    rsrp_dBm = double(measurements.RSRPPerAntenna(:).');
+    % PBCH DM-RS is optional for these measurements. Use the mandatory SSS
+    % set only, avoiding an implicit equal-EPRE assumption for mixed RSs.
+    sssIndices=nrSSSIndices;
+    reference=complex(zeros(240,4,'like',real(ssbGrid)));
+    reference(sssIndices)=nrSSS(nCellID);
+    out.NoiseInterferenceRECount=numel(sssIndices);
     nRx = size(ssbGrid, 3);
-    if numel(rsrp_dBm) ~= nRx
-        error("sixgr:refsig:SSBMeasurementAntennaMismatch", ...
-            "nrSSBMeasurements returned %d branches for an NRx=%d grid.", ...
-            numel(rsrp_dBm), nRx);
-    end
     for rxIdx = 1:nRx
         branchGrid = double(ssbGrid(:, :, rxIdx));
-        noiseInterference_W = mean(abs(branchGrid(noiseIndices)).^2, "omitnan");
-        rsrp_W = 10 .^ ((rsrp_dBm(rxIdx) - 30) / 10);
-        % nrSSBMeasurements observes noisy SSS REs.  Removing the measured
-        % same-bandwidth noise contribution prevents a positive low-SNR
-        % bias while preserving the TS 38.215 desired-power definition.
+        rsrp_W=mean(abs(branchGrid(sssIndices)).^2);
+        [~,noiseInterference_W]=nrChannelEstimate(branchGrid,double(reference),'CDMLengths',[1 1]);
+        if ~isscalar(noiseInterference_W) || ~isfinite(noiseInterference_W) || noiseInterference_W<0
+            error('sixgr:refsig:InvalidSSSReceivedDisturbance','SSS reference estimation did not produce a finite nonnegative variance.');
+        end
+        % The full per-RE disturbance belongs to a linear per-RE power
+        % estimator. Subtracting it from squared coherent-mean power was
+        % inconsistent and erased valid frequency-selective received power.
         desired_W = max(rsrp_W - noiseInterference_W, 0);
         out.RSRPPowerPerReceiveAntenna_W(rxIdx) = rsrp_W;
         out.NoiseInterferencePowerPerReceiveAntenna_W(rxIdx) = noiseInterference_W;
         out.DesiredPowerPerReceiveAntenna_W(rxIdx) = desired_W;
-        out.RawObservedSS_RSRPPerReceiveAntenna_dBm(rxIdx) = rsrp_dBm(rxIdx);
+        out.RawObservedSS_RSRPPerReceiveAntenna_dBm(rxIdx) = 10*log10(rsrp_W)+30;
         if isfinite(desired_W) && desired_W > 0
             out.NoiseDebiasedSS_RSRPPerReceiveAntenna_dBm(rxIdx) = ...
                 10 * log10(desired_W) + 30;

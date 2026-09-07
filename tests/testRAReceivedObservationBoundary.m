@@ -15,9 +15,15 @@ rng(78132,'twister');
     'AllowRuntimeStageWaveformComposition',false, ...
     'StageAction','prepare_next_stage','ReceiveThroughTime_s',0);
 stages = ["Msg1","Msg2","Msg3","Msg4","RRCSetupComplete"];
+scaleFields = ["PreambleTxAmplitudeScale","Msg2TxAmplitudeScale", ...
+    "Msg3TxAmplitudeScale","Msg4TxAmplitudeScale","SetupCompleteTxAmplitudeScale"];
+executedScales = nan(size(stages));
 for index = 1:numel(stages)
     tx = prepared.PreparedTransmission;
     assert(tx.StageName == stages(index) && height(prepared.RuntimeStageRows) == index-1);
+    executedScales(index) = prepared.(scaleFields(index));
+    assert(isfinite(executedScales(index)) && executedScales(index) > 0, ...
+        'A prepared real transmission must retain its applied amplitude scale.');
     fs = tx.SampleRate_Hz;
     first = round(tx.StartTime_s*fs);
     tailSamples = 7;
@@ -63,6 +69,10 @@ for index = 1:numel(stages)
         held.RuntimeExecutionState=="pending_stage_receive", ...
         'Resuming without re-supplying the buffer must retain its actual receive-completion boundary.');
     [decoded, checkpoint] = localComplete(cfg,heldCheckpoint,observation,tx);
+    for prior = 1:index
+        assert(isequal(decoded.(scaleFields(prior)),executedScales(prior)), ...
+            'Later received RAR power commands must not erase or alter earlier TX scaling evidence.');
+    end
     rows = decoded.RuntimeStageRows;
     row = rows(end,:);
     assert(height(rows) == index && row.StageName == stages(index));
