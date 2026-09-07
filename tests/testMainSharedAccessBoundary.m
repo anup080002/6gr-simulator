@@ -3,7 +3,10 @@ function ok=testMainSharedAccessBoundary(folder)
 % This is deliberately NOT a full-run pass. Verify actual SSB/TRS and Msg1
 % publication while retaining a genuine failed-access/no-data result.
 setup6GRSimToolkit('Verbose',false);
-if nargin<1, folder=diagnoseMainSharedRA(36); end
+if nargin<1
+    folder=diagnoseMainSharedRA(36,fullfile('simulator','configs','scenarios', ...
+        'lls_causal_tdd_ra_retry_fixture.yaml'));
+end
 files=dir(fullfile(folder,'**','*pbch*trials*.csv'));
 found=false;
 for f=files(:).'

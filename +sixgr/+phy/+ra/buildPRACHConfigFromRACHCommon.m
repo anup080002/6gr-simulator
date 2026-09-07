@@ -26,6 +26,9 @@ base.random_access = struct( ...
     "enable_frequency_estimation_metric", logical(sixgr.util.structGet( ...
         cfg, "random_access.enable_frequency_estimation_metric", false)));
 base.phy.carrier.NCellID = double(raCfg.NCellID);
+if isfield(cfg.random_access,'target_false_alarm_probability')
+    base.random_access.target_false_alarm_probability=cfg.random_access.target_false_alarm_probability;
+end
 base.phy.carrier.NSizeGrid = double(raCfg.NSizeGrid);
 base.phy.carrier.SubcarrierSpacing = double(raCfg.CarrierSCSkHz);
 base.phy.duplex.mode = char(duplexMode);

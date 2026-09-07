@@ -43,7 +43,8 @@ if backendMode == "toolbox_peak"
     [idx0, offset0, detInfo] = localDetectByToolboxPRACHDetect( ...
         rxWaveform, cfg, occasion, candidateSet, thresholdMode, explicitThreshold);
 else
-    [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet);
+    [idx0, offset0, detInfo] = localDetectByWaveformCorrelation( ...
+        rxWaveform, cfg, occasion, candidateSet, thresholdMode, explicitThreshold);
 end
 
 peaks = double(detInfo.CorrelationPeaks(:));
@@ -57,7 +58,7 @@ if isempty(maxIdx) || ~isfinite(peakMetric)
     peakMetric = NaN;
 end
 candidateDetected = candidateSet(maxIdx);
-if backendMode == "toolbox_peak" && ~isempty(idx0)
+if ~isempty(idx0)
     % Root-sequence peaks can tie across cyclic shifts. Preserve the
     % measured peaks exactly and use the detector's decoded identity;
     % never perturb a correlation value to force max() to pick it.
@@ -68,14 +69,22 @@ if backendMode == "toolbox_peak" && ~isempty(idx0)
     candidateDetected=candidateSet(maxIdx);
     peakMetric=peaks(maxIdx);
 end
-[threshold, thresholdInfo] = localResolveThreshold(peaks, thresholdMode, explicitThreshold, cfg, detInfo);
-if backendMode == "toolbox_peak" && isfield(detInfo, "DetectionThreshold")
-    tbThreshold = double(detInfo.DetectionThreshold);
-    if isfinite(tbThreshold) && tbThreshold >= 0
-        threshold = tbThreshold;
-        thresholdInfo.BackgroundComponent = tbThreshold;
-        thresholdInfo.ThresholdScale = 1;
+if contains(string(detInfo.DetectorBackend),"nrPRACHDetect")
+    % Do not calculate a legacy CFAR/peak-guard threshold, overwrite it
+    % with nrPRACHDetect's value, then export the unused heuristic as if
+    % it controlled this decision. Default thresholds are receiver policy,
+    % not a single-observation proof of a requested false-alarm rate.
+    threshold=double(detInfo.DetectionThreshold);
+    validateattributes(threshold,{'numeric'},{'scalar','real','finite','>=',0,'<=',1});
+    thresholdInfo=localEmptyThresholdInfo();
+    if thresholdMode=="fixed"
+        thresholdInfo.Source="configured_fixed_nrPRACHDetect";
+    else
+        thresholdInfo.Source="nrPRACHDetect_default_format_LRA_repetitions_rx_antennas";
     end
+else
+    error('sixgr:rach:PRACHDetector:UnknownDecisionBackend', ...
+        'PRACH decisions must retain the actual nrPRACHDetect threshold.');
 end
 detected = isfinite(peakMetric) && peakMetric >= threshold && ~isempty(idx0);
 
@@ -108,6 +117,9 @@ det.TimingOffsetSamples = double(offset);
 det.PeakMetric = double(peakMetric);
 det.Threshold = double(threshold);
 det.ThresholdMode = char(thresholdMode);
+det.ThresholdSource = thresholdInfo.Source;
+det.ThresholdCalibrationStatus = "single_detection_not_statistical_qualification";
+det.ConfiguredTargetFalseAlarmProbability = double(sixgr.util.structGet(cfg,"TargetFalseAlarmProbability",NaN));
 det.CorrelationPeaks = peaks;
 det.CandidatePreambles = candidateSet(:);
 toolboxDetections = double(sixgr.util.structGet( ...
@@ -140,7 +152,8 @@ det.ThresholdGlobalPeakComponent = double(sixgr.util.structGet(thresholdInfo, "G
 det.TargetFalseAlarmProbability = double(sixgr.util.structGet(thresholdInfo, "TargetFalseAlarmProbability", NaN));
 det.PeakGuardFactor = double(sixgr.util.structGet(thresholdInfo, "PeakGuardFactor", NaN));
 det.PeakToThresholdRatio = localSafeRatio(peakMetric, threshold);
-det.PeakToNoiseRatio = localSafeRatio(peakMetric, det.PDPNoiseFloor);
+tracePeak=double(sixgr.util.structGet(detInfo,'DiagnosticMatchedFilterPeak',peakMetric));
+det.PeakToNoiseRatio = localSafeRatio(tracePeak, det.PDPNoiseFloor);
 det.PeakToNoiseRatio_dB = localRatioToDb(det.PeakToNoiseRatio);
 det.FrequencyEstimate = freqEst;
 det.Occasion = occasion;
@@ -283,102 +296,33 @@ prach.FrequencyIndex = double(sixgr.util.structGet( ...
     prachIn, "FrequencyIndex", 0));
 end
 
-function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet)
-rx = localMatrix(rxWaveform);
-try
-    [idx0, offset0, detInfo] = localDetectByToolboxPRACHDetect( ...
-        rxWaveform, cfg, occasion, candidateSet, "auto", []);
-    bestIdx = round(double(sixgr.util.structGet(detInfo, "BestCandidateIndex", 1)));
-    bestIdx = max(1, min(numel(candidateSet), bestIdx));
-    ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
-        "PreambleIndex", double(candidateSet(bestIdx)));
-    [tracePeak, traceOffset, lags, metrics, antPeaks, antOffsets, timingWindow] = localCorrelationPeak(rx, ref, cfg);
-    peaks = double(sixgr.util.structGet(detInfo, "CorrelationPeaks", nan(numel(candidateSet), 1)));
-    offsets = double(sixgr.util.structGet(detInfo, "CorrelationOffsets", nan(numel(candidateSet), 1)));
-    if numel(peaks) ~= numel(candidateSet)
-        peaks = nan(numel(candidateSet), 1);
-    end
-    if numel(offsets) ~= numel(candidateSet)
-        offsets = nan(numel(candidateSet), 1);
-    end
-    if isfinite(tracePeak)
-        peaks(bestIdx) = max(peaks(bestIdx), double(tracePeak));
-    end
-    if isfinite(traceOffset)
-        offsets(bestIdx) = double(traceOffset);
-    end
-    if isempty(idx0) && any(isfinite(peaks))
-        idx0 = double(candidateSet(bestIdx));
-    end
-    offset0 = offsets(:);
-    detInfo.CorrelationPeaks = peaks(:);
-    detInfo.CorrelationOffsets = offsets(:);
-    detInfo.BestCandidateIndex = double(bestIdx);
-    detInfo.BestCorrelationTrace = struct( ...
-        "PreambleIndex", double(candidateSet(bestIdx)), ...
-        "LagSamples", double(lags(:)), ...
-        "CorrelationAbs", double(metrics(:)), ...
-        "AntennaPeakMetrics", double(antPeaks(:)), ...
-        "AntennaPeakLags", double(antOffsets(:)), ...
-        "TraceStatus", "real_lls_evidence");
-    detInfo.NumRepeatedSymbols = localFirstFinite(NaN, localRepeatedSymbolCount(ref));
-    detInfo.TimingSearchWindow = timingWindow;
-    detInfo.DetectorBackend = "matlab_5g_toolbox_nrPRACHDetect_plus_best_candidate_full_trace";
-    detInfo.ProcessingFlow = "nrPRACHDetect_all_candidates_then_inrepo_best_candidate_lag_trace";
-    return;
-catch
-    % Fall through to the legacy all-candidate trace path when Toolbox
-    % detection is unavailable for a focused PRACH evidence run.
+function [idx0, offset0, detInfo] = localDetectByWaveformCorrelation(rxWaveform, cfg, occasion, candidateSet, thresholdMode, explicitThreshold)
+% The NR receiver decides identity/threshold. The full waveform correlation
+% supplies a diagnostic trace and refines timing only for a detected index.
+% Never mix maxima from two statistics or silently switch detector backends.
+rx=localMatrix(rxWaveform);
+[idx0,offset0,detInfo]=localDetectByToolboxPRACHDetect( ...
+    rxWaveform,cfg,occasion,candidateSet,thresholdMode,explicitThreshold);
+bestIdx=double(detInfo.BestCandidateIndex);
+ref=sixgr.rach.generatePRACHWaveform(cfg,'Occasion',occasion, ...
+    'PreambleIndex',double(candidateSet(bestIdx)));
+[tracePeak,traceOffset,lags,metrics,antPeaks,antOffsets,timingWindow]= ...
+    localCorrelationPeak(rx,ref,cfg);
+if ~isempty(idx0) && isfinite(traceOffset)
+    offset0(bestIdx)=double(traceOffset);
 end
-peaks = nan(numel(candidateSet), 1);
-offsets = nan(numel(candidateSet), 1);
-traceCells = cell(numel(candidateSet), 1);
-timingWindow = struct();
-candidateRows = repmat(struct( ...
-    "PreambleIndex", NaN, ...
-    "PeakMetric", NaN, ...
-    "PeakLagSamples", NaN, ...
-    "AntennaCount", size(rx, 2), ...
-    "AntennaPeakMetrics", "", ...
-    "AntennaPeakLags", ""), numel(candidateSet), 1);
-numRepeatedSymbols = NaN;
-for iCand = 1:numel(candidateSet)
-    ref = sixgr.rach.generatePRACHWaveform(cfg, "Occasion", occasion, ...
-        "PreambleIndex", double(candidateSet(iCand)));
-    numRepeatedSymbols = localFirstFinite(numRepeatedSymbols, localRepeatedSymbolCount(ref));
-    [peaks(iCand), offsets(iCand), lags, metrics, antPeaks, antOffsets, timingWindow] = localCorrelationPeak(rx, ref, cfg);
-    traceCells{iCand} = struct( ...
-        "PreambleIndex", double(candidateSet(iCand)), ...
-        "LagSamples", double(lags(:)), ...
-        "CorrelationAbs", double(metrics(:)), ...
-        "AntennaPeakMetrics", double(antPeaks(:)), ...
-        "AntennaPeakLags", double(antOffsets(:)));
-    candidateRows(iCand).PreambleIndex = double(candidateSet(iCand));
-    candidateRows(iCand).PeakMetric = double(peaks(iCand));
-    candidateRows(iCand).PeakLagSamples = double(offsets(iCand));
-    candidateRows(iCand).AntennaCount = double(size(rx, 2));
-    candidateRows(iCand).AntennaPeakMetrics = strjoin(string(double(antPeaks(:)).'), "|");
-    candidateRows(iCand).AntennaPeakLags = strjoin(string(double(antOffsets(:)).'), "|");
-end
-[bestPeak, bestIdx] = max(peaks, [], "omitnan");
-if isempty(bestIdx) || ~isfinite(bestPeak)
-    idx0 = [];
-    bestIdx = 1;
-else
-    idx0 = double(candidateSet(bestIdx));
-end
-offset0 = offsets(:);
-detInfo = struct();
-detInfo.CorrelationPeaks = peaks;
-detInfo.CorrelationOffsets = offsets;
-detInfo.BestCandidateIndex = double(bestIdx);
-detInfo.BestCorrelationTrace = traceCells{bestIdx};
-detInfo.CandidateResults = struct2table(candidateRows, "AsArray", true);
-detInfo.RxAntennaCount = double(size(rx, 2));
-detInfo.NumRepeatedSymbols = double(numRepeatedSymbols);
-detInfo.TimingSearchWindow = timingWindow;
-detInfo.DetectorBackend = "inrepo_section5_prach_waveform_matched_filter_noncoherent_pdp";
-detInfo.ProcessingFlow = "rx_waveform_per_antenna_correlation_pdp_noncoherent_combining_peak_window_threshold_ta";
+detInfo.CorrelationOffsets=offset0(:);
+detInfo.DiagnosticMatchedFilterPeak=double(tracePeak);
+detInfo.BestCorrelationTrace=struct( ...
+    'PreambleIndex',double(candidateSet(bestIdx)), ...
+    'LagSamples',double(lags(:)),'CorrelationAbs',double(metrics(:)), ...
+    'AntennaPeakMetrics',double(antPeaks(:)), ...
+    'AntennaPeakLags',double(antOffsets(:)), ...
+    'TraceStatus',"real_lls_evidence");
+detInfo.NumRepeatedSymbols=localRepeatedSymbolCount(ref);
+detInfo.TimingSearchWindow=timingWindow;
+detInfo.DetectorBackend="matlab_5g_toolbox_nrPRACHDetect_plus_best_candidate_full_trace";
+detInfo.ProcessingFlow="nrPRACHDetect_identity_and_threshold_then_waveform_trace_and_timing_refinement";
 end
 
 function [peakMetric, offsetSamples, lags, metrics, antPeaks, antOffsets, timingWindow] = localCorrelationPeak(rx, ref, cfg)
@@ -475,7 +419,7 @@ rx = complex(rx(:));
 ref = complex(ref(:));
 nRx = numel(rx);
 nRef = numel(ref);
-corrVals = conv(rx, flipud(conj(ref)), "full");
+corrVals = sixgr.rach.fullWaveformCorrelation(rx,ref);
 metrics = nan(size(corrVals));
 lags = (1:numel(corrVals)).' - nRef;
 rxPower = abs(rx).^2;
@@ -652,6 +596,14 @@ trace = struct( ...
     "NoiseFloor", NaN, ...
     "PeakLagSamples", double(peakLagSamples), ...
     "TraceStatus", "unavailable");
+trace.DecisionThreshold=double(threshold);
+trace.ThresholdSource="nrPRACHDetect_decision_statistic";
+if contains(string(detInfo.DetectorBackend),"full_trace")
+    % The auxiliary matched-filter trace is not nrPRACHDetect's statistic.
+    % Its y-axis must not carry the other statistic's decision threshold.
+    trace.Threshold=NaN;
+    trace.ThresholdSource="not_applicable_diagnostic_matched_filter_trace";
+end
 if ~(isstruct(detInfo) && isfield(detInfo, "BestCorrelationTrace") && isstruct(detInfo.BestCorrelationTrace))
     return;
 end
@@ -732,124 +684,16 @@ fracOffset = 0.5 * (yPrev - yNext) / denom;
 fracOffset = max(-0.5, min(0.5, double(fracOffset)));
 end
 
-function [threshold, info] = localResolveThreshold(peaks, modeToken, explicitThreshold, cfg, detInfo)
+function info=localEmptyThresholdInfo()
 info = struct( ...
     "BackgroundComponent", NaN, ...
     "GlobalPeakComponent", NaN, ...
     "BackgroundPDPLevel", NaN, ...
     "ThresholdScale", NaN, ...
     "TargetFalseAlarmProbability", NaN, ...
-    "PeakGuardFactor", NaN);
-if modeToken == "fixed"
-    threshold = explicitThreshold;
-    return;
+    "PeakGuardFactor", NaN, "Source", "");
 end
 
-finitePeaks = peaks(isfinite(peaks));
-if isempty(finitePeaks)
-    threshold = explicitThreshold;
-    return;
-end
-targetPfa = double(sixgr.util.structGet(cfg, "TargetFalseAlarmProbability", 1e-3));
-peakGuardFactor = double(sixgr.util.structGet(cfg, "PrachPeakGuardFactor", ...
-    sixgr.util.structGet(cfg, "PeakThresholdFactor", 0.1)));
-if ~(isfinite(peakGuardFactor) && peakGuardFactor >= 0 && peakGuardFactor <= 1)
-    peakGuardFactor = 0.1;
-end
-numRxAnt = double(sixgr.util.structGet(detInfo, "RxAntennaCount", ...
-    sixgr.util.structGet(cfg, "NumRxAntennas", 1)));
-scale = localFlexRANPRACHThresholdScale(cfg, numRxAnt);
-background = NaN;
-try
-    tr = detInfo.BestCorrelationTrace;
-    background = localBackgroundPDPLevel(double(tr.CorrelationAbs(:)), double(sixgr.util.structGet(tr, "PeakLagSamples", NaN)), cfg);
-catch
-end
-if ~(isfinite(background) && background >= 0)
-    robustCenter = median(finitePeaks);
-    robustSigma = 1.4826 * median(abs(finitePeaks - robustCenter));
-    gaussQuantile = max(1, sqrt(-2 * log(max(targetPfa, eps))));
-    backgroundComponent = robustCenter + gaussQuantile * robustSigma;
-else
-    backgroundComponent = background * scale;
-end
-globalPeakComponent = max(finitePeaks) * peakGuardFactor;
-threshold = max([double(explicitThreshold), double(backgroundComponent), double(globalPeakComponent)], [], "omitnan");
-if ~(isfinite(threshold) && threshold >= 0)
-    threshold = explicitThreshold;
-end
-info.BackgroundComponent = double(backgroundComponent);
-info.GlobalPeakComponent = double(globalPeakComponent);
-info.BackgroundPDPLevel = double(background);
-info.ThresholdScale = double(scale);
-info.TargetFalseAlarmProbability = double(targetPfa);
-info.PeakGuardFactor = double(peakGuardFactor);
-end
-
-function scale = localFlexRANPRACHThresholdScale(cfg, numRxAnt)
-fmt = upper(strtrim(string(sixgr.util.structGet(cfg, "ResolvedPRACHFormat", ...
-    sixgr.util.structGet(cfg, "RequestedPRACHFormat", "")))));
-fmt = erase(fmt, "FORMAT");
-if strlength(fmt) == 0
-    fmt = "0";
-end
-ant = [1 2 4];
-switch fmt
-    case {"0"}
-        vals = [17.5320 11.7240 8.5440];
-    case {"A1", "B1"}
-        vals = [11.3570 8.3450 6.6500];
-    case {"A2", "B2"}
-        vals = [8.3450 5.1500 4.1660];
-    case {"C2"}
-        vals = [14.3450 11.1500 10.1660];
-    case {"A3", "B3"}
-        vals = [7.2410 5.0130 4.2870];
-    case {"B4"}
-        vals = [6.0130 5.2870 4.8430];
-    otherwise
-        vals = [16.8390 11.3570 8.3450];
-end
-numRxAnt = max(1, double(numRxAnt));
-scale = interp1(ant, vals, min(max(numRxAnt, ant(1)), ant(end)), "linear");
-if numRxAnt > ant(end)
-    scale = vals(end);
-end
-end
-
-function background = localBackgroundPDPLevel(vals, peakLagSamples, cfg)
-vals = double(vals(:));
-vals = vals(isfinite(vals));
-if isempty(vals)
-    background = NaN;
-    return;
-end
-peakNeighborhood = round(double(sixgr.util.structGet(cfg, "PrachPeakNeighborhoodSamples", NaN)));
-if ~(isfinite(peakNeighborhood) && peakNeighborhood >= 0)
-    lra = double(sixgr.util.structGet(cfg, "ToolboxPRACH.LRA", NaN));
-    if isfinite(lra) && lra > 200
-        peakNeighborhood = 4;
-    else
-        peakNeighborhood = 8;
-    end
-end
-[~, peakIdx] = max(vals, [], "omitnan");
-if isfinite(peakLagSamples) && peakLagSamples >= 0 && peakLagSamples < numel(vals)
-    peakIdx = max(1, min(numel(vals), round(peakLagSamples) + 1));
-end
-keep = true(size(vals));
-lo = max(1, peakIdx - peakNeighborhood);
-hi = min(numel(vals), peakIdx + peakNeighborhood);
-keep(lo:hi) = false;
-bg = vals(keep);
-if isempty(bg)
-    bg = vals;
-end
-background = mean(bg, "omitnan");
-if ~(isfinite(background) && background >= 0)
-    background = median(vals, "omitnan");
-end
-end
 
 function aligned = localAlignWaveforms(rxWave, refWave, offsetSamples, cpLength)
 if nargin < 4 || isempty(cpLength) || ~isfinite(double(cpLength)) || double(cpLength) < 0

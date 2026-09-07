@@ -4724,7 +4724,9 @@ random_access:
   preamble_count: 64
   zero_correlation_zone: 8
   detection_threshold: 0.5
-  detection_threshold_mode: "fixed"
+  # Fixed value is inactive in auto mode. The main nrPRACHDetect receiver
+  # derives its threshold from format/LRA/repetitions/receive-column count.
+  detection_threshold_mode: auto
   msg3_enabled: true
   repetition_count: 1
   repetition_beam_mode: "same_beam"

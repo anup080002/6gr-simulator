@@ -1,7 +1,8 @@
 function ok=testMainSharedRARetry()
-% Authored nominal-12-dB TDD scenario: actual second PRACH after UE expiry.
+% Explicit high-threshold negative TDD fixture: real retry after UE expiry.
 % This proves retry causality/power authority, not full data qualification.
-folder=diagnoseMainSharedRA(58);
+folder=diagnoseMainSharedRA(58,fullfile('simulator','configs','scenarios', ...
+    'lls_causal_tdd_ra_retry_fixture.yaml'));
 pbch=readtable(fullfile(folder,'air_interface','csv','pbch_trials.csv'),'TextType','string');
 decoded=pbch(pbch.SIB1DLSCHCrcPass==1 & pbch.SIB1ASN1DecodeOk==1,:);
 assert(~isempty(decoded),'Main run must publish actual decoded SIB1 power evidence.');

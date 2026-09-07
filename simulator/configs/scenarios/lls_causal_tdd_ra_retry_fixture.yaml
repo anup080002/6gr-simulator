@@ -1,0 +1,12 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
+
+meta:
+  scenario_id: lls_causal_tdd_ra_retry_fixture
+  description: Explicit high-threshold TDD negative fixture for real PRACH retry timing.
+  purpose: Exercise UE RAR timeout and power ramping with an intentionally insensitive receiver; not production receiver qualification.
+  research_class: optional_research_experiment
+
+random_access:
+  detection_threshold_mode: fixed
+  detection_threshold: 0.5

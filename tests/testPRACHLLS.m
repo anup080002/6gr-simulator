@@ -1,29 +1,36 @@
-function ok = testPRACHLLS()
+function ok = testPRACHLLS(selectedNames)
 %TESTPRACHLLS Focused waveform PRACH LLS regression suite.
+% Optional names run an explicitly reported subset; no argument runs all.
 
 setup6GRSimToolkit("Verbose", false);
 
-testNoNoiseSanityDetection();
-testFalseAlarmModeWithPrachDisabled();
-testTimingOffsetRecovery();
-testCorrelationTraceMissCase();
-testCorrelationTraceFalseAlarmCase();
-testRestrictedSetNCSValidation();
-testPRACHOccasionSnapshotIsolation();
-testZCDPEBackwardCompatibleWaveform();
-testZCDPENonzeroDPIDetection();
-testZCDPERunnerExports();
-testMultipleSNRMonotonicitySanity();
-testWrongPreambleClassification();
-testCollisionModeTwoUEs();
-testDeterministicReproducibility();
+cases={@testContradictoryDuplexRejected,@testNoNoiseSanityDetection, ...
+    @testFalseAlarmModeWithPrachDisabled,@testTimingOffsetRecovery, ...
+    @testCorrelationTraceMissCase,@testCorrelationTraceFalseAlarmCase, ...
+    @testRestrictedSetNCSValidation,@testPRACHOccasionSnapshotIsolation, ...
+    @testZCDPEBackwardCompatibleWaveform,@testZCDPENonzeroDPIDetection, ...
+    @testZCDPERunnerExports,@testMultipleSNRMonotonicitySanity, ...
+    @testWrongPreambleClassification,@testCollisionModeTwoUEs, ...
+    @testDeterministicReproducibility};
+names=string(cellfun(@func2str,cases,'UniformOutput',false));
+if nargin>0
+    selectedNames=string(selectedNames);
+    assert(~isempty(selectedNames) && all(ismember(selectedNames,names)), ...
+        'Every explicitly selected PRACH subtest must exist.');
+    cases=cases(ismember(names,selectedNames));
+end
+for k=1:numel(cases)
+    name=func2str(cases{k}); fprintf('PRACH_SUBTEST_START %s\n',name);
+    feval(cases{k}); fprintf('PRACH_SUBTEST_PASS %s\n',name);
+end
+fprintf('PRACH_SUBTEST_COVERAGE %d/%d\n',numel(cases),numel(names));
 
 ok = true;
 end
 
 function testNoNoiseSanityDetection()
 cfg = localScenario("ScenarioName", "no_noise", "SNRSweep_dB", 100, "NumTrials", 1, "ThresholdSweep", 0.02);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(height(out.ROTable) == 1, "No-noise PRACH smoke must emit one RO row.");
 assert(all(out.ROTable.detected), "No-noise PRACH smoke must detect the preamble.");
 assert(all(out.ROTable.correct_detection), "No-noise PRACH smoke must classify a correct detection.");
@@ -32,7 +39,7 @@ end
 function testFalseAlarmModeWithPrachDisabled()
 cfg = localScenario("ScenarioName", "false_alarm", "SNRSweep_dB", [-10 0], ...
     "NumTrials", 3, "NumUEsPerRO", 0, "ActivePreamblePattern", false, "ThresholdSweep", 0.02);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(all(~out.TrialTable.preamble_tx_present), ...
     "False-alarm PRACH mode must not claim transmitted preambles.");
 assert(all(~out.TrialTable.detected), ...
@@ -55,6 +62,11 @@ det = sixgr.rach.PRACHDetector(rx, cfg, "Occasion", occ, ...
     "DetectionThresholdMode", "fixed", "DetectionThreshold", 0.02);
 timing = sixgr.rach.estimateTimingOffset(det.TimingOffsetSamples, tx.SampleRate_Hz, delaySamples);
 assert(logical(det.Detected), "Timing-offset recovery case must detect the preamble.");
+assert(det.DetectedPreambleIndex == 7 && det.DetectedPreambleIndexRaw == 7, ...
+    "Tied root-sequence peaks must not replace the receiver-decoded cyclic-shift identity.");
+assert(isfinite(det.TimingOffsetSamples), "A detected preamble must retain its measured timing.");
+assert(isnan(det.CorrelationTrace.Threshold) && det.CorrelationTrace.DecisionThreshold==det.Threshold, ...
+    "Do not overlay the NR decision threshold onto a different diagnostic correlation statistic.");
 assert(abs(double(timing.Error_us)) < 0.1, ...
     "Timing-offset recovery error must stay below 0.1 us for the deterministic fractional-delay case.");
 assert(isfield(det, "CorrelationTrace") && isstruct(det.CorrelationTrace), ...
@@ -70,9 +82,10 @@ assert(abs(double(det.CorrelationTrace.PeakLagSamples) - delaySamples) < 1.0, ..
 end
 
 function testCorrelationTraceMissCase()
-cfg = localScenario("ScenarioName", "trace_miss", "SNRSweep_dB", 100, ...
-    "NumTrials", 1, "ThresholdSweep", 2.0);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+% Exercise an actual noisy miss, not an out-of-range (>1) detector threshold.
+cfg = localScenario("ScenarioName", "trace_miss", "SNRSweep_dB", -20, ...
+    "NumTrials", 1, "ThresholdSweep", 0.99);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(istable(out.CorrelationTraceTable) && ~isempty(out.CorrelationTraceTable), ...
     "PRACH miss case must still export measured lag-domain correlation samples.");
 assert(all(ismember(localCorrelationTraceColumns(), string(out.CorrelationTraceTable.Properties.VariableNames))), ...
@@ -86,7 +99,7 @@ end
 function testCorrelationTraceFalseAlarmCase()
 cfg = localScenario("ScenarioName", "trace_false_alarm", "SNRSweep_dB", -20, ...
     "NumTrials", 1, "NumUEsPerRO", 0, "ActivePreamblePattern", false, "ThresholdSweep", 0.0);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(istable(out.CorrelationTraceTable) && ~isempty(out.CorrelationTraceTable), ...
     "PRACH false-alarm case must export measured lag-domain correlation samples.");
 assert(any(logical(out.CorrelationTraceTable.false_alarm)), ...
@@ -156,13 +169,17 @@ det = sixgr.rach.ZCDPEDetector(tx.Waveform, cfg, "Occasion", occ, ...
 assert(logical(det.Detected), "ZC-DPE detector must detect a no-noise nonzero-DPI PRACH waveform.");
 assert(double(det.DetectedPreambleIndex) == 3, "ZC-DPE detector must preserve the detected preamble index.");
 assert(double(det.ZCDPE.DPI_Detected) == 1, "ZC-DPE detector must recover the transmitted DPI index.");
+assert(det.ThresholdSource=="zcdpe_configured_fixed_matched_filter" && ...
+    det.ThresholdCalibrationStatus=="unqualified_research_detector" && ...
+    isempty(det.CorrelationTrace.LagSamples), ...
+    "A research decision must not inherit the NR detector's threshold source or lag trace.");
 end
 
 function testZCDPERunnerExports()
 cfg = localShortPRACHScenario("zcdpe_runner", ...
     "ZCDPE", struct("Enable", true, "DPI_D", 2, "DPI_d", 1, "NumSymbols", 2), ...
     "PreambleIndex", 3, "SNRSweep_dB", 100, "ThresholdSweep", 0.7, "NumTrials", 1);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(all(ismember(["zcdpe_enabled","prach_design","dpi_D","dpi_d_true","dpi_d_detected","dpi_correct"], ...
     string(out.ROTable.Properties.VariableNames))), ...
     "ZC-DPE PRACH runner must export design and DPI evidence columns.");
@@ -175,7 +192,7 @@ end
 function testMultipleSNRMonotonicitySanity()
 cfg = localScenario("ScenarioName", "snr_monotonicity", "SNRSweep_dB", [-35 -25 -15], ...
     "NumTrials", 6, "ThresholdSweep", 0.2);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 detProb = double(out.SummaryBySNR.DetectionProbability);
 assert(issorted(detProb), ...
     "DetectionProbability must be nondecreasing over the chosen SNR sweep sanity case.");
@@ -187,7 +204,7 @@ cfg = localScenario("ScenarioName", "wrong_preamble", "CarrierFrequencyHz", 700e
     "PRACHSubcarrierSpacing", 1.25, "PRACHFormat", "0", ...
     "NumUEsPerRO", 2, "EnableCollisionMode", false, "PreambleIndex", [5 12], ...
     "NumTrials", 1, "SNRSweep_dB", 30, "ThresholdSweep", 0.02);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(any(out.TrialTable.wrong_preamble), ...
     "Multi-UE different-preamble case must produce at least one wrong-preamble UE classification.");
 end
@@ -199,7 +216,7 @@ cfg = localScenario("ScenarioName", "collision_two_ue", "CarrierFrequencyHz", 4e
     "NumUEsPerRO", 2, "EnableCollisionMode", true, "NumTrials", 1, ...
     "SNRSweep_dB", 20, "ThresholdSweep", 0.02, "ChannelModel", "TDL-C", ...
     "DelaySpread_ns", 300, "Speed_kmh", 30, "Seed", 77);
-out = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 assert(height(out.TrialTable) == 2, ...
     "Two-UE collision PRACH case must emit one trial row per UE.");
 assert(numel(unique(out.TrialTable.transmitted_preamble_index)) == 1, ...
@@ -210,14 +227,36 @@ function testDeterministicReproducibility()
 cfg = localScenario("ScenarioName", "repro", "SNRSweep_dB", [-20 -10], ...
     "NumTrials", 3, "ThresholdSweep", 0.2, "ChannelModel", "TDL-C", ...
     "DelaySpread_ns", 300, "Speed_kmh", 30, "Seed", 333);
-out1 = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
-out2 = sixgr.rach.runPRACHLLS(sixgr.config.defaultConfig(), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out1 = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
+out2 = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "ScenarioMatrix", cfg);
 ro1 = localDropRuntimeLatencyColumns(out1.ROTable);
 ro2 = localDropRuntimeLatencyColumns(out2.ROTable);
 assert(isequaln(out1.TrialTable, out2.TrialTable), ...
     "PRACH LLS trials must be reproducible for a fixed seed.");
 assert(isequaln(ro1, ro2), ...
     "PRACH LLS RO summaries must be reproducible for a fixed seed.");
+end
+
+function base=localBaseConfig(cfg)
+% The fixture base must agree with its explicit FDD/TDD scenario authority.
+base=sixgr.config.defaultConfig();
+base.phy.duplex.mode=cfg.DuplexMode;
+% These are small waveform/detection fixtures, not the system catalog's
+% inherited 4-TX/64-RX massive-array campaign. Declare the tested layout.
+% Production and dedicated antenna-dimension tests keep their own authority.
+base.random_access.num_tx_antennas=1;
+base.random_access.num_rx_antennas=2;
+end
+
+function testContradictoryDuplexRejected()
+cfg=localScenario(); base=localBaseConfig(cfg); base.phy.duplex.mode="TDD";
+try
+    sixgr.rach.runPRACHLLS(base,"WriteOutputs",false,"ScenarioMatrix",cfg);
+catch e
+    assert(string(e.identifier)=="sixgr:phy:frame:DuplexAuthorityMismatch",e.message);
+    return;
+end
+error('testPRACHLLS:MissingDuplexRejection','Conflicting duplex authorities must still be rejected.');
 end
 
 function cfg = localScenario(varargin)

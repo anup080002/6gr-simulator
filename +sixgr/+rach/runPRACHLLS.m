@@ -62,10 +62,12 @@ for iScenario = 1:numel(scenarioMatrix)
                     roCount = roCount + 1;
                     roRows{roCount, 1} = simOut.ROSummary;
                     if isfield(simOut, "CorrelationTraceRows") && ~isempty(simOut.CorrelationTraceRows)
-                        for iCorr = 1:numel(simOut.CorrelationTraceRows)
-                            corrCount = corrCount + 1;
-                            corrRows{corrCount, 1} = simOut.CorrelationTraceRows(iCorr);
-                        end
+                        % Retain one columnar block per executed occasion.
+                        % Expanding every lag into a separate cell-held struct
+                        % creates excessive metadata copies during concatenation.
+                        % The samples, row order, field types and labels are unchanged.
+                        corrCount = corrCount + 1;
+                        corrRows{corrCount, 1} = localStructArrayToTable(simOut.CorrelationTraceRows);
                     end
                     for iRow = 1:numel(simOut.UERows)
                         trialCount = trialCount + 1;
@@ -85,7 +87,11 @@ if verbose
 end
 trialTable = localStructArrayToTable(localCellStructArray(trialRows));
 roTable = localStructArrayToTable(localCellStructArray(roRows));
-correlationTraceTable = localStructArrayToTable(localCellStructArray(corrRows));
+if isempty(corrRows)
+    correlationTraceTable = table();
+else
+    correlationTraceTable = vertcat(corrRows{:});
+end
 if verbose
     fprintf("PRACH metrics start: trialRows=%d roRows=%d\n", height(trialTable), height(roTable));
 end
@@ -769,7 +775,9 @@ rows = repmat(struct( ...
     "lag_samples", NaN, ...
     "lag_us", NaN, ...
     "correlation_abs", NaN, ...
-    "threshold", double(threshold), ...
+    "threshold", double(sixgr.util.structGet(trace, "Threshold", NaN)), ...
+    "decision_threshold", double(det.Threshold), ...
+    "threshold_source", string(sixgr.util.structGet(trace, "ThresholdSource", "not_available")), ...
     "noise_floor", double(noiseFloor), ...
     "peak_lag_samples", double(peakLagSamples), ...
     "timing_advance_samples", double(roSummary.EstimatedTimingOffset_samples), ...

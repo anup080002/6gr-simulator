@@ -50,12 +50,24 @@ det.TimingOffsetSamples = search.TimingOffsetSamples;
 det.PeakMetric = search.PeakMetric;
 det.Threshold = double(threshold);
 det.ThresholdMode = char(thresholdMode);
+det.DetectorBackend="zcdpe_waveform_candidate_dpi_correlation";
+det.ThresholdSource="zcdpe_configured_fixed_matched_filter";
+if thresholdMode=="auto"
+    det.ThresholdSource="zcdpe_unqualified_peak_background_heuristic";
+end
+det.ThresholdCalibrationStatus="unqualified_research_detector";
+% The baseline NR trace is not this research detector's decision trace.
+% Keep it explicitly diagnostic; do not export its samples with DPI outcomes.
+det.CorrelationTrace=struct('LagSamples',zeros(0,1),'CorrelationAbs',zeros(0,1), ...
+    'Threshold',NaN,'NoiseFloor',NaN,'PeakLagSamples',NaN, ...
+    'TraceStatus',"unavailable_zcdpe_decision_trace_not_published");
 det.CorrelationPeaks = search.CandidatePeaks(:);
 det.CandidatePreambles = candidateSet(:);
 det.MultiCandidateAboveThreshold = sum(double(search.CandidatePeaks) >= double(threshold)) > 1;
 det.ZCDPE = localEmptyZCDPE(zcfg);
 det.ZCDPE.LegacyNRDetected = logical(baselineDet.Detected);
 det.ZCDPE.LegacyNRPeakMetric = double(baselineDet.PeakMetric);
+det.ZCDPE.LegacyNRCorrelationTrace=baselineDet.CorrelationTrace;
 det.ZCDPE.SearchBackend = "waveform_candidate_dpi_correlation";
 
 enableFreq = logical(localFirstNonEmpty(opts.EnableFrequencyEstimationMetric, ...
@@ -207,7 +219,7 @@ ref = ref(isfinite(real(ref)) & isfinite(imag(ref)));
 if isempty(rx) || isempty(ref)
     return;
 end
-xc = conv(rx(:), flipud(conj(ref(:))));
+xc = sixgr.rach.fullWaveformCorrelation(rx,ref);
 lags = (1:numel(xc)).' - numel(ref);
 valid = lags >= 0 & lags <= max(0, numel(rx) - 1);
 if ~any(valid)

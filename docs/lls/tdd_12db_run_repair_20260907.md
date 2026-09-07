@@ -1,6 +1,188 @@
 # Short TDD run: measured failures and remaining integration work
 
-## UE-filtered PRACH reference checkpoint (current, 2026-09-07)
+## PRACH receiver policy and identity repair (2026-09-07)
+
+This repair does **not** qualify all uplink channels or the complete shared
+scheduler. The following evidence is separate from the older failed-access
+checkpoint below; no old run files were overwritten or promoted to a pass.
+
+- Replayed the two original actual Msg1 captures. The logical and physical
+  emitted waveforms decode the correct preamble with correlation 1. The
+  received captures have decision peaks 0.340459538 and 0.443858178: the old
+  fixed threshold 0.5 rejects them. The toolbox default for this actual
+  B4/LRA-139/12-repetition/2-RX configuration is 0.0204124145 and decodes
+  preamble 0 at 7 samples on both captures. TX active-window power and
+  whole-capture mean power differ because of inactive/guard samples; this
+  is not evidence of an extra attenuation requiring a power boost.
+- Ran 12,000 independent complex-white-noise receiver trials, with fixed
+  sample count and four predeclared YAML seeds, without outcome-dependent
+  stopping or threshold fitting. There were zero false alarms; the exact
+  two-sided 95% binomial upper bound is approximately 0.00030736, below
+  0.001. This is receiver-algorithm evidence for the captured noise/array
+  configuration, **not** a full RF false-alarm or detection-probability
+  qualification. Results: `C:/Users/anup0/AppData/Local/Temp/`
+  `prach_receiver_noise_qualification_20260907`; log:
+  `logs/prach_receiver_noise_qualification_20260907.log`.
+- Both causal YAML profiles now explicitly select `auto`. Fixed-threshold
+  operation remains supported. The intentional high-threshold main retry
+  test uses `lls_causal_tdd_ra_retry_fixture.yaml`, explicitly labeled as a
+  negative research fixture, rather than requiring the production receiver
+  to remain insensitive. This is a receiver-implementation policy, not a
+  claimed 3GPP-mandated numerical threshold. See
+  [nrPRACHDetect](https://www.mathworks.com/help/5g/ref/nrprachdetect.html)
+  and the separate
+  [PRACH detection/false-alarm example](https://www.mathworks.com/help/5g/ug/5g-nr-prach-detection-test.html).
+- The full-trace wrapper had a genuine identity bug: the actual decoder
+  returned preamble 7, but a subsequent maximum over tied root metrics
+  selected preamble 0 and its NaN timing. It now retains the decoded
+  identity and refines only that candidate's timing. The unrelated
+  matched-filter statistic no longer replaces the decision peak; the
+  silent alternate-detector catch/fallback and unused heuristic threshold
+  implementation were removed. Diagnostic trace thresholds are unavailable
+  where they would mix two different statistics; actual decision thresholds
+  remain separately exported. Unused PFA/CFAR inputs are not labeled as
+  measured decision inputs or a statistical qualification.
+- The PRACH fixture now supplies internally consistent FDD/TDD authority,
+  with an explicit negative test preserving contradictory-duplex rejection.
+  Its missed-detection trace uses actual noise and a legal threshold, not a
+  threshold greater than the receiver's supported maximum of 1.
+
+### Fresh main run and remaining failure
+
+`C:/Users/anup0/AppData/Local/Temp/main_shared_ra_20260907_190456`, log
+`logs/prach_auto_main_tdd_20260907.log`, MATLAB **exit 1**. Configured limit:
+25 slots; nominal receiver-noise operating-point label: 12 dB (not calibrated
+measured SINR). Actual shared-stream evidence:
+
+- Msg1 at absolute slot 14: received samples `[111360,115215)` at 7.68 MHz.
+- First UE RAR observation, absolute slot 15: genuine DCI CRC failure.
+- Next observation, absolute slot 16: actual DCI and PDSCH CRC passes,
+  matching RAPID, valid decoded UL grant and RAR accepted. Samples
+  `[122880,130575)`, with `ProxyUsed=0` and `FallbackUsed=0`.
+- At scheduler slot 21 (absolute slot 20), the UL-to-DL direction reversal
+  fails with `WAVEFORM:TDDChannelTailNotConsumed`: required 16 actual idle
+  samples, observed zero. The pending Msg3 receive window has not completed;
+  no Msg3 CRC, completed access, or connected DL/UL data pass is claimed.
+
+The native reciprocal-object swap resets its input filter. The current
+owner therefore cannot swap away a still-pending UL response. The guard
+remains intact. Do not fix this by truncating received samples, resetting
+the channel, inventing idle samples, or changing the TDD pattern to rescue
+the test. Resolve actual UE DL-reference / UE TX / gNB RX origins first,
+including decoded/default `N_TA,offset` authority and received TA, then
+preserve pending directional FIR responses where required. Current shared
+RA still rejects nonzero RAR TA and does not implement `N_TA,offset`; this
+is unfinished integration, not a verified timing solution. Timing authority:
+[TS 38.213 clause 4.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+
+Exhaustive available-output audit with **five** leading rows of every CSV:
+`results/lls/qualification_working/reviews/prach_auto_main_first5_20260907/`.
+54 CSVs, 11,288 rows, 3,452 columns; zero parse/structural/infinity failures.
+Strict value-closure **fails**: 42 populated files have no applicable domain
+contract in this aborted checkpoint and 12 header-only files lack completed
+applicability classification. Zero semantic-check entries is not a pass.
+There are zero PNGs (`SaveFigures=false` diagnostic), and no plot-completeness
+claim. Token matches containing `proxy` include explicit unavailable-proxy
+labels; they are not automatically evidence of executed approximations.
+
+The four `pbch_trials.csv` rows were also checked by **column name**, not
+position in a long CSV row. Actual `ReferenceSignalTxEPRE_dBm` is
+5.00000000000006 dBm, `SignalledSSPBCHBlockPower_dBm` is 5 dBm, and the
+reported delta is approximately 6.4e-14 dB for every beam. Their measured
+SS-RSRP values are -80.9243, -89.2872, -77.4934 and -76.0461 dBm for SSB
+indices 1, 2, 3 and 0 respectively. There is no demonstrated signalled-versus-
+transmitted SSS EPRE mismatch in these rows. This does not close the overall
+geometry/beam/noise/SINR calibration or make the nominal 12 dB label a
+measured operating point.
+
+### Verification status
+
+The first identity rerun command used a nonexistent `runTests` helper and
+failed before any test execution; it was corrected to `runFocusedTests`.
+`testPRACHThresholdPolicy` then passed. The following `testPRACHLLS` execution
+caused severe memory pressure and was explicitly stopped without completion;
+that suite is **not passed**. Its remaining checks require a bounded rerun
+and its full-trace accumulation/resource scaling needs separate attention.
+The failure is retained in `logs/prach_receiver_identity_focused_verified_20260907.log`.
+
+Subsequent named execution localized the resource problems. The smoke
+fixture inherited **4 TX / 64 RX** from `core_parameter_catalog.yaml`; its
+collision case committed over 26 GB of private memory. The smoke fixture
+now declares **1 TX / 2 RX** without changing production configuration or
+the dedicated antenna-dimension tests. The NR multi-SNR and wrong-preamble
+tests had passed before that interrupted collision execution. The optional
+ZC-DPE runner was separately stopped incomplete while its many direct
+full-waveform convolutions were still running; no interrupted suite is
+counted as a complete pass.
+
+Following the MATLAB-performance skill, correlation-table accumulation now
+retains columnar per-occasion blocks with the same sample rows, order, types
+and labels. `fullWaveformCorrelation` performs the full zero-padded linear
+correlation with FFTs, preserving all lags and candidate searches. Its
+numerical parity test compares against `conv` for single/double precision,
+unequal lengths, amplitude scales, impulse timing and empty/nonfinite
+reference-kernel semantics. No signal-quality threshold, trial count,
+sampling resolution or decoder assertion was weakened for speed.
+
+ZC-DPE no longer inherits an NR decision-threshold source or exports the NR
+reference trace with DPI outcomes. Its threshold is explicitly an
+unqualified research-detector policy. The NR trace remains separately
+diagnostic; an unavailable research decision trace is not fabricated.
+
+The corrected complete **15/15 PRACH subtests** and correlation-kernel
+parity test passed in `logs/prach_linear_correlation_final_20260907.log`.
+This includes actual noisy miss/false-alarm traces, fractional preamble-7
+timing, collision, reproducibility and the optional ZC-DPE smoke tests.
+This limited study check is not 6G standards conformance.
+
+The earlier 13-entry NR/config/grant/export batch passed with MATLAB exit 0:
+`logs/prach_policy_export_nr_focused_20260907.log` (Msg1, B4 timing, trace
+integrity, TA, config, DL, UL, reference points, grants, strict proxies and
+both E2E truth/export checks). Eight bounded PRACH subtests and eight
+access/hybrid/strict regressions also passed in
+`logs/prach_identity_bounded_final_20260907.log`; that process then exited 1
+because the skill's `selftest6GRSimToolkit` command is absent from this
+checkout. Do not describe that batch as an exit-0 run or invent a substitute
+self-test.
+
+The final `prach_linear_correlation_final_20260907.log` process completed
+with **exit 0**: kernel parity, all 15 PRACH subtests, then 10/10 focused
+tests (RAR receive window, received-observation boundary, shared PRACH power,
+threshold policy, hybrid, calibration coverage, strict proxy guards,
+no-fallback guards and both E2E truth/export checks). The post-FFT boundary
+batch also completed with **exit 0**, 5/5 tests: Msg1 waveform detection,
+B4 short-format timing, correlation trace adapter, primary trace integrity
+and received RAR TA authority. Log:
+`logs/prach_post_fft_boundary_verified_20260907.log`.
+
+The newly explicit high-threshold negative main-retry YAML compiles and its
+threshold policy is asserted, but the 36/58-slot negative main fixtures
+were not rerun in this checkpoint. No `testAll`, 25 dB scenario or new FDD
+campaign was launched; existing tests include explicit FDD compatibility
+and E2E fixtures.
+
+### Not yet closed by these passes
+
+1. Shared UL clock: distinct received-DL reference, UE TX and gNB RX origins,
+   received/default timing-advance offset, received TA application without
+   cropping, and pending reciprocal channel response at direction reversal.
+2. Actual Msg3 CRC, RAR-granted Msg3 power-control authority and subsequent
+   Msg4/RRC completion in the main shared stream.
+3. Main-run connected PUSCH/PUCCH/SRS, UCI-on-PUSCH/PUCCH and late-created
+   HARQ-ACK scheduling, with actual decoded evidence and no standalone replay
+   substituted for shared observations.
+4. Main-run CSI PMI/RI/CQI, SRS precoding, and QCL/TCI activation and beam
+   usage traced from received control to physical samples and CSV/PNG.
+5. Defined SS/CSI RSSI measurement scope, physical power/noise calibration,
+   and completed CSV/PNG value contracts. Total time-sample power is not
+   interchangeable with a resource-specific RSSI measurement.
+6. The four-step RA correlation exporter currently places a RAR command
+   index into `timing_advance_samples`; that unit mismatch remains to be
+   corrected with an explicit sample-rate/TA source contract and regression.
+7. Continuous, traceable IQ export and instrument playback qualification
+   remain later work, after shared-stream physical correctness.
+
+## UE-filtered PRACH reference checkpoint (previous, 2026-09-07)
 
 **The main run still fails access qualification. Do not describe it as a
 fully verified uplink, calibrated 12 dB run, or production-qualified LLS.**
