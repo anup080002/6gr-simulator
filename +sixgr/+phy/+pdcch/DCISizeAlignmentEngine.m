@@ -41,7 +41,8 @@ classdef DCISizeAlignmentEngine
             end
 
             uniqueSizes = unique([rows.AlignedBits]);
-            cRNTIFormats = ismember(string({rows.DCIFormat}), ["0_0","0_1","1_0","1_1"]);
+            cRNTIFormats = ismember(string({rows.DCIFormat}), ["0_0","0_1","1_0","1_1"]) ...
+                & string(data.RNTIType) == "C-RNTI";
             cRNTISizes = unique([rows(cRNTIFormats).AlignedBits]);
             if numel(uniqueSizes) > 4 || numel(cRNTISizes) > 3
                 error("sixgr:phy:pdcch:too_many_monitored_dci_sizes", ...

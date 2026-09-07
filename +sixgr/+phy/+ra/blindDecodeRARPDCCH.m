@@ -1,24 +1,28 @@
 function [rx, info] = blindDecodeRARPDCCH(rxWaveform, cfg, raCfg, sched, varargin)
 %BLINDDECODERARPDCCH Blind-decode RA-RNTI PDCCH candidates for MSG2.
 p = inputParser;
-p.addParameter("RNTIAttempted", sched.RNTI, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("RNTIAttempted", raCfg.RARNTI, @(x)isnumeric(x) && isscalar(x));
 p.parse(varargin{:});
 cfgRx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg2Slot);
 cfgRx.phy.pdcch.rnti = double(p.Results.RNTIAttempted);
-cfgRx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
-cfgRx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);
+context = sixgr.phy.pdcch.RARDCIContext.create(raCfg.RARDCIReference,double(p.Results.RNTIAttempted));
+schema = sixgr.phy.pdcch.DCISchemaEngine.resolve(context);
+cfgRx.phy.pdcch.KBits = schema.RawBits;
+cfgRx.phy.pdcch.dciPayloadBits = schema.RawBits;
 cfgRx.phy.pdcch.blindSearch = logical(sixgr.util.structGet(cfg, ...
     "phy.pdcch.blindSearch", false));
 sixgr.config.assertRuntimeFeatureUse(cfgRx, "pdcch_blind_search", ...
     cfgRx.phy.pdcch.blindSearch, "blindDecodeRARPDCCH");
 cfgRx.phy.pdcch.allowBlindCandidateTimingEstimate = false;
-cfgRx.phy.pdcch.aggregationLevel = 4;
-cfgRx.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgRx);
-cfgRx = sixgr.phy.ra.localizeRAPDCCHConfig(cfgRx, carrier);
+[commonPDCCH,commonEvidence] = sixgr.phy.ra.buildRARCommonPDCCH(cfgRx,raCfg,carrier);
 [rx, info] = sixgr.phy.dl.PDCCH_Rx(rxWaveform, cfgRx, ...
-    "Carrier", carrier, ...
-    "PDCCH", sixgr.util.structGet(sched, "PDCCH", []), ...
-    "K", double(raCfg.DCIPayloadBits), ...
-    "ExpectedDCIBits", int8(sched.DCIBits(:)));
+    "Carrier", carrier, "PDCCH",commonPDCCH,"RNTI",double(p.Results.RNTIAttempted), ...
+    "PDCCHScramblingRNTI",0, "K", schema.RawBits);
+info.DCIContextDigest = context.Digest;
+info.DCIContextSource = context.Data.FrequencyReferenceSource;
+info.CommonControlEvidence=commonEvidence;
+info.SelectedCandidateIndex=NaN;
+if logical(rx.Ok), info.SelectedCandidateIndex=double(rx.CandidateIndex); end
+% sched remains an API compatibility argument, not receiver input authority.
 end

@@ -6,6 +6,23 @@ classdef DCISchemaEngine
             context = sixgr.phy.pdcch.DCISchemaEngine.requireContext(context);
             data = context.Data;
             fmt = string(data.DCIFormat);
+            if string(data.RNTIType) == "RA-RNTI"
+                nFreq = ceil(log2(data.FrequencyReferenceSize * ...
+                    (data.FrequencyReferenceSize + 1) / 2));
+                definitions = [
+                    localDef("frequency_resource_assignment",nFreq,0,2^nFreq-1,"CORESET0 or initial DL BWP","38.212 7.3.1.2.1")
+                    localDef("time_resource_assignment",4,0,15,"PDSCH common TDRA","38.212 7.3.1.2.1")
+                    localDef("vrb_to_prb_mapping",1,0,1,"PDSCH resource allocation","38.212 7.3.1.2.1")
+                    localDef("mcs",5,0,31,"38.214 Table 5.1.3.1-1","38.212 7.3.1.2.1")
+                    localDef("tb_scaling",2,0,2,"38.214 Table 5.1.3.2-2","38.212 7.3.1.2.1")
+                    localDef("reserved",16,0,0,"licensed FR1/FR2-1 RA-RNTI","38.212 7.3.1.2.1")];
+                schema = struct("Format",fmt,"ContextDigest",context.Digest, ...
+                    "Definitions",definitions,"RawBits",nFreq+28, ...
+                    "FrequencyAssignmentBits",nFreq,"TimeAssignmentBits",4, ...
+                    "SchemaVersion","sixgr_ra_rnti_dci_r18_8_0/v1", ...
+                    "StandardClause","3GPP TS 38.212 V18.8.0 7.3.1.2.1");
+                return;
+            end
             if startsWith(fmt, "0_")
                 nBWP = double(data.ActiveULBWPSize);
                 timeRows = data.ULTimeDomainAllocations;

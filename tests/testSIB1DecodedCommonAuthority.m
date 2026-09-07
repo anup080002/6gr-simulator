@@ -35,6 +35,21 @@ bits = sixgr.rrc.asn1.encodeSIB1UPER(tree);
 received = sixgr.rrc.asn1.decodeSIB1UPER(bits);
 assert(sixgr.rrc.asn1.compareSIB1Trees(tree, received));
 assert(isequal(bits, sixgr.rrc.asn1.encodeSIB1UPER(received)));
+% Scalar MATLAB strings and char scalars are the same ASN.1 string value,
+% and a singleton SEQUENCE OF is still a list. Preserve real differences.
+representation = tree;
+representation.message.c1.systemInformationBlockType1.servingCellConfigCommon. ...
+    downlinkConfigCommon.initialDownlinkBWP.pdcch_ConfigCommon. ...
+    commonSearchSpaceList.searchSpaceType = "common";
+assert(sixgr.rrc.asn1.compareSIB1Trees(representation,received));
+space=representation.message.c1.systemInformationBlockType1.servingCellConfigCommon. ...
+    downlinkConfigCommon.initialDownlinkBWP.pdcch_ConfigCommon.commonSearchSpaceList;
+representation.message.c1.systemInformationBlockType1.servingCellConfigCommon. ...
+    downlinkConfigCommon.initialDownlinkBWP.pdcch_ConfigCommon.commonSearchSpaceList={space};
+assert(sixgr.rrc.asn1.compareSIB1Trees(representation,received));
+representation.message.c1.systemInformationBlockType1.servingCellConfigCommon. ...
+    downlinkConfigCommon.initialDownlinkBWP.pdcch_ConfigCommon.ra_SearchSpace=2;
+assert(~sixgr.rrc.asn1.compareSIB1Trees(representation,received));
 installed = sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(), received);
 ue = installed.UECommonCellConfiguration;
 assert(ue.InitialULBWP.StartRB == 7 && ue.InitialULBWP.SizeRB == 52);

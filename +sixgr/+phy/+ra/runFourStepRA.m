@@ -1001,6 +1001,15 @@ if isempty(sib1Recovery) || ~(isstruct(sib1Recovery) && ~isempty(fieldnames(sib1
     return;
 end
 [cfg, evidenceT] = sixgr.mac.ra.installDecodedSIB1RACHConfig(cfg, sib1Recovery);
+if logical(sixgr.util.structGet(sib1Recovery,"MIBDecoded",false)) && ...
+        logical(sixgr.util.structGet(sib1Recovery,"BCHCrcPass",false))
+    cfg.UECommonMIBConfiguration = struct( ...
+        "Source","decoded_mib_bch_transport_block", ...
+        "DMRSTypeAPosition",sib1Recovery.MIBDMRSTypeAPosition, ...
+        "CORESET0Present",sib1Recovery.CORESET0Present, ...
+        "CORESET0NumRB",sib1Recovery.CORESET0NumRB, ...
+        "CORESET0RBStart",sib1Recovery.CORESET0RBStart);
+end
 if istable(evidenceT) && ~isempty(evidenceT)
     evidenceT.RunPhase = repmat("sib1_to_ra_config_install", height(evidenceT), 1);
 end
@@ -2603,7 +2612,8 @@ tables.ra_attempts = struct2table(localAttemptRow(result), "AsArray", true);
 tables.ra_state_transitions = result.Events;
 tables.msg1_prach_detection = struct2table(localMsg1Row(result, raCfg, det), "AsArray", true);
 tables.msg2_rar_trials = struct2table(localMsg2Row(result, raCfg, msg2Tx, pdschRx2, rarRx), "AsArray", true);
-tables.msg2_pdcch_candidates = localPDCCHCandidateRows(result, raCfg, pdcchInfo);
+tables.msg2_pdcch_candidates = sixgr.phy.ra.rarPDCCHCandidateEvidence(result, raCfg, pdcchInfo);
+tables.msg2_dci_fields = sixgr.phy.ra.rarDCIFieldEvidence(result,raCfg,msg2Tx,pdschRx2);
 tables.msg3_pusch_trials = struct2table(localMsg3Row(result, raCfg, msg3Rx), "AsArray", true);
 tables.msg4_contention_resolution = struct2table(localMsg4Row(result, raCfg), "AsArray", true);
 tables.rrc_connection_events = localRRCConnectionRows(result);
@@ -2954,29 +2964,6 @@ row = struct("RunId", string(r.RunId), "CellId", double(r.CellId), "UEId", doubl
     "DecoderIterations", double(r.Msg2DecoderIterations), ...
     "ULGrantValid", logical(r.RARULGrantValid), "Status", string(ternary(logical(r.RARULGrantValid), "OK", "FAIL")), ...
     "FailureReason", string(r.FailureReason)); %#ok<NASGU>
-end
-
-function T = localPDCCHCandidateRows(r, raCfg, pdcchInfo)
-base = localCandidateRow(r, raCfg, 1, NaN, NaN, double(raCfg.RARNTI), logical(r.Msg2DCICrcPass), "", true);
-if isstruct(pdcchInfo) && isfield(pdcchInfo, "CandidateResults") && istable(pdcchInfo.CandidateResults) && height(pdcchInfo.CandidateResults) > 0
-    C = pdcchInfo.CandidateResults;
-    rows = repmat(base, height(C), 1);
-    for ii = 1:height(C)
-        rows(ii) = localCandidateRow(r, raCfg, ii, 4, NaN, double(raCfg.RARNTI), ...
-            logical(C.DecodeOK(ii)), ternary(logical(C.DecodeOK(ii)), "", "crc_fail"), logical(C.DecodeOK(ii)));
-    end
-    T = struct2table(rows, "AsArray", true);
-else
-    T = struct2table(base, "AsArray", true);
-end
-end
-
-function row = localCandidateRow(r, raCfg, idx, al, cce, attempted, pass, reason, selected)
-row = struct("RunId", string(r.RunId), "CellId", double(r.CellId), "UEId", double(r.UEId), ...
-    "AttemptId", double(r.AttemptId), "CandidateIndex", double(idx), "AggregationLevel", double(al), ...
-    "CCEIndex", double(cce), "RNTIAttempted", double(attempted), "ExpectedRARNTI", double(raCfg.RARNTI), ...
-    "CrcPass", logical(pass), "DciFormatDecoded", "1_0", "Metric", NaN, ...
-    "RejectedReason", string(reason), "IsSelectedCandidate", logical(selected));
 end
 
 function row = localMsg3Row(r, raCfg, msg3Rx)

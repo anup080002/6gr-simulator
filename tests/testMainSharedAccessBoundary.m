@@ -22,6 +22,15 @@ assert(found,'The main scheduler must publish its actual four-candidate burst, n
 files=dir(fullfile(folder,'**','ra_received_observations','*Msg1*.mat'));
 assert(numel(files)==1,'Actual main Msg1 planes must be retained.');
 data=load(fullfile(files.folder,files.name),'capture'); c=data.capture;
+% The receiver's broadcast capsule must carry both decoded MIB and SIB1
+% through the scheduler, not reconstruct CORESET0 from the scenario at RA.
+mib=c.ReceiverContinuation.Config.UECommonMIBConfiguration;
+ref=c.ReceiverContinuation.RAConfig.RARDCIReference;
+assert(mib.Source=="decoded_mib_bch_transport_block" && mib.CORESET0Present);
+assert(ref.FrequencyReferenceSource=="decoded_mib_coreset0" && ...
+    ref.FrequencyReferenceSize==mib.CORESET0NumRB && ...
+    ref.FrequencyReferenceStart==mib.CORESET0RBStart && ...
+    ref.DMRSTypeAPosition==mib.DMRSTypeAPosition);
 assert(abs(c.Prepared.StartTime_s-0.0145)<1e-12 && c.StartSample==111360);
 ra=c.ReceivedResult; row=ra.RuntimeStageRows(end,:);
 assert(row.RuntimeChannelStateUsed && ~row.SelfLoopWaveformUsed && ...
@@ -31,6 +40,9 @@ assert(row.CompositeReceiverFrontEndApplied && row.RxRFAppliedStageCount>0 && ..
 assert(ra.RARNTI==127,'Mixed-numerology RA-RNTI must address PRACH slot 9/symbol 0.');
 assert(~ra.PreambleDetected && ~ra.RACompleted && ~ra.StrictOk, ...
     'Do not turn this low-detection-margin physical observation into an access pass.');
+assert(isempty(ra.ArtifactTables.msg2_pdcch_candidates) && ...
+    isempty(ra.ArtifactTables.msg2_dci_fields), ...
+    'Unexecuted Msg2 must not publish a dummy candidate or decoded DCI row.');
 for name=["dl_pdsch_trials","ul_pusch_trials"]
     file=fullfile(folder,'air_interface','csv',name+'.csv');
     if isfile(file), assert(isempty(readtable(file)),'Failed access cannot produce data trials.'); end

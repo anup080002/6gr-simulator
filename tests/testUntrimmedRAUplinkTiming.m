@@ -5,6 +5,19 @@ setup6GRSimToolkit('Verbose',false);
 cfg=raStrictAnchorConfig(); cfg.phy.duplex.mode='TDD';
 ra=sixgr.mac.ra.RAConfig(cfg);
 grant=sixgr.mac.ra.buildRARULGrant(ra);
+for field=["TransformPrecoding","EnablePTRS"]
+    for invalid={NaN,2,"false",[true false]}
+        bad=grant; bad.(field)=invalid{1};
+        rejected=false;
+        try
+            sixgr.phy.ra.localPUSCHConfigFromGrant(ra,bad);
+        catch ME
+            assert(string(ME.identifier)=="sixgr:phy:ra:InvalidPUSCHWaveformFlag",ME.message);
+            rejected=true;
+        end
+        assert(rejected,"Invalid Msg3 waveform flags must never silently select defaults.");
+    end
+end
 msg3=sixgr.mac.ra.buildMsg3Payload('UEId',1,'UEIdentity','UE-1');
 msg5=sixgr.mac.ra.buildRRCSetupComplete('UEIdentity','UE-1');
 cfg.lls6g.receiverSync=struct('RuntimeWaveformSampleAligned',false, ...

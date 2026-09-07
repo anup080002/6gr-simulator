@@ -4,11 +4,12 @@ classdef DCIParser
     methods (Static)
         function dci = parse(bits, context)
             context = sixgr.phy.pdcch.DCISchemaEngine.requireContext(context);
-            bits = int8(bits(:));
-            if any(bits ~= 0 & bits ~= 1)
+            if ~(isnumeric(bits) || islogical(bits)) || ~isreal(bits) || ...
+                    ~isvector(bits) || any(~isfinite(bits(:))) || any(bits(:) ~= 0 & bits(:) ~= 1)
                 error("sixgr:phy:pdcch:payload_length_mismatch", ...
                     "DCI payload must contain binary values only.");
             end
+            bits = int8(bits(:));
             schema = sixgr.phy.pdcch.DCISchemaEngine.resolve(context);
             alignment = sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(context);
             K = alignment.Selected.AlignedBits;
@@ -67,6 +68,10 @@ classdef DCIParser
 
         function derived = resolveSemantics(fields, context)
             data = context.Data;
+            if string(data.RNTIType) == "RA-RNTI"
+                derived = sixgr.phy.pdcch.RARDCIContext.resolveSemantics(fields,context);
+                return;
+            end
             fmt = string(data.DCIFormat);
             if startsWith(fmt, "0_")
                 nBWP = double(data.ActiveULBWPSize);

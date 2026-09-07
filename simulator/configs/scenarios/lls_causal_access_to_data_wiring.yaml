@@ -4671,6 +4671,21 @@ initial_access:
     note17_band: false
   sib1:
     enabled: true
+    pdcch_config_common:
+      commonControlResourceSet:
+        controlResourceSetId: 1
+        frequencyDomainResources: '111100000000000000000000000000000000000000000'
+        duration: 2
+        cce_REG_MappingType: nonInterleaved
+        precoderGranularity: sameAsREG-bundle
+      commonSearchSpaceList:
+        - searchSpaceId: 1
+          controlResourceSetId: 1
+          monitoringSlotPeriodicityAndOffset: {periodicity: sl1, offset: 0}
+          monitoringSymbolsWithinSlot: '10000000000000'
+          nrofCandidates: [0, 0, 1, 0, 0]
+          searchSpaceType: common
+      ra_SearchSpace: 1
     pdsch:
       ptrs_enabled: false
       prb_start: 0

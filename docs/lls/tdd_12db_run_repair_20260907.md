@@ -1,6 +1,152 @@
 # Short TDD run: measured failures and remaining integration work
 
-## Decoded common-control and UL BWP authority (latest checkpoint, 2026-09-07)
+## RA-RNTI waveform and decoded main-scheduler authority (latest checkpoint, 2026-09-07)
+
+**Still not a qualified production LLS.** The repairs below do not establish
+successful main-run access, data, UCI, SRS, CSI feedback or continuous
+instrument playback. The full-main timing/integration checklist stays open.
+
+Implemented at the actual producer/receiver boundary:
+
+- Msg2 now uses canonical RA-RNTI DCI 1_0: reference-width FDRA, four TDRA
+  bits, VRB mapping, MCS, TB scaling and reserved bits. It no longer uses
+  the private 32-bit allocation payload or C-RNTI HARQ/NDI/RV fields.
+  CORESET0 provides the frequency reference when configured; otherwise the
+  initial DL BWP does. The canonical packer/parser and real polar chain
+  execute these bits. This bounded implementation rejects shared-spectrum,
+  FR2-2, configured common TDRA lists and interleaved RAR PDSCH rather than
+  silently substituting licensed/default-A/noninterleaved behavior.
+- TX and blind RX independently materialize Type-1 common PDCCH from the
+  decoded common CORESET/search-space IEs, including monitoring periodicity,
+  start symbol, candidates and CCE capacity. Physical scrambling uses zero
+  RNTI; the RA-RNTI masks the DCI CRC. Both scenario YAMLs now declare their
+  common resources. No production FDD or 25 dB scenario was launched.
+- Msg2 RX derives its PDSCH allocation, MCS, mapping, TBS and LDPC layout
+  from decoded DCI plus UE common configuration. It no longer consults the
+  TX PDCCH/PDSCH objects, expected DCI bits, TX TBS or RAR payload length.
+  Default-A normal/extended-CP tables and MIB DMRS position are explicit.
+- Msg2 rank-one/QPSK, additional DMRS position 2, CDM no-data ownership,
+  zero xOverhead and the decoded TB scaling reach actual nrTBS/LDPC/grid
+  generation. Common PDSCH DMRS amplitude now derives from the standard
+  data-to-DMRS EPRE ratio. An independent generated-grid power check catches
+  the former unboosted CDM2 defect even when matching TX/RX assumptions
+  would pass CRC. This does not alter connected-data FRC calibration policy.
+- The main broadcast capsule previously discarded decoded MIB/CORESET0
+  fields while retaining SIB1. The slot-15 failure in
+  `logs/rar_final_ul_main_regressions_20260907.log` exposed that handoff.
+  The capsule now retains those actual receiver fields; the main regression
+  checks their arrival in the RA continuation and DCI frequency reference.
+- Msg3's three silent setting-assignment catches were removed. Invalid
+  transform-precoding/PT-RS flags now fail before transmission; they cannot
+  silently select Toolbox defaults. Delayed coded Msg3/SRB1 recovery and
+  measured PRACH timing remain distinct from a full-main access pass.
+- Canonical DCI parsing validates binary values before integer conversion.
+  SIB1 semantic comparison normalizes equivalent scalar string/character
+  and singleton SEQUENCE OF representations while still rejecting a changed
+  decoded IE. No PHY assertion or failure threshold was weakened.
+- `control/csv/msg2_dci_fields.csv` records only actual TX fields and
+  CRC-valid RX fields with context identity and reference provenance. An
+  unexecuted Msg2 leaves a typed empty table, not planned decoded evidence.
+- RAR candidate export no longer hardcodes AL4 or creates a selected
+  candidate when Msg2 never ran. It preserves actual decoder aggregation,
+  CRC, attempted RNTI and reduced hypothesis selection. Unpublished CCE
+  start remains explicitly unavailable; candidate ordinal is not substituted
+  for a CCE index. Actual AL2/4/8 waveform cases exercise this mapping.
+
+Normative references: [TS 38.212 V18.8.0, 7.3.1.2.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138212/18.08.00_60/ts_138212v180800p.pdf),
+[TS 38.214 V18.7.0, 4.1, 5.1.2.1, 5.1.3 and 5.1.6.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.07.00_60/ts_138214v180700p.pdf).
+
+Verification completed before the final candidate-export rerun:
+
+- `logs/rar_sib1_semantics_20260907.log`, exit 0: decoded SIB1 authority,
+  semantic comparison and SIB1-to-four-step-RA integration passed.
+- `logs/rar_final_ul_main_regressions_20260907.log`: all 24 named checks
+  before the main test passed, including config, DL/UL/reference points,
+  proxy guards, grant/E2E/export integrity, PUCCH/SRS, data, QCL/TCI/PMI,
+  SRS RI/TPMI and late/recovered UCI. Main then failed on the missing MIB
+  capsule described above. This batch is retained as a failure, not a pass.
+- After DMRS power, strict UL settings and MIB capsule corrections,
+  `logs/rar_epre_main_ul_final_20260907.log`, exit 0: all 12 named focused
+  checks plus four function-based DCI suites executed with `assertSuccess`
+  passed. Includes actual main execution, delayed RA reception, PUCCH/SRS,
+  coded DL/UL, recovered PUSCH UCI and export integrity.
+- Python codec/reporting/contract set: 77 passed, with 181 third-party
+  deprecation warnings. `testAll` was not run per the user's restriction.
+  Existing FDD E2E fixtures are not a production FDD run or qualification.
+
+The pre-candidate-export main run is retained at
+`C:\Users\anup0\AppData\Local\Temp\main_shared_ra_20260907_134534`.
+Its first-five-row review is
+`results/lls/qualification_working/reviews/rar_main_first5_20260907_1350/`:
+162 CSVs / 15,842 rows, zero parse failures or infinities, 56 empty files,
+six structural/schema failures, 120 required semantic-check failures and
+one chart-check failure. The strict value-review gate remains **FAIL**.
+These are contract failures, including absent main data/campaign-finalizer
+artifacts, not 120 independently diagnosed physical-layer defects.
+
+Its post-run measured RSSI review is
+`results/lls/qualification_working/reviews/rar_main_rssi_20260907_1350/`.
+The eight observed SSB/receive-branch rows span -66.47 to -52.67 dBm and
+close to their linear four-symbol powers within 1.43e-14 dB. The PNG was
+visually inspected and source/output hashes retained. This is explicitly
+20-PRB/four-symbol SSB-window RSSI, not full-carrier or SMTC RSSI, and not
+runtime PNG publication (the boundary diagnostic uses SaveFigures=false).
+All unobserved UL/CSI/PMI/EVM curves remain unavailable with reasons.
+
+Final candidate-export verification:
+
+- `logs/rar_candidate_evidence_final_20260907.log`, session 32759, exit 0:
+  canonical Msg2 at actual AL2/4/8, the RA CSV/PNG artifact-schema and
+  source-lineage test, and the actual main boundary all passed. The main
+  test also asserts zero candidate/DCI rows for unexecuted Msg2.
+- Final retained main:
+  `C:\Users\anup0\AppData\Local\Temp\main_shared_ra_20260907_135354`.
+  All 16 scheduling slots completed; four SSB/SIB1 candidates passed BCH,
+  DCI and DL-SCH CRC. The actual PRACH metric remains 0.340461277865219
+  against threshold 0.5. `RACompleted=0`, `StrictOk=0`, `ProxyUsed=0`,
+  `Skipped=0`, failure `preamble_not_detected`; DL/UL data trial rows are zero.
+- Final review:
+  `results/lls/qualification_working/reviews/rar_candidate_final_first5_20260907/`.
+  162 CSVs / 15,841 rows / 8,647 columns; zero parse failures or infinities,
+  57 empty files and six structural failures. There are 121 required CSV
+  semantic-check failures and one chart-check failure: the gate remains
+  **FAIL**. Removing the fake candidate row correctly reduces the row count
+  by one; the generic empty-table contract now flags its absence too. Do not
+  reinstate that row to improve an audit score. Four `fallback` and three
+  `placeholder` token matches are metric-catalog column-name descriptions,
+  not evidence of executed fallback waveforms. Global legacy correctness
+  still requires the remaining causal and physical checks above.
+- Final measured plot review:
+  `results/lls/qualification_working/reviews/rar_candidate_final_rssi_20260907/`.
+  Eight measured RSSI rows and provenance were regenerated without modifying
+  the run. Its PNG hash equals the visually inspected preceding review;
+  values and exact measurement scope are unchanged. No main runtime PNG
+  publication or absent UL/CSI curve is claimed.
+
+Still required, in causal order:
+
+1. Correct RAR monitoring-window start from the actual PRACH end and Type-1
+   monitoring occasions; integrate expiry, continuous backoff, retries and
+   UE knowledge of failure. Validating one planned Msg2 slot is not that
+   receiver monitoring state machine. Multiple in-slot monitoring starts
+   and reuse of SearchSpaceZero remain unsupported, explicitly rejected.
+2. Replace the remaining private TC-RNTI Msg4 layout and TX-derived receiver
+   assumptions; verify contention-resolution/HARQ feedback timing. Msg2's
+   migration does not qualify Msg4 or full ASN.1 on-air RRC/SRB1 framing.
+3. Finish chronological main PDCCH/PDSCH/PUSCH/PUCCH/UCI/SRS ownership and
+   nonzero-TA TX-versus-RX origins; repair higher-numerology cumulative CP
+   clocks and mixed-numerology PRACH grid coordinates. Component delayed
+   receivers do not establish these main-scheduler invariants.
+4. Close physical PRACH detection/access without lowering thresholds to
+   force a pass. Establish a declared reference-SNR calibration separately
+   from geometry/thermal-noise mode; the current 12 dB label is not measured
+   instantaneous SINR or a controlling noise reference.
+5. Then qualify actual UL CRC/LA/rank/TPMI, late UCI transport, activated
+   QCL/TCI and CSI RI/PMI/CQI use, power/PHR, SS/CSI/RSSI measurements and
+   runtime CSV/PNG publication on the same main run. Planned power fields
+   for unexecuted RA stages and remaining missing schemas still need repair.
+
+## Decoded common-control and UL BWP authority (previous checkpoint, 2026-09-07)
 
 **Not a qualified production LLS.** This checkpoint fixes the SIB1/UE
 configuration boundary; it does not close the remaining scheduler, retry,

@@ -253,6 +253,7 @@ cfg.InitialDLBWP = struct("StartRB", dlStart, "SizeRB", dlSize, ...
     "CyclicPrefix", string(sixgr.util.structGet(dl.genericParameters, "cyclicPrefix", "normal")));
 cfg.PDCCHConfigCommon = sixgr.util.structGet(dl, "pdcch_ConfigCommon", struct());
 cfg.PDCCHConfigCommonPresent = isfield(dl, "pdcch_ConfigCommon");
+cfg.PDSCHConfigCommon = sixgr.util.structGet(dl,"pdsch_ConfigCommon",struct());
 cfg.ValidationStatus = "decoded_sib1_common_cell_config_installed";
 end
 

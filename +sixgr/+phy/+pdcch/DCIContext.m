@@ -196,6 +196,13 @@ classdef DCIContext
         end
 
         function validate(data)
+            if isfield(data,"RNTIType") && string(data.RNTIType) == "RA-RNTI"
+                % RA-RNTI does not carry connected-mode HARQ, UL, TCI or
+                % carrier-indicator fields. Validate its own authority;
+                % do not manufacture an irrelevant C-RNTI configuration.
+                sixgr.phy.pdcch.RARDCIContext.validate(data);
+                return;
+            end
             required = ["SpecRelease","SpecVersion","DCIFormat","RNTIType", ...
                 "RNTIValue","SearchSpaceType","SearchSpaceID","CORESETID", ...
                 "ControlServingCell","ControlCarrier","ControlBWP", ...

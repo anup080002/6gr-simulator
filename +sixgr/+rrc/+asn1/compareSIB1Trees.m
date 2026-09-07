@@ -19,6 +19,12 @@ if isstruct(in)
     for idx = 1:numel(out)
         for k = 1:numel(f)
             out(idx).(f{k}) = localNormalize(out(idx).(f{k}));
+            % ASN.1 SEQUENCE OF remains a list with one item. MATLAB's
+            % jsondecode collapses a homogeneous singleton object list to
+            % a scalar struct; YAML can instead supply a cell list.
+            if strcmp(f{k},'commonSearchSpaceList') && isstruct(out(idx).(f{k}))
+                out(idx).(f{k}) = num2cell(out(idx).(f{k}));
+            end
         end
     end
 elseif iscell(in)
@@ -27,7 +33,11 @@ elseif iscell(in)
         out{k} = localNormalize(out{k});
     end
 elseif isstring(in)
-    out = cellstr(in);
+    if isscalar(in)
+        out = char(in);
+    else
+        out = cellstr(in);
+    end
 else
     out = in;
 end

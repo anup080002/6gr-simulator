@@ -12,20 +12,13 @@ pusch.NID = double(raCfg.NCellID);
 % PT-RS association below must bind to that scheduled DM-RS port rather
 % than relying on an nrPUSCHConfig default.
 pusch.DMRS.DMRSPortSet = 0;
-try
-    pusch.DMRS.DMRSAdditionalPosition = 2;
-catch
-end
-try
-    pusch.TransformPrecoding = logical(grant.TransformPrecoding);
-catch
-end
-try
-    pusch.EnablePTRS = logical(sixgr.util.structGet(grant, ...
-        "EnablePTRS", sixgr.util.structGet(raCfg, ...
-        "Msg3PUSCH.EnablePTRS", false)));
-catch
-end
+% A rejected waveform setting must abort this grant, not leave a Toolbox
+% default in place while the grant/evidence claims the requested setting.
+pusch.DMRS.DMRSAdditionalPosition = 2;
+pusch.TransformPrecoding = localLogical(grant.TransformPrecoding, "TransformPrecoding");
+pusch.EnablePTRS = localLogical(sixgr.util.structGet(grant, ...
+    "EnablePTRS", sixgr.util.structGet(raCfg, ...
+    "Msg3PUSCH.EnablePTRS", false)), "EnablePTRS");
 if logical(pusch.EnablePTRS)
     pusch.PTRS.PTRSPortSet = double(sixgr.util.structGet(grant, ...
         "PTRSPortSet", sixgr.util.structGet(raCfg, ...
@@ -40,4 +33,13 @@ if logical(pusch.EnablePTRS)
         "PTRSREOffset", sixgr.util.structGet(raCfg, ...
         "Msg3PUSCH.PTRSREOffset", "00"))));
 end
+end
+
+function value = localLogical(value, name)
+if ~(isnumeric(value) || islogical(value)) || ~isreal(value) || ...
+        ~isscalar(value) || ~isfinite(value) || ~ismember(value, [0 1])
+    error("sixgr:phy:ra:InvalidPUSCHWaveformFlag", ...
+        "%s must be an explicit logical scalar or numeric 0/1.", name);
+end
+value = logical(value);
 end
