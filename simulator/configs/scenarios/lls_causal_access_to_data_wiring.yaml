@@ -4629,6 +4629,9 @@ initial_access:
   shared_spectrum: false
   random_access_procedure: "four_step_contention_based"
   require_explicit_ssb_bitmap: true
+  # UE pre-connection implementation policy, not received RRC QuantityConfig.
+  preconnection_rsrp_filter_coefficient_k: 4
+  preconnection_rsrp_filter_reference_period_ms: 20
   validation_snr_db: 20
   validation_seed: 1
   ssb:

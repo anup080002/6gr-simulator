@@ -807,6 +807,10 @@ initial_access:
   shared_spectrum: false
   random_access_procedure: four_step_contention_based
   require_explicit_ssb_bitmap: true
+  # Explicit UE implementation before any dedicated QuantityConfig is received.
+  # These are NOT claimed to be fields signalled in SIB1, or NR-mandated values.
+  preconnection_rsrp_filter_coefficient_k: 4
+  preconnection_rsrp_filter_reference_period_ms: 20
   validation_snr_db: 20
   validation_seed: 4702601
   ssb:

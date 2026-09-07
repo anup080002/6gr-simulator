@@ -12571,6 +12571,19 @@ if ~isfield(state, "DecodedSIB1RecoverySlotByUE") || ...
 end
 state.DecodedSIB1RecoveryByUE{ueIdx} = recovery;
 state.DecodedSIB1RecoverySlotByUE(ueIdx) = double(slotIdx);
+% Install only the received tree at the actual delivery boundary. Retain
+% cell/epoch identity separately from the broadcast IEs; they are receiver
+% context, not additional information claimed to have been in SIB1.
+installed = sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(),recovery);
+common = installed.UECommonCellConfiguration;
+common.ServingCell = state.CurrentServingIdx(ueIdx);
+common.AvailableSlot = double(slotIdx);
+common.ConfigurationEpoch = sixgr.util.structGet(state.CfgMobility, ...
+    'initial_access.configuration_epoch',NaN);
+if ~isfield(state,'UECommonCellConfigurationByUE')
+    state.UECommonCellConfigurationByUE = repmat({struct()},nUsers,1);
+end
+state.UECommonCellConfigurationByUE{ueIdx} = common;
 end
 
 function recovery = localDecodedSIB1RecoveryForUE(state, ueIdx)

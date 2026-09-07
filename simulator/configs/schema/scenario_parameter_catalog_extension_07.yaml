@@ -63,6 +63,8 @@ sections:
       shared_spectrum: {required: true, type: boolean}
       random_access_procedure: {required: true, type: string}
       require_explicit_ssb_bitmap: {required: true, type: boolean}
+      preconnection_rsrp_filter_coefficient_k: {required: false, type: integer, allowed_values: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 15, 17, 19]}
+      preconnection_rsrp_filter_reference_period_ms: {required: false, type: number, min: 0.001}
       validation_snr_db: {required: true, type: number}
       validation_seed: {required: true, type: integer, min: 0}
       ssb: {required: true, type: struct}

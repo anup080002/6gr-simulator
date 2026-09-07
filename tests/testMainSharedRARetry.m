@@ -40,7 +40,23 @@ assert(height(deferred)==1 && ~deferred.ReferenceUsable && deferred.Status=="sta
 for result={a,b}
     r=result{1}; selected=decisions(decisions.MeasurementId==string(r.PowerPathlossMeasurementId) & decisions.ReferenceUsable,:);
     assert(height(selected)==1 && abs(r.PowerPathloss_dB-selected.Pathloss_dB)<1e-10 && ...
-        abs(r.PowerPathloss_dB-(selected.ReferenceSignalTxEPRE_dBm-selected.MeasuredRSRP_dBm))<1e-8);
+        abs(r.PowerPathloss_dB-(selected.SignalledSSPBCHBlockPower_dBm-selected.FilteredRSRP_dBm))<1e-8 && ...
+        selected.SIB1AvailableSlot<=selected.Slot && strlength(selected.SIB1RxTreeHash)>0 && ...
+        selected.Source=="ue_decoded_sib1_power_minus_filtered_ssb_rsrp");
+end
+references=readtable(fullfile(csv,'reference_signal_measurements.csv'),'TextType','string');
+ssb=references(references.SignalType=="SSB" & references.Valid==1,:);
+assert(height(ssb)==12,'All four beam observations in each of three bursts must be retained.');
+for beam=unique(ssb.ResourceId).'
+    samples=sortrows(ssb(ssb.ResourceId==beam,:),'ProducerSlot');
+    expected=samples.RSRP_dBm(1);
+    for i=1:height(samples)
+        if i>1
+            alpha=1-0.5^((samples.ProducerSlot(i)-samples.ProducerSlot(i-1))/20);
+            expected=(1-alpha)*expected+alpha*samples.RSRP_dBm(i);
+        end
+        assert(abs(samples.UEFilteredRSRP_dBm(i)-expected)<1e-9 && samples.UERSRPFilterUpdateCount(i)==i);
+    end
 end
 assert(first.ExecutionReplay.RuntimeChannelStateUsed && second.ExecutionReplay.RuntimeChannelStateUsed);
 assert(~a.RuntimeSelfLoopWaveformsUsed && ~b.RuntimeSelfLoopWaveformsUsed && ~a.ProxyUsed && ~b.ProxyUsed);
@@ -50,5 +66,5 @@ assert(nnz(monitor.RunId==string(a.RunId))==16 && nnz(monitor.RunId==string(b.Ru
 assert(all(monitor.AttemptId(monitor.RunId==string(a.RunId))==1));
 assert(all(monitor.AttemptId(monitor.RunId==string(b.RunId))==2));
 assert(~isfolder(fullfile(folder,'air_interface','air_interface')));
-ok=true; disp('MAIN_SHARED_RA_RETRY_PASS: actual second TDD PRACH, fresh-reference deferral and decoded SIB1 power published; UE L3 power-control contract remains unqualified.');
+ok=true; disp('MAIN_SHARED_RA_RETRY_PASS: actual TDD PRACH retry consumes decoded SIB1 and UE-filtered SSB power; full access/data qualification remains open.');
 end

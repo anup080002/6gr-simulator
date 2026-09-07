@@ -1,6 +1,144 @@
 # Short TDD run: measured failures and remaining integration work
 
-## SIB1 / actual SSS power checkpoint (current, 2026-09-07)
+## UE-filtered PRACH reference checkpoint (current, 2026-09-07)
+
+**The main run still fails access qualification. Do not describe it as a
+fully verified uplink, calibrated 12 dB run, or production-qualified LLS.**
+This checkpoint closes the PRACH reference-power input boundary, not the
+remaining Msg3, connected control/data, measurement or playback contracts.
+
+### Corrected producer and consumer authority
+
+- Initial acquisition and serving-SSB tracking no longer require diagnostic
+  transmitter-derived pathloss to publish a usable UE SS-RSRP measurement.
+- Actual decoded SIB1 common configuration is retained per UE at broadcast
+  delivery, with received-tree hash, serving-cell context and epoch.
+- A retained UE filter operates independently per UE/cell/SSB/configuration
+  and sweep start. It initializes from the first actual observation, filters
+  logarithmic RSRP in dBm, adjusts its coefficient for elapsed producer time,
+  rejects future/reversed/mutated input, and does not re-filter duplicate reads.
+- Both causal YAML profiles explicitly declare preconnection coefficient
+  `k=4` and reference period `20 ms`. These are UE implementation choices,
+  **not** a claim that SIB1 carries QuantityConfig, that these choices are
+  mandatory NR defaults, or that measurement-performance requirements have
+  been independently qualified. An absent policy does not synthesize a
+  filtered reference. An incomplete/invalid policy is rejected before PHY.
+- Shared PRACH binds decoded `ss-PBCH-BlockPower - filtered SS-RSRP` and
+  checks cell, selected SSB, configuration, measurement age and delivery
+  availability. A deferred attempt clears its earlier numeric pathloss.
+  Changing or removing transmitter-only EPRE/pathloss diagnostics cannot
+  change this UE decision. Those diagnostics remain separately exported.
+- Primary reference and PRACH decision CSVs retain raw/filtered RSRP,
+  filter source/hash/count/coefficient, received SIB1 power/hash/availability,
+  and diagnostic physical pathloss without merging their meanings.
+
+The PRACH pathloss equation is specified in
+[TS 38.213 V18.8.0 clause 7.4](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+The filter recurrence, logarithmic domain, initialization and time adaptation
+are based on
+[TS 38.331 V18.8.0 clause 5.5.3.2](https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.08.00_60/ts_138331v180800p.pdf).
+Dedicated received QuantityConfig installation remains unqualified.
+
+### Fresh main TDD evidence
+
+Run: `C:/Users/anup0/AppData/Local/Temp/main_shared_ra_20260907_175527`.
+`testMainSharedRARetry` completed successfully: 58 scheduler slots, three
+four-beam SSB bursts, two real shared-stream PRACH transmissions, one actual
+UE RAR timeout and one stale-reference deferral. The test independently
+reconstructs the logarithmic filter for all 12 SSB rows.
+
+| PRACH decision slot | Raw SS-RSRP dBm | Filtered SS-RSRP dBm | UE pathloss dB | Outcome |
+| --- | ---: | ---: | ---: | --- |
+| 15 | -76.046058 | -76.046058 | 81.046058 | Actual first preamble |
+| 45 | unavailable fresh reference | unavailable | unavailable | Deferred: age 24 > configured 20 slots |
+| 55 | -76.276058 | -76.187521 | 81.187521 | Actual second preamble, filter update 3 |
+
+Decoded SIB1 power is 5 dBm. First/second PRACH requested powers are
+-11.953942/-9.812479 dBm and target powers are -93/-91 dBm. Their actual
+detector metrics are 0.340459538/0.443858178, both below the unchanged 0.5
+threshold. Both captured results have `ProxyUsed=false` and
+`RuntimeSelfLoopWaveformsUsed=false`. These flags qualify those captures,
+not every legacy code path. The second RAR window is still pending at the
+58 ms boundary; no completed expiry or successful access is invented.
+PDSCH/PUSCH data trial counts remain zero.
+
+The configured 12 dB is still an operating-point label, not a calibrated
+measured SINR. This diagnostic uses `SaveFigures=false`: PNG count is zero,
+not evidence that requested plots were implemented or verified.
+
+### Verification and output audit
+
+- Passed: `testReferenceRSRPFilter`, `testSharedRAPowerReference`,
+  `testSIB1DecodedCommonAuthority`, `testConfig` in
+  `logs/ue_filtered_ra_power_units_20260907.log` (MATLAB exit 0).
+- Passed: actual main retry/filter reconstruction in
+  `logs/ue_filtered_ra_power_main_20260907.log` (MATLAB exit 0).
+- The 30-entry UL/control/beam/export batch initially passed 27 tests and
+  failed three in `logs/ue_filtered_ra_power_ul_regressions_20260907.log`
+  (exit 1). Full-stack reruns traced the failures to this patch's overly
+  restrictive positive-epoch check: the catalog permits epoch 0 and the FDD
+  profile uses it. The validator now accepts nonnegative integer epochs,
+  without changing either scenario, and still rejects negative epochs.
+- The first correction rerun exposed an incomplete PUCCH test fixture:
+  it claimed a valid SSB observation using only a pathloss scalar. Its
+  explicit analytical cell/RSRP/EPRE inputs are now complete, with a negative
+  assertion proving the incomplete row is still rejected. No production
+  measurement validation was relaxed to rescue the fixture.
+- Final rerun: all nine selected entries passed, exit 0, in
+  `logs/ue_filtered_ra_power_final_focused_20260907.log`: filter, PRACH
+  reference binding, SRS/PUCCH collisions, PUSCH and PUCCH power, PUCCH/PUSCH
+  reservations, UCI-on-PUSCH YAML authority, config and decoded SIB1.
+  Thus every test in the original 30-entry set has a passing execution,
+  including the corrected three. The original passing checks cover actual
+  DL/UL staged waveforms, sample clocks, RAR, SRS RI/TPMI, UCI recovery/core,
+  QCL/TCI/PMI, physical CSI/SS measurements, strict proxy/grant guards and
+  both required E2E truth/export regressions. They are not substituted for
+  the missing main-run uplink evidence.
+- The main TDD capture above preceded the epoch-0/fixture corrections; its
+  epoch-1 execution path is unchanged. Epoch 0 and equivalent measurement
+  timing at 1 ms / 0.5 ms slot durations are explicitly regression-tested.
+  No `testAll`, new FDD campaign, 25 dB run or long campaign was started.
+- Exhaustive audit with first-five-row previews:
+  `results/lls/qualification_working/reviews/ue_filtered_ra_power_first5_20260907/`.
+  It inspected 166 CSVs / 16,699 rows, with no parse failures or infinity
+  tokens. It found 61 empty files, six structural-header issue files, 125
+  required CSV semantic failures and one required chart failure. Exit 1 is
+  retained. These findings are not 125 independent newly discovered PHY
+  bugs; incomplete access and unavailable primary evidence account for many.
+  Lexical proxy/fallback tokens are inventory findings, not proof that a
+  primary PHY row used a proxy. No acceptance assertion was weakened.
+  Empty-header files are `air_interface/csv/multiuser_user_summary.csv`,
+  both air/control `pdcch_trials.csv`, control `csi_rs_trials.csv` and
+  `srs_trials.csv`, and `reports/csv/live_link_adaptation_input_table.csv`.
+
+### Remaining work, in dependency order
+
+1. Independently diagnose PRACH detection and UL spatial/receive mapping;
+   calibrate operating-point and detection/false-alarm behavior rather than
+   lowering the threshold to manufacture successful access.
+2. Finish acquired-UE clock/TA origins and full Msg2/Msg3/Msg4/RRC causal
+   integration. Audit SIB1 receiver acceptance separately from validation-
+   harness `StrictOk`/TX-tree comparison gating. Audit retained broadcast
+   state across sweep/cell/configuration transitions.
+3. Replace the remaining generic Msg3 power calculation with its actual
+   decoded common/RAR authority, numerology and power-adjustment state.
+   `runFourStepRA.localResolveRATransmitPower` still uses generic P0/alpha
+   defaults, `10*log10(mRB)` and headroom from capped output power. These
+   are not evidence of qualified Msg3/UE-PHR behavior. Compare against
+   [TS 38.213 clause 7.1.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf),
+   including the RAR-specific parameter set, before executing Msg3.
+4. Demonstrate real main PUSCH, PUCCH, SRS and UCI-on-PUSCH after access;
+   verify late ACK binding, cancellation, receive ownership and grant clocks.
+   Focused component tests cannot replace that end-to-end evidence.
+5. Qualify received CSI/PMI/RI, SRS/TPMI, QCL/TCI and physical precoder usage
+   through main scheduler rank/MCS/HARQ/OLLA decisions in both duplex modes.
+6. Complete scoped RSSI/CSI/SS/PHR and pending-stage CSV publication, resolve
+   structural/applicability failures, and verify actual generated PNGs.
+7. Only then qualify continuous all-channel IQ with common timing and
+   traceable playback metadata for M9384B/M9383B and 89600 VSA. No instrument
+   compatibility or full NR/6G conformance is claimed by this checkpoint.
+
+## SIB1 / actual SSS power checkpoint (previous, 2026-09-07)
 
 **The full main run is still NOT qualified.** This checkpoint repairs the
 SS/PBCH power declaration/transmitter mismatch in both causal profiles and
