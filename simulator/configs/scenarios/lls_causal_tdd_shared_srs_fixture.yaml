@@ -1,0 +1,15 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
+
+meta:
+  scenario_id: lls_causal_tdd_shared_srs_fixture
+  description: >
+    Nominal-12-dB TDD shared-clock access followed by actual connected SRS
+    observations. This diagnostic does not claim connected-data qualification.
+  research_class: baseline_benchmark
+
+run_control:
+  total_slots: 35
+  measurement_slots: 35
+  total_time_ms: 35
+  measurement_time_ms: 35

@@ -266,6 +266,9 @@ cfg.RACHConfigCommon = struct( ...
     "PRACHFormat", string(sixgr.util.structGet(ra, "prach_format", "")));
 cfg.PUSCHConfigCommon = sixgr.util.structGet(ul, "pusch_ConfigCommon", struct());
 cfg.PUCCHConfigCommon = sixgr.util.structGet(ul, "pucch_ConfigCommon", struct());
+% Mandatory received MAC timer authority. Do not substitute a scenario
+% timer at the UE or lose it when the RA continuation is released.
+cfg.TimeAlignmentTimerCommon = string(serving.uplinkConfigCommon.timeAlignmentTimerCommon);
 dl = serving.downlinkConfigCommon.initialDownlinkBWP;
 [dlStart, dlSize] = sixgr.bwop.RIVFDRA.decode(275, double(dl.genericParameters.locationAndBandwidth));
 cfg.InitialDLBWP = struct("StartRB", dlStart, "SizeRB", dlSize, ...

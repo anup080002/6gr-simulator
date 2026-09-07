@@ -1,4 +1,4 @@
-function [post,pre,tx,replay,receiver]=sharedObservationEvidence(planes)
+function [post,pre,tx,replay,receiver]=sharedObservationEvidence(planes,preparedUL)
 % Keep segment provenance. Only flatten quantities invariant across the
 % actual observation; block-average powers are NOT whole-window metrics.
 ids=string({planes.ReceiverID});
@@ -8,7 +8,15 @@ if numel(postIndex)~=1 || numel(preIndex)~=1 || numel(txIndex)~=1
     error('sixgr:truth:IncompletePhysicalObservationPlanes','One complete TX, pre-RF and post-RF observation are required.');
 end
 post=planes(postIndex).Observation; pre=planes(preIndex).Observation; tx=planes(txIndex).Observation;
-for b={post,pre,tx}
+buffers={post,pre,tx};
+if nargin>=2
+    assert(isa(preparedUL,'sixgr.link.PreparedUplinkControlTransmission'), ...
+        'sixgr:truth:InvalidPhysicalULObservationAuthority','Distinct TX/RX intervals require typed received UL timing.');
+    preparedUL.readObservation(tx,"transmitter");
+    preparedUL.readObservation(post,"receiver");
+    buffers={post,pre};
+end
+for b=buffers
     v=b{1};
     if ~v.isComplete() || v.SampleRateHz~=post.SampleRateHz || ...
             v.StartSample~=post.StartSample || v.EndSampleExclusive~=post.EndSampleExclusive
@@ -17,7 +25,7 @@ for b={post,pre,tx}
 end
 segments=planes(postIndex).Segments;
 rxID=extractBefore(ids(postIndex),':post_rf');
-rx=cell(numel(segments),1); txReplay=cell(numel(segments),1); linkReplay=cell(0,1);
+rx=cell(numel(segments),1); txReplay=cell(numel(segments),1); linkReplay=cell(0,1); lossReplay=cell(0,1);
 txID=extractBefore(ids(txIndex),':tx');
 intervals=zeros(numel(segments),2);
 for k=1:numel(segments)
@@ -29,7 +37,10 @@ for k=1:numel(segments)
     if isempty(index), error('sixgr:truth:MissingTransmitterExecution','No physical transmitter owns this interval.'); end
     txReplay{k}=e.TX(index).Replay;
     links=e.Links(string({e.Links.RX})==rxID);
-    for link=links, linkReplay{end+1,1}=link.Replay; end %#ok<AGROW>
+    for link=links
+        linkReplay{end+1,1}=link.Replay; %#ok<AGROW>
+        if string(link.TX)==txID, lossReplay{end+1,1}=link.LossReplay; end %#ok<AGROW>
+    end
     intervals(k,:)=[segments{k}.StartSample segments{k}.EndSampleExclusive];
 end
 if isempty(segments) || intervals(1,1)>post.StartSample || ...
@@ -69,4 +80,26 @@ if nargout>=5
     replay.SampleNoiseVariance=NaN;
     replay.SampleNoiseVarianceDomain='requires_estimation_on_digital_gain_compensated_received_reference_REs';
 end
+% Stationary execution metadata can be exported directly. Per-block means,
+% time-varying AGC and component powers must not become guessed scalars.
+mapping={'NoiseOperatingMode',rx,'NoiseOperatingMode'; ...
+    'ThermalSampleNoiseBandwidth_Hz',rx,'ThermalSampleNoiseBandwidth_Hz'; ...
+    'ThermalNoisePSD_mWPerHz',rx,'ThermalNoisePSD_mWPerHz'; ...
+    'TxRFExecutionStatus',txReplay,'RFExecutionStatus'; ...
+    'TxRFStageOrder',txReplay,'RFStageOrder'; ...
+    'TxRFAppliedStageCount',txReplay,'RFAppliedStageCount'; ...
+    'CompositeReceiverFrontEndStatus',rx,'RFExecutionStatus'; ...
+    'AppliedLargeScaleGain_dB',lossReplay,'AppliedLargeScaleGain_dB'; ...
+    'AppliedLargeScaleLoss_dB',lossReplay,'AppliedLargeScaleLoss_dB'; ...
+    'AppliedBasePathloss_dB',lossReplay,'AppliedBasePathloss_dB'; ...
+    'AppliedShadowFading_dB',lossReplay,'AppliedShadowFading_dB'; ...
+    'AppliedO2I_dB',lossReplay,'AppliedO2I_dB'; ...
+    'AppliedLargeScaleGainSource',lossReplay,'AppliedLargeScaleGainSource'};
+for k=1:size(mapping,1)
+    values=mapping{k,2}; field=mapping{k,3};
+    if isempty(values) || ~all(cellfun(@(v)isfield(v,field),values)), continue; end
+    values=cellfun(@(v)v.(field),values,'UniformOutput',false);
+    if all(cellfun(@(v)isequaln(v,values{1}),values)), replay.(mapping{k,1})=values{1}; end
+end
+replay.CompositeReceiverFrontEndApplied=any(cellfun(@(v)v.RFAppliedStageCount>0,rx));
 end

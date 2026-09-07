@@ -93,44 +93,43 @@ if ~madeAny
     [caseLbl, hasCase] = localCaseLabels(T);
     if hasCase
         [yBler, ~] = localFindNumericVar(T, {'BLER','bler','TB_BLER','PDSCH_BLER','PUSCH_BLER'});
-        if ~isempty(yBler)
+        if any(isfinite(yBler))
             figs.BLER_ByCase = localMakeFig(opt, sprintf('%s_BLER_ByCase', opt.FigurePrefix));
             ax = axes(figs.BLER_ByCase);
-            semilogy(ax, 1:numel(yBler), max(yBler, eps), 'o-');
+            localPlotCaseMetric(ax,yBler,caseLbl);
             grid(ax, 'on');
-            set(ax, 'XTick', 1:numel(yBler), 'XTickLabel', caseLbl);
             xtickangle(ax, 25);
             xlabel(ax, 'Case');
             ylabel(ax, 'BLER');
-            title(ax, sprintf('%s: BLER by Case', opt.FigurePrefix));
+            title(ax, sprintf('%s: BLER by Case', opt.FigurePrefix),'Interpreter','none');
             madeAny = true;
         end
 
         [yBer, ~] = localFindNumericVar(T, {'BER','ber','BitErrorRate'});
-        if ~isempty(yBer)
+        if any(isfinite(yBer))
             figs.BER_ByCase = localMakeFig(opt, sprintf('%s_BER_ByCase', opt.FigurePrefix));
             ax = axes(figs.BER_ByCase);
-            semilogy(ax, 1:numel(yBer), max(yBer, eps), 'o-');
+            localPlotCaseMetric(ax,yBer,caseLbl);
             grid(ax, 'on');
-            set(ax, 'XTick', 1:numel(yBer), 'XTickLabel', caseLbl);
             xtickangle(ax, 25);
             xlabel(ax, 'Case');
             ylabel(ax, 'BER');
-            title(ax, sprintf('%s: BER by Case', opt.FigurePrefix));
+            title(ax, sprintf('%s: BER by Case', opt.FigurePrefix),'Interpreter','none');
             madeAny = true;
         end
 
         [yThr, yThrName] = localFindNumericVar(T, {'Goodput_Mbps','Throughput_Mbps','ThroughputGbps','Tput_Mbps','Tput'});
-        if ~isempty(yThr)
+        if any(isfinite(yThr))
             figs.Throughput_ByCase = localMakeFig(opt, sprintf('%s_Throughput_ByCase', opt.FigurePrefix));
             ax = axes(figs.Throughput_ByCase);
-            bar(ax, 1:numel(yThr), yThr);
+            mask=isfinite(yThr);
+            bar(ax, find(mask), yThr(mask));
             grid(ax, 'on');
-            set(ax, 'XTick', 1:numel(yThr), 'XTickLabel', caseLbl);
+            set(ax, 'XTick', find(mask), 'XTickLabel', caseLbl(mask));
             xtickangle(ax, 25);
             xlabel(ax, 'Case');
             ylabel(ax, yThrName);
-            title(ax, sprintf('%s: %s by Case', opt.FigurePrefix, yThrName));
+            title(ax, sprintf('%s: %s by Case', opt.FigurePrefix, yThrName),'Interpreter','none');
             madeAny = true;
         end
     end
@@ -143,6 +142,15 @@ figs.MetadataDebugTables = names; %#ok<STRNU>
 end
 
 % ---------------- helpers ----------------
+
+function localPlotCaseMetric(ax,y,labels)
+% Independent cases are not an interpolated sweep. Missing observations
+% stay missing; an observed zero stays zero, never machine epsilon.
+mask=isfinite(y);
+plot(ax,find(mask),y(mask),'o','LineStyle','none');
+if all(y(mask)>0), set(ax,'YScale','log'); end
+set(ax,'XTick',find(mask),'XTickLabel',labels(mask),'TickLabelInterpreter','none');
+end
 
 function T = localResolvePrimarySweepTable(kpis, tbls)
 T = table();
@@ -166,27 +174,26 @@ made = false;
 if isempty(x)
     return;
 end
-[series, names, sourceVars] = localFindNamedSeries(T, candidates, labels);
+[series, names] = localFindNamedSeries(T, candidates, labels);
 if isempty(series)
     return;
 end
 figs.(fieldName) = localMakeFig(opt, sprintf('%s_%s', opt.FigurePrefix, fieldName)); %#ok<NASGU>
 ax = axes(figs.(fieldName));
 hold(ax, 'on');
+% A measured zero is not a positive log-floor or a confidence bound.
+if useLog && any(cellfun(@(v)any(isfinite(v) & v==0),series)), useLog=false; end
 if useLog
     set(ax, 'YScale', 'log');
 end
 for i = 1:numel(series)
     y = series{i};
     yPlot = y;
-    if useLog
-        yPlot = localResolveLogSweepSeries(T, sourceVars{i}, yPlot);
-    end
     mask = isfinite(x) & isfinite(yPlot);
     if ~any(mask)
         continue;
     end
-    localPlotDiscreteSweepSeries(ax, x(mask), yPlot(mask), useLog, names{i});
+    localPlotDiscreteSweepSeries(ax, x(mask), yPlot(mask), names{i});
     made = true;
 end
 if ~made
@@ -217,6 +224,7 @@ end
 figs.PAPR = localMakeFig(opt, sprintf('%s_PAPR_CCDF', opt.FigurePrefix)); %#ok<NASGU>
 ax = axes(figs.PAPR);
 hold(ax, 'on');
+if all(TP.CCDF(isfinite(TP.CCDF))>0), set(ax,'YScale','log'); end
 if ismember("Direction", string(TP.Properties.VariableNames))
     dirs = unique(string(TP.Direction));
 else
@@ -234,7 +242,7 @@ for i = 1:numel(dirs)
     [xSorted, order] = sort(x(mask));
     ySorted = y(mask);
     ySorted = ySorted(order);
-    semilogy(ax, xSorted, max(ySorted, eps), 'o-', 'LineWidth', 1.25, 'MarkerSize', 4, 'DisplayName', char(dirs(i)));
+    plot(ax, xSorted, ySorted, 'o-', 'LineWidth', 1.25, 'MarkerSize', 4, 'DisplayName', char(dirs(i)));
     made = true;
 end
 if ~made
@@ -276,59 +284,6 @@ for i = 1:numel(candidates)
 end
 end
 
-function y = localResolveLogSweepSeries(T, metricVar, y)
-y = double(y(:));
-mask = isfinite(y) & y <= 0;
-if ~any(mask)
-    return;
-end
-[~, ciHighVar] = localResolveSweepCIColumns(T, metricVar);
-if strlength(ciHighVar) > 0 && ismember(ciHighVar, string(T.Properties.VariableNames))
-    hi = double(T.(ciHighVar));
-    hi = hi(:);
-    useCI = mask & isfinite(hi) & hi > 0;
-    y(useCI) = hi(useCI);
-    mask = isfinite(y) & y <= 0;
-end
-if any(mask)
-    positive = y(isfinite(y) & y > 0);
-    if isempty(positive)
-        floorVal = eps;
-    else
-        floorVal = max(min(positive) / 10, eps);
-    end
-    y(mask) = floorVal;
-end
-end
-
-function [ciLowVar, ciHighVar] = localResolveSweepCIColumns(T, metricVar)
-ciLowVar = "";
-ciHighVar = "";
-if ~istable(T)
-    return;
-end
-vars = string(T.Properties.VariableNames);
-base = string(metricVar);
-baseNoUnit = base;
-if endsWith(base, "_dB")
-    baseNoUnit = extractBefore(base, strlength(base) - 2);
-end
-patterns = [
-    base + "_CI95_Low", base + "_CI95_High";
-    base + "_CI_Low", base + "_CI_High";
-    baseNoUnit + "_CI95_Low", baseNoUnit + "_CI95_High";
-    baseNoUnit + "_CI_Low", baseNoUnit + "_CI_High";
-    base + "_lo", base + "_hi";
-    base + "_lower", base + "_upper"];
-for i = 1:size(patterns, 1)
-    if ismember(patterns(i, 1), vars) && ismember(patterns(i, 2), vars)
-        ciLowVar = patterns(i, 1);
-        ciHighVar = patterns(i, 2);
-        return;
-    end
-end
-end
-
 function localApplyFiniteXLimits(ax, x)
 x = double(x(:));
 x = x(isfinite(x));
@@ -351,13 +306,10 @@ end
 xticks(ax, x.');
 end
 
-function localPlotDiscreteSweepSeries(ax, x, y, useLog, displayName)
+function localPlotDiscreteSweepSeries(ax, x, y, displayName)
 [x, order] = sort(double(x(:)));
 y = double(y(:));
 y = y(order);
-if useLog
-    y = max(y, eps);
-end
 if numel(x) > 1
     stairs(ax, x, y, '-', 'LineWidth', 1.1, 'HandleVisibility', 'off');
 end

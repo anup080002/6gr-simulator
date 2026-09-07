@@ -8446,6 +8446,7 @@ if nargin < 6 || ~isstruct(pendingULGrants)
 end
 state = localDeliverCoupledBroadcastResults(state);
 state = localDeliverCoupledTRSResults(state);
+state = localDeliverSharedSRSResults(state);
 state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
 numUsers = numel(userCfg);
 slotIdx = double(sixgr.util.structGet(state, "CurrentSlot", NaN));
@@ -8759,7 +8760,11 @@ for ueIdx = 1:numUsers
 
     srsEnabled = logical(sixgr.util.structGet(cfgU, "phy.srs.enable", ...
         sixgr.util.structGet(cfg, "phy.srs.enable", false)));
-    if srsEnabled && slotULAllowed
+    if srsEnabled && isfield(state,'SharedWaveformStream')
+        [state, pendingULGrants, queued] = localPrepareSharedSRS( ...
+            state,cfgU,ueIdx,snr_dB,pendingULGrants);
+        srsAttemptCount=srsAttemptCount+double(queued);
+    elseif srsEnabled && slotULAllowed
         shouldAttemptSRS = sixgr.truth.coupledSRSAttemptDue(state,cfgU,slotIdx,ueIdx) && ...
             srsScheduledThisSlot < srsMaxUEsPerSlot;
         if shouldAttemptSRS
@@ -12403,6 +12408,10 @@ for item=received
         state=localCompleteSharedRAObservation(state,item);
         continue;
     end
+    if item.Kind=="SRS"
+        state=localCompleteSharedSRS(state,item);
+        continue;
+    end
     p=context.Prepared;
     [~,pre,tx,replay,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
     ch=state.SharedWaveformStream.channelState(item.UE,"DL");
@@ -12440,6 +12449,132 @@ for item=received
         error('sixgr:truth:MissingSharedReceiverReducer','No canonical row reducer for completed %s.',item.Kind);
     end
 end
+end
+
+function [state,queuedUL,queued]=localPrepareSharedSRS(state,cfg,ue,snr,queuedUL)
+queued=false; owner=state.SharedWaveformStream;
+if owner.hasPending("SRS",ue) || ...
+        ~isfield(state,'ConnectedULTimingByUE') || numel(state.ConnectedULTimingByUE)<ue || ...
+        isempty(state.ConnectedULTimingByUE{ue})
+    return;
+end
+if isfield(state,'SharedSRSResults') && any(cellfun(@(x)x.UE==ue,state.SharedSRSResults)), return; end
+authority=state.ConnectedULTimingByUE{ue};
+% This initial TAG has only received common BWPs. A later BWP/NTN timing
+% reconfiguration needs its own received authority, not a scenario override.
+common=state.UECommonCellConfigurationByUE{ue};
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+assert(carrier.SubcarrierSpacing==common.InitialULBWP.SubcarrierSpacing_kHz, ...
+    'sixgr:truth:ConnectedULTimingBWPChanged','Install received dedicated-BWP timing before changing UL numerology.');
+for slot=state.CurrentSlot:state.CanonicalSlotsPerSweepPoint
+    [~,allowed]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,slot);
+    if ~allowed, continue; end
+    plan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,slot);
+    if ~sixgr.truth.coupledSRSAttemptDue(plan,cfg,slot,ue), continue; end
+    occupied=owner.Pending(string({owner.Pending.Kind})=="SRS");
+    count=sum(arrayfun(@(x)x.Context.Slot==slot,occupied));
+    if count>=cfg.phy.srs.maxUEsPerSlot, continue; end
+    [cfgSRS,~]=localApplyCoupledRuntimeUserContext(cfg,plan,ue,"UL");
+    cfgSRS.SharedULTimingContext=authority;
+    nominal=sixgr.phy.frame.slotStartSample(carrier,slot-1,owner.SampleRateHz);
+    timing=sixgr.phy.ra.sharedULStageTiming(cfgSRS,nominal/owner.SampleRateHz,owner.SampleRateHz,1, ...
+        authority.ReceivedRARTiming.NTA_Tc);
+    if min(timing.TransmitStartSample,timing.ReceiveStartSample)<owner.Events.NextSampleIndex || ...
+            timing.TransmitStartSample<authority.TimingAdvanceEffectiveAtSample
+        continue; % The complete TX origin cannot precede available knowledge.
+    end
+    [collision,decisions]=localResolveCoupledSRSPUSCHResourceDecision(cfgSRS,queuedUL,table(),slot,ue);
+    if collision
+        [state,queuedUL,decisions,collision]=sixgr.truth.resolveSRSPUSCHRuntimePriority( ...
+            state,queuedUL,decisions,cfgSRS,slot,ue);
+    end
+    state.ControlTrials.SRSResourceDecisions=localAppendCompatTable( ...
+        sixgr.util.structGet(state.ControlTrials,'SRSResourceDecisions',table()),decisions);
+    if collision, continue; end
+    % This parameter is metadata only on the shared physical path. The
+    % receiver's thermal-noise owner, not a large-scale SINR prediction,
+    % determines the actual noise samples.
+    args={'SNR_dB',snr,'TrialIndex',slot+1,'SlotIndex',slot, ...
+        'TimingAdvanceSamples',authority.ReceivedRARTiming.Samples};
+    output=sixgr.link.runSRSChannelEstimation(cfgSRS,args{:},'PrepareOnly',true);
+    assert(isfield(output,'PreparedTransmission'), ...
+        'sixgr:truth:SharedSRSPreparationFailed','SRS preparation failed: %s',output.Notes);
+    context=struct('Config',cfgSRS,'Slot',slot,'Frame',1+floor((slot-1)*state.SlotDuration_s/.01), ...
+        'RNTI',localUserRNTI(state.MultiUser,ue),'ServingCell',state.CurrentServingIdx(ue), ...
+        'SNR',snr,'Arguments',{args},'DecisionSlot',state.CurrentSlot);
+    owner.queueUplinkControl(ue,output.PreparedTransmission,context);
+    queued=true;
+    localAppendRuntimeLog("INFO","Queued full SRS waveform: ue=%d decision_slot=%d source_slot=%d tx_start=%d rx_start=%d.", ...
+        ue,state.CurrentSlot,slot,output.PreparedTransmission.StartSample,output.PreparedTransmission.ReceiveStartSample);
+    return;
+end
+end
+
+function state=localCompleteSharedSRS(state,item)
+c=item.Context; p=c.Prepared;
+[post,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
+ch=state.SharedWaveformStream.directionalChannelState(item.UE,"UL");
+if isfield(ch,'Obj') && isobject(ch.Obj) && isprop(ch.Obj,'DelayProfile') && replay.ChannelFadingApplied
+    replay.ChannelModelApplied=char(ch.Obj.DelayProfile);
+end
+input=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
+    'TransmitterObservation',tx,'Replay',replay,'ChannelState',ch);
+output=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
+[raw,~,observed]=localCollectSRSTrials(c.Config,c.SNR,1,ch,c.Slot,output);
+trial=localAnnotateCoupledControlTrial(raw,c.Slot,c.Frame,item.UE,c.RNTI,"UL",c.ServingCell);
+trial.RuntimeTransportMode(:)="shared_physical_stream_SRS_received_completion";
+trial.ObservationStartSample=post.StartSample;
+trial.ObservationEndSampleExclusive=post.EndSampleExclusive;
+trial.ObservationSampleRateHz=post.SampleRateHz;
+trial.ObservationCompletionTime_s=post.EndSampleExclusive/post.SampleRateHz;
+trial.ObservationCoverageSource="complete_contiguous_received_sample_buffer";
+trial.TransmitStartSample=p.StartSample;
+trial.TransmitEndSampleExclusive=p.EndSampleExclusive;
+trial.TransmitPreparationDecisionSlot=c.DecisionSlot;
+trial.SRSReceiveTimingOffset_samples=double(sixgr.util.structGet(output,'EstimatedTimingOffset_samples',NaN));
+trial.SRSAppliedTimingCorrection_samples=double(sixgr.util.structGet(output,'AppliedTimingCorrection_samples',NaN));
+trial.SRSReceiveTimingSource=string(sixgr.util.structGet(output,'TimingEstimateSource',""));
+trial.ReceiverGainCompensationApplied=replay.ReceiverGainCompensation.Applied;
+trial.ReceivedRARTimingAdvanceCommand=c.Config.SharedULTimingContext.ReceivedRARTiming.Command;
+trial.TimingAdvanceEffectiveAtSample=c.Config.SharedULTimingContext.TimingAdvanceEffectiveAtSample;
+trial.TimeAlignmentTimerCommon=c.Config.SharedULTimingContext.TimeAlignmentTimerCommon;
+trial.RuntimeStateUpdated=false;
+trial.ObservationDeliverySlot=NaN;
+trial.ObservationDeliveryTime_s=NaN;
+trial.ObservationDeliverySource="not_yet_delivered_to_scheduler";
+state.ControlTrials.SRS=localAppendCompatTable(state.ControlTrials.SRS,trial);
+state.ObservedREAllocationTable=localAppendObservedREAllocation( ...
+    sixgr.util.structGet(state,'ObservedREAllocationTable',table()),observed);
+state.LastSRSSlotByUE(item.UE)=c.Slot;
+if ~isfield(state,'SharedSRSResults'), state.SharedSRSResults=cell(0,1); end
+state.SharedSRSResults{end+1,1}=struct('UE',item.UE,'Row',height(state.ControlTrials.SRS), ...
+    'Trial',trial,'ServingCell',c.ServingCell);
+sixgr.truth.exportSharedULControlObservation(c.Config.run.rootRunFolder,c.Config,p,item.Planes,output);
+localAppendRuntimeLog("INFO","Received shared SRS: ue=%d slot=%d samples=[%d,%d) status=%s timing=%g NMSE=%g reason=%s.", ...
+    item.UE,c.Slot,post.StartSample,post.EndSampleExclusive,trial.Status, ...
+    trial.SRSReceiveTimingOffset_samples,trial.NMSE_dB,trial.FailureReason);
+end
+
+function state=localDeliverSharedSRSResults(state)
+if ~isfield(state,'SharedSRSResults') || isempty(state.SharedSRSResults), return; end
+now=(state.CurrentSlot-1)*state.SlotDuration_s;
+keep=true(numel(state.SharedSRSResults),1);
+for k=1:numel(keep)
+    item=state.SharedSRSResults{k}; trial=item.Trial;
+    if trial.ObservationCompletionTime_s>now, continue; end
+    assert(state.CurrentServingIdx(item.UE)==item.ServingCell, ...
+        'sixgr:truth:SharedSRSOwnerChanged','Censor old-cell SRS explicitly before consuming it in a new cell.');
+    trial.ObservationDeliverySlot=state.CurrentSlot;
+    trial.ObservationDeliveryTime_s=now;
+    trial.ObservationDeliverySource="canonical_slot_start_after_complete_received_window";
+    state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,item.UE,trial);
+    trial.RuntimeStateUpdated=true;
+    % Update the measured row once. Final-slot evidence is published even
+    % when no subsequent scheduler decision consumes it.
+    state.ControlTrials.SRS(item.Row,trial.Properties.VariableNames)=trial;
+    keep(k)=false;
+end
+state.SharedSRSResults=state.SharedSRSResults(keep);
 end
 
 function state = localDeliverCoupledTRSResults(state)
@@ -12944,6 +13079,15 @@ elseif item.Kind=="RARExpiry"
         retryRow.PreambleBackoff_ms,retryRow.EarliestRetryTicks,retryRow.PreambleTransMaxExhausted);
 elseif item.Kind=="RAR" && ~isempty(fieldnames(checkpoint)) && checkpoint.NextStage==3
     retry=retry.rarAccepted();
+    common=state.UECommonCellConfigurationByUE{ue};
+    if isfield(state,'ConnectedULTimingByUE') && numel(state.ConnectedULTimingByUE)>=ue && ...
+            ~isempty(state.ConnectedULTimingByUE{ue})
+        error('sixgr:truth:ConnectedTAGReacquisitionNotIntegrated', ...
+            'A received initial RAR cannot silently overwrite a running TAG timer.');
+    end
+    state.ConnectedULTimingByUE{ue,1}=sixgr.mac.ra.connectedTimingFromRAR( ...
+        attempt.Config,common,checkpoint.RARRx,item.Context.AbsoluteSlot, ...
+        post.EndSampleExclusive,post.SampleRateHz);
 elseif isempty(fieldnames(checkpoint)) && ra.RACompleted
     retry=retry.completed();
 elseif isempty(fieldnames(checkpoint))
@@ -15326,7 +15470,10 @@ end
 T = struct2table(rows);
 end
 
-function [T, chState, observedRET] = localCollectSRSTrials(cfg, snr_dB, nTrials, chState, trialOffset)
+function [T, chState, observedRET] = localCollectSRSTrials(cfg, snr_dB, nTrials, chState, trialOffset, receivedOutput)
+if nargin < 6, receivedOutput=[]; end
+assert(isempty(receivedOutput) || nTrials==1, ...
+    'sixgr:truth:SharedSRSReducerMultiplicity','One actual SRS reception produces one canonical trial row.');
 if nargin < 4
     chState = [];
 end
@@ -15345,7 +15492,11 @@ for k = 1:nTrials
         if isfinite(double(trialOffset)) && double(trialOffset) > 0
             srsArgs = [srsArgs, {"SlotIndex", double(trialOffset)}]; %#ok<AGROW>
         end
-        outSRS = sixgr.link.runSRSChannelEstimation(cfg, srsArgs{:});
+        if isempty(receivedOutput)
+            outSRS = sixgr.link.runSRSChannelEstimation(cfg, srsArgs{:});
+        else
+            outSRS = receivedOutput;
+        end
         observedRET = localAppendCompatTable(observedRET, ...
             sixgr.util.structGet(outSRS, "ObservedREAllocationTable", table()));
         chState = sixgr.util.structGet(outSRS, "ChannelState", chState);

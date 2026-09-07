@@ -1,5 +1,173 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Main connected SRS shared-stream integration (after bc5762f1)
+
+The main SRS path now prepares full UE samples in advance, maps logical
+ports to the configured physical antennas, and registers distinct UE TX and
+gNB receive intervals with the existing physical owner. Reception consumes
+the actual completed shared samples, without another channel/RF execution.
+Canonical SRS rows retain producer, preparation, TX, RX and scheduler-delivery
+clocks. Final-slot received rows are published even without a later consumer.
+Capture-relative SRS timing is not applied as a MAC timing-advance command.
+
+Decoded SIB1 `timeAlignmentTimerCommon` is retained. At accepted received RAR,
+the initial single-cell TAG retains the decoded command, received DL clock,
+common offset, reception time, TS 38.213 clause 4.2 application boundary and
+timer expiry. This is scoped to the initial common BWPs before dedicated BWP,
+NTN or multi-cell TAG reconfiguration, not an implementation of those extra
+procedures. The additional-DM-RS N1 column is used for TA application, including
+the mandated N1,0=14; the ordinary pos0 N1=8 is not reused incorrectly.
+
+Focused checks passed in `logs/shared_srs_main_tdd_20260907.log`:
+`testConnectedRARTimingAuthority`, `testSIB1DecodedCommonAuthority`,
+`testUplinkControlReceivedTiming`, and `testUplinkControlStreamStages`.
+The first fixture used floating-point millisecond multiplication for an
+integer timestamp and correctly failed validation; the corrected fixture
+uses integer sample arithmetic and actual SIB1 UPER encode/decode.
+
+A 35-slot nominal-12-dB TDD diagnostic completed (MATLAB exit 0) from the
+inherited `lls_causal_tdd_shared_srs_fixture.yaml`, including YAML figure/IQ
+flags. Root: `C:\Users\anup0\AppData\Local\Temp\main_shared_srs_20260907_225801`.
+It is **not qualified**. No main FDD/25-dB campaign or `testAll`
+execution was launched. The actual noise remains the geometry/thermal RF
+profile; the nominal label is not an enforced measured SINR.
+
+The existing finite true-channel NMSE gate remains intact. The shared
+physical owner currently has no scoring-only desired-reference observation;
+that absence must remain unavailable/fail, not a guessed NMSE or a bypass.
+Connected PUSCH/PUCCH UCI, practical SRS usability versus offline scoring,
+main CSI/PMI/QCL/TCI, full-window RSSI, and exhaustive output qualification
+remain open after this integration work.
+
+References: TS 38.213 V18.8.0 clause 4.2; TS 38.214 V18.8.0 Tables 5.3-1
+and 6.4-1; TS 38.321 V18.6.0 clause 5.2.
+
+Measured main result (one-based SRS/scheduler slots, exclusive sample stops):
+
+| SRS slot | Prepared at slot | UE TX interval | gNB RX interval | Measured timing | Measured SRS SINR | Scheduler delivery |
+| --- | --- | --- | --- | --- | --- | --- |
+| 30 | 26 | [222620,230300) | [222543,230392) | 84 samples | 12.2599459731 dB | slot 31 |
+| 35 | 31 | [261020,268700) | [260943,268792) | 84 samples | 11.7991857804 dB | not delivered before end of horizon |
+
+Both rows have `Crash=0`, `Status=FAIL`, and
+`FailureReason=srs_channel_nmse_reference_unavailable`. Full actual
+SRS TX/RX captures are retained under
+`air_interface/mat/ul_control_received_observations`. The last-slot row is
+present with `RuntimeStateUpdated=0`; no future delivery is invented.
+All five access stages still use actual shared samples; no RA self-loop
+waveform is used. Connected DL/UL data trial counts remain zero.
+
+An independent HDF5/NumPy read of both saved MATLAB IQ captures passed:
+each has two physical antennas, 7,680 TX samples per antenna and 7,849
+samples per antenna in each pre-RF, post-RF and digital-gain-compensated
+RX plane at 7.68 MHz. Every complex sample is finite; every plane has
+nonzero energy; each sample count equals its exclusive-stop minus start.
+The whole-capture raw post-AGC mean-square power is about 0.245 mW, versus
+about 1.99e-10 mW before RF and after recorded digital gain compensation.
+Those are distinct processing planes, **not interchangeable RSSI/RSRP**;
+these full-capture averages are not configured OFDM-symbol RSSI reports.
+Capture SHA-256 values are
+`9b837520e57c827a53cc5e8bcfed15e471c58266802dc6cd5e3f3fc31e7bccaa`
+and `e77c68c6320ff9310c10d0e7fe36e4ea4041cad3dfc88421c8aadecf3582afb2`,
+in the SRS-slot order above. This is capture-integrity evidence, not a
+successful channel-NMSE or native-instrument playback qualification.
+
+Exhaustive first-five-row audit:
+`results/lls/qualification_working/reviews/shared_srs_first5_20260907`.
+It parsed 170 CSV files, 17,621 rows and 9,767 columns with no parser errors.
+There are 53 empty tables, five structural-issue files, 13 duplicate rows,
+124 required CSV semantic-check failures and one required chart-lineage
+failure. The four infinity-token hits are the valid decoded timer enum
+`infinity` in the SRS table and its mirror, **not numerical overflow**.
+The direct diagnostic also lacks full front-door run-identity fields and
+has unavailable schemas/data families; do not interpret parser success as
+complete physical or artifact qualification.
+
+The 13 duplicate rows were localized: 12 are in
+`rf/csv/energy_timeline_trace.csv` and one is in
+`beamforming/csv/mimo_negative_trials.csv`. The energy exporter reduces
+multiple SSB beam rows to the same entity/slot and charges a full slot per
+row; it does not retain actual beam/sample-window identity. This modeled
+energy accounting needs disjoint per-radio intervals, not blind CSV
+deduplication. `resolveNominalVsEffectiveMIMO.localNegativeTrials` also
+creates an `InjectedFault`/`NegativeExpectedOk=1` row for each failed
+configuration objective without executing a negative waveform trial. That
+belongs in configuration diagnostics, not evidence of an injected-fault
+PHY test. Both producers remain **unrepaired** in this checkpoint.
+
+All five fallback-token and four placeholder-token hits were column names
+in `metric_unit_catalog.csv`, not affirmative execution flags. The five
+structural failures are empty headers in multiuser summary, the primary
+and mirrored PDCCH table, CSI-RS trials and live LA inputs. Those schema
+defects remain open even though missing observations must not be filled
+with dummy rows.
+
+All three generated PNGs were visually inspected. The legacy case plotter
+incorrectly turned unavailable BER/BLER into machine epsilon and emitted an
+empty throughput graph. That producer is repaired: all-unavailable graphs
+are omitted, zero observations remain zero on a linear axis, and confidence
+bounds are no longer substituted for point estimates. The failed run's
+original plots are retained as diagnostic evidence, not silently rewritten.
+`testLinkCasePlotMissingMeasurements` verifies case and sweep plot values.
+
+Post-run fixes also preserve invariant actual RF/noise/loss metadata from
+physical execution segments, include transmitter identity in UL capture
+filenames, retain actual gain-compensation status, and keep the configured
+SRS label at the requested nominal operating point (the diagnostic still
+contains the older 35.78-dB large-scale prediction in that metadata field).
+These metadata/plot fixes require fresh publication; they do not alter the
+retained 35-slot evidence or manufacture successful SRS NMSE/data rows.
+
+The first broad regression batch exposed a struct/table compatibility error
+in the new SRS-delivery boundary. Its public legacy component caller supplies
+a struct plus explicit producer slot. The boundary now accepts that typed
+input while still requiring complete clock/delivery evidence on shared rows.
+The continued regression log is
+`logs/shared_srs_regression_final_20260907.log`; the complete final batch
+finished with MATLAB exit 0 on 2026-09-08 local time. It executed 24 checks:
+
+- `testConnectedRARTimingAuthority`,
+  `testCoupledTruthOLLARetransmissionExclusion`, `testLLSControlAccessGating`,
+  `testLinkCasePlotMissingMeasurements`, `testLinkKPIPlotMetadataIsolation`,
+  `testLinkExportPipeline`, `testArtifactIntegrity`,
+  `testOrganizeRunResults_E2EArtifactPreservation`;
+- `testSchedulerGrantConsistency`, `testConfig`, `testLLS_DL`, `testLLS_UL`,
+  `testLLS_ReferencePoints`, `testStrictProxyGuards`,
+  `testStrictMode_NoFallbackAnywhere`, `testBroadcastTRSNoisyStream`,
+  `testTRSMeasuredResultDelivery`;
+- `testE2E_FastVsTruth`, `testE2E_TruthPacketSemanticCampaign`,
+  `test6GScenarioConfigValidation`, `test6GScenarioRunner`,
+  `test6GScenarioMatrixRunner`, `test6GScenarioPromptCompliance`,
+  `test6GParameterCatalog`.
+
+Across the focused batches, 32 distinct MATLAB checks passed. The eight
+additional passing checks were `testSIB1DecodedCommonAuthority`,
+`testUplinkControlReceivedTiming`, `testUplinkControlStreamStages`,
+`testSharedWaveformPhysicalRuntime`, `testCausalSRSStrictScheduleAuthority`,
+`testFirstSRSULPreDCI`, `testSRSPUSCHRuntimePriority`, and
+`testSRSPUCCHExactCollisionFDDTDD`. These component/regression results and
+the independent saved-IQ integrity check do not change the failed main
+SRS qualification or qualify connected PUSCH/PUCCH/UCI. The user's
+`testAll` execution exception remains in force; its registry was updated,
+but `testAll` was not executed. Existing FDD/TDD component and E2E fixtures
+were regression checks, not a new main FDD or 25-dB campaign.
+
+Additional audit items remain explicit: the generic control-case aggregate
+still labels procedure failure probability as BLER for PRACH; that needs a
+CRC-applicable metric contract. Full-window RSSI/plot lineage, missing data
+families, dedicated SRS/control configuration delivery, TA tracking beyond
+the initial RAR/TAG and practical-versus-oracle SRS admission remain open.
+
+RSSI scope was cross-checked against [TS 38.215 V18.4.0](https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.04.00_60/ts_138215v180400p.pdf),
+clauses 5.1.3, 5.1.4 and 5.1.21. NR carrier RSSI, CSI-RSSI and the separately
+configured RSSI measurement have different time-resource rules. The current
+`measureSSBWindowPower` measures only the received 240-subcarrier/four-symbol
+SSB window and explicitly labels that scope. Completing carrier/CSI RSSI
+requires actual received samples over the applicable configured bandwidth
+and symbols, linear power averaging including interference/noise, and the
+corresponding branch/measurement-plane evidence. Its SSB-window value must
+not simply be renamed to satisfy the requested CSV/PNG coverage.
+
 ## Connected UL receive timing repair (after e257a7b1)
 
 This is a component-level repair, **not main connected-uplink qualification**.

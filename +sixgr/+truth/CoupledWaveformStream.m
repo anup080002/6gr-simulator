@@ -177,6 +177,39 @@ classdef CoupledWaveformStream < handle
             obj.Decisions(end+1)=struct('ID',id,'Kind',"RARExpiry",'UE',ue, ...
                 'Context',struct('RunId',ra.RunId,'ExpiryTicks',window.ExpiryTicksExclusive));
         end
+        function queueUplinkControl(obj,ue,prepared,context)
+            assert(isa(prepared,'sixgr.link.PreparedUplinkControlTransmission') && ...
+                prepared.SampleRateHz==obj.SampleRateHz && prepared.PhysicalTiming.WaveformTimingApplied, ...
+                'sixgr:truth:SharedULControlPreparationAuthority', ...
+                'Shared UL needs a typed preparation with received clock/TA authority.');
+            assert(~obj.hasPending(prepared.Channel,ue), ...
+                'sixgr:truth:DuplicatePendingULControl','Receive the prior UE control observation first.');
+            link=obj.linkForUE(ue,"UL");
+            tx="ue_"+ue; rx="gnb_"+link.Cell+"_rx";
+            array=sixgr.rf.AntennaArrayFactory.build(prepared.ReceiverConfig,'ue', ...
+                'signal',lower(prepared.Channel),'numPorts',size(prepared.Tx.Waveform,2));
+            samples=prepared.Tx.Waveform*cast(array.PortToElementMatrix.','like',prepared.Tx.Waveform);
+            node=obj.Nodes(string({obj.Nodes.ID})==tx);
+            assert(size(samples,2)==node.NumAntennas, ...
+                'sixgr:truth:SharedULControlAntennaLayout','Prepared ports must map to the actual physical UE radio.');
+            obj.Serial=obj.Serial+1; id=lower(prepared.Channel)+"_observation_"+obj.Serial;
+            obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,prepared.StartSample));
+            active=find(any(samples~=0,2),1,'first');
+            assert(~isempty(active),'sixgr:truth:EmptySharedULControl','A scheduled SRS/PUCCH must contain actual transmit energy.');
+            boundary=id+"_ul_start";
+            obj.Events.decisionBoundary(boundary,prepared.StartSample+active-1);
+            obj.Decisions(end+1)=struct('ID',boundary,'Kind',"ULTransmitBoundary", ...
+                'UE',ue,'Context',struct());
+            obj.Events.observe(tx+":tx",id,prepared.StartSample,prepared.EndSampleExclusive);
+            ch=obj.channelState(ue,"UL");
+            for plane=[rx+":pre_rf",rx+":post_rf"]
+                obj.Events.observe(plane,id,prepared.ReceiveStartSample, ...
+                    prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
+            end
+            context.Prepared=prepared;
+            obj.Pending(end+1)=struct('ID',id,'Kind',prepared.Channel,'UE',ue, ...
+                'Context',context,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+        end
         function ch=directionalChannelState(obj,ue,direction)
             % Metadata view only: never swap, clone or execute the owned
             % fading object to prepare a future opposite-direction signal.

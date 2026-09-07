@@ -697,7 +697,7 @@ methods(Static)
         % transition.  Production and tests intentionally share this exact
         % implementation; tests must not reconstruct scheduler feedback.
         state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrial( ...
-            state, ueIdx, row, slotIdx);
+            state, ueIdx, row, slotIdx, sixgr.truth.srsResultDeliverySlot(state,row,slotIdx));
     end
 
     function row = emptyLatestFeedbackRowRuntime()
@@ -5611,15 +5611,18 @@ methods(Static, Access=private)
         end
         row = trialT(end, :);
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
+        availableSlot = sixgr.truth.srsResultDeliverySlot(state,row);
         state.LastSRSObservedSlotByUE(ueIdx) = double(slotIdx);
         ok = sixgr.truth.CoupledTruthRuntime.srsRuntimeEvidenceComplete(row);
         if ok
             state.SRSValidityState(ueIdx) = "valid";
             state.CSIValidityState(ueIdx) = "fresh_srs";
             state.LastSuccessfulSRSSlotByUE(ueIdx) = double(slotIdx);
-            state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx);
-            state = sixgr.truth.CoupledTruthRuntime.updateTimingAdvanceFromReceiverTrialImpl( ...
-                state, ueIdx, row, "srs_receiver_timing_estimate");
+            state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx, availableSlot);
+            if ~ismember('SRSReceiveTimingOffset_samples',row.Properties.VariableNames)
+                state = sixgr.truth.CoupledTruthRuntime.updateTimingAdvanceFromReceiverTrialImpl( ...
+                    state, ueIdx, row, "srs_receiver_timing_estimate");
+            end % A capture guard/filter offset is not a received MAC TA command.
         else
             state.SRSValidityState(ueIdx) = "invalid";
             state.CSIValidityState(ueIdx) = "invalid_srs_not_usable";
@@ -5627,13 +5630,13 @@ methods(Static, Access=private)
         end
         state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
             state, "SRS", "UE", ueIdx, row, ...
-            "ProducerSlot", slotIdx, "AvailableSlot", slotIdx, ...
+            "ProducerSlot", slotIdx, "AvailableSlot", availableSlot, ...
             "Valid", ok, "Direction", "UL", "SourceSignal", "SRS", ...
             "MeasurementSource", "CoupledTruthRuntime.applySRSTrial");
         state = sixgr.truth.CoupledTruthRuntime.refreshControlStateImpl(state);
     end
 
-    function state = updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx)
+    function state = updateLatestULFeedbackFromSRSTrial(state, ueIdx, row, slotIdx, availableSlot)
         ri = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
             ["RIEstimate","RankEstimate","EstimatedRI","RI"], NaN);
         tpmi = sixgr.truth.CoupledTruthRuntime.rowFirstFinite(row, ...
@@ -5693,6 +5696,7 @@ methods(Static, Access=private)
             srsReport = sixgr.truth.CoupledTruthRuntime.buildSRSAdaptationReport( ...
                 schedCQI, ri, tpmi, schedAdjustedSINR_dB, slotIdx, ...
                 servingCellForAdaptation, schedSource, "UL");
+            srsReport.DueSlot = double(availableSlot);
             [state, srsReport] = sixgr.truth.CoupledTruthRuntime. ...
                 applyLinkAdaptationToCSIReport(state, srsReport, ueIdx, "UL", row);
             latest = sixgr.truth.CoupledTruthRuntime. ...
@@ -5714,8 +5718,8 @@ methods(Static, Access=private)
             latest.Direction = "UL";
             latest.Slot = double(slotIdx);
             latest.SourceSlot = double(slotIdx);
-            latest.DueSlot = double(slotIdx);
-            latest.DeliveredSlot = double(slotIdx);
+            latest.DueSlot = double(availableSlot);
+            latest.DeliveredSlot = double(availableSlot);
             latest.FeedbackSourceSignal = "SRS";
             latest.FeedbackCRCPass = NaN;
             if srsAdaptationApplied
@@ -5829,6 +5833,7 @@ methods(Static, Access=private)
                 dlReport = sixgr.truth.CoupledTruthRuntime.buildSRSAdaptationReport( ...
                     dlCqi, ri, tpmi, dlAdjustedSINR, slotIdx, servingCell, ...
                     dlSchedSource, "DL");
+                dlReport.DueSlot = double(availableSlot);
                 [state, dlReport] = sixgr.truth.CoupledTruthRuntime. ...
                     applyLinkAdaptationToCSIReport(state, dlReport, ueIdx, "DL", row);
                 dlLatest = sixgr.truth.CoupledTruthRuntime. ...
@@ -5842,8 +5847,8 @@ methods(Static, Access=private)
                 end
                 if isfinite(dlMCS) && dlMCS >= 0
                     dlLatest.SourceSlot = double(slotIdx);
-                    dlLatest.DueSlot = double(slotIdx);
-                    dlLatest.DeliveredSlot = double(slotIdx);
+                    dlLatest.DueSlot = double(availableSlot);
+                    dlLatest.DeliveredSlot = double(availableSlot);
                     dlLatest.MCSIndex = double(round(dlMCS));
                     dlLatest.Modulation = char(string(dlMod));
                     dlLatest.TargetCodeRate = double(dlRate);
