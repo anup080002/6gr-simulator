@@ -66,7 +66,7 @@ stream.observe('ue_pre_rf','ssb',0,broadcast.NumSamples);
 stream.observe('ue_pre_rf','trs',firstTRS,firstTRS+trs.NumSamples);
 if includePDCCH
     stream.enqueue('gnb','pdcch',sixgr.phy.waveform.WaveformChunk(physicalPDCCH,firstTRS));
-    stream.observe('ue_pre_rf','pdcch',firstTRS,firstTRS+pdcch.NumSamples);
+    stream.observe('ue_pre_rf','pdcch',firstTRS,firstTRS+pdcch.MinimumReceiveSamples);
 end
 % This diagnostic's entire TX schedule is known. A scheduler must instead
 % commit only intervals for which all causal contributors are available.
@@ -126,6 +126,9 @@ for requested = unique([1 13:round(fs*1e-3):stop stop])
                 assert(control.Ok && isequal(control.DCIBits,bits), ...
                     'PDCCH did not recover the actual DCI payload from the shared noisy CDL stream.');
                 assert(controlInfo.ObservationStartSample==firstTRS);
+                assert(controlInfo.ObservationEndSampleExclusive==firstTRS+pdcch.MinimumReceiveSamples && ...
+                    controlInfo.ObservationEndSampleExclusive<firstTRS+pdcch.NumSamples && ...
+                    ~controlInfo.ReceivePaddingApplied);
                 assert(controlInfo.ListLength==cfgP.phy.pdcch.listLength);
         end
         assert(truth.RuntimeChannelState.CurrentSampleIndex==clockBefore, ...

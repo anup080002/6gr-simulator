@@ -9046,14 +9046,14 @@ end
 % Consequently its DCI decode is intrinsic execution authority, not an
 % optional access-gating policy.  A disabled PDCCH must yield no qualified
 % scheduler_truth grant rather than a control-free data waveform.
-pdcchRequired = true;
 slotDLControlAllowed = logical(sixgr.util.structGet(state, "CurrentSlotDLAllowed", true)) && ...
     double(sixgr.util.structGet(state, "CurrentSlotDLNumSymbols", 0)) > 0;
 for gi = 1:numel(grants)
     grant = grants(gi);
     ueIdx = localResolveGrantUEIndex(grant, state.MultiUser);
-    if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= numel(userCfg))
-        continue;
+    if ~(isfinite(ueIdx) && ueIdx==fix(ueIdx) && ueIdx >= 1 && ueIdx <= numel(userCfg))
+        error('sixgr:truth:InvalidPDCCHGrantUEIdentity', ...
+            'A scheduled DCI must bind to an existing UE; silently skipping the grant is forbidden.');
     end
     cfgU = userCfg{ueIdx};
     tempState = state;
@@ -9067,58 +9067,19 @@ for gi = 1:numel(grants)
     rnti = double(sixgr.util.structGet(grant, "RNTI", localUserRNTI(state.MultiUser, ueIdx)));
     servingCell = double(sixgr.util.structGet(grant, "ServingCell", NaN));
     if ~slotDLControlAllowed
-        if pdcchRequired
-            [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
-                state, grant, direction, "control_blocked_no_dl_control_symbols_in_tdd_slot");
-            state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
-            pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, NaN, ...
-                "control_blocked_no_dl_control_symbols_in_tdd_slot");
-            pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction, servingCell);
-            [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
-            state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
-        else
-            grant.PDCCHGatingActive = false;
-            grant.ControlDecodeOk = true;
-            grant.GrantControlState = "control_not_required_no_dl_control_symbols_in_tdd_slot";
-            [~, grant] = localAnnotateGrantControlTrial(table(), grant, cfgU, direction);
-            if isempty(qualifiedGrants)
-                qualifiedGrants = grant;
-            else
-                [qualifiedGrants, grant] = localHarmonizeStructArrays(qualifiedGrants, grant);
-                qualifiedGrants(end + 1, 1) = grant; %#ok<AGROW>
-            end
-        end
-        continue;
-    end
-    pdcchSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "DL", snr_dB);
-    if localPDCCHPreAttachAssumptionApplies(state, cfgU, ueIdx, controlSlotIdx)
-        grant.PDCCHGatingActive = true;
-        grant.ControlDecodeOk = true;
-        grant.ControlEligible = true;
-        grant.GrantControlState = "pre_attach_assumed_ok_no_trial_in_warmup";
-        grant.CellAcquisitionState = "pre_attach_assumed_ok";
-        grant.AccessState = "pre_attach_assumed_ok";
-        grant.PDCCHControlEvidenceSource = "run.controlGating.preAttachUEsBeforeMeasurement";
-        if isfield(state, "LastPDCCHStatus") && ueIdx <= numel(state.LastPDCCHStatus)
-            state.LastPDCCHStatus(ueIdx) = "pre_attach_assumed_ok_no_trial_in_warmup";
-        end
-        if isfield(state, "LastSuccessfulPDCCHSlotByUE") && ueIdx <= numel(state.LastSuccessfulPDCCHSlotByUE)
-            state.LastSuccessfulPDCCHSlotByUE(ueIdx) = controlSlotIdx;
-        end
-        pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, pdcchSNR_dB, ...
-            "pre_attach_assumed_ok_no_trial_in_warmup");
+        [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
+            state, grant, direction, "control_blocked_no_dl_control_symbols_in_tdd_slot");
+        state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
+        pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, NaN, ...
+            "control_blocked_no_dl_control_symbols_in_tdd_slot");
         pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction, servingCell);
         [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
         state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
-        state = sixgr.truth.CoupledTruthRuntime.updateGrantControlTrace(state, grant, direction);
-        if isempty(qualifiedGrants)
-            qualifiedGrants = grant;
-        else
-            [qualifiedGrants, grant] = localHarmonizeStructArrays(qualifiedGrants, grant);
-            qualifiedGrants(end + 1, 1) = grant; %#ok<AGROW>
-        end
         continue;
     end
+    pdcchSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "DL", snr_dB);
+    % An initialized attachment state is not a received DCI. Pre-attachment
+    % may initialize access state, but never authorizes this DL/UL grant.
     % Reserve exact payload + DM-RS coordinates across both scheduling
     % passes. A search-space/CORESET ID or the scheduled data direction does
     % not create a separate physical resource pool.
@@ -9182,30 +9143,6 @@ for gi = 1:numel(grants)
         end
     end
 end
-end
-
-function tf = localPDCCHPreAttachAssumptionApplies(state, cfgU, ueIdx, controlSlotIdx)
-tf = false;
-if ~logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false))
-    return;
-end
-if ~logical(sixgr.util.structGet(state.ControlGating, "PreAttachUEsBeforeMeasurement", ...
-        sixgr.util.structGet(cfgU, "run.controlGating.preAttachUEsBeforeMeasurement", false)))
-    return;
-end
-warmupSlots = double(sixgr.util.structGet(cfgU, "run.warmupSlots", ...
-    sixgr.util.structGet(cfgU, "run_control.warmup_slots", 0)));
-if ~(isfinite(warmupSlots) && warmupSlots >= 0)
-    warmupSlots = 0;
-end
-if ~(isfinite(controlSlotIdx) && controlSlotIdx >= warmupSlots)
-    return;
-end
-lastSlot = NaN;
-if isfield(state, "LastSuccessfulPDCCHSlotByUE") && ueIdx <= numel(state.LastSuccessfulPDCCHSlotByUE)
-    lastSlot = double(state.LastSuccessfulPDCCHSlotByUE(ueIdx));
-end
-tf = ~(isfinite(lastSlot) && lastSlot >= 0 && lastSlot < warmupSlots);
 end
 
 function state = localCollectCanonicalCoupledControlTrials(state, cfgU, ueIdx, direction, snr_dB, trialT)
@@ -13414,7 +13351,6 @@ if reserveControlResources && nTrials ~= 1
     error("sixgr:truth:PDCCHReservationTrialScope", ...
         "A shared control-slot reservation must execute one scheduled DCI at a time.");
 end
-dciFormatSeed = localResolvePDCCHGrantDCIFormat(grantContext, "DL");
 dciBitsSeed = int8([]);
 if isstruct(sixgr.util.structGet(grantContext, "DCI", struct()))
     dciBitsSeed = int8(sixgr.util.structGet(sixgr.util.structGet(grantContext, "DCI", struct()), "Bits", int8([])));
@@ -13436,8 +13372,14 @@ for k = 1:nTrials
         end
         if ~isempty(dciBitsSeed)
             txArgs = [txArgs {"DCIBits", dciBitsSeed}]; %#ok<AGROW>
+        elseif ~isempty(fieldnames(grantContext))
+            error('sixgr:truth:MissingScheduledPDCCHPayload', ...
+                'A scheduler DCI must use the actual finalized grant payload.');
         else
-            txArgs = [txArgs {"K", 64}]; %#ok<AGROW>
+            payloadBits=sixgr.util.structGet(cfgTrial,'phy.pdcch.configuredPayloadBits', ...
+                sixgr.util.structGet(cfgTrial,'phy.pdcch.dciPayloadBits',[]));
+            validateattributes(payloadBits,{'numeric'},{'scalar','finite','integer','positive'});
+            txArgs = [txArgs {"K", payloadBits}]; %#ok<AGROW>
         end
         if reserveControlResources
             txArgs = [txArgs {"ReservedRECoordinates", occupiedRECoordinates}]; %#ok<AGROW>
@@ -13456,10 +13398,9 @@ for k = 1:nTrials
             "CellID", double(tx.Carrier.NCellID), ...
             "UEID", double(sixgr.util.structGet(grantContext, "UEIndex", NaN)), ...
             "AllocationID", "pdcch_slot_" + string(observedSlot0));
-        observedRET = localAppendCompatTable(observedRET, pdcchRET);
-        [rxWave,nVar,replay,noiseOnly,updatedRuntimeChannelState] = ...
+        [rxWave,nVar,replay,updatedRuntimeChannelState] = ...
             localApplyPDCCHChannelAndNoise(preparedPDCCH,snr_dB,updatedRuntimeChannelState);
-        tDecode = tic;
+        observedRET = localAppendCompatTable(observedRET,pdcchRET);
         origin = double(sixgr.util.structGet(replay,"RuntimeChannelStartSample",NaN));
         if ~isfinite(origin) && ~logical(sixgr.util.structGet(replay,"RuntimeChannelStateUsed",false))
             origin = preparedPDCCH.RuntimeStartSample;
@@ -13470,296 +13411,7 @@ for k = 1:nTrials
         observation = sixgr.phy.waveform.WaveformObservationBuffer( ...
             origin,origin+size(rxWave,1),preparedPDCCH.SampleRateHz,size(rxWave,2));
         observation.append(sixgr.phy.waveform.WaveformChunk(rxWave,origin),preparedPDCCH.SampleRateHz);
-        noiseVariance = [];
-        if isfinite(double(nVar)) && double(nVar) >= 0
-            noiseVariance = nVar;
-        end
-        [rx,rxInfo] = sixgr.link.completePDCCHReception(preparedPDCCH,observation, ...
-            "NoiseVariance",noiseVariance,"NoiseOnlyWaveform",noiseOnly);
-        controlLatency_ms = toc(tDecode) * 1e3;
-        radioTTI_ms = localSlotDuration(cfgTrial) * 1e3;
-        noiseArgs = {"Carrier", tx.Carrier, "PDCCH", tx.PDCCH, "K", numel(tx.DCIBits), ...
-            "ListLength", sixgr.util.structGet(cfgTrial,"phy.pdcch.listLength",[]), ...
-            "ExpectedDCIBits", tx.DCIBits};
-        if isfinite(grantRNTI)
-            noiseArgs = [noiseArgs {"RNTI", grantRNTI}]; %#ok<AGROW>
-        end
-        if isfinite(double(nVar)) && double(nVar) >= 0
-            noiseArgs = [noiseArgs {"NoiseVar", nVar}]; %#ok<AGROW>
-        end
-        [rxNoise, ~] = sixgr.phy.dl.PDCCH_Rx(noiseOnly, cfgTrial, noiseArgs{:});
-        [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
-        dciCrcPass = logical(sixgr.util.structGet(rx, "Ok", false)) && ...
-            double(sixgr.util.structGet(rx, "ErrFlag", 1)) == 0;
-        payloadMatch = logical(sixgr.util.structGet(rx, "DCIPayloadMatch", (be == 0) && (bt == numel(tx.DCIBits))));
-        ok = dciCrcPass && payloadMatch;
-        candidateT = sixgr.util.structGet(rxInfo, "CandidateResults", table());
-        if ~istable(candidateT)
-            candidateT = table();
-        end
-        decodedDci = localDecodeObservedPDCCHGrantDCI( ...
-            rx, tx, dciFormatSeed, grantContext, cfgTrial);
-        aggLevel = localPDCCHScalar(tx.PDCCH, "AggregationLevel", NaN);
-        usedCCEs = aggLevel;
-        availCCEs = localPDCCHAvailableCCEs(tx.PDCCH);
-        controlBits = double(sixgr.util.structGet(txInfo, "E", NaN));
-        r.TBSize_bits = double(numel(tx.DCIBits));
-        r.DCISize_bits = double(numel(tx.DCIBits));
-        r.BitsCompared = double(bt);
-        r.BitErrors = double(be);
-        r.CRCApplicable = true;
-        r.CRCPass = double(ok);
-        r.CRCOutcome = string(localPDCCHCRCOutcome(dciCrcPass, payloadMatch));
-        r.DCICrcPass = logical(dciCrcPass);
-        r.PDCCHPayloadMatch = logical(payloadMatch);
-        r.PDCCHCausalGrantDecodeOk = logical(sixgr.util.structGet(rx, "CausalGrantDecodeOk", ok));
-        r.PDCCHExpectedDCIBitCount = double(numel(tx.DCIBits));
-        r.PDCCHDecodedDCIBitCount = double(numel(sixgr.util.structGet(rx, "DCIBits", int8([]))));
-        r.PDCCHDCIBitsCompared = double(sixgr.util.structGet(rx, "DCIBitsCompared", bt));
-        r.PDCCHDCIBitErrors = double(sixgr.util.structGet(rx, "DCIBitErrors", be));
-        r.PDCCHMissedDetection = logical(sixgr.util.structGet(rx, "MissedDetection", ~dciCrcPass));
-        r.PDCCHFalseAlarm = logical(sixgr.util.structGet(rx, "FalseAlarm", dciCrcPass && ~payloadMatch));
-        r.PDCCHErrFlag = double(sixgr.util.structGet(rx, "ErrFlag", NaN));
-        r.DetectionMetric = 1 - (double(be) / max(double(bt), 1));
-        r.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
-        r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
-        r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
-        r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
-        r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
-        r.NoiseVarianceSource = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
-        r.ChannelModelApplied = string(sixgr.util.structGet(replay, "ChannelModelApplied", ""));
-        r.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
-        r.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
-        r.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
-        r.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
-        r.AppliedPathloss_dB = double(sixgr.util.structGet(replay, "AppliedPathloss_dB", NaN));
-        r.AppliedShadowFading_dB = double(sixgr.util.structGet(replay, "AppliedShadowFading_dB", NaN));
-        r.AppliedO2I_dB = double(sixgr.util.structGet(replay, "AppliedO2I_dB", NaN));
-        r.AppliedLargeScaleGainSource = string(sixgr.util.structGet(replay, "AppliedLargeScaleGainSource", ""));
-        r.PowerContextAmplitudeUnit = string(sixgr.util.structGet( ...
-            replay,"PowerContextAmplitudeUnit",""));
-        r.PowerContextTotalTxPower_dBm = double(sixgr.util.structGet( ...
-            replay,"PowerContextTotalTxPower_dBm",NaN));
-        powerContext = sixgr.util.structGet(replay,"PowerContext",struct());
-        r.PowerContextTxGain_dB = double(sixgr.util.structGet( ...
-            powerContext,"TxGain_dB",NaN));
-        r.PowerContextRxGain_dB = double(sixgr.util.structGet( ...
-            powerContext,"RxGain_dB",NaN));
-        r.PowerContextAdditionalLoss_dB = double(sixgr.util.structGet( ...
-            powerContext,"AdditionalLoss_dB",NaN));
-        r.CellTotalTxPower_dBm = double(sixgr.util.structGet( ...
-            powerContext,"CellTotalTxPower_dBm",NaN));
-        r.EndpointPowerBudget_dBm = double(sixgr.util.structGet( ...
-            powerContext,"EndpointPowerBudget_dBm",NaN));
-        r.ConcurrentTransmitterGrantCount = double(sixgr.util.structGet( ...
-            powerContext,"ConcurrentTransmitterGrantCount",NaN));
-        r.GrantPowerFraction = double(sixgr.util.structGet( ...
-            powerContext,"GrantPowerFraction",NaN));
-        r.GrantTargetTxPower_dBm = double(sixgr.util.structGet( ...
-            powerContext,"GrantTargetTxPower_dBm",NaN));
-        r.ScheduledPowerPolicy = string(sixgr.util.structGet( ...
-            powerContext,"ScheduledPowerPolicy",""));
-        r.ScheduledPowerAuthority = string(sixgr.util.structGet( ...
-            powerContext,"ScheduledPowerAuthority",""));
-        r.SharedCellBudgetApplied = logical(sixgr.util.structGet( ...
-            powerContext,"SharedCellBudgetApplied",false));
-        r.TxRFExecutionStatus = string(sixgr.util.structGet( ...
-            replay,"TxRFExecutionStatus",""));
-        r.TxRFStageOrder = string(sixgr.util.structGet( ...
-            replay,"TxRFStageOrder",""));
-        r.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
-            replay,"TxRFAppliedStageCount",0));
-        r.CompositeReceiverFrontEndApplied = logical(sixgr.util.structGet( ...
-            replay,"CompositeReceiverFrontEndApplied",false));
-        r.CompositeReceiverFrontEndStatus = string(sixgr.util.structGet( ...
-            replay,"CompositeReceiverFrontEndStatus",""));
-        r.ServingRSRP_dBm = double(sixgr.util.structGet(replay, "ServingRSRP_dBm", NaN));
-        r.ServingRSRPSource = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
-        r.LargeScaleSINR_dB = double(sixgr.util.structGet(replay, "LargeScaleSINR_dB", NaN));
-        r.LargeScaleSINRSource = string(sixgr.util.structGet(replay, "LargeScaleSINRSource", ""));
-        r.InterferenceMode = string(sixgr.util.structGet(replay, "InterferenceMode", ""));
-        r.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
-        r.TrueCFO_Hz = r.InjectedCFO_Hz;
-        r.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", 0));
-        r.TrueTimingOffset_samples = r.InjectedTimingOffset_samples;
-        r.IQImbalanceConfigured = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
-        r.IQImbalanceApplied = logical(sixgr.util.structGet(replay, "IQImbalanceApplied", false));
-        r.IQImbalanceModel = string(sixgr.util.structGet(replay, "IQImbalanceModel", ""));
-        r.ConfiguredIQGainImbalance_dB = double(sixgr.util.structGet(replay, "ConfiguredIQGainImbalance_dB", NaN));
-        r.ConfiguredIQPhaseImbalance_deg = double(sixgr.util.structGet(replay, "ConfiguredIQPhaseImbalance_deg", NaN));
-        r.IQImbalanceMirrorPowerRatio_dB = double(sixgr.util.structGet(replay, "IQImbalanceMirrorPowerRatio_dB", NaN));
-        r.IQImbalanceImageRejection_dB = double(sixgr.util.structGet(replay, "IQImbalanceImageRejection_dB", NaN));
-        r.IQImbalanceIQPowerRatio_dB = double(sixgr.util.structGet(replay, "IQImbalanceIQPowerRatio_dB", NaN));
-        r.IQImbalanceIQCorrelation = double(sixgr.util.structGet(replay, "IQImbalanceIQCorrelation", NaN));
-        r.IQImbalanceEstimatedAlphaAbs = double(sixgr.util.structGet(replay, "IQImbalanceEstimatedAlphaAbs", NaN));
-        r.IQImbalanceEstimatedBetaAbs = double(sixgr.util.structGet(replay, "IQImbalanceEstimatedBetaAbs", NaN));
-        r.IQImbalanceMeasurementSource = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementSource", ""));
-        r.IQImbalanceMeasurementStatus = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementStatus", ""));
-        r.ReceiverHestSINR_dB = double(sixgr.util.structGet(rx, "ReceiverHestSINR_dB", NaN));
-        r.ReceiverHestSINRSource = string(sixgr.util.structGet(rx, "ReceiverHestSINRSource", ""));
-        r.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", ""));
-        r.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", ""));
-        r.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", ""));
-        r.MeasuredTrialSINR_dB = NaN;
-        r.MeasuredTrialSINRSource = "";
-        r.MeasuredTrialSINRValueRole = "unavailable";
-        r.MeasuredTrialSINRValueStatus = "unavailable";
-        r.MeasuredTrialSINRNAReason = "pdcch_has_no_data_post_equalization_sinr_measurement";
-        r.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
-        r.NoiseVarStatus = string(sixgr.util.structGet(rx, "NoiseVarStatus", ""));
-        r.NoiseVarSource = string(sixgr.util.structGet(rx, "NoiseVarSource", ""));
-        r.NoiseVarReason = string(sixgr.util.structGet(rx, "NoiseVarReason", ""));
-        if strlength(strtrim(r.NoiseVarStatus)) == 0 && isfinite(r.NoiseVariance) && r.NoiseVariance > 0
-            r.NoiseVarStatus = "OK";
-            r.NoiseVarSource = "pdcch_receiver_noise_variance";
-        elseif ~(isfinite(r.NoiseVariance) && r.NoiseVariance > 0)
-            r.NoiseVarStrictFailure = true;
-            r.NoiseVarReason = "pdcch_noise_variance_missing_or_nonpositive";
-        elseif r.NoiseVarStatus ~= "OK"
-            r.NoiseVarStrictFailure = true;
-        end
-        if localThermalNoiseSINRUnavailable(replay)
-            r = localMarkControlSINRUnavailable(r, ...
-                "thermal_noise_sinr_unavailable_without_runtime_rx_power_or_pathloss");
-        end
-        r.EVM_rms = double(sixgr.util.structGet(rx, "EVM_rms", NaN));
-        r.DecodeAttempted = true;
-        r.DecodeUsable = logical(ok);
-        r.DetectionAttempted = true;
-        r.DetectionSuccess = logical(ok);
-        r.DetectionUsable = isfinite(r.DetectionMetric) && height(candidateT) > 0;
-        r.MeasurementAttempted = true;
-        r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && ...
-            sixgr.util.isAcceptableSINRStatus(r.ReceiverHestSINRValueStatus);
-        r.FalseAlarmFlag = double(logical(sixgr.util.structGet(rxNoise, "Ok", false)));
-        r.BlockingFlag = double(isfinite(aggLevel) && isfinite(availCCEs) && aggLevel > availCCEs);
-        r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", height(candidateT)));
-        r.AvailableCCECount = availCCEs;
-        r.UsedCCECount = usedCCEs;
-        r.NonOverlappedCCEUsage = usedCCEs / max(availCCEs, 1);
-        r.AggregationLevel = aggLevel;
-        r.CandidatesAttempted = r.BlindDecodeCount;
-        r.PDCCHBlindSearchEnabled = logical(sixgr.util.structGet(rxInfo, "BlindSearch", false));
-        r.PDCCHCandidatesAvailable = double(sixgr.util.structGet(rxInfo, "NumCandidatesAvailable", height(candidateT)));
-        r.PDCCHCandidatesAttempted = r.BlindDecodeCount;
-        txCandidateIndex = localPDCCHScalar(tx.PDCCH, "AllocatedCandidate", 1) - 1;
-        selectedAggregationLevel = double(sixgr.util.structGet( ...
-            rx, "CandidateAggregationLevel", NaN));
-        selectedCandidateIndex = double(sixgr.util.structGet( ...
-            rx, "CandidateIndexWithinAggregation", NaN));
-        r.PDCCHCandidateIndex = double(txCandidateIndex);
-        r.PDCCHCandidateFlatIndex = double(sixgr.util.structGet( ...
-            rx, "CandidateFlatIndex", sixgr.util.structGet(rx, "CandidateIndex", NaN)));
-        r.PDCCHSelectedAggregationLevel = selectedAggregationLevel;
-        r.PDCCHSelectedCandidateIndex = selectedCandidateIndex;
-        r.PDCCHSelectedCCEIndex = localResolvePDCCHFirstCCE( ...
-            cfgTrial, tx, selectedAggregationLevel, selectedCandidateIndex, grantRNTI);
-        r.SelectedCCEIndex = r.PDCCHSelectedCCEIndex;
-        r.TxCCEIndex = localResolvePDCCHFirstCCE( ...
-            cfgTrial, tx, aggLevel, txCandidateIndex, grantRNTI);
-        r.PDCCHTxCCEIndex = r.TxCCEIndex;
-        r.PDCCHDCICrcRNTI = double(sixgr.util.structGet(txInfo, "DCICrcRNTI", NaN));
-        r.PDCCHScramblingRNTI = double(sixgr.util.structGet(txInfo, "PDCCHScramblingRNTI", NaN));
-        r.PDCCHEncodedBits = controlBits;
-        r.PDCCHRECount = double(sixgr.util.structGet(txInfo, "NumPDCCHRE", numel(tx.PDCCHInd)));
-        r.PDCCHDMRSRECount = double(sixgr.util.structGet(txInfo, "NumDMRSRE", numel(tx.DMRSInd)));
-        r.PDCCHCandidateErrFlagVector = localFormatNumericVector(localColumnOrDefault(candidateT, "ErrFlag", nan(height(candidateT), 1)));
-        r.PDCCHCandidateDecodeOKVector = localFormatNumericVector(double(localColumnOrDefault(candidateT, "DecodeOK", false(height(candidateT), 1))));
-        r.PDCCHCandidateSINRVector_dB = localFormatNumericVector(localColumnOrDefault(candidateT, "ReceiverHestSINR_dB", nan(height(candidateT), 1)));
-        r.PDCCHCandidateRECountVector = localFormatNumericVector(localColumnOrDefault(candidateT, "PDCCHRECount", nan(height(candidateT), 1)));
-        r.PDCCHCandidateDMRSRECountVector = localFormatNumericVector(localColumnOrDefault(candidateT, "DMRSRECount", nan(height(candidateT), 1)));
-        r.PDCCHCandidateAggregationLevelVector = localFormatNumericVector(localColumnOrDefault(candidateT, "AggregationLevel", nan(height(candidateT), 1)));
-        r.PDCCHCandidateWithinAggregationVector = localFormatNumericVector(localColumnOrDefault(candidateT, "CandidateIndexWithinAggregation", nan(height(candidateT), 1)));
-        r.PDCCHHypothesisReductionClass = string(sixgr.util.structGet(rxInfo, "HypothesisReductionClass", ""));
-        r.PDCCHEquivalentValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "EquivalentValidHypothesisCount", 0));
-        r.PDCCHAmbiguousValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "AmbiguousHypothesisCount", 0));
-        r.PDCCHCRCDecodeSource = "nrDCIDecode_crc_masked_by_rnti";
-        r.PDCCHBlindDecodeEvidenceSource = "nrPDCCHSpace_nrPDCCHDecode_nrDCIDecode";
-        r.PDCCHCCE_REGMappingEvidence = "nrPDCCHResources_coreset_search_space_candidate_mapping";
-        r.PDCCHREGMappingAvailable = ~isempty(tx.PDCCHInd) && ~isempty(tx.DMRSInd);
-        r.PDCCHCORESETDuration = localPDCCHScalar(tx.PDCCH.CORESET, "Duration", NaN);
-        r.PDCCHCORESETFrequencyResources = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.CORESET, "FrequencyResources"));
-        r.PDCCHSearchSpaceNumCandidates = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.SearchSpace, "NumCandidates"));
-        configuredCORESETId = double(sixgr.util.structGet(cfgTrial, ...
-            "phy.pdcch.coreset.id", 0));
-        configuredSearchSpaceId = double(sixgr.util.structGet(cfgTrial, ...
-            "phy.pdcch.searchSpace.id", 1));
-        r.CORESETId = localPDCCHScalar(tx.PDCCH.CORESET, ...
-            "CORESETID", localPDCCHScalar(tx.PDCCH.CORESET, ...
-            "ID", configuredCORESETId));
-        r.SearchSpaceId = localPDCCHScalar(tx.PDCCH.SearchSpace, ...
-            "SearchSpaceID", localPDCCHScalar(tx.PDCCH.SearchSpace, ...
-            "ID", configuredSearchSpaceId));
-        % CandidateIndex is the transmitted zero-based candidate within the
-        % configured aggregation level. The receiver's flat blind-attempt
-        % ordinal and selected hypothesis are exported separately above.
-        r.CandidateIndex = double(txCandidateIndex);
-        r.DCIFormat = string(dciFormatSeed);
-        r.DCIId = string(sixgr.util.structGet(decodedDci, "PayloadHash", ""));
-        r.DCIFieldsHash = string(localHashDecodedPDCCHGrantFields(decodedDci, r.PDCCHDCICrcRNTI));
-        r.DecodedDCIHARQProcessId = double(sixgr.util.structGet(decodedDci, "Fields.harq_process", NaN));
-        r.DecodedDCIPRBStart = double(sixgr.util.structGet(decodedDci, "Fields.prb_start", NaN));
-        r.DecodedDCIAllocatedPRBCount = double(sixgr.util.structGet(decodedDci, "Fields.num_prb", NaN));
-        r.DecodedDCISymbolStart = double(sixgr.util.structGet(decodedDci, "Fields.symbol_start", NaN));
-        r.DecodedDCINumSymbols = double(sixgr.util.structGet(decodedDci, "Fields.num_symbols", NaN));
-        r.DecodedDCIMCSIndex = double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN));
-        r.DecodedDCIRV = double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN));
-        r.DecodedDCINDI = double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN));
-        r.DecodedDCITimeDomainAssignmentIndex = double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN));
-        r.LinkedGrantId = string(sixgr.util.structGet(grantContext, "GrantContextId", ""));
-        r.LinkedPDSCHOrPUSCH = upper(string(sixgr.util.structGet(grantContext, "Direction", "")));
-        r.PDCCHGridHash = localComplexSHA256(tx.Grid);
-        r.PDCCHWaveformHash = localComplexSHA256(tx.Waveform);
-        r.PDCCHResourceHash = localPDCCHResourceHash(tx.PDCCHInd, tx.DMRSInd);
-        r.ControlCapacityBits = controlBits;
-        r.ControlCapacityUtilization = double(numel(tx.DCIBits)) / max(controlBits, 1);
-        r.CORESETUtilization = usedCCEs / max(availCCEs, 1);
-        r.ComputeLatency_ms = controlLatency_ms;
-        r.ProcedureDelay_ms = NaN;
-        r.AirInterfaceTTI_ms = radioTTI_ms;
-        % Legacy alias preserved for backward compatibility with older exports.
-        % It mirrors the control opportunity duration, not wall-clock decode runtime.
-        r.ControlLatency_ms = radioTTI_ms;
-        r.ResourceExtractionAttempted = true;
-        r.ResourceExtractionAvailable = ~isempty(tx.PDCCHInd) && ~isempty(rx.EqualizedSymbols);
-        r.ChannelEstimateAttempted = true;
-        r.ChannelEstimateAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "ChannelEstimate", []));
-        r.ChannelEstimateSource = "nrChannelEstimate_pdcch_dmrs";
-        r.EqualizationAttempted = true;
-        r.EqualizationAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "EqualizedSymbols", []));
-        noiseOk = isfinite(r.NoiseVariance) && r.NoiseVariance > 0 && strcmpi(string(r.NoiseVarStatus), "OK") && ...
-            ~logical(r.NoiseVarStrictFailure);
-        strictOk = logical(ok) && logical(r.DetectionUsable) && logical(r.MeasurementUsable) && ...
-            logical(r.ChannelEstimateAvailable) && logical(r.ResourceExtractionAvailable) && ...
-            logical(r.EqualizationAvailable) && noiseOk && ~logical(r.FalseAlarmFlag);
-        r.StrictReceiverEvidenceOk = logical(strictOk);
-        r.StrictOk = logical(strictOk);
-        r.ReceiverUsable = logical(strictOk);
-        r.TruthStatus = "real_pdcch_waveform_blind_dci_crc_evidence";
-        r.SourceClassification = "active_integrated";
-        r.RuntimeMaterializationStatus = "active_integrated_pdcch_blind_dci_crc_cce_reg_evidence";
-        r.RuntimeEvidenceSource = "sixgr.phy.dl.PDCCH_Tx|sixgr.phy.dl.PDCCH_Rx";
-        r.RuntimeIntegrationMode = "coupled_slot_runtime";
-        r.RuntimeTransportMode = "pdcch_tx_runtime_channel_rf_noise_pdcch_rx";
-        r.RuntimeStageWaveformsRequired = true;
-        r.RuntimeStageWaveformsUsed = true;
-        r.RuntimeSelfLoopWaveformsUsed = false;
-        r.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
-            replay, "RuntimeChannelStateUsed", false));
-        r.RuntimeNoiseApplied = isfinite(double(nVar)) && double(nVar) > 0;
-        r.RuntimeNoiseVarianceMean = double(nVar);
-        r.RuntimeChannelLinkKeys = string(sixgr.util.structGet( ...
-            replay, "RuntimeChannelLinkKey", ""));
-        r.RuntimeStageCount = 5;
-        if strictOk
-            r.Status = "PASS";
-        else
-            r.Status = "FAIL";
-            r.FailureReason = localPDCCHStrictFailureReason(r, rx, be, bt, payloadMatch, dciCrcPass, noiseOk);
-        end
-        if ~isempty(dciBitsSeed)
-            r.Notes = "Grant-coupled PDCCH DCI payload decoded through blind candidate search, channel estimation, MMSE equalization, and RNTI-masked DCI CRC.";
-        end
+        r = localCompletePDCCHTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay);
     catch ME
         r.Crash = true;
         r.Status = "CRASH";
@@ -13785,6 +13437,314 @@ for k = 1:nTrials
     rows(k) = r;
 end
 T = struct2table(rows);
+end
+
+function r = localCompletePDCCHTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay)
+% Receive-completion reducer for a retained control preparation. This stage
+% never regenerates TX, propagates fading, or executes an RF chain.
+cfgTrial = preparedPDCCH.ReceiverConfig;
+tx = preparedPDCCH.Tx;
+txInfo = preparedPDCCH.TxInfo;
+grantRNTI = double(txInfo.RNTI);
+dciFormatSeed = localResolvePDCCHGrantDCIFormat(grantContext, "DL");
+dciBitsSeed = int8(sixgr.util.structGet(grantContext,"DCI.Bits",int8([])));
+r = localMakeLinkTrialRow(cfgTrial,"DL",snr_dB,k);
+r.Status = "FAIL";
+r.CRCPass = NaN;
+r.CRCApplicable = false;
+tDecode = tic;
+noiseVariance = [];
+if isfinite(double(nVar)) && double(nVar)>=0
+    noiseVariance = nVar;
+end
+[rx,rxInfo] = sixgr.link.completePDCCHReception(preparedPDCCH,observation, ...
+    "NoiseVariance",noiseVariance);
+controlLatency_ms = toc(tDecode)*1e3;
+radioTTI_ms = localSlotDuration(cfgTrial)*1e3;
+[be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
+dciCrcPass = logical(sixgr.util.structGet(rx, "Ok", false)) && ...
+    double(sixgr.util.structGet(rx, "ErrFlag", 1)) == 0;
+payloadMatch = logical(sixgr.util.structGet(rx, "DCIPayloadMatch", (be == 0) && (bt == numel(tx.DCIBits))));
+ok = dciCrcPass && payloadMatch;
+candidateT = sixgr.util.structGet(rxInfo, "CandidateResults", table());
+if ~istable(candidateT)
+    candidateT = table();
+end
+decodedDci = localDecodeObservedPDCCHGrantDCI( ...
+    rx, tx, dciFormatSeed, grantContext, cfgTrial);
+aggLevel = localPDCCHScalar(tx.PDCCH, "AggregationLevel", NaN);
+usedCCEs = aggLevel;
+availCCEs = localPDCCHAvailableCCEs(tx.PDCCH);
+controlBits = double(sixgr.util.structGet(txInfo, "E", NaN));
+r.TBSize_bits = double(numel(tx.DCIBits));
+r.DCISize_bits = double(numel(tx.DCIBits));
+r.BitsCompared = double(bt);
+r.BitErrors = double(be);
+r.CRCApplicable = true;
+r.CRCPass = double(ok);
+r.CRCOutcome = string(localPDCCHCRCOutcome(dciCrcPass, payloadMatch));
+r.DCICrcPass = logical(dciCrcPass);
+r.PDCCHPayloadMatch = logical(payloadMatch);
+r.PDCCHCausalGrantDecodeOk = logical(sixgr.util.structGet(rx, "CausalGrantDecodeOk", ok));
+r.PDCCHExpectedDCIBitCount = double(numel(tx.DCIBits));
+r.PDCCHDecodedDCIBitCount = double(numel(sixgr.util.structGet(rx, "DCIBits", int8([]))));
+r.PDCCHDCIBitsCompared = double(sixgr.util.structGet(rx, "DCIBitsCompared", bt));
+r.PDCCHDCIBitErrors = double(sixgr.util.structGet(rx, "DCIBitErrors", be));
+r.PDCCHMissedDetection = logical(sixgr.util.structGet(rx, "MissedDetection", ~dciCrcPass));
+r.PDCCHFalseAlarm = logical(sixgr.util.structGet(rx, "FalseAlarm", dciCrcPass && ~payloadMatch));
+r.PDCCHErrFlag = double(sixgr.util.structGet(rx, "ErrFlag", NaN));
+r.DetectionMetric = 1 - (double(be) / max(double(bt), 1));
+r.ConfiguredSNR_dB = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
+r.AppliedAWGNSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+r.DesiredSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+r.CompositeSignalPowerBeforeNoise = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+r.AppliedNoiseSNR_dB = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+r.NoiseVarianceSource = string(sixgr.util.structGet(replay, "NoiseVarianceSource", ""));
+r.ChannelModelApplied = string(sixgr.util.structGet(replay, "ChannelModelApplied", ""));
+r.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false));
+r.AppliedLargeScaleGain_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleGain_dB", NaN));
+r.AppliedLargeScaleLoss_dB = double(sixgr.util.structGet(replay, "AppliedLargeScaleLoss_dB", NaN));
+r.AppliedBasePathloss_dB = double(sixgr.util.structGet(replay, "AppliedBasePathloss_dB", NaN));
+r.AppliedPathloss_dB = double(sixgr.util.structGet(replay, "AppliedPathloss_dB", NaN));
+r.AppliedShadowFading_dB = double(sixgr.util.structGet(replay, "AppliedShadowFading_dB", NaN));
+r.AppliedO2I_dB = double(sixgr.util.structGet(replay, "AppliedO2I_dB", NaN));
+r.AppliedLargeScaleGainSource = string(sixgr.util.structGet(replay, "AppliedLargeScaleGainSource", ""));
+r.PowerContextAmplitudeUnit = string(sixgr.util.structGet( ...
+    replay,"PowerContextAmplitudeUnit",""));
+r.PowerContextTotalTxPower_dBm = double(sixgr.util.structGet( ...
+    replay,"PowerContextTotalTxPower_dBm",NaN));
+powerContext = sixgr.util.structGet(replay,"PowerContext",struct());
+r.PowerContextTxGain_dB = double(sixgr.util.structGet( ...
+    powerContext,"TxGain_dB",NaN));
+r.PowerContextRxGain_dB = double(sixgr.util.structGet( ...
+    powerContext,"RxGain_dB",NaN));
+r.PowerContextAdditionalLoss_dB = double(sixgr.util.structGet( ...
+    powerContext,"AdditionalLoss_dB",NaN));
+r.CellTotalTxPower_dBm = double(sixgr.util.structGet( ...
+    powerContext,"CellTotalTxPower_dBm",NaN));
+r.EndpointPowerBudget_dBm = double(sixgr.util.structGet( ...
+    powerContext,"EndpointPowerBudget_dBm",NaN));
+r.ConcurrentTransmitterGrantCount = double(sixgr.util.structGet( ...
+    powerContext,"ConcurrentTransmitterGrantCount",NaN));
+r.GrantPowerFraction = double(sixgr.util.structGet( ...
+    powerContext,"GrantPowerFraction",NaN));
+r.GrantTargetTxPower_dBm = double(sixgr.util.structGet( ...
+    powerContext,"GrantTargetTxPower_dBm",NaN));
+r.ScheduledPowerPolicy = string(sixgr.util.structGet( ...
+    powerContext,"ScheduledPowerPolicy",""));
+r.ScheduledPowerAuthority = string(sixgr.util.structGet( ...
+    powerContext,"ScheduledPowerAuthority",""));
+r.SharedCellBudgetApplied = logical(sixgr.util.structGet( ...
+    powerContext,"SharedCellBudgetApplied",false));
+r.TxRFExecutionStatus = string(sixgr.util.structGet( ...
+    replay,"TxRFExecutionStatus",""));
+r.TxRFStageOrder = string(sixgr.util.structGet( ...
+    replay,"TxRFStageOrder",""));
+r.TxRFAppliedStageCount = double(sixgr.util.structGet( ...
+    replay,"TxRFAppliedStageCount",0));
+r.CompositeReceiverFrontEndApplied = logical(sixgr.util.structGet( ...
+    replay,"CompositeReceiverFrontEndApplied",false));
+r.CompositeReceiverFrontEndStatus = string(sixgr.util.structGet( ...
+    replay,"CompositeReceiverFrontEndStatus",""));
+r.ServingRSRP_dBm = double(sixgr.util.structGet(replay, "ServingRSRP_dBm", NaN));
+r.ServingRSRPSource = string(sixgr.util.structGet(replay, "ServingRSRPSource", ""));
+r.LargeScaleSINR_dB = double(sixgr.util.structGet(replay, "LargeScaleSINR_dB", NaN));
+r.LargeScaleSINRSource = string(sixgr.util.structGet(replay, "LargeScaleSINRSource", ""));
+r.InterferenceMode = string(sixgr.util.structGet(replay, "InterferenceMode", ""));
+r.InjectedCFO_Hz = double(sixgr.util.structGet(replay, "InjectedCFO_Hz", NaN));
+r.TrueCFO_Hz = r.InjectedCFO_Hz;
+r.InjectedTimingOffset_samples = double(sixgr.util.structGet(replay, "InjectedTimingOffset_samples", 0));
+r.TrueTimingOffset_samples = r.InjectedTimingOffset_samples;
+r.IQImbalanceConfigured = logical(sixgr.util.structGet(replay, "IQImbalanceConfigured", false));
+r.IQImbalanceApplied = logical(sixgr.util.structGet(replay, "IQImbalanceApplied", false));
+r.IQImbalanceModel = string(sixgr.util.structGet(replay, "IQImbalanceModel", ""));
+r.ConfiguredIQGainImbalance_dB = double(sixgr.util.structGet(replay, "ConfiguredIQGainImbalance_dB", NaN));
+r.ConfiguredIQPhaseImbalance_deg = double(sixgr.util.structGet(replay, "ConfiguredIQPhaseImbalance_deg", NaN));
+r.IQImbalanceMirrorPowerRatio_dB = double(sixgr.util.structGet(replay, "IQImbalanceMirrorPowerRatio_dB", NaN));
+r.IQImbalanceImageRejection_dB = double(sixgr.util.structGet(replay, "IQImbalanceImageRejection_dB", NaN));
+r.IQImbalanceIQPowerRatio_dB = double(sixgr.util.structGet(replay, "IQImbalanceIQPowerRatio_dB", NaN));
+r.IQImbalanceIQCorrelation = double(sixgr.util.structGet(replay, "IQImbalanceIQCorrelation", NaN));
+r.IQImbalanceEstimatedAlphaAbs = double(sixgr.util.structGet(replay, "IQImbalanceEstimatedAlphaAbs", NaN));
+r.IQImbalanceEstimatedBetaAbs = double(sixgr.util.structGet(replay, "IQImbalanceEstimatedBetaAbs", NaN));
+r.IQImbalanceMeasurementSource = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementSource", ""));
+r.IQImbalanceMeasurementStatus = string(sixgr.util.structGet(replay, "IQImbalanceMeasurementStatus", ""));
+r.ReceiverHestSINR_dB = double(sixgr.util.structGet(rx, "ReceiverHestSINR_dB", NaN));
+r.ReceiverHestSINRSource = string(sixgr.util.structGet(rx, "ReceiverHestSINRSource", ""));
+r.ReceiverHestSINRValueRole = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueRole", ""));
+r.ReceiverHestSINRValueStatus = string(sixgr.util.structGet(rx, "ReceiverHestSINRValueStatus", ""));
+r.ReceiverHestSINRNAReason = string(sixgr.util.structGet(rx, "ReceiverHestSINRNAReason", ""));
+r.MeasuredTrialSINR_dB = NaN;
+r.MeasuredTrialSINRSource = "";
+r.MeasuredTrialSINRValueRole = "unavailable";
+r.MeasuredTrialSINRValueStatus = "unavailable";
+r.MeasuredTrialSINRNAReason = "pdcch_has_no_data_post_equalization_sinr_measurement";
+r.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+r.NoiseVarStatus = string(sixgr.util.structGet(rx, "NoiseVarStatus", ""));
+r.NoiseVarSource = string(sixgr.util.structGet(rx, "NoiseVarSource", ""));
+r.NoiseVarReason = string(sixgr.util.structGet(rx, "NoiseVarReason", ""));
+if strlength(strtrim(r.NoiseVarStatus)) == 0 && isfinite(r.NoiseVariance) && r.NoiseVariance > 0
+    r.NoiseVarStatus = "OK";
+    r.NoiseVarSource = "pdcch_receiver_noise_variance";
+elseif ~(isfinite(r.NoiseVariance) && r.NoiseVariance > 0)
+    r.NoiseVarStrictFailure = true;
+    r.NoiseVarReason = "pdcch_noise_variance_missing_or_nonpositive";
+elseif r.NoiseVarStatus ~= "OK"
+    r.NoiseVarStrictFailure = true;
+end
+if localThermalNoiseSINRUnavailable(replay)
+    r = localMarkControlSINRUnavailable(r, ...
+        "thermal_noise_sinr_unavailable_without_runtime_rx_power_or_pathloss");
+end
+r.EVM_rms = double(sixgr.util.structGet(rx, "EVM_rms", NaN));
+r.DecodeAttempted = true;
+r.DecodeUsable = logical(ok);
+r.DetectionAttempted = true;
+r.DetectionSuccess = logical(ok);
+r.DetectionUsable = isfinite(r.DetectionMetric) && height(candidateT) > 0;
+r.MeasurementAttempted = true;
+r.MeasurementUsable = isfinite(r.ReceiverHestSINR_dB) && ...
+    sixgr.util.isAcceptableSINRStatus(r.ReceiverHestSINRValueStatus);
+% Primary evidence is this actual received candidate set. Independent
+% noise-only false-alarm campaigns remain separate observations, not
+% a second RF execution used to accept or reject this scheduled DCI.
+r.FalseAlarmFlag = double(r.PDCCHFalseAlarm);
+r.FalseAlarmClassification = "actual_received_dci_payload_mismatch";
+r.NoiseFalseAlarmFlag = NaN;
+r.PDCCHObservationStartSample = rxInfo.ObservationStartSample;
+r.PDCCHObservationEndSampleExclusive = rxInfo.ObservationEndSampleExclusive;
+r.PDCCHObservationCompletionTime_s = rxInfo.ObservationCompletionTime_s;
+r.PDCCHMinimumReceiveSamples = rxInfo.ReceiveExtent.MinimumReceiveSamples;
+r.PDCCHDemodulatedSymbols = rxInfo.DemodulatedSymbols;
+r.PDCCHReceivePaddingApplied = rxInfo.ReceivePaddingApplied;
+r.BlockingFlag = double(isfinite(aggLevel) && isfinite(availCCEs) && aggLevel > availCCEs);
+r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", height(candidateT)));
+r.AvailableCCECount = availCCEs;
+r.UsedCCECount = usedCCEs;
+r.NonOverlappedCCEUsage = usedCCEs / max(availCCEs, 1);
+r.AggregationLevel = aggLevel;
+r.CandidatesAttempted = r.BlindDecodeCount;
+r.PDCCHBlindSearchEnabled = logical(sixgr.util.structGet(rxInfo, "BlindSearch", false));
+r.PDCCHCandidatesAvailable = double(sixgr.util.structGet(rxInfo, "NumCandidatesAvailable", height(candidateT)));
+r.PDCCHCandidatesAttempted = r.BlindDecodeCount;
+txCandidateIndex = localPDCCHScalar(tx.PDCCH, "AllocatedCandidate", 1) - 1;
+selectedAggregationLevel = double(sixgr.util.structGet( ...
+    rx, "CandidateAggregationLevel", NaN));
+selectedCandidateIndex = double(sixgr.util.structGet( ...
+    rx, "CandidateIndexWithinAggregation", NaN));
+r.PDCCHCandidateIndex = double(txCandidateIndex);
+r.PDCCHCandidateFlatIndex = double(sixgr.util.structGet( ...
+    rx, "CandidateFlatIndex", sixgr.util.structGet(rx, "CandidateIndex", NaN)));
+r.PDCCHSelectedAggregationLevel = selectedAggregationLevel;
+r.PDCCHSelectedCandidateIndex = selectedCandidateIndex;
+r.PDCCHSelectedCCEIndex = localResolvePDCCHFirstCCE( ...
+    cfgTrial, tx, selectedAggregationLevel, selectedCandidateIndex, grantRNTI);
+r.SelectedCCEIndex = r.PDCCHSelectedCCEIndex;
+r.TxCCEIndex = localResolvePDCCHFirstCCE( ...
+    cfgTrial, tx, aggLevel, txCandidateIndex, grantRNTI);
+r.PDCCHTxCCEIndex = r.TxCCEIndex;
+r.PDCCHDCICrcRNTI = double(sixgr.util.structGet(txInfo, "DCICrcRNTI", NaN));
+r.PDCCHScramblingRNTI = double(sixgr.util.structGet(txInfo, "PDCCHScramblingRNTI", NaN));
+r.PDCCHEncodedBits = controlBits;
+r.PDCCHRECount = double(sixgr.util.structGet(txInfo, "NumPDCCHRE", numel(tx.PDCCHInd)));
+r.PDCCHDMRSRECount = double(sixgr.util.structGet(txInfo, "NumDMRSRE", numel(tx.DMRSInd)));
+r.PDCCHCandidateErrFlagVector = localFormatNumericVector(localColumnOrDefault(candidateT, "ErrFlag", nan(height(candidateT), 1)));
+r.PDCCHCandidateDecodeOKVector = localFormatNumericVector(double(localColumnOrDefault(candidateT, "DecodeOK", false(height(candidateT), 1))));
+r.PDCCHCandidateSINRVector_dB = localFormatNumericVector(localColumnOrDefault(candidateT, "ReceiverHestSINR_dB", nan(height(candidateT), 1)));
+r.PDCCHCandidateRECountVector = localFormatNumericVector(localColumnOrDefault(candidateT, "PDCCHRECount", nan(height(candidateT), 1)));
+r.PDCCHCandidateDMRSRECountVector = localFormatNumericVector(localColumnOrDefault(candidateT, "DMRSRECount", nan(height(candidateT), 1)));
+r.PDCCHCandidateAggregationLevelVector = localFormatNumericVector(localColumnOrDefault(candidateT, "AggregationLevel", nan(height(candidateT), 1)));
+r.PDCCHCandidateWithinAggregationVector = localFormatNumericVector(localColumnOrDefault(candidateT, "CandidateIndexWithinAggregation", nan(height(candidateT), 1)));
+r.PDCCHHypothesisReductionClass = string(sixgr.util.structGet(rxInfo, "HypothesisReductionClass", ""));
+r.PDCCHEquivalentValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "EquivalentValidHypothesisCount", 0));
+r.PDCCHAmbiguousValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "AmbiguousHypothesisCount", 0));
+r.PDCCHCRCDecodeSource = "nrDCIDecode_crc_masked_by_rnti";
+r.PDCCHBlindDecodeEvidenceSource = "nrPDCCHSpace_nrPDCCHDecode_nrDCIDecode";
+r.PDCCHCCE_REGMappingEvidence = "nrPDCCHResources_coreset_search_space_candidate_mapping";
+r.PDCCHREGMappingAvailable = ~isempty(tx.PDCCHInd) && ~isempty(tx.DMRSInd);
+r.PDCCHCORESETDuration = localPDCCHScalar(tx.PDCCH.CORESET, "Duration", NaN);
+r.PDCCHCORESETFrequencyResources = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.CORESET, "FrequencyResources"));
+r.PDCCHSearchSpaceNumCandidates = localFormatNumericVector(localPDCCHScalarVector(tx.PDCCH.SearchSpace, "NumCandidates"));
+configuredCORESETId = double(sixgr.util.structGet(cfgTrial, ...
+    "phy.pdcch.coreset.id", 0));
+configuredSearchSpaceId = double(sixgr.util.structGet(cfgTrial, ...
+    "phy.pdcch.searchSpace.id", 1));
+r.CORESETId = localPDCCHScalar(tx.PDCCH.CORESET, ...
+    "CORESETID", localPDCCHScalar(tx.PDCCH.CORESET, ...
+    "ID", configuredCORESETId));
+r.SearchSpaceId = localPDCCHScalar(tx.PDCCH.SearchSpace, ...
+    "SearchSpaceID", localPDCCHScalar(tx.PDCCH.SearchSpace, ...
+    "ID", configuredSearchSpaceId));
+% CandidateIndex is the transmitted zero-based candidate within the
+% configured aggregation level. The receiver's flat blind-attempt
+% ordinal and selected hypothesis are exported separately above.
+r.CandidateIndex = double(txCandidateIndex);
+r.DCIFormat = string(dciFormatSeed);
+r.DCIId = string(sixgr.util.structGet(decodedDci, "PayloadHash", ""));
+r.DCIFieldsHash = string(localHashDecodedPDCCHGrantFields(decodedDci, r.PDCCHDCICrcRNTI));
+r.DecodedDCIHARQProcessId = double(sixgr.util.structGet(decodedDci, "Fields.harq_process", NaN));
+r.DecodedDCIPRBStart = double(sixgr.util.structGet(decodedDci, "Fields.prb_start", NaN));
+r.DecodedDCIAllocatedPRBCount = double(sixgr.util.structGet(decodedDci, "Fields.num_prb", NaN));
+r.DecodedDCISymbolStart = double(sixgr.util.structGet(decodedDci, "Fields.symbol_start", NaN));
+r.DecodedDCINumSymbols = double(sixgr.util.structGet(decodedDci, "Fields.num_symbols", NaN));
+r.DecodedDCIMCSIndex = double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN));
+r.DecodedDCIRV = double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN));
+r.DecodedDCINDI = double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN));
+r.DecodedDCITimeDomainAssignmentIndex = double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN));
+r.LinkedGrantId = string(sixgr.util.structGet(grantContext, "GrantContextId", ""));
+r.LinkedPDSCHOrPUSCH = upper(string(sixgr.util.structGet(grantContext, "Direction", "")));
+r.PDCCHGridHash = localComplexSHA256(tx.Grid);
+r.PDCCHWaveformHash = localComplexSHA256(tx.Waveform);
+r.PDCCHResourceHash = localPDCCHResourceHash(tx.PDCCHInd, tx.DMRSInd);
+r.ControlCapacityBits = controlBits;
+r.ControlCapacityUtilization = double(numel(tx.DCIBits)) / max(controlBits, 1);
+r.CORESETUtilization = usedCCEs / max(availCCEs, 1);
+r.ComputeLatency_ms = controlLatency_ms;
+r.ProcedureDelay_ms = NaN;
+r.AirInterfaceTTI_ms = radioTTI_ms;
+% Legacy alias preserved for backward compatibility with older exports.
+% It mirrors the control opportunity duration, not wall-clock decode runtime.
+r.ControlLatency_ms = radioTTI_ms;
+r.ResourceExtractionAttempted = true;
+r.ResourceExtractionAvailable = ~isempty(tx.PDCCHInd) && ~isempty(rx.EqualizedSymbols);
+r.ChannelEstimateAttempted = true;
+r.ChannelEstimateAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "ChannelEstimate", []));
+r.ChannelEstimateSource = "nrChannelEstimate_pdcch_dmrs";
+r.EqualizationAttempted = true;
+r.EqualizationAvailable = localHasFiniteNumericEvidence(sixgr.util.structGet(rx, "EqualizedSymbols", []));
+noiseOk = isfinite(r.NoiseVariance) && r.NoiseVariance > 0 && strcmpi(string(r.NoiseVarStatus), "OK") && ...
+    ~logical(r.NoiseVarStrictFailure);
+strictOk = logical(ok) && logical(r.DetectionUsable) && logical(r.MeasurementUsable) && ...
+    logical(r.ChannelEstimateAvailable) && logical(r.ResourceExtractionAvailable) && ...
+    logical(r.EqualizationAvailable) && noiseOk && ~logical(r.FalseAlarmFlag);
+r.StrictReceiverEvidenceOk = logical(strictOk);
+r.StrictOk = logical(strictOk);
+r.ReceiverUsable = logical(strictOk);
+r.TruthStatus = "real_pdcch_waveform_blind_dci_crc_evidence";
+r.SourceClassification = "active_integrated";
+r.RuntimeMaterializationStatus = "active_integrated_pdcch_blind_dci_crc_cce_reg_evidence";
+r.RuntimeEvidenceSource = "sixgr.phy.dl.PDCCH_Tx|sixgr.phy.dl.PDCCH_Rx";
+r.RuntimeIntegrationMode = "coupled_slot_runtime";
+r.RuntimeTransportMode = "pdcch_tx_runtime_channel_rf_noise_pdcch_rx";
+r.RuntimeStageWaveformsRequired = true;
+r.RuntimeStageWaveformsUsed = true;
+r.RuntimeSelfLoopWaveformsUsed = false;
+r.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
+    replay, "RuntimeChannelStateUsed", false));
+injectedVariance = double(sixgr.util.structGet(replay,"InjectedNoiseVariance",NaN));
+r.RuntimeNoiseApplied = isfinite(injectedVariance) && injectedVariance > 0;
+r.RuntimeNoiseVarianceMean = double(nVar);
+r.RuntimeChannelLinkKeys = string(sixgr.util.structGet( ...
+    replay, "RuntimeChannelLinkKey", ""));
+r.RuntimeStageCount = 5;
+if strictOk
+    r.Status = "PASS";
+else
+    r.Status = "FAIL";
+    r.FailureReason = localPDCCHStrictFailureReason(r, rx, be, bt, payloadMatch, dciCrcPass, noiseOk);
+end
+if ~isempty(dciBitsSeed)
+    r.Notes = "Grant-coupled PDCCH DCI payload decoded through blind candidate search, channel estimation, MMSE equalization, and RNTI-masked DCI CRC.";
+end
 end
 
 function tf = localThermalNoiseSINRUnavailable(replay)
@@ -13818,7 +13778,7 @@ r.SINRValueStatus = "unavailable";
 r.SINRValueDefinition = "no_control_sinr_observation_available_without_runtime_noise_power_anchor";
 end
 
-function [y,nVar,replay,noiseOnlyWave,updatedRuntimeChannelState] = ...
+function [y,nVar,replay,updatedRuntimeChannelState] = ...
         localApplyPDCCHChannelAndNoise(prepared,snr_dB,initialRuntimeChannelState)
 cfg = prepared.ReceiverConfig;
 tx = prepared.Tx;
@@ -13890,8 +13850,7 @@ for ii = 1:numel(fields)
     replay.(fields{ii}) = impairmentReplay.(fields{ii});
 end
 replay.ChannelModelApplied = string(sixgr.util.structGet(cfg, "channel.model", replay.ChannelModelApplied));
-replay.ChannelFadingApplied = logical(sixgr.util.structGet(replay, "ChannelFadingApplied", false)) || ...
-    logical(sixgr.util.structGet(state, "UseFading", false));
+replay.ChannelFadingApplied = logical(sixgr.util.structGet(channelReplay, "ChannelFadingApplied", false));
 desiredWaveform = y;
 [preFrontEndWaveform, preFrontEndNVar, noiseInfo] = ...
     localPDCCHAddAwgnFromReplay(y,replay,desiredWaveform,txInfo);
@@ -13905,19 +13864,14 @@ if isfinite(preFrontEndNVar) && preFrontEndNVar > 0 && ...
         replay,"NoiseVarianceSource","")))) == 0
     replay.NoiseVarianceSource = "pdcch_replay_reference_waveform_awgn";
 end
-noiseOnlyPreFrontEnd = localPDCCHNoiseOnlyWaveformLike(y,preFrontEndNVar);
 [y,replay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
     preFrontEndWaveform,cfgReplay,sampleRateHz,replay,"Direction","DL");
 replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
 nVar = double(sixgr.util.structGet(replay, ...
     "InjectedNoiseVariancePostCompositeFrontEnd",preFrontEndNVar));
-noiseReplay = struct("InjectedNoiseVariance",double(preFrontEndNVar), ...
-    "NoiseVarianceSource",char(string(sixgr.util.structGet( ...
-    replay,"InjectedNoiseVariancePreCompositeFrontEndSource", ...
-    "pdcch_noise_only_pre_composite_front_end"))));
-[noiseOnlyWave,noiseReplay] = sixgr.link.applyCompositeReceiverFrontEnd( ...
-    noiseOnlyPreFrontEnd,cfgReplay,sampleRateHz,noiseReplay, ...
-    "Direction","DL"); %#ok<ASGLU>
+% A nonlinear receiver cannot be replayed independently on noise and then
+% described as the disturbance in the original capture. Use its resolved
+% input-to-output variance where valid, or actual received DM-RS estimation.
 updatedRuntimeChannelState = sixgr.util.structGet( ...
     state,"RuntimeChannelState",struct());
 end
@@ -13935,8 +13889,9 @@ if isempty(sampleRateHz) && isstruct(tx)
         sampleRateHz = [];
     end
 end
-if isempty(sampleRateHz) || ~(isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
-    sampleRateHz = 30.72e6;
+if isempty(sampleRateHz) || ~(isscalar(sampleRateHz) && isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
+    error('sixgr:truth:PDCCHSampleRateUnavailable', ...
+        'PDCCH noise and timing require its actual OFDM sample rate.');
 else
     sampleRateHz = double(sampleRateHz);
 end
@@ -13953,9 +13908,8 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
         y = x + cast(n, "like", x);
         return;
     end
-    y = x;
-    nVar = NaN;
-    return;
+    error('sixgr:truth:PDCCHNoiseVarianceUnavailable', ...
+        'The receiver thermal-noise operating mode requires a resolved physical noise PSD and sample rate.');
 end
 appliedSNR_dB = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
 nVar = localPDCCHResolveConfiguredSNRNoiseVariance(referenceWaveform, appliedSNR_dB, txInfo);
@@ -13969,8 +13923,8 @@ if isfinite(nVar) && nVar >= 0
     end
     return;
 end
-[y, nVar] = sixgr.util.addAwgnComplex(x, appliedSNR_dB);
-noiseInfo = localPDCCHNoiseCalibrationInfo(x, referenceWaveform, nVar, "legacy_addAwgnComplex_last_resort", replay);
+error('sixgr:truth:PDCCHNoiseVarianceUnavailable', ...
+    'Configured-SNR noise requires the actual useful-symbol signal power and resolved SNR.');
 end
 
 function info = localPDCCHNoiseCalibrationInfo(compositeWaveform, desiredWaveform, nVar, source, replay)
@@ -14042,16 +13996,6 @@ if isempty(idx)
     refPower = mean(abs(double(waveform(:))).^2, "omitnan");
 else
     refPower = mean(abs(double(waveform(idx, :))).^2, "all", "omitnan");
-end
-end
-
-function noiseOnlyWave = localPDCCHNoiseOnlyWaveformLike(referenceWaveform, nVar)
-noiseOnlyWave = zeros(size(referenceWaveform), "like", referenceWaveform);
-if isfinite(double(nVar)) && double(nVar) > 0
-    n = sqrt(double(nVar) / 2) .* ...
-        (randn(size(referenceWaveform), "like", real(referenceWaveform)) + ...
-        1i * randn(size(referenceWaveform), "like", real(referenceWaveform)));
-    noiseOnlyWave = cast(n, "like", referenceWaveform);
 end
 end
 
@@ -14149,7 +14093,7 @@ if ~logical(noiseOk)
     parts(end+1, 1) = "pdcch_noise_variance_missing_or_not_ok"; %#ok<AGROW>
 end
 if logical(r.FalseAlarmFlag)
-    parts(end+1, 1) = "pdcch_noise_only_false_alarm_detected"; %#ok<AGROW>
+    parts(end+1, 1) = "pdcch_actual_received_false_grant_decode"; %#ok<AGROW>
 end
 if isempty(parts)
     parts(end+1, 1) = "pdcch_strict_receiver_evidence_incomplete"; %#ok<AGROW>
@@ -16006,6 +15950,12 @@ row.PDCCHCandidateDMRSRECountVector = "";
 row.PDCCHCandidateAggregationLevelVector = "";
 row.PDCCHCandidateWithinAggregationVector = "";
 row.PDCCHHypothesisReductionClass = "";
+row.PDCCHObservationStartSample = NaN;
+row.PDCCHObservationEndSampleExclusive = NaN;
+row.PDCCHObservationCompletionTime_s = NaN;
+row.PDCCHMinimumReceiveSamples = NaN;
+row.PDCCHDemodulatedSymbols = NaN;
+row.PDCCHReceivePaddingApplied = false;
 row.PDCCHEquivalentValidHypothesisCount = 0;
 row.PDCCHAmbiguousValidHypothesisCount = 0;
 row.PDCCHCRCDecodeSource = "";

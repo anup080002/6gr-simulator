@@ -128,12 +128,14 @@ end
 % UL calls, not only the independent value-ledger API above.
 source = fileread(fullfile('+sixgr','+truth','runWaveformLinkBundle.m'));
 start = strfind(source,'function [state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH');
-finish = strfind(source,'function tf = localPDCCHPreAttachAssumptionApplies');
+finish = strfind(source,'function state = localCollectCanonicalCoupledControlTrials');
 body = source(start:finish-1);
 assert(contains(body,'state.PDCCHResourceLedger') && ...
     contains(body,'occupiedControlREs') && contains(body,'allocatedControlREs') && ...
     ~contains(body,'containers.Map'), ...
     'The active qualifier must share exact reservations rather than reset per-pass CCE counters.');
+assert(~contains(body,'pre_attach_assumed_ok') && ~contains(body,'localPDCCHPreAttachAssumptionApplies'), ...
+    'Pre-attached access state must not replace actual DCI reception for either data direction.');
 ok = true;
 fprintf('PASS testPDCCHSharedSlotResourceAllocation: exact shared candidates and one faded composite in TDD/FDD.\n');
 end

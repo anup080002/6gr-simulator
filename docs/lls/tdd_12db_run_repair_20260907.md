@@ -1,5 +1,92 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Actual PDCCH receive boundary and legacy grant shortcuts (latest checkpoint)
+
+**The main chronological shared-stream scheduler is still incomplete. No new
+production 12 dB TDD run, FDD run, 25 dB run or instrument capture is qualified
+by this checkpoint.** These changes close specific control-path defects and
+separate its receive reducer; they do not claim the remaining scheduler
+migration has happened.
+
+- PDCCH preparation derives its receive extent from the actual monitored
+  PDCCH/DM-RS REs and OFDM symbol/CP lengths, across numerologies and slot
+  positions. A fractional declared sample origin is rejected, not rounded.
+- PDCCH RX no longer pads unreceived time samples or OFDM symbols to a whole
+  slot. A short capture must cover all monitored symbols after timing
+  alignment. Missing timing prehistory, incomplete independent noise samples
+  and requested timing-estimation failures are explicit errors.
+- The first test failed because the index/symbol `nrChannelEstimate` API
+  requires a whole slot. The documented **reference-grid** signature now
+  estimates the actual received prefix. Reference-grid zeros denote
+  non-pilot REs; no received waveform/grid padding or scalar fading-channel
+  estimate is introduced. See
+  [nrChannelEstimate](https://www.mathworks.com/help/5g/ref/nrchannelestimate.html).
+- The main collector has a separate `localCompletePDCCHTrial` reducer,
+  consuming retained TX metadata and an actual completed observation. It
+  does not execute a transmitter, channel or RF chain. Its caller still
+  invokes physical execution eagerly; event-driven main integration remains
+  required.
+- A pre-attached access state no longer substitutes for actual DCI reception
+  in the DL/UL grant qualifier. Invalid UE bindings and missing scheduled
+  DCI payloads fail explicitly; no generic 64-bit DCI replaces a grant.
+- Removed the independent noise-only RF pass from the primary PDCCH path.
+  Primary false-grant evidence comes from the actual received candidate set;
+  `NoiseFalseAlarmFlag` remains unavailable, not a fabricated zero. Dedicated
+  no-signal false-alarm campaigns remain separate tests. Missing noise/sample
+  rate authority no longer falls back to generic AWGN or 30.72 MHz.
+- The row producer retains actual observation start/end/completion time,
+  minimum receive samples, demodulated symbols and receive-padding status.
+  Preparation alone does not publish an observed RE allocation. These are
+  producer changes, not a claim that fresh production CSVs already exist.
+
+Validation so far: the failed initial batch **64658** is retained in
+`logs/pdcch_actual_receive_boundary_20260907.log`; the repaired boundary batch
+**94426** exited 0 (`logs/pdcch_actual_receive_boundary_r2_20260907.log`),
+covering 15/30/60 kHz and multiple slot/start-symbol positions, incomplete
+capture rejection, exact shared PDCCH allocation, and an early actual DCI
+decode from the noisy CDL SSB/TRS/PDCCH stream. The full transmit waveform
+continues through the stream after that early receiver event. Whole/chunk
+sample equality and the unchanged receive-completion channel clock passed.
+
+The allocator's built-in FDD component fixture is not a production FDD run.
+Only bounded tests are used, respecting the request not to run `testAll`.
+The main-caller structural regression is explicitly labeled structural, not
+end-to-end scheduler execution evidence. CSI-RSSI/RSRQ plot validation was
+rerun: **41 Python tests passed**.
+
+Batch **63769** exited 0
+(`logs/pdcch_runtime_causal_boundary_final_20260907.log`): main-caller
+structural guards, PDCCH preparation/reception, receive-decision boundary,
+shared allocation, actual DCI/grant gate, control-slot authority, scheduled
+PDSCH transmit authority, first-SRS-before-UL-DCI ordering, staged SRS/PUCCH,
+received-DM-RS PUCCH formats 1–4 after retained AGC/ADC, actual HARQ-ACK on
+PUSCH, and the early PDCCH/SSB/TRS noisy CDL stream passed.
+
+Batch **74159** exited 0 (`logs/pdcch_functiontests_execution_20260907.log`):
+`runtests` actually executed both function-based PDCCH no-signal false-alarm
+and CFO/timing cases, followed by `assertSuccess`. Merely calling their
+test-factory functions is not counted as execution.
+
+Final regression batch **40367** exited 0
+(`logs/pdcch_ul_truth_regressions_20260907.log`): five-stage received RA
+coverage/origin/tail guards; actual TDD CDL-A RA and decoded TA=0/Msg3 CRC;
+QCL propagation; activated TCI binding; SRS RI/TPMI and applied PUSCH
+precoder-domain checks; `testConfig`; strict proxy/fallback guards;
+`testLLS_DL`, `testLLS_UL`, `testLLS_ReferencePoints`;
+`testSchedulerGrantConsistency`; `testE2E_FastVsTruth`; and
+`testE2E_TruthPacketSemanticCampaign`. The E2E regressions used their own FDD
+fixtures. Neither those fixtures nor the source-structure guard qualify the
+unfinished main chronological scheduler. All MATLAB validation processes
+finished before this checkpoint was committed; previous run outputs were
+not deleted.
+
+The remaining-area table below still applies. Specifically: integrate all
+prepared access/control/data contributors with the physical event owner;
+handle nonzero UL TA and format-0 disturbance evidence; commit HARQ/CSI/SRS
+at actual RX completion; verify QCL/TCI/PMI activation and consumed precoder
+identity; define SS/UL RSSI observation windows separately; then run and
+inspect fresh TDD CSVs/PNGs before continuous instrument IQ/playback work.
+
 ## UL received-reference noise boundary (subsequent checkpoint)
 
 The preceding absolute-noise/retained physical-owner changes are committed
@@ -102,7 +189,7 @@ definitions; the CSI-RS metric cannot be relabeled as either one.
 | PUCCH / UCI | Formats 1–4 received-DM-RS estimation and real UCI decode; legacy format-0 detector coverage | Format-0 independent post-RF disturbance observation; commit feedback only after its actual RX completion |
 | PUSCH / UCI | Actual coded staged PUSCH and UCI-on-PUSCH component tests; late ACK reservation reducers | Same physical stream as due SRS/PUCCH/other UEs; end-to-end received DCI, K2, HARQ and CSI delivery timing |
 | SRS | Actual staged resource estimation and strict noise/NMSE checks | Shared-stream oracle diagnostics without rerunning RF/channel; resource priority and feedback applied at actual observation completion |
-| Control / QCL / TCI / PMI | Exact coding/resource components and QCL/TCI/source-authority reducers tested | Verify activation time, beam/precoder actually used, and report-to-grant identity in the combined run; retire independent noise-only PDCCH diagnostic execution from physical ownership |
+| Control / QCL / TCI / PMI | Exact coding/resource components and QCL/TCI/source-authority reducers tested; independent primary PDCCH noise-only RF pass removed in latest checkpoint | Verify activation time, beam/precoder actually used, and report-to-grant identity in the combined run |
 | RSSI / CSV / PNG | CSI-RS resource/branch/bandwidth/symbol measurements and strict plot checks exist | Fresh measured combined-run rows/PNGs; SS-RSSI and UL observation definitions cannot be inferred from CSI-RS or whole-slot power |
 | Continuous instrument IQ | Actual post-IFFT contributions and retained physical sample planes exist | End-to-end common-clock capture across all enabled channels, complete provenance, then instrument-specific playback validation |
 

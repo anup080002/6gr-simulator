@@ -156,9 +156,10 @@ if ~skipTimingEstimate
         else
             timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1}, 'SampleRate', sampleRateHz);
         end
-    catch
-        % If timing estimation is unavailable, continue without a runtime correction.
-        timingOffset = NaN;
+    catch cause
+        failure=MException('sixgr:phy:pdcch:TimingEstimationFailed', ...
+            'Requested PDCCH timing estimation failed; decoding without synchronization is not a substitute.');
+        throw(addCause(failure,cause));
     end
 else
     timingSource = "external_sync_required_for_blind_pdcch_no_candidate_timing";
@@ -170,47 +171,42 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
     "Source", timingSource);
 rxWave = localApplyTimingCorrection(rxWave, timingResolution.AppliedCorrection_samples);
 
-% Keep one full slot available for OFDM demod even when timing estimation
-% trims a few leading samples on otherwise aligned captures. A canonical
-% sampling failure is propagated rather than retried with Toolbox defaults.
+% Decode when the monitored control symbols have actually arrived. The
+% unreceived remainder of a slot is neither silence nor receiver evidence.
 sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
-slotSymbols = double(sampling.SymbolsPerSlot);
 expectedSamples = double(sampling.CurrentSlotSamples);
+extent=sixgr.phy.dl.pdcchObservationExtent(carrier, ...
+    {candSymInd,candDMRSInd},sampling.ToolboxOFDMInfo);
+if size(rxWave,1)<extent.MinimumReceiveSamples
+    error('sixgr:phy:pdcch:IncompleteReceivedControlSymbols', ...
+        'Actual received samples do not cover every monitored PDCCH/DM-RS symbol after timing alignment.');
+end
 if size(rxWave, 1) > expectedSamples
     rxWave = rxWave(1:expectedSamples, :);
-elseif size(rxWave, 1) < expectedSamples
-    rxWave(end+1:expectedSamples, :) = 0; %#ok<AGROW>
 end
 
 % ---------------------- OFDM demod ----------------------
 rxGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWave);
 
-% This receiver operates on a single slot. Some toolbox metadata paths
-% describe a full subframe, so trim/pad the demodulated grid to one slot.
-slotSymbols = max(1, round(double(carrier.SymbolsPerSlot)));
-if size(rxGrid, 2) > slotSymbols
-    rxGrid = rxGrid(:, 1:slotSymbols, :);
-elseif size(rxGrid, 2) < slotSymbols
-    pad = complex(zeros(size(rxGrid, 1), slotSymbols - size(rxGrid, 2), size(rxGrid, 3), ...
-        'like', rxGrid));
-    rxGrid = cat(2, rxGrid, pad);
+if size(rxGrid,2)<=extent.LastMonitoredSymbol0Based
+    error('sixgr:phy:pdcch:IncompleteReceivedControlSymbols', ...
+        'OFDM demodulation did not produce all actual monitored symbols.');
 end
 
 noiseGrid = [];
 if ~isempty(opt.NoiseOnlyWaveform)
     noiseWave = localApplyTimingCorrection(opt.NoiseOnlyWaveform, timingResolution.AppliedCorrection_samples);
+    if size(noiseWave,1)<size(rxWave,1)
+        error('sixgr:phy:pdcch:IncompleteNoiseObservation', ...
+            'An independent noise observation must cover the same received interval; zero padding is forbidden.');
+    end
     if size(noiseWave, 1) > expectedSamples
         noiseWave = noiseWave(1:expectedSamples, :);
-    elseif size(noiseWave, 1) < expectedSamples
-        noiseWave(end+1:expectedSamples, :) = 0; %#ok<AGROW>
     end
     noiseGrid = sixgr.phy.waveform.ofdmDemodulate(carrier, noiseWave);
-    if size(noiseGrid, 2) > slotSymbols
-        noiseGrid = noiseGrid(:, 1:slotSymbols, :);
-    elseif size(noiseGrid, 2) < slotSymbols
-        padNoise = complex(zeros(size(noiseGrid, 1), slotSymbols - size(noiseGrid, 2), size(noiseGrid, 3), ...
-            'like', noiseGrid));
-        noiseGrid = cat(2, noiseGrid, padNoise);
+    if size(noiseGrid,2)<size(rxGrid,2)
+        error('sixgr:phy:pdcch:IncompleteNoiseObservation', ...
+            'An independent noise grid must cover every actual received control symbol.');
     end
 end
 
@@ -263,10 +259,25 @@ for c = 1:numel(candSymInd)
     dmrsSym = candDMRSSym{c};
 
     % Channel estimate
-    try
-        [hEst, nVarEst] = nrChannelEstimate(carrier, rxGrid, dmrsInd, dmrsSym);
-    catch
+    if size(rxGrid,2)==double(carrier.SymbolsPerSlot)
         [hEst, nVarEst] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym);
+    else
+        % The index/symbol Toolbox signature requires a whole slot.
+        % Its reference-grid signature supports the actual received
+        % prefix. Zeros here mean non-reference REs, never RX samples.
+        kSub=size(rxGrid,1); nSymbols=size(rxGrid,2);
+        slotREs=kSub*double(carrier.SymbolsPerSlot);
+        refs=double(dmrsInd(:))-1;
+        refSymbols=floor(mod(refs,slotREs)/kSub);
+        if any(refSymbols>=nSymbols)
+            error('sixgr:phy:pdcch:UnreceivedReferenceSymbols', ...
+                'Channel estimation cannot use DM-RS symbols that have not arrived.');
+        end
+        refPorts=floor(refs/slotREs);
+        referenceGrid=complex(zeros(kSub,nSymbols,max(refPorts)+1,'like',rxGrid));
+        prefixIndices=mod(refs,kSub)+1+kSub*refSymbols+kSub*nSymbols*refPorts;
+        referenceGrid(prefixIndices)=dmrsSym(:);
+        [hEst,nVarEst]=nrChannelEstimate(carrier,rxGrid,referenceGrid);
     end
 
     if isnan(noiseVarUsed)
@@ -284,23 +295,11 @@ for c = 1:numel(candSymInd)
     [candidateSINR_dB, candidateSINRStatus, candidateSINRReason] = localPDCCHReferenceSINR(hEst, nVar, dmrsInd, dmrsSym, rxGrid);
 
     % PDCCH decode -> soft bits
-    try
-        rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI, nVar);
-    catch
-        rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI);
-    end
+    rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI, nVar);
     rxCW = localApplyPDCCHCSIWeighting(rxCW, csi);
 
     % DCI decode (polar list)
-    errFlag = 1;
-    dciBits = int8([]);
-    try
-        [dciBits, errFlag] = nrDCIDecode(rxCW, K, listLen, rnti);
-    catch
-        % Some versions return only bits; infer ErrFlag as unknown
-        dciBits = nrDCIDecode(rxCW, K, listLen, rnti);
-        errFlag = 1;
-    end
+    [dciBits, errFlag] = nrDCIDecode(rxCW, K, listLen, rnti);
 
     rx.DCIBits = int8(dciBits(:));
     rx.ErrFlag = double(errFlag);
@@ -381,6 +380,10 @@ if rx.AmbiguousValidHypotheses
 end
 
 info = struct();
+info.ReceiveExtent = extent;
+info.DemodulatedReceiveSamples = size(rxWave,1);
+info.DemodulatedSymbols = size(rxGrid,2);
+info.ReceivePaddingApplied = false;
 info.CarrierInfo = cinfo;
 info.NCellID = nCellID;
 info.RNTI = rnti;
@@ -694,17 +697,14 @@ if ~isfinite(timingOffset) || timingOffset == 0
     y = x;
 elseif timingOffset > 0
     if timingOffset < size(x, 1)
-        y = [x(1+timingOffset:end, :); zeros(timingOffset, size(x, 2), "like", x)];
+        y = x(1+timingOffset:end, :);
     else
-        y = zeros(size(x), "like", x);
+        error('sixgr:phy:pdcch:IncompleteTimingObservation', ...
+            'The timing estimate consumes the received observation.');
     end
 else
-    lead = abs(timingOffset);
-    if lead < size(x, 1)
-        y = [zeros(lead, size(x, 2), "like", x); x(1:end-lead, :)];
-    else
-        y = zeros(size(x), "like", x);
-    end
+    error('sixgr:phy:pdcch:MissingTimingPrehistory', ...
+        'Negative timing alignment requires actual earlier received samples, not a fabricated zero prefix.');
 end
 end
 

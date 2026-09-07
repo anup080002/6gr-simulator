@@ -6,7 +6,7 @@ arguments
     options.NoiseVariance = []
     options.NoiseOnlyWaveform = []
 end
-required = ["ExecutionStage","Tx","TxInfo","ReceiverConfig","SampleRateHz","NumSamples","RuntimeStartSample"];
+required = ["ExecutionStage","Tx","TxInfo","ReceiverConfig","SampleRateHz","NumSamples","RuntimeStartSample","MinimumReceiveSamples"];
 if ~all(isfield(prepared,required))|| ...
         prepared.ExecutionStage~="pdcch_waveform_prepared_not_received"
     error('sixgr:link:InvalidPDCCHPreparation','PDCCH completion requires its retained transmitter preparation.');
@@ -15,9 +15,10 @@ if ~observation.isComplete()
     error('WAVEFORM:IncompleteObservation','PDCCH decoding requires the entire actual received window.');
 end
 if observation.SampleRateHz~=prepared.SampleRateHz|| ...
-        observation.EndSampleExclusive-observation.StartSample~=prepared.NumSamples
+        prepared.NumSamples~=size(prepared.Tx.Waveform,1)|| ...
+        observation.EndSampleExclusive-observation.StartSample<prepared.MinimumReceiveSamples
     error('sixgr:link:PDCCHObservationLayoutMismatch', ...
-        'PDCCH receive rate and extent must match its prepared waveform.');
+        'PDCCH reception requires the actual monitored symbols at the prepared sample rate.');
 end
 if isfinite(prepared.RuntimeStartSample) && observation.StartSample~=prepared.RuntimeStartSample
     error('sixgr:link:PDCCHObservationOriginMismatch', ...
