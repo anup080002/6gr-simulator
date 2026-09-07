@@ -12,6 +12,8 @@ classdef RARReceiveWindow
         Candidates table = table()
         DecodedFields table = table()
         AcceptedResponse struct = struct()
+        PreambleBackoff_ms double = 0
+        BackoffSource string = "mac_initialization_no_rar_received"
     end
     methods
         function obj=RARReceiveWindow(cfg,ra)
@@ -69,7 +71,9 @@ classdef RARReceiveWindow
             tbOK=logical(sixgr.util.structGet(rx,'Ok',false));
             rapidOK=tbOK && isfield(rar,'RAPID') && rar.RAPID==ra.PreambleIndex;
             grant=struct('Valid',false);
-            if tbOK, grant=sixgr.mac.ra.validateRARULGrant(rar.ULGrant,ra); end
+            if tbOK && ~isempty(fieldnames(rar.ULGrant))
+                grant=sixgr.mac.ra.validateRARULGrant(rar.ULGrant,ra);
+            end
             completeTicks=int64(observation.EndSampleExclusive)*int64(tc);
             within=completeTicks<=obj.Window.ExpiryTicksExclusive;
             allocationComplete=true;
@@ -82,6 +86,14 @@ classdef RARReceiveWindow
                     pdschEnd.Ticks<=obj.Window.ExpiryTicksExclusive;
             end
             accepted=dciOK && tbOK && rapidOK && grant.Valid && within && allocationComplete;
+            if dciOK && tbOK && within && allocationComplete
+                % Normal CBRA initialization sets SCALING_FACTOR_BI=1.
+                % Prioritized/LTM/NTN procedures require their own decoded
+                % MAC context and are not qualified by this receiver.
+                obj.PreambleBackoff_ms=rar.BackoffParameter_ms;
+                obj.BackoffSource="decoded_mac_rar_without_bi_zero_ms";
+                if rar.BackoffIndicatorPresent, obj.BackoffSource="decoded_mac_rar_bi_table_7_2_1"; end
+            end
             reason="dci_crc_fail";
             if dciOK, reason="rar_tb_crc_fail"; end
             if tbOK, reason="rapid_mismatch"; end
@@ -103,6 +115,8 @@ classdef RARReceiveWindow
                 'WindowStartTicks','WindowExpiryTicksExclusive','CandidatesAttempted', ...
                 'DCICrcPass','PDSCHCrcPass','RAPIDMatches','ULGrantValid','RARAccepted', ...
                 'Result','Source','ProxyUsed','FallbackUsed'});
+            row.PreambleBackoff_ms=obj.PreambleBackoff_ms;
+            row.BackoffSource=obj.BackoffSource;
             obj.Observations=localAppend(obj.Observations,row);
             obj.Candidates=localAppend(obj.Candidates,candidates);
             obj.DecodedFields=localAppend(obj.DecodedFields,fields);

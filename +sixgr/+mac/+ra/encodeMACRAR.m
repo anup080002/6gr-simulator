@@ -28,6 +28,11 @@ subheader = uint8(64 + rapid); % E=0, T=1, RAPID=rapid for single subPDU anchor.
 payloadBits = int8([0; localIntToBits(ta, 12); int8(grant.BitVector(:)); localIntToBits(tcRnti, 16)]);
 payloadBytes = localBitsToBytes(payloadBits);
 bytes = [subheader; payloadBytes(:)];
+if ~isnan(opt.BackoffIndicator)
+    bi=localInteger(opt.BackoffIndicator,0,13,"BackoffIndicator");
+    % E=1,T=0,R=R=0: a real leading BI subPDU, not metadata only.
+    bytes=[uint8(128+bi);bytes];
+end
 bits = localBytesToBits(bytes);
 
 rar = struct();

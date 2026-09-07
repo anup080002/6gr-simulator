@@ -8,7 +8,7 @@ raw = bitsOrBytes(:);
 if ~(isnumeric(raw) || islogical(raw)) || ~isreal(raw) || any(~isfinite(raw))
     error("sixgr:mac:ra:InvalidMACRARInput", "MAC RAR input must contain finite real bits or octets.");
 end
-if ~isa(raw,"uint8") && all(raw == 0 | raw == 1) && numel(raw) > 8
+if ~isa(raw,"uint8") && all(raw == 0 | raw == 1) && numel(raw) >= 8
     if mod(numel(raw),8) ~= 0
         error("sixgr:mac:ra:InvalidMACRARInput", "MAC RAR bit input must contain complete octets.");
     end
@@ -19,40 +19,70 @@ else
     end
     bytes = uint8(raw);
 end
-if numel(bytes) < 8
-    error("sixgr:mac:ra:ShortRAR", "MAC RAR requires at least 8 octets in the anchor profile.");
-end
-
-subheader = bytes(1);
-if bitand(subheader,uint8(192)) ~= 64
-    error("sixgr:mac:ra:UnsupportedMACRARSubheader", ...
-        "This parser requires one E=0,T=1 RAPID subPDU; BI and multiple RAR subPDUs are not silently reinterpreted.");
-end
-rapid = double(bitand(subheader, uint8(63)));
-payloadBits = localBytesToBits(bytes(2:8));
-ta = localBitsToInt(payloadBits(2:13));
-grantBits = int8(payloadBits(14:40));
-tcRnti = localBitsToInt(payloadBits(41:56));
-if payloadBits(1) ~= 0 || ta > 3846 || tcRnti < 1 || tcRnti > 65519
-    error("sixgr:mac:ra:InvalidMACRARField", "Reserved bit, TA command, or Temporary C-RNTI is invalid.");
-end
 if nargin < 2
     error("sixgr:mac:ra:MissingRARReceiverContext", ...
         "Interpreting decoded RAR fields requires the receiver's initial UL BWP and PUSCH common context.");
 end
-grant = sixgr.mac.ra.RARULGrantCodec.decode(grantBits, raCfg);
-grant.TemporaryCRNTI = double(tcRnti);
+position=1; responses=struct([]); bi=NaN; backoff=0;
+while true
+    if position>numel(bytes)
+        error('sixgr:mac:ra:UnsupportedMACRARSubheader','E=1 requires another complete MAC subPDU.');
+    end
+    header=bytes(position); more=bitand(header,uint8(128))~=0;
+    if bitand(header,uint8(64))==0
+        if position~=1 || ~isnan(bi) || bitand(header,uint8(48))~=0
+            error('sixgr:mac:ra:InvalidMACRARField','BI must be first and its reserved bits must be zero.');
+        end
+        bi=double(bitand(header,uint8(15)));
+        backoff=sixgr.mac.ra.rarBackoffMilliseconds(bi);
+        position=position+1;
+    else
+        % This context is four-step CBRA. SI-request RAPID-only subPDUs
+        % require the decoded SI-request resource context, not byte guessing.
+        if position+7>numel(bytes)
+            error('sixgr:mac:ra:ShortRAR','A CBRA RAPID subPDU requires seven payload octets.');
+        end
+        response=localDecodeResponse(bytes(position:position+7),raCfg);
+        if ~isempty(responses) && any([responses.RAPID]==response.RAPID)
+            error('sixgr:mac:ra:InvalidMACRARField','Duplicate RAPID responses are ambiguous.');
+        end
+        responses=[responses;response]; %#ok<AGROW>
+        position=position+8;
+    end
+    if ~more, break; end
+end
+if isempty(responses)
+    rar=struct('RAPID',NaN,'TimingAdvanceCommand',NaN,'TemporaryCRNTI',NaN, ...
+        'ULGrant',struct(),'ULGrantHex',"");
+else
+    selected=find([responses.RAPID]==sixgr.util.structGet(raCfg,'PreambleIndex',NaN),1);
+    if isempty(selected), selected=1; end
+    rar=responses(selected);
+end
+rar.Responses=responses;
+rar.BackoffIndicatorPresent=~isnan(bi);
+rar.BackoffIndicator=bi;
+rar.BackoffParameter_ms=backoff;
+rar.Bytes=bytes(1:position-1);
+rar.Bits=localBytesToBits(rar.Bytes);
+rar.Hex=upper(string(reshape(dec2hex(rar.Bytes,2).',1,[])));
+rar.PayloadHash=sixgr.rrc.asn1.asn1SHA256Hex(rar.Bytes);
+rar.PaddingOctets=numel(bytes)-position+1;
+end
 
-rar = struct();
-rar.RAPID = double(rapid);
-rar.TimingAdvanceCommand = double(ta);
-rar.TemporaryCRNTI = double(tcRnti);
-rar.ULGrant = grant;
-rar.ULGrantHex = sixgr.rrc.asn1.bitsToHex(grantBits);
-rar.Bytes = bytes(1:8);
-rar.Bits = localBytesToBits(bytes(1:8));
-rar.Hex = upper(string(reshape(dec2hex(bytes(1:8), 2).', 1, [])));
-rar.PayloadHash = sixgr.rrc.asn1.asn1SHA256Hex(bytes(1:8));
+function response=localDecodeResponse(bytes,raCfg)
+rapid=double(bitand(bytes(1),uint8(63)));
+payloadBits=localBytesToBits(bytes(2:8));
+ta=localBitsToInt(payloadBits(2:13));
+grantBits=int8(payloadBits(14:40));
+tcRnti=localBitsToInt(payloadBits(41:56));
+if payloadBits(1)~=0 || ta>3846 || tcRnti<1 || tcRnti>65519
+    error('sixgr:mac:ra:InvalidMACRARField','Reserved bit, TA command, or Temporary C-RNTI is invalid.');
+end
+grant=sixgr.mac.ra.RARULGrantCodec.decode(grantBits,raCfg);
+grant.TemporaryCRNTI=double(tcRnti);
+response=struct('RAPID',rapid,'TimingAdvanceCommand',ta,'TemporaryCRNTI',tcRnti, ...
+    'ULGrant',grant,'ULGrantHex',sixgr.rrc.asn1.bitsToHex(grantBits));
 end
 
 

@@ -135,6 +135,7 @@ ra.ScenarioName = scenarioName;
 ra.CellId = double(cellId);
 ra.UEId = double(opt.UEId);
 ra.AttemptId = double(opt.AttemptId);
+validateattributes(ra.AttemptId,{'numeric'},{'real','scalar','integer','positive','finite'});
 ra.RAProcedureType = "contention_based_four_step";
 ra.BindingSource = bindingSource;
 ra.StrictMode = logical(strict);

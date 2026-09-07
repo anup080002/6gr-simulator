@@ -1,8 +1,9 @@
 function result = runFourStepRAMultiAttempt(cfg, varargin)
 %RUNFOURSTEPRAMULTIATTEMPT Execute bounded retries using the production chain.
 %
-% Attempts are independent waveform executions. AttemptId owns the power
-% ramping counter; RATimingService owns the deterministic backoff boundary.
+% Offline independent executions, not a main shared-clock retry loop. This
+% fixed-reference fixture explicitly supplies its power-ramping counter;
+% the attempt identifier alone is not production power-control authority.
 
 p = inputParser;
 p.addParameter("RunFolder", "", @(x)ischar(x) || isstring(x));
@@ -67,6 +68,7 @@ for attemptIndex = 1:maxAttempts
         "RunId", string(opt.RunId) + "_A" + string(attemptIndex), ...
         "UEId", double(opt.UEId), ...
         "AttemptId", attemptIndex, ...
+        "PreamblePowerRampingCounter",attemptIndex, ...
         "FaultMode", fault, ...
         "WriteArtifacts", logical(opt.WriteArtifacts), ...
         "RunNegativeSuite", false);

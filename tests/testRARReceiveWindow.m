@@ -35,7 +35,7 @@ for mode=["TDD","FDD"]
         grant=sixgr.mac.ra.buildRARULGrant(scheduled);
         rapid=ra.PreambleIndex; if k==1, rapid=mod(rapid+1,64); end
         rar=sixgr.mac.ra.encodeMACRAR('RAPID',rapid,'TimingAdvanceCommand',0, ...
-            'TemporaryCRNTI',ra.TempCRNTI,'ULGrant',grant);
+            'TemporaryCRNTI',ra.TempCRNTI,'ULGrant',grant,'BackoffIndicator',localBI(k));
         tx=sixgr.phy.ra.generateMsg2RARWaveform(cfg,scheduled,rar);
         start=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slots(k),0,window.Numerology);
         obs=localBuffer(tx.Waveform,double(start.Ticks)*fs/1966080000,fs);
@@ -43,16 +43,25 @@ for mode=["TDD","FDD"]
         assert(out.Observation.DCICrcPass && out.Observation.PDSCHCrcPass);
         if k==1
             assert(~out.Accepted && obj.Status=="waiting" && out.Observation.Result=="rapid_mismatch");
+            assert(obj.PreambleBackoff_ms==5 && obj.BackoffSource=="decoded_mac_rar_bi_table_7_2_1", ...
+                'BI index zero is 5 ms, not the absent-BI default.');
         else
             assert(out.Accepted && obj.Status=="matched" && out.RAConfig.Msg2Slot==slots(2));
+            assert(obj.PreambleBackoff_ms==0 && obj.BackoffSource=="decoded_mac_rar_without_bi_zero_ms", ...
+                'A subsequent CRC-valid RAR without BI resets the backoff parameter.');
             bound=sixgr.phy.ra.bindReceivedRARTiming(cfg,out.RAConfig,out.RAR.ULGrant,out.Receiver.RecoveredSchedule);
             assert(bound.Msg3Slot==slots(2)+out.RAR.ULGrant.K2+out.RAR.ULGrant.Msg3AdditionalDelaySlots);
         end
     end
     assert(all(~obj.Observations.ProxyUsed & ~obj.Observations.FallbackUsed));
 end
+
 ok=true;
 disp('RAR_RECEIVE_WINDOW_PASS: actual candidate decoding, wrong-RAPID then acceptance, no skipped observations or premature expiry; TDD/FDD unit fixtures.');
+end
+
+function bi=localBI(k)
+bi=NaN; if k==1, bi=0; end
 end
 
 function obs=localBuffer(samples,first,fs)

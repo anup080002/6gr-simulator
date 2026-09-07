@@ -8678,9 +8678,29 @@ for ueIdx = 1:numUsers
             end
             shouldAttemptPRACH = ~isfinite(lastAttempt) || lastAttempt <= 0;
         end
+        if shouldAttemptPRACH && isfield(state,'SharedWaveformStream') && ...
+                isfield(state,'RARetryByUE') && numel(state.RARetryByUE)>=ueIdx && ...
+                ~isempty(state.RARetryByUE{ueIdx})
+            shouldAttemptPRACH=state.RARetryByUE{ueIdx}.canStart(localSharedNowTicks(state));
+        end
         if shouldAttemptPRACH
             [cfgU, tempState] = localApplyCoupledRuntimeUserContext(cfgU, tempState, ueIdx, "UL"); %#ok<ASGLU>
             cfgU = localApplyDeterministicPrachUserContext(cfgU, ueIdx);
+            if isfield(state,'SharedWaveformStream')
+                cfgU=localApplyMeasuredSSBSelectionForRA(cfgU,state,ueIdx);
+                [cfgU,referenceDecision]=sixgr.truth.bindSharedRAPowerReference(cfgU,state,ueIdx,slotIdx);
+                state.ControlTrials.RAEvidenceTables=localAppendRAEvidenceTables( ...
+                    state.ControlTrials.RAEvidenceTables,struct('ra_power_reference_decisions',referenceDecision));
+                shouldAttemptPRACH=referenceDecision.ReferenceUsable;
+                if ~shouldAttemptPRACH
+                    localAppendRuntimeLog("INFO", ...
+                        "PRACH deferred: ue=%d slot=%d selected_ssb=%d reason=%s minimum_age_slots=%g maximum_age_slots=%g; no model pathloss substitution.", ...
+                        ueIdx,slotIdx,referenceDecision.SelectedSSBIndex,referenceDecision.Blocker, ...
+                        referenceDecision.MinimumAvailableAgeSlots,referenceDecision.MaximumAgeSlots);
+                end
+            end
+        end
+        if shouldAttemptPRACH
             prachSNR_dB = localResolveCoupledRuntimeLinkSNR(state, cfgU, ueIdx, "UL", snr_dB);
             [state, prachRawT, prachCorrT, prachRAEvidenceT] = ...
                 localCollectCoupledPRACHTrials( ...
@@ -12716,6 +12736,7 @@ end
 receiveThrough = (slotIdx - 1) * sixgr.time.slotDurationSec(cfg);
 shared=isfield(state,'SharedWaveformStream');
 if shared
+    receiveThrough=double(localSharedNowTicks(state))/double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
     if pending
         if isempty(sixgr.util.structGet(attempt,'Received',[])), return; end
         ra=attempt.Received; checkpoint=attempt.Continuation;
@@ -12723,11 +12744,26 @@ if shared
     else
         cfg=sixgr.util.structSet(cfg,'random_access.use_runtime_channel',true);
         attempt.Config=cfg;
+        if ~isfield(state,'RARetryByUE'), state.RARetryByUE=cell(numel(state.AccessState),1); end
+        if isempty(state.RARetryByUE{ueIdx})
+            validateattributes(cfg.run.seed,{'numeric'},{'scalar','integer','nonnegative','finite'});
+            key="cell_"+state.CurrentServingIdx(ueIdx)+"_ue_"+ueIdx;
+            seed=sixgr.lls.deterministicSeed(cfg.run.seed,key,1,1,"RA_BACKOFF");
+            state.RARetryByUE{ueIdx}=sixgr.mac.ra.RARetryState(seed);
+        end
+        selected=cfg.random_access.associated_ssb_index;
+        validateattributes(selected,{'numeric'},{'scalar','integer','nonnegative','finite'});
+        reference="cell_"+state.CurrentServingIdx(ueIdx)+"/SSB_"+selected;
+        % Current licensed CBRA path has no lower-layer LBT failure or
+        % ramp-suspension indication. Such indications must be explicit inputs
+        % when channel-access/preamble cancellation is integrated.
+        retry=state.RARetryByUE{ueIdx}.prepare(reference,localSharedNowTicks(state),false,false);
         dlState=state.SharedWaveformStream.directionalChannelState(ueIdx,"DL");
         ulState=state.SharedWaveformStream.directionalChannelState(ueIdx,"UL");
         [prepared,checkpoint]=sixgr.phy.ra.runFourStepRA(cfg, ...
             'RunFolder',cfg.run.rootRunFolder,'RunId',"shared_ra_ue"+ueIdx+"_slot"+slotIdx, ...
             'UEId',ueIdx,'RuntimeSlot',slotIdx,'WriteArtifacts',false, ...
+            'AttemptId',retry.TransmissionCounter,'PreamblePowerRampingCounter',retry.PowerRampingCounter, ...
             'RuntimeIntegrationMode','shared_physical_waveform_stream', ...
             'UseRuntimeChannel',true,'RequireRuntimeStageWaveforms',true, ...
             'AllowRuntimeStageWaveformComposition',false, ...
@@ -12735,6 +12771,7 @@ if shared
             'RequireDecodedSIB1',localRequireDecodedSIB1ForRA(cfg), ...
             'InitialDLChannelState',dlState,'InitialULChannelState',ulState, ...
             'StageAction','prepare_next_stage','ReceiveThroughTime_s',receiveThrough);
+        state.RARetryByUE{ueIdx}=retry.arm(checkpoint.RAConfig);
         attempt.Continuation=checkpoint; attempt.Received=[];
         if ~isfield(state,'PendingRAAttempts'), state.PendingRAAttempts=cell(numel(state.AccessState),1); end
         state.PendingRAAttempts{ueIdx}=attempt; state.AccessState(ueIdx)="pending";
@@ -12854,6 +12891,27 @@ end
     'Continuation',attempt.Continuation,'RuntimeStageWaveforms',streams, ...
     'InitialDLChannelState',dl,'InitialULChannelState',ul, ...
     'StopAfterStage',stage,'StageAction',action,'ReceiveThroughTime_s',through,extra{:});
+retry=state.RARetryByUE{ue};
+if item.Kind=="RA" && stage=="Msg1"
+    retry=retry.transmitted(attempt.Continuation.RAConfig.PRACHActiveEndTicksExclusive);
+elseif item.Kind=="RARExpiry"
+    [retry,retryRow]=retry.responseExpired(ra.ExpiredRARReceiver,localSharedNowTicks(state));
+    retryEvidence=struct('ra_retry_events',retryRow);
+    state.ControlTrials.RAEvidenceTables=localAppendRAEvidenceTables( ...
+        sixgr.util.structGet(state.ControlTrials,'RAEvidenceTables',struct()),retryEvidence);
+    localAppendRuntimeLog("INFO", ...
+        "UE RA timeout: ue=%d attempt=%d next_counter=%d ramp_counter=%d backoff_ms=%g retry_tick=%g exhausted=%d.", ...
+        ue,retryRow.CompletedAttempt,retryRow.NextTransmissionCounter,retryRow.PowerRampingCounter, ...
+        retryRow.PreambleBackoff_ms,retryRow.EarliestRetryTicks,retryRow.PreambleTransMaxExhausted);
+elseif item.Kind=="RAR" && ~isempty(fieldnames(checkpoint)) && checkpoint.NextStage==3
+    retry=retry.rarAccepted();
+elseif isempty(fieldnames(checkpoint)) && ra.RACompleted
+    retry=retry.completed();
+elseif isempty(fieldnames(checkpoint))
+    error('sixgr:truth:MissingUEContentionFailureBoundary', ...
+        'A post-RAR gNB decode failure cannot become an immediate UE retry; execute the UE contention timer first.');
+end
+state.RARetryByUE{ue}=retry;
 if item.Kind=="RA"
     sixgr.truth.exportSharedRAObservation(attempt.Config.run.rootRunFolder,attempt.Config, ...
         attempt.Continuation,p,item.Planes,ra);
@@ -12889,6 +12947,15 @@ if ~isempty(fieldnames(checkpoint))
             struct('Config',attempt.Config),next.PreparedTransmission.StageName=="Msg2");
     end
 end
+end
+
+function ticks=localSharedNowTicks(state)
+fs=state.SharedWaveformStream.SampleRateHz;
+tc=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/fs;
+if tc~=fix(tc)
+    error('sixgr:truth:SharedRetryClock','The UE retry clock must preserve exact physical Tc.');
+end
+ticks=int64(state.SharedWaveformStream.Events.NextSampleIndex)*int64(tc);
 end
 
 function cfg = localApplyMeasuredSSBSelectionForRA(cfg, state, ueIdx)
@@ -13532,6 +13599,7 @@ end
 
 function names = localRAEvidenceTableNames()
 names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
+    "ra_retry_events","ra_power_reference_decisions", ...
     "rar_monitoring_observations","rar_monitoring_candidates","rar_monitoring_decoded_fields", ...
     "msg2_rar_trials","msg2_pdcch_candidates","msg2_dci_fields","msg3_pusch_trials", ...
     "msg4_contention_resolution","rrc_connection_events","rrc_setup_complete", ...

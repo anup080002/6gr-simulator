@@ -1,6 +1,165 @@
 # Short TDD run: measured failures and remaining integration work
 
-## Executed UE RAR window and canonical IQ checkpoint (current, 2026-09-07)
+## UE retry, backoff, receive-plane and fresh-reference checkpoint (current, 2026-09-07)
+
+**NOT qualified as a complete NR link-level run.** The fresh 58-slot TDD
+diagnostic proves the repairs below, not completed access/data, calibrated
+12 dB SINR, all-channel PNGs, or continuous instrument playback.
+
+### Repairs implemented and executed
+
+- The main UE now owns separate preamble transmission and power-ramping
+  counters. Actual UE RAR expiry advances the transmission counter; a gNB
+  detector miss is not a UE retry trigger. Power ramping follows the retained
+  reference and explicit lower-layer indication inputs, not an attempt-ID
+  shortcut. The component checks cover unchanged/changed reference, ramp
+  suspension, LBT failure, backoff eligibility and maximum-attempt exhaustion.
+  Main licensed CBRA has no LBT/suspension producer yet; no such coverage is
+  claimed. Exhaustion stops further attempts; an actual upper-layer RRC
+  problem indication remains to be integrated.
+- MAC RAR BI is encoded into real transmitted octets. Decoding handles a
+  leading BI, multiple CBRA RAPIDs, BI-only PDUs and implicit padding. All
+  14 defined BI values have independent byte/value assertions; reserved
+  encodings are rejected. Absent BI means zero backoff, whereas BI index 0
+  means 5 ms. An actual coded wrong-RAPID RAR carrying BI=2 drives the UE's
+  20 ms backoff parameter; all remaining receive occasions and expiry execute
+  before the seeded uniform draw is used. Value copies retain independent
+  RNG state. SI-request RAPID-only, prioritized/LTM/NTN and two-step variants
+  are not qualified by these CBRA changes.
+- Retry decisions are exported as `ra_retry_events.csv`, with real expiry,
+  counter, random-draw and backoff provenance. RAR monitoring retains decoded
+  BI state/source; final Msg2 rows now expose actual decoded BI fields instead
+  of an unconditional NaN.
+- Actual RAR acceptance exposed a caller bug: the gain-compensated receiver
+  buffer was supplied to the raw post-RF provenance check. The caller now
+  supplies raw post-RF samples, and the existing strict validator derives the
+  decoder plane itself. No assertion was weakened and neither plane is
+  overwritten. The intermediate 48-slot main diagnostic reached actual RAR
+  acceptance after this repair, but its power path was still defective.
+- A second real defect was found in that intermediate run: when the SSB
+  pathloss measurement aged out, generic user context silently substituted
+  large-scale model pathloss. The retry's requested power jumped about 15 dB
+  despite only a 2 dB ramp and a roughly 0.1 dB SS-RSRP change. Shared PRACH
+  now requires the selected SSB's identified, causally available physical-
+  reference measurement; model/base pathloss cannot satisfy that check.
+  `ra_power_reference_decisions.csv` records usable and deferred decisions.
+  Deferred attempts do not increment transmitted-attempt accounting. The
+  existing YAML age limit is retained; no new fixed NR age constant is claimed.
+
+### Main evidence and limits
+
+Latest run: `%LOCALAPPDATA%/Temp/main_shared_ra_20260907_162452`.
+The main retry assertions passed after all 58 slots executed.
+
+| Evidence | First attempt | Retry |
+| --- | --- | --- |
+| Actual PRACH start | 14.5 ms / sample 111360 | 54.5 ms / sample 418560 |
+| Transmission / power-ramping counter | 1 / 1 | 2 / 2 |
+| Selected SSB | 0 | 0 |
+| Measurement producer / available / consumed slot (one-based) | 1 / 6 / 15 | 41 / 46 / 55 |
+| Physical-reference pathloss | 81.046095612 dB | 81.276075549 dB |
+| Requested/applied PRACH power | -11.953904388 dBm | -9.723924451 dBm |
+| Detector metric / unchanged threshold | 0.340461278 / 0.5 | 0.448173950 / 0.5 |
+| Actual RAR monitor observations within this run | 16 | 2 |
+
+The first UE response window expires at exactly 35 ms / 68,812,800 Tc.
+Slot 45 is explicitly deferred: the delivered SSB-0 reference is 24 slots
+old versus the configured limit of 20; its decision row contains no numeric
+pathloss substitute. A later delivered SSB measurement enables the actual
+slot-55 retry, aged 14 slots. Both PRACH attempts remain below threshold.
+There are zero DL/UL data trial rows; the second RAR window is still running
+at the diagnostic stop, not falsely declared expired.
+
+**New confirmed signalling/power defect:** the retained CRC-decoded SIB1
+tree in the first Msg1 capture contains
+`servingCellConfigCommon.ss_PBCH_BlockPower = -25 dBm`, while the associated
+physical-reference row measures transmitted SSS EPRE at
+`+5.228787453 dBm`. The discrepancy is approximately 30.2288 dB.
+`buildBCCHDLSCHMessage` supplies a -25 default when the field is absent;
+the shared power path currently consumes measured TX/RX reference powers,
+not a qualified received-SIB1-power plus UE higher-layer-filtered-RSRP
+contract. The freshness repair does **not** close this separate defect.
+Bind a configuration-owned transmitter EPRE budget to the actual broadcast
+value, install that decoded value at the UE, and implement/verify its
+higher-layer RSRP filtering before claiming TS 38.213 power-control closure.
+
+References: [TS 38.321 V18.8.0, 5.1.3/5.1.4 and 7.2](https://www.etsi.org/deliver/etsi_ts/138300_138399/138321/18.08.00_60/ts_138321v180800p.pdf),
+[TS 38.213 V18.8.0, 7.4](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+
+### Verification record
+
+- `logs/ra_retry_backoff_components_20260907.log`: the five preceding
+  component calls passed; batch exit 1 because a function-test suite object
+  was passed to `assertSuccess` without executing it. Corrected the command,
+  not production code or assertions.
+- `logs/ra_retry_main_20260907.log`: both offline multi-attempt tests passed;
+  the main run failed at actual RAR acceptance with
+  `PhysicalRAObservationMismatch`. Retained run: `main_shared_ra_20260907_160316`.
+- `logs/ra_retry_receive_plane_20260907.log`: exit 0 after correcting the raw
+  receive-plane handoff; components and 48-slot retry test passed. Retained
+  run: `main_shared_ra_20260907_161240`. That test's arithmetic-only power
+  assertion was insufficient to detect stale-reference model substitution;
+  it is not a power qualification pass and was strengthened accordingly.
+- `logs/ra_retry_fresh_reference_20260907.log`: exit 0. Fresh/stale/future/
+  wrong-reference and same-row power checks, received-BI retry tests and the
+  stronger 58-slot main test passed. Both actual PRACH captures and their
+  measurement identities/timing/power equations were checked.
+- `logs/ra_retry_ul_regressions_20260907.log`: exit 0. All 28 focused test
+  entry points completed, including the two-case multi-attempt suite:
+  RAR codec/grant/window/retry, fresh-reference and five-stage received-buffer
+  checks; RA artifact schemas and exact sample clock; `testConfig`,
+  `testLLS_DL`, `testLLS_UL`, `testLLS_ReferencePoints`,
+  `testStrictProxyGuards`, `testE2E_FastVsTruth`,
+  `testE2E_TruthPacketSemanticCampaign`, `testSchedulerGrantConsistency`,
+  `testUplinkControlStreamStages`, `testDataChannelStreamStages`,
+  `testLLSULSRSRITPMIEstimator`, `testRecoveredPUSCHUCIEvidence`,
+  `testPUSCHCausalSRSFrozenGrant`, `testPDSCHQCLStatePropagation`,
+  `testPDSCHTCIStateBinding`, `testPMIPrecodingRuntime`,
+  `testCSIRSPhysicalResourceMeasurements`,
+  `testPUSCHMeasuredReferencePowerControl` and
+  `testPUCCHMeasuredReferencePowerControl`. Existing FDD compatibility/E2E
+  fixtures are separate from the authored TDD main diagnostic. These passes
+  do not establish main-stream access, connected UL or full NR conformance.
+
+Final first-five-row audit:
+`results/lls/qualification_working/reviews/ra_retry_fresh_reference_first5_20260907/`.
+It inspected all 166 CSVs: 16,690 rows and 8,730 columns; zero parse failures
+or infinities, 61 empty files, 19 duplicate rows and 25 byte-hash mirror
+groups. There are 125 required CSV semantic failures and one chart failure;
+the strict value-review gate is FAIL. Six files lack headers: multiuser
+summary, both PDCCH copies, CSI-RS, SRS and live LA input. Token counts
+(209 proxy, four fallback, three placeholder, zero synthetic) are lexical
+review flags, not proof of which execution backend ran. `SaveFigures=false`
+was explicit, and there are zero PNGs; this is not PNG publication evidence.
+
+### Remaining acceptance work (not waived)
+
+1. Repair signalled SS/PBCH reference power, waveform EPRE authority and UE
+   filtered-RSRP consumption; then evaluate PRACH beam/spatial filtering and
+   receiver margin without changing thresholds to force access. Audit Msg3
+   power-control inputs/formula and reference age at actual transmission
+   separately from ordinary PUSCH component tests.
+2. Complete acquired UE-DL clock origin, nonzero-TA UE-TX/gNB-RX origins,
+   final-window FDD tail handling and actual Msg3/contention timer deadlines.
+   Preserve guards against immediate UE failure inferred from a gNB decoder.
+3. Complete main shared PDCCH/PDSCH/PUSCH/PUCCH/UCI/SRS scheduling/receive
+   ownership, actual control and RRC framing, upper-layer RA exhaustion
+   signalling, and cancellation of stopped receive windows. Do not permit
+   legacy eager PHY execution on the stream-owned channel.
+4. Publish already measured per-stage PRACH/Msg2/Msg3/Msg4 primary rows while
+   access is pending, with immutable receiver outcomes and separate attempt
+   lifecycle events. At present the detailed primary RA stage tables still
+   wait for terminal attempt finalization; raw runtime stage/IQ evidence is live.
+5. Qualify late HARQ-ACK on queued PUSCH, PUCCH/PUSCH UCI recovery, SRS-driven
+   UL rank/TPMI and CSI CQI/PMI/RI, physical precoders and QCL/TCI source/age
+   binding in the actual main stream. Component passes alone are insufficient.
+6. Qualify RSSI/SS/CSI RSRP/SINR and PHR with explicit power plane, reference,
+   antenna and bandwidth/window definitions; repair CSV applicability/schema
+   and real PNG publication. Then establish independently calibrated 12 dB
+   operation and continuous all-channel Keysight playback. No authored FDD,
+   25 dB production scenario, or `testAll` was launched in this checkpoint.
+
+## Executed UE RAR window and canonical IQ checkpoint (previous, 2026-09-07)
 
 **The main run remains NOT qualified.** This checkpoint closes the immediate
 gNB-miss-to-UE-failure defect for the authored TDD diagnostic. It does not
