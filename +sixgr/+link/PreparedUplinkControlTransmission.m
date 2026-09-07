@@ -1,6 +1,7 @@
 classdef PreparedUplinkControlTransmission
     % Retained SRS/PUCCH contribution, before shared node RF and propagation.
-    % The nominal-slot interface deliberately does not claim nonzero TA.
+    % UE TX and gNB RX origins are distinct when received clock/TA authority
+    % is present. The aligned zero-TA component fixture remains explicit.
     properties (SetAccess=private)
         Channel (1,1) string
         InputConfig
@@ -12,6 +13,9 @@ classdef PreparedUplinkControlTransmission
         SampleRateHz (1,1) double
         StartSample (1,1) double
         EndSampleExclusive (1,1) double
+        ReceiveStartSample (1,1) double
+        ReceiveEndSampleExclusive (1,1) double
+        PhysicalTiming struct
         NumPhysicalTransmitAntennas (1,1) double
         NumReceiveAntennas (1,1) double
     end
@@ -25,9 +29,6 @@ classdef PreparedUplinkControlTransmission
             validateattributes(tx.Waveform,{'single','double'},{'2d','nonempty','finite'});
             assert(isfield(options,'TimingAdvanceSamples') && isfinite(options.TimingAdvanceSamples), ...
                 'sixgr:link:MissingPreparedULControlTiming','Explicit timing-advance authority is required.');
-            assert(options.TimingAdvanceSamples==0, ...
-                'sixgr:link:SharedULControlTimingAdvanceNotIntegrated', ...
-                'Nonzero timing advance needs distinct UE TX and gNB RX origins; do not silently ignore it.');
             pc=rxCfg.lls6g.runtimePowerContext;
             assert(~pc.PAApplied && (~pc.PAEnabled || pc.PAExecutionDeferred), ...
                 'sixgr:link:ULControlPreparationAppliedRF','Defer PA until node composition.');
@@ -47,6 +48,50 @@ classdef PreparedUplinkControlTransmission
             obj.RequestBinding=obj.requestBinding(options);
             obj.Tx=tx; obj.TxInfo=info; obj.ReceiverConfig=rxCfg; obj.Metadata=metadata;
             obj.SampleRateHz=fs; obj.StartSample=round(origin);
+            obj.ReceiveStartSample=obj.StartSample;
+            obj.ReceiveEndSampleExclusive=obj.StartSample+size(tx.Waveform,1);
+            obj.PhysicalTiming=struct('Source',"explicit_aligned_zero_TA_component_fixture", ...
+                'WaveformTimingApplied',false,'FiniteWaveformCropped',false);
+            if isfield(cfg,'SharedULTimingContext')
+                context=cfg.SharedULTimingContext;
+                assert(all(isfield(context,{'ReceivedRARTiming','TimingAdvanceAvailableAtSample', ...
+                    'TimingAdvanceEffectiveAtSample','TimeAlignmentExpirySampleExclusive'})), ...
+                    'sixgr:link:MissingReceivedULControlTiming', ...
+                    'Retain decoded RAR timing, receiver availability, TAG application time and timer expiry; no configured TA substitute.');
+                ta=context.ReceivedRARTiming;
+                resolved=sixgr.phy.ra.resolveRARTimingAdvance(ta.Command,ta.FirstULSCSkHz,fs);
+                assert(isequaln(ta,resolved) && options.TimingAdvanceSamples==ta.Samples, ...
+                    'sixgr:link:ULControlTimingAuthorityMismatch','Received RAR timing and the requested TA must agree exactly.');
+                timing=sixgr.phy.ra.sharedULStageTiming(cfg,origin/fs,fs,size(tx.Waveform,1),ta.NTA_Tc);
+                validateattributes(context.TimingAdvanceAvailableAtSample,{'numeric'}, ...
+                    {'scalar','real','finite','integer','nonnegative'});
+                assert(timing.TransmitStartSample>=context.TimingAdvanceAvailableAtSample, ...
+                    'sixgr:link:ULControlBeforeReceivedTA','An UL transmission cannot use a future decoded timing command.');
+                % TS 38.213 4.2 application time is distinct from decoding.
+                % Its MAC/TAG owner must resolve it using the applicable
+                % processing times; a PHY contributor cannot invent it.
+                validateattributes(context.TimingAdvanceEffectiveAtSample,{'numeric'}, ...
+                    {'scalar','real','finite','integer','>=',context.TimingAdvanceAvailableAtSample});
+                assert(timing.TransmitStartSample>=context.TimingAdvanceEffectiveAtSample, ...
+                    'sixgr:link:ULControlBeforeTAApplication','The decoded TA has not become applicable to this connected UL transmission.');
+                expiry=context.TimeAlignmentExpirySampleExclusive;
+                validateattributes(expiry,{'numeric'},{'scalar','real','positive','nonnan'});
+                assert(isinf(expiry) || expiry==fix(expiry), ...
+                    'sixgr:link:InvalidULTimeAlignmentExpiry','Time-alignment expiry must lie on the sample clock, or be explicitly infinite.');
+                assert(timing.TransmitEndSampleExclusive<=expiry, ...
+                    'sixgr:link:ULControlAfterTimeAlignmentExpiry','The complete connected UL transmission requires valid time alignment.');
+                obj.StartSample=timing.TransmitStartSample;
+                obj.ReceiveStartSample=timing.ReceiveStartSample;
+                obj.ReceiveEndSampleExclusive=timing.ReceiveEndWithoutChannelTail;
+                timing.TimingAdvanceAvailableAtSample=context.TimingAdvanceAvailableAtSample;
+                timing.TimingAdvanceEffectiveAtSample=context.TimingAdvanceEffectiveAtSample;
+                timing.TimeAlignmentExpirySampleExclusive=expiry;
+                obj.PhysicalTiming=timing;
+            else
+                assert(options.TimingAdvanceSamples==0, ...
+                    'sixgr:link:SharedULControlTimingAdvanceNotIntegrated', ...
+                    'Nonzero TA requires received DL clock/common offset/TA authority; no finite waveform shifting.');
+            end
             obj.EndSampleExclusive=obj.StartSample+size(tx.Waveform,1);
             obj.NumPhysicalTransmitAntennas=size(array.PortToElementMatrix,1);
             obj.NumReceiveAntennas=sixgr.phy.ul.resolveULDirectionalAntennaCount(rxCfg,'rx',size(tx.Waveform,2));
@@ -115,15 +160,24 @@ classdef PreparedUplinkControlTransmission
             assert(isa(buffer,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(buffer), ...
                 'sixgr:link:ULControlObservationRequired','Supply contiguous actual sample observations.');
             antennas=obj.NumReceiveAntennas;
-            intervalOK=buffer.EndSampleExclusive>=obj.EndSampleExclusive;
+            first=obj.ReceiveStartSample;
+            intervalOK=buffer.EndSampleExclusive>=obj.ReceiveEndSampleExclusive;
             if string(plane)=="transmitter"
                 antennas=obj.NumPhysicalTransmitAntennas;
+                first=obj.StartSample;
                 intervalOK=buffer.EndSampleExclusive==obj.EndSampleExclusive;
             end
-            assert(buffer.StartSample==obj.StartSample && buffer.SampleRateHz==obj.SampleRateHz && ...
+            assert(buffer.StartSample==first && buffer.SampleRateHz==obj.SampleRateHz && ...
                 buffer.NumReceiveAntennas==antennas && intervalOK, ...
                 'sixgr:link:ULControlObservationMismatch','Observation clock, coverage and physical branches must match.');
             samples=buffer.readComplete();
+        end
+
+        function interval=receiverTimingSearchWindow(obj,buffer)
+            % Capture extent is the gNB search authority, never the actual
+            % UE TX origin or a perfect channel-delay measurement.
+            obj.readObservation(buffer,"receiver");
+            interval=[0 buffer.EndSampleExclusive-buffer.StartSample-size(obj.Tx.Waveform,1)];
         end
     end
     methods (Static)

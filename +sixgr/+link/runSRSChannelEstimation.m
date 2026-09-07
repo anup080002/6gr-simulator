@@ -302,11 +302,26 @@ try
         noiseVarArgs = {"NoiseVar", double(injectedNoiseVariance), ...
             "NoiseVarDomain", "time"};
     end
+    if received
+        noiseVarArgs=[noiseVarArgs {"TimingSearchWindowSamples", ...
+            prepared.receiverTimingSearchWindow(context.Observation)}];
+    end
     [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
         noiseVarArgs{:}, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
+    out.ReceiveTiming=rx.Timing;
+    out.EstimatedTimingOffset_samples=rx.Timing.TimingOffsetSamples;
+    out.AppliedTimingCorrection_samples=rx.Timing.AppliedTimingCorrectionSamples;
+    out.TimingEstimateSource=rx.Timing.TimingSource;
+    if received && ~isempty(txWaveForReference)
+        % Scoring-only desired reference uses the SAME measured receiver
+        % alignment. Never fit a separate oracle timing to improve NMSE.
+        first=rx.Timing.AppliedTimingCorrectionSamples;
+        count=rx.Timing.DemodulatedSampleCount;
+        txWaveForReference=txWaveForReference(first+(1:count),:);
+    end
     out.NoiseVariance = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
     out.RuntimeNoiseApplied = isfinite(out.NoiseVariance) && out.NoiseVariance > 0;
     out.RuntimeNoiseVarianceMean = out.NoiseVariance;

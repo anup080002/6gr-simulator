@@ -1,5 +1,99 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Connected UL receive timing repair (after e257a7b1)
+
+This is a component-level repair, **not main connected-uplink qualification**.
+The main access checkpoint below is unchanged. No new FDD campaign or 25 dB
+campaign was launched. No `testAll` execution was requested by this repair.
+
+Verified focused log: `logs/ul_control_received_timing_validation_20260907.log`
+(MATLAB exit 0). `testUplinkControlReceivedTiming`,
+`testUplinkControlStreamStages`, and `testSharedULTimingOrigins` passed.
+The new test uses the actual TDD and FDD resolved configurations, real NR
+SRS/PUCCH codecs, and explicitly **analytic delayed two-tap unit samples**;
+these samples are not a claimed TDL/CDL realization or main-run evidence.
+Both channels recover the 96-sample receive offset for RAR command 0 and
+84 samples for command 3, in both profiles (eight reception cases). All
+PUCCH DM-RS cases recover their coded UCI; SRS retains the existing finite
+true-channel NMSE acceptance gate. Completion preserves RNG state.
+
+Changes and exact limits:
+
+- Prepared SRS/PUCCH now retain separate full UE TX and independent gNB RX
+  intervals when received DL phase, decoded common offset, and received RAR
+  timing are supplied. TA is checked in exact Tc/sample units against the
+  received command, its availability, a separately declared MAC/TAG
+  application instant, and time-alignment expiry. The PHY does not infer
+  immediate applicability from decoding. Main MAC ownership of the
+  normative application instant/timer still needs integration. No finite TX samples are shifted
+  out of their buffer, discarded, or replaced by zeros.
+- SRS and PUCCH with DM-RS use bounded **received-reference correlation**
+  before FFT demodulation. Search authority is the receive capture, not
+  the actual transmitter start or a perfect channel delay. Complete
+  received slot coverage is required. Scoring-only SRS reference samples
+  use that same measured alignment, never a separately fitted oracle delay.
+- Removed PUCCH's transmitted-grid timing diagnostic for Format 0. A
+  nonzero-uncertainty Format-0 observation without receiver-known UL timing
+  fails explicitly (`PUCCHTimingReferenceRequired`). The aligned component
+  fixture remains supported, without claiming measured timing. This does
+  **not** complete Format-0 timing tracking in the main scheduler.
+- PUCCH active-symbol power and CP-based CFO diagnostics now use the same
+  received alignment as the FFT. A scalar noise parameter still cannot
+  manufacture isolated-noise SINR/EVM measurements.
+- A malformed MATLAB string-array error in the PUCCH YAML/profile guard
+  now reports its intended `YAMLChannelProfileBypassed` identifier. The
+  guard itself remains strict and is covered by a negative test.
+
+Initial new-test failures were retained in their logs: duplicate timing
+uncertainty authority, a mismatched fixture channel profile (which exposed
+the malformed error), and changing only one FDD alias on a TDD fixture.
+The final fixture loads the real corresponding YAML and does not weaken
+any configuration guard to pass.
+
+Broader regression verification **passed**, MATLAB exit 0:
+`logs/ul_control_timing_regression_20260907.log`. All 18 invoked regression
+functions plus the executable `testPUCCHReceiverContextNoOracle` test passed:
+config, DL, UL, reference points, strict proxy/no-fallback guards, scheduler
+grant consistency, received PUCCH noise (formats 1-4 through actual retained
+AGC/ADC), waveform UCI feedback, FDD/TDD reservations, staged data channels,
+recovered PUSCH UCI, SRS channel/RF wiring, link export, artifact integrity,
+E2E artifact preservation, and both E2E truth regressions. Existing FDD E2E
+unit fixtures were executed; no new user FDD campaign was launched.
+
+The final added application/expiry guards **passed** the repeated new
+reception, staged-reception, clock-origin and received-noise tests, MATLAB
+exit 0, in `logs/ul_control_timing_activation_guard_20260907.log`.
+Across this checkpoint, **22 distinct focused test functions passed**.
+Missing application
+authority, one-sample-early application, and one-sample-late expiry each
+have explicit negative assertions; this is not a substituted MAC timer.
+
+Still required before a complete short-run claim:
+
+1. Main SRS look-ahead preparation must enqueue before the advanced UE TX
+   origin, consume the shared physical observation, then deliver its result
+   at the actual receive-completion boundary. The existing eager SRS path
+   still hits the intentional shared-channel double-execution guard.
+2. Separate practical SRS usability from offline NMSE scoring without
+   inventing a noiseless reference or weakening the NMSE qualification gate.
+   `applySRSTrial` currently publishes producer-slot availability and gates
+   runtime validity with oracle NMSE; both require an explicit causal design.
+3. Complete connected PUSCH/PUCCH preparation, decoded TAG/TA state delivery,
+   Format-0 timing tracking, UCI-on-PUSCH late binding and actual ACK delivery.
+   Do not use legacy capture-relative timing aliases or the optional
+   geometry-predictive TA path as a substitute for a received TA command.
+4. Qualify CSI PMI/RI/CQI, applied QCL/TCI/beam identity and freshness in the
+   **main run**, not just existing isolated binding tests. Close the RSSI
+   measurement bandwidth/window definition and CSV/PNG publication; an
+   SSB-window power measurement is not automatically full-carrier RSSI.
+5. Fix physical-clock live progress, empty CSV schemas and remaining strict
+   output checks listed below. Publish plots only from actual observations.
+
+References: [TS 38.213 V18.8, clause 4.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf)
+defines the common timing adjustment for PUSCH/SRS/PUCCH in a TAG;
+[MathWorks SRS CSI example](https://www.mathworks.com/help/5g/ug/nr-uplink-channel-state-information-estimation-using-srs.html)
+uses practical timing correlation on SRS indices/symbols before demodulation.
+
 ## Latest verified checkpoint: main shared-stream access completes
 
 Run `C:/Users/anup0/AppData/Local/Temp/main_shared_ra_20260907_214328`

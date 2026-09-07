@@ -136,48 +136,17 @@ else
         channelMeta, replay, runtimeState] = localRuntimeWaveformPath( ...
         cfgRuntime,tx,opt);
 end
-[signalPower, activeSymbolIndices] = localActiveOFDMMeanPower( ...
-    desiredWaveform,tx);
-measuredNoisePower = localActiveOFDMMeanPower( ...
-    injectedNoise,tx,activeSymbolIndices);
-measuredInterferencePower = double(sixgr.util.structGet( ...
-    replay,"InterferenceWaveformVariance",0));
-if received
-    % A variance parameter is not a measured noise-only waveform. A nonlinear
-    % composite cannot be separated into desired/noise components by guessing.
-    measuredNoisePower=NaN;
-    measuredInterferencePower=double(sixgr.util.structGet(replay,'InterferenceWaveformVariance',NaN));
-end
-if ~(isfinite(measuredInterferencePower) && measuredInterferencePower >= 0)
-    measuredInterferencePower = NaN;
-end
-measuredDisturbancePower = measuredNoisePower+measuredInterferencePower;
-if isfinite(signalPower) && signalPower > 0 && ...
-        isfinite(measuredDisturbancePower) && measuredDisturbancePower > 0
-    trial.InputMeasuredSINR_dB = 10*log10(signalPower/measuredDisturbancePower);
-    trial.InputEVMPercent = 100*sqrt(measuredDisturbancePower/signalPower);
-else
-    trial.InputMeasuredSINR_dB = NaN;
-    trial.InputEVMPercent = NaN;
-end
 trial.NoiseVariance = noiseVariance;
 trial.NoiseVarianceDomain = "receiver_sample_waveform_post_composite_front_end";
 trial.ReceiverInputSampleNoiseVariance = noiseVariance;
 trial.ReceiverInputSampleNoiseVarianceDomain = string(sixgr.util.structGet( ...
     replay,'SampleNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end'));
-trial.MeasuredInputSignalPower = signalPower;
-trial.MeasuredInputNoisePower = measuredNoisePower;
-trial.MeasuredInputInterferencePower = measuredInterferencePower;
-trial.MeasuredInputDisturbancePower = measuredDisturbancePower;
 trial.Channel = channelMeta;
 trial.ImpairmentReplay = replay;
 trial.UpdatedRuntimeChannelState = runtimeState;
-[estimatedCFO,cfoInfo] = sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
-    rxWaveform,tx.OFDMInfo,double(tx.OFDMInfo.SampleRate));
-trial.EstimatedCFO_Hz = double(estimatedCFO);
-trial.CFOEstimatorInfo = cfoInfo;
-trial.EstimatedTimingOffsetSamples = localTimingEstimate( ...
-    carrier,rxWaveform,tx);
+% Receiver timing must never correlate against a transmitted UCI grid.
+trial.EstimatedTimingOffsetSamples = NaN;
+trial.AppliedTimingCorrectionSamples = 0;
 
 try
     rxArgs = {"NoiseVariance",noiseVariance, ...
@@ -186,6 +155,10 @@ try
         "DetectionThreshold",opt.DetectionThreshold};
     if received && prepared.receiverNoiseMode(replay)=="received_reference_estimate"
         rxArgs=[rxArgs {"NoiseVarianceMode","received_dmrs_estimate"}];
+    end
+    if received
+        rxArgs=[rxArgs {"TimingSearchWindowSamples", ...
+            prepared.receiverTimingSearchWindow(receivedContext.Observation)}];
     end
     interferenceCovariance = sixgr.util.structGet( ...
         replay,"InterferenceCovariance",[]);
@@ -197,6 +170,9 @@ try
     end
     rx = sixgr.phy.pucch.PUCCHReceiver.receive( ...
         rxWaveform,carrier,opt.Assignment,context,rxArgs{:});
+    trial.EstimatedTimingOffsetSamples=rx.ReceiveTiming.TimingOffsetSamples;
+    trial.AppliedTimingCorrectionSamples=rx.ReceiveTiming.AppliedTimingCorrectionSamples;
+    trial.TimingEstimateSource=rx.ReceiveTiming.TimingSource;
 catch ME
     if received, rethrow(ME); end
     trial.ReceiverDecodeFailed = true;
@@ -207,6 +183,37 @@ catch ME
     trial.FailureReason = "receiver_decode_failed";
     return;
 end
+
+% All slot-scoped diagnostics use the same received alignment as the FFT.
+% A capture's pre-guard is not part of the active PUCCH symbol interval.
+diagnosticWaveform=rxWaveform;
+if received && isfield(rx.ReceiveTiming,'DemodulatedSampleCount')
+    sampleIndices=rx.ReceiveTiming.AppliedTimingCorrectionSamples+(1:rx.ReceiveTiming.DemodulatedSampleCount);
+    diagnosticWaveform=rxWaveform(sampleIndices,:);
+    if ~isempty(desiredWaveform), desiredWaveform=desiredWaveform(sampleIndices,:); end
+end
+[signalPower,activeSymbolIndices]=localActiveOFDMMeanPower(desiredWaveform,tx);
+measuredNoisePower=localActiveOFDMMeanPower(injectedNoise,tx,activeSymbolIndices);
+measuredInterferencePower=double(sixgr.util.structGet(replay,'InterferenceWaveformVariance',0));
+if received
+    % Scalar variance metadata is not a measured isolated noise waveform.
+    measuredNoisePower=NaN;
+    measuredInterferencePower=double(sixgr.util.structGet(replay,'InterferenceWaveformVariance',NaN));
+end
+if ~(isfinite(measuredInterferencePower) && measuredInterferencePower>=0), measuredInterferencePower=NaN; end
+measuredDisturbancePower=measuredNoisePower+measuredInterferencePower;
+trial.InputMeasuredSINR_dB=NaN; trial.InputEVMPercent=NaN;
+if isfinite(signalPower) && signalPower>0 && isfinite(measuredDisturbancePower) && measuredDisturbancePower>0
+    trial.InputMeasuredSINR_dB=10*log10(signalPower/measuredDisturbancePower);
+    trial.InputEVMPercent=100*sqrt(measuredDisturbancePower/signalPower);
+end
+trial.MeasuredInputSignalPower=signalPower;
+trial.MeasuredInputNoisePower=measuredNoisePower;
+trial.MeasuredInputInterferencePower=measuredInterferencePower;
+trial.MeasuredInputDisturbancePower=measuredDisturbancePower;
+[estimatedCFO,cfoInfo]=sixgr.phy.rx.estimateCFOFromCyclicPrefix( ...
+    diagnosticWaveform,tx.OFDMInfo,double(tx.OFDMInfo.SampleRate));
+trial.EstimatedCFO_Hz=double(estimatedCFO); trial.CFOEstimatorInfo=cfoInfo;
 
 serialized = tx.Serialization;
 reference = [serialized.Sequence1.Bits;serialized.Sequence2.Bits];
@@ -465,20 +472,6 @@ trial = struct( ...
     "Receiver",struct(),"Transmitter",struct(),"Channel",struct());
 end
 
-function value = localTimingEstimate(carrier,waveform,tx)
-value = NaN;
-try
-    if ~isempty(tx.DMRS.Indices)
-        value = double(nrTimingEstimate(carrier,waveform, ...
-            tx.DMRS.Indices,tx.DMRS.Symbols));
-    else
-        value = double(nrTimingEstimate(carrier,waveform,tx.Grid));
-    end
-catch
-    value = NaN;
-end
-end
-
 function value = localChannelEstimateSource(profile,attempted,format)
 if attempted
     value = "pucch_dmrs_per_resource_nrChannelEstimate";
@@ -529,8 +522,8 @@ if yamlAuthority
         sixgr.channel.resolveConcreteProfile(cfgRuntime))));
     if configuredProfile ~= requestedProfile
         error("sixgr:config:YAMLChannelProfileBypassed", ...
-            ["PUCCH requested channel profile %s, but the resolved YAML " ...
-             "authority requires %s."],char(requestedProfile), ...
+            "PUCCH requested channel profile %s, but the resolved YAML " + ...
+             "authority requires %s.",char(requestedProfile), ...
              char(configuredProfile));
     end
 else

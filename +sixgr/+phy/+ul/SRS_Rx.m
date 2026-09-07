@@ -29,6 +29,7 @@ ip.addParameter('NoiseVarDomain', 'auto', @(x) any(strcmpi(char(string(x)), {'ti
 ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @(x) ischar(x) || isstring(x));
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('TimingSearchWindowSamples',[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -48,12 +49,18 @@ else
     srs = opt.SRS;
 end
 
-% OFDM demod
-[rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
-
 % SRS indices and symbols
 [srsInd, srsInfo] = nrSRSIndices(carrier, srs);
 srsSym = nrSRS(carrier, srs);
+
+timing=struct('TimingOffsetSamples',NaN,'AppliedTimingCorrectionSamples',0, ...
+    'TimingSource',"caller_aligned_legacy_observation_not_measured", ...
+    'OracleTimingUsed',false,'ReceiverZeroPaddingUsed',false);
+if ~isempty(opt.TimingSearchWindowSamples)
+    [rxWaveform,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
+        carrier,rxWaveform,srsInd,srsSym,opt.TimingSearchWindowSamples);
+end
+[rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
 
 % Channel estimation
 Hest = [];
@@ -109,6 +116,7 @@ end
 nVar = double(nVar);
 
 rx = struct();
+rx.Timing=timing;
 rx.Hest = Hest;
 rx.NoiseVar = nVar;
 rx.NoiseVarDomain = "resource_grid_pre_equalization";
