@@ -1935,6 +1935,15 @@ maxCorrection = inf;
 end
 
 function delay = localResolveKnownTimingDelaySamples(cfg, tracking, sampleRateHz)
+removed=sixgr.util.structGet(cfg,'lls6g.receiverSync.ReceivedTimingPrecompensation_samples',[]);
+if ~isempty(removed)
+    validateattributes(removed,{'numeric'},{'real','scalar','finite','nonnegative'});
+    % Only an offset actually removed from these samples may be subtracted
+    % from measured timing. A modeled filter/path delay is not compensation
+    % already applied to an untrimmed physical receive stream.
+    delay=double(removed);
+    return;
+end
 delay = double(sixgr.util.structGet(tracking, "KnownTimingDelay_samples", NaN));
 if isfinite(delay)
     return;

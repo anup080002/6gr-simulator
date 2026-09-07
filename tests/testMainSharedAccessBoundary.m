@@ -1,27 +1,9 @@
 function ok=testMainSharedAccessBoundary()
 % Execute the actual main entry point through its migrated access boundary.
-% This is deliberately NOT a full-run pass: unmigrated eager RA must fail
-% before touching the retained channel. Preserve its diagnostic checkpoint.
+% This is deliberately NOT a full-run pass. Verify actual SSB/TRS and Msg1
+% publication while retaining a genuine failed-access/no-data result.
 setup6GRSimToolkit('Verbose',false);
-s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
-    'lls_causal_access_to_data_wiring_tdd.yaml'));
-folder=fullfile(tempdir,['main_shared_access_' char(datetime('now','Format','yyyyMMdd_HHmmss'))]);
-cfg=sixgr.lls6g.buildInternalConfig(s,folder);
-horizon=2*double(cfg.phy.numerology.slotsPerFrame);
-options=struct('LinkSNR_dB',12,'LinkDuration_s',horizon*sixgr.time.slotDurationSec(cfg),'LinkMaxSimFrames',horizon, ...
-    'SaveFigures',false,'PersistenceEnabled',true);
-fprintf('MAIN_SHARED_ACCESS_DIAGNOSTIC=%s\n',folder);
-try
-    sixgr.truth.runWaveformLinkBundle(cfg,fullfile(folder,'air_interface'),options);
-    error('TEST:ExpectedUnmigratedAccessBoundary','Main entry must not silently bypass unmigrated RA.');
-catch e
-    assert(strcmp(e.identifier,'sixgr:truth:LegacyExecutionOnSharedStream'), ...
-        'Unexpected main boundary: %s\n%s',e.identifier,getReport(e,'extended','hyperlinks','off'));
-end
-files=dir(fullfile(folder,'**','runtime_failure_checkpoint.csv'));
-assert(numel(files)==1,'The main failure must retain its measured checkpoint.');
-t=readtable(fullfile(files.folder,files.name),'TextType','string');
-assert(t.Slot>=6 && t.DLTrialRows==0 && t.ULTrialRows==0);
+folder=diagnoseMainSharedRA(16);
 files=dir(fullfile(folder,'**','*pbch*trials*.csv'));
 found=false;
 for f=files(:).'
@@ -37,6 +19,22 @@ for f=files(:).'
     end
 end
 assert(found,'The main scheduler must publish its actual four-candidate burst, not only component-test results.');
-disp('MAIN_SHARED_ACCESS_BOUNDARY_PASS: completed SSB/SIB1 evidence; unmigrated RA remains blocked, not qualified.');
+files=dir(fullfile(folder,'**','ra_received_observations','*Msg1*.mat'));
+assert(numel(files)==1,'Actual main Msg1 planes must be retained.');
+data=load(fullfile(files.folder,files.name),'capture'); c=data.capture;
+assert(abs(c.Prepared.StartTime_s-0.0145)<1e-12 && c.StartSample==111360);
+ra=c.ReceivedResult; row=ra.RuntimeStageRows(end,:);
+assert(row.RuntimeChannelStateUsed && ~row.SelfLoopWaveformUsed && ...
+    row.RuntimeTransportMode=="shared_physical_waveform_stream" && row.ReceiverGainCompensationApplied);
+assert(row.CompositeReceiverFrontEndApplied && row.RxRFAppliedStageCount>0 && ...
+    isfinite(row.AppliedLargeScaleLoss_dB) && row.ThermalSampleNoiseBandwidth_Hz==c.SampleRateHz);
+assert(ra.RARNTI==127,'Mixed-numerology RA-RNTI must address PRACH slot 9/symbol 0.');
+assert(~ra.PreambleDetected && ~ra.RACompleted && ~ra.StrictOk, ...
+    'Do not turn this low-detection-margin physical observation into an access pass.');
+for name=["dl_pdsch_trials","ul_pusch_trials"]
+    file=fullfile(folder,'air_interface','csv',name+'.csv');
+    if isfile(file), assert(isempty(readtable(file)),'Failed access cannot produce data trials.'); end
+end
+disp('MAIN_SHARED_ACCESS_BOUNDARY_PASS: actual SSB/SIB1 and PRACH evidence; failed access, no data qualification.');
 ok=true;
 end

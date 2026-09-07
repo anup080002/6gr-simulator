@@ -2,6 +2,31 @@ classdef RAPowerController
     %RAPOWERCONTROLLER Exact Msg1 open-loop/ramping power resolution.
 
     methods (Static)
+        function delta = deltaPreamble(format, msg1SCSkHz)
+            % TS 38.321 7.3 Tables 7.3-1/2. These normative constants
+            % depend on the executed preamble format and PRACH numerology,
+            % not on the data carrier or a scenario-specific default.
+            format=upper(string(format));
+            if ~isscalar(format)
+                error('sixgr:phy:ia:UnknownPRACHPowerFormat','Use one materialized concrete PRACH format.');
+            end
+            formats=["0","1","2","3","A1","A2","A3","B1","B2","B3","B4","C0","C2"];
+            base=[0 -3 -6 0 8 5 3 8 5 3 0 11 5];
+            index=find(formats==format,1);
+            if isempty(index)
+                error('sixgr:phy:ia:UnknownPRACHPowerFormat','Use the materialized concrete PRACH format.');
+            end
+            delta=base(index);
+            if index>4
+                validateattributes(msg1SCSkHz,{'numeric'},{'real','scalar','finite','positive'});
+                mu=log2(double(msg1SCSkHz)/15);
+                if mu<0 || mu~=fix(mu)
+                    error('sixgr:phy:ia:InvalidPRACHPowerNumerology','Short PRACH requires an exact NR numerology.');
+                end
+                delta=delta+3*mu;
+            end
+        end
+
         function result = resolve(varargin)
             p = inputParser;
             p.FunctionName = ...

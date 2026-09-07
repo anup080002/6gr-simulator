@@ -89,6 +89,51 @@ classdef CoupledWaveformStream < handle
         function tf=hasPending(obj,kind,ue)
             tf=any(string({obj.Pending.Kind})==string(kind) & [obj.Pending.UE]==ue);
         end
+        function queueRA(obj,ue,prepared,context)
+            link=obj.linkForUE(ue,string(prepared.Direction));
+            if prepared.SampleRate_Hz~=obj.SampleRateHz || ~prepared.RFExecutionDeferred || ...
+                    prepared.PhysicalWaveformPlane~="physical_antenna_sqrt_mW_before_shared_tx_rf"
+                error('sixgr:truth:SharedRAPreparationAuthority','RA samples need physical antenna/power authority on the shared clock.');
+            end
+            first=prepared.StartTime_s*obj.SampleRateHz;
+            if ~isfinite(first)||abs(first-round(first))>8*eps(max(1,abs(first)))
+                error('sixgr:truth:SharedRAOriginOffClock','Prepared RA starts off the physical sample clock.');
+            end
+            first=round(first); samples=prepared.PhysicalWaveform;
+            if prepared.Direction=="UL"
+                tx="ue_"+ue; rx="gnb_"+link.Cell+"_rx";
+            else
+                tx="gnb_"+link.Cell; rx="ue_"+ue+"_rx";
+            end
+            node=obj.Nodes(string({obj.Nodes.ID})==tx);
+            if size(samples,2)~=node.NumAntennas || size(samples,1)~=prepared.SampleCount
+                error('sixgr:truth:SharedRAAntennaLayout','Prepared RA must match its registered physical radio and complete sample extent.');
+            end
+            if obj.hasPending("RA",ue)
+                error('sixgr:truth:DuplicatePendingRAStage','One UE cannot queue a second stage before the prior received stage completes.');
+            end
+            obj.Serial=obj.Serial+1; id="ra_observation_"+obj.Serial;
+            obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
+            % Observe actual subsequent physical samples, including the
+            % filter tail. No zeros are appended to a received waveform.
+            ch=obj.channelState(ue,string(prepared.Direction));
+            stop=first+size(samples,1)+double(ch.ChannelPadSamples);
+            for plane=[tx+":tx",rx+":pre_rf",rx+":post_rf"]
+                obj.Events.observe(plane,id,first,stop);
+            end
+            context.Prepared=prepared;
+            obj.Pending(end+1)=struct('ID',id,'Kind',"RA",'UE',ue,'Context',context, ...
+                'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+        end
+        function ch=directionalChannelState(obj,ue,direction)
+            % Metadata view only: never swap, clone or execute the owned
+            % fading object to prepare a future opposite-direction signal.
+            link=obj.linkForUE(ue,direction); ch=obj.channelState(ue,direction);
+            cfg=link.DLConfig; if direction=="UL", cfg=link.ULConfig; end
+            ch.Direction=char(direction);
+            ch.LinkKey=char(sixgr.channel.ChannelFactory.runtimeChannelKey(cfg,direction, ...
+                'UEIndex',ue,'ServingCell',link.Cell));
+        end
         function queueDownlink(obj,kind,ue,prepared,context)
             link=obj.linkForUE(ue,"DL");
             fs=double(prepared.SampleRateHz);

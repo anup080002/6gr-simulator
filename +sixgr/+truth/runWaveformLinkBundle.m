@@ -12374,6 +12374,10 @@ end
 function state=localCompleteSharedControlObservations(state,received)
 for item=received
     context=item.Context; p=context.Prepared;
+    if item.Kind=="RA"
+        state=localCompleteSharedRAObservation(state,item);
+        continue;
+    end
     [~,pre,tx,replay,post]=sixgr.truth.sharedObservationEvidence(item.Planes);
     ch=state.SharedWaveformStream.channelState(item.UE,"DL");
     if item.Kind=="PBCH"
@@ -12706,6 +12710,34 @@ end
 % Pre-scheduling observes completed samples strictly before the current
 % slot, not samples from the slot whose grants are about to be decided.
 receiveThrough = (slotIdx - 1) * sixgr.time.slotDurationSec(cfg);
+shared=isfield(state,'SharedWaveformStream');
+if shared
+    if pending
+        if isempty(sixgr.util.structGet(attempt,'Received',[])), return; end
+        ra=attempt.Received; checkpoint=attempt.Continuation;
+        attempt.Received=[];
+    else
+        cfg=sixgr.util.structSet(cfg,'random_access.use_runtime_channel',true);
+        attempt.Config=cfg;
+        dlState=state.SharedWaveformStream.directionalChannelState(ueIdx,"DL");
+        ulState=state.SharedWaveformStream.directionalChannelState(ueIdx,"UL");
+        [prepared,checkpoint]=sixgr.phy.ra.runFourStepRA(cfg, ...
+            'RunFolder',state.RunFolder,'RunId',"shared_ra_ue"+ueIdx+"_slot"+slotIdx, ...
+            'UEId',ueIdx,'RuntimeSlot',slotIdx,'WriteArtifacts',false, ...
+            'RuntimeIntegrationMode','shared_physical_waveform_stream', ...
+            'UseRuntimeChannel',true,'RequireRuntimeStageWaveforms',true, ...
+            'AllowRuntimeStageWaveformComposition',false, ...
+            'SIB1Recovery',localDecodedSIB1RecoveryForUE(state,ueIdx), ...
+            'RequireDecodedSIB1',localRequireDecodedSIB1ForRA(cfg), ...
+            'InitialDLChannelState',dlState,'InitialULChannelState',ulState, ...
+            'StageAction','prepare_next_stage','ReceiveThroughTime_s',receiveThrough);
+        attempt.Continuation=checkpoint; attempt.Received=[];
+        if ~isfield(state,'PendingRAAttempts'), state.PendingRAAttempts=cell(numel(state.AccessState),1); end
+        state.PendingRAAttempts{ueIdx}=attempt; state.AccessState(ueIdx)="pending";
+        state.SharedWaveformStream.queueRA(ueIdx,prepared.PreparedTransmission,struct('Config',cfg));
+        return;
+    end
+else
 [state, dlState] = sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl(state, cfg, ueIdx, "DL");
 [state, ulState] = sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl(state, cfg, ueIdx, "UL");
 if pending
@@ -12725,6 +12757,7 @@ dlState = sixgr.util.structGet(ra, "RuntimeDLChannelState", dlState);
 ulState = sixgr.util.structGet(ra, "RuntimeULChannelState", ulState);
 state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(state, dlState);
 state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState(state, ulState);
+end
 stages = sixgr.util.structGet(ra, "RuntimeStageRows", table());
 previousCount = attempt.PublishedStageRows;
 if height(stages) < previousCount
@@ -12766,6 +12799,51 @@ else
     attempt.PublishedStageRows = height(stages);
     state.PendingRAAttempts{ueIdx} = attempt;
     state.AccessState(ueIdx) = "pending";
+end
+end
+
+function state=localCompleteSharedRAObservation(state,item)
+ue=item.UE; attempt=state.PendingRAAttempts{ue}; p=item.Context.Prepared;
+ids=string({item.Planes.ReceiverID});
+post=item.Planes(find(endsWith(ids,':post_rf'),1)).Observation;
+streams=struct(); streams.(p.StageName+"RxWaveform")=post;
+streams.(p.StageName+"PhysicalExecution")=struct('Planes',item.Planes,'Prepared',p);
+dl=state.SharedWaveformStream.directionalChannelState(ue,"DL");
+ul=state.SharedWaveformStream.directionalChannelState(ue,"UL");
+if ~isempty(attempt.Received)
+    error('sixgr:truth:UndeliveredRAStage','Prior completed RA evidence must be consumed before replacing it.');
+end
+[ra,checkpoint]=sixgr.phy.ra.runFourStepRA(attempt.Config, ...
+    'Continuation',attempt.Continuation,'RuntimeStageWaveforms',streams, ...
+    'InitialDLChannelState',dl,'InitialULChannelState',ul, ...
+    'StopAfterStage',p.StageName,'ReceiveThroughTime_s',post.EndSampleExclusive/post.SampleRateHz);
+sixgr.truth.exportSharedRAObservation(state.RunFolder,attempt.Config, ...
+    attempt.Continuation,p,item.Planes,ra);
+attempt.Received=ra;
+% Publish the received stage even at the final configured slot. Eligibility
+% is consumed by the next scheduler decision; retaining receiver evidence
+% must not depend on that future slot actually being simulated.
+attempt.Continuation=checkpoint;
+state.PendingRAAttempts{ue}=attempt;
+deliverySlot=state.CurrentSlot+1;
+[state,raw,correlation,evidence]=localAdvanceCoupledRAAttempt( ...
+    state,attempt.Config,ue,attempt.SNR_dB,deliverySlot);
+frame=1+floor((deliverySlot-1)*state.SlotDuration_s/0.01);
+cellID=state.CurrentServingIdx(ue); rnti=localUserRNTI(state.MultiUser,ue);
+trial=localAnnotateCoupledControlTrial(raw,deliverySlot,frame,ue,rnti,"UL",cellID);
+state.ControlTrials.PRACH=localAppendCompatTable(state.ControlTrials.PRACH,trial);
+state.ControlTrials.PRACHCorrelationTrace=localAppendCompatTable( ...
+    sixgr.util.structGet(state.ControlTrials,'PRACHCorrelationTrace',table()),correlation);
+state.ControlTrials.RAEvidenceTables=localAppendRAEvidenceTables( ...
+    sixgr.util.structGet(state.ControlTrials,'RAEvidenceTables',struct()),evidence);
+if ~isempty(trial), state=sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state,ue,trial); end
+if ~isempty(fieldnames(checkpoint))
+    attempt=state.PendingRAAttempts{ue};
+    [next,checkpoint]=sixgr.phy.ra.runFourStepRA(attempt.Config, ...
+        'Continuation',checkpoint,'StageAction','prepare_next_stage');
+    attempt.Continuation=checkpoint;
+    state.PendingRAAttempts{ue}=attempt;
+    state.SharedWaveformStream.queueRA(ue,next.PreparedTransmission,struct('Config',attempt.Config));
 end
 end
 

@@ -57,6 +57,17 @@ if isempty(maxIdx) || ~isfinite(peakMetric)
     peakMetric = NaN;
 end
 candidateDetected = candidateSet(maxIdx);
+if backendMode == "toolbox_peak" && ~isempty(idx0)
+    % Root-sequence peaks can tie across cyclic shifts. Preserve the
+    % measured peaks exactly and use the detector's decoded identity;
+    % never perturb a correlation value to force max() to pick it.
+    maxIdx=find(candidateSet==double(idx0(1)),1);
+    if isempty(maxIdx)
+        error('sixgr:rach:PRACHDetector:UnexpectedDetectedCandidate','Toolbox detected an unrequested preamble.');
+    end
+    candidateDetected=candidateSet(maxIdx);
+    peakMetric=peaks(maxIdx);
+end
 [threshold, thresholdInfo] = localResolveThreshold(peaks, thresholdMode, explicitThreshold, cfg, detInfo);
 if backendMode == "toolbox_peak" && isfield(detInfo, "DetectionThreshold")
     tbThreshold = double(detInfo.DetectionThreshold);
@@ -184,11 +195,6 @@ if ~isempty(offset) && ~isempty(idxDetected)
     end
     bestOffset = double(offset(1));
     if isfinite(bestPeak) && bestIdx <= numel(peaks)
-        peakMax = max(double(peaks), [], "omitnan");
-        if ~(isfinite(peakMax) && peakMax >= 0)
-            peakMax = double(bestPeak);
-        end
-        peaks(bestIdx) = max(double(peaks(bestIdx)), peakMax + max(eps(peakMax), 1e-12));
         bestPeak = double(peaks(bestIdx));
     end
 elseif bestIdx <= numel(offset0)

@@ -219,6 +219,9 @@ classdef SharedWaveformPhysicalRuntime < handle
                     replay.NoiseVarianceSource='receiver_thermal_noise_plus_nf_absolute_sqrt_mW';
                     replay.NoiseStreamSeed=node.NoiseSeed;
                     replay.NoiseBandwidth_Hz=node.NoiseReplay.NoiseBandwidth_Hz;
+                    replay.NoiseOperatingMode=node.NoiseReplay.NoiseOperatingMode;
+                    replay.ThermalSampleNoiseBandwidth_Hz=node.NoiseReplay.ThermalSampleNoiseBandwidth_Hz;
+                    replay.ThermalNoisePSD_mWPerHz=node.NoiseReplay.ThermalNoisePSD_mWPerHz;
                     replay.SampleNoiseVariance=NaN;
                     replay.SampleNoiseVarianceDomain='unavailable_requires_received_reference_estimation';
                     % Do not reinterpret a missing/time-varying AGC gain

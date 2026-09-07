@@ -1,6 +1,159 @@
 # Short TDD run: measured failures and remaining integration work
 
-## Main physical owner, receiver gain and SS power repair (current checkpoint)
+## Shared Msg1 integration and uplink timing (latest work, 2026-09-07)
+
+**Still not a qualified production run.** The former slot-15 eager-channel
+failure has been crossed: the actual main scheduler now transmits and
+receives Msg1 through its retained physical stream. Access still fails on
+the first measured PRACH, and there are zero DL/UL data trials. The older
+checkpoint below describes the previous boundary, not the current status.
+
+Implemented in this work:
+
+- Main RA stage preparation now queues actual power-scaled physical-antenna
+  samples. Completion receives contiguous TX/pre-RX-RF/post-RX-RF observations
+  from the same physical owner. It does not execute a second channel or
+  inject received-tail padding. Actual analogue AGC compensation is applied
+  digitally after ADC, without removing noise or quantization errors.
+- Completed RA-stage evidence is published immediately, including at the
+  last simulated slot; it no longer depends on another scheduler iteration.
+  A window extending beyond the run remains incomplete, not fabricated.
+- Configured raw-IQ capture now saves the real RA planes and execution
+  segments even though the internal runner disables per-link `saveMAT`.
+  These are diagnostic stage captures, **not** continuous Keysight playback.
+- PRACH waveform origin is its own nominal PRACH-slot origin, including
+  the modulator's internal offsets only once. Here PRACH slot 29 begins at
+  14.5 ms, not carrier-slot 14's 14.0 ms. Its active CP/useful samples touch
+  carrier symbols 7–12. PRACH-grid symbol numbers are not carrier symbols.
+  Mapping uses actual CP/useful/guard sample lengths and cumulative carrier
+  CP lengths, including unequal adjacent-slot lengths at higher numerologies.
+- The selected occasion now carries distinct PRACH-clock RA-RNTI coordinates.
+  This case uses `s_id=0`, `t_id=9`, RA-RNTI 127, not the data-carrier slot 4.
+  The TDD YAML's explicit carrier-coordinate selector is corrected to symbol
+  7. This is not a duplex-specific arithmetic branch or an altered threshold.
+- PRACH detector correlation peaks are preserved exactly. A decoded cyclic
+  shift wins a root-metric tie via its decoded identity, not a fabricated
+  epsilon added to a measured peak. The gNB RAR uses the actual detected
+  preamble, not the UE's intended transmitted preamble as an oracle.
+- Shared Msg3 and SRB1 receivers no longer skip measured timing acquisition
+  or treat an untrimmed waveform as already aligned. Measured arrival is
+  applied once; modeled path/filter delays are not subtracted as though
+  already removed. PRACH TA separately calibrates only the known implementation
+  filter delay, while retaining raw arrival and calibrated delay separately.
+- `DELTA_PREAMBLE` now comes from executed format and PRACH SCS under
+  TS 38.321 7.3. B4/30 kHz requires 3 dB, not the old default zero. Conflicting
+  legacy offsets are rejected rather than overriding the normative value.
+- RA rows now retain actual RF stage counts/status, physical projection
+  digest, applied loss, thermal-noise PSD/bandwidth and gain-compensation
+  evidence. Only invariant segment metadata is flattened into a scalar.
+
+Sources: [PRACH OFDM sample contract](https://www.mathworks.com/help/5g/ref/nrprachofdmmodulate.html),
+[PRACH grid indices](https://www.mathworks.com/help/5g/ref/nrprachindices.html),
+[TS 38.321, 5.1.3/5.1.4 and 7.3](https://www.etsi.org/deliver/etsi_ts/138300_138399/138321/18.02.00_60/ts_138321v180200p.pdf).
+
+Verification so far:
+
+- `logs/shared_ul_timing_main_r2_20260907.log`, session 51967, exit 0:
+  delayed real Msg3/SRB1 LDPC payload/CRC and PRACH timing calibration;
+  actual alternate-preamble-to-RAR test; all five received-buffer TDD RA
+  stages; runtime repetition/occasion binding; actual 16-slot main boundary.
+  The PRACH correlation estimator measured 19.0286 samples for an injected
+  19-sample FIR delay; calibration subtracts exactly 11 implementation
+  samples, not a guessed propagation delay. Timing accuracy is checked to
+  one input sample, not asserted to be an exact-delay oracle.
+- Main output before the format-power correction:
+  `C:\Users\anup0\AppData\Local\Temp\main_shared_ra_20260907_113542`.
+  All four actual PBCH/SIB1 candidates and one actual failed Msg1 are retained.
+  The main boundary test explicitly does not treat this as an access/data pass.
+- 65 focused Python radio-measurement/artifact/runtime-contract tests passed.
+- Format-power, all 1,031 PRACH configuration-row sample-mapping checks and
+  a fresh main run passed in `logs/prach_power_main_verified_20260907.log`
+  (session 33938, exit 0). This is boundary/test success, not access success.
+  The retained run is
+  `C:\Users\anup0\AppData\Local\Temp\main_shared_ra_20260907_114238`.
+  Actual Msg1 TX power is -11.9539043881 dBm, target -93 dBm,
+  measured-reference pathloss 81.0460956119 dB; requested power closes on
+  target plus measured pathloss and is below PCMAX 23 dBm. Actual received
+  detection metric is 0.3404612779 against the unchanged threshold 0.5.
+  The decoded-index field remains unavailable and access is honestly failed.
+  Earlier intermediate failures are retained: two obsolete PRACH-grid test
+  assumptions, a higher-numerology test clock origin, and a stale fixture
+  missing the required absolute RA coordinates. Assertions now compare
+  actual generated support; production validation was not weakened.
+- `logs/shared_ul_spatial_regressions_20260907.log`, session 28463, exit 0:
+  `testUplinkControlStreamStages`, `testDataChannelStreamStages`,
+  `testPDSCHQCLStatePropagation`, `testPDSCHTCIStateBinding`,
+  `testPMIPrecodingRuntime`, `testLLSULSRSRITPMIEstimator`,
+  `testFutureULPlanningCausality`, `testGrantCacheLiveUCIAuthority`, and
+  `testRecoveredPUSCHUCIEvidence` all completed. These verify actual coded
+  isolated DL/UL reception, SRS/PUCCH received-buffer processing, exact UCI,
+  precoding, and scheduling causality; they do not qualify main access.
+  Offline diagnosis of the actual retained Msg1 confirms that TX samples
+  detect, while pre-RF and digitally gain-compensated received planes both
+  give the same failed metric (0.340461). ADC/AGC is not hiding this failure.
+- Real eight-branch SSB-window RSSI CSV/PNG were rendered from this run to
+  `results/lls/qualification_working/reviews/shared_ra_rssi_20260907_1150/`.
+  `provenance.json` records source/output SHA256 and absent-chart reasons.
+  The PNG was visually inspected. These are **post-run measured reviews**,
+  not new PHY execution or full-carrier RSSI. The diagnostic itself explicitly
+  disables figure generation. No data/CSI/precoder curves were invented.
+- Exhaustive audit of the same run, including the first **five** rows of
+  each CSV, is under
+  `results/lls/qualification_working/reviews/shared_ra_first5_audit_20260907_1200/`.
+  It parsed 161 CSV files / 15,842 rows with zero parse failures or infinity
+  tokens. Qualification fails: 55 zero-row files, six schema-less exports,
+  and 119 failed semantic checks plus missing campaign chart lineage.
+  These are not 119 distinct PHY bugs: many require completed data trials
+  and the campaign finalizer/identity wrapper omitted by this direct main
+  boundary diagnostic. The failures remain recorded, not waived.
+  Six concrete schema-less exports are `multiuser_user_summary`, PDCCH
+  (air-interface and control mirrors), CSI-RS, SRS, and live LA inputs.
+- All ten focused cases in `logs/shared_ra_config_truth_regressions_20260907.log`
+  passed (session 73884, exit 0): PRACH power, canonical RA-RNTI,
+  `testConfig`, `testLLS_DL`, `testLLS_UL`, `testLLS_ReferencePoints`,
+  `testStrictProxyGuards`, `testSchedulerGrantConsistency`,
+  `testE2E_FastVsTruth`, and `testE2E_TruthPacketSemanticCampaign`.
+  Some existing regression fixtures use FDD; these are not a production FDD
+  run or qualification of the current main shared-stream integration.
+  The explicit user restriction against `testAll` is retained.
+- Recomputed the persisted per-branch linear-power ratios for all four SSB
+  candidates: maximum SS-SINR arithmetic discrepancy is 3.56e-14 dB; all
+  eight RSSI values close exactly on the saved per-symbol watt measurements
+  at displayed precision. Beam 0 has the greatest SS-RSRP (-75.8173 dBm),
+  matching the actual PRACH association. Its SS-SINR is 49.0833 dB, so this
+  is clearly **not** a measured 12-dB reference-SNR experiment. Arithmetic
+  closure does not qualify the missing full-run measurement/timing paths.
+
+Remaining critical issues (do not omit from qualification):
+
+1. Main RA retries still restart with attempt 1: MAC response-window expiry,
+   retained transmission/power-ramping counters, beam-change rules and
+   decoded backoff must be integrated causally. gNB missed detection is not
+   an immediate UE-known random-access failure.
+2. Main nonzero TA still has an explicit guard: true separate UE TX/gNB RX
+   origins are required. The legacy cropped/zero-filled finite-waveform TA
+   routine must not be used to claim continuous-stream correctness.
+3. Main data PDCCH/PDSCH/PUSCH, PUCCH/UCI and SRS still need complete shared
+   owner integration. Their component successes do not prove the current
+   main run, which has no completed data grants. Preserve chronological
+   received DCI, K1/K2, late ACK multiplexing, HARQ, CSI/SRS and frozen precoders.
+4. `buildObservedREAllocation` still treats PRACH-grid coordinates like
+   carrier RE coordinates. Mixed-numerology PRACH frequency/time export and
+   WebGUI overlay need an explicitly scoped conversion; a filled carrier
+   rectangle must not be labeled exact orthogonal PRACH REs.
+5. The main scheduler still assumes equal slot durations in its absolute
+   sample-boundary helper. The PRACH mapper now handles cumulative CP lengths,
+   but that repair is not yet propagated to all higher-numerology producers.
+6. Full-main QCL/activated-TCI/PMI consumption, per-channel UL power/PHR,
+   correct CSI/SS measurement resources and all requested CSV/PNG remain
+   unqualified. SSB-window RSSI is not full-carrier/SMTC RSSI.
+7. The profile's nominal 12 dB remains a label under geometry plus thermal
+   noise. It is not a controlled/measured 12 dB reference-SNR experiment.
+8. Bounded Msg3/SRB1 message builders use custom payload framing; this is not
+   evidence of full on-air ASN.1 RRC/MAC protocol conformance. Preserve the
+   distinction between real NR-coded PHY payloads and protocol conformance.
+
+## Main physical owner, receiver gain and SS power repair (previous checkpoint)
 
 **Not a completed/qualified production run. The actual main scheduler reaches
 slot 15, then rejects its unmigrated eager RA channel acquisition. It retains

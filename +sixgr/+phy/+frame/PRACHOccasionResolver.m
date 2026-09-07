@@ -420,13 +420,13 @@ for prachSlot = 0:(periodPRACHSlots - 1)
                         double(prach.ConfigurationIndex));
                 end
                 if double(prach.LRA) ~= 839
-                    % For short preambles the carrier-grid subscript form is
-                    % the authoritative mapping. SymbolLocation is expressed
-                    % on the PRACH reference timeline and cannot be scaled as
-                    % a generic carrier-symbol count.
-                    startSymbol = occupiedSymbols(1);
-                    duration = occupiedSymbols(end) - ...
-                        occupiedSymbols(1) + 1;
+                    % nrPRACHIndices indexes nrPRACHGrid at PRACH SCS, not
+                    % the carrier's time grid. Map the actual CP/useful
+                    % sample support, including the fractional-slot origin.
+                    sampleTiming=sixgr.rach.prachSampleTiming(carrier,prach);
+                    absoluteSlot=sampleTiming.CarrierSlot0;
+                    startSymbol=sampleTiming.CarrierStartSymbol;
+                    duration=sampleTiming.CarrierDurationSymbols;
                 end
                 [availability, availabilityReason] = ...
                     localAvailability(absoluteSlot, startSymbol, duration, ...
@@ -460,6 +460,24 @@ for prachSlot = 0:(periodPRACHSlots - 1)
                 row.DurationSymbols = duration;
                 row.ToolboxSymbolLocation = toolboxStartSymbol;
                 row.ToolboxPRACHDuration = toolboxDuration;
+                % RA-RNTI coordinates live on the PRACH/reference clock,
+                % not on the data-carrier numerology. TS 38.321 5.1.3 caps
+                % t_id at the containing 120-kHz slot for 480/960 kHz.
+                if double(prach.LRA)==839
+                    pi=nrPRACHOFDMInfo(carrier,prach,'Windowing',0);
+                    activeStart=prachSlot*double(prach.SubframesPerPRACHSlot)*1e-3+double(pi.OffsetLength)/double(pi.SampleRate);
+                    referenceSCS=15;
+                    sid=double(tableInfo.StartingSymbol);
+                else
+                    activeStart=sampleTiming.ActiveStartTime_s;
+                    referenceSCS=min(double(prach.SubcarrierSpacing),120);
+                    sid=toolboxStartSymbol;
+                    if string(prach.Format)=="C0", sid=2*sid; end
+                    sid=mod(sid,14);
+                end
+                referenceSlot=activeStart/(1e-3*15/referenceSCS);
+                row.RARNTISymbolIndex=sid;
+                row.RARNTISlotIndex=mod(floor(referenceSlot+16*eps(max(1,referenceSlot))),10*referenceSCS/15);
                 if ~isfield(indexInfo, "PRBSet") || isempty(indexInfo.PRBSet)
                     error("sixgr:phy:frame:InvalidPRACHFrequencyMapping", ...
                         "nrPRACHIndices did not return its carrier PRB set.");
@@ -665,6 +683,7 @@ row = struct( ...
     "FrequencyIndex", 0, ...
     "Format", "", ...
     "StartSymbol", 0, ...
+    "RARNTISymbolIndex", NaN, "RARNTISlotIndex", NaN, ...
     "DurationSymbols", 0, ...
     "ToolboxSymbolLocation", 0, ...
     "ToolboxPRACHDuration", 0, ...

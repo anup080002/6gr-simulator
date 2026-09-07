@@ -927,7 +927,9 @@ random_access:
   occasion:
     frame: 0
     slot: 4
-    symbol: 0
+    # Carrier-grid coordinate: the active 30-kHz PRACH slot is the second
+    # half of this 15-kHz carrier slot. RA-RNTI uses its separate PRACH clock.
+    symbol: 7
     frequency_index: 0
   timing:
     rar_processing_delay_slots: 1

@@ -298,7 +298,10 @@ try
         det,msg1Tx.SampleRate_Hz,raCfg.CarrierSCSkHz);
     detectorAmbiguity = logical(sixgr.util.structGet(det, "MultiCandidateAboveThreshold", false));
     collisionDetected = faultMode == "collision_same_preamble";
-    preambleDetected = logical(det.Detected) && double(det.DetectedPreambleIndex) == double(raCfg.PreambleIndex) && ~collisionDetected;
+    % The gNB cannot veto a detected preamble by consulting the UE's TX
+    % identity. It responds to the received candidate; the UE subsequently
+    % accepts/rejects the decoded RAPID against its own transmitted index.
+    preambleDetected = logical(det.Detected) && ~collisionDetected;
     result = localApplyMsg1(result, raCfg, det, ta, collisionDetected, preambleDetected, detectorAmbiguity);
     events = [events; localEvent(raCfg, "MSG1_PRACH_TX", ternary(preambleDetected, "MSG1_PRACH_DETECTED", "RA_FAILURE"), ...
         "prach_correlation_detection", "", NaN, double(raCfg.RARNTI), double(raCfg.PreambleIndex), ...
@@ -318,7 +321,7 @@ try
     if nextStage <= 2
     if reusePreparedStage ~= 2
     grantTx = sixgr.mac.ra.buildRARULGrant(raCfg);
-    rapid = double(raCfg.PreambleIndex);
+    rapid = double(det.DetectedPreambleIndex);
     if faultMode == "wrong_rapid_in_rar"
         rapid = mod(rapid + 1, 64);
     end
@@ -784,6 +787,15 @@ end
                 "TimeReference", "absolute_runtime_seconds", ...
                 "ExecutionStatus", "generated_not_propagated", ...
                 "WaveformPlane", "after_rach_power_and_ta_before_runtime_power_context_and_tx_rf");
+            if string(runtime.Mode)=="shared_physical_waveform_stream"
+                if isfield(preparedContext,'TimingAdvanceWaveform') && ...
+                        preparedContext.TimingAdvanceWaveform.RARTiming.Samples~=0
+                    error('sixgr:phy:ra:SharedRATimingOriginsRequired', ...
+                        'Nonzero received RAR TA requires distinct UE TX/gNB RX origins; a cropped finite waveform cannot enter the shared stream.');
+                end
+                pending.PreparedTransmission=localPrepareSharedStage( ...
+                    pending.PreparedTransmission,cfg,tx,runtime);
+            end
         end
         checkpoint = struct("ContractVersion", "ra_stage_continuation_v3", ...
             "ResumePhase", phase, "PreparedContext", preparedContext, ...
@@ -836,6 +848,12 @@ end
 function [startTime, endTime] = localStageSampleInterval(cfg, raCfg, name, waveform, tx)
 fs = localStageSampleRate(localStageTxInfo(tx), tx);
 startTime = localStageSlotStartTime(cfg, localStageSlot(raCfg, name));
+if string(name)=="Msg1"
+    % nrPRACHOFDMModulate returns one PRACH-slot waveform, including its
+    % internal OffsetLength. Its origin is not necessarily a carrier-slot
+    % boundary (e.g. 30-kHz PRACH on a 15-kHz carrier).
+    startTime=double(tx.PRACH.NPRACHSlot)*double(tx.PRACH.SubframesPerPRACHSlot)*1e-3;
+end
 endTime = startTime + size(waveform, 1) / fs;
 if ~(isfinite(startTime) && startTime >= 0 && isfinite(endTime) && endTime > startTime)
     error("sixgr:phy:ra:InvalidRAStageSampleInterval", ...
@@ -1226,6 +1244,22 @@ if ~isempty(provided)
     row.ProvidedWaveformField = providedField;
     row.RuntimeStageWaveformUsed = true;
     row.SelfLoopWaveformUsed = false;
+    physicalField=stageName+"PhysicalExecution";
+    if isfield(runtime.StageWaveforms,physicalField)
+        physical=runtime.StageWaveforms.(physicalField);
+        [rawPost,~,~,replay,receiver]=sixgr.truth.sharedObservationEvidence(physical.Planes);
+        if ~isa(provided,'sixgr.phy.waveform.WaveformObservationBuffer') || ...
+                provided.StartSample~=rawPost.StartSample || ...
+                ~isequal(provided.readComplete(),rawPost.readComplete())
+            error('sixgr:phy:ra:PhysicalRAObservationMismatch', ...
+                'RA execution evidence must belong to the exact supplied post-RF observation.');
+        end
+        rxWave=receiver.readComplete();
+        row=localApplySharedStageEvidence(row,physical,replay);
+    elseif string(runtime.Mode)=="shared_physical_waveform_stream"
+        error('sixgr:phy:ra:MissingSharedStageExecution', ...
+            'Shared-stream RA requires actual physical execution segments, not bare RX samples.');
+    end
     runtime.StageRows(end + 1, 1) = row;
     return;
 end
@@ -1258,6 +1292,10 @@ runtime.StageRows(end + 1, 1) = row;
 end
 
 function [rxWave, runtime, row] = localApplyRuntimeChannelForStage(row, direction, txWave, cfg, txStruct, runtime)
+if string(runtime.Mode)=="shared_physical_waveform_stream"
+    error('sixgr:phy:ra:LegacyChannelOnSharedRA', ...
+        'Shared-stream RA must receive its scheduled physical observation; eager propagation is forbidden.');
+end
 cfgStage = localRuntimeStageConfig(cfg, direction, runtime);
 cfgStage = sixgr.util.structSet(cfgStage, ...
     "lls6g.userContext.RuntimeSignalFamily",char(string(row.StageName)));
@@ -1588,6 +1626,12 @@ end
 
 function cfgOut = localApplyRuntimeReceiverSyncContext(cfg, runtime, direction)
 cfgOut = cfg;
+if string(runtime.Mode)=="shared_physical_waveform_stream"
+    cfgOut=sixgr.util.structSet(cfgOut,'lls6g.receiverSync.RuntimeWaveformSampleAligned',false);
+    cfgOut=sixgr.util.structSet(cfgOut,'lls6g.receiverSync.ReceivedTimingPrecompensation_samples',0);
+    cfgOut=sixgr.util.structSet(cfgOut,'lls6g.receiverSync.ReceivedWaveformTimingPlane', ...
+        'untrimmed_shared_physical_receive_stream');
+end
 direction = upper(strtrim(string(direction)));
 stateField = "DLChannelState";
 if direction == "UL"
@@ -1625,7 +1669,8 @@ end
 % Propagate that contract into the channel receiver so it cannot perform a
 % second blind DM-RS timing acquisition and shift the slot again.
 cfgOut = sixgr.util.structSet(cfgOut, ...
-    "lls6g.receiverSync.RuntimeWaveformSampleAligned", true);
+    "lls6g.receiverSync.RuntimeWaveformSampleAligned", ...
+    string(runtime.Mode)~="shared_physical_waveform_stream");
 end
 
 function det = localAttachMsg1ReferenceEvidence(det, stageInfo)
@@ -1635,7 +1680,8 @@ function det = localAttachMsg1ReferenceEvidence(det, stageInfo)
 % ChannelFactory, so zero is the transmitted occasion reference, not a
 % receiver oracle.  Externally supplied waveforms have no known reference.
 knownReference = logical(sixgr.util.structGet(stageInfo, "SelfLoopWaveformUsed", false)) || ...
-    logical(sixgr.util.structGet(stageInfo, "RuntimeChannelStateUsed", false));
+    (logical(sixgr.util.structGet(stageInfo, "RuntimeChannelStateUsed", false)) && ...
+    ~startsWith(string(sixgr.util.structGet(stageInfo,'WaveformSource',"")),"shared_physical_stream"));
 if knownReference
     trueOffset = 0;
     referenceSource = "resolved_prach_occasion_waveform_origin";
@@ -2010,7 +2056,108 @@ row = struct( ...
     "CompositeReceiverFrontEndApplied", false, ...
     "CompositeReceiverFrontEndStatus", "", "RxRFStageOrder", "", ...
     "RxRFAppliedStageCount", NaN, ...
+    "ReceiverGainCompensationApplied",false,"ReceiverGainCompensationSource","", ...
+    "PhysicalExecutionSegmentsJSON","","TxProjectionMatrixSHA256","", ...
     "TxSampleCount", NaN, "TxPortCount", NaN, "RxSampleCount", NaN, "RxPortCount", NaN);
+end
+
+function prepared=localPrepareSharedStage(prepared,cfg,tx,runtime)
+% Apply only deterministic TX power and antenna operations. The physical
+% owner, not this preparation, executes PA/RF/channel/noise at sample time.
+name=string(prepared.StageName); direction=string(prepared.Direction);
+cfgStage=localRuntimeStageConfig(cfg,direction,runtime);
+cfgStage=sixgr.util.structSet(cfgStage,'lls6g.userContext.RuntimeSignalFamily',name);
+[power,source]=localStageTransmitPower(tx,name,cfgStage,direction);
+if ~isfinite(power) || startsWith(source,"fallback")
+    error('sixgr:phy:ra:SharedRATransmitPowerRequired','Shared RA requires actual typed %s transmit power.',name);
+end
+ctx=sixgr.rf.PowerContext(cfgStage,direction,'NumPorts',size(prepared.Waveform,2));
+ctx.TotalTxPower_dBm=power; ctx.TotalTxPower_mW=10^(power/10);
+ctx.TotalTxPower_W=ctx.TotalTxPower_mW*1e-3; ctx.TotalTxPowerSource=char(source);
+ctx.SignalSpecificPowerControl=true; ctx.SignalFamily=char(name);
+[samples,ctx]=sixgr.rf.applyPowerContext(prepared.Waveform,cfgStage,direction, ...
+    localStageTxInfo(tx),'PowerContext',ctx,'ApplyPA',false);
+[ant,meta]=localStageRuntimeAntenna(cfgStage,direction,'tx',size(samples,2),name);
+matrix=ant.PortToElementMatrix;
+prepared.PhysicalWaveform=samples*cast(matrix,'like',samples).';
+prepared.PhysicalPortCount=size(matrix,1);
+prepared.PowerContext=ctx;
+prepared.TransmitMappingSource=string(meta.PortToElementMappingSource);
+prepared.TransmitBeamID=string(meta.SelectedBeamId);
+prepared.TransmitProjectionMatrixSHA256=string(sixgr.phy.mimo.MatrixContract.digest(matrix));
+prepared.RFExecutionDeferred=true;
+prepared.PhysicalWaveformPlane="physical_antenna_sqrt_mW_before_shared_tx_rf";
+end
+
+function row=localApplySharedStageEvidence(row,physical,replay)
+if ~replay.RuntimeChannelStateUsed
+    error('sixgr:phy:ra:MissingSharedRAChannelExecution','Shared RA needs a physically executed propagation link.');
+end
+p=physical.Prepared; ctx=p.PowerContext;
+if p.StageName~=row.StageName || p.Direction~=row.Direction
+    error('sixgr:phy:ra:SharedRAStageIdentityMismatch','Received physical evidence belongs to another RA stage.');
+end
+row.WaveformSource="shared_physical_stream_received_post_adc_gain_compensated";
+row.RuntimeTransportMode="shared_physical_waveform_stream";
+row.RuntimeChannelStateUsed=true; row.ChannelFadingApplied=replay.ChannelFadingApplied;
+row.ChannelFadingExecutionStatus="actual_shared_stream_execution";
+for name=["RuntimeChannelLinkKey","RuntimeChannelSeed","RuntimeChannelStartSample","RuntimeChannelEndSample"]
+    row.(name)=sixgr.util.structGet(replay,name,row.(name));
+end
+row.RuntimeChannelPhysicalTxElements=p.PhysicalPortCount;
+row.TxPortToElementMappingSource=p.TransmitMappingSource; row.TxBeamId=p.TransmitBeamID;
+row.TxProjectionMatrixSHA256=p.TransmitProjectionMatrixSHA256;
+row.AppliedTxPower_dBm=ctx.TotalTxPower_dBm;
+row.MeasuredTxPowerBeforeRF_dBm=ctx.OutputTotalPower_dBm;
+row.TxPowerClosureError_dB=ctx.PowerClosureError_dB;
+row.PowerContextAmplitudeScale=ctx.AmplitudeScale;
+row.WaveformAmplitudeUnit=string(ctx.WaveformAmplitudeUnit);
+row.TxPowerSource=string(ctx.TotalTxPowerSource);
+row.NoiseVariancePreFrontEnd_mW=replay.InjectedNoiseVariance;
+row.NoiseApplied=isfinite(replay.InjectedNoiseVariance) && replay.InjectedNoiseVariance>0;
+row.NoiseVariance=NaN; % Actual post-RF received-reference estimate belongs to each decoder.
+row.NoiseVariancePostFrontEndMethod="received_reference_estimation_required_after_actual_gain_compensation";
+row.NoiseVarianceSource=string(replay.NoiseVarianceSource);
+row.ReceiverGainCompensationApplied=replay.ReceiverGainCompensation.Applied;
+row.ReceiverGainCompensationSource=string(replay.ReceiverGainCompensation.Source);
+proof=struct('Source',{},'StartSample',{},'EndSampleExclusive',{},'LinkIDs',{},'TX',{},'RX',{});
+ids=string({physical.Planes.ReceiverID});
+txID=extractBefore(ids(endsWith(ids,':tx')),':tx');
+rxID=extractBefore(ids(endsWith(ids,':post_rf')),':post_rf');
+txRF=cell(0,1); rxRF=cell(0,1); loss=cell(0,1);
+for k=1:numel(replay.ReceiveStreamExecutionSegments)
+    segment=replay.ReceiveStreamExecutionSegments{k}; e=segment.Execution;
+    proof(k)=struct('Source',string(e.Source),'StartSample',segment.StartSample, ...
+        'EndSampleExclusive',segment.EndSampleExclusive, ...
+        'LinkIDs',string({e.Links.ID}),'TX',string({e.TX.ID}),'RX',string({e.RX.ID}));
+    txRF{end+1,1}=e.TX(string({e.TX.ID})==txID).Replay; %#ok<AGROW>
+    rxRF{end+1,1}=e.RX(string({e.RX.ID})==rxID).Replay; %#ok<AGROW>
+    for link=e.Links(string({e.Links.RX})==rxID & string({e.Links.TX})==txID)
+        loss{end+1,1}=link.LossReplay; %#ok<AGROW>
+    end
+end
+row.PhysicalExecutionSegmentsJSON=string(jsonencode(proof));
+% Flatten only invariant actual metadata. Full interval evidence remains
+% in the capture; time-varying values must not become a guessed scalar.
+mapping={ 'TxRFExecutionStatus',txRF,'RFExecutionStatus'; ...
+    'TxRFStageOrder',txRF,'RFStageOrder'; 'TxRFAppliedStageCount',txRF,'RFAppliedStageCount'; ...
+    'RxRFStageOrder',rxRF,'RFStageOrder'; 'RxRFAppliedStageCount',rxRF,'RFAppliedStageCount'; ...
+    'CompositeReceiverFrontEndStatus',rxRF,'RFExecutionStatus'; ...
+    'NoiseOperatingMode',rxRF,'NoiseOperatingMode'; ...
+    'ThermalSampleNoiseBandwidth_Hz',rxRF,'ThermalSampleNoiseBandwidth_Hz'; ...
+    'ThermalNoisePSD_mWPerHz',rxRF,'ThermalNoisePSD_mWPerHz'; ...
+    'AppliedLargeScaleLoss_dB',loss,'AppliedLargeScaleLoss_dB'};
+for k=1:size(mapping,1)
+    rows=mapping{k,2}; name=mapping{k,3};
+    if ~isempty(rows) && all(cellfun(@(r)isfield(r,name),rows))
+        values=cellfun(@(r)r.(name),rows,'UniformOutput',false);
+        if all(cellfun(@(v)isequaln(v,values{1}),values))
+            value=values{1}; if ischar(value), value=string(value); end
+            row.(mapping{k,1})=value;
+        end
+    end
+end
+row.CompositeReceiverFrontEndApplied=any(cellfun(@(r)r.RFAppliedStageCount>0,rxRF));
 end
 
 function pc = localResolveRATransmitPower(cfg, raCfg)
@@ -2022,9 +2169,19 @@ p0 = localFirstFiniteScalar(raCfg.P0PUSCH_dBm, ...
 alpha = localFirstFiniteScalar(raCfg.AlphaPUSCH, ...
     sixgr.util.structGet(cfg, "phy.pusch.powerControl.alpha", []), 0.8);
 alpha = min(max(double(alpha), 0), 1);
-deltaPreamble = localFirstFiniteScalar( ...
-    sixgr.util.structGet(cfg, "random_access.delta_preamble_db", []), ...
-    sixgr.util.structGet(cfg, "phy.prach.deltaPreamble_dB", []), 0);
+deltaPreamble=sixgr.phy.ia.RAPowerController.deltaPreamble( ...
+    raCfg.ResolvedPRACHFormat,raCfg.PRACHSubcarrierSpacing);
+for name=["random_access.delta_preamble_db","phy.prach.deltaPreamble_dB"]
+    configured=sixgr.util.structGet(cfg,name,[]);
+    if ~isempty(configured)
+        validateattributes(configured,{'numeric'},{'real','scalar','finite'});
+        if double(configured)~=deltaPreamble
+            error('sixgr:phy:ra:ConflictingPRACHFormatPowerOffset', ...
+                '%s=%g conflicts with TS 38.321 7.3: format %s at %g kHz requires %g dB.', ...
+                name,configured,raCfg.ResolvedPRACHFormat,raCfg.PRACHSubcarrierSpacing,deltaPreamble);
+        end
+    end
+end
 deltaTF = localFirstFiniteScalar( ...
     sixgr.util.structGet(cfg, "phy.pusch.powerControl.deltaTF_dB", []), ...
     sixgr.util.structGet(cfg, "phy.pusch.power_control.delta_tf_db", []), 0);
