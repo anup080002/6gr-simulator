@@ -1,5 +1,123 @@
 # Short TDD run: measured failures and remaining integration work
 
+## UL received-reference noise boundary (subsequent checkpoint)
+
+The preceding absolute-noise/retained physical-owner changes are committed
+as `f48509fb`. The main shared-stream migration remains **open**.
+
+The SRS/PUCCH staged receiver interface previously required a finite scalar
+post-front-end sample noise variance even when retained AGC/ADC could not
+provide that scalar honestly. It now accepts the explicit physical-owner
+state `unavailable_requires_received_reference_estimation`, with no
+numerical substitute:
+
+- SRS uses its actual received-reference `nrChannelEstimate` variance in
+  resource-grid units. Its independent NMSE/true-channel qualification gate
+  is unchanged; absence of that reference is still not a qualification pass.
+- PUCCH formats 1–4 can explicitly estimate disturbance from their actual
+  received DM-RS, including when the propagation model is AWGN but the
+  composite receiver RF/channel gain is not unity. This requires per-resource
+  channel estimates and a usable received variance; there is no supplied
+  scalar rescue when estimation fails.
+- PUCCH format 0 has no DM-RS. It still rejects unknown post-RF variance
+  until independent, correctly scoped received disturbance evidence is wired.
+  A scalar full-grid channel, configured SNR or zero variance is not inserted.
+- A measured pilot residual cannot be added to a separately supplied
+  interference covariance again. Explicit covariance mode retains its
+  provided thermal variance; received-DM-RS estimation mode rejects a second
+  disturbance authority.
+
+This uses the practical estimator documented by
+[nrChannelEstimate](https://www.mathworks.com/help/5g/ref/nrchannelestimate.html)
+and feeds the receiver-domain variance required by
+[nrPUCCHDecode](https://www.mathworks.com/help/5g/ref/nrpucchdecode.html).
+The residual is a receiver disturbance estimate, not an exact decomposition
+of thermal noise, interference, RF distortion and estimation error.
+
+An additional staged **multi-antenna format-2** test exposed a real legacy
+AWGN shortcut: direct resource extraction passed an N_RE-by-N_RX matrix
+to `nrPUCCHDecode`, which requires one combined column for formats 2–4.
+Batch **56234** failed with `Expected SYM to be a column vector`; it is not
+counted as a pass. AWGN propagation also does not imply unity transmit
+power or receiver gain. Formats 1–4 now use their actual per-resource DM-RS
+channel estimates and MMSE antenna combining on AWGN as well as fading.
+Format 0 retains its reference-free noncoherent receiver. The old test that
+required bypassed DM-RS processing for format 2 now requires actual DM-RS
+processing, with its CRC/payload assertions unchanged. No antenna was
+dropped and no channel estimate was synthesized to satisfy the interface.
+
+PUCCH primary `NoiseVariance` / `NoiseVarSource` / `NoiseVarianceDomain`
+now describe the resource-grid variance actually consumed by the receiver;
+`ReceiverInputSampleNoiseVariance` and its domain remain separate (NaN
+when unknown). The canonical PUCCH row writer and SRS row writer retain
+those measurement-domain distinctions. These are new measured metadata,
+not finite replacements for unavailable physical inputs.
+
+Batch **29662**, exit 0 (`logs/ul_received_noise_estimation_20260907.log`):
+actual PUCCH formats 1–4 UCI decoded after retained causal AGC/ADC using
+received DM-RS variance; SRS and PUCCH staged contracts passed. These tests
+use explicitly labeled isolated connector/control fixtures, not main-run
+access decisions or a completed production TDD slot calendar.
+
+Batch **28240**, exit 0 (`logs/ul_received_noise_regressions_20260907.log`):
+40-case `testPUCCHPhase05`, PUCCH feedback, UL noise validation, absolute
+thermal noise, shared physical owner, HARQ-on-PUSCH, coded data stages and
+CSI-RS physical measurements passed. The multi-antenna AWGN defect found
+after this batch is recorded above; those earlier passes alone did not
+close the newly exposed defect.
+
+Final batch **8404**, exit 0
+(`logs/ul_receiver_dmrs_combining_final_20260907.log`), after that repair:
+
+- `testUplinkControlStreamStages` (SRS, format-0 PUCCH, and the added
+  multi-antenna DM-RS PUCCH case) and `testPUCCHReceivedNoiseEstimation`;
+- `testLLSPUCCHWaveformFeedback` and all 40 `testPUCCHPhase05` cases;
+- `testConfig`, `testStrictProxyGuards`, `testStrictMode_NoFallbackAnywhere`,
+  `testLLS_DL`, `testLLS_UL`, `testLLS_ReferencePoints`,
+  `testSchedulerGrantConsistency`, `testE2E_FastVsTruth`, and
+  `testE2E_TruthPacketSemanticCampaign`.
+
+The integrity regressions exercised their built-in FDD fixtures. No new
+production FDD or TDD scenario was launched. This was bounded validation,
+not `testAll`, a 12 dB production qualification, or proof that every open
+integration item is implemented.
+
+The existing CSI-RS physical RSSI/RSRQ calculation and plot code was also
+inspected. It retains the measured resource, receive branch, bandwidth and
+symbol window; the displayed RSRP/RSSI/RSRQ use the same branch. The plotting
+pipeline verifies `RSRQ_dB = 10*log10(N_RB) + RSRP_dBm - RSSI_dBm` and rejects
+duplicate or incomplete resource identities. Python validation:
+`python -m pytest -q tests/test_lls_radio_measurement_plots.py`, **41 passed**.
+This does not certify new production PNGs: no new production run was started,
+and the unfinished combined runtime must first produce those measurements.
+SS-RSSI and UL-specific received-power windows still need their own explicit
+definitions; the CSI-RS metric cannot be relabeled as either one.
+
+### Remaining combined-runtime acceptance work
+
+| Requested area | Evidence now | Still required before qualification |
+| --- | --- | --- |
+| Main clock / shared stream | Retained node RF, per-link fading, receiver noise and DL/UL tail-safe direction switch tested | Replace eager access/control/data executions with prepared transmissions and chronological receiver-completion callbacks in the actual collector |
+| PRACH / four-step RA | All five actual RA stages and TA=0 Msg3 CRC passed with physical sample-noise closure | Integrate staged RA with broadcast/TRS/data; implement and verify nonzero TA and separate UE TX / gNB RX origins |
+| PUCCH / UCI | Formats 1–4 received-DM-RS estimation and real UCI decode; legacy format-0 detector coverage | Format-0 independent post-RF disturbance observation; commit feedback only after its actual RX completion |
+| PUSCH / UCI | Actual coded staged PUSCH and UCI-on-PUSCH component tests; late ACK reservation reducers | Same physical stream as due SRS/PUCCH/other UEs; end-to-end received DCI, K2, HARQ and CSI delivery timing |
+| SRS | Actual staged resource estimation and strict noise/NMSE checks | Shared-stream oracle diagnostics without rerunning RF/channel; resource priority and feedback applied at actual observation completion |
+| Control / QCL / TCI / PMI | Exact coding/resource components and QCL/TCI/source-authority reducers tested | Verify activation time, beam/precoder actually used, and report-to-grant identity in the combined run; retire independent noise-only PDCCH diagnostic execution from physical ownership |
+| RSSI / CSV / PNG | CSI-RS resource/branch/bandwidth/symbol measurements and strict plot checks exist | Fresh measured combined-run rows/PNGs; SS-RSSI and UL observation definitions cannot be inferred from CSI-RS or whole-slot power |
+| Continuous instrument IQ | Actual post-IFFT contributions and retained physical sample planes exist | End-to-end common-clock capture across all enabled channels, complete provenance, then instrument-specific playback validation |
+
+No FDD-only or TDD-only workaround, forced MCS/rank/SINR, relaxed CRC/NMSE
+assertion, synthetic output row or fabricated PNG completes any open item.
+
+Two additional legacy evidence paths found by static inspection are **not
+yet repaired by this checkpoint**: `annotateControlReferenceSINRColumnsImpl`
+can infer `ChannelFadingApplied` from channel/profile/class strings plus
+absence of a crash, rather than only retaining the producer's consumed-link
+evidence; SRS `RuntimeNoiseApplied` currently follows a positive receiver
+grid estimate rather than independently proving injected receiver noise.
+Neither flag by itself is accepted here as physical execution proof. Their
+producer/row authority must be corrected during the combined-stream migration.
+
 ## Absolute receiver noise and physical-stream owner (2026-09-07, subsequent checkpoint)
 
 The main collector is **still not fully integrated with the chronological

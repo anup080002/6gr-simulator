@@ -19,12 +19,14 @@ cfg.lls6g.userContext.RuntimeServingPathlossMeasurementSlot=1;
 cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalType='SSB';
 cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalId=0;
 
-for channel=["SRS","PUCCH"]
+for caseIndex=1:3
+    channels=["SRS","PUCCH","PUCCH"];
+    channel=channels(caseIndex);
     if channel=="SRS"
         runner=@sixgr.link.runSRSChannelEstimation;
         args={'SlotIndex',5,'SNR_dB',12,'TimingAdvanceSamples',0};
     else
-        connected=localPUCCH(cfg);
+        connected=localPUCCH(cfg,caseIndex==3);
         runner=@sixgr.link.runPUCCHWaveformTrial;
         args={'Assignment',connected.Assignment,'Report',connected.Report, ...
             'Carrier',sixgr.phy.grid.makeCarrier(cfg),'ChannelProfile','AWGN', ...
@@ -84,6 +86,16 @@ for channel=["SRS","PUCCH"]
         expected=sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
             noise.SampleNoiseVariance,info,'InputDomain','time');
         assert(abs(completed.NoiseVariance-expected)<=1e-12*expected);
+        % A shared RF owner may not know a scalar post-RF variance. Use the
+        % actual SRS resource estimator, never the configured SNR as rescue.
+        estimatedContext=context;
+        estimatedContext.Replay.SampleNoiseVariance=NaN;
+        estimatedContext.Replay.SampleNoiseVarianceDomain= ...
+            'unavailable_requires_received_reference_estimation';
+        estimated=runner(cfg,args{:},'ReceivedContext',estimatedContext);
+        assert(isfinite(estimated.NoiseVariance) && estimated.NoiseVariance>0 && ...
+            string(estimated.NoiseVarianceSource)=="runtime_channel_estimate");
+        assert(string(estimated.NoiseVarianceDomain)=="resource_grid_pre_equalization");
         % Missing channel reference must not generate a Doppler stand-in.
         noReference=rmfield(context,'DesiredReferenceObservation');
         failed=runner(cfg,args{:},'ReceivedContext',noReference);
@@ -101,13 +113,30 @@ for channel=["SRS","PUCCH"]
         assert(isnan(completed.InputEVMPercent) && isnan(completed.MeasuredInputNoisePower), ...
             'Do not manufacture isolated-noise measurements from a variance parameter.');
         assert(isequal(completed.Tx.Waveform,p.Tx.Waveform));
+        assert(completed.NoiseVariance==completed.Rx.GridNoiseVariance && ...
+            string(completed.NoiseVarianceDomain)=="resource_grid_pre_equalization" && ...
+            string(completed.NoiseVarSource)==string(completed.Rx.GridNoiseVarianceSource));
+        unknownNoise=context;
+        unknownNoise.Replay.SampleNoiseVariance=NaN;
+        unknownNoise.Replay.SampleNoiseVarianceDomain= ...
+            'unavailable_requires_received_reference_estimation';
+        if isempty(p.Tx.DMRSIndices)
+            localReject(@()runner(cfg,args{:},'ReceivedContext',unknownNoise), ...
+                'sixgr:link:PUCCHNoiseObservationRequired');
+        else
+            estimated=runner(cfg,args{:},'ReceivedContext',unknownNoise);
+            assert(estimated.Ok && estimated.UCIContentMatch && estimated.NoiseVariance>0 && ...
+                isnan(estimated.ReceiverInputSampleNoiseVariance) && ...
+                estimated.NoiseVarSource=="received_pucch_dmrs_noise_plus_residual_estimate");
+            assert(isequal(estimated.DecodedBits,estimated.ExpectedBits));
+        end
     end
     fprintf('[PASS] %s staged actual reception at standalone 12 dB; no main scheduler claim.\n',channel);
 end
 ok=true;
 end
 
-function out=localPUCCH(cfg)
+function out=localPUCCH(cfg,withDMRS)
 identity=cfg.phy.frame.DefaultIdentity;
 ue=struct('UEID',1,'RNTI',cfg.phy.pusch.RNTI,'ServingCell',1,'PUCCHCell',1, ...
     'ComponentCarrier',identity.ScheduledCCID,'ActiveULBWP',identity.ULBWPID);
@@ -115,7 +144,9 @@ frame=struct('K1',4,'K1Source','decoded_dci','PDSCHEndSlot',1,'TargetSlot',5, ..
     'DecodedPRI',0,'PRIFieldWidth',3,'PRIProvenance','unit_fixture', ...
     'FirstCCE',0,'NumCCE',4,'SlotSymbolOwnership','UUUUUUUUUUUUUU', ...
     'FlexibleResolutionProvided',false,'TriggeringEventID','unit_fixture');
-out=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ(cfg,ue,true,frame);
+bits=true;
+if withDMRS, bits=logical([1;0;1]); end
+out=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ(cfg,ue,bits,frame);
 end
 
 function buffer=localBuffer(p,x)

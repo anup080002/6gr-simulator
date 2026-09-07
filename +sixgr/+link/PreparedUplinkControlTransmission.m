@@ -82,12 +82,33 @@ classdef PreparedUplinkControlTransmission
                 assert((isnumeric(value)||islogical(value)) && isscalar(value) && isequal(double(value),0), ...
                     'sixgr:link:ProxyULControlStreamForbidden','No proxy/fallback primary control evidence.');
             end
-            noise=sixgr.util.structGet(context.Replay,'SampleNoiseVariance',NaN);
-            domain=string(sixgr.util.structGet(context.Replay,'SampleNoiseVarianceDomain',''));
-            assert(isnumeric(noise) && isreal(noise) && isscalar(noise) && isfinite(noise) && noise>=0 && ...
-                isscalar(domain) && domain=="receiver_sample_waveform_post_composite_front_end", ...
+            obj.receiverNoiseMode(context.Replay);
+        end
+
+        function mode=receiverNoiseMode(obj,replay)
+            noise=sixgr.util.structGet(replay,'SampleNoiseVariance',NaN);
+            domain=string(sixgr.util.structGet(replay,'SampleNoiseVarianceDomain',''));
+            mode="provided";
+            if isnumeric(noise) && isreal(noise) && isscalar(noise) && isfinite(noise) && noise>=0 && ...
+                    isscalar(domain) && domain=="receiver_sample_waveform_post_composite_front_end"
+                return;
+            end
+            assert(isnumeric(noise) && isreal(noise) && isscalar(noise) && isnan(noise) && ...
+                isscalar(domain) && domain=="unavailable_requires_received_reference_estimation", ...
                 'sixgr:link:ULControlNoisePlaneMismatch', ...
-                'Declare actual post-front-end sample noise variance; grid variance is not interchangeable.');
+                'Supply post-RF sample variance or explicitly require actual received-reference estimation.');
+            % No oracle noise or scalar gain is invented for a nonlinear or
+            % nonstationary front end. SRS and PUCCH DM-RS allow a practical
+            % received-resource disturbance estimate, not exact thermal noise.
+            if obj.Channel=="PUCCH"
+                assert(~isempty(sixgr.util.structGet(obj.Tx,'DMRSIndices',[])), ...
+                    'sixgr:link:PUCCHNoiseObservationRequired', ...
+                    'PUCCH Format 0 has no DM-RS; an independent received disturbance observation is required.');
+            else
+                assert(~isempty(obj.Tx.SRSIndices) && ~isempty(obj.Tx.SRSSymbols), ...
+                    'sixgr:link:SRSNoiseReferenceRequired','Actual SRS reference resources are required.');
+            end
+            mode="received_reference_estimate";
         end
 
         function samples=readObservation(obj,buffer,plane)

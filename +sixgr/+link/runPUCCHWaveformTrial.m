@@ -161,6 +161,10 @@ else
     trial.InputEVMPercent = NaN;
 end
 trial.NoiseVariance = noiseVariance;
+trial.NoiseVarianceDomain = "receiver_sample_waveform_post_composite_front_end";
+trial.ReceiverInputSampleNoiseVariance = noiseVariance;
+trial.ReceiverInputSampleNoiseVarianceDomain = string(sixgr.util.structGet( ...
+    replay,'SampleNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end'));
 trial.MeasuredInputSignalPower = signalPower;
 trial.MeasuredInputNoisePower = measuredNoisePower;
 trial.MeasuredInputInterferencePower = measuredInterferencePower;
@@ -180,6 +184,9 @@ try
         "NoiseVarianceDomain","sample", ...
         "ChannelProfile",channelMeta.Profile, ...
         "DetectionThreshold",opt.DetectionThreshold};
+    if received && prepared.receiverNoiseMode(replay)=="received_reference_estimate"
+        rxArgs=[rxArgs {"NoiseVarianceMode","received_dmrs_estimate"}];
+    end
     interferenceCovariance = sixgr.util.structGet( ...
         replay,"InterferenceCovariance",[]);
     if ~isempty(interferenceCovariance)
@@ -224,7 +231,13 @@ trial.TxInfo = struct("OFDMInfo",tx.OFDMInfo, ...
     "AssignmentDigest",tx.AssignmentDigest, ...
     "ConnectedModeEvidenceEligible",tx.ConnectedModeEvidenceEligible);
 trial.Channel = channelMeta;
-trial.NoiseVariance = noiseVariance;
+% Primary receiver evidence uses the variance actually consumed in the
+% RESOURCE GRID, not the injected sample variance under the same name.
+trial.NoiseVariance = double(rx.GridNoiseVariance);
+trial.NoiseVarianceDomain = "resource_grid_pre_equalization";
+trial.ReceiverGridDisturbanceVariance = double(rx.GridNoiseVariance);
+trial.ReceiverGridDisturbanceVarianceSource = string(rx.GridNoiseVarianceSource);
+trial.ReceiverGridDisturbanceVarianceDomain = "resource_grid_pre_equalization";
 trial.ExpectedBits = reference;
 trial.DecodedBits = decoded;
 trial.ExpectedBitCount = numel(reference);
@@ -271,9 +284,7 @@ trial.ConfiguredSNR_dB = double(opt.SNR_dB);
 trial.AppliedAWGNSNR_dB = double(sixgr.util.structGet( ...
     replay,"AppliedAWGNSNR_dB",localAWGNSNR(opt)));
 trial.NoiseVarStatus = "OK";
-trial.NoiseVarSource = string(sixgr.util.structGet( ...
-    replay,"NoiseVarianceSource", ...
-    "calibrated_sample_to_grid_transform"));
+trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
 trial.NoiseVarReason = "";
 trial.NoiseVarStrictFailure = false;
 sinrAvailable = logical(sixgr.util.structGet(rx, ...
@@ -336,8 +347,11 @@ trial.RuntimeStageWaveformsUsed = true;
 trial.RuntimeSelfLoopWaveformsUsed = false;
 trial.RuntimeChannelStateUsed = logical(sixgr.util.structGet( ...
     replay,"RuntimeChannelStateUsed",false));
-trial.RuntimeNoiseApplied = isfinite(noiseVariance) && noiseVariance > 0;
+injectedVariance=double(sixgr.util.structGet(replay,'InjectedNoiseVariance',noiseVariance));
+trial.RuntimeNoiseApplied = isfinite(injectedVariance) && injectedVariance > 0;
 trial.RuntimeNoiseVarianceMean = double(noiseVariance);
+trial.RuntimeNoiseVarianceDomain = string(sixgr.util.structGet(replay, ...
+    'SampleNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end'));
 trial.RuntimeChannelLinkKeys = string(sixgr.util.structGet( ...
     replay,"RuntimeChannelLinkKey",""));
 trial.RuntimeStageCount = 5;

@@ -314,8 +314,14 @@ try
     out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
     out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
     out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
-    out.NoiseVarianceSource = char(string(sixgr.util.structGet( ...
-        replay,"NoiseVarianceSource",out.NoiseVarSource)));
+    % The reported variance is in the received RESOURCE GRID. A pre-RF
+    % thermal sample variance source must not replace its estimator source.
+    out.NoiseVarianceSource = out.NoiseVarSource;
+    out.NoiseVarianceDomain = "resource_grid_pre_equalization";
+    out.InjectedSampleNoiseVariance = double(sixgr.util.structGet( ...
+        replay,'InjectedNoiseVariance',injectedNoiseVariance));
+    out.InjectedSampleNoiseVarianceDomain = string(sixgr.util.structGet( ...
+        replay,'InjectedNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end'));
     out.SignalEnergyPerOccupiedRE = double(sixgr.util.structGet( ...
         replay,"SignalEnergyPerOccupiedRE",NaN));
     out.ReferenceAWGNGridNoiseVariance = double(sixgr.util.structGet( ...
