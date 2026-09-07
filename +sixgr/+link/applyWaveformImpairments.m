@@ -298,6 +298,15 @@ replay = struct( ...
     "IQImbalanceEstimatedBetaAbs", NaN, ...
     "IQImbalanceMeasurementSource", "sample_domain_widely_linear_fit_after_iq_stage", ...
     "IQImbalanceMeasurementStatus", char(iqExecutionStatus));
+if string(noiseMode)=="receiver_noise_figure_thermal_noise"
+    replay.ThermalSampleNoiseVariance_mW=sixgr.link.resolveReceiverThermalNoiseVariance(replay);
+    replay.ThermalSampleNoiseBandwidth_Hz=double(sampleRateHz);
+    replay.ThermalNoisePSD_mWPerHz=replay.ThermalSampleNoiseVariance_mW/double(sampleRateHz);
+    replay.ThermalNoiseSampleDefinition="flat_complex_baseband_receiver_noise_PSD_times_Fs_per_physical_branch";
+    % Retained legacy link-budget field, not an actual waveform measurement
+    % and no longer an input to any thermal-noise variance calculation.
+    replay.AppliedAWGNSNRValueRole="link_budget_prediction_not_measured_SINR_or_noise_control";
+end
 end
 
 function source = localAvailableSource(value, availableSource)
@@ -493,10 +502,9 @@ switch strtrim(lower(string(noiseMode)))
                 source = "thermal_noise_unavailable_missing_pathloss_or_runtime_rx_power";
             end
         end
-        % Bridge the absolute thermal-noise power into the normalized
-        % waveform domain inside the DL/UL kernels, where the desired
-        % reference waveform power is still available after fading,
-        % large-scale scaling, and interference synthesis.
+        % Waveforms have absolute sqrt(mW) units. Sample variance is PSD*Fs
+        % and must NOT be normalized to faded waveform/serving-link power.
+        % The explicit sample-noise fields are attached to replay above.
         targetNoiseVariance = NaN;
     case "standalone_awgn_snr_argument"
         source = "standalone_awgn_snr_argument";

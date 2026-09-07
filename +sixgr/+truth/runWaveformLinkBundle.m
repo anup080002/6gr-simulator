@@ -14006,19 +14006,8 @@ end
 nVar = refPower / max(10.^(snr_dB / 10), eps);
 end
 
-function nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
-nVar = NaN;
-thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
-    return;
-end
-refPower = localPDCCHUsefulOFDMReferencePower(referenceWaveform, txInfo);
-if ~(isfinite(refPower) && refPower >= 0)
-    return;
-end
-relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
-nVar = refPower * 10.^(relativeNoise_dB / 10);
+function nVar = localPDCCHResolveThermalNoiseVariance(replay, referenceWaveform, txInfo) %#ok<INUSD>
+nVar = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
 end
 
 function refPower = localPDCCHUsefulOFDMReferencePower(waveform, txInfo)

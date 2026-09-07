@@ -1112,21 +1112,8 @@ evidence.CyclicPrefixPowerUsedForAWGN = false;
 evidence.UnusedFFTBinPowerUsedForAWGN = false;
 end
 
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
-nVar = NaN;
-thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
-    return;
-end
-[~, perBranchPower_mW] = sixgr.rf.measureActiveOFDMTotalPower( ...
-    referenceWaveform, txInfo);
-refPowerPerBranch = mean(double(perBranchPower_mW), "omitnan");
-if ~(isfinite(refPowerPerBranch) && refPowerPerBranch >= 0)
-    return;
-end
-relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
-nVar = refPowerPerBranch * 10.^(relativeNoise_dB / 10);
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo) %#ok<INUSD>
+nVar = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
 end
 
 function sampleRateHz = localResolveSampleRate(info, tx, cfg)

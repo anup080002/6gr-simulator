@@ -137,7 +137,7 @@ if noiseMode == "receiver_noise_figure_thermal_noise"
             ["Initial-access thermal-noise mode requires a finite " ...
              "bandwidth and receiver noise figure."]);
     end
-    replay.InjectedNoiseVariance = 10 .^ (thermalNoisePower_dBm / 10);
+    replay.InjectedNoiseVariance = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
     noiseState = sixgr.util.structGet(state, "ReceiverNoiseState", struct());
     origin = double(sixgr.util.structGet(noiseState, "OriginSample", startSample));
     runSeed = sixgr.util.structGet(cfg, "run.seed", []);

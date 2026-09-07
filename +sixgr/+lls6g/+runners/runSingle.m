@@ -5685,6 +5685,17 @@ if ~isfield(txInfo, "OFDM")
         txInfo.OFDM = struct();
     end
 end
+% Match the bundle's physical units/order. Applying RX RF before adding
+% noise, or calibrating normalized TX against a link-budget scalar, is not
+% a physical thermal-noise receiver.
+sampleRateHz = localRunnerResolvePDCCHSampleRate(tx,txInfo);
+[x,powerContext] = sixgr.rf.applyPowerContext(x,cfg,"DL",txInfo);
+cfg = sixgr.util.structSet(cfg,"lls6g.runtimePowerContext",powerContext);
+txRF = sixgr.rf.applyRFImpairmentChain(x,cfg, ...
+    "SampleRateHz",sampleRateHz,"Direction","DL","MeasurementPoint","tx_output", ...
+    "Endpoint","tx","StrictMutationRequired",false,"UseLegacyGlobalConfig",false, ...
+    "ApplyPA",false,"ApplyADC",false);
+x = cast(txRF.Waveform,"like",x);
 state = sixgr.link.initWaveformTruthChannelState(cfg, tx, txInfo);
 sampleRateHz = double(sixgr.util.structGet(state, "SampleRate_Hz", localRunnerResolvePDCCHSampleRate(tx, txInfo)));
 y = x;
@@ -5703,7 +5714,7 @@ for chIdx = 1:numel(chFields)
 end
 
 cfgReplay = sixgr.util.structSet(cfg, "channel.snr_dB", double(snr_dB));
-[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz);
+[y, impairmentReplay] = sixgr.link.applyWaveformImpairments(y, cfgReplay, sampleRateHz,"ApplyRFChain",false);
 fields = fieldnames(impairmentReplay);
 for ii = 1:numel(fields)
     replay.(fields{ii}) = impairmentReplay.(fields{ii});
@@ -5717,6 +5728,11 @@ replay.InjectedNoiseVariance = double(nVar);
 if isfinite(nVar) && nVar > 0
     replay.NoiseVarianceSource = "pdcch_runner_reference_waveform_awgn";
 end
+[y,replay] = sixgr.link.applyCompositeReceiverFrontEnd(y,cfgReplay,sampleRateHz,replay,"Direction","DL");
+replay = sixgr.link.applyCompositeFrontEndVarianceReplay(replay);
+nVar = replay.InjectedNoiseVariancePostCompositeFrontEnd;
+replay.TxRFStageOrder = txRF.Replay.RFStageOrder;
+replay.TxRFAppliedStageCount = txRF.Replay.RFAppliedStageCount;
 noiseOnlyWave = localRunnerNoiseOnlyWaveformLike(y, nVar);
 end
 
@@ -5780,19 +5796,8 @@ end
 nVar = refPower / max(10.^(snr_dB / 10), eps);
 end
 
-function nVar = localRunnerResolveThermalNoiseVariance(replay, referenceWaveform)
-nVar = NaN;
-thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-if ~(isfinite(thermalNoisePower_dBm) && isfinite(servingRxPower_dBm))
-    return;
-end
-refPower = mean(abs(double(referenceWaveform(:))).^2, "omitnan");
-if ~(isfinite(refPower) && refPower >= 0)
-    return;
-end
-relativeNoise_dB = thermalNoisePower_dBm - servingRxPower_dBm;
-nVar = refPower * 10.^(relativeNoise_dB / 10);
+function nVar = localRunnerResolveThermalNoiseVariance(replay, referenceWaveform) %#ok<INUSD>
+nVar = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
 end
 
 function noiseOnlyWave = localRunnerNoiseOnlyWaveformLike(referenceWaveform, nVar)

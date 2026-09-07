@@ -10,12 +10,19 @@ if nargin < 1 || ~isstruct(replay)
 end
 
 gainLinear = 1;
-gainDb = double(sixgr.util.structGet(replay, "AGCGain_dB", 0));
-if logical(sixgr.util.structGet(replay, "AGCApplied", false)) && isfinite(gainDb)
+gainDb = double(sixgr.util.structGet(replay, "AGCGain_dB", NaN));
+if logical(sixgr.util.structGet(replay,"AGCGainIsTimeVarying",false))
+    error('RF:NonstationaryNoiseRequiresReceivedEstimation', ...
+        'Time-varying AGC requires received-resource noise/covariance estimation, not a unity or averaged scalar gain.');
+end
+if logical(sixgr.util.structGet(replay, "AGCApplied", false))
+    if ~(isreal(gainDb) && isscalar(gainDb) && isfinite(gainDb))
+        error('RF:MissingAppliedAGCGain','A post-RF noise calculation requires the actual recorded AGC gain.');
+    end
     gainLinear = 10.^(gainDb ./ 20);
 end
 if ~(isfinite(gainLinear) && gainLinear > 0)
-    gainLinear = 1;
+    error('RF:InvalidAppliedAGCGain','An invalid applied gain cannot be replaced with unity.');
 end
 
 qVar = localCompositeADCQuantizationNoiseVariance(replay);
@@ -73,6 +80,16 @@ end
 replay.CompositeReceiverFrontEndGainLinear = double(gainLinear);
 replay.CompositeReceiverFrontEndNoiseVarianceDomain = "receiver_sample_waveform_post_composite_front_end";
 replay.CompositeReceiverFrontEndADCQuantizationNoiseVariance = double(qVar);
+replay.CompositeReceiverNoiseVarianceMethod = "constant_recorded_agc_gain_white_noise_propagation";
+if logical(sixgr.util.structGet(replay,"ADCQuantizationApplied",false))
+    replay.CompositeReceiverNoiseVarianceMethod = ...
+        "constant_gain_thermal_plus_measured_ADC_error_power_uncorrelated_estimate";
+end
+% ADC error power is measured, but adding its variance to thermal noise
+% assumes zero cross-correlation. Do not label that estimator as an exact
+% measured decomposition of the post-quantizer disturbance.
+replay.CompositeReceiverNoiseVarianceAssumesUncorrelatedADCError = ...
+    logical(sixgr.util.structGet(replay,"ADCQuantizationApplied",false));
 end
 
 function qVar = localCompositeADCQuantizationNoiseVariance(replay)

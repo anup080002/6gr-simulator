@@ -4398,23 +4398,8 @@ if strlength(mode) == 0
 end
 end
 
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
-nVar = NaN;
-servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-if ~(isfinite(servingRxPower_dBm) && isfinite(thermalNoisePower_dBm))
-    return;
-end
-referencePower = localUsefulOFDMReferencePower(referenceWaveform, txInfo);
-if ~(isfinite(referencePower) && referencePower > 0)
-    return;
-end
-signalMilliwatt = 10.^(servingRxPower_dBm / 10);
-noiseMilliwatt = 10.^(thermalNoisePower_dBm / 10);
-if ~(isfinite(signalMilliwatt) && signalMilliwatt > 0 && isfinite(noiseMilliwatt) && noiseMilliwatt >= 0)
-    return;
-end
-nVar = referencePower * (noiseMilliwatt / signalMilliwatt);
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo) %#ok<INUSD>
+nVar = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
 end
 
 function fs = localResolveSampleRate(tx, txInfo)

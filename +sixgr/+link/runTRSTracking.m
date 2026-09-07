@@ -802,22 +802,8 @@ else
 end
 end
 
-function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo)
-nVar = NaN;
-servingRxPower_dBm = double(sixgr.util.structGet(replay, "ServingRxPower_dBm", NaN));
-thermalNoisePower_dBm = double(sixgr.util.structGet(replay, "ThermalNoisePower_dBm", NaN));
-[~, perPortPower_mW] = sixgr.rf.measureActiveOFDMTotalPower( ...
-    referenceWaveform, txInfo);
-referencePower = mean(double(perPortPower_mW), "omitnan");
-if ~(isfinite(servingRxPower_dBm) && isfinite(thermalNoisePower_dBm) && isfinite(referencePower) && referencePower > 0)
-    return;
-end
-signalMilliwatt = 10.^(servingRxPower_dBm / 10);
-noiseMilliwatt = 10.^(thermalNoisePower_dBm / 10);
-if ~(isfinite(signalMilliwatt) && signalMilliwatt > 0 && isfinite(noiseMilliwatt) && noiseMilliwatt >= 0)
-    return;
-end
-nVar = referencePower * (noiseMilliwatt / signalMilliwatt);
+function nVar = localResolveThermalNoiseVariance(replay, referenceWaveform, txInfo) %#ok<INUSD>
+nVar = sixgr.link.resolveReceiverThermalNoiseVariance(replay);
 end
 
 function model = localResolveTrialChannelModel(cfg)

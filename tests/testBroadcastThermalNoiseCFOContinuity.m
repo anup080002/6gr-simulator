@@ -29,7 +29,9 @@ for origin = [0 913]
     expected = x.*replay.AppliedLargeScaleAmplitudeGain .* ...
         exp(1i*2*pi*(7500/fs)*(origin+n));
     assert(isequal(replay.RawWaveform,expected), 'CFO must use the actual absolute sample phase.');
-    assert(replay.InjectedNoiseVariance == 10^(replay.ThermalNoisePower_dBm/10));
+    assert(replay.InjectedNoiseVariance == sixgr.link.resolveReceiverThermalNoiseVariance(replay));
+    assert(replay.InjectedNoiseVariance == ...
+        10^(replay.ThermalNoisePower_dBm/10)*fs/replay.NoiseBandwidth_Hz);
     assert(any(abs(whole(1:512,:))>0,'all'), 'Quiet samples must retain receiver thermal noise.');
     state = initial;
     divided = zeros(size(whole),'like',whole);

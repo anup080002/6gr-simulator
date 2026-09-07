@@ -1,5 +1,121 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Absolute receiver noise and physical-stream owner (2026-09-07, subsequent checkpoint)
+
+The main collector is **still not fully integrated with the chronological
+stream**. No new production run, 25 dB run or hardware waveform
+export has been claimed. The previously failed production CSV/PNG artifacts
+have not been rewritten to look successful.
+
+An additional real producer defect was found in the main PDSCH, PUSCH,
+PUCCH, SRS, TRS, PDCCH and four-step RA paths. Their TX waveforms already
+had absolute `sqrt(mW)` units, but the thermal-noise functions still
+multiplied noise by `receivedWaveformPower / servingLinkBudgetPower`.
+That lets fading, beam gain, duty cycle and unrelated serving-power metadata
+change the receiver noise floor. The standalone PDCCH runner also lacked
+the matching TX-power/RF boundary and applied RX RF before adding noise.
+
+These paths now use `resolveReceiverThermalNoiseVariance`:
+
+`sample noise variance [mW] = thermal power over B [mW] * Fs/B`.
+
+The same noise PSD must cover the complex sample-rate bandwidth, not just
+the occupied BWP. This is consistent with the
+[complex-baseband thermal-noise sample-rate definition](https://www.mathworks.com/help/comm/ref/comm.thermalnoise-system-object.html)
+and the distinction between
+[sample-domain and occupied-RE SNR](https://www.mathworks.com/help/5g/ug/snr-definition-used-in-link-simulations.html).
+No serving RSRP, measured fading gain or configured `12 dB` label is an input
+to that variance. The broadcast path uses the same helper. Replay exposes
+sample noise bandwidth, PSD and variance separately from the integrated
+channel-bandwidth noise power. The legacy `AppliedAWGNSNR_dB` link-budget
+field has an explicit **prediction, not measurement/noise-control** role;
+it must not be displayed as measured SINR. RA stage CSV rows now also retain
+the pre-front-end variance and sample-bandwidth/PSD closure.
+
+`SharedWaveformPhysicalRuntime` provides the physical callback for the
+existing event runtime: composed physical TX samples go through each node's
+retained TX RF once, each actual link is filtered once, link outputs are
+summed per receiver, then one persistent receiver noise stream and one RX
+RF stream execute. It preserves separate TX, pre-RF and post-RF sample
+planes. Duplicate channel ownership and outside clock advancement are
+rejected. Thermal-noise identity belongs to the receiver, not the incoming
+link. This callback is implemented and tested, **not yet selected by the
+main eager grant/access collectors**.
+
+The TDD reversal method preserves the same reciprocal fading owner and
+requires actual outgoing TX silence sufficient to consume the channel FIR
+tail before swapping. The installed toolbox's direction-swap implementation
+resets the selected input filter; a swap is not permission to truncate
+unconsumed RX samples. Profile/frequency/physical-link changes are rejected
+as different operations, not silently accepted as a direction reversal.
+FDD must retain independent carrier/direction links. The required legacy
+E2E integrity regressions used their own FDD fixtures; no new production
+FDD scenario or high-SNR adaptation run was launched.
+
+Time-varying or missing applied AGC gains can no longer become unity in
+`applyCompositeFrontEndVarianceReplay`. Nonstationary post-RF noise needs
+actual reference-resource estimation/covariance handling. The new physical
+owner intentionally does not invent a scalar post-RF variance when RF
+processing occurred. Its interval-wide sample power is explicitly **not**
+SS-RSSI or CSI-RSSI. Full UL RX estimator integration, measurement-defined
+RSSI exports, nonzero TA, scheduler UCI deadlines and main QCL/TCI/PMI
+consumption remain open.
+
+Verification so far:
+
+- `logs/shared_physical_absolute_noise_20260907.log`: absolute PSD/Fs power
+  contract and broadcast thermal-noise/CFO continuity passed. The initial
+  physical-owner test exposed a char/string direction comparison; repaired.
+- Terminal batch **73303**, exit 0,
+  `logs/shared_physical_thermal_tdd_20260907.log`: shared physical owner,
+  actual five-stage TDD RA, staged SRS/PUCCH and coded DL/UL/UCI data passed.
+  Whole/split actual CDL/RF/noise samples agree; direction reversal retains
+  the clock and rejects an unconsumed tail. The RA test decoded **TA = 0**
+  at 7.68 MHz and passed Msg3 CRC with the corrected absolute noise.
+  SRS/PUCCH/data stage tests retain their explicitly limited standalone
+  fixtures; they do not qualify the main combined runtime.
+- Terminal batch **42021**, exit 0,
+  `logs/physical_noise_focused_validation_20260907.log`: absolute noise,
+  scalar-gain/ADC-assumption authority, broadcast continuity, `testConfig`,
+  `testLLS_DL`, `testLLS_UL`, `testLLS_ReferencePoints`, `testStrictProxyGuards`,
+  `testStrictMode_NoFallbackAnywhere`, `testE2E_FastVsTruth` and
+  `testE2E_TruthPacketSemanticCampaign` completed successfully. This was the
+  bounded requested validation, not `testAll` or full conformance.
+- Terminal batch **53940**, exit 0,
+  `logs/physical_noise_ul_final_20260907.log`: final scalar-noise metadata,
+  shared physical clock (UL reversal at the authored 4 ms full-UL boundary),
+  RA stage-noise CSV round-trip, HARQ-on-PUSCH, CSI source authority,
+  future-UL planning, SRS/PUSCH priority, PDSCH QCL/TCI and CSI-RS physical
+  resource measurement regressions passed. These are component/reducer
+  checks; QCL/TCI activation and PMI use still require the combined run.
+- Terminal batch **89202**, exit 0,
+  `logs/broadcast_trs_pdcch_absolute_noise_20260907.log`: actual shared noisy
+  CDL SSB/SIB1, TRS and PDCCH receivers passed with the new PSD/Fs conversion.
+  This remains the pre-RF component composition test, not the main loop.
+
+The subsequent standalone RA metadata rerun (**14311**) failed a next-stage
+assertion despite the earlier combined passes. The fixture inherited global
+MATLAB payload/noise RNG state from whichever test ran previously. It now
+uses the **unchanged authored scenario seed 4702601**, restores the caller's
+execution RNG state, and diagnoses a failed received stage before attempting
+another preparation. There is no seed search, reduced noise or relaxed CRC
+assertion. The authored-seed rerun (**5953**,
+`logs/ra_authored_seed_absolute_noise_20260907.log`) exited 0 with all five
+stages and the final noise/SNR CSV closure assertions passing. The repeat
+from caller `rng(123,'twister')` also passed all five stages and assertions
+(`logs/ra_seed_order_verification_20260907.log`); no MATLAB process remained
+after the diary's final PASS. This is fixture-order independence, not a
+multi-seed BLER qualification. The stage CSV also now closes
+its SNR against actual pre-noise waveform reference power and injected
+sample variance, explicitly labeled as a simulation reference, not a UE
+report or requested-SNR echo.
+
+Remaining legacy paths found during this review also include independent
+PDCCH noise-only diagnostic executions and scalar post-RF covariance
+assumptions beyond constant AGC. They have not been reclassified as measured
+primary observations. The main chronological migration must replace those
+with actual received windows and source-specific estimator evidence.
+
 ## Retained RF and main UL slot-entry checkpoint (2026-09-07)
 
 **The production shared-clock failure is not fully repaired.** This checkpoint
