@@ -17,17 +17,28 @@ for i = 1:numel(required)
     end
 end
 serving = sib1.servingCellConfigCommon;
-for name = ["downlinkConfigCommon","uplinkConfigCommon","ssb_PositionsInBurst","ssb_periodicityServingCell","dmrs_TypeA_Position"]
+for name = ["downlinkConfigCommon","uplinkConfigCommon","ssb_PositionsInBurst","ssb_periodicityServingCell"]
     if ~isfield(serving, name)
         error("sixgr:rrc:asn1:MissingSIB1IE", "Required servingCellConfigCommon IE '%s' is missing.", name);
     end
 end
-pdcchSIB1 = serving.downlinkConfigCommon.initialDownlinkBWP.pdcch_ConfigCommon.pdcch_ConfigSIB1;
-coreset0 = double(pdcchSIB1.controlResourceSetZero);
-search0 = double(pdcchSIB1.searchSpaceZero);
-if ~(isfinite(coreset0) && coreset0 >= 0 && coreset0 <= 15 && isfinite(search0) && search0 >= 0 && search0 <= 15)
-    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
-        "Anchor SIB1 profile supports CORESET0/searchSpaceZero indices in [0,15].");
+% PDCCH-ConfigCommon is optional; its constraints are checked by the actual
+% generated ASN.1 encoder. Do not require an invented MIB pdcch-ConfigSIB1.
+for direction = ["downlink", "uplink"]
+    if direction == "downlink", bwpName = "initialDownlinkBWP";
+    else, bwpName = "initialUplinkBWP"; end
+    bwp = serving.(direction + "ConfigCommon").(bwpName);
+    riv = double(bwp.genericParameters.locationAndBandwidth);
+    [startRB, sizeRB] = sixgr.bwop.RIVFDRA.decode(275, riv);
+    if sixgr.bwop.RIVFDRA.encode(275, startRB, sizeRB) ~= riv
+        error("sixgr:rrc:asn1:InvalidBWPAllocation", "Noncanonical initial BWP RIV.");
+    end
+    for unsupported = ["pdsch_ConfigCommon", "pusch_ConfigCommon", "pucch_ConfigCommon"]
+        if isfield(bwp, unsupported)
+            error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+                "%s is not encoded by the bounded SIB1 profile.", unsupported);
+        end
+    end
 end
 prach = serving.uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon;
 if isfield(prach, "restrictedSet") && ~any(strcmpi(string(prach.restrictedSet), ...

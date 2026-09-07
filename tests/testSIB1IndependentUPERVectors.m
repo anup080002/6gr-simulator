@@ -19,6 +19,19 @@ for ii = 1:height(vectors)
     verifyEqual(testCase, string(decodedMeta.ASN1SchemaSHA256), ...
         vectors.SchemaSHA256(ii));
     verifyFalse(testCase, logical(decodedMeta.SelfConsistencyOnly));
+    expected = jsondecode(vectors.SemanticJSON(ii));
+    sib = message.message.c1.systemInformationBlockType1;
+    verifyEqual(testCase, double(sib.cellAccessRelatedInfo.cellIdentity), double(expected.cell_identity));
+    verifyEqual(testCase, double(sib.cellAccessRelatedInfo.trackingAreaCode), double(expected.tracking_area_code));
+    if isfield(expected,"pdcch_config_common")
+        received = sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(), message);
+        verifyTrue(testCase, received.UECommonCellConfiguration.PDCCHConfigCommonPresent);
+        verifyEqual(testCase, double(received.UECommonCellConfiguration.PDCCHConfigCommon.ra_SearchSpace), ...
+            double(expected.pdcch_config_common.ra_SearchSpace));
+        verifyEqual(testCase, received.random_access.initial_ul_bwp_start, 7);
+        verifyEqual(testCase, received.random_access.initial_ul_bwp_size, 52);
+        verifyEqual(testCase, received.UECommonCellConfiguration.InitialULBWP.SubcarrierSpacing_kHz, 15);
+    end
 end
 end
 

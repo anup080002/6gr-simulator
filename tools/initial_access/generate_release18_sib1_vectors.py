@@ -6,33 +6,73 @@ import argparse
 import csv
 import hashlib
 import json
+import io
+import re
+import xml.etree.ElementTree as ET
+import zipfile
 from pathlib import Path
 from typing import Any
 
 import asn1tools
 
 
-# 3GPP publishes the raw ASN.1 module in 38331-i90.zip.  The raw module
-# contains parameterized ASN.1 that asn1tools cannot compile directly, so the
-# generator consumes the deterministic expanded module while recording the
-# hash of the unmodified official module in every reference row.
+# The pinned official ZIP contains a DOCX, not a standalone ASN.1 file.
+# Extract its ASN1START/ASN1STOP blocks, preserving text, tabs and breaks.
+# Inline the standard SetupRelease parameterized CHOICE without changing
+# its alternatives. Both transformations and their exact hashes are pinned.
 OFFICIAL_SCHEMA_SHA256 = (
-    "29e55635561822bf625d9170f050552d65047c334a3c0a8a47797c8df1985db5"
+    "b54f593035fbdb90c79398ed85d718cce3c8c5dbcf44e084bdb6fb25b91363b9"
 )
 COMPILE_SCHEMA_SHA256 = (
-    "e1171504285f07df8e46d1b7b950baaf1333ab5706a6731f62d8fcf6c744b4d1"
+    "59171109ce3dfa691664e9717ea5f799df87100e25e5076c22250db6e927ea41"
 )
 ARCHIVE_SHA256 = "8089df60eeb3bc2a223cc13d32f2ed709f89e5124f771d6cf6d81ed52fbbb7f6"
 SOURCE_URL = "https://www.3gpp.org/ftp/Specs/archive/38_series/38.331/38331-i90.zip"
 
 
 def bits(value: int, width: int) -> tuple[bytes, int]:
-    return value.to_bytes((width + 7) // 8, "big"), width
+    if not 0 <= value < 1 << width:
+        raise ValueError("BIT STRING value exceeds its declared width")
+    # asn1tools consumes the most-significant width bits of the octets.
+    # E.g. 36-bit cellIdentity 17 requires 00 00 00 01 10, not ...00 11.
+    return (value << (-width % 8)).to_bytes((width + 7) // 8, "big"), width
+
+
+def compile_official_archive(path: Path):
+    archive = path.read_bytes()
+    if hashlib.sha256(archive).hexdigest() != ARCHIVE_SHA256:
+        raise RuntimeError("official TS 38.331 archive hash mismatch")
+    with zipfile.ZipFile(io.BytesIO(archive)) as source:
+        document = source.read("38331-i90.docx")
+    with zipfile.ZipFile(io.BytesIO(document)) as docx:
+        root = ET.fromstring(docx.read("word/document.xml"))
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    active = False
+    lines = []
+    for paragraph in root.iter(ns + "p"):
+        line = "".join((n.text or "") if n.tag == ns + "t" else
+                       "\t" if n.tag == ns + "tab" else
+                       "\n" if n.tag == ns + "br" else "" for n in paragraph.iter())
+        if line.strip() == "-- ASN1START": active = True
+        if active: lines.append(line)
+        if line.strip() == "-- ASN1STOP": active = False
+    raw = "\n".join(lines) + "\n"
+    if hashlib.sha256(raw.encode()).hexdigest() != OFFICIAL_SCHEMA_SHA256:
+        raise RuntimeError("extracted official ASN.1 hash mismatch")
+    expanded, definitions = re.subn(
+        r"SetupRelease\s*\{\s*ElementTypeParam\s*\}\s*::=\s*CHOICE\s*\{\s*release\s+NULL\s*,\s*setup\s+ElementTypeParam\s*\}", "", raw)
+    expanded, uses = re.subn(r"SetupRelease\s*\{\s*([A-Za-z][A-Za-z0-9-]*)\s*\}",
+                             r"CHOICE { release NULL, setup \1 }", expanded)
+    if definitions != 1 or uses != 338 or hashlib.sha256(expanded.encode()).hexdigest() != COMPILE_SCHEMA_SHA256:
+        raise RuntimeError("expanded official ASN.1 hash/count mismatch")
+    return asn1tools.compile_string(expanded, "uper")
 
 
 def object_from_semantic(s: dict[str, Any]) -> dict[str, Any]:
     scs = f"kHz{int(s['subcarrier_spacing_khz'])}"
     bandwidth = int(s["carrier_bandwidth_rb"])
+    riv = (275 * (bandwidth - 1) if bandwidth <= 138 else
+           275 * (276 - bandwidth) + 274)
     fmt = str(s["preamble_format"]).upper()
     root_choice = "l839" if fmt in {"0", "1", "2", "3"} else "l139"
     generic = {
@@ -113,7 +153,7 @@ def object_from_semantic(s: dict[str, Any]) -> dict[str, Any]:
                 },
                 "initialDownlinkBWP": {
                     "genericParameters": {
-                        "locationAndBandwidth": 275 * (bandwidth - 1),
+                        "locationAndBandwidth": riv,
                         "subcarrierSpacing": scs,
                     }
                 },
@@ -151,7 +191,7 @@ def object_from_semantic(s: dict[str, Any]) -> dict[str, Any]:
                 },
                 "initialUplinkBWP": {
                     "genericParameters": {
-                        "locationAndBandwidth": 275 * (bandwidth - 1),
+                        "locationAndBandwidth": riv,
                         "subcarrierSpacing": scs,
                     },
                     "rach-ConfigCommon": ("setup", rach),
@@ -169,6 +209,36 @@ def object_from_semantic(s: dict[str, Any]) -> dict[str, Any]:
             for key in ("t300", "t301", "t310", "n310", "t311", "n311", "t319")
         },
     }
+    serving = sib["servingCellConfigCommon"]
+    for direction, common, bwp in (("dl", "downlinkConfigCommon", "initialDownlinkBWP"),
+                                   ("ul", "uplinkConfigCommon", "initialUplinkBWP")):
+        if f"initial_{direction}_bwp_riv" in s:
+            serving[common][bwp]["genericParameters"] = {
+                "locationAndBandwidth": s[f"initial_{direction}_bwp_riv"],
+                "subcarrierSpacing": f"kHz{s[f'initial_{direction}_bwp_scs_khz']}"}
+    if "pdcch_config_common" in s:
+        # Independent construction: do not import the production mapping.
+        spec = s["pdcch_config_common"]
+        c = spec["commonControlResourceSet"]
+        mapping = ("nonInterleaved", None)
+        if c["cce_REG_MappingType"] == "interleaved":
+            mapping = ("interleaved", {"reg-BundleSize": c["reg_BundleSize"],
+                                       "interleaverSize": c["interleaverSize"], "shiftIndex": c["shiftIndex"]})
+        common = {"ra-SearchSpace": spec["ra_SearchSpace"],
+                  "commonControlResourceSet": {
+                      "controlResourceSetId": c["controlResourceSetId"],
+                      "frequencyDomainResources": bits(int(c["frequencyDomainResources"], 2), 45),
+                      "duration": c["duration"], "cce-REG-MappingType": mapping,
+                      "precoderGranularity": c["precoderGranularity"]}, "commonSearchSpaceList": []}
+        for ss in spec["commonSearchSpaceList"]:
+            p = ss["monitoringSlotPeriodicityAndOffset"]
+            common["commonSearchSpaceList"].append({
+                "searchSpaceId": ss["searchSpaceId"], "controlResourceSetId": ss["controlResourceSetId"],
+                "monitoringSlotPeriodicityAndOffset": (p["periodicity"], None if p["periodicity"] == "sl1" else p["offset"]),
+                "monitoringSymbolsWithinSlot": bits(int(ss["monitoringSymbolsWithinSlot"], 2), 14),
+                "nrofCandidates": {f"aggregationLevel{al}": f"n{n}" for al, n in zip((1, 2, 4, 8, 16), ss["nrofCandidates"])},
+                "searchSpaceType": ("common", {"dci-Format0-0-AndFormat1-0": {}})})
+        serving["downlinkConfigCommon"]["initialDownlinkBWP"]["pdcch-ConfigCommon"] = ("setup", common)
     return {"message": ("c1", ("systemInformationBlockType1", sib))}
 
 
@@ -254,12 +324,31 @@ def variants() -> list[tuple[str, str, dict[str, Any]]]:
         "si_window_length": "s160",
         "ssb_positions_in_burst": "11111111",
     }
+    common = baseline() | {"carrier_bandwidth_rb": 106,
+        "initial_ul_bwp_riv": 275 * 51 + 7, "initial_ul_bwp_scs_khz": 15,
+        "initial_dl_bwp_riv": 275 * 47 + 12, "initial_dl_bwp_scs_khz": 30,
+        "pdcch_config_common": {
+            "ra_SearchSpace": 1,
+            "commonControlResourceSet": {"controlResourceSetId": 1,
+                "frequencyDomainResources": "1111" + "0" * 41, "duration": 2,
+                "cce_REG_MappingType": "nonInterleaved", "precoderGranularity": "sameAsREG-bundle"},
+            "commonSearchSpaceList": [{"searchSpaceId": 1, "controlResourceSetId": 1,
+                "monitoringSlotPeriodicityAndOffset": {"periodicity": "sl1", "offset": 0},
+                "monitoringSymbolsWithinSlot": "10000000000000", "nrofCandidates": [0, 0, 1, 0, 0],
+                "searchSpaceType": "common"}]}}
+    interleaved = json.loads(json.dumps(common))
+    interleaved["pdcch_config_common"]["commonControlResourceSet"].update(
+        cce_REG_MappingType="interleaved", reg_BundleSize="n6", interleaverSize="n2", shiftIndex=7)
+    interleaved["pdcch_config_common"]["commonSearchSpaceList"][0]["monitoringSlotPeriodicityAndOffset"] = {
+        "periodicity": "sl20", "offset": 3}
     return [
         ("SIB1-UPER-001", "baseline_fr1_30khz", one),
         ("SIB1-UPER-002", "case_a_15khz", two),
         ("SIB1-UPER-003", "restricted_set_type_a", three),
         ("SIB1-UPER-004", "restricted_set_type_b", four),
         ("SIB1-UPER-005", "bounded_optional_load", five),
+        ("SIB1-UPER-009", "ra_common_control_shifted_mixed_numerology_bwps", common),
+        ("SIB1-UPER-010", "ra_common_interleaved_periodic_monitoring", interleaved),
     ]
 
 
@@ -268,12 +357,12 @@ def main() -> int:
     parser.add_argument("schema", type=Path)
     parser.add_argument("output", type=Path)
     args = parser.parse_args()
-    if (
-        hashlib.sha256(args.schema.read_bytes()).hexdigest()
-        != COMPILE_SCHEMA_SHA256
-    ):
-        raise RuntimeError("expanded official ASN.1 schema hash mismatch")
-    codec = asn1tools.compile_files(str(args.schema), "uper")
+    if args.schema.suffix.lower() == ".zip":
+        codec = compile_official_archive(args.schema)
+    else:
+        if hashlib.sha256(args.schema.read_bytes()).hexdigest() != COMPILE_SCHEMA_SHA256:
+            raise RuntimeError("expanded official ASN.1 schema hash mismatch")
+        codec = asn1tools.compile_files(str(args.schema), "uper")
     rows: list[dict[str, Any]] = []
     positives: list[bytes] = []
     for vector_id, purpose, semantic in variants():
@@ -281,6 +370,9 @@ def main() -> int:
             "BCCH-DL-SCH-Message", object_from_semantic(semantic)
         )
         decoded = codec.decode("BCCH-DL-SCH-Message", payload)
+        cell = decoded["message"][1][1]["cellAccessRelatedInfo"]["plmn-IdentityInfoList"][0]
+        if int.from_bytes(cell["cellIdentity"][0], "big") >> 4 != semantic["cell_identity"]:
+            raise RuntimeError(f"cellIdentity semantic mismatch in {vector_id}")
         if codec.encode("BCCH-DL-SCH-Message", decoded) != payload:
             raise RuntimeError(f"noncanonical vector {vector_id}")
         positives.append(payload)
@@ -293,7 +385,7 @@ def main() -> int:
                 "EncoderVersion": asn1tools.__version__,
                 "SchemaSHA256": OFFICIAL_SCHEMA_SHA256,
                 "CompileSchemaSHA256": COMPILE_SCHEMA_SHA256,
-                "SchemaTransformation": "asn1tools_parse_parameterized_types",
+                "SchemaTransformation": "docx_asn1_tags_preserve_tabs_inline_SetupRelease",
                 "SemanticJSON": json.dumps(
                     semantic, sort_keys=True, separators=(",", ":")
                 ),
@@ -326,7 +418,7 @@ def main() -> int:
                 "EncoderVersion": asn1tools.__version__,
                 "SchemaSHA256": OFFICIAL_SCHEMA_SHA256,
                 "CompileSchemaSHA256": COMPILE_SCHEMA_SHA256,
-                "SchemaTransformation": "asn1tools_parse_parameterized_types",
+                "SchemaTransformation": "docx_asn1_tags_preserve_tabs_inline_SetupRelease",
                 "SemanticJSON": "",
                 "UPERHex": payload.hex().upper(),
                 "NumBits": len(payload) * 8,

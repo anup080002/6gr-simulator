@@ -1,6 +1,122 @@
 # Short TDD run: measured failures and remaining integration work
 
-## Shared Msg1 integration and uplink timing (latest work, 2026-09-07)
+## Decoded common-control and UL BWP authority (latest checkpoint, 2026-09-07)
+
+**Not a qualified production LLS.** This checkpoint fixes the SIB1/UE
+configuration boundary; it does not close the remaining scheduler, retry,
+TA, UL/UCI or full-main beam/measurement integration below.
+
+Concrete repairs:
+
+- `installDecodedSIB1RACHConfig` now decodes `locationAndBandwidth` as a
+  type-1 RIV with reference width 275. A 25-RB BWP has encoded RIV 6600;
+  it is not a 6600-RB allocation. Shifted intervals and both RIV branches
+  survive actual UPER encoding and UE installation.
+- The installed UL BWP uses its own decoded SCS, not PRACH SCS. The current
+  profile has 15-kHz data-carrier spacing and 30-kHz B4 PRACH spacing.
+  Decoded DL/UL BWP RIVs, SCS and CP are preserved independently rather than
+  reconstructed from carrier bandwidth. These are codec/installation tests,
+  not qualification of every shifted-BWP waveform consumer.
+- The SIB1 builder no longer invents MIB-only `pdcch-ConfigSIB1` or DMRS
+  type-A position, or unencoded common PDSCH/PUSCH/PUCCH defaults. Absent
+  common-channel configuration stays absent at the UE. Unsupported IEs
+  are rejected instead of discarded and reported as a complete decode.
+- Explicit `initial_access.sib1.pdcch_config_common` (or internal
+  `rrc.sib1.pdcch_config_common`) now traverses the real generated UPER
+  codec. The bounded implementation preserves common CORESET resources,
+  CCE/REG mapping, common search-space periodicity/offset/symbol bitmap,
+  candidates and RA search-space identity. Its UE installation/evidence
+  is distinct from qualification of actual RAR monitoring.
+- A whole-message semantic reconstruction guard rejects unrepresented
+  fields, including an otherwise silently replaced UL carrier definition.
+- The independent vector generator had a real non-octet BIT STRING bug:
+  metadata cell identity 17 encoded as 1. It now left-aligns significant
+  bits, asserts decoded meaning, and regenerates vectors using asn1tools
+  from the hash-pinned official `38331-i90.zip`. The ZIP contains a DOCX;
+  the script now reproducibly extracts tagged ASN.1 text with tabs preserved
+  and inlines the standard SetupRelease CHOICE. Source/expanded hashes are
+  updated to those reproducible representations. The independent mapper
+  does not import the production common-control mapper. Seven positive
+  vectors (including noninterleaved/interleaved common control) and three
+  negative vectors are retained.
+
+Normative references: [TS 38.331 V18.9.0, BWP and PDCCH-ConfigCommon IEs](https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.09.00_60/ts_138331v180900p.pdf),
+[TS 38.213 V18.6.0, 8.2 and 10.1](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.06.00_60/ts_138213v180600p.pdf),
+[official source archive](https://www.3gpp.org/ftp/Specs/archive/38_series/38.331/38331-i90.zip).
+
+Verification:
+
+- `logs/sib1_common_authority_20260907.log`, session 18395, exit 0:
+  new decoded-authority test, ASN.1 round-trip, then-current independent
+  byte vectors, validation comparison and SIB1-to-four-step-RA integration.
+- `logs/sib1_common_main_regressions_20260907.log`, session 5835, exit 0:
+  all 23 named focused checks passed. Includes config, no-proxy guards,
+  DL/UL/reference points, grant consistency, both required E2E regressions,
+  export integrity, staged SRS/PUCCH/PDSCH/PUSCH, QCL/activated-TCI, PMI,
+  SRS rank/TPMI and late-UCI authority. Its main run is
+  `C:\Users\anup0\AppData\Local\Temp\main_shared_ra_20260907_123351`.
+- After the final semantic-loss guard and independent-vector repair,
+  `logs/sib1_final_semantic_uplink_20260907.log`, session 23287, exit 0:
+  regenerated independent tests and all eight named checks passed,
+  including no-oracle SIB1 waveform recovery, delayed Msg3/SRB1 bit/CRC
+  recovery, actual detected-preamble-to-RAR binding, all five received-buffer
+  TDD RA stages and the actual main boundary again.
+- Final Python codec/reporting/contract set: 77 passed (session 47394,
+  exit 0). There are 181 third-party asn1tools/pyparsing deprecation warnings;
+  they are not failed PHY assertions. `testAll` was not run, per the user's
+  explicit restriction. Existing FDD unit/E2E fixtures are not production
+  FDD execution or full-FDD qualification.
+
+Latest retained main run:
+`C:\Users\anup0\AppData\Local\Temp\main_shared_ra_20260907_124424`.
+All 16 scheduling slots completed with four successful SSB/SIB1 candidate
+observations and a real failed PRACH. Detection remains 0.340461277865219,
+below the unchanged 0.5 threshold; access is not complete and DL/UL data
+tables have zero rows. No new main-run PUSCH/PUCCH/SRS or CSI/PMI success
+is inferred from isolated component tests.
+
+The strict first-five-row audit is saved under
+`results/lls/qualification_working/reviews/sib1_common_first5_20260907_1247/`.
+It covers 161 CSVs / 15,842 rows: zero parse failures or infinities, 55
+empty/header-only files, six structural/schema-less files, 119 failed
+required CSV semantic checks and one failed chart check. The gate remains
+**FAIL**. These counts include absent data and missing campaign-finalizer
+contracts in the direct boundary diagnostic, not 119 distinct PHY bugs.
+
+A separate post-run measured review is under
+`results/lls/qualification_working/reviews/sib1_common_rssi_20260907_1247/`.
+The actual eight-branch SSB-window RSSI CSV/PNG was regenerated, source/output
+hashes saved and PNG visually inspected. Values close to
+`10*log10(1000*mean(symbol_powers_w))` within 1e-12 dB. Its measurement scope
+is 240 subcarriers / four SSB symbols, **not full-carrier or SMTC RSSI**.
+The diagnostic has SaveFigures=false; this is a post-run review, not a
+claim of runtime PNG publishing. Other requested curves stay unavailable
+with explicit reasons because their measured sources are absent.
+
+Additional open defects found at this boundary:
+
+1. Main YAML still needs actual common-control configuration, and Msg2
+   generation/reception must consume the decoded CORESET/search-space
+   rather than the current AL4/candidate/localized-resource constants.
+   The new codec capability alone does not repair those consumers.
+2. `scheduleMsg2RAR` still builds a private 32-bit allocation layout, not
+   the normative RA-RNTI DCI 1_0 field layout. Repair TX, blind RX and
+   decoded allocation authority together; do not merely change the label.
+3. RAR response-window start must use the first valid Type-1 monitoring
+   occasion after the PRACH sample extent, including the symbol gap.
+   `RAEventScheduler` and `RATimingService` still use PRACH end slot + 1.
+   Backoff currently starts from response-window start rather than expiry.
+   Main retry counters and delayed UE failure knowledge remain unintegrated.
+4. RA result rows contain planned Msg3/Msg2/Msg4 power values even when those
+   stages were never transmitted. They need explicit planned-versus-applied
+   roles; finite planned powers are not measurements of executed stages.
+
+Next sequence: actual common-control/DCI consumer integration and causal
+MAC timers/retries; shared main UL/control/data ownership and nonzero TA;
+then full-main QCL/TCI/PMI, power/PHR/RSSI and output qualification. Preserve
+all remaining issues in the following checklist rather than claiming 10/10.
+
+## Shared Msg1 integration and uplink timing (previous checkpoint, 2026-09-07)
 
 **Still not a qualified production run.** The former slot-15 eager-channel
 failure has been crossed: the actual main scheduler now transmits and

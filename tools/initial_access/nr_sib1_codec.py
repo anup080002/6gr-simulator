@@ -15,6 +15,10 @@ from pathlib import Path
 from typing import Any
 
 from pycrate_asn1dir import RRCNR
+if __package__:
+    from . import sib1_common_control
+else:
+    import sib1_common_control
 
 
 CODEC = RRCNR.NR_RRC_Definitions.BCCH_DL_SCH_Message
@@ -35,8 +39,13 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
         riv = 275 * (bandwidth - 1)
     else:
         riv = 275 * (275 - bandwidth + 1) + 274
-    fmt = str(semantic["preamble_format"]).upper()
-    root_choice = "l839" if fmt in {"0", "1", "2", "3"} else "l139"
+    if "root_sequence_choice" in semantic:
+        root_choice = semantic["root_sequence_choice"]
+        if root_choice not in {"l839", "l139"}:
+            raise ValueError("unsupported PRACH root-sequence choice")
+    else:
+        fmt = str(semantic["preamble_format"]).upper()
+        root_choice = "l839" if fmt in {"0", "1", "2", "3"} else "l139"
     root_max = 837 if root_choice == "l839" else 137
     root = int(semantic["root_sequence_index"])
     if not 0 <= root <= root_max:
@@ -75,7 +84,7 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
         rach["totalNumberOfRA-Preambles"] = preamble_count
 
     si_mapping = [{"type": str(semantic["mapped_sib_type"])}]
-    return {
+    message = {
         "message": (
             "c1",
             (
@@ -219,6 +228,21 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
             ),
         )
     }
+    serving = message["message"][1][1]["servingCellConfigCommon"]
+    for direction, common, bwp in (("dl", "downlinkConfigCommon", "initialDownlinkBWP"),
+                                   ("ul", "uplinkConfigCommon", "initialUplinkBWP")):
+        generic = serving[common][bwp]["genericParameters"]
+        if f"initial_{direction}_bwp_riv" in semantic:
+            generic["locationAndBandwidth"] = sib1_common_control._integer(semantic[f"initial_{direction}_bwp_riv"])
+            generic["subcarrierSpacing"] = f"kHz{sib1_common_control._integer(semantic[f'initial_{direction}_bwp_scs_khz'])}"
+        if semantic.get(f"initial_{direction}_bwp_cyclic_prefix", "normal") == "extended":
+            generic["cyclicPrefix"] = "extended"
+        elif semantic.get(f"initial_{direction}_bwp_cyclic_prefix", "normal") != "normal":
+            raise ValueError("unsupported BWP cyclic prefix")
+    if "pdcch_config_common" in semantic:
+        serving["downlinkConfigCommon"]["initialDownlinkBWP"]["pdcch-ConfigCommon"] = (
+            "setup", sib1_common_control.to_asn1(semantic["pdcch_config_common"]))
+    return message
 
 
 def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
@@ -242,7 +266,7 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
     schedule = si["schedulingInfoList"][0]
     mapped = schedule["sib-MappingInfo"][0]["type"]
     ssb_bits = serving["ssb-PositionsInBurst"]["inOneGroup"]
-    return {
+    semantic = {
         "mcc": "".join(str(x) for x in plmn["mcc"]),
         "mnc": "".join(str(x) for x in plmn["mnc"]),
         "tracking_area_code": int(cell["trackingAreaCode"][0]),
@@ -312,6 +336,25 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
         "ss_pbch_block_power_dbm": int(serving["ss-PBCH-BlockPower"]),
         **{key: value for key, value in sib["ue-TimersAndConstants"].items()},
     }
+    for direction, common, bwp in (("dl", dl, "initialDownlinkBWP"),
+                                   ("ul", ul, "initialUplinkBWP")):
+        generic_bwp = common[bwp]["genericParameters"]
+        semantic[f"initial_{direction}_bwp_riv"] = generic_bwp["locationAndBandwidth"]
+        semantic[f"initial_{direction}_bwp_scs_khz"] = int(generic_bwp["subcarrierSpacing"].replace("kHz", ""))
+        semantic[f"initial_{direction}_bwp_cyclic_prefix"] = generic_bwp.get("cyclicPrefix", "normal")
+    if "pdcch-ConfigCommon" in dl["initialDownlinkBWP"]:
+        kind, common_control = dl["initialDownlinkBWP"]["pdcch-ConfigCommon"]
+        if kind != "setup":
+            raise ValueError("bounded SIB1 requires setup, not release, for present PDCCH-ConfigCommon")
+        semantic["pdcch_config_common"] = sib1_common_control.from_asn1(common_control)
+    # This codec does not yet carry these optional IEs into the MATLAB tree.
+    # Reject them rather than report a silently truncated decode as complete.
+    if "pdsch-ConfigCommon" in dl["initialDownlinkBWP"] or any(
+            name in ul["initialUplinkBWP"] for name in ("pusch-ConfigCommon", "pucch-ConfigCommon")):
+        raise ValueError("unsupported common PDSCH/PUSCH/PUCCH IE in bounded SIB1")
+    if bounded_object(semantic) != value:
+        raise ValueError("decoded SIB1 contains fields not represented losslessly by the bounded semantic profile")
+    return semantic
 
 
 def envelope(
