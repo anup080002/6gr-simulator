@@ -4,8 +4,8 @@ function ok = testLLSULSRSRITPMIEstimator()
 setup6GRSimToolkit("Verbose", false);
 
 if exist("nrPUSCHCodebook", "file") ~= 2
-    ok = true;
-    return;
+    error('sixgr:test:Required5GToolboxUnavailable', ...
+        'The SRS RI/TPMI regression requires nrPUSCHCodebook; an unavailable test cannot pass.');
 end
 
 cfg = sixgr.config.defaultConfig();

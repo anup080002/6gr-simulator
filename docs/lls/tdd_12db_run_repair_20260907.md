@@ -1,5 +1,98 @@
 # Short TDD run: measured failures and remaining integration work
 
+## Executed HARQ and decoded RAR timing checkpoint (2026-09-07)
+
+The main scheduler shared-clock/shared-stream repair is **not complete**.
+No production TDD/FDD/25 dB simulation was launched in this checkpoint.
+The failed `tdd_12db_verify_20260907_0018` run and its CSV/PNG evidence remain
+unchanged. Passing the component checks below is not full-run qualification.
+
+Two further production defects were repaired:
+
+1. `CoupledTruthRuntime.updateHARQState` fabricated an all-zero transport
+   block from a trial's reported size when the actual transmitted payload
+   was absent. It also reconstructed missing UL executed grants from current
+   configuration and overwrote contradictory size aliases before checking.
+   `validateExecutedHARQPayload` now requires the retained actual payload and
+   executed grant for both directions. It checks binary values before casts,
+   byte alignment, trial/grant/frozen coding sizes, retained context aliases
+   and decoded payload availability. Rejection happens before HARQ handle
+   allocation/mutation. Actual zero-valued transmitted blocks remain valid;
+   a CRC pass does not replace differing decoder bits with transmitter bits.
+   The completion entry point also rejects a future resource-planning view.
+2. PRACH-to-RAR TA used `round(delaySamples/16)` independent of sampling
+   rate/numerology, while Msg3 used the unquantized detector sample count
+   rather than the actually decoded RAR. The absolute RAR relation is
+   `N_TA = T_A * 1024 / 2^mu` in Tc units, with the first scheduled UL's SCS;
+   this is distinct from a relative MAC-CE adjustment. The conversion now
+   uses the existing numerology and absolute-time authorities. Nearest-step
+   selection is explicitly the gNB quantization policy, not an invented
+   standard requirement. Out-of-range commands and unrepresentable fractional
+   shifts are rejected rather than silently clipped or rounded. See
+   [TS 38.213 v18.8.0 section 4.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+
+   Msg3 and RRCSetupComplete now apply the command recovered from MAC RAR
+   bytes, converting its time to each actual UL waveform's sample rate.
+   A gNB proposed command is separately labeled and is not exposed as a
+   received UE command before successful RAR reception. Native RA/Msg3 CSV
+   rows and the main canonical adapter retain command, Tc ticks, sample rate,
+   source and quantization residual. The canonical microsecond value comes
+   from Tc, not a guessed PRACH/PUSCH sample-rate equivalence.
+
+Verification (eleven distinct focused tests across four terminal batches):
+
+- Session 22625, exit 0, `logs/executed_harq_authority_20260907_focused.log`:
+  `testExecutedHARQPayloadAuthority`, `testDataChannelStreamStages`,
+  `testHARQTBContextInvariants`, `testFutureULPlanningCausality`,
+  `testSchedulerGrantConsistency`.
+- Session 59865, exit 0, `logs/executed_harq_ul_components_20260907_verified.log`:
+  `testExecutedHARQPayloadAuthority`, `testUplinkControlStreamStages`,
+  `testTDDCausalFourStepRARuntimeTiming`, `testLLSULSRSRITPMIEstimator`.
+  This batch preceded discovery of the RAR conversion defect; its timing
+  pass alone did not demonstrate the correct command conversion.
+- Session 64308, exit 0, `logs/rar_timing_authority_20260907_focused.log`:
+  `testRARTimingAdvanceAuthority`, `testMsg1PRACHWaveformDetection`,
+  `testTDDCausalFourStepRARuntimeTiming`, `testLLSULSRSRITPMIEstimator`.
+- Session 34593, exit 0, `logs/rar_timing_harq_exports_20260907_verified.log`:
+  `testExecutedHARQPayloadAuthority`, `testRARTimingAdvanceAuthority`,
+  `testFourStepRAResultAdapterDependencies`,
+  `testTDDCausalFourStepRARuntimeTiming`, including an actual receiver-derived
+  Msg3 timing table CSV write/read round-trip.
+
+The data-stage test actually executes coded PDSCH/PUSCH and HARQ-ACK on
+PUSCH, with retained TX and contiguous RX samples. SRS and standalone PUCCH
+tests use actual generation/reception at an explicitly isolated 12 dB AWGN
+operating point. Their connector and access/UCI inputs are declared unit
+fixtures, not field measurements or a completed scheduler run. The strict
+DL channel/RF qualification gate remains failed where the reference is absent.
+The SRS RI/TPMI test uses constructed channel matrices and is not over-air CSI
+feedback qualification; missing Toolbox support now raises rather than passes.
+
+The TDD RA test uses the configured CDL-A physical link and completes all
+five access/RRC waveform stages. It also poisons stale diagnostic TA sample
+caches before Msg3 preparation to prove consumption of decoded RAR authority.
+**Its measured RAR TA was zero** (0 Tc, 0 samples at 7.68 MHz). Nonzero
+quantization was checked analytically across seven catalog numerologies and
+four sample rates, and with real MAC RAR encoding/decoding, not a nonzero-TA
+shared-stream fading run. There was no FDD waveform run, `testAll`, full
+campaign, production PNG generation or instrument export in this checkpoint.
+
+Remaining requested work, not skipped or claimed complete:
+
+| Area | Remaining integration/qualification |
+| --- | --- |
+| Main shared clock | Replace eager complete SSB/TRS/SRS/control/data propagation with one chronological owner; current code still advances beyond pending RA windows. |
+| Shared UL timing | Distinct received-DL/UE-TX/gNB-RX origins, configured N_TA,offset, nonzero TA and exact sample coverage. The existing finite-window RA shift is not the shared-stream solution; prepared SRS/PUCCH/PUSCH still reject nonzero TA. |
+| UCI/control | Actual component PUCCH and PUSCH UCI decoding passed; full-run grant/reservation/decode/feedback ordering and all configured formats remain to qualify. |
+| SRS overlap | Same-UE same-carrier symbol-based SRS/PUCCH rules and partial SRS-symbol suppression, including the aperiodic exception, remain open. |
+| QCL/TCI/PMI | Runtime activation, availability, selected resource/precoder use and source-bound CSV/PNG need full-run evidence; the current profile does not require an active TCI state. |
+| RSSI | The physical CSI measurement call returns per-antenna RSSI/RSRQ, but PDSCH_Rx retains only RSRP from it. Retain resource/branch/window/bandwidth/power-plane evidence and wire CSV/PNG; never relabel normalized legacy dB as dBm. |
+| Operating point/artifacts | Calibrate and distinguish the 12 dB request from geometry/thermal measured SINR; rerun the complete TDD chain and audit every actual CSV/PNG after integration. |
+
+The NR-validation and result-integrity skills governed the fail-closed
+checks, units, source labels and these limited verification claims. No
+primary table was filled with replacement measurements or payloads.
+
 ## SRS priority versus committed UL control checkpoint (2026-09-07)
 
 The main chronological waveform owner is **still incomplete**. No new

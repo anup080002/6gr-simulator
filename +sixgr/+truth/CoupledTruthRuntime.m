@@ -2886,6 +2886,7 @@ methods(Static, Access=private)
     end
 
     function [state, trialT] = completeSlotImpl(state, cfgU, ueIdx, direction, trialT, res)
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
         if ~(istable(trialT) && ~isempty(trialT))
             return;
         end
@@ -3312,12 +3313,11 @@ methods(Static, Access=private)
         rnti = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
         harqOut = sixgr.util.structGet(res, "HARQ", struct());
-        tbBits = int8(sixgr.util.structGet(harqOut, "TransportBlockBits", int8([])));
-        decodedTbBits = int8(sixgr.util.structGet(harqOut, ...
-            "DecodedTransportBlockBits", int8([])));
-        if isempty(tbBits)
-            tbBits = zeros(max(0, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "TBSize_bits", 0)))), 1, "int8");
-        end
+        % Validate retained transmitter/receiver evidence before allocate()
+        % or onTx() can mutate the shared handle. Never invent payload bits
+        % or reconstruct a missing UL/DL executed grant from configuration.
+        [tbBits, decodedTbBits, grantSnapshot] = ...
+            sixgr.truth.validateExecutedHARQPayload(harqOut,row,direction);
         combinedLLR = sixgr.util.structGet(harqOut, "CombinedLLR", []);
         softBuffer = sixgr.util.structGet(harqOut, "SoftBuffer", ...
             sixgr.util.structGet(harqOut, "HARQSoftBuffer", struct()));
@@ -3347,36 +3347,9 @@ methods(Static, Access=private)
             ndi = double(txp.HARQ.NDI);
             rv = double(txp.HARQ.RV);
         end
-        grantSnapshot = sixgr.util.structGet(harqOut, "GrantSnapshot", ...
-            sixgr.util.structGet(context, "GrantSnapshot", struct()));
-        if ~(isstruct(grantSnapshot) && ~isempty(fieldnames(grantSnapshot)))
-            if direction == "DL"
-                trialStatus = string(sixgr.truth.CoupledTruthRuntime. ...
-                    rowValue(row, "Status", "UNKNOWN"));
-                trialNotes = string(sixgr.truth.CoupledTruthRuntime. ...
-                    rowValue(row, "Notes", ""));
-                error("sixgr:truth:CoupledTruthRuntime:MissingExecutedDLGrantSnapshot", ...
-                    ['Executed DL scheduler truth did not return its immutable grant snapshot. ' ...
-                    'Trial status=%s; notes=%s'], ...
-                    char(trialStatus), char(trialNotes));
-            end
-            grantSnapshot = sixgr.truth.CoupledTruthRuntime.buildGrantSnapshot(cfgU, row, direction, ueIdx, rnti);
-        end
-        if ~isempty(tbBits)
-            actualTBSBits = double(numel(tbBits));
-            grantSnapshot.TransportBlockSize = actualTBSBits;
-            grantSnapshot.TBSBits = actualTBSBits;
-            grantSnapshot.TBSBytes = floor(actualTBSBits / 8);
-        end
         tbContext = sixgr.util.structGet(context, "TransportBlockContext", ...
             sixgr.util.structGet(grantSnapshot, "HARQTBContext", struct()));
-        ctxTBSBits = double(sixgr.util.structGet(tbContext, "TBSBits", NaN));
         if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
-            if ~isempty(tbBits) && isfinite(ctxTBSBits) && round(ctxTBSBits) ~= round(numel(tbBits))
-                error("sixgr:truth:HARQStoredTBContextMismatch", ...
-                    "%s HARQ state update observed TB bits=%d but context TBSBits=%d.", ...
-                    char(direction), round(numel(tbBits)), round(ctxTBSBits));
-            end
             tbContext.HARQProcessId = double(harqId0);
             tbContext.NDI = logical(ndi);
             tbContext.NDIEpoch = double(sixgr.util.structGet(context, "NDIEpoch", ...
