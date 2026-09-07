@@ -199,6 +199,7 @@ ra.PRACHOccasionOrdinal = double(resolvedOccasion.Ordinal);
 ra.ResolvedPRACHFormat = string(resolvedOccasion.Format);
 frame = sixgr.phy.FrameStructureEngine(cfg,"FrameCoreOnly",true);
 ra.PRACHAbsoluteSlot = double(resolvedOccasion.AbsoluteSlot);
+basePRACHSlot=ra.PRACHAbsoluteSlot;
 % A configured occasion identifies a resource in the canonical repetition,
 % not permission to replay frame zero when a UE starts a later attempt.
 % Bind only a NEW attempt to the next repetition of that same resource.
@@ -236,6 +237,18 @@ for symbol = startSymbol:(startSymbol+durationSymbols-1)
     end
 end
 ra.RAResponseWindowSlots = double(sixgr.util.structGet(raNode, "ra_response_window_slots", 8));
+if ~ismember('PRACHActiveEndTicksExclusive',resolvedOccasion.Properties.VariableNames)
+    error('sixgr:mac:ra:MissingPRACHSampleTiming', ...
+        'The PRACH occasion must include its actual CP/useful-sample end on the Tc clock.');
+end
+baseTime=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(basePRACHSlot,0,frame.Numerology);
+selectedTime=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(ra.PRACHAbsoluteSlot,0,frame.Numerology);
+ra.PRACHActiveEndTicksExclusive=int64(resolvedOccasion.PRACHActiveEndTicksExclusive)+ ...
+    selectedTime.Ticks-baseTime.Ticks;
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+[~,control]=sixgr.phy.ra.resolveRARCommonControl(cfg,carrier);
+ra.RARMonitoringWindow=sixgr.phy.ia.RARMonitoringWindow.resolve( ...
+    frame,control,ra.PRACHActiveEndTicksExclusive,ra.RAResponseWindowSlots);
 ra.RAContentionResolutionTimerSlots = double(sixgr.util.structGet(raNode, "ra_contention_resolution_timer_slots", 64));
 timingNode = raNode.timing;
 rrcNode = sixgr.util.structGet(cfg, "initial_access.rrc", struct());
@@ -300,6 +313,7 @@ if frame.Mu ~= grantPlan.TimeDomainAllocation.Mu
         "RA carrier numerology must match its canonical frame; cross-numerology RA needs explicit time conversion.");
 end
 ra.TimingSchedule = sixgr.phy.ia.RAEventScheduler.resolve( ...
+    "RARMonitoringWindow", ra.RARMonitoringWindow, ...
     "PRACHOccasionEndSlot", ra.PRACHOccasionEndSlot, ...
     "RAResponseWindowSlots", ra.RAResponseWindowSlots, ...
     "RARProcessingDelaySlots", double(timingNode.rar_processing_delay_slots), ...

@@ -15,11 +15,19 @@ end
 edges=double(info.OffsetLength)+[0;cumsum(lengths)];
 fs=double(info.SampleRate);
 origin=double(prach.NPRACHSlot)*double(prach.SubframesPerPRACHSlot)*1e-3;
+ticksPerSample=double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond)/fs;
+originSample=origin*fs;
+if ticksPerSample~=fix(ticksPerSample) || ...
+        abs(originSample-round(originSample))>8*eps(max(1,originSample))
+    error('sixgr:rach:PRACHSampleClockNotExact','PRACH sample boundaries must map exactly to Tc.');
+end
 timing=struct('Source','nrPRACHOFDMInfo_actual_CP_useful_samples_excluding_guard', ...
     'SampleRateHz',fs,'WaveformStartTime_s',origin, ...
     'WaveformEndTimeExclusive_s',origin+edges(end)/fs, ...
     'ActiveStartTime_s',origin+edges(symbols(1))/fs, ...
     'ActiveEndTimeExclusive_s',origin+(edges(symbols(end)+1)-guard(symbols(end)))/fs);
+timing.ActiveEndTicksExclusive=int64(round(originSample)+ ...
+    edges(symbols(end)+1)-guard(symbols(end)))*int64(ticksPerSample);
 % Resource reservations cover every carrier symbol touched by the actual
 % CP/useful samples. Do not scale PRACH-symbol numbers or round away a
 % partial-symbol overlap. Guard zeros are not transmitted PRACH resources.

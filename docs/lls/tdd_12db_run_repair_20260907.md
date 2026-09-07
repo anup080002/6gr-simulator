@@ -1,6 +1,110 @@
 # Short TDD run: measured failures and remaining integration work
 
-## RA-RNTI waveform and decoded main-scheduler authority (latest checkpoint, 2026-09-07)
+## Type1 RAR window planning and uplink regression checkpoint (current, 2026-09-07)
+
+**The main run is still NOT qualified.** This checkpoint repairs the RAR
+opportunity planner and backoff arithmetic, not the remaining main UE
+receive-window/retry state machine. Component passes below must not be
+promoted to successful end-to-end uplink or instrument-playback evidence.
+
+Changes made and tested:
+
+- The actual PRACH CP/useful-sample end is now retained in exact Tc ticks,
+  including long and short formats and later repetitions of the selected
+  PRACH resource. Guard zeros are not counted as transmitted PRACH symbols.
+- Common Type1 PDCCH configuration is resolved independently of a chosen
+  Msg2 slot. Both TX/RX and the RA planner consume the same decoded common
+  CORESET/search-space authority; no additional scenario-specific constants
+  or relaxed CCE/candidate checks were introduced.
+- `RARMonitoringWindow` finds the first configured, DL-available CORESET
+  separated from the last PRACH symbol by at least one Type1-SCS symbol.
+  Periodicity, offset, monitoring duration, symbol position, actual CP
+  boundaries, TDD availability and partial final slots are retained.
+  The window and its expiry follow TS 38.213 clause 8.2; they are explicitly
+  a receive-opportunity plan, not executed blind-decoder evidence.
+- `RAEventScheduler` now searches those monitoring occasions rather than
+  every slot. Msg2 PDSCH must fit inside the response window and its encoded
+  K2+delta must yield a legal Msg3 UL allocation. The same code resolves
+  both TDD and FDD configurations. Multiple in-slot RAR monitoring starts
+  still fail explicitly; they have not been silently truncated or qualified.
+- Backoff arithmetic starts after an unsuccessful response-window expiry,
+  not its beginning. Continuous BI-times-uniform-draw delay is represented
+  in Tc, and the earliest complete slot boundary is rounded upward. This
+  is a candidate restart boundary, not evidence that a retry was executed.
+  Existing independent-attempt and phase/impact callers were migrated to
+  explicit window authority; the contention impact model also now converts
+  its slot-based latency estimate to milliseconds using the actual SCS.
+- RA timer CSVs retain response-window `StartTicks`,
+  `ExpiryTicksExclusive`, and `ClockSource`. Planned start rows are labelled
+  `planned_not_timer_execution` rather than claiming a running UE timer.
+
+Normative reference:
+[TS 38.213 V18.8.0, clause 8.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+
+Verification:
+
+- `logs/rar_monitor_window_initial_20260907.log`: **failed** initial batch.
+  My fixture-regeneration edit accidentally produced NaN expected backoff
+  columns; a second fixture also retained an obsolete window-origin
+  assumption. Both test inputs were corrected, without changing or weakening
+  their assertions. This log is not a passing result.
+- `logs/rar_monitor_window_boundary_20260907.log`: exit 0. Exact one-Tc
+  boundary/period/duration tests, all eight initial-access phase-core tests,
+  real RAR DCI/PDSCH, TDD/FDD allocation checks, five coded TDD received
+  stages, RA config/repetition/artifact tests, and the main access-boundary
+  regression passed. The main regression intentionally verifies a genuine
+  failed-access/no-data outcome; it is not a qualification pass.
+- `logs/rar_window_ul_regressions_20260907.log`: exit 0. Rechecked the window,
+  eight phase-core tests and two independent-attempt tests; then `testConfig`,
+  `testLLS_DL`, `testLLS_UL`, `testLLS_ReferencePoints`, `testStrictProxyGuards`,
+  `testE2E_FastVsTruth`, `testE2E_TruthPacketSemanticCampaign`,
+  `testSchedulerGrantConsistency`, `testUplinkControlStreamStages`,
+  `testDataChannelStreamStages`, `testLLSULSRSRITPMIEstimator`,
+  `testRecoveredPUSCHUCIEvidence`, `testPUSCHCausalSRSFrozenGrant`,
+  `testPDSCHQCLStatePropagation`, `testPDSCHTCIStateBinding`,
+  `testPMIPrecodingRuntime`, and `testCSIRSPhysicalResourceMeasurements`.
+  No `testAll`, production FDD scenario, or 25 dB run was launched; existing
+  focused E2E compatibility fixtures include FDD execution.
+
+Actual main diagnostic: `%LOCALAPPDATA%/Temp/main_shared_ra_20260907_142140`.
+It completed 16 slots, four successfully decoded SSB/SIB1 candidates and an
+actual shared-stream PRACH, but **zero DL/UL data trials**. PRACH detection
+remains 0.340461277865219 against the unchanged 0.5 threshold. The exported
+response-window plan is [15 ms, 35 ms), i.e. slots 15 through 34 inclusive
+with zero-based indexing. The 16-slot run ends before that window expires.
+
+Offline reprocessing of the retained samples (same regression log) found:
+TX-after-RF detects the correct preamble with metric 1; RX-before-RF is
+already below threshold at 0.340461; RX-after-RF is 0.340284; actual digital
+gain compensation restores 0.340461. Thus receiver AGC/display scaling is
+not the cause of this miss. The capture ledger records 94.1081 dB applied
+base pathloss and 7 dB receiver NF. The selected downlink beam's measured
+pathloss reference used by PRACH power control is a different quantity;
+its UL spatial-filter consistency still needs investigation, not an
+arbitrary power correction or lower detector threshold.
+
+CSV review: `results/lls/qualification_working/reviews/rar_window_first5_20260907/`.
+All 162 CSVs were parsed and their first five rows retained: 15,841 rows,
+8,650 columns, zero parse failures/infinities, 57 empty files, six structural
+issue files, 121 required CSV semantic failures and one chart failure.
+The qualification gate remains **FAIL**. The extra three columns are exact
+timer-clock provenance, not extra measured trials. This diagnostic used
+`SaveFigures=false`; no runtime PNG publication is claimed.
+
+Remaining work, without dropping any requested family:
+
+| Area | Remaining main-runtime verification/repair |
+| --- | --- |
+| PRACH and RA timers | Do not expose gNB detection failure as an immediate UE failure. Execute actual Type1 receive observations through expiry, then update retry/power-ramping counters and bind the next legal PRACH occasion. The independent-attempt wrapper is not this main shared-stream state machine. |
+| Msg3 / Msg4 / SRB1 | Start contention timing after actual Msg3 transmission, retain distinct nonzero-TA UE-TX/gNB-RX origins, migrate private Msg4 control framing, and verify actual receiver completion against deadlines. |
+| Main shared clock and streams | Complete chronological PDCCH/PDSCH/PUSCH/PUCCH/UCI/SRS integration, including unequal higher-numerology slot sample extents. Component stage tests do not close this. |
+| PUCCH / PUSCH UCI | Verify late-created HARQ feedback, decoded grants, frozen TB/coding layouts, multiplexed UCI and suppression decisions on the main stream after successful access. |
+| SRS / CSI / rank / PMI / TCI / QCL | Prove actual sounded/reported state reaches the main grants and physical precoders with correct age and beam association; component tests alone are insufficient. |
+| RSSI / RSRP / SINR / PHR | Retain explicit antenna/reference/window/bandwidth/power units and source identities. SSB-window RSSI is not full-carrier/SMTC RSSI. Main UL/CSI/PHR measurements remain unavailable without those transmissions. |
+| CSV / PNG / evidence | Remove or distinguish remaining unexecuted planned stage fields from primary measurements; resolve empty-table applicability and actual runtime plot publication. The preambleTransMax event still uses the within-frame slot rather than the absolute runtime slot and hardcodes attempt 1 in its status. |
+| Nominal 12 dB / Keysight | The current 12 dB value is a noncontrolling operating-point label. Declare and verify a fixed independent reference calibration before claiming measured 12 dB. Continuous, traceable all-channel IQ/VSG playback remains unqualified. |
+
+## RA-RNTI waveform and decoded main-scheduler authority (preceding checkpoint, 2026-09-07)
 
 **Still not a qualified production LLS.** The repairs below do not establish
 successful main-run access, data, UCI, SRS, CSI feedback or continuous

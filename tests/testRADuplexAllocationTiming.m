@@ -51,7 +51,9 @@ anchor = raStrictAnchorConfig();
 ra = sixgr.mac.ra.RAConfig(anchor);
 assert(ra.PRACHAbsoluteSlot == 2 && ra.PRACHOccasionEndSlot == 3, ...
     "A long Msg1 spans two 30 kHz slots; response timing must start after its end.");
-assert(ra.TimingSchedule.ResponseWindowStartSlot == 4);
+assert(ra.TimingSchedule.ResponseWindowStartSlot == 10, ...
+    'The first Type1 CORESET after PRACH is slot 10; slots 4 through 9 are fixed UL.');
+assert(ra.TimingSchedule.RARCommonMonitoringAllocationValidated);
 assert(~ra.TimingSchedule.ControlMonitoringQualified && ~ra.TimingSchedule.SetupCompleteGrantQualified, ...
     "Allocation legality alone must not qualify undecoded control authority.");
 ok = true;
