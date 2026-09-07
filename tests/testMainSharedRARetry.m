@@ -2,6 +2,14 @@ function ok=testMainSharedRARetry()
 % Authored nominal-12-dB TDD scenario: actual second PRACH after UE expiry.
 % This proves retry causality/power authority, not full data qualification.
 folder=diagnoseMainSharedRA(58);
+pbch=readtable(fullfile(folder,'air_interface','csv','pbch_trials.csv'),'TextType','string');
+decoded=pbch(pbch.SIB1DLSCHCrcPass==1 & pbch.SIB1ASN1DecodeOk==1,:);
+assert(~isempty(decoded),'Main run must publish actual decoded SIB1 power evidence.');
+assert(all(decoded.SignalledSSPBCHBlockPower_dBm==5) && ...
+    all(decoded.SSPBCHBlockPowerSource=="decoded_sib1_servingCellConfigCommon_ss_PBCH_BlockPower"));
+assert(all(isfinite(decoded.ReferenceSignalTxEPRE_dBm)) && ...
+    all(abs(decoded.SSSTxPowerDeltaFromSignalled_dB- ...
+    (decoded.ReferenceSignalTxEPRE_dBm-decoded.SignalledSSPBCHBlockPower_dBm))<1e-9));
 csv=fullfile(folder,'control','csv');
 events=readtable(fullfile(csv,'ra_retry_events.csv'),'TextType','string');
 assert(height(events)==1 && events.CompletedAttempt==1 && events.NextTransmissionCounter==2 && ...
@@ -42,5 +50,5 @@ assert(nnz(monitor.RunId==string(a.RunId))==16 && nnz(monitor.RunId==string(b.Ru
 assert(all(monitor.AttemptId(monitor.RunId==string(a.RunId))==1));
 assert(all(monitor.AttemptId(monitor.RunId==string(b.RunId))==2));
 assert(~isfolder(fullfile(folder,'air_interface','air_interface')));
-ok=true; disp('MAIN_SHARED_RA_RETRY_PASS: actual second TDD PRACH, separate counters, fresh physical-reference identity and stale-reference deferral; SIB1/L3 power contract remains unqualified.');
+ok=true; disp('MAIN_SHARED_RA_RETRY_PASS: actual second TDD PRACH, fresh-reference deferral and decoded SIB1 power published; UE L3 power-control contract remains unqualified.');
 end

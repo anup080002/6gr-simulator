@@ -12,6 +12,7 @@ p.parse(varargin{:});
 if nargin < 1 || isempty(cfg)
     cfg = struct();
 end
+[cfg, ~] = sixgr.rf.resolveSSBPowerContract(cfg);
 
 ncellid = localFirstFinite(p.Results.CellID, ...
     sixgr.util.structGet(cfg, "phy.carrier.NCellID", []), ...

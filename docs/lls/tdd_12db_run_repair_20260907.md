@@ -1,6 +1,139 @@
 # Short TDD run: measured failures and remaining integration work
 
-## UE retry, backoff, receive-plane and fresh-reference checkpoint (current, 2026-09-07)
+## SIB1 / actual SSS power checkpoint (current, 2026-09-07)
+
+**The full main run is still NOT qualified.** This checkpoint repairs the
+SS/PBCH power declaration/transmitter mismatch in both causal profiles and
+verifies a fresh 58-slot TDD diagnostic. It does not qualify completed access,
+main PUSCH/PUCCH/SRS/UCI, calibrated 12 dB operation, all PNGs, or playback.
+
+### Implemented and measured
+
+- Root cause: the configured 30 dBm full-BWP budget over 300 subcarriers
+  produced 5.228787453 dBm SSS EPRE, while SIB1 used the legacy -25 dBm
+  declaration. The difference was 30.228787453 dB, not a propagation effect.
+- Added catalog-owned `ssb_power_reference_policy` and optional integer
+  `ss_pbch_block_power_dbm`. Both causal YAML profiles select
+  `quantized_full_bwp_epre`. Its network implementation policy is
+  `floor(PfullBWP - 10*log10(12*NRB) + configuredCommonSSBOffset)`.
+  This integer allocation policy is not claimed to be mandated by 3GPP.
+- A common resolver feeds both the actual SSB burst plan and the encoded
+  SIB1 field. It applies the relative correction before waveform generation;
+  common fixed-EPRE normalization preserves that correction. The authored
+  unit-norm physical-element precoders are retained. Repeated resolution
+  does not accumulate a second power correction.
+- The real decoded SIB1 installer now preserves `ss-PBCH-BlockPower` in UE
+  common configuration and its field/hash evidence. Main PBCH CSVs separately
+  expose decoded `SignalledSSPBCHBlockPower_dBm`, its source, measured
+  `ReferenceSignalTxEPRE_dBm`, and their actual difference. Post-RF deviations
+  are not overwritten with the nominal declaration.
+- The waveform regression measured all four beams on the authored two-
+  element transmitter: a 30 dBm budget yielded actual/decoded SSS EPRE of
+  5 dBm; a 33 dBm budget yielded 8 dBm. Actual SSS-sample closure tolerance
+  is 1e-6 dB. Configuration checks independently cover 25/52/106-RB budgets,
+  repeated resolution and conflicting/missing authority rejection.
+- The contract currently rejects mixed SSB/carrier numerology, unequal
+  per-SSB power offsets, allocation-dependent total-power normalization,
+  and inherited data-grant power authority. These are explicit coverage
+  limits, not assertions that NR prohibits these configurations. Unconfigured
+  legacy/unit-waveform callers remain unqualified for this absolute-power
+  contract and still require migration; no global completion is claimed.
+
+Standards basis: the field meaning and integer range are defined in
+[TS 38.331 V18.8.0, ServingCellConfigCommonSIB / SS-PBCH field descriptions](https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.08.00_60/ts_138331v180800p.pdf).
+The UE PRACH pathloss reference and higher-layer-filtered RSRP requirement
+are in [TS 38.213 V18.8.0 clause 7.4](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf).
+
+### Main evidence
+
+Run: `%LOCALAPPDATA%/Temp/main_shared_ra_20260907_171109`.
+All 58 slots completed and `testMainSharedRARetry` passed.
+
+- Twelve actual SSB rows (producer slots 1, 21, 41) all decoded 5 dBm and
+  measured 5.00000000000006 dBm transmitted SSS EPRE. Received SS-RSRP
+  spanned -89.931667 to -76.046058 dBm; SS-SINR spanned 35.051961 to
+  49.711129 dB. The configured 12 dB label is **not** calibrated/measured
+  12 dB SINR. Independent reconstruction from the exported per-antenna
+  signal/disturbance powers closed SS-RSRP within 5.685e-14 dB and SS-SINR
+  within 4.974e-14 dB. This proves arithmetic consistency, not every aspect
+  of measurement-estimator accuracy.
+- Actual Msg1 at 14.5 ms: measurement slot 1, age 14 slots; pathloss
+  81.046057648 dB; target -93 dBm; requested TX -11.953942352 dBm;
+  detector metric 0.340459538 versus unchanged threshold 0.5 (miss).
+- UE RAR expiry was 35 ms / 68,812,800 Tc. Slot 45 was deferred because
+  the selected reference was stale, without a model-pathloss replacement.
+- Actual retry at 54.5 ms: measurement slot 41, age 14; transmission/power
+  counters both 2; pathloss 81.276058065 dB; requested TX -9.723941935 dBm;
+  detector metric 0.448173099 versus threshold 0.5 (miss). Its RAR window
+  remained pending at the 58 ms diagnostic boundary.
+- DL and UL data trial rows remain zero. Main PUSCH/PUCCH/UCI/SRS and their
+  rank, precoding, power/PHR and timing are not qualified by this run.
+
+### Executed tests and artifact review
+
+- `logs/ssb_power_reference_waveforms_20260907.log`: both
+  `testSSBPowerReferenceContract` and `testSSBSharedReceivedBurst` passed.
+- `logs/ssb_power_main_tdd_verified_20260907.log`: decoded common authority,
+  ASN.1 round trip, two independent UPER-vector cases (actually executed
+  with `run`/`assertSuccess`), no-oracle receiver, SIB1 artifact schemas,
+  SSB-window power, and the 58-slot main retry assertions passed.
+- Two earlier test-driver failures are retained, not counted as passes:
+  `ssb_power_reference_contract_20260907.log` used the wrong receiver field
+  name; `ssb_power_main_tdd_20260907.log` asserted a test-suite object instead
+  of executing it. Neither failure was repaired by weakening production
+  validation. The successful logs above supersede those attempts.
+- `logs/ssb_power_ul_nr_regressions_20260907.log`: all 26 focused entries
+  passed and the MATLAB batch exited successfully: config, DL, UL, reference
+  points, strict proxy guards, scheduler grants, physical slot/sample clock,
+  RAR BI codec, RAR UL-grant codec, retry state, RAR receive window, fresh
+  RA reference selection, RA receive boundary, staged UL control, staged
+  data (including real coded HARQ-ACK on PUSCH), UL SRS RI/TPMI estimator,
+  persisted UCI evidence recovery, frozen SRS-driven PUSCH grant, PDSCH
+  QCL and TCI bindings, PMI precoding, CSI-RS physical measurements, PUSCH
+  and PUCCH power control, and both required E2E/export-integrity tests.
+  The metadata-recovery test uses explicit table fixtures; it is not itself
+  waveform evidence. The staged PHY tests use declared isolated channel/
+  payload fixtures, not main access measurements. Existing FDD compatibility
+  and E2E fixtures ran in this batch, separately from the authored TDD run.
+- First-five-row/exhaustive audit:
+  `results/lls/qualification_working/reviews/ssb_power_reference_first5_20260907/`.
+  All 166 CSVs parsed (16,699 rows, 8,744 columns), with no Inf tokens.
+  Qualification remains FAIL: 61 empty CSVs, six structural/header issues,
+  125 required CSV semantic failures and one chart failure. There are
+  19 duplicate rows and 25 identical-file groups requiring source-aware
+  classification. NaN/blank/inapplicable columns have not been fabricated
+  into values. Proxy/fallback text matches are lexical audit flags, not
+  evidence that those backends executed. `SaveFigures=false` was explicit;
+  PNG count zero is not successful PNG publication.
+
+### Remaining work, in causal order (none waived)
+
+1. Make UE power control consume the decoded reference declaration and
+   correctly configured, causal higher-layer-filtered RSRP. The main PRACH
+   selector still consumes the physical TX/RX diagnostic pathloss; equality
+   of nominal and actual TX power here does not qualify UE-side authority.
+   Audit PRACH spatial filtering/combining, detector margin and Msg3 power
+   separately; do not lower the threshold merely to obtain access.
+2. Complete acquired UE-DL and nonzero-TA UE-TX/gNB-RX time origins, real
+   Msg3/contention deadlines, Msg4/control/RRC framing, receive cancellation
+   and upper-layer exhaustion signalling on the shared stream.
+3. Complete main shared scheduler ownership of PDCCH/PDSCH/PUSCH/PUCCH/SRS,
+   including late HARQ-ACK binding to queued PUSCH and real UCI recovery on
+   both transports. Retain no-eager-execution and no-proxy guards.
+4. Qualify measured CSI/SRS feedback through CQI/RI/PMI/TPMI, QCL/TCI age and
+   activation, actual physical precoders, rank/MCS/HARQ/OLLA and their main
+   CSV/PNG outputs. Component passes are not end-to-end evidence.
+5. Publish immutable observed RA stages before attempt finalization; repair
+   CSV applicability/header failures and actual PNG publication. Qualify
+   RSSI with its correct observation scope: the available SSB-window RSSI
+   is not a full-carrier/SMTC NR Carrier RSSI result. Complete CSI/UL/PHR
+   power, noise/interference, bandwidth, antenna and timing reconciliation.
+6. Independently calibrate the intended 12 dB operating point, then qualify
+   continuous actual post-IFFT all-channel IQ and Keysight playback. No
+   authored FDD or 25 dB production campaign or `testAll` was launched.
+   Long impaired runs and further 6G study features remain later goal work.
+
+## UE retry, backoff, receive-plane and fresh-reference checkpoint (previous, 2026-09-07)
 
 **NOT qualified as a complete NR link-level run.** The fresh 58-slot TDD
 diagnostic proves the repairs below, not completed access/data, calibrated

@@ -12,6 +12,7 @@ arguments
     options.ApplyPA (1,1) logical = false
 end
 cfg = localSanitizeSIB1PrecodingConfig(cfg);
+[cfg, ~] = sixgr.rf.resolveSSBPowerContract(cfg);
 requestedSNR_dB = double(sixgr.util.structGet(cfg, "channel.snr_dB", Inf));
 generatorSNR_dB = requestedSNR_dB;
 if useRuntimeChannel

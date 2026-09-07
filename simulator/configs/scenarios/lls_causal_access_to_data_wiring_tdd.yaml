@@ -341,6 +341,9 @@ power_and_rf_frontend:
   # cell budget into the occupied PRBs. UL remains allocation-aware under
   # the signal-specific TS 38.213 power-control equations.
   downlink_power_normalization_policy: fixed_epre_over_configured_bwp
+  # Broadcast an integer SSS EPRE and apply the same power to actual SSB REs.
+  # Quantization is floor(PfullBWP - 10*log10(12*NRB)), not a fixed dBm value.
+  ssb_power_reference_policy: quantized_full_bwp_epre
   uplink_power_normalization_policy: active_ofdm_total_power
   ue_noise_figure_db: 7
   noise_figure: 5

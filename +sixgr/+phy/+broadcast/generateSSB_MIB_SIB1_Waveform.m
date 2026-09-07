@@ -23,6 +23,7 @@ localRequireBroadcastFeature(cfg, "sib1", "phy.sib1.enable");
 localRequireEnabledPath(cfg, "phy.pdsch.enable", "SIB1 PDSCH");
 
 cfg = localNormalizeBroadcastCfg(cfg);
+[cfg, ssbPowerContract] = sixgr.rf.resolveSSBPowerContract(cfg);
 tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [sib1Bits, asn1Meta] = sixgr.rrc.asn1.encodeSIB1UPER(tree);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
@@ -74,6 +75,7 @@ waveform = localComposeAbsoluteTimeline( ...
 [~, treeHash] = sixgr.rrc.asn1.compareSIB1Trees(tree, tree);
 tx = struct();
 tx.Waveform = waveform;
+tx.SSBPowerReferenceContract = ssbPowerContract;
 tx.SSBWaveform = ssbWaveform;
 tx.SIB1Waveform = siWaveform;
 tx.SIB1WaveformStartSample = sib1StartSample;

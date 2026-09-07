@@ -5,6 +5,7 @@ function [waveform, waveInfo, txCfg] = SSB_Tx(cfg, varargin)
 % Toolbox waveform generator is called.  Invalid grids, cases, Lmax values,
 % or SSB indices are never clamped, rewritten, or retried.
 
+[cfg, ~] = sixgr.rf.resolveSSBPowerContract(cfg);
 p = inputParser;
 p.FunctionName = "sixgr.phy.dl.SSB_Tx";
 p.addParameter("NumSubframes", 10, @localPositiveInteger);

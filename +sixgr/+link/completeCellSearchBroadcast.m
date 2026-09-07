@@ -79,12 +79,21 @@ if isfinite(candidateIndices(candidateOrdinal))
 end
 rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
     observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation);
+rec.SignalledSSPBCHBlockPower_dBm = NaN;
+rec.SSPBCHBlockPowerSource = "unavailable_decoded_sib1";
+rec.SSSTxPowerDeltaFromSignalled_dB = NaN;
+if rec.DLSCHCrcPass && rec.SIB1ASN1DecodeOk
+    rec.SignalledSSPBCHBlockPower_dBm = double( ...
+        rec.SIB1RxTree.message.c1.systemInformationBlockType1.servingCellConfigCommon.ss_PBCH_BlockPower);
+    rec.SSPBCHBlockPowerSource = "decoded_sib1_servingCellConfigCommon_ss_PBCH_BlockPower";
+end
 if logical(options.UseRuntimeChannel)
     txSSBPower = localMeasureTransmitSSBEPRE( ...
         runtimeTxWaveform, receiverCfg, double(tx.SampleRateHz), ...
         double(sixgr.util.structGet(rec, "SSBIndex", NaN)));
     rec.ReferenceSignalId = double(sixgr.util.structGet(rec, "SSBIndex", NaN));
     rec.ReferenceSignalTxEPRE_dBm = double(txSSBPower.AggregateEPRE_dBm);
+    rec.SSSTxPowerDeltaFromSignalled_dB = rec.ReferenceSignalTxEPRE_dBm - rec.SignalledSSPBCHBlockPower_dBm;
     rec.ReferenceSignalTxEPREPerAntenna_dBm = string( ...
         txSSBPower.PerTransmitPortEPREToken_dBm);
     rec.ReferenceSignalTxMeasurementSource = string(txSSBPower.Source);
@@ -250,6 +259,9 @@ out.SSSINRFailureReason = string(sixgr.util.structGet( ...
     rec, "SSSINRFailureReason", ""));
 out.ReferenceSignalId = double(sixgr.util.structGet( ...
     rec, "ReferenceSignalId", NaN));
+out.SignalledSSPBCHBlockPower_dBm = rec.SignalledSSPBCHBlockPower_dBm;
+out.SSPBCHBlockPowerSource = rec.SSPBCHBlockPowerSource;
+out.SSSTxPowerDeltaFromSignalled_dB = rec.SSSTxPowerDeltaFromSignalled_dB;
 out.ReferenceSignalTxEPRE_dBm = double(sixgr.util.structGet( ...
     rec, "ReferenceSignalTxEPRE_dBm", NaN));
 out.ReferenceSignalTxEPREPerAntenna_dBm = string(sixgr.util.structGet( ...

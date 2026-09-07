@@ -316,6 +316,8 @@
       "bs_tx_power_dbm": {"required": true, "type": "number"},
       "ue_tx_power_dbm": {"required": true, "type": "number"},
       "downlink_power_normalization_policy": {"required": false, "type": "string", "allowed_values": ["active_ofdm_total_power", "fixed_epre_over_configured_bwp"]},
+      "ssb_power_reference_policy": {"required": false, "type": "string", "allowed_values": ["quantized_full_bwp_epre", "explicit_ss_pbch_block_power"]},
+      "ss_pbch_block_power_dbm": {"required": false, "type": "integer", "min": -60, "max": 50},
       "uplink_power_normalization_policy": {"required": false, "type": "string", "allowed_values": ["active_ofdm_total_power"]},
       "ue_noise_figure_db": {"required": false, "type": "number", "min": 0},
       "power_backoff_db": {"required": true, "type": "number", "min": 0},

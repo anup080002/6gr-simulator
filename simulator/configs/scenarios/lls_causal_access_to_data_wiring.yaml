@@ -332,6 +332,7 @@ power_and_rf_frontend:
   # FDD and TDD share the same physical DL reference plane: configured gNB
   # power is a full-BWP budget, while sparse DL resources retain fixed EPRE.
   downlink_power_normalization_policy: fixed_epre_over_configured_bwp
+  ssb_power_reference_policy: quantized_full_bwp_epre
   uplink_power_normalization_policy: active_ofdm_total_power
   ue_noise_figure_db: 5
   power_backoff_db: 0

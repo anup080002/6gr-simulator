@@ -12216,6 +12216,9 @@ for k = 1:nTrials
             out, "ReferenceSignalId", r.SSBIndex));
         r.ReferenceSignalTxEPRE_dBm = double(sixgr.util.structGet( ...
             out, "ReferenceSignalTxEPRE_dBm", NaN));
+        r.SignalledSSPBCHBlockPower_dBm = double(sixgr.util.structGet(out,"SignalledSSPBCHBlockPower_dBm",NaN));
+        r.SSPBCHBlockPowerSource = string(sixgr.util.structGet(out,"SSPBCHBlockPowerSource",""));
+        r.SSSTxPowerDeltaFromSignalled_dB = double(sixgr.util.structGet(out,"SSSTxPowerDeltaFromSignalled_dB",NaN));
         r.ReferenceSignalTxEPREPerAntenna_dBm = string(sixgr.util.structGet( ...
             out, "ReferenceSignalTxEPREPerAntenna_dBm", ""));
         r.ReferenceSignalTxMeasurementSource = string(sixgr.util.structGet( ...
@@ -16586,6 +16589,9 @@ row.SSPhysicalMeasurementStatus = "unavailable";
 row.SSSINRFailureReason = "";
 row.ReferenceSignalId = NaN;
 row.ReferenceSignalTxEPRE_dBm = NaN;
+row.SignalledSSPBCHBlockPower_dBm = NaN;
+row.SSPBCHBlockPowerSource = "";
+row.SSSTxPowerDeltaFromSignalled_dB = NaN;
 row.ReferenceSignalTxEPREPerAntenna_dBm = "";
 row.ReferenceSignalTxMeasurementSource = "";
 row.MeasuredReferenceSignalPathloss_dB = NaN;
