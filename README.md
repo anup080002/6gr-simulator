@@ -1103,6 +1103,9 @@ If you want more than this README, the best next documents are:
 
 ### Supporting docs
 
+- `docs/LLS_RUNBOOK.md` — exact YAML commands for the 12 dB TDD run, an
+  eight-point configured-SNR sweep, FDD and 400 MHz examples, feature toggles,
+  validation, output inspection, and timestamped `testAll` logs
 - `docs/6g_phy_lls_config_driven_framework.md`
 - `docs/result_output_layout.md`
 

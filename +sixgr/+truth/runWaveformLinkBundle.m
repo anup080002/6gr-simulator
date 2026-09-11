@@ -20856,7 +20856,53 @@ existingRank = localPHYSignalDiagnosticRank(existing);
 firstDifference = find(candidateRank ~= existingRank, 1, "first");
 if ~isempty(firstDifference) && candidateRank(firstDifference) < existingRank(firstDifference)
     selected = candidate;
+    return;
 end
+if isempty(firstDifference) && ...
+        string(sixgr.util.structGet(candidate,"SnapshotID","")) == ...
+        string(sixgr.util.structGet(existing,"SnapshotID",""))
+    % The shared receive path first creates a practical-receiver snapshot,
+    % then augments that same trial after CRC with captured channel arrays.
+    % Preserve earliest-trial selection while allowing the completed copy
+    % of that exact SnapshotID to replace its pre-decode form.
+    candidateEvidence = localPHYSignalDiagnosticEvidenceRank(candidate);
+    existingEvidence = localPHYSignalDiagnosticEvidenceRank(existing);
+    evidenceDifference = find(candidateEvidence ~= existingEvidence, 1, "first");
+    if ~isempty(evidenceDifference) && ...
+            candidateEvidence(evidenceDifference) > existingEvidence(evidenceDifference)
+        selected = candidate;
+    end
+end
+end
+
+function rank = localPHYSignalDiagnosticEvidenceRank(snapshot)
+T = sixgr.util.structGet(snapshot,"SourceTable",table());
+if ~(istable(T) && ~isempty(T))
+    rank = [0 0 0];
+    return;
+end
+names = string(T.Properties.VariableNames);
+provenanceColumns = ["AngleCoordinateFrame","AngleEvidenceSource", ...
+    "RuntimeChannelLinkKey","RuntimeChannelStateKey", ...
+    "RuntimeChannelReciprocityDirection","RuntimeChannelReciprocitySource", ...
+    "RuntimeChannelReciprocityApproximationMode"];
+schemaComplete = all(ismember(provenanceColumns,names));
+angleComplete = false;
+if schemaComplete && ismember("Panel",names)
+    angleMask = string(T.Panel)=="runtime_channel_angles";
+    if any(angleMask)
+        angleComplete = true;
+        for field = provenanceColumns
+            column = T.(char(field));
+            values = lower(strtrim(string(column(angleMask))));
+            angleComplete = angleComplete && all(~ismissing(values) & ...
+                strlength(values)>0 & ~ismember(values,["nan","<missing>","null"]));
+        end
+    end
+end
+postChannelComplete = ismember("Panel",names) && ismember("Series",names) && ...
+    any(string(T.Panel)=="time_domain" & string(T.Series)=="post_channel");
+rank = [double(schemaComplete) double(angleComplete) double(postChannelComplete)];
 end
 
 function rank = localPHYSignalDiagnosticRank(snapshot)

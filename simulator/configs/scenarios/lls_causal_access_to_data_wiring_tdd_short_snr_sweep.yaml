@@ -1,0 +1,40 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short.yaml
+
+meta:
+  scenario_id: lls_causal_access_to_data_wiring_tdd_short_snr_sweep
+  description: >
+    Eight-point configured-SNR diagnostic using the same causal TDD shared
+    waveform, access, scheduler, DL, UL, CSI, SRS, TRS, beam, HARQ and AMC
+    chain as the bounded 12 dB gate. Each point starts with independent link
+    and initial-access state. This is regression evidence, not a statistically
+    qualified BLER publication campaign.
+  version: "1.0.0"
+  owner: sixgr
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: causal_access_to_data_wiring
+  tags: [lls, truth, tdd, 5mhz, short, configured_snr_sweep, causal, amc]
+
+canonical_control:
+  launch:
+    scenario_mode: fixed_snr_sweep
+    sweep_enabled: true
+    fixed_link_campaign_enabled: false
+    geometry_enabled: false
+
+simulation:
+  snr_db: 0
+  snr_sweep_offsets_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: true
+    state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
+    values_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+
+output:
+  profile: lls_causal_access_to_data_wiring_tdd_short_snr_sweep

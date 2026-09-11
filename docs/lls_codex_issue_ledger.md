@@ -1,8 +1,29 @@
 # LLS CODEX Issue Ledger
 
-Last updated: 2026-06-11
+Last updated: 2026-09-12
 
 This ledger tracks the CODEX-01..40 repair stream against concrete repo files and focused tests. A row is only marked fixed when the implementation path and a focused validation are both present. Rows marked partial or pending must not be described as 3GPP-complete in reports, CSV manifests, DB rows, or WebGUI badges.
+
+## Current execution gate and ordered roadmap
+
+The 58-slot 12 dB configured-SNR TDD run is the only immediate completion
+target. It is an actual shared-waveform LLS diagnostic, not an E2E campaign and
+not statistical publication evidence.
+
+| Order | Scope | Status / acceptance |
+|---|---|---|
+| 1 | Operator-master PDSCH/PUSCH TDRA catalogs | Completed in commit `a3dc4b9f`; focused operator-master contract passed. |
+| 2 | Shared-clock 12 dB PHY execution | All 58 slots completed on the preceding run: PBCH, four-step RA, SRS, DL/UL grants, CSI/PMI/RI, AMC and exact I/Q executed. |
+| 3 | Terminal artifact closure | In repair: preserve exact `live_waveform_preview.csv`, preserve UL `not_selected` in `beam_codebook.csv`, and retain exact same-trial angle/channel/reciprocity provenance. Acceptance is a fresh run whose truth, standards, mandatory-subsystem, visual and browser receipts all pass. |
+| 4 | Full repository qualification | Pending because `testAll` was explicitly stopped. Focused tests do not replace this gate. One stale unit fixture also lacks the mandatory Type-0 monitoring occasion and must be repaired before it can exercise its intended replay-export assertion. |
+| 5 | Keysight playback package | Pending after step 3: M9384B/M9383B per-port complex I/Q, clock/center-frequency/scaling/port-alignment metadata, hashes, repetition policy and 89600 VSA import verification. |
+| 6 | Single-carrier 7 GHz/400 MHz | Pending `optional_research_experiment`; it must not be implemented as four 100 MHz carriers. Required gates include numerology/grid/FFT/sample-rate consistency, PRACH/SSB/control/BWP legality, memory-safe shared CDL execution and Keysight playback. |
+| 7 | UL 1024-QAM and DL 4096-QAM | Pending fail-closed experimental integration through scheduler, control fields, TBS, modulation, receiver and AMC. DL 4096-QAM is not an NR conformance claim, and a 30 dB run alone is not proof of reliable 4096-QAM. |
+| 8 | 30 dB run | Pending after steps 5-7. |
+| 9 | Impairment and physical-link-budget variants | Pending separate profiles. The fixed-SNR baseline keeps ideal RF; O2I/path loss/shadowing and hardware stress are not silently mixed into it. |
+
+The exact operator commands and configuration rules are maintained in
+`docs/LLS_RUNBOOK.md`.
 
 | ID | Issue | Current status | Root-cause evidence | Owner files / validation |
 |---|---|---|---|---|

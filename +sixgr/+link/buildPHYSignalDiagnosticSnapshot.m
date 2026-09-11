@@ -501,7 +501,58 @@ end
 sourceT=[sourceT;localExecutedRuntimeAngleRows(meta,context)]; %#ok<AGROW>
 [timeRows,dopplerRows]=localExecutedTimeVaryingChannelRows(meta,context);
 sourceT=[sourceT;timeRows;dopplerRows]; %#ok<AGROW>
+sourceT=localBindExecutedChannelProvenance(sourceT,context,direction);
 snapshot.SourceTable=sourceT;
+end
+
+function T=localBindExecutedChannelProvenance(T,context,direction)
+% Flatten the exact post-decode channel identity onto every row from this
+% one trial.  These values originate in exportSharedChannelObservation's
+% captured processor segment; no configured channel values are used.
+if isempty(T)
+    return;
+end
+linkKey=strtrim(string(sixgr.util.structGet(context,"RuntimeChannelLinkKey","")));
+stateKey=strtrim(string(sixgr.util.structGet(context,"RuntimeChannelStateKey","")));
+assert(strlength(linkKey)>0 && strlength(stateKey)>0, ...
+    'sixgr:link:PHYDiagnosticChannelIdentityUnavailable', ...
+    'Post-decode PHY diagnostics require the exact executed link and channel-state keys.');
+
+angleAvailable=logical(sixgr.util.structGet(context, ...
+    "RuntimeChannelAngleEvidenceAvailable",false));
+angleFrame=strtrim(string(sixgr.util.structGet(context, ...
+    "RuntimeChannelAngleCoordinateFrame","")));
+angleSource=strtrim(string(sixgr.util.structGet(context, ...
+    "RuntimeChannelAngleEvidenceSource","")));
+if angleAvailable
+    assert(strlength(angleFrame)>0 && strlength(angleSource)>0, ...
+        'sixgr:link:PHYDiagnosticAngleProvenanceUnavailable', ...
+        'Executed channel angles require their runtime coordinate frame and evidence source.');
+end
+
+reciprocityExact=logical(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocityExact",false));
+reciprocityDirection=strtrim(string(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocityDirection","")));
+reciprocitySource=strtrim(string(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocitySource","")));
+reciprocityMode=strtrim(string(sixgr.util.structGet(context, ...
+    "RuntimeChannelReciprocityApproximationMode","")));
+if reciprocityExact
+    assert(reciprocityDirection==direction && strlength(reciprocitySource)>0 && ...
+        strlength(reciprocityMode)>0, ...
+        'sixgr:link:PHYDiagnosticReciprocityProvenanceUnavailable', ...
+        'Exact runtime reciprocity requires matching direction, source, and approximation-mode evidence.');
+end
+
+T.RuntimeChannelLinkKey(:)=linkKey;
+T.RuntimeChannelStateKey(:)=stateKey;
+T.AngleCoordinateFrame(:)=angleFrame;
+T.AngleEvidenceSource(:)=angleSource;
+T.RuntimeChannelReciprocityExact(:)=reciprocityExact;
+T.RuntimeChannelReciprocityDirection(:)=reciprocityDirection;
+T.RuntimeChannelReciprocitySource(:)=reciprocitySource;
+T.RuntimeChannelReciprocityApproximationMode(:)=reciprocityMode;
 end
 
 function snapshot = localEmptySnapshot(direction)

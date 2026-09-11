@@ -118,7 +118,14 @@ sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_control_gating_stat
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_stage_status.csv"), stageT);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_rsrp_serving_trace.csv"), rsrpTraceT);
 
-signalChain = sixgr.truth.exportLLSLiveSignalChainTables(runFolder, localVertcatTables(dlRaw, ulRaw), table(), struct());
+% The waveform bundle may already have published exact IFFT/shared-stream
+% preview samples before this system-level bridge runs.  Do not replace
+% those measured rows with a header-only table merely because systemOut
+% does not carry the large sample preview in memory.
+waveformPreviewT = localResolvePersistedWaveformPreview(layout);
+signalChain = sixgr.truth.exportLLSLiveSignalChainTables( ...
+    runFolder, localVertcatTables(dlRaw, ulRaw), table(), ...
+    struct("WaveformPreviewTable", waveformPreviewT));
 derived = sixgr.truth.exportLLSLiveDerivedTables(cfg, runFolder, rawTrials, localConfiguredMultiUserContext(cfg, scfg), struct(), struct());
 
 out = struct();
@@ -1565,6 +1572,39 @@ elseif isfile(path)
     % recovered above, so removal here cannot erase measured observations.
     delete(path);
 end
+end
+
+function T = localResolvePersistedWaveformPreview(layout)
+T = table();
+path = fullfile(layout.ReportCSVDir, "live_waveform_preview.csv");
+if ~isfile(path)
+    return;
+end
+try
+    candidate = sixgr.util.csvReadTable(path);
+catch ME
+    error("sixgr:truth:exportSystemLevelCanonicalArtifacts:InvalidWaveformPreview", ...
+        "Cannot read the existing runtime waveform preview '%s': %s", ...
+        path, string(ME.message));
+end
+if height(candidate) == 0
+    return;
+end
+required = ["Direction","SNR_dB","Frame","Slot","SampleIndex","Time_s", ...
+    "TxReal","TxImag","TxMagnitude","RxReal","RxImag","RxMagnitude"];
+missing = required(~ismember(required, string(candidate.Properties.VariableNames)));
+if ~isempty(missing)
+    error("sixgr:truth:exportSystemLevelCanonicalArtifacts:InvalidWaveformPreview", ...
+        "Existing runtime waveform preview is missing required columns: %s.", ...
+        strjoin(missing, ", "));
+end
+txFinite = isfinite(double(candidate.TxReal)) & isfinite(double(candidate.TxImag));
+rxFinite = isfinite(double(candidate.RxReal)) & isfinite(double(candidate.RxImag));
+if ~any(txFinite) || ~any(rxFinite)
+    error("sixgr:truth:exportSystemLevelCanonicalArtifacts:InvalidWaveformPreview", ...
+        "Existing runtime waveform preview has no finite transmitted or received I/Q rows.");
+end
+T = candidate;
 end
 
 function T = localEmptyRawTrialTable()
