@@ -1,4 +1,4 @@
-function [y, replay, state] = applyRuntimeFadingChannel(x, state, varargin)
+function [y, replay, state, reference] = applyRuntimeFadingChannel(x, state, varargin)
 %APPLYRUNTIMEFADINGCHANNEL Apply persistent runtime fading state when available.
 % Continuous receivers retain channel/filter delay on their absolute sample
 % clock. Only the legacy grant interface may use delay-aligned output.
@@ -8,7 +8,12 @@ ip.addParameter("OutputSampleAlignment", "grant_delay_aligned", ...
     @(v) ischar(v) || isstring(v));
 ip.addParameter("InputSampleDomain", "logical_ports", ...
     @(v) ischar(v) || isstring(v));
+ip.addParameter("CaptureChannelReference",false,@(v)islogical(v) && isscalar(v));
 ip.parse(varargin{:});
+reference=struct();
+capture=ip.Results.CaptureChannelReference;
+assert(~capture || nargout>=4,'sixgr:link:ChannelReferenceOutputRequired', ...
+    'Independent channel evidence must be returned separately from receiver replay.');
 inputDomain = string(ip.Results.InputSampleDomain);
 if ~isscalar(inputDomain) || ismissing(inputDomain) || ...
         ~any(inputDomain == ["logical_ports", "materialized_channel_ports"])
@@ -21,7 +26,7 @@ if ~isscalar(alignment) || ismissing(alignment) || ...
     error("ChannelFactory:InvalidOutputSampleAlignment", ...
         "OutputSampleAlignment must be grant_delay_aligned or continuous_raw_samples.");
 end
-if alignment == "continuous_raw_samples" || inputDomain == "materialized_channel_ports"
+if capture || alignment == "continuous_raw_samples" || inputDomain == "materialized_channel_ports"
     runtime = sixgr.util.structGet(state, "RuntimeChannelState", struct());
     if ~isstruct(state) || ~isscalar(state) || ~isstruct(runtime) || ...
             ~isscalar(runtime) || ~isfield(runtime, "ContractVersion")
@@ -51,9 +56,9 @@ end
 
 runtimeState = sixgr.util.structGet(state, "RuntimeChannelState", struct());
 if isstruct(runtimeState) && isfield(runtimeState, "ContractVersion")
-    [y, replay, runtimeState] = sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
+    [y, replay, runtimeState, reference] = sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
         runtimeState, x, "OutputSampleAlignment", alignment, ...
-        "InputSampleDomain", inputDomain);
+        "InputSampleDomain", inputDomain,"CaptureChannelReference",capture);
     state.RuntimeChannelState = runtimeState;
     state.UseFading = logical(sixgr.util.structGet(runtimeState, "UseFading", false));
     state.Obj = sixgr.util.structGet(runtimeState, "Obj", []);

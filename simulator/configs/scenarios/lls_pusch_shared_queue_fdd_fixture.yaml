@@ -1,0 +1,15 @@
+inherits:
+  - ./lls_trs_shared_scoring_fdd_fixture.yaml
+
+meta:
+  scenario_id: lls_pusch_shared_queue_fdd_fixture
+  description: Known-candidate UL-grant control and received SRS/PUSCH shared-clock component fixture.
+  purpose: Verify actual UL control/data and channel artifacts, not access or blind-decoding qualification.
+  research_class: optional_research_experiment
+
+control:
+  blind_search_enabled: false
+
+initial_access:
+  sib1:
+    enabled: false

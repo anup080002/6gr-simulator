@@ -72,8 +72,25 @@ wrong=state; wrong.ReferenceSignalMeasurementTable.ServingCell(:)=2;
 changed=cfg; changed.initial_access.preconnection_rsrp_filter_coefficient_k=8;
 [~,d]=sixgr.truth.bindSharedRAPowerReference(changed,state,1,55); assert(~d.ReferenceUsable);
 wrong=state; wrong.ReferenceSignalMeasurementTable.UEFilteredRSRP_dBm(:)=10;
-localReject(@()sixgr.truth.bindSharedRAPowerReference(cfg,wrong,1,55),'sixgr:truth:InvalidRAPowerReference');
-localReject(@()sixgr.truth.bindSharedRAPowerReference(cfg,state,1,56),'sixgr:truth:RAPowerReferenceKnowledgeClock');
+localReject(@()sixgr.truth.bindSharedRAPowerReference(cfg,wrong,1,55),'sixgr:truth:InvalidSSBPowerReference');
+localReject(@()sixgr.truth.bindSharedRAPowerReference(cfg,state,1,56),'sixgr:truth:SSBPowerReferenceKnowledgeClock');
+fixed=cfg;
+fixed.integration=struct('run_mode','FIXED_SNR_SWEEP', ...
+    'configured_snr_is_link_authority',true);
+fixedState=state; fixedState.CurrentSlot=55;
+fixedState.ReferenceSignalMeasurementTable.ResourceId(:)=1;
+[fixedBound,fixedDecision]=sixgr.truth.bindSharedRAPowerReference( ...
+    fixed,fixedState,1,55);
+assert(fixedDecision.ReferenceUsable && ...
+    fixedDecision.OperatingPointAuthority=="configured_occupied_re_esn0" && ...
+    isnan(fixedDecision.Pathloss_dB) && ...
+    isnan(fixedBound.lls6g.userContext.RuntimeServingPathloss_dB), ...
+    ['Configured-Es/N0 PRACH requires decoded SIB1/SSB association, ' ...
+     'not an unavailable absolute-power measurement.']);
+fixedState.UECommonCellConfigurationByUE={struct()};
+[~,fixedDecision]=sixgr.truth.bindSharedRAPowerReference(fixed,fixedState,1,55);
+assert(~fixedDecision.ReferenceUsable && ...
+    fixedDecision.Status=="no_available_decoded_sib1");
 ok=true; disp('SHARED_RA_POWER_REFERENCE_PASS: decoded SIB1 minus filtered UE RSRP, cell/epoch/age/knowledge guards; no TX diagnostic authority.');
 end
 function localReject(f,id)

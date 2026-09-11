@@ -38,6 +38,11 @@ assert(double(csi.MCSIndex) > 0 && ~strcmpi(char(string(csi.Modulation)), "QPSK"
     "Measured high-SINR CSI should produce a higher AMC point than bootstrap QPSK.");
 assert(double(csi.RI) == 2, ...
     "Measured RI must be preserved for downstream rank/layer grant realignment.");
+for field=["RIEstimate","RankEstimate","EstimatedRI"]
+    measured=row; measured.RankIndicator=1; measured.(field)=2;
+    actual=sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRowRuntime(measured,cfg,"DL");
+    assert(actual.RI==2,'Measured RI must not be replaced by the source transmission layer count.');
+end
 
 rowLayerLimited = row;
 rowLayerLimited.PostEqSINRPerLayer_dB = "18.5|1.0";
@@ -66,14 +71,12 @@ rowGuarded.NMSE_dB = -20;
 rowGuarded.ChannelAgingLoss_dB = 1.25;
 rowGuarded.MismatchSensitivity_dB = 166;
 guardedCSI = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRowRuntime(rowGuarded, cfg, "DL");
-expectedGuardedSINR = 18.5 - 10 * log10(1 + 10^(18.5 / 10) * 10^(-20 / 10)) - 1.25;
-assert(abs(double(guardedCSI.SINR_dB) - expectedGuardedSINR) < 1e-9, ...
-    "AMC SINR guard must use measured NMSE and channel-aging loss only.");
-assert(double(guardedCSI.SINR_dB) > 10, ...
-    "Channel-magnitude dispersion around MIMO nulls must not be treated as a direct 166 dB SINR loss.");
-assert(contains(string(guardedCSI.SINRSource), "channel_aging_penalty_db=1.250") && ...
-        ~contains(string(guardedCSI.SINRSource), "mismatch_penalty"), ...
-    "Guard provenance must describe the physical aging penalty rather than the dispersion diagnostic.");
+assert(abs(double(guardedCSI.SINR_dB)-18.5)<1e-9 && guardedCSI.CQI==csi.CQI && ...
+        guardedCSI.MCSIndex==csi.MCSIndex, ...
+    "Scoring NMSE, channel-gain drift and dispersion must not alter received SINR/CQI/MCS.");
+assert(~contains(string(guardedCSI.SINRSource),'penalty') && ...
+    ~contains(string(guardedCSI.SINRSource),'guarded'), ...
+    "Do not relabel a synthetic SINR penalty as a measured scheduling input.");
 
 cfgAged = cfg;
 cfgAged = sixgr.util.structSet(cfgAged, "phy.linkAdaptation.mode", "amc");

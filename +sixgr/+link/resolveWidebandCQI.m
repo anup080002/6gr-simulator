@@ -31,7 +31,7 @@ end
 
 [widebandSINR_dB, perRBSINR_dB, rankIndicator, perLayerSINR_dB] = localExtractSINRInputs(sinrInput);
 [sinrInputAccepted, sinrInputRejectionReason, sinrInputSource, sinrInputRole, sinrInputStatus] = ...
-    localValidateSINRInputProvenance(sinrInput);
+    localValidateSINRInputProvenance(sinrInput, direction);
 if ~sinrInputAccepted
     widebandSINR_dB = NaN;
     perRBSINR_dB = [];
@@ -134,7 +134,7 @@ feedback = struct( ...
     "BLERLUTCalibrationID", char(string(localResolveBLERLUTCalibrationID(cfg, direction, tableToken, thresholds_dB, targetBLER))));
 end
 
-function [accepted, reason, source, role, status] = localValidateSINRInputProvenance(sinrInput)
+function [accepted, reason, source, role, status] = localValidateSINRInputProvenance(sinrInput, direction)
 accepted = true;
 reason = "";
 source = "";
@@ -154,6 +154,15 @@ status = string(sixgr.util.structGet(sinrInput, "SINRValueStatus", ...
     sixgr.util.structGet(sinrInput, "ValueStatus", ""))));
 provenanceToken = lower(strjoin([source, role], " "));
 statusToken = lower(strtrim(string(status)));
+% The removed legacy SRS-to-DL path relabeled UL SINR minus a scalar margin
+% as measured DL quality. A source label cannot establish directional power,
+% UE noise/interference, or a DL precoder. Reject it at the CQI boundary too.
+if contains(provenanceToken, "srs_reciprocity") || ...
+        (strcmpi(direction, "DL") && contains(provenanceToken, "ul_srs"))
+    accepted = false;
+    reason = "unqualified_cross_direction_srs_sinr";
+    return;
+end
 if strlength(strtrim(strjoin([source, role, status], " "))) == 0
     return;
 end

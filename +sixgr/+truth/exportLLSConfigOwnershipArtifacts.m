@@ -1676,6 +1676,16 @@ token = lower(strtrim(localScalarToString(value)));
 token = replace(token, "-", "_");
 token = replace(token, " ", "_");
 switch string(parameterName)
+    case "channels.model_type"
+        % The browser/config surface owns a model family, while executed
+        % rows correctly retain the concrete 38.901 profile.  This is a
+        % semantic match only for a concrete member of the configured
+        % family; concrete profile validation remains strict elsewhere.
+        if startsWith(token, "cdl_")
+            token = "cdl";
+        elseif startsWith(token, "tdl_")
+            token = "tdl";
+        end
     case "deployment_topology.layout_type"
         if ismember(token, ["single_pair","single_link","singlelink","single","link_pair"])
             % These tokens all describe the same one-site/one-link runtime

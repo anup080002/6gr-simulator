@@ -474,6 +474,8 @@
       "periodicity": {"required": false, "type": "string_or_number"},
       "row_number": {"required": false, "type": "integer", "min": 1},
       "symbol_location": {"required": false, "type": "integer", "min": 0},
+      "symbol_locations": {"required": false, "type": "number_list", "min_items": 2, "max_items": 2, "min": 0, "max": 13, "integer": true},
+      "burst_length_slots": {"required": false, "type": "integer", "allowed_numeric_values": [2]},
       "subcarrier_location": {"required": false, "type": "integer", "min": 0},
       "rb_offset": {"required": false, "type": "integer", "min": 0},
       "num_rb": {"required": false, "type": "integer", "min": 1},

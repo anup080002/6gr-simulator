@@ -9,8 +9,17 @@ for ii = 1:numel(slots)
     carrier = resourceSet.Carrier;
     carrier.NSlot = mod(slots(ii),double(carrier.SlotsPerFrame));
     carrier.NFrame = mod(floor(slots(ii)/double(carrier.SlotsPerFrame)),1024);
-    ind = nrCSIRSIndices(carrier, resourceSet.CSIRS);
-    sym = nrCSIRS(carrier, resourceSet.CSIRS);
+    ind=[]; sym=[]; resourceOrdinals=[];
+    for resourceIndex=1:numel(resourceSet.Resources)
+        resource=resourceSet.Resources{resourceIndex};
+        resourceIndices=nrCSIRSIndices(carrier,resource);
+        resourceSymbols=nrCSIRS(carrier,resource);
+        ind=[ind;resourceIndices(:)]; %#ok<AGROW>
+        sym=[sym;resourceSymbols(:)]; %#ok<AGROW>
+        resourceOrdinals=[resourceOrdinals;repmat(resourceIndex-1,numel(resourceIndices),1)]; %#ok<AGROW>
+    end
+    assert(numel(unique(ind))==numel(ind),'sixgr:phy:trs:ResourceCollision', ...
+        'Distinct tracking resources cannot occupy the same RE.');
     K = double(carrier.NSizeGrid) * 12;
     L = double(carrier.SymbolsPerSlot);
     P = double(resourceSet.CSIRS.NumCSIRSPorts);
@@ -31,6 +40,7 @@ for ii = 1:numel(slots)
         row.ConfigHash = string(cfg.ConfigHash);
         row.Slot = double(slots(ii));
         row.ResourceIndex = double(jj);
+        row.CSIRSResourceWithinSlot0Based=resourceOrdinals(jj);
         row.LinearIndex1Based = double(ind(jj));
         row.Subcarrier0Based = double(sc(jj) - 1);
         row.Symbol0Based = double(symIdx(jj) - 1);
@@ -58,6 +68,7 @@ end
 
 function row = localMappingRow()
 row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, "ResourceIndex", NaN, ...
+    "CSIRSResourceWithinSlot0Based",NaN, ...
     "LinearIndex1Based", NaN, "Subcarrier0Based", NaN, "Symbol0Based", NaN, ...
     "Port0Based", NaN, "ReferenceSignal", "", "CSIRSRowNumber", NaN, ...
     "NumCSIRSPorts", NaN, "CDMType", "", "Density", "", "TruthStatus", "");

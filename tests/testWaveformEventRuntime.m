@@ -20,6 +20,8 @@ r.observe('tx_capture','early',0,4); % Same ID on a different plane.
 r.decisionBoundary('feedback',4);
 r.decisionBoundary('schedule',7);
 initialRNG=rng;
+assert(r.nextEventSample(12)==4 && r.nextEventSample(2)==2 && ...
+    r.NextSampleIndex==0 && r.ProcessorState.Calls==0);
 event=r.advanceUntilEvent(0);
 assert(~event.PhysicalExecutionPerformed && r.ProcessorState.Calls==0);
 localError(@()r.advanceUntilEvent(12),'WAVEFORM:UncommittedTransmissionInterval');
@@ -42,6 +44,7 @@ assert(event.Completed(1).Segments{1}.StartSample==0 && ...
 % A receiver result can now cause an actual future UE transmission before
 % any samples of that transmission have been consumed.
 r.decisionBoundary('same_sample_action',4);
+assert(r.nextEventSample(12)==4 && r.NextSampleIndex==4);
 same=r.advanceUntilEvent(12);
 assert(same.Decisions=="same_sample_action" && same.StartSample==4 && ...
     same.EndSampleExclusive==4 && ~same.PhysicalExecutionPerformed && r.NextSampleIndex==4);

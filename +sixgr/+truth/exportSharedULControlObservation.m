@@ -18,8 +18,16 @@ capture=struct('Source',"actual_shared_physical_UL_control_observation", ...
     'TXAfterRF',tx.readComplete(),'RXBeforeRF',pre.readComplete(), ...
     'RXAfterRF',post.readComplete(),'RXAfterDigitalGainCompensation',receiver.readComplete(), ...
     'ExecutionReplay',replay,'ReceivedResult',received,'WaveformAmplitudeUnit',"sqrt_mW");
-temporary=string(tempname(folder))+".mat";
-save(temporary,'capture','-v7.3');
-[ok,message]=movefile(temporary,target);
-assert(ok,'sixgr:truth:ULControlCapturePublishFailed','%s',message);
+if prepared.Channel=="SRS"
+    planeIDs=string({planes.ReceiverID});
+    scoringID=planeIDs(endsWith(planeIDs,':desired_pre_noise'));
+    [reference,evidence,channelReferences]=sixgr.truth.sharedLinkScoringObservation(planes,prepared,scoringID);
+    capture.DesiredLinkScoringSamples=reference.readComplete();
+    capture.DesiredLinkScoringEvidence=evidence;
+    capture.AppliedChannelReferenceSegments=channelReferences;
+end
+% PUCCH/SRS captures need the same long-path-safe, byte-verified publication
+% as data captures, without dropping IQ or changing the v7.3 payload format.
+sixgr.util.matSave(target,struct('capture',capture), ...
+    'UseArtifactStore',false,'ForceV73',true);
 end

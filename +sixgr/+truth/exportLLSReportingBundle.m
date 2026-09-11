@@ -1212,7 +1212,7 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
     return;
 end
-x = double(trialT.(varName));
+x = sixgr.truth.numericMeasurementColumn(trialT.(varName),varName);
 x = x(isfinite(x));
 if isempty(x)
     return;
@@ -1228,7 +1228,7 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
     return;
 end
-x = double(trialT.(varName));
+x = sixgr.truth.numericMeasurementColumn(trialT.(varName),varName);
 x = x(isfinite(x));
 if isempty(x)
     return;
@@ -1250,8 +1250,8 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember([numVar, denVar], string(trialT.Properties.VariableNames))))
     return;
 end
-num = double(trialT.(numVar));
-den = double(trialT.(denVar));
+num = sixgr.truth.numericMeasurementColumn(trialT.(numVar),numVar);
+den = sixgr.truth.numericMeasurementColumn(trialT.(denVar),denVar);
 mask = isfinite(num) & isfinite(den) & den >= 0;
 if ~any(mask)
     return;
@@ -1273,7 +1273,7 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
     return;
 end
-x = double(trialT.(varName));
+x = sixgr.truth.numericMeasurementColumn(trialT.(varName),varName);
 mask = isfinite(x);
 if ~any(mask)
     return;
@@ -1291,7 +1291,7 @@ requiredVars = ["Layers","Status"];
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(requiredVars, string(trialT.Properties.VariableNames))))
     return;
 end
-layers = double(trialT.Layers);
+layers = sixgr.truth.numericMeasurementColumn(trialT.Layers, "Layers");
 status = upper(strtrim(string(trialT.Status)));
 failMask = status == "FAIL" | status == "CRASH";
 valid = isfinite(layers) & layers >= 1;
@@ -1331,9 +1331,9 @@ if ~(istable(trialT) && ~isempty(trialT))
 end
 vars = string(trialT.Properties.VariableNames);
 if all(ismember(["RateMatchedBits","RateMatchPunctureBits","RateMatchRepetitionBits"], vars))
-    rm = double(trialT.RateMatchedBits);
-    punct = double(trialT.RateMatchPunctureBits);
-    rep = double(trialT.RateMatchRepetitionBits);
+    rm = sixgr.truth.numericMeasurementColumn(trialT.RateMatchedBits, "RateMatchedBits");
+    punct = sixgr.truth.numericMeasurementColumn(trialT.RateMatchPunctureBits, "RateMatchPunctureBits");
+    rep = sixgr.truth.numericMeasurementColumn(trialT.RateMatchRepetitionBits, "RateMatchRepetitionBits");
     mask = isfinite(rm) & isfinite(punct) & isfinite(rep) & rm > 0;
     if any(mask)
         overhead = (punct(mask) + rep(mask)) ./ rm(mask);
@@ -1603,26 +1603,26 @@ end
 vars = string(trialT.Properties.VariableNames);
 bitVar = string(bitVar);
 if ismember(bitVar, vars)
-    bitValues = double(trialT.(bitVar));
+    bitValues = sixgr.truth.numericMeasurementColumn(trialT.(bitVar), bitVar);
     bitValues(~isfinite(bitValues)) = NaN;
 else
     bitValues = NaN(height(trialT), 1);
 end
 if bitVar == "GoodBits" && all(~isfinite(bitValues))
     if ismember("TBSize_bits", vars)
-        bitTotals = double(trialT.TBSize_bits);
+        bitTotals = sixgr.truth.numericMeasurementColumn(trialT.TBSize_bits, "TBSize_bits");
         bitTotals(~isfinite(bitTotals)) = 0;
         passMask = false(height(trialT), 1);
         if ismember("Status", vars)
             passMask = upper(strtrim(string(trialT.Status))) == "PASS";
         elseif ismember("CRCPass", vars)
-            passMask = logical(trialT.CRCPass);
+            passMask = sixgr.truth.numericMeasurementColumn(trialT.CRCPass, "CRCPass") ~= 0;
         end
         bitValues = zeros(size(bitTotals));
         bitValues(passMask) = bitTotals(passMask);
     end
 elseif bitVar == "OfferedBits" && all(~isfinite(bitValues)) && ismember("TBSize_bits", vars)
-    bitTotals = double(trialT.TBSize_bits);
+    bitTotals = sixgr.truth.numericMeasurementColumn(trialT.TBSize_bits, "TBSize_bits");
     bitTotals(~isfinite(bitTotals)) = NaN;
     bitValues = bitTotals;
 end
@@ -1633,7 +1633,7 @@ slotDur_s = 0.5e-3;
 if ~(istable(trialT) && ~isempty(trialT) && ismember("AirInterfaceTTI_ms", string(trialT.Properties.VariableNames)))
     return;
 end
-tti_ms = double(trialT.AirInterfaceTTI_ms);
+tti_ms = sixgr.truth.numericMeasurementColumn(trialT.AirInterfaceTTI_ms, "AirInterfaceTTI_ms");
 tti_ms = tti_ms(isfinite(tti_ms) & tti_ms > 0);
 if ~isempty(tti_ms)
     slotDur_s = median(tti_ms, "omitnan") / 1000;
@@ -1645,7 +1645,7 @@ durations_s = repmat(double(fallback_s), height(trialT), 1);
 if ~(istable(trialT) && ~isempty(trialT) && ismember("AirInterfaceTTI_ms", string(trialT.Properties.VariableNames)))
     return;
 end
-tti_ms = double(trialT.AirInterfaceTTI_ms);
+tti_ms = sixgr.truth.numericMeasurementColumn(trialT.AirInterfaceTTI_ms, "AirInterfaceTTI_ms");
 validMask = isfinite(tti_ms) & tti_ms > 0;
 durations_s(validMask) = tti_ms(validMask) / 1000;
 end
@@ -1657,13 +1657,19 @@ if ~(istable(trialT) && ~isempty(trialT))
 end
 vars = string(trialT.Properties.VariableNames);
 if all(ismember(["Frame","Slot"], vars))
-    slotKeys = "frame_" + string(round(double(trialT.Frame))) + "_slot_" + string(round(double(trialT.Slot)));
+    frame = sixgr.truth.numericMeasurementColumn(trialT.Frame, "Frame");
+    slot = sixgr.truth.numericMeasurementColumn(trialT.Slot, "Slot");
+    slotKeys = "frame_" + string(round(frame)) + "_slot_" + string(round(slot));
 elseif all(ismember(["SFN","Slot"], vars))
-    slotKeys = "sfn_" + string(round(double(trialT.SFN))) + "_slot_" + string(round(double(trialT.Slot)));
+    sfn = sixgr.truth.numericMeasurementColumn(trialT.SFN, "SFN");
+    slot = sixgr.truth.numericMeasurementColumn(trialT.Slot, "Slot");
+    slotKeys = "sfn_" + string(round(sfn)) + "_slot_" + string(round(slot));
 elseif ismember("CanonicalSlot", vars)
-    slotKeys = "canonical_slot_" + string(round(double(trialT.CanonicalSlot)));
+    canonicalSlot = sixgr.truth.numericMeasurementColumn(trialT.CanonicalSlot, "CanonicalSlot");
+    slotKeys = "canonical_slot_" + string(round(canonicalSlot));
 elseif ismember("Slot", vars)
-    slotKeys = "slot_" + string(round(double(trialT.Slot)));
+    slot = sixgr.truth.numericMeasurementColumn(trialT.Slot, "Slot");
+    slotKeys = "slot_" + string(round(slot));
 else
     slotKeys = strings(height(trialT), 1);
 end
@@ -2272,7 +2278,7 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember(varName, string(trialT.Properties.VariableNames)))
     return;
 end
-x = double(trialT.(varName));
+x = sixgr.truth.numericMeasurementColumn(trialT.(varName), varName);
 x = x(isfinite(x));
 if isempty(x)
     return;
@@ -2296,9 +2302,9 @@ req = ["SegmentationOccurred","NumCodeBlocks","SegmentationPaddingBits"];
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
     return;
 end
-seg = double(trialT.SegmentationOccurred);
-numCb = double(trialT.NumCodeBlocks);
-pad = double(trialT.SegmentationPaddingBits);
+seg = sixgr.truth.numericMeasurementColumn(trialT.SegmentationOccurred, "SegmentationOccurred");
+numCb = sixgr.truth.numericMeasurementColumn(trialT.NumCodeBlocks, "NumCodeBlocks");
+pad = sixgr.truth.numericMeasurementColumn(trialT.SegmentationPaddingBits, "SegmentationPaddingBits");
 seg = seg(isfinite(seg));
 numCb = numCb(isfinite(numCb));
 pad = pad(isfinite(pad));
@@ -2319,9 +2325,9 @@ req = ["RateMatchPunctureBits","RateMatchRepetitionBits","SegmentationPaddingBit
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
     return;
 end
-puncture = double(trialT.RateMatchPunctureBits);
-repeat = double(trialT.RateMatchRepetitionBits);
-padding = double(trialT.SegmentationPaddingBits);
+puncture = sixgr.truth.numericMeasurementColumn(trialT.RateMatchPunctureBits, "RateMatchPunctureBits");
+repeat = sixgr.truth.numericMeasurementColumn(trialT.RateMatchRepetitionBits, "RateMatchRepetitionBits");
+padding = sixgr.truth.numericMeasurementColumn(trialT.SegmentationPaddingBits, "SegmentationPaddingBits");
 puncture = puncture(isfinite(puncture));
 repeat = repeat(isfinite(repeat));
 padding = padding(isfinite(padding));
@@ -2345,9 +2351,9 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["Layers","Status","TBSize_bits"], string(trialT.Properties.VariableNames))))
     return;
 end
-layers = double(trialT.Layers);
+layers = sixgr.truth.numericMeasurementColumn(trialT.Layers, "Layers");
 status = upper(strtrim(string(trialT.Status)));
-bits = double(trialT.TBSize_bits);
+bits = sixgr.truth.numericMeasurementColumn(trialT.TBSize_bits, "TBSize_bits");
 vals = unique(layers(isfinite(layers)));
 for i = 1:numel(vals)
     v = vals(i);
@@ -2362,8 +2368,8 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["CSIPayloadBitLength","TBSize_bits"], string(trialT.Properties.VariableNames))))
     return;
 end
-x = double(trialT.CSIPayloadBitLength);
-y = double(trialT.TBSize_bits);
+x = sixgr.truth.numericMeasurementColumn(trialT.CSIPayloadBitLength, "CSIPayloadBitLength");
+y = sixgr.truth.numericMeasurementColumn(trialT.TBSize_bits, "TBSize_bits");
 mask = isfinite(x) & isfinite(y) & y > 0;
 if ~any(mask)
     return;
@@ -2380,14 +2386,17 @@ papr = localFiniteColumn(ctx.Tables.UL, "PAPR_dB");
 enabled = localConfigFlag(ctx, ["waveform.low_papr_mode", "pusch.low_papr_mode"], false) || ...
     localConfigNonBaseline(ctx, ["pucch.low_papr_policy"]) || ...
     localConfigFlag(ctx, ["modulation.pi2_bpsk_enabled"], false);
-note = "Reported as observed UL PAPR under the configured low-PAPR mode. Lower observed PAPR implies higher low-PAPR gain relative to a comparator campaign.";
+note = "Absolute PAPR from finite UL waveform measurements; not a measured PAPR reduction or gain. A gain requires a separately measured matched comparator.";
+T = localMetricTableRow(cat, metric, "UL", "feature_enabled", "config_only", ...
+    double(enabled), "", "bool", "meta/scenario_config_resolved.json", note);
 if isempty(papr)
-    papr = NaN;
+    % An empty/NaN-only trial column cannot supply an observed statistic.
+    % Keep only the configuration row, without measurement coverage credit.
+    return;
 end
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "UL", "feature_enabled", "config_only", double(enabled), "", "bool", "meta/scenario_config_resolved.json", localConfigEnabledNote(enabled, note)); ...
-    localMetricTableRow(cat, metric, "UL", "mean_papr_db", "available", mean(papr, "omitnan"), "", "dB", localDefaultSource("UL"), localConfigEnabledNote(enabled, note)); ...
-    localMetricTableRow(cat, metric, "UL", "p95_papr_db", "available", prctile(papr(isfinite(papr)), 95), "", "dB", localDefaultSource("UL"), localConfigEnabledNote(enabled, note))];
+    localMetricTableRow(cat, metric, "UL", "mean_papr_db", "available", mean(papr), "", "dB", localDefaultSource("UL"), note); ...
+    localMetricTableRow(cat, metric, "UL", "p95_papr_db", "available", prctile(papr, 95), "", "dB", localDefaultSource("UL"), note)];
 end
 
 function T = localPABackoffImpactRows(cat, metric, ctx)
@@ -2994,8 +3003,10 @@ T = localEmptyMetricTable();
     if ~(istable(trialT) && ~isempty(trialT) && all(ismember(["WidebandCQI","PostEqSINR_dB"], string(trialT.Properties.VariableNames))))
         return;
     end
-    reported = double(trialT.WidebandCQI);
-    sinr = double(trialT.PostEqSINR_dB);
+    reported = sixgr.truth.numericMeasurementColumn( ...
+        trialT.WidebandCQI, "WidebandCQI");
+    sinr = sixgr.truth.numericMeasurementColumn( ...
+        trialT.PostEqSINR_dB, "PostEqSINR_dB");
 mask = isfinite(reported) & isfinite(sinr);
 if ~any(mask)
     return;
@@ -3009,19 +3020,22 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember("PMI", string(trialT.Properties.VariableNames)))
     return;
 end
-reported = double(trialT.PMI);
+reported = sixgr.truth.numericMeasurementColumn(trialT.PMI, "PMI");
 reference = NaN(size(reported));
 if ismember("BestBeamIndex", string(trialT.Properties.VariableNames))
-    bestBeam = double(trialT.BestBeamIndex) - 1;
+    bestBeam = sixgr.truth.numericMeasurementColumn( ...
+        trialT.BestBeamIndex, "BestBeamIndex") - 1;
     reference(isfinite(bestBeam)) = bestBeam(isfinite(bestBeam));
 end
 if ismember("SelectedBeamIndex", string(trialT.Properties.VariableNames))
-    selBeam = double(trialT.SelectedBeamIndex) - 1;
+    selBeam = sixgr.truth.numericMeasurementColumn( ...
+        trialT.SelectedBeamIndex, "SelectedBeamIndex") - 1;
     mask = ~isfinite(reference) & isfinite(selBeam);
     reference(mask) = selBeam(mask);
 end
 if ismember("ConfiguredPMI", string(trialT.Properties.VariableNames))
-    cfgPmi = double(trialT.ConfiguredPMI);
+    cfgPmi = sixgr.truth.numericMeasurementColumn( ...
+        trialT.ConfiguredPMI, "ConfiguredPMI");
     mask = ~isfinite(reference) & isfinite(cfgPmi);
     reference(mask) = cfgPmi(mask);
 end
@@ -3037,14 +3051,16 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember("RankIndicator", string(trialT.Properties.VariableNames)))
     return;
 end
-reported = double(trialT.RankIndicator);
+reported = sixgr.truth.numericMeasurementColumn( ...
+    trialT.RankIndicator, "RankIndicator");
 reference = NaN(size(reported));
 if ismember("RankEstimate", string(trialT.Properties.VariableNames))
-    rankEst = double(trialT.RankEstimate);
+    rankEst = sixgr.truth.numericMeasurementColumn( ...
+        trialT.RankEstimate, "RankEstimate");
     reference(isfinite(rankEst)) = rankEst(isfinite(rankEst));
 end
 if ismember("Layers", string(trialT.Properties.VariableNames))
-    layers = double(trialT.Layers);
+    layers = sixgr.truth.numericMeasurementColumn(trialT.Layers, "Layers");
     mask = ~isfinite(reference) & isfinite(layers);
     reference(mask) = layers(mask);
 end
@@ -3061,9 +3077,12 @@ req = ["ReceiverHestSINR_dB","ChannelGain_dB","NoiseVariance"];
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
     return;
 end
-reported = double(trialT.ReceiverHestSINR_dB);
-gain = double(trialT.ChannelGain_dB);
-noiseVar = double(trialT.NoiseVariance);
+reported = sixgr.truth.numericMeasurementColumn( ...
+    trialT.ReceiverHestSINR_dB, "ReceiverHestSINR_dB");
+gain = sixgr.truth.numericMeasurementColumn( ...
+    trialT.ChannelGain_dB, "ChannelGain_dB");
+noiseVar = sixgr.truth.numericMeasurementColumn( ...
+    trialT.NoiseVariance, "NoiseVariance");
 reference = gain - 10 .* log10(max(noiseVar, eps));
 mask = isfinite(reported) & isfinite(reference);
 if ~any(mask)
@@ -3077,14 +3096,14 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember("ChannelGain_dB", string(trialT.Properties.VariableNames)))
     return;
 end
-reported = double(trialT.ChannelGain_dB);
+reported = sixgr.truth.numericMeasurementColumn(trialT.ChannelGain_dB, "ChannelGain_dB");
 reference = NaN(size(reported));
 if ismember("SelectedBeamGain_dB", string(trialT.Properties.VariableNames))
-    ref0 = double(trialT.SelectedBeamGain_dB);
+    ref0 = sixgr.truth.numericMeasurementColumn(trialT.SelectedBeamGain_dB, "SelectedBeamGain_dB");
     reference(isfinite(ref0)) = ref0(isfinite(ref0));
 end
 if ismember("BestBeamGain_dB", string(trialT.Properties.VariableNames))
-    ref1 = double(trialT.BestBeamGain_dB);
+    ref1 = sixgr.truth.numericMeasurementColumn(trialT.BestBeamGain_dB, "BestBeamGain_dB");
     mask = ~isfinite(reference) & isfinite(ref1);
     reference(mask) = ref1(mask);
 end
@@ -3101,9 +3120,11 @@ req = ["LinkAdaptationScheduled","LinkAdaptationApplied"];
 if ~(istable(trialT) && ~isempty(trialT) && all(ismember(req, string(trialT.Properties.VariableNames))))
     return;
 end
-scheduled = double(trialT.LinkAdaptationScheduled) ~= 0;
-applied = double(trialT.LinkAdaptationApplied) ~= 0;
-mask = isfinite(double(trialT.LinkAdaptationScheduled)) & isfinite(double(trialT.LinkAdaptationApplied));
+scheduledValue = sixgr.truth.numericMeasurementColumn(trialT.LinkAdaptationScheduled, "LinkAdaptationScheduled");
+appliedValue = sixgr.truth.numericMeasurementColumn(trialT.LinkAdaptationApplied, "LinkAdaptationApplied");
+scheduled = scheduledValue ~= 0;
+applied = appliedValue ~= 0;
+mask = isfinite(scheduledValue) & isfinite(appliedValue);
 if ~any(mask)
     return;
 end
@@ -3120,7 +3141,7 @@ T = localEmptyMetricTable();
 if ~(istable(trialT) && ~isempty(trialT) && ismember("ConditionNumber_dB", string(trialT.Properties.VariableNames)))
     return;
 end
-condDb = double(trialT.ConditionNumber_dB);
+condDb = sixgr.truth.numericMeasurementColumn(trialT.ConditionNumber_dB, "ConditionNumber_dB");
 condDb = condDb(isfinite(condDb));
 if isempty(condDb)
     return;
@@ -3560,8 +3581,17 @@ for i = 1:height(probeT)
             availability = rowAvailability;
         end
     end
+    numericValue = double(probeT.Value(i));
+    textValue = strtrim(string(probeT.TextValue(i)));
+    notes = string(probeT.Notes(i));
+    if ~isfinite(numericValue) && ...
+            (ismissing(textValue) || strlength(textValue) == 0)
+        textValue = "";
+        availability = "not_available";
+        notes = strtrim(notes + " Metric was not measured in this run; no count or value is inferred.");
+    end
     T = [T; localMetricTableRow(cat, metric, probeT.Entity(i), probeT.Statistic(i), availability, ... %#ok<AGROW>
-        double(probeT.Value(i)), string(probeT.TextValue(i)), string(probeT.Unit(i)), src, string(probeT.Notes(i)))];
+        numericValue, textValue, string(probeT.Unit(i)), src, notes)];
 end
 end
 
@@ -3639,6 +3669,16 @@ for si = 1:numel(specs)
         snrDb = localBeamTableNumeric(statsT, "SNR_dB", k, NaN);
         [scopedStatistic, scopeNote] = sixgr.truth.beamMetricStatisticIdentity( ...
             string(spec.Statistic), direction, snrDb);
+        [sourceIdentitySuffix, sourceIdentityNote] = ...
+            localBeamMetricSourceIdentity(statsT, k);
+        scopedStatistic = scopedStatistic + sourceIdentitySuffix;
+        if strlength(sourceIdentityNote) > 0
+            if strlength(scopeNote) > 0
+                scopeNote = scopeNote + "; " + sourceIdentityNote;
+            else
+                scopeNote = sourceIdentityNote;
+            end
+        end
         if strlength(scopeNote) > 0
             note = note + " AggregationScope=" + scopeNote + ".";
         end
@@ -3662,6 +3702,44 @@ for si = 1:numel(specs)
         end
     end
 end
+end
+
+function [suffix, note] = localBeamMetricSourceIdentity(T, rowIdx)
+% Preserve the runtime aggregation identity in the legacy metric table,
+% whose natural key has no dedicated UE/cell/frame/slot columns.  Omitting
+% these fields made distinct measured beam observations collide under the
+% same CategoryKey/MetricKey/Entity/Statistic key.
+suffix = "";
+parts = strings(0, 1);
+specs = { ...
+    ["UEIndex","UEID"], "ue"; ...
+    ["ServingCell","CellID","BaseStationID"], "cell"; ...
+    ["Frame"], "frame"; ...
+    ["Slot"], "slot"; ...
+    ["BWPId","BWPID","ActiveBWP"], "bwp"; ...
+    ["BurstID","SSBBurstID"], "burst"};
+for i = 1:size(specs, 1)
+    value = localBeamTableString(T, specs{i, 1}(1), rowIdx, "");
+    if strlength(value) == 0
+        for candidate = specs{i, 1}(2:end)
+            value = localBeamTableString(T, candidate, rowIdx, "");
+            if strlength(value) > 0, break; end
+        end
+    end
+    value = strtrim(string(value));
+    if ismissing(value) || strlength(value) == 0 || lower(value) == "nan"
+        continue;
+    end
+    token = lower(regexprep(value, "[^A-Za-z0-9]+", "_"));
+    token = strip(token, "_");
+    if strlength(token) == 0
+        continue;
+    end
+    label = string(specs{i, 2});
+    suffix = suffix + "_" + label + "_" + token;
+    parts(end+1, 1) = label + "=" + value; %#ok<AGROW>
+end
+note = strjoin(parts, "; ");
 end
 
 function T = localBeamManagementRowsFromSSBSweep(cat, metric, ssbT, metricKey)

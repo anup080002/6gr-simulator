@@ -6,11 +6,11 @@ slotT = tx.SlotTable;
 rows = repmat(localTimingRow(), numel(resources), 1);
 for ii = 1:numel(resources)
     carrier = resources(ii).Carrier;
-    slotWave = localSlotWaveform(rx.Waveform, slotT, ii);
     attempted = true;
     est = NaN;
     status = "timing_estimate_unavailable";
     try
+        slotWave = localSlotWaveform(rx.Waveform, slotT, ii);
         est = double(nrTimingEstimate(carrier, slotWave, resources(ii).Indices, resources(ii).Symbols));
         status = "timing_estimate_available";
     catch ME
@@ -49,8 +49,14 @@ timing.TimingError_samples = median([rows.TimingError_samples], "omitnan");
 end
 
 function y = localSlotWaveform(wave, slotT, idx)
-startIdx = max(1, round(double(slotT.StartSample1Based(idx))));
-endIdx = min(size(wave, 1), round(double(slotT.EndSample1Based(idx))));
+startIdx = double(slotT.StartSample1Based(idx));
+endIdx = double(slotT.EndSample1Based(idx));
+if ~isfinite(startIdx) || ~isfinite(endIdx) || ...
+        startIdx~=fix(startIdx) || endIdx~=fix(endIdx) || ...
+        startIdx<1 || endIdx<startIdx || endIdx>size(wave,1)
+    error('sixgr:phy:trs:IncompleteTimingCapture', ...
+        'TRS timing correlation requires the complete declared received slot.');
+end
 y = wave(startIdx:endIdx, :);
 end
 

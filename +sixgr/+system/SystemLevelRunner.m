@@ -42,6 +42,10 @@ classdef SystemLevelRunner
             out.Errors = strings(0,1);
             out.KPITable = table();
             out.Artifacts = struct('csv',{{}},'mat',{{}},'fig',{{}},'m',{{}});
+            schedulerDecisionState=struct('SchedulerDecisionTable',table(), ...
+                'SchedulerResourceExclusionTable',table(), ...
+                'SchedulerDecisionSourceArtifact',"csv/system_scheduler_decisions.csv", ...
+                'SchedulerResourceSourceArtifact',"csv/system_scheduler_resource_exclusions.csv");
 
             try
                 layout = sixgr.scenario.generateLayout(cfg);
@@ -745,7 +749,11 @@ classdef SystemLevelRunner
                         ueStateDL = ueStateDLAll(ueCell);
                         schedCellTimer = tic;
                         try
-                            [gCell, ~] = schedDLCells{cellId}.schedule(t-1, ueStateDL, dlBudget);
+                            [gCell, schedulerInfo] = schedDLCells{cellId}.schedule(t-1, ueStateDL, dlBudget);
+                            schedulerDecisionState.CurrentSlot=t;
+                            schedulerDecisionState.CurrentFrame=1+floor((t-1)/double(schedDLCells{cellId}.Carrier.SlotsPerFrame));
+                            schedulerDecisionState=sixgr.truth.CoupledTruthRuntime.recordSchedulerDecisionRuntime( ...
+                                schedulerDecisionState,schedulerInfo,"DL",cellId);
                         catch MEs
                             out.Ok = false;
                             gCell = struct([]);
@@ -804,8 +812,12 @@ classdef SystemLevelRunner
                         ueStateUL = ueStateULAll(ueCell);
                         schedCellTimer = tic;
                         try
-                            [gCell, ~] = schedULCells{cellId}.schedule( ...
+                            [gCell, schedulerInfo] = schedULCells{cellId}.schedule( ...
                                 t-1, ueStateUL, ulSchedulingBudget);
+                            schedulerDecisionState.CurrentSlot=t;
+                            schedulerDecisionState.CurrentFrame=1+floor((t-1)/double(schedULCells{cellId}.Carrier.SlotsPerFrame));
+                            schedulerDecisionState=sixgr.truth.CoupledTruthRuntime.recordSchedulerDecisionRuntime( ...
+                                schedulerDecisionState,schedulerInfo,"UL",cellId);
                         catch MEs
                             gCell = struct([]);
                             out.Ok = false;
@@ -1539,6 +1551,8 @@ classdef SystemLevelRunner
             out.Details.BeamEvents = beamEvents;
             out.Details.SchedulerGrants = schedulerGrants;
             out.Details.HARQProcesses = harqProcesses;
+            out.Details.SchedulerDecisions=schedulerDecisionState.SchedulerDecisionTable;
+            out.Details.SchedulerResourceExclusions=schedulerDecisionState.SchedulerResourceExclusionTable;
             out.Details.CellLoad = cellLoadTS;
             out.Details.InterferenceDetail = interferenceDetail;
             out.Details.MobilityControlSeries = mobilityTS;
@@ -1632,6 +1646,16 @@ classdef SystemLevelRunner
                 csvSched = fullfile(ctx.RunFolder, "csv", "system_scheduler_grants.csv");
                 sixgr.util.csvWriteTable(csvSched, schedulerGrants);
                 out.Artifacts.csv{end+1} = csvSched;
+                if ~isempty(out.Details.SchedulerDecisions)
+                    csvDecisions=fullfile(ctx.RunFolder,"csv","system_scheduler_decisions.csv");
+                    sixgr.util.csvWriteTable(csvDecisions,out.Details.SchedulerDecisions);
+                    out.Artifacts.csv{end+1}=csvDecisions;
+                end
+                if ~isempty(out.Details.SchedulerResourceExclusions)
+                    csvExclusions=fullfile(ctx.RunFolder,"csv","system_scheduler_resource_exclusions.csv");
+                    sixgr.util.csvWriteTable(csvExclusions,out.Details.SchedulerResourceExclusions);
+                    out.Artifacts.csv{end+1}=csvExclusions;
+                end
 
                 csvHarq = fullfile(ctx.RunFolder, "csv", "system_harq_processes.csv");
                 sixgr.util.csvWriteTable(csvHarq, harqProcesses);
@@ -2111,9 +2135,28 @@ try
     elseif requiresExactGrantNRE
         tf = false;
     end
-catch
-    % An unresolved exact allocation cannot authorize a primary grant.
-    tf = false;
+catch ME
+    % A TDD partition may clip a valid declared allocation so its Type-A
+    % DM-RS is no longer present. That opportunity is unavailable. An
+    % invalid enabled RS/configuration, clock mismatch or Toolbox failure
+    % must instead retain its original exception, never look like no demand.
+    if dir == "UL"
+        configured = localRequiredAllocation(cfg, ...
+            ["phy.pusch.symbolAllocation","phy.pusch.SymbolAllocation"], "PUSCH");
+    else
+        configured = localRequiredAllocation(cfg, ...
+            ["phy.pdsch.symbolAllocation","phy.pdsch.SymbolAllocation"], "PDSCH");
+    end
+    clipped = ~isequal(double(configured(:).'), symAlloc);
+    dmrsUnavailable = any(string(ME.identifier) == [ ...
+        "sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol", ...
+        "sixgr:phy:grid:allocREsPDSCH:InvalidTypeADMRSSymbol", ...
+        "sixgr:pdsch:NoDMRSResources"]);
+    if clipped && dmrsUnavailable
+        tf = false;
+    else
+        rethrow(ME);
+    end
 end
 end
 

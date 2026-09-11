@@ -11,11 +11,27 @@ end
 rng(8308, "twister");
 maxLayerInverseErr = 0;
 maxBER = 0;
-for nLayers = 1:8
+% Include asymmetric codeword modulation: identical QPSK on both codewords
+% can hide a one-based/zero-based mismatch in the measurement consumer.
+rankCases = [1:8 5 8];
+for caseIndex = 1:numel(rankCases)
+    nLayers = rankCases(caseIndex);
     cfg = localCfg(nLayers);
+    if caseIndex > 8
+        cfg.phy.pdsch.modulation = {'QPSK','16QAM'};
+    end
     W = eye(nLayers);
     [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, "PrecodingMatrix", W);
     expectedCW = 1 + double(nLayers > 4);
+    if expectedCW == 1
+        expectedCodewordByLayer = zeros(1,nLayers);
+    else
+        % TS 38.211 Table 7.3.1.3-1: q=0 takes floor(v/2) layers.
+        expectedCodewordByLayer = [zeros(1,floor(nLayers/2)), ...
+            ones(1,ceil(nLayers/2))];
+    end
+    assert(isequal(tx.CodewordLayerMapping.CodewordIndexByLayer, expectedCodewordByLayer), ...
+        'PDSCH physical codeword IDs must be q=0,1, not MATLAB cell positions.');
 
     assert(double(tx.NumCodewords) == expectedCW, "Rank-%d PDSCH must materialize %d codeword(s).", nLayers, expectedCW);
     assert(numel(tx.Codewords) == expectedCW && isequal(int8(tx.Codewords{1}(:)), int8(tx.Codeword(:))), ...
@@ -69,11 +85,19 @@ for nLayers = 1:8
     assert(height(samples) == numel(tx.PDSCHLayerSymbolsForEvidence) && ...
         all(samples.CaptureScope == "full_allocation_paired_symbols"), ...
         "Rank-%d must export the complete measured allocation.", nLayers);
-    expectedIndices = reshape(tx.CodewordLayerMapping.CodewordIndexByLayer(samples.LayerIndex), [], 1);
+    expectedIndices = reshape(expectedCodewordByLayer(samples.LayerIndex), [], 1);
     assert(isequal(samples.CodewordIndex, expectedIndices), ...
         "Rank-%d capture must preserve the actual codeword-to-layer mapping.", nLayers);
-    assert(size(samples.Modulation, 2) == 1 && all(samples.Modulation == "QPSK"), ...
+    expectedModulations = string(cfg.phy.pdsch.modulation);
+    expectedSampleModulations = reshape(expectedModulations(expectedIndices+1), [], 1);
+    assert(size(samples.Modulation, 2) == 1 && isequal(samples.Modulation, expectedSampleModulations), ...
         "Rank-%d must preserve one modulation label per sample, not a vector-valued CSV cell.", nLayers);
+    assert(isequal(rx.CodewordLayerMapping.CodewordIndexByLayer, expectedCodewordByLayer), ...
+        'RX must independently retain NR physical codeword IDs.');
+    for codewordCell = 1:expectedCW
+        assert(isequal(int8(rx.TransportBlocks{codewordCell}(:)), int8(tx.TransportBlocks{codewordCell}(:))), ...
+            'Every codeword must recover its actual transport block.');
+    end
     ber = sum(int8(rx.TransportBlock(:)) ~= int8(tx.TransportBlock(:))) / numel(tx.TransportBlock);
     maxBER = max(maxBER, ber);
     assert(ber == 0, "Rank-%d no-noise PDSCH must recover the exact TB.", nLayers);
@@ -98,9 +122,43 @@ for nLayers = 1:8
 end
 
 localAssertInvalidScopesFail();
-fprintf("PDSCH codeword/layer ranks=1:8 maxLayerInverseErr=%.3g maxBER=%.3g\n", ...
+localAssertDelayedSharedCFO();
+fprintf("PDSCH codeword/layer ranks=1:8 plus mixed QPSK/16QAM ranks=5,8 maxLayerInverseErr=%.3g maxBER=%.3g\n", ...
     maxLayerInverseErr, maxBER);
 ok = true;
+end
+
+function localAssertDelayedSharedCFO()
+% Received-waveform timing/frequency test, not a channel-delay oracle.
+cfg=localCfg(1);
+cfg.phy.rx.cfoCorrectionEnabled=true;
+cfg.phy.impairments.cfoEstimationMethod='cyclic_prefix';
+[tx,~]=sixgr.phy.dl.PDSCH_Tx(cfg,'PrecodingMatrix',1);
+ofdm=nrOFDMInfo(tx.Carrier);
+delay=7;
+for injectedCFO=[-220 0 220]
+    % Explicit test channel: integer delay and frequency rotation, with
+    % actual idle samples after transmission. Nothing is supplied to RX
+    % about the injected delay or frequency; only its bounded search window.
+    observed=[complex(zeros(delay,1));tx.Waveform;complex(zeros(32,1))];
+    observed=observed.*exp(1j*2*pi*injectedCFO/ofdm.SampleRate*(0:size(observed,1)-1).');
+    [rx,~]=sixgr.phy.dl.PDSCH_Rx(observed,cfg, ...
+        'Carrier',tx.Carrier,'PDSCH',tx.PDSCH,'PDSCHIndices',tx.PDSCHIndices, ...
+        'TransportBlockSize',tx.TransportBlockSize,'TargetCodeRate',tx.TargetCodeRate, ...
+        'RV',tx.RV,'CodingPlan',tx.CodingPlans,'CodingLayout',tx.CodingLayouts, ...
+        'PrecodingMatrix',1,'NoiseVar',1e-12,'NoiseVarDomain','grid', ...
+        'SkipTimingEstimate',false,'TimingSearchWindowSamples',[0 20]);
+    assert(rx.Ok && ~rx.CRCError && isequal(rx.TransportBlock,tx.TransportBlock));
+    assert(rx.ReceiveTiming.TimingOffsetSamples==delay && ...
+        ~rx.ReceiveTiming.OracleTimingUsed && ~rx.ReceiveTiming.ReceiverZeroPaddingUsed);
+    assert(abs(rx.EstimatedCFO_Hz-injectedCFO)<5, ...
+        'Shared PDSCH frequency estimation must use aligned received symbols.');
+    assert(abs(rx.ResidualCFO_EstimatedPostCorrection_Hz)<5, ...
+        'Residual CFO must be measured on the actual aligned/corrected FFT interval.');
+    fprintf('SHARED_PDSCH_CFO_PASS injected=%g measured=%.12g residual=%.12g timing=%g\n', ...
+        injectedCFO,rx.EstimatedCFO_Hz,rx.ResidualCFO_EstimatedPostCorrection_Hz, ...
+        rx.ReceiveTiming.TimingOffsetSamples);
+end
 end
 
 function cfg = localCfg(nLayers)

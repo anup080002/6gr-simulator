@@ -19,6 +19,7 @@ generatedULAny = false;
 
 for i = 1:numel(seeds)
     s = seeds(i);
+    cfg.run.seed = double(s);
     rng(double(s), "twister");
     rep = sixgr_run_3gpp_full_campaign(cfg, ...
         "ResultsRoot", tmp, ...
@@ -40,6 +41,7 @@ for i = 1:numel(seeds)
         "E2EStrictValidation", false, ...
         "E2ETruthMaxSlots", 28);
 
+    verifyCampaignSeedAuthority(rep,double(s));
     assert(isfield(rep, "E2E") && isstruct(rep.E2E), "E2E report struct missing.");
     assert(istable(rep.E2E.SummaryTable) && height(rep.E2E.SummaryTable) == 1, "E2E summary missing.");
     assert(istable(rep.E2E.PacketIntegrityTable) && height(rep.E2E.PacketIntegrityTable) >= 3, "Packet integrity table missing.");

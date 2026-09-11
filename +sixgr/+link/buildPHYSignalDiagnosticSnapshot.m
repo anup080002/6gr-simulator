@@ -1,4 +1,4 @@
-function snapshot = buildPHYSignalDiagnosticSnapshot(cfg, direction, tx, rxWave, rx, constellationT, context)
+function snapshot = buildPHYSignalDiagnosticSnapshot(cfg, direction, tx, rxWave, rx, constellationT, context, existingSnapshot)
 %BUILDPHYSIGNALDIAGNOSTICSNAPSHOT Capture one bounded, same-trial PHY diagnostic.
 %
 % The snapshot is intentionally built while the actual TX waveform, channel
@@ -10,6 +10,11 @@ if nargin < 7 || ~isstruct(context)
     context = struct();
 end
 direction = upper(strtrim(string(direction)));
+if nargin >= 8 && isstruct(existingSnapshot) && ...
+        logical(sixgr.util.structGet(existingSnapshot,"Available",false))
+    snapshot=localAugmentExecutedChannelEvidence(existingSnapshot,direction,context);
+    return;
+end
 snapshot = localEmptySnapshot(direction);
 
 if ~logical(sixgr.util.structGet(cfg, "outputs.phySignalDiagnosticEnabled", false))
@@ -300,8 +305,8 @@ rows.XUnit(:) = "Hz_offset";
 rows.YUnit(:) = "relative_magnitude_dB_common_reference";
 sourceT = [sourceT; rows]; %#ok<AGROW>
 
-hMagnitude_dB = 20 .* log10(max(abs(hSlice), realmin));
-hPhase_deg = unwrap(angle(hSlice)) .* 180 ./ pi;
+[hMagnitude_dB,hWrapped,hUnwrapped] = localMeasuredChannelPolar(hSlice);
+hPhase_deg = hUnwrapped .* 180 ./ pi;
 rows = localBaseRows(meta, "channel_estimate", "hest", numel(hSlice));
 rows.PointIndex = (1:numel(hSlice)).';
 rows.SubcarrierIndex = double(hSubcarrier);
@@ -323,10 +328,15 @@ rows.QValue = imag(hSlice);
 rows.MagnitudeLinear = abs(hSlice);
 rows.Magnitude_dB = hMagnitude_dB;
 rows.PowerLinear = abs(hSlice).^2;
-rows.Power_dB = 10 .* log10(max(rows.PowerLinear, realmin));
+rows.Power_dB = hMagnitude_dB;
 rows.Phase_deg = hPhase_deg;
-rows.WrappedPhase_rad = angle(hSlice);
-rows.UnwrappedPhaseFrequency_rad = unwrap(angle(hSlice));
+rows.WrappedPhase_rad = hWrapped;
+rows.UnwrappedPhaseFrequency_rad = hUnwrapped;
+rows.MagnitudeValueStatus(:) = "exact_receiver_estimate_log_magnitude";
+rows.PhaseValueStatus(:) = "defined_nonzero_receiver_estimate";
+zeroH = abs(hSlice)==0;
+rows.MagnitudeValueStatus(zeroH) = "negative_infinity_exact_zero_receiver_estimate";
+rows.PhaseValueStatus(zeroH) = "undefined_zero_receiver_estimate";
 rows.GridKind(:) = "receiver_channel_estimate_frequency_slice";
 rows.GridSHA256(:) = localComplexTensorHash(hSlice);
 sourceT = [sourceT; rows]; %#ok<AGROW>
@@ -391,6 +401,107 @@ snapshot.Direction = direction;
 snapshot.SnapshotID = meta.SnapshotID;
 snapshot.Metadata = meta;
 snapshot.SourceTable = sourceT;
+end
+
+function snapshot=localAugmentExecutedChannelEvidence(snapshot,direction,context)
+% Add channel-oracle arrays only after the practical receiver is complete.
+% This mode cannot construct a receiver estimate and cannot influence CRC,
+% CQI, PMI, equalization, or decoding.
+assert(string(sixgr.util.structGet(snapshot,"Direction",""))==direction && ...
+    isstruct(sixgr.util.structGet(snapshot,"Metadata",struct())) && ...
+    istable(sixgr.util.structGet(snapshot,"SourceTable",table())), ...
+    'sixgr:link:PHYDiagnosticAugmentIdentity', ...
+    'Post-decode channel evidence must augment the same-direction actual PHY snapshot.');
+meta=snapshot.Metadata;
+sourceT=snapshot.SourceTable;
+replacePanels=["true_channel_impulse_response","true_channel_frequency_response", ...
+    "runtime_channel_angles","time_varying_channel_impulse_response","doppler_spectrum"];
+sourceT=sourceT(~ismember(string(sourceT.Panel),replacePanels),:);
+sourceT=sourceT(~(string(sourceT.Panel)=="time_domain" & ...
+    string(sourceT.Series)=="post_channel"),:);
+postChannelWave=localFirstWaveformColumn(sixgr.util.structGet( ...
+    context,"PostChannelWaveform",[]));
+if ~isempty(postChannelWave)
+    txRows=sourceT(string(sourceT.Panel)=="time_domain" & string(sourceT.Series)=="tx",:);
+    nPostChannel=min(numel(postChannelWave),height(txRows));
+    assert(nPostChannel>0 && isfinite(meta.SampleRate_Hz) && meta.SampleRate_Hz>0, ...
+        'sixgr:link:PostChannelDiagnosticClockUnavailable', ...
+        'Post-channel augmentation requires the same bounded waveform clock as the actual trial snapshot.');
+    postChannelIndex=(1:nPostChannel).';
+    postChannelUse=postChannelWave(postChannelIndex);
+    rows=localBaseRows(meta,"time_domain","post_channel",nPostChannel);
+    rows.PointIndex=double(postChannelIndex);
+    rows.SampleIndex=double(postChannelIndex);
+    rows.XValue=(double(postChannelIndex)-1)./double(meta.SampleRate_Hz);
+    rows.YValue=abs(postChannelUse);
+    rows.XUnit(:)="s";
+    rows.YUnit(:)="complex_baseband_amplitude_before_receiver_impairments";
+    rows.IValue=real(postChannelUse);
+    rows.QValue=imag(postChannelUse);
+    rows.GridKind(:)="exact_runtime_channel_output_waveform";
+    rows.GridSHA256(:)=string(sixgr.util.structGet(context, ...
+        "PostChannelWaveformSHA256",localComplexTensorHash(postChannelWave)));
+    sourceT=[sourceT;rows]; %#ok<AGROW>
+end
+[truePathGain,truePathDelay_s,truePathStatus]=localSelectExecutedPathGain(context);
+assert(truePathStatus=="available", ...
+    'sixgr:link:PHYDiagnosticExecutedChannelUnavailable', ...
+    'A shared fading capture must provide actual path gains and delays after decoding.');
+nPath=numel(truePathGain);
+rows=localBaseRows(meta,"true_channel_impulse_response", ...
+    "executed_path_gain_rx1_tx1",nPath);
+rows.PointIndex=(1:nPath).';
+rows.XValue=truePathDelay_s;
+rows.YValue=abs(truePathGain);
+rows.XUnit(:)="s_excess_delay";
+rows.YUnit(:)="executed_complex_path_gain_magnitude";
+rows.IValue=real(truePathGain);
+rows.QValue=imag(truePathGain);
+rows.MagnitudeLinear=abs(truePathGain);
+rows.Magnitude_dB=20.*log10(max(rows.MagnitudeLinear,realmin));
+rows.PowerLinear=abs(truePathGain).^2;
+rows.Power_dB=10.*log10(max(rows.PowerLinear,realmin));
+rows.Phase_deg=rad2deg(angle(truePathGain));
+rows.WrappedPhase_rad=angle(truePathGain);
+rows.GridKind(:)="executed_runtime_channel_path_gain_tensor_slice";
+rows.GridSHA256(:)=string(sixgr.util.structGet(context, ...
+    "RuntimeChannelPathGainsSHA256",localComplexTensorHash(truePathGain)));
+sourceT=[sourceT;rows]; %#ok<AGROW>
+
+if isfinite(meta.SCS_kHz) && meta.SCS_kHz>0
+    channelRows=sourceT(string(sourceT.Panel)=="channel_estimate",:);
+    nFrequency=max(2,height(channelRows));
+    frequencyOffset_Hz=((0:nFrequency-1).'-(nFrequency-1)./2).*double(meta.SCS_kHz).*1e3;
+    trueHf=exp(-1i.*2.*pi.*frequencyOffset_Hz.*reshape(truePathDelay_s,1,[]))* ...
+        reshape(truePathGain,[],1);
+    rows=localBaseRows(meta,"true_channel_frequency_response", ...
+        "executed_h_f_rx1_tx1",nFrequency);
+    rows.PointIndex=(1:nFrequency).';
+    rows.XValue=frequencyOffset_Hz;
+    rows.YValue=20.*log10(max(abs(trueHf),realmin));
+    rows.XUnit(:)="Hz_offset";
+    rows.YUnit(:)="executed_channel_magnitude_dB";
+    rows.FrequencyOffset_Hz=frequencyOffset_Hz;
+    if isfinite(meta.CarrierFrequency_Hz)
+        rows.AbsoluteFrequency_Hz=meta.CarrierFrequency_Hz+frequencyOffset_Hz;
+    end
+    rows.IValue=real(trueHf);
+    rows.QValue=imag(trueHf);
+    rows.MagnitudeLinear=abs(trueHf);
+    rows.Magnitude_dB=20.*log10(max(rows.MagnitudeLinear,realmin));
+    rows.PowerLinear=abs(trueHf).^2;
+    rows.Power_dB=10.*log10(max(rows.PowerLinear,realmin));
+    rows.Phase_deg=rad2deg(unwrap(angle(trueHf)));
+    rows.WrappedPhase_rad=angle(trueHf);
+    rows.UnwrappedPhaseFrequency_rad=unwrap(angle(trueHf));
+    rows.GridKind(:)="frequency_response_from_executed_path_gains_and_delays";
+    rows.GridSHA256(:)=localComplexTensorHash(trueHf);
+    sourceT=[sourceT;rows]; %#ok<AGROW>
+end
+sourceT=[sourceT;localExecutedRuntimeAngleRows(meta,context)]; %#ok<AGROW>
+[timeRows,dopplerRows]=localExecutedTimeVaryingChannelRows(meta,context);
+sourceT=[sourceT;timeRows;dopplerRows]; %#ok<AGROW>
+snapshot.SourceTable=sourceT;
 end
 
 function snapshot = localEmptySnapshot(direction)
@@ -778,6 +889,8 @@ T.IValue = nan(n, 1);
 T.QValue = nan(n, 1);
 T.MagnitudeLinear = nan(n, 1);
 T.Magnitude_dB = nan(n, 1);
+T.MagnitudeValueStatus = strings(n, 1);
+T.PhaseValueStatus = strings(n, 1);
 T.PowerLinear = nan(n, 1);
 T.Power_dB = nan(n, 1);
 T.Phase_deg = nan(n, 1);
@@ -852,9 +965,7 @@ h4 = reshape(h4, sz(1), sz(2), sz(3), sz(4));
 [k0, l0, rx0, tx0] = ndgrid(0:kCount-1, 0:symbolCount-1, ...
     0:rxCount-1, 0:txCount-1);
 
-wrapped = angle(h4);
-unwrappedFrequency = unwrap(wrapped, [], 1);
-unwrappedTime = unwrap(wrapped, [], 2);
+[magnitudeDB,wrapped,unwrappedFrequency,unwrappedTime] = localMeasuredChannelPolar(h4);
 deltaFrequency = nan(size(wrapped));
 deltaTime = nan(size(wrapped));
 if kCount > 1
@@ -897,9 +1008,14 @@ T.YUnit(:) = "zero_based_ofdm_symbol_index";
 T.IValue = real(h4(:));
 T.QValue = imag(h4(:));
 T.MagnitudeLinear = abs(h4(:));
-T.Magnitude_dB = 20 .* log10(max(T.MagnitudeLinear, realmin));
+T.Magnitude_dB = magnitudeDB(:);
 T.PowerLinear = abs(h4(:)).^2;
-T.Power_dB = 10 .* log10(max(T.PowerLinear, realmin));
+T.Power_dB = magnitudeDB(:);
+T.MagnitudeValueStatus(:) = "exact_receiver_estimate_log_magnitude";
+T.PhaseValueStatus(:) = "defined_nonzero_receiver_estimate";
+zeroH = abs(h4(:))==0;
+T.MagnitudeValueStatus(zeroH) = "negative_infinity_exact_zero_receiver_estimate";
+T.PhaseValueStatus(zeroH) = "undefined_zero_receiver_estimate";
 T.Phase_deg = rad2deg(wrapped(:));
 T.WrappedPhase_rad = wrapped(:);
 T.UnwrappedPhaseFrequency_rad = unwrappedFrequency(:);
@@ -908,6 +1024,35 @@ T.PhaseDeltaFrequency_rad = deltaFrequency(:);
 T.PhaseDeltaTime_rad = deltaTime(:);
 T.GridKind(:) = "receiver_channel_estimate";
 T.GridSHA256(:) = localComplexTensorHash(h4);
+end
+
+function [magnitudeDB,wrapped,frequencyPhase,timePhase] = localMeasuredChannelPolar(h)
+% Preserve the receiver tensor, including exact zeros. A zero has -Inf log
+% magnitude and undefined phase, not an invented -6153 dB/zero-degree value.
+% This is receiver-output visualization, not evidence that an unallocated
+% resource has a physically zero propagation channel.
+magnitudeDB=20.*log10(abs(h));
+wrapped=angle(h);
+wrapped(abs(h)==0 | ~isfinite(real(h)) | ~isfinite(imag(h)))=NaN;
+frequencyPhase=localUnwrapDefinedPhase(wrapped,1);
+timePhase=localUnwrapDefinedPhase(wrapped,2);
+end
+
+function phase=localUnwrapDefinedPhase(wrapped,dimension)
+% Unwrap each contiguous defined segment; zero/unavailable REs cannot
+% supply a phase reference or connect independently observed segments.
+order=1:ndims(wrapped); order([1 dimension])=order([dimension 1]);
+values=permute(wrapped,order); shape=size(values);
+values=reshape(values,shape(1),[]);
+for column=1:size(values,2)
+    defined=isfinite(values(:,column));
+    edges=diff([false;defined;false]); starts=find(edges==1); stops=find(edges==-1)-1;
+    for segment=1:numel(starts)
+        selected=starts(segment):stops(segment);
+        values(selected,column)=unwrap(values(selected,column));
+    end
+end
+phase=ipermute(reshape(values,shape),order);
 end
 
 function T = localOFDMSymbolSampleRows(meta, tx, txWave, maxSamples)
@@ -1080,6 +1225,22 @@ if any(~isfinite(sampleTimes)) || any(diff(sampleTimes) <= 0) || ...
         any(~isfinite(pathDelays))
     return;
 end
+% The immutable channel MAT artifact retains every coefficient sample.
+% Bound only the tabular visualization plane so a slot-length MIMO CDL
+% tensor cannot expand into a multi-gigabyte CSV. Uniform indices retain
+% the complete observation time span; the Doppler calculation below still
+% uses the full executed rx1/tx1 series.
+fullPathGains=pathGains;
+fullSampleTimes=sampleTimes;
+maxTimeSamples=round(double(sixgr.util.structGet(context, ...
+    "RuntimeChannelDiagnosticMaxTimeSamples",128)));
+maxTimeSamples=max(4,min(1024,maxTimeSamples));
+if sz(1)>maxTimeSamples
+    keep=unique(round(linspace(1,sz(1),maxTimeSamples))).';
+    pathGains=pathGains(keep,:,:,:);
+    sampleTimes=sampleTimes(keep);
+    sz=size(pathGains); sz(end+1:4)=1;
+end
 [time0, path0, tx0, rx0] = ndgrid(0:sz(1)-1, 0:sz(2)-1, ...
     0:sz(3)-1, 0:sz(4)-1);
 gain = pathGains(:);
@@ -1111,11 +1272,11 @@ timeRows.GridKind(:) = "executed_runtime_channel_path_gain_tensor";
 timeRows.GridSHA256(:) = string(sixgr.util.structGet(context, ...
     "RuntimeChannelPathGainsSHA256", localComplexTensorHash(pathGains)));
 
-dt = median(diff(sampleTimes));
-if ~(isfinite(dt) && dt > 0) || sz(1) < 4
+dt = median(diff(fullSampleTimes));
+if ~(isfinite(dt) && dt > 0) || size(fullPathGains,1) < 4
     return;
 end
-pair = reshape(pathGains(:, :, 1, 1), sz(1), sz(2));
+pair = reshape(fullPathGains(:, :, 1, 1),size(fullPathGains,1),size(fullPathGains,2));
 [~, strongestPath] = max(mean(abs(pair).^2, 1, "omitnan"));
 series = pair(:, strongestPath);
 if any(~isfinite(real(series)) | ~isfinite(imag(series)))

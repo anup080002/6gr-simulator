@@ -232,6 +232,18 @@ request = struct( ...
     "O1",double(sixgr.util.structGet(cfg,"phy.mimo.O1",NaN)), ...
     "O2",double(sixgr.util.structGet(cfg,"phy.mimo.O2",NaN)), ...
     "Rank",nLayers);
+if numTxPorts > 2 && request.CodebookType == "typeI-SinglePanel"
+    report = sixgr.util.structGet(cfg,"phy.csi.reportConfiguration",struct());
+    for field = ["Ports","N1","N2","O1","O2"]
+        if ~isfield(report,field) || ~isequal(double(report.(field)),request.(field))
+            error('sixgr:mimo:CSIReportResourceMismatch', ...
+                'Scheduler %s must match the active CSI report codebook geometry.',field);
+        end
+    end
+    request.CodebookMode = double(sixgr.util.structGet(report,"CodebookMode",NaN));
+    request.CodebookSubsetRestriction = sixgr.util.structGet(report,"CodebookSubsetRestriction",[]);
+    request.I2Restriction = sixgr.util.structGet(report,"I2Restriction",[]);
+end
 enumeration = sixgr.phy.mimo.CodebookEngine.enumerate(request);
 n = size(enumeration.Matrices,3);
 candidates = repmat(struct( ...

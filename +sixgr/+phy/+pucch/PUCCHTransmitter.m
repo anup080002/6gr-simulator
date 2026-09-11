@@ -13,6 +13,13 @@ classdef PUCCHTransmitter
                 error("sixgr:phy:pucch:StaleConfiguration", ...
                     "PUCCH report and assignment ownership differ.");
             end
+            powerState=assignment.PowerControlState.Data;
+            mu=log2(double(carrier.SubcarrierSpacing)/15);
+            if double(powerState.Mu)~=mu || ...
+                    double(powerState.MRB)~=double(assignment.Resource.Data.NumPRBs)
+                error("sixgr:phy:pucch:PowerResourceMismatch", ...
+                    "PUCCH power-control Mu/MRB must match the actual carrier and allocated resource.");
+            end
             serialized = sixgr.phy.pucch.UCIReportSerializer.serialize(report);
             bits = [serialized.Sequence1.Bits;serialized.Sequence2.Bits];
             sixgr.phy.pucch.PUCCHFormatValidator.validateResource( ...
@@ -38,13 +45,25 @@ classdef PUCCHTransmitter
                 carrier,mapped.Grid);
             power = sixgr.phy.pucch.PUCCHPowerController.resolve( ...
                 assignment.PowerControlState);
-            waveform = localApplyPower(waveform,power.AppliedPowerdBm);
+            activeSymbols=double(assignment.Resource.Data.StartSymbol)+ ...
+                (0:double(assignment.Resource.Data.NumSymbols)-1);
+            [waveform,scale,reference] = localApplyPower( ...
+                waveform,power.AppliedPowerdBm,ofdmInfo,activeSymbols);
             % Canonical simulator samples use sqrt(mW), so mean |x|^2 is
             % directly expressed in mW and converts to dBm without a
             % watts-to-milliwatts factor.
-            measured = 10*log10(max(mean(abs(waveform(:)).^2),realmin));
+            [measured_mW,~,measuredInfo]=sixgr.rf.measureActiveOFDMTotalPower( ...
+                waveform,struct('OFDM',ofdmInfo),'ActiveSymbolIndices',activeSymbols);
+            measured = 10*log10(measured_mW);
             power.MeasuredWaveformPowerdBm = measured;
             power.PowerError_dB = measured-power.AppliedPowerdBm;
+            power.MeasurementReferenceDomain=string(measuredInfo.ReferenceDomain);
+            power.MeasurementActiveSymbolIndices0=activeSymbols;
+            power.MeasurementSampleCount=measuredInfo.SampleCount;
+            power.MeasuredSlotAveragePowerdBm=10*log10(mean(sum(abs(double(waveform)).^2,2)));
+            power.WaveformAmplitudeUnit="sqrt_mW";
+            power.WaveformScale=scale;
+            power.PreScalingActivePower=reference;
             tx = struct( ...
                 "Waveform",waveform,"Grid",mapped.Grid,"Carrier",carrier, ...
                 "PUCCH",pucch,"Assignment",assignment,"Report",report, ...
@@ -76,14 +95,20 @@ value = "QPSK";
 if isprop(pucch,"Modulation"), value = string(pucch.Modulation); end
 end
 
-function waveform = localApplyPower(waveform,powerdBm)
-current = mean(abs(waveform(:)).^2);
+function [waveform,scale,reference] = localApplyPower(waveform,powerdBm,ofdmInfo,activeSymbols)
+% Match the shared runtime's useful-symbol reference, without including
+% silent slot samples or relying on an energy detector to choose symbols.
+[current,~,reference] = sixgr.rf.measureActiveOFDMTotalPower( ...
+    waveform,struct('OFDM',ofdmInfo),'ActiveSymbolIndices',activeSymbols);
 target = 10^(double(powerdBm)/10);
-if current <= 0 || ~isfinite(current)
+if current <= 0 || ~isfinite(current) || ~isfinite(target) || target<=0 || ...
+        string(reference.ReferenceDomain)~="specified_active_ofdm_symbols_excluding_cp" || ...
+        any(~isfinite(waveform),'all')
     error("sixgr:phy:pucch:InvalidPowerControlState", ...
-        "Cannot apply PUCCH power to an empty waveform.");
+        "PUCCH power requires finite samples and complete allocated OFDM-symbol evidence.");
 end
-waveform = waveform*sqrt(target/current);
+scale=sqrt(target/current);
+waveform = waveform*scale;
 end
 
 function value = localProfile(assignment)

@@ -16,6 +16,16 @@ AUDIT_MODULE = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(AUDIT_MODULE)
 
 
+def test_lut_risk_acronym_does_not_match_absolute_or_resolution() -> None:
+    for value in ("absolute_zero_based", "receiver_thermal_noise_absolute_sqrt_mW", "trajectory_resolution"):
+        assert not AUDIT_MODULE.risk_counts(value)
+    for value in ("LUT", "lut_linear_interp", "calibration-lut", "LUT2", "fast_proxy"):
+        assert AUDIT_MODULE.risk_counts(value)["proxy"] == 1
+    # Mentions of an unavailable proxy stay discoverable. The inventory
+    # counts vocabulary, not proof that an approximation executed.
+    assert AUDIT_MODULE.risk_counts("unavailable_decoder_truth_proxy_not_materialized")["proxy"] == 1
+
+
 def run_audit(
     run: Path,
     output: Path,

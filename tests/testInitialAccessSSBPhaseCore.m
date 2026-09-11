@@ -340,6 +340,8 @@ cfg.channel.fc_Hz = 3.5e9;
 cfg.frequency.center_frequency_hz = 3.5e9;
 cfg.frequency.range_name = "FR1";
 cfg.frequency.bandwidth_hz = 20e6;
+% This existing Case-B fixture explicitly models paired spectrum.
+cfg.frequency.duplex_mode = "FDD";
 cfg.phy.frequencyRange = "FR1";
 cfg.phy.channelBandwidth_MHz = 20;
 cfg.phy.carrier = struct( ...

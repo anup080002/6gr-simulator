@@ -6,14 +6,13 @@ p.addParameter("Timing", struct(), @isstruct);
 p.parse(varargin{:});
 timing = p.Results.Timing;
 resources = localResolveSlotResources(cfg, tx);
-slotT = tx.SlotTable;
 timingT = sixgr.util.structGet(timing, "Table", table());
 rows = repmat(localDetectionRow(), numel(resources), 1);
 slotDetections = repmat(localSlotDetection(), 0, 1);
 for ii = 1:numel(resources)
-    rawWave = localSlotWaveform(rx.Waveform, slotT, ii);
-    estTiming = localTimingForSlot(timingT, resources(ii).Slot);
-    corrWave = localApplyTimingCorrection(rawWave, estTiming);
+    corrWave = [];
+    window = struct();
+    ofdmInfo = struct();
     rxGrid = [];
     metric = NaN;
     phase = NaN;
@@ -21,8 +20,14 @@ for ii = 1:numel(resources)
     status = "detection_failed";
     attempted = true;
     try
-        rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
+        estTiming = localTimingForSlot(timingT, resources(ii).Slot);
+        [corrWave,window] = sixgr.phy.trs.extractTRSReceiveWindow( ...
+            rx.Waveform,tx,ii,estTiming,resources(ii));
+        [rxGrid,ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate( ...
             resources(ii).Carrier, corrWave);
+        assert(size(rxGrid,2)==window.SymbolCount, ...
+            'sixgr:phy:trs:ReceiveSymbolCountMismatch', ...
+            'Demodulated TRS symbols must match the retained sample window.');
         rxRE = rxGrid(resources(ii).Indices);
         ref = resources(ii).Symbols(:);
         metric = localChunkedReferenceCorrelation(rxRE(:), ref);
@@ -53,12 +58,21 @@ for ii = 1:numel(resources)
     row.NoiseVariance = double(rx.NoiseVariance);
     row.Status = string(status);
     row.TruthStatus = "real_lls_evidence";
+    if ~isempty(fieldnames(window))
+        row.ReceiveStartSample1Based = window.StartSample1Based;
+        row.ReceiveEndSample1Based = window.EndSample1Based;
+        row.ReceivedSymbolCount = window.SymbolCount;
+        row.EstimatedTimingOffset_samples = window.TimingOffset_samples;
+        row.ReceiveWindowSource = window.Source;
+    end
     rows(ii) = row;
     s = localSlotDetection();
     s.Slot = double(resources(ii).Slot);
     s.RxGrid = rxGrid;
     s.RxRE = rxRE(:);
     s.ReferenceSymbols = resources(ii).Symbols(:);
+    s.ReferenceIndices = resources(ii).Indices(:);
+    s.CyclicPrefixFraction = double(sixgr.util.structGet(ofdmInfo,'CyclicPrefixFraction',NaN));
     s.Detected = logical(success);
     s.PhaseRad = double(phase);
     s.Metric = double(metric);
@@ -85,34 +99,16 @@ det.MinCoverageRatio = min([rows.ResourceCoverageRatio]);
 end
 
 function est = localTimingForSlot(timingT, slot)
-est = 0;
-if istable(timingT) && height(timingT) > 0 && ismember("Slot", string(timingT.Properties.VariableNames))
-    idx = find(double(timingT.Slot) == double(slot), 1, "first");
-    if ~isempty(idx) && ismember("EstimatedTimingOffset_samples", string(timingT.Properties.VariableNames))
-        v = double(timingT.EstimatedTimingOffset_samples(idx));
-        if isfinite(v)
-            est = round(v);
-        end
-    end
+required = ["Slot","EstimatedTimingOffset_samples","TRSTimingEstimateAvailable"];
+if ~istable(timingT) || ~all(ismember(required,string(timingT.Properties.VariableNames)))
+    error('sixgr:phy:trs:MissingReceivedTiming','TRS demodulation requires a received timing estimate.');
 end
+idx = find(double(timingT.Slot)==double(slot));
+if ~isscalar(idx) || ~isequal(timingT.TRSTimingEstimateAvailable(idx),true)
+    error('sixgr:phy:trs:MissingReceivedTiming','TRS slot must have exactly one available received timing estimate.');
 end
-
-function y = localSlotWaveform(wave, slotT, idx)
-startIdx = max(1, round(double(slotT.StartSample1Based(idx))));
-endIdx = min(size(wave, 1), round(double(slotT.EndSample1Based(idx))));
-y = wave(startIdx:endIdx, :);
-end
-
-function y = localApplyTimingCorrection(x, d)
-d = round(double(d));
-if d > 0 && d < size(x, 1)
-    y = [x(1+d:end, :); zeros(d, size(x, 2), "like", x)];
-elseif d < 0
-    dAbs = min(abs(d), size(x, 1)-1);
-    y = [zeros(dAbs, size(x, 2), "like", x); x(1:end-dAbs, :)];
-else
-    y = x;
-end
+est = double(timingT.EstimatedTimingOffset_samples(idx));
+validateattributes(est,{'numeric'},{'scalar','real','finite','integer'});
 end
 
 function row = localDetectionRow()
@@ -120,13 +116,15 @@ row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, ...
     "DetectionAttempted", false, "DetectionSuccess", false, ...
     "DetectionMetric", NaN, "DetectionThreshold", NaN, "ExpectedRECount", NaN, ...
     "ObservedRECount", NaN, "ResourceCoverageRatio", NaN, "MinCoverageRatio", NaN, ...
-    "ReferencePhase_rad", NaN, "NoiseVariance", NaN, "Status", "", "TruthStatus", "");
+    "ReferencePhase_rad", NaN, "NoiseVariance", NaN, "Status", "", "TruthStatus", "", ...
+    "ReceiveStartSample1Based",NaN,"ReceiveEndSample1Based",NaN, ...
+    "ReceivedSymbolCount",NaN,"EstimatedTimingOffset_samples",NaN,"ReceiveWindowSource","");
 end
 
 function row = localSlotDetection()
 row = struct("Slot", NaN, "RxGrid", [], "RxRE", [], "ReferenceSymbols", [], ...
     "Detected", false, "PhaseRad", NaN, "Metric", NaN, "CoverageRatio", NaN, ...
-    "CorrectedWaveform", []);
+    "CorrectedWaveform", [], "ReferenceIndices", [], "CyclicPrefixFraction", NaN);
 end
 
 function metric = localChunkedReferenceCorrelation(rxRE, ref)

@@ -1,190 +1,124 @@
-function freq = estimateTRSFrequencyOffset(det, cfg, tx, rx)
-%ESTIMATETRSFREQUENCYOFFSET Estimate CFO from TRS channel phase drift.
-%
-% The estimator is intentionally based on per-RE LS TRS channel estimates:
-% H(k,n) = Y_TRS(k,n) / X_TRS(k,n).  The inter-slot phase increment is then
-% angle(sum_k H_late(k) * conj(H_early(k))).  This later-times-conj-earlier
-% ordering gives a positive estimate for a positive injected frequency offset,
-% and the elapsed time is the measured full sample-time gap between TRS slots.
-
-slotDet = det.SlotDetections;
-slotT = tx.SlotTable;
-physicalDopplerHz = localPhysicalDopplerHz(rx);
-candidateRows = repmat(localFrequencyRow(), 0, 1);
-pairEstimates = [];
-pairWeights = [];
-
-attempted = true;
-for ii = 1:max(0, numel(slotDet) - 1)
-    row = localFrequencyRow();
-    row.RunId = string(cfg.RunId);
-    row.ConfigHash = string(cfg.ConfigHash);
-    row.FromSlot = double(slotDet(ii).Slot);
-    row.ToSlot = double(slotDet(ii + 1).Slot);
-    row.FrequencyTrackingAttempted = logical(attempted);
-    row.InjectedCFO_Hz = double(rx.InjectedCFO_Hz);
-    row.PhysicalDoppler_Hz = double(physicalDopplerHz);
-    row.FrequencyTolerance_Hz = double(cfg.FrequencyToleranceHz);
-    row.PhaseSampleCount = 0;
-    row.DeltaT_s = localSlotDeltaSeconds(slotT, ii, ii + 1, tx.SampleRateHz);
-    row.CrossCorrelationOrder = "late_times_conj_early";
-
-    if ~(logical(slotDet(ii).Detected) && logical(slotDet(ii + 1).Detected))
-        row.Status = "frequency_estimate_unavailable_no_detected_trs_pair";
-        row.FrequencyError_Hz = NaN;
-        candidateRows(end + 1, 1) = row; %#ok<AGROW>
-        continue;
+function freq = estimateTRSFrequencyOffset(det, cfg, tx, evaluation)
+%ESTIMATETRSFREQUENCYOFFSET Received common phase frequency, not oscillator CFO.
+% Correlate matching subcarriers on the two receiver-known TRS symbols in
+% each slot, on every RX branch. No injected Doppler/CFO enters estimation.
+% The fourth argument is used ONLY for explicitly labeled error scoring.
+if nargin<4, evaluation=struct(); end
+rows=repmat(localRow(),numel(det.SlotDetections),1);
+correlations=complex(zeros(numel(rows),1));
+for k=1:numel(rows)
+    d=det.SlotDetections(k);
+    row=localRow();
+    row.RunId=string(cfg.RunId); row.ConfigHash=string(cfg.ConfigHash);
+    row.FromSlot=double(d.Slot); row.ToSlot=double(d.Slot);
+    row.FrequencyTrackingAttempted=true;
+    row.FrequencyTolerance_Hz=double(cfg.FrequencyToleranceHz);
+    if ~d.Detected
+        row.Status="frequency_unavailable_no_detected_trs";
+        rows(k)=row; continue;
     end
-
-    [hEarly, hLate, n] = localAlignedChannelEstimates(slotDet(ii), slotDet(ii + 1));
-    row.PhaseSampleCount = double(n);
-    if n == 0 || ~(isfinite(row.DeltaT_s) && row.DeltaT_s > 0)
-        row.Status = "frequency_estimate_unavailable_no_valid_channel_samples";
-        row.FrequencyError_Hz = NaN;
-        candidateRows(end + 1, 1) = row; %#ok<AGROW>
-        continue;
+    try
+        grid=d.RxGrid;
+        K=size(grid,1); R=size(grid,3);
+        ind=double(d.ReferenceIndices(:));
+        ref=d.ReferenceSymbols(:);
+        assert(numel(ind)==numel(ref) && numel(unique(ind))==numel(ind), ...
+            'sixgr:phy:trs:FrequencyReferenceIdentity','Reference RE identities must be unique and complete.');
+        symbols=floor((ind-1)/K);
+        pair=unique(symbols);
+        assert(numel(pair)==2,'sixgr:phy:trs:FrequencyReferencePair', ...
+            'Tracking requires two received reference-symbol times per slot.');
+        first=find(symbols==pair(1)); last=find(symbols==pair(2));
+        [scA,orderA]=sort(mod(ind(first)-1,K)+1);
+        [scB,orderB]=sort(mod(ind(last)-1,K)+1);
+        assert(isequal(scA,scB) && ~isempty(scA), ...
+            'sixgr:phy:trs:FrequencySubcarrierIdentity','Reference symbols must pair the same subcarriers.');
+        a=reshape(grid(:,pair(1)+1,:),K,R);
+        b=reshape(grid(:,pair(2)+1,:),K,R);
+        ha=a(scA,:)./ref(first(orderA)); hb=b(scB,:)./ref(last(orderB));
+        assert(all(isfinite(ha(:))) && all(isfinite(hb(:))), ...
+            'sixgr:phy:trs:InvalidFrequencySamples','Every paired reference sample must be finite.');
+        c=sum(hb.*conj(ha),'all');
+        energy=sqrt(sum(abs(ha).^2,'all')*sum(abs(hb).^2,'all'));
+        assert(isfinite(c) && abs(c)>0 && isfinite(energy) && energy>0, ...
+            'sixgr:phy:trs:NoFrequencyCorrelation','No nonzero received reference correlation.');
+        dt=localSymbolDelta(tx,d,pair);
+        row.FromSymbol0Based=pair(1); row.ToSymbol0Based=pair(2);
+        row.DeltaT_s=dt; row.DeltaPhi_rad=angle(c);
+        row.PhaseSampleCount=numel(ha); row.NumReceiveAntennas=R;
+        row.CorrelationCoherence=abs(c)/energy;
+        row.UnambiguousHalfRange_Hz=1/(2*dt);
+        row.EstimatedCommonFrequency_Hz=angle(c)/(2*pi*dt);
+        row.EstimatedCFO_Hz=row.EstimatedCommonFrequency_Hz;
+        row.TRSCFOEstimateAvailable=true;
+        row.Status="received_common_frequency_available";
+        correlations(k)=c;
+    catch ME
+        row.Status="frequency_unavailable:"+string(ME.identifier);
     end
-
-    accumC = sum(hLate .* conj(hEarly), "omitnan");
-    row.DeltaPhi_rad = double(angle(accumC));
-    row.EstimatedCommonFrequency_Hz = double(row.DeltaPhi_rad ./ (2 * pi * row.DeltaT_s));
-    if isfinite(physicalDopplerHz)
-        row.EstimatedCFO_Hz = double(row.EstimatedCommonFrequency_Hz - physicalDopplerHz);
-        row.FrequencyError_Hz = double(row.EstimatedCFO_Hz - double(rx.InjectedCFO_Hz));
-    else
-        row.EstimatedCFO_Hz = NaN;
-        row.FrequencyError_Hz = NaN;
-        row.Status = "frequency_estimate_unavailable_physical_doppler_not_deembedded";
-    end
-    row.TRSCFOEstimateAvailable = isfinite(row.EstimatedCFO_Hz);
-    if strlength(strtrim(string(row.Status))) == 0
-        row.Status = string(sixgr.phy.trs.localTernary(row.TRSCFOEstimateAvailable, ...
-            "frequency_estimate_available", "frequency_estimate_unavailable"));
-    end
-    row.TruthStatus = "real_lls_evidence";
-    candidateRows(end + 1, 1) = row; %#ok<AGROW>
-
-    if row.TRSCFOEstimateAvailable
-        pairEstimates(end + 1, 1) = row.EstimatedCommonFrequency_Hz; %#ok<AGROW>
-        pairWeights(end + 1, 1) = max(1, double(n)); %#ok<AGROW>
-    end
+    rows(k)=row;
 end
-
-if isempty(candidateRows)
-    candidateRows = localFrequencyRow();
-    candidateRows.RunId = string(cfg.RunId);
-    candidateRows.ConfigHash = string(cfg.ConfigHash);
-    candidateRows.FrequencyTrackingAttempted = logical(attempted);
-    candidateRows.InjectedCFO_Hz = double(rx.InjectedCFO_Hz);
-    candidateRows.PhysicalDoppler_Hz = double(physicalDopplerHz);
-    candidateRows.FrequencyTolerance_Hz = double(cfg.FrequencyToleranceHz);
-    candidateRows.Status = "frequency_estimate_unavailable_insufficient_trs_slots";
-    candidateRows.TruthStatus = "real_lls_evidence";
-end
-
-available = ~isempty(pairEstimates);
-if available && isfinite(physicalDopplerHz)
-    estimatedCommon = sum(pairEstimates .* pairWeights, "omitnan") ./ max(sum(pairWeights, "omitnan"), eps);
-    estimated = estimatedCommon - physicalDopplerHz;
-else
-    estimatedCommon = NaN;
-    estimated = NaN;
-end
-err = estimated - double(rx.InjectedCFO_Hz);
-for ii = 1:numel(candidateRows)
-    if available
-        candidateRows(ii).EstimatedCommonFrequency_Hz = double(estimatedCommon);
-        candidateRows(ii).EstimatedCFO_Hz = double(estimated);
-        candidateRows(ii).FrequencyError_Hz = double(err);
-        candidateRows(ii).TRSCFOEstimateAvailable = true;
+valid=[rows.TRSCFOEstimateAvailable];
+common=NaN; available=false; halfRange=NaN;
+if any(valid)
+    times=[rows(valid).DeltaT_s];
+    halfRange=min([rows(valid).UnambiguousHalfRange_Hz]);
+    % Equal TRS symbol spacing permits circular pooling without averaging
+    % opposite sides of the phase wrap into a false near-zero frequency.
+    assert(max(times)-min(times)<1e-12,'sixgr:phy:trs:IncompatibleFrequencyPairTimes', ...
+        'One frequency aggregate requires equal observed reference-symbol spacing.');
+    pooled=sum(correlations(valid));
+    if isfinite(pooled) && abs(pooled)>0
+        common=angle(pooled)/(2*pi*times(1)); available=true;
     end
 end
-
-freq = struct();
-freq.Table = struct2table(candidateRows, "AsArray", true);
-freq.Attempted = logical(attempted);
-freq.EstimateAvailable = logical(available);
-freq.EstimatedCFO_Hz = double(estimated);
-freq.EstimatedCommonFrequency_Hz = double(estimatedCommon);
-freq.PhysicalDoppler_Hz = double(physicalDopplerHz);
-freq.FrequencyError_Hz = double(err);
+% Scoring has no influence on availability, correlation or correction values.
+reference=double(sixgr.util.structGet(evaluation,'FrequencyReferenceForScoring_Hz',NaN));
+source=string(sixgr.util.structGet(evaluation,'FrequencyReferenceForScoringSource',"unavailable"));
+validateattributes(reference,{'numeric'},{'real','scalar'});
+for k=1:numel(rows)
+    rows(k).FrequencyReferenceForScoring_Hz=reference;
+    rows(k).FrequencyReferenceForScoringSource=source;
+    rows(k).FrequencyError_Hz=rows(k).EstimatedCommonFrequency_Hz-reference;
+end
+freq=struct('Table',struct2table(rows,'AsArray',true), ...
+    'Attempted',~isempty(rows),'EstimateAvailable',available, ...
+    'EstimatedCFO_Hz',common,'EstimatedCommonFrequency_Hz',common, ...
+    'EstimatedOscillatorCFO_Hz',NaN,'PhysicalDoppler_Hz',NaN, ...
+    'UnambiguousHalfRange_Hz',halfRange, ...
+    'FrequencyEstimateDomain',"received_TRS_common_phase_frequency", ...
+    'FrequencyReferenceForScoring_Hz',reference, ...
+    'FrequencyReferenceForScoringSource',source,'FrequencyError_Hz',common-reference);
 end
 
-function dopplerHz = localPhysicalDopplerHz(rx)
-dopplerHz = localFirstFinite(rx, ["PhysicalDoppler_Hz","RuntimeSignedDoppler_Hz","InjectedScalarDoppler_Hz","InjectedDoppler_Hz"], NaN);
-if isfinite(dopplerHz)
-    return;
-end
-if isstruct(rx) && logical(localFirstFinite(rx, "ChannelFadingApplied", 0))
-    dopplerHz = NaN;
-else
-    dopplerHz = 0;
-end
-end
-
-function value = localFirstFinite(s, names, defaultValue)
-value = double(defaultValue);
-if ~isstruct(s)
-    return;
-end
-for name = string(names(:)).'
-    field = char(name);
-    if ~isfield(s, field)
-        continue;
-    end
-    raw = double(s.(field));
-    raw = raw(isfinite(raw));
-    if ~isempty(raw)
-        value = raw(1);
-        return;
-    end
-end
+function dt=localSymbolDelta(tx,d,pair)
+L=double(tx.GridSlots(1).Carrier.SymbolsPerSlot);
+first=(double(d.Slot)-double(tx.FirstSlot0Based))*L;
+lengths=double(tx.OFDM.SymbolLengths(:));
+cp=double(tx.OFDM.CyclicPrefixLengths(:));
+carrier=tx.GridSlots(1).Carrier;
+scale=double(tx.SampleRateHz)/(double(tx.OFDM.Nfft)*double(carrier.SubcarrierSpacing)*1000);
+% FFT-window center differences: the useful FFT duration cancels. Retain
+% actual CP-pattern differences and the demodulator's configured CP fraction.
+fraction=double(d.CyclicPrefixFraction);
+a=first+pair(1)+1; b=first+pair(2)+1;
+samples=(sum(lengths(a:b-1))+fraction*(cp(b)-cp(a)))*scale;
+dt=samples/double(tx.SampleRateHz);
+assert(isfinite(dt) && dt>0,'sixgr:phy:trs:InvalidFrequencySampleClock', ...
+    'Frequency estimation requires positive actual FFT-window time separation.');
 end
 
-function [hEarly, hLate, n] = localAlignedChannelEstimates(early, late)
-obsEarly = early.RxRE(:);
-obsLate = late.RxRE(:);
-refEarly = early.ReferenceSymbols(:);
-refLate = late.ReferenceSymbols(:);
-n = min([numel(obsEarly), numel(obsLate), numel(refEarly), numel(refLate)]);
-if n == 0
-    hEarly = complex([]);
-    hLate = complex([]);
-    return;
-end
-obsEarly = obsEarly(1:n);
-obsLate = obsLate(1:n);
-refEarly = refEarly(1:n);
-refLate = refLate(1:n);
-mask = isfinite(real(obsEarly)) & isfinite(imag(obsEarly)) & ...
-    isfinite(real(obsLate)) & isfinite(imag(obsLate)) & ...
-    isfinite(real(refEarly)) & isfinite(imag(refEarly)) & abs(refEarly) > eps & ...
-    isfinite(real(refLate)) & isfinite(imag(refLate)) & abs(refLate) > eps;
-hEarly = obsEarly(mask) ./ refEarly(mask);
-hLate = obsLate(mask) ./ refLate(mask);
-n = numel(hEarly);
-end
-
-function deltaT = localSlotDeltaSeconds(slotT, earlyIdx, lateIdx, sampleRateHz)
-deltaT = NaN;
-if ~istable(slotT) || height(slotT) < lateIdx
-    return;
-end
-if ~(ismember("StartSample1Based", string(slotT.Properties.VariableNames)) && ...
-        isfinite(double(sampleRateHz)) && double(sampleRateHz) > 0)
-    return;
-end
-earlyStart = double(slotT.StartSample1Based(earlyIdx));
-lateStart = double(slotT.StartSample1Based(lateIdx));
-deltaT = (lateStart - earlyStart) ./ double(sampleRateHz);
-end
-
-function row = localFrequencyRow()
-row = struct("RunId", "", "ConfigHash", "", "FromSlot", NaN, "ToSlot", NaN, ...
-    "FrequencyTrackingAttempted", false, "TRSCFOEstimateAvailable", false, ...
-    "EstimatedCommonFrequency_Hz", NaN, "PhysicalDoppler_Hz", NaN, ...
-    "EstimatedCFO_Hz", NaN, "InjectedCFO_Hz", NaN, "FrequencyError_Hz", NaN, ...
-    "FrequencyTolerance_Hz", NaN, "PhaseSampleCount", NaN, "DeltaPhi_rad", NaN, ...
-    "DeltaT_s", NaN, "CrossCorrelationOrder", "", "Status", "", ...
-    "TruthStatus", "");
+function row=localRow()
+row=struct('RunId',"",'ConfigHash',"",'FromSlot',NaN,'ToSlot',NaN, ...
+    'FromSymbol0Based',NaN,'ToSymbol0Based',NaN, ...
+    'FrequencyTrackingAttempted',false,'TRSCFOEstimateAvailable',false, ...
+    'EstimatedCommonFrequency_Hz',NaN,'EstimatedCFO_Hz',NaN, ...
+    'EstimatedOscillatorCFO_Hz',NaN,'PhysicalDoppler_Hz',NaN, ...
+    'FrequencyReferenceForScoring_Hz',NaN,'FrequencyReferenceForScoringSource',"unavailable", ...
+    'FrequencyError_Hz',NaN,'FrequencyTolerance_Hz',NaN, ...
+    'PhaseSampleCount',0,'NumReceiveAntennas',NaN,'CorrelationCoherence',NaN, ...
+    'UnambiguousHalfRange_Hz',NaN,'DeltaPhi_rad',NaN,'DeltaT_s',NaN, ...
+    'CrossCorrelationOrder',"late_times_conj_early_same_subcarrier_and_receive_branch", ...
+    'FrequencyEstimateDomain',"received_TRS_common_phase_frequency", ...
+    'Status',"",'TruthStatus',"real_lls_evidence");
 end

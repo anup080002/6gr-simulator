@@ -509,7 +509,7 @@ mux=sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...
 llr=(1-2*double(mux.Codewords{1}))*50;
 demux=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
     pusch,rate,tbs,llr,payload,mcs);
-recovered=demux.HARQACKCRCOK&&demux.CSI1CRCOK;
+recovered=demux.HARQACKContentMatch&&demux.CSI1ContentMatch;
 end
 
 function overlap=localSRSOverlap(fixture)

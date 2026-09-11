@@ -18,6 +18,7 @@ multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 701, ...
     "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize( ...
     cfg, fullfile(tmp, "runtime"), multiUser, struct(), 2);
+state.CurrentServingIdx(:)=1; % Explicit CSI/HARQ component-fixture serving cell.
 
 state.CurrentSlot = 4;
 dmrsRow = table(4, 10, 8.5, 1, 0, true, true, 2, 17, ...
@@ -53,6 +54,7 @@ csirsRow = table(true, true, true, 12, 2, 1, 3, 11.25, ...
     'ChannelEstimateAvailable','CQI','RI','PMI','CRI','SINR_dB', ...
     'SINRSource','SINRValueRole','SINRValueStatus','MeasurementSource'});
 csirsTrial = dmrsRow;
+csirsRow.LI=0; % Explicit receiver-measurement fixture: first layer strongest.
 csirsTrial.Slot(:) = 6;
 state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
     state, 1, "DL", csirsTrial, cfg, csirsRow);
@@ -94,9 +96,39 @@ assert(numel(retainedULKnowledgeGrant) == 1 && isempty(falseCollisionRows), ...
 state.PendingCSITable = state.PendingCSITable(end, :);
 dueSlot = double(state.PendingCSITable.DueSlot(1));
 reportIdentity = string(state.PendingCSITable.ReportIdentity(1));
+% Explicit scheduler-ledger fixture; no standalone PUCCH waveform is claimed.
+reservation=localFeedbackRow();
+reservation.Direction="DL"; reservation.UEIndex=1; reservation.RNTI=701;
+reservation.SourceSlot=double(state.PendingCSITable.SourceSlot(1)); reservation.DueSlot=dueSlot;
+reservation.ServingCell=1; reservation.BaseStationID=1;
+reservation.ComponentCarrier=cfg.phy.frame.DefaultIdentity.ScheduledCCID;
+reservation.ActiveULBWP=cfg.phy.frame.DefaultIdentity.ULBWPID;
+reservation.PUCCHGrantId="PUCCH-CSI-"+reportIdentity;
+reservation.UCIType="csi_part1_part2";
+reservation.UCIBitCount=double(state.PendingCSITable.CSIUCIBitCount(1));
+reservation.ControlResourceSource="explicit_CSI_transport_ledger_component_fixture";
+state=sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime(state,struct2table(reservation));
 puschGrant = struct("Direction", "UL", "UEIndex", 1, "RNTI", 701, ...
     "GrantContextId", "CSI-PUSCH-CONTEXT", "Slot", dueSlot, ...
-    "ScheduledAbsoluteSlot", dueSlot);
+    "ScheduledAbsoluteSlot", dueSlot,"SymbolAllocation",[0 14]);
+for enabled=[false true]
+    disjoint=puschGrant; disjoint.SymbolAllocation=[0 10];
+    [untouched,retained,blocked]=sixgr.truth.CoupledTruthRuntime. ...
+        reconcileQueuedPUSCHAfterDLFeedbackRuntime(state,disjoint,enabled);
+    assert(isempty(blocked) && numel(retained)==1 && ...
+        ~logical(sixgr.util.structGet(retained,'UCIOnPUSCHApplied',false)) && ...
+        isequaln(untouched.PendingCSITable,state.PendingCSITable), ...
+        'Nonoverlapping CSI PUCCH must retain its typed report and standalone transport.');
+end
+% Equal RNTI is not permission to transfer a different runtime UE's CSI.
+otherUEGrant=puschGrant; otherUEGrant.UEIndex=2; otherUEGrant.ServingCell=2;
+[otherState,otherGrant,otherBlocked]=sixgr.truth.CoupledTruthRuntime. ...
+    reconcileQueuedPUSCHAfterDLFeedbackRuntime(state,otherUEGrant,true);
+assert(isempty(otherBlocked) && numel(otherGrant)==1 && ...
+    ~logical(sixgr.util.structGet(otherGrant,'UCIOnPUSCHApplied',false)) && ...
+    isequaln(otherState.PendingCSITable,state.PendingCSITable) && ...
+    ~any(otherState.PUCCHGrantTraceTable.MultiplexedOnPUSCH), ...
+    'A different runtime UE must neither consume CSI nor suppress its own PUSCH through RNTI equality.');
 % A CSI reservation becoming visible between post-DL reconciliation and
 % UL slot entry must still bind before the PUCCH receiver can consume it.
 [entryState,entryGrant,entryBlocked]=sixgr.truth.CoupledTruthRuntime.startSlotWithQueuedUL( ...
@@ -115,6 +147,15 @@ assert(isa(puschGrant.ExpectedUCIPayload, ...
     logical(state.PendingCSITable.CSIUCIMultiplexedOnPUSCH(1)) && ...
     string(state.PendingCSITable.CSIUCITransport(1)) == "pusch_bound", ...
     "Due CSI must bind to the exact queued PUSCH typed-UCI payload.");
+boundTrace=state.PUCCHGrantTraceTable(string(state.PUCCHGrantTraceTable.PUCCHGrantId)== ...
+    "PUCCH-CSI-"+reportIdentity,:);
+boundCSI=puschGrant.ExpectedUCIPayload;
+assert(height(boundTrace)==1 && boundTrace.UCIBitCount== ...
+    numel(boundCSI.CSIPart1)+numel(boundCSI.CSIPart2) && ...
+    string(state.PendingCSITable.CSIUCIChannel(1))=="PUSCH", ...
+    'The transferred CSI ledger must count actual PUSCH bits, not retain PUCCH padding.');
+
+localCheckReceivedPUSCHLengthAuthority(state,puschGrant,dueSlot);
 
 % Reproduce the production queue/cache boundary: the pending CSI row keeps
 % its exact PUSCH reservation, while a rebuilt live grant contains no
@@ -160,8 +201,8 @@ feedback.CurrentDecodeOK = true;
 feedback.CombinedDecodeOK = true;
 feedback.ServingCell = 1;
 feedback.BaseStationID = 1;
-feedback.ComponentCarrier = 1;
-feedback.ActiveULBWP = 1;
+feedback.ComponentCarrier = cfg.phy.frame.DefaultIdentity.ScheduledCCID;
+feedback.ActiveULBWP = cfg.phy.frame.DefaultIdentity.ULBWPID;
 feedback.TBSBits = 64;
 feedback.UCIBitCount = 1;
 feedback.RequestedFormat = 1;
@@ -243,11 +284,27 @@ state.CurrentCanonicalSlot = dueSlot;
 harqOut = struct("GrantSnapshot", puschGrant, ...
     "ExpectedCSIPart1Bits", puschGrant.ExpectedUCIPayload.CSIPart1, ...
     "ExpectedCSIPart2Bits", puschGrant.ExpectedUCIPayload.CSIPart2, ...
-    "DecodedCSIPart1Bits", puschGrant.ExpectedUCIPayload.CSIPart1, ...
-    "DecodedCSIPart2Bits", puschGrant.ExpectedUCIPayload.CSIPart2, ...
     "ExpectedHARQACKBits", int8([]), "DecodedHARQACKBits", int8([]));
+% Actual multiplexing, received Part-1 sizing and NR UCI decoder outputs;
+% this is a codec/ledger component, not a channel trial.
+payload=puschGrant.ExpectedUCIPayload;
+p=nrPUSCHConfig; p.PRBSet=0:11;
+config=sixgr.phy.mimo.CSIReportConfiguration(state.CfgMobility.phy.csi.reportConfiguration, ...
+    double(state.PendingCSITable.CSIConfigurationEpoch(1)));
+config=config.forTransport("PUSCH");
+info=nrULSCHInfo(p,.3,512,0,numel(payload.CSIPart1),numel(payload.CSIPart2));
+mux=sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...
+    p,.3,512,zeros(info.GULSCH,1,'int8'),payload,4);
+received=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
+    p,.3,512,localPUSCHLLR(p,mux.Codewords{1}),payload,4,config);
+harqOut.DecodedCSIPart1Bits=received.DecodedCSIPart1;
+harqOut.DecodedCSIPart2Bits=received.DecodedCSIPart2;
+harqOut.UCIReceiverEvidence=received.UCIReceiverEvidence;
+state.PendingCSITable.LI(1)=1; % Stale local value must not override decoded bits.
 state = sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime( ...
     state, harqOut);
+assert(isnan(state.PendingCSITable.LI(1)), ...
+    'cri-RI-PMI-CQI does not report LI; a stale local LI must not become received feedback.');
 assert(logical(state.PendingCSITable.Processed(1)) && ...
     string(state.PendingCSITable.CSIUCITransport(1)) == "pusch_decoded" && ...
     logical(state.PendingCSITable.CSIUCIDecodeOk(1)) && ...
@@ -258,6 +315,13 @@ assert(logical(state.PendingCSITable.Processed(1)) && ...
     "Scheduler CSI must come from the PUSCH receiver-decoded payload, " + ...
     "not the transmitter-side report struct; any subsequent temporal " + ...
     "smoothing must remain separately traceable.");
+csiTrace=state.PUCCHGrantTraceTable(string(state.PUCCHGrantTraceTable.PUCCHGrantId)=="PUCCH-CSI-"+reportIdentity,:);
+assert(height(csiTrace)==1 && csiTrace.MultiplexedOnPUSCH && ...
+    ~csiTrace.GrantExecutedFlag && ~csiTrace.PUCCHDecodeOk && ...
+    csiTrace.PUSCHUCIDecodeOk && csiTrace.RuntimeStateUpdated && ...
+    csiTrace.UCIBitCount==state.PendingCSITable.CSIUCIBitCount(1) && ...
+    string(csiTrace.PUCCHGrantState)=="pusch_csi_feedback_applied", ...
+    'PUSCH CSI must close its transferred ledger without inventing a standalone PUCCH execution.');
 
 % Reusing a PUSCH/HARQ snapshot on a later CSI occasion must not replay the
 % old typed payload.  The occasion sanitizer must discard the stale report
@@ -293,6 +357,59 @@ assert(any(string(refT.SignalType) == "PDSCH-DMRS") && ...
     "Reference-signal evidence must preserve the actual producer signal for each report.");
 
 ok = true;
+end
+
+function localCheckReceivedPUSCHLengthAuthority(state,grant,dueSlot)
+% Actual UCI codecs and a scheduler-ledger fixture, not an RF/access claim.
+payload=grant.ExpectedUCIPayload;
+assert(~isempty(payload.CSIPart2));
+request=state.CfgMobility.phy.csi.reportConfiguration;
+config=sixgr.phy.mimo.CSIReportConfiguration(request, ...
+    double(state.PendingCSITable.CSIConfigurationEpoch(1)));
+config=config.forTransport("PUSCH");
+p=nrPUSCHConfig; p.PRBSet=0:11;
+info=nrULSCHInfo(p,.3,512,0,numel(payload.CSIPart1),numel(payload.CSIPart2));
+mux=sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...
+    p,.3,512,zeros(info.GULSCH,1,'int8'),payload,4);
+poison=sixgr.phy.ul.pusch.PUSCHUCIPayload('CSIPart1',payload.CSIPart1, ...
+    'CSIPart2',[payload.CSIPart2;int8(0)]);
+received=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
+    p,.3,512,localPUSCHLLR(p,mux.Codewords{1}),poison,4,config);
+assert(isequal(received.DecodedCSIPart2,payload.CSIPart2) && ~received.CSI2ContentMatch);
+% Poison only stored TX-reference metadata, not the encoded samples or
+% received evidence. Keep the diagnostic binding check internally consistent.
+state.PendingCSITable.CSIPart2BitsToken(1)=string(sixgr.runtime.RawCSVArrayCodec.encode(poison.CSIPart2));
+state.CurrentSlot=dueSlot;
+out=struct('GrantSnapshot',grant,'ExpectedHARQACKBits',int8([]), ...
+    'ExpectedCSIPart1Bits',poison.CSIPart1,'ExpectedCSIPart2Bits',poison.CSIPart2, ...
+    'DecodedCSIPart1Bits',received.DecodedCSIPart1,'DecodedCSIPart2Bits',received.DecodedCSIPart2, ...
+    'UCIReceiverEvidence',received.UCIReceiverEvidence);
+missing=out; missing.UCIReceiverEvidence=rmfield(missing.UCIReceiverEvidence,'CSI2LengthAuthority');
+rejected=false;
+try
+    sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,missing);
+catch err
+    assert(strcmp(err.identifier,'sixgr:truth:MissingReceivedCSILengthAuthority')); rejected=true;
+end
+assert(rejected,'Runtime must reject CSI with no received sizing authority.');
+state=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,out);
+assert(state.PendingCSITable.CSIUCIDecodeOk(1) && state.PendingCSITable.Processed(1));
+assert(string(state.PendingCSITable.CSIUCITransport(1))=="pusch_decoded");
+decoded=config.decode(received.DecodedCSIPart1,received.DecodedCSIPart2);
+assert(state.PendingCSITable.RI(1)==decoded.RI && state.PendingCSITable.PMI(1)==decoded.PMI);
+trace=state.PUCCHGrantTraceTable;
+hit=string(trace.PUCCHGrantId)=="PUCCH-CSI-"+string(state.PendingCSITable.ReportIdentity(1));
+assert(nnz(hit)==1 && trace.PUSCHUCIDecodeOk(hit) && ~trace.UCIContentMatch(hit), ...
+    'Received CSI must be usable without masking the poisoned diagnostic reference.');
+fprintf('PUSCH_RECEIVED_CSI_SCHEDULER_AUTHORITY_PASS\n');
+end
+
+function llr=localPUSCHLLR(p,bits)
+% One-bit UCI contains x/y placeholders. They must pass through actual
+% scrambling/modulation, not be interpreted as binary hard-decision LLRs.
+carrier=nrCarrierConfig;
+symbols=nrPUSCH(carrier,p,bits);
+llr=nrPUSCHDecode(carrier,p,symbols,.01);
 end
 
 function row = localFeedbackRow()

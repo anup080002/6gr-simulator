@@ -150,6 +150,16 @@ end
 
 basePathloss_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingBasePathloss_dB", NaN));
 pathloss_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingPathloss_dB", NaN));
+propagationAuthority="legacy_serving_pathloss_context";
+if isfield(userMeta,"RuntimePropagationPathloss_dB")
+    value=userMeta.RuntimePropagationPathloss_dB;
+    if ~(isnumeric(value) && isscalar(value) && isreal(value) && isfinite(value) && value>=0)
+        error("sixgr:link:InvalidPropagationPathloss", ...
+            "Explicit physical propagation loss must be finite and nonnegative; a UE estimate cannot replace it.");
+    end
+    pathloss_dB=double(value);
+    propagationAuthority="explicit_runtime_physical_propagation";
+end
 shadow_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingShadowFading_dB", NaN));
 o2i_dB = localFiniteOrNaN(sixgr.util.structGet(userMeta, "RuntimeServingO2I_dB", NaN));
 channelComplianceMode = string(sixgr.util.structGet(userMeta, "RuntimeChannelComplianceMode", ""));
@@ -162,6 +172,28 @@ o2iComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeO2IComplianc
 losProbabilitySource = string(sixgr.util.structGet(userMeta, "RuntimeLOSProbabilitySource", ""));
 losComplianceStatus = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceStatus", ""));
 losComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceReason", ""));
+fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
+    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
+    logical(sixgr.util.structGet(cfg, ...
+    "integration.configured_snr_is_link_authority", false));
+if fixedNormalizedEsN0
+    % A configured-Es/N0 LLS has no absolute large-scale link budget.  The
+    % identity sample gain is still zero dB internally, but zero must not be
+    % exported as a measured pathloss/O2I/shadowing result.  Keeping these
+    % quantities unavailable also prevents a dormant system-level geometry
+    % context from leaking into fixed-SNR plots and power-control evidence.
+    basePathloss_dB = NaN;
+    pathloss_dB = NaN;
+    shadow_dB = NaN;
+    o2i_dB = NaN;
+    propagationAuthority = "not_applicable_fixed_configured_esn0";
+    pathlossModelSource = "not_applicable_fixed_configured_esn0";
+    pathlossComplianceStatus = "not_applicable_fixed_configured_esn0";
+    fallbackUsedForPathloss = false;
+    o2iModelSource = "not_applicable_fixed_configured_esn0";
+    o2iComplianceStatus = "not_applicable_fixed_configured_esn0";
+    o2iComplianceReason = "configured_esn0_owns_receiver_operating_point";
+end
 if ~isfinite(pathloss_dB) && logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", false))
     explicitPathloss_dB = localFiniteOrNaN(sixgr.util.structGet(cfg, "channel.pathloss_dB", NaN));
     if isfinite(explicitPathloss_dB)
@@ -254,6 +286,7 @@ replay = struct( ...
     "AppliedLargeScaleAmplitudeGain", ampGain, ...
     "AppliedBasePathloss_dB", basePathloss_dB, ...
     "AppliedPathloss_dB", pathloss_dB, ...
+    "PropagationPathlossAuthority", char(propagationAuthority), ...
     "AppliedShadowFading_dB", shadow_dB, ...
     "AppliedO2I_dB", o2i_dB, ...
     "AppliedLargeScaleGainSource", char(gainSource), ...

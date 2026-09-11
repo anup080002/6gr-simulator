@@ -5,8 +5,8 @@ if nargin < 2 || isempty(baseCfg)
     baseCfg = struct();
 end
 cfgIn = baseCfg;
-paths = ["row_number","symbol_location","subcarrier_location","num_rb", ...
-    "rb_offset","scrambling_id","slot_numbers","detection_threshold"];
+paths = ["row_number","symbol_location","symbol_locations","subcarrier_location","num_rb", ...
+    "rb_offset","scrambling_id","slot_numbers","burst_length_slots","detection_threshold"];
 for ii = 1:numel(paths)
     value = sixgr.util.structGet(rrcCfg, paths(ii), []);
     if isempty(value)
@@ -17,7 +17,7 @@ for ii = 1:numel(paths)
         switch key
             case "rownumber"
                 cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.csirsRowNumber", value);
-            case "symbollocation"
+            case {"symbollocation","symbollocations"}
                 cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.symbolLocation", value);
             case "subcarrierlocation"
                 cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.subcarrierLocation", value);
@@ -29,6 +29,8 @@ for ii = 1:numel(paths)
                 cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.scramblingID", value);
             case "slotnumbers"
                 cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.slotNumbers", value);
+            case "burstlengthslots"
+                cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.burstLengthSlots", value);
             case "detectionthreshold"
                 cfgIn = sixgr.util.structSet(cfgIn, "phy.trs.detectionThreshold", value);
         end

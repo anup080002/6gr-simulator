@@ -296,7 +296,6 @@ else
 end
 ra.TempCRNTI = double(sixgr.util.structGet(raNode, "temp_crnti", 4660));
 ra.FinalCRNTI = double(sixgr.util.structGet(raNode, "final_crnti", ra.TempCRNTI));
-ra.DCIPayloadBits = double(sixgr.util.structGet(raNode, "dci_payload_bits", 32));
 % Random-access common/control transmissions have independent PT-RS
 % authority from connected user data.  Read each stage from its YAML node;
 % only legacy scenarios without the stage field inherit their direction's
@@ -322,7 +321,11 @@ if frame.Mu ~= grantPlan.TimeDomainAllocation.Mu
     error("sixgr:mac:ra:RACarrierNumerologyMismatch", ...
         "RA carrier numerology must match its canonical frame; cross-numerology RA needs explicit time conversion.");
 end
+commonDL = sixgr.phy.frame.CommonDLResourcePlan(cfg);
+commonDL.validateSIB1TRS();
+stageAllocations = struct('Msg2',ra.Msg2PDSCH,'Msg4',ra.Msg4PDSCH);
 ra.TimingSchedule = sixgr.phy.ia.RAEventScheduler.resolve( ...
+    "PDSCHResourceAvailability", @(stage,slot0) commonDL.checkPDSCH(stageAllocations.(stage),slot0), ...
     "RARMonitoringWindow", ra.RARMonitoringWindow, ...
     "PRACHOccasionEndSlot", ra.PRACHOccasionEndSlot, ...
     "RAResponseWindowSlots", ra.RAResponseWindowSlots, ...
@@ -352,6 +355,18 @@ rarContext = sixgr.phy.pdcch.RARDCIContext.create(ra.RARDCIReference,ra.RARNTI);
 rarSchema = sixgr.phy.pdcch.DCISchemaEngine.resolve(rarContext);
 ra.Msg2DCIPayloadBits = rarSchema.RawBits;
 ra.Msg2PDSCH.TBScaling = double(sixgr.util.structGet(raNode,"msg2_pdsch.tb_scaling",0));
+ra.Msg4DCI = sixgr.util.structGet(raNode,'msg4_dci',struct());
+requiredMsg4 = ["ndi","harq_process","tpc_command_for_pucch", ...
+    "pucch_resource_indicator","pdsch_to_harq_feedback_timing","harq_ack_repetitions_configured"];
+assert(isstruct(ra.Msg4DCI) && isscalar(ra.Msg4DCI) && all(isfield(ra.Msg4DCI,requiredMsg4)), ...
+    'sixgr:mac:ra:MissingMsg4DCIAuthority','random_access.msg4_dci must explicitly configure all Msg4 control fields.');
+ra.Msg4DCIReference = sixgr.phy.ra.resolveMsg4DCIReference(cfg);
+msg4Context = sixgr.phy.pdcch.TCMsg4DCIContext.create(ra.Msg4DCIReference, ...
+    ra.TempCRNTI,ra.Msg4DCI.harq_ack_repetitions_configured);
+msg4Schema = sixgr.phy.pdcch.DCISchemaEngine.resolve(msg4Context);
+ra.Msg4DCIPayloadBits = msg4Schema.RawBits;
+ra.DCIPayloadBits = msg4Schema.RawBits; % Compatibility alias; never a configured/fixed payload size.
+sixgr.phy.ra.scheduleMsg4(ra); % Validate authored fields/TDRA before any RA waveform.
 localPublishRuntimeBindings(ra);
 
 hashSource = jsonencode(localSerializableRAConfig(raNode));

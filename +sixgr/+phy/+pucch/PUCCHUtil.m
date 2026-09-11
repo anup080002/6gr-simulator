@@ -94,11 +94,14 @@ classdef PUCCHUtil
                 end
                 bits = int8(token(:) - '0');
             else
-                bits = int8(input(:));
-                if any(bits ~= 0 & bits ~= 1)
+                % Validate before conversion: int8 rounds fractional values
+                % and can turn malformed UCI (e.g. 0.2) into a valid zero.
+                if ~((isnumeric(input) || islogical(input)) && isreal(input)) || ...
+                        any(~isfinite(input(:))) || any(input(:) ~= 0 & input(:) ~= 1)
                     error("sixgr:phy:pucch:InvalidUCIBit", ...
-                        "UCI values must be binary.");
+                        "UCI values must be finite real binary values before conversion.");
                 end
+                bits = int8(input(:));
             end
         end
 

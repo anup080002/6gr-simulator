@@ -21,21 +21,25 @@ synchronization:
   # Bounded acquisition window around each SS/PBCH occasion, resolved at
   # the actual waveform sample rate; channel delay is not trimmed away.
   max_timing_uncertainty_us: 10
+  max_received_ul_timing_age_slots: 4
 
 canonical_control:
   launch:
-    scenario_mode: ue_placement_geometry
+    scenario_mode: fixed_snr_sweep
+    # This diagnostic is one configured point of the sweep, not a separate
+    # fixed-link Monte-Carlo campaign. The production access/scheduler
+    # timeline remains the executed workload.
     sweep_enabled: false
     fixed_link_campaign_enabled: false
-    geometry_enabled: true
+    geometry_enabled: false
   integration:
     enabled: true
     configuration_epoch: 1
-    run_mode: GEOMETRY_NETWORK
+    run_mode: FIXED_SNR_SWEEP
     radio_profile: nr_rel18_system_lls_strict
-    subprofile: connected_network
+    subprofile: connected_control_smoke
     trace_profile: FULL_EVIDENCE
-    configured_snr_is_link_authority: false
+    configured_snr_is_link_authority: true
     common_pipeline_required: true
     measured_sinr_required: true
   isac:
@@ -112,12 +116,15 @@ run_control:
   num_drops: 1
   num_workers: 1
   auto_start_parallel_pool: false
-  total_slots: 25
+  # Continue through the next unoccupied TDD DL window after the causally
+  # delayed CSI report. Slot 42 is a periodic Type-0/SIB1 occasion and is
+  # therefore unavailable to a separately coded connected-mode PDSCH.
+  total_slots: 58
   warmup_slots: 0
-  measurement_slots: 25
-  total_time_ms: 25
+  measurement_slots: 58
+  total_time_ms: 58
   warmup_time_ms: 0
-  measurement_time_ms: 25
+  measurement_time_ms: 58
   slot_level_logging_enable: true
   symbol_level_logging_enable: true
   per_ue_logging_enable: true
@@ -162,15 +169,23 @@ output_control:
 
 simulation:
   link_direction: both
-  n_frames: 2
-  n_slots: 25
-  n_subframes: 25
+  n_frames: 5
+  n_slots: 58
+  n_subframes: 58
   monte_carlo_iterations: 1
   random_seed: 4702601
   deterministic_mode: true
   snr_db: 12
-  noise_operating_mode: receiver_noise_figure_thermal_noise
-  min_duration_s: 0.025
+  # Single-point configured occupied-RE Es/N0. Noise is calibrated once at
+  # the pre-equalization unit-energy resource-grid reference and does not
+  # track the instantaneous CDL fade or received waveform power.
+  noise_operating_mode: standalone_awgn_snr_argument
+  # The access/scheduler timeline below is the sole executed workload for
+  # this bounded verification. Do not inherit a separate Monte-Carlo
+  # reference/adaptive campaign from the parent scenario.
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+  min_duration_s: 0.058
   snr_sweep_offsets_db: [0]
 
 frequency:
@@ -254,6 +269,9 @@ deployment_topology:
   num_cells: 1
   num_sectors_per_site: 1
   num_ues: 1
+  # Fixed-SNR link calibration excludes geometry and large-scale losses.
+  # O2I remains available only in separate physical-link-budget profiles.
+  indoor_ue_fraction: 0.0
   num_trps: 1
   trp_topology: per_cell_trp
   trp_sync_mode: synchronous
@@ -365,10 +383,51 @@ power_and_rf_frontend:
 # TS 38.213 UL power-control implementation for TDD and FDD; duplexing only
 # determines when an UL allocation is legal, never the power equation.
 rf_frontend:
+  # 3GPP TS 38.101-1/38.104 define endpoint RF minimum requirements and
+  # TS 38.521-1/38.141-1 define their test methods. They do not prescribe
+  # one PA, ADC, I/Q-imbalance, or FR1 phase-noise realization to inject
+  # into a propagation LLS. Keep this standards-baseline run free of an
+  # invented hardware realization; dedicated RF conformance-emulation
+  # profiles own tests against the pinned requirement tables.
+  enabled: false
+  profile_id: ideal_phy_strict
+  specification_version: 1.0.0
+  claim_class: IDEAL_PHY
   configuration_epoch: 1
+  reference_plane:
+    sample_unit: sqrt_mW
+    impedance_ohm: 50
+    tx_input: DIGITAL_LAYER_PORT
+    tx_output: TX_ANTENNA_CONNECTOR_OR_DECLARED_TAB
+    rx_input: RX_ANTENNA_CONNECTOR_OR_DECLARED_TAB
+    rx_output: EQUALIZED_RE
+  # Zero oscillator error is the standards-baseline operating point.
+  # Frequency-accuracy limits are checked by the dedicated BS/UE RF
+  # emulation profiles and are not misused as a residual-CFO distribution.
+  oscillator:
+    tx_error_hz: 0
+    rx_error_hz: 0
+    link_doppler_source: channel_runtime
+    drift_hz_per_s: 0
+    initial_phase_rad: 0
+    seed: 4702601
+  iq_and_lo_leakage:
+    enabled: false
+    gain_imbalance_db: 0
+    phase_imbalance_deg: 0
+    dc_offset_real: 0
+    dc_offset_imag: 0
+    compensation_enabled: false
+  phase_noise:
+    enabled: false
+    profile_id: not_applicable_3gpp_lacks_universal_fr1_injection_mask
+    seed: 4702601
   ul_power_control:
-    enabled: true
-    open_loop_enabled: true
+    # Not part of a normalized Es/N0 LLS point. TS 38.213 power-control is
+    # exercised in physical-link-budget scenarios where measured pathloss
+    # exists; using it here would replace the configured 12 dB authority.
+    enabled: false
+    open_loop_enabled: false
     closed_loop_enabled: false
     phr_report_enabled: true
     require_measured_reference_rs: true
@@ -391,20 +450,46 @@ channels:
   # Evaluate fading on the waveform clock, independent of runtime chunk boundaries.
   per_sample_fading_enabled: true
   delay_spread_ns: 100
-  doppler_hz: 7.838756
+  # v*fc/c = (3/3.6)*2.35e9/299792458 = 6.5322968643 Hz.
+  # The runtime per-ray/radial projection is allowed to be lower.
+  doppler_hz: 6.532296864297144
   doppler_source_mode: derive_from_ue_speed
   mobility_kmph: 3
   # Preserve physical per-connector voltage and power. MATLAB's optional
   # receive-antenna-count normalization would apply a different scale after
   # reversing unequal endpoint arrays and is therefore incompatible with
   # exact moving-TDD reciprocity.
+  normalize_path_gains: true
   normalize_channel_outputs: false
   los_enabled: false
   spatial_consistency_enabled: true
-  pathloss_enabled: true
+  pathloss_enabled: false
   shadow_fading_enabled: false
   pathloss_model: nrPathLoss
   shadow_fading_std_db: 0
+  o2i_model: none
+
+impairments:
+  cfo:
+    enabled: false
+    value_hz: 0
+  cfo_enabled: false
+  cfo_hz: 0
+  cfo_correction_enable: false
+  phase_noise:
+    enabled: false
+    model: none
+  phase_noise_enabled: false
+  phase_noise_model: none
+  iq_imbalance:
+    enabled: false
+    model: frequency_flat_widely_linear
+    gain_imbalance_db: 0
+    phase_imbalance_deg: 0
+  iq_imbalance_enabled: false
+  iq_imbalance_correction_enable: false
+  adc_quantization_enabled: false
+  adc_quantization_bits: 12
 
 interference:
   inter_cell_interference_flag: false
@@ -509,9 +594,19 @@ reference_signals:
     interpolation_policy: 2d_linear
     trp_transmission_assumption: single_trp_only
   trs_enabled: true
+  # One two-slot TRS burst per 10-slot TDD frame.  Keep the executable
+  # period explicit instead of relying on a runtime default.
+  trs_periodicity_slots: 10
   trs:
     enabled: true
-    slot_numbers: [2, 7]
+    # One recurring consecutive-slot resource set per frame. SIB1 owns slot
+    # 2 of each 20-ms broadcast period; do not overlay unsignalled TRS there.
+    # Their symbols fit the DL portions and avoid the slot-0/1 SSB burst.
+    slot_numbers: [7, 8]
+    periodicity: "10"
+    burst_length_slots: 2
+    row_number: 1
+    symbol_locations: [4, 8]
   tracking_rs_enabled: true
   ptrs_enabled: true
   ptrs_cpe_correction_enabled: true
@@ -548,6 +643,7 @@ mimo:
   precoding_granularity: prg_wideband
   max_dl_layers: 2
   max_ul_layers: 1
+  rank_adaptation_policy: measured_ri
   phase07_strict:
     enabled: true
     profile_id: "fr1_typeI_single_panel_strict"
@@ -861,6 +957,14 @@ initial_access:
           nrofCandidates: [0, 0, 1, 0, 0]
           searchSpaceType: common
       ra_SearchSpace: 1
+    # TS 38.331 PUCCH-ConfigCommon carried by the decoded SIB1.  These
+    # values are installed only after successful SIB1 decoding; the random
+    # access receiver must not read a scenario-side oracle copy.
+    pucch_config_common:
+      pucch_ResourceCommon: 0
+      pucch_GroupHopping: neither
+      hoppingId: 1
+      p0_nominal: -90
     pdsch:
       ptrs_enabled: false
       prb_start: 0
@@ -920,8 +1024,8 @@ random_access:
   frequency_start: 0
   n_cell_id: 1
   num_prach_occasions: 2
-  num_slots: 25
-  num_subframes: 25
+  num_slots: 48
+  num_subframes: 48
   active_preamble_pattern: 1
   num_rx_antennas: 2
   num_tx_antennas: 1
@@ -961,9 +1065,15 @@ random_access:
     msg4_processing_delay_slots: 1
     # Full-slot UL is separated from the last full DL slot by the mixed slot.
     setup_complete_k2_slots: 2
-  dci_payload_bits: 32
   msg2_pdsch: {prb_start: 0, num_prb: 24, symbol_start: 2, num_symbols: 12, mcs: 0, mcs_table: qam64, modulation: QPSK, target_code_rate: 0.1171875, rv: 0, n_layers: 1, ptrs_enabled: false}
   msg3_pusch: {prb_start: 0, num_prb: 24, symbol_start: 0, num_symbols: 14, mcs: 0, mcs_table: qam64, modulation: QPSK, target_code_rate: 0.1171875, rv: 0, n_layers: 1, transform_precoding: false, ptrs_enabled: false}
+  msg4_dci:
+    ndi: 1
+    harq_process: 0
+    tpc_command_for_pucch: 1
+    pucch_resource_indicator: 0
+    pdsch_to_harq_feedback_timing: 1
+    harq_ack_repetitions_configured: false
   msg4_pdsch: {prb_start: 0, num_prb: 24, symbol_start: 2, num_symbols: 12, mcs: 0, mcs_table: qam64, modulation: QPSK, target_code_rate: 0.1171875, rv: 0, n_layers: 1, ptrs_enabled: false}
   setup_complete_pusch: {prb_start: 0, num_prb: 24, symbol_start: 0, num_symbols: 14, mcs: 0, mcs_table: qam64, modulation: QPSK, target_code_rate: 0.1171875, rv: 0, n_layers: 1, transform_precoding: false, ptrs_enabled: false}
   statistical_qualification:
@@ -1890,7 +2000,11 @@ control_gating:
   srs_required: true
   srs_max_age_slots: 5
   trs_required: true
-  trs_max_age_slots: 5
+  # The configured TRS resource set recurs once per 10-slot radio frame.
+  # Preserve the last decoded tracking state through that complete cadence;
+  # a shorter age creates a deterministic scheduler outage before every
+  # refresh even though no tracking failure occurred.
+  trs_max_age_slots: 10
 
 csi_acquisition_and_reporting:
   dl_csi_enabled: true
@@ -1930,7 +2044,7 @@ link_adaptation:
   cqi_source: csi_feedback
   pdsch_link_adaptation_policy: baseline
   pusch_link_adaptation_policy: baseline
-  rank_adaptation_policy: fixed
+  rank_adaptation_policy: measured_ri
   al_adaptation_policy: cqi_aware
   beam_adaptation_policy: measured_reference_signal
   adaptation_periodicity: slot
@@ -2023,6 +2137,7 @@ traffic:
       ue_count: 1
 
 output:
+  live_csv_png_enabled: true
   constellation_capture_scope: full_allocation
   bucket: lls
   profile: lls_causal_access_to_data_wiring_tdd

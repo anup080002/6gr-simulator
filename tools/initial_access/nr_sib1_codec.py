@@ -247,6 +247,34 @@ def bounded_object(semantic: dict[str, Any]) -> dict[str, Any]:
     if "pdcch_config_common" in semantic:
         serving["downlinkConfigCommon"]["initialDownlinkBWP"]["pdcch-ConfigCommon"] = (
             "setup", sib1_common_control.to_asn1(semantic["pdcch_config_common"]))
+    if "pucch_config_common" in semantic:
+        spec = semantic["pucch_config_common"]
+        allowed = {
+            "pucch_ResourceCommon", "pucch_GroupHopping", "hoppingId", "p0_nominal"
+        }
+        unknown = set(spec) - allowed
+        if unknown:
+            raise ValueError(
+                "unsupported bounded pucch-ConfigCommon field(s): "
+                + ", ".join(sorted(unknown))
+            )
+        hopping = str(spec["pucch_GroupHopping"])
+        if hopping not in {"neither", "enable", "disable"}:
+            raise ValueError("unsupported pucch-GroupHopping value")
+        common: dict[str, Any] = {"pucch-GroupHopping": hopping}
+        for semantic_name, asn1_name, lower, upper in (
+            ("pucch_ResourceCommon", "pucch-ResourceCommon", 0, 15),
+            ("hoppingId", "hoppingId", 0, 1023),
+            ("p0_nominal", "p0-nominal", -202, 24),
+        ):
+            if semantic_name in spec:
+                number = int(spec[semantic_name])
+                if number != spec[semantic_name] or not lower <= number <= upper:
+                    raise ValueError(f"{semantic_name} is out of range")
+                common[asn1_name] = number
+        serving["uplinkConfigCommon"]["initialUplinkBWP"]["pucch-ConfigCommon"] = (
+            "setup", common
+        )
     return message
 
 
@@ -354,11 +382,28 @@ def semantic_from_object(value: dict[str, Any]) -> dict[str, Any]:
         if kind != "setup":
             raise ValueError("bounded SIB1 requires setup, not release, for present PDCCH-ConfigCommon")
         semantic["pdcch_config_common"] = sib1_common_control.from_asn1(common_control)
+    if "pucch-ConfigCommon" in ul["initialUplinkBWP"]:
+        kind, common_control = ul["initialUplinkBWP"]["pucch-ConfigCommon"]
+        if kind != "setup":
+            raise ValueError("bounded SIB1 requires setup, not release, for present PUCCH-ConfigCommon")
+        if any(name in common_control for name in (
+                "nrofPRBs", "intra-SlotFH-r17", "pucch-ResourceCommonRedCap-r17",
+                "additionalPRBOffset-r17")):
+            raise ValueError("unsupported extension in bounded pucch-ConfigCommon")
+        mapped = {"pucch_GroupHopping": common_control["pucch-GroupHopping"]}
+        for asn1_name, semantic_name in (
+            ("pucch-ResourceCommon", "pucch_ResourceCommon"),
+            ("hoppingId", "hoppingId"),
+            ("p0-nominal", "p0_nominal"),
+        ):
+            if asn1_name in common_control:
+                mapped[semantic_name] = int(common_control[asn1_name])
+        semantic["pucch_config_common"] = mapped
     # This codec does not yet carry these optional IEs into the MATLAB tree.
     # Reject them rather than report a silently truncated decode as complete.
-    if "pdsch-ConfigCommon" in dl["initialDownlinkBWP"] or any(
-            name in ul["initialUplinkBWP"] for name in ("pusch-ConfigCommon", "pucch-ConfigCommon")):
-        raise ValueError("unsupported common PDSCH/PUSCH/PUCCH IE in bounded SIB1")
+    if "pdsch-ConfigCommon" in dl["initialDownlinkBWP"] or \
+            "pusch-ConfigCommon" in ul["initialUplinkBWP"]:
+        raise ValueError("unsupported common PDSCH/PUSCH IE in bounded SIB1")
     if bounded_object(semantic) != value:
         raise ValueError("decoded SIB1 contains fields not represented losslessly by the bounded semantic profile")
     return semantic

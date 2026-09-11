@@ -40,11 +40,14 @@ for direction = ["downlink", "uplink"]
     if sixgr.bwop.RIVFDRA.encode(275, startRB, sizeRB) ~= riv
         error("sixgr:rrc:asn1:InvalidBWPAllocation", "Noncanonical initial BWP RIV.");
     end
-    for unsupported = ["pdsch_ConfigCommon", "pusch_ConfigCommon", "pucch_ConfigCommon"]
+    for unsupported = ["pdsch_ConfigCommon", "pusch_ConfigCommon"]
         if isfield(bwp, unsupported)
             error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
                 "%s is not encoded by the bounded SIB1 profile.", unsupported);
         end
+    end
+    if direction == "uplink" && isfield(bwp, "pucch_ConfigCommon")
+        localValidatePUCCHConfigCommon(bwp.pucch_ConfigCommon);
     end
 end
 prach = serving.uplinkConfigCommon.initialUplinkBWP.rach_ConfigCommon;
@@ -53,6 +56,40 @@ if isfield(prach, "restrictedSet") && ~any(strcmpi(string(prach.restrictedSet), 
         "RestrictedSetTypeA","RestrictedSetTypeB"]))
     error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
         "SIB1 restrictedSet must be unrestricted, Type A, or Type B.");
+end
+
+function localValidatePUCCHConfigCommon(value)
+if ~(isstruct(value) && isscalar(value))
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+        "pucch-ConfigCommon must be a scalar structure.");
+end
+allowed = ["pucch_ResourceCommon","pucch_GroupHopping","hoppingId","p0_nominal"];
+unknown = setdiff(string(fieldnames(value)), allowed);
+if ~isempty(unknown)
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+        "Unsupported bounded pucch-ConfigCommon field(s): %s.", ...
+        strjoin(unknown, ", "));
+end
+if ~isfield(value, "pucch_GroupHopping") || ...
+        ~any(string(value.pucch_GroupHopping) == ["neither","enable","disable"])
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+        "pucch-GroupHopping must be neither, enable, or disable.");
+end
+localOptionalInteger(value, "pucch_ResourceCommon", 0, 15);
+localOptionalInteger(value, "hoppingId", 0, 1023);
+localOptionalInteger(value, "p0_nominal", -202, 24);
+end
+
+function localOptionalInteger(value, name, minimum, maximum)
+if ~isfield(value, name)
+    return;
+end
+number = double(value.(name));
+if ~(isscalar(number) && isfinite(number) && number == fix(number) && ...
+        number >= minimum && number <= maximum)
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+        "%s must be an integer in [%d,%d].", name, minimum, maximum);
+end
 end
 if ~isfield(sib1, "ue_TimersAndConstants")
     error("sixgr:rrc:asn1:MissingSIB1IE", ...

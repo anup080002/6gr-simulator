@@ -659,7 +659,10 @@ roSummary.TimingError_samples = double(roSummary.EstimatedTimingOffset_samples -
 roSummary.ActiveUECount = round(double(activeUECount));
 roSummary.CollisionFlag = double(collisionFlag);
 roSummary.DistinctTransmittedPreambleCount = round(double(distinctServingPreambles));
-roSummary.CRCPass = double(correct);
+% TS 38.211 6.3.3 preamble detection is not a CRC-protected TB decode.
+roSummary.CRCApplicable = false;
+roSummary.CRCPass = NaN;
+roSummary.DetectionSuccess = logical(correct);
 roSummary.FalseAlarmFlag = double(falseAlarm);
 roSummary.Status = string(localOutcomeStatus(correct));
 roSummary.Notes = string(detectionType);

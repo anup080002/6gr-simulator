@@ -17,6 +17,10 @@ for mode = ["TDD", "FDD"]
         cfg.frequency.center_frequency_hz = 2.1e9;
         cfg.channel.fc_Hz = 2.1e9;
         cfg.phy.fc_Hz = 2.1e9;
+        % Case A below 3 GHz has four SSB candidates.  Do not retain the
+        % n78 eight-candidate fixture while changing the operating band.
+        cfg.phy.ssb.Lmax = 4;
+        cfg.phy.ssb.activeBitmap = "1000";
     end
     cfg.outputs.saveCSV = false;
     cfg.outputs.saveMAT = false;

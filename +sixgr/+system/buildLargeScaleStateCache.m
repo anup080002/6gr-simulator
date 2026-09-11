@@ -63,6 +63,14 @@ state.RSRPPerREConvention = "per_reference_resource_element_power";
 state.PathlossModelSource = localObjectStringProp(plModel, "PathlossModelSource", string(sixgr.util.structGet(opt.PreviousState, "PathlossModelSource", string(sixgr.util.structGet(state, "PathlossModelSource", "")))));
 state.PathlossComplianceStatus = localObjectStringProp(plModel, "PathlossComplianceStatus", string(sixgr.util.structGet(opt.PreviousState, "PathlossComplianceStatus", string(sixgr.util.structGet(state, "PathlossComplianceStatus", "")))));
 state.FallbackUsedForPathloss = localObjectLogicalProp(plModel, "FallbackUsedForPathloss", logical(sixgr.util.structGet(opt.PreviousState, "FallbackUsedForPathloss", logical(sixgr.util.structGet(state, "FallbackUsedForPathloss", false)))));
+% A configured-SNR LLS still uses zero-loss large-scale matrices as an
+% internal cell-selection identity.  Do not describe that identity as an
+% executed TR 38.901 pathloss result: it is not a physical 0 dB pathloss.
+if ~logical(state.PathlossEnabled)
+    state.PathlossModelSource = "pathloss_disabled_fixed_snr_identity";
+    state.PathlossComplianceStatus = "not_applicable_pathloss_disabled";
+    state.FallbackUsedForPathloss = false;
+end
 state.O2IModelSource = localObjectStringProp(plModel, "O2IModelSource", string(sixgr.util.structGet(opt.PreviousState, "O2IModelSource", string(sixgr.util.structGet(state, "O2IModelSource", "")))));
 state.O2IComplianceStatus = localObjectStringProp(plModel, "O2IComplianceStatus", string(sixgr.util.structGet(opt.PreviousState, "O2IComplianceStatus", string(sixgr.util.structGet(state, "O2IComplianceStatus", "")))));
 state.O2IComplianceReason = localObjectStringProp(plModel, "O2IComplianceReason", string(sixgr.util.structGet(opt.PreviousState, "O2IComplianceReason", string(sixgr.util.structGet(state, "O2IComplianceReason", "")))));

@@ -16,12 +16,15 @@ timingOk = logical(timing.Attempted) && logical(timing.EstimateAvailable) && ...
 freqOk = logical(freq.Attempted) && logical(freq.EstimateAvailable) && ...
     isfinite(double(freq.FrequencyError_Hz)) && abs(double(freq.FrequencyError_Hz)) <= double(cfg.FrequencyToleranceHz);
 channelOk = logical(ch.Attempted) && logical(ch.EstimateAvailable) && ...
-    isfinite(double(ch.MeanNMSE_dB)) && double(ch.MeanNMSE_dB) <= double(cfg.ChannelNMSEThresholddB);
+    ch.NMSEScoringAvailable && ~isnan(double(ch.MeanNMSE_dB)) && double(ch.MeanNMSE_dB) <= double(cfg.ChannelNMSEThresholddB);
 if runtimeCoupled
     timingOk = localRuntimeTimingOk(timing);
     freqOk = localRuntimeFrequencyOk(freq);
 end
-trackingOk = logical(tracking.StrictOk) || runtimeCoupled;
+trackingOk = isequal(tracking.StrictOk,true);
+if runtimeCoupled
+    trackingOk = isequal(sixgr.util.structGet(tracking,"RuntimeEvidenceUsable",false),true);
+end
 positiveStrictOk = detectionOk && timingOk && freqOk && channelOk && trackingOk;
 strictOk = positiveStrictOk && ~negativeExpected;
 negativeOk = negativeExpected && ~positiveStrictOk;
@@ -32,6 +35,7 @@ if ~strictOk && ~negativeOk
     if ~timingOk, missing(end+1, 1) = "timing"; end %#ok<AGROW>
     if ~freqOk, missing(end+1, 1) = "frequency"; end %#ok<AGROW>
     if ~channelOk, missing(end+1, 1) = "channel"; end %#ok<AGROW>
+    if ~trackingOk, missing(end+1, 1) = "tracking"; end %#ok<AGROW>
     failure = "trs_strict_components_incomplete:" + strjoin(missing, "|");
 end
 
@@ -60,7 +64,9 @@ row.FrequencyTrackingAttempted = logical(freq.Attempted);
 row.TRSCFOEstimateAvailable = logical(freq.EstimateAvailable);
 row.EstimatedCFO_Hz = double(freq.EstimatedCFO_Hz);
 row.EstimatedCFO_PreCorrection_Hz = double(freq.EstimatedCFO_Hz);
-row.EstimatedOscillatorCFO_Hz = double(freq.EstimatedCFO_Hz);
+row.EstimatedOscillatorCFO_Hz = double(freq.EstimatedOscillatorCFO_Hz);
+row.FrequencyEstimateDomain = string(freq.FrequencyEstimateDomain);
+row.FrequencyUnambiguousHalfRange_Hz = double(freq.UnambiguousHalfRange_Hz);
 row.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(freq, "EstimatedCommonFrequency_Hz", NaN));
 row.PhysicalDoppler_Hz = double(sixgr.util.structGet(freq, "PhysicalDoppler_Hz", NaN));
 row.InjectedCFO_Hz = double(rx.InjectedCFO_Hz);
@@ -69,7 +75,8 @@ row.ChannelEstimationAttempted = logical(ch.Attempted);
 row.TRSChannelEstimateAvailable = logical(ch.EstimateAvailable);
 row.NMSE_dB = double(ch.MeanNMSE_dB);
 row.PhaseTrackingError_deg = NaN;
-row.QCLAccuracy = double(max(0, min(1, det.MeanDetectionMetric)));
+row.QCLAccuracy = NaN; % Reference correlation is not validation of a QCL/TCI assumption.
+row.QCLMeasurementStatus = "not_measured_requires_QCL_TCI_binding_evidence";
 row.AppliedAWGNSNR_dB = double(rx.AppliedAWGNSNR_dB);
 row.NoiseVariance = double(rx.NoiseVariance);
 row.ChannelModel = string(cfg.ChannelModel);
@@ -79,6 +86,7 @@ row.ToolboxMissing = false;
 row.UsedOracleFields = "";
 row.TrackingEstimateSource = "trs_nzp_csirs_waveform_estimator";
 row.StrictOk = logical(strictOk);
+row.TrackingRuntimeEvidenceUsable = runtimeCoupled && trackingOk;
 row.NegativeExpectedOk = logical(negativeOk);
 row.Status = string(sixgr.phy.trs.localTernary(strictOk, "PASS", "FAIL"));
 row.FailureReason = string(failure);
@@ -113,12 +121,13 @@ row = struct("RunId", "", "ScenarioName", "", "TrialId", NaN, "TrialType", "", .
     "FrequencyTrackingAttempted", false, "TRSCFOEstimateAvailable", false, ...
     "EstimatedCFO_Hz", NaN, "EstimatedCFO_PreCorrection_Hz", NaN, ...
     "EstimatedOscillatorCFO_Hz", NaN, "EstimatedCommonFrequency_Hz", NaN, ...
-    "PhysicalDoppler_Hz", NaN, ...
+    "PhysicalDoppler_Hz", NaN, "FrequencyEstimateDomain", "", "FrequencyUnambiguousHalfRange_Hz", NaN, ...
     "InjectedCFO_Hz", NaN, "FrequencyError_Hz", NaN, ...
     "ChannelEstimationAttempted", false, "TRSChannelEstimateAvailable", false, ...
-    "NMSE_dB", NaN, "PhaseTrackingError_deg", NaN, "QCLAccuracy", NaN, ...
+    "NMSE_dB", NaN, "PhaseTrackingError_deg", NaN, "QCLAccuracy", NaN, "QCLMeasurementStatus", "", ...
     "AppliedAWGNSNR_dB", NaN, "NoiseVariance", NaN, "ChannelModel", "", ...
     "ProxyUsed", false, "Skipped", false, "ToolboxMissing", false, ...
     "UsedOracleFields", "", "TrackingEstimateSource", "", "StrictOk", false, ...
+    "TrackingRuntimeEvidenceUsable", false, ...
     "NegativeExpectedOk", false, "Status", "", "FailureReason", "", "TruthStatus", "");
 end

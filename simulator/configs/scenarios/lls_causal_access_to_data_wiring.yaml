@@ -35,6 +35,7 @@ synchronization:
   # Bounded acquisition window around each SS/PBCH occasion, resolved at
   # the actual waveform sample rate; channel delay is not trimmed away.
   max_timing_uncertainty_us: 10
+  max_received_ul_timing_age_slots: 4
 
 run_control:
   seed: 104729
@@ -926,12 +927,16 @@ reference_signals:
     trp_transmission_assumption: "single_trp_only"
   trs:
     enabled: true
-    slot_numbers: [0, 4, 8]
+    slot_numbers: [7, 8]
+    burst_length_slots: 2
+    row_number: 1
+    symbol_locations: [4, 8]
     purpose: "tracking"
     baseline_or_candidate_tag: "baseline_benchmark"
     time_density: "configured"
     frequency_density: "configured"
-    periodicity: "20ms"
+    # Explicit slot_numbers recur once per 10-ms carrier frame.
+    periodicity: "10ms"
     aperiodic_trigger: "none"
     semi_persistent_flag: false
     num_ports: 1
@@ -4690,6 +4695,15 @@ initial_access:
           nrofCandidates: [0, 0, 1, 0, 0]
           searchSpaceType: common
       ra_SearchSpace: 1
+    # TS 38.331 PUCCH-ConfigCommon is decoded by the UE before Msg4 ACK.
+    # The DCI PRI and first-CCE then select one of the TS 38.213 table
+    # resources; this value is configuration authority, not a scheduler
+    # fallback.
+    pucch_config_common:
+      pucch_ResourceCommon: 0
+      pucch_GroupHopping: neither
+      hoppingId: 1
+      p0_nominal: -90
     pdsch:
       ptrs_enabled: false
       prb_start: 0
@@ -4807,7 +4821,6 @@ random_access:
     msg3_k2_slots: 1
     msg4_processing_delay_slots: 1
     setup_complete_k2_slots: 1
-  dci_payload_bits: 32
   msg2_pdsch:
     prb_start: 0
     num_prb: 24
@@ -4841,6 +4854,13 @@ random_access:
     ptrs_time_density: 1
     ptrs_frequency_density: 2
     ptrs_re_offset: "00"
+  msg4_dci:
+    ndi: 1
+    harq_process: 0
+    tpc_command_for_pucch: 1
+    pucch_resource_indicator: 0
+    pdsch_to_harq_feedback_timing: 1
+    harq_ack_repetitions_configured: false
   msg4_pdsch:
     prb_start: 0
     num_prb: 24
@@ -5830,6 +5850,7 @@ validation:
         consumer_source_files: ["+sixgr/+truth/exportRuntimeTxIQCapture.m"]
         required: true
 output:
+  live_csv_png_enabled: true
   constellation_capture_scope: full_allocation
   bucket: "lls"
   profile: "lls_causal_access_to_data_wiring"

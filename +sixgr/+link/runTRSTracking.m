@@ -37,6 +37,14 @@ out.Skipped = false;
 out.Crash = false;
 out.FailureIdentifier = "";
 out.NMSE_dB = NaN;
+out.NMSEScoringAvailable = false;
+out.NMSEReferenceSource = "unavailable";
+out.ChannelNMSEComparedComplexValues = 0;
+out.ChannelNMSEReferencePlane = "unavailable";
+out.ChannelNMSEReferenceIncludesRFImpairments = NaN;
+out.QCLMeasurementStatus = "not_measured_requires_QCL_TCI_binding_evidence";
+out.ChannelEstimationTable = table();
+out.TrackingTable = table();
 out.PhaseError_deg = NaN;
 out.EstimatedDoppler_Hz = NaN;
 out.InjectedDoppler_Hz = NaN;
@@ -46,6 +54,8 @@ out.EstimatedCFO_Hz = NaN;
 out.EstimatedCFO_PreCorrection_Hz = NaN;
 out.EstimatedOscillatorCFO_Hz = NaN;
 out.EstimatedCommonFrequency_Hz = NaN;
+out.FrequencyEstimateDomain = "";
+out.FrequencyUnambiguousHalfRange_Hz = NaN;
 out.PhysicalDoppler_Hz = NaN;
 out.InjectedCFO_Hz = NaN;
 out.CFOEstimateAvailability = "missing";
@@ -160,18 +170,28 @@ try
     runtimeEvidenceOk = localRuntimeTRSEvidenceComplete(trial, strictCfg);
 
     out.NMSE_dB = double(trial.NMSE_dB);
+    out.NMSEScoringAvailable = ch.NMSEScoringAvailable;
+    out.NMSEReferenceSource = ch.NMSEReferenceSource;
+    out.ChannelEstimationTable = ch.Table;
+    out.TrackingTable = tracking.Table;
+    out.ChannelNMSEComparedComplexValues = sum(ch.Table.NMSEComparedComplexValues);
+    if ch.NMSEScoringAvailable
+        out.ChannelNMSEReferencePlane = ch.ChannelReferenceEvidence{1}.ReferencePlane;
+        out.ChannelNMSEReferenceIncludesRFImpairments = double(ch.ChannelReferenceEvidence{1}.RFImpairmentsIncluded);
+    end
     out.PhaseError_deg = localMeanReferencePhaseDeg(det);
     out.EstimatedCFO_Hz = double(trial.EstimatedCFO_Hz);
     out.EstimatedCFO_PreCorrection_Hz = double(trial.EstimatedCFO_PreCorrection_Hz);
     out.EstimatedOscillatorCFO_Hz = double(sixgr.util.structGet(trial, "EstimatedOscillatorCFO_Hz", out.EstimatedCFO_Hz));
     out.EstimatedCommonFrequency_Hz = double(sixgr.util.structGet(trial, "EstimatedCommonFrequency_Hz", NaN));
+    out.FrequencyEstimateDomain = string(trial.FrequencyEstimateDomain);
+    out.FrequencyUnambiguousHalfRange_Hz = double(trial.FrequencyUnambiguousHalfRange_Hz);
     out.PhysicalDoppler_Hz = double(sixgr.util.structGet(trial, "PhysicalDoppler_Hz", ...
         sixgr.util.structGet(freq, "PhysicalDoppler_Hz", NaN)));
     out.InjectedCFO_Hz = double(trial.InjectedCFO_Hz);
-    out.EstimatedDoppler_Hz = localResolveRuntimeDopplerEstimate(out.EstimatedCommonFrequency_Hz, out.EstimatedOscillatorCFO_Hz);
+    out.EstimatedDoppler_Hz = NaN; % TRS common phase alone does not separate oscillator and propagation shifts.
     out.ConfiguredMaxDoppler_Hz = localResolveConfiguredMaxDopplerHz(cfg);
-    out.InjectedDoppler_Hz = localFirstFiniteValue(out.PhysicalDoppler_Hz, ...
-        localResolveScalarInjectedDopplerHz(replay), localResolveConfiguredMaxDopplerHz(cfg));
+    out.InjectedDoppler_Hz = localResolveScalarInjectedDopplerHz(replay);
     if isfinite(out.EstimatedDoppler_Hz) && isfinite(out.InjectedDoppler_Hz)
         out.DopplerError_Hz = out.EstimatedDoppler_Hz - out.InjectedDoppler_Hz;
     end
@@ -257,10 +277,10 @@ try
     out.HestRxPorts = double(sixgr.util.structGet(ch, "HestRxPorts", NaN));
     out.HestTxPorts = double(sixgr.util.structGet(ch, "HestTxPorts", NaN));
     out.MeasuredTrialSINR_dB = double(sixgr.util.structGet(ch, "MeanPilotSINR_dB", NaN));
-    out.MeasuredTrialSINRSource = "trs_pilot_re_channel_reconstruction";
-    out.MeasuredTrialSINRValueRole = "measured_receiver_sinr";
+    out.MeasuredTrialSINRSource = "unavailable_pilot_fit_is_not_independent_SINR";
+    out.MeasuredTrialSINRValueRole = "unavailable";
     out.MeasuredTrialSINRValueStatus = localAvailableStatus(out.MeasuredTrialSINR_dB);
-    out.SINRMeasurementDomain = "trs_pilot_re_channel_reconstruction_residual";
+    out.SINRMeasurementDomain = "unavailable_pilot_fit_is_not_independent_SINR";
     out.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_timing_correction";
     out.DesiredPilotPower = double(sixgr.util.structGet(ch, "DesiredPilotPower", NaN));
     out.ResidualPilotPower = double(sixgr.util.structGet(ch, "ResidualPilotPower", NaN));
@@ -294,7 +314,8 @@ try
         out.CFOEstimateSource = "trs_reference_phase_slope_frequency_estimator";
         out.CFOEstimateDefinition = "not_available_without_multiple_valid_trs_symbol_times";
     end
-    out.Ok = logical(runtimeEvidenceOk);
+    % Qualification may use independent truth; receiver usability must not.
+    out.Ok = logical(runtimeEvidenceOk && score.StrictOk);
     out.Notes = "TRS runtime tracking measurement from NZP-CSI-RS waveform path. NRE=" + string(localTRSNRE(tx)) + ...
         ", configured max Doppler=" + string(round(out.ConfiguredMaxDoppler_Hz, 3)) + ...
         " Hz, scalar injected Doppler=" + string(round(out.InjectedDoppler_Hz, 3)) + ...
@@ -412,13 +433,26 @@ rx.FaultMode = "normal";
 rx.SampleRateHz = double(tx.SampleRateHz);
 rx.GridSlots = tx.GridSlots;
 rx.TruthStatus = "real_lls_evidence";
+rx.FrequencyReferenceForScoring_Hz = NaN;
+rx.FrequencyReferenceForScoringSource = "unavailable_no_independent_scalar_frequency_reference";
+if ~logical(sixgr.util.structGet(replay,'ChannelFadingApplied',false)) && ...
+        logical(sixgr.util.structGet(replay,'ScalarDopplerInjected',false))
+    rx.FrequencyReferenceForScoring_Hz = rx.InjectedCFO_Hz + ...
+        double(replay.InjectedScalarDoppler_Hz);
+    rx.FrequencyReferenceForScoringSource = "standalone_scalar_injection_scoring_only";
+end
 
 timing = sixgr.phy.trs.estimateTRSTiming(rx, strictCfg, tx);
 det = sixgr.phy.trs.detectTRSResources(rx, strictCfg, tx, "Timing", timing);
 timing = localRejectTimingIfDetectionFailed(timing, det);
 freq = sixgr.phy.trs.estimateTRSFrequencyOffset(det, strictCfg, tx, rx);
 ch = sixgr.phy.trs.estimateTRSChannel(rx, strictCfg, tx, det);
-tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg);
+references=sixgr.util.structGet(reception,'ScoringChannelReferences',{});
+if ~isempty(references) && ch.EstimateAvailable
+    [referenceGrids,referenceEvidence]=sixgr.truth.sharedTRSReferenceGrids(prepared,references,replay,det);
+    ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
+end
+tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg,reception.Observation);
 score = sixgr.phy.trs.scoreTRSDetection(strictCfg, rx, det, timing, freq, ch, tracking, ...
     "TrialId", 1, "TrialType", "runtime_coupled_trs", "NegativeExpected", false);
 end
@@ -474,9 +508,10 @@ detectionUsable = logical(trial.DetectionAttempted) && logical(trial.DetectionSu
     double(trial.ResourceCoverageRatio) >= double(cfg.MinCoverageRatio);
 timingUsable = localTimingEstimateUsable(trial, cfg);
 frequencyUsable = localFrequencyEstimateUsable(trial, cfg);
-channelUsable = logical(trial.ChannelEstimationAttempted) && logical(trial.TRSChannelEstimateAvailable) && ...
-    isfinite(double(trial.NMSE_dB)) && double(trial.NMSE_dB) <= double(cfg.ChannelNMSEThresholddB);
-tf = proxyClean && detectionUsable && timingUsable && frequencyUsable && channelUsable;
+% A practical receiver cannot know the independently scored channel error.
+channelUsable = logical(trial.ChannelEstimationAttempted) && logical(trial.TRSChannelEstimateAvailable);
+trackingUsable=isequal(sixgr.util.structGet(trial,"TrackingRuntimeEvidenceUsable",false),true);
+tf = proxyClean && detectionUsable && timingUsable && frequencyUsable && channelUsable && trackingUsable;
 end
 
 function tf = localTimingEstimateUsable(trial, cfg)
@@ -501,8 +536,8 @@ est = double(trial.EstimatedCFO_Hz);
 if ~isfinite(est)
     return;
 end
-maxHz = localMaxRuntimeFrequencyCorrectionHz(cfg);
-tf = abs(est) <= maxHz;
+maxHz = double(trial.FrequencyUnambiguousHalfRange_Hz);
+tf = isfinite(maxHz) && maxHz>0 && abs(est) <= maxHz;
 end
 
 function maxSamples = localMaxRuntimeTimingCorrectionSamples(cfg)
@@ -542,18 +577,6 @@ if ~(isfinite(maxSamples) && maxSamples >= 0)
 end
 end
 
-function maxHz = localMaxRuntimeFrequencyCorrectionHz(cfg)
-scsHz = max(1, double(cfg.SubcarrierSpacingKHz) * 1e3);
-baseCfg = sixgr.util.structGet(cfg, "BaseConfig", struct());
-configuredCFOHz = abs(double(sixgr.util.structGet(baseCfg, "phy.impairments.cfoHz", ...
-    sixgr.util.structGet(baseCfg, "rf.cfoHz", 0))));
-configuredDopplerHz = abs(double(sixgr.util.structGet(baseCfg, "channel.doppler_Hz", ...
-    sixgr.util.structGet(baseCfg, "channel.dopplerHz", ...
-    sixgr.util.structGet(baseCfg, "channel.fading.maxDoppler_Hz", 0)))));
-configuredSpanHz = configuredCFOHz + configuredDopplerHz + double(cfg.FrequencyToleranceHz);
-maxHz = max([double(cfg.FrequencyToleranceHz), configuredSpanHz, scsHz / 2]);
-end
-
 function phaseDeg = localMeanReferencePhaseDeg(det)
 phaseDeg = NaN;
 T = sixgr.util.structGet(det, "Table", table());
@@ -580,17 +603,6 @@ if ~isempty(vals)
 end
 end
 
-function dopplerHz = localResolveRuntimeDopplerEstimate(commonFrequencyHz, estimatedOscillatorCFOHz)
-dopplerHz = NaN;
-if ~isfinite(double(commonFrequencyHz))
-    return;
-end
-if isfinite(double(estimatedOscillatorCFOHz))
-    dopplerHz = double(commonFrequencyHz) - double(estimatedOscillatorCFOHz);
-else
-    dopplerHz = double(commonFrequencyHz);
-end
-end
 
 function value = localFirstTableNumber(T, name, defaultValue)
 value = double(defaultValue);

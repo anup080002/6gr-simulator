@@ -13,6 +13,10 @@ cfg = sixgr.lls6g.buildInternalConfig(scfg, runFolder);
 manifest = struct("CodeVersion", "test", "CodeDetail", "clean", ...
     "RandomSeed", 23, "GeneratedUTC", "test", "RunnerProfile", "test", ...
     "RunCompletion", "failed", "DeterministicMode", "test");
+% The main run's optional QCLAccuracy column is all blank. MATLAB imports
+% this as cells; no QCL measurement may be invented to keep reports alive.
+optional=table({'';''},'VariableNames',{'QCLAccuracy'});
+sixgr.util.csvWriteTable(fullfile(runFolder,'air_interface','csv','dl_pdsch_trials.csv'),optional);
 sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, ...
     struct("Ok", false), manifest, ...
     struct("StartedUTC", "test", "ElapsedSeconds", 0), ...
@@ -21,6 +25,9 @@ coveragePath = fullfile(runFolder, "reports", "csv", "lls_output_spec_coverage.c
 
 coverage = readtable(coveragePath, "VariableNamingRule", "preserve");
 detail = readtable(fullfile(runFolder, "reports", "csv", "lls_output_metric_rows.csv"), "VariableNamingRule", "preserve");
+qcl=detail(contains(lower(string(detail.MetricKey)),"qcl"),:);
+assert(~isempty(qcl) && ~any(logical(qcl.CountsTowardCoverage)), ...
+    'Blank QCL inputs must remain unavailable, not observed zero correlation.');
 inventory = readtable(fullfile(runFolder, "reports", "csv", "artifact_inventory.csv"), "VariableNamingRule", "preserve");
 summaryT = readtable(fullfile(runFolder, "reports", "csv", "per_scenario_summary_tables.csv"), "VariableNamingRule", "preserve");
 autoMd = string(fileread(fullfile(runFolder, "reports", "automatic_markdown_summary.md")));
@@ -78,6 +85,38 @@ assert(any(string(detail.MetricKey) == "ai_confidence_traces" & string(detail.Av
 assert(any(string(detail.MetricKey) == "curves_access_delay_cdf" & string(detail.Availability) == "not_available"), ...
     "Detail rows must preserve not_available for an omitted access-delay plot.");
 
+paprRows=detail(string(detail.MetricKey)=="low_papr_gain",:);
+assert(height(paprRows)==1 && string(paprRows.Statistic)=="feature_enabled" && ...
+    string(paprRows.Availability)=="config_only" && ~paprRows.CountsTowardCoverage, ...
+    'A failed run without UL samples must not publish observed NaN PAPR statistics.');
+assert(~localCoverageCredit(coverage,"low_papr_gain"));
+
+% Explicit report-only numeric fixtures, not PHY qualification observations.
+% NaN-only and finite-with-NaN inputs exercise the producer's evidence guard.
+for paprFixture = {nan(3,1),[3;6;9;NaN]}
+    source=table(paprFixture{1},'VariableNames',{'PAPR_dB'});
+    sixgr.util.csvWriteTable(fullfile(runFolder,'air_interface','csv','ul_pusch_trials.csv'),source);
+    sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, ...
+        struct("Ok", false), manifest, ...
+        struct("StartedUTC", "test", "ElapsedSeconds", 0), ...
+        struct("RunCompletion", "failed", "ResultOk", false));
+    refreshed=readtable(fullfile(runFolder,'reports','csv','lls_output_metric_rows.csv'), ...
+        'TextType','string','VariableNamingRule','preserve');
+    rows=refreshed(string(refreshed.MetricKey)=="low_papr_gain",:);
+    observed=rows(logical(rows.CountsTowardCoverage),:);
+    values=paprFixture{1}; values=values(isfinite(values));
+    if isempty(values)
+        assert(isempty(observed) && height(rows)==1, ...
+            'NaN-only UL evidence was promoted to measured PAPR coverage.');
+    else
+        assert(height(observed)==2 && all(string(observed.Availability)=="observed") && ...
+            all(isfinite(observed.ValueNumeric)));
+        assert(abs(observed.ValueNumeric(observed.Statistic=="mean_papr_db")-mean(values))<1e-12);
+        assert(abs(observed.ValueNumeric(observed.Statistic=="p95_papr_db")-prctile(values,95))<1e-12);
+        assert(all(contains(observed.Notes,"not a measured PAPR reduction or gain")));
+    end
+end
+disp('UL_PAPR_MEASUREMENT_AVAILABILITY_PASS');
 ok = true;
 end
 

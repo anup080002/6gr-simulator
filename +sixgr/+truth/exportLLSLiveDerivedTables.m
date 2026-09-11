@@ -19,6 +19,14 @@ sixgr.util.ensureFolder(layout.HARQCSVDir);
 analyticsCSVDir = fullfile(layout.Root, "analytics", "csv");
 sixgr.util.ensureFolder(analyticsCSVDir);
 
+% Bind raw rows as primary CSVs do. Persisted component evidence loaded
+% later retains its own identity; it must not be relabeled as this run.
+for signal = ["DL","UL","SRS","TRS","CSIRS","PBCH"]
+    if isfield(rawTrials,signal)
+        rawTrials.(signal) = sixgr.truth.bindCoupledExecutionIdentity( ...
+            rawTrials.(signal),cfg,signal);
+    end
+end
 dlT = sixgr.util.structGet(rawTrials, "DL", table());
 ulT = sixgr.util.structGet(rawTrials, "UL", table());
 srsT = sixgr.util.structGet(rawTrials, "SRS", table());
@@ -113,10 +121,10 @@ channelImpulseT = sixgr.truth.buildChannelImpulseResponseTable(cfg);
 
 sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT);
 sixgr.util.csvWriteTable(artifacts.RankEstimationStatsPath, rankT);
-sixgr.util.csvWriteTable(artifacts.BeamSelectionStatsPath, beamT);
-sixgr.util.csvWriteTable(artifacts.BeamP1AcquisitionStatsPath, beamP1T);
-sixgr.util.csvWriteTable(artifacts.BeamP2RefinementStatsPath, beamP2T);
-sixgr.util.csvWriteTable(artifacts.BeamProcedureStatsPath, beamT);
+sixgr.util.csvWriteTable(artifacts.BeamSelectionStatsPath, beamT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.BeamP1AcquisitionStatsPath, beamP1T, "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.BeamP2RefinementStatsPath, beamP2T, "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.BeamProcedureStatsPath, beamT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.CSIFeedbackStatsPath, csiT);
 sixgr.util.csvWriteTable(artifacts.CSIRSStatsPath, csirsT);
 sixgr.util.csvWriteTable(artifacts.LinkAdaptationInputPath, linkAdaptationT);
@@ -259,26 +267,31 @@ end
 function T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder)
 beamMetricFields = ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount", ...
     "SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"];
+authorityDL = dlT;
+authorityUL = ulT;
 rawBeamT = localVertcat({ ...
-    localAggregateByDirectionAndSNR(dlT, "DL", beamMetricFields, localRuntimeTrialSource(dlT, "DL", false)), ...
-    localAggregateByDirectionAndSNR(ulT, "UL", beamMetricFields, localRuntimeTrialSource(ulT, "UL", false))});
+    localRawBeamSummary(dlT, "DL", beamMetricFields, localRuntimeTrialSource(dlT, "DL", false)), ...
+    localRawBeamSummary(ulT, "UL", beamMetricFields, localRuntimeTrialSource(ulT, "UL", false))});
 if isempty(rawBeamT)
     [persistedDL, persistedUL] = localReadPersistedDirectionalBeamTrials(runFolder);
+    authorityDL = persistedDL;
+    authorityUL = persistedUL;
     rawBeamT = localVertcat({ ...
-        localAggregateByDirectionAndSNR(persistedDL, "DL", beamMetricFields, localRuntimeTrialSource(persistedDL, "DL", true)), ...
-        localAggregateByDirectionAndSNR(persistedUL, "UL", beamMetricFields, localRuntimeTrialSource(persistedUL, "UL", true))});
+        localRawBeamSummary(persistedDL, "DL", beamMetricFields, localRuntimeTrialSource(persistedDL, "DL", true)), ...
+        localRawBeamSummary(persistedUL, "UL", beamMetricFields, localRuntimeTrialSource(persistedUL, "UL", true))});
 end
 rawBeamT = localAnnotateBeamSummaryTable(rawBeamT, "P2_runtime_beam_refinement", "PDSCH_PUSCH_GRANT");
+[authorityRunID, authorityExecutionID] = localBeamAuthorityIdentity(authorityDL, authorityUL);
 
 parts = { ...
     rawBeamT, ...
-    localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "probe_beam_mimo.csv"), "beamforming/csv/probe_beam_mimo.csv"), ...
+    localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "probe_beam_mimo.csv", authorityRunID, authorityExecutionID), "beamforming/csv/probe_beam_mimo.csv"), ...
         "P2_runtime_beam_refinement", "PDSCH_PUSCH_PROBE"), ...
-    localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "beam_precoder_table.csv"), "beamforming/csv/beam_precoder_table.csv"), ...
+    localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "beam_precoder_table.csv", authorityRunID, authorityExecutionID), "beamforming/csv/beam_precoder_table.csv"), ...
         "P2_runtime_beam_refinement", "PDSCH_PUSCH_PRECODER"), ...
-    localAnnotateBeamSummaryTable(localBuildBeamStateTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_state_trace.csv")), ...
+    localAnnotateBeamSummaryTable(localBuildBeamStateTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_state_trace.csv", authorityRunID, authorityExecutionID)), ...
         "P2_runtime_beam_state_tracking", "BEAM_STATE_TRACE"), ...
-    localAnnotateBeamSummaryTable(localBuildBeamEventTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_event_trace.csv")), ...
+    localAnnotateBeamSummaryTable(localBuildBeamEventTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_event_trace.csv", authorityRunID, authorityExecutionID)), ...
         "P2_runtime_beam_event_tracking", "BEAM_EVENT_TRACE")};
 T = localVertcat(parts);
 if isempty(T)
@@ -290,9 +303,18 @@ function T = localAnnotateBeamSummaryTable(T, procedure, sourceFamily)
 if ~(istable(T) && width(T) > 0)
     T = localEmptySummaryTable();
 end
+
 n = height(T);
 T.BeamManagementProcedure = repmat(string(procedure), n, 1);
 T.SignalSourceFamily = repmat(string(sourceFamily), n, 1);
+end
+
+function T=localRawBeamSummary(sourceT,direction,fields,traceSource)
+specs=repmat(localBeamMetricSpec("",strings(0)),0,1);
+for name=fields
+    specs(end+1,1)=localBeamMetricSpec(name,name); %#ok<AGROW>
+end
+T=sixgr.truth.buildBeamMeasurementSummary(sourceT,direction,traceSource,specs);
 end
 
 function T = localEmptyBeamSummaryTable()
@@ -347,7 +369,7 @@ for candidateIndex = 1:numel(candidates)
 end
 end
 
-function T = localReadBeamArtifactTable(runFolder, fileName)
+function T = localReadBeamArtifactTable(runFolder, fileName, authorityRunID, authorityExecutionID)
 T = table();
 if strlength(strtrim(string(runFolder))) == 0
     return;
@@ -359,6 +381,51 @@ candidates = { ...
     fullfile(layout.ControlCSVDir, char(fileName)), ...
     fullfile(layout.AirInterfaceCSVDir, char(fileName))};
 T = localReadFirstDerivedTable(candidates);
+% These secondary beam artifacts are folded into a primary, scenario-level
+% measured summary.  Rows without the exact run/execution identity cannot
+% be proven to belong to this execution (and older derived artifacts may
+% survive a failed terminal publication attempt), so they must not be
+% promoted into the primary summary.  The canonical DL/UL/PBCH trial rows
+% remain the authoritative source when an auxiliary trace lacks identity.
+if istable(T) && ~isempty(T)
+    vars = string(T.Properties.VariableNames);
+    runName = vars(find(strcmpi(vars, "RunID"), 1));
+    executionName = vars(find(strcmpi(vars, "ExecutionID"), 1));
+    if isempty(runName) || isempty(executionName)
+        T = table();
+        return;
+    end
+    runID = strtrim(string(T.(runName)));
+    executionID = strtrim(string(T.(executionName)));
+    valid = ~ismissing(runID) & strlength(runID) > 0 & ...
+        ~ismissing(executionID) & strlength(executionID) > 0 & ...
+        runID == string(authorityRunID) & ...
+        executionID == string(authorityExecutionID);
+    T = T(valid, :);
+    if isempty(T)
+        T = table();
+    end
+end
+end
+
+function [runID, executionID] = localBeamAuthorityIdentity(dlT, ulT)
+runValues = [localBeamTextColumn(dlT, "RunID", ""); ...
+    localBeamTextColumn(ulT, "RunID", "")];
+executionValues = [localBeamTextColumn(dlT, "ExecutionID", ""); ...
+    localBeamTextColumn(ulT, "ExecutionID", "")];
+runValues = unique(strtrim(runValues(strlength(strtrim(runValues)) > 0)));
+executionValues = unique(strtrim(executionValues(strlength(strtrim(executionValues)) > 0)));
+if isempty(runValues) && isempty(executionValues)
+    runID = "";
+    executionID = "";
+    return;
+end
+assert(numel(runValues) == 1 && numel(executionValues) == 1, ...
+    'sixgr:truth:MissingBeamAuthorityIdentity', ...
+    ['A primary beam summary requires exactly one RunID and ExecutionID ' ...
+     'from the canonical DL/UL trials.']);
+runID = runValues(1);
+executionID = executionValues(1);
 end
 
 function T = localReadFirstDerivedTable(candidates)
@@ -431,56 +498,9 @@ if isempty(T)
 end
 end
 
-function T = localBuildSSBSelectedBeamRows(ssbT, traceSource, qualityRole)
-T = localEmptySummaryTable();
-if ~(istable(ssbT) && ~isempty(ssbT))
-    return;
-end
-score = localBeamNumericColumn(ssbT, ["SS_RSRP_dBm","PBCHDMRSMetric"]);
-beam = localBeamNumericColumn(ssbT, ["BeamIndex","SSBIndex"]);
-if ~any(isfinite(score)) || ~any(isfinite(beam))
-    return;
-end
-[snrBin, snrHasFinite] = localBeamSNRBins(ssbT);
-if snrHasFinite
-    groups = unique(snrBin(isfinite(snrBin)), "stable");
-else
-    groups = NaN;
-end
-rows = repmat(localSummaryRowTemplate(), 0, 1);
-for i = 1:numel(groups)
-    if snrHasFinite
-        mask = abs(snrBin - groups(i)) < 1e-9;
-        snrValue = double(groups(i));
-        qualityAxis = "SNR_dB";
-        selectedQualityRole = string(qualityRole);
-        qualitySource = "SNR_dB";
-    else
-        mask = true(height(ssbT), 1);
-        snrValue = NaN;
-        qualityAxis = "runtime_beam_sample";
-        selectedQualityRole = string(qualityRole);
-        qualitySource = string(traceSource);
-    end
-    valid = mask & isfinite(score) & isfinite(beam);
-    if ~any(valid)
-        continue;
-    end
-    validIdx = find(valid);
-    [~, relIdx] = max(score(valid));
-    selectedIdx = validIdx(relIdx);
-    selectedBeam = beam(selectedIdx);
-    selectedScore = score(selectedIdx);
-    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", traceSource, snrValue, ...
-        qualityAxis, selectedQualityRole, qualitySource, "P1SelectedSSBBeamIndex", selectedBeam, selectedBeam, selectedBeam, 1); %#ok<AGROW>
-    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", traceSource, snrValue, ...
-        qualityAxis, selectedQualityRole, qualitySource, "P1SelectedSSBBeamScore", selectedScore, selectedScore, selectedScore, 1); %#ok<AGROW>
-    rows(end+1, 1) = localMakeSummaryRow("SSB_DL", traceSource, snrValue, ...
-        qualityAxis, selectedQualityRole, qualitySource, "P1SSBSweptBeamCount", double(nnz(valid)), double(nnz(valid)), double(nnz(valid)), 1); %#ok<AGROW>
-end
-if ~isempty(rows)
-    T = struct2table(rows, "AsArray", true);
-end
+function T = localBuildSSBSelectedBeamRows(ssbT, traceSource, qualityRole) %#ok<INUSD>
+T = sixgr.truth.buildBeamMeasurementSummary(ssbT, "SSB_DL", traceSource, struct([]), true);
+if isempty(T), T=localEmptySummaryTable(); end
 end
 
 function T = localBuildRuntimeBeamArtifactStats(sourceT, traceSource)
@@ -550,74 +570,9 @@ function spec = localBeamMetricSpec(metric, columns)
 spec = struct("Metric", string(metric), "Columns", string(columns(:)).');
 end
 
-function T = localBuildBeamSummaryRows(sourceT, defaultDirection, traceSource, specs, qualityRole)
-if ~(istable(sourceT) && ~isempty(sourceT))
-    T = localEmptySummaryTable();
-    return;
-end
-direction = localBeamTextColumn(sourceT, ["Direction","direction"], string(defaultDirection));
-if strlength(strtrim(string(defaultDirection))) == 0
-    emptyDir = strlength(strtrim(direction)) == 0;
-    direction(emptyDir) = "BEAM";
-end
-[snrBin, snrHasFinite] = localBeamSNRBins(sourceT);
-dirList = unique(direction, "stable");
-if isempty(dirList)
-    dirList = string(defaultDirection);
-end
-if snrHasFinite
-    snrList = unique(snrBin(isfinite(snrBin)), "stable");
-else
-    snrList = NaN;
-end
-
-rows = repmat(localSummaryRowTemplate(), 0, 1);
-for d = 1:numel(dirList)
-    dirMask = direction == dirList(d);
-    for s = 1:numel(snrList)
-        if snrHasFinite
-            snrMask = abs(snrBin - snrList(s)) < 1e-9;
-            snrValue = double(snrList(s));
-            qualityAxis = "SNR_dB";
-            qualitySource = "SNR_dB";
-        else
-            snrMask = true(height(sourceT), 1);
-            snrValue = NaN;
-            qualityAxis = "runtime_beam_sample";
-            qualitySource = string(traceSource);
-        end
-        mask = dirMask & snrMask;
-        if ~any(mask)
-            continue;
-        end
-        for k = 1:numel(specs)
-            vals = localBeamNumericColumn(sourceT, specs(k).Columns);
-            vals = vals(mask);
-            vals = vals(isfinite(vals));
-            if isempty(vals)
-                continue;
-            end
-            rows(end+1, 1) = localMakeSummaryRow(dirList(d), traceSource, snrValue, qualityAxis, ...
-                qualityRole, qualitySource, specs(k).Metric, mean(vals, "omitnan"), ...
-                localPercentile(vals, 5), localPercentile(vals, 95), double(numel(vals))); %#ok<AGROW>
-        end
-    end
-end
-if isempty(rows)
-    T = localEmptySummaryTable();
-else
-    T = struct2table(rows, "AsArray", true);
-end
-end
-
-function [snrBin, hasFinite] = localBeamSNRBins(T)
-snr = localBeamNumericColumn(T, ["SNR_dB","snr_db"]);
-hasFinite = any(isfinite(snr));
-snrBin = nan(height(T), 1);
-if hasFinite
-    finiteMask = isfinite(snr);
-    snrBin(finiteMask) = round(snr(finiteMask));
-end
+function T = localBuildBeamSummaryRows(sourceT, defaultDirection, traceSource, specs, qualityRole) %#ok<INUSD>
+T = sixgr.truth.buildBeamMeasurementSummary(sourceT, defaultDirection, traceSource, specs);
+if isempty(T), T=localEmptySummaryTable(); end
 end
 
 function values = localBeamNumericColumn(T, names)

@@ -1,0 +1,18 @@
+inherits:
+  - ./lls_causal_tdd_shared_srs_fixture.yaml
+
+meta:
+  scenario_id: lls_causal_tdd_connected_feedback_fixture
+  description: >
+    Short nominal-12-dB TDD shared-clock access and connected-feedback
+    diagnostic. Retains the inherited physical channel, RF, traffic and
+    adaptation policies, with additional UL occasions after initial access
+    to inspect received CSI/SRS and HARQ effects on subsequent grants.
+    This is not statistical, FRC or production qualification.
+  research_class: baseline_benchmark
+
+run_control:
+  total_slots: 55
+  measurement_slots: 55
+  total_time_ms: 55
+  measurement_time_ms: 55

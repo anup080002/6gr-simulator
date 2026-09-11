@@ -24,14 +24,24 @@ classdef CodebookEngine
                 return;
             end
 
+            if codebookType == "typei-singlepanel" && ports > 2 && rankValue <= 2
+                [matrices,indices,components,layout] = ...
+                    sixgr.phy.mimo.TypeISinglePanelCodebook.enumerate(request);
+                result = localResult(matrices,indices,request,layout.Specification);
+                result.PMIComponents = components;
+                result.PMIIndexDimensions = layout.Dimensions;
+                result.MatrixAuthority = "ts38214_rank1_rank2_single_panel_formulas";
+                return;
+            end
+
             % The public R2026a 5G Toolbox CSI report implementation is the
             % release-pinned production authority for the enabled larger
-            % Type-I/Type-II tuples. Candidate enumeration is intentionally
+            % Type-I/Type-II tuples. Other candidate enumeration is intentionally
             % fail-closed until a frozen independent matrix pack exists.
             error("sixgr:mimo:UnsupportedProfile", ...
                 "Strict candidate enumeration for profile %s (%s, %d ports, " + ...
                 "rank %d) requires its frozen independent matrix pack; the " + ...
-                "two-port Type-I floor is the currently enabled enumerated subset.", ...
+                "enabled enumerated subset is two-port Type-I and larger single-panel ranks 1/2.", ...
                 profileID, codebookType, ports, rankValue);
         end
 
@@ -91,14 +101,15 @@ classdef CodebookEngine
             end
             snapshotCount = size(H,3);
             metric = zeros(size(candidates,3),1);
+            assert(ismember(upper(options.Receiver),["MMSE","IRC"]), ...
+                'sixgr:mimo:UnsupportedReceiver', ...
+                'Receiver-aware selection is implemented for MMSE/IRC only.');
+            candidateLayerSINR=cell(size(candidates,3),1);
             for index = 1:size(candidates,3)
                 Wi = candidates(:,:,index);
-                snapshotMetric = zeros(snapshotCount,1);
-                for snapshot = 1:snapshotCount
-                    G = double(H(:,:,snapshot)) * double(Wi);
-                    gram = G' * (R \ G);
-                    snapshotMetric(snapshot) = real(log2(det(eye(size(gram)) + gram)));
-                end
+                layerSINR=sixgr.phy.mimo.measurePrecoderLayerSINR(H,Wi,R);
+                candidateLayerSINR{index}=layerSINR;
+                snapshotMetric=sum(log2(1+layerSINR),2);
                 % Wideband PMI/rank selection uses the arithmetic mean of
                 % per-snapshot mutual information.  Averaging complex H
                 % first is invalid on frequency-selective channels because
@@ -108,6 +119,7 @@ classdef CodebookEngine
             [bestMetric, bestIndex] = max(metric);
             W = candidates(:,:,bestIndex);
             decision = struct( ...
+                "SelectedSINRPerRELayer",candidateLayerSINR{bestIndex}, ...
                 "CandidateMetric", metric, ...
                 "SelectedIndex", bestIndex-1, ...
                 "SelectedMetric", bestMetric, ...

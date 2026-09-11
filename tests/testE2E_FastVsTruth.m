@@ -39,10 +39,12 @@ scenarios = [ ...
 
 for i = 1:numel(scenarios)
     sc = scenarios(i);
+    cfg.run.seed = double(sc.Seed);
     runArgs = [commonArgs, {"E2ETrafficModel", sc.TrafficModel, "E2EUECount", sc.NumUE}];
 
     rng(double(sc.Seed), "twister");
     repTruth = sixgr_run_3gpp_full_campaign(cfg, runArgs{:}, "E2EAirModel", "truth");
+    verifyCampaignSeedAuthority(repTruth,double(sc.Seed));
 
     assert(isfield(repTruth, "E2E") && istable(repTruth.E2E.SummaryTable), "Truth run missing E2E summary.");
     assert(height(repTruth.E2E.SummaryTable) == 1, "Truth run must produce one E2E summary row.");

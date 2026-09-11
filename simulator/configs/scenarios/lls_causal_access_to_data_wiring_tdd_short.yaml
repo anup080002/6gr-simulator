@@ -4,7 +4,7 @@ inherits:
 meta:
   scenario_id: lls_causal_access_to_data_wiring_tdd_short
   description: >
-    Fifteen-slot, three-period TDD diagnostic derived from the production causal
+    Fifty-eight-slot bounded TDD diagnostic derived from the production causal
     access-to-data wiring profile. It preserves the complete measured
     scheduler-truth PHY, initial-access, beam, CSI/SRS/TRS, HARQ, link-
     adaptation, antenna, channel, IQ, CSV, MAT and PNG contracts while
@@ -17,22 +17,27 @@ meta:
   tags: [lls, truth, tdd, 5mhz, short, causal, initial_access, beam, csi, amc]
 
 run_control:
-  total_slots: 15
+  total_slots: 58
   warmup_slots: 0
-  measurement_slots: 15
-  total_time_ms: 15
+  measurement_slots: 58
+  total_time_ms: 58
   warmup_time_ms: 0
-  measurement_time_ms: 15
+  measurement_time_ms: 58
 
 simulation:
-  n_frames: 2
-  n_slots: 15
-  n_subframes: 15
-  min_duration_s: 0.015
+  n_frames: 5
+  n_slots: 58
+  n_subframes: 58
+  min_duration_s: 0.058
 
 random_access:
-  num_slots: 15
-  num_subframes: 15
+  num_slots: 58
+  num_subframes: 58
 
 output:
   profile: lls_causal_access_to_data_wiring_tdd_short
+  # Raw trial CSVs still update causally. Defer the expensive derived PNG
+  # gallery until finalization; rebuilding it after every slot previously
+  # dominated this 58-slot diagnostic runtime without adding PHY evidence.
+  live_heavy_refresh_interval_frames: 58
+  live_heavy_refresh_each_sweep_point: false

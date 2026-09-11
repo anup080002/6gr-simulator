@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-07-contract-v57-physical-csi-rssi-evidence"
+MATERIALIZER_VERSION = "2026-09-10-contract-v63-control-evm-applicability"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -786,6 +786,17 @@ def contract_artifact_is_policy_filtered(
         "evm per subcarrier",
         "evm per layer",
         "symbol decision error histogram",
+    }:
+        return True
+
+    # These control/reference-signal EVM views require independently aligned
+    # paired samples. Enabling the corresponding channel does not make them
+    # available: detector scores, SINR and same-pilot fit residuals are not
+    # EVM. A scenario must explicitly enable this measurement campaign.
+    if not bool(policy.get("control_evm_capture_enabled", False)) and name in {
+        "prach evm",
+        "ssb evm",
+        "csi-rs evm",
     }:
         return True
 
@@ -1605,7 +1616,8 @@ def _bar_dataset_from_named_values(
 
 
 def _format_axis_tick(value: float) -> str:
-    value = 0.0 if math.isclose(float(value), 0.0, abs_tol=1e-12) else float(value)
+    # Preserve small physical powers; only canonicalize signed exact zero.
+    value = 0.0 if float(value) == 0.0 else float(value)
     magnitude = abs(value)
     if magnitude >= 10000 or (magnitude > 0 and magnitude < 0.001):
         return f"{value:.2e}"
@@ -1621,12 +1633,18 @@ def _ellipsize_svg_text(value: Any, max_chars: int) -> str:
 
 
 def _axis_tick_values(minimum: float, maximum: float, count: int = 5) -> list[float]:
+    if not (math.isfinite(minimum) and math.isfinite(maximum) and minimum <= maximum):
+        raise ValueError("Axis bounds must be finite ordered values")
     if count <= 1 or math.isclose(minimum, maximum):
         return [float(minimum)]
     span = float(maximum) - float(minimum)
     raw_step = span / max(int(count) - 1, 1)
+    if raw_step == 0.0 or not math.isfinite(raw_step):
+        return [float(minimum), float(maximum)]
     exponent = math.floor(math.log10(raw_step))
     scale = 10.0**exponent
+    if scale == 0.0:
+        return [float(minimum), float(maximum)]
     fraction = raw_step / scale
     if fraction <= 1.0:
         nice_fraction = 1.0
@@ -1639,7 +1657,7 @@ def _axis_tick_values(minimum: float, maximum: float, count: int = 5) -> list[fl
     else:
         nice_fraction = 10.0
     step = nice_fraction * scale
-    epsilon = max(abs(minimum), abs(maximum), 1.0) * 1e-12
+    epsilon = max(math.ulp(minimum), math.ulp(maximum), abs(step) * 1e-12)
     first = math.ceil((float(minimum) - epsilon) / step) * step
     last = math.floor((float(maximum) + epsilon) / step) * step
     if first > last:
@@ -2026,10 +2044,13 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
             discrete_index_metric = any(
                 token in y_semantics
                 for token in ("beam", "rank", "layer", "pmi", "cri", "index")
+            ) and not any(
+                token in y_semantics
+                for token in ("db", "sinr", "power", "quality", "gain", "evm", "%")
             )
             if bounded_unit_metric and 0.0 <= constant_value <= 1.0:
                 min_y, max_y = 0.0, 1.0
-            elif discrete_index_metric:
+            elif discrete_index_metric and constant_value >= 0.0:
                 min_y = max(0.0, constant_value - 1.0)
                 max_y = constant_value + 1.0
             else:
@@ -8076,7 +8097,6 @@ def _explicit_runtime_metric_chart_materialization(
         "run health timeline": {"sources": ["reports/csv/live_run_overview.csv"], "fields": ["run_completion"], "status_fields": ["status_text"], "kind": "timeline", "label": "Run healthy/completed flag"},
         "error/warning/fallback stacked time series": {"sources": ["reports/csv/live_case_status.csv"], "fields": ["fallback_rows", "placeholder_rows"], "kind": "timeline", "label": "Fallback/placeholder rows"},
         "truth policy violations by category": {"sources": ["analytics/csv/truth_policy_analytics.csv"], "fields": ["StrictTruthFailureCount", "StrictProxyGuardFailureCount"], "kind": "distribution", "label": "Truth-policy violation count"},
-        "frame/slot/symbol occupancy timeline": {"sources": ["reports/csv/slot_trace.csv"], "fields": ["DLNumSymbols", "ULNumSymbols", "GuardNumSymbols"], "x_fields": ["CanonicalSlot"], "kind": "timeline", "label": "Occupied symbols"},
         "DL/UL/guard slot pattern chart": {"sources": ["reports/csv/slot_trace.csv"], "fields": ["DLNumSymbols", "ULNumSymbols", "GuardNumSymbols"], "x_fields": ["CanonicalSlot"], "kind": "timeline", "label": "DL/UL/guard symbols"},
         "SSB occasion timeline": {"sources": ["reports/csv/live_ssb_occasion_state.csv"], "fields": ["SSBIndex", "BeamIndex"], "x_fields": ["Slot"], "kind": "timeline", "label": "SSB index"},
         "PRACH occasion timeline": {"sources": ["reports/csv/live_prach_occasion_state.csv"], "fields": ["PRACHCarrierSlot"], "x_fields": ["Slot"], "kind": "timeline", "label": "PRACH carrier slot"},
@@ -8092,7 +8112,7 @@ def _explicit_runtime_metric_chart_materialization(
         "measurement source coverage chart": {"sources": ["reports/csv/measurement_output_integrity_audit.csv"], "fields": ["MeasurementRows"], "kind": "distribution", "label": "Measurement rows by source"},
         "config-vs-measured conflict dashboard": {"sources": ["reports/csv/reports_config_vs_measured_conflicts_v.csv"], "fields": ["measured_minus_configured_snr_db", "mean_measured_sinr_db"], "kind": "timeline", "label": "Measured minus configured SNR/SINR (dB)"},
         "config vs measured conflict dashboard": {"sources": ["reports/csv/reports_config_vs_measured_conflicts_v.csv"], "fields": ["measured_minus_configured_snr_db", "mean_measured_sinr_db"], "kind": "timeline", "label": "Measured minus configured SNR/SINR (dB)"},
-        "UE control/report timeline": {"sources": ["reports/csv/live_ue_control_state.csv"], "fields": ["ValueNumeric"], "kind": "timeline", "label": "UE control/report metric"},
+        "UE control/report timeline": {"sources": ["packet_flow/csv/live_pucch_grants.csv", "reports/csv/live_ue_control_state.csv"], "fields": ["RuntimeStateUpdated"], "x_fields": ["Slot"], "require_explicit_x": True, "required_true_fields": ["ControlObservationAvailable"], "kind": "timeline", "label": "Received UE feedback applied (0/1)"},
         "DRX state timeline": {"sources": ["reports/csv/live_drx_state.csv"], "fields": ["active_samples", "sleep_samples", "idle_samples"], "kind": "timeline", "label": "DRX state samples"},
         "UE energy proxy timeline": {"sources": ["reports/csv/live_ue_power_state.csv"], "fields": ["energy_per_bit_j", "cumulative_energy_j"], "x_fields": ["slot", "timestamp_sim_ms"], "kind": "timeline", "label": "UE measured energy"},
         "per-cell context health timeline": {"sources": ["reports/csv/live_per_cell_context.csv"], "fields": ["dl_grant_count", "ul_grant_count"], "kind": "timeline", "label": "Per-cell executed grant count"},
@@ -8148,6 +8168,16 @@ def _explicit_runtime_metric_chart_materialization(
         candidate_samples: list[tuple[float, float]] = []
         candidate_values: list[float] = []
         for index, row in enumerate(rows, start=1):
+            # Coverage/configuration records are not runtime measurements,
+            # even when an alias CSV happens to contain numeric values.
+            if _row_text(row, "Availability").strip().lower() in {
+                "config_only", "not_available", "unavailable", "disabled", "not_applicable"
+            }:
+                continue
+            if any(_row_float(row, flag) == 1 for flag in ("PlaceholderFlag", "FallbackFlag", "ProxyUsed")):
+                continue
+            if any(_row_float(row, field) != 1 for field in spec.get("required_true_fields", [])):
+                continue
             value = _row_float(row, *spec["fields"])
             if value is None:
                 status_token = ""
@@ -8176,6 +8206,8 @@ def _explicit_runtime_metric_chart_materialization(
             if value is None or not math.isfinite(float(value)):
                 continue
             x_value = _row_float(row, *spec.get("x_fields", []))
+            if x_value is None and spec.get("require_explicit_x"):
+                continue
             if x_value is None:
                 x_value = _timeline_axis_value(row, index)
             candidate_values.append(float(value))
@@ -8676,25 +8708,45 @@ def _runtime_spectral_chart(
         "power spectral comparison before/after impairment",
     }:
         return None
-    source_path = "reports/csv/live_waveform_preview.csv"
-    _, records = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
-    if not records:
+    source_path = "reports/csv/phy_signal_diagnostic_source.csv"
+    _, source_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
+    exact_rows = [row for row in source_rows
+                  if _row_text(row, "Panel") == "spectrum"
+                  and _row_text(row, "Status").lower() == "available"
+                  and _row_text(row, "truth_status").lower() == "real_lls_evidence"
+                  and _row_text(row, "SourceArtifact").lower() == "runtime_phy_arrays_same_trial"]
+    if not exact_rows:
         return None
-    records = sorted(records, key=lambda row: _row_float(row, "SampleIndex") or 0.0)[:256]
-    time_values = [value for value in (_row_float(row, "Time_s") for row in records) if value is not None]
-    deltas = [b - a for a, b in zip(time_values, time_values[1:]) if b > a]
-    sample_rate_hz = 1.0 / (sum(deltas) / len(deltas)) if deltas else float("nan")
-    tx = [complex(_row_float(row, "TxReal") or 0.0, _row_float(row, "TxImag") or 0.0) for row in records]
-    rx = [complex(_row_float(row, "RxReal") or 0.0, _row_float(row, "RxImag") or 0.0) for row in records]
-    tx_psd = _preview_spectrum(tx, sample_rate_hz)
-    rx_psd = _preview_spectrum(rx, sample_rate_hz)
-    if not tx_psd and not rx_psd:
+    # Select one bounded, coherent runtime snapshot per direction. Combining
+    # bins from different TBs would not describe any waveform that existed.
+    selected: dict[str, str] = {}
+    for row in exact_rows:
+        direction = _row_text(row, "Direction").upper() or "UNKNOWN"
+        snapshot = _row_text(row, "SnapshotID")
+        if snapshot and direction not in selected:
+            selected[direction] = snapshot
+    records = [row for row in exact_rows
+               if _row_text(row, "SnapshotID") == selected.get(_row_text(row, "Direction").upper() or "UNKNOWN", "")]
+    spectra: dict[str, list[list[float]]] = defaultdict(list)
+    sample_rates: set[float] = set()
+    for row in records:
+        frequency_hz = _row_float(row, "XValue")
+        spectral_db = _row_float(row, "YValue")
+        if frequency_hz is None or spectral_db is None:
+            continue
+        direction = _row_text(row, "Direction").upper() or "UNKNOWN"
+        endpoint = _row_text(row, "Series").upper()
+        spectra[f"{direction} {endpoint}"].append([float(frequency_hz) / 1e6, float(spectral_db)])
+        sample_rate = _row_float(row, "SampleRate_Hz")
+        if sample_rate is not None and sample_rate > 0:
+            sample_rates.add(float(sample_rate))
+    for values in spectra.values():
+        values.sort(key=lambda point: point[0])
+    if not spectra:
         return None
     series = []
     csv_rows: list[dict[str, Any]] = []
-    for name, values in (("TX", tx_psd), ("RX", rx_psd)):
-        if not values:
-            continue
+    for name, values in sorted(spectra.items()):
         series.append({"name": name, "points": values})
         for frequency_mhz, psd_db in values:
             csv_rows.append(
@@ -8703,25 +8755,38 @@ def _runtime_spectral_chart(
                     "chart_name": chart_name,
                     "series_name": name,
                     "frequency_mhz": frequency_mhz,
-                    "relative_psd_db": psd_db,
+                    "relative_spectral_level_db": psd_db,
+                    "measurement_domain": "bounded_runtime_fft_common_reference",
                     "source_table_logical_path": source_path,
                 }
             )
-    note = "Preview-sample periodogram; it is not relabeled as a full raw-IQ spectral mask measurement."
+    note = ("Bounded FFT from exact same-trial runtime I/Q using the producer's common spectral reference. "
+            "It is a diagnostic relative spectrum, not an absolute dBm/Hz spectrum-mask or Keysight conformance result.")
     if chart_name in {"occupied bandwidth", "out-of-band spectral summaries if measurable"}:
-        # Estimate the 99-percent occupied bandwidth from the actual preview periodogram.
-        linear = [(point[0], 10.0 ** (point[1] / 10.0)) for point in tx_psd]
+        tx_key = next((key for key in spectra if key.endswith(" TX")), "")
+        if not tx_key:
+            return None
+        # 99-percent OBW uses the 0.5/99.5-percent cumulative-power edges of
+        # the actual TX diagnostic spectrum. No configured bandwidth is used.
+        linear = [(point[0], 10.0 ** (point[1] / 10.0)) for point in spectra[tx_key]]
         total = sum(power for _, power in linear)
-        ordered = sorted(linear, key=lambda item: abs(item[0]))
+        ordered = sorted(linear)
         cumulative = 0.0
-        half_band_mhz = 0.0
+        low_edge_mhz = ordered[0][0]
+        high_edge_mhz = ordered[-1][0]
         for frequency_mhz, power in ordered:
             cumulative += power
-            half_band_mhz = max(half_band_mhz, abs(frequency_mhz))
-            if total > 0 and cumulative / total >= 0.99:
+            if total > 0 and cumulative / total >= 0.005:
+                low_edge_mhz = frequency_mhz
                 break
-        occupied_mhz = 2.0 * half_band_mhz
-        in_band = sum(power for frequency, power in linear if abs(frequency) <= half_band_mhz)
+        cumulative = 0.0
+        for frequency_mhz, power in ordered:
+            cumulative += power
+            if total > 0 and cumulative / total >= 0.995:
+                high_edge_mhz = frequency_mhz
+                break
+        occupied_mhz = max(high_edge_mhz - low_edge_mhz, 0.0)
+        in_band = sum(power for frequency, power in linear if low_edge_mhz <= frequency <= high_edge_mhz)
         out_band = max(total - in_band, 0.0)
         metric_points = [[0.0, occupied_mhz]] if chart_name == "occupied bandwidth" else [[0.0, 10.0 * math.log10(max(out_band / max(in_band, 1e-15), 1e-15))]]
         return _runtime_point_chart(
@@ -8729,7 +8794,7 @@ def _runtime_spectral_chart(
             run_id,
             source_path,
             metric_points,
-            "Preview measurement",
+            "Runtime spectral observation",
             "99% occupied bandwidth (MHz)" if chart_name == "occupied bandwidth" else "Out/in-band power ratio (dB)",
             note,
             mode="bar",
@@ -8737,18 +8802,18 @@ def _runtime_spectral_chart(
         )
     return {
         "csv_bytes": _encode_dict_rows(
-            ["run_id", "chart_name", "series_name", "frequency_mhz", "relative_psd_db", "source_table_logical_path"],
+            ["run_id", "chart_name", "series_name", "frequency_mhz", "relative_spectral_level_db", "measurement_domain", "source_table_logical_path"],
             csv_rows,
         ),
         "img_bytes": _render_multi_series_svg(
             chart_name,
             note,
             series,
-            [f"source={source_path}", f"sample_rate_hz={sample_rate_hz:.9g}", f"samples={len(records)}"],
+            [f"source={source_path}", f"sample_rate_hz={','.join(f'{v:.9g}' for v in sorted(sample_rates))}", f"bins={len(records)}"],
             x_label="Frequency (MHz)",
-            y_label="Relative PSD (dB)",
+            y_label="Relative spectral level (dB, common reference)",
         ),
-        "csv_status": "specialized_runtime_preview_periodogram_dataset",
+        "csv_status": "specialized_runtime_exact_fft_spectrum_dataset",
         "image_status": "generated_specialized_runtime_spectrum_svg",
         "source_table_path": source_path,
         "source_row_count": len(records),
@@ -9146,7 +9211,12 @@ def _runtime_prach_operational_chart(
         occasion_symbol = _row_float(row, "PRACHOccasionSymbol")
         occasion_frequency = _row_float(row, "PRACHFrequencyIndex")
         attempt = _row_float(row, "PreambleAttemptNumber", "RAAttemptId")
-        success_flag = _row_flag(row, "RACompleted", "PreambleDetected", "Detected", "DecodeSuccess")
+        success_flag = _row_flag(row, "RACompleted")
+        success_scope = "RA completed" if success_flag is not None else ""
+        if success_flag is None:
+            success_flag = _row_flag(row, "DetectionSuccess", "PreambleDetected", "Detected", "DecodeSuccess")
+            if success_flag is not None:
+                success_scope = "Preamble detected"
         true_timing = _row_float(row, "PRACHTrueTimingOffset_samples", "TrueTimingOffset_samples")
         estimate = _row_float(
             row,
@@ -9184,6 +9254,7 @@ def _runtime_prach_operational_chart(
             "cyclic_shift_ncs": _row_text(row, "CyclicShift", "NCS", "n_cs"),
             "attempt_number": "" if attempt is None else float(attempt),
             "success_flag": "" if success_flag is None else int(bool(success_flag)),
+            "success_scope": success_scope,
             "true_timing_offset_samples": "" if true_timing is None else float(true_timing),
             "estimated_timing_offset_samples": "" if estimate is None else float(estimate),
             "timing_error_samples": "" if timing_error is None else float(timing_error),
@@ -9214,19 +9285,29 @@ def _runtime_prach_operational_chart(
         dataset["tick_labels"] = [key for key, _value in named]
         summary.extend(labels)
     elif chart_key == "access attempt/success timeline":
-        successes = sum(int(row["success_flag"]) for row in out_rows if row["success_flag"] != "")
-        dataset, labels = _bar_dataset_from_named_values("Access outcome", "Count", [("Attempts", len(out_rows)), ("Successful", successes)])
-        dataset["tick_labels"] = ["Attempts", "Successful"]
+        # A detected preamble is not a completed Msg1-to-SetupComplete
+        # procedure. Missing outcomes are unknown, not failed attempts.
+        named = [("Observed rows", float(len(out_rows)))]
+        for scope in ("Preamble detected", "RA completed"):
+            scoped = [row for row in out_rows if row["success_scope"] == scope]
+            if scoped:
+                named.append((scope, float(sum(int(row["success_flag"]) for row in scoped))))
+        unknown = sum(row["success_flag"] == "" for row in out_rows)
+        if unknown:
+            named.append(("Outcome unavailable", float(unknown)))
+        dataset, labels = _bar_dataset_from_named_values("Observed procedure stage", "Count", named)
+        dataset["tick_labels"] = [name for name, _ in named]
         summary.extend(labels)
     elif chart_key == "timing offset true vs estimated vs residual":
         true_values = [float(row["true_timing_offset_samples"]) for row in out_rows if row["true_timing_offset_samples"] != ""]
         estimated_values = [float(row["estimated_timing_offset_samples"]) for row in out_rows if row["estimated_timing_offset_samples"] != ""]
         residual_values = [float(row["timing_error_samples"]) for row in out_rows if row["timing_error_samples"] != ""]
-        named = [
-            ("True", sum(true_values) / len(true_values) if true_values else 0.0),
-            ("Estimated", sum(estimated_values) / len(estimated_values) if estimated_values else 0.0),
-            ("Residual", sum(residual_values) / len(residual_values) if residual_values else 0.0),
-        ]
+        named = [(name, sum(values) / len(values)) for name, values in
+                 (("True", true_values), ("Estimated", estimated_values), ("Residual", residual_values))
+                 if values]
+        summary.extend(f"{name} unavailable" for name, values in
+                       (("True", true_values), ("Estimated", estimated_values), ("Residual", residual_values))
+                       if not values)
         dataset, labels = _bar_dataset_from_named_values("Timing quantity", "Mean samples", named)
         dataset["tick_labels"] = [name for name, _value in named]
         summary.extend(labels)
@@ -9293,19 +9374,26 @@ def _runtime_prach_operational_chart(
         dataset.setdefault("evidence_shape_policy", "observed_distribution")
         img_bytes = _render_svg_plot(
             chart_name,
-            "Exact PRACH/initial-access observations from the executed four-step waveform chain.",
+            "Persisted PRACH/initial-access observations; procedure coverage follows the source rows.",
             dataset,
             summary,
         )
     else:
-        return None
+        reason = "The source rows do not contain the measured quantities required for this PRACH chart."
+        return {
+            "csv_bytes": _encode_csv(["run_id", "chart_name", "status", "reason", "checked_source"],
+                [[run_id, chart_name, "unavailable_exact_reason", reason, source_path]]),
+            "img_bytes": _render_reason_svg(chart_name, "Required measured quantities are unavailable.", [reason]),
+            "csv_status": "unavailable_exact_reason", "image_status": "generated_unavailable_reason_svg",
+            "source_table_path": source_path, "source_row_count": 0, "note": reason,
+        }
     return {
         "csv_bytes": _encode_dict_rows(
             [
                 "run_id", "chart_name", "observation_index", "ue_id", "occasion_id",
                 "occasion_frame", "occasion_slot", "occasion_symbol", "occasion_frequency_index",
                 "preamble_index_tx", "preamble_index_detected", "root_sequence_index",
-                "cyclic_shift_ncs", "attempt_number", "success_flag",
+                "cyclic_shift_ncs", "attempt_number", "success_flag", "success_scope",
                 "true_timing_offset_samples", "estimated_timing_offset_samples",
                 "timing_error_samples", "correlation_peak", "detection_threshold",
                 "noise_floor", "detector_peak_lag_samples", "timing_advance_command", "access_latency_slots",
@@ -9319,7 +9407,7 @@ def _runtime_prach_operational_chart(
         "source_table_path": source_path,
         "source_row_count": len(records),
         "source_mapping_status": "exact",
-        "note": "PRACH operational view uses only executed four-step random-access runtime rows.",
+        "note": "PRACH operational view uses persisted receiver observations; detection alone does not prove a completed access procedure.",
     }
 
 
@@ -9786,6 +9874,11 @@ def _runtime_phy_signal_diagnostic_chart(
     metrics, or preview/fallback rows to reconstruct missing sample arrays.
     """
     supported = {
+        "Tx waveform",
+        "Rx waveform",
+        "magnitude vs sample",
+        "phase vs sample",
+        "power vs sample",
         "pre-channel waveform",
         "post-channel waveform",
         "post-impairment waveform",
@@ -9820,10 +9913,17 @@ def _runtime_phy_signal_diagnostic_chart(
         return None
 
     if chart_name in {
+        "Tx waveform", "Rx waveform", "magnitude vs sample", "phase vs sample",
+        "power vs sample",
         "pre-channel waveform", "post-channel waveform", "post-impairment waveform",
         "stage overlay plots", "UE-wise / link-wise waveform comparison",
     }:
         wanted_series = {
+            "Tx waveform": {"tx"},
+            "Rx waveform": {"rx"},
+            "magnitude vs sample": {"tx", "rx"},
+            "phase vs sample": {"tx", "rx"},
+            "power vs sample": {"tx", "rx"},
             "pre-channel waveform": {"tx"},
             "post-channel waveform": {"post_channel"},
             "post-impairment waveform": {"rx"},
@@ -9873,11 +9973,16 @@ def _runtime_phy_signal_diagnostic_chart(
             ue_index = _row_text(row, "UEIndex") or "UNKNOWN"
             snapshot_id = _row_text(row, "SnapshotID")
             magnitude = math.hypot(float(i_value), float(q_value))
-            if chart_name in {"stage overlay plots", "UE-wise / link-wise waveform comparison"}:
+            if chart_name in {"stage overlay plots", "UE-wise / link-wise waveform comparison",
+                              "magnitude vs sample", "phase vs sample", "power vs sample"}:
                 prefix = f"{direction} UE {ue_index}" if chart_name == "UE-wise / link-wise waveform comparison" else direction
-                series_points[f"{prefix} {endpoint} magnitude"].append(
-                    [float(x_value), magnitude]
-                )
+                if chart_name == "phase vs sample":
+                    metric_name, metric_value = "phase", math.atan2(float(q_value), float(i_value))
+                elif chart_name == "power vs sample":
+                    metric_name, metric_value = "power", magnitude * magnitude
+                else:
+                    metric_name, metric_value = "magnitude", magnitude
+                series_points[f"{prefix} {endpoint} {metric_name}"].append([float(x_value), metric_value])
             else:
                 series_points[f"{direction} {endpoint} I"].append(
                     [float(x_value), float(i_value)]
@@ -9911,6 +10016,21 @@ def _runtime_phy_signal_diagnostic_chart(
             for name, points in sorted(series_points.items())
         ]
         subtitle = {
+            "Tx waveform": (
+                "Exact complex transmitter output at the pre-channel boundary from the same PHY trial."
+            ),
+            "Rx waveform": (
+                "Exact complex waveform presented to the receiver after the executed channel and noise stages."
+            ),
+            "magnitude vs sample": (
+                "Magnitude of exact transmitter and receiver-input complex-IQ samples; no trial-metric reconstruction."
+            ),
+            "phase vs sample": (
+                "Wrapped phase of exact transmitter and receiver-input complex-IQ samples."
+            ),
+            "power vs sample": (
+                "Instantaneous squared magnitude of exact transmitter and receiver-input complex-IQ samples."
+            ),
             "pre-channel waveform": (
                 "Exact transmitter output at the pre-channel boundary from the same PHY trial."
             ),
@@ -9945,7 +10065,11 @@ def _runtime_phy_signal_diagnostic_chart(
                     f"source={source_path}",
                     "evidence=runtime_same_trial_phy_arrays",
                 ],
-                x_label="Time (s)", y_label="Complex amplitude" if chart_name != "stage overlay plots" else "Magnitude",
+                x_label="Time (s)",
+                y_label=("Phase (rad)" if chart_name == "phase vs sample" else
+                         "Power (amplitude squared)" if chart_name == "power vs sample" else
+                         "Magnitude" if chart_name in {"magnitude vs sample", "stage overlay plots", "UE-wise / link-wise waveform comparison"} else
+                         "Complex amplitude"),
             ),
             "csv_status": "specialized_runtime_exact_phy_waveform_dataset",
             "image_status": "generated_specialized_runtime_waveform_svg",
@@ -10341,7 +10465,7 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
                 return None  # Inverse-DFT QAM positions are not per-subcarrier measurements.
             if not slot or not ue or not (frame or sfn) or not layer or codeword == "":
                 return None
-            if any(token in truth for token in ("proxy", "fallback", "synthetic", "unavailable")):
+            if _non_runtime_evidence_field(row):
                 return None
             if any(token in ordering_status.lower() for token in ("unmatched", "mismatch", "unavailable", "invalid")):
                 return None
@@ -10439,6 +10563,16 @@ def _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_i
     }
 
 
+def _non_runtime_evidence_field(row):
+    """Check every declared provenance marker, not just the first alias."""
+    for field in ("TruthStatus", "truth_status", "ExecutionBackend", "ApproximationMode", "E2EAirModel", "Source"):
+        value = _row_text(row, field).lower()
+        if value == "lut" or any(token in value for token in
+                                ("proxy", "synthetic", "fallback", "unavailable", "logistic")):
+            return field
+    return ""
+
+
 def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
     """Preserve individual scheduled-TB/goodput observations, including failures.
 
@@ -10459,7 +10593,7 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
             reason = ""
             if direction != source_direction:
                 reason = "direction_conflicts_with_canonical_trial_source"
-            elif any(token in truth for token in ("proxy", "fallback", "synthetic", "unavailable")):
+            elif _non_runtime_evidence_field(row):
                 reason = "non_runtime_evidence"
             if reason:
                 # Reject the chart at its source boundary. Non-runtime values
@@ -10566,6 +10700,12 @@ def _specialized_chart_materialization(
     run_id: int,
 ) -> dict[str, Any] | None:
     chart_name = str(chart_name or "")
+    if chart_name == "PRACH native resource grid":
+        from lls_resource_occupancy_plots import native_prach_grid_chart
+        return native_prach_grid_chart(existing, fetch_artifact_bytes, run_id)
+    if chart_name == "frame/slot/symbol occupancy timeline":
+        from lls_resource_occupancy_plots import symbol_occupancy_chart
+        return symbol_occupancy_chart(existing, fetch_artifact_bytes, run_id)
     from lls_radio_measurement_plots import radio_measurement_chart
     radio_chart = radio_measurement_chart(chart_name, existing, fetch_artifact_bytes, run_id)
     if radio_chart is not None:

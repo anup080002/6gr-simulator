@@ -1219,6 +1219,61 @@ classdef (Abstract) SchedulerBase < handle
             metric = inst / max(avg, 1);
         end
 
+        function [available,evidence] = ssbSafePRBSet(obj,slot,budget,available,symAlloc,grant)
+            % Derive common-DL exclusions for this actual data occasion.
+            % Connected-mode PDSCH is emitted as a separate waveform on the
+            % shared stream, so overlapping SSB, Type-0/SIB1 or TRS REs must
+            % be excluded before DCI/TBS freezing.  Treating that overlap as
+            % harmless rate matching would be incorrect: no rate-matching
+            % pattern is signalled to either independently coded PDSCH.
+            evidence = table();
+            commonEnabled = logical(sixgr.util.structGet(obj.Cfg,"phy.ssb.enable",false)) || ...
+                logical(sixgr.util.structGet(obj.Cfg,"phy.sib1.enable",false)) || ...
+                logical(sixgr.util.structGet(obj.Cfg,"phy.trs.enable",false));
+            if upper(string(obj.Direction))~="DL" || ~commonEnabled
+                return;
+            end
+            if nargin<6, grant=struct(); end
+            probe=grant;
+            probe.Direction='DL'; probe.Slot=slot;
+            probe.SymbolAllocation=symAlloc;
+            probe=sixgr.l2.mac.rebindHARQRetransmissionTiming(probe);
+            probe.ControlAbsoluteSlot=slot;
+            if isfield(budget,'ControlAbsoluteSlot')
+                probe.ControlAbsoluteSlot=budget.ControlAbsoluteSlot;
+            end
+            if isfield(budget,'ControlSymbolAllocation')
+                probe.ControlSymbolAllocation=budget.ControlSymbolAllocation;
+            end
+            timing=sixgr.phy.frame.TimingRelationEngine.resolveProductionGrant(obj.Cfg,probe);
+            assert(timing.Valid,'sixgr:SchedulerBase:TimingDecisionRejected', ...
+                'SSB resource selection requires legal canonical timing: %s',timing.Diagnostic);
+            actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Cfg,double(timing.DataAbsoluteSlot)+1);
+            before=double(available(:).');
+            if isempty(before), return; end
+            plan=sixgr.phy.frame.CommonDLResourcePlan(actual);
+            excluded=zeros(1,0); owners=strings(0,1);
+            for prb=before
+                allocation=struct('PRBStart',double(prb),'NumPRB',1, ...
+                    'SymbolStart',double(symAlloc(1)),'NumSymbols',double(symAlloc(2)));
+                [free,conflict]=plan.checkPDSCH(allocation,double(timing.DataAbsoluteSlot));
+                if ~free
+                    excluded(end+1)=prb; %#ok<AGROW>
+                    owners=[owners;string(conflict.ConflictingOwners(:))]; %#ok<AGROW>
+                end
+            end
+            if isempty(excluded), return; end
+            available=setdiff(before,unique(excluded,'stable'),'stable');
+            owners=unique(owners,'stable');
+            reason="common_dl_resource_frequency_exclusion:" + strjoin(owners,"|");
+            evidence=table(double(slot),double(timing.ControlAbsoluteSlot), ...
+                double(timing.DataAbsoluteSlot),string(obj.Direction), ...
+                string(jsonencode(before)),string(jsonencode(excluded)), ...
+                string(jsonencode(available)),reason, ...
+                'VariableNames',{'Slot','ControlAbsoluteSlot0','DataAbsoluteSlot0', ...
+                'Direction','InputPRBSetJSON','ExcludedPRBSetJSON','AvailablePRBSetJSON','Reason'});
+        end
+
         function grantOut = freezePHYGrantForGrant(obj, grantIn)
             % Freeze the final scheduler grant dimensional contract once.
             grantOut = grantIn;
@@ -1243,6 +1298,12 @@ classdef (Abstract) SchedulerBase < handle
             grantOut = sixgr.l2.mac.rebindHARQRetransmissionTiming(grantOut);
             grantOut = obj.attachCanonicalTimingDecision(grantOut);
             grantOut = obj.finalizeExactPHYFeasibility(grantOut);
+            if ~logical(sixgr.util.structGet(grantOut,"ExactPHYFeasible",false))
+                % A rejected allocation must not acquire a frozen PHY contract.
+                grantOut.PHYGrant = struct();
+                grantOut.PHYGrantContextId = "";
+                return;
+            end
             cfgForFreeze = obj.Cfg;
             priorPHYGrant = sixgr.util.structGet(grantOut, "PHYGrant", struct());
             isRetransmission = logical(sixgr.util.structGet(grantOut, ...
@@ -1269,6 +1330,19 @@ classdef (Abstract) SchedulerBase < handle
             grantSeed = grantOut;
             if isfield(grantSeed, "PHYGrant")
                 grantSeed = rmfield(grantSeed, "PHYGrant");
+            end
+            if upper(string(grantOut.Direction)) == "DL" && ...
+                    isfield(grantOut, "PMI") && ...
+                    ~(isnumeric(grantOut.PMI) && isscalar(grantOut.PMI) && ...
+                    isfinite(grantOut.PMI))
+                % The finalized scheduler grant owns whether PMI was
+                % actually selected.  In an adaptive bootstrap interval a
+                % configured study default must not leak back in after the
+                % causal feedback path explicitly reports PMI unavailable.
+                cfgForFreeze = sixgr.util.structSet( ...
+                    cfgForFreeze, "phy.pdsch.PMI", NaN);
+                cfgForFreeze = sixgr.util.structSet( ...
+                    cfgForFreeze, "phy.pdsch.pmi", NaN);
             end
             phyGrant = sixgr.phy.grant.freezePHYGrant(cfgForFreeze, grantOut.Direction, grantSeed, ...
                 "Slot", double(sixgr.util.structGet(grantOut, "Slot", NaN)), ...
@@ -1363,8 +1437,17 @@ classdef (Abstract) SchedulerBase < handle
         function grantOut = attachCanonicalTimingDecision(obj, grantIn)
             % Attach the authoritative CC/BWP-aware K0/K1/K2 decision.
             grantOut = grantIn;
+            timingGrant=grantOut;
+            if upper(string(sixgr.util.structGet(grantOut,'Direction',obj.Direction)))=="UL"
+                % Timing now depends on the first-symbol DM-RS/data mapping.
+                % Resolve the same scheduler mapping policy before N2, not
+                % only afterwards during exact TBS/resource finalization.
+                mapping=localFinalizeGrantMappingType(obj.Cfg,'UL',grantOut, ...
+                    sixgr.util.structGet(grantOut,'SymbolAllocation',[]));
+                timingGrant.MappingType=char(mapping.MappingType);
+            end
             timing = sixgr.phy.frame.TimingRelationEngine. ...
-                resolveProductionGrant(obj.Cfg, grantOut);
+                resolveProductionGrant(obj.Cfg, timingGrant);
             grantOut.TimingDecision = timing;
             grantOut.SchedulingCCID = timing.SchedulingCCID;
             grantOut.ScheduledCCID = timing.ScheduledCCID;
@@ -1388,7 +1471,12 @@ classdef (Abstract) SchedulerBase < handle
                 error("sixgr:SchedulerBase:TimingDecisionRejected", ...
                     "Canonical production timing rejected the grant: %s (%s)", ...
                     char(string(timing.ReasonCode)), ...
-                    char(string(timing.Diagnostic)));
+                        char(string(timing.Diagnostic)));
+            end
+            if isfield(grantOut,'SharedULTimingContext') && ...
+                    ~isempty(fieldnames(grantOut.SharedULTimingContext))
+                grantOut.ReceivedULTimingValidation=sixgr.l2.mac.validateGrantReceivedULTiming( ...
+                    obj.Cfg,grantOut,timing);
             end
         end
 
@@ -1403,6 +1491,17 @@ classdef (Abstract) SchedulerBase < handle
             end
 
             [ok, reason] = localValidateGrantResourceIntent(obj, grantOut);
+            if ok
+                try
+                    sixgr.phy.grant.assertGrantTimingIdentity(grantOut,obj.Direction);
+                catch cause
+                    if ~strcmp(cause.identifier,'sixgr:phy:grant:TimingIdentityMismatch')
+                        rethrow(cause);
+                    end
+                    ok=false;
+                    reason=string(cause.message);
+                end
+            end
             grantOut.ExactPHYFeasibilityChecked = true;
             grantOut.ExactPHYFeasible = logical(ok);
             grantOut.ExactPHYFeasibilitySource = "SchedulerBase.finalizeExactPHYFeasibility";
@@ -1514,6 +1613,47 @@ classdef (Abstract) SchedulerBase < handle
             try
                 [exactBits, exactBytes, exactNRE, exactInfo] = obj.estimateTBS(modStr, nLayers, numel(prbSet), symAlloc, targetCodeRate, ...
                     "PlanningOnly", false, "ForceExact", true, "ConfigOverride", cfgExact);
+                % Nominal TBS sizing cannot validate current-slot ownership:
+                % its cache uses a PRB count, not the actual frequency/time
+                % allocation. Bind the canonical DATA clock (not the DCI
+                % slot) and separately resolve the actual rate-matched G.
+                dataSlot0 = double(sixgr.util.structGet( ...
+                    grantOut,"ScheduledAbsoluteSlot",NaN));
+                validateattributes(dataSlot0,{'numeric'}, ...
+                    {'scalar','finite','integer','nonnegative'});
+                cfgActual = sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+                    cfgExact,dataSlot0+1);
+                actualCarrier = sixgr.phy.grid.makeCarrier(cfgActual);
+                actualArgs = {"PRBSet",prbSet,"SymbolAllocation",symAlloc, ...
+                    "Modulation",modStr,"NumLayers",nLayers, ...
+                    "RNTI",double(grantOut.RNTI)};
+                if upper(string(grantOut.Direction)) == "DL"
+                    [~,actualInfo] = sixgr.phy.grid.allocREsPDSCH( ...
+                        actualCarrier,cfgActual,actualArgs{:});
+                else
+                    [~,actualInfo,actualPUSCH] = sixgr.phy.grid.allocREsPUSCH( ...
+                        actualCarrier,cfgActual,actualArgs{:});
+                    timing=sixgr.util.structGet(grantOut,'TimingDecision.DataDecision',struct());
+                    if isfield(timing,'ProcessingBudget')
+                        finalBudget=sixgr.phy.frame.puschPreparationProcessingTime( ...
+                            actualCarrier,actualPUSCH,[timing.SourceMu,timing.TargetMu]);
+                        assert(finalBudget.Ticks==timing.MinimumProcessingTicks && ...
+                            finalBudget.D21Symbols==timing.ProcessingBudget.D21Symbols, ...
+                            'sixgr:SchedulerBase:PUSCHProcessingAllocationChanged', ...
+                            'Final PUSCH allocation changed the preparation budget after canonical timing selection.');
+                    end
+                end
+                assert(actualInfo.NREPerPRB == exactNRE, ...
+                    'sixgr:SchedulerBase:NominalNREMismatch', ...
+                    'Actual allocation and nominal TBS must agree on 38.214 N_RE.');
+                assert(actualInfo.G > 0, ...
+                    'sixgr:SchedulerBase:EmptyRateMatchedAllocation', ...
+                    'The actual scheduled allocation has no coded data capacity.');
+                grantOut.ExactAllocationCodedBitsG = double(actualInfo.G);
+                grantOut.ExactAllocationDataRE = double(actualInfo.NRE);
+                grantOut.ExactAllocationReservedRE = double(actualInfo.ReservedRE);
+                grantOut.ExactAllocationAbsoluteSlot0 = dataSlot0;
+                grantOut.ExactAllocationSource = "scheduled_prb_symbol_reference_ownership";
             catch ME
                 grantOut.Valid = false;
                 grantOut.ExactPHYFeasible = false;
@@ -1677,6 +1817,7 @@ classdef (Abstract) SchedulerBase < handle
             fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
             sliv = localTimeDomainAssignIndex( ...
                 symbolAllocation, obj.SymbolsPerSlot);
+            sixgr.phy.grant.assertGrantTimingIdentity(grant,obj.Direction);
             [dciContext, tdaIndex, dciContextSource] = ...
                 sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant( ...
                 obj.Cfg, grant, fmt);
@@ -3197,11 +3338,14 @@ end
 function nrePerPRB = localComputeExactNREPerPRB(direction, carrier, cfg, nPRB, symAlloc, modStr, nLayers)
 cfg = localApplyGrantLayerCountToCfg(cfg, direction, nLayers);
 if strcmpi(direction,'DL')
-    [~, allocInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, cfg, ...
+    % This cache is keyed by count/TDRA, not the scheduled slot or PRB set.
+    % It owns nominal TBS N_RE only, never occasion-specific feasibility/G.
+    nrePerPRB = sixgr.phy.resource.nominalPDSCHNREPerPRB(carrier, cfg, ...
         "PRBSet", 0:(max(nPRB,1)-1), ...
         "SymbolAllocation", symAlloc, ...
         "Modulation", char(modStr), ...
         "NumLayers", double(nLayers));
+    return;
 else
     [~, allocInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg, ...
         "PRBSet", 0:(max(nPRB,1)-1), ...
@@ -3356,11 +3500,11 @@ end
 
 symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
 symAlloc = double(symAlloc(:).');
-if numel(symAlloc) < 2 || any(~isfinite(symAlloc(1:2)))
+if numel(symAlloc) ~= 2 || ~isreal(symAlloc) || any(~isfinite(symAlloc)) || ...
+        any(symAlloc~=fix(symAlloc))
     reason = "invalid_symbol_allocation";
     return;
 end
-symAlloc = round(symAlloc(1:2));
 if symAlloc(1) < 0 || symAlloc(2) < 1 || (symAlloc(1) + symAlloc(2)) > round(double(obj.SymbolsPerSlot))
     reason = "symbol_allocation_out_of_slot";
     return;

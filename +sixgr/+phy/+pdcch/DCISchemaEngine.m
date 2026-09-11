@@ -6,6 +6,28 @@ classdef DCISchemaEngine
             context = sixgr.phy.pdcch.DCISchemaEngine.requireContext(context);
             data = context.Data;
             fmt = string(data.DCIFormat);
+            if string(data.RNTIType)=="TC-RNTI" && isfield(data,'FrequencyReferenceSize')
+                nFreq = ceil(log2(data.FrequencyReferenceSize*(data.FrequencyReferenceSize+1)/2));
+                definitions = [
+                    localDef("format_identifier",1,1,1,"DL DCI format","38.212 7.3.1.2.1")
+                    localDef("frequency_resource_assignment",nFreq,0,2^nFreq-1,"CORESET0","38.212 7.3.1.2.1")
+                    localDef("time_resource_assignment",4,0,15,"PDSCH common TDRA","38.212 7.3.1.2.1")
+                    localDef("vrb_to_prb_mapping",1,0,1,"PDSCH resource allocation","38.212 7.3.1.2.1")
+                    localDef("mcs",5,0,31,"38.214 Table 5.1.3.1-1","38.212 7.3.1.2.1")
+                    localDef("ndi",1,0,1,"Msg4 HARQ state","38.212 7.3.1.2.1")
+                    localDef("rv",2,0,3,"Msg4 HARQ state","38.212 7.3.1.2.1")
+                    localDef("harq_process",4,0,15,"Msg4 HARQ process","38.212 7.3.1.2.1")
+                    localDef("dai",2,0,0,"reserved without Msg4 ACK repetitions","38.212 7.3.1.2.1")
+                    localDef("tpc_command_for_pucch",2,0,3,"PUCCH power control","38.212 7.3.1.2.1")
+                    localDef("pucch_resource_indicator",3,0,7,"common PUCCH resource","38.212 7.3.1.2.1")
+                    localDef("pdsch_to_harq_feedback_timing",3,0,7,"Msg4 feedback timing","38.212 7.3.1.2.1")];
+                schema = struct('Format',fmt,'ContextDigest',context.Digest, ...
+                    'Definitions',definitions,'RawBits',nFreq+28, ...
+                    'FrequencyAssignmentBits',nFreq,'TimeAssignmentBits',4, ...
+                    'SchemaVersion',"sixgr_tc_rnti_msg4_dci_r18_8_0/v1", ...
+                    'StandardClause',"3GPP TS 38.212 V18.8.0 7.3.1.2.1");
+                return;
+            end
             if string(data.RNTIType) == "RA-RNTI"
                 nFreq = ceil(log2(data.FrequencyReferenceSize * ...
                     (data.FrequencyReferenceSize + 1) / 2));

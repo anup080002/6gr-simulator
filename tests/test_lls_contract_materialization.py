@@ -268,6 +268,26 @@ def test_filesystem_materializer_honors_yaml_raster_authority() -> None:
     assert '"raster_replacement_executed": raster_replacement_executed' in source
 
 
+def test_forced_filesystem_materialization_refreshes_terminal_source_index() -> None:
+    source = (
+        REPO_ROOT / "scripts" / "materialize_lls_contract_artifacts.py"
+    ).read_text(encoding="utf-8")
+    cache_clear = source.index(
+        'if args.force:\n            dash.clear_dashboard_caches(int(run_row.get("run_id") or 0))'
+    )
+    source_index = source.index(
+        "initial_artifacts = dash.filesystem_artifacts_for_run(run_row)"
+    )
+    assert cache_clear < source_index
+
+
+def test_native_prach_snapshot_is_a_producer_owned_canonical_source() -> None:
+    target = "reports/csv/live_prach_native_allocation_snapshot.csv"
+    assert materializer._table_sources(  # noqa: SLF001
+        "live_prach_native_allocation_snapshot"
+    ) == [target]
+
+
 def test_image_artifact_audit_is_materialized_after_contract_charts() -> None:
     source = (REPO_ROOT / "apps" / "lls_contract_materializer.py").read_text(
         encoding="utf-8"

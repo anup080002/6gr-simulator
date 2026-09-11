@@ -5,6 +5,14 @@ setup6GRSimToolkit('Verbose',false);
 s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
 s = s.toStruct();
+% This test qualifies an absolute-voltage PA and therefore owns a physical
+% power reference.  The source scenario is a normalized fixed-Es/N0 LLS;
+% do not silently mix those two operating-point contracts.
+s.integration.run_mode = 'GEOMETRY_NETWORK';
+s.integration.subprofile = 'connected_network';
+s.integration.configured_snr_is_link_authority = false;
+s.canonical_control.launch.scenario_mode = 'ue_placement_geometry';
+s.canonical_control.launch.geometry_enabled = true;
 s.impairments.pa_nonlinearity_enabled = true;
 if isfield(s,'rf_frontend') && isfield(s.rf_frontend,'pa')
     s.rf_frontend.pa.enabled = true;
@@ -16,7 +24,9 @@ beforeCfg = cfg;
 profile clear;
 profile on;
 cleanup = onCleanup(@() profile('off')); %#ok<NASGU>
-trs = sixgr.link.runTRSTracking(cfg,'SNR_dB',12,'RuntimeSlot',3,'PrepareOnly',true);
+% runTRSTracking exposes a one-based reporting slot; configured TRS slot 7
+% (zero-based radio slot) is therefore RuntimeSlot 8.
+trs = sixgr.link.runTRSTracking(cfg,'SNR_dB',12,'RuntimeSlot',8,'PrepareOnly',true);
 ssb = sixgr.link.runCellSearch_MIB_SIB1(cfg,'UseRuntimeChannel',true, ...
     'RuntimeSlot',0,'WriteArtifacts',false,'PrepareOnly',true);
 profile off;

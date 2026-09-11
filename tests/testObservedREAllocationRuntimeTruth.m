@@ -92,6 +92,29 @@ assert(sum(double(pucch.re_count)) == numel(unique([ ...
     double(pucchTrial.Transmitter.DMRSIndices(:))])), ...
     "PUCCH runtime row RE count must equal its exact executed indices.");
 
+% Reject malformed evidence instead of rounding it into plausible REs.
+for channel = ["PDCCH", "PUCCH"]
+    if channel == "PDCCH", baseTx = pdcchTx;
+    else, baseTx = pucchTrial.Transmitter; end
+    for invalid = {1.25, NaN, Inf, 0, -1, 1+1i, "1", numel(baseTx.Grid)+1}
+        malformed = baseTx;
+        malformed.(channel+"Indices") = invalid{1};
+        direction = "DL";
+        if channel == "PUCCH", direction = "UL"; end
+        localRejectIndices(@() sixgr.truth.buildObservedREAllocation(malformed, ...
+            "Direction", direction, "Channel", channel, "AbsoluteSlot", 8));
+    end
+end
+% Integration uses actual MATLAB-produced rows, not a Python-only fixture
+% with an active_flag that the producer never emitted.
+publicationRoot=tempname; mkdir(publicationRoot);
+context=struct('run',struct('scenarioID','DL_UL_executed_grid_component'), ...
+    'meta',struct('configHash',sixgr.lls6g.config.hashResolvedScenario(cfg)));
+layout=verifyObservedREPublication([dl;ul],context,publicationRoot);
+[status,message]=system(sprintf('python "%s" "%s"', ...
+    fullfile(pwd,'tests','verify_native_prach_publication.py'),layout.ReportCSVDir));
+assert(status==0,'Actual carrier-grid publication failed: %s',message);
+fprintf('%s',message);
 ok = true;
 fprintf('%s\n', ['PASS testObservedREAllocationRuntimeTruth: executed ' ...
     'PDSCH/PUSCH/PDCCH/PUCCH Toolbox indices own the observed grid.']);
@@ -105,6 +128,7 @@ assert(all(string(T.channel) == channel));
 assert(all(double(T.absolute_slot) == slot0));
 assert(all(double(T.ue_id) == ueID));
 assert(all(string(T.evidence_scope) == "runtime_observed_tx_occupancy"));
+assert(all(T.active_flag) && all(T.grid_domain=="carrier_cp_ofdm"));
 assert(all(string(T.authority) == "executed_tx_toolbox_config_and_indices"));
 assert(all(double(T.subcarrier_count) >= 1) && all(double(T.re_count) >= 1));
 assert(all(double(T.symbol_index) >= 0 & double(T.symbol_index) < 14));
@@ -114,4 +138,15 @@ function localCleanup(pathText)
 if isfolder(pathText)
     rmdir(pathText, "s");
 end
+end
+
+function localRejectIndices(fn)
+try
+    fn();
+catch cause
+    assert(strcmp(cause.identifier,"sixgr:truth:InvalidExecutedREIndices"), ...
+        "Unexpected index rejection: %s",cause.identifier);
+    return;
+end
+error("test:MissingIndexRejection","Malformed executed indices were accepted.");
 end

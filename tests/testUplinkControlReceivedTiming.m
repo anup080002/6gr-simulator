@@ -96,13 +96,18 @@ assert(sixgr.phy.frame.resolveDuplexMode(base)==mode);
             bad=context; bad.Observation=localBuffer(y,p.StartSample,fs);
             localReject(@()runner(cfg,args{:},'ReceivedContext',bad),'sixgr:link:ULControlObservationMismatch');
             future=cfg; future.SharedULTimingContext.TimingAdvanceAvailableAtSample=p.StartSample+1;
-            localReject(@()runner(future,args{:},'PrepareOnly',true),'sixgr:link:ULControlBeforeReceivedTA');
+            future.SharedULTimingContext.TimingAdvanceEffectiveAtSample=p.StartSample+1;
+            localReject(@()runner(future,args{:},'PrepareOnly',true),'sixgr:link:ConnectedULBeforeReceivedTA');
             future=cfg; future.SharedULTimingContext.TimingAdvanceEffectiveAtSample=p.StartSample+1;
-            localReject(@()runner(future,args{:},'PrepareOnly',true),'sixgr:link:ULControlBeforeTAApplication');
+            localReject(@()runner(future,args{:},'PrepareOnly',true),'sixgr:link:ConnectedULBeforeTAApplication');
             expired=cfg; expired.SharedULTimingContext.TimeAlignmentExpirySampleExclusive=p.EndSampleExclusive-1;
-            localReject(@()runner(expired,args{:},'PrepareOnly',true),'sixgr:link:ULControlAfterTimeAlignmentExpiry');
+            localReject(@()runner(expired,args{:},'PrepareOnly',true),'sixgr:link:ConnectedULAfterTAExpiry');
             incomplete=cfg; incomplete.SharedULTimingContext=rmfield(incomplete.SharedULTimingContext,'TimingAdvanceEffectiveAtSample');
-            localReject(@()runner(incomplete,args{:},'PrepareOnly',true),'sixgr:link:MissingReceivedULControlTiming');
+            localReject(@()runner(incomplete,args{:},'PrepareOnly',true),'sixgr:link:MissingConnectedULTiming');
+            corrupted=cfg;
+            corrupted.SharedULTimingContext.Offset.NTAOffset_Tc= ...
+                corrupted.SharedULTimingContext.Offset.NTAOffset_Tc+int64(1);
+            localReject(@()runner(corrupted,args{:},'PrepareOnly',true),'sixgr:link:ConnectedULOffsetAuthorityMismatch');
             wrong=args; wrong{end}=ta.Samples+1;
             localReject(@()runner(cfg,wrong{:},'PrepareOnly',true),'sixgr:link:ULControlTimingAuthorityMismatch');
             fprintf('[PASS] %s %s RAR=%d measured timing=%g expected=%g; actual NR unit reception.\n', ...

@@ -12,6 +12,7 @@ sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from lls_csv_semantics import (  # noqa: E402
     audit_run,
+    _audit_control_table,
     _audit_derived_link_table,
     _audit_domain_runtime_tables,
     _audit_dynamic_tdd_runtime_channel_reciprocity,
@@ -236,6 +237,57 @@ def _observed_re_row(
         "status_classification": "implemented",
         "active_flag": "1",
     }
+
+
+def _observed_grid_checks(tmp_path: Path, rows: list[dict[str, str]]):
+    config = {"frame": {"duplex": "FDD", "scs_khz": 15}, "bwp": {"dl": {"n_size_bwp": 1}}}
+    path = tmp_path / "meta/scenario_config_resolved.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config), encoding="utf-8")
+    _write_rows(tmp_path / "frame_grid/csv/observed_re_allocation.csv", rows)
+    return _audit_observed_re_allocation(tmp_path)
+
+
+def test_observed_si_broadcast_requires_executed_grid_and_interval(tmp_path: Path) -> None:
+    # Declared validator inputs, not PHY measurements or qualification rows.
+    row = _observed_re_row("DL", "PDSCH", "sib1_component")
+    row.update({
+        "ue_id": "", "rnti": "65535", "associated_ssb_index0": "0",
+        "authority": "executed_broadcast_tx_grid_and_committed_waveform_interval",
+        "waveform_port_domain": "physical_element_domain", "transmit_grid_sha256": "b" * 64,
+        "broadcast_start_sample": "0", "broadcast_end_sample_exclusive": "7680",
+        "observation_sample_rate_hz": "7680000",
+    })
+    assert all(check.passed for check in _observed_grid_checks(tmp_path, [row]))
+    for field, value in [
+        ("rnti", "1"), ("authority", "executed_tx_toolbox_config_and_indices"),
+        ("waveform_port_domain", "logical_port"), ("transmit_grid_sha256", ""),
+        ("associated_ssb_index0", "NaN"), ("broadcast_start_sample", "1"),
+        ("broadcast_end_sample_exclusive", "7679"), ("observation_sample_rate_hz", "0"),
+        ("channel", "PUSCH"),
+    ]:
+        bad = dict(row, **{field: value})
+        checks = _observed_grid_checks(tmp_path, [bad])
+        assert any(not check.passed and "data_allocation_missing_UE_identity" in check.details for check in checks), field
+    checks = _observed_grid_checks(tmp_path, [dict(row, ue_id="1")])
+    assert any("cell_broadcast_must_not_claim_unicast_UE" in check.details for check in checks)
+
+
+def test_observed_grid_collisions_are_cell_scoped(tmp_path: Path) -> None:
+    first = _observed_re_row("DL", "PDSCH", "cell1")
+    second = dict(_observed_re_row("DL", "PDSCH", "cell2"), cell_id="2")
+    assert all(check.passed for check in _observed_grid_checks(tmp_path, [first, second]))
+    second["cell_id"] = "1"
+    assert any("RE_collision_with" in check.details for check in _observed_grid_checks(tmp_path, [first, second]))
+    second["cell_id"] = ""
+    assert any("missing_or_invalid_cell_identity" in check.details for check in _observed_grid_checks(tmp_path, [second]))
+
+
+def test_native_prach_cannot_be_audited_as_carrier_re(tmp_path: Path) -> None:
+    for channel, domain in [("PRACH", ""), ("PRACH", "carrier_cp_ofdm"), ("PUSCH", "prach_native_ofdm")]:
+        row = dict(_observed_re_row("UL", channel, "native"), grid_domain=domain)
+        assert any("noncarrier_native_grid_in_carrier_RE_table" in check.details
+                   for check in _observed_grid_checks(tmp_path, [row]))
 
 
 def test_fdd_opposite_direction_re_coordinates_are_distinct_rf_carriers(
@@ -1132,6 +1184,8 @@ def _beam_primary_and_output() -> tuple[dict[str, str], dict[str, str]]:
         "transform_precoding_applied": "0", "precoding_num_ports": "1",
         "precoding_num_layers": "1", "precoding_matrix_rows": "1",
         "precoding_matrix_cols": "1", "qcl_accuracy": "1",
+        "qcl_type": "", "qcl_source_rs": "", "tci_state_id": "",
+        "unified_tci_state_id": "", "tci_validity_timer_slots": "",
         "qcl_status": "runtime_qcl_accuracy_measured",
         "tci_status": "not_materialized_in_active_truth_path",
         "near_field_status": "not_materialized_in_active_truth_path",
@@ -1359,6 +1413,64 @@ def test_frc_only_run_is_not_skipped_by_semantic_audit(tmp_path: Path) -> None:
         check["category"] == "frc_reference"
         for check in audit["canonical_csv_semantic_audit"]
     )
+
+
+def test_unfinished_control_only_run_is_audited_without_data_or_summary(tmp_path: Path) -> None:
+    row = {
+        "ReceiverHestSINR_dB": "12.26", "ReceiverHestSINRApplicable": "0",
+        "ChannelEstimateAvailable": "1", "SourceClassification": "active_integrated",
+    }
+    for path in ("air_interface/csv/srs_trials.csv", "control/csv/srs_trials.csv"):
+        _write_rows(tmp_path / path, [row])
+    audit = audit_run(tmp_path)
+    checks = audit["canonical_csv_semantic_audit"]
+    assert audit["summary"][0]["semantic_check_count"] > 0
+    assert not audit["summary"][0]["ok"]
+    assert any(check["check_id"] == "run_completion_summary_present" and not check["passed"]
+               for check in checks)
+    for path in ("air_interface/csv/srs_trials.csv", "control/csv/srs_trials.csv"):
+        inconsistent = [check for check in checks if check["artifact_path"] == path
+                        and check["check_id"] == "receiver_sinr_applicability"]
+        assert len(inconsistent) == 1 and not inconsistent[0]["passed"]
+        assert "finite_receiver_sinr_marked_not_applicable" in inconsistent[0]["details"]
+
+
+def test_unfinished_declared_control_component_does_not_invent_data_requirement(tmp_path: Path) -> None:
+    config = tmp_path / "meta/scenario_config_resolved.json"
+    config.parent.mkdir(parents=True)
+    config.write_text(json.dumps({"scenario": {"runner_profile": "srs_strict_validation"}}),
+                      encoding="utf-8")
+    _write_rows(tmp_path / "control/csv/srs_trials.csv", [{"ReceiverHestSINR_dB": "12.26"}])
+    checks = audit_run(tmp_path)["canonical_csv_semantic_audit"]
+    primary = [check for check in checks if check["category"] == "primary_link"]
+    assert primary and all(not check["required"] for check in primary)
+    assert any(check["check_id"] == "run_completion_summary_present" and not check["passed"]
+               for check in checks)
+
+
+def test_pucch_only_observation_is_not_skipped(tmp_path: Path) -> None:
+    path = "air_interface/csv/pucch_trials.csv"
+    _write_rows(tmp_path / path, [{"ReceiverHestSINR_dB": "8.5", "FallbackFlag": "1"}])
+    checks = audit_run(tmp_path)["canonical_csv_semantic_audit"]
+    assert any(check["artifact_path"] == path and "fallback_or_placeholder" in check["details"]
+               and not check["passed"] for check in checks)
+
+
+def test_receiver_sinr_applicability_is_not_signal_detection() -> None:
+    row = {"ReceiverHestSINR_dB": "12", "ReceiverHestSINRApplicable": "1",
+           "ChannelEstimateAvailable": "1", "DetectionSuccess": "0"}
+    checks = _audit_control_table("control/csv/srs_trials.csv", list(row), [row])
+    applicability = next(check for check in checks if check.check_id == "receiver_sinr_applicability")
+    assert applicability.passed
+    for changes, reason in (
+        ({"ReceiverHestSINR_dB": "NaN"}, "applicable_receiver_sinr_missing"),
+        ({"ChannelEstimateAvailable": "0"}, "receiver_sinr_without_channel_estimate"),
+        ({"ReceiverHestSINRApplicable": "unknown"}, "invalid_receiver_sinr_applicability"),
+    ):
+        changed = row | changes
+        check = next(check for check in _audit_control_table("control/csv/srs_trials.csv", list(changed), [changed])
+                     if check.check_id == "receiver_sinr_applicability")
+        assert not check.passed and reason in check.details
 
 
 def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path) -> None:

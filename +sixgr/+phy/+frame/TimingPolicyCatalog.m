@@ -25,6 +25,44 @@ classdef TimingPolicyCatalog
     end
 
     methods (Static)
+        function ticks = processingSymbolTicks(symbols, mu)
+            % TS 38.214 5.3/6.4 processing-time units, also for extended CP.
+            % These are NOT durations obtained by counting waveform CPs.
+            mu=localMu(mu);
+            assert(mu<=6 && isnumeric(symbols) && isreal(symbols) && ...
+                isscalar(symbols) && isfinite(symbols) && symbols>=0, ...
+                'sixgr:phy:frame:InvalidProcessingSymbolDuration', ...
+                'Processing duration requires finite nonnegative symbols and supported NR numerology.');
+            value=double(symbols)*(2048+144)*64/2^mu;
+            assert(isfinite(value) && value==fix(value) && value<=flintmax, ...
+                'sixgr:phy:frame:InvalidProcessingSymbolDuration', ...
+                'Processing duration must be an exactly representable integer number of Tc ticks.');
+            ticks=int64(value);
+        end
+
+        function result = capability1ProcessingBase(procedure, numerologies)
+            % Base N1/N2 budget only. Allocation-dependent d terms, switching
+            % delays and the additional UCI multiplexing budget are separate.
+            procedure=upper(string(procedure));
+            assert(isscalar(procedure) && any(procedure==["HARQ_ACK","PUSCH"]) && ...
+                isnumeric(numerologies) && isreal(numerologies) && ...
+                isvector(numerologies) && ~isempty(numerologies), ...
+                'sixgr:phy:frame:InvalidProcessingCapabilityRequest', ...
+                'N1/N2 selection requires an explicit procedure and all participating numerologies.');
+            result=struct('Ticks',int64(-1),'Mu',NaN,'Symbols',NaN, ...
+                'Unit',"nr_nominal_symbol_duration", ...
+                'Scope',"capability1_base_N1_N2_not_complete_UCI_budget");
+            for mu=reshape(numerologies,1,[])
+                row=sixgr.phy.frame.TimingPolicyCatalog.capability1(mu);
+                if procedure=="HARQ_ACK", symbols=row.PDSCHN1Symbols;
+                else, symbols=row.PUSCHN2Symbols; end
+                ticks=sixgr.phy.frame.TimingPolicyCatalog.processingSymbolTicks(symbols,mu);
+                if ticks>result.Ticks
+                    result.Ticks=ticks; result.Mu=double(mu); result.Symbols=symbols;
+                end
+            end
+        end
+
         function row = capability1(mu)
             %CAPABILITY1 Processing values for DM-RS additional position 0.
             %

@@ -1,0 +1,11 @@
+inherits:
+  - ./lls_pdcch_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_pusch_csi_delivery_fixture
+  description: Received CSI-RS feedback on shared PUSCH with deferred scheduler delivery.
+  purpose: Isolated DL measurement followed by shared UL waveform transport; not end-to-end access qualification.
+  research_class: optional_research_experiment
+
+link_adaptation:
+  feedback_delay_slots: 3

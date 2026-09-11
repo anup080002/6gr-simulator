@@ -26,6 +26,14 @@ end
 if numel(double(sixgr.util.structGet(trsCfg, "SlotNumbers", []))) < 2
     reasons(end+1, 1) = "frequency_tracking_requires_at_least_two_trs_slots"; %#ok<AGROW>
 end
+slots=reshape(double(sixgr.util.structGet(trsCfg,"SlotNumbers",[])),1,[]);
+burst=double(sixgr.util.structGet(trsCfg,"BurstLengthSlots",numel(slots)));
+if ~isscalar(burst) || burst~=2 || mod(numel(slots),2)~=0 || isempty(slots)
+    reasons(end+1,1)="implemented_tracking_receiver_requires_complete_two_slot_resource_sets";
+elseif any(~isfinite(slots)) || any(slots~=fix(slots)) || ...
+        any(diff(slots)<=0) || any(diff(reshape(slots,2,[]),1,1)~=1,'all')
+    reasons(end+1,1)="tracking_resource_sets_require_consecutive_unique_slots";
+end
 if ~(isfinite(double(trsCfg.DetectionThreshold)) && double(trsCfg.DetectionThreshold) > 0 && double(trsCfg.DetectionThreshold) < 1)
     reasons(end+1, 1) = "invalid_detection_threshold"; %#ok<AGROW>
 end

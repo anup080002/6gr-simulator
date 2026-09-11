@@ -49,9 +49,10 @@ verifyEqual(testCase, numel(mux.CSI1CodedBits), ...
     double(budget.GCSI1));
 verifyEqual(testCase, numel(mux.CSI2AndCGUCICodedBits), ...
     double(budget.GCSI2));
-verifyTrue(testCase, demux.HARQACKCRCOK);
-verifyTrue(testCase, demux.CSI1CRCOK);
-verifyTrue(testCase, demux.CSI2CRCOK);
+verifyTrue(testCase, demux.HARQACKContentMatch);
+verifyTrue(testCase, demux.CSI1ContentMatch);
+verifyTrue(testCase, demux.CSI2ContentMatch);
+verifyTrue(testCase, all(isnan([demux.HARQACKCRCOK demux.CSI1CRCOK demux.CSI2CRCOK])));
 verifyTrue(testCase, demux.ConfiguredGrantUCIMatch);
 verifyEqual(testCase, demux.DecodedHARQACK, payload.HARQACK);
 verifyEqual(testCase, demux.DecodedCSIPart1, payload.CSIPart1);
@@ -66,6 +67,22 @@ verifyError(testCase, @() ...
     "HARQACK", 1, ...
     "SchedulingRequest", 1), ...
     "sixgr:pusch:SchedulingRequestNotCarriedOnPUSCH");
+end
+
+function testReceiverCRCCannotUseExpectedContent(testCase)
+pusch=nrPUSCHConfig; pusch.PRBSet=0:23;
+payload=sixgr.phy.ul.pusch.PUSCHUCIPayload('CSIPart1',int8(mod((1:20)',2)));
+budget=nrULSCHInfo(pusch,.3,512,0,20,0);
+mux=sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...
+    pusch,.3,512,zeros(double(budget.GULSCH),1,'int8'),payload,10);
+llr=50*(1-2*double(mux.Codewords{1}));
+received=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex(pusch,.3,512,llr,payload,10);
+different=sixgr.phy.ul.pusch.PUSCHUCIPayload('CSIPart1',1-payload.CSIPart1);
+scored=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex(pusch,.3,512,llr,different,10);
+verifyEqual(testCase,received.UCIReceiverEvidence,scored.UCIReceiverEvidence);
+verifyEqual(testCase,received.DecodedCSIPart1,scored.DecodedCSIPart1);
+verifyEqual(testCase,scored.CSI1CRCOK,1);
+verifyFalse(testCase,scored.CSI1ContentMatch);
 end
 
 function testCSI2RequiresCSI1(testCase)

@@ -88,8 +88,116 @@ def test_slot_trace_is_authoritative_and_idle_is_explicit(monkeypatch: pytest.Mo
     assert grid["slots"][0]["activity"] == "allocated"
     assert grid["slots"][1]["state_label"] == "DL idle — no grant"
     assert grid["slots"][1]["reason"] == "no_grant_reason_not_exported_by_legacy_run"
-    assert grid["slots"][3]["state_label"] == "Special DL/guard/UL slot"
+    assert grid["slots"][3]["state_label"] == "Special DL/flexible/guard/UL slot"
     assert "slot_trace" not in {event.get("table_key") for event in grid["events"]}
+
+
+def test_special_slot_flex_and_native_prach_are_visible_without_carrier_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_rows = [
+        {
+            **_trace_row(4, "S"),
+            "DLSymbolStart": 0,
+            "DLNumSymbols": 10,
+            "GuardSymbolStart": 0,
+            "GuardNumSymbols": 0,
+            "ULSymbolStart": 12,
+            "ULNumSymbols": 2,
+        }
+    ]
+    native_prach_rows = [
+        {
+            "carrier_origin_slot0": 3,
+            "channel": "PRACH",
+            "component": "PRACH",
+            "grid_domain": "prach_native_ofdm",
+            "native_subcarrier_start": 2,
+            "native_subcarrier_count": 139,
+            "native_symbol_index": 0,
+            "native_grid_sha256": "a" * 64,
+            "coordinate_precision": "exact_native_prach_grid_run",
+            "evidence_scope": "runtime_observed_tx_occupancy",
+        },
+        {
+            "carrier_origin_slot0": 3,
+            "channel": "PRACH",
+            "component": "PRACH",
+            "grid_domain": "prach_native_ofdm",
+            "native_subcarrier_start": 2,
+            "native_subcarrier_count": 139,
+            "native_symbol_index": 1,
+            "native_grid_sha256": "a" * 64,
+            "coordinate_precision": "exact_native_prach_grid_run",
+            "evidence_scope": "runtime_observed_tx_occupancy",
+        },
+    ]
+    lifecycle_rows = [
+        {
+            "CanonicalSlot": 4,
+            "StageName": "PRACH",
+            "EventName": "PRACH_MSG1_DETECTED",
+            "StageStatus": "PASS",
+            "ValueRole": "measured_runtime_procedure_event",
+        }
+    ]
+    run_row = {
+        "run_id": 80,
+        "run_tag": "native-prach-slot",
+        "scenario_id": "native-prach-slot",
+        "status_text": "completed",
+        "status_json": "{}",
+        "config_json": json.dumps(
+            {
+                "resolved_runtime_view": {"active_grid_num_rbs": 25},
+                "frame_timing": {"symbols_per_slot": 14},
+            }
+        ),
+        "updated_utc": "2026-08-24T00:00:00Z",
+    }
+    monkeypatch.setattr(dash, "fetch_run", lambda _run_id: run_row)
+    monkeypatch.setattr(dash, "fetch_artifacts", lambda _run_id: [])
+    monkeypatch.setattr(dash, "merge_db_and_filesystem_artifacts", lambda _artifacts, _run: [])
+
+    def select_rows(_artifacts, logical_path, **_kwargs):
+        selected = []
+        if logical_path == "reports/csv/slot_trace.csv":
+            selected = trace_rows
+        elif logical_path == "reports/csv/live_prach_native_allocation_snapshot.csv":
+            selected = native_prach_rows
+        elif logical_path == "control/csv/initial_access_lifecycle_trace.csv":
+            selected = lifecycle_rows
+        return selected, {
+            "selected_logical_path": logical_path,
+            "canonical_logical_path": logical_path,
+            "selection_status": "selected" if selected else "unavailable",
+            "selected_artifact_id": None,
+        }
+
+    monkeypatch.setattr(dash, "select_canonical_csv_rows", select_rows)
+    dash.PHY_GRID_PAYLOAD_CACHE.clear()
+    grid = dash.build_phy_grid_payload(80, slot_limit=1)["grid"]
+
+    slot = grid["slots"][0]
+    assert slot["slot"] == 4
+    assert slot["dl_symbol_start"] == 0
+    assert slot["dl_symbols"] == 10
+    assert slot["flexible_symbol_start"] == 10
+    assert slot["flexible_symbols"] == 2
+    assert slot["guard_symbols"] == 0
+    assert slot["ul_symbol_start"] == 12
+    assert slot["ul_symbols"] == 2
+    assert {item["kind"] for item in slot["annotations"]} == {
+        "initial_access",
+        "native_resource_grid",
+    }
+    native = next(item for item in slot["annotations"] if item["kind"] == "native_resource_grid")
+    assert native["grid_domain"] == "prach_native_ofdm"
+    assert native["source_slot"] == 3
+    assert native["display_slot_offset"] == 1
+    assert native["row_count"] == 2
+    assert grid["events"] == []
+    assert grid["time_frequency_cells"] == []
 
 
 def test_tdd_pattern_derives_from_common_pattern_and_nan_is_not_a_ue() -> None:

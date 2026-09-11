@@ -112,8 +112,9 @@ classdef RFImpairmentStream < handle
             [y,trace]=obj.AGC.apply(x,obj.Chain.RxADC.FullScale,obj.ConfigurationEpoch);
             trace.StartSample=trace.StartSample+obj.OriginSample;
             trace.EndSampleExclusive=trace.EndSampleExclusive+obj.OriginSample;
-            trace.StartSample=trace.StartSample+obj.OriginSample;
-            trace.EndSampleExclusive=trace.EndSampleExclusive+obj.OriginSample;
+            assert(trace.StartSample==obj.NextSampleIndex && ...
+                trace.EndSampleExclusive==obj.NextSampleIndex+size(x,1), ...
+                'RF:AGCStreamClockMismatch','Translate the AGC relative clock to the physical origin exactly once.');
             trace.SampleCoordinateDomain="absolute_receiver_sample_clock";
             obj.LastAGCTrace=trace;
         end

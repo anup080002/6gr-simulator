@@ -164,6 +164,14 @@
         "modulation": {"value_type": "string", "default": "QPSK"},
         "target_code_rate": {"value_type": "number", "default": 0.1171875, "min": 0}
       },
+      "msg4_dci": {
+        "ndi": {"value_type": "integer", "default": 1, "min": 0, "max": 1},
+        "harq_process": {"value_type": "integer", "default": 0, "min": 0, "max": 15},
+        "tpc_command_for_pucch": {"value_type": "integer", "default": 1, "min": 0, "max": 3},
+        "pucch_resource_indicator": {"value_type": "integer", "default": 0, "min": 0, "max": 7},
+        "pdsch_to_harq_feedback_timing": {"value_type": "integer", "default": 1, "min": 0, "max": 7},
+        "harq_ack_repetitions_configured": {"value_type": "boolean", "default": false}
+      },
       "msg4_pdsch": {
         "prb_start": {"value_type": "integer", "default": 0, "min": 0},
         "num_prb": {"value_type": "integer", "default": 24, "min": 1},

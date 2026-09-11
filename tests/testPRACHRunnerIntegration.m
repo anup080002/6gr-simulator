@@ -6,6 +6,9 @@ setup6GRSimToolkit("Verbose", false);
 tmp = tempname;
 mkdir(tmp);
 cleanupObj = onCleanup(@() rmdir(tmp, "s"));
+previousScratch=getenv('SIXGR_REGRESSION_SCRATCH_ROOT');
+setenv('SIXGR_REGRESSION_SCRATCH_ROOT',tmp);
+scratchCleanup=onCleanup(@()setenv('SIXGR_REGRESSION_SCRATCH_ROOT',previousScratch)); %#ok<NASGU>
 
 repoRoot = fileparts(fileparts(mfilename("fullpath")));
 baseScenario = strrep(fullfile(repoRoot, "simulator", "configs", "scenarios", "prach_detection.yaml"), "\", "/");
@@ -18,6 +21,7 @@ scenarioCfg.meta = struct( ...
 scenarioCfg.simulation = struct( ...
     "monte_carlo_iterations", 1, ...
     "snr_db", 18);
+scenarioCfg.run_control=struct('auto_start_parallel_pool',false,'num_workers',1);
 % The inherited PRACH scenario resolves a TDD carrier. Declare the matching
 % reciprocity authority explicitly so this integration fixture cannot inherit
 % an unrelated FDD MIMO policy from a shared base profile.
@@ -39,6 +43,8 @@ assert(isfield(out, "ScenarioStatus") && isstruct(out.ScenarioStatus), ...
     "runSingle must return its persisted terminal ScenarioStatus to callers.");
 
 runFolder = char(out.RunFolder);
+assert(startsWith(lower(string(runFolder)),lower(string(tmp)+filesep)), ...
+    'The export regression must stay inside its explicitly owned scratch directory.');
 ctrlPath = fullfile(runFolder, "control", "csv", "prach_trials.csv");
 airPath = fullfile(runFolder, "air_interface", "csv", "prach_trials.csv");
 reportPath = fullfile(runFolder, "reports", "csv", "initial_access_random_access_outputs.csv");
@@ -86,6 +92,11 @@ kpiGateT = readtable(kpiGatePath, "VariableNamingRule", "preserve");
 
 assert(~isempty(ctrlT), "PRACH control trial export must not be empty.");
 assert(~isempty(airT), "PRACH air-interface trial export must not be empty.");
+assert(all(~ctrlT.CRCApplicable) && all(isnan(ctrlT.CRCPass)) && ...
+    all(ismember(ctrlT.DetectionSuccess,[0 1])) && ...
+    isequaln(ctrlT.CRCPass,airT.CRCPass) && ...
+    isequaln(ctrlT.DetectionSuccess,airT.DetectionSuccess), ...
+    'Canonical PRACH mirrors must retain measured detection without claiming CRC.');
 assert(~isempty(reportT), "PRACH report summary export must not be empty.");
 assert(~isempty(summaryBySNRT), "PRACH summary-by-SNR export must not be empty.");
 assert(~isempty(corrT), "PRACH correlation trace export must not be empty.");

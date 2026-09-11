@@ -1,0 +1,49 @@
+function ok = testHARQControlOccasionAliases()
+% Original HARQ TB state must not resurrect an old control occasion.
+setup6GRSimToolkit('Verbose',false);
+for direction = ["DL","UL"]
+    for current0 = [45, 10240]
+        old0 = current0-5;
+        stored = struct('Direction',direction,'ControlAbsoluteSlot',old0, ...
+            'ControlSlot',old0+1,'ControlFrame',1,'Slot',old0+1, ...
+            'K0',0,'K1',3,'K2',4, ...
+            'TimingDecision',struct('Valid',true,'IndexConvention',"zero_based", ...
+                'ControlAbsoluteSlot',old0), ...
+            'TransportBlockBits',repmat(int8([0;1;1;0]),16,1), ...
+            'TransportBlockId',"original_tb",'TBSBits',64, ...
+            'HARQ',struct('HarqID',0,'NDI',false,'RV',2,'IsRetransmission',true));
+        current = stored;
+        current.ControlAbsoluteSlot = current0;
+        current.Slot = current0+1;
+        rebound = sixgr.l2.mac.rebindHARQRetransmissionTiming(current);
+        assert(sixgr.truth.resolvePDCCHControlSlot(rebound,current0+1)==current0+1, ...
+            'HARQ timing reset retained the previous one-based control-slot alias.');
+        assert(~isfield(rebound,'ControlFrame') || ...
+            isempty(rebound.ControlFrame) || isnan(rebound.ControlFrame), ...
+            'An expired control-frame alias must not survive timing reset.');
+        assert(isequal(rebound.TransportBlockBits,stored.TransportBlockBits) && ...
+            rebound.TransportBlockId==stored.TransportBlockId && ...
+            rebound.TBSBits==stored.TBSBits && isequal(rebound.HARQ,stored.HARQ), ...
+            'Resetting occasion timing must not change the HARQ transport block or RV.');
+
+        % New canonical decision is owned by this attempt. Exercise both
+        % paths by which the original grant snapshot re-enters execution.
+        rebound.ControlSlot=current0+1;
+        rebound.ControlFrame=2;
+        rebound.TimingDecision=struct('Valid',true,'IndexConvention',"zero_based", ...
+            'ControlAbsoluteSlot',current0);
+        merged=sixgr.truth.CoupledTruthRuntime.mergeReplayCurrentGrantAuthorityRuntime(stored,rebound);
+        assert(sixgr.truth.resolvePDCCHControlSlot(merged,current0+1)==current0+1);
+        assert(merged.ControlFrame==rebound.ControlFrame);
+        cached=sixgr.truth.mergeCachedGrantWithLiveRuntime(stored,rebound);
+        assert(sixgr.truth.resolvePDCCHControlSlot(cached,current0+1)==current0+1);
+        assert(cached.ControlFrame==rebound.ControlFrame);
+        assert(isequal(merged.TransportBlockBits,stored.TransportBlockBits) && ...
+            isequal(cached.TransportBlockBits,stored.TransportBlockBits));
+    end
+end
+newData=struct('IsRetransmission',false,'ControlSlot',7,'ControlFrame',1,'K0',0);
+assert(isequal(newData,sixgr.l2.mac.rebindHARQRetransmissionTiming(newData)));
+ok=true;
+fprintf('PASS testHARQControlOccasionAliases: DL/UL replay and cache timing lineage.\n');
+end

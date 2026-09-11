@@ -96,6 +96,9 @@ end
 if isfield(s, "pdcch_config_common")
     cfg.rrc.sib1.pdcch_config_common = s.pdcch_config_common;
 end
+if isfield(s, "pucch_config_common")
+    cfg.rrc.sib1.pucch_config_common = s.pucch_config_common;
+end
 if isfield(s,'n_timing_advance_offset')
     cfg.rrc.sib1.n_timing_advance_offset=string(s.n_timing_advance_offset);
 end

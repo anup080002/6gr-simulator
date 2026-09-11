@@ -26,9 +26,11 @@ cfg.powerAndRF.downlinkPowerNormalizationPolicy = ...
     "fixed_epre_over_configured_bwp";
 cfg = sixgr.util.structSet(cfg, "phy.trs.nPorts", 1);
 cfg = sixgr.util.structSet(cfg, "phy.trs.scramblingID", 7);
-cfg = sixgr.util.structSet(cfg, "phy.trs.symbolLocations", [2 11]);
+cfg = sixgr.util.structSet(cfg, "phy.trs.csirsRowNumber", 1);
+cfg = sixgr.util.structSet(cfg, "phy.trs.symbolLocations", [4 8]);
 cfg = sixgr.util.structSet(cfg, "phy.trs.subcarrierComb", 4);
 cfg = sixgr.util.structSet(cfg, "phy.trs.slotNumbers", [0 1]);
+cfg = sixgr.util.structSet(cfg, "phy.trs.burstLengthSlots", 2);
 
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
 [trsInd, trsSym, info] = sixgr.phy.refsig.trs(carrier, cfg);
@@ -36,18 +38,20 @@ assert(logical(info.Enabled), "TRS helper must enable when cfg.phy.trs.enable=tr
 assert(~isempty(trsInd) && ~isempty(trsSym), "TRS helper must generate actual indices and symbols.");
 
 out = sixgr.link.runTRSTracking(cfg, "SNR_dB", 20);
-assert(out.Ok, "TRS tracking smoke must complete.");
-assert(isfinite(out.NMSE_dB), "TRS runtime must report NMSE.");
+assert(~out.Crash && out.TRSRuntimeEvidenceUsable, ...
+    "The practical TRS receiver must complete with usable tracking evidence.");
+assert(~out.Ok && ~out.StrictOk && ~out.NMSEScoringAvailable && isnan(out.NMSE_dB), ...
+    "Strict qualification requires an independent channel reference; receiver self-scoring is forbidden.");
 assert(isfinite(out.PhaseError_deg), "TRS runtime must report phase error.");
 assert(isfinite(out.InjectedDoppler_Hz) && abs(out.InjectedDoppler_Hz - 30) < 1e-9, ...
-    "TRS runtime must expose the injected Doppler semantics.");
-assert(isfinite(out.EstimatedDoppler_Hz), "TRS runtime must report a finite Doppler estimate.");
-assert(abs(out.EstimatedDoppler_Hz - out.InjectedDoppler_Hz) < 20, ...
-    "TRS Doppler estimate must stay reasonably close to the injected Doppler in the smoke case.");
+    "TRS runtime must expose the configured propagation metadata.");
+assert(isnan(out.EstimatedDoppler_Hz) && isnan(out.EstimatedOscillatorCFO_Hz) && ...
+    isfinite(out.EstimatedCommonFrequency_Hz), ...
+    "TRS common phase cannot identify separate oscillator-CFO and Doppler components.");
 assert(strcmpi(char(string(out.CFOEstimateAvailability)), "available") && ...
     isfinite(double(out.EstimatedCFO_Hz)) && isfinite(double(out.EstimatedCFO_PreCorrection_Hz)), ...
     "TRS runtime must expose a real CFO estimate when the reference-symbol phase slope is observable.");
-assert(out.NMSE_dB < 0, "TRS NMSE should be meaningfully below 0 dB at 20 dB SNR.");
+assert(out.FrequencyEstimateDomain=="received_TRS_common_phase_frequency");
 assert(strcmp(string(out.PowerNormalizationPolicy), ...
     "fixed_epre_over_configured_bwp") && ...
     strcmp(string(out.PowerNormalizationGridSource), ...
@@ -79,6 +83,11 @@ cfgLLS.run.controlGating.srsRequired = false;
 cfgLLS.run.controlGating.trsRequired = true;
 cfgLLS.run.controlGating.trsMaxAgeSlots = 2;
 cfgLLS.phy.trs.enable = true;
+cfgLLS.phy.trs.csirsRowNumber = 1;
+cfgLLS.phy.trs.symbolLocation = [4 8];
+cfgLLS.phy.trs.symbolLocations = [4 8];
+cfgLLS.phy.trs.slotNumbers = [7 8];
+cfgLLS.phy.trs.burstLengthSlots = 2;
 multiUser = struct("Enabled", true, "NumUsers", 1, "RNTIStart", 320, "ExecutionModel", "slot_coupled_truth");
 state = sixgr.truth.CoupledTruthRuntime.initialize(cfgLLS, fullfile(tmp, "runtime"), multiUser, struct(), 1);
 state.CurrentServingIdx(1) = 1;
@@ -95,6 +104,7 @@ state = sixgr.truth.CoupledTruthRuntime.refreshControlState(state);
 assert(~logical(state.SchedulingEligibility(1)), ...
     "TRS-required runtime state must keep scheduling ineligible before a valid TRS observation.");
 stateBeforeTRS = state;
+stateBeforeTRS.CurrentSlot = 5;
 
 trsRow = table( ...
     1, ...
@@ -211,7 +221,8 @@ cfgSyncDL.phy.pdsch.DCIFormat = "1_1";
 cfgSyncDL = sixgr.util.structSet(cfgSyncDL, "phy.impairments.cfoHz", 0);
 cfgSyncDL = sixgr.util.structSet(cfgSyncDL, "phy.impairments.timingOffsetSamples", 0);
 dlSync = sixgr.link.runDLPDSCHThroughput(cfgSyncDL, "SNR_dB", 30, ...
-    "NumFrames", 1, "ExecutionProfile", "phy_calibration");
+    "NumFrames", 1, "StartSlotIndex", 7, ...
+    "ExecutionProfile", "phy_calibration");
 dlSyncT = dlSync.TrialTable;
 assert(istable(dlSyncT) && height(dlSyncT) == 1 && ...
     strcmpi(char(string(dlSyncT.CFOEstimateAvailability(1))), "available") && ...
@@ -241,7 +252,8 @@ cfgSyncUL.channel.snr_dB = 30;
 cfgSyncUL.phy.rx.useIdealTimingSync = false;
 cfgSyncUL = sixgr.util.structSet(cfgSyncUL, "phy.impairments.cfoHz", 0);
 cfgSyncUL = sixgr.util.structSet(cfgSyncUL, "phy.impairments.timingOffsetSamples", 0);
-ulSync = sixgr.link.runULPUSCHThroughput(cfgSyncUL, "SNR_dB", 30, "NumFrames", 1);
+ulSync = sixgr.link.runULPUSCHThroughput(cfgSyncUL, "SNR_dB", 30, ...
+    "NumFrames", 1, "StartSlotIndex", 7);
 ulSyncT = ulSync.TrialTable;
 assert(istable(ulSyncT) && height(ulSyncT) == 1 && ...
     ~logical(ulSyncT.TimingEstimateUsed(1)) && ...
@@ -254,8 +266,8 @@ artifacts = sixgr.truth.CoupledTruthRuntime.mobilityArtifacts(state);
 controlStateT = artifacts.ControlGatingStateTable;
 assert(istable(controlStateT) && height(controlStateT) == 1 && logical(controlStateT.TrackingEligibility(1)), ...
     "Control-state artifacts must export the runtime TRS tracking eligibility.");
-assert(isfinite(double(controlStateT.LastEstimatedTRSDopplerHz(1))), ...
-    "Control-state artifacts must export the estimated TRS Doppler state.");
+assert(isnan(double(controlStateT.LastEstimatedTRSDopplerHz(1))), ...
+    "Control state must not relabel common TRS phase rate as a Doppler estimate.");
 assert(istable(artifacts.ReceiverTrackingStateTable) && height(artifacts.ReceiverTrackingStateTable) >= 1 && ...
     logical(artifacts.ReceiverTrackingStateTable.TRSProcessed(1)), ...
     "Mobility artifacts must expose the shared receiver tracking state updated by TRS.");
@@ -297,6 +309,8 @@ row.ChannelEstimationAttempted = true;
 row.TRSChannelEstimateAvailable = true;
 row.TRSRuntimeEvidenceUsable = true;
 row.StrictOk = true;
+row.Status = "PASS";
+row.FailureReason = "";
 end
 
 function status = ternaryTRSStatus(okFlag)

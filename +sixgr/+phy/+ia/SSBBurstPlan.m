@@ -2,6 +2,37 @@ classdef SSBBurstPlan
     %SSBBURSTPLAN Immutable multi-SSB bitmap, timing, beam and power plan.
 
     methods (Static)
+        function selection = selectedPrecoderFromConfig(cfg, selectedIndex)
+            % Reuse the transmitter's exact bitmap/precoder expansion.
+            % This selects a configured spatial mapping; it does not claim
+            % receiver QCL use or MAC activation of a TCI state.
+            lmax = sixgr.util.structGet(cfg,"phy.ssb.Lmax",NaN);
+            validateattributes(lmax,{'numeric'},{'scalar','real','finite','integer','positive'});
+            validateattributes(selectedIndex,{'numeric'}, ...
+                {'scalar','real','finite','integer','nonnegative','<',lmax});
+            bitmap = localFirstConfigured(cfg,["phy.ssb.activeBitmap", ...
+                "phy.ssb.positionsInBurst","reference_signals.ssb_positions_in_burst"]);
+            [active,bitmapSource] = localResolveBitmap(bitmap,lmax,selectedIndex, ...
+                logical(sixgr.util.structGet(cfg,"initial_access.require_explicit_ssb_bitmap",false)));
+            if ~active(selectedIndex+1)
+                error('sixgr:phy:ia:InactiveAssociatedSSB', ...
+                    'SSB %d is not active in the configured transmitted burst.',selectedIndex);
+            end
+            raw = localFirstConfigured(cfg,["phy.ssb.precoderMatrices", ...
+                "mimo_and_beam_management.ssb_precoder_matrices"]);
+            [matrices,ports,hashes] = localExpandPrecoders(raw,lmax);
+            ids = localExpandText(localFirstConfigured(cfg,["phy.ssb.precoderIDs", ...
+                "mimo_and_beam_management.ssb_precoder_ids"]),lmax,"identity");
+            if all(ids=="identity") && ports>1
+                ids = "configured_precoder_" + string(0:lmax-1);
+            end
+            selection = struct('SSBIndex0',double(selectedIndex), ...
+                'MatrixRow',matrices{selectedIndex+1}, ...
+                'NumTransmitAntennas',ports,'PrecoderID',ids(selectedIndex+1), ...
+                'PrecoderMatrixSHA256',hashes(selectedIndex+1), ...
+                'BitmapSource',string(bitmapSource));
+        end
+
         function plan = fromTiming(timing, varargin)
             if ~isstruct(timing) || ...
                     ~isfield(timing, "Lmax") || ...
@@ -148,6 +179,10 @@ end
 if islogical(value)
     bitmap = value(:).';
 elseif isnumeric(value) && ~isscalar(value)
+    if ~isreal(value) || any(~isfinite(value(:))) || any(value(:)~=0 & value(:)~=1)
+        error("sixgr:phy:ia:InvalidSSBBitmap", ...
+            "Numeric SSB bitmap entries must be finite binary values.");
+    end
     bitmap = logical(value(:).');
 else
     chars = char(strtrim(string(value)));

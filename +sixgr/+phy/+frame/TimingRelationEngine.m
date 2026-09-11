@@ -218,7 +218,9 @@ classdef TimingRelationEngine < handle
             end
             result.MinimumProcessingTicks = minimumProcessingTicks;
             waveformPlacement = targetStart;
-            if procedure == "PUSCH"
+            % TS 38.214 5.3 and 6.4 both use the advanced UL symbol
+            % start. Nominal K1 timing alone cannot prove N1 feasibility.
+            if any(procedure == ["PUSCH", "HARQ_ACK"])
                 try
                     timingAdvance = localNonnegativeInt64(localRequired(request, ...
                         ["TimingAdvanceTicks", "timing_advance_ticks"], ...
@@ -403,6 +405,7 @@ if strlength(reason) > 0
     decision.ReasonCode = reason;
     return;
 end
+decision.ControlSymbolAllocation = controlAllocation;
 [dataAllocation, reason] = localStrictAllocation( ...
     localOptional(grant, ["SymbolAllocation", ...
     "symbol_allocation"], []), "data");
@@ -492,6 +495,17 @@ else
     end
     dataRequest.ProcessingTimeReference = ...
         policy.PUSCHProcessingTimeReference;
+    processingBase=sixgr.phy.frame.TimingPolicyCatalog.capability1ProcessingBase( ...
+        "PUSCH",[sourceBWP.Mu,ulBWP.Mu]);
+    try
+        processingBudget=localPUSCHProcessingBudget(cfg,grant,ulBWP, ...
+            [sourceBWP.Mu,ulBWP.Mu],dataAllocation);
+    catch cause
+        decision.ReasonCode="pusch_processing_allocation_invalid";
+        decision.Diagnostic=string(cause.identifier)+": "+string(cause.message);
+        return;
+    end
+    dataRequest.MinimumProcessingTicks=processingBudget.Ticks;
     [timingAdvance, foundTA] = localExplicitTimingAdvance( ...
         grant, policy);
     if ~foundTA
@@ -501,6 +515,8 @@ else
     dataRequest.TimingAdvanceTicks = timingAdvance;
     [dataResult, attempts] = localSelectRelation(engine, ...
         dataRequest, "PUSCH", grant, policy, "K2");
+    dataResult.ProcessingBase=processingBase;
+    dataResult.ProcessingBudget=processingBudget;
 end
 decision.DataDecision = dataResult;
 decision.DataAttempts = attempts;
@@ -514,6 +530,11 @@ decision.K0 = double(dataResult.K0);
 decision.K2 = double(dataResult.K2);
 
 if decision.HARQACKRequired
+    [feedbackTimingAdvance, foundTA] = localExplicitTimingAdvance(grant, policy);
+    if ~foundTA
+        decision.ReasonCode = "harq_ack_timing_advance_not_attached";
+        return;
+    end
     [feedbackAllocation, reason] = ...
         localFeedbackSymbolAllocation(cfg, grant);
     if strlength(reason) > 0
@@ -542,9 +563,14 @@ if decision.HARQACKRequired
         "MinimumProcessingSymbols", minimumSymbols, ...
         "ProcessingTimeReference", ...
             policy.PDSCHProcessingTimeReference, ...
+        "TimingAdvanceTicks", feedbackTimingAdvance, ...
         "HARQProcessID", localHARQProcessID(grant));
+    processingBase=sixgr.phy.frame.TimingPolicyCatalog.capability1ProcessingBase( ...
+        "HARQ_ACK",[sourceBWP.Mu,dlBWP.Mu,ulBWP.Mu]);
+    feedbackRequest.MinimumProcessingTicks=processingBase.Ticks;
     [feedbackResult, feedbackAttempts] = localSelectRelation( ...
         engine, feedbackRequest, "HARQ_ACK", grant, policy, "K1");
+    feedbackResult.ProcessingBase=processingBase;
     decision.HARQACKDecision = feedbackResult;
     decision.HARQACKAttempts = feedbackAttempts;
     if ~feedbackResult.Valid
@@ -563,6 +589,39 @@ decision.ReasonCode = "production_timing_valid";
 decision.Diagnostic = "";
 end
 
+function budget=localPUSCHProcessingBudget(cfg,grant,bwp,mus,allocation)
+% Express the scheduled active BWP on its own numerology grid. No samples
+% are generated here; the first-symbol RE occupancy is independent of the
+% slot-dependent pilot sequence and frequency-hopping PRB translation.
+carrier=nrCarrierConfig('NSizeGrid',bwp.NSizeBWP,'NStartGrid',bwp.NStartBWP, ...
+    'SubcarrierSpacing',bwp.SCSKHz,'CyclicPrefix',bwp.CyclicPrefix);
+args={'SymbolAllocation',allocation};
+keys={"PRBSet","Modulation","NumLayers","RNTI","MappingType", ...
+    "TransformPrecoding","TransmissionScheme","NumAntennaPorts","TPMI"};
+aliases={"PRBSet","Modulation",["NumLayers","Layers"],"RNTI", ...
+    ["MappingType","mappingType"],"TransformPrecoding","TransmissionScheme", ...
+    ["NumAntennaPorts","NumLogicalPorts","PortCount"],["TPMI","PMI"]};
+for k=1:numel(keys)
+    value=localOptional(grant,aliases{k},[]);
+    if ~isempty(value), args=[args,{keys{k},value}]; end %#ok<AGROW>
+end
+prbs=localOptional(grant,"PRBSet",[]);
+start=localOptional(grant,"PRBStart",[]);
+count=localOptional(grant,["AllocatedPRBCount","PRBCount"],[]);
+if isempty(prbs) && ~isempty(start) && ~isempty(count)
+    validateattributes(start,{'numeric'},{'scalar','integer','nonnegative','finite'});
+    validateattributes(count,{'numeric'},{'scalar','integer','positive','finite'});
+    args=[args,{'PRBSet',double(start)+(0:double(count)-1)}];
+end
+layers=localOptional(grant,["NumLayers","Layers"], ...
+    sixgr.util.structGet(cfg,'phy.pusch.numLayers', ...
+    sixgr.util.structGet(cfg,'phy.pusch.nLayers',NaN)));
+ports=sixgr.phy.grant.resolveScheduledDMRSPortSet(cfg,'UL',layers,grant);
+cfg=sixgr.util.structSet(cfg,'phy.pusch.dmrs.scheduledPortSet',ports);
+[~,~,pusch]=sixgr.phy.grid.allocREsPUSCH(carrier,cfg,args{:});
+budget=sixgr.phy.frame.puschPreparationProcessingTime(carrier,pusch,mus);
+end
+
 function decision = localProductionDecision()
 emptyRelation = struct();
 decision = struct( ...
@@ -577,6 +636,7 @@ decision = struct( ...
     "SourceBWPID", "", ...
     "TargetBWPID", "", ...
     "ControlAbsoluteSlot", int64(-1), ...
+    "ControlSymbolAllocation", [], ...
     "DataAbsoluteSlot", int64(-1), ...
     "FeedbackAbsoluteSlot", int64(-1), ...
     "K0", NaN, ...
@@ -1171,24 +1231,25 @@ catch
     return;
 end
 if reference == "SOURCE"
-    ticks = sourceEnd.durationTicks(symbols, sourceBWP);
+    referenceMu=sourceBWP.Mu;
 elseif reference == "TARGET"
-    try
-        processingStart = targetStart.plusSymbols(-symbols, targetBWP);
-        ticks = processingStart.ticksUntil(targetStart);
-    catch cause
-        if any(string(cause.identifier) == [ ...
-                "sixgr:phy:frame:AbsoluteTimeUnderflow", ...
-                "sixgr:phy:frame:UnalignedNumerologyBoundary"])
-            ticks = int64(-1);
-            reason = "invalid_minimum_processing_time";
-            return;
-        end
-        rethrow(cause);
-    end
+    referenceMu=targetBWP.Mu;
 else
     ticks = int64(-1);
     reason = "invalid_processing_time_reference";
+    return;
+end
+% N1/N2 are measured in the nominal symbol unit specified by TS 38.214,
+% not the actual duration of SOURCE/TARGET waveform symbols. Long CP and
+% extended CP must affect resource boundaries, not this processing unit.
+try
+    ticks=sixgr.phy.frame.TimingPolicyCatalog.processingSymbolTicks(symbols,referenceMu);
+catch cause
+    if string(cause.identifier)=="sixgr:phy:frame:InvalidProcessingSymbolDuration"
+        ticks=int64(-1); reason="invalid_minimum_processing_time";
+        return;
+    end
+    rethrow(cause);
 end
 end
 

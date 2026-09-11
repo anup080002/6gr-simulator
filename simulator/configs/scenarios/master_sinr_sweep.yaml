@@ -663,11 +663,15 @@ canonical_control:
     # fixed-link master, so enabling it requires no hidden MATLAB defaults.
     trs:
       enabled: false
-      slot_numbers: [1, 21, 41]
+      # Same explicit periodic TRS resource contract as the geometry master.
+      # Zero-based resources [1,2], [21,22], ... at the configured 30 kHz.
+      slot_numbers: []
+      period_offset: 1
+      burst_length_slots: 2
       num_ports: 1
       scrambling_id: 1
-      row_number: 2
-      symbol_location: 4
+      row_number: 1
+      symbol_locations: [4, 8]
       subcarrier_location: 0
       rb_offset: 0
       num_rb: 273
@@ -1652,7 +1656,9 @@ canonical_control:
   - path: link_adaptation.al_adaptation_policy
     value: fixed
   - path: link_adaptation.cqi_source
-    value: configured_mcs
+    # Catalog-valid source declaration. The fixed operating-point policy
+    # below prevents CQI from changing MCS in this calibration profile.
+    value: csi_feedback
   - path: link_adaptation.pdsch_link_adaptation_policy
     value: fixed
   - path: link_adaptation.pusch_link_adaptation_policy

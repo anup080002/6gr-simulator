@@ -27,6 +27,14 @@ normalized = lower(strtrim(string(name)));
 if nargin < 2
     allNames = strings(0, 1);
 end
+% A blank CRC result is meaningful beside explicit applicability (PRACH
+% has no TB CRC; an applicable but unavailable decode must remain auditable).
+% Preserve the pair without supplying a numeric result or keeping unrelated
+% blank columns just to satisfy table shape.
+if normalized == "crcpass" && any(strcmpi(string(allNames),"CRCApplicable"))
+    tf = true;
+    return;
+end
 persistent cachedExactKeep
 if isempty(cachedExactKeep)
 exactKeep = lower([ ...

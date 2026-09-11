@@ -32,6 +32,19 @@ for ii = 1:height(vectors)
         verifyEqual(testCase, received.random_access.initial_ul_bwp_size, 52);
         verifyEqual(testCase, received.UECommonCellConfiguration.InitialULBWP.SubcarrierSpacing_kHz, 15);
     end
+    if isfield(expected,"pucch_config_common")
+        received = sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(), message);
+        actual = received.UECommonCellConfiguration.PUCCHConfigCommon;
+        verifyTrue(testCase, received.UECommonCellConfiguration.PUCCHConfigCommonPresent);
+        verifyEqual(testCase, double(actual.pucch_ResourceCommon), ...
+            double(expected.pucch_config_common.pucch_ResourceCommon));
+        verifyEqual(testCase, string(actual.pucch_GroupHopping), ...
+            string(expected.pucch_config_common.pucch_GroupHopping));
+        verifyEqual(testCase, double(actual.hoppingId), ...
+            double(expected.pucch_config_common.hoppingId));
+        verifyEqual(testCase, double(actual.p0_nominal), ...
+            double(expected.pucch_config_common.p0_nominal));
+    end
 end
 end
 

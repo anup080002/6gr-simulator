@@ -108,13 +108,19 @@ configuredModel = localConcreteConfiguredModel(cfg);
 for si = 1:size(sets, 1)
     direction = string(sets{si, 1});
     T = sets{si, 2};
-    localRequireColumns(T, ["ChannelRealizationId","RuntimeChannelLinkKey", ...
+    for ii = 1:height(T)
+        if localHasChannelArtifactClaim(T,ii)
+            [r,s,g]=localVerifiedChannelRows(cfg,identity,direction,T(ii,:));
+            realRows(end+1,1)=r; %#ok<AGROW>
+            snapRows=[snapRows;s]; gainRows=[gainRows;g]; %#ok<AGROW>
+            continue;
+        end
+        localRequireColumns(T, ["ChannelRealizationId","RuntimeChannelLinkKey", ...
         "RuntimeChannelStartSample","RuntimeChannelEndSample", ...
         "RuntimeChannelInputWaveformSHA256","RuntimeChannelOutputWaveformSHA256", ...
         "RuntimeChannelPathGainsSHA256","RuntimeChannelPathGainElementCount", ...
         "RuntimeChannelPathGainDimensions","ChannelModelApplied", ...
         "ChannelFadingApplied","ChannelFadingObjectClass"], direction + " Channel/RF");
-    for ii = 1:height(T)
         trialId = localTrialId(direction, T, ii);
         rid = strtrim(string(T.ChannelRealizationId(ii)));
         inputHash = lower(strtrim(string(T.RuntimeChannelInputWaveformSHA256(ii))));
@@ -154,23 +160,18 @@ for si = 1:size(sets, 1)
         row.WaveformBeforeHash = inputHash;
         row.WaveformAfterHash = outputHash;
         row.PathGainsHash = pathHash;
-        row.ChannelSnapshotHash = outputHash;
+        row.ChannelSnapshotHash = "";
         row.WaveformChanged = waveChanged;
-        row.PathGainsExported = pathOk && configuredModel ~= "AWGN";
-        row.ChannelSnapshotExported = hashesOk;
-        row.ChannelMatrixRows = double(T.RuntimeChannelEndSample(ii) - T.RuntimeChannelStartSample(ii));
-        row.ChannelMatrixColumns = double(localValue(T, "RxWaveformBranches", ii, NaN));
+        row.PathGainsExported = false;
+        row.ChannelSnapshotExported = false;
+        row.ChannelMatrixRows = NaN;
+        row.ChannelMatrixColumns = NaN;
+        row.ChannelEvidenceKind = "producer_reported_hashes_not_verified_tensor_artifacts";
+        row.WaveformHashScope = "reported_processor_interval";
         row.StrictOk = ok;
         row.TruthStatus = "real_lls_evidence";
         row.FailureReason = localReason(ok, "", "runtime_channel_identity_or_hash_mismatch");
         row = localBindRow(row, identity, "in_path", true);
-        realRows(end+1, 1) = row; %#ok<AGROW>
-
-        snap = localSnapshotRow();
-        snap.RunId = string(identity.RunID);
-        snap.TrialId = trialId;
-        snap.ChannelRealizationId = rid;
-        snap.SnapshotIndex = ii;
         [sampleRateHz, sampleRateSource] = localResolveRuntimeSampleRateHz(cfg, T, ii);
         startSample = double(T.RuntimeChannelStartSample(ii));
         if ~(isscalar(startSample) && isfinite(startSample) && startSample >= 0)
@@ -178,26 +179,22 @@ for si = 1:size(sets, 1)
                 "RuntimeChannelStartSample must be a finite nonnegative scalar for %s.", ...
                 trialId);
         end
-        snap.SampleTimeSec = startSample / sampleRateHz;
-        snap.SampleRateHz = sampleRateHz;
-        snap.SampleRateSource = sampleRateSource;
-        snap.ChannelSnapshotHash = outputHash;
-        snap.TruthStatus = "real_lls_evidence";
-        snap = localBindRow(snap, identity, "in_path", true);
-        snapRows(end+1, 1) = snap; %#ok<AGROW>
+        row.SampleTimeSec = startSample / sampleRateHz;
+        row.SampleRateHz = sampleRateHz;
+        row.SampleRateSource = sampleRateSource;
+        realRows(end+1, 1) = row; %#ok<AGROW>
 
         gain = localPathGainRow();
         gain.RunId = string(identity.RunID);
         gain.TrialId = trialId;
         gain.ChannelRealizationId = rid;
         gain.PathGainHash = pathHash;
-        gain.SampleTimeHash = lower(strtrim(string( ...
-            sixgr.channel.hashChannelRFConfig(struct( ...
-            "LinkKey", string(T.RuntimeChannelLinkKey(ii)), ...
-            "StartSample", double(T.RuntimeChannelStartSample(ii)), ...
-            "EndSample", double(T.RuntimeChannelEndSample(ii)))))));
+        gain.SampleTimeHash = "";
+        gain.EvidenceKind = "producer_reported_path_gain_hash_only";
         gain.PathGainElementCount = double(T.RuntimeChannelPathGainElementCount(ii));
-        gain.SampleTimeCount = double(T.RuntimeChannelEndSample(ii) - T.RuntimeChannelStartSample(ii));
+        % A waveform interval does not reveal how many fading snapshots
+        % or sample times were actually retained (they may be decimated).
+        gain.SampleTimeCount = NaN;
         gain.PathGainDimensions = string(T.RuntimeChannelPathGainDimensions(ii));
         gain.TruthStatus = "real_lls_evidence";
         gain = localBindRow(gain, identity, "in_path", true);
@@ -207,6 +204,71 @@ end
 realizationT = struct2table(realRows, "AsArray", true);
 snapshotT = struct2table(snapRows, "AsArray", true);
 pathGainT = struct2table(gainRows, "AsArray", true);
+end
+
+function tf=localHasChannelArtifactClaim(T,k)
+tf=false;
+for name=["ChannelObservationID","ChannelObservationManifestJSON","ChannelObservationSource", ...
+        "ChannelObservationManifestSHA256","ChannelObservationMATFile", ...
+        "ChannelObservationMATFileSHA256","ChannelObservationSegmentsCSV", ...
+        "ChannelObservationSegmentsCSVSHA256"]
+    value=localValue(T,name,k,"");
+    if isnumeric(value) && isscalar(value) && isnan(value), continue; end
+    value=string(value);
+    tf=tf || (~ismissing(value) && strlength(strtrim(value))>0);
+end
+count=double(localValue(T,"ChannelObservationSegmentCount",k,NaN));
+tf=tf || (isfinite(count) && count>0);
+end
+
+function [row,snaps,gains]=localVerifiedChannelRows(cfg,identity,direction,T)
+v=sixgr.channel.validateSharedChannelObservationArtifact( ...
+    sixgr.util.structGet(cfg,'run.rootRunFolder',""),T);
+m=v.Manifest; segments=m.Segments; configured=localConcreteConfiguredModel(cfg);
+row=localChannelRow(); row.RunId=string(identity.RunID); row.ScenarioName=string(identity.ScenarioID);
+row.TrialId=localTrialId(direction,T,1); row.ChannelRealizationId=string(T.ChannelObservationID);
+row.ChannelEvidenceKind="verified_ordered_path_gain_snapshots_not_resource_grid_H";
+row.ChannelModelType=localChannelFamily(configured); row.DelayProfile=configured;
+models=unique(string({segments.ChannelModelApplied}));
+assert(isscalar(models),'sixgr:channel:ChannelProfileChangedWithinObservation','Do not flatten differing applied channel profiles.');
+row.AppliedChannelModelType=models;
+nt=unique([segments.NumTransmitAntennas]); nr=unique([segments.NumReceiveAntennas]);
+assert(isscalar(nt) && isscalar(nr),'sixgr:channel:ChannelArrayChangedWithinObservation','One receiver observation must retain its physical array layout.');
+row.NumTxAntennas=nt; row.NumRxAntennas=nr;
+row.WaveformChanged=any(string({segments.RuntimeChannelInputWaveformSHA256})~=string({segments.RuntimeChannelOutputWaveformSHA256}));
+row.WaveformHashScope="see_original_hashes_per_executed_segment";
+row.PathGainsExported=true; row.ChannelSnapshotExported=true;
+row.SnapshotManifestSHA256=string(T.ChannelObservationManifestSHA256);
+row.CoefficientMATFile=string(T.ChannelObservationMATFile);
+row.CoefficientMATFileSHA256=string(T.ChannelObservationMATFileSHA256);
+row.SampleTimeSec=m.ObservationStartSample/m.SampleRateHz;
+row.SampleRateHz=m.SampleRateHz; row.SampleRateSource="validated_shared_channel_observation";
+row.StrictOk=models==configured; row.TruthStatus="real_lls_evidence";
+row.FailureReason=localReason(row.StrictOk,"","runtime_channel_profile_mismatch");
+row=localBindRow(row,identity,"in_path",true);
+snaps=repmat(localSnapshotRow(),0,1); gains=repmat(localPathGainRow(),0,1);
+for k=1:numel(segments)
+    s=segments(k);
+    snap=localSnapshotRow(); snap.RunId=string(identity.RunID); snap.TrialId=row.TrialId;
+    snap.ChannelRealizationId=row.ChannelRealizationId; snap.SnapshotIndex=k;
+    snap.SampleTimeSec=s.StartSample/m.SampleRateHz; snap.SampleRateHz=m.SampleRateHz;
+    snap.SampleRateSource=row.SampleRateSource;
+    snap.ChannelSnapshotHash=string(s.PathGainsSHA256);
+    snap.SnapshotRepresentation="sample_indexed_path_gain_tensor_not_resource_grid_H";
+    snap.PathFiltersHash=string(s.PathFiltersSHA256); snap.SampleTimeHash=string(s.SampleTimesSHA256);
+    snap.StartSample=s.StartSample; snap.EndSampleExclusive=s.EndSampleExclusive;
+    snap.CoefficientMATFile=row.CoefficientMATFile; snap.CoefficientMATFileSHA256=row.CoefficientMATFileSHA256;
+    snap.TruthStatus="real_lls_evidence";
+    snaps(end+1,1)=localBindRow(snap,identity,"in_path",true); %#ok<AGROW>
+    gain=localPathGainRow(); gain.RunId=string(identity.RunID); gain.TrialId=row.TrialId;
+    gain.ChannelRealizationId=row.ChannelRealizationId; gain.PathGainHash=string(s.PathGainsSHA256);
+    gain.SampleTimeHash=string(s.SampleTimesSHA256); gain.PathGainElementCount=s.PathGainElementCount;
+    gain.SampleTimeCount=s.SampleTimeCount; gain.PathGainDimensions=string(s.PathGainDimensions);
+    gain.EvidenceKind="verified_persisted_path_gain_tensor"; gain.SegmentIndex=k;
+    gain.CoefficientMATFile=row.CoefficientMATFile; gain.CoefficientMATFileSHA256=row.CoefficientMATFileSHA256;
+    gain.TruthStatus="real_lls_evidence";
+    gains(end+1,1)=localBindRow(gain,identity,"in_path",true); %#ok<AGROW>
+end
 end
 
 function T = localLargeScaleTable(cfg, identity, sets)
@@ -221,10 +283,12 @@ for si = 1:size(sets, 1)
         row.RunId = string(identity.RunID); row.ScenarioName = string(identity.ScenarioID);
         row.LinkId = direction + ":" + string(localValue(T, "RuntimeChannelLinkKey", ii, localTrialId(direction,T,ii)));
         row.ChannelRealizationId = string(localValue(T, "ChannelRealizationId", ii, ""));
+        if localHasChannelArtifactClaim(T,ii), row.ChannelRealizationId=string(T.ChannelObservationID(ii)); end
         row.PathlossModel = string(localValue(T, "PathlossModelSource", ii, ...
             sixgr.util.structGet(cfg, "channel.pathlossModel", "")));
-        row.Distance3Dm = double(localValue(T, "PropagationDistance_m", ii, NaN));
-        row.Distance2Dm = row.Distance3Dm;
+        row.Distance3Dm = double(localValue(T, "RuntimeGeometryDistance3D_m", ii, NaN));
+        row.Distance2Dm = double(localValue(T, "RuntimeGeometryDistance2D_m", ii, NaN));
+        row.GeometrySource=string(localValue(T,"RuntimeGeometrySource",ii,"unavailable_executed_link_geometry"));
         row.PathlossDbConfigured = double(localValue(T, "AppliedPathloss_dB", ii, NaN));
         row.PathlossDbApplied = row.PathlossDbConfigured;
         row.ShadowFadingStdDb = double(sixgr.util.structGet(cfg, "channel.shadowFadingStd_dB", NaN));
@@ -232,9 +296,36 @@ for si = 1:size(sets, 1)
         row.O2IModelSource = string(localValue(T, "O2IModelSource", ii, ""));
         row.O2IPenetrationLossDbApplied = double(localValue(T, "AppliedO2I_dB", ii, NaN));
         row.TotalLargeScaleLossDbApplied = double(localValue(T, "AppliedLargeScaleLoss_dB", ii, NaN));
-        row.ExpectedDeltaDb = row.TotalLargeScaleLossDbApplied;
-        row.MeasuredDeltaDb = row.TotalLargeScaleLossDbApplied;
-        row.ToleranceDb = 0;
+        % Net executed gain includes endpoint gains/additional loss, not
+        % pathloss alone. Compare two independently captured sample energies
+        % with the expected output energy over the SAME execution segments.
+        before=double(localValue(T,"LargeScaleInputEnergy_mWsample",ii,NaN));
+        after=double(localValue(T,"LargeScaleOutputEnergy_mWsample",ii,NaN));
+        expected=double(localValue(T,"LargeScaleExpectedOutputEnergy_mWsample",ii,NaN));
+        count=double(localValue(T,"LargeScaleSampleElementCount",ii,NaN));
+        tolerance=double(localValue(T,"LargeScalePowerClosureRelativeTolerance",ii,NaN));
+        row.PowerMeasurementSource=string(localValue(T,"LargeScaleMeasurementSource",ii,""));
+        row.PowerMeasurementStartSample=double(localValue(T,"LargeScaleMeasurementStartSample",ii,NaN));
+        row.PowerMeasurementEndSampleExclusive=double(localValue(T,"LargeScaleMeasurementEndSampleExclusive",ii,NaN));
+        captureStart=double(localValue(T,"RuntimeChannelStartSample",ii,NaN));
+        captureEnd=double(localValue(T,"RuntimeChannelEndSample",ii,NaN));
+        scopeOk=all(isfinite([row.PowerMeasurementStartSample row.PowerMeasurementEndSampleExclusive ...
+            captureStart captureEnd])) && captureEnd>captureStart && ...
+            row.PowerMeasurementStartSample<=captureStart && row.PowerMeasurementEndSampleExclusive>=captureEnd;
+        energyAvailable=all(isfinite([before after expected count tolerance])) && ...
+            all([before after expected count]>0) && tolerance>0 && tolerance<1 && ...
+            count==fix(count) && scopeOk && strlength(strtrim(row.PowerMeasurementSource))>0;
+        powerClosure=false;
+        if energyAvailable
+            row.WaveformPowerBeforeDb=10*(log10(before)-log10(count));
+            row.WaveformPowerAfterDb=10*(log10(after)-log10(count));
+            row.ExpectedDeltaDb=10*(log10(before)-log10(expected));
+            row.MeasuredDeltaDb=10*(log10(before)-log10(after));
+            row.ToleranceDb=-10/log(10)*log1p(-tolerance);
+            powerClosure=abs(after-expected)<=tolerance*expected;
+        end
+        row.PowerMeasurementAvailable=energyAvailable;
+        row.PowerClosureOk=powerClosure;
         row.PathlossConfigured = pathConfigured;
         row.PathlossApplied = pathConfigured && isfinite(row.PathlossDbApplied);
         row.ShadowFadingConfigured = shadowConfigured;
@@ -243,9 +334,14 @@ for si = 1:size(sets, 1)
         row.O2IApplied = o2iConfigured && isfinite(row.O2IPenetrationLossDbApplied);
         row.AppliedOk = row.PathlossConfigured == row.PathlossApplied && ...
             row.ShadowFadingConfigured == row.ShadowFadingApplied && ...
-            row.O2IConfigured == row.O2IApplied && isfinite(row.TotalLargeScaleLossDbApplied);
+            row.O2IConfigured == row.O2IApplied && isfinite(row.TotalLargeScaleLossDbApplied) && powerClosure;
         row.TruthStatus = "real_lls_evidence";
         row.FailureReason = localReason(row.AppliedOk, "", "runtime_large_scale_configured_applied_mismatch");
+        if ~energyAvailable
+            row.FailureReason="runtime_large_scale_independent_energy_missing";
+        elseif ~powerClosure
+            row.FailureReason="runtime_large_scale_measured_power_mismatch";
+        end
         row = localBindRow(row, identity, "in_path", true);
         rows(end+1,1) = row; %#ok<AGROW>
     end
@@ -393,10 +489,31 @@ for si = 1:size(sets,1)
         row.RFConfigured = configured || ...
             double(localValue(T0,"TxRFConfiguredStageCount",ii,0)) > 0 || ...
             double(localValue(T0,"RxRFConfiguredStageCount",ii,0)) > 0;
+        manifest=string(localValue(T0,"RFExecutionManifestJSON",ii,""));
+        retainedClaim=strlength(strtrim(manifest))>0 || ...
+            strlength(string(localValue(T0,"RFExecutionEvidenceSource",ii,"")))>0 || ...
+            isfinite(double(localValue(T0,"TxRFExecutedStageCount",ii,NaN))) || ...
+            isfinite(double(localValue(T0,"RxRFExecutedStageCount",ii,NaN)));
+        executionOk=true;
+        if retainedClaim
+            rfEvidence=sixgr.channel.validateSharedRFExecutionEvidence(T0(ii,:));
+            executionOk=rfEvidence.Ok;
+            row.RFExecuted=rfEvidence.AnyStageExecuted;
+            row.RFExecutionEvidenceSource=rfEvidence.Source;
+            row.TXSegmentWaveformChanged=rfEvidence.AnyTXSegmentWaveformChanged;
+            row.RXSegmentWaveformChanged=rfEvidence.AnyRXSegmentWaveformChanged;
+            row.RFExecutionManifestSHA256=string(localValue(T0,"RFExecutionManifestSHA256",ii,""));
+        else
+            % Preserve legacy strict/mutation evidence until those producer
+            % rows carry independently verifiable retained execution records.
+            row.RFExecuted=row.WaveformChanged;
+            row.RFExecutionEvidenceSource="legacy_strict_RX_mutation_evidence_not_retained_execution";
+        end
         row.StrictOk = logical(T0.RFStrictOk(ii)) && localIsHash(row.WaveformBeforeHash) && ...
-            localIsHash(row.WaveformAfterHash) && strlength(row.RFImpairmentChainId) > 0;
+            localIsHash(row.WaveformAfterHash) && strlength(row.RFImpairmentChainId) > 0 && executionOk;
         row.TruthStatus = "real_lls_evidence";
         row.FailureReason = localReason(row.StrictOk,"","runtime_rf_chain_identity_or_hash_missing");
+        if ~executionOk, row.FailureReason=rfEvidence.FailureReason; end
         row = localBindRow(row,identity,"in_path",true);
         rows(end+1,1) = row; %#ok<AGROW>
     end
@@ -435,6 +552,7 @@ for si=1:size(sets,1)
         row.CellId=double(localValue(T0,"BaseStationID",ii,NaN));
         row.UEId=double(localValue(T0,"UEIndex",ii,NaN));
         row.ChannelRealizationId=string(localValue(T0,"ChannelRealizationId",ii,""));
+        if localHasChannelArtifactClaim(T0,ii), row.ChannelRealizationId=string(T0.ChannelObservationID(ii)); end
         row.RFImpairmentChainId=string(localValue(T0,"RFImpairmentChainId",ii,""));
         row.ReferenceValid=strlength(row.ChannelRealizationId)>0 && strlength(row.RFImpairmentChainId)>0;
         row.Status=localReason(row.ReferenceValid,"runtime_waveform_reference_available","runtime_reference_missing");
@@ -458,7 +576,7 @@ rows(end+1,1)=localConfiguredPositive(identity,"runtime_interference","interfere
     localOnOff(any(logical(intT.InterferenceApplied))),all(logical(intT.StrictOk))); %#ok<AGROW>
 rows(end+1,1)=localConfiguredPositive(identity,"runtime_rf_chain","rf_impairment_chain", ...
     localOnOff(any(logical(rfT.RFConfigured))), ...
-    localOnOff(any(logical(rfT.WaveformChanged))),all(logical(rfT.StrictOk))); %#ok<AGROW>
+    localOnOff(any(logical(rfT.RFExecuted))),all(logical(rfT.StrictOk))); %#ok<AGROW>
 T=struct2table(rows,"AsArray",true);
 ok=all(logical(T.StrictOk)) && all(logical(T.ConfiguredAppliedMatch));
 end
@@ -696,22 +814,33 @@ row=struct("RunId","","ScenarioName","","TrialId","","ChannelRealizationId","", 
 "MaxDopplerHz",NaN,"DelaySpreadSec",NaN,"WaveformBeforeHash","","WaveformAfterHash","","PathGainsHash","", ...
 "ChannelSnapshotHash","","WaveformChanged",false,"PathGainsExported",false,"ChannelSnapshotExported",false, ...
 "MeasuredRMSDelaySpreadSec",NaN,"ChannelMatrixRows",NaN,"ChannelMatrixColumns",NaN,"StrictOk",false,"TruthStatus","","FailureReason","");
+row.ChannelEvidenceKind=""; row.WaveformHashScope=""; row.SnapshotManifestSHA256="";
+row.CoefficientMATFile=""; row.CoefficientMATFileSHA256="";
+row.SampleTimeSec=NaN; row.SampleRateHz=NaN; row.SampleRateSource="";
 row=localIdentityFields(row); end
 function row=localSnapshotRow()
 row=struct("RunId","","TrialId","","ChannelRealizationId","","SnapshotIndex",NaN,"SampleTimeSec",NaN, ...
 "SampleRateHz",NaN,"SampleRateSource","","MagnitudeMean",NaN,"PhaseMeanRad",NaN, ...
-"ChannelSnapshotHash","","TruthStatus",""); row=localIdentityFields(row); end
+"ChannelSnapshotHash","","TruthStatus","");
+row.SnapshotRepresentation=""; row.PathFiltersHash=""; row.SampleTimeHash="";
+row.StartSample=NaN; row.EndSampleExclusive=NaN; row.CoefficientMATFile=""; row.CoefficientMATFileSHA256="";
+row=localIdentityFields(row); end
 function row=localPathGainRow()
 row=struct("RunId","","TrialId","","ChannelRealizationId","","PathGainHash","","SampleTimeHash","", ...
-"PathGainElementCount",NaN,"SampleTimeCount",NaN,"PathGainDimensions","","TruthStatus",""); row=localIdentityFields(row); end
+"PathGainElementCount",NaN,"SampleTimeCount",NaN,"PathGainDimensions","","TruthStatus","");
+row.EvidenceKind=""; row.SegmentIndex=NaN; row.CoefficientMATFile=""; row.CoefficientMATFileSHA256="";
+row=localIdentityFields(row); end
 function row=localLargeScaleRow()
 row=struct("RunId","","ScenarioName","","LinkId","","ChannelRealizationId","","PathlossModel","","LOSState",false, ...
-"O2IState",false,"Distance2Dm",NaN,"Distance3Dm",NaN,"PathlossDbConfigured",NaN,"PathlossDbApplied",NaN, ...
+"O2IState",false,"Distance2Dm",NaN,"Distance3Dm",NaN,"GeometrySource","", ...
+"PathlossDbConfigured",NaN,"PathlossDbApplied",NaN, ...
 "ShadowFadingStdDb",NaN,"ShadowFadingDbApplied",NaN,"O2IModelSource","","O2IPenetrationLossDbApplied",NaN, ...
 "TotalLargeScaleLossDbApplied",NaN,"WaveformPowerBeforeDb",NaN,"WaveformPowerAfterDb",NaN,"ExpectedDeltaDb",NaN, ...
 "MeasuredDeltaDb",NaN,"ToleranceDb",NaN,"PathlossConfigured",false,"PathlossApplied",false, ...
 "ShadowFadingConfigured",false,"ShadowFadingApplied",false,"O2IConfigured",false,"O2IApplied",false, ...
-"AppliedOk",false,"TruthStatus","","FailureReason",""); row=localIdentityFields(row); end
+"AppliedOk",false,"TruthStatus","","FailureReason","", ...
+"PowerMeasurementAvailable",false,"PowerClosureOk",false,"PowerMeasurementSource","", ...
+"PowerMeasurementStartSample",NaN,"PowerMeasurementEndSampleExclusive",NaN); row=localIdentityFields(row); end
 function row=localInterferenceRow()
 row=struct("RunId","","ScenarioName","","InterferenceModelId","","InterfererCellId",NaN,"InterfererSectorId",NaN, ...
 "InterfererUEId",NaN,"VictimCellId",NaN,"VictimUEId",NaN,"Direction","","ResourceOverlap","","TxPowerDbm",NaN, ...
@@ -732,7 +861,9 @@ row=struct("RunId","","TrialId","","RFImpairmentChainId","","Direction","","TxOr
 "TimingOffsetSamplesConfigured",NaN,"TimingOffsetSamplesApplied",NaN,"SampleClockOffsetEnabled",false,"SampleClockOffsetPpm",NaN, ...
 "QuantizationEnabled",false,"ADCBits",NaN,"DACBits",NaN,"WaveformBeforeHash","","WaveformAfterHash","", ...
 "WaveformChanged",false,"EVMMeasuredDb",NaN,"EVMMeasuredPercent",NaN,"RFConfigured",false,"StrictOk",false, ...
-"TruthStatus","","FailureReason",""); row=localIdentityFields(row); end
+"TruthStatus","","FailureReason","", ...
+"RFExecuted",false,"RFExecutionEvidenceSource","","RFExecutionManifestSHA256","", ...
+"TXSegmentWaveformChanged",false,"RXSegmentWaveformChanged",false); row=localIdentityFields(row); end
 function row=localEVMRow()
 row=struct("RunId","","TrialId","","RFImpairmentChainId","","Direction","","MeasurementPoint","","EVMDb",NaN, ...
 "EVMPercent",NaN,"CFOHzEstimated",NaN,"IQImageRejectionDb",NaN,"PACompressionDb",NaN,"PhaseNoiseMetric",NaN, ...

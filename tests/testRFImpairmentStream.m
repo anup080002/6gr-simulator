@@ -1,6 +1,8 @@
 function ok=testRFImpairmentStream()
 % Actual OFDM sample processing, not a complete RF conformance campaign.
 setup6GRSimToolkit('Verbose',false);
+localError(@()sixgr.rf.waveformSHA256(struct('Configured',true)), ...
+    'sixgr:rf:WaveformHashSamplesRequired');
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
     'lls_causal_access_to_data_wiring_tdd.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
@@ -33,6 +35,8 @@ for direction=["DL","UL"]
     whole=sixgr.rf.runtime.RFImpairmentStream(cfg,endpoint,direction,fs,2,first,epoch,false);
     split=sixgr.rf.runtime.RFImpairmentStream(cfg,endpoint,direction,fs,2,first,epoch,false);
     expected=whole.apply(sixgr.phy.waveform.WaveformChunk(x,first),epoch);
+    assert(all(expected.StageTrace.Executed(expected.StageTrace.Enabled)) && ...
+        expected.Replay.RFExecutedStageCount==sum(expected.StageTrace.Executed));
     y=zeros(size(x),'like',x); gains=zeros(0,1); start=0;
     for stop=unique([1 17 73 777 size(x,1)])
         chunk=sixgr.phy.waveform.WaveformChunk(x(start+1:stop,:),first+start);
@@ -45,6 +49,14 @@ for direction=["DL","UL"]
         end
         assert(replay.RFStreamStartSample==first+start && replay.RFStreamEndSampleExclusive==first+stop);
         assert(replay.RFProcessingMode=="retained_sample_stream" && replay.AGCDecisionCausal);
+        assert(replay.RFStrictOk && ...
+            string(replay.RFOutputWaveformSHA256)==string(sixgr.rf.waveformSHA256(part)), ...
+            'Retained replay must carry the actual strict result and sample-content hash.');
+        if endpoint=="rx"
+            assert(replay.AGCStreamTrace.StartSample==first+start && ...
+                replay.AGCStreamTrace.EndSampleExclusive==first+stop, ...
+                'Each AGC trace must use the physical origin exactly once.');
+        end
         y(start+1:stop,:)=part;
         if endpoint=="rx", gains=[gains;replay.AGCStreamTrace.AppliedGain_dB]; end %#ok<AGROW>
         start=stop;

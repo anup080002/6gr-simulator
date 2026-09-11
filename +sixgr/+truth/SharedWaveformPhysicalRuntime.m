@@ -16,6 +16,8 @@ classdef SharedWaveformPhysicalRuntime < handle
         Transmitters = struct('ID',{},'RF',{})
         Receivers = struct('ID',{},'RF',{},'NoiseVariance',{},'NoiseSeed',{},'NoiseState',{},'NoiseReplay',{})
         Links = struct('ID',{},'TX',{},'RX',{},'State',{},'Config',{},'LossReplay',{},'TrailingIdleSamples',{})
+        ScoringPlanes = struct('ID',{},'LinkID',{},'RX',{})
+        ChannelReferenceRequests = struct('LinkID',{},'RX',{},'Start',{},'End',{})
     end
     methods
         function obj=SharedWaveformPhysicalRuntime(fs,first,epoch)
@@ -42,11 +44,33 @@ classdef SharedWaveformPhysicalRuntime < handle
             cfg=sixgr.util.structSet(cfg,'lls6g.userContext.RuntimeCurrentDirection',upper(string(direction)));
             [~,ledger]=sixgr.link.applyWaveformImpairments(complex(zeros(1,nAnt)), ...
                 cfg,obj.SampleRateHz,'ApplyRFChain',false);
-            if string(ledger.NoiseOperatingMode)~="receiver_noise_figure_thermal_noise"
-                error('WAVEFORM:ReceiverThermalNoiseAuthorityRequired', ...
-                    'A physical shared receiver requires absolute thermal-noise/NF authority, not per-block requested SNR.');
+            noiseMode=lower(strtrim(string(ledger.NoiseOperatingMode)));
+            if noiseMode=="receiver_noise_figure_thermal_noise"
+                variance=sixgr.link.resolveReceiverThermalNoiseVariance(ledger);
+                ledger.SharedNoiseCalibrationSource= ...
+                    'receiver_thermal_noise_psd_times_sample_bandwidth';
+            elseif noiseMode=="standalone_awgn_snr_argument"
+                carrier=sixgr.phy.grid.makeCarrier(cfg);
+                calibration=sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier);
+                requested=double(sixgr.truth.resolveWaveformOperatingPointMetadata(cfg));
+                signalEnergy=1;
+                gridVariance=signalEnergy*10^(-requested/10);
+                variance=gridVariance/double(calibration.SampleToGridNoiseVarianceGain);
+                ledger.ConfiguredSNR_dB=requested;
+                ledger.RequestedAWGNReferenceSNR_dB=requested;
+                ledger.SignalEnergyPerOccupiedRE=signalEnergy;
+                ledger.GridNoiseVariance=gridVariance;
+                ledger.SampleNoiseVariance=variance;
+                ledger.SampleToGridNoiseVarianceGain=double(calibration.SampleToGridNoiseVarianceGain);
+                ledger.SNRReferencePlane='occupied_resource_grid_re_pre_equalization';
+                ledger.SharedNoiseCalibrationSource= ...
+                    'fixed_once_from_unit_occupied_re_energy_and_canonical_ofdm_noise_transform';
+                ledger.ThermalSampleNoiseBandwidth_Hz=NaN;
+                ledger.ThermalNoisePSD_mWPerHz=NaN;
+            else
+                error('WAVEFORM:SharedNoiseOperatingModeUnsupported', ...
+                    'Shared waveform execution requires thermal-noise or fixed occupied-RE Es/N0 authority; got %s.',noiseMode);
             end
-            variance=sixgr.link.resolveReceiverThermalNoiseVariance(ledger);
             validateattributes(variance,{'numeric'},{'real','scalar','finite','positive'});
             seed=sixgr.util.structGet(cfg,'run.seed',[]);
             validateattributes(seed,{'numeric'},{'real','scalar','finite','integer','nonnegative'});
@@ -55,7 +79,9 @@ classdef SharedWaveformPhysicalRuntime < handle
             identity=struct('ReceiverID',id,'Direction',rf.Chain.Direction,'RunSeed',seed, ...
                 'CarrierFrequencyHz',frequency,'SampleRateHz',obj.SampleRateHz, ...
                 'OriginSample',obj.NextSampleIndex,'Epoch',obj.ConfigurationEpoch, ...
-                'Role','physical_receiver_thermal_noise');
+                'Role','physical_receiver_noise','NoiseOperatingMode',char(noiseMode), ...
+                'ConfiguredSNR_dB',double(sixgr.util.structGet(ledger, ...
+                    'RequestedAWGNReferenceSNR_dB',NaN)));
             digest=sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(identity),'UTF-8')));
             noiseSeed=hex2dec(extractBefore(digest,9));
             obj.Receivers(end+1)=struct('ID',id,'RF',rf,'NoiseVariance',variance, ...
@@ -158,6 +184,41 @@ classdef SharedWaveformPhysicalRuntime < handle
             for k=1:numel(obj.Links), states{k}=obj.Links(k).State; end
         end
 
+        function id=registerLinkScoringPlane(obj,runtime,linkID,receiverID)
+            % Observe the already executed link contribution. This plane
+            % never feeds an RF chain, receiver estimator or transmission.
+            obj.assertMutable();
+            assert(isa(runtime,'sixgr.phy.waveform.WaveformEventRuntime') && ...
+                runtime.SampleRateHz==obj.SampleRateHz && ...
+                runtime.NextSampleIndex==obj.NextSampleIndex && isequal(runtime.ProcessorState,obj), ...
+                'WAVEFORM:ScoringPlaneClockMismatch','Register scoring with the actual physical clock owner.');
+            obj.findID(obj.Links,linkID);
+            rx=obj.findID(obj.Receivers,receiverID);
+            id=string(linkID)+":"+string(receiverID)+":desired_pre_noise";
+            if any(string({obj.ScoringPlanes.ID})==id), return; end
+            runtime.addReceiver(id,obj.Receivers(rx).RF.NumAntennas);
+            obj.ScoringPlanes(end+1)=struct('ID',id,'LinkID',string(linkID),'RX',rx);
+        end
+
+        function requestLinkChannelReference(obj,runtime,linkID,receiverID,first,stop)
+            obj.assertMutable();
+            assert(isa(runtime,'sixgr.phy.waveform.WaveformEventRuntime') && ...
+                isequal(runtime.ProcessorState,obj) && runtime.NextSampleIndex==obj.NextSampleIndex, ...
+                'WAVEFORM:ScoringPlaneClockMismatch','Request evidence from the authoritative clock owner.');
+            obj.findID(obj.Links,linkID); rx=obj.findID(obj.Receivers,receiverID);
+            validateattributes(first,{'numeric'},{'scalar','real','finite','integer','>=',obj.NextSampleIndex});
+            validateattributes(stop,{'numeric'},{'scalar','real','finite','integer','>',first});
+            % Multiple consumers of one link/window share one capture, not
+            % duplicated coefficient tensors. Distinct overlapping windows
+            % remain separately scoped to their own receiver observations.
+            requests=obj.ChannelReferenceRequests;
+            if any(string({requests.LinkID})==string(linkID) & [requests.RX]==rx & ...
+                    [requests.Start]==first & [requests.End]==stop)
+                return;
+            end
+            obj.ChannelReferenceRequests(end+1)=struct('LinkID',string(linkID),'RX',rx,'Start',first,'End',stop);
+        end
+
         function [outputs,execution,nextState]=process(obj,inputs,first,stop,unusedState) %#ok<INUSD>
             obj.assertMutable();
             obj.validateInterval(inputs,first,stop);
@@ -169,7 +230,9 @@ classdef SharedWaveformPhysicalRuntime < handle
                     'ApproximationMode','none','StartSample',first,'EndSampleExclusive',stop, ...
                     'TX',struct('ID',{},'Replay',{}), ...
                     'Links',struct('ID',{},'TX',{},'RX',{},'Replay',{},'LossReplay',{}), ...
-                    'RX',struct('ID',{},'Replay',{}));
+                    'RX',struct('ID',{},'Replay',{}), ...
+                    'ScoringPlanes',struct('ID',{},'LinkID',{},'TX',{},'RX',{},'Active',{},'Source',{}), ...
+                    'ChannelReferences',struct('LinkID',{},'TX',{},'RX',{},'Reference',{}));
                 txSamples=cell(numel(obj.Transmitters),1);
                 for k=1:numel(obj.Transmitters)
                     node=obj.Transmitters(k); index=obj.findID(inputs,node.ID);
@@ -182,17 +245,39 @@ classdef SharedWaveformPhysicalRuntime < handle
                 for k=1:numel(obj.Receivers)
                     sums{k}=complex(zeros(stop-first,obj.Receivers(k).RF.NumAntennas,'like',txSamples{1}));
                 end
+                contributions=cell(numel(obj.Links),1);
                 for k=1:numel(obj.Links)
                     link=obj.Links(k); x=txSamples{link.TX};
-                    [contribution,replay,state]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
+                    requests=obj.ChannelReferenceRequests;
+                    hits=find(string({requests.LinkID})==link.ID & [requests.RX]==link.RX & ...
+                        [requests.Start]<stop & [requests.End]>first);
+                    [contribution,replay,state,reference]=sixgr.channel.ChannelFactory.applyRuntimeChannelState( ...
                         link.State,x,'OutputSampleAlignment','continuous_raw_samples', ...
-                        'InputSampleDomain','materialized_channel_ports');
+                        'InputSampleDomain','materialized_channel_ports','CaptureChannelReference',~isempty(hits));
+                    for h=hits
+                        request=requests(h); bounded=reference;
+                        bounded.ObservationStartSample=request.Start;
+                        bounded.ObservationEndSampleExclusive=request.End;
+                        bounded.StartSample=max(first,request.Start);
+                        bounded.EndSampleExclusive=min(stop,request.End);
+                        indices=(bounded.StartSample-first+1):(bounded.EndSampleExclusive-first);
+                        bounded.PathGains=reference.PathGains(indices,:,:,:);
+                        bounded.SampleTimes_s=reference.SampleTimes_s(indices);
+                        bounded.ExecutionStartSample=first; bounded.ExecutionEndSampleExclusive=stop;
+                        execution.ChannelReferences(end+1)=struct('LinkID',link.ID, ...
+                            'TX',obj.Transmitters(link.TX).ID,'RX',obj.Receivers(link.RX).ID, ...
+                            'Reference',bounded); %#ok<AGROW>
+                    end
                     if state.CurrentSampleIndex~=stop || ...
                             ~isequal(size(contribution),size(sums{link.RX}))
                         error('WAVEFORM:LinkOutputClockMismatch','Each link must return exactly the consumed physical interval.');
                     end
                     gain=double(link.LossReplay.AppliedLargeScaleAmplitudeGain);
+                    beforeGain=contribution;
                     contribution=contribution.*cast(gain,'like',contribution);
+                    lossReplay=link.LossReplay;
+                    lossReplay.GainStageMeasurement=sixgr.truth.measureWaveformGainEnergy(beforeGain,contribution);
+                    contributions{k}=contribution;
                     sums{link.RX}=sums{link.RX}+contribution;
                     lastNonzero=find(any(x~=0,2),1,'last');
                     if isempty(lastNonzero)
@@ -202,7 +287,24 @@ classdef SharedWaveformPhysicalRuntime < handle
                     end
                     obj.Links(k).State=state;
                     execution.Links(end+1)=struct('ID',link.ID,'TX',obj.Transmitters(link.TX).ID, ...
-                        'RX',obj.Receivers(link.RX).ID,'Replay',replay,'LossReplay',link.LossReplay);
+                        'RX',obj.Receivers(link.RX).ID,'Replay',replay,'LossReplay',lossReplay);
+                end
+                for plane=obj.ScoringPlanes
+                    k=obj.findID(obj.Links,plane.LinkID); link=obj.Links(k);
+                    active=link.RX==plane.RX;
+                    if active
+                        samples=contributions{k};
+                    else
+                        % The reciprocal TDD link currently points at the
+                        % opposite endpoint: its contribution HERE is zero.
+                        % This is not padding a missing receiver observation.
+                        samples=zeros(size(sums{plane.RX}),'like',sums{plane.RX});
+                    end
+                    outputs(end+1)=struct('ID',plane.ID, ...
+                        'Chunk',sixgr.phy.waveform.WaveformChunk(samples,first)); %#ok<AGROW>
+                    execution.ScoringPlanes(end+1)=struct('ID',plane.ID,'LinkID',plane.LinkID, ...
+                        'TX',obj.Transmitters(link.TX).ID,'RX',obj.Receivers(plane.RX).ID, ...
+                        'Active',active,'Source',"actual_link_contribution_after_tx_rf_channel_loss_before_sum_noise_rx_rf");
                 end
                 for k=1:numel(obj.Receivers)
                     node=obj.Receivers(k);
@@ -216,12 +318,32 @@ classdef SharedWaveformPhysicalRuntime < handle
                     replay=actual.Replay;
                     replay.InjectedNoiseVariance=node.NoiseVariance;
                     replay.InjectedNoiseVarianceDomain='receiver_sample_waveform_pre_composite_front_end';
-                    replay.NoiseVarianceSource='receiver_thermal_noise_plus_nf_absolute_sqrt_mW';
+                    if lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)))== ...
+                            "standalone_awgn_snr_argument"
+                        replay.NoiseVarianceSource= ...
+                            'fixed_unit_occupied_re_esn0_canonical_ofdm_transform';
+                    else
+                        replay.NoiseVarianceSource= ...
+                            'receiver_thermal_noise_plus_nf_absolute_sqrt_mW';
+                    end
                     replay.NoiseStreamSeed=node.NoiseSeed;
                     replay.NoiseBandwidth_Hz=node.NoiseReplay.NoiseBandwidth_Hz;
                     replay.NoiseOperatingMode=node.NoiseReplay.NoiseOperatingMode;
                     replay.ThermalSampleNoiseBandwidth_Hz=node.NoiseReplay.ThermalSampleNoiseBandwidth_Hz;
                     replay.ThermalNoisePSD_mWPerHz=node.NoiseReplay.ThermalNoisePSD_mWPerHz;
+                    replay.RequestedAWGNReferenceSNR_dB=double(sixgr.util.structGet( ...
+                        node.NoiseReplay,'RequestedAWGNReferenceSNR_dB',NaN));
+                    replay.SignalEnergyPerOccupiedRE=double(sixgr.util.structGet( ...
+                        node.NoiseReplay,'SignalEnergyPerOccupiedRE',NaN));
+                    replay.GridNoiseVariance=double(sixgr.util.structGet( ...
+                        node.NoiseReplay,'GridNoiseVariance',NaN));
+                    replay.ReferenceAWGNGridNoiseVariance=replay.GridNoiseVariance;
+                    replay.ReferenceAWGNSampleNoiseVariance=double(sixgr.util.structGet( ...
+                        node.NoiseReplay,'SampleNoiseVariance',NaN));
+                    replay.SampleToGridNoiseVarianceGain=double(sixgr.util.structGet( ...
+                        node.NoiseReplay,'SampleToGridNoiseVarianceGain',NaN));
+                    replay.SharedNoiseCalibrationSource=string(sixgr.util.structGet( ...
+                        node.NoiseReplay,'SharedNoiseCalibrationSource',''));
                     replay.SampleNoiseVariance=NaN;
                     replay.SampleNoiseVarianceDomain='unavailable_requires_received_reference_estimation';
                     % Do not reinterpret a missing/time-varying AGC gain
@@ -238,6 +360,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                     replay.PreRFPowerMeasurementDefinition='total_time_sample_power_over_this_interval_not_SS_or_CSI_RSSI';
                     execution.RX(end+1)=struct('ID',node.ID,'Replay',replay);
                 end
+                obj.ChannelReferenceRequests=obj.ChannelReferenceRequests([obj.ChannelReferenceRequests.End]>stop);
                 obj.NextSampleIndex=stop; nextState=obj;
             catch cause
                 obj.Faulted=true; rethrow(cause);
@@ -295,6 +418,21 @@ classdef SharedWaveformPhysicalRuntime < handle
             [~,ledger]=sixgr.link.applyWaveformImpairments( ...
                 complex(zeros(1,obj.Receivers(rx).RF.NumAntennas)),cfg,obj.SampleRateHz,'ApplyRFChain',false);
             validateattributes(ledger.AppliedLargeScaleAmplitudeGain,{'numeric'},{'real','scalar','finite','positive'});
+            % Retain the geometry supplied to this executed link, not a
+            % later report-time config snapshot. These are physical-model
+            % inputs, not receiver-estimated ranges.
+            d2=double(sixgr.util.structGet(cfg,'channel.distance2D_m',NaN));
+            d3=double(sixgr.util.structGet(cfg,'channel.distance3D_m',NaN));
+            ledger.RuntimeGeometryDistance2D_m=NaN;
+            ledger.RuntimeGeometryDistance3D_m=NaN;
+            ledger.RuntimeGeometrySource='unavailable_executed_link_geometry';
+            if isscalar(d2) && isscalar(d3) && isfinite(d2) && isfinite(d3)
+                assert(d2>=0 && d3>=d2,'WAVEFORM:InvalidPhysicalLinkGeometry', ...
+                    'Executed geometry requires 0 <= horizontal distance <= 3-D distance.');
+                ledger.RuntimeGeometryDistance2D_m=d2;
+                ledger.RuntimeGeometryDistance3D_m=d3;
+                ledger.RuntimeGeometrySource='executed_link_geometry_inputs_not_receiver_measurement';
+            end
             if logical(sixgr.util.structGet(ledger,'FallbackUsedForPathloss',false))
                 error('WAVEFORM:FallbackPhysicalPathlossForbidden','Shared physical execution cannot promote fallback pathloss.');
             end

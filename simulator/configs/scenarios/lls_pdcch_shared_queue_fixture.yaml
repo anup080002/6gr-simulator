@@ -1,0 +1,30 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
+
+meta:
+  scenario_id: lls_pdcch_shared_queue_fixture
+  description: Known-candidate control waveform fixture for the shared physical owner.
+  purpose: Isolate physical contribution and received-window timing; not acquisition or blind-decoding qualification.
+  research_class: optional_research_experiment
+
+control:
+  blind_search_enabled: false
+
+# This component fixture qualifies shared-clock/feedback causality, not the
+# 12 dB link operating point. Keep adequate margin so a seeded CDL fade does
+# not turn a timing regression into an SRS link-budget test.
+simulation:
+  snr_db: 60
+  noise_operating_mode: standalone_awgn_snr_argument
+
+# This is a shared-clock/component fixture, not an O2I link-budget case.
+# Do not inherit attenuation added to the production TDD scenario.
+deployment_topology:
+  indoor_ue_fraction: 0.0
+
+channels:
+  o2i_model: none
+
+initial_access:
+  sib1:
+    enabled: false

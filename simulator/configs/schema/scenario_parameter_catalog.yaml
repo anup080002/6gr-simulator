@@ -965,6 +965,7 @@ sections:
       msg2_pdsch: {required: false, type: struct}
       msg3_pusch: {required: false, type: struct}
       msg4_pdsch: {required: false, type: struct}
+      msg4_dci: {required: false, type: struct}
       setup_complete_pusch: {required: false, type: struct}
       channel_model:
         required: false
@@ -1199,6 +1200,7 @@ sections:
       generate_summary_plots: {required: true, type: boolean}
       live_publish_frame_interval: {required: false, type: integer, min: 1}
       live_heavy_refresh_interval_frames: {required: false, type: integer, min: 1}
+      live_csv_png_enabled: {required: false, type: boolean}
       live_heavy_refresh_each_sweep_point: {required: false, type: boolean}
       emit_placeholder_artifacts: {required: false, type: boolean}
       emit_disabled_audit_artifacts: {required: false, type: boolean}

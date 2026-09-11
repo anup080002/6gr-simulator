@@ -209,7 +209,8 @@ slotDur_s = localSlotDuration(cfgUL);
 trialSeed = NaN(numFrames,1);
 trialFrame = startFrameIndex + (0:numFrames-1).';
 trialSlot = startSlotIndex + (0:numFrames-1).';
-trialSFN = trialFrame;
+% Reporting Frame is one-based; radio SFN is owned by the executed carrier.
+trialSFN = NaN(numFrames,1);
 trialRuntimeAbsoluteSlot0 = NaN(numFrames,1);
 trialCarrierNSlot = NaN(numFrames,1);
 trialCarrierNFrame = NaN(numFrames,1);
@@ -292,6 +293,7 @@ trialCSIRSSI = NaN(numFrames,1);
 trialCSIRSSISource = strings(numFrames,1);
 trialCSIRSRQ = NaN(numFrames,1);
 trialCSIRSRQSource = strings(numFrames,1);
+trialULNormalizedPowerEvidence = strings(numFrames,1);
 trialCQI = NaN(numFrames,1);
 trialCQISource = strings(numFrames,1);
 trialCQIDerivedMCS = NaN(numFrames,1);
@@ -328,6 +330,7 @@ trialCQIDerivedModulation = strings(numFrames,1);
 trialPMIType = strings(numFrames,1);
 trialPMICodebookMode = strings(numFrames,1);
 trialPMISource = strings(numFrames,1);
+trialULSpatialMeasurementEvidence = strings(numFrames,1);
 trialCSIReportMode = strings(numFrames,1);
 trialCSIPayloadBits = NaN(numFrames,1);
 trialCSIPayloadHex = strings(numFrames,1);
@@ -370,6 +373,7 @@ trialExpectedCSIPart1Bits = strings(numFrames,1);
 trialExpectedCSIPart2Bits = strings(numFrames,1);
 trialDecodedCSIPart1Bits = strings(numFrames,1);
 trialDecodedCSIPart2Bits = strings(numFrames,1);
+trialUCIReceiverEvidenceJSON = strings(numFrames,1);
 trialCSI1ContentMatch = false(numFrames,1);
 trialCSI2ContentMatch = false(numFrames,1);
 trialHARQACKContentMatch = false(numFrames,1);
@@ -518,6 +522,9 @@ trialFrequencyHoppingToolboxMode = strings(numFrames,1);
 trialSecondHopStartPRB = NaN(numFrames,1);
 trialBeamformingApplied = false(numFrames,1);
 trialAppliedBeamIndexSet = strings(numFrames,1);
+trialAppliedCodebookPortIndexSet = strings(numFrames,1);
+trialAppliedCodebookPortIndexDefinition = strings(numFrames,1);
+trialPrecodingNumLogicalPorts = NaN(numFrames,1);
 trialAppliedPrecoderPMI = NaN(numFrames,1);
 trialAppliedPrecoderPMIType = strings(numFrames,1);
 trialAppliedPrecoderCodebookMode = strings(numFrames,1);
@@ -609,6 +616,7 @@ trialEstDoppler = NaN(numFrames,1);
 trialDopplerErr = NaN(numFrames,1);
 trialPhaseTrackErr = NaN(numFrames,1);
 trialQCL = NaN(numFrames,1);
+trialChannelReferenceCorrelation = NaN(numFrames,1);
 trialAgingLoss = NaN(numFrames,1);
 trialInterpLoss = NaN(numFrames,1);
 trialMismatch = NaN(numFrames,1);
@@ -718,6 +726,7 @@ lastExpectedCSIPart1Bits = int8([]);
 lastExpectedCSIPart2Bits = int8([]);
 lastDecodedCSIPart1Bits = int8([]);
 lastDecodedCSIPart2Bits = int8([]);
+lastUCIReceiverEvidence = struct();
 lastCSI1ContentMatch = false;
 lastCSI2ContentMatch = false;
 puschPowerControlState = struct( ...
@@ -857,6 +866,7 @@ for n = 1:numFrames
             "lls6g.runtime.AbsoluteSlotIndex0", NaN));
         trialCarrierNSlot(n) = double(tx.Carrier.NSlot);
         trialCarrierNFrame(n) = double(tx.Carrier.NFrame);
+        trialSFN(n) = mod(trialCarrierNFrame(n), 1024);
         localAssertExecutedCarrierTimeline(cfgFrame, tx.Carrier, "UL");
         observedUEIndex = double(sixgr.util.structGet(grantSnapshotOverride, ...
             "UEIndex", sixgr.util.structGet(cfgFrame, ...
@@ -1023,6 +1033,9 @@ for n = 1:numFrames
             tx, "SecondHopStartPRB", NaN));
         trialBeamformingApplied(n) = logical(ulPrecoding.BeamformingApplied);
         trialAppliedBeamIndexSet(n) = string(ulPrecoding.AppliedBeamIndexSet);
+        trialAppliedCodebookPortIndexSet(n)=string(ulPrecoding.AppliedCodebookPortIndexSet);
+        trialAppliedCodebookPortIndexDefinition(n)=string(ulPrecoding.AppliedCodebookPortIndexDefinition);
+        trialPrecodingNumLogicalPorts(n)=ulPrecoding.PrecodingNumLogicalPorts;
         trialAppliedPrecoderPMI(n) = double(ulPrecoding.AppliedPrecoderPMI);
         trialAppliedPrecoderPMIType(n) = string(ulPrecoding.AppliedPrecoderPMIType);
         trialAppliedPrecoderCodebookMode(n) = string(ulPrecoding.AppliedPrecoderCodebookMode);
@@ -1149,7 +1162,7 @@ for n = 1:numFrames
                 "WaveformAuthority","exact_runtime_pusch_waveform");
         end
         if receivedCompletion && ~isempty(fieldnames(txWaveformCapture))
-            txWaveformCapture.WaveformAuthority = "actual_transmitter_composite_observation";
+            txWaveformCapture.WaveformAuthority = "exact_runtime_transmitter_composite_observation";
         end
         trialPUSCHPowerControlEnabled(n) = logical(powerCtrl.Enabled);
         trialPUSCHPowerControlStatus(n) = string(powerCtrl.Status);
@@ -1179,8 +1192,10 @@ for n = 1:numFrames
         trialRxWaveformBranches(n) = double(size(rxWave, 2));
         trialPhysicalRxAntennas(n) = double(size(rxWave, 2));
         localAssertULHybridReceiveElementDomain(cfgFrameRx, rxWave);
-        cfgFrame = localAttachReceiverSyncRuntimeContext(cfgFrame, chState, replay);
-        cfgFrameRx = localAttachReceiverSyncRuntimeContext(cfgFrameRx, chState, replay);
+        if ~receivedCompletion
+            cfgFrame = localAttachReceiverSyncRuntimeContext(cfgFrame, chState, replay);
+            cfgFrameRx = localAttachReceiverSyncRuntimeContext(cfgFrameRx, chState, replay);
+        end
 
         rxArgs = {"Carrier", tx.Carrier, ...
             "PUSCH", tx.PUSCH, ...
@@ -1190,6 +1205,10 @@ for n = 1:numFrames
             "RV", tx.RV, ...
             "CodingLayout", tx.CodingLayout, ...
             "SkipTimingEstimate", useIdealTimingSync};
+        if receivedCompletion
+            rxArgs=[rxArgs {"TimingSearchWindowSamples", ...
+                preparedTransmission.receiverTimingSearchWindow(p.Results.ReceivedContext.Observation)}];
+        end
         if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
             rxArgs = [rxArgs {"PHYGrant", phyGrantOverride}]; %#ok<AGROW>
         end
@@ -1209,7 +1228,10 @@ for n = 1:numFrames
                 "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
         end
         injectedNoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
-        if isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
+        % Shared samples have passed RF/ADC and measured gain compensation.
+        % Pre-front-end injection variance remains scoring metadata, not a
+        % receiver-domain disturbance estimate. Let DM-RS estimate it here.
+        if ~receivedCompletion && isfinite(injectedNoiseVariance) && injectedNoiseVariance >= 0
             rxArgs = [rxArgs {"NoiseVar", injectedNoiseVariance, "NoiseVarDomain", "time"}]; %#ok<AGROW>
         end
         if logical(sixgr.util.structGet(replay, "InterferenceContributionTensorAvailable", false)) && ...
@@ -1227,6 +1249,9 @@ for n = 1:numFrames
         end
         rxCallTic = tic;
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        if receivedCompletion
+            out.ReceiveTiming = rx.ReceiveTiming;
+        end
         trialReceiverPipelineLatency(n) = 1e3 * toc(rxCallTic);
         trialReceiverPipelineLatencySource(n) = "matlab_tic_toc_pusch_receiver_call";
         trialChannelEstimationLatency(n) = double(sixgr.util.structGet( ...
@@ -1278,6 +1303,10 @@ for n = 1:numFrames
         lastExpectedCSIPart2Bits = int8(sixgr.util.structGet(rx, "ExpectedCSIPart2Bits", int8([])));
         lastDecodedCSIPart1Bits = int8(sixgr.util.structGet(rx, "DecodedCSIPart1Bits", int8([])));
         lastDecodedCSIPart2Bits = int8(sixgr.util.structGet(rx, "DecodedCSIPart2Bits", int8([])));
+        lastUCIReceiverEvidence=sixgr.util.structGet(rx,'UCIReceiverEvidence',struct());
+        if ~isempty(fieldnames(lastUCIReceiverEvidence))
+            trialUCIReceiverEvidenceJSON(n)=string(jsonencode(lastUCIReceiverEvidence));
+        end
         lastCSI1ContentMatch = logical(sixgr.util.structGet(rx, "CSI1ContentMatch", ...
             isempty(lastExpectedCSIPart1Bits)));
         lastCSI2ContentMatch = logical(sixgr.util.structGet(rx, "CSI2ContentMatch", ...
@@ -1533,12 +1562,13 @@ for n = 1:numFrames
             trialMeasuredTrialSINRValueStatus(n) = string(selectedSINR.ValueStatus);
             trialMeasuredTrialSINRNAReason(n) = string(selectedSINR.NAReason);
         end
-        trialCSIRSRP(n) = metrics.CSI_RSRP_dB;
-        trialCSIRSRPSource(n) = string(metrics.CSI_RSRPSource);
-        trialCSIRSSI(n) = metrics.CSI_RSSI_dB;
-        trialCSIRSSISource(n) = string(metrics.CSI_RSSISource);
-        trialCSIRSRQ(n) = metrics.CSI_RSRQ_dB;
-        trialCSIRSRQSource(n) = string(metrics.CSI_RSRQSource);
+        trialCSIRSRP(n) = metrics.ULNormalizedReferencePower_dB;
+        trialCSIRSRPSource(n) = string(metrics.ULNormalizedReferencePowerSource);
+        trialCSIRSSI(n) = metrics.ULNormalizedWindowRSSI_dB;
+        trialCSIRSSISource(n) = string(metrics.ULNormalizedWindowRSSISource);
+        trialCSIRSRQ(n) = metrics.ULNormalizedWindowPowerRatio_dB;
+        trialCSIRSRQSource(n) = string(metrics.ULNormalizedWindowPowerRatioSource);
+        trialULNormalizedPowerEvidence(n)=metrics.ULNormalizedPowerEvidenceJSON;
         rawMeasuredCQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
         receiverCQI = NaN;
         if isfinite(rawMeasuredCQI)
@@ -1578,6 +1608,15 @@ for n = 1:numFrames
         trialPMIType(n) = string(metrics.PMIType);
         trialPMICodebookMode(n) = string(metrics.PMICodebookMode);
         trialPMISource(n) = string(metrics.PMISource);
+        spatialFields={'ChannelEstimateDomain','RankEstimate','RI','RISource', ...
+            'PMI','PMISource','ConfiguredPMI','RuntimeAppliedPMI','CSIReportMode', ...
+            'SRSRITPMIValid','SRSRITPMIStatus','SelectedCodebookPortIndices1Based'};
+        spatialEvidence=struct();
+        for spatialFieldIndex=1:numel(spatialFields)
+            spatialField=spatialFields{spatialFieldIndex};
+            spatialEvidence.(spatialField)=metrics.(spatialField);
+        end
+        trialULSpatialMeasurementEvidence(n)=string(jsonencode(spatialEvidence));
         trialCSIReportMode(n) = string(metrics.CSIReportMode);
         trialCSIPayloadBits(n) = metrics.CSIPayloadBitLength;
         trialCSIPayloadHex(n) = string(metrics.CSIPayloadHex);
@@ -1718,6 +1757,7 @@ for n = 1:numFrames
         trialDopplerErr(n) = trialEstDoppler(n) - dopplerHz;
         trialPhaseTrackErr(n) = double(sixgr.util.structGet(modTrack, "PhaseTrackingError_deg", NaN));
         trialQCL(n) = double(sixgr.util.structGet(modTrack, "QCLAccuracy", NaN));
+        trialChannelReferenceCorrelation(n) = double(modTrack.EstimatedChannelReferenceCorrelationMagnitude);
         trialAgingLoss(n) = double(sixgr.util.structGet(modTrack, "ChannelAgingLoss_dB", NaN));
         trialInterpLoss(n) = double(sixgr.util.structGet(modTrack, "InterpolationLoss_dB", NaN));
         trialMismatch(n) = double(sixgr.util.structGet(modTrack, "MismatchSensitivity_dB", NaN));
@@ -1752,6 +1792,17 @@ for n = 1:numFrames
             end
             constT.Frame = repmat(double(trialFrame(n)), height(constT), 1);
             constT.Slot = repmat(double(trialSlot(n)), height(constT), 1);
+            constT.SFN = repmat(trialSFN(n), nConst, 1);
+            constT.CarrierNFrame = repmat(trialCarrierNFrame(n), nConst, 1);
+            constT.CarrierNSlot = repmat(trialCarrierNSlot(n), nConst, 1);
+            constT.UEIndex = repmat(trialUEIndex(n), nConst, 1);
+            constT.RNTI = repmat(trialRNTI(n), nConst, 1);
+            constT.BaseStationID = repmat(trialBaseStationID(n), nConst, 1);
+            % Cell identity comes from the actual grant/attached UE context,
+            % not a guessed PCI or the reporting frame/UE identifier.
+            constT.ServingCell = repmat(double(sixgr.util.structGet(grantSnapshot, ...
+                "ServingCell", sixgr.util.structGet(cfgFrame, ...
+                "lls6g.userContext.RuntimeServingCell", NaN))), nConst, 1);
             if ismember("SNR_dB", string(constT.Properties.VariableNames))
                 sampleSNR = double(constT.SNR_dB);
                 sampleSNR(~isfinite(sampleSNR)) = snrLineage_dB;
@@ -1771,7 +1822,7 @@ for n = 1:numFrames
             constT.Normalization = repmat(string(modTrack.EVMComputationDomain), nConst, 1);
             constT.TruthStatus = repmat("real_lls_evidence", nConst, 1);
             constT.direction = string(constT.Direction);
-            constT.ue_id = nan(nConst, 1);
+            constT.ue_id = constT.UEIndex;
             constT.slot = double(constT.Slot);
             constT.tb_id = double(constT.TBId);
             constT.layer = double(constT.LayerIndex);
@@ -2110,6 +2161,7 @@ if isstruct(out.HARQ)
     out.HARQ.ExpectedCSIPart2Bits = int8(lastExpectedCSIPart2Bits(:));
     out.HARQ.DecodedCSIPart1Bits = int8(lastDecodedCSIPart1Bits(:));
     out.HARQ.DecodedCSIPart2Bits = int8(lastDecodedCSIPart2Bits(:));
+    out.HARQ.UCIReceiverEvidence=lastUCIReceiverEvidence;
     out.HARQ.CSI1ContentMatch = logical(lastCSI1ContentMatch);
     out.HARQ.CSI2ContentMatch = logical(lastCSI2ContentMatch);
     out.HARQ.UCIOnPUSCHEvidenceSource = char(string( ...
@@ -2121,8 +2173,9 @@ out.ObservedREAllocationTable = localCombineObservedREChunks(observedREChunks);
 if receivedCompletion
     out.ExecutionStage = "received_shared_stream_completed";
     out.PreparationComputeTime_ms = preparedTransmission.PreparationComputeTime_ms;
-    out.TransmitWaveformAuthority = "actual_transmitter_composite_observation";
+out.TransmitWaveformAuthority = "exact_runtime_transmitter_composite_observation";
     out.PUSCHPowerControlState = puschPowerControlState;
+    out.PhysicalTiming = preparedTransmission.PhysicalTiming;
 end
 
 if frameCrash == numFrames
@@ -2137,6 +2190,13 @@ if frameCrash == numFrames
 end
 
 out.TrialTable = localBuildTrialSlice(numFrames);
+if receivedCompletion && ~isempty(out.TrialTable)
+    powerFields=sixgr.truth.measureReceivedDataCarrierPower( ...
+        preparedTransmission,p.Results.ReceivedContext,out.ReceiveTiming);
+    for name=string(fieldnames(powerFields)).'
+        out.TrialTable.(name)=repmat(powerFields.(name),height(out.TrialTable),1);
+    end
+end
 strictTruthRequired = logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
     logical(sixgr.util.structGet(cfg, "run.noProxyTruthContract", false));
 out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
@@ -2275,6 +2335,8 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
             'Status','Crash', ...
              'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
+        T.EstimatedChannelReferenceCorrelationMagnitude = trialChannelReferenceCorrelation(idx);
         T.SymbolDecisionStatus = trialSymbolDecisionStatus(idx);
         T.RuntimeAbsoluteSlotIndex0 = trialRuntimeAbsoluteSlot0(idx);
         T.CarrierNSlot = trialCarrierNSlot(idx);
@@ -2425,6 +2487,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ExpectedCSIPart2Bits = trialExpectedCSIPart2Bits(idx);
         T.DecodedCSIPart1Bits = trialDecodedCSIPart1Bits(idx);
         T.DecodedCSIPart2Bits = trialDecodedCSIPart2Bits(idx);
+        T.UCIReceiverEvidenceJSON = trialUCIReceiverEvidenceJSON(idx);
         T.CSI1ContentMatch = trialCSI1ContentMatch(idx);
         T.CSI2ContentMatch = trialCSI2ContentMatch(idx);
         T.UCIOnPUSCHCSIReportIdentity = repmat(string(sixgr.util.structGet( ...
@@ -2553,17 +2616,19 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.LargeScaleSINRSource = trialLargeScaleSINRSource(idx);
         T.ServingRSRP_dBm = trialServingRSRP(idx);
         T.ServingRSRPSource = trialServingRSRPSource(idx);
-        T.CSI_RSRP_dB = trialCSIRSRP(idx);
-        T.CSI_RSRPSource = trialCSIRSRPSource(idx);
-        T.CSI_RSSI_dB = trialCSIRSSI(idx);
-        T.CSI_RSSISource = trialCSIRSSISource(idx);
-        T.CSI_RSRQ_dB = trialCSIRSRQ(idx);
-        T.CSI_RSRQSource = trialCSIRSRQSource(idx);
+        T.ULNormalizedReferencePower_dB = trialCSIRSRP(idx);
+        T.ULNormalizedReferencePowerSource = trialCSIRSRPSource(idx);
+        T.ULNormalizedWindowRSSI_dB = trialCSIRSSI(idx);
+        T.ULNormalizedWindowRSSISource = trialCSIRSSISource(idx);
+        T.ULNormalizedWindowPowerRatio_dB = trialCSIRSRQ(idx);
+        T.ULNormalizedWindowPowerRatioSource = trialCSIRSRQSource(idx);
+        T.ULNormalizedPowerEvidenceJSON=trialULNormalizedPowerEvidence(idx);
         T.BeamScoreVector_dB = trialBeamScoreVector(idx);
         T.TopBeamIndexSet = trialTopBeamIndexSet(idx);
         T.TopBeamGainSet_dB = trialTopBeamGainSet(idx);
         T.BeamScoreSource = trialBeamScoreSource(idx);
         T.PMISource = trialPMISource(idx);
+        T.ULSpatialMeasurementEvidenceJSON=trialULSpatialMeasurementEvidence(idx);
         T.AppliedLargeScaleGain_dB = trialAppliedLargeScaleGain(idx);
         T.AppliedLargeScaleLoss_dB = trialAppliedLargeScaleLoss(idx);
         T.AppliedBasePathloss_dB = trialAppliedBasePathloss(idx);
@@ -2670,6 +2735,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.SecondHopStartPRB = trialSecondHopStartPRB(idx);
         T.BeamformingApplied = trialBeamformingApplied(idx);
         T.AppliedBeamIndexSet = trialAppliedBeamIndexSet(idx);
+        T.AppliedCodebookPortIndexSet=trialAppliedCodebookPortIndexSet(idx);
+        T.AppliedCodebookPortIndexDefinition=trialAppliedCodebookPortIndexDefinition(idx);
+        T.PrecodingNumLogicalPorts=trialPrecodingNumLogicalPorts(idx);
         T.AppliedPrecoderPMI = trialAppliedPrecoderPMI(idx);
         T.AppliedPrecoderPMIType = trialAppliedPrecoderPMIType(idx);
         T.AppliedPrecoderCodebookMode = trialAppliedPrecoderCodebookMode(idx);
@@ -2692,6 +2760,26 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T = localApplyRuntimeEvidenceColumns(T, trialRuntimeEvidence(idx));
         T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, trialMeasuredPHYEvidence(idx));
         T = localDecorateTrialTruthFields(T, "UL", cfg);
+        if receivedCompletion
+            % One received frozen grant: these are actual observation
+            % extents, not values reconstructed from nominal slot numbers.
+            context=p.Results.ReceivedContext;
+            T.SharedStreamSampleRateHz=repmat(preparedTransmission.SampleRateHz,stopIdx,1);
+            T.TXStartSample=repmat(context.TransmitterObservation.StartSample,stopIdx,1);
+            T.TXEndSampleExclusive=repmat(context.TransmitterObservation.EndSampleExclusive,stopIdx,1);
+            T.RXStartSample=repmat(context.Observation.StartSample,stopIdx,1);
+            T.RXEndSampleExclusive=repmat(context.Observation.EndSampleExclusive,stopIdx,1);
+            physical=preparedTransmission.PhysicalTiming;
+            T.WaveformTimingApplied=repmat(physical.WaveformTimingApplied,stopIdx,1);
+            T.WaveformTimingSource=repmat(string(physical.Source),stopIdx,1);
+            if physical.WaveformTimingApplied
+                T.TimingAdvanceNTA_Tc=repmat(physical.NTA_Tc,stopIdx,1);
+                T.TimingAdvanceOffset_Tc=repmat(physical.NTAOffset_Tc,stopIdx,1);
+                T.TimingAdvanceTotal_Tc=repmat(physical.TotalAdvanceTicks,stopIdx,1);
+                T.TimingAdvanceEffectiveAtSample=repmat(physical.TimingAdvanceEffectiveAtSample,stopIdx,1);
+                T.TimeAlignmentExpirySampleExclusive=repmat(physical.TimeAlignmentExpirySampleExclusive,stopIdx,1);
+            end
+        end
 end
 end
 
@@ -2963,6 +3051,15 @@ T.CQISource = localResolveCQISourceColumn(T, configuredDomain);
 [mcsSelectionSource, mcsValueStatus] = localResolveMCSSelectionEvidenceColumns(T, cfg, direction);
 T.MCSSelectionSource = mcsSelectionSource;
 T.MCSValueStatus = mcsValueStatus;
+% Distinguish "AMC enabled" from "a causal receiver-feedback decision was
+% applied".  A conservative bootstrap grant has no feedback lineage and
+% must not be labelled as an applied link-adaptation decision.
+bootstrapSelection = contains(lower(strtrim(string(mcsSelectionSource))), "bootstrap");
+feedbackSourceSlot = double(localOptionalColumn(T, ...
+    "LinkAdaptationAppliedFeedbackSourceSlot", NaN));
+if ismember("LinkAdaptationApplied", string(T.Properties.VariableNames))
+    T.LinkAdaptationApplied(bootstrapSelection & ~isfinite(feedbackSourceSlot)) = false;
+end
 T.OLLADomain = repmat(localResolveOLLADomainToken(cfg, direction), n, 1);
 outerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.outerLoopFlag", false));
 innerLoopEnabled = logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.innerLoopFlag", false));
@@ -3093,9 +3190,6 @@ explicitBeamWeights = logical(localOptionalColumn(T, "ExplicitBeamWeightsApplied
 beamformingApplied = logical(localOptionalColumn(T, "BeamformingApplied", false));
 isUL = upper(string(direction)) == "UL";
 codebookMask = isUL & (precodingMode == "ul_codebook_tpmi" | lower(appliedSource) == "ul_pusch_native_codebook_tpmi");
-implicitTPMIBeamRequestMask = codebookMask & strlength(requestedBeam) == 0 & ...
-    strlength(appliedBeam) > 0 & isfinite(requestedPMI);
-requestedBeam(implicitTPMIBeamRequestMask) = appliedBeam(implicitTPMIBeamRequestMask);
 T.RequestedBeamIndexSet = requestedBeam;
 
 T.RequestedBeamTruthClassification = repmat("", n, 1);
@@ -3125,13 +3219,11 @@ if ~isUL
 end
 
 directMask = ~transformApplied & ~codebookMask;
-missingAppliedBeamMask = ~appliedBeamMask & ~explicitBeamWeights;
-missingAppliedPMIMask = ~appliedPMIMask & ~explicitBeamWeights;
-nativeCodebookAppliedBeamMask = appliedBeamMask & codebookMask;
+missingAppliedBeamMask = ~appliedBeamMask;
+missingAppliedPMIMask = ~appliedPMIMask;
 
 beamAppSource = T.AppliedBeamApplicationSource;
 pmiAppSource = T.AppliedPrecoderPMIApplicationSource;
-beamAppSource(nativeCodebookAppliedBeamMask) = "ul_pusch_native_codebook_tpmi_port_support";
 beamAppSource(missingAppliedBeamMask & directMask) = "ul_direct_mapping_no_materialized_beam_index_set";
 beamAppSource(missingAppliedBeamMask & transformApplied) = "ul_transform_precoding_no_materialized_beam_index_set";
 beamAppSource(missingAppliedBeamMask & codebookMask) = "ul_pusch_native_codebook_no_materialized_beam_index_set";
@@ -3206,6 +3298,8 @@ userMeta = sixgr.util.structGet(cfg, "lls6g.userContext", struct());
 bsMeta = localResolveRuntimeAntennaMeta(userMeta, "RuntimeServingBSAntennaMeta", "RuntimeServingBSAntenna");
 ueMeta = localResolveRuntimeAntennaMeta(userMeta, "RuntimeUEAntennaMeta", "RuntimeUEAntenna");
 [distance_m, geometricDelay_s] = localResolveGeometryDelay(userMeta);
+[distance_m, geometricDelay_s, geometricDelayForReport_s, geometrySource] = ...
+    localFixedSNRGeometryReporting(cfg, distance_m, geometricDelay_s, replay);
 [dominantPathDelay_s, channelFilterDelay_s, channelDelaySource] = localResolveChannelDelayTerms(chState, tx, txInfo);
 slotStart_s = double(sixgr.util.structGet(userMeta, "RuntimeSlotStartTime_s", NaN));
 toa_s = NaN;
@@ -3279,7 +3373,12 @@ row.InterferenceChannelArrayHandlingBlocker = string(interferenceMeta.ChannelArr
 row.InterferenceUsesSameRuntimeAntennaAssumptions = logical(interferenceMeta.ChannelUsesSameRuntimeAntennaAssumptions);
 row.InterferencePathUsesSameArrayAssumptions = logical(interferenceMeta.InterferencePathUsesSameArrayAssumptions);
 row.PropagationDistance_m = double(distance_m);
-row.GeometricPropagationDelay_s = double(geometricDelay_s);
+row.RuntimeGeometryDistance2D_m=double(localFixedSNRGeometryValue(cfg, ...
+    sixgr.util.structGet(replay,'RuntimeGeometryDistance2D_m',NaN)));
+row.RuntimeGeometryDistance3D_m=double(localFixedSNRGeometryValue(cfg, ...
+    sixgr.util.structGet(replay,'RuntimeGeometryDistance3D_m',NaN)));
+row.RuntimeGeometrySource=string(geometrySource);
+row.GeometricPropagationDelay_s = double(geometricDelayForReport_s);
 row.DominantPathDelay_s = double(dominantPathDelay_s);
 row.ChannelFilterDelay_s = double(channelFilterDelay_s);
 row.PropagationDelay_s = double(geometricDelay_s + dominantPathDelay_s);
@@ -3287,7 +3386,11 @@ row.ToD_s = double(slotStart_s);
 row.ToA_s = double(toa_s);
 row.ToAEstimate_s = double(toaEstimate_s);
 row.ToDSource = "runtime_slot_start_reference";
-row.ToASource = "runtime_geometry_plus_channel_path_delay";
+if localConfiguredSNRIsLinkAuthority(cfg)
+    row.ToASource = "runtime_slot_start_plus_cdl_path_delay_no_geometry";
+else
+    row.ToASource = "runtime_geometry_plus_channel_path_delay";
+end
 row.ToAEstimateSource = string(ternaryString(isfinite(toaEstimate_s), "receiver_timing_estimate_pre_correction", ""));
 row.ChannelDelaySource = string(channelDelaySource);
 row.AntennaGeometrySource = string(sixgr.util.structGet(userMeta, ...
@@ -3391,6 +3494,33 @@ row.PowerConversionEquation = string(sixgr.util.structGet(powerContext, "Convers
 row.AbsolutePowerReferencePlane = string(sixgr.util.structGet(replay, "AbsolutePowerReferencePlane", ""));
 row.SamplePowerReferencePlane = string(sixgr.util.structGet(replay, "SamplePowerReferencePlane", ""));
 row.InterferencePowerReferencePlane = string(sixgr.util.structGet(replay, "InterferencePowerReferencePlane", ""));
+end
+
+function [distance_m, delayForTiming_s, delayForReport_s, source] = localFixedSNRGeometryReporting(cfg, distance_m, delay_s, replay)
+source = string(sixgr.util.structGet(replay, ...
+    'RuntimeGeometrySource','unavailable_executed_link_geometry'));
+delayForTiming_s = delay_s;
+delayForReport_s = delay_s;
+if localConfiguredSNRIsLinkAuthority(cfg)
+    distance_m = NaN;
+    delayForTiming_s = 0;
+    delayForReport_s = NaN;
+    source = "not_applicable_fixed_configured_esn0";
+end
+end
+
+function value = localFixedSNRGeometryValue(cfg, value)
+value = double(value);
+if localConfiguredSNRIsLinkAuthority(cfg)
+    value = NaN;
+end
+end
+
+function tf = localConfiguredSNRIsLinkAuthority(cfg)
+tf = strcmpi(string(sixgr.util.structGet( ...
+    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
+    logical(sixgr.util.structGet(cfg, ...
+    "integration.configured_snr_is_link_authority", false));
 end
 
 function meta = localResolveRuntimeAntennaMeta(userMeta, metaField, antennaField)
@@ -3660,6 +3790,8 @@ row = struct( ...
     "InterferenceUsesSameRuntimeAntennaAssumptions", false, ...
     "InterferencePathUsesSameArrayAssumptions", false, ...
     "PropagationDistance_m", NaN, ...
+    "RuntimeGeometryDistance2D_m",NaN,"RuntimeGeometryDistance3D_m",NaN, ...
+    "RuntimeGeometrySource","unavailable_executed_link_geometry", ...
     "GeometricPropagationDelay_s", NaN, ...
     "DominantPathDelay_s", NaN, ...
     "ChannelFilterDelay_s", NaN, ...
@@ -4570,6 +4702,8 @@ assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ComputeLatencySource = strings(0,1);
+T.QCLMeasurementStatus = strings(0,1);
+T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
 T.SymbolDecisionStatus = strings(0,1);
 T.RuntimeAbsoluteSlotIndex0 = zeros(0,1);
 T.CarrierNSlot = zeros(0,1);
@@ -4674,6 +4808,7 @@ T.ExpectedCSIPart1Bits = strings(0,1);
 T.ExpectedCSIPart2Bits = strings(0,1);
 T.DecodedCSIPart1Bits = strings(0,1);
 T.DecodedCSIPart2Bits = strings(0,1);
+T.UCIReceiverEvidenceJSON = strings(0,1);
 T.CSI1ContentMatch = false(0,1);
 T.CSI2ContentMatch = false(0,1);
 T.UCIOnPUSCHCSIReportIdentity = strings(0,1);
@@ -4767,12 +4902,13 @@ T.LargeScaleSINR_dB = zeros(0,1);
 T.LargeScaleSINRSource = strings(0,1);
 T.ServingRSRP_dBm = zeros(0,1);
 T.ServingRSRPSource = strings(0,1);
-T.CSI_RSRP_dB = zeros(0,1);
-T.CSI_RSRPSource = strings(0,1);
-T.CSI_RSSI_dB = zeros(0,1);
-T.CSI_RSSISource = strings(0,1);
-T.CSI_RSRQ_dB = zeros(0,1);
-T.CSI_RSRQSource = strings(0,1);
+T.ULNormalizedReferencePower_dB = zeros(0,1);
+T.ULNormalizedReferencePowerSource = strings(0,1);
+T.ULNormalizedWindowRSSI_dB = zeros(0,1);
+T.ULNormalizedWindowRSSISource = strings(0,1);
+T.ULNormalizedWindowPowerRatio_dB = zeros(0,1);
+T.ULNormalizedWindowPowerRatioSource = strings(0,1);
+T.ULNormalizedPowerEvidenceJSON = strings(0,1);
 T.AppliedLargeScaleGain_dB = zeros(0,1);
 T.AppliedLargeScaleLoss_dB = zeros(0,1);
 T.AppliedBasePathloss_dB = zeros(0,1);
@@ -4935,6 +5071,9 @@ T.FrequencyHoppingToolboxMode = strings(0,1);
 T.SecondHopStartPRB = zeros(0,1);
 T.BeamformingApplied = false(0,1);
 T.AppliedBeamIndexSet = strings(0,1);
+T.AppliedCodebookPortIndexSet = strings(0,1);
+T.AppliedCodebookPortIndexDefinition = strings(0,1);
+T.PrecodingNumLogicalPorts = NaN(0,1);
 T.AppliedPrecoderPMI = zeros(0,1);
 T.AppliedPrecoderPMIType = strings(0,1);
 T.AppliedPrecoderCodebookMode = strings(0,1);
@@ -4951,6 +5090,7 @@ T.AppliedBeamTruthClassification = strings(0,1);
 T.AppliedPrecoderPMIApplicationSource = strings(0,1);
 T.AppliedPrecoderPMITruthClassification = strings(0,1);
 T.PMISource = strings(0,1);
+T.ULSpatialMeasurementEvidenceJSON = strings(0,1);
 T.PrecodingNumPorts = zeros(0,1);
 T.PrecodingNumLayers = zeros(0,1);
 T.PrecodingMatrixRows = zeros(0,1);
@@ -5273,11 +5413,11 @@ if nargin < 3 || ~isstruct(grant)
     grant = struct();
 end
 pusch = sixgr.util.structGet(tx, "PUSCH", []);
-prec = sixgr.util.structGet(tx, "PrecodeInfo", struct());
-transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", sixgr.util.structGet(grant, "TransformPrecodingApplied", false)));
-precodingActive = logical(sixgr.util.structGet(prec, "Active", transformPrecoding));
-beamformingApplied = logical(sixgr.util.structGet(prec, "BeamformingApplied", sixgr.util.structGet(grant, "BeamformingApplied", false)));
-appliedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(prec, "PMI", sixgr.util.structGet(grant, "AppliedPrecoderPMI", NaN)));
+prec = sixgr.phy.ul.validatePUSCHPrecoderEvidence(tx);
+transformPrecoding = logical(pusch.TransformPrecoding);
+precodingActive = logical(prec.Active);
+beamformingApplied = logical(prec.BeamformingApplied);
+appliedPMI = localOptionalPUSCHPMI(prec.PMI);
 requestedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(grant, "PMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.TPMI", ...
     sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN))));
@@ -5285,27 +5425,30 @@ digestEvidence = sixgr.phy.grant.resolvePrecoderDigestEvidence(grant, prec);
 appliedPrecoderMatrixSHA256 = string(digestEvidence.AppliedPrecoderMatrixSHA256);
 trace = struct( ...
     "ConfiguredBeamSelectionStrategy", string(sixgr.util.structGet(cfg, "lls6g.userContext.BeamSelectionStrategy", "")), ...
-    "PrecoderSource", string(sixgr.util.structGet(prec, "Source", sixgr.util.structGet(grant, "PrecoderSource", localResolveULPrecoderSource(transformPrecoding)))), ...
-    "PrecodingMode", string(sixgr.util.structGet(prec, "Mode", sixgr.util.structGet(grant, "PrecodingMode", localResolveULPrecodingMode(transformPrecoding)))), ...
-    "PrecodingApplicationStage", string(sixgr.util.structGet(prec, "ApplicationStage", sixgr.util.structGet(grant, "PrecodingApplicationStage", localResolveULPrecodingStage(transformPrecoding)))), ...
+    "PrecoderSource", string(prec.Source), ...
+    "PrecodingMode", string(prec.Mode), ...
+    "PrecodingApplicationStage", string(prec.ApplicationStage), ...
     "PrecodingActive", logical(precodingActive), ...
     "ExplicitBeamWeightsApplied", logical(sixgr.util.structGet(prec, "ExplicitBeamWeightsApplied", false)), ...
     "TransformPrecodingApplied", logical(transformPrecoding), ...
     "BeamformingApplied", logical(beamformingApplied), ...
-    "AppliedBeamIndexSet", localFormatIndexSet(sixgr.util.structGet(prec, "BeamIndices", sixgr.util.structGet(grant, "AppliedBeamIndexSet", []))), ...
+    "AppliedBeamIndexSet", localFormatIndexSet(prec.BeamIndices), ...
+    "AppliedCodebookPortIndexSet", localFormatIndexSet(prec.CodebookPortIndices1Based), ...
+    "AppliedCodebookPortIndexDefinition", string(prec.CodebookPortIndexDefinition), ...
     "AppliedPrecoderPMI", double(appliedPMI), ...
-    "AppliedPrecoderPMIType", string(sixgr.util.structGet(prec, "PMIType", sixgr.util.structGet(grant, "AppliedPrecoderPMIType", ""))), ...
-    "AppliedPrecoderCodebookMode", string(sixgr.util.structGet(prec, "CodebookMode", sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""))), ...
+    "AppliedPrecoderPMIType", string(prec.PMIType), ...
+    "AppliedPrecoderCodebookMode", string(prec.CodebookMode), ...
     "AppliedPrecoderMatrixSHA256", appliedPrecoderMatrixSHA256, ...
     "RequestedPrecoderSHA256", string(digestEvidence.RequestedPrecoderSHA256), ...
     "AppliedPrecoderSHA256", string(digestEvidence.AppliedPrecoderSHA256), ...
     "PrecoderDigestDomain", string(digestEvidence.PrecoderDigestDomain), ...
     "FrozenGrantContextId", string(digestEvidence.FrozenGrantContextId), ...
     "RequestedVsAppliedPrecoderPMIMatchStatus", localRequestedVsAppliedPMIStatus(requestedPMI, appliedPMI), ...
-    "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", size(sixgr.util.structGet(tx, "Grid", zeros(0,0,0)), 3))), ...
-    "PrecodingNumLayers", double(sixgr.util.structGet(prec, "NumLayers", localObjectValue(pusch, "NumLayers", sixgr.util.structGet(grant, "PrecodingNumLayers", NaN)))), ...
-    "PrecodingMatrixRows", double(sixgr.util.structGet(prec, "MatrixRows", NaN)), ...
-    "PrecodingMatrixCols", double(sixgr.util.structGet(prec, "MatrixCols", NaN)));
+    "PrecodingNumPorts", double(prec.NumPorts), ...
+    "PrecodingNumLogicalPorts", double(prec.NumLogicalPorts), ...
+    "PrecodingNumLayers", double(prec.NumLayers), ...
+    "PrecodingMatrixRows", double(prec.MatrixRows), ...
+    "PrecodingMatrixCols", double(prec.MatrixCols));
 end
 
 function contract = localResolvePUSCHThroughputExecutionContract( ...
@@ -5576,9 +5719,10 @@ metrics = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
 % codebook/domain.
 metrics.BeamObservationDomain = "pusch_dmrs_effective_layer_channel";
 if strcmpi(string(sixgr.util.structGet(precoderTrace, "PrecodingMode", "")), "ul_codebook_tpmi")
-    runtimeAppliedPMI = double(sixgr.util.structGet(precoderTrace, "AppliedPrecoderPMI", NaN));
-    metrics.PMI = runtimeAppliedPMI;
-    metrics.PMISource = "ul_runtime_applied_codebook_tpmi_from_pusch_waveform";
+    metrics.PMI = metrics.RuntimeAppliedPMI;
+    if isfinite(metrics.RuntimeAppliedPMI)
+        metrics.PMISource = "ul_runtime_applied_codebook_tpmi_from_pusch_waveform";
+    end
     metrics.CSIReportMode = "ul_pusch_dmrs_effective_channel_no_tpmi_recommendation";
     metrics.SRSRITPMIValid = false;
     metrics.TPMICandidateCount = NaN;
@@ -6534,7 +6678,7 @@ if nargin < 4 || ~isstruct(seedGrant)
     seedGrant = struct();
 end
 pusch = sixgr.util.structGet(tx, "PUSCH", []);
-prec = sixgr.util.structGet(tx, "PrecodeInfo", struct());
+prec = sixgr.phy.ul.validatePUSCHPrecoderEvidence(tx);
 tbBitsActual = sixgr.util.structGet(tx, "TransportBlock", []);
 tbSizeActual = double(numel(tbBitsActual));
 if ~(isfinite(tbSizeActual) && tbSizeActual > 0)
@@ -6563,6 +6707,7 @@ xOverhead = double(sixgr.util.structGet(tx, "XOverhead", sixgr.util.structGet(cf
 appliedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(prec, "PMI", NaN));
 requestedPMI = localOptionalPUSCHPMI(sixgr.util.structGet(seedGrant, "PMI", sixgr.util.structGet(cfg, "phy.pusch.PMI", NaN)));
 grant = struct( ...
+    "Direction", "UL", ...
     "MCS", double(mcsIndex), ...
     "MCSIndex", double(sixgr.util.structGet(seedGrant, "MCSIndex", mcsIndex)), ...
     "Modulation", localSafeCharToken(puschMod), ...
@@ -6603,6 +6748,8 @@ grant = struct( ...
     "TransformPrecodingApplied", logical(puschTransformPrecoding), ...
     "BeamformingApplied", logical(sixgr.util.structGet(prec, "BeamformingApplied", false)), ...
     "AppliedBeamIndexSet", char(localFormatIndexSet(sixgr.util.structGet(prec, "BeamIndices", []))), ...
+    "AppliedCodebookPortIndexSet", char(localFormatIndexSet(prec.CodebookPortIndices1Based)), ...
+    "AppliedCodebookPortIndexDefinition", char(prec.CodebookPortIndexDefinition), ...
     "AppliedPrecoderPMI", double(appliedPMI), ...
     "AppliedPrecoderPMIType", localSafeCharToken(sixgr.util.structGet(prec, "PMIType", "")), ...
     "AppliedPrecoderCodebookMode", localSafeCharToken(sixgr.util.structGet(prec, "CodebookMode", "")), ...
@@ -6639,6 +6786,10 @@ preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI",
     "NumLogicalPorts","NumRFChains", ...
     "SchedulerCQIRawCQI","SchedulerAdjustedSINR_dB","SchedulerSINRBackoff_dB","SchedulerCQISource", ...
     "MCSIndexAuthority","GrantOperatingPointSource", ...
+    "TimingDecision","K0","K1","K2","ControlAbsoluteSlot", ...
+    "ScheduledAbsoluteSlot","HARQFeedbackAbsoluteSlot", ...
+    "SchedulingCCID","ScheduledCCID","CarrierIndicator", ...
+    "SourceBWPID","TargetBWPID", ...
     "PBCHGatingActive","PRACHGatingActive","PDCCHGatingActive","SRSGatingActive","ControlEligible","ControlDecodeOk", ...
     "DCICrcPass","PDCCHPayloadMatch","PDCCHCausalGrantDecodeOk", ...
     "PDCCHMissedDetection","PDCCHFalseAlarm","GrantValid", ...

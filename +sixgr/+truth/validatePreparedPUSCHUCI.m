@@ -1,0 +1,23 @@
+function validatePreparedPUSCHUCI(grant,prepared)
+% Calendar reconciliation cannot rewrite already encoded physical UCI.
+assert(isa(prepared,'sixgr.link.PreparedDataTransmission') && prepared.Direction=="UL", ...
+    'sixgr:truth:PreparedPUSCHRequired','Use the retained coded UL contribution.');
+payload=sixgr.util.structGet(grant,'ExpectedUCIPayload',[]);
+if isempty(payload), payload=sixgr.phy.ul.pusch.PUSCHUCIPayload(); end
+assert(isa(payload,'sixgr.phy.ul.pusch.PUSCHUCIPayload') && ...
+    isequaln(payload.toStruct(),prepared.Tx.UCIPayload), ...
+    'sixgr:truth:LateSharedPUSCHUCIChange', ...
+    'UCI became different after PUSCH encoding. It cannot be inserted into emitted/queued IQ by changing the calendar.');
+saved=prepared.RequestBinding.Grant;
+for field=["UCIOnPUSCHFeedbackGrantIds","UCIOnPUSCHCSIReportIdentity"]
+    assert(isequal(string(sixgr.util.structGet(grant,field,"")), ...
+        string(sixgr.util.structGet(saved,field,""))), ...
+        'sixgr:truth:LateSharedPUSCHUCIChange','Encoded UCI must retain its exact HARQ/CSI source identity.');
+end
+for field=["UCIOnPUSCHFeedbackSourceSlots","UCIOnPUSCHFeedbackHARQIds"]
+    a=double(sixgr.util.structGet(grant,field,[]));
+    b=double(sixgr.util.structGet(saved,field,[]));
+    assert(isequaln(a(:),b(:)),'sixgr:truth:LateSharedPUSCHUCIChange', ...
+        'Encoded HARQ bits must retain source-slot and process ordering.');
+end
+end

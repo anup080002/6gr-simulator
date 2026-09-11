@@ -1,0 +1,26 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
+
+meta:
+  scenario_id: lls_trs_future_dl_projection_fixture
+  description: Unequal gNB and UE arrays with future DL queued during physical UL.
+  purpose: Verify retained directional TX mapping without channel mutation or replay.
+  research_class: optional_research_experiment
+
+antenna_and_array:
+  bs_num_txrus: 4
+  bs_num_rxrus: 4
+  bs_num_antenna_elements: 4
+
+mimo:
+  n_tx_ant: 4
+
+initial_access:
+  ssb:
+    precoder_codebook:
+      physical_element_count: 4
+      beam_grid_columns: 4
+
+reference_signals:
+  csi_rs_precoder_codebook:
+    physical_element_count: 4

@@ -99,7 +99,7 @@ end
 % Validate the entire decision before mutating any shared HARQ handle.
 for ordinal = reshape(grantOrdinals,1,[])
     grant = pendingULGrants(ordinal);
-    scheduled = sixgr.util.structGet(grant,"ScheduledAbsoluteSlot",NaN);
+    scheduled = sixgr.truth.runtimeULGrantSlot(grant);
     if ~isequal(double(scheduled),slotIdx)
         error("sixgr:truth:SRSPUSCHCollisionSlotMismatch", ...
             "SRS arbitration cannot cancel a grant from a different UL occasion.");

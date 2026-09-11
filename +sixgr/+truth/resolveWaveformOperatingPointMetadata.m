@@ -1,0 +1,13 @@
+function snr_dB=resolveWaveformOperatingPointMetadata(cfg,operatingPoint_dB)
+% Configured trial label only; never derive it from receiver or geometry state.
+% In thermal-noise mode this label does not set the received noise variance.
+if nargin<2 || isempty(operatingPoint_dB)
+    operatingPoint_dB=sixgr.util.structGet(cfg,'channel.snr_dB',NaN);
+end
+assert(isnumeric(operatingPoint_dB) && isreal(operatingPoint_dB) && ...
+    isscalar(operatingPoint_dB) && isfinite(operatingPoint_dB), ...
+    'sixgr:truth:MissingConfiguredWaveformOperatingPoint', ...
+    ['Waveform production requires a finite configured operating-point label. ' ...
+     'Received SINR, pending CSI and geometry estimates are not substitutes.']);
+snr_dB=double(operatingPoint_dB);
+end

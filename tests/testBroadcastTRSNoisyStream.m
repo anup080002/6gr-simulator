@@ -2,12 +2,15 @@ function [ok,evidence] = testBroadcastTRSNoisyStream(trsRuntimeSlot,includePDCCH
 % Actual composed TDD samples, noisy CDL stream and completed receivers.
 % This is not qualification of the main slot scheduler or full RF chain.
 setup6GRSimToolkit('Verbose',false);
-if nargin < 1, trsRuntimeSlot = 3; end
+if nargin < 1, trsRuntimeSlot = []; end
 if nargin < 2, includePDCCH = false; end
 s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
 root = tempname;
 cfg = sixgr.lls6g.buildInternalConfig(s,root);
+if isempty(trsRuntimeSlot)
+    trsRuntimeSlot = double(cfg.phy.trs.slotNumbers(1)) + 1;
+end
 multi = struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 runtime = sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),1);
 runtime.CurrentSlot = 1;
@@ -26,6 +29,10 @@ truth = sixgr.link.initWaveformTruthChannelState(trs.ReceiverConfig,tx,trs.TxInf
 fs = trs.SampleRateHz;
 assert(fs==broadcast.SampleRateHz && cfg.phy.carrier.SubcarrierSpacing==15);
 firstTRS = round(trs.Tx.FirstSlot0Based*fs*1e-3);
+[basis,~]=sixgr.channel.projectRuntimeTransmitSamples(truth.RuntimeChannelState, ...
+    eye(size(trs.TransmitSamples,2),'like',trs.TransmitSamples));
+trs.TransmitProjectionMatrix=basis.';
+trs.TransmitStartSample=firstTRS;
 stop = max(broadcast.NumSamples,firstTRS+trs.NumSamples);
 if includePDCCH
     cfgP = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,trsRuntimeSlot);
@@ -63,6 +70,14 @@ stream.addReceiver('ue_pre_rf',size(reference,2));
 stream.enqueue('gnb','ssb',sixgr.phy.waveform.WaveformChunk(broadcast.TransmitSamples,0));
 stream.enqueue('gnb','trs',sixgr.phy.waveform.WaveformChunk(xTRS,firstTRS));
 stream.observe('ue_pre_rf','ssb',0,broadcast.NumSamples);
+horizons=sixgr.phy.frame.ssbObservationHorizons(cfg,fs);
+prefixIDs="ssb_occasion_"+string(horizons.SSBIndex);
+prefixResults=cell(height(horizons),1);
+assert(all(horizons.ObservationEndSampleExclusive<broadcast.NumSamples), ...
+    'This fixture must prove SSB availability before complete SIB1/burst reception.');
+for k=1:height(horizons)
+    stream.observe('ue_pre_rf',prefixIDs(k),0,horizons.ObservationEndSampleExclusive(k));
+end
 stream.observe('ue_pre_rf','trs',firstTRS,firstTRS+trs.NumSamples);
 if includePDCCH
     stream.enqueue('gnb','pdcch',sixgr.phy.waveform.WaveformChunk(physicalPDCCH,firstTRS));
@@ -99,6 +114,19 @@ for requested = unique([1 13:round(fs*1e-3):stop stop])
         observations.(item.ID) = item.Observation;
         captureReplay=localObservationReplay(item);
         clockBefore=truth.RuntimeChannelState.CurrentSampleIndex;
+        if any(item.ID==prefixIDs)
+            index=find(item.ID==prefixIDs);
+            assert(stream.NextSampleIndex==horizons.ObservationEndSampleExclusive(index));
+            r=sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
+                item.Observation,broadcast.ReceiverConfig,'RecoveryScope','SSB_MIB', ...
+                'CandidateSSBIndex',horizons.SSBIndex(index));
+            assert(r.SSBMIBComplete && r.BCHCrcPass && r.MIBDecoded && ...
+                r.SSBIndex==horizons.SSBIndex(index),r.FailureReason);
+            assert(~r.SIB1ReceptionAttempted && ~r.DLSCHCrcPass && ~r.StrictOk && ...
+                r.Status=="SSB_MIB_COMPLETE_SIB1_NOT_ATTEMPTED");
+            assert(isfinite(r.SS_RSRP_dBm) && isfinite(r.SS_SINR_dB));
+            prefixResults{index}=r;
+        end
         % Complete the real decoder at the event, before consuming any
         % later fading/noise samples. There is no future-result delivery.
         switch item.ID
@@ -115,11 +143,18 @@ for requested = unique([1 13:round(fs*1e-3):stop stop])
                         'Shared noisy stream SSB/SIB1 candidate failed: %s',candidate.FailureReason);
                 end
             case "trs"
+                captures=cell(numel(item.Segments),1);
+                for j=1:numel(item.Segments)
+                    captures{j}=struct('LinkID',"gnb_to_ue",'TX',"gnb",'RX',"ue", ...
+                        'Reference',item.Segments{j}.Execution.ChannelReference);
+                end
                 tracked=sixgr.link.completeTRSReception( ...
-                    trs,item.Observation,captureReplay,truth.RuntimeChannelState);
+                    trs,item.Observation,captureReplay,truth.RuntimeChannelState, ...
+                    'ScoringChannelReferences',captures);
                 assert(tracked.Ok && tracked.StrictOk && ~tracked.Crash, ...
                     'Shared noisy stream TRS receiver failed: %s',tracked.FailureReason);
-                assert(isfinite(tracked.MeasuredTrialSINR_dB) && isfinite(tracked.NMSE_dB));
+                assert(isnan(tracked.MeasuredTrialSINR_dB) && isfinite(tracked.NMSE_dB) && ...
+                    tracked.NMSEScoringAvailable);
             case "pdcch"
                 [control,controlInfo]=sixgr.link.completePDCCHReception(pdcch,item.Observation, ...
                     'NoiseVariance',captureReplay.InjectedNoiseVariance);
@@ -141,13 +176,18 @@ assert(norm(received-reference,'fro')<=1e-12*max(norm(reference,'fro'),realmin))
 assert(isequaln(truth.ReceiverNoiseState,referenceState.ReceiverNoiseState));
 assert(truth.RuntimeChannelState.CurrentSampleIndex==stop);
 expectedIDs = ["ssb";"trs"];
+expectedIDs=[expectedIDs;prefixIDs];
 if includePDCCH, expectedIDs(end+1,1)="pdcch"; end
 assert(isequal(sort(ids),sort(expectedIDs)));
 assert(norm(reference-wholeReplay.RawWaveform,'fro')>0);
 assert(intervals(1,1)==0 && intervals(end,2)==stop && ...
     all(intervals(2:end,1)==intervals(1:end-1,2)));
 evidence = struct('TRS',tracked,'Runtime',runtime,'Config',cfg, ...
-    'SourceSlot',trsRuntimeSlot,'SampleRateHz',fs,'ExecutionTrace',{stream.ExecutionTrace});
+    'SourceSlot',trsRuntimeSlot,'PreparedTRS',trs,'SampleRateHz',fs,'ExecutionTrace',{stream.ExecutionTrace});
+evidence.SSBObservationHorizons=horizons;
+evidence.SSBOccasionResults=prefixResults;
+assert(all(~cellfun(@isempty,prefixResults)));
+disp('SSB_OCCASION_CAUSAL_RECEPTION_PASS: actual noisy CDL prefixes before full-burst/SIB1 completion.');
 if includePDCCH
     evidence.PDCCH = control;
     evidence.PDCCHInfo = controlInfo;
@@ -177,13 +217,14 @@ end
 
 function [outputs,execution,state]=localPhysicalInterval(inputs,first,stop,state)
 assert(numel(inputs)==1 && inputs.ID=="gnb");
-[y,replay,state.Truth]=sixgr.link.applyWaveformTruthImpairments( ...
+[y,replay,state.Truth,reference]=sixgr.link.applyWaveformTruthImpairments( ...
     inputs.Chunk.Samples,12,state.Truth,state.Config,state.Tx,state.TxInfo, ...
-    'InputSampleDomain','materialized_channel_ports');
+    'InputSampleDomain','materialized_channel_ports','CaptureChannelReference',true);
 state.Received(first+1:stop,:)=y;
 outputs=struct('ID',"ue_pre_rf",'Chunk',sixgr.phy.waveform.WaveformChunk(y,first));
 execution=struct('Source',"actual_continuous_CDL_and_thermal_noise_pre_RF", ...
-    'ApproximationMode',"none",'StartSample',first,'EndSampleExclusive',stop,'Replay',replay);
+    'ApproximationMode',"none",'StartSample',first,'EndSampleExclusive',stop, ...
+    'Replay',replay,'ChannelReference',reference);
 end
 
 function replay=localObservationReplay(item)
@@ -192,7 +233,7 @@ function replay=localObservationReplay(item)
 replay=struct();
 for field=["RuntimeChannelStateUsed","RuntimeChannelLinkKey", ...
         "RuntimeChannelSeed","InjectedNoiseVariance","InjectedTimingOffset_samples", ...
-        "InjectedCFO_Hz","AppliedAWGNSNR_dB","ChannelFadingApplied"]
+        "InjectedCFO_Hz","AppliedAWGNSNR_dB","ChannelFadingApplied","AppliedLargeScaleGain_dB"]
     value=item.Segments{1}.Execution.Replay.(field);
     for k=2:numel(item.Segments)
         assert(isequaln(value,item.Segments{k}.Execution.Replay.(field)), ...

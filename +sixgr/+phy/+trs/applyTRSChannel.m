@@ -31,11 +31,14 @@ end
 
 rx = struct();
 rx.Waveform = rxWave;
+rx.NoiselessWaveform = wave;
 rx.NoiseOnlyWaveform = noiseWave;
 rx.NoiseVariance = double(nVar);
 rx.AppliedAWGNSNR_dB = double(opt.SNRdB);
 rx.InjectedTimingOffset_samples = double(timingOffset);
 rx.InjectedCFO_Hz = double(cfoHz);
+rx.FrequencyReferenceForScoring_Hz = double(cfoHz);
+rx.FrequencyReferenceForScoringSource = "explicit_scalar_rotation_in_standalone_AWGN_fixture_scoring_only";
 rx.FaultMode = faultMode;
 rx.SampleRateHz = sampleRate;
 rx.GridSlots = gridSlots;

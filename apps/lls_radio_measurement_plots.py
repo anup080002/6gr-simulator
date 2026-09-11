@@ -24,8 +24,10 @@ CSI_FIELDS = {"CSI CQI timeline": "CQI", "CSI RI timeline": "RI",
 CSI_POWER_FIELDS = {"CSI-RS RSSI timeline": ("RSSIPerAntenna_dBm", "RSSI (dBm)"),
                     "CSI-RS RSRQ timeline": ("RSRQPerAntenna_dB", "RSRQ (dB)")}
 SSB_POWER_CHART = "SSB-window RSSI timeline"
+DATA_POWER_CHARTS = {"PDSCH-window carrier RSSI timeline": TRIALS[:1],
+                     "PUSCH-window carrier RSSI timeline": TRIALS[1:]}
 PRECODER_CHARTS = {"reported versus applied PMI", "precoder ports and layers", "precoder matrix integrity"}
-CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + (SSB_POWER_CHART,) + tuple(sorted(PRECODER_CHARTS)) + (
+CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tuple(DATA_POWER_CHARTS) + (SSB_POWER_CHART,) + tuple(sorted(PRECODER_CHARTS)) + (
     "throughput vs SNR", "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
     "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR",
 )
@@ -34,8 +36,9 @@ CHART_SOURCES = {name: (path, "air_interface/csv/control_evm_samples.csv")
 CHART_SOURCES.update({name: (FEEDBACK,) for name in CSI_FIELDS})
 CHART_SOURCES.update({name: ("air_interface/csv/csi_rs_trials.csv",) for name in CSI_POWER_FIELDS})
 CHART_SOURCES[SSB_POWER_CHART] = ("air_interface/csv/pbch_trials.csv",)
+CHART_SOURCES.update(DATA_POWER_CHARTS)
 CHART_SOURCES.update({name: TRIALS + (FEEDBACK,) for name in PRECODER_CHARTS})
-CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS,
+CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS + ("air_interface/csv/srs_trials.csv",),
     "PDSCH BLER vs measured SINR": TRIALS[:1], "PUSCH BLER vs measured SINR": TRIALS[1:],
     "PUCCH BLER vs measured SINR": ("air_interface/csv/pucch_trials.csv",),
     "CSI-RS pilot residual": ("air_interface/csv/csi_rs_trials.csv",)})
@@ -91,22 +94,21 @@ def _identity(m, row, path, index):
     inferred = "DL" if "dl_pdsch" in path else "UL" if "ul_pusch" in path else ""
     if inferred and declared and declared != inferred:
         raise ValueError(f"Direction conflict in {path} row {index}")
-    for field in ("TruthStatus", "truth_status", "ExecutionBackend", "ApproximationMode", "E2EAirModel", "Source"):
-        truth = m._row_text(row, field).lower()
-        if any(x in truth for x in ("proxy", "synthetic", "fallback", "unavailable", "logistic")) or truth == "lut":
-            raise ValueError(f"Non-runtime evidence ({field}) in {path} row {index}")
+    field = m._non_runtime_evidence_field(row)
+    if field:
+        raise ValueError(f"Non-runtime evidence ({field}) in {path} row {index}")
     return {"direction": declared or inferred, "ue_index": m._row_text(row, "UEIndex", "UEID", "ue_id"),
             "frame": m._row_text(row, "Frame"), "slot": m._row_float(row, "RuntimeSlot", "Slot"),
             "cell_id": m._row_text(row, "CellID", "ServingCell"),
             "source_table_logical_path": path, "source_row_index": index}
 
 
-def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources):
+def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, display_title=None):
     if not rows or not series:
         return _unavailable(m, name, run_id, note, sources)
     records = [{"run_id": run_id, "chart_name": name, **row} for row in rows]
     return {"csv_bytes": m._encode_dict_rows(list(records[0]), records),
-            "img_bytes": m._render_multi_series_svg(name, note,
+            "img_bytes": m._render_multi_series_svg(display_title or name, note,
                 [{"name": label, "points": points} for label, points in series.items()],
                 [f"source_records={len(rows)}", "Observed points; no sweep/fit claim", "See CSV for source and timing"],
                 x_label=x_label, y_label=y_label, mode="scatter", evidence_shape_policy="operating_point"),
@@ -286,9 +288,15 @@ def _precoding(m, name, existing, fetch, run_id):
                                   "matrix_dimension_match": "dimensions match", "requested_applied_matrix_hash_equal": "hashes match",
                                   "requested_applied_pmi_equal": "PMIs match"}
                         series[f"{prefix} {labels[field]}"].append([slot, record[field]])
+    title = name
+    if name == "reported versus applied PMI" and not any(row["reported_pmi_token"] for row in rows):
+        # A bootstrap/configured request is not UE feedback. Keep the stable
+        # contract/CSV name, but describe only the evidence actually plotted.
+        title = "Requested versus applied PMI (no bound feedback)"
     result = _finish(m, name, run_id, rows, series, "Executed data slot",
         "Index / count" if name != "precoder matrix integrity" else "Recorded-evidence consistency (1=match, 0=mismatch)",
-        "Requested and executed precoders stay separate. Feedback is linked only by an explicit applied source slot and prior delivery. Hash equality is not matrix-coefficient or optimality validation.", sources + [FEEDBACK])
+        "Requested and executed precoders stay separate. Feedback is linked only by an explicit applied source slot and prior delivery. Hash equality is not matrix-coefficient or optimality validation.", sources + [FEEDBACK],
+        display_title=title)
     if name == "precoder matrix integrity" and result["csv_status"] != "unavailable_exact_reason":
         result["img_bytes"] = _matrix_checks_svg(rows, m.MAX_PREVIEW_ROWS)
     return result
@@ -337,6 +345,8 @@ def _relationships(m, name, existing, fetch, run_id):
         paths = TRIALS[:1]
     elif name.startswith("PUSCH"):
         paths = TRIALS[1:]
+    elif name == "NMSE vs SNR / SINR":
+        paths = TRIALS + ("air_interface/csv/srs_trials.csv",)
     else:
         paths = TRIALS
     rows, series = [], defaultdict(list)
@@ -376,9 +386,14 @@ def _relationships(m, name, existing, fetch, run_id):
                 x, x_field, x_source = m._row_float(row, "Slot", "CSIMeasurementSlot"), "Slot", "runtime_csi_rs_observation"
                 y_field, y = "PilotResidualNMSE_dB", m._row_float(row, "PilotResidualNMSE_dB")
             elif name == "NMSE vs SNR / SINR":
-                y_field, y = "OracleNMSE_dB", m._row_float(row, "OracleNMSE_dB")
+                y_field = "TrueChannelNMSE_dB"
+                y = m._row_float(row, "TrueChannelNMSE_dB")
+                if y is None:
+                    y_field, y = "OracleNMSE_dB", m._row_float(row, "OracleNMSE_dB")
                 reference = m._row_text(row, "NMSEReferenceSource")
-                if not reference or any(token in reference.lower() for token in ("proxy", "fallback", "synthetic", "unavailable")):
+                oracle_available = m._row_flag(row, "TrueChannelOracleAvailable")
+                if (not reference or oracle_available is False or
+                        any(token in reference.lower() for token in ("proxy", "fallback", "synthetic", "unavailable"))):
                     y = None  # Generic NMSE_dB can be a pilot fit or noise/gain proxy.
             record.update({"x_value": x, "x_source_field": x_field, "x_source": x_source,
                 "metric_value": y, "metric_source_field": y_field,
@@ -397,7 +412,7 @@ def _relationships(m, name, existing, fetch, run_id):
                 series[f"{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
     notes = {"throughput vs SNR": "Scheduled TB bitrate and Delivered goodput are separate measured series. Actual noise-calibration SNR; no configured-SNR substitution or controlled sweep is claimed.",
              "CSI-RS pilot residual": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
-             "NMSE vs SNR / SINR": "An explicit true-channel reference and OracleNMSE_dB are required. Pilot-fit residuals and noise/gain ratios are not channel-estimation NMSE."}
+             "NMSE vs SNR / SINR": "An explicit executed true-channel reference and TrueChannelNMSE_dB/OracleNMSE_dB are required. Pilot-fit residuals and noise/gain ratios are not channel-estimation NMSE."}
     note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
     return _finish(m, name, run_id, rows, series,
         "Executed CSI-RS slot" if name == "CSI-RS pilot residual" else "Applied noise-calibration SNR (dB)" if name == "throughput vs SNR" else "Measured SINR (dB)",
@@ -411,10 +426,47 @@ def _csi_physical_power(m, name, existing, fetch, run_id):
     rows, series = [], defaultdict(list)
     seen = set()
     for index, row in enumerate(samples, 1):
-        if m._row_text(row, "PhysicalMeasurementStatus") != "available":
+        physical_status = m._row_text(row, "PhysicalMeasurementStatus")
+        if physical_status not in {"available", "available_normalized_fixed_esn0_not_absolute_dbm"}:
             continue
         identity = _identity(m, row, path, index)
         plane = m._row_text(row, "PowerReferencePlane")
+        if physical_status == "available_normalized_fixed_esn0_not_absolute_dbm":
+            if plane != "normalized_fixed_esn0_unit_occupied_re_es":
+                raise ValueError("Normalized CSI-RS power has an inconsistent reference plane.")
+            if m._row_text(row, "MeasurementSource") != "actual_csirs_re_measurement_relative_to_unit_occupied_re_es":
+                raise ValueError("Normalized CSI-RS power has no supported actual waveform source.")
+            n_rb = m._row_float(row, "MeasurementNumRB")
+            first_prb = m._row_float(row, "MeasurementFirstPRB0Based")
+            scs = m._row_float(row, "MeasurementSubcarrierSpacing_kHz")
+            bandwidth = m._row_float(row, "MeasurementBandwidth_Hz")
+            symbols = _numbers(m._row_text(row, "MeasurementSymbolIndices0Based"), integers=True)
+            rssis = _numbers(m._row_text(row, "MeasurementRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"))
+            rsrps = _numbers(m._row_text(row, "MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"))
+            rsrqs = _numbers(m._row_text(row, "MeasurementRSRQPerReceiveAntenna_dB"))
+            if (n_rb is None or n_rb < 1 or n_rb != int(n_rb) or first_prb is None or first_prb < 0 or
+                    first_prb != int(first_prb) or scs is None or scs <= 0 or bandwidth is None or
+                    not math.isclose(bandwidth, 12*n_rb*scs*1000, rel_tol=1e-12) or not symbols or
+                    not rssis or len(rssis) != len(rsrps) or len(rssis) != len(rsrqs)):
+                raise ValueError("Normalized CSI-RS measurement identity, bandwidth or branch vectors are incomplete.")
+            for branch, (rsrp, rssi, rsrq) in enumerate(zip(rsrps, rssis, rsrqs), 1):
+                if abs(rsrq - (10*math.log10(n_rb)+rsrp-rssi)) > 1e-6:
+                    raise ValueError("Normalized CSI-RS same-branch RSRP/RSSI/RSRQ closure fails.")
+                metric = rssi if name == "CSI-RS RSSI timeline" else rsrq
+                rows.append({**identity, "bwp_id": m._row_text(row, "BWPID"),
+                    "measurement_id": m._row_text(row, "CSIMeasurementID"),
+                    "resource_id": m._row_text(row, "ResourceID"),
+                    "receive_antenna_index_1based": branch, "metric_value": metric,
+                    "metric_source_field": ("MeasurementRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"
+                        if name == "CSI-RS RSSI timeline" else "MeasurementRSRQPerReceiveAntenna_dB"),
+                    "power_reference_plane": plane, "num_rb": int(n_rb),
+                    "first_prb_0based": int(first_prb), "subcarrier_spacing_khz": scs,
+                    "bandwidth_hz": bandwidth, "symbol_indices_0based": json.dumps(symbols),
+                    "rsrp_db_re_unit_occupied_re_es": rsrp,
+                    "rssi_db_re_unit_occupied_re_es": rssi, "rsrq_db": rsrq})
+                if identity["slot"] is not None:
+                    series[f"U{identity['ue_index']} C{identity['cell_id']} R{m._row_text(row, 'ResourceID')} Rx{branch}"].append([identity["slot"], metric])
+            continue
         if plane not in {"receiver_antenna_connector_pre_composite_front_end",
                          "receiver_antenna_connector_no_composite_front_end"}:
             raise ValueError("CSI-RS physical power requires an explicit antenna-connector measurement plane.")
@@ -473,8 +525,11 @@ def _csi_physical_power(m, name, existing, fetch, run_id):
                     "rsrp_dbm": rsrp, "rssi_dbm": rssi, "rsrq_db": rsrq})
                 if identity["slot"] is not None:
                     series[f"U{identity['ue_index']} C{identity['cell_id']} R{rid} Rx{branch+1}"].append([identity["slot"], value])
-    return _finish(m, name, run_id, rows, series, "Measurement slot", units,
-        "Actual CSI-RS antenna-plane measurements; every receive branch and resource retained. RSSI uses only the recorded bandwidth and CSI-RS symbol window, not normalized grid power.", sources)
+    normalized = any(row.get("power_reference_plane") == "normalized_fixed_esn0_unit_occupied_re_es" for row in rows)
+    display_units = ("RSSI (dB re unit occupied-RE Es)" if normalized and name == "CSI-RS RSSI timeline" else units)
+    note = ("Actual CSI-RS waveform measurements in the fixed-Es/N0 normalized power plane; every receive branch, resource, bandwidth, and measurement-symbol window is retained. Values are deliberately not labeled dBm."
+            if normalized else "Actual CSI-RS antenna-plane measurements; every receive branch and resource retained. RSSI uses only the recorded bandwidth and CSI-RS symbol window.")
+    return _finish(m, name, run_id, rows, series, "Measurement slot", display_units, note, sources)
 
 
 def _ssb_window_power(m, name, existing, fetch, run_id):
@@ -484,6 +539,36 @@ def _ssb_window_power(m, name, existing, fetch, run_id):
     for index, row in enumerate(samples, 1):
         token = m._row_text(row, "SSBWindowPowerMeasurementJSON")
         if not token:
+            if m._row_text(row, "SSPhysicalMeasurementStatus") != "available_normalized_fixed_esn0_not_absolute_dbm":
+                continue
+            plane = m._row_text(row, "PowerReferencePlane")
+            source = m._row_text(row, "SSMeasurementSource")
+            if (plane != "normalized_fixed_esn0_unit_occupied_re_es" or
+                    source != "noise_debiased_linear_sss_re_power_and_received_reference_disturbance"):
+                raise ValueError("Normalized SSB-window RSSI has an unsupported measurement plane or source.")
+            identity = _identity(m, row, path, index)
+            rssis = _numbers(m._row_text(row, "SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"))
+            ssb = m._row_float(row, "SSBIndex")
+            first, stop, fs = (m._row_float(row, f) for f in
+                              ("ObservationStartSample", "ObservationEndSampleExclusive", "ObservationSampleRateHz"))
+            if (not rssis or identity["direction"] != "DL" or not identity["ue_index"] or ssb is None or
+                    ssb < 0 or ssb != int(ssb) or any(v is None for v in (first, stop, fs)) or
+                    first < 0 or first != int(first) or stop <= first or stop != int(stop) or fs <= 0):
+                raise ValueError("Normalized SSB-window RSSI lacks branch, beam, or received-burst identity.")
+            for branch, rssi in enumerate(rssis, 1):
+                key = (identity["ue_index"], identity["cell_id"], first, stop, int(ssb), branch)
+                if key in seen:
+                    raise ValueError("Duplicate normalized received SSB/branch RSSI identity.")
+                seen.add(key)
+                rows.append({**identity, "ssb_index_0based": int(ssb),
+                    "receive_antenna_index_1based": branch,
+                    "rssi_db_re_unit_occupied_re_es": rssi,
+                    "burst_observation_start_sample": int(first),
+                    "burst_observation_end_sample_exclusive": int(stop),
+                    "sample_rate_hz": fs, "power_reference_plane": plane,
+                    "measurement_scope": "received_ssb_240_subcarrier_four_symbol_window_normalized_fixed_esn0"})
+                if identity["slot"] is not None:
+                    series[f"U{identity['ue_index']} SSB{int(ssb)} Rx{branch}"].append([identity["slot"], rssi])
             continue
         identity = _identity(m, row, path, index)
         plane = m._row_text(row, "PowerReferencePlane")
@@ -544,8 +629,95 @@ def _ssb_window_power(m, name, existing, fetch, run_id):
                 "sample_rate_hz": fs, "power_reference_plane": plane, "measurement_scope": evidence["Scope"]})
             if identity["slot"] is not None:
                 series[f"U{identity['ue_index']} SSB{int(ssb)} Rx{branch+1}"].append([identity["slot"], rssis[branch]])
-    return _finish(m, name, run_id, rows, series, "Burst source slot", "SSB-window RSSI (dBm)",
-        "Actual 20-PRB/four-symbol SSB received power, including observed noise/interference, per receive branch. Not full carrier/SMTC RSSI or a UE carrier-RSSI report.", sources)
+    normalized = any(row.get("power_reference_plane") == "normalized_fixed_esn0_unit_occupied_re_es" for row in rows)
+    units = "SSB-window RSSI (dB re unit occupied-RE Es)" if normalized else "SSB-window RSSI (dBm)"
+    note = ("Actual received SSB-window power per branch in the fixed-Es/N0 normalized plane. It is deliberately not labeled dBm; it is not a full-carrier/SMTC RSSI report."
+            if normalized else "Actual 20-PRB/four-symbol SSB received power, including observed noise/interference, per receive branch. Not full carrier/SMTC RSSI or a UE carrier-RSSI report.")
+    return _finish(m, name, run_id, rows, series, "Burst source slot", units, note, sources)
+
+
+def _data_carrier_power(m, name, existing, fetch, run_id):
+    sources = CHART_SOURCES[name]
+    rows, series, seen = [], defaultdict(list), set()
+    for path, samples in m._all_available_rows(existing, fetch, sources):
+        for index, row in enumerate(samples, 1):
+            token = m._row_text(row, "AllocationCarrierPowerMeasurementJSON")
+            if not token:
+                continue
+            identity = _identity(m, row, path, index)
+            try:
+                e = json.loads(token)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("Invalid received carrier-power evidence JSON.") from exc
+            required = {"ContractVersion": "received_data_carrier_power/v1",
+                "Scope": "received_data_symbol_window_full_carrier_not_ue_NR_RSSI_report",
+                "PowerReferencePlane": "receiver_antenna_connector_pre_composite_front_end",
+                "Source": "actual_physical_received_IQ_OFDM_carrier_energy",
+                "InputAmplitudeUnit": "sqrt_mW", "GridAmplitudeUnit": "sqrt_W",
+                "FrequencyAlignment": "nominal_carrier_no_oracle_CFO_correction", "CPIncluded": False}
+            if not isinstance(e, dict) or any(e.get(k) != v for k, v in required.items()):
+                raise ValueError("Carrier-window RSSI requires actual physical IQ with explicit scope and units.")
+            def positive(field, integer=False):
+                v = e.get(field)
+                if (not isinstance(v, (float, int)) or isinstance(v, bool) or not math.isfinite(v)
+                        or v <= 0 or (integer and v != int(v))):
+                    raise ValueError(f"Invalid carrier-power {field}.")
+                return int(v) if integer else v
+            n_rx, n_rb = positive("NumReceiveAntennas", True), positive("NumRB", True)
+            scs, bw = positive("SubcarrierSpacing_kHz"), positive("Bandwidth_Hz")
+            fs, nfft = positive("SampleRateHz"), positive("Nfft", True)
+            symbols = _numbers(json.dumps(e.get("SymbolIndices0Based")), integers=True)
+            allocation = _numbers(json.dumps(e.get("SymbolAllocation")), integers=True)
+            if (len(allocation) != 2 or allocation[1] < 1 or
+                    symbols != list(range(allocation[0], sum(allocation))) or
+                    not math.isclose(bw, 12*n_rb*scs*1000, rel_tol=1e-12)):
+                raise ValueError("Carrier power must retain the exact data-symbol window and carrier bandwidth.")
+            first, stop = e.get("ObservationStartSample"), e.get("ObservationEndSampleExclusive")
+            bounds = [first, e.get("ReceivedSymbolStartSample"), e.get("ReceivedSymbolEndSampleExclusive"), stop]
+            if (any(not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v)
+                    or v < 0 or v != int(v) for v in bounds) or
+                    not first <= bounds[1] < bounds[2] <= stop):
+                raise ValueError("Carrier power has invalid received sample bounds.")
+            grant = e.get("GrantContextId")
+            digest = e.get("PhysicalObservationSHA256", "")
+            if (not isinstance(grant, str) or not grant or not re.fullmatch(r"[0-9a-fA-F]{64}", str(digest)) or
+                    e.get("Direction") != identity["direction"] or not identity["ue_index"] or identity["slot"] is None or
+                    e.get("RNTI") != m._row_float(row, "RNTI") or
+                    e.get("DataAbsoluteSlot") != identity["slot"]-1):
+                raise ValueError("Carrier power lacks exact received grant, UE, slot or waveform identity.")
+            rssis = _numbers(json.dumps(e.get("RSSIPerAntenna_dBm")))
+            mirrors = _numbers(m._row_text(row, "AllocationCarrierRSSIPerReceiveAntenna_dBm"))
+            powers = e.get("SymbolPowerPerAntenna_W")
+            if n_rx == 1 and len(symbols) == 1 and isinstance(powers, (int, float)):
+                # MATLAB jsonencode serializes a 1x1 numeric matrix as a scalar.
+                powers = [[powers]]
+            elif n_rx == 1 and isinstance(powers, list) and all(isinstance(v, (int, float)) for v in powers):
+                powers = [[v] for v in powers]
+            elif len(symbols) == 1 and isinstance(powers, list) and all(isinstance(v, (int, float)) for v in powers):
+                powers = [powers]
+            if (len(rssis) != n_rx or len(mirrors) != n_rx or not isinstance(powers, list) or
+                    len(powers) != len(symbols) or any(not isinstance(p, list) or len(p) != n_rx for p in powers)):
+                raise ValueError("Carrier power must preserve every receive branch and measured symbol.")
+            for branch in range(n_rx):
+                values = [p[branch] for p in powers]
+                if any(not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) or v < 0 for v in values) or sum(values) <= 0:
+                    raise ValueError("Invalid physical symbol energy.")
+                value = 10*math.log10(sum(values)/len(values))+30
+                if abs(value-rssis[branch]) > 1e-7 or abs(value-mirrors[branch]) > 1e-7:
+                    raise ValueError("Carrier RSSI fails per-branch linear-energy/dBm closure.")
+                key = (grant, first, stop, branch)
+                if key in seen:
+                    raise ValueError("Duplicate received grant/branch carrier-power identity.")
+                seen.add(key)
+                rows.append({**identity, "grant_context_id": grant, "receive_antenna_index_1based": branch+1,
+                    "rssi_dbm": value, "num_rb": n_rb, "bandwidth_hz": bw, "sample_rate_hz": fs, "nfft": nfft,
+                    "symbol_indices_0based": json.dumps(symbols), "symbol_powers_w": json.dumps(values),
+                    "observation_start_sample": first, "observation_end_sample_exclusive": stop,
+                    "power_reference_plane": e["PowerReferencePlane"], "measurement_scope": e["Scope"],
+                    "physical_observation_sha256": digest})
+                series[f"{identity['direction']} U{identity['ue_index']} Rx{branch+1}"].append([identity["slot"], value])
+    return _finish(m, name, run_id, rows, series, "Received data slot", "Carrier-window RSSI (dBm)",
+        "Actual antenna-plane carrier energy over received data symbols, per branch. Includes noise/interference; no oracle CFO correction. Not a UE NR-RSSI report.", sources)
 
 
 def radio_measurement_chart(name, existing, fetch, run_id):
@@ -563,6 +735,8 @@ def radio_measurement_chart(name, existing, fetch, run_id):
             return _csi_physical_power(m, name, existing, fetch, run_id)
         if name == SSB_POWER_CHART:
             return _ssb_window_power(m, name, existing, fetch, run_id)
+        if name in DATA_POWER_CHARTS:
+            return _data_carrier_power(m, name, existing, fetch, run_id)
         if name in PRECODER_CHARTS:
             return _precoding(m, name, existing, fetch, run_id)
         return _relationships(m, name, existing, fetch, run_id)

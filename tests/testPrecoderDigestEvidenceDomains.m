@@ -37,6 +37,15 @@ bad.MatrixPorts = [];
 bad.AppliedMatrixSHA256 = "not-a-digest";
 localAssertThrows(@() sixgr.phy.grant.resolvePrecoderDigestEvidence(grant, bad), ...
     "sixgr:phy:grant:InvalidPrecoderDigest");
+noRequest=sixgr.phy.grant.resolvePrecoderDigestEvidence(struct(),precodeInfo);
+assert(strlength(noRequest.RequestedPrecoderSHA256)==0 && noRequest.AppliedPrecoderSHA256==elementDigest, ...
+    'Applied waveform evidence cannot manufacture a requested digest or a false requested/applied match.');
+requestedOnly=grant;
+requestedOnly.AppliedPrecoderSHA256=elementDigest;
+requestedOnly.AppliedPrecoderMatrixSHA256=elementDigest;
+noTransmitter=sixgr.phy.grant.resolvePrecoderDigestEvidence(requestedOnly,struct());
+assert(noTransmitter.RequestedPrecoderSHA256==elementDigest && strlength(noTransmitter.AppliedPrecoderSHA256)==0, ...
+    'Grant claims cannot substitute for an absent transmitter-applied matrix.');
 ok = true;
 end
 

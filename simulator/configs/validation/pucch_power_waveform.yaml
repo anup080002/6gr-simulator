@@ -1,0 +1,13 @@
+profile_id: pucch_power_vector_waveform_v1
+research_class: baseline_benchmark
+evidence_scope: component_power_control_calibration_not_main_run
+# Explicit validation fixture; Mu/MRB and all power operands come from each
+# frozen power vector. No received DCI, channel, beam or RF-mask pass is claimed.
+fixture_factory: sixgr.phy.pucch.PUCCHFixtureFactory.connected
+format: 3
+information_bits: '01010101010101010101'
+minimum_grid_prbs: 24
+start_prb: 0
+rnti: 321
+resource_id: 13
+configuration_epoch: 1

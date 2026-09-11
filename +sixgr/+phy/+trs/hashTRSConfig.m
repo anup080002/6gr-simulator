@@ -2,7 +2,7 @@ function hash = hashTRSConfig(trsCfg)
 %HASHTRSCONFIG Stable SHA-256 hash for strict TRS evidence.
 
 S = trsCfg;
-drop = {'ToolboxCarrier','ToolboxCSIRS','ConfigExport','StrictValidation','BaseConfig'};
+drop = {'ToolboxCarrier','ToolboxCSIRS','ToolboxResources','ConfigExport','StrictValidation','BaseConfig'};
 drop = intersect(drop, fieldnames(S));
 if ~isempty(drop)
     S = rmfield(S, drop);

@@ -2,6 +2,7 @@ function writeYAML(filePath, data)
 %WRITEYAML Write a struct/cell/numeric/string object as YAML text.
 
 filePath = char(string(filePath));
+data = sixgr.lls6g.config.yamlArrayEnvelope(data,"encode");
 txt = localSerializeValue(data, 0, false);
 sixgr.util.writeTextFile(filePath, txt, ...
     "MimeType", "application/x-yaml; charset=UTF-8", ...
@@ -250,7 +251,13 @@ if isinf(v)
     end
     return;
 end
-txt = string(v);
+if isa(v,"double")
+    txt = string(sprintf('%.17g',v));
+elseif isa(v,"single")
+    txt = string(sprintf('%.9g',v));
+else
+    txt = string(v);
+end
 if contains(lower(txt), "e") && ~contains(txt, ".")
     txt = regexprep(txt, '^([+-]?\d+)e([+-]?\d+)$', '$1.0e$2');
 end

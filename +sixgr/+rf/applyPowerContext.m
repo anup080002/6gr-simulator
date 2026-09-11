@@ -19,6 +19,74 @@ if ~(isstruct(ctx) && isfield(ctx, "ContractVersion"))
 end
 
 [inputTotal_mW, inputPerPort_mW, refInfo] = localTotalActivePower_mW(x, txInfo);
+fixedSNRNormalizedReference = ...
+    upper(strtrim(string(sixgr.util.structGet(cfg, ...
+        "integration.run_mode", "")))) == "FIXED_SNR_SWEEP" && ...
+    logical(sixgr.util.structGet(cfg, ...
+        "integration.configured_snr_is_link_authority", false));
+if fixedSNRNormalizedReference
+    % A configured-SNR LLS uses normalized baseband Es/N0.  Applying a
+    % device EIRP, geometry pathloss, or 38.213 power-control result here
+    % would silently replace that operating point.  Preserve the actual
+    % IFFT samples and make the arbitrary-but-declared unit mapping
+    % explicit: one unit-energy occupied RE is represented as 1 mW.
+    % This branch is limited to the connected FIXED_SNR_SWEEP integration
+    % mode; physical-link-budget runs retain the absolute-power path.
+    if logical(sixgr.util.structGet(cfg, "rf.pa.enable", ...
+            sixgr.util.structGet(cfg, "phy.impairments.paNonlinearityEnabled", false)))
+        error("sixgr:rf:FixedSNRAbsolutePAReferenceUnsupported", ...
+            ["The normalized occupied-RE fixed-SNR path cannot apply an " + ...
+             "absolute-voltage PA model. Use a separately declared " + ...
+             "normalized-EVM impairment or a physical-link-budget run."]);
+    end
+    y = x;
+    [outputTotal_mW, outputPerPort_mW] = localTotalActivePower_mW(y, txInfo);
+    ctx.ScaleApplied = false;
+    ctx.AmplitudeScale = 1;
+    ctx.InputTotalPower_mW = double(inputTotal_mW);
+    ctx.InputTotalPower_dBm = localmWToDbm(inputTotal_mW);
+    ctx.InputPerPortPower_mW = double(inputPerPort_mW);
+    ctx.InputPerPortPower_dBm = localmWToDbm(inputPerPort_mW);
+    ctx.OutputTotalPower_mW = double(outputTotal_mW);
+    ctx.OutputTotalPower_dBm = localmWToDbm(outputTotal_mW);
+    ctx.OutputPerPortPower_mW = double(outputPerPort_mW);
+    ctx.OutputPerPortPower_dBm = localmWToDbm(outputPerPort_mW);
+    ctx.TotalTxPower_mW = double(outputTotal_mW);
+    ctx.TotalTxPower_dBm = localmWToDbm(outputTotal_mW);
+    ctx.TotalTxPower_W = double(outputTotal_mW) * 1e-3;
+    ctx.TotalTxPowerSource = ...
+        "fixed_snr_unit_occupied_re_reference_not_device_power";
+    ctx.ActivePortCount = double(nnz(outputPerPort_mW > ...
+        eps(max([outputPerPort_mW(:); 1]))));
+    ctx.ReferencePowerDomain = char(string(sixgr.util.structGet( ...
+        refInfo, "ReferenceDomain", "")));
+    ctx.ReferenceSampleCount = double(sixgr.util.structGet( ...
+        refInfo, "SampleCount", numel(x)));
+    ctx.PowerNormalizationPolicy = "unit_occupied_re_fixed_esn0";
+    ctx.PowerNormalizationSource = ...
+        "integration.configured_snr_is_link_authority";
+    ctx.FullBWPActivityFactor = NaN;
+    ctx.ReferenceInputPower_mW = double(inputTotal_mW);
+    ctx.ReferenceInputPower_dBm = localmWToDbm(inputTotal_mW);
+    ctx.ReferenceOutputPower_mW = double(outputTotal_mW);
+    ctx.ReferenceOutputPower_dBm = localmWToDbm(outputTotal_mW);
+    ctx.ActualEmittedPowerBackoffFromBudget_dB = NaN;
+    ctx.PowerClosureError_dB = 0;
+    ctx.PerPortPowerSum_mW = sum(double(outputPerPort_mW), "omitnan");
+    ctx.ExpectedEmittedPower_mW = double(outputTotal_mW);
+    ctx.PerPortPowerSumError_mW = ctx.PerPortPowerSum_mW - double(outputTotal_mW);
+    ctx.ConversionEquation = ...
+        "x_out=x_ifft; occupied_RE_Es_reference=1_mW; no_absolute_power_scaling";
+    ctx.FixedSNRNormalizedReference = true;
+    ctx.FixedSNRReferenceEnergyPerOccupiedRE = 1;
+    ctx.PhysicalDevicePowerClaim = false;
+    ctx.PAEnabled = false;
+    ctx.PAApplied = false;
+    ctx.PAExecutionDeferred = false;
+    ctx.PAModel = "disabled_for_normalized_fixed_snr_reference";
+    ctx.PAExecutionStatus = "not_applicable_normalized_fixed_snr_reference";
+    return;
+end
 [normalization, normalizationInfo] = localResolveNormalizationReference( ...
     x, cfg, direction, txInfo, inputTotal_mW, refInfo);
 scale = 1;

@@ -57,6 +57,14 @@ cfg.initial_access.rrc = struct( ...
     "srb1_lcid", 1);
 cfg.random_access = struct();
 cfg.random_access.enabled = true;
+% Explicit component-fixture association; this is not a measured beam sweep.
+cfg.random_access.associated_ssb_index = 0;
+cfg.random_access.associated_ssb_selection_source = "component_fixture_not_measured_selection";
+cfg.phy.ssb.Lmax = 8;
+cfg.phy.ssb.runtimeSSBIndex = 0;
+cfg.phy.ssb.activeBitmap = "10000000";
+cfg.phy.ssb.precoderMatrices = 1;
+cfg.phy.ssb.precoderIDs = "component_fixture_identity";
 cfg.random_access.rar_grant = struct("field_layout", "licensed_27bit", ...
     "frequency_hopping", false, "time_resource_assignment", 0, "tpc_command", 3);
 cfg.random_access.binding_source = "scenario_config_pending_sib1";
@@ -85,7 +93,9 @@ cfg.random_access.timing = struct( ...
     "msg3_k2_slots", 1, ...
     "msg4_processing_delay_slots", 1, ...
     "setup_complete_k2_slots", 1);
-cfg.random_access.dci_payload_bits = 32;
+cfg.random_access.msg4_dci = struct('ndi',1,'harq_process',0, ...
+    'tpc_command_for_pucch',1,'pucch_resource_indicator',0, ...
+    'pdsch_to_harq_feedback_timing',1,'harq_ack_repetitions_configured',false);
 cfg.random_access.detection_threshold_mode = "fixed";
 cfg.random_access.detection_threshold = 0.02;
 cfg.random_access.msg2_pdsch = localDLSched();

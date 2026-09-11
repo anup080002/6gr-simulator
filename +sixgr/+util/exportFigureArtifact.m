@@ -28,6 +28,12 @@ if isstruct(gate) && isfield(gate, "Matched") && logical(gate.Matched)
     end
 end
 
+% Direct runtime publishers do not necessarily enter the qualification
+% runner that installs graphics defaults. Normalize the completed figure at
+% the common export boundary so white canvases never retain dark-theme text.
+% Styling must not change any plotted samples, labels or provenance.
+sixgr.visual.RasterFigureStyle.apply(figHandle);
+
 if sixgr.db.isArtifactStoreActive()
     tmpPath = char(string(tempname) + string(ext));
     cleanupTmp = onCleanup(@() localDeleteIfExists(tmpPath)); %#ok<NASGU>

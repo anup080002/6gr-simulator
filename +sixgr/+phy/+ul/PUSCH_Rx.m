@@ -21,6 +21,7 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "PHYGrant"    : frozen canonical grant dimensional contract
 %     "ReceiveCombiningMatrix": frozen Nrx-by-Nout MU receive projection
 %     "ReceiveCombiningMatrixSHA256": expected digest of that projection
+%     "TimingSearchWindowSamples": bounded search in an actual gNB capture
 %
 %   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -70,6 +71,7 @@ ip.addParameter('CodingLayout', struct(), @(x) isempty(x) || isstruct(x) || isce
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('TimingSearchWindowSamples', [], @(x) isempty(x) || (isnumeric(x) && numel(x)==2));
 ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
 ip.addParameter('InterferenceContributionTensor', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('InterferenceContributionSource', "", @(x) isempty(x) || ischar(x) || isstring(x));
@@ -211,19 +213,6 @@ if numel(trBlkSize) ~= nCodewords || ...
         "PUSCH RX requires one positive integer transport block size per codeword.");
 end
 
-% Canonical coding layout. For UCI-on-PUSCH the LDPC rate-recovery input is
-% GULSCH, not the total PUSCH coded-bit count G.
-ulschRateMatchedBitCount = localResolveRxULSCHBitCount( ...
-    pusch, targetCodeRate, trBlkSize, puschInfo, expectedUCIPayload);
-codingLayouts = localResolveRxCodingLayouts(opt.CodingLayout, phyGrant, "UL", ...
-    trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ...
-    ulschRateMatchedBitCount);
-codingLayout = codingLayouts{1};
-bgn = double(cellfun(@(x) x.BaseGraph, codingLayouts));
-tbCRCType = string(cellfun(@(x) string(x.TBCRCType), codingLayouts));
-tbCRCLen = double(cellfun(@(x) x.TBCRCLength, codingLayouts));
-ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
-
 % DMRS
 [dmrsInd, dmrsSym, dmrsInfo] = sixgr.phy.refsig.dmrsPUSCH(carrier, pusch);
 [dmrsSym, dmrsPowerInfo] = localApplyPUSCHDMRSEPREDifference(dmrsSym, cfg);
@@ -270,6 +259,26 @@ elseif logical(trackingCorrection.CFOEstimateAvailable)
     trackingCorrection.CFONAReason = "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
 end
 
+receiveTiming = struct();
+if ~isempty(opt.TimingSearchWindowSamples)
+    assert(~useFastAWGNPath && ~logical(opt.SkipTimingEstimate) && ...
+        ~localRuntimeAlignedTimingBypass(cfg), ...
+        'sixgr:phy:ul:SharedPUSCHTimingBypassForbidden', ...
+        'An unaligned shared capture requires actual DM-RS timing, not aligned/ideal timing bypass.');
+    [rxWaveform,receiveTiming]=sixgr.phy.sync.alignULReferenceObservation( ...
+        carrier,rxWaveform,chEstDMRSInd,chEstDMRSSym,opt.TimingSearchWindowSamples);
+    rawTimingEstimate=receiveTiming.TimingOffsetSamples;
+    timingEstimateForCorrection=rawTimingEstimate;
+    timingEstimateSource=receiveTiming.TimingSource;
+    % These samples have not undergone the legacy channel-wrapper trim.
+    % Extracting the measured complete FFT interval is the only correction.
+    knownTimingDelaySamples=0;
+    timingResolution=sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ...
+        'EstimateUsed',true,'ApplicationMode','positive_crop_only', ...
+        'Source',timingEstimateSource);
+    timingResolution.ApplicationPolicy='actual_capture_complete_slot_extraction_no_padding';
+    trackingCorrection.TimingCorrectionApplied=true;
+else
 rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
@@ -315,6 +324,7 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(timingEstimateForCorr
     "MaxCorrectionSamples", localMaxTimingCorrectionSamples(carrier));
 trackingCorrection.TimingCorrectionApplied = logical(timingResolution.EstimateUsed);
 rxWaveform = localApplyTimingCorrection(rxWaveform, timingResolution.AppliedCorrection_samples);
+end
 
 % OFDM demod
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
@@ -428,6 +438,12 @@ else
         "InputDomain", domain, ...
         "Source", noiseSource);
 end
+% The demodulator's calibrated sample-to-grid gain is independent of
+% whether the receiver estimated noise directly in the grid or converted
+% an explicit input variance. An identity input conversion is not the OFDM
+% transform, and a measured grid variance must not erase this metadata.
+noiseTransformInfo.OFDMSampleToGridNoiseVarianceGain = ...
+    double(sixgr.util.structGet(ofdmInfo,"SampleToGridNoiseVarianceGain",NaN));
 configuredNoiseVariance = opt.ConfiguredNoiseVariance;
 if ~isempty(configuredNoiseVariance)
     [configuredNoiseVariance, configuredNoiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
@@ -447,6 +463,7 @@ if ~logical(noiseStatus.IsValid)
         trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
         nVar, noiseStatus, logical(opt.CompactOutput));
+    rx.ReceiveTiming = receiveTiming;
     rx.DMRSEPREDifference = dmrsPowerInfo;
     rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
     rx.DMRSPowerBoost_dB = double(dmrsPowerInfo.DMRSPowerBoost_dB);
@@ -615,15 +632,27 @@ else
 end
 
 [cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHCodewordLLR(cwLLR, nCodewords);
-codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract( ...
-    pusch, cwLLRCell, codingLayouts, eqSym);
 [cwLLRCell, llrCSIInfo] = localApplyCSIToPUSCHCodewordLLRs( ...
     cwLLRCell, csi, pusch.Modulation, postEqSINR_dB, ...
     nVarForDecode, nVarDecodeInfo);
 cwLLR = cwLLRCell{1};
 [cwLLRForULSCH, uciOnPUSCH] = localDemultiplexTypedUCIFromPUSCH( ...
     localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
-    expectedUCIPayload, initialIMCS);
+    expectedUCIPayload, initialIMCS, cfg);
+
+% Resolve LDPC rate recovery only AFTER received UCI has established the
+% actual UL-SCH resource count. Expected TX CSI lengths are not RX authority.
+ulschRateMatchedBitCount=double(cellfun(@numel,cwLLRForULSCH));
+codingLayouts = localResolveRxCodingLayouts(opt.CodingLayout, phyGrant, "UL", ...
+    trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ...
+    ulschRateMatchedBitCount);
+codingLayout = codingLayouts{1};
+bgn = double(cellfun(@(x) x.BaseGraph, codingLayouts));
+tbCRCType = string(cellfun(@(x) string(x.TBCRCType), codingLayouts));
+tbCRCLen = double(cellfun(@(x) x.TBCRCLength, codingLayouts));
+ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
+codewordLayerMapping = localBuildPUSCHRxCodewordLayerContract( ...
+    pusch, cwLLRCell, codingLayouts, eqSym);
 
 if nCodewords == 2
     decodeTic = tic;
@@ -654,6 +683,7 @@ if nCodewords == 2
         knownTimingDelaySamples, timingEstimateForCorrection, timingEstimateSource, ...
         decodeLatency_s, maxIter, alg, llrCSIInfo, uciOnPUSCH, ...
         enablePTRSCPECorrection, opt.CompactOutput);
+    rx.ReceiveTiming = receiveTiming;
     if hasPHYGrant
         rx.PHYGrant = phyGrant;
         rx.PHYGrantDimensionContract = phyGrantContract;
@@ -679,22 +709,9 @@ cwLLRForULSCH = cwLLRForULSCH{1};
 
 % Rate recover (to code blocks)
 if numel(cwLLRForULSCH) ~= double(codingLayout.RateMatchedBitCount)
-    if ~logical(uciOnPUSCH.Applied)
-        error("sixgr:phy:ul:PUSCHCodewordLLRCountContract", ...
-            "PUSCH UL-SCH LLR count %d does not match CodingLayout RateMatchedBitCount=%d and no UCI demultiplexing explains the mismatch.", ...
-            numel(cwLLRForULSCH), round(double(codingLayout.RateMatchedBitCount)));
-    end
-    codingLayout = sixgr.phy.phycode.resolveCodingLayout( ...
-        "Direction", "UL", ...
-        "TransportBlockSize", trBlkSize, ...
-        "TargetCodeRate", targetCodeRate, ...
-        "RV", rv, ...
-        "Modulation", pusch.Modulation, ...
-        "NumLayers", pusch.NumLayers, ...
-        "RateMatchedBitCount", numel(cwLLRForULSCH), ...
-        "TBCRCType", tbCRCType);
-    bgn = double(codingLayout.BaseGraph);
-    ldpcSeg = localLDPCSegmentationFromLayout(codingLayout);
+    error("sixgr:phy:ul:PUSCHCodewordLLRCountContract", ...
+        "Received UL-SCH LLR count %d differs from validated coding layout %d.", ...
+        numel(cwLLRForULSCH), double(codingLayout.RateMatchedBitCount));
 end
 codewordLayerMapping.ULSCHDemapperLLRCountPerCodeword = double(numel(cwLLRForULSCH));
 codewordLayerMapping.TotalULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
@@ -795,6 +812,7 @@ decodedBitLineage = localBuildPUSCHDecodedBitLineage(cwLLR, cwLLRForULSCH, recLL
 
 % Outputs
 rx = struct();
+rx.ReceiveTiming = receiveTiming;
 rx.TransportBlockSize = trBlkSize;
 rx.CRCError = logical(crcErr);
 rx.Ok = logical(crcOK);
@@ -813,7 +831,7 @@ rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVarianceDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVarianceSource = char(string(noiseStatus.Source));
 rx.PreEqualizationNoiseVarTransformSource = char(string(sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
-rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
+rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet(noiseTransformInfo, "OFDMSampleToGridNoiseVarianceGain", NaN));
 rx.DecoderNoiseVar = double(nVarForDecode);
 rx.PostEqualizationNoiseVar = double(nVarPostEqDiagnostic);
 rx.PostEqualizationNoiseVariance = double(nVarPostEqDiagnostic);
@@ -1051,6 +1069,7 @@ rx.DecodedCSIPart2Bits = int8(uciOnPUSCH.DecodedCSIPart2Bits(:));
 rx.DecodedConfiguredGrantUCIBits = int8(uciOnPUSCH.DecodedConfiguredGrantUCIBits(:));
 rx.CSI1ContentMatch = logical(uciOnPUSCH.CSI1ContentMatch);
 rx.CSI2ContentMatch = logical(uciOnPUSCH.CSI2ContentMatch);
+rx.UCIReceiverEvidence=uciOnPUSCH.UCIReceiverEvidence;
 rx.ConfiguredGrantUCIContentMatch = logical(uciOnPUSCH.ConfiguredGrantUCIContentMatch);
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
@@ -1751,25 +1770,10 @@ end
 timingAvailable = localFirstLogical(raw, ["TimingEstimateAvailable","RuntimeTRSTimingEstimateAvailable"], false);
 timingSamples = localFirstFinite(raw, ["TimingEstimate_samples","RuntimeTRSTimingEstimate_samples","EstimatedTimingOffset_samples"], NaN);
 cfoAvailable = localFirstLogical(raw, ["CFOEstimateAvailable","RuntimeTRSCFOEstimateAvailable"], false);
-oscillatorCFOHz = localFirstFinite(raw, ["EstimatedOscillatorCFO_Hz","RuntimeTRSEstimatedOscillatorCFO_Hz"], NaN);
-legacyCFOHz = localFirstFinite(raw, ["EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
 allowRuntimeCommonAsCFO = logical(sixgr.util.structGet(cfg, ...
     "phy.rx.applyRuntimeTRSCommonFrequencyAsCFO", false));
-injectedCFOHz = localResolveInjectedCFOHz(cfg);
-hasInjectedOscillatorCFO = isfinite(injectedCFOHz) && abs(double(injectedCFOHz)) > 1e-9;
-runtimeLegacyZeroCFO = usingRuntimeUserContext && isfinite(legacyCFOHz) && abs(double(legacyCFOHz)) <= 1e-9;
-runtimeNonzeroTRSCFOWithoutInjectedOscillator = usingRuntimeUserContext && ...
-    ~allowRuntimeCommonAsCFO && ~hasInjectedOscillatorCFO && ~runtimeLegacyZeroCFO && ...
-    isfinite(oscillatorCFOHz) && abs(double(oscillatorCFOHz)) > 1e-9;
-if runtimeNonzeroTRSCFOWithoutInjectedOscillator
-    cfoHz = NaN;
-elseif runtimeLegacyZeroCFO
-    cfoHz = legacyCFOHz;
-elseif usingRuntimeUserContext && ~allowRuntimeCommonAsCFO
-    cfoHz = oscillatorCFOHz;
-else
-    cfoHz = localFirstFiniteValue(oscillatorCFOHz, legacyCFOHz);
-end
+[cfoHz,tracking.FrequencyEstimateDomain] = sixgr.phy.rx.resolveTrackingFrequencyEstimate( ...
+    raw,usingRuntimeUserContext,allowRuntimeCommonAsCFO);
 commonHz = localFirstFinite(raw, ["EstimatedCommonFrequency_Hz","RuntimeTRSEstimatedCommonFrequency_Hz", ...
     "EstimatedCommonPhaseFrequency_Hz"], NaN);
 physicalDopplerHz = localFirstFinite(raw, ["PhysicalDoppler_Hz","RuntimeTRSPhysicalDoppler_Hz", ...
@@ -2966,16 +2970,6 @@ seg = struct( ...
     "SegmentationInfo", sixgr.util.structGet(layout, "Segmentation", struct()));
 end
 
-function E = localRateMatchedBitCountFromInfo(info)
-E = double(sixgr.util.structGet(info, "G", NaN));
-E = E(:).';
-if isempty(E) || any(~isfinite(E) | E <= 0 | E ~= fix(E))
-    error("sixgr:phy:ul:PUSCHCodingLayoutMissingG", ...
-        "PUSCH RX requires one positive integer rate-matched bit count per codeword.");
-end
-E = round(E);
-end
-
 function pusch = localEnsureTransformPrecodingOwnership(pusch, cfg)
 try
     modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
@@ -3058,29 +3052,8 @@ else
 end
 end
 
-function E = localResolveRxULSCHBitCount(pusch, targetCodeRate, trBlkSize, puschInfo, payload)
-E = localRateMatchedBitCountFromInfo(puschInfo);
-if ~payload.hasPayload()
-    return;
-end
-if exist("nrULSCHInfo", "file") ~= 2
-    error("sixgr:pusch:UCIProcessingUnavailable", ...
-        "Typed UCI on PUSCH requires nrULSCHInfo from 5G Toolbox.");
-end
-p = payload.toStruct();
-rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, ...
-    p.OACK, p.OCSI1, p.OCSI2 + p.OCGUCI);
-E = double(rmInfo.GULSCH);
-E = E(:).';
-if numel(E) ~= double(pusch.NumCodewords) || ...
-        any(~isfinite(E) | E <= 0 | E ~= fix(E))
-    error("sixgr:pusch:InvalidUCIBitBudget", ...
-        "Typed UCI produced an invalid per-codeword GULSCH=%s.", mat2str(E));
-end
-end
-
 function [ulschLLR, info] = localDemultiplexTypedUCIFromPUSCH( ...
-        cwLLR, pusch, targetCodeRate, trBlkSize, expectedPayload, initialIMCS)
+        cwLLR, pusch, targetCodeRate, trBlkSize, expectedPayload, initialIMCS, cfg)
 p = expectedPayload.toStruct();
 info = struct( ...
     "Applied", false, ...
@@ -3103,6 +3076,7 @@ info = struct( ...
     "ContentMatch", true, ...
     "CSI1ContentMatch", true, ...
     "CSI2ContentMatch", true, ...
+    "UCIReceiverEvidence",struct(), ...
     "ConfiguredGrantUCIContentMatch", true, ...
     "Status", "not_requested", ...
     "Reason", "");
@@ -3119,15 +3093,29 @@ if exist("nrULSCHDemultiplex", "file") ~= 2 || exist("nrUCIDecode", "file") ~= 2
         "Mandatory typed UCI demultiplex/decode requires nrULSCHDemultiplex and nrUCIDecode.");
 end
 try
+    reportConfig=[];
+    if p.OCSI1>0
+        request=sixgr.util.structGet(cfg,"phy.csi.reportConfiguration",struct());
+        if isstruct(request) && ~isempty(fieldnames(request))
+            epoch=sixgr.util.structGet(cfg,"phy.csi.reportConfigurationEpoch",request.Epoch);
+            reportConfig=sixgr.phy.mimo.CSIReportConfiguration(request,epoch);
+            reportConfig=reportConfig.forTransport("PUSCH");
+        elseif logical(sixgr.util.structGet(cfg,"mimo.strict",sixgr.util.structGet(cfg,"phy.mimo.strict",false)))
+            error('sixgr:pusch:MissingCSIReportConfiguration', ...
+                'Strict received CSI must have a report configuration; TX payload lengths are not a substitute.');
+        end
+    end
     result = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
         pusch, targetCodeRate, trBlkSize, localUnwrapSingleCell(cwLLRCells), ...
-        expectedPayload, initialIMCS);
+        expectedPayload, initialIMCS, reportConfig);
 catch ME
     throwAsCaller(MException("sixgr:phy:ul:PUSCHUCIDemultiplexFailed", ...
         "Typed UCI demultiplex/decode failed (%s): %s", ME.identifier, ME.message));
 end
 ulschLLR = result.ULSCHLLR;
 info.Applied = true;
+info.CSI1BitCount=result.ResolvedCSI1BitCount;
+info.CSI2BitCount=result.ResolvedCSI2BitCount;
 info.Source = result.Source;
 info.DecodedHARQACKBits = result.DecodedHARQACK;
 info.DecodedCSIPart1Bits = result.DecodedCSIPart1;
@@ -3136,9 +3124,10 @@ info.DecodedConfiguredGrantUCIBits = result.DecodedConfiguredGrantUCI;
 info.HARQACKLLR = result.HARQACKLLR;
 info.CSI1LLR = result.CSI1LLR;
 info.CSI2AndCGUCILLR = result.CSI2AndCGUCILLR;
-info.ContentMatch = result.HARQACKCRCOK;
-info.CSI1ContentMatch = result.CSI1CRCOK;
-info.CSI2ContentMatch = result.CSI2CRCOK;
+info.ContentMatch = result.HARQACKContentMatch;
+info.CSI1ContentMatch = result.CSI1ContentMatch;
+info.CSI2ContentMatch = result.CSI2ContentMatch;
+info.UCIReceiverEvidence=result.UCIReceiverEvidence;
 info.ConfiguredGrantUCIContentMatch = result.ConfiguredGrantUCIMatch;
 % This exported status is HARQ-ACK-specific. CSI and configured-grant UCI
 % retain their independent content-match fields.
@@ -3318,7 +3307,7 @@ rx.PreEqualizationNoiseVarDomain = "resource_grid_pre_equalization";
 rx.PreEqualizationNoiseVarTransformSource = char(string( ...
     sixgr.util.structGet(noiseTransformInfo, "TransformSource", "")));
 rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
-    noiseTransformInfo, "SampleToGridNoiseVarianceGain", NaN));
+    noiseTransformInfo, "OFDMSampleToGridNoiseVarianceGain", NaN));
 rx.ReceiverHestSINR_dB = double(receiverSINR.Value);
 rx.ReceiverHestSINRSource = char(receiverSINR.Source);
 rx.PostEqSINR_dB = double(postEqSINR_dB);
@@ -3389,6 +3378,7 @@ rx.DecodedConfiguredGrantUCIBits = int8(uci.DecodedConfiguredGrantUCIBits(:));
 rx.HARQACKContentMatch = logical(uci.ContentMatch);
 rx.CSI1ContentMatch = logical(uci.CSI1ContentMatch);
 rx.CSI2ContentMatch = logical(uci.CSI2ContentMatch);
+rx.UCIReceiverEvidence=uci.UCIReceiverEvidence;
 rx.ConfiguredGrantUCIContentMatch = logical(uci.ConfiguredGrantUCIContentMatch);
 rx.HARQACKDecodeStatus = char(string(uci.Status));
 if ~logical(compactOutput)

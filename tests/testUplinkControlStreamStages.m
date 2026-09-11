@@ -19,7 +19,10 @@ cfg.lls6g.userContext.RuntimeServingPathlossMeasurementSlot=1;
 cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalType='SSB';
 cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalId=0;
 
-for caseIndex=1:3
+% The old Format-0 connector case had no received UL timing/TAG history.
+% Its actual shared-SRS -> Format-0 replacement is executed below; never
+% manufacture a prior clock to keep that obsolete receive fixture passing.
+for caseIndex=[1 3]
     channels=["SRS","PUCCH","PUCCH"];
     channel=channels(caseIndex);
     if channel=="SRS"
@@ -82,6 +85,7 @@ for caseIndex=1:3
     if channel=="SRS"
         assert(isequaln(completed.ChannelState,context.ChannelState));
         assert(completed.TrueChannelOracleAvailable && completed.NMSE_dB<=completed.ChannelNMSEThreshold_dB);
+        assert(isnan(completed.QCLAccuracy));
         [~,info]=sixgr.phy.waveform.ofdmDemodulate(p.Tx.Carrier,y);
         expected=sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
             noise.SampleNoiseVariance,info,'InputDomain','time');
@@ -101,12 +105,14 @@ for caseIndex=1:3
         failed=runner(cfg,args{:},'ReceivedContext',noReference);
         assert(~failed.Ok && ~failed.TrueChannelOracleAvailable && isnan(failed.NMSE_dB) && ...
             string(failed.FailureReason)=="srs_channel_nmse_reference_unavailable");
+        localUnchangedReceiver(completed,failed);
         % A wrong absolute gain is an NMSE failure, not fitted away.
         wrongReference=context;
         wrongReference.DesiredReferenceObservation=localBuffer(p,2*desired);
         failed=runner(cfg,args{:},'ReceivedContext',wrongReference);
         assert(~failed.Ok && failed.NMSE_dB>-8 && ...
             string(failed.FailureReason)=="srs_channel_nmse_above_threshold");
+        localUnchangedReceiver(completed,failed);
     else
         assert(isequaln(completed.UpdatedRuntimeChannelState,context.ChannelState));
         assert(completed.UCIContentMatch && isequal(completed.ExpectedBits,completed.DecodedBits));
@@ -133,7 +139,19 @@ for caseIndex=1:3
     end
     fprintf('[PASS] %s staged actual reception at standalone 12 dB; no main scheduler claim.\n',channel);
 end
+assert(testSharedPUCCHFeedbackClock(), ...
+    'Pilot-free PUCCH requires the actual preceding shared SRS timing fixture.');
 ok=true;
+end
+
+function localUnchangedReceiver(good,scoringFailure)
+assert(~scoringFailure.StrictOk && scoringFailure.SRSRuntimeEvidenceUsable, ...
+    'Scoring failure must fail qualification without replacing received evidence.');
+for field=["SRSRuntimeEvidenceUsable","SRSChannelEstimateAvailable","ChannelEstimateAvailable", ...
+        "SINR_dB","CQI","MCSIndex","RIEstimate","TPMIEstimate","NoiseVariance"]
+    assert(isequaln(good.(field),scoringFailure.(field)), ...
+        'Independent scoring changed receiver output %s.',field);
+end
 end
 
 function out=localPUCCH(cfg,withDMRS)

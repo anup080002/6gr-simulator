@@ -25,6 +25,15 @@ if strlength(outputDir)==0
     error("sixgr:phy:pucch:MissingEvidenceOutput", ...
         "OutputDir is mandatory.");
 end
+% Do not publish the legacy phase's hardcoded independent mismatch counts,
+% unevaluated DMRS correlation, or selected==applied beam assertions as
+% measured evidence. Real standalone receiver trials do not validate these
+% other families. Remove this quarantine only with execution-backed
+% replacement producers and an aggregate gate covering every family.
+error("sixgr:phy:pucch:UnverifiedPhaseEvidence", ...
+    "PUCCH Phase-05 qualification is unavailable: independent-vector, " + ...
+    "DMRS correlation, hopping comparison and spatial application evidence " + ...
+    "are not execution-backed. No phase CSV/PNG has been generated.");
 if ~isfolder(outputDir), mkdir(outputDir); end
 runID = "PUCCH_PHASE05_R18";
 contract = sixgr.phy.pucch.PUCCHUtil.readAllStrings( ...
@@ -57,8 +66,8 @@ tables.pucch_collision_resolution = localCollision( ...
 tables.pucch_power_control = localPower(contract,runID,vectorRoot);
 tables.pucch_spatial_relation = localSpatial(contract,runID,vectorRoot);
 tables.pucch_negative_tests = localNegative(contract,runID,vectorRoot);
-tables.pucch_independent_vector_results = localIndependent( ...
-    contract,runID,vectorRoot);
+[tables.pucch_independent_vector_results,tables.pucch_independent_field_comparisons] = ...
+    sixgr.phy.pucch.PUCCHIndependentVectorComparison.build(vectorRoot,runID);
 tables.pucch_test_summary = localSummary(contract,runID,waveformSummary);
 
 names = string(fieldnames(tables));
@@ -93,9 +102,16 @@ expectedCSV = string(contract.FileName);
 expectedPNG = string(imageContract.ImageFile);
 csvPresent = arrayfun(@(x) exist(fullfile(outputDir,x),"file")==2,expectedCSV);
 pngPresent = arrayfun(@(x) exist(fullfile(outputDir,x),"file")==2,expectedPNG);
-mismatches = sum(str2double(tables.pucch_independent_vector_results.MismatchCount));
+mismatches = sum(tables.pucch_independent_vector_results.MismatchCount);
+allStatusPass=true;
+for name=names.'
+    t=tables.(name);
+    if ismember('Status',t.Properties.VariableNames)
+        allStatusPass=allStatusPass&&all(string(t.Status)=="PASS");
+    end
+end
 passed = all(csvPresent)&&all(pngPresent)&&mismatches==0&& ...
-    waveformSummary.Failures==0;
+    waveformSummary.Failures==0&&allStatusPass;
 summary = struct( ...
     "Passed",passed,"Strict",true,"RunID",runID, ...
     "OutputDir",outputDir,"CSVCount",sum(csvPresent), ...
@@ -395,24 +411,10 @@ end
 end
 
 function value = localPower(contract,runID,root)
-input=localRead(root,"pucch_power_control_test_vectors.csv");
-expected=localRead(root,"expected_pucch_power_control.csv");
-value=localTable(contract,"pucch_power_control.csv",height(input));
-for index=1:height(input)
-    actual=sixgr.phy.pucch.PUCCHPowerController.resolveVector(input(index,:));
-    expectedPower=str2double(expected.ExpectedTransmitPowerdBm(index));
-    errorDb=actual.AppliedPowerdBm-expectedPower;
-    value.RunID(index)=runID;value.CaseID(index)=input.CaseID(index);
-    copy=["P0dBm","PathlossdB","DeltaFdB","DeltaTFdB","PCMAXdBm"];
-    for name=copy,value.(name)(index)=input.(name)(index);end
-    value.BandwidthTermdB(index)=string(actual.BandwidthTermdB);
-    value.TPCAdjustmentdB(index)=input.ClosedLoopAdjustmentdB(index);
-    value.RequestedPowerdBm(index)=string(actual.RequestedPowerdBm);
-    value.AppliedPowerdBm(index)=string(actual.AppliedPowerdBm);
-    value.MeasuredWaveformPowerdBm(index)=string(expectedPower);
-    value.PowerError_dB(index)=string(errorDb);
-    value.Clipped(index)=localBool(actual.Clipped);value.Status(index)=localStatus(abs(errorDb)<=1e-9);
-end
+% Policy is an explicit component-validation profile, not a main-run override.
+repository=fileparts(which('setup6GRSimToolkit'));
+profile=fullfile(repository,'simulator','configs','validation','pucch_power_waveform.yaml');
+value=sixgr.phy.pucch.PUCCHPowerVectorEvidence.build(root,runID,profile);
 end
 
 function value = localSpatial(contract,runID,root)
@@ -477,25 +479,6 @@ if any(failed)
     details=join(value.CaseID(failed)+":"+value.ObservedErrorID(failed),", ");
     error("sixgr:phy:pucch:NegativeCaseMismatch", ...
         "Production negative cases did not match the contract: %s.",details);
-end
-end
-
-function value = localIndependent(contract,runID,root)
-families=["uci_report_serialization","uci_coding","harq_ack_codebook", ...
-    "sr_state","csi_report","resource_set_selection","resource_indicator", ...
-    "format_mapping","dmrs","hopping_repetition","k1_tdd", ...
-    "power_control","spatial_relation"];
-counts=[128 140 24 414 48 70 64 350 5 5 192 48 72];
-manifestPath=fullfile(root,"independent_vector_manifest.json");
-artifactHash=sixgr.phy.pucch.PUCCHArtifactExporter.fileSHA256(manifestPath);
-value=localTable(contract,"pucch_independent_vector_results.csv",numel(families));
-for index=1:numel(families)
-    value.RunID(index)=runID;value.VectorFamily(index)=families(index);
-    value.VectorCount(index)=string(counts(index));value.OracleClass(index)="pure_spec_frozen_independent";
-    value.OracleImplementation(index)="pucch_rel18_vector_pack";
-    value.OracleVersion(index)="TS38.211/212/213/214/331 V18.8.0";
-    value.OracleArtifactSHA256(index)=artifactHash;value.MismatchCount(index)="0";
-    value.Status(index)="PASS";
 end
 end
 

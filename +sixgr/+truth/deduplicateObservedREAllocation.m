@@ -22,6 +22,9 @@ identityVariables = [ ...
     "absolute_slot", "symbol_index", "port_index", ...
     "subcarrier_start", "subcarrier_count", "direction", ...
     "channel", "allocation_id"];
+if ismember('grid_domain',T.Properties.VariableNames)
+    identityVariables(end+1)="grid_domain";
+end
 if all(ismember(identityVariables, string(T.Properties.VariableNames)))
     key = strings(inputCount, numel(identityVariables));
     for variableIndex = 1:numel(identityVariables)

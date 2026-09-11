@@ -20,7 +20,8 @@ end
 if isfield(grant, "TimingDecision")
     grant.TimingDecision = struct();
 end
-for field = ["ScheduledAbsoluteSlot", "HARQFeedbackAbsoluteSlot", ...
+for field = ["ControlSlot", "ControlFrame", ...
+        "ScheduledAbsoluteSlot", "HARQFeedbackAbsoluteSlot", ...
         "DataAbsoluteSlot", "FeedbackAbsoluteSlot"]
     name = char(field);
     if isfield(grant, name)

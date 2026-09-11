@@ -3387,3 +3387,4770 @@ tests cannot substitute for that missing run-level evidence.
 Audit legacy callers and shortcuts for every channel above. Preserve absent
 or inapplicable evidence with explicit reasons; never create primary rows or
 plots simply to make channel coverage appear complete.
+
+## 2026-09-08: actual shared SRS link observation; qualification still fails
+
+Fresh diagnostic: `C:\Users\anup0\AppData\Local\Temp\main_shared_srs_20260908_002956`.
+Log: `logs/shared_link_scoring_main_tdd_20260908.log`. MATLAB exited zero after
+35 TDD slots. This is execution completion, NOT qualification or full-frontdoor
+publication success. The nominal 12 dB setting remains an operating-point label.
+
+An on-demand shared physical scoring plane now records the serving link's
+actual contribution after TX RF, channel and large-scale loss, before receiver
+noise/RF and summation with other links. It uses the contribution already
+computed by the same physical execution; it does not clone, reset or rerun the
+channel, RF or RNG. Opposite-direction TDD intervals explicitly contribute zero
+to this endpoint, with an inactive-link flag. Its clock coverage, link identity
+and antenna dimensions are checked before exporting the samples.
+
+This observation is scoring-only: `ReceiverEstimatorInput=false` and
+`ChannelMatrixReference=false`. It is NOT an independently separated per-port
+channel matrix. The SRS receiver and scheduler do not consume it as such, and
+the missing-channel-reference qualification gate was not relaxed.
+
+Both SRS occasions completed without a timing exception:
+
+| One-based slot | Actual gNB receive window [samples) | Measured timing [samples] | Result |
+|---|---|---|---|
+| 30 | [222543, 230392) | 84 | FAIL: srs_channel_nmse_reference_unavailable |
+| 35 | [260943, 268792) | 84 | FAIL: srs_channel_nmse_reference_unavailable |
+
+Both rows export `DesiredLinkScoringAvailable=1`,
+`DesiredLinkScoringSource=actual_executed_link_contribution`, and
+`DesiredLinkScoringChannelMatrixReference=0`. Connected DL and UL trial counts
+remain zero. No main-run PUSCH/PUCCH/UCI or CSI/PMI/TCI closure is established.
+
+Independent HDF5 checks of both actual MAT captures found:
+
+- 7.68 MHz sample rate, two physical branches, 7680 TX samples and 7849 samples
+  in each received/scoring plane, all finite, lengths equal end minus start.
+- Every element of TX-after-RF, RX-before-RF, RX-after-RF and digitally
+  gain-compensated RX was BIT IDENTICAL to the corresponding capture in
+  `main_shared_srs_20260907_225801`, which had no scoring observer.
+- Desired-link mean squared amplitudes were 4.613057295870089e-11 and
+  4.613152477712407e-11 mW. Pre-RF minus desired-link mean squared amplitudes
+  were 1.5247610479251825e-10 and 1.528992649349484e-10 mW. These are averages
+  across the entire capture, including non-SRS time, NOT SRS-RE SINR or a
+  standardized RSSI measurement.
+
+### Additional SRS metric defect identified, not yet repaired
+
+`runSRSChannelEstimation.localSRSLSEstimate` prefers branch-averaged raw pilot
+ratios over the actual practical `rx.Hest`. The reference helper also averages
+complex receive branches. Such cancellation and composite multi-port pilots
+cannot establish per-port channel-estimator accuracy. Other local comparison
+helpers truncate unequal vectors and discard invalid entries. The new shared
+observation must not be inserted into that path to manufacture finite NMSE.
+
+Next repair requires independent per-resource/per-port reference evidence from
+the SAME actual channel execution, using recorded path gains/filters/times,
+the receiver's measured timing, physical port mapping and explicit gain plane.
+Do not use perfect timing in the receiver or a second channel execution.
+`nrPerfectChannelEstimate` supports reconstruction from applied path gains,
+filters and sample times with an explicit timing offset
+([MathWorks documentation](https://www.mathworks.com/help/5g/ref/nrperfectchannelestimate.html)).
+That is an offline scoring mechanism, not permission for oracle receiver input.
+
+### MIMO reporting integrity repair
+
+The evidence builder formerly manufactured `NegativeExpectedOk=true` and an
+`InjectedFault` string for ordinary configured-versus-effective failures. It
+executes no injected-fault waveform experiment. These invented negative-trial
+rows are now omitted (empty typed table); actual failed objectives and strict
+gate reasons remain intact. The rank-collapse regression now checks both
+properties. Existing result folders have not been rewritten or deleted.
+
+### Artifact audit and verification checkpoint
+
+The strict exhaustive audit (including first FIVE rows of every CSV) is at
+`results/lls/qualification_working/reviews/shared_scoring_first5_20260908`.
+It found 171 CSVs, 17634 rows, zero parse failures, 53 empty tables, five
+structural-issue files, 13 duplicate rows, 126 required CSV semantic failures
+and one required chart-lineage failure. These are audit checks, not 126 proven
+distinct PHY defects. The diagnostic lacks full-frontdoor identity/publication
+metadata; missing trials and applicability/schema gaps are not concealed.
+
+One PNG was generated and visually inspected. Unavailable BER/throughput plots
+were correctly omitted instead of populated with synthetic values. The remaining
+case plot still incorrectly calls PRACH detection outcome rate BLER; its source
+metric/applicability contract requires repair. Visual audit also reports the
+missing `reports/csv/plot_manifest.csv`.
+
+SSB-window RSSI exists in actual PBCH rows, e.g. first row receive branches
+-57.7819920234285 and -58.4298753327016 dBm. Its 240-subcarrier/four-symbol
+measurement scope must remain explicit; full-carrier/SMTC RSSI and RSSI PNG
+publication are not claimed implemented by this checkpoint.
+
+Four focused shared-physical, UL timing/staging and connected-RAR tests passed
+in `logs/shared_link_scoring_focused_20260908.log`. A subsequent 27-check batch
+including the MIMO repair, strict guards, config, DL/UL, reference points,
+scheduler, E2E and export/scenario checks was INTERRUPTED in
+`logs/shared_scoring_integrity_regression_20260908.log`. On reinspection at
+02:32 local time its process and session were absent; the log ended in an E2E
+fixture without the final marker. Do not count the complete batch as passed.
+No `testAll`, 25 dB or main FDD campaign was launched.
+
+## 2026-09-08 continuation: full applied channel coefficients and noise rejection
+
+The saved-observation replay in `logs/srs_received_noise_only_audit_20260908.log`
+completed with exit zero. It compared the actual gain-compensated SRS reception
+against a scoring-only negative observation: actual pre-RF received samples
+minus the actual desired-link contribution. No channel, RF or noise was rerun
+to construct that negative diagnostic, and it was not published as a new trial.
+
+| Replay input | Finite Hest | Noise/measurement usable flag | Measured timing | Correlation peak |
+|---|---|---|---|---|
+| Actual received | 1 | 1 | 84 samples | 1.82806e-7 |
+| Desired contribution removed | 1 | 1 | 54 samples | 2.98384e-10 |
+
+This proves that finite Hest and a usable noise estimate are insufficient
+detection evidence. `runSRSChannelEstimation` currently derives detection
+success from finite Hest. That receiver/admission defect remains OPEN; the
+noise-only result must not be admitted by dropping the independent NMSE gate.
+The separate legacy grid detector is not a safe replacement: its extraction
+indexes RX grids with transmit-port indices and has implicit applied-gain
+defaults. Noise rejection needs an explicitly defined, receiver-only detection
+statistic and negative tests, distinct from offline qualification.
+
+Implemented full reference collection through the existing shared clock:
+
+- `ChannelFactory.applyRuntimeChannelState` offers an explicit fourth-output
+  reference containing full actually applied path gains, filters and sample
+  times, antenna dimensions and normalization flags. It requires continuous
+  materialized-port NR fading samples and validates complete per-sample
+  coverage. The truncated preview is never substituted for that reference.
+- The continuous path no longer retries a stateful channel call after an
+  output-contract exception. The new reference path performs exactly one
+  channel call and fails on incomplete evidence.
+- The physical owner accepts bounded reference windows and retains only
+  matching active link/receiver intervals. Requests expire at their end;
+  retargeted opposite-direction TDD intervals do not acquire fictitious UL
+  coefficients. This is not hardcoded to antenna count or duplex mode.
+- Shared SRS preparation requests the coefficients for its actual receive
+  window. Captures retain them separately as `AppliedChannelReferenceSegments`.
+  Receiver replay removes these tensors before delivery; the practical
+  receiver does not receive them as an estimation input.
+
+Three focused checks passed in `logs/channel_reference_capture_focused_20260908.log`.
+Four then passed in `logs/shared_channel_reference_integration_focused_20260908.log`:
+continuous channel, shared physical runtime, UL received timing and UL staged
+reception. Tests compare full gains/filters/times and waveform samples against
+independent test-only channel objects, prove subsequent sample invariance,
+bound capture inside processor intervals, and assert receiver replay excludes
+the new reference tensors. The continuous 38400-sample test had relative
+whole-versus-partition error 2.02772e-16. TDD/FDD component cases remain distinct
+from a main FDD campaign, which was not run.
+
+The 35-slot TDD main diagnostic completed with exit zero and the explicit final
+marker in `logs/shared_channel_reference_main_tdd_20260908.log`. Its root is
+`C:\Users\anup0\AppData\Local\Temp\main_shared_srs_20260908_025028`.
+Both actual SRS MAT captures contain 18 contiguous reference segments spanning
+all 7849 receive samples, with 23 paths and a 2-by-2 physical channel. An
+independent HDF5 check verified complete finite coefficient dimensions and
+BIT-IDENTICAL TX/post-RF/pre-RF/gain-compensated sample arrays compared with
+`main_shared_srs_20260908_002956`. This run still had no independent NMSE
+scoring wired into qualification: two SRS FAIL rows and zero connected DL/UL
+trials remain in its original outputs. Those outputs were not rewritten.
+
+## Per-port NMSE repair after the completed coefficient-capture run
+
+`sharedSRSReferenceGrid` now reconstructs the independent NR channel response
+from those SAME executed gains/filters/times, referenced to the actual TX start
+and the measured receiver timing (7 samples relative to TX in this run). It
+applies the prepared port-to-element map, declared TX amplitude scaling,
+executed propagation loss and explicit channel-output normalization. It checks
+link identity, contiguous coverage, coefficient dimensions and slot bounds.
+No receiver-estimate gain/phase is fitted and no second channel call is made.
+
+The reference plane is explicitly the nominal linear SRS port response; RF
+distortions are excluded from the reference, not silently claimed modeled by
+its linear matrix. The actual receiver still processes the complete impaired
+waveform. This is not a general nonlinear-RF transfer-matrix claim.
+
+`pilotChannelNMSE` compares the practical per-RE Hest against that reference
+over every pilot, receive antenna and SRS port. It rejects missing scored
+values, unequal shapes, duplicate indices and unobserved configured ports.
+It does not average complex antenna branches, truncate arrays or discard NaNs.
+Exact zero error is retained as zero linear NMSE / negative-infinity dB.
+
+Saved-waveform replay completed with exit zero in
+`logs/srs_per_port_scoring_replay_20260908.log`:
+
+| SRS TX start | Per-port NMSE dB | Compared complex values | RX antennas | SRS logical ports |
+|---|---|---|---|---|
+| 222620 | -21.6758 | 288 | 2 | 1 |
+| 261020 | -22.3174 | 288 | 2 | 1 |
+
+These are independently reconstructed reference comparisons, not rewritten
+canonical trial rows. The one SRS port maps to two physical UE elements; this
+run does not establish two-port UL sounding or rank-two UL adaptation.
+
+The scorer has now been wired into `runSRSChannelEstimation` AFTER `SRS_Rx`,
+using a separate scoring context that is never passed to that receiver.
+Canonical rows retain comparison counts and the explicit reference plane.
+The existing -8 dB threshold was not changed. Missing reference remains a
+failure. The algebra regression includes opposite-phase RX branches, gain and
+phase errors, missing values and duplicate resources; it is registered in the
+test registry without executing `testAll`.
+
+All five focused qualification/timing/physical-owner checks PASSED with exit
+zero and a final marker in `logs/srs_per_port_qualification_focused_20260908.log`.
+The gating regression explicitly retains failure for missing NMSE and accepts
+negative infinity only as the mathematical representation of zero linear error.
+A fresh 35-slot nominal-12-dB TDD diagnostic is RUNNING in
+`logs/shared_srs_qualified_main_tdd_20260908.log` to exercise the newly wired
+scoring and subsequent scheduler behavior; its result is not yet known. Its
+root is `C:\Users\anup0\AppData\Local\Temp\main_shared_srs_20260908_031620`.
+SRS noise rejection, complete regression
+closure, main connected PUSCH/PUCCH/UCI/CSI/beam/RSSI and publication correctness
+remain OPEN; none is inferred from the two replay NMSE results.
+
+## 2026-09-08: main SRS qualification reached; connected PDCCH boundary failed
+
+The process for `main_shared_srs_20260908_031620` has EXITED WITH FAILURE,
+not completed qualification. The actual slot-30 shared SRS row is PASS with
+NMSE -21.6758 dB. At slot 31 the scheduler received it (`valid_srs=1/1`) and
+created its first DL grant (`active=1 granted=1 grants=1`). It then stopped:
+
+`sixgr:truth:LegacyExecutionOnSharedStream` in
+`localQualifyCoupledGrantsWithPDCCH` ->
+`CoupledTruthRuntime.acquireRuntimeChannelStateForControl`.
+
+The existing guard correctly prevented a second, eager channel execution.
+There were still ZERO connected PDSCH/PUSCH trial rows at the failure
+checkpoint. SRS success does not establish connected UL data/control success.
+
+The next migration stage adds an actual physical PDCCH contribution adapter
+and queue to `CoupledWaveformStream`: exact coded/OFDM IQ, explicit per-RE
+power normalization, power-preserving logical-to-physical antenna mapping,
+deferred node RF/PA, and receive completion at the monitored symbol boundary.
+DL and UL DCI share a physical control-RE reservation ledger. These adapters
+are under focused test; the MAIN scheduler still calls the legacy qualifier
+until data preparation and received-grant delivery can be migrated together.
+It would be incorrect to replace the exception with an empty grant list or
+to prepare UE PUSCH from an unreceived DCI.
+
+An additional timing defect was found while building the adapter: blind
+PDCCH skips candidate timing but did not consume the prior received SS/PBCH
+clock. The new received-clock alignment contract validates cell, sample rate,
+measured phase, implementation filter delay and causal availability. It
+shifts the actual observation origin and prevents a second timing correction
+inside the decoder. Missing blind-receiver timing is rejected by the shared
+queue, not silently assumed zero. No true path delay or channel coefficients
+are used to align this receiver.
+
+Focused tests are running in `logs/pdcch_shared_queue_focused_20260908.log`.
+No new main simulation was launched after the slot-31 failure.
+
+Additional confirmed unclosed producer paths from static inspection:
+
+- `PreparedDataTransmission` still rejects nonzero UL TA instead of using
+  distinct UE TX/gNB RX origins; the received-TA control implementation must
+  be reused for data, not bypassed.
+- Main standalone PUCCH reducers still acquire the legacy channel in
+  `CoupledTruthRuntime` (HARQ and CSI UCI paths). Their prepared/received
+  component support does not yet establish shared-scheduler execution.
+- Connected data completion must retain HARQ/UCI binding across actual DCI,
+  data and ACK receive events; no timing qualification is inferred here.
+- Per-port SRS score is repaired for this shared path, but finite-Hest-only
+  detection still accepts the independently replayed noise-only observation.
+- CSI feedback/PMI, QCL/TCI activation/beam use, full-band RSSI and complete
+  CSV/PNG publication remain open and must not be advertised as verified.
+
+PDCCH adapter test corrections (not new successful campaign results):
+
+- The first batch passed received-clock alignment but failed physical queue
+  preparation because `PDCCH_Tx` only populated `AllocatedRECoordinates`
+  when `ReservedRECoordinates` was explicitly supplied. The transmitter now
+  always exports its actual payload/DM-RS coordinates, independent of that
+  optional candidate-selection request. It does not synthesize occupancy.
+- The second attempt correctly rejected a missing sample-count field, but
+  this profile declares its timing search budget in microseconds. The queue
+  now calls the existing generic `resolveTimingSearchGuard` for either unit
+  and rejects the legacy no-budget assumption. No fixed sample count was
+  added for this scenario.
+- Retry two is logged in `logs/pdcch_shared_queue_focused_retry2_20260908.log`;
+  its test outcome is still pending at this journal entry.
+
+Further static-review boundaries: SRS TX power control currently accepts
+`RuntimeServingPathloss_dB` with a combined
+`runtime_geometry_or_reference_rs_measurement` source. This does not prove
+UE measured-reference-only pathloss authority and needs a precise provenance
+audit. The new PDCCH physical array projection likewise does not, by itself,
+establish decoded TCI activation or QCL-based beam selection. Those checks
+must precede a beamforming-conformance claim.
+
+The coherent known-candidate fixture is now declared in
+`lls_pdcch_shared_queue_fixture.yaml`, with SIB1 disabled because that
+procedure requires blind search. It is an isolated physical-owner experiment;
+the production profile and its access/blind-search requirements are unchanged.
+Prior retries caught inconsistent test authority and were not passes.
+
+`pdcch_shared_queue_focused_retry4_20260908.log` exited zero. Five directly
+executed checks passed: shared physical queue, received-clock alignment,
+preparation/reception, receive decision boundary, and shared control resources.
+The real coded known-candidate physical fixture decoded at sample 1192,
+before its 7680-sample slot ended; CRC passed, with measured candidate SINR
+33.9034 dB. That is this component's measured SINR, not a forced 12 dB result
+or a completed main-run DCI grant.
+
+Verification correction: the last named false-alarm test in that command
+returns a MATLAB function-test suite. Direct `feval` only constructed it;
+the command's PASS marker is NOT evidence that its assertions ran. Repeating
+with the repository's `executeRegressionTest` harness is required. No
+false-alarm success is claimed from that first command.
+
+The corrected harness run has now completed with exit zero and final marker
+`PDCCH_SHARED_QUEUE_ASSERTIONS_PASS` in
+`logs/pdcch_shared_queue_assertions_20260908.log`. All EIGHT named tests
+executed their assertions and passed:
+
+- `testPDCCHSharedPhysicalQueue`
+- `testPDCCHReceivedClockAlignment`
+- `testPDCCHPreparationReception`
+- `testPDCCHReceiveDecisionBoundary`
+- `testPDCCHSharedSlotResourceAllocation`
+- `testPDCCHNoSignalFalseAlarm` (suite actually executed)
+- `testPDCCHBlindSearchNoOracle` (suite actually executed)
+- `testPDCCHWrongRNTIReject`
+
+These establish the tested adapter/receiver boundaries, including the
+existing TDD/FDD control-resource component fixture, not a main FDD campaign
+or completion of main connected data. The next required integration step
+is still coordinated main PDCCH/data preparation and received-event delivery;
+the legacy execution guard remains enabled and main slot 31 remains blocked.
+
+Broader verification is RUNNING in
+`logs/shared_control_required_regressions_20260908.log`, with 23 named checks
+executed through `executeRegressionTest` and per-test BEGIN/PASS_ASSERTIONS
+markers. Execution source, tests and configuration are frozen during this
+MATLAB batch. It is not `testAll`, a new main TDD run or a main FDD campaign.
+Its result is pending; these uncommitted changes are not yet qualified for
+a clean/release checkpoint.
+
+### Failed-main exhaustive inventory and measurement arithmetic closure
+
+The original failed main run remains untouched at
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_031620`.
+Its separate review is
+`results/lls/qualification_working/reviews/shared_srs_qualified_failed_20260908`.
+`tools/audit_lls_run_exhaustive.py --preview-rows 5 --strict-value-closure`
+completed with exit 1, correctly failing value qualification:
+
+- 73 CSV files, 11,817 rows and 5,787 columns; all first-five-row previews
+  retained in `all_csv_first_five_rows.csv`.
+- No CSV parse failures, structural issue files or duplicate rows.
+- Eleven empty files without explicit applicability dispositions; 62 nonempty
+  files without domain contracts. No semantic-check pass can be inferred.
+- 448 all-blank columns, 1,391 all-zero finite columns, 12,916 NaN tokens and
+  two Inf tokens require field-specific interpretation, not blanket filling.
+- No PNG or other raster output exists in this aborted main run. Reports
+  from component tests are not substitutes for its missing final plots.
+- Fourteen byte-identical CSV groups include control/air-interface mirrors;
+  their existence does not establish duplicated physical observations.
+
+All 87 lexical proxy matches were reviewed. The scanner matches `lut` inside
+`absolute` and `resolution`, and also matches explicitly unavailable
+`*_decoder_truth_proxy_not_materialized` labels whose numeric proxy SINR is
+NaN. These matches are not evidence of proxy execution. This is not a claim
+that every execution path has been cleared of legacy approximations. The two
+Inf tokens are the explicitly infinite time-alignment timer and its mirror,
+not infinite measured SINR.
+
+Independent arithmetic checks on all eight actual PBCH rows found maximum
+absolute errors of 4.98e-14 dB for SS-SINR versus the saved per-branch linear
+desired/disturbance power ratio, 9.95e-14 dB for measured pathloss versus
+signalled reference power minus SS-RSRP, and 1.43e-14 dB for SSB-window RSSI
+versus the mean per-symbol sum of received RE power. These establish export
+arithmetic closure only. The RSSI scope is the 240-subcarrier, four-symbol
+SSB window, not full-carrier or SMTC RSSI. The nominal 12 dB scenario label
+does not establish a measured 12 dB SS-SINR benchmark.
+
+Actual access evidence includes shared-stream Msg1, Msg2, Msg3, Msg4 and
+RRCSetupComplete with `SelfLoopWaveformUsed=0`. Msg3 CRC passes; slot-24
+RRCSetupComplete has TBS 736 bits, passing CRC/receiver/identity checks and
+RRCConnected=1. These access results do not qualify connected PUSCH or UCI.
+
+### Additional connected-uplink timing gap (not yet repaired)
+
+The valid SRS at slot 30 has nominal slot origin 222720 samples but actual
+UE TX origin 222620 samples, despite a decoded RAR command of zero. Its
+received-clock/common-offset timing remains applicable when the RAR-command
+contribution is zero. `PreparedDataTransmission` currently accepts zero
+`TimingAdvanceTicks` and then stages data at the nominal slot origin; it
+also rejects nonzero TA instead of resolving distinct UE TX/gNB RX origins.
+The data path must reuse received timing, common-offset, TAG application and
+expiry authority, not remove the assertion or hardcode this 100-sample gap.
+
+Static review also confirms that worker batch results preserve the original
+configuration/context through `localMergeCoupledGrantBatchWorkerResult`.
+The cleared worker payload is not an empty-config commit defect; do not
+change that merge on the basis of the intermediate representation alone.
+Future shared data coordination must retain this frozen-grant/HARQ context.
+
+At this entry the same MATLAB process (PID 8872, session 23903) remains live.
+The first 14 of 23 named checks passed assertions; `test6GScenarioRunner` is
+in report finalization. Its intermediate truth-gate failures are retained in
+the log and are not yet classified as an expected negative fixture or a
+regression failure. Execution source/tests/YAML remain frozen until the
+batch terminates.
+
+Further inspection of the actual SRS row found a source-to-schema defect:
+`ReceiverHestSINR_dB=12.2599459730789`, status `OK`, and an explicit measured
+SRS reconstruction source coexist with `ReceiverHestSINRApplicable=0`.
+`localCollectSRSTrials` binds the measured value/source but leaves the
+generic row template's false applicability flag untouched. Repair must
+bind receiver availability/status as well as the value; it must not infer
+signal detection from a finite number. `ControlResourceValidity=0` is also
+a generic template value whose channel-specific applicability is unresolved.
+
+The same row has measured rank 1 and generic `PMI=0`, which the reducer
+copies from `TPMIEstimate`. That is not proof of a UE CSI-PMI report, decoded
+TCI activation or an applied beam. The actual row says BeamformingApplied=0,
+ExplicitBeamWeightsApplied=0 and no applied-precoder evidence. Its predicted
+PUSCH SINR 15.0856191918861 dB is explicitly diagnostic-only/unanchored;
+the absolute PUSCH scheduling SINR anchor is unavailable. The persisted CSI
+feedback report table contains only its header. These boundaries must stay
+visible when repairing PMI/TPMI labels and scheduler integration.
+
+The component runner's intermediate missing-report truth failure was later
+resolved by its existing final artifact materialization: at 22:34:57 UTC
+the same log records truth-contract ok=1, evidenceMissing=0, strictFailures=0.
+This does not yet establish the enclosing test assertion result. Do not patch
+the earlier intermediate status or create a duplicate report producer merely
+to make an in-progress snapshot appear final.
+
+Latest verified batch checkpoint: `PASS_ASSERTIONS test6GScenarioRunner` is
+now present, making 15 of 23 assertion sets passed. The same live process
+has begun `test6GScenarioMatrixRunner`; there is no final batch marker yet.
+The goal remains active and unqualified, with no new main campaign, commit,
+output deletion or production execution-source edit during this audit turn.
+
+### Offline audit dispatch repaired for unfinished control-only runs
+
+The next goal turn classified the preceding turn as progress plus verified
+wait, then revalidated the same live MATLAB PID 8872/session 23903. MATLAB
+execution source, MATLAB tests and YAML remain frozen during that batch.
+Python audit code was repaired/tested separately; this is not a PHY producer
+repair. CORRECTION from the later subprocess review below: it is imported
+indirectly by MATLAB's report materializer. The earlier limited dependency
+search missed `scripts/`; an immutable whole-repository batch is not claimed.
+
+`tools/lls_csv_semantics.py` previously returned zero checks and `ok=True`
+when no scenario summary, primary DL/UL data table, chart contract or FRC
+reference existed. Actual control/reference observations alone did not
+activate its audit. It now recognizes canonical control tables and their
+control-directory mirrors, including PUCCH, audits their actual rows, and
+fails the missing-final-summary qualification explicitly. If a resolved
+configuration declares a component-only runner, it preserves that scope
+instead of inventing a requirement for PDSCH/PUSCH observations.
+
+The control-table auditor also checks a present
+`ReceiverHestSINRApplicable` flag against its numeric value and channel
+estimate availability. It does not use this consistency check to infer
+successful detection. Added tests cover unfinished SRS runs, mirror rows,
+resolved component scope, PUCCH-only evidence, missing/contradictory values
+and the distinction between applicability and signal detection.
+
+Verification: `python -m pytest tests/test_lls_csv_semantics.py
+tests/test_audit_lls_run_exhaustive.py -q` completed successfully:
+**102 passed in 9.70 s**. No MATLAB test result is inferred from this command.
+
+Reaudit of the preserved main run is at
+`results/lls/qualification_working/reviews/shared_srs_failed_semantic_v2_20260908`.
+Its 73 CSV files now receive 326 semantic checks, with 104 required failed
+checks plus one failed chart-lineage check. These are NOT 104 independent
+PHY defects: they include mirrored checks, missing final provenance,
+unpublished lifecycle/status tables and absent connected data. Strict value
+closure still correctly fails; one CSV remains without a domain contract.
+The generic domain contracts check only their declared constraints, not
+every physical meaning of all 5,787 exported columns.
+
+The new applicability check catches the known SRS contradiction and the
+same producer omission in ALL THREE TRS rows (and their mirrors). PBCH and
+PRACH applicability checks pass. In `localCollectTRSTrials`, measured SINR
+is copied into ReceiverHestSINR but the generic false applicability flag is
+left untouched, as in `localCollectSRSTrials`. Both producer mappings remain
+to be repaired after the executable-source freeze ends. This additional
+TRS finding changes the next producer repair; it is not hidden by the audit.
+
+At the latest process check the same MATLAB batch remains live, CPU
+1588.828125 s, in `test6GScenarioMatrixRunner` baseline-child finalization.
+Only the prior 15 named assertion passes are claimed; no final batch marker,
+new main 12 dB campaign or full-run qualification exists yet.
+
+### Shared timing review: missing HARQ-ACK timing-advance deadline
+
+The following goal turn classified the previous turn as progress (offline
+auditor implementation and 102 passing tests) plus verified wait. It again
+confirmed MATLAB PID 8872/session 23903 live. The matrix baseline child
+completed successfully at 22:43:56 UTC; the candidate child is still running.
+No completed matrix-test assertion or full-batch result is claimed.
+
+Read-only inspection found a further production timing omission:
+`TimingRelationEngine.resolve` applies `TimingAdvanceTicks` to
+`WaveformPlacementTick` only for procedure `PUSCH`. HARQ_ACK follows the
+nominal target time, and `resolveProductionGrant` does not attach TA to its
+`feedbackRequest`. This can overestimate the actual PDSCH-to-PUCCH processing
+gap. Existing `testTimingRelationEngine` and production-caller fixtures
+declare zero TA and do not establish the missing nonzero-TA HARQ boundary.
+
+The primary normative reference is
+[TS 38.214 V18.6.0](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.06.00_60/ts_138214v180600p.pdf):
+section 5.3 includes timing advance when evaluating the first HARQ-ACK UL
+symbol against the PDSCH processing deadline; section 6.4 does so for PUSCH
+preparation. Section 5.4 additionally constrains triggered CSI reporting by
+its trigger/reference processing times. The CSI path needs its own complete
+review; absence of matching `Zref` names in a source search is not proof that
+every CSI timing implementation is missing.
+
+The main scheduler also has no located data-grant binding from
+`ConnectedULTimingByUE`: current consumers in `runWaveformLinkBundle` are
+the SRS preparation and initial connected-TAG setup. The frame policy reads
+configured `phy.timingAdvanceTicks` / scheduling-timing aliases, and the
+timing engine accepts an explicit per-grant override. Main integration must
+bind received per-UE timing before scheduling rather than leave the generic
+configured zero policy authoritative for an accessed UE.
+
+Required next repair/test scope (not yet implemented while MATLAB is live):
+
+- Distinguish received RAR NTA, common NTA offset, received DL phase, nominal
+  resource time and actual UE TX/gNB observation origins. Do not add the
+  common offset twice or treat measured receiver alignment as a TA command.
+- Use the same applicable received TAG authority in grant deadline checks
+  and PUSCH/PUCCH waveform preparation, with application time and expiry.
+- Add a nonzero-TA HARQ-ACK boundary regression where nominal K1/N1 passes
+  but the advanced first UL symbol violates N1; include TDD/FDD component
+  cases, without changing or silently shifting the configured target.
+- Retain distinct CSI trigger/reference computation deadlines and late-UCI
+  binding before physical IQ commitment; do not freeze UCI at grant creation
+  or replace already transmitted samples when feedback arrives.
+
+At the latest verified check PID 8872 CPU reached 1814.125 seconds, with new
+candidate-child report output. This is a live verified wait, not a stalled
+job inferred from elapsed wall time. MATLAB execution source/tests/YAML are
+unchanged during this turn; the newly confirmed timing defect remains open.
+
+### Isolated connected-UL timing authority helper implemented
+
+The following turn revalidated the same broad regression process, classified
+the preceding turn as new timing evidence plus verified wait, and refined the
+source freeze: existing MATLAB callers, classes, test registry and YAML are
+unchanged, but a new isolated helper and explicitly invoked unit test can be
+developed without changing any path executed by that batch. These new files
+are not yet integrated into the production scheduler or preparation classes.
+
+New `sixgr.link.resolveConnectedULTransmissionTiming` resolves a complete
+connected-UL contribution from the existing received initial-TAG capsule.
+It reconstructs and checks RAR conversion and the common timing-offset
+resolution, validates received-DL clock fields, preserves distinct UE TX and
+gNB RX windows, and enforces TA availability/application/expiry. It exposes
+the full advance separately from RAR NTA. It performs no waveform, RF,
+channel, decoder, state mutation or invented measurement. The result-integrity
+review changed its metadata to `OriginsResolved=true` and
+`WaveformTimingApplied=false`: only a later owner that installs those origins
+can truthfully mark timing as applied.
+
+`testConnectedULTransmissionTiming` covers TDD/FDD analytic fixtures at three
+sample rates, two UL numerologies and zero/nonzero RAR commands, received
+FR1 optional offsets, an explicitly declared FR2-1 offset, exact expiry and
+one-sample-invalid expiry, future/inapplicable TA, corrupted conversions,
+corrupted offsets, missing authority and an unrepresentable sample clock.
+Changing UE phase changes UE TX origin but not the gNB search-window origin.
+These are arithmetic/authority fixtures, not main FDD/TDD campaigns or PHY
+waveform qualification. Later BWP/relative-TA/NTN authority is not claimed.
+
+Memory was rechecked before the isolated MATLAB invocation: approximately
+3.75 GB free. No second waveform campaign was launched. Initial helper and
+metadata assertions passed; the extended range fixture first failed because
+it incorrectly used bare `FR2`, which the production frequency resolver
+rightly rejects. The fixture now uses `FR2-1`; production validation was not
+weakened. The final retry log is
+`logs/connected_ul_timing_helper_ranges_retry_20260908.log`, containing
+`CONNECTED_UL_TIMING_HELPER_RANGES_ASSERTIONS_PASS` after execution through
+`executeRegressionTest`. Earlier logs are retained, including the failure.
+
+Main integration is still pending: install this helper's resolved origins
+in actual PUSCH/PUCCH/SRS preparation, bind the same received per-UE authority
+to scheduler processing deadlines, add the nonzero-TA HARQ-ACK rejection,
+and preserve the UCI preparation-before-physical-commit boundary. Merely
+adding the helper does not repair a currently unchanged runtime caller.
+The broad batch remains live (PID 8872, CPU 2208.4375 s), with 15/23 named
+test passes and matrix-parent report finalization still in progress.
+
+### Verified wait and report-subprocess dependency correction
+
+The subsequent turns verified the same running PID/session, without changing
+existing MATLAB callers. The matrix parent completed at 22:57:20 UTC and
+the PRACH matrix child started at 22:57:22 UTC. The broad test count remains
+15/23 until the enclosing matrix assertion completes.
+
+When MATLAB CPU growth slowed during browser-artifact materialization, the
+actual process tree was checked rather than inferring a dead job. MATLAB
+8872 owns command subprocess 1604, launching task Python 9260 and its actual
+Python child 1932. The command is `materialize_lls_contract_artifacts.py`
+for this PRACH fixture. The helper process is not a second simulation.
+
+This exposed an error in the earlier dependency claim: the materializer
+imports `regenerate_lls_rasters_from_csv`, which imports `audit_run` from
+`tools/lls_csv_semantics.py`. The earlier search covered `+sixgr`, `simulator`
+and `tools`, but omitted `scripts` and `apps`. The auditor repair therefore
+affects later report-materialization checks in the still-running batch.
+Its 102 isolated Python test passes remain valid; the unchanged MATLAB PHY
+source assertion remains valid. However, this batch must NOT be represented
+as a single immutable repository-snapshot verification across all report
+tests. Report tests executed before the auditor edit need renewed coverage
+after final integration. No source was reverted mid-run to hide this fact.
+
+The preceding turn was a verified wait, not an implementation-completion
+claim. The goal remains active. Main scheduler/received-TA integration,
+SRS/TRS metadata producer repairs and full 12 dB qualification remain open.
+
+### PRACH component image review exposes CRC-labeling defect
+
+While the same broad batch remained live, its actual PRACH correlation PNG
+was inspected. It shows three selected traces from 16 recorded AWGN/12 dB
+trials, not every trial. The selected seeds match persisted trial rows.
+The waveform-correlation trace and detector score are distinct quantities:
+for seed 111106, the trace's first correlation magnitude is 0.94061443151435,
+whereas the detector score is 0.999379899380456 and its threshold is 0.5.
+The trace threshold is NaN. Do not insert that detector threshold into the
+different waveform-correlation domain merely to fill the plot column.
+
+A separate concrete defect was found in the component producer:
+`+sixgr/+rach/runPRACHLLS.m` assigns `roSummary.CRCPass=double(correct)`;
+`localBuildPRACHRunnerTables` forwards it into canonical PRACH trials.
+Thus these 16 component rows advertise a CRC pass for a detected preamble.
+PRACH sequence generation/detection is not a transport-block CRC check
+([nrPRACH, referencing TS 38.211 section 6.3.3](https://www.mathworks.com/help/5g/ref/nrprach.html)).
+This must be repaired at the producer and downstream consumers, preserving
+the actual detection outcome under its correct name and explicit CRC
+inapplicability. A successful component regression is not proof this label
+is physically correct, because the current test does not check that meaning.
+
+The preserved shared-stream main PRACH row already distinguishes these:
+`CRCApplicable=0`, `DetectionSuccess=1`, `DetectionUsable=1`, with no numeric
+CRC pass. Do not regress this main-path behavior when repairing the standalone
+producer. No runtime producer or active report code was edited during this
+inspection; the newly identified standalone defect remains open.
+
+### 2026-09-08: broad batch finished; UL authority and export repairs
+
+`logs/shared_control_required_regressions_20260908.log` finished with all
+23 named tests marked `PASS_ASSERTIONS`, final
+`SHARED_CONTROL_REQUIRED_REGRESSIONS_PASS`, and process exit 0. These are
+regression results, not qualification of the failed main TDD run. The
+earlier auditor-version caveat remains: report tests did not all execute
+against one immutable repository snapshot. `testAll` was not run, following
+the user's explicit focused-test restriction.
+
+After that batch finished, `PreparedUplinkControlTransmission` was wired to
+`resolveConnectedULTransmissionTiming`. SRS and PUCCH now share exact received
+RAR/common-offset validation, availability/application/expiry checks, and
+distinct UE TX/gNB capture origins. No waveform crop, finite shift, received
+sample padding or channel replay was added. The new corrupted-common-offset
+fixture must fail. The initial test run failed because its future-TA fixture
+left application earlier than reception; the fixture now advances both.
+Production validation was not weakened.
+
+`logs/ul_control_timing_integrated_retry_20260908.log` exited 0 with
+`UL_CONTROL_TIMING_AND_PRACH_PASS`: connected timing resolver assertions,
+actual SRS/PUCCH received timing for TDD/FDD fixtures and RAR commands 0/3,
+retained coded DL/UL stage tests including exact UCI-on-PUSCH bits, and two
+explicit PRACH subtests (no-noise detection and transmitter-absent noise).
+The PRACH subset is **2/15**, not the entire PRACH suite. Neither duplex
+fixture is a new main campaign.
+
+The standalone PRACH producer now sets CRCApplicable=false, CRCPass=NaN and
+DetectionSuccess from its actual correct-detection outcome. The canonical
+runner preserves this separation and rejects a numeric PRACH CRC. Both
+canonical CSV mirrors are covered by an added integration assertion; its
+new export/materialization test is pending at this checkpoint.
+
+SRS/TRS primary-row binding now copies actual receiver SINR, source, status
+and channel-estimate availability instead of leaving the generic
+ReceiverHestSINRApplicable flag false. Missing metrics remain NaN. Finite but
+unavailable/invalid evidence remains visible for the auditor to reject.
+The binder does not set detection, strict qualification, or scheduler SINR.
+
+The timing engine now applies TA to HARQ-ACK N1 feasibility as well as PUSCH
+N2; the production DL feedback adapter passes explicit TA authority through.
+This follows TS 38.214 section 5.3's advanced first-UL-symbol requirement:
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.06.00_60/ts_138214v180600p.pdf
+Added exact-deadline / one-Tc-too-early / absent-TA checks across existing
+mixed-numerology TDD and catalog fixtures. New focused batch is pending;
+no claim that the main scheduler yet supplies received TAG authority for
+every data/feedback grant.
+
+Remaining requested surfaces are explicitly open, not skipped:
+
+| Surface | Remaining qualification / implementation |
+| --- | --- |
+| Main shared clock | Replace synchronous legacy PDCCH qualification with actual queued TX/RX completion; retain failed-DCI/HARQ semantics. |
+| PUSCH timing | Bind received TAG before scheduling, implement distinct data TX/RX origins and bounded practical RX timing; current nonzero-TA guard remains enabled. |
+| PUCCH / UCI | Integrate main feedback/CSI queues and bind late ACKs before PUSCH IQ is committed; component success alone is insufficient. |
+| SRS | Main slot-30 measured NMSE passed; noise-only false-detection semantics and scheduling SINR authority remain unresolved. |
+| PRACH / access | Main shared Msg1–4 and setup-complete evidence exists; preserve it through scheduler migration and verify fresh outputs. |
+| CSI / PMI | Main CSI feedback is still unpopulated; prove received CQI/PMI/RI drives the actual retained precoder and scheduler. |
+| QCL / TCI | Trace actual reference, activation time, beam and applied weights into CSV/PNG; a QCL correlation score is not activation evidence. |
+| RSSI | Current SSB-window power closure does not qualify full-carrier SMTC RSSI; scope, units, branches and actual measurement-window exports still need verification. |
+| CSV / PNG | Failed main diagnostic still has no complete PNG set or connected data rows. Do not manufacture artifacts to hide this. |
+
+No new main TDD/FDD campaign, 25 dB run, Keysight playback, commit, cleanup
+or qualification claim was made at this checkpoint.
+
+#### Follow-up verification and discovered CRC schema loss
+
+`logs/harq_ta_and_measurement_bindings_20260908.log` completed with five
+`PASS_ASSERTIONS` markers and process exit 0: TimingRelationEngine,
+ReferenceSignalSINREvidence, SchedulerGrantConsistency,
+DataChannelStreamStages and LLSControlAccessGating. Production adapter
+boundary assertions were then added to testProductionTimingCallerMigration;
+that test also passed in the next batch.
+
+The first PRACH export diagnostic was **intentionally stopped, not passed**:
+`logs/prach_crc_export_integrity_20260908.log`. Actual persisted rows showed
+the correct DetectionSuccess=1 and CRCApplicable=0, but csvWriteTable's
+generic blank-column pruning removed CRCPass entirely. Its pipeline was
+stopped after this concrete schema defect was confirmed; the diagnostic
+outputs under `results/lls/prach_runner_smoke/prach_runner_smoke` were not
+deleted. The owned MATLAB PID and its four worker PIDs were verified before
+stopping them. No user/main simulation process was stopped.
+
+`pruneStructurallyBlankTableColumns` now retains CRCPass when its explicit
+CRCApplicable companion exists, whether applicability is true or false.
+Unrelated empty columns are still pruned; no values are supplied. New
+testCRCApplicabilitySchema checks in-memory pruning and an actual CSV
+roundtrip. The PRACH regression now uses the established regression scratch
+root contract (restoring its previous environment value afterwards), asserts
+its output stays below that owned scratch root, and declares one worker with
+automatic pool startup disabled in its test scenario. PHY settings and
+detector/report assertions were not relaxed.
+
+Current batch: `logs/ul_timing_crc_schema_regression_20260908.log`, exec
+session 40769, actual MATLAB PID 6468. Six tests have passed assertions:
+ProductionTimingCallerMigration, CRCApplicabilitySchema,
+ReferenceSignalSINREvidence, LinkExportPipeline, ArtifactIntegrity and
+OrganizeRunResults_E2EArtifactPreservation. The seventh,
+PRACHRunnerIntegration, has completed its waveform trials but is still
+finalizing reports. No terminal success marker yet. Actual scratch root:
+`C:/Users/anup0/AppData/Local/Temp/tpc122a343_759b_4de0_8bc7_127824cbafec`.
+
+Additional static RSSI review found duplicated legacy functions in
+CSI_Feedback and measureULLinkState: reference power averages extracted
+receive branches, while RSSI sums all branch powers. This makes their legacy
+RSRQ depend on the number of receive branches even for duplicated identical
+inputs. It is not evidence that every main-path physical RSSI is wrong:
+PDSCH_Rx's dedicated physical-resource output explicitly takes RSSI/RSRQ from
+the same branch selected for reported RSRP. The duplicated legacy calculation
+and its actual downstream use still require a measured-domain repair and
+regression, not a cosmetic relabel or a fabricated RSSI value.
+
+The active retry's first two canonical PRACH rows were inspected after
+writing: slot 39, controlled AWGN points 12/18 dB, DetectionSuccess=1,
+CRCApplicable=0, CRCPass=NaN, detector metrics 0.999401904606669 and
+0.999843159825899. The paired schema is now retained. These are standalone
+component measurements, not new connected TDD run evidence.
+
+The legacy RSSI inconsistency is also encoded in
+`tests/testCSIRuntimeExecution.m`: its expectedRSSI sums all receive branches
+while expected reference power is averaged. That existing assertion cannot
+serve as independent physical validation; repair must include analytical
+branch-consistency/diversity tests and downstream source-domain checks.
+Dedicated physical-resource RSSI/RSRQ tests already exist in
+testCSIRSPhysicalResourceMeasurements and testCSIRSRPPhysicalMeasurement;
+reuse their explicit bandwidth/symbol/branch concepts rather than replacing
+their measurement path with the legacy aggregate.
+
+### 2026-09-08 continuation: terminal PRACH export failure and plot repairs
+
+The previous goal turn was progress (runtime/producer changes and executed
+tests). On this continuation the same PID 6468/session 40769 was revalidated
+live; it was not restarted because observation took time. The seventh test
+did **not** pass: terminal materialization raised
+`sixgr:lls6g:TerminalContractRefreshFailed` for missing **PRACH EVM**. The
+manifest reported 32 available tables, 40 available charts, 161/346
+policy-disabled tables/charts, zero missing tables and one missing chart.
+The scenario summary recorded RequiredFailureCount=1. No measured
+prach_evm_samples/control_evm_samples producer was found in +sixgr.
+Do not derive EVM from the detector correlation score, disable the required
+chart, or claim that a receiver-estimator fit residual is EVM.
+
+After the explicit required-artifact failure, the runner entered report
+recovery. Its exact owned PID/command and absence of report child processes
+were checked before stopping recovery. The resulting process exit is forced
+(0xffffffff), not a successful assertion-suite exit. All scratch evidence was
+preserved. Six earlier tests in the batch passed assertions; PRACH export
+qualification remains failed. No main TDD run is active.
+
+The actual TA-estimate PNG was inspected. Its two values matched the measured
+PRACH estimates (~0.498 samples), but its caption falsely claimed an executed
+four-step chain for this standalone detector scenario. In
+apps/lls_contract_materializer.py, the caption/provenance now describes only
+persisted PRACH/initial-access observations. The same routine now consumes
+the actual DetectionSuccess field, distinguishes preamble detection from
+RACompleted, and retains missing outcomes as unknown. Missing true/residual
+timing values are no longer replaced by zero bars. If none of the chart's
+required measured timing quantities exist, it emits an explicit unavailable
+reason instead of allowing a generic substitute plot.
+
+Verified: `python -m pytest tests/test_prach_operational_plot_semantics.py
+tests/test_lls_contract_applicability_and_sweep.py
+tests/test_lls_radio_measurement_plots.py -q`: **104 passed (6.41 s)**.
+These are plot/data-semantics tests, not waveform or main-run qualification.
+No historical PNG or raw measurement was rewritten to conceal the defect.
+
+The RSSI standards review additionally establishes that same-branch
+numerator/denominator closure is necessary but not sufficient for a reported
+diversity RSRQ. TS 38.215 18.4.0 section 5.1.4 also requires reported CSI-RSRQ
+not below any individual receive branch. The maximum-RSRP branch need not
+maximize RSRQ. Retain per-branch results and distinguish associated-branch
+diagnostics from reported diversity quantities; do not silently reuse the
+RSRP-selected branch as proof that reported RSRQ is qualified.
+Reference: https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.04.00_60/ts_138215v180400p.pdf
+
+Materializer version advanced to
+`2026-09-08-contract-v58-prach-stage-and-missing-value-semantics` so cached
+old-provenance images cannot satisfy the new implementation's cache checks.
+The expanded Python set including test_lls_contract_materialization passed
+**132 tests (7.13 s)**. A fresh six-test MATLAB export/truth regression batch
+was then started in `logs/prach_plot_integrity_regressions_20260908.log`;
+completion is pending. It does not rerun the known-failing PRACH EVM
+integration or launch a main scenario.
+Live handle at handoff: exec session **41982**, actual MATLAB PID **17244**
+(wrapper PID 7904). First test begun: testLinkExportPipeline. Poll this same
+handle/process and log; do not restart merely because no new text arrives.
+
+### 2026-09-08 continuation: PUSCH received origins and intra-symbol commitment
+
+The same export regression process (session 41982 / MATLAB 17244) completed
+with exit 0 and `PRACH_PLOT_INTEGRITY_REGRESSIONS_PASS`: all six named
+export, grant-consistency and E2E truth tests passed assertions. This does
+not clear the separate missing PRACH EVM artifact or qualify the main run.
+
+PreparedDataTransmission now resolves distinct UE TX and gNB RX origins
+from the retained received DL clock, decoded RAR, common offset, application
+time and TAG expiry. Its frozen scheduling relation must contain the same
+total timing advance; a mismatch fails instead of silently changing a
+grant. The explicit aligned zero-TA component fixture remains separate.
+The actual coded waveform is retained in full, without a finite TX shift.
+PUSCH receive completion no longer marks an untouched shared capture as
+legacy channel-trimmed/aligned. It searches actual received DM-RS within
+the capture's available interval and extracts a complete measured slot;
+there is no CP-bound clipping, receiver padding, TX regeneration or channel
+delay oracle in this branch. Received timing and physical origin evidence
+are retained on the completion object. The 38.211 section 4.3.1 / 38.214
+section 6.4 references remain the timing authority, not a forced target SNR.
+
+`logs/pusch_received_timing_20260908.log` passed the TDD DL/UL stage fixtures:
+PUSCH timing 7 samples for the aligned component, 90 for received RAR 0,
+78 for received RAR 3. All three recovered the exact retained transport
+block; both received-RAR cases also recovered the actual encoded HARQ-ACK
+payload. One TX/one RX and unchanged RX-completion RNG assertions passed.
+These use explicitly analytical connector/noise samples, not a main CDL
+campaign or measured access. The batch then failed in the FDD test fixture:
+its hardcoded SRS slot was not an authored SRS occasion. The fixture now
+selects the latest configured periodic SRS occasion before its control slot
+and preserves that measured slot in the SRS decision. No SRS detector or
+production gate was weakened. Both mode fixtures are being rerun.
+
+A second causal defect was repaired in CoupledWaveformStream.advanceSlot:
+it previously committed every transmitter through an entire OFDM symbol
+before returning an earlier receive completion inside that symbol. That
+locked samples that a newly received DCI should still be able to schedule.
+WaveformEventRuntime now exposes a read-only next-event boundary, and the
+owner commits only through that boundary before receiving and reacting.
+The existing actual-PDCCH physical-owner regression now verifies future
+schedule mutability at its genuinely intra-symbol decode completion; an
+explicit zero-valued idle contribution tests ownership only and is not an
+invented channel, data trial or additional successful decode.
+
+Pending focused retry: `logs/pusch_and_causal_commit_retry_20260908.log`,
+session 54661 / MATLAB 13892. Includes both data-stage mode fixtures,
+testWaveformEventRuntime and testPDCCHSharedPhysicalQueue. No main run is
+active. The main deferred DCI/data/HARQ reducer integration, received TAG
+binding before scheduler grant freeze, future UL IQ/UCI preparation, RSSI
+diversity/legacy-domain repair, SRS noise-only detection, QCL/TCI and PMI
+end-to-end verification, and real PRACH EVM producer remain open. The main
+LegacyExecutionOnSharedStream guard remains enabled; no 10/10 claim.
+
+The focused retry completed **exit 0**, `PUSCH_AND_CAUSAL_COMMIT_PASS`.
+Both TDD and FDD data-stage fixtures passed with actual timing 7/90/78
+samples and exact TB/HARQ-ACK recovery. testWaveformEventRuntime passed.
+The physical PDCCH fixture decoded CRC=1 at sample 1192 before slot end
+7680 and successfully declared future idle samples at that intra-symbol
+callback. Measured receiver SINR in this execution was 52.5427 dB; this is
+not forced to the nominal 12-dB label and not a new main-run result.
+
+Received PUSCH trial/live-slice tables additionally retain actual sample
+rate, TX/RX start/end, timing-applied/source and (only when actually bound)
+NTA, common offset, total advance, applicability and TAG expiry. They are
+copied from the retained physical/observation authority, not reconstructed
+from nominal slots. New assertions cover these columns and reject not-yet
+effective or expired TAG authority during preparation. A frozen-source
+expanded batch is active in `logs/pusch_timing_export_required_20260908.log`
+(session 91690, MATLAB 18564): both mode fixtures, event/PDCCH owner,
+connected/control timing, production timing, Config, strict proxy guards,
+DL/UL/reference points, grant consistency, export integrity and both E2E
+truth regressions. No testAll or main campaign is launched. TDD data-stage
+assertions already passed; remaining tests must be polled, not assumed.
+
+Next integration boundary from source review: received TAG currently enters
+shared SRS preparation only. CoupledTruthRuntime.buildSchedulerUEState must
+carry each UE's received authority before SchedulerPF/SchedulerRR freeze
+their grants (not append a corrected TA after DCI generation). Their
+attachULSRSAuthorityToGrant calls currently copy SRS/TPMI only; HARQ-ACK also
+needs the per-UE advance when freezing DL timing. The cell-wide DL timing
+probe cannot substitute for that UE-specific validation. Coupled runtime
+applyUserContext must retain the same received context for PUSCH preparation.
+Main PDCCH qualification still executes eagerly in
+localQualifyCoupledGrantsWithPDCCH. Completing the main reducer requires
+actual deferred TX/RX, preserving transmitted HARQ on failed DCI, and
+resolving late UCI before irreversible IQ commitment. Do not remove the
+shared-stream guard, reuse the component fixture's received clock as main
+evidence, or enqueue a full-slot waveform prefix into already committed time.
+
+Latest expanded-batch observation: both data mode fixtures and the first ten
+named tests through testLLS_DL passed assertions. This includes actual SRS
+and PUCCH TDD/FDD received timing (RAR 0:96 samples, RAR 3:84 samples),
+Config and both strict proxy/fallback guards. MATLAB 18564/session 91690
+remains active in testLLS_UL; no process failure was observed. Keep polling
+the same handle and `logs/pusch_timing_export_required_20260908.log`.
+`git diff --check` passes. No files/results were deleted, committed or
+published to instruments during this continuation.
+
+### 2026-09-08 continuation: received TAG before scheduler grant freeze
+
+Previous turn classified as progress: implemented physical PUSCH timing,
+actual timing columns and intra-symbol commitment with executed assertions.
+The same prior regression handle 91690 completed **exit 0** with
+`PUSCH_TIMING_EXPORT_REQUIRED_PASS`: both data-stage mode fixtures and all
+18 named timing/config/PHY/export/truth tests passed. Source changes to the
+schedulers below were made only after those assertions finished.
+
+PF and RR now call attachReceivedULTimingAuthority before freezing every
+new-data or retransmission grant, including PF MU retransmissions. Both DL
+HARQ-ACK and UL PUSCH carry their own UE's received initial TAG instead of
+inheriting a cell-wide configured zero. SchedulerBase validates the selected
+UL occasion against the same received context, its common offset, exact
+sample clock, application time and expiry. This is scheduling evidence,
+explicitly not a claim that IQ was transmitted or DCI received. Initial-TAG
+scope rejects a changed UL numerology requiring dedicated timing authority.
+
+CoupledTruthRuntime now copies the received per-UE context into both the
+scheduler UE state and the execution configuration. It rejects a retained
+clock from another serving cell/UL numerology, removes stale caller context
+when the UE has no TAG, and (on the shared owner) rejects feedback whose
+availability timestamp is beyond actually consumed samples. It does not
+promote legacy measured timing offsets or geometry-predicted TA to a decoded
+RAR/TA authority.
+
+The first scheduler fixture run failed correctly at an N2 boundary: the
+30-kHz, K2=1, symbol-0 test allocation had no slack for received common TA.
+The test now asserts that failure, then schedules the feasible [2,12]
+allocation. A second fixture failure exposed its missing receiver-known
+TDRA row for [2,12]; the analytical fixture explicitly declares both rows.
+Neither the production N2 guard nor DCI TDRA validation was weakened.
+`logs/scheduler_received_tag_binding_tdra_retry_20260908.log` then completed
+**exit 0** with `SCHEDULER_RECEIVED_TAG_BINDING_PASS`:
+testSchedulerReceivedULTiming, testSchedulerGrantConsistency and
+testProductionTimingCallerMigration passed. The new test exercises both
+mode timing relations and real PF/RR grant/DCI freeze for two distinct UE
+commands, plus unavailable/expired/wrong-owner and wrong-cell/BWP rejection.
+It remains an analytical received-context fixture, not measured access.
+
+A strengthened runtime-adapter/future-feedback assertion and 20-test focused
+regression batch are now running in
+`logs/scheduler_received_tag_integration_20260908.log` (session 3789).
+Do not launch a replacement merely because output is quiet. No new main
+TDD/FDD campaign or testAll was launched. Main asynchronous PDCCH/data/UCI
+reduction is still unfinished; keep LegacyExecutionOnSharedStream enabled.
+The broad goal and remaining RSSI, QCL/TCI/PMI and PRACH-EVM work remain open.
+
+The strengthened testSchedulerReceivedULTiming passed in the expanded batch,
+including the actual runtime UE-state/config adapters with an initialized
+shared owner (zero physical samples consumed in that analytical fixture),
+rejection of future feedback and removal of stale caller context. The next
+four named tests through testLLSControlAccessGating also passed. Live handle:
+session **3789**, MATLAB **19440** (wrapper 17548). Continue observing this
+same batch; broad completion is not yet claimed. Source is frozen for its
+remaining physical/config/PHY/export/truth assertions.
+
+### Shared data capture and measured DL timing (2026-09-08 continuation)
+
+The scheduler received-TAG batch above has now completed with exit 0 and
+`SCHEDULER_RECEIVED_TAG_INTEGRATION_PASS`: all 20 named assertions passed,
+including both required E2E truth/export comparisons. Session 3789 is closed.
+This does not qualify the still-failed main 12-dB scenario.
+
+Further real defects and changes:
+
+- PDCCH TX evidence was incorrectly captured on the shifted receiver clock.
+  `queuePDCCH` now observes the actual transmitted monitoring prefix on the
+  gNB clock and the received control interval on the UE clock. The complete
+  authored PDCCH waveform stays queued. This early prefix is explicitly not
+  a complete-slot instrument IQ export and does not defer DCI to slot end.
+- Shared PDSCH reception called the legacy synchronization-context helper,
+  which labels a waveform already aligned even though the shared capture
+  has not been trimmed. The shared completion now uses bounded received
+  PDSCH DM-RS correlation and extracts a complete actual slot. No known
+  channel-delay correction, CP clipping or RX zero padding is used. The
+  antenna-plane measurement grid gets the same measured sample interval.
+- `CoupledWaveformStream.queueData` now accepts retained coded PDSCH/PUSCH
+  preparations, maps their logical ports to the physical transmitter,
+  preserves independent TX/RX intervals, and consumes real channel tails.
+  UL rejects component-only aligned timing without received TAG authority.
+  No DCI success, data CRC, HARQ commit or primary trial is invented by
+  queueing a waveform. Main scheduler call-site migration is STILL OPEN.
+
+Validation completed: `logs/shared_data_capture_timing_20260908.log`, session
+1680, exit 0, `SHARED_DATA_CAPTURE_TIMING_PASS`. The actual physical PDCCH
+fixture decoded its bits at sample 1192 before slot end 7680. TDD and FDD
+data codec fixtures recovered the full payloads; DL measured 7 samples and
+UL measured 7/90/78 samples, with exact HARQ-ACK recovery in both UCI cases.
+These are bounded fixtures, not a new FDD campaign or main-run proof.
+
+The queue-specific physical-owner test is running separately in
+`logs/shared_data_owner_queue_20260908.log`, session 17155. Do not restart
+on output silence. The main run has NOT been restarted: asynchronous
+PDCCH/data/HARQ/UCI reduction and pre-slot UL scheduling remain unfinished.
+PRACH EVM, legacy RSSI/RSRQ branch semantics, and actual QCL/TCI/CSI-PMI
+activation lineage remain open; no all-CSV/all-PNG qualification is claimed.
+
+The first owner-queue test exited 1 because its assertion incorrectly read
+`ControlDecodeOk` from `PreparedDataTransmission.RequestBinding.Grant`.
+The existing preparation contract deliberately removes receiver decisions
+from this immutable TX binding. The corrected test asserts their absence;
+it does not insert decoded-control authority. No production gate changed.
+
+Retry batch: `logs/shared_data_and_control_queue_retry_20260908.log`, session
+46883, actual MATLAB PID 3448 (wrapper 1696). Its first two assertions passed:
+`testSharedDataPhysicalQueue` retained actual TX [0,7680), RX [0,7695), and
+`testSharedPDCCHObservationClocks` retained distinct gNB/UE clock intervals.
+The 19-test queue/scheduler/PHY/export/truth batch remains in progress.
+Do not run testAll or relaunch the main scenario on these component passes.
+
+Main integration boundary checklist, confirmed by source inspection:
+
+1. `localQualifyCoupledGrantsWithPDCCH` still eagerly acquires/executes a
+   channel before data scheduling. Replace with enqueue plus received DCI
+   reduction, retaining exact CCE reservations even when decoding fails.
+2. `localExecuteCoupledDirectionBatch` still commits received results
+   immediately. `queueData` supplies physical capture, not this coordinator.
+   `buildTrialContextFromGrantImpl` also attaches the legacy channel context.
+3. DL queue bits are currently reserved by `commitGrantExecutionImpl` after
+   reception. Asynchronous execution requires once-only TX commitment so
+   the next scheduler cannot spend the same bytes while RX tails remain.
+4. Failed DL DCI cannot cancel an already transmitted PDSCH. Preserve actual
+   transmission and HARQ DTX/timeout evidence, without an invented data CRC.
+5. UL grant preparation must use actual decoded DCI, received TAG and the
+   final due UCI before any advanced TX/RX prefix is committed. Existing
+   eager PUCCH feedback paths still need migration.
+6. `completeSlotImpl` reads CurrentCanonicalSlot for completion counters;
+   a received tail crossing into the next slot must not relabel the source
+   grant. Review all feedback deadlines and counters at this boundary.
+7. `queueData` currently admits one pending same-UE data observation. Before
+   main use, replace this with immutable transmission-key duplicate checking
+   so genuine RX tails do not unnecessarily block the next HARQ transmission.
+8. At the finite scheduling horizon, consume retained physical tails without
+   silently scheduling additional data or discarding unfinished observations.
+
+Latest retry progress: all first 11 tests through
+`testStrictMode_NoFallbackAnywhere` passed; `testLLS_DL` is running. This
+includes actual TDD/FDD SRS and PUCCH RAR=0/3 timing assertions (96/84
+samples), shared physical/clock tests, per-UE scheduler timing and grant
+consistency. Session 46883 / MATLAB 3448 remains the live batch to poll.
+No source dependencies should change before it finishes. The new DL timing
+and PDCCH capture patches pass `git diff --check` (only normal CRLF notices).
+
+### Once-only shared TX commitment (next continuation)
+
+The 19-test batch completed with exit 0 and
+`SHARED_DATA_AND_CONTROL_QUEUE_REQUIRED_PASS`; session 46883 is closed.
+All named assertions passed, including the two E2E campaigns. No main
+scenario was launched as a consequence of those component/regression passes.
+
+The queue's one-pending-UE limitation is now removed. Contributions use an
+immutable prepared-transmission identity, so a later same-UE HARQ attempt
+can coexist with the preceding actual RX tail. Duplicate identity remains
+an error. A private physical-owner ledger records `DataTX` only after the
+first nonzero contribution sample has actually passed through the retained
+physical processor; preparation/enqueueing does not count as transmission.
+
+Validation: `logs/shared_data_tx_commit_boundary_20260908.log`, session
+1769, exit 0, `SHARED_DATA_TX_COMMIT_BOUNDARY_PASS`. Two distinct coded
+PDSCH contributions and their receive tails completed, along with the
+waveform-event and actual shared-PDCCH fixtures. No DCI or data decode is
+claimed by the two-data-queue test.
+
+Now wired into the main shared-event reducer: `DataTX` invokes
+`commitSharedDataTransmission`. It verifies the physical owner's immutable
+execution record, actual coded bits/TBS/layout and scheduler-allocated HARQ
+process, then commits queue consumption and onTx once. Duplicate commit
+fails before a second counter mutation. Shared RX completion now requires
+matching TX identity/payload/HARQ and does not call onTx again.
+
+Focused validation is running in `logs/shared_data_tx_harq_commit_20260908.log`,
+session 20054, actual MATLAB PID 18928 (wrapper 9848). The strengthened
+physical queue fixture allocates two real HARQ processes and checks queue
+depletion, TX counts, duplicate rejection and changed-payload rejection.
+Do not claim this new batch passed before inspecting its terminal result.
+
+Main PDCCH/data enqueue call-site migration, receive-result aggregation,
+late UCI preparation and per-sample feedback availability remain OPEN. The
+new event handler is a required integration boundary, not a declaration
+that the earlier main 12-dB failure has been cleared or that the artifact
+contract now passes.
+
+The focused TX/HARQ batch (session 20054) terminated with exit 1. Its first
+two tests passed: the real physical queue test confirmed exactly two
+onTx/queue commits for two adjacent coded contributions, and
+`testExecutedHARQPayloadAuthority` retained all no-mutation negative guards.
+The third test, `testLLSCoupledTruthHARQRoundTrip`, failed before transmission
+at `WAVEFORM:ReceiverThermalNoiseAuthorityRequired`. Its older five-slot FDD
+fixture inherits `standalone_awgn_snr_argument` from the FDD scenario, while
+the physical owner requires declared absolute thermal noise. Do not count
+that test as passed or weaken the physical guard; its config and connected
+control/access fixture need migration along with the main coordinator.
+
+Additional once-only protection: shared receive completion records its
+transmission ID only after successful state reduction; replaying that ID
+is rejected before HARQ/CSI/statistics update. Queue/packet value-state
+validation now precedes mutable HARQ onTx, avoiding a partial HARQ update
+when protocol-payload queue binding is invalid.
+
+Current verification: `logs/shared_tx_commit_required_20260908.log`, session
+79081, 20 named physical/scheduler/config/PHY/export/truth tests. No main
+TDD run, testAll, long run, output deletion or git commit was performed.
+The known-failing coupled HARQ round-trip remains an explicit OPEN failure,
+not an excluded test reported as green. Keep this current source snapshot
+unchanged until the running batch completes.
+
+Live batch identity confirmed: session 79081, MATLAB **15884**, wrapper
+18072. First four tests through testPDCCHSharedPhysicalQueue passed; it is
+now in testUplinkControlReceivedTiming. The new real queue fixture passed
+after the value-state-before-handle ordering change and duplicate-RX guard.
+Normal repository `git diff --check` passed on touched coordinator files.
+A one-off `-c core.autocrlf=false` check misread CRLF as trailing whitespace;
+it was read-only, made no bulk rewrite, and is not a valid patch assessment.
+
+Additional scope audit before high rank: commitSharedDataTransmission uses
+the retained singular Tx.CodingLayout, matching the current single-codeword
+fixture. Multi-codeword rank-5--8 TB/HARQ ownership is not established by
+this test and must be inspected/implemented before high-rank qualification.
+Do not interpret two queued HARQ attempts as two-codeword validation.
+
+## 2026-09-08: main deferred-data integration under verification
+
+The 20-test batch in `logs/shared_tx_commit_required_20260908.log`
+terminated with exit 0 and `SHARED_TX_COMMIT_REQUIRED_PASS`. This does not
+include the known-failing legacy coupled HARQ fixture described above.
+
+Main coordinator edits now queue actual PDCCH preparations, retain the
+authored DL TX/job until reception, and arm future UL preparation only
+after actual decoded DCI authority. They preserve actual DataTX ownership,
+bind pending HARQ-ACK at UL preparation, consume retained observations
+without a second channel execution, and publish completed rows after
+physical advancement. Source-slot completion accounting no longer credits
+late receive tails to the callback slot. These edits are NOT yet qualified.
+
+Verification session 54274, MATLAB 11164, log
+`logs/shared_main_deferred_integration_20260908.log`: real shared data queue,
+real PDCCH queue and TDD/FDD per-UE scheduler timing prerequisites passed;
+the nominal 12-dB, 35-slot TDD `diagnoseMainSharedSRS` is running. This is a
+direct diagnostic, not a claim that all frontdoor CSV/PNG contracts pass.
+No main FDD campaign or testAll was launched.
+
+Still explicit integration work: failed-DL-DCI DTX disposition, sample-time
+PUCCH preparation/late feedback, immutable UCI ownership after UL IQ has
+been prepared, finite-horizon receive tails, two-codeword ownership, and
+final runtime artifact qualification. Existing fail-closed guards remain;
+an unresolved boundary must not fabricate a CRC or delete an actual TX.
+
+Measurement audit: legacy CSI_Feedback averages reference power over RX
+branches but sums RSSI over branches. The physical CSI-RS path preserves
+branch-specific measurements, yet selecting RSRQ solely from the strongest
+RSRP branch is not a proof of reported RSRQ diversity compliance. TS 38.215
+18.4.0 clauses 5.1.3/5.1.4 require the numerator/denominator measurement RB
+sets and appropriate time resources to agree, and reported RSRQ under
+diversity not to be below an individual branch. These RSSI/RSRQ issues and
+QCL/TCI/PMI activation-to-waveform/export lineage remain OPEN.
+
+The main diagnostic above terminated with exit 1 at slot 32. It cleared
+the old eager-control/shared-clock boundary: slot-31 actual DCI reception
+completed at sample 231507 with `allowed=1`. Actual four-step access and
+RRCSetupComplete passed, and slot-30 SRS measured timing 84 samples and
+pilot-channel NMSE -21.6758 dB. The next failure was
+`sixgr:phy:rx:NoiseDomainEvidenceInvalid` in runDLPDSCHThroughput line 2081,
+before a connected data row could be committed. Preserve the log and root
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_070225`.
+
+Cause: sharedObservationEvidence retains injected pre-RF thermal variance
+but intentionally clears post-gain-compensation SampleNoiseVariance. The
+data producer's legacy replay lookup fell through to that unavailable
+field; whole-capture serving-link signal power was also not observed.
+The repair adds an independent observation of the already-executed serving
+link (no additional propagation/RF), checks thermal PSD x bandwidth closure,
+and explicitly binds pre-front-end injected variance. It reports the
+whole-capture serving-transmitter sample SNR with a source stating it is
+NOT data SINR. Post-RF injected variance remains unavailable, never replaced
+with the pre-RF value or a receiver estimate. No noise validator was weakened.
+
+Focused verification now runs in session 53774, log
+`logs/shared_main_noise_evidence_focused_20260908.log`. Added tests reject
+wrong noise domains/thermal variance and check exact whole-window power
+from the retained physical reference. New preparation-clock coverage checks
+that grant metadata preparation neither advances the channel nor claims TX.
+The main diagnostic has NOT yet been rerun after this noise-evidence repair.
+Python CSV/PRACH reporting regressions: 87 passed this turn.
+
+Focused noise-evidence batch 53774 terminated with exit 0; all nine named
+tests passed (`SHARED_MAIN_NOISE_EVIDENCE_FOCUSED_PASS`). This includes the
+new grant-preparation clock test, same-execution power/thermal-negative
+checks, existing noise-domain validation, actual PDCCH, TDD/FDD component
+SRS/PUCCH timing, QCL/TCI component binding, and CSI physical measurements.
+It does not prove main-run QCL/TCI activation signalling or connected UCI.
+
+Fresh nominal 12-dB TDD diagnostic: session **36373**, MATLAB **18604**,
+wrapper 18612; `logs/shared_main_noise_bound_tdd_retry_20260908.log`;
+root `C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_072033`.
+Last observed at slot 10/35, still RUNNING. Poll this exact session/log,
+do not restart on output truncation or count startup as completion.
+Keep its MATLAB source dependencies unchanged until it terminates.
+Added a terminal guard against falsely finalizing with pending PDSCH/PUSCH
+receive tails; draining those tails remains an explicit integration task.
+
+Exhaustive prior-failure audit (first FIVE rows of every CSV):
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_070225_audit_first5`.
+119 CSVs / 13,159 rows, 0 parse errors, 28 header-only files, 2 structural
+issues (empty headers in live_link_adaptation_input_table and
+live_waveform_preview), 130 required semantic failures and 1 missing-chart
+failure, 0 PNGs. This is a failed/incomplete diagnostic, not 130 independently
+proven PHY bugs. Empty connected-data tables must not be populated by rescue
+rows. Generic inventory keyword counts also matched LUT inside "absolute"
+and "resolution"; fixed only that short-acronym false positive, preserving
+explicit LUT/proxy mentions and unchanged strict semantic checks. 107 Python
+audit/CSV/PRACH tests passed. The preserved old audit predates this vocabulary
+fix. No generic token count alone establishes approximation execution.
+
+Normative RSSI/RSRQ audit reference (release pinned, not a 6G compliance claim):
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/18.04.00_60/ts_138215v180400p.pdf
+
+Still required after main migration: broader focused PHY/config/export/truth
+regressions on the final edited snapshot; no claim that the earlier 20-test
+batch qualifies subsequent source changes. No testAll, main FDD, 25-dB run,
+long campaign, instrument playback, git commit or output cleanup was done.
+
+## 2026-09-08: received-control timestamps and shared row lifecycle
+
+Retry session 36373 terminated with exit 1 at slot 32. The actual data
+receive attempt passed noise-domain validation and reached row annotation,
+then failed at missing `IsWarmupFrame` in localApplyTrialTruthAnnotations.
+The deferred path had omitted localEnsureLinkTrialTable, which supplies
+the existing configured warm-up/lifecycle annotations. Refactored one
+localFinalizeCompletedGrantTables routine shared by immediate and deferred
+receiver paths, using the executed job's config. No measured CRC, SINR,
+TBS or missing primary row is invented by this integration repair.
+
+Also repaired a separate control-clock defect: applyPDCCHGrantTrial used
+the scheduled data Slot to update last-successful PDCCH history and its
+lifecycle event. It now joins the actual row/control-slot authority, rejects
+future or conflicting control times, retains the future data Slot unchanged,
+and does not regress last-successful history for an older observation.
+The new reducer test explicitly labels its rows as component fixtures, not
+actual waveform evidence. Both DL K0 and UL K2 cases are covered, including
+late completion and negative future/mismatched control timestamps.
+
+`logs/shared_data_annotation_clock_focused_20260908.log`, session 44729,
+terminated exit 0: testPDCCHReceivedGrantClock,
+testSharedGrantPreparationClock, testLLSControlAccessGating, and
+testNoiseDomainEvidenceContract passed (`DATA_ANNOTATION_CLOCK_FOCUSED_PASS`).
+
+Next main TDD diagnostic launched into
+`logs/shared_main_annotation_bound_tdd_retry_20260908.log`. Inspect its live
+session/process before assuming it completed. The full objective remains
+open: integrated UCI, receive-tail draining, per-sample HARQ availability,
+RSSI/RSRQ branch semantics, QCL/TCI/PMI main lineage, all artifacts, and final
+broad focused regression qualification still need evidence.
+
+Live identity confirmed for the annotation-bound retry: session **85963**,
+MATLAB **18860**, wrapper 18436 (started local 07:36). It is RUNNING;
+retain this handle and log. No other MATLAB batch is active. Main-source
+dependencies stay frozen while this diagnostic executes. The reducer test's
+future-control negative fixture was tightened after its passing batch to
+keep its data occasion after the future control occasion (Slot 7 vs control
+6); rerun that test with the next focused set.
+
+## 2026-09-08: ongoing integrated uplink review
+
+The annotation-bound retry's actual root is
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_073640`.
+At 02:14 UTC it was still running (same session 85963 / MATLAB 18860).
+Its dependencies were kept frozen; this is not a completed-run qualification.
+
+Read-only audit confirmed these remaining integration risks:
+
+- `processDueFeedback` still invokes eager `observePUCCHFeedback`, which
+  acquires a legacy channel state. The actual shared owner rejects that
+  double-execution path. Received SRS/PUCCH component passes do not qualify
+  this main standalone-PUCCH scheduling path.
+- UL preparation binds UCI and queues immutable IQ, but slot-entry and
+  due-slot reconciliation can still operate on the mutable calendar grant.
+  Calendar updates must not change the UCI already encoded into a waveform.
+- `CSI_Feedback` and `measureULLinkState` have legacy scalar measurement
+  helpers that average reference power across branches while summing RSSI
+  across branches. Their branch normalization and reporting provenance need
+  repair; passing the separate calibrated CSI-RS measurement test does not
+  qualify these helpers or every exported RSSI/RSRQ field.
+- Invalid UE identity in `applyPDCCHGrantTrialImpl` currently returns allowed
+  before decoding validation. The main qualifier rejects invalid identities,
+  but the public reducer must not preserve this permissive boundary.
+
+No channel-specific row count, configured TCI, or isolated test is sufficient
+proof of main-run UL correctness, received beam activation, or CSV/PNG closure.
+
+The annotation-bound retry subsequently terminated exit 1 (session 85963).
+It passed SRS slot 30 (NMSE -21.6758 dB), received actual slot-31/32/33 DCI,
+and committed two PDSCH rows: slots 31/32, MCS 4, one layer, CRC pass in
+both, measured SINR 20.76293/10.64353 dB. These values are not nominal 12 dB.
+It then hit the confirmed eager PUCCH acquisition at slot-34 entry, through
+`startSlotWithQueuedUL -> processDueFeedback -> observePUCCHFeedback`.
+No connected PUSCH result or complete-run qualification was obtained.
+The retained DL IQ manifest labels a first-grant observation window, not a
+complete cell transmission or instrument-ready all-channel playback capture.
+
+Implemented shared HARQ-PUCCH preparation timers, preparation-only codec
+execution, reception from the actual shared observations, and reuse of the
+existing feedback reducer only at RX completion. Preserved source-occasion
+slot/frame on delayed PUCCH rows and removed permissive invalid-UE DCI
+execution. Main data receive completion arms the feedback preparation clock.
+Combined HARQ/CSI payloads retain their report identity while awaiting RX.
+This integration is UNDER TEST, not yet a main-run pass. Standalone CSI-only
+PUCCH, frozen PUSCH/UCI ownership, full receive-tail draining and other listed
+boundaries remain open.
+
+`logs/shared_pucch_stage_focused_20260908.log` session 76534 exited 0:
+testPDCCHReceivedGrantClock, testLLSPUCCHWaveformFeedback,
+testLLSPUSCHHARQACKRuntimeFeedback and testUplinkControlReceivedTiming passed.
+The latter covered TDD/FDD components, not a main FDD campaign.
+New actual shared-PUCCH test runs in session 72058,
+`logs/shared_pucch_physical_clock_20260908.log`; check its terminal result.
+
+Shared-PUCCH test progression (all preserved; no main retry launched):
+
+- Session 72058 exited 1: fixture lacked component-carrier/UL-BWP identity.
+  Supplied the actual resolved configuration identities, retaining the guard.
+- Session 72620 exited 1: fixture lacked a pathloss measurement selector.
+  Added an explicitly labelled analytical selector fixture, not a simulated
+  SSB result, consistent with the test's declared DL/TAG fixture scope.
+- Session 27088 exited 1: production preparation omitted explicit received
+  RAR `TimingAdvanceSamples`. Wired the retained RAR command conversion into
+  the preparation arguments. No receiver alignment/default was substituted.
+- Session 52523 exited 1, `logs/shared_pucch_physical_clock_ta_bound_20260908.log`:
+  preparation and actual shared consumption reached PUCCH RX, then
+  `sixgr:link:PUCCHNoiseObservationRequired`. Format 0 has no DM-RS; after
+  dynamic RF/gain compensation its exact sample-noise variance is unavailable.
+  The next guard also requires an independently received UL timing reference
+  for uncertain-window Format-0 FFT processing. Both guards remain intact.
+
+The new `testSharedPUCCHFeedbackClock` remains a FAILING positive test until
+that real Format-0 receive-reference integration is implemented. It was not
+changed to a different PUCCH format or weakened to count the rejection as a
+pass. The test is registered in testAll, but testAll was NOT executed.
+No MATLAB batch or main diagnostic remains active after session 52523.
+
+Additional implemented receive evidence: PUCCH CSV rows now retain actual
+TX/RX sample intervals, completion time, measured timing correction and
+source; duplicate shared PUCCH receiver commits are rejected. Main Format-0
+qualification, combined HARQ/CSI main reception, frozen PUSCH UCI ownership,
+CSI-only PUCCH, receive-tail draining, RSSI branch semantics and the remaining
+beam/PMI/artifact reviews are still OPEN. This snapshot is not release-ready.
+
+Next implementation must use actual prior SRS/PUSCH receiver evidence for
+Format-0 timing/disturbance estimation with explicit source/age/domain and
+serving-cell/BWP/TAG identity. Do not call an estimate exact injected noise,
+reinterpret a timing estimate as received TA, correlate against TX payload,
+switch the scenario's format to hide the gap, or bypass the absent-DMRS guard.
+
+## 2026-09-08: received SRS reference and Format-0 correlation (under test)
+
+Corrected the prior noise prerequisite: the installed `nrPUCCHDecode`
+Format-0 implementation uses normalized sequence correlation and does not
+consume noise variance. Added an explicit `noncoherent_correlation` receiver
+mode with unavailable variance preserved as NaN, no fabricated variance or
+noise-dependent energy acceptance. Formats with DM-RS keep their estimator.
+Independent measured timing is still required for the uncertain receive window.
+
+Added immutable `ReceivedULTimingReference` from actually received SRS or
+CRC-passing PUSCH pilot correlation, with UE/cell/carrier/BWP/TAG identity,
+availability, complete sample coverage, and YAML-owned maximum age checks.
+Later Format-0 alignment is labelled a constant-phase prediction from the
+prior measurement, not a fresh measurement or decoded timing advance.
+The TDD and FDD causal scenarios explicitly set the age limit to four slots.
+The component fixture retains one-bit Format 0 and now executes preceding SRS.
+
+Removed TX-known UCI content-match from the receiver's ACK acceptance gate;
+content match remains scoring evidence. Otherwise an actually decoded false
+ACK would be oracle-censored. This change still needs focused regression proof.
+
+Sessions 85232 and 40406 exited 1 in test diagnostic-message formatting
+(empty/missing SRS Notes), not an established receiver pass. The formatting
+was repaired without changing the success assertion. Session 11807 then
+exited 1 with the actual `srs_channel_nmse_above_threshold` failure.
+Session 3925 repeated and persisted the physical evidence:
+`C:/Users/anup0/AppData/Local/Temp/tp4a4a7a75_536a_4c7f_ad91_8b32ac6daaa3_shared_srs_failure.mat`.
+Measured SRS NMSE is +3.09175 dB versus the unchanged -8 dB limit;
+timing correction is 90 samples and estimated grid noise is 8.00709e-8.
+Log: `logs/shared_pucch_srs_failure_evidence_20260908.log`.
+Neither Format-0 positive qualification nor a new main TDD run is claimed.
+The retained capture is being inspected without another channel execution.
+
+The capture inspection exposed an inconsistent analytical component input:
+the selector fixture used 77 dB while its configured physical link applied
+101.175 dB loss, reducing commanded SRS power by about 19.34 dB under alpha
+0.8. Corrected only that declared fixture to obtain its loss from the same
+configured large-scale resolver (no RF or noise execution for this query).
+No main UE report was replaced with a geometry-derived measurement, and no
+NMSE threshold, fading/noise, or decoder success assertion was weakened.
+The SRS then passed; the next new-class defect was a nonexistent `phy.rnti`
+field, corrected to validated `phy.pusch.RNTI`. Also corrected the data
+observation validator's antenna-count argument and required the complete
+measured demodulation interval to fit inside its retained buffer.
+
+`logs/shared_pucch_received_identity_20260908.log`, session 90710, EXIT 0:
+testSharedPUCCHFeedbackClock, testLLSPUCCHWaveformFeedback,
+testLLSPUSCHHARQACKRuntimeFeedback and testDataChannelStreamStages passed.
+The latter now creates the UL timing reference from actual received PUSCH
+DM-RS timing and rejects oracle timing. Its TDD PUSCH cases passed TB CRC,
+with measured offsets 7/90/78 samples; the two UCI cases recovered exact
+HARQ bits. These remain component fixtures, not full main-run qualification.
+
+Added `validatePreparedPUSCHUCI`: before and after calendar multiplexing,
+compare any already queued actual PUSCH's encoded typed payload and retained
+HARQ/CSI source identities. A late change fails explicitly instead of
+claiming new bits were carried by immutable IQ. This detects the impossible
+late-binding boundary; it is not physical cancellation/re-encoding support.
+TDD/FDD data-stage component checks plus HARQ/UCI and received UL-control
+timing tests are running in session 37704,
+`logs/shared_ul_frozen_uci_tdd_fdd_20260908.log`. Inspect terminal state before
+editing their dependencies or claiming the new guard passed.
+
+Session 37704 has now terminated EXIT 0, marker
+`SHARED_UL_FROZEN_UCI_TDD_FDD_COMPONENTS_PASS`. Both duplex component
+data-stage runs passed actual TB CRC and two HARQ-bit UCI cases, including
+rejection of post-encoding payload and source-identity changes. The received
+SRS/PUCCH timing components passed in both modes with RAR 0/3 and measured
+offsets 96/84 samples. No main FDD simulation was executed. The 107 Python
+CSV/audit/PRACH-plot semantic checks also passed on this snapshot.
+
+## Active main retry: 2026-09-08 08:41 local
+
+Session **15475**, MATLAB PID **1604** (launcher 2960), log
+`logs/shared_main_ul_feedback_tdd_20260908.log` remains RUNNING.
+Do not restart it based on truncated output; re-poll its existing handle.
+Actual root:
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_084105`.
+All runtime dependencies are frozen until terminal exit.
+
+Its prelude passed testPDSCHQCLStatePropagation, testPDSCHTCIStateBinding,
+and testCSIRSRPPhysicalMeasurement. The latter's coupled calibration check
+measured -77.28001 dBm against -77.29586 dBm expected, serving -77.46887 dBm;
+the receiver's 30.9544 dB AGC gain was not added to physical CSI-RSRP.
+Those are calibration-test values, not measurements from the nominal-12-dB
+main diagnostic that followed. Main is now at the first slots of 35, TDD
+only. No completed-run correctness or full artifact closure is claimed.
+
+Rechecked TS 38.215 v18.4.0 section 5.1.4: CSI-RSRQ numerator/denominator
+must share measurement RBs and receive-diversity reporting must not fall
+below any individual branch's RSRQ. Current physical PDSCH CSI export chooses
+the maximum-RSRP branch for RSSI and RSRQ; that preserves one branch's ratio
+but does not necessarily satisfy maximum/diversity RSRQ reporting. The two
+legacy helpers additionally average RSRP over branches while summing RSSI.
+These repairs, standalone CSI-only shared PUCCH, complete receive-tail
+draining, post-encoding late-UCI disposition, main QCL/TCI/PMI activation
+lineage, PRACH-EVM and full CSV/PNG inspection remain explicitly open.
+
+## 2026-09-08: terminal main result and follow-up fixes
+
+The preceding RUNNING entry is superseded: session 15475 terminated EXIT 0.
+This means MATLAB finished, NOT qualification passed. The 35-slot TDD root
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_084105` contains
+actual Msg1-4/RRCSetupComplete and SRS observations at slots 30 and 35, three
+connected PDSCH rows, but **zero connected PUSCH rows**. Access-stage
+`StageSlot` is zero-based; trial/runtime slots are one-based. Do not mix them.
+Actual SRS NMSE was -21.6758 and -22.3174 dB. No new FDD/25-dB main run.
+
+The strict exhaustive audit terminated EXIT 1. Its sibling directory
+`main_shared_srs_20260908_084105_audit` records first-five-row previews for
+every CSV: 204 CSV files / 80,187 rows, no parse failures, 172 required
+semantic checks failed, and eight decodable, nonblank PNG files. Many failed
+checks are missing front-door identity/summary metadata because this helper
+directly calls runWaveformLinkBundle; they are not 172 independent PHY bugs.
+The value-review gate remains false. All eight PNGs have now been visually
+inspected: most leak dark-theme axes/text into a white export, leaving labels
+poorly readable. PAPR uses only three observed trials; the connected points
+must not be interpreted as a dense measured distribution or SINR sweep.
+
+Confirmed late-ACK defect: PUCCH due 34 carried feedback from DL31/32, while
+DL33's same-occasion row remained unexecuted. Repaired the physical owner
+and coordinator to register complete real TX/RX observations first, then
+encode at the earliest configured PUCCH active symbol. Only an exactly-zero
+already-consumed transmitter contribution prefix may be omitted from future
+enqueue; no receive samples are padded, replayed or fabricated. Existing
+observations retain their actual RF/noise/other contributors. Occasion keys
+now include UE/RNTI/cell/CC/UL-BWP/direction/slot. New bits cannot silently
+join an encoded or completed occasion. A transfer to PUSCH retains capture
+disposition without inventing a standalone PUCCH trial.
+
+Session 7607, `logs/shared_pucch_two_phase_clock_20260908.log`, EXIT 0:
+testSharedPUCCHFeedbackClock and testSharedPUCCHLateFeedbackClock passed.
+The latter adds a second declared DL fixture result after the full capture
+origin but before active symbols, receives one actual two-bit Format-0
+waveform, and applies one ACK and one NACK to distinct real HARQ entities.
+These DL inputs are explicitly component fixtures, not claimed PDSCH truth.
+An additional rejection assertion for post-encoding new feedback is included
+in the subsequent focused batch; inspect its terminal outcome below/in log.
+
+CSI-RSRQ repair: selection now preserves the max-RSRP branch's RSSI pair,
+separately reports the max-RSRQ branch, and exports that RSRQ's actual
+numerator, denominator and receive-branch index. Every branch's ratio is
+validated before selection. This follows TS 38.215 v18.4.0 sections 5.1.2
+and 5.1.4; branch summation is not silently substituted for diversity power.
+Session 11173, `logs/csi_rsrq_diversity_binding_20260908.log`, EXIT 0:
+testCSIRSBranchMeasurementSelection and testCSIRSRPPhysicalMeasurement passed.
+The 53 Python radio-measurement plot tests also passed. Legacy normalized
+CSI helper RSSI aggregation is still unaudited/unrepaired; do not promote
+those values to calibrated dBm or standards-qualified UE reports.
+
+### Next blocking issue: TRS resources and UL eligibility
+
+The no-UL result has a concrete gating explanation: TRS last delivery 29,
+configured maximum age 5, K2 decision at 34 for data slot 35. The future view
+correctly requires validity at the data occasion, where TRS age is 6.
+SRS is valid, queued UL traffic exists, but shared eligibility becomes false.
+Keep the freshness guard. Existing testFutureULPlanningCausality explicitly
+distinguishes current knowledge from future-use freshness.
+
+The current TRS config uses slot_numbers [2,7], treated as one multi-slot
+observation per frame. The resource builder materializes one CSI-RS resource
+per slot, and strict validation merely requires at least two slots. This is
+not adequate validation of NR trs-Info resource-set structure. TS 38.214
+section 5.1.6.1.1 specifies the FR1 consecutive-slot/two-resources-per-slot
+structure (with conditional single-slot alternatives). Correct the resource
+set, its configured recurrence, TDD symbol/SSB conflicts, receiver estimation
+and availability together. Do NOT just enlarge the age limit or relabel the
+existing nonconsecutive pilot pair as qualified TRS. Source:
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.04.00_60/ts_138214v180400p.pdf
+
+Remaining: first-ever ACK arriving after capture origin with no prearmed
+occasion; CSI-only shared PUCCH; physically feasible late PUSCH-UCI
+cancellation/re-encoding; complete receive-tail draining; main PUSCH/LA
+qualification; main QCL/TCI/PMI activation/precoder lineage through CSV/PNG;
+PRACH measured EVM; RSSI plot publication and legacy-domain labeling;
+front-door run identities and artifact completeness; plot contrast.
+No complete 3GPP conformance, 10/10 grade, full MIMO playback or all-channel
+instrument export is claimed. All changes remain uncommitted.
+
+Follow-up batch session 56678 terminated EXIT 0, marker
+`FOCUSED_UL_TIMING_UCI_BEAM_RSSI_PASS`, log
+`logs/focused_ul_timing_uci_beam_rssi_20260908.log`. Eight regression entry
+points passed: the one- and late-two-bit shared PUCCH tests (including
+post-encoding rejection), future UL planning causality, PUSCH HARQ-ACK
+feedback, SRS/PUCCH received timing with RAR 0/3 in both duplex component
+profiles, QCL propagation, TCI binding and CSI branch selection. This is not
+a main FDD run or testAll. The scenario's strict MIMO configuration still has
+`require_active_tci_state: false`; component binding success does not prove
+the main scheduler activated and consumed a TCI state.
+
+The common figure export boundary now calls the existing RasterFigureStyle
+normalizer, covering direct runtime publishers as well as qualification
+callers. Session 6976 terminated EXIT 0, marker
+`DIRECT_RUNTIME_RASTER_CONTRAST_PASS`, log
+`logs/direct_runtime_raster_contrast_20260908.log`. Both style and PNG/JPEG
+export tests passed; the export regression explicitly retains identical
+scatter X/Y/C data and label strings through normalization. Existing run
+PNGs were not overwritten. The 53 Python radio-measurement plot tests passed
+again. K2 scheduling logs now retain actual NoGrantReason and resource reason
+from the scheduler rather than only zero counts.
+
+CSI observation unavailable/default branches now clear the new RSRQ
+branch/numerator/denominator fields as well, preventing stale selected-resource
+evidence. `logs/csi_branch_power_csv_closure_20260908.log` runs the physical
+measurement and branch-selection tests with CSV round-trip assertions for
+all new numeric fields and the branch-selection source string. Inspect its
+terminal status before treating this last snapshot as tested.
+
+Session 80626 terminated EXIT 0, marker `CSI_BRANCH_POWER_CSV_CLOSURE_PASS`.
+The physical CSI CSV round-trip and branch-selection tests passed after the
+unavailable/default field reset fix.
+
+Session 21552 terminated EXIT 0, marker `SHARED_PUCCH_LATE_FORMATS_PASS`,
+`logs/shared_pucch_late_formats_20260908.log`. The new
+testSharedPUCCHLateFormat2Clock adds enough late HARQ bits to require Format
+2; one actual shared-stream waveform decoded the three-bit codebook and
+updated two ACK / one NACK processes correctly. Format 0 retains unavailable
+noise variance for its noncoherent receiver; Format 2 uses actual measured
+DM-RS noise. Neither is relabelled as the other. This still does not qualify
+the main combined CSI-plus-HARQ payload or CSI-only shared PUCCH.
+
+### Newly confirmed precoder request/measurement time-domain mix-up
+
+Persisted DL32 has newly measured PMI 3, applied PMI 0, and requested/applied
+matrix digests both 143f916316e8ac2099a4f4fbf10441c53055561769c8f9316b1c37b5af7e606a.
+Two decorators were incorrectly using this receiver's `T.PMI` as the earlier
+transmit request and declaring a mismatch. DL producer now retains PMI from
+the immutable PHYGrant.PrecodingState at TX, with source
+`frozen_PHYGrant_precoding_state`; both decorators preserve it through the
+shared `requestedPrecoderColumns` helper. Explicit-matrix unavailable PMI
+stays unavailable; later received CSI cannot fill it. Configured references
+remain separately labelled and never promoted to measured feedback. Actual
+precoder matrices, received PMI, scheduler policy and samples are unchanged.
+
+TestRequestedPrecoderTimingLineage covers opposite measured/frozen indices,
+missing scalar PMI, idempotent table decoration and both directions. Actual
+data-stage tests assert frozen request provenance alongside TB CRC and UCI.
+Batch session 88035, `logs/frozen_precoder_timing_lineage_20260908.log`, is
+running TDD/FDD component cases. Verify terminal status before claiming this
+latest precoder export patch passed. The old main PNG/CSV files are retained,
+not silently rewritten to appear repaired. Main TCI activation and complete
+PMI feedback delivery/application remain to be qualified separately.
+
+Additional open QCL labeling issue found by source inspection: the exported
+`QCLAccuracy` is not evidence of a configured QCL type/TCI relationship.
+deriveModulationTrackingMetrics computes channel correlation across symbols;
+runSRSChannelEstimation computes estimated/reference channel correlation;
+TRS scoreTRSDetection assigns a clipped detection metric. Those are distinct
+diagnostics, not a common normative QCL accuracy measurement. Rename/preserve
+the real diagnostics with their distinct definitions and add explicit
+QCL/TCI activation/resource/receiver linkage before claiming QCL correctness.
+Do not interpret the old main value 1 as proof that TCI signaling worked.
+
+Session 88035 terminated EXIT 0, marker `FROZEN_PRECODER_TIMING_LINEAGE_PASS`.
+The requested-PMI timing test, matrix-domain digest test, and actual TDD/FDD
+data-stage components passed. Both directions retain coded TBs and measured
+receive timing; PUSCH passed CRC with/without HARQ UCI (offsets 7,90,78).
+The DL component verified its requested PMI against the actual frozen grant.
+`git diff --check` passed. No MATLAB batch remains intentionally running;
+no main retry, testAll, commit, output deletion or instrument playback was
+performed in this follow-up. The unresolved items above still prevent a
+full qualification claim. The active overall goal is not complete.
+
+## 2026-09-08 continuation: actual TRS resource contract repair in progress
+
+Previous goal turn made progress (implemented fixes plus terminal passing
+tests). Revalidated no live MATLAB process before this patch. Main run is
+still the failed-qualification 35-slot TDD root above; no main restart.
+
+TRS TX/resource work now in progress: both causal profiles explicitly request
+two consecutive-slot bursts per carrier frame, slots [2,3] and [7,8], with
+two row-1/density-three single-port CSI-RS resources per slot at symbols [4,8].
+The new burst-length authority is mapped through YAML/internal config/RRC
+adapter. resolveTRSObservationWindow selects a complete burst instead of
+joining nonconsecutive slots. Both resources are generated with nrCSIRS and
+nrCSIRSIndices, mapped to actual OFDM IQ, and retained with resource ordinals.
+PDSCH reservation and planned grid allocation were updated to include both
+resources. This is an implementation-in-progress, not a receiver pass.
+
+Test session 40570 failed at schema validation (unrecognized burst_length_slots),
+log `logs/trs_consecutive_resource_waveforms_20260908.log`, EXIT 1. Added the
+missing nested catalog entry; retry session 78099,
+`logs/trs_consecutive_resource_waveforms_retry_20260908.log`, is testing
+both TDD/FDD waveform components. Recheck terminal state before editing its
+dependencies. Pending schema refinement: reference_signal_object is shared
+across signal families; keep its legacy scalar symbol_location type and add
+a distinct TRS symbol_locations vector rather than constraining other signals
+to a two-symbol list. No success claim until the corrected schema is retested.
+
+Further TRS receiver findings: detectTRSResources still shifts/pads each
+slot's received buffer; estimateTRSFrequencyOffset uses injected/physical
+Doppler to de-embed its estimate; estimateTRSChannel labels a pilot-fit
+residual as NMSE. These must be repaired with real capture timing, measured
+common-frequency estimation and explicit scoring-only truth separation.
+Do not run the main scenario or qualify these legacy paths as fixed yet.
+
+Session 78099 terminated EXIT 0 (`TRS_CONSECUTIVE_RESOURCE_WAVEFORMS_PASS`).
+The schema was then refined as planned: legacy scalar symbol_location is
+unchanged for other signal families; TRS profiles explicitly use the new
+symbol_locations pair. Missing/invalid pairs are rejected rather than
+silently expanded or rounded. The RRC adapter and normalization surface
+carry the new fields. Burst length currently supports the implemented
+two-slot receiver contract; single-slot alternatives are not claimed.
+
+Session 85995 terminated EXIT 0 (`TRS_BURST_AND_PDSCH_OWNERSHIP_PASS`),
+`logs/trs_burst_pdsch_ownership_20260908.log`: TDD/FDD waveform generation and
+PDSCH exact-RE reservation passed. Tests verify 6*N_RB REs per slot, two
+distinct symbol resources, independent nrCSIRS symbols and exact IFFT/CP
+sample spans; true Type-B PDSCH DM-RS overlap still fails closed. This
+replaces the old collision fixture that itself used an invalid one-symbol
+TRS layout, without weakening the actual collision guard.
+
+A follow-up found the reservation calendar still checked only the first
+periodic burst's slots. It now uses the canonical absolute resource occasion
+via isActiveTRSOccasion, retaining a slot-clock consistency assertion.
+TestPDSCHTRSExactReservation now exercises allocation in the second periodic
+burst, not just a calendar predicate. Session 33287,
+`logs/trs_periodic_reservation_closure_20260908.log`, is running this focused
+closure check. No main waveform scenario was launched. Current receiver
+padding/oracle-Doppler/pilot-residual issues above remain open.
+
+Session 33287 terminated EXIT 0, marker `TRS_PERIODIC_RESERVATION_CLOSURE_PASS`.
+No intentionally live MATLAB batch remains. The new transmitter/resource
+contract is component-tested; the main scheduler/RX chain is not requalified.
+Next work is actual TRS receive-window extraction without padding, common
+frequency estimation without injected Doppler, and correctly named/scoped
+channel-error evidence. Keep the full goal active and preserve the failed
+main run as evidence. Broad regressions and legacy fixture migration remain
+outstanding; testAll was not run under the user's focused-test restriction.
+
+### TRS actual reference-symbol receive windows (2026-09-08)
+
+Removed the receiver-side shift-and-zero-pad operation in detectTRSResources.
+The receiver now extracts actual samples starting at the measured timing
+offset through the final configured TRS symbol. It does not require unused
+trailing slot symbols. Exact symbol lengths come from the retained OFDM
+sample clock. Missing, unavailable, fractional or duplicate timing estimates
+fail; a missing required sample produces unavailable detection, not zeros.
+The detection table retains capture-relative start/end samples, symbol count,
+measured timing offset and an explicit receive-window source. Timing
+correlation no longer clamps an incomplete nominal capture to its buffer end.
+
+Channel estimation uses nrChannelEstimate reference-grid syntax with the
+same actual received symbol extent. Unmapped zeros in that TX reference grid
+are not fabricated RX samples. This does not fix the separate legacy
+pilot-residual-as-NMSE label, QCLAccuracy label or oracle-Doppler problem.
+
+Session 38770 terminated EXIT 0, log
+`logs/trs_actual_receive_window_20260908.log`, marker
+`TRS_RECEIVE_WINDOW_CLOSURE_PASS`. New testTRSActualReceiveWindow passed
+TDD/FDD component fixtures with measured offsets 0 and 17, two RX branches,
+exact direct-nrOFDMDemodulate equality, missing-sample rejection and missing
+timing rejection. testTRSReceiveCompletion passed: 53,760 actual RX samples,
+identical receive-only evidence, no TX/RF/channel regeneration on completion.
+The new test is registered in testAll; testAll itself was not executed.
+
+Session 31731 is checking the new window in the actual shared noisy CDL
+SSB/PDCCH/TRS component receiver, log
+`logs/trs_actual_window_shared_cdl_20260908.log`. Recheck terminal state.
+No new main scenario was launched and the failed main run is preserved.
+
+Further UL source audit: the shared PUSCH TimingSearchWindowSamples branch
+uses alignULReferenceObservation and forbids ideal/aligned timing bypass.
+However, localResolveReceiverTrackingCorrection still consults configured
+injected CFO to decide whether to apply a legacy tracking estimate. This
+oracle-dependent correction policy remains open, as does the legacy
+aligned-channel-wrapper path. Do not infer complete UL qualification from
+the passing shared-timing component tests.
+
+Session 31731 terminated EXIT 0, markers
+`PDCCH_SSB_TRS_SHARED_RECEIVER_PASS`, `BROADCAST_TRS_NOISY_STREAM_PASS`,
+`TRS_SHARED_NOISY_RECEIVER_PASS`. The updated reference-symbol extraction
+works on the retained shared noisy CDL observation, without RX padding.
+`python -m pytest tests/test_lls_radio_measurement_plots.py -q` also passed
+all 53 tests (1.77 s). This verifies plotting contracts, not an exhaustive
+qualification of newly generated main-run PNGs.
+
+Session 45808, `logs/ul_timing_uci_beam_binding_focused_20260908.log`, is
+running explicit PRACH timing/TA, SRS/PUCCH received timing, PUSCH/UCI codec,
+scheduler received timing, PUCCH oracle-context and QCL/TCI binding checks.
+Recheck terminal state before changing their dependencies. These include
+TDD/FDD components, not an FDD main scenario or testAll.
+
+Additional source findings retained for the next repair:
+
+- trackTRSOverTime sets both ProducerSlot and AvailableSlot to the first
+  detected slot, despite estimating over the complete burst. Its exported
+  tracking availability must not precede the last required observation.
+  Main shared delivery has a separate TRSResultDelivery contract; do not
+  assume this legacy table is the main runtime clock authority.
+- estimateTRSFrequencyOffset overwrites every pair row with the aggregate
+  estimate when any pair succeeds, including unavailable pairs. Preserve
+  each pair's own evidence when removing injected-Doppler de-embedding.
+- TRS freshness is evaluated against CurrentSlot while future grants also
+  carry a schedulingKnowledgeSlot. Audit the exact PDCCH-consumer time vs
+  UL-data time before changing this gate; do not simply widen its age limit.
+- CSI-RS plotting checks same-branch RSRQ = 10log10(N_RB) + RSRP - RSSI.
+  SSB RSSI plots are explicitly 240-subcarrier/four-symbol received-window
+  power, NOT full-carrier/SMTC RSSI. Preserve that scope in CSV/UI/PNG.
+
+Session 45808 terminated EXIT 0, marker
+`UL_TIMING_UCI_AND_BEAM_BINDING_FOCUSED_PASS`. PRACH preamble/TA origin
+checks passed in TDD/FDD. SRS and PUCCH actual unit receivers measured
+96/84 samples for the two RAR commands in both modes. Data-stage tests
+recovered exact coded PDSCH/PUSCH TBs; all three UL fixtures per mode had
+CRC pass, with measured PUSCH offsets 7/90/78 samples and UCI present in
+the latter two cases. The tests verify decoded HARQ-ACK bits, no RX padding,
+no oracle timing, immutable prepared-grant binding and actual DCI decoding.
+These are bounded analytic-channel fixtures, not proof of connected UL
+traffic in the main CDL run. PF/RR received-TAG timing and QCL/TCI binding
+guards passed; testPUCCHReceiverContextNoOracle's returned suite was executed.
+
+Final receive-window hardening: extraction uses the receiver-configured
+resource hypothesis, not the transmitter's reference locations, and rejects
+non-finite samples in any retained receive branch. Tests exercise resource
+pairs ending at symbols 8/9/10 and a NaN in branch two. Session 67732,
+`logs/trs_receive_resource_authority_20260908.log`, reruns TDD/FDD window
+checks, receive-only completion and the shared noisy CDL receiver. Recheck
+terminal outcome before claiming this final revision tested.
+
+Session 67732 terminated EXIT 0, marker `TRS_RECEIVER_AUTHORITY_FINAL_PASS`.
+Both duplex-mode window tests, receive-only replay, and the noisy shared
+SSB/PDCCH/TRS receiver passed after the final receiver-resource/NaN guard.
+No MATLAB batch remains intentionally live. git diff --check passed.
+No main scenario, testAll, commit, deletion or instrument playback was run.
+
+The main run remains unqualified: its previously retained connected UL
+trial table is empty, and the component successes above must not overwrite
+that finding. Next repair priority is measured common-frequency estimation
+without injected-Doppler subtraction and without rewriting failed pair
+rows; then truthful channel-error/QCL labels and burst-availability timing;
+then main TDD scheduler/late-UCI integration and complete output validation.
+Broad required regressions and migration of old TRS resource fixtures remain
+outstanding. Main active-TCI use and PMI/precoder CSV/PNG lineage are not
+proven merely by passing the binding unit guards.
+
+Other audit risks to retain: guardNoOracleTRS called without accessedFields
+defaults to an empty access list, so its all-not-accessed rows alone are not
+instrumented proof of no oracle use. hashTRSConfig currently retains an
+existing ConfigHash field in the hashed struct; verify rehash idempotence
+before relying on receiver overrides as canonical config identity. Neither
+of these additional findings was patched in this receive-window change.
+
+### Received TRS common-frequency repair (2026-09-08)
+
+Previous turn was progress: terminal receive-window tests passed. No live
+MATLAB process remained when this repair began. Re-read NR-validation and
+result-integrity instructions. Main run qualification is still open.
+
+estimateTRSFrequencyOffset now estimates common phase frequency from the two
+receiver-known TRS symbols within each slot, matching subcarrier identities
+and correlating each RX branch with itself before summing. Actual OFDM
+symbol lengths, CP lengths and FFT-window position determine delta time.
+Circular pooling avoids averaging opposite phase-wrap endpoints into zero.
+Every per-slot pair keeps its own measured estimate or unavailable status;
+a successful pair no longer overwrites a failed pair. Unequal pair timing
+cannot silently enter one aggregate. This is a receiver implementation, not
+a claim that 3GPP mandates this particular estimator algorithm.
+
+Injected CFO, scalar/physical Doppler and configured maximum Doppler no
+longer enter the estimator. An explicitly named frequency reference may
+produce scoring errors only. Oscillator-only CFO and physical Doppler remain
+NaN: these are not separately identifiable from this common-phase estimate.
+EstimatedCFO_Hz is a compatibility alias of the measured common frequency,
+with FrequencyEstimateDomain=received_TRS_common_phase_frequency. The real
+phase-pair unambiguous half-range is exported; injected impairments no longer
+set the runtime acceptance range. Obsolete Doppler-subtraction fallback was
+removed. Standalone scalar-injection scoring is separate from CDL runtime
+observations, which do not claim a scalar Doppler error reference.
+
+DL/UL receiver selection now calls resolveTrackingFrequencyEstimate without
+injected CFO configuration. Endpoint/direction and freshness checks still
+apply first. Runtime tracking state, user context and trace fields carry the
+common-frequency domain and preserve oscillator-only NaN rather than copying
+the general CFO field into it. Existing explicit legacy-policy handling is
+still labeled legacy; it is not promoted into new measured-domain evidence.
+
+Session 68648 terminated EXIT 0,
+`logs/trs_received_common_frequency_20260908.log`, marker
+`RECEIVED_TRS_COMMON_FREQUENCY_PASS`. TDD/FDD actual-OFDM unit fixtures tested
+-1000/-250/0/250/1000 Hz rotations on two opposite-phase RX branches. Measured
+extremes were -1002.57/+1002.52 Hz. Changing injected CFO/Doppler metadata did
+not change any estimate. Unavailable pairs stayed unavailable, missing
+reference identities failed, and unavailable scoring did not suppress a
+real measurement. Receive-only replay, shared noisy SSB/PDCCH/TRS reception,
+and receiver direction-authority tests also passed.
+
+Session 88885, `logs/trs_common_frequency_runtime_binding_20260908.log`,
+is testing final range export, runtime delivery/domain propagation in
+TDD/FDD, receive-only/shared-CDL reception and actual data-stage codecs in
+both modes. Recheck terminal state before changing its dependencies.
+No main FDD/TDD run or testAll was launched. NMSE/QCL labels, legacy tracking
+CSV availability, main connected-UL scheduling and full artifacts remain
+unqualified; no previous failed run has been overwritten.
+
+Session 88885 terminated EXIT 0, marker `TRS_FREQUENCY_RUNTIME_BINDING_PASS`.
+Final-revision runtime delivery tests passed in TDD/FDD, preserving a
+common-frequency value of 251 Hz through tracking state, trace and DL user
+context while keeping oscillator-only CFO NaN and denying DL-to-UL correction.
+Those delivery values are explicitly scheduling fixtures, not measured PHY
+rows. Actual TRS waveform tests, receive-only replay and shared noisy CDL
+reception passed. Data-stage codec tests passed in both modes: all three
+PUSCH fixtures recovered exact TBs with CRC pass, and both UCI-bearing cases
+recovered the expected HARQ-ACK bits. Actual timing offsets were 7/90/78
+samples, not supplied to the receiver as channel-delay truth.
+
+All 53 Python radio-measurement plotting tests passed again (1.85 s).
+git diff --check passed. No intentionally live MATLAB batch remains.
+Changes remain uncommitted; no old output deletion, instrument writes,
+main scenario, long impairment campaign or testAll was performed.
+
+Next primary repair remains independent TRS channel-NMSE scoring and QCL
+semantics. A relevant existing real-scoring path is sharedSRSReferenceGrid
+plus pilotChannelNMSE: the physical owner retains independently executed
+channel references, which are consumed only after the practical receiver.
+TRS should gain equivalent actual scoring evidence rather than relabeling
+its pilot-fit residual or using that residual as a replacement for true
+channel error. Also fix tracking-table burst availability, then rerun the
+short main TDD case to audit connected UL traffic, late UCI and all artifacts.
+Do not claim this turn closed those remaining requirements.
+
+## Independent received TRS channel scoring (2026-09-08)
+
+Practical TRS channel estimation now retains the complete per-resource,
+per-receive-branch nrChannelEstimate output. Its fitted pilot residual is
+explicitly a pilot-fit diagnostic, not channel NMSE or independently measured
+SINR. Reference correlation is no longer called QCL accuracy. Unmeasured QCL
+and TRS SINR remain unavailable, not manufactured values.
+
+The shared physical owner now retains the same executed NR path gains and
+filters for TRS scoring, alongside the exact physical TX projection, TX
+amplitude and applied link loss. References go only to post-receiver scoring;
+no additional channel execution or gain/phase fitting is allowed. NMSE pools
+error and reference energies across slots/branches instead of averaging dB.
+
+Initial focused batch (session 79315) failed with TooFewSnapshots: the
+documented nrPerfectChannelEstimate interface requires a complete slot,
+whereas an actual TRS observation may end after its last configured RS
+symbol. No observation or channel-snapshot padding was added.
+receivedFFTChannelDiagonal instead computes the same-symbol diagonal of the
+actual time-varying FIR/OFDM operator over exactly the received FFT windows.
+It includes finite CP/symbol support; ICI/ISI are not mislabeled diagonal
+gain. Native FFT-rate operation is supported; resampled scoring fails closed
+until its actual resampling operator is modeled. References describe the
+nominal linear response, not RF distortion compensation.
+
+testReceivedFFTChannelDiagonal passed direct independent basis-waveform
+filtering comparisons for two TX/two RX branches, time-varying gains, partial
+slots, offsets 0/7/20 and CP fractions 0/0.5/1, including insufficient-CP
+conditions. Missing executed snapshots are rejected. This is unit evidence,
+not generated campaign data.
+
+Session 80531: that operator test and actual four-slot shared-owner TDD TRS
+scoring passed (NMSE -35.446 dB over 600 pilot/branch values). FDD then correctly
+rejected the base scenario's standalone per-block-SNR authority. A separately
+labeled inherited FDD component YAML now explicitly requests thermal noise;
+the base scenario is unchanged. Session 61256 passed FDD scoring at -22.4495
+dB over 600 values; composed broadcast/control regressions are still pending
+at this journal entry. Neither test is a main FDD campaign or main TDD
+qualification.
+
+The main TRS row adapter now preserves common-frequency domain and leaves
+oscillator-only CFO and unmeasured post-correction residual unavailable.
+Its previous injected-CFO subtraction was not an observed corrected-waveform
+residual. testTRSFrequencyExportDomain passed CSV roundtrip, changed-injection
+invariance and rejection of oscillator relabeling. Its initial static-wiring
+assertion named the wrong local variable; corrected it to the actual adapter
+call, without changing production acceptance.
+
+The older composed-broadcast fixture is being upgraded to retain the actual
+executed references, via optional separate fourth outputs in the fading and
+impairment wrappers. No primary receiver replay contains the truth tensors.
+The successful TRS assertion is retained; fake finite pilot-fit SINR is now
+explicitly rejected in favor of true independent channel NMSE.
+
+Newly identified follow-up: TRS runtime eligibility currently gates on
+truth-scored NMSE, and the scheduler legacy branch also reads it. This must
+be separated from qualification so altering scoring references cannot alter
+receiver/scheduler usability. SRS has a similar truth-NMSE scheduling gate
+requiring an independent audit. TRS tracking tables still use the first burst
+slot as availability and need actual completion binding. Standalone/strict
+TRS harnesses have not yet been migrated to independent scoring; they must
+remain unqualified rather than recover old pilot-fit-as-NMSE behavior.
+
+Main connected UL traffic, all channel artifacts, QCL/TCI activation and
+requested-PMI use are still not newly qualified. No main scenario, testAll,
+long campaign, instrument write, deletion or commit was performed here.
+
+### Causal qualification separation and uplink follow-through
+
+Session 61256 completed EXIT 0 with TRS_SHARED_REFERENCE_REGRESSION_PASS:
+FDD shared-owner scoring, composed SSB/TRS, composed PDCCH/SSB/TRS and
+frequency-domain CSV checks passed. The complete-slot reference failure is
+closed for native-rate partial TRS observations; no padding was introduced.
+
+TRS receiver usability is now independent of simulator-only channel NMSE.
+Ok/StrictOk and exported PASS still require qualification; MeasurementUsable
+and TRSRuntimeEvidenceUsable describe received evidence. The scheduler no
+longer consumes PASS/NMSE as receiver authority. Independent NMSE stays in
+the scoring trace, not ReceiverTrackingStateByCell. Negative tests exposed
+two real defects during this change: the old state still copied truth NMSE,
+and OR-ing legacy DetectionUsable with DetectionSuccess could override an
+explicit failed detection. Both were fixed at the producer/consumer boundary;
+canonical false/missing flags cannot be rescued by aliases or summary PASS.
+
+TRS tracking tables now pool NMSE energies, identify the last source slot,
+and bind availability to the next slot start after the actual completed
+sample window, explicitly zero-based. Without an observation, availability
+is unavailable rather than assumed from the first burst slot. This does not
+replace the main scheduler's separately enforced delivery clock.
+
+Session 59796 completed EXIT 0, TRS_SCORING_CAUSAL_SEPARATION_PASS. TDD/FDD
+delivery fixtures passed NMSE/qualification mutation invariance and false
+canonical-flag rejection. Both physical TRS component cases passed again
+(TDD -52.987 dB, FDD -30.975 dB, 600 compared pilot/branch values each in this
+batch). Changing retained reference gains failed qualification without
+changing practical frequency, detection or runtime usability. These values
+describe those component executions, not the nominal-12-dB main scenario.
+
+The same defect was found and repaired in runSRSChannelEstimation and the
+scheduler SRS gate: practical channel availability/runtime usability no
+longer depend on independent truth NMSE. SRS Ok/StrictOk still require a
+valid independent reference and the configured NMSE threshold. SRS channel
+correlation is no longer exported as QCL accuracy; its explicit unavailable
+status is carried into the main trial adapter. Regression batch 20412 is
+pending at this entry; do not claim this revision's uplink tests passed yet.
+
+The measured TRS-delivery fixture was migrated from its old six-slot burst
+assumption to the actual prepared burst extent and required slot-start
+delivery. It now checks NMSE in the trace and its absence from RX state.
+Radio-measurement Python plotting tests: 53 passed in 2.01 s. Diff whitespace
+validation passed; existing run outputs remain untouched.
+
+Remaining identified work, before any new main qualification claim:
+
+- Finish pending uplink/measured-delivery regressions and rerun actual UL
+  timing, PRACH/access and late-PUCCH/PUSCH-UCI focused checks.
+- Main scheduler's decoder-quality guard still reads generic/true NMSE
+  as a SINR penalty (CoupledTruthRuntime.schedulerDecoderQualityGuardedSINR).
+  Audit and replace that oracle-dependent adaptation input with an explicit
+  receiver-estimated uncertainty contract; do not call a pilot-fit residual
+  independent channel error. SRS eligibility separation alone does not close
+  every link-adaptation truth dependency.
+- Standalone TRS and strict harnesses need independently retained scoring
+  references; they must not recover old residual-as-NMSE behavior. Actual
+  runtime TRS timing-error labels also still subtract configured injected
+  delay without a total propagated timing reference.
+- trackTRSOverTime's standalone strict-frequency score requires an explicit
+  independent frequency reference; runtime scoring currently uses a separate
+  availability path. Unify and label these contracts without a blanket
+  runtime tracking qualification bypass.
+- Other modulation-tracking helpers still label correlation QCLAccuracy;
+  actual QCL/TCI activation, CSI PMI/precoding and all corresponding CSV/PNG
+  outputs need a main-path audit.
+- Audit queued DL projection while the reciprocal physical channel is
+  currently UL, particularly unequal antenna dimensions. The current
+  component queueing pattern does not prove every future-direction case.
+- Rerun the short main TDD baseline only after these gating repairs and
+  focused checks; verify connected PUSCH, late UCI, RSSI/RSRP/SINR power
+  domains and every generated CSV/PNG. No all-correct/10-out-of-10 claim.
+
+Uplink follow-up: session 20412 passed the new SRS scheduler separation test
+in TDD/FDD, including canonical false/alias-conflict rejection. Actual
+received SRS passed unchanged-SINR/CQI/MCS/RI/TPMI/noise tests under absent or
+wrong independent references, while Ok/StrictOk correctly failed scoring.
+That batch then failed an obsolete pilot-free PUCCH connector fixture: it
+provided no prior received gNB UL timing reference. Production rejection
+PUCCHTimingReferenceRequired was retained. The test now invokes the existing
+actual shared SRS-to-PUCCH clock fixture for Format 0, while keeping its
+SRS and DM-RS-bearing PUCCH connector cases. No fabricated prior clock,
+receiver padding or weaker production validation was introduced.
+
+Session 18669 (logs/ul_scoring_received_clock_regression_20260908.log) is
+running that replacement plus actual coded data/UCI checks in TDD/FDD and
+measured TRS delivery. At this entry SRS and DM-RS-bearing PUCCH passed;
+remaining checks are pending. These are component fixtures, not a main
+FDD campaign and not a qualified 12-dB shared-scheduler run.
+
+Session 18669 subsequently completed EXIT 0 with
+UL_SCORING_AND_TRS_DELIVERY_PASS. Actual SRS and DM-RS-bearing PUCCH reception,
+the physical shared SRS-to-pilot-free-PUCCH clock, coded data stages in
+TDD/FDD, and measured TRS result delivery all passed. Each mode's three
+PUSCH cases recovered exact TBs with CRC pass; both UCI-bearing cases also
+recovered their expected HARQ-ACK payload. Received timing offsets were
+7/90/78 samples. The data fixture explicitly leaves DL full-channel/RF
+qualification failed when its independent reference is absent, despite a
+successful TB decode; that assertion was retained.
+
+Final guard follow-up: MATLAB logical conversion accepts nonzero values
+including NaN. TRS/SRS canonical availability flags now require an explicit
+finite scalar boolean/0-or-1 value equal to one. Session 2510 is checking
+TDD/FDD scheduler behavior with NaN/2, canonical false, contradictory aliases,
+and changed truth NMSE; this entry does not yet claim its terminal result.
+
+Session 2510 completed EXIT 0 with RECEIVED_RS_TYPED_FLAG_GUARDS_PASS.
+Both duplex-mode TRS delivery tests and both SRS scheduler-mode checks
+passed on the final typed-flag revision. No MATLAB batch remains intentionally
+running. Whitespace validation passed. Work remains uncommitted; no previous
+run outputs were deleted or overwritten. The active repair goal is not
+complete: the main-run and remaining scientific/qualification issues listed
+above still require work.
+
+## Receiver-only AMC and queued DL antenna authority (2026-09-08)
+
+The preceding goal turn made verified progress; no MATLAB process remained
+live when this continuation began. Inspection confirmed the residual
+schedulerDecoderQualityGuardedSINR path subtracted a penalty derived from
+generic/true NMSE or fitted-pilot residuals. Its additional ChannelAgingLoss
+input is produced from a first-to-last estimated channel-gain ratio, not a
+measured decoder-loss experiment. Those inputs do not constitute an
+independent receiver-known disturbance variance and can double-count error
+already present in receiver SINR.
+
+Removed that unsupported correction path. The scheduler continues to use
+its explicitly sourced receiver SINR/CSI selection and existing CSI/HARQ
+adaptation. No new lookup penalty, truth-to-estimate relabeling, fabricated
+uncertainty or fixed-MCS replacement was introduced. Qualification metrics
+remain available for scoring. This change does not claim every other
+optional CSI-aging/prediction model is qualified.
+
+Session 90741 completed EXIT 0 with RECEIVER_ONLY_AMC_REGRESSION_PASS:
+testRuntimeCSIScoringIsolation, testRuntimeMeasuredCSIFeedbackDerivation,
+testCoupledTruthOLLARetransmissionExclusion and
+testLinkAdaptationFeedbackDelayAuthority passed. The new isolation test
+covers TDD/FDD and DL/UL, mutates six scoring/diagnostic fields through
+NaN/-Inf/-80/-5/40/Inf, and requires unchanged runtime CSI. Genuine received
+SINR reduction still reduces CQI/MCS; absent received SINR cannot be rescued
+by good NMSE. These are explicit scheduler fixtures, not PHY measurements.
+The former regression that expected an NMSE/aging-derived SINR penalty now
+asserts receiver-input invariance while retaining actual lower-SINR and
+per-layer AMC-response checks.
+
+Primary reference for the receiver-CSI/feedback architecture:
+https://www.mathworks.com/help/5g/ug/nr-pdsch-throughput-using-csi-feedback.html
+(This example itself has no HARQ; the repository's separate HARQ regression
+above supplies the tested OLLA/feedback evidence. No blanket 3GPP algorithm
+mandate is inferred from the example.)
+
+Next found defect: queueDownlink projected future TRS through the currently
+materialized TDD direction. During UL, that metadata belongs to the UE TX
+array, not the future gNB TX radio. The owner now retains an immutable DL
+projection metadata snapshot at initialization, without a fading handle,
+and validates queued waveform columns against the actual registered gNB.
+No channel swap, clone or execution is used for future DL preparation.
+
+An inherited unequal-array component YAML tests a four-port/four-element
+gNB and two-port UE, queuing the later TRS burst while the physical owner is
+UL. Early fixture attempts correctly failed stale two-element beam-codebook
+authority, an unsupported CSI-codebook key, and a mismatched two-port MIMO
+declaration. The fixture now declares consistent MIMO, RF/array and beam
+codebook dimensions; production schema/channel validation was not weakened.
+Session 62172 is running the corrected future-queue plus FDD component
+checks. Their terminal result is not claimed at this journal entry.
+
+### Correction and verified physical-array interface
+
+Session 62172 actually failed with the same four-element/two-port mismatch.
+The preceding tentative fixture-only interpretation was incomplete. A
+resolved-metadata diagnostic (session 5517, EXIT 0) showed that the gNB has
+four physical elements and two logical CSI ports even with mimo.n_tx_ant=4.
+The shared owner's one-column materialization probe let a logical signal
+port count become the physical CDL endpoint width.
+
+The owner now materializes the actual physical TX/RX array interfaces,
+preserving the logical/RF architecture and phased-array objects separately.
+The interface is explicitly after TX projection and before RX combining.
+TRS uses its own configured signal-to-element map before queueing; it does
+not borrow the live reciprocal direction's map or a CSI-port map. The
+earlier proposed cached-DL-projection implementation was superseded. This
+does not swap/advance/clone a physical channel during future preparation.
+All physical dimension and power-preservation checks remain enforced.
+
+Session 38946 completed EXIT 0, log
+`logs/directional_dl_physical_interface_20260908.log`, marker
+`DIRECTIONAL_DL_PROJECTION_REGRESSION_PASS`. The unequal 4-gNB-element /
+2-UE-element TDD test queued a future TRS burst during UL and verified no
+channel-clock/direction mutation. Independently scored NMSE was -39.3201 dB
+over 600 pilot/branch values. The FDD component also passed (-40.7558 dB,
+600 values). These are component measurements, not a main-run certificate.
+
+### Complete received tracking, without unconditional runtime acceptance
+
+Found and removed `tracking.StrictOk || runtimeCoupled`. Runtime tracking
+now requires every configured window's explicit detection/timing/frequency/
+channel-estimate availability, finite measured timing and common frequency,
+the frequency ambiguity range/domain, and an actual completed observation.
+Scoring timing/frequency error and true NMSE remain separate qualification
+inputs, not practical receiver authority. The tracking CSV and trial row
+publish the explicit receiver-evidence flag. Failed tracking is now included
+in the strict failure reason and blocks runtime delivery.
+
+The new real-OFDM loopback regression deliberately removes a window and
+injects invalid availability flags/nonfinite estimates. Its first batch
+(64073) exposed a pre-existing NaN-to-logical conversion in the accuracy
+gate; that gate now also requires typed, complete-window flags. Batch 40874
+is running the corrected tracking check, unequal-array TDD/FDD TRS checks,
+and received-clock SRS-to-PUCCH regression. Its terminal result is not yet
+claimed here. No full main scenario was started at this entry.
+
+All 53 radio-measurement plot tests passed again (1.77 s). These validate
+plot/data contracts, not the numerical correctness of an unexecuted main
+run. CSI-RSSI must average total received power on its measurement symbols
+and RB bandwidth; it is not RSRP times a fabricated gain. Reference:
+https://www.mathworks.com/help/5g/ug/5g-nr-csi-rs-measurements.html
+and TS 38.215 section 5.1.4. Existing CSI branch power/RSRQ closure and
+SSB-window-versus-full-carrier RSSI distinctions remain required.
+
+Remaining main-run qualification is explicitly open: connected PUSCH/UCI,
+control timing/feedback ownership, full TCI/QCL/PMI activation-to-waveform
+lineage, RSSI/RSRP/SINR across actual run CSV/PNG artifacts, and any
+independently unmeasured impairment accuracy. No 10/10/complete-conformance
+claim is made. No output deletion, commit, main FDD/25-dB campaign,
+instrument playback or testAll execution was performed.
+
+Batch 40874 subsequently completed EXIT 0, marker
+`SHARED_TRACKING_AND_UL_CLOCK_PASS` in
+`logs/shared_tracking_and_ul_clock_typed_20260908.log`. Complete-window
+negative tracking checks, unequal-array future-DL TDD, FDD TRS component,
+and actual received SRS-to-PUCCH clock/feedback all passed. The physical TRS
+NMSE values matched the immediately preceding component batch. This is not
+an across-platform reproducibility certification.
+
+Started a new short nominal-12-dB TDD main-bundle diagnostic using the
+existing 35-slot YAML, logging to `logs/main_shared_timing_repair_20260908.log`.
+It will create a fresh timestamped temporary run folder. Completion,
+connected PUSCH/UCI outcomes and artifact validity are not claimed before
+its persisted evidence is audited. No main FDD run was started.
+
+### Main diagnostic stopped on an unmigrated CSI-UCI executor
+
+Session 74480 terminated EXIT 1. Run folder:
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_113356`.
+At entry to slot 34, `processDueFeedback -> executeDueDLCSIReport ->
+acquireRuntimeChannelStateForControl` hit
+`sixgr:truth:LegacyExecutionOnSharedStream`. The physical-owner guard is
+correct and remains enabled. This is a real remaining main-scheduler
+integration defect, not an output-display problem.
+
+Persisted progress before the exception:
+
+- Four real SSB candidates; selected zero-based SSB 0 had the strongest
+  measured SS-RSRP (-76.0461 dBm). No candidate was removed from the table.
+- Msg1 through Msg4 used runtime channel observations, with
+  SelfLoopWaveformUsed=0. The procedure row reports preamble detection and
+  Msg2-PDSCH, Msg3-PUSCH and Msg4-PDSCH CRC passes. Access became complete.
+- Actual connected SRS slot 30 passed: SINR 12.2599 dB, independent channel
+  NMSE -21.6758 dB. Shared received tracking was available.
+- Two committed PDSCH rows (31,32) passed CRC, each MCS 4 and 2.088 Mbps
+  goodput. The later queued transmission is not promoted to a received row.
+- No connected PUSCH row. The CSI report `DL_UE1_SRC32_DUE34` remains
+  Processed=0, CSIUCITransport=pucch. Its actual UCI transmission was never
+  armed on the shared owner. Consequently this run cannot qualify UL data,
+  delivered CSI-driven AMC, or the complete scheduler.
+
+The next required repair is **not** to suppress/ignore the due report. It
+must reserve a future received-clock UL observation while there is still
+time, encode the actual typed CSI report at the physical preparation
+boundary, resolve ownership with pending HARQ/PUSCH, and update scheduler
+CSI only from received decoded bits. Existing shared PUCCH arming iterates
+HARQ grant traces; `observePUCCHFeedback` currently creates a HARQ bit for
+each input row and uses connectedCombined/connectedHARQ. A CSI-only report
+must not be disguised as a dummy HARQ row. Extend this interface with
+explicit payload ownership (or a dedicated typed CSI adapter), and preserve
+the existing completion-only reducer and legacy-execution rejection.
+
+The exhaustive failed-run audit is outside the run folder at
+`C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_113356_audit`.
+It parsed 132 CSVs, 41,957 rows and 10,700 columns; saved the first five rows
+of every CSV; and found 132 required semantic failures across 39 files.
+There were no CSV parse failures, but zero PNGs. These are failed checks,
+not 132 independently diagnosed PHY bugs. Many concern absent front-door
+identity/final completion artifacts in this aborted direct-bundle
+diagnostic. DL CRC/BER/goodput arithmetic and noise/SINR/EVM lineage checks
+passed for the two committed rows. Full output qualification still fails.
+No historical outputs were edited to make the audit pass.
+
+### Data-channel QCL reporting correction
+
+The main DL rows also exposed QCLAccuracy=1. Inspection proved that
+deriveModulationTrackingMetrics assigned correlation against the first
+estimated channel symbol to that name. This does not validate any QCL type,
+source/reference-signal pair or activated TCI state. The scalar is now
+exported separately as EstimatedChannelReferenceCorrelationMagnitude in
+both DL and UL. QCLAccuracy remains NaN with explicit
+QCLMeasurementStatus=not_measured_requires_QCL_TCI_binding_evidence.
+This is an honest reporting repair, **not** implementation of full TCI/QCL
+activation, which remains open. Generic Doppler/aging diagnostic labels
+also still need their separate scientific audit.
+
+The first QCL test fixture lacked carrier numerology and correctly failed
+slotDurationSec validation. The fixture now takes a real default carrier;
+production validation was unchanged. Session 14095, log
+`logs/qcl_scope_and_data_codecs_carrier_20260908.log`, has passed the
+TDD/FDD DL/UL correlation-vs-QCL diagnostic and NR symbol-decision tests and
+is running the data/UCI codec regressions. Terminal status is not yet
+claimed at this entry. No restarted main campaign is running.
+
+Session 14095 completed EXIT 0 with QCL_SCOPE_AND_DATA_CODECS_PASS.
+TDD and FDD each passed all three PUSCH cases with exact recovered TBs;
+the two UCI-bearing cases in each mode recovered their expected bits.
+Their actual timing estimates were 7/90/78 samples. These remain explicit
+attenuator/noise codec fixtures, not full shared-fading scheduler runs.
+The QCL/correlation scope tests and NR symbol-decision regressions passed.
+git diff --check passed. No MATLAB batch is intentionally left running.
+The active repair goal remains open, with CSI-only shared-stream arming
+and decoded feedback delivery the next main-run blocking repair.
+
+### CSI-only shared-clock migration and measured-RI adapter (in verification)
+
+The slot-34 legacy CSI executor is now split into pure typed CSI resource
+planning and physical execution. Shared PUCCH arming also reserves actual
+CSI-only reports. CSI grants carry UCIType=csi_part1_part2, no HARQ process,
+and no manufactured ACK bit. The shared preparation callback forms CSI-only
+or combined HARQ/CSI IQ; only its actual receiver callback marks the report
+decoded. The due-slot reducer requires exactly one physical owner while it
+waits. The legacy-execution guard remains enabled.
+
+Explicit CSI PUCCH reservations transfer to a qualified PUSCH context before
+encoding and release with stale context bindings. Already encoded PUCCH CSI
+cannot be copied onto a later PUSCH. A physical CSI-only PUCCH does not call
+HARQEntity.onFeedback. These production changes are still under focused
+regression and are not yet main-run qualification.
+
+New testSharedCSIReportClock executes actual shared CDL/RF/thermal-noise
+PUCCH IQ. Its input DL clock/TAG, CSI measurement and optional HARQ transport
+block are explicitly component fixtures, not measured initial access or
+PDSCH. The first run reached successful CSI decode and scheduler delivery,
+then failed an overstrict test expectation: raw CQI 10 was decoded exactly,
+while configured link adaptation resolved scheduler CQI 9. The test now
+checks raw decoded fields, exact information bits and adjusted scheduler
+CQI separately rather than disabling link adaptation.
+
+The stronger field check found a real adapter defect: RIEstimate was not an
+accepted rank alias, producing RI=NaN; attachTypedCSIUCIPayload converted it
+to rank one through max(1,...). Received CQI/RI/PMI were [10,1,0], while the
+pending source was [10,NaN,0]. Measured RIEstimate/RankEstimate/EstimatedRI
+now take precedence over the source grant's layer count. Serialization
+requires finite integer RI within the configured restriction and no longer
+clips CQI/PMI/CRI into legal-looking payload fields. A negative regression
+requires unavailable rank to fail with InvalidCSIReportRank. Full PMI/LI
+schema and active TCI/QCL integration remain separately open; this patch
+does not claim to complete them.
+
+Batch 67494, logs/shared_csi_rank_transport_20260908.log, is verifying the
+rank adapter, CSI-only and CSI+HARQ TDD/FDD components, CSI/PUSCH source
+authority and late Format-2 HARQ feedback. Terminal success is NOT claimed
+at this entry. No main FDD campaign, 25-dB run, testAll, commit, historical
+output rewrite/deletion or instrument playback was performed.
+
+The existing RSSI/RSRQ/windowed-SSB plot regressions passed: 53 tests in
+1.52 seconds. They enforce actual antenna-plane units, recorded bandwidth,
+receive branches, symbol windows and power closure. This proves the plot
+logic against its declared fixtures, not main-run CSV/PNG completion.
+
+Batch 67494 completed EXIT 0, SHARED_CSI_TRANSPORT_REGRESSIONS_PASS.
+CSI-only and CSI+HARQ shared waveform tests passed in TDD and FDD: seven
+CSI bits recovered exactly, TDD due=4/delivered=5 and FDD due=5/delivered=6.
+The measured-RI adapter, CSI/PUSCH source authority and late Format-2 HARQ
+tests also passed. No main campaign was started at this boundary.
+
+### Actual PUSCH UCI CRC and modulation authority
+
+Further uplink inspection found PUSCHUCIDemultiplexer discarded nrUCIDecode's
+actual error output and assigned HARQACKCRCOK/CSI1CRCOK/CSI2CRCOK by comparing
+decoded bits with transmitted bits. It also omitted the modulation argument
+required for correct one-/two-bit UCI decoding. Those are actual producer
+and labeling defects, not grounds to substitute expected bits at the receiver.
+
+decodeUCIWithEvidence now retains received-only per-code-block CRC errors,
+applicability, usability and the owning codeword modulation. Short UCI has
+CRCPass=NaN, not a fabricated pass. Transmitted-bit agreement is separately
+named ContentMatch and used only for scoring. PUSCH_Rx and both staged and
+ordinary UL results retain UCIReceiverEvidence; raw CSVs also carry its JSON.
+CSI scheduler delivery now validates the received decoder evidence and
+rejects actual CRC failure even when the decoder returned binary bits.
+The analogous HARQ receiver-evidence guard and explicit completion of a
+CSI reservation transferred onto PUSCH are undergoing final reducer tests.
+They do not create standalone PUCCH trials or set its GrantExecutedFlag.
+
+Batch 61663 completed EXIT 0, ACTUAL_PUSCH_UCI_CRC_PASS, recorded in
+logs/actual_pusch_uci_crc_20260908.log. Actual UCI coding/decoding covered
+QPSK/16QAM/64QAM/256QAM and 1/2/7/12/20-bit payloads; a real erroneous polar
+decode was rejected despite returning 20 binary bits. The typed UCI phase
+suite and CSI source-authority component passed. TDD and FDD data-chain
+components each passed all three PUSCH cases: actual timing estimates
+7/90/78 samples, TB CRC=1, and exact recovery for the two UCI cases.
+These are explicitly codec/channel fixtures, not main-run qualification.
+
+The PUSCH phase CSV contract/verifier now checks CRC applicability and
+labels the combined CSI2/configured-grant-UCI code-block scope. Its local
+synthetic verifier self-test (not primary simulator output) passed all
+42 valid checks and rejected its deliberately corrupted PNG hash.
+Batch 89065, logs/uci_receiver_ledger_closure_20260908.log, is running the
+final receiver/ledger tests, including expected-content mutation invariance.
+No terminal result is claimed at this entry.
+
+Reference used for this decoder repair:
+https://www.mathworks.com/help/5g/ref/nrucidecode.html (TS 38.212 sections
+6.3.2.2--6.3.2.5; decoder error flags apply only to CRC-based schemes).
+Full QCL/TCI activation, PMI/LI schema coverage, main connected-PUSCH closure,
+the complete RSSI/RSRP/SINR artifact audit and front-door CSV/PNG publication
+remain open. This is not an all-3GPP or 10/10 qualification claim.
+
+The explicit CSI reservation regression subsequently exposed that the
+HARQ-only PUSCH collector also read CSI-only grant-trace rows, manufacturing
+an extra ACK. Only the HARQ collector is now type-filtered; the general
+collision collector still sees CSI resources. No assertion was relaxed.
+Batch 99019 completed EXIT 0, UCI_RECEIVER_AND_LEDGER_CLOSURE_PASS, in
+logs/uci_receiver_ledger_correct_collector_20260908.log. CSI source identity,
+transferred-reservation completion, HARQ received-bit authority, actual UCI
+CRC rejection and five typed coding tests passed. Changing expected CSI
+content with the same received LLRs leaves the decoded bits and real CRC
+unchanged; only the independent ContentMatch score changes.
+
+Started a fresh short nominal-12-dB TDD main-bundle diagnostic with the
+existing 35-slot YAML, logs/main_shared_csi_repair_20260908.log. This tests
+the repaired path beyond the former slot-34 legacy CSI exception. Main
+completion, connected PUSCH and artifact qualification are NOT yet claimed.
+
+### Main run crossed the old CSI failure, then exposed a future-PUSCH timestamp defect
+
+Session 75781 exited 1, root
+C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_122908.
+The main scheduler entered slot 34 without the legacy CSI executor error.
+It decoded a real UL DCI in control slot 34 for data slot 35, then stopped
+in PreparedDataTransmission with sixgr:link:DataPreparationClockMismatch.
+localPrepareCoupledGrantBatch rebound carrier slot/frame to the future UL
+occasion but retained RuntimeSlotStartTime_s from the current control-slot
+user context. The strict guard correctly rejected inconsistent time before
+publishing a PUSCH receiver result; it remains unchanged.
+
+bindSharedDataOccasion now binds the scheduled carrier calendar and sample-
+derived RuntimeSlotStartTime_s together at the main shared data producer.
+It is also used when reserving future UL preparation after actual DCI RX.
+This changes only the waveform occasion config: no future scheduler view,
+feedback, traffic or shared fading/RF clock is executed. The data-stage tests
+now deliberately start with the old control-slot timestamp and require the
+generic binder before actual coded TX/RX. Batch 99895,
+logs/scheduled_data_occasion_binding_20260908.log, passed metadata clock
+isolation and all TDD data/UCI cases; FDD components remain in progress at
+this entry. This latest repair has not yet been reverified in a main run.
+
+Persisted main-run evidence before failure:
+- Four SSB candidates, all BCH CRC passes; only index 0 selected, strongest
+  SS-RSRP=-76.0461 dBm. Both receive branches retain scoped SSB-window RSSI.
+- Actual Msg1--Msg4 procedure, RuntimeStageWaveformsUsed=1 and
+  RuntimeSelfLoopWaveformsUsed=0; Msg2 PDSCH, Msg3 PUSCH and Msg4 PDSCH CRCs
+  pass. PRACH itself has no CRC and is not assigned a synthetic CRC pass.
+- Connected SRS slot 30: PASS, receiver SINR=12.2599 dB, independent
+  channel NMSE=-21.6758 dB, runtime channel state used.
+- Two committed DL rows, no connected PUSCH row. The received future UL
+  grant is not equivalent to a completed PUSCH. No final success claim.
+
+The full first-five-row audit is outside the run folder at
+C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_122908_audit.
+It parsed all 132 CSVs / 41,963 rows without parse errors, but still found
+132 required semantic failures across 39 files and zero PNGs. These include
+65 runtime-identity failures, missing final reduction/manifest artifacts,
+and an actual PDCCH label inconsistency: finite receiver SINR is marked
+not_applicable in three rows. Main HARQ observation summaries also lack
+required primary-row lineage fields. These are unresolved, not hidden by
+the successful focused tests. DL CRC/BER/goodput arithmetic and noise/SINR/
+EVM lineage pass for the two committed rows. Historical outputs are intact.
+
+The focused Python plot/CSV/audit tests completed: 156 passed in 9.71 s.
+No testAll, main FDD/25-dB run, commit, output deletion, or instrument
+playback was performed. The active repair goal is not complete or blocked.
+
+Batch 99895 completed EXIT 0, SCHEDULED_DATA_OCCASION_BINDING_PASS.
+Metadata-only preparation left the physical clock unchanged, and actual
+TDD/FDD data/UCI cases passed after rebinding the stale control timestamp
+to their scheduled data occasion. The next main diagnostic must still
+prove the repaired producer through connected PUSCH reception and final
+artifact publication; component success does not substitute for that run.
+
+### 2026-09-08: shared-clock main diagnostic completed through connected UL
+
+The fresh main bundle reached MAIN_SHARED_DATA_TIME_DIAGNOSTIC_COMPLETED
+in logs/main_shared_data_time_repair_20260908.log. Output root:
+C:/Users/anup0/AppData/Local/Temp/main_shared_srs_20260908_124829.
+All 35 nominal-12-dB TDD slots completed. No main FDD or 25-dB run was made.
+The operating-point label is not a claim that every received signal has
+12 dB SINR; this YAML executes geometry/pathloss and absolute thermal noise.
+
+Observed main-run results (not component-fixture substitutions):
+- Msg1--Msg4 completed through actual shared received waveforms. Msg1 and
+  Msg3 traces have RuntimeStageWaveformUsed=1, SelfLoopWaveformUsed=0 and
+  actual continuous channel/RF execution. PRACH has no invented CRC.
+- SRS slot 30: receiver SINR 12.2599459730789 dB, independently scored
+  channel NMSE -21.6758131252816 dB; slot 35 also passed (NMSE -22.3174 dB).
+- Three connected PDSCH rows and one PUSCH row were committed. PUSCH slot
+  35: CRC=1, BitErrors=0, BitsCompared=984, MCS=1, one layer, receiver Hest
+  SINR=8.9254933099784 dB, post-EQ SINR=11.437938711607 dB.
+- Actual UL transmitter capture: 7680 samples, two physical ports, 7.68 MHz,
+  SHA256 be1daa0009a204b067b05c2bda3b6c1ae57418a68bf3c3810cd885ebf840b926.
+  This is not yet Keysight native-format/playback qualification.
+- CSI measured at slot 32 was received on PUCCH at the slot-34 occasion and
+  delivered to the scheduler. Three HARQ-ACK grant rows and one CSI row
+  share that actual PUCCH waveform; these are logical payload owners, not
+  four separate physical transmissions. PUSCH is slot 35, with no UCI in
+  this run. UCI-on-PUSCH remains covered by the earlier explicit component
+  tests, not falsely claimed as exercised by this main diagnostic.
+- The UL report due after the 35-slot horizon remains explicitly right-
+  censored, not fabricated as delivered feedback.
+
+Exhaustive audit: 210 CSVs / 135786 rows, every first five rows inspected by
+the audit; zero CSV parse failures. Twelve PNGs decoded successfully with
+no duplicate raster hashes. Full audit is at the sibling folder
+main_shared_srs_20260908_124829_audit. Required semantic failures remain:
+162 CSV checks and one chart check. This direct bundle diagnostic omits
+front-door run identities, lifecycle summary, contract materialization and
+terminal gates: 94 identity failures and 35 cross-table failures are not
+94/35 independent diagnosed PHY defects. DL/UL CRC/BER/goodput arithmetic,
+scheduled operating points and noise/SINR/EVM lineage passed for all four
+committed data rows. The fallback/placeholder token hits are column names
+inside metric_unit_catalog.csv, not evidence that fallback executed.
+
+Additional producer defects found and patched after the main run stopped:
+1. PDCCH retained measured SINR but left ReceiverHestSINRApplicable=false.
+   bindReceiverSINRApplicability now binds the producer flag from available
+   channel estimates and receiver status without changing measurements or
+   CRC decisions. Actual shared-PDCCH and negative metadata tests passed.
+2. CSIReportConfiguration silently encoded missing nonzero-width fields as
+   zero. It now rejects missing measurements; zero-width implied fields
+   need no fabricated values. PUCCH/PUSCH schema fixtures and the existing
+   four-port NR CSI engine/source-authority tests passed. Batch 96988
+   EXIT 0: RECEIVER_METADATA_CSI_REQUIRED_FIELDS_PASS.
+3. The shared UL DCI callback returned before the legacy UL-grant trace
+   append. Thus real PUSCH ran but live_ul_scheduler_grants.csv was empty.
+   recordReceivedULGrant now appends the exact decoded grant once at that
+   callback. It cannot consume bytes or create HARQ TX counts. Its initial
+   regression incorrectly referenced a PUCCH-only GrantExecutedFlag field;
+   that fixture assertion now checks the actual shared TX ledger and
+   unchanged queue/HARQ counters instead. Production validation unchanged.
+4. Visual inspection of the UL diagnostic showed a fictitious -6153 dB
+   receiver-channel dip: log magnitude was floored at realmin. Channel
+   slice/full-grid rows now preserve zero I/Q, -Inf exact log magnitude and
+   undefined phase, with explicit statuses; phase unwrap does not bridge
+   zero/unavailable entries. This is visualization of raw receiver output,
+   not a claim that an unallocated RE has zero propagation gain.
+
+Batch 99178 (logs/shared_ul_trace_channel_plot_20260908.log) is testing
+the latest UL trace and channel plot changes; no terminal result at entry.
+No primary artifact in the completed run was rewritten to appear repaired.
+
+Still open: full front-door artifact/gate publication; residual KPI source
+manifest mismatch; native IQ authority validation; waveform TX/RX plot
+power-plane labeling; full QCL/TCI activation; measured LI instead of rank-1;
+high-port PMI subfield transport/reconstruction and dynamic CSI Part-2 RI
+authority. TS 38.214 V18.7.0 clause 5.2.1.4.2 defines LI through the strongest
+layer of the reported precoder, not the last layer. No all-3GPP/10-of-10 or
+complete 6G compliance is claimed. Existing dirty edits and outputs remain.
+
+Batch 99178 completed EXIT 0, SHARED_UL_TRACE_AND_CHANNEL_PLOT_PASS.
+Received UL grant identity/duplicate rejection, unchanged queue/HARQ state
+at DCI reception, scheduler grant consistency, and the actual diagnostic
+snapshot/export regression (including zero-magnitude/undefined-phase cases)
+passed. Earlier batch 2025 failed only the newly authored fixture's wrong
+PUCCH-only table field; it is retained in logs/shared_ul_grant_trace_20260908.log.
+
+The WebGUI listener at 127.0.0.1:62906 currently refuses connections. The
+next verification therefore uses the normal runSingle front door directly,
+with the same 35-slot TDD YAML, unique tag
+short12_shared_ul_frontdoor_20260908_01. It is not reported as a WebGUI
+submission. This is needed to exercise real provenance/manifest/gate
+publication, not retroactively add identities to the old diagnostic.
+
+The normal-runner batch is live as session 49061, log
+logs/short12_shared_ul_frontdoor_20260908_01.log. At 07:46 UTC it had written
+resolved snapshots and was resolving exact DL/UL allocations before slot
+zero. Do not edit its production dependencies while it is running. The
+focused Python radio-plot/CSV/exhaustive-audit suite also passed after these
+changes: 156 tests in 10.68 seconds, session 19642 EXIT 0. Git diff --check
+passes. The broad goal remains active and incomplete; no testAll, commit,
+output deletion, long run, main FDD run, or instrument playback occurred.
+
+### 2026-09-08 08:13 UTC: normal-runner waveform completion; qualification still failing
+
+Session 49061 remains live in final report generation. The physical batch
+completed all 35 TDD slots and committed three PDSCH rows and one PUSCH row.
+UL slot 35 passed CRC with 0/984 compared-bit errors. Its received-DCl grant
+trace now exists with the exact grant identity, 984 TBS bits and 123 bytes.
+SRS at slots 30 and 35 passed on the shared clock, each with 84-sample
+measured timing correction. Slot 34 contains one physical PUCCH with combined
+HARQ-ACK and CSI (11 UCI bits, CRC correctly not applicable). This run did
+not exercise UCI-on-PUSCH or a post-bootstrap UL adaptation decision.
+
+The CSI-RS sample at slot 32 has measured RSRP -76.2144497965813 dBm and
+RSSI -51.2069038961501 dBm over the stated 25-RB scope. Selected SS-RSRP is
+-76.0460576482401 dBm. These values are not forced to the nominal 12 dB
+label. DL median post-equalization SINR is 50.528 dB; UL is 11.438 dB.
+
+Runner-profile result.Ok=0: ChannelRF_StrictValidation and
+MIMO_NominalEffectiveEvidence failed. UL has only bootstrap data, so the
+adaptation failure is genuine insufficient coverage and must not be waived.
+Final truth evaluation additionally reports roundtripMismatch=2,
+evidenceMissing=6, strictFailures=8; exhaustive terminal artifact audit is
+still pending. The raw main rows have blank ChannelRealizationId and
+RFImpairmentChainId, AppliedPathloss_dB=NaN but finite total applied loss.
+sharedObservationEvidence deliberately flattens only constant segment
+metadata: inspect actual segment records before copying any scalar. Do not
+replace variable per-segment measurements with configuration values.
+
+An additional report-integrity defect was traced in
+buildInPathChannelRFResult.localLargeScaleTable: ExpectedDeltaDb and
+MeasuredDeltaDb both copy TotalLargeScaleLossDbApplied. This is not an
+independent measured power closure. It needs actual before/after per-link
+gain-stage sample energies (or explicitly unavailable measurement), not a
+passing comparison of a ledger value with itself. Also,
+exportStrictChannelRFArtifacts.localReportConfiguredAppliedTable incorrectly
+requires FeatureApplied even for explicitly disabled features. Neither is
+fixed at this entry; running production dependencies remain frozen.
+
+Prepared NEW, not-yet-wired/not-yet-tested helpers selectCSILayerIndicator
+and measurePrecoderLayerSINR, plus tests testCSIMeasuredLayerIndicator and
+testCSISelectedPrecoderLayer. They target the real LI=rank-1 shortcut and
+rank-overhead contamination of the scalar CSI SINR. The LI helper explicitly
+limits its enabled domain to one-codeword ranks 1:4; higher-rank/two-codeword
+LI packing is not claimed. Planned integration must retain actual selected
+precoder/MMSE layer measurements, propagate LI through measurement rows and
+replace receiver feedback only from decoded UCI fields. Current producer
+functions and runtime payload still have the old behavior until that patch.
+
+Normative read: TS 38.214 V18.7.0 5.2.1.4.2 (strongest-layer LI), TS 38.212
+V18.5.0 6.3.1.1.2 (report quantity, field widths/order). Broader CSI payload
+problems remain: unrequested LI is currently appended, wideband PUCCH
+single-part/two-part mapping needs review, high-port PMI subfields are lost
+between the measured engine and runtime, and Part-2 rank authority must come
+from decoded Part 1. Existing frozen CSI floor vectors also encode the old
+unrequested-LI assumption; do not treat self-consistency as 3GPP validation.
+
+Further source tracing: SharedWaveformPhysicalRuntime.resolveLoss obtains
+the actual applied loss ledger from applyWaveformImpairments; process()
+multiplies each per-link fading output by that ledger's amplitude gain
+before receiver summation. sharedObservationEvidence retains actual
+ReceiveStreamExecutionSegments, but only flattens RuntimeChannelLinkKey,
+RuntimeChannelSeed and a short stationary loss/RF field list. Channel/RF
+IDs are therefore not carried into scalar data-trial replay. A correct
+repair must retain per-segment IDs/clock ranges; if IDs differ between
+segments, a composite observation identity must hash and reference those
+actual records, not select the first segment or manufacture a config-only
+identity. Time-varying loss fields must remain explicit segment evidence.
+
+An integration patch for the new measured-LI helpers is prepared in tool
+session storage as measuredLIIntegrationPatch (not applied at this entry).
+It wires CodebookEngine/selectPMI/buildCSIFeedback/NRCSIReportEngine,
+measurement-row LI, actual decoded LI on both UCI transports, and focused
+regression registration. It also removes rank-overhead contamination by
+using the selected receiver's measured per-layer SINR for the effective
+scheduling statistic. It deliberately does not claim the separate CSI
+payload schema/high-port transport problems are closed. Apply only after
+session 49061 exits, then run the new focused tests and actual four-port
+CSI and UCI source-authority tests. At 08:23 UTC the normal runner had
+finished coverage exports and was repeating config-ownership finalization;
+strict browser raster materialization is a later stage, not yet audited.
+
+### 2026-09-08: terminal report failure and measured CSI repair
+
+The normal-runner batch did not finish successfully. At 08:32:55 UTC it
+raised sixgr:lls6g:TerminalContractRefreshFailed while rendering a constant
+negative beam/layer quality value: the index-axis heuristic constructed
+reversed bounds and _axis_tick_values called log10 on a negative step.
+After the persisted failure, the owned MATLAB recovery process was stopped
+explicitly; session 49061 exited 1. No raw result files were deleted. Radio
+execution had completed, but this is not a qualified successful run.
+The later materialization stage had produced over 230 PNGs, so the earlier
+10-PNG exhaustive audit is not the terminal artifact audit.
+
+After that process stopped, the measured-LI integration described above was
+applied to CodebookEngine, selectPMI, buildCSIFeedback, NRCSIReportEngine,
+DL measurement rows and CoupledTruthRuntime. LI now comes from the actual
+selected precoder's receiver layer SINR, not rank minus one. The enabled
+helper domain is explicitly one-codeword ranks 1:4. Candidate scoring uses
+MMSE layer SINRs and rank overhead no longer contaminates the reported
+effective SINR. Decoded LI replaces the pending report value at both UCI
+transport reducers. This does not close the separate report-quantity,
+high-port PMI transport or decoded-Part-1 rank-authority defects.
+
+Focused MATLAB batch logs/measured_csi_layer_transport_20260908.log exited
+0 with MEASURED_CSI_LAYER_AND_TRANSPORT_PASS: testCSIMeasuredLayerIndicator,
+testCSISelectedPrecoderLayer, testCSIRequiredMeasuredFields,
+testNRCSIReportEngineFourPort and testCoupledTruthCSIReportSourceAuthority.
+These are component regressions; the completed main run predates this patch.
+
+The physical-axis regressions reproduced five failures before the renderer
+fix. Negative dB quality is now distinguished from nonnegative indices;
+small nonzero physical powers are not formatted as zero; tick tolerances
+scale with the actual axis; subnormal endpoints remain representable; bad
+bounds fail explicitly. The new tests plus materialization and applicability
+tests passed (80 tests). Dataset values are preserved, not clipped to pass.
+git diff --check passed. No testAll, new main FDD/TDD, 25-dB or playback run
+was launched. Shared CSI/HARQ clock component tests for both duplex modes
+and a separate terminal exhaustive artifact audit are now in progress.
+
+Both operations subsequently finished. Shared CSI plus HARQ on one physical
+PUCCH passed in TDD (due slot 4, delivered 5) and FDD (due 5, delivered 6),
+with actual encoded/received/decoded CSI bits checked and no early feedback
+commit. Log: logs/shared_csi_clock_measured_li_20260908.log; batch exit 0,
+SHARED_CSI_CLOCK_BOTH_MODES_PASS. This remains a rank-one component fixture,
+not high-port PMI or main-run UCI-on-PUSCH coverage.
+
+Also corrected exportStrictChannelRFArtifacts: ConfiguredAppliedOk now
+requires FeatureApplied to match FeatureConfigured when both are present,
+instead of requiring every feature to be enabled. StrictOk and the existing
+configured/applied match remain mandatory. The regression includes disabled,
+unexecuted features and passed in logs/in_path_rf_report_match_20260908.log
+(testInPathChannelRFEvidence, exit 0,
+IN_PATH_RF_REPORT_CONFIGURATION_MATCH_PASS). This fixes a false report
+failure; it does not fix the separate runtime channel/RF identity or actual
+gain-stage power-measurement gaps.
+
+Frozen terminal audit location:
+results/lls/lls_causal_tdd_shared_srs_fixture/short12_shared_ul_frontdoor_20260908_01_terminal_audit.
+It checked 919 CSVs, 581463 rows, 54378 columns and 230 PNGs, including the
+first five rows of each CSV. Zero CSV parse/structural failures and zero
+raster decode/structural issues. There are still nine required CSV semantic
+failures across seven files, one chart-source failure, four files without
+domain contracts, and twelve required primary columns with missing values.
+All 27 terminal status mirrors agree. Two byte-identical raster groups and
+62 byte-identical CSV groups require applicability/mirror review; duplication
+alone is not proof of fabricated output. Audit exited 1 as expected for the
+remaining failed gates. Outputs were not regenerated or relabelled after
+these code fixes, and no new main simulation was launched.
+
+Priority remaining: independent actual gain-stage energy closure (the
+current large-scale report still copies expected loss into measured loss),
+complete shared-stream channel/RF identity and sample/path provenance,
+report-quantity-correct CSI layout/high-port PMI/decoded-RI authority,
+actual QCL/TCI activation and application evidence, missing live waveform
+and diagnostic-angle exports, consistent artifact manifests, and enough
+TDD UL opportunities to observe post-bootstrap adaptation and UCI-on-PUSCH.
+Do not claim all requested uplink/beam/RSSI behavior is qualified on the
+basis of the current sparse main run or the focused component passes.
+
+### 2026-09-08: independent executed gain-stage energy, shared DL and UL
+
+The previous goal turn was progress (CSI transport and renderer fixes with
+passing focused tests). This continuation removed the large-scale report's
+tautological MeasuredDeltaDb = TotalLargeScaleLossDbApplied assignment.
+
+New measureWaveformGainEnergy observes finite actual samples on both sides
+of the shared physical owner's large-scale multiplication. It records
+input/output energy, sample/branch counts and numerical precision allowance;
+it takes no expected gain or desired reference as an input. Idle energy
+stays exactly zero. The physical owner stores this measurement in each
+executed link segment without rerunning a channel or changing TX/RX samples.
+sharedObservationEvidence removes that scoring-only energy from practical
+receiver replay, alongside independent channel-reference tensors.
+
+New bindSharedLargeScaleEvidence binds the desired TX-to-RX link's actual
+measurements only after the main shared PHY receive job returns. It retains
+the full execution-segment interval covering the capture, not a fabricated
+cropped-window mean. Expected output energy is reduced separately from the
+input energy and applied net gain in each segment. Net gain includes the
+configured endpoint gains and additional loss; pathloss alone is not the
+expected waveform attenuation. The primary trial preserves these new
+columns through the existing extra-column-preserving adapter.
+
+buildInPathChannelRFResult now computes before/after mean sample powers and
+measured attenuation from those energies. Missing energy, wrong gain or
+wrong measurement-clock coverage fails validation; expected loss is never
+used as a substitute. Scalar stationary AppliedPathloss_dB and its actual
+source/compliance/fallback ledger fields now survive sharedObservationEvidence.
+Variable segment values are still not flattened into invented scalars.
+
+Validation:
+- logs/measured_gain_energy_shared_20260908_03.log exited 0 with
+  MEASURED_GAIN_ENERGY_SHARED_DL_UL_PASS: analytic double/single/zero/invalid
+  samples; actual Channel/RF report and CSV/PNG export; actual CDL/RF/noise
+  DL and UL with tail-safe TDD reversal; waveform split invariance; scoring
+  isolation; and adjacent data captures whose RX tails overlap processor
+  segments. The first two attempts exposed new fixture errors (incorrect
+  authored array dimension count and reuse of an observation ID); those
+  fixture errors were corrected without relaxing production validation.
+- logs/measured_gain_energy_fdd_component_20260908.log exited 0 with
+  FDD_COMPONENT_GAIN_ENERGY_CAPTURE_PASS, checking actual FDD shared data
+  captures with the same measurement adapter. This is not a main FDD run.
+- New independent Python large-scale CSV power checks plus existing CSV
+  semantics/exhaustive-audit tests: 107 passed. git diff --check passed.
+- A final focused wrong-clock negative regression is running in
+  logs/measured_gain_energy_scope_20260908.log; record its actual result below.
+
+The new Python rule was applied read-only to the frozen main run's
+channel/csv/large_scale_parameters.csv: all four old rows fail independent
+measurement availability. The earlier nine-required-CSV-check count therefore
+is not the full count under this stronger audit. No historical output was
+rewritten to appear fixed, and no new main run/testAll/25-dB/long/playback run
+was launched.
+
+Scope still open: this sample-energy producer is integrated into the shared
+DL/UL waveform path used by the main scheduler. Non-shared legacy trial
+producers have not yet been migrated to emit the same independent energy
+evidence; the strengthened validator must reject their missing evidence,
+not restore the previous copied-loss behavior. End-to-end short-main
+qualification is still pending, along with channel/RF sample identities,
+CSI layout/high-port transport, QCL/TCI, artifact provenance and adequate UL
+adaptation/UCI coverage. An additional geometry-report issue remains:
+localLargeScaleTable currently copies Distance3Dm into Distance2Dm; this
+needs the actual per-link geometry, not an assumed equal horizontal range.
+
+The final energy-scope batch exited 0:
+logs/measured_gain_energy_scope_20260908.log contains
+GAIN_ENERGY_MISSING_WRONG_POWER_WRONG_CLOCK_REJECTED. Missing-energy,
+incorrect-gain and wrong-sample-interval negative cases all passed their
+rejection assertions, along with the positive report/export fixture.
+No MATLAB batch remains running at this handoff. All work remains uncommitted
+in the existing shared worktree; no prior edits or outputs were removed.
+
+### 2026-09-08: retained RF provenance and nonzero-origin AGC clock
+
+The previous continuation was verified progress on independent gain-stage
+power evidence. This turn traced the missing RF fields to an adapter gap:
+applyRFImpairmentChain already calculated sample-content hashes and Row.StrictOk,
+but the retained shared execution saved Replay without its strict result.
+Replay now preserves that actual result/failure reason. The canonical RF
+waveform hash implementation is shared through sixgr.rf.waveformSHA256;
+numeric sample hashes are byte-compatible with the old RF helper, and
+configuration structs are explicitly rejected as waveform-hash inputs.
+
+New bindSharedRFExecutionEvidence runs only after the main shared receive
+job returns. It hashes the actual complete pre-RF and post-RF RX observations
+and actual post-RF TX observation, retaining different TX/RX capture bounds.
+It also serializes the ordered actual endpoint execution records (sample
+intervals, epoch, hashes, strict results and stage counts) in
+RFExecutionManifestJSON with a separate manifest SHA256. RF path and RX
+observation identities bind to those records and captures. A manifest hash
+is not put into any waveform-content hash field. Missing endpoint evidence,
+wrong clocks and gaps are rejected. The original raw and diagnostic outputs
+were not rewritten to appear fixed.
+
+The broader RF regression exposed a genuine pre-existing nonzero-origin
+timing defect: RFImpairmentStream.applyAGC added OriginSample twice. Removed
+the duplicate translation and added an invariant requiring the translated
+AGC trace to match the current physical interval. The regression checks a
+nonzero origin and every split chunk, not only a stream starting at zero.
+
+It also exposed a reporting distinction: an RF operator can execute on idle
+samples without changing their bytes. StageTrace now separately records
+Executed and WaveformChanged. Retained-stream strict validation requires
+actual operator execution, while its optional StrictMutationRequired gate
+still requires sample mutation. Legacy independent-block strict policy was
+preserved pending its separate backend migration. RFExecutedStageCount is
+distinct from the legacy mutation-based RFAppliedStageCount; time-varying
+mutation counts are kept in the segment manifest, with an unavailable scalar
+and explicit status instead of copying the first segment.
+
+Verification: logs/shared_rf_execution_provenance_20260908_04.log exited 0
+with SHARED_RF_EXECUTED_PROVENANCE_BOTH_MODES_PASS. The batch ran
+testRFImpairmentOrderedChain, testRFImpairmentStream,
+testSharedWaveformPhysicalRuntime and testSharedDataPhysicalQueue in both
+TDD and FDD. It verified stream/block regression behavior, nonzero-origin
+AGC clocks, waveform split invariance, actual RF hashes, manifest digest,
+missing-evidence rejection, tail-safe DL/UL reversal and different TX/RX
+capture end samples. Earlier attempts failed on the duplicated AGC origin,
+mutation-versus-execution reporting, and an initialization bug in the new
+manifest adapter; all were addressed before this passing batch.
+
+This is component-level evidence, not a newly qualified main run. No main
+FDD/TDD, testAll, 25-dB, long, playback, commit, or output-deletion operation
+was performed. Channel provenance is still open: ordered channel-segment
+records need their own representation and validation rather than hashes of
+segment lists being mislabeled as full waveform/path-gain hashes. The
+existing channel report also labels an output-waveform hash as a channel
+snapshot and equates hash availability with exported snapshots; actual
+channel-tensor artifacts/lineage must be distinguished in that repair.
+The RF report's older configured-versus-applied reduction still uses RX
+waveform change in places; it needs the new execution evidence, particularly
+for TX-only impairments and idle captures. CSI/QCL/TCI, non-shared power
+producer migration and the other previously listed qualification gaps remain.
+
+### 2026-09-08: RF report reduces validated execution, not RX mutation
+
+The previous goal turn was progress (actual RF provenance, AGC-origin repair
+and passing focused component tests). This continuation connected the new
+RF execution manifest to the in-path report validator/reducer.
+
+New validateSharedRFExecutionEvidence verifies manifest bytes against the
+stored SHA256 and RF path identity, RX observation identity, primary capture
+hashes, endpoint capture clocks, nonnegative integer segment clocks/epochs,
+contiguous coverage, sample-hash format and configured/executed stage counts.
+Each retained segment must report successful strict execution. A resealed
+manifest that declares a configured stage unexecuted is rejected; matching
+hashes alone do not imply valid execution.
+
+buildInPathChannelRFResult now exports RFExecuted separately from the
+RX-capture WaveformChanged field and separately identifies TX/RX segment
+mutation. Its configured/applied RF reduction uses validated RFExecuted for
+retained-stream rows, so an actual TX-only impairment or execution on idle
+samples is not rejected solely because the RX capture has unchanged bytes.
+Rows claiming retained evidence cannot fall back to legacy mutation evidence
+when the manifest is missing or invalid. Older block rows retain an explicit
+legacy_strict_RX_mutation_evidence_not_retained_execution source; blank/NaN
+compatibility columns alone do not promote them to retained-stream evidence.
+
+Verification:
+- logs/rf_execution_report_reduction_20260908.log exited 0 with
+  RF_EXECUTION_REPORT_BOTH_MODES_PASS. Actual retained TX-only CFO and idle
+  RF component captures were accepted by the RF report; missing evidence
+  and resealed skipped-stage claims failed. Idle data still failed the
+  separate nonzero power-measurement gate. Existing analytic channel rows
+  in the adapter test remain explicit fixtures, not end-to-end PHY claims.
+- The same batch validated manifests from actual shared CDL/RF DL and UL
+  captures and adjacent data captures in both TDD and FDD.
+- logs/rf_report_manifest_legacy_separation_20260908.log exited 0 with
+  RF_REPORT_MANIFEST_AND_LEGACY_SEPARATION_PASS after adding the explicit
+  legacy/retained compatibility regression and capture-hash format checks.
+- git diff --check passed. No main simulation, testAll, 25-dB/long/playback,
+  commit or historical-output rewrite/delete occurred.
+
+Next channel-provenance investigation has a concrete producer lead:
+ChannelFactory.applyRuntimeChannelState automatically captures path gains
+only on its first executed interval unless explicitly requested again.
+CaptureChannelReference forces full same-execution capture, but current
+shared stream requests are registered for reference-signal observations,
+not every main data observation. Thus a first (possibly idle) processor
+interval cannot supply the later PDSCH/PUSCH path-gain evidence. Fix bounded
+same-observation capture/export and segment representation; do not reuse an
+earlier path-gain hash or label a waveform hash as a channel-tensor snapshot.
+Full short-main qualification, broader RF parameter/metric propagation,
+legacy producer migration, CSI/QCL/TCI and other artifact gaps remain open.
+
+## 2026-09-08: Observation-bound shared data channel capture
+
+The missing producer capture was reproduced before patching:
+logs/shared_data_channel_capture_red_20260908.log exited 1 because the
+actual queued PDSCH observation returned no same-execution coefficients.
+An earlier automatic channel preview does not describe a later grant.
+
+CoupledWaveformStream.queueData now requests the actual receive interval
+and channel tail when fading and the existing PHY diagnostic output gate
+are enabled. The physical owner obtains coefficients from the same channel
+call that produces the samples, not a replay or another state advance.
+Identical link/receiver/window requests coalesce. Each bounded reference
+retains its requested observation bounds as well as execution and sample
+bounds; adjacent grants can overlap without borrowing each other's captures.
+
+sharedLinkScoringObservation selects only the matching observation's
+references and checks exact coefficient coverage of every direction-active
+processor segment. It explicitly reports direction-inactive intervals:
+a TDD TRS receive window can span a channel reversal, during which no
+channel toward the original receiver executed. Those intervals are not
+filled with manufactured coefficients. Channel tensors remain stripped
+from practical receiver replay.
+
+Verification:
+- logs/shared_data_channel_capture_20260908_03.log exited 0 with
+  SHARED_DATA_CHANNEL_CAPTURE_BOTH_MODES_PASS.
+- Adjacent coded PDSCH physical-queue captures passed in TDD and FDD,
+  including extended receive tails and rejection of a truncated tensor.
+  These queue fixtures do not claim a decoded PDCCH/PDSCH or an UL TB.
+- Actual retained CDL/RF DL/UL sample execution passed, including swapped
+  antenna layout after TDD reversal, identical-request coalescing, unchanged
+  executed samples with observation enabled, and no new captured coefficients
+  in the first interval after the requested capture ended.
+- TRS scoring passed in TDD (NMSE -58.4614 dB) and FDD (-31.4193 dB),
+  each comparing 600 actual pilot/receive-branch values. The regressions
+  retain the distinction between practical reception and independent scoring.
+- Intermediate attempts exposed a test access to a private runtime property
+  and an over-broad full-window coverage assertion. These were corrected
+  through public execution evidence and explicit inactive-interval semantics,
+  respectively; the final full focused batch above passed.
+
+This closes capture/scoping, not report publication or whole-run qualification.
+The channel report still needs truthful ordered-segment/artifact binding:
+never label a waveform hash as a channel tensor or infer that a tensor was
+exported merely because a hash exists. No main TDD/FDD run, testAll, 25-dB,
+long run, playback, commit, or historical-output deletion was performed.
+
+The separate uplink regression batch also completed:
+logs/shared_channel_capture_uplink_control_20260908.log exited 0 with
+SHARED_CHANNEL_CAPTURE_SRS_PUCCH_UCI_PASS. Actual SRS received on the shared
+CDL/RF clock supplied the timing reference for actual PUCCH reception,
+including a late-created HARQ feedback case. The SRS test explicitly checks
+complete active-link coefficient capture and exclusion of those tensors
+from receiver replay. Combined CSI/HARQ UCI delivery passed on actual
+PUCCH waveforms in both TDD (due 4, delivered 5) and FDD (due 5, delivered 6).
+The input CSI reports, DL ACK/TB and initial timing authorities in these
+tests remain declared component fixtures, not newly simulated access or
+PDSCH measurements. These tests do not prove main-run UCI-on-PUSCH.
+Both MATLAB batches are closed; git diff --check passed.
+
+## 2026-09-08: Actual shared channel coefficient artifacts
+
+Added exportSharedChannelObservation and wired it into the main scheduler's
+completed data-reception path, after executeGrantPHYJob and before the
+normal trial-row lifecycle. Existing configured PHY diagnostic enablement
+and actual fading-state enablement gate publication; no new scenario-only
+switch, receiver oracle or channel execution was added.
+
+Each observation publishes a MAT containing the exact captured complex
+path gains, path filters and sample times, plus a segment CSV. Its manifest
+identifies actual link endpoints, receive bounds, inactive TDD intervals,
+normalization settings, physical antenna dimensions, applied profile and
+class, state/seed/reset/swap/reciprocity metadata, and executed delays/angles.
+The representation is explicitly sample-indexed path gains and filters,
+NOT a resource-grid channel estimate or a channel output waveform.
+
+Hashes are separated by meaning: cropped numeric arrays, full processor
+input/output waveforms, observation manifest, published MAT, and published
+CSV each retain their own field and scope. Raw trial rows receive the
+observation ID, manifest, relative artifact paths and independently read
+file hashes only after both files are written. Existing publications are
+not overwritten. MAT publication uses the repository's validated writer.
+
+The first export regression correctly failed because ChannelFactory replay
+did not publish ChannelModelApplied. The producer now records DelayProfile
+from the actual fading object; the exporter does not fill this from YAML.
+
+Verification:
+- logs/shared_channel_artifact_roundtrip_20260908_02.log exited 0 with
+  SHARED_CHANNEL_ARTIFACT_ROUNDTRIP_BOTH_MODES_PASS.
+- logs/shared_channel_artifact_integrity_20260908.log exited 0 with
+  SHARED_CHANNEL_ARTIFACT_CONTENT_AND_NEGATIVES_PASS after adding negative
+  nonfinite-coefficient and mismatched-link-state checks and swap/reset
+  metadata. Duplicate publication is rejected without rewriting files.
+- Adjacent coded PDSCH queue fixtures in TDD and FDD reopened the generated
+  MAT/CSV, compared all captured arrays exactly, independently checked file
+  and array hashes and verified sample bounds/counts. These do not claim
+  a decoded data trial, main-run publication or a PUSCH artifact round trip.
+- Actual DL/UL shared CDL/RF execution, split invariance and TDD antenna
+  reversal passed in the final batch. git diff --check passed.
+
+Remaining immediate integration: buildInPathChannelRFResult still consumes
+the old scalar fields and wrongly treats an output-waveform hash as a
+channel snapshot and hash availability as file-export proof. Migrate it
+to validate these actual artifacts/ordered segments, remove the old false
+snapshot/matrix/sample-time-hash claims, and retain explicit missing evidence
+for unmigrated producers. A separate artifact verifier must check the file
+and array content and observation identity, not only trust manifest flags.
+This remains open; these new files do not qualify all existing CSVs/PNGs.
+No main run, testAll, playback, commit or historical-output deletion occurred.
+All MATLAB batches from this step are closed.
+
+## 2026-09-08: Independent channel artifact validation and report migration
+
+Added validateSharedChannelObservationArtifact. It validates primary-row
+identity/clock bindings, content-addressed paths within the run, actual MAT
+and CSV file hashes, the saved manifest, captured numeric array hashes and
+dimensions, sample-time spacing, segment/link/state identity and CSV field
+contents. Active and explicitly inactive intervals must cover the observation
+without overlap or gaps. This is artifact-consistency validation, not a
+cryptographic attestation that an arbitrary independently forged dataset was
+physically executed; producer execution remains covered by PHY regressions.
+
+The verifier found a real FDD schema issue: entirely empty reciprocity text
+columns were pruned by the shared CSV writer. Channel provenance now uses
+explicit scalar text and PreserveSchema=true. Fields without FDD reciprocity
+evidence remain empty, not populated with invented TDD values. The exporter
+also binds observation start/end/rate explicitly in primary rows. Reimported
+primary CSVs are supported without confusing serialized boolean zero with
+missing evidence.
+
+buildInPathChannelRFResult now validates the actual artifacts before reducing
+them. Verified observations retain a manifest-scoped observation identity
+and actual per-segment path-gain snapshots, sample-time hashes, counts and
+MAT references. SnapshotRepresentation explicitly says these are sample-indexed
+path-gain tensors, not resource-grid H. Aggregate array hashes and channel-
+matrix dimensions are not invented from a segment manifest or waveform size.
+Applied profiles come from executed metadata and must match configuration.
+Downstream and large-scale references use the verified observation identity.
+
+Legacy producer-reported hashes remain explicitly distinct from verified
+tensor files. They no longer assert PathGainsExported/ChannelSnapshotExported,
+emit fabricated snapshot rows, call a waveform hash a channel snapshot, or
+infer channel-matrix dimensions from waveform dimensions. The legacy channel
+execution timestamp/rate/source remains in ChannelRealizations. Its sample-
+time array hash and count remain unavailable: waveform length does not prove
+the number of retained fading snapshots. Blank compatibility fields do not
+promote an old row to verified capture evidence; partial actual artifact
+claims cannot silently downgrade to the legacy branch.
+
+Verification (all exited 0):
+- logs/shared_channel_artifact_verifier_20260908_03.log:
+  SHARED_CHANNEL_ARTIFACT_VERIFIER_BOTH_MODES_PASS. Actual adjacent data
+  captures in TDD/FDD survived MAT/CSV/primary-CSV round trips. A mismatched
+  observation, out-of-run path, and modified coefficient MAT with recomputed
+  file hash were rejected. Earlier two attempts exposed the FDD pruning bug.
+- logs/shared_channel_report_content_guards_20260908.log:
+  SHARED_CHANNEL_REPORT_CONTENT_AND_PROFILE_GUARDS_PASS. The full adapter
+  consumed verified artifacts from both duplex fixtures, retained exact
+  coefficient/time hashes, rejected missing bindings and failed an explicitly
+  mismatched configured profile. The queue-only fixtures still fail whole-run
+  qualification because they do not supply complete received data metrics.
+- logs/legacy_channel_snapshot_claim_guards_20260908.log:
+  LEGACY_CHANNEL_NO_FALSE_SNAPSHOT_CLAIMS_PASS, including absence of fabricated
+  snapshot/matrix/time-array claims and blank-column compatibility handling.
+- git diff --check passed; all MATLAB batches are closed.
+
+Scope remains component/report verification, not a new main run. Actual
+PUSCH/SRS/TRS artifact round trips, broader CSV/PNG contract migration, QCL/TCI,
+high-port CSI/UCI and the other recorded whole-run issues remain open.
+No main TDD/FDD run, testAll, 25-dB/long run, playback, commit, or historical-
+output deletion/rewrite was performed.
+
+### 2026-09-08: Received SRS channel publication and combined uplink coverage
+
+The main shared SRS receive completion now publishes the same-execution
+channel observation MAT/segment CSV and binds their hashes to its primary
+trial when PHY diagnostics are enabled on fading channels. Publication is
+after practical receiver completion; coefficients remain scoring/export
+inputs only. It neither reexecutes the channel nor constructs a resource-grid
+H from waveform hashes. The existing diagnostic configuration remains the
+authority; no scenario-specific production branch was introduced.
+
+logs/shared_srs_artifact_uplink_20260908.log exited 0 with
+SHARED_SRS_ARTIFACT_UPLINK_BOTH_MODES_PASS. The extended shared PUCCH test
+executed actual SRS and PUCCH in TDD and FDD component fixtures, including
+late three-bit Format-2 feedback in TDD. It persisted/reloaded primary SRS
+CSV, coefficient MAT and segment CSV; independent validation checked sample
+bounds, antenna dimensions, hashes and exact gain/filter/time arrays. Initial
+TAG, reference-pathloss selector and ACK inputs remain declared component
+fixtures, not a simulated initial-access claim.
+
+Added testSharedPUSCHChannelArtifacts for the missing combined actual shared
+SRS -> received PDCCH grant -> PUSCH with two HARQ-ACK UCI bits. It checks
+actual TX/HARQ ledger commit, received decoder CRC/UCI, practical-receiver
+isolation and persisted channel artifact validation. Its initial timing,
+pathloss selector and UCI inputs are explicit fixtures, not full access or
+link-adaptation qualification. Verification result is recorded below after
+execution; merely adding this test is not a passing result.
+
+Combined-uplink diagnostic findings:
+- shared_pusch_artifacts_20260908_01 failed because the new fixture omitted
+  the existing production bindSharedDataNoiseEvidence call. Added that
+  same-execution bookkeeping call; no validation gate was weakened.
+- shared_pusch_artifacts_20260908_02 actually passed TDD SRS/DCI/PUSCH/UCI:
+  slot 10, CRC 1, HARQ-ACK content match 1, 18 verified channel segments.
+  FDD then correctly rejected missing received DL clock for blind PDCCH.
+  Added an explicitly known-candidate FDD YAML component fixture, matching
+  the TDD test's scope. This does not qualify blind PDCCH or access.
+- That passing TDD row exposed NoiseVarSource=runtime_metadata. Both shared
+  PDSCH/PUSCH completion paths were supplying pre-front-end injected noise
+  to receivers after RF/ADC and AGC compensation. Corrected both paths to
+  leave practical DM-RS disturbance estimation active. Injected variance
+  is still retained for independent physical bookkeeping, not fabricated
+  into a post-front-end noise estimate. No duplex-specific branch added.
+- shared_receiver_noise_domain_20260908_03 then rejected missing calibrated
+  sample-to-grid gain. PUSCH_Rx was sourcing this OFDM property from the
+  optional supplied-noise conversion, which is absent for an estimated
+  grid variance (and identity for a supplied grid variance). It now exports
+  the actual demodulator's calibrated gain separately from input-variance
+  conversion semantics, in both ordinary and high-rank result builders.
+  Receiver noise values and validation equations are unchanged by this
+  metadata fix. Final post-fix test result follows below.
+
+Post-fix combined component results from shared_receiver_noise_domain_20260908_04:
+- TDD SRS/DCI/PUSCH/UCI passed; persisted received_pusch.csv at
+  C:/Users/anup0/AppData/Local/Temp/tp87d5bcd5_7720_48f5_a65f_8b1dd9d454ea.
+  Slot 10, MCS 4, CRC 1, HARQACKContentMatch 1, NoiseVarSource
+  runtime_channel_estimate, variance 8.26283783108918e-08 in grid domain,
+  calibrated sample-to-grid gain 512, measured/post-equalization SINR
+  4.57505397699559 dB, 18 verified executed channel segments.
+  The earlier metadata-driven row was 4.80003445877685 dB; neither value is
+  relabeled as the nominal 12 dB or as a fresh main-run result.
+- FDD SRS/DCI/PUSCH/UCI passed; persisted received_pusch.csv at
+  C:/Users/anup0/AppData/Local/Temp/tpc3b4bdec_d53d_4c91_80b7_e55cefbf2655.
+  Both are component fixtures; only TDD remains authorized for a main run.
+- Remaining stage and measurement guards in that batch were still running
+  when these two results were recorded. No whole-batch pass claimed yet.
+
+That batch subsequently exited 0 with
+SHARED_RECEIVER_NOISE_AND_UPLINK_ARTIFACTS_PASS: both combined duplex
+fixtures; both DL/UL retained-stage fixtures including actual received
+timing offsets 7/90/78 samples and UCI; CSI-RSSI symbol/bandwidth/branch
+semantics; and the no-channel-correlation-as-QCL guard all passed.
+
+One additional integration edge was found before a main rerun: SRS and
+PUSCH may have identical actual link capture bounds, so their manifests
+identify one shared coefficient artifact. The exporter previously rejected
+every existing path. It now reuses a complete publication only after its
+persisted arrays/CSV independently validate against the newly captured
+manifest. It performs no overwrite or rescue. Incomplete pairs fail closed;
+corrupted MAT content fails even if its file hash is recomputed. Regression
+coverage now checks unchanged bytes/bindings/write times on valid reuse,
+rejects corrupt/partial reuse, and exercises coincident TDD SRS/PUSCH. That
+final focused batch result will be recorded after completion.
+
+Final focused batch logs/shared_coincident_uplink_artifacts_20260908.log
+completed with COINCIDENT_UL_ARTIFACT_AND_TIMING_GUARDS_PASS:
+- Actual coincident TDD SRS/PUSCH: received SRS, received UL DCI, actual
+  PUSCH CRC 1 and HARQ-ACK content match 1; the last SRS and PUSCH bind the
+  identical verified observation ID. Saved PUSCH row has 19 actual channel
+  segments, runtime_channel_estimate noise, SINR 4.57463532251824 dB.
+  Artifact root: C:/Users/anup0/AppData/Local/Temp/tpc7f25c59_da1f_4ecc_af0f_ebf20944fdba.
+- TDD and FDD adjacent-data physical-queue/artifact tests: valid immutable
+  reuse passed; modified coefficients and incomplete file pairs rejected;
+  no fabricated channel-grid matrix or decode claim in queue-only fixtures.
+- PRACH receive-origin component checks: all-preamble detection and derived
+  timing advance remain invariant to capture pre-guard in both duplex modes.
+  The radio delays in these tests are analytic fixtures, not new shared-CDL
+  access results.
+- Shared UL direction boundary checks passed for exact and within-symbol
+  TDD edges and independent FDD directions.
+- git diff --check passed. No main simulation, testAll, 25-dB/long campaign,
+  instrument playback, commit, cleanup or historical-output rewriting.
+
+Open scope is unchanged by these component passes: fresh main-run
+qualification and complete CSV/PNG lineage/contracts; main scheduler UCI
+reservation/delivery coverage; received QCL/TCI activation/effective-time and
+beam application; high-port PMI components and decoded-Part-1-driven CSI
+Part-2 semantics; sustained rank/MCS adaptation; remaining geometry, RF and
+measurement-domain audits recorded above. No claim of complete 3GPP/6G
+conformance or a 10/10 simulator is justified yet.
+
+### 2026-09-08: Received CSI Part-1 rank authority
+
+Revalidated an idle MATLAB environment and the 186-file accumulated worktree;
+the previous goal turn made verified implementation/test progress.
+
+CSIReportConfiguration now retains its configured schema request and exposes
+decodePart1. The received Part-1 RI resolves the rank-dependent Part-2 schema,
+which is checked for a configuration-fixed Part-1 layout and active maximum
+rank. decode then validates/consumes Part 2 with that received-rank schema.
+It no longer relies on the rank held in a pending transmitter report object.
+Receive-side PUSCH/combined-PUCCH consumers no longer overwrite the active
+request's rank from report.RI, and no longer run a stale-rank Part-2 length
+check before decoding. Binary validation precedes any integer conversion;
+fractional/nonbinary values cannot silently become valid UCI bits.
+
+Normative dependency checked against TS 38.214 V18.5.0, the PUSCH two-part
+CSI description: fixed-size Part 1 identifies the Part-2 information size;
+for Type I it includes RI/CRI/first-codeword CQI when reported.
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.05.00_60/ts_138214v180500p.pdf
+This does not certify the existing schemas' full normative field ordering,
+PUCCH representation, high-port PMI layout or lower-level CSI Part-2 rate
+dematching. Those wider schema/transport issues remain open.
+
+logs/csi_received_rank_authority_20260908_02.log exited 0 with
+CSI_RECEIVED_RANK_AND_SHARED_UCI_PASS. Explicit codec fixtures at 2/4/8 ports
+and ranks 1/2 passed with an intentionally opposite prior rank. Received RI
+selected the correct PMI/LI field interpretation and Part-2 size. Extra bits,
+fractional bits and out-of-restriction RI were rejected. Required-measured-
+field and generic-YAML configuration guards passed; actual shared TDD/FDD
+PUCCH with combined HARQ/CSI decoded and delivered successfully. Attempt 01
+had a MATLAB property-attribute syntax error, corrected before this run.
+
+The subsequent shared scalar-poison fixture changes only RI/PMI/CQI scalar
+annotations after real encoding/reception, retaining identity and actual
+coded bit payloads. Both TDD and FDD recovered the original expected values
+from received UCI. The Phase-07 component suite in that same batch was still
+running when this result was recorded; its final status follows below.
+
+Remaining connected defects found during this trace, NOT claimed repaired:
+- High-port PMI_I11/I12/I13/I2 are present inside NRCSIReportEngine but do
+  not survive all measurement-row/pending-report/UCI/scheduler boundaries.
+- Receive reducers still retain report.PMI when decoded high-port output
+  lacks a scalar PMI; sanitizeFeedbackPMI has configured fallback paths.
+- ReportQuantity is not fully respected (including unconditional LI in
+  some schemas), and normative part layout needs broader repair.
+- Lower-level Part-2 resource/codeword sizing still needs decoded-Part-1
+  integration, not only semantic report interpretation.
+No new main run, testAll, long/25-dB campaign, playback or cleanup occurred.
+
+Final status: logs/csi_received_scalar_poison_20260908.log exited 0 with
+CSI_RECEIVED_SCALAR_POISON_GUARDS_PASS. Both adversarial shared waveform
+fixtures and all 28 executed testMIMOCSIBeamformingPhase07Core tests passed.
+The suite was executed through executeRegressionTest, not merely constructed.
+git diff --check passed. All MATLAB batches launched this turn are closed.
+
+## 2026-09-08: Type-I PMI identity and shared uplink artifact readback
+
+Implemented formula-based Type-I single-panel matrices for 4/8/12/16/24/32
+ports, ranks 1/2 and codebook modes 1/2. Geometry, component ranges, rank-2
+beam offsets, polarization phasing and unit-total-power normalization follow
+TS 38.214 V18.9.0 clause 5.2.2.2.1, Tables -2, -3, -5 and -6:
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.09.00_60/ts_138214v180900p.pdf
+This is not a generic DFT fallback or a higher-rank/Type-II implementation.
+IndependentMatrixPackReady remains false for larger profiles: formula
+verification is not a frozen external matrix pack.
+
+Strict scheduler enumeration reads active report geometry/codebook mode.
+Restricted candidates retain original zero-based PMI identities. The PDSCH
+resolver and main grant sanitizer check membership, not array length, and
+strict enumeration errors are not swallowed when no explicit matrix exists.
+PMI_I11/I12/I13/I2 survive CSI producer, measurement-row and pending-report
+boundaries. Received Part-1 RI selects component widths; received PMI fields
+reconstruct the scheduler index. Receive reducers no longer inherit a TX
+scalar PMI when decoding supplies none. Strict feedback sanitization no
+longer substitutes configured PMI for invalid/missing received evidence.
+This does not repair every legacy fallback path.
+
+The NR CSI adapter checks its selected matrix against the formula matrix,
+then uses the same deterministic representation/digest as the scheduler.
+Original toolbox matrix hash and maximum numeric difference are retained
+in the adapter output. EngineUsed now identifies the actual high-port engine.
+No CSI measurement values are invented to populate the new schema fields.
+
+Completed verification:
+- logs/typei_single_panel_received_pmi_20260908_01.log: 4,608 independent
+  matrix comparisons, four-port adapter and received-rank codecs passed.
+- logs/typei_single_panel_uplink_regression_20260908_02.log exited 0:
+  all 35,232 matrices across 13 normative geometries, both modes and ranks
+  1/2 matched independent R2026a matrices within 1e-12. Index/codec recovery,
+  normalization and invalid/restricted PMI guards passed. Actual shared
+  TDD/FDD PUCCH with HARQ+CSI recovered original values despite poisoned TX
+  scalar annotations. All 28 Phase-07 core tests were executed and passed.
+  Analytic H/codec fixtures are not main-run observations.
+- logs/typei_uplink_precoder_consumer_20260908_03.log: CSI queue/rebinding,
+  DL/UL PMI precoding and PRACH receive-origin tests passed before a shared
+  PUSCH CSV reload failed. This combined batch must remain labelled failed.
+
+The failure was delimiter inference, NOT a missing on-disk observation.
+MATLAB read the wide comma CSV as 1x1827 columns split at underscores, with
+names containing unsplit comma-separated fields. The CSV actually contained
+all 13 observation binding fields. The channel segment validator and shared
+artifact fixtures now use existing explicit-comma csvReadTable. Assertions
+are unchanged. logs/pusch_csv_import_diagnostic_20260908.log records the bad
+inference. logs/typei_uplink_artifact_readback_20260908_04.log exited 0:
+the ORIGINAL UNMODIFIED PUSCH CSV validated, the wide CSV regression and
+selected/scheduler matrix-digest check passed, and actual shared
+SRS/DCI/PUSCH/HARQ-UCI passed in TDD (coincident SRS) and FDD. Both MAT and
+segment CSV coefficients were independently reloaded and validated.
+
+The component bypassed runSingle's RNG initialization, making UE drops
+depend on preceding tests. It now uses resolved cfg.run.seed and restores
+the caller's RNG afterward. This is test isolation, not measured-SINR
+adjustment. logs/shared_uplink_seeded_artifacts_20260908_05.log exited 0 with
+YAML_SEEDED_SHARED_UPLINK_ARTIFACTS_PASS; TDD/FDD actual reception/artifact
+checks and caller-RNG restoration passed. Result roots:
+- TDD: C:/Users/anup0/AppData/Local/Temp/tpa9def6d0_a1ae_492a_90c1_65e0e4a8e115
+- FDD: C:/Users/anup0/AppData/Local/Temp/tp71dab545_12ce_4816_9448_17db881d6064
+
+Still open; do not skip or label qualified:
+- Main scheduler/shared-clock integration needs a fresh short TDD front-door
+  run after remaining gates are repaired. Last main run is still completed
+  but failed qualification: short12_shared_ul_frontdoor_20260908_01.
+- Complete CSI ReportQuantity/LI and PUCCH/PUSCH normative layouts,
+  lower-level Part-2 sizing from received Part 1, high-port end-to-end
+  waveform/scheduler feedback, and rank >2 remain incomplete.
+- Received QCL/TCI activation, effective time, actual beam application and
+  complete CSV/PNG lineage remain open; correlation is not QCL evidence.
+- Sustained UL/DL HARQ/rank/MCS/OLLA and main-run UCI-on-PUSCH need more than
+  one-grant checks. Initial TAG/pathloss and HARQ bits in these components
+  are declared fixture inputs, not simulated access/DL outcomes.
+- Full RSSI/RSRP/SINR and all CSV/PNG main-run audit, remaining RF/geometry
+  issues and legacy artifact migration remain open. Keysight playback is
+  deferred until correctness gates pass.
+No new main TDD/FDD, 25-dB/long campaign, testAll, cleanup or commit occurred.
+
+## 2026-09-08: received CSI sizing through PUSCH and scheduler delivery
+
+Closed a concrete receiver-authority defect in three stages, without changing
+the configured SINR, faking a CRC, or changing duplex scheduling policy:
+
+1. PUSCHUCIDemultiplexer now accepts the active immutable CSI report
+   configuration. It extracts and actually decodes Part 1, resolves Part-2
+   size from the received RI/configuration, then demultiplexes Part 2 and
+   UL-SCH. Transmitted reference bits remain diagnostic comparisons only.
+   CSIReportConfiguration enumerates configured possible Part-2 sizes for
+   UCI-only presence discovery; no transmitted rank determines this search.
+2. PUSCH_Rx builds/validates its coding layouts AFTER UCI demultiplexing,
+   using the actual received UL-SCH LLR count. Removed the earlier TX-length
+   budget helper and the subsequent mismatch-driven layout reconstruction.
+   Supplied frozen coding layouts still must match; no assertion was relaxed.
+3. CoupledTruthRuntime CSI delivery now requires retained received-size
+   authority and validates the received per-part decoder evidence/counts.
+   Stored TX lengths no longer gate CSI usability. Exact due-slot, grant
+   context, pending-row and reference-binding checks remain. The semantic
+   decoder revalidates Part-2 fields against received Part 1 before delivery.
+
+The resource distinction was cross-checked against installed R2026a
+getULSCHInfo: with UL-SCH, CSI1 resources do not depend on Part-2 length;
+UCI-only additionally depends on Part-2 presence. The provisional zero/one
+count is used ONLY to locate Part 1; it is never exported as a measured
+Part-2 size. An invalid/unresolved interpretation fails rather than falling
+back to the transmitter's expected length. Primary references:
+- [TS 38.212 V18.8.0, sections 6.2.7 and 6.3.2](https://www.etsi.org/deliver/etsi_ts/138200_138299/138212/18.08.00_60/ts_138212v180800p.pdf)
+- [MathWorks nrULSCHDemultiplex](https://www.mathworks.com/help/5g/ref/nrulschdemultiplex.html)
+
+UCIReceiverEvidence now retains CSI2LengthAuthority,
+CSIPart1DecodedBeforePart2, ResolvedCSI1BitCount and ResolvedCSI2BitCount.
+These follow the existing receiver -> runULPUSCHThroughput -> HARQ and
+UCIReceiverEvidenceJSON CSV path. Actual receiver CSI1BitCount/CSI2BitCount
+are populated from resolved results, not expected bits. No new PNG was
+claimed or fabricated for these codec changes.
+
+Verification (all batches closed; explicit log outcomes preserved):
+- logs/pusch_received_csi2_length_20260908_01.log passed the original eight
+  noiseless multiplex/decode cases, UCI CRC evidence and source-authority
+  checks. This early batch did not test the full PUSCH waveform receiver.
+- logs/pusch_received_csi_waveform_20260908_01.log FAILED after the new
+  actual waveform test passed: the batch command incorrectly requested a
+  return value from executeRegressionTest. Corrected the invocation only.
+- logs/pusch_received_csi_waveform_20260908_02.log exited 0. Ten codec cases
+  cover ranks 1/2, modes 1/2, UL-SCH present/absent, and SISO with no Part 2;
+  invalid received RI is rejected. Deliberately wrong TX CSI lengths/bits
+  cannot change received decoding. Actual AWGN OFDM/DM-RS/LDPC/HARQ/CSI
+  decoding passed with both supplied and receiver-built coding layouts.
+  All five testUCIPUSCHPhaseCore tests executed and passed. Actual shared
+  SRS/DCI/PUSCH/HARQ-UCI and immutable channel-artifact readback passed in
+  TDD (coincident SRS) and FDD. Component roots:
+  - TDD: C:/Users/anup0/AppData/Local/Temp/tp427ddea6_1b16_42ac_810b_84642b0ba4d9
+  - FDD: C:/Users/anup0/AppData/Local/Temp/tp6223a719_8934_4cbf_9f7a_5954ec7e1f69
+- logs/pusch_received_csi_scheduler_20260908_01.log FAILED after the new
+  poisoned-reference delivery regression passed: an older fixture lacked
+  received-size authority and initialized decoded fields from expected bits.
+  Replaced that fixture input with actual multiplex/demultiplex and decoder
+  outputs; did NOT invent the required provenance fields or weaken the gate.
+- logs/pusch_received_csi_scheduler_20260908_02.log exited 0. The corrected
+  source/rebinding/late-feedback suite, poisoned TX-length delivery check,
+  waveform round trip, failed-CRC evidence and received-rank tests passed.
+  Missing received-size provenance is explicitly rejected. A mismatched TX
+  reference remains visible in UCIContentMatch while actual usable received
+  CSI reaches the scheduler. New tests are registered for future testAll;
+  testAll itself was NOT run, respecting the focused-test scope.
+
+Remaining gates, including every area requested by the user:
+- PRACH/access: earlier receive-origin and Msg1-4 evidence stands, but the
+  latest complete main-run access/shared-clock regression is still pending.
+- PUCCH/PUSCH/SRS: shared timing and received-uplink component checks pass;
+  this is not full-control conformance, sustained HARQ/OLLA/rank/MCS proof,
+  or proof that the main run exercised CSI/HARQ multiplexing on PUSCH.
+- CSI/PMI: complete ReportQuantity/LI field order, PUCCH versus PUSCH
+  layouts/padding, RI restrictions, rank >2 and full high-port measured
+  CSI -> UCI -> scheduler -> data-waveform qualification remain open.
+  This patch fixes sizing authority within the current report schema; it
+  does NOT establish that all existing CSI schema layouts are normative.
+  Malformed/unresolved Part 1 currently fails the receive operation; graceful
+  per-trial unavailable reporting and two-codeword ownership need further audit.
+- Beam/QCL/TCI: decoded activation, effective sample/slot, actual beam use
+  and complete CSV/PNG lineage remain unqualified. A configured active state
+  or channel correlation must not be substituted for this evidence.
+- RSSI/RSRP/SINR: earlier branch/resource-domain measurement tests passed;
+  complete main-run calculation, CSV and PNG publication audit remains open.
+- Main scheduler/shared stream: no new main run has been started. The last
+  short12_shared_ul_frontdoor_20260908_01 remains failed qualification;
+  these component results do not retroactively qualify its old artifacts.
+- Existing RF/geometry/artifact-contract issues and Keysight playback remain
+  deferred/open as previously documented. No 25-dB/long campaign, main FDD
+  run, output cleanup or commit was performed in this repair step.
+
+## 2026-09-08 continuation: wideband CSI wire format and transport reassignment
+
+The next audit found a separate real defect beyond received Part-2 sizing:
+the old Type-I wideband schema used PUSCH-style Part 1/Part 2 for PUCCH,
+included LI even when ReportQuantity did not request it, and did not apply
+the PUCCH allowed-rank padding rule. Corrected the serializer itself and
+the scheduler's transport handoff; no displayed measurement was invented.
+
+Implemented scope:
+
+- Wideband Type-I PUCCH is one sequence: CRI, RI, requested LI, normative
+  zero padding, requested PMI X1/X2, CQI. PUSCH has CRI/RI/CQI in Part 1
+  and requested LI before PMI in Part 2. Missing LI is not returned to the
+  scheduler as a received zero. Zero padding is protocol encoding, not
+  synthetic measurement data.
+- Configured AllowedRanks now controls codebook RI ordinal encoding and
+  PUCCH padding. The `cri-RI-CQI` exception retains physical rank-minus-one
+  encoding with port-dependent width. Main phase-07 YAML rank_domain is
+  passed through; an excluded bootstrap rank is not silently selected.
+- Received Part 1 selects the rank-specific PUCCH field layout, while
+  checking constant total length and rejecting nonzero reserved padding.
+- Queued CSI is decoded from its serialized TX report and re-encoded for
+  PUSCH when bound to that transport. A released reservation is re-encoded
+  for PUCCH. The PUSCH receiver and scheduler decode explicitly select the
+  PUSCH schema. No stale report scalar is substituted for decoded UCI.
+- Four-port i1-only serialization omits i2 and LI. Unsupported Type-I
+  subband, rank >2, and two-port i1 interpretations fail explicitly.
+  This does not qualify the i1-conditioned CQI measurement algorithm or
+  the remaining legacy Type-II schemas. See CSI_SCHEMA_NOTES.md beside
+  the vectors for their exact qualification boundary.
+- Frozen numeric schema vectors now check field order and separate
+  encoding as well as lengths. Their old PUCCH expectations were corrected
+  from the normative tables, not copied from generated output.
+
+Primary references: TS 38.212 V18.8.0 Tables 6.3.1.1.2-3/7 and
+6.3.2.1.2-3/4; TS 38.214 V18.9.0 5.2.1.4.2 and 5.2.2.2.1. Exact links are
+in tests/vectors/mimo/CSI_SCHEMA_NOTES.md. The RI table was also rendered
+from the authoritative PDF and visually inspected because text extraction
+does not reliably preserve its mathematical columns.
+
+Verification so far (latest full closure recorded below when available):
+
+- csi_wideband_wire_layout_20260908_01 passed initial literal cases and
+  actual AWGN PUSCH waveform decoding.
+- csi_wideband_transport_runtime_20260908_01 failed an older fixture that
+  treated one-bit UCI x/y placeholders as transmitted binary bits. Fixed
+  the fixture to use actual nrPUSCH scrambling/modulation and nrPUSCHDecode
+  soft bits before demultiplexing; did not weaken receiver validation.
+- csi_wideband_transport_runtime_20260908_02 exited 0: required fields,
+  received-rank sizing, ten PUSCH codec cases, source/rebinding/late-ACK
+  delivery and poisoned-reference checks passed. Actual shared PUCCH
+  HARQ+CSI passed in both TDD (7 CSI bits, due 4, delivered 5) and FDD
+  (7 CSI bits, due 5, delivered 6). These are component tests, not a new
+  main FDD run or full access-to-data qualification.
+- csi_wideband_facade_vectors_20260908_01 failed 20 stale schema vectors;
+  versions 02/03 failed the newly strengthened empty-Part-2 field check.
+  Diagnostic csi_schema_vector_diagnostic_20260908_01 showed MATLAB
+  join(empty string array) produces a missing string. Normalized the
+  empty sequence on both sides of this fixture-only comparison and fixed
+  comma delimiter authority. No primary measurement import is filled.
+- The fourth facade batch passed 15 independent literal bit vectors and
+  all 28 testMIMOCSIBeamformingPhase07Core tests; its matrix/YAML checks
+  were still running when this paragraph was recorded.
+
+Follow-up closure: csi_wideband_facade_vectors_20260908_04 exited 0. The
+independent 35,232 Type-I panel matrices (4-32 ports, modes 1/2, ranks 1/2)
+and received-PMI round trips passed, followed by the generic YAML authority
+test. This is matrix/codec verification, not high-port over-the-air or
+rank-adaptation qualification. The failed logs remain intact.
+
+The transferred CSI grant ledger also previously retained the original
+PUCCH bit count after PUSCH re-encoding removed padding. Updated it from
+the exact current pending report, with transport and count-consistency
+assertions. It records CSI bits only, not the combined HARQ+CSI payload.
+Added before/after-delivery regression assertions; standalone PUCCH
+execution is still false when the report was received on PUSCH. The new
+focused ledger/uplink batch was started after the facade batch closed.
+
+Final focused closure: logs/csi_transport_ledger_uplink_20260908_01.log
+exited 0. Literal wire layouts, required measured fields, received-rank
+authority, ten received-CSI-size cases, late-feedback/rebinding and actual
+receiver-to-scheduler delivery, the actual AWGN OFDM/DM-RS/LDPC/UCI round
+trip, and all five testUCIPUSCHPhaseCore cases passed. Actual shared
+HARQ+CSI PUCCH reception passed in TDD and FDD. Actual shared SRS ->
+received UL DCI -> coded PUSCH/HARQ-UCI and artifact readback also passed:
+
+- TDD, coincident SRS, inherited YAML seed 4702601: component artifacts at
+  C:/Users/anup0/AppData/Local/Temp/tpb3e23cc1_0f33_4b4b_9b93_50a12e9335ef.
+- FDD, YAML seed 104729: component artifacts at
+  C:/Users/anup0/AppData/Local/Temp/tp1f85ee9f_ef44_491d_a418_1a60a88d5f00.
+
+The console rounds the TDD seed; the resolved YAML/config is its exact
+authority, not the rounded console token. These component fixtures use
+explicit initial TAG/pathloss/HARQ or CSI inputs and do not qualify access,
+the main run, sustained link adaptation, or full high-port beamforming.
+No MATLAB batch remains live. git diff --check passed. Full-suite and
+campaign-wide tests were not run; the focused-test claim remains narrow.
+
+Additional retained integrity gate: packCSIFeedbackPayload still has a
+legacy unconditional BitExactSupported=true for advanced typed schemas.
+Those Type-II/internal layouts have not been qualified and must not be
+advertised as independent bit-exact 3GPP evidence. This is unresolved,
+not an assertion that the current Type-I test results qualify Type II.
+
+All earlier main-run, PRACH/access, shared-clock, QCL/TCI, sustained
+DL/UL adaptation, measurement publication and Keysight gates above remain
+open until independently reverified. No main run, testAll, cleanup or
+commit was performed in this continuation. Full 3GPP conformance is not
+claimed by these repairs.
+
+## 2026-09-08 continuation: prevent unqualified CSI wire claims
+
+Previous goal turn: verified progress. Rechecked the worktree and terminal
+MATLAB state, then audited the retained unconditional BitExactSupported
+claim. Used nr-validation and result-integrity skills; no production file
+was edited while a dependent MATLAB batch was live.
+
+Found and repaired:
+
+- Legacy custom CQI/PMI containers asserted BitExactSupported=true despite
+  arbitrary field order and custom CRC/container logic. They now explicitly
+  identify a non-3GPP custom wire container, with BitExactSupported=false.
+  This label does not authorize their use as a primary NR UCI result.
+- Legacy Type-II/multipanel schema formulas could serialize and decode as
+  purported NR feedback. Production build, decodePart1/decode and noiseless
+  wire roundtrip now reject them as UnqualifiedCSIWireLayout. Constructor
+  size inspection remains available for existing internal schema tests.
+  Full advanced codebook implementation remains REQUIRED and OPEN; this is
+  a safety repair, not an implementation-complete or conformance claim.
+- Typed reports supplied by callers could avoid configuration validation,
+  provide false owner labels, or be cast to uint8 before binary validation.
+  Packing now requires active configuration, matching identity/epoch,
+  valid binary bits/RI/padding/lengths, and exact schema-derived field owners.
+  Runtime configuration overrides a stale producer-side configuration;
+  received RI, not a stale configured rank, resolves its actual layout.
+- Strict high-port packing without a prebuilt TypedReport omitted measured
+  PMI components. It now passes I11/I12/I13/I2 explicitly, with missing
+  nonzero-width fields still rejected.
+- Strict, mimo.strict and phy.mimo.strict are ORed at the packer boundary;
+  a false alias cannot disable another explicitly enabled strict setting.
+- CSI facade metadata carries bit-exact support and wire-format scope;
+  disabled reporting remains explicitly not-applicable, not a fake report.
+
+The Type-I wideband wire repair remains the qualified codec subset, not
+an all-feature CSI or over-the-air qualification. The normative Type-II
+field layouts are distinct (TS 38.212 V18.8.0 sections 6.3.1.1.2 and
+6.3.2.1.2); deterministic internal formulas are not evidence of compliance.
+Source: https://www.etsi.org/deliver/etsi_ts/138200_138299/138212/18.08.00_60/ts_138212v180800p.pdf
+
+Verification:
+
+- logs/csi_wire_qualification_20260908_01.log exited 0: new positive and
+  tampered-report/legacy-rejection tests, 15 literal wire vectors, all 28
+  core CSI tests, generic YAML authority, actual receiver-to-scheduler
+  delivery and actual OFDM/DM-RS/LDPC/UCI waveform decoding passed.
+- After adding the strict-alias and noiseless-roundtrip guards, started
+  logs/csi_wire_qualification_guards_20260908_01.log. The new binding and
+  strict-alias tests passed; the broader truth/proxy and E2E regressions
+  were still live when this paragraph was recorded. Their own system-level
+  FDD replay fixtures are regression checks, not a new main FDD or 12-dB run.
+
+Final closure: csi_wire_qualification_guards_20260908_01 exited 0 with
+CSI_WIRE_QUALIFICATION_GUARDS_PASS. testCSIWireQualification (including
+strict aliases), testStrictProxyGuards, testStrictMode_NoFallbackAnywhere,
+testE2E_FastVsTruth and testE2E_TruthPacketSemanticCampaign all completed.
+The E2E suites exercised their five short system-level replay fixtures;
+these results do not prove the main shared-stream scenario or full CSI
+conformance. No MATLAB batch remains live. git diff --check passed.
+The previous section's unconditional typed BitExactSupported integrity
+issue is closed at the codec/packing boundary; implementing the rejected
+advanced CSI layouts remains open. Skills enforced explicit unsupported
+status and source authority rather than allowing a plausible payload to
+be promoted into primary NR feedback.
+
+The last main 12-dB run is still unqualified. Main scheduler/shared stream,
+PRACH/access revalidation, actual QCL/TCI activation and beam application,
+sustained DL/UL adaptation, full RSSI/RSRP/SINR and CSV/PNG auditing,
+advanced CSI implementation, and Keysight replay remain open. No fresh
+main run, testAll, output cleanup or commit was performed in this step.
+
+## 2026-09-08 continuation: executed geometry and fresh connected TDD diagnostic
+
+Previous goal turn was verified progress (CSI integrity guards and E2E
+regressions). Reopened the actual prior main qualification JSON/logs:
+short12_shared_ul_frontdoor_20260908_01 remains failed, with just one
+connected PUSCH at the last slot. It cannot prove post-bootstrap uplink
+adaptation. Older qualification/artifact files were not rewritten.
+
+Before starting another main run, fixed a confirmed remaining error:
+buildInPathChannelRFResult copied PropagationDistance_m into BOTH Distance3Dm
+and Distance2Dm. Horizontal and slant distances are distinct in TR 38.901
+7.4.1/Figure 7.4.1-1. The repair retains the actual per-link geometry inputs
+when SharedWaveformPhysicalRuntime resolves the executed loss stage,
+passes paired stationary geometry through sharedObservationEvidence,
+and writes both values/source into PDSCH/PUSCH trials and channel reports.
+They are explicitly physical-model inputs, NOT receiver range estimates.
+Time-varying/missing pairs remain unavailable in scalar rows; detailed
+execution segments retain the source values. No current config snapshot,
+first segment, inferred equal height, or fabricated distance fills a gap.
+Invalid finite pairs (negative distance or horizontal > slant) are rejected.
+
+Reference: [TR 38.901 V18.1.0](https://www.etsi.org/deliver/etsi_tr/138900_138999/138901/18.01.00_60/tr_138901v180100p.pdf).
+
+Focused verification logs/executed_link_geometry_20260908_01.log exited 0:
+testInPathChannelRFEvidence, testSharedWaveformPhysicalRuntime and actual
+shared SRS/DCI/PUSCH/UCI in TDD and FDD passed. Tests cover distinct ranges,
+missing geometry and changing geometry across actual capture segments.
+Fixed a new test's local variable typo (trial -> row) before that function
+executed; no production dependency was changed during the batch.
+Persisted received_pusch.csv readback confirmed:
+
+- TDD slot 10: horizontal 70.6173814908973 m, slant 74.4248921304622 m.
+  Component folder: C:/Users/anup0/AppData/Local/Temp/tpaa55c71e_946e_4531_876c_6bb7509f2bce.
+- FDD slot 10: horizontal 252.912139658736 m, slant 254.001575559601 m.
+  Component folder: C:/Users/anup0/AppData/Local/Temp/tp598cf1b9_ee15_4a90_9e8e_ff9d6dd96527.
+
+Prepared lls_causal_tdd_connected_feedback_fixture.yaml, inheriting the
+same physical channel, nominal 12-dB setting, RF, traffic and adaptation
+policies. Its 55 slots provide additional UL occasions after access instead
+of ending at the first PUSCH. CSV/MAT/PNG settings remain inherited/enabled;
+no MCS/rank is forced and no qualification gate is waived. This short case
+is not a statistical or independent FRC qualification campaign.
+
+After the focused MATLAB batch exited, started the normal runSingle front
+door with a new, previously nonexistent output target:
+results/lls/lls_causal_tdd_connected_feedback_fixture/short12_connected_feedback_20260908_01.
+Log: logs/short12_connected_feedback_20260908_01.log. Session 4289 was
+starting when this entry was written. Preflight checks resolve YAML and
+assert TDD, nominal 12 dB, duration/slot consistency and CSV/PNG flags.
+This is filesystem-runner execution, not a claimed WebGUI launch. Do not
+edit production dependencies while this main batch is live, and do not
+restart on an observation timeout. Inspect the same live handle/log.
+
+Verified startup: preflight passed. At 13:08:38 UTC the runner entered
+waveform_bundle with yaml_exact_truth_runtime, 55 canonical 1-ms slots,
+one Monte Carlo point, and receiver_noise_figure_thermal_noise mode.
+The operatingPointLabel is 12 dB, not a guarantee that measured DL/UL SINR
+equals 12 dB. At 13:08:59 UTC slot 1 pre-scheduling control gating was
+active; resolved snapshots and live geometry CSVs existed. Session 4289
+was confirmed live by polling; no completion/qualification claim is made.
+
+Remaining gates are unchanged until fresh evidence closes them: full
+shared scheduler/access/CSI/SRS/data causal timing, sustained adaptation,
+QCL/TCI activation/application, measurement and artifact correctness,
+advanced CSI, independent qualification and eventual Keysight playback.
+No prior outputs were deleted, no code was committed, and testAll was not
+run in this focused step. git diff --check passed before main execution.
+
+### Live connected-feedback audit, 2026-09-08 13:27 UTC (not terminal qualification)
+
+Continued the SAME MATLAB session 4289 and short12_connected_feedback_20260908_01
+output target. No restart, second MATLAB batch, production edit, output rewrite,
+commit or cleanup was performed during this audit. The run reached slot 36/55;
+it has NOT finished or passed qualification. The following are persisted receiver
+observations, not conclusions inferred from configured feature flags:
+
+- Initial access: four PBCH beam observations; access accepted at canonical slot
+  25. Msg2 DCI/PDSCH, Msg3 PUSCH, Msg4 PDCCH/PDSCH CRCs pass; contention identity
+  matches; RRCSetupComplete CRC/decoding and RRCConnected are true. PRACH row has
+  ProxyUsed=0, RuntimeSelfLoopWaveformsUsed=0, FallbackFlag=0. Runtime stage
+  captures identify shared_physical_waveform_stream, RuntimeStageWaveformUsed=1,
+  SelfLoopWaveformUsed=0. An earlier RAR candidate failed DCI CRC before the next
+  actual candidate succeeded; do not erase the rejection or call access failed.
+- SRS slots 30 and 35 passed. Slot 30 measured SINR is 12.2599459730789 dB.
+  Slot 35 received sample interval [260943,268792), timing estimate 84 samples,
+  logged NMSE -22.3174. Main SRS is therefore observed, not merely configured.
+- UL DCI decoded in control slot 34 for data slot 35 (K2=1). First connected
+  PUSCH slot 35 has DCICrcPass=1, CRCPass=1, MCS=1, rank/layers=1. Receiver
+  post-equalization SINR is 11.0811002152035 dB; EVM proxy is separately labeled
+  11.4382732929824 dB and is not the scheduling SINR. No UCI payload requested
+  on this first PUSCH, so it does NOT prove UCI-on-PUSCH or sustained adaptation.
+- PUCCH slot 34 decoded 10 HARQ/CSI bits exactly (1110111111), zero bit errors.
+  CRCApplicable=0, CRCPass=NaN, CRCOutcome=not_applicable; no fake CRC pass.
+  SourceSlotSet=31|32|33|32 denotes the three DL feedback sources plus CSI slot
+  32. This is a different slot from the first connected PUSCH, not a collision.
+- CSI-RS slot 32: PMI=3, physical RSRP=-76.2144497965813 dBm,
+  RSSI=-51.2069038961501 dBm, RSRQ=-11.0281458137108 dB. Retained bandwidth
+  is 25 RB / 4.5 MHz and OFDM symbol [5] zero-based; source is the actual
+  pre-front-end receiver antenna-plane grid. RSRQ closure using the recorded
+  same-branch numerator/denominator differs by only -2.84e-14 dB. This checks
+  ONE measurement's arithmetic, not every measurement's conformance. Strongest
+  SSB SS-RSRP=-76.0460576482401 dBm is close to this CSI-RSRP, not the former
+  many-tens-of-dB discrepancy. Relative normalized power remains distinct.
+- Both first DL rows and first UL row retain executed horizontal distance
+  70.6173814908973 m and slant distance 74.4248921304622 m with explicit
+  physical-model-input provenance. The new geometry repair reaches main output.
+
+Confirmed remaining defects / repair candidates after this batch exits:
+
+1. CoupledTruthRuntime access transition reason still says prach_msg1_detected
+   even for fully validated four-step/RRC success. Underlying success is not
+   based on Msg1 alone; correct the misleading reason without loosening gates.
+2. exportLLSLiveDerivedTables beam summaries round raw source SNR 35.7766 to
+   36 and label its quality role measured_same_scenario_in_path_ssb_pbch_sweep.
+   Raw measured PBCH SINRs instead span 38.3173 to 51.3522 dB. Preserve quality
+   axis authority; do not rename the source SNR as a receiver measurement.
+   Selected-beam summary prefers internal one-based BeamIndex, yet its metric
+   name says SSBBeamIndex; explicitly distinguish physical zero-based SSBIndex.
+   Its grouping by source SNR alone also needs UE/burst scope review.
+3. No live PNG had been published by slot 24 (109 CSVs existed). Confirmed
+   localRefreshLiveDerivedArtifacts calls localExportBeamformingDiagnostics
+   with hardcoded false, whereas terminal rendering receives saveFigures.
+   Repair live rendering using resolved output policy; cfgL.outputs.saveFigures
+   is deliberately disabled for per-trial calls, so reading that clobbered flag
+   is not a valid repair. Do not claim final-only publication meets live output.
+4. First main DL row explicitly reports QCLMeasurementStatus=
+   not_measured_requires_QCL_TCI_binding_evidence. Component TCI/QCL validator
+   tests do not prove decoded activation/application in this scheduler path.
+5. CSI-RS PMI=3 coexists with PMIType=not_applicable_for_active_csi_rs_runtime
+   and PMICodebookMode=typeI-SinglePanel: investigate this metadata discrepancy.
+   It is not evidence that the measured PMI itself is wrong.
+
+Continue the live handle through further UL opportunities, then audit all CSV
+rows/first-five previews and PNGs plus qualification gates. Do not edit active
+production dependencies or relabel this incomplete audit as a clean run.
+Reference for RSSI bandwidth/symbol scope and same-bandwidth RSRQ:
+[TS 38.215 V19.1.0, 5.1.3/5.1.4](https://www.etsi.org/deliver/etsi_ts/138200_138299/138215/19.01.00_60/ts_138215v190100p.pdf).
+QCL/TCI procedure reference:
+[TS 38.214 V18.5.0, 5.1.5](https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/18.05.00_60/ts_138214v180500p.pdf).
+
+### Connected-feedback failure isolated, 2026-09-08 13:39 UTC
+
+Previous goal turn was progress plus verified monitoring. Same live session
+4289 reached slot 39, then radio execution FAILED at 13:30:00 UTC; do not call
+this a completed 55-slot run. Persisted checkpoint records 5 DL and 1 UL trials.
+No restart was made. MATLAB PID 1156 remains active generating partial reports
+(CPU time advances); a failed radio checkpoint is not proof that the batch has
+exited. Continue polling session 4289 before editing production dependencies or
+starting another MATLAB batch. OutputCoverage reached tables_beam_timing_built
+and is executing downstream package/provenance audits. This is report recovery,
+not additional successful radio slots. No later PUSCH/OLLA success is claimed.
+
+Exact stack in this run's meta/failure_debug_report.txt:
+CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime line 927 calls
+setStringColumn(reports,'CSIUCITransport',"pucch_bound",rowMask).
+setStringColumn line 12968 interprets its fourth parameter as a scalar
+whole-column overwrite flag and uses logical(overwrite) with ||. It is NOT a
+row selector. Single-row fixtures concealed the mismatch. Main PendingCSITable
+now contains DL source slot 32 (processed/pucch_decoded), UL source slot 35
+(processed/not_scheduled), and DL source slot 37 (pending/pucch due 39).
+The three-element mask raises MATLAB:nonLogicalConditional during preparation.
+
+Required producer/consumer repair once the batch exits: use existing
+setStringValueAt(reports,'CSIUCITransport',csiIndex,"pucch_bound"), preserving
+every other row. Do NOT reduce the mask with any/all and overwrite all reports.
+A read-only scan of other setStringColumn calls found scalar true/false flags;
+this call is the identified row-mask misuse. Consider explicit scalar flag
+validation in that helper to prevent another ambiguous API misuse.
+
+Prepared regression-only edits while production dependencies stayed unchanged:
+
+- testSharedCSIReportClock now surrounds the active report with a uniquely
+  identified processed history row and a right-censored future row. Preparation
+  and delivery must change only active row 2; the other rows must remain equal.
+  Existing real PUCCH IQ/CDL/RF/noise and decoded CSI/HARQ assertions remain.
+  This function supports both TDD and FDD component modes; neither has been run
+  with this new multi-row fixture yet. No pass claim.
+- New testLLSBeamSummaryMeasurementAuthority covers explicit configured vs
+  measured quality, exact source-only SNR metadata, physical zero-based SSB
+  index, and separate selected-beam identities across UE and burst slots.
+  These are explicitly reporting fixtures, not PHY observations. Production
+  beam exporter is not fixed yet and this test is expected to reveal its gaps.
+
+No production fix, new main run, testAll, commit, or old-output deletion in this
+step. git diff --check passed. Keep the full goal active; repair and run focused
+CSI regressions after terminal batch exit, then complete the beam/live-PNG and
+remaining runtime/qualification audits before another claimed clean run.
+
+### Verified recovery wait and DL feedback-source audit, 2026-09-08 13:48 UTC
+
+Previous turn made progress by isolating the real multi-report CSI failure and
+preparing regressions. Re-polled the same session 4289 repeatedly: it is still
+live, MATLAB PID 1156 CPU time advances, and new contract CSV timestamps reached
+13:46:44 UTC. OutputCoverage logged done, but recoverLLSRunArtifacts and the
+downstream report/contract pipeline have not returned. Do not infer process exit
+from the radio-failed status or from one exporter's done message. No production
+dependencies changed; no second MATLAB batch or diagnostic restart was made.
+
+Additional observed issue requiring physical/source-authority repair:
+DL slots 31/32/33 used MCS 4 and PMI 0; slots 36/37 used MCS 2 and PMI 0, all
+five with passing CRC. Slot 36 post-equalization SINR=50.3856345130018 dB, while
+its CQISource is scheduler_grant:measured_dl_srs_reciprocity_after_scheduler_margin,
+feedback source slot 35, WidebandCQI=4, and OLLA update count=3. CSI-RS source
+slot 32 had PMI 3 / CQI 15 and its PUCCH report had actually been decoded at 34.
+The later SRS observation replaced that DL feedback; it is not evidence of
+CSI-driven PMI application. Fixed rank is explicitly configured for this
+baseline, so observed rank one alone is not a rank-adaptation malfunction.
+
+Source trace: apply-SRS feedback branch in CoupledTruthRuntime around lines
+5997-6082 overwrites LatestDLFeedback when srsReciprocityFeedsDLFeedback is true.
+That predicate uses joint_dl_ul acquisition, TDD orientation, and runtime
+reciprocity support; this scenario declares joint_dl_ul. The DL CQI converter
+resolveDLSRSReciprocitySchedulerCQI around 6210 subtracts a backoff from the UL
+SRS SINR. It does not perform a DL transmit-reference-power / receiver-noise
+conversion there. Channel reciprocity alone does not establish equal UL/DL
+SINR, and a margin is not such a conversion. Its source/role should not imply
+a measured PDSCH quantity. This requires a proper direction-specific physical
+prediction and source-selection policy audit, including fresh decoded CSI
+priority, not a hardcoded CQI/MCS increase. Keep it distinct from the row-mask
+crash and do not silently disable SRS reciprocity as a substitute for repair.
+
+The slow recovery path also repeatedly audits full source/function inventories;
+buildPHYPackageExecutionAudit calls file-level duplex scanning again for each
+declared method. This is a potential safe semantic-preserving performance repair
+later, not evidence that this live batch is hung and not grounds to kill it.
+
+### CSI queue repair verified; failed-run exhaustive audit, 2026-09-08
+
+Authoritative terminal event: session 4289 exited with code 1 after recovery
+reported sixgr:artifact:TerminalBrowserClosureFailed at 13:51:59 UTC
+(three passes; materialization=0, visual=1, lineage=1). The original radio
+failure remains MATLAB:nonLogicalConditional at slot 39. Only AFTER session
+exit was CoupledTruthRuntime production code changed:
+
+- prepareSharedPUCCHFeedbackRuntime now uses setStringValueAt with the exact
+  selected csiIndex, rather than passing a mask to setStringColumn.
+- setStringColumn now explicitly rejects a non-scalar/non-boolean overwrite
+  argument with sixgr:truth:InvalidStringColumnOverwrite. No any/all reduction,
+  table-wide overwrite, report deletion, skipped receiver, or fake success.
+
+Focused MATLAB batch logs/shared_csi_multi_report_20260908_01.log (session
+65974) exited 0. Both real-waveform multi-report tests passed with HARQ and
+stale scalar CSI annotations injected AFTER encoding/receipt to test receiver
+authority: TDD CSI 7 bits due 4/delivered 5; FDD due 5/delivered 6. Historical
+and future rows remained unchanged. testSharedPUCCHLateFeedbackClock,
+testSharedPUCCHLateFormat2Clock, and testCSIWireQualification also passed.
+This is a verified repair of the identified queue fault, NOT a completed
+55-slot main run, full suite, or 3GPP conformance claim. No new main run yet.
+
+Read-only audit of the now-terminal run completed with exit 1, as expected for
+remaining failures. Separate output directory:
+results/lls/qualification_working/short12_connected_feedback_20260908_01_audit.
+Command used tools/audit_lls_run_exhaustive.py --strict-value-closure
+--preview-rows 5. It inspected 869 CSV files / 314726 rows / 44980 columns and
+all 265 PNG files. CSV parse failures=0, raster decode failures=0; required CSV
+semantic failures=83 across 35 files. 27 terminal status mirrors agree. These
+counts do not mean every blank/zero/proxy token is an error: applicability and
+explicit diagnostic/proxy labels still govern individual findings.
+Breakdown includes 68 execution-identity checks (RunID/ExecutionID missing or
+inconsistent across applicable tables), 2 primary required-column failures,
+MCS/CQI reference arithmetic/key checks, exact-RE schema, VSG IQ manifest,
+canonical/catalog manifest reconciliation, channel reciprocity evidence and
+production status reduction. Preserve the details in canonical_csv_semantic_audit.csv;
+do not flatten failed-run identity/provenance failures into radio CRC failures.
+
+Important visual inspection finding not caught by the current automated chart
+checks (which reported zero required chart failures):
+contract__air-interface-frame-slot-symbol-grid__frame-slot-symbol-occupancy-timeline.png
+and its dataset call DLNumSymbols from slot_trace.csv "Occupied symbols" and
+"runtime measurement". The mapping is in apps/lls_contract_materializer.py,
+_explicit_runtime_metric_chart_materialization (~8089). DLNumSymbols is the
+allowed DL slot-format capacity, not executed occupancy. For absolute slot 2,
+the persisted exact TX RE table contains only symbols 4 and 8, whereas the
+chart uses 14 for canonical slot 3. Repair by counting distinct executed
+symbol indices from identity-scoped observed TX RE rows, not by relabeling
+configured capacity or fabricating zero events for missing source evidence.
+Also audit zero-/one-based slot labels, cell/carrier/direction scope and
+duplicate RE/port deduplication. No occupancy producer repair has landed yet.
+
+The inspected CSI-RS RSSI PNG does show the actual two receive branches at
+measurement slots 32 and 37 (four points, dBm axis, no fitted sweep). All-image
+readability does not establish measurement correctness or complete coverage.
+Live publication is still unresolved: these PNGs appeared during terminal
+failure recovery, not during radio execution.
+
+Unfinished reporting regression testLLSBeamSummaryMeasurementAuthority remains
+prepared but not run/fixed/registered. Next work: measured occupancy mapping,
+beam quality/index scope, live PNG authority, the SRS-to-DL source/power-domain
+defect and all remaining semantic/qualification gates, then a fresh TDD run.
+Do not overwrite/re-finalize this failed run as a success after code repairs.
+No commit, cleanup or output deletion; git diff --check passes.
+
+### Executed-symbol occupancy repair and independent guard, 2026-09-08 14:09 UTC
+
+Previous turn was verified progress: repaired shared CSI queue and passed its
+TDD/FDD waveform regressions, then audited the terminal failed run. No MATLAB
+batch was active or started in this reporting step. The full goal stays active.
+
+Repaired the capacity-as-occupancy defect in the Python publisher:
+apps/lls_resource_occupancy_plots.py now counts distinct active executed TX
+symbol indices from reports/csv/live_re_allocation_snapshot.csv. The specialized
+chart dispatcher uses this producer; the old DLNumSymbols/ULNumSymbols/
+GuardNumSymbols mapping was removed. RE runs, ports, layers, and channels cannot
+inflate the symbol count. Exported cell/carrier/BWP/direction/absolute-slot
+scopes stay separate. Invalid coordinates or nonexecuted provenance fail
+explicitly; missing sources yield a labeled unavailable disposition, not
+configured capacity or zero-filled time intervals. Single-slot observations
+are state snapshots, not invented trends. Source slots remain explicitly
+zero-based; no fixed 14-symbol conversion is used in this new chart.
+
+Existing exact RE rows omit carrier/BWP IDs. The new CSV retains blank IDs and
+scope_identity_status=partial_carrier_or_bwp_not_exported, and its legend uses
+CC?/BWP? with an explicit explanation. This does NOT claim complete multi-carrier
+scope integrity from a producer that did not export that identity; producer
+identity completion remains a separate task. Materializer cache version is now
+2026-09-08-contract-v59-executed-symbol-occupancy.
+
+Added tools/lls_csv_semantics.py::_executed_symbol_occupancy_failures and wired it
+into the actual chart-lineage audit. It independently recomputes symbol sets
+and checks exact source, per-scope counts, source coverage, duplicate scopes,
+and slot index labeling. Running the updated chart audit against the UNMODIFIED
+failed run identifies occupancy_uses_nonexecuted_source for its old occupancy
+chart (one chart failure plus the all_lineaged_charts_exact rollup). This closes
+the previous audit blind spot; the original stored audit remains historical.
+
+167 focused Python tests passed after the final cache-version update:
+test_executed_symbol_occupancy, test_lls_csv_semantics,
+test_audit_lls_run_exhaustive, test_lls_contract_materialization,
+test_lls_running_contract_materialization, test_audit_lls_visual_artifacts,
+test_lls_contract_physical_axes, and test_prach_operational_plot_semantics.
+No assertion was weakened. The initial single-point fixture exposed a renderer
+shape mismatch, corrected by explicitly identifying a measured snapshot.
+
+Generated a separate, source-hashed preview under
+results/lls/qualification_working/short12_connected_feedback_20260908_01_audit/occupancy_repair_preview
+(executed_symbol_occupancy.csv/.png and preview_lineage.json). All 23 points
+reconcile independently with 5732 source RE rows. Absolute slot 2 has symbol
+set 4|8 and count 2, not the old configured count 14. Viewed the raster and
+verified axes, DL/UL markers, source count, and missing-identity disclosure.
+Source SHA256: 7873e050d41b2a3c8e70e4e23b2ecfebe8448329c36fa07f99059c154f1049f0.
+The preview is explicitly post-repair analysis, NOT a replacement original run
+artifact. Original failed-run files were not changed. A Windows long-path read
+initially failed before output creation; reran with the existing audit io_path
+helper, then verified the generated files successfully.
+
+Still open: SRS-to-DL physical/source authority, beam measurement/index scopes
+(prepared MATLAB test remains unrun), actual live PNG publication, missing
+execution and resource-scope identities, QCL/TCI, channel reciprocity evidence,
+other CSV/manifest gates and a fresh full short TDD run. No commit, output
+deletion, full-suite or full-conformance claim; git diff --check passes.
+
+## SRS/DL feedback authority repair, 2026-09-08
+
+The failed connected-feedback run has a real cross-direction source defect:
+CSI source slot 32 decoded at PUCCH 34 carried CQI 15 / RI 1 / PMI 3;
+SRS 35 subsequently overwrote DL feedback using UL SINR 11.7991857803585 dB
+and UL TPMI. DL slots 36/37 consequently used MCS 2 / PMI 0 under the source
+measured_dl_srs_reciprocity_after_scheduler_margin. The scenario explicitly
+selects link_adaptation.cqi_source=csi_feedback. Physical channel reciprocity
+does not equate directional Tx EPRE, receiver noise/interference, or UL/DL
+codebook indices. This is not a reason to force higher MCS or reported SINR.
+
+Removed the reciprocal UL-SINR-minus-backoff CQI producer and its DL
+ILLA/OLLA update. SRS may still supply separately timestamped reciprocal
+spatial evidence where physical reciprocity and acquisition policy permit;
+it no longer changes DL CQI/PMI/RI, feedback validity, serving-cell identity,
+SINR, measurement/delivery age, or adaptation state. UL SRS adaptation remains
+in place. The CQI input boundary also rejects the retired reciprocal-SRS
+label and direct UL-SRS input offered as DL quality.
+
+Added validateSRSDownlinkFeedbackAuthority and runtime initialization guard.
+The configured csi_feedback source is supported. srs_based DL quality is
+explicitly UNQUALIFIED until a calibrated reciprocal channel, directional
+power/noise/interference and DL precoder evaluation are implemented. This
+guard does not implement that missing predictor and must not be described
+as complete SRS-based DL adaptation. No scenario is silently switched to a
+different source. Added the existing two CQI source names to catalog enums.
+
+Focused checks include actual PUCCH-IQ decoded CSI followed by explicitly
+analytic SRS delivery-boundary fixtures, with UL SINR -15 and +45 dB. These
+fixtures are NOT exported radio measurements or a new full main run. They
+must preserve all DL feedback and DL adaptation state while retaining UL
+SRS RI/TPMI. They intentionally lack a per-layer PUSCH prediction and must
+not invent a valid UL MCS. Separate state-machine coverage checks exact
+reciprocal spatial token retention and subsequent DL scheduler authority.
+
+First batch (srs_dl_feedback_authority_20260908_01.log) stopped at an older
+access-gating fixture's invalid TRS symbol definition before the new SRS
+assertions. Corrected its enabled TRS resource to the explicit [4,8] pair;
+production resource validation remains unchanged. Second batch (_02.log)
+exposed a mistaken NEW test expectation: consuming SRS RI/TPMI is not the
+same as having a qualified PUSCH MCS prediction. Corrected the fixture check
+to require consumed RI/TPMI and unavailable MCS, not to force UL validity.
+Batch _03 is pending at the time of this entry; no pass is claimed here.
+
+Subsequent results: _03 passed actual shared PUCCH CSI plus HARQ, with the
+late-SRS authority checks, in both TDD (due 4, delivered 5) and FDD (due 5,
+delivered 6). It also passed testMeasuredRSSchedulerCQIProvenanceFDDTDD.
+The later access-gating fixture failed at its inherited TRS row/port count;
+_04 then exposed its disjoint TRS resources treated as one burst. The final
+fixture explicitly uses row 1, one port, symbols [4,8], consecutive zero-based
+DL slots [1,2], burst length 2, with TRS still enabled. Its old oracle-NMSE
+gating assertion was reconciled with testSRSScoringSchedulerSeparation:
+missing independent NMSE does not block practical SRS; missing actual
+channel-estimate availability still blocks it. Production scoring/control
+separation was not changed. Batch _05 is pending.
+
+Final verification: batch _05 reached the corrected scheduler result (MCS
+18 with decoded_csi_scheduler_component_fixture provenance), then stopped
+because its old assertion expected a different operating-point source. The
+assertion now requires EXACT preservation of the fixture MCS and its input
+MCSSelectionSource, not merely MCS greater than one. This MCS 18 is an explicit
+component fixture result, not a fresh main-run observation.
+
+Batch logs/srs_dl_feedback_authority_20260908_06.log completed with exit 0:
+testLLSControlAccessGating, testLLSULSRSRITPMIEstimator,
+testSRSDownlinkFeedbackAuthority, testMeasuredRSSchedulerCQIProvenanceFDDTDD,
+testSRSScoringSchedulerSeparation, and testStrictProxyGuards all passed.
+The actual TDD/FDD shared-CSI waveform checks passed earlier in _03 before
+the unrelated fixture failure; production files did not change afterward.
+The new authority guard is registered in testAll, but testAll was NOT run.
+Full regression/conformance coverage remains open. No main run was launched,
+no original failed-run artifacts were modified, and no commit or cleanup
+was performed. git diff --check passes.
+
+Next required work remains: qualified SRS-only DL prediction (not implemented
+by this guard), main-run UCI-on-PUSCH coverage, QCL/TCI application, beam
+summary identity/quality scopes, live PNG publication, execution/resource
+identity and CSV/manifest audit failures, then a fresh short TDD run.
+
+## Beam-summary measurement and scope repair, 2026-09-08
+
+Added buildBeamMeasurementSummary and wired both P1 and P2 beam summaries
+through it. Configured/source SNR stays an exact, source-labeled metadata
+axis; no integer rounding or promotion to measured quality. Receiver-quality
+mean/percentiles/count now use actual available receiver columns and retain
+their producer source and value role (including estimated_post_equalization).
+Unavailable quality stays NaN with sample count zero. The four beam CSV
+writers preserve their schema rather than pruning those missing values.
+
+Summaries retain available RunID/ExecutionID, UE, cell, component-carrier,
+BWP, burst, frame and slot scopes. IdentityScope lists what the source really
+provides; absent identity is not invented. P1 strongest-RSRP comparisons use
+physical zero-based SSBIndex, never an inferred conversion of BeamIndex.
+RSRP is not mixed with PBCH correlation scores. Duplicate candidate rows do
+not inflate distinct swept-beam count. SelectionPolicy, tie handling and
+SelectionEvidenceRole explicitly label the result as a posthoc measured
+candidate comparison, not proof of the receiver's actual access decision.
+Observed/unscored candidate counts refer to observation rows. Explicit proxy
+rows are rejected from these primary measured summaries.
+
+testLLSBeamSummaryMeasurementAuthority was completed, expanded and registered
+in testAll. Tests cover configured vs source SNR, unavailable quality,
+estimated-role preservation, independent UE/burst winners, duplicate and
+unscored observations, absent physical index, invalid index and proxy input.
+Initial batch _01 found inconsistent new summary/selection schemas; _02
+found CSV pruning of all-missing quality columns. Both were fixed without
+inventing values. logs/beam_measurement_authority_20260908_03.log exited 0:
+testLLSBeamSummaryMeasurementAuthority, testLinkExportPipeline,
+testArtifactIntegrity, testSchedulerGrantConsistency all passed.
+
+Added independent tools/lls_beam_summary_audit.py, integrated into the actual
+tools/lls_csv_semantics.py audit_run path. It checks physical winners, exact
+source scopes/operating points, descriptive RSRP means, receiver-quality
+counts/means, source labels and value roles against persisted observations.
+106 Python tests passed (beam audit, general CSV semantics, exhaustive-run
+auditor). Against the UNCHANGED failed run, the new check identifies 108
+row-level violations in its original P1 summary; this is one new failed
+semantic check, not 108 new radio failures. Old audit outputs were not edited.
+
+Post-repair analysis preview _01 copied exactly eight original canonical
+PBCH rows (two authored bursts, slots 1 and 21) and generated eight summary
+rows. All eight reconcile independently. Physical SSB 0 is strongest in
+both bursts: SS-RSRP -76.0460576482401 / -76.1519095635297 dBm. Its exported
+post-equalization SINR estimates are 51.3014124363361 / 51.7029619284483 dB,
+retaining estimated_post_equalization, not relabeled as configured SNR.
+Arithmetic means of exported dBm/dB observations are descriptive summary
+statistics, not combined received power or effective scheduling SINR.
+Source CSV SHA256: fe7044735d737149267652034071c1e8be512fbef94c85db7ef1abfdf8e1cb2e.
+The original source file and copied preview source hashes match.
+
+Viewed the first PNG and found theme-dependent low-contrast text. Updated
+the diagnostic renderer to explicit white/black colors and an estimated
+SINR axis label; a fresh _02 preview is pending. These are post-run analysis
+artifacts, NOT a new simulation or retroactively published runtime outputs.
+logs/beam_measurement_preview_20260908_01.log exited 0 after both
+testE2E_FastVsTruth and testE2E_TruthPacketSemanticCampaign. No main TDD or FDD
+campaign was launched; these are separate regression fixtures.
+
+New upstream issue to trace next: canonical PBCH ConfiguredSNR_dB itself is
+35.7766108843276 / 35.7773804452239, whereas the scenario nominal label is
+12 dB. The repaired summary faithfully preserves that persisted source;
+it does NOT certify that upstream metadata is correctly authored. Suspect
+surfaces include runWaveformLinkBundle's generic SNR-to-ConfiguredSNR filling
+(around lines 11210, 18061) and per-call construction. Trace the original
+operating-point authority before editing; do not force receiver SINR to 12.
+Full CSV/PNG, identity, timing/UCI, QCL/TCI and main-run qualification remain
+open. testAll was not run, no cleanup/commit was performed, goal stays active.
+
+Final preview verification: logs/beam_measurement_preview_20260908_02.log
+exited 0; testOrganizeRunResults_E2EArtifactPreservation passed. Viewed the
+corrected PNG and verified readable axes/legend, four physical SSB candidates,
+two burst slots, raw RSRP and explicitly estimated SINR. Independently
+reconciled all eight summary rows again with no failures. Final analysis
+artifacts are under results/lls/qualification_working/beam_measurement_preview_20260908_02
+(beam_measurement_summary.csv, beam_measurement_preview.png, canonical_pbch.csv,
+preview_lineage.json). The lineage records original/source/producer/CSV/PNG
+hashes and unresolved limitations. No MATLAB batch remains live, and
+git diff --check passes. Full-run qualification remains incomplete.
+
+References for the directional distinction:
+https://www.mathworks.com/help/5g/ug/srs-based-downlink-channel-measurements-for-tdd-system.html
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138214/19.01.00_60/ts_138214v190100p.pdf
+The MathWorks workflow computes a DL channel/measurement from SRS; it does
+not establish that raw UL quality or UL TPMI is already DL CQI/PMI.
+
+## Configured operating point versus delivered quality, 2026-09-08
+
+The immutable short12_connected_feedback_20260908_01 sources confirm mixed
+authority: PBCH and PRACH ConfiguredSNR_dB are approximately 35.78, and TRS
+eventually labels the previous SRS SINR (12.2599459730789) as configured SNR.
+PDCCH, PUCCH, SRS and data rows retain 12. The removed local resolver could
+substitute delivered feedback, undelivered pending CSI, or a geometry/noise
+estimate for an API argument that becomes configured operating-point metadata.
+
+All eight affected control/reference call sites now use the explicitly
+configured trial point through resolveWaveformOperatingPointMetadata. The
+data plan separately reads resolveDeliveredLinkQuality, requiring valid
+direction-specific feedback with source <= delivered <= current slot. It
+does not call the legacy feedback getter, whose bootstrap can construct
+feedback when direct evidence is absent. Unavailable quality remains NaN.
+Neither change forces receiver SINR, MCS, CRC or physical noise to the label.
+
+testWaveformOperatingPointAuthority passed in _03 and _04 focused logs:
+typed missing/future feedback cases, invalid configured input rejection,
+all eight call-site bindings, and actual noise-ledger variance invariance
+under label 12 versus 35.78 for DL/UL in thermal-noise TDD and FDD fixtures.
+These are component regressions, not a new main FDD campaign. Earlier
+iterations exposed and corrected test/bootstrap and AWGN-fixture mistakes.
+
+The combined set then hit a stale PSS source-text assertion. It now checks
+the public receiver's normalized correlation and detected timing with
+unequal two-branch gains. Its first attempt used an invalid sample rate for
+the 30 kHz/20-RB reference; the test now derives fs from nrOFDMInfo. Production
+OFDM validation was not weakened. Final combined rerun is tracked in
+logs/waveform_operating_point_authority_20260908_05.log exited 0. All five
+checks passed: testWaveformOperatingPointAuthority,
+testPUCCHConfiguredSNRMetadataAuthority, testStandaloneControlSweepSNRBinding,
+testLLSConfiguredSNRObservability, and testBroadcastTRSNoisyStream(3,true).
+The last test includes actual shared broadcast/TRS/PDCCH reception and
+rejection of stale physical-clock state before channel mutation.
+
+Follow-up: runWaveformLinkBundle still has legacy LinkSNR_dB defaults of 30
+when a caller omits that option. The main diagnostic supplies 12 explicitly,
+so this is separate from the confirmed 35.78 contamination. Review scalar
+and sweep authority before changing these defaults. Main-run QCL/TCI binding,
+runtime PNG publication, identity gaps, UCI-on-PUSCH coverage and complete
+fresh-run qualification remain open. Original failed-run files are unchanged.
+
+Focused uplink re-verification: logs/uplink_timing_uci_authority_20260908_01.log
+exited 0 after all six tests: testSharedULTimingOrigins,
+testSharedULTDDDirectionBoundary, testSharedPRACHReceiveOrigin,
+testSharedPUCCHLateFeedbackClock, testPUSCHUCIReceiverEvidence, and
+testLLSULSRSRITPMIEstimator. The timing/direction tests are analytic contracts;
+PRACH uses actual coded samples with declared test delay in both duplex
+fixtures. The late-feedback test executes actual TDD SRS and PUCCH samples
+through the shared CDL/RF/noise receiver, verifies exported SRS channel
+arrays, and prevents HARQ reduction before receive completion. Its DL
+transport-block outcomes are explicitly declared component fixtures.
+The PUSCH test checks actual UCI coding/modulation/soft decoding across
+QPSK/16QAM/64QAM/256QAM, applicable CRC versus no-CRC payloads, and failed-CRC
+rejection; it is not a main-run PUSCH propagation qualification. SRS RI/TPMI
+uses declared per-resource channel fixtures and preserves diagnostic versus
+anchored scheduler metrics. No new radio results were inserted into the
+failed run. All eleven tests across the two final batches passed; testAll
+and full fresh-run qualification remain outstanding. No MATLAB batch remains
+live and git diff --check passes.
+
+## Runtime CSV-derived PNG checkpoint publication, 2026-09-08
+
+Confirmed boundary: runWaveformLinkBundle disabled legacy per-trial figures,
+and its heavy live checkpoint exported CSVs only. Final CSV materialization
+was the sole raster route. Re-enabling the retired MATLAB beam renderer
+would create competing raster authority, so it remains disabled.
+
+Added output.live_csv_png_enabled (global default and explicit causal TDD/FDD
+YAML authority). Self-contained legacy YAML without the optional field does
+not opt in. buildInternalConfig combines this with save_figures/save_png;
+the waveform runner preserves this effective flag before suppressing legacy
+figures and honors persistence and the SaveFigures option. Existing heavy
+slot-complete checkpoints synchronously call publishLiveCSVPlots after their
+canonical CSV writers, independent of duplex mode or database backend.
+
+scripts/publish_lls_live_csv_plots.py reuses the existing source-bound CSV
+chart builders and PNG rasterizer. It emits immutable content-addressed
+reports/live_measurements snapshots: exact source byte copies, derived CSVs,
+PNG hashes, producer hashes, per-chart available/unavailable status, and an
+atomic latest.json receipt. Every image is labelled partial; terminal
+qualification remains false. It does not invoke terminal finalization,
+replace old images, fabricate missing samples, or persist reason-card PNGs.
+Runtime file/capture changes fail rather than completing a mixed receipt.
+Unchanged snapshots are reused only after checking artifact hashes.
+
+Tests: 60 Python tests passed (test_live_csv_plot_publication.py and
+test_lls_radio_measurement_plots.py), including missing evidence, proxy
+rejection, corrupted receipts, malformed CSVs, read-only post-run previews,
+and Windows paths longer than 260 characters. The long-path regression first
+failed, matching an actual persisted-data preview failure; publication now
+uses the existing extended-length I/O helper. No failed-preview completion
+manifest was created. MATLAB logs/live_csv_plot_publication_20260908_02.log
+exited 0: testLiveCSVPlotPublication, test6GScenarioConfigValidation,
+test6GParameterCatalog, testLinkExportPipeline, testArtifactIntegrity.
+The _01 batch exposed missing optional authority in self-contained YAML;
+this was corrected without inventing a hidden enabled default.
+
+Read-only original-run preview:
+results/lls/qualification_working/live_csv_png_preview_20260908_01
+Latest snapshot 58a3218e571680635c175bb647484ec8bf6cf8e5ea184ff4f1bf4c573ed85964
+has 16 PNGs: CSI CQI/RI/PMI/SINR, CSI-RS RSSI/RSRQ, SSB-window RSSI,
+precoder matrix/ports/layers/reported-applied PMI, DL/UL/PUCCH block-error
+observations, CSI pilot residual, throughput-versus-measured-SINR, and
+executed-symbol occupancy. Viewed throughput/SINR and per-branch RSSI PNGs;
+axes and source-domain labels are legible, no interpolated sweep is claimed.
+These are POST-RUN PREVIEW images, not retroactive live publication.
+
+Seven unavailable plots disclose actual limits: PRACH/SSB/CSI EVM,
+PDSCH/PUSCH EVM per symbol, throughput versus applied SNR (thermal mode),
+and oracle NMSE. Original main run has neither canonical DL/UL constellation
+samples nor preview CSV despite requesting full-allocation capture. Trace
+the shared data receiver/capture export producer next; do not relax paired
+sample requirements or derive EVM from SINR. Not every unavailable chart is
+a defect (e.g. thermal mode has no applied AWGN-SNR sweep).
+
+Final MATLAB rerun plus E2E/organizer integrity checks is tracked in
+logs/live_csv_plot_publication_20260908_03.log; result pending. No main
+campaign started, no original run artifacts were edited, and no full-run
+qualification claim is made. QCL/TCI and main-run UCI-on-PUSCH remain open.
+
+Final verification update: _03 exited 0 (testLiveCSVPlotPublication,
+testE2E_FastVsTruth, testE2E_TruthPacketSemanticCampaign,
+testOrganizeRunResults_E2EArtifactPreservation). The E2E fixtures internally
+exercise FDD regression cases; no main FDD diagnostic/campaign was launched.
+An additional negative plot test then demonstrated that the reused
+throughput/SINR builder rejected TruthStatus=proxy but accepted Source=fast_proxy.
+Fixed the canonical renderer, not just the live wrapper: throughput, paired
+EVM and radio measurement charts share checks across TruthStatus/truth_status,
+ExecutionBackend, ApproximationMode, E2EAirModel and Source. A real label
+cannot override a contradictory proxy marker. Terminal raster cache version
+is now v60-all-provenance-markers so older cached results are not silently
+treated as reverified. No original artifact was regenerated by this change.
+
+181 Python checks pass across live publication, radio measurements, EVM
+profiles and CSV semantics, including LUT/logistic/synthetic/fallback and
+contradictory-marker rejection. Final MATLAB _04 exited 0 after
+testLiveCSVPlotPublication and testSchedulerGrantConsistency. Final preview
+snapshot is 1e0aa6323036e2cdabd7297936117cd753bb68eae3142ff0dcdd58b8972cf1f5,
+still 16 measured PNGs and seven explicitly unavailable charts. Earlier
+preview snapshots remain separate diagnostic history. Live rendering is
+implemented and component-tested; fresh-main-run runtime publication is
+NOT yet demonstrated. Full testAll was not run. No MATLAB batch remains
+live; git diff --check passes. The goal remains active.
+
+## Backend-independent constellation persistence, 2026-09-08
+
+Confirmed root cause for the absent main-run paired-symbol CSVs: in
+localExportLinkRawTrialTables, dlLiveConstellationPath/ulLiveConstellationPath
+were initialized to empty and assigned only under isLiveDBMode. The failed
+main run used filesystem storage. Its completed samples could reach the
+coordinator, but live writers received empty paths and the slot-39 exception
+prevented the final constellation exporter from running. Failure checkpoint
+also accepted only DL/UL trial tables, not the captured symbol tables.
+
+The live path gate now uses localCoupledLiveRuntimePublicationEnabled, as
+other filesystem runtime evidence does. New constellationArtifactPaths maps
+the existing YAML capture scope to explicit preview versus samples names,
+independently of duplex/backend, and terminal export uses the same mapping.
+Full-allocation rows are not downsampled. Failure checkpoint now writes only
+nonempty completed DL/UL symbol tables and attaches any persistence exception
+to the original error before rethrowing; it does not manufacture pairs or
+turn a failed run into success. No old run is modified or resimulated.
+
+New testConstellationPublicationBackend covers both modes, both backends,
+both scopes and the production live/failure call bindings. Actual receiver
+tests testDataChannelStreamStages(TDD/FDD) and
+testSharedPUSCHChannelArtifacts(TDD) now use verifyReceivedConstellationCapture:
+complete observation counts, unique symbol/subcarrier/layer coordinates,
+unchanged raw versus reported equalized symbols, independent sum(error^2)/
+sum(reference^2) RMS EVM, CSV round-trip retention, and actual CSV-derived
+PDSCH/PUSCH per-symbol PNG publication. These are declared component setups,
+not a new main run or full RF/standard conformance qualification.
+
+logs/constellation_backend_capture_20260908_01.log passed backend and full-
+capture checks and reached an actual DL CSV/PNG, then failed in the test's
+heterogeneous JSON chart-array concatenation. Fixed the test reader to handle
+available/unavailable entries without adding fields or altering production
+validation. The same batch is rerunning under
+logs/constellation_backend_capture_20260908_02.log; outcome pending.
+
+Capture batch _02 exited 0. Backend/full-allocation regressions passed, as
+did all four actual DL/UL stage cases in each duplex mode and the actual TDD
+shared SRS/DCI/PUSCH/UCI case. Independently reconciled capture evidence:
+- TDD DL: 3335 pairs, RMS EVM 13.6765803503 percent.
+- TDD UL: 3522 pairs each; RMS EVM 0.311466369231, 0.324925298068,
+  0.319714375392 percent (no UCI, UCI, changed TA respectively).
+- FDD DL: 6370 pairs, RMS EVM 30.9927960967 percent.
+- FDD UL: 7644 pairs each; RMS EVM 0.884886590252, 0.779552223905,
+  0.634937282186 percent.
+- TDD shared CDL/SRS/DCI/PUSCH/UCI: 3522 pairs, RMS EVM
+  8.55060489662 percent, actual TB CRC and UCI content passed.
+These values are component observations, not substitutes for main-run
+measurements or RF-conformance EVM. Their roots are recorded in the log.
+Viewed the TDD DL per-symbol PNG at the logged tp3cbd0b7e... root; all 3335
+pairs feed the 12-symbol RMS/peak plot. The per-symbol EVM variation is
+visible, not flattened/fitted away. Its receiver/impairment interpretation
+still needs investigation; successful CSV reconciliation is not proof that
+every underlying receiver calculation is physically correct.
+
+New confirmed indexing issue from that actual plot: PDSCH_Tx/PDSCH_Rx
+localCodewordLayerIndexMap assign c (1-based) to CodewordIndexByLayer;
+PUSCH_Tx/PUSCH_Rx assign 0:nCodewords-1. deriveModulationTrackingMetrics
+localSymbolModulations expects zero-based codewords and adds one when
+indexing modulation. Single-modulation shortcuts hide this mismatch;
+mixed two-codeword modulation can reject the production DL map. Existing
+testPDSCHCodewordLayerHighRank compares exported indices back to the same
+producer and only uses QPSK, so it does not independently catch it.
+Next: repair producer/consumer index authority, test actual mixed-modulation
+TX/RX, and keep MATLAB cell positions separate from physical codeword IDs.
+NR reference verified: TS 38.211 V18.7.0, 7.3.1.1 and Table 7.3.1.3-1 use
+physical codewords q=0,1 and q=0 for single-codeword transmission:
+https://www.etsi.org/deliver/etsi_ts/138200_138299/138211/18.07.00_60/ts_138211v180700p.pdf
+
+Export integrity batch now running as logs/constellation_export_integrity_20260908_01.log
+(testLinkExportPipeline, testArtifactIntegrity, testSchedulerGrantConsistency,
+testE2E_FastVsTruth, testE2E_TruthPacketSemanticCampaign,
+testOrganizeRunResults_E2EArtifactPreservation). No main run was launched.
+
+### PDSCH physical codeword numbering repair, 2026-09-08
+
+The export-integrity batch above exited 0. Independent rank-map assertions
+then reproduced the producer defect in
+`logs/pdsch_codeword_index_20260908_red.log` (exit 1): even a single
+codeword was labeled 1 rather than physical NR q=0.
+PDSCH TX/RX now publish zero-based codeword identities, an explicit
+CodewordIndexBase=0, and PDSCHCodewordLayer/v2 metadata; MATLAB transport
+block cell indexing remains unchanged. Old persisted outputs are not rewritten.
+`logs/pdsch_codeword_index_20260908_01.log` exited 0: ranks 1:8 and additional
+mixed QPSK/16QAM ranks 5 and 8 recover every actual codeword payload, with
+zero layer-map inverse error and zero BER. Per-sample modulation labels and
+codeword IDs are checked against an independent TS 38.211 layer mapping.
+FullConstellationCapture, ConstellationPublicationBackend, StrictProxyGuards
+and StrictMode_NoFallbackAnywhere also passed in that batch.
+
+The unexpectedly high alternating DL EVM in the shared-stage component is
+being traced, not accepted merely because its CSV arithmetic is consistent.
+Read-only inspection shows DL estimates blind CFO before extracting the
+DM-RS-aligned shared capture, unlike PUSCH (alignment precedes estimation).
+The CP estimator assumes its first sample is a CP boundary. A delayed
+capture violates that premise and can bias the correction. This is a
+candidate causal timing defect pending diagnostic evidence; no correction
+has yet been claimed. `logs/pdsch_shared_cfo_diagnostic_20260908_01.log`
+is executing the TDD stage fixture with measured CFO/timing values logged.
+
+The diagnostic exited 0 and confirmed a 60.042 Hz blind CFO estimate in the
+declared zero-CFO DL connector fixture (actual integer delay 7 samples).
+The estimator had correlated CP windows before the measured arrival boundary.
+PDSCH_Rx now acquires bounded DM-RS timing for the blind-estimator input,
+then applies the measured frequency correction to the original capture and
+extracts the actual complete received slot. No transmitted payload/channel
+delay/configured CFO is supplied to the estimator, and there is no RX padding.
+
+`logs/pdsch_shared_cfo_timing_20260908_01.log` exited 0:
+- TDD DL: measured CFO 0.016544 Hz; RMS EVM 0.00717370670347 percent
+  versus 13.6765803503 percent before; 3335 actual paired symbols.
+- FDD compatibility DL: measured CFO -0.0048349 Hz; RMS EVM
+  0.0148513551932 percent versus 30.9927960967 percent before;
+  6370 actual paired symbols. This was not a main FDD campaign.
+- TDD PUSCH no-UCI, UCI, changed-TA fixtures retained exact payload/UCI and
+  timing 7/90/78 samples, with unchanged measured EVM.
+- FRCPDSCHCFOTracking (actual nonzero CFO), ReceivedTrackingFrequencyAuthority
+  and ReceiverTrackingDirectionAuthorityFDDTDD passed.
+Viewed the new TDD EVM PNG (tpbbdb1479.../reports/live_measurements/
+088a33fa35415f721fc7451012ebd5b47f49bbbe0cbaee91311238841b8ba88c/image/
+pdsch_evm_per_symbol.png): correct CW0 label, all 3335 pairs, observed RMS
+and peak without the previous large alternating phase error. These very
+small EVM values belong to the weak-noise connector fixture, not the
+nominal-12dB main shared CDL/RF run.
+
+Residual-CFO diagnostic still uses the pre-alignment capture, even after
+the blind-estimator fix. A new independent delayed waveform check with
+injected -220/0/+220 Hz is being run in
+`logs/pdsch_shared_residual_cfo_20260908_red.log` before moving that residual
+measurement to the actual corrected FFT interval. Main-run QCL/TCI binding,
+UCI-on-PUSCH coverage and full-run CSV/PNG qualification remain open.
+
+The new residual-CFO assertion failed before its fix (red log exit 1).
+Residual estimation now runs after frequency correction and actual measured
+timing extraction, using the same waveform interval passed to OFDM decoding.
+`logs/pdsch_shared_residual_cfo_20260908_01.log` exited 0. In the independently
+constructed seven-sample delayed waveform tests, injected/estimated CFO was
+-220/-220, 0/0 and 220/220 Hz, with measured residuals
+-3.97681012321e-14, 0 and -4.67115290599e-14 Hz respectively. Exact transport
+blocks and non-oracle timing passed. All rank/mixed-modulation checks also
+passed. FRCPDSCHCFOTracking, ReceivedTrackingFrequencyAuthority,
+ReceiverTrackingDirectionAuthorityFDDTDD, CSIRSPhysicalResourceMeasurements,
+CSIRSBranchMeasurementSelection, PDSCHTCIStateBinding,
+PDSCHQCLStatePropagation and ChannelCorrelationNotQCL passed in this batch.
+The TCI/QCL tests are explicit component contracts, not proof of main-run
+RRC activation or applied-beam lineage. The RSSI fixtures test per-branch,
+measurement-bandwidth/symbol-window arithmetic, not field measurements.
+Python EVM/live-publication regressions: 45 passed. Source diff check passed.
+
+### Remaining qualification boundary after the timing repair
+
+No fresh main scenario was launched in this repair interval. The original
+55-slot TDD run still failed at slot 39 and must not be relabeled complete.
+
+| Requested surface | Evidence now | Still required before full-run qualification |
+| --- | --- | --- |
+| PRACH/access | Original main run executed received Msg1-4 and RRCSetupComplete; proxy/self-loop/fallback flags were zero. | Fresh access-to-data run after all repairs; no new PRACH qualification in this interval. |
+| PUCCH/UCI | Prior shared late-feedback tests used actual received PUCCH and decoded UCI. | Fresh main scheduling/feedback lineage and overlap audit. |
+| PUSCH/UCI | Actual shared TDD SRS-to-decoded-DCI-to-PUSCH component passed TB CRC and UCI content; current delayed stage cases retain exact payload and TA. | Main-run late-ACK multiplexing case; original main PUSCH did not carry UCI. |
+| SRS/UL scheduling | Shared SRS measurements and received UL-DCI component evidence exist; SRS no longer overwrites DL feedback. | Fresh main SRS-to-grant-to-PUSCH causal trace across all executed UL occasions. |
+| Shared timing | Bounded sample captures, actual timing extraction and DL CFO/residual repairs are tested. | Fresh main scheduler continuation beyond the original slot-39 failure. |
+| CSI/PMI/precoding | Component codebook and applied-precoder evidence; physical codeword mapping now independently checked. | End-to-end feedback delivery/age/rank/PMI-to-applied-precoder reconciliation; do not claim unimplemented advanced codebook scopes. |
+| QCL/TCI | Activated-state, stale-precoder and QCL-field component guards pass. | Main-run activation/source-RS/selected-TCI/applied-beam lineage is not implemented/qualified by these tests. |
+| RSSI/RSRP/RSRQ | Per-branch bandwidth/symbol-window arithmetic and branch-selection closure pass; existing measured-preview RSSI plots exist. | Fresh run values and all source/derived CSV/PNG consistency checks. |
+| Runtime CSV/PNG | Filesystem sample capture and live plot publication repaired; actual DL/UL pairs independently reconcile EVM. | Fresh runtime publication and terminal audit; missing PRACH/SSB/CSI EVM must remain unavailable, not invented. |
+
+Broader focused regression batch started as
+`logs/pdsch_timing_link_regression_20260908_01.log`:
+testConfig, testLLS_DL, testLLS_UL, testLLS_ReferencePoints.
+MATLAB session 97735 is the only live batch; preserve its handle and do not
+start another MATLAB batch or edit its production dependencies until it exits.
+The earlier user restriction against testAll is retained; full-suite
+qualification is not claimed. No outputs were deleted and no commit was made.
+
+### Next main TDD diagnostic, 2026-09-08
+
+The broader testConfig/testLLS_DL/testLLS_UL/testLLS_ReferencePoints batch
+exited 0 (session 97735 is closed). The preceding goal turn made verified
+production/test progress; it was not a no-progress turn.
+The unchanged 55-slot connected-feedback diagnostic retains nominal 12 dB,
+thermal receiver noise, TDD, UCI-on-PUSCH enabled, filesystem live CSV/PNG,
+and full-allocation received constellation capture. No 25-dB/FDD main campaign
+or long all-impairment run is authorized at this stage of verification.
+Preparing a fresh short12_connected_feedback_20260908_02 output target;
+this run is needed to expose main scheduler/shared-stream and publication
+failures rather than claiming component success proves complete integration.
+Main-run QCL/TCI activation remains open, not silently claimed by this run.
+
+The first launch check used an invalid top-level cfg.duplexMode field and
+exited before creating output (logs/short12_connected_feedback_20260908_02.log,
+session 70993 closed). Corrected only the check to cfg.phy.duplex.mode.
+The actual _02 run then started with session 28934 and log
+`logs/short12_connected_feedback_20260908_02_start.log`. Preflight passed;
+waveform execution began at 16:18:35 UTC with 55 1-ms slots. Acquisition
+completed by the slot-6 gating update. Actual broadcast/TRS evidence appeared.
+
+Main-run publication observation exposed a missed front-door authority:
+runSingle sets opt.SaveFigures=false when the terminal artifact-contract
+renderer owns rasters, but runWaveformLinkBundle also used that legacy flag
+to disable liveCSVPNGEnabled. Thus heavy CSV refreshes ran but no
+reports/live_measurements folder was published despite enabled resolved YAML.
+Stopped this incomplete diagnostic at slot-9 preparation, after verifying
+the exact MATLAB child PID 12860 and its command line/parent; session 28934
+closed exit 1. All persisted results are retained, with an explicit
+meta/diagnostic_interruption.json; no waveform completion is claimed.
+
+Added resolveWaveformBundlePublicationPolicy: terminal raster ownership
+disables only legacy MATLAB figures. The front door passes a separate
+LiveCSVPNGEnabled option derived from resolved YAML. The bundle honors it;
+legacy direct callers that omit it retain their SaveFigures suppression.
+LiveCSVPlotPublication now covers the real front-door policy for both
+duplex profiles, contract-renderer on/off, each output-disable flag, and
+source wiring to the bundle. Focused tests are running in
+logs/live_renderer_authority_20260908_01.log, MATLAB session 12380.
+
+Read-only follow-up control audit (not yet repaired):
+MACCESchemaRegistry incorrectly assigns zero payload lengths to nonempty
+fixed CEs, misidentifies DL LCIDs 57/58 as DRX, treats fixed UL CCCH as
+variable, and misclassifies SP ZP CSI-RS as variable. MACSubheaderCodec does
+not validate fixed payload length, so the demultiplexer can consume payload
+bytes as following headers. Existing mac_pdu_subheader_test_vectors.csv
+duplicates the wrong assumptions; current round-trip tests cover SDUs only.
+Independent normative check: TS 38.321 V18.5.0, Tables 6.2.1-1/2 and
+clauses 6.1.3.2/.3/.4/.8/.15/.19: C-RNTI=2, contention identity=6,
+TA command=1, single-entry PHR=2, PDCCH TCI indication=2, SP ZP CSI-RS=2
+payload octets. DL 57/58 are SCell activation (4/1 octets); DRX uses 59/60.
+Source: https://www.etsi.org/deliver/etsi_ts/138300_138399/138321/18.05.00_60/ts_138321v180500p.pdf
+WaveformProtocolBridge uses this assembler/demux for data SDUs; a received
+TCI activation path is still absent. Do not infer that the original main
+RAR/Msg4 waveforms used this particular defective registry: they also have
+separate access codecs. Repair requires independent fixed-CE mixed-PDU
+vectors, strict length checks and source-backed updates to stale vectors,
+then integration into received control state—not relabeling model state.
+
+Live-renderer focused batch and the export/E2E regression batch both exited
+0 (live_renderer_authority_20260908_01.log and
+live_renderer_authority_e2e_20260908_01.log). These are regression results,
+not completion of the interrupted main _02 diagnostic.
+
+The interrupted _02 exhaustive audit read 99 CSV files / 49,331 rows with
+zero CSV parse failures and found no PNG. Its 96 failed semantic checks
+include expected missing terminal/data artifacts; they are not 96 proven
+radio defects. Audit files, including first-five-row previews, are retained
+in qualification_working/short12_connected_feedback_20260908_02_interrupted_audit.
+
+Confirmed live control provenance defect: runtimeExportMetadata exported a
+database numeric key as RunID (NaN on filesystem) and omitted ExecutionID;
+terminal bundle binding arrived too late for live tables. The shared
+bindCoupledExecutionIdentity helper now binds actual scenario lifecycle IDs
+before live persistence and checks conflicts. Numeric DB keys, when present,
+are separate DatabaseRunID values. Callers without a complete lifecycle stay
+unbound; no execution ID is invented. Measurement columns are unchanged.
+
+testCoupledLiveExecutionIdentity exercises the actual live writer with an
+explicit metadata-only fixture under both duplex configurations. Initial
+readback failed because MATLAB auto-detected the header incorrectly on the
+one-row fixture; raw CSV inspection showed all identities present. Specifying
+the actual comma delimiter/header resolved the test parsing, not production
+measurements. The second batch exited 0, along with RuntimeIdentityFillerIsolation,
+InPathArtifactIdentityBinding, ArtifactEvidenceIdentity and RunExecutionIdentityAuthority
+(logs/coupled_live_identity_20260908_02.log).
+
+MAC fixed-CE byte-layout repair: independent new test reproduced the zero
+length bug at DL LCID 47 (mac_fixed_ce_byte_layout_20260908_red.log, exit 1).
+Registry lengths now follow the cited TS 38.321 fixed CE sizes, UL 64/48-bit
+CCCH uses a one-octet fixed subheader, and DL SCell/DRX LCIDs are separated.
+The codec rejects invalid/nonfinite/non-scalar lengths and fixed payload
+size mismatches. Independent mixed DL/UL byte strings verify header/payload
+offsets, exact bytes and truncation rejection. Existing erroneous zero-size
+positive vectors are now negative cases; added normative valid-size cases.
+Variable-CE vector validity concerns header framing, not CE field semantics.
+Batch mac_fixed_ce_byte_layout_20260908_01.log exited 0: fixed-CE test,
+MACVectorValidator (zero mismatches across its families), WaveformProtocolBridge.
+This does not claim all LCIDs/eLCIDs or received TCI activation implemented.
+
+Focused UL authority/timing, physical RSSI/CSI resource measurement and
+post-patch E2E export regressions started in
+logs/live_identity_mac_ul_export_regression_20260908_01.log. The main _03
+has not started yet. Production dependencies stay unchanged during MATLAB.
+
+The post-patch UL timing/UCI/RSSI and E2E batch exited 0. Python radio plot
+and live publication tests: 65 passed. Independent MAC vector pack verifier:
+33 files / 4789 rows, no failures; manifest updated for the explicitly
+documented normative subheader corrections, not for a changed measured run.
+Next is a fresh short TDD _03 diagnostic with unchanged nominal-12-dB thermal
+noise policy, 55 slots, full receiver symbol capture and live CSV/PNG enabled.
+QCL/TCI end-to-end activation and full-run UCI qualification remain open.
+
+Fresh main _03 started via run_6g_phy_lls_single, log
+logs/short12_connected_feedback_20260908_03.log, MATLAB session 78756.
+Preflight passed; unchanged scenario ConfigHash
+84de70c648f30e1b251d3812a873240789f94831092884a22d7f5423ebeb9e34.
+Actual execution identity execution_4b47626b-a347-454b-99a3-3194d03d127a.
+At slot 6-8, live PBCH rows carried both new run IDs. A measured live
+SSB-window RSSI PNG and eight-row CSV appeared during the scheduler loop,
+covering four received SSBs and two antennas. Viewed that PNG; scope caption,
+per-beam/branch legend and dBm axes are present. This proves this source's
+runtime publication path, not all plots or main-run completion. Snapshot
+receipts are checked independently against retained artifact bytes.
+
+At 16:53:17 UTC main _03 is still running, slot 13/55 preparation, acquired
+1/1, valid TRS 1/1, access not yet complete and no connected data rows yet.
+MATLAB session 78756 remains the sole live MATLAB batch. Do not launch a
+second batch or edit production dependencies while it runs. First live
+snapshot aaa8fb04996943a6be6b57ffaa0e09e978fc69fb692a960f44821f1f49258379:
+one measured PNG, seven artifact receipts all match. A plain pathlib probe
+hit Windows long-path limits; rerunning the read-only check with the
+repository io_path helper passed. No file was missing or reconstructed.
+Next: follow PRACH/Msg1-4 through connected SRS/PUCCH/PUSCH and due-slot UCI;
+then audit every CSV and PNG from the completed or honestly failed _03.
+Do not infer full UL or TCI/QCL correctness from these partial observations.
+
+### Shared access capture arithmetic audit, 2026-09-08 continuation
+
+Previous goal turn: concrete progress (MAC/publishing/identity repairs and
+regressions). Same main session 78756 was revalidated live; no restart or
+production dependency edit. Added independent read-only
+tools/audit_lls_ra_capture.py plus 14 Python unit tests. It checks stage
+direction, received-vs-self-loop source, exact sample counts/completion
+time, contiguous physical execution coverage, channel direction and
+thermal PSD-times-bandwidth arithmetic. Partial evidence is never promoted
+to radio qualification. Optional audit output stays outside the run and
+retains exact CSV input bytes with SHA-256.
+
+Main _03 now has five actual received rows: Msg1 slot 14, Msg2 16, Msg3 19,
+Msg4 22, RRCSetupComplete 24 (these StageSlot values are zero-based).
+Msg3 UL-SCH CRC=1; Msg4 PDCCH/PDSCH CRC=1; RRCSetupComplete CRC/Decoded=1.
+At scheduler slot 27 the UE became access-ready/eligible. Snapshot
+87eaae7c8013b5d3b804d9d1c8c950cd9495c8be5a9d965153996bbf757690a2
+is retained under qualification_working/short12_connected_feedback_20260908_03_ra_capture_audit.
+All five rows pass the capture/clock/coverage/channel/noise checks.
+
+NEW OPEN EXPORT DEFECT, not a proven waveform power error:
+Msg2 reports AppliedTxPower_dBm=30, MeasuredTxPowerBeforeRF_dBm=29.4984907508465,
+TxPowerClosureError_dB=0. applyPowerContext correctly defines its closure
+against ReferenceOutputPower_dBm, not emitted power, when the declared
+fixed_epre_over_configured_bwp policy applies. runFourStepRA drops that
+reference, FullBWPActivityFactor, ExpectedEmittedPower_mW and policy from
+the exported stage row. The initial audit's equality of budget and emitted
+power was too strong for this valid normalization; corrected the auditor
+to require and reconcile actual reference-domain metadata instead. It
+continues to fail the current rows because that evidence is absent, rather
+than guessing the missing factor. Audit tests cover both active-total and
+sparse/full-BWP policies and reject missing factor metadata.
+
+AFTER MATLAB TERMINATES: export the actual PowerContext normalization
+fields from both shared and eager runFourStepRA stage producers/prototype;
+retain budget vs actual emitted definitions explicitly. Do not change
+sample amplitudes to make a reporting equality pass. Test actual TX
+power-context closure and fresh stage exports, including both duplex modes.
+Current main run is still needed for connected SRS/PUCCH/PUSCH/UCI evidence.
+
+### 2026-09-08: _03 first connected-control failure and follow-up
+
+Main _03 failed at scheduler slot 31 with
+`sixgr:truth:MissingDecodedPDCCHCCEContext`, before any connected DL/UL
+trial commit. This is not a passing run. MATLAB remains in failure-report
+finalization; production dependencies must not change until it terminates.
+Received Msg1/2/3/4 and RRCSetupComplete capture checks passed. The first
+shared SRS at slot 30 passed with measured SINR 12.2599459730789 dB and
+received-reference timing correction 84 samples. Connected PUCCH/PUSCH/UCI
+and full main QCL/TCI activation remain unqualified.
+
+Static binding review identified two real CCE inconsistencies: the grant
+consumer combines receiver-selected first CCE with TX/planned aggregation
+level; the metadata resolver advances the USS Y recurrence using absolute
+slot instead of slot within frame. The failure checkpoint does not retain
+the rejected local PDCCH trial, so its exact AL/CCE numeric tuple is not yet
+proven. Do not present a hypothesized tuple as measured evidence.
+
+Added isolated `resolveCandidateContext` and independent toolbox-resource
+mapping test, not yet wired into the live bundle. It uses received AL and
+candidate ordinal, monitored PDCCH RNTI/CORESET and frame-relative slot.
+Added isolated `bindStagePowerEvidence` and actual OFDM power-context tests
+to preserve budget/emitted/reference distinctions. MATLAB verification and
+producer wiring are pending batch termination. Python RA capture audit
+regressions rerun: 14 passed.
+
+SRS reporting also needs direct generic timing bindings: the actual
+SRS-specific 84-sample estimate/correction is present but the generic
+TimingEstimate/AppliedTimingCorrection/TimingEstimateUsed fields remain
+unavailable/false. Do not infer residual timing or true injected delay from
+that measured correlation peak. A separate legacy normalization block also
+copies missing applied correction from raw TimingOffset; that is not proof
+of application and needs a focused regression before removal.
+
+Additional isolated helper now added: `bindReceivedPDCCHGrantContext`.
+Regression checks retained planned TX AL separately from received AL,
+missing received metadata, invalid capacity and CCE alignment. It has not
+yet been called by production or verified in MATLAB. Next integration:
+use received context in localAnnotateGrantControlTrial, including annotation
+AL/ordinal; replace the broad-catch CCE reconstruction with the monitored
+resource helper (no nCI mismatch with toolbox-generated waveform); bind
+both RA power producers and prototype; bind actual SRS timing fields.
+
+Secondary strict PDCCH class audit also found that PDCCHTransmitter and
+PDCCHReceiver pass AbsoluteSlot into candidate enumeration while the
+ToolboxCarrier used for waveform processing is not visibly advanced from
+that option. Audit and regress those clocks separately; do not claim the
+new main helper repairs every strict-class caller. No main _04 has started.
+At 17:20 UTC _03 MATLAB session 78756/PID 12744 remained alive after output
+coverage generation, with CPU use still advancing. No second MATLAB batch
+or changes to its loaded production dependencies were made.
+
+At 17:20:20 UTC _03 exited 1. Failure recovery additionally reported
+TerminalBrowserClosureFailed: materialization=0, visual=0, lineage=1.
+The visual audit pinpoints seven genuine immutable live RSSI PNG snapshots
+as unmanifested visual artifacts. Their live manifests and SHA receipts
+exist, but terminal audit registration does not consume them. This is a
+real integration defect, not permission to exclude those images from audit.
+Terminal coverage has 24 missing tables and 182 missing charts; connected
+data never executed, so do not synthesize observations to close coverage.
+
+After batch termination, wired coherent received CCE context into main
+grant binding and its annotation AL/ordinal; replaced broad-catch first-CCE
+reconstruction with actual monitored resources and frame-relative mapping.
+Nonzero configured nCI now fails rather than mislabeling toolbox nCI=0 REs.
+Wired actual RA power ledger projection into both stage paths/prototype.
+Wired actual SRS receiver timing into generic and SRS-specific export fields
+without synthesizing residual timing or injected-delay truth.
+
+Focused MATLAB batch received_cce_ra_power_20260908_01 failed due to an
+invalid new common-search-space test RNTI. Corrected fixture RNTI to zero;
+did not weaken toolbox validation. Batch _02 exited 0, six tests passed:
+testPDCCHReceivedCandidateContext (480 independent toolbox RE mappings),
+testRAStagePowerEvidence (actual sparse-DL/UL OFDM, both duplex metadata),
+testReceivedSRSTimingEvidence (actual SRS reference correlation),
+testPDCCHEquivalentBlindHypothesisReduction,
+testPowerContextPhysicalUnits, testPDCCHSharedPhysicalQueue.
+
+Extended shared-PDCCH component to bind its ACTUAL decoded candidate to the
+new grant consumer, not only a table fixture. Current MATLAB batch
+received_cce_export_e2e_20260908_01, session 70884, runs that component plus
+testE2E_FastVsTruth and testE2E_TruthPacketSemanticCampaign. Shared component
+has passed; E2E tests were still running at 17:26 UTC. These contain their
+existing FDD regression fixtures, not a new requested main FDD campaign.
+No testAll and no fresh main _04, 25-dB run or instrument playback started.
+Production dependencies remain frozen during this active batch.
+
+Batch received_cce_export_e2e_20260908_01 subsequently exited 0: actual
+shared-PDCCH received-context binding, E2E_FastVsTruth and
+E2E_TruthPacketSemanticCampaign all passed. No MATLAB process left live.
+
+Repaired the live publisher's terminal-registration defect after that batch:
+each measured snapshot now contains checksum-bound checkpoint_plot_lineage.csv
+recognized by the existing strict component-lineage auditor. The ledger
+points to immutable snapshot-local plotted CSV and PNG bytes, has explicit
+partial evidence scope/TerminalQualification=false, and is included in the
+snapshot receipt. No old snapshot bytes or old run status were rewritten.
+An empty-measurement regression initially caught an unnecessary empty
+ledger CSV; producer now skips that ledger when no measured plot exists,
+preserving the original no-artifact assertion. Combined Python live-publication
+and RA-capture tests: 27 passed, including strict terminal consumption of
+two separate snapshots and rejection of corrupted checkpoint source bytes.
+
+Next necessary verification is a fresh TDD _04 run with unchanged 55-slot,
+nominal-12-dB/thermal-noise configuration. This is not a claim that all NR
+features, QCL/TCI activation, PMI feedback, connected UCI or browser coverage
+are already qualified. Those remain main-run acceptance work.
+
+Fresh main _04 launched 2026-09-08 17:33:39 UTC and passed the front-door
+TDD/55-slot/nominal-12-dB/full-allocation/live-CSV-PNG/UCI-enabled preflight.
+MATLAB session 53326; launcher PID 11072, worker PID 2896. Log:
+logs/short12_connected_feedback_20260908_04.log. At 17:33:44 it was resolving
+exact allocations before slot zero, not yet connected-data qualified.
+Only this MATLAB batch is active. Freeze production dependencies until
+termination, including failure recovery. No prior outputs were removed.
+
+### 2026-09-08 17:57 UTC — `_04` connected UL observed; audit queue retained
+
+Same session 53326 / worker 2896 remains live at slot 38/55. Do not start
+a second MATLAB or edit its production dependencies. Execution ID is
+execution_6b565697-a192-4681-91fa-d2383823477c. Access capture audit with
+--require-complete passed all five actual stages and power-reference closure;
+the retained audit is qualification_working/short12_connected_feedback_20260908_04_ra_capture_audit.
+Actual RSSI live snapshot f0f7144993027cccff3140a4e7b0625f72ba0de05b3584d27cf6108f2a1de03f
+passed the unchanged component-lineage auditor (one measured PNG, zero
+failures). This is partial SSB-window RSSI, not terminal carrier-RSSI proof.
+
+Previous CCE failure did not recur at connected slot 31. PUSCH slot 35
+passed CRC at measured SINR 11.0811002152035 dB, MCS 1 bootstrap. PUCCH
+slot 34 recovered all ten HARQ/CSI bits. No UCI-on-PUSCH observed yet.
+PDSCH moved from bootstrap MCS 1 to CQI-table MCS 26/64QAM at slot 36,
+with CRC pass. Actual DL measured SINR is approximately 45–50 dB, so the
+nominal-12-dB label is not a measured 12-dB qualification. No rank uplift
+claim applies to this rank-1 diagnostic.
+
+New audit/regression work (not production changes during this live run):
+docs/lls/qcl_tci_clock_audit_20260908.md records strict TX/RX/prepared-PDCCH
+clock issues, TCI ID vs beam-ID conflation, and required QCL case analysis.
+It also records newly observed PUCCH timing-used flag loss and PUSCH
+injected-offset vs capture-relative timing residual error, which require
+producer fixes for both DL/UL and both duplex modes after termination.
+New tests testStrictPDCCHTransmitSlotAuthority,
+testLLSDerivedBeamExecutionIdentity, testDUTReferenceUnavailableIdentity
+are prepared but not yet run. Reproduce failures, then implement fixes.
+
+The exhaustive `_03` audit completed with expected exit 1: 617 CSVs,
+238992 rows, first five rows of every CSV retained, 124 PNGs; no CSV parse
+or PNG decode failures, two headerless tables, 62 required semantic checks
+failed across 43 files (many caused by absent post-failure observations).
+Audit root: qualification_working/short12_connected_feedback_20260908_03_full_audit.
+Derived P1 beam summaries lack raw-memory lifecycle binding despite correct
+primary CSV identities. Reference diagnostics lose block/run string identity
+when no measured comparisons exist; investigate empty struct2table typing
+and in-memory append before assuming the writer pruned it. Empty link-
+adaptation and waveform-preview tables also need explicit schemas or skips.
+No assertions were weakened, no old results changed, no new main FDD or
+25-dB run launched. Goal remains active and overall qualification open.

@@ -49,6 +49,26 @@ for r in rows(HERE/'expected_pucch_sr_occasion.csv'):
 # K1 no-shift invariant
 for r in rows(HERE/'expected_pucch_timing_resolution.csv'):
  if truth(r['SymbolShiftAllowed']):fail.append('k1_shift:'+r['CaseID'])
+# TS 38.213 V18.8.0 9.2.3: independent resource-list partition arithmetic.
+# Build all eight groups rather than calling/copying the MATLAB resolver.
+pri_inputs={r['CaseID']:r for r in rows(HERE/'pucch_resource_indicator_test_vectors.csv')}
+for r in rows(HERE/'expected_pucch_resource_indicator_selection.csv'):
+ q=pri_inputs[r['CaseID']]
+ size,pri,width=int(q['ResourceListSize']),int(q['PRIValue']),int(q['PRIFieldWidth'])
+ formula=int(q['ResourceSetID'])==0 and size>8
+ valid=(size>0 and 0<=width<=3 and 0<=pri<2**width and truth(q['RequiresSet0CCEFormula'])==formula)
+ ordinal=None
+ if valid and formula:
+  first,total=int(q['FirstCCE']),int(q['NumCCE'])
+  valid=0<=first<total
+  if valid:
+   groups=[size//8+int(group<size%8) for group in range(8)]
+   ordinal=sum(groups[:pri])+(first*groups[pri])//total+1
+ elif valid:
+  valid=pri<size
+  if valid:ordinal=pri+1
+ if truth(r['ExpectedValid'])!=valid:fail.append('pri_validity:'+r['CaseID'])
+ if valid and r['ExpectedOrdinal']!=str(ordinal):fail.append('pri_ordinal:'+r['CaseID'])
 # Power arithmetic
 pmap={r['CaseID']:r for r in rows(HERE/'pucch_power_control_test_vectors.csv')}
 for r in rows(HERE/'expected_pucch_power_control.csv'):

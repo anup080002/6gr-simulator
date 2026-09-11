@@ -32,7 +32,7 @@
     "link_adaptation": {"required": true, "parameters": {
       "fixed_or_amc": {"required": true, "type": "string"}, "operating_point_mode": {"required": false, "type": "string", "allowed_values": ["fixed", "adaptive", "bounded_adaptive"]}, "domain": {"required": false, "type": "string", "allowed_values": ["cqi", "cqi_domain", "effective_sinr", "bler_margin", "legacy_mcs", "radisys_l1_mcs", "flexran_mcs", "mcs_hundredths"]},
       "cqi_table": {"required": true, "type": "string", "allowed_values": ["table1", "table2"]}, "outer_loop_flag": {"required": true, "type": "boolean"},
-      "inner_loop_flag": {"required": true, "type": "boolean"}, "cqi_source": {"required": true, "type": "string"},
+      "inner_loop_flag": {"required": true, "type": "boolean"}, "cqi_source": {"required": true, "type": "string", "allowed_values": ["csi_feedback", "srs_based"]},
       "dmrs_based_tracking_flag": {"required": true, "type": "boolean"}, "csi_rs_based_tracking_flag": {"required": true, "type": "boolean"},
       "delta_cqi_policy": {"required": true, "type": "string"}, "delta_mcs_policy": {"required": true, "type": "string"},
       "pdcch_link_adaptation_policy": {"required": true, "type": "string"}, "pdsch_link_adaptation_policy": {"required": true, "type": "string"},

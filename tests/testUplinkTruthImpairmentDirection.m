@@ -6,6 +6,10 @@ setup6GRSimToolkit('Verbose',false);
 source=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(source,tempname);
+% This fixture validates direction-specific absolute-power/noise ownership;
+% choose that operating mode explicitly instead of inheriting the scenario's
+% configured-Es/N0 link-level mode.
+cfg.run.noiseOperatingMode="receiver_noise_figure_thermal_noise";
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 runtime=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),1);
 runtime.CurrentSlot=5;
@@ -54,7 +58,9 @@ wholeState.RuntimeChannelState=sixgr.channel.ChannelFactory.forkRuntimeChannelSt
 assert(string(expected.PowerContextDirection)=="UL" && expected.WaveformLinkDirection=="UL");
 assert(expected.NoiseFigure_dB==p.Tx.PowerContext.NoiseFigure_dB);
 assert(string(expected.NoiseOperatingMode)=="receiver_noise_figure_thermal_noise");
-assert(abs(10*log10(expected.InjectedNoiseVariance)-expected.ThermalNoisePower_dBm)<1e-10);
+assert(abs(expected.InjectedNoiseVariance-expected.ThermalSampleNoiseVariance_mW) ...
+    <=eps(max(expected.InjectedNoiseVariance,realmin)));
+assert(expected.ThermalSampleNoiseBandwidth_Hz==p.SampleRateHz);
 assert(expected.ChannelFadingApplied && expected.RuntimeChannelTransmitAndReceiveSwapped);
 assert(~expected.RuntimeChannelAlignmentLookaheadExecutedOnFork);
 assert(expected.RuntimeChannelStartSample==p.StartSample && ...

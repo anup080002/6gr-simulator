@@ -29,8 +29,15 @@ for idx = 1:numel(paths)
         "SINRValueStatus", "PASS", ...
         "RankIndicator", 1);
     dl = sixgr.link.resolveWidebandCQI(dlInput, cfg, "DL");
-    assert(logical(dl.SINRInputAccepted) && isfinite(double(dl.WidebandCQI)), ...
-        "Measured DL reciprocity scheduling evidence must be accepted for %s.", expectedDuplex(idx));
+    assert(~dl.SINRInputAccepted && isnan(dl.WidebandCQI), ...
+        "UL SRS with only a DL reciprocity label must be rejected for %s.", expectedDuplex(idx));
+    crossed=sixgr.link.resolveWidebandCQI(ulInput,cfg,"DL");
+    assert(~crossed.SINRInputAccepted && isnan(crossed.WidebandCQI));
+    dlInput.SINRSource="receiver_post_equalization_sinr";
+    dlInput.SINRValueRole="measured_post_equalization_scheduling_input";
+    dl=sixgr.link.resolveWidebandCQI(dlInput,cfg,"DL");
+    assert(dl.SINRInputAccepted && isfinite(dl.WidebandCQI), ...
+        'Direction-appropriate receiver quality must remain available to DL CQI.');
 
     configuredOnly = ulInput;
     configuredOnly.SINRSource = "configured_operating_point_metadata";

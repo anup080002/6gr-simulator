@@ -11,9 +11,14 @@ for suffix = ["_tdd", ""]
     if suffix == "_tdd"
         assert(isequal(slots,[6 9 12 14]),"The configured five-slot TDD pattern must produce legal RA allocations.");
     else
-        assert(frame.DuplexMode == "FDD" && isequal(slots,[2 5 6 7]));
+        assert(frame.DuplexMode == "FDD" && isequal(slots,[3 6 9 10]), ...
+            'RAR must avoid SIB1 slot 2; Msg4 must avoid TRS slots 7/8.');
     end
     assert(frame.IsDLAllocation(ra.Msg2Slot,[ra.Msg2PDSCH.SymbolStart ra.Msg2PDSCH.NumSymbols]));
+    assert(ra.TimingSchedule.CommonPDSCHReservationsValidated);
+    ownership = sixgr.phy.frame.CommonDLResourcePlan(cfg);
+    assert(ownership.checkPDSCH(ra.Msg2PDSCH,ra.Msg2Slot));
+    assert(ownership.checkPDSCH(ra.Msg4PDSCH,ra.Msg4Slot));
     assert(frame.IsULAllocation(ra.Msg3Slot,[ra.Msg3PUSCH.SymbolStart ra.Msg3PUSCH.NumSymbols]));
     assert(frame.IsDLAllocation(ra.Msg4Slot,[ra.Msg4PDSCH.SymbolStart ra.Msg4PDSCH.NumSymbols]));
     assert(frame.IsULAllocation(ra.SetupCompleteSlot,[ra.SetupCompletePUSCH.SymbolStart ra.SetupCompletePUSCH.NumSymbols]));

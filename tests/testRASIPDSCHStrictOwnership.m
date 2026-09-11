@@ -19,6 +19,23 @@ rar = sixgr.mac.ra.encodeMACRAR( ...
 [msg2Rx,rarRx] = sixgr.phy.ra.recoverMsg2RAR( ...
     msg2Tx.Waveform,cfg,ra,msg2Schedule,msg2Tx);
 localAssertStrict(msg2Tx.PDSCH,msg2Rx,"msg2_rar");
+localAssertCommonReference(msg2Tx.PDSCH.IntegrationBinding,0,"msg2_rar");
+localAssertCommonReference(msg2Rx.IntegrationBinding,0,"msg2_rar");
+badIntegration=msg2Tx.PDSCHIntegrationContext;
+badIntegration=rmfield(badIntegration,'CommonQCLReference');
+localVerifyError(@() sixgr.pdsch.PDSCHIntegrationValidator.bind( ...
+    msg2Tx.PDSCHAssignment,badIntegration,msg2Tx.PDSCHPrecoderBundle), ...
+    "sixgr:pdsch:MissingCommonQCLReference");
+badIntegration=msg2Tx.PDSCHIntegrationContext;
+badIntegration.CommonQCLReference.ServingCellId=99;
+localVerifyError(@() sixgr.pdsch.PDSCHIntegrationValidator.bind( ...
+    msg2Tx.PDSCHAssignment,badIntegration,msg2Tx.PDSCHPrecoderBundle), ...
+    "sixgr:pdsch:CommonQCLAssignmentMismatch");
+badIntegration=msg2Tx.PDSCHIntegrationContext;
+badIntegration.ActivatedTCIStates=struct('TCIStateId',0,'Activated',true);
+localVerifyError(@() sixgr.pdsch.PDSCHIntegrationValidator.bind( ...
+    msg2Tx.PDSCHAssignment,badIntegration,msg2Tx.PDSCHPrecoderBundle), ...
+    "sixgr:pdsch:InvalidCommonQCLReference");
 assert(double(rarRx.RAPID) == double(ra.PreambleIndex));
 assert(string(msg2Tx.PDSCHControlEvent.Id) == ...
     string(msg2Rx.PDCCHControlEvent.Id), ...
@@ -38,6 +55,8 @@ localAssertStrict(msg4Tx.PDSCH,msg4Rx, ...
     "msg4_contention_resolution");
 assert(string(msg4Decoded.ContentionIdentity) ...
     == string(msg3.ContentionIdentity));
+localAssertCommonReference(msg4Tx.PDSCH.IntegrationBinding,0,"msg4_contention_resolution");
+localAssertCommonReference(msg4Rx.IntegrationBinding,0,"msg4_contention_resolution");
 assert(string(msg4Tx.PDSCHControlEvent.Id) == ...
     string(msg4Rx.PDCCHControlEvent.Id), ...
     "Msg4 TX schedule and RX decode must bind to the same DCI event identity.");
@@ -65,12 +84,57 @@ assert(logical(sibTx.PDSCHInfo.CanonicalDelegation));
 assert(string(sibTx.PDSCHExecutionProfile) == "ra_si_strict");
 assert(logical(sibRx.StrictOk) ...
     && logical(sibRx.PDSCHCanonicalDelegation));
+localAssertCommonReference(sibTx.PDSCHTx.IntegrationBinding, ...
+    sibTx.SSBInfo.SSBTiming.SelectedSSBIndex,"sib1");
 assert(string(sibTx.PDSCHControlEvent.FieldProvenance.PRBSet) ...
     == "transmitter_scheduled_dci_payload_bits");
 assert(string(sibTx.PDSCHControlEvent.FieldProvenance.DMRSConfiguration) ...
     == "validated_common_procedure_context");
+localAssertSIBSpatialMapping(sibCfg);
 
 ok = true;
+end
+
+function localAssertSIBSpatialMapping(cfg)
+% Deterministic unit channel, not a measured spatial channel or beam sweep.
+cfg.phy.ssb.Lmax=8;
+cfg.phy.ssb.runtimeSSBIndex=0;
+cfg.phy.ssb.activeBitmap="10000000";
+cfg.phy.ssb.precoderMatrices=1;
+cfg.phy.ssb.precoderIDs="component_fixture_identity";
+cfg.phy.ssb.waveformDomain="physical_element_domain";
+scalar=sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg,'Seed',1502);
+row=[1 1i -1 -1i]/2;
+cfg.phy.ssb.precoderMatrices=row;
+cfg.phy.ssb.precoderIDs="component_fixture_complex_four_elements";
+physical=sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg,'Seed',1502);
+expected=scalar.SIB1Waveform*row;
+assert(isequal(size(physical.SIB1Waveform),size(expected)));
+assert(norm(physical.SIB1Waveform-expected,'fro')<1e-11*norm(expected,'fro'));
+assert(norm(physical.Waveform-scalar.Waveform*row,'fro')<1e-11*norm(scalar.Waveform,'fro'));
+assert(physical.SIB1SpatialMapping.MatrixAppliedHere);
+assert(physical.SIB1SpatialMapping.PrecoderMatrixSHA256== ...
+    physical.SSBBurstPlan.PrecoderMatrixSHA256(1));
+% Apply an explicitly known unit-fixture channel for end-to-end decoding.
+rx=sixgr.phy.broadcast.recoverSIB1FromWaveform(physical.Waveform*row',cfg);
+assert(rx.StrictOk);
+cfg.phy.ssb.waveformDomain="logical_rf_chain_post_analog_precoder";
+logicalTx=sixgr.phy.broadcast.generateSSB_MIB_SIB1_Waveform(cfg,'Seed',1502);
+assert(~logicalTx.SIB1SpatialMapping.MatrixAppliedHere);
+assert(size(logicalTx.SIB1Waveform,2)==1);
+assert(isequal(logicalTx.SIB1Waveform,scalar.SIB1Waveform));
+assert(logicalTx.SIB1SpatialMapping.PhysicalProjectionOwner=="external_physical_projection_required");
+end
+
+function localAssertCommonReference(binding,index,procedure)
+assert(isempty(fieldnames(binding.TCIState)));
+ref=binding.ReceiverQCL;
+assert(ref.SourceReferenceSignal=="SSB" && ref.SourceReferenceSignalId==index);
+assert(ref.Procedure==procedure && ref.BindingKind=="common_procedure_reference");
+assert(~ref.TCIActivationApplicable);
+assert(ref.ReceiverParameterReuseStatus=="not_evaluated_by_reference_binding");
+assert(binding.PrecoderBinding.Required && binding.PrecoderBinding.Status=="PASS");
+assert(isnan(binding.PrecoderBinding.TCIStateId));
 end
 
 function localAssertStrict(tx,rx,procedure)

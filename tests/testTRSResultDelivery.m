@@ -1,12 +1,14 @@
-function ok = testTRSResultDelivery()
+function ok = testTRSResultDelivery(mode)
 % Scheduling fixture only: these prescribed values are not PHY evidence.
 setup6GRSimToolkit('Verbose',false);
 assert(nargin('sixgr.truth.runWaveformLinkBundle')==3); % Parse the production adapter.
 source = fileread(which('sixgr.truth.runWaveformLinkBundle'));
 assert(contains(source,'state = localDeliverCoupledTRSResults(state);'));
 assert(contains(source,'state = sixgr.truth.TRSResultDelivery.enqueue('));
-s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
-    'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
+if nargin<1, mode="TDD"; end
+file='lls_causal_access_to_data_wiring_tdd.yaml';
+if string(mode)=="FDD", file='lls_causal_access_to_data_wiring.yaml'; end
+s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',file));
 cfg = sixgr.lls6g.buildInternalConfig(s,tempname);
 multi = struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 base = sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),12);
@@ -32,7 +34,7 @@ for slot = 3:8
     assert(isequaln(state.ReceiverTrackingStateByCell,base.ReceiverTrackingStateByCell));
     assert(isequaln(state.ControlTrials.TRS,base.ControlTrials.TRS));
 end
-state.CurrentSlot = 9; % 8 ms: both configured resources have been received.
+state.CurrentSlot = 9; % 8 ms: the declared unit-fixture capture is complete.
 [state,ready] = sixgr.truth.TRSResultDelivery.takeAvailable(state);
 assert(numel(ready)==1 && isempty(state.PendingTRSResults));
 assert(isequaln(ready.Trial(:,row.Properties.VariableNames),row));
@@ -48,6 +50,45 @@ assert(delivered.ReferenceSignalMeasurementTable.ProducerSlot(end)==3);
 assert(delivered.ReferenceSignalMeasurementTable.AvailableSlot(end)==9);
 assert(delivered.ReceiverTrackingTraceTable.Slot(end)==9);
 assert(delivered.ReceiverTrackingTraceTable.TRSTrackingUpdateTime_s(end)==0.008);
+% Qualification truth must never decide receiver/scheduler eligibility.
+for nmse=[NaN -Inf 20]
+    changed=ready.Trial; changed.NMSE_dB=nmse;
+    changed.StrictOk=false; changed.Status="FAIL";
+    independent=sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state,1,changed);
+    assert(independent.TrackingEligibilityByCell(1) && ...
+        independent.LastSuccessfulTRSSlotByCell(1)==9);
+    assert(isequaln(independent.ReceiverTrackingStateByCell,delivered.ReceiverTrackingStateByCell));
+end
+unusable=ready.Trial; unusable.TRSRuntimeEvidenceUsable=false;
+rejected=sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state,1,unusable);
+assert(~rejected.TrackingEligibilityByCell(1),'PASS cannot override unusable received evidence.');
+for field=["DetectionSuccess","TRSTimingEstimateAvailable","TRSCFOEstimateAvailable", ...
+        "TRSChannelEstimateAvailable","TRSRuntimeEvidenceUsable"]
+    conflict=ready.Trial; conflict.(field)=false;
+    conflict.DetectionUsable=true; conflict.TimingEstimateAvailable=true;
+    conflict.CFOEstimateAvailable=true; conflict.ChannelEstimateAvailable=true;
+    conflict.MeasurementUsable=true;
+    rejected=sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state,1,conflict);
+    assert(~rejected.TrackingEligibilityByCell(1),'A legacy alias overrode %s=false.',field);
+    for invalid=[NaN 2]
+        conflict.(field)=invalid;
+        rejected=sixgr.truth.CoupledTruthRuntime.applyTRSTrial(state,1,conflict);
+        assert(~rejected.TrackingEligibilityByCell(1),'Invalid %s was cast to true.',field);
+    end
+end
+tracked=delivered.ReceiverTrackingStateByCell(1);
+assert(tracked.EstimatedCFO_Hz==251 && tracked.EstimatedCommonFrequency_Hz==251);
+assert(isnan(tracked.EstimatedOscillatorCFO_Hz));
+assert(string(tracked.FrequencyEstimateDomain)=="received_TRS_common_phase_frequency");
+assert(isnan(delivered.ReceiverTrackingTraceTable.TRSEstimatedOscillatorCFO_Hz(end)));
+assert(string(delivered.ReceiverTrackingTraceTable.TRSFrequencyEstimateDomain(end))==string(tracked.FrequencyEstimateDomain));
+[dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,delivered,1,'DL');
+assert(dl.lls6g.userContext.RuntimeTRSEstimatedCFO_Hz==251);
+assert(isnan(dl.lls6g.userContext.RuntimeTRSEstimatedOscillatorCFO_Hz));
+assert(sixgr.phy.rx.resolveTrackingFrequencyEstimate(dl.lls6g.userContext,true,false)==251);
+[ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,delivered,1,'UL');
+assert(~ul.lls6g.userContext.RuntimeTRSCFOEstimateAvailable);
+assert(isnan(ul.lls6g.userContext.RuntimeTRSEstimatedCFO_Hz));
 [~,again] = sixgr.truth.TRSResultDelivery.takeAvailable(state);
 assert(isempty(again));
 early = state; early.CurrentSlot = 8;
@@ -107,7 +148,8 @@ row = struct2table(struct('Frame',1,'Slot',3,'UEIndex',1,'ServingCell',1, ...
     'TRSTimingEstimateAvailable',true,'EstimatedTimingOffset_samples',0, ...
     'TRSTimingEstimateUsable',true,'FrequencyTrackingAttempted',true, ...
     'TRSCFOEstimateAvailable',true,'TRSCFOEstimateUsable',true, ...
-    'EstimatedCFO_Hz',0,'ChannelEstimationAttempted',true, ...
+    'EstimatedCFO_Hz',251,'EstimatedCommonFrequency_Hz',251,'EstimatedOscillatorCFO_Hz',NaN, ...
+    'FrequencyEstimateDomain',"received_TRS_common_phase_frequency",'ChannelEstimationAttempted',true, ...
     'TRSChannelEstimateAvailable',true,'TRSRuntimeEvidenceUsable',true, ...
     'StrictOk',true,'UsedOracleFields',"", ...
     'ObservationStartSample',15360,'ObservationEndSampleExclusive',last, ...

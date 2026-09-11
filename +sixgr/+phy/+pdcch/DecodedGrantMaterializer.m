@@ -64,9 +64,11 @@ classdef DecodedGrantMaterializer
             installedState.ControlBeamState.validateForSlot(event.AbsoluteSlot);
             beam = installedState.ControlBeamState.Data;
             if double(event.TCIStateID) ~= double(beam.TCIStateID) || ...
-                    double(event.BeamID) ~= double(beam.BeamID)
+                    double(event.BeamID) ~= double(beam.BeamID) || ...
+                    string(event.QCLSourceType) ~= string(beam.QCLSourceType) || ...
+                    double(event.QCLSourceID) ~= double(beam.QCLSourceID)
                 error("sixgr:phy:pdcch:inactive_tci_state", ...
-                    "Decoded TCI/beam identity is not the active measured control beam.");
+                    "Decoded TCI/beam/QCL reference is not the active measured control beam binding.");
             end
             if startsWith(string(event.DCIFormat), "1_")
                 direction = "DL";

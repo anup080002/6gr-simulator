@@ -1,0 +1,534 @@
+function pdsch = pdschConfigFromConfig(carrier, cfg, varargin)
+%PDSCHCONFIGFROMCONFIG Shared allocation/DM-RS/PT-RS construction.
+% This is a configuration factory, not a waveform allocation. Occasion-owned
+% reference exclusions belong to allocREsPDSCH; nominal TBS sizing uses this
+% same validated factory without claiming actual rate-matched capacity G.
+opts = sixgr.phy.grid.parsePDSCHAllocationOptions(varargin{:});
+% Build nrPDSCHConfig from an explicit calibration configuration. Strict
+% connected/SPS execution materializes from PDSCHSchedulingAssignment.
+
+pdsch = nrPDSCHConfig;
+
+% Defaults from cfg
+modStr = "";
+numLayers = 1;
+rnti = 1;
+nid = [];
+mapType = "A";
+prbSetCfg = [];
+symAllocCfg = [];
+mapTypeExplicit = false;
+tdraID = "";
+
+if isstruct(cfg)
+    modStr = sixgr.util.structGet(cfg, "phy.pdsch.modulation", modStr);
+    numLayers = double(sixgr.util.structGet(cfg, "phy.pdsch.numLayers", numLayers));
+    rnti = double(sixgr.util.structGet(cfg, "phy.pdsch.RNTI", rnti));
+    nid = sixgr.util.structGet(cfg, "phy.pdsch.NID", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.nid", nid));
+    rawMapType = string(sixgr.util.structGet(cfg, "phy.pdsch.mappingType", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.MappingType", "")));
+    if strlength(strtrim(rawMapType)) > 0
+        mapType = rawMapType;
+        mapTypeExplicit = true;
+    end
+    prbSetCfg = sixgr.util.structGet(cfg, "phy.pdsch.prbSet", prbSetCfg);
+    symAllocCfg = sixgr.util.structGet(cfg, "phy.pdsch.symbolAllocation", symAllocCfg);
+    tdraID = string(sixgr.util.structGet(cfg, "phy.pdsch.tdraId", ...
+        sixgr.util.structGet(cfg, "phy.pdsch.TDRAID", "")));
+end
+
+% Apply overrides
+if ~isempty(opts.NumLayers), numLayers = double(opts.NumLayers); end
+if ~isempty(opts.Modulation), modStr = opts.Modulation; end
+if ~isempty(opts.RNTI), rnti = double(opts.RNTI); end
+if ~isempty(opts.NID), nid = opts.NID; end
+if strlength(opts.MappingType) > 0
+    mapType = opts.MappingType;
+    mapTypeExplicit = logical(opts.MappingTypeExplicit);
+end
+if ~isempty(opts.PRBSet), prbSetCfg = opts.PRBSet; end
+if ~isempty(opts.SymbolAllocation), symAllocCfg = opts.SymbolAllocation; end
+
+[symAllocCfg, mapType, mapTypeExplicit] = localResolvePDSCHTDRA( ...
+    carrier, cfg, tdraID, symAllocCfg, mapType, mapTypeExplicit, ...
+    opts.FixedReferenceMode);
+
+% Assign
+if isempty(modStr) || all(strlength(strtrim(string(modStr))) == 0)
+    error("sixgr:pdsch:MissingCodewordSpecificModulation", ...
+        "PDSCH modulation must be explicit for every codeword.");
+end
+pdsch.Modulation = localNormalizeModulationForCodewords(modStr, 1 + (double(numLayers) > 4));
+pdsch.NumLayers = numLayers;
+pdsch.RNTI = rnti;
+
+prbVec = localExpandPRBSet(prbSetCfg, carrier.NSizeGrid);
+pdsch.PRBSet = prbVec;
+
+pdsch.SymbolAllocation = double(symAllocCfg(:).');
+pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg);
+% Preserve an explicitly configured logical DM-RS port set. The Toolbox
+% object may retain its own empty calibration value, but a valid supplied
+% set is never overwritten or renumbered.  Resolve this before PT-RS so
+% first_scheduled_dmrs_port observes the actual scheduled port set.
+configuredDMRSPorts = sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
+    cfg, "DL", pdsch.NumLayers, struct());
+maxLogicalPort = 11;
+if isprop(pdsch.DMRS, "DMRSEnhancedR18") && ...
+        logical(pdsch.DMRS.DMRSEnhancedR18)
+    maxLogicalPort = 23;
+end
+localValidateDMRSPortSet( ...
+    configuredDMRSPorts,pdsch.NumLayers,maxLogicalPort);
+pdsch.DMRS.DMRSPortSet = double(configuredDMRSPorts(:).');
+
+pdsch = localApplyPDSCHPTRSConfig(pdsch, cfg);
+pdsch = localNormalizePDSCHMapping(pdsch, mapType, mapTypeExplicit, opts.FixedReferenceMode);
+
+% Optional NID (scrambling)
+try
+    if isprop(pdsch, "NID")
+        if isempty(nid)
+            nid = carrier.NCellID;
+        end
+        pdsch.NID = double(nid);
+    end
+catch
+end
+
+
+end
+
+function [symbolAllocation, mappingType, mappingExplicit] = ...
+        localResolvePDSCHTDRA(carrier, cfg, tdraID, ...
+        symbolAllocation, mappingType, mappingExplicit, fixedReferenceMode)
+strict = logical(fixedReferenceMode);
+if isstruct(cfg)
+    strict = strict || ...
+        logical(sixgr.util.structGet(cfg, "run.strictMode", false)) || ...
+        logical(sixgr.util.structGet(cfg, "validation.strict", false));
+end
+symbolsPerSlot = localSymbolsPerSlot(carrier);
+tdraID = strtrim(string(tdraID));
+if strlength(tdraID) > 0
+    raw = struct( ...
+        "TDRAID", tdraID, ...
+        "Channel", "PDSCH", ...
+        "DMRSTypeAPosition", localPDSCHDMRSTypeAPosition(cfg));
+    if ~isempty(symbolAllocation)
+        raw.StartSymbol = double(symbolAllocation(1));
+        if numel(symbolAllocation) >= 2
+            raw.NumSymbols = double(symbolAllocation(2));
+        end
+    end
+    if logical(mappingExplicit)
+        raw.MappingType = mappingType;
+    end
+    tdra = sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+        raw, symbolsPerSlot);
+    symbolAllocation = [tdra.StartSymbol tdra.NumSymbols];
+    mappingType = tdra.MappingType;
+    mappingExplicit = true;
+    return;
+end
+
+if isempty(symbolAllocation)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "PDSCH transmission requires phy.pdsch.tdraId or an explicit " + ...
+        "phy.pdsch.symbolAllocation test/configuration grant. A missing " + ...
+        "allocation is not expanded to a full slot.");
+end
+if numel(symbolAllocation) ~= 2
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidTDRA", ...
+        "PDSCH SymbolAllocation must be [zeroBasedStart positiveLength].");
+end
+if strict && ~logical(mappingExplicit)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "Strict PDSCH transmission requires an explicit TDRA MappingType A or B.");
+end
+raw = struct( ...
+    "StartSymbol", double(symbolAllocation(1)), ...
+    "NumSymbols", double(symbolAllocation(2)), ...
+    "MappingType", string(mappingType));
+tdra = sixgr.phy.frame.ResourceAllocationValidator.resolveTDRA( ...
+    raw, symbolsPerSlot);
+symbolAllocation = [tdra.StartSymbol tdra.NumSymbols];
+mappingType = tdra.MappingType;
+end
+
+function position = localPDSCHDMRSTypeAPosition(cfg)
+position = 2;
+if ~isstruct(cfg)
+    return;
+end
+candidate = sixgr.util.structGet(cfg, ...
+    "phy.pdsch.dmrs.typeAPosition", ...
+    sixgr.util.structGet(cfg, ...
+    "phy.pdsch.dmrs.DMRSTypeAPosition", []));
+if ~isempty(candidate)
+    position = double(candidate);
+end
+end
+
+function count = localSymbolsPerSlot(carrier)
+numerology = sixgr.phy.frame.NumerologyCatalog.resolve( ...
+    double(carrier.SubcarrierSpacing), string(carrier.CyclicPrefix), ...
+    "generic_waveform_test", "");
+count = double(numerology.SymbolsPerSlot);
+end
+
+function prbVec = localExpandPRBSet(prbSetCfg, nSizeGrid)
+% Preserve the exact explicit PRB vector. Range interpretation belongs to
+% the decoded FDRA allocator and is not inferred from a two-element vector.
+
+if isempty(prbSetCfg)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingPRBSet", ...
+        "PDSCH transmission requires an explicit nonempty PRBSet. A " + ...
+        "missing allocation is not expanded to the full carrier grid.");
+end
+if ~(isnumeric(prbSetCfg) && isreal(prbSetCfg))
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidPRBSet", ...
+        "PDSCH PRBSet must be a real numeric vector.");
+end
+
+prbSetCfg = double(prbSetCfg(:).');
+if any(~isfinite(prbSetCfg)) || any(prbSetCfg ~= fix(prbSetCfg)) || ...
+        any(prbSetCfg < 0) || any(prbSetCfg >= double(nSizeGrid)) || ...
+        numel(unique(prbSetCfg)) ~= numel(prbSetCfg)
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidPRBSet", ...
+        "PDSCH PRBSet must contain unique integer indices in [0,%d].", ...
+        round(double(nSizeGrid)) - 1);
+end
+prbVec = prbSetCfg;
+if isempty(prbVec)
+    error("sixgr:phy:grid:allocREsPDSCH:MissingPRBSet", ...
+        "PDSCH transmission requires an explicit nonempty PRBSet.");
+end
+
+end
+
+function modulation = localNormalizeModulationForCodewords(raw, nCodewords)
+if ~(isnumeric(nCodewords) && isreal(nCodewords) && isscalar(nCodewords) ...
+        && isfinite(nCodewords) && nCodewords == fix(nCodewords) ...
+        && any(nCodewords == [1 2]))
+    error("sixgr:pdsch:InvalidCodewordCount", ...
+        "PDSCH NumCodewords must be exactly 1 or 2.");
+end
+nCodewords = double(nCodewords);
+if iscell(raw)
+    tokens = string(raw);
+else
+    tokens = string(raw);
+end
+tokens = tokens(:).';
+if isempty(tokens) || any(strlength(strtrim(tokens)) == 0)
+    error("sixgr:pdsch:MissingCodewordSpecificModulation", ...
+        "PDSCH modulation must be explicit for every codeword.");
+end
+if numel(tokens) ~= nCodewords
+    error("sixgr:pdsch:MissingCodewordSpecificModulation", ...
+        "PDSCH rank requires %d codeword modulation value(s); received %d.", ...
+        nCodewords, numel(tokens));
+end
+tokens = upper(strrep(strtrim(tokens), " ", ""));
+supported = ["QPSK","16QAM","64QAM","256QAM","1024QAM"];
+if any(~ismember(tokens, supported))
+    bad = tokens(find(~ismember(tokens, supported), 1));
+    error("sixgr:pdsch:UnsupportedNRModulation", ...
+        "Unsupported strict NR PDSCH modulation '%s'.", bad);
+end
+if nCodewords == 1
+    modulation = char(tokens(1));
+else
+    modulation = cellstr(tokens);
+end
+end
+
+function text = localModulationText(raw)
+if iscell(raw)
+    tokens = string(raw);
+else
+    tokens = string(raw);
+end
+tokens = tokens(:).';
+tokens = tokens(strlength(strtrim(tokens)) > 0);
+if isempty(tokens)
+    text = "";
+else
+    text = strjoin(tokens, "|");
+end
+end
+
+function pdsch = localApplyPDSCHDMRSConfig(pdsch, cfg)
+if ~(isstruct(cfg) && isprop(pdsch, "DMRS"))
+    return;
+end
+
+dmrs = pdsch.DMRS;
+
+typeAPos = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.typeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.typeApos", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSTypeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.typeAPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.typeApos", []), ...
+    []);
+if ~isempty(typeAPos) && isprop(dmrs, "DMRSTypeAPosition")
+    localValidateIntegerMember(typeAPos, [2 3], "InvalidDMRSTypeAPosition");
+    dmrs.DMRSTypeAPosition = double(typeAPos);
+end
+
+configType = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.configurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.configType", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSConfigurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.configurationType", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.configType", []), ...
+    []);
+if ~isempty(configType) && isprop(dmrs, "DMRSConfigurationType")
+    localValidateIntegerMember(configType, [1 2], "InvalidDMRSConfigurationType");
+    dmrs.DMRSConfigurationType = double(configType);
+end
+
+addPos = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.additionalPositions", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.additionalPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSAdditionalPosition", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.additionalPositions", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSAdditionalPosition", []), ...
+    []);
+if ~isempty(addPos) && isprop(dmrs, "DMRSAdditionalPosition")
+    localValidateIntegerMember(addPos, 0:3, "InvalidDMRSAdditionalPosition");
+    dmrs.DMRSAdditionalPosition = double(addPos);
+end
+
+dmrsLength = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.maxLength", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.length", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSLength", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.maxLength", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.DMRSLength", []), ...
+    []);
+if ~isempty(dmrsLength) && isprop(dmrs, "DMRSLength")
+    localValidateIntegerMember(dmrsLength, [1 2], "InvalidDMRSLength");
+    dmrs.DMRSLength = double(dmrsLength);
+end
+
+numCDM = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.numCDMGroupsWithoutData", []), ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.NumCDMGroupsWithoutData", []), ...
+    sixgr.util.structGet(cfg, "phy.dmrs.numCDMGroupsWithoutData", []), ...
+    []);
+if ~isempty(numCDM) && isprop(dmrs, "NumCDMGroupsWithoutData")
+    localValidateIntegerMember(numCDM, 1:3, "InvalidNumCDMGroupsWithoutData");
+    dmrs.NumCDMGroupsWithoutData = double(numCDM);
+end
+
+enhancedR18 = sixgr.util.structGet( ...
+    cfg, "phy.pdsch.dmrs.enhancedR18", ...
+    sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSEnhancedR18", []));
+if ~isempty(enhancedR18)
+    if ~((islogical(enhancedR18) || isnumeric(enhancedR18)) ...
+            && isscalar(enhancedR18) && isfinite(double(enhancedR18)) ...
+            && any(double(enhancedR18) == [0 1]))
+        error("sixgr:pdsch:InvalidDMRSEnhancedR18", ...
+            "DMRSEnhancedR18 must be an explicit logical scalar.");
+    end
+    if isprop(dmrs, "DMRSEnhancedR18")
+        dmrs.DMRSEnhancedR18 = logical(enhancedR18);
+    elseif logical(enhancedR18)
+        error("sixgr:pdsch:DMRSEnhancedR18Unavailable", ...
+            "The installed 5G Toolbox does not expose DMRSEnhancedR18.");
+    end
+end
+
+pdsch.DMRS = dmrs;
+end
+
+function pdsch = localApplyPDSCHPTRSConfig(pdsch, cfg)
+if ~(isstruct(cfg) && isprop(pdsch, "EnablePTRS"))
+    return;
+end
+
+enabled = logical(sixgr.util.structGet(cfg, "phy.pdsch.enablePTRS", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.enable", ...
+    sixgr.util.structGet(cfg, "pdsch6gr.EnablePTRS", ...
+    sixgr.util.structGet(cfg, "PTRS.PTRSEnabled", false)))));
+pdsch.EnablePTRS = enabled;
+if ~enabled || ~isprop(pdsch, "PTRS")
+    return;
+end
+
+ptrs = pdsch.PTRS;
+timeDensity = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.ptrs.timeDensity", []), ...
+    sixgr.util.structGet(cfg, "phy.ptrs.timeDensity", []), ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSTimeDensity", []), ...
+    sixgr.util.structGet(cfg, "PTRS.TimeDensity", []));
+freqDensity = localFirstFiniteScalar( ...
+    sixgr.util.structGet(cfg, "phy.pdsch.ptrs.frequencyDensity", []), ...
+    sixgr.util.structGet(cfg, "phy.ptrs.frequencyDensity", []), ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSFrequencyDensity", []), ...
+    sixgr.util.structGet(cfg, "PTRS.FrequencyDensity", []));
+reOffset = string(sixgr.util.structGet(cfg, "phy.pdsch.ptrs.reOffset", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.reOffset", ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSREOffset", ...
+    sixgr.util.structGet(cfg, "PTRS.REOffset", "")))));
+portSet = sixgr.util.structGet(cfg, "phy.pdsch.ptrs.portSet", ...
+    sixgr.util.structGet(cfg, "phy.ptrs.portSet", ...
+    sixgr.util.structGet(cfg, "pdsch6gr.PTRSPortSet", ...
+    sixgr.util.structGet(cfg, "DMRS.PortSet", []))));
+scheduledDMRSPorts = [];
+try
+    if isprop(pdsch, "DMRS") && isprop(pdsch.DMRS, "DMRSPortSet")
+        scheduledDMRSPorts = double(pdsch.DMRS.DMRSPortSet(:).');
+    end
+catch
+    scheduledDMRSPorts = [];
+end
+% Use the same YAML-owned association resolver as grant freezing.  This
+% keeps direct PHY-calibration execution and scheduled execution identical:
+% first_scheduled_dmrs_port follows the actual allocation, whereas
+% configured_absolute_port must name an exact scheduled DM-RS port.
+[~, portSet] = sixgr.phy.grant.resolveScheduledPTRSPortSet( ...
+    cfg, "DL", scheduledDMRSPorts, struct("PTRSPortSet", portSet));
+
+if isempty(timeDensity)
+    error("sixgr:pdsch:MissingPTRSTimeDensity", ...
+        "Enabled PDSCH PT-RS requires explicit time density.");
+end
+if isempty(freqDensity)
+    error("sixgr:pdsch:MissingPTRSFrequencyDensity", ...
+        "Enabled PDSCH PT-RS requires explicit frequency density.");
+end
+if strlength(strtrim(reOffset)) == 0
+    error("sixgr:pdsch:MissingPTRSREOffset", ...
+        "Enabled PDSCH PT-RS requires an explicit RE offset.");
+end
+if isempty(portSet)
+    error("sixgr:pdsch:MissingPTRSPortSet", ...
+        ["Enabled PDSCH PT-RS with configured_absolute_port policy " ...
+         "requires an explicit associated DM-RS port."]);
+end
+localValidateIntegerMember(timeDensity, [1 2 4 8], "InvalidPTRSTimeDensity");
+localValidateIntegerMember(freqDensity, [2 4], "InvalidPTRSFrequencyDensity");
+portSet = double(portSet(:).');
+if any(~isfinite(portSet)) || any(portSet ~= fix(portSet)) || ...
+        any(portSet < 0) || numel(unique(portSet)) ~= numel(portSet)
+    error("sixgr:pdsch:InvalidPTRSPortAssociation", ...
+        "PT-RS ports must be unique zero-based integer DM-RS ports.");
+end
+try
+    if isprop(ptrs, "TimeDensity")
+        ptrs.TimeDensity = double(timeDensity);
+    end
+    if isprop(ptrs, "FrequencyDensity")
+        ptrs.FrequencyDensity = double(freqDensity);
+    end
+    if isprop(ptrs, "REOffset")
+        ptrs.REOffset = char(reOffset);
+    end
+    if isprop(ptrs, "PTRSPortSet")
+        ptrs.PTRSPortSet = portSet;
+    end
+    pdsch.PTRS = ptrs;
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:BadPTRSConfig", ...
+        "Invalid PDSCH PTRS runtime configuration: %s", ME.message);
+end
+end
+
+function pdsch = localNormalizePDSCHMapping(pdsch, mapType, explicitMapType, fixedReferenceMode)
+if nargin < 2 || strlength(string(mapType)) == 0
+    mapType = "A";
+end
+if nargin < 3
+    explicitMapType = false;
+end
+if nargin < 4
+    fixedReferenceMode = false;
+end
+
+mapType = upper(strtrim(string(mapType)));
+if strlength(mapType) == 0
+    mapType = "A";
+end
+
+symAlloc = double(pdsch.SymbolAllocation(:).');
+if numel(symAlloc) < 2
+    error("sixgr:phy:grid:allocREsPDSCH:MissingExplicitTDRA", ...
+        "PDSCH SymbolAllocation must be present before mapping validation.");
+end
+startSym = double(symAlloc(1));
+typeAPos = 2;
+try
+    if isprop(pdsch, "DMRS") && isprop(pdsch.DMRS, "DMRSTypeAPosition")
+        typeAPos = double(pdsch.DMRS.DMRSTypeAPosition);
+    end
+catch
+end
+localValidateIntegerMember(typeAPos, [2 3], "InvalidDMRSTypeAPosition");
+
+if mapType == "A" && startSym > typeAPos
+    error("sixgr:phy:grid:allocREsPDSCH:InvalidTypeADMRSSymbol", ...
+        "PDSCH MappingType A starts at symbol %d after configured DMRSTypeAPosition=%d.", ...
+        round(double(startSym)), round(double(typeAPos)));
+end
+
+try
+    if isprop(pdsch, "MappingType")
+        pdsch.MappingType = char(mapType);
+    end
+catch ME
+    error("sixgr:phy:grid:allocREsPDSCH:BadMappingType", ...
+        "Invalid PDSCH MappingType '%s': %s", char(mapType), ME.message);
+end
+end
+
+function val = localFirstFiniteScalar(varargin)
+val = [];
+for i = 1:numel(varargin)
+    candidate = varargin{i};
+    if isempty(candidate)
+        continue;
+    end
+    if isnumeric(candidate) && isscalar(candidate) && isfinite(double(candidate))
+        val = double(candidate);
+        return;
+    end
+end
+end
+
+function value = localFirstNonemptyNumeric(varargin)
+value = [];
+for idx = 1:nargin
+    candidate = varargin{idx};
+    if isnumeric(candidate) && ~isempty(candidate)
+        value = candidate;
+        return;
+    end
+end
+end
+
+function localValidateIntegerMember(value, allowed, token)
+if ~(isnumeric(value) && isscalar(value) && isfinite(value) && ...
+        value == fix(value) && ismember(double(value), double(allowed)))
+    error("sixgr:pdsch:" + string(token), ...
+        "Configured PDSCH value %s is invalid.", mat2str(value));
+end
+end
+
+function localValidateDMRSPortSet(ports, numLayers, maxLogicalPort)
+ports = double(ports(:).');
+if nargin < 3
+    maxLogicalPort = 11;
+end
+if any(~isfinite(ports)) || any(ports ~= fix(ports)) || ...
+        any(ports < 0) || any(ports > double(maxLogicalPort)) || ...
+        numel(unique(ports)) ~= numel(ports) || ...
+        numel(ports) ~= double(numLayers)
+    error("sixgr:pdsch:InvalidDMRSPortSet", ...
+        "DM-RS port set must contain one unique logical port per layer.");
+end
+end

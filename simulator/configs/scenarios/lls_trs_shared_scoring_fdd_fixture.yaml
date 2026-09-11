@@ -1,0 +1,11 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring.yaml
+
+meta:
+  scenario_id: lls_trs_shared_scoring_fdd_fixture
+  description: FDD shared physical TRS channel-reference component verification.
+  purpose: Test actual retained channel scoring with absolute receiver thermal noise; not access or main-run qualification.
+  research_class: optional_research_experiment
+
+simulation:
+  noise_operating_mode: receiver_noise_figure_thermal_noise

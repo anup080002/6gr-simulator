@@ -86,6 +86,10 @@ if ~(isscalar(threshold) && isfinite(threshold) && threshold >= 0 && threshold <
     threshold = 0.999;
 end
 exactRate = localNumericColumn(mimoT.ExactMatchPercent);
+% Exact configured/effective equality is a fixed-operating-point contract.
+% Adaptive rows are expected to diverge as CQI/PMI/RI feedback changes the
+% scheduled operating point; their authority is AdaptivePolicyConformance.
+exactEqualityRequired = any(fixedRequired);
 exactRowsOk = schemaOk && evidenceRowsOk && ...
     all(isfinite(exactRate) & exactRate + eps >= threshold);
 exactOk = schemaOk && directionsOk && exactRowsOk;
@@ -94,7 +98,7 @@ status.ConfiguredEffectiveOk = logical(sixgr.util.structGet(status, ...
     "ConfiguredEffectiveOk", false)) && logical(exactOk);
 status.ConfiguredEffectivePolicyOk = logical(sixgr.util.structGet(status, ...
     "ConfiguredEffectivePolicyOk", false)) && logical(policyOk);
-if ~exactOk
+if exactEqualityRequired && ~exactOk
     status.StatusNotes = localJoinStatusNotes( ...
         sixgr.util.structGet(status, "StatusNotes", ""), ...
         "Persisted MIMO exact configured/effective evidence failed or is " + ...

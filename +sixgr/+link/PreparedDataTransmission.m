@@ -15,6 +15,9 @@ classdef PreparedDataTransmission
         SampleRateHz (1,1) double
         StartSample (1,1) double
         EndSampleExclusive (1,1) double
+        ReceiveStartSample (1,1) double
+        ReceiveEndSampleExclusive (1,1) double
+        PhysicalTiming struct
         NumPhysicalTransmitAntennas (1,1) double
         PreparationComputeTime_ms (1,1) double
     end
@@ -36,10 +39,6 @@ classdef PreparedDataTransmission
                 timing = sixgr.util.structGet(binding.Grant,'TimingDecision.DataDecision',struct());
                 assert(isfield(timing,'TimingAdvanceTicks') && timing.Valid, ...
                     'sixgr:link:MissingPreparedULTiming','UL preparation requires the validated scheduling time relation.');
-                assert(timing.TimingAdvanceTicks==0, ...
-                    'sixgr:link:SharedULTimingAdvanceNotIntegrated', ...
-                    ['Nonzero UL timing advance requires separate UE transmit and gNB ' ...
-                     'observation origins; nominal-slot staging cannot silently ignore it.']);
             end
             slot0 = sixgr.util.structGet(rxCfg,'lls6g.runtime.AbsoluteSlotIndex0',NaN);
             scs = double(tx.Carrier.SubcarrierSpacing);
@@ -58,6 +57,28 @@ classdef PreparedDataTransmission
             obj.Tx = tx; obj.TxInfo = info; obj.ReceiverConfig = rxCfg;
             obj.SampleRateHz = double(fs);
             obj.StartSample = round(sampleOrigin);
+            obj.ReceiveStartSample = obj.StartSample;
+            obj.ReceiveEndSampleExclusive = obj.StartSample+size(tx.Waveform,1);
+            obj.PhysicalTiming = struct('Source',"explicit_aligned_component_fixture", ...
+                'WaveformTimingApplied',false,'FiniteWaveformCropped',false);
+            if obj.Direction=="UL"
+                if isfield(cfg,'SharedULTimingContext')
+                    physical=sixgr.link.resolveConnectedULTransmissionTiming( ...
+                        cfg,startTime,fs,size(tx.Waveform,1));
+                    assert(timing.TimingAdvanceTicks==physical.TotalAdvanceTicks, ...
+                        'sixgr:link:DataTimingAuthorityMismatch', ...
+                        'The frozen UL preparation-time relation must include the received NTA and common offset.');
+                    obj.StartSample=physical.TransmitStartSample;
+                    obj.ReceiveStartSample=physical.ReceiveStartSample;
+                    obj.ReceiveEndSampleExclusive=physical.ReceiveEndWithoutChannelTail;
+                    physical.WaveformTimingApplied=true;
+                    obj.PhysicalTiming=physical;
+                else
+                    assert(timing.TimingAdvanceTicks==0, ...
+                        'sixgr:link:SharedULTimingAdvanceNotIntegrated', ...
+                        'Nonzero UL TA requires the received DL clock, RAR and common-offset authority.');
+                end
+            end
             obj.EndSampleExclusive = obj.StartSample+size(tx.Waveform,1);
             obj.NumPhysicalTransmitAntennas = double(binding.PHYGrant.AntennaArchitecture.NumElements);
             obj.PreparationComputeTime_ms = double(elapsed);
@@ -82,19 +103,28 @@ classdef PreparedDataTransmission
                 'sixgr:link:DataObservationPlaneMismatch','Declare the transmitter or receiver observation plane.');
             assert(isa(buffer,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(buffer), ...
                 'sixgr:link:DataObservationRequired','Use actual contiguous sample observations.');
-            intervalOK = buffer.EndSampleExclusive >= obj.EndSampleExclusive;
+            first = obj.ReceiveStartSample;
+            intervalOK = buffer.EndSampleExclusive >= obj.ReceiveEndSampleExclusive;
             if string(plane)=="transmitter"
+                first = obj.StartSample;
                 intervalOK = buffer.EndSampleExclusive == obj.EndSampleExclusive;
             end
             % The RX owner can collect actual channel/filter delay tails.
             % Do not crop those samples to the nominal TX slot length.
             assert(buffer.SampleRateHz == obj.SampleRateHz && ...
-                buffer.StartSample == obj.StartSample && ...
+                buffer.StartSample == first && ...
                 intervalOK && ...
                 buffer.NumReceiveAntennas == numAntennas, ...
                 'sixgr:link:DataObservationMismatch', ...
                 'Observation rate, interval and antenna count must match the prepared data transmission.');
             samples = buffer.readComplete();
+        end
+
+        function interval = receiverTimingSearchWindow(obj,buffer)
+            % Capture coverage, not UE TX phase or a perfect channel delay,
+            % bounds the gNB's DM-RS timing search.
+            obj.readObservation(buffer,buffer.NumReceiveAntennas,"receiver");
+            interval=[0 buffer.EndSampleExclusive-buffer.StartSample-size(obj.Tx.Waveform,1)];
         end
     end
     methods (Static)

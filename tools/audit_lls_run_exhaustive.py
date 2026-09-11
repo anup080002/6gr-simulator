@@ -16,6 +16,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import sys
 from collections import Counter
 from itertools import chain
@@ -105,7 +106,14 @@ def risk_counts(value: str) -> Counter[str]:
     lowered = value.strip().lower()
     result: Counter[str] = Counter()
     for token, kind in RISK_TOKENS.items():
-        if token in lowered:
+        # The short acronym LUT is not the substring in "absolute" or
+        # "resolution". Keep explicit LUT labels (including underscore
+        # and version-number delimiters) and all other risk mentions.
+        found = (
+            re.search(r"(?<![a-z])lut(?![a-z])", lowered) is not None
+            if token == "lut" else token in lowered
+        )
+        if found:
             result[kind] += 1
     return result
 

@@ -53,39 +53,15 @@ classdef PreparedUplinkControlTransmission
             obj.PhysicalTiming=struct('Source',"explicit_aligned_zero_TA_component_fixture", ...
                 'WaveformTimingApplied',false,'FiniteWaveformCropped',false);
             if isfield(cfg,'SharedULTimingContext')
-                context=cfg.SharedULTimingContext;
-                assert(all(isfield(context,{'ReceivedRARTiming','TimingAdvanceAvailableAtSample', ...
-                    'TimingAdvanceEffectiveAtSample','TimeAlignmentExpirySampleExclusive'})), ...
-                    'sixgr:link:MissingReceivedULControlTiming', ...
-                    'Retain decoded RAR timing, receiver availability, TAG application time and timer expiry; no configured TA substitute.');
-                ta=context.ReceivedRARTiming;
-                resolved=sixgr.phy.ra.resolveRARTimingAdvance(ta.Command,ta.FirstULSCSkHz,fs);
-                assert(isequaln(ta,resolved) && options.TimingAdvanceSamples==ta.Samples, ...
+                timing=sixgr.link.resolveConnectedULTransmissionTiming( ...
+                    cfg,origin/fs,fs,size(tx.Waveform,1));
+                ta=timing.ReceivedRARTiming;
+                assert(options.TimingAdvanceSamples==ta.Samples, ...
                     'sixgr:link:ULControlTimingAuthorityMismatch','Received RAR timing and the requested TA must agree exactly.');
-                timing=sixgr.phy.ra.sharedULStageTiming(cfg,origin/fs,fs,size(tx.Waveform,1),ta.NTA_Tc);
-                validateattributes(context.TimingAdvanceAvailableAtSample,{'numeric'}, ...
-                    {'scalar','real','finite','integer','nonnegative'});
-                assert(timing.TransmitStartSample>=context.TimingAdvanceAvailableAtSample, ...
-                    'sixgr:link:ULControlBeforeReceivedTA','An UL transmission cannot use a future decoded timing command.');
-                % TS 38.213 4.2 application time is distinct from decoding.
-                % Its MAC/TAG owner must resolve it using the applicable
-                % processing times; a PHY contributor cannot invent it.
-                validateattributes(context.TimingAdvanceEffectiveAtSample,{'numeric'}, ...
-                    {'scalar','real','finite','integer','>=',context.TimingAdvanceAvailableAtSample});
-                assert(timing.TransmitStartSample>=context.TimingAdvanceEffectiveAtSample, ...
-                    'sixgr:link:ULControlBeforeTAApplication','The decoded TA has not become applicable to this connected UL transmission.');
-                expiry=context.TimeAlignmentExpirySampleExclusive;
-                validateattributes(expiry,{'numeric'},{'scalar','real','positive','nonnan'});
-                assert(isinf(expiry) || expiry==fix(expiry), ...
-                    'sixgr:link:InvalidULTimeAlignmentExpiry','Time-alignment expiry must lie on the sample clock, or be explicitly infinite.');
-                assert(timing.TransmitEndSampleExclusive<=expiry, ...
-                    'sixgr:link:ULControlAfterTimeAlignmentExpiry','The complete connected UL transmission requires valid time alignment.');
                 obj.StartSample=timing.TransmitStartSample;
                 obj.ReceiveStartSample=timing.ReceiveStartSample;
                 obj.ReceiveEndSampleExclusive=timing.ReceiveEndWithoutChannelTail;
-                timing.TimingAdvanceAvailableAtSample=context.TimingAdvanceAvailableAtSample;
-                timing.TimingAdvanceEffectiveAtSample=context.TimingAdvanceEffectiveAtSample;
-                timing.TimeAlignmentExpirySampleExclusive=expiry;
+                timing.WaveformTimingApplied=true;
                 obj.PhysicalTiming=timing;
             else
                 assert(options.TimingAdvanceSamples==0, ...
@@ -128,6 +104,13 @@ classdef PreparedUplinkControlTransmission
                     'sixgr:link:ProxyULControlStreamForbidden','No proxy/fallback primary control evidence.');
             end
             obj.receiverNoiseMode(context.Replay);
+            if obj.Channel=="PUCCH" && obj.RequestBinding.Assignment.Format==0
+                prior=sixgr.util.structGet(context,'ReceivedULTimingReference',[]);
+                assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
+                    'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
+                    'Retain an actual prior received gNB UL clock before receiving pilot-free Format 0.');
+                prior.align(obj,context.Observation); % Validate identity, age and actual sample coverage before RX.
+            end
         end
 
         function mode=receiverNoiseMode(obj,replay)
@@ -147,9 +130,14 @@ classdef PreparedUplinkControlTransmission
             % nonstationary front end. SRS and PUCCH DM-RS allow a practical
             % received-resource disturbance estimate, not exact thermal noise.
             if obj.Channel=="PUCCH"
+                if obj.RequestBinding.Assignment.Format==0
+                    assert(isempty(sixgr.util.structGet(obj.Tx,'DMRSIndices',[])), ...
+                        'sixgr:link:InvalidFormat0DMRS','Format 0 uses normalized sequence correlation without DM-RS or noise-variance scaling.');
+                    mode="noncoherent_correlation";
+                    return; % Unknown variance stays NaN; it is not consumed.
+                end
                 assert(~isempty(sixgr.util.structGet(obj.Tx,'DMRSIndices',[])), ...
-                    'sixgr:link:PUCCHNoiseObservationRequired', ...
-                    'PUCCH Format 0 has no DM-RS; an independent received disturbance observation is required.');
+                    'sixgr:link:PUCCHNoiseObservationRequired','Formats 1-4 require actual received DM-RS disturbance evidence.');
             else
                 assert(~isempty(obj.Tx.SRSIndices) && ~isempty(obj.Tx.SRSSymbols), ...
                     'sixgr:link:SRSNoiseReferenceRequired','Actual SRS reference resources are required.');

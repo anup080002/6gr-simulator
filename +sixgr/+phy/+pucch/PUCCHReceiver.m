@@ -8,7 +8,7 @@ classdef PUCCHReceiver
             addParameter(p,"NoiseVarianceDomain","sample", ...
                 @(x) ischar(x)||isstring(x));
             addParameter(p,"NoiseVarianceMode","provided", ...
-                @(x) isscalar(string(x)) && any(string(x)==["provided","received_dmrs_estimate"]));
+                @(x) isscalar(string(x)) && any(string(x)==["provided","received_dmrs_estimate","noncoherent_correlation"]));
             addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
             addParameter(p,"TimingSearchWindowSamples",[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
             addParameter(p,"DetectionThreshold",0.2,@(x) isnumeric(x)&&isscalar(x));
@@ -20,12 +20,13 @@ classdef PUCCHReceiver
             opt = p.Results;
             receiverPipelineTic = tic;
             estimateNoise=string(opt.NoiseVarianceMode)=="received_dmrs_estimate";
-            if (~estimateNoise && (~isreal(opt.NoiseVariance) || ~isfinite(opt.NoiseVariance) || opt.NoiseVariance < 0)) || ...
-                    (estimateNoise && (~isreal(opt.NoiseVariance) || ~isnan(opt.NoiseVariance)))
+            noncoherent=string(opt.NoiseVarianceMode)=="noncoherent_correlation";
+            if (~estimateNoise && ~noncoherent && (~isreal(opt.NoiseVariance) || ~isfinite(opt.NoiseVariance) || opt.NoiseVariance < 0)) || ...
+                    ((estimateNoise || noncoherent) && (~isreal(opt.NoiseVariance) || ~isnan(opt.NoiseVariance)))
                 error("sixgr:phy:pucch:InvalidNoiseVariance", ...
                     "Provide finite nonnegative variance, or NaN with explicit received_dmrs_estimate mode.");
             end
-            if estimateNoise && ~isempty(opt.InterferenceCovariance)
+            if (estimateNoise || noncoherent) && ~isempty(opt.InterferenceCovariance)
                 error("sixgr:phy:pucch:OverlappingDisturbanceAuthorities", ...
                     "The received DM-RS residual includes disturbance; do not add another interference covariance to it.");
             end
@@ -44,6 +45,9 @@ classdef PUCCHReceiver
                     "Receiver report and assignment contexts differ.");
             end
             pucch = assignment.Resource.toolboxConfig();
+            assert(~noncoherent || assignment.Format==0, ...
+                'sixgr:phy:pucch:NoncoherentNoiseModeFormatMismatch', ...
+                'Noise-independent sequence correlation is only the Format-0 path.');
             [indices,~] = nrPUCCHIndices(carrier,pucch);
             dmrs = sixgr.phy.pucch.PUCCHDMRS.generate( ...
                 carrier,assignment.Resource);
@@ -67,7 +71,12 @@ classdef PUCCHReceiver
             ofdmDemodulationLatency_ms = 1e3 .* toc(ofdmTic);
             channel = upper(string(opt.ChannelProfile));
             sampleNoiseVariance = double(opt.NoiseVariance);
-            if estimateNoise
+            if noncoherent
+                nVar=NaN;
+                noiseSource="unavailable_not_required_by_format0_normalized_correlation";
+                noiseTransform=struct('InputDomain','not_consumed','OutputDomain','not_consumed', ...
+                    'TransformSource',noiseSource,'SampleToGridNoiseVarianceGain',NaN);
+            elseif estimateNoise
                 if isempty(dmrs.Indices)
                     error("sixgr:phy:pucch:NoiseReferenceUnavailable", ...
                         "PUCCH Format 0 has no DM-RS; collect independent received disturbance evidence.");
@@ -150,13 +159,23 @@ classdef PUCCHReceiver
                 reportContext.Sequence2Length;
             gridDisturbanceVariance = localEffectiveScalarVariance( ...
                 nVar,rintGrid,max(1,size(grid,3)));
-            decodeNoiseVariance = localEqualizedNoiseVariance( ...
-                equalizerInfo,gridDisturbanceVariance);
+            decodeNoiseVariance=NaN;
+            if ~noncoherent
+                decodeNoiseVariance = localEqualizedNoiseVariance(equalizerInfo,gridDisturbanceVariance);
+            end
             decodeTic = tic;
             try
+                if noncoherent
+                    % Format 0's normalized cyclic-shift detector does not
+                    % take nVar internally. Do not supply/export a fictitious
+                    % variance or add a noise-dependent energy rescue gate.
+                    [soft,constellation,metric]=nrPUCCHDecode(carrier,pucch,totalA,eq, ...
+                        'DetectionThreshold',opt.DetectionThreshold);
+                else
                 [soft,constellation,metric] = nrPUCCHDecode( ...
                     carrier,pucch,totalA,eq,decodeNoiseVariance, ...
                     "DetectionThreshold",opt.DetectionThreshold);
+                end
             catch ME
                 error("sixgr:phy:pucch:UCIDecodeFailed", ...
                     "PUCCH physical decode failed: %s",ME.message);
@@ -172,7 +191,9 @@ classdef PUCCHReceiver
             decodeLatency_ms = 1e3 .* toc(decodeTic);
             energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
             energyMetric = max(0,(energyRatio-1)/(energyRatio+1));
-            if assignment.Format <= 1 && isscalar(metric) && isfinite(metric)
+            if noncoherent
+                detectionMetric=double(metric);
+            elseif assignment.Format <= 1 && isscalar(metric) && isfinite(metric)
                 detectionMetric = min(double(metric),double(energyMetric));
             else
                 detectionMetric = double(energyMetric);

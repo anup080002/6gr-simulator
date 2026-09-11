@@ -99,14 +99,20 @@ classdef WaveformEventRuntime < handle
             obj.BoundaryIDs(end+1,1)=id;
         end
 
-        function event=advanceUntilEvent(obj,requestedStop)
+        function stop=nextEventSample(obj,requestedStop)
+            % Inspect the next causal boundary before committing schedules.
+            % This does not consume samples, release events or reserve IQ.
             obj.assertMutable();
             validateattributes(requestedStop,{'numeric'},{'real','scalar','finite','integer','>=',obj.NextSampleIndex});
+            stop=min([double(requestedStop),[obj.Windows.Stop],[obj.Boundaries.Sample]]);
+        end
+
+        function event=advanceUntilEvent(obj,requestedStop)
+            stop=obj.nextEventSample(requestedStop);
             if isempty(obj.Transmitters) || isempty(obj.Receivers)
                 error('WAVEFORM:UnconfiguredEventRuntime','Register physical transmitters and observation planes first.');
             end
             first=obj.NextSampleIndex;
-            stop=min([double(requestedStop),[obj.Windows.Stop],[obj.Boundaries.Sample]]);
             event=struct('StartSample',first,'EndSampleExclusive',stop, ...
                 'RequestedStopSample',double(requestedStop),'Decisions',strings(0,1), ...
                 'Completed',struct('ReceiverID',{},'ID',{},'Observation',{},'Segments',{}), ...

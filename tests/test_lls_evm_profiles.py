@@ -34,6 +34,17 @@ PAYLOAD = (
 ).encode()
 
 
+@pytest.mark.parametrize("field,marker", [("Source","fast_proxy"), ("ExecutionBackend","synthetic"),
+    ("ApproximationMode","lut"), ("E2EAirModel","logistic")])
+def test_evm_rejects_conflicting_provenance_even_with_real_truth_status(field, marker):
+    rows = list(csv.DictReader(io.StringIO(PAYLOAD.decode())))
+    stream = io.StringIO()
+    writer = csv.DictWriter(stream, list(rows[0]) + [field])
+    writer.writeheader()
+    writer.writerows([{**row, field: marker} for row in rows])
+    assert render(stream.getvalue().encode())["csv_status"] == "unavailable_exact_reason"
+
+
 def test_evm_energy_normalization_peak_and_slot_identity():
     result = render(PAYLOAD)
     rows = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))

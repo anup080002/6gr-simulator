@@ -57,6 +57,9 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             info = struct();
             info.Slot = slot;
             info.Direction = obj.Direction;
+            info.SchedulerClass = string(class(obj));
+            info.HARQDeferrals = table();
+            info.ResourceExclusions = table();
             candidateRows = repmat(localCandidateRow(), 0, 1);
             info.CandidateTable = localCandidateTable(candidateRows);
             info.DecisionTable = info.CandidateTable;
@@ -129,6 +132,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                             continue;
                         end
                         g = localNormalizeGrant(retx.LastGrant, tmpl, obj.Direction, slot);
+                        [fitsBudget, deferral] = sixgr.l2.mac.harqRetransmissionFitsSymbolBudget(g, symAlloc);
+                        if ~fitsBudget
+                            info.HARQDeferrals = [info.HARQDeferrals; deferral];
+                            continue;
+                        end
                         if isempty(prbAvail)
                             break;
                         end
@@ -139,6 +147,16 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         end
                         % Retx must preserve enough PRBs to carry the stored TB honestly.
                         if nNeed <= 0 || numel(prbAvail) < nNeed
+                            continue;
+                        end
+                        retxIntent=g; retxIntent.HARQ=retx.HARQ;
+                        [retxAvailable,excluded]=obj.ssbSafePRBSet(slot,budget, ...
+                            prbAvail,g.SymbolAllocation,retxIntent);
+                        info.ResourceExclusions=[info.ResourceExclusions;excluded];
+                        [retxPRBs,~]=sixgr.l2.mac.contiguousPRBChunk(retxAvailable,1,nNeed,nNeed);
+                        if isempty(retxPRBs)
+                            info.HARQDeferrals=[info.HARQDeferrals; ...
+                                sixgr.l2.mac.harqPRBDeferral(g,retxAvailable,symAlloc)];
                             continue;
                         end
                         neededCCE = localUEPDCCHCCE(ueStates(k), budget);
@@ -190,10 +208,10 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         end
 
                         if isfinite(peerT)
-                            if all(ismember(g.PRBSet, prbAvail))
+                            if all(ismember(g.PRBSet, retxAvailable)) && all(diff(g.PRBSet)==1)
                                 sharedPRBSet = double(g.PRBSet(:).');
                             else
-                                sharedPRBSet = double(prbAvail(1:nNeed));
+                                sharedPRBSet = retxPRBs;
                             end
                             memberT = [t peerT];
                             memberRetx = {retx, peerRetx};
@@ -221,6 +239,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                                     memberGrant, muSpatialDesign, memberIndex, obj.Direction);
                                 memberGrant = obj.attachULSRSAuthorityToGrant( ...
                                     memberGrant, ueStates(stateIndex));
+                                memberGrant = sixgr.l2.mac.attachReceivedULTimingAuthority(memberGrant,ueStates(stateIndex));
                                 [memberGrant.DMRSPortSet, memberGrant.DMRSPortSetSource] = ...
                                     sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
                                     obj.Cfg, obj.Direction, memberGrant.NumLayers, memberGrant);
@@ -237,8 +256,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                             continue;
                         end
 
-                        if ~all(ismember(g.PRBSet, prbAvail))
-                            g.PRBSet = prbAvail(1:nNeed);
+                        if ~all(ismember(g.PRBSet, retxAvailable)) || ~all(diff(g.PRBSet)==1)
+                            g.PRBSet = retxPRBs;
                         end
                         prbAvail = setdiff(prbAvail, g.PRBSet, 'stable');
                         g = localPrepareRetransmissionGrant(g, retx, ueStates(k), ...
@@ -248,6 +267,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.GrantReason = "harq_retx";
                         g = localMarkUnpairedRetransmission(g);
                         g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
+                        g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                         g = obj.freezePHYGrantForGrant(g);
                         g.DCI = obj.buildDCIBitfield(g);
                         grants = localAppendGrant(grants, g);
@@ -267,6 +287,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             end
 
             % ------------------ 2) PF scheduling for new data ------------------
+            [prbAvail,excluded]=obj.ssbSafePRBSet(slot,budget,prbAvail,symAlloc);
+            info.ResourceExclusions=[info.ResourceExclusions;excluded];
             % Compute PF metric per UE using a hypothetical chunk size
             nPRBAvail = numel(prbAvail);
             nSym = double(symAlloc(2));
@@ -338,7 +360,14 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 end
                 row.HARQHasFreeProcess = true;
 
-                probePRBSet = prbAvail(1:min(probeChunk, numel(prbAvail)));
+                [probePRBSet,~]=sixgr.l2.mac.contiguousPRBChunk(prbAvail,1,probeChunk,1);
+                if isempty(probePRBSet)
+                    row.Rejected=true;
+                    row.RejectionReason="NO_LEGAL_CONTIGUOUS_PRB_ALLOCATION";
+                    candidateRows(end+1,1)=row; %#ok<AGROW>
+                    candidateRowIdxByMetric(t)=numel(candidateRows);
+                    continue;
+                end
                 row.ProbePRBCount = double(numel(probePRBSet));
                 probePlanTimer = tic;
                 plan = obj.buildNewDataGrantPlan(ueStates(k), probePRBSet, symAlloc, bufBytes(k), ...
@@ -403,11 +432,11 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 if cursor > numel(prbAvail)
                     break;
                 end
-                nAlloc = min(prbChunk, numel(prbAvail)-cursor+1);
-                if nAlloc < obj.MinPRBPerUE
+                [candidatePRBSet,chunkStart]=sixgr.l2.mac.contiguousPRBChunk( ...
+                    prbAvail,cursor,prbChunk,obj.MinPRBPerUE);
+                if isempty(candidatePRBSet)
                     break;
                 end
-                candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
                 groupOrd = ord(ii);
                 if muEnabled
                     groupCapacity = min(muMaxUsers, ...
@@ -669,6 +698,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     end
                     stateIndex = ueIdx(groupOrd(gg));
                     g = obj.attachULSRSAuthorityToGrant(g, ueStates(stateIndex));
+                    g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(stateIndex));
                     [g.DMRSPortSet, g.DMRSPortSetSource] = ...
                         sixgr.phy.grant.resolveScheduledDMRSPortSet( ...
                         obj.Cfg, obj.Direction, g.NumLayers, g);
@@ -680,7 +710,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     finalizedGroupGrants = localAppendGrant(finalizedGroupGrants, g);
                 end
                 groupGrants = finalizedGroupGrants;
-                cursor = cursor + max(1, numel(prbSetForGroup));
+                cursor = chunkStart + max(1, numel(prbSetForGroup));
                 usedOrd(ii) = true;
                 usedOrd(ismember(ord, groupOrd(groupValid))) = true;
                 scheduledNewUECount = scheduledNewUECount + actualGroupSize;
@@ -700,7 +730,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
             localDecayUnscheduledCandidates(obj, ueStates, ueIdx, grants);
 
             info.NGrants = numel(grants);
-            info.PRBUnderuse = numel(prbAvail) - max(0, cursor-1);
+            info.PRBUnderuse = numel(setdiff(prbAvail,[grants.PRBSet]));
             info.ProbeElapsed_s = probeElapsed_s;
             info.AllocationElapsed_s = allocElapsed_s;
             info.ScheduleElapsed_s = toc(scheduleTimer);

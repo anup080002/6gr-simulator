@@ -812,6 +812,7 @@ def test_disabled_runtime_capabilities_filter_only_their_own_contracts() -> None
     assert policy["raw_iq_capture_enabled"] is False
     assert policy["raw_grid_capture_enabled"] is False
     assert policy["channel_snapshot_capture_enabled"] is False
+    assert policy["control_evm_capture_enabled"] is False
     assert policy["fading_enabled"] is False
     assert policy["interference_enabled"] is True
     assert policy["initial_access_enabled"] is True
@@ -828,6 +829,9 @@ def test_disabled_runtime_capabilities_filter_only_their_own_contracts() -> None
         "pre-channel waveform",
         "DMRS/PTRS occupancy map",
         "true H(tau) if available",
+        "PRACH EVM",
+        "SSB EVM",
+        "CSI-RS EVM",
         "pathloss distribution",
         "delay spread chart",
     ):
@@ -1491,8 +1495,8 @@ def test_runtime_grid_spectrum_and_audit_charts_use_exact_sources() -> None:
         [[1, 0, 1, "PDSCH", "PDSCH", 1], [1, 1, 1, "SSB", "PBCH", 1], [2, 0, 1, "PUSCH", "PUSCH", 1]],
     )
     waveform_csv = materializer._encode_csv(  # noqa: SLF001
-        ["SampleIndex", "Time_s", "TxReal", "TxImag", "RxReal", "RxImag"],
-        [[index + 1, index / 1e6, (-1) ** index, 0, 0.5 * ((-1) ** index), 0] for index in range(16)],
+        ["Panel", "Status", "truth_status", "SourceArtifact", "Direction", "SnapshotID", "XValue", "YValue", "Series", "SampleRate_Hz"],
+        [["spectrum", "available", "real_lls_evidence", "runtime_phy_arrays_same_trial", "DL", "snapshot-1", -8e6 + index * 1e6, -60 + index, "tx", 16e6] for index in range(16)],
     )
     status_csv = materializer._encode_csv(  # noqa: SLF001
         ["required_flag", "status"],
@@ -1500,7 +1504,7 @@ def test_runtime_grid_spectrum_and_audit_charts_use_exact_sources() -> None:
     )
     existing = {
         "reports/csv/live_re_allocation_snapshot.csv": {"artifact_id": 31, "logical_path": "reports/csv/live_re_allocation_snapshot.csv"},
-        "reports/csv/live_waveform_preview.csv": {"artifact_id": 32, "logical_path": "reports/csv/live_waveform_preview.csv"},
+        "reports/csv/phy_signal_diagnostic_source.csv": {"artifact_id": 32, "logical_path": "reports/csv/phy_signal_diagnostic_source.csv"},
         "reports/csv/live_required_vs_optional_case_status.csv": {"artifact_id": 33, "logical_path": "reports/csv/live_required_vs_optional_case_status.csv"},
     }
     payloads = {31: re_csv, 32: waveform_csv, 33: status_csv}
@@ -1518,7 +1522,7 @@ def test_runtime_grid_spectrum_and_audit_charts_use_exact_sources() -> None:
 
     assert grid is not None and grid["source_row_count"] == 3
     assert "rb_index" in grid["csv_bytes"].decode("utf-8")
-    assert spectrum is not None and "relative_psd_db" in spectrum["csv_bytes"].decode("utf-8")
+    assert spectrum is not None and "relative_spectral_level_db" in spectrum["csv_bytes"].decode("utf-8")
     assert status is not None and "x_value,y_value" in status["csv_bytes"].decode("utf-8")
 
 

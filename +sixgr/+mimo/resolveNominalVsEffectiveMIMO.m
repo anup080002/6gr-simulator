@@ -46,7 +46,7 @@ portMapping = localAntennaPortMapping(cfgT, rankTrials);
 precoderEvidence = localPrecoderEvidence(rankTrials);
 beamCodebook = localBeamCodebook(cfgT, rankTrials);
 beamSweep = localBeamSweep(rankTrials);
-negativeTrials = localNegativeTrials(cfgT, rankTrials, configuredEffective, runId);
+negativeTrials = localNegativeTrials();
 oracleGuard = localOracleGuard(rankTrials, runId);
 toolbox = localToolboxCapabilities();
 
@@ -967,20 +967,13 @@ end
 T = struct2table(rows);
 end
 
-function T = localNegativeTrials(cfgT, rankT, configuredEffective, runId)
+function T = localNegativeTrials()
+% This evidence builder does not execute injected-fault waveform trials.
+% Observed configuration/runtime mismatches remain failed objectives in
+% ConfiguredVsEffective and StrictGateSummary, not passed negative tests.
 rows = repmat(struct("RunId","", "NegativeTrialType","", "InjectedFault","", ...
     "ExpectedFailureStage","", "ObservedFailureStage","", "ExactConfiguredMatch",false, ...
     "DecodeCrcPass",false, "StrictOk",false, "NegativeExpectedOk",false, "FailureReason",""), 0, 1);
-for i = 1:height(configuredEffective)
-    if logical(configuredEffective.ScenarioObjectivePass(i)), continue; end
-    row = struct("RunId",string(runId), "NegativeTrialType","configured_effective_collapse", ...
-        "InjectedFault","observed_runtime_rank_layer_or_mcs_mismatch", ...
-        "ExpectedFailureStage","configured_vs_effective_gate", ...
-        "ObservedFailureStage","configured_vs_effective_gate", ...
-        "ExactConfiguredMatch",false, "DecodeCrcPass",false, "StrictOk",false, ...
-        "NegativeExpectedOk",true, "FailureReason",string(configuredEffective.FailureReason(i)));
-    rows(end+1, 1) = row; %#ok<AGROW>
-end
 T = struct2table(rows);
 end
 

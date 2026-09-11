@@ -141,12 +141,13 @@ reference_signals:
     enabled: true
     num_ports: 1
     scrambling_id: 7
-    row_number: 2
-    symbol_location: 4
+    row_number: 1
+    symbol_locations: [4, 8]
     subcarrier_location: 0
     rb_offset: 0
     num_rb: 24
     slot_numbers: [0, 1]
+    burst_length_slots: 2
     detection_threshold: 0.55
     min_coverage_ratio: 0.95
     timing_tolerance_samples: 2

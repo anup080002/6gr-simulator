@@ -1,10 +1,11 @@
 function out = classifyPUCCHGrantDisposition(grants, pucchTrials)
 %CLASSIFYPUCCHGRANTDISPOSITION Prove how each scheduled feedback grant ended.
 %
-% A PUCCH grant is resolved only by one of three explicit runtime outcomes:
+% A PUCCH grant is resolved only by one of four explicit runtime outcomes:
 % a matching standalone PUCCH receiver trial, an exact same-waveform
 % UCI-on-PUSCH decode consumed by HARQ state, or an explicitly finalized
-% cancellation. A scheduler grant alone is never receiver evidence.
+% cancellation/censoring disposition. A scheduler grant alone is never
+% receiver evidence.
 
 if nargin < 2 || ~istable(pucchTrials)
     pucchTrials = table();
@@ -16,6 +17,7 @@ end
 n = height(grants);
 scheduled = localLogical(grants, "GrantScheduledFlag", true(n, 1));
 cancelled = localLogical(grants, "CanceledAtSweepBoundary", false(n, 1));
+rightCensored = localLogical(grants, "RightCensored", false(n, 1));
 finalized = localLogical(grants, "FinalizedFlag", true(n, 1));
 
 transferContext = localString(grants, "PUSCHGrantContextId", repmat("", n, 1));
@@ -31,16 +33,23 @@ transferred = localLogical(grants, "MultiplexedOnPUSCH", false(n, 1)) & ...
 
 standalone = localMatchedStandaloneReceiverRows(grants, pucchTrials);
 cancelled = cancelled & finalized;
-resolved = ~scheduled | transferred | standalone | cancelled;
+rightCensorReason = lower(localString(grants, "CensorReason", repmat("", n, 1)));
+rightCensorStatus = upper(localString(grants, "Status", repmat("", n, 1)));
+rightCensored = rightCensored & finalized & ...
+    strlength(rightCensorReason) > 0 & ...
+    rightCensorReason ~= "not_applicable_for_active_pucch_grant_trace_runtime" & ...
+    rightCensorStatus == "RIGHT_CENSORED";
+resolved = ~scheduled | transferred | standalone | cancelled | rightCensored;
 reason = repmat("unresolved_scheduled_feedback_grant", n, 1);
 reason(~scheduled) = "not_scheduled";
 reason(cancelled) = "explicitly_finalized_cancellation";
+reason(rightCensored) = "explicitly_finalized_right_censoring";
 reason(standalone) = "matched_standalone_pucch_receiver_trial";
 reason(transferred) = "same_waveform_pusch_uci_decode_consumed";
 
-rows = table(scheduled, transferred, standalone, cancelled, resolved, reason, ...
+rows = table(scheduled, transferred, standalone, cancelled, rightCensored, resolved, reason, ...
     'VariableNames', {'Scheduled','TransferredOnPUSCH','StandalonePUCCHTrialMatched', ...
-    'CancelledFinalized','Resolved','Disposition'});
+    'CancelledFinalized','RightCensoredFinalized','Resolved','Disposition'});
 if ismember("PUCCHGrantId", string(grants.Properties.VariableNames))
     rows.PUCCHGrantId = localString(grants, "PUCCHGrantId", repmat("", n, 1));
     rows = movevars(rows, "PUCCHGrantId", "Before", 1);
@@ -52,10 +61,11 @@ out = struct( ...
     "TransferredCount", double(nnz(scheduled & transferred)), ...
     "StandaloneTrialCount", double(nnz(scheduled & standalone)), ...
     "CancelledCount", double(nnz(scheduled & cancelled)), ...
+    "RightCensoredCount", double(nnz(scheduled & rightCensored)), ...
     "ResolvedCount", double(nnz(scheduled & resolved)), ...
     "UnresolvedCount", double(nnz(scheduled & ~resolved)), ...
     "AllScheduledResolved", logical(all(~scheduled | resolved)), ...
-    "SchemaVersion", "pucch_grant_disposition_v1");
+    "SchemaVersion", "pucch_grant_disposition_v2");
 end
 
 function matched = localMatchedStandaloneReceiverRows(grants, trials)

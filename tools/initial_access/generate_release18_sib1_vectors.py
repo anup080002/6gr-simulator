@@ -239,6 +239,18 @@ def object_from_semantic(s: dict[str, Any]) -> dict[str, Any]:
                 "nrofCandidates": {f"aggregationLevel{al}": f"n{n}" for al, n in zip((1, 2, 4, 8, 16), ss["nrofCandidates"])},
                 "searchSpaceType": ("common", {"dci-Format0-0-AndFormat1-0": {}})})
         serving["downlinkConfigCommon"]["initialDownlinkBWP"]["pdcch-ConfigCommon"] = ("setup", common)
+    if "pucch_config_common" in s:
+        # Independent construction from TS 38.331 PUCCH-ConfigCommon.
+        spec = s["pucch_config_common"]
+        common = {"pucch-GroupHopping": spec["pucch_GroupHopping"]}
+        for semantic_name, asn1_name in (
+            ("pucch_ResourceCommon", "pucch-ResourceCommon"),
+            ("hoppingId", "hoppingId"),
+            ("p0_nominal", "p0-nominal"),
+        ):
+            if semantic_name in spec:
+                common[asn1_name] = int(spec[semantic_name])
+        serving["uplinkConfigCommon"]["initialUplinkBWP"]["pucch-ConfigCommon"] = ("setup", common)
     return {"message": ("c1", ("systemInformationBlockType1", sib))}
 
 
@@ -341,6 +353,13 @@ def variants() -> list[tuple[str, str, dict[str, Any]]]:
         cce_REG_MappingType="interleaved", reg_BundleSize="n6", interleaverSize="n2", shiftIndex=7)
     interleaved["pdcch_config_common"]["commonSearchSpaceList"][0]["monitoringSlotPeriodicityAndOffset"] = {
         "periodicity": "sl20", "offset": 3}
+    pucch_common = json.loads(json.dumps(common))
+    pucch_common["pucch_config_common"] = {
+        "pucch_ResourceCommon": 0,
+        "pucch_GroupHopping": "neither",
+        "hoppingId": 1,
+        "p0_nominal": -90,
+    }
     return [
         ("SIB1-UPER-001", "baseline_fr1_30khz", one),
         ("SIB1-UPER-002", "case_a_15khz", two),
@@ -349,6 +368,7 @@ def variants() -> list[tuple[str, str, dict[str, Any]]]:
         ("SIB1-UPER-005", "bounded_optional_load", five),
         ("SIB1-UPER-009", "ra_common_control_shifted_mixed_numerology_bwps", common),
         ("SIB1-UPER-010", "ra_common_interleaved_periodic_monitoring", interleaved),
+        ("SIB1-UPER-011", "initial_access_common_pucch_authority", pucch_common),
     ]
 
 

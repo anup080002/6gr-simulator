@@ -19,14 +19,22 @@ end
 seq = sixgr.rach.generatePRACHSequence(cfg, "Occasion", occasion, "PreambleIndex", opts.PreambleIndex);
 [waveform, grid, ofdmInfo, backend] = localModulatePRACHSequence(seq);
 
-numTxAnt = round(double(sixgr.util.structGet(cfg, "NumTxAntennas", 1)));
+numTxAnt = double(sixgr.util.structGet(cfg, "NumTxAntennas", 1));
+assert(isscalar(numTxAnt) && isreal(numTxAnt) && isfinite(numTxAnt) && ...
+    numTxAnt>=1 && numTxAnt==fix(numTxAnt), ...
+    'sixgr:rach:InvalidWaveformPortCount','PRACH waveform-port count must be a positive integer.');
+waveformPortGrid = grid;
 if numTxAnt > 1
     waveform = repmat(waveform, 1, numTxAnt) / sqrt(numTxAnt);
+    waveformPortGrid = repmat(grid, 1, 1, numTxAnt) / sqrt(numTxAnt);
 end
 
 tx = struct();
 tx.Waveform = waveform;
+tx.WaveformHashPlane = "prach_generator_before_preamble_power_control_spatial_mapping_and_rf";
 tx.Grid = grid;
+tx.WaveformPortResourceGrid = waveformPortGrid;
+tx.ResourceGridDomain = "prach_native_ofdm";
 tx.Symbols = seq.Symbols;
 tx.Indices = seq.Indices;
 tx.Carrier = seq.Carrier;

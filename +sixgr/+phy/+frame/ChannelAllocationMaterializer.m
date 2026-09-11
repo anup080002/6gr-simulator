@@ -211,17 +211,26 @@ classdef ChannelAllocationMaterializer
             end
             if isempty(coordinates) || size(coordinates, 2) ~= 3
                 error("sixgr:phy:frame:EmptyToolboxAllocation", ...
-                    "nrPRACHIndices returned no active carrier-grid RE.");
+                    "nrPRACHIndices returned no active native PRACH-grid RE.");
             end
             coordinates = unique(coordinates, "rows", "stable");
             component = localCoordinateComponent(coordinates, ...
                 "PRACH", "nrPRACHIndices:subscript_0based", opt);
-            allocation = localAllocationFromCoordinates( ...
-                "PRACH", "UL", coordinates, "", opt);
+            % PRACH bins/symbols do not define carrier PRBs/OFDM symbols.
+            % No ResourceAllocationValidator carrier envelope may be made
+            % from these native indices, even when both SCS values match.
+            allocation = struct('GridDomain',"prach_native_ofdm", ...
+                'NativeCoordinates0Based',coordinates, ...
+                'NativeSubcarrierSpacingHz',1000*double(prach.SubcarrierSpacing));
             result = localResult("PRACH", "nrPRACHIndices", ...
                 allocation, coordinates, opt);
             result.Resources = component;
             result.IndicesInfo = indexInfo;
+            result.GridDomain="prach_native_ofdm";
+            nativeGrid=nrPRACHGrid(carrier,prach);
+            result.NativeGridSubcarrierSpacingHz=1000*double(prach.SubcarrierSpacing);
+            result.NativeGridSubcarrierCount=size(nativeGrid,1);
+            result.NativeGridSymbolCount=size(nativeGrid,2);
         end
 
         function result = materializeReferenceSignal( ...

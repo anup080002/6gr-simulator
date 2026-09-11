@@ -84,7 +84,7 @@ for invalidOrdinal=[0,1.5,NaN,3]
         state,pending,invalid,cfg,2,2), ...
         'sixgr:truth:MissingCollidingQueuedPUSCHGrant');
 end
-wrongSlot=pending; wrongSlot(1).ScheduledAbsoluteSlot=3;
+wrongSlot=pending; wrongSlot(1).Slot=3;
 localReject(@()sixgr.truth.resolveSRSPUSCHRuntimePriority( ...
     state,wrongSlot,decision,cfg,2,2),'sixgr:truth:SRSPUSCHCollisionSlotMismatch');
 
@@ -132,7 +132,7 @@ end
 function grant = localGrant(ueIndex)
 grant = struct("UEIndex", double(ueIndex), ...
     "RNTI", double(100 + ueIndex), ...
-    "ScheduledAbsoluteSlot", 2);
+    "Slot", 2);
 end
 
 function T = localDecision(pair, ordinal)

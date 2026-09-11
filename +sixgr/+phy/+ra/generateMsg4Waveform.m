@@ -2,25 +2,24 @@ function [tx, sched] = generateMsg4Waveform(cfg, raCfg, msg4)
 %GENERATEMSG4WAVEFORM Carry contention resolution on temp C-RNTI PDSCH.
 cfgTx = sixgr.phy.ra.localizeCarrierConfig(cfg, raCfg, raCfg.Msg4Slot);
 [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgTx);
-sched = localMsg4Schedule(raCfg);
+sched = sixgr.phy.ra.scheduleMsg4(raCfg);
 cfgTx = sixgr.phy.ra.localizeRAPDSCHConfig(cfgTx, sched.PDSCH);
 cfgTx.phy.pdcch.rnti = double(raCfg.TempCRNTI);
-cfgTx.phy.pdcch.KBits = double(raCfg.DCIPayloadBits);
-cfgTx.phy.pdcch.dciPayloadBits = double(raCfg.DCIPayloadBits);
+cfgTx.phy.pdcch.KBits = double(raCfg.Msg4DCIPayloadBits);
+cfgTx.phy.pdcch.dciPayloadBits = double(raCfg.Msg4DCIPayloadBits);
 cfgTx.phy.pdcch.blindSearch = logical(sixgr.util.structGet(cfg, ...
     "phy.pdcch.blindSearch", false));
 sixgr.config.assertRuntimeFeatureUse(cfgTx, "pdcch_blind_search", ...
     cfgTx.phy.pdcch.blindSearch, "generateMsg4Waveform");
 cfgTx.phy.pdcch.allowBlindCandidateTimingEstimate = false;
-cfgTx.phy.pdcch.aggregationLevel = 4;
-cfgTx.phy.pdcch.searchSpace.numCandidates = [0 0 1 0 0];
-cfgTx = sixgr.phy.ra.localizeRAPDCCHConfig(cfgTx, carrier);
+[commonPDCCH,commonEvidence] = sixgr.phy.ra.buildMsg4CommonPDCCH(cfgTx,raCfg,carrier);
 
 [pdcchTx, pdcchInfo] = sixgr.phy.dl.PDCCH_Tx(cfgTx, "Carrier", carrier, ...
-    "DCIBits", sched.DCIBits, "K", double(raCfg.DCIPayloadBits), ...
-    "RNTI", double(raCfg.TempCRNTI), "NCellID", double(raCfg.NCellID), ...
+    "PDCCH",commonPDCCH, "DCIBits", sched.DCIBits, "K", double(raCfg.Msg4DCIPayloadBits), ...
+    "RNTI", double(raCfg.TempCRNTI), "PDCCHScramblingRNTI",0, "NCellID", double(raCfg.NCellID), ...
     "OFDMModulate", true);
 sched.PDCCH = pdcchTx.PDCCH;
+pdcchInfo.CommonControlEvidence = commonEvidence;
 controlEvent = sixgr.pdsch.RASIPDSCHContext.scheduledControlEvent( ...
     "msg4_contention_resolution", ...
     double(raCfg.TempCRNTI), "1_0", sched.DCIBits, ...
@@ -53,6 +52,9 @@ tx.Msg4 = msg4;
 tx.Msg4BitLength = double(numel(msg4.PayloadBits));
 tx.TransportBlockSize = double(pdschTx.TransportBlockSize);
 tx.PDCCHInfo = pdcchInfo;
+tx.Msg4DCIFieldTable = sched.DCIFieldTable;
+tx.Msg4DCIContextDigest = sched.DCIContext.Digest;
+tx.Msg4DCIReferenceSource = sched.DCIContext.Data.FrequencyReferenceSource;
 tx.PDSCHInfo = pdschInfo;
 tx.PDSCHControlEvent = strict.ControlEvent;
 tx.PDSCHAssignment = strict.Assignment;
@@ -67,51 +69,6 @@ sched.PDSCHExecutionProfile = "ra_si_strict";
 sched.PDSCHControlEventId = strict.ControlEvent.Id;
 end
 
-function sched = localMsg4Schedule(raCfg)
-pdsch = nrPDSCHConfig;
-s = raCfg.Msg4PDSCH;
-pdsch.PRBSet = double(s.PRBStart):(double(s.PRBStart) + double(s.NumPRB) - 1);
-pdsch.SymbolAllocation = [double(s.SymbolStart) double(s.NumSymbols)];
-pdsch.Modulation = char(string(s.Modulation));
-pdsch.NumLayers = double(s.NLayers);
-pdsch.RNTI = double(raCfg.TempCRNTI);
-pdsch.NID = double(raCfg.NCellID);
-pdsch.MappingType = "A";
-pdsch.DMRS.DMRSConfigurationType = 1;
-pdsch.DMRS.DMRSTypeAPosition = 2;
-pdsch.DMRS.DMRSAdditionalPosition = 0;
-pdsch.DMRS.DMRSLength = 1;
-pdsch.DMRS.NumCDMGroupsWithoutData = 1;
-pdsch.DMRS.NIDNSCID = double(raCfg.NCellID);
-pdsch.DMRS.NSCID = 0;
-pdsch.DMRS.DMRSPortSet = 0;
-pdsch.EnablePTRS = logical(sixgr.util.structGet(s, "EnablePTRS", false));
-if pdsch.EnablePTRS
-    pdsch.PTRS.PTRSPortSet = double(sixgr.util.structGet(s, "PTRSPortSet", 0));
-    pdsch.PTRS.TimeDensity = double(sixgr.util.structGet(s, "PTRSTimeDensity", 1));
-    pdsch.PTRS.FrequencyDensity = double(sixgr.util.structGet(s, "PTRSFrequencyDensity", 2));
-    pdsch.PTRS.REOffset = char(string(sixgr.util.structGet(s, "PTRSREOffset", "00")));
-end
-sched = struct();
-sched.RNTI = double(raCfg.TempCRNTI);
-sched.DCIFormat = "1_0";
-sched.DCIBits = int8([localIntToBits(s.PRBStart, 8); localIntToBits(s.NumPRB, 8); ...
-    localIntToBits(s.SymbolStart, 4); localIntToBits(s.NumSymbols, 4); ...
-    localIntToBits(s.MCS, 5); localIntToBits(s.RV, 2); 1]);
-sched.PDSCH = pdsch;
-sched.MCS = double(s.MCS);
-sched.MCSTable = string(s.MCSTable);
-sched.TargetCodeRate = double(s.TargetCodeRate);
-sched.RV = double(s.RV);
-end
-
-function bits = localIntToBits(value, nBits)
-value = uint32(max(0, round(double(value))));
-bits = zeros(nBits, 1, "int8");
-for ii = 1:nBits
-    bits(ii) = int8(bitand(bitshift(value, -(nBits - ii)), 1));
-end
-end
 
 function bits = localPadBits(src, nBits)
 src = int8(src(:) ~= 0);
@@ -158,6 +115,7 @@ end
 
 function context = localProcedureContext(cfg, raCfg, sched)
 context = struct( ...
+    "DCIContext",sched.DCIContext, ...
     "Procedure", "msg4_contention_resolution", ...
     "RNTI", double(raCfg.TempCRNTI), ...
     "RNTIType", "TC-RNTI", ...
@@ -168,12 +126,11 @@ context = struct( ...
     "PDCCHAbsoluteSlot", double(raCfg.Msg4Slot), ...
     "PDSCHAbsoluteSlot", double(raCfg.Msg4Slot), ...
     "K0", 0, "MCSTable", string(sched.MCSTable), ...
-    "MCSIndex", double(raCfg.Msg4PDSCH.MCS), ...
+    "MCSIndex", double(sched.MCS), ...
     "TargetCodeRate", double(sched.TargetCodeRate), ...
-    "XOverhead", sixgr.phy.dl.resolvePDSCHXOverhead( ...
-        cfg, sched.PDSCH.SymbolAllocation), ...
-    "RV", double(sched.RV), "NDI", 1, ...
-    "HARQProcessId", 0, "TCIStateId", 0, ...
+    "XOverhead", 0, ...
+    "RV", double(sched.RV), "NDI", double(sched.NDI), ...
+    "HARQProcessId", double(sched.HARQProcessId), "TCIStateId", 0, ...
     "ActiveBWPContextPresent", true, "EpochCurrent", true, ...
     "ServingCellActive", true, "MCSContextSupported", true, ...
     "TCIStateActive", true, "UECapability1024QAM", false, ...
@@ -183,4 +140,6 @@ context = struct( ...
     "DeploymentClass", "common_search_space_ra_si", ...
     "FrequencyRangeAllows1024QAM", false, ...
     "BandAllows1024QAM", false);
+context.CommonQCLReference = sixgr.pdsch.CommonPDSCHQCLReference.fromRA( ...
+    cfg,context.Procedure,double(raCfg.NCellID));
 end

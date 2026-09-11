@@ -1,0 +1,13 @@
+function match=matchRuntimeUCIOwner(grantUE,reportUE)
+% Runtime UEIndex is the simulator-wide owner; RNTI must not override it.
+% RNTIs belong to radio contexts and can be reused. This function does not
+% infer a missing UE from an RNTI, cell drop order or a configured offset.
+if ~isnumeric(grantUE) || ~isreal(grantUE) || ~isscalar(grantUE) || ...
+        ~isfinite(grantUE) || grantUE<1 || grantUE~=fix(grantUE) || ...
+        ~isnumeric(reportUE) || ~isreal(reportUE) || ...
+        any(~isfinite(reportUE) | reportUE<1 | reportUE~=fix(reportUE),'all')
+    error('sixgr:truth:MissingRuntimeUCIOwner', ...
+        'PUSCH and pending UCI require explicit positive integer runtime UEIndex ownership.');
+end
+match=double(reportUE)==double(grantUE);
+end

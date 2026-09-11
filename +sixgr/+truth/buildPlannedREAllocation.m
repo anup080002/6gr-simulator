@@ -66,7 +66,7 @@ pdcchEnabled = isSelected("PDCCH") && ...
 pdschEnabled = isSelected("PDSCH") && ...
     logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", true));
 [rows, checks] = localAttempt(rows, checks, "PDSCH", "DL", ...
-    pdschEnabled, "scheduler_grant_resolved_from_RRC_BWP", ...
+    pdschEnabled, "configured_RRC_BWP_resource_pool_not_scheduler_grant", ...
     "allocREsPDSCH+nrPDSCHIndices", ...
     @() localPDSCH(cfg, carrier, totalSlots, frame));
 
@@ -101,7 +101,7 @@ pucchEnabled = isSelected("PUCCH") && ...
 puschEnabled = isSelected("PUSCH") && ...
     logical(sixgr.util.structGet(cfg, "phy.pusch.enable", true));
 [rows, checks] = localAttempt(rows, checks, "PUSCH", "UL", ...
-    puschEnabled, "scheduler_grant_resolved_from_RRC_UL_BWP", ...
+    puschEnabled, "configured_RRC_UL_BWP_resource_pool_not_scheduler_grant", ...
     "allocREsPUSCH+nrPUSCHIndices", ...
     @() localPUSCH(cfg, carrier, totalSlots, frame));
 
@@ -116,6 +116,10 @@ if isempty(rows)
     T = struct2table(repmat(localEmptyRow(), 0, 1), "AsArray", true);
 else
     T = struct2table(rows, "AsArray", true);
+    carrierRows=T.grid_domain=="carrier_cp_ofdm";
+    T.grid_subcarrier_spacing_hz(carrierRows)=1000*double(carrier.SubcarrierSpacing);
+    T.grid_subcarrier_count(carrierRows)=12*double(carrier.NSizeGrid);
+    T.grid_symbol_count(carrierRows)=double(carrier.SymbolsPerSlot);
     slotsPerFrame = 10 * round(double(carrier.SlotsPerSubframe));
     T.sfn = floor(T.absolute_slot ./ slotsPerFrame);
     T.slot_within_frame = mod(T.absolute_slot, slotsPerFrame);
@@ -232,15 +236,14 @@ if isempty(type0) || ~isstruct(type0) || ~isfield(type0,"Resolution")
     error("sixgr:truth:MissingType0ForSIB1", ...
         "SIB1 allocation requires successfully resolved Type-0 PDCCH.");
 end
-slot0 = type0.Slots(1);
-c = localCarrierAtSlot(carrier,slot0);
-[~,pdsch] = sixgr.phy.broadcast.buildSIB1DCI10(c,type0.Config, ...
-    "PRBCount",min(24,double(c.NSizeGrid)));
+[~,cfgSI,c,~,slot0] = sixgr.phy.broadcast.resolveSIB1ControlOccasion(carrier,cfg);
+pdsch = sixgr.phy.broadcast.configuredSIB1Allocation(c,cfgSI);
 materialized = sixgr.phy.frame.ChannelAllocationMaterializer. ...
     materializePDSCH(c,pdsch,"AbsoluteSlot",slot0);
-rows = localResultRows(materialized,slot0,"SIB1_PDSCH",1,1, ...
-    "decoded_Type0_DCI_1_0_SI_RNTI", ...
+rows = localResultRows(materialized,slot0,"SIB1_PDSCH",1,double(pdsch.NumLayers), ...
+    "configured_Type0_DCI_1_0_SI_RNTI_not_received", ...
     "buildSIB1DCI10+nrPDSCHIndices");
+for rowIndex = 1:numel(rows), rows(rowIndex).ue_id = NaN; end
 out = localPayload(rows,size(materialized.ActualCoordinates0Based,1), ...
     "SI-RNTI DCI and SIB1 PDSCH resolve on the same slot");
 end
@@ -270,32 +273,41 @@ out = localPayload(rows,count,"dedicated PDCCH monitoring occasions resolved");
 end
 
 function out = localPDSCH(cfg,carrier,totalSlots,frame)
-[~,~,pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier,cfg);
-rows = repmat(localEmptyRow(),0,1); count = 0;
+rows = repmat(localEmptyRow(),0,1); count = 0; blockedSlots = 0;
 for slot0 = 0:(totalSlots-1)
+    actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    c=sixgr.phy.grid.makeCarrier(actual);
+    pdsch=sixgr.phy.grid.pdschConfigFromConfig(c,actual);
     if ~frame.IsDLAllocation(slot0,double(pdsch.SymbolAllocation)), continue; end
-    c = localCarrierAtSlot(carrier,slot0);
+    reservation=sixgr.phy.frame.ssbPRBSymbolReservation(actual,c,slot0);
+    available=sixgr.phy.grid.pdschPRBsWithoutReservedDMRS(c,pdsch,reservation.ReservedCarrierRE0);
+    if isempty(available), blockedSlots=blockedSlots+1; continue; end
+    % The pool can contain multiple islands. It is not a DCI/grant: actual
+    % scheduling still enforces contiguous chunks, queue and capability limits.
+    [~,~,pdsch]=sixgr.phy.grid.allocREsPDSCH(c,actual,'PRBSet',available);
     m = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePDSCH(c,pdsch,"AbsoluteSlot",slot0);
     rows = [rows; localResultRows(m,slot0,"PDSCH",1, ...
-        double(pdsch.NumLayers),"scheduler_grant_resolved_from_RRC_BWP", ...
+        double(pdsch.NumLayers),"configured_RRC_BWP_resource_pool_not_scheduler_grant", ...
         "allocREsPDSCH+nrPDSCHIndices")]; %#ok<AGROW>
     count = count + size(m.ActualCoordinates0Based,1);
 end
 if count == 0, error("sixgr:truth:NoPDSCHOccasion","No legal PDSCH occasion resolved."); end
-out = localPayload(rows,count,"PDSCH data, DM-RS and PT-RS resolved");
+out = localPayload(rows,count,sprintf( ...
+    'Per-occasion PDSCH resource pools resolved; %d DL occasions have no SSB-safe PRBs. Not executed grants.',blockedSlots));
 end
 
 function out = localPUSCH(cfg,carrier,totalSlots,frame)
-[~,~,pusch] = sixgr.phy.grid.allocREsPUSCH(carrier,cfg);
 rows = repmat(localEmptyRow(),0,1); count = 0;
 for slot0 = 0:(totalSlots-1)
+    actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    c=sixgr.phy.grid.makeCarrier(actual);
+    [~,~,pusch]=sixgr.phy.grid.allocREsPUSCH(c,actual);
     if ~frame.IsULAllocation(slot0,double(pusch.SymbolAllocation)), continue; end
-    c = localCarrierAtSlot(carrier,slot0);
     m = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePUSCH(c,pusch,"AbsoluteSlot",slot0);
     rows = [rows; localResultRows(m,slot0,"PUSCH",1, ...
-        double(pusch.NumLayers),"scheduler_grant_resolved_from_RRC_UL_BWP", ...
+        double(pusch.NumLayers),"configured_RRC_UL_BWP_resource_pool_not_scheduler_grant", ...
         "allocREsPUSCH+nrPUSCHIndices")]; %#ok<AGROW>
     count = count + size(m.ActualCoordinates0Based,1);
 end
@@ -331,15 +343,17 @@ end
 function out = localTRS(cfg,totalSlots,frame)
 strict=sixgr.phy.trs.buildTRSConfigFromScenario(cfg);
 rows=repmat(localEmptyRow(),0,1);count=0;
-for slot0=reshape(double(strict.SlotNumbers),1,[])
-    if slot0>=totalSlots || ~frame.IsDLSlot(slot0),continue;end
+for slot0=0:totalSlots-1
+    if ~sixgr.truth.isActiveTRSOccasion(cfg,slot0+1),continue;end
     c=localCarrierAtSlot(strict.ToolboxCarrier,slot0);
+    for resourceIndex=1:numel(strict.ToolboxResources)
     m=sixgr.phy.frame.ChannelAllocationMaterializer.materializeReferenceSignal( ...
-        c,"CSI_RS",strict.ToolboxCSIRS,"AbsoluteSlot",slot0);
+        c,"CSI_RS",strict.ToolboxResources{resourceIndex},"AbsoluteSlot",slot0);
     rows=[rows;localResultRows(m,slot0,"TRS",1,NaN, ...
         "RRC_NZP_CSI_RS_TRS_resource_configuration", ...
         "buildTRSConfigFromScenario+nrCSIRSIndices")]; %#ok<AGROW>
     count=count+size(m.ActualCoordinates0Based,1);
+    end
 end
 if count==0,error("sixgr:truth:NoTRSOccasion","No TRS RE resolved in run window.");end
 out=localPayload(rows,count,"TRS resources resolved");
@@ -471,6 +485,14 @@ for i=1:numel(parts)
         labels(i),cellID,layerCount,string(authority),string(resolver), ...
         lower(string(channel))+"_slot_"+string(slot0))]; %#ok<AGROW>
 end
+if isfield(result,'GridDomain')
+    for i=1:numel(rows)
+        rows(i).grid_domain=string(result.GridDomain);
+        rows(i).grid_subcarrier_spacing_hz=result.NativeGridSubcarrierSpacingHz;
+        rows(i).grid_subcarrier_count=result.NativeGridSubcarrierCount;
+        rows(i).grid_symbol_count=result.NativeGridSymbolCount;
+    end
+end
 end
 
 function rows=localRows(coords,slot0,channel,component,cellID,layerCount,authority,resolver,id)
@@ -547,7 +569,9 @@ row=struct("absolute_slot",NaN,"sfn",NaN,"slot_within_frame",NaN, ...
     "port_index",NaN,"re_count",NaN,"cell_id",NaN,"ue_id",NaN, ...
     "layer_count",NaN,"authority","","resolver","", ...
     "allocation_id","","coordinate_precision","exact_contiguous_re_run", ...
-    "evidence_scope","planned_config_not_runtime_observation");
+    "evidence_scope","planned_config_not_runtime_observation", ...
+    "grid_domain","carrier_cp_ofdm", "grid_subcarrier_spacing_hz",NaN, ...
+    "grid_subcarrier_count",NaN,"grid_symbol_count",NaN);
 end
 
 function c=localEmptyCheck()

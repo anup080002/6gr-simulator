@@ -44,6 +44,13 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "live_search_space_state": ["reports/csv/pdcch6gr_search_space_map.csv", "air_interface/csv/pdcch_trials.csv", "reports/csv/pdcch_control_outputs.csv"],
     "live_ssb_occasion_state": ["air_interface/csv/pbch_trials.csv", "reports/csv/initial_access_random_access_outputs.csv"],
     "live_prach_occasion_state": ["air_interface/csv/prach_trials.csv", "control/csv/prach_trials.csv", "reports/csv/initial_access_random_access_outputs.csv", "reports/csv/prach_summary_by_snr.csv"],
+    # This table is emitted directly by the waveform PRACH producer.  Listing
+    # its own canonical path marks it as producer-owned during forced browser
+    # rematerialization, so recovery cannot hide the restored evidence from
+    # the specialized native-grid chart.
+    "live_prach_native_allocation_snapshot": [
+        "reports/csv/live_prach_native_allocation_snapshot.csv"
+    ],
     "live_prb_allocation_snapshot": ["packet_flow/csv/live_prb_allocation.csv", "reports/csv/prb_allocation_heatmap.csv"],
     "live_re_allocation_snapshot": ["reports/csv/live_re_allocation_snapshot.csv", "reports/csv/dl_resource_grid_heatmap.csv", "reports/csv/ul_resource_grid_heatmap.csv"],
     "live_scheduler_cycle": ["packet_flow/csv/table_scheduler_decision.csv", "packet_flow/csv/live_dl_scheduler_grants.csv", "packet_flow/csv/live_ul_scheduler_grants.csv"],
@@ -108,7 +115,7 @@ CONTRACT_TABLE_ALIAS_PATHS: dict[str, list[str]] = {
     "live_user_grouping_table": ["beamforming/csv/beamforming_analytics_table.csv", "reports/csv/live_user_performance_snapshot.csv"],
     "live_ue_state_table": ["system/csv/system_ue_summary.csv", "reports/csv/live_user_performance_snapshot.csv"],
     "live_ue_measurement_state": ["reports/csv/table_cqi_pmi_ri.csv", "reports/csv/live_rsrp_serving_trace.csv"],
-    "live_ue_control_state": ["reports/csv/pusch_pucch_outputs.csv", "packet_flow/csv/live_pucch_grants.csv"],
+    "live_ue_control_state": ["packet_flow/csv/live_pucch_grants.csv"],
     "live_ue_power_state": ["reports/csv/live_power_runtime_table.csv", "reports/csv/live_user_performance_snapshot.csv"],
     "live_drx_state": ["reports/csv/live_drx_state.csv", "reports/csv/live_sleep_state_table.csv", "system/csv/system_ue_summary.csv"],
     "live_gnb_state_table": ["reports/csv/table_gnb_cell.csv", "reports/csv/runtime_operating_mode.csv"],

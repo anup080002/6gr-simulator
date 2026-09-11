@@ -68,9 +68,9 @@
     },
     {
       "path": "expected_pucch_resource_indicator_selection.csv",
-      "sha256": "e9d1cc2ed7db97af943a228fa7db168203f2b5dc5b6125de9a7a45f5b34a8701",
+      "sha256": "77c0f0670ce92ff5a54d8625ca1de413ab2d33c05deae402669c8a07a65950e9",
       "rows": 64,
-      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
+      "oracle_class": "PURE_INDEX_AND_TS38213_V1880_9_2_3_HAND_CALCULATED",
       "generated_without_matlab": true
     },
     {

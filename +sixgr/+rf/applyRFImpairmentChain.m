@@ -109,12 +109,14 @@ rfChainId = "rf_" + localShortHash(afterHash);
 replay.RFImpairmentChainId = char(rfChainId);
 replay.RFInputWaveformSHA256 = char(string(beforeHash));
 replay.RFOutputWaveformSHA256 = char(string(afterHash));
-strictOk = localResolveStrictOk(chain, beforeHash, afterHash, stageRows, logical(opt.StrictMutationRequired));
+strictOk = localResolveStrictOk(chain, beforeHash, afterHash, stageRows, logical(opt.StrictMutationRequired),~isempty(stream));
 
 failure = "";
 if ~strictOk
     failure = localStrictFailureReason(chain, beforeHash, afterHash, stageRows, logical(opt.StrictMutationRequired));
 end
+replay.RFStrictOk=logical(strictOk);
+replay.RFFailureReason=char(failure);
 
 out = struct();
 out.Waveform = y;
@@ -711,9 +713,11 @@ y = x;
 if logical(enabled)
     row.InputHash = string(localWaveformHash(x));
     y = fn(x);
+    row.Executed = true;
     row.OutputPower = localMeanPower(y);
     row.OutputHash = string(localWaveformHash(y));
     row.Applied = row.InputHash ~= row.OutputHash;
+    row.WaveformChanged = row.Applied;
     row.PowerDelta_dB = 10 * log10(max(row.OutputPower, realmin) ./ max(row.InputPower, realmin));
     row.Status = localTernary(row.Applied, "applied", "configured_identity_no_sample_change");
 else
@@ -731,6 +735,8 @@ row = struct( ...
     "StageName", "", ...
     "Endpoint", "", ...
     "Enabled", false, ...
+    "Executed", false, ...
+    "WaveformChanged", false, ...
     "Applied", false, ...
     "Status", "", ...
     "InputPower", NaN, ...
@@ -792,6 +798,7 @@ replay = struct( ...
     "RFDisabledIdentity", ~any([rows.Enabled]) && ~any([rows.Applied]), ...
     "RFConfiguredStageCount", double(nnz([rows.Enabled])), ...
     "RFAppliedStageCount", double(nnz([rows.Applied])), ...
+    "RFExecutedStageCount", double(nnz([rows.Executed])), ...
     "RFInputPower", localMeanPower(xRef), ...
     "RFOutputPower", localMeanPower(y), ...
     "RFPowerDelta_dB", 10 * log10(max(localMeanPower(y), realmin) ./ max(localMeanPower(xRef), realmin)), ...
@@ -857,9 +864,19 @@ replay = struct( ...
     "SampleClockOffsetRxPpm", double(chain.SampleClockOffset.RxPPM));
 end
 
-function strictOk = localResolveStrictOk(chain, beforeHash, afterHash, rows, strictMutationRequired)
+function strictOk = localResolveStrictOk(chain, beforeHash, afterHash, rows, strictMutationRequired,retainedStream)
 configuredAny = any([rows.Enabled]);
-appliedAllEnabled = all(~[rows.Enabled] | [rows.Applied] | startsWith(string({rows.Status}), "configured_zero"));
+% Actual invocation and sample mutation are different facts. A retained
+% oscillator, delay or AGC can execute correctly on idle samples without
+% changing their bytes. The optional mutation gate remains independent.
+if retainedStream
+    appliedAllEnabled = all(~[rows.Enabled] | [rows.Executed]);
+else
+    % Legacy block backends have not all been migrated to retained,
+    % explicitly validated operators. Preserve their stronger mutation
+    % evidence requirement until that separate migration is verified.
+    appliedAllEnabled = all(~[rows.Enabled] | [rows.Applied] | startsWith(string({rows.Status}), "configured_zero"));
+end
 if strictMutationRequired && configuredAny
     mutationOk = string(beforeHash) ~= string(afterHash);
 else
@@ -1077,19 +1094,7 @@ end
 end
 
 function hash = localWaveformHash(x)
-if isempty(x)
-    hash = sixgr.util.sha256Hex(uint8(char("empty:" + string(class(x)))));
-    return;
-end
-if ~(isnumeric(x) || islogical(x))
-    hash = sixgr.channel.hashChannelRFConfig(struct("Class", class(x), "Size", size(x)));
-    return;
-end
-header = uint8(char("waveform:" + string(class(x)) + ":"));
-dimBytes = reshape(typecast(uint64(size(x)), "uint8"), [], 1);
-realBytes = reshape(typecast(double(real(x(:))), "uint8"), [], 1);
-imagBytes = reshape(typecast(double(imag(x(:))), "uint8"), [], 1);
-hash = sixgr.util.sha256Hex([header(:); dimBytes; realBytes; imagBytes]);
+hash=sixgr.rf.waveformSHA256(x);
 end
 
 function M = localResolvePortToElementMatrixForStage(x, stageCfg, cfg)

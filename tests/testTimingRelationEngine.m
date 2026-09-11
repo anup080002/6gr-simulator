@@ -115,6 +115,7 @@ assert(height(trace) == 10 && ...
 assert(any(trace.ReasonCode == "target_flexible_symbols_unresolved") && ...
     any(trace.ReasonCode == "insufficient_n1_processing_time") && ...
     any(trace.ReasonCode == "insufficient_n2_processing_time"));
+localAssertHARQTimingAdvanceBoundary(engine,harq,rHARQ);
 
 % Exhaust the pinned timing catalogs across every supported processing
 % capability numerology.  K0/K2 come from every selected TDRA catalog row;
@@ -124,6 +125,7 @@ assert(coverage.Numerologies == 6 && ...
     coverage.K0Rows == 24 && coverage.K1Rows == 48 && ...
     coverage.K2Rows == 12 && coverage.CapabilityChecks == 24, ...
     "The programmatic timing catalog coverage is incomplete.");
+localAssertNominalProcessingUnits();
 
 tmp = string(tempname);
 mkdir(tmp);
@@ -146,6 +148,26 @@ exportgraphics(fig, imagePath, "Resolution", 120);
 assert(isfile(imagePath) && dir(imagePath).bytes > 1000);
 
 ok = true;
+end
+
+function localAssertHARQTimingAdvanceBoundary(engine,request,nominal)
+% Exact-clock deadline test, not a fabricated received RAR command.
+assert(nominal.Valid && nominal.TimingAdvanceTicks==0);
+slack=nominal.ProcessingGapTicks-nominal.MinimumProcessingTicks;
+assert(slack>=0);
+request.TestID=string(request.TestID)+"-ta-boundary";
+request.TimingAdvanceTicks=slack;
+boundary=engine.resolveHARQACK(request);
+assert(boundary.Valid && boundary.TimingAdvanceTicks==slack && ...
+    boundary.WaveformPlacementTick==nominal.TargetTick-slack && ...
+    boundary.ProcessingGapTicks==boundary.MinimumProcessingTicks);
+request.TimingAdvanceTicks=slack+int64(1);
+early=engine.resolveHARQACK(request);
+assert(~early.Valid && early.ReasonCode=="insufficient_n1_processing_time", ...
+    'One Tc too early after TA must fail, even though nominal K1 was valid.');
+request=rmfield(request,'TimingAdvanceTicks');
+missing=engine.resolveHARQACK(request);
+assert(~missing.Valid && missing.ReasonCode=="invalid_timing_advance");
 end
 
 function request = localRequest(testID, procedure, sourceTime, ...
@@ -358,6 +380,7 @@ for mu = supportedMu
         "Pinned N1=%d should be feasible at mu=%d and K1=%d: %s.", ...
         capability.PDSCHN1Symbols, mu, max(catalogK1), ...
         legalN1Result.ReasonCode);
+    localAssertHARQTimingAdvanceBoundary(engine,legalN1,legalN1Result);
 
     illegalN1 = legalN1;
     illegalN1.TestID = "capability-n1-illegal-mu" + string(mu);
@@ -400,17 +423,19 @@ for mu = supportedMu
 end
 end
 
-function [carrier, dl, ul] = localCatalogCarrier(mu)
+function [carrier, dl, ul] = localCatalogCarrier(mu, cyclicPrefix)
+if nargin<2, cyclicPrefix="normal"; end
 [range, centerHz, bandwidthMHz, nrb] = localCatalogGridRow(mu);
 scsKHz = 15 * 2^mu;
 grid = struct("NStartGrid", 0, "NSizeGrid", nrb, ...
     "SubcarrierSpacingKHz", scsKHz, ...
-    "CyclicPrefix", "normal", "FrequencyRange", range);
+    "CyclicPrefix", cyclicPrefix, "FrequencyRange", range);
 zero = sixgr.phy.frame.AbsoluteTime.fromTicks(0);
-dl = sixgr.phy.frame.BWPConfig(localCatalogBWP( ...
-    "DL0", "DL", range, scsKHz, nrb, zero), grid);
-ul = sixgr.phy.frame.BWPConfig(localCatalogBWP( ...
-    "UL0", "UL", range, scsKHz, nrb, zero), grid);
+dlData=localCatalogBWP("DL0", "DL", range, scsKHz, nrb, zero);
+ulData=localCatalogBWP("UL0", "UL", range, scsKHz, nrb, zero);
+dlData.CyclicPrefix=cyclicPrefix; ulData.CyclicPrefix=cyclicPrefix;
+dl=sixgr.phy.frame.BWPConfig(dlData,grid);
+ul=sixgr.phy.frame.BWPConfig(ulData,grid);
 cfg = struct( ...
     "CCID", "CC0", "ServingCellID", "CELL0", ...
     "SchedulingCCIDs", "CC0", ...
@@ -423,6 +448,44 @@ cfg = struct( ...
     "CarrierIndicatorMap", struct( ...
         "Indicator", 0, "ScheduledCCID", "CC0"));
 carrier = sixgr.phy.frame.ComponentCarrierConfig(cfg, {dl, ul});
+end
+
+function localAssertNominalProcessingUnits()
+% Independent pinned table/formula oracle, not measured PHY timing claims.
+mus=[0 1 2 3 5 6];
+n1=[8 10 17 20 80 160]; n2=[10 12 23 36 144 288];
+for procedure=["HARQ_ACK","PUSCH"]
+    counts=n1; if procedure=="PUSCH", counts=n2; end
+    golden=counts.*(2048+144).*64./(2.^mus);
+    for a=1:numel(mus)
+        for b=1:numel(mus)
+            selected=sixgr.phy.frame.TimingPolicyCatalog.capability1ProcessingBase( ...
+                procedure,mus([a b]));
+            assert(selected.Ticks==int64(max(golden([a b]))) && ...
+                selected.Unit=="nr_nominal_symbol_duration", ...
+                'Base processing must select the largest duration across the actual participating numerologies.');
+        end
+    end
+end
+sourceEnds=[];
+for cp=["normal","extended"]
+    [carrier,dl,~]=localCatalogCarrier(2,cp);
+    timing=sixgr.phy.frame.TimingRelationEngine(carrier,struct( ...
+        'AllowedK0',0,'AllowedK1',4,'AllowedK2',4, ...
+        'PolicyID','explicit_processing_unit_fixture','Source','component_fixture'));
+    first=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(0,0,dl);
+    for reference=["SOURCE","TARGET"]
+        request=localRequest("processing-unit-"+cp+reference,"HARQ_ACK", ...
+            first,"DL0","UL0",4,0,1,17);
+        request.ProcessingTimeReference=reference;
+        actual=timing.resolveHARQACK(request);
+        assert(actual.Valid && actual.MinimumProcessingTicks==int64(17*(2048+144)*64/4), ...
+            'Normal/extended waveform CP must not change the normative processing-time unit.');
+    end
+    sourceEnds(end+1)=double(actual.SourceEndTick); %#ok<AGROW>
+end
+assert(sourceEnds(1)~=sourceEnds(2), ...
+    'The test must actually use different physical CP boundaries while preserving processing units.');
 end
 
 function cfg = localCatalogBWP(id, direction, range, scs, nrb, zero)

@@ -20,7 +20,7 @@ for gi=1:numel(grants)
         error("sixgr:truth:SRSReservationAfterULCommit", ...
             "First-SRS allocation must precede DCI and UCI commitment.");
     end
-    if ~isequal(double(grants(gi).ScheduledAbsoluteSlot),slot)
+    if ~isequal(sixgr.truth.runtimeULGrantSlot(grants(gi)),slot)
         error("sixgr:truth:SRSPUSCHCollisionSlotMismatch","Plan only grants for this UL occasion.");
     end
 end

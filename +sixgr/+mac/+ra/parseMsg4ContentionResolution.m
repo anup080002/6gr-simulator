@@ -15,7 +15,8 @@ msg4.FinalCRNTI = final;
 msg4.RRCSetupPresent = false;
 msg4.RRCSetup = struct();
 msg4.RRCSetupSHA256 = "";
-if numel(bytes) > 9
+msg4.EncodingProfile = "legacy_bounded_not_NR_MAC_RRC";
+if numel(bytes) > 9 && any(bytes(10:end)~=0)
     if numel(bytes) < 12 || bytes(10) ~= uint8(50) || ...
             bytes(11) > uint8(3) || bytes(12) < uint8(1) || ...
             bytes(12) > uint8(32)
@@ -31,6 +32,8 @@ if numel(bytes) > 9
         "TransactionID", double(bytes(11)), ...
         "SRB1LCID", double(bytes(12)));
     msg4.RRCSetupSHA256 = sixgr.rrc.asn1.asn1SHA256Hex(bytes(10:12));
+    assert(all(bytes(13:end)==0),'sixgr:mac:ra:InvalidMsg4Padding', ...
+        'The bounded Msg4 payload has unexpected nonzero trailing bytes.');
 end
 msg4.Valid = true;
 end

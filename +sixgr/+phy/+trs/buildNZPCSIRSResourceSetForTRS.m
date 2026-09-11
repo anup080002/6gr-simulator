@@ -25,7 +25,14 @@ csirs.RowNumber = double(cfg.RowNumber);
 if double(cfg.RowNumber) == 1
     csirs.Density = "three";
 end
-csirs.SymbolLocations = double(cfg.SymbolLocation);
+locations=reshape(double(cfg.SymbolLocation),1,[]);
+assert(numel(locations)==2 && any(all(locations==[4 8;5 9;6 10],2)), ...
+    'sixgr:phy:trs:UnsupportedTrackingSymbolPair', ...
+    'The implemented FR1/FR2 common TRS pattern requires an explicit symbol pair [4,8], [5,9] or [6,10].');
+assert(double(cfg.RowNumber)==1 && double(cfg.NumCSIRSPortsRequested)==1, ...
+    'sixgr:phy:trs:InvalidTrackingDensityPorts', ...
+    'trs-Info requires one-port density-three NZP CSI-RS (TS 38.211 mapping row 1).');
+csirs.SymbolLocations = locations(1);
 csirs.SubcarrierLocations = double(cfg.SubcarrierLocation);
 csirs.NumRB = double(cfg.NumRB);
 csirs.RBOffset = double(cfg.RBOffset);
@@ -34,6 +41,11 @@ csirs.NID = double(cfg.NID);
 resourceSet = struct();
 resourceSet.Carrier = carrier;
 resourceSet.CSIRS = csirs;
+resourceSet.Resources=cell(1,numel(locations));
+for resourceIndex=1:numel(locations)
+    resource=csirs; resource.SymbolLocations=locations(resourceIndex);
+    resourceSet.Resources{resourceIndex}=resource;
+end
 resourceSet.SlotNumbers = double(cfg.SlotNumbers(:).');
 resourceSet.ImplementationStatus = "toolbox_nzp_csirs_trs_resource_materialized";
 end

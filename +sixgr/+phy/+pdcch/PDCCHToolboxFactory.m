@@ -2,6 +2,15 @@ classdef PDCCHToolboxFactory
     %PDCCHTOOLBOXFACTORY Materialize validated strict config for Toolbox.
 
     methods (Static)
+        function carrier = atAbsoluteSlot(carrier,absoluteSlot)
+            % Waveform clock, not merely an event label; zero-based API.
+            validateattributes(absoluteSlot,{'numeric'}, ...
+                {'scalar','real','finite','integer','nonnegative'});
+            slotsPerFrame=double(carrier.SlotsPerFrame);
+            carrier.NSlot=mod(double(absoluteSlot),slotsPerFrame);
+            carrier.NFrame=mod(floor(double(absoluteSlot)/slotsPerFrame),1024);
+        end
+
         function result = create(carrier, coresetDefinition, ...
                 searchSpaceDefinition, aggregationLevel, rnti, nCellID, ...
                 nStartBWP, nSizeBWP)
@@ -37,6 +46,10 @@ classdef PDCCHToolboxFactory
             searchSpace = localSet(searchSpace, ["SearchSpaceID","ID"], ...
                 searchData.SearchSpaceID, true);
             searchSpace.CORESETID = coresetData.CORESETID;
+            searchSpace.SearchSpaceType = 'common';
+            if searchData.SearchSpaceType == "USS"
+                searchSpace.SearchSpaceType = 'ue';
+            end
             searchSpace.StartSymbolWithinSlot = find( ...
                 searchData.MonitoringSymbolsWithinSlot, 1, "first") - 1;
             searchSpace.SlotPeriodAndOffset = ...

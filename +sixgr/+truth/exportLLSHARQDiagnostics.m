@@ -182,19 +182,21 @@ for warmIdx = 1:warmupCount
     [cfgDyn, laState] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, direction, frameCounter, "Phase", "before");
     cfgWarm = cfgDyn;
     cfgWarm.run.seed = seedBase + 5000 + warmIdx;
-    [~, rxWarm, diagWarm] = localRunAttempt(cfgWarm, direction, snr_dB, [], 0, []);
+    warmSlot = localResolveHARQProbeSlot0(cfgWarm, direction, warmIdx - 1);
+    [~, rxWarm, diagWarm] = localRunAttempt(cfgWarm, direction, snr_dB, [], 0, [], warmSlot);
     warmMetrics = localExtractLinkAdaptationMetrics(cfgWarm, rxWarm, diagWarm);
     [cfgDyn, laState] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, direction, frameCounter, "Phase", "after", "Metrics", warmMetrics);
     frameCounter = frameCounter + 1;
 end
 
 for pkt = 1:numPackets
-    slotBase = (pkt - 1) * (feedbackSlots + 1);
+    requestedSlotBase = (pkt - 1) * (feedbackSlots + 1);
+    slotBase = localResolveHARQProbeSlot0(cfgDyn, direction, requestedSlotBase);
     [cfgDyn, laState] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, direction, frameCounter, "Phase", "before");
     cfgPkt = cfgDyn;
     cfgPkt.run.seed = seedBase + pkt - 1;
 
-    [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, [], 0, []);
+    [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, [], 0, [], slotBase);
     observeMetrics = localExtractLinkAdaptationMetrics(cfgPkt, rx, diag);
     txp = harq.allocate(rnti, slotBase, ceil(double(tx.TransportBlockSize) / 8), "NewData", true);
     txGrant = localHARQGrantFromExecutedTx(tx, direction, slotBase, txp.HARQ, struct());
@@ -219,12 +221,14 @@ for pkt = 1:numPackets
         end
         attempt = attempt + 1;
         cfgPkt.run.seed = seedBase + pkt - 1 + 37 * attempt;
-        [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, int8(retx.TB(:)), retx.HARQ.RV, diag.HARQSoftBuffer);
-        txSlot = slotBase + attempt - 1;
+        txSlot = localResolveHARQProbeSlot0( ...
+            cfgPkt, direction, double(packetRows(end).Slot) + 1);
+        [tx, rx, diag] = localRunAttempt(cfgPkt, direction, snr_dB, ...
+            int8(retx.TB(:)), retx.HARQ.RV, diag.HARQSoftBuffer, txSlot);
         txGrant = localHARQGrantFromExecutedTx(tx, direction, txSlot, ...
             retx.HARQ, sixgr.util.structGet(retx, "TBContext", struct()));
         harq.onTx(rnti, retx.HARQ.HarqID, uint8(tx.TransportBlock(:)), txGrant, txSlot);
-        packetRows(end+1, 1) = localMakePacketRow(direction, snr_dB, pkt, attempt, slotBase + attempt - 1, retx.HARQ, diag, feedbackSlots * attempt, slotDur_s, "pending", tx.TransportBlockSize, mode); %#ok<AGROW>
+        packetRows(end+1, 1) = localMakePacketRow(direction, snr_dB, pkt, attempt, txSlot, retx.HARQ, diag, feedbackSlots * attempt, slotDur_s, "pending", tx.TransportBlockSize, mode); %#ok<AGROW>
         harq.onFeedback(rnti, retx.HARQ.HarqID, diag.CombinedDecodeOK);
         finalSuccess(pkt) = diag.CombinedDecodeOK;
         retxCount(pkt) = attempt - 1;
@@ -347,14 +351,18 @@ if isstruct(tbContext) && ~isempty(fieldnames(tbContext))
 end
 end
 
-function [tx, rx, diag] = localRunAttempt(cfg, direction, snr_dB, tbBits, rv, combinedPrev)
+function [tx, rx, diag] = localRunAttempt(cfg, direction, snr_dB, tbBits, rv, combinedPrev, absoluteSlot0)
 if nargin < 6
     combinedPrev = [];
+end
+if nargin < 7
+    absoluteSlot0 = localResolveHARQProbeSlot0(cfg, direction, 0);
 end
 cfgAttempt = localSanitizeHARQProbeConfig(cfg, direction);
 if upper(string(direction)) == "DL"
     cfgAttempt = localConfigureDLHARQCalibrationOwnership(cfgAttempt);
 end
+cfgAttempt = localBindHARQProbeSlot0(cfgAttempt, absoluteSlot0);
 if isempty(tbBits)
     tbBitsArg = {};
 else
@@ -435,6 +443,84 @@ diag.MeasuredSINR_dB = measuredSINR;
 if ~isfield(diag, "Notes")
     diag.Notes = "";
 end
+end
+
+function slot0 = localResolveHARQProbeSlot0(cfg, direction, requestedSlot0)
+% Select a real carrier occasion before coding.  The diagnostic is not a
+% scheduler, but its waveform must still obey the configured duplex symbol
+% budget and SS/PBCH exclusion on the same absolute clock.
+validateattributes(requestedSlot0, {'numeric'}, ...
+    {'scalar','integer','nonnegative','finite'});
+direction = upper(strtrim(string(direction)));
+if ~any(direction == ["DL","UL"])
+    error("sixgr:truth:HARQProbeDirectionInvalid", ...
+        "HARQ probe direction must be DL or UL.");
+end
+
+duplexMode = sixgr.phy.frame.resolveDuplexMode(cfg);
+[carrier0, ~] = sixgr.phy.grid.makeCarrier(cfg);
+slotsPerFrame = double(carrier0.SlotsPerFrame);
+searchLength = max(2 * slotsPerFrame, 40);
+for candidate = double(requestedSlot0):(double(requestedSlot0) + searchLength)
+    cfgCandidate = localBindHARQProbeSlot0(cfg, candidate);
+    if duplexMode == "TDD"
+        partition = sixgr.util.resolveTDDSlotPartition(cfgCandidate, candidate);
+        if ~localHARQProbeAllocationFitsPartition(cfgCandidate, direction, partition)
+            continue;
+        end
+    end
+    if direction == "DL"
+        [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgCandidate);
+        pdsch = sixgr.phy.grid.pdschConfigFromConfig(carrier, cfgCandidate);
+        try
+            sixgr.phy.grid.reserveSSBPDSCHResources( ...
+                carrier, pdsch, cfgCandidate);
+        catch ME
+            if strcmp(ME.identifier, ...
+                    'sixgr:phy:grid:allocREsPDSCH:SSBDMRSCollision')
+                continue;
+            end
+            rethrow(ME);
+        end
+    end
+    slot0 = candidate;
+    return;
+end
+error("sixgr:truth:HARQProbeLegalSlotUnavailable", ...
+    "No legal %s HARQ probe occasion was found from absolute slot %d.", ...
+    direction, double(requestedSlot0));
+end
+
+function tf = localHARQProbeAllocationFitsPartition(cfg, direction, partition)
+if direction == "DL"
+    requested = double(sixgr.util.structGet( ...
+        cfg, "phy.pdsch.symbolAllocation", []));
+    available = double(sixgr.util.structGet( ...
+        partition, "DLSymbolAllocation", [0 0]));
+else
+    requested = double(sixgr.util.structGet( ...
+        cfg, "phy.pusch.symbolAllocation", []));
+    available = double(sixgr.util.structGet( ...
+        partition, "ULSymbolAllocation", [0 0]));
+end
+tf = numel(requested) == 2 && numel(available) == 2 && ...
+    all(isfinite([requested(:); available(:)])) && ...
+    requested(2) > 0 && available(2) > 0 && ...
+    requested(1) >= available(1) && ...
+    requested(1) + requested(2) <= available(1) + available(2);
+end
+
+function cfgOut = localBindHARQProbeSlot0(cfg, absoluteSlot0)
+validateattributes(absoluteSlot0, {'numeric'}, ...
+    {'scalar','integer','nonnegative','finite'});
+[carrier, ~] = sixgr.phy.grid.makeCarrier(cfg);
+slotsPerFrame = double(carrier.SlotsPerFrame);
+cfgOut = sixgr.util.structSet( ...
+    cfg, "lls6g.runtime.AbsoluteSlotIndex0", double(absoluteSlot0));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NFrame", ...
+    floor(double(absoluteSlot0) / slotsPerFrame));
+cfgOut = sixgr.util.structSet(cfgOut, "phy.carrier.NSlot", ...
+    mod(double(absoluteSlot0), slotsPerFrame));
 end
 
 function cfgOut = localConfigureDLHARQCalibrationOwnership(cfgOut)

@@ -180,8 +180,16 @@ def validate_specific(name,rows,reasons):
             if raw>0 and owner=="":reasons.append(f"uci_owner_missing:line={line}")
             if raw>0:owner_by_case.setdefault(r["CaseID"],set()).add(owner)
             for bits,crcfield in (("OACK","ACKCRCOK"),("OCSI1","CSI1CRCOK"),("OCSI2","CSI2CRCOK")):
-                if (integer(r.get(bits)) or 0)>0 and truth(r.get(crcfield)) is not True:
+                count = integer(r.get(bits)) or 0
+                if bits == "OCSI2": count += integer(r.get("OCGUCI")) or 0
+                applicable = count >= 12
+                flag = crcfield.replace("CRCOK", "CRCApplicable")
+                if truth(r.get(flag)) is not applicable:
+                    reasons.append(f"uci_crc_applicability_wrong:{crcfield}:line={line}")
+                if applicable and truth(r.get(crcfield)) is not True:
                     reasons.append(f"uci_crc_not_ok:{crcfield}:line={line}")
+                if not applicable and str(r.get(crcfield, "")).strip().lower() not in {"", "nan"}:
+                    reasons.append(f"uci_nonexistent_crc_reported:{crcfield}:line={line}")
         for case,owners in owner_by_case.items():
             if len(owners)!=1:reasons.append(f"uci_multiple_owner_codewords:{case}:{owners}")
     elif name=="pusch_coding_chain.csv":
@@ -406,7 +414,9 @@ def synthetic_csvs(root,contracts):
             r.update(CaseID="SYN",Codeword=0,NumULSCHTB=1,UCIOnly=0,OACK=2,OCSI1=0,OCSI2=0,OCGUCI=0,
             G=100,ULSCHBitCount=80,ACKCodedBitCount=20,CSI1CodedBitCount=0,CSI2CodedBitCount=0,
             CGUCICodedBitCount=0,PlaceholderXCount=0,PlaceholderYCount=0,MuxedBitCount=100,UCIOwnerCodeword=0,
-            PayloadMatch=1,ACKCRCOK=1,CSI1CRCOK=1,CSI2CRCOK=1)
+            PayloadMatch=1,ACKCRCOK="NaN",CSI1CRCOK="NaN",CSI2CRCOK="NaN",
+            ACKCRCApplicable=0,CSI1CRCApplicable=0,CSI2CRCApplicable=0,
+            CSI2CRCScope="CSI_part2_and_configured_grant_UCI_combined_code_block")
         elif name=="pusch_coding_chain.csv":r.update(CaseID="SYN",Codeword=0,TBS=1024,G=2048,RateMatchedBits=2048,RateRecoveredBits=2048,CRCOK=1)
         elif name=="pusch_independent_vector_results.csv":
             rows=[]

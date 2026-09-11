@@ -44,6 +44,7 @@ out.ChannelNMSEThreshold_dB = NaN;
 out.InterpolationLoss_dB = NaN;
 out.MismatchSensitivity_dB = NaN;
 out.QCLAccuracy = NaN;
+out.QCLMeasurementStatus = "not_measured_requires_QCL_TCI_binding_evidence";
 out.ComputeLatency_ms = NaN;
 out.ProcedureDelay_ms = 0;
 out.AirInterfaceObservation_ms = NaN;
@@ -306,7 +307,7 @@ try
         noiseVarArgs=[noiseVarArgs {"TimingSearchWindowSamples", ...
             prepared.receiverTimingSearchWindow(context.Observation)}];
     end
-    [rx, ~] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
+    [rx, rxInfo] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
         noiseVarArgs{:}, ...
@@ -331,7 +332,14 @@ try
     out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
     % The reported variance is in the received RESOURCE GRID. A pre-RF
     % thermal sample variance source must not replace its estimator source.
-    out.NoiseVarianceSource = out.NoiseVarSource;
+    injectedNoiseSource = string(sixgr.util.structGet( ...
+        replay, "NoiseVarianceSource", ""));
+    if strlength(strtrim(injectedNoiseSource)) > 0
+        out.NoiseVarianceSource = char(string(out.NoiseVarSource) + ...
+            "_from_" + injectedNoiseSource);
+    else
+        out.NoiseVarianceSource = out.NoiseVarSource;
+    end
     out.NoiseVarianceDomain = "resource_grid_pre_equalization";
     out.InjectedSampleNoiseVariance = double(sixgr.util.structGet( ...
         replay,'InjectedNoiseVariance',injectedNoiseVariance));
@@ -398,13 +406,24 @@ try
     end
     out.NMSEReferenceAGCGain_dB=double(sixgr.util.structGet(replay,'NMSEReferenceAGCGain_dB',NaN));
     nmse = localNormalizedMSE(hEst, hTrue);
+    if received && isfield(context,'ScoringChannelReferences')
+        % Independent scoring happens AFTER the practical receiver. These
+        % tensors are never an argument to SRS_Rx or channelEstimate.
+        [referenceGrid,referenceEvidence]=sixgr.truth.sharedSRSReferenceGrid( ...
+            prepared,context.ScoringChannelReferences,replay,rx.Timing,rxInfo.OFDMInfo);
+        out.ChannelNMSEScoring=sixgr.phy.srs.pilotChannelNMSE( ...
+            rx.Hest,referenceGrid,tx.SRSIndices);
+        out.ChannelNMSEReferenceEvidence=referenceEvidence;
+        nmse=out.ChannelNMSEScoring.Linear;
+        nmseReferenceSource=referenceEvidence.Source;
+    end
     estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
     out.DopplerEstimateCRLB_Hz = localDopplerCRLBHz(hEst, symTimes_s, rx.NoiseVar);
 
     if isnan(nmse)
         out.NMSE_dB=NaN;
     else
-        out.NMSE_dB = 10*log10(max(nmse, eps));
+        out.NMSE_dB = 10*log10(nmse);
     end
     out.TrueChannelNMSE_dB = double(out.NMSE_dB);
     out.NMSEReferenceSource = char(string(nmseReferenceSource));
@@ -412,7 +431,7 @@ try
     out.ChannelNMSEThreshold_dB = localResolveSRSNMSEThreshold(cfgSRS);
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
     out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);
-    out.QCLAccuracy = localReferenceCorrelation(hEst, hTrue);
+    out.QCLAccuracy = NaN; % Channel correlation does not validate QCL/TCI.
     out.ComputeLatency_ms = 1e3 * toc(tStart);
     out.ProcedureDelay_ms = 0;
     out.AirInterfaceObservation_ms = 1e3 * (size(rxWave, 1) / sampleRateHz);
@@ -546,14 +565,14 @@ try
     out.MeasurementUsable = isfinite(out.SINR_dB) && sixgr.util.isAcceptableSINRStatus(out.SINRValueStatus);
     strictNoiseOk = ~logical(out.NoiseVarStrictFailure) && ...
         (~strictNoiseVarianceRequired || (isfinite(out.NoiseVariance) && out.NoiseVariance >= 0));
-    nmseStrictOk = isfinite(out.NMSE_dB) && out.NMSE_dB <= out.ChannelNMSEThreshold_dB;
-    out.SRSChannelEstimateAvailable = logical(out.SRSChannelEstimateAvailable) && logical(nmseStrictOk);
+    nmseStrictOk = ~isnan(out.NMSE_dB) && out.NMSE_dB <= out.ChannelNMSEThreshold_dB;
     out.SRSRuntimeEvidenceUsable = logical(out.DetectionUsable) && ...
         logical(out.ResourceExtractionAvailable) && logical(out.ChannelEstimateAvailable) && ...
         logical(out.SRSChannelEstimateAvailable) && logical(out.MeasurementUsable) && ...
-        logical(strictNoiseOk) && logical(nmseStrictOk);
+        logical(strictNoiseOk);
     out.StrictReceiverEvidenceOk = logical(out.SRSRuntimeEvidenceUsable);
-    out.StrictOk = logical(out.SRSRuntimeEvidenceUsable);
+    out.StrictOk = logical(out.SRSRuntimeEvidenceUsable) && ...
+        logical(out.TrueChannelOracleAvailable) && logical(nmseStrictOk);
     out.Ok = logical(out.StrictOk);
     if ~logical(out.Ok) && strlength(strtrim(string(out.FailureReason))) == 0
         if ~out.TrueChannelOracleAvailable
@@ -887,7 +906,7 @@ required = [pathloss_dB p0_dBm alpha deltaTF_dB pcmax_dBm occupiedRB mu];
 standaloneAWGN = lower(strtrim(string(sixgr.util.structGet( ...
     cfg,"run.noiseOperatingMode","")))) == ...
     "standalone_awgn_snr_argument";
-strictPowerAvailable = ~any(~isfinite(required)) && occupiedRB >= 1 && ...
+strictPowerAvailable = ~standaloneAWGN && ~any(~isfinite(required)) && occupiedRB >= 1 && ...
     mu >= 0 && mu == round(mu);
 if ~strictPowerAvailable && ~standaloneAWGN
     error("sixgr:link:SRS:MissingPowerControlAuthority", ...
@@ -919,13 +938,13 @@ if strictPowerAvailable
 else
     powerEvidence = struct( ...
         "Channel","SRS", ...
-        "RequestedPower_dBm",double(powerContext.TotalTxPower_dBm), ...
-        "AppliedPower_dBm",double(powerContext.TotalTxPower_dBm), ...
+        "RequestedPower_dBm",NaN, ...
+        "AppliedPower_dBm",NaN, ...
         "PowerHeadroom_dB",NaN,"Clipped",false, ...
         "PathlossSource","not_applicable_standalone_awgn_reference", ...
         "EvidenceClass","standalone_awgn_reference_not_production_power_control");
     powerContext.TotalTxPowerSource = ...
-        "standalone_awgn_reference_power_context";
+        "standalone_awgn_unit_occupied_re_reference_no_38_213_power_control";
     powerContext.SignalSpecificPowerControl = false;
 end
 powerContext.TotalTxPower_mW = 10.^(powerContext.TotalTxPower_dBm/10);

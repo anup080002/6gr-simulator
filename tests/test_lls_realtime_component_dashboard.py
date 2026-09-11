@@ -10,6 +10,15 @@ sys.path.insert(0, str(ROOT / "apps"))
 import lls_web_dashboard as dashboard  # noqa: E402
 
 
+def test_ul_preview_keeps_codebook_ports_distinct_from_spatial_beams() -> None:
+    labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS["ul_trials"])
+    assert labels["AppliedPrecoderPMI"] == "Applied TPMI"
+    assert labels["AppliedCodebookPortIndexSet"] == "Codebook ports (1-based)"
+    assert labels["PrecodingNumLogicalPorts"] == "Logical ports"
+    assert labels["AppliedBeamIndexSet"] == "Applied spatial beam"
+    assert "AppliedCodebookPortIndexSet" not in dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS["dl_trials"])
+
+
 def artifact(path: str, mime_type: str = "text/csv", artifact_id: int = 1) -> dict:
     return {
         "artifact_id": artifact_id,
@@ -145,6 +154,9 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
                 "Slot": 2,
                 "SS_RSRP_dBm": -91.0,
                 "SS_SINR_dB": 7.5,
+                "ConfiguredSNR_dB": 3.0,
+                "MeasuredReferenceSignalChannelGain_dB": 4.25,
+                "SSSINRMeasurementMethod": "ts38215_received_reference_disturbance",
                 "SSBReceivedPower_dB": -3.0,
                 "MeasuredTrialSINR_dB": 9.25,
             }
@@ -181,6 +193,10 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     assert ue["serving_rsrp_dbm"] == -82.5
     assert ue["ss_rsrp_dbm"] == -91.0
     assert ue["ss_sinr_db"] == 7.5
+    assert ue["configured_snr_db"] == 3.0
+    assert ue["ss_sinr_delta_db"] == 4.5
+    assert ue["ss_channel_gain_db"] == 4.25
+    assert ue["ss_sinr_method"] == "ts38215_received_reference_disturbance"
     assert ue["pbch_dmrs_sinr_db"] == 9.25
     assert ue["csi_rsrp_dbm"] == -86.25
     assert ue["csi_rsrp_relative_db"] == 23.0
@@ -189,6 +205,8 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     assert ue["pathloss_paths"][0]["pathloss_db"] == 104.0
     assert ue["pathloss_paths"][1]["pathloss_db"] is None
     assert ue["pathloss_paths"][1]["raw_pathloss_db"] == 0
+    assert ue["pathloss_paths"][1]["beam_index"] is None
+    assert ue["pathloss_paths"][1]["beam_gain_db"] is None
 
 
 def test_post_equalization_csi_row_is_not_relabelled_as_csi_sinr() -> None:
@@ -226,11 +244,20 @@ def test_data_preview_retains_crc_and_measured_beam_fields() -> None:
                 "Modulation": "64QAM",
                 "MeasuredTrialSINR_dB": 13.25,
                 "CRCPass": 1,
+                "SchedulerCQIRawCQI": 7,
+                "AppliedLinkAdaptationMCS": 11,
                 "SelectedBeamIndex": 3,
                 "PMI": 2,
                 "AppliedPrecoderPMI": 2,
+                "RequestedPrecoderPMI": 3,
+                "RequestedPrecoderSource": "delayed_csi_report_pmi",
+                "RequestedVsAppliedPrecoderPMIMatchStatus": "requested_equals_runtime_applied_matrix_after_csirs_basis_composition",
+                "AppliedPrecoderPMITruthClassification": "applied_runtime_value",
                 "AppliedBeamIndexSet": "3",
                 "SelectedBeamGain_dB": 8.75,
+                "BestBeamIndex": 4,
+                "BestBeamGain_dB": 9.25,
+                "BeamGainGap_dB": 0.5,
             }
         ],
     )
@@ -243,11 +270,20 @@ def test_data_preview_retains_crc_and_measured_beam_fields() -> None:
             "Modulation": "64QAM",
             "Measured SINR dB": 13.25,
             "CRC pass": 1,
+            "Scheduler CQI used": 7,
+            "LA MCS": 11,
             "Beam": 3,
             "PMI": 2,
-            "Applied PMI": 2,
+            "Requested CSI PMI": 3,
+            "PMI request source": "delayed_csi_report_pmi",
+            "Applied basis PMI": 2,
             "Applied beam": "3",
-            "Quality dB": 8.75,
+            "Precoder match": "requested_equals_runtime_applied_matrix_after_csirs_basis_composition",
+            "Applied PMI status": "applied_runtime_value",
+            "Applied beam gain dB": 8.75,
+            "Best measured beam": 4,
+            "Best beam gain dB": 9.25,
+            "Beam gap dB": 0.5,
         }
     ]
 

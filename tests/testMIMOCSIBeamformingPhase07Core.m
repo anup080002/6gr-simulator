@@ -38,6 +38,7 @@ end
 
 function testCSIReportPUCCHSerialization(testCase)
 request = localReportRequest("PUCCH");
+request.Rank=1;
 cfg = sixgr.phy.mimo.CSIReportConfiguration(request,3);
 report = cfg.build(struct("CRI",1,"RI",1,"CQI_CW0",9,"PMI",1,"LI",0));
 decoded = cfg.encodeDecodeNoNoise(report);
@@ -262,7 +263,8 @@ cfg.runtime.currentSlot = 20;
 [csi,info] = sixgr.phy.dl.CSI_Feedback(H,.02,cfg, ...
     "MaxRank",2,"MeasurementState",measurement);
 verifyFalse(testCase,csi.CustomContainerUsed);
-verifyTrue(testCase,csi.SeparateEncoding);
+verifyFalse(testCase,csi.SeparateEncoding);
+verifyEmpty(testCase,csi.CSIPart2Bits);
 verifyEqual(testCase,csi.MeasurementID,"facade-meas");
 verifyEqual(testCase,info.EngineUsed,"sixgr.mimo.buildCSIFeedback");
 verifyFalse(testCase,info.ConfiguredSNRUsed);

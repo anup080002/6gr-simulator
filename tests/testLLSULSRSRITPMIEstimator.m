@@ -202,14 +202,35 @@ srsPass = table("PASS",1,1,true,2,12, ...
     "ProxyUsed","Skipped","ToolboxMissing","UsedOracleFields"]);
 state = sixgr.truth.CoupledTruthRuntime.applySRSTrial(state, 1, srsPass);
 sanitized = double(state.LatestULFeedback(1).PMI);
-assert(isfinite(sanitized) && sanitized ~= 12, ...
-    "Coupled runtime must not pass a wider-port invalid UL TPMI from SRS feedback through to a 2-port PUSCH grant.");
-try
-    nrPUSCHCodebook(2, 2, round(double(sanitized)), false);
-catch ME
-    error("testLLSULSRSRITPMIEstimator:InvalidSanitizedTPMI", ...
-        "Sanitized UL TPMI %g must be executable for rank-2 2-port PUSCH: %s", ...
-        double(sanitized), ME.message);
+assert(isnan(sanitized), ...
+    "Invalid received TPMI must remain unavailable, never become a configured or first-valid TPMI.");
+for strict = [false true]
+    candidate = state;
+    candidate.CfgMobility.mimo.strict = strict;
+    candidate.CfgMobility.phy.pusch.PMI = 1;
+    candidate.CfgMobility.phy.pusch.TPMI = 1;
+    candidate.LatestULFeedback(1).RI = 1;
+    candidate.LatestULFeedback(1).PMI = 5;
+    % Rank 1 TPMI 5 is valid for two ports, but cannot survive a rank-2
+    % report that omits TPMI. Rank and TPMI belong to the same observation.
+    for reportedTPMI = [NaN 12 1.5 -1]
+        observed = srsPass;
+        observed.TPMIEstimate = reportedTPMI;
+        updated = sixgr.truth.CoupledTruthRuntime.applySRSTrial(candidate,1,observed);
+        assert(updated.LatestULFeedback(1).RI == 2 && ...
+            isnan(updated.LatestULFeedback(1).PMI), ...
+            "New rank must not be paired with an old, rounded or configured TPMI.");
+    end
+    observed = srsPass; observed.TPMIEstimate = 1;
+    updated = sixgr.truth.CoupledTruthRuntime.applySRSTrial(candidate,1,observed);
+    assert(updated.LatestULFeedback(1).RI == 2 && updated.LatestULFeedback(1).PMI == 1);
+    for reportedRI = [NaN 0 1.5]
+        observed.RIEstimate = reportedRI;
+        updated = sixgr.truth.CoupledTruthRuntime.applySRSTrial(candidate,1,observed);
+        assert(isnan(updated.LatestULFeedback(1).RI) && ...
+            isnan(updated.LatestULFeedback(1).PMI), ...
+            "A TPMI without valid measured rank must not borrow a configured or previous rank.");
+    end
 end
 
 % A PUSCH DM-RS channel estimate has one channel dimension per effective

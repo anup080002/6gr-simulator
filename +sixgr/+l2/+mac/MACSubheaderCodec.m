@@ -4,15 +4,21 @@ classdef MACSubheaderCodec
         function bytes=encode(direction,lcid,payloadLength)
             schema=sixgr.l2.mac.MACCESchemaRegistry.resolve(direction,lcid);
             payloadLength=double(payloadLength);
+            if ~isscalar(payloadLength) || ~isfinite(payloadLength) || ...
+                    payloadLength<0 || payloadLength>65535 || payloadLength~=fix(payloadLength)
+                error("sixgr:mac:MACPDULengthOverrun","Invalid subPDU length.");
+            end
+            if schema.SizeType=="fixed" && payloadLength~=schema.FixedPayloadBytes
+                error("sixgr:mac:FixedMACPayloadLengthMismatch", ...
+                    "%s LCID %d requires exactly %d payload octets, got %d.", ...
+                    direction,lcid,schema.FixedPayloadBytes,payloadLength);
+            end
             if schema.Kind=="SDU" && lcid~=0 && payloadLength==0
                 error("sixgr:mac:ZeroLengthLogicalChannelSDU", ...
                     "Logical-channel MAC SDU cannot be empty.");
             end
             if schema.SizeType=="fixed" || schema.SizeType=="implicit"
                 bytes=uint8(lcid); return;
-            end
-            if payloadLength<0 || payloadLength>65535 || payloadLength~=fix(payloadLength)
-                error("sixgr:mac:MACPDULengthOverrun","Invalid subPDU length.");
             end
             if payloadLength<=255
                 bytes=uint8([lcid bitand(payloadLength,255)]);

@@ -129,10 +129,16 @@ function out = localCSI(root)
 T = localRead(root,"mimo_csi_report_schema_test_vectors.csv");
 n = height(T); actual = false(n,1); actualError = strings(n,1);
 p1 = strings(n,1); p2 = strings(n,1);
+fieldOrderMismatch=false(n,1);
 for index = 1:n
     try
         [config,p1(index),p2(index)] = localBuildCSIVector(T(index,:));
-        %#ok<NASGU>
+        if T.Part1Bits(index)~="FORMULA_FROM_CONFIG"
+            fieldOrderMismatch(index)= ...
+                fillmissing(join(config.Part1Fields,"|"),'constant',"")~=fillmissing(T.Part1Fields(index),'constant',"") || ...
+                fillmissing(join(config.Part2Fields,"|"),'constant',"")~=fillmissing(T.Part2Fields(index),'constant',"") || ...
+                (config.part2BitCount()>0)~=localTruth(T.SeparateEncoding(index));
+        end
         actual(index) = true;
     catch ME
         actualError(index) = string(ME.identifier);
@@ -144,7 +150,8 @@ numericExpected = expected & T.Part1Bits~="FORMULA_FROM_CONFIG";
 lengthMismatch(numericExpected) = ...
     str2double(p1(numericExpected))~=str2double(T.Part1Bits(numericExpected)) | ...
     str2double(p2(numericExpected))~=str2double(T.Part2Bits(numericExpected));
-mismatch = actual~=expected | (~expected & actualError~=T.ExpectedError) | lengthMismatch;
+mismatch = actual~=expected | (~expected & actualError~=T.ExpectedError) | ...
+    lengthMismatch | (expected & fieldOrderMismatch);
 out = table(T.CaseID,expected,actual,T.ExpectedError,actualError,p1,p2, ...
     double(mismatch),'VariableNames',{'VectorID','ExpectedValid','ActualValid', ...
     'ExpectedError','ActualError','ActualPart1Bits','ActualPart2Bits','MismatchCount'});
@@ -345,7 +352,7 @@ end
 
 function T = localRead(root,name)
 pathValue = fullfile(root,name);
-opts = detectImportOptions(pathValue,"TextType","string", ...
+opts = detectImportOptions(pathValue,"Delimiter",",","TextType","string", ...
     "VariableNamingRule","preserve");
 opts = setvartype(opts,opts.VariableNames,"string");
 T = readtable(pathValue,opts);

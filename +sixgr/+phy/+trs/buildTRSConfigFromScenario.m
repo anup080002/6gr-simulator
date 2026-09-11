@@ -46,7 +46,9 @@ if isempty(slotNumbers)
             ["Enabled TRS requires either explicit zero-based slot_numbers " + ...
              "or an integer period_slots/period_offset pair resolved from YAML."]);
     end
-    slotNumbers = periodOffset;
+    burstLength = double(sixgr.util.structGet(cfg,"phy.trs.burstLengthSlots",1));
+    validateattributes(burstLength,{'numeric'},{'scalar','integer','positive','<=',periodSlots});
+    slotNumbers = periodOffset+(0:burstLength-1);
     slotAuthority = "periodic_offset";
 else
     rawSlotNumbers = double(slotNumbers(:).');
@@ -72,8 +74,10 @@ nPorts = max(1, round(double(sixgr.util.structGet(cfg, "phy.trs.nPorts", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.num_ports", 1)))));
 rowNumber = max(1, round(double(sixgr.util.structGet(cfg, "phy.trs.csirsRowNumber", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.row_number", localRowForPorts(nPorts))))));
-symbolLocation = max(0, round(double(sixgr.util.structGet(cfg, "phy.trs.symbolLocation", ...
-    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.symbol_location", 4)))));
+symbolLocation = double(sixgr.util.structGet(cfg, "phy.trs.symbolLocation", ...
+    sixgr.util.structGet(cfg, "phy.trs.symbolLocations", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.symbol_locations", ...
+    sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.symbol_location", [])))));
 subcarrierLocation = max(0, round(double(sixgr.util.structGet(cfg, "phy.trs.subcarrierLocation", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.subcarrier_location", 0)))));
 rbOffset = max(0, round(double(sixgr.util.structGet(cfg, "phy.trs.rbOffset", ...
@@ -104,6 +108,7 @@ if ~isempty(fieldnames(runtimeWindow))
     strictCfg.RuntimeObservationWindow = runtimeWindow;
 end
 strictCfg.SlotNumbers = double(slotNumbers);
+strictCfg.BurstLengthSlots = double(sixgr.util.structGet(cfg,"phy.trs.burstLengthSlots",numel(slotNumbers)));
 strictCfg.SlotAuthority = slotAuthority;
 strictCfg.PeriodSlots = double(sixgr.util.structGet(cfg, "phy.trs.period_slots", NaN));
 strictCfg.PeriodOffset = double(sixgr.util.structGet(cfg, "phy.trs.period_offset", NaN));
@@ -142,18 +147,20 @@ if ~isempty(fieldnames(runtimeWindow)) && runtimeWindow.Authority == "explicit_s
 end
 strictCfg.ToolboxCarrier = resourceSet.Carrier;
 strictCfg.ToolboxCSIRS = resourceSet.CSIRS;
+strictCfg.ToolboxResources = resourceSet.Resources;
 strictCfg.NumCSIRSPorts = double(resourceSet.CSIRS.NumCSIRSPorts);
 strictCfg.CDMType = string(resourceSet.CSIRS.CDMType);
 strictCfg.Density = string(resourceSet.CSIRS.Density);
 strictCfg.ConfigHash = sixgr.phy.trs.hashTRSConfig(strictCfg);
 strictCfg.StrictValidation = sixgr.phy.trs.validateTRSConfigStrict(strictCfg);
 strictCfg.ConfigExport = rmfield(strictCfg, intersect(fieldnames(strictCfg), ...
-    {'ToolboxCarrier','ToolboxCSIRS','BaseConfig','ConfigExport','StrictValidation'}));
+    {'ToolboxCarrier','ToolboxCSIRS','ToolboxResources','BaseConfig','ConfigExport','StrictValidation'}));
 end
 
 function row = localRowForPorts(nPorts)
 if nPorts <= 1
-    row = 2;
+    % trs-Info uses one-port, density-three NZP-CSI-RS mapping row 1.
+    row = 1;
 elseif nPorts <= 2
     row = 3;
 else

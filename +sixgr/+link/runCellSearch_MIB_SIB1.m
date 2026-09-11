@@ -59,6 +59,10 @@ out.TimingEstimateWasClipped = false;
 out.Sync = struct();
 out.PBCH = struct();
 out.SSBIndex = NaN;
+out.ObservedSSBOccasionIndex = NaN;
+out.PBCHHypothesisSSBIndex = NaN;
+out.SSBIdentityVerified = false;
+out.SSBIndexSource = "";
 out.SSBBeamIndex = NaN;
 out.SSBReceivedPower_dB = NaN;
 out.SS_RSRP_dBm = NaN;
@@ -303,7 +307,11 @@ try
     out.AcquisitionTime_ms = out.AirInterfaceObservation_ms;
     out.Sync = sync;
     out.PBCH = pb;
-    out.SSBIndex = double(sixgr.util.structGet(pb, "SSBIndex", sixgr.util.structGet(txInfo, "SSB.SSBIndex", NaN)));
+    identity = sixgr.phy.sync.receivedSSBOccasionIdentity(sync, pb);
+    for field = string(fieldnames(identity)).'
+        out.(field) = identity.(field);
+    end
+    out.SSBIndex = out.ObservedSSBOccasionIndex;
     out.SSBBeamIndex = out.SSBIndex + 1;
     out.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     out.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
@@ -347,7 +355,7 @@ try
     out.LLRAvailable = logical(sixgr.util.structGet(pb, "PBCHDecodeAvailable", false));
     out.LLRFinite = out.LLRAvailable && isfinite(double(sixgr.util.structGet(pb, "NoiseVar", NaN)));
 
-    out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0);
+    out.Ok = logical(pb.Ok) && (double(pb.ErrFlag) == 0) && out.SSBIdentityVerified;
     if out.Ok
         out.Status = "PASS";
         out.FailureReason = "";

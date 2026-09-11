@@ -493,7 +493,7 @@ end
 layerCountPerCodeword = localLayerCountPerCodeword(nLayers, nCodewords);
 [codewordIndexByLayer, layerIndexWithinCodeword] = localCodewordLayerIndexMap(layerCountPerCodeword);
 mapping = struct();
-mapping.ContractVersion = "PDSCHCodewordLayer/v1";
+mapping.ContractVersion = "PDSCHCodewordLayer/v2";
 mapping.Direction = "DL";
 mapping.MappingStandard = "3GPP_TS_38_211_codeword_to_layer_mapping";
 mapping.MappingEngine = "nrPDSCH_internal_nrLayerMap";
@@ -504,6 +504,7 @@ mapping.NumCodewords = double(nCodewords);
 mapping.NumLayers = double(nLayers);
 mapping.GrantNumLayers = double(nLayers);
 mapping.CodewordIndexByLayer = double(codewordIndexByLayer);
+mapping.CodewordIndexBase = 0;
 mapping.LayerIndexWithinCodeword = double(layerIndexWithinCodeword);
 mapping.LayerCountPerCodeword = double(layerCountPerCodeword);
 mapping.RateMatchedBitCountPerCodeword = double(rateBits);
@@ -599,7 +600,8 @@ pos = 1;
 for c = 1:numel(layerCountPerCodeword)
     n = double(layerCountPerCodeword(c));
     idx = pos:(pos + n - 1);
-    cwByLayer(idx) = c;
+    % TS 38.211 7.3.1: physical q is zero-based; c indexes MATLAB cells.
+    cwByLayer(idx) = c - 1;
     layerInCw(idx) = 1:n;
     pos = pos + n;
 end

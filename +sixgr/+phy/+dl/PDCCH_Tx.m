@@ -112,6 +112,13 @@ end
 % Indices and DMRS for this PDCCH allocation.
 % Output order is [indices, dmrsSymbols, dmrsIndices].
 [pdcchInd, dmrsSym, dmrsInd] = nrPDCCHResources(carrier, pdcch);
+% Allocation evidence belongs to the actual transmitted resource mapping,
+% even when the caller did not request a search for a free candidate.
+% Collapse only the port axis: control occupancy is physical time/frequency.
+mapped=double([pdcchInd(:);dmrsInd(:)])-1;
+nSubcarriers=12*double(carrier.NSizeGrid);
+allocatedCoordinates=unique([mod(mapped,nSubcarriers)+12*double(carrier.NStartGrid), ...
+    mod(floor(mapped/nSubcarriers),double(carrier.SymbolsPerSlot))],'rows');
 
 % Encoded length E (bits) for QPSK
 E = 2 * numel(pdcchInd);

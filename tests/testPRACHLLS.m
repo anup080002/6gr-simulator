@@ -34,6 +34,9 @@ out = sixgr.rach.runPRACHLLS(localBaseConfig(cfg), "WriteOutputs", false, "Scena
 assert(height(out.ROTable) == 1, "No-noise PRACH smoke must emit one RO row.");
 assert(all(out.ROTable.detected), "No-noise PRACH smoke must detect the preamble.");
 assert(all(out.ROTable.correct_detection), "No-noise PRACH smoke must classify a correct detection.");
+assert(all(~out.ROTable.CRCApplicable) && all(isnan(out.ROTable.CRCPass)) && ...
+    isequal(out.ROTable.DetectionSuccess,out.ROTable.correct_detection), ...
+    'Preamble detection success must not masquerade as a transport-block CRC.');
 end
 
 function testFalseAlarmModeWithPrachDisabled()
@@ -46,6 +49,8 @@ assert(all(~out.TrialTable.detected), ...
     "False-alarm PRACH noise-only smoke must not produce detections at the chosen threshold.");
 assert(all(out.SummaryBySNR.FalseAlarmProbability == 0), ...
     "FalseAlarmProbability must be derived from trials and be zero for this deterministic noise-only smoke.");
+assert(all(~out.ROTable.CRCApplicable) && all(isnan(out.ROTable.CRCPass)) && ...
+    ~any(out.ROTable.DetectionSuccess));
 end
 
 function testTimingOffsetRecovery()

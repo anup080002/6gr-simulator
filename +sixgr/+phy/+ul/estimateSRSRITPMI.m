@@ -48,6 +48,8 @@ estimate = struct( ...
     "SelectedPostEqSINRAnchorSource", "", ...
     "SelectedPostEqSINRPowerReferencePlane", "", ...
     "SelectedBeamIndices", [], ...
+    "SelectedCodebookPortIndices1Based", [], ...
+    "CodebookPortIndexDefinition", "nonzero_nrPUSCHCodebook_antenna_port_support_not_spatial_beam_ID", ...
     "PRBCount", NaN, ...
     "SRSSymbolCount", NaN, ...
     "NumTxPorts", NaN, ...
@@ -118,7 +120,7 @@ end
 estimate.TPMI = double(tpmi);
 estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
-estimate.SelectedBeamIndices = double(beamIndices);
+estimate.SelectedCodebookPortIndices1Based = double(beamIndices);
 anchor_dB = double(opt.AbsoluteSINRAnchor_dB);
 anchorSource = strtrim(string(opt.AbsoluteSINRAnchorSource));
 anchorPlane = strtrim(string(opt.AbsoluteSINRAnchorPowerReferencePlane));
@@ -520,32 +522,25 @@ end
 W = double(W);
 numTxPorts = max(1, round(double(numTxPorts)));
 
-% nrPUSCHCodebook returns layer-by-port weights in current 5G Toolbox
-% releases. The channel matrix is receive-antenna-by-transmit-port, so the
-% score needs a port-by-layer precoder. Preserve already-oriented custom
-% candidates and reject genuinely incompatible dimensions.
-if size(W, 1) == numTxPorts
-    WportsByLayer = W;
-elseif size(W, 2) == numTxPorts
-    WportsByLayer = W.';
-else
-    return;
+% Candidate construction returns the canonical port-by-layer matrix.
+% Never infer orientation from dimensions: square full-rank matrices are
+% ambiguous and must use the same explicit transpose as PUSCH mapping.
+if size(W, 1) ~= numTxPorts
+    error('sixgr:phy:ul:SRSPrecoderDomainMismatch', ...
+        'SRS scoring requires a canonical port-by-layer precoder.');
 end
-
-if isempty(WportsByLayer) || size(WportsByLayer, 1) ~= numTxPorts
-    WportsByLayer = [];
-end
+WportsByLayer = W;
 end
 
 function [W, beamIndices] = localPUSCHCodebookCandidate(ri, numTxPorts, tpmiIdx, transformPrecoding)
 W = [];
 beamIndices = [];
-[~, ~, W] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
+[W, ~] = sixgr.phy.ul.puschCodebookProjectionMatrix( ...
     max(1, round(double(ri))), max(1, round(double(numTxPorts))), ...
     round(double(tpmiIdx)), logical(transformPrecoding));
 if isempty(W)
     return;
 end
-portPower = sum(abs(double(W)).^2, 1, "omitnan");
-beamIndices = find(isfinite(portPower) & portPower > (eps(max(portPower, [], "omitnan")) * 16));
+portPower = sum(abs(double(W)).^2, 2);
+beamIndices = find(portPower > (eps(max(portPower)) * 16)).';
 end

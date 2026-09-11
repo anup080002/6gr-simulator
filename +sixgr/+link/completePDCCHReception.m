@@ -20,7 +20,17 @@ if observation.SampleRateHz~=prepared.SampleRateHz|| ...
     error('sixgr:link:PDCCHObservationLayoutMismatch', ...
         'PDCCH reception requires the actual monitored symbols at the prepared sample rate.');
 end
-if isfinite(prepared.RuntimeStartSample) && observation.StartSample~=prepared.RuntimeStartSample
+expectedStart=prepared.RuntimeStartSample;
+alignment=sixgr.util.structGet(prepared,'ReceivedTimingAlignment',struct());
+if ~isempty(fieldnames(alignment))
+    expected=sixgr.phy.frame.pdcchReceivedClockAlignment(alignment.Reference, ...
+        prepared.Tx.Carrier,prepared.RuntimeStartSample,prepared.SampleRateHz, ...
+        alignment.Reference.ImplementationFilterDelay_samples);
+    assert(isequaln(alignment,expected),'sixgr:link:PDCCHReceivedClockMismatch', ...
+        'Retain the measured clock alignment without substituting a fitted receive offset.');
+    expectedStart=alignment.ReceiveStartSample;
+end
+if isfinite(expectedStart) && observation.StartSample~=expectedStart
     error('sixgr:link:PDCCHObservationOriginMismatch', ...
         'Received PDCCH samples must retain the scheduled control-slot origin.');
 end
@@ -43,10 +53,11 @@ txInfo = prepared.TxInfo;
     'RNTI',txInfo.RNTI,'PDCCHScramblingRNTI',txInfo.PDCCHScramblingRNTI, ...
     'ExpectedDCIBits',tx.DCIBits,'SampleRate_Hz',prepared.SampleRateHz, ...
     'ListLength',listLength,'NoiseVar',options.NoiseVariance, ...
-    'NoiseOnlyWaveform',options.NoiseOnlyWaveform);
+    'NoiseOnlyWaveform',options.NoiseOnlyWaveform,'InputTimingAlignment',alignment);
 info.ObservationStartSample = observation.StartSample;
 info.ObservationEndSampleExclusive = observation.EndSampleExclusive;
 info.ObservationSampleRateHz = observation.SampleRateHz;
 info.ObservationCompletionTime_s = observation.EndSampleExclusive/observation.SampleRateHz;
 info.ObservationCoverageSource = "complete_contiguous_received_sample_buffer";
+info.ReceivedTimingAlignment=alignment;
 end

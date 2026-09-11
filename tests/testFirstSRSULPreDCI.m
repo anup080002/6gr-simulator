@@ -15,7 +15,7 @@ state.AccessState(:)="succeeded";
 state.LastSuccessfulPRACHSlotByUE(:)=1;
 plan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,5);
 srs=sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
-grant=struct('UEIndex',1,'RNTI',1,'ScheduledAbsoluteSlot',5, ...
+grant=struct('UEIndex',1,'RNTI',1,'Slot',5, ...
     'PRBSet',0:cfg.phy.carrier.NSizeGrid-1, ...
     'SymbolAllocation',[0 double(srs.ToolboxSRS.SymbolStart)+1], ...
     'Modulation','QPSK','NumLayers',1,'PDCCHGatingActive',true, ...
@@ -27,6 +27,20 @@ assert(~keep && T.Collision && T.OverlapRECount>0 && T.PUSCHCandidateDeferred &&
     T.DecisionStage=="before_ul_dci_transmission" && T.Exact && ~T.ApproximationUsed);
 assert(isequaln(before,rng) && isequaln(harq,state.ULHarq.Stats));
 assert(contains(T.SRSAllocationSource,'nrSRS') && contains(T.PUSCHAllocationSource,'nrPUSCH'));
+
+% A real TDD timing decision must address the SAME resource-only fixture
+% occasion. The scheduler's zero-based slot cannot be compared to plan.Slot.
+canonical=grant; canonical.Direction='UL';
+canonical.ControlAbsoluteSlot=3; canonical.ControlSymbolAllocation=[0 2];
+canonical.TimingDecision=sixgr.phy.frame.TimingRelationEngine. ...
+    resolveProductionGrant(cfg,canonical);
+assert(canonical.TimingDecision.Valid && canonical.TimingDecision.DataAbsoluteSlot==4, ...
+    'The TDD component must have a legal canonical PUSCH occasion.');
+canonical.ScheduledAbsoluteSlot=double(canonical.TimingDecision.DataAbsoluteSlot);
+sixgr.phy.grant.assertGrantTimingIdentity(canonical,'UL');
+[canonicalKeep,canonicalT]=sixgr.truth.planFirstSRSULResources(plan,cfg,{cfg},canonical);
+assert(isequal(canonicalKeep,keep) && isequaln(canonicalT,T), ...
+    'Canonical scheduler timing must retain exact first-SRS resource arbitration.');
 
 clearGrant=grant; clearGrant.SymbolAllocation=[0 double(srs.ToolboxSRS.SymbolStart)];
 [keep,T]=sixgr.truth.planFirstSRSULResources(plan,cfg,{cfg},clearGrant);
@@ -46,7 +60,7 @@ localReject(@()sixgr.truth.planFirstSRSULResources(future,cfg,{cfg},grant), ...
 committed=grant; committed.ControlDecodeOk=true;
 localReject(@()sixgr.truth.planFirstSRSULResources(plan,cfg,{cfg},committed), ...
     'sixgr:truth:SRSReservationAfterULCommit');
-wrong=grant; wrong.ScheduledAbsoluteSlot=10;
+wrong=grant; wrong.Slot=10;
 localReject(@()sixgr.truth.planFirstSRSULResources(plan,cfg,{cfg},wrong), ...
     'sixgr:truth:SRSPUSCHCollisionSlotMismatch');
 

@@ -196,6 +196,11 @@ classdef DCIContext
         end
 
         function validate(data)
+            if isfield(data,"RNTIType") && string(data.RNTIType) == "TC-RNTI" && ...
+                    isfield(data,'DCIFormat') && string(data.DCIFormat)=="1_0"
+                sixgr.phy.pdcch.TCMsg4DCIContext.validate(data);
+                return;
+            end
             if isfield(data,"RNTIType") && string(data.RNTIType) == "RA-RNTI"
                 % RA-RNTI does not carry connected-mode HARQ, UL, TCI or
                 % carrier-indicator fields. Validate its own authority;

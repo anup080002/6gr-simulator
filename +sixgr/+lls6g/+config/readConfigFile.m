@@ -20,6 +20,7 @@ switch ext
             "Unsupported config format '%s' for '%s'.", ext, string(filePath));
 end
 
+data = sixgr.lls6g.config.yamlArrayEnvelope(data,"decode");
 if ~(builtin("isstruct", data) && isscalar(data))
     error("sixgr:lls6g:config:BadTopLevel", ...
         "Top-level config in '%s' must decode to a scalar struct.", string(filePath));

@@ -42,6 +42,18 @@ DOMAIN_COLUMNS = {
 }
 
 
+DOMAIN_COLUMNS["measurement"] += (
+    " ULNormalizedReferencePower_dB ULNormalizedReferencePowerSource"
+    " ULNormalizedWindowRSSI_dB ULNormalizedWindowRSSISource"
+    " ULNormalizedWindowPowerRatio_dB ULNormalizedWindowPowerRatioSource ULNormalizedPowerEvidenceJSON"
+    " AllocationCarrierPowerMeasurementJSON AllocationCarrierRSSIPerReceiveAntenna_dBm"
+)
+DOMAIN_COLUMNS["beam_mimo"] += (
+    " AppliedCodebookPortIndexSet AppliedCodebookPortIndexDefinition"
+    " PrecodingNumLogicalPorts ULSpatialMeasurementEvidenceJSON"
+)
+
+
 def _s(slug: str, title: str, domain: str, column_key: str, tables: str, charts: str) -> dict[str, Any]:
     return {"slug": slug, "title": title, "domain": domain, "column_key": column_key, "tables": tables.split(), "charts": [c.strip() for c in charts.split(";") if c.strip()]}
 
@@ -59,7 +71,7 @@ REPORT_SECTIONS = [
     _s("pdsch-dl-data-chain", "PDSCH / DL Data Chain", "pdsch", "pdsch", "live_pdsch_stage_table live_pdsch_transport_block_table live_pdsch_code_block_table live_pdsch_mapping_table live_pdsch_dmrs_ptrs_table", "TB size over time;MCS/code-rate timeline;code-block count histogram;LDPC stage latency waterfall;DMRS/PTRS occupancy plot;precoder / beam selection timeline;DL resource-grid heatmap"),
     _s("pusch-ul-data-chain", "PUSCH / UL Data Chain", "pusch", "pusch", "live_pusch_stage_table live_pusch_rx_summary live_ul_dmrs_table live_llr_summary live_decoder_summary", "channel estimation latency;equalizer latency;decoder iteration histogram;TA estimate timeline;LLR statistics over time;UL resource-grid / equalized symbol summaries"),
     _s("pucch-f0-f1-f2-f3-f4", "PUCCH F0 / F1 / F2 / F3 / F4", "pucch", "pucch", "live_pucch_summary live_pucch_f0_table live_pucch_f1_table live_pucch_f2_table live_pucch_f3_table live_pucch_f4_table live_uci_table", "requested vs resolved format confusion matrix;PUCCH decode success/failure trend;ACK/NACK match chart;DTX detection chart;per-format latency histograms;crash/error timeline;UCI bit count distribution"),
-    _s("prach-random-access", "PRACH / Random Access", "prach", "prach", "live_prach_stage_table live_prach_detection_table live_random_access_state", "PRACH peak search timeline;noise floor trend;peak value histogram;preamble usage chart;TA estimate trend;access attempt/success timeline;PRACH EVM"),
+    _s("prach-random-access", "PRACH / Random Access", "prach", "prach", "live_prach_stage_table live_prach_detection_table live_random_access_state live_prach_native_allocation_snapshot", "PRACH peak search timeline;noise floor trend;peak value histogram;preamble usage chart;TA estimate trend;access attempt/success timeline;PRACH EVM;PRACH native resource grid"),
     _s("srs-ul-sounding-massive-mimo-inputs", "SRS / UL Sounding / Massive MIMO Inputs", "srs", "srs", "live_srs_stage_table live_srs_channel_estimation_table live_csi_output_table", "SRS validity timeline;channel estimate quality trend;SRS consumption by scheduler/beam module"),
     _s("channel-interference-impairments", "Channel / Interference / Impairments", "channel", "channel", "live_channel_realization_table live_interference_table live_impairment_table live_tracking_table", "channel quality timeline;CFO true vs estimated vs residual;timing offset true vs estimated vs residual;pathloss/shadowing distributions;interference power timeline;impairment contribution bar chart;channel heatmap artifact links"),
     _s("measurements-csi-link-adaptation-inputs", "Measurements / CSI / Link Adaptation Inputs", "measurement", "measurement", "live_measurement_table live_csi_feedback_table live_link_adaptation_input_table", "applied vs measured runtime SNR/SINR comparison;RSRP/CSI-RSRP timeline;CQI / PMI / RI / CRI timeline;measurement source coverage chart;config-vs-measured conflict dashboard;CSI CQI timeline;CSI RI timeline;CSI PMI components timeline;CSI SINR timeline"),

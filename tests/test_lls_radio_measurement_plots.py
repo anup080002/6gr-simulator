@@ -23,6 +23,75 @@ def chart(name, sources):
     return result, rows
 
 
+def data_carrier_power_payload(change="", direction="UL", n_rx=2, n_symbols=3):
+    powers = [[1e-9*(symbol+1)*(branch+1) for branch in range(n_rx)] for symbol in range(n_symbols)]
+    rssis = [10*math.log10(sum(p[b] for p in powers)/n_symbols)+30 for b in range(n_rx)]
+    e = {"ContractVersion": "received_data_carrier_power/v1",
+        "Scope": "received_data_symbol_window_full_carrier_not_ue_NR_RSSI_report",
+        "PowerReferencePlane": "receiver_antenna_connector_pre_composite_front_end",
+        "Source": "actual_physical_received_IQ_OFDM_carrier_energy", "InputAmplitudeUnit": "sqrt_mW",
+        "GridAmplitudeUnit": "sqrt_W", "FrequencyAlignment": "nominal_carrier_no_oracle_CFO_correction",
+        "CPIncluded": False, "Direction": direction, "RNTI": 1, "GrantContextId": "received-grant-1",
+        "DataAbsoluteSlot": 9, "ObservationStartSample": 900, "ObservationEndSampleExclusive": 1000,
+        "ReceivedSymbolStartSample": 920, "ReceivedSymbolEndSampleExclusive": 990,
+        "NumRB": 25, "SubcarrierSpacing_kHz": 15, "Bandwidth_Hz": 4500000,
+        "NumReceiveAntennas": n_rx, "SampleRateHz": 7680000, "Nfft": 512,
+        "SymbolIndices0Based": list(range(2, 2+n_symbols)), "SymbolAllocation": [2, n_symbols],
+        "RSSIPerAntenna_dBm": rssis, "SymbolPowerPerAntenna_W": powers,
+        "PhysicalObservationSHA256": "a"*64}
+    if change == "closure": powers[0][0] *= 2
+    if change == "plane": e["PowerReferencePlane"] = "normalized_receiver_grid"
+    if change == "scope": e["Scope"] = "UE_NR_RSSI"
+    if change == "bandwidth": e["Bandwidth_Hz"] *= 2
+    if change == "symbols": e["SymbolIndices0Based"] = [2, 4, 5]
+    if change == "branch": e["NumReceiveAntennas"] += 1
+    if change == "clock": e["ReceivedSymbolEndSampleExclusive"] = 1001
+    if change == "grant": e["GrantContextId"] = ""
+    if change == "slot": e["DataAbsoluteSlot"] = 8
+    if change == "units": e["InputAmplitudeUnit"] = "normalized"
+    if change == "hash": e["PhysicalObservationSHA256"] = ""
+    if n_rx == 1: e["SymbolPowerPerAntenna_W"] = [p[0] for p in powers]
+    if n_symbols == 1:
+        e["SymbolIndices0Based"] = 2
+        e["SymbolPowerPerAntenna_W"] = powers[0] if n_rx > 1 else powers[0][0]
+    if change == "boolean_energy": e["SymbolPowerPerAntenna_W"] = True
+    row = {"Direction": direction, "RNTI": 1, "UEIndex": 1, "CellID": 1, "Slot": 10,
+        "AllocationCarrierPowerMeasurementJSON": json.dumps(e),
+        "AllocationCarrierRSSIPerReceiveAntenna_dBm": json.dumps(rssis)}
+    if change == "proxy": row["Source"] = "fast_proxy"
+    if change == "mirror": row["AllocationCarrierRSSIPerReceiveAntenna_dBm"] = "[0, 0]"
+    output = io.StringIO(); writer = csv.DictWriter(output, list(row))
+    writer.writeheader(); writer.writerow(row)
+    if change == "duplicate": writer.writerow(row)
+    return output.getvalue().encode()
+
+
+@pytest.mark.parametrize("direction,path,name", [("UL", radio.TRIALS[1], "PUSCH-window carrier RSSI timeline"),
+                                                ("DL", radio.TRIALS[0], "PDSCH-window carrier RSSI timeline")])
+@pytest.mark.parametrize("n_rx", [1, 2, 4])
+@pytest.mark.parametrize("n_symbols", [1, 3])
+def test_data_carrier_rssi_keeps_measured_window_and_branches(direction, path, name, n_rx, n_symbols):
+    result, rows = chart(name, {path: data_carrier_power_payload(direction=direction, n_rx=n_rx, n_symbols=n_symbols)})
+    assert result["csv_status"] == "specialized_runtime_radio_measurement_dataset"
+    assert len(rows) == n_rx and all(row["grant_context_id"] == "received-grant-1" for row in rows)
+    assert all(row["measurement_scope"].endswith("not_ue_NR_RSSI_report") for row in rows)
+    png = m._rasterize_contract_png(result["img_bytes"], source_mime_type="image/svg+xml", source_logical_path="test://power.svg")
+    assert png.startswith(b"\x89PNG\r\n\x1a\n")
+
+
+@pytest.mark.parametrize("change", ["closure", "plane", "scope", "bandwidth", "symbols", "branch", "clock",
+                                    "grant", "slot", "units", "hash", "proxy", "mirror", "duplicate"])
+def test_data_carrier_rssi_rejects_corrupt_or_mislabeled_measurements(change):
+    result, _ = chart("PUSCH-window carrier RSSI timeline", {radio.TRIALS[1]: data_carrier_power_payload(change)})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_data_carrier_rssi_rejects_boolean_scalar_energy():
+    result, _ = chart("PUSCH-window carrier RSSI timeline", {radio.TRIALS[1]:
+        data_carrier_power_payload("boolean_energy", n_rx=1, n_symbols=1)})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
 def ssb_power_payload(change="", n_rx=2):
     powers = [[1e-8*(symbol+1)*(branch+1) for branch in range(n_rx)] for symbol in range(4)]
     rssis = [10*math.log10(sum(p[b] for p in powers)/4)+30 for b in range(n_rx)]
@@ -183,11 +252,22 @@ def test_precoder_feedback_requires_explicit_delivered_source_slot_not_value_equ
     trials = (b"Slot,UEIndex,CSIMeasurementSlot,LinkAdaptationAppliedFeedbackSourceSlot,RequestedPrecoderPMI,AppliedPrecoderPMI\n"
               b"7,1,7,NaN,0,0\n11,1,12,7,0,0\n")
     reports = b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,PMI,RI\nDL,1,7,9,delivered_to_runtime_scheduler,0,2\nDL,1,12,14,delivered_to_runtime_scheduler,3,2\n"
-    _, rows = chart("reported versus applied PMI", {radio.TRIALS[0]: trials, radio.FEEDBACK: reports})
+    result, rows = chart("reported versus applied PMI", {radio.TRIALS[0]: trials, radio.FEEDBACK: reports})
     assert rows[0]["reported_pmi_token"] == ""  # Slot 7 measurement was not delivered yet.
     assert rows[1]["reported_pmi_token"] == "0"  # Uses explicit source 7, not current CSI slot 12.
     assert rows[1]["reported_ri"] == "2.0"
     assert rows[1]["feedback_binding_authority"].endswith("not_proof_of_precoder_selection_causality")
+    assert b"no bound feedback" not in result["img_bytes"].lower()
+
+
+def test_requested_pmi_is_not_titled_reported_when_no_feedback_is_bound():
+    trials = b"Slot,UEIndex,RequestedPrecoderPMI,AppliedPrecoderPMI\n31,1,0,0\n32,1,0,0\n"
+    result, rows = chart("reported versus applied PMI", {radio.TRIALS[0]: trials})
+    image = result["img_bytes"].lower()
+    assert b"requested versus applied pmi (no bound feedback)" in image
+    assert b"reported versus applied pmi" not in image
+    assert all(row["reported_pmi_token"] == "" for row in rows)
+    assert all(row["chart_name"] == "reported versus applied PMI" for row in rows)
 
 
 @pytest.mark.parametrize("direction,path", [("DL", radio.TRIALS[0]), ("UL", radio.TRIALS[1])])

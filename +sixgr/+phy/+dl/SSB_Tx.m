@@ -317,7 +317,9 @@ if ~requiresComposition
             "Composed", false, ...
             "ActiveSSBIndices0Based", activeIndices - 1, ...
             "NumTransmitAntennas", 1, ...
-            "ComponentCount", numel(activeIndices));
+            "ComponentCount", numel(activeIndices), ...
+            "TransmitPortResourceGrid", localExactSSBurstGrid(waveInfo), ...
+            "WaveformDomain", waveformDomain);
     end
     return;
 end
@@ -330,6 +332,7 @@ end
 waveform = complex(zeros(0, burstPlan.NumTransmitAntennas));
 waveInfo = struct();
 compositeSSBGrid = [];
+compositePortGrid = [];
 for ordinal = 1:numel(activeIndices)
     ssbPosition = activeIndices(ordinal);
     componentCfg = cfgDL;
@@ -364,6 +367,18 @@ for ordinal = 1:numel(activeIndices)
     else
         precoded = componentWaveform * precoder;
     end
+    % Retain the same per-beam spatial map used by the actual waveform.
+    % The logical SS/PBCH grid alone does not describe TX antenna ports.
+    if waveformDomain == "logical_rf_chain_post_analog_precoder"
+        portGrid = componentSSBGrid;
+    else
+        portGrid = reshape(componentSSBGrid(:) * precoder, ...
+            size(componentSSBGrid,1),size(componentSSBGrid,2),numel(precoder));
+    end
+    if isempty(compositePortGrid)
+        compositePortGrid = zeros(size(portGrid),'like',portGrid);
+    end
+    compositePortGrid = compositePortGrid + portGrid;
     if ordinal == 1
         waveform = zeros(size(precoded), "like", precoded);
         waveInfo = componentInfo;
@@ -390,7 +405,8 @@ if isstruct(waveInfo)
         "PerSSBPowerDB", burstPlan.PerSSBPowerDB(activeIndices), ...
         "PrecoderMatrixSHA256", ...
             burstPlan.PrecoderMatrixSHA256(activeIndices), ...
-        "CompositeResourceGridAvailable", true);
+        "CompositeResourceGridAvailable", true, ...
+        "TransmitPortResourceGrid", compositePortGrid);
 end
 end
 

@@ -77,6 +77,9 @@ cfg.mac.scheduler.maxPRBAllocationPerUE = 12;
 cfg.mac.scheduler.muMimoEnabled = false;
 cfg.mac.harq.enable = true;
 cfg.phy.harq.enable = true;
+% Explicit test TDRA [index,start,count,K0] must describe the budget below.
+cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pdsch.timeDomainAllocations = [0 2 12 1];
 cfg = withCanonicalSchedulerTiming(cfg);
 
 sched = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "DL", "HARQ", []);
@@ -121,6 +124,7 @@ cfg.phy.tddTiming.allowedK0 = 0;
 cfg.phy.tddTiming.pdcchToPDSCHK0 = 0;
 cfg.phy.pdcch.symbolAllocation = [0 2];
 cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pdsch.timeDomainAllocations = [0 2 12 0];
 cfg.phy.pdsch.mappingType = "A";
 if isfield(cfg.phy, "frameStructure")
     cfg.phy = rmfield(cfg.phy, "frameStructure");

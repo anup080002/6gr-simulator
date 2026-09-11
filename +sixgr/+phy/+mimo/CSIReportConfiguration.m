@@ -7,6 +7,7 @@ classdef CSIReportConfiguration
         CodebookType (1,1) string
         Ports (1,1) double
         Rank (1,1) double
+        AllowedRanks (1,:) double
         ReportQuantity (1,1) string
         NumCSIResources (1,1) double
         FrequencyGranularity (1,1) string
@@ -16,6 +17,10 @@ classdef CSIReportConfiguration
         Part2Fields (1,:) string
         Part2Widths (1,:) double
         SpecificationProfile (1,1) string
+    end
+
+    properties (SetAccess = immutable, GetAccess = private)
+        SchemaRequest (1,1) struct
     end
 
     methods
@@ -44,6 +49,10 @@ classdef CSIReportConfiguration
             codebookType = string(request.CodebookType);
             ports = localInteger(request.Ports, "Ports");
             rankValue = localInteger(request.Rank, "Rank");
+            allowedRanks=localAllowedRanks(request,ports);
+            if ~ismember(rankValue,allowedRanks)
+                error('sixgr:mimo:InvalidRI','RI %d is excluded by the active report rank restriction.',rankValue);
+            end
             numResources = localInteger(request.NumCSIResources, "NumCSIResources");
             if rankValue > min(8,ports)
                 error("sixgr:mimo:InvalidRI", ...
@@ -64,10 +73,12 @@ classdef CSIReportConfiguration
                     numResources,string(request.FrequencyGranularity),request);
 
             obj.ReportConfigID = string(request.ReportConfigID);
+            obj.SchemaRequest = request;
             obj.Epoch = epoch;
             obj.CodebookType = codebookType;
             obj.Ports = ports;
             obj.Rank = rankValue;
+            obj.AllowedRanks = allowedRanks;
             obj.ReportQuantity = string(request.ReportQuantity);
             obj.NumCSIResources = numResources;
             obj.FrequencyGranularity = string(request.FrequencyGranularity);
@@ -88,11 +99,62 @@ classdef CSIReportConfiguration
             n = sum(obj.Part2Widths);
         end
 
+        function counts = part2BitCountCandidates(obj)
+            % Resource discovery before RI reception uses only configured
+            % possibilities, never the transmitter's selected RI/bit count.
+            request=obj.SchemaRequest;
+            counts=zeros(size(obj.AllowedRanks));
+            for index=1:numel(obj.AllowedRanks)
+                request.Rank=obj.AllowedRanks(index);
+                candidate=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
+                counts(index)=candidate.part2BitCount();
+            end
+            counts=unique(counts);
+        end
+
+        function target = forTransport(obj,channel)
+            request=obj.SchemaRequest;
+            request.UCIChannel=upper(string(channel));
+            target=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
+        end
+
+        function assertQualifiedWireLayout(obj)
+            % Legacy advanced schema-size formulas are internal inspection
+            % objects, not implementations of TS 38.212 CSI wire formats.
+            assert(lower(obj.CodebookType)=="typei-singlepanel" && ...
+                lower(obj.FrequencyGranularity)=="wideband" && ...
+                all(obj.AllowedRanks<=2), ...
+                'sixgr:mimo:UnqualifiedCSIWireLayout', ...
+                'CSI %s/%s has no qualified wire implementation; do not serialize or consume the legacy schema as NR UCI.', ...
+                obj.CodebookType,obj.FrequencyGranularity);
+        end
+
+        function [encoded,target] = transcode(obj,part1,part2,channel)
+            % TX transport reassignment: preserve the original information
+            % fields, change only their channel-specific wire representation.
+            values=obj.decode(part1,part2);
+            request=obj.SchemaRequest;
+            if isfield(values,'RI'), request.Rank=values.RI; end
+            request.UCIChannel=upper(string(channel));
+            target=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
+            encoded=target.build(values);
+        end
+
         function report = build(obj, values)
             arguments
                 obj
                 values (1,1) struct
             end
+            obj.assertQualifiedWireLayout();
+            if any(obj.Part1Fields=="RI")
+                assert(isfield(values,'RI') && ~isempty(values.RI), ...
+                    'sixgr:mimo:MissingCSIReportMeasurement','RI requires an explicit measured rank.');
+                assert(isequal(double(values.RI),obj.Rank), ...
+                    'sixgr:mimo:InvalidRI','Serialized RI must agree with the report layout rank.');
+                riValues=localRIValues(obj.SchemaRequest);
+                values.RI=find(riValues==obj.Rank); % Restricted codebook ordinal; see Table 6.3.1.1.2-3.
+            end
+            values.ZERO_PADDING=0; % Normative reserved padding, not a measurement.
             [part1Bits, part1Owners] = localSerializeFields( ...
                 obj.Part1Fields,obj.Part1Widths,values);
             [part2Bits, part2Owners] = localSerializeFields( ...
@@ -108,12 +170,13 @@ classdef CSIReportConfiguration
                 "Part2Owners", part2Owners, ...
                 "Part1Sequence", sixgr.phy.pucch.UCISequence(1,part1Bits,part1Owners,part1Names), ...
                 "Part2Sequence", sixgr.phy.pucch.UCISequence(2,part2Bits,part2Owners,part2Names), ...
-                "SeparateEncoding", true, ...
+                "SeparateEncoding", ~isempty(part2Bits), ...
                 "CustomContainerUsed", false, ...
                 "SpecificationProfile", obj.SpecificationProfile);
         end
 
         function decoded = encodeDecodeNoNoise(obj, report)
+            obj.assertQualifiedWireLayout();
             localValidateReportLength(obj,report);
             decoded = struct();
             decoded.Part1 = localRoundTrip(report.Part1Sequence, "QPSK");
@@ -136,15 +199,62 @@ classdef CSIReportConfiguration
             end
         end
 
+        function [values, receivedConfig] = decodePart1(obj, part1Bits)
+            % Resolve rank-dependent Part 2 from RECEIVED Part 1, never
+            % the rank used by a pending transmitter-side report object.
+            obj.assertQualifiedWireLayout();
+            localValidateBinaryBits(part1Bits);
+            if numel(part1Bits) ~= obj.part1BitCount()
+                error("sixgr:mimo:InvalidCSIPart1Length", ...
+                    "CSI Part 1 has %d bits; schema requires %d.",numel(part1Bits),obj.part1BitCount());
+            end
+            receivedConfig = obj;
+            riIndex=find(obj.Part1Fields=="RI",1);
+            if ~isempty(riIndex)
+                % CRI/RI precede every rank-dependent field on both channels.
+                prefixLength=sum(obj.Part1Widths(1:riIndex));
+                prefix=localDeserializeFields(obj.Part1Fields(1:riIndex), ...
+                    obj.Part1Widths(1:riIndex),part1Bits(1:prefixLength),struct());
+                riValues=localRIValues(obj.SchemaRequest);
+                if prefix.RI>numel(riValues) || ~ismember(riValues(prefix.RI),obj.AllowedRanks)
+                    error('sixgr:mimo:InvalidRI','Received RI ordinal is excluded by the report rank restriction.');
+                end
+                request = obj.SchemaRequest;
+                request.Rank = riValues(prefix.RI);
+                receivedConfig = sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
+                assert(obj.part1BitCount()==receivedConfig.part1BitCount(), ...
+                    'sixgr:mimo:RankDependentCSIPart1Schema', ...
+                    'Part-1 resource size must be fixed by configuration, not the reported rank.');
+            end
+            values=localDeserializeFields(receivedConfig.Part1Fields, ...
+                receivedConfig.Part1Widths,part1Bits(:),struct());
+            if isfield(values,'RI')
+                riValues=localRIValues(obj.SchemaRequest); values.RI=riValues(values.RI);
+            end
+            if obj.Ports==1, values.RI=1; end % No transmitted spatial choice for one CSI-RS port.
+        end
+
         function values = decode(obj, part1Bits, part2Bits)
             %DECODE Reconstruct CSI fields from receiver-decoded UCI bits.
             % The scheduler must consume this result rather than the
             % transmitter-side values used to construct the report.
-            obj.validateDecoded(part1Bits, part2Bits);
-            values = localDeserializeFields(obj.Part1Fields, ...
-                obj.Part1Widths, int8(part1Bits(:)), struct());
-            values = localDeserializeFields(obj.Part2Fields, ...
-                obj.Part2Widths, int8(part2Bits(:)), values);
+            [values, receivedConfig] = obj.decodePart1(part1Bits);
+            localValidateBinaryBits(part2Bits);
+            receivedConfig.validateDecoded(part1Bits, part2Bits);
+            values = localDeserializeFields(receivedConfig.Part2Fields, ...
+                receivedConfig.Part2Widths, part2Bits(:), values);
+            if obj.Ports>2 && lower(obj.CodebookType)=="typei-singlepanel" && ...
+                    contains(lower(obj.ReportQuantity),'pmi') && isfield(values,"PMI_I11")
+                % Reconstruct the internal index ONLY from received fields
+                % and the active geometry. Never inherit a TX scalar PMI.
+                values.PMI=sixgr.phy.mimo.TypeISinglePanelCodebook.linearIndex( ...
+                    receivedConfig.SchemaRequest,values);
+                [~,components]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix( ...
+                    receivedConfig.SchemaRequest,values.PMI);
+                for field=["PMI_I11","PMI_I12","PMI_I13","PMI_I2"]
+                    values.(field)=components.(field);
+                end
+            end
             values.ReportConfigID = obj.ReportConfigID;
             values.ConfigurationEpoch = obj.Epoch;
             values.UCIChannel = obj.UCIChannel;
@@ -152,65 +262,21 @@ classdef CSIReportConfiguration
     end
 end
 
+function localValidateBinaryBits(bits)
+if ~((isnumeric(bits) || islogical(bits)) && isreal(bits) && ...
+        (isvector(bits) || isempty(bits)) && all(bits(:)==0 | bits(:)==1))
+    error('sixgr:mimo:CSIDeserializationMismatch', ...
+        'Receiver-decoded CSI must be a binary vector; do not round or cast invalid values into bits.');
+end
+end
+
 function [p1f,p1w,p2f,p2w] = localSchema(codebookType,ports,rankValue,quantity,nResources,granularity,request)
 cb = lower(codebookType);
 q = lower(quantity);
 criWidth = localBits(nResources-1);
 riWidth = localBits(min(8,ports)-1);
-if contains(cb,"typei") && contains(cb,"single") && ports == 1
-    % A single CSI-RS port has no spatial choice: RI is identically one
-    % and PMI/LI carry no information.  Keep only the resource selector
-    % (when multiple CSI-RS resources exist) and wideband CQI in Part 1.
-    % Emitting a fabricated PMI for SISO would make the scheduler appear
-    % spatially adaptive when no codebook decision exists.
-    p1f = ["CRI","CQI_CW0"];
-    p1w = [criWidth,4];
-    p2f = strings(1,0);
-    p2w = zeros(1,0);
-    return;
-end
-if contains(cb,"typei") && contains(cb,"single") && ports == 2
-    p1f = ["CRI","RI","CQI_CW0"];
-    p1w = [criWidth,1,4];
-    p2f = strings(1,0);
-    p2w = zeros(1,0);
-    if contains(q,"pmi") || contains(q,"i1")
-        p2f(end+1) = "PMI";
-        p2w(end+1) = 3-rankValue; % rank1:2 bits, rank2:1 bit
-    end
-    p2f(end+1) = "LI";
-    p2w(end+1) = localBits(rankValue-1);
-    return;
-end
-if contains(cb,"typei") && contains(cb,"single") && ports > 2
-    n1 = localInteger(localField(request,"N1",NaN),"N1");
-    n2 = localInteger(localField(request,"N2",NaN),"N2");
-    o1 = localInteger(localField(request,"O1",NaN),"O1");
-    o2 = localInteger(localField(request,"O2",NaN),"O2");
-    maxRank = localInteger(localField(request,"MaxRank",rankValue),"MaxRank");
-    codebookMode = localInteger(localField(request,"CodebookMode",NaN),"CodebookMode");
-    if ports ~= 2*n1*n2 || ~ismember(codebookMode,[1 2]) || ...
-            rankValue > 2 || maxRank > 2
-        error("sixgr:mimo:UnsupportedAntennaTuple", ...
-            "The enabled strict Type-I single-panel payload schema supports " + ...
-            "dual-polarized ports=2*N1*N2 and ranks one or two.");
-    end
-    p1f = ["CRI","RI","CQI_CW0"];
-    p1w = [criWidth,localBits(maxRank-1),4];
-    p2f = strings(1,0);
-    p2w = zeros(1,0);
-    localAppendPMIField("PMI_I11",localBits(n1*o1-1));
-    localAppendPMIField("PMI_I12",localBits(n2*o2-1));
-    if rankValue == 2
-        localAppendPMIField("PMI_I13",1);
-    end
-    if rankValue == 1
-        localAppendPMIField("PMI_I2",2);
-    else
-        localAppendPMIField("PMI_I2",1);
-    end
-    p2f(end+1) = "LI";
-    p2w(end+1) = localBits(rankValue-1);
+if cb=="typei-singlepanel"
+    [p1f,p1w,p2f,p2w]=localTypeIWidebandSchema(request);
     return;
 end
 if ~(contains(cb,"typeii") || contains(cb,"typei"))
@@ -234,12 +300,84 @@ p2f = ["PMI_COEFFICIENTS","LI"];
 p2w = [rankValue*beamCount*(localBits(phaseAlphabet-1)+1)*subbands, ...
        localBits(rankValue-1)];
 
-    function localAppendPMIField(name,width)
-        if width > 0
-            p2f(end+1) = name;
-            p2w(end+1) = width;
-        end
+end
+
+function ranks=localAllowedRanks(request,ports)
+maximum=localInteger(localField(request,'MaxRank',min(8,ports)),'MaxRank');
+ranks=double(localField(request,'AllowedRanks',1:maximum));
+assert(isrow(ranks) && ~isempty(ranks) && all(isfinite(ranks)) && ...
+    all(ranks==fix(ranks) & ranks>=1 & ranks<=min(maximum,ports)) && ...
+    isequal(ranks,unique(ranks,'sorted')), ...
+    'sixgr:mimo:InvalidRI','AllowedRanks must be increasing unique valid ranks within MaxRank and the CSI-RS ports.');
+end
+
+function [p1f,p1w,p2f,p2w]=localTypeIWidebandSchema(request)
+% TS 38.212 Tables 6.3.1.1.2-7 (PUCCH) and 6.3.2.1.2-3/4 (PUSCH).
+ports=double(request.Ports); rank=double(request.Rank);
+ranks=localAllowedRanks(request,ports); q=lower(string(request.ReportQuantity));
+assert(lower(string(request.FrequencyGranularity))=="wideband", ...
+    'sixgr:mimo:UnsupportedCSIReportLayout','Type-I subband CSI requires its actual differential-CQI/PMI layout.');
+assert(any(q==["cri-ri-pmi-cqi","cri-ri-li-pmi-cqi","cri-ri-cqi","cri-ri-i1","cri-ri-i1-cqi","cri-cqi","cqi"]), ...
+    'sixgr:mimo:UnsupportedCSIReportLayout','Unsupported Type-I report quantity %s; do not substitute a CQI payload.',q);
+assert(ports==1 || contains(q,'ri'), ...
+    'sixgr:mimo:UnsupportedCSIReportLayout','Spatial Type-I reports require their configured RI field.');
+if ports>2
+    assert(max(ranks)<=2,'sixgr:mimo:UnsupportedAntennaTuple', ...
+        'Type-I single-panel report matrices above rank two remain unqualified.');
+end
+prefix=strings(1,0); prefixWidths=zeros(1,0);
+if contains(q,'cri'), prefix(end+1)="CRI"; prefixWidths(end+1)=localBits(request.NumCSIResources-1); end
+if ports>1 && contains(q,'ri'), prefix(end+1)="RI"; prefixWidths(end+1)=localBits(numel(localRIValues(request))-1); end
+cqi=strings(1,0); cqiWidths=zeros(1,0);
+if contains(q,'cqi'), cqi="CQI_CW0"; cqiWidths=4; end
+[li,liWidths,pmi,pmiWidths]=localTypeIRankFields(request);
+if upper(string(localField(request,'UCIChannel','PUCCH')))=="PUSCH"
+    p1f=[prefix cqi]; p1w=[prefixWidths cqiWidths];
+    p2f=[li pmi]; p2w=[liWidths pmiWidths];
+else
+    widths=zeros(size(ranks));
+    for k=1:numel(ranks)
+        candidate=request; candidate.Rank=ranks(k);
+        [~,lw,~,pw]=localTypeIRankFields(candidate);
+        widths(k)=sum(lw)+sum(pw)+sum(cqiWidths);
     end
+    padding=max(widths)-sum(liWidths)-sum(pmiWidths)-sum(cqiWidths);
+    p1f=[prefix li "ZERO_PADDING" pmi cqi];
+    p1w=[prefixWidths liWidths padding pmiWidths cqiWidths];
+    p2f=strings(1,0); p2w=zeros(1,0);
+end
+end
+
+function values=localRIValues(request)
+if lower(string(request.ReportQuantity))=="cri-ri-cqi"
+    % No-codebook RI keeps the port-count-dependent field and physical
+    % rank-minus-one encoding (TS 38.212 Table 6.3.1.1.2-3).
+    values=1:min(8,double(request.Ports));
+else
+    values=localAllowedRanks(request,double(request.Ports));
+end
+end
+
+function [li,lw,pmi,pw]=localTypeIRankFields(request)
+ports=double(request.Ports); rank=double(request.Rank); q=lower(string(request.ReportQuantity));
+li=strings(1,0); lw=zeros(1,0); pmi=strings(1,0); pw=zeros(1,0);
+if ports==1, return; end
+if contains(q,'-li-'), li="LI"; lw=localBits(rank-1); end
+if ~(contains(q,'pmi') || contains(q,'i1')), return; end
+if ports==2
+    assert(~contains(q,'i1'),'sixgr:mimo:UnsupportedCSIReportLayout', ...
+        'A two-port Type-I codebook has a scalar PMI, not an i1 component.');
+    pmi="PMI"; pw=3-rank;
+else
+    layout=sixgr.phy.mimo.TypeISinglePanelCodebook.layout(request);
+    names=["PMI_I11","PMI_I12","PMI_I13","PMI_I2"];
+    dims=layout.Dimensions([2 3 4 1]);
+    if ~contains(q,'pmi'), names=names(1:3); dims=dims(1:3); end
+    for k=1:numel(names)
+        width=localBits(dims(k)-1);
+        if width>0, pmi(end+1)=names(k); pw(end+1)=width; end %#ok<AGROW>
+    end
+end
 end
 
 function [bits,owners] = localSerializeFields(fields,widths,values)
@@ -251,7 +389,12 @@ for index = 1:numel(fields)
         continue;
     end
     name = fields(index);
-    value = double(localField(values,char(name),0));
+    if ~isfield(values,name) || isempty(values.(name))
+        error("sixgr:mimo:MissingCSIReportMeasurement", ...
+            "CSI field %s requires an explicit measured value for its %d-bit payload; missing evidence cannot be serialized as zero.", ...
+            name,width);
+    end
+    value = double(values.(name));
     if name == "RI"
         value = value-1;
     end
@@ -288,6 +431,9 @@ for index = 1:numel(fields)
     end
     weights = 2.^((width-1):-1:0);
     value = sum(fieldBits .* weights);
+    if strcmp(name,'ZERO_PADDING') && value~=0
+        error('sixgr:mimo:InvalidCSIPadding','Received CSI reserved padding must be zero.');
+    end
     if strcmp(name,"RI")
         value = value + 1;
     end

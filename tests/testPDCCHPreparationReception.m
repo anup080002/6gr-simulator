@@ -22,6 +22,9 @@ end
 assert(p.RFExecutionDeferred && p.ChannelExecutionDeferred && p.PowerExecutionDeferred);
 assert(p.SampleDomain=="toolbox_normalized_logical_ports");
 assert(isequal(p.TransmitSamples,p.Tx.Waveform));
+assert(~isempty(p.TxInfo.AllocatedRECoordinates) && ...
+    size(p.TxInfo.AllocatedRECoordinates,1)==numel(p.Tx.PDCCHInd)+numel(p.Tx.DMRSInd), ...
+    'Actual control RE occupancy must be exported even without ReservedRECoordinates.');
 assert(p.TxInfo.OFDM.EngineUsed=="canonical_nrOFDMModulate");
 assert(p.TxInfo.OFDM.WaveformSHA256==sixgr.phy.waveform.WaveformHash.numeric(p.Tx.Waveform));
 assert(p.RuntimeStartSample==round(0.010*p.SampleRateHz));

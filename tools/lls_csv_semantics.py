@@ -24,6 +24,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
 
+from lls_beam_summary_audit import reconcile_beam_summary
+
 
 PRIMARY_LINK_TABLES = {
     "DL": "air_interface/csv/dl_pdsch_trials.csv",
@@ -52,6 +54,7 @@ CONTROL_TABLES = (
     "air_interface/csv/pbch_trials.csv",
     "air_interface/csv/prach_trials.csv",
     "air_interface/csv/pdcch_trials.csv",
+    "air_interface/csv/pucch_trials.csv",
     "air_interface/csv/csi_rs_trials.csv",
     "air_interface/csv/srs_trials.csv",
     "air_interface/csv/trs_trials.csv",
@@ -691,6 +694,30 @@ def _expected_link_count(summary: dict[str, str], direction: str) -> int:
     return int(value) if value is not None and value >= 0 else 0
 
 
+def _audit_large_scale_power_table(
+    path: str, rows: list[dict[str, str]],
+) -> list[AuditCheck]:
+    """Expected loss is never evidence of a measured waveform power change."""
+    failures: list[str] = []
+    for index, row in enumerate(rows, start=1):
+        before = _number(row, "WaveformPowerBeforeDb")
+        after = _number(row, "WaveformPowerAfterDb")
+        measured = _number(row, "MeasuredDeltaDb")
+        expected = _number(row, "ExpectedDeltaDb")
+        tolerance = _number(row, "ToleranceDb")
+        if any(value is None for value in (before, after, measured, expected, tolerance)):
+            failures.append(f"row={index}:independent_waveform_power_measurement_missing")
+            continue
+        if not _close(measured, before - after, atol=1e-9):
+            failures.append(f"row={index}:measured_delta_not_input_minus_output_power")
+        if tolerance < 0 or abs(measured - expected) > tolerance + 1e-9:
+            failures.append(f"row={index}:measured_power_does_not_close_against_expected_net_gain")
+    return [_check(
+        "channel_power", path, "independent_gain_stage_power_closure", rows, failures,
+        required=bool(rows), evaluated=bool(rows),
+    )]
+
+
 def _audit_identity(path: str, rows: list[dict[str, str]]) -> list[AuditCheck]:
     checks: list[AuditCheck] = []
     failures: list[str] = []
@@ -748,7 +775,9 @@ def _audit_link_table(
             path,
             "expected_trial_count",
             rows,
-            [] if len(rows) == expected_count and expected_count > 0 else [f"expected={expected_count};actual={len(rows)}"],
+            [] if len(_measured_analysis_rows(rows)) == expected_count and expected_count > 0 else [
+                f"expected={expected_count};actual_effective={len(_measured_analysis_rows(rows))};actual_total={len(rows)}"
+            ],
         )
     )
     if not rows:
@@ -1022,6 +1051,26 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
         if not any(_number(row, name) is not None for name in measured_fields if name in header):
             failures.append(f"row={index}:no_finite_runtime_measurement")
     checks.append(_check("control_runtime", path, "runtime_measurement_and_truth", rows, failures))
+    if "ReceiverHestSINRApplicable" in header:
+        applicability_failures: list[str] = []
+        for index, row in enumerate(rows, start=1):
+            applicable = _boolean(row, "ReceiverHestSINRApplicable")
+            value = _number(row, "ReceiverHestSINR_dB")
+            if applicable is None:
+                applicability_failures.append(f"row={index}:invalid_receiver_sinr_applicability")
+            elif applicable and value is None:
+                applicability_failures.append(f"row={index}:applicable_receiver_sinr_missing")
+            elif not applicable and value is not None:
+                applicability_failures.append(f"row={index}:finite_receiver_sinr_marked_not_applicable")
+            if applicable and "ChannelEstimateAvailable" in header and \
+                    _boolean(row, "ChannelEstimateAvailable") is not True:
+                applicability_failures.append(f"row={index}:receiver_sinr_without_channel_estimate")
+        # Availability consistency is not a detector: a finite channel/noise
+        # estimate must never certify that the desired signal was detected.
+        checks.append(_check(
+            "control_runtime", path, "receiver_sinr_applicability", rows,
+            applicability_failures,
+        ))
     return checks
 
 
@@ -2382,7 +2431,9 @@ def _audit_beam_precoder_table(
         "precoding_application_stage", "precoding_active",
         "explicit_beam_weights_applied", "transform_precoding_applied",
         "precoding_num_ports", "precoding_num_layers", "precoding_matrix_rows",
-        "precoding_matrix_cols", "qcl_accuracy", "qcl_status", "tci_status",
+        "precoding_matrix_cols", "qcl_accuracy", "qcl_type", "qcl_source_rs",
+        "qcl_status", "tci_state_id", "unified_tci_state_id",
+        "tci_validity_timer_slots", "tci_status",
         "near_field_status", "runtime_evidence",
         "source_artifact_ref", "run_tag", "scenario_id", "config_hash",
         "code_commit", "seed", "producer_module", "status_code",
@@ -3923,7 +3974,7 @@ def _audit_frc_reference_outputs(run_root: Path) -> list[AuditCheck]:
 def _raw_rows_for_scope(
     link_rows: dict[str, list[dict[str, str]]], direction: str, ue_value: str
 ) -> list[dict[str, str]]:
-    rows = link_rows.get(direction.upper(), [])
+    rows = _measured_analysis_rows(link_rows.get(direction.upper(), []))
     ue = str(ue_value or "").strip().lower()
     if ue in {"", "all", "nan", "n/a"}:
         return rows
@@ -3932,6 +3983,50 @@ def _raw_rows_for_scope(
         for row in rows
         if _text(row, "UEIndex", "UEID").strip().lower() == ue
     ]
+
+
+def _finalized_truth_rows_for_scope(
+    link_rows: dict[str, list[dict[str, str]]], direction: str, ue_value: str
+) -> list[dict[str, str]]:
+    rows = _finalized_truth_rows(link_rows.get(direction.upper(), []))
+    ue = str(ue_value or "").strip().lower()
+    if ue in {"", "all", "nan", "n/a"}:
+        return rows
+    return [
+        row
+        for row in rows
+        if _text(row, "UEIndex", "UEID").strip().lower() == ue
+    ]
+
+
+def _finalized_truth_rows(
+    rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Return all finalized, non-fallback waveform trial observations."""
+    return [
+        row
+        for row in rows
+        if ("FinalizedFlag" not in row or _boolean(row, "FinalizedFlag") is True)
+        and _boolean(row, "FallbackFlag") is not True
+    ]
+
+
+def _measured_analysis_rows(
+    rows: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Mirror generateMeasuredSINRCurves' finalized measurement population."""
+    selected: list[dict[str, str]] = []
+    for row in _finalized_truth_rows(rows):
+        if _boolean(row, "IsWarmupFrame") is True:
+            continue
+        if "PostEqSINR_dB" in row and _number(row, "PostEqSINR_dB") is None:
+            continue
+        if "PostEqSINRValueStatus" in row and not _text(
+            row, "PostEqSINRValueStatus"
+        ).strip().upper().startswith("OK"):
+            continue
+        selected.append(row)
+    return selected
 
 
 def _raw_error_rates(rows: list[dict[str, str]]) -> tuple[float, float, int]:
@@ -4020,19 +4115,19 @@ def _audit_derived_link_table(
     required_columns = required_by_name.get(name, set())
     schema_failures = sorted(required_columns.difference(header))
     raw_link_population = [
-        row for direction_rows in link_rows.values() for row in direction_rows
+        row for direction_rows in link_rows.values()
+        for row in _measured_analysis_rows(direction_rows)
     ]
-    fixed_link_without_geometry = bool(raw_link_population) and all(
-        _boolean(row, "FixedLinkCampaign") is True
-        and _number(row, "PropagationDistance_m") is None
+    link_without_geometry = bool(raw_link_population) and all(
+        _number(row, "PropagationDistance_m") is None
         for row in raw_link_population
     )
-    if not rows and name == "distance_vs_sinr.csv" and fixed_link_without_geometry:
+    if not rows and name == "distance_vs_sinr.csv" and link_without_geometry:
         return [
             _check(
                 "derived_link",
                 path,
-                "not_applicable_fixed_link_without_geometry",
+                "not_applicable_link_without_geometry",
                 rows,
                 schema_failures,
                 required=False,
@@ -4164,7 +4259,9 @@ def _audit_derived_link_table(
                 reconciliation_failures.append(f"group={key}:distribution_population_mismatch")
     elif name == "multiuser_user_summary.csv":
         for index, row in enumerate(rows, start=1):
-            raw = _raw_rows_for_scope(link_rows, _text(row, "Direction"), _text(row, "UEIndex"))
+            raw = _finalized_truth_rows_for_scope(
+                link_rows, _text(row, "Direction"), _text(row, "UEIndex")
+            )
             bler, ber, failures = _raw_error_rates(raw)
             if not raw or not _close(_number(row, "ObservedRowCount"), len(raw), atol=0):
                 reconciliation_failures.append(f"row={index}:observed_count_mismatch")
@@ -4186,7 +4283,10 @@ def _audit_derived_link_table(
             ):
                 reconciliation_failures.append(f"direction={direction}:ccdf_not_monotone")
     elif name == "distance_vs_sinr.csv":
-        if len(rows) != sum(len(value) for value in link_rows.values()):
+        expected_distance_rows = sum(
+            len(_measured_analysis_rows(value)) for value in link_rows.values()
+        )
+        if len(rows) != expected_distance_rows:
             reconciliation_failures.append("distance_table_trial_count_mismatch")
     elif name == "fer_summary.csv":
         for index, row in enumerate(rows, start=1):
@@ -5418,6 +5518,34 @@ def _exact_mu_context_authority(
     return authority
 
 
+def _observed_si_broadcast(row: dict[str, str], slots_per_frame: int) -> bool:
+    """SI-RNTI is cell broadcast, not a missing unicast UE (38.321 7.1).
+
+    The exemption requires the executed broadcast producer's retained grid
+    and committed waveform interval; an RNTI value alone is insufficient.
+    """
+    if (
+        _text(row, "direction").upper() != "DL"
+        or _text(row, "channel").upper() != "PDSCH"
+        or _number(row, "rnti") != 65535
+        or _text(row, "authority") != "executed_broadcast_tx_grid_and_committed_waveform_interval"
+        or _text(row, "waveform_port_domain") != "physical_element_domain"
+        or not _is_sha256(_text(row, "transmit_grid_sha256"))
+        or not _whole(_number(row, "associated_ssb_index0"))
+        or not _whole(_number(row, "cell_id"), minimum=1)
+        or slots_per_frame <= 0
+    ):
+        return False
+    first = _number(row, "broadcast_start_sample")
+    last = _number(row, "broadcast_end_sample_exclusive")
+    rate = _number(row, "observation_sample_rate_hz")
+    slot = _number(row, "absolute_slot")
+    if not all(_whole(value) for value in (first, last, slot)) or rate is None or rate <= 0:
+        return False
+    slot_samples = rate * 0.01 / slots_per_frame
+    return last > first and first <= slot * slot_samples + 1e-7 and last >= (slot + 1) * slot_samples - 1e-7
+
+
 def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
     relative = "frame_grid/csv/observed_re_allocation.csv"
     header, rows = _read_rows(run_root / relative)
@@ -5469,7 +5597,7 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
     # directions.  In TDD the configured symbol-direction check above is the
     # authority that prevents simultaneous opposite-direction ownership.
     occupied: dict[
-        tuple[str, int, int, int, int], tuple[str, str, int | None]
+        tuple[int, str, int, int, int, int], tuple[str, str, int | None]
     ] = {}
     mu_authority = _exact_mu_context_authority(run_root)
     dl_channels = {"PSS", "SSS", "PBCH", "SSB", "PDCCH", "PDSCH", "CSI-RS", "CSIRS", "TRS"}
@@ -5487,6 +5615,13 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
         direction = _text(row, "direction").upper()
         channel = _text(row, "channel").upper()
         ue_id = _number(row, "ue_id")
+        cell_id = _number(row, "cell_id")
+        if not _whole(cell_id, minimum=1):
+            value_failures.append(prefix + ":missing_or_invalid_cell_identity")
+            continue
+        if channel == "PRACH" or _text(row, "grid_domain") not in {"", "carrier_cp_ofdm"}:
+            value_failures.append(prefix + ":noncarrier_native_grid_in_carrier_RE_table")
+            continue
         if not all(_whole(value) for value in (absolute_slot, sfn, slot_in_frame, symbol, start, port)):
             value_failures.append(prefix + ":noninteger_or_negative_coordinate")
             continue
@@ -5507,7 +5642,10 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
             value_failures.append(prefix + ":DL_channel_direction_mismatch")
         if channel in ul_channels and direction != "UL":
             value_failures.append(prefix + ":UL_channel_direction_mismatch")
-        if channel in {"PDSCH", "PUSCH"} and not _whole(ue_id, minimum=1):
+        si_broadcast = _observed_si_broadcast(row, slots_per_frame)
+        if si_broadcast and ue_id is not None:
+            value_failures.append(prefix + ":cell_broadcast_must_not_claim_unicast_UE")
+        if channel in {"PDSCH", "PUSCH"} and not _whole(ue_id, minimum=1) and not si_broadcast:
             value_failures.append(prefix + ":data_allocation_missing_UE_identity")
         allowed = _configured_tdd_symbol_direction(resolved, int(absolute_slot), int(symbol))
         if allowed is not None and allowed != direction:
@@ -5522,7 +5660,9 @@ def _audit_observed_re_allocation(run_root: Path) -> list[AuditCheck]:
             value_failures.append(prefix + ":active_flag_not_true")
         allocation = _text(row, "allocation_id")
         for subcarrier in range(int(start), int(start + count)):
-            key = (direction, int(absolute_slot), int(symbol), int(port), subcarrier)
+            # Different cells own distinct transmitters/ports. Cochannel
+            # inter-cell interference is not duplicate same-cell allocation.
+            key = (int(cell_id), direction, int(absolute_slot), int(symbol), int(port), subcarrier)
             previous = occupied.get(key)
             current_ue = int(ue_id) if _whole(ue_id, minimum=1) else None
             current = (channel, allocation, current_ue)
@@ -6264,6 +6404,53 @@ def _domain_table_applicability(
     return True, True
 
 
+def _executed_symbol_occupancy_failures(run_root: Path, points: list[dict[str, str]]) -> list[str]:
+    """Independently close occupancy against exact TX REs, not slot capacity."""
+    source = "reports/csv/live_re_allocation_snapshot.csv"
+    if any(_text(point, "source_table_logical_path") != source for point in points):
+        return ["occupancy_uses_nonexecuted_source"]
+    _, records = _read_rows(run_root / source)
+    if not records:
+        return ["executed_tx_re_source_missing"]
+    expected: dict[tuple, set[int]] = {}
+    for row in records:
+        if _text(row, "evidence_scope") != "runtime_observed_tx_occupancy":
+            return ["occupancy_source_contains_nonexecuted_evidence"]
+        active = _text(row, "active_flag").lower()
+        values = [_number(row, field) for field in ("absolute_slot", "symbol_index", "subcarrier_count")]
+        if active not in {"true", "false", "0", "1"} or any(
+            value is None or value < 0 or value != int(value) for value in values
+        ):
+            return ["occupancy_source_invalid_coordinates_or_activity"]
+        slot, symbol, width = (int(value) for value in values)
+        if active in {"false", "0"} or width == 0:
+            continue
+        key = (_text(row, "cell_id"), _text(row, "component_carrier", "component_carrier_id"),
+               _text(row, "bwp_id"), _text(row, "direction").upper(), slot)
+        expected.setdefault(key, set()).add(symbol)
+    failures = []
+    seen = set()
+    for ordinal, point in enumerate(points, 1):
+        slot = _number(point, "x_value")
+        key = (_text(point, "cell_id"), _text(point, "component_carrier"),
+               _text(point, "bwp_id"), _text(point, "direction").upper(), slot)
+        if key in seen:
+            failures.append(f"occupancy_point={ordinal}:duplicate_scope")
+        seen.add(key)
+        if key not in expected:
+            failures.append(f"occupancy_point={ordinal}:unobserved_scope")
+            continue
+        if _number(point, "y_value") != len(expected[key]):
+            failures.append(f"occupancy_point={ordinal}:distinct_symbol_count_mismatch")
+        if _text(point, "symbol_indices_0based") != "|".join(map(str, sorted(expected[key]))):
+            failures.append(f"occupancy_point={ordinal}:symbol_set_mismatch")
+        if "0-based" not in _text(point, "x_label"):
+            failures.append(f"occupancy_point={ordinal}:slot_index_domain_missing")
+    if seen != set(expected):
+        failures.append("occupancy_executed_scope_coverage_mismatch")
+    return failures
+
+
 def _audit_chart_lineage(run_root: Path) -> list[AuditCheck]:
     lineage_rel = "reports/csv/contract_plot_lineage.csv"
     lineage_path = run_root / lineage_rel
@@ -6365,6 +6552,8 @@ def _audit_chart_lineage(run_root: Path) -> list[AuditCheck]:
                     item_failures.append("source_mapping_status_column_missing")
                 elif any(_text(source_row, "source_mapping_status").lower() != "exact" for source_row in source_rows):
                     item_failures.append("specialized_chart_mapping_not_exact")
+        if any(_text(point, "chart_name").lower() == "frame/slot/symbol occupancy timeline" for point in source_rows):
+            item_failures.extend(_executed_symbol_occupancy_failures(run_root, source_rows))
         chart_checks.append(
             _check(
                 "chart_lineage",
@@ -6389,13 +6578,16 @@ def _audit_reconciliation(
     checks: list[AuditCheck] = []
     for direction, rows in link_rows.items():
         expected = _expected_link_count(summary, direction)
+        measured_rows = _measured_analysis_rows(rows)
         checks.append(
             _check(
                 "cross_table_reconciliation",
                 summary_path,
                 f"{direction.lower()}_summary_trial_count",
-                rows,
-                [] if expected == len(rows) else [f"summary={expected};table={len(rows)}"],
+                measured_rows,
+                [] if expected == len(measured_rows) else [
+                    f"summary={expected};effective_table={len(measured_rows)};total_table={len(rows)}"
+                ],
                 required=primary_links_required or bool(rows),
                 evaluated=primary_links_required or bool(rows),
             )
@@ -8249,6 +8441,22 @@ def _audit_qualification_status_tables(
     return checks
 
 
+def _audit_beam_measurement_summaries(run_root: Path) -> list[AuditCheck]:
+    relative = "reports/csv/live_beam_p1_acquisition_stats.csv"
+    _, rows = _read_rows(run_root / relative)
+    if not rows:
+        return []  # Presence/enablement is checked by the domain-table audit.
+    sources = {}
+    for source in {row.get("TraceSource", "") for row in rows}:
+        path = (run_root / source).resolve()
+        if not source or not path.is_relative_to(run_root.resolve()):
+            sources[source] = []
+        else:
+            _, sources[source] = _read_rows(path)
+    return [_check("beam_measurement", relative, "measured_quality_and_physical_ssb_scope",
+                   rows, reconcile_beam_summary(rows, sources))]
+
+
 def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     run_root = run_root.resolve()
     resolved_primary_tables = primary_link_tables(run_root)
@@ -8256,6 +8464,10 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     _summary_header, summary_rows = _read_rows(run_root / summary_rel)
     summary = summary_rows[0] if summary_rows else {}
     runner_profile = _text(summary, "RunnerProfile").strip().lower()
+    if not runner_profile:
+        runner_profile = str(_nested_value(
+            _load_resolved_config(run_root), "scenario.runner_profile", ""
+        )).strip().lower()
     component_only = runner_profile in COMPONENT_ONLY_RUNNER_PROFILES
     has_primary_run_evidence = bool(summary_rows) or any(
         _io_path(run_root / path).is_file() for path in resolved_primary_tables.values()
@@ -8264,7 +8476,13 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         run_root / "reports/csv/contract_plot_lineage.csv"
     ).is_file()
     has_frc_reference = _io_path(run_root / FRC_POINT_TABLE).is_file()
-    if not has_primary_run_evidence and not has_chart_contract and not has_frc_reference:
+    control_paths = tuple(dict.fromkeys(
+        CONTROL_TABLES + tuple(path.replace("air_interface/", "control/", 1) for path in CONTROL_TABLES)
+    ))
+    has_control_run_evidence = any(
+        _io_path(run_root / path).is_file() for path in control_paths
+    )
+    if not (has_primary_run_evidence or has_control_run_evidence or has_chart_contract or has_frc_reference):
         return {
             "canonical_csv_semantic_audit": [],
             "chart_source_semantic_audit": [],
@@ -8278,9 +8496,10 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
             }],
         }
     checks: list[AuditCheck] = []
+    checks.extend(_audit_beam_measurement_summaries(run_root))
     if has_frc_reference:
         checks.extend(_audit_frc_reference_outputs(run_root))
-    if not has_primary_run_evidence and not has_chart_contract:
+    if not (has_primary_run_evidence or has_control_run_evidence or has_chart_contract):
         required_failures = sum(
             check.required and (not check.evaluated or not check.passed)
             for check in checks
@@ -8301,6 +8520,11 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
                 "ok": required_failures == 0,
             }],
         }
+    if has_control_run_evidence and not summary_rows:
+        checks.append(_check(
+            "run_lifecycle", summary_rel, "run_completion_summary_present",
+            summary_rows, ["missing_run_summary_control_observations_not_final_qualification"],
+        ))
     link_rows: dict[str, list[dict[str, str]]] = {}
     for direction, path in resolved_primary_tables.items():
         header, rows = _read_rows(run_root / path)
@@ -8327,7 +8551,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
                 _expected_link_count(summary, direction),
             )
         )
-    for path in CONTROL_TABLES:
+    for path in control_paths:
         header, rows = _read_rows(run_root / path)
         if header or rows:
             checks.extend(_audit_control_table(path, header, rows))
@@ -8335,6 +8559,10 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         header, rows = _read_rows(run_root / path)
         if header or rows:
             checks.extend(_audit_derived_link_table(path, header, rows, link_rows))
+    large_scale_path = "channel/csv/large_scale_parameters.csv"
+    _large_scale_header, large_scale_rows = _read_rows(run_root / large_scale_path)
+    if large_scale_rows:
+        checks.extend(_audit_large_scale_power_table(large_scale_path, large_scale_rows))
     checks.extend(_audit_component_bler_outputs(run_root, link_rows, summary))
     checks.extend(_audit_fixed_snr_reporting_tables(run_root, link_rows))
     checks.extend(_audit_mimo_rank_layer_output(run_root, link_rows))

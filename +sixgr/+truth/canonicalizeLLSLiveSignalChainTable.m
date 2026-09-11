@@ -13,6 +13,9 @@ end
 
 scopeToken = lower(regexprep(char(string(scopeToken)), "[^a-z0-9]+", "_"));
 T = sixgr.truth.normalizeDisabledInterferenceIdentity(T, string(scopeToken));
+if any(string(scopeToken) == ["dl_pdsch_trials", "ul_pusch_trials"])
+    T = localCorrectBootstrapLinkAdaptationClaim(T);
+end
 names = string(T.Properties.VariableNames);
 for i = 1:numel(names)
     fieldName = char(names(i));
@@ -64,6 +67,38 @@ tf = any(scope == ["dl_pdsch_trials", "ul_pusch_trials", ...
     "csirs_stats", "csi_rs_trials", "rank_layer_trials", ...
     "mimo_config_strict", "mimo_configured_vs_effective", ...
     "beam_precoder_table"]);
+end
+
+function T = localCorrectBootstrapLinkAdaptationClaim(T)
+names = string(T.Properties.VariableNames);
+if ~ismember("LinkAdaptationApplied", names)
+    return;
+end
+n = height(T);
+feedbackSourceSlot = nan(n, 1);
+appliedCQI = nan(n, 1);
+for field = ["LinkAdaptationAppliedFeedbackSourceSlot", ...
+        "FeedbackSourceSlot", "CQIFeedbackSourceSlot"]
+    if ismember(field, names)
+        candidate = double(T.(char(field)));
+        take = ~isfinite(feedbackSourceSlot) & isfinite(candidate);
+        feedbackSourceSlot(take) = candidate(take);
+    end
+end
+if ismember("AppliedLinkAdaptationResolvedCQI", names)
+    appliedCQI = double(T.AppliedLinkAdaptationResolvedCQI);
+end
+% A decoded grant, a finite MCS, or a textual "adaptive" policy is not
+% proof that causal CSI was applied to this grant.  The applied flag is
+% true only when the row identifies either the receiver-feedback occasion
+% or the resolved CQI consumed by the scheduler.  This also repairs older
+% bootstrap rows whose selection-source text was overwritten downstream.
+noCausalFeedbackEvidence = ~isfinite(feedbackSourceSlot) & ~isfinite(appliedCQI);
+if any(noCausalFeedbackEvidence)
+    applied = logical(T.LinkAdaptationApplied);
+    applied(noCausalFeedbackEvidence) = false;
+    T.LinkAdaptationApplied = applied;
+end
 end
 
 function tf = localIsStringLikeColumn(col)

@@ -82,6 +82,13 @@ def main() -> int:
                 path, policy, contract_name=name
             )
 
+        # A terminal run can still gain producer-owned evidence during an
+        # explicit recovery/refinalization.  ``--force`` must therefore
+        # invalidate the dashboard's terminal filesystem index before source
+        # discovery; otherwise a newly restored CSV can remain invisible even
+        # though the manifest cache itself was bypassed.
+        if args.force:
+            dash.clear_dashboard_caches(int(run_row.get("run_id") or 0))
         initial_artifacts = dash.filesystem_artifacts_for_run(run_row)
         exact_cache_hit = bool(
             not args.force

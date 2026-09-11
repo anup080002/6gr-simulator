@@ -1,6 +1,16 @@
 function ok = testFourStepRARuntimeStageComposer()
 %TESTFOURSTEPRARUNTIMESTAGECOMPOSER Coupled RA composes strict runtime waveforms.
 cfg = raStrictAnchorConfig();
+% Explicit association fixture, not a claim that this unit decoded SSB.
+% Exercise the real Msg2/Msg4 projection/export path on a nonzero SSB ID.
+cfg.phy.ssb.Lmax = 8;
+cfg.phy.ssb.activeBitmap = "00010000";
+cfg.phy.ssb.runtimeSSBIndex = 3;
+cfg.phy.ssb.precoderMatrices = 1;
+cfg.phy.ssb.precoderIDs = "component_associated_ssb_mapping";
+cfg.random_access.common_downlink_beam_source = "selected_ssb_beam";
+cfg.random_access.associated_ssb_index = 3;
+cfg.random_access.associated_ssb_selection_source = "component_fixture_not_measured_selection";
 res = sixgr.truth.CoupledTruthRuntime.runFourStepRARuntime(cfg, ...
     "RunId", "test_ra_runtime_stage_composer", ...
     "UEId", 1, "CellId", 1, "AttemptId", 1, ...
@@ -22,6 +32,11 @@ assert(string(res.RuntimeTransportMode) == "coupled_runtime_stage_waveform_compo
     "Runtime transport mode must disclose coupled stage-waveform composition.");
 
 T = res.ArtifactTables.ra_runtime_stage_waveforms;
+native=res.ObservedREAllocationTable;
+assert(~isempty(native) && all(native.grid_domain=="prach_native_ofdm") && ...
+    all(native.waveform_hash_plane=="prach_after_preamble_power_control_before_spatial_mapping_and_rf") && ...
+    all(native.waveform_sha256==string(sixgr.phy.waveform.WaveformHash.numeric(res.Msg1Tx.Waveform))), ...
+    'Msg1 export must hash and label the actual power-controlled waveform, not a pre-power generator copy.');
 expectedStages = ["Msg1","Msg2","Msg3","Msg4","RRCSetupComplete"];
 assert(height(T) == numel(expectedStages), ...
     "Strict runtime RA must publish one composed transport row per waveform-carried message.");
@@ -38,5 +53,19 @@ assert(all(string(T.WaveformSource) == "coupled_runtime_stage_waveform_composer"
 assert(any(contains(string(T.RuntimeChannelLinkKey), "dir=UL")) && ...
     any(contains(string(T.RuntimeChannelLinkKey), "dir=DL")), ...
     "Strict composed RA must use both UL and DL persistent link keys.");
+for k=1:height(T)
+    if any(string(T.StageName(k))==["Msg2","Msg4"])
+        evidence=jsondecode(T.TxSSBAssociationJSON(k));
+        assert(evidence.SourceReferenceSignalId==3 && string(evidence.SourceReferenceSignal)=="SSB");
+        assert(string(T.TxBeamId(k))=="component_associated_ssb_mapping");
+        assert(string(evidence.ProjectionMatrixSHA256)== ...
+            string(sixgr.phy.mimo.MatrixContract.digest(1)));
+        assert(string(evidence.SelectionSource)=="component_fixture_not_measured_selection");
+        assert(contains(string(evidence.Scope),"not_receiver_QCL_or_TCI_activation"));
+    else
+        assert(strlength(string(T.TxSSBAssociationJSON(k)))==0, ...
+            'UL stages must not inherit a DL SSB projection claim.');
+    end
+end
 ok = true;
 end

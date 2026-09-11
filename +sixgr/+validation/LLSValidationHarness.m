@@ -219,7 +219,9 @@ rows = [rows; localPBCHComparisonRows(ctx, configHash)]; %#ok<AGROW>
 rows = [rows; localSIB1ComparisonRows(ctx, configHash)]; %#ok<AGROW>
 
 if isempty(rows)
-    T = struct2table(repmat(localEmptyComparisonRow(), 0, 1), "AsArray", true);
+    % Preserve field types; struct2table(emptyStruct) loses string types.
+    T = struct2table(localEmptyComparisonRow(), "AsArray", true);
+    T(1,:) = [];
 else
     T = struct2table(rows, "AsArray", true);
 end

@@ -1,124 +1,64 @@
-function ch = estimateTRSChannel(rx, cfg, tx, det)
-%ESTIMATETRSCHANNEL Estimate channel from received TRS REs using nrChannelEstimate.
-
+function ch = estimateTRSChannel(rx, cfg, tx, det) %#ok<INUSD>
+% Practical channel estimation ONLY. Independent NMSE is scored afterwards.
 sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.trs.estimateTRSChannel", ...
-    "TRS", "DL", struct("Stage","CHANNEL_TRACKING"));
-
-slotDet = det.SlotDetections;
-resources = localResolveSlotResources(cfg, tx);
-rows = repmat(localChannelRow(), numel(slotDet), 1);
-for ii = 1:numel(slotDet)
-    attempted = true;
-    available = false;
-    nmseDb = NaN;
-    noiseEst = NaN;
-    desiredPilotPower = NaN;
-    residualPilotPower = NaN;
-    pilotSINR_dB = NaN;
-    hestDimensions = "";
-    hestRxPorts = NaN;
-    hestTxPorts = NaN;
-    status = "channel_estimate_unavailable";
+    "TRS","DL",struct("Stage","CHANNEL_TRACKING"));
+rows=repmat(localRow(),numel(det.SlotDetections),1);
+estimates=cell(numel(rows),1); pilots=estimates;
+for k=1:numel(rows)
+    d=det.SlotDetections(k); row=localRow();
+    row.RunId=string(cfg.RunId); row.ConfigHash=string(cfg.ConfigHash);
+    row.Slot=d.Slot; row.ChannelEstimationAttempted=true;
+    row.ChannelNMSEThreshold_dB=double(cfg.ChannelNMSEThresholddB);
     try
-        rxGrid = slotDet(ii).RxGrid;
-        if isempty(rxGrid)
-            rxGrid = sixgr.phy.waveform.ofdmDemodulate( ...
-                resources(ii).Carrier, slotDet(ii).CorrectedWaveform);
-        end
-        [hest, noiseEst] = nrChannelEstimate(resources(ii).Carrier, rxGrid, ...
-            resources(ii).Indices, resources(ii).Symbols);
-        hestDimensions = strjoin(string(size(hest)), "x");
-        hestRxPorts = double(size(hest, 3));
-        if ndims(hest) >= 4
-            hestTxPorts = double(size(hest, 4));
-        else
-            hestTxPorts = 1;
-        end
-        rxRE = slotDet(ii).RxRE(:);
-        if isempty(rxRE)
-            rxRE = rxGrid(resources(ii).Indices);
-        end
-        ref = resources(ii).Symbols(:);
-        hPilot = hest(resources(ii).Indices);
-        n = min([numel(rxRE), numel(ref), numel(hPilot)]);
-        rxRE = rxRE(1:n);
-        ref = ref(1:n);
-        hPilot = hPilot(1:n);
-        mask = isfinite(real(rxRE)) & isfinite(imag(rxRE)) & ...
-            isfinite(real(ref)) & isfinite(imag(ref)) & ...
-            isfinite(real(hPilot)) & isfinite(imag(hPilot));
-        if ~any(mask)
-            nmse = NaN;
-        else
-            rxRE = rxRE(mask);
-            ref = ref(mask);
-            hPilot = hPilot(mask);
-            reconstructedPilot = hPilot(:) .* ref(:);
-            residual = rxRE(:) - reconstructedPilot;
-            desiredPilotPower = mean(abs(reconstructedPilot).^2, "omitnan");
-            residualPilotPower = mean(abs(residual).^2, "omitnan");
-            nmse = residualPilotPower ./ max(mean(abs(rxRE(:)).^2, "omitnan"), eps);
-            if isfinite(desiredPilotPower) && isfinite(residualPilotPower)
-                pilotSINR_dB = 10 * log10(max(desiredPilotPower, eps) ./ max(residualPilotPower, eps));
-            end
-        end
-        nmseDb = 10 * log10(max(nmse, eps));
-        available = isfinite(nmseDb) && logical(slotDet(ii).Detected);
-        status = "channel_estimate_available_pilot_reconstruction_nmse";
+        assert(d.Detected && ~isempty(d.RxGrid),'sixgr:phy:trs:MissingDetectedChannelResources', ...
+            'Channel estimation requires detected, actually demodulated TRS samples.');
+        grid=d.RxGrid; ind=double(d.ReferenceIndices(:)); ref=d.ReferenceSymbols(:);
+        K=size(grid,1); L=size(grid,2); R=size(grid,3);
+        assert(numel(ind)==numel(ref) && numel(unique(ind))==numel(ind) && ...
+            all(ind>=1 & ind<=K*L) && all(isfinite(grid(:))), ...
+            'sixgr:phy:trs:IncompleteChannelPilotResources','Do not truncate or discard pilot/receive-branch samples.');
+        reference=zeros(K,L,'like',grid); reference(ind)=ref;
+        [hest,noise]=nrChannelEstimate(tx.GridSlots(k).Carrier,grid,reference);
+        assert(size(hest,1)==K && size(hest,2)==L && size(hest,3)==R && size(hest,4)==1 && ...
+            all(isfinite(hest(:))),'sixgr:phy:trs:InvalidPracticalChannelGrid', ...
+            'Keep the complete per-resource/per-RX practical channel estimate.');
+        received=reshape(grid,K*L,R); fitted=reshape(hest,K*L,R);
+        received=received(ind,:); fitted=fitted(ind,:).*ref;
+        residual=received-fitted;
+        receivedEnergy=sum(abs(received).^2,'all');
+        assert(receivedEnergy>0,'sixgr:phy:trs:NoReceivedPilotEnergy','No received pilot energy.');
+        row.PilotFitResidualRatio_dB=10*log10(sum(abs(residual).^2,'all')/receivedEnergy);
+        row.PilotFitSignalToResidual_dB=10*log10(sum(abs(fitted).^2,'all')/sum(abs(residual).^2,'all'));
+        row.NoiseEstimate=double(noise);
+        row.HestDimensions=strjoin(string(size(hest)),'x');
+        row.HestRxPorts=R; row.HestTxPorts=1;
+        row.TRSChannelEstimateAvailable=true;
+        row.Status="practical_channel_available_independent_NMSE_not_yet_scored";
+        estimates{k}=hest; pilots{k}=ind;
     catch ME
-        status = "channel_estimate_failed:" + string(ME.identifier);
+        row.Status="channel_estimate_failed:"+string(ME.identifier);
     end
-    row = localChannelRow();
-    row.RunId = string(cfg.RunId);
-    row.ConfigHash = string(cfg.ConfigHash);
-    row.Slot = double(slotDet(ii).Slot);
-    row.ChannelEstimationAttempted = logical(attempted);
-    row.TRSChannelEstimateAvailable = logical(available);
-    row.NMSE_dB = double(nmseDb);
-    row.NoiseEstimate = double(noiseEst);
-    row.DesiredPilotPower = double(desiredPilotPower);
-    row.ResidualPilotPower = double(residualPilotPower);
-    row.PilotSINR_dB = double(pilotSINR_dB);
-    row.SINRMeasurementDomain = "trs_pilot_re_channel_reconstruction_residual";
-    row.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_timing_correction";
-    row.HestDimensions = string(hestDimensions);
-    row.HestRxPorts = double(hestRxPorts);
-    row.HestTxPorts = double(hestTxPorts);
-    row.ChannelNMSEThreshold_dB = double(cfg.ChannelNMSEThresholddB);
-    row.ChannelEstimator = "nrChannelEstimate_pilot_reconstruction_nmse";
-    row.Status = string(status);
-    row.TruthStatus = "real_lls_evidence";
-    rows(ii) = row;
+    rows(k)=row;
 end
-
-function resources = localResolveSlotResources(cfg, tx)
-if isfield(tx, "SlotResources") && isfield(tx, "Config") && ...
-        isfield(tx.Config, "ConfigHash") && string(tx.Config.ConfigHash) == string(cfg.ConfigHash)
-    resources = tx.SlotResources;
-else
-    resources = sixgr.phy.trs.generateTRSSymbolsAndIndices(cfg).SlotResources;
+ch=struct('Table',struct2table(rows,'AsArray',true),'ChannelEstimates',{estimates}, ...
+    'PilotIndices',{pilots},'Attempted',~isempty(rows),'EstimateAvailable', ...
+    ~isempty(rows) && all([rows.TRSChannelEstimateAvailable]), ...
+    'MeanNMSE_dB',NaN,'NMSEScoringAvailable',false,'NMSEReferenceSource',"unavailable", ...
+    'MeanPilotSINR_dB',NaN,'DesiredPilotPower',NaN,'ResidualPilotPower',NaN, ...
+    'HestDimensions',strjoin(unique(string([rows.HestDimensions]),'stable'),'|'), ...
+    'HestRxPorts',max([rows.HestRxPorts],[],'omitnan'),'HestTxPorts',max([rows.HestTxPorts],[],'omitnan'));
 end
-end
-ch = struct();
-ch.Table = struct2table(rows, "AsArray", true);
-ch.Attempted = any([rows.ChannelEstimationAttempted]);
-ch.EstimateAvailable = all([rows.TRSChannelEstimateAvailable]);
-ch.MeanNMSE_dB = mean([rows.NMSE_dB], "omitnan");
-ch.MeanPilotSINR_dB = mean([rows.PilotSINR_dB], "omitnan");
-ch.DesiredPilotPower = mean([rows.DesiredPilotPower], "omitnan");
-ch.ResidualPilotPower = mean([rows.ResidualPilotPower], "omitnan");
-ch.HestDimensions = strjoin(unique(string([rows.HestDimensions]), "stable"), "|");
-ch.HestRxPorts = max([rows.HestRxPorts], [], "omitnan");
-ch.HestTxPorts = max([rows.HestTxPorts], [], "omitnan");
-end
-
-function row = localChannelRow()
-row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, ...
-    "ChannelEstimationAttempted", false, "TRSChannelEstimateAvailable", false, ...
-    "NMSE_dB", NaN, "NoiseEstimate", NaN, "ChannelNMSEThreshold_dB", NaN, ...
-    "DesiredPilotPower", NaN, "ResidualPilotPower", NaN, "PilotSINR_dB", NaN, ...
-    "SINRMeasurementDomain", "", "PowerReferencePlane", "", ...
-    "HestDimensions", "", "HestRxPorts", NaN, "HestTxPorts", NaN, ...
-    "ChannelEstimator", "nrChannelEstimate_pilot_reconstruction_nmse", ...
-    "Status", "", "TruthStatus", "");
+function row=localRow()
+row=struct('RunId',"",'ConfigHash',"",'Slot',NaN,'ChannelEstimationAttempted',false, ...
+    'TRSChannelEstimateAvailable',false,'NMSE_dB',NaN,'NMSEScoringAvailable',false, ...
+    'NMSEReferenceSource',"unavailable",'NMSEComparedComplexValues',0, ...
+    'ChannelErrorEnergy',NaN,'ChannelReferenceEnergy',NaN, ...
+    'PilotFitResidualRatio_dB',NaN,'PilotFitSignalToResidual_dB',NaN, ...
+    'NoiseEstimate',NaN,'ChannelNMSEThreshold_dB',NaN, ...
+    'DesiredPilotPower',NaN,'ResidualPilotPower',NaN,'PilotSINR_dB',NaN, ...
+    'SINRMeasurementDomain',"unavailable_pilot_fit_is_not_independent_SINR", ...
+    'PowerReferencePlane',"received_grid_after_timing_correction", ...
+    'HestDimensions',"",'HestRxPorts',NaN,'HestTxPorts',NaN, ...
+    'ChannelEstimator',"nrChannelEstimate_received_TRS_reference_grid", ...
+    'Status',"",'TruthStatus',"real_lls_evidence");
 end

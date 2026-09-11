@@ -115,7 +115,14 @@ if istable(T) && height(T) > 0
             ok = ok & logical(T.ConfiguredAppliedMatch);
         end
         if ismember("FeatureApplied", string(T.Properties.VariableNames))
-            ok = ok & logical(T.FeatureApplied);
+            if ismember("FeatureConfigured", string(T.Properties.VariableNames))
+                % Disabled by configuration and not executed is a match,
+                % not a missing mandatory impairment. Retain strict and
+                % configured/applied checks above for actual mismatches.
+                ok = ok & (logical(T.FeatureApplied) == logical(T.FeatureConfigured));
+            else
+                ok = ok & logical(T.FeatureApplied);
+            end
         end
         T.ConfiguredAppliedOk = ok;
     end
@@ -223,6 +230,9 @@ for ii = 1:height(lsT)
     row.ChannelRealizationId = string(lsT.ChannelRealizationId(ii));
     row.Distance2Dm = double(lsT.Distance2Dm(ii));
     row.Distance3Dm = double(lsT.Distance3Dm(ii));
+    if ismember('GeometrySource',lsT.Properties.VariableNames)
+        row.GeometrySource=string(lsT.GeometrySource(ii));
+    end
     row.PathlossModel = string(lsT.PathlossModel(ii));
     row.LOSState = logical(lsT.LOSState(ii));
     row.O2IState = logical(lsT.O2IState(ii));
@@ -272,6 +282,7 @@ end
 function row = localPerUERow()
 row = struct("RunId", "", "ScenarioName", "", "LinkId", "", ...
     "ChannelRealizationId", "", "Distance2Dm", NaN, "Distance3Dm", NaN, ...
+    "GeometrySource", "unavailable_executed_link_geometry", ...
     "PathlossModel", "", "LOSState", false, "O2IState", false, ...
     "PathlossDbApplied", NaN, "ShadowFadingDbApplied", NaN, ...
     "O2IPenetrationLossDbApplied", NaN, "TotalLargeScaleLossDbApplied", NaN, ...

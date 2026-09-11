@@ -97,6 +97,11 @@ runtimeEvidenceRefinalization = ...
     sixgr.truth.refinalizePersistedLLSRuntimeEvidence(cfg, runFolder, ...
     "RunTag", recoveryRunTag, ...
     "RefreshBrowserContract", false);
+% Normal completion audits geometry after runtime-derived measurements.
+% Aborted execution must do the same: incomplete geometry stays FAIL, but
+% its required audit must not disappear merely because PHY execution threw.
+geometryScenarioAudit = sixgr.validation.runGeometryScenarioAuditIfNeeded( ...
+    runFolder, scfg, cfg);
 
 profile = lower(string(scfg.get("scenario.runner_profile", "")));
 if finalizationMode == "completed_run_refinalization"
@@ -160,6 +165,7 @@ manifest = localBuildManifest(scfg, publicRunFolder, profile, runtimeSummary, en
 localWriteScenarioManifest(layout, manifest);
 
 reportBundle = sixgr.truth.exportLLSReportingBundle(runFolder, scfg, cfg, result, manifest, runtimeSummary, scenarioStatus);
+reportBundle.GeometryScenarioAudit = geometryScenarioAudit;
 truthArtifactScan = sixgr.truth.scanTruthArtifacts(runFolder, struct());
 artifactEvidenceCoverage = table();
 artifactContractResult = struct( ...
@@ -253,6 +259,8 @@ terminalGeneratedAt = string(sixgr.util.utcNowISO8601());
 terminalPreviousSignature = "";
 terminalConverged = false;
 terminalClosure = struct();
+browserPublicationRequired = logical(sixgr.util.structGet( ...
+    scenarioStatus, "BrowserPublicationRequired", false));
 for terminalPass = 1:3
     componentViews = sixgr.truth.publishComponentArtifactViews(runFolder, ...
         "Enabled", logical(scfg.get( ...
@@ -262,7 +270,9 @@ for terminalPass = 1:3
         "RequiredComponents", componentViewsRequiredComponents(:));
     terminalClosure = sixgr.artifact.sealBrowserArtifactClosure( ...
         string(runFolder), "RunID", recoveryRunTag, ...
-        "GeneratedAtUTC", terminalGeneratedAt, "MaxPasses", 3);
+        "GeneratedAtUTC", terminalGeneratedAt, ...
+        "MaxPasses", 1 + 2*double(browserPublicationRequired), ...
+        "Required", browserPublicationRequired);
     contractMaterialization = terminalClosure.Materialization;
     browserReceipt = terminalClosure.Receipt;
     finalVisualAudit = terminalClosure.VisualAudit;
@@ -352,6 +362,7 @@ out.SanitizedCSVs = sanitizedCSVs;
 out.RestoredTruthArtifacts = restoredTruthArtifacts;
 out.RecoveryArtifactStore = recoveryStore;
 out.RuntimeEvidenceRefinalization = runtimeEvidenceRefinalization;
+out.GeometryScenarioAudit = geometryScenarioAudit;
 out.BrowserContractMaterialization = contractMaterialization;
 out.BrowserPublicationReceipt = browserReceipt;
 out.FinalVisualAudit = finalVisualAudit;

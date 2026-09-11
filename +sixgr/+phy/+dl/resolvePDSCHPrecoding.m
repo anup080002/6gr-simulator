@@ -715,20 +715,21 @@ if isempty(candidates)
         numPorts, nLayers, mode);
 end
 
-pmiIndex = round(double(tpmi));
-if pmiIndex < 0 || pmiIndex >= numel(candidates)
+pmiIndex = double(tpmi);
+matchIndex = find([candidates.PMI] == pmiIndex,1);
+if ~isscalar(pmiIndex) || ~isfinite(pmiIndex) || pmiIndex ~= fix(pmiIndex) || isempty(matchIndex)
     error("sixgr:phy:dl:PDSCHPrecoding:TPMIOutOfRange", ...
         "PMI/TPMI=%d is out of range for mode '%s' with %d candidate(s).", ...
         pmiIndex, mode, numel(candidates));
 end
 
-Wcfg = candidates(pmiIndex + 1).W;
+Wcfg = candidates(matchIndex).W;
 meta.Source = "pmi-codebook";
 meta.Mode = info.Mode;
 meta.PMI = double(pmiIndex);
-meta.PMIType = string(candidates(pmiIndex + 1).PMIType);
-meta.CodebookMode = string(candidates(pmiIndex + 1).CodebookMode);
-meta.BeamIndices = double(candidates(pmiIndex + 1).BeamIndices);
+meta.PMIType = string(candidates(matchIndex).PMIType);
+meta.CodebookMode = string(candidates(matchIndex).CodebookMode);
+meta.BeamIndices = double(candidates(matchIndex).BeamIndices);
 end
 
 function meta = localResolveExplicitMatrixMetadata(cfg, Wcfg, nLayers, requestedPorts)

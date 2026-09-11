@@ -91,9 +91,18 @@ for x in rows(HERE/'mac_lcp_test_vectors.csv'):
  elif abs(float(x['ExpectedBj_Bytes'])-expected)>1e-9:fail.append('lcp_bj:'+x['CaseID'])
 
 # PDU header floor.
+# Independent fixed payload sizes, TS 38.321 V18.5.0; do not trust the
+# vector's SizeType/ExpectedValid fields as their own oracle.
+fixed={'DL':{47:2,48:2,52:2,57:4,58:1,59:0,60:0,61:1,62:6},
+       'UL':{0:8,52:6,44:2,55:0,57:2,58:2,59:1,61:1}}
 for x in rows(HERE/'mac_pdu_subheader_test_vectors.csv'):
  expected=1 if x['SizeType'] in {'fixed','implicit'} else (2 if int(x['PayloadLength'])<256 else 3)
  if int(x['ExpectedHeaderBytes'])!=expected:fail.append('pdu_header:'+x['CaseID'])
+ length=fixed.get(x['Direction'],{}).get(int(x['LCID']))
+ if length is not None:
+  valid=int(x['PayloadLength'])==length
+  if x['SizeType']!='fixed' or truth(x['ExpectedValid'])!=valid or int(x['ExpectedHeaderBytes'])!=1:
+   fail.append('pdu_fixed_payload:'+x['CaseID'])
 
 # Scheduler metric floor.
 for x in rows(HERE/'mac_scheduler_policy_test_vectors.csv'):

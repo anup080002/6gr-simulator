@@ -18,6 +18,8 @@ assert(installed.UECommonCellConfiguration.RACHConfigCommon.PRACHSubcarrierSpaci
 assert(~installed.UECommonCellConfiguration.PDCCHConfigCommonPresent);
 assert(isempty(fieldnames(installed.UECommonCellConfiguration.PUSCHConfigCommon)));
 assert(isempty(fieldnames(installed.UECommonCellConfiguration.PUCCHConfigCommon)));
+assert(~installed.UECommonCellConfiguration.PUCCHConfigCommonPresent);
+assert(~isfield(installed.random_access,'pucch_common_resource'));
 assert(~any(contains(evidence.ValidationStatus,'decoded_anchor_profile')));
 serv = received.message.c1.systemInformationBlockType1.servingCellConfigCommon;
 assert(~isfield(serv,'dmrs_TypeA_Position'));
@@ -30,6 +32,7 @@ cfg.initial_access.sib1.initial_ul_bwp = struct('start_rb',7,'size_rb',52,'scs_k
 cfg.initial_access.sib1.initial_dl_bwp = struct('start_rb',12,'size_rb',48,'scs_khz',30);
 common = localCommon();
 cfg.initial_access.sib1.pdcch_config_common = common;
+cfg.initial_access.sib1.pucch_config_common = localPUCCHCommon();
 tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 bits = sixgr.rrc.asn1.encodeSIB1UPER(tree);
 received = sixgr.rrc.asn1.decodeSIB1UPER(bits);
@@ -58,6 +61,15 @@ assert(ue.InitialDLBWP.SubcarrierSpacing_kHz == 30 && ue.InitialULBWP.Subcarrier
 assert(ue.PDCCHConfigCommonPresent && ue.PDCCHConfigCommon.ra_SearchSpace == 1);
 assert(ue.PDCCHConfigCommon.commonControlResourceSet.duration == 2);
 assert(isequal(double(ue.PDCCHConfigCommon.commonSearchSpaceList.nrofCandidates(:).'),[0 0 1 0 0]));
+assert(ue.PUCCHConfigCommonPresent);
+assert(ue.PUCCHConfigCommon.pucch_ResourceCommon == 0);
+assert(string(ue.PUCCHConfigCommon.pucch_GroupHopping) == "neither");
+assert(ue.PUCCHConfigCommon.hoppingId == 1);
+assert(ue.PUCCHConfigCommon.p0_nominal == -90);
+assert(installed.random_access.pucch_common_resource == 0);
+assert(string(installed.random_access.pucch_group_hopping) == "neither");
+assert(installed.random_access.pucch_hopping_id == 1);
+assert(installed.random_access.pucch_p0_nominal_dbm == -90);
 
 % Exercise both type-1 RIV branches and offsets independent of duplex.
 for allocation = [0 25; 7 52; 2 273; 0 275; 100 175; 274 1].'
@@ -68,6 +80,11 @@ for allocation = [0 25; 7 52; 2 273; 0 275; 100 175; 274 1].'
     installed = sixgr.mac.ra.installDecodedSIB1RACHConfig(struct(), received);
     assert(installed.random_access.initial_ul_bwp_start == allocation(1));
     assert(installed.random_access.initial_ul_bwp_size == allocation(2));
+end
+
+function common = localPUCCHCommon()
+common = struct('pucch_ResourceCommon',0, ...
+    'pucch_GroupHopping','neither','hoppingId',1,'p0_nominal',-90);
 end
 ok = true;
 disp('SIB1_DECODED_COMMON_AUTHORITY_PASS');

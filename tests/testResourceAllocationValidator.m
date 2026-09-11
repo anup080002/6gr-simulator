@@ -165,6 +165,7 @@ assert(isequal(double(pusch.SymbolAllocation), [2 10]) && ...
     "Strict PUSCH must resolve its symbols/mapping from the pinned TDRA ID.");
 
 cfgDL = sixgr.config.defaultConfig();
+cfgDL = localNarrowCarrierSSB(cfgDL);
 cfgDL.run.strictMode = true;
 cfgDL.phy.carrier.NSizeGrid = 24;
 cfgDL.phy.carrier.SubcarrierSpacing = 15;
@@ -174,10 +175,32 @@ cfgDL.phy.pdsch = rmfield(cfgDL.phy.pdsch, ...
     intersect(fieldnames(cfgDL.phy.pdsch), ...
     {'symbolAllocation','mappingType','MappingType','tdraId','TDRAID'}));
 cfgDL.phy.pdsch.tdraId = "PDSCH_DEFAULT_B_NCP_R6_DMRS2";
+localAssertError(@() sixgr.phy.grid.allocREsPDSCH(carrier, cfgDL), ...
+    "sixgr:phy:grid:allocREsPDSCH:SSBDMRSCollision");
+% The same TDRA is legal after the configured slot-0 SS/PBCH occasion.
+carrier.NSlot = 2;
 [~, ~, pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier, cfgDL);
 assert(isequal(double(pdsch.SymbolAllocation), [2 2]) && ...
     string(pdsch.MappingType) == "B", ...
     "Strict PDSCH must resolve its symbols/mapping from the pinned TDRA ID.");
+end
+
+function cfg = localNarrowCarrierSSB(cfg)
+% Explicit, fitting SS/PBCH authority for the 24-RB / 15-kHz fixture.
+% Keep the production SSB exclusion active rather than disabling validation.
+cfg.phy.carrier.SubcarrierSpacing_kHz = 15;
+cfg.phy.carrier.centerFrequency_Hz = 2.14e9;
+cfg.phy.frequencyRange = 'FR1';
+cfg.frequency.band_name = 'n1';
+cfg.frequency.spectrum = 'paired';
+cfg.phy.bwp.dl.NStartBWP = 0;
+cfg.phy.bwp.dl.NSizeBWP = 24;
+cfg.phy.ssb.blockPattern = 'Case A';
+cfg.phy.ssb.scs_kHz = 15;
+cfg.phy.ssb.Lmax = 4;
+cfg.phy.ssb.NCRBSSB = 2;
+cfg.phy.ssb.KSSB = 0;
+cfg.phy.ssb.activeBitmap = '1000';
 end
 
 function localVerifyMissingAllocationsFailClosed()
@@ -198,6 +221,7 @@ assert(~missingFrequencyResult.ActualValid && ...
     "Canonical allocation validation must not invent a one-RB allocation.");
 
 cfgDL = sixgr.config.defaultConfig();
+cfgDL = localNarrowCarrierSSB(cfgDL);
 cfgDL.run.strictMode = false;
 cfgDL.phy.carrier.NSizeGrid = 24;
 cfgDL.phy.carrier.SubcarrierSpacing = 15;
@@ -216,6 +240,7 @@ localAssertError(@() sixgr.phy.grid.allocREsPDSCH(carrier, cfgDL), ...
     "sixgr:phy:grid:allocREsPDSCH:MissingPRBSet");
 
 cfgDL.phy.pdsch.prbSet = 0:23;
+carrier.NSlot = 2; % Outside the explicitly retained slot-0 SS/PBCH burst.
 [~, ~, explicitDL] = sixgr.phy.grid.allocREsPDSCH(carrier, cfgDL);
 assert(isequal(double(explicitDL.PRBSet), 0:23) && ...
     isequal(double(explicitDL.SymbolAllocation), [0 14]), ...
@@ -329,7 +354,10 @@ end
 assert(isequal(sortrows(prachResult.ActualCoordinates0Based), ...
         sortrows(unique(double(directPRACH), "rows"))) && ...
     prachResult.Exact && ~prachResult.FallbackUsed, ...
-    "PRACH canonical allocation must equal exact carrier-grid Toolbox subscripts.");
+    "PRACH canonical allocation must equal exact native-grid Toolbox subscripts.");
+assert(prachResult.GridDomain=="prach_native_ofdm" && ...
+    ~isfield(prachResult.Allocation,'StartRB') && ~isfield(prachResult.Allocation,'RECoordinates'), ...
+    'Native PRACH indices must not manufacture a carrier PRB allocation.');
 end
 
 function [carrier, prach] = localActivePRACH()

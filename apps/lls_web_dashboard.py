@@ -9241,6 +9241,22 @@ PHY_GRID_EXTRA_TABLES: dict[str, dict[str, Any]] = {
         "owner_kind": "slot_trace",
         "render_events": False,
     },
+    "native_prach_allocation": {
+        "canonical_path": "reports/csv/live_prach_native_allocation_snapshot.csv",
+        "legacy_paths": ["frame_grid/csv/observed_prach_native_allocation.csv"],
+        "owner_kind": "observed_prach_native_allocation",
+        # PRACH uses its own OFDM grid.  Keep it on the slot timeline, but
+        # never project its native subcarriers onto the carrier CP-OFDM grid.
+        "render_events": False,
+    },
+    "initial_access_lifecycle": {
+        "canonical_path": "control/csv/initial_access_lifecycle_trace.csv",
+        "legacy_paths": ["reports/csv/initial_access_lifecycle_trace.csv"],
+        "owner_kind": "initial_access_lifecycle",
+        # Procedure timestamps annotate a slot; they do not provide RE
+        # coordinates and therefore cannot create resource-grid rectangles.
+        "render_events": False,
+    },
     "csirs_trials": {
         "canonical_path": "air_interface/csv/csi_rs_trials.csv",
         "legacy_paths": ["control/csv/csi_rs_trials.csv", "reports/csv/live_csirs_stats.csv"],
@@ -9304,6 +9320,7 @@ def phy_grid_slot_value(row: dict[str, Any]) -> int | None:
             "Slot",
             "SlotNumber",
             "slot",
+            "carrier_origin_slot0",
         ],
         math.nan,
     )
@@ -9391,13 +9408,25 @@ def phy_grid_row_bool(row: dict[str, Any], names: list[str], default: bool = Fal
     return bool(default)
 
 
-def phy_grid_slot_state(row: dict[str, Any]) -> dict[str, Any]:
+def phy_grid_slot_state(row: dict[str, Any], symbols_per_slot: int = 14) -> dict[str, Any]:
     """Reduce one canonical SlotTrace row without inventing allocations."""
     slot = phy_grid_slot_value(row)
     label = str(first_present_value(row, ["SlotDuplexLabel", "DuplexLabel"], "")).strip().upper()
+    symbols_per_slot = bounded_int(symbols_per_slot, 14, 1, 28)
+    dl_start = max(0, bounded_int(first_present_number(row, ["DLSymbolStart"], 0), 0, 0, symbols_per_slot))
     dl_symbols = max(0, bounded_int(first_present_number(row, ["DLNumSymbols"], 0), 0, 0, 28))
+    guard_start_default = min(symbols_per_slot, dl_start + dl_symbols)
+    guard_start = max(0, bounded_int(first_present_number(row, ["GuardSymbolStart"], guard_start_default), guard_start_default, 0, symbols_per_slot))
     guard_symbols = max(0, bounded_int(first_present_number(row, ["GuardNumSymbols"], 0), 0, 0, 28))
+    ul_start_default = max(0, symbols_per_slot - max(0, bounded_int(first_present_number(row, ["ULNumSymbols"], 0), 0, 0, 28)))
+    ul_start = max(0, bounded_int(first_present_number(row, ["ULSymbolStart"], ul_start_default), ul_start_default, 0, symbols_per_slot))
     ul_symbols = max(0, bounded_int(first_present_number(row, ["ULNumSymbols"], 0), 0, 0, 28))
+    owned_symbols: set[int] = set()
+    for start, count in ((dl_start, dl_symbols), (guard_start, guard_symbols), (ul_start, ul_symbols)):
+        owned_symbols.update(range(start, min(symbols_per_slot, start + count)))
+    flexible_indices = [index for index in range(symbols_per_slot) if index not in owned_symbols]
+    flexible_symbols = len(flexible_indices)
+    flexible_start = flexible_indices[0] if flexible_indices else 0
     special = phy_grid_row_bool(row, ["SpecialSlotActive", "IsSpecialSlot"], False)
     if "FDD" in label or label in {"F", "FLEX", "FLEXIBLE"}:
         token = "F"
@@ -9455,7 +9484,7 @@ def phy_grid_slot_state(row: dict[str, Any]) -> dict[str, Any]:
                 reason = "no_grant_reason_not_exported_by_legacy_run"
     elif token == "S":
         activity = "special"
-        state_label = "Special DL/guard/UL slot"
+        state_label = "Special DL/flexible/guard/UL slot"
         reason = dl_reason or ul_reason
     elif token == "F":
         activity = "flexible"
@@ -9471,11 +9500,88 @@ def phy_grid_slot_state(row: dict[str, Any]) -> dict[str, Any]:
         "activity": activity,
         "state_label": state_label,
         "reason": reason,
+        "dl_symbol_start": dl_start,
         "dl_symbols": dl_symbols,
+        "flexible_symbol_start": flexible_start,
+        "flexible_symbols": flexible_symbols,
+        "guard_symbol_start": guard_start,
         "guard_symbols": guard_symbols,
+        "ul_symbol_start": ul_start,
         "ul_symbols": ul_symbols,
         "source": "slot_trace.csv",
     }
+
+
+def phy_grid_slot_annotations(
+    table_rows: dict[str, list[dict[str, Any]]],
+    table_meta: dict[str, dict[str, Any]],
+    trace_slots: list[int],
+    slot_set: set[int],
+) -> list[dict[str, Any]]:
+    """Return source-backed non-carrier annotations without inventing REs."""
+    annotations: dict[tuple[Any, ...], dict[str, Any]] = {}
+
+    native_rows = table_rows.get("native_prach_allocation", [])
+    native_slots = [phy_grid_slot_value(row) for row in native_rows]
+    native_slots = [int(value) for value in native_slots if value is not None]
+    native_offset = 1 if trace_slots and native_slots and min(trace_slots) == 1 and min(native_slots) == 0 else 0
+    native_path = str(table_meta.get("native_prach_allocation", {}).get("selected_logical_path") or "")
+    for row in native_rows:
+        source_slot = phy_grid_slot_value(row)
+        if source_slot is None:
+            continue
+        # carrier_origin_slot0 is explicitly zero based even when the
+        # bounded browser window starts after slot one.
+        row_native_offset = 1 if trace_slots and "carrier_origin_slot0" in row else native_offset
+        slot = int(source_slot) + row_native_offset
+        if slot not in slot_set:
+            continue
+        domain = str(first_present_value(row, ["grid_domain", "GridDomain"], "prach_native_ofdm"))
+        grid_hash = str(first_present_value(row, ["native_grid_sha256", "NativeGridSHA256"], ""))
+        key = (slot, "PRACH native OFDM", domain, grid_hash)
+        item = annotations.setdefault(
+            key,
+            {
+                "slot": slot,
+                "kind": "native_resource_grid",
+                "label": "PRACH native OFDM",
+                "status": "observed",
+                "grid_domain": domain,
+                "evidence_scope": str(first_present_value(row, ["evidence_scope", "EvidenceScope"], "runtime_observed")),
+                "source_artifact": native_path,
+                "source_slot": int(source_slot),
+                "display_slot_offset": row_native_offset,
+                "row_count": 0,
+            },
+        )
+        item["row_count"] += 1
+
+    lifecycle_path = str(table_meta.get("initial_access_lifecycle", {}).get("selected_logical_path") or "")
+    for row in table_rows.get("initial_access_lifecycle", []):
+        slot = phy_grid_slot_value(row)
+        if slot is None or int(slot) not in slot_set:
+            continue
+        event_name = str(first_present_value(row, ["EventName", "StageName"], "initial access event"))
+        status = str(first_present_value(row, ["StageStatus", "ValueStatus", "Status"], "observed"))
+        stage = str(first_present_value(row, ["StageName", "PhysicalChannel"], "initial access"))
+        key = (int(slot), "initial_access", event_name, status, lifecycle_path)
+        annotations[key] = {
+            "slot": int(slot),
+            "kind": "initial_access",
+            "label": f"{stage}: {event_name}",
+            "status": status,
+            "grid_domain": "procedure_timeline_no_re_coordinates",
+            "evidence_scope": str(first_present_value(row, ["ValueRole", "EvidenceScope"], "measured_runtime_procedure_event")),
+            "source_artifact": lifecycle_path,
+            "source_slot": int(slot),
+            "display_slot_offset": 0,
+            "row_count": 1,
+        }
+
+    return sorted(
+        annotations.values(),
+        key=lambda item: (int(item.get("slot") or 0), str(item.get("kind") or ""), str(item.get("label") or "")),
+    )
 
 
 def phy_grid_configured_tdd_pattern(cfg: dict[str, Any]) -> str:
@@ -9941,7 +10047,7 @@ def build_phy_grid_payload(
         slot_start = min(raw_slots)
     trace_by_slot: dict[int, dict[str, Any]] = {}
     for row in table_rows.get("slot_trace", []):
-        trace_state = phy_grid_slot_state(row)
+        trace_state = phy_grid_slot_state(row, symbols_per_slot)
         trace_slot = trace_state.get("slot")
         if trace_slot is not None:
             trace_by_slot[int(trace_slot)] = trace_state
@@ -9980,6 +10086,17 @@ def build_phy_grid_payload(
         else ("resolved_config" if tdd_pattern else "unavailable")
     )
     slot_set = {int(slot["slot"]) for slot in slots}
+    slot_annotations = phy_grid_slot_annotations(
+        table_rows,
+        table_meta,
+        trace_slots,
+        slot_set,
+    )
+    annotations_by_slot: dict[int, list[dict[str, Any]]] = {}
+    for annotation in slot_annotations:
+        annotations_by_slot.setdefault(int(annotation["slot"]), []).append(annotation)
+    for slot in slots:
+        slot["annotations"] = annotations_by_slot.get(int(slot["slot"]), [])
 
     events: list[dict[str, Any]] = []
     for table_key, rows in table_rows.items():
@@ -10076,6 +10193,8 @@ def build_phy_grid_payload(
         "The time-frequency view uses absolute slot plus OFDM symbol on X and PRB plus its 12-subcarrier span on Y; occupied cells are aggregated only from persisted allocation events.",
         "Zero-based absolute-slot allocation rows are shifted by +1 only when the canonical slot trace explicitly uses one-based slots; source_slot and the offset remain visible on every affected event.",
         "Missing, disabled, collision, transmitted, received, and decoded states are rendered from persisted lifecycle_status fields only.",
+        "Native PRACH annotations remain on the slot timeline and link to their native-OFDM artifact; they are never projected onto the carrier CP-OFDM resource grid.",
+        "Initial-access lifecycle annotations identify measured procedure events only and never create resource rectangles without persisted RE coordinates.",
     ]
     payload = {
         "run": {
@@ -10094,6 +10213,7 @@ def build_phy_grid_payload(
             "selected_ue_id": selected_ue,
             "ue_options": ue_values[:500],
             "lanes": lanes,
+            "slot_annotations": slot_annotations,
             "events": returned_events,
             "event_count": len(events),
             "returned_event_count": len(returned_events),
@@ -10463,7 +10583,8 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("RuntimeMaterializationStatus", "Runtime materialization"),
         ("ControlGatingEffect", "Gating effect"),
         ("CRCPass", "CRC pass"),
-        ("BeamIndex", "Beam"),
+        ("BeamIndex", "Precoder row (1-based)"),
+        ("SelectedBeamFlag", "Selected beam"),
         ("SSBIndex", "SSB index"),
         ("DetectionMetric", "Metric"),
         ("EVM_rms", "EVM"),
@@ -10560,17 +10681,35 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("NumSymbols", "Symbols"),
         ("MCSIndex", "MCS"),
         ("Modulation", "Modulation"),
+        ("ActualMCSSelectionMode", "MCS mode"),
+        ("MCSSelectionSource", "MCS source"),
+        ("LinkAdaptationApplied", "LA applied"),
         ("TargetCodeRate", "TargetCodeRate"),
         ("TBSize_bits", "TBS bits"),
         ("PostEqSINR_dB", "Post-eq SINR dB"),
         ("MeasuredTrialSINR_dB", "Measured SINR dB"),
         ("CRCPass", "CRC pass"),
         ("WidebandCQI", "CQI"),
+        ("SchedulerCQIRawCQI", "Scheduler CQI used"),
+        ("AppliedLinkAdaptationMCS", "LA MCS"),
         ("SelectedBeamIndex", "Beam"),
         ("PMI", "PMI"),
-        ("AppliedPrecoderPMI", "Applied PMI"),
+        ("RequestedPrecoderPMI", "Requested CSI PMI"),
+        ("RequestedPrecoderSource", "PMI request source"),
+        ("AppliedPrecoderPMI", "Applied basis PMI"),
         ("AppliedBeamIndexSet", "Applied beam"),
-        ("SelectedBeamGain_dB", "Quality dB"),
+        ("AppliedPrecoderMatrixSHA256", "Precoder SHA"),
+        ("RequestedVsAppliedPrecoderPMIMatchStatus", "Precoder match"),
+        ("AppliedPrecoderPMITruthClassification", "Applied PMI status"),
+        ("PrecoderSource", "Precoder source"),
+        ("BeamformingApplied", "Beamforming applied"),
+        ("ExplicitBeamWeightsApplied", "Explicit weights applied"),
+        ("PrecodingApplicationStage", "Application stage"),
+        ("SelectedBeamGain_dB", "Applied beam gain dB"),
+        ("BestBeamIndex", "Best measured beam"),
+        ("BestBeamGain_dB", "Best beam gain dB"),
+        ("BeamGainGap_dB", "Beam gap dB"),
+        ("BeamScoreSource", "Beam score source"),
         ("BeamHit", "Beam hit"),
         ("Status", "Status"),
     ],
@@ -10584,18 +10723,35 @@ DATA_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("NumSymbols", "Symbols"),
         ("MCSIndex", "MCS"),
         ("Modulation", "Modulation"),
+        ("ActualMCSSelectionMode", "MCS mode"),
+        ("MCSSelectionSource", "MCS source"),
+        ("LinkAdaptationApplied", "LA applied"),
         ("TargetCodeRate", "TargetCodeRate"),
         ("TBSize_bits", "TBS bits"),
         ("PostEqSINR_dB", "Post-eq SINR dB"),
         ("MeasuredTrialSINR_dB", "Measured SINR dB"),
         ("CRCPass", "CRC pass"),
         ("WidebandCQI", "CQI"),
+        ("SchedulerCQIRawCQI", "Scheduler CQI used"),
+        ("AppliedLinkAdaptationMCS", "LA MCS"),
         ("SelectedBeamIndex", "Beam"),
         ("PMI", "PMI"),
-        ("AppliedPrecoderPMI", "Applied PMI"),
-        ("AppliedBeamIndexSet", "Applied beam"),
-        ("SelectedBeamGain_dB", "Quality dB"),
+        ("RequestedPrecoderPMI", "Requested TPMI"),
+        ("RequestedPrecoderSource", "PMI request source"),
+        ("AppliedPrecoderPMI", "Applied TPMI"),
+        ("AppliedPrecoderPMITruthClassification", "Applied PMI status"),
+        ("AppliedCodebookPortIndexSet", "Codebook ports (1-based)"),
+        ("PrecodingNumLogicalPorts", "Logical ports"),
+        ("AppliedBeamIndexSet", "Applied spatial beam"),
+        ("SelectedBeamGain_dB", "Applied beam gain dB"),
+        ("BestBeamIndex", "Best measured beam"),
+        ("BestBeamGain_dB", "Best beam gain dB"),
+        ("BeamGainGap_dB", "Beam gap dB"),
+        ("BeamScoreSource", "Beam score source"),
         ("BeamHit", "Beam hit"),
+        ("BeamformingApplied", "Beamforming applied"),
+        ("ExplicitBeamWeightsApplied", "Explicit weights applied"),
+        ("PrecodingApplicationStage", "Application stage"),
         ("Status", "Status"),
     ],
 }
@@ -11603,6 +11759,13 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "lls6g.resolvedConfig.run_control.save_constellations",
         default=False,
     )
+    control_evm_capture_enabled = config_bool(
+        "run_control.control_evm_capture_enable",
+        "output_control.control_evm_capture_enable",
+        "lls6g.resolvedConfig.run_control.control_evm_capture_enable",
+        "lls6g.resolvedConfig.output_control.control_evm_capture_enable",
+        default=False,
+    )
     storage_backend = config_text(
         "output.backend",
         "lls6g.resolvedConfig.output.backend",
@@ -11683,6 +11846,7 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "scheduler_runtime_enabled": scheduler_runtime_enabled,
         "traffic_runtime_enabled": traffic_runtime_enabled,
         "constellation_capture_enabled": constellation_capture_enabled,
+        "control_evm_capture_enabled": control_evm_capture_enabled,
         "storage_backend": storage_backend,
         "prach_collision_enabled": prach_collision_enabled,
         "prach_threshold_sweep_enabled": prach_threshold_sweep_enabled,
@@ -14367,8 +14531,12 @@ def realtime_pathloss_rows_by_ue(
                 "raw_pathloss_db": raw_pathloss,
                 "rsrp_dbm": coerce_numeric(first_present_value(row, ["RSRP_dBm"], None)),
                 "rx_power_dbm": coerce_numeric(first_present_value(row, ["RxPower_dBm"], None)),
-                "beam_index": coerce_numeric(first_present_value(row, ["BeamIndex"], None)),
-                "beam_gain_db": coerce_numeric(first_present_value(row, ["BeamGain_dB"], None)),
+                # When pathloss is disabled this row is an internal
+                # fixed-SNR cell-selection identity, not a measured beam
+                # result.  The actual SSB/data beam evidence is displayed
+                # from PBCH and PDSCH/PUSCH waveform trial tables.
+                "beam_index": None if unavailable else coerce_numeric(first_present_value(row, ["BeamIndex"], None)),
+                "beam_gain_db": None if unavailable else coerce_numeric(first_present_value(row, ["BeamGain_dB"], None)),
                 "los": first_present_value(row, ["LOSFlag"], ""),
                 "shadow_fading_db": coerce_numeric(first_present_value(row, ["ShadowFading_dB"], None)),
                 "o2i_db": coerce_numeric(first_present_value(row, ["O2I_dB"], None)),
@@ -14455,6 +14623,15 @@ def build_realtime_ue_status(
         ss_rsrp_dbm = coerce_numeric(first_present_value(ssb, ["SS_RSRP_dBm", "SSRSRP_dBm"], None))
         ss_relative_db = coerce_numeric(first_present_value(ssb, ["SSBReceivedPower_dB"], None))
         ss_sinr_db = coerce_numeric(first_present_value(ssb, ["SS_SINR_dB", "SSSINR_dB"], None))
+        configured_snr_db = coerce_numeric(first_present_value(ssb, ["ConfiguredSNR_dB", "SNR_dB"], None))
+        ss_sinr_delta_db = (
+            ss_sinr_db - configured_snr_db
+            if ss_sinr_db is not None and configured_snr_db is not None
+            else None
+        )
+        ss_channel_gain_db = coerce_numeric(
+            first_present_value(ssb, ["MeasuredReferenceSignalChannelGain_dB"], None)
+        )
         pbch_dmrs_sinr_db = coerce_numeric(first_present_value(ssb, ["MeasuredTrialSINR_dB", "ReceiverHestSINR_dB"], None))
         phr_db = coerce_numeric(first_present_value(ul, ["PUSCHPowerHeadroom_dB", "PowerHeadroom_dB", "PHR_dB"], None))
         serving_rsrp_dbm = coerce_numeric(first_present_value(serving, ["ServingRSRP_dBm", "RSRP_dBm"], None))
@@ -14484,6 +14661,10 @@ def build_realtime_ue_status(
                 "ss_rsrp_dbm": ss_rsrp_dbm,
                 "ss_rsrp_relative_db": ss_relative_db,
                 "ss_sinr_db": ss_sinr_db,
+                "configured_snr_db": configured_snr_db,
+                "ss_sinr_delta_db": ss_sinr_delta_db,
+                "ss_channel_gain_db": ss_channel_gain_db,
+                "ss_sinr_method": first_present_value(ssb, ["SSSINRMeasurementMethod"], ""),
                 "pbch_dmrs_sinr_db": pbch_dmrs_sinr_db,
                 "csi_rsrp_dbm": csi_rsrp_dbm,
                 "csi_rsrp_relative_db": csi_relative_db,
@@ -18965,9 +19146,10 @@ window.addEventListener('DOMContentLoaded', function () {
       ...recent(controlPreviews.prach_trials).map(row => ({Procedure:'PRACH/RACH',Frame:row.Frame,Slot:row.Slot,Endpoint:row.UE,Outcome:row.Metric,Status:row.Status})),
     ].slice(0, 8);
     const csiRows = recent(Array.isArray(dashboard.ue_status) ? dashboard.ue_status : []).map(ue => ({Slot:ue.csi_slot,UE:ue.ue_id,Cell:ue.serving_cell,'CSI-RSRP dBm':ue.csi_rsrp_dbm,'CSI-SINR dB':ue.csi_sinr_db,Status:ue.csi_measurement_status}));
+    const hasRuntimeBeamValue = value => value !== null && value !== undefined && value !== '' && value !== 'N/A';
     const beamRows = recent([...(dataPreviews.dl_trials || []), ...(dataPreviews.ul_trials || [])]
-      .filter(row => (row['Applied beam'] !== null && row['Applied beam'] !== undefined && row['Applied beam'] !== 'N/A') || (row['Applied PMI'] !== null && row['Applied PMI'] !== undefined && row['Applied PMI'] !== 'N/A')))
-      .map(row => ({Slot:row.Slot,UE:row.UE,Direction:row.Direction,'Applied beam':row['Applied beam'],'Applied PMI':row['Applied PMI'],'Quality dB':row['Quality dB']}));
+      .filter(row => hasRuntimeBeamValue(row['Applied beam']) || hasRuntimeBeamValue(row['Applied spatial beam']) || hasRuntimeBeamValue(row['Applied basis PMI']) || hasRuntimeBeamValue(row['Applied TPMI']) || hasRuntimeBeamValue(row['Precoder SHA'])))
+      .map(row => ({Slot:row.Slot,UE:row.UE,Direction:row.Direction,'Beamforming applied':row['Beamforming applied'],'Explicit weights applied':row['Explicit weights applied'],'Application stage':row['Application stage'],'Applied beam':row['Applied beam'] ?? row['Applied spatial beam'],'Requested PMI/TPMI':row['Requested CSI PMI'] ?? row['Requested TPMI'],'PMI request source':row['PMI request source'],'Applied PMI/TPMI':row['Applied basis PMI'] ?? row['Applied TPMI'],'Applied PMI status':row['Applied PMI status'],'Precoder match':row['Precoder match'],'Precoder SHA':row['Precoder SHA'],'Applied beam gain dB':row['Applied beam gain dB'],'Best measured beam':row['Best measured beam'],'Best beam gain dB':row['Best beam gain dB'],'Beam gap dB':row['Beam gap dB']}));
     const trafficRows = recent(metricRows.flatMap(row => {
       const rows = [];
       if (row.dl_goodput_mbps !== null || row.dl_offered_mbps !== null) rows.push({Slot:row.slot,UE:row.ueid,Direction:'DL','Offered Mbps':row.dl_offered_mbps,'Goodput Mbps':row.dl_goodput_mbps,MCS:row.dl_mcs});
@@ -18975,14 +19157,14 @@ window.addEventListener('DOMContentLoaded', function () {
       return rows;
     }));
     const tableSpecs = [
-      {id:'ssb_pbch', title:'SSB / PBCH', columns:['Frame','Slot','Cell','Beam','CRC pass','Metric'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'ssb_pbch', title:'SSB / PBCH', columns:['Frame','Slot','Cell','SSB index','Precoder row (1-based)','Selected beam','CRC pass','Metric'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
       {id:'prach_rach', title:'PRACH / RACH', columns:['Frame','Slot','UE','Metric','False alarm','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'initial_access', title:'Acquisition / Initial Access', columns:['Procedure','Frame','Slot','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + PRACH trial rows'},
-      {id:'beam', title:'Beam / Precoding', columns:['Slot','UE','Direction','Applied beam','Applied PMI','Quality dB'], rows:beamRows, sourcePath:'canonical DL + UL trial precoder fields'},
+      {id:'beam', title:'Beam / Precoding', columns:['Slot','UE','Direction','Beamforming applied','Explicit weights applied','Application stage','Applied beam','Requested PMI/TPMI','PMI request source','Applied PMI/TPMI','Applied PMI status','Precoder match','Precoder SHA','Applied beam gain dB','Best measured beam','Best beam gain dB','Beam gap dB'], rows:beamRows, sourcePath:'canonical DL + UL trial precoder fields'},
       {id:'pdcch', title:'PDCCH / DCI', columns:['Slot','UE','AggLevel','DCI bits','Decode ok','CRC pass'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
       {id:'pucch', title:'PUCCH / UCI', columns:['Slot','UE','Format','Bits','Decode ok','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
-      {id:'pdsch', title:'PDSCH / DL-SCH', columns:['Slot','UE','MCS','Modulation','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
-      {id:'pusch', title:'PUSCH / UL-SCH', columns:['Slot','UE','MCS','Modulation','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
+      {id:'pdsch', title:'PDSCH / DL-SCH', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
+      {id:'pusch', title:'PUSCH / UL-SCH', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
       {id:'csi', title:'CSI / CSI-RS measurements', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-SINR dB','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
       {id:'srs', title:'SRS', columns:['Slot','UE','Metric','NMSE dB','Timing off','Status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
       {id:'trs', title:'TRS / Tracking', columns:['Slot','UE','Metric','Est Doppler Hz','TRSValidityState','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
@@ -18996,7 +19178,7 @@ window.addEventListener('DOMContentLoaded', function () {
       return `<article class="realtime-channel-table"><div class="toolbar" style="justify-content:space-between"><h4>${esc(spec.title)}</h4>${source}</div><div class="table-wrap"><table><thead><tr>${spec.columns.map(column => `<th>${esc(column)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></article>`;
     }).join('');
     const policy = dashboard.folder_policy || {};
-    return `<section class="panel"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Live Channel Tables</h3><p class="subtle">Each PHY/procedure channel has its own six-column view. Columns are curated for that channel and values come only from its exact runtime preview or measurement rows.</p></div><div><span class="badge ${policy.manifest ? 'good' : 'warn'}">${esc(String(policy.status || 'folder policy unavailable').replaceAll('_',' '))}</span><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div></div><div class="realtime-channel-table-grid">${channelTables}</div><details><summary>Artifact counts and component cards</summary><div class="realtime-component-grid" style="margin-top:10px">${cards}</div></details><p class="mini-note" style="margin-top:9px">${esc(policy.note || 'Canonical paths remain authoritative; component views must be hash-verified mirrors.')}</p></section>`;
+    return `<section class="panel"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Live Channel Tables</h3><p class="subtle">Each PHY/procedure channel has a channel-specific view. Columns are curated for that channel and values come only from its exact runtime preview or measurement rows.</p></div><div><span class="badge ${policy.manifest ? 'good' : 'warn'}">${esc(String(policy.status || 'folder policy unavailable').replaceAll('_',' '))}</span><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div></div><div class="realtime-channel-table-grid">${channelTables}</div><details><summary>Artifact counts and component cards</summary><div class="realtime-component-grid" style="margin-top:10px">${cards}</div></details><p class="mini-note" style="margin-top:9px">${esc(policy.note || 'Canonical paths remain authoritative; component views must be hash-verified mirrors.')}</p></section>`;
   }
   function realtimeUEStatusPanel() {
     const dashboard = ((state.live || {}).realtime_dashboard || {});
@@ -19005,8 +19187,12 @@ window.addEventListener('DOMContentLoaded', function () {
     const cards = items.map(ue => {
       const badgeClass = ue.health === 'blocked' ? 'bad' : (ue.health === 'attention' ? 'warn' : 'good');
       const pathRows = (Array.isArray(ue.pathloss_paths) ? ue.pathloss_paths : []).map(path => `<tr><td>${esc(realtimeValue(path.candidate_rank,'',0))}</td><td>${esc(realtimeValue(path.cell_id,'',0))}</td><td>${esc(realtimeValue(path.pathloss_db,' dB'))}</td><td>${esc(realtimeValue(path.rsrp_dbm,' dBm'))}</td><td>${esc(realtimeValue(path.beam_index,'',0))}</td><td>${esc(String(path.status || 'unavailable').replaceAll('_',' '))}</td></tr>`).join('');
-      const ssRelative = ue.ss_rsrp_relative_db === null || ue.ss_rsrp_relative_db === undefined ? '' : ` · normalized SS/PBCH grid power ${realtimeValue(ue.ss_rsrp_relative_db,' dB')}`;
+      let ssRelative = ue.ss_rsrp_relative_db === null || ue.ss_rsrp_relative_db === undefined ? '' : ` · normalized SS/PBCH grid power ${realtimeValue(ue.ss_rsrp_relative_db,' dB')}`;
       const csiRelative = ue.csi_rsrp_relative_db === null || ue.csi_rsrp_relative_db === undefined ? '' : ` · legacy normalized CSI power ${realtimeValue(ue.csi_rsrp_relative_db,' dB')}`;
+      const ssOperatingPoint = ue.configured_snr_db === null || ue.configured_snr_db === undefined ? '' : ` · configured Es/N0 ${realtimeValue(ue.configured_snr_db,' dB')}`;
+      const ssDelta = ue.ss_sinr_delta_db === null || ue.ss_sinr_delta_db === undefined ? '' : ` · SS measurement delta ${realtimeValue(ue.ss_sinr_delta_db,' dB')}`;
+      const ssChannelGain = ue.ss_channel_gain_db === null || ue.ss_channel_gain_db === undefined ? '' : ` · measured RS channel gain ${realtimeValue(ue.ss_channel_gain_db,' dB')}`;
+      ssRelative += `${ssOperatingPoint}${ssDelta}${ssChannelGain}. The SS delta includes the instantaneous fading, precoder, and receive-branch realization; it is not labelled as array gain.`;
       return `<article class="ue-status-card ${esc(ue.health || '')}"><div class="toolbar" style="justify-content:space-between;margin-bottom:7px"><h4>UE ${esc(ue.ue_id)}</h4><span class="badge ${badgeClass}">${esc(String(ue.health || 'unavailable').replaceAll('_',' '))}</span></div><div class="ue-status-metrics"><span>Cell <strong>${esc(realtimeValue(ue.serving_cell, '', 0))}</strong></span><span>Eligible <strong>${esc(ue.scheduling_eligible === null ? '—' : (ue.scheduling_eligible ? 'yes' : 'no'))}</strong></span><span>Serving RSRP <strong>${esc(realtimeValue(ue.serving_rsrp_dbm, ' dBm'))}</strong></span><span>UE PHR <strong>${esc(realtimeValue(ue.ue_phr_db, ' dB'))}</strong></span><span>SS-RSRP <strong>${esc(realtimeValue(ue.ss_rsrp_dbm, ' dBm'))}</strong></span><span>SS-SINR <strong>${esc(realtimeValue(ue.ss_sinr_db, ' dB'))}</strong></span><span>CSI-RSRP <strong>${esc(realtimeValue(ue.csi_rsrp_dbm, ' dBm'))}</strong></span><span>CSI-SINR <strong>${esc(realtimeValue(ue.csi_sinr_db, ' dB'))}</strong></span><span>DL SINR <strong>${esc(realtimeValue(ue.dl_sinr_db, ' dB'))}</strong></span><span>UL SINR <strong>${esc(realtimeValue(ue.ul_sinr_db, ' dB'))}</strong></span><span>DL BLER <strong>${esc(realtimeValue(ue.dl_bler, '', 3))}</strong></span><span>UL BLER <strong>${esc(realtimeValue(ue.ul_bler, '', 3))}</strong></span><span>DL rate <strong>${esc(realtimeValue(ue.dl_throughput_mbps, ' Mbps'))}</strong></span><span>UL rate <strong>${esc(realtimeValue(ue.ul_throughput_mbps, ' Mbps'))}</strong></span></div><div class="small" style="margin-top:8px">Access: ${esc(ue.access_state)} · PDCCH: ${esc(ue.pdcch_state)} · SRS/CSI/TRS: ${esc(ue.srs_state)}/${esc(ue.csi_state)}/${esc(ue.trs_state)}</div><div class="mini-note">CSI: ${esc(String(ue.csi_measurement_status || 'not published').replaceAll('_',' '))}${esc(csiRelative)} · PBCH-DMRS SINR ${esc(realtimeValue(ue.pbch_dmrs_sinr_db,' dB'))}${esc(ssRelative)}</div><details style="margin-top:8px"><summary>Per-path measurement evidence (${(ue.pathloss_paths || []).length}) · ${esc(String(ue.pathloss_status || 'unavailable').replaceAll('_',' '))}</summary><div class="table-wrap"><table><thead><tr><th>Rank</th><th>Cell</th><th>Pathloss</th><th>RSRP</th><th>Beam</th><th>Status</th></tr></thead><tbody>${pathRows || '<tr><td colspan="6">No per-path runtime measurement rows were published.</td></tr>'}</tbody></table></div></details><div class="mini-note">Last slots PDCCH ${esc(realtimeValue(ue.last_pdcch_slot,'',0))} · PUCCH ${esc(realtimeValue(ue.last_pucch_slot,'',0))} · SRS ${esc(realtimeValue(ue.last_srs_slot,'',0))} · TRS ${esc(realtimeValue(ue.last_trs_slot,'',0))}</div></article>`;
     }).join('');
     return `<section class="panel"><h3>UE Status</h3><p class="subtle">Control eligibility and measured performance remain source-labeled; abstraction-level summaries are not presented as waveform truth.</p><div class="ue-status-grid">${cards}</div></section>`;
@@ -20621,7 +20807,7 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
 {initial_error_html}
 <section class="panel">
   <h2>Planned And Observed PHY Resource Grid</h2>
-  <p class="muted">Separate YAML-resolved and runtime-observed DL/UL allocations. The detailed view is subcarrier × OFDM symbol and can be filtered by slot, port, layer, UE, and lifecycle state. Missing coordinates remain missing.</p>
+  <p class="muted">Separate YAML-resolved and runtime-observed DL/UL allocations. Slot-state cells also show source-backed access events and native PRACH presence without projecting them onto the carrier CP-OFDM grid. The detailed carrier view is subcarrier × OFDM symbol and can be filtered by slot, port, layer, UE, and lifecycle state. Missing coordinates remain missing.</p>
   <div class="toolbar">
     <label>Run {run_selector}</label>
     <label>UE <select id="phyUeSelect"><option value="">Auto / broadcast</option></select></label>
@@ -20676,6 +20862,9 @@ def build_phy_grid_page(run_id: int | None = None, message: str = "", user_profi
 .phy-cell.tdd-U { background:rgba(255,122,89,0.08); }
 .phy-cell.tdd-S { background:rgba(243,182,64,0.16); }
 .phy-badge { display:block; margin:2px 0; padding:4px 6px; border-radius:8px; color:white; font-weight:700; line-height:1.2; box-shadow:0 4px 10px rgba(18,32,51,0.12); }
+.phy-state-badge { display:block; margin:2px 0; padding:4px 6px; border-radius:8px; background:#e8eef7; color:#233b5d; font-weight:700; line-height:1.2; }
+.phy-annotation-badge { display:block; margin:3px 0; padding:4px 6px; border-radius:8px; background:#fff7db; color:#72510b; border:1px solid #ead38c; line-height:1.2; }
+.phy-annotation-badge.native { background:#fde8e8; color:#8d1d1d; border-color:#efb5b5; }
 .phy-DL { background:#0f8b8d; }
 .phy-UL { background:#ff7a59; }
 .phy-RS { background:#6759ff; }
@@ -20822,17 +21011,28 @@ function renderPhyGrid(payload) {{
     ['Events', String(grid.event_count || events.length || 0)]
   ].map(([label, value]) => `<div class="metric-card"><div class="metric-value">${{escPhy(value)}}</div><div class="metric-label">${{escPhy(label)}}</div></div>`).join('');
   const loadState = document.getElementById('phyLoadState');
-  if (loadState) loadState.textContent = `${{events.length}} rendered grid events from ${{(payload.table_status || []).filter(row => Number(row.rows_loaded || 0) > 0).length}} source tables.`;
+  if (loadState) loadState.textContent = `${{events.length}} rendered carrier-grid events and ${{(grid.slot_annotations || []).length}} source-backed slot annotations from ${{(payload.table_status || []).filter(row => Number(row.rows_loaded || 0) > 0).length}} source tables.`;
   const gridTable = document.getElementById('phyGridTable');
   if (!gridTable) return;
-  if (!lanes.length || !slots.length) {{
-    gridTable.innerHTML = '<p class="warning">No grid events are available yet for this run. The view will populate as MATLAB publishes the runtime CSV artifacts.</p>';
+  if (!slots.length) {{
+    gridTable.innerHTML = '<p class="warning">No canonical slot-state rows are available yet for this run.</p>';
   }} else {{
     const head = `<tr><th class="phy-slot-head">Channel</th>${{slots.map(slot => {{
-      const slotTitle = `${{slot.state_label || 'Slot state'}}${{slot.reason ? ` · ${{slot.reason}}` : ''}} · symbols D/G/U ${{slot.dl_symbols ?? '?'}} / ${{slot.guard_symbols ?? '?'}} / ${{slot.ul_symbols ?? '?'}}`;
+      const slotTitle = `${{slot.state_label || 'Slot state'}}${{slot.reason ? ` · ${{slot.reason}}` : ''}} · symbols D/F/G/U ${{slot.dl_symbols ?? '?'}} / ${{slot.flexible_symbols ?? '?'}} / ${{slot.guard_symbols ?? '?'}} / ${{slot.ul_symbols ?? '?'}}`;
       const activity = slot.activity === 'allocated' ? 'active' : (slot.activity || '');
       return `<th class="phy-slot-head tdd-${{escPhy(slot.tdd || '?')}} activity-${{escPhy(slot.activity || '')}}" title="${{escPhy(slotTitle)}}">Slot ${{escPhy(slot.slot)}}<br><span class="mini-note">${{escPhy(slot.tdd || '?')}}${{activity ? ` · ${{escPhy(activity)}}` : ''}}</span></th>`;
     }}).join('')}}</tr>`;
+    const stateCells = slots.map(slot => {{
+      const partition = `D ${{slot.dl_symbol_start ?? '?'}}+${{slot.dl_symbols ?? '?'}} · F ${{slot.flexible_symbol_start ?? '?'}}+${{slot.flexible_symbols ?? '?'}} · G ${{slot.guard_symbol_start ?? '?'}}+${{slot.guard_symbols ?? '?'}} · U ${{slot.ul_symbol_start ?? '?'}}+${{slot.ul_symbols ?? '?'}}`;
+      const state = `<span class="phy-state-badge" title="${{escPhy(slot.reason || '')}}">${{escPhy(slot.state_label || 'Slot state')}}<span class="phy-mini">${{escPhy(partition)}}${{slot.reason ? ` · ${{escPhy(slot.reason)}}` : ''}}</span></span>`;
+      const annotations = (slot.annotations || []).map(annotation => {{
+        const nativeClass = String(annotation.kind || '') === 'native_resource_grid' ? ' native' : '';
+        const title = `scope=${{annotation.evidence_scope || ''}} domain=${{annotation.grid_domain || ''}} source=${{annotation.source_artifact || ''}} rows=${{annotation.row_count || 0}}`;
+        return `<span class="phy-annotation-badge${{nativeClass}}" title="${{escPhy(title)}}">${{escPhy(annotation.label || annotation.kind || 'observed event')}}<span class="phy-mini">${{escPhy(annotation.status || 'observed')}} · ${{escPhy(annotation.grid_domain || '')}}</span></span>`;
+      }}).join('');
+      return `<td class="phy-cell tdd-${{escPhy(slot.tdd || '?')}}">${{state}}${{annotations}}</td>`;
+    }}).join('');
+    const stateRow = `<tr><th>Slot state / access</th>${{stateCells}}</tr>`;
     const rows = lanes.map(lane => {{
       const cells = slots.map(slot => {{
         const list = byKey.get(`${{lane}}|${{slot.slot}}`) || [];
@@ -20846,7 +21046,7 @@ function renderPhyGrid(payload) {{
       }}).join('');
       return `<tr><th>${{escPhy(lane)}}</th>${{cells}}</tr>`;
     }}).join('');
-    gridTable.innerHTML = `<table class="phy-table">${{head}}${{rows}}</table>`;
+    gridTable.innerHTML = `<table class="phy-table">${{head}}${{stateRow}}${{rows}}</table>`;
   }}
   const ueSelect = document.getElementById('phyUeSelect');
   if (ueSelect) {{

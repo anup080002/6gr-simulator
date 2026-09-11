@@ -14,6 +14,14 @@ p.parse(varargin{:});
 if nargin < 1 || ~isstruct(cfg)
     cfg = struct();
 end
+artifactRoot = strtrim(string(p.Results.RunFolder));
+if strlength(artifactRoot) > 0
+    % The explicit artifact root is also the authority used to validate
+    % content-addressed in-path channel captures.  runWaveformLinkBundle
+    % keeps this field on its execution-local config; the enclosing runner
+    % must not make the later strict validator depend on that private copy.
+    cfg = sixgr.util.structSet(cfg, "run.rootRunFolder", char(artifactRoot));
+end
 runId = string(p.Results.RunId);
 scenarioName = string(p.Results.ScenarioName);
 cfg = sixgr.util.structSet(cfg, "channel_rf.runId", char(runId));

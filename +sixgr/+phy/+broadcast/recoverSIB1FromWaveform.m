@@ -9,6 +9,9 @@ if isa(rxWaveform, 'sixgr.phy.waveform.WaveformObservationBuffer')
 end
 
 p = inputParser;
+p.addParameter('RecoveryScope',"SSB_MIB_SIB1",@(x) ...
+    (ischar(x)||isstring(x)) && isscalar(string(x)) && ...
+    any(string(x)==["SSB_MIB_SIB1","SSB_MIB"]));
 p.addParameter("ReceiverRNTI", 65535, @(x) isnumeric(x) && isscalar(x));
 p.addParameter("FaultMode", "", @(x) ischar(x) || isstring(x));
 p.addParameter('PhysicalMeasurementObservation',[],@(x)isempty(x) || ...
@@ -26,10 +29,13 @@ if ~isempty(p.Results.PhysicalMeasurementObservation)
 end
 
 result = localEmptyResult();
+result.RecoveryScope=string(p.Results.RecoveryScope);
+result.SIB1ReceptionAttempted=false;
+result.SSBMIBComplete=false;
 result.Status = "started";
 try
     [siSupported, siReason] = sixgr.phy.broadcast.siRNTIWaveformSupported();
-    if ~siSupported
+    if ~siSupported && result.RecoveryScope=="SSB_MIB_SIB1"
         result.Status = "unsupported_si_rnti_waveform";
         result.FailureReason = string(siReason);
         result.Errors = string(siReason);
@@ -66,6 +72,10 @@ try
     result.SSBPlacementCorrectionAppliedHz = double(sixgr.util.structGet( ...
         sync, "SSBPlacementCorrectionAppliedHz", NaN));
     result.SSBIndex = double(sixgr.util.structGet(pbch, "SSBIndex", NaN));
+    identity = sixgr.phy.sync.receivedSSBOccasionIdentity(sync, pbch);
+    for field = string(fieldnames(identity)).'
+        result.(field) = identity.(field);
+    end
     result.SSBReceivedPower_dB = localGridMeanPowerDb(rxSSB);
     result.PBCHDMRSMetric = double(sixgr.util.structGet(pbchInfo, "Selected.metric", NaN));
     result.PSSMetric = double(sixgr.util.structGet(sync, "FreqInfo.Metric", NaN));
@@ -111,7 +121,9 @@ try
         % AGC/ADC/CFO are not inverted using a guessed scalar gain.
         [physicalSSB,physicalSync]=sixgr.phy.dl.SSB_Rx(physicalSamples,cfg, ...
             'SampleRate_Hz',sampleRate,'CandidateSSBIndex',p.Results.CandidateSSBIndex);
-        if physicalSync.NCellID~=sync.NCellID
+        physicalIdentity = sixgr.phy.sync.receivedSSBOccasionIdentity(physicalSync, pbch);
+        if physicalSync.NCellID~=sync.NCellID || ...
+                physicalIdentity.ObservedSSBOccasionIndex ~= result.ObservedSSBOccasionIndex
             error('sixgr:phy:broadcast:MeasurementCellMismatch','Connector measurement detected a different cell from the decoded PBCH.');
         end
         result=localMeasurePhysicalSSB(result,physicalSSB,physicalSync,pbch,cfg);
@@ -154,8 +166,23 @@ try
         result.StrictOk = false;
         return;
     end
+    if ~result.SSBIdentityVerified
+        result.Status = "decoded_ssb_identity_mismatch";
+        result.FailureReason = "CRC-passing PBCH identity does not match the received PSS occasion";
+        result.StrictReceiverEvidenceOk = false;
+        result.StrictOk = false;
+        return;
+    end
     mib = sixgr.phy.broadcast.decodeMIBTransportBlock(pbch.TransportBlock);
     result.MIBSystemFrameNumber = 16*double(mib.SystemFrameNumberMSB6) + result.MIBSFN4LSBValue;
+    result.SSBMIBComplete=true;
+    if result.RecoveryScope=="SSB_MIB"
+        % A complete received SS/PBCH occasion need not wait for SIB1.
+        % StrictOk remains false: it means full SIB1 recovery, not this stage.
+        result.Status="SSB_MIB_COMPLETE_SIB1_NOT_ATTEMPTED";
+        return;
+    end
+    result.SIB1ReceptionAttempted=true;
     [type0, cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB(carrier, cfg, mib, ...
         "RNTI", double(p.Results.ReceiverRNTI));
     monitoringOccasionOrdinal = localMonitoringOccasionOrdinal(cfg);
@@ -241,7 +268,7 @@ try
     cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
     strict = sixgr.pdsch.RASIPDSCHContext.materialize( ...
         carrier, pdsch, controlEvent, ...
-        localProcedureContext(cfgSI, carrier, dci, pdsch), ...
+        localProcedureContext(cfgSI, carrier, dci, pdsch, result.SSBIndex), ...
         "NPhysicalRxAntennas", size(siWave, 2), ...
         "ChannelModel", sixgr.channel.resolveConcreteProfile(cfgSI), ...
         "MaxIterations", sixgr.phy.phycode.resolveLDPCMaxIterations( ...
@@ -339,7 +366,7 @@ catch ME
 end
 end
 
-function context = localProcedureContext(cfg, carrier, dci, pdsch)
+function context = localProcedureContext(cfg, carrier, dci, pdsch, receivedSSBIndex)
 absoluteSlot = double(sixgr.util.structGet( ...
     cfg, "phy.sib1.pdcchAbsoluteSlot", NaN));
 if ~(isscalar(absoluteSlot) && isfinite(absoluteSlot) && ...
@@ -375,6 +402,8 @@ context = struct( ...
     "DeploymentClass", "common_search_space_ra_si", ...
     "FrequencyRangeAllows1024QAM", false, ...
     "BandAllows1024QAM", false);
+context.CommonQCLReference = sixgr.pdsch.CommonPDSCHQCLReference.create( ...
+    "sib1",receivedSSBIndex,carrier.NCellID,"received_ssb_pbch_identity");
 end
 
 function result = localEmptyResult()
@@ -385,6 +414,8 @@ result = struct( ...
     "SIB1CFOCorrectionApplied_Hz", NaN, "SIB1CFOCorrectionSource", "", ...
     "SSBCenterFrequencyOffsetHz", NaN, ...
     "SSBPlacementCorrectionAppliedHz", NaN, "SSBIndex", NaN, ...
+    "ObservedSSBOccasionIndex", NaN, "PBCHHypothesisSSBIndex", NaN, ...
+    "SSBIdentityVerified", false, "SSBIndexSource", "", ...
     "SSBReceivedPower_dB", NaN, ...
     "SS_RSRP_dBm", NaN, "SS_RSRPPerReceiveAntenna_dBm", "", ...
     "SS_RSRPRawObserved_dBm", NaN, ...

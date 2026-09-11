@@ -10,7 +10,9 @@ runtime=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),1
 runtime.CurrentSlot=1; runtime.CurrentServingIdx(:)=1;
 [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,runtime,1,'DL');
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,runtime,1,'UL');
-p=sixgr.link.prepareTRSTransmission(dl,12,'RuntimeSlot',3);
+trsSlots=double(sixgr.util.structGet(dl,'phy.trs.slotNumbers',[]));
+assert(~isempty(trsSlots),'The authored shared-runtime fixture requires TRS slots.');
+p=sixgr.link.prepareTRSTransmission(dl,12,'RuntimeSlot',trsSlots(1)+1);
 tx=p.Tx; tx.Waveform=p.TransmitSamples;
 truth=sixgr.link.initWaveformTruthChannelState(p.ReceiverConfig,tx,p.TxInfo);
 state=truth.RuntimeChannelState;
@@ -38,6 +40,13 @@ whole=localOwner(dl,ul,state,fs,nt,nr,epoch);
 split=localOwner(dl,ul,sixgr.channel.ChannelFactory.forkRuntimeChannelState(state),fs,nt,nr,epoch);
 wholeEvent=localEvent(whole,fs,nt,nr);
 splitEvent=localEvent(split,fs,nt,nr);
+% Observer registration must not change any executed TX/RX samples or RNG.
+dlScoring=split.registerLinkScoringPlane(splitEvent,'serving','ue_rx');
+ulScoring=split.registerLinkScoringPlane(splitEvent,'serving','gnb_rx');
+assert(split.registerLinkScoringPlane(splitEvent,'serving','ue_rx')==dlScoring);
+% The capture request deliberately cuts inside processor intervals.
+split.requestLinkChannelReference(splitEvent,'serving','ue_rx',3,41);
+split.requestLinkChannelReference(splitEvent,'serving','ue_rx',3,41);
 before=rng;
 guard=double(state.ChannelPadSamples)+9;
 % The authored DDD-S-U fixture has its first full UL slot at 4 ms. Consume
@@ -56,12 +65,25 @@ for event={wholeEvent,splitEvent}
         e.observe(plane,plane,0,stop);
     end
 end
+splitEvent.observe(dlScoring,dlScoring,0,stop);
+splitEvent.observe(ulScoring,ulScoring,0,stop);
 result=wholeEvent.advanceUntilEvent(stop);
 actual=struct([]); next=0;
 for last=unique([1 17 71 777 stop])
     event=splitEvent.advanceUntilEvent(last);
     assert(event.Execution.StartSample==next && event.Execution.EndSampleExclusive==last);
     assert(numel(event.Execution.Links)==1 && numel(event.Execution.RX)==2);
+    a=max(next,3); b=min(last,41); references=event.Execution.ChannelReferences;
+    if a<b
+        assert(isscalar(references) && references.LinkID=="serving" && ...
+            references.Reference.ObservationStartSample==3 && ...
+            references.Reference.ObservationEndSampleExclusive==41 && ...
+            references.Reference.StartSample==a && references.Reference.EndSampleExclusive==b && ...
+            size(references.Reference.PathGains,1)==b-a, ...
+            'Only actual requested channel snapshots may be retained.');
+    else
+        assert(isempty(references),'Full channel capture must stop at the requested boundary.');
+    end
     assert(event.Execution.Links.Replay.RuntimeChannelStartSample==next && ...
         event.Execution.Links.Replay.RuntimeChannelEndSample==last && ...
         ~event.Execution.Links.Replay.RuntimeChannelAlignmentLookaheadExecutedOnFork);
@@ -70,7 +92,19 @@ for last=unique([1 17 71 777 stop])
     actual=[actual event.Completed]; %#ok<AGROW>
     next=last;
 end
-assert(numel(actual)==numel(result.Completed));
+scoring=actual(endsWith(string({actual.ReceiverID}),':desired_pre_noise'));
+actual=actual(~endsWith(string({actual.ReceiverID}),':desired_pre_noise'));
+assert(numel(actual)==numel(result.Completed) && numel(scoring)==2);
+desired=scoring(string({scoring.ReceiverID})==dlScoring).Observation.readComplete();
+inactive=scoring(string({scoring.ReceiverID})==ulScoring).Observation.readComplete();
+assert(any(desired(:)~=0) && all(inactive(:)==0));
+% Subtract the actually emitted noiseless link contribution from the
+% pre-RF receiver, which includes the once-generated thermal noise.
+observed=actual(string({actual.ReceiverID})=="ue_rx:pre_rf").Observation.readComplete();
+measuredNoise=mean(abs(observed-desired).^2,'all');
+injected=result.Execution.RX(1).Replay.InjectedNoiseVariance;
+assert(abs(measuredNoise/injected-1)<.04, ...
+    'The scoring tap must be the actual link output before receiver noise.');
 for k=1:numel(actual)
     index=find(string({result.Completed.ID})==actual(k).ID);
     a=actual(k).Observation.readComplete(); b=result.Completed(index).Observation.readComplete();
@@ -81,6 +115,60 @@ for k=1:numel(actual)
     end
 end
 assert(isequal(rng,before),'Shared physical execution consumed the global RNG.');
+receiverPlanes=actual(ismember(string({actual.ReceiverID}), ...
+    ["gnb:tx","ue_rx:pre_rf","ue_rx:post_rf"]));
+[~,~,~,receiverReplay]=sixgr.truth.sharedObservationEvidence(receiverPlanes);
+assert(receiverReplay.RuntimeGeometryDistance2D_m==dl.channel.distance2D_m && ...
+    receiverReplay.RuntimeGeometryDistance3D_m==dl.channel.distance3D_m && ...
+    receiverReplay.RuntimeGeometryDistance2D_m<receiverReplay.RuntimeGeometryDistance3D_m, ...
+    'Actual shared link geometry must keep horizontal and slant ranges distinct.');
+varyingGeometry=receiverPlanes;
+geometryPlane=find(endsWith(string({varyingGeometry.ReceiverID}),':post_rf'));
+assert(numel(varyingGeometry(geometryPlane).Segments)>1);
+varyingGeometry(geometryPlane).Segments{end}.Execution.Links.LossReplay.RuntimeGeometryDistance2D_m= ...
+    receiverReplay.RuntimeGeometryDistance2D_m+1;
+[~,~,~,variableReplay]=sixgr.truth.sharedObservationEvidence(varyingGeometry);
+assert(isnan(variableReplay.RuntimeGeometryDistance2D_m) && ...
+    isnan(variableReplay.RuntimeGeometryDistance3D_m), ...
+    'A time-varying geometry pair must remain segment evidence, not a selected scalar.');
+assert(isequaln(receiverReplay.AppliedPathloss_dB,result.Execution.Links.LossReplay.AppliedPathloss_dB) && ...
+    string(receiverReplay.PathlossModelSource)==string(result.Execution.Links.LossReplay.PathlossModelSource), ...
+    'Stationary pathloss provenance must survive the actual shared receiver adapter.');
+energyTrial=sixgr.truth.bindSharedLargeScaleEvidence(table(1,'VariableNames',{'Slot'}),receiverPlanes);
+rfTrial=sixgr.truth.bindSharedRFExecutionEvidence(table(1,'VariableNames',{'Slot'}),receiverPlanes);
+validatedRF=sixgr.channel.validateSharedRFExecutionEvidence(rfTrial);
+assert(validatedRF.Ok && validatedRF.AnyStageExecuted, ...
+    'The independent report validator must accept the actual retained RF manifest: %s',validatedRF.FailureReason);
+assert(rfTrial.RFStrictOk && ...
+    rfTrial.RxRFInputWaveformSHA256==string(sixgr.rf.waveformSHA256(observed)) && ...
+    rfTrial.RxRFOutputWaveformSHA256==string(sixgr.rf.waveformSHA256( ...
+        receiverPlanes(endsWith(string({receiverPlanes.ReceiverID}),':post_rf')).Observation.readComplete())) && ...
+    rfTrial.RxRFStreamStartSample==0 && rfTrial.RxRFStreamEndSampleExclusive==stop, ...
+    'RF provenance must hash the actual complete RX captures, not a segment list or configured reference.');
+rfManifest=jsondecode(rfTrial.RFExecutionManifestJSON);
+assert(numel(rfManifest.RX.ExecutedSegments)>1 && ...
+    rfTrial.RFExecutionManifestSHA256==string(sixgr.util.sha256Hex( ...
+        uint8(unicode2native(char(rfTrial.RFExecutionManifestJSON),'UTF-8')))));
+missingRF=receiverPlanes;
+postIndex=find(endsWith(string({missingRF.ReceiverID}),':post_rf'));
+bad=missingRF(postIndex).Segments{1}.Execution;
+bad.RX(1).Replay=rmfield(bad.RX(1).Replay,'RFStrictOk');
+missingRF(postIndex).Segments{1}.Execution=bad;
+localError(@()sixgr.truth.bindSharedRFExecutionEvidence(table(1,'VariableNames',{'Slot'}),missingRF), ...
+    'sixgr:truth:MissingRFExecution');
+assert(abs(energyTrial.LargeScaleOutputEnergy_mWsample-sum(abs(double(desired(:))).^2)) ...
+    <=energyTrial.LargeScalePowerClosureRelativeTolerance*energyTrial.LargeScaleOutputEnergy_mWsample && ...
+    abs(energyTrial.LargeScaleOutputEnergy_mWsample-energyTrial.LargeScaleExpectedOutputEnergy_mWsample) ...
+    <=energyTrial.LargeScalePowerClosureRelativeTolerance*energyTrial.LargeScaleExpectedOutputEnergy_mWsample, ...
+    'Exported DL energy must measure the actual post-gain scoring tap and close against applied net gain.');
+assert(energyTrial.LargeScaleMeasurementStartSample==0 && ...
+    energyTrial.LargeScaleMeasurementEndSampleExclusive==stop);
+assert(all(cellfun(@(s)~isfield(s.Execution.Links.LossReplay,'GainStageMeasurement'), ...
+    receiverReplay.ReceiveStreamExecutionSegments)), ...
+    'Scoring-only desired-link energy must not become a receiver oracle.');
+assert(all(cellfun(@(s)~isfield(s.Execution,'ChannelReferences'), ...
+    receiverReplay.ReceiveStreamExecutionSegments)), ...
+    'Practical receiver replay must not expose the independent channel reference tensors.');
 states=split.channelStates(); assert(states{1}.CurrentSampleIndex==stop);
 assert(string(states{1}.StateKey)==string(state.StateKey));
 % Two real receiver identities must not share a receiver-noise seed. Their
@@ -104,11 +192,45 @@ u=u(1:512,:);
 splitEvent.enqueue('ue','ul_ofdm',sixgr.phy.waveform.WaveformChunk(u,stop));
 splitEvent.commitTransmissionsThrough('gnb',stop+size(u,1));
 splitEvent.commitTransmissionsThrough('ue',stop+size(u,1));
+splitEvent.observe(ulScoring,'ul_score',stop,stop+size(u,1));
+split.requestLinkChannelReference(splitEvent,'serving','gnb_rx',stop,stop+size(u,1));
+splitEvent.observe(dlScoring,'dl_inactive_score',stop,stop+size(u,1));
+for plane=["ue:tx","gnb_rx:pre_rf","gnb_rx:post_rf"]
+    splitEvent.observe(plane,plane+":ul_gain_capture",stop,stop+size(u,1));
+end
 event=splitEvent.advanceUntilEvent(stop+size(u,1));
+ulChannel=event.Execution.ChannelReferences;
+assert(isscalar(ulChannel) && ulChannel.TX=="ue" && ulChannel.RX=="gnb_rx" && ...
+    ulChannel.Reference.ObservationStartSample==stop && ...
+    ulChannel.Reference.NumTransmitAntennas==nr && ulChannel.Reference.NumReceiveAntennas==nt && ...
+    size(ulChannel.Reference.PathGains,1)==size(u,1), ...
+    'TDD reversal must capture the actual reverse antenna layout.');
+ulReference=event.Completed(string({event.Completed.ID})=="ul_score").Observation.readComplete();
+dlInactive=event.Completed(string({event.Completed.ID})=="dl_inactive_score").Observation.readComplete();
+assert(size(ulReference,2)==nt && any(ulReference(:)~=0) && all(dlInactive(:)==0));
+ulPlanes=event.Completed(ismember(string({event.Completed.ReceiverID}), ...
+    ["ue:tx","gnb_rx:pre_rf","gnb_rx:post_rf"]));
+ulEnergy=sixgr.truth.bindSharedLargeScaleEvidence(table(5,'VariableNames',{'Slot'}),ulPlanes);
+ulRF=sixgr.truth.bindSharedRFExecutionEvidence(table(5,'VariableNames',{'Slot'}),ulPlanes);
+validatedULRF=sixgr.channel.validateSharedRFExecutionEvidence(ulRF);
+assert(validatedULRF.Ok,'Actual UL RF manifest validation failed: %s',validatedULRF.FailureReason);
+assert(ulRF.RFStrictOk && ulRF.RFImpairmentChainId~=rfTrial.RFImpairmentChainId && ...
+    ulRF.RxRFStreamStartSample==stop && ulRF.RxRFStreamEndSampleExclusive==stop+size(u,1), ...
+    'UL must bind its own RF endpoints and sample clock, not the earlier DL identity.');
+assert(abs(ulEnergy.LargeScaleOutputEnergy_mWsample-sum(abs(double(ulReference(:))).^2)) ...
+    <=ulEnergy.LargeScalePowerClosureRelativeTolerance*ulEnergy.LargeScaleOutputEnergy_mWsample && ...
+    abs(ulEnergy.LargeScaleOutputEnergy_mWsample-ulEnergy.LargeScaleExpectedOutputEnergy_mWsample) ...
+    <=ulEnergy.LargeScalePowerClosureRelativeTolerance*ulEnergy.LargeScaleExpectedOutputEnergy_mWsample, ...
+    'UL after TDD reversal needs its own actual desired-link energy measurement.');
 assert(event.Execution.Links.Replay.RuntimeChannelStartSample==stop);
 assert(event.Execution.Links.Replay.RuntimeChannelEndSample==stop+size(u,1));
 localError(@()split.retargetTDDLink('serving','gnb','ue_rx',dl),'WAVEFORM:TDDChannelTailNotConsumed');
 assert(~split.Faulted);
+splitEvent.commitTransmissionsThrough('gnb',stop+size(u,1)+1);
+splitEvent.commitTransmissionsThrough('ue',stop+size(u,1)+1);
+afterCapture=splitEvent.advanceUntilEvent(stop+size(u,1)+1);
+assert(isempty(afterCapture.Execution.ChannelReferences), ...
+    'The first actual interval after a completed capture must not retain new coefficients.');
 % Duplicate shared-state owners are rejected before consuming any sample.
 % The original 'whole' owner consumed state.Obj. Use a newly materialized
 % independent test channel for the duplicate-registration negative case.

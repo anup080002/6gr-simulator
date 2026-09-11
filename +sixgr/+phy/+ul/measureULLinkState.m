@@ -80,15 +80,17 @@ metrics = struct( ...
     "BeamScoreSource", "", ...
     "ConfiguredPMI", NaN, ...
     "ConfiguredCRI", NaN, ...
-    "CSI_RSRP_dB", NaN, ...
-    "CSI_RSRPSource", "", ...
-    "CSI_RSSI_dB", NaN, ...
-    "CSI_RSSISource", "", ...
-    "CSI_RSRQ_dB", NaN, ...
-    "CSI_RSRQSource", "", ...
+    "ULNormalizedReferencePower_dB", NaN, ...
+    "ULNormalizedReferencePowerSource", "measurement_unavailable", ...
+    "ULNormalizedWindowRSSI_dB", NaN, ...
+    "ULNormalizedWindowRSSISource", "measurement_unavailable", ...
+    "ULNormalizedWindowPowerRatio_dB", NaN, ...
+    "ULNormalizedWindowPowerRatioSource", "measurement_unavailable", ...
+    "ULNormalizedPowerEvidenceJSON", "", ...
     "RISource", "", ...
     "PMISource", "", ...
     "RuntimeAppliedPMI", NaN, ...
+    "SelectedCodebookPortIndices1Based", [], ...
     "TPMICandidateCount", NaN, ...
     "TPMIMutualInformation", NaN, ...
     "SRSConditionNumber_dB", NaN, ...
@@ -113,7 +115,7 @@ end
 
 [metrics.NumRxAnt, metrics.NumTxPorts] = size(Hwb);
 [metrics.ChannelGain_dB, metrics.RankEstimate, metrics.ConditionNumber_dB] = localWidebandChannelDescriptors(Hwb);
-metrics.RI = localResolveULRankIndicator(metrics.RankEstimate, cfg);
+metrics.RI = localResolveULRankIndicator(metrics.RankEstimate);
 if channelEstimateDomain == "srs_port_domain"
     metrics.RISource = "ul_srs_port_domain_wideband_rank_descriptor";
     srsEstimate = sixgr.phy.ul.estimateSRSRITPMI(Hest, nVar, cfg);
@@ -179,22 +181,16 @@ if isfinite(pilotNMSE_dB)
     metrics.DetectionMetric = 1 / (1 + 10.^(pilotNMSE_dB / 10));
 end
 
-[referencePower, rsrpSource] = localMeasureReferencePower(opt.ReceivedGrid, opt.ReferenceIndices, opt.ReferenceSymbols);
-if isfinite(referencePower) && referencePower > 0
-    metrics.CSI_RSRP_dB = 10 * log10(max(referencePower, eps));
-    metrics.CSI_RSRPSource = char(string(rsrpSource));
-else
-    metrics.CSI_RSRPSource = "measurement_unavailable";
-end
-[rssiPower, rssiNRB, rssiSource, ~] = localMeasureRSSI(opt.ReceivedGrid, opt.ReferenceIndices);
-if isfinite(rssiPower) && rssiPower > 0
-    metrics.CSI_RSSI_dB = 10 * log10(max(rssiPower, eps));
-    metrics.CSI_RSSISource = char(string(rssiSource));
-end
-if isfinite(referencePower) && referencePower > 0 && isfinite(rssiPower) && rssiPower > 0 && ...
-        isfinite(rssiNRB) && rssiNRB > 0
-    metrics.CSI_RSRQ_dB = 10 * log10(max(double(rssiNRB) * referencePower / max(rssiPower, eps), eps));
-    metrics.CSI_RSRQSource = "ts38215_n_times_rsrp_over_rssi";
+if ~isempty(opt.ReceivedGrid) && ~isempty(opt.ReferenceIndices) && ~isempty(opt.ReferenceSymbols)
+    power=sixgr.phy.ul.measureNormalizedReferencePower( ...
+        opt.ReceivedGrid,opt.ReferenceIndices,opt.ReferenceSymbols);
+    metrics.ULNormalizedReferencePower_dB=power.ReferencePower_dB;
+    metrics.ULNormalizedWindowRSSI_dB=power.WindowRSSI_dB;
+    metrics.ULNormalizedWindowPowerRatio_dB=power.WindowPowerRatio_dB;
+    metrics.ULNormalizedReferencePowerSource="normalized_UL_reference_RE_energy_linear_branch_mean";
+    metrics.ULNormalizedWindowRSSISource="normalized_UL_reference_PRBs_and_symbols_linear_branch_mean";
+    metrics.ULNormalizedWindowPowerRatioSource="diagnostic_N_times_reference_over_window_power_not_NR_RSRQ";
+    metrics.ULNormalizedPowerEvidenceJSON=string(jsonencode(power));
 end
 
 if measuredSINRAvailable && reportCQI && ...
@@ -259,19 +255,12 @@ end
 cond_dB = double(cond);
 end
 
-function ri = localResolveULRankIndicator(rankEstimate, cfg)
-configuredLayers = double(sixgr.util.structGet(cfg, "phy.pusch.nLayers", ...
-    sixgr.util.structGet(cfg, "phy.pusch.NumLayers", ...
-    sixgr.util.structGet(cfg, "phy.pusch.maxRankDefault", 1))));
-if ~(isscalar(configuredLayers) && isfinite(configuredLayers) && configuredLayers >= 1)
-    configuredLayers = 1;
-end
-configuredLayers = max(1, round(configuredLayers));
+function ri = localResolveULRankIndicator(rankEstimate)
+% A measured channel-rank descriptor is not a configured transmission rank.
+% Zero/unavailable channel rank supplies no positive RI recommendation.
 ri = NaN;
-if isfinite(rankEstimate) && rankEstimate >= 1
-    ri = double(max(1, min(round(rankEstimate), configuredLayers)));
-else
-    ri = double(configuredLayers);
+if isscalar(rankEstimate) && isfinite(rankEstimate) && rankEstimate >= 1 && rankEstimate==fix(rankEstimate)
+    ri = double(rankEstimate);
 end
 end
 
@@ -285,37 +274,40 @@ scheme = lower(string(sixgr.util.structGet(cfg, "phy.pusch.transmissionScheme", 
 transformPrecoding = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false));
 isCodebook = scheme == "codebook" && ~transformPrecoding;
 
-appliedPMI = double(sixgr.util.structGet(precInfo, "AppliedPrecoderPMI", NaN));
-if ~(isfinite(appliedPMI) && isCodebook)
-    appliedPMI = configuredPMI;
+appliedPMI = sixgr.util.structGet(precInfo, "AppliedPrecoderPMI", NaN);
+if ~(isCodebook && isnumeric(appliedPMI) && isscalar(appliedPMI) && ...
+        isreal(appliedPMI) && isfinite(appliedPMI) && appliedPMI>=0 && appliedPMI==fix(appliedPMI))
+    appliedPMI = NaN;
 end
-metrics.RuntimeAppliedPMI = appliedPMI;
+metrics.RuntimeAppliedPMI = double(appliedPMI);
 
-if isCodebook && isfinite(appliedPMI)
+if isCodebook
     estimatedTPMI = double(sixgr.util.structGet(srsEstimate, "TPMI", NaN));
-    estimatedBeamIndices = double(sixgr.util.structGet(srsEstimate, "SelectedBeamIndices", []));
-    if isfinite(estimatedTPMI)
-        metrics.PMI = double(round(estimatedTPMI));
-        metrics.PMISource = char(string(sixgr.util.structGet(srsEstimate, "TPMISource", "ul_srs_mutual_information_tpmi_estimator_lab_default")));
-    else
-        metrics.PMI = double(round(appliedPMI));
+    measuredSRS=strcmp(metrics.ChannelEstimateDomain,'srs_port_domain');
+    if measuredSRS && logical(sixgr.util.structGet(srsEstimate,'Valid',false)) && ...
+            isscalar(estimatedTPMI) && isfinite(estimatedTPMI) && estimatedTPMI>=0 && estimatedTPMI==fix(estimatedTPMI)
+        metrics.PMI = estimatedTPMI;
+        metrics.PMISource = char(string(srsEstimate.TPMISource));
+        metrics.SelectedCodebookPortIndices1Based = double(sixgr.util.structGet( ...
+            srsEstimate,'SelectedCodebookPortIndices1Based',[]));
+    elseif ~measuredSRS && isfinite(appliedPMI)
+        metrics.PMI = double(appliedPMI);
         metrics.PMISource = "ul_runtime_applied_codebook_tpmi";
+    else
+        metrics.PMI = NaN;
+        metrics.PMISource = "ul_tpmi_unavailable_no_measured_recommendation_or_applicable_transmit_evidence";
     end
     metrics.PMIType = char(string(sixgr.util.structGet(precInfo, "AppliedPrecoderPMIType", "pusch_codebook")));
     metrics.PMICodebookMode = char(string(sixgr.util.structGet(precInfo, "AppliedPrecoderCodebookMode", ...
         sixgr.util.structGet(cfg, "phy.pusch.codebookType", ""))));
-    metrics.CSIReportMode = "ul_srs_based_ri_tpmi_estimator_lab_default";
-    metrics.SelectedBeamIndices = localParseIndexSet(sixgr.util.structGet(precInfo, "AppliedBeamIndexSet", []));
-    if isempty(metrics.SelectedBeamIndices) && ~isempty(estimatedBeamIndices)
-        metrics.SelectedBeamIndices = estimatedBeamIndices;
+    if measuredSRS
+        metrics.CSIReportMode = "ul_srs_measured_ri_tpmi_recommendation";
+    else
+        metrics.CSIReportMode = "ul_pusch_dmrs_effective_channel_no_tpmi_recommendation";
     end
-    if isempty(metrics.SelectedBeamIndices)
-        metrics.SelectedBeamIndices = localResolveNativeULCodebookBeamIndices(metrics.NumTxPorts, metrics.RI, metrics.PMI, transformPrecoding);
-    end
-    if ~isempty(metrics.SelectedBeamIndices)
-        metrics.SelectedBeamIndex = double(metrics.SelectedBeamIndices(1));
-        metrics.BeamCandidateCount = double(max(max(metrics.SelectedBeamIndices), numel(metrics.SelectedBeamIndices)));
-    end
+    % Codebook support identifies antenna ports, not spatial beam IDs.
+    % Applied physical-beam evidence belongs to the transmitter trace;
+    % neither an SRS recommendation nor effective DM-RS creates beam IDs.
 else
     if transformPrecoding
         metrics.CSIReportMode = "ul_gnb_reference_measurement_transform_precoding_active";
@@ -331,49 +323,6 @@ else
 end
 metrics.CSIPayloadBitLength = NaN;
 metrics.CSIPayloadHex = "";
-end
-
-function values = localParseIndexSet(rawValue)
-values = [];
-if isempty(rawValue)
-    return;
-end
-if isstring(rawValue) || ischar(rawValue)
-    toks = regexp(char(string(rawValue)), "\d+", "match");
-    if isempty(toks)
-        return;
-    end
-    values = str2double(string(toks));
-else
-    values = double(rawValue(:).');
-end
-values = values(isfinite(values));
-values = unique(round(values), "stable");
-end
-
-function beamIndices = localResolveNativeULCodebookBeamIndices(numTxPorts, rankIndicator, tpmi, transformPrecoding)
-beamIndices = [];
-if ~(isscalar(numTxPorts) && isfinite(numTxPorts) && numTxPorts >= 1 && ...
-        isfinite(rankIndicator) && rankIndicator >= 1 && isfinite(tpmi))
-    return;
-end
-if exist("nrPUSCHCodebook", "file") ~= 2
-    return;
-end
-try
-    W = nrPUSCHCodebook(max(1, round(rankIndicator)), max(1, round(numTxPorts)), round(tpmi), logical(transformPrecoding));
-catch
-    try
-        W = nrPUSCHCodebook(max(1, round(rankIndicator)), max(1, round(numTxPorts)), round(tpmi));
-    catch
-        W = [];
-    end
-end
-if isempty(W)
-    return;
-end
-portPower = sum(abs(double(W)).^2, 1, "omitnan");
-beamIndices = find(isfinite(portPower) & portPower > (eps(max(portPower, [], "omitnan")) * 16));
 end
 
 function Hwb = localWidebandChannelMatrix(Hest, cfg)
@@ -431,106 +380,6 @@ expectedRx = max(1, round(expectedRx));
 expectedTx = max(1, round(expectedTx));
 end
 
-function [powerLin, source] = localMeasureReferencePower(rxGrid, refInd, refSym)
-powerLin = NaN;
-source = "measurement_unavailable";
-if isempty(rxGrid) || isempty(refInd)
-    return;
-end
-try
-    rxRef = nrExtractResources(refInd, rxGrid);
-catch
-    rxRef = [];
-end
-if isempty(rxRef)
-    return;
-end
-if ~isempty(refSym)
-    try
-        refMask = abs(refSym(:)) > 0;
-        if ismatrix(rxRef) && size(rxRef, 1) == numel(refMask)
-            rxRef = rxRef(refMask, :);
-        elseif isvector(rxRef) && numel(rxRef) == numel(refMask)
-            rxRef = rxRef(refMask);
-        end
-    catch
-    end
-end
-vals = abs(double(rxRef(:))).^2;
-vals = vals(isfinite(vals));
-if isempty(vals)
-    return;
-end
-powerLin = mean(vals, "omitnan");
-source = "received_reference_signal_power";
-end
-
-function [rssiLin, nRB, source, status] = localMeasureRSSI(rxGrid, refInd)
-rssiLin = NaN;
-nRB = NaN;
-source = "measurement_unavailable";
-status = "unavailable";
-if isempty(rxGrid) || isempty(refInd)
-    return;
-end
-[subcarrier, symbol] = localReferenceSubcarrierAndSymbol(rxGrid, refInd);
-if isempty(subcarrier) || isempty(symbol)
-    return;
-end
-rbIndex = unique(floor((double(subcarrier(:)) - 1) ./ 12) + 1);
-rbIndex = rbIndex(isfinite(rbIndex) & rbIndex >= 1);
-symbol = unique(double(symbol(:)));
-symbol = symbol(isfinite(symbol) & symbol >= 1 & symbol <= size(rxGrid, 2));
-if isempty(rbIndex) || isempty(symbol)
-    return;
-end
-nRB = double(numel(rbIndex));
-scMask = false(size(rxGrid, 1), 1);
-for i = 1:numel(rbIndex)
-    sc0 = (rbIndex(i) - 1) * 12 + 1;
-    sc1 = min(size(rxGrid, 1), sc0 + 11);
-    if sc0 <= size(rxGrid, 1)
-        scMask(sc0:sc1) = true;
-    end
-end
-perSymbolPower = nan(numel(symbol), 1);
-for i = 1:numel(symbol)
-    vals = abs(double(rxGrid(scMask, round(symbol(i)), :))).^2;
-    vals = vals(isfinite(vals));
-    if ~isempty(vals)
-        perSymbolPower(i) = sum(vals, "omitnan");
-    end
-end
-perSymbolPower = perSymbolPower(isfinite(perSymbolPower));
-if isempty(perSymbolPower)
-    return;
-end
-rssiLin = mean(perSymbolPower, "omitnan");
-source = "received_signal_strength_indicator_measurement_bandwidth";
-status = "OK";
-end
-
-function [subcarrier, symbol] = localReferenceSubcarrierAndSymbol(rxGrid, refInd)
-subcarrier = [];
-symbol = [];
-if isempty(refInd)
-    return;
-end
-if isnumeric(refInd) && ismatrix(refInd) && size(refInd, 2) >= 2 && size(refInd, 2) <= 4 && size(refInd, 1) > 1
-    subcarrier = double(refInd(:, 1));
-    symbol = double(refInd(:, 2));
-    return;
-end
-nSc = size(rxGrid, 1);
-nSym = size(rxGrid, 2);
-idx = double(refInd(:));
-idx = idx(isfinite(idx) & idx >= 1);
-if isempty(idx)
-    return;
-end
-subcarrier = mod(idx - 1, max(nSc, 1)) + 1;
-symbol = mod(floor((idx - 1) ./ max(nSc, 1)), max(nSym, 1)) + 1;
-end
 
 function [sinr_dB, source, status, pilotNMSE_dB, perRBSINR_dB] = localMeasureReferenceSINR(Hest, nVar, rxGrid, refInd, refSym, cfg)
 sinr_dB = NaN;
@@ -646,18 +495,7 @@ subcarrier = [];
 if isempty(refInd)
     return;
 end
-if isnumeric(refInd) && ismatrix(refInd) && size(refInd, 2) >= 1 && size(refInd, 2) <= 4 && size(refInd, 1) > 1
-    if size(refInd, 2) > 1
-        subcarrier = double(refInd(:, 1));
-        return;
-    end
-end
-try
-    nSc = size(rxGrid, 1);
-    subcarrier = mod(double(refInd(:)) - 1, max(double(nSc), 1)) + 1;
-catch
-    subcarrier = [];
-end
+subcarrier=sixgr.phy.ul.linearReferenceSubcarriers(rxGrid,refInd);
 end
 
 function values = localMeanAcrossNonRE(x)

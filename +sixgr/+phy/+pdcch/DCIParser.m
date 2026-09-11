@@ -68,6 +68,10 @@ classdef DCIParser
 
         function derived = resolveSemantics(fields, context)
             data = context.Data;
+            if string(data.RNTIType)=="TC-RNTI" && isfield(data,'FrequencyReferenceSize')
+                derived = sixgr.phy.pdcch.TCMsg4DCIContext.resolveSemantics(fields,context);
+                return;
+            end
             if string(data.RNTIType) == "RA-RNTI"
                 derived = sixgr.phy.pdcch.RARDCIContext.resolveSemantics(fields,context);
                 return;

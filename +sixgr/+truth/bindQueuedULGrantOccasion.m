@@ -1,0 +1,26 @@
+function grant=bindQueuedULGrantOccasion(grant,controlSlot,dataSlot,controlFrame,dataFrame,k2Slots)
+%BINDQUEUEDULGRANTOCCASION Add one-based queue labels without changing timing.
+% The scheduler owns the zero-based canonical decision. Queue/display slots
+% are one-based; they must never overwrite ScheduledAbsoluteSlot or rebuild
+% a decision after DCI has been frozen.
+sixgr.phy.grant.assertGrantTimingIdentity(grant,'UL');
+assert(isfield(grant,'TimingDecision') && isstruct(grant.TimingDecision) && ...
+    isfield(grant.TimingDecision,'Valid') && isequal(grant.TimingDecision.Valid,true), ...
+    'sixgr:truth:MissingQueuedULTiming','Queued PUSCH requires canonical scheduler timing.');
+values=[controlSlot dataSlot controlFrame dataFrame k2Slots];
+assert(isnumeric(values) && isreal(values) && numel(values)==5 && ...
+    all(isfinite(values)) && all(values==fix(values)) && ...
+    all(values(1:4)>=1) && k2Slots>=0, ...
+    'sixgr:truth:InvalidQueuedULOccasion','Queue slots/frames must be positive one-based integers.');
+t=grant.TimingDecision;
+assert(controlSlot-1==t.ControlAbsoluteSlot && dataSlot-1==t.DataAbsoluteSlot && ...
+    k2Slots==t.K2 && dataSlot-controlSlot==k2Slots, ...
+    'sixgr:truth:QueuedULTimingMismatch', ...
+    'Queue labels must identify the existing canonical UL control/data occasion.');
+grant.ControlSlot=double(controlSlot);
+grant.ControlFrame=double(controlFrame);
+grant.K2Slots=double(k2Slots);
+grant.Slot=double(dataSlot);
+grant.Frame=double(dataFrame);
+grant.ULGrantTimingMode="dci_k2_queued_grant";
+end

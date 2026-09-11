@@ -18,12 +18,16 @@ if isempty(slots)
         error('sixgr:truth:MissingTRSSlotAuthority', ...
             'TRS needs explicit within-frame slotNumbers or integer period_slots/period_offset.');
     end
-    % A single periodic resource is not silently expanded into a multi-slot
-    % frequency-tracking observation. Strict receiver validation still applies.
+    burstLength=sixgr.util.structGet(cfg,'phy.trs.burstLengthSlots',1);
+    validateattributes(burstLength,{'numeric'},{'scalar','integer','positive','<=',double(period)});
+    % The configured resource-set length, not an inferred extra pilot,
+    % determines all resources belonging to this periodic observation.
     first = double(offset)+max(0,floor((absoluteSlot-double(offset))/double(period)))*double(period);
+    resolved=first+(0:burstLength-1);
     window = struct('Authority',"periodic_offset",'FrameNumber',NaN,'SlotsPerFrame',NaN, ...
-        'ConfiguredSlotNumbers',double(offset),'AbsoluteSlotNumbers',first, ...
-        'ResourceActive',absoluteSlot==first,'ObservationStarts',absoluteSlot==first);
+        'ConfiguredSlotNumbers',double(offset)+(0:burstLength-1),'AbsoluteSlotNumbers',resolved, ...
+        'ResourceSetIndex0Based',0,'BurstLengthSlots',burstLength, ...
+        'ResourceActive',any(absoluteSlot==resolved),'ObservationStarts',absoluteSlot==first);
     return;
 end
 spf = sixgr.util.structGet(cfg,'phy.numerology.slotsPerFrame', ...
@@ -41,10 +45,24 @@ end
 slots = sort(double(slots(:).'));
 frame = floor(absoluteSlot/double(spf));
 resolved = frame*double(spf)+slots;
+burstLength=sixgr.util.structGet(cfg,'phy.trs.burstLengthSlots',numel(slots));
+validateattributes(burstLength,{'numeric'},{'scalar','integer','positive'});
+assert(mod(numel(slots),burstLength)==0,'sixgr:truth:InvalidTRSBurstPartition', ...
+    'Every authored TRS resource set must have its complete configured burst_length_slots.');
+bursts=reshape(resolved,burstLength,[]);
+assert(all(diff(bursts,1,1)==1,'all'),'sixgr:truth:NonconsecutiveTRSBurst', ...
+    'A multi-slot trs-Info resource set requires consecutive slots, not a disjoint pilot pair.');
+activeBurst=find(any(bursts==absoluteSlot,1),1);
+if isempty(activeBurst)
+    activeBurst=find(bursts(1,:)>=absoluteSlot,1);
+    if isempty(activeBurst), activeBurst=size(bursts,2); end
+end
+observationSlots=bursts(:,activeBurst).';
 if any(resolved>flintmax)
     error('sixgr:truth:InvalidTRSSlot','TRS absolute resource slots exceed exact integer coordinates.');
 end
 window = struct('Authority',"explicit_slot_numbers",'FrameNumber',frame,'SlotsPerFrame',double(spf), ...
-    'ConfiguredSlotNumbers',slots,'AbsoluteSlotNumbers',resolved, ...
-    'ResourceActive',any(absoluteSlot==resolved),'ObservationStarts',absoluteSlot==resolved(1));
+    'ConfiguredSlotNumbers',slots,'AbsoluteSlotNumbers',observationSlots, ...
+    'ResourceSetIndex0Based',activeBurst-1,'BurstLengthSlots',burstLength, ...
+    'ResourceActive',any(absoluteSlot==resolved),'ObservationStarts',any(absoluteSlot==bursts(1,:)));
 end

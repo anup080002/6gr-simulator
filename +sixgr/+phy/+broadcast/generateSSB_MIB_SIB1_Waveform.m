@@ -23,6 +23,8 @@ localRequireBroadcastFeature(cfg, "sib1", "phy.sib1.enable");
 localRequireEnabledPath(cfg, "phy.pdsch.enable", "SIB1 PDSCH");
 
 cfg = localNormalizeBroadcastCfg(cfg);
+commonDL = sixgr.phy.frame.CommonDLResourcePlan(cfg);
+commonDL.validateSIB1TRS();
 [cfg, ssbPowerContract] = sixgr.rf.resolveSSBPowerContract(cfg);
 tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [sib1Bits, asn1Meta] = sixgr.rrc.asn1.encodeSIB1UPER(tree);
@@ -32,6 +34,10 @@ tree = sixgr.rrc.asn1.buildBCCHDLSCHMessage(cfg);
 [pdsch, dci, targetCodeRate, paddedBits] = ...
     localSelectSIB1Allocation(carrierSI, cfgSI, sib1Bits);
 cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch);
+[ssbWaveform, ssbWaveInfo, ssbInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", localSSBObservationSubframes(cfg), ...
+    "SSBIndex", double(sixgr.util.structGet(cfg, "phy.ssb.runtimeSSBIndex", 0)));
+commonQCL = sixgr.pdsch.CommonPDSCHQCLReference.create("sib1", ...
+    ssbInfo.SSBTiming.SelectedSSBIndex,carrierSI.NCellID,"actual_ssb_transmitter_occasion");
 
 [pdcchTx, pdcchInfo] = sixgr.phy.dl.PDCCH_Tx(cfgSI, ...
     "Carrier", carrierSI, "PDCCH", pdcch, "DCIBits", dci.Bits, ...
@@ -45,7 +51,7 @@ controlEvent = sixgr.pdsch.RASIPDSCHContext.scheduledControlEvent( ...
     "PDCCHDMRSIndicesOneBased", pdcchTx.DMRSInd);
 strict = sixgr.pdsch.RASIPDSCHContext.materialize( ...
     carrierSI, pdsch, controlEvent, ...
-    localProcedureContext(cfgSI, carrierSI, dci, pdsch), ...
+    localProcedureContext(cfgSI, carrierSI, dci, pdsch, commonQCL), ...
     "TransportBlockSize", numel(paddedBits), ...
     "ChannelModel", "AWGN", ...
     "MaterializationRole", "transmitter");
@@ -60,8 +66,7 @@ strict = sixgr.pdsch.RASIPDSCHContext.materialize( ...
 
 siGrid = localAddGrids(pdcchTx.Grid, pdschTx.Grid);
 siWaveform = sixgr.phy.waveform.ofdmModulate(carrierSI, siGrid);
-[ssbWaveform, ssbWaveInfo, ssbInfo] = sixgr.phy.dl.SSB_Tx(cfg, "NumSubframes", localSSBObservationSubframes(cfg), ...
-    "SSBIndex", double(sixgr.util.structGet(cfg, "phy.ssb.runtimeSSBIndex", 0)));
+[siWaveform, siSpatialMapping] = localApplyAssociatedSSBMapping(siWaveform,ssbInfo);
 localAssertNoSSBSIResourceCollision( ...
     ssbWaveInfo, ssbInfo, siGrid, sib1AbsoluteSlot, carrierSI);
 sampleRate = double(sixgr.util.structGet(ssbInfo, "SampleRate_Hz", localSampleRate(carrier)));
@@ -93,6 +98,8 @@ tx.PDSCH = pdsch;
 tx.PDCCHTx = pdcchTx;
 tx.PDSCHTx = pdschTx;
 tx.SIB1Grid = siGrid;
+tx.SIB1GridDomain = "logical_antenna_port_before_spatial_mapping";
+tx.SIB1SpatialMapping = siSpatialMapping;
 tx.TxTree = tree;
 tx.TxTreeHash = treeHash.TxTreeHash;
 tx.SIB1Bits = sib1Bits;
@@ -132,7 +139,38 @@ tx.Skipped = false;
 tx.ToolboxMissing = false;
 end
 
-function context = localProcedureContext(cfg, carrier, dci, pdsch)
+function [waveform,evidence] = localApplyAssociatedSSBMapping(waveform,ssbInfo)
+% Consume the matrix retained by the actual SSB producer, not a newly
+% resolved configuration matrix. Preserve logical-domain external ownership.
+plan=ssbInfo.SSBBurstPlan;
+index=double(ssbInfo.SSBTiming.SelectedSSBIndex);
+row=plan.PrecoderMatrices{index+1};
+domain=string(ssbInfo.WaveformDomain);
+if size(waveform,2)~=1 || ~isrow(row) || ...
+        numel(row)~=plan.NumTransmitAntennas || any(~isfinite(row))
+    error('sixgr:phy:broadcast:InvalidSIB1SpatialMapping', ...
+        'Common SI requires one logical port and the generated SSB element mapping.');
+end
+switch domain
+    case "physical_element_domain"
+        waveform=waveform*row;
+        applied=true;
+        owner="sib1_waveform_composer";
+    case "logical_rf_chain_post_analog_precoder"
+        applied=false;
+        owner="external_physical_projection_required";
+    otherwise
+        error('sixgr:phy:broadcast:InvalidSIB1SpatialMapping','Unknown SSB waveform domain.');
+end
+evidence=struct('Source',"actual_generated_ssb_precoder", ...
+    'SSBIndex',index,'WaveformDomain',domain, ...
+    'MatrixAppliedHere',applied,'PhysicalProjectionOwner',owner, ...
+    'PrecoderMatrix',row,'PrecoderMatrixSHA256',plan.PrecoderMatrixSHA256(index+1), ...
+    'NumLogicalPorts',1,'NumPhysicalElements',numel(row), ...
+    'NumWaveformColumns',size(waveform,2));
+end
+
+function context = localProcedureContext(cfg, carrier, dci, pdsch, commonQCL)
 absoluteSlot = double(sixgr.util.structGet( ...
     cfg, "phy.sib1.pdcchAbsoluteSlot", NaN));
 if ~(isscalar(absoluteSlot) && isfinite(absoluteSlot) && ...
@@ -168,6 +206,7 @@ context = struct( ...
     "DeploymentClass", "common_search_space_ra_si", ...
     "FrequencyRangeAllows1024QAM", false, ...
     "BandAllows1024QAM", false);
+context.CommonQCLReference = commonQCL;
 end
 
 function cfg = localNormalizeBroadcastCfg(cfg)
@@ -213,37 +252,8 @@ end
 end
 
 function [pdsch, dci, targetCodeRate, paddedBits] = localSelectSIB1Allocation(carrier, cfg, sib1Bits)
-allocation = sixgr.util.structGet(cfg, ...
-    "initial_access.sib1.pdsch", sixgr.util.structGet(cfg, ...
-    "phy.sib1.pdsch", struct()));
-required = ["prb_start","num_prb","symbol_start","num_symbols","mcs","rv"];
-if ~(isstruct(allocation) && isscalar(allocation))
-    error("sixgr:phy:broadcast:MissingSIB1Allocation", ...
-        "Strict SIB1 generation requires initial_access.sib1.pdsch.");
-end
-for ii = 1:numel(required)
-    if ~isfield(allocation, required(ii)) || isempty(allocation.(required(ii)))
-        error("sixgr:phy:broadcast:MissingSIB1Allocation", ...
-            "Strict SIB1 allocation is missing %s.", required(ii));
-    end
-end
-prbStart = localNonnegativeInteger(allocation.prb_start, "prb_start");
-nRB = localPositiveInteger(allocation.num_prb, "num_prb");
-symbolStart = localNonnegativeInteger( ...
-    allocation.symbol_start, "symbol_start");
-numSymbols = localPositiveInteger( ...
-    allocation.num_symbols, "num_symbols");
-mcs = localNonnegativeInteger(allocation.mcs, "mcs");
-rv = localNonnegativeInteger(allocation.rv, "rv");
-if prbStart + nRB > double(carrier.NSizeGrid)
-    error("sixgr:phy:broadcast:SIB1AllocationOutsideBWP", ...
-        "Configured SIB1 PRB interval [%d,%d) exceeds NSizeGrid=%d.", ...
-        prbStart, prbStart + nRB, double(carrier.NSizeGrid));
-end
-[dci, pdsch] = sixgr.phy.broadcast.buildSIB1DCI10(carrier, cfg, ...
-    "PRBStart", prbStart, "PRBCount", nRB, ...
-    "SymbolStart", symbolStart, "NumSymbols", numSymbols, ...
-    "MCSIndex", mcs, "RV", rv);
+[pdsch, dci] = sixgr.phy.broadcast.configuredSIB1Allocation(carrier, cfg);
+nRB = numel(pdsch.PRBSet);
 [pdschIndices, info] = nrPDSCHIndices(carrier, pdsch);
 nrePerPRB = localResolveSIB1DataNREPerPRB( ...
     info, nRB, pdsch.Modulation, pdsch.NumLayers, ...
@@ -324,28 +334,8 @@ end
 
 function [pdcch, cfgSI, carrierSI, resolution, absoluteSlot] = ...
         localSIB1PDCCHConfig(carrier, cfg)
-mib = sixgr.phy.broadcast.splitPDCCHConfigSIB1(localPDCCHConfigSIB1(cfg), ...
-    "Source", "tx_configured_mib_pdcch_ConfigSIB1");
-mib.DMRSTypeAPosition = double(sixgr.util.structGet(cfg, "phy.mib.dmrsTypeAPosition", 2));
-[resolution, cfgSI] = sixgr.phy.broadcast.deriveType0PDCCHFromMIB(carrier, cfg, mib, "RNTI", 65535);
-ordinal = localMonitoringOccasionOrdinal(cfg);
-if ordinal > height(resolution.MonitoringOccasions)
-    error("sixgr:phy:broadcast:InvalidType0MonitoringOccasion", ...
-        "Type0 monitoring occasion ordinal %d exceeds the %d resolved occasions.", ...
-        ordinal, height(resolution.MonitoringOccasions));
-end
-absoluteSlot = double( ...
-    resolution.MonitoringOccasions.AbsoluteSlot(ordinal));
-carrierSI = localCarrierAtAbsoluteSlot(carrier, absoluteSlot);
-cfgSI = sixgr.util.structSet(cfgSI, ...
-    "phy.carrier.NSlot", double(carrierSI.NSlot));
-cfgSI = sixgr.util.structSet(cfgSI, ...
-    "phy.carrier.NFrame", double(carrierSI.NFrame));
-cfgSI = sixgr.util.structSet(cfgSI, ...
-    "phy.sib1.pdcchAbsoluteSlot", absoluteSlot);
-pdcch = resolution.PDCCH;
-cfgSI = sixgr.util.structSet(cfgSI, "phy.sib1.resolvedCORESET0", resolution.CORESET0);
-cfgSI = sixgr.util.structSet(cfgSI, "phy.sib1.resolvedSearchSpace0", resolution.SearchSpace0);
+[pdcch, cfgSI, carrierSI, resolution, absoluteSlot] = ...
+    sixgr.phy.broadcast.resolveSIB1ControlOccasion(carrier, cfg);
 end
 
 function cfgSI = localSanitizeSIB1PDSCHPrecoding(cfgSI, pdsch)

@@ -16,7 +16,24 @@ classdef ControlBeamState
                 error("sixgr:phy:pdcch:inactive_tci_state", ...
                     "ControlBeamState is incomplete.");
             end
-            if strlength(string(data.MeasurementProvenance)) == 0
+            for field = ["TCIStateID","QCLSourceID","BeamID", ...
+                    "MeasurementSlot","MeasurementMaxAgeSlots"]
+                value = data.(field);
+                if ~(isnumeric(value) && isscalar(value) && isreal(value) && ...
+                        isfinite(value) && value >= 0 && value == fix(value))
+                    error("sixgr:phy:pdcch:invalid_control_beam_state", ...
+                        "Control beam %s must be a finite nonnegative integer.", field);
+                end
+            end
+            for field = ["TCIActive","BeamActive","BeamBlocked"]
+                value = data.(field);
+                if ~((islogical(value) || isnumeric(value)) && isscalar(value) && ...
+                        isreal(value) && isfinite(value) && (value == 0 || value == 1))
+                    error("sixgr:phy:pdcch:invalid_control_beam_state", ...
+                        "Control beam %s must be an explicit boolean.", field);
+                end
+            end
+            if ~localText(data.QCLSourceType) || ~localText(data.MeasurementProvenance)
                 error("sixgr:phy:pdcch:stale_beam_measurement", ...
                     "Control beam state requires observed RS/beam provenance.");
             end
@@ -26,6 +43,12 @@ classdef ControlBeamState
         end
 
         function validateForSlot(obj, absoluteSlot)
+            if ~(isnumeric(absoluteSlot) && isscalar(absoluteSlot) && ...
+                    isreal(absoluteSlot) && isfinite(absoluteSlot) && ...
+                    absoluteSlot >= 0 && absoluteSlot == fix(absoluteSlot))
+                error("sixgr:phy:pdcch:stale_beam_measurement", ...
+                    "Control beam validation requires an actual absolute slot.");
+            end
             if ~logical(obj.Data.TCIActive) || ~logical(obj.Data.BeamActive) || ...
                     logical(obj.Data.BeamBlocked)
                 error("sixgr:phy:pdcch:inactive_tci_state", ...
@@ -40,4 +63,9 @@ classdef ControlBeamState
             end
         end
     end
+end
+
+function tf = localText(value)
+tf = (ischar(value) || isstring(value)) && isscalar(string(value)) && ...
+    ~ismissing(string(value)) && strlength(strtrim(string(value))) > 0;
 end

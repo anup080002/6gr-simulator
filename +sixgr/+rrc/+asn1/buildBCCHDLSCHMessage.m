@@ -142,6 +142,12 @@ control = sixgr.util.structGet(cfg, "rrc.sib1.pdcch_config_common", ...
 if ~isempty(fieldnames(control))
     servingCommon.downlinkConfigCommon.initialDownlinkBWP.pdcch_ConfigCommon = control;
 end
+pucchCommon = sixgr.util.structGet(cfg, "rrc.sib1.pucch_config_common", ...
+    sixgr.util.structGet(cfg, "initial_access.sib1.pucch_config_common", struct()));
+if ~isempty(fieldnames(pucchCommon))
+    servingCommon.uplinkConfigCommon.initialUplinkBWP.pucch_ConfigCommon = ...
+        localCanonicalPUCCHConfigCommon(pucchCommon);
+end
 
 sib1 = struct();
 sib1.cellSelectionInfo = struct("q_RxLevMin", -70, "q_QualMin", -20);
@@ -172,6 +178,30 @@ msg.asn1Release = "3GPP_TS_38_331_V18_9_0";
 msg.profile = "3gpp_ts38331_v18_bounded_fr1_sib1";
 msg.message = struct("c1", struct("systemInformationBlockType1", sib1));
 sixgr.rrc.asn1.validateSIB1ForScenario(msg, cfg);
+end
+
+function value = localCanonicalPUCCHConfigCommon(spec)
+if ~(isstruct(spec) && isscalar(spec))
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+        "pucch-ConfigCommon must be a scalar configuration structure.");
+end
+allowed = ["pucch_ResourceCommon","pucch_GroupHopping","hoppingId","p0_nominal"];
+unknown = setdiff(string(fieldnames(spec)), allowed);
+if ~isempty(unknown)
+    error("sixgr:rrc:asn1:UnsupportedSIB1IE", ...
+        "Unsupported bounded pucch-ConfigCommon field(s): %s.", ...
+        strjoin(unknown, ", "));
+end
+if ~isfield(spec, "pucch_GroupHopping")
+    error("sixgr:rrc:asn1:MissingSIB1IE", ...
+        "pucch-ConfigCommon requires pucch_GroupHopping.");
+end
+value = struct("pucch_GroupHopping", string(spec.pucch_GroupHopping));
+for name = ["pucch_ResourceCommon","hoppingId","p0_nominal"]
+    if isfield(spec, name)
+        value.(name) = double(spec.(name));
+    end
+end
 end
 
 function bitmap = localCanonicalSIB1SSBPositions(cfg)

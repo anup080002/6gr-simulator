@@ -26,6 +26,17 @@ if strlength(outputDir) == 0
     error("sixgr:phy:pdcch:missing_evidence_output", ...
         "OutputDir is mandatory.");
 end
+% Integrity quarantine, before creating any artifact. Several legacy local
+% producers below manufacture beam/decode, grant/waveform, and independent
+% comparison outcomes without executing those operations. Neither strict
+% mode nor FastTestMode may publish them as primary evidence. This guard
+% must only be removed when those producers have execution-backed outputs
+% and the phase summary is derived from their observed checks.
+error("sixgr:phy:pdcch:unverified_phase_evidence", ...
+    ["PDCCH Phase-04 qualification is unavailable: beam monitoring, " + ...
+    "grant authority, BWP context comparison, independent-vector comparison " + ...
+    "and test-summary producers lack execution-backed evidence. " + ...
+    "No phase CSV/PNG has been generated; this is not a PHY qualification pass."]);
 if ~isfolder(outputDir)
     mkdir(outputDir);
 end

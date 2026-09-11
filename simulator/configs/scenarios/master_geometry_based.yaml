@@ -639,11 +639,15 @@ canonical_control:
     # phase observations; the strict waveform path must not invent slot indices.
     trs:
       enabled: true
-      slot_numbers: [1, 21, 41]
+      # Periodic zero-based resources: [1,2], [21,22], ... at 30 kHz.
+      # An explicit slot_numbers list is frame-local, not an absolute run timeline.
+      slot_numbers: []
+      period_offset: 1
+      burst_length_slots: 2
       num_ports: 1
       scrambling_id: 1
-      row_number: 2
-      symbol_location: 4
+      row_number: 1
+      symbol_locations: [4, 8]
       subcarrier_location: 0
       rb_offset: 0
       num_rb: 273

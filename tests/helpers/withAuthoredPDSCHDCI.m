@@ -5,17 +5,12 @@ function grant = withAuthoredPDSCHDCI(cfg, grant)
 carrier = sixgr.phy.grid.makeCarrier(cfg);
 slot = double(carrier.NFrame)*double(carrier.SlotsPerFrame) + double(carrier.NSlot);
 timing = sixgr.pdsch.resolveSchedulerPDSCHTiming(grant, slot);
-if ~isfield(grant, 'TimingDecision')
-    grant.TimingDecision = struct('Valid',true,'IndexConvention',"zero_based", ...
-        'ControlAbsoluteSlot',timing.PDCCHAbsoluteSlot,'DataAbsoluteSlot',slot, ...
-        'K0',timing.K0);
-end
-if ~isfield(grant, 'K1')
-    % Codec-only fixture. No feedback waveform or processing time is claimed.
-    grant.K1 = 4;
-end
 assert(isfield(grant,'HARQ'),'TX fixture must declare its HARQ process/NDI/RV.');
 sch = sixgr.l2.mac.SchedulerPF(cfg, 'Direction','DL');
+grant.ControlAbsoluteSlot=timing.PDCCHAbsoluteSlot;
+grant=sch.attachCanonicalTimingDecision(grant);
+assert(grant.ScheduledAbsoluteSlot==slot, ...
+    'The authored fixture must retain its explicitly selected data occasion.');
 grant.DCI = sch.buildDCIBitfield(grant);
 grant.ControlDecodeOk = false;
 grant.PDCCHGrantBindingOk = false;

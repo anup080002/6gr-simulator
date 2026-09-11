@@ -44,6 +44,7 @@ ip.addParameter('NoiseVar', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) 
 ip.addParameter('ExpectedDCIBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x));
 ip.addParameter('NoiseOnlyWaveform', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
+ip.addParameter('InputTimingAlignment',struct(),@(x)isstruct(x)&&isscalar(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 configuredPDCCH = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
@@ -149,7 +150,16 @@ allowBlindCandidateTiming = logical(sixgr.util.structGet(cfg, ...
 skipTimingEstimate = logical(blind) && ~allowBlindCandidateTiming;
 timingOffset = NaN;
 timingSource = "nrTimingEstimate_pdcch_dmrs";
-if ~skipTimingEstimate
+inputAligned=~isempty(fieldnames(opt.InputTimingAlignment));
+if inputAligned
+    alignment=opt.InputTimingAlignment;
+    expected=sixgr.phy.frame.pdcchReceivedClockAlignment(alignment.Reference, ...
+        carrier,alignment.NominalStartSample,sampleRateHz, ...
+        alignment.Reference.ImplementationFilterDelay_samples);
+    assert(isequaln(alignment,expected),'sixgr:phy:pdcch:InvalidInputTimingAlignment', ...
+        'Input alignment must come from the causally available received SS/PBCH clock.');
+    timingSource=alignment.Source;
+elseif ~skipTimingEstimate
     try
         if isempty(sampleRateHz)
             timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1});
@@ -169,6 +179,17 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
     "ApplicationMode", "signed_waveform_shift", ...
     "SkipRequested", skipTimingEstimate, ...
     "Source", timingSource);
+if inputAligned
+    % The observation origin already applies this measured shift. Applying
+    % it a second time inside the receiver would corrupt the control grid.
+    timingResolution.RawEstimate_samples=alignment.AppliedObservationShiftSamples;
+    timingResolution.AppliedCorrection_samples=0;
+    timingResolution.EstimateAvailable=true;
+    timingResolution.EstimateUsed=true;
+    timingResolution.WasClipped=false;
+    timingResolution.ApplicationPolicy='received_clock_shift_applied_by_observation_owner_no_second_shift';
+    timingResolution.Status='available_applied_at_observation_origin';
+end
 rxWave = localApplyTimingCorrection(rxWave, timingResolution.AppliedCorrection_samples);
 
 % Decode when the monitored control symbols have actually arrived. The

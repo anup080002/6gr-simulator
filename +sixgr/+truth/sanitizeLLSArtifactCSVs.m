@@ -117,8 +117,7 @@ if localPreserveDeclaredRawSchemaFile(filePath)
     return;
 end
 try
-    T = readtable(filePath, "FileType", "text", "Delimiter", ",", ...
-        "ReadVariableNames", true, "VariableNamingRule", "preserve");
+    T = sixgr.util.csvReadTable(filePath);
 catch
     return;
 end

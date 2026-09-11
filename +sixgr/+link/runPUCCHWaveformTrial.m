@@ -149,6 +149,8 @@ trial.EstimatedTimingOffsetSamples = NaN;
 trial.AppliedTimingCorrectionSamples = 0;
 
 try
+    receiverWaveform=rxWaveform;
+    priorTiming=[];
     rxArgs = {"NoiseVariance",noiseVariance, ...
         "NoiseVarianceDomain","sample", ...
         "ChannelProfile",channelMeta.Profile, ...
@@ -156,7 +158,16 @@ try
     if received && prepared.receiverNoiseMode(replay)=="received_reference_estimate"
         rxArgs=[rxArgs {"NoiseVarianceMode","received_dmrs_estimate"}];
     end
-    if received
+    if received && prepared.receiverNoiseMode(replay)=="noncoherent_correlation"
+        rxArgs=[rxArgs {"NoiseVarianceMode","noncoherent_correlation"}];
+    end
+    if received && opt.Assignment.Format==0
+        prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
+        assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
+            'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
+            'Pilot-free Format 0 needs a retained measured gNB UL clock, not UE TX timing or a zero-aligned capture.');
+        [receiverWaveform,priorTiming]=prior.align(prepared,receivedContext.Observation);
+    elseif received
         rxArgs=[rxArgs {"TimingSearchWindowSamples", ...
             prepared.receiverTimingSearchWindow(receivedContext.Observation)}];
     end
@@ -169,10 +180,16 @@ try
             "shared_slot_pucch_receiver_sample_contribution_covariance"}]; %#ok<AGROW>
     end
     rx = sixgr.phy.pucch.PUCCHReceiver.receive( ...
-        rxWaveform,carrier,opt.Assignment,context,rxArgs{:});
+        receiverWaveform,carrier,opt.Assignment,context,rxArgs{:});
+    if ~isempty(priorTiming), rx.ReceiveTiming=priorTiming; end
     trial.EstimatedTimingOffsetSamples=rx.ReceiveTiming.TimingOffsetSamples;
     trial.AppliedTimingCorrectionSamples=rx.ReceiveTiming.AppliedTimingCorrectionSamples;
     trial.TimingEstimateSource=rx.ReceiveTiming.TimingSource;
+    % Prior pilot prediction is not a fresh measurement. A measured zero
+    % correction is nevertheless a current estimate actually used by RX.
+    trial.TimingEstimateUsed=isfinite(rx.ReceiveTiming.TimingOffsetSamples) && ...
+        string(rx.ReceiveTiming.TimingSource)=="received_reference_correlation_bounded_search" && ...
+        ~rx.ReceiveTiming.OracleTimingUsed;
 catch ME
     if received, rethrow(ME); end
     trial.ReceiverDecodeFailed = true;
@@ -294,6 +311,10 @@ trial.NoiseVarStatus = "OK";
 trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
 trial.NoiseVarReason = "";
 trial.NoiseVarStrictFailure = false;
+if ~isfinite(trial.NoiseVariance) && opt.Assignment.Format==0
+    trial.NoiseVarStatus="unavailable";
+    trial.NoiseVarReason="not_required_by_normalized_sequence_correlation_no_variance_substitution";
+end
 sinrAvailable = logical(sixgr.util.structGet(rx, ...
     "MeasuredSINRApplicable",isfinite(rx.MeasuredSINR_dB))) && ...
     isfinite(double(rx.MeasuredSINR_dB));
@@ -373,6 +394,13 @@ trial.InterferencePowerSource = string(sixgr.util.structGet( ...
 trial.FullInterfererChannelTruthUsed = logical(sixgr.util.structGet( ...
     replay,"FullInterfererChannelTruthUsed",false));
 txBoundary = sixgr.util.structGet(replay,"PUCCHTransmitBoundary",struct());
+trial.PUCCHAppliedTxPowerReferencePlane="typed_pucch_transmit_power_control_target";
+if received
+    % This is the retained applied contribution target, not a measurement
+    % of isolated post-RF PUCCH in the shared node composite.
+    txBoundary=prepared.Metadata.PowerEvidence;
+    trial.PUCCHAppliedTxPowerReferencePlane="pre_node_rf_transmitter_contribution";
+end
 trial.PUCCHAppliedTxPower_dBm = double(sixgr.util.structGet( ...
     txBoundary,"AppliedPower_dBm",NaN));
 trial.PUCCHMeasuredTxOutputPower_dBm = double(sixgr.util.structGet( ...
@@ -381,6 +409,10 @@ trial.PUCCHTxPowerClosureError_dB = double(sixgr.util.structGet( ...
     txBoundary,"PowerClosureError_dB",NaN));
 trial.PUCCHRequestedTxPower_dBm = double(sixgr.util.structGet( ...
     tx,"Power.RequestedPowerdBm",NaN));
+trial.PUCCHPowerControlMRB = double(sixgr.util.structGet(tx,"Power.MRB",NaN));
+trial.PUCCHPowerControlMu = double(sixgr.util.structGet(tx,"Power.Mu",NaN));
+trial.PUCCHPowerBandwidthTerm_dB = double(sixgr.util.structGet(tx,"Power.BandwidthTermdB",NaN));
+trial.PUCCHPowerBandwidthSource = string(sixgr.util.structGet(tx,"Power.BandwidthSource",""));
 trial.PUCCHPCMAX_dBm = double(sixgr.util.structGet( ...
     tx,"Power.PCMAXdBm",NaN));
 trial.PUCCHPowerHeadroom_dB = double(sixgr.util.structGet( ...

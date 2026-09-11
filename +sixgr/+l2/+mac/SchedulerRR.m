@@ -50,6 +50,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             info = struct();
             info.Slot = slot;
             info.Direction = obj.Direction;
+            info.SchedulerClass = string(class(obj));
+            info.HARQDeferrals = table();
+            info.ResourceExclusions = table();
             nPRBAvail = numel(prbAvail);
             info.NPRBAvail = nPRBAvail;
             ssid = obj.SearchSpaceID;
@@ -124,6 +127,11 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                         continue;
                     end
                     g = localNormalizeGrant(retx.LastGrant, tmpl, obj.Direction, slot);
+                    [fitsBudget, deferral] = sixgr.l2.mac.harqRetransmissionFitsSymbolBudget(g, symAlloc);
+                    if ~fitsBudget
+                        info.HARQDeferrals = [info.HARQDeferrals; deferral];
+                        continue;
+                    end
 
                     nNeed = numel(g.PRBSet);
                     if nNeed <= 0
@@ -134,8 +142,21 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     if nNeed <= 0 || (nPRBAvail - cursor + 1) < nNeed
                         continue;
                     end
-                    g.PRBSet = prbAvail(cursor:(cursor + nNeed - 1));
-                    cursor = cursor + nNeed;
+                    retxIntent=g; retxIntent.HARQ=retx.HARQ;
+                    [retxAvailable,excluded]=obj.ssbSafePRBSet(slot,budget, ...
+                        prbAvail(cursor:end),g.SymbolAllocation,retxIntent);
+                    info.ResourceExclusions=[info.ResourceExclusions;excluded];
+                    [retxPRBs,~]=sixgr.l2.mac.contiguousPRBChunk(retxAvailable,1,nNeed,nNeed);
+                    if isempty(retxPRBs)
+                        info.HARQDeferrals=[info.HARQDeferrals; ...
+                            sixgr.l2.mac.harqPRBDeferral(g,retxAvailable,symAlloc)];
+                        continue;
+                    end
+                    g.PRBSet=retxPRBs;
+                    % Keep all unallocated islands available for subsequent
+                    % grants; moving a cursor would lose preceding holes.
+                    prbAvail=setdiff(prbAvail,retxPRBs,'stable');
+                    nPRBAvail=numel(prbAvail); cursor=1;
 
                     % Refresh slot + HARQ fields
                     g.Slot = slot;
@@ -174,6 +195,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     g.BufferBytesAfter = max(g.BufferBytesBefore - double(g.TBSBytes), 0);
                     g.GrantReason = "harq_retx";
                     g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
+                    g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                     g = obj.freezePHYGrantForGrant(g);
                     g.DCI = obj.buildDCIBitfield(g);
 
@@ -198,6 +220,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             end
 
             % --- 2) Round-robin new-data grants ---
+            [prbAvail,excluded]=obj.ssbSafePRBSet(slot,budget,prbAvail,symAlloc);
+            info.ResourceExclusions=[info.ResourceExclusions;excluded];
+            nPRBAvail=numel(prbAvail);
             rrList = ueIdx(:).';
             nUE = numel(rrList);
             start = obj.NextUE;
@@ -234,11 +259,9 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     continue;
                 end
 
-                nAlloc = min(prbPerUE, nPRBAvail - cursor + 1);
-                if nAlloc < obj.MinPRBPerUE
-                    break;
-                end
-                if nAlloc <= 0
+                [candidatePRBSet,chunkStart]=sixgr.l2.mac.contiguousPRBChunk( ...
+                    prbAvail,cursor,prbPerUE,obj.MinPRBPerUE);
+                if isempty(candidatePRBSet)
                     break;
                 end
 
@@ -247,13 +270,12 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 if controlBudgetActive && neededCCE > controlCCERemaining
                     continue;
                 end
-                candidatePRBSet = prbAvail(cursor:(cursor+nAlloc-1));
                 plan = obj.buildNewDataGrantPlan(ueStates(k), candidatePRBSet, symAlloc, bufB);
                 if ~plan.Valid || plan.TBSBits <= 0 || plan.TBSBytes <= 0
                     continue;
                 end
                 prbSet = double(plan.PRBSet(:).');
-                cursor = cursor + numel(prbSet);
+                cursor = chunkStart + numel(prbSet);
                 servedBytes = double(plan.TBSBytes);
 
                 % HARQ allocation (new data)
@@ -370,6 +392,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     sprintf("%s new_data_rr RNTI=%d", class(obj), round(rnti)));
                 g.TBSBytes = g.TBSBits / 8;
                 g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
+                g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                 g = obj.freezePHYGrantForGrant(g);
                 g.DCI = obj.buildDCIBitfield(g);
 
@@ -398,7 +421,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
 
             grants = grants(1:nGrant);
             info.NGrants = numel(grants);
-            info.PRBUnderuse = max(0, nPRBAvail - cursor + 1);
+            info.PRBUnderuse = numel(setdiff(prbAvail,[grants.PRBSet]));
         end
     end
 end

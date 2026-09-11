@@ -81,6 +81,12 @@ job.PHYGrant = phyGrant;
 job.DCI = sixgr.util.structGet(grant, "DCI", struct());
 job.GrantContextId = string(sixgr.util.structGet(grant, "GrantContextId", ...
     sixgr.util.structGet(phyGrant, "GrantContextId", "")));
+% Retain the same resolved identity in the payload sent to the PHY. Leaving
+% it only on the job envelope lets the receiver compose a different replay
+% ID, breaking exact pending UCI/HARQ joins after an otherwise valid decode.
+if strlength(job.GrantContextId)>0
+    job.GrantSnapshot.GrantContextId=job.GrantContextId;
+end
 job.PreviousCombinedLLR = sixgr.util.structGet(trialContext, "PreviousCombinedLLR", []);
 job.InterferenceBundle = sixgr.util.structGet(trialContext, "InterferenceBundle", struct([]));
 job.ChannelState = sixgr.util.structGet(trialContext, "ChannelState", struct());

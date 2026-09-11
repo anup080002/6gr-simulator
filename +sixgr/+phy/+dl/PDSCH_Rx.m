@@ -98,6 +98,7 @@ ip.addParameter('CalibrationReceiverBundle', struct(), ...
 ip.addParameter('CompactOutput', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('FastAWGNPath', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('SkipTimingEstimate', false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
+ip.addParameter('TimingSearchWindowSamples', [], @(x) isempty(x) || (isnumeric(x) && numel(x)==2));
 ip.addParameter('ReceiverTrackingState', [], @(x) isempty(x) || isstruct(x));
 ip.addParameter('InterferenceContributionTensor', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('InterferenceContributionSource', "", @(x) isempty(x) || ischar(x) || isstring(x));
@@ -152,6 +153,9 @@ if executionProfile == "ra_si_strict" && ...
 end
 
 if ~isempty(opt.Assignment)
+    assert(isempty(opt.TimingSearchWindowSamples), ...
+        'sixgr:phy:dl:UnsupportedAssignmentTimingSearch', ...
+        'Explicit assignment reception must resolve its capture timing before canonical receiver delegation.');
     [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
         rxWaveform, cfg, opt, executionProfile, hasPHYGrant);
     return;
@@ -625,6 +629,7 @@ trackingCorrection = sixgr.util.structGet( ...
     opt, "RuntimeTrackingCorrection", struct());
 timingResolution = sixgr.util.structGet( ...
     opt, "RuntimeTimingResolution", struct());
+rx.ReceiveTiming = sixgr.util.structGet(timingResolution,'ReceiveTiming',struct());
 syncState = sixgr.util.structGet( ...
     opt, "RuntimeSynchronizationState", struct());
 rx.TimingOffset = double(sixgr.util.structGet( ...
@@ -1136,6 +1141,8 @@ csirsObservation.CRISelectionSource = string(sixgr.util.structGet( ...
     csirsEstimateInfo, "SelectionSource", ""));
 csirsObservation = localSelectCSIRSRSPResource( ...
     csirsObservation, csirsEstimateInfo);
+csirsObservation = localRelabelNormalizedCSIRSPower( ...
+    csirsObservation, cfg);
 if csirsObservation.ChannelEstimateAvailable
     csirsObservation.Consumed = true;
     csirsObservation.Consumer = "dl_csi_ri_pmi_cri_measurement";
@@ -2523,25 +2530,10 @@ end
 timingAvailable = localFirstLogical(raw, ["TimingEstimateAvailable","RuntimeTRSTimingEstimateAvailable"], false);
 timingSamples = localFirstFinite(raw, ["TimingEstimate_samples","RuntimeTRSTimingEstimate_samples","EstimatedTimingOffset_samples"], NaN);
 cfoAvailable = localFirstLogical(raw, ["CFOEstimateAvailable","RuntimeTRSCFOEstimateAvailable"], false);
-oscillatorCFOHz = localFirstFinite(raw, ["EstimatedOscillatorCFO_Hz","RuntimeTRSEstimatedOscillatorCFO_Hz"], NaN);
-legacyCFOHz = localFirstFinite(raw, ["EstimatedCFO_Hz","RuntimeTRSEstimatedCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
 allowRuntimeCommonAsCFO = logical(sixgr.util.structGet(cfg, ...
     "phy.rx.applyRuntimeTRSCommonFrequencyAsCFO", false));
-injectedCFOHz = localResolveInjectedCFOHz(cfg);
-hasInjectedOscillatorCFO = isfinite(injectedCFOHz) && abs(double(injectedCFOHz)) > 1e-9;
-runtimeLegacyZeroCFO = usingRuntimeUserContext && isfinite(legacyCFOHz) && abs(double(legacyCFOHz)) <= 1e-9;
-runtimeNonzeroTRSCFOWithoutInjectedOscillator = usingRuntimeUserContext && ...
-    ~allowRuntimeCommonAsCFO && ~hasInjectedOscillatorCFO && ~runtimeLegacyZeroCFO && ...
-    isfinite(oscillatorCFOHz) && abs(double(oscillatorCFOHz)) > 1e-9;
-if runtimeNonzeroTRSCFOWithoutInjectedOscillator
-    cfoHz = NaN;
-elseif runtimeLegacyZeroCFO
-    cfoHz = legacyCFOHz;
-elseif usingRuntimeUserContext && ~allowRuntimeCommonAsCFO
-    cfoHz = oscillatorCFOHz;
-else
-    cfoHz = localFirstFiniteValue(oscillatorCFOHz, legacyCFOHz);
-end
+[cfoHz,tracking.FrequencyEstimateDomain] = sixgr.phy.rx.resolveTrackingFrequencyEstimate( ...
+    raw,usingRuntimeUserContext,allowRuntimeCommonAsCFO);
 commonHz = localFirstFinite(raw, ["EstimatedCommonFrequency_Hz","RuntimeTRSEstimatedCommonFrequency_Hz", ...
     "EstimatedCommonPhaseFrequency_Hz"], NaN);
 physicalDopplerHz = localFirstFinite(raw, ["PhysicalDoppler_Hz","RuntimeTRSPhysicalDoppler_Hz", ...
@@ -2832,8 +2824,22 @@ knownTimingDelaySamples = localResolveKnownTimingDelaySamples( ...
 % so an FRC with nonzero frequency offset cannot silently execute with an
 % unavailable tracking state.
 if ~logical(tracking.CFOEstimateAvailable)
+    cfoObservation = rxWaveform;
+    if ~isempty(opt.TimingSearchWindowSamples)
+        % CP and DM-RS frequency estimators require symbol-aligned input.
+        % A shared capture begins at its receiver window, not necessarily
+        % at the arriving slot. Acquire timing from received DM-RS first;
+        % never substitute the channel delay or the configured CFO.
+        assert(~logical(opt.FastAWGNPath) && ~logical(opt.SkipTimingEstimate) && ...
+            ~localRuntimeAlignedTimingBypass(cfg), ...
+            'sixgr:phy:dl:SharedPDSCHTimingBypassForbidden', ...
+            'An unaligned shared capture requires measured DM-RS timing before frequency estimation.');
+        [cfoObservation,~] = sixgr.phy.sync.alignULReferenceObservation( ...
+            carrier,rxWaveform,nrPDSCHDMRSIndices(carrier,pdsch), ...
+            nrPDSCHDMRS(carrier,pdsch),opt.TimingSearchWindowSamples);
+    end
     tracking = localEstimateCalibrationReceiverCFO( ...
-        rxWaveform, carrier, pdsch, cfg, sampleRateHz, tracking);
+        cfoObservation, carrier, pdsch, cfg, sampleRateHz, tracking);
 end
 
 if logical(tracking.CFOEstimateAvailable) ...
@@ -2844,17 +2850,6 @@ if logical(tracking.CFOEstimateAvailable) ...
     tracking.CFOCorrectionApplied = true;
     tracking.CFOCorrectionApplied_Hz = ...
         double(tracking.EstimatedCFO_Hz);
-    try
-        [~, correctedOFDMInfo] = ...
-            sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
-        tracking = localEstimateResidualCFOAfterCorrection( ...
-            rxWaveform, correctedOFDMInfo, sampleRateHz, tracking, ...
-            "cyclic_prefix_post_calibration_receiver_correction");
-    catch
-        tracking.ResidualCFOEstimate_Hz = NaN;
-        tracking.ResidualCFOEstimateSource = ...
-            "cyclic_prefix_post_calibration_receiver_correction_failed";
-    end
 elseif logical(tracking.CFOEstimateAvailable)
     tracking.CFONAReason = ...
         "receiver_tracking_cfo_estimate_present_but_sample_rate_unavailable";
@@ -2863,6 +2858,27 @@ end
 rawTimingEstimate = NaN;
 timingEstimateUsed = false;
 timingEstimateSource = "unavailable";
+if ~isempty(opt.TimingSearchWindowSamples)
+    assert(~logical(opt.FastAWGNPath) && ~logical(opt.SkipTimingEstimate) && ...
+        ~localRuntimeAlignedTimingBypass(cfg), ...
+        'sixgr:phy:dl:SharedPDSCHTimingBypassForbidden', ...
+        'An unaligned shared capture requires measured DM-RS timing, not an aligned/ideal timing bypass.');
+    % Reference correlation uses the same OFDM primitive for both link
+    % directions. Supply receiver-known DL DM-RS, never a channel delay or
+    % transmitted data symbols, to the bounded capture extractor.
+    indices=nrPDSCHDMRSIndices(carrier,pdsch);
+    symbols=nrPDSCHDMRS(carrier,pdsch);
+    [rxWaveform,receiveTiming]=sixgr.phy.sync.alignULReferenceObservation( ...
+        carrier,rxWaveform,indices,symbols,opt.TimingSearchWindowSamples);
+    rawTimingEstimate=receiveTiming.TimingOffsetSamples;
+    timingEstimateSource=receiveTiming.TimingSource;
+    knownTimingDelaySamples=0;
+    timingResolution=sixgr.phy.sync.resolveTimingApplication(rawTimingEstimate, ...
+        'EstimateUsed',true,'ApplicationMode','positive_crop_only','Source',timingEstimateSource);
+    timingResolution.ApplicationPolicy='actual_capture_complete_slot_extraction_no_padding';
+    timingResolution.ReceiveTiming=receiveTiming;
+    tracking.TimingCorrectionApplied=true;
+else
 % RuntimeWaveformSampleAligned is a producer contract shared by FDD and
 % TDD: the materialized channel delay has already been trimmed before this
 % receiver boundary.  Preserve the TRS observation for audit, but do not
@@ -2900,6 +2916,24 @@ tracking.TimingCorrectionApplied = ...
     logical(timingResolution.EstimateUsed);
 rxWaveform = localApplyTimingCorrection( ...
     rxWaveform, timingResolution.AppliedCorrection_samples);
+end
+
+% The residual estimator has the same CP-boundary prerequisite as the
+% acquisition estimator. Measure the aligned, corrected samples actually
+% passed to OFDM decoding, not the original delayed capture.
+if logical(tracking.CFOCorrectionApplied)
+    try
+        [~, correctedOFDMInfo] = ...
+            sixgr.phy.waveform.ofdmDemodulate(carrier, rxWaveform);
+        tracking = localEstimateResidualCFOAfterCorrection( ...
+            rxWaveform, correctedOFDMInfo, sampleRateHz, tracking, ...
+            "cyclic_prefix_post_timing_and_frequency_correction");
+    catch
+        tracking.ResidualCFOEstimate_Hz = NaN;
+        tracking.ResidualCFOEstimateSource = ...
+            "cyclic_prefix_post_timing_and_frequency_correction_failed";
+    end
+end
 
 syncState = sixgr.phy.sync.resolveSynchronizationState( ...
     "SampleRate_Hz", sampleRateHz, ...
@@ -3036,7 +3070,15 @@ if timingUsed && ~isfinite(timingCorrection)
     return;
 end
 if isfinite(timingCorrection)
-    corrected = localApplyTimingCorrection(corrected, timingCorrection);
+    if isfield(timingResolution,'ReceiveTiming')
+        count=timingResolution.ReceiveTiming.DemodulatedSampleCount;
+        assert(timingCorrection>=0 && size(corrected,1)>=timingCorrection+count, ...
+            'sixgr:phy:dl:IncompletePhysicalMeasurementTiming', ...
+            'Antenna-plane measurement must retain the same actual complete slot as decoding.');
+        corrected=corrected(timingCorrection+(1:count),:);
+    else
+        corrected = localApplyTimingCorrection(corrected, timingCorrection);
+    end
 end
 
 try
@@ -3307,12 +3349,14 @@ if isfinite(values(ordinal))
     resources=sixgr.util.structGet(obs,"MeasurementPhysicalResources",{});
     if ordinal<=numel(resources) && ~isempty(resources{ordinal})
         measured=resources{ordinal};
-        [~,branch]=max(measured.RSRPPerAntenna_dBm);
-        % RSSI and RSRQ must come from the SAME resource and receive branch
-        % as the reported RSRP, not independently chosen maxima.
-        obs.MeasurementReceiveAntennaIndex1Based=double(branch);
-        obs.MeasurementRSSI_dBm=measured.RSSIPerAntenna_dBm(branch);
-        obs.MeasurementRSRQ_dB=measured.RSRQPerAntenna_dB(branch);
+        selected=sixgr.phy.refsig.selectCSIRSBranchMeasurements(measured);
+        obs.MeasurementReceiveAntennaIndex1Based=double(selected.RSRPReceiveBranch1Based);
+        obs.MeasurementRSSI_dBm=selected.RSSI_dBm;
+        obs.MeasurementRSRQ_dB=selected.RSRQ_dB;
+        obs.MeasurementRSRQReceiveAntennaIndex1Based=double(selected.RSRQReceiveBranch1Based);
+        obs.MeasurementRSRQNumeratorRSRP_dBm=selected.RSRQNumeratorRSRP_dBm;
+        obs.MeasurementRSRQDenominatorRSSI_dBm=selected.RSRQDenominatorRSSI_dBm;
+        obs.MeasurementRSRQAntennaAggregation=selected.RSRQSelection;
         obs.MeasurementRSSIPerReceiveAntenna_dBm=localNumericVectorToken(measured.RSSIPerAntenna_dBm);
         obs.MeasurementRSRQPerReceiveAntenna_dB=localNumericVectorToken(measured.RSRQPerAntenna_dB);
         obs.MeasurementNumRB=measured.NumRB;
@@ -3330,6 +3374,10 @@ else
     obs.MeasurementRSRPPerReceiveAntenna_dBm="";
     obs.MeasurementRSSI_dBm=NaN;
     obs.MeasurementRSRQ_dB=NaN;
+    obs.MeasurementRSRQReceiveAntennaIndex1Based=NaN;
+    obs.MeasurementRSRQNumeratorRSRP_dBm=NaN;
+    obs.MeasurementRSRQDenominatorRSSI_dBm=NaN;
+    obs.MeasurementRSRQAntennaAggregation="";
     obs.MeasurementRSSIPerReceiveAntenna_dBm="";
     obs.MeasurementRSRQPerReceiveAntenna_dB="";
     obs.MeasurementReceiveAntennaIndex1Based=NaN;
@@ -3342,6 +3390,53 @@ else
     obs.MeasurementRSSIStatus="unavailable_selected_resource_not_measured";
     obs.PhysicalMeasurementStatus="unavailable_selected_resource_not_measured";
 end
+end
+
+function obs = localRelabelNormalizedCSIRSPower(obs, cfg)
+fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
+    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
+    logical(sixgr.util.structGet(cfg, ...
+    "integration.configured_snr_is_link_authority", false));
+if ~fixedNormalizedEsN0
+    return;
+end
+% The CSI-RS extraction is from the actual received OFDM waveform, but a
+% configured Es/N0 run has no antenna-connector watt calibration. Preserve
+% relative measurements and prevent the unit-Es numerical map from being
+% exported as dBm.
+obs.MeasurementRSRP_dB_re_UnitOccupiedRE_Es = double( ...
+    sixgr.util.structGet(obs, "MeasurementRSRP_dBm", NaN));
+obs.MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = string( ...
+    sixgr.util.structGet(obs, "MeasurementRSRPPerReceiveAntenna_dBm", ""));
+obs.MeasurementRSRPPerResource_dB_re_UnitOccupiedRE_Es = string( ...
+    sixgr.util.structGet(obs, "MeasurementRSRPPerResource_dBm", ""));
+obs.MeasurementRSSI_dB_re_UnitOccupiedRE_Es = double( ...
+    sixgr.util.structGet(obs, "MeasurementRSSI_dBm", NaN));
+obs.MeasurementRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = string( ...
+    sixgr.util.structGet(obs, "MeasurementRSSIPerReceiveAntenna_dBm", ""));
+obs.MeasurementRSRQNumeratorRSRP_dB_re_UnitOccupiedRE_Es = double( ...
+    sixgr.util.structGet(obs, "MeasurementRSRQNumeratorRSRP_dBm", NaN));
+obs.MeasurementRSRQDenominatorRSSI_dB_re_UnitOccupiedRE_Es = double( ...
+    sixgr.util.structGet(obs, "MeasurementRSRQDenominatorRSSI_dBm", NaN));
+obs.MeasurementRSRP_dBm = NaN;
+obs.MeasurementRSRPPerReceiveAntenna_dBm = "";
+obs.MeasurementRSRPPerResource_dBm = "";
+obs.MeasurementRSRPPerResourceValues_dBm = [];
+obs.MeasurementRSRPPerAntennaByResource_dBm = {};
+obs.MeasurementRSSI_dBm = NaN;
+obs.MeasurementRSSIPerReceiveAntenna_dBm = "";
+obs.MeasurementRSRQNumeratorRSRP_dBm = NaN;
+obs.MeasurementRSRQDenominatorRSSI_dBm = NaN;
+obs.MeasurementPhysicalResources = {};
+obs.MeasurementPhysicalResourcesJSON = "";
+obs.MeasurementGridScaleToSqrtW = NaN;
+obs.MeasurementReceiverGainCorrectionSource = ...
+    "not_applicable_normalized_fixed_esn0";
+obs.MeasurementSource = ...
+    "actual_csirs_re_measurement_relative_to_unit_occupied_re_es";
+obs.PowerReferencePlane = "normalized_fixed_esn0_unit_occupied_re_es";
+obs.PhysicalMeasurementStatus = ...
+    "available_normalized_fixed_esn0_not_absolute_dbm";
 end
 
 function [Hest, nVar, estInfo] = localEstimateCSIRSChannelForPMI(carrier, rxGrid, csirsInd, csirsSym, csirsInfo, cfg, strictMode, channelModelToken, numTxPorts)
@@ -3593,8 +3688,19 @@ obs.MeasurementRSRP_dB = NaN;
 obs.MeasurementRelativeRSRP_dB = NaN;
 obs.MeasurementRelativeSource = "";
 obs.MeasurementRSRP_dBm = NaN;
+obs.MeasurementRSRP_dB_re_UnitOccupiedRE_Es = NaN;
+obs.MeasurementRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = "";
+obs.MeasurementRSRPPerResource_dB_re_UnitOccupiedRE_Es = "";
 obs.MeasurementRSSI_dBm = NaN;
+obs.MeasurementRSSI_dB_re_UnitOccupiedRE_Es = NaN;
+obs.MeasurementRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = "";
 obs.MeasurementRSRQ_dB = NaN;
+obs.MeasurementRSRQReceiveAntennaIndex1Based = NaN;
+obs.MeasurementRSRQNumeratorRSRP_dBm = NaN;
+obs.MeasurementRSRQDenominatorRSSI_dBm = NaN;
+obs.MeasurementRSRQNumeratorRSRP_dB_re_UnitOccupiedRE_Es = NaN;
+obs.MeasurementRSRQDenominatorRSSI_dB_re_UnitOccupiedRE_Es = NaN;
+obs.MeasurementRSRQAntennaAggregation = "";
 obs.MeasurementRSSIPerReceiveAntenna_dBm = "";
 obs.MeasurementRSRQPerReceiveAntenna_dB = "";
 obs.MeasurementReceiveAntennaIndex1Based = NaN;
@@ -3959,7 +4065,7 @@ end
 layerCountPerCodeword = localLayerCountPerCodeword(nLayers, nCodewords);
 [codewordIndexByLayer, layerIndexWithinCodeword] = localCodewordLayerIndexMap(layerCountPerCodeword);
 mapping = struct();
-mapping.ContractVersion = "PDSCHCodewordLayer/v1";
+mapping.ContractVersion = "PDSCHCodewordLayer/v2";
 mapping.Direction = "DL";
 mapping.MappingStandard = "3GPP_TS_38_211_codeword_to_layer_mapping";
 mapping.MappingEngine = "nrPDSCH_internal_nrLayerMap";
@@ -3971,6 +4077,7 @@ mapping.ActualNumCodewords = NaN;
 mapping.NumLayers = double(nLayers);
 mapping.GrantNumLayers = double(nLayers);
 mapping.CodewordIndexByLayer = double(codewordIndexByLayer);
+mapping.CodewordIndexBase = 0;
 mapping.LayerIndexWithinCodeword = double(layerIndexWithinCodeword);
 mapping.LayerCountPerCodeword = double(layerCountPerCodeword);
 mapping.RateMatchedBitCountPerCodeword = double(round(rateMatchedBits));
@@ -4419,7 +4526,8 @@ pos = 1;
 for c = 1:numel(layerCountPerCodeword)
     n = double(layerCountPerCodeword(c));
     idx = pos:(pos + n - 1);
-    cwByLayer(idx) = c;
+    % TS 38.211 7.3.1: physical q is zero-based; c indexes MATLAB cells.
+    cwByLayer(idx) = c - 1;
     layerInCw(idx) = 1:n;
     pos = pos + n;
 end

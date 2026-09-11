@@ -28,8 +28,13 @@ assert(all(isfinite(allocations.symbol_index)));
 assert(all(isfinite(allocations.port_index)));
 assert(all(allocations.subcarrier_start >= 0));
 assert(all(allocations.subcarrier_start + allocations.subcarrier_count <= ...
-    12 * double(cfg.phy.carrier.NSizeGrid)));
-assert(all(allocations.symbol_index >= 0 & allocations.symbol_index < 14));
+    allocations.grid_subcarrier_count));
+assert(all(allocations.symbol_index >= 0 & allocations.symbol_index < allocations.grid_symbol_count));
+[carrierAllocations,nativePRACH]=sixgr.truth.splitREAllocationDomains(allocations);
+assert(all(carrierAllocations.grid_domain=="carrier_cp_ofdm") && ...
+    ~any(carrierAllocations.channel=="PRACH") && ~isempty(nativePRACH) && ...
+    all(nativePRACH.grid_domain=="prach_native_ofdm") && ...
+    all(nativePRACH.grid_subcarrier_spacing_hz==1000*cfg.phy.prach.subcarrierSpacing_kHz));
 assert(all(ismember(["DL","UL"], unique(string(allocations.direction)))));
 
 frame = sixgr.phy.FrameStructureEngine(cfg);

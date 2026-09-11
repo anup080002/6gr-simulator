@@ -2,6 +2,7 @@
   "manifest_version": "1.0",
   "generator": "independent Python table/state/vector generator; no MATLAB or 5G Toolbox used",
   "specification_profile": "3GPP Release 18 bounded MAC/HARQ profile",
+  "revision_note": "2026-09-08: independently corrected fixed CE and UL CCCH subheader sizes against TS 38.321 V18.5.0 Tables 6.2.1-1/2 and clauses 6.1.2/6.1.3; variable CE cases validate header framing, not CE payload semantics.",
   "files": [
     {
       "path": "expected_bsr_5bit_table.csv",
@@ -89,8 +90,8 @@
     },
     {
       "path": "mac_pdu_subheader_test_vectors.csv",
-      "rows": 77,
-      "sha256": "809a4bfa651d547427138a46baf484ed6055da92ec8f482885b50506df6f910a",
+      "rows": 93,
+      "sha256": "22b3ae57ef07327c6d5870262bf4227a04a7acd95772f5cff613c3e7cf467bca",
       "oracle_class": "pure_spec_table_or_deterministic_state_floor"
     },
     {
