@@ -2152,8 +2152,21 @@ catch ME
         "sixgr:phy:grid:allocREsPUSCH:InvalidTypeADMRSSymbol", ...
         "sixgr:phy:grid:allocREsPDSCH:InvalidTypeADMRSSymbol", ...
         "sixgr:pdsch:NoDMRSResources"]);
+    % This pre-scheduler probe uses the full canonical PRB budget and has
+    % no K0/data-occasion decision yet.  Common-DL collisions are therefore
+    % not proof that the slot is unusable: SchedulerBase.ssbSafePRBSet
+    % resolves the actual data slot and removes each occupied SSB/SIB1/TRS/
+    % CSI-RS PRB before DCI and TBS are frozen.  Preserve fail-closed handling
+    % for malformed configurations, but let that exact scheduler stage decide
+    % whether a legal contiguous PRB island remains.
+    schedulerResolvableDLConflict = dir == "DL" && any(string(ME.identifier) == [ ...
+        "sixgr:phy:grid:allocREsPDSCH:SSBDMRSCollision", ...
+        "sixgr:phy:grid:allocREsPDSCH:CSIRSDMRSCollision", ...
+        "sixgr:phy:grid:allocREsPDSCH:TRSDMRSCollision"]);
     if clipped && dmrsUnavailable
         tf = false;
+    elseif schedulerResolvableDLConflict
+        tf = true;
     else
         rethrow(ME);
     end

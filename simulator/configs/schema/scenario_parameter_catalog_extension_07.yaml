@@ -103,6 +103,7 @@ sections:
       mapping_type: {required: false, type: string}
       start_symbol: {required: false, type: integer, min: 0}
       num_symbols: {required: false, type: integer, min: 1}
+      time_domain_allocations: {required: false, type: matrix}
       num_antenna_ports: {required: false, type: integer, min: 1}
       transmission_scheme: {required: false, type: string, allowed_values: [codebook, nonCodebook]}
       codebook_type: {required: false, type: string, allowed_values: [type1, type2, etype2]}
@@ -132,6 +133,7 @@ sections:
       mapping_type: {required: false, type: string}
       start_symbol: {required: false, type: integer, min: 0}
       num_symbols: {required: false, type: integer, min: 1}
+      time_domain_allocations: {required: false, type: matrix}
       rnti: {required: false, type: integer, min: 0, max: 65535}
       scrambling_id: {required: false, type: integer, min: 0, max: 1023}
       mcs_table: {required: false, type: string}

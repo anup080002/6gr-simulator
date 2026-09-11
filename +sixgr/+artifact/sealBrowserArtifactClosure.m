@@ -25,7 +25,7 @@ for passIndex = 1:options.MaxPasses
     forceMaterialization = passIndex > 1;
     materialization = sixgr.artifact.materializeBrowserContractArtifacts( ...
         runFolder, "Force", forceMaterialization, ...
-        "ReplaceExistingRastersFromCSV", false);
+        "ReplaceExistingRastersFromCSV", true);
     materialization.RunID = options.RunID;
     generatedAt = options.GeneratedAtUTC;
     if strlength(strtrim(generatedAt)) == 0

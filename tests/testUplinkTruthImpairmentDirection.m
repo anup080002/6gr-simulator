@@ -14,7 +14,10 @@ multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_co
 runtime=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),1);
 runtime.CurrentSlot=5;
 runtime.CurrentServingIdx(:)=1;
+cfg.lls6g.runtimePowerContext=sixgr.rf.PowerContext(cfg,'DL');
 [cfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,runtime,1,'UL');
+assert(~isfield(cfg.lls6g,'runtimePowerContext'), ...
+    'A new UE/direction binding must discard stale signal-specific power context.');
 cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,5,1);
 cfg.lls6g.userContext.RuntimeSlotStartTime_s=4e-3;
 cfg.lls6g.userContext.RuntimeServingPathloss_dB=77;
@@ -29,9 +32,6 @@ pending=sixgr.link.runSRSChannelEstimation(cfg,'SlotIndex',5, ...
 p=pending.PreparedTransmission;
 cfg=p.ReceiverConfig;
 assert(string(cfg.lls6g.userContext.RuntimeCurrentDirection)=="UL");
-% Rebuild the receiver context from its declared direction, as a shared
-% owner must do independently of any one contributor's power-control state.
-cfg.lls6g=rmfield(cfg.lls6g,'runtimePowerContext');
 truth=sixgr.link.initWaveformTruthChannelState(cfg,p.Tx,p.TxInfo);
 assert(truth.Direction=="UL" && string(truth.RuntimeChannelState.Direction)=="UL");
 assert(truth.SampleRate_Hz==p.SampleRateHz && ...

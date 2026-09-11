@@ -27,11 +27,13 @@ classdef CoupledWaveformStream < handle
                     'Initialize the physical owner at the first canonical slot, not at a later observation.');
             end
             obj=sixgr.truth.CoupledWaveformStream();
-            for flag=["inter_cell_interference_flag","intra_cell_interference_flag","mu_mimo_interference_flag"]
-                if logical(sixgr.util.structGet(cfg,"lls6g.resolvedConfig.interference."+flag,false))
-                    error('sixgr:truth:SharedInterferenceLinksRequired', ...
-                        'Enabled interference requires explicit cross-links in the shared physical owner; serving links alone are insufficient.');
-                end
+            % Intra-cell and MU-MIMO interference are represented by the
+            % shared serving-link composite. Inter-cell interference still
+            % requires explicit source-cell-to-victim cross-links.
+            if logical(sixgr.util.structGet(cfg, ...
+                    "lls6g.resolvedConfig.interference.inter_cell_interference_flag",false))
+                error('sixgr:truth:SharedInterferenceLinksRequired', ...
+                    'Enabled inter-cell interference requires explicit cross-links in the shared physical owner; serving links alone are insufficient.');
             end
             carrier=sixgr.phy.grid.makeCarrier(cfg); info=nrOFDMInfo(carrier);
             obj.SampleRateHz=double(info.SampleRate);

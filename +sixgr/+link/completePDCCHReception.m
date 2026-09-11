@@ -32,7 +32,9 @@ if ~isempty(fieldnames(alignment))
 end
 if isfinite(expectedStart) && observation.StartSample~=expectedStart
     error('sixgr:link:PDCCHObservationOriginMismatch', ...
-        'Received PDCCH samples must retain the scheduled control-slot origin.');
+        ['Received PDCCH samples must retain the scheduled control-slot origin ' ...
+        '(observed=%d expected=%d nominal=%d).'], ...
+        observation.StartSample,expectedStart,prepared.RuntimeStartSample);
 end
 if ~isempty(options.NoiseVariance)
     validateattributes(options.NoiseVariance,{'numeric'},{'real','scalar','finite','nonnegative'});

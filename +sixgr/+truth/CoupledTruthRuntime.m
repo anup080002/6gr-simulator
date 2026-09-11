@@ -1479,6 +1479,13 @@ methods(Static, Access=private)
 
     function [cfgU, state] = applyUserContextImpl(cfgIn, state, ueIdx, direction)
         cfgU = cfgIn;
+        % A runtime power context belongs to one concrete prepared waveform
+        % and direction. Never carry it through a later UE/direction bind;
+        % each producer installs its own freshly measured context.
+        if isfield(cfgU, "lls6g") && isstruct(cfgU.lls6g) && ...
+                isfield(cfgU.lls6g, "runtimePowerContext")
+            cfgU.lls6g = rmfield(cfgU.lls6g, "runtimePowerContext");
+        end
         if ueIdx < 1 || ueIdx > numel(state.CurrentServingIdx)
             return;
         end

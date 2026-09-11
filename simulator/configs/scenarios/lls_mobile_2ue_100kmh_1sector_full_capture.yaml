@@ -400,7 +400,10 @@ mimo:
   trp_count: 1
   precoding_granularity: prg_wideband
   digital_precoder_family: subband
-  hybrid_beamforming_flag: false
+  # Execute the explicit 64-element CSI-RS/PDSCH spatial filters in the
+  # element-domain waveform.  With 64 configured RF chains this is the
+  # fully-digital limit of the shared RF/baseband factorization.
+  hybrid_beamforming_flag: true
   rank_adaptation_enable: true
   rank_adaptation_policy: srs_rank_indicator
   max_rank_dl: 2
@@ -507,12 +510,21 @@ system:
 
 pdsch:
   execution_profile: scheduler_truth
+  # The four CSI-RS ports define the Type-I PMI basis used by this
+  # rank-two PDSCH.  Ports and layers are distinct NR dimensions.
+  num_antenna_ports: 4
   resource_allocation_type: type1
   prb_start: 0
   num_prb: 273
   mapping_type: typeA
   start_symbol: 2
   num_symbols: 12
+  # RRC PDSCH-TimeDomainResourceAllocationList rows:
+  # [index, start symbol, length, K0].  Row 1 enables data on the ten
+  # DL symbols remaining after the two-symbol PDCCH in the special slot.
+  time_domain_allocations:
+    - [0, 2, 12, 0]
+    - [1, 2, 10, 0]
   vrb_to_prb_mapping: non_interleaved
   prb_bundling_type: static
   prb_bundle_size: wideband
@@ -601,6 +613,9 @@ pdcch:
     p_rnti: 65534
 
 control:
+  # Connected-mode spatial grants require the UE-specific 0_1/1_1 pair;
+  # retain the common formats for initial-access/control procedures.
+  dci_formats: ["0_0", "0_1", "1_0", "1_1"]
   pucch_enabled: true
   pucch_format: 2
 
@@ -728,7 +743,7 @@ equalization:
   noise_variance_for_equalizer: pre_equalization
   post_equalization_snr_estimation: post_equalization_mmse
   irc_interference_covariance_window_slots: 4
-  irc_covariance_estimation: sample_based
+  irc_covariance_estimation: per_prb_symbol_contribution_sample_covariance
   sv_threshold: 1.0e-6
   condition_number_cap: 100.0
   per_prb_equalization: true
@@ -771,13 +786,16 @@ rf_hardware:
 tdd_timing:
   pdcch_to_pdsch_k0: 0
   pdcch_to_pusch_k2: 4
-  dl_harq_feedback_k1: [4, 5, 6, 7]
+  # K1=8 is required for a PDSCH in slot 1 to reach the next full UL slot
+  # in the authored DDDSU five-slot TDD pattern.
+  dl_harq_feedback_k1: [4, 5, 6, 7, 8]
   ul_grant_k2: 4
   harq_roundtrip_slots: 8
   dl_to_ul_guard_time_us: 50.0
   timing_advance_max_us: 666.7
-  n1_pdsch_processing_time_symbols: 4
-  n2_pusch_preparation_time_symbols: 4
+  # Release-18 capability-1 processing times for mu=1 / 30 kHz SCS.
+  n1_pdsch_processing_time_symbols: 10
+  n2_pusch_preparation_time_symbols: 12
 
 reference_signals:
   ssb_enabled: true
@@ -870,6 +888,16 @@ reference_signals:
   trs_periodicity_ms: 10
   trs:
     period_offset: 0
+    # TS 38.211 trs-Info is represented by two one-port, density-three
+    # NZP-CSI-RS resources in consecutive, downlink-capable TDD slots.
+    # Declare these explicitly so inherited generic CSI-RS offsets cannot
+    # become a disjoint TRS observation window.
+    slot_numbers: [1, 2]
+    burst_length_slots: 2
+    num_ports: 1
+    row_number: 1
+    symbol_locations: [4, 8]
+    subcarrier_location: 0
   channel_estimation_mode: realistic_baseline
   receiver_type: mmse_irc
   receiver_example: mmse_irc

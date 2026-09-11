@@ -304,6 +304,20 @@ if isacEnabled
         "Result",sensing);
 end
 localPublishRuntimeReferenceArtifacts(runFolder, cfgL, multiUser, rawTrials);
+% Live callbacks are cadence-controlled and may legitimately finish before
+% the final directional tables are complete (for example, short coupled
+% runs with different DL/UL completion counts).  Materialize the canonical
+% signal-chain tables once more from the finalized primary trial evidence so
+% a completed run cannot lose its channel-estimation/state exports merely
+% because no later live-refresh milestone occurred.
+finalSignalTrials = localAppendCompatTable( ...
+    sixgr.util.structGet(rawTrials, "DL", table()), ...
+    sixgr.util.structGet(rawTrials, "UL", table()));
+finalConstellation = localAppendCompatTable( ...
+    sixgr.util.structGet(rawTrials, "DLConstellation", table()), ...
+    sixgr.util.structGet(rawTrials, "ULConstellation", table()));
+sixgr.truth.exportLLSLiveSignalChainTables( ...
+    rootRunFolder, finalSignalTrials, finalConstellation, struct());
 [stageRows, stageOrder] = localAppendRuntimeStageProfile(rootRunFolder, stageRows, stageOrder, ...
     "raw_trials_export", toc(stageStart), toc(bundleStart), "Primary raw trial tables published.");
 localPublishWaveformBundleStageStatus(runFolder, struct( ...
@@ -7272,6 +7286,18 @@ end
 function cfgOut = localPrepareGrantReplayExecutionConfig(cfgIn, direction, grant)
 cfgOut = cfgIn;
 direction = upper(string(direction));
+dataSlot = double(sixgr.util.structGet(grant,"Slot",NaN));
+dataFrame = double(sixgr.util.structGet(grant,"Frame",NaN));
+if ~(isscalar(dataSlot) && isfinite(dataSlot) && dataSlot>=1 && ...
+        dataSlot==fix(dataSlot))
+    error('sixgr:truth:MissingGrantReplayTimeline', ...
+        'Truth waveform hydration requires the frozen grant absolute slot.');
+end
+% Execution hydration may inherit a carrier object from an earlier
+% control/access occasion. Rebind the NR carrier to the frozen data grant
+% before any PDSCH/PUSCH RE exclusion or TBS calculation is performed.
+[cfgOut,~] = sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+    cfgOut,dataSlot,dataFrame);
 numLayers = double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", NaN)));
 if ~(isfinite(numLayers) && numLayers >= 1)
     numLayers = 1;
@@ -11103,9 +11129,14 @@ if all(~isfinite(double(T.ResidualTimingError_PostCorrection_samples))) && any(i
     T.ResidualTimingError_PostCorrection_samples = double(T.TimingError_samples);
 end
 warmMask = false(height(T), 1);
-if ismember("LinkAdaptationScheduled", string(T.Properties.VariableNames)) && ...
+if ismember("AdaptiveMode", string(T.Properties.VariableNames)) && ...
+        ismember("LinkAdaptationScheduled", string(T.Properties.VariableNames)) && ...
         ismember("LinkAdaptationApplied", string(T.Properties.VariableNames))
-    warmMask = logical(T.LinkAdaptationScheduled) & ~logical(T.LinkAdaptationApplied);
+    % A fixed-MCS grant can legitimately record that adaptation machinery
+    % inspected the grant but did not apply an adaptive decision.  That is
+    % measured fixed-operation data, not an AMC bootstrap/warm-up row.
+    warmMask = logical(T.AdaptiveMode) & ...
+        logical(T.LinkAdaptationScheduled) & ~logical(T.LinkAdaptationApplied);
 end
 T.IsWarmupFrame = logical(warmMask);
 if all(~isfinite(double(T.SFN)))
@@ -12452,6 +12483,12 @@ c=item.Context; p=c.Prepared;
 [post,~,~,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
 raw=localCompletePDCCHTrial(p,receiver,c.Grant,c.SNR,1, ...
     double(sixgr.util.structGet(replay,'SampleNoiseVariance',NaN)),replay);
+if logical(sixgr.util.structGet(raw,'Crash',false))
+    localAppendRuntimeLog("WARN", ...
+        "Shared PDCCH receive completion failed: ue=%d slot=%d id=%s notes=%s", ...
+        item.UE,c.Slot,string(sixgr.util.structGet(raw,'FailureReason',"")), ...
+        string(sixgr.util.structGet(raw,'Notes',"")));
+end
 trial=localAnnotateCoupledControlTrial(struct2table(raw),c.Slot,c.Frame,item.UE,c.RNTI,c.Direction,c.ServingCell);
 [trial,grant]=localAnnotateGrantControlTrial(trial,c.Grant,c.Config,c.Direction);
 [state,grant,allowed]=sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state,grant,c.Direction,trial);
@@ -14144,8 +14181,24 @@ for k = 1:nTrials
         [rxWave,nVar,replay,updatedRuntimeChannelState] = ...
             localApplyPDCCHChannelAndNoise(preparedPDCCH,snr_dB,updatedRuntimeChannelState);
         observedRET = localAppendCompatTable(observedRET,pdcchRET);
-        origin = double(sixgr.util.structGet(replay,"RuntimeChannelStartSample",NaN));
-        if ~isfinite(origin) && ~logical(sixgr.util.structGet(replay,"RuntimeChannelStateUsed",false))
+        runtimeChannelUsed = logical(sixgr.util.structGet( ...
+            replay,"RuntimeChannelStateUsed",false));
+        fadingChannelApplied = logical(sixgr.util.structGet( ...
+            replay,"ChannelFadingApplied",false));
+        if runtimeChannelUsed && fadingChannelApplied
+            % A retained fading channel owns its absolute execution clock.
+            % Its replay origin must therefore be present and agree with
+            % the scheduled PDCCH occasion checked by receive completion.
+            origin = double(sixgr.util.structGet( ...
+                replay,"RuntimeChannelStartSample",NaN));
+            if ~isfinite(origin)
+                error('sixgr:truth:PDCCHRuntimeChannelOriginMissing', ...
+                    'A retained PDCCH fading execution must expose its absolute sample origin.');
+            end
+        else
+            % Identity/AWGN/RF replay metadata can contain a local zero
+            % origin even though no fading channel clock executed.
+            % The actual scheduled producer clock is authoritative here.
             origin = preparedPDCCH.RuntimeStartSample;
             if ~isfinite(origin)
                 origin = 0; % Standalone capture without a scheduled absolute origin.

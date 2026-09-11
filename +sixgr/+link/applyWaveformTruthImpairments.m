@@ -285,16 +285,43 @@ if ~isscalar(direction) || ismissing(direction) || ~any(direction == ["DL","UL"]
     error("sixgr:link:InvalidWaveformLinkDirection", ...
         "Waveform impairment execution requires an explicit valid DL/UL direction.");
 end
+bindingNames = ["state.Direction", "state.RuntimeChannelState.Direction", ...
+    "cfg.lls6g.runtimePowerContext.Direction"];
 bindings = {sixgr.util.structGet(state,"Direction",[]), ...
     sixgr.util.structGet(state,"RuntimeChannelState.Direction",[]), ...
     sixgr.util.structGet(cfg,"lls6g.runtimePowerContext.Direction",[])};
 for k = 1:numel(bindings)
     if isempty(bindings{k}), continue; end
     bound = upper(strtrim(string(bindings{k})));
+    % The wrapper's canonical empty runtime-channel state uses Direction=""
+    % until a fading link is initialized.  It carries no directional
+    % authority and must not conflict with the explicit receiver context.
+    % Once initialized, however, an empty direction is a malformed link and
+    % remains a hard failure below.
+    if k == 2 && isscalar(bound) && ~ismissing(bound) && ...
+            strlength(bound) == 0 && ~logical(sixgr.util.structGet( ...
+            state,"RuntimeChannelState.Initialized",false))
+        continue;
+    end
     if ~isscalar(bound) || ismissing(bound) || bound ~= direction
         error("sixgr:link:WaveformLinkDirectionMismatch", ...
-            "Receiver, power and materialized link contexts must agree on direction before sample execution.");
+            "Receiver, power and materialized link contexts must agree " + ...
+            "on direction before sample execution: requested=%s, " + ...
+            "mismatched_%s=%s.", direction, bindingNames(k), ...
+            localDirectionToken(bound));
     end
+end
+end
+
+function token = localDirectionToken(value)
+if isempty(value)
+    token = "<empty>";
+elseif ~isscalar(value)
+    token = "<nonscalar:" + strjoin(value(:).', ",") + ">";
+elseif ismissing(value)
+    token = "<missing>";
+else
+    token = value;
 end
 end
 
