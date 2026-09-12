@@ -10,6 +10,8 @@ addParameter(p, "HARQProcess", 1, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, "NumLayers", 1, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, "TPMI", 0, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, "SRSResourceIndicator", 0, @(x) isnumeric(x) && isscalar(x));
+addParameter(p, "DMRSPortSet", [], @isnumeric);
+addParameter(p, "NumCDMGroupsWithoutData", [], @isnumeric);
 parse(p, pdcchCfg, varargin{:});
 opt = p.Results;
 
@@ -35,6 +37,11 @@ context = sixgr.phy.pdcch.resolveDCIContext(pdcchCfg, "0_1");
 if isfield(context.Data,'ULPrecoding')
     fields.precoding_information_and_number_of_layers= ...
         sixgr.phy.pdcch.ULPrecodingField.encode(context.Data,double(opt.NumLayers),double(opt.TPMI));
+end
+if isfield(context.Data,'ULReferenceSignaling')
+    fields=sixgr.phy.pdcch.ULReferenceSignaling.bindSRI(fields,context.Data,double(opt.SRSResourceIndicator));
+    fields.antenna_ports=sixgr.phy.pdcch.ULReferenceSignaling.encodeAntenna(context.Data, ...
+        double(opt.NumLayers),opt.DMRSPortSet,opt.NumCDMGroupsWithoutData,1);
 end
 fields = sixgr.phy.pdcch.completeDCIFields(fields, context);
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "0_1", pdcchCfg);

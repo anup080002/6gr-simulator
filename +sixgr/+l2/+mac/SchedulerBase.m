@@ -2356,6 +2356,11 @@ switch fmt
                 double(sixgr.util.structGet(grant,"TPMI",NaN)));
         end
         fields.antenna_ports = localULAntennaPortField(grant);
+        if isfield(dciContext.Data,'ULReferenceSignaling')
+            fields=sixgr.phy.pdcch.ULReferenceSignaling.bindSRI(fields,dciContext.Data, ...
+                double(sixgr.util.structGet(grant,"SRSResourceIndicator",0)));
+            fields.antenna_ports=sixgr.phy.pdcch.ULReferenceSignaling.antennaFromGrant(dciContext.Data,cfg,grant);
+        end
         fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
         fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", 0), 2);
         if logical(dciContext.Data.CBGFieldsPresent)

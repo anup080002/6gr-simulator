@@ -3,7 +3,9 @@
 Current 12 dB checkpoint: the continuous-IQ YAML now enables two logical
 SRS/PUSCH ports at rank one, with an explicit `control.ul_precoding` table
 context. The corrected focused shared-clock test passed; the next full run
-is held for the remaining SRI/DM-RS control-field audit. See
+is held for complete control-context and receiver payload-size qualification.
+The [SRI/DM-RS field repair](lls/ul_reference_signaling_repair_20260912.md) passed
+its focused shared-clock regression. See
 [the repair ledger](lls/continuous_iq_02_spatial_reaudit_20260912.md) for exact
 YAML fields, focused commands, receipts and remaining qualification limits.
 

@@ -135,6 +135,21 @@ classdef DCIParser
                     derived.precoding_information_and_number_of_layers_rank_minus1 = floor(combined / 16);
                 end
             end
+            if fmt=="0_1" && isfield(data,'ULReferenceSignaling')
+                ref=sixgr.phy.pdcch.ULReferenceSignaling.resolve(data);
+                rank=derived.precoding_information_and_number_of_layers_rank_minus1+1;
+                [ports,groups]=sixgr.phy.pdcch.ULReferenceSignaling.decodeAntenna(data,rank,fields.antenna_ports);
+                derived.dmrs_port_set=ports;
+                derived.dmrs_num_cdm_groups_without_data=groups;
+                derived.dmrs_front_load_symbols=1;
+                if ref.SRIWidth==0
+                    derived.srs_resource_index0based=0;
+                    derived.srs_resource_selection_source="implicit_single_configured_resource";
+                else
+                    derived.srs_resource_index0based=fields.srs_resource_indicator;
+                    derived.srs_resource_selection_source="received_srs_resource_indicator";
+                end
+            end
         end
     end
 end

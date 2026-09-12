@@ -213,6 +213,16 @@ classdef DCIContextFactory
                     'sixgr:phy:pdcch:ULPrecodingContextMismatch', ...
                     'DCI UL precoding context must agree with the configured SRS/PUSCH ports, rank and waveform.');
             end
+            if fmt=="0_1" && isfield(operatorControl,'ul_reference_signaling')
+                data=context.Data; data.ULReferenceSignaling=operatorControl.ul_reference_signaling;
+                sixgr.phy.pdcch.ULReferenceSignaling.resolve(data);
+                assert(data.ULReferenceSignaling.srs_resource_count==1 && ...
+                    isstruct(cfg.phy.srs) && isscalar(cfg.phy.srs) && ...
+                    string(cfg.phy.srs.resourceSetUsage)=="codebook", ...
+                    'sixgr:phy:pdcch:SRSResourceSetRuntimeMismatch', ...
+                    'The current runtime config constructs one codebook SRS resource, not multiple independently selectable resources.');
+                context=sixgr.phy.pdcch.DCIContext(data);
+            end
             if direction == "DL"
                 allocations = context.Data.DLTimeDomainAllocations;
             else

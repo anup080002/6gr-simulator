@@ -193,6 +193,10 @@ for item=items
             assert(decoded.Fields.precoding_information_and_number_of_layers_tpmi==grant.TPMI && ...
                 decoded.Fields.precoding_information_and_number_of_layers_rank_minus1==grant.NumLayers-1);
         end
+        if isfield(grant.DCI.ContextData,'ULReferenceSignaling')
+            assert(~isfield(decoded.Fields,'srs_resource_indicator') && decoded.Fields.srs_resource_index0based==0);
+            state.TestDecodedULReferenceFields=decoded.Fields;
+        end
         grant.ControlDecodeOk=logical(rx.CausalGrantDecodeOk); grant.PDCCHGrantBindingOk=logical(rx.CausalGrantDecodeOk);
         grant.PDCCHGrantDCIId=decoded.PayloadHash; grant.PDCCHGrantDCIFormat=decoded.Format;
         hash=@(v)sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(orderfields(v)),'UTF-8')));
@@ -234,6 +238,13 @@ for item=items
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
     elseif item.Kind=="PUSCH"
         job=c.Job; job.PrepareOnly=false;
+        if isfield(state,'TestDecodedULReferenceFields')
+            actual=p.Tx.PUSCH.DMRS; received=state.TestDecodedULReferenceFields;
+            assert(isequal(double(actual.DMRSPortSet(:).'),double(received.dmrs_port_set(:).')) && ...
+                actual.NumCDMGroupsWithoutData==received.dmrs_num_cdm_groups_without_data && ...
+                actual.DMRSLength==received.dmrs_front_load_symbols, ...
+                'Received DCI reference indication must match the actual transmitted PUSCH DMRS, not rank-only planning fields.');
+        end
         replay=sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,c.DesiredReferencePlane,replay);
         expectedTiming=(p.StartSample-p.ReceiveStartSample) + ...
             replay.RuntimeChannelFilterDelay_samples + ...

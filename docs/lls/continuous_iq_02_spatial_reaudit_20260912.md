@@ -1,5 +1,9 @@
 # `_02` spatial-power re-audit and approved two-port UL repair
 
+Follow-up: [SRI/DM-RS field repair](ul_reference_signaling_repair_20260912.md)
+now has a focused shared-clock PASS. Full-run qualification remains held for
+the complete control context and independent receiver payload-size authority.
+
 This supplements `continuous_iq_02_terminal_repairs_20260912.md`. It does not
 rewrite or requalify the old execution. The user approved two logical SRS and
 PUSCH ports, rank one, with measured TPMI selection for the next 12 dB run.

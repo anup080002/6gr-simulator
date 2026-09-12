@@ -1,0 +1,22 @@
+[
+  {
+    "Name": "testULReferenceSignaling",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testTwoPortULYAMLAndSRS",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "test6GParameterCatalog",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "test6GScenarioConfigValidation",
+    "Status": "PASS",
+    "Error": ""
+  }
+]

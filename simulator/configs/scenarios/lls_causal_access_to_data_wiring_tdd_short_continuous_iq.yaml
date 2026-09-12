@@ -32,6 +32,9 @@ mimo:
     initialization_source: lls_preconfigured_higher_layer_context
 
 reference_signals:
+  pusch_dmrs_num_cdm_groups_without_data: 2
+  pusch_dmrs_config_type: 1
+  pusch_dmrs_max_length: 1
   # Sound both UE logical ports; rank remains one. A one-port sounding
   # resource cannot select a spatial TPMI across two physical UE elements.
   srs_ports: 2
@@ -45,6 +48,12 @@ pusch:
   num_antenna_ports: 2
 
 control:
+  ul_reference_signaling:
+    srs_resource_count: 1
+    dmrs_configuration_type: 1
+    dmrs_max_length: 1
+    dmrs_type_enhanced: false
+    multipanel_sdm: false
   ul_precoding:
     num_ports: 2
     max_rank: 1

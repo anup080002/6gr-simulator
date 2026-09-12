@@ -1757,6 +1757,8 @@ if hasPUSCHDMRSPortPool
         "phy.pusch.dmrs.DMRSPortSet", activePUSCHDMRSPorts);
 end
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.typeApos", double(localGetNested(s, "reference_signals.pusch_dmrs_type_a_position", 2)));
+cfg = localStructSetIfPresent(cfg,"phy.pusch.dmrs.numCDMGroupsWithoutData", ...
+    localGetNested(s,"reference_signals.pusch_dmrs_num_cdm_groups_without_data",[]));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.configType", double(localGetNested(s, "reference_signals.pusch_dmrs_config_type", ...
     localGetNested(s, "reference_signals.pdsch_dmrs_config_type", 1))));
 cfg = sixgr.util.structSet(cfg, "phy.pusch.dmrs.additionalPositions", double(localGetNested(s, "reference_signals.pusch_dmrs_additional_positions", 0)));

@@ -1,0 +1,22 @@
+[
+  {
+    "Name": "test6GParameterCatalog",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "test6GScenarioConfigValidation",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSchedulerGrantConsistency",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testConfig",
+    "Status": "PASS",
+    "Error": ""
+  }
+]
