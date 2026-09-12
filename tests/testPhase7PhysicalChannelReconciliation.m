@@ -77,6 +77,14 @@ reportMaster = sixgr.analytics.buildPhase7ReadinessArtifacts(cfgMaster, tmp);
 assert(logical(reportMaster.Gates.AntennaArrayReconciliationOk), ...
     "Master-YAML antenna_and_array endpoint counts must reconcile for both DL and UL.");
 
+cfgYAML = rmfield(cfg,'channel');
+cfgYAML.channels = struct('model_type',"CDL",'profile',"CDL-C");
+reportYAML = sixgr.analytics.buildPhase7ReadinessArtifacts(cfgYAML,tmp);
+assert(~any(ismember(["CdlRealizationOk","PathPowerNormalizationOk", ...
+    "AntennaArrayReconciliationOk","PolarizationReconciliationOk"], ...
+    string(reportYAML.Gates.NotApplicableGateNames))), ...
+    'Resolved YAML CDL authority must never receive AWGN gate exemptions.');
+
 % A schema-pruned runtime table must fail as missing evidence rather than
 % crashing while indexing an absent polarization column.  Configured
 % polarization is metadata and cannot repair this runtime evidence gap.

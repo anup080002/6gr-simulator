@@ -224,6 +224,26 @@ end
 cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.enabled", true);
 cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.contextId", char(string(phyGrant.GrantContextId)));
 cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.direction", char(direction));
+% PMI belongs to the frozen codebook coordinate system, not to an index
+% inferred later from the physically composed element-domain matrix.
+pmiBasis = "unavailable_no_codebook_pmi";
+if isfinite(double(sixgr.util.structGet(prec,"PMI",NaN)))
+    pmiBasis = lower(direction) + "_logical_port_basis";
+    if direction=="DL", pmiBasis="pdsch_logical_port_basis"; end
+    if direction=="UL", pmiBasis="pusch_logical_port_basis"; end
+    if logical(sixgr.util.structGet(prec,"CSIRSPortBasisApplied",false))
+        pmiBasis = "csi_rs_port_basis";
+    end
+end
+identity = struct('PMIBasis',pmiBasis);
+for identityField = ["PMI","PMIType","CodebookMode","BeamIndices", ...
+        "CSIResourceIndex","PMICodebookMatrixCSIPortsSHA256", ...
+        "CSIRSPortToElementMatrixSHA256","ComposedElementMatrixSHA256"]
+    if isfield(prec,identityField)
+        identity.(identityField) = prec.(identityField);
+    end
+end
+cfgOut = sixgr.util.structSet(cfgOut,"phy.canonicalGrant.precoderIdentity",identity);
 cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.spatialSignature", ...
     double(prec.Matrix));
 cfgOut = sixgr.util.structSet(cfgOut, "phy.canonicalGrant.spatialSignatureSHA256", ...

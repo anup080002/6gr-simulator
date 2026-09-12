@@ -18,6 +18,38 @@ for direction=["DL","UL"]
         'PDCCHPayloadMatch','PDCCHCausalGrantDecodeOk','PDCCHFalseAlarm','PDCCHMissedDetection'});
     [state,received,allowed]=sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(base,grant,direction,row);
     assert(allowed && received.ControlDecodeOk && received.Slot==5);
+    % Unit-only reducer evidence. Exercise the same late-control boundary
+    % used by production data completion without claiming a PHY decode.
+    received.PDCCHGrantDCIFieldsHash=string(repmat('a',1,64));
+    received.PDCCHGrantFieldsHash=received.PDCCHGrantDCIFieldsHash;
+    preparedGrant=grant;
+    preparedGrant.TBSBits=984;
+    preparedGrant.PrecodingMatrix=[1;1]/sqrt(2);
+    for evidenceField=["ControlDecodeOk","DCICrcPass","PDCCHPayloadMatch", ...
+            "PDCCHCausalGrantDecodeOk","PDCCHGrantBindingRequired","PDCCHGrantBindingOk"]
+        preparedGrant.(evidenceField)=false;
+    end
+    bound=sixgr.truth.bindReceivedPDCCHGrantEvidence(preparedGrant,received);
+    assert(bound.DCICrcPass && bound.PDCCHPayloadMatch && ...
+        bound.PDCCHCausalGrantDecodeOk && bound.PDCCHGrantBindingRequired && ...
+        bound.PDCCHGrantBindingOk && bound.TBSBits==984 && ...
+        isequal(bound.PrecodingMatrix,preparedGrant.PrecodingMatrix));
+    before=sixgr.link.PreparedDataTransmission.requestBinding(struct(),preparedGrant,struct());
+    after=sixgr.link.PreparedDataTransmission.requestBinding(struct(),bound,struct());
+    assert(isequaln(before,after), ...
+        'Late control evidence must not change the immutable prepared-data request.');
+    wrong=received; wrong.RNTI=received.RNTI+1;
+    localReject(@()sixgr.truth.bindReceivedPDCCHGrantEvidence(preparedGrant,wrong), ...
+        'sixgr:truth:ReceivedPDCCHGrantIdentityMismatch');
+    wrong=received; wrong.PDCCHPayloadMatch=false;
+    localReject(@()sixgr.truth.bindReceivedPDCCHGrantEvidence(preparedGrant,wrong), ...
+        'sixgr:truth:IncompleteReceivedPDCCHGrantEvidence');
+    wrong=rmfield(received,'DCICrcPass');
+    localReject(@()sixgr.truth.bindReceivedPDCCHGrantEvidence(preparedGrant,wrong), ...
+        'sixgr:truth:IncompleteReceivedPDCCHGrantEvidence');
+    wrong=received; wrong.PDCCHGrantFieldsHash=string(repmat('b',1,64));
+    localReject(@()sixgr.truth.bindReceivedPDCCHGrantEvidence(preparedGrant,wrong), ...
+        'sixgr:truth:IncompleteReceivedPDCCHGrantEvidence');
     if direction=="UL"
         % Explicit grant fixture: do not reconstruct this TBS from throughput.
         received.GrantContextId="fixture_received_ul_slot5";

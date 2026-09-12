@@ -145,7 +145,7 @@ if hasMeasuredState && isfinite(modelSinr_dB)
     % an earlier data allocation must not override a current CSI-RS report.
     sinr_dB = double(modelSinr_dB);
     sinrSource = "measured_csi_state_receiver_objective";
-    sinrRole = "measured_post_equalization_scheduling_input";
+    sinrRole = "measured_csi_receiver_objective_scheduling_input";
     sinrStatus = "OK";
     sinrReason = "";
 elseif isfinite(postEqSINR_dB)
@@ -1333,7 +1333,7 @@ csi.CSIPart2Bits = payload.Part2Bits;
 csi.SeparateEncoding = payload.SeparateEncoding;
 csi.CustomContainerUsed = payload.CustomContainerUsed;
 csi.SINRSource = "measured_csi_state_receiver_objective";
-csi.SINRValueRole = "measured_post_equalization_scheduling_input";
+csi.SINRValueRole = "measured_csi_receiver_objective_scheduling_input";
 csi.SINRValueStatus = "OK";
 csi.SINRNAReason = "";
 csi.SubbandCQI = [];

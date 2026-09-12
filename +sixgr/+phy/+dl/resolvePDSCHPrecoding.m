@@ -37,6 +37,8 @@ prec.NumWaveformColumns = nLayers;
 prec.NumCodewords = nCodewords;
 prec.WidebandOnly = true;
 prec.PMI = NaN;
+prec.PMIBasis = "unavailable_no_codebook_pmi";
+prec.EquivalentPDSCHPortBasisCodebookIndex = NaN;
 prec.PMIType = "";
 prec.CodebookMode = "";
 prec.BeamIndices = [];
@@ -314,8 +316,19 @@ if strictPrecoder
 end
 
 if isstruct(pmiMeta)
+    identityFields = ["PMIBasis","EquivalentPDSCHPortBasisCodebookIndex", ...
+        "CSIResourceIndex","PMICodebookMatrixCSIPortsSHA256", ...
+        "CSIRSPortToElementMatrixSHA256","ComposedElementMatrixSHA256"];
+    for identityField = identityFields
+        if isfield(pmiMeta,identityField)
+            prec.(identityField) = pmiMeta.(identityField);
+        end
+    end
     if isfield(pmiMeta, "PMI")
         prec.PMI = double(pmiMeta.PMI);
+        if ~isfield(pmiMeta,"PMIBasis") && isfinite(prec.PMI)
+            prec.PMIBasis = "pdsch_logical_port_basis";
+        end
     end
     if isfield(pmiMeta, "PMIType")
         prec.PMIType = string(pmiMeta.PMIType);
@@ -736,6 +749,8 @@ function meta = localResolveExplicitMatrixMetadata(cfg, Wcfg, nLayers, requested
 meta = struct( ...
     "Source", "", ...
     "PMI", NaN, ...
+    "PMIBasis", "unavailable_no_codebook_pmi", ...
+    "EquivalentPDSCHPortBasisCodebookIndex", NaN, ...
     "PMIType", "", ...
     "CodebookMode", "", ...
     "BeamIndices", []);
@@ -759,6 +774,16 @@ beamToken = string(sixgr.util.structGet(userMeta, "BeamIndexSet", ""));
 parsedBeamIdx = localParseBeamIndexSet(beamToken);
 if ~isempty(parsedBeamIdx)
     meta.BeamIndices = parsedBeamIdx;
+end
+
+identity = sixgr.util.structGet(cfg,"phy.canonicalGrant.precoderIdentity",struct());
+hasFrozenPMI = logical(sixgr.util.structGet(cfg,"phy.canonicalGrant.enabled",false)) && ...
+    isstruct(identity) && isfield(identity,'PMI');
+if hasFrozenPMI
+    % NaN is also authoritative for a genuinely non-codebook explicit grant.
+    for identityField = string(fieldnames(identity)).'
+        meta.(identityField) = identity.(identityField);
+    end
 end
 
 Wports = localNormalizeExplicitMatrix(Wcfg, nLayers);
@@ -812,7 +837,12 @@ if ~(isfinite(matchIdx) && matchIdx >= 1 && matchIdx <= numel(candidates))
 end
 
 matched = candidates(matchIdx);
+meta.EquivalentPDSCHPortBasisCodebookIndex = double(matched.PMI);
+if hasFrozenPMI
+    return;
+end
 meta.PMI = double(matched.PMI);
+meta.PMIBasis = "pdsch_logical_port_basis";
 meta.PMIType = string(matched.PMIType);
 meta.CodebookMode = string(matched.CodebookMode);
 meta.BeamIndices = double(matched.BeamIndices);

@@ -16,3 +16,21 @@ meta:
 
 run_control:
   continuous_raw_iq_capture_enable: true
+
+# Explicit LLS higher-layer initialization; not a simulated MAC CE.
+# Type-A average-delay transfer is verified at the PDSCH DM-RS receiver.
+mimo:
+  qcl_tci:
+    enabled: true
+    state_id: 17
+    codepoint: 0
+    configuration_epoch: 1
+    activation_absolute_slot0: 0
+    source_resource_id: 100
+    source_max_age_slots: 20
+    timing_search_radius_samples: 4
+    initialization_source: lls_preconfigured_higher_layer_context
+
+reference_signals:
+  trs:
+    resource_ids: [100, 101, 102, 103]

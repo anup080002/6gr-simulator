@@ -434,6 +434,10 @@ methods(Static)
 
     function [cfgU, state] = applyUserContext(cfgIn, state, ueIdx, direction)
         [cfgU, state] = sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfgIn, state, ueIdx, direction);
+        references=sixgr.util.structGet(state,'SharedQCLTimingReferences',{});
+        if string(direction)=="DL" && numel(references)>=ueIdx && ~isempty(references{ueIdx})
+            cfgU=sixgr.util.structSet(cfgU,'lls6g.userContext.QCLTimingReference',references{ueIdx});
+        end
     end
 
     function state = startSlot(state, cfg, direction, sweepIdx, sweepCount, absoluteFrame, totalFrames, snr_dB)
@@ -12569,7 +12573,7 @@ methods(Static, Access=private)
             T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSStateSource", string(trsCtx.TRSStateSource), false);
             T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSRuntimeConsumer", string(trsCtx.TRSRuntimeConsumer), false);
             T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSReceiverIntegrationStatus", string(trsCtx.TRSReceiverIntegrationStatus), false);
-            T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSReceiverIntegrationBlocker", string(trsCtx.TRSReceiverIntegrationBlocker), false);
+            T = sixgr.truth.annotateTRSIntegrationBlocker(T,trsCtx.TRSReceiverIntegrationBlocker);
             T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSReceiverConsumerType", string(trsCtx.TRSReceiverConsumerType), false);
             T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSTrackingStateBefore", string(trsCtx.TRSTrackingStateBefore), false);
             T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "TRSTrackingStateAfter", string(trsCtx.TRSTrackingStateAfter), false);

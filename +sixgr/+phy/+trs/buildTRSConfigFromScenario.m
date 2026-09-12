@@ -108,6 +108,8 @@ if ~isempty(fieldnames(runtimeWindow))
     strictCfg.RuntimeObservationWindow = runtimeWindow;
 end
 strictCfg.SlotNumbers = double(slotNumbers);
+strictCfg.NZPCSIRSResourceIDs = double(sixgr.util.structGet(cfg, ...
+    "lls6g.reference_signals.trs.resource_ids",[]));
 strictCfg.BurstLengthSlots = double(sixgr.util.structGet(cfg,"phy.trs.burstLengthSlots",numel(slotNumbers)));
 strictCfg.SlotAuthority = slotAuthority;
 strictCfg.PeriodSlots = double(sixgr.util.structGet(cfg, "phy.trs.period_slots", NaN));

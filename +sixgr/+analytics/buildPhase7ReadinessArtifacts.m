@@ -1764,8 +1764,11 @@ if fixedApplicable && ~geometryApplicable
         "SchedulerKpiReconciliationOk"]];
 end
 
-channelModel = upper(strtrim(string(sixgr.util.structGet(cfg, ...
-    "channel.model", "AWGN"))));
+% This reducer accepts both resolved scenario YAML and internal config.
+% Missing an internal mirror must not exempt an explicitly configured CDL
+% run from fading/array/polarization checks by silently assuming AWGN.
+channelModel = upper(strtrim(string(localGet(cfg, ...
+    "channel.model", localGet(cfg,"channels.model_type","")))));
 if channelModel == "AWGN"
     names = [names; ...
         "CdlRealizationOk"; ...

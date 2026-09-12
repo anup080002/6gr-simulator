@@ -486,6 +486,10 @@ sections:
         required: false
         type: struct
         nested_rule: mimo_phase07_strict
+      qcl_tci:
+        required: false
+        type: struct
+        nested_rule: mimo_qcl_tci
   users:
     required: false
     parameters:
@@ -1260,6 +1264,21 @@ nested_sections:
         allowed_values: [post_run_csv_contract_materializer]
       allow_svg: {required: true, type: boolean}
       allow_placeholder_evidence: {required: true, type: boolean}
+  mimo_qcl_tci:
+    path: mimo.qcl_tci
+    parameters:
+      enabled: {required: true, type: boolean}
+      state_id: {required: true, type: integer, min: 0, max: 127}
+      codepoint: {required: true, type: integer, min: 0, max: 7}
+      configuration_epoch: {required: true, type: integer, min: 0}
+      activation_absolute_slot0: {required: true, type: integer, min: 0}
+      source_resource_id: {required: true, type: integer, min: 0, max: 191}
+      source_max_age_slots: {required: true, type: integer, min: 1}
+      timing_search_radius_samples: {required: true, type: integer, min: 1}
+      initialization_source:
+        required: true
+        type: string
+        allowed_values: [lls_preconfigured_higher_layer_context]
   mimo_phase07_strict:
     path: mimo.phase07_strict
     parameters:

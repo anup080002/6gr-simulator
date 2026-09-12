@@ -2311,8 +2311,16 @@ switch fmt
         fields.pdsch_to_harq_feedback_timing = double(k1);
         fields.antenna_ports = localDLAntennaPortField(grant);
         if logical(dciContext.Data.TCIPresent)
-            fields.transmission_configuration_indication = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
-                sixgr.util.structGet(cfg, "phy.pdsch.TCIState", 0)), dciContext.Data.TCIWidth);
+            policy=sixgr.util.structGet(cfg,'phy.pdsch.qclTCI',struct());
+            if logical(sixgr.util.structGet(policy,'enabled',false))
+                assert(grant.Slot-1>=policy.activation_absolute_slot0 && ...
+                    dciContext.Data.ConfigurationEpoch==policy.configuration_epoch, ...
+                    'sixgr:qcl:InactiveTCI','Scheduled DCI must use the active TCI mapping epoch.');
+                fields.transmission_configuration_indication=double(policy.codepoint);
+            else
+                fields.transmission_configuration_indication = localClampDCIValue(sixgr.util.structGet(grant, "TCIState", ...
+                    sixgr.util.structGet(cfg, "phy.pdsch.TCIState", 0)), dciContext.Data.TCIWidth);
+            end
         end
         fields.srs_request = localClampDCIValue(sixgr.util.structGet(grant, "SRSRequest", 0), 2);
         fields.csi_request = localClampDCIValue(sixgr.util.structGet(grant, "CSIRequest", ...

@@ -176,6 +176,39 @@ classdef RunEvidenceLifecycle
                 "PublicationQualified", false));
         end
 
+        function terminal = completeUnpublished(attempt, artifactManifestPath)
+            % Functional completion is not publication qualification. Keep
+            % the existing qualified-publication pointer byte-for-byte intact.
+            localValidateAttempt(attempt);
+            artifactManifestPath = localCanonical(artifactManifestPath);
+            localAssertChild(artifactManifestPath, attempt.AttemptRoot);
+            if ~isfile(artifactManifestPath)
+                error("sixgr:runtime:FinalizationArtifactManifestMissing", ...
+                    "Completion requires an attempt-owned artifact manifest.");
+            end
+            manifest = localReadJSON(artifactManifestPath);
+            if ~isequal(sixgr.util.structGet(manifest,"ResultOk",false),true) || ...
+                    string(sixgr.util.structGet(manifest,"ArtifactContractStatus","")) ~= "PASS" || ...
+                    sixgr.util.structGet(manifest,"ArtifactContractRequiredFailureCount",Inf) ~= 0 || ...
+                    ~isequal(sixgr.util.structGet(manifest,"PublicationQualified",true),false)
+                error("sixgr:runtime:FunctionalCompletionEvidenceInvalid", ...
+                    "Unpublished completion requires functional PASS, no required artifact failures, and explicit non-qualification.");
+            end
+            for field = ["RunID","ExecutionID","FinalizationID","AttemptID"]
+                if string(sixgr.util.structGet(manifest,field,"")) ~= string(attempt.(field))
+                    error("sixgr:runtime:FinalizationExecutionMismatch", ...
+                        "Completion artifact identity mismatch: %s.",field);
+                end
+            end
+            terminal = localTerminal(attempt,"PASS",struct( ...
+                "ArtifactManifestRelativePath",string(localRelativePath( ...
+                    attempt.AttemptRoot,artifactManifestPath)), ...
+                "ArtifactManifestSHA256",localFileSHA256(artifactManifestPath), ...
+                "FunctionalFinalizationStatus","PASS", ...
+                "PublicationStatus","NOT_QUALIFIED", ...
+                "Published",false,"PublicationQualified",false));
+        end
+
         function terminal = publish(attempt, artifactManifestPath)
             localValidateAttempt(attempt);
             artifactManifestPath = localCanonical(artifactManifestPath);

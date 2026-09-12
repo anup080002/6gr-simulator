@@ -484,6 +484,12 @@ trialTransformPrecodingApplied = false(numFrames,1);
 trialBeamformingApplied = false(numFrames,1);
 trialAppliedBeamIndexSet = strings(numFrames,1);
 trialAppliedPrecoderPMI = NaN(numFrames,1);
+trialAppliedPrecoderPMIBasis = strings(numFrames,1);
+trialEquivalentPDSCHPortBasisCodebookIndex = NaN(numFrames,1);
+trialAppliedCSIResourceIndex = NaN(numFrames,1);
+trialPMICodebookMatrixCSIPortsSHA256 = strings(numFrames,1);
+trialCSIRSPortToElementMatrixSHA256 = strings(numFrames,1);
+trialComposedElementMatrixSHA256 = strings(numFrames,1);
 trialRequestedPrecoderPMI = NaN(numFrames,1);
 trialRequestedPrecoderSource = strings(numFrames,1);
 trialAppliedPrecoderPMIType = strings(numFrames,1);
@@ -574,6 +580,8 @@ trialEstDoppler = NaN(numFrames,1);
 trialDopplerErr = NaN(numFrames,1);
 trialPhaseTrackErr = NaN(numFrames,1);
 trialQCL = NaN(numFrames,1);
+[~,qclEmpty]=sixgr.phy.rx.applyQCLTimingTransfer(struct(),struct(),[],NaN,[]);
+trialQCLRuntime=repmat(qclEmpty,numFrames,1);
 trialChannelReferenceCorrelation = NaN(numFrames,1);
 trialAgingLoss = NaN(numFrames,1);
 trialInterpLoss = NaN(numFrames,1);
@@ -1052,6 +1060,12 @@ for n = 1:numFrames
         trialBeamformingApplied(n) = logical(dlPrecoding.BeamformingApplied);
         trialAppliedBeamIndexSet(n) = string(dlPrecoding.AppliedBeamIndexSet);
         trialAppliedPrecoderPMI(n) = double(dlPrecoding.AppliedPrecoderPMI);
+        trialAppliedPrecoderPMIBasis(n) = dlPrecoding.AppliedPrecoderPMIBasis;
+        trialEquivalentPDSCHPortBasisCodebookIndex(n) = dlPrecoding.EquivalentPDSCHPortBasisCodebookIndex;
+        trialAppliedCSIResourceIndex(n) = dlPrecoding.AppliedCSIResourceIndex;
+        trialPMICodebookMatrixCSIPortsSHA256(n) = dlPrecoding.PMICodebookMatrixCSIPortsSHA256;
+        trialCSIRSPortToElementMatrixSHA256(n) = dlPrecoding.CSIRSPortToElementMatrixSHA256;
+        trialComposedElementMatrixSHA256(n) = dlPrecoding.ComposedElementMatrixSHA256;
         trialRequestedPrecoderPMI(n) = double(dlPrecoding.RequestedPrecoderPMI);
         trialRequestedPrecoderSource(n) = string(dlPrecoding.RequestedPrecoderSource);
         trialAppliedPrecoderPMIType(n) = string(dlPrecoding.AppliedPrecoderPMIType);
@@ -1151,8 +1165,11 @@ for n = 1:numFrames
             "CodingLayout", tx.CodingLayout, ...
             "SkipTimingEstimate", useIdealTimingSync};
         if receivedCompletion
-            rxArgs=[rxArgs {'TimingSearchWindowSamples', ...
-                preparedTransmission.receiverTimingSearchWindow(p.Results.ReceivedContext.Observation)}];
+            observation=p.Results.ReceivedContext.Observation;
+            searchWindow=preparedTransmission.receiverTimingSearchWindow(observation);
+            [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+                cfgFrame,grantSnapshotOverride,observation,preparedTransmission.StartSample,searchWindow);
+            rxArgs=[rxArgs {'TimingSearchWindowSamples',searchWindow}];
         end
         if executionContract.Profile == "scheduler_truth"
             rxArgs = [rxArgs {"SchedulerGrantContext", grantSnapshotOverride}]; %#ok<AGROW>
@@ -1187,6 +1204,13 @@ for n = 1:numFrames
         [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, rxArgs{:});
         if receivedCompletion
             out.ReceiveTiming=rx.ReceiveTiming;
+            if qclEvidence.QCLTimingPriorUsed
+                assert(isequal(double(rx.ReceiveTiming.SearchWindowSamples(:).'),double(searchWindow(:).')), ...
+                    'sixgr:qcl:PriorNotConsumed','PDSCH receiver must consume the bound QCL search window.');
+                qclEvidence.QCLDMRSDelayResidual_samples=double(rx.ReceiveTiming.TimingOffsetSamples)-qclEvidence.QCLTimingPriorSamples;
+                qclEvidence.QCLStatus="consumed_by_received_pdsch_dmrs_timing_estimator";
+            end
+            trialQCLRuntime(n)=qclEvidence;
         end
         rxCallElapsed_s = toc(stageTic);
         trialReceiverPipelineLatency(n) = 1e3 * rxCallElapsed_s;
@@ -2261,6 +2285,10 @@ end
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
         T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
+        qclTable=struct2table(trialQCLRuntime(idx));
+        for qclName=string(qclTable.Properties.VariableNames)
+            T.(qclName)=qclTable.(qclName);
+        end
         T.EstimatedChannelReferenceCorrelationMagnitude = trialChannelReferenceCorrelation(idx);
         T.SymbolDecisionStatus = trialSymbolDecisionStatus(idx);
         T.RuntimeAbsoluteSlotIndex0 = trialRuntimeAbsoluteSlot0(idx);
@@ -2638,6 +2666,12 @@ end
         T.BeamformingApplied = trialBeamformingApplied(idx);
         T.AppliedBeamIndexSet = trialAppliedBeamIndexSet(idx);
         T.AppliedPrecoderPMI = trialAppliedPrecoderPMI(idx);
+        T.AppliedPrecoderPMIBasis = trialAppliedPrecoderPMIBasis(idx);
+        T.EquivalentPDSCHPortBasisCodebookIndex = trialEquivalentPDSCHPortBasisCodebookIndex(idx);
+        T.AppliedCSIResourceIndex = trialAppliedCSIResourceIndex(idx);
+        T.PMICodebookMatrixCSIPortsSHA256 = trialPMICodebookMatrixCSIPortsSHA256(idx);
+        T.CSIRSPortToElementMatrixSHA256 = trialCSIRSPortToElementMatrixSHA256(idx);
+        T.ComposedElementMatrixSHA256 = trialComposedElementMatrixSHA256(idx);
         T.RequestedPrecoderPMI = trialRequestedPrecoderPMI(idx);
         T.RequestedPrecoderSource = trialRequestedPrecoderSource(idx);
         T.AppliedPrecoderPMIType = trialAppliedPrecoderPMIType(idx);
@@ -3110,6 +3144,7 @@ row.HestRxPorts = double(sixgr.util.structGet(rxObs, "HestRxPorts", NaN));
 row.HestTxPorts = double(sixgr.util.structGet(rxObs, "HestTxPorts", NaN));
 row.SINRMeasurementDomain = string(sixgr.util.structGet(rxObs, "SINRMeasurementDomain", ...
     "csi_rs_resource_selective_channel_estimate"));
+row.ReferenceMeasuredSINRDomain = row.SINRMeasurementDomain;
 row.PowerReferencePlane = string(sixgr.util.structGet(rxObs, "PowerReferencePlane", ...
     "normalized_ofdm_resource_grid_after_receiver_synchronization"));
 row.CQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
@@ -3209,7 +3244,9 @@ row.SINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
 row.SINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
 row.SINRValueRole = string(sixgr.util.structGet(metrics, "SINRValueRole", ""));
 row.SINRValueStatus = string(sixgr.util.structGet(metrics, "SINRValueStatus", ""));
-if contains(lower(row.SINRSource), "post_equal") || contains(lower(row.SINRSource), "equalized")
+if row.SINRSource == "measured_csi_state_receiver_objective"
+    row.SINRMeasurementDomain = "csi_rs_selected_pmi_receiver_objective";
+elseif contains(lower(row.SINRSource), "post_equal") || contains(lower(row.SINRSource), "equalized")
     row.SINRMeasurementDomain = "pdsch_post_equalization_data_re";
 elseif contains(lower(row.SINRSource), "csi") || contains(lower(row.SINRSource), "hest")
     row.SINRMeasurementDomain = "csi_rs_resource_selective_channel_estimate";
@@ -3409,6 +3446,7 @@ row = struct( ...
     "PilotRECount", NaN, "PilotResidualPower", NaN, "PilotResidualNMSE_dB", NaN, ...
     "ReferenceMeasuredSINR_dB", NaN, "ReferenceMeasuredSINRSource", "", ...
     "ReferenceMeasuredSINRStatus", "not_attempted", ...
+    "ReferenceMeasuredSINRDomain", "", ...
     "HestDimensions", "", "HestRxPorts", NaN, "HestTxPorts", NaN, ...
     "CQI", NaN, "RI", NaN, "PMI", NaN, "LI", NaN, "CRI", NaN, "CQISource", "", ...
     "PMI_I11",NaN,"PMI_I12",NaN,"PMI_I13",NaN,"PMI_I2",NaN, ...
@@ -5522,6 +5560,12 @@ T.TransformPrecodingApplied = false(0,1);
 T.BeamformingApplied = false(0,1);
 T.AppliedBeamIndexSet = strings(0,1);
 T.AppliedPrecoderPMI = zeros(0,1);
+T.AppliedPrecoderPMIBasis = strings(0,1);
+T.EquivalentPDSCHPortBasisCodebookIndex = zeros(0,1);
+T.AppliedCSIResourceIndex = zeros(0,1);
+T.PMICodebookMatrixCSIPortsSHA256 = strings(0,1);
+T.CSIRSPortToElementMatrixSHA256 = strings(0,1);
+T.ComposedElementMatrixSHA256 = strings(0,1);
 T.AppliedPrecoderPMIType = strings(0,1);
 T.AppliedPrecoderCodebookMode = strings(0,1);
 T.RequestedBeamTruthClassification = strings(0,1);
@@ -5879,6 +5923,12 @@ trace = struct( ...
     "BeamformingApplied", logical(sixgr.util.structGet(prec, "Active", sixgr.util.structGet(grant, "BeamformingApplied", false))), ...
     "AppliedBeamIndexSet", localFormatIndexSet(sixgr.util.structGet(prec, "BeamIndices", sixgr.util.structGet(grant, "AppliedBeamIndexSet", []))), ...
     "AppliedPrecoderPMI", double(sixgr.util.structGet(prec, "PMI", sixgr.util.structGet(grant, "AppliedPrecoderPMI", NaN))), ...
+    "AppliedPrecoderPMIBasis", string(sixgr.util.structGet(prec,"PMIBasis","")), ...
+    "EquivalentPDSCHPortBasisCodebookIndex", double(sixgr.util.structGet(prec,"EquivalentPDSCHPortBasisCodebookIndex",NaN)), ...
+    "AppliedCSIResourceIndex", double(sixgr.util.structGet(prec,"CSIResourceIndex",NaN)), ...
+    "PMICodebookMatrixCSIPortsSHA256", string(sixgr.util.structGet(prec,"PMICodebookMatrixCSIPortsSHA256","")), ...
+    "CSIRSPortToElementMatrixSHA256", string(sixgr.util.structGet(prec,"CSIRSPortToElementMatrixSHA256","")), ...
+    "ComposedElementMatrixSHA256", string(sixgr.util.structGet(prec,"ComposedElementMatrixSHA256","")), ...
     "AppliedPrecoderPMIType", string(sixgr.util.structGet(prec, "PMIType", sixgr.util.structGet(grant, "AppliedPrecoderPMIType", ""))), ...
     "AppliedPrecoderCodebookMode", string(sixgr.util.structGet(prec, "CodebookMode", sixgr.util.structGet(grant, "AppliedPrecoderCodebookMode", ""))), ...
     "PrecodingNumPorts", double(sixgr.util.structGet(prec, "NumPorts", sixgr.util.structGet(grant, "PrecodingNumPorts", NaN))), ...

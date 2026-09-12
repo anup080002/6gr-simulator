@@ -131,10 +131,7 @@ classdef PreparedDataTransmission
         function binding = requestBinding(options,grant,phyGrant)
             % Receiver evidence may arrive after DL TX preparation. No other
             % scheduling, payload or PHY allocation field may change.
-            receiverFields = {'ControlDecodeOk','PDCCHGrantBindingOk', ...
-                'PDCCHGrantDCIId','PDCCHGrantDCIFormat', ...
-                'PDCCHGrantFirstCCE','PDCCHGrantNumCCE', ...
-                'PDCCHGrantDCIFieldsHash','PDCCHGrantFieldsHash'};
+            receiverFields = sixgr.truth.receivedPDCCHGrantEvidenceFields();
             present = intersect(fieldnames(grant),receiverFields);
             grant = rmfield(grant,present);
             binding = struct('Grant',grant,'PHYGrant',phyGrant);

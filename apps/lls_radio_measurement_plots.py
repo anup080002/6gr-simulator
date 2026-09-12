@@ -198,10 +198,16 @@ def _csi(m, name, existing, fetch, run_id):
         measured_slot = m._row_float(row, "SourceSlot")
         delivered_slot = m._row_float(row, "DeliveredSlot")
         values = _numbers(m._row_text(row, field), integers=field != "SINR_dB")
+        sinr_source = m._row_text(row, "SINRSource") if field == "SINR_dB" else ""
+        sinr_domain = m._row_text(row, "SINRMeasurementDomain") if field == "SINR_dB" else ""
+        if sinr_source == "measured_csi_state_receiver_objective":
+            sinr_domain = "csi_rs_selected_pmi_receiver_objective"
         record = {**identity, "source_slot": measured_slot, "due_slot": m._row_float(row, "DueSlot"),
             "delivered_slot": delivered_slot, "delivery_status": m._row_text(row, "DeliveryStatus"),
             "report_identity": m._row_text(row, "ReportIdentity"), "source_signal": m._row_text(row, "SourceSignal"),
             "measurement_source": m._row_text(row, "MeasurementSource"), "metric_field": field,
+            "sinr_source": sinr_source, "sinr_measurement_domain": sinr_domain,
+            "sinr_value_role": m._row_text(row, "SINRValueRole") if field == "SINR_dB" else "",
             "reported_value_token": m._row_text(row, field), "component_values": json.dumps(values),
             "value_status": "available" if values and measured_slot is not None else "unavailable_in_source"}
         rows.append(record)
@@ -216,8 +222,8 @@ def _csi(m, name, existing, fetch, run_id):
                     raise ValueError(f"CSI delivery precedes measurement in {FEEDBACK} row {index}")
                 series[f"{label} delivered"].append([delivered_slot, value])
     return _finish(m, name, run_id, rows, series, "Runtime slot (measurement / delivery)",
-        "Reported SINR (dB)" if field == "SINR_dB" else f"Reported {field} index",
-        "Measured CSI reports and actual delivery events. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.", [FEEDBACK])
+        "CSI scheduling SINR estimate (dB)" if field == "SINR_dB" else f"Reported {field} index",
+        "CSI reports from received reference signals and actual delivery events. Selected-PMI receiver-objective SINR is an estimated scheduling input, not raw CSI-RS SINR or a decoded PDSCH measurement. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.", [FEEDBACK])
 
 
 def _precoding(m, name, existing, fetch, run_id):
@@ -252,6 +258,22 @@ def _precoding(m, name, existing, fetch, run_id):
                 "requested_pmi_source": m._row_text(trial, "RequestedPrecoderSource"),
                 "applied_pmi_token": m._row_text(trial, "AppliedPrecoderPMI"),
                 "applied_pmi_type": m._row_text(trial, "AppliedPrecoderPMIType"),
+                "applied_pmi_basis": m._row_text(trial, "AppliedPrecoderPMIBasis"),
+                "qcl_status": m._row_text(trial, "QCLStatus"),
+                "qcl_type": m._row_text(trial, "QCLType"),
+                "qcl_source_resource_id": m._row_float(trial, "QCLSourceResourceID"),
+                "qcl_source_slot0": m._row_float(trial, "QCLSourceSlot0"),
+                "qcl_timing_prior_samples": m._row_float(trial, "QCLTimingPriorSamples"),
+                "qcl_dmrs_delay_residual_samples": m._row_float(trial, "QCLDMRSDelayResidual_samples"),
+                "qcl_measurement_status": m._row_text(trial, "QCLMeasurementStatus"),
+                "tci_state_id": m._row_float(trial, "TCIStateID"),
+                "tci_codepoint": m._row_float(trial, "TCICodepoint"),
+                "tci_initialization_source": m._row_text(trial, "TCIInitializationSource"),
+                "equivalent_pdsch_port_basis_codebook_index": m._row_float(trial, "EquivalentPDSCHPortBasisCodebookIndex"),
+                "applied_csi_resource_index": m._row_float(trial, "AppliedCSIResourceIndex"),
+                "csi_port_pmi_matrix_sha256": m._row_text(trial, "PMICodebookMatrixCSIPortsSHA256"),
+                "csi_port_to_element_matrix_sha256": m._row_text(trial, "CSIRSPortToElementMatrixSHA256"),
+                "composed_element_matrix_sha256": m._row_text(trial, "ComposedElementMatrixSHA256"),
                 "applied_codebook_mode": m._row_text(trial, "AppliedPrecoderCodebookMode"),
                 "precoder_source": m._row_text(trial, "PrecoderSource"),
                 "application_stage": m._row_text(trial, "PrecodingApplicationStage"),

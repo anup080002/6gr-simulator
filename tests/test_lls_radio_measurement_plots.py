@@ -238,6 +238,29 @@ def test_censored_csi_is_not_plotted_as_delivered():
     assert b"UL U1 CQI delivered" not in result["img_bytes"]
 
 
+def test_csi_sinr_retains_selected_pmi_objective_domain():
+    payload = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,SINR_dB,SINRSource,SINRValueRole\n"
+               b"DL,1,32,35,delivered_to_runtime_scheduler,18.7,measured_csi_state_receiver_objective,measured_csi_receiver_objective_scheduling_input\n")
+    result, rows = chart("CSI SINR timeline", {radio.FEEDBACK: payload})
+    assert rows[0]["sinr_measurement_domain"] == "csi_rs_selected_pmi_receiver_objective"
+    assert rows[0]["sinr_source"] == "measured_csi_state_receiver_objective"
+    assert rows[0]["sinr_value_role"] == "measured_csi_receiver_objective_scheduling_input"
+    assert b"CSI scheduling SINR estimate (dB)" in result["img_bytes"]
+
+
+def test_applied_csi_basis_pmi_is_not_replaced_by_equivalent_port_basis_index():
+    payload = (b"Slot,UEIndex,RequestedPrecoderPMI,AppliedPrecoderPMI,AppliedPrecoderPMIBasis,EquivalentPDSCHPortBasisCodebookIndex,PMICodebookMatrixCSIPortsSHA256,CSIRSPortToElementMatrixSHA256,ComposedElementMatrixSHA256\n"
+               + b"36,1,3,3,csi_rs_port_basis,1," + b"a"*64 + b"," + b"b"*64 + b"," + b"c"*64 + b"\n")
+    _, rows = chart("reported versus applied PMI", {radio.TRIALS[0]: payload})
+    assert rows[0]["applied_pmi_token"] == "3"
+    assert rows[0]["applied_pmi_basis"] == "csi_rs_port_basis"
+    assert rows[0]["equivalent_pdsch_port_basis_codebook_index"] == "1.0"
+    assert rows[0]["requested_applied_pmi_equal"] == "1"
+    assert rows[0]["csi_port_pmi_matrix_sha256"] == "a"*64
+    assert rows[0]["csi_port_to_element_matrix_sha256"] == "b"*64
+    assert rows[0]["composed_element_matrix_sha256"] == "c"*64
+
+
 @pytest.mark.parametrize("status", ["not_delivered", "pusch_csi_decode_unavailable_not_delivered"])
 def test_failed_delivery_cannot_pass_a_substring_match(status):
     payload = f"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,CQI,PMI\nDL,1,7,9,{status},10,0\n".encode()

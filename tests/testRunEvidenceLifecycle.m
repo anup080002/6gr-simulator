@@ -89,6 +89,28 @@ catch ME
     assert(strcmp(ME.identifier, "sixgr:runtime:LifecyclePathEscape"));
 end
 
+pointerHash = localSHA(pointerPath);
+unqualifiedManifest = fullfile(attempt3.OutputsRoot,"artifact_manifest.json");
+evidence = struct('RunID',attempt3.RunID,'ExecutionID',attempt3.ExecutionID, ...
+    'FinalizationID',attempt3.FinalizationID,'AttemptID',attempt3.AttemptID, ...
+    'ResultOk',true,'ArtifactContractStatus',"PASS", ...
+    'ArtifactContractRequiredFailureCount',0,'PublicationQualified',false);
+badEvidence = evidence; badEvidence.ResultOk = false;
+sixgr.util.jsonWrite(unqualifiedManifest,badEvidence);
+try
+    sixgr.runtime.RunEvidenceLifecycle.completeUnpublished(attempt3,unqualifiedManifest);
+    error('testRunEvidenceLifecycle:ExpectedFunctionalFailure','Invalid result accepted.');
+catch ME
+    assert(strcmp(ME.identifier,'sixgr:runtime:FunctionalCompletionEvidenceInvalid'));
+end
+sixgr.util.jsonWrite(unqualifiedManifest,evidence);
+terminal3 = sixgr.runtime.RunEvidenceLifecycle.completeUnpublished(attempt3,unqualifiedManifest);
+assert(string(terminal3.Status)=="PASS" && ~terminal3.PublicationQualified && ...
+    ~terminal3.Published && string(terminal3.PublicationStatus)=="NOT_QUALIFIED");
+assert(localSHA(pointerPath)==pointerHash, ...
+    'Functional-only completion must not advance or rewrite the qualified pointer.');
+attemptManifest3 = jsondecode(fileread(fullfile(attempt3.AttemptRoot,'attempt_manifest.json')));
+assert(string(attemptManifest3.Status)=="PASS" && ~attemptManifest3.PublicationQualified);
 assert(localSHA(rawManifest) == rawHashBefore && localSHA(patchPath) == patchHashBefore, ...
     "Finalization attempts must not mutate raw execution evidence.");
 ok = true;

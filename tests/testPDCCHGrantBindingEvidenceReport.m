@@ -37,6 +37,38 @@ assert(contains(string(statusT.ResultStatusReason(1)), "pdcch_grant_binding_gate
     "Root result status reason must name the PDCCH grant binding gate when it fails.");
 
 % Presence in only one enabled direction is not complete binding evidence.
+% A good control row must not hide contradictory data-side receiver fields.
+control=localFailingControlBindingTrial();
+control.DCIFieldsHash="hash_dl_1"; control.GrantFieldsHash="hash_dl_1";
+control.GrantBindingOk=true; control.GrantBindingStatus="bound";
+control.GrantBindingFailureCode="";
+sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),control);
+dlPath=fullfile(ctx.Layout.AirInterfaceCSVDir,"dl_pdsch_trials.csv");
+dl=readtable(dlPath,"VariableNamingRule","preserve");
+dl.ExecutionBackend=repmat("scheduler_shared_stream_receiver",height(dl),1);
+for field=["DCICrcPass","PDCCHGrantBindingRequired","ControlDecodeOk", ...
+        "PDCCHPayloadMatch","PDCCHCausalGrantDecodeOk"]
+    dl.(field)=true(height(dl),1);
+end
+for field=["DCICrcPass","PDCCHGrantBindingRequired","ControlDecodeOk", ...
+        "PDCCHPayloadMatch","PDCCHCausalGrantDecodeOk"]
+    bad=dl; bad.(field)(1)=false;
+    sixgr.util.csvWriteTable(dlPath,bad);
+    sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
+    binding=readtable(fullfile(ctx.Layout.ReportCSVDir,"pdcch_grant_binding_evidence.csv"), ...
+        "VariableNamingRule","preserve");
+    row=binding(string(binding.Direction)=="DL" & string(binding.GrantId)=="grant_1",:);
+    assert(height(row)==1 && string(row.BindingStatus)=="failed" && ...
+        contains(string(row.FailureCode),"data_trial_"), ...
+        'A bound control row must not hide missing received data evidence: %s.',field);
+end
+sixgr.util.csvWriteTable(dlPath,dl);
+sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
+status=readtable(fullfile(ctx.Layout.ReportCSVDir,"result_status_summary.csv"), ...
+    "VariableNamingRule","preserve");
+assert(status.PDCCHGrantBindingOk,'Consistent complete control/data evidence must pass.');
+
+% Presence in only one enabled direction is not complete binding evidence.
 % This catches the former reduction defect where one bound DL row allowed a
 % bidirectional run to report PDCCHGrantBindingOk=true with no UL row.
 missingUL = llsRootGateFixture("honest_study");

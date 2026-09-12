@@ -1,0 +1,54 @@
+{
+  "Suite": "focused_12dB_repairs",
+  "Status": "PASS",
+  "Tests": [
+    {
+      "Name": "testRunEvidenceLifecycle",
+      "Status": "PASS",
+      "Seconds": 5.0127661,
+      "Error": ""
+    },
+    {
+      "Name": "testPDCCHReceivedGrantClock",
+      "Status": "PASS",
+      "Seconds": 30.9158009,
+      "Error": ""
+    },
+    {
+      "Name": "testPDCCHGrantBindingEvidenceReport",
+      "Status": "PASS",
+      "Seconds": 31.3550428,
+      "Error": ""
+    },
+    {
+      "Name": "testCSIMeasuredStateSchedulingSINRAuthority",
+      "Status": "PASS",
+      "Seconds": 0.870608,
+      "Error": ""
+    },
+    {
+      "Name": "testPhase7PhysicalChannelReconciliation",
+      "Status": "PASS",
+      "Seconds": 37.0069712,
+      "Error": ""
+    },
+    {
+      "Name": "testTDDRankOneTwoPortCSIRSSpatialContract",
+      "Status": "PASS",
+      "Seconds": 21.255093,
+      "Error": ""
+    },
+    {
+      "Name": "testSharedQCLTimingTransfer",
+      "Status": "PASS",
+      "Seconds": 0.4785803,
+      "Error": ""
+    },
+    {
+      "Name": "testChannelCorrelationNotQCL",
+      "Status": "PASS",
+      "Seconds": 0.9868924,
+      "Error": ""
+    }
+  ]
+}

@@ -2871,6 +2871,12 @@ summary.TRSRuntimeConsumer = localFirstNonEmptyString(sourceT, ["TRSRuntimeConsu
 summary.TRSInfluenceDefinition = localFirstNonEmptyString(sourceT, ["TRSInfluenceDefinition"], summary.TRSInfluenceDefinition);
 summary.TRSReceiverIntegrationStatus = localFirstNonEmptyString(sourceT, ["TRSReceiverIntegrationStatus"], summary.TRSReceiverIntegrationStatus);
 summary.TRSReceiverIntegrationBlocker = localFirstNonEmptyString(sourceT, ["TRSReceiverIntegrationBlocker"], summary.TRSReceiverIntegrationBlocker);
+if all(ismember(["RuntimeStateUpdated","TRSReceiverIntegrationBlocker"],string(sourceT.Properties.VariableNames)))
+    committed=find(sourceT.RuntimeStateUpdated==1,1,'last');
+    if ~isempty(committed)
+        summary.TRSReceiverIntegrationBlocker=string(sourceT.TRSReceiverIntegrationBlocker(committed));
+    end
+end
 summary.TRSInfluencedDecision = localFirstLogicalValue(sourceT, ["TRSInfluencedDecision","RuntimeStateUpdated"], summary.TRSInfluencedDecision);
 end
 
@@ -12542,6 +12548,12 @@ assert(~any(cellfun(@(x)x.Key==c.Key,controls)), ...
 controls{end+1}=struct('Key',c.Key,'Grant',grant,'Allowed',allowed, ...
     'AvailableAtSample',post.EndSampleExclusive);
 state.SharedReceivedGrantControls=controls;
+if c.Direction=="DL" && allowed && isfinite(raw.DecodedDCITCICodepoint)
+    grant.ReceivedTCICodepoint=raw.DecodedDCITCICodepoint;
+    grant.ReceivedTCIConfigurationEpoch=double(sixgr.util.structGet(c.Grant,'DCI.ContextData.ConfigurationEpoch',NaN));
+    controls{end}.Grant=grant;
+    state.SharedReceivedGrantControls=controls;
+end
 localAppendRuntimeLog("INFO","Shared %s DCI received: ue=%d control_slot=%d data_slot=%d allowed=%d sample=%d.", ...
     c.Direction,item.UE,c.Slot,grant.Slot,allowed,post.EndSampleExclusive);
 if c.Direction=="DL" && allowed
@@ -12603,11 +12615,9 @@ assert(numel(hit)==1,'sixgr:truth:SharedDataControlNotReceived', ...
 control=controls{hit};
 assert(control.Allowed,'sixgr:truth:SharedDataDTXDispositionRequired', ...
     'PDSCH transmitted with failed DCI needs a DTX/feedback disposition; it cannot be decoded using scheduler oracle authority.');
-fields={'ControlDecodeOk','PDCCHGrantBindingOk','PDCCHGrantDCIId','PDCCHGrantDCIFormat', ...
-    'PDCCHGrantFirstCCE','PDCCHGrantNumCCE','PDCCHGrantDCIFieldsHash','PDCCHGrantFieldsHash'};
-for k=1:numel(fields)
-    if isfield(control.Grant,fields{k}), job.GrantSnapshot.(fields{k})=control.Grant.(fields{k}); end
-end
+[job.GrantSnapshot,receivedEvidenceFields]=sixgr.truth.bindReceivedPDCCHGrantEvidence( ...
+    job.GrantSnapshot,control.Grant);
+plan.GrantSnapshot=job.GrantSnapshot;
 [post,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
 assert(control.AvailableAtSample<=post.EndSampleExclusive, ...
     'sixgr:truth:FutureSharedDCIAuthority','Control authority must already be available to the receiver.');
@@ -12653,6 +12663,14 @@ state.SharedWaveformPreviewTable=localAppendCompatTable( ...
     sixgr.util.structGet(state,'SharedWaveformPreviewTable',table()), ...
     plan.WaveformPreviewTable);
 trial=localAnnotateGrantDrivenTrials(trial,plan.GrantRow);
+% The planning row predates reception and cannot overwrite received DCI
+% evidence. Copy only the receiver-owned fields from this exact grant.
+for fieldIndex=1:numel(receivedEvidenceFields)
+    name=receivedEvidenceFields{fieldIndex};
+    value=job.GrantSnapshot.(name);
+    if ischar(value), value=string(value); end
+    trial.(name)=repmat(value,height(trial),1);
+end
 state=sixgr.truth.CoupledTruthRuntime.setCurrentUE(state,item.UE,job.Direction);
 [state,trial]=localCompleteCoupledRuntimeSlot(state,plan.Cfg,item.UE,job.Direction,trial,res);
 plan.Result=res;
@@ -12762,6 +12780,7 @@ for item=received
     elseif item.Kind=="TRS"
         [~,~,references]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,context.DesiredReferencePlane);
         output=sixgr.link.completeTRSReception(p,post,replay,ch,'ScoringChannelReferences',references);
+        state=sixgr.truth.recordSharedQCLTimingReference(state,p,post,output,item.UE,context.ServingCell);
         [raw,~,observed]=localCollectTRSTrials(context.Config,context.SNR,1,ch,output);
         trial=localAnnotateCoupledControlTrial(raw,context.Slot,context.Frame,item.UE,context.RNTI,"DL",context.ServingCell);
         state=sixgr.truth.TRSResultDelivery.enqueue(state,context.ServingCell,item.UE,trial,context.Config,observed);
@@ -14517,6 +14536,7 @@ r.DecodedDCIMCSIndex = double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN
 r.DecodedDCIRV = double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN));
 r.DecodedDCINDI = double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN));
 r.DecodedDCITimeDomainAssignmentIndex = double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN));
+r.DecodedDCITCICodepoint = double(sixgr.util.structGet(decodedDci,"Fields.transmission_configuration_indication",NaN));
 r.LinkedGrantId = string(sixgr.util.structGet(grantContext, "GrantContextId", ""));
 r.LinkedPDSCHOrPUSCH = upper(string(sixgr.util.structGet(grantContext, "Direction", "")));
 r.PDCCHGridHash = localComplexSHA256(tx.Grid);
@@ -16783,6 +16803,7 @@ row.DecodedDCIMCSIndex = NaN;
 row.DecodedDCIRV = NaN;
 row.DecodedDCINDI = NaN;
 row.DecodedDCITimeDomainAssignmentIndex = NaN;
+row.DecodedDCITCICodepoint = NaN;
 row.LinkedGrantId = "";
 row.LinkedPDSCHOrPUSCH = "";
 row.PDCCHGridHash = "";
@@ -20294,6 +20315,12 @@ keepVars = ["RunID","ExecutionID","UEIndex","RNTI","ServingCell","CellID","Direc
     "BeamSelectionStrategy","BeamIndexSet","ConfiguredBeamSelectionStrategy","AppliedBeamIndexSet", ...
     "PrecoderSource","PrecodingMode","PrecodingApplicationStage","PrecodingActive","ExplicitBeamWeightsApplied","TransformPrecodingApplied","BeamformingApplied", ...
     "AppliedPrecoderPMI","AppliedPrecoderPMIType","AppliedPrecoderCodebookMode","PrecodingNumPorts","PrecodingNumLayers","PrecodingMatrixRows","PrecodingMatrixCols", ...
+    "AppliedPrecoderPMIBasis","EquivalentPDSCHPortBasisCodebookIndex","AppliedCSIResourceIndex", ...
+    "QCLStatus","QCLType","QCLSourceRS","QCLSourceResourceID","QCLSourceSlot0", ...
+    "QCLSourceAvailableAtSample","TCIStateID","TCICodepoint","TCIStatus","TCIInitializationSource", ...
+    "QCLTimingPriorUsed","QCLTimingPriorSamples","QCLDMRSDelayResidual_samples","QCLMeasurementStatus", ...
+    "PMICodebookMatrixCSIPortsSHA256","CSIRSPortToElementMatrixSHA256","ComposedElementMatrixSHA256", ...
+    "RequestedPrecoderPMI","RequestedPrecoderSHA256","AppliedPrecoderSHA256","PrecoderDigestDomain", ...
     "ExecutionModel","Status"];
 
 chunks = cell(numel(tables), 1);

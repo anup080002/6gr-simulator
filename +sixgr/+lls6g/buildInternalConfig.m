@@ -3125,6 +3125,14 @@ cfg = localApplyAuxiliaryPHYKnobs(cfg, s);
 % num_antenna_ports aliases to overwrite the strict port tuple after it had
 % already been validated.
 cfg = localApplyPhase07MIMOConfig(cfg,s);
+qclPolicy = localGetNested(s,"mimo.qcl_tci",struct());
+cfg = sixgr.util.structSet(cfg,"phy.pdsch.qclTCI",qclPolicy);
+if logical(sixgr.util.structGet(qclPolicy,"enabled",false))
+    assert(logical(sixgr.util.structGet(cfg,"phy.trs.enable",false)), ...
+        'sixgr:qcl:MissingSource','Type-A timing transfer requires enabled received TRS.');
+    cfg = sixgr.util.structSet(cfg,"phy.pdsch.activeTCIStateID",qclPolicy.state_id);
+    cfg = sixgr.util.structSet(cfg,"phy.pdcch.configurationEpoch",qclPolicy.configuration_epoch);
+end
 % Validate the spatial dependency graph only after the deep PDSCH/PUSCH
 % surfaces have materialized their logical antenna-port authorities.  The
 % physical array is built earlier, whereas pdsch.num_antenna_ports and

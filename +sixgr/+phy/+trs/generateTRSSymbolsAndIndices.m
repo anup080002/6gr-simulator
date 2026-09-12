@@ -3,6 +3,13 @@ function out = generateTRSSymbolsAndIndices(cfg)
 
 resourceSet = sixgr.phy.trs.buildNZPCSIRSResourceSetForTRS(cfg);
 slots = double(resourceSet.SlotNumbers(:).');
+resourceIDs=double(sixgr.util.structGet(cfg,"NZPCSIRSResourceIDs",[]));
+if ~isempty(resourceIDs)
+    validateattributes(resourceIDs,{'numeric'},{'vector','finite','integer','>=',0,'<=',191});
+    assert(numel(resourceIDs)==numel(slots)*numel(resourceSet.Resources) && ...
+        numel(unique(resourceIDs))==numel(resourceIDs), ...
+        'sixgr:qcl:InvalidTRSResourceIDs','Declare one distinct NZP-CSI-RS ID per tracking resource.');
+end
 slotResources = repmat(localSlotResource(), 0, 1);
 mappingRows = repmat(localMappingRow(), 0, 1);
 for ii = 1:numel(slots)
@@ -41,6 +48,9 @@ for ii = 1:numel(slots)
         row.Slot = double(slots(ii));
         row.ResourceIndex = double(jj);
         row.CSIRSResourceWithinSlot0Based=resourceOrdinals(jj);
+        if ~isempty(resourceIDs)
+            row.NZPCSIRSResourceID=resourceIDs((ii-1)*numel(resourceSet.Resources)+resourceOrdinals(jj)+1);
+        end
         row.LinearIndex1Based = double(ind(jj));
         row.Subcarrier0Based = double(sc(jj) - 1);
         row.Symbol0Based = double(symIdx(jj) - 1);
@@ -69,6 +79,7 @@ end
 function row = localMappingRow()
 row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, "ResourceIndex", NaN, ...
     "CSIRSResourceWithinSlot0Based",NaN, ...
+    "NZPCSIRSResourceID",NaN, ...
     "LinearIndex1Based", NaN, "Subcarrier0Based", NaN, "Symbol0Based", NaN, ...
     "Port0Based", NaN, "ReferenceSignal", "", "CSIRSRowNumber", NaN, ...
     "NumCSIRSPorts", NaN, "CDMType", "", "Density", "", "TruthStatus", "");

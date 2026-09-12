@@ -2367,10 +2367,33 @@ end
 controlTrials = localReadTable(fullfile(layout.ControlCSVDir, "pdcch_trials.csv"));
 controlRows = localPDCCHGrantBindingRowsFromControlTrials(controlTrials, cfg);
 dataRows = localPDCCHGrantBindingRowsFromDataTrials(dlTrials, ulTrials, cfg);
+dataRows = localEnforcePDCCHGrantBindingEvidenceCompleteness(dataRows);
 
 if height(controlRows) > 0 && height(dataRows) > 0
     controlKeys = localPDCCHGrantBindingEvidenceKeys(controlRows);
     dataKeys = localPDCCHGrantBindingEvidenceKeys(dataRows);
+    [duplicate,controlIndex] = ismember(dataKeys,controlKeys);
+    for dataIndex = find(duplicate).'
+        targetIndex = controlIndex(dataIndex);
+        % Deduplicate counts, never contradictory receiver evidence. A
+        % valid control row cannot rescue a data row that lost its CRC.
+        if string(dataRows.BindingStatus(dataIndex)) ~= "bound"
+            failures = localSplitBindingFailureCodes(controlRows.FailureCode(targetIndex));
+            failures(end+1,1) = "data_trial_" + string(dataRows.FailureCode(dataIndex));
+            controlRows.BindingStatus(targetIndex) = "failed";
+            controlRows.FailureCode(targetIndex) = strjoin(unique(failures,'stable'),'|');
+        elseif string(controlRows.BindingStatus(targetIndex)) == "bound"
+            names = {'DCIId','DCIFieldsHash','GrantFieldsHash','RNTI','UeId','CellId'};
+            for fieldIndex = 1:numel(names)
+                name = names{fieldIndex};
+                if ~isequaln(controlRows.(name)(targetIndex),dataRows.(name)(dataIndex))
+                    controlRows.BindingStatus(targetIndex) = "failed";
+                    controlRows.FailureCode(targetIndex) = "control_data_evidence_identity_mismatch";
+                    break;
+                end
+            end
+        end
+    end
     dataRows = dataRows(~ismember(dataKeys, controlKeys), :);
 end
 rows = [controlRows; dataRows];
@@ -2616,6 +2639,18 @@ dciFieldsHash = localFirstStringOrNumericAsString(trialT, ["PDCCHGrantDCIFieldsH
 grantFieldsHash = localFirstStringOrNumericAsString(trialT, ["PDCCHGrantFieldsHash"]);
 dciId = localFirstStringOrNumericAsString(trialT, ["PDCCHGrantDCIId"]);
 decodedCrcOk = localColumnBoolDefault(trialT, "DCICrcPass", false);
+
+shared = localFirstStringColumn(trialT,"ExecutionBackend") == "scheduler_shared_stream_receiver";
+for evidenceField = ["PDCCHGrantBindingRequired","ControlDecodeOk", ...
+        "PDCCHPayloadMatch","PDCCHCausalGrantDecodeOk"]
+    missing = shared & ~localColumnBoolDefault(trialT,evidenceField,false);
+    for rowIndex = find(missing).'
+        failures = localSplitBindingFailureCodes(failureCode(rowIndex));
+        failures(end+1,1) = "received_evidence_missing_" + evidenceField;
+        failureCode(rowIndex) = strjoin(unique(failures,'stable'),'|');
+        bindingStatus(rowIndex) = "failed";
+    end
+end
 
 T = table( ...
     directions(mask), ...

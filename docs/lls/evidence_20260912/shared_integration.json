@@ -1,0 +1,27 @@
+[
+  {
+    "Name": "testSharedQCLScenarioContract",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSharedDataPhysicalQueue",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSharedPDCCHObservationClocks",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testTRSRuntimeObservationBinding",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testTRSResultDelivery",
+    "Status": "PASS",
+    "Error": ""
+  }
+]
