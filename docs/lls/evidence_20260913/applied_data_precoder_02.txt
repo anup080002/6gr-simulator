@@ -1,0 +1,2 @@
+SHARED_DATA_PHYSICAL_QUEUE_PASS: TDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+EXECUTED_DATA_PRECODER_EVIDENCE_PASS transmissions=2 weights=4 patterns=5402 folder=docs/lls/evidence_20260913/applied_data_precoder_02

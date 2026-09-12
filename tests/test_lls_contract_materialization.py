@@ -941,7 +941,18 @@ def main() -> None:
     assert detection_special is not None
     assert detection_special["csv_status"] == "specialized_runtime_detection_dataset"
     assert "bucket_name,snr_db,metric_value,sample_count" in detection_special["csv_bytes"].decode("utf-8")
-    assert "visual_gate=scalar_prach_rate_kpi" in detection_special["img_bytes"].decode("utf-8")
+    # Configured SNR labels are not measured-SINR evidence. Preserve the
+    # scalar aggregate rather than inventing an observed quality axis.
+    _, detection_rows = materializer._decode_csv_dicts(detection_special["csv_bytes"])
+    assert len(detection_rows) == 1
+    assert detection_rows[0]["snr_db"] == ""
+    assert float(detection_rows[0]["metric_value"]) == 0.5
+    assert int(detection_rows[0]["sample_count"]) == 4
+    assert all(0 <= float(row["ci95_lower"]) < 0.5 < float(row["ci95_upper"]) <= 1
+               for row in detection_rows)
+    detection_svg = detection_special["img_bytes"].decode("utf-8")
+    assert "visual_gate=scalar_prach_rate_kpi" in detection_svg
+    assert "wilson95_lower=" in detection_svg
 
     false_alarm_special = materializer._specialized_chart_materialization(  # noqa: SLF001
         "false alarm rate",

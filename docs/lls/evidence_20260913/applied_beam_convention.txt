@@ -1,0 +1,7 @@
+{Error using assert
+Directivity must be invariant to common weight scale.
+
+Error in testAppliedBeamPatternConvention (line 21)
+assert(max(abs(dScaled(:)-d(:)))<1e-8,'Directivity must be invariant to common weight scale.');
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

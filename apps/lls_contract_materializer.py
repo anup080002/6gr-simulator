@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-13-contract-v64-constellation-full-run-preview"
+MATERIALIZER_VERSION = "2026-09-13-contract-v65-executed-data-precoder"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -5209,6 +5209,12 @@ def _prach_rate_chart_materialization(
                 dataset,
                 summary,
             )
+            if len(points) == 1 and ordered[0][0] is None:
+                img_bytes = _render_prach_rate_card_svg(
+                    chart_name, str(spec["metric_label"]),
+                    total_positive / total_samples, total_positive, total_samples,
+                    summary,
+                )
             return {
                 "csv_bytes": _encode_dict_rows(
                     ["run_id", "chart_name", "bucket_name", "snr_db", "metric_value", "sample_count", "ci95_lower", "ci95_upper", "source_table_logical_path"],
@@ -6991,112 +6997,34 @@ def _runtime_antenna_radiation_chart(
     }
 
 
-def _first_runtime_precoder_pmi(
-    existing: dict[str, dict[str, Any]],
-    fetch_artifact_bytes: Callable[[int], bytes],
-) -> tuple[float, str, str]:
-    candidates = [
-        "beamforming/csv/beam_precoder_table.csv",
-        "reports/csv/live_precoder_table.csv",
-        "reports/csv/antenna_runtime_evidence.csv",
-        "reports/csv/live_channel_state_tti.csv",
-    ]
-    for source_path, rows in _all_available_rows(existing, fetch_artifact_bytes, candidates):
-        for row in rows:
-            pmi = _row_float(row, "applied_precoder_pmi", "AppliedPrecoderPMI", "requested_precoder_pmi", "RequestedPrecoderPMI", "PMI")
-            if pmi is not None and math.isfinite(float(pmi)):
-                source = _row_text(row, "precoder_source", "PrecoderSource", "AppliedPrecoderSource") or "runtime_precoder"
-                return float(pmi), source_path, source
-    return 0.0, "", "default_first_precoder_when_no_runtime_pmi_row"
-
-
 def _runtime_beam_pattern_chart(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
     fetch_artifact_bytes: Callable[[int], bytes],
     run_id: int,
-) -> dict[str, Any] | None:
-    cfg = _select_runtime_antenna_config(existing, fetch_artifact_bytes)
-    if cfg is None:
-        return None
-    n_rows = int(cfg["rows"])
-    n_cols = int(cfg["cols"])
-    spacing_h = float(cfg["spacing_h"])
-    spacing_v = float(cfg["spacing_v"])
-    positions: list[tuple[float, float]] = []
-    for r in range(n_rows):
-        for c in range(n_cols):
-            y_lambda = (c - (n_cols - 1) / 2.0) * spacing_h
-            z_lambda = (r - (n_rows - 1) / 2.0) * spacing_v
-            positions.append((y_lambda, z_lambda))
-    if not positions:
-        return None
-    pmi, pmi_source_path, precoder_source = _first_runtime_precoder_pmi(existing, fetch_artifact_bytes)
-    n_ports = len(positions)
-    beam_idx = int(round(pmi)) % max(n_ports, 1)
-    weights = [complex(math.cos(-2.0 * math.pi * n * beam_idx / max(n_ports, 1)), math.sin(-2.0 * math.pi * n * beam_idx / max(n_ports, 1))) / math.sqrt(max(n_ports, 1)) for n in range(n_ports)]
-    az_values = list(range(-90, 91, 5))
-    el_values = list(range(-60, 61, 5))
-    raw_gain: list[tuple[int, int, float]] = []
-    max_gain = 0.0
-    for el in el_values:
-        el_rad = math.radians(el)
-        for az in az_values:
-            az_rad = math.radians(az)
-            steering_sum = 0j
-            for idx, (y_lambda, z_lambda) in enumerate(positions):
-                phase = 2.0 * math.pi * (y_lambda * math.cos(el_rad) * math.sin(az_rad) + z_lambda * math.sin(el_rad))
-                response = complex(math.cos(phase), math.sin(phase))
-                steering_sum += weights[idx].conjugate() * response
-            gain = abs(steering_sum) ** 2
-            max_gain = max(max_gain, gain)
-            raw_gain.append((az, el, gain))
-    if max_gain <= 0:
-        return None
-    matrix: list[list[float]] = []
-    csv_rows: list[dict[str, Any]] = []
-    by_el: dict[int, list[float]] = defaultdict(list)
-    for az, el, gain in raw_gain:
-        gain_db = 10.0 * math.log10(max(gain / max_gain, 1e-12))
-        # The generic heatmap renderer expects non-negative magnitudes. Keep
-        # the CSV in normalized dB, and use a 40 dB display floor for color.
-        by_el[el].append(max(gain_db, -40.0) + 40.0)
-        csv_rows.append(
-            {
-                "run_id": run_id,
-                "chart_name": chart_name,
-                "azimuth_deg": az,
-                "elevation_deg": el,
-                "normalized_gain_db": gain_db,
-                "applied_precoder_pmi": beam_idx,
-                "array_rows": n_rows,
-                "array_cols": n_cols,
-                "precoder_source": precoder_source,
-                "source_table_logical_path": "|".join(filter(None, [str(cfg["source_path"]), pmi_source_path])),
-            }
-        )
-    for el in el_values:
-        matrix.append(by_el[el])
+) -> dict[str, Any]:
+    from lls_applied_beam import validate_samples, render_surface
+
+    weights_path = "beamforming/csv/applied_data_precoder_weights.csv"
+    patterns_path = "beamforming/csv/applied_data_precoder_patterns.csv"
+    _, weights = _artifact_rows_by_path(existing, fetch_artifact_bytes, weights_path)
+    _, patterns = _artifact_rows_by_path(existing, fetch_artifact_bytes, patterns_path)
+    # Missing applied matrices must never fall through to a requested-PMI proxy.
+    grid, source, selected = validate_samples(weights, patterns)
     return {
-        "csv_bytes": _encode_dict_rows(
-            ["run_id", "chart_name", "azimuth_deg", "elevation_deg", "normalized_gain_db", "applied_precoder_pmi", "array_rows", "array_cols", "precoder_source", "source_table_logical_path"],
-            csv_rows,
+        "csv_bytes": fetch_artifact_bytes(int(existing[patterns_path]["artifact_id"])),
+        "img_bytes": render_surface(grid, source, selected, chart_name),
+        "csv_status": "specialized_runtime_applied_data_precoder_dataset",
+        "image_status": "generated_executed_data_precoder_3d_surface_svg",
+        "source_table_path": "|".join([weights_path, patterns_path]),
+        "source_row_count": len(patterns),
+        "source_mapping_status": "exact",
+        "note": (
+            "All exported angular samples are retained in CSV. The image shows one "
+            "explicit PRG/symbol-group/layer of the latest started data transmission. "
+            "Directivity uses its exact applied matrix and installed physical array, "
+            "in local-array coordinates before node RF; it is not an OTA measurement."
         ),
-        "img_bytes": _render_heatmap_svg(
-            chart_name,
-            "Runtime DFT-codebook array-factor gain sampled over azimuth/elevation.",
-            [str(value) for value in az_values],
-            [str(value) for value in el_values],
-            matrix,
-            [f"array={n_rows}x{n_cols}", f"spacing={spacing_h:g}/{spacing_v:g} lambda", f"pmi={beam_idx}", "color=floor(normalized_gain_db,-40)+40"],
-            "Azimuth (deg)",
-            "Elevation (deg)",
-        ),
-        "csv_status": "specialized_runtime_beam_pattern_dataset",
-        "image_status": "generated_specialized_runtime_beam_pattern_svg",
-        "source_table_path": "|".join(filter(None, [str(cfg["source_path"]), pmi_source_path])),
-        "source_row_count": len(csv_rows),
-        "note": "Beam pattern is a deterministic array-factor reconstruction from exported runtime array geometry and applied DFT-codebook PMI. It is not relabeled as a measured over-the-air radiation pattern.",
     }
 
 

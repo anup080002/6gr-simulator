@@ -4,6 +4,8 @@ function grant = resolveWaveformGrant(cfg, direction, frameIdx, varargin)
 ip = inputParser;
 ip.addParameter("Slot", frameIdx, @(x) isnumeric(x) && isscalar(x));
 ip.addParameter("SFN", mod(max(double(frameIdx) - 1, 0), 1024), @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("ControlAbsoluteSlot", [], @(x) isempty(x) || ...
+    (isnumeric(x) && isscalar(x) && isfinite(x) && x>=0 && x==fix(x)));
 ip.addParameter("RV", NaN, @(x) isnumeric(x) && isscalar(x));
 ip.addParameter("HARQProcess", NaN, @(x) isnumeric(x) && isscalar(x));
 ip.addParameter("IsRetransmission", false, @(x) islogical(x) || (isnumeric(x) && isscalar(x)));
@@ -18,6 +20,11 @@ grant.Direction = char(direction);
 grant.Frame = double(frameIdx);
 grant.Slot = double(opt.Slot);
 grant.SFN = double(opt.SFN);
+if ~isempty(opt.ControlAbsoluteSlot)
+    % Explicit zero-based control clock, distinct from one-based HARQ Slot.
+    % Preserve legacy callers until their clock domains are migrated.
+    grant.ControlAbsoluteSlot=double(opt.ControlAbsoluteSlot);
+end
 [ueIndex, ueIdentitySource] = localResolveUEIdentity(cfg);
 grant.UEIndex = double(ueIndex);
 grant.UEID = double(ueIndex);

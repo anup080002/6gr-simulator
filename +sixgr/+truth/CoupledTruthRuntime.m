@@ -2813,6 +2813,13 @@ methods(Static, Access=private)
                 end
             end
         end
+        for appliedSpec={ {'AppliedDataPrecoderWeights','applied_data_precoder_weights.csv'}, ...
+                {'AppliedDataPrecoderPatterns','applied_data_precoder_patterns.csv'} }
+            spec=appliedSpec{1}; applied=sixgr.util.structGet(state,spec{1},table());
+            if ~isempty(applied)
+                sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir,spec{2}),applied,'PreserveSchema',true);
+            end
+        end
         receiverTrackingStateT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("receiver_tracking_state", ...
             sixgr.truth.CoupledTruthRuntime.buildReceiverTrackingStateTable(state));
         receiverTrackingTraceT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("receiver_tracking_trace", ...

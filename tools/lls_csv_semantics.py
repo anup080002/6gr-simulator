@@ -20,9 +20,13 @@ import json
 import math
 import os
 import statistics
+import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps"))
+from lls_applied_beam import validate_samples as validate_applied_beam_samples
 
 from lls_beam_summary_audit import reconcile_beam_summary
 from lls_continuous_iq_audit import validate_capture as validate_continuous_iq_capture
@@ -8468,6 +8472,22 @@ def _audit_beam_measurement_summaries(run_root: Path) -> list[AuditCheck]:
                    rows, reconcile_beam_summary(rows, sources))]
 
 
+def _audit_applied_data_precoder(run_root: Path) -> list[AuditCheck]:
+    weights_path = "beamforming/csv/applied_data_precoder_weights.csv"
+    patterns_path = "beamforming/csv/applied_data_precoder_patterns.csv"
+    wh, weights = _read_rows(run_root / weights_path)
+    ph, patterns = _read_rows(run_root / patterns_path)
+    if not (wh or ph):
+        return []  # Required chart enablement is checked by chart contracts.
+    failures = []
+    try:
+        validate_applied_beam_samples(weights, patterns)
+    except (ValueError, KeyError, TypeError, OverflowError) as exc:
+        failures.append(str(exc))
+    return [_check("applied_data_precoder", path, "matrix_identity_and_angular_samples", rows, failures)
+            for path, rows in ((weights_path, weights), (patterns_path, patterns))]
+
+
 def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     run_root = run_root.resolve()
     resolved_primary_tables = primary_link_tables(run_root)
@@ -8487,13 +8507,15 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         run_root / "reports/csv/contract_plot_lineage.csv"
     ).is_file()
     has_frc_reference = _io_path(run_root / FRC_POINT_TABLE).is_file()
+    has_applied_beam = any(_io_path(run_root / f"beamforming/csv/applied_data_precoder_{name}.csv").is_file()
+                           for name in ("weights", "patterns"))
     control_paths = tuple(dict.fromkeys(
         CONTROL_TABLES + tuple(path.replace("air_interface/", "control/", 1) for path in CONTROL_TABLES)
     ))
     has_control_run_evidence = any(
         _io_path(run_root / path).is_file() for path in control_paths
     )
-    if not (has_primary_run_evidence or has_control_run_evidence or has_chart_contract or has_frc_reference):
+    if not (has_primary_run_evidence or has_control_run_evidence or has_chart_contract or has_frc_reference or has_applied_beam):
         return {
             "canonical_csv_semantic_audit": [],
             "chart_source_semantic_audit": [],
@@ -8508,6 +8530,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
         }
     checks: list[AuditCheck] = []
     checks.extend(_audit_beam_measurement_summaries(run_root))
+    checks.extend(_audit_applied_data_precoder(run_root))
     if has_frc_reference:
         checks.extend(_audit_frc_reference_outputs(run_root))
     if not (has_primary_run_evidence or has_control_run_evidence or has_chart_contract):

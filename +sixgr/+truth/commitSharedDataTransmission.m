@@ -44,11 +44,16 @@ slot0=prepared.ReceiverConfig.lls6g.runtime.AbsoluteSlotIndex0;
 validateattributes(slot0,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
 grant.Slot=double(slot0)+1;
 grant.Frame=floor(double(slot0)/double(prepared.Tx.Carrier.SlotsPerFrame))+1;
+[appliedWeights,appliedPatterns]=sixgr.truth.buildExecutedDataPrecoderEvidence(owner,prepared,item.UE);
 % Queue/packet ledgers are value state: validate their update before the
 % shared HARQ handle mutates, then publish both updates together.
 nextState=sixgr.truth.CoupledTruthRuntime.commitGrantExecution(state,item.UE,prepared.Direction,grant);
 entity.onTx(identity.RNTI,pid,uint8(bits(:)),grant,grant.Slot);
 state=nextState;
+if ~isempty(appliedWeights)
+    state.AppliedDataPrecoderWeights=[sixgr.util.structGet(state,'AppliedDataPrecoderWeights',table());appliedWeights];
+    state.AppliedDataPrecoderPatterns=[sixgr.util.structGet(state,'AppliedDataPrecoderPatterns',table());appliedPatterns];
+end
 ledger{end+1,1}=struct('Identity',identity,'Grant',grant,'TransportBlockBits',int8(bits(:)), ...
     'FirstActiveSample',records(hit).FirstActiveSample, ...
     'CommittedAtSample',records(hit).CommittedAtSample, ...

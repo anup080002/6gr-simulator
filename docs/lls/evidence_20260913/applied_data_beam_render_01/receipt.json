@@ -1,0 +1,26 @@
+{
+  "source_artifacts": {
+    "weights": {
+      "path": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\applied_data_precoder_02\\applied_data_precoder_weights.csv",
+      "sha256": "3ac8af90c44d8df120772050f3e7d0635eb36a9071e3e4f0aceec49f4ac3ff4f",
+      "rows": 4
+    },
+    "patterns": {
+      "path": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\applied_data_precoder_02\\applied_data_precoder_patterns.csv",
+      "sha256": "9955d8b381ea5b10df5cfc4d6b8374f41f64981d14a752d0d3f582a36bcd8cb1",
+      "rows": 5402
+    }
+  },
+  "selected_transmission_prg_group_layer": [
+    "c6c93e482b75c46c7b368615be349c2ce24e7116d3e2f2b4608e1481d1545469",
+    0,
+    0,
+    0
+  ],
+  "matrix_sha256": "b1e9e43567946d195d07e49858285f62b5e552b9c9c228beb948cb0d5ef85b28",
+  "png_sha256": "67c2570fbff65b7623351f61c6ecc00352f1ed21da8a1d2f92a8ee4390bcc83c",
+  "reference_plane": "physical_element_data_grid_before_node_rf",
+  "coordinate_frame": "local_array_before_runtime_orientation",
+  "over_the_air_measurement": false,
+  "full_run_qualification": false
+}

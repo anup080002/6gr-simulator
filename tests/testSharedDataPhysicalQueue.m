@@ -1,4 +1,4 @@
-function ok=testSharedDataPhysicalQueue(mode)
+function [ok,state]=testSharedDataPhysicalQueue(mode)
 % Actual coded DL through the same CDL/RF/thermal-noise owner as PDCCH.
 % No access or main-scheduler qualification is claimed by this fixture.
 setup6GRSimToolkit('Verbose',false);
@@ -22,7 +22,7 @@ state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
 [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
 dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,1);
 dl=sixgr.util.structSet(dl,'lls6g.userContext.RuntimeSlotStartTime_s',0);
-grant=sixgr.link.resolveWaveformGrant(dl,'DL',0);
+grant=sixgr.link.resolveWaveformGrant(dl,'DL',1,'Slot',1,'SFN',0,'ControlAbsoluteSlot',0);
 allocated=state.DLHarq.allocate(grant.RNTI,1,grant.TBSBits/8,'NewData',true);
 assert(allocated.HARQ.HarqID==grant.HARQ.HarqID && allocated.HARQ.NDI==grant.HARQ.NDI);
 grant.ControlDecodeOk=false; grant.PDCCHGrantBindingOk=false;
@@ -36,14 +36,18 @@ before=owner.Events.NextSampleIndex;
 owner.queueData(1,p,struct('Purpose',"physical_queue_not_control_qualification"));
 assert(owner.Events.NextSampleIndex==before && owner.hasPending('PDSCH',1));
 assert(isempty(owner.DataTransmissions),'Enqueueing is not transmission.');
+if cfg.outputs.antennaPatternSamplesEnabled
+    localReject(@()sixgr.truth.buildExecutedDataPrecoderEvidence(owner,p,1), ...
+        'sixgr:truth:PrecoderTransmissionNotExecuted');
+end
 localReject(@()owner.queueData(1,p,struct()),'sixgr:truth:DuplicatePendingData');
 % A second same-UE grant can be enqueued before the first RX tail ends.
 % Preserve the exact new slot/grant identity, not a duplicated TB record.
 dl2=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,2);
 dl2=sixgr.util.structSet(dl2,'lls6g.userContext.RuntimeSlotStartTime_s',p.EndSampleExclusive/p.SampleRateHz);
-g2=sixgr.link.resolveWaveformGrant(dl2,'DL',1);
+g2=sixgr.link.resolveWaveformGrant(dl2,'DL',1,'Slot',2,'SFN',0,'ControlAbsoluteSlot',1);
 allocated2=state.DLHarq.allocate(g2.RNTI,2,g2.TBSBits/8,'NewData',true);
-g2=sixgr.link.resolveWaveformGrant(dl2,'DL',1,'HARQProcess',allocated2.HARQ.HarqID);
+g2=sixgr.link.resolveWaveformGrant(dl2,'DL',1,'Slot',2,'SFN',0,'ControlAbsoluteSlot',1,'HARQProcess',allocated2.HARQ.HarqID);
 assert(allocated2.HARQ.NDI==g2.HARQ.NDI);
 g2.ControlDecodeOk=false; g2.PDCCHGrantBindingOk=false;
 j2=sixgr.truth.buildGrantPHYJob(dl2,'DL',cfg.channel.snr_dB,1,[], ...

@@ -1,0 +1,31 @@
+APPLIED_BEAM_SCALE relative_linear_error=1.2434498272457292e-14 max_db_difference=2.4987747321659981
+APPLIED_BEAM_CONVENTION_PASS independent transmit phase, peak=+30 deg, scale invariant
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+{Error using assert
+A supplied grant clock must match execution, not be silently overwritten.
+
+Error in sixgr.link.bindExecutedHARQClock (line 15)
+        assert(isscalar(value) && (isnan(value) || value==values(k)), ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput>localBuildHARQGrantSnapshot (line 7399)
+grant = sixgr.link.bindExecutedHARQClock(grant,tx.Carrier,slotIdx);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 929)
+        grantSnapshot = localBuildHARQGrantSnapshot(tx, trialMCS(n), cfgFrame, ...
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.executeGrantPHYJob (line 71)
+    res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in receivedDLFeedbackFixture (line 47)
+result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts>localReceivedDLReservations (line 496)
+    [out,timing]=receivedDLFeedbackFixture(cfg,sourceSlot,k-1,variance);
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 112)
+        if slot==9, state=localReceivedDLReservations(state,cfg,10); end
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testExecutedDataPrecoderEvidence (line 10)
+    [passed,state]=testSharedPUSCHChannelArtifacts('TDD',false,false,false,true,true); signal="PUSCH";
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

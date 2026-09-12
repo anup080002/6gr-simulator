@@ -6,7 +6,10 @@ cfg.channel.model='AWGN'; cfg.channel.fading.enabled=false; cfg.channel.fading.t
 cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
 carrier=sixgr.phy.grid.makeCarrier(cfg); info=nrOFDMInfo(carrier);
 cfg=sixgr.truth.bindSharedDataOccasion(cfg,slot,floor((slot-1)/carrier.SlotsPerFrame)+1,info.SampleRate);
-grant=sixgr.link.resolveWaveformGrant(cfg,'DL',slot-1,'HARQProcess',process);
+frame=floor((slot-1)/carrier.SlotsPerFrame)+1;
+grant=sixgr.link.resolveWaveformGrant(cfg,'DL',frame,'Slot',slot, ...
+    'SFN',carrier.NFrame,'ControlAbsoluteSlot',slot-1,'HARQProcess',process);
+assert(grant.Frame==frame && grant.Slot==slot);
 assert(grant.Valid && grant.ExactPHYFeasible);
 control=sixgr.link.preparePDCCHTransmission(cfg,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
 [rx,~]=sixgr.phy.dl.PDCCH_Rx(control.TransmitSamples,cfg,'Carrier',control.Tx.Carrier, ...
@@ -18,7 +21,6 @@ grant.ControlDecodeOk=logical(rx.CausalGrantDecodeOk); grant.PDCCHGrantBindingOk
 grant.PDCCHGrantDCIId=decoded.PayloadHash; grant.PDCCHGrantDCIFormat=decoded.Format;
 grant.PDCCHGrantDCIFieldsHash=sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(orderfields(decoded.Fields)),'UTF-8')));
 grant.PDCCHGrantFieldsHash=grant.PDCCHGrantDCIFieldsHash;
-frame=floor((slot-1)/carrier.SlotsPerFrame)+1;
 context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true);
 job=sixgr.truth.buildGrantPHYJob(cfg,'DL',cfg.channel.snr_dB,frame,[],context);
 job.StartSlotIndex=slot;

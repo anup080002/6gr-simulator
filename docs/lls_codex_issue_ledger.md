@@ -6,6 +6,16 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [applied data-beam checkpoint](lls/applied_data_beam_evidence_20260913.md)
+replaces requested/default-PMI reconstruction with exact started-transmission
+weights and installed-array angular samples. DL capture/CSV/PNG checks pass;
+UL, SSB, higher-rank/slice coverage and full-run wiring are not thereby qualified.
+The UL test also exposed mixed frame/slot and control0/execution1 clock domains
+in the isolated DL-feedback fixture. The explicit control-clock API and focused
+follow-up are documented there. The aggregate PRACH rate card is repaired;
+the separate sparse-peak chart-contract assertion remains open. The final
+58-slot hold and unmodified allocator restriction remain in effect.
+
 The [fresh access/artifact re-audit](lls/continuous_iq_02_access_artifact_reaudit_20260913.md)
 explains the old slot-31 traffic start from actual RA/SRS/TDD traces. It
 initially parsed 1,013 run CSVs / 1,300,260 rows and decoded 292 PNGs; an
