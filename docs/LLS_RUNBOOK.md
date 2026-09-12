@@ -30,6 +30,13 @@ The configured value is SNR at the declared normalized reference plane. SS,
 CSI, DM-RS and post-equalization SINR are measurements and need not each equal
 12 dB; their source and reference plane must remain visible in the CSVs.
 
+`out.Ok` is the functional LLS/root-contract verdict. This bounded one-point
+AMC diagnostic is deliberately not a statistically or independently
+FRC-qualified publication campaign, so a successful run can retain
+`PublicationQualified=0` and must not advance `published/current.json`. Check
+`reports/json/result_status_summary.json` for the functional verdict and the
+separate publication-qualification fields.
+
 ## 3. Eight-point configured-SNR run
 
 ```powershell

@@ -13,9 +13,9 @@ not statistical publication evidence.
 | Order | Scope | Status / acceptance |
 |---|---|---|
 | 1 | Operator-master PDSCH/PUSCH TDRA catalogs | Completed in commit `a3dc4b9f`; focused operator-master contract passed. |
-| 2 | Shared-clock 12 dB PHY execution | All 58 slots completed on the preceding run: PBCH, four-step RA, SRS, DL/UL grants, CSI/PMI/RI, AMC and exact I/Q executed. |
-| 3 | Terminal artifact closure | Final code repair implemented; fresh proof rerun pending. The 2026-09-12 `_03` run completed all 58 PHY slots and passed truth, standards, mandatory-subsystem, issue and visual gates, but correctly failed terminal browser closure because finalization replaced exact shared-stream preview rows with a header-only CSV. Final publication now receives `CoupledRuntime.SharedWaveformPreviewTable` and fails closed if that exact runtime table is absent. UL `not_selected` preservation and exact same-trial angle/channel/reciprocity provenance were also verified in `_03`. Acceptance remains a fresh run whose browser receipt also passes. |
-| 4 | Full repository qualification | Pending because `testAll` was explicitly stopped. Focused tests do not replace this gate. One stale unit fixture also lacks the mandatory Type-0 monitoring occasion and must be repaired before it can exercise its intended replay-export assertion. |
+| 2 | Shared-clock 12 dB PHY execution | **Completed.** Run `tdd_12db_fixed_snr_20260912_04` executed all 58 slots without the former slot-44 crash: four-step RA succeeded, 12 PDSCH and 5 PUSCH trials completed with CRC pass, and the active runtime exported PBCH, PRACH, PUCCH, SRS, TRS, CSI/PMI/RI, PDCCH grant binding, AMC and exact post-IFFT I/Q. DL AMC causally moved from bootstrap MCS 1/QPSK to MCS 20-22/64-QAM. Median receiver post-equalization SINR was 19.929 dB DL and 12.216 dB UL at the declared configured 12 dB reference point. |
+| 3 | Functional artifact closure | **Completed.** The `_04` rerun preserved 4,096 exact shared-waveform preview rows (647,246-byte CSV), materialized 738 browser artifacts with zero missing tables/charts, passed the 634-row strict raster audit with zero failures, and finished with `ResultOk=1`, runtime truth PASS, standards PASS, mandatory subsystems PASS, active issue gate PASS, visual/duplicate gates PASS, and zero proxy/fallback evidence. Browser receipt is PASS. The finalization attempt remains intentionally unpublished because this one-point AMC run is classed `adaptive_system_diagnostic`, not statistically/FRC-qualified production evidence; therefore `published/current.json` is not advanced and `PublicationQualified=0`. This is a publication-qualification boundary, not a failed PHY execution. |
+| 4 | Full repository qualification and production publication | Pending because `testAll` was explicitly stopped and this bounded diagnostic has no independent FRC/statistical publication qualification. Focused tests and one successful short run do not replace those gates. One stale unit fixture also lacks the mandatory Type-0 monitoring occasion and must be repaired before it can exercise its intended replay-export assertion. |
 | 5 | Keysight playback package | Pending after step 3: M9384B/M9383B per-port complex I/Q, clock/center-frequency/scaling/port-alignment metadata, hashes, repetition policy and 89600 VSA import verification. |
 | 6 | Single-carrier 7 GHz/400 MHz | Pending `optional_research_experiment`; it must not be implemented as four 100 MHz carriers. Required gates include numerology/grid/FFT/sample-rate consistency, PRACH/SSB/control/BWP legality, memory-safe shared CDL execution and Keysight playback. |
 | 7 | UL 1024-QAM and DL 4096-QAM | Pending fail-closed experimental integration through scheduler, control fields, TBS, modulation, receiver and AMC. DL 4096-QAM is not an NR conformance claim, and a 30 dB run alone is not proof of reliable 4096-QAM. |
@@ -27,9 +27,11 @@ The exact operator commands and configuration rules are maintained in
 
 The `_03` failed-run cleanup repeatedly regenerated the full coverage,
 component-view and strict materialization artifacts after the terminal receipt
-was already sealed. De-duplicating that reporting-only failure path is a
-performance follow-up; it is not part of the waveform-truth repair and must not
-change the required terminal gates.
+was already sealed. The successful `_04` run also spent most of its 11,427 s
+elapsed time in repeated strict raster materialization/final auditing after the
+58-slot waveform bundle had completed. De-duplicating that reporting-only path
+is a performance follow-up; it must not weaken the truth, visual, or publication
+gates.
 
 | ID | Issue | Current status | Root-cause evidence | Owner files / validation |
 |---|---|---|---|---|
