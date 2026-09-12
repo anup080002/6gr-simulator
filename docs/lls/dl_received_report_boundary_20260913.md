@@ -86,6 +86,39 @@ ownership, alternate-write or configuration workaround was applied. The
 allocator is unchanged. No test/capture generation from the rejected multi-file
 patch ran.
 
+### Independent capacity regression (following continuation)
+
+`testCSIRSNonoccasionDataCapacity` now isolates allocation from noise, channel
+estimation and decoding. It uses the actual received assignment from saved
+attempt 4, the inherited 12 dB configuration and the same carrier/assignment
+digest in both comparisons. The only changed policy is CSI-RS enablement.
+The MATLAB batch terminated with exit 1 at the new capacity assertion:
+
+| Quantity | CSI-RS enabled | CSI-RS disabled |
+| --- | ---: | ---: |
+| Absolute data slot (zero-based) | 62 | 62 |
+| Configured CSI-RS periodicity / offset | 5 / 1 | 5 / 1 |
+| CSI-RS occasion | No | No |
+| Coded capacity G (bits) | 3060 | 3108 |
+| Extra CSI-RS reservation (REs) | 12 | 0 |
+| Nominal TBS (bits) | 1064 | 1064 |
+
+The 48-bit difference is 12 REs at four bits/symbol, approximately 1.54% of
+the unpunctured coded capacity. It changes the rate-matching map even though
+TBS is unchanged. This proves an allocation defect, not a noise/decoder
+failure or an explanation for the entire access-to-traffic delay.
+
+The periodic slot calculation matches [TS 38.211 V18.8.0 clause 7.4.1.5.3](https://www.etsi.org/deliver/etsi_ts/138200_138299/138211/18.08.00_60/ts_138211v180800p.pdf):
+frame-aware slot index minus configured offset is divisible by the period.
+Explicit ZP CSI-RS and separately configured rate-matching reservations have
+their own contracts; the proposed repair must preserve those and the existing
+TRS/SSB reservations. It only prevents this enabled NZP CSI-RS generator from
+creating implicit holes outside its own occasions.
+
+The allocator write was reattempted in this continuation and rejected again.
+It remains unchanged. The failing assertion is retained in
+`csi_nonoccasion_capacity_01.txt`; no full waveform run was started.
+
 After restoring write access, add off-occasion and frame-boundary capacity
 regressions, then generate a **new separately named** four-attempt component
 capture set with the corrected allocator. Keep the old captures and logs as

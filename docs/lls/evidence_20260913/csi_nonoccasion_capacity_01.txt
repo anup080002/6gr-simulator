@@ -1,0 +1,8 @@
+CSI_NONOCCASION_CAPACITY slot0=62 calendar=5:1 scheduled=0 enabled_G=3060 disabled_G=3108 extra_reserved_re=12 enabled_TBS=1064 disabled_TBS=1064
+{Error using assert
+CSI-RS that is not scheduled must not remove PDSCH REs or change G/TBS.
+
+Error in testCSIRSNonoccasionDataCapacity (line 26)
+assert(isempty(extraHoles) && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

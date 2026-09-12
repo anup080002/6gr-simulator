@@ -36,6 +36,12 @@ rejected twice by the file-edit tool; the allocator is unchanged and the final
 guard remains failing. Restore write access, fix the shared calendar at that
 allocator, and generate separately versioned component captures before claiming
 the report boundary fully qualified. The old waveform evidence is retained.
+The independent non-occasion allocation regression now measures the defect
+without a decoder: slot0=62, period/offset=5/1, 12 excess reserved REs,
+G=3060 versus 3108, unchanged TBS=1064. It fails as expected on the unrepaired
+allocator. A subsequent write attempt was also rejected. This is about 1.54%
+of that allocation's coded capacity, not proof that it explains the long idle
+interval or all throughput loss.
 See the checkpoint receipt for the separate runner/shared-TRS process outcome.
 
 The [UE-owned DL HARQ endpoint](lls/dl_received_harq_20260913.md) now retains
