@@ -6,6 +6,16 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [main DL HARQ handoff checkpoint](lls/main_dl_harq_handoff_20260913.md)
+wires a per-UE received-control entity into the main shared callback and removes
+the connected wrapper's second combine/decode. It is **unqualified**: the donor
+now exposes the strict factory's missing absent-TCI/CORESET-default-QCL path.
+Canonical combining projections and four HARQ replays pass, but the broader
+report process still fails the unchanged non-occasion CSI allocation guard.
+Both MATLAB processes exit 1. Earlier UL passes are historical and must be
+rerun after this integration repair. No full baseline or push is authorized
+by these results; preserve actual source evidence and all failing assertions.
+
 The [received-control UL/artifact checkpoint](lls/ul_received_control_and_artifacts_20260913.md)
 closes the isolated donor's missing received-assignment capsule. Actual
 two-port SRS/DCI/PUSCH/UCI now passes, with applied TPMI 3, exact matrix

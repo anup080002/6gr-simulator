@@ -12654,9 +12654,24 @@ job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
     'ChannelState',state.SharedWaveformStream.directionalChannelState(item.UE,job.Direction));
 job.ReceivedContext.ReceivedAssignment=control.ReceivedAssignment;
 job.ReceivedContext.UEIndex=item.UE;
+connectedDL=job.Direction=="DL" && isfield( ...
+    sixgr.util.structGet(job.Cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
+if connectedDL
+    dlEntities=sixgr.util.structGet(state,'SharedUEDLHARQEntities',{});
+    if numel(dlEntities)<item.UE || isempty(dlEntities{item.UE})
+        dlEntities{item.UE}=sixgr.link.ReceivedDLHARQState(job.Cfg,item.UE);
+    end
+    job.ReceivedContext.ReceivedHARQState=dlEntities{item.UE};
+end
 output=sixgr.truth.executeGrantPHYJob(job);
 assert(output.ReadyForReceiverCommit,'sixgr:truth:SharedDataReceptionMissing','A receiver attempt must produce actual trial evidence.');
 res=output.Result;
+if connectedDL
+    assert(isfield(res,'ReceivedHARQState') && isa(res.ReceivedHARQState,'sixgr.link.ReceivedDLHARQState'), ...
+        'sixgr:truth:MissingReceivedDLHARQCommit','Shared DL completion must return the UE-owned soft state.');
+    dlEntities{item.UE}=res.ReceivedHARQState;
+    state.SharedUEDLHARQEntities=dlEntities;
+end
 res.TrialTable=sixgr.truth.bindSharedLargeScaleEvidence(res.TrialTable,item.Planes);
 res.TrialTable=sixgr.truth.bindSharedRFExecutionEvidence(res.TrialTable,item.Planes);
 if logical(sixgr.util.structGet(job.Cfg,'outputs.phySignalDiagnosticEnabled',false)) && ...

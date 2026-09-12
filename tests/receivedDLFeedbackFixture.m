@@ -62,6 +62,7 @@ job.ReceivedContext=struct('Prepared',p,'Observation',observation, ...
 if connected
     job.ReceivedContext.ReceivedAssignment=receivedAssignment;
     job.ReceivedContext.UEIndex=grant.UEIndex;
+    job.ReceivedContext.ReceivedHARQState=sixgr.link.ReceivedDLHARQState(cfg,grant.UEIndex);
 end
 result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
 assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);

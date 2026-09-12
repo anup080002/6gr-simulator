@@ -1,0 +1,28 @@
+{Error using assert
+Received TCI codepoint requires its active same-epoch installed mapping.
+
+Error in sixgr.pdsch.PDSCHAssignmentFactory.fromReceivedConnectedDCI (line 27)
+            assert(received.TCIPresent && q.enabled && ...
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materializeReceived (line 22)
+            [~,allocation,integration]=sixgr.pdsch.PDSCHAssignmentFactory. ...
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materializeReceivedNewTB (line 14)
+            bundle=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materializeReceived( ...
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.ReceivedDLHARQState/receive (line 51)
+                bundle=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materializeReceivedNewTB( ...
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 1223)
+            [rx,receivedDecision,nextReceivedHARQ]=received.ReceivedHARQState.receive( ...
+                                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.executeGrantPHYJob (line 71)
+    res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in receivedDLFeedbackFixture (line 67)
+result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedDLFeedbackAuthority (line 11)
+    [out,timing,a]=receivedDLFeedbackFixture(cfg,slots(k),k-1,variances(k));
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

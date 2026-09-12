@@ -91,6 +91,8 @@ end
 [prepareOnly, receivedCompletion, preparedTransmission, preparedBinding] = ...
     sixgr.link.validateDataStreamRequest(cfg,p.Results,"DL", ...
     executionContract.Profile,grantSnapshotOverride,phyGrantOverride);
+connectedReceivedHARQ=receivedCompletion && isfield( ...
+    sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
 if receivedCompletion
     executionContract.Backend = "scheduler_shared_stream_receiver";
 end
@@ -1211,7 +1213,27 @@ for n = 1:numFrames
             "frame=%g slot=%g stage=rx_start noise_var=%g noise_domain=%s", ...
             frameIdx, trialSlot(n), injectedNoiseVariance, "time");
         stageTic = tic;
-        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        if connectedReceivedHARQ
+            received=p.Results.ReceivedContext;
+            assert(isfield(received,'ReceivedHARQState') && ...
+                isa(received.ReceivedHARQState,'sixgr.link.ReceivedDLHARQState') && ...
+                received.ReceivedHARQState.UEId==received.UEIndex, ...
+                'sixgr:truth:MissingReceivedDLHARQState', ...
+                'Connected DL decoding requires the retained UE-owned HARQ entity.');
+            [rx,receivedDecision,nextReceivedHARQ]=received.ReceivedHARQState.receive( ...
+                cfgFrame,received.ReceivedAssignment,rxWave, ...
+                'TimingSearchWindowSamples',searchWindow, ...
+                'PhysicalMeasurementWaveform',physicalMeasurementWaveform, ...
+                'PhysicalMeasurementReferencePlane','receiver_antenna_connector_pre_composite_front_end', ...
+                'PhysicalMeasurementSource',physicalMeasurementSource);
+            assert(receivedDecision.DecodeAttempted && ~isempty(rx), ...
+                'sixgr:truth:RepeatedDLAckDispositionRequired', ...
+                'A previously decoded TB needs a protocol-only repeated ACK, not a fabricated PHY trial.');
+            out.ReceivedHARQState=nextReceivedHARQ;
+            out.ReceivedHARQDecision=receivedDecision;
+        else
+            [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        end
         if receivedCompletion
             out.ReceiveTiming=rx.ReceiveTiming;
             if qclEvidence.QCLTimingPriorUsed
@@ -1905,7 +1927,11 @@ for n = 1:numFrames
             'sixgr:phy:harq:DLReceiverCodingLayoutRequired', ...
             'DL HARQ combining requires the actual receiver coding layout.');
         currentCodingLayout = rx.CodingLayout;
-        [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout);
+        if connectedReceivedHARQ
+            [combinedLLR,harqCombining]=sixgr.link.receivedDLHARQCombiningEvidence(rx);
+        else
+            [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout);
+        end
         combinedDecodeOK = false;
         combinedDecodeIt = NaN;
         L = min(numel(txBits), numel(rxBits));
@@ -1945,7 +1971,7 @@ for n = 1:numFrames
         bitTot = bitTot + double(numel(txBits));
 
         hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
-        if hasPriorHARQEvidence && ~currentDecodeOK
+        if ~connectedReceivedHARQ && hasPriorHARQEvidence && ~currentDecodeOK
             [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = ...
                 sixgr.phy.harq.decodeCombinedDLSCH(currentCodingLayout, combinedLLR, cfgFrame);
             if combinedDecodeOK
@@ -2113,6 +2139,18 @@ out.StartFrameIndex = double(startFrameIndex);
 out.StartSlotIndex = double(startSlotIndex);
 out.EndFrameIndex = double(trialFrame(max(1, numFrames)));
 out.EndSlotIndex = double(trialSlot(max(1, numFrames)));
+if connectedReceivedHARQ
+    % Also cover unavailable/empty-payload dispositions above: never return
+    % the scheduler's PreviousCombinedLLR as the UE's current soft evidence.
+    [lastHARQ.CombinedLLR,actualCombining]=sixgr.link.receivedDLHARQCombiningEvidence(rx);
+    lastHARQ.SoftBuffer=actualCombining.SoftBuffer;
+    lastHARQ.HARQSoftBuffer=actualCombining.SoftBuffer;
+    lastHARQ.DecoderCRCInputDomain=rx.DecoderCRCInputDomain;
+    lastHARQ.CurrentAttemptStandaloneCRCMeasured=rx.CurrentAttemptStandaloneCRCMeasured;
+    lastHARQ.CurrentDecodeOKDomain="decoder_result_including_ue_owned_prior_soft_state";
+    lastHARQ.ReceivedAssignmentDigest=rx.ReceivedAssignmentDigest;
+    lastHARQ.ReceivedHARQDecision=receivedDecision;
+end
 out.HARQ = lastHARQ;
 out.ChannelState = chState;
 out.ISACWaveformCapture = isacWaveformCapture;
@@ -2136,6 +2174,15 @@ if frameCrash == numFrames
 end
 
 out.TrialTable = localBuildTrialSlice(numFrames);
+if connectedReceivedHARQ && ~isempty(out.TrialTable)
+    assert(numFrames==1,'sixgr:truth:ReceivedDLCompletionCardinality', ...
+        'One received stream completion owns exactly one decoder attempt.');
+    out.TrialTable.DecoderCRCInputDomain=string(lastHARQ.DecoderCRCInputDomain);
+    out.TrialTable.CurrentAttemptStandaloneCRCMeasured=logical(lastHARQ.CurrentAttemptStandaloneCRCMeasured);
+    out.TrialTable.HARQCurrentDecodeOKDomain=string(lastHARQ.CurrentDecodeOKDomain);
+    out.TrialTable.ReceivedAssignmentDigest=string(lastHARQ.ReceivedAssignmentDigest);
+    out.TrialTable.ReceiverHARQStateSource="ue_owned_received_dci_and_soft_state";
+end
 if receivedCompletion && ~isempty(out.TrialTable)
     powerFields=sixgr.truth.measureReceivedDataCarrierPower( ...
         preparedTransmission,p.Results.ReceivedContext,out.ReceiveTiming);
