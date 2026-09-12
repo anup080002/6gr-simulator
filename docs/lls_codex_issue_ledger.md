@@ -6,6 +6,12 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [gNB HARQ/UCI reference repair](lls/gnb_harq_uci_reference_repair_20260912.md)
+replaces current-MCS reuse with retained gNB initial-MCS identity and repairs
+original coding metadata preservation. Actual endpoint retransmission now
+also decodes UCI. Shared main-scheduler retransmission/combining, strict DL
+receive integration and dynamic DAI remain separate mandatory gates.
+
 The [received UL HARQ checkpoint](lls/received_ul_harq_repair_20260912.md)
 adds UE-owned process buffers and modulation-only MCS handling, with actual
 received-control/retransmitted-waveform endpoint evidence. Shared UCI

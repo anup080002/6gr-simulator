@@ -721,6 +721,8 @@ trialULReceivedAssignmentDigest = strings(numFrames,1);
 trialULReceiveAllocationAuthority = strings(numFrames,1);
 trialUEHARQAttempt = NaN(numFrames,1);
 trialUEHARQInitialAssignmentDigest = strings(numFrames,1);
+trialUCIInitialMCS = NaN(numFrames,1);
+trialUCIInitialMCSSource = strings(numFrames,1);
 trialChan = repmat(chanModel, numFrames, 1);
 trialDopp = dopplerHz * ones(numFrames,1);
 liveCallbackWarned = false;
@@ -858,8 +860,12 @@ for n = 1:numFrames
             txArgs = [txArgs {"RV", rvOverride}]; %#ok<AGROW>
         end
         if expectedUCIPayload.hasPayload()
+            uciInitial=sixgr.link.resolvePUSCHUCIInitialMCS( ...
+                cfgFrame,grantSnapshotOverride,harqContext,isRetransmission,trialMCS(n));
+            trialUCIInitialMCS(n)=uciInitial.MCS;
+            trialUCIInitialMCSSource(n)=uciInitial.Source;
             txArgs = [txArgs {"UCIPayload", expectedUCIPayload, ...
-                "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
+                "InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
         end
         if receivedCompletion
             tx = preparedTransmission.Tx;
@@ -1267,7 +1273,7 @@ for n = 1:numFrames
         end
         if expectedUCIPayload.hasPayload()
             rxArgs = [rxArgs {"ExpectedUCIPayload", expectedUCIPayload, ...
-                "InitialIMCSPerCodeword", trialMCS(n)}]; %#ok<AGROW>
+                "InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
         end
         injectedNoiseVariance = double(sixgr.util.structGet(replay, "InjectedNoiseVariance", NaN));
         % Shared samples have passed RF/ADC and measured gain compensation.
@@ -2794,6 +2800,8 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ULReceiveAllocationAuthority = trialULReceiveAllocationAuthority(idx);
         T.UEHARQAttempt = trialUEHARQAttempt(idx);
         T.UEHARQInitialAssignmentDigest = trialUEHARQInitialAssignmentDigest(idx);
+        T.PUSCHUCIInitialMCS = trialUCIInitialMCS(idx);
+        T.PUSCHUCIInitialMCSSource = trialUCIInitialMCSSource(idx);
         T.RequestedVsAppliedPrecoderPMIMatchStatus = trialRequestedVsAppliedPrecoderPMIMatchStatus(idx);
         T.PrecodingNumPorts = trialPrecodingNumPorts(idx);
         T.PrecodingNumLayers = trialPrecodingNumLayers(idx);
@@ -4770,6 +4778,8 @@ T.ULReceivedAssignmentDigest = strings(0,1);
 T.ULReceiveAllocationAuthority = strings(0,1);
 T.UEHARQAttempt = zeros(0,1);
 T.UEHARQInitialAssignmentDigest = strings(0,1);
+T.PUSCHUCIInitialMCS = zeros(0,1);
+T.PUSCHUCIInitialMCSSource = strings(0,1);
 T.QCLMeasurementStatus = strings(0,1);
 T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
 T.SymbolDecisionStatus = strings(0,1);

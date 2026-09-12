@@ -7,6 +7,8 @@ installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 entity=sixgr.link.ReceivedULHARQState(installed);
 initial=sixgr.link.resolveMCSProfile(installed.phy.pusch.mcsTable,10);
 bits=[]; gnbTBS=[];
+uci=sixgr.phy.ul.pusch.PUSCHUCIPayload('HARQACK',int8([1;0]));
+gnbContext=struct();
 for k=1:3
     slot=31+10*(k-1); mcs=10; nprb=6; rv=0; ndi=1;
     if k==2, mcs=31; nprb=8; rv=2; end
@@ -34,7 +36,7 @@ for k=1:3
     if k~=2, bits=int8(randi([0 1],allocation.NominalTBSBits,1)); end
     inputBits=bits; if k==2, inputBits=[]; end
     before=entity;
-    [tx,info,entity]=entity.transmit(cfg,a,inputBits,[]);
+    [tx,info,entity]=entity.transmit(cfg,a,inputBits,uci);
     assert(tx.UEHARQIsRetransmission==(k==2) && info.UEHARQAttempt==1+(k==2));
     assert(isequal(tx.TransportBlock,bits));
     if k==2
@@ -79,11 +81,28 @@ for k=1:3
         gnbTBS=nrTBS(pusch.Modulation,pusch.NumLayers,nprb,account.NREPerPRBForTBS, ...
             initial.TargetCodeRate,gnb.phy.pusch.xOverhead);
     end
+    ownGrant=struct('Direction','UL','ServingCell',1,'UEIndex',1,'RNTI',gnb.phy.pdsch.RNTI, ...
+        'MCSIndex',mcs,'TargetCodeRate',initial.TargetCodeRate,'TBSBits',gnbTBS, ...
+        'Modulation',profile.Modulation,'NumLayers',1,'PRBSet',gnb.phy.pusch.prbSet, ...
+        'SymbolAllocation',gnb.phy.pusch.symbolAllocation,'Slot',slot, ...
+        'HARQ',struct('HarqID',2,'NDI',logical(ndi),'NDIEpoch',1+(k==3)));
+    if k~=2
+        ownLayout=sixgr.phy.phycode.resolveCodingLayout('Direction','UL', ...
+            'TransportBlockSize',gnbTBS,'TargetCodeRate',initial.TargetCodeRate, ...
+            'RV',rv,'Modulation',profile.Modulation,'NumLayers',1, ...
+            'RateMatchedBitCount',account.CodedBitCountG);
+        gnbContext=sixgr.harq.createTBContext(struct('Direction','UL', ...
+            'Grant',ownGrant,'CodingLayout',ownLayout,'IsRetransmission',false));
+    end
+    uciReference=sixgr.link.resolvePUSCHUCIInitialMCS(gnb,ownGrant, ...
+        struct('TransportBlockContext',gnbContext),k==2,mcs);
     nfft=nrOFDMInfo(carrier).Nfft; noise=10^(-35/10)/nfft;
     wave=tx.Waveform+sqrt(noise/2)*complex(randn(size(tx.Waveform)),randn(size(tx.Waveform)));
     rx=sixgr.phy.ul.PUSCH_Rx(wave,gnb,'TransportBlockSize',gnbTBS, ...
-        'InitialIMCSPerCodeword',10,'NoiseVar',noise,'NoiseVarDomain','time');
-    assert(rx.Ok && isequal(rx.TransportBlock,bits));
+        'InitialIMCSPerCodeword',uciReference.MCS,'ExpectedUCIPayload',uci, ...
+        'NoiseVar',noise,'NoiseVarDomain','time');
+    assert(rx.Ok && isequal(rx.TransportBlock,bits) && rx.HARQACKContentMatch && ...
+        isequal(rx.DecodedHARQACKBits,int8([1;0])));
     fprintf('RECEIVED_UL_HARQ_PASS attempt=%d ndi=%d rv=%d mcs=%d nprb=%d tbs=%d\n', ...
         tx.UEHARQAttempt,ndi,rv,mcs,nprb,gnbTBS);
 end

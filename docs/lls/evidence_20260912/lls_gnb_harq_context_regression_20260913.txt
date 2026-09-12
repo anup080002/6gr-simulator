@@ -1,0 +1,10 @@
+[FAIL] testSchedulerHARQContextIsolation (13.74s)
+       The finalized DL grant SymbolAllocation=[2 12] is absent from the active DL time-domain allocation list.
+PDSCH two-codeword HARQ: 2 TB contexts, aggregate 2344 bits, typed mismatch guard PASS
+[PASS] testPDSCHTwoCodewordHARQContext (3.14s)
+Slowest 2 test(s):
+   1. testSchedulerHARQContextIsolation (13.74s)
+   2. testPDSCHTwoCodewordHARQContext (3.14s)
+{Error using runFocusedTests (line 55)
+One or more focused regressions failed; see per-test diagnostics.
+} 

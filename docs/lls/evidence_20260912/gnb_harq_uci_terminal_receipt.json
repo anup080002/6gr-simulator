@@ -1,0 +1,32 @@
+{
+  "scope": "focused endpoint, HARQ metadata, scheduler fixture and new-TB shared-stream validation; not full 12 dB qualification",
+  "source": "observed exec/write_stdin process completions",
+  "runs": [
+    {
+      "session_id": 31828,
+      "tests": ["testPUSCHUCIInitialMCS", "testHARQTBContextInvariants", "testReceivedULHARQState"],
+      "exit_code": 0,
+      "log": "lls_gnb_harq_uci_20260913.txt"
+    },
+    {
+      "session_id": 43022,
+      "tests": ["testSchedulerHARQContextIsolation", "testPDSCHTwoCodewordHARQContext"],
+      "exit_code": 1,
+      "failure": "scheduler fixture requested symbols absent from active TDRA catalog",
+      "log": "lls_gnb_harq_context_regression_20260913.txt"
+    },
+    {
+      "session_id": 74499,
+      "command_body": "setup6GRSimToolkit('Verbose',false); try; assert(testSchedulerHARQContextIsolation); catch ME; disp(getReport(ME,'extended')); rethrow(ME); end",
+      "exit_code": 0,
+      "log": "lls_gnb_harq_context_final_20260913.txt",
+      "note": "Successful assertion is silent; zero-length log is expected, not invented test output."
+    },
+    {
+      "session_id": 57153,
+      "test": "testSharedPUSCHChannelArtifacts('TDD',true,false,false,true,true)",
+      "exit_code": 0,
+      "log": "lls_gnb_harq_uci_shared_20260913.txt"
+    }
+  ]
+}

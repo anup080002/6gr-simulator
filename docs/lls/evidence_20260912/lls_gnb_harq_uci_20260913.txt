@@ -1,0 +1,10 @@
+[PASS] testPUSCHUCIInitialMCS (4.98s)
+[PASS] testHARQTBContextInvariants (2.33s)
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=1 rv=0 mcs=10 nprb=6 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=2 ndi=1 rv=2 mcs=31 nprb=8 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=0 rv=0 mcs=10 nprb=6 tbs=1160
+[PASS] testReceivedULHARQState (45.80s)
+Slowest 3 test(s):
+   1. testReceivedULHARQState (45.80s)
+   2. testPUSCHUCIInitialMCS (4.98s)
+   3. testHARQTBContextInvariants (2.33s)

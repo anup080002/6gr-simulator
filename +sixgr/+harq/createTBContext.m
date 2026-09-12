@@ -159,11 +159,12 @@ ctx.OriginalMCS = localFirstFiniteScalar( ...
     sixgr.util.structGet(grant, "MCSIndex", NaN), ...
     sixgr.util.structGet(grant, "MCS", NaN), ...
     sixgr.util.structGet(phyGrant, "CodingLayout.MCSIndex", NaN));
-ctx.OriginalModulation = char(modulation);
-ctx.OriginalQm = localQm(modulation);
-ctx.OriginalTargetCodeRate = double(targetCodeRate);
-ctx.OriginalRank = double(rank);
-ctx.OriginalNumLayers = double(numLayers);
+ctx.OriginalModulation = char(localCarryForwardString(previous, "OriginalModulation", modulation));
+ctx.OriginalQm = localQm(ctx.OriginalModulation);
+ctx.OriginalTargetCodeRate = localFirstFiniteScalar( ...
+    sixgr.util.structGet(previous, "OriginalTargetCodeRate", NaN), targetCodeRate);
+ctx.OriginalRank = localFirstFiniteScalar(sixgr.util.structGet(previous, "OriginalRank", NaN), rank);
+ctx.OriginalNumLayers = localFirstFiniteScalar(sixgr.util.structGet(previous, "OriginalNumLayers", NaN), numLayers);
 ctx.OriginalPRBSet = localCarryForwardNumeric(previous, "OriginalPRBSet", prbSet);
 ctx.OriginalSymbolAllocation = localCarryForwardNumeric(previous, "OriginalSymbolAllocation", symbolAllocation);
 ctx.OriginalMappingType = char(string(localFirstNonEmpty( ...
