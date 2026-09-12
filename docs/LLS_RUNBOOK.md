@@ -240,9 +240,22 @@ complete:
 The per-port `waveform/raw/*_cf64le.bin` files use little-endian IEEE-754
 `I0,Q0,I1,Q1,...` samples. They preserve the exact runtime values and include
 intentional silence. They are source captures, not directly normalized VSG
-files. Continuous-capture-to-Keysight normalization and physical instrument
-loopback remain separate acceptance steps; do not load the raw float64 files
-as signed-int16 `.wiq`.
+files; do not load the raw float64 files as signed-int16 `.wiq`.
+
+After the continuous run seals successfully, create a separate playback tree:
+
+```powershell
+matlab -batch "setup6GRSimToolkit('Verbose',false); src='results/lls/lls_causal_access_to_data_wiring_tdd_short_continuous_iq/tdd_12db_continuous_iq_01'; dst='results/playback/tdd_12db_continuous_iq_01_keysight_01'; o=sixgr.truth.exportContinuousKeysightPlaybackPackage(src,dst); assert(o.Ok); disp(o.ManifestPath)"
+```
+
+The exporter verifies the sealed capture and per-slot segment tables, source
+file hashes, complete sample horizon and one common scale per physical
+transmitter. It writes one headerless normalized I/Q CSV, little-endian int16
+`.wiq`, and 89600 MAT per physical antenna port. All ports retain sample-zero
+alignment, common clock and equal length. An entirely silent transmitter is
+preserved as zeros with an explicit identity scale; activity is never
+fabricated. The source run remains unchanged. Physical M9384B/M9383B/89600
+loopback is still an operator/instrument acceptance step.
 
 Official format references: [M9383B/M9384B waveform files and sample-rate
 commands](https://helpfiles.keysight.com/csg/m9384/Content/GPSS/Signals.htm),
