@@ -1,0 +1,7 @@
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=1 ack=0 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=2 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=3 ack=1 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=4 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_GUARDS_PASS count=7
+RECEIVED_DL_QCL_AUTHORITY_PASS bits=1064 delay=43 window=[39 47] guards=8 source=explicit_boundary_fixture
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.

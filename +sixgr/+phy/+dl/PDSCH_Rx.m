@@ -88,6 +88,7 @@ ip.addParameter('HARQManager', [], @(x) isempty(x) || isa(x, 'sixgr.pdsch.PDSCHH
 ip.addParameter('ExecutionProfile', "", @(x) ischar(x) || isstring(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || iscell(x) || isstruct(x));
 ip.addParameter('ReceiverHARQState', [], @(x) isempty(x) || isa(x,'sixgr.link.ReceivedDLHARQState'));
+ip.addParameter('ReceivedAssignment', struct(), @(x) isstruct(x) && isscalar(x));
 ip.addParameter('HARQSoftBufferLayout', struct(), @(x) isempty(x) ...
     || isstruct(x) || iscell(x) ...
     || isa(x,'sixgr.pdsch.DLSCHCodingPlan'));
@@ -115,6 +116,9 @@ if ~isempty(opt.ReceiverHARQState) && isempty(opt.Assignment)
     error('sixgr:pdsch:ReceivedDLHARQAssignmentRequired', ...
         'UE-owned HARQ state requires the typed received-assignment entry point.');
 end
+assert(isempty(fieldnames(opt.ReceivedAssignment)) || ~isempty(opt.Assignment), ...
+    'sixgr:pdsch:ReceivedReportAssignmentRequired', ...
+    'Received-control reporting requires the typed received-assignment entry point.');
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.dl.PDSCH_Rx", ...
     "Stage", "dl_pdsch_rx", ...
     "Metadata", struct( ...
@@ -588,10 +592,9 @@ mapping = localFinalizePDSCHRxCodewordLayerContract( ...
 
 estimatedNoise = double(canonical.EstimatedNoiseVariance);
 decoderNoise = double(canonical.NoiseVarianceUsedForLLR);
-if ~(isscalar(decoderNoise) && isfinite(decoderNoise) ...
-        && decoderNoise > 0)
-    decoderNoise = eps;
-end
+assert(isscalar(decoderNoise) && isfinite(decoderNoise) && decoderNoise > 0, ...
+    'sixgr:pdsch:InvalidCanonicalDecoderNoiseEvidence', ...
+    'Reporting cannot replace invalid executed decoder noise with a fabricated epsilon variance.');
 channelEstimate = canonical.EffectiveLayerChannelEstimate;
 if isempty(channelEstimate)
     channelEstimate = canonical.ChannelGainPerPhysicalPort;
@@ -612,15 +615,19 @@ segmentation = cellfun(@(x) ...
 rx = canonical;
 executionProfile = string(bundle.Assignment.Profile);
 isSchedulerTruth = executionProfile == "scheduler_truth";
+isReceivedControl = executionProfile == "connected_strict";
 rx.ExecutionProfile = char(executionProfile);
 rx.FacadeContractVersion = "PDSCH_RxCompatibilityFacade/v3";
 rx.CanonicalDelegation = true;
 rx.DelegationTarget = "sixgr.pdsch.PDSCHReceiver";
-rx.StrictSchedulingOwnership = logical(isSchedulerTruth);
+rx.StrictSchedulingOwnership = logical(isSchedulerTruth || isReceivedControl);
 rx.SchedulingOwnership = char(ternaryPDSCHRXProfile( ...
     isSchedulerTruth, ...
     "decoded_scheduler_grant_pdcch_bound_assignment", ...
     "explicit_phy_calibration_assignment"));
+if isReceivedControl
+    rx.SchedulingOwnership = 'received_control_and_ue_owned_harq';
+end
 rx.AssignmentId = char(bundle.Assignment.AssignmentId);
 rx.TransportBlockSize = double(bundle.TransportBlockSizes);
 rx.TransportBlockSizePerCodeword = ...
@@ -673,6 +680,9 @@ rx.PreEqualizationNoiseVarianceSource = ...
     "canonical_pdsch_dmrs_channel_estimator";
 rx.PreEqualizationNoiseVarTransformSource = ...
     "calibration_adapter_explicit_domain_conversion";
+if isReceivedControl
+    rx.PreEqualizationNoiseVarTransformSource = "received_assignment_native_ofdm_noise_transform";
+end
 rx.SampleToGridNoiseVarianceGain = double(sixgr.util.structGet( ...
     canonical.OFDMInfo, "SampleToGridNoiseVarianceGain", NaN));
 rx.DecoderNoiseVar = decoderNoise;
@@ -898,6 +908,13 @@ rx.RecLLR = recLLR{1};
 rx.RateRecoveredLLR = recLLR{1};
 rx.RecLLRCell = recLLR;
 rx.RateRecoveredLLRCell = recLLR;
+rx.RateRecoveredLLRDomain = "current_attempt_mother_code_before_harq_combining";
+rx.HARQCombinedLLRCell = cellfun(@(x) double(x.HARQCombinedLLR), ...
+    decoded, "UniformOutput", false);
+rx.HARQCombinedLLR = rx.HARQCombinedLLRCell{1};
+rx.HARQCombinedLLRDomain = "prior_and_current_attempt_mother_code";
+rx.DecoderCRCInputDomain = "harq_combined_mother_code";
+rx.CurrentAttemptStandaloneCRCMeasured = ~rx.HARQSoftCombiningApplied;
 rx.RateRecoverInfoCell = recInfo;
 rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, ...
     dmrsAntInd, dmrsSym, dmrsInfo, llrCell, recLLR, recLLR, recInfo, ...
@@ -1039,13 +1056,13 @@ rx.DMRSAntennaIndices = dmrsAntInd;
 rx.PDSCHAntennaIndices = pdschAntInd;
 rx.PDSCHIndices = pdschInd;
 csirsReceiverPipelineTic = tic;
-[csirsInd, csirsSym, csirsInfo, csirsObservation] = ...
+[csirsInd, csirsSym, csirsInfo, csirsObservation, csirsConfig] = ...
     localObserveCSIRSRuntimeResource( ...
     carrier, cfg, canonical.OFDMGrid, opt, canonical.OFDMInfo);
 rx.CSIRSIndices = csirsInd;
 rx.CSIRSSymbols = csirsSym;
 rx.CSIRSInfo = csirsInfo;
-rx.CSIRS = opt.CSIRSConfig;
+rx.CSIRS = csirsConfig;
 rx.PTRSIndices = ptrsInd;
 rx.PTRSSymbols = ptrsSym;
 rx.PTRSAntennaIndices = ptrsAntInd;
@@ -1063,7 +1080,7 @@ rx.CSIRSChannelEstimate = csirsHest;
 rx.CSIRSNoiseVar = csirsNoiseVar;
 rx.CSIRSChannelEstimation = csirsEstimateInfo;
 rx.SelectedCSIRS = localSelectedCSIRSConfig( ...
-    opt.CSIRSConfig, csirsInfo, csirsEstimateInfo);
+    csirsConfig, csirsInfo, csirsEstimateInfo);
 rx.CSIChannelEstimateForPMI = csirsHest;
 rx.CSIChannelNoiseVarForPMI = csirsNoiseVar;
 rx.CSIChannelEstimateSource = string(sixgr.util.structGet( ...
@@ -1246,6 +1263,9 @@ info = struct( ...
     "Source",char(ternaryPDSCHRXProfile(isSchedulerTruth, ...
         "canonical_pdsch_receiver_scheduler_truth_facade", ...
         "canonical_pdsch_receiver_calibration_facade")));
+if isReceivedControl
+    info.Source = 'canonical_pdsch_receiver_received_control_report';
+end
 end
 
 function value = ternaryPDSCHRXProfile(condition, trueValue, falseValue)
@@ -1396,7 +1416,7 @@ parity = [];
 cbError = [];
 for cw = 1:nCodewords
     item = decoded{cw};
-    recLLR{cw} = double(item.HARQCombinedLLR);
+    recLLR{cw} = double(item.RateRecoveredLLR);
     recInfo{cw} = item.RateRecoveryInfo;
     blocks{cw} = int8(item.DecodedCodeBlocks);
     iterations = [iterations, ...
@@ -1516,8 +1536,28 @@ if assignment.Profile ~= executionProfile
         assignment.Profile, executionProfile);
 end
 assignmentDigest = assignment.validateForExecution();
+reportBundle=[];
+if ~isempty(fieldnames(opt.ReceivedAssignment))
+    assert(executionProfile=="connected_strict", ...
+        'sixgr:pdsch:ReceivedReportProfileMismatch','Connected received control cannot label another procedure.');
+    data=assignment.toStruct();
+    history=sixgr.util.structGet(data,'ReceivedHARQCodingHistory',[]);
+    reportBundle=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materializeReceived( ...
+        cfg,opt.ReceivedAssignment,data.UEId,size(rxWaveform,2),history);
+    assert(reportBundle.Assignment.validateForExecution()==assignmentDigest && ...
+        isequaln(reportBundle.ResourcePlan,opt.ResourcePlan) && ...
+        isequaln(reportBundle.CodingPlans,opt.CodingPlan) && ...
+        isequaln(reportBundle.ReferenceConfig,opt.ReferenceSignalConfig) && ...
+        isequaln(reportBundle.Carrier,opt.Carrier) && ...
+        isequaln(reportBundle.ReceiverConfig,opt.ReceiverConfig), ...
+        'sixgr:pdsch:ReceivedReportIdentityMismatch', ...
+        'Reporting must reconstruct the exact received assignment, resources, references and coding history.');
+    cfg=reportBundle.ReceiverResolvedConfig;
+end
 
 sharedTiming = ~isempty(opt.TimingSearchWindowSamples);
+assert(isempty(reportBundle) || sharedTiming,'sixgr:pdsch:ReceivedReportTimingRequired', ...
+    'Received-control reporting requires the actual capture timing contract.');
 if sharedTiming
     % Derive the acquisition reference from receiver-owned allocation and
     % immutable RS policy, not cfg's initial PRBs/NSCID or a TX reference.
@@ -1644,6 +1684,28 @@ if sharedTiming
     info.ReceiveTiming = rx.ReceiveTiming;
     info.SynchronizationState = rx.SynchronizationState;
     info.PhysicalMeasurementGridStatus = rx.PhysicalMeasurementGridStatus;
+end
+if ~isempty(reportBundle)
+    % Report the same decoder execution; no second receive/decode and no
+    % transmitter plans, known bits, applied weights or noise oracle.
+    reportOpt=opt;
+    reportOpt.RuntimeTrackingCorrection=trackingCorrection;
+    reportOpt.RuntimeTimingResolution=timingResolution;
+    reportOpt.RuntimeSynchronizationState=syncState;
+    reportOpt.PhysicalMeasurementGrid=measurementGrid;
+    reportOpt.PhysicalMeasurementOFDMInfo=measurementOFDMInfo;
+    reportOpt.PhysicalMeasurementGridStatus=measurementStatus;
+    if logical(sixgr.util.structGet(cfg,'phy.csirs.enable',false))
+        [reportOpt.CSIRSScheduled,~]=sixgr.phy.refsig.csirsOccasion( ...
+            cfg,opt.ReceivedAssignment.DataAbsoluteSlot);
+    end
+    [~,powerInfo]=sixgr.phy.dl.applyPDSCHDMRSEPREDifference(complex(1),cfg);
+    [~,pdschInfo]=nrPDSCHIndices(reportBundle.Carrier,reportBundle.PDSCH);
+    [rx,info]=localAdaptCanonicalCalibrationRX(canonical,reportBundle, ...
+        pdschInfo,struct(),powerInfo,cfg,reportOpt,struct(),false);
+    rx.AssignmentValidationDigest=assignmentDigest;
+    rx.ReceivedAssignmentDigest=opt.ReceivedAssignment.AssignmentDigest;
+    info.AssignmentValidationDigest=assignmentDigest;
 end
 end
 
@@ -3169,7 +3231,7 @@ catch ME
 end
 end
 
-function [csirsInd, csirsSym, csirsInfo, obs] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt, ofdmInfo)
+function [csirsInd, csirsSym, csirsInfo, obs, measurementConfig] = localObserveCSIRSRuntimeResource(carrier, cfg, rxGrid, opt, ofdmInfo)
 csirsInd = opt.CSIRSIndices;
 csirsSym = opt.CSIRSSymbols;
 csirsInfo = opt.CSIRSInfo;

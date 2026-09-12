@@ -1,0 +1,7 @@
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=1 combined=0 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=2 combined=1 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=4 combined=0 csi_occasion=0
+RECEIVED_DL_REPORT_CALENDAR_PASS slots=42 guards=4
+{Error using testNoiseDomainEvidenceContract
+Too many output arguments.
+} 

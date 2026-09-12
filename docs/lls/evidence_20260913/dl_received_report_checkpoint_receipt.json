@@ -1,0 +1,113 @@
+{
+  "status": "unqualified_local_preservation_checkpoint",
+  "qualification_pass": false,
+  "full_58_slot_run_started": false,
+  "testAll_run": false,
+  "remote_push_held": "User requested updates after correctness confirmation; final guard fails and allocator write is blocked.",
+  "source_sha256": [
+    {
+      "path": "+sixgr/+link/ReceivedDLHARQState.m",
+      "sha256": "d819da8e009e477e2eae8bbec6a7bdf69780cce1c20132bdf6d215e631514683"
+    },
+    {
+      "path": "+sixgr/+pdsch/PDSCHCalibrationFacadeAdapter.m",
+      "sha256": "f5165fb1d78043ac469f594481d4e11b849350b28a9c4f9bb6aaeafa5cd96b00"
+    },
+    {
+      "path": "+sixgr/+phy/+dl/PDSCH_Rx.m",
+      "sha256": "5686c00b544f00fce35b1d39dc1589c1cdbb5e42c940d43564dbe46168bfd2d5"
+    },
+    {
+      "path": "+sixgr/+phy/+dl/PDSCH_Tx.m",
+      "sha256": "51882c929ebca95dcdcf18dc5eae7581e142087fd71b352f02414c3dec571c95"
+    },
+    {
+      "path": "+sixgr/+phy/+refsig/csirsOccasion.m",
+      "sha256": "e8a240ff0e35558af8ccedbbd7df4d4a471de2c39f2c94c541e51411fec95eb5"
+    },
+    {
+      "path": "+sixgr/+phy/+grid/allocREsPDSCH.m",
+      "sha256": "6fda9153551656d36b86c656f0efe8bb88de7b9b1b98374487549fb5c06f6402"
+    },
+    {
+      "path": "tests/testReceivedDLReportEvidence.m",
+      "sha256": "1dd21d7085dbb526d70247c844022d49c60a83fcd7d3f8f9df2a08590a431b72"
+    },
+    {
+      "path": "tests/testReceivedDLDisabledCSI.m",
+      "sha256": "88ee3df81b9edc3bae53866298e2448242caa152152c5ed237acc60a6a2192e4"
+    },
+    {
+      "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
+      "sha256": "35e7e2333eadad5db1601fed9b81162c236d97ad8b54574dc5023f568e1e2cfc"
+    }
+  ],
+  "batches": [
+    {
+      "log": "received_dl_report_adapter_01.txt",
+      "exit_code": null,
+      "scope": "Replay and QCL assertions printed PASS; terminal exit not observed after context truncation."
+    },
+    {
+      "log": "received_dl_report_adapter_02.txt",
+      "exit_code": 0,
+      "scope": "Received DL HARQ replay, QCL authority, compatibility facade, CSI reservation assertions."
+    },
+    {
+      "log": "received_dl_report_evidence_01.txt",
+      "exit_code": 1,
+      "reason": "New test incorrectly required replayed tic/toc decoder duration equality."
+    },
+    {
+      "log": "received_dl_report_evidence_02.txt",
+      "exit_code": 1,
+      "scope": "Three report replays and 42 calendar checks passed.",
+      "reason": "assert wrapper requested an output from no-output noise-contract test."
+    },
+    {
+      "log": "received_dl_report_noise_regressions_01.txt",
+      "exit_code": 0,
+      "scope": "Noise-contract body executed; functiontests factories only constructed, their tests NOT executed."
+    },
+    {
+      "log": "received_dl_report_noise_regressions_02.txt",
+      "exit_code": 0,
+      "scope": "Noise-contract body; runtests/ assertSuccess: 3 passed, 0 failed, 0 incomplete; then three report replays and 42 calendar checks."
+    },
+    {
+      "log": "received_dl_report_final_guards_01.txt",
+      "exit_code": 1,
+      "reason": "Disabled CSI fixture retained strict CSI requirement; correctly rejected."
+    },
+    {
+      "log": "received_dl_report_final_guards_02.txt",
+      "exit_code": 1,
+      "scope": "Three canonical report replay checks passed.",
+      "reason": "Optional disabled-CSI ACK/delivery differed from archived non-occasion capture."
+    },
+    {
+      "log": "received_dl_disabled_csi_01.txt",
+      "exit_code": 1,
+      "reason": "Isolated disabled-CSI reproducer: correct disabled status/no indices/no observation, but changed ACK/delivery."
+    }
+  ],
+  "root_cause": "allocREsPDSCH.localReserveCSIRSResources reserves always-on CSI-RS kernel REs without the TX periodic-occasion gate. Disabling CSI changes the old capture's rate-matching mapping.",
+  "repair_blocker": {
+    "file": "+sixgr/+phy/+grid/allocREsPDSCH.m",
+    "attempts": 2,
+    "error": "Failed to write file",
+    "windows_read_only_attribute": false,
+    "exact_write_restriction": "not established",
+    "allocator_changed": false,
+    "permission_bypass_attempted": false
+  },
+  "capture_policy": "Retain original captures. Generate a new separately named component capture set after repairing allocation; never overwrite or relabel old waveform evidence.",
+  "remaining": [
+    "Periodic CSI-RS allocation repair and newly executed component captures",
+    "Actual on-occasion CSI-RS received-control reporting",
+    "Main UE-owned DL HARQ handoff; remove TX metadata and second combining/decode",
+    "Repeated ACK and failed-control/DTX dispositions; dynamic DAI and actual UCI feedback",
+    "Prior beam-pattern, RA grid, special-slot, TA/synchronization and artifact-contract blockers",
+    "Final 58-slot validation and downstream 400 MHz/7 GHz, high-QAM and instrument qualification"
+  ]
+}

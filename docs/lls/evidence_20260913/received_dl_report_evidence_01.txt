@@ -1,0 +1,7 @@
+{Error using assert
+Report construction must not change the canonical measurement or decoder execution.
+
+Error in testReceivedDLReportEvidence (line 32)
+    assert(isequaln(rx.Metrics,saved.rx.Metrics) && ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

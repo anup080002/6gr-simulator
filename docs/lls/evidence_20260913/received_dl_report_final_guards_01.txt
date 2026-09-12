@@ -1,0 +1,22 @@
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=1 combined=0 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=2 combined=1 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=4 combined=0 csi_occasion=0
+{Error using sixgr.phy.dl.PDSCH_Rx>localBuildCSIMeasurementState (line 3962)
+Strict DL CSI is enabled but CSI-RS transmission is disabled by YAML.
+
+Error in sixgr.phy.dl.PDSCH_Rx>localAdaptCanonicalCalibrationRX (line 1092)
+    localBuildCSIMeasurementState(cfg, carrier, csirsHest, ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Rx>localDelegateCanonicalPDSCHReceiver (line 1704)
+    [rx,info]=localAdaptCanonicalCalibrationRX(canonical,reportBundle, ...
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Rx (line 165)
+    [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.ReceivedDLHARQState/receive (line 63)
+                rx=sixgr.phy.dl.PDSCH_Rx(waveform,installed, ...
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedDLReportEvidence (line 73)
+[rxDisabled,disabledDecision]=saved.before.receive(disabled,saved.a,saved.delayed, ...
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

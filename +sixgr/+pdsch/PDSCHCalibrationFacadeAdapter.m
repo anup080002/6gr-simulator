@@ -53,6 +53,7 @@ classdef PDSCHCalibrationFacadeAdapter
                 cfg,allocation.Carrier,allocation.ChannelConfig,request);
             bundle.IntegrationContext=integration;
             bundle.ReceivedAssignmentDigest=received.AssignmentDigest;
+            bundle.ReceiverResolvedConfig=cfg;
             bundle.CodingAuthority="received_new_tb_allocation_no_transmitter_plan";
             if ~isempty(history)
                 assert(plan.BaseGraph==history.BaseGraph && ...

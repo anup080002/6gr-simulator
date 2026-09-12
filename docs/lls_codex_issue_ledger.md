@@ -24,8 +24,18 @@ The [connected QCL/CRC authority repair](lls/dl_qcl_crc_authority_20260913.md)
 forwards received DCI into main DL QCL selection, separates RRC and simulator
 cell identities, and removes known-TX-bit equality from DL CRC decisions.
 The first focused process passed the new boundaries and five regressions.
-This is not the main UE-owned RX/HARQ switch: its reporting-adapter mismatch,
-second-combining path and protocol-only repeated-ACK disposition remain open.
+This is not the main UE-owned RX/HARQ switch. The subsequent
+[received report boundary repair](lls/dl_received_report_boundary_20260913.md)
+adapts canonical receiver evidence using received control, separates current
+and combined LLR domains and shares the YAML CSI-RS occasion calendar with TX.
+Main caller integration, the second-combining path and protocol-only
+repeated-ACK/failed-control dispositions remain open.
+The new disabled-CSI regression additionally exposed unconditional CSI-RS
+reservation in `allocREsPDSCH` outside periodic occasions. Its repair was
+rejected twice by the file-edit tool; the allocator is unchanged and the final
+guard remains failing. Restore write access, fix the shared calendar at that
+allocator, and generate separately versioned component captures before claiming
+the report boundary fully qualified. The old waveform evidence is retained.
 See the checkpoint receipt for the separate runner/shared-TRS process outcome.
 
 The [UE-owned DL HARQ endpoint](lls/dl_received_harq_20260913.md) now retains

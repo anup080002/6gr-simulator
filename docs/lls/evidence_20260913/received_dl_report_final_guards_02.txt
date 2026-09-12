@@ -1,0 +1,10 @@
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=1 combined=0 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=2 combined=1 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=4 combined=0 csi_occasion=0
+{Error using assert
+Assertion failed.
+
+Error in testReceivedDLReportEvidence (line 80)
+assert(isequaln(disabledDecision,saved.decision) && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
