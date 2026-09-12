@@ -1775,8 +1775,30 @@ if channelModel == "AWGN"
 end
 names = unique(names, "stable");
 
-if ~(fixedApplicable || geometryApplicable) && runClass ~= "hybrid_validation"
-    % Unknown run classes do not receive mode-based exclusions.
+diagnosticClasses = ["fixed_lls_anchor","functional_waveform_validation", ...
+    "adaptive_system_diagnostic"];
+if ismember(runClass, diagnosticClasses)
+    % A bounded single-run waveform diagnostic does not claim a sweep,
+    % multi-seed confidence interval, checkpoint equivalence campaign or
+    % long-run stability study. Preserve those unevaluated booleans as
+    % false and exclude them explicitly from the functional Phase-7
+    % reduction. The separate production reducer still requires real
+    % statistical and publication evidence before qualification.
+    names = [names; [ ...
+        "CheckpointResumeEquivalenceOk"
+        "SeedHierarchyOk"
+        "CampaignDesignOk"
+        "CampaignCompletionOk"
+        "MultiSeedDropStatisticsOk"
+        "ConfidenceIntervalsOk"
+        "SampleAdequacyOk"
+        "SweepDataQualityOk"
+        "SerialParallelDeterminismOk"
+        "LongRunStabilityOk"]];
+    names = unique(names, "stable");
+elseif ~(fixedApplicable || geometryApplicable) && runClass ~= "hybrid_validation"
+    % Unknown or full-stack run classes do not receive inferred
+    % exclusions. They must provide their declared evidence or fail.
     names = strings(0, 1);
 end
 end
