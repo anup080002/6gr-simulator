@@ -14,7 +14,7 @@ not statistical publication evidence.
 |---|---|---|
 | 1 | Operator-master PDSCH/PUSCH TDRA catalogs | Completed in commit `a3dc4b9f`; focused operator-master contract passed. |
 | 2 | Shared-clock 12 dB PHY execution | All 58 slots completed on the preceding run: PBCH, four-step RA, SRS, DL/UL grants, CSI/PMI/RI, AMC and exact I/Q executed. |
-| 3 | Terminal artifact closure | In repair: preserve exact `live_waveform_preview.csv`, preserve UL `not_selected` in `beam_codebook.csv`, and retain exact same-trial angle/channel/reciprocity provenance. Acceptance is a fresh run whose truth, standards, mandatory-subsystem, visual and browser receipts all pass. |
+| 3 | Terminal artifact closure | Final code repair implemented; fresh proof rerun pending. The 2026-09-12 `_03` run completed all 58 PHY slots and passed truth, standards, mandatory-subsystem, issue and visual gates, but correctly failed terminal browser closure because finalization replaced exact shared-stream preview rows with a header-only CSV. Final publication now receives `CoupledRuntime.SharedWaveformPreviewTable` and fails closed if that exact runtime table is absent. UL `not_selected` preservation and exact same-trial angle/channel/reciprocity provenance were also verified in `_03`. Acceptance remains a fresh run whose browser receipt also passes. |
 | 4 | Full repository qualification | Pending because `testAll` was explicitly stopped. Focused tests do not replace this gate. One stale unit fixture also lacks the mandatory Type-0 monitoring occasion and must be repaired before it can exercise its intended replay-export assertion. |
 | 5 | Keysight playback package | Pending after step 3: M9384B/M9383B per-port complex I/Q, clock/center-frequency/scaling/port-alignment metadata, hashes, repetition policy and 89600 VSA import verification. |
 | 6 | Single-carrier 7 GHz/400 MHz | Pending `optional_research_experiment`; it must not be implemented as four 100 MHz carriers. Required gates include numerology/grid/FFT/sample-rate consistency, PRACH/SSB/control/BWP legality, memory-safe shared CDL execution and Keysight playback. |
@@ -24,6 +24,12 @@ not statistical publication evidence.
 
 The exact operator commands and configuration rules are maintained in
 `docs/LLS_RUNBOOK.md`.
+
+The `_03` failed-run cleanup repeatedly regenerated the full coverage,
+component-view and strict materialization artifacts after the terminal receipt
+was already sealed. De-duplicating that reporting-only failure path is a
+performance follow-up; it is not part of the waveform-truth repair and must not
+change the required terminal gates.
 
 | ID | Issue | Current status | Root-cause evidence | Owner files / validation |
 |---|---|---|---|---|
