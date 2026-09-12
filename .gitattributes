@@ -7,4 +7,7 @@ artifacts/focused_logs/*.log -text -whitespace
 artifacts/repair_phase/*.log -text -whitespace
 artifacts/repair_phase/**/*.log -text -whitespace
 audit/full_stack_qualification/phase18_recovery_*/evidence/full_stack_regression_summary.csv -whitespace
+
+# MATLAB result/workspace binaries are stored through Git LFS so historical
+# evidence does not exceed GitHub's per-object size limit.
 *.mat filter=lfs diff=lfs merge=lfs -text
