@@ -153,9 +153,6 @@ if executionProfile == "ra_si_strict" && ...
 end
 
 if ~isempty(opt.Assignment)
-    assert(isempty(opt.TimingSearchWindowSamples), ...
-        'sixgr:phy:dl:UnsupportedAssignmentTimingSearch', ...
-        'Explicit assignment reception must resolve its capture timing before canonical receiver delegation.');
     [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
         rxWaveform, cfg, opt, executionProfile, hasPHYGrant);
     return;
@@ -1515,6 +1512,42 @@ if assignment.Profile ~= executionProfile
 end
 assignmentDigest = assignment.validateForExecution();
 
+sharedTiming = ~isempty(opt.TimingSearchWindowSamples);
+if sharedTiming
+    % Derive the acquisition reference from receiver-owned allocation and
+    % immutable RS policy, not cfg's initial PRBs/NSCID or a TX reference.
+    referenceData = opt.ReferenceSignalConfig.toStruct();
+    opt.ReferenceSignalConfig.validateForExecution();
+    pdsch = sixgr.pdsch.PDSCHConfigMaterializer.fromAssignment(assignment,referenceData);
+    absoluteSlot = double(opt.Carrier.NFrame)*double(opt.Carrier.SlotsPerFrame) + ...
+        double(opt.Carrier.NSlot);
+    assert(absoluteSlot==double(assignment.get("PDSCHAbsoluteSlot")), ...
+        'sixgr:phy:dl:AssignmentReceiveClockMismatch', ...
+        'Capture acquisition and immutable PDSCH assignment must use the same absolute slot.');
+    % The existing shared acquisition operates on the native IFFT clock.
+    % Never silently apply its sample counts to a resampled capture.
+    clockArgs = referenceData.OFDMOptions;
+    clockNames = lower(string(clockArgs(1:2:end)));
+    clockArgs(reshape([2*find(clockNames=="cyclicprefixfraction")-1; ...
+        2*find(clockNames=="cyclicprefixfraction")],1,[])) = [];
+    clockInfo = nrOFDMInfo(opt.Carrier,clockArgs{:});
+    nativeInfo = nrOFDMInfo(opt.Carrier);
+    assert(clockInfo.Nfft==nativeInfo.Nfft && clockInfo.SampleRate==nativeInfo.SampleRate && ...
+        isequal(clockInfo.SymbolPhases,nativeInfo.SymbolPhases), ...
+        'sixgr:phy:dl:AssignmentReceiveSampleClockUnsupported', ...
+        'Shared assignment acquisition requires the native OFDM sample clock and symbol phase convention; custom captures need a matching acquisition contract.');
+    [rxWaveform,trackingCorrection,timingResolution,syncState] = ...
+        localApplyCalibrationReceiverTracking(rxWaveform,opt.Carrier,pdsch,cfg,opt);
+    [measurementGrid,measurementOFDMInfo,measurementStatus] = ...
+        localPreparePhysicalMeasurementGrid(opt.PhysicalMeasurementWaveform, ...
+        opt.Carrier,trackingCorrection,timingResolution,referenceData.OFDMOptions{:});
+    if ~isempty(opt.PhysicalMeasurementWaveform)
+        assert(measurementStatus=="available_exact_pre_front_end_grid", ...
+            'sixgr:phy:dl:InvalidAssignmentPhysicalMeasurement', ...
+            'A supplied physical-plane capture must produce its actual aligned grid.');
+    end
+end
+
 canonical = sixgr.pdsch.PDSCHReceiver( ...
     rxWaveform, assignment, opt.ResourcePlan, opt.Carrier, ...
     opt.ReferenceSignalConfig, opt.ReceiverConfig, ...
@@ -1542,6 +1575,31 @@ rx.AssignmentValidationDigest = assignmentDigest;
 rx.IntegrationBinding = canonical.IntegrationBinding;
 rx.Ok = logical(canonical.CRCPass);
 rx.TBCRCPass = logical(canonical.CRCPass);
+if sharedTiming
+    rx.ReceiveTiming = timingResolution.ReceiveTiming;
+    rx.TimingOffset = double(syncState.RawTimingEstimate_samples);
+    rx.RawTimingEstimate_samples = rx.TimingOffset;
+    rx.KnownTimingDelay_samples = double(syncState.KnownTimingDelay_samples);
+    rx.AppliedTimingCorrection_samples = double(timingResolution.AppliedCorrection_samples);
+    rx.TimingEstimateUsed = logical(timingResolution.EstimateUsed);
+    rx.TimingEstimateSource = string(timingResolution.Source);
+    rx.TimingEstimateStatus = string(timingResolution.Status);
+    rx.TimingEstimateApplicationPolicy = string(timingResolution.ApplicationPolicy);
+    rx.TimingEstimateWasClipped = logical(timingResolution.WasClipped);
+    rx.SynchronizationState = syncState;
+    rx.ReceiverTrackingCorrection = trackingCorrection;
+    rx.EstimatedCFO_Hz = double(trackingCorrection.EstimatedCFO_Hz);
+    rx.CFOCorrectionApplied = logical(trackingCorrection.CFOCorrectionApplied);
+    rx.CFOCorrectionApplied_Hz = double(trackingCorrection.CFOCorrectionApplied_Hz);
+    rx.CFOEstimateSource = string(trackingCorrection.Source);
+    rx.CFOEstimateStatus = string(trackingCorrection.Status);
+    rx.ResidualCFOEstimate_Hz = double(trackingCorrection.ResidualCFOEstimate_Hz);
+    rx.PhysicalMeasurementGrid = measurementGrid;
+    rx.PhysicalMeasurementOFDMInfo = measurementOFDMInfo;
+    rx.PhysicalMeasurementGridStatus = measurementStatus;
+    rx.PhysicalMeasurementReferencePlane = string(opt.PhysicalMeasurementReferencePlane);
+    rx.PhysicalMeasurementSource = string(opt.PhysicalMeasurementSource);
+end
 rx.PTRSConfiguredEnabled = logical(opt.ReferenceSignalConfig.get("EnablePTRS"));
 rx.PTRSCPECorrectionConfigured = logical(sixgr.util.structGet( ...
     cfg, "phy.pdsch.ptrs.enableCPECorrection", false));
@@ -1570,6 +1628,11 @@ info = struct( ...
     "StageTrace", canonical.StageTrace, ...
     "OFDM", canonical.OFDMInfo, ...
     "Source", "canonical_pdsch_receiver_facade");
+if sharedTiming
+    info.ReceiveTiming = rx.ReceiveTiming;
+    info.SynchronizationState = rx.SynchronizationState;
+    info.PhysicalMeasurementGridStatus = rx.PhysicalMeasurementGridStatus;
+end
 end
 
 function tf = localRXFacadeHasStructOrCell(value)
@@ -3031,7 +3094,7 @@ end
 
 function [measurementGrid, measurementOFDMInfo, status] = ...
         localPreparePhysicalMeasurementGrid( ...
-        measurementWaveform, carrier, tracking, timingResolution)
+        measurementWaveform, carrier, tracking, timingResolution, varargin)
 measurementGrid = [];
 measurementOFDMInfo = struct();
 status = "unavailable_missing_pre_front_end_measurement_waveform";
@@ -3083,7 +3146,7 @@ end
 
 try
     [measurementGrid, measurementOFDMInfo] = ...
-        sixgr.phy.waveform.ofdmDemodulate(carrier, corrected);
+        sixgr.phy.waveform.ofdmDemodulate(carrier, corrected, varargin{:});
     status = "available_exact_pre_front_end_grid";
 catch ME
     measurementGrid = [];

@@ -678,7 +678,7 @@ function plans = localRXCodingPlans(raw,contract,resourcePlan,receiver)
 if isempty(raw)
     error("sixgr:pdsch:PDSCHReceiver:MissingCodingPlan", ...
         ("Strict PDSCH RX requires the immutable DLSCHCodingPlan " + ...
-        "object(s) produced by the matching transmitter."));
+        "object(s) resolved from the receiver allocation and retained TB coding state."));
 end
 if isa(raw,"sixgr.pdsch.DLSCHCodingPlan")
     plans = num2cell(reshape(raw,1,[]));

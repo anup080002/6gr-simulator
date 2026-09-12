@@ -1,0 +1,13 @@
+PDSCH_ASSIGNMENT_CAPTURE_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tpb28be2f4_a559_48b1_af3d_b8540ab18d44
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=0 cfo=-700.000 estimate=-700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=43 cfo=700.000 estimate=700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_NEGATIVES_PASS
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.
+[PASS] testPDSCHCompatibilityFacadeDelegation (2.30s)
+PDSCH CDL truth receiver: BLER 0.000, SINR 35.35 dB
+[PASS] testPDSCHReceiverCDL (4.88s)
+[PASS] testFRCPDSCHCFOTracking (21.55s)
+Slowest 3 test(s):
+   1. testFRCPDSCHCFOTracking (21.55s)
+   2. testPDSCHReceiverCDL (4.88s)
+   3. testPDSCHCompatibilityFacadeDelegation (2.30s)

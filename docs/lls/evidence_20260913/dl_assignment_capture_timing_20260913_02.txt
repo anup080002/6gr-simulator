@@ -1,0 +1,7 @@
+{Error using assert
+Assertion failed.
+
+Error in testPDSCHAssignmentCaptureTiming (line 52)
+    assert(info.CanonicalDelegation && contains(string(rx.ChannelEstimationMode),'resource_selective'));
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

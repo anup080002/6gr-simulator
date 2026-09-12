@@ -1,0 +1,92 @@
+{
+  "scope": "typed PDSCH native-clock capture acquisition component; not production received-DCI/main-scheduler qualification",
+  "source": "observed exec/write_stdin terminal completions",
+  "runs": [
+    {
+      "session_id": 41769,
+      "exit_code": 1,
+      "log": "dl_assignment_capture_timing_20260913.txt",
+      "result": "fixture omitted mandatory coding plan; production guard rejected before decoding"
+    },
+    {
+      "session_id": 75608,
+      "exit_code": 1,
+      "log": "dl_assignment_capture_timing_20260913_02.txt",
+      "result": "static decode/alignment succeeded; test expected resource_selective in the wrong estimator label field"
+    },
+    {
+      "session_id": 28355,
+      "exit_code": 0,
+      "log": "dl_assignment_capture_timing_20260913_03.txt",
+      "result": "static delay/CFO/physical-grid checks, negative inputs and compatibility/CDL/FRC-CFO regressions passed"
+    },
+    {
+      "session_id": 21440,
+      "exit_code": 0,
+      "log": "dl_assignment_capture_timing_20260913_04.txt",
+      "result": "static and time-varying CDL-C native-clock capture checks passed"
+    },
+    {
+      "session_id": 17003,
+      "exit_code": 0,
+      "log": "dl_assignment_capture_timing_20260913_05.txt",
+      "result": "final static/CDL capture checks and custom FFT/symbol-phase convention rejection passed"
+    }
+  ],
+  "qualified_capture_root": "C:\\Users\\anup0\\AppData\\Local\\Temp\\tp751758ac_2991_4127_ac9e_9542404daa23",
+  "artifacts": [
+    {
+      "file": "dl_assignment_capture_timing_20260913_02.txt",
+      "bytes": 305,
+      "sha256": "4b87602557e33806bd129f3dc70df30b68aa6bd09237eb06dea526eb825e21a6"
+    },
+    {
+      "file": "dl_assignment_capture_timing_20260913_03.txt",
+      "bytes": 779,
+      "sha256": "c3ee4cde1a387c185398dc0d4837b198e5806c2233767106028e8c3f87383fa8"
+    },
+    {
+      "file": "dl_assignment_capture_timing_20260913_04.txt",
+      "bytes": 391,
+      "sha256": "72ac30875522cb08fa8e2a0f6fcbfd4865b8212d6da057641c9301b56a1d2905"
+    },
+    {
+      "file": "dl_assignment_capture_timing_20260913_05.txt",
+      "bytes": 391,
+      "sha256": "8015489ed8a4ab1aa4a1753e2e1f7c2669531d355ed6259c7264b3f6b96ed9b7"
+    },
+    {
+      "file": "dl_assignment_capture_timing_20260913.txt",
+      "bytes": 1004,
+      "sha256": "1bc8eef91e4240f224687f7dc10a8c7e4527bf3c2856e6795b82200b03931691"
+    },
+    {
+      "file": "dl_assignment_capture/capture_cdl_c.mat",
+      "bytes": 990469,
+      "sha256": "f25f09b6b8ba6b7a0f79f7c3072b597b641cab7d064fe1ec6a1af90578ab9557"
+    },
+    {
+      "file": "dl_assignment_capture/capture_delay_0.mat",
+      "bytes": 650960,
+      "sha256": "c048742c1cb9d49d64a861d544491e7b8028772f94a4f6fb45798ba3ce987dbe"
+    },
+    {
+      "file": "dl_assignment_capture/capture_delay_43.mat",
+      "bytes": 650134,
+      "sha256": "8f5ee65d6cb8abb3477cf16931473740d4dc9410c7c70c1c029e75f850d72177"
+    },
+    {
+      "file": "dl_assignment_capture/component_capture_timing.csv",
+      "bytes": 162,
+      "sha256": "bc832e2f5c6cc7c3a946aaae0b461f747d41840c04f3e5e33e0069c1d8f9e136"
+    },
+    {
+      "file": "dl_assignment_capture/component_cdl_capture_timing.csv",
+      "bytes": 80,
+      "sha256": "1296e1f45ec3c6a7035475e20016ad0a9a9883394c92c0a47b28e1f9505a8087"
+    }
+  ],
+  "baseline_58_slot_started": false,
+  "testAll_started": false,
+  "e2e_started": false
+}

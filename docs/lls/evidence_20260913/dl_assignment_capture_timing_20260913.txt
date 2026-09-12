@@ -1,0 +1,19 @@
+{Error using sixgr.pdsch.PDSCHReceiver>localRXCodingPlans (line 679)
+Strict PDSCH RX requires the immutable DLSCHCodingPlan object(s) produced by the matching transmitter.
+
+Error in sixgr.pdsch.PDSCHReceiver>localStrictReceiver (line 114)
+plans = localRXCodingPlans( ...
+        ^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.pdsch.PDSCHReceiver (line 7)
+rx = localStrictReceiver(rxWaveform, assignment, resourcePlan, varargin{:});
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Rx>localDelegateCanonicalPDSCHReceiver (line 1550)
+canonical = sixgr.pdsch.PDSCHReceiver( ...
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Rx (line 156)
+    [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testPDSCHAssignmentCaptureTiming (line 27)
+    [rx,info]=sixgr.phy.dl.PDSCH_Rx(received,cfg,args{:}, ...
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -6,6 +6,12 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [typed DL capture-timing repair](lls/dl_assignment_capture_timing_20260913.md)
+connects received-DMRS timing/frequency acquisition to the assignment-owned
+receiver and retains actual physical-plane alignment evidence. Static and
+CDL-C component captures pass. Native-clock acquisition is not full production
+received-DCI, HARQ, QCL or main-scheduler qualification; those gates remain open.
+
 The [DL receiver CRC checkpoint](lls/dl_receiver_crc_repair_20260913.md)
 removes TX metadata from combined decoding and includes CB CRC failures in
 the canonical decoder's overall verdict. Focused coding/receiver regressions

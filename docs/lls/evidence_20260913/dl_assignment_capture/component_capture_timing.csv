@@ -1,0 +1,3 @@
+InjectedDelaySamples,MeasuredDelaySamples,InjectedCFO_Hz,MeasuredCFO_Hz,DemodulatedSampleCount,CRCPass,BitErrors
+0,0,-700,-700,1920,1,0
+43,43,700,700,1920,1,0
