@@ -32,5 +32,22 @@ mimo:
     initialization_source: lls_preconfigured_higher_layer_context
 
 reference_signals:
+  # Sound both UE logical ports; rank remains one. A one-port sounding
+  # resource cannot select a spatial TPMI across two physical UE elements.
+  srs_ports: 2
+  srs:
+    num_ports: 2
+    port_set: [0, 1]
   trs:
     resource_ids: [100, 101, 102, 103]
+
+pusch:
+  num_antenna_ports: 2
+
+control:
+  ul_precoding:
+    num_ports: 2
+    max_rank: 1
+    codebook_subset: fullyAndPartialAndNonCoherent
+    transmission_scheme: codebook
+    full_power_mode: not_configured

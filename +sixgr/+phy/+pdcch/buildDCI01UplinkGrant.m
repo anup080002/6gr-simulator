@@ -32,6 +32,10 @@ fields.srs_request = 0;
 fields.csi_request = 0;
 
 context = sixgr.phy.pdcch.resolveDCIContext(pdcchCfg, "0_1");
+if isfield(context.Data,'ULPrecoding')
+    fields.precoding_information_and_number_of_layers= ...
+        sixgr.phy.pdcch.ULPrecodingField.encode(context.Data,double(opt.NumLayers),double(opt.TPMI));
+end
 fields = sixgr.phy.pdcch.completeDCIFields(fields, context);
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "0_1", pdcchCfg);
 end

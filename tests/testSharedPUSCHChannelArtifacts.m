@@ -1,4 +1,4 @@
-function ok=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI)
+function ok=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -9,6 +9,7 @@ if nargin<1, mode="TDD"; end
 if nargin<2, withCoincidentSRS=false; end
 if nargin<3, deferUCIDelivery=false; end
 if nargin<4, withCSI=false; end
+if nargin<5, twoPortUL=false; end
 assert(any(string(mode)==["TDD","FDD"]));
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_pusch_shared_queue_fdd_fixture.yaml'; end
@@ -16,9 +17,16 @@ if withCSI
     assert(string(mode)=="TDD",'The deferred CSI component scenario is authored for TDD.');
     fixture='lls_pusch_csi_delivery_fixture.yaml';
 end
+if twoPortUL
+    assert(string(mode)=="TDD" && ~withCSI);
+    fixture='lls_two_port_ul_shared_queue_fixture.yaml';
+end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
 root=tempname; mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
+if twoPortUL
+    assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
+end
 if withCSI, localSaveScenarioEvidence(s,cfg,root); end
 % This component bypasses runSingle, which normally initializes the run
 % RNG. Bind the UE drop to the resolved YAML seed, not the preceding test.
@@ -127,7 +135,7 @@ end
 
 function [grant,cfg]=localGrant(state,cfg,slot0)
 measured=state.TestSRS;
-ports=double(cfg.phy.pusch.dmrs.nPorts);
+ports=double(cfg.phy.pusch.NumAntennaPorts);
 assert(isfinite(measured.RI) && isfinite(measured.TPMI) && ports<=measured.NumSRSPorts);
 cfg.phy.pusch.TPMI=measured.TPMI;
 cfg.phy.pusch.srsDecision=struct('Authoritative',true,'MeasurementID',measured.ID, ...
@@ -181,6 +189,10 @@ for item=items
         decoded=sixgr.phy.pdcch.decodeDCIPayload(rx.DCIBits,grant.DCI.Format,grant.DCI.ContextData);
         authored=sixgr.phy.pdcch.decodeDCIPayload(grant.DCI.Bits,grant.DCI.Format,grant.DCI.ContextData);
         assert(isequaln(decoded.Fields,authored.Fields));
+        if string(grant.DCI.Format)=="0_1" && isfield(grant.DCI.ContextData,'ULPrecoding')
+            assert(decoded.Fields.precoding_information_and_number_of_layers_tpmi==grant.TPMI && ...
+                decoded.Fields.precoding_information_and_number_of_layers_rank_minus1==grant.NumLayers-1);
+        end
         grant.ControlDecodeOk=logical(rx.CausalGrantDecodeOk); grant.PDCCHGrantBindingOk=logical(rx.CausalGrantDecodeOk);
         grant.PDCCHGrantDCIId=decoded.PayloadHash; grant.PDCCHGrantDCIFormat=decoded.Format;
         hash=@(v)sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(orderfields(v)),'UTF-8')));

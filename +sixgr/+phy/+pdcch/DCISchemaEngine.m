@@ -58,6 +58,11 @@ classdef DCISchemaEngine
             nHARQ = max(1, ceil(log2(double(data.HARQProcessCount))));
             definitions = sixgr.phy.pdcch.DCISchemaEngine.emptyDefinitions();
 
+            ulWidth=6; ulMax=63; ulClause="38.212 7.3.1.1 (legacy mapping; not table-qualified)";
+            if fmt=="0_1" && isfield(data,'ULPrecoding')
+                ul=sixgr.phy.pdcch.ULPrecodingField.resolve(data);
+                ulWidth=ul.Width; ulMax=ul.MaxValue; ulClause=ul.StandardClause;
+            end
             switch fmt
                 case "0_0"
                     definitions = [
@@ -105,7 +110,7 @@ classdef DCISchemaEngine
                         localDef("first_dai", data.DAIWidth, 0, 2^data.DAIWidth-1, "HARQ-ACK codebook", "38.212 7.3.1.1")
                         localDef("tpc_command_for_pusch", 2, 0, 3, "PUSCH power control", "38.212 7.3.1.1")
                         localDef("srs_resource_indicator", data.SRSResourceIndicatorWidth, 0, 2^data.SRSResourceIndicatorWidth-1, "SRS resource set", "38.212 7.3.1.1")
-                        localDef("precoding_information_and_number_of_layers", 6, 0, 63, "PUSCH codebook and layer capability", "38.212 7.3.1.1")
+                        localDef("precoding_information_and_number_of_layers", ulWidth, 0, ulMax, "PUSCH codebook and layer capability", ulClause)
                         localDef("antenna_ports", data.AntennaPortFieldWidth, 0, 2^data.AntennaPortFieldWidth-1, "PUSCH DM-RS configuration", "38.212 7.3.1.1")
                         localDef("srs_request", data.SRSRequestWidth, 0, 2^data.SRSRequestWidth-1, "SRS request configuration", "38.212 7.3.1.1")
                         localDef("csi_request", data.CSIRequestWidth, 0, 2^data.CSIRequestWidth-1, "CSI request configuration", "38.212 7.3.1.1")

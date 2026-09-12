@@ -1,0 +1,32 @@
+[
+  {
+    "Name": "testCSISINRPortAndBranchMeasurement",
+    "Status": "FAIL",
+    "Error": "Error using assert\nAverage linear reference-RE powers, not the coherent frequency mean of H.\n\nError in testCSISINRPortAndBranchMeasurement (line 32)\nassert(abs(selective.CSI_SINR_dB-12)<1.5, ...\n^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^"
+  },
+  {
+    "Name": "testReferenceSignalSINREvidence",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSharedQCLTimingTransfer",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSharedQCLScenarioContract",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testPDCCHGrantBindingEvidenceReport",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testContinuousRuntimeTxIQRecorder",
+    "Status": "PASS",
+    "Error": ""
+  }
+]

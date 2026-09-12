@@ -1,5 +1,12 @@
 # YAML LLS runbook
 
+Current 12 dB checkpoint: the continuous-IQ YAML now enables two logical
+SRS/PUSCH ports at rank one, with an explicit `control.ul_precoding` table
+context. The corrected focused shared-clock test passed; the next full run
+is held for the remaining SRI/DM-RS control-field audit. See
+[the repair ledger](lls/continuous_iq_02_spatial_reaudit_20260912.md) for exact
+YAML fields, focused commands, receipts and remaining qualification limits.
+
 This runbook covers the config-driven link-level simulator only. Commands are
 written for PowerShell from the repository root. They do not launch the E2E
 campaign runner.

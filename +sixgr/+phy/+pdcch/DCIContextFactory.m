@@ -87,6 +87,10 @@ classdef DCIContextFactory
                 "ExecutionProfile", string(localRequired(strict, "execution_profile")), ...
                 "ResearchClass", string(localRequired(strict, "research_class")), ...
                 "LegacyCompatibility", false);
+            if isfield(raw,'ul_precoding')
+                data.ULPrecoding=raw.ul_precoding;
+                sixgr.phy.pdcch.ULPrecodingField.resolve(data);
+            end
             context = sixgr.phy.pdcch.DCIContext(data);
         end
 
@@ -190,6 +194,25 @@ classdef DCIContextFactory
                 end
             end
 
+            if fmt=="0_1" && isfield(operatorControl,'ul_precoding')
+                data=context.Data;
+                if isfield(data,'ULPrecoding')
+                    assert(isequaln(data.ULPrecoding,operatorControl.ul_precoding), ...
+                        'sixgr:phy:pdcch:ULPrecodingContextMismatch','Conflicting UL precoding configurations.');
+                end
+                data.ULPrecoding=operatorControl.ul_precoding;
+                sixgr.phy.pdcch.ULPrecodingField.resolve(data);
+                context=sixgr.phy.pdcch.DCIContext(data);
+            end
+            if fmt=="0_1" && isfield(context.Data,'ULPrecoding')
+                ul=context.Data.ULPrecoding;
+                assert(double(ul.num_ports)==double(cfg.phy.pusch.NumAntennaPorts) && ...
+                    double(ul.num_ports)==double(cfg.phy.srs.nPorts) && ...
+                    double(ul.max_rank)>=double(cfg.phy.pusch.numLayers) && ...
+                    logical(context.Data.TransformPrecodingEnabled)==logical(cfg.phy.pusch.transformPrecoding), ...
+                    'sixgr:phy:pdcch:ULPrecodingContextMismatch', ...
+                    'DCI UL precoding context must agree with the configured SRS/PUSCH ports, rank and waveform.');
+            end
             if direction == "DL"
                 allocations = context.Data.DLTimeDomainAllocations;
             else

@@ -47,6 +47,7 @@ import yaml
 
 import lls_output_contract as output_contract
 import lls_contract_materializer as contract_materializer
+from lls_runtime_visualization_evidence import verified_runtime_visualizations
 from lls_contract_aliases import (
     CONTRACT_CHART_ALIAS_PATHS,
     CONTRACT_TABLE_ALIAS_PATHS,
@@ -14324,7 +14325,8 @@ def realtime_component_for_text(value: Any) -> str:
 
 
 def build_realtime_component_dashboard(
-    artifacts: list[dict[str, Any]], run_status: str
+    artifacts: list[dict[str, Any]], run_status: str,
+    visualizations: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Build evidence-presence status without converting presence into a pass claim."""
     rows: list[dict[str, Any]] = []
@@ -14394,6 +14396,18 @@ def build_realtime_component_dashboard(
             matches = contract_matches
         else:
             matches = legacy_canonical_matches if legacy_canonical_matches else all_matches
+        canonical_count = len(matches)
+        existing_paths = {str(item.get("logical_path") or "").replace("\\", "/")
+                          for item in matches}
+        visualization_matches = [
+            item for item in (visualizations or [])
+            if item.get("evidence_scope") == "verified_runtime_visualization"
+            and item.get("hash_verified") is True
+            and str(item.get("logical_path") or "").replace("\\", "/") not in existing_paths
+            and any(token in str(item.get("logical_path") or "").lower().replace("-", "_")
+                    for token in spec["tokens"])
+        ]
+        matches = matches + visualization_matches
         csv_count = sum(
             1
             for artifact in matches
@@ -14419,13 +14433,15 @@ def build_realtime_component_dashboard(
                 "group": spec["group"],
                 "status": status,
                 "artifact_count": len(matches),
+                "canonical_artifact_count": canonical_count,
+                "visualization_artifact_count": len(visualization_matches),
                 "csv_count": csv_count,
                 "image_count": image_count,
                 "legacy_svg_count": legacy_svg_count,
                 "planned_folder": str(spec.get("folder") or spec["id"]),
                 "latest_artifacts": [build_artifact_descriptor(item) for item in matches[:4]],
                 "status_note": (
-                    "Canonical persisted evidence is available; this is not itself a pass verdict."
+                    "Primary component evidence and hash-verified derived visualizations are counted separately; neither presence count is a PHY pass verdict."
                     + (" Legacy SVG is retained only because this is an older immutable run." if legacy_svg_count else "")
                     if matches
                     else "No persisted evidence matching this component is available for the selected run."
@@ -16525,6 +16541,13 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     public_artifacts, component_authority = select_primary_result_artifacts(
         public_artifacts
     )
+    def read_visualization_bytes(artifact: dict[str, Any]) -> bytes:
+        path = str(artifact.get("filesystem_path") or "")
+        return (_windows_extended_path(path).read_bytes() if path
+                else fetch_artifact_bytes(int(artifact["artifact_id"])))
+    runtime_visualizations = filter_public_artifacts_for_policy(
+        verified_runtime_visualizations(artifacts, read_visualization_bytes), feature_policy
+    )
     diagnostic_counts = dict(counts)
     public_counts = summarize_artifacts(public_artifacts)
     public_counts["logs_total"] = counts["logs_total"]
@@ -16570,8 +16593,9 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     metric_explorer = build_metric_explorer_payload(artifacts, summary)
     realtime_dashboard = {
         "components": build_realtime_component_dashboard(
-            public_artifacts, status_text
+            public_artifacts, status_text, runtime_visualizations
         ),
+        "runtime_visualizations": [build_artifact_descriptor(item) for item in runtime_visualizations],
         "ue_status": build_realtime_ue_status(
             metric_explorer,
             runtime_context,
@@ -19130,7 +19154,7 @@ window.addEventListener('DOMContentLoaded', function () {
       const links = latest.slice(0, 2).map(item => `<a class="source-link mono" href="${esc(item.view_url || item.download_url || '#')}" title="${esc(item.logical_path || '')}">${esc(item.logical_path || 'artifact')}</a>`).join('');
       const badgeClass = component.status === 'not_published' ? 'warn' : 'good';
       const legacyVector = Number(component.legacy_svg_count || 0) > 0 ? `<span class="badge warn">${esc(component.legacy_svg_count)} legacy SVG</span>` : '';
-      return `<article class="realtime-component ${esc(component.status || '')}"><span class="badge ${badgeClass}">${esc(component.group || 'Component')}</span>${legacyVector}<h4>${esc(component.label || component.component_id)}</h4><div class="counts"><strong>${esc(component.artifact_count || 0)}</strong> evidence · ${esc(component.csv_count || 0)} CSV · ${esc(component.image_count || 0)} PNG/JPEG</div><div class="small mono">/${esc(component.planned_folder || component.component_id)}/{csv,image,json,mat}</div>${links || '<div class="small" style="margin-top:5px">No published source yet</div>'}</article>`;
+      return `<article class="realtime-component ${esc(component.status || '')}"><span class="badge ${badgeClass}">${esc(component.group || 'Component')}</span>${legacyVector}<h4>${esc(component.label || component.component_id)}</h4><div class="counts"><strong>${esc(component.artifact_count || 0)}</strong> evidence · ${esc(component.csv_count || 0)} CSV · ${esc(component.image_count || 0)} PNG/JPEG</div><div class="small">${esc(component.canonical_artifact_count || 0)} primary component artifacts · ${esc(component.visualization_artifact_count || 0)} hash-verified derived visualizations</div><div class="small mono">/${esc(component.planned_folder || component.component_id)}/{csv,image,json,mat}</div>${links || '<div class="small" style="margin-top:5px">No published source yet</div>'}</article>`;
     }).join('');
     const runtime = ((state.live || {}).runtime_context || {});
     const controlPreviews = runtime.control_trial_previews || {};

@@ -25,6 +25,8 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from lls_beam_summary_audit import reconcile_beam_summary
+from lls_continuous_iq_audit import validate_capture as validate_continuous_iq_capture
+from lls_continuous_iq_audit import MANIFEST as CONTINUOUS_IQ_MANIFEST, SEGMENTS as CONTINUOUS_IQ_SEGMENTS
 
 
 PRIMARY_LINK_TABLES = {
@@ -7818,6 +7820,15 @@ def _audit_provenance_and_reference_tables(
                 relative, check_id, rows, [], required=False, evaluated=False,
             ))
         return checks
+    capture_header, capture_rows = _read_rows(run_root / CONTINUOUS_IQ_MANIFEST)
+    segment_header, segment_rows = _read_rows(run_root / CONTINUOUS_IQ_SEGMENTS)
+    capture_required = _nested_value(_load_resolved_config(run_root),
+                                    "run_control.continuous_raw_iq_capture_enable", False) is True
+    if capture_header or segment_header or capture_required:
+        failures = validate_continuous_iq_capture(run_root, capture_rows, segment_rows, _io_path)
+        for path, rows in [(CONTINUOUS_IQ_MANIFEST, capture_rows), (CONTINUOUS_IQ_SEGMENTS, segment_rows)]:
+            checks.append(_check("manifest_integrity", path,
+                "continuous_iq_file_and_segment_rf_hash_clock_closure", rows, failures))
     checks.extend(_audit_canonical_component_manifest(run_root))
     checks.extend(_audit_mcs_cqi_reference_tables(run_root))
     checks.extend(_audit_dut_reference_comparison(run_root))

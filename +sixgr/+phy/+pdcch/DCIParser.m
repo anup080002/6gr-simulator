@@ -126,8 +126,14 @@ classdef DCIParser
             if fmt == "0_1" && isfield(fields, ...
                     "precoding_information_and_number_of_layers")
                 combined = double(fields.precoding_information_and_number_of_layers);
-                derived.precoding_information_and_number_of_layers_tpmi = mod(combined, 16);
-                derived.precoding_information_and_number_of_layers_rank_minus1 = floor(combined / 16);
+                if isfield(data,'ULPrecoding')
+                    [rank,tpmi]=sixgr.phy.pdcch.ULPrecodingField.decode(data,combined);
+                    derived.precoding_information_and_number_of_layers_tpmi=tpmi;
+                    derived.precoding_information_and_number_of_layers_rank_minus1=rank-1;
+                else
+                    derived.precoding_information_and_number_of_layers_tpmi = mod(combined, 16);
+                    derived.precoding_information_and_number_of_layers_rank_minus1 = floor(combined / 16);
+                end
             end
         end
     end

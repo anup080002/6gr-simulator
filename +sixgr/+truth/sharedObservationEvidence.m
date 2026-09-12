@@ -110,7 +110,12 @@ for k=1:numel(linkReplay)
         logical(sixgr.util.structGet(linkReplay{k},'ChannelFadingApplied',false));
 end
 if ~isempty(linkReplay)
-    for name=["RuntimeChannelLinkKey","RuntimeChannelSeed"]
+    for name=["RuntimeChannelLinkKey","RuntimeChannelSeed", ...
+            "RuntimeChannelAlignmentLookaheadSamples", ...
+            "RuntimeChannelAlignmentLookaheadExecutedOnFork", ...
+            "RuntimeChannelOutputSampleAlignment", ...
+            "RuntimeChannelAppliedAlignmentTrimSamples"]
+        if ~all(cellfun(@(x)isfield(x,name),linkReplay)), continue; end
         values=cellfun(@(x)x.(name),linkReplay,'UniformOutput',false);
         if all(cellfun(@(x)isequaln(x,values{1}),values)), replay.(name)=values{1}; end
     end

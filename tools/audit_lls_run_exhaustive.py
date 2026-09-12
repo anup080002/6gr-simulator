@@ -1050,6 +1050,7 @@ def main() -> int:
     }
     summary["csv_value_review_gate_pass"] = bool(
         summary["csv_header_only_unresolved_files"] == 0
+        and summary["csv_required_primary_columns_with_missing_values"] == 0
         and summary["csv_files_parsed_but_without_domain_contract"] == 0
         and summary["csv_semantic_required_failures"] == 0
         and summary["chart_semantic_required_failures"] == 0

@@ -1103,14 +1103,14 @@ csirsObservation.PilotResidualPower = double(sixgr.util.structGet( ...
     csirsEstimateInfo, "PilotResidualPower", NaN));
 csirsObservation.PilotResidualNMSE_dB = double(sixgr.util.structGet( ...
     csirsEstimateInfo, "PilotResidualNMSE_dB", NaN));
-[csirsObservation.ReferenceMeasuredSINR_dB, ...
-    csirsObservation.ReferenceMeasuredSINRSource, ...
-    csirsObservation.ReferenceMeasuredSINRStatus] = ...
+[csirsObservation.ChannelEstimateDiagnosticSINR_dB, ...
+    csirsObservation.ChannelEstimateDiagnosticSINRSource, ...
+    csirsObservation.ChannelEstimateDiagnosticSINRStatus] = ...
     localCSIRSReferenceSINR(csirsHest, csirsNoiseVar, csirsEstimateInfo);
 csirsObservation.HestDimensions = localSizeToken(csirsHest);
 csirsObservation.HestRxPorts = localArrayDimension(csirsHest, 3);
 csirsObservation.HestTxPorts = localArrayDimension(csirsHest, 4);
-csirsObservation.SINRMeasurementDomain = "csi_rs_resource_selective_channel_estimate";
+csirsObservation.SINRMeasurementDomain = "csi_rs_port3000_reference_re_received_plane";
 if ~isfinite(csirsObservation.MeasurementRSRP_dBm)
     csirsObservation.PowerReferencePlane = ...
         "normalized_ofdm_resource_grid_after_receiver_synchronization";
@@ -3329,6 +3329,13 @@ obs = localSelectCSIRSRSPResource(obs,struct('SelectedResourceOrdinal',valid));
 end
 
 function obs = localSelectCSIRSRSPResource(obs, estimateInfo)
+% Re-selection must not retain the first resource's SINR when the selected
+% CRI has no measurement. The initial strongest/first-resource probe is not
+% authority for a different selected CSI resource.
+obs.ReferenceMeasuredSINR_dB=NaN;
+obs.ReferenceMeasuredSINRSource="";
+obs.ReferenceMeasuredSINRStatus="unavailable_selected_resource_measurement";
+obs.ReferenceSINRMeasurementJSON="";
 values = sixgr.util.structGet(obs, "MeasurementRSRPPerResourceValues_dBm", []);
 perAntenna = sixgr.util.structGet(obs, ...
     "MeasurementRSRPPerAntennaByResource_dBm", {});
@@ -3349,6 +3356,12 @@ if isfinite(values(ordinal))
     resources=sixgr.util.structGet(obs,"MeasurementPhysicalResources",{});
     if ordinal<=numel(resources) && ~isempty(resources{ordinal})
         measured=resources{ordinal};
+        if isfield(measured,'SINR') && measured.SINR.Available
+            obs.ReferenceMeasuredSINR_dB=measured.SINR.CSI_SINR_dB;
+            obs.ReferenceMeasuredSINRSource=measured.SINR.Source;
+            obs.ReferenceMeasuredSINRStatus="available";
+            obs.ReferenceSINRMeasurementJSON=string(jsonencode(measured.SINR));
+        end
         selected=sixgr.phy.refsig.selectCSIRSBranchMeasurements(measured);
         obs.MeasurementReceiveAntennaIndex1Based=double(selected.RSRPReceiveBranch1Based);
         obs.MeasurementRSSI_dBm=selected.RSSI_dBm;
@@ -3607,8 +3620,8 @@ end
 end
 
 function [sinrDb, source, status] = localCSIRSReferenceSINR(Hest, nVar, estimateInfo)
-% Report CSI-RS-domain SINR from the same resource-selective channel
-% estimate used by CRI/RI/PMI/CQI.  This is deliberately distinct from
+% Retain the legacy channel-power diagnostic, NOT TS 38.215 CSI-SINR.
+% This is distinct from port-3000 reference-RE measurement and from
 % PDSCH post-equalization SINR: signal power is the average received power
 % of unit-energy orthogonal CSI-RS ports and the denominator is the noise
 % plus interference variance measured by the CSI-RS estimator.
@@ -3747,6 +3760,10 @@ obs.PilotResidualNMSE_dB = NaN;
 obs.ReferenceMeasuredSINR_dB = NaN;
 obs.ReferenceMeasuredSINRSource = "";
 obs.ReferenceMeasuredSINRStatus = "not_attempted";
+obs.ReferenceSINRMeasurementJSON = "";
+obs.ChannelEstimateDiagnosticSINR_dB = NaN;
+obs.ChannelEstimateDiagnosticSINRSource = "";
+obs.ChannelEstimateDiagnosticSINRStatus = "not_attempted";
 obs.HestDimensions = "";
 obs.HestRxPorts = NaN;
 obs.HestTxPorts = NaN;

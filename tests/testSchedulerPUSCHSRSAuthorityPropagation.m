@@ -3,6 +3,7 @@ function ok = testSchedulerPUSCHSRSAuthorityPropagation()
 
 setup6GRSimToolkit("Verbose", false);
 for schedulerName = ["PF", "RR"]
+  for selectedTPMI=0:2
     cfg = localConfig();
     if schedulerName == "PF"
         scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", "UL");
@@ -10,6 +11,8 @@ for schedulerName = ["PF", "RR"]
         scheduler = sixgr.l2.mac.SchedulerRR(cfg, "Direction", "UL");
     end
     ue = localUEState();
+    ue.PMI=selectedTPMI;
+    ue.TPMI=selectedTPMI;
     [grants, ~] = scheduler.schedule(7, ue, localBudget(7));
     assert(numel(grants) == 1, ...
         "%s scheduler must create one strict causal-SRS UL grant.", schedulerName);
@@ -21,6 +24,9 @@ for schedulerName = ["PF", "RR"]
         double(grant.SRSCausalAgeSlots) == 2, ...
         "%s scheduler changed the causal SRS identity, slot, or age.", schedulerName);
     prec = grant.PHYGrant.PrecodingState;
+    expected=nrPUSCHCodebook(2,2,selectedTPMI,false).';
+    assert(grant.TPMI==selectedTPMI && norm(prec.MatrixLogicalPorts-expected,'fro')<1e-12, ...
+        'The scheduler must freeze the received SRS TPMI, including nonzero values, not configured bootstrap zero.');
     assert(logical(prec.AuthoritativeSRSDecisionUsed) && ...
         string(prec.SRSMeasurementID) == "SRS_UE_1_slot_5" && ...
         double(prec.SRSMeasurementSlot) == 5, ...
@@ -31,6 +37,7 @@ for schedulerName = ["PF", "RR"]
     missing.SRSCausalMeasurementId = "";
     localAssertThrows(@()scheduler.schedule(8, missing, localBudget(8)), ...
         "sixgr:mimo:MissingSRSState");
+  end
 end
 ok = true;
 end

@@ -643,6 +643,10 @@ sections:
       pdcch_payload_bits: {required: false, type: integer, min: 1}
       blind_decode_list_length: {required: true, type: integer, min: 1}
       pdcch_strict: {required: false, type: struct}
+      ul_precoding:
+        required: false
+        type: struct
+        description: Explicit higher-layer two-port PUSCH codebook context for TS 38.212 DCI 0_1; validated against SRS/PUSCH before grant packing.
       pdcch6gr: {required: false, type: struct}
       monitoring_mode:
         required: false

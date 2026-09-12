@@ -1,0 +1,25 @@
+inherits:
+  - ./lls_pdcch_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_two_port_ul_shared_queue_fixture
+  description: Two-port measured SRS to decoded UL DCI and applied PUSCH TPMI component regression.
+  purpose: Shared-clock UL spatial wiring; inherited high-margin point is not 12 dB performance evidence.
+  research_class: optional_research_experiment
+
+reference_signals:
+  srs_ports: 2
+  srs:
+    num_ports: 2
+    port_set: [0, 1]
+
+pusch:
+  num_antenna_ports: 2
+
+control:
+  ul_precoding:
+    num_ports: 2
+    max_rank: 1
+    codebook_subset: fullyAndPartialAndNonCoherent
+    transmission_scheme: codebook
+    full_power_mode: not_configured

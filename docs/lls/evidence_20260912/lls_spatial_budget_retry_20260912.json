@@ -1,0 +1,42 @@
+{
+  "Scope": "offline_frozen_time_spatial_power_not_runtime_SINR",
+  "DLPMIIdentifiedByAppliedMatrixHash": 0,
+  "DLMatrixReal": [
+    1,
+    0
+  ],
+  "DLMatrixImag": [
+    0,
+    -6.123233995736766E-17
+  ],
+  "ULMatrixReal": [
+    0.70710678118654746,
+    0.70710678118654746
+  ],
+  "ULMatrixImag": [
+    0,
+    0
+  ],
+  "DLTotalLayerPower": 1,
+  "ULTotalLayerPower": 0.99999999999999978,
+  "DLCapture": {
+    "SourceTrialSlot": 31,
+    "SourceChannelMATFile": "channel/mat/channel_observation_b2278ec8f7c7fb7794131f8dd2b3aa58c8827a2997f1abd0f09cd739b10ddf6b.mat",
+    "SampleIndex": 230675,
+    "DLReceiveBranchSumGain_dB": 7.6276088845154817,
+    "ULReceiveBranchSumGain_dB": 1.1656487181907311,
+    "SameReciprocalChannelDLMinusULSpatialPower_dB": 6.4619601663247508,
+    "ConfiguredGridNoiseVariance": 0.0630957344480193,
+    "ReportedRuntimePostEQ_SINR_dB": 19.0386355290819
+  },
+  "ULCapture": {
+    "SourceTrialSlot": 35,
+    "SourceChannelMATFile": "channel/mat/channel_observation_7461d4c3acd5a36a7534401ec0cd44250961c0625f40864af4152c76b84c9da7.mat",
+    "SampleIndex": 260981,
+    "DLReceiveBranchSumGain_dB": 7.5719299184899711,
+    "ULReceiveBranchSumGain_dB": 1.1657762696730078,
+    "SameReciprocalChannelDLMinusULSpatialPower_dB": 6.4061536488169635,
+    "ConfiguredGridNoiseVariance": 0.0630957344480193,
+    "ReportedRuntimePostEQ_SINR_dB": 12.0739283080389
+  }
+}

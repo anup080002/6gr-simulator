@@ -1,0 +1,22 @@
+[
+  {
+    "Name": "testSchedulerPUSCHSRSAuthorityPropagation",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSRSCodebookOrientation",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testLLSULSRSRITPMIEstimator",
+    "Status": "PASS",
+    "Error": ""
+  },
+  {
+    "Name": "testSharedQCLScenarioContract",
+    "Status": "PASS",
+    "Error": ""
+  }
+]

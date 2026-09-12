@@ -6,6 +6,15 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+Latest checkpoint (2026-09-12): the `_02` spatial re-audit and approved
+two-port SRS/PUSCH work are tracked in
+[the spatial repair ledger](lls/continuous_iq_02_spatial_reaudit_20260912.md).
+The corrected TPMI table/shared-clock regression passed. The next full
+58-slot run remains held for SRI/DM-RS control-field context qualification;
+do not interpret earlier functional-run rows as closure of these new checks.
+The `continuous_iq_03` attempt was stopped during initialization and is not
+a new PHY result. All original outputs remain local and unchanged.
+
 The 58-slot 12 dB configured-SNR TDD run is the only immediate completion
 target. It is an actual shared-waveform LLS diagnostic, not an E2E campaign and
 not statistical publication evidence.
