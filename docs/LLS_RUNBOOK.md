@@ -176,3 +176,54 @@ For a single run, inspect these first:
 Empty data, a missing artifact or a failed gate must remain empty/missing/
 failed. It must never be repaired by inserting proxy or synthetic rows into a
 truth table.
+
+## 9. Keysight M9384B/M9383B and 89600 playback package
+
+Do not edit a sealed run to add instrument files. Repackage its exact captured
+Tx-IQ into a separate folder:
+
+```powershell
+matlab -batch "setup6GRSimToolkit('Verbose',false); src='results/lls/lls_causal_access_to_data_wiring_tdd_short/tdd_12db_fixed_snr_20260912_04'; dst='results/playback/tdd_12db_fixed_snr_20260912_04_keysight_01'; o=sixgr.truth.exportKeysightPlaybackPackage(src,dst); assert(o.Ok); disp(o.ManifestPath)"
+```
+
+For each DL/UL physical port the package contains:
+
+- headerless UTF-8 CSV with normalized `I,Q` floating-point samples;
+- `.wiq` with little-endian interleaved signed-int16
+  `I0,Q0,I1,Q1,...` samples and explicit quantization metadata;
+- an 89600-compatible MAT file with case-sensitive `Y`, `XDelta`,
+  `InputCenter`, `InputZoom=1`, and `XDomain=2` variables;
+- SHA-256, sample rate, center frequency, port count, normalization scale,
+  capture scope, and physical-instrument-validation status in the manifests.
+
+The M9383B/M9384B import sequence for a generated `.wiq` is:
+
+```text
+:SYSTem:WAVeform:BFILe:FORMat:DEFault I16Little
+:MEMory:IMPort:WEXTension NONE
+:SOURce:GROup1:SIGNal1:WAVeform:SELect "C:\keysight\final_tx_iq_dl_port1_keysight_le16.wiq"
+:SOURce:GROup1:SIGNal1:WAVeform:SCLock:RATE 7.68MHz
+```
+
+Use the sample rate from `final_tx_iq_capture_manifest.csv`, not the example
+literal. Keep extension `NONE`: the exporter already requires at least 1,024
+samples and, for M9384B, a sample count divisible by 16, so the instrument must
+not silently repeat or zero-pad the trace. Select one synchronized generator
+channel per physical port and preserve the manifest's port ordering.
+
+In 89600 VSA use **File > Recall > Recall Recording** on a generated
+`*_89600vsa.mat` file. For multiple physical ports, recall the per-port files
+as multiple single-channel recordings using `RecallMultifile`; do not combine
+ports by summing their samples.
+
+The current `_04` package preserves its source scope honestly: DL is the first
+committed grant component, while UL is one complete selected-UE grant. It is
+not a continuous 58-slot all-channel playback file, and the manifest therefore
+retains `single_grant_component_not_complete_cell_transmission` for DL.
+Continuous shared-clock Tx capture and physical instrument loopback remain
+separate acceptance steps.
+
+Official format references: [M9383B/M9384B waveform files and sample-rate
+commands](https://helpfiles.keysight.com/csg/m9384/Content/GPSS/Signals.htm),
+[binary byte order and extension policy](https://helpfiles.keysight.com/csg/m9384/Content/GPSS/Instrument%20Settings.htm),
+and [89600 MATLAB source playback](https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/gui/content/source_using_matab.htm).
