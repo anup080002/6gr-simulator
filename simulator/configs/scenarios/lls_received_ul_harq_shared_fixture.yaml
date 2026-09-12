@@ -1,0 +1,20 @@
+inherits:
+  - ./lls_received_ul_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_received_ul_harq_shared_fixture
+  description: Received two-port UL commands and actual NACK-driven shared-clock HARQ.
+  purpose: Component retransmission and soft-buffer wiring, not full-run qualification.
+  research_class: optional_research_experiment
+
+simulation:
+  snr_db: 12
+
+pusch:
+  fixed_mcs: 28
+  mcs_index: 28
+  modulation: 64QAM
+
+modulation:
+  ul_mcs_index: 28
+  ul_modulation_order: 6

@@ -100,6 +100,7 @@ hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
 if hasPHYGrant
     sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pusch_rx_entry");
     cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
+    opt = sixgr.phy.ul.pusch.resolveFrozenReceiveCoding(opt,phyGrant);
 end
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.ul.PUSCH_Rx", ...
     "Stage", "ul_pusch_rx", ...

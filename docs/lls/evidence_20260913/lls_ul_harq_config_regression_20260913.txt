@@ -1,0 +1,5 @@
+[PASS] test6GScenarioConfigValidation (39.04s)
+[PASS] testHARQTBContextInvariants (3.85s)
+Slowest 2 test(s):
+   1. test6GScenarioConfigValidation (39.04s)
+   2. testHARQTBContextInvariants (3.85s)

@@ -1,0 +1,19 @@
+{
+  "scope": "focused two-port shared-owner UL retransmission recovery, not final 58-slot qualification",
+  "source": "observed exec/write_stdin terminal completions; historical failures preserved",
+  "runs": [
+    {"session_id": 69653, "exit_code": 1, "log": "lls_shared_ul_harq_20260913.txt", "result": "fixture queued a second SRS before receiving the first; owner rejected"},
+    {"session_id": 61789, "exit_code": 1, "log": "lls_shared_ul_harq_20260913_02.txt", "result": "MCS24 block passed; NACK-required stress fixture correctly refused fabricated feedback"},
+    {"session_id": 1013, "exit_code": 0, "log": "lls_ul_receiver_harq_decoder_20260913.txt", "result": "receiver-owned CRC16/24A, BG1/2 and multi-CB decoder vectors passed"},
+    {"session_id": 32778, "exit_code": 1, "log": "lls_shared_ul_harq_20260913_03.txt", "result": "decoder vectors including CB-CRC negative passed; scenario rejected by erroneous catalog MCS<=27 limit"},
+    {"session_id": 37063, "exit_code": 0, "log": "lls_ul_harq_focused_regression_20260913.txt", "result": "testHARQSoftBufferPositionAware, testPUSCHUCIInitialMCS, testReceivedULHARQState passed"},
+    {"session_id": 90777, "exit_code": 0, "log": "lls_shared_ul_harq_20260913_04.txt", "result": "original wiring-only assertions passed but both TB CRCs failed; NOT packet-recovery acceptance; CSV audit exposed stale receiver RV0 for actual UE RV2"},
+    {"session_id": 98659, "exit_code": 0, "log": "lls_ul_harq_config_regression_20260913.txt", "result": "test6GScenarioConfigValidation and testHARQTBContextInvariants passed"},
+    {"session_id": 88859, "exit_code": 0, "log": "lls_shared_ul_harq_20260913_05.txt", "result": "frozen gNB coding-parameter checks and stronger shared recovery assertion passed; RV0 NACK -> RV2 combined CRC pass, exact 19968 bits, TPMI3"}
+  ],
+  "qualified_component_capture": "C:\\Users\\anup0\\AppData\\Local\\Temp\\tpd997c1e8_e4c8_467f_8eb7_25880dedaae4",
+  "failed_recovery_capture": "C:\\Users\\anup0\\AppData\\Local\\Temp\\tp2a1fff53_9e7a_4d69_9a35_c7f043b490ea",
+  "baseline_58_slot_started": false,
+  "testAll_started": false,
+  "e2e_started": false
+}

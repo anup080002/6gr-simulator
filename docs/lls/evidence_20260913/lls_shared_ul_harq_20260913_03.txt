@@ -1,0 +1,27 @@
+UL_RECEIVER_OWNED_HARQ_DECODE_PASS: A=1160 CRC=16 BGN=2 C=1
+UL_RECEIVER_OWNED_HARQ_DECODE_PASS: A=3824 CRC=16 BGN=2 C=1
+UL_RECEIVER_OWNED_HARQ_DECODE_PASS: A=3840 CRC=24A BGN=1 C=1
+UL_RECEIVER_OWNED_HARQ_DECODE_PASS: A=10000 CRC=24A BGN=1 C=2
+{Error using sixgr.lls6g.config.validateScenarioConfig>localValidateRuleValue (line 1258)
+modulation.ul_mcs_index in C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\simulator\configs\scenarios\lls_received_ul_harq_shared_fixture.yaml must be <=
+27.
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateStructRules (line 1220)
+    localValidateRuleValue(secStruct.(name), ruleStruct.(name), secName + "." + name, ctx, catalog, allowPartial);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateScenarioSections (line 80)
+    localValidateStructRules(cfg.(sec), catalog.sections.(sec).parameters, sec, ctx, catalog, allowPartial);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.validateScenarioConfig (line 21)
+        localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 29)
+sixgr.lls6g.config.validateScenarioConfig(raw, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 34)
+s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

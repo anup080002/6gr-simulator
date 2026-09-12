@@ -1,0 +1,20 @@
+SCENARIO_INITIAL_MCS28_PASS: qam64 row 28 accepted, qam256 reserved row 28 rejected.
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=8.9580509173 root=C:\Users\anup0\AppData\Local\Temp\tp499d28dd_3374_4a26_83a6_62434f9fbae2
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples    EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    ________    _____________
+
+      "UL"        10                -15.997                   -15.997                 84             0.089581        21.24    
+
+SHARED_UL_HARQ_ATTEMPT: slot=10 CRC=0 current=0 combined=0
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=9.20656662086 root=C:\Users\anup0\AppData\Local\Temp\tp018380da_23b1_45b6_92d1_962ea01657fb
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples    EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    ________    _____________
+
+      "UL"        20                 -9.02                     -9.02                  84             0.092066       20.901    
+
+SHARED_UL_HARQ_ATTEMPT: slot=20 CRC=0 current=0 combined=1
+SHARED_RECEIVED_UL_HARQ_PASS: first CRC=0 final CRC=0 two-port TPMI=3 root=C:\Users\anup0\AppData\Local\Temp\tp2a1fff53_9e7a_4d69_9a35_c7f043b490ea
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tp2a1fff53_9e7a_4d69_9a35_c7f043b490ea

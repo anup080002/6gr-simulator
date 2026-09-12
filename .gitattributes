@@ -6,6 +6,9 @@ artifacts/phase20_*.err -text -whitespace
 artifacts/focused_logs/*.log -text -whitespace
 artifacts/repair_phase/*.log -text -whitespace
 artifacts/repair_phase/**/*.log -text -whitespace
+
+# Immutable runtime snapshots: CSV/JSON/log hashes must survive checkout.
+docs/lls/evidence_20260913/** -text -whitespace
 audit/full_stack_qualification/phase18_recovery_*/evidence/full_stack_regression_summary.csv -whitespace
 
 # MATLAB result/workspace binaries are stored through Git LFS so historical

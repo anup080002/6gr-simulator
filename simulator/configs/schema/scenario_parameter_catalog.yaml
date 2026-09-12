@@ -585,8 +585,11 @@ sections:
         required: true
         type: string
         allowed_values: [qam64_table1, qam256_table2, qam64LowSE_table3]
-      dl_mcs_index: {required: true, type: integer, min: 0, max: 27}
-      ul_mcs_index: {required: true, type: integer, min: 0, max: 27}
+      # Defined-rate qam64 tables include row 28; table-specific validity is
+      # checked after inheritance. Reserved retransmission rows are not a
+      # valid configured initial operating point.
+      dl_mcs_index: {required: true, type: integer, min: 0, max: 28}
+      ul_mcs_index: {required: true, type: integer, min: 0, max: 28}
   control:
     required: true
     parameters:

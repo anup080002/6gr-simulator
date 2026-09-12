@@ -2030,7 +2030,10 @@ if ~(isfinite(configuredOrder) && configuredOrder > 0 && isnumeric(mcsIndex) && 
 end
 profile = sixgr.link.resolveMCSProfile(tableName, double(mcsIndex));
 if ~logical(profile.Valid)
-    return;
+    error("sixgr:lls6g:config:InitialMCSRateRequired", ...
+        "%s configured initial MCS %g in %s has no defined rate in modulation.mcs_table=%s. " + ...
+        "Reserved retransmission MCS rows require retained HARQ state and cannot initialize a scenario.", ...
+        direction,double(mcsIndex),localCtx(ctx),tableName);
 end
 resolvedOrder = localQAMOrderFromValue(string(profile.Modulation));
 if ~(isfinite(resolvedOrder) && resolvedOrder > 0)

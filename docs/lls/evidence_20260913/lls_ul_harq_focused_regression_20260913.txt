@@ -1,0 +1,11 @@
+HARQSoftBufferPositionAware: rv0Positions=17656 rv3Positions=21816 overlap=13496
+[PASS] testHARQSoftBufferPositionAware (6.78s)
+[PASS] testPUSCHUCIInitialMCS (0.82s)
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=1 rv=0 mcs=10 nprb=6 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=2 ndi=1 rv=2 mcs=31 nprb=8 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=0 rv=0 mcs=10 nprb=6 tbs=1160
+[PASS] testReceivedULHARQState (34.86s)
+Slowest 3 test(s):
+   1. testReceivedULHARQState (34.86s)
+   2. testHARQSoftBufferPositionAware (6.78s)
+   3. testPUSCHUCIInitialMCS (0.82s)

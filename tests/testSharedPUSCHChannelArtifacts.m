@@ -1,4 +1,4 @@
-function ok=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority)
+function ok=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -11,6 +11,7 @@ if nargin<3, deferUCIDelivery=false; end
 if nargin<4, withCSI=false; end
 if nargin<5, twoPortUL=false; end
 if nargin<6, receivedAuthority=false; end
+if nargin<7, withHARQ=false; end
 assert(any(string(mode)==["TDD","FDD"]));
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_pusch_shared_queue_fdd_fixture.yaml'; end
@@ -26,24 +27,31 @@ if receivedAuthority
     assert(twoPortUL && ~withCSI);
     fixture='lls_received_ul_shared_queue_fixture.yaml';
 end
+if withHARQ
+    assert(receivedAuthority && ~withCoincidentSRS && ~deferUCIDelivery && ~withCSI);
+    fixture='lls_received_ul_harq_shared_fixture.yaml';
+end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
 root=tempname; mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
 if twoPortUL
     assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
 end
-if withCSI, localSaveScenarioEvidence(s,cfg,root); end
+if withCSI || withHARQ, localSaveScenarioEvidence(s,cfg,root); end
 % This component bypasses runSingle, which normally initializes the run
 % RNG. Bind the UE drop to the resolved YAML seed, not the preceding test.
 priorRNG=rng;
 rngCleanup=onCleanup(@()rng(priorRNG)); %#ok<NASGU>
 rng(double(cfg.run.seed),'twister');
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
-state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),11);
+lastSlot=11+10*logical(withHARQ);
+state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),lastSlot);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
 state.CurrentServingIdx(:)=1; state.TestRoot=root;
 state.TestDeferUCIDelivery=logical(deferUCIDelivery);
 state.TestWithCSI=logical(withCSI);
+state.TestWithHARQ=logical(withHARQ);
+state.TestPUSCHRows=table();
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if receivedAuthority
     [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
@@ -74,15 +82,11 @@ measurement=table(0,loss,"SSB-0","analytic_component_pathloss_selector_fixture",
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
-[srsCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
-srsCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(srsCfg,5);
-srsCfg.lls6g.userContext.RuntimeSlotStartTime_s=4*sixgr.time.slotDurationSec(cfg);
-args={'SlotIndex',5,'SNR_dB',cfg.channel.snr_dB,'TimingAdvanceSamples',0};
-prepared=sixgr.link.runSRSChannelEstimation(srsCfg,args{:},'PrepareOnly',true);
-owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
-for slot=1:11
+localQueueSRS(state,cfg,5);
+for slot=1:lastSlot
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if withHARQ && slot==11, localQueueSRS(state,cfg,15); end
     if slot==11 && isfield(state,'TestDeferredUCI')
         h=state.TestDeferredUCI;
         assert(sixgr.truth.receivedPUSCHUCIOccasion(owner,h,h.GrantSnapshot)==10 && ...
@@ -103,9 +107,13 @@ for slot=1:11
         if state.TestWithCSI, localVerifyCSI(state); end
         disp('SHARED_PUSCH_LATE_UCI_DELIVERY_PASS: actual slot-10 reception delivered in slot 11.');
     end
-    if slot==9
+    if slot==9 || (withHARQ && slot==19)
         assert(isfield(state,'TestSRS') && state.TestSRS.AvailableAtSample<=owner.Events.NextSampleIndex);
-        state=localReceivedDLReservations(state,cfg,10);
+        if slot==9, state=localReceivedDLReservations(state,cfg,10); end
+        if slot==19
+            assert(~state.TestLastULHARQ.CombinedDecodeOK && state.ULHarq.hasPendingRetx(cfg.phy.pusch.RNTI,slot), ...
+                'This fixture requires a real receiver NACK; never manufacture retransmission feedback.');
+        end
         [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
         ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,slot);
         ul.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
@@ -127,7 +135,7 @@ for slot=1:11
         allocation=state.ULHarq.allocate(grant.RNTI,slot,grant.TBSBytes,'NewData',true);
         assert(isequaln(allocation.HARQ.HarqID,grant.HARQ.HarqID) && ...
             allocation.HARQ.NDI==grant.HARQ.NDI && allocation.HARQ.RV==grant.HARQ.RV);
-        state.ULQueueBits(1)=grant.TBSBits; % Explicit fixture queue, actual allocated TB.
+        if slot==9, state.ULQueueBits(1)=grant.TBSBits; end % No new bytes for a retransmission.
         [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
         dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,slot);
         dl.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
@@ -141,8 +149,19 @@ for slot=1:11
     end
     [state,~]=owner.advanceSlot(state,cfg,@localEvents);
 end
-assert(state.TestPUSCHReceived && state.ULHarq.Stats.Tx==1 && state.ULQueueBits(1)==0);
-assert(numel(owner.DataTransmissions)==1 && ~owner.hasPending('PUSCH',1));
+attempts=1+logical(withHARQ);
+assert(state.TestPUSCHReceived && state.ULHarq.Stats.Tx==attempts && state.ULQueueBits(1)==0);
+assert(numel(owner.DataTransmissions)==attempts && ~owner.hasPending('PUSCH',1));
+if withHARQ
+    assert(state.ULHarq.Stats.Retx==1 && height(state.TestPUSCHRows)==2 && ...
+        state.TestPUSCHRows.CRCPass(1)==0 && state.TestLastULHARQ.HARQCombiningApplied && ...
+        state.TestLastULHARQ.HARQSoftCombiningPositionAware && state.TestLastULHARQ.PreviousLLRCount>0 && ...
+        state.TestPUSCHRows.CRCPass(2)==1 && state.TestLastULHARQ.CombinedDecodeOK && ...
+        isequal(state.TestLastULHARQ.DecodedTransportBlockBits,state.TestLastULHARQ.TransportBlockBits), ...
+        'Shared HARQ must recover the actual original payload, not merely report that combining was invoked.');
+    fprintf('SHARED_RECEIVED_UL_HARQ_PASS: first CRC=%d final CRC=%d two-port TPMI=%d root=%s\n', ...
+        state.TestPUSCHRows.CRCPass(1),state.TestPUSCHRows.CRCPass(2),state.TestSRS.TPMI,root);
+end
 if withCoincidentSRS
     assert(state.TestLastSRSObservationID==state.TestPUSCHObservationID, ...
         'Coincident SRS and PUSCH must share one verified immutable channel artifact.');
@@ -151,21 +170,37 @@ fprintf('SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: %s actual SRS/DCI/PUSCH/UCI, seed=
 ok=true;
 end
 
+function localQueueSRS(state,cfg,srsSlot)
+[srsCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
+srsCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(srsCfg,srsSlot);
+srsCfg.lls6g.userContext.RuntimeSlotStartTime_s=(srsSlot-1)*sixgr.time.slotDurationSec(cfg);
+args={'SlotIndex',srsSlot,'SNR_dB',cfg.channel.snr_dB,'TimingAdvanceSamples',0};
+prepared=sixgr.link.runSRSChannelEstimation(srsCfg,args{:},'PrepareOnly',true);
+state.SharedWaveformStream.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
+end
+
 function [grant,cfg]=localGrant(state,cfg,slot0)
 measured=state.TestSRS;
 ports=double(cfg.phy.pusch.NumAntennaPorts);
 assert(isfinite(measured.RI) && isfinite(measured.TPMI) && ports<=measured.NumSRSPorts);
 cfg.phy.pusch.TPMI=measured.TPMI;
 cfg.phy.pusch.srsDecision=struct('Authoritative',true,'MeasurementID',measured.ID, ...
-    'MeasurementSlot',5,'RI',measured.RI,'TPMI',measured.TPMI,'NumPorts',ports);
+    'MeasurementSlot',measured.Slot,'RI',measured.RI,'TPMI',measured.TPMI,'NumPorts',ports);
 p=cfg.phy.pusch;
 grant=struct('Direction','UL','Frame',0,'Slot',slot0,'RNTI',p.RNTI,'UEIndex',1, ...
     'BaseStationID',1,'ServingCell',1,'PRBSet',p.prbSet,'SymbolAllocation',p.symbolAllocation, ...
     'Modulation',p.modulation,'TargetCodeRate',p.codeRate,'MCSIndex',p.mcsIndex,'MCS',p.mcsIndex, ...
     'RV',0,'Layers',measured.RI,'NumLayers',measured.RI,'RI',measured.RI, ...
     'NumLogicalPorts',ports,'TPMI',measured.TPMI,'SRSCausalUsable',true,'SRSValid',true, ...
-    'SRSCausalMeasurementId',measured.ID,'LastSuccessfulSRSSlot',5, ...
-    'HARQ',struct('HarqID',0,'NDI',true,'RV',0,'IsRetransmission',false));
+    'SRSCausalMeasurementId',measured.ID,'LastSuccessfulSRSSlot',measured.Slot, ...
+    'HARQ',struct('HarqID',0,'NDI',true,'NDIEpoch',1,'RV',0,'IsRetransmission',false));
+if state.TestWithHARQ && slot0==18
+    prior=state.ULHarq.peekRetx(p.RNTI,slot0+1);
+    assert(~isempty(prior));
+    grant.HARQ=prior.HARQ; grant.RV=prior.HARQ.RV;
+    grant.IsRetransmission=true; grant.HARQTBContext=prior.TBContext;
+    grant.TBSBytes=prior.TBSBytes; grant.TBSBits=8*prior.TBSBytes;
+end
 grant.TimingAdvanceTicks=cfg.SharedULTimingContext.ReceivedRARTiming.NTA_Tc+cfg.SharedULTimingContext.Offset.NTAOffset_Tc;
 scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','UL');
 grant=scheduler.attachCanonicalTimingDecision(grant);
@@ -213,6 +248,7 @@ for item=items
         out=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
         assert(out.Ok,'test:SharedSRSFailed','Actual SRS receiver must pass before a sounded grant.');
         state.TestSRS=struct('RI',out.EstimatedRI,'TPMI',out.EstimatedTPMI, ...
+            'Slot',double(c.Arguments{2}), ...
             'ID',sixgr.phy.waveform.WaveformHash.numeric(receiver.readComplete()), ...
             'NumSRSPorts',p.Tx.SRS.NumSRSPorts,'AvailableAtSample',receiver.EndSampleExclusive);
         state.ReceivedULTimingReferences={sixgr.phy.sync.ReceivedULTimingReference(p,receiver,out.ReceiveTiming)};
@@ -255,6 +291,8 @@ for item=items
         grant=sixgr.truth.bindQueuedULGrantOccasion( ...
             grant,controlSlot,slot,controlFrame,frame,grant.K2);
         [cfg,~]=sixgr.truth.bindSharedDataOccasion(c.ULConfig,slot,frame,owner.SampleRateHz);
+        hasDueACK=any(~state.PendingFeedbackTable.Processed);
+        if hasDueACK
         future=state;
         lateTiming=jsondecode(future.PendingFeedbackTable.DataReceiveTimingEvidenceJSON(1));
         lateTiming.ResultAvailableAtSample=owner.Events.NextSampleIndex+1;
@@ -265,32 +303,55 @@ for item=items
         missing=state; missing.PendingFeedbackTable.DataReceiveTimingEvidenceJSON(1)="";
         localReject(@()sixgr.truth.CoupledTruthRuntime.multiplexDueHARQACKOnPUSCHRuntime(missing,grant,slot), ...
             'sixgr:truth:MissingUCIReceiveTiming');
+        end
         [state,grant,blocked]=sixgr.truth.CoupledTruthRuntime. ...
             reconcileQueuedPUSCHAfterDLFeedbackRuntime(state,grant,true);
         assert(isempty(blocked) && numel(grant)==1, ...
             'Canonical queued PUSCH must retain its actual due slot during late UCI reconciliation.');
-        uci=grant.ExpectedUCIPayload;
+        uci=sixgr.util.structGet(grant,'ExpectedUCIPayload',sixgr.phy.ul.pusch.PUSCHUCIPayload());
+        if hasDueACK
         assert(isequal(int8(uci.HARQACK(:)),int8([1;0])) && ...
             all(string(state.PendingFeedbackTable.DeliveryMechanism)=="pusch_uci") && ...
             all(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH));
-        context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true,'ExpectedUCIPayload',uci);
+        else
+            assert(~uci.hasPayload(),'Already delivered ACKs must not be remultiplexed on the retransmission.');
+        end
+        context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true, ...
+            'ExpectedUCIPayload',uci,'HARQContext',grant.HARQ);
+        isRetx=logical(grant.HARQ.IsRetransmission);
+        if isRetx
+            context.HARQContext.TransportBlockContext=state.TestLastULHARQ.TransportBlockContext;
+            context.PreviousCombinedLLR=state.ULHarq.getSoftBuffer(grant.RNTI,grant.HARQ.HarqID);
+            context.RV=grant.HARQ.RV;
+        end
         if ~isempty(fieldnames(receivedAssignment))
             cfg.phy.pusch.receivedDCIAssignment=receivedAssignment;
-            cfg.phy.pusch.receivedHARQState=sixgr.link.ReceivedULHARQState(cfg);
-            receivedAllocation=sixgr.phy.pdcch.connectedDataAllocation(cfg,receivedAssignment);
-            context.TransportBlockBits=int8(randi([0 1],receivedAllocation.NominalTBSBits,1));
+            if isRetx
+                cfg.phy.pusch.receivedHARQState=state.TestUEHARQState;
+            else
+                cfg.phy.pusch.receivedHARQState=sixgr.link.ReceivedULHARQState(cfg);
+                receivedAllocation=sixgr.phy.pdcch.connectedDataAllocation(cfg,receivedAssignment);
+                context.TransportBlockBits=int8(randi([0 1],receivedAllocation.NominalTBSBits,1));
+            end
         end
         job=sixgr.truth.buildGrantPHYJob(cfg,'UL',cfg.channel.snr_dB,frame,[],context); job.StartSlotIndex=slot;
         result=sixgr.truth.executeGrantPHYJob(job);
         assert(~result.ReadyForReceiverCommit && isempty(result.Result.TrialTable));
         if ~isempty(fieldnames(receivedAssignment))
             actual=result.Result.PreparedTransmission.Tx;
-            assert(actual.TransmissionAuthority=="received_dci_and_ue_new_tb_payload" && ...
+            authority="received_dci_and_ue_new_tb_payload";
+            if isRetx, authority="received_dci_and_ue_harq_buffer"; end
+            assert(actual.TransmissionAuthority==authority && ...
                 actual.PrecodeInfo.AuthoritativeDCIDecisionUsed && ~actual.PrecodeInfo.AuthoritativeSRSDecisionUsed);
             retained=result.Result.UEHARQState.Processes{receivedAssignment.HARQProcess+1};
-            assert(actual.UEHARQAttempt==1 && ~actual.UEHARQIsRetransmission && ...
-                isequal(retained.TransportBlockBits,actual.TransportBlock) && ...
-                retained.InitialAssignmentDigest==receivedAssignment.AssignmentDigest);
+            assert(actual.UEHARQAttempt==1+isRetx && actual.UEHARQIsRetransmission==isRetx && ...
+                isequal(retained.TransportBlockBits,actual.TransportBlock));
+            if isRetx
+                assert(retained.InitialAssignmentDigest~=receivedAssignment.AssignmentDigest && ...
+                    isequal(actual.TransportBlock,state.TestLastULHARQ.TransportBlockBits));
+            else
+                assert(retained.InitialAssignmentDigest==receivedAssignment.AssignmentDigest);
+            end
             state.TestUEHARQState=result.Result.UEHARQState;
         end
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
@@ -314,21 +375,27 @@ for item=items
         job.ReceivedContext=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
             'TransmitterObservation',tx,'Replay',replay,'ChannelState',owner.directionalChannelState(1,'UL'));
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
-        assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1 && out.TrialTable.CRCPass==1);
+        assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+        if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
         assert(out.TrialTable.TrueTimingOffset_samples==expectedTiming && ...
             abs(out.TrialTable.ResidualTimingError_PostCorrection_samples)<=1, ...
             'The practical PUSCH timing estimate must reconcile against receiver-arrival truth within one sample.');
         verifyReceivedConstellationCapture(out,job.Cfg,item.UE);
         assert(string(out.TrialTable.NoiseVarSource)=="runtime_channel_estimate", ...
             'Shared PUSCH must estimate disturbance from received reference REs, not injected-noise metadata.');
-        assert(out.HARQ.HARQACKContentMatch && isequal(out.HARQ.DecodedHARQACKBits,int8([1;0])));
+        hasUCI=job.ExpectedUCIPayload.hasPayload();
+        if hasUCI
+            assert(out.HARQ.HARQACKContentMatch && isequal(out.HARQ.DecodedHARQACKBits,int8([1;0])));
+        else
+            assert(isempty(out.HARQ.DecodedHARQACKBits));
+        end
         assert(string(out.HARQ.GrantSnapshot.GrantContextId)==string(job.GrantContextId), ...
             'The actual decoded grant must retain the same PHY-job identity used for UCI reservation.');
         % Exercise the main shared completion's receive-event handoff on
         % actual CDL/SRS/PUSCH captures, without a known-delay/oracle input.
         out.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...
             p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
-        assert(sixgr.truth.receivedPUSCHUCIOccasion(owner,out.HARQ,out.HARQ.GrantSnapshot)==10);
+        assert(sixgr.truth.receivedPUSCHUCIOccasion(owner,out.HARQ,out.HARQ.GrantSnapshot)==job.StartSlotIndex);
         missing=rmfield(out.HARQ,'ReceivedTimingEvidence');
         localReject(@()sixgr.truth.receivedPUSCHUCIOccasion(owner,missing,out.HARQ.GrantSnapshot), ...
             'sixgr:truth:MissingSharedHARQReceiveTiming');
@@ -340,7 +407,7 @@ for item=items
             % do not change the captured waveform or its availability time.
             state.TestDeferredUCI=out.HARQ;
             assert(all(~state.PendingFeedbackTable.Processed));
-        else
+        elseif hasUCI
             state=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,out.HARQ);
             assert(all(state.PendingFeedbackTable.Processed) && ...
                 state.DLHarq.Stats.Ack==1 && state.DLHarq.Stats.Nack==1);
@@ -352,13 +419,18 @@ for item=items
         end
         row=sixgr.truth.bindSharedLargeScaleEvidence(out.TrialTable,item.Planes);
         if isfield(job.Cfg.phy.pusch,'receivedDCIAssignment')
-            assert(all(row.ULTransmissionAuthority=="received_dci_and_ue_new_tb_payload") && ...
+            isRetx=logical(job.GrantSnapshot.HARQ.IsRetransmission);
+            authority="received_dci_and_ue_new_tb_payload";
+            if isRetx, authority="received_dci_and_ue_harq_buffer"; end
+            assert(all(row.ULTransmissionAuthority==authority) && ...
                 all(row.ULReceiveAllocationAuthority=="gnb_own_scheduled_grant") && ...
                 all(row.ULReceivedAssignmentDigest==job.Cfg.phy.pusch.receivedDCIAssignment.AssignmentDigest));
-            assert(row.UEHARQAttempt==1 && ...
-                row.UEHARQInitialAssignmentDigest==row.ULReceivedAssignmentDigest);
+            assert(row.UEHARQAttempt==1+isRetx);
+            if ~isRetx, assert(row.UEHARQInitialAssignmentDigest==row.ULReceivedAssignmentDigest); end
+            if hasUCI
             assert(row.PUSCHUCIInitialMCS==job.GrantSnapshot.MCSIndex && ...
                 row.PUSCHUCIInitialMCSSource=="current_new_tb_mcs");
+            end
         end
         row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes);
         row=sixgr.truth.exportSharedChannelObservation(state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
@@ -381,7 +453,7 @@ for item=items
                 all(persisted.ULReceivedAssignmentDigest==row.ULReceivedAssignmentDigest));
             assert(persisted.UEHARQAttempt==row.UEHARQAttempt && ...
                 persisted.UEHARQInitialAssignmentDigest==row.UEHARQInitialAssignmentDigest);
-            assert(persisted.PUSCHUCIInitialMCS==row.PUSCHUCIInitialMCS && ...
+            assert(isequaln(persisted.PUSCHUCIInitialMCS,row.PUSCHUCIInitialMCS) && ...
                 persisted.PUSCHUCIInitialMCSSource==row.PUSCHUCIInitialMCSSource);
         end
         assert(persisted.DataDecodeAvailableAtSample==owner.Events.NextSampleIndex && ...
@@ -396,6 +468,20 @@ for item=items
             all(verified.Segments.NumReceiveAntennas==receiver.NumReceiveAntennas));
         state.TestPUSCHReceived=true;
         state.TestPUSCHObservationID=row.ChannelObservationID;
+        if state.TestWithHARQ
+            HARQEvidence=out.HARQ; %#ok<NASGU>
+            save(fullfile(state.TestRoot,sprintf('received_ul_harq_slot_%d.mat',job.StartSlotIndex)), ...
+                'HARQEvidence','-v7.3');
+            state.TestPUSCHRows=[state.TestPUSCHRows;row];
+            sixgr.util.csvWriteTable(fullfile(state.TestRoot,'received_pusch_harq.csv'),state.TestPUSCHRows,'PreserveSchema',true);
+            state.TestLastULHARQ=out.HARQ;
+            state.ULHarq.storeSoftBuffer(out.HARQ.GrantSnapshot.RNTI, ...
+                out.HARQ.GrantSnapshot.HARQ.HarqID,out.HARQ.SoftBuffer);
+            state.ULHarq.onFeedback(out.HARQ.GrantSnapshot.RNTI,out.HARQ.GrantSnapshot.HARQ.HarqID, ...
+                logical(out.HARQ.CombinedDecodeOK),'SourceSlot',job.StartSlotIndex,'FeedbackSlot',state.CurrentSlot);
+            fprintf('SHARED_UL_HARQ_ATTEMPT: slot=%d CRC=%d current=%d combined=%d\n', ...
+                job.StartSlotIndex,row.CRCPass,out.HARQ.CurrentDecodeOK,out.HARQ.HARQCombiningApplied);
+        end
     else
         error('test:UnexpectedSharedEvent','Unexpected event %s.',item.Kind);
     end

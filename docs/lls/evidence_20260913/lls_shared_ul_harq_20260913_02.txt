@@ -1,0 +1,17 @@
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=8.96255123929 root=C:\Users\anup0\AppData\Local\Temp\tpa3fb785e_a7b7_4e4f_9684_ec942b9a09e7
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples    EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    ________    _____________
+
+      "UL"        10                -4.7195                   -4.7195                 84             0.089626       21.222    
+
+SHARED_UL_HARQ_ATTEMPT: slot=10 CRC=1 current=1 combined=0
+{Error using assert
+This fixture requires a real receiver NACK; never manufacture retransmission feedback.
+
+Error in testSharedPUSCHChannelArtifacts (line 114)
+            assert(~state.TestLastULHARQ.CombinedDecodeOK && state.ULHarq.hasPendingRetx(cfg.phy.pusch.RNTI,slot), ...
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

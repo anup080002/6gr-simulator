@@ -1,0 +1,10 @@
+{Error using assert
+Receive the prior UE control observation first.
+
+Error in sixgr.truth.CoupledWaveformStream/queueUplinkControl (line 209)
+                assert(~obj.hasPending(prepared.Channel,ue), ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 93)
+owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

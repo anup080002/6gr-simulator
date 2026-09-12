@@ -1,10 +1,18 @@
 # LLS CODEX Issue Ledger
 
-Last updated: 2026-09-12
+Last updated: 2026-09-13
 
 This ledger tracks the CODEX-01..40 repair stream against concrete repo files and focused tests. A row is only marked fixed when the implementation path and a focused validation are both present. Rows marked partial or pending must not be described as 3GPP-complete in reports, CSV manifests, DB rows, or WebGUI badges.
 
 ## Current execution gate and ordered roadmap
+
+The [shared UL HARQ repair](lls/shared_ul_harq_repair_20260913.md) fixes the
+missing gNB receiver RV/TBS handoff, transmitter-owned combined-decoder
+metadata, discarded CB CRC verdict and initial-MCS-28 catalog rejection.
+The 21-slot two-port component now shows actual RV0 failure followed by
+RV2 combined recovery of all 19968 bits at configured 12 dB, with applied
+TPMI 3. This closes the exercised shared-owner recovery defect, not the
+complete main scheduler, strict DL receiver, dynamic DAI or final 58-slot gate.
 
 The [gNB HARQ/UCI reference repair](lls/gnb_harq_uci_reference_repair_20260912.md)
 replaces current-MCS reuse with retained gNB initial-MCS identity and repairs

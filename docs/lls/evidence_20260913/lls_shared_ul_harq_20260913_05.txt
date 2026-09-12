@@ -1,0 +1,20 @@
+PUSCH_FROZEN_RECEIVE_CODING_PASS: retained gNB RV/TBS/rate and contradictory-input rejection.
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=8.9580509173 root=C:\Users\anup0\AppData\Local\Temp\tpcfb02f3b_1999_4b1c_8ee3_f98cf8c3c6c2
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples    EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    ________    _____________
+
+      "UL"        10                -15.997                   -15.997                 84             0.089581        21.24    
+
+SHARED_UL_HARQ_ATTEMPT: slot=10 CRC=0 current=0 combined=0
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=9.20656662086 root=C:\Users\anup0\AppData\Local\Temp\tpcc9d5a99_73f3_41a7_b11f_f45da420f2aa
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples    EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    ________    _____________
+
+      "UL"        20                 -9.02                     -9.02                  84             0.092066       20.901    
+
+SHARED_UL_HARQ_ATTEMPT: slot=20 CRC=1 current=0 combined=1
+SHARED_RECEIVED_UL_HARQ_PASS: first CRC=0 final CRC=1 two-port TPMI=3 root=C:\Users\anup0\AppData\Local\Temp\tpd997c1e8_e4c8_467f_8eb7_25880dedaae4
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tpd997c1e8_e4c8_467f_8eb7_25880dedaae4
