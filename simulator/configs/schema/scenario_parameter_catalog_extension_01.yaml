@@ -59,6 +59,7 @@
       "per_ue_logging_enable": {"required": false, "type": "boolean"},
       "per_cell_logging_enable": {"required": false, "type": "boolean"},
       "raw_iq_capture_enable": {"required": false, "type": "boolean"},
+      "continuous_raw_iq_capture_enable": {"required": false, "type": "boolean"},
       "raw_grid_capture_enable": {"required": false, "type": "boolean"},
       "save_constellations": {"required": false, "type": "boolean"},
       "save_channel_tensors": {"required": false, "type": "boolean"},

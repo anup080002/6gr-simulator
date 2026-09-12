@@ -1,0 +1,18 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short.yaml
+
+meta:
+  scenario_id: lls_causal_access_to_data_wiring_tdd_short_continuous_iq
+  description: >
+    Exact 58-slot configured-12-dB TDD LLS with disk-backed capture of every
+    shared-clock physical transmitter sample after waveform composition,
+    power scaling and retained TX RF processing and before propagation.
+  version: "1.0.0"
+  owner: sixgr
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: causal_access_to_data_wiring
+  tags: [lls, truth, tdd, 5mhz, configured_snr, continuous_iq, keysight]
+
+run_control:
+  continuous_raw_iq_capture_enable: true

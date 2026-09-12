@@ -293,6 +293,8 @@ cfg.outputs.persistToResultsFolder = logical(localGetNested(s, "output.persist_t
 cfg.outputs.persistenceFallbackReason = char(string(localGetNested(s, "output.persistence_fallback_reason", "")));
 cfg.outputs.resultsRoot = char(string(localGetNested(s, "output.results_root", "results")));
 cfg.outputs.rawIQCaptureEnabled = logical(localGetNested(s, "run_control.raw_iq_capture_enable", false));
+cfg.outputs.continuousRawIQCaptureEnabled = logical(localGetNested(s, ...
+    "run_control.continuous_raw_iq_capture_enable", false));
 cfg.outputs.rawGridCaptureEnabled = logical(localGetNested(s, "run_control.raw_grid_capture_enable", false));
 cfg.outputs.saveRawWaveforms = logical(localGetNested(s, "output_control.save_raw_waveforms", cfg.outputs.rawIQCaptureEnabled));
 cfg.outputs.saveChannelSnapshots = logical(localGetNested(s, "output_control.save_channel_snapshots", ...

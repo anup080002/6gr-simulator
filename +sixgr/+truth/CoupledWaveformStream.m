@@ -15,6 +15,7 @@ classdef CoupledWaveformStream < handle
         Links = struct('ID',{},'UE',{},'Cell',{},'Direction',{},'DLConfig',{},'ULConfig',{})
         Components = struct('ID',{},'TX',{},'Start',{},'Samples',{})
         Serial = 0
+        TxIQRecorder = []
         Decisions = struct('ID',{},'Kind',{},'UE',{},'Context',{})
         PDCCHResourceLedger = struct()
     end
@@ -77,6 +78,17 @@ classdef CoupledWaveformStream < handle
                 end
             end
             obj.Physical.attach(obj.Events,'double');
+            if logical(sixgr.util.structGet(cfg, ...
+                    'outputs.continuousRawIQCaptureEnabled',false))
+                rootRunFolder=string(sixgr.util.structGet( ...
+                    cfg,'run.rootRunFolder',''));
+                if strlength(strtrim(rootRunFolder))==0
+                    error('sixgr:truth:ContinuousTxIQRunFolderMissing', ...
+                        'Continuous shared-clock Tx-IQ requires run.rootRunFolder.');
+                end
+                obj.TxIQRecorder=sixgr.truth.RuntimeTxIQStreamRecorder( ...
+                    rootRunFolder,cfg,obj.SampleRateHz);
+            end
             if mode=="TDD" && ~dlAllowed && ulAllowed
                 error('sixgr:truth:SharedStreamInitialULBinding', ...
                     'An initially uplink TDD pattern needs initial UL channel binding, not a pre-execution reciprocal swap.');
@@ -563,6 +575,19 @@ classdef CoupledWaveformStream < handle
             if sum(lengths)~=stop-first
                 error('sixgr:truth:SlotSampleExtentMismatch','Actual OFDM symbol lengths must cover the scheduler slot.');
             end
+            if ~isempty(obj.TxIQRecorder)
+                txNodes=obj.Nodes(~endsWith(string({obj.Nodes.ID}),"_rx"));
+                for node=txNodes
+                    obj.Serial=obj.Serial+1;
+                    id="continuous_tx_iq_"+obj.Serial;
+                    obj.Events.observe(node.ID+":tx",id,first,stop);
+                    context=struct('EndpointID',string(node.ID), ...
+                        'Direction',string(node.Direction),'NumPorts',double(node.NumAntennas));
+                    obj.Pending(end+1)=struct('ID',id,'Kind',"ContinuousTxIQ", ...
+                        'UE',NaN,'Context',context, ...
+                        'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+                end
+            end
             boundaries=[first first+cumsum(lengths)];
             [~,~,~,partition]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,state.CurrentSlot);
             dl=double(partition.DLSymbolAllocation); ul=double(partition.ULSymbolAllocation);
@@ -594,9 +619,20 @@ classdef CoupledWaveformStream < handle
                     end
                     previousCount=numel(completed);
                     done=find(arrayfun(@(x)numel(x.Planes)== ...
-                        3+double(isfield(x.Context,'DesiredReferencePlane')),obj.Pending));
+                        localExpectedSharedPlaneCount(x),obj.Pending));
+                    captureDone=done(string({obj.Pending(done).Kind})=="ContinuousTxIQ");
+                    if ~isempty(captureDone)
+                        if obj.Events.NextSampleIndex~=stop
+                            error('sixgr:truth:ContinuousTxIQPrematureCompletion', ...
+                                'A full-slot transmitter capture completed before the slot boundary.');
+                        end
+                        obj.appendContinuousTxIQ(obj.Pending(captureDone),first,stop);
+                    end
                     for k=done
                         p=obj.Pending(k);
+                        if p.Kind=="ContinuousTxIQ"
+                            continue;
+                        end
                         if p.Kind=="TransferredPUCCHObservation"
                             obj.ControlObservationDispositions(end+1)=struct('ID',p.ID,'UE',p.UE, ...
                                 'Reason',"feedback_transferred_to_PUSCH_no_PUCCH_transmitted", ...
@@ -656,8 +692,57 @@ classdef CoupledWaveformStream < handle
             link=obj.linkForUE(ue,direction); states=obj.Physical.channelStates();
             state=states{find(string({obj.Links.ID})==link.ID,1)};
         end
+
+        function result=finalizeContinuousTxIQCapture(obj,expectedEndSample,expectedSlotCount)
+            if isempty(obj.TxIQRecorder)
+                error('sixgr:truth:ContinuousTxIQRecorderMissing', ...
+                    'Continuous Tx-IQ capture was not enabled for this shared stream.');
+            end
+            result=obj.TxIQRecorder.finalize(expectedEndSample,expectedSlotCount);
+        end
     end
     methods (Access=private)
+        function appendContinuousTxIQ(obj,captures,first,stop)
+            txNodes=obj.Nodes(~endsWith(string({obj.Nodes.ID}),"_rx"));
+            if numel(captures)~=numel(txNodes)
+                error('sixgr:truth:ContinuousTxIQEndpointCoverage', ...
+                    'Every physical transmitter requires one complete slot observation.');
+            end
+            waveforms=cell(numel(txNodes),1);
+            replayEvidence=repmat(struct('Replay',struct()),numel(txNodes),1);
+            captureIDs=string(arrayfun(@(x)string(x.Context.EndpointID),captures));
+            for index=1:numel(txNodes)
+                node=txNodes(index);
+                hit=find(captureIDs==string(node.ID));
+                if numel(hit)~=1
+                    error('sixgr:truth:ContinuousTxIQEndpointCoverage', ...
+                        'Endpoint %s has %d full-slot captures.',string(node.ID),numel(hit));
+                end
+                plane=captures(hit).Planes;
+                if numel(plane)~=1 || string(plane.ReceiverID)~=string(node.ID)+":tx" || ...
+                        plane.Observation.StartSample~=first || ...
+                        plane.Observation.EndSampleExclusive~=stop
+                    error('sixgr:truth:ContinuousTxIQObservationScope', ...
+                        'Endpoint %s capture does not match its exact TX observation plane.', ...
+                        string(node.ID));
+                end
+                samples=plane.Observation.readComplete();
+                localAssertContinuousTxRFSegments( ...
+                    samples,plane.Segments,string(node.ID),first,stop);
+                waveforms{index}=samples;
+                replayEvidence(index).Replay=struct( ...
+                    'RFOutputWaveformSHA256',char(sixgr.rf.waveformSHA256(samples)));
+            end
+            nodes=repmat(struct('ID',"",'Direction',"",'NumPorts',NaN), ...
+                numel(txNodes),1);
+            for index=1:numel(txNodes)
+                nodes(index).ID=string(txNodes(index).ID);
+                nodes(index).Direction=string(txNodes(index).Direction);
+                nodes(index).NumPorts=double(txNodes(index).NumAntennas);
+            end
+            obj.TxIQRecorder.appendBatch(nodes,waveforms,replayEvidence,first,stop);
+        end
+
         function registerNode(obj,id,cfg,direction,nAnt,isTX)
             k=find(string({obj.Nodes.ID})==id,1);
             rf=sixgr.util.structGet(cfg,'rf',struct());
@@ -694,6 +779,57 @@ classdef CoupledWaveformStream < handle
             end
         end
     end
+end
+
+function count=localExpectedSharedPlaneCount(pending)
+if string(pending.Kind)=="ContinuousTxIQ"
+    count=1;
+else
+    count=3+double(isfield(pending.Context,'DesiredReferencePlane'));
+end
+end
+
+function localAssertContinuousTxRFSegments(samples,segments,nodeID,first,stop)
+if isempty(segments)
+    error('sixgr:truth:ContinuousTxIQRFSegmentsMissing', ...
+        'Endpoint %s has no physical TX-RF execution segments.',nodeID);
+end
+if isstruct(segments)
+    segments=num2cell(segments);
+end
+starts=zeros(numel(segments),1);
+stops=zeros(numel(segments),1);
+for index=1:numel(segments)
+    segment=segments{index};
+    starts(index)=double(segment.StartSample);
+    stops(index)=double(segment.EndSampleExclusive);
+    if starts(index)<first || stops(index)>stop || stops(index)<=starts(index)
+        error('sixgr:truth:ContinuousTxIQRFSegmentScope', ...
+            'Endpoint %s has a TX-RF segment outside [%d,%d).',nodeID,first,stop);
+    end
+    executions=sixgr.util.structGet(segment,'Execution.TX',struct([]));
+    hit=find(string({executions.ID})==nodeID);
+    if numel(hit)~=1
+        error('sixgr:truth:ContinuousTxIQRFSegmentIdentity', ...
+            'Endpoint %s lacks one exact TX-RF replay for [%d,%d).', ...
+            nodeID,starts(index),stops(index));
+    end
+    expected=string(sixgr.util.structGet( ...
+        executions(hit).Replay,'RFOutputWaveformSHA256',''));
+    indices=(starts(index)-first+1):(stops(index)-first);
+    observed=string(sixgr.rf.waveformSHA256(samples(indices,:)));
+    if strlength(expected)~=64 || observed~=expected
+        error('sixgr:truth:ContinuousTxIQRFSegmentHashMismatch', ...
+            'Endpoint %s samples differ from TX-RF replay on [%d,%d).', ...
+            nodeID,starts(index),stops(index));
+    end
+end
+if starts(1)~=first || stops(end)~=stop || ...
+        any(starts(2:end)~=stops(1:end-1))
+    error('sixgr:truth:ContinuousTxIQRFSegmentGap', ...
+        'Endpoint %s TX-RF replay does not cover [%d,%d) contiguously.', ...
+        nodeID,first,stop);
+end
 end
 
 function tf=localFixedDLAtSample(cfg,sample,fs)

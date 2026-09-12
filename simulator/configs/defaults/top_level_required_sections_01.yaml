@@ -31,6 +31,7 @@
     "per_ue_logging_enable": true,
     "per_cell_logging_enable": true,
     "raw_iq_capture_enable": false,
+    "continuous_raw_iq_capture_enable": false,
     "raw_grid_capture_enable": false,
     "save_constellations": false,
     "save_channel_tensors": false,

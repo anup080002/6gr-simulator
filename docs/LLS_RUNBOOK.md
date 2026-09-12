@@ -220,8 +220,29 @@ The current `_04` package preserves its source scope honestly: DL is the first
 committed grant component, while UL is one complete selected-UE grant. It is
 not a continuous 58-slot all-channel playback file, and the manifest therefore
 retains `single_grant_component_not_complete_cell_transmission` for DL.
-Continuous shared-clock Tx capture and physical instrument loopback remain
-separate acceptance steps.
+
+To create a new run with disk-backed continuous capture of every physical
+gNB/UE transmitter on the shared sample clock, use the dedicated child YAML:
+
+```powershell
+matlab -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml','results','tdd_12db_continuous_iq_01'); assert(out.Ok,'continuous 12 dB LLS closure failed')"
+```
+
+That run must seal both of these truth artifacts before its capture is
+complete:
+
+- `waveform/csv/continuous_tx_iq_capture_manifest.csv` — one PASS row per
+  physical transmitter, including sample horizon, port count, precision,
+  common clock, source and file hashes;
+- `waveform/csv/continuous_tx_iq_segments.csv` — one row per transmitter and
+  scheduler slot, bound to the exact post-TX-RF execution hashes.
+
+The per-port `waveform/raw/*_cf64le.bin` files use little-endian IEEE-754
+`I0,Q0,I1,Q1,...` samples. They preserve the exact runtime values and include
+intentional silence. They are source captures, not directly normalized VSG
+files. Continuous-capture-to-Keysight normalization and physical instrument
+loopback remain separate acceptance steps; do not load the raw float64 files
+as signed-int16 `.wiq`.
 
 Official format references: [M9383B/M9384B waveform files and sample-rate
 commands](https://helpfiles.keysight.com/csg/m9384/Content/GPSS/Signals.htm),
