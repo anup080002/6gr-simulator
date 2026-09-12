@@ -1,0 +1,3 @@
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=1 rv=0 mcs=10 nprb=6 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=2 ndi=1 rv=2 mcs=20 nprb=8 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=0 rv=0 mcs=10 nprb=6 tbs=1160

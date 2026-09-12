@@ -1,0 +1,10 @@
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=0.106893223406 root=C:\Users\anup0\AppData\Local\Temp\tpef889099_dcad_40bf_bfa9_a8da52c6df94
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples     EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    _________    _____________
+
+      "UL"        10                -5.2942                   -5.2942                 84             0.0010689         45      
+
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tp15c12d5e_7004_4342_a50a_0ed6166a7828

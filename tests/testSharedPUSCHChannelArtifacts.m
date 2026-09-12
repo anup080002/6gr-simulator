@@ -276,6 +276,7 @@ for item=items
         context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true,'ExpectedUCIPayload',uci);
         if ~isempty(fieldnames(receivedAssignment))
             cfg.phy.pusch.receivedDCIAssignment=receivedAssignment;
+            cfg.phy.pusch.receivedHARQState=sixgr.link.ReceivedULHARQState(cfg);
             receivedAllocation=sixgr.phy.pdcch.connectedDataAllocation(cfg,receivedAssignment);
             context.TransportBlockBits=int8(randi([0 1],receivedAllocation.NominalTBSBits,1));
         end
@@ -286,6 +287,11 @@ for item=items
             actual=result.Result.PreparedTransmission.Tx;
             assert(actual.TransmissionAuthority=="received_dci_and_ue_new_tb_payload" && ...
                 actual.PrecodeInfo.AuthoritativeDCIDecisionUsed && ~actual.PrecodeInfo.AuthoritativeSRSDecisionUsed);
+            retained=result.Result.UEHARQState.Processes{receivedAssignment.HARQProcess+1};
+            assert(actual.UEHARQAttempt==1 && ~actual.UEHARQIsRetransmission && ...
+                isequal(retained.TransportBlockBits,actual.TransportBlock) && ...
+                retained.InitialAssignmentDigest==receivedAssignment.AssignmentDigest);
+            state.TestUEHARQState=result.Result.UEHARQState;
         end
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
     elseif item.Kind=="PUSCH"
@@ -349,6 +355,8 @@ for item=items
             assert(all(row.ULTransmissionAuthority=="received_dci_and_ue_new_tb_payload") && ...
                 all(row.ULReceiveAllocationAuthority=="gnb_own_scheduled_grant") && ...
                 all(row.ULReceivedAssignmentDigest==job.Cfg.phy.pusch.receivedDCIAssignment.AssignmentDigest));
+            assert(row.UEHARQAttempt==1 && ...
+                row.UEHARQInitialAssignmentDigest==row.ULReceivedAssignmentDigest);
         end
         row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes);
         row=sixgr.truth.exportSharedChannelObservation(state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
@@ -369,6 +377,8 @@ for item=items
             assert(all(persisted.ULTransmissionAuthority==row.ULTransmissionAuthority) && ...
                 all(persisted.ULReceiveAllocationAuthority==row.ULReceiveAllocationAuthority) && ...
                 all(persisted.ULReceivedAssignmentDigest==row.ULReceivedAssignmentDigest));
+            assert(persisted.UEHARQAttempt==row.UEHARQAttempt && ...
+                persisted.UEHARQInitialAssignmentDigest==row.UEHARQInitialAssignmentDigest);
         end
         assert(persisted.DataDecodeAvailableAtSample==owner.Events.NextSampleIndex && ...
             persisted.DataReceiveSymbolEndSampleExclusive<=receiver.EndSampleExclusive && ...

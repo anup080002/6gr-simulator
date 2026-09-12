@@ -719,6 +719,8 @@ trialNotes = strings(numFrames,1);
 trialULTransmissionAuthority = strings(numFrames,1);
 trialULReceivedAssignmentDigest = strings(numFrames,1);
 trialULReceiveAllocationAuthority = strings(numFrames,1);
+trialUEHARQAttempt = NaN(numFrames,1);
+trialUEHARQInitialAssignmentDigest = strings(numFrames,1);
 trialChan = repmat(chanModel, numFrames, 1);
 trialDopp = dopplerHz * ones(numFrames,1);
 liveCallbackWarned = false;
@@ -863,16 +865,29 @@ for n = 1:numFrames
             tx = preparedTransmission.Tx;
             txInfo = preparedTransmission.TxInfo;
         elseif isfield(cfgFrame.phy.pusch,'receivedDCIAssignment')
+            if isfield(cfgFrame.phy.pusch,'receivedHARQState')
+                ueState=cfgFrame.phy.pusch.receivedHARQState;
+                assert(isa(ueState,'sixgr.link.ReceivedULHARQState'), ...
+                    'sixgr:link:ReceivedULHARQStateRequired','UE HARQ must be endpoint-owned typed state.');
+                assignment=cfgFrame.phy.pusch.receivedDCIAssignment;
+                prior=ueState.Processes{assignment.HARQProcess+1};
+                ueBits=transportBlockBits;
+                if ~isempty(prior) && prior.NDI==assignment.NDI, ueBits=[]; end
+                [tx,txInfo,out.UEHARQState]=ueState.transmit(cfgFrame,assignment,ueBits,expectedUCIPayload);
+            else
             assert(~isRetransmission,'sixgr:link:ReceivedULHARQStateRequired', ...
                 'Received-command retransmission requires UE-owned HARQ TB state; new-TB sizing is not a substitute.');
             [tx,txInfo]=sixgr.link.transmitReceivedPUSCH(cfgFrame, ...
                 cfgFrame.phy.pusch.receivedDCIAssignment,transportBlockBits,expectedUCIPayload);
+            end
         else
             [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
         end
         trialULTransmissionAuthority(n)=string(sixgr.util.structGet(tx,'TransmissionAuthority', ...
             'configured_or_scheduled_transmitter'));
         trialULReceivedAssignmentDigest(n)=string(sixgr.util.structGet(tx,'ReceivedDCIAssignmentDigest',''));
+        trialUEHARQAttempt(n)=double(sixgr.util.structGet(tx,'UEHARQAttempt',NaN));
+        trialUEHARQInitialAssignmentDigest(n)=string(sixgr.util.structGet(tx,'UEHARQInitialAssignmentDigest',''));
         trialRuntimeAbsoluteSlot0(n) = double(sixgr.util.structGet(cfgFrame, ...
             "lls6g.runtime.AbsoluteSlotIndex0", NaN));
         trialCarrierNSlot(n) = double(tx.Carrier.NSlot);
@@ -1228,6 +1243,9 @@ for n = 1:numFrames
             rxArgs={"SkipTimingEstimate",useIdealTimingSync};
             trialULReceiveAllocationAuthority(n)="gnb_own_scheduled_grant";
             cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedDCIAssignment');
+            if isfield(cfgFrame.phy.pusch,'receivedHARQState')
+                cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedHARQState');
+            end
         end
         if receivedCompletion
             rxArgs=[rxArgs {"TimingSearchWindowSamples", ...
@@ -2774,6 +2792,8 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ULTransmissionAuthority = trialULTransmissionAuthority(idx);
         T.ULReceivedAssignmentDigest = trialULReceivedAssignmentDigest(idx);
         T.ULReceiveAllocationAuthority = trialULReceiveAllocationAuthority(idx);
+        T.UEHARQAttempt = trialUEHARQAttempt(idx);
+        T.UEHARQInitialAssignmentDigest = trialUEHARQInitialAssignmentDigest(idx);
         T.RequestedVsAppliedPrecoderPMIMatchStatus = trialRequestedVsAppliedPrecoderPMIMatchStatus(idx);
         T.PrecodingNumPorts = trialPrecodingNumPorts(idx);
         T.PrecodingNumLayers = trialPrecodingNumLayers(idx);
@@ -4748,6 +4768,8 @@ T.ComputeLatencySource = strings(0,1);
 T.ULTransmissionAuthority = strings(0,1);
 T.ULReceivedAssignmentDigest = strings(0,1);
 T.ULReceiveAllocationAuthority = strings(0,1);
+T.UEHARQAttempt = zeros(0,1);
+T.UEHARQInitialAssignmentDigest = strings(0,1);
 T.QCLMeasurementStatus = strings(0,1);
 T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
 T.SymbolDecisionStatus = strings(0,1);

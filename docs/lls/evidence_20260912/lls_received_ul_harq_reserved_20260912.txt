@@ -1,0 +1,10 @@
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=1 rv=0 mcs=10 nprb=6 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=2 ndi=1 rv=2 mcs=31 nprb=8 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=0 rv=0 mcs=10 nprb=6 tbs=1160
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+CONNECTED_DATA_ALLOCATION_PASS format=1_1 tbs=1064 nscid=1 port=1
+[PASS] testConnectedDataAllocation (18.93s)
+[PASS] testConnectedDCIMaterialization (9.72s)
+Slowest 2 test(s):
+   1. testConnectedDataAllocation (18.93s)
+   2. testConnectedDCIMaterialization (9.72s)

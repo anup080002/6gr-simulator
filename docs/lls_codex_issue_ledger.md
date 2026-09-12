@@ -6,6 +6,14 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [received UL HARQ checkpoint](lls/received_ul_harq_repair_20260912.md)
+adds UE-owned process buffers and modulation-only MCS handling, with actual
+received-control/retransmitted-waveform endpoint evidence. Shared UCI
+retransmission and gNB initial-MCS retention, strict DL receive integration,
+dynamic DAI and full main-scheduler qualification remain mandatory. The
+linked checkpoint also records newly identified Type-2 ordering limitations;
+old bounded codebook vectors are not sufficient closure evidence.
+
 The [received UL shared-execution checkpoint](lls/received_ul_shared_execution_20260912.md)
 wires decoded UL assignments into new-TB preparation and separates gNB receive
 allocation from UE transmitter metadata. The high-margin shared two-port

@@ -12516,6 +12516,11 @@ for plan=reshape(plans,1,[])
             'sixgr:truth:MissingReceivedULAssignment', ...
             'Connected UE transmission requires its accepted received DCI, not the scheduled grant alone.');
         plan.Cfg.phy.pusch.receivedDCIAssignment=controls{hit}.ReceivedAssignment;
+        ueBuffers=sixgr.util.structGet(state,'SharedUEULHARQBuffers',{});
+        if numel(ueBuffers)<plan.UEIndex || isempty(ueBuffers{plan.UEIndex})
+            ueBuffers{plan.UEIndex}=sixgr.link.ReceivedULHARQState(plan.Cfg);
+        end
+        plan.Cfg.phy.pusch.receivedHARQState=ueBuffers{plan.UEIndex};
     end
     plan.TrialContext.PrepareOnly=true;
     [~,~,~,~,output,job]=localRunSingleFrameDirectionTrial(plan.Cfg,multiUser, ...
@@ -12524,6 +12529,10 @@ for plan=reshape(plans,1,[])
     context=struct('Plan',plan,'Job',job,'MultiUser',multiUser,'Config',cfg, ...
         'Key',localSharedGrantControlKey(plan.GrantSnapshot,direction));
     state.SharedWaveformStream.queueData(plan.UEIndex,output.PreparedTransmission,context);
+    if isfield(output,'UEHARQState')
+        ueBuffers{plan.UEIndex}=output.UEHARQState;
+        state.SharedUEULHARQBuffers=ueBuffers;
+    end
 end
 end
 

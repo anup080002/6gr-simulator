@@ -1,0 +1,14 @@
+[PASS] testConnectedMCSHARQSemantics (0.07s)
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=1 rv=0 mcs=10 nprb=6 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=2 ndi=1 rv=2 mcs=31 nprb=8 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=0 rv=0 mcs=10 nprb=6 tbs=1160
+[PASS] testReceivedULHARQState (50.10s)
+[PASS] testConnectedDCIMaterialization (10.57s)
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+CONNECTED_DATA_ALLOCATION_PASS format=1_1 tbs=1064 nscid=1 port=1
+[PASS] testConnectedDataAllocation (21.46s)
+Slowest 4 test(s):
+   1. testReceivedULHARQState (50.10s)
+   2. testConnectedDataAllocation (21.46s)
+   3. testConnectedDCIMaterialization (10.57s)
+   4. testConnectedMCSHARQSemantics (0.07s)
