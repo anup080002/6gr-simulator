@@ -1,0 +1,11 @@
+DL_HARQ_REPLAY_BASE_CAPTURE=C:\Users\anup0\AppData\Local\Temp\tpf868aa03_479b_4b63_9e17_9d093e4215bd.mat
+{Error using assert
+DL replay allocation evidence must match the frozen scheduler grant exactly.
+
+Error in testLLSHARQGrantReplayTBConsistency>localAssertAllocationEvidence (line 227)
+assert(~isempty(prbSet) && numel(symbolAllocation) >= 2 && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testLLSHARQGrantReplayTBConsistency (line 155)
+localAssertAllocationEvidence(dlReplay.TrialTable, dlGrant, "DL replay");
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

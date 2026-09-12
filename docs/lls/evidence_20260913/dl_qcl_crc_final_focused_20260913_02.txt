@@ -1,0 +1,6 @@
+FROZEN_SYMBOL_ALLOCATION_PASS captured_grant=1 negative_guards=3
+EXECUTED_HARQ_CLOCK_PASS slots=5 guards=20 includes_sfn_wrap
+RECEIVED_DL_QCL_AUTHORITY_PASS bits=1064 delay=43 window=[39 47] guards=8 source=explicit_boundary_fixture
+DL_CRC_SCORING_SEPARATION_PASS captures=3 scoring_complements=3 guards=2
+testObservedREAllocationDeduplication passed.
+RAStageContinuation PASS: TDD/FDD coded waveforms, decoded-stage resume, checkpoint round trip, no premature finalization.

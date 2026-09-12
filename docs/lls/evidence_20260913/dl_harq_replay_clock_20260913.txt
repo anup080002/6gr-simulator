@@ -1,0 +1,8 @@
+DL_HARQ_REPLAY_BASE_CAPTURE=C:\Users\anup0\AppData\Local\Temp\tp0482fe94_0360_4072_97fe_84c18bc15431.mat
+{Error using sixgr.link.runDLPDSCHThroughput (line 32)
+The value of 'StartSlotIndex' is invalid. It must satisfy the function: @(x)isnumeric(x)&&isscalar(x)&&x>=1.
+
+Error in testLLSHARQGrantReplayTBConsistency (line 151)
+dlReplay = sixgr.link.runDLPDSCHThroughput(cfgDLReplay, "NumFrames", 1, "SNR_dB", 18, ...
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

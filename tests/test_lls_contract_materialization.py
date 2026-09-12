@@ -643,6 +643,31 @@ def test_scientific_renderers_publish_numeric_axes_and_truthful_constellation_co
     assert "Quadrature" in constellation_svg
 
 
+def test_constellation_preview_includes_late_adapted_samples(monkeypatch) -> None:
+    rows = [["DL", 0.7, 0.7, 0.707, 0.707] for _ in range(1000)]
+    rows.append(["DL", 0.15, -0.45, 0.154, -0.463])
+    payload = materializer._encode_csv(
+        ["Direction", "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"], rows
+    )
+    existing = {"reports/csv/equalized_constellations.csv": {
+        "artifact_id": 1, "logical_path": "reports/csv/equalized_constellations.csv", "artifact_kind": "table_csv"
+    }}
+    captured = []
+    def render(_title, _subtitle, panels, _summary):
+        captured.extend(panels)
+        return b"preview"
+    monkeypatch.setattr(materializer, "_render_scatter_panels_svg", render)
+    result = materializer._specialized_chart_materialization(
+        "post-equalization constellation", existing, lambda _id: payload, 91
+    )
+    assert result["source_row_count"] == 1001
+    points, references = captured[0][1:]
+    assert len(points) == 450
+    assert points[0][:2] == (0.7, 0.7)
+    assert points[-1][:2] == (0.15, -0.45)
+    assert references == [(0.707, 0.707), (0.154, -0.463)]
+
+
 def test_contract_cleanup_never_removes_runtime_source_csv(tmp_path: Path) -> None:
     stale = tmp_path / "analytics" / "image" / "contract__old__chart.png"
     source = tmp_path / "air_interface" / "csv" / "dl_pdsch_trials.csv"

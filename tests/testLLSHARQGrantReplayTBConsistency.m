@@ -59,6 +59,11 @@ cfg.phy.pusch.nPRB = 10;
 cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.pusch.enablePTRS = false;
 cfg.phy.ptrs.enable = false;
+% This is an isolated 11-RB data/HARQ fixture, not an SS/PBCH/access run.
+% Its resized carrier does not define a valid SSB Point-A placement.
+% Keep the production SSB allocation guard; exclude SSB from this fixture.
+cfg.phy.ssb.enable = false;
+cfg.phy.sib1.enable = false;
 cfg.phy.csirs.enable = false;
 cfg.phy.trs.enable = false;
 cfg.phy.pdsch.modulation = "QPSK";
@@ -111,10 +116,16 @@ cfg.phy.pusch.mcsContext = mcsContext;
 cfg = withCanonicalSchedulerTiming(cfg);
 
 initialDLGrant = localBindSchedulerTruthGrant( ...
-    sixgr.link.resolveWaveformGrant(cfg, "DL", 0), "DL");
+    sixgr.link.resolveWaveformGrant(cfg, "DL", 0), "DL", cfg);
 initialDLGrant = localBindSameWaveformProtocolFixture(initialDLGrant, "DL");
 baseDL = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 1, "SNR_dB", 18, ...
-    "GrantSnapshot", initialDLGrant);
+    "GrantSnapshot", initialDLGrant, ...
+    "StartSlotIndex",double(initialDLGrant.ScheduledAbsoluteSlot)+1);
+captureFile=[tempname '.mat'];
+save(captureFile,'cfg','initialDLGrant','baseDL');
+fprintf('DL_HARQ_REPLAY_BASE_CAPTURE=%s\n',captureFile);
+assert(~any(string(baseDL.TrialTable.Status)=="CRASH"), ...
+    'DL base waveform execution failed before allocation assertions: %s',localDescribeResult(baseDL));
 localAssertAllocationEvidence(baseDL.TrialTable, initialDLGrant, "DL base");
 assert(~isempty(baseDL.HARQ) && isfield(baseDL.HARQ, "TransportBlockBits"), ...
     "DL base run must return HARQ transport bits. %s", ...
@@ -130,6 +141,7 @@ localAssertSameWaveformProtocolBindingPreserved( ...
     dlGrant, initialDLGrant, "DL first transmission");
 assert(~isempty(dlBits), "DL base run must emit a non-empty TB.");
 dlGrant = localRemoveLegacySymbolAllocation(dlGrant);
+dlGrant = localAuthorReplayDCI(dlGrant,cfg,"DL");
 
 cfgDLReplay = cfg;
 cfgDLReplay.phy.pdsch.mcsIndex = 27;
@@ -139,7 +151,11 @@ cfgDLReplay.phy.pdsch.nPRB = 10;
 cfgDLReplay.phy.pdsch.prbSet = 0:9;
 dlReplay = sixgr.link.runDLPDSCHThroughput(cfgDLReplay, "NumFrames", 1, "SNR_dB", 18, ...
     "TransportBlockBits", dlBits, "RV", 2, ...
-    "HARQContext", struct("IsRetransmission", true), "GrantSnapshot", dlGrant);
+    "HARQContext", struct("IsRetransmission", true), "GrantSnapshot", dlGrant, ...
+    "StartSlotIndex",double(dlGrant.Slot));
+save(captureFile,'cfgDLReplay','dlGrant','dlReplay','-append');
+assert(~any(string(dlReplay.TrialTable.Status)=="CRASH"), ...
+    'DL replay failed before allocation assertions: %s',localDescribeResult(dlReplay));
 localAssertAllocationEvidence(dlReplay.TrialTable, dlGrant, "DL replay");
 assert(~any(string(dlReplay.TrialTable.Status) == "CRASH"), "DL HARQ replay must not crash after config drift.");
 assert(all(double(dlReplay.TrialTable.TBSize_bits) == numel(dlBits)), "DL HARQ replay must preserve original TB size.");
@@ -154,10 +170,11 @@ localAssertSameWaveformProtocolBindingPreserved( ...
     dlReplay.HARQ.GrantSnapshot, dlGrant, "DL retransmission");
 
 initialULGrant = localBindSchedulerTruthGrant( ...
-    sixgr.link.resolveWaveformGrant(cfg, "UL", 0), "UL");
+    sixgr.link.resolveWaveformGrant(cfg, "UL", 0), "UL", cfg);
 initialULGrant = localBindSameWaveformProtocolFixture(initialULGrant, "UL");
 baseUL = sixgr.link.runULPUSCHThroughput(cfg, "NumFrames", 1, "SNR_dB", 18, ...
-    "GrantSnapshot", initialULGrant);
+    "GrantSnapshot", initialULGrant, ...
+    "StartSlotIndex",double(initialULGrant.ScheduledAbsoluteSlot)+1);
 localAssertAllocationEvidence(baseUL.TrialTable, initialULGrant, "UL base");
 localAssertULDecodedPDCCHAuthority(baseUL.TrialTable);
 assert(~isempty(baseUL.HARQ) && isfield(baseUL.HARQ, "TransportBlockBits"), ...
@@ -174,6 +191,7 @@ localAssertSameWaveformProtocolBindingPreserved( ...
     ulGrant, initialULGrant, "UL first transmission");
 assert(~isempty(ulBits), "UL base run must emit a non-empty TB.");
 ulGrant = localRemoveLegacySymbolAllocation(ulGrant);
+ulGrant = localAuthorReplayDCI(ulGrant,cfg,"UL");
 
 cfgULReplay = cfg;
 cfgULReplay.phy.pusch.mcsIndex = 27;
@@ -183,7 +201,8 @@ cfgULReplay.phy.pusch.nPRB = 10;
 cfgULReplay.phy.pusch.prbSet = 0:9;
 ulReplay = sixgr.link.runULPUSCHThroughput(cfgULReplay, "NumFrames", 1, "SNR_dB", 18, ...
     "TransportBlockBits", ulBits, "RV", 2, ...
-    "HARQContext", struct("IsRetransmission", true), "GrantSnapshot", ulGrant);
+    "HARQContext", struct("IsRetransmission", true), "GrantSnapshot", ulGrant, ...
+    "StartSlotIndex",double(ulGrant.Slot));
 localAssertAllocationEvidence(ulReplay.TrialTable, ulGrant, "UL replay");
 assert(~any(string(ulReplay.TrialTable.Status) == "CRASH"), "UL HARQ replay must not crash after config drift.");
 assert(all(double(ulReplay.TrialTable.TBSize_bits) == numel(ulBits)), "UL HARQ replay must preserve original TB size.");
@@ -198,6 +217,19 @@ localAssertSameWaveformProtocolBindingPreserved( ...
     ulReplay.HARQ.GrantSnapshot, ulGrant, "UL retransmission");
 
 ok = true;
+end
+
+function grant=localAuthorReplayDCI(grant,cfg,direction)
+% Retransmission requests must serialize their current RV. Keeping the RV0
+% payload while asking the transmitter for RV2 is an invalid test grant.
+% Preserve NDI and original TB; only author current-transmission control.
+grant.RV=2;
+grant.HARQ.RV=2;
+grant.IsRetransmission=true;
+grant.HARQ.IsRetransmission=true;
+authored=sixgr.link.restoreFrozenSymbolAllocation(grant,grant.PHYGrant,direction);
+scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction',char(direction));
+grant.DCI=scheduler.buildDCIBitfield(authored);
 end
 
 function localAssertAllocationEvidence(trialT, grant, label)
@@ -231,7 +263,7 @@ if ~isempty(legacyFields)
 end
 end
 
-function grant = localBindSchedulerTruthGrant(grant, direction)
+function grant = localBindSchedulerTruthGrant(grant, direction, cfg)
 % Unit fixture for the HARQ replay contract. The grant and DCI themselves
 % are produced by the production exact-feasibility finalizer; this helper
 % supplies the successful control-decode binding normally contributed by
@@ -245,6 +277,15 @@ assert(isstruct(dci) && logical(sixgr.util.structGet(dci, ...
     "BitExactPDCCHPayload", false)), ...
     "%s unit fixture requires a bit-exact production DCI payload.", direction);
 bindingHash = "harq_replay_unit_" + lower(string(direction)) + "_binding";
+% resolveWaveformGrant's request labels are not the executed data calendar.
+% Materialize the same one-based data identity as coordinator dispatch,
+% retaining the separate zero-based control/data TimingDecision fields.
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+grant.Slot=double(grant.ScheduledAbsoluteSlot)+1;
+grant.Frame=floor(double(grant.ScheduledAbsoluteSlot)/double(carrier.SlotsPerFrame))+1;
+grant.PHYGrant=sixgr.phy.grant.freezePHYGrant(cfg,direction,grant, ...
+    'Slot',grant.Slot,'Frame',grant.Frame,'HARQContext',grant.HARQ);
+grant.PHYGrantContextId=char(string(grant.PHYGrant.GrantContextId));
 grant.ControlDecodeOk = true;
 grant.PDCCHGrantBindingRequired = true;
 grant.PDCCHGrantBindingOk = true;

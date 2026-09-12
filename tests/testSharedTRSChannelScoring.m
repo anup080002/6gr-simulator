@@ -1,11 +1,16 @@
-function ok=testSharedTRSChannelScoring(mode,queueWhileUL)
+function ok=testSharedTRSChannelScoring(mode,queueWhileUL,withQCL)
 % Actual shared physical owner: TRS waveform, NR fading, RF and thermal noise.
 % Short component execution, not an access/data scheduler qualification.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, mode="TDD"; end
 if nargin<2, queueWhileUL=false; end
+if nargin<3, withQCL=false; end
 file='lls_causal_access_to_data_wiring_tdd.yaml';
 if string(mode)=="FDD", file='lls_trs_shared_scoring_fdd_fixture.yaml'; end
+if withQCL
+    assert(string(mode)=="TDD" && ~queueWhileUL);
+    file='lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml';
+end
 runtimeSlot=8; queueSlot=1;
 if queueWhileUL
     assert(string(mode)=="TDD");
@@ -14,6 +19,11 @@ if queueWhileUL
 end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',file));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+if withQCL
+    cfg.run.rootRunFolder=tempname;
+    mkdir(cfg.run.rootRunFolder);
+    fprintf('SHARED_TRS_QCL_RUN_ROOT=%s\n',cfg.run.rootRunFolder);
+end
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),runtimeSlot+1);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentServingIdx(:)=1;
@@ -77,6 +87,23 @@ for slot=1:runtimeSlot+1
         samplesPerSlot=p.SampleRateHz*1e-3/(double(p.StrictConfig.ToolboxCarrier.SubcarrierSpacing)/15);
         assert(out.TrackingTable.AvailableSlot==ceil(observation.EndSampleExclusive/samplesPerSlot));
         assert(out.TrackingTable.AvailableSlot>out.TrackingTable.ProducerSlot);
+        if withQCL
+            state=sixgr.truth.recordSharedQCLTimingReference(state,p,observation,out,1,1);
+            reference=state.SharedQCLTimingReferences{1};
+            dciContext=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(p.ReceiverConfig,'1_1');
+            assert(reference.RRCServingCellIndex==dciContext.Data.ScheduledServingCell && ...
+                reference.ServingCellIndex==1 && reference.UEIndex==1 && ...
+                reference.AvailableAtSample==observation.EndSampleExclusive && ...
+                reference.SourceResourceID==cfg.phy.pdsch.qclTCI.source_resource_id);
+            nominal=sixgr.phy.frame.slotStartSample(p.Tx.GridSlots(1).Carrier, ...
+                p.Tx.FirstSlot0Based,observation.SampleRateHz);
+            assert(reference.TimingPhaseSamples==observation.StartSample+out.EstimatedTimingOffset_samples-nominal);
+            captureFile=[tempname '.mat']; receivedWaveform=observation.readComplete();
+            save(captureFile,'p','out','reference','replay','receivedWaveform');
+            fprintf('SHARED_TRS_QCL_REFERENCE_PASS rrc_cell=%g simulator_cell=%g phase=%g available=%g capture=%s\n', ...
+                reference.RRCServingCellIndex,reference.ServingCellIndex,reference.TimingPhaseSamples, ...
+                reference.AvailableAtSample,captureFile);
+        end
         fileCSV=[tempname '.csv']; writetable(out.ChannelEstimationTable,fileCSV);
         saved=readtable(fileCSV,'TextType','string');
         assert(height(saved)==2 && all(saved.NMSEScoringAvailable) && ...

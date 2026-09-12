@@ -21,6 +21,10 @@ reference=struct('UEIndex',double(ue),'ServingCellIndex',double(cellIndex), ...
     'TimingPhaseSamples',observation.StartSample+double(out.EstimatedTimingOffset_samples)-round(nominalStart), ...
     'Source',"received_nzp_csi_rs_trs_timing_estimator", ...
     'SourceConfigHash',string(p.StrictConfig.ConfigHash));
+if isfield(sixgr.util.structGet(p.ReceiverConfig,'phy.pdcch.operatorControl',struct()),'connected_dci')
+    context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(p.ReceiverConfig,'1_1');
+    reference.RRCServingCellIndex=double(context.Data.ScheduledServingCell);
+end
 references=sixgr.util.structGet(state,'SharedQCLTimingReferences',{});
 references{ue}=reference;
 state.SharedQCLTimingReferences=references;

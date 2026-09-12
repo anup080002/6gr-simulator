@@ -12652,6 +12652,8 @@ job.PrepareOnly=false;
 job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
     'PhysicalMeasurementObservation',pre,'TransmitterObservation',tx,'Replay',replay, ...
     'ChannelState',state.SharedWaveformStream.directionalChannelState(item.UE,job.Direction));
+job.ReceivedContext.ReceivedAssignment=control.ReceivedAssignment;
+job.ReceivedContext.UEIndex=item.UE;
 output=sixgr.truth.executeGrantPHYJob(job);
 assert(output.ReadyForReceiverCommit,'sixgr:truth:SharedDataReceptionMissing','A receiver attempt must produce actual trial evidence.');
 res=output.Result;
@@ -13393,10 +13395,15 @@ for mapping={ ...
     evidence.(keys{2})=values(count+1:end,:);
     attempt.(keys{3})=height(values);
 end
-if previousCount == 0 && ~isempty(stages)
+% A continuation can add observed allocations after Msg1. Merge each
+% executed publication using physical RE identity, not first-stage gating.
+% Never derive occupancy from planned grants or receive-row rectangles.
+if ~isempty(stages)
     state.ObservedREAllocationTable = localAppendObservedREAllocation( ...
         sixgr.util.structGet(state, "ObservedREAllocationTable", table()), ...
         sixgr.util.structGet(ra, "ObservedREAllocationTable", table()));
+end
+if previousCount == 0 && ~isempty(stages)
     measured = localApplyFourStepRAEvidenceToPRACHRow( ...
         localMakeLinkTrialRow(cfg, "UL", attempt.SNR_dB, 1), ra, 1, attempt.StartSlot);
     correlationTraceT = localBuildFourStepRACorrelationTraceTable(ra, measured, cfg, attempt.SNR_dB, 1);

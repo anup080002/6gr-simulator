@@ -83,6 +83,24 @@ def is_nested_execution_path(run_root: Path, candidate: Path) -> bool:
     return bool(relative.parts and relative.parts[0].lower() == "sweeps")
 
 
+def enumerate_run_files(run_root: Path) -> list[Path]:
+    """Enumerate through the extended Windows path, never silently skip it.
+
+    Extending only open/stat is insufficient: ordinary Path.rglob can omit
+    deep live-measurement checkpoints before their files reach those calls.
+    Keep ordinary paths in exported lineage and raise traversal errors.
+    """
+    root = run_root.resolve()
+    traversal_root = io_path(root)
+    def traversal_error(error: OSError) -> None:
+        raise error
+    found = []
+    for directory, _children, names in os.walk(traversal_root, onerror=traversal_error):
+        relative = Path(directory).relative_to(traversal_root)
+        found.extend(root / relative / name for name in names)
+    return sorted(found)
+
+
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with io_path(path).open("rb") as handle:
@@ -888,7 +906,8 @@ def main() -> int:
     csv_rows: list[dict] = []
     column_rows: list[dict] = []
     first_row_previews: list[dict] = []
-    for path in sorted(run_root.rglob("*.csv")):
+    all_files = enumerate_run_files(run_root)
+    for path in (p for p in all_files if p.suffix.lower() == ".csv"):
         if is_nested_execution_path(run_root, path):
             continue
         file_row, columns, first_rows = audit_csv(
@@ -898,7 +917,7 @@ def main() -> int:
         column_rows.extend(columns)
         first_row_previews.extend(first_rows)
     image_paths = sorted(
-        path for path in run_root.rglob("*")
+        path for path in all_files
         if not is_nested_execution_path(run_root, path)
         and io_path(path).is_file()
         and path.suffix.lower() in {".png", ".jpg", ".jpeg"}
@@ -906,7 +925,7 @@ def main() -> int:
     image_rows = [audit_image(path, run_root) for path in image_paths]
     vector_paths = sorted(
         path
-        for path in run_root.rglob("*.svg")
+        for path in all_files if path.suffix.lower() == ".svg"
         if not is_nested_execution_path(run_root, path) and io_path(path).is_file()
     )
 

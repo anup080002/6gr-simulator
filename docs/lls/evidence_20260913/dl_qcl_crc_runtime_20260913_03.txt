@@ -1,0 +1,7 @@
+{Error using sixgr.truth.CoupledWaveformStream.initialize (line 86)
+Continuous shared-clock Tx-IQ requires run.rootRunFolder.
+
+Error in testSharedTRSChannelScoring (line 25)
+[state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

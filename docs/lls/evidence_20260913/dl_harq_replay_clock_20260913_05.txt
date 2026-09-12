@@ -1,0 +1,10 @@
+DL_HARQ_REPLAY_BASE_CAPTURE=C:\Users\anup0\AppData\Local\Temp\tpff473432_0259_45d4_b820_1bef8fe44628.mat
+{Error using assert
+DL replay failed before allocation assertions: Ok=false, Skipped=false, Notes=Failed: every DL waveform trial crashed (sixgr:pdsch:AuthoredSchedulerDCIAllocationMismatch |
+Authored DCI RV=0 differs from materialized scheduler PDSCH 2. | stack=localEqual:103 <- bindSchedulerPDSCHTransmitContext:63 <- PDSCHCalibrationFacadeAdapter.materialize:324 <-
+localDelegateCanonicalGrantTransmitter:1176 <- PDSCH_Tx:141 <- runDLPDSCHThroughput:823 <- testLLSHARQGrantReplayTBConsistency:151), Status=CRASH, FailureReason=
+
+Error in testLLSHARQGrantReplayTBConsistency (line 156)
+assert(~any(string(dlReplay.TrialTable.Status)=="CRASH"), ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -1,0 +1,13 @@
+EXECUTED_HARQ_CLOCK_PASS slots=5 guards=20 includes_sfn_wrap
+DL_HARQ_REPLAY_BASE_CAPTURE=C:\Users\anup0\AppData\Local\Temp\tp83f953a3_6e02_4f30_bba5_e48866fdec4f.mat
+[FAIL] testLLSHARQGrantReplayTBConsistency (19.74s)
+       DL base waveform execution failed before allocation assertions: Ok=false, Skipped=false, Notes=Failed: every DL waveform trial crashed (sixgr:link:HARQExecutedClockMismatch | A supplied grant clock must match execution, not be silently overwritten. | stack=bindExecutedHARQClock:15 <- localBuildHARQGrantSnapshot:7399 <- runDLPDSCHThroughput:929 <- testLLSHARQGrantReplayTBConsistency:121 <- executeRegressionTest:7 <- runFocusedTests:37), Status=CRASH, FailureReason=
+[PASS] testLLS_DL (64.58s)
+[PASS] testLLS_UL (82.20s)
+Slowest 3 test(s):
+   1. testLLS_UL (82.20s)
+   2. testLLS_DL (64.58s)
+   3. testLLSHARQGrantReplayTBConsistency (19.74s)
+{Error using assert
+Focused clock/runner regressions failed
+} 

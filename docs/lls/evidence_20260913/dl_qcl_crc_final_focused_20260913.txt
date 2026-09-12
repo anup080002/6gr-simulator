@@ -1,0 +1,7 @@
+{Error using assert
+Assertion failed.
+
+Error in testFrozenSymbolAllocationReplay (line 11)
+assert(isequal(fixed,sixgr.link.restoreFrozenSymbolAllocation(fixed,g.PHYGrant,'DL')));
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

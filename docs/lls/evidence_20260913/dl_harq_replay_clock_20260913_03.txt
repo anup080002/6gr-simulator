@@ -1,0 +1,26 @@
+DL_HARQ_REPLAY_BASE_CAPTURE=C:\Users\anup0\AppData\Local\Temp\tpde644c55_4175_4b2e_be87_ee7465485a96.mat
+{Error using assert
+grant_timing_identity_mismatch:SymbolAllocation. Resolve a new canonical timing decision before DCI/TX.
+
+Error in sixgr.phy.grant.assertGrantTimingIdentity>localRequire (line 72)
+assert(condition,'sixgr:phy:grant:TimingIdentityMismatch', ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.grant.assertGrantTimingIdentity>localNumber (line 61)
+    localRequire(~required,field);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.grant.assertGrantTimingIdentity (line 21)
+localNumber(grant,'SymbolAllocation',[d.TargetStartSymbol d.TargetNumSymbols],true);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.grant.freezePHYGrant (line 30)
+sixgr.phy.grant.assertGrantTimingIdentity(grant,direction);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput>localNormalizeHARQReplayGrantInputs (line 7538)
+    phyGrant = sixgr.phy.grant.freezePHYGrant(cfg, "DL", grant, ...
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 83)
+    [grantSnapshotOverride, phyGrantOverride] = localNormalizeHARQReplayGrantInputs( ...
+                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testLLSHARQGrantReplayTBConsistency (line 151)
+dlReplay = sixgr.link.runDLPDSCHThroughput(cfgDLReplay, "NumFrames", 1, "SNR_dB", 18, ...
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

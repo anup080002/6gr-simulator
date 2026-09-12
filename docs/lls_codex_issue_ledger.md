@@ -6,6 +6,28 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [fresh access/artifact re-audit](lls/continuous_iq_02_access_artifact_reaudit_20260913.md)
+explains the old slot-31 traffic start from actual RA/SRS/TDD traces. It
+initially parsed 1,013 run CSVs / 1,300,260 rows and decoded 292 PNGs; an
+independent count exposed 35 omitted long-path checkpoint CSVs. Extended-path
+enumeration is now repaired and tested; the corrected 1,048-file / 1,373,809-row
+pass is retained separately. The initial pass was not exhaustive. The strict
+value gate fails two old missing alignment columns, 32 uncontracted historical
+snapshot files and three unclassified empty snapshots. Independent IQ
+checks pass. A first-samples-only constellation defect is repaired, but
+applied-beam pattern identity, downstream RA grid producers, special-slot
+dispatch, TA truth-reference reconciliation and repeated publication remain
+mandatory open items. Editable YAML does not qualify eight-layer/two-codeword
+or high-QAM operation. The final 58-slot run stays held.
+
+The [connected QCL/CRC authority repair](lls/dl_qcl_crc_authority_20260913.md)
+forwards received DCI into main DL QCL selection, separates RRC and simulator
+cell identities, and removes known-TX-bit equality from DL CRC decisions.
+The first focused process passed the new boundaries and five regressions.
+This is not the main UE-owned RX/HARQ switch: its reporting-adapter mismatch,
+second-combining path and protocol-only repeated-ACK disposition remain open.
+See the checkpoint receipt for the separate runner/shared-TRS process outcome.
+
 The [UE-owned DL HARQ endpoint](lls/dl_received_harq_20260913.md) now retains
 initial received coding identity and soft bits, combines received MCS31/RV2,
 avoids duplicate delivery, and resets on NDI toggle. Actual captured endpoint

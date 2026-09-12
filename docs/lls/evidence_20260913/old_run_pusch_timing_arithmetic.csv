@@ -1,0 +1,6 @@
+Slot,NominalMinusTX_samples,AppliedTA_samples,TAAvailableBeforeTX,CaptureOriginDelta_samples,TrueOffset_samples,AppliedCorrection_samples,Residual_samples
+35,100,100,true,77,84,84,0
+40,100,100,true,77,84,84,0
+45,100,100,true,77,84,84,0
+50,100,100,true,77,84,84,0
+55,100,100,true,77,84,84,0

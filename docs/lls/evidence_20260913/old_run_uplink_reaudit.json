@@ -1,0 +1,597 @@
+{
+  "Scope": "observed_uplink_evidence_consistency_not_phy_qualification",
+  "CrossFileAtomicCheckpoint": false,
+  "RunRoot": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\results\\lls\\lls_causal_access_to_data_wiring_tdd_short_continuous_iq\\tdd_12db_continuous_iq_02",
+  "Coverage": {
+    "PRACH": {
+      "State": "observed",
+      "Rows": 1
+    },
+    "PUCCH": {
+      "State": "observed",
+      "Rows": 4
+    },
+    "PUSCH": {
+      "State": "observed",
+      "Rows": 5
+    },
+    "SRS": {
+      "State": "observed",
+      "Rows": 6
+    }
+  },
+  "Sources": [
+    {
+      "Path": "air_interface/csv/prach_trials.csv",
+      "SHA256": "d99dbc1a8d503d07be85d10b00f52ebb70b0d3a42d8dbd37fa0dd59a30d6d2d7",
+      "Bytes": 15614,
+      "Rows": 1
+    },
+    {
+      "Path": "air_interface/csv/pucch_trials.csv",
+      "SHA256": "b2fed2454e1e232c18026215f00980e726ae4bcc98386b131a9b2f4c33d9ee38",
+      "Bytes": 18887,
+      "Rows": 4
+    },
+    {
+      "Path": "air_interface/csv/ul_pusch_trials.csv",
+      "SHA256": "869ecf4ceddbd95f55969ca5d69a8cda57861c58ecc810941498daabf49f57f4",
+      "Bytes": 541451,
+      "Rows": 5
+    },
+    {
+      "Path": "air_interface/csv/srs_trials.csv",
+      "SHA256": "7a7a97e32cbc3476ac90d3472ab71236f5c719ed87843494dfcf303f11020f78",
+      "Bytes": 398680,
+      "Rows": 6
+    }
+  ],
+  "Checks": [
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "uci_binary_vectors",
+      "Passed": true,
+      "Detail": "Expected/decoded/error evidence must be literal binary strings."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "ExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "DecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "PUCCHExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "PUCCHDecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "uci_content_match_closure",
+      "Passed": true,
+      "Detail": "Content equality is checked independently of CRC applicability."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "uci_error_vector_closure",
+      "Passed": true,
+      "Detail": "Published error vector must match bit-by-bit XOR, including leading zeroes."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "successful_pucch_has_complete_payload",
+      "Passed": true,
+      "Detail": "A successful receive requires a complete decoded payload, not only a status label."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "uci_crc_applicability",
+      "Passed": true,
+      "Detail": "Published UCI CRC length=0.0; applicability must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "nonapplicable_pucch_crc_not_passed",
+      "Passed": true,
+      "Detail": "Nonapplicable CRC must remain unavailable, not a numeric pass/fail."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 2,
+      "Slot": "34",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "uci_binary_vectors",
+      "Passed": true,
+      "Detail": "Expected/decoded/error evidence must be literal binary strings."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "ExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "DecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "PUCCHExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "PUCCHDecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "uci_content_match_closure",
+      "Passed": true,
+      "Detail": "Content equality is checked independently of CRC applicability."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "uci_error_vector_closure",
+      "Passed": true,
+      "Detail": "Published error vector must match bit-by-bit XOR, including leading zeroes."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "successful_pucch_has_complete_payload",
+      "Passed": true,
+      "Detail": "A successful receive requires a complete decoded payload, not only a status label."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "uci_crc_applicability",
+      "Passed": true,
+      "Detail": "Published UCI CRC length=0.0; applicability must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "nonapplicable_pucch_crc_not_passed",
+      "Passed": true,
+      "Detail": "Nonapplicable CRC must remain unavailable, not a numeric pass/fail."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 3,
+      "Slot": "39",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "uci_binary_vectors",
+      "Passed": true,
+      "Detail": "Expected/decoded/error evidence must be literal binary strings."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "ExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "DecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "PUCCHExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "PUCCHDecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=9; vector length=9."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "uci_content_match_closure",
+      "Passed": true,
+      "Detail": "Content equality is checked independently of CRC applicability."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "uci_error_vector_closure",
+      "Passed": true,
+      "Detail": "Published error vector must match bit-by-bit XOR, including leading zeroes."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "successful_pucch_has_complete_payload",
+      "Passed": true,
+      "Detail": "A successful receive requires a complete decoded payload, not only a status label."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "uci_crc_applicability",
+      "Passed": true,
+      "Detail": "Published UCI CRC length=0.0; applicability must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "nonapplicable_pucch_crc_not_passed",
+      "Passed": true,
+      "Detail": "Nonapplicable CRC must remain unavailable, not a numeric pass/fail."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 4,
+      "Slot": "49",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "uci_binary_vectors",
+      "Passed": true,
+      "Detail": "Expected/decoded/error evidence must be literal binary strings."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "ExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "DecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "PUCCHExpectedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "PUCCHDecodedBitCount_closure",
+      "Passed": true,
+      "Detail": "Published count=10; vector length=10."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "uci_content_match_closure",
+      "Passed": true,
+      "Detail": "Content equality is checked independently of CRC applicability."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "uci_error_vector_closure",
+      "Passed": true,
+      "Detail": "Published error vector must match bit-by-bit XOR, including leading zeroes."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "successful_pucch_has_complete_payload",
+      "Passed": true,
+      "Detail": "A successful receive requires a complete decoded payload, not only a status label."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "uci_crc_applicability",
+      "Passed": true,
+      "Detail": "Published UCI CRC length=0.0; applicability must agree."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "nonapplicable_pucch_crc_not_passed",
+      "Passed": true,
+      "Detail": "Nonapplicable CRC must remain unavailable, not a numeric pass/fail."
+    },
+    {
+      "Channel": "PUCCH",
+      "CSVRow": 5,
+      "Slot": "54",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 2,
+      "Slot": "30",
+      "Check": "usable_srs_runtime_provenance",
+      "Passed": true,
+      "Detail": "Usable runtime SRS requires its actual producer provenance, not a missing-field token."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 2,
+      "Slot": "30",
+      "Check": "shared_srs_observation_clock",
+      "Passed": true,
+      "Detail": "Actual completed capture must retain integral sample bounds and its exact completion time."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 2,
+      "Slot": "30",
+      "Check": "shared_srs_no_future_delivery",
+      "Passed": true,
+      "Detail": "Scheduler consumption cannot precede completed actual SRS observation."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 2,
+      "Slot": "30",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 3,
+      "Slot": "35",
+      "Check": "usable_srs_runtime_provenance",
+      "Passed": true,
+      "Detail": "Usable runtime SRS requires its actual producer provenance, not a missing-field token."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 3,
+      "Slot": "35",
+      "Check": "shared_srs_observation_clock",
+      "Passed": true,
+      "Detail": "Actual completed capture must retain integral sample bounds and its exact completion time."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 3,
+      "Slot": "35",
+      "Check": "shared_srs_no_future_delivery",
+      "Passed": true,
+      "Detail": "Scheduler consumption cannot precede completed actual SRS observation."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 3,
+      "Slot": "35",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 4,
+      "Slot": "40",
+      "Check": "usable_srs_runtime_provenance",
+      "Passed": true,
+      "Detail": "Usable runtime SRS requires its actual producer provenance, not a missing-field token."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 4,
+      "Slot": "40",
+      "Check": "shared_srs_observation_clock",
+      "Passed": true,
+      "Detail": "Actual completed capture must retain integral sample bounds and its exact completion time."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 4,
+      "Slot": "40",
+      "Check": "shared_srs_no_future_delivery",
+      "Passed": true,
+      "Detail": "Scheduler consumption cannot precede completed actual SRS observation."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 4,
+      "Slot": "40",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 5,
+      "Slot": "45",
+      "Check": "usable_srs_runtime_provenance",
+      "Passed": true,
+      "Detail": "Usable runtime SRS requires its actual producer provenance, not a missing-field token."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 5,
+      "Slot": "45",
+      "Check": "shared_srs_observation_clock",
+      "Passed": true,
+      "Detail": "Actual completed capture must retain integral sample bounds and its exact completion time."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 5,
+      "Slot": "45",
+      "Check": "shared_srs_no_future_delivery",
+      "Passed": true,
+      "Detail": "Scheduler consumption cannot precede completed actual SRS observation."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 5,
+      "Slot": "45",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 6,
+      "Slot": "50",
+      "Check": "usable_srs_runtime_provenance",
+      "Passed": true,
+      "Detail": "Usable runtime SRS requires its actual producer provenance, not a missing-field token."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 6,
+      "Slot": "50",
+      "Check": "shared_srs_observation_clock",
+      "Passed": true,
+      "Detail": "Actual completed capture must retain integral sample bounds and its exact completion time."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 6,
+      "Slot": "50",
+      "Check": "shared_srs_no_future_delivery",
+      "Passed": true,
+      "Detail": "Scheduler consumption cannot precede completed actual SRS observation."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 6,
+      "Slot": "50",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 7,
+      "Slot": "55",
+      "Check": "usable_srs_runtime_provenance",
+      "Passed": true,
+      "Detail": "Usable runtime SRS requires its actual producer provenance, not a missing-field token."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 7,
+      "Slot": "55",
+      "Check": "shared_srs_observation_clock",
+      "Passed": true,
+      "Detail": "Actual completed capture must retain integral sample bounds and its exact completion time."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 7,
+      "Slot": "55",
+      "Check": "shared_srs_no_future_delivery",
+      "Passed": true,
+      "Detail": "Scheduler consumption cannot precede completed actual SRS observation."
+    },
+    {
+      "Channel": "SRS",
+      "CSVRow": 7,
+      "Slot": "55",
+      "Check": "measured_timing_application_flag",
+      "Passed": true,
+      "Detail": "Received-reference timing applied 84.0 samples; application flag must agree."
+    }
+  ],
+  "FailedChecks": 0,
+  "UnobservedChannels": []
+}

@@ -1,0 +1,12 @@
+[PASS] testLLS_DL (71.24s)
+[FAIL] testLLSHARQGrantReplayTBConsistency (2.18s)
+       Cannot pack DCI for an infeasible finalized PHY grant: exact_resource_accounting_failed:NCRBSSB and KSSB must be nonnegative integers.
+DL PDSCH throughput execution contract: 4/4 typed ownership guards; calibration and connected canonical waveform provenance retained.
+[PASS] testDLPDSCHThroughputExecutionContract (10.69s)
+Slowest 3 test(s):
+   1. testLLS_DL (71.24s)
+   2. testDLPDSCHThroughputExecutionContract (10.69s)
+   3. testLLSHARQGrantReplayTBConsistency (2.18s)
+{Error using runFocusedTests (line 55)
+One or more focused regressions failed; see per-test diagnostics.
+} 

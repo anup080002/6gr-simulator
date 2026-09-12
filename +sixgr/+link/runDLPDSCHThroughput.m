@@ -1167,8 +1167,18 @@ for n = 1:numFrames
         if receivedCompletion
             observation=p.Results.ReceivedContext.Observation;
             searchWindow=preparedTransmission.receiverTimingSearchWindow(observation);
-            [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
-                cfgFrame,grantSnapshotOverride,observation,preparedTransmission.StartSample,searchWindow);
+            if isfield(sixgr.util.structGet(cfgFrame,'phy.pdcch.operatorControl',struct()),'connected_dci')
+                received=p.Results.ReceivedContext;
+                assert(isfield(received,'ReceivedAssignment') && isfield(received,'UEIndex'), ...
+                    'sixgr:truth:MissingReceivedDLAssignment', ...
+                    'Connected shared DL reception requires the actual received control capsule.');
+                [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+                    cfgFrame,received.ReceivedAssignment,observation, ...
+                    preparedTransmission.StartSample,searchWindow,received.UEIndex);
+            else
+                [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+                    cfgFrame,grantSnapshotOverride,observation,preparedTransmission.StartSample,searchWindow);
+            end
             rxArgs=[rxArgs {'TimingSearchWindowSamples',searchWindow}];
         end
         if executionContract.Profile == "scheduler_truth"
@@ -1929,19 +1939,18 @@ for n = 1:numFrames
             continue;
         end
 
-        currentBe = sum(txBits(1:L) ~= rxBits(1:L));
+        [currentDecodeOK,currentBe,L] = sixgr.link.scoreReceivedDLTransportBlock(rx,txBits);
         finalBe = currentBe;
         finalBitsCompared = L;
         bitTot = bitTot + double(numel(txBits));
 
-        currentDecodeOK = rx.Ok && currentBe == 0 && numel(rxBits) == numel(txBits);
         hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
         if hasPriorHARQEvidence && ~currentDecodeOK
             [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = ...
                 sixgr.phy.harq.decodeCombinedDLSCH(currentCodingLayout, combinedLLR, cfgFrame);
             if combinedDecodeOK
-                [combinedBe, combinedBitsCompared] = localFinalBitErrors(txBits, combinedRxBits);
-                combinedDecodeOK = combinedBitsCompared == numel(txBits) && combinedBe == 0;
+                [combinedDecodeOK,combinedBe,combinedBitsCompared] = sixgr.link.scoreReceivedDLTransportBlock( ...
+                    struct('CRCPass',logical(combinedDecodeOK),'TransportBlock',combinedRxBits),txBits);
                 finalBe = combinedBe;
                 finalBitsCompared = combinedBitsCompared;
                 if combinedDecodeOK
@@ -7387,6 +7396,7 @@ if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
     grant.PHYGrantContextId = char(string(txPHYGrant.GrantContextId));
 end
 grant = sixgr.link.finalizeHARQGrantSpatialSnapshot(grant, "DL");
+grant = sixgr.link.bindExecutedHARQClock(grant,tx.Carrier,slotIdx);
 if ~(isfield(grant, "GrantContextId") && strlength(strtrim(string(grant.GrantContextId))) > 0)
     grant.GrantContextId = localComposeReplayGrantContextId( ...
         seedGrant, "DL", frameIdx, slotIdx, trialSeed);
@@ -7421,6 +7431,7 @@ function grant = localAlignGrantSnapshotToPHYGrant(grant, phyGrant)
 if ~(isstruct(grant) && isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)))
     return;
 end
+grant=sixgr.link.restoreFrozenSymbolAllocation(grant,phyGrant,'DL');
 coding = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
 ant = sixgr.util.structGet(phyGrant, "AntennaArchitecture", struct());
 prec = sixgr.util.structGet(phyGrant, "PrecodingState", struct());

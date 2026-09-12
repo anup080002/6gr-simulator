@@ -55,6 +55,7 @@ if isstruct(phyGrantOverride) && ~isempty(fieldnames(phyGrantOverride))
     end
     grantSnapshotOverride.PHYGrant = phyGrantOverride;
     grantSnapshotOverride.PHYGrantContextId = char(string(phyGrantOverride.GrantContextId));
+    grantSnapshotOverride=sixgr.link.restoreFrozenSymbolAllocation(grantSnapshotOverride,phyGrantOverride,'UL');
 end
 [grantSnapshotOverride, phyGrantOverride] = localNormalizeHARQReplayGrantInputs( ...
     cfg, grantSnapshotOverride, phyGrantOverride, transportBlockBits, harqContext, snr_dB, startFrameIndex, startSlotIndex);
@@ -6880,6 +6881,7 @@ if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
     grant.PHYGrantContextId = char(string(txPHYGrant.GrantContextId));
 end
 grant = sixgr.link.finalizeHARQGrantSpatialSnapshot(grant, "UL");
+grant = sixgr.link.bindExecutedHARQClock(grant,tx.Carrier,slotIdx);
 if ~(isfield(grant, "GrantContextId") && strlength(strtrim(string(grant.GrantContextId))) > 0)
     grant.GrantContextId = localComposeReplayGrantContextId( ...
         seedGrant, "UL", frameIdx, slotIdx, trialSeed);

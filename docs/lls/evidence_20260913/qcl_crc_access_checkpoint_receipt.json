@@ -1,0 +1,133 @@
+{
+  "schema": "sixgr.focused_checkpoint.v1",
+  "date": "2026-09-13",
+  "baseline_commit": "628517d8497dd83091b7bf112644ffd8e4a003e2",
+  "scope": "Focused QCL/CRC/clock/HARQ and artifact repair checkpoint, not final LLS qualification",
+  "full_58_slot_run_started": false,
+  "testAll_started": false,
+  "e2e_campaign_started": false,
+  "processes": [
+    {
+      "log": "dl_qcl_crc_authority_20260913.txt",
+      "exit_code": 0,
+      "scope": "Received-QCL boundary and CRC scoring plus five regressions"
+    },
+    {
+      "log": "dl_harq_replay_clock_20260913_06.txt",
+      "exit_code": 0,
+      "scope": "DL and UL frozen-grant HARQ replay"
+    },
+    {
+      "log": "dl_qcl_crc_final_focused_20260913_02.txt",
+      "exit_code": 0,
+      "scope": "Frozen allocation, clock, QCL/CRC guards, observed-RE deduplication, TDD/FDD RA continuation"
+    },
+    {
+      "log": "access_artifact_python_tests.xml",
+      "exit_code": 0,
+      "passed_tests": 248
+    },
+    {
+      "artifact": "qualification_working/continuous_iq_02_full_reaudit_20260913/audit_summary.json",
+      "exit_code": 1,
+      "csv_files": 1013,
+      "csv_rows": 1300260,
+      "png_files": 292,
+      "required_columns_missing": 2,
+      "coverage_complete": false
+    },
+    {
+      "log": "access_artifact_python_final_tests.xml",
+      "exit_code": 0,
+      "passed_tests": 250
+    },
+    {
+      "artifact": "qualification_working/continuous_iq_02_full_reaudit_20260913_longpaths/audit_summary.json",
+      "exit_code": 1,
+      "csv_files": 1048,
+      "csv_rows": 1373809,
+      "png_files": 292,
+      "enumeration_matches_independent_filesystem_count": true,
+      "required_columns_missing": 2,
+      "uncontracted_historical_csv_files": 32,
+      "unclassified_empty_snapshots": 3
+    }
+  ],
+  "component_subtest": {
+    "log": "dl_qcl_crc_runtime_20260913_04.txt",
+    "whole_process_exit_code": 1,
+    "shared_trs_subtest": "PASS",
+    "nmse_db": -12.2123,
+    "source_timing_phase_samples": 7,
+    "available_at_sample": 69120,
+    "rrc_cell_index": 0,
+    "simulator_cell_index": 1
+  },
+  "independent_old_run_iq_audit": {
+    "exit_code": 0,
+    "failures": [],
+    "scope": "Stored four-port continuous IQ, both endpoints, 116 segments; no instrument playback qualification"
+  },
+  "intermediate_failed_logs_retained": true,
+  "mandatory_open": [
+    "main DL received-assignment/report adapter and UE-owned HARQ handoff",
+    "dynamic DAI and main shared QCL/TCI consumption",
+    "later RA stage exact-grid producers and main integration qualification",
+    "applied SSB/data beam pattern complex-weight and basis identity",
+    "special-slot dispatch and K1 qualification",
+    "independent TA / capture / emission clock reconciliation",
+    "disabled-power assertion fixture repair",
+    "one-pass publication and full final 12 dB artifact audit",
+    "historical live-measurement snapshot lineage, domain and empty-table applicability contracts"
+  ],
+  "hashes": [
+    {
+      "path": "docs/lls/evidence_20260913/dl_qcl_crc_authority_20260913.txt",
+      "sha256": "7fc18db1e41ac41bea10e441746eaf56f8ff6da20ee549ab8c64a78a6dae917d"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/dl_harq_replay_clock_20260913_06.txt",
+      "sha256": "c1c9b7e0a1dc898b10a3b9b9b3be55343646551af4635fb934b40b67fe293fd4"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/dl_qcl_crc_final_focused_20260913_02.txt",
+      "sha256": "590293c39273305bb6d78231f509075ba96ceb3e7a0facf65f2a954951ce4665"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/access_artifact_python_tests.xml",
+      "sha256": "5e0ae32b78aae31c95c1482b88cce969fe4700f7ddc07131158a08208abb94e8"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/shared_trs_received_qcl_reference.mat",
+      "sha256": "4f5a9048430df42c16bac25168da2d5c1221c4f4583fb8925d39e6b15d5b7748"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/dl_harq_replay_base_and_retx.mat",
+      "sha256": "e7d751f4c2910fedbc9f613e95d86e4e2f01f382dc09c4be6e46d234e3fcf921"
+    },
+    {
+      "path": "qualification_working/continuous_iq_02_full_reaudit_20260913/audit_summary.json",
+      "sha256": "953b2c92e4044a3929ce120ec931db614c5ef7d50abafd11ba88c935b04dd983"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/access_artifact_python_final_tests.xml",
+      "sha256": "a5ba11f52db6e6082bd62fb0a5c557ecd483012428c9903f5fa9ebe3d7235e6d"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/deep_path_audit_tests.xml",
+      "sha256": "99521f2c13b4b3e323d7cc8e9c1cae97228bfd5defb21832000b535eda799fba"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/old_run_uplink_reaudit.json",
+      "sha256": "0db54845f6d556d8a7a95a170d22076f3e2d2695be7b994e058f9f3073af2a7d"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/old_run_pusch_timing_arithmetic.csv",
+      "sha256": "c9e18e72c9738eb1f2652e92faec55939dcfef983e3c2eb3883dec7c4d7ad1b3"
+    },
+    {
+      "path": "qualification_working/continuous_iq_02_full_reaudit_20260913_longpaths/audit_summary.json",
+      "sha256": "0082ff9ec37bf2e21afd24740851fa722e0771d34f33f627d86b09e8166e9b48"
+    }
+  ]
+}

@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-10-contract-v63-control-evm-applicability"
+MATERIALIZER_VERSION = "2026-09-13-contract-v64-constellation-full-run-preview"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -12069,12 +12069,20 @@ def _specialized_chart_materialization(
                         }
                     )
                 if points:
-                    panels.append((f"{direction} {chart_name.replace(' constellation', '')}", points[:450], ideal[:64]))
+                    # A prefix showed only bootstrap QPSK in an adapted run.
+                    # Sample the entire retained sequence deterministically;
+                    # keep every observation in the source CSV, unchanged.
+                    count = min(len(points), 450)
+                    selected = [points[i * (len(points) - 1) // max(count - 1, 1)] for i in range(count)]
+                    references = list(dict.fromkeys(ideal))
+                    ref_count = min(len(references), 256)
+                    reference_preview = [references[i * (len(references) - 1) // max(ref_count - 1, 1)] for i in range(ref_count)]
+                    panels.append((f"{direction} {chart_name.replace(' constellation', '')}", selected, reference_preview))
             if panels:
                 direction_counts = Counter(str(row["direction"]) for row in csv_rows)
                 return {
                     "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "x_value", "y_value", "reference_x", "reference_y", "source_table_logical_path"], csv_rows),
-                    "img_bytes": _render_scatter_panels_svg(chart_name, "Constellation cloud from real runtime preview samples. Grey markers show ideal reference symbols when exported.", panels, [f"dl_rows={direction_counts['DL']}", f"ul_rows={direction_counts['UL']}"]),
+                    "img_bytes": _render_scatter_panels_svg(chart_name, "Uniform row-index preview across retained samples; full dataset in CSV. Grey markers: exported references.", panels, [f"dl_rows={direction_counts['DL']}", f"ul_rows={direction_counts['UL']}", "display_limit=450 samples/direction", "reference_limit=256 unique/direction"]),
                     "csv_status": "specialized_runtime_constellation_dataset",
                     "image_status": "generated_specialized_runtime_constellation_svg",
                     "source_table_path": f"{dl_preview_path}|{ul_preview_path}",

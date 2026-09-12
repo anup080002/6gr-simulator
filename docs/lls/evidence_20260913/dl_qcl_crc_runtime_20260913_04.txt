@@ -1,0 +1,11 @@
+DL_HARQ_REPLAY_BASE_CAPTURE=C:\Users\anup0\AppData\Local\Temp\tp8af382a4_1d6d_4d2c_bcbd_415ebaa1a386.mat
+[FAIL] testLLSHARQGrantReplayTBConsistency (17.57s)
+       DL base waveform execution failed before allocation assertions: Ok=false, Skipped=false, Notes=Failed: every DL waveform trial crashed (sixgr:pdsch:SchedulerTimingMismatch | Carrier data slot 0 differs from scheduled data slot 1. | stack=resolveSchedulerPDSCHTiming:33 <- bindSchedulerPDSCHTransmitContext:49 <- PDSCHCalibrationFacadeAdapter.materialize:324 <- localDelegateCanonicalGrantTransmitter:1176 <- PDSCH_Tx:141 <- runDLPDSCHThroughput:823 <- testLLSHARQGrantReplayTBConsistency:121 <- executeRegressionTest:7 <- runFocusedTests:37), Status=CRASH, FailureReason=
+Slowest 1 test(s):
+   1. testLLSHARQGrantReplayTBConsistency (17.57s)
+SHARED_TRS_QCL_RUN_ROOT=C:\Users\anup0\AppData\Local\Temp\tp19bc1b8a_4b37_44c6_a97c_eedd5c05414d
+SHARED_TRS_QCL_REFERENCE_PASS rrc_cell=0 simulator_cell=1 phase=7 available=69120 capture=C:\Users\anup0\AppData\Local\Temp\tp47f1e223_ac69_4893_a529_8a938b2523f1.mat
+SHARED_TRS_CHANNEL_SCORING: TDD NMSE=-12.2123 dB, 600 compared pilot/branch values.
+{Error using assert
+HARQ replay regression remains failed; see preserved diagnostics
+} 
