@@ -6,6 +6,12 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [DL receiver CRC checkpoint](lls/dl_receiver_crc_repair_20260913.md)
+removes TX metadata from combined decoding and includes CB CRC failures in
+the canonical decoder's overall verdict. Focused coding/receiver regressions
+pass; this does not close first-pass received-assignment materialization,
+UE-owned DL HARQ state, shared timing integration, or the final baseline gate.
+
 The [shared UL HARQ repair](lls/shared_ul_harq_repair_20260913.md) fixes the
 missing gNB receiver RV/TBS handoff, transmitter-owned combined-decoder
 metadata, discarded CB CRC verdict and initial-MCS-28 catalog rejection.

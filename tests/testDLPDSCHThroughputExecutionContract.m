@@ -58,7 +58,8 @@ cfgActual = localCalibrationConfig();
 actual = sixgr.link.runDLPDSCHThroughput( ...
     cfgActual, "ExecutionProfile", "phy_calibration", ...
     "NumFrames", 1, "SNR_dB", 30);
-assert(actual.Ok && ~actual.Skipped);
+assert(actual.Ok && ~actual.Skipped, ...
+    'One-frame calibration failed: %s',string(actual.Notes));
 assert(height(actual.TrialTable) == 1);
 assert(string(actual.TrialTable.ExecutionProfile) == "phy_calibration");
 assert(string(actual.TrialTable.ExecutionBackend) ...
@@ -115,6 +116,9 @@ cfg.channel.awgnOnly = true;
 cfg.channel.snr_dB = 30;
 cfg.phy.carrier.NSizeGrid = 12;
 cfg.phy.carrier.SubcarrierSpacing = 30;
+% Isolated 12-RB data calibration does not transmit a 20-RB SS/PBCH block.
+% Keep production SSB exclusion validation intact; declare fixture scope.
+cfg.phy.ssb.enable = false;
 cfg.phy.pdsch.enable = true;
 cfg.phy.pdsch.prbSet = 0:5;
 cfg.phy.pdsch.symbolAllocation = [0 10];

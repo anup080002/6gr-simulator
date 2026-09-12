@@ -1,0 +1,17 @@
+PDSCH no-noise DL-SCH: 4/4 CRC pass, total bit errors=0, multi-CB=1
+[PASS] testPDSCHNoNoiseRoundTrip (5.60s)
+PDSCH two-codeword coding: rank=5 layers=[2 3], CRC pass=2/2, bit errors=0
+[PASS] testPDSCHTwoCodewordCoding (1.91s)
+PDSCH strict RX no-noise: ranks 1-8, 12 codewords, max bit errors=0
+[PASS] testPDSCHReceiverNoNoiseExact (9.81s)
+HARQSoftBufferPositionAware: rv0Positions=17656 rv3Positions=21816 overlap=13496
+[PASS] testHARQSoftBufferPositionAware (2.46s)
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+CONNECTED_DATA_ALLOCATION_PASS format=1_1 tbs=1064 nscid=1 port=1
+[PASS] testConnectedDataAllocation (37.23s)
+Slowest 5 test(s):
+   1. testConnectedDataAllocation (37.23s)
+   2. testPDSCHReceiverNoNoiseExact (9.81s)
+   3. testPDSCHNoNoiseRoundTrip (5.60s)
+   4. testHARQSoftBufferPositionAware (2.46s)
+   5. testPDSCHTwoCodewordCoding (1.91s)

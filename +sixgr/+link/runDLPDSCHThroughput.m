@@ -1890,7 +1890,11 @@ for n = 1:numFrames
         rxBits = int8(rx.TransportBlock(:));
         finalRxBits = rxBits;
         currentRecLLR = sixgr.util.structGet(rx, "RecLLR", []);
-        currentCodingLayout = sixgr.util.structGet(rx, "CodingLayout", sixgr.util.structGet(tx, "CodingLayout", struct()));
+        assert(isfield(rx,"CodingLayout") && isstruct(rx.CodingLayout) && ...
+            ~isempty(fieldnames(rx.CodingLayout)), ...
+            'sixgr:phy:harq:DLReceiverCodingLayoutRequired', ...
+            'DL HARQ combining requires the actual receiver coding layout.');
+        currentCodingLayout = rx.CodingLayout;
         [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout);
         combinedDecodeOK = false;
         combinedDecodeIt = NaN;
@@ -1933,7 +1937,8 @@ for n = 1:numFrames
         currentDecodeOK = rx.Ok && currentBe == 0 && numel(rxBits) == numel(txBits);
         hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
         if hasPriorHARQEvidence && ~currentDecodeOK
-            [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = localDecodeCombinedLLR(tx, combinedLLR, cfgFrame);
+            [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = ...
+                sixgr.phy.harq.decodeCombinedDLSCH(currentCodingLayout, combinedLLR, cfgFrame);
             if combinedDecodeOK
                 [combinedBe, combinedBitsCompared] = localFinalBitErrors(txBits, combinedRxBits);
                 combinedDecodeOK = combinedBitsCompared == numel(txBits) && combinedBe == 0;
@@ -7106,52 +7111,6 @@ catch
 end
 end
 
-function [ok, meanIter, tbBits] = localDecodeCombinedLLR(tx, recLLR, cfg)
-ok = false;
-meanIter = NaN;
-tbBits = int8([]);
-if isempty(recLLR)
-    return;
-end
-X = localEnsureLLRMatrix(recLLR);
-if isempty(X)
-    return;
-end
-nRow = size(X, 1);
-nCB = size(X, 2);
-if ~localIsValidLDPCDecodeRows(nRow, double(tx.BaseGraph))
-    return;
-end
-decCbs = zeros(nRow, nCB, 'int8');
-itVec = NaN(nCB, 1);
-maxLen = 0;
-alg = localSafeCharToken(sixgr.util.structGet(cfg, "phy.ldpc.algorithm", "Normalized min-sum"));
-maxIter = sixgr.phy.phycode.resolveLDPCMaxIterations(cfg, "Direction", "DL");
-for c = 1:nCB
-    [d, it] = sixgr.phy.phycode.ldpcDecode(X(:, c), double(tx.BaseGraph), maxIter, alg);
-    d = int8(d(:));
-    Ld = min(numel(d), nRow);
-    if Ld > 0
-        decCbs(1:Ld, c) = d(1:Ld);
-        maxLen = max(maxLen, Ld);
-    end
-    it = it(:);
-    if ~isempty(it)
-        itVec(c) = double(it(1));
-    end
-end
-if maxLen <= 0
-    return;
-end
-decCbs = decCbs(1:maxLen, :);
-B = double(tx.TransportBlockSize) + double(sixgr.util.structGet(tx, "TransportBlockCRCLength", 24));
-tbCrc = sixgr.phy.tb.desegmentLDPC(decCbs, double(tx.BaseGraph), B);
-[tbBits, crcOk] = sixgr.phy.tb.checkCRC(tbCrc, localSafeCharToken(sixgr.util.structGet(tx, "TransportBlockCRCType", "24A")));
-tbBits = int8(tbBits(:));
-ok = logical(crcOk);
-meanIter = mean(itVec(isfinite(itVec)), "omitnan");
-end
-
 function [bitErrors, bitsCompared] = localFinalBitErrors(txBits, rxBits)
 txBits = int8(txBits(:));
 rxBits = int8(rxBits(:));
@@ -7226,22 +7185,6 @@ if isempty(v)
 end
 X = localEnsureLLRMatrix(v);
 shape = [size(X, 1) size(X, 2)];
-end
-
-function tf = localIsValidLDPCDecodeRows(nRows, bgn)
-tf = false;
-if ~(isscalar(nRows) && isfinite(nRows) && nRows > 0 && isscalar(bgn) && isfinite(bgn))
-    return;
-end
-if round(bgn) == 1
-    zc = double(nRows) / 66;
-elseif round(bgn) == 2
-    zc = double(nRows) / 50;
-else
-    return;
-end
-validZc = [2:16 18:2:32 36:4:64 72:8:128 144:16:256 288:32:384];
-tf = abs(zc - round(zc)) < 1e-9 && any(abs(validZc - round(zc)) < 1e-9);
 end
 
 function seed = localRNGSeed(seedValue)

@@ -1,0 +1,1 @@
+DL PDSCH throughput execution contract: 4/4 typed ownership guards; calibration and connected canonical waveform provenance retained.

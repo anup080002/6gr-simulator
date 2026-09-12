@@ -1,0 +1,66 @@
+{
+  "scope": "focused DL CRC/combined decoder and component regression checkpoint, not main scheduler or final 58-slot qualification",
+  "source": "observed exec/write_stdin terminal completions",
+  "runs": [
+    {
+      "session_id": 77273,
+      "exit_code": 0,
+      "log": "dl_receiver_harq_decoder_20260913.txt",
+      "result": "16 receiver-owned/canonical DL decoder vectors passed; CRC-boundary, CB-CRC fault and invalid-layout checks passed"
+    },
+    {
+      "session_id": 61507,
+      "exit_code": 0,
+      "log": "dl_receiver_harq_regression_20260913.txt",
+      "result": "five focused existing coding, rank 1-8 receiver, soft-buffer and connected DL/UL allocation tests passed"
+    },
+    {
+      "session_id": 21333,
+      "exit_code": 1,
+      "log": "dl_receiver_harq_decoder_20260913_02.txt",
+      "result": "expanded 16-vector and two-codeword CB-CRC negative checks passed; throughput fixture failed its one-frame calibration assertion"
+    },
+    {
+      "session_id": 10162,
+      "exit_code": 1,
+      "log": "dl_throughput_contract_diagnostic_20260913.txt",
+      "result": "diagnostic identified inherited enabled SSB on a 12-RB data-only calibration fixture: InvalidSSBPointAOffset before data transmission"
+    },
+    {
+      "session_id": 23403,
+      "exit_code": 0,
+      "log": "dl_throughput_contract_diagnostic_20260913_02.txt",
+      "result": "throughput contract test passed after explicitly disabling untransmitted SSB only in isolated calibration fixture"
+    }
+  ],
+  "artifacts": [
+    {
+      "file": "dl_receiver_harq_decoder_20260913_02.txt",
+      "bytes": 1266,
+      "sha256": "3b62c875a502e393477101b0bb511ef718f034d96a0af07307a10e212e718377"
+    },
+    {
+      "file": "dl_receiver_harq_decoder_20260913.txt",
+      "bytes": 1052,
+      "sha256": "25eb04b96c903e6d93b8426027a054153654cec95784cd75fb71b70f7e7f5763"
+    },
+    {
+      "file": "dl_receiver_harq_regression_20260913.txt",
+      "bytes": 876,
+      "sha256": "2f21f4e577c14830fdd9d92a19d9ff897f3fbffff139e2e25e2e465e5906c934"
+    },
+    {
+      "file": "dl_throughput_contract_diagnostic_20260913_02.txt",
+      "bytes": 134,
+      "sha256": "260778a13cbcacd358d6d07cb54225e6189374c05815d03c02cc7d27eacc0457"
+    },
+    {
+      "file": "dl_throughput_contract_diagnostic_20260913.txt",
+      "bytes": 693,
+      "sha256": "6cda52cb6a39b5bf3c19c3604d9edd3331a1d4fd20711d12238cc8b43184f1ee"
+    }
+  ],
+  "baseline_58_slot_started": false,
+  "testAll_started": false,
+  "e2e_started": false
+}

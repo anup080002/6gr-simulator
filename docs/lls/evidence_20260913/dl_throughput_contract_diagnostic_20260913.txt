@@ -1,0 +1,10 @@
+{Error using assert
+One-frame calibration failed: Failed: every DL waveform trial crashed (sixgr:phy:frame:InvalidSSBPointAOffset | NCRBSSB and KSSB must be nonnegative integers. |
+stack=localGridRelationship:410 <- SSBTimingResolver.resolve:111 <- SSBTimingResolver.resolveFromConfig:192 <- ssbPRBSymbolReservation:13 <- reserveSSBPDSCHResources:6 <-
+allocREsPDSCH:25 <- localResolvePDSCHMaterialization:2229 <- localDelegateCanonicalGrantTransmitter:1073 <- PDSCH_Tx:141 <- runDLPDSCHThroughput:823 <-
+testDLPDSCHThroughputExecutionContract:58)
+
+Error in testDLPDSCHThroughputExecutionContract (line 61)
+assert(actual.Ok && ~actual.Skipped, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
