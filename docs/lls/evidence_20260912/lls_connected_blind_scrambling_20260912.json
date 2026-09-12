@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedPDCCHBlindMonitoring",
+      "ok": true,
+      "msg": "",
+      "duration_s": 33.4331321
+    },
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.8305681
+    },
+    {
+      "name": "testPDCCHPreparationReception",
+      "ok": true,
+      "msg": "",
+      "duration_s": 20.6063706
+    }
+  ],
+  "selected_tests": [
+    "testConnectedPDCCHBlindMonitoring",
+    "testConnectedDCIProfile",
+    "testPDCCHPreparationReception"
+  ],
+  "total_duration_s": 66.8792578
+}

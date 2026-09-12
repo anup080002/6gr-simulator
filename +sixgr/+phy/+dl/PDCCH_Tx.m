@@ -91,12 +91,24 @@ if isempty(rnti)
 end
 rnti = double(rnti);
 pdcchScramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, rnti, opt.PDCCHScramblingRNTI);
+if isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci')
+    configuredID=cfg.phy.pdcch.operatorControl.connected_monitoring.dmrs_scrambling_id;
+    assert(isempty(opt.NCellID) || opt.NCellID==configuredID, ...
+        'sixgr:phy:pdcch:ConnectedMonitoringIdentityMismatch','Connected scrambling identity is configuration-owned.');
+    assert(pdcchScramblingRNTI==rnti,'sixgr:phy:pdcch:ConnectedMonitoringIdentityMismatch', ...
+        'Connected PDCCH uses the configured C-RNTI for physical scrambling.');
+    nCellID=double(configuredID);
+end
 
 % PDCCH config
 if isempty(opt.PDCCH)
+    if isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci')
+        [pdcch,candidateResolution]=sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfg,carrier,rnti,false);
+    else
     [pdcch, candidateResolution] = localDefaultPDCCH( ...
         cfg, carrier, nCellID, ...
         localPDCCHConfigRNTI(rnti, pdcchScramblingRNTI));
+    end
 else
     pdcch = opt.PDCCH;
     candidateResolution = struct();
@@ -192,7 +204,8 @@ catch exception
         "The PDCCH transmit OFDM metadata could not be resolved: %s", ...
         exception.message);
 end
-info.NCellID = nCellID;
+info.NCellID = double(carrier.NCellID);
+info.PDCCHScramblingID = nCellID;
 info.RNTI = rnti;
 info.DCICrcRNTI = rnti;
 info.PDCCHScramblingRNTI = pdcchScramblingRNTI;

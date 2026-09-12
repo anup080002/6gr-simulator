@@ -1,0 +1,14 @@
+[PASS] testConnectedPDCCHBlindMonitoring (30.96s)
+PASS testPDCCHSharedSlotResourceAllocation: exact shared candidates and one faded composite in TDD/FDD.
+[PASS] testPDCCHSharedSlotResourceAllocation (4.94s)
+PDCCH_PREPARATION_RECEPTION_PASS
+[PASS] testPDCCHPreparationReception (12.13s)
+PDCCH_SHARED_PHYSICAL_QUEUE_PASS: decision_sample=1192 slot_end=7680 CRC=1 SINR=57.6392
+[PASS] testPDCCHSharedPhysicalQueue (20.04s)
+[PASS] testTwoPortULYAMLAndSRS (10.37s)
+Slowest 5 test(s):
+   1. testConnectedPDCCHBlindMonitoring (30.96s)
+   2. testPDCCHSharedPhysicalQueue (20.04s)
+   3. testPDCCHPreparationReception (12.13s)
+   4. testTwoPortULYAMLAndSRS (10.37s)
+   5. testPDCCHSharedSlotResourceAllocation (4.94s)

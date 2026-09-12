@@ -1,0 +1,8 @@
+[PASS] testConnectedPDCCHBlindMonitoring (33.43s)
+[PASS] testConnectedDCIProfile (12.83s)
+PDCCH_PREPARATION_RECEPTION_PASS
+[PASS] testPDCCHPreparationReception (20.61s)
+Slowest 3 test(s):
+   1. testConnectedPDCCHBlindMonitoring (33.43s)
+   2. testPDCCHPreparationReception (20.61s)
+   3. testConnectedDCIProfile (12.83s)

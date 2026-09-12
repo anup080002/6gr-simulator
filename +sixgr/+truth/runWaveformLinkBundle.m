@@ -14463,15 +14463,15 @@ r.PDCCHMinimumReceiveSamples = rxInfo.ReceiveExtent.MinimumReceiveSamples;
 r.PDCCHDemodulatedSymbols = rxInfo.DemodulatedSymbols;
 r.PDCCHReceivePaddingApplied = rxInfo.ReceivePaddingApplied;
 r.BlockingFlag = double(isfinite(aggLevel) && isfinite(availCCEs) && aggLevel > availCCEs);
-r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumCandidatesTried", height(candidateT)));
+r.BlindDecodeCount = double(sixgr.util.structGet(rxInfo, "NumDecodeHypothesesTried", height(candidateT)));
 r.AvailableCCECount = availCCEs;
 r.UsedCCECount = usedCCEs;
 r.NonOverlappedCCEUsage = usedCCEs / max(availCCEs, 1);
 r.AggregationLevel = aggLevel;
-r.CandidatesAttempted = r.BlindDecodeCount;
+r.CandidatesAttempted = double(rxInfo.NumCandidatesTried);
 r.PDCCHBlindSearchEnabled = logical(sixgr.util.structGet(rxInfo, "BlindSearch", false));
 r.PDCCHCandidatesAvailable = double(sixgr.util.structGet(rxInfo, "NumCandidatesAvailable", height(candidateT)));
-r.PDCCHCandidatesAttempted = r.BlindDecodeCount;
+r.PDCCHCandidatesAttempted = r.CandidatesAttempted;
 txCandidateIndex = localPDCCHScalar(tx.PDCCH, "AllocatedCandidate", 1) - 1;
 selectedAggregationLevel = double(sixgr.util.structGet( ...
     rx, "CandidateAggregationLevel", NaN));
@@ -15602,6 +15602,16 @@ end
 
 function decodedDci = localDecodeObservedPDCCHGrantDCI(rx, tx, dciFormat, grantContext, cfg)
 decodedDci = struct();
+if isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci')
+    if logical(sixgr.util.structGet(rx,'Ok',false))
+        assert(string(rx.DCISelectionSource)=="receiver_installed_context_crc_and_semantic_parse" && ...
+            isstruct(rx.DecodedDCI) && ~isempty(fieldnames(rx.DecodedDCI)) && ...
+            isequal(int8(rx.DecodedDCI.Bits(:)),int8(rx.DCIBits(:))), ...
+            'sixgr:truth:MissingReceiverOwnedDCI','Connected control requires the actual receiver-parsed payload.');
+        decodedDci=rx.DecodedDCI;
+    end
+    return;
+end
 bits = int8(sixgr.util.structGet(rx, "DCIBits", int8([])));
 if isempty(bits)
     return;

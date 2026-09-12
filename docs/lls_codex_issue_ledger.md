@@ -11,7 +11,8 @@ two-port SRS/PUSCH work are tracked in
 [the spatial repair ledger](lls/continuous_iq_02_spatial_reaudit_20260912.md).
 The corrected TPMI and [SRI/DM-RS signaling](lls/ul_reference_signaling_repair_20260912.md)
 shared-clock regressions passed. The next full
-58-slot run remains held for complete configuration-owned control context and receiver payload-size authority;
+58-slot run remains held for received-field execution authority, dynamic
+DAI/HARQ-ACK semantics and shared-clock qualification of the updated control layout;
 do not interpret earlier functional-run rows as closure of these new checks.
 The `continuous_iq_03` attempt was stopped during initialization and is not
 a new PHY result. All original outputs remain local and unchanged.
@@ -27,10 +28,16 @@ The [connected DCI layout repair](lls/connected_dci_profile_repair_20260912.md)
 replaces the baseline's legacy layout with a YAML-owned paired context,
 explicit TDRA tables, K1 list indexing, correct optional-field presence,
 UL-SCH/NSCID signaling and DL NSCID waveform wiring. Twelve focused tests
-passed. Receiver-owned size search and received-field materialization remain
-open. The same audit identified constant scheduler DAI as an additional
+passed. Receiver-owned size search is addressed by the next checkpoint below;
+received-field materialization remains open. The same audit identified constant scheduler DAI as an additional
 dynamic HARQ-ACK codebook qualification blocker; field-width tests alone do
 not close it. The full 58-slot run remains held.
+
+The [connected blind-monitoring repair](lls/connected_blind_monitoring_repair_20260912.md)
+now derives monitored sizes and TX/RX mappings independently from YAML;
+actual coded tests include equal-length formats and corrupted TX hints.
+Downstream received-grant materialization, DAI/UCI semantics and shared-clock
+qualification of this new paired layout still precede the final 58-slot run.
 
 The 58-slot 12 dB configured-SNR TDD run is the only immediate completion
 target. It is an actual shared-waveform LLS diagnostic, not an E2E campaign and

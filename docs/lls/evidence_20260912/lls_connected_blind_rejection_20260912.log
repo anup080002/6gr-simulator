@@ -1,0 +1,28 @@
+[PASS] testConnectedPDCCHBlindMonitoring (31.75s)
+[PASS] testConnectedDCIProfile (12.16s)
+PDCCH_PREPARATION_RECEPTION_PASS
+[PASS] testPDCCHPreparationReception (11.83s)
+[FAIL] testPDCCHSharedSlotResourceAllocation (5.34s)
+       The active qualifier must share exact reservations rather than reset per-pass CCE counters.
+PDCCH_RECEIVED_CLOCK_ALIGNMENT_PASS
+[PASS] testPDCCHReceivedClockAlignment (8.96s)
+SHARED_PDCCH_OBSERVATION_CLOCKS_PASS
+[PASS] testSharedPDCCHObservationClocks (17.65s)
+[PASS] testConfig (12.05s)
+[PASS] test6GScenarioConfigValidation (12.68s)
+[PASS] test6GParameterCatalog (0.77s)
+[PASS] testSchedulerGrantConsistency (10.60s)
+Slowest 10 test(s):
+   1. testConnectedPDCCHBlindMonitoring (31.75s)
+   2. testSharedPDCCHObservationClocks (17.65s)
+   3. test6GScenarioConfigValidation (12.68s)
+   4. testConnectedDCIProfile (12.16s)
+   5. testConfig (12.05s)
+   6. testPDCCHPreparationReception (11.83s)
+   7. testSchedulerGrantConsistency (10.60s)
+   8. testPDCCHReceivedClockAlignment (8.96s)
+   9. testPDCCHSharedSlotResourceAllocation (5.34s)
+  10. test6GParameterCatalog (0.77s)
+{Error using assert
+Assertion failed.
+} 

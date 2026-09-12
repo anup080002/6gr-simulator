@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedPDCCHBlindMonitoring",
+      "ok": true,
+      "msg": "",
+      "duration_s": 31.6736177
+    },
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.7209988
+    },
+    {
+      "name": "testDLReferenceSignaling",
+      "ok": true,
+      "msg": "",
+      "duration_s": 16.7812474
+    },
+    {
+      "name": "testPDCCHPreparationReception",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.9380117
+    },
+    {
+      "name": "testPDCCHReceivedClockAlignment",
+      "ok": true,
+      "msg": "",
+      "duration_s": 10.4256711
+    }
+  ],
+  "selected_tests": [
+    "testConnectedPDCCHBlindMonitoring",
+    "testConnectedDCIProfile",
+    "testDLReferenceSignaling",
+    "testPDCCHPreparationReception",
+    "testPDCCHReceivedClockAlignment"
+  ],
+  "total_duration_s": 84.5513188
+}

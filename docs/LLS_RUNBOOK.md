@@ -19,6 +19,12 @@ See [the connected-layout checkpoint](lls/connected_dci_profile_repair_20260912.
 for the 37/43-bit baseline layouts, focused checks and remaining receiver/DAI
 gates. Do not start a new full run merely because YAML validation passes.
 
+`control.connected_monitoring` now owns the connected CORESET/monitoring clock
+and scrambling parameters. [Receiver-owned blind monitoring](lls/connected_blind_monitoring_repair_20260912.md)
+uses those values and the configured DCI contexts, not a transmitted payload
+length or copied TX PDCCH object. Its remaining downstream gates are explicit
+in the linked checkpoint.
+
 This runbook covers the config-driven link-level simulator only. Commands are
 written for PowerShell from the repository root. They do not launch the E2E
 campaign runner.

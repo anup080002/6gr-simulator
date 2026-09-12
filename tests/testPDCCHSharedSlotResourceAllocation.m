@@ -127,8 +127,10 @@ end
 % Check the active production caller carries reservations between DL and
 % UL calls, not only the independent value-ledger API above.
 source = fileread(fullfile('+sixgr','+truth','runWaveformLinkBundle.m'));
-start = strfind(source,'function [state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH');
+start = regexp(source,'(?m)^function[^\r\n]* = localQualifyCoupledGrantsWithPDCCH\(','start');
 finish = strfind(source,'function state = localCollectCanonicalCoupledControlTrials');
+assert(isscalar(start) && isscalar(finish) && finish>start, ...
+    'The production qualifier function boundaries must be found before inspecting its reservation wiring.');
 body = source(start:finish-1);
 assert(contains(body,'state.PDCCHResourceLedger') && ...
     contains(body,'occupiedControlREs') && contains(body,'allocatedControlREs') && ...

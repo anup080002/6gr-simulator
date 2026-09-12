@@ -1,0 +1,78 @@
+{
+  "ok": false,
+  "results": [
+    {
+      "name": "testConnectedPDCCHBlindMonitoring",
+      "ok": true,
+      "msg": "",
+      "duration_s": 31.7521429
+    },
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.1612493
+    },
+    {
+      "name": "testPDCCHPreparationReception",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.8286173
+    },
+    {
+      "name": "testPDCCHSharedSlotResourceAllocation",
+      "ok": false,
+      "msg": "The active qualifier must share exact reservations rather than reset per-pass CCE counters.",
+      "duration_s": 5.3420356
+    },
+    {
+      "name": "testPDCCHReceivedClockAlignment",
+      "ok": true,
+      "msg": "",
+      "duration_s": 8.9591813
+    },
+    {
+      "name": "testSharedPDCCHObservationClocks",
+      "ok": true,
+      "msg": "",
+      "duration_s": 17.6471751
+    },
+    {
+      "name": "testConfig",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.0459236
+    },
+    {
+      "name": "test6GScenarioConfigValidation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.6802483
+    },
+    {
+      "name": "test6GParameterCatalog",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.7698778
+    },
+    {
+      "name": "testSchedulerGrantConsistency",
+      "ok": true,
+      "msg": "",
+      "duration_s": 10.6046021
+    }
+  ],
+  "selected_tests": [
+    "testConnectedPDCCHBlindMonitoring",
+    "testConnectedDCIProfile",
+    "testPDCCHPreparationReception",
+    "testPDCCHSharedSlotResourceAllocation",
+    "testPDCCHReceivedClockAlignment",
+    "testSharedPDCCHObservationClocks",
+    "testConfig",
+    "test6GScenarioConfigValidation",
+    "test6GParameterCatalog",
+    "testSchedulerGrantConsistency"
+  ],
+  "total_duration_s": 123.8142601
+}

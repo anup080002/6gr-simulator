@@ -2756,6 +2756,8 @@ if isfield(s.control,'connected_dci')
     cfg.phy.pdcch.dciContextData=contexts;
     cfg.phy.pdcch.dciPayloadSizesByFormat=sizes;
     cfg.phy.pdcch.dciPayloadSizeSource='installed_connected_RRC_context';
+    sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfg, ...
+        sixgr.phy.grid.makeCarrier(cfg),cfg.phy.pdsch.RNTI,true);
 end
 end
 

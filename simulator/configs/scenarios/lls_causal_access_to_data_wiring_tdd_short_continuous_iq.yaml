@@ -61,6 +61,17 @@ pdsch:
     - [1, 2, 8, 0]
 
 control:
+  connected_monitoring:
+    cce_reg_mapping: noninterleaved
+    reg_bundle_size: 6
+    interleaver_size: 0
+    shift_index: 1
+    precoder_granularity: sameAsREG-bundle
+    start_symbol: 0
+    period_slots: 1
+    offset_slots: 0
+    duration_slots: 1
+    dmrs_scrambling_id: 1
   connected_dci:
     spec_release: Release-18
     spec_version: "18.8.0"

@@ -1,0 +1,13 @@
+[PASS] testConnectedPDCCHBlindMonitoring (31.67s)
+[PASS] testConnectedDCIProfile (12.72s)
+[PASS] testDLReferenceSignaling (16.78s)
+PDCCH_PREPARATION_RECEPTION_PASS
+[PASS] testPDCCHPreparationReception (12.94s)
+PDCCH_RECEIVED_CLOCK_ALIGNMENT_PASS
+[PASS] testPDCCHReceivedClockAlignment (10.43s)
+Slowest 5 test(s):
+   1. testConnectedPDCCHBlindMonitoring (31.67s)
+   2. testDLReferenceSignaling (16.78s)
+   3. testPDCCHPreparationReception (12.94s)
+   4. testConnectedDCIProfile (12.72s)
+   5. testPDCCHReceivedClockAlignment (10.43s)

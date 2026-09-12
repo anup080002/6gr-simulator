@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedPDCCHBlindMonitoring",
+      "ok": true,
+      "msg": "",
+      "duration_s": 30.9599306
+    },
+    {
+      "name": "testPDCCHSharedSlotResourceAllocation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 4.9440674
+    },
+    {
+      "name": "testPDCCHPreparationReception",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.1271688
+    },
+    {
+      "name": "testPDCCHSharedPhysicalQueue",
+      "ok": true,
+      "msg": "",
+      "duration_s": 20.0420122
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 10.3662484
+    }
+  ],
+  "selected_tests": [
+    "testConnectedPDCCHBlindMonitoring",
+    "testPDCCHSharedSlotResourceAllocation",
+    "testPDCCHPreparationReception",
+    "testPDCCHSharedPhysicalQueue",
+    "testTwoPortULYAMLAndSRS"
+  ],
+  "total_duration_s": 78.4573158
+}

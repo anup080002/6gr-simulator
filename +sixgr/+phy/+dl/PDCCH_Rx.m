@@ -5,9 +5,10 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %   single-slot PDCCH from RXWAVEFORM using DMRS-aided timing, channel
 %   estimation, MMSE equalization, and polar list decoding of DCI.
 %
-%   This is a "known-location" receiver by default (it uses the same PDCCH
-%   resource mapping as the transmitter). You can enable a simple blind
-%   candidate search by setting cfg.phy.pdcch.blindSearch=true.
+%   Connected configuration without explicit K uses receiver-installed
+%   contexts and blind candidate/format/size search. Explicit K retains the
+%   separately identified codec-calibration path. Legacy configurations may
+%   use known-location reception or cfg.phy.pdcch.blindSearch=true.
 %
 %   Name-Value options:
 %     "Carrier"        : nrCarrierConfig override
@@ -23,7 +24,7 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %   Outputs:
 %     RX.DCIBits        : recovered DCI payload bits
 %     RX.ErrFlag        : 0 if CRC passes, 1 otherwise (when available)
-%     RX.Ok             : true when ErrFlag==0
+%     RX.Ok             : CRC pass and, for connected monitoring, valid context parse
 %     RX.CausalGrantDecodeOk : true when CRC passes and ExpectedDCIBits match
 %     RX.TimingOffset   : raw sample timing estimate
 %     RX.AppliedTimingCorrection_samples : applied waveform correction
@@ -47,6 +48,20 @@ ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscala
 ip.addParameter('InputTimingAlignment',struct(),@(x)isstruct(x)&&isscalar(x));
 ip.parse(varargin{:});
 opt = ip.Results;
+hasConnectedPolicy=isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
+connectedMonitoring=isempty(opt.K) && hasConnectedPolicy;
+contexts={}; payloadSizes=[];
+if connectedMonitoring
+    assert(isempty(opt.PDCCH) && isempty(opt.Carrier), ...
+        'sixgr:phy:pdcch:TransmitterMonitoringOverride', ...
+        'Connected blind monitoring constructs carrier and PDCCH from receiver configuration, not TX objects.');
+    formats=string(cfg.phy.pdcch.operatorControl.dci_formats);
+    for h=1:numel(formats)
+        contexts{h}=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,formats(h)); %#ok<AGROW>
+        a=sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(contexts{h});
+        payloadSizes(h)=a.Selected.AlignedBits; %#ok<AGROW>
+    end
+end
 configuredPDCCH = logical(sixgr.util.structGet(cfg, "phy.pdcch.enable", false));
 configuredDMRS = logical(sixgr.util.structGet(cfg, "phy.pdcch.dmrs.enable", false));
 sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch", configuredPDCCH, ...
@@ -69,17 +84,33 @@ end
 nCellID = double(sixgr.util.structGet(cfg, 'phy.carrier.NCellID', ...
     sixgr.util.structGet(cfg, 'scenario.NCellID', 1)));
 if isempty(opt.RNTI)
+    if connectedMonitoring
+        rnti=contexts{1}.Data.RNTIValue;
+    else
     rnti = double(sixgr.util.structGet(cfg, 'phy.pdcch.rnti', 4660));
+    end
 else
     rnti = double(opt.RNTI);
 end
 pdcchScramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, rnti, opt.PDCCHScramblingRNTI);
+if connectedMonitoring
+    assert(rnti==contexts{1}.Data.RNTIValue && pdcchScramblingRNTI==rnti, ...
+        'sixgr:phy:pdcch:ConnectedMonitoringIdentityMismatch','Receiver C-RNTI must match its installed context.');
+end
+if hasConnectedPolicy
+    nCellID=double(cfg.phy.pdcch.operatorControl.connected_monitoring.dmrs_scrambling_id);
+end
 
 % PDCCH config
 if isempty(opt.PDCCH)
+    if hasConnectedPolicy
+        [pdcch,candidateResolution]=sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build( ...
+            cfg,carrier,rnti,logical(sixgr.util.structGet(cfg,'phy.pdcch.blindSearch',false)));
+    else
     [pdcch, candidateResolution] = localDefaultPDCCH( ...
         cfg, carrier, nCellID, ...
         localPDCCHConfigRNTI(rnti, pdcchScramblingRNTI));
+    end
 else
     pdcch = opt.PDCCH;
     candidateResolution = struct();
@@ -87,13 +118,14 @@ end
 
 K = opt.K;
 expectedDCIBits = localNormalizeDCIBits(opt.ExpectedDCIBits);
-if isempty(K)
+if isempty(K) && ~connectedMonitoring
     if ~isempty(expectedDCIBits)
         K = numel(expectedDCIBits);
     else
         K = double(sixgr.util.structGet(cfg, 'phy.pdcch.dciPayloadBits', 64));
     end
 end
+if ~connectedMonitoring, payloadSizes=K; contexts={[]}; end
 
 listLen = opt.ListLength;
 if isempty(listLen)
@@ -101,6 +133,8 @@ if isempty(listLen)
 end
 
 blind = logical(sixgr.util.structGet(cfg, 'phy.pdcch.blindSearch', false));
+assert(~connectedMonitoring || blind,'sixgr:phy:pdcch:ConnectedBlindSearchRequired', ...
+    'Connected monitoring requires the configured blind candidate search.');
 sixgr.config.assertRuntimeFeatureUse(cfg, "pdcch_blind_search", blind, ...
     "PDCCH_Rx.blindSearch");
 
@@ -273,6 +307,7 @@ rx.RxGrid = rxGrid;
 rx.EqualizedSymbols = complex([]);
 candidateRows = repmat(localEmptyCandidateRow(), 0, 1);
 passingRx = cell(0, 1);
+crcPassingRx=cell(0,1);
 
 for c = 1:numel(candSymInd)
     symInd  = candSymInd{c};
@@ -319,12 +354,43 @@ for c = 1:numel(candSymInd)
     rxCW = nrPDCCHDecode(eqSym, nCellID, pdcchScramblingRNTI, nVar);
     rxCW = localApplyPDCCHCSIWeighting(rxCW, csi);
 
-    % DCI decode (polar list)
+    % Reuse received REs/Hest/LLRs across independently configured payload
+    % hypotheses. ExpectedDCIBits never selects a size, format or candidate.
+    for h=1:numel(payloadSizes)
+    K=payloadSizes(h);
     [dciBits, errFlag] = nrDCIDecode(rxCW, K, listLen, rnti);
+    decoded=struct(); parseOK=~connectedMonitoring; parseFailure="";
+    if connectedMonitoring && errFlag==0
+        try
+            decoded=sixgr.phy.pdcch.DCIParser.parse(dciBits,contexts{h});
+            parseOK=true;
+        catch cause
+            % Invalid/reserved received fields are a rejected hypothesis;
+            % unrelated programming failures must not become radio errors.
+            if ~ismember(string(cause.identifier),[ ...
+                    "sixgr:phy:pdcch:field_out_of_range", ...
+                    "sixgr:phy:pdcch:dci_size_alignment_failure", ...
+                    "sixgr:phy:pdcch:ReservedULPrecodingCodepoint", ...
+                    "sixgr:phy:pdcch:ReservedULDMRSCodepoint", ...
+                    "sixgr:phy:pdcch:ReservedDLDMRSCodepoint"])
+                rethrow(cause);
+            end
+            parseFailure=string(cause.identifier);
+        end
+    end
 
     rx.DCIBits = int8(dciBits(:));
     rx.ErrFlag = double(errFlag);
-    rx.Ok = (rx.ErrFlag == 0);
+    rx.Ok = (rx.ErrFlag == 0) && parseOK;
+    rx.DecodedDCI=decoded;
+    rx.DCIPayloadLength=K;
+    rx.DCIContextDigest=""; rx.DCIFormat="";
+    rx.DCISelectionSource="explicit_or_legacy_payload_length";
+    if connectedMonitoring
+        rx.DCIContextDigest=contexts{h}.Digest;
+        rx.DCIFormat=contexts{h}.Data.DCIFormat;
+        rx.DCISelectionSource="receiver_installed_context_crc_and_semantic_parse";
+    end
     [dciBitErrors, dciBitsCompared, dciPayloadMatch] = localCompareDCIBits(expectedDCIBits, rx.DCIBits);
     rx.DCIBitsCompared = double(dciBitsCompared);
     rx.DCIBitErrors = double(dciBitErrors);
@@ -355,6 +421,12 @@ for c = 1:numel(candSymInd)
     row.AggregationLevel = double(candAggregationLevel(c));
     row.CandidateIndexWithinAggregation = double(candWithinAggregation(c));
     row.DecodeAttempted = true;
+    row.DCIPayloadLength=K;
+    row.DCIFormat=rx.DCIFormat;
+    row.DCIContextDigest=rx.DCIContextDigest;
+    row.CRCOK=(errFlag==0);
+    row.ContextParseOK=parseOK;
+    row.ContextParseFailure=parseFailure;
     row.DecodeOK = logical(rx.Ok);
     row.ErrFlag = double(errFlag);
     row.DCIBitsCompared = double(dciBitsCompared);
@@ -374,8 +446,12 @@ for c = 1:numel(candSymInd)
     row.PDCCHRECount = double(numel(symInd));
     row.DMRSRECount = double(numel(dmrsInd));
     candidateRows(end+1, 1) = row; %#ok<AGROW>
+    if errFlag==0
+        crcPassingRx{end+1,1}=rx; %#ok<AGROW>
+    end
     if rx.Ok
         passingRx{end+1,1} = rx; %#ok<AGROW>
+    end
     end
 end
 
@@ -398,6 +474,8 @@ if rx.AmbiguousValidHypotheses
     % accepted by reduceBlindHypotheses without consulting ExpectedDCIBits.
     rx.Ok = false;
     rx.CausalGrantDecodeOk = false;
+    rx.MissedDetection=~isempty(expectedDCIBits);
+    rx.DecodedDCI=struct();
 end
 
 info = struct();
@@ -406,11 +484,15 @@ info.DemodulatedReceiveSamples = size(rxWave,1);
 info.DemodulatedSymbols = size(rxGrid,2);
 info.ReceivePaddingApplied = false;
 info.CarrierInfo = cinfo;
-info.NCellID = nCellID;
+info.NCellID = double(carrier.NCellID);
+info.PDCCHScramblingID = nCellID;
 info.RNTI = rnti;
 info.DCICrcRNTI = rnti;
 info.PDCCHScramblingRNTI = pdcchScramblingRNTI;
-info.K = K;
+info.K = rx.DCIPayloadLength;
+info.MonitoredPayloadSizes=payloadSizes;
+info.DCISelectionSource=rx.DCISelectionSource;
+info.ReceiverConfiguredMonitoring=connectedMonitoring;
 info.ExpectedDCIBits = expectedDCIBits;
 info.DCIBitsCompared = double(rx.DCIBitsCompared);
 info.DCIBitErrors = double(rx.DCIBitErrors);
@@ -421,7 +503,8 @@ info.MissedDetection = logical(rx.MissedDetection);
 info.ListLength = listLen;
 info.BlindSearch = blind;
 info.NumCandidatesAvailable = numel(candSymInd);
-info.NumCandidatesTried = numel(candidateRows);
+info.NumCandidatesTried = numel(candSymInd);
+info.NumDecodeHypothesesTried=numel(candidateRows);
 if ~isempty(fieldnames(candidateResolution))
     info.ConfiguredSearchSpaceNumCandidates = ...
         candidateResolution.ConfiguredCandidates;
@@ -438,7 +521,9 @@ info.ValidHypothesisCount = numel(passingRx);
 % The scalar RX contract still rejects ambiguous single-DCI selection; do
 % not choose a payload using ExpectedDCIBits or discard other valid DCIs.
 % These are raw hypotheses, not yet independently validated scheduler grants.
-info.CRCValidHypotheses = passingRx;
+info.CRCValidHypotheses = crcPassingRx;
+info.ContextValidHypotheses=passingRx;
+info.CRCValidHypothesisCount=numel(crcPassingRx);
 info.HypothesisReductionClass = char(hypothesisClass);
 info.MultipleEquivalentValidHypotheses = logical(rx.MultipleEquivalentValidHypotheses);
 info.EquivalentValidHypothesisCount = double(rx.EquivalentValidHypothesisCount);
@@ -458,6 +543,8 @@ end
 
 function row = localEmptyCandidateRow()
 row = struct( ...
+    "DCIPayloadLength",NaN,"DCIFormat","","DCIContextDigest","", ...
+    "CRCOK",false,"ContextParseOK",false,"ContextParseFailure","", ...
     "CandidateIndex", NaN, ...
     "CandidateFlatIndex", NaN, ...
     "AggregationLevel", NaN, ...
