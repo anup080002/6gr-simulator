@@ -1,0 +1,33 @@
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+RECEIVED_TYPED_DL_PASS tbs=1064 measured_delay=43 tci_state=17 codepoint=0
+CONNECTED_DATA_ALLOCATION_PASS format=1_1 tbs=1064 nscid=1 port=1
+PDSCHDMRSEPREDifference: rank-4 0 dB default, exact -3 dB boost, grid mapping, and matched Rx verified.
+[PASS] testPDSCHDMRSEPREDifference (3.95s)
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.
+[PASS] testPDSCHCompatibilityFacadeDelegation (2.39s)
+PDSCHSchedulingAssignment: 22/22 frozen rows passed.\n[PASS] testPDSCHSchedulingAssignment (1.79s)
+PDSCH_RX_WITHOUT_TX_PRECODER_PASS bits=384 bit_errors=0 guards=7
+[PASS] testPDSCHReceiverWithoutTXPrecoder (1.76s)
+PDSCH_ASSIGNMENT_CAPTURE_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tpb2434e66_3a0c_48ea_bf80_d344e099e76d
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=0 cfo=-700.000 estimate=-700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=43 cfo=700.000 estimate=700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_NEGATIVES_PASS
+PDSCH_ASSIGNMENT_CDL_CAPTURE_PASS delay=50.000 cfo_estimate=673.749 bits=384
+[PASS] testPDSCHAssignmentCaptureTiming (4.63s)
+PDSCH CDL truth receiver: BLER 0.000, SINR 35.35 dB
+[PASS] testPDSCHReceiverCDL (3.24s)
+PASS testPDSCHTransmitReceiveAuthoritySeparation: scheduled TX waveforms without invented RX authority.
+[PASS] testPDSCHTransmitReceiveAuthoritySeparation (2.40s)
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=1 rv=0 mcs=10 nprb=6 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=2 ndi=1 rv=2 mcs=31 nprb=8 tbs=1160
+RECEIVED_UL_HARQ_PASS attempt=1 ndi=0 rv=0 mcs=10 nprb=6 tbs=1160
+[PASS] testReceivedULHARQState (12.83s)
+Slowest 8 test(s):
+   1. testReceivedULHARQState (12.83s)
+   2. testPDSCHAssignmentCaptureTiming (4.63s)
+   3. testPDSCHDMRSEPREDifference (3.95s)
+   4. testPDSCHReceiverCDL (3.24s)
+   5. testPDSCHTransmitReceiveAuthoritySeparation (2.40s)
+   6. testPDSCHCompatibilityFacadeDelegation (2.39s)
+   7. testPDSCHSchedulingAssignment (1.79s)
+   8. testPDSCHReceiverWithoutTXPrecoder (1.76s)

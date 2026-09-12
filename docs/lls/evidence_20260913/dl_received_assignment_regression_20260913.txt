@@ -1,0 +1,28 @@
+[FAIL] testPDSCHDMRSEPREDifference (1.86s)
+       NCRBSSB and KSSB must be nonnegative integers.
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.
+[PASS] testPDSCHCompatibilityFacadeDelegation (8.47s)
+PDSCHSchedulingAssignment: 22/22 frozen rows passed.\n[PASS] testPDSCHSchedulingAssignment (3.38s)
+PDSCH_RX_WITHOUT_TX_PRECODER_PASS bits=384 bit_errors=0 guards=7
+[PASS] testPDSCHReceiverWithoutTXPrecoder (2.33s)
+PDSCH_ASSIGNMENT_CAPTURE_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tpeadb522b_b9cc_4aeb_80a2_dc6d6f2da55f
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=0 cfo=-700.000 estimate=-700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=43 cfo=700.000 estimate=700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_NEGATIVES_PASS
+PDSCH_ASSIGNMENT_CDL_CAPTURE_PASS delay=50.000 cfo_estimate=673.749 bits=384
+[PASS] testPDSCHAssignmentCaptureTiming (4.90s)
+PDSCH CDL truth receiver: BLER 0.000, SINR 35.35 dB
+[PASS] testPDSCHReceiverCDL (3.83s)
+PASS testPDSCHTransmitReceiveAuthoritySeparation: scheduled TX waveforms without invented RX authority.
+[PASS] testPDSCHTransmitReceiveAuthoritySeparation (2.52s)
+Slowest 7 test(s):
+   1. testPDSCHCompatibilityFacadeDelegation (8.47s)
+   2. testPDSCHAssignmentCaptureTiming (4.90s)
+   3. testPDSCHReceiverCDL (3.83s)
+   4. testPDSCHSchedulingAssignment (3.38s)
+   5. testPDSCHTransmitReceiveAuthoritySeparation (2.52s)
+   6. testPDSCHReceiverWithoutTXPrecoder (2.33s)
+   7. testPDSCHDMRSEPREDifference (1.86s)
+{Error using runFocusedTests (line 55)
+One or more focused regressions failed; see per-test diagnostics.
+} 

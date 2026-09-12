@@ -1,5 +1,7 @@
 classdef PDSCHCalibrationFacadeAdapter
-    %PDSCHCALIBRATIONFACADEADAPTER Freeze legacy calibration inputs.
+    %PDSCHCALIBRATIONFACADEADAPTER Freeze configured or received allocations.
+    % The class name is retained for compatibility. Connected RX uses a
+    % received-DCI constructor, never a relabeled calibration assignment.
     %
     % This adapter is the only bridge from the configuration-oriented
     % PDSCH_Tx/PDSCH_Rx signatures to the canonical assignment-owned
@@ -8,6 +10,44 @@ classdef PDSCHCalibrationFacadeAdapter
     % estimation, equalization, or decoding.
 
     methods (Static)
+        function bundle = materializeReceivedNewTB(installed, received, ueId, nRx)
+            % Independent UE new-TB contract. HARQ admission remains the
+            % caller's responsibility; this method never accepts TX plans.
+            validateattributes(nRx,{'numeric'},{'scalar','integer','positive','finite'});
+            [~,allocation,integration]=sixgr.pdsch.PDSCHAssignmentFactory. ...
+                fromReceivedConnectedDCI(installed,received,ueId);
+            cfg=allocation.Config;
+            plan=sixgr.pdsch.DLSCHCodingPlan.resolve( ...
+                'TransportBlockSize',allocation.NominalTBSBits, ...
+                'TargetCodeRate',received.TargetCodeRate,'RV',received.RV, ...
+                'Modulation',received.Modulation,'NumLayers',received.NumLayers, ...
+                'RateMatchedBitCount',allocation.RateMatchedCapacityBits);
+            request=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.resolveMCSOwnership(cfg,struct(),1);
+            request.ExecutionProfile="connected_strict";
+            request.ReceivedUEId=double(ueId);
+            request.TargetCodeRate=received.TargetCodeRate; request.RV=received.RV;
+            request.XOverhead=allocation.XOverhead; request.DCIFormat=received.DCIFormat;
+            request.NumLayers=received.NumLayers;
+            request.TransportBlockSizes=allocation.NominalTBSBits;
+            request.TransportBlockBits=[]; request.CodingPlans={plan};
+            request.PrecodingMatrix=[]; request.ReservedREZeroBased=[];
+            [~,powerInfo]=sixgr.phy.dl.applyPDSCHDMRSEPREDifference(complex(1),cfg);
+            request.DMRSAmplitudeScale=powerInfo.DMRSAmplitudeScale;
+            request.DMRSPortResolutionPolicy="received_dci_logical_ports";
+            request.NPhysicalRxAntennas=double(nRx);
+            % Practical receiver estimates noise; no injected channel noise
+            % variance crosses this endpoint boundary.
+            request.NoiseVariance=[]; request.NoiseVarianceDomain="grid";
+            request.MaxIterations=sixgr.phy.phycode.resolveLDPCMaxIterations(cfg,'Direction','DL');
+            request.Algorithm=cfg.phy.ldpc.algorithm;
+            request.ReceiverOnly=true;
+            bundle=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize( ...
+                cfg,allocation.Carrier,allocation.ChannelConfig,request);
+            bundle.IntegrationContext=integration;
+            bundle.ReceivedAssignmentDigest=received.AssignmentDigest;
+            bundle.CodingAuthority="received_new_tb_allocation_no_transmitter_plan";
+        end
+
         function ownership = resolveMCSOwnership(cfg, phyGrant, numCodewords)
             arguments
                 cfg (1,1) struct
@@ -238,7 +278,18 @@ classdef PDSCHCalibrationFacadeAdapter
                 carrier, pdsch, mcsTable, mcsIndex, mcsProfiles, ...
                 layerCount, ports, ptrsPorts, rv, xOverhead, request);
             absoluteSlot = localAbsoluteSlot(carrier);
-            if request.ExecutionProfile == "scheduler_truth"
+            if request.ExecutionProfile == "connected_strict"
+                assert(receiverOnly && ~isempty(fieldnames(received)), ...
+                    'sixgr:pdsch:ReceivedConnectedDLRequired', ...
+                    'Connected materialization requires an actual received DL capsule.');
+                [assignment,receivedAllocation]=sixgr.pdsch.PDSCHAssignmentFactory.fromReceivedConnectedDCI( ...
+                    cfg,received,request.ReceivedUEId);
+                assert(absoluteSlot==received.DataAbsoluteSlot && ...
+                    isequal(tbs,receivedAllocation.NominalTBSBits) && ...
+                    isequal(resourcePlan.GPerCodeword,receivedAllocation.RateMatchedCapacityBits), ...
+                    'sixgr:pdsch:ReceivedNewTBCodingMismatch', ...
+                    'Connected new-TB coding size, exact capacity and carrier clock must derive from received allocation.');
+            elseif request.ExecutionProfile == "scheduler_truth"
                 frameState = struct("AbsoluteSlot", absoluteSlot, "ResourceAvailable", true);
                 if receiverOnly
                     assignmentRequest = localApplySchedulerTruthAssignmentContext( ...
@@ -615,10 +666,15 @@ if ~isfield(request, "ExecutionProfile")
     request.ExecutionProfile = "phy_calibration";
 end
 request.ExecutionProfile = lower(strtrim(string(request.ExecutionProfile)));
-if ~any(request.ExecutionProfile == ["phy_calibration","scheduler_truth"])
+if ~any(request.ExecutionProfile == ["phy_calibration","scheduler_truth","connected_strict"])
     error("sixgr:pdsch:InvalidExplicitGrantAdapterProfile", ...
         "Explicit grant adapter profile '%s' is unsupported.", ...
         request.ExecutionProfile);
+end
+if request.ExecutionProfile == "connected_strict"
+    assert(isfield(request,'ReceiverOnly') && isequal(request.ReceiverOnly,true) && ...
+        isfield(request,'ReceivedUEId'), 'sixgr:pdsch:ReceivedConnectedDLRequired', ...
+        'Connected adapter entry is exclusively receiver-owned and requires UE identity.');
 end
 if ~isfield(request, "SchedulerGrantContext")
     request.SchedulerGrantContext = struct();
@@ -1155,7 +1211,9 @@ request.DCIRNTIMatch = true;
 end
 
 function source = localExplicitGrantAdapterSource(profile, receiverOnly)
-if lower(strtrim(string(profile))) == "scheduler_truth"
+if lower(strtrim(string(profile))) == "connected_strict"
+    source = "received_connected_dci_to_canonical_receiver_assignment";
+elseif lower(strtrim(string(profile))) == "scheduler_truth"
     if receiverOnly
         source = "decoded_scheduler_grant_to_canonical_assignment";
     else

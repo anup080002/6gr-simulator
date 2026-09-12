@@ -27,6 +27,12 @@ p.symbolAllocation=assignment.SymbolAllocation;
 p.modulation=char(assignment.Modulation);
 p.codeRate=allocationRate;
 p.mcsIndex=assignment.MCS; p.mcs=assignment.MCS;
+if assignment.Direction=="DL"
+    % The per-codeword compatibility aliases must not retain bootstrap MCS
+    % after actual received control has selected the current allocation.
+    p.mcsIndexPerCodeword=assignment.MCS;
+    p.mcsTablePerCodeword=assignment.MCSTable;
+end
 p.numLayers=assignment.NumLayers; p.nLayers=assignment.NumLayers;
 p.rv=assignment.RV;
 p.dmrs.NSCID=assignment.NSCID;

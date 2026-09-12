@@ -2,6 +2,100 @@ classdef PDSCHAssignmentFactory
     %PDSCHAssignmentFactory Typed constructors for strict PDSCH ownership.
 
     methods (Static)
+        function [assignment, allocation, integration] = fromReceivedConnectedDCI(installed, received, ueId)
+            % UE endpoint materialization: no scheduled grant, TX or CRC hint.
+            validateattributes(ueId,{'numeric'},{'scalar','integer','positive','finite'});
+            context = sixgr.phy.pdcch.validateConnectedAssignment(installed,received);
+            c = context.Data;
+            assert(received.Direction=="DL" && received.DCIFormat=="1_1" && ...
+                isfield(c,'ConnectedPolicy') && c.RNTIType=="C-RNTI", ...
+                'sixgr:pdsch:ReceivedConnectedDLRequired', ...
+                'This materializer requires the installed connected C-RNTI DL profile.');
+            assert(~received.RequiresHARQHistory, ...
+                'sixgr:pdsch:ReceivedDLHARQHistoryRequired', ...
+                'Modulation-only retransmissions require retained UE HARQ coding history.');
+            allocation = sixgr.phy.pdcch.connectedDataAllocation(installed,received);
+            cfg = allocation.Config; p = allocation.ChannelConfig;
+            q = cfg.phy.pdsch.qclTCI;
+            assert(received.TCIPresent && q.enabled && ...
+                received.TCICodepoint==q.codepoint && ...
+                received.ConfigurationEpoch==q.configuration_epoch && ...
+                received.ControlAbsoluteSlot>=q.activation_absolute_slot0, ...
+                'sixgr:pdsch:ReceivedTCIMappingUnavailable', ...
+                'Received TCI codepoint requires its active same-epoch installed mapping.');
+            % This configured LLS association is not a simulated MAC CE,
+            % measured Type-A transfer, or Type-D spatial-filter evidence.
+            tci = struct('TCIStateId',double(q.state_id),'Activated',true, ...
+                'SourceReferenceSignal',"NZP-CSI-RS", ...
+                'SourceReferenceSignalId',string(q.source_resource_id), ...
+                'QCLTypes',"A",'Assumptions',"average_delay_doppler_from_configured_TRS", ...
+                'InitializationSource',string(q.initialization_source));
+            integration = struct('ActiveServingCellIds',double(c.ScheduledServingCell), ...
+                'ActiveCCIds',double(c.ScheduledCarrier),'ActiveBWPId',double(c.ScheduledBWP), ...
+                'ActiveBWPStartPRB',double(c.ActiveDLBWPStart), ...
+                'ActiveBWPNumPRB',double(c.ActiveDLBWPSize), ...
+                'ConfigurationEpoch',double(c.ConfigurationEpoch), ...
+                'CarrierIndicatorValid',~c.CarrierIndicatorPresent, ...
+                'CrossCarrierSchedulingEnabled',logical(c.ConnectedPolicy.cross_carrier_scheduling), ...
+                'ActivatedTCIStates',tci);
+            data = sixgr.pdsch.PDSCHAssignmentFactory.baseData( ...
+                'connected_strict','decoded_dci+ue_context');
+            data.UEId=double(ueId); data.RNTI=received.RNTI; data.RNTIType=string(c.RNTIType);
+            data.ServingCellId=double(c.ScheduledServingCell);
+            data.SchedulingCellId=double(c.ControlServingCell);
+            data.CCId=double(c.ScheduledCarrier); data.BWPId=double(c.ScheduledBWP);
+            data.ConfigurationEpoch=received.ConfigurationEpoch;
+            data.PDCCHAbsoluteSlot=received.ControlAbsoluteSlot;
+            data.PDSCHAbsoluteSlot=received.DataAbsoluteSlot;
+            data.DecodedDCIId="RX-DCI-"+received.AssignmentDigest;
+            data.ControlAuthority="receiver_crc_valid_decode";
+            data.DCIFormat=received.DCIFormat; data.DCICRCPass=true;
+            data.DecodedRNTI=received.RNTI; data.DCIRNTIMatch=true;
+            data.SearchSpaceId=string(c.SearchSpaceID); data.CORESETId=string(c.CORESETID);
+            data.FDRAType="type1";
+            data.FrequencyDomainAssignmentRaw=received.Fields.frequency_resource_assignment;
+            data.VRBToPRBMapping="noninterleaved";
+            data.PRBSetBWPRelative=received.PRBStart+(0:received.NumPRB-1);
+            data.PRBSetCarrierRelative=double(p.PRBSet(:).');
+            data.TDRAListId="installed_DL_TDRA_"+context.Digest;
+            data.TDRARowIndex=received.TimeDomainAssignmentIndex;
+            data.K0=received.TimingOffsetSlots; data.SymbolAllocation=received.SymbolAllocation;
+            first=data.SymbolAllocation(1); count=data.SymbolAllocation(2);
+            if count<=8, data.SLIV=14*(count-1)+first;
+            else, data.SLIV=14*(15-count)+13-first; end
+            data.MappingType=string(p.MappingType);
+            ownership=sixgr.pdsch.PDSCHCalibrationFacadeAdapter.resolveMCSOwnership(cfg,struct(),1);
+            names=["UECapability1024QAM","RRCEnabled1024QAM","DCIEnabled1024QAM", ...
+                "DeploymentAllows1024QAM","FrequencyRange","OperatingBand","DeploymentClass", ...
+                "FrequencyRangeAllows1024QAM","BandAllows1024QAM", ...
+                "UECapability1024QAMVariant","MaxNumberMIMOLayersPDSCH"];
+            for name=names, data.(name)=ownership.(name); end
+            profile=sixgr.phy.pdcch.resolveConnectedMCS(cfg.phy.pdsch,received.MCS);
+            data.MCSTablePerCodeword=received.MCSTable;
+            data.MCSIndexPerCodeword=received.MCS; data.ModulationPerCodeword=received.Modulation;
+            data.QmPerCodeword=profile.Qm; data.TargetCodeRatePerCodeword=received.TargetCodeRate;
+            data.TBScalingPerCodeword=1; data.XOverhead=allocation.XOverhead;
+            data.NumLayers=received.NumLayers; data.NumCodewords=1;
+            data.LayerCountPerCodeword=received.NumLayers;
+            data.AntennaPortField=received.AntennaPortCodepoint;
+            data.DMRSConfigId="received_DL_reference_"+received.AssignmentDigest;
+            data.DMRSPortSet=received.DMRSPortSet;
+            if p.EnablePTRS
+                data.PTRSConfigId="installed_DL_PTRS_"+context.Digest;
+                data.PTRSPortSet=double(p.PTRS.PTRSPortSet(:).');
+            end
+            data.NDIPerCodeword=received.NDI; data.RVPerCodeword=received.RV;
+            data.HARQProcessId=received.HARQProcess;
+            data.DAI=received.Fields.dai; % Raw received two-bit codepoint, not unwrapped counter.
+            data.TCIStateId=double(q.state_id);
+            data.TransmissionConfigurationIndication=received.TCICodepoint;
+            data.ReceivedAssignmentDigest=received.AssignmentDigest;
+            data.DAIDomain="received_two_bit_codepoint_not_unwrapped_counter";
+            data.AssignmentId=sixgr.pdsch.PDSCHAssignmentFactory.assignmentId(data);
+            assignment=sixgr.pdsch.PDSCHSchedulingAssignment(data);
+            sixgr.pdsch.PDSCHIntegrationValidator.bind(assignment,integration);
+        end
+
         function assignment = fromDecodedDCI(decodedDCI, ueContext, frameState, harqState)
             arguments
                 decodedDCI

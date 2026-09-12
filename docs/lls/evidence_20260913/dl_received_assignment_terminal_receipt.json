@@ -1,0 +1,40 @@
+{
+  "scope": "actual received-control strict DL new-TB endpoint and focused regressions; not main-scheduler qualification",
+  "source": "observed exec/write_stdin terminal completions",
+  "runs": [
+    {
+      "session_id": 55483,
+      "exit_code": 0,
+      "log": "dl_received_assignment_20260913.txt",
+      "bytes": 207,
+      "sha256": "2fbf00d815c6fc3116f8c51cacf80fd0ec98b4cbb7cbd66310834bc61e0e7713",
+      "result": "actual coded DL control to typed receiver and measured delayed capture passed; UL allocation passed"
+    },
+    {
+      "session_id": 14731,
+      "exit_code": 1,
+      "log": "dl_received_assignment_regression_20260913.txt",
+      "bytes": 1649,
+      "sha256": "52992d1803d97958c75793d7e083dd5130eb007635e84180ee6b2d7dedd5c744",
+      "result": "six regressions passed; DM-RS EPRE fixture failed before scaling because enabled SSB cannot fit its 12-RB carrier"
+    },
+    {
+      "session_id": 28512,
+      "exit_code": 0,
+      "log": "dl_received_assignment_20260913_02.txt",
+      "bytes": 2073,
+      "sha256": "6ce8d2344094079f46af6aaf0c3ce91e01111b3f8e41e1b7f978ea563ec68f83",
+      "result": "endpoint including stale-MCS guards and all eight focused regressions passed"
+    }
+  ],
+  "dl_endpoint_payload_bits": 1064,
+  "dl_endpoint_payload_errors": 0,
+  "dl_endpoint_measured_delay_samples": 43,
+  "dl_tci_codepoint": 0,
+  "dl_tci_state_id": 17,
+  "qcl_initialization": "lls_preconfigured_higher_layer_context",
+  "baseline_58_slot_started": false,
+  "main_scheduler_qualified": false,
+  "testAll_started": false,
+  "e2e_started": false
+}

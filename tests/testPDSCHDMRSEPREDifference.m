@@ -137,6 +137,8 @@ cfg.channel.nRxAnt = 4;
 cfg.scenario.bs.nTxAnt = 4;
 cfg.antenna.bs.numElements = 4;
 cfg.phy.carrier.NSizeGrid = 12;
+% This is a PDSCH-only power-ratio fixture; a 20-RB SSB cannot fit here.
+cfg.phy.ssb.enable = false;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.pdsch.prbSet = 0:5;
 cfg.phy.pdsch.symbolAllocation = [0 10];

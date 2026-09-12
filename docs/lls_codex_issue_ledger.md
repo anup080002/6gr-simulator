@@ -6,6 +6,15 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [received-control DL endpoint](lls/dl_received_assignment_20260913.md)
+now derives a connected typed assignment and new-TB coding plan from actual
+decoded DCI and installed configuration, without TX plans or a TX matrix.
+The actual coded endpoint recovered 1064 bits and measured a 43-sample capture
+delay; the updated endpoint test and eight regressions passed. Received MCS
+aliases and table-context validation are repaired. UE-owned DL HARQ admission,
+retained retransmission coding, main-scheduler handoff and dynamic DAI still
+gate the full 58-slot run. The old disabled-power test-file edit remains blocked.
+
 The [practical DL precoder-boundary repair](lls/dl_receiver_precoder_boundary_20260913.md)
 removes an unintended transmitter-matrix requirement from receiver-only
 integration binding. Active BWP/CC/epoch/TCI checks remain enforced; matrix
