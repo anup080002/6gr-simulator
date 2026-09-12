@@ -73,4 +73,22 @@ replay.SNRReferencePlane='receiver_sample_waveform_pre_composite_front_end';
 replay.AppliedNoiseSNR_dB=10*log10(power/variance);
 replay.AppliedNoiseSNRSource=nominalSource;
 replay.ServingLinkPowerMeasurementEvidence=evidence;
+channelArrivalDelay=double(sixgr.util.structGet(evidence, ...
+    'RuntimeChannelExpectedEarliestArrivalDelay_samples',NaN));
+receiveWindowDisplacement=double(prepared.StartSample-prepared.ReceiveStartSample);
+if isfinite(channelArrivalDelay) && isfinite(receiveWindowDisplacement) && ...
+        isfinite(double(replay.InjectedTimingOffset_samples))
+    replay.TrueReceiverTimingOffset_samples=receiveWindowDisplacement + ...
+        channelArrivalDelay + double(replay.InjectedTimingOffset_samples);
+    replay.TrueReceiverTimingOffsetSource= ...
+        'prepared_tx_minus_rx_observation_origin_plus_executed_channel_filter_and_minimum_path_delay_plus_applied_RF_timing_offset';
+    replay.ReceiveWindowDisplacement_samples=receiveWindowDisplacement;
+    replay.RuntimeChannelFilterDelay_samples=double(evidence.RuntimeChannelFilterDelay_samples);
+    replay.RuntimeChannelMinimumPathDelay_samples=double(evidence.RuntimeChannelMinimumPathDelay_samples);
+    replay.TimingTruthReceiverEstimatorInput=false;
+else
+    replay.TrueReceiverTimingOffset_samples=NaN;
+    replay.TrueReceiverTimingOffsetSource='unavailable_incomplete_executed_shared_channel_timing_truth';
+    replay.TimingTruthReceiverEstimatorInput=false;
+end
 end
