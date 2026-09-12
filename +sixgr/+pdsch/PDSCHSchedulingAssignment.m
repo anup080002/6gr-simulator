@@ -118,6 +118,9 @@ classdef PDSCHSchedulingAssignment
 
     methods (Static, Access = private)
         function validateData(data)
+            if isfield(data,'DefaultCORESETQCLReference')
+                sixgr.pdsch.CORESETQCLReference.validate(data.DefaultCORESETQCLReference,data);
+            end
             profile = lower(strtrim(string(data.Profile)));
             source = string(data.Source);
             nLayers = sixgr.pdsch.PDSCHSchedulingAssignment.integerScalar( ...

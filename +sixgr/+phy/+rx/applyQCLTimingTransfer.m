@@ -9,6 +9,20 @@ evidence=struct('QCLStatus',"not_configured",'QCLType',"", ...
     'QCLDMRSDelayResidual_samples',NaN, ...
     'QCLMeasurementStatus',"not_measured_requires_QCL_TCI_binding_evidence");
 policy=sixgr.util.structGet(cfg,'phy.pdsch.qclTCI',struct());
+if isfield(grant,'ReceivedCORESETQCLReference')
+        context=sixgr.phy.pdcch.validateConnectedAssignment(cfg,grant);
+        reference=sixgr.pdsch.CORESETQCLReference.fromInstalled(cfg,context,grant.ControlAbsoluteSlot);
+        assert(~grant.TCIPresent && isequaln(reference,grant.ReceivedCORESETQCLReference), ...
+            'sixgr:qcl:CORESETAssociationIdentityMismatch','Default QCL must retain the received scheduling CORESET association.');
+        evidence.QCLStatus="installed_CORESET_association_no_measured_parameter_transfer";
+        evidence.QCLType=reference.QCLTypes;
+        evidence.QCLSourceRS=reference.SourceReferenceSignal;
+        evidence.QCLSourceResourceID=reference.Policy.source_reference_signal_id;
+        evidence.TCIStatus="field_absent_default_CORESET_QCL_association";
+        evidence.TCIInitializationSource=string(reference.Policy.initialization_source);
+        evidence.QCLMeasurementStatus=reference.ReceiverParameterReuseStatus;
+    return;
+end
 if ~logical(sixgr.util.structGet(policy,'enabled',false)), return; end
 source=sixgr.util.structGet(cfg,'lls6g.userContext.QCLTimingReference',struct());
 required={'UEIndex','ServingCellIndex','SourceResourceID','ConfigurationEpoch', ...

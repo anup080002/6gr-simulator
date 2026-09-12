@@ -1,0 +1,16 @@
+DEFAULT_CORESET_QCL_REFERENCE_PASS received_no_TCI=1 invented_state=0 negative_guards=10
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=0.106893223406 root=C:\Users\anup0\AppData\Local\Temp\tpead78306_3bd8_44f7_afaf_0a0064169c96
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples     EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    _________    _____________
+
+      "UL"        10                -4.9602                   -4.9602                 84             0.0010689         45      
+
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tp7de7b851_3d82_4f4f_924d_146271a9eca8
+EXECUTED_DATA_PRECODER_EVIDENCE_PASS transmissions=1 weights=2 patterns=2701 folder=docs/lls/evidence_20260913/default_coreset_qcl_ul_regression_01
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+RECEIVED_DL_QCL_AUTHORITY_PASS bits=1064 delay=43 window=[39 47] guards=8 source=explicit_boundary_fixture

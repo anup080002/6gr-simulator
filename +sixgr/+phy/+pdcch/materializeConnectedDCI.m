@@ -58,6 +58,13 @@ else
     if assignment.TCIPresent
         % A received codepoint is not an activated QCL/TCI state ID.
         assignment.TCICodepoint=f.transmission_configuration_indication;
+    elseif isfield(cfg.phy.pdcch.operatorControl,'coreset_qcl_association')
+        expected=sixgr.pdsch.CORESETQCLReference.fromInstalled(cfg,context,controlSlot);
+        assert(isfield(info,'ReceiverCORESETQCLReference') && ...
+            isequaln(info.ReceiverCORESETQCLReference,expected), ...
+            'sixgr:qcl:MissingReceivedCORESETAssociation', ...
+            'The association must be the one bound at actual PDCCH reception.');
+        assignment.ReceivedCORESETQCLReference=info.ReceiverCORESETQCLReference;
     end
 end
 assignment.AssignmentDigest=string(sixgr.rrc.asn1.asn1SHA256Hex(uint8( ...

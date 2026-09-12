@@ -1,0 +1,3 @@
+Slot1,ControlSlot0,DataSlot0,HARQProcess,ReceivedAssignmentSHA256,CRCPass,DecodeAvailableAtSample
+3,2,2,0,"544592bf501a6be6c830e5ab67fd3f35bededef214c90698d47c4215409f66dd",1,23047
+6,5,5,1,"57d1a974c3815ca08fbc96d7a16bc3e3247b63832e994a125aac6774853af59b",0,46087

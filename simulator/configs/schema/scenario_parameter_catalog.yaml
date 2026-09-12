@@ -655,6 +655,7 @@ sections:
       dl_reference_signaling: {required: false, type: struct}
       connected_dci: {required: false, type: struct}
       connected_monitoring: {required: false, type: struct}
+      coreset_qcl_association: {required: false, type: struct, nested_rule: coreset_qcl_association}
       pdcch6gr: {required: false, type: struct}
       monitoring_mode:
         required: false
@@ -1276,6 +1277,19 @@ nested_sections:
         allowed_values: [post_run_csv_contract_materializer]
       allow_svg: {required: true, type: boolean}
       allow_placeholder_evidence: {required: true, type: boolean}
+  coreset_qcl_association:
+    path: control.coreset_qcl_association
+    parameters:
+      configuration_epoch: {required: true, type: integer, min: 0}
+      serving_cell_index: {required: true, type: integer, min: 0}
+      component_carrier_index: {required: true, type: integer, min: 0}
+      bwp_id: {required: true, type: integer, min: 0}
+      coreset_id: {required: true, type: integer, min: 0}
+      activation_absolute_slot0: {required: true, type: integer, min: 0}
+      source_reference_signal: {required: true, type: string, allowed_values: [SSB, NZP-CSI-RS]}
+      source_reference_signal_id: {required: true, type: integer, min: 0}
+      qcl_types: {required: true, type: string_array}
+      initialization_source: {required: true, type: string, allowed_values: [lls_preconfigured_higher_layer_context]}
   mimo_qcl_tci:
     path: mimo.qcl_tci
     parameters:

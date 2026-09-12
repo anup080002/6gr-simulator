@@ -12,6 +12,19 @@ control:
   blind_search_enabled: true
   connected_dci:
     tci_present: false
+  # Installed CORESET association, not a measured TRS prior or an activated
+  # TCI codepoint. Type-A only: this fixture does not qualify spatial reuse.
+  coreset_qcl_association:
+    configuration_epoch: 1
+    serving_cell_index: 0
+    component_carrier_index: 0
+    bwp_id: 0
+    coreset_id: 0
+    activation_absolute_slot0: 0
+    source_reference_signal: SSB
+    source_reference_signal_id: 0
+    qcl_types: [A]
+    initialization_source: lls_preconfigured_higher_layer_context
 
 # The isolated DL ACK donors have no preceding TRS observation. This UL
 # fixture does not qualify QCL; production and testSharedQCLTimingTransfer do.

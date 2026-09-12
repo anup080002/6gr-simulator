@@ -516,6 +516,12 @@ if ~isempty(fieldnames(candidateResolution))
     info.SearchSpaceNCCE = candidateResolution.NCCE;
     info.SearchSpaceCandidateResolutionSource = ...
         char(candidateResolution.Source);
+    if isfield(candidateResolution,'CORESETQCLReference')
+        info.ReceiverCORESETQCLReference=candidateResolution.CORESETQCLReference;
+    elseif isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'coreset_qcl_association')
+        error('sixgr:qcl:MissingCORESETReceiveClock', ...
+            'An actual control reception must bind its clock-qualified CORESET association.');
+    end
 end
 info.ValidHypothesisCount = numel(passingRx);
 % Preserve measured CRC-valid observations for a composite-slot consumer.

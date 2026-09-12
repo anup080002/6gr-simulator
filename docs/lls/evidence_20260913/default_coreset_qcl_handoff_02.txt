@@ -1,0 +1,4 @@
+DEFAULT_CORESET_QCL_REFERENCE_PASS received_no_TCI=1 invented_state=0 negative_guards=10
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_DL_FEEDBACK_AUTHORITY_PASS actual_ACK_NACK=1,0 slots=3,6 folder=docs/lls/evidence_20260913/default_coreset_qcl_handoff_02

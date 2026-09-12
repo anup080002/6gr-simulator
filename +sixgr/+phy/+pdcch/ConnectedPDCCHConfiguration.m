@@ -59,6 +59,13 @@ classdef ConnectedPDCCHConfiguration
             objects=sixgr.phy.pdcch.PDCCHToolboxFactory.create(carrier,core,search, ...
                 level,rnti,p.dmrs_scrambling_id,d.ActiveDLBWPStart,d.ActiveDLBWPSize);
             pdcch=objects.PDCCH;
+            if isfield(control,'coreset_qcl_association')
+                sixgr.pdsch.CORESETQCLReference.policyForContext(cfg,context);
+                slot=sixgr.util.structGet(cfg,'lls6g.runtime.AbsoluteSlotIndex0',[]);
+                if ~isempty(slot)
+                    resolution.CORESETQCLReference=sixgr.pdsch.CORESETQCLReference.fromInstalled(cfg,context,slot);
+                end
+            end
         end
     end
 end

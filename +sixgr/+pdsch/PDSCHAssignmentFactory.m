@@ -24,6 +24,7 @@ classdef PDSCHAssignmentFactory
             end
             cfg = allocation.Config; p = allocation.ChannelConfig;
             q = cfg.phy.pdsch.qclTCI;
+            if received.TCIPresent
             assert(received.TCIPresent && q.enabled && ...
                 received.TCICodepoint==q.codepoint && ...
                 received.ConfigurationEpoch==q.configuration_epoch && ...
@@ -37,6 +38,14 @@ classdef PDSCHAssignmentFactory
                 'SourceReferenceSignalId',string(q.source_resource_id), ...
                 'QCLTypes',"A",'Assumptions',"average_delay_doppler_from_configured_TRS", ...
                 'InitializationSource',string(q.initialization_source));
+            else
+                expected=sixgr.pdsch.CORESETQCLReference.fromInstalled(installed,context,received.ControlAbsoluteSlot);
+                assert(isfield(received,'ReceivedCORESETQCLReference') && ...
+                    isequaln(received.ReceivedCORESETQCLReference,expected), ...
+                    'sixgr:qcl:MissingReceivedCORESETAssociation', ...
+                    'Absent-TCI PDSCH requires the actual received scheduling CORESET association.');
+                tci=struct();
+            end
             integration = struct('ActiveServingCellIds',double(c.ScheduledServingCell), ...
                 'ActiveCCIds',double(c.ScheduledCarrier),'ActiveBWPId',double(c.ScheduledBWP), ...
                 'ActiveBWPStartPRB',double(c.ActiveDLBWPStart), ...
@@ -45,6 +54,10 @@ classdef PDSCHAssignmentFactory
                 'CarrierIndicatorValid',~c.CarrierIndicatorPresent, ...
                 'CrossCarrierSchedulingEnabled',logical(c.ConnectedPolicy.cross_carrier_scheduling), ...
                 'ActivatedTCIStates',tci);
+            if ~received.TCIPresent
+                integration=rmfield(integration,'ActivatedTCIStates');
+                integration.DefaultCORESETQCLReference=received.ReceivedCORESETQCLReference;
+            end
             data = sixgr.pdsch.PDSCHAssignmentFactory.baseData( ...
                 'connected_strict','decoded_dci+ue_context');
             data.UEId=double(ueId); data.RNTI=received.RNTI; data.RNTIType=string(c.RNTIType);
@@ -100,8 +113,17 @@ classdef PDSCHAssignmentFactory
             data.NDIPerCodeword=received.NDI; data.RVPerCodeword=received.RV;
             data.HARQProcessId=received.HARQProcess;
             data.DAI=received.Fields.dai; % Raw received two-bit codepoint, not unwrapped counter.
-            data.TCIStateId=double(q.state_id);
-            data.TransmissionConfigurationIndication=received.TCICodepoint;
+            if received.TCIPresent
+                data.TCIStateId=double(q.state_id);
+                data.TransmissionConfigurationIndication=received.TCICodepoint;
+            else
+                data.ReceivedTCIPresent=false;
+                data.DefaultCORESETQCLReference=received.ReceivedCORESETQCLReference;
+                % These fields do not exist in the received DCI. Do not
+                % invent codepoint zero or an activated TCI state ID.
+                data.TCIStateId=NaN;
+                data.TransmissionConfigurationIndication=NaN;
+            end
             data.ReceivedAssignmentDigest=received.AssignmentDigest;
             data.ReceivedContextDigest=received.ContextDigest;
             data.DAIDomain="received_two_bit_codepoint_not_unwrapped_counter";

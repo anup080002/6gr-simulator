@@ -748,6 +748,9 @@ if isfield(cfg.control,'connected_dci')
     assert(isfield(cfg.control,'connected_monitoring'), ...
         'sixgr:phy:pdcch:MissingConnectedMonitoring','Connected DCI requires control.connected_monitoring.');
     sixgr.phy.pdcch.ConnectedPDCCHConfiguration.validatePolicy(cfg.control.connected_monitoring);
+    if isfield(cfg.control,'coreset_qcl_association')
+        sixgr.pdsch.CORESETQCLReference.validatePolicy(cfg.control.coreset_qcl_association);
+    end
     sixgr.phy.pdcch.ConnectedDCIProfile.validatePolicy(cfg.control.connected_dci);
     assert(all(isfield(cfg.control,{'dl_reference_signaling','ul_reference_signaling','ul_precoding'})), ...
         'sixgr:lls6g:config:MissingConnectedReferencePolicy','Connected DCI requires explicit DL/UL reference and UL precoding contexts.');

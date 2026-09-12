@@ -1,0 +1,12 @@
+{Unrecognized field name "runtime".
+
+Error in sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build (line 64)
+                    cfg,context,cfg.lls6g.runtime.AbsoluteSlotIndex0);
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2759)
+    sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfg, ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedDLFeedbackAuthority (line 7)
+cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

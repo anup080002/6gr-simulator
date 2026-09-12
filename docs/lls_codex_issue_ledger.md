@@ -6,6 +6,17 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [default CORESET-QCL repair](lls/default_coreset_qcl_20260913.md) closes the
+absent-TCI donor failure without inventing activated TCI or a measured timing
+prior. YAML-owned associations now pass through actual received PDCCH into
+the immutable DL assignment. Ten negative guards, actual donor ACK/NACK,
+two-port shared SRS/PUSCH/UCI, PUCCH timing/power and explicit-TCI boundary
+checks pass in zero-exit processes. Type-D/default spatial reuse remains
+unqualified. The allocator edit was retried after testing and again refused
+by the normal editor; its source and failing capacity guard remain unchanged.
+The main coordinator, protocol dispositions, special slots and final baseline
+still require qualification. Prior failed checkpoints below are historical.
+
 The [main DL HARQ handoff checkpoint](lls/main_dl_harq_handoff_20260913.md)
 wires a per-UE received-control entity into the main shared callback and removes
 the connected wrapper's second combine/decode. It is **unqualified**: the donor
