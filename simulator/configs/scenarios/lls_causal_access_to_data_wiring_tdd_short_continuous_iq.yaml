@@ -47,8 +47,43 @@ reference_signals:
 
 pusch:
   num_antenna_ports: 2
+  dmrs_nscid: 0
+  # RRC TDRA rows: [index, start symbol, length, K2].
+  time_domain_allocations:
+    - [0, 0, 13, 1]
+    - [1, 0, 13, 2]
+
+pdsch:
+  dmrs_nscid: 0
+  # Full-DL and special-slot DL allocations, both with K0=0.
+  time_domain_allocations:
+    - [0, 2, 12, 0]
+    - [1, 2, 8, 0]
 
 control:
+  connected_dci:
+    spec_release: Release-18
+    spec_version: "18.8.0"
+    configuration_epoch: 1
+    serving_cell_index: 0
+    component_carrier_index: 0
+    search_space_id: 1
+    coreset_id: 0
+    rnti_type: C-RNTI
+    frequency_allocation_type: type1_riv
+    vrb_interleaving: false
+    prb_bundling: staticBundling
+    rate_match_pattern_group_count: 0
+    aperiodic_zp_csirs_resource_set_count: 0
+    harq_ack_codebook: dynamic
+    supplementary_uplink: false
+    cross_carrier_scheduling: false
+    cbg_enabled: false
+    csi_request_bits: 0
+    beta_offsets: semiStatic
+    tci_present: true
+    # Explicit absence of optional Rel-16/17/18 DCI extension fields.
+    additional_dci_features: []
   dl_reference_signaling:
     dmrs_configuration_type: 1
     dmrs_max_length: 1

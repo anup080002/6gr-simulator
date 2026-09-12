@@ -1,0 +1,5 @@
+[PASS] testConnectedDCIProfile (28.69s)
+[PASS] testTwoPortULYAMLAndSRS (8.55s)
+Slowest 2 test(s):
+   1. testConnectedDCIProfile (28.69s)
+   2. testTwoPortULYAMLAndSRS (8.55s)

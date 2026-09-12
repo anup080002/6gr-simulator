@@ -98,7 +98,11 @@ classdef DCIParser
                 error("sixgr:phy:pdcch:field_out_of_range", ...
                     "Decoded frequency_resource_assignment is not a valid RIV for BWP size %d.", nBWP);
             end
-            index = double(fields.time_resource_assignment);
+            if ~isfield(fields,'time_resource_assignment') && isfield(data,'ConnectedPolicy') && size(allocations,1)==1
+                index=0;
+            else
+                index = double(fields.time_resource_assignment);
+            end
             row = allocations(allocations(:,1) == index, :);
             if size(row, 1) ~= 1
                 error("sixgr:phy:pdcch:field_out_of_range", ...
@@ -118,6 +122,14 @@ classdef DCIParser
                 "scheduled_carrier", double(data.ScheduledCarrier), ...
                 "scheduled_bwp", double(data.ScheduledBWP), ...
                 "configuration_epoch", double(data.ConfigurationEpoch));
+            if isfield(data,'ConnectedPolicy')
+                derived.time_domain_assignment_index=index;
+                if fmt=="1_1"
+                    indicator=0;
+                    if isfield(fields,'pdsch_to_harq_feedback_timing'), indicator=fields.pdsch_to_harq_feedback_timing; end
+                    derived.pdsch_to_harq_feedback_timing_slots=data.DLDataToULACK(indicator+1);
+                end
+            end
             if isfield(fields, "tpc_command_for_pusch")
                 derived.tpc = double(fields.tpc_command_for_pusch);
             elseif isfield(fields, "tpc_command_for_pucch")

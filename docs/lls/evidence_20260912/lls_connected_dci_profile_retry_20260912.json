@@ -1,0 +1,92 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": true,
+      "msg": "",
+      "duration_s": 28.1416005
+    },
+    {
+      "name": "testDLReferenceSignaling",
+      "ok": true,
+      "msg": "",
+      "duration_s": 18.5359053
+    },
+    {
+      "name": "testULReferenceSignaling",
+      "ok": true,
+      "msg": "",
+      "duration_s": 6.7683259
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 6.7608247
+    },
+    {
+      "name": "testConfig",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.0601518
+    },
+    {
+      "name": "test6GParameterCatalog",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.0105064
+    },
+    {
+      "name": "test6GScenarioConfigValidation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.8806785
+    },
+    {
+      "name": "testSchedulerGrantConsistency",
+      "ok": true,
+      "msg": "",
+      "duration_s": 9.0663402
+    },
+    {
+      "name": "testDCIPackParseRoundTrip",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.3813145
+    },
+    {
+      "name": "testDCISizeAlignment",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.3138068
+    },
+    {
+      "name": "testSharedQCLScenarioContract",
+      "ok": true,
+      "msg": "",
+      "duration_s": 6.6353738
+    },
+    {
+      "name": "testPDCCHReceivedClockAlignment",
+      "ok": true,
+      "msg": "",
+      "duration_s": 6.4783296
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIProfile",
+    "testDLReferenceSignaling",
+    "testULReferenceSignaling",
+    "testTwoPortULYAMLAndSRS",
+    "testConfig",
+    "test6GParameterCatalog",
+    "test6GScenarioConfigValidation",
+    "testSchedulerGrantConsistency",
+    "testDCIPackParseRoundTrip",
+    "testDCISizeAlignment",
+    "testSharedQCLScenarioContract",
+    "testPDCCHReceivedClockAlignment"
+  ],
+  "total_duration_s": 120.0600623
+}

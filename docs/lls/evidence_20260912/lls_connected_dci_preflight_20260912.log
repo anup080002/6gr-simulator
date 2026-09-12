@@ -1,0 +1,17 @@
+{Error using sixgr.lls6g.config.validateScenarioConfig>localRejectUnknownSectionFields (line 151)
+Unknown keys in section 'pdsch' of C:\Users\anup0\OneDrive\Documents\Simulator\6GR
+Simulator_v2_clean_main\simulator\configs\scenarios\lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml: dmrs_nscid
+
+Error in sixgr.lls6g.config.validateScenarioConfig>localValidateScenarioSections (line 72)
+    localRejectUnknownSectionFields(cfg.(sec), allowedSections.(sec), sec, ctx);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.validateScenarioConfig (line 21)
+        localValidateScenarioSections(cfg, schemaDef, catalog, logical(opt.AllowPartial), ctx);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 29)
+sixgr.lls6g.config.validateScenarioConfig(raw, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

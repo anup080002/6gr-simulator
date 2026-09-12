@@ -92,6 +92,7 @@ sections:
   pdsch:
     required: false
     parameters:
+      dmrs_nscid: {required: false, type: integer, allowed_numeric_values: [0, 1]}
       execution_profile:
         required: false
         type: string

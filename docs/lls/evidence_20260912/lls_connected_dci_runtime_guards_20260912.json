@@ -1,0 +1,22 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": true,
+      "msg": "",
+      "duration_s": 28.6858502
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 8.5528967
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIProfile",
+    "testTwoPortULYAMLAndSRS"
+  ],
+  "total_duration_s": 37.2450028
+}

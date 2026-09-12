@@ -1,0 +1,9 @@
+{Unrecognized field name "timeDomainAllocations".
+
+Error in sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig (line 44)
+            dlRows=cfg.phy.pdsch.timeDomainAllocations; ulRows=cfg.phy.pusch.timeDomainAllocations;
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2742)
+        context=sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig(cfg,formats(i));
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

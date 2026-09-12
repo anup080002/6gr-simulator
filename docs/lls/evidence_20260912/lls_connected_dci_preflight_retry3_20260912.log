@@ -1,0 +1,9 @@
+{Unrecognized field name "id".
+
+Error in sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig (line 60)
+                'SearchSpaceType',"USS",'SearchSpaceID',double(cfg.phy.pdcch.searchSpace.id), ...
+                                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2742)
+        context=sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig(cfg,formats(i));
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

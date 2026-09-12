@@ -4,6 +4,10 @@ classdef DCIContextFactory
     methods (Static)
         function context = fromRuntimeConfig(cfg, dciFormat)
             control = sixgr.util.structGet(cfg, "phy.pdcch.operatorControl", []);
+            if isstruct(control) && isfield(control,'connected_dci')
+                context=sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig(cfg,dciFormat);
+                return;
+            end
             if isempty(control)
                 error("sixgr:phy:pdcch:missing_dci_context", ...
                     "Runtime config does not carry phy.pdcch.operatorControl.");
@@ -133,6 +137,7 @@ classdef DCIContextFactory
             strict = sixgr.util.structGet(operatorControl, "pdcch_strict", struct());
             hasOperatorContext = isstruct(strict) && isscalar(strict) && ...
                 isfield(strict, "dci_context") && ~isempty(strict.dci_context);
+            hasOperatorContext=hasOperatorContext || isfield(operatorControl,'connected_dci');
             if hasOperatorContext
                 context = sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg, fmt);
                 % The operator context declares the RRC layout and RNTI

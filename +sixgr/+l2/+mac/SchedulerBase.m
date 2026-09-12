@@ -2283,6 +2283,10 @@ fields.mcs = double(mcs);
 fields.ndi = double(ndi);
 fields.rv = double(rv);
 fields.harq_process = double(harqId);
+if isfield(dciContext.Data,'ConnectedPolicy')
+    fields=sixgr.phy.pdcch.ConnectedDCIProfile.scheduledFields(fields,dciContext,cfg,grant,k1);
+    return;
+end
 symAlloc = double(sixgr.util.structGet(grant, "SymbolAllocation", []));
 if numel(symAlloc) ~= 2 || any(~isfinite(symAlloc))
     error("sixgr:SchedulerBase:MissingSymbolAllocation", ...

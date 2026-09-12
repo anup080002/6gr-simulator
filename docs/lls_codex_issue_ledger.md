@@ -23,6 +23,15 @@ precedence in the UL indication helper. Complete DCI optional-field policy,
 receiver-owned monitored sizes, and received reference-field materialization
 remain mandatory; the linked ledger lists the exact remaining control work.
 
+The [connected DCI layout repair](lls/connected_dci_profile_repair_20260912.md)
+replaces the baseline's legacy layout with a YAML-owned paired context,
+explicit TDRA tables, K1 list indexing, correct optional-field presence,
+UL-SCH/NSCID signaling and DL NSCID waveform wiring. Twelve focused tests
+passed. Receiver-owned size search and received-field materialization remain
+open. The same audit identified constant scheduler DAI as an additional
+dynamic HARQ-ACK codebook qualification blocker; field-width tests alone do
+not close it. The full 58-slot run remains held.
+
 The 58-slot 12 dB configured-SNR TDD run is the only immediate completion
 target. It is an actual shared-waveform LLS diagnostic, not an E2E campaign and
 not statistical publication evidence.

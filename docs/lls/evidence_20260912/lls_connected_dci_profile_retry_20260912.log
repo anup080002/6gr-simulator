@@ -1,0 +1,35 @@
+[PASS] testConnectedDCIProfile (28.14s)
+[PASS] testDLReferenceSignaling (18.54s)
+[PASS] testULReferenceSignaling (6.77s)
+[PASS] testTwoPortULYAMLAndSRS (6.76s)
+[PASS] testConfig (11.06s)
+[PASS] test6GParameterCatalog (1.01s)
+[PASS] test6GScenarioConfigValidation (12.88s)
+[PASS] testSchedulerGrantConsistency (9.07s)
+Running testDCIPackParseRoundTrip
+.
+Done testDCIPackParseRoundTrip
+__________
+
+[PASS] testDCIPackParseRoundTrip (11.38s)
+Running testDCISizeAlignment
+.
+Done testDCISizeAlignment
+__________
+
+[PASS] testDCISizeAlignment (1.31s)
+PASS testSharedQCLScenarioContract
+[PASS] testSharedQCLScenarioContract (6.64s)
+PDCCH_RECEIVED_CLOCK_ALIGNMENT_PASS
+[PASS] testPDCCHReceivedClockAlignment (6.48s)
+Slowest 10 test(s):
+   1. testConnectedDCIProfile (28.14s)
+   2. testDLReferenceSignaling (18.54s)
+   3. test6GScenarioConfigValidation (12.88s)
+   4. testDCIPackParseRoundTrip (11.38s)
+   5. testConfig (11.06s)
+   6. testSchedulerGrantConsistency (9.07s)
+   7. testULReferenceSignaling (6.77s)
+   8. testTwoPortULYAMLAndSRS (6.76s)
+   9. testSharedQCLScenarioContract (6.64s)
+  10. testPDCCHReceivedClockAlignment (6.48s)

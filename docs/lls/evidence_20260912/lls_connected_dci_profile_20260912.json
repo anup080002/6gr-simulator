@@ -1,0 +1,36 @@
+{
+  "ok": false,
+  "results": [
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": false,
+      "msg": "Unrecognized method, property, or field 'control' for class 'sixgr.lls6g.config.ScenarioConfig'.",
+      "duration_s": 26.0966409
+    },
+    {
+      "name": "testDLReferenceSignaling",
+      "ok": true,
+      "msg": "",
+      "duration_s": 21.0743816
+    },
+    {
+      "name": "testULReferenceSignaling",
+      "ok": true,
+      "msg": "",
+      "duration_s": 6.9818865
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 7.9045215
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIProfile",
+    "testDLReferenceSignaling",
+    "testULReferenceSignaling",
+    "testTwoPortULYAMLAndSRS"
+  ],
+  "total_duration_s": 62.0659256
+}

@@ -1,0 +1,13 @@
+[FAIL] testConnectedDCIProfile (26.10s)
+       Unrecognized method, property, or field 'control' for class 'sixgr.lls6g.config.ScenarioConfig'.
+[PASS] testDLReferenceSignaling (21.07s)
+[PASS] testULReferenceSignaling (6.98s)
+[PASS] testTwoPortULYAMLAndSRS (7.90s)
+Slowest 4 test(s):
+   1. testConnectedDCIProfile (26.10s)
+   2. testDLReferenceSignaling (21.07s)
+   3. testTwoPortULYAMLAndSRS (7.90s)
+   4. testULReferenceSignaling (6.98s)
+{Error using assert
+Assertion failed.
+} 

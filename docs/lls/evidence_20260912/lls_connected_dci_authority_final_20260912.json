@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedDCIProfile",
+      "ok": true,
+      "msg": "",
+      "duration_s": 33.1677414
+    },
+    {
+      "name": "test6GScenarioConfigValidation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 13.2960167
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 7.9006009
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIProfile",
+    "test6GScenarioConfigValidation",
+    "testTwoPortULYAMLAndSRS"
+  ],
+  "total_duration_s": 54.3712823
+}

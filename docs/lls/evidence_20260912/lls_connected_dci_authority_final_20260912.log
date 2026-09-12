@@ -1,0 +1,7 @@
+[PASS] testConnectedDCIProfile (33.17s)
+[PASS] test6GScenarioConfigValidation (13.30s)
+[PASS] testTwoPortULYAMLAndSRS (7.90s)
+Slowest 3 test(s):
+   1. testConnectedDCIProfile (33.17s)
+   2. test6GScenarioConfigValidation (13.30s)
+   3. testTwoPortULYAMLAndSRS (7.90s)

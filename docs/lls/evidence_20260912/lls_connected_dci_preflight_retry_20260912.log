@@ -1,0 +1,29 @@
+{Error using sixgr.lls6g.config.readConfigFile>localReadYAMLViaExternalPython (line 149)
+Source YAML 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\simulator\configs\schema\scenario_parameter_catalog_extension_07.yaml' contains a duplicate
+key.
+
+Error in sixgr.lls6g.config.readConfigFile>localReadYAML (line 41)
+        data = localReadYAMLViaExternalPython(filePath, runtime.PythonExecutable);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.readConfigFile (line 17)
+        data = localReadYAML(raw, filePath);
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadParameterCatalog>localLoadMergedCatalog (line 41)
+    overlay = sixgr.lls6g.config.readConfigFile(overlayPath);
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadParameterCatalog (line 14)
+            scenarioCatalog = localLoadMergedCatalog("scenario");
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.schema (line 9)
+catalog = sixgr.lls6g.config.loadParameterCatalog(kind);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.validateScenarioConfig (line 13)
+schemaDef = sixgr.lls6g.config.schema(kind);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig>localResolveConfigTree (line 29)
+sixgr.lls6g.config.validateScenarioConfig(raw, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.config.loadScenarioConfig (line 5)
+[resolved, chain] = localResolveConfigTree(configPath, strings(0,1));
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -6,6 +6,10 @@ classdef DCISchemaEngine
             context = sixgr.phy.pdcch.DCISchemaEngine.requireContext(context);
             data = context.Data;
             fmt = string(data.DCIFormat);
+            if isfield(data,'ConnectedPolicy')
+                schema=sixgr.phy.pdcch.ConnectedDCIProfile.schema(context);
+                return;
+            end
             if string(data.RNTIType)=="TC-RNTI" && isfield(data,'FrequencyReferenceSize')
                 nFreq = ceil(log2(data.FrequencyReferenceSize*(data.FrequencyReferenceSize+1)/2));
                 definitions = [

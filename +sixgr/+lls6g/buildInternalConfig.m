@@ -2736,6 +2736,27 @@ end
 % strict validation have completed.  Legacy aliases remain compatibility
 % views, while contradictory YAML authorities now fail before execution.
 cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
+if isfield(s.control,'connected_dci')
+    sixgr.phy.pdcch.ConnectedDCIProfile.validatePolicy(s.control.connected_dci);
+    for binding={"searchSpace","search_space_id";"coreset","coreset_id"}.'
+        path="phy.pdcch."+binding{1}+".id";
+        value=s.control.connected_dci.(binding{2});
+        prior=sixgr.util.structGet(cfg,path,[]);
+        assert(isempty(prior) || isequal(prior,value), ...
+            'sixgr:phy:pdcch:ConnectedRuntimeMismatch','Connected DCI identity conflicts with the configured search space or CORESET.');
+        cfg=sixgr.util.structSet(cfg,path,value);
+    end
+    contexts=cell(2,1); sizes=zeros(2,1); formats=string(s.control.dci_formats);
+    for i=1:numel(formats)
+        context=sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig(cfg,formats(i));
+        contexts{i}=context.Data;
+        aligned=sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(context);
+        sizes(i)=aligned.Selected.AlignedBits;
+    end
+    cfg.phy.pdcch.dciContextData=contexts;
+    cfg.phy.pdcch.dciPayloadSizesByFormat=sizes;
+    cfg.phy.pdcch.dciPayloadSizeSource='installed_connected_RRC_context';
+end
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)
@@ -3453,6 +3474,7 @@ function cfg = localApplyPDSCHDetailSurface(cfg, s, targetBase)
 % transmitted through multiple logical antenna ports using a selected PMI.
 % Do not collapse NumAntennaPorts to NumLayers at this translation boundary.
 scalarPairs = {
+    "dmrs_nscid", "dmrs.NSCID"
     "num_antenna_ports", "NumAntennaPorts"
     "transmission_scheme", "transmissionScheme"
     "codebook_type", "codebookType"

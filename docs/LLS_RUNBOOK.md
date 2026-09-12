@@ -13,6 +13,12 @@ adds `control.dl_reference_signaling` to the continuous-IQ YAML. Its focused
 table and waveform checks passed; it does not remove the remaining complete
 DCI-context and receiver-monitoring gate.
 
+The continuous-IQ profile now also declares `control.connected_dci`, explicit
+PDSCH/PUSCH TDRA catalogs and `pdsch.dmrs_nscid`/`pusch.dmrs_nscid`.
+See [the connected-layout checkpoint](lls/connected_dci_profile_repair_20260912.md)
+for the 37/43-bit baseline layouts, focused checks and remaining receiver/DAI
+gates. Do not start a new full run merely because YAML validation passes.
+
 This runbook covers the config-driven link-level simulator only. Commands are
 written for PowerShell from the repository root. They do not launch the E2E
 campaign runner.

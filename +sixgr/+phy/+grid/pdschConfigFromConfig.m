@@ -325,6 +325,12 @@ if ~isempty(numCDM) && isprop(dmrs, "NumCDMGroupsWithoutData")
     dmrs.NumCDMGroupsWithoutData = double(numCDM);
 end
 
+nscid = sixgr.util.structGet(cfg, "phy.pdsch.dmrs.NSCID", []);
+if ~isempty(nscid)
+    localValidateIntegerMember(nscid, [0 1], "InvalidNSCID");
+    dmrs.NSCID = double(nscid);
+end
+
 enhancedR18 = sixgr.util.structGet( ...
     cfg, "phy.pdsch.dmrs.enhancedR18", ...
     sixgr.util.structGet(cfg, "phy.pdsch.dmrs.DMRSEnhancedR18", []));
