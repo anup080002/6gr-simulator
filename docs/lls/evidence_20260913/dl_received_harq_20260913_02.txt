@@ -1,0 +1,24 @@
+RECEIVED_DL_HARQ_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp4cd151fd_b0f6_408e_aa6d_e166df6d2a6b
+RECEIVED_DL_HARQ_PASS sequence=1 ndi=1 rv=0 mcs=10 bits=1064 delay=2 decode=1 ack=0 deliver=0
+{Error using assert
+SS/PBCH excludes 48 scheduled PDSCH DM-RS REs in absolute slot 40. The scheduler must select a legal PRB/TDRA allocation before coding.
+
+Error in sixgr.phy.grid.reserveSSBPDSCHResources (line 27)
+assert(isempty(collision),'sixgr:phy:grid:allocREsPDSCH:SSBDMRSCollision', ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.grid.allocREsPDSCH (line 25)
+    [pdsch, ssbReservation] = sixgr.phy.grid.reserveSSBPDSCHResources(carrier, pdsch, cfgOrPdsch);
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx>localResolvePDSCHMaterialization (line 2229)
+        [indices, info, pdsch] = sixgr.phy.grid.allocREsPDSCH( ...
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx>localDelegateCanonicalGrantTransmitter (line 1073)
+[~, pdschInfo, pdsch] = localResolvePDSCHMaterialization( ...
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx (line 141)
+    [tx, info] = localDelegateCanonicalGrantTransmitter( ...
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedDLHARQState (line 47)
+    tx=sixgr.phy.dl.PDSCH_Tx(gnb,'ExecutionProfile','phy_calibration',txArgs{:});
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

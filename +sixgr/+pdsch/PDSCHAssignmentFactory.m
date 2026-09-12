@@ -2,7 +2,7 @@ classdef PDSCHAssignmentFactory
     %PDSCHAssignmentFactory Typed constructors for strict PDSCH ownership.
 
     methods (Static)
-        function [assignment, allocation, integration] = fromReceivedConnectedDCI(installed, received, ueId)
+        function [assignment, allocation, integration] = fromReceivedConnectedDCI(installed, received, ueId, history)
             % UE endpoint materialization: no scheduled grant, TX or CRC hint.
             validateattributes(ueId,{'numeric'},{'scalar','integer','positive','finite'});
             context = sixgr.phy.pdcch.validateConnectedAssignment(installed,received);
@@ -11,10 +11,17 @@ classdef PDSCHAssignmentFactory
                 isfield(c,'ConnectedPolicy') && c.RNTIType=="C-RNTI", ...
                 'sixgr:pdsch:ReceivedConnectedDLRequired', ...
                 'This materializer requires the installed connected C-RNTI DL profile.');
-            assert(~received.RequiresHARQHistory, ...
-                'sixgr:pdsch:ReceivedDLHARQHistoryRequired', ...
-                'Modulation-only retransmissions require retained UE HARQ coding history.');
-            allocation = sixgr.phy.pdcch.connectedDataAllocation(installed,received);
+            if nargin<4, history=[]; end
+            if isempty(history)
+                assert(~received.RequiresHARQHistory, ...
+                    'sixgr:pdsch:ReceivedDLHARQHistoryRequired', ...
+                    'Modulation-only retransmissions require retained UE HARQ coding history.');
+                allocation = sixgr.phy.pdcch.connectedDataAllocation(installed,received);
+            else
+                assert(isa(history,'sixgr.pdsch.ReceivedDLHARQCodingHistory'), ...
+                    'sixgr:pdsch:ReceivedDLHARQHistoryRequired','Receiver-owned immutable coding history is required.');
+                allocation=history.allocation(installed,received,ueId);
+            end
             cfg = allocation.Config; p = allocation.ChannelConfig;
             q = cfg.phy.pdsch.qclTCI;
             assert(received.TCIPresent && q.enabled && ...
@@ -74,6 +81,12 @@ classdef PDSCHAssignmentFactory
             data.MCSTablePerCodeword=received.MCSTable;
             data.MCSIndexPerCodeword=received.MCS; data.ModulationPerCodeword=received.Modulation;
             data.QmPerCodeword=profile.Qm; data.TargetCodeRatePerCodeword=received.TargetCodeRate;
+            if ~isempty(history)
+                data.ReceivedHARQCodingHistory=history;
+                data.TargetCodeRatePerCodeword=history.InitialTargetCodeRate;
+                data.NominalReceivedMCSTargetCodeRate=received.TargetCodeRate;
+                data.CodingRateSource="retained_initial_received_assignment";
+            end
             data.TBScalingPerCodeword=1; data.XOverhead=allocation.XOverhead;
             data.NumLayers=received.NumLayers; data.NumCodewords=1;
             data.LayerCountPerCodeword=received.NumLayers;
@@ -90,6 +103,7 @@ classdef PDSCHAssignmentFactory
             data.TCIStateId=double(q.state_id);
             data.TransmissionConfigurationIndication=received.TCICodepoint;
             data.ReceivedAssignmentDigest=received.AssignmentDigest;
+            data.ReceivedContextDigest=received.ContextDigest;
             data.DAIDomain="received_two_bit_codepoint_not_unwrapped_counter";
             data.AssignmentId=sixgr.pdsch.PDSCHAssignmentFactory.assignmentId(data);
             assignment=sixgr.pdsch.PDSCHSchedulingAssignment(data);

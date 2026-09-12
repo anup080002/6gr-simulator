@@ -1,0 +1,98 @@
+{
+  "scope": "UE-owned received-control DL HARQ endpoint; not main-scheduler or final 12 dB qualification",
+  "runs": [
+    {
+      "session_id": 73221,
+      "exit_code": 1,
+      "log": "dl_received_harq_20260913.txt",
+      "result": "overstrict exact-timing assertion in intentionally failing low-SNR fixture"
+    },
+    {
+      "session_id": 10873,
+      "exit_code": 1,
+      "log": "dl_received_harq_20260913_02.txt",
+      "result": "fixture allocation collided with periodic SSB; reservation guard correctly rejected it"
+    },
+    {
+      "session_id": 14008,
+      "exit_code": 1,
+      "log": "dl_received_harq_20260913_03.txt",
+      "result": "raw legacy soft-buffer handoff rejected; replaced with typed UE state"
+    },
+    {
+      "session_id": 92569,
+      "exit_code": 0,
+      "log": "dl_received_harq_20260913_04.txt",
+      "result": "four-step actual endpoint plus five focused regressions passed",
+      "terminal_source": "observed exec/write_stdin completion"
+    },
+    {
+      "session_id": 49389,
+      "exit_code": null,
+      "log": "dl_received_harq_replay_20260913.txt",
+      "result": "four replay PASS markers, seven negative guards and three regression PASS markers; no MATLAB process remains",
+      "terminal_source": "handle unavailable after context recovery; exit not inferred from log"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "dl_received_harq_20260913_02.txt",
+      "bytes": 1601,
+      "sha256": "b9381629564ac70c04fd8cdaabb56cf0cf8eb474679278609dbbb11d9ff922cc"
+    },
+    {
+      "path": "dl_received_harq_20260913_03.txt",
+      "bytes": 973,
+      "sha256": "6d6e6126d81342aa1ebd998513ec341aae8556eef515d7742866b485dff361a4"
+    },
+    {
+      "path": "dl_received_harq_20260913_04.txt",
+      "bytes": 2555,
+      "sha256": "4daa253656ea9ad89e9c6cbf7e05e93328d29d777d054d1d9c5b91776b2a1bef"
+    },
+    {
+      "path": "dl_received_harq_20260913.txt",
+      "bytes": 287,
+      "sha256": "aa70d40635f08042db190e58ebf70bf47da3de5d98cef7c76389bd835cfbe8a1"
+    },
+    {
+      "path": "dl_received_harq_replay_20260913.txt",
+      "bytes": 1191,
+      "sha256": "9fd6749e1f620610eb9720c81f1ea55ec80198c434b761582dc82251e9312975"
+    },
+    {
+      "path": "received_dl_harq/attempt_1.mat",
+      "bytes": 1312978,
+      "sha256": "a2edce9389286d96ebabc45bd5baf57a1fd02f74070048edde5d6bc0b4f18ab4"
+    },
+    {
+      "path": "received_dl_harq/attempt_2.mat",
+      "bytes": 2175159,
+      "sha256": "f6761e01ea754c5177cbaff3093a0d8bf3dcecf453e8722c3c1479be480e814d"
+    },
+    {
+      "path": "received_dl_harq/attempt_3.mat",
+      "bytes": 999080,
+      "sha256": "11de370f4be52163ae6e1a9216fc87a53187cbcb0bb77b4da4f54ebe0d989cd4"
+    },
+    {
+      "path": "received_dl_harq/attempt_4.mat",
+      "bytes": 1641940,
+      "sha256": "91a07b012b43b7cf55f632f996cbbe51cfe3e06d3cde7a4f40cc29cab3755f42"
+    },
+    {
+      "path": "received_dl_harq/received_dl_harq.csv",
+      "bytes": 228,
+      "sha256": "72cd442626b2bb1d203508c58fd399b17668f52a8a92756d6603ef7f85317077"
+    }
+  ],
+  "original_capture_directory": "C:\\Users\\anup0\\AppData\\Local\\Temp\\tp31c3ebab_d3af_4b7b_abc2_bf44015cdc5e",
+  "capture_copy_sha256_verified": true,
+  "decoded_tb_bits": 1064,
+  "retransmission_payload_errors": 0,
+  "feedback_transmission_qualified": false,
+  "main_scheduler_qualified": false,
+  "baseline_58_slot_started": false,
+  "testAll_started": false,
+  "e2e_started": false
+}

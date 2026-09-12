@@ -1,0 +1,15 @@
+RECEIVED_DL_HARQ_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tpafbb4b25_bb15_45db_a2a5_c9eca52c7a1a
+RECEIVED_DL_HARQ_PASS sequence=1 ndi=1 rv=0 mcs=10 bits=1064 delay=42 decode=1 ack=0 deliver=0
+{Error using sixgr.phy.dl.PDSCH_Rx>localDelegateCanonicalPDSCHReceiver (line 1498)
+Assignment-owned PDSCH reception rejects legacy PDSCH, coding, rate, RV, TBS, precoder-matrix, and soft-buffer overrides.
+
+Error in sixgr.phy.dl.PDSCH_Rx (line 157)
+    [rx, info] = localDelegateCanonicalPDSCHReceiver( ...
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.ReceivedDLHARQState/receive (line 63)
+                rx=sixgr.phy.dl.PDSCH_Rx(waveform,installed, ...
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedDLHARQState (line 58)
+    [rx,decision,entity]=entity.receive(cfg,a,delayed,'TimingSearchWindowSamples',[0 60]);
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

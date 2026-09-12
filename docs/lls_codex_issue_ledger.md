@@ -6,6 +6,16 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [UE-owned DL HARQ endpoint](lls/dl_received_harq_20260913.md) now retains
+initial received coding identity and soft bits, combines received MCS31/RV2,
+avoids duplicate delivery, and resets on NDI toggle. Actual captured endpoint
+execution recovered 1064 bits; four capture replays, seven guards and focused
+regressions passed their assertions. The receipt distinguishes the verified
+zero-exit component process from a replay whose terminal exit was unavailable.
+Main shared-scheduler handoff, QCL timing on that path and dynamic DAI remain
+mandatory, along with the recorded disabled-power assertion. No full 58-slot
+baseline was restarted; approved two-port SRS/PUSCH settings remain enabled.
+
 The [received-control DL endpoint](lls/dl_received_assignment_20260913.md)
 now derives a connected typed assignment and new-TB coding plan from actual
 decoded DCI and installed configuration, without TX plans or a TX matrix.

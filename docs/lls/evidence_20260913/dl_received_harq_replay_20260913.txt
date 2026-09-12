@@ -1,0 +1,19 @@
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=1 ack=0 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=2 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=3 ack=1 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=4 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_GUARDS_PASS count=7
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.
+[PASS] testPDSCHCompatibilityFacadeDelegation (3.22s)
+PDSCH_ASSIGNMENT_CAPTURE_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tpd2939da5_3aa4_444b_a1ae_d18d991b51a0
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=0 cfo=-700.000 estimate=-700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_TIMING_PASS delay=43 cfo=700.000 estimate=700.000 bits=384
+PDSCH_ASSIGNMENT_CAPTURE_NEGATIVES_PASS
+PDSCH_ASSIGNMENT_CDL_CAPTURE_PASS delay=50.000 cfo_estimate=673.749 bits=384
+[PASS] testPDSCHAssignmentCaptureTiming (5.46s)
+HARQSoftBufferPositionAware: rv0Positions=17656 rv3Positions=21816 overlap=13496
+[PASS] testHARQSoftBufferPositionAware (2.39s)
+Slowest 3 test(s):
+   1. testPDSCHAssignmentCaptureTiming (5.46s)
+   2. testPDSCHCompatibilityFacadeDelegation (3.22s)
+   3. testHARQSoftBufferPositionAware (2.39s)
