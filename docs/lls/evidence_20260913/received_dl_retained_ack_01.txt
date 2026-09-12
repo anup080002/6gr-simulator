@@ -1,0 +1,9 @@
+RECEIVED_DL_RETAINED_ACK_PASS actual_archived_sequence=3 no_IQ_required=1 no_new_PHY_row=1 guards=11 folder=docs/lls/evidence_20260913/received_dl_retained_ack_01
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=1 ack=0 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=2 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=3 ack=1 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=4 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_GUARDS_PASS count=7
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=1 prior=0 current=5600 combined=5600
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=2 prior=5600 current=5600 combined=5600
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=4 prior=0 current=5600 combined=5600

@@ -6,6 +6,18 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [retained DL ACK checkpoint](lls/retained_dl_ack_20260913.md) separates
+the UE's protocol-only repeated ACK from current PHY decoding. Actual archived
+receptions, 11 new negative checks, the four-attempt HARQ replay, canonical
+combining evidence and the connected ACK/NACK donor pass in zero-exit focused
+processes. New/undecoded TBs still require IQ; repeated ACK needs no waveform
+or fabricated CRC/SINR/EVM row and does not redeliver data. **Main shared
+integration is still pending**: protocol timing/feedback reservation and
+failed-DCI gNB observation/DTX handling must be implemented before removing
+the current stop conditions. Allocator write restriction, special-slot/TA
+qualification and remaining measurement/publication gates are unchanged.
+No full 12 dB run or push occurred at this checkpoint.
+
 The [default CORESET-QCL repair](lls/default_coreset_qcl_20260913.md) closes the
 absent-TCI donor failure without inventing activated TCI or a measured timing
 prior. YAML-owned associations now pass through actual received PDCCH into

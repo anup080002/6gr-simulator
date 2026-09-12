@@ -1,0 +1,4 @@
+RECEIVED_DL_RETAINED_ACK_PASS actual_archived_sequence=3 no_IQ_required=1 no_new_PHY_row=1 guards=11 folder=docs/lls/evidence_20260913/received_dl_retained_ack_02
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_DL_FEEDBACK_AUTHORITY_PASS actual_ACK_NACK=1,0 slots=3,6 folder=docs/lls/evidence_20260913/received_dl_retained_ack_donor_02
