@@ -1,0 +1,12 @@
+{
+  "input_path": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\ul_constellation_handoff_01\\air_interface\\csv\\ul_constellation_samples.csv",
+  "input_sha256": "6412e743e6e0484d49799f913dc5016d214a0292dc7d2572c75e6a3c8c9e49b0",
+  "input_rows": 3522,
+  "exported_rows": 3522,
+  "display_limit_per_direction": 450,
+  "display_sampling": "uniform_row_index_includes_first_and_last",
+  "chart_csv_sha256": "dbd995f573716c7217a7612c079340c89704e79a249e44b4de76d90ddc39206b",
+  "png_sha256": "fe3d3e64b6c7fc279b2bf99944f063fa91c3700dfd223526bc203a9b059c396f",
+  "note": "Full canonical captures take precedence over aliases/previews. Receiver samples are not payload-fitted, and post-equalized data cannot substitute for pre-equalization observations.",
+  "full_run_qualification": false
+}

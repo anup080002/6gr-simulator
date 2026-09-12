@@ -591,7 +591,15 @@ def test_prach_probability_exports_wilson_bounds_from_trial_flags() -> None:
     assert ",0.5,2," in csv_text
     svg_text = result["img_bytes"].decode("utf-8")
     assert ">1<" in svg_text
-    assert ">2<" not in svg_text, "Bernoulli probabilities must use a [0,1] vertical domain."
+    # No measured quality axis exists: show one aggregate and its uncertainty,
+    # not a curve over the configured SNR label or a missing-evidence card.
+    assert all(label in svg_text for label in ["95% lower", "Observed", "95% upper", "denominator=2"])
+    assert "not three operating points" in svg_text
+    _, probability_rows = materializer._decode_csv_dicts(result["csv_bytes"])
+    assert len(probability_rows) == 1
+    assert float(probability_rows[0]["metric_value"]) == .5
+    assert int(probability_rows[0]["sample_count"]) == 2
+    assert 0 <= float(probability_rows[0]["ci95_lower"]) < .5 < float(probability_rows[0]["ci95_upper"]) <= 1
     png = materializer._rasterize_contract_png(  # noqa: SLF001
         result["img_bytes"],
         source_mime_type="image/svg+xml",
@@ -618,7 +626,7 @@ def test_scientific_renderers_publish_numeric_axes_and_truthful_constellation_co
     assert ">1.25<" in bar_svg and ">1.75<" in bar_svg
 
     payload = materializer._encode_csv(  # noqa: SLF001
-        ["Direction", "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"],
+        ["Direction", "RawEqualizedReal", "RawEqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"],
         [
             ["DL", -0.7, 0.7, -0.707, 0.707],
             ["DL", 0.7, -0.7, 0.707, -0.707],
@@ -647,7 +655,7 @@ def test_constellation_preview_includes_late_adapted_samples(monkeypatch) -> Non
     rows = [["DL", 0.7, 0.7, 0.707, 0.707] for _ in range(1000)]
     rows.append(["DL", 0.15, -0.45, 0.154, -0.463])
     payload = materializer._encode_csv(
-        ["Direction", "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"], rows
+        ["Direction", "RawEqualizedReal", "RawEqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"], rows
     )
     existing = {"reports/csv/equalized_constellations.csv": {
         "artifact_id": 1, "logical_path": "reports/csv/equalized_constellations.csv", "artifact_kind": "table_csv"
@@ -951,7 +959,7 @@ def main() -> None:
     assert all(0 <= float(row["ci95_lower"]) < 0.5 < float(row["ci95_upper"]) <= 1
                for row in detection_rows)
     detection_svg = detection_special["img_bytes"].decode("utf-8")
-    assert "visual_gate=scalar_prach_rate_kpi" in detection_svg
+    assert all(label in detection_svg for label in ["95% lower", "Observed", "95% upper", "denominator=4"])
     assert "wilson95_lower=" in detection_svg
 
     false_alarm_special = materializer._specialized_chart_materialization(  # noqa: SLF001
@@ -985,6 +993,11 @@ def main() -> None:
     )
     assert prach_peak is not None
     assert "visual_gate=sparse_prach_peak_evidence" in prach_peak["img_bytes"].decode("utf-8")
+    _, peak_rows = materializer._decode_csv_dicts(prach_peak["csv_bytes"])
+    assert len(peak_rows) == 2
+    assert [float(row["correlation_peak"]) for row in peak_rows] == [0.87, 0.89]
+    assert all(float(row["occasion_slot"]) == 5 for row in peak_rows)
+    assert all(row["detection_threshold"] == "" for row in peak_rows)
 
     csirs_csv = materializer._encode_csv(  # noqa: SLF001
         ["CellID", "Slot", "ResourceID", "ResourceSetID", "RBOffset", "NumRB", "SymbolLocations", "NRE", "MeasurementRSRP_dB", "UEIndex"],
@@ -1136,9 +1149,20 @@ def main() -> None:
     )
     assert bler_summary is not None
     bler_summary_text = bler_summary["csv_bytes"].decode("utf-8")
-    assert "BLER,0.0,2,air_interface/csv/dl_pdsch_trials.csv" in bler_summary_text
+    _, bler_rows = materializer._decode_csv_dicts(bler_summary["csv_bytes"])
+    assert len(bler_rows) == 1
+    assert bler_rows[0]["metric_name"] == "BLER"
+    assert float(bler_rows[0]["metric_value"]) == 0.0
+    assert float(bler_rows[0]["error_count"]) == 0.0
+    assert int(bler_rows[0]["sample_count"]) == 2
+    assert float(bler_rows[0]["ci95_lower"]) == 0.0
+    z_squared = 1.959963984540054 ** 2
+    assert abs(float(bler_rows[0]["ci95_upper"]) - z_squared / (2 + z_squared)) < 1e-12
+    assert bler_rows[0]["source_table_logical_path"] == "air_interface/csv/dl_pdsch_trials.csv"
     assert "pucch_trials" not in bler_summary_text, "Data-channel BLER must not mix PUCCH control decode failures into the denominator."
-    assert "visual_gate=scalar_reliability_kpi" in bler_summary["img_bytes"].decode("utf-8")
+    # The three bars are an interval and its estimate, not three simulated trials.
+    bler_svg = bler_summary["img_bytes"].decode("utf-8")
+    assert all(label in bler_svg for label in ("95% lower", "Observed", "95% upper", "denominator=2"))
 
     flat_waveform_csv = materializer._encode_csv(  # noqa: SLF001
         ["SampleIndex", "Time_s", "TxReal", "TxImag", "TxMagnitude", "RxReal", "RxImag", "RxMagnitude"],
@@ -1183,6 +1207,9 @@ def main() -> None:
     )
     assert ssb_sparse is not None
     assert "visual_gate=sparse_ssb_index_events" in ssb_sparse["img_bytes"].decode("utf-8")
+    _, ssb_event_rows = materializer._decode_csv_dicts(ssb_sparse["csv_bytes"])
+    assert [float(row["slot"]) for row in ssb_event_rows] == [1, 1]
+    assert [float(row["ssb_index"]) for row in ssb_event_rows] == [0, 1]
 
     pbch_csv = materializer._encode_csv(  # noqa: SLF001
         ["Slot", "CellID", "DecodeSuccess", "SelectedBeamIndex"],
@@ -1204,7 +1231,12 @@ def main() -> None:
         16,
     )
     assert pbch_sparse is not None
-    assert "visual_gate=single_axis_resource_occupancy" in pbch_sparse["img_bytes"].decode("utf-8")
+    assert pbch_sparse["image_status"] == "generated_specialized_runtime_projection_svg"
+    assert "view=exact_1d_projection" in pbch_sparse["img_bytes"].decode("utf-8")
+    _, pbch_projection_rows = materializer._decode_csv_dicts(pbch_sparse["csv_bytes"])
+    assert [float(row["slot"]) for row in pbch_projection_rows] == [1, 1]
+    assert [row["cell_id"] for row in pbch_projection_rows] == ["1", "2"]
+    assert [float(row["occupancy_value"]) for row in pbch_projection_rows] == [1, 1]
 
     pucch_dtx_csv = materializer._encode_csv(  # noqa: SLF001
         ["Slot", "UEID", "CRCPass", "DetectionAttempted", "BitsCompared", "DTXFlag", "MissedDetection", "FalseAlarmFlag"],

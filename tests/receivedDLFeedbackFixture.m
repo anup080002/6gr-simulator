@@ -1,4 +1,4 @@
-function [out,timing]=receivedDLFeedbackFixture(cfg,slot,process,noiseVariance)
+function [out,timing,receivedAssignment]=receivedDLFeedbackFixture(cfg,slot,process,noiseVariance)
 % Actual coded PDSCH and clean decoded DCI through an isolated connector.
 % The caller's PUCCH can use a shared CDL owner; this source fixture does
 % NOT claim its isolated DL samples passed through that owner or access.
@@ -12,9 +12,22 @@ grant=sixgr.link.resolveWaveformGrant(cfg,'DL',frame,'Slot',slot, ...
 assert(grant.Frame==frame && grant.Slot==slot);
 assert(grant.Valid && grant.ExactPHYFeasible);
 control=sixgr.link.preparePDCCHTransmission(cfg,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
-[rx,~]=sixgr.phy.dl.PDCCH_Rx(control.TransmitSamples,cfg,'Carrier',control.Tx.Carrier, ...
-    'PDCCH',control.Tx.PDCCH,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits), ...
-    'ExpectedDCIBits',grant.DCI.Bits,'SampleRate_Hz',control.SampleRateHz);
+connected=isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
+receivedAssignment=struct();
+if connected
+    % Installed monitoring owns RNTI, formats and candidate payload sizes.
+    % Expected bits and the scheduled TX configuration are scoring only.
+    [rx,rxInfo]=sixgr.phy.dl.PDCCH_Rx(control.TransmitSamples,cfg, ...
+        'SampleRate_Hz',control.SampleRateHz);
+    receivedAssignment=sixgr.phy.pdcch.materializeConnectedDCI(rx,rxInfo,cfg);
+    assert(receivedAssignment.ControlAbsoluteSlot==slot-1 && ...
+        receivedAssignment.DataAbsoluteSlot==slot-1 && ...
+        receivedAssignment.HARQProcess==process);
+else
+    [rx,~]=sixgr.phy.dl.PDCCH_Rx(control.TransmitSamples,cfg,'Carrier',control.Tx.Carrier, ...
+        'PDCCH',control.Tx.PDCCH,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits), ...
+        'SampleRate_Hz',control.SampleRateHz);
+end
 assert(rx.Ok && rx.CausalGrantDecodeOk && isequal(rx.DCIBits(:),grant.DCI.Bits(:)));
 decoded=sixgr.phy.pdcch.decodeDCIPayload(rx.DCIBits,grant.DCI.Format,grant.DCI.ContextData);
 grant.ControlDecodeOk=logical(rx.CausalGrantDecodeOk); grant.PDCCHGrantBindingOk=grant.ControlDecodeOk;
@@ -46,6 +59,10 @@ job.ReceivedContext=struct('Prepared',p,'Observation',observation, ...
     'PhysicalMeasurementObservation',observation,'TransmitterObservation',localBuffer(p.StartSample,x,p.SampleRateHz), ...
     'Replay',replay,'ChannelState',struct('Initialized',false,'UseFading',false,'Obj',[], ...
     'ReceiverNoiseState',noiseState));
+if connected
+    job.ReceivedContext.ReceivedAssignment=receivedAssignment;
+    job.ReceivedContext.UEIndex=grant.UEIndex;
+end
 result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
 assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
 out.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...

@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-13-contract-v65-executed-data-precoder"
+MATERIALIZER_VERSION = "2026-09-13-contract-v67-full-constellation-source"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -2815,16 +2815,25 @@ def _render_prach_rate_card_svg(
     sample_count: int,
     summary_lines: list[str],
 ) -> bytes:
-    return _render_kpi_card_svg(
+    if (sample_count <= 0 or sample_count != int(sample_count)
+            or not math.isfinite(positive_count)
+            or positive_count != int(positive_count)
+            or not 0 <= positive_count <= sample_count
+            or not math.isclose(rate_value, positive_count / sample_count, abs_tol=1e-12)):
+        raise ValueError("PRACH aggregate requires consistent actual Bernoulli trial counts.")
+    lower, upper = _wilson_score_interval(positive_count, sample_count)
+    dataset, _ = _bar_dataset_from_named_values(
+        "Aggregate statistic (not an SNR sweep)", metric_label,
+        [("95% lower", lower), ("Observed", rate_value), ("95% upper", upper)],
+    )
+    dataset.update(tick_labels=["95% lower", "Observed", "95% upper"],
+                   sample_count=sample_count, y_axis_min=0.0, y_axis_max=1.0)
+    return _render_svg_plot(
         title,
-        "PRACH rate evidence is a scalar run aggregate, not a sweep or trend.",
-        [
-            (metric_label, rate_value, ""),
-            ("Positive trials", positive_count, ""),
-            ("Samples", sample_count, ""),
-        ],
-        summary_lines + ["chart_decision=scalar_prach_rate_card"],
-        visual_gate="scalar_prach_rate_kpi",
+        "One observed PRACH aggregate and its Wilson 95% interval; not three operating points.",
+        dataset,
+        summary_lines + [f"positive_trials={positive_count:g}",
+                         f"denominator={sample_count}", "interval=Wilson 95%"],
     )
 
 
@@ -3120,11 +3129,11 @@ def _render_scatter_panels_svg(
         parts.append(f'<line x1="{cx}" y1="{cy - radius}" x2="{cx}" y2="{cy + radius}" stroke="#94a3b8" stroke-width="1.1"/>')
         parts.append(f'<text x="{cx}" y="{y0 + panel_h - 8}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#334155">In-phase</text>')
         parts.append(f'<text x="{x0 + 14}" y="{cy}" text-anchor="middle" transform="rotate(-90 {x0 + 14} {cy})" font-family="Segoe UI,Arial,sans-serif" font-size="11" fill="#334155">Quadrature</text>')
-        for ix, iy in ideal_points[:64]:
+        for ix, iy in ideal_points[:256]:
             px = cx + (ix / axis_limit) * radius
             py = cy - (iy / axis_limit) * radius
             parts.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="4.0" fill="#cbd5e1" />')
-        for x_val, y_val, direction in points[:420]:
+        for x_val, y_val, direction in points[:450]:
             px = cx + (x_val / axis_limit) * radius
             py = cy - (y_val / axis_limit) * radius
             color = colors.get(direction, "#475569")
@@ -6026,28 +6035,30 @@ def _ssb_index_timeline_chart_materialization(
     points: list[list[float]] = []
     for idx, row in enumerate(records, start=1):
         slot = _row_float(row, "Slot")
-        if slot is None:
-            slot = float(idx)
-        ssb = _row_float(row, "SSBIndex", "SSBIdx", "SelectedBeamIndex")
+        # An antenna/codebook beam index is not necessarily an SS/PBCH index.
+        ssb = _row_float(row, "SSBIndex", "SSBIdx")
         if ssb is None:
             match = re.search(r"SSBIdx=(\d+)", _row_text(row, "Notes"))
             if match:
                 ssb = float(match.group(1))
         if ssb is None:
             continue
-        points.append([float(slot), float(ssb)])
+        if ssb < 0 or ssb != int(ssb):
+            raise ValueError("SSB index evidence must contain nonnegative integer identities")
+        points.append([float(slot) if slot is not None else None, float(ssb)])
         csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot": slot, "ssb_index": ssb, "source_table_logical_path": source_path})
     if not csv_rows:
-        return None
-    unique_slots = _unique_numeric_count([point[0] for point in points])
-    if unique_slots < 2:
+        raise ValueError("SSB index timeline requires actual SSBIndex/SSBIdx evidence; a selected beam index is not a substitute")
+    known_slots = [point[0] for point in points if point[0] is not None]
+    unique_slots = _unique_numeric_count(known_slots)
+    if len(known_slots) != len(points):
         chart_points = [[float(index), float(point[1])] for index, point in enumerate(points, start=1)]
         x_label = "Observed SSB event index"
     else:
         chart_points = points
-        x_label = "Slot/sample"
+        x_label = "Reported slot"
     dataset = {
-        "mode": "scatter" if len(points) < 3 else "line",
+        "mode": "scatter",  # SSB identities are discrete events, not interpolated values.
         "x_label": x_label,
         "y_label": "SSB index",
         "points": chart_points[:MAX_PREVIEW_ROWS],
@@ -6062,6 +6073,15 @@ def _ssb_index_timeline_chart_materialization(
         dataset,
         summary + [f"unique_slots={unique_slots}", f"unique_ssb={unique_ssb}"],
     )
+    if unique_slots < 2:
+        counts = Counter(point[1] for point in points)
+        img_bytes = _render_kpi_card_svg(
+            chart_name, "Discrete SSB observations without a multi-slot time series.",
+            [("Observed events", len(points), ""), ("Distinct SSB indices", unique_ssb, ""),
+             ("Known slots", unique_slots, "")],
+            summary + [f"SSB {index:g}: {count} observations" for index, count in sorted(counts.items())],
+            visual_gate="sparse_ssb_index_events",
+        )
     return {
         "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ssb_index", "source_table_logical_path"], csv_rows),
         "img_bytes": img_bytes,
@@ -9306,6 +9326,15 @@ def _runtime_prach_operational_chart(
             dataset,
             summary,
         )
+        if chart_key == "prach peak search timeline":
+            occasions = {(row["occasion_frame"], row["occasion_slot"], row["occasion_symbol"])
+                         for row in out_rows if row["occasion_slot"] != ""}
+            comparison = len(out_rows) == 1 and bool(peak_points) and bool(threshold_points)
+            if len(occasions) < 2 and peak_points and not comparison:
+                img_bytes = _render_prach_peak_summary_svg(
+                    chart_name, [point[1] for point in peak_points], Counter(),
+                    summary + ["single_or_unresolved_occasion_no_elapsed_time_trend"],
+                )
     else:
         reason = "The source rows do not contain the measured quantities required for this PRACH chart."
         return {
@@ -11950,18 +11979,25 @@ def _specialized_chart_materialization(
                             "note": "Stage waveform chart derived from persisted stage-trace samples when exported by runtime.",
                         }
     if chart_name in {"pre-equalization constellation", "post-equalization constellation", "EVM RMS", "symbol decision error histogram"}:
-        dl_preview_path = "air_interface/csv/dl_constellation_preview.csv"
-        ul_preview_path = "air_interface/csv/ul_constellation_preview.csv"
-        _, dl_preview = _artifact_rows_by_path(existing, fetch_artifact_bytes, dl_preview_path)
-        _, ul_preview = _artifact_rows_by_path(existing, fetch_artifact_bytes, ul_preview_path)
-        preview_rows = [("DL", row, dl_preview_path) for row in dl_preview] + [("UL", row, ul_preview_path) for row in ul_preview]
+        preview_rows = []
+        chosen_sources = {}
+        for direction in ("DL", "UL"):
+            for suffix in ("samples", "preview"):
+                source_path = f"air_interface/csv/{direction.lower()}_constellation_{suffix}.csv"
+                _, source_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
+                if source_rows:
+                    chosen_sources[direction] = source_path
+                    preview_rows.extend((direction, row, source_path) for row in source_rows)
+                    break
         for source_path in ("reports/csv/equalized_constellations.csv", "analytics/csv/constellation_analytics.csv"):
             _, constellation_rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, source_path)
             for row in constellation_rows:
                 direction = _row_text(row, "Direction").upper()
                 if direction not in {"DL", "UL"}:
-                    direction = "DL" if "dl_" in str(_row_text(row, "SourceArtifact")).lower() else "UL"
-                preview_rows.append((direction, row, source_path))
+                    continue  # Missing direction cannot default to a UL measurement.
+                chosen_sources.setdefault(direction, source_path)
+                if chosen_sources[direction] == source_path:
+                    preview_rows.append((direction, row, source_path))
         if chart_name in {"pre-equalization constellation", "post-equalization constellation"} and preview_rows:
             panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]] = []
             csv_rows: list[dict[str, Any]] = []
@@ -11972,11 +12008,17 @@ def _specialized_chart_materialization(
                     if row_direction != direction:
                         continue
                     if chart_name == "pre-equalization constellation":
-                        x_val = _row_float(row, "ReceivedReal", "RxReal", "RawEqualizedReal", "DetectorOutputReal")
-                        y_val = _row_float(row, "ReceivedImag", "RxImag", "RawEqualizedImag", "DetectorOutputImag")
+                        x_val = _row_float(row, "ReceivedReal", "RxReal")
+                        y_val = _row_float(row, "ReceivedImag", "RxImag")
                     else:
-                        x_val = _row_float(row, "EqualizedReal")
-                        y_val = _row_float(row, "EqualizedImag")
+                        if "RawEqualizedReal" in row or "RawEqualizedImag" in row:
+                            x_val = _row_float(row, "RawEqualizedReal")
+                            y_val = _row_float(row, "RawEqualizedImag")
+                        elif _row_text(row, "EqualizationSource") == "receiver_output_without_payload_gain_or_phase_fit":
+                            x_val = _row_float(row, "EqualizedReal")
+                            y_val = _row_float(row, "EqualizedImag")
+                        else:
+                            raise ValueError("Post-equalization constellation requires raw receiver samples or explicit no-payload-fit provenance")
                     if x_val is None or y_val is None:
                         continue
                     ref_r = _row_float(row, "ReferenceSymbolReal")
@@ -12013,10 +12055,11 @@ def _specialized_chart_materialization(
                     "img_bytes": _render_scatter_panels_svg(chart_name, "Uniform row-index preview across retained samples; full dataset in CSV. Grey markers: exported references.", panels, [f"dl_rows={direction_counts['DL']}", f"ul_rows={direction_counts['UL']}", "display_limit=450 samples/direction", "reference_limit=256 unique/direction"]),
                     "csv_status": "specialized_runtime_constellation_dataset",
                     "image_status": "generated_specialized_runtime_constellation_svg",
-                    "source_table_path": f"{dl_preview_path}|{ul_preview_path}",
+                    "source_table_path": "|".join(sorted({row["source_table_logical_path"] for row in csv_rows})),
                     "source_row_count": len(csv_rows),
-                    "note": "Constellation chart derived directly from persisted preview samples.",
+                    "note": "Full canonical captures take precedence over aliases/previews. Receiver samples are not payload-fitted, and post-equalized data cannot substitute for pre-equalization observations.",
                 }
+            raise ValueError("Requested constellation plane has no valid samples; do not substitute a different receiver plane")
         if chart_name == "EVM RMS":
             trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
             named_values: list[tuple[str, float]] = []

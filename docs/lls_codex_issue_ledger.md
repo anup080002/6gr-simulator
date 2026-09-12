@@ -6,6 +6,19 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [received-control UL/artifact checkpoint](lls/ul_received_control_and_artifacts_20260913.md)
+closes the isolated donor's missing received-assignment capsule. Actual
+two-port SRS/DCI/PUSCH/UCI now passes, with applied TPMI 3, exact matrix
+identity and retained beam/constellation PNGs. Received ACK/NACK and a PUCCH
+clock/power regression also pass. This is a 60 dB component fixture, not the
+final 12 dB baseline. Fifty-two Python tests plus the separate materializer
+main assertions pass; full canonical constellation samples and exact sparse
+event identities replace preview-only/identity-reconstructed paths. The
+configured high-SINR cap and demapper-noise source label require further
+domain reconciliation. Main DL RX/HARQ, the allocator restriction, special-slot
+dispatch, complete timing and terminal publication remain mandatory gates.
+Earlier checkpoint outcomes below remain historical, not current UL failures.
+
 The [applied data-beam checkpoint](lls/applied_data_beam_evidence_20260913.md)
 replaces requested/default-PMI reconstruction with exact started-transmission
 weights and installed-array angular samples. DL capture/CSV/PNG checks pass;

@@ -40,6 +40,21 @@ class AppliedBeamTest(unittest.TestCase):
         self.assertEqual(chart["csv_bytes"], self.payloads[2])
         self.assertEqual(chart["source_row_count"], len(self.patterns))
 
+    def test_actual_two_port_ul_matches_pusch_applied_matrix(self):
+        folder = self.folder.parent / "applied_data_precoder_ul_04"
+        weights = list(csv.DictReader((folder / "applied_data_precoder_weights.csv").read_text().splitlines()))
+        patterns = list(csv.DictReader((folder / "applied_data_precoder_patterns.csv").read_text().splitlines()))
+        grid, source, _ = validate_samples(weights, patterns)
+        trial_path = self.folder.parent / "shared_ul_capsule_handoff_01/received_pusch.csv"
+        trials = list(csv.DictReader(trial_path.read_text().splitlines()))
+        self.assertEqual(len(trials), 1)
+        self.assertEqual(source["MatrixSHA256"], trials[0]["AppliedPrecoderMatrixSHA256"])
+        self.assertEqual(source["Signal"], "PUSCH")
+        self.assertEqual(float(trials[0]["AppliedPrecoderPMI"]), 3)
+        self.assertEqual(len(weights), 2)
+        self.assertEqual(len(grid), 2701)
+        self.assertEqual(float(trials[0]["CRCPass"]), 1)
+
     def test_pmi_only_cannot_be_a_pattern(self):
         with self.assertRaisesRegex(ValueError, "exact executed weights"):
             _runtime_beam_pattern_chart("beam pattern 3d", {}, lambda _: b"PMI\n0\n", 1)
