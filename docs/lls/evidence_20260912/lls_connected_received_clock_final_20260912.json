@@ -1,0 +1,43 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedDCIMaterialization",
+      "ok": true,
+      "msg": "",
+      "duration_s": 32.4697009
+    },
+    {
+      "name": "testPDCCHReceivedClockAlignment",
+      "ok": true,
+      "msg": "",
+      "duration_s": 8.302193
+    },
+    {
+      "name": "testPDCCHReceivedGrantClock",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.2934306
+    },
+    {
+      "name": "testSharedQCLTimingTransfer",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.5559388
+    },
+    {
+      "name": "testPDCCHGrantBindingEvidenceCompleteness",
+      "ok": true,
+      "msg": "",
+      "duration_s": 10.1446543
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIMaterialization",
+    "testPDCCHReceivedClockAlignment",
+    "testPDCCHReceivedGrantClock",
+    "testSharedQCLTimingTransfer",
+    "testPDCCHGrantBindingEvidenceCompleteness"
+  ],
+  "total_duration_s": 62.7775582
+}

@@ -1,0 +1,36 @@
+{
+  "ok": false,
+  "results": [
+    {
+      "name": "testConnectedDCIMaterialization",
+      "ok": false,
+      "msg": "Assertion failed.",
+      "duration_s": 32.1766311
+    },
+    {
+      "name": "testConnectedPDCCHBlindMonitoring",
+      "ok": true,
+      "msg": "",
+      "duration_s": 10.1655767
+    },
+    {
+      "name": "testPDCCHPreparationReception",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.9507686
+    },
+    {
+      "name": "testPDCCHSharedSlotResourceAllocation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 5.4183183
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIMaterialization",
+    "testConnectedPDCCHBlindMonitoring",
+    "testPDCCHPreparationReception",
+    "testPDCCHSharedSlotResourceAllocation"
+  ],
+  "total_duration_s": 59.7211965
+}

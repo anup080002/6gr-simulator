@@ -1,0 +1,14 @@
+[PASS] testConnectedDCIMaterialization (32.47s)
+PDCCH_RECEIVED_CLOCK_ALIGNMENT_PASS
+[PASS] testPDCCHReceivedClockAlignment (8.30s)
+PDCCH_RECEIVED_GRANT_CLOCK_PASS
+[PASS] testPDCCHReceivedGrantClock (11.29s)
+PASS testSharedQCLTimingTransfer
+[PASS] testSharedQCLTimingTransfer (0.56s)
+[PASS] testPDCCHGrantBindingEvidenceCompleteness (10.14s)
+Slowest 5 test(s):
+   1. testConnectedDCIMaterialization (32.47s)
+   2. testPDCCHReceivedGrantClock (11.29s)
+   3. testPDCCHGrantBindingEvidenceCompleteness (10.14s)
+   4. testPDCCHReceivedClockAlignment (8.30s)
+   5. testSharedQCLTimingTransfer (0.56s)

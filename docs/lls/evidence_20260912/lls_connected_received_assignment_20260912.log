@@ -1,0 +1,15 @@
+[FAIL] testConnectedDCIMaterialization (32.18s)
+       Assertion failed.
+[PASS] testConnectedPDCCHBlindMonitoring (10.17s)
+PDCCH_PREPARATION_RECEPTION_PASS
+[PASS] testPDCCHPreparationReception (11.95s)
+PASS testPDCCHSharedSlotResourceAllocation: exact shared candidates and one faded composite in TDD/FDD.
+[PASS] testPDCCHSharedSlotResourceAllocation (5.42s)
+Slowest 4 test(s):
+   1. testConnectedDCIMaterialization (32.18s)
+   2. testPDCCHPreparationReception (11.95s)
+   3. testConnectedPDCCHBlindMonitoring (10.17s)
+   4. testPDCCHSharedSlotResourceAllocation (5.42s)
+{Error using assert
+Assertion failed.
+} 

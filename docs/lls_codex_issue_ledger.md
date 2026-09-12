@@ -6,6 +6,10 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [received-assignment audit](lls/received_assignment_audit_20260912.md)
+records the remaining transmitter-owned data-receiver inputs and execution
+gates, separately from the now-independent connected PDCCH decoder.
+
 Latest checkpoint (2026-09-12): the `_02` spatial re-audit and approved
 two-port SRS/PUSCH work are tracked in
 [the spatial repair ledger](lls/continuous_iq_02_spatial_reaudit_20260912.md).

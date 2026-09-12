@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConnectedDCIMaterialization",
+      "ok": true,
+      "msg": "",
+      "duration_s": 31.7019308
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 8.5435203
+    },
+    {
+      "name": "testSchedulerGrantConsistency",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.5715431
+    }
+  ],
+  "selected_tests": [
+    "testConnectedDCIMaterialization",
+    "testTwoPortULYAMLAndSRS",
+    "testSchedulerGrantConsistency"
+  ],
+  "total_duration_s": 52.8255905
+}

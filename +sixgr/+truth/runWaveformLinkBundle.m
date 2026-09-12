@@ -12518,7 +12518,7 @@ end
 function state=localCompleteSharedScheduledPDCCH(state,item)
 c=item.Context; p=c.Prepared;
 [post,~,~,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
-raw=localCompletePDCCHTrial(p,receiver,c.Grant,c.SNR,1, ...
+[raw,receivedAssignment]=localCompletePDCCHTrial(p,receiver,c.Grant,c.SNR,1, ...
     double(sixgr.util.structGet(replay,'SampleNoiseVariance',NaN)),replay);
 if logical(sixgr.util.structGet(raw,'Crash',false))
     localAppendRuntimeLog("WARN", ...
@@ -12546,11 +12546,16 @@ controls=sixgr.util.structGet(state,'SharedReceivedGrantControls',{});
 assert(~any(cellfun(@(x)x.Key==c.Key,controls)), ...
     'sixgr:truth:DuplicateSharedGrantControl','One scheduled DCI must be committed once.');
 controls{end+1}=struct('Key',c.Key,'Grant',grant,'Allowed',allowed, ...
+    'ReceivedAssignment',receivedAssignment, ...
     'AvailableAtSample',post.EndSampleExclusive);
 state.SharedReceivedGrantControls=controls;
 if c.Direction=="DL" && allowed && isfinite(raw.DecodedDCITCICodepoint)
     grant.ReceivedTCICodepoint=raw.DecodedDCITCICodepoint;
-    grant.ReceivedTCIConfigurationEpoch=double(sixgr.util.structGet(c.Grant,'DCI.ContextData.ConfigurationEpoch',NaN));
+    if raw.DecodedDCIAssignmentAvailable
+        grant.ReceivedTCIConfigurationEpoch=raw.DecodedDCIConfigurationEpoch;
+    else
+        grant.ReceivedTCIConfigurationEpoch=double(sixgr.util.structGet(c.Grant,'DCI.ContextData.ConfigurationEpoch',NaN));
+    end
     controls{end}.Grant=grant;
     state.SharedReceivedGrantControls=controls;
 end
@@ -14285,10 +14290,11 @@ end
 T = struct2table(rows);
 end
 
-function r = localCompletePDCCHTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay)
+function [r,receivedAssignment] = localCompletePDCCHTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay)
 % Receive-completion reducer for a retained control preparation. This stage
 % never regenerates TX, propagates fading, or executes an RF chain.
 cfgTrial = preparedPDCCH.ReceiverConfig;
+receivedAssignment=struct();
 tx = preparedPDCCH.Tx;
 txInfo = preparedPDCCH.TxInfo;
 grantRNTI = double(txInfo.RNTI);
@@ -14318,6 +14324,9 @@ if ~istable(candidateT)
 end
 decodedDci = localDecodeObservedPDCCHGrantDCI( ...
     rx, tx, dciFormatSeed, grantContext, cfgTrial);
+if rxInfo.ReceiverConfiguredMonitoring && rx.Ok
+    receivedAssignment=sixgr.phy.pdcch.materializeConnectedDCI(rx,rxInfo,cfgTrial);
+end
 aggLevel = localPDCCHScalar(tx.PDCCH, "AggregationLevel", NaN);
 usedCCEs = aggLevel;
 availCCEs = localPDCCHAvailableCCEs(tx.PDCCH);
@@ -14535,8 +14544,15 @@ r.DecodedDCINumSymbols = double(sixgr.util.structGet(decodedDci, "Fields.num_sym
 r.DecodedDCIMCSIndex = double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN));
 r.DecodedDCIRV = double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN));
 r.DecodedDCINDI = double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN));
-r.DecodedDCITimeDomainAssignmentIndex = double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN));
+r.DecodedDCITimeDomainAssignmentIndex = double(sixgr.util.structGet(decodedDci, ...
+    "Fields.time_domain_assignment_index",sixgr.util.structGet(decodedDci,"Fields.time_resource_assignment",NaN)));
 r.DecodedDCITCICodepoint = double(sixgr.util.structGet(decodedDci,"Fields.transmission_configuration_indication",NaN));
+if ~isempty(fieldnames(receivedAssignment))
+    receivedFields=sixgr.truth.connectedDCIAssignmentEvidence(receivedAssignment);
+    for fieldName=string(fieldnames(receivedFields)).'
+        r.(fieldName)=receivedFields.(fieldName);
+    end
+end
 r.LinkedGrantId = string(sixgr.util.structGet(grantContext, "GrantContextId", ""));
 r.LinkedPDSCHOrPUSCH = upper(string(sixgr.util.structGet(grantContext, "Direction", "")));
 r.PDCCHGridHash = localComplexSHA256(tx.Grid);
@@ -15647,7 +15663,8 @@ payload = struct( ...
     "AllocatedPRBCount", double(sixgr.util.structGet(decodedDci, "Fields.num_prb", NaN)), ...
     "SymbolStart", double(sixgr.util.structGet(decodedDci, "Fields.symbol_start", NaN)), ...
     "NumSymbols", double(sixgr.util.structGet(decodedDci, "Fields.num_symbols", NaN)), ...
-    "TimeDomainAssignmentIndex", double(sixgr.util.structGet(decodedDci, "Fields.time_resource_assignment", NaN)), ...
+    "TimeDomainAssignmentIndex", double(sixgr.util.structGet(decodedDci, ...
+        "Fields.time_domain_assignment_index",sixgr.util.structGet(decodedDci,"Fields.time_resource_assignment",NaN))), ...
     "MCSIndex", double(sixgr.util.structGet(decodedDci, "Fields.mcs", NaN)), ...
     "RV", double(sixgr.util.structGet(decodedDci, "Fields.rv", NaN)), ...
     "NDI", double(sixgr.util.structGet(decodedDci, "Fields.ndi", NaN)));
@@ -16814,6 +16831,10 @@ row.DecodedDCIRV = NaN;
 row.DecodedDCINDI = NaN;
 row.DecodedDCITimeDomainAssignmentIndex = NaN;
 row.DecodedDCITCICodepoint = NaN;
+receivedFields=sixgr.truth.connectedDCIAssignmentEvidence(struct());
+for fieldName=string(fieldnames(receivedFields)).'
+    row.(fieldName)=receivedFields.(fieldName);
+end
 row.LinkedGrantId = "";
 row.LinkedPDSCHOrPUSCH = "";
 row.PDCCHGridHash = "";

@@ -1,0 +1,7 @@
+[PASS] testConnectedDCIMaterialization (31.70s)
+[PASS] testTwoPortULYAMLAndSRS (8.54s)
+[PASS] testSchedulerGrantConsistency (12.57s)
+Slowest 3 test(s):
+   1. testConnectedDCIMaterialization (31.70s)
+   2. testSchedulerGrantConsistency (12.57s)
+   3. testTwoPortULYAMLAndSRS (8.54s)

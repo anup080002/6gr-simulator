@@ -493,6 +493,7 @@ info.K = rx.DCIPayloadLength;
 info.MonitoredPayloadSizes=payloadSizes;
 info.DCISelectionSource=rx.DCISelectionSource;
 info.ReceiverConfiguredMonitoring=connectedMonitoring;
+info.ReceiverAbsoluteSlotIndex0=double(sixgr.util.structGet(cfg,'lls6g.runtime.AbsoluteSlotIndex0',NaN));
 info.ExpectedDCIBits = expectedDCIBits;
 info.DCIBitsCompared = double(rx.DCIBitsCompared);
 info.DCIBitErrors = double(rx.DCIBitErrors);
