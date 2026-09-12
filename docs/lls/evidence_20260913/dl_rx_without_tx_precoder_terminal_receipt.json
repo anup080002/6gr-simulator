@@ -1,0 +1,17 @@
+{
+  "scope": "practical strict DL receiver precoder-boundary component and five focused regressions; not decoded-DCI/main-scheduler qualification",
+  "source": "observed exec/write_stdin terminal completion",
+  "session_id": 70502,
+  "exit_code": 0,
+  "log": "dl_rx_without_tx_precoder_20260913.txt",
+  "log_bytes": 899,
+  "log_sha256": "0fc940fc59d1705a91c926d7ecbd54a9395ecd6a3a13455e17176cf6c8136a70",
+  "component_payload_bits": 384,
+  "component_bit_errors": 0,
+  "negative_guards_passed": 7,
+  "regressions_passed": 5,
+  "assignment_fixture_is_actual_received_dci": false,
+  "baseline_58_slot_started": false,
+  "testAll_started": false,
+  "e2e_started": false
+}

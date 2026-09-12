@@ -1,0 +1,15 @@
+PDSCH_RX_WITHOUT_TX_PRECODER_PASS bits=384 bit_errors=0 guards=7
+PDSCH compatibility facades: bound canonical TX/RX passed; 11/11 typed ownership, coding-plan, stale-context, and carrier guards passed.
+[PASS] testPDSCHCompatibilityFacadeDelegation (3.23s)
+PDSCH TCI-state binding passed.\n[PASS] testPDSCHTCIStateBinding (2.77s)
+PDSCH active-BWP binding passed.\n[PASS] testPDSCHActiveBWPBinding (0.55s)
+PASS testPDSCHTransmitReceiveAuthoritySeparation: scheduled TX waveforms without invented RX authority.
+[PASS] testPDSCHTransmitReceiveAuthoritySeparation (2.95s)
+PDSCH CDL truth receiver: BLER 0.000, SINR 35.35 dB
+[PASS] testPDSCHReceiverCDL (5.85s)
+Slowest 5 test(s):
+   1. testPDSCHReceiverCDL (5.85s)
+   2. testPDSCHCompatibilityFacadeDelegation (3.23s)
+   3. testPDSCHTransmitReceiveAuthoritySeparation (2.95s)
+   4. testPDSCHTCIStateBinding (2.77s)
+   5. testPDSCHActiveBWPBinding (0.55s)

@@ -480,8 +480,17 @@ if isempty(fieldnames(context))
         "Strict PDSCH RX requires the explicit active BWP/CC/epoch/TCI " + ...
         "integration context.");
 end
-binding = sixgr.pdsch.PDSCHIntegrationValidator.bind( ...
-    assignment, context, precoderBundle);
+if isempty(precoderBundle)
+    % A practical receiver estimates H*W from received logical-port DM-RS.
+    % Active BWP/CC/epoch/QCL validation is still mandatory, but the UE
+    % does not own the transmitter's applied physical-port matrix digest.
+    % Omitting argument three explicitly leaves TX-matrix binding unevaluated.
+    binding = sixgr.pdsch.PDSCHIntegrationValidator.bind(assignment, context);
+else
+    % Explicit matrix-assisted callers must retain the full binding guard.
+    binding = sixgr.pdsch.PDSCHIntegrationValidator.bind( ...
+        assignment, context, precoderBundle);
+end
 end
 
 function localRXValidateCarrierSymbolBoundary(assignment, carrier)

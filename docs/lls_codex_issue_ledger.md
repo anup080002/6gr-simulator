@@ -6,6 +6,15 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [practical DL precoder-boundary repair](lls/dl_receiver_precoder_boundary_20260913.md)
+removes an unintended transmitter-matrix requirement from receiver-only
+integration binding. Active BWP/CC/epoch/TCI checks remain enforced; matrix
+binding is explicitly unevaluated when absent. A 384-bit static component,
+seven negative guards and five regressions pass. This does not close actual
+received-DCI materialization, UE-owned DL HARQ or main-scheduler qualification.
+The approved two-port SRS/PUSCH configuration and measured TPMI 3 UL recovery
+checkpoint remain intact; no full baseline was restarted.
+
 The [typed DL capture-timing repair](lls/dl_assignment_capture_timing_20260913.md)
 connects received-DMRS timing/frequency acquisition to the assignment-owned
 receiver and retains actual physical-plane alignment evidence. Static and
