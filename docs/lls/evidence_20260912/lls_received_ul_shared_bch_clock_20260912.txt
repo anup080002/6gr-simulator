@@ -1,0 +1,13 @@
+Error using assert
+sixgr:phy:pdcch:ConnectedMonitoringIdentityMismatch:Connected PDCCH uses the configured C-RNTI for physical scrambling.
+
+Error in testSharedPUSCHChannelArtifacts (line 52)
+    assert(isfield(prototype,'PreparedBroadcast'),'%s',prototype.FailureReason);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using assert
+sixgr:phy:pdcch:ConnectedMonitoringIdentityMismatch:Connected PDCCH uses the configured C-RNTI for physical scrambling.
+
+Error in testSharedPUSCHChannelArtifacts (line 52)
+    assert(isfield(prototype,'PreparedBroadcast'),'%s',prototype.FailureReason);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

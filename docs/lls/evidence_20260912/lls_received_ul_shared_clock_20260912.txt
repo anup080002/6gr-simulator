@@ -1,0 +1,13 @@
+Error using sixgr.link.runCellSearch_MIB_SIB1 (line 184)
+PrepareOnly requires the SIB1 runtime-channel path with in-memory artifact ownership.
+
+Error in testSharedPUSCHChannelArtifacts (line 50)
+    prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using sixgr.link.runCellSearch_MIB_SIB1 (line 184)
+PrepareOnly requires the SIB1 runtime-channel path with in-memory artifact ownership.
+
+Error in testSharedPUSCHChannelArtifacts (line 50)
+    prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

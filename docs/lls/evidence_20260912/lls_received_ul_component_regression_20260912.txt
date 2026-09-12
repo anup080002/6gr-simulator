@@ -1,0 +1,12 @@
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+CONNECTED_DATA_ALLOCATION_PASS format=1_1 tbs=1064 nscid=1 port=1
+[PASS] testConnectedDataAllocation (62.42s)
+PASS testSharedQCLTimingTransfer
+[PASS] testSharedQCLTimingTransfer (0.43s)
+[PASS] testSchedulerPUSCHSRSAuthorityPropagation (10.66s)
+[PASS] testPUSCHTransmitterPrecoderEvidence (0.17s)
+Slowest 4 test(s):
+   1. testConnectedDataAllocation (62.42s)
+   2. testSchedulerPUSCHSRSAuthorityPropagation (10.66s)
+   3. testSharedQCLTimingTransfer (0.43s)
+   4. testPUSCHTransmitterPrecoderEvidence (0.17s)

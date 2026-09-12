@@ -62,7 +62,11 @@ for fmt=["0_1","1_1"]
         missing=allocation.Config; missing.phy.pusch=rmfield(missing.phy.pusch,'receivedDCIAssignment');
         localReject(@()sixgr.phy.ul.resolvePUSCHPrecoding(allocation.ChannelConfig,missing), ...
             'sixgr:mimo:MissingSRSState');
-        tx=sixgr.phy.ul.PUSCH_Tx(allocation.Config);
+        bits=int8(randi([0 1],allocation.NominalTBSBits,1));
+        tx=sixgr.link.transmitReceivedPUSCH(installed,a,bits,[]);
+        assert(tx.TransmissionAuthority=="received_dci_and_ue_new_tb_payload");
+        localReject(@()sixgr.link.transmitReceivedPUSCH(installed,a,bits(2:end),[]), ...
+            'sixgr:link:ReceivedULTBSizeMismatch');
     else
         % Explicit TX-only unit-channel fixture matrix; not a measured PMI.
         % The independent UE receiver estimates the effective channel.

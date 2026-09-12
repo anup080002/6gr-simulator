@@ -1,0 +1,21 @@
+[PASS] testPUSCHMeasuredReferencePowerControl exact request 10.791812 dBm.
+[PASS] testPUSCHMeasuredReferencePowerControl (52.25s)
+PDCCH_RECEIVED_CLOCK_ALIGNMENT_PASS
+[PASS] testPDCCHReceivedClockAlignment (8.11s)
+Slowest 2 test(s):
+   1. testPUSCHMeasuredReferencePowerControl (52.25s)
+   2. testPDCCHReceivedClockAlignment (8.11s)
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=5.65205310657 root=C:\Users\anup0\AppData\Local\Temp\tp52905324_1ae8_4529_adea_4b61dc09c2ef
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples    EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    ________    _____________
+
+      "UL"        10                 -8.75                     -8.75                  7              0.056521       24.975    
+
+RECEIVED_DATA_SYMBOL_TIMING_PASS: UL start=69127 end=76259 available=76807
+{Error using assert
+Assertion failed.
+
+Error in testDataChannelStreamStages (line 287)
+        assert(abs(completed.TrialTable.PUSCHRequestedPower_dBm - ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

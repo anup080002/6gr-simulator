@@ -1,0 +1,25 @@
+[PASS] testTwoPortULYAMLAndSRS (28.35s)
+[PASS] testConnectedDCIMaterialization (11.37s)
+[PASS] testConnectedPDCCHBlindMonitoring (9.81s)
+Running testPDCCHPhysicalScrambling
+.
+Done testPDCCHPhysicalScrambling
+__________
+
+[PASS] testPDCCHPhysicalScrambling (3.27s)
+Running testPDCCHRNTIProcedureMatrix
+.
+Done testPDCCHRNTIProcedureMatrix
+__________
+
+[PASS] testPDCCHRNTIProcedureMatrix (0.94s)
+[PASS] testMIBPDCCHConfigSIB1Derivation (15.45s)
+[PASS] testCommonPDCCHWithConnectedPolicy (7.00s)
+Slowest 7 test(s):
+   1. testTwoPortULYAMLAndSRS (28.35s)
+   2. testMIBPDCCHConfigSIB1Derivation (15.45s)
+   3. testConnectedDCIMaterialization (11.37s)
+   4. testConnectedPDCCHBlindMonitoring (9.81s)
+   5. testCommonPDCCHWithConnectedPolicy (7.00s)
+   6. testPDCCHPhysicalScrambling (3.27s)
+   7. testPDCCHRNTIProcedureMatrix (0.94s)

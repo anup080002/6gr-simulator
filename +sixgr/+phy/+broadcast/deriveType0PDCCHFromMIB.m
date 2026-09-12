@@ -145,6 +145,7 @@ coreset.InterleaverSize = double(canonical.CORESET0.InterleaverSize);
 coreset.ShiftIndex = double(canonical.CORESET0.ShiftIndex);
 
 searchSpace = nrSearchSpaceConfig;
+searchSpace.SearchSpaceType = 'common';
 try
     searchSpace.SearchSpaceID = 0;
 catch

@@ -1,0 +1,43 @@
+Error using assert
+Active QCL requires an earlier received reference for this UE.
+
+Error in sixgr.phy.rx.applyQCLTimingTransfer (line 16)
+assert(all(isfield(source,required)),'sixgr:qcl:MissingReceivedReference', ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 1170)
+            [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.executeGrantPHYJob (line 71)
+    res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in receivedDLFeedbackFixture (line 47)
+result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts>localReceivedDLReservations (line 353)
+    [out,timing]=receivedDLFeedbackFixture(cfg,sourceSlot,k-1,variance);
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 100)
+        state=localReceivedDLReservations(state,cfg,10);
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using assert
+Active QCL requires an earlier received reference for this UE.
+
+Error in sixgr.phy.rx.applyQCLTimingTransfer (line 16)
+assert(all(isfield(source,required)),'sixgr:qcl:MissingReceivedReference', ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 1170)
+            [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.executeGrantPHYJob (line 71)
+    res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in receivedDLFeedbackFixture (line 47)
+result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts>localReceivedDLReservations (line 353)
+    [out,timing]=receivedDLFeedbackFixture(cfg,sourceSlot,k-1,variance);
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 100)
+        state=localReceivedDLReservations(state,cfg,10);
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

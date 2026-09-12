@@ -83,6 +83,12 @@ matlab -batch "setup6GRSimToolkit('Verbose',false); runFocusedTests({'testTwoPor
 
 ## Mandatory next integration work
 
+Update: [received UL shared execution](received_ul_shared_execution_20260912.md)
+now covers new-TB UE preparation, independently configured gNB reception and
+a passing high-margin shared-clock test. The remaining items below are not
+all closed: retransmission/receiver HARQ, dynamic DAI, strict DL integration
+and full main-scheduler qualification still precede the final baseline.
+
 1. Wire received UL allocation into actual UE preparation, while retaining
    the gNB receiver's independently authored grant. In the shared runner,
    `localCompleteSharedScheduledPDCCH` still queues the authored grant and

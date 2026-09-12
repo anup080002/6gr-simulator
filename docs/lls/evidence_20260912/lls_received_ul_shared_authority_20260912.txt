@@ -1,0 +1,25 @@
+Error using assert
+TCI presence requires the installed same-epoch mapping.
+
+Error in sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig (line 70)
+            assert(~p.tci_present || (qcl.enabled && qcl.configuration_epoch==p.configuration_epoch), ...
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2751)
+        context=sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig(cfg,formats(i));
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 31)
+cfg=sixgr.lls6g.buildInternalConfig(s,root);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using assert
+TCI presence requires the installed same-epoch mapping.
+
+Error in sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig (line 70)
+            assert(~p.tci_present || (qcl.enabled && qcl.configuration_epoch==p.configuration_epoch), ...
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2751)
+        context=sixgr.phy.pdcch.ConnectedDCIProfile.fromRuntimeConfig(cfg,formats(i));
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 31)
+cfg=sixgr.lls6g.buildInternalConfig(s,root);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

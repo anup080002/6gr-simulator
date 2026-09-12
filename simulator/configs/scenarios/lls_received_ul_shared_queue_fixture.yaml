@@ -1,0 +1,26 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+  - ./lls_two_port_ul_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_received_ul_shared_queue_fixture
+  description: Independent connected DCI and UE PUSCH generation on the shared clock.
+  purpose: Endpoint authority and timing regression, not 12 dB performance qualification.
+  research_class: optional_research_experiment
+
+control:
+  blind_search_enabled: true
+  connected_dci:
+    tci_present: false
+
+# The isolated DL ACK donors have no preceding TRS observation. This UL
+# fixture does not qualify QCL; production and testSharedQCLTimingTransfer do.
+mimo:
+  qcl_tci:
+    enabled: false
+
+# Generate the real broadcast capture; the UL fixture consumes its early
+# SS/PBCH observations for timing, not a synthetic initial PDCCH clock.
+initial_access:
+  sib1:
+    enabled: true

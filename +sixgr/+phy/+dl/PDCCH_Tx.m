@@ -91,7 +91,20 @@ if isempty(rnti)
 end
 rnti = double(rnti);
 pdcchScramblingRNTI = localResolvePDCCHScramblingRNTI(cfg, rnti, opt.PDCCHScramblingRNTI);
-if isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci')
+% SI/RA/TC-RNTI procedures provide their resolved common-search-space
+% object. Installed connected policy does not replace that procedure's
+% physical scrambling with C-RNTI scrambling.
+commonMonitoring=~isempty(opt.PDCCH) && ...
+    strcmpi(string(opt.PDCCH.SearchSpace.SearchSpaceType),'common');
+connectedMonitoring=~commonMonitoring && isfield( ...
+    sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
+if commonMonitoring
+    if isempty(opt.PDCCHScramblingRNTI), pdcchScramblingRNTI=0; end
+    assert(pdcchScramblingRNTI==0, ...
+        'sixgr:phy:pdcch:CommonMonitoringIdentityMismatch', ...
+        'An explicit common search space requires physical scrambling n_RNTI=0.');
+end
+if connectedMonitoring
     configuredID=cfg.phy.pdcch.operatorControl.connected_monitoring.dmrs_scrambling_id;
     assert(isempty(opt.NCellID) || opt.NCellID==configuredID, ...
         'sixgr:phy:pdcch:ConnectedMonitoringIdentityMismatch','Connected scrambling identity is configuration-owned.');
@@ -102,7 +115,7 @@ end
 
 % PDCCH config
 if isempty(opt.PDCCH)
-    if isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci')
+    if connectedMonitoring
         [pdcch,candidateResolution]=sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfg,carrier,rnti,false);
     else
     [pdcch, candidateResolution] = localDefaultPDCCH( ...
@@ -209,6 +222,8 @@ info.PDCCHScramblingID = nCellID;
 info.RNTI = rnti;
 info.DCICrcRNTI = rnti;
 info.PDCCHScramblingRNTI = pdcchScramblingRNTI;
+info.CommonSearchSpaceApplied=commonMonitoring;
+info.ConnectedMonitoringApplied=connectedMonitoring;
 info.DCIPayloadSource = char(payloadSource);
 info.RandomDCIPayload = logical(randomPayload);
 if ~isempty(fieldnames(candidateResolution))

@@ -1,4 +1,4 @@
-function ok=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL)
+function ok=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -10,6 +10,7 @@ if nargin<2, withCoincidentSRS=false; end
 if nargin<3, deferUCIDelivery=false; end
 if nargin<4, withCSI=false; end
 if nargin<5, twoPortUL=false; end
+if nargin<6, receivedAuthority=false; end
 assert(any(string(mode)==["TDD","FDD"]));
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_pusch_shared_queue_fdd_fixture.yaml'; end
@@ -20,6 +21,10 @@ end
 if twoPortUL
     assert(string(mode)=="TDD" && ~withCSI);
     fixture='lls_two_port_ul_shared_queue_fixture.yaml';
+end
+if receivedAuthority
+    assert(twoPortUL && ~withCSI);
+    fixture='lls_received_ul_shared_queue_fixture.yaml';
 end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
 root=tempname; mkdir(root);
@@ -40,6 +45,14 @@ state.CurrentServingIdx(:)=1; state.TestRoot=root;
 state.TestDeferUCIDelivery=logical(deferUCIDelivery);
 state.TestWithCSI=logical(withCSI);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
+if receivedAuthority
+    [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
+    prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
+        'UseRuntimeChannel',true,'RuntimeSlot',0);
+    assert(isfield(prototype,'PreparedBroadcast'),'%s',prototype.FailureReason);
+    owner.queueDownlink('PBCH',1,prototype.PreparedBroadcast, ...
+        struct('Config',dl,'Slot',1,'ServingCell',1,'TrackingOnly',true));
+end
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 carrier=sixgr.phy.grid.makeCarrier(ul); fs=owner.SampleRateHz;
 reference=struct('Source',"received_SSB_timing_and_decoded_BCH", ...
@@ -119,7 +132,12 @@ for slot=1:11
         dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,slot);
         dl.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
         p=sixgr.link.prepareSharedPDCCHTransmission(dl,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
-        owner.queuePDCCH(1,p,struct('Grant',grant,'ULConfig',ul));
+        controlContext=struct('Grant',grant,'ULConfig',ul);
+        if receivedAuthority
+            assert(isfield(state,'TestReceivedDLClock'),'Actual received SS/PBCH clock is required.');
+            controlContext.ReceivedDLTimingReference=state.TestReceivedDLClock;
+        end
+        owner.queuePDCCH(1,p,controlContext);
     end
     [state,~]=owner.advanceSlot(state,cfg,@localEvents);
 end
@@ -164,9 +182,29 @@ for item=items
         state=sixgr.truth.commitSharedDataTransmission(state,item); continue;
     end
     c=item.Context; p=c.Prepared;
-    [~,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
+    if any(item.Kind==["PBCH","SSBOccasion"])
+        [~,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes);
+    else
+        [~,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
+    end
     assert(all(cellfun(@(s)~isfield(s.Execution,'ChannelReferences'),replay.ReceiveStreamExecutionSegments)));
-    if item.Kind=="SRS"
+    if item.Kind=="PBCH"
+        % This component qualifies SS/PBCH timing, not full SIB1 recovery.
+        continue;
+    elseif item.Kind=="SSBOccasion"
+        if isfield(state,'TestReceivedDLClock'), continue; end
+        ch=owner.channelState(item.UE,'DL');
+        recovered=sixgr.phy.broadcast.recoverSIB1FromWaveform(receiver,p.ReceiverConfig, ...
+            'RecoveryScope','SSB_MIB','CandidateSSBIndex',c.SSBOccasionHorizon.SSBIndex, ...
+            'PhysicalMeasurementObservation',pre);
+        if recovered.BCHCrcPass && recovered.MIBDecoded
+                state.TestReceivedDLClock=sixgr.phy.frame.receivedDLTimingReference( ...
+                    p.ReceiverConfig,recovered,receiver,ch.ChannelTrimSamples);
+                state.ConnectedULTimingByUE{1}.DLReference=state.TestReceivedDLClock;
+                fprintf('RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=%d phase=%d\n', ...
+                    receiver.EndSampleExclusive,state.TestReceivedDLClock.DLPhaseOffsetSamples);
+        end
+    elseif item.Kind=="SRS"
         [~,e,refs]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
         assert(e.ChannelReferenceCoverageComplete);
         input=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
@@ -183,7 +221,11 @@ for item=items
         sixgr.channel.validateSharedChannelObservationArtifact(state.TestRoot,row);
         state.TestLastSRSObservationID=row.ChannelObservationID;
     elseif item.Kind=="PDCCH"
-        [rx,~]=sixgr.link.completePDCCHReception(p,receiver);
+        [rx,rxInfo]=sixgr.link.completePDCCHReception(p,receiver);
+        receivedAssignment=struct();
+        if isfield(sixgr.util.structGet(p.ReceiverConfig,'phy.pdcch.operatorControl',struct()),'connected_dci')
+            receivedAssignment=sixgr.phy.pdcch.materializeConnectedDCI(rx,rxInfo,p.ReceiverConfig);
+        end
         grant=c.Grant;
         assert(rx.Ok && rx.CausalGrantDecodeOk && isequal(rx.DCIBits(:),grant.DCI.Bits(:)));
         decoded=sixgr.phy.pdcch.decodeDCIPayload(rx.DCIBits,grant.DCI.Format,grant.DCI.ContextData);
@@ -232,9 +274,19 @@ for item=items
             all(string(state.PendingFeedbackTable.DeliveryMechanism)=="pusch_uci") && ...
             all(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH));
         context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true,'ExpectedUCIPayload',uci);
+        if ~isempty(fieldnames(receivedAssignment))
+            cfg.phy.pusch.receivedDCIAssignment=receivedAssignment;
+            receivedAllocation=sixgr.phy.pdcch.connectedDataAllocation(cfg,receivedAssignment);
+            context.TransportBlockBits=int8(randi([0 1],receivedAllocation.NominalTBSBits,1));
+        end
         job=sixgr.truth.buildGrantPHYJob(cfg,'UL',cfg.channel.snr_dB,frame,[],context); job.StartSlotIndex=slot;
         result=sixgr.truth.executeGrantPHYJob(job);
         assert(~result.ReadyForReceiverCommit && isempty(result.Result.TrialTable));
+        if ~isempty(fieldnames(receivedAssignment))
+            actual=result.Result.PreparedTransmission.Tx;
+            assert(actual.TransmissionAuthority=="received_dci_and_ue_new_tb_payload" && ...
+                actual.PrecodeInfo.AuthoritativeDCIDecisionUsed && ~actual.PrecodeInfo.AuthoritativeSRSDecisionUsed);
+        end
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
     elseif item.Kind=="PUSCH"
         job=c.Job; job.PrepareOnly=false;
@@ -293,6 +345,11 @@ for item=items
             out.TrialTable.(name)=timingFields.(name);
         end
         row=sixgr.truth.bindSharedLargeScaleEvidence(out.TrialTable,item.Planes);
+        if isfield(job.Cfg.phy.pusch,'receivedDCIAssignment')
+            assert(all(row.ULTransmissionAuthority=="received_dci_and_ue_new_tb_payload") && ...
+                all(row.ULReceiveAllocationAuthority=="gnb_own_scheduled_grant") && ...
+                all(row.ULReceivedAssignmentDigest==job.Cfg.phy.pusch.receivedDCIAssignment.AssignmentDigest));
+        end
         row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes);
         row=sixgr.truth.exportSharedChannelObservation(state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
         path=fullfile(state.TestRoot,'received_pusch.csv');
@@ -308,6 +365,11 @@ for item=items
         end
         sixgr.util.csvWriteTable(path,row,'PreserveSchema',true);
         persisted=sixgr.util.csvReadTable(path,'TextType','string');
+        if isfield(job.Cfg.phy.pusch,'receivedDCIAssignment')
+            assert(all(persisted.ULTransmissionAuthority==row.ULTransmissionAuthority) && ...
+                all(persisted.ULReceiveAllocationAuthority==row.ULReceiveAllocationAuthority) && ...
+                all(persisted.ULReceivedAssignmentDigest==row.ULReceivedAssignmentDigest));
+        end
         assert(persisted.DataDecodeAvailableAtSample==owner.Events.NextSampleIndex && ...
             persisted.DataReceiveSymbolEndSampleExclusive<=receiver.EndSampleExclusive && ...
             persisted.DataReceiveSampleRateHz==owner.SampleRateHz);

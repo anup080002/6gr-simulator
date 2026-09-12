@@ -1,0 +1,21 @@
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+Error using assert
+Blind PDCCH on the shared stream requires a previously received DL clock, not silent zero timing.
+
+Error in sixgr.truth.CoupledWaveformStream/queuePDCCH (line 332)
+                assert(~logical(sixgr.util.structGet(prepared.ReceiverConfig,'phy.pdcch.blindSearch',false)), ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 127)
+        owner.queuePDCCH(1,p,struct('Grant',grant,'ULConfig',ul));
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using assert
+Blind PDCCH on the shared stream requires a previously received DL clock, not silent zero timing.
+
+Error in sixgr.truth.CoupledWaveformStream/queuePDCCH (line 332)
+                assert(~logical(sixgr.util.structGet(prepared.ReceiverConfig,'phy.pdcch.blindSearch',false)), ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUSCHChannelArtifacts (line 127)
+        owner.queuePDCCH(1,p,struct('Grant',grant,'ULConfig',ul));
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

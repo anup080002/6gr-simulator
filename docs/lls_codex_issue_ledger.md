@@ -6,6 +6,15 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [received UL shared-execution checkpoint](lls/received_ul_shared_execution_20260912.md)
+wires decoded UL assignments into new-TB preparation and separates gNB receive
+allocation from UE transmitter metadata. The high-margin shared two-port
+SRS/DCI/PUSCH/UCI test passed with applied TPMI 3 and exact ACK bits. Common
+control/Type-0 search-space defects were also repaired. This is not the final
+12 dB run: receiver HARQ, dynamic DAI and full main-scheduler integration
+remain gates. One older disabled-power stage assertion remains a recorded
+failure, with its attempted edit blocked by the file-edit tool.
+
 The [connected data authority repair](lls/connected_data_authority_repair_20260912.md)
 adds independent endpoint allocation, UE received-TPMI authority and a
 practical DL receiver path without a borrowed transmitter matrix. Component

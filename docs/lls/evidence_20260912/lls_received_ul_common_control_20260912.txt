@@ -1,0 +1,13 @@
+Error using assert
+Assertion failed.
+
+Error in testCommonPDCCHWithConnectedPolicy (line 9)
+assert(strcmpi(common.SearchSpace.SearchSpaceType,'common') && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using assert
+Assertion failed.
+
+Error in testCommonPDCCHWithConnectedPolicy (line 9)
+assert(strcmpi(common.SearchSpace.SearchSpaceType,'common') && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

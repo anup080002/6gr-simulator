@@ -716,6 +716,9 @@ trialLAScheduledDecisionOLLAUpdateCount = NaN(numFrames,1);
 trialLAScheduledDecisionOLLAFeedbackEligible = false(numFrames,1);
 trialLAScheduledDecisionOLLAFeedbackExclusionReason = strings(numFrames,1);
 trialNotes = strings(numFrames,1);
+trialULTransmissionAuthority = strings(numFrames,1);
+trialULReceivedAssignmentDigest = strings(numFrames,1);
+trialULReceiveAllocationAuthority = strings(numFrames,1);
 trialChan = repmat(chanModel, numFrames, 1);
 trialDopp = dopplerHz * ones(numFrames,1);
 liveCallbackWarned = false;
@@ -859,9 +862,17 @@ for n = 1:numFrames
         if receivedCompletion
             tx = preparedTransmission.Tx;
             txInfo = preparedTransmission.TxInfo;
+        elseif isfield(cfgFrame.phy.pusch,'receivedDCIAssignment')
+            assert(~isRetransmission,'sixgr:link:ReceivedULHARQStateRequired', ...
+                'Received-command retransmission requires UE-owned HARQ TB state; new-TB sizing is not a substitute.');
+            [tx,txInfo]=sixgr.link.transmitReceivedPUSCH(cfgFrame, ...
+                cfgFrame.phy.pusch.receivedDCIAssignment,transportBlockBits,expectedUCIPayload);
         else
             [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgFrame, txArgs{:});
         end
+        trialULTransmissionAuthority(n)=string(sixgr.util.structGet(tx,'TransmissionAuthority', ...
+            'configured_or_scheduled_transmitter'));
+        trialULReceivedAssignmentDigest(n)=string(sixgr.util.structGet(tx,'ReceivedDCIAssignmentDigest',''));
         trialRuntimeAbsoluteSlot0(n) = double(sixgr.util.structGet(cfgFrame, ...
             "lls6g.runtime.AbsoluteSlotIndex0", NaN));
         trialCarrierNSlot(n) = double(tx.Carrier.NSlot);
@@ -1084,9 +1095,14 @@ for n = 1:numFrames
             cfgFrameRx = preparedTransmission.ReceiverConfig;
             powerContext = tx.PowerContext;
         else
+        powerGrant=grantSnapshot;
+        if isfield(cfgFrame.phy.pusch,'receivedDCIAssignment')
+            powerGrant=struct('PRBSet',tx.PUSCH.PRBSet, ...
+                'DecodedDCIFields',cfgFrame.phy.pusch.receivedDCIAssignment.Fields);
+        end
         [txWaveformPC, powerCtrl, cfgFrameRx, puschPowerControlState] = ...
             sixgr.link.bindPUSCHPowerControlContext(tx.Waveform, cfgFrame, tx, ...
-            grantSnapshot, puschPowerControlState);
+            powerGrant, puschPowerControlState);
         tx.Waveform = txWaveformPC;
         [tx.Waveform, powerContext] = sixgr.rf.applyPowerContext( ...
             tx.Waveform, cfgFrameRx, "UL", txInfo,"ApplyPA",~prepareOnly);
@@ -1205,6 +1221,14 @@ for n = 1:numFrames
             "RV", tx.RV, ...
             "CodingLayout", tx.CodingLayout, ...
             "SkipTimingEstimate", useIdealTimingSync};
+        trialULReceiveAllocationAuthority(n)="legacy_transmitter_metadata";
+        if receivedCompletion && isfield(cfgFrame.phy.pusch,'receivedDCIAssignment')
+            % gNB receives using its own frozen scheduling state, not what
+            % the UE decoded and not the UE transmitter's resource objects.
+            rxArgs={"SkipTimingEstimate",useIdealTimingSync};
+            trialULReceiveAllocationAuthority(n)="gnb_own_scheduled_grant";
+            cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedDCIAssignment');
+        end
         if receivedCompletion
             rxArgs=[rxArgs {"TimingSearchWindowSamples", ...
                 preparedTransmission.receiverTimingSearchWindow(p.Results.ReceivedContext.Observation)}];
@@ -2747,6 +2771,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.AppliedPrecoderSHA256 = trialAppliedPrecoderSHA256(idx);
         T.PrecoderDigestDomain = trialPrecoderDigestDomain(idx);
         T.FrozenGrantContextId = trialFrozenGrantContextId(idx);
+        T.ULTransmissionAuthority = trialULTransmissionAuthority(idx);
+        T.ULReceivedAssignmentDigest = trialULReceivedAssignmentDigest(idx);
+        T.ULReceiveAllocationAuthority = trialULReceiveAllocationAuthority(idx);
         T.RequestedVsAppliedPrecoderPMIMatchStatus = trialRequestedVsAppliedPrecoderPMIMatchStatus(idx);
         T.PrecodingNumPorts = trialPrecodingNumPorts(idx);
         T.PrecodingNumLayers = trialPrecodingNumLayers(idx);
@@ -4718,6 +4745,9 @@ assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ComputeLatencySource = strings(0,1);
+T.ULTransmissionAuthority = strings(0,1);
+T.ULReceivedAssignmentDigest = strings(0,1);
+T.ULReceiveAllocationAuthority = strings(0,1);
 T.QCLMeasurementStatus = strings(0,1);
 T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
 T.SymbolDecisionStatus = strings(0,1);
