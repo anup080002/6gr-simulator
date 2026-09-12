@@ -1,0 +1,21 @@
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+CONNECTED_DATA_ALLOCATION_PASS format=1_1 tbs=1064 nscid=1 port=1
+[PASS] testConnectedDataAllocation (43.08s)
+PDSCH CDL truth receiver: BLER 0.000, SINR 35.35 dB
+[PASS] testPDSCHReceiverCDL (4.57s)
+Running testPDSCHReceiverMIMONoiseDomain
+..
+Done testPDSCHReceiverMIMONoiseDomain
+__________
+
+[PASS] testPDSCHReceiverMIMONoiseDomain (7.35s)
+PDSCH strict RX AWGN: CRC pass, estimated noise 2.77e-05
+[PASS] testPDSCHReceiverAWGN (1.87s)
+PDSCH strict RX wrong DM-RS port: controlled CRC failure pass
+[PASS] testPDSCHReceiverWrongDMRSPort (0.38s)
+Slowest 5 test(s):
+   1. testConnectedDataAllocation (43.08s)
+   2. testPDSCHReceiverMIMONoiseDomain (7.35s)
+   3. testPDSCHReceiverCDL (4.57s)
+   4. testPDSCHReceiverAWGN (1.87s)
+   5. testPDSCHReceiverWrongDMRSPort (0.38s)

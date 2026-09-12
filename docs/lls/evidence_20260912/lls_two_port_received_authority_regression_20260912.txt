@@ -1,0 +1,11 @@
+[PASS] testTwoPortULYAMLAndSRS (29.62s)
+[PASS] testULPrecodingDCIField (1.14s)
+[PASS] testSchedulerPUSCHSRSAuthorityPropagation (10.29s)
+[PASS] testPUSCHTransmitterPrecoderEvidence (0.14s)
+[PASS] testConnectedDCIMaterialization (15.34s)
+Slowest 5 test(s):
+   1. testTwoPortULYAMLAndSRS (29.62s)
+   2. testConnectedDCIMaterialization (15.34s)
+   3. testSchedulerPUSCHSRSAuthorityPropagation (10.29s)
+   4. testULPrecodingDCIField (1.14s)
+   5. testPUSCHTransmitterPrecoderEvidence (0.14s)

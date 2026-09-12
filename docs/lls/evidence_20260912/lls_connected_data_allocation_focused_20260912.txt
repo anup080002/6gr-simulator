@@ -1,0 +1,14 @@
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+[FAIL] testConnectedDataAllocation (39.99s)
+       Strict or immutable-grant PDSCH requires the selected matrix SHA-256 identity.
+[PASS] testSchedulerPUSCHSRSAuthorityPropagation (8.08s)
+[PASS] testPUSCHTransmitterPrecoderEvidence (0.14s)
+[PASS] testConnectedDCIMaterialization (10.06s)
+Slowest 4 test(s):
+   1. testConnectedDataAllocation (39.99s)
+   2. testConnectedDCIMaterialization (10.06s)
+   3. testSchedulerPUSCHSRSAuthorityPropagation (8.08s)
+   4. testPUSCHTransmitterPrecoderEvidence (0.14s)
+{Error using runFocusedTests (line 55)
+One or more focused regressions failed; see per-test diagnostics.
+} 

@@ -1,0 +1,38 @@
+CONNECTED_DATA_ALLOCATION_PASS format=0_1 tbs=1160 nscid=1 port=1
+Error using sixgr.phy.dl.resolvePDSCHPrecoding (line 128)
+Strict multi-port PDSCH requires the scheduler-selected immutable Nport-by-Nlayer matrix.
+
+Error in sixgr.pdsch.PDSCHCalibrationFacadeAdapter>localPrecoder (line 1198)
+legacy = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize (line 121)
+            [legacyPrecoder, precoderBundle] = localPrecoder( ...
+                                               ^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx>localDelegateCanonicalGrantTransmitter (line 1176)
+bundle = sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize( ...
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx (line 141)
+    [tx, info] = localDelegateCanonicalGrantTransmitter( ...
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testConnectedDataAllocation (line 51)
+        tx=sixgr.phy.dl.PDSCH_Tx(gnb,'ExecutionProfile','phy_calibration');
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using sixgr.phy.dl.resolvePDSCHPrecoding (line 128)
+Strict multi-port PDSCH requires the scheduler-selected immutable Nport-by-Nlayer matrix.
+
+Error in sixgr.pdsch.PDSCHCalibrationFacadeAdapter>localPrecoder (line 1198)
+legacy = sixgr.phy.dl.resolvePDSCHPrecoding(pdsch, cfg, ...
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize (line 121)
+            [legacyPrecoder, precoderBundle] = localPrecoder( ...
+                                               ^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx>localDelegateCanonicalGrantTransmitter (line 1176)
+bundle = sixgr.pdsch.PDSCHCalibrationFacadeAdapter.materialize( ...
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.dl.PDSCH_Tx (line 141)
+    [tx, info] = localDelegateCanonicalGrantTransmitter( ...
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testConnectedDataAllocation (line 51)
+        tx=sixgr.phy.dl.PDSCH_Tx(gnb,'ExecutionProfile','phy_calibration');
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

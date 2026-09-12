@@ -1,0 +1,25 @@
+Error using sixgr.phy.ul.resolvePUSCHPrecoding>localValidateSRSAuthority (line 257)
+Strict codebook PUSCH requires an authoritative measured-SRS RI/SRI/TPMI decision.
+
+Error in sixgr.phy.ul.resolvePUSCHPrecoding (line 43)
+        localValidateSRSAuthority(srsDecision,nLayers,nPorts,tpmi);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.ul.PUSCH_Tx (line 130)
+prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg, ...
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testConnectedDataAllocation (line 40)
+        tx=sixgr.phy.ul.PUSCH_Tx(allocation.Config);
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using sixgr.phy.ul.resolvePUSCHPrecoding>localValidateSRSAuthority (line 257)
+Strict codebook PUSCH requires an authoritative measured-SRS RI/SRI/TPMI decision.
+
+Error in sixgr.phy.ul.resolvePUSCHPrecoding (line 43)
+        localValidateSRSAuthority(srsDecision,nLayers,nPorts,tpmi);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.ul.PUSCH_Tx (line 130)
+prec = sixgr.phy.ul.resolvePUSCHPrecoding(pusch, cfg, ...
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testConnectedDataAllocation (line 40)
+        tx=sixgr.phy.ul.PUSCH_Tx(allocation.Config);
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -6,6 +6,12 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [connected data authority repair](lls/connected_data_authority_repair_20260912.md)
+adds independent endpoint allocation, UE received-TPMI authority and a
+practical DL receiver path without a borrowed transmitter matrix. Component
+waveforms pass; production shared-runner wiring, receiver HARQ state and
+dynamic DAI remain mandatory gates, not closed by these component tests.
+
 The [received-assignment audit](lls/received_assignment_audit_20260912.md)
 records the remaining transmitter-owned data-receiver inputs and execution
 gates, separately from the now-independent connected PDCCH decoder.

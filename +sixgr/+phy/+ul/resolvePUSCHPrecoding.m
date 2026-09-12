@@ -33,13 +33,27 @@ end
 nPorts = max(1, round(double(nPorts)));
 
 tpmi = NaN;
+receivedDCI=sixgr.util.structGet(cfg,'phy.pusch.receivedDCIAssignment',struct());
+hasReceivedDCI=isstruct(receivedDCI) && ~isempty(fieldnames(receivedDCI));
+assert(~hasReceivedDCI || isCodebook, ...
+    'sixgr:phy:ul:ReceivedPrecodingMismatch', ...
+    'A received codebook command cannot authorize non-codebook transmission.');
 if isCodebook
     tpmi = double(localObjectValue(pusch, "TPMI", NaN));
     srsDecision = opt.SRSDecision;
     if isempty(srsDecision)
         srsDecision = sixgr.util.structGet(cfg,"phy.pusch.srsDecision",[]);
     end
-    if strictMIMO
+    if hasReceivedDCI
+        receivedContext=sixgr.phy.pdcch.validateConnectedAssignment(cfg,receivedDCI);
+        assert(receivedDCI.Direction=="UL" && receivedDCI.TPMI==tpmi && ...
+            receivedDCI.NumLayers==nLayers && receivedContext.Data.ULPrecoding.num_ports==nPorts && ...
+            receivedContext.Data.TransformPrecodingEnabled==transformPrecoding && ...
+            receivedDCI.RNTI==pusch.RNTI && ...
+            receivedDCI.DataAbsoluteSlot==cfg.lls6g.runtime.AbsoluteSlotIndex0, ...
+            'sixgr:phy:ul:ReceivedPrecodingMismatch', ...
+            'UE codebook transmission must retain received TPMI, rank, identity, ports and data slot.');
+    elseif strictMIMO
         localValidateSRSAuthority(srsDecision,nLayers,nPorts,tpmi);
         tpmi = double(srsDecision.TPMI);
     end
@@ -91,6 +105,8 @@ prec.BeamIndexDefinition = "";
 prec.FixedReferenceMode = logical(opt.FixedReferenceMode);
 prec.StrictMIMO = logical(strictMIMO);
 prec.AuthoritativeSRSDecisionUsed = false;
+prec.AuthoritativeDCIDecisionUsed = false;
+prec.DecodedDCIAssignmentDigest = "";
 prec.SRSMeasurementID = "";
 prec.SRSMeasurementSlot = NaN;
 prec.SelectedMatrixSHA256 = "";
@@ -231,7 +247,12 @@ prec.NumWaveformColumns = double(size(Wports, 1));
 prec.CodebookPortIndices1Based = double(localActiveCodebookPorts(Wtx));
 prec.CodebookPortIndexDefinition = "one_based_logical_antenna_port_support_not_spatial_beam_ID";
 prec.CodebookStatus = string(codebookStatus);
-if strictMIMO
+if hasReceivedDCI
+    prec.AuthoritativeDCIDecisionUsed=true;
+    prec.DecodedDCIAssignmentDigest=receivedDCI.AssignmentDigest;
+    prec.Source="ul_pusch_native_codebook_received_dci";
+    prec.SRI=receivedDCI.SRSResourceIndex;
+elseif strictMIMO
     selectedDigest = string(sixgr.util.structGet(srsDecision,"SelectionMatrixSHA256",""));
     actualDigest = sixgr.phy.mimo.MatrixContract.digest(Wports);
     if strlength(selectedDigest) > 0 && ~strcmpi(selectedDigest,actualDigest)
