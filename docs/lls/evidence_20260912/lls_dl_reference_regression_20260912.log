@@ -1,0 +1,46 @@
+[PASS] testConfig (21.05s)
+[PASS] test6GParameterCatalog (8.84s)
+[PASS] test6GScenarioConfigValidation (16.79s)
+[PASS] testSchedulerGrantConsistency (11.93s)
+Running testDCISchema01
+.
+Done testDCISchema01
+__________
+
+[PASS] testDCISchema01 (12.22s)
+Running testDCIPackParseRoundTrip
+.
+Done testDCIPackParseRoundTrip
+__________
+
+[PASS] testDCIPackParseRoundTrip (1.10s)
+Running testDCISizeAlignment
+.
+Done testDCISizeAlignment
+__________
+
+[PASS] testDCISizeAlignment (1.33s)
+Running testDCIWrongContextRejection
+.
+Done testDCIWrongContextRejection
+__________
+
+[PASS] testDCIWrongContextRejection (0.46s)
+Running testDecodedDCIGrantAuthority
+.
+Done testDecodedDCIGrantAuthority
+__________
+
+[PASS] testDecodedDCIGrantAuthority (3.27s)
+[PASS] testTwoPortULYAMLAndSRS (8.43s)
+Slowest 10 test(s):
+   1. testConfig (21.05s)
+   2. test6GScenarioConfigValidation (16.79s)
+   3. testDCISchema01 (12.22s)
+   4. testSchedulerGrantConsistency (11.93s)
+   5. test6GParameterCatalog (8.84s)
+   6. testTwoPortULYAMLAndSRS (8.43s)
+   7. testDecodedDCIGrantAuthority (3.27s)
+   8. testDCISizeAlignment (1.33s)
+   9. testDCIPackParseRoundTrip (1.10s)
+  10. testDCIWrongContextRejection (0.46s)

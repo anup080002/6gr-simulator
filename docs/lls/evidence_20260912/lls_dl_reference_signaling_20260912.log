@@ -1,0 +1,11 @@
+{Error using sixgr.l2.mac.SchedulerBase/buildDCIBitfield (line 1758)
+Cannot pack DCI for an infeasible finalized PHY grant: exact_resource_accounting_failed:SS/PBCH excludes 126 scheduled PDSCH DM-RS REs in absolute slot 0. The scheduler must
+select a legal PRB/TDRA allocation before coding.
+
+Error in sixgr.link.resolveWaveformGrant (line 73)
+grant.DCI = scheduler.buildDCIBitfield(grant);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testDLReferenceSignaling (line 60)
+grant=sixgr.link.resolveWaveformGrant(cfg,'DL',0);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

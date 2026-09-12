@@ -1,0 +1,78 @@
+{
+  "ok": true,
+  "results": [
+    {
+      "name": "testConfig",
+      "ok": true,
+      "msg": "",
+      "duration_s": 21.0507117
+    },
+    {
+      "name": "test6GParameterCatalog",
+      "ok": true,
+      "msg": "",
+      "duration_s": 8.8438612
+    },
+    {
+      "name": "test6GScenarioConfigValidation",
+      "ok": true,
+      "msg": "",
+      "duration_s": 16.7917492
+    },
+    {
+      "name": "testSchedulerGrantConsistency",
+      "ok": true,
+      "msg": "",
+      "duration_s": 11.9258169
+    },
+    {
+      "name": "testDCISchema01",
+      "ok": true,
+      "msg": "",
+      "duration_s": 12.2211381
+    },
+    {
+      "name": "testDCIPackParseRoundTrip",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.1027485
+    },
+    {
+      "name": "testDCISizeAlignment",
+      "ok": true,
+      "msg": "",
+      "duration_s": 1.3279825
+    },
+    {
+      "name": "testDCIWrongContextRejection",
+      "ok": true,
+      "msg": "",
+      "duration_s": 0.4551596
+    },
+    {
+      "name": "testDecodedDCIGrantAuthority",
+      "ok": true,
+      "msg": "",
+      "duration_s": 3.2653214
+    },
+    {
+      "name": "testTwoPortULYAMLAndSRS",
+      "ok": true,
+      "msg": "",
+      "duration_s": 8.4326003
+    }
+  ],
+  "selected_tests": [
+    "testConfig",
+    "test6GParameterCatalog",
+    "test6GScenarioConfigValidation",
+    "testSchedulerGrantConsistency",
+    "testDCISchema01",
+    "testDCIPackParseRoundTrip",
+    "testDCISizeAlignment",
+    "testDCIWrongContextRejection",
+    "testDecodedDCIGrantAuthority",
+    "testTwoPortULYAMLAndSRS"
+  ],
+  "total_duration_s": 85.4573309
+}

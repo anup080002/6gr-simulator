@@ -32,6 +32,7 @@ mimo:
     initialization_source: lls_preconfigured_higher_layer_context
 
 reference_signals:
+  pdsch_dmrs_max_length: 1
   pusch_dmrs_num_cdm_groups_without_data: 2
   pusch_dmrs_config_type: 1
   pusch_dmrs_max_length: 1
@@ -48,6 +49,12 @@ pusch:
   num_antenna_ports: 2
 
 control:
+  dl_reference_signaling:
+    dmrs_configuration_type: 1
+    dmrs_max_length: 1
+    dmrs_type_enhanced: false
+    two_tci_states: false
+    max_codewords: 1
   ul_reference_signaling:
     srs_resource_count: 1
     dmrs_configuration_type: 1

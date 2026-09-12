@@ -9,6 +9,8 @@ addParameter(p, "MCS", 10, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, "HARQProcess", 0, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, "NumLayers", 2, @(x) isnumeric(x) && isscalar(x));
 addParameter(p, "PMI", 0, @(x) isnumeric(x) && isscalar(x));
+addParameter(p, "DMRSPortSet", [], @isnumeric);
+addParameter(p, "NumCDMGroupsWithoutData", [], @isnumeric);
 parse(p, pdcchCfg, varargin{:});
 opt = p.Results;
 
@@ -34,6 +36,10 @@ fields.srs_request = 0;
 fields.csi_request = 0;
 fields.dmrs_sequence_initialization = 0;
 context = sixgr.phy.pdcch.resolveDCIContext(pdcchCfg, "1_1");
+if isfield(context.Data,'DLReferenceSignaling')
+    fields.antenna_ports=sixgr.phy.pdcch.DLReferenceSignaling.encodeAntenna(context.Data, ...
+        opt.NumLayers,opt.DMRSPortSet,opt.NumCDMGroupsWithoutData,1);
+end
 fields = sixgr.phy.pdcch.completeDCIFields(fields, context);
 dci = sixgr.phy.pdcch.encodeDCIPayload(fields, "1_1", pdcchCfg);
 end

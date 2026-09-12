@@ -91,6 +91,10 @@ classdef DCIContextFactory
                 data.ULPrecoding=raw.ul_precoding;
                 sixgr.phy.pdcch.ULPrecodingField.resolve(data);
             end
+            if isfield(control,'dl_reference_signaling')
+                data.DLReferenceSignaling=control.dl_reference_signaling;
+                sixgr.phy.pdcch.DLReferenceSignaling.resolve(data);
+            end
             context = sixgr.phy.pdcch.DCIContext(data);
         end
 
@@ -194,6 +198,12 @@ classdef DCIContextFactory
                 end
             end
 
+            if isfield(operatorControl,'dl_reference_signaling')
+                data=context.Data;
+                data.DLReferenceSignaling=operatorControl.dl_reference_signaling;
+                sixgr.phy.pdcch.DLReferenceSignaling.resolve(data);
+                context=sixgr.phy.pdcch.DCIContext(data);
+            end
             if fmt=="0_1" && isfield(operatorControl,'ul_precoding')
                 data=context.Data;
                 if isfield(data,'ULPrecoding')

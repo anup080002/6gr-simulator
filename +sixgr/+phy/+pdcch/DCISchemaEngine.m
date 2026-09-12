@@ -61,6 +61,11 @@ classdef DCISchemaEngine
             ulWidth=6; ulMax=63; ulClause="38.212 7.3.1.1 (legacy mapping; not table-qualified)";
             sriWidth=data.SRSResourceIndicatorWidth; sriMax=2^sriWidth-1;
             ulAntennaWidth=data.AntennaPortFieldWidth;
+            dlAntennaWidth=data.AntennaPortFieldWidth;
+            if fmt=="1_1" && isfield(data,'DLReferenceSignaling')
+                dlRef=sixgr.phy.pdcch.DLReferenceSignaling.resolve(data);
+                dlAntennaWidth=dlRef.AntennaWidth;
+            end
             if fmt=="0_1" && isfield(data,'ULReferenceSignaling')
                 ref=sixgr.phy.pdcch.ULReferenceSignaling.resolve(data);
                 sriWidth=ref.SRIWidth; sriMax=ref.SRIMaxValue; ulAntennaWidth=ref.AntennaWidth;
@@ -141,7 +146,7 @@ classdef DCISchemaEngine
                         localDef("tpc_command_for_pucch", 2, 0, 3, "PUCCH power control", "38.212 7.3.1.2")
                         localDef("pucch_resource_indicator", 3, 0, 7, "PUCCH resource set", "38.212 7.3.1.2")
                         localDef("pdsch_to_harq_feedback_timing", 3, 0, 7, "dl-DataToUL-ACK", "38.212 7.3.1.2")
-                        localDef("antenna_ports", data.AntennaPortFieldWidth, 0, 2^data.AntennaPortFieldWidth-1, "PDSCH DM-RS configuration", "38.212 7.3.1.2")
+                        localDef("antenna_ports", dlAntennaWidth, 0, 2^dlAntennaWidth-1, "PDSCH DM-RS configuration", "38.212 7.3.1.2.2")
                         localOptional(data.TCIPresent, "transmission_configuration_indication", data.TCIWidth, "active TCI states", "38.212 7.3.1.2")
                         localDef("srs_request", data.SRSRequestWidth, 0, 2^data.SRSRequestWidth-1, "SRS request configuration", "38.212 7.3.1.2")
                         localDef("csi_request", data.CSIRequestWidth, 0, 2^data.CSIRequestWidth-1, "CSI request configuration", "38.212 7.3.1.2")

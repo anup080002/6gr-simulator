@@ -16,6 +16,13 @@ do not interpret earlier functional-run rows as closure of these new checks.
 The `continuous_iq_03` attempt was stopped during initialization and is not
 a new PHY result. All original outputs remain local and unchanged.
 
+The [DL DM-RS indication repair](lls/dl_reference_signaling_repair_20260912.md)
+now passes independent table, exact-bit and coded-transmitter/received-PDCCH
+checks, plus ten focused regressions. It also repairs scheduled nonzero-port
+precedence in the UL indication helper. Complete DCI optional-field policy,
+receiver-owned monitored sizes, and received reference-field materialization
+remain mandatory; the linked ledger lists the exact remaining control work.
+
 The 58-slot 12 dB configured-SNR TDD run is the only immediate completion
 target. It is an actual shared-waveform LLS diagnostic, not an E2E campaign and
 not statistical publication evidence.

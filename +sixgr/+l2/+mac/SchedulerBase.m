@@ -2310,6 +2310,9 @@ switch fmt
         fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
         fields.pdsch_to_harq_feedback_timing = double(k1);
         fields.antenna_ports = localDLAntennaPortField(grant);
+        if isfield(dciContext.Data,'DLReferenceSignaling')
+            fields.antenna_ports=sixgr.phy.pdcch.DLReferenceSignaling.antennaFromGrant(dciContext.Data,cfg,grant);
+        end
         if logical(dciContext.Data.TCIPresent)
             policy=sixgr.util.structGet(cfg,'phy.pdsch.qclTCI',struct());
             if logical(sixgr.util.structGet(policy,'enabled',false))

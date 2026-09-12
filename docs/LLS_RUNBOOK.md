@@ -8,6 +8,10 @@ The [SRI/DM-RS field repair](lls/ul_reference_signaling_repair_20260912.md) pass
 its focused shared-clock regression. See
 [the repair ledger](lls/continuous_iq_02_spatial_reaudit_20260912.md) for exact
 YAML fields, focused commands, receipts and remaining qualification limits.
+The [DL DM-RS indication repair](lls/dl_reference_signaling_repair_20260912.md)
+adds `control.dl_reference_signaling` to the continuous-IQ YAML. Its focused
+table and waveform checks passed; it does not remove the remaining complete
+DCI-context and receiver-monitoring gate.
 
 This runbook covers the config-driven link-level simulator only. Commands are
 written for PowerShell from the repository root. They do not launch the E2E

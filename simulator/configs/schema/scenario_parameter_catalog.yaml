@@ -649,6 +649,7 @@ sections:
         type: struct
         description: Explicit higher-layer two-port PUSCH codebook context for TS 38.212 DCI 0_1; validated against SRS/PUSCH before grant packing.
       ul_reference_signaling: {required: false, type: struct}
+      dl_reference_signaling: {required: false, type: struct}
       pdcch6gr: {required: false, type: struct}
       monitoring_mode:
         required: false

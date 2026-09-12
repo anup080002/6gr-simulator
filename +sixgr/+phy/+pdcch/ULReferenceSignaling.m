@@ -69,7 +69,7 @@ classdef ULReferenceSignaling
         function value=antennaFromGrant(data,cfg,grant)
             rank=double(grant.NumLayers);
             [ports,~]=sixgr.phy.grant.resolveScheduledDMRSPortSet(cfg,'UL',rank,grant);
-            selected=cfg; selected.phy.pusch.dmrs.portSet=ports;
+            selected=cfg; selected.phy.pusch.dmrs.scheduledPortSet=ports;
             carrier=sixgr.phy.grid.makeCarrier(selected);
             [~,~,pusch]=sixgr.phy.grid.allocREsPUSCH(carrier,selected,'NumLayers',rank, ...
                 'SymbolAllocation',grant.SymbolAllocation,'PRBSet',grant.PRBSet);
