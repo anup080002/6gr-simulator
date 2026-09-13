@@ -1,0 +1,15 @@
+HARQBits,HARQValue,SRValue,ExpectedTransmission,TXSequenceMatchesReference,TransmitErrorID,ReceiverCheckApplicable,RXMatchesIndependentReference,ReceiverErrorID,DetectionThreshold,Source
+0,,0,0,0,,0,0,,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+0,,1,1,0,,1,0,,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+1,0,0,1,1,,1,1,,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+1,0,1,1,1,,1,1,,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+1,1,0,1,0,,1,0,,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+1,1,1,1,0,,1,0,,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,00,0,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,00,1,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,01,0,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,01,1,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,10,0,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,10,1,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,11,0,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance
+2,11,1,1,0,sixgr:phy:pucch:InvalidFormatPayload,1,0,sixgr:phy:pucch:UCIDecodeFailed,0.42,clean_component_sequence_semantics_not_scheduler_or_conformance

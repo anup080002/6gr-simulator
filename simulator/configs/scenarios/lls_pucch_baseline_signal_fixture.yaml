@@ -1,0 +1,14 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+
+meta:
+  scenario_id: lls_pucch_baseline_signal_fixture
+  research_class: optional_research_experiment
+  description: >
+    Actual baseline-12-dB SRS/PUCCH shared-channel component fixture.
+    Initialization uses the existing test's declared connected-state and
+    DL-feedback fixtures, not simulated access or independently qualified TA.
+    Receiver observations are retained; this is not the final 58-slot run.
+
+run_control:
+  continuous_raw_iq_capture_enable: false

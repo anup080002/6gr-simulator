@@ -416,6 +416,16 @@ trial.PUCCHMeasuredTxOutputPower_dBm = double(sixgr.util.structGet( ...
     txBoundary,"MeasuredTxOutputPower_dBm",NaN));
 trial.PUCCHTxPowerClosureError_dB = double(sixgr.util.structGet( ...
     txBoundary,"PowerClosureError_dB",NaN));
+trial.PUCCHPhysicalPowerApplicable=logical(sixgr.util.structGet(txBoundary,'PhysicalPowerApplicable',true));
+trial.PUCCHNormalizedPowerReference=logical(sixgr.util.structGet(txBoundary,'NormalizedPowerReference',false));
+trial.PUCCHNormalizedActiveMeanSquare=NaN;
+trial.PUCCHNormalizedReferenceEnergyPerRE=NaN;
+trial.PUCCHRemovedAbsoluteTransmitScale=double(sixgr.util.structGet(txBoundary,'RemovedAbsoluteTransmitScale',1));
+if trial.PUCCHNormalizedPowerReference
+    trial.PUCCHAppliedTxPowerReferencePlane="normalized_occupied_re_pre_node_rf_contribution";
+    trial.PUCCHNormalizedActiveMeanSquare=double(txBoundary.NormalizedActiveMeanSquare);
+    trial.PUCCHNormalizedReferenceEnergyPerRE=double(txBoundary.PowerContext.FixedSNRReferenceEnergyPerOccupiedRE);
+end
 trial.PUCCHRequestedTxPower_dBm = double(sixgr.util.structGet( ...
     tx,"Power.RequestedPowerdBm",NaN));
 trial.PUCCHPowerControlMRB = double(sixgr.util.structGet(tx,"Power.MRB",NaN));

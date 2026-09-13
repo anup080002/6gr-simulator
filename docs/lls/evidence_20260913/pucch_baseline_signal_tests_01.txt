@@ -1,0 +1,19 @@
+{Error using assert
+Active QCL requires an earlier received reference for this UE.
+
+Error in sixgr.phy.rx.applyQCLTimingTransfer (line 30)
+assert(all(isfield(source,required)),'sixgr:qcl:MissingReceivedReference', ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.link.runDLPDSCHThroughput (line 1177)
+                [searchWindow,qclEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.executeGrantPHYJob (line 71)
+    res = sixgr.link.runDLPDSCHThroughput(cfg, args{:});
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in receivedDLFeedbackFixture (line 67)
+result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUCCHFeedbackClock (line 59)
+[received,receiveFields]=receivedDLFeedbackFixture(cfg,3,0,1e-13);
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

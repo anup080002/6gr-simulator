@@ -1,0 +1,7 @@
+profile_id: pucch_baseline_signal_clock_v1
+research_class: optional_research_experiment
+physical_scenario: simulator/configs/scenarios/lls_pucch_baseline_signal_fixture.yaml
+feedback_source_scenario: simulator/configs/scenarios/lls_pdcch_shared_queue_fixture.yaml
+include_late_feedback: true
+duplex_mode: TDD
+evidence_scope: shared_baseline_srs_pucch_with_separate_isolated_dl_feedback_source

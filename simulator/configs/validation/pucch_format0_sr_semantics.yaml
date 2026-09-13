@@ -1,0 +1,12 @@
+profile_id: pucch_format0_harq_sr_reference_vectors
+research_class: baseline_benchmark
+evidence_scope: clean_component_sequence_semantics_not_scheduler_or_conformance
+harq_bit_counts: [0, 1, 2]
+sr_values: [0, 1]
+format: 0
+num_grid_prbs: 24
+scs_khz: 15
+rnti: 321
+resource_id: 10
+configuration_epoch: 1
+reference: TS_38.211_6.3.2.3

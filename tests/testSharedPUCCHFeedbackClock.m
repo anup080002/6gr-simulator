@@ -1,4 +1,4 @@
-function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode)
+function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,evidenceRoot,feedbackScenarioPath)
 % Actual PUCCH IQ/CDL/RF/thermal-noise reception and delayed HARQ reducer.
 % Source DL TB/ACK now come from an isolated coded PDSCH connector fixture;
 % that DL is not claimed to pass through this shared CDL owner. TAG and
@@ -12,11 +12,27 @@ validateattributes(lateCount,{'numeric'},{'scalar','integer','>=',0,'<=',2});
 setup6GRSimToolkit('Verbose',false);
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_trs_shared_scoring_fdd_fixture.yaml'; end
-s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
-    'scenarios',fixture));
+if nargin>=3 && strlength(string(scenarioPath))>0
+    s=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+else
+    s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
+end
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+feedbackCfg=cfg; feedbackScenario=s.Data;
+if nargin>=5 && strlength(string(feedbackScenarioPath))>0
+    feedbackSource=sixgr.lls6g.config.loadScenarioConfig(feedbackScenarioPath);
+    feedbackCfg=sixgr.lls6g.buildInternalConfig(feedbackSource,tempname);
+    feedbackScenario=feedbackSource.Data;
+end
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
+if nargin>=4 && strlength(string(evidenceRoot))>0
+    assert(~isfolder(evidenceRoot),'test:EvidenceExists','Choose a new evidence directory.');
+    mkdir(evidenceRoot);
+    state.TestPhysicalEvidenceRoot=char(evidenceRoot);
+    resolvedScenario=s.Data;
+    save(fullfile(evidenceRoot,'configuration.mat'),'cfg','resolvedScenario','feedbackCfg','feedbackScenario');
+end
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
 state.CurrentServingIdx(:)=1;
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
@@ -46,7 +62,7 @@ measurement=table(0,fixturePathloss,"SSB-0","analytic_component_pathloss_selecto
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
-[received,receiveFields]=receivedDLFeedbackFixture(cfg,3,0,1e-13);
+[received,receiveFields]=receivedDLFeedbackFixture(feedbackCfg,3,0,1e-13);
 assert(received.TrialTable.CRCPass==1);
 grant=received.HARQ.GrantSnapshot;
 % A decoded DL DCI fixes the future K1/PRI occasion before the PDSCH ACK
@@ -108,7 +124,7 @@ for slot=1:10
         for lateIndex=1:lateCount
         sourceSlot=5+lateIndex;
         variance=1e-13; if mod(lateIndex,2)==1, variance=1e-4; end
-        [received2,receiveFields2]=receivedDLFeedbackFixture(cfg,sourceSlot,lateIndex,variance);
+        [received2,receiveFields2]=receivedDLFeedbackFixture(feedbackCfg,sourceSlot,lateIndex,variance);
         grant2=received2.HARQ.GrantSnapshot;
         allocation2=state.DLHarq.allocate(1,sourceSlot,grant2.TBSBytes,'NewData',true);
         assert(allocation2.HARQ.HarqID==grant2.HARQ.HarqID && allocation2.HARQ.NDI==grant2.HARQ.NDI);
@@ -213,6 +229,9 @@ for item=events
             'TransmitterObservation',tx,'Replay',replay,'ScoringChannelReferences',{channelReferences}, ...
             'ChannelState',state.SharedWaveformStream.directionalChannelState(1,'UL'));
         output=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
+        if isfield(state,'TestPhysicalEvidenceRoot')
+            save(fullfile(state.TestPhysicalEvidenceRoot,'received_srs.mat'),'output','input','p');
+        end
         if ~output.Ok
             diagnosticFile=string(tempname)+"_shared_srs_failure.mat";
             save(diagnosticFile,'output','input','p');
@@ -302,6 +321,10 @@ for item=events
             'sixgr:truth:LateSharedPUCCHFeedback');
         state.TestPUCCHPrepared=true;
     elseif item.Kind=="PUCCH"
+        if isfield(state,'TestPhysicalEvidenceRoot')
+            timingReferences=state.ReceivedULTimingReferences;
+            save(fullfile(state.TestPhysicalEvidenceRoot,'received_pucch.mat'),'item','timingReferences');
+        end
         assert(height(item.Context.FeedbackRows)==height(state.PUCCHGrantTraceTable), ...
             'test:SharedPUCCHReceivedCodebookRows', ...
             'Received rows=%d but trace rows=%d.', ...
@@ -313,6 +336,10 @@ for item=events
                 'sixgr:phy:pucch:PUCCHTimingReferenceRequired');
         end
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
+        if isfield(state,'TestPhysicalEvidenceRoot')
+            writetable(state.ControlTrials.PUCCH,fullfile(state.TestPhysicalEvidenceRoot,'received_pucch_trials.csv'));
+            writetable(state.PUCCHGrantTraceTable,fullfile(state.TestPhysicalEvidenceRoot,'received_pucch_grants.csv'));
+        end
         assert(state.SharedLastPUCCHAvailableAtSample==state.SharedWaveformStream.Events.NextSampleIndex);
         state.TestPUCCHReceived=true;
     else

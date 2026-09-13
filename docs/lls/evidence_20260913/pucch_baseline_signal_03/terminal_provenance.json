@@ -1,0 +1,77 @@
+{
+  "SourceFiles": [
+    {
+      "Path": "+sixgr/+link/preparePUCCHTransmitWaveform.m",
+      "SHA256": "92dadf60a1a37b44581f0f656bf566bf0bb219ac9a1e28069b367bb854995160"
+    },
+    {
+      "Path": "+sixgr/+link/runPUCCHWaveformTrial.m",
+      "SHA256": "84cba84f09839287c7197b1d29dbaf500f5dd1bd99606f399b0857e2fe8c891b"
+    },
+    {
+      "Path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "SHA256": "424a98b13b7a628112099f0462ab63c4dce3fee488a7a5d98b41fea3c555c255"
+    },
+    {
+      "Path": "tests/testSharedPUCCHFeedbackClock.m",
+      "SHA256": "18f06369fb108c048c311929930109e5cb08fa03714f26851101bd488998276b"
+    },
+    {
+      "Path": "tests/verifyPUCCHPowerExport.m",
+      "SHA256": "e46e6c499e322fb94847809d94ca1a599c7402f0e64ad7a29344fd493ba763ab"
+    },
+    {
+      "Path": "tests/testPUCCHNormalizedTransmitReference.m",
+      "SHA256": "4877f608da7cf1a81ce43285bc58e04197a2b97d35d83527bc44d2392d733e40"
+    },
+    {
+      "Path": "tests/testPUCCHBaselineSignalClock.m",
+      "SHA256": "cba52a9c459feb54f237c83ed1b2be7fdd477987f5560c50bd53af7729128bc3"
+    },
+    {
+      "Path": "simulator/configs/validation/pucch_baseline_signal.yaml",
+      "SHA256": "8b5efabe9a238dfd0685fc5bd480a73630af4b84dfec7951bb558c372794c71e"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_pucch_baseline_signal_fixture.yaml",
+      "SHA256": "1aab15ebf3cf1398fdc0b07eb4f0a2bb0b28a94c4cfca4a9b7c4fdcbc39f4488"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
+      "SHA256": "6626fb168e23b7e82b84442dcd35c41667b83e0e05bd04a3e2e0adc4e88ba408"
+    }
+  ],
+  "Captures": [
+    {
+      "Path": "configuration.mat",
+      "Bytes": 602887,
+      "SHA256": "a811a49234dd47529193cfcec5d956bf286c96d6f91b804867f8c0a04e1e59b2"
+    },
+    {
+      "Path": "received_pucch_grants.csv",
+      "Bytes": 4789,
+      "SHA256": "0b37725e09653d0d8d488d3d5cc113db446982c07442c5a8b79a55628ab588b7"
+    },
+    {
+      "Path": "received_pucch_trials.csv",
+      "Bytes": 6664,
+      "SHA256": "df1fd17fbf03840f59102e14f206430460bad68ef4ae5d3a00e6496939103241"
+    },
+    {
+      "Path": "received_pucch.mat",
+      "Bytes": 2217015,
+      "SHA256": "9d5d5fe85df3840d514abeab0b9b4a22209b8b6cbfda3d43eb4b1bffb889adc1"
+    },
+    {
+      "Path": "received_srs.mat",
+      "Bytes": 11575538,
+      "SHA256": "79619f97170fc5a2738f1c297e2216253cd5abd37c4409a4357c7b7bdcf8fdff"
+    }
+  ],
+  "BaseCommit": "a5fed9dfc38c46f171bb1e41be9600738a40187a",
+  "TerminalExitCode": 0,
+  "EvidenceScope": "one_actual_shared_baseline_UL_SRS_PUCCH_capture_with_explicit_isolated_DL_feedback_source_not_full_run_or_ROC",
+  "HashCollection": "after_terminal_before_any_further_source_edit",
+  "DetectionMetric": 0.420294752122787,
+  "DetectionThreshold": 0.42
+}

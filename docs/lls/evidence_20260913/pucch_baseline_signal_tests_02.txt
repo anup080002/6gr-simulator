@@ -1,0 +1,12 @@
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+{Error using assert
+Assertion failed.
+
+Error in testSharedPUCCHFeedbackClock (line 166)
+assert(state.DLHarq.Stats.Dtx==0 && all( ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testPUCCHBaselineSignalClock (line 7)
+ok=testSharedPUCCHFeedbackClock(v.include_late_feedback,v.duplex_mode, ...
+   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
