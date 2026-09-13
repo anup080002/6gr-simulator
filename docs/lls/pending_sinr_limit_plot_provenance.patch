@@ -1,0 +1,378 @@
+diff --git a/apps/lls_contract_materializer.py b/apps/lls_contract_materializer.py
+index 33384055..7cb8b69b 100644
+--- a/apps/lls_contract_materializer.py
++++ b/apps/lls_contract_materializer.py
+@@ -27,7 +27,7 @@ from lls_contract_aliases import (
+ )
+ 
+ 
+-MATERIALIZER_VERSION = "2026-09-13-contract-v68-constellation-provenance-identity"
++MATERIALIZER_VERSION = "2026-09-13-contract-v69-sinr-limit-provenance"
+ FILESYSTEM_CONTRACT_CACHE_PATH = (
+     "artifact_generation/browser_contract_exact_source_cache.json"
+ )
+@@ -10530,7 +10530,43 @@ def _non_runtime_evidence_field(row):
+     return ""
+ 
+ 
+-def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
++def _measured_sinr_evidence(row):
++    """Keep a receiver coordinate and its declared semantics inseparable.
++
++    No configured SNR, geometry estimate or EVM-derived replacement is used.
++    A finite but rejected preferred field is not rescued through an alias.
++    Missing legacy metadata stays missing; no status or raw value is invented.
++    """
++    fields = {
++        "PostEqSINR_dB": "PostEqSINR",
++        "MeasuredTrialSINR_dB": "MeasuredTrialSINR",
++        "MeasuredSINR_dB": "SINR",
++        "MeasuredWidebandSINR_dB": "MeasuredWidebandSINR",
++    }
++    result = {"value": None, "field": "", "source": "", "status": "",
++              "reason": "", "role": "", "domain": "", "limited": False,
++              "raw_equalizer_db": None}
++    for field, stem in fields.items():
++        value = _row_float(row, field)
++        if value is None:
++            continue
++        source = _row_text(row, stem + "Source", "SINRSource")
++        status = _row_text(row, stem + "ValueStatus")
++        result.update(value=value, field=field, source=source, status=status,
++                      reason=_row_text(row, stem + "NAReason"),
++                      role=_row_text(row, stem + "ValueRole"),
++                      domain=_row_text(row, stem + "MeasurementDomain", "SINRMeasurementDomain"),
++                      limited=status.lower() == "ok_dynamic_range_limited",
++                      raw_equalizer_db=_row_float(row, "PostEqSINRRawEqualizer_dB")
++                          if field == "PostEqSINR_dB" else None)
++        if any(token in (source + " " + status).lower() for token in
++               ("proxy", "synthetic", "fallback", "unavailable", "not_available", "invalid", "unverified")):
++            result["value"] = None
++        return result
++    return result
++
++
++def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
+     """Preserve individual scheduled-TB/goodput observations, including failures.
+ 
+     Throughput_Mbps is the runtime scheduled TB bitrate, not delivered traffic.
+@@ -10563,25 +10599,13 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
+                     "csv_status": "unavailable_exact_reason", "image_status": "generated_unavailable_reason_svg",
+                     "source_table_path": source_path, "source_row_count": 0, "note": reason,
+                 }
+-            sinr, sinr_field = None, ""
+-            # No configured SNR, geometry-only SINR, or inferred EVM-to-SINR.
+-            for field in ("PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "MeasuredWidebandSINR_dB"):
+-                candidate = _row_float(row, field)
+-                if candidate is not None:
+-                    sinr, sinr_field = candidate, field
+-                    break
++            sinr_evidence = _measured_sinr_evidence(row)
++            sinr, sinr_field = sinr_evidence["value"], sinr_evidence["field"]
+             throughput = _row_float(row, "Throughput_Mbps")
+             goodput = _row_float(row, "Goodput_Mbps")
+-            source_fields = {
+-                "PostEqSINR_dB": ("PostEqSINRSource", "PostEqSINRValueStatus"),
+-                "MeasuredTrialSINR_dB": ("MeasuredTrialSINRSource", "MeasuredTrialSINRValueStatus"),
+-                "MeasuredSINR_dB": ("SINRSource", "SINRValueStatus"),
+-                "MeasuredWidebandSINR_dB": ("MeasuredWidebandSINRSource", "MeasuredWidebandSINRValueStatus"),
+-            }
+-            sinr_source, sinr_status = ([_row_text(row, name) for name in source_fields[sinr_field]]
+-                                        if sinr_field else ["", ""])
+-            if sinr is None:
+-                reason = reason or "measured_sinr_unavailable"
++            sinr_source, sinr_status = sinr_evidence["source"], sinr_evidence["status"]
++            if sinr is None:
++                reason = reason or ("sinr_source_not_measured_evidence" if sinr_field else "measured_sinr_unavailable")
+             elif throughput is None and goodput is None:
+                 reason = reason or "runtime_bitrates_unavailable"
+             elif any(value is not None and value < 0 for value in (throughput, goodput)):
+@@ -10603,7 +10627,11 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
+                 "crc_pass": _row_text(row, "CRCPass"),
+                 "sinr_db": sinr, "sinr_source_field": sinr_field,
+                 "sinr_measurement_source": sinr_source, "sinr_value_status": sinr_status,
+-                "sinr_measurement_domain": _row_text(row, "SINRMeasurementDomain"),
++                "sinr_measurement_domain": sinr_evidence["domain"],
++                "sinr_value_reason": sinr_evidence["reason"],
++                "sinr_value_role": sinr_evidence["role"],
++                "sinr_is_limited": sinr_evidence["limited"],
++                "sinr_raw_equalizer_db": sinr_evidence["raw_equalizer_db"],
+                 "throughput_mbps": throughput, "goodput_mbps": goodput,
+                 "throughput_value_status": "available" if throughput is not None else "unavailable_in_source",
+                 "goodput_value_status": "available" if goodput is not None else "unavailable_in_source",
+@@ -10620,12 +10648,17 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
+                 if metric is not None:
+                     domain = {"PostEqSINR_dB": "post-EQ", "MeasuredTrialSINR_dB": "trial",
+                               "MeasuredSINR_dB": "measured", "MeasuredWidebandSINR_dB": "wideband"}[sinr_field]
+-                    plot_points[f"{direction} {name} [{domain}]"].append([sinr, metric])
++                    # Put the qualification first: long legends are truncated.
++                    limit_label = "[limited] " if sinr_evidence["limited"] else ""
++                    plot_points[f"{limit_label}{direction} {name} [{domain}]"].append([sinr, metric])
+     note = ("Individual DL/UL trial observations: scheduled TB bitrate and delivered goodput. "
+             "No fitted curve, no DL/UL averaging; SINR field, MCS, layers and CRC retained in CSV.")
+-    summary = [f"runtime_trials={len(csv_rows)}",
++    summary = [f"runtime_trials={len(csv_rows)}",
+                f"unplotted_trials={sum(row['value_status'] != 'available' for row in csv_rows)}",
+-               "TB bitrate is not delivered goodput", "No interpolation or sweep claim"]
++               "TB bitrate is not delivered goodput", "No interpolation or sweep claim"]
++    limited_count = sum(row["sinr_is_limited"] and row["value_status"] == "available" for row in csv_rows)
++    if limited_count:
++        summary.extend([f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"])
+     series = [{"name": name, "points": points, "marker": "square" if "Goodput" in name else "circle"}
+               for name, points in plot_points.items()]
+     if not series:
+@@ -10641,7 +10674,7 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
+     return {
+         "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
+         "img_bytes": _render_multi_series_svg(chart_name, note, series, summary,
+-            x_label="Measured SINR (dB); source domain in legend/CSV", y_label="Bitrate / goodput (Mbit/s)",
++            x_label="Receiver SINR (dB); includes limited values" if limited_count else "Measured SINR (dB); source domain in legend/CSV", y_label="Bitrate / goodput (Mbit/s)",
+             mode="scatter", evidence_shape_policy="operating_point"),
+         "csv_status": "specialized_runtime_throughput_dataset",
+         "image_status": "generated_specialized_runtime_summary_svg",
+diff --git a/apps/lls_radio_measurement_plots.py b/apps/lls_radio_measurement_plots.py
+index fdc85288..ed65a0b8 100644
+--- a/apps/lls_radio_measurement_plots.py
++++ b/apps/lls_radio_measurement_plots.py
+@@ -103,29 +103,22 @@ def _identity(m, row, path, index):
+             "source_table_logical_path": path, "source_row_index": index}
+ 
+ 
+-def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, display_title=None):
++def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, display_title=None, extra_summary=()):
+     if not rows or not series:
+         return _unavailable(m, name, run_id, note, sources)
+     records = [{"run_id": run_id, "chart_name": name, **row} for row in rows]
+     return {"csv_bytes": m._encode_dict_rows(list(records[0]), records),
+             "img_bytes": m._render_multi_series_svg(display_title or name, note,
+                 [{"name": label, "points": points} for label, points in series.items()],
+-                [f"source_records={len(rows)}", "Observed points; no sweep/fit claim", "See CSV for source and timing"],
++                [f"source_records={len(rows)}", "Observed points; no sweep/fit claim", "See CSV for source and timing", *extra_summary],
+                 x_label=x_label, y_label=y_label, mode="scatter", evidence_shape_policy="operating_point"),
+             "csv_status": "specialized_runtime_radio_measurement_dataset",
+             "image_status": "generated_specialized_runtime_summary_svg", "source_table_path": "|".join(sources),
+             "source_row_count": len(rows), "note": note}
+ 
+ 
+-def _measured_sinr(m, row):
+-    for field in ("PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "MeasuredWidebandSINR_dB"):
+-        value = m._row_float(row, field)
+-        if value is not None:
+-            source = m._row_text(row, field.removesuffix("_dB") + "Source", "SINRSource")
+-            if any(x in source.lower() for x in ("proxy", "synthetic", "fallback", "unavailable")):
+-                continue
+-            return value, field, source
+-    return None, "", ""
++def _measured_sinr(m, row):
++    return m._measured_sinr_evidence(row)
+ 
+ 
+ def _control_evm(m, name, existing, fetch, run_id):
+@@ -375,7 +368,8 @@ def _relationships(m, name, existing, fetch, run_id):
+     for path, trials in m._all_available_rows(existing, fetch, paths):
+         for index, row in enumerate(trials, 1):
+             record = _identity(m, row, path, index)
+-            x, x_field, x_source = _measured_sinr(m, row)
++            sinr_evidence = _measured_sinr(m, row)
++            x, x_field, x_source = (sinr_evidence[key] for key in ("value", "field", "source"))
+             y_field, y = "", None
+             if name == "throughput vs SNR":
+                 x, x_field = None, ""
+@@ -417,28 +411,37 @@ def _relationships(m, name, existing, fetch, run_id):
+                 if (not reference or oracle_available is False or
+                         any(token in reference.lower() for token in ("proxy", "fallback", "synthetic", "unavailable"))):
+                     y = None  # Generic NMSE_dB can be a pilot fit or noise/gain proxy.
+-            record.update({"x_value": x, "x_source_field": x_field, "x_source": x_source,
++            record.update({"x_value": x, "x_source_field": x_field, "x_source": x_source,
+                 "metric_value": y, "metric_source_field": y_field,
+                 "metric_reference_source": m._row_text(row, "NMSEReferenceSource") if name == "NMSE vs SNR / SINR" else "",
+                 "mcs": m._row_text(row, "MCS", "MCSIndex"), "layers": m._row_text(row, "Layers"),
+                 "format": m._row_text(row, "Format", "PUCCHFormat"),
+                 "crc_pass": m._row_text(row, "CRCPass"),
+                 "noise_operating_mode": m._row_text(row, "NoiseOperatingMode"),
+-                "value_status": "available" if x is not None and y is not None else "required_measurement_unavailable"})
++                "value_status": "available" if x is not None and y is not None else "required_measurement_unavailable"})
++            is_sinr_axis = name != "throughput vs SNR" and name != "CSI-RS pilot residual"
++            if is_sinr_axis:
++                record.update({"x_value_status": sinr_evidence["status"],
++                    "x_value_reason": sinr_evidence["reason"], "x_value_role": sinr_evidence["role"],
++                    "x_measurement_domain": sinr_evidence["domain"], "x_is_limited": sinr_evidence["limited"],
++                    "x_raw_equalizer_db": sinr_evidence["raw_equalizer_db"]})
+             rows.append(record)
+             if name == "throughput vs SNR" and x is not None:
+                 for field, label in (("Throughput_Mbps", "scheduled TB rate"), ("Goodput_Mbps", "goodput")):
+                     if record[field] is not None:
+                         series[f"{record['direction']} U{record['ue_index']} {label}"].append([x, record[field]])
+             elif x is not None and y is not None:
+-                series[f"{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
++                limit_label = "[limited] " if is_sinr_axis and sinr_evidence["limited"] else ""
++                series[f"{limit_label}{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
+     notes = {"throughput vs SNR": "Scheduled TB bitrate and Delivered goodput are separate measured series. Actual noise-calibration SNR; no configured-SNR substitution or controlled sweep is claimed.",
+              "CSI-RS pilot residual": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
+              "NMSE vs SNR / SINR": "An explicit executed true-channel reference and TrueChannelNMSE_dB/OracleNMSE_dB are required. Pilot-fit residuals and noise/gain ratios are not channel-estimation NMSE."}
+-    note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
+-    return _finish(m, name, run_id, rows, series,
+-        "Executed CSI-RS slot" if name == "CSI-RS pilot residual" else "Applied noise-calibration SNR (dB)" if name == "throughput vs SNR" else "Measured SINR (dB)",
+-        "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "True-channel NMSE (dB)" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths))
++    note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
++    limited_count = sum(row.get("x_is_limited", False) and row["value_status"] == "available" for row in rows)
++    limit_summary = [f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"] if limited_count else []
++    return _finish(m, name, run_id, rows, series,
++        "Executed CSI-RS slot" if name == "CSI-RS pilot residual" else "Applied noise-calibration SNR (dB)" if name == "throughput vs SNR" else "Receiver SINR (dB); includes limited values" if limited_count else "Measured SINR (dB)",
++        "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "True-channel NMSE (dB)" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths), extra_summary=limit_summary)
+ 
+ 
+ def _csi_physical_power(m, name, existing, fetch, run_id):
+diff --git a/tests/test_lls_sinr_limit_provenance.py b/tests/test_lls_sinr_limit_provenance.py
+new file mode 100644
+--- /dev/null
++++ b/tests/test_lls_sinr_limit_provenance.py
+@@ -0,0 +1,148 @@
++"""SINR limit metadata must survive both CSV derivation and visible plots."""
++import csv
++import io
++from pathlib import Path
++import sys
++
++import pytest
++
++sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "apps"))
++import lls_contract_materializer as m
++
++
++CHARTS = ["throughput vs SINR", "PUSCH BLER vs measured SINR"]
++FIELDS = [("PostEqSINR_dB", "PostEqSINR"), ("MeasuredTrialSINR_dB", "MeasuredTrialSINR"),
++          ("MeasuredSINR_dB", "SINR"), ("MeasuredWidebandSINR_dB", "MeasuredWidebandSINR")]
++
++
++def render(name, rows):
++    columns = list(dict.fromkeys(k for row in rows for k in row))
++    stream = io.StringIO()
++    writer = csv.DictWriter(stream, fieldnames=columns)
++    writer.writeheader()
++    writer.writerows(rows)
++    payload = stream.getvalue().encode()
++    result = m._specialized_chart_materialization(name,
++        {"air_interface/csv/ul_pusch_trials.csv": {"artifact_id": 1}}, lambda _: payload, 1)
++    return result, list(csv.DictReader(io.StringIO(result["csv_bytes"].decode())))
++
++
++def trial(field="PostEqSINR_dB", stem="PostEqSINR", status="OK_dynamic_range_limited"):
++    return {"Direction": "UL", "UEIndex": 1, "Slot": 10, "Frame": 1,
++            "CRCPass": 1, "Throughput_Mbps": 2.152, "Goodput_Mbps": 2.152,
++            "TruthStatus": "real_lls_evidence", field: 45,
++            stem + "Source": "actual_receiver_estimate", stem + "ValueStatus": status,
++            stem + "NAReason": "raw estimate 60.08 dB limited to trusted 45 dB",
++            stem + "ValueRole": "measured_post_equalization_scheduling_input",
++            stem + "MeasurementDomain": "post_equalization_layer_domain",
++            "PostEqSINRRawEqualizer_dB": 60.08}
++
++
++def prefix(name):
++    return "sinr" if name == CHARTS[0] else "x"
++
++
++@pytest.mark.parametrize("name", CHARTS)
++@pytest.mark.parametrize("field,stem", FIELDS)
++def test_limited_metadata_and_visible_warning(name, field, stem):
++    source = trial(field, stem)
++    result, rows = render(name, [source])
++    r, p = rows[0], prefix(name)
++    assert float(r["sinr_db" if p == "sinr" else "x_value"]) == 45
++    assert r[p + "_value_status"] == source[stem + "ValueStatus"]
++    assert r[p + "_value_reason"] == source[stem + "NAReason"]
++    assert r[p + "_value_role"] == source[stem + "ValueRole"]
++    assert r[p + "_measurement_domain"] == source[stem + "MeasurementDomain"]
++    assert r[p + "_is_limited"] == "True"
++    raw = r[p + "_raw_equalizer_db"]
++    assert float(raw) == 60.08 if field == "PostEqSINR_dB" else raw == ""
++    assert b"Limited values are not raw estimates" in result["img_bytes"]
++    assert b"includes limited values" in result["img_bytes"]
++    assert b"limited]" in result["img_bytes"]
++
++
++@pytest.mark.parametrize("name", CHARTS)
++def test_actual_limited_capture_keeps_the_plotted_coordinate(name):
++    source = Path.cwd() / "docs/lls/evidence_20260913/projected_ul_late_uci_capture_01/air_interface/csv/ul_pusch_trials.csv"
++    original = list(csv.DictReader(source.read_text().splitlines()))
++    result, rows = render(name, original)
++    p = prefix(name)
++    assert rows[0][p + "_value_status"] == "OK_dynamic_range_limited"
++    assert rows[0][p + "_value_reason"] == original[0]["PostEqSINRNAReason"]
++    assert float(rows[0][p + "_raw_equalizer_db"]) == float(original[0]["PostEqSINRRawEqualizer_dB"])
++    assert float(rows[0]["sinr_db" if p == "sinr" else "x_value"]) == 45
++    assert b"Limited SINR values: 1" in result["img_bytes"]
++
++
++@pytest.mark.parametrize("name", CHARTS)
++@pytest.mark.parametrize("status", ["OK", "", "available"])
++def test_unlimited_and_legacy_metadata_not_fabricated(name, status):
++    source = trial(status=status)
++    source.pop("PostEqSINRRawEqualizer_dB")
++    source["PostEqSINRNAReason"] = ""
++    result, rows = render(name, [source])
++    p = prefix(name)
++    assert rows[0][p + "_is_limited"] == "False"
++    assert rows[0][p + "_raw_equalizer_db"] == ""
++    assert rows[0][p + "_value_status"] == status
++    assert b"includes limited values" not in result["img_bytes"]
++
++
++@pytest.mark.parametrize("name", CHARTS)
++@pytest.mark.parametrize("marker", ["fallback", "synthetic", "proxy", "invalid", "unavailable", "unverified"])
++def test_rejected_preferred_value_not_rescued_by_numeric_alias(name, marker):
++    source = trial(status=marker)
++    source.update(MeasuredSINR_dB=12, SINRSource="actual_receiver_alias")
++    result, _ = render(name, [source])
++    assert result["csv_status"] == "unavailable_exact_reason"
++    assert b"includes limited values" not in result["img_bytes"]
++
++
++@pytest.mark.parametrize("name", CHARTS)
++def test_mixed_rows_preserve_separate_limited_series(name):
++    limited, normal = trial(), trial(status="OK")
++    normal.update(Slot=11, PostEqSINR_dB=20, PostEqSINRNAReason="")
++    result, rows = render(name, [limited, normal])
++    assert [r[prefix(name) + "_is_limited"] for r in rows] == ["True", "False"]
++    assert b"Limited SINR values: 1" in result["img_bytes"]
++
++
++@pytest.mark.parametrize("name", CHARTS)
++def test_configured_snr_and_raw_estimate_are_not_coordinate_substitutes(name):
++    source = trial()
++    source.pop("PostEqSINR_dB")
++    source.update(ConfiguredSNR_dB=45, SNR_dB=45, EVM_rms=0.001)
++    result, _ = render(name, [source])
++    assert result["csv_status"] == "unavailable_exact_reason"
++
++
++def test_snr_chart_does_not_inherit_unused_sinr_limit():
++    source = trial()
++    source.update(AppliedAWGNSNR_dB=60, AppliedAWGNSNRSource="actual_noise_calibration")
++    result, rows = render("throughput vs SNR", [source])
++    assert float(rows[0]["x_value"]) == 60
++    assert "x_is_limited" not in rows[0]
++    assert b"includes limited values" not in result["img_bytes"]
++
++
++@pytest.mark.parametrize("name", CHARTS)
++def test_generic_source_alias_cannot_hide_proxy_provenance(name):
++    source = trial(status="OK")
++    source.pop("PostEqSINRSource")
++    source["SINRSource"] = "evm_proxy"
++    result, _ = render(name, [source])
++    assert result["csv_status"] == "unavailable_exact_reason"
++
++
++@pytest.mark.parametrize("name", CHARTS)
++def test_selected_alternative_owns_its_metadata(name):
++    source = trial()
++    source.update(PostEqSINR_dB="NaN", MeasuredTrialSINR_dB=12,
++                  MeasuredTrialSINRSource="actual_trial_receiver",
++                  MeasuredTrialSINRValueStatus="OK", MeasuredTrialSINRNAReason="")
++    result, rows = render(name, [source])
++    p = prefix(name)
++    assert rows[0][p + "_value_status"] == "OK"
++    assert rows[0][p + "_value_reason"] == ""
++    assert rows[0][p + "_raw_equalizer_db"] == ""
++    assert b"includes limited values" not in result["img_bytes"]

@@ -1,0 +1,18 @@
+{
+  "scope": "isolated_python_candidate_replot_of_retained_component_evidence",
+  "integrated_into_runtime": false,
+  "full_run_qualification": false,
+  "source_path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\projected_ul_late_uci_capture_01\\air_interface\\csv\\ul_pusch_trials.csv",
+  "source_sha256": "a7caa5f7d2a87f8dabb1b46bd5750c9c8619114fbe52f41e2aca23095c39317e",
+  "producer_sha256": {
+    "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_sinr_plot_candidate_20260913\\apps\\lls_contract_materializer.py": "d1438f50438db1a05c93a085fbc8aae36dba8eafdb064269121289be9ca27a64",
+    "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_sinr_plot_candidate_20260913\\apps\\lls_radio_measurement_plots.py": "c661c93170a54da82a8053932fe62748ccdb965566bd83756ba8c78da42f29c1",
+    "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_sinr_plot_candidate_20260913\\render_candidate.py": "32be53cc42a68236e53974db31048775ee1892b4cb1d72e14248ae01180c09fa"
+  },
+  "artifact_sha256": {
+    "throughput_vs_sinr.csv": "2962de452cef4f10694f8e4b032293c68304c606deddf81c9dd1bbeaafad09d2",
+    "throughput_vs_sinr.png": "9546bcfdaff180571d2bfc3a57959e26b0fbb00a156b9d0ecd86894de914a57f",
+    "pusch_bler_vs_measured_sinr.csv": "dc8163939e35744e75952b38390310a592e07b8ebd5626418d08fcf8b0b0bcd0",
+    "pusch_bler_vs_measured_sinr.png": "88837d63b5b762cf3132622401be18e60bd7ce5d732cc588c972e3090de28b37"
+  }
+}
