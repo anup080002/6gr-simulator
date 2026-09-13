@@ -1,0 +1,204 @@
+{
+  "BaseCommit": "ce050209c90b6a6150ea0af48daeda37b2b662b0",
+  "Files": [
+    {
+      "Path": "docs/lls/csi_clock_fixture_and_constellation_publication_20260913.md",
+      "Bytes": 6636,
+      "SHA256": "A3E703AD587A49BA51136C352DC2D0CDE727EFB00B307875558BBB898514E55F"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/checkpoint_plot_lineage.csv",
+      "Bytes": 3577,
+      "SHA256": "46074AEBF0C17230F84BD85BB599D74FD5018B6FAAAA9DCC5CA994DA5B34EC53"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/post_equalization_constellation.csv",
+      "Bytes": 839940,
+      "SHA256": "D46AA1381FCA0A82407B6DE975C8E92FCE068A3AF4889F0B63EC3F891F955A06"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/precoder_matrix_integrity.csv",
+      "Bytes": 1663,
+      "SHA256": "8BC09A0C69707675A189095C85B10C08A1EB3E8194E4DD521BE1313BE4BC6326"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/precoder_ports_and_layers.csv",
+      "Bytes": 1663,
+      "SHA256": "D64A6C5F33A8B50978DF3093F384574BB11DDD742B7BD9479373D8E391508A6F"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/pusch_bler_vs_measured_sinr.csv",
+      "Bytes": 510,
+      "SHA256": "1E4E44CFDAAC9455E6F6642E408ED81E8A3ED54C3B2B71397BA5B8BCB9967990"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/pusch_evm_per_symbol.csv",
+      "Bytes": 6689,
+      "SHA256": "4D866E962F65BF8555D995676FD0B56666302DD77943E6349081C38053EB4F33"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/pusch_window_carrier_rssi_timeline.csv",
+      "Bytes": 1848,
+      "SHA256": "989D1E45FB1F523C49A76E39873ED1E1479353AE186454EFD2230F31FAF9D8CC"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/reported_versus_applied_pmi.csv",
+      "Bytes": 1665,
+      "SHA256": "82201F81C55A46ACDE1E2BD8D1A54FEC178BF6F3C01232C73A5F7DA03DB895A6"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/throughput_vs_sinr.csv",
+      "Bytes": 728,
+      "SHA256": "8D4B09B2E1B86362322AD8A74C60ACDAFC5072BE5354A41E478F195EB9E7200A"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/csv/throughput_vs_snr.csv",
+      "Bytes": 518,
+      "SHA256": "A5C2A864559DDC9AA46612B1A084C6CC3C71C4F4D4503FDA7852492A60C2FC17"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/post_equalization_constellation.png",
+      "Bytes": 47126,
+      "SHA256": "FE5D7DB0C41413E82FE6B4E43C4ECE61875EE3BED52E371A4142D12406DEDFF6"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/precoder_matrix_integrity.png",
+      "Bytes": 38036,
+      "SHA256": "C161302DB2E40EDAB0512371D4B7082D498BDDECEB14A5466B4CA0D5DC289C7F"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/precoder_ports_and_layers.png",
+      "Bytes": 49280,
+      "SHA256": "3E75DB606314DB923D68733CCD7A2F27798F5481EBF289976B2B35A8A27349E9"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/pusch_bler_vs_measured_sinr.png",
+      "Bytes": 52173,
+      "SHA256": "24646E7B58415690DE8C325B2F1F01CB72EC7AEA3BC007D22F07BE4C4A7D505C"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/pusch_evm_per_symbol.png",
+      "Bytes": 57313,
+      "SHA256": "36AB406B48F19926001B8D6D99041473F0C3EA3F5FF520200F0780585C618614"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/pusch_window_carrier_rssi_timeline.png",
+      "Bytes": 53823,
+      "SHA256": "9724C2C43F6BC7E37AC8926D291E853BABE8A8D4B86B246952CE5D43AF4962AE"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/reported_versus_applied_pmi.png",
+      "Bytes": 54528,
+      "SHA256": "3B9F3EC62B92394DE9C136A529B906FB74A140CF49199EA04514A9E291628D15"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/throughput_vs_sinr.png",
+      "Bytes": 56045,
+      "SHA256": "ABD9E226C5423FF2F53727B96799D23B77450220588C6E3FDCF9DBE5AA0E2B14"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/image/throughput_vs_snr.png",
+      "Bytes": 56549,
+      "SHA256": "FEEADDCD7EF2735AA588A831588DC89B1C638E2C0245E612C1DA945771ACB814"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/manifest.json",
+      "Bytes": 15356,
+      "SHA256": "D641902DE6272A9DA85C9A293A8D64854D63FA2CA79CCB9513D8F3DD37CA85BC"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/sources/air_interface/csv/ul_constellation_samples.csv",
+      "Bytes": 3446951,
+      "SHA256": "6412E743E6E0484D49799F913DC5016D214A0292DC7D2572C75E6A3C8C9E49B0"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584/sources/air_interface/csv/ul_pusch_trials.csv",
+      "Bytes": 33474,
+      "SHA256": "35B9B4D61724B89C3FA650AF3E886FB32297DCA8FEB47F7ACD5B83C789147D9B"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_01/reports/live_measurements/latest.json",
+      "Bytes": 15356,
+      "SHA256": "D641902DE6272A9DA85C9A293A8D64854D63FA2CA79CCB9513D8F3DD37CA85BC"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/constellation_publication_lineage_audit_01.json",
+      "Bytes": 14574,
+      "SHA256": "1835640198CC6E8D736F141A724426F64B61BE36BAF9D2C4377EB8852F81EDA6"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csi_runtime_clock_fixture_tests_01.txt",
+      "Bytes": 333,
+      "SHA256": "D80B269ABEDDDCFC88ADED6D9E4B70CECCD2E5C924B2DA8F9A112A6DC3750DFC"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/live_constellation_tests_01.xml",
+      "Bytes": 13932,
+      "SHA256": "25C560A80A5E9BEA144C35E2C2EDC00CC90D115C55E69675726DA5616D5BDC4A"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/live_constellation_tests_02.xml",
+      "Bytes": 13932,
+      "SHA256": "5CB061E418483345BCE76D9E01D012F5DCFEC81D5011B9824D76EFE894F71756"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/live_constellation_tests_03.xml",
+      "Bytes": 13932,
+      "SHA256": "B7ED02F20AE5E79FDAED86569AABCB8EB265F7800C846CCCE381D45EF10D56E1"
+    },
+    {
+      "Path": "tests/test_live_constellation_publication.py",
+      "Bytes": 4251,
+      "SHA256": "D9C0DA8AD566A5CF3CC87DB1B28F7A120BEB087E15833C3E237256B61BBE367A"
+    },
+    {
+      "Path": "apps/lls_contract_materializer.py",
+      "Bytes": 720789,
+      "SHA256": "3A508BABDEB6B5B0112AB7298BC039BAEFB8D7E206480BDDE7EE75D183597637"
+    },
+    {
+      "Path": "docs/lls/csirs_calendar_and_remaining_gates_20260913.md",
+      "Bytes": 9919,
+      "SHA256": "587A74B96DDE0B3C3022286B2C4953FFAA83964987E1A892852EF8932A0EAD4D"
+    },
+    {
+      "Path": "docs/lls/true_lls_engineering_plan.md",
+      "Bytes": 8100,
+      "SHA256": "81A7DDB29F5EAC95EC2FF7059602864C78ADFD8F9C49FF46C750D56262576329"
+    },
+    {
+      "Path": "scripts/publish_lls_live_csv_plots.py",
+      "Bytes": 9210,
+      "SHA256": "1EAB665B295563D8EE2BEBE616C7348C0C8CE8E1F9E6FEFC55FABA8F8B9D3C15"
+    },
+    {
+      "Path": "tests/testCSIRuntimeExecution.m",
+      "Bytes": 27504,
+      "SHA256": "3C288809396E3AA772F6D6324F228634EAA08886BE9493A2630A461833EC3F0D"
+    }
+  ],
+  "Status": "SCOPED_REPAIRS_TESTED_FULL_BASELINE_HELD",
+  "Tests": {
+    "Matlab": {
+      "log": "csi_runtime_clock_fixture_tests_01.txt",
+      "exit_code": 0,
+      "tests": 3
+    },
+    "Python": {
+      "receipt": "live_constellation_tests_03.xml",
+      "exit_code": 0,
+      "tests": 91,
+      "failures": 0
+    },
+    "ComponentPlotLineage": {
+      "receipt": "constellation_publication_lineage_audit_01.json",
+      "plots": 9,
+      "failures": 0,
+      "scope": "post_run_diagnostic_preview_not_final_run"
+    }
+  },
+  "PlannerCompanionPatchApplied": false,
+  "Full58SlotRunStarted": false,
+  "Pushed": false,
+  "OriginalCapturesDeleted": false
+}

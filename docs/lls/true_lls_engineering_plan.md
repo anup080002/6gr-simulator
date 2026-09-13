@@ -4,6 +4,11 @@ This plan is for rebuilding the scenario path as a measured PHY/MAC execution pa
 
 ## Current 12 dB qualification checkpoint (2026-09-13)
 
+Latest follow-up: [CSI clock fixture correction and constellation publication](csi_clock_fixture_and_constellation_publication_20260913.md)
+closes the reproduced test-fixture clock mismatch and adds source-bound
+constellation PNG publication. The source-editor/planner and other mandatory
+baseline gates remain open; there has been no new full 58-slot validation.
+
 The full 58-slot validation is held. Current evidence and mandatory remaining
 work now include [CSI-RS calendar repair and readiness](csirs_calendar_and_remaining_gates_20260913.md).
 Earlier scoped work is tracked in [special-slot scheduler/TRS repair](special_slot_scheduler_trs_20260913.md)

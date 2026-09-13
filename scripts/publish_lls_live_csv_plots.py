@@ -20,7 +20,7 @@ import lls_radio_measurement_plots as radio
 from regenerate_lls_rasters_from_csv import io_path
 
 CHARTS = radio.CHARTS + ("throughput vs SINR", "PDSCH EVM per symbol", "PUSCH EVM per symbol",
-                       "frame/slot/symbol occupancy timeline")
+                       "post-equalization constellation", "frame/slot/symbol occupancy timeline")
 SOURCES = tuple(dict.fromkeys(radio.SOURCE_PATHS + (
     "reports/csv/live_re_allocation_snapshot.csv",
     "air_interface/csv/dl_constellation_samples.csv",

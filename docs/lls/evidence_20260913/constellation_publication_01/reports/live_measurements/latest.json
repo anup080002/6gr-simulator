@@ -1,0 +1,245 @@
+{
+  "status": "post_run_diagnostic_preview",
+  "run_folder": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\constellation_publication_01",
+  "source_run_folder": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\gnb_feedback_ul_constellation_03",
+  "snapshot": "3a841e1865e5dcff6095b9dd610d49f2a6021e6e8957298c37486a64aea88584",
+  "created_utc": "2026-09-13T03:25:06.986075+00:00",
+  "source_sha256": {
+    "air_interface/csv/ul_pusch_trials.csv": "35b9b4d61724b89c3fa650af3e886fb32297dca8feb47f7acd5b83c789147d9b",
+    "air_interface/csv/ul_constellation_samples.csv": "6412e743e6e0484d49799f913dc5016d214a0292dc7d2572c75e6a3c8c9e49b0"
+  },
+  "producer_sha256": {
+    "scripts/publish_lls_live_csv_plots.py": "1eab665b295563d8ee2bebe616c7348c0c8ce8e1f9e6fefc55faba8f8b9d3c15",
+    "apps/lls_contract_materializer.py": "3a508babdeb6b5b0112ab7298bc039baefb8d7e206480bdde7ee75d183597637",
+    "apps/lls_radio_measurement_plots.py": "718c193ce689d1773c96f6954a7e86d4acb7b89ee8650dad64c9681e041e0a73",
+    "apps/lls_resource_occupancy_plots.py": "e0f4ed50a695488283cf5993a2d7d7c0b46501e498ad7ed624f43f36585d8723",
+    "scripts/regenerate_lls_rasters_from_csv.py": "efe4d4bd2afc7636c61bbcd8d2d9e48af57544a7358d860269a2d9225e3ab766"
+  },
+  "artifact_sha256": {
+    "csv/pusch_window_carrier_rssi_timeline.csv": "989d1e45fb1f523c49a76e39873ed1e1479353ae186454efd2230f31faf9d8cc",
+    "image/pusch_window_carrier_rssi_timeline.png": "9724c2c43f6bc7e37ac8926d291e853babe8a8d4b86b246952ce5d43af4962ae",
+    "csv/precoder_matrix_integrity.csv": "8bc09a0c69707675a189095c85b10c08a1eb3e8194e4dd521be1313be4bc6326",
+    "image/precoder_matrix_integrity.png": "c161302db2e40edab0512371d4b7082d498bddeceb14a5466b4ca0d5dc289c7f",
+    "csv/precoder_ports_and_layers.csv": "d64a6c5f33a8b50978df3093f384574bb11ddd742b7bd9479373d8e391508a6f",
+    "image/precoder_ports_and_layers.png": "3e75db606314db923d68733ccd7a2f27798f5481ebf289976b2b35a8a27349e9",
+    "csv/reported_versus_applied_pmi.csv": "82201f81c55a46acde1e2bd8d1a54fec178bf6f3c01232c73a5f7da03db895a6",
+    "image/reported_versus_applied_pmi.png": "3b9f3ec62b92394de9c136a529b906fb74a140cf49199ea04514a9e291628d15",
+    "csv/throughput_vs_snr.csv": "a5c2a864559ddc9aa46612b1a084c6cc3c71c4f4d4503fda7852492a60c2fc17",
+    "image/throughput_vs_snr.png": "feeaddcd7ef2735aa588a831588dc89b1c638e2c0245e612c1da945771acb814",
+    "csv/pusch_bler_vs_measured_sinr.csv": "1e4e44cfdaac9455e6f6642e408ed81e8a3ed54c3b2b71397ba5b8bcb9967990",
+    "image/pusch_bler_vs_measured_sinr.png": "24646e7b58415690de8c325b2f1f01cb72ec7aea3bc007d22f07be4c4a7d505c",
+    "csv/throughput_vs_sinr.csv": "8d4b09b2e1b86362322ad8a74c60acdafc5072be5354a41e478f195eb9e7200a",
+    "image/throughput_vs_sinr.png": "abd9e226c5423ff2f53727b96799d23b77450220588c6e3fdcf9dbe5aa0e2b14",
+    "csv/pusch_evm_per_symbol.csv": "4d866e962f65bf8555d995676fd0b56666302dd77943e6349081c38053eb4f33",
+    "image/pusch_evm_per_symbol.png": "36ab406b48f19926001b8d6d99041473f0c3ea3f5ff520200f0780585c618614",
+    "csv/post_equalization_constellation.csv": "d46aa1381fca0a82407b6de975c8e92fce068a3af4889f0b63ec3f891f955a06",
+    "image/post_equalization_constellation.png": "fe5d7db0c41413e82fe6b4e43c4ece61875ee3bed52e371a4142d12406dedff6",
+    "sources/air_interface/csv/ul_pusch_trials.csv": "35b9b4d61724b89c3fa650af3e886fb32297dca8feb47f7acd5b83c789147d9b",
+    "sources/air_interface/csv/ul_constellation_samples.csv": "6412e743e6e0484d49799f913dc5016d214a0292dc7d2572c75e6a3c8c9e49b0",
+    "checkpoint_plot_lineage.csv": "46074aebf0c17230f84bd85bb599d74fd5018b6faaaa9dcc5ca994da5b34ec53"
+  },
+  "charts": [
+    {
+      "name": "PRACH EVM",
+      "source_paths": "air_interface/csv/prach_evm_samples.csv|air_interface/csv/control_evm_samples.csv",
+      "source_row_count": 0,
+      "note": "Independent paired control samples with explicit alignment/reference. No conversion from SINR, detection score, or pilot-fit residual. Not RF conformance EVM.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "SSB EVM",
+      "source_paths": "air_interface/csv/ssb_evm_samples.csv|air_interface/csv/control_evm_samples.csv",
+      "source_row_count": 0,
+      "note": "Independent paired control samples with explicit alignment/reference. No conversion from SINR, detection score, or pilot-fit residual. Not RF conformance EVM.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI-RS EVM",
+      "source_paths": "air_interface/csv/csi_rs_evm_samples.csv|air_interface/csv/control_evm_samples.csv",
+      "source_row_count": 0,
+      "note": "Independent paired control samples with explicit alignment/reference. No conversion from SINR, detection score, or pilot-fit residual. Not RF conformance EVM.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI CQI timeline",
+      "source_paths": "air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 0,
+      "note": "CSI reports from received reference signals and actual delivery events. Selected-PMI receiver-objective SINR is an estimated scheduling input, not raw CSI-RS SINR or a decoded PDSCH measurement. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI RI timeline",
+      "source_paths": "air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 0,
+      "note": "CSI reports from received reference signals and actual delivery events. Selected-PMI receiver-objective SINR is an estimated scheduling input, not raw CSI-RS SINR or a decoded PDSCH measurement. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI PMI components timeline",
+      "source_paths": "air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 0,
+      "note": "CSI reports from received reference signals and actual delivery events. Selected-PMI receiver-objective SINR is an estimated scheduling input, not raw CSI-RS SINR or a decoded PDSCH measurement. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI SINR timeline",
+      "source_paths": "air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 0,
+      "note": "CSI reports from received reference signals and actual delivery events. Selected-PMI receiver-objective SINR is an estimated scheduling input, not raw CSI-RS SINR or a decoded PDSCH measurement. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI-RS RSSI timeline",
+      "source_paths": "air_interface/csv/csi_rs_trials.csv",
+      "source_row_count": 0,
+      "note": "Actual CSI-RS antenna-plane measurements; every receive branch and resource retained. RSSI uses only the recorded bandwidth and CSI-RS symbol window.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI-RS RSRQ timeline",
+      "source_paths": "air_interface/csv/csi_rs_trials.csv",
+      "source_row_count": 0,
+      "note": "Actual CSI-RS antenna-plane measurements; every receive branch and resource retained. RSSI uses only the recorded bandwidth and CSI-RS symbol window.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "PDSCH-window carrier RSSI timeline",
+      "source_paths": "air_interface/csv/dl_pdsch_trials.csv",
+      "source_row_count": 0,
+      "note": "Actual antenna-plane carrier energy over received data symbols, per branch. Includes noise/interference; no oracle CFO correction. Not a UE NR-RSSI report.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "PUSCH-window carrier RSSI timeline",
+      "source_paths": "air_interface/csv/ul_pusch_trials.csv",
+      "source_row_count": 2,
+      "note": "Actual antenna-plane carrier energy over received data symbols, per branch. Includes noise/interference; no oracle CFO correction. Not a UE NR-RSSI report.",
+      "status": "measured_checkpoint",
+      "csv": "csv/pusch_window_carrier_rssi_timeline.csv",
+      "png": "image/pusch_window_carrier_rssi_timeline.png"
+    },
+    {
+      "name": "SSB-window RSSI timeline",
+      "source_paths": "air_interface/csv/pbch_trials.csv",
+      "source_row_count": 0,
+      "note": "Actual 20-PRB/four-symbol SSB received power, including observed noise/interference, per receive branch. Not full carrier/SMTC RSSI or a UE carrier-RSSI report.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "precoder matrix integrity",
+      "source_paths": "air_interface/csv/ul_pusch_trials.csv|air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 1,
+      "note": "Requested and executed precoders stay separate. Feedback is linked only by an explicit applied source slot and prior delivery. Hash equality is not matrix-coefficient or optimality validation.",
+      "status": "measured_checkpoint",
+      "csv": "csv/precoder_matrix_integrity.csv",
+      "png": "image/precoder_matrix_integrity.png"
+    },
+    {
+      "name": "precoder ports and layers",
+      "source_paths": "air_interface/csv/ul_pusch_trials.csv|air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 1,
+      "note": "Requested and executed precoders stay separate. Feedback is linked only by an explicit applied source slot and prior delivery. Hash equality is not matrix-coefficient or optimality validation.",
+      "status": "measured_checkpoint",
+      "csv": "csv/precoder_ports_and_layers.csv",
+      "png": "image/precoder_ports_and_layers.png"
+    },
+    {
+      "name": "reported versus applied PMI",
+      "source_paths": "air_interface/csv/ul_pusch_trials.csv|air_interface/csv/csi_feedback_reports.csv",
+      "source_row_count": 1,
+      "note": "Requested and executed precoders stay separate. Feedback is linked only by an explicit applied source slot and prior delivery. Hash equality is not matrix-coefficient or optimality validation.",
+      "status": "measured_checkpoint",
+      "csv": "csv/reported_versus_applied_pmi.csv",
+      "png": "image/reported_versus_applied_pmi.png"
+    },
+    {
+      "name": "throughput vs SNR",
+      "source_paths": "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv",
+      "source_row_count": 1,
+      "note": "Scheduled TB bitrate and Delivered goodput are separate measured series. Actual noise-calibration SNR; no configured-SNR substitution or controlled sweep is claimed.",
+      "status": "measured_checkpoint",
+      "csv": "csv/throughput_vs_snr.csv",
+      "png": "image/throughput_vs_snr.png"
+    },
+    {
+      "name": "PDSCH BLER vs measured SINR",
+      "source_paths": "air_interface/csv/dl_pdsch_trials.csv",
+      "source_row_count": 0,
+      "note": "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "PUSCH BLER vs measured SINR",
+      "source_paths": "air_interface/csv/ul_pusch_trials.csv",
+      "source_row_count": 1,
+      "note": "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.",
+      "status": "measured_checkpoint",
+      "csv": "csv/pusch_bler_vs_measured_sinr.csv",
+      "png": "image/pusch_bler_vs_measured_sinr.png"
+    },
+    {
+      "name": "PUCCH BLER vs measured SINR",
+      "source_paths": "air_interface/csv/pucch_trials.csv",
+      "source_row_count": 0,
+      "note": "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "CSI-RS pilot residual",
+      "source_paths": "air_interface/csv/csi_rs_trials.csv",
+      "source_row_count": 0,
+      "note": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "NMSE vs SNR / SINR",
+      "source_paths": "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv|air_interface/csv/srs_trials.csv",
+      "source_row_count": 0,
+      "note": "An explicit executed true-channel reference and TrueChannelNMSE_dB/OracleNMSE_dB are required. Pilot-fit residuals and noise/gain ratios are not channel-estimation NMSE.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "throughput vs SINR",
+      "source_paths": "air_interface/csv/ul_pusch_trials.csv",
+      "source_row_count": 1,
+      "note": "Individual DL/UL trial observations: scheduled TB bitrate and delivered goodput. No fitted curve, no DL/UL averaging; SINR field, MCS, layers and CRC retained in CSV.",
+      "status": "measured_checkpoint",
+      "csv": "csv/throughput_vs_sinr.csv",
+      "png": "image/throughput_vs_sinr.png"
+    },
+    {
+      "name": "PDSCH EVM per symbol",
+      "source_paths": "air_interface/csv/dl_constellation_preview.csv|air_interface/csv/ul_constellation_preview.csv|air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv",
+      "source_row_count": 0,
+      "note": "No complete DL paired-sample evidence with UE/frame/slot/layer/codeword and OFDM-symbol coordinates is available.",
+      "status": "unavailable_at_checkpoint"
+    },
+    {
+      "name": "PUSCH EVM per symbol",
+      "source_paths": "air_interface/csv/ul_constellation_samples.csv",
+      "source_row_count": 3522,
+      "note": "RMS and Peak EVM from actual receiver symbols without reporter payload gain/phase fitting; average reference-power normalization within each UE/frame/slot/TB/codeword/layer bucket. Full paired-allocation coverage verified by sample/resource identities and transmitter counts. Not RF conformance EVM.",
+      "status": "measured_checkpoint",
+      "csv": "csv/pusch_evm_per_symbol.csv",
+      "png": "image/pusch_evm_per_symbol.png"
+    },
+    {
+      "name": "post-equalization constellation",
+      "source_paths": "air_interface/csv/ul_constellation_samples.csv",
+      "source_row_count": 3522,
+      "note": "Full canonical captures take precedence over aliases/previews. Receiver samples are not payload-fitted, and post-equalized data cannot substitute for pre-equalization observations.",
+      "status": "measured_checkpoint",
+      "csv": "csv/post_equalization_constellation.csv",
+      "png": "image/post_equalization_constellation.png"
+    },
+    {
+      "name": "frame/slot/symbol occupancy timeline",
+      "source_paths": "reports/csv/live_re_allocation_snapshot.csv",
+      "source_row_count": 0,
+      "note": "Executed TX RE coordinates and occupancy provenance are unavailable; slot-format capacity is not occupancy.",
+      "status": "unavailable_at_checkpoint"
+    }
+  ],
+  "png_count": 9,
+  "terminal_qualification": false
+}

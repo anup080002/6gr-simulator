@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-13-contract-v67-full-constellation-source"
+MATERIALIZER_VERSION = "2026-09-13-contract-v68-constellation-provenance-identity"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -12007,6 +12007,11 @@ def _specialized_chart_materialization(
                 for row_direction, row, source_path in preview_rows:
                     if row_direction != direction:
                         continue
+                    declared_direction = _row_text(row, "Direction", "direction").upper()
+                    if declared_direction and declared_direction != direction:
+                        raise ValueError("Constellation direction contradicts its source table")
+                    if _non_runtime_evidence_field(row):
+                        raise ValueError("Non-runtime evidence cannot become a measured constellation")
                     if chart_name == "pre-equalization constellation":
                         x_val = _row_float(row, "ReceivedReal", "RxReal")
                         y_val = _row_float(row, "ReceivedImag", "RxImag")
@@ -12019,6 +12024,8 @@ def _specialized_chart_materialization(
                             y_val = _row_float(row, "EqualizedImag")
                         else:
                             raise ValueError("Post-equalization constellation requires raw receiver samples or explicit no-payload-fit provenance")
+                    if chart_name == "post-equalization constellation" and (x_val is None or y_val is None):
+                        raise ValueError("Post-equalization constellation contains nonfinite or missing receiver samples")
                     if x_val is None or y_val is None:
                         continue
                     ref_r = _row_float(row, "ReferenceSymbolReal")
@@ -12035,6 +12042,15 @@ def _specialized_chart_materialization(
                             "y_value": y_val,
                             "reference_x": ref_r if ref_r is not None else "",
                             "reference_y": ref_i if ref_i is not None else "",
+                            "ue_index": _row_text(row, "UEIndex", "ue_id"),
+                            "frame": _row_text(row, "Frame"),
+                            "sfn": _row_text(row, "SFN"),
+                            "slot": _row_text(row, "RuntimeSlot", "Slot", "slot"),
+                            "layer_index": _row_text(row, "LayerIndex", "layer"),
+                            "codeword_index": _row_text(row, "CodewordIndex"),
+                            "modulation": _row_text(row, "Modulation", "modulation"),
+                            "sample_index": _row_text(row, "SampleIndex"),
+                            "capture_scope": _row_text(row, "CaptureScope"),
                             "source_table_logical_path": source_path,
                         }
                     )
@@ -12051,7 +12067,7 @@ def _specialized_chart_materialization(
             if panels:
                 direction_counts = Counter(str(row["direction"]) for row in csv_rows)
                 return {
-                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "x_value", "y_value", "reference_x", "reference_y", "source_table_logical_path"], csv_rows),
+                    "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", "x_value", "y_value", "reference_x", "reference_y", "ue_index", "frame", "sfn", "slot", "layer_index", "codeword_index", "modulation", "sample_index", "capture_scope", "source_table_logical_path"], csv_rows),
                     "img_bytes": _render_scatter_panels_svg(chart_name, "Uniform row-index preview across retained samples; full dataset in CSV. Grey markers: exported references.", panels, [f"dl_rows={direction_counts['DL']}", f"ul_rows={direction_counts['UL']}", "display_limit=450 samples/direction", "reference_limit=256 unique/direction"]),
                     "csv_status": "specialized_runtime_constellation_dataset",
                     "image_status": "generated_specialized_runtime_constellation_svg",
@@ -12910,6 +12926,7 @@ def _specialized_chart_materialization(
         if evm_chart is not None:
             return evm_chart
     unavailable_reasons = {
+        "post-equalization constellation": "No captured receiver equalized samples are available; no constellation is synthesized from modulation settings or EVM.",
         "pre-equalization constellation": "The run does not export raw pre-equalization I/Q sample clouds, so a pre-equalization constellation plot cannot be reconstructed honestly.",
         "pre-channel waveform": "The run does not export stage-resolved pre-channel sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",
         "post-channel waveform": "The run does not export stage-resolved post-channel sample traces, so this stage-specific waveform view cannot be reconstructed honestly.",

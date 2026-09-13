@@ -5,6 +5,11 @@ checkpoint follows [the gNB feedback repair](gnb_feedback_expectation_20260913.m
 It does not change the configured SINR, duplex pattern, channel, RF settings,
 SRS/PUSCH ports or waveform execution backend.
 
+Follow-up: [clock fixture correction and constellation publication](csi_clock_fixture_and_constellation_publication_20260913.md)
+narrows and closes the reproduced HARQ alias mismatch as a fixture error,
+with the complete CSI runtime regression passing. The planner failure below
+remains unresolved; historical failed receipts have not been overwritten.
+
 ## Reproduced cause and implementation
 
 `sixgr.phy.refsig.csirs` previously returned an always-active Toolbox resource

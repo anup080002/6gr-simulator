@@ -1,0 +1,4 @@
+EXECUTED_HARQ_CLOCK_PASS slots=5 guards=20 includes_sfn_wrap
+RESOLVE_WAVEFORM_GRANT_CLOCK_PASS slots=1,3,6,21 explicit control0/execution1
+[TR38901Plus] Resolved config: Scenario=UrbanMacro Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=1
+CSI_RUNTIME_CLOCK_FIXTURE_TESTS_PASS
