@@ -30,6 +30,11 @@ TDRA policy or gate was changed.
 
 ## Validation at this checkpoint
 
+Follow-up: the complete five-test focused batch subsequently passed with
+exit 0. See `projected_data_output_review_20260913.md` for final timings,
+retained CSV/PNG evidence, independent checks and an open SINR plot-provenance
+defect. The bullets below retain the earlier checkpoint chronology.
+
 - `git diff --check`: passed.
 - Beam CSV/provenance/rendering Python tests: 14 passed. These use previously
   retained captures; they do not qualify the new MATLAB projection path.

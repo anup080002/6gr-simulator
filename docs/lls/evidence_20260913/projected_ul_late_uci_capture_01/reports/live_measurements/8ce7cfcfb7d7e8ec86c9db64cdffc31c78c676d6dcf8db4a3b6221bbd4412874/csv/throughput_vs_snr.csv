@@ -1,0 +1,2 @@
+run_id,chart_name,direction,ue_index,frame,slot,cell_id,source_table_logical_path,source_row_index,AppliedAWGNSNR_dB,Throughput_Mbps,AppliedSNR_dB,Goodput_Mbps,x_value,x_source_field,x_source,metric_value,metric_source_field,metric_reference_source,mcs,layers,format,crc_pass,noise_operating_mode,value_status
+tpe948456c_c17b_448e_b898_4976ed1e6683,throughput vs SNR,UL,1,1,10.0,,air_interface/csv/ul_pusch_trials.csv,1,60.0,2.152,,2.152,60.0,AppliedAWGNSNR_dB,,2.152,Goodput_Mbps,,4,1,,1,standalone_awgn_snr_argument,available

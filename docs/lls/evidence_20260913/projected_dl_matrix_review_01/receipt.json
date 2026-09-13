@@ -1,0 +1,26 @@
+{
+  "source_artifacts": {
+    "weights": {
+      "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\projected_dl_matrix_capture_01\\applied_data_precoder_weights.csv",
+      "sha256": "9b90445b70e1b77b81c7aa068202e5b283e1a05ed361c4de105732ec299e13f9",
+      "rows": 4
+    },
+    "patterns": {
+      "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\projected_dl_matrix_capture_01\\applied_data_precoder_patterns.csv",
+      "sha256": "f221b70455725642e5db3628664825d67f26d9d5b9310316fcbf2ad592c37964",
+      "rows": 5402
+    }
+  },
+  "selected_transmission_prg_group_layer": [
+    "8a0ee3191edb94d7717b38491a8ec5ce7140f7ebba0bc746cc756f97e647f1b8",
+    0,
+    0,
+    0
+  ],
+  "matrix_sha256": "b1e9e43567946d195d07e49858285f62b5e552b9c9c228beb948cb0d5ef85b28",
+  "png_sha256": "67c2570fbff65b7623351f61c6ecc00352f1ed21da8a1d2f92a8ee4390bcc83c",
+  "reference_plane": "physical_element_data_grid_before_node_rf",
+  "coordinate_frame": "local_array_before_runtime_orientation",
+  "over_the_air_measurement": false,
+  "full_run_qualification": false
+}

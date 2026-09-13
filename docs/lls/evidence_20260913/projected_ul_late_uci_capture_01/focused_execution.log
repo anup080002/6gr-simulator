@@ -1,0 +1,58 @@
+[PASS] testGeometryMasterRuntimeAuthority (50.76s)
+    AbsoluteSlot0    DLSymbolStart    DLNumSymbols    IsSpecialSlot    LegalConfiguredTDRAExists    BudgetPRBs    SelectedStart    SelectedLength    SelectionMatchesLegalCatalogRow    DCITDRAIndex    UnavailableReason                                    EvidenceScope                                
+    _____________    _____________    ____________    _____________    _________________________    __________    _____________    ______________    _______________________________    ____________    _________________    _____________________________________________________________________________
+
+          0                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          1                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          2                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          3                0               10             true                   true                   25              2                 8                       true                       1                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          5                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          6                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          7                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          8                0               10             true                   true                   25              2                 8                       true                       1                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+
+BASELINE_DL_TDRA_BUDGET_PASS
+[PASS] testBaselineDLTDRABudget (21.18s)
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=0.12848147185 root=C:\Users\anup0\AppData\Local\Temp\tpe948456c_c17b_448e_b898_4976ed1e6683
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples     EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    _________    _____________
+
+      "UL"        10                -10.704                   -10.704                 90             0.0012848         45      
+
+SHARED_PUSCH_LATE_UCI_DELIVERY_PASS: actual slot-10 reception delivered in slot 11.
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tpb7845fe8_6795_4560_8db8_48d441283e02
+[PASS] testSharedPUSCHLateUCIDelivery (226.32s)
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=7 process=2 CRC=1 sample=53767 noise=1e-13
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=0.12455164722 root=C:\Users\anup0\AppData\Local\Temp\tpd044f3cc_5b44_4c98_b4f5_e6457c474e80
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples     EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    _________    _____________
+
+      "UL"        10                -10.182                   -10.182                 90             0.0012455         45      
+
+SHARED_PUSCH_LATE_CSI_DELIVERY_PASS: measured CSI-RS report retained across actual PUSCH and late delivery.
+SHARED_PUSCH_LATE_UCI_DELIVERY_PASS: actual slot-10 reception delivered in slot 11.
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tpbb639df5_7fa1_460d_864c_7aef229b9ae3
+[PASS] testSharedPUSCHLateCSIDelivery (189.15s)
+SHARED_DATA_PHYSICAL_QUEUE_PASS: TDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+EXECUTED_DATA_PRECODER_EVIDENCE_PASS transmissions=2 weights=4 patterns=5402 folder=C:\Users\anup0\AppData\Local\Temp\tp3b7b548f_d036_4fda_892f_ca22fe56477d
+[PASS] testExecutedDataPrecoderEvidence (70.11s)
+Slowest 5 test(s):
+   1. testSharedPUSCHLateUCIDelivery (226.32s)
+   2. testSharedPUSCHLateCSIDelivery (189.15s)
+   3. testExecutedDataPrecoderEvidence (70.11s)
+   4. testGeometryMasterRuntimeAuthority (50.76s)
+   5. testBaselineDLTDRABudget (21.18s)
+
+ans = 
+
+  struct with fields:
+
+                  ok: 1
+             results: [5×1 struct]
+      selected_tests: {5×1 cell}
+    total_duration_s: 557.5637
+
