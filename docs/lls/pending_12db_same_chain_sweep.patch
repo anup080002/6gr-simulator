@@ -1,0 +1,41 @@
+diff --git a/simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml b/simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml
+--- a/simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml
++++ b/simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml
+@@ -1,15 +1,15 @@
+ inherits:
+-  - ./lls_causal_access_to_data_wiring_tdd_short.yaml
++  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+ 
+ meta:
+   scenario_id: lls_causal_access_to_data_wiring_tdd_short_snr_sweep
+   description: >
+-    Eight-point configured-SNR diagnostic using the same causal TDD shared
++    Nine-point configured-SNR diagnostic using the same causal TDD shared
+     waveform, access, scheduler, DL, UL, CSI, SRS, TRS, beam, HARQ and AMC
+-    chain as the bounded 12 dB gate. Each point starts with independent link
++    chain and continuous IQ as the 12 dB gate. Each point starts with independent link
+     and initial-access state. This is regression evidence, not a statistically
+     qualified BLER publication campaign.
+-  version: "1.0.0"
++  version: "1.1.0"
+   owner: sixgr
+   research_class: baseline_benchmark
+   maturity_tag: regression
+@@ -25,7 +25,7 @@
+ 
+ simulation:
+   snr_db: 0
+-  snr_sweep_offsets_db: [-30, -20, -10, 0, 10, 20, 30, 40]
++  snr_sweep_offsets_db: [-30, -20, -10, 0, 10, 12, 20, 30, 40]
+   reference_sweep_enabled: false
+   adaptive_sweep_enabled: false
+ 
+@@ -34,7 +34,7 @@
+     enabled: true
+     state_policy: independent_link_state_per_point
+     initial_access_state_policy: independent_per_point
+-    values_db: [-30, -20, -10, 0, 10, 20, 30, 40]
++    values_db: [-30, -20, -10, 0, 10, 12, 20, 30, 40]
+ 
+ output:
+   profile: lls_causal_access_to_data_wiring_tdd_short_snr_sweep

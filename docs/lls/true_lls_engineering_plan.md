@@ -4,6 +4,14 @@ This plan is for rebuilding the scenario path as a measured PHY/MAC execution pa
 
 ## Current 12 dB qualification checkpoint (2026-09-13)
 
+Current priority and acceptance plan:
+[12 dB measurement closure and lossless consolidation](12db_measurement_closure_plan_20260913.md).
+The older CSI/typed-consumer/vector patches below have since been applied;
+the remaining receiver/HARQ, measurement, artifact and validation gates are
+listed in the new plan. The nine-point same-baseline sweep and SINR plotting
+repairs remain preserved candidates while live suites use unchanged sources.
+The following entries are historical checkpoints, not the current editing status.
+
 Latest follow-up: [Type-2 HARQ repair and source-editor block](type2_harq_repair_and_editor_block_20260913.md)
 implements and tests scalar-TB DAI chronology/gap/wrap handling, but the typed
 runtime handoff fails and two vector-manifest hashes remain stale because
