@@ -1,6 +1,10 @@
 classdef PUCCHConfigBuilder
     %PUCCHCONFIGBUILDER Separate causal resource plans from transmit state.
     methods (Static)
+        function rrc=receiverConfiguration(cfg,ueData)
+            % Installed resource configuration only; no report or UE TX state.
+            rrc=localRRC(cfg,ueData);
+        end
         function out=planHARQ(cfg,ueData,ack,frame)
             out=localPlan(cfg,ueData,ack,int8([]),int8([]),frame,true);
         end
