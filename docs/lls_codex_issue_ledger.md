@@ -6,6 +6,18 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [PUCCH detector YAML checkpoint](lls/pucch_detector_yaml_20260913.md)
+wires and validates format-dependent thresholds through the actual shared
+receiver and trial/grant exports. Paired retained-IQ replay reduces any
+false detections from 60/64 to 3/64 and false ACK bits from 34/64 to 3/64;
+this **does not establish the 1% DTX-to-ACK requirement**. Independent
+baseline-array/RF ROC qualification and other-format metric repair remain
+mandatory. Focused final-source MATLAB and 122 Python checks pass. A direct
+receiver-file edit and self-contained legacy YAML edit were refused; shared
+execution rejects missing policy instead of inventing one. The inherited
+12 dB YAML is configured, but its complete run remains held along with the
+existing allocator, missed-DCI, HARQ/timing and publication gates.
+
 The [received ACK/NACK/DTX checkpoint](lls/received_harq_outcomes_20260913.md)
 repairs PUCCH's Boolean-DTX collapse, preserves PUSCH feedback outcomes,
 separates HARQ NACK/DTX counters and excludes unusable UCI from runtime and

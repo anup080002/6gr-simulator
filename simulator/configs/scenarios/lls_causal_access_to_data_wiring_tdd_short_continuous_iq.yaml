@@ -17,6 +17,13 @@ meta:
 run_control:
   continuous_raw_iq_capture_enable: true
 
+# Receiver implementation settings, not universal 3GPP constants. Format 0
+# uses normalized correlation; Formats 1-4 still need separate metric/ROC
+# qualification and retain their existing energy-aware thresholds.
+pucch:
+  detection_threshold_format0_one_symbol: 0.49
+  detection_threshold_format0_two_symbols: 0.42
+
 # Explicit LLS higher-layer initialization; not a simulated MAC CE.
 # Type-A average-delay transfer is verified at the PDSCH DM-RS receiver.
 mimo:

@@ -3,7 +3,8 @@
     "./top_level_required_sections_01.yaml",
     "./top_level_required_sections_02.yaml",
     "./top_level_required_sections_03.yaml",
-    "./processing_chains.yaml"
+    "./processing_chains.yaml",
+    "../control/pucch_receiver_thresholds.yaml"
   ],
   "meta": {
     "scenario_id": "global_default",

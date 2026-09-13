@@ -1680,6 +1680,22 @@ cfg.phy.pucch.enable = logical(s.control.pucch_enabled);
 cfg.phy.pucch.calibrationFormatHint = double(s.control.pucch_format);
 cfg.phy.pucch.format = double(s.control.pucch_format);
 cfg.phy.pucch.assignmentMode = "rrc_procedure_state";
+detectorFields=["detection_threshold_format0_one_symbol", ...
+    "detection_threshold_format0_two_symbols","detection_threshold_format1", ...
+    "detection_threshold_format2","detection_threshold_format3","detection_threshold_format4"];
+% Absence is not a configured detector. Keep unrelated PHY/config consumers
+% usable; the shared PUCCH execution boundary requires a complete policy.
+% Never supply hidden defaults to a self-contained scenario missing fields.
+if isfield(s,'pucch') && any(isfield(s.pucch,cellstr(detectorFields)))
+for detectorField=detectorFields
+    threshold=localGetNested(s,"pucch."+detectorField,[]);
+    assert(isnumeric(threshold) && isscalar(threshold) && isreal(threshold) && ...
+        isfinite(threshold) && threshold>=0 && threshold<=1, ...
+        'sixgr:lls6g:config:InvalidPUCCHDetectionThreshold', ...
+        'pucch.%s must be a finite scalar in [0,1], inherited or explicitly configured.',detectorField);
+    cfg.phy.pucch.receiverDetectionThresholds.(detectorField)=double(threshold);
+end
+end
 
 cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
 cfg.phy.pusch.nLayers = double(ulLayerCount);

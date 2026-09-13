@@ -1,0 +1,3 @@
+{Error: File: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\tests\testPUCCHDetectionYAMLAuthority.m Line: 85 Column: 23
+Using identifier 'grid' as both a variable and a command is not supported. For more information, see "How MATLAB Recognizes Command Syntax".
+} 

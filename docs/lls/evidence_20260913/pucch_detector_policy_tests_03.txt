@@ -1,0 +1,12 @@
+PUCCH_YAML_DETECTOR_PASS old_false_detections=60 new_false_detections=3 / 64
+DTX_TO_ACK_BITS old=34 new=3 denominator=64 (not conformance qualification)
+{Error using assert
+pucch.detection_threshold_format0_one_symbol must be a finite scalar in [0,1], inherited or explicitly configured.
+
+Error in sixgr.lls6g.buildInternalConfig (line 1688)
+    assert(isnumeric(threshold) && isscalar(threshold) && isreal(threshold) && ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testLLSPUSCHHARQACKRuntimeFeedback (line 9)
+resolved = sixgr.lls6g.buildInternalConfig(scenario, tempdir);
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

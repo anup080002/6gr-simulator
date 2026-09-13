@@ -81,6 +81,12 @@
       "rv_sequence": {"required": true, "type": "number_list", "min_items": 1}, "retransmission_policy": {"required": true, "type": "string"}
     }},
     "pucch": {"required": true, "parameters": {
+      "detection_threshold_format0_one_symbol": {"required": false, "type": "number", "min": 0, "max": 1},
+      "detection_threshold_format0_two_symbols": {"required": false, "type": "number", "min": 0, "max": 1},
+      "detection_threshold_format1": {"required": false, "type": "number", "min": 0, "max": 1},
+      "detection_threshold_format2": {"required": false, "type": "number", "min": 0, "max": 1},
+      "detection_threshold_format3": {"required": false, "type": "number", "min": 0, "max": 1},
+      "detection_threshold_format4": {"required": false, "type": "number", "min": 0, "max": 1},
       "enabled": {"required": true, "type": "boolean"}, "formats": {"required": true, "type": "number_list", "min_items": 1},
       "harq_ack_policy": {"required": true, "type": "string"}, "sr_policy": {"required": true, "type": "string"},
       "csi_policy": {"required": true, "type": "string"}, "multiplexing_policy": {"required": true, "type": "string"},

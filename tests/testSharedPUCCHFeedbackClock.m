@@ -152,6 +152,14 @@ assert(state.DLHarq.Stats.Dtx==0 && all( ...
     replace(string(double(state.PUCCHGrantTraceTable.ObservedAck)),["0","1"],["NACK","ACK"])));
 assert(all(string(state.PUCCHGrantTraceTable.FeedbackOutcomeReason)=="decoded_uci_bit"));
 verifyPUCCHPowerExport(state.ControlTrials.PUCCH,cfg);
+thresholdField="detection_threshold_format0_two_symbols";
+if state.ControlTrials.PUCCH.PUCCHFormat~=0
+    thresholdField="detection_threshold_format"+string(state.ControlTrials.PUCCH.PUCCHFormat);
+end
+assert(state.ControlTrials.PUCCH.DetectionThreshold==cfg.phy.pucch.receiverDetectionThresholds.(thresholdField));
+assert(string(state.ControlTrials.PUCCH.DetectionThresholdSource)=="yaml.pucch."+thresholdField);
+assert(all(state.PUCCHGrantTraceTable.DetectionThreshold==state.ControlTrials.PUCCH.DetectionThreshold) && ...
+    all(string(state.PUCCHGrantTraceTable.DetectionThresholdSource)=="yaml.pucch."+thresholdField));
 assert(~state.ControlTrials.PUCCH.CRCApplicable && isnan(state.ControlTrials.PUCCH.CRCPass));
 assert(state.ControlTrials.PUCCH.PUCCHDecodeOk, ...
     'The actual Format-0 payload must decode, not just produce a failed-attempt row.');

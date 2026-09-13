@@ -14,8 +14,8 @@ addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
 addParameter(p,"SNR_dB",30,@(x) isnumeric(x)&&isscalar(x)&&isfinite(x));
 addParameter(p,"Seed",1,@(x) isnumeric(x)&&isscalar(x)&&isfinite(x));
 addParameter(p,"SignalPresent",true,@(x) islogical(x)&&isscalar(x));
-addParameter(p,"DetectionThreshold",0.2, ...
-    @(x) isnumeric(x)&&isscalar(x)&&x>=0&&x<=1);
+addParameter(p,"DetectionThreshold",[], ...
+    @(x) isempty(x)||(isnumeric(x)&&isscalar(x)&&isreal(x)&&isfinite(x)&&x>=0&&x<=1));
 addParameter(p,"DopplerHz",0,@(x) isnumeric(x)&&isscalar(x)&&x>=0);
 addParameter(p,"DelaySpreadSeconds",300e-9, ...
     @(x) isnumeric(x)&&isscalar(x)&&x>=0);
@@ -72,6 +72,14 @@ if isempty(opt.Report)
     trial.FailureReason = "missing_report";
     return;
 end
+detectorPolicy=sixgr.util.structGet(cfg,'phy.pucch.receiverDetectionThresholds',[]);
+if prepareOnly || received
+    assert(~isempty(detectorPolicy) && isempty(opt.DetectionThreshold), ...
+        'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
+        'Shared PUCCH receiver thresholds must come from resolved YAML; no argument override.');
+end
+[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
+    opt.Assignment,detectorPolicy,opt.DetectionThreshold);
 context = opt.ReceiverContext;
 if isempty(context)
     context = sixgr.phy.pucch.UCIReportContext.fromReport(opt.Report);
@@ -154,7 +162,7 @@ try
     rxArgs = {"NoiseVariance",noiseVariance, ...
         "NoiseVarianceDomain","sample", ...
         "ChannelProfile",channelMeta.Profile, ...
-        "DetectionThreshold",opt.DetectionThreshold};
+        "DetectionThreshold",detectionThreshold};
     if received && prepared.receiverNoiseMode(replay)=="received_reference_estimate"
         rxArgs=[rxArgs {"NoiseVarianceMode","received_dmrs_estimate"}];
     end
@@ -283,6 +291,7 @@ trial.AckObserved = ~isempty(decoded) && logical(decoded(1));
 trial.DTXFlag = logical(rx.DTX);
 trial.DetectionMetric = rx.DetectionMetric;
 trial.DetectionThreshold = rx.DetectionThreshold;
+trial.DetectionThresholdSource = detectionThresholdSource;
 trial.DetectionAttempted = rx.DetectionAttempted;
 trial.DetectionUsable = rx.ReceiverUsable;
 trial.ReceiverUsable = rx.ReceiverUsable;
