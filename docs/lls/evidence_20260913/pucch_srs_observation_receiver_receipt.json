@@ -1,0 +1,180 @@
+{
+  "schema_version": 2,
+  "base_commit": "d86dd096217c8736b0e10d1fa4f3eef4bf8b63b0",
+  "scope": "PUCCH practical observation receiver and separate SRS receiver/injection provenance; not shared codebook or baseline qualification",
+  "sources": [
+    {
+      "path": "+sixgr/+link/receivePUCCHObservation.m",
+      "as_executed_sha256": "7fa2c46c9b084179924628de7fa1aa62e9397fb3adad789aa11bdb5e5a92216d",
+      "git_blob_sha1": "f45c90afb4917b9e4aff37b97a513a61c39b8b71"
+    },
+    {
+      "path": "+sixgr/+link/runPUCCHWaveformTrial.m",
+      "as_executed_sha256": "28db15e54141c53eb6111a290a5f6b5d7e326e98fcb2eee5c8ced2123dfb8dc5",
+      "git_blob_sha1": "e835f0898fdd87e4ecd1cd7270ed5d16a096e82d"
+    },
+    {
+      "path": "+sixgr/+link/runSRSChannelEstimation.m",
+      "as_executed_sha256": "459d4460e64ed81c6a4224149617904efbecc7c168f0758f8d5c38474f737911",
+      "git_blob_sha1": "be7b08b9a39974de08f667dccf1716b29b34209e"
+    },
+    {
+      "path": "+sixgr/+phy/+sync/ReceivedULTimingReference.m",
+      "as_executed_sha256": "f33650329fa4ffda98e951ff76bd013fdaef92faea809d02b3a321ab1ed7657e",
+      "git_blob_sha1": "8065849ea3b55c06996d31e252a21c04811a7c54"
+    },
+    {
+      "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "as_executed_sha256": "9ae424a78daba8f24889736c602872f33a3baafbfe26d69cb4161d9db28d7948",
+      "git_blob_sha1": "e0cdda5498dcb54a1e2066d8ac930b236d2af811"
+    },
+    {
+      "path": "+sixgr/+truth/runWaveformLinkBundle.m",
+      "as_executed_sha256": "e8c563664b86934e2f7296e4f47521f69a4e79bbc8830a6b91b0836efe2df0aa",
+      "git_blob_sha1": "a4d3c8cdc37a85f468a6bf00af445fa38e926ceb"
+    },
+    {
+      "path": "tests/testPUCCHObservationReceiver.m",
+      "as_executed_sha256": "0c3cd3832c93fa751174b04de26a799d4a8f918e28963cd802c040a0a567d129",
+      "git_blob_sha1": "7c0d24a93093b2aac79535f7433d13bad9adcc72"
+    },
+    {
+      "path": "tests/testSharedPUCCHFeedbackClock.m",
+      "as_executed_sha256": "f44369da7150a5292aaab6495d65efd55a0758e127cb95260ad353372afcdf00",
+      "git_blob_sha1": "81c55609169c1149597473cf4381110010ebba7f"
+    },
+    {
+      "path": "tests/testSRSRuntimeCanonicalWidebandResource.m",
+      "as_executed_sha256": "596104d04049dcc0b2c6158d9280c8f57cff969e3e6c8f43be7dcb367ebd8737",
+      "git_blob_sha1": "f6e2b50fc5c43e957fc10942372ea517d1773f57"
+    },
+    {
+      "path": "tests/testUplinkControlStreamStages.m",
+      "as_executed_sha256": "a54eca8e7467282fc7d0ad35868cebcc26adfb2dea1b7d046eb94c80b146f2c6",
+      "git_blob_sha1": "476a71650337695e4df5252847567a7d43742a8f"
+    },
+    {
+      "path": "tests/verifyPUCCHPowerExport.m",
+      "as_executed_sha256": "d4068676f8ba10a72633e2cc3ffd386b615236adc31d13b02a8af774aeb601e6",
+      "git_blob_sha1": "30afd7c1f8122a908f22f0e3e01d3bbf4d9ffec7"
+    },
+    {
+      "path": "tests/testAll.m",
+      "as_executed_sha256": "b02348d8cdb9b904b0be7b61d6aa20ad7a8d75d38994704bc6b4ca6db374f804",
+      "git_blob_sha1": "0c6de66a1cace8f3bce7e919df622617150de2c9"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_pucch_observation_receiver_20260913_01.log",
+      "sha256": "9bde3a82bc404e9969104717b8b0c278ef78f5c276d0d6a18a9954d3b1138966",
+      "bytes": 505
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_pucch_observation_receiver_20260913_02.log",
+      "sha256": "14247572923332fcdcf2896821fb1f32d301ec6d2b90b9255aca021baa5e3685",
+      "bytes": 294
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_pucch_observation_receiver_focused_20260913_03.log",
+      "sha256": "41f96da8d0e9a7d668ac11212c3d590028ac12f35cb027b1415a1b4c9a5c0904",
+      "bytes": 2445
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_pucch_observation_staged_failure_20260913_04.log",
+      "sha256": "0d7678037811c782b387f5271c349a654c6c5f956128f5c437b2e814744bd89c",
+      "bytes": 264
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_pucch_observation_staged_repair_20260913_05.log",
+      "sha256": "d1aaf7ca1f8086ee307207dba0cc0279c9b468f334fb8f34a18494ed31edf309",
+      "bytes": 391
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_pucch_srs_provenance_final_20260913_06.log",
+      "sha256": "1d005f97f3513ae633ccefd0f06a92ca40879f77f71450100654be53361499dc",
+      "bytes": 1190
+    },
+    {
+      "path": "docs/lls/evidence_20260913/stopped_superseded_main_5b07063c_full_20260913.log",
+      "sha256": "d7d40b2c800b999691c4a7700032f5a56f5a32947c33525d8bd567891e6accb1",
+      "bytes": 84215
+    },
+    {
+      "path": "docs/lls/evidence_20260913/stopped_superseded_scheduled_dai_d86dd096_full_20260913.log",
+      "sha256": "f5d38805d562752b65163d3e7c6e4215905ff885f79ea22adebd1853b1bed84e",
+      "bytes": 29931
+    },
+    {
+      "path": "docs/lls/evidence_20260913/stopped_superseded_ul_dai_7c215d65_full_20260913.log",
+      "sha256": "214537d6fd0839f9c6e489aad5d260d99799285a9ecfb7c9b6320dd9e29e10be",
+      "bytes": 29127
+    },
+    {
+      "path": "docs/lls/evidence_20260913/pucch_baseline_signal_04/received_pucch.mat",
+      "sha256": "2f2d6d3417f6b346394b36b68dbc8b7df2c3dfeb2158aa2b2e7f338fc53fb895",
+      "bytes": 2217027
+    },
+    {
+      "path": "docs/lls/evidence_20260913/pucch_baseline_noise_rf_01/configuration.mat",
+      "sha256": "dc51a5e634fb679ed64a501987608963c6e71040e8d329b0b7cf37e7129a29fe",
+      "bytes": 307454
+    },
+    {
+      "path": "docs/lls/evidence_20260913/pucch_baseline_noise_rf_01/noise_trials.csv",
+      "sha256": "51c60b059bd95f41d8ca3428fe2b1307341f199bb3938c87b729e507156ad32e",
+      "bytes": 337030
+    },
+    {
+      "path": "docs/lls/evidence_20260913/pucch_baseline_noise_rf_01/noise_observations.mat",
+      "sha256": "09b4484532064268154e0669c5e348ec2917aab753573284258dbdc139d74d9d",
+      "bytes": 121043767
+    }
+  ],
+  "tests": [
+    {
+      "log": "sixgr_pucch_observation_receiver_20260913_01.log",
+      "exit_code": 1,
+      "status": "failed initial nominal-end capture guard"
+    },
+    {
+      "log": "sixgr_pucch_observation_receiver_20260913_02.log",
+      "exit_code": 0,
+      "status": "intermediate observation API component pass"
+    },
+    {
+      "log": "sixgr_pucch_observation_receiver_focused_20260913_03.log",
+      "exit_code": 1,
+      "passed": 7,
+      "failed": 1,
+      "status": "SRS source provenance assertion failed"
+    },
+    {
+      "log": "sixgr_pucch_observation_staged_failure_20260913_04.log",
+      "exit_code": 1,
+      "status": "direct diagnostic testUplinkControlStreamStages line 100"
+    },
+    {
+      "log": "sixgr_pucch_observation_staged_repair_20260913_05.log",
+      "exit_code": 0,
+      "status": "repaired staged SRS/PUCCH and shared clock pass"
+    },
+    {
+      "log": "sixgr_pucch_srs_provenance_final_20260913_06.log",
+      "exit_code": 0,
+      "passed": 4,
+      "failed": 0,
+      "status": "final combined-source focused pass"
+    }
+  ],
+  "stopped_superseded_full_revisions": [
+    "7c215d65",
+    "5b07063c",
+    "d86dd096"
+  ],
+  "stopped_jobs_qualified": false,
+  "full_regression_qualified": false,
+  "independent_shared_harq_qualified": false,
+  "baseline_12db_qualified": false,
+  "source_identity_note": "Exact as-executed working bytes and Git clean-filtered blob identities are both recorded. Windows checkout can change source line endings. Logs and retained capture inputs are byte-pinned; historical evidence is not rewritten."
+}

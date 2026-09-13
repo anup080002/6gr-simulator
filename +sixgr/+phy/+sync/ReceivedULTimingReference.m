@@ -50,9 +50,20 @@ classdef ReceivedULTimingReference
             assert(isa(prepared,'sixgr.link.PreparedUplinkControlTransmission') && ...
                 isscalar(prepared) && prepared.Channel=="PUCCH", ...
                 'sixgr:phy:sync:ULTimingTargetRequired','Prior timing alignment here is for a prepared PUCCH observation.');
-            raw=prepared.readObservation(observation,'receiver');
+            prepared.readObservation(observation,'receiver');
             cfg=prepared.ReceiverConfig;
-            assert(isequaln(obj.Identity,localIdentity(cfg,prepared.SampleRateHz)) && ...
+            slot0=double(prepared.RequestBinding.Assignment.DueSlot)-1;
+            [samples,evidence]=obj.alignObservation(cfg,observation,slot0);
+        end
+        function [samples,evidence]=alignObservation(obj,cfg,observation,absoluteSlot0)
+            % A gNB receive window exists even when the UE transmits nothing.
+            % Its clock comes from the scheduled slot and a received pilot;
+            % no prepared UE waveform, TA value or TX origin is consumed.
+            validateattributes(absoluteSlot0,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+            assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(observation), ...
+                'sixgr:phy:sync:ULTimingObservationRequired','Supply a complete actual received sample buffer.');
+            raw=observation.readComplete();
+            assert(isequaln(obj.Identity,localIdentity(cfg,observation.SampleRateHz)) && ...
                 isequaln(obj.TAG,cfg.SharedULTimingContext), ...
                 'sixgr:phy:sync:ULTimingReferenceIdentityMismatch', ...
                 'A prior UL clock cannot cross UE, cell, carrier, BWP, sample clock or received TAG changes.');
@@ -60,8 +71,10 @@ classdef ReceivedULTimingReference
                 'sixgr:phy:sync:FutureULTimingReference','Use only pilot evidence available before this observation starts.');
             maximum=sixgr.util.structGet(cfg,'phy.synchronization.maxReceivedULTimingAgeSlots',NaN);
             validateattributes(maximum,{'numeric'},{'scalar','finite','integer','nonnegative'});
-            carrier=prepared.Tx.Carrier;
-            nominal=prepared.PhysicalTiming.NominalStartSample;
+            carrier=sixgr.phy.grid.makeCarrier(cfg);
+            carrier.NFrame=floor(absoluteSlot0/double(carrier.SlotsPerFrame));
+            carrier.NSlot=mod(absoluteSlot0,double(carrier.SlotsPerFrame));
+            nominal=sixgr.phy.frame.slotStartSample(carrier,absoluteSlot0,obj.SampleRateHz);
             slotSamples=obj.SampleRateHz*1e-3*15/double(carrier.SubcarrierSpacing);
             age=(nominal-obj.NominalStartSample)/slotSamples;
             assert(age>=0 && age<=maximum,'sixgr:phy:sync:StaleULTimingReference', ...

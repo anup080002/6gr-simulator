@@ -100,6 +100,8 @@ for caseIndex=[1 3]
         assert(isfinite(estimated.NoiseVariance) && estimated.NoiseVariance>0 && ...
             string(estimated.NoiseVarianceSource)=="runtime_channel_estimate");
         assert(string(estimated.NoiseVarianceDomain)=="resource_grid_pre_equalization");
+        assert(string(estimated.InjectedSampleNoiseVarianceSource)==string(replay.NoiseVarianceSource), ...
+            'Keep physical injection provenance separate from the received estimator source.');
         % Missing channel reference must not generate a Doppler stand-in.
         noReference=rmfield(context,'DesiredReferenceObservation');
         failed=runner(cfg,args{:},'ReceivedContext',noReference);

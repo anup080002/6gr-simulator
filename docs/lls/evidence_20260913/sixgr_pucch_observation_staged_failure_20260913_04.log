@@ -1,0 +1,7 @@
+{Error using assert
+Assertion failed.
+
+Error in testUplinkControlStreamStages (line 100)
+        assert(isfinite(estimated.NoiseVariance) && estimated.NoiseVariance>0 && ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -149,6 +149,12 @@ trial.NoiseVarianceDomain = "receiver_sample_waveform_post_composite_front_end";
 trial.ReceiverInputSampleNoiseVariance = noiseVariance;
 trial.ReceiverInputSampleNoiseVarianceDomain = string(sixgr.util.structGet( ...
     replay,'SampleNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end'));
+trial.ReceiverInputSampleNoiseVarianceValueRole="standalone_provided_receiver_variance";
+trial.ReceiverInjectedNoiseVarianceConsumed=NaN;
+if received
+    trial.ReceiverInputSampleNoiseVarianceValueRole="physical_execution_metadata_not_receiver_estimate";
+    trial.ReceiverInjectedNoiseVarianceConsumed=false;
+end
 trial.Channel = channelMeta;
 trial.ImpairmentReplay = replay;
 trial.UpdatedRuntimeChannelState = runtimeState;
@@ -157,39 +163,24 @@ trial.EstimatedTimingOffsetSamples = NaN;
 trial.AppliedTimingCorrectionSamples = 0;
 
 try
-    receiverWaveform=rxWaveform;
-    priorTiming=[];
-    rxArgs = {"NoiseVariance",noiseVariance, ...
-        "NoiseVarianceDomain","sample", ...
-        "ChannelProfile",channelMeta.Profile, ...
-        "DetectionThreshold",detectionThreshold};
-    if received && prepared.receiverNoiseMode(replay)=="received_reference_estimate"
-        rxArgs=[rxArgs {"NoiseVarianceMode","received_dmrs_estimate"}];
-    end
-    if received && prepared.receiverNoiseMode(replay)=="noncoherent_correlation"
-        rxArgs=[rxArgs {"NoiseVarianceMode","noncoherent_correlation"}];
-    end
-    if received && opt.Assignment.Format==0
+    if received
         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
-        assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
-            'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
-            'Pilot-free Format 0 needs a retained measured gNB UL clock, not UE TX timing or a zero-aligned capture.');
-        [receiverWaveform,priorTiming]=prior.align(prepared,receivedContext.Observation);
-    elseif received
-        rxArgs=[rxArgs {"TimingSearchWindowSamples", ...
-            prepared.receiverTimingSearchWindow(receivedContext.Observation)}];
+        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,opt.Assignment,context, ...
+            receivedContext.Observation,prior);
+    else
+        rxArgs = {"NoiseVariance",noiseVariance, ...
+            "NoiseVarianceDomain","sample", ...
+            "ChannelProfile",channelMeta.Profile, ...
+            "DetectionThreshold",detectionThreshold};
+        interferenceCovariance = sixgr.util.structGet(replay,"InterferenceCovariance",[]);
+        if ~isempty(interferenceCovariance)
+            rxArgs = [rxArgs {"InterferenceCovariance",interferenceCovariance, ...
+                "InterferenceCovarianceSource", ...
+                "shared_slot_pucch_receiver_sample_contribution_covariance"}]; %#ok<AGROW>
+        end
+        rx = sixgr.phy.pucch.PUCCHReceiver.receive( ...
+            rxWaveform,carrier,opt.Assignment,context,rxArgs{:});
     end
-    interferenceCovariance = sixgr.util.structGet( ...
-        replay,"InterferenceCovariance",[]);
-    if ~isempty(interferenceCovariance)
-        rxArgs = [rxArgs {"InterferenceCovariance", ...
-            interferenceCovariance, ...
-            "InterferenceCovarianceSource", ...
-            "shared_slot_pucch_receiver_sample_contribution_covariance"}]; %#ok<AGROW>
-    end
-    rx = sixgr.phy.pucch.PUCCHReceiver.receive( ...
-        receiverWaveform,carrier,opt.Assignment,context,rxArgs{:});
-    if ~isempty(priorTiming), rx.ReceiveTiming=priorTiming; end
     trial.EstimatedTimingOffsetSamples=rx.ReceiveTiming.TimingOffsetSamples;
     trial.AppliedTimingCorrectionSamples=rx.ReceiveTiming.AppliedTimingCorrectionSamples;
     trial.TimingEstimateSource=rx.ReceiveTiming.TimingSource;

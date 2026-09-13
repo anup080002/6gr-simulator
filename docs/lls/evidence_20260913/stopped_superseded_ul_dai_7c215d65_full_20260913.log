@@ -1,0 +1,521 @@
+FULLSTACK_TEST_START testConstellationPublicationBackend
+CONSTELLATION_PUBLICATION_BACKEND_PASS: both duplex modes, backend-independent live/final paths and failure capture wiring.
+FULLSTACK_TEST_END testConstellationPublicationBackend PASS
+[PASS] testConstellationPublicationBackend (0.57s)
+FULLSTACK_TEST_START testLiveCSVPlotPublication
+LIVE_CSV_PLOT_PUBLICATION_PASS: config gate, actual PNG, snapshot receipt, runtime call binding.
+FULLSTACK_TEST_END testLiveCSVPlotPublication PASS
+[PASS] testLiveCSVPlotPublication (55.46s)
+FULLSTACK_TEST_START testPAModelSelectionAuthority
+[Warning: AMPMConversion property of the comm.MemorylessNonlinearity System object will be removed in a future release.] 
+[> In comm.MemorylessNonlinearity>throwDeprecationMessage (line 1462)
+In comm/MemorylessNonlinearity/set.AMPMConversion (line 536)
+In matlab.system.SystemProp/parseInputs
+In matlab.system.SystemProp/setProperties
+In comm/MemorylessNonlinearity (line 379)
+In sixgr.rf/PAModel/reset (line 85)
+In sixgr.rf/PAModel (line 73)
+In testPAModelSelectionAuthority (line 7)
+In executeRegressionTest (line 7)
+In testAll (line 659)] 
+[Warning: AMPMConversion property of the comm.MemorylessNonlinearity System object will be removed in a future release.] 
+[> In comm.MemorylessNonlinearity>throwDeprecationMessage (line 1462)
+In comm/MemorylessNonlinearity/set.AMPMConversion (line 536)
+In matlab.system.SystemProp/parseInputs
+In matlab.system.SystemProp/setProperties
+In comm/MemorylessNonlinearity (line 379)
+In testPAModelSelectionAuthority (line 10)
+In executeRegressionTest (line 7)
+In testAll (line 659)] 
+[Warning: AMPMConversion property of the comm.MemorylessNonlinearity System object will be removed in a future release.] 
+[> In comm.MemorylessNonlinearity>throwDeprecationMessage (line 1462)
+In comm/MemorylessNonlinearity/set.AMPMConversion (line 536)
+In matlab.system.SystemProp/parseInputs
+In matlab.system.SystemProp/setProperties
+In comm/MemorylessNonlinearity (line 379)
+In sixgr.rf/PAModel/reset (line 85)
+In sixgr.rf/PAModel (line 73)
+In sixgr.rf.applyPowerContext>localApplyPAContext (line 321)
+In sixgr.rf.applyPowerContext (line 100)
+In testPAModelSelectionAuthority (line 28)
+In executeRegressionTest (line 7)
+In testAll (line 659)] 
+PA_MODEL_SELECTION_AUTHORITY_PASS
+FULLSTACK_TEST_END testPAModelSelectionAuthority PASS
+[PASS] testPAModelSelectionAuthority (1.51s)
+FULLSTACK_TEST_START testPASoftLimiterResponse
+PA_SOFT_LIMITER_RESPONSE_PASS
+FULLSTACK_TEST_END testPASoftLimiterResponse PASS
+[PASS] testPASoftLimiterResponse (0.21s)
+FULLSTACK_TEST_START testPreparedWaveformPAOwnership
+PREPARED_WAVEFORM_PA_OWNERSHIP_PASS
+FULLSTACK_TEST_END testPreparedWaveformPAOwnership PASS
+[PASS] testPreparedWaveformPAOwnership (29.87s)
+FULLSTACK_TEST_START testRAReceivedObservationBoundary
+RAReceivedObservationBoundary PASS: five coded TDD stages; coverage, origin, rate and causal decode guards.
+FULLSTACK_TEST_END testRAReceivedObservationBoundary PASS
+[PASS] testRAReceivedObservationBoundary (25.85s)
+FULLSTACK_TEST_START testPBCHSINRRuntimeBinding
+PBCH_SINR_RUNTIME_BINDING_PASS
+FULLSTACK_TEST_END testPBCHSINRRuntimeBinding PASS
+[PASS] testPBCHSINRRuntimeBinding (7.47s)
+FULLSTACK_TEST_START testRegressionExecutionAuthority
+Running regressionHarnessProbeTest
+.
+Done regressionHarnessProbeTest
+__________
+
+Running regressionHarnessProbeTest
+
+================================================================================
+Verification failed in regressionHarnessProbeTest/testExecution.
+    ----------------
+    Test Diagnostic:
+    ----------------
+    Intentional harness negative-case failure.
+    ---------------------
+    Framework Diagnostic:
+    ---------------------
+    verifyTrue failed.
+    --> The value must evaluate to "true".
+    
+    Actual Value:
+      logical
+    
+       0
+    ------------------
+    Stack Information:
+    ------------------
+    In C:\Users\anup0\AppData\Local\Temp\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\tests\regressionHarnessProbeTest.m (testExecution) at 13
+================================================================================
+.
+Done regressionHarnessProbeTest
+__________
+
+Failure Summary:
+
+     Name                                      Failed  Incomplete  Reason(s)
+    =======================================================================================
+     regressionHarnessProbeTest/testExecution    X                 Failed by verification.
+Running regressionHarnessProbeTest
+
+================================================================================
+regressionHarnessProbeTest/testExecution was filtered.
+    Test Diagnostic: Intentional harness incomplete-case check.
+================================================================================
+.
+Done regressionHarnessProbeTest
+__________
+
+Failure Summary:
+
+     Name                                      Failed  Incomplete  Reason(s)
+    =======================================================================================
+     regressionHarnessProbeTest/testExecution              X       Filtered by assumption.
+Running regressionHarnessProbeTest
+
+================================================================================
+Verification failed in regressionHarnessProbeTest/testExecution.
+    ----------------
+    Test Diagnostic:
+    ----------------
+    Intentional harness negative-case failure.
+    ---------------------
+    Framework Diagnostic:
+    ---------------------
+    verifyTrue failed.
+    --> The value must evaluate to "true".
+    
+    Actual Value:
+      logical
+    
+       0
+    ------------------
+    Stack Information:
+    ------------------
+    In C:\Users\anup0\AppData\Local\Temp\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\tests\regressionHarnessProbeTest.m (testExecution) at 13
+================================================================================
+.
+Done regressionHarnessProbeTest
+__________
+
+Failure Summary:
+
+     Name                                      Failed  Incomplete  Reason(s)
+    =======================================================================================
+     regressionHarnessProbeTest/testExecution    X                 Failed by verification.
+[FAIL] regressionHarnessProbeTest (0.54s)
+       Test regressionHarnessProbeTest contains failed or incomplete tests.
+Running regressionHarnessProbeTest
+
+================================================================================
+Verification failed in regressionHarnessProbeTest/testExecution.
+    ----------------
+    Test Diagnostic:
+    ----------------
+    Intentional harness negative-case failure.
+    ---------------------
+    Framework Diagnostic:
+    ---------------------
+    verifyTrue failed.
+    --> The value must evaluate to "true".
+    
+    Actual Value:
+      logical
+    
+       0
+    ------------------
+    Stack Information:
+    ------------------
+    In C:\Users\anup0\AppData\Local\Temp\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\tests\regressionHarnessProbeTest.m (testExecution) at 13
+================================================================================
+.
+Done regressionHarnessProbeTest
+__________
+
+Failure Summary:
+
+     Name                                      Failed  Incomplete  Reason(s)
+    =======================================================================================
+     regressionHarnessProbeTest/testExecution    X                 Failed by verification.
+[FAIL] regressionHarnessProbeTest (0.63s)
+       Test regressionHarnessProbeTest contains failed or incomplete tests.
+Running regressionHarnessProbeTest
+
+================================================================================
+Verification failed in regressionHarnessProbeTest/testExecution.
+    ----------------
+    Test Diagnostic:
+    ----------------
+    Intentional harness negative-case failure.
+    ---------------------
+    Framework Diagnostic:
+    ---------------------
+    verifyTrue failed.
+    --> The value must evaluate to "true".
+    
+    Actual Value:
+      logical
+    
+       0
+    ------------------
+    Stack Information:
+    ------------------
+    In C:\Users\anup0\AppData\Local\Temp\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\tests\regressionHarnessProbeTest.m (testExecution) at 13
+================================================================================
+.
+Done regressionHarnessProbeTest
+__________
+
+Failure Summary:
+
+     Name                                      Failed  Incomplete  Reason(s)
+    =======================================================================================
+     regressionHarnessProbeTest/testExecution    X                 Failed by verification.
+[FAIL] regressionHarnessProbeTest (0.31s)
+       Test regressionHarnessProbeTest contains failed or incomplete tests.
+PASS testRegressionExecutionAuthority (intentional negative probe failures above were required).
+FULLSTACK_TEST_END testRegressionExecutionAuthority PASS
+[PASS] testRegressionExecutionAuthority (10.58s)
+FULLSTACK_TEST_START testConfig
+FULLSTACK_TEST_END testConfig PASS
+[PASS] testConfig (13.08s)
+FULLSTACK_TEST_START testFrameNumerologyCatalog
+FULLSTACK_TEST_END testFrameNumerologyCatalog PASS
+[PASS] testFrameNumerologyCatalog (1.17s)
+FULLSTACK_TEST_START testNumerologyCallerMigration
+FULLSTACK_TEST_END testNumerologyCallerMigration PASS
+[PASS] testNumerologyCallerMigration (1.43s)
+FULLSTACK_TEST_START testTransmissionBandwidthCatalog
+FULLSTACK_TEST_END testTransmissionBandwidthCatalog PASS
+[PASS] testTransmissionBandwidthCatalog (1.20s)
+FULLSTACK_TEST_START testOFDMSamplingResolver
+FULLSTACK_TEST_END testOFDMSamplingResolver PASS
+[PASS] testOFDMSamplingResolver (1.54s)
+FULLSTACK_TEST_START testOFDMWindowingCallers
+FULLSTACK_TEST_END testOFDMWindowingCallers PASS
+[PASS] testOFDMWindowingCallers (2.49s)
+FULLSTACK_TEST_START testOFDMReceiverWindowEvidence
+FULLSTACK_TEST_END testOFDMReceiverWindowEvidence PASS
+[PASS] testOFDMReceiverWindowEvidence (0.77s)
+FULLSTACK_TEST_START testTDDCommonPattern
+FULLSTACK_TEST_END testTDDCommonPattern PASS
+[PASS] testTDDCommonPattern (3.13s)
+FULLSTACK_TEST_START testTDDDedicatedOverride
+FULLSTACK_TEST_END testTDDDedicatedOverride PASS
+[PASS] testTDDDedicatedOverride (1.66s)
+FULLSTACK_TEST_START testTDDMultiNumerologyExpansion
+FULLSTACK_TEST_END testTDDMultiNumerologyExpansion PASS
+[PASS] testTDDMultiNumerologyExpansion (3.35s)
+FULLSTACK_TEST_START testFlexibleSymbolAllocator
+FULLSTACK_TEST_END testFlexibleSymbolAllocator PASS
+[PASS] testFlexibleSymbolAllocator (0.49s)
+FULLSTACK_TEST_START testFDDSeparateFrameGrids
+FULLSTACK_TEST_END testFDDSeparateFrameGrids PASS
+[PASS] testFDDSeparateFrameGrids (2.59s)
+FULLSTACK_TEST_START testControlDataAllocationIndependence
+FULLSTACK_TEST_END testControlDataAllocationIndependence PASS
+[PASS] testControlDataAllocationIndependence (5.78s)
+FULLSTACK_TEST_START testPDSCHOccasionAllocationPreflight
+PDSCH_OCCASION_PREFLIGHT_PASS: actual per-slot reservations, no fake grants, all-blocked rejection.
+FULLSTACK_TEST_END testPDSCHOccasionAllocationPreflight PASS
+[PASS] testPDSCHOccasionAllocationPreflight (47.29s)
+FULLSTACK_TEST_START testResourceAllocationValidator
+FULLSTACK_TEST_END testResourceAllocationValidator PASS
+[PASS] testResourceAllocationValidator (3.15s)
+FULLSTACK_TEST_START testPUCCHReceiverOnlyAssignment
+PUCCH_RECEIVER_ONLY_ASSIGNMENT_PASS retained absent/false-alarm IQ and identity guards
+FULLSTACK_TEST_END testPUCCHReceiverOnlyAssignment PASS
+[PASS] testPUCCHReceiverOnlyAssignment (3.55s)
+FULLSTACK_TEST_START testPUCCHReceiverAssignmentEquivalence
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=0 exact_decoded_bits=1
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=1 exact_decoded_bits=2
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=2 exact_decoded_bits=20
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=3 exact_decoded_bits=20
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=4 exact_decoded_bits=20
+FULLSTACK_TEST_END testPUCCHReceiverAssignmentEquivalence PASS
+[PASS] testPUCCHReceiverAssignmentEquivalence (4.09s)
+FULLSTACK_TEST_START testScheduledType2DAI
+SCHEDULED_DAI_INPUT valid=1 required=1 ack_valid=1 format=DCI_1_1
+SCHEDULED_TYPE2_DAI_PASS: ordinal wrap, rejected candidates, identity, retirement and real contextual packing
+FULLSTACK_TEST_END testScheduledType2DAI PASS
+[PASS] testScheduledType2DAI (11.74s)
+FULLSTACK_TEST_START testType2HARQACKLayout
+TYPE2_HARQ_ACK_LAYOUT_PASS: literal gaps/wraps, 256 DAI sequences, guards and serialization
+HARQ_LEGACY_VECTOR_REGRESSION_PASS: 24 vectors
+FULLSTACK_TEST_END testType2HARQACKLayout PASS
+[PASS] testType2HARQACKLayout (2.33s)
+FULLSTACK_TEST_START testReceivedULTotalDAICodebook
+RECEIVED_UL_TOTAL_DAI_CODEBOOK_PASS received_dcIs=16 codebooks=32 guards=64 folder=C:\Users\anup0\AppData\Local\Temp\tp9becfbde_80f2_4931_93d0_46468baef895
+FULLSTACK_TEST_END testReceivedULTotalDAICodebook PASS
+[PASS] testReceivedULTotalDAICodebook (15.99s)
+FULLSTACK_TEST_START testType2HARQRuntimePlan
+TYPE2_HARQ_RUNTIME_PLAN_PASS
+FULLSTACK_TEST_END testType2HARQRuntimePlan PASS
+[PASS] testType2HARQRuntimePlan (6.67s)
+FULLSTACK_TEST_START testReceivedDLHARQState
+RECEIVED_DL_HARQ_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp0b3b5318_2eb6_4150_8d3f_e025b03fb1e9
+RECEIVED_DL_HARQ_PASS sequence=1 ndi=1 rv=0 mcs=10 bits=1064 delay=42 decode=1 ack=0 deliver=0
+RECEIVED_DL_HARQ_PASS sequence=2 ndi=1 rv=2 mcs=31 bits=1064 delay=43 decode=1 ack=1 deliver=1
+RECEIVED_DL_HARQ_PASS sequence=3 ndi=1 rv=2 mcs=31 bits=1064 delay=NaN decode=0 ack=1 deliver=0
+RECEIVED_DL_HARQ_PASS sequence=4 ndi=0 rv=0 mcs=10 bits=1064 delay=43 decode=1 ack=1 deliver=1
+FULLSTACK_TEST_END testReceivedDLHARQState PASS
+[PASS] testReceivedDLHARQState (23.25s)
+FULLSTACK_TEST_START testReceivedDLHARQReplay
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=1 ack=0 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=2 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=3 ack=1 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=4 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_GUARDS_PASS count=7
+FULLSTACK_TEST_END testReceivedDLHARQReplay PASS
+[PASS] testReceivedDLHARQReplay (11.42s)
+FULLSTACK_TEST_START testReceivedDLHARQACKEvent
+RECEIVED_DL_HARQ_EVENT_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp7523e6f2_024a_46d3_a5de_20700d7deaea
+RECEIVED_DL_HARQ_EVENT_PASS sequence=1 raw_dai=0 ack=0 decode=1 missing=0
+RECEIVED_DL_HARQ_EVENT_PASS sequence=2 raw_dai=1 ack=1 decode=1 missing=1
+RECEIVED_DL_HARQ_EVENT_PASS sequence=3 raw_dai=2 ack=1 decode=0 missing=2
+RECEIVED_DL_HARQ_EVENT_PASS sequence=4 raw_dai=3 ack=1 decode=1 missing=3
+RECEIVED_DL_HARQ_EVENT_ALL_PASS no_shared_feedback_qualification=1
+FULLSTACK_TEST_END testReceivedDLHARQACKEvent PASS
+[PASS] testReceivedDLHARQACKEvent (25.06s)
+FULLSTACK_TEST_START testRetainedDLACKFeedbackQueue
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=10 sample=76800
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=20 sample=153600
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=30 sample=230400
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=40 sample=307200
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=50 sample=384000
+[Warning: Directory already exists.] 
+[> In testRetainedDLACKFeedbackQueue (line 104)
+In executeRegressionTest (line 7)
+In testAll (line 659)] 
+RETAINED_DL_ACK_QUEUE_PASS guards=11 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=C:\Users\anup0\AppData\Local\Temp\tp440450d8_da68_4178_9a7f_78db66c74d02
+FULLSTACK_TEST_END testRetainedDLACKFeedbackQueue PASS
+[PASS] testRetainedDLACKFeedbackQueue (141.11s)
+FULLSTACK_TEST_START testReceivedDLFeedbackAuthority
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_DL_FEEDBACK_AUTHORITY_PASS actual_ACK_NACK=1,0 slots=3,6 folder=C:\Users\anup0\AppData\Local\Temp\tp7aff018b_cde1_4e1f_b10a_3a2c0e99752e
+FULLSTACK_TEST_END testReceivedDLFeedbackAuthority PASS
+[PASS] testReceivedDLFeedbackAuthority (72.80s)
+FULLSTACK_TEST_START testReceivedHARQFeedbackOutcome
+NO_SIGNAL_FALSE_ALARMS 60/64 (component observation, not threshold qualification)
+RECEIVED_HARQ_ACK_NACK_DTX_PASS
+FULLSTACK_TEST_END testReceivedHARQFeedbackOutcome PASS
+[PASS] testReceivedHARQFeedbackOutcome (16.42s)
+FULLSTACK_TEST_START testReceivedDLRetainedACK
+RECEIVED_DL_RETAINED_ACK_PASS actual_archived_sequence=3 no_IQ_required=1 no_new_PHY_row=1 guards=11 folder=C:\Users\anup0\AppData\Local\Temp\tp673c27fe_1b39_416d_b91b_5371bd735ecc
+FULLSTACK_TEST_END testReceivedDLRetainedACK PASS
+[PASS] testReceivedDLRetainedACK (11.25s)
+FULLSTACK_TEST_START testRetainedDLACKFeedbackTiming
+RETAINED_DL_ACK_FEEDBACK_TIMING_PASS guards=15 collector_and_trace=1 fixture_clocks_not_main_run=1 folder=C:\Users\anup0\AppData\Local\Temp\tpd3559a62_de35_475a_b8d3_4a8529b3ac46
+FULLSTACK_TEST_END testRetainedDLACKFeedbackTiming PASS
+[PASS] testRetainedDLACKFeedbackTiming (7.71s)
+FULLSTACK_TEST_START testSharedDLHARQExpectation
+SHARED_DATA_PHYSICAL_QUEUE_PASS: TDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+SHARED_DATA_PHYSICAL_QUEUE_PASS: FDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+    Duplex                              TransmissionID                              DataAbsoluteSlot0    FeedbackAbsoluteSlot0    HARQProcess    ScheduledPRI    TXCommittedAtSample                            Source                                              Status                     UEControlReceptionClaimed    UCIObservationClaimed
+    ______    __________________________________________________________________    _________________    _____________________    ___________    ____________    ___________________    _______________________________________________________    ________________________________________    _________________________    _____________________
+
+    "TDD"     "88b4f24da33718626d4fca37a400f0bee17cbc44ee3eac59e77bc3a5e8c7dd74"            0                      3                   0              0                 1101            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+    "TDD"     "8a0ee3191edb94d7717b38491a8ec5ce7140f7ebba0bc746cc756f97e647f1b8"            1                      3                   1              0                 8781            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+    "FDD"     "88b4f24da33718626d4fca37a400f0bee17cbc44ee3eac59e77bc3a5e8c7dd74"            0                      1                   0              0                 1101            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+    "FDD"     "8a0ee3191edb94d7717b38491a8ec5ce7140f7ebba0bc746cc756f97e647f1b8"            1                      2                   1              0                 8781            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+
+SHARED_DL_HARQ_EXPECTATION_PASS
+FULLSTACK_TEST_END testSharedDLHARQExpectation PASS
+[PASS] testSharedDLHARQExpectation (97.25s)
+FULLSTACK_TEST_START testScheduledHARQACKMapping
+SCHEDULED_HARQ_MAPPING_FIXTURE folder=C:\Users\anup0\AppData\Local\Temp\tpb03ed807_fa8f_4817_8618_e43c4c7431b9
+SCHEDULED_HARQ_ACK_MAPPING_PASS actual_DL_TX=2 UE_receptions=0 gNB_feedback_updates=0 folder=C:\Users\anup0\AppData\Local\Temp\tpb03ed807_fa8f_4817_8618_e43c4c7431b9
+FULLSTACK_TEST_END testScheduledHARQACKMapping PASS
+[PASS] testScheduledHARQACKMapping (22.81s)
+FULLSTACK_TEST_START testDLCRCScoringSeparation
+DL_CRC_SCORING_SEPARATION_PASS captures=3 scoring_complements=3 guards=2
+FULLSTACK_TEST_END testDLCRCScoringSeparation PASS
+[PASS] testDLCRCScoringSeparation (0.39s)
+FULLSTACK_TEST_START testReceivedDLCombiningEvidence
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=1 prior=0 current=5600 combined=5600
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=2 prior=5600 current=5600 combined=5600
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=4 prior=0 current=5600 combined=5600
+FULLSTACK_TEST_END testReceivedDLCombiningEvidence PASS
+[PASS] testReceivedDLCombiningEvidence (12.14s)
+FULLSTACK_TEST_START testReceivedDLReportEvidence
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=1 combined=0 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=2 combined=1 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=4 combined=0 csi_occasion=0
+DISABLED_CSI_DIAGNOSTIC decision_equal=1 status=disabled indices=0 observed=0
+RECEIVED_DL_REPORT_DISABLED_CSI_PASS waveform=nonoccasion_capture guards=1
+RECEIVED_DL_REPORT_CALENDAR_PASS slots=42 guards=8
+FULLSTACK_TEST_END testReceivedDLReportEvidence PASS
+[PASS] testReceivedDLReportEvidence (24.63s)
+FULLSTACK_TEST_START testReceivedDLQCLAuthority
+RECEIVED_DL_QCL_AUTHORITY_PASS bits=1064 delay=43 window=[39 47] guards=8 source=explicit_boundary_fixture
+FULLSTACK_TEST_END testReceivedDLQCLAuthority PASS
+[PASS] testReceivedDLQCLAuthority (8.17s)
+FULLSTACK_TEST_START testReceivedDLDisabledCSI
+DISABLED_CSI_DIAGNOSTIC decision_equal=1 status=disabled indices=0 observed=0
+RECEIVED_DL_REPORT_DISABLED_CSI_PASS waveform=nonoccasion_capture guards=1
+FULLSTACK_TEST_END testReceivedDLDisabledCSI PASS
+[PASS] testReceivedDLDisabledCSI (8.50s)
+FULLSTACK_TEST_START testCSIRSPlannedCalendar
+CSI_PLANNED_CALENDAR period=5 offset=1 slots=[1 6 11 16 21 26 31 36 41 46 51 56]
+CSI_PLANNED_CALENDAR period=5 offset=1 slots=[1 6 11 16 21 26 31 36 41 46 51 56]
+CSI_PLANNED_CALENDAR period=20 offset=11 slots=[11 31]
+CSIRS_PLANNED_CALENDAR_PASS
+FULLSTACK_TEST_END testCSIRSPlannedCalendar PASS
+[PASS] testCSIRSPlannedCalendar (10.66s)
+FULLSTACK_TEST_START testCSIRSNonoccasionDataCapacity
+CSI_NONOCCASION_CAPACITY slot0=62 calendar=5:1 scheduled=0 enabled_G=3108 disabled_G=3108 extra_reserved_re=0 enabled_TBS=1064 disabled_TBS=1064
+FULLSTACK_TEST_END testCSIRSNonoccasionDataCapacity PASS
+[PASS] testCSIRSNonoccasionDataCapacity (7.10s)
+FULLSTACK_TEST_START testObservedBroadcastREAllocation
+OBSERVED_BROADCAST_GRID_PASS: lls_causal_tdd_connected_feedback_fixture.yaml rows=2958 exact waveform grid error=2.45e-16
+OBSERVED_BROADCAST_GRID_PASS: lls_causal_access_to_data_wiring.yaml rows=2958 exact waveform grid error=2.19e-16
+FULLSTACK_TEST_END testObservedBroadcastREAllocation PASS
+[PASS] testObservedBroadcastREAllocation (29.29s)
+FULLSTACK_TEST_START testPRACHNativeGridEvidence
+ACTUAL_GRID_PRODUCER_CSV_PNG_PASS: PRACH native resource grid: C:\Users\anup0\AppData\Local\Temp\tp93aec35f_e112_4ae4_a4bd_f5e7a3ede307\TDD_ports1\reports\csv\live_prach_native_allocation_snapshot.png
+ACTUAL_GRID_PRODUCER_CSV_PNG_PASS: PRACH native resource grid: C:\Users\anup0\AppData\Local\Temp\tp93aec35f_e112_4ae4_a4bd_f5e7a3ede307\TDD_ports2\reports\csv\live_prach_native_allocation_snapshot.png
+ACTUAL_GRID_PRODUCER_CSV_PNG_PASS: PRACH native resource grid: C:\Users\anup0\AppData\Local\Temp\tp93aec35f_e112_4ae4_a4bd_f5e7a3ede307\FDD_ports1\reports\csv\live_prach_native_allocation_snapshot.png
+ACTUAL_GRID_PRODUCER_CSV_PNG_PASS: PRACH native resource grid: C:\Users\anup0\AppData\Local\Temp\tp93aec35f_e112_4ae4_a4bd_f5e7a3ede307\FDD_ports2\reports\csv\live_prach_native_allocation_snapshot.png
+PRACH_NATIVE_GRID_EVIDENCE_PASS: C:\Users\anup0\AppData\Local\Temp\tp93aec35f_e112_4ae4_a4bd_f5e7a3ede307
+FULLSTACK_TEST_END testPRACHNativeGridEvidence PASS
+[PASS] testPRACHNativeGridEvidence (12.32s)
+FULLSTACK_TEST_START testObservedREAllocationRuntimeTruth
+ACTUAL_GRID_PRODUCER_CSV_PNG_PASS: frame/slot/symbol occupancy timeline: C:\Users\anup0\AppData\Local\Temp\tp070d43fc_13b7_4af4_b70f_7b3fdefc7e7d\reports\csv\live_re_allocation_snapshot.png
+PASS testObservedREAllocationRuntimeTruth: executed PDSCH/PUSCH/PDCCH/PUCCH Toolbox indices own the observed grid.
+FULLSTACK_TEST_END testObservedREAllocationRuntimeTruth PASS
+[PASS] testObservedREAllocationRuntimeTruth (18.89s)
+FULLSTACK_TEST_START testObservedREAllocationDeduplication
+testObservedREAllocationDeduplication passed.
+FULLSTACK_TEST_END testObservedREAllocationDeduplication PASS
+[PASS] testObservedREAllocationDeduplication (0.17s)
+FULLSTACK_TEST_START testNumericMeasurementColumn
+NUMERIC_MEASUREMENT_COLUMN_PASS
+FULLSTACK_TEST_END testNumericMeasurementColumn PASS
+[PASS] testNumericMeasurementColumn (0.24s)
+FULLSTACK_TEST_START testSSBTimingResolver
+FULLSTACK_TEST_END testSSBTimingResolver PASS
+[PASS] testSSBTimingResolver (5.64s)
+FULLSTACK_TEST_START testSSBSharedReceivedBurst
+Candidate 0: BCH=1 SIB1=1 SS-RSRP=NaN dBm
+Candidate 1: BCH=1 SIB1=1 SS-RSRP=NaN dBm
+Candidate 2: BCH=1 SIB1=1 SS-RSRP=NaN dBm
+Candidate 3: BCH=1 SIB1=1 SS-RSRP=NaN dBm
+SSB_SHARED_RECEIVED_BURST_PASS: one TX/channel, 4 receivers.
+FULLSTACK_TEST_END testSSBSharedReceivedBurst PASS
+[PASS] testSSBSharedReceivedBurst (109.99s)
+FULLSTACK_TEST_START testWaveformStreamComposition
+WAVEFORM_STREAM_COMPOSITION_PASS: 38400 samples, 2 antennas, exact slot partition.
+FULLSTACK_TEST_END testWaveformStreamComposition PASS
+[PASS] testWaveformStreamComposition (15.08s)
+FULLSTACK_TEST_START testSharedULTimingOrigins
+SHARED_UL_TIMING_ORIGINS_PASS: distinct TX/RX clocks, received offset/TA, no cropped samples.
+FULLSTACK_TEST_END testSharedULTimingOrigins PASS
+[PASS] testSharedULTimingOrigins (0.11s)
+FULLSTACK_TEST_START testSharedULTDDDirectionBoundary
+SHARED_UL_DIRECTION_BOUNDARY_PASS: exact and in-symbol TDD edges; FDD independent directions.
+FULLSTACK_TEST_END testSharedULTDDDirectionBoundary PASS
+[PASS] testSharedULTDDDirectionBoundary (16.09s)
+FULLSTACK_TEST_START testSharedPRACHReceiveOrigin
+SHARED_PRACH_RECEIVE_ORIGIN_PASS: identity and measured TA invariant to known capture pre-guard, TDD/FDD.
+FULLSTACK_TEST_END testSharedPRACHReceiveOrigin PASS
+[PASS] testSharedPRACHReceiveOrigin (18.03s)
+FULLSTACK_TEST_START testRuntimeChannelContinuousSamples
+Continuous channel backend: nrCDLChannel; alignment trim=7 pad=15.
+Samples [0,13): API-vs-object=0; partition-vs-whole=0.
+Samples [13,4099): API-vs-object=0; partition-vs-whole=1.57824e-16.
+Samples [4099,16384): API-vs-object=0; partition-vs-whole=4.02128e-16.
+Samples [16384,38400): API-vs-object=0; partition-vs-whole=6.2814e-16.
+RUNTIME_CHANNEL_CONTINUOUS_SAMPLES_PASS: 38400 real TX samples, relative error 1.79129e-16.
+FULLSTACK_TEST_END testRuntimeChannelContinuousSamples PASS
+[PASS] testRuntimeChannelContinuousSamples (16.75s)
+FULLSTACK_TEST_START testMaterializedChannelInputComposition
+MATERIALIZED_CHANNEL_INPUT_COMPOSITION_PASS: 69120 actual composite samples; one physical clock.
+FULLSTACK_TEST_END testMaterializedChannelInputComposition PASS
+[PASS] testMaterializedChannelInputComposition (17.48s)
+FULLSTACK_TEST_START testADCContinuousState
+ADC_CONTINUOUS_STATE_PASS: real/complex multi-channel dither, jitter and I/Q transfer errors.
+FULLSTACK_TEST_END testADCContinuousState PASS
+[PASS] testADCContinuousState (0.20s)
+FULLSTACK_TEST_START testAGCContinuousState
+AGC_CONTINUOUS_STATE_PASS: fixed sample windows, exact hold and no future-sample dependence.
+FULLSTACK_TEST_END testAGCContinuousState PASS
+[PASS] testAGCContinuousState (0.12s)
+FULLSTACK_TEST_START testRFReceiverEvidenceIntegrity
+RF_RECEIVER_EVIDENCE_INTEGRITY_PASS: no logistic BLER or invented joint receiver rows.
+FULLSTACK_TEST_END testRFReceiverEvidenceIntegrity PASS
+[PASS] testRFReceiverEvidenceIntegrity (0.77s)
+FULLSTACK_TEST_START testWaveformObservationBuffer
+WAVEFORM_OBSERVATION_BUFFER_PASS: partial reads and missing/overlapping samples rejected.
+FULLSTACK_TEST_END testWaveformObservationBuffer PASS
+[PASS] testWaveformObservationBuffer (0.25s)
+FULLSTACK_TEST_START testWaveformReceiveDispatcher
+WAVEFORM_RECEIVE_DISPATCHER_PASS
+FULLSTACK_TEST_END testWaveformReceiveDispatcher PASS
+[PASS] testWaveformReceiveDispatcher (0.39s)
+FULLSTACK_TEST_START testCellSearchPreparationAuthority
+CELL_SEARCH_PREPARATION_AUTHORITY_PASS: 38400 real TX samples, no channel or decoder execution.
+FULLSTACK_TEST_END testCellSearchPreparationAuthority PASS
+[PASS] testCellSearchPreparationAuthority (15.70s)
+FULLSTACK_TEST_START testPRACHOccasionResolver
+[Warning: ZeroCorrelationZone=0 gives N_CS=0 with no cyclic-shift guard interval; use ZCZ >= 1 for non-zero cell-radius studies.] 
+[> In sixgr.rach.PRACHConfig>localValidateResolvedConfig (line 526)
+In sixgr.rach.PRACHConfig (line 238)
+In sixgr.phy.ra.buildPRACHConfigFromRACHCommon (line 37)
+In sixgr.phy.ra.generateMsg1PRACHWaveform (line 3)
+In testPRACHOccasionResolver (line 156)
+In executeRegressionTest (line 7)
+In testAll (line 659)] 
+FULLSTACK_TEST_END testPRACHOccasionResolver PASS
+[PASS] testPRACHOccasionResolver (158.01s)
+FULLSTACK_TEST_START testTimingRelationEngine
+FULLSTACK_TEST_END testTimingRelationEngine PASS
+[PASS] testTimingRelationEngine (26.52s)
+FULLSTACK_TEST_START testMultiBWPFrameGrid
+FULLSTACK_TEST_END testMultiBWPFrameGrid PASS
+[PASS] testMultiBWPFrameGrid (12.41s)
+FULLSTACK_TEST_START testCarrierAggregationFrameTiming
+FULLSTACK_TEST_END testCarrierAggregationFrameTiming PASS
+[PASS] testCarrierAggregationFrameTiming (9.77s)
+FULLSTACK_TEST_START testFrameGridArtifacts

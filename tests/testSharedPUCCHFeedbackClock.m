@@ -340,6 +340,10 @@ for item=events
                 'sixgr:phy:pucch:PUCCHTimingReferenceRequired');
         end
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
+        assert(all(state.ControlTrials.PUCCH.ReceiverInjectedNoiseVarianceConsumed==0) && ...
+            all(string(state.ControlTrials.PUCCH.ReceiverInputSampleNoiseVarianceValueRole)== ...
+            "physical_execution_metadata_not_receiver_estimate"), ...
+            'Shared PUCCH exports must distinguish injection metadata from practical receiver estimates.');
         if isfield(state,'TestPhysicalEvidenceRoot')
             writetable(state.ControlTrials.PUCCH,fullfile(state.TestPhysicalEvidenceRoot,'received_pucch_trials.csv'));
             writetable(state.PUCCHGrantTraceTable,fullfile(state.TestPhysicalEvidenceRoot,'received_pucch_grants.csv'));

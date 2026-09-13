@@ -1,0 +1,20 @@
+PUCCH_OBSERVATION_RECEIVER_RETAINED_PASS guards=8 no_shared_codebook_qualification=1
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=1
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=2
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=3
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=4
+[PASS] testPUCCHObservationReceiver (14.50s)
+[PASS] SRS staged actual reception at standalone 12 dB; no main scheduler claim.
+[PASS] PUCCH staged actual reception at standalone 12 dB; no main scheduler claim.
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+[PASS] testUplinkControlStreamStages (121.75s)
+[TR38901Plus] Resolved config: Scenario=UMa Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=0
+[PASS] testSRSRuntimeCanonicalWidebandResource (18.00s)
+[PASS] testNoiseDomainEvidenceContract (0.27s)
+Slowest 4 test(s):
+   1. testUplinkControlStreamStages (121.75s)
+   2. testSRSRuntimeCanonicalWidebandResource (18.00s)
+   3. testPUCCHObservationReceiver (14.50s)
+   4. testNoiseDomainEvidenceContract (0.27s)

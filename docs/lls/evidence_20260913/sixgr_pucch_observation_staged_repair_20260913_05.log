@@ -1,0 +1,12 @@
+[PASS] SRS staged actual reception at standalone 12 dB; no main scheduler claim.
+[PASS] PUCCH staged actual reception at standalone 12 dB; no main scheduler claim.
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+
+ans =
+
+  logical
+
+   1
+

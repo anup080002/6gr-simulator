@@ -1,0 +1,44 @@
+PUCCH_OBSERVATION_RECEIVER_RETAINED_PASS guards=8 no_shared_codebook_qualification=1
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=1
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=2
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=3
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=4
+[PASS] testPUCCHObservationReceiver (18.70s)
+PUCCH_RECEIVER_ONLY_ASSIGNMENT_PASS retained absent/false-alarm IQ and identity guards
+[PASS] testPUCCHReceiverOnlyAssignment (6.83s)
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=0 exact_decoded_bits=1
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=1 exact_decoded_bits=2
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=2 exact_decoded_bits=20
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=3 exact_decoded_bits=20
+PUCCH_RECEIVER_ASSIGNMENT_EQUIVALENCE format=4 exact_decoded_bits=20
+[PASS] testPUCCHReceiverAssignmentEquivalence (3.10s)
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+[PASS] testSharedPUCCHFeedbackClock (143.39s)
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+[PASS] testSharedPUCCHLateFeedbackClock (91.55s)
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=7 process=2 CRC=1 sample=53767 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+[PASS] testSharedPUCCHLateFormat2Clock (76.21s)
+[FAIL] testUplinkControlStreamStages (13.52s)
+       Assertion failed.
+[PASS] testNoiseDomainEvidenceContract (0.28s)
+Slowest 8 test(s):
+   1. testSharedPUCCHFeedbackClock (143.39s)
+   2. testSharedPUCCHLateFeedbackClock (91.55s)
+   3. testSharedPUCCHLateFormat2Clock (76.21s)
+   4. testPUCCHObservationReceiver (18.70s)
+   5. testUplinkControlStreamStages (13.52s)
+   6. testPUCCHReceiverOnlyAssignment (6.83s)
+   7. testPUCCHReceiverAssignmentEquivalence (3.10s)
+   8. testNoiseDomainEvidenceContract (0.28s)
+{Error using testAll (line 20)
+One or more requested regressions failed; see per-test diagnostics.
+} 

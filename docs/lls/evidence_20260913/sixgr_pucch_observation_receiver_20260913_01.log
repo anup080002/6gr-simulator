@@ -1,0 +1,10 @@
+{Error using assert
+The received sample clock and coverage must contain the gNB scheduled slot.
+
+Error in sixgr.link.receivePUCCHObservation (line 27)
+assert(observation.SampleRateHz==double(info.SampleRate) && ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testPUCCHObservationReceiver (line 31)
+received=sixgr.link.receivePUCCHObservation(cfg,assignment,context,observation,prior);
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

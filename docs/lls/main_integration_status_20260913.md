@@ -4,9 +4,21 @@ This supersedes current-status statements in the earlier candidate/handoff
 notes. Historical evidence and patches are preserved, not rewritten.
 The 12 dB baseline is **not yet qualified**.
 
+Latest consolidation: [PUCCH observation and SRS provenance](pucch_observation_receiver_20260913.md).
+That note supersedes the older live-job and unmerged-checkpoint status below.
+The new tip includes the two intervening UL-DAI/mapping commits and the
+practical PUCCH/SRS provenance repair; final focused checks passed.
+The older full jobs were stopped/incomplete and preserved before preparing
+the single-main validation. No full-suite or baseline PASS is claimed.
+
 Subsequent isolated checkpoint work and its bounded test results are recorded
 in [received UL DAI and independent mapping](received_ul_dai_and_independent_mapping_20260913.md).
 That work is not yet merged into the main revision being validated below.
+The subsequent [practical PUCCH observation receiver](pucch_observation_receiver_20260913.md)
+removes prepared-transmitter and injected-variance dependencies from the
+shared decoding call, while explicitly retaining the legacy assignment's
+transmitter-coupled label. Its controller/codebook integration and final
+revision-bound regression remain open; it is not a baseline PASS.
 
 ## Consolidated and applied
 
