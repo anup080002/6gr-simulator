@@ -269,8 +269,16 @@ for item=items
     assert(contains(replay.AppliedNoiseSNRSource,'not_data_SINR'), ...
         'Whole-capture noise diagnostic must not be labeled as data SINR.');
     wrong=originalReplay; wrong.InjectedNoiseVariance=2*wrong.InjectedNoiseVariance;
+    switch string(originalReplay.NoiseOperatingMode)
+        case "standalone_awgn_snr_argument"
+            closureID='sixgr:truth:SharedFixedSNRNoiseClosure';
+        case "receiver_noise_figure_thermal_noise"
+            closureID='sixgr:truth:SharedThermalNoiseClosure';
+        otherwise
+            error('test:UnknownNoiseFixture','Extend the negative test for the declared noise mode.');
+    end
     localReject(@()sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,item.Context.DesiredReferencePlane,wrong), ...
-        'sixgr:truth:SharedFixedSNRNoiseClosure');
+        closureID);
     wrong=originalReplay; wrong.InjectedNoiseVarianceDomain='post_rf';
     localReject(@()sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,item.Context.DesiredReferencePlane,wrong), ...
         'sixgr:truth:SharedInjectedNoisePlaneMismatch');

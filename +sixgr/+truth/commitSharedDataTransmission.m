@@ -45,11 +45,25 @@ validateattributes(slot0,{'numeric'},{'scalar','real','finite','integer','nonneg
 grant.Slot=double(slot0)+1;
 grant.Frame=floor(double(slot0)/double(prepared.Tx.Carrier.SlotsPerFrame))+1;
 [appliedWeights,appliedPatterns]=sixgr.truth.buildExecutedDataPrecoderEvidence(owner,prepared,item.UE);
+% A gNB expects feedback because it transmitted a scheduled DL assignment,
+% even if the UE later misses DCI. This is separate from UE feedback rows
+% and never authorizes a UE transmission or supplies an ACK/NACK bit.
+expectation=struct([]);
+expectations=sixgr.util.structGet(state,'SharedDLHARQExpectations',{});
+if prepared.Direction=="DL"
+    expectation=sixgr.truth.scheduledDLHARQExpectation( ...
+        grant,identity,records(hit).CommittedAtSample);
+    assert(~any(cellfun(@(e)e.TransmissionID==identity.TransmissionID,expectations)), ...
+        'sixgr:truth:DuplicateDLFeedbackExpectation','One transmitted attempt owns one gNB expectation.');
+end
 % Queue/packet ledgers are value state: validate their update before the
 % shared HARQ handle mutates, then publish both updates together.
 nextState=sixgr.truth.CoupledTruthRuntime.commitGrantExecution(state,item.UE,prepared.Direction,grant);
 entity.onTx(identity.RNTI,pid,uint8(bits(:)),grant,grant.Slot);
 state=nextState;
+if ~isempty(expectation)
+    state.SharedDLHARQExpectations=[expectations;{expectation}];
+end
 if ~isempty(appliedWeights)
     state.AppliedDataPrecoderWeights=[sixgr.util.structGet(state,'AppliedDataPrecoderWeights',table());appliedWeights];
     state.AppliedDataPrecoderPatterns=[sixgr.util.structGet(state,'AppliedDataPrecoderPatterns',table());appliedPatterns];

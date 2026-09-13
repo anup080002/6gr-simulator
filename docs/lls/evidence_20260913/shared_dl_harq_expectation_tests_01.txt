@@ -1,0 +1,7 @@
+SHARED_DATA_PHYSICAL_QUEUE_PASS: TDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+{Unrecognized field name "ControlDecodeOk".
+
+Error in testSharedDLHARQExpectation (line 17)
+        assert(~tx.Grant.ControlDecodeOk && ~tx.Grant.PDCCHGrantBindingOk, ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^
+} 

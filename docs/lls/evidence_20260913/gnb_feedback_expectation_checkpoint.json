@@ -1,0 +1,235 @@
+{
+  "Schema": "sixgr.focused_checkpoint.v1",
+  "Status": "unqualified_full_baseline_local_checkpoint",
+  "BaseCommit": "dd9dd773667c38a91dc97b67d8ea57b07be66c79",
+  "Full58SlotRunStarted": false,
+  "RemotePush": false,
+  "SourceHashes": [
+    {
+      "Path": "+sixgr/+truth/commitSharedDataTransmission.m",
+      "SHA256": "2A1611E34434B63DC9996F1A1027697F930987C02B8AB1201ECDB116242BDE8E"
+    },
+    {
+      "Path": "+sixgr/+truth/scheduledDLHARQExpectation.m",
+      "SHA256": "E1C9696593D1883AADFC1620B5BB5F33EEF374A41E59194185C2DBEC083A3BDC"
+    },
+    {
+      "Path": "+sixgr/+truth/validatePUCCHObservationTransfer.m",
+      "SHA256": "840CDAE4BE3F58E5FA3D27113BFB0301A539D1596ED6DB1173622C1110313452"
+    },
+    {
+      "Path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "SHA256": "F4E24081793187493E4895F437687AFA1436663F552803615C38AF4DAC7F8611"
+    },
+    {
+      "Path": "+sixgr/+truth/CoupledWaveformStream.m",
+      "SHA256": "71183FF197B435D163855434F9607123C7FF71AB6445BB7076F4DC28D8E0C89C"
+    },
+    {
+      "Path": "tests/testSharedDLHARQExpectation.m",
+      "SHA256": "3EE9DA4C4B138BA2779E943976FE0A86DF7C61E5E574AC8CA530708E54A54FBA"
+    },
+    {
+      "Path": "tests/testPUCCHObservationTransferEvidence.m",
+      "SHA256": "E647963D2DFEF44BD3E71AFBF16511314B358653AD1B18663234F85F0F3C031A"
+    },
+    {
+      "Path": "tests/testSharedDataPhysicalQueue.m",
+      "SHA256": "1ADECADFFE2BDEDF98600573521D385B37AE7F02A2A5822815CF92074BE47E99"
+    },
+    {
+      "Path": "tests/testSharedPUSCHChannelArtifacts.m",
+      "SHA256": "3D55FB9D7753D8C8C06D2C00EBF72D397290DF950AE89FF87FBE43E9BE250202"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_pdcch_shared_queue_fixture.yaml",
+      "SHA256": "6CB83624AEAD37F86DCB80BB76BA72A4C571914364ED323B39B98786FB47E993"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_trs_shared_scoring_fdd_fixture.yaml",
+      "SHA256": "E48F05DFB3711616572801FEBD6C890DD7C8FFDCD1B92500CB79FEBB1927D8BB"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_received_ul_shared_queue_fixture.yaml",
+      "SHA256": "949C07A0EABCD66C03954E936EF5226FAFC59EF1EA5A471467885B1F24EF21AF"
+    }
+  ],
+  "SourceHashScope": "Final working-file bytes after terminal _03; failed _01/_02 predate the documented test corrections and final transfer-proof retention edit.",
+  "Tests": [
+    {
+      "Log": "shared_dl_harq_expectation_tests_01.txt",
+      "ExitCode": 1,
+      "Scope": "TDD physical TX executed; new test asserted receiver fields that are intentionally absent in retained TX contracts."
+    },
+    {
+      "Log": "shared_dl_harq_expectation_tests_02.txt",
+      "ExitCode": 1,
+      "Scope": "TDD expectation checks passed; FDD negative test expected wrong fixed-SNR rather than thermal-noise error."
+    },
+    {
+      "Log": "shared_dl_harq_expectation_tests_03.txt",
+      "ExitCode": 0,
+      "Scope": "TDD/FDD actual TX commits and gNB scheduled-expectation negatives; transfer-lineage unit cases; two-port shared SRS/received UL DCI/PUSCH/UCI regression. Not full missed-DCI feedback or physical transfer completion."
+    },
+    {
+      "Log": "gnb_feedback_semantics_tests_01.xml",
+      "ExitCode": 0,
+      "Passed": 122,
+      "Scope": "Existing retained-ACK/CSV/exhaustive-auditor regressions; not PHY qualification."
+    }
+  ],
+  "RetainedCopies": {
+    "SourceRoots": [
+      "C:/Users/anup0/AppData/Local/Temp/tp26900637_7893_46bd_85fa_cc2427f98171",
+      "C:/Users/anup0/AppData/Local/Temp/tp64defe19_ea20_49d7_a810_256dfb42dce0"
+    ],
+    "DestinationRoots": [
+      "docs/lls/evidence_20260913/gnb_feedback_ul_regression_03",
+      "docs/lls/evidence_20260913/gnb_feedback_ul_constellation_03"
+    ],
+    "Files": [
+      {
+        "SourceRootIndex": 0,
+        "RelativePath": "received_pusch.csv",
+        "SHA256": "4A0FD4D71CD187B2F9A55F500A40FF69FD2180682871ACE2563290274BE0B539"
+      },
+      {
+        "SourceRootIndex": 0,
+        "RelativePath": "channel\\csv\\channel_observation_7d1831f9d5fb3c847bed9a512037e0834a575cd2ac8cb1e68e145944a2cf5c43_segments.csv",
+        "SHA256": "2B35846B2B77C3434AB2CFD5CD0AA7FDF31DAED36C333B4AF2497BAD77159FF5"
+      },
+      {
+        "SourceRootIndex": 0,
+        "RelativePath": "channel\\csv\\channel_observation_8d9b5ca2ca14d9b611f3f8846183a56133644298757ccfad5861b88cfe88f377_segments.csv",
+        "SHA256": "73F8A43DF82F6DC7567E7F665C8EAADA965A617888EFEFC75945121822EE989C"
+      },
+      {
+        "SourceRootIndex": 0,
+        "RelativePath": "channel\\mat\\channel_observation_7d1831f9d5fb3c847bed9a512037e0834a575cd2ac8cb1e68e145944a2cf5c43.mat",
+        "SHA256": "F9D5B79C7677CB8CB282EAB9FC0930663C7700B317DAE5D951C47BD9EACD4DFE"
+      },
+      {
+        "SourceRootIndex": 0,
+        "RelativePath": "channel\\mat\\channel_observation_8d9b5ca2ca14d9b611f3f8846183a56133644298757ccfad5861b88cfe88f377.mat",
+        "SHA256": "BFD96F22D4B62AE68D9035CE4DC5A1B42F4B047BD74D67775BE8599701C7110D"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "air_interface\\csv\\ul_constellation_samples.csv",
+        "SHA256": "6412E743E6E0484D49799F913DC5016D214A0292DC7D2572C75E6A3C8C9E49B0"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "air_interface\\csv\\ul_pusch_trials.csv",
+        "SHA256": "35B9B4D61724B89C3FA650AF3E886FB32297DCA8FEB47F7ACD5B83C789147D9B"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\latest.json",
+        "SHA256": "14A09395D7591FF375132C8D2EFA6374EA8CB13F1CA5E6258F94959067F0DCAD"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\checkpoint_plot_lineage.csv",
+        "SHA256": "2CC5FD120D65BAC4BDC7F9DCFDCD63E33AC3F2B38EB49A56D6E0C8BD17FF83DD"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\manifest.json",
+        "SHA256": "14A09395D7591FF375132C8D2EFA6374EA8CB13F1CA5E6258F94959067F0DCAD"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\precoder_matrix_integrity.csv",
+        "SHA256": "756EE82A340D4D762167D5FED3A6F5A36549F3D6E45A85AB825346A1E76EACD3"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\precoder_ports_and_layers.csv",
+        "SHA256": "58273BED04E54AEE1723D1CA4203310F4F7743461DF7D9759E32DE5EF5242252"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\pusch_bler_vs_measured_sinr.csv",
+        "SHA256": "A0A00A43A5EE230302E17743B44853004BC1113EFE5BC5722424FDC00505D4FE"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\pusch_evm_per_symbol.csv",
+        "SHA256": "BE4C424CB3DCCEA2B3798B5E07EB7B121D9576E02F351ED5AA8AECAF6361692D"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\pusch_window_carrier_rssi_timeline.csv",
+        "SHA256": "ADAF41DCDE92FEBBD2E5F2297147705ADBAE60150F34627415E23679A5CDCE06"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\reported_versus_applied_pmi.csv",
+        "SHA256": "B186670C33EAD2D3A98AC49992D80A5BA2CF43B4CF2821C0F5ADC5ED0EC7DB8E"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\throughput_vs_sinr.csv",
+        "SHA256": "587CAD2E63610D3A4684835882ECFB9BCFF95DE70D7D728F6DCE554E2A3BF9F8"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\csv\\throughput_vs_snr.csv",
+        "SHA256": "EAB3835DC1D97571C60AB7908862ADAD626B9E53A4CCB7647107F150C3CBBA97"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\precoder_matrix_integrity.png",
+        "SHA256": "710B9F0990938CDA76BD9138DA5C3EDA9C8D890FA7F52F0A9646802C1ABB474E"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\precoder_ports_and_layers.png",
+        "SHA256": "99EC9BAC9FE1FFC9D39BA1537C5517665EC686BB460D4D07AA2DBFC795F8FE28"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\pusch_bler_vs_measured_sinr.png",
+        "SHA256": "8C25C094C182D7E8C374B80B8D058FBFFE7DA4F1C7D1E3A227181D2BB004AABF"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\pusch_evm_per_symbol.png",
+        "SHA256": "0BB4BBF8F0D571E222E15FEF8ADBF25ED4761ACF7272A62CC923ABB226822246"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\pusch_window_carrier_rssi_timeline.png",
+        "SHA256": "680ACF4ACA5DF35F0CF6B501D51B19120858215BC16240B92A925AB0C79B9BBF"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\reported_versus_applied_pmi.png",
+        "SHA256": "6FFA842EE601BF80F6E6C5313D75C7FB8B1A0B89744DAD21B490658ACBD940B5"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\throughput_vs_sinr.png",
+        "SHA256": "A0F3BB1B7D675B9C3EC493ECF60044EF7EBCD6C7F27701332F0ECDC715CFF9E6"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\image\\throughput_vs_snr.png",
+        "SHA256": "11048F64120BEAA5EB69A56CA486BA77D84A8CCB6140A3B64971070514B53E6A"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\sources\\air_interface\\csv\\ul_constellation_samples.csv",
+        "SHA256": "6412E743E6E0484D49799F913DC5016D214A0292DC7D2572C75E6A3C8C9E49B0"
+      },
+      {
+        "SourceRootIndex": 1,
+        "RelativePath": "reports\\live_measurements\\0ea50fc3e8a0df0ee272dad737da9e4adbdcdafff289e310be90c581e1b7778d\\sources\\air_interface\\csv\\ul_pusch_trials.csv",
+        "SHA256": "35B9B4D61724B89C3FA650AF3E886FB32297DCA8FEB47F7ACD5B83C789147D9B"
+      }
+    ],
+    "HashVerification": "All 28 original/copy SHA256 comparisons matched; originals retained."
+  },
+  "RemainingGatesDocument": "docs/lls/gnb_feedback_expectation_20260913.md"
+}

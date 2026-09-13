@@ -1,0 +1,22 @@
+SHARED_DATA_PHYSICAL_QUEUE_PASS: TDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+SHARED_DATA_PHYSICAL_QUEUE_PASS: FDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+    Duplex                              TransmissionID                              DataAbsoluteSlot0    FeedbackAbsoluteSlot0    HARQProcess    ScheduledPRI    TXCommittedAtSample                            Source                                              Status                     UEControlReceptionClaimed    UCIObservationClaimed
+    ______    __________________________________________________________________    _________________    _____________________    ___________    ____________    ___________________    _______________________________________________________    ________________________________________    _________________________    _____________________
+
+    "TDD"     "88b4f24da33718626d4fca37a400f0bee17cbc44ee3eac59e77bc3a5e8c7dd74"            0                      3                   0              0                 1101            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+    "TDD"     "8a0ee3191edb94d7717b38491a8ec5ce7140f7ebba0bc746cc756f97e647f1b8"            1                      3                   1              0                 8781            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+    "FDD"     "88b4f24da33718626d4fca37a400f0bee17cbc44ee3eac59e77bc3a5e8c7dd74"            0                      1                   0              0                 1101            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+    "FDD"     "8a0ee3191edb94d7717b38491a8ec5ce7140f7ebba0bc746cc756f97e647f1b8"            1                      2                   1              0                 8781            "gnb_transmitted_schedule_expectation_not_received_UCI"    "awaiting_physical_feedback_observation"              false                      false        
+
+SHARED_DL_HARQ_EXPECTATION_PASS
+PUCCH_OBSERVATION_TRANSFER_EVIDENCE_PASS
+RECEIVED_UL_SHARED_DL_CLOCK_PASS: sample=3369 phase=0
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=0.106893223406 root=C:\Users\anup0\AppData\Local\Temp\tp64defe19_ea20_49d7_a810_256dfb42dce0
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples     EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    _________    _____________
+
+      "UL"        10                -4.9602                   -4.9602                 84             0.0010689         45      
+
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tp26900637_7893_46bd_85fa_cc2427f98171

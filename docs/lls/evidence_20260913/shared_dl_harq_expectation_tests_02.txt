@@ -1,0 +1,20 @@
+SHARED_DATA_PHYSICAL_QUEUE_PASS: TDD TX=[7680,15360) RX=[7680,15375), no decode claimed.
+{Error using assert
+Expected sixgr:truth:SharedFixedSNRNoiseClosure, got sixgr:truth:SharedThermalNoiseClosure: The executed sample variance must agree with the actual thermal PSD and bandwidth.
+
+Error in testSharedDataPhysicalQueue>localReject (line 306)
+    assert(strcmp(cause.identifier,id),'Expected %s, got %s: %s',id,cause.identifier,cause.message);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedDataPhysicalQueue>localReceive (line 272)
+    localReject(@()sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,item.Context.DesiredReferencePlane,wrong), ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledWaveformStream/advanceSlot (line 688)
+                        state=onReceived(state,completed(previousCount+1:end));
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedDataPhysicalQueue (line 66)
+    [state,~]=owner.advanceSlot(state,cfg,@localReceive);
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedDLHARQExpectation (line 8)
+    [passed,state]=testSharedDataPhysicalQueue(mode);
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

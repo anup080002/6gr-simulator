@@ -8,7 +8,7 @@ classdef CoupledWaveformStream < handle
         SampleRateHz
         Pending = struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{})
         DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{})
-        ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{})
+        ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{},'TransferProof',{})
     end
     properties (Access=private)
         Nodes = struct('ID',{},'Direction',{},'NumAntennas',{},'RF',{})
@@ -474,10 +474,19 @@ classdef CoupledWaveformStream < handle
             obj.Decisions(end+1)=struct('ID',id,'Kind',"PreparePUCCH", ...
                 'UE',ue,'Context',context);
         end
-        function transferPUCCHObservation(obj,id)
+        function transferPUCCHObservation(obj,id,proof)
             k=find(string({obj.Pending.ID})==string(id));
             assert(isscalar(k) && obj.Pending(k).Context.AwaitingPreparation, ...
                 'sixgr:truth:InvalidPUCCHObservationTransfer','Only an unencoded PUCCH observation can transfer to PUSCH UCI.');
+            assert(nargin==3 && isstruct(proof) && isscalar(proof) && ...
+                all(isfield(proof,{'Key','FeedbackGrantIDs','PUSCHGrantContextIDs','Source'})) && ...
+                proof.Key==obj.Pending(k).Context.Key && ...
+                ~isempty(proof.FeedbackGrantIDs) && ...
+                numel(proof.FeedbackGrantIDs)==numel(proof.PUSCHGrantContextIDs) && ...
+                proof.Source=="pending_UCI_reservation_not_PUSCH_execution", ...
+                'sixgr:truth:PUCCHTransferEvidenceMissing', ...
+                'Retain exact pending-UCI reservation lineage before disposing this capture.');
+            obj.Pending(k).Context.TransferProof=proof;
             obj.Pending(k).Kind="TransferredPUCCHObservation";
         end
         function ch=directionalChannelState(obj,ue,direction)
@@ -636,7 +645,8 @@ classdef CoupledWaveformStream < handle
                         if p.Kind=="TransferredPUCCHObservation"
                             obj.ControlObservationDispositions(end+1)=struct('ID',p.ID,'UE',p.UE, ...
                                 'Reason',"feedback_transferred_to_PUSCH_no_PUCCH_transmitted", ...
-                                'CompletedAtSample',obj.Events.NextSampleIndex);
+                                'CompletedAtSample',obj.Events.NextSampleIndex, ...
+                                'TransferProof',p.Context.TransferProof);
                             continue;
                         end
                         if p.Kind=="PUCCH"

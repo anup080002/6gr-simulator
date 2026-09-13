@@ -1006,7 +1006,11 @@ methods(Static)
         if isempty(rows)
             % Keep the actual registered captures, but do not publish a
             % standalone PUCCH trial when these bits now belong to PUSCH.
-            state.SharedWaveformStream.transferPUCCHObservation(item.Context.ObservationID);
+            % Empty rows alone do not establish that transfer (e.g. missed
+            % DCI or a lost/late producer). Require explicit matching lineage.
+            proof=sixgr.truth.validatePUCCHObservationTransfer( ...
+                state.PUCCHGrantTraceTable,item.Context.Key);
+            state.SharedWaveformStream.transferPUCCHObservation(item.Context.ObservationID,proof);
             return;
         end
         harqRows=rows(sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(rows),:);

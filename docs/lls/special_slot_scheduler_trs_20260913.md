@@ -3,6 +3,9 @@
 This checkpoint follows [the TDRA/disposition repair](pucch_disposition_and_tdra_20260913.md).
 It is not a qualified 58-slot run. Failed captures remain unchanged.
 
+Subsequent work: [gNB feedback expectation and PUCCH disposition](gnb_feedback_expectation_20260913.md)
+records the next producer repair and its remaining receive-only/codebook integration.
+
 ## Reproduced cause and repair
 
 The main-created scheduler was exercised with the resolved continuous-IQ
