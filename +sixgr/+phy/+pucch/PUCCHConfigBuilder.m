@@ -54,12 +54,20 @@ end
 function out=localPlan(cfg,ueData,harq,part1,part2,frame,harqOnly)
 [rrc,~,epoch]=localRRC(cfg,ueData);
 ueData.ConfigurationEpoch=epoch;
-harq=sixgr.phy.pucch.PUCCHUtil.bits(harq);
+harqReport=struct([]);
+if isa(harq,'sixgr.phy.pucch.HARQACKCodebookState')
+    assert(isscalar(harq) && harq.ConfigurationEpoch==epoch, ...
+        'sixgr:phy:pucch:StaleConfiguration','HARQ codebook must match the current PUCCH configuration epoch.');
+    harqReport=harq;
+    harq=harq.Bits;
+else
+    harq=sixgr.phy.pucch.PUCCHUtil.bits(harq);
+    if ~isempty(harq), harqReport=struct('Bits',harq); end
+end
 part1=sixgr.phy.pucch.PUCCHUtil.bits(part1);
 part2=sixgr.phy.pucch.PUCCHUtil.bits(part2);
 due=double(sixgr.phy.pucch.PUCCHUtil.field(frame,'TargetSlot',NaN));
-csi=struct([]); harqReport=struct([]);
-if ~isempty(harq), harqReport=struct('Bits',harq); end
+csi=struct([]);
 if ~isempty(part1) || ~isempty(part2)
     csi=struct('Part1Bits',part1,'Part2Bits',part2,'Priority',0,'ReportID',1);
 end

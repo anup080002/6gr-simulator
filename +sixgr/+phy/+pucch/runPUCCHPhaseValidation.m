@@ -235,11 +235,14 @@ for index=1:height(input)
     actual=sixgr.phy.pucch.HARQACKCodebookBuilder.buildVector(input(index,:));
     expectedTokens=char(expected.ExpectedBitTokens(index));
     for bit=1:numel(actual.BitTokens)
-        event=actual.Events(bit).Data;
         row=localLike(value); row.RunID=runID; row.CaseID=input.CaseID(index);
         row.CodebookType=actual.CodebookType; row.BitIndex=string(bit-1);
-        row.ServingCell=string(event.ServingCell); row.PDSCHID=string(event.PDSCHID);
-        row.DAI=string(event.DAI); row.Priority=string(event.Priority);
+        source=actual.SourceEventIndex(bit);
+        if source>0
+            event=actual.Events(source).Data;
+            row.ServingCell=string(event.ServingCell); row.PDSCHID=string(event.PDSCHID);
+            row.DAI=string(event.DAI); row.Priority=string(event.Priority);
+        end % DAI gap: no observed PDSCH identity is fabricated.
         row.ACKState=actual.BitTokens(bit); row.ExpectedACKState=string(expectedTokens(bit));
         row.Mismatch=localBool(actual.BitTokens(bit)~=string(expectedTokens(bit)));
         row.Status="PASS"; value=[value;row]; %#ok<AGROW>

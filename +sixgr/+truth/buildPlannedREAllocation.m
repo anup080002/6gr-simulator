@@ -11,7 +11,8 @@ ip.addRequired("cfg", @(x)isstruct(x) || isobject(x));
 ip.addParameter("TargetChannels", strings(0, 1), ...
     @(x)ischar(x) || isstring(x) || iscellstr(x));
 ip.parse(cfg, varargin{:});
-targetChannels = upper(strtrim(string(ip.Results.TargetChannels(:))));
+targetChannels = upper(strtrim(string(ip.Results.TargetChannels)));
+targetChannels = targetChannels(:);
 targetChannels = targetChannels(strlength(targetChannels) > 0);
 isTargetedStudy = ~isempty(targetChannels);
 isSelected = @(name) ~isTargetedStudy || any(targetChannels == upper(string(name)));
@@ -316,18 +317,19 @@ out = localPayload(rows,count,"PUSCH data, DM-RS and PT-RS resolved");
 end
 
 function out = localCSIRS(cfg,carrier,totalSlots,frame)
-[~,~,info,primary] = sixgr.phy.refsig.csirs(carrier,cfg);
-configs = {primary};
-if isfield(info,"Resources") && ~isempty(info.Resources)
-    configs = cell(numel(info.Resources),1);
-    for i=1:numel(info.Resources), configs{i}=info.Resources(i).Configuration; end
-end
 rows = repmat(localEmptyRow(),0,1); count=0;
 for slot0=0:(totalSlots-1)
     if ~frame.IsDLSlot(slot0), continue; end
+    cfgSlot=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    c=localCarrierAtSlot(carrier,slot0);
+    [~,~,info,primary]=sixgr.phy.refsig.csirs(c,cfgSlot);
+    if ~info.Scheduled, continue; end
+    configs={primary};
+    if isfield(info,"Resources") && ~isempty(info.Resources)
+        configs=cell(numel(info.Resources),1);
+        for i=1:numel(info.Resources), configs{i}=info.Resources(i).Configuration; end
+    end
     for i=1:numel(configs)
-        c=localCarrierAtSlot(carrier,slot0);
-        try configs{i}.CSIRSPeriod = configs{i}.CSIRSPeriod; catch, end %#ok<CTCH>
         m=sixgr.phy.frame.ChannelAllocationMaterializer.materializeReferenceSignal( ...
             c,"CSI_RS",configs{i},"AbsoluteSlot",slot0);
         rows=[rows;localResultRows(m,slot0,"CSI_RS",1,NaN, ...
