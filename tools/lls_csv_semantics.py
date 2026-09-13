@@ -1078,6 +1078,31 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
             "control_runtime", path, "receiver_sinr_applicability", rows,
             applicability_failures,
         ))
+    # These flags describe decoded HARQ mistakes, not missing feedback.
+    # Check them independently of the producer's aggregate BitErrors/Status:
+    # a stale True flag must not survive a completely matching UCI vector.
+    # Other control families need not expose HARQ fields. Missing columns
+    # remain the responsibility of their artifact schema/coverage gates.
+    flag_fields = [name for name in ("FalseAck", "FalseNack") if name in header]
+    if flag_fields:
+        flag_failures: list[str] = []
+        for index, row in enumerate(rows, start=1):
+            expected = _text(row, "UCIExpectedBitVector")
+            decoded = _text(row, "UCIDecodedBitVector")
+            matching = bool(expected) and set(expected) <= {"0", "1"} and expected == decoded
+            dtx = _boolean(row, "DTXFlag")
+            for field in flag_fields:
+                flag = _boolean(row, field)
+                if flag is None:
+                    flag_failures.append(f"row={index}:invalid_{field}")
+                elif flag:
+                    if matching:
+                        flag_failures.append(f"row={index}:matched_uci_has_{field}")
+                    if dtx is True:
+                        flag_failures.append(f"row={index}:receiver_dtx_has_{field}")
+        checks.append(_check(
+            "control_runtime", path, "harq_error_flag_consistency", rows, flag_failures,
+        ))
     return checks
 
 
