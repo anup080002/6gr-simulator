@@ -1,0 +1,154 @@
+{
+  "schema": "received_dl_harq_event_component/v1",
+  "date": "2026-09-13",
+  "parent_git_revision": "5e210340",
+  "source_state": "existing runtime dependencies unchanged from ff00f0c1; new unregistered event helper/test present",
+  "full_run_qualified": false,
+  "shared_feedback_integration_qualified": false,
+  "event_component_exit": 0,
+  "fresh_capture_generator_exit": 0,
+  "tests": [
+    "testReceivedDLHARQState",
+    "testReceivedDLHARQACKEvent",
+    "testType2HARQACKLayout",
+    "testType2HARQRuntimePlan"
+  ],
+  "raw_dai_tested": [
+    0,
+    1,
+    2,
+    3
+  ],
+  "actual_ack_outcomes": [
+    false,
+    true,
+    true,
+    true
+  ],
+  "actual_decode_attempted": [
+    true,
+    true,
+    false,
+    true
+  ],
+  "negative_event_guards": 48,
+  "fresh_capture_snr_db": [
+    -12,
+    35,
+    35,
+    35
+  ],
+  "fresh_capture_scope": "isolated coded endpoint test, not 12 dB baseline or shared propagation; third attempt uses retained ACK",
+  "old_capture_replay_comparison": {
+    "original_and_changed_dai_same_iq_outputs_equal": true,
+    "archived_retransmission_crc": true,
+    "current_original_assignment_crc": false,
+    "current_changed_dai_crc": false,
+    "initial_data_symbols": {
+      "archived": 765,
+      "current": 777
+    },
+    "retransmission_data_symbols": {
+      "archived": 1020,
+      "current": 1036
+    },
+    "initial_llrs": {
+      "archived": 3060,
+      "current": 3108
+    },
+    "retransmission_llrs": {
+      "archived": 6120,
+      "current": 6216
+    },
+    "explanation": "Old captures predate the CSI-RS nonoccasion calendar repair and use different data RE/rate-matching maps. Original evidence is unchanged."
+  },
+  "files": [
+    {
+      "path": "docs/lls/evidence_20260913/received_dl_harq_calendar_02/attempt_1.mat",
+      "sha256": "cb732a9b3c2062898a2493faa81a94878dffa560d2a4f9e7969641ccdb2f77e3",
+      "bytes": 2342634
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_dl_harq_calendar_02/attempt_2.mat",
+      "sha256": "c654c5343cac0d12c0fd27e992871e66f4adbba975a18ba3e8751d3238e6f1ab",
+      "bytes": 3909161
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_dl_harq_calendar_02/attempt_3.mat",
+      "sha256": "7f9113412f1c5c95ba5550b10b83e8651ed60b9657f3922653d4e18eb6a122e6",
+      "bytes": 1004915
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_dl_harq_calendar_02/attempt_4.mat",
+      "sha256": "19f876054fd6ee269d5bc93857f428c9fb2ed71737d32f5efbea9fe9e0ecb5cb",
+      "bytes": 2659783
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_dl_harq_calendar_02/received_dl_harq.csv",
+      "sha256": "72cd442626b2bb1d203508c58fd399b17668f52a8a92756d6603ef7f85317077",
+      "bytes": 228
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_old_calendar_replay_failure_01/received_event_1.mat",
+      "sha256": "cb57dbac917caa989a46577bee5a982be4fb00a6298aa808d0b82ac5df80fe16",
+      "bytes": 2109537
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_old_calendar_replay_failure_01/received_harq_events.csv",
+      "sha256": "c25bbf087f06c46f670580915231ecc38fc0e2564ed70c8babd96fe1a3419640",
+      "bytes": 339
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_old_calendar_replay_failure_01/unexpected_decode_2.mat",
+      "sha256": "a0abb58680f0db38578f29d1140fd2512dfc4b48d8f67318ca196f5539da89b2",
+      "bytes": 6903814
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_event_04/received_event_1.mat",
+      "sha256": "3540ccda32ddb020289401ce48952c29b159868b7a2b2ca490e9934ba76b8f0f",
+      "bytes": 2109329
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_event_04/received_event_2.mat",
+      "sha256": "18fe4415d5356ddff1310c1ddcd5f39b2a7e10165fe86381117735891c875c04",
+      "bytes": 3495608
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_event_04/received_event_3.mat",
+      "sha256": "4d74e0f0ef120f3d1f9783d92fa0ffa740c230cacedfe94137e28c9f9205aff3",
+      "bytes": 429297
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_event_04/received_event_4.mat",
+      "sha256": "c8c78c0309cf93316c8dba92781d0360b1213535f1aef0161455ce39b860c105",
+      "bytes": 2084482
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_event_04/received_harq_events.csv",
+      "sha256": "109769c48af3c00294a7eb46fc99ffa725c43fcb3fc0fa29e6e1c14eb4ad091a",
+      "bytes": 813
+    }
+  ],
+  "producers": [
+    {
+      "path": "+sixgr/+link/receivedDLHARQACKEvent.m",
+      "sha256": "9dc345cc824e022736c509e855eb15c0adcd2059ad21ad3150c71fb46a86e39c"
+    },
+    {
+      "path": "tests/testReceivedDLHARQACKEvent.m",
+      "sha256": "9a6f511a699e2c71244756d12572bebc75ffbfb04b65d20f0eb87aaffc816e01"
+    },
+    {
+      "path": "tests/testReceivedDLHARQState.m",
+      "sha256": "35e725d1fe790092ebaa24dc9fbeba5986bfef8686c76dc8370a2d71487d5e7b"
+    },
+    {
+      "path": "+sixgr/+link/ReceivedDLHARQState.m",
+      "sha256": "25e4669de63cc4907e1ecaf19ec7150ff9d6697a12da2fc26afe84f085e6b94d"
+    },
+    {
+      "path": "+sixgr/+phy/+refsig/csirs.m",
+      "sha256": "27a35aca58eaa14ba3cf57a9e4f466f690ad334af95c48f415e883109ee48660"
+    }
+  ]
+}

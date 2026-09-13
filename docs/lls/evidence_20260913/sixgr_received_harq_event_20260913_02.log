@@ -1,0 +1,9 @@
+RECEIVED_DL_HARQ_EVENT_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp663f31f2_85e3_4076_bea8_34d94545c8b1
+RECEIVED_DL_HARQ_EVENT_PASS sequence=1 raw_dai=0 ack=0 decode=1 missing=0
+{Error using assert
+Assertion failed.
+
+Error in testReceivedDLHARQACKEvent (line 30)
+    assert(decision.ACK==(k~=1) && decision.DecodeAttempted==(k~=3));
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

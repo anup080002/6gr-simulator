@@ -1,0 +1,5 @@
+Sequence,ReceivedRawDAI,CounterDAI,MonitoringSymbolClock,FeedbackSlot1Based,ACK,DecodeAttempted,DeliverTransportBlock,CodebookBits,MissingAssignmentBits,EventDigest,CodebookDigest
+1,0,1,448,34,0,1,0,1,0,"2698223e6b5c83ad394bd7e84895b68fed87432d22a0dcdb3a228a6df3e72dc0","884ff2c4bd076af2c3593add32cf74fcdc7fd73f3a125b2c89bd91992f3276e9"
+2,1,2,588,44,1,1,1,2,1,"3a3ab08fbd983f0e9f2c66e02d208bb03b1b350a832658ce93befa7a954f9f9c","19047768d69ea106270bdfd6cf7a0f8c3457e6cd6e93bc765731f349affee919"
+3,2,3,728,54,1,0,0,3,2,"6757a0d1c118d194b47b0a379ce4ec11f698072f328e4693b740808ea9f0eb1b","c0b2744b3109e0a03f9ab3be34b507a6978dc1adc4435783ebc905b192e047e2"
+4,3,4,868,64,1,1,1,4,3,"f7e1ccffa4bffccae74df447066651fb721e1d792fc180b0449d6dc633cc0e4f","8a1daee118416a4e988c93bd238603123ca348a61bd44c4108d1d019e52afed5"

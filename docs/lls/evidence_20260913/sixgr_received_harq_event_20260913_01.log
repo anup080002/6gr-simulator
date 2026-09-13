@@ -1,0 +1,10 @@
+RECEIVED_DL_HARQ_EVENT_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp55b18031_5868_492d_a22f_6e0e9a530e4b
+{Unrecognized field name "startSymbol".
+
+Error in sixgr.link.receivedDLHARQACKEvent (line 65)
+start=localInteger(installed.phy.pdcch.searchSpace.startSymbol,0,symbols-1);
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedDLHARQACKEvent (line 37)
+    event=sixgr.link.receivedDLHARQACKEvent(cfg,a,decision,after);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

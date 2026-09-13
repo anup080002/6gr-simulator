@@ -6,6 +6,12 @@ Requested on 2026-09-13. Source inspected: development `630be334`, main
 `b03aed95`, receiver checkpoint `8fba90cc`. Both other branch tips are
 ancestors of development. All three worktrees were clean before this plan.
 The saved edits are present; the final baseline is **not qualified**.
+Follow-up: [received HARQ event handoff and stale-capture isolation](received_harq_event_handoff_20260913.md)
+adds a tested received-DCI/private-UE-state event boundary and fresh actual
+captures. It exposes pre-calendar-fix replay fixtures and missing testAll
+coverage; fixture/registry migration and shared feedback integration remain
+pending. The development 12-test guard batch has now completed with exit 0;
+its full testAll is running, not merely queued.
 This document supersedes old *current-status* statements about blocked
 source editing and unapplied CSI/Type-2 consumer patches, not their historical
 failure evidence. Those three old companion patches were applied in `8cfac549`.

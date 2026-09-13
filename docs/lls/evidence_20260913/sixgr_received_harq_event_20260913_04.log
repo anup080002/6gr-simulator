@@ -1,0 +1,16 @@
+RECEIVED_DL_HARQ_EVENT_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp24018dd5_ffc4_4d44_b314_53cb93d6e9b6
+RECEIVED_DL_HARQ_EVENT_PASS sequence=1 raw_dai=0 ack=0 decode=1 missing=0
+RECEIVED_DL_HARQ_EVENT_PASS sequence=2 raw_dai=1 ack=1 decode=1 missing=1
+RECEIVED_DL_HARQ_EVENT_PASS sequence=3 raw_dai=2 ack=1 decode=0 missing=2
+RECEIVED_DL_HARQ_EVENT_PASS sequence=4 raw_dai=3 ack=1 decode=1 missing=3
+RECEIVED_DL_HARQ_EVENT_ALL_PASS no_shared_feedback_qualification=1
+TYPE2_HARQ_ACK_LAYOUT_PASS: literal gaps/wraps, 256 DAI sequences, guards and serialization
+HARQ_LEGACY_VECTOR_REGRESSION_PASS: 24 vectors
+TYPE2_HARQ_RUNTIME_PLAN_PASS
+
+ans =
+
+  logical
+
+   1
+

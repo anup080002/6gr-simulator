@@ -1,0 +1,10 @@
+RECEIVED_DL_HARQ_EVENT_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp3a4aaec1_29c1_4d75_bdcf_e4b7376275da
+RECEIVED_DL_HARQ_EVENT_PASS sequence=1 raw_dai=0 ack=0 decode=1 missing=0
+HARQ_EVENT_UNEXPECTED_DECODE sequence=2 saved_ack=1 original_replay_ack=0 changed_dai_ack=0
+{Error using assert
+Retained actual waveform outcome changed; inspect preserved same-IQ original/DAI comparison.
+
+Error in testReceivedDLHARQACKEvent (line 42)
+    assert(decision.ACK==(k~=1) && decision.DecodeAttempted==(k~=3), ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 
