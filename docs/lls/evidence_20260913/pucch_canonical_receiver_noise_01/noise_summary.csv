@@ -1,0 +1,3 @@
+HARQBits,NoiseOccasions,ReceiveBranches,FalseDetections,FalseACKBits,ACKBitDenominator,DTXToACKBitFraction,OccasionsWithFalseACK,AnyACKUpperBoundUnderIIDOccasionAssumption,ConfidenceAlpha,Requirement,EmpiricalFractionMeetsLimit,QualificationStatus
+1,512,2,8,2,512,0.00390625,2,0.0122449883961485,0.05,0.01,1,component_only_no_conformance_or_ACK_miss_qualification
+2,512,2,16,12,1024,0.01171875,10,0.032904108456955,0.05,0.01,0,component_only_no_conformance_or_ACK_miss_qualification

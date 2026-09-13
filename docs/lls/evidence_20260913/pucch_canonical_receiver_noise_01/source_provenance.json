@@ -1,0 +1,30 @@
+{
+  "artifact_kind": "executed_receiver_noise_rf_component_not_complete_baseline_or_conformance",
+  "matlab_source_revision": "7b1bea5d9bcbd7a8426961d790ef6e0181930fdb",
+  "revision_scope": "MATLAB source matches this checkpoint; source was unchanged throughout the noise run",
+  "producer": "tests/testPUCCHBaselineNoiseRF.m",
+  "command": "setup6GRSimToolkit('Verbose',false); testPUCCHReceiverOnlyAssignment; testPUCCHReceiverAssignmentEquivalence; testPUCCHBaselineNoiseRF(fullfile(tempdir,'sixgr_receiver_only_noise_20260913'))",
+  "process_exit_code": 0,
+  "original_output_directory": "%TEMP%/sixgr_receiver_only_noise_20260913",
+  "preservation": "Completed configuration, trials, summary, IQ, terminal state and execution log copied without rewriting originals",
+  "receiver_path": "PUCCHReceptionAssignment -> PUCCHReceiver.receive",
+  "configured_noise_occasions": 512,
+  "hypothesis_rows": 1024,
+  "signal_present": false,
+  "timing_scope": "prescribed_slot_window_not_acquired_sync",
+  "comparison_to_prior_direct_toolbox_component": {
+    "reference_directory": "../pucch_baseline_noise_rf_01",
+    "all_common_csv_fields_except_iq_file_hash_and_metric_equal": true,
+    "maximum_detection_metric_difference": 0.0,
+    "retained_complex_iq_elements_exactly_equal": true,
+    "hdf5_iq_shape": [2, 3932160],
+    "comparison_scope": "Deterministic same-noise equivalence, not an independent statistical replication; MAT container hashes differ"
+  },
+  "audit_directory": "../pucch_canonical_receiver_noise_audit_01",
+  "remaining_boundaries": [
+    "Two-bit empirical false-ACK fraction remains above its configured reference",
+    "No signal-present ACK-miss or detector conformance qualification",
+    "No main-runtime gNB missed-DCI receive-window consumer qualification",
+    "No full-suite or Phase-05 qualification"
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "source_run": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\pucch_canonical_receiver_noise_01",
+  "source_sha256": {
+    "configuration.mat": "8ffa2f7d181813f4aa476bba9758b4add1c3988106beeacad884b705a84678d5",
+    "noise_trials.csv": "a096c44351793a6e1751cb22178496cba25c28f5c84645dd595a39e48f50e981",
+    "noise_summary.csv": "a8a2e0f1f0033b6cebc3799701c70eb135fe83c503e16c25c7b4df6a6b1f9565",
+    "noise_observations.mat": "876c50c7a34c874e77a1a12a1236badf6fe7c308ab7f4359fc80f2bc7f11bbd3"
+  },
+  "audit_kind": "retained_noise_csv_aggregation_and_iq_integrity_not_new_phy_execution",
+  "auditor_sha256": "a709d56cf8b60dcfc35e32c2ede80b5c38a49ad5336b61d06f3e21b8b7998932",
+  "summary": [
+    {
+      "HARQBits": 1,
+      "NoiseOccasions": 512,
+      "ReceiveBranches": 2,
+      "FalseDetections": 8,
+      "FalseACKBits": 2,
+      "ACKBitDenominator": 512,
+      "OccasionsWithFalseACK": 2,
+      "EmpiricalFractionMeetsLimit": 1,
+      "DTXToACKBitFraction": 0.00390625,
+      "Requirement": 0.01,
+      "AnyACKUpperBoundUnderIIDOccasionAssumption": 0.012244988396149322,
+      "ConfidenceAlpha": 0.05,
+      "QualificationStatus": "component_only_no_conformance_or_ACK_miss_qualification"
+    },
+    {
+      "HARQBits": 2,
+      "NoiseOccasions": 512,
+      "ReceiveBranches": 2,
+      "FalseDetections": 16,
+      "FalseACKBits": 12,
+      "ACKBitDenominator": 1024,
+      "OccasionsWithFalseACK": 10,
+      "EmpiricalFractionMeetsLimit": 0,
+      "DTXToACKBitFraction": 0.01171875,
+      "Requirement": 0.01,
+      "AnyACKUpperBoundUnderIIDOccasionAssumption": 0.03290410845695298,
+      "ConfidenceAlpha": 0.05,
+      "QualificationStatus": "component_only_no_conformance_or_ACK_miss_qualification"
+    }
+  ],
+  "limitations": [
+    "Does not re-decode retained IQ or verify cryptographic assignment contents.",
+    "Checks consistency with the saved configuration, not full YAML inheritance.",
+    "IID bound is on occasions with any false ACK, not individual ACK bits.",
+    "Empirical reference checks are not conformance or ACK-miss qualification."
+  ],
+  "output_sha256": {
+    "noise_detector_audit.png": "2d0a2ef4a4dcbe13d883d0e7a22ba29c59502cd66049d76280160997f86e834f",
+    "recomputed_summary.csv": "4909e10fd98c8e0bb6150527cdc7a47d98c2d6b4bf87db05e23d27c39af7a42b"
+  }
+}
