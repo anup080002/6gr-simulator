@@ -11,8 +11,15 @@ classdef HARQACKEvent
             required = ["DAI","EventIndex","PDSCHID","Priority", ...
                 "ServingCell","State"];
             sixgr.phy.pucch.UCIReport.requireFields(data,required);
+            for field=["DAI","EventIndex","Priority","ServingCell"]
+                value=data.(field);
+                assert(isnumeric(value) && isreal(value) && isscalar(value) && ...
+                    isfinite(value) && value>=0 && value==fix(value), ...
+                    'sixgr:phy:pucch:InvalidHARQEvent', ...
+                    '%s must be a finite nonnegative integer before event hashing.',field);
+            end
             state = upper(string(data.State));
-            if ~ismember(state,["ACK","NACK","DTX"])
+            if ~isscalar(state) || ismissing(state) || ~ismember(state,["ACK","NACK","DTX"])
                 error("sixgr:phy:pucch:UnsupportedHARQCodebook", ...
                     "HARQ event State must be ACK, NACK or DTX.");
             end

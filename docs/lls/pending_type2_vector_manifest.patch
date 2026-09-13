@@ -1,0 +1,17 @@
+*** Begin Patch
+*** Update File: tests/vectors/pucch/independent_vector_manifest.json
+@@
+       "path": "pucch_harq_codebook_test_vectors.csv",
+-      "sha256": "924fa84b197a9c3ec0f70c45401e8b0fbb43aec0b1e66786209079d1b56cfdc3",
++      "sha256": "291d423acb1523f5454a67463a6297f3cc276f821d2a2f127108f1b0ef206d50",
+       "rows": 24,
+-      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
++      "oracle_class": "BOUNDED_FLOOR_WITH_TS38213_V1880_9_1_3_1_TYPE2_CORRECTION",
+@@
+       "path": "expected_pucch_harq_codebook.csv",
+-      "sha256": "2c829149eb3ecad09816ab00f3ac506acac00854056d8f6a1418fd09faddfbb6",
++      "sha256": "29c492060d9c203fedcabce54bab74a1b1f00bff7d50f7a31d7d7e78f7ed1245",
+       "rows": 24,
+-      "oracle_class": "PURE_PYTHON_BOUNDED_FLOOR",
++      "oracle_class": "BOUNDED_FLOOR_WITH_TS38213_V1880_9_1_3_1_TYPE2_CORRECTION",
+*** End Patch

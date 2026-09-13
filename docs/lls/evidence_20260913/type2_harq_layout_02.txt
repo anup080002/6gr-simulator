@@ -1,0 +1,2 @@
+TYPE2_HARQ_ACK_LAYOUT_PASS: literal gaps/wraps, 256 DAI sequences, guards and serialization
+HARQ_LEGACY_VECTOR_REGRESSION_PASS: 24 vectors

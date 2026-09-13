@@ -1,0 +1,6 @@
+{
+  "scope": "existing independent vector pack verifier; not waveform qualification",
+  "command": "python tests/vectors/pucch/verify_pucch_vector_pack.py",
+  "exit_code": 1,
+  "output": "{\r\n  \"manifest_files\": 31,\r\n  \"vector_rows\": 4271,\r\n  \"failures\": [\r\n    \"sha:pucch_harq_codebook_test_vectors.csv\",\r\n    \"sha:expected_pucch_harq_codebook.csv\"\r\n  ]\r\n}\r\n"
+}

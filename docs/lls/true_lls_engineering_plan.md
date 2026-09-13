@@ -4,7 +4,14 @@ This plan is for rebuilding the scenario path as a measured PHY/MAC execution pa
 
 ## Current 12 dB qualification checkpoint (2026-09-13)
 
-Latest follow-up: [CSI clock fixture correction and constellation publication](csi_clock_fixture_and_constellation_publication_20260913.md)
+Latest follow-up: [Type-2 HARQ repair and source-editor block](type2_harq_repair_and_editor_block_20260913.md)
+implements and tests scalar-TB DAI chronology/gap/wrap handling, but the typed
+runtime handoff fails and two vector-manifest hashes remain stale because
+the required consumer/manifest edits could not be saved. Saved companion
+patches are unapplied; this is an unqualified checkpoint, not a baseline run.
+Further mandatory integration requires an external editing/tool-state change.
+
+Earlier follow-up: [CSI clock fixture correction and constellation publication](csi_clock_fixture_and_constellation_publication_20260913.md)
 closes the reproduced test-fixture clock mismatch and adds source-bound
 constellation PNG publication. The source-editor/planner and other mandatory
 baseline gates remain open; there has been no new full 58-slot validation.

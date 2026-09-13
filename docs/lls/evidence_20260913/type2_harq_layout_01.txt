@@ -1,0 +1,25 @@
+{Error using jsonencode
+Unable to encode complex-valued objects of class double as JSON-formatted text.
+
+Error in sixgr.phy.pucch.PUCCHUtil.hash (line 123)
+                encoded = jsonencode(input);
+                          ^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.pucch.HARQACKEvent (line 21)
+            obj.Digest = sixgr.phy.pucch.PUCCHUtil.hash(data);
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.pucch.HARQACKCodebookBuilder.build (line 23)
+                    events(end+1,1) = sixgr.phy.pucch.HARQACKEvent(eventData(index)); %#ok<AGROW>
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testType2HARQACKLayout>build (line 95)
+s=sixgr.phy.pucch.HARQACKCodebookBuilder.build('TYPE2_DYNAMIC',e,2);
+  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testType2HARQACKLayout>@()build(e) (line 55)
+    rejects(@()build(e),'sixgr:phy:pucch:InvalidHARQEvent');
+               ^^^^^^^^
+Error in testType2HARQACKLayout>rejects (line 100)
+try, action(); catch cause, caught=strcmp(cause.identifier,id); if ~caught, rethrow(cause); end; end
+     ^^^^^^^^
+Error in testType2HARQACKLayout (line 55)
+    rejects(@()build(e),'sixgr:phy:pucch:InvalidHARQEvent');
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

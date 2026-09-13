@@ -1,0 +1,19 @@
+TYPE2_HARQ_ACK_LAYOUT_PASS: literal gaps/wraps, 256 DAI sequences, guards and serialization
+HARQ_LEGACY_VECTOR_REGRESSION_PASS: 24 vectors
+TYPE2_CHECK PASS testType2HARQACKLayout
+PUCCH_RESOURCE_PLANNING_WITHOUT_POWER_PASS: exact resource plan and strict transmit power binding.
+TYPE2_CHECK PASS testPUCCHResourcePlanningWithoutPower
+TYPE2_CHECK FAIL testType2HARQRuntimePlan
+Error using sixgr.phy.pucch.PUCCHUtil.bits (line 101)
+UCI values must be finite real binary values before conversion.
+
+Error in sixgr.phy.pucch.PUCCHConfigBuilder>localPlan (line 57)
+harq=sixgr.phy.pucch.PUCCHUtil.bits(harq);
+     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ (line 5)
+            out=localPlan(cfg,ueData,ack,int8([]),int8([]),frame,true);
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testType2HARQRuntimePlan (line 21)
+planned=sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ(cfg,ue,book,frame);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TYPE2_CHECK_TOTAL tests=3 failures=1

@@ -1,8 +1,14 @@
 classdef HARQACKCodebookBuilder
-    %HARQACKCODEBOOKBUILDER Release-pinned Type-1/2/3 event ordering.
+    %HARQACKCODEBOOKBUILDER Scalar-TB HARQ event procedure adapter.
+    % Type 2: EventIndex is the unique chronological monitoring-pair ordinal,
+    % not the modulo DAI. Optional MonitoringOccasionIndex groups cells in the
+    % same monitoring occasion; EventIndex orders receptions within that cell.
+    % One invocation represents one feedback occasion and priority. This API
+    % does not implement CBG, multi-TB bundling, SPS append or Type-2 grouping.
 
     methods (Static)
         function state = build(type,eventData,epoch)
+            validateattributes(epoch,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
             type = upper(string(type));
             if ~ismember(type,["TYPE1_SEMISTATIC","TYPE2_DYNAMIC", ...
                     "TYPE3_ONESHOT"])
@@ -21,15 +27,13 @@ classdef HARQACKCodebookBuilder
                     error("sixgr:phy:pucch:UnsupportedHARQCodebook", ...
                         "HARQ event indices must be unique.");
                 end
-                if type == "TYPE2_DYNAMIC"
-                    dai = arrayfun(@(x) double(x.Data.DAI),events);
-                    if any(dai < 1 | dai > 4)
-                        error("sixgr:phy:pucch:UnsupportedHARQCodebook", ...
-                            "Type-2 DAI values must be in [1,4].");
-                    end
-                end
             end
-            state = sixgr.phy.pucch.HARQACKCodebookState(type,events,epoch);
+            if type == "TYPE2_DYNAMIC"
+                [events,sourceIndices] = sixgr.phy.pucch.type2HARQACKLayout(events,epoch);
+            else
+                sourceIndices=(1:numel(events)).';
+            end
+            state = sixgr.phy.pucch.HARQACKCodebookState(type,events,epoch,sourceIndices);
         end
 
         function state = buildVector(row)

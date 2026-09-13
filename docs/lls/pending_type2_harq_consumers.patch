@@ -1,0 +1,32 @@
+*** Begin Patch
+*** Update File: +sixgr/+phy/+pucch/PUCCHConfigBuilder.m
+@@
+-harq=sixgr.phy.pucch.PUCCHUtil.bits(harq);
++harqReport=struct([]);
++if isa(harq,'sixgr.phy.pucch.HARQACKCodebookState')
++    assert(isscalar(harq) && harq.ConfigurationEpoch==epoch, ...
++        'sixgr:phy:pucch:StaleConfiguration','HARQ codebook must match the current PUCCH configuration epoch.');
++    harqReport=harq;
++    harq=harq.Bits;
++else
++    harq=sixgr.phy.pucch.PUCCHUtil.bits(harq);
++    if ~isempty(harq), harqReport=struct('Bits',harq); end
++end
+@@
+-csi=struct([]); harqReport=struct([]);
+-if ~isempty(harq), harqReport=struct('Bits',harq); end
++csi=struct([]);
+*** Update File: +sixgr/+phy/+pucch/runPUCCHPhaseValidation.m
+@@
+-        event=actual.Events(bit).Data;
+         row=localLike(value); row.RunID=runID; row.CaseID=input.CaseID(index);
+         row.CodebookType=actual.CodebookType; row.BitIndex=string(bit-1);
+-        row.ServingCell=string(event.ServingCell); row.PDSCHID=string(event.PDSCHID);
+-        row.DAI=string(event.DAI); row.Priority=string(event.Priority);
++        source=actual.SourceEventIndex(bit);
++        if source>0
++            event=actual.Events(source).Data;
++            row.ServingCell=string(event.ServingCell); row.PDSCHID=string(event.PDSCHID);
++            row.DAI=string(event.DAI); row.Priority=string(event.Priority);
++        end % DAI gap: no observed PDSCH identity is fabricated.
+*** End Patch

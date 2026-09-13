@@ -16,3 +16,7 @@ audit/full_stack_qualification/phase18_recovery_*/evidence/full_stack_regression
 # MATLAB result/workspace binaries are stored through Git LFS so historical
 # evidence does not exceed GitHub's per-object size limit.
 *.mat filter=lfs diff=lfs merge=lfs -text
+
+# These corrected independent vectors have byte-pinned manifest SHA256s.
+tests/vectors/pucch/pucch_harq_codebook_test_vectors.csv -text
+tests/vectors/pucch/expected_pucch_harq_codebook.csv -text
