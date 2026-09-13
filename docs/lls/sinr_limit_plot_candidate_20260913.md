@@ -1,5 +1,9 @@
 # SINR limit plotting candidate — not yet integrated
 
+Current follow-up: [main integration status](main_integration_status_20260913.md).
+The candidate is now applied on main and its 37 tests pass in the integrated
+268-test Python batch. This page retains the original isolated review history.
+
 ## Implementation and isolation
 
 `pending_sinr_limit_plot_provenance.patch` contains the candidate changes to

@@ -1,5 +1,9 @@
 # Received DCI to UE HARQ event: tested component, integration pending
 
+Follow-up: [main integration status](main_integration_status_20260913.md)
+records the applied fixture/registry patch and implemented shared-clock event
+commit. The remaining UCI consumer and gNB mapping are still not qualified.
+
 This follows the [12 dB closure plan](12db_measurement_closure_plan_20260913.md).
 It does not qualify the 58-slot baseline, shared PUCCH/PUSCH feedback, the
 detector, full measurement closure or the later impairment campaign.

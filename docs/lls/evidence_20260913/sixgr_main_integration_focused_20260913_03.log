@@ -1,0 +1,41 @@
+SAME_CHAIN_SWEEP_CONFIG_PASS points=9 permitted_changed_leaves=21 hash=73bbbfcb449ff72baf183e500f1a1f20dc60f5e2f40c610f1874f278076d192a
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=1 ack=0 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=2 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=3 ack=1 deliver=0
+RECEIVED_DL_HARQ_REPLAY_PASS sequence=4 ack=1 deliver=1
+RECEIVED_DL_HARQ_REPLAY_GUARDS_PASS count=7
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=1 prior=0 current=5600 combined=5600
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=2 prior=5600 current=5600 combined=5600
+RECEIVED_DL_COMBINING_EVIDENCE_PASS attempt=4 prior=0 current=5600 combined=5600
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=1 combined=0 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=2 combined=1 csi_occasion=0
+RECEIVED_DL_REPORT_EVIDENCE_PASS sequence=4 combined=0 csi_occasion=0
+DISABLED_CSI_DIAGNOSTIC decision_equal=1 status=disabled indices=0 observed=0
+RECEIVED_DL_REPORT_DISABLED_CSI_PASS waveform=nonoccasion_capture guards=1
+RECEIVED_DL_REPORT_CALENDAR_PASS slots=42 guards=8
+RECEIVED_DL_QCL_AUTHORITY_PASS bits=1064 delay=43 window=[39 47] guards=8 source=explicit_boundary_fixture
+DISABLED_CSI_DIAGNOSTIC decision_equal=1 status=disabled indices=0 observed=0
+RECEIVED_DL_REPORT_DISABLED_CSI_PASS waveform=nonoccasion_capture guards=1
+RECEIVED_DL_HARQ_EVENT_OUTPUT=C:\Users\anup0\AppData\Local\Temp\tp41309bb2_8a1a_467e_af42_94455be5eb67
+RECEIVED_DL_HARQ_EVENT_PASS sequence=1 raw_dai=0 ack=0 decode=1 missing=0
+RECEIVED_DL_HARQ_EVENT_PASS sequence=2 raw_dai=1 ack=1 decode=1 missing=1
+RECEIVED_DL_HARQ_EVENT_PASS sequence=3 raw_dai=2 ack=1 decode=0 missing=2
+RECEIVED_DL_HARQ_EVENT_PASS sequence=4 raw_dai=3 ack=1 decode=1 missing=3
+RECEIVED_DL_HARQ_EVENT_ALL_PASS no_shared_feedback_qualification=1
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=10 sample=76800
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=20 sample=153600
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=30 sample=230400
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=40 sample=307200
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=50 sample=384000
+[Warning: Directory already exists.] 
+[> In testRetainedDLACKFeedbackQueue (line 87)] 
+RETAINED_DL_ACK_QUEUE_PASS guards=9 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=C:\Users\anup0\AppData\Local\Temp\tp002d94f4_a77b_446c_94cd_2a0ff51f6e03
+TYPE2_HARQ_ACK_LAYOUT_PASS: literal gaps/wraps, 256 DAI sequences, guards and serialization
+HARQ_LEGACY_VECTOR_REGRESSION_PASS: 24 vectors
+TYPE2_HARQ_RUNTIME_PLAN_PASS
+CSI_PLANNED_CALENDAR period=5 offset=1 slots=[1 6 11 16 21 26 31 36 41 46 51 56]
+CSI_PLANNED_CALENDAR period=5 offset=1 slots=[1 6 11 16 21 26 31 36 41 46 51 56]
+CSI_PLANNED_CALENDAR period=20 offset=11 slots=[11 31]
+CSIRS_PLANNED_CALENDAR_PASS
+CSI_NONOCCASION_CAPACITY slot0=62 calendar=5:1 scheduled=0 enabled_G=3108 disabled_G=3108 extra_reserved_re=0 enabled_TBS=1064 disabled_TBS=1064
+MAIN_INTEGRATION_FOCUSED_PASS

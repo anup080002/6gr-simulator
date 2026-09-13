@@ -1132,7 +1132,7 @@ methods(Static)
             'sixgr:truth:RetainedACKClockSlotMismatch','Control/data slot coordinates must agree with the shared sample clock.');
         before=state.SharedUEDLHARQEntities{ue};
         assert(before.UEId==ue,'sixgr:truth:RetainedACKUEIdentity','Use this UE owned HARQ entity.');
-        [~,next,protocol]=before.acknowledgeRetained(cfg,a);
+        [decision,next,protocol]=before.acknowledgeRetained(cfg,a);
         protocol.ControlAvailableAtSample=control.AvailableAtSample;
         protocol.DecisionAvailableAtSample=availableAtSample;
         protocol.SampleRateHz=owner.SampleRateHz;
@@ -1170,6 +1170,8 @@ methods(Static)
         pending=sixgr.util.structGet(state,'PendingFeedbackTable',table());
         assert(isempty(pending) || ~any(string(pending.PUCCHGrantId)==string(fb.PUCCHGrantId)), ...
             'sixgr:truth:DuplicateRetainedACKReservation','One received assignment must queue feedback once.');
+        [state,~]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
+            state,cfg,control,decision,next,availableAtSample);
         state.PendingFeedbackTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
             pending,struct2table(fb,'AsArray',true));
         state=sixgr.truth.CoupledTruthRuntime.appendPUCCHGrantTraceFromFeedback(state,fb);

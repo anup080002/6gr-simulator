@@ -4,7 +4,7 @@ s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 for k=[1 2 4]
-    saved=load(fullfile('docs','lls','evidence_20260913','received_dl_harq',sprintf('attempt_%d.mat',k)));
+    saved=load(fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_02',sprintf('attempt_%d.mat',k)));
     cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(installed,saved.a.ControlAbsoluteSlot+1);
     [rx,decision]=saved.before.receive(cfg,saved.a,saved.delayed,'TimingSearchWindowSamples',[0 60]);
     [combined,e]=sixgr.link.receivedDLHARQCombiningEvidence(rx);

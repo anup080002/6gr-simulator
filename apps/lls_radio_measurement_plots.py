@@ -103,14 +103,14 @@ def _identity(m, row, path, index):
             "source_table_logical_path": path, "source_row_index": index}
 
 
-def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, display_title=None):
+def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, display_title=None, extra_summary=()):
     if not rows or not series:
         return _unavailable(m, name, run_id, note, sources)
     records = [{"run_id": run_id, "chart_name": name, **row} for row in rows]
     return {"csv_bytes": m._encode_dict_rows(list(records[0]), records),
             "img_bytes": m._render_multi_series_svg(display_title or name, note,
                 [{"name": label, "points": points} for label, points in series.items()],
-                [f"source_records={len(rows)}", "Observed points; no sweep/fit claim", "See CSV for source and timing"],
+                [f"source_records={len(rows)}", "Observed points; no sweep/fit claim", "See CSV for source and timing", *extra_summary],
                 x_label=x_label, y_label=y_label, mode="scatter", evidence_shape_policy="operating_point"),
             "csv_status": "specialized_runtime_radio_measurement_dataset",
             "image_status": "generated_specialized_runtime_summary_svg", "source_table_path": "|".join(sources),
@@ -118,14 +118,7 @@ def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, d
 
 
 def _measured_sinr(m, row):
-    for field in ("PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "MeasuredWidebandSINR_dB"):
-        value = m._row_float(row, field)
-        if value is not None:
-            source = m._row_text(row, field.removesuffix("_dB") + "Source", "SINRSource")
-            if any(x in source.lower() for x in ("proxy", "synthetic", "fallback", "unavailable")):
-                continue
-            return value, field, source
-    return None, "", ""
+    return m._measured_sinr_evidence(row)
 
 
 def _control_evm(m, name, existing, fetch, run_id):
@@ -375,7 +368,8 @@ def _relationships(m, name, existing, fetch, run_id):
     for path, trials in m._all_available_rows(existing, fetch, paths):
         for index, row in enumerate(trials, 1):
             record = _identity(m, row, path, index)
-            x, x_field, x_source = _measured_sinr(m, row)
+            sinr_evidence = _measured_sinr(m, row)
+            x, x_field, x_source = (sinr_evidence[key] for key in ("value", "field", "source"))
             y_field, y = "", None
             if name == "throughput vs SNR":
                 x, x_field = None, ""
@@ -425,20 +419,29 @@ def _relationships(m, name, existing, fetch, run_id):
                 "crc_pass": m._row_text(row, "CRCPass"),
                 "noise_operating_mode": m._row_text(row, "NoiseOperatingMode"),
                 "value_status": "available" if x is not None and y is not None else "required_measurement_unavailable"})
+            is_sinr_axis = name != "throughput vs SNR" and name != "CSI-RS pilot residual"
+            if is_sinr_axis:
+                record.update({"x_value_status": sinr_evidence["status"],
+                    "x_value_reason": sinr_evidence["reason"], "x_value_role": sinr_evidence["role"],
+                    "x_measurement_domain": sinr_evidence["domain"], "x_is_limited": sinr_evidence["limited"],
+                    "x_raw_equalizer_db": sinr_evidence["raw_equalizer_db"]})
             rows.append(record)
             if name == "throughput vs SNR" and x is not None:
                 for field, label in (("Throughput_Mbps", "scheduled TB rate"), ("Goodput_Mbps", "goodput")):
                     if record[field] is not None:
                         series[f"{record['direction']} U{record['ue_index']} {label}"].append([x, record[field]])
             elif x is not None and y is not None:
-                series[f"{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
+                limit_label = "[limited] " if is_sinr_axis and sinr_evidence["limited"] else ""
+                series[f"{limit_label}{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
     notes = {"throughput vs SNR": "Scheduled TB bitrate and Delivered goodput are separate measured series. Actual noise-calibration SNR; no configured-SNR substitution or controlled sweep is claimed.",
              "CSI-RS pilot residual": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
              "NMSE vs SNR / SINR": "An explicit executed true-channel reference and TrueChannelNMSE_dB/OracleNMSE_dB are required. Pilot-fit residuals and noise/gain ratios are not channel-estimation NMSE."}
     note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
+    limited_count = sum(row.get("x_is_limited", False) and row["value_status"] == "available" for row in rows)
+    limit_summary = [f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"] if limited_count else []
     return _finish(m, name, run_id, rows, series,
-        "Executed CSI-RS slot" if name == "CSI-RS pilot residual" else "Applied noise-calibration SNR (dB)" if name == "throughput vs SNR" else "Measured SINR (dB)",
-        "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "True-channel NMSE (dB)" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths))
+        "Executed CSI-RS slot" if name == "CSI-RS pilot residual" else "Applied noise-calibration SNR (dB)" if name == "throughput vs SNR" else "Receiver SINR (dB); includes limited values" if limited_count else "Measured SINR (dB)",
+        "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "True-channel NMSE (dB)" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths), extra_summary=limit_summary)
 
 
 def _csi_physical_power(m, name, existing, fetch, run_id):

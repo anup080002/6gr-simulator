@@ -1,0 +1,9 @@
+{Error using assert
+Sweep changed non-sweep configuration: canonical_control.run, config_inheritance.overridden_fields, config_inheritance.parents,
+config_inheritance.provenance.auto_normalization_notes, config_inheritance.provenance.auto_normalized_fields, config_inheritance.provenance.config_path,
+config_inheritance.provenance.source_files, sweeps_and_matrix.fixed_link_calibration, validation.fixed_link_campaign.snr_db.
+
+Error in test12dBSameChainSweepConfig (line 28)
+assert(isempty(unexpected),'test:SweepPHYDrift', ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

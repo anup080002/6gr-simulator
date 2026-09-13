@@ -27,7 +27,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-13-contract-v68-constellation-provenance-identity"
+MATERIALIZER_VERSION = "2026-09-13-contract-v69-sinr-limit-provenance"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -10530,6 +10530,42 @@ def _non_runtime_evidence_field(row):
     return ""
 
 
+def _measured_sinr_evidence(row):
+    """Keep a receiver coordinate and its declared semantics inseparable.
+
+    No configured SNR, geometry estimate or EVM-derived replacement is used.
+    A finite but rejected preferred field is not rescued through an alias.
+    Missing legacy metadata stays missing; no status or raw value is invented.
+    """
+    fields = {
+        "PostEqSINR_dB": "PostEqSINR",
+        "MeasuredTrialSINR_dB": "MeasuredTrialSINR",
+        "MeasuredSINR_dB": "SINR",
+        "MeasuredWidebandSINR_dB": "MeasuredWidebandSINR",
+    }
+    result = {"value": None, "field": "", "source": "", "status": "",
+              "reason": "", "role": "", "domain": "", "limited": False,
+              "raw_equalizer_db": None}
+    for field, stem in fields.items():
+        value = _row_float(row, field)
+        if value is None:
+            continue
+        source = _row_text(row, stem + "Source", "SINRSource")
+        status = _row_text(row, stem + "ValueStatus")
+        result.update(value=value, field=field, source=source, status=status,
+                      reason=_row_text(row, stem + "NAReason"),
+                      role=_row_text(row, stem + "ValueRole"),
+                      domain=_row_text(row, stem + "MeasurementDomain", "SINRMeasurementDomain"),
+                      limited=status.lower() == "ok_dynamic_range_limited",
+                      raw_equalizer_db=_row_float(row, "PostEqSINRRawEqualizer_dB")
+                          if field == "PostEqSINR_dB" else None)
+        if any(token in (source + " " + status).lower() for token in
+               ("proxy", "synthetic", "fallback", "unavailable", "not_available", "invalid", "unverified")):
+            result["value"] = None
+        return result
+    return result
+
+
 def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
     """Preserve individual scheduled-TB/goodput observations, including failures.
 
@@ -10563,25 +10599,13 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
                     "csv_status": "unavailable_exact_reason", "image_status": "generated_unavailable_reason_svg",
                     "source_table_path": source_path, "source_row_count": 0, "note": reason,
                 }
-            sinr, sinr_field = None, ""
-            # No configured SNR, geometry-only SINR, or inferred EVM-to-SINR.
-            for field in ("PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredSINR_dB", "MeasuredWidebandSINR_dB"):
-                candidate = _row_float(row, field)
-                if candidate is not None:
-                    sinr, sinr_field = candidate, field
-                    break
+            sinr_evidence = _measured_sinr_evidence(row)
+            sinr, sinr_field = sinr_evidence["value"], sinr_evidence["field"]
             throughput = _row_float(row, "Throughput_Mbps")
             goodput = _row_float(row, "Goodput_Mbps")
-            source_fields = {
-                "PostEqSINR_dB": ("PostEqSINRSource", "PostEqSINRValueStatus"),
-                "MeasuredTrialSINR_dB": ("MeasuredTrialSINRSource", "MeasuredTrialSINRValueStatus"),
-                "MeasuredSINR_dB": ("SINRSource", "SINRValueStatus"),
-                "MeasuredWidebandSINR_dB": ("MeasuredWidebandSINRSource", "MeasuredWidebandSINRValueStatus"),
-            }
-            sinr_source, sinr_status = ([_row_text(row, name) for name in source_fields[sinr_field]]
-                                        if sinr_field else ["", ""])
+            sinr_source, sinr_status = sinr_evidence["source"], sinr_evidence["status"]
             if sinr is None:
-                reason = reason or "measured_sinr_unavailable"
+                reason = reason or ("sinr_source_not_measured_evidence" if sinr_field else "measured_sinr_unavailable")
             elif throughput is None and goodput is None:
                 reason = reason or "runtime_bitrates_unavailable"
             elif any(value is not None and value < 0 for value in (throughput, goodput)):
@@ -10603,7 +10627,11 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
                 "crc_pass": _row_text(row, "CRCPass"),
                 "sinr_db": sinr, "sinr_source_field": sinr_field,
                 "sinr_measurement_source": sinr_source, "sinr_value_status": sinr_status,
-                "sinr_measurement_domain": _row_text(row, "SINRMeasurementDomain"),
+                "sinr_measurement_domain": sinr_evidence["domain"],
+                "sinr_value_reason": sinr_evidence["reason"],
+                "sinr_value_role": sinr_evidence["role"],
+                "sinr_is_limited": sinr_evidence["limited"],
+                "sinr_raw_equalizer_db": sinr_evidence["raw_equalizer_db"],
                 "throughput_mbps": throughput, "goodput_mbps": goodput,
                 "throughput_value_status": "available" if throughput is not None else "unavailable_in_source",
                 "goodput_value_status": "available" if goodput is not None else "unavailable_in_source",
@@ -10620,12 +10648,17 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
                 if metric is not None:
                     domain = {"PostEqSINR_dB": "post-EQ", "MeasuredTrialSINR_dB": "trial",
                               "MeasuredSINR_dB": "measured", "MeasuredWidebandSINR_dB": "wideband"}[sinr_field]
-                    plot_points[f"{direction} {name} [{domain}]"].append([sinr, metric])
+                    # Put the qualification first: long legends are truncated.
+                    limit_label = "[limited] " if sinr_evidence["limited"] else ""
+                    plot_points[f"{limit_label}{direction} {name} [{domain}]"].append([sinr, metric])
     note = ("Individual DL/UL trial observations: scheduled TB bitrate and delivered goodput. "
             "No fitted curve, no DL/UL averaging; SINR field, MCS, layers and CRC retained in CSV.")
     summary = [f"runtime_trials={len(csv_rows)}",
                f"unplotted_trials={sum(row['value_status'] != 'available' for row in csv_rows)}",
                "TB bitrate is not delivered goodput", "No interpolation or sweep claim"]
+    limited_count = sum(row["sinr_is_limited"] and row["value_status"] == "available" for row in csv_rows)
+    if limited_count:
+        summary.extend([f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"])
     series = [{"name": name, "points": points, "marker": "square" if "Goodput" in name else "circle"}
               for name, points in plot_points.items()]
     if not series:
@@ -10641,7 +10674,7 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
     return {
         "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
         "img_bytes": _render_multi_series_svg(chart_name, note, series, summary,
-            x_label="Measured SINR (dB); source domain in legend/CSV", y_label="Bitrate / goodput (Mbit/s)",
+            x_label="Receiver SINR (dB); includes limited values" if limited_count else "Measured SINR (dB); source domain in legend/CSV", y_label="Bitrate / goodput (Mbit/s)",
             mode="scatter", evidence_shape_policy="operating_point"),
         "csv_status": "specialized_runtime_throughput_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",

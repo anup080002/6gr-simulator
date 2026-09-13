@@ -1,5 +1,11 @@
 # 12 dB baseline: pending issues, acceptance and consolidation plan
 
+Current follow-up: [main integration status](main_integration_status_20260913.md).
+Main now contains both saved branch histories; the three recent candidate
+patches are applied. The received-event shared-clock handoff is implemented,
+but its PUCCH/PUSCH consumer and independent gNB mapping remain open.
+The status below records the original plan, not an integrated-run pass.
+
 ## Status and scope
 
 Requested on 2026-09-13. Source inspected: development `630be334`, main

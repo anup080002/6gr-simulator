@@ -1,0 +1,7 @@
+{Error using assert
+Sweep changed inherited domain canonical_control.
+
+Error in test12dBSameChainSweepConfig (line 21)
+    assert(isfield(sweep.Data,name) && isequaln(base.Data.(name),sweep.Data.(name)), ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

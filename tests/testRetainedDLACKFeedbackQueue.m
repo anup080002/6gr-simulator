@@ -12,7 +12,7 @@ cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 % Production binds this at the runner front door; this direct component
 % invocation must retain an equally explicit continuous-IQ output root.
 cfg.run.rootRunFolder=fullfile(outputRoot,'physical_clock_capture');
-saved=load('docs/lls/evidence_20260913/received_dl_harq/attempt_3.mat'); a=saved.a;
+saved=load('docs/lls/evidence_20260913/received_dl_harq_calendar_02/attempt_3.mat'); a=saved.a;
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),a.DataAbsoluteSlot+2);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
@@ -52,6 +52,25 @@ assert(state.PUCCHGrantTraceTable.IsRetransmission && ...
     'Retained ACK must not be presented to link adaptation as first-transmission feedback.');
 sixgr.truth.assertHARQFeedbackAvailable(state.PendingFeedbackTable,now,owner.SampleRateHz);
 sixgr.truth.assertHARQFeedbackAvailable(state.PUCCHGrantTraceTable,now,owner.SampleRateHz);
+assert(numel(state.SharedUEHARQACKEvents)==1);
+entry=state.SharedUEHARQACKEvents{1};
+assert(isa(entry.Event,'sixgr.phy.pucch.HARQACKEvent') && ...
+    entry.Event.Data.ReceivedAssignmentDigest==a.AssignmentDigest && ...
+    entry.Event.Data.AcknowledgedFromPriorDecode && ...
+    ~entry.Event.Data.DecodeAttempted && ~entry.Event.Data.DeliverTransportBlock && ...
+    entry.AvailableAtSample==now && entry.ControlAvailableAtSample==control.AvailableAtSample && ...
+    ~entry.FeedbackTransmissionQualified);
+[decision,after]=saved.before.acknowledgeRetained(current,a);
+localReject(@()sixgr.truth.commitReceivedDLHARQACKEvent( ...
+    state,current,control,decision,after,now),'sixgr:truth:DuplicateReceivedHARQEvent');
+localReject(@()sixgr.truth.commitReceivedDLHARQACKEvent( ...
+    before,current,control,decision,after,now+1),'sixgr:truth:HARQEventSharedClockRequired');
+bad=control; bad.Allowed=false;
+localReject(@()sixgr.truth.commitReceivedDLHARQACKEvent( ...
+    before,current,bad,decision,after,now),'sixgr:truth:HARQEventReceivedControlRequired');
+bad=control; bad.AvailableAtSample=now+1; wrong=before; wrong.SharedReceivedGrantControls={bad};
+localReject(@()sixgr.truth.commitReceivedDLHARQACKEvent( ...
+    wrong,current,bad,decision,after,now),'sixgr:truth:HARQEventClockSlotMismatch');
 localReject(@()sixgr.truth.CoupledTruthRuntime.queueRetainedDLACKRuntime( ...
     state,current,1,control,now),'sixgr:link:ReceivedDLHARQNoncausalAssignment');
 localReject(@()sixgr.truth.CoupledTruthRuntime.queueRetainedDLACKRuntime( ...
@@ -69,7 +88,7 @@ mkdir(outputRoot);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'protocol_decisions.csv'),struct2table(protocol),'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'pending_feedback.csv'),state.PendingFeedbackTable,'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'pucch_reservations.csv'),state.PUCCHGrantTraceTable,'PreserveSchema',true);
-fprintf('RETAINED_DL_ACK_QUEUE_PASS guards=5 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=%s\n',outputRoot);
+fprintf('RETAINED_DL_ACK_QUEUE_PASS guards=9 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=%s\n',outputRoot);
 ok=true;
 end
 

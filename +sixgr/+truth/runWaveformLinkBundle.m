@@ -12697,6 +12697,9 @@ if connectedDL
         'sixgr:truth:MissingReceivedDLHARQCommit','Shared DL completion must return the UE-owned soft state.');
     dlEntities{item.UE}=res.ReceivedHARQState;
     state.SharedUEDLHARQEntities=dlEntities;
+    [state,res.ReceivedHARQACKEvent]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
+        state,job.Cfg,control,res.ReceivedHARQDecision,res.ReceivedHARQState, ...
+        state.SharedWaveformStream.Events.NextSampleIndex);
 end
 res.TrialTable=sixgr.truth.bindSharedLargeScaleEvidence(res.TrialTable,item.Planes);
 res.TrialTable=sixgr.truth.bindSharedRFExecutionEvidence(res.TrialTable,item.Planes);

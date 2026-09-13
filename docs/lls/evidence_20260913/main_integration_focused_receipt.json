@@ -1,0 +1,109 @@
+{
+  "scope": "main_integration_focused_regressions_not_end_to_end_12db_qualification",
+  "parent_commit": "06e534af",
+  "executed_with_uncommitted_integration_changes": true,
+  "python": {
+    "tests_passed": 268,
+    "exit_code": 0,
+    "warnings": 13
+  },
+  "matlab": {
+    "focused_tests_passed": 12,
+    "exit_code": 0,
+    "terminal_marker": "MAIN_INTEGRATION_FOCUSED_PASS",
+    "failed_prior_batches": [
+      "sixgr_main_integration_focused_20260913_01.log",
+      "sixgr_main_integration_focused_20260913_02.log"
+    ],
+    "registry_note": "Six additional existing feedback/scoring tests registered after this focused batch; testAll not yet qualified."
+  },
+  "full_suite_qualified": false,
+  "shared_UCI_consumer_qualified": false,
+  "baseline_12db_qualified": false,
+  "files": [
+    {
+      "path": "+sixgr/+truth/commitReceivedDLHARQACKEvent.m",
+      "sha256": "33108fabd34f327580fd3260f8e49b1aac55753d89bb014708bf9520fae145fc"
+    },
+    {
+      "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "sha256": "3e5a6b0c992b7f25a9f1bb6594b5e8685cd99ea3e86ee52a2f8319b920ca3aa2"
+    },
+    {
+      "path": "+sixgr/+truth/runWaveformLinkBundle.m",
+      "sha256": "0c5af175311fdf67be638a531bcb1af806ec7f3442a74849c8c0325bea318ddd"
+    },
+    {
+      "path": "apps/lls_contract_materializer.py",
+      "sha256": "e1ac1b52523cb47bda83987c8085930e0274705f9d3b6a4f6d53fddfb4e826ad"
+    },
+    {
+      "path": "apps/lls_radio_measurement_plots.py",
+      "sha256": "411d34f53dd3d02d841e113d8103046dc3a878ff17c0ceda513a25b939e32980"
+    },
+    {
+      "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml",
+      "sha256": "f7878444ee4d5236848bff20465a726f7adca9c7e85e5915783d768f9850debd"
+    },
+    {
+      "path": "tests/test12dBSameChainSweepConfig.m",
+      "sha256": "2f4a15c561805e01ad153a2fbffb6b360ae6097d7e886f82ccef58af4bec1aeb"
+    },
+    {
+      "path": "tests/testRetainedDLACKFeedbackQueue.m",
+      "sha256": "b063238729cf0ac39c024f065d83240de470222ac29fbe5332834a56b8f7dbad"
+    },
+    {
+      "path": "tests/testReceivedDLHARQReplay.m",
+      "sha256": "3cad7c23d6048fc72fcd2fd0342f1af0fa3ab536787af670f5aed036e040b14c"
+    },
+    {
+      "path": "tests/testReceivedDLCombiningEvidence.m",
+      "sha256": "7744ff2b49446d95f5f4c7686342221a1617c562d096a69c6e53d116eb0842c3"
+    },
+    {
+      "path": "tests/testReceivedDLReportEvidence.m",
+      "sha256": "3b90d165233b2c0f86c84a2df10ca0fb9988f49ea08b77efd73fe935c20e92fd"
+    },
+    {
+      "path": "tests/testReceivedDLQCLAuthority.m",
+      "sha256": "db43ecfaf2841968cfd4675f5494b8545c57d9d3bc8638c13bb7b2ada7ea2596"
+    },
+    {
+      "path": "tests/testReceivedDLDisabledCSI.m",
+      "sha256": "4f266dfb9d35ee1123aed09106652c0f63c5cf115ec0a3ec244a3817f8286447"
+    },
+    {
+      "path": "tests/testReceivedDLHARQACKEvent.m",
+      "sha256": "8741e35ab63e102ef83c00bec631bb919d3094f1480c5382be7a48ace22e82da"
+    },
+    {
+      "path": "tests/testType2HARQACKLayout.m",
+      "sha256": "9e04e51c4147a7d4e210b68ceeddc4cd5463c53b9861de56b40ba04bd9e91677"
+    },
+    {
+      "path": "tests/testType2HARQRuntimePlan.m",
+      "sha256": "9aa03556bae50d521c9e63d9bb9b6bf3a342decc73f77568795cc6829e6be7aa"
+    },
+    {
+      "path": "tests/testCSIRSPlannedCalendar.m",
+      "sha256": "bc71d9cd606d99a991c4964edcb0f11433910ceb8bafee39435e8882fa9d7a35"
+    },
+    {
+      "path": "tests/testCSIRSNonoccasionDataCapacity.m",
+      "sha256": "89ad87828b9807e4b1f58132e7dffbb8fe3b446d21eee16fc50c722953530157"
+    },
+    {
+      "path": "tests/test_lls_sinr_limit_provenance.py",
+      "sha256": "2bc9513fba4be08e15a6779dcd85d2c56a201dd4c576efc2b9d64956688df9f6"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/main_integration_python_01.xml",
+      "sha256": "f656892efa12a24cd98a00f2b97121f8b0f87d7c055fa55f43514d3eab62202f"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_main_integration_focused_20260913_03.log",
+      "sha256": "61509cd04df1f8ac14383c31a7d84687b068fe184e60c96c19dac303c400273a"
+    }
+  ]
+}
