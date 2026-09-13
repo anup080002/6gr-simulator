@@ -5,6 +5,11 @@ checkpoint worktree. Main and the older development full-suite sources
 remain unchanged while their jobs run. This is a bounded B02 repair;
 **shared feedback integration and the 12 dB acceptance gate remain open**.
 
+Subsequent producer wiring, retained-grant DCI tests, and explicit retirement
+of the superseded development suite are recorded in
+[scheduled UL DAI runtime finalization](scheduled_ul_dai_runtime_20260913.md).
+The status below describes the earlier component checkpoint.
+
 ## Implemented candidate
 
 - PUSCH Type-2 codebook construction consumes an integrity-checked, received

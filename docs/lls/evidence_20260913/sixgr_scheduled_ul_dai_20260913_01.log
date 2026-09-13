@@ -1,0 +1,10 @@
+{Error using sixgr.l2.mac.SchedulerBase/attachCanonicalTimingDecision (line 1471)
+Canonical production timing rejected the grant: data_timing_rejected:target_flexible_symbols_unresolved ()
+
+Error in sixgr.link.resolveWaveformGrant (line 78)
+grant = scheduler.attachCanonicalTimingDecision(grant);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testScheduledULTotalDAI (line 11)
+grant=sixgr.link.resolveWaveformGrant(cfg,'UL',4,'Slot',34,'SFN',3,'ControlAbsoluteSlot',32);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

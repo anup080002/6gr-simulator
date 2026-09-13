@@ -1,0 +1,241 @@
+{
+  "schema": "sixgr.scheduled_ul_dai_component_evidence/v2",
+  "base_commit": "7c215d65a6f1ad6a375fba8e2a0d4b141dfed443",
+  "scope": "Scheduled UL total DAI producer and actual DCI codec component, not shared UCI, 12 dB qualification or full regression",
+  "source_identity_policy": "as_executed_sha256 identifies exact mixed/CRLF/LF working bytes; git_blob_sha1 identifies Git-clean-filtered content across checkouts. Evidence artifacts are byte-pinned.",
+  "runs": [
+    {
+      "log": "sixgr_scheduled_ul_dai_20260913_01.log",
+      "exit_code": 1,
+      "stage": "fixture grant construction",
+      "reason": "target_flexible_symbols_unresolved"
+    },
+    {
+      "log": "sixgr_scheduled_ul_dai_20260913_02.log",
+      "exit_code": 1,
+      "stage": "fixture grant construction",
+      "reason": "generic calibration grant missing connected UL TPMI"
+    },
+    {
+      "log": "sixgr_scheduled_ul_dai_20260913_03.log",
+      "exit_code": 0,
+      "passed": [
+        "testScheduledULTotalDAI",
+        "testScheduledType2DAI"
+      ],
+      "actual_UL_DCI_receptions": 9,
+      "declared_DL_scheduling_counts": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ],
+      "negative_guards": 24,
+      "marker": "SCHEDULED_UL_DAI_FOCUSED_PASS"
+    }
+  ],
+  "required_new_revision_full_regression": "pending",
+  "required_new_revision_guards": "pending",
+  "superseded_validation": {
+    "log": "stopped_superseded_projection_full_20260913.log",
+    "status": "intentionally_stopped_incomplete",
+    "wrapper_exit_code": -1,
+    "reason": "Ancestor source superseded by two live newer validations; freeing existing worktree for actual runtime repair"
+  },
+  "sources": [
+    {
+      "path": "+sixgr/+truth/prepareScheduledULDAI.m",
+      "as_executed_sha256": "82f770772f487f28188c60878b47c09706964e2ae2060892a9eb25c26f9551c3",
+      "git_blob_sha1": "e3786edacb51963a7952d0ae7016208db20cc470"
+    },
+    {
+      "path": "+sixgr/+truth/runWaveformLinkBundle.m",
+      "as_executed_sha256": "b4bf4b1e87959760e3f4e8f18a320751df15118f549b525fdedaa253b728448b",
+      "git_blob_sha1": "a56bc12eaf78a041386f129c8f9e07e722a8a079"
+    },
+    {
+      "path": "tests/testScheduledULTotalDAI.m",
+      "as_executed_sha256": "bee352e1f722111e4b9af99462d019f96865048b6d1f0dd61edcf6559f7272f7",
+      "git_blob_sha1": "5d3c37d915dc95d8325fbd4756c51dc58098ae44"
+    },
+    {
+      "path": "tests/testScheduledType2DAI.m",
+      "as_executed_sha256": "0990258d5b745a30d07f5236e7dea1b5f01d1415cc055f4599e3ef6a29788a07",
+      "git_blob_sha1": "4a31380caa19c46a00562aa451608a467d13798c"
+    },
+    {
+      "path": "tests/testAll.m",
+      "as_executed_sha256": "88adb34d517218d11c4ecd9548542578575b9dba4f78efb0e4f8c7f45a71c53b",
+      "git_blob_sha1": "0b3d5aa992c532e518595876d2c6ee872e4deb3d"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_0.mat",
+      "sha256": "79cfd9bd19064a02ec34db01819fa58529cf9d260537c60738159d7921d1cb00"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_1.mat",
+      "sha256": "46570094be2578ac3701c8c0947c6c69b10a62d0c5b9a502c8c1a2b95b70e9c0"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_2.mat",
+      "sha256": "82b537f7599b66d224770d28119f4305be52ac2d5c9e5b040772fdf3e534f0b6"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_3.mat",
+      "sha256": "2203d27e9055adab342c48609de000245e57064f9bba01740137f65c46ba8574"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_4.mat",
+      "sha256": "230cf05e08f786b110ef3f177552b6587d8ee611f7c3bfdc1612636f29f6d1c4"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_5.mat",
+      "sha256": "81a4e7680cfef858974b0e79c676f77a6447279a0280610ee3e5c82ea548d2ef"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_6.mat",
+      "sha256": "e08001cae59599d32294eaaa8582c481a73030c28671dbea66c1ed9c5a884e37"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_7.mat",
+      "sha256": "cdb9cb708466a8512200c5e8b7e78c8f16ae9704d13c11f893136a26c510f87f"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai_8.mat",
+      "sha256": "d081e48d2d4c4526fc3e8cabbaac29ad0689aaa563b1d3766f74265325ffe822"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_ul_dai_03/scheduled_ul_dai.csv",
+      "sha256": "40bcf22b9560dd3eced93341adbcea5d74f5017c7e32357c9636c0ec090bb3e9"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_scheduled_ul_dai_20260913_01.log",
+      "sha256": "41ad0ed1ffa48b371271d18c967e0048fa7e9e2b578ff9fc14fcbb896f9c686b"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_scheduled_ul_dai_20260913_02.log",
+      "sha256": "55d05ac88fe9daabe44d9ed8d153233a32a61902d9ffc5302889aa6c4aacb129"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_scheduled_ul_dai_20260913_03.log",
+      "sha256": "71e9e1d691644f9391ef936bded0f51f11f8c359999d7d29a01e18fc1214e56e"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/stopped_superseded_projection_full_20260913.log",
+      "sha256": "a4afb2e0eb62f5587e400ecac490fb227d8f31fdf506d6762ec2b841b4719327"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_harq_slot_10.mat",
+      "sha256": "c83281808eaf054a6bb4c27bd0257c6890a5f3b07930413a3bd0b400e47bd66c"
+    }
+  ],
+  "parent_receipt_checkout_verification": {
+    "parent_receipt": "received_ul_dai_component_receipt.json",
+    "note": "All original as-executed files remain exact in their live checkpoint worktree. Eleven unchanged source files have equal Git blobs and identical text after normalizing line endings; testAll differs by this turn's added test registration.",
+    "sources": [
+      {
+        "path": "+sixgr/+phy/+pucch/HARQACKCodebookBuilder.m",
+        "recorded_as_executed_sha256": "079ad8f426409d1bbe44f75456b0ec2289571daa00e881e803194727656fddab",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "753175768733d9d3990b403242e0fc79fe871762",
+        "current_git_blob": "753175768733d9d3990b403242e0fc79fe871762"
+      },
+      {
+        "path": "+sixgr/+phy/+pucch/HARQACKCodebookState.m",
+        "recorded_as_executed_sha256": "7a5cd806e19619aa30fced2681bcfdcf08d3650770e5754b096341a21dc96578",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "d7e7c2bf542497ed27c08533f23943f3bc22d23b",
+        "current_git_blob": "d7e7c2bf542497ed27c08533f23943f3bc22d23b"
+      },
+      {
+        "path": "+sixgr/+phy/+pucch/type2HARQACKLayout.m",
+        "recorded_as_executed_sha256": "209739b2d7df2cf3499654f6b20b6a85d50d2d472c92f01d03e07d4e23d8a7f8",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "50f524f9a02f7cd680090efb19b4572b49cde05e",
+        "current_git_blob": "50f524f9a02f7cd680090efb19b4572b49cde05e"
+      },
+      {
+        "path": "+sixgr/+phy/+pucch/PUCCHConfigBuilder.m",
+        "recorded_as_executed_sha256": "6a371e09958292f9ea7a10c42c5159df5378d5e4721a9897bb7828ecdc340ee1",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "c499b49aaee32d3bfaa4307a95974e0da4feaa20",
+        "current_git_blob": "c499b49aaee32d3bfaa4307a95974e0da4feaa20"
+      },
+      {
+        "path": "+sixgr/+phy/+ul/+pusch/PUSCHUCIPayload.m",
+        "recorded_as_executed_sha256": "acbdd9d8d869901d8091d4ebdc916ae278e951f8eb072f371d5a30793e3b2bb4",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "77acf1fcf59a9be1e7260449d13645bb32a9288a",
+        "current_git_blob": "77acf1fcf59a9be1e7260449d13645bb32a9288a"
+      },
+      {
+        "path": "+sixgr/+truth/buildReceivedHARQACKCodebook.m",
+        "recorded_as_executed_sha256": "f1455ed1e299db82a57507d22a7661146d653dd7069dd88448d31fa5fc0618f2",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "cfb91fbec8fc45b9af0523309d14a15a42394827",
+        "current_git_blob": "cfb91fbec8fc45b9af0523309d14a15a42394827"
+      },
+      {
+        "path": "+sixgr/+truth/buildScheduledHARQACKMapping.m",
+        "recorded_as_executed_sha256": "38d42f62419aa17510112f3ffa21a85c575dabacdf678a5d2d09f849b5e3d0af",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "f4a4699e7279fd0be022c1af62c3d0be417e9490",
+        "current_git_blob": "f4a4699e7279fd0be022c1af62c3d0be417e9490"
+      },
+      {
+        "path": "tests/testReceivedULTotalDAICodebook.m",
+        "recorded_as_executed_sha256": "b04ed5700d0d6f959eac77c17708efb51d600742fc047dd2b603459229869f19",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "0605eca836c56cee10bf6408343f36b2bcf2bac3",
+        "current_git_blob": "0605eca836c56cee10bf6408343f36b2bcf2bac3"
+      },
+      {
+        "path": "tests/testScheduledHARQACKMapping.m",
+        "recorded_as_executed_sha256": "aee49b6961e6fd2f3efb1353cbe97fe7887a7e92d990d6ed97173091d4d32f2d",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "945cb0d168cf696d39e9e809a5a79d18906c51ab",
+        "current_git_blob": "945cb0d168cf696d39e9e809a5a79d18906c51ab"
+      },
+      {
+        "path": "tests/testRetainedDLACKFeedbackQueue.m",
+        "recorded_as_executed_sha256": "ef24eb66da9c8f9ec6448048a13f05f7f4ba740098516e27f956b1fd05b02ed3",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "c86f37e9c501955cb13140007a538934d8919951",
+        "current_git_blob": "c86f37e9c501955cb13140007a538934d8919951"
+      },
+      {
+        "path": "tests/testType2HARQRuntimePlan.m",
+        "recorded_as_executed_sha256": "acfa2ab6834fe99bf76042bd89f93caaf764a1ce80179e61449e4e42d0e390c9",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": true,
+        "parent_git_blob": "673b0d823950fec7579f19b10288eb6cd9741abf",
+        "current_git_blob": "673b0d823950fec7579f19b10288eb6cd9741abf"
+      },
+      {
+        "path": "tests/testAll.m",
+        "recorded_as_executed_sha256": "df6daf7cc10b6502f8d555468006d94adbab39e42c3b26120ce90161c94152cf",
+        "original_worktree_still_matches": true,
+        "same_text_ignoring_line_endings": false,
+        "parent_git_blob": "6fcab0af45778089c84a2290a4f83d9e4b6fabec",
+        "current_git_blob": "0b3d5aa992c532e518595876d2c6ee872e4deb3d"
+      }
+    ]
+  }
+}

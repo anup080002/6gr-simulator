@@ -1,0 +1,4 @@
+SCHEDULED_UL_TOTAL_DAI_PASS actual_UL_DCI_receptions=9 declared_schedule_counts=0:8 guards=24 folder=C:\Users\anup0\AppData\Local\Temp\tpf40b098f_b2e3_4269_918f_8a5a406d55a0
+SCHEDULED_DAI_INPUT valid=1 required=1 ack_valid=1 format=DCI_1_1
+SCHEDULED_TYPE2_DAI_PASS: ordinal wrap, rejected candidates, identity, retirement and real contextual packing
+SCHEDULED_UL_DAI_FOCUSED_PASS

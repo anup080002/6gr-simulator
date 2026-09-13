@@ -9284,6 +9284,7 @@ for gi = 1:numel(grants)
     % tentative scheduler candidate or as a function of successful UE RX.
     [grant,candidateDAILedger]=sixgr.truth.prepareScheduledDLDAI( ...
         sixgr.util.structGet(state,'ScheduledDLDAILedger',struct()),cfgU,grant);
+    grant=sixgr.truth.prepareScheduledULDAI(candidateDAILedger,cfgU,grant);
     cfgControl = localResolvePDCCHTrialConfig(cfgU, pdcchSNR_dB, 1, 1, grant);
     [controlCarrier, ~] = sixgr.phy.grid.makeCarrier(cfgControl);
     [state.PDCCHResourceLedger, occupiedControlREs] = ...
