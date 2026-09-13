@@ -493,6 +493,22 @@ classdef CoupledWaveformStream < handle
             obj.Pending(k).Context.TransferProof=proof;
             obj.Pending(k).Kind="TransferredPUCCHObservation";
         end
+        function bindPUCCHReceiveOnly(obj,id,cfg,hypothesis)
+            k=find(string({obj.Pending.ID})==string(id));
+            assert(isscalar(k) && obj.Pending(k).Kind=="PUCCH" && ...
+                obj.Pending(k).Context.AwaitingPreparation, ...
+                'sixgr:truth:InvalidPUCCHReceiveOnlyBinding','Bind one actual unencoded registered receive window.');
+            assert(isa(hypothesis.Assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment') && ...
+                hypothesis.Assignment.Data.ObservationID==string(id) && ...
+                hypothesis.Mapping.UEIndex==obj.Pending(k).UE && ...
+                hypothesis.Mapping.TargetSlot==obj.Pending(k).Context.Slot, ...
+                'sixgr:truth:PUCCHReceiveOnlyIdentityMismatch','The gNB hypothesis must own this exact receiver window.');
+            obj.Pending(k).Context.Config=cfg;
+            obj.Pending(k).Context.GNBReception=hypothesis;
+            obj.Pending(k).Context.AwaitingPreparation=false;
+            obj.Pending(k).Kind="PUCCHReceiveOnly";
+            % No contributor, waveform, power state or TX reference is added.
+        end
         function ch=directionalChannelState(obj,ue,direction)
             % Metadata view only: never swap, clone or execute the owned
             % fading object to prepare a future opposite-direction signal.

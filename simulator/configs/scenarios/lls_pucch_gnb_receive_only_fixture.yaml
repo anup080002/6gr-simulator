@@ -1,0 +1,22 @@
+inherits:
+  - ./lls_pucch_baseline_signal_fixture.yaml
+
+meta:
+  scenario_id: lls_pucch_gnb_receive_only_fixture
+  research_class: optional_research_experiment
+  description: >
+    Actual shared DL transmission, SRS timing and gNB-only PUCCH observation.
+    UE control reception is deliberately not executed in this component
+    fixture. It is not a missed-DCI decoding or full access qualification.
+
+reference_signals:
+  csi_reporting_enabled: false
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
+
+pucch_resources:
+  sr_resource_ids: []
+  overlap_policy:
+    uci_on_pusch_enabled: false

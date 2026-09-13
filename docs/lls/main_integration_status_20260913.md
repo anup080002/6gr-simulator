@@ -4,6 +4,17 @@ This supersedes current-status statements in the earlier candidate/handoff
 notes. Historical evidence and patches are preserved, not rewritten.
 The 12 dB baseline is **not yet qualified**.
 
+Latest server handoff: [Windows testAll and log bundles](server_testall_handoff_20260913.md)
+and [actual gNB receive-only integration](gnb_receive_only_integration_20260913.md).
+The consolidated `2faf8d91` guard batch finished with **12 passes, exit 0**;
+its full suite continues on that unchanged local main checkout. The new
+receiver-only/server-launcher candidate has **5 focused MATLAB passes** and
+**4 Python launcher-contract passes**. These are not a full-suite or baseline
+pass. The user requested publication of all saved source for server testing;
+the consolidated descendant is intended for GitHub `main`, while local main
+must remain frozen until its existing MATLAB process finishes. Historical
+status paragraphs below do not supersede this revision-bound distinction.
+
 Latest consolidation: [PUCCH observation and SRS provenance](pucch_observation_receiver_20260913.md).
 That note supersedes the older live-job and unmerged-checkpoint status below.
 The new tip includes the two intervening UL-DAI/mapping commits and the

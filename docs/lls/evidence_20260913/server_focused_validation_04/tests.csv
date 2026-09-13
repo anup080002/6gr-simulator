@@ -1,0 +1,6 @@
+name,ok,msg,duration_s
+testSharedPUCCHReceiveOnlyClock,1,,120.2880063
+testPUCCHReceiverOnlyAssignment,1,,2.8684283
+testPUCCHObservationReceiver,1,,6.8056642
+testSharedPUCCHFeedbackClock,1,,77.7103846
+testRegressionExecutionAuthority,1,,9.1854943

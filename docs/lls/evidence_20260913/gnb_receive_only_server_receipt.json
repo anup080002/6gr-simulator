@@ -1,0 +1,309 @@
+{
+  "schema_version": 2,
+  "base_commit": "2faf8d912a7877441067ec4bf9b916757a5832cd",
+  "scope": "actual HARQ-only gNB receive-only integration and Windows server testAll launcher; not 12 dB qualification",
+  "final_focused_matlab": {
+    "test_count": 5,
+    "failed_count": 0,
+    "matlab_exit_code": 0,
+    "launcher_exit_code": 0,
+    "log": "docs/lls/evidence_20260913/server_focused_validation_04/matlab.log"
+  },
+  "launcher_python": {
+    "passed": 4,
+    "failed": 0,
+    "seconds": 28.04
+  },
+  "full_new_source_regression": "required_not_yet_complete",
+  "older_main_2faf8d91": {
+    "guard_tests_passed": 12,
+    "guard_exit_code": 0,
+    "full_testAll": "running_on_unchanged_source"
+  },
+  "sources": [
+    {
+      "path": "+sixgr/+phy/+pucch/PUCCHConfigBuilder.m",
+      "as_executed_sha256": "0e4860fa842a997482a1e55d69b5c4be9c021f7d720397d7b13697a8e858d699",
+      "git_blob_sha1": "e141d3fac4595ca51adcd8a2581e964ac8a89ecf"
+    },
+    {
+      "path": "+sixgr/+phy/+pucch/PUCCHResourceSetResolver.m",
+      "as_executed_sha256": "ed14628b1907b2b7c27d357066725a622c147c596f22b7a05dd703b5f76e4f24",
+      "git_blob_sha1": "5aaca2a59c6b332beee9b2f10c5d69669106475f"
+    },
+    {
+      "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "as_executed_sha256": "1a08c446aef51f40a24b49d35f19c84ff967b3668f2d3612224ca11abe51ce9f",
+      "git_blob_sha1": "fafcb7834d8380690611052befb7bbf839305ead"
+    },
+    {
+      "path": "+sixgr/+truth/CoupledWaveformStream.m",
+      "as_executed_sha256": "1b704e2bd88a2975983e93d19cdf49e0c946ed592e5151e244aa80b1cc6d2007",
+      "git_blob_sha1": "6a7b0a6ba6677024922dfa76e7484d9943accff1"
+    },
+    {
+      "path": "+sixgr/+truth/runWaveformLinkBundle.m",
+      "as_executed_sha256": "0c7aa4dbe957c093beaacda88fe3fcd846097d57492eb827518b17e264a60bc7",
+      "git_blob_sha1": "9962dbf2d11e1630121317cc4fbb67bb3b7cd5d2"
+    },
+    {
+      "path": "+sixgr/+truth/buildScheduledPUCCHHARQReception.m",
+      "as_executed_sha256": "c080cec35ecac652f21a3fdd13757343275e17294db97c51c8b6590f8833b9e2",
+      "git_blob_sha1": "5451b33c7641ece00ffcbe78dab3eb6703678538"
+    },
+    {
+      "path": "tests/testAll.m",
+      "as_executed_sha256": "52efc8e01d1a7581f2936c890b159eaeed4f165c4f8115f17eb5357cedb00243",
+      "git_blob_sha1": "1fe7ac6aa834a5d0e5c32f8df9ab16d0647c80aa"
+    },
+    {
+      "path": "tests/runFocusedTests.m",
+      "as_executed_sha256": "69cfcec27afa0b829836d8422253e0d37c04c72dc52e4767938934ba0a022efa",
+      "git_blob_sha1": "07cf5fcefe0b714903d5fdcf03cf0eb3d7b07853"
+    },
+    {
+      "path": "tests/testSharedPUCCHReceiveOnlyClock.m",
+      "as_executed_sha256": "b9807385a37b0882ed9da7589b89ccf595d62b2324921ff50b0a0227cbd0c23f",
+      "git_blob_sha1": "cdbfb67c7241ab86e99293e919eb602a92789cbf"
+    },
+    {
+      "path": "simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml",
+      "as_executed_sha256": "86708c121dd9b838abcac4e8eaace6d53c5e950e14bc2f2b30f12dbc12caee51",
+      "git_blob_sha1": "bae8f5dd137ee8e9210c0e57a55145e1d5195247"
+    },
+    {
+      "path": "scripts/run_server_testall.m",
+      "as_executed_sha256": "c5fda820d9c5adcbdbf49e3b5a6c23e3786d15b65090f8c17c5626f8b804a1ca",
+      "git_blob_sha1": "0f53630c07dc87b258a684553bcfe0b1e6734a7c"
+    },
+    {
+      "path": "scripts/run_server_testall.ps1",
+      "as_executed_sha256": "2b5414bad62a21b8552e3d8f5dabb099b8957626b5d7d784ae394ad7ccb09679",
+      "git_blob_sha1": "5e5acda6c299af247c9bd907dd67e096e19f3dfb"
+    },
+    {
+      "path": "tests/test_server_testall_launcher.py",
+      "as_executed_sha256": "a4241958e86599431085141806be50521c7d4791686a1c489ce02112f0b3d59d",
+      "git_blob_sha1": "fc0cb406ba56985ed3ae4ad5a316c6fa0161acc7"
+    },
+    {
+      "path": ".gitignore",
+      "as_executed_sha256": "1301cb05e8e11f47c3c2442365ed4ed1a8b4c1243627af8a057bd49b7a6e8179",
+      "git_blob_sha1": "7dc575edefe1785ba9fae8a2ac6fbf79f71e4ead"
+    }
+  ],
+  "earlier_attempt_02_sources": [
+    {
+      "path": "+sixgr/+phy/+pucch/PUCCHResourceSetResolver.m",
+      "as_executed_sha256": "ed14628b1907b2b7c27d357066725a622c147c596f22b7a05dd703b5f76e4f24",
+      "git_blob_sha1": "5aaca2a59c6b332beee9b2f10c5d69669106475f"
+    },
+    {
+      "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "as_executed_sha256": "ae7a130de0736364bec6bd13df05c1d01238ff516caf1daf9f535a4219a72822",
+      "git_blob_sha1": "3cbbb35d6490981ef3fd54f3910948e1338c72d7"
+    },
+    {
+      "path": "+sixgr/+truth/CoupledWaveformStream.m",
+      "as_executed_sha256": "1b704e2bd88a2975983e93d19cdf49e0c946ed592e5151e244aa80b1cc6d2007",
+      "git_blob_sha1": "6a7b0a6ba6677024922dfa76e7484d9943accff1"
+    },
+    {
+      "path": "+sixgr/+truth/runWaveformLinkBundle.m",
+      "as_executed_sha256": "0c7aa4dbe957c093beaacda88fe3fcd846097d57492eb827518b17e264a60bc7",
+      "git_blob_sha1": "9962dbf2d11e1630121317cc4fbb67bb3b7cd5d2"
+    },
+    {
+      "path": "+sixgr/+truth/buildScheduledPUCCHHARQReception.m",
+      "as_executed_sha256": "af9bf72cb9af054b7da495428ac559dbdfc01e1b8608b644beb50dcdcbd6ebe2",
+      "git_blob_sha1": "127bb6b6a23f586d93cd584700816d1c9f0debcd"
+    },
+    {
+      "path": "tests/testAll.m",
+      "as_executed_sha256": "87101a6dce6104b68dc1160f81f2f6edfa6c445cb9f2a054ed4bc8c5dfd6dd1e",
+      "git_blob_sha1": "7273cee7f6d4c60fe364d5a51311f8f8e0e4a251"
+    },
+    {
+      "path": "tests/testSharedPUCCHReceiveOnlyClock.m",
+      "as_executed_sha256": "4ba32289f98a08a83aaa3d5ccd4d136a4118368ec6f9313ffb1c67ebad001ee2",
+      "git_blob_sha1": "6643c79540787dd0690274b9700950a8817ac668"
+    },
+    {
+      "path": "simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml",
+      "as_executed_sha256": "3685c9028d23ced39bf98188eb32c25ecbd05855b4f766a88b8a5e6f1b430019",
+      "git_blob_sha1": "3d1a159208eb33f37440f57af4ad2750544b7baf"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/configuration.mat",
+      "sha256": "3f0d71dda15a0157115997d5aa31df1c9a230e45e87a6dc8f147f2d34a0abe27",
+      "bytes": 306567
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/gnb_harq_feedback_observations.csv",
+      "sha256": "0dfb5146cd814cb9c39d71cb6ab4227d30e412ada27ee40680f2ab31d0ea5307",
+      "bytes": 745
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/pucch_receive_only_trials.csv",
+      "sha256": "887f8cd11c03f10b0780c69589233ed1c9586f738c77c38229d0acd00585d1ea",
+      "bytes": 1082
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/received_pucch_absent.mat",
+      "sha256": "3549b87ef55b9bab0b9ea1def5d3f035d6a29406b730e6e9accdfc9ac5cb3926",
+      "bytes": 1555949
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/received_srs.mat",
+      "sha256": "42b7ee5ce21f70827adc7801c51b14a174ba4c954e0004018c50cc42653b0a5d",
+      "bytes": 11573791
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/unconsumed_ue_pdsch_1.mat",
+      "sha256": "3b53c63a1486cd07e6bfa3f69956c8d2b3f9a2586c1988e6bf9e0eec56e5b367",
+      "bytes": 40321360
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_02/unconsumed_ue_pdsch_2.mat",
+      "sha256": "42c4e3b591beb7c88d0a08089e8eff12434d359801b16aecfc77d1a45dfee628",
+      "bytes": 40480997
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/configuration.mat",
+      "sha256": "d228ae4eead67db0823b2a0eeb5962955a2f9261ea38cb3f202b0b029325904b",
+      "bytes": 306569
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/gnb_harq_feedback_observations.csv",
+      "sha256": "0dfb5146cd814cb9c39d71cb6ab4227d30e412ada27ee40680f2ab31d0ea5307",
+      "bytes": 745
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/pucch_receive_only_trials.csv",
+      "sha256": "97963b2dd9fe7c7ec1c8dfb6a5955be7bcdd89ba2957962865058b404f9ab7f8",
+      "bytes": 1082
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/received_pucch_absent.mat",
+      "sha256": "e21b30957f6b0c47d2849d4fde917339ee3ac775f7a57e138cb14018478a493f",
+      "bytes": 1555946
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/received_srs.mat",
+      "sha256": "762a44f1de88e45b8c0cc566d51132bf613ec7f1367a4ca38fd250651ddfad3b",
+      "bytes": 11573887
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/unconsumed_ue_pdsch_1.mat",
+      "sha256": "7feabb15ca62e0cf16a471904ddc57f05f2a9afb34636b79408983da3baa9d95",
+      "bytes": 40321230
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_03/unconsumed_ue_pdsch_2.mat",
+      "sha256": "a0d036a1eba4bde8df28bb8d3604ec06986e1db08c94098fba2aa2eac50d81d3",
+      "bytes": 40480958
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/configuration.mat",
+      "sha256": "44b418bb642fd7b24d1beaa2264f8ee93448dae045bc5fb19e974cd6959304d7",
+      "bytes": 306582
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/gnb_harq_feedback_observations.csv",
+      "sha256": "0dfb5146cd814cb9c39d71cb6ab4227d30e412ada27ee40680f2ab31d0ea5307",
+      "bytes": 745
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/pucch_receive_only_trials.csv",
+      "sha256": "97963b2dd9fe7c7ec1c8dfb6a5955be7bcdd89ba2957962865058b404f9ab7f8",
+      "bytes": 1082
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/received_pucch_absent.mat",
+      "sha256": "e4f17a2fa68cd32e3678b015a2661802bc2fed3d394a38decc447a60db86d25d",
+      "bytes": 1555955
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/received_srs.mat",
+      "sha256": "c4e7a176a94f5200a6556f9b3a8fdefc53a6f36084a2a9e0a17778a692f1a828",
+      "bytes": 11573943
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/unconsumed_ue_pdsch_1.mat",
+      "sha256": "f4927dd8733454abd83b6097fa8a3346d12ebb046ddece8beadeec015a68cb07",
+      "bytes": 40321255
+    },
+    {
+      "path": "docs/lls/evidence_20260913/gnb_receive_only_04/unconsumed_ue_pdsch_2.mat",
+      "sha256": "cf79b1dd5fe788ee86b2c03416826c31cd3a127ead87f63cee2c143d7799112d",
+      "bytes": 40480981
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/environment.json",
+      "sha256": "870b61fdc29ae9a845cb41d3cc9e0bb1a76e362f79b042cff9f582c1ad9d8173",
+      "bytes": 12092
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/failures.csv",
+      "sha256": "fb1f5a0dc9284db615b1ee2420ae7ece1f43b2a3f82eb2ef83b971d92b4d4033",
+      "bytes": 24
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/launcher.json",
+      "sha256": "6090252eead7531051c6c2ce6d2267aaeae9e40d8a35ace2fb40976daf373007",
+      "bytes": 2754
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/matlab.log",
+      "sha256": "0bb287a5239e5a304207fe5a189e4a28a8c0d8f2ff6672ec4aee365d385470f2",
+      "bytes": 17902
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/summary.json",
+      "sha256": "788ce340591227b8df406f501430e191f53f352896905d513cdd7fc567740c45",
+      "bytes": 517
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/test_report.json",
+      "sha256": "c29fae1b903ca5725159c38c86990910bd9100dcedac6b6088b1e7b472edfe97",
+      "bytes": 662
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/test_report.mat",
+      "sha256": "b0dda89c6740a82e34d8628004749129a2d6b289e218f799fb50b2d33828f40d",
+      "bytes": 866
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_focused_validation_04/tests.csv",
+      "sha256": "7fb41395b6badee077a53aa67bf66184ac4e76317a08dfd611b3949025846924",
+      "bytes": 252
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_gnb_receive_only_20260913_01.log",
+      "sha256": "030d43c9fdef896d1fe7f917fbe15c6e3e02879d6cb4fe9405ad80a350ab3bff",
+      "bytes": 851
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_gnb_receive_only_20260913_02.log",
+      "sha256": "528fd11d08064f1d4b89cc9547df07e2f570bd9c9e56289922644c1ac7c099a9",
+      "bytes": 158
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_gnb_receive_only_20260913_03.log",
+      "sha256": "bc986e3ff6319f7837e16dd8d41a3e521458cc5dcb4f47ae1fbe644af406e0a0",
+      "bytes": 908
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_main_2faf8d91_guards_20260913.log",
+      "sha256": "524f82c364ae6b4af5e12e809af31bc688693c8001dd9ec4035ea4067a7eb7be",
+      "bytes": 96347
+    },
+    {
+      "path": "docs/lls/evidence_20260913/server_launcher_pytest_20260913_01.xml",
+      "sha256": "44198cc73d170858e67ce660c4443888408514da3e7f217e5b867e43f8eb767d",
+      "bytes": 739
+    }
+  ]
+}

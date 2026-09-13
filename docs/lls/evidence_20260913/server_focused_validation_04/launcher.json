@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-13T09:24:31.5480349Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228",
+  "matlab_requested": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testSharedPUCCHReceiveOnlyClock",
+    "testPUCCHReceiverOnlyAssignment",
+    "testPUCCHObservationReceiver",
+    "testSharedPUCCHFeedbackClock",
+    "testRegressionExecutionAuthority"
+  ],
+  "allow_dirty": true,
+  "suite_pass": false,
+  "git_commit": "2faf8d912a7877441067ec4bf9b916757a5832cd",
+  "git_status_before": "M +sixgr/+phy/+pucch/PUCCHConfigBuilder.m\r\n M +sixgr/+phy/+pucch/PUCCHResourceSetResolver.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M +sixgr/+truth/CoupledWaveformStream.m\r\n M +sixgr/+truth/runWaveformLinkBundle.m\r\n M .gitignore\r\n M tests/runFocusedTests.m\r\n M tests/testAll.m\r\n?? +sixgr/+truth/buildScheduledPUCCHHARQReception.m\r\n?? docs/lls/server_testall_handoff_20260913.md\r\n?? logs/\r\n?? scripts/run_server_testall.m\r\n?? scripts/run_server_testall.ps1\r\n?? simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml\r\n?? tests/testSharedPUCCHReceiveOnlyClock.m\r\n?? tests/test_server_testall_launcher.py",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228/logs/testall_20260913T092431509Z_0e58cfd5',false,{'testSharedPUCCHReceiveOnlyClock','testPUCCHReceiverOnlyAssignment','testPUCCHObservationReceiver','testSharedPUCCHFeedbackClock','testRegressionExecutionAuthority'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "M +sixgr/+phy/+pucch/PUCCHConfigBuilder.m\r\n M +sixgr/+phy/+pucch/PUCCHResourceSetResolver.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M +sixgr/+truth/CoupledWaveformStream.m\r\n M +sixgr/+truth/runWaveformLinkBundle.m\r\n M .gitignore\r\n M tests/runFocusedTests.m\r\n M tests/testAll.m\r\n?? +sixgr/+truth/buildScheduledPUCCHHARQReception.m\r\n?? docs/lls/server_testall_handoff_20260913.md\r\n?? logs/\r\n?? scripts/run_server_testall.m\r\n?? scripts/run_server_testall.ps1\r\n?? simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml\r\n?? tests/testSharedPUCCHReceiveOnlyClock.m\r\n?? tests/test_server_testall_launcher.py",
+  "git_commit_after": "2faf8d912a7877441067ec4bf9b916757a5832cd",
+  "finished_utc": "2026-09-13T09:29:01.9875675Z",
+  "launcher_exit_code": 0
+}

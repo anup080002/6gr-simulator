@@ -1,0 +1,16 @@
+{Error using sixgr.config.installRuntimeOperatingAuthority>localAssertFeatureDependencies (line 223)
+reference_signals.cqi_reporting_enabled=true requires reference_signals.csi_reporting_enabled=true.
+
+Error in sixgr.config.installRuntimeOperatingAuthority>localAssertSourceAliasesAgree (line 199)
+localAssertFeatureDependencies(s);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.config.installRuntimeOperatingAuthority (line 14)
+localAssertSourceAliasesAgree(sourceScenario);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.buildInternalConfig (line 2754)
+cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testSharedPUCCHReceiveOnlyClock (line 9)
+cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

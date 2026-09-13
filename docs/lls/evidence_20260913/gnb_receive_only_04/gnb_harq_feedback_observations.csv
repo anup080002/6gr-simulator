@@ -1,0 +1,3 @@
+ObservationID,Slot,UEIndex,RNTI,HarqID,NDI,SourceSlot,BitIndex,TransmissionID,PHYGrantContextId,TBSBits,RV,FeedbackOutcome,ReceiverUsable,ObservedAck,AvailableAtSample,MappingDigest,Source,StaleFeedbackIgnored
+pucch_observation_3,9,1,1,0,1,6,1,c792e035187fd3126d1be259ae01501973a0a28956ab94278d70323712519dfa,DL|cell=1|ue=1|rnti=1|frame=1|slot=6,2088,0,DTX,0,0,69112,8d76ceed6e09ec75e03773c76689ad9b279167fb725ed0c127a3136f3f12deff,actual_gnb_receive_only_PUCCH_observation,0
+pucch_observation_3,9,1,1,1,1,7,2,e56b859e4e65dcd0acd46f85453724cee882604ee9dc5de9e2c7fab3f52a73b9,DL|cell=1|ue=1|rnti=1|frame=1|slot=7,2088,0,DTX,0,0,69112,8d76ceed6e09ec75e03773c76689ad9b279167fb725ed0c127a3136f3f12deff,actual_gnb_receive_only_PUCCH_observation,0

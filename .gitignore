@@ -27,6 +27,9 @@ slprj/
 
 # Runtime logs and temp roots
 logs/
+!/logs/
+/logs/*
+!/logs/README.md
 tmp/
 tmp_*/
 tmp*/

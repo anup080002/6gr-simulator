@@ -1,0 +1,13 @@
+SHARED_PUCCH_RECEIVE_ONLY_GUARDS_PASS rejections=8 unchanged_rejected_HARQ_state=1 actual_IQ_replay_equivalence=1
+SHARED_PUCCH_RECEIVE_ONLY_PASS actual_DL_TX=2 UE_UCI_producers=0 outcomes=DTX,DTX folder=C:\Users\anup0\AppData\Local\Temp\sixgr_gnb_receive_only_20260913_03
+PUCCH_RECEIVER_ONLY_ASSIGNMENT_PASS retained absent/false-alarm IQ and identity guards
+PUCCH_OBSERVATION_RECEIVER_RETAINED_PASS guards=8 no_shared_codebook_qualification=1
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=1
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=2
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=3
+PUCCH_OBSERVATION_RECEIVER_DMRS_PASS format=4
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+{Unrecognized function or variable 'testPUCCHPowerControlRuntimeExport'.
+} 

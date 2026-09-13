@@ -57,6 +57,17 @@ classdef PUCCHResourceSetResolver
             end
             serialized = sixgr.phy.pucch.UCIReportSerializer.serialize(report);
             oUCI = serialized.InformationBitCount;
+            selected=sixgr.phy.pucch.PUCCHResourceSetResolver.resolveBitCount( ...
+                oUCI,rrcContext,report.ConfigurationEpoch);
+        end
+
+        function selected=resolveBitCount(oUCI,rrcContext,epoch)
+            % gNB resource selection needs its own length, never UE bits.
+            validateattributes(oUCI,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+            assert(isa(rrcContext,'sixgr.phy.pucch.PUCCHRRCContext') && isscalar(rrcContext), ...
+                'sixgr:phy:pucch:MissingUCIReportContext','Installed RRC configuration is required.');
+            assert(epoch==rrcContext.ConfigurationEpoch,'sixgr:phy:pucch:StaleConfiguration', ...
+                'The receive hypothesis must match the installed RRC epoch.');
             sets = rrcContext.ResourceSets;
             selected = [];
             for index = 1:numel(sets)

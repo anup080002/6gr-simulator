@@ -39,6 +39,7 @@ for k = 1:numel(tests)
     catch ME
         r.ok = false;
         r.msg = ME.message;
+        fprintf(2,'%s\n',getReport(ME,'extended','hyperlinks','off'));
         report.ok = false;
     end
     r.duration_s = toc(testStart);

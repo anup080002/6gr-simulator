@@ -12589,12 +12589,6 @@ if c.Direction=="DL" && allowed && isfinite(raw.DecodedDCITCICodepoint)
 end
 localAppendRuntimeLog("INFO","Shared %s DCI received: ue=%d control_slot=%d data_slot=%d allowed=%d sample=%d.", ...
     c.Direction,item.UE,c.Slot,grant.Slot,allowed,post.EndSampleExclusive);
-if c.Direction=="DL" && allowed
-    % The decoded DCI already fixes K1 and PRI. Reserve the future physical
-    % PUCCH capture now; only its ACK/NACK payload waits for PDSCH decoding.
-    state=sixgr.truth.CoupledTruthRuntime. ...
-        armSharedDLHARQOccasionFromGrantRuntime(state,grant,item.UE);
-end
 if c.Direction~="UL", return; end
 if ~allowed
     state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state,grant,'UL');
@@ -12783,6 +12777,13 @@ for item=received
     context=item.Context;
     if item.Kind=="DataTX"
         state=sixgr.truth.commitSharedDataTransmission(state,item);
+        if item.Context.Prepared.Direction=="DL"
+            transmitted=state.SharedDataTXLedger{end};
+            if transmitted.Grant.TimingDecision.HARQACKRequired
+                state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime( ...
+                    state,transmitted.Grant,item.UE);
+            end
+        end
         continue;
     end
     if item.Kind=="PDCCH"
@@ -12799,6 +12800,10 @@ for item=received
     end
     if item.Kind=="PUCCH"
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
+        continue;
+    end
+    if item.Kind=="PUCCHReceiveOnly"
+        state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item);
         continue;
     end
     if any(item.Kind==["PDSCH","PUSCH"])

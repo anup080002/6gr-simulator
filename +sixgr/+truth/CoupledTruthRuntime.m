@@ -886,9 +886,9 @@ methods(Static)
     end
 
     function state=armSharedDLHARQOccasionFromGrantRuntime(state,grant,ueIdx)
-        % Reserve the future physical PUCCH observation when its decoded
-        % DCI becomes available.  The ACK/NACK value remains unknown until
-        % PDSCH decoding completes and is bound immediately before the
+        % Production reserves this window from the actually transmitted DL
+        % schedule, whether or not the UE receives DCI. Any UE ACK/NACK
+        % remains unknown until PDSCH decoding completes and is bound before the
         % configured PUCCH symbols.  Waiting for the decoder result before
         % registering the observation is causally too late when K1 points
         % to the next slot, even though the PUCCH symbols themselves occur
@@ -916,6 +916,14 @@ methods(Static)
         fb.NumCCE=double(sixgr.util.structGet(grant,'PDCCHGrantNumCCE',NaN));
         fb.PRIProvenance=char(string(sixgr.util.structGet(grant, ...
             'PUCCHResourceIndicatorSource','')));
+        if isfield(grant,'DCI') && isfield(grant.DCI,'Bits')
+            packed=sixgr.phy.pdcch.decodeDCIPayload(grant.DCI.Bits,grant.DCI.Format,grant.DCI.ContextData);
+            retainedPRI=double(packed.Fields.pucch_resource_indicator);
+            assert(~isfinite(fb.PRIValue) || fb.PRIValue==retainedPRI, ...
+                'sixgr:truth:InconsistentSharedPUCCHPRI','Grant PRI differs from its retained packed DCI.');
+            fb.PRIValue=retainedPRI;
+            fb.PRIProvenance='retained_packed_DCI_payload';
+        end
         assert(isfinite(sourceSlot) && sourceSlot>=1 && isfinite(rnti) && ...
             isfinite(fb.PRIValue) && strlength(strtrim(string(fb.PRIProvenance)))>0, ...
             'sixgr:truth:MissingSharedPUCCHGrantAuthority', ...
@@ -1008,9 +1016,29 @@ methods(Static)
             % standalone PUCCH trial when these bits now belong to PUSCH.
             % Empty rows alone do not establish that transfer (e.g. missed
             % DCI or a lost/late producer). Require explicit matching lineage.
-            proof=sixgr.truth.validatePUCCHObservationTransfer( ...
-                state.PUCCHGrantTraceTable,item.Context.Key);
-            state.SharedWaveformStream.transferPUCCHObservation(item.Context.ObservationID,proof);
+            allRows=state.PUCCHGrantTraceTable;
+            keys=sixgr.truth.CoupledTruthRuntime.sharedPUCCHOccasionKey(allRows);
+            if any(keys==item.Context.Key)
+                proof=sixgr.truth.validatePUCCHObservationTransfer(allRows,item.Context.Key);
+                state.SharedWaveformStream.transferPUCCHObservation(item.Context.ObservationID,proof);
+                return;
+            end
+            [cfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(state.CfgMobility,state,ue,'UL');
+            cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
+            hypothesis=sixgr.truth.buildScheduledPUCCHHARQReception(state,cfg,ue,slot,item.Context.ObservationID);
+            book=sixgr.truth.buildReceivedHARQACKCodebook(state,cfg,ue,slot);
+            assert(isempty(book.Events),'sixgr:truth:MissingReceivedPUCCHProducer', ...
+                'Received UE feedback events cannot disappear into an absent-transmitter receive window.');
+            controls=sixgr.util.structGet(state,'SharedReceivedGrantControls',{});
+            for ci=1:numel(controls)
+                control=controls{ci}; g=control.Grant;
+                receivedDL=control.Allowed && upper(string(g.Direction))=="DL" && ...
+                    g.RNTI==hypothesis.Mapping.RNTI && ...
+                    sixgr.util.structGet(g,'TimingDecision.FeedbackAbsoluteSlot',NaN)==slot-1;
+                assert(~receivedDL,'sixgr:truth:MissingReceivedPUCCHProducer', ...
+                    'A received DL command needs its UE feedback producer, not an invented absence.');
+            end
+            state.SharedWaveformStream.bindPUCCHReceiveOnly(item.Context.ObservationID,cfg,hypothesis);
             return;
         end
         harqRows=rows(sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(rows),:);
@@ -1078,6 +1106,110 @@ methods(Static)
         end
         state.SharedLastPUCCHAvailableAtSample=post.EndSampleExclusive;
         state.SharedPUCCHRXCommittedIDs=[committed;key];
+    end
+
+    function state=completeSharedPUCCHReceiveOnlyRuntime(state,item)
+        % Actual gNB observation with no UE PUCCH producer. Do not construct
+        % a fake prepared transmitter or synthesize a UE feedback/grant row.
+        c=item.Context; h=c.GNBReception; mapping=h.Mapping; cfg=c.Config;
+        owner=state.SharedWaveformStream;
+        committed=sixgr.util.structGet(state,'SharedPUCCHRXCommittedIDs',strings(0,1));
+        assert(item.Kind=="PUCCHReceiveOnly" && ~any(committed==c.Key) && ...
+            ~isfield(c,'Prepared') && ~c.AwaitingPreparation, ...
+            'sixgr:truth:InvalidPUCCHReceiveOnlyCompletion','Complete one bound receiver-only window exactly once.');
+        current=sixgr.truth.buildScheduledPUCCHHARQReception(state,cfg,item.UE,c.Slot,c.ObservationID);
+        assert(current.Mapping.Digest==mapping.Digest && current.Assignment.Digest==h.Assignment.Digest, ...
+            'sixgr:truth:ChangedPUCCHReceiveHypothesis','The bound gNB allocation must remain valid through reception.');
+        names=string({item.Planes.ReceiverID});
+        postIndex=find(names=="gnb_"+mapping.LastGrant.ServingCell+"_rx:post_rf");
+        preIndex=find(names=="gnb_"+mapping.LastGrant.ServingCell+"_rx:pre_rf");
+        txIndex=find(names=="ue_"+item.UE+":tx");
+        assert(isscalar(postIndex) && isscalar(preIndex) && isscalar(txIndex), ...
+            'sixgr:truth:MissingPUCCHReceiveOnlyPlanes','Retain actual receiver and transmitter audit captures.');
+        post=item.Planes(postIndex).Observation; pre=item.Planes(preIndex).Observation;
+        tx=item.Planes(txIndex).Observation;
+        post.readComplete(); pre.readComplete(); tx.readComplete();
+        assert(post.SampleRateHz==owner.SampleRateHz && post.StartSample==pre.StartSample && ...
+            post.EndSampleExclusive==pre.EndSampleExclusive && ...
+            post.EndSampleExclusive==owner.Events.NextSampleIndex, ...
+            'sixgr:truth:PUCCHReceiveOnlyClockMismatch','Commit only at actual complete gNB reception.');
+        references=sixgr.util.structGet(state,'ReceivedULTimingReferences',{});
+        prior=[]; if numel(references)>=item.UE, prior=references{item.UE}; end
+        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,post,prior);
+        bits=int8(rx.DecodedSequence1(:));
+        usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
+        assert(all(bits==0 | bits==1),'sixgr:truth:InvalidReceivedHARQBit','Received UCI must be binary.');
+        rows=struct([]);
+        for k=1:mapping.BitCount
+            identity=mapping.Records(k);
+            ledger=state.SharedDataTXLedger;
+            hit=find(cellfun(@(r)r.Identity.TransmissionID==identity.TransmissionID,ledger));
+            assert(isscalar(hit),'sixgr:truth:MissingPUCCHReceiveOnlyGrant','Each receive bit must retain its actual DL grant.');
+            grant=ledger{hit}.Grant;
+            outcome="DTX"; if usable, outcome="NACK"; if bits(k), outcome="ACK"; end, end
+            row=struct('ObservationID',string(c.ObservationID),'Slot',c.Slot,'UEIndex',item.UE, ...
+                'RNTI',identity.RNTI,'HarqID',identity.HARQProcess,'NDI',identity.NDI, ...
+                'SourceSlot',identity.SourceSlot,'BitIndex',identity.BitIndex, ...
+                'TransmissionID',identity.TransmissionID,'PHYGrantContextId',identity.PHYGrantContextId, ...
+                'TBSBits',double(grant.TBSBits),'RV',double(grant.HARQ.RV), ...
+                'FeedbackOutcome',outcome,'ReceiverUsable',logical(usable), ...
+                'ObservedAck',outcome=="ACK",'AvailableAtSample',post.EndSampleExclusive, ...
+                'MappingDigest',mapping.Digest,'Source',"actual_gnb_receive_only_PUCCH_observation");
+            if isempty(rows), rows=row; else, rows(end+1)=row; end %#ok<AGROW>
+        end
+        % Validate every process before changing any shared HARQ handle.
+        processes=cell(numel(rows),1);
+        for k=1:numel(rows)
+            row=rows(k);
+            ui=find(state.DLHarq.UEList==row.RNTI); pid=row.HarqID+1;
+            assert(isscalar(ui) && pid>=1 && pid<=numel(state.DLHarq.UEProcs{ui}), ...
+                'sixgr:truth:MissingPUCCHReceiveOnlyHARQ','Retain the actual scheduled HARQ entity and process.');
+            process=state.DLHarq.UEProcs{ui}(pid);
+            assert(~process.AwaitingFeedback || process.LastTxSlot~=row.SourceSlot || process.NDI==row.NDI, ...
+                'sixgr:truth:InconsistentScheduledHARQNDI','A same-slot pending process cannot change its scheduled NDI.');
+            stale=~process.AwaitingFeedback || process.LastTxSlot~=row.SourceSlot || process.NDI~=row.NDI;
+            rows(k).StaleFeedbackIgnored=logical(stale);
+            processes{k}=process;
+        end
+        for k=1:numel(rows)
+            row=rows(k); pid=row.HarqID+1; process=processes{k};
+            state.DLHarq.onFeedback(row.RNTI,row.HarqID,row.FeedbackOutcome, ...
+                'SourceSlot',row.SourceSlot,'FeedbackSlot',c.Slot);
+            if row.StaleFeedbackIgnored, continue; end
+            if row.ObservedAck && item.UE<=size(state.DLCombinedLLR,1) && pid<=size(state.DLCombinedLLR,2)
+                state.DLCombinedLLR{item.UE,pid}=[];
+            end
+            feedback=row; feedback.Ack=row.ObservedAck;
+            feedback.ServingCell=mapping.LastGrant.ServingCell;
+            feedback.IsRetransmission=process.TxCount>1;
+            state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state,feedback,'DL');
+        end
+        bitTable=struct2table(rows);
+        state.SharedGNBUCIHARQTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table()),bitTable);
+        trial=struct('Slot',c.Slot,'Channel',"PUCCH",'Direction',"UL",'UEIndex',item.UE, ...
+            'RNTI',mapping.RNTI,'ServingCell',mapping.LastGrant.ServingCell, ...
+            'PUCCHGrantId',string(c.ObservationID),'PUCCHResourceId',string(h.Assignment.Resource.ID), ...
+            'PUCCHFormat',h.Assignment.Format,'PUCCHDecodeOk',logical(usable),'ReceiverUsable',logical(usable), ...
+            'DTXFlag',logical(rx.DTX),'DetectionMetric',rx.DetectionMetric,'DetectionThreshold',rx.DetectionThreshold, ...
+            'DetectionThresholdSource',string(rx.DetectionThresholdSource), ...
+            'ReceiverExpectedHARQBitCount',mapping.BitCount,'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString(bits), ...
+            'ObservationStartSample',post.StartSample,'ObservationEndSampleExclusive',post.EndSampleExclusive, ...
+            'ObservationSampleRateHz',post.SampleRateHz,'ObservationCompletionTime_s',post.EndSampleExclusive/post.SampleRateHz, ...
+            'NoiseVariance',rx.GridNoiseVariance,'NoiseVarianceDomain',"resource_grid_pre_equalization", ...
+            'NoiseVarSource',string(rx.GridNoiseVarianceSource),'ReceiverInjectedNoiseVarianceConsumed',false, ...
+            'ReceiverOnlyAssignment',true,'PUCCHTransmissionPrepared',false,'OraclePayloadBitsUsed',false, ...
+            'MappingDigest',mapping.Digest,'ReceiverAssignmentDigest',h.Assignment.Digest, ...
+            'ExecutionBackend',"pucch_shared_gnb_receive_only",'ApproximationMode',"none", ...
+            'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
+        state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+        evidence=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
+        evidence{end+1}=struct('ObservationID',string(c.ObservationID),'Mapping',mapping,'Receiver',rx, ...
+            'AvailableAtSample',post.EndSampleExclusive);
+        state.SharedGNBUCIReceptions=evidence;
+        state.SharedLastPUCCHAvailableAtSample=post.EndSampleExclusive;
+        state.SharedPUCCHRXCommittedIDs=[committed;c.Key];
     end
 
     function [state, observed] = observePUCCHFeedbackRuntime(state, feedbackRow, csiReport)
@@ -2783,6 +2915,10 @@ methods(Static, Access=private)
         referenceMeasurementT = sixgr.util.structGet(state, "ReferenceSignalMeasurementTable", table());
         sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "csi_feedback_reports.csv"), csiReportT);
         sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "csi_feedback_reports.csv"), csiReportT);
+        gnbHARQ=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
+        if ~isempty(gnbHARQ)
+            sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "gnb_harq_feedback_observations.csv"),gnbHARQ);
+        end
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "reference_signal_measurements.csv"), referenceMeasurementT);
         sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "reference_signal_measurements.csv"), referenceMeasurementT);
         prachCorrelationTrace = sixgr.util.structGet(state.ControlTrials, "PRACHCorrelationTrace", table());
