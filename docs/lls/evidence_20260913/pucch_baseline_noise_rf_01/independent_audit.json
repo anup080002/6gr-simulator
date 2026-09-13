@@ -1,0 +1,23 @@
+{
+  "status": "independent_byte_count_finiteness_and_statistic_audit_pass",
+  "audit_implementation": "Python csv/hashlib, h5py 3.11.0, numpy, scipy 1.13.1 beta.ppf",
+  "csv_rows": 1024,
+  "iq_matlab_shape": [3932160, 2],
+  "iq_sha256": "09b4484532064268154e0669c5e348ec2917aab753573284258dbdc139d74d9d",
+  "executed_rx_rf_stage_count": 1,
+  "cases": [
+    {"harq_bits": 1, "occasions": 512, "false_detections": 8, "false_ack_bits": 2},
+    {"harq_bits": 2, "occasions": 512, "false_detections": 16, "false_ack_bits": 12}
+  ],
+  "checks": [
+    "whole_iq_file_sha256_matches_every_csv_row",
+    "all_complex_iq_samples_finite",
+    "both_harq_layouts_share_exact_observation_identity",
+    "sample_window_lengths_and_iq_bounds",
+    "all_configured_reference_esn0_values_equal_12_db",
+    "all_detected_flags_match_metric_threshold_comparison",
+    "all_false_ack_and_detection_counts_and_denominators",
+    "independent_beta_quantile_statistical_bound"
+  ],
+  "conformance_qualified": false
+}

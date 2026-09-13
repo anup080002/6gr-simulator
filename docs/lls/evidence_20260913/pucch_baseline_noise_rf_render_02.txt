@@ -1,0 +1,2 @@
+PUCCH_NOISE_RENDER_AND_NEGATIVE_GUARD_PASS
+rx_timing>rx_lo_cfo>rx_phase_noise>rx_iq>rx_element_rf>rx_sample_clock_offset>rx_agc>rx_adc

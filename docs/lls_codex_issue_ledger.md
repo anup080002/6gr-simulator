@@ -6,6 +6,18 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [baseline-array PUCCH noise/RF checkpoint](lls/pucch_baseline_noise_rf_20260913.md)
+completed 512 independent-noise UL observations on the configured two-branch
+gNB receiver with retained RX RF. At threshold 0.42, one-bit HARQ produced
+2/512 false ACK bits (0.390625%); two-bit HARQ produced 12/1024 (1.171875%),
+exceeding the 1% reference. The one-bit statistical upper bound also does not
+establish the limit. All 1,024 rows and 3,932,160 x 2 complex IQ samples passed
+independent byte/count/finiteness/statistic checks. This is a documented
+detector performance failure, not a conformance pass. Signal-present missed
+ACKs, payload/layout-aware detector qualification, missed-DCI handling and
+the existing shared HARQ/timing/publication gates remain open. The allocator
+edit was refused again. No full run or production threshold retuning occurred.
+
 The [PUCCH detector YAML checkpoint](lls/pucch_detector_yaml_20260913.md)
 wires and validates format-dependent thresholds through the actual shared
 receiver and trial/grant exports. Paired retained-IQ replay reduces any

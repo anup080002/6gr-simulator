@@ -1,0 +1,11 @@
+profile_id: pucch_baseline_array_noise_only_v1
+research_class: baseline_benchmark
+evidence_scope: receiver_noise_rf_component_not_complete_access_or_conformance
+scenario_path: simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+noise_occasions: 512
+harq_bit_counts: [1, 2]
+receiver_id: pucch_dtx_qualification_rx
+transmitter_id: pucch_dtx_idle_ue
+confidence_alpha: 0.05
+dtx_to_ack_requirement: 0.01
+requirement_reference: TS_38.104_8.3.1

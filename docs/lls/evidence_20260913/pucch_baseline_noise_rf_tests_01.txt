@@ -1,0 +1,15 @@
+PUCCH_DTX_PROGRESS occasions=64 / 512 rx_branches=2 slot0=319
+PUCCH_DTX_PROGRESS occasions=128 / 512 rx_branches=2 slot0=639
+PUCCH_DTX_PROGRESS occasions=192 / 512 rx_branches=2 slot0=959
+PUCCH_DTX_PROGRESS occasions=256 / 512 rx_branches=2 slot0=1279
+PUCCH_DTX_PROGRESS occasions=320 / 512 rx_branches=2 slot0=1599
+PUCCH_DTX_PROGRESS occasions=384 / 512 rx_branches=2 slot0=1919
+PUCCH_DTX_PROGRESS occasions=448 / 512 rx_branches=2 slot0=2239
+PUCCH_DTX_PROGRESS occasions=512 / 512 rx_branches=2 slot0=2559
+    HARQBits    NoiseOccasions    ReceiveBranches    FalseDetections    FalseACKBits    ACKBitDenominator    DTXToACKBitFraction    OccasionsWithFalseACK    AnyACKUpperBoundUnderIIDOccasionAssumption    ConfidenceAlpha    Requirement    EmpiricalFractionMeetsLimit                       QualificationStatus                   
+    ________    ______________    _______________    _______________    ____________    _________________    ___________________    _____________________    __________________________________________    _______________    ___________    ___________________________    _________________________________________________________
+
+       1             512                 2                  8                 2                512                0.0039062                   2                               0.012245                          0.05             0.01                   true                "component_only_no_conformance_or_ACK_miss_qualification"
+       2             512                 2                 16                12               1024                 0.011719                  10                               0.032904                          0.05             0.01                   false               "component_only_no_conformance_or_ACK_miss_qualification"
+
+PUCCH_BASELINE_NOISE_COMPONENT_COMPLETE no_signal_present_or_conformance_claim

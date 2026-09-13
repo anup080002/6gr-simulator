@@ -1,0 +1,24 @@
+{
+  "scope": "receiver_noise_rf_component_not_complete_access_or_conformance",
+  "base_commit": "69d79f285e0b83d22e1ff5f6003fe49b0737097c",
+  "listed_execution_sources_changed_during_waveform_execution": false,
+  "matlab_release": "R2026a",
+  "scenario": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
+  "resolved_configuration": "configuration.mat",
+  "source_sha256": {
+    "tests/testPUCCHBaselineNoiseRF.m": "0ba35778cfb2c4d01fa50194a6e1db14b2181c9c8be6cd3748424983a21cbf3b",
+    "simulator/configs/validation/pucch_baseline_dtx.yaml": "7c166611c161cf079dea20aa93b68225a048b3cd8a065cdf6c9ed3e7fc06c1a3",
+    "+sixgr/+truth/SharedWaveformPhysicalRuntime.m": "9b42f3c9f48993d4a234a1941815eeb9940c3f2c1561a7aad55c62a328bbb921",
+    "+sixgr/+phy/+pucch/PUCCHReceiver.m": "0bf3d8578f22a9cbd38c59657558177d9a4cb8acbc0c0afa377698d77deed7a7"
+  },
+  "receiver_algorithm": "nrPUCCHDecode Format 0, normalized sequence correlation",
+  "receiver_algorithm_reference": "https://www.mathworks.com/help/5g/ref/nrpucchdecode.html",
+  "requirement_reference": "https://www.etsi.org/deliver/etsi_ts/138100_138199/138104/18.10.00_60/ts_138104v181000p.pdf",
+  "limitations": [
+    "No signal is transmitted; no fading, O2I or beam-gain execution is claimed.",
+    "RX windows use the configured slot clock, not acquired synchronization or measured timing advance.",
+    "One- and two-bit receivers score the same IQ observations and are not independent experiment repetitions.",
+    "Statistical upper bounds assume independent occasion outcomes; retained RF may introduce dependence.",
+    "No ACK-miss, missed-DCI scheduler, full-run or instrument-playback qualification."
+  ]
+}
