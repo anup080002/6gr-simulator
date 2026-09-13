@@ -34,13 +34,18 @@ prach = baseSeq.PRACH;
 [waveform, grid, ofdmInfo, backend] = localModulateZCDPESymbols(symbols, baseSeq, cfgUse);
 
 numTxAnt = round(double(sixgr.util.structGet(cfgUse, "NumTxAntennas", 1)));
+waveformPortGrid = grid;
 if numTxAnt > 1
     waveform = repmat(waveform, 1, numTxAnt) / sqrt(numTxAnt);
+    waveformPortGrid = repmat(grid, 1, 1, numTxAnt) / sqrt(numTxAnt);
 end
 
 tx = struct();
 tx.Waveform = waveform;
+tx.WaveformHashPlane = "prach_generator_before_preamble_power_control_spatial_mapping_and_rf";
 tx.Grid = grid;
+tx.WaveformPortResourceGrid = waveformPortGrid;
+tx.ResourceGridDomain = "prach_native_ofdm";
 tx.Symbols = symbols;
 tx.Indices = baseSeq.Indices;
 tx.Carrier = carrier;

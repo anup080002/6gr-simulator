@@ -1,0 +1,5 @@
+name,ok,msg,duration_s
+testConfiguredCombinedPUCCHReception,1,,7.9326609
+testCSIPhysicalKnowledgeConsumer,0,Expected input to be finite.,36.8051698
+testLLSPUSCHHARQACKRuntimeFeedback,1,,23.4038904
+testSharedPUCCHReceiveOnlyClock,1,,70.5058212

@@ -78,12 +78,29 @@ if prepareOnly || received
         'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
         'Shared PUCCH receiver thresholds must come from resolved YAML; no argument override.');
 end
-[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
-    opt.Assignment,detectorPolicy,opt.DetectionThreshold);
+receiverAssignment=opt.Assignment;
 context = opt.ReceiverContext;
-if isempty(context)
+independentReception=received && isfield(receivedContext,'GNBReception');
+if independentReception
+    hypothesis=receivedContext.GNBReception;
+    assert(isstruct(hypothesis) && isscalar(hypothesis) && ...
+        all(isfield(hypothesis,{'Assignment','Context'})) && ...
+        isempty(setdiff(string(fieldnames(hypothesis)),["Assignment","Context"])), ...
+        'sixgr:link:InvalidGNBUCIReceiveHypothesis', ...
+        'The gNB receive boundary accepts only a typed allocation and payload-free schema.');
+    assert(isa(hypothesis.Assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment') && ...
+        isscalar(hypothesis.Assignment) && ...
+        isa(hypothesis.Context,'sixgr.phy.pucch.UCIReportContext') && isscalar(hypothesis.Context) && ...
+        hypothesis.Assignment.ReportContextDigest==hypothesis.Context.Digest, ...
+        'sixgr:link:InvalidGNBUCIReceiveHypothesis', ...
+        'Receiver allocation and schema must be independently bound; no TX assignment substitution.');
+    receiverAssignment=hypothesis.Assignment;
+    context=hypothesis.Context;
+elseif isempty(context)
     context = sixgr.phy.pucch.UCIReportContext.fromReport(opt.Report);
 end
+[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
+    receiverAssignment,detectorPolicy,opt.DetectionThreshold);
 carrier = opt.Carrier;
 if isempty(carrier)
     if isa(cfg,"nrCarrierConfig")
@@ -165,7 +182,7 @@ trial.AppliedTimingCorrectionSamples = 0;
 try
     if received
         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
-        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,opt.Assignment,context, ...
+        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,receiverAssignment,context, ...
             receivedContext.Observation,prior);
     else
         rxArgs = {"NoiseVariance",noiseVariance, ...
@@ -265,12 +282,26 @@ trial.ExpectedBits = reference;
 trial.DecodedBits = decoded;
 trial.ExpectedBitCount = numel(reference);
 trial.DecodedBitCount = numel(decoded);
+trial.ReceiverExpectedBitCount=context.Sequence1Length+context.Sequence2Length;
+trial.ReceiverExpectedHARQBitCount=context.HARQACKBits;
+trial.ReceiverExpectedSRBitCount=context.SRBits;
+trial.ReceiverExpectedCSIPart1BitCount=context.CSIPart1Bits;
+trial.ReceiverExpectedCSIPart2BitCount=context.CSIPart2Bits;
+trial.ReceiverAssignmentDigest=rx.AssignmentDigest;
+trial.ReceiverContextDigest=rx.ReportContextDigest;
+trial.IndependentReceiverAssignment=logical(rx.ReceiverOnlyAssignment);
+trial.ReceiverExpectedBitCountSource="receiver_length_context";
+trial.ReceiverFields=rx.DecodedFields;
 trial.UCIExpectedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(reference);
 trial.UCIDecodedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(decoded);
 trial.UCIBitErrorVector = localErrorVector(reference,decoded);
 trial.UCICodedBitCount = numel(tx.Coding.CodedBits);
-trial.UCICRCBitCount = tx.Coding.Plan.CRCBits;
-trial.UCICRCApplicable = tx.Coding.Plan.CRCBits > 0;
+trial.TransmitterUCICRCBitCount=tx.Coding.Plan.CRCBits;
+trial.TransmitterUCICRCApplicable=tx.Coding.Plan.CRCBits>0;
+trial.UCICRCBitCount = rx.UCICRCBitCount;
+trial.UCICRCApplicable = rx.CRCApplicable;
+trial.UCICRCValueRole="receiver_decoding_hypothesis";
+trial.CodeBlockCRCError=rx.CodeBlockCRCError;
 trial.CRCApplicable = trial.UCICRCApplicable;
 if trial.CRCApplicable
     trial.CRCPass = double(~trial.CRCFailed);
@@ -289,6 +320,8 @@ trial.ReceiverUsable = rx.ReceiverUsable;
 trial.RequestedFormat = opt.Assignment.Format;
 trial.ResolvedFormat = opt.Assignment.Format;
 trial.PUCCHFormat = opt.Assignment.Format;
+trial.ReceiverPUCCHFormat=receiverAssignment.Format;
+trial.ReceiverPUCCHResourceId=string(receiverAssignment.Resource.ID);
 trial.FormatAdapted = false;
 trial.FormatAdaptationReason = "none_strict_assignment";
 trial.ControlResourceValidity = true;
@@ -311,7 +344,7 @@ trial.NoiseVarStatus = "OK";
 trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
 trial.NoiseVarReason = "";
 trial.NoiseVarStrictFailure = false;
-if ~isfinite(trial.NoiseVariance) && opt.Assignment.Format==0
+if ~isfinite(trial.NoiseVariance) && receiverAssignment.Format==0
     trial.NoiseVarStatus="unavailable";
     trial.NoiseVarReason="not_required_by_normalized_sequence_correlation_no_variance_substitution";
 end
@@ -470,7 +503,7 @@ trial.ChannelEstimateAttempted = ~isempty(tx.DMRS.Indices) && ...
 trial.ChannelEstimateAvailable = ~trial.ChannelEstimateAttempted || ...
     ~isempty(rx.ChannelEstimate);
 trial.ChannelEstimateSource = localChannelEstimateSource( ...
-    channelMeta.Profile,trial.ChannelEstimateAttempted,opt.Assignment.Format);
+    channelMeta.Profile,trial.ChannelEstimateAttempted,receiverAssignment.Format);
 trial.EqualizationAttempted = trial.ChannelEstimateAttempted;
 trial.EqualizationAvailable = ~trial.EqualizationAttempted || ...
     ~isempty(rx.ChannelEstimate);

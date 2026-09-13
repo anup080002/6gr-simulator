@@ -1,0 +1,6 @@
+name,ok,msg,duration_s
+testPUCCHFeedbackScoringExport,1,,3.3763935
+testCSIPhysicalKnowledgeConsumer,0,Expected input to be finite.,25.5372695
+testLLSPUSCHHARQACKRuntimeFeedback,1,,19.6162926
+testConfiguredCombinedPUCCHReception,1,,3.4860391
+testLLSPUCCHGrantRuntimeArtifacts,1,,9.9687805

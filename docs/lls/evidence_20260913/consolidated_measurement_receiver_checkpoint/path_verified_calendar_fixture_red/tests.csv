@@ -1,0 +1,14 @@
+name,ok,msg,duration_s
+testSetupExcludesLogSnapshots,1,"",12.2810687
+testPUCCHFeedbackScoringExport,1,"",3.5191205
+testCSIPhysicalKnowledgeConsumer,0,"Unrecognized field name ""CurrentSweepPointIndex"".",25.9036012
+testLLSPUSCHHARQACKRuntimeFeedback,1,"",18.9665336
+testConfiguredCombinedPUCCHReception,1,"",3.081087
+testCSIMixedClockConsumer,1,"",0.5791777
+testFinalCoupledWaveformPreview,1,"",0.0274888
+testPUSCHHARQACKBindingPreflight,1,"",0.1133204
+testPUSCHHARQACKPreflightReducer,1,"",0.3158371
+testSharedPUCCHCodebookBinding,1,"",0.2868873
+testUCIDecoderCRC,1,"",1.0758281
+testPUCCHReceiverCRC,1,"",1.1976992
+testLLSPUCCHGrantRuntimeArtifacts,1,"",10.8942235

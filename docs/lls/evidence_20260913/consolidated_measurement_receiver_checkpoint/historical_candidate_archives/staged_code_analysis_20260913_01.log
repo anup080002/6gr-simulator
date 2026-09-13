@@ -1,0 +1,538 @@
+ANALYZE 1/28 +sixgr\+link\runPUCCHWaveformTrial.m
+DIAGNOSTICS candidate=8 base=8
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":196,"column":[80,90]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":730,"column":[57,67]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":738,"column":[54,64]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":935,"column":[18,41]}
+CANDIDATE {"id":"ALIGN","message":"This keyword might not be aligned with its matching END on line 997.","fix":0,"line":995,"column":[1,2]}
+CANDIDATE {"id":"ALIGN","message":"This keyword might not be aligned with its matching END on line 1003.","fix":0,"line":1001,"column":[1,2]}
+CANDIDATE {"id":"ALIGN","message":"This keyword might not be aligned with its matching END on line 1015.","fix":0,"line":1011,"column":[1,2]}
+ANALYZE 2/28 +sixgr\+lls6g\+runners\runSingle.m
+DIAGNOSTICS candidate=87 base=87
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":77,"column":[101,111]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":321,"column":[9,12]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":371,"column":[13,14]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":423,"column":[9,10]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":457,"column":[5,6]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":504,"column":[9,10]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":534,"column":[9,10]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":564,"column":[9,10]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":586,"column":[5,6]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":623,"column":[5,6]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":664,"column":[21,31]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":737,"column":[17,38]}
+CANDIDATE {"id":"ISCLSTR","message":"To support string in addition to cellstr, include a call to 'isstring'.","fix":0,"line":772,"column":[8,16]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":943,"column":[5,30]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":998,"column":[18,50]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":1146,"column":[9,17]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":1173,"column":[5,15]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":1279,"column":[5,36]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":1319,"column":[5,34]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":1359,"column":[5,34]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":1399,"column":[5,40]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":1634,"column":[5,36]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":1687,"column":[5,35]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":1977,"column":[40,42]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2025,"column":[5,8]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2076,"column":[13,17]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2077,"column":[13,17]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2080,"column":[13,17]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2081,"column":[13,17]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2095,"column":[9,12]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2267,"column":[5,8]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2300,"column":[5,8]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2337,"column":[5,8]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2372,"column":[5,8]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2405,"column":[5,8]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2436,"column":[5,8]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":2518,"column":[70,80]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":2541,"column":[51,61]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":2565,"column":[67,77]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2581,"column":[1,6]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2582,"column":[1,8]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2583,"column":[1,14]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2584,"column":[1,18]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2585,"column":[1,16]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2588,"column":[1,14]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2589,"column":[1,17]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2590,"column":[1,22]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2593,"column":[1,23]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2594,"column":[1,18]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2595,"column":[1,21]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2596,"column":[1,21]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2597,"column":[1,19]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2599,"column":[1,29]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2600,"column":[1,27]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":3025,"column":[5,33]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":3148,"column":[13,37]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":3377,"column":[5,33]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":3553,"column":[43,53]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":3868,"column":[9,12]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":3973,"column":[39,49]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":3995,"column":[66,71]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":4209,"column":[47,57]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":4300,"column":[46,56]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":4656,"column":[16,40]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":4805,"column":[42,52]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5189,"column":[54,64]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5397,"column":[1,4]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5398,"column":[1,11]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5425,"column":[13,16]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5455,"column":[123,133]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5484,"column":[1,4]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5743,"column":[1,1]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5752,"column":[77,87]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":5862,"column":[22,33]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":5885,"column":[16,31]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6209,"column":[48,58]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6219,"column":[43,53]}
+CANDIDATE {"id":"ALIGN","message":"This keyword might not be aligned with its matching END on line 6300.","fix":0,"line":6296,"column":[1,2]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6505,"column":[71,81]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":6544,"column":[1,5]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6616,"column":[37,47]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6623,"column":[31,41]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":6931,"column":[15,37]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":6942,"column":[28,52]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":6952,"column":[26,49]}
+CANDIDATE {"id":"DEFNU","message":"Function might be unused.","fix":0,"line":7461,"column":[18,48]}
+ANALYZE 3/28 +sixgr\+phy\+pucch\PUCCHReceiver.m
+DIAGNOSTICS candidate=4 base=4
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":113,"column":[13,35]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":157,"column":[17,35]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":162,"column":[50,60]}
+ANALYZE 4/28 +sixgr\+phy\+pucch\UCIDecoder.m
+DIAGNOSTICS candidate=1 base=1
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 5/28 +sixgr\+phy\+refsig\causalMeasurementState.m
+DIAGNOSTICS candidate=1 base=1
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 6/28 +sixgr\+rach\generateZCDPEWaveform.m
+DIAGNOSTICS candidate=1 base=1
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 7/28 +sixgr\+rach\runPRACHLLS.m
+DIAGNOSTICS candidate=4 base=4
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":211,"column":[5,16]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":222,"column":[5,19]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":781,"column":[93,101]}
+ANALYZE 8/28 +sixgr\+truth\CoupledTruthRuntime.m
+DIAGNOSTICS candidate=135 base=135
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":314,"column":[42,44]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":314,"column":[47,55]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":481,"column":[39,41]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":481,"column":[44,50]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":497,"column":[73,75]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":939,"column":[13,17]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":1593,"column":[43,45]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":1594,"column":[9,19]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":1785,"column":[38,38]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":2381,"column":[57,67]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2399,"column":[9,17]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":3537,"column":[20,35]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":3629,"column":[29,29]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":3632,"column":[28,55]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":3866,"column":[77,80]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":4033,"column":[21,21]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":4786,"column":[9,25]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":4787,"column":[9,29]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5535,"column":[37,37]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5567,"column":[84,84]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5625,"column":[72,72]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5652,"column":[21,21]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5654,"column":[21,21]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5656,"column":[21,21]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5687,"column":[25,25]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5728,"column":[73,73]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5729,"column":[83,83]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5740,"column":[92,92]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5742,"column":[89,89]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5812,"column":[70,80]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":5844,"column":[68,68]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6068,"column":[72,72]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6091,"column":[13,13]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6093,"column":[13,13]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6095,"column":[13,13]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":6395,"column":[55,65]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6809,"column":[32,32]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6911,"column":[68,68]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6913,"column":[75,75]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":6914,"column":[79,79]}
+CANDIDATE {"id":"UNRCH","message":"This statement (and possibly following ones) cannot be reached.","fix":0,"line":7148,"column":[13,61]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":7278,"column":[67,71]}
+CANDIDATE {"id":"ISMAT","message":"When checking if a variable is a matrix consider using ISMATRIX.","fix":1,"line":7533,"column":[43,47]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":7544,"column":[109,116]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":8014,"column":[25,25]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":8109,"column":[25,25]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":8182,"column":[13,28]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":9134,"column":[9,31]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":9944,"column":[82,84]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":9944,"column":[87,95]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":9946,"column":[13,15]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":9949,"column":[13,21]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":10205,"column":[14,19]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":10205,"column":[22,35]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":10377,"column":[25,25]}
+CANDIDATE {"id":"LOGSUM","message":"Consider using 'nnz' instead of 'sum' for logical vectors to improve readability.","fix":0,"line":10575,"column":[22,24]}
+CANDIDATE {"id":"BDSCI","message":"Variable might be set by a nonscalar operator.","fix":0,"line":10697,"column":[36,45]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":10717,"column":[13,21]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":11035,"column":[79,79]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":11363,"column":[55,63]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":11667,"column":[9,17]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":11668,"column":[9,17]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":12063,"column":[20,35]}
+CANDIDATE {"id":"STRQUOT","message":"string('...') is not recommended. Use \"...\" instead.","fix":1,"line":12121,"column":[46,90]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":12204,"column":[68,78]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":12210,"column":[68,78]}
+CANDIDATE {"id":"ISCLSTR","message":"To support string in addition to cellstr, include a call to 'isstring'.","fix":0,"line":12539,"column":[16,24]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":12806,"column":[9,23]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":12954,"column":[9,18]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":13176,"column":[12,32]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":13635,"column":[13,16]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":13662,"column":[21,21]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":13922,"column":[21,21]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":14189,"column":[21,29]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":15098,"column":[13,22]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":15271,"column":[13,13]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":15338,"column":[17,17]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":16316,"column":[9,20]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":17249,"column":[74,83]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17460,"column":[49,59]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17461,"column":[39,49]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17462,"column":[121,131]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17463,"column":[117,127]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17464,"column":[62,72]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17465,"column":[62,72]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17466,"column":[75,85]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17467,"column":[117,127]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17468,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17469,"column":[119,129]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17470,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17471,"column":[113,123]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17472,"column":[101,111]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17473,"column":[107,117]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17474,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17475,"column":[110,120]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17476,"column":[115,125]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17477,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17478,"column":[116,126]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17479,"column":[149,159]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17481,"column":[53,63]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17483,"column":[54,64]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17485,"column":[121,131]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17486,"column":[54,64]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17487,"column":[137,147]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17488,"column":[69,79]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17489,"column":[115,125]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17490,"column":[103,113]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17491,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17492,"column":[109,119]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17493,"column":[105,115]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17494,"column":[126,136]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17495,"column":[127,137]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17496,"column":[117,127]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17497,"column":[189,199]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17498,"column":[130,140]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17499,"column":[119,129]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17500,"column":[119,129]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17501,"column":[125,135]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17502,"column":[123,133]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17503,"column":[78,88]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17506,"column":[82,92]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17507,"column":[95,105]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17508,"column":[91,101]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17509,"column":[79,89]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17510,"column":[93,103]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17511,"column":[91,101]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17512,"column":[107,117]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17513,"column":[109,119]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17514,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17515,"column":[93,103]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17516,"column":[97,107]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17517,"column":[105,115]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17518,"column":[107,117]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17519,"column":[138,148]}
+ANALYZE 9/28 +sixgr\+truth\bindReceivedCSIRSClock.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 10/28 +sixgr\+truth\bindSharedDLCSICompletion.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 11/28 +sixgr\+truth\csirsMeasurementAvailability.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 12/28 +sixgr\+truth\extractPUCCHReceiverFields.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 13/28 +sixgr\+truth\finalCoupledWaveformPreview.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 14/28 +sixgr\+truth\mapScheduledHARQFeedback.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 15/28 +sixgr\+truth\prepareScheduledHARQFeedback.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 16/28 +sixgr\+truth\referenceMeasurementClockArguments.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 17/28 +sixgr\+truth\runWaveformLinkBundle.m
+DIAGNOSTICS candidate=214 base=214
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":169,"column":[1,13]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":208,"column":[1,16]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":283,"column":[1,13]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":302,"column":[5,17]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":345,"column":[17,26]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":683,"column":[61,71]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":689,"column":[52,62]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":713,"column":[13,22]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":757,"column":[20,28]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":972,"column":[13,22]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":1153,"column":[91,101]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":1158,"column":[120,130]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":1178,"column":[76,86]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":1234,"column":[13,16]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":1339,"column":[62,68]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":1416,"column":[1,11]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":2309,"column":[22,32]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":2732,"column":[65,75]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2789,"column":[1,6]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":2802,"column":[1,4]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":2863,"column":[68,68]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":2864,"column":[74,74]}
+CANDIDATE {"id":"NBRAK2","message":"Use of brackets [] is unnecessary.","fix":1,"line":2865,"column":[75,75]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":2996,"column":[9,12]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":3023,"column":[9,12]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":3871,"column":[141,150]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":4221,"column":[1,24]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":4232,"column":[115,125]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":4349,"column":[62,64]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":4349,"column":[114,126]}
+CANDIDATE {"id":"PFBNS","message":"The entire array or structure 'workerCache' is a broadcast variable. This might result in unnecessary communication overhead.","fix":0,"line":4503,"column":[169,179]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":4558,"column":[1,6]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":4559,"column":[1,6]}
+CANDIDATE {"id":"PFBNS","message":"The entire array or structure 'grants' is a broadcast variable. This might result in unnecessary communication overhead.","fix":0,"line":4890,"column":[148,153]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5250,"column":[1,2]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":5328,"column":[1,4]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":5394,"column":[73,75]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":5701,"column":[4,20]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":5717,"column":[76,84]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5802,"column":[107,117]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5804,"column":[62,72]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5805,"column":[48,58]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5807,"column":[75,85]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5808,"column":[56,66]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5809,"column":[99,109]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5810,"column":[67,77]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5811,"column":[99,109]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5812,"column":[100,110]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5813,"column":[80,90]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5814,"column":[105,115]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5815,"column":[124,134]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5817,"column":[56,66]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5818,"column":[64,74]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5819,"column":[57,67]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5820,"column":[66,76]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5821,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5822,"column":[105,115]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5823,"column":[113,123]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5824,"column":[105,115]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5825,"column":[107,117]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5826,"column":[95,105]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5827,"column":[101,111]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5828,"column":[105,115]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5829,"column":[102,112]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5830,"column":[107,117]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5831,"column":[95,105]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5832,"column":[100,110]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5833,"column":[95,105]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5834,"column":[100,110]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5835,"column":[95,105]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5836,"column":[100,110]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5838,"column":[127,137]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5839,"column":[112,122]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5847,"column":[80,90]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5848,"column":[70,80]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5849,"column":[64,74]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5851,"column":[33,43]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5853,"column":[35,45]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5856,"column":[101,111]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5859,"column":[58,68]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5860,"column":[111,121]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5861,"column":[130,140]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5862,"column":[127,137]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5863,"column":[165,175]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5881,"column":[74,84]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5882,"column":[87,97]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5883,"column":[83,93]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5884,"column":[97,107]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5885,"column":[71,81]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5886,"column":[85,95]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5887,"column":[83,93]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5888,"column":[99,109]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5889,"column":[101,111]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5890,"column":[103,113]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5891,"column":[85,95]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5892,"column":[89,99]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5893,"column":[97,107]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5894,"column":[99,109]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":5895,"column":[130,140]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":6368,"column":[1,6]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":6369,"column":[1,12]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":6377,"column":[1,7]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6380,"column":[45,55]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6400,"column":[75,85]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6404,"column":[43,53]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6423,"column":[75,85]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6427,"column":[43,53]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6431,"column":[69,79]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6445,"column":[41,51]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6571,"column":[47,57]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6576,"column":[45,55]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6581,"column":[45,55]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6586,"column":[45,55]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6591,"column":[59,69]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6596,"column":[76,86]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6600,"column":[49,59]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":6604,"column":[47,57]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":6957,"column":[8,23]}
+CANDIDATE {"id":"ISMAT","message":"When checking if a variable is a matrix consider using ISMATRIX.","fix":1,"line":7162,"column":[12,16]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":7469,"column":[59,63]}
+CANDIDATE {"id":"ISMAT","message":"When checking if a variable is a matrix consider using ISMATRIX.","fix":1,"line":7771,"column":[4,8]}
+CANDIDATE {"id":"ISMAT","message":"When checking if a variable is a matrix consider using ISMATRIX.","fix":1,"line":7775,"column":[4,8]}
+CANDIDATE {"id":"ISMAT","message":"When checking if a variable is a matrix consider using ISMATRIX.","fix":1,"line":7804,"column":[4,8]}
+CANDIDATE {"id":"ISMAT","message":"When checking if a variable is a matrix consider using ISMATRIX.","fix":1,"line":7808,"column":[4,8]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":8001,"column":[1,15]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":8286,"column":[5,9]}
+CANDIDATE {"id":"PFBNS","message":"The entire array or structure 'stateWorker' is a broadcast variable. This might result in unnecessary communication overhead.","fix":0,"line":8542,"column":[41,51]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":8653,"column":[92,102]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":8815,"column":[100,110]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":9248,"column":[5,11]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":9249,"column":[5,12]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":9270,"column":[18,22]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":9757,"column":[1,5]}
+CANDIDATE {"id":"NBRAK1","message":"If you intend to specify expression precedence, use parentheses () instead of brackets [].","fix":1,"line":10155,"column":[88,88]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":10334,"column":[13,15]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":10584,"column":[62,72]}
+CANDIDATE {"id":"MDUPC","message":"The case value 'PDCCHCausalGrantDecodeOk' is a duplicate of one on line 11021.","fix":0,"line":11028,"column":[62,87]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":11285,"column":[1,4]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":11433,"column":[53,61]}
+CANDIDATE {"id":"ASGLU","message":"Value assigned to variable might be unused. Consider replacing the variable with ~ instead.","fix":1,"line":11625,"column":[18,23]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":11856,"column":[1,5]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":11870,"column":[1,11]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":12517,"column":[16,28]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":12614,"column":[8,20]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":12620,"column":[28,42]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":12637,"column":[8,20]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":14762,"column":[1,1]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":14780,"column":[77,87]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":14845,"column":[1,9]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15016,"column":[47,57]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15019,"column":[83,93]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15022,"column":[75,85]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15025,"column":[69,79]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15028,"column":[62,72]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15031,"column":[60,70]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15034,"column":[66,76]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15037,"column":[65,75]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15040,"column":[67,77]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15043,"column":[68,78]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":15266,"column":[50,52]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15314,"column":[52,62]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15317,"column":[58,68]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15320,"column":[61,71]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15323,"column":[55,65]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15326,"column":[43,53]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15329,"column":[51,61]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15333,"column":[53,63]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15337,"column":[56,66]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15340,"column":[42,52]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15343,"column":[41,51]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15346,"column":[42,52]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15349,"column":[61,71]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15352,"column":[49,59]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15357,"column":[51,61]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15362,"column":[46,56]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":15366,"column":[60,70]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":15611,"column":[90,93]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":15671,"column":[1,4]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":17685,"column":[61,71]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":18613,"column":[31,41]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":18616,"column":[31,41]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":18887,"column":[72,80]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":19225,"column":[1,7]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":19378,"column":[61,67]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":19580,"column":[1,8]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":19582,"column":[1,11]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":20082,"column":[35,45]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":20085,"column":[34,44]}
+CANDIDATE {"id":"INUSD","message":"Input argument might be unused. Consider replacing the argument with ~ instead.","fix":1,"line":20204,"column":[67,69]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":20409,"column":[34,44]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":20415,"column":[34,44]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":20597,"column":[5,12]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":20659,"column":[5,11]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":20661,"column":[5,13]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21135,"column":[30,40]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21141,"column":[30,40]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21149,"column":[30,40]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21172,"column":[30,40]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21178,"column":[30,40]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21186,"column":[30,40]}
+CANDIDATE {"id":"AGROW","message":"Variable appears to change size on every loop iteration. Consider preallocating for speed.","fix":0,"line":21246,"column":[9,12]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21277,"column":[41,51]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21311,"column":[41,51]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21335,"column":[41,51]}
+CANDIDATE {"id":"NASGU","message":"Value assigned to variable might be unused.","fix":0,"line":21464,"column":[1,5]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":21487,"column":[4,22]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21580,"column":[41,51]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21862,"column":[40,50]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21865,"column":[38,48]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21868,"column":[52,62]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21871,"column":[40,50]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21874,"column":[42,52]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":21877,"column":[39,49]}
+ANALYZE 18/28 tests\testAll.m
+DIAGNOSTICS candidate=3 base=3
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"MSNU","message":"A Code Analyzer message was once suppressed here, but the message is no longer generated.","fix":1,"line":682,"column":[43,53]}
+CANDIDATE {"id":"ISCLSTR","message":"To support string in addition to cellstr, include a call to 'isstring'.","fix":0,"line":725,"column":[8,16]}
+ANALYZE 19/28 tests\testCSIMixedClockConsumer.m
+DIAGNOSTICS candidate=2 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"NOCOMMA","message":"Extra comma is unnecessary.","fix":1,"line":56,"column":[4,4]}
+ANALYZE 20/28 tests\testCSIPhysicalKnowledgeConsumer.m
+DIAGNOSTICS candidate=2 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"NOCOMMA","message":"Extra comma is unnecessary.","fix":1,"line":62,"column":[4,4]}
+ANALYZE 21/28 tests\testFinalCoupledWaveformPreview.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 22/28 tests\testPRACHNativeRetention.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 23/28 tests\testPUCCHBaselineNoiseRF.m
+DIAGNOSTICS candidate=1 base=1
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 24/28 tests\testPUCCHReceiverCRC.m
+DIAGNOSTICS candidate=2 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"ISCL","message":"To improve performance, use 'isscalar' instead of length comparison.","fix":1,"line":20,"column":[32,61]}
+ANALYZE 25/28 tests\testPUCCHReceiverFieldAuthority.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZE 26/28 tests\testPUCCHTrialIndependentReceive.m
+DIAGNOSTICS candidate=2 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"NOCOMMA","message":"Extra comma is unnecessary.","fix":1,"line":131,"column":[4,4]}
+ANALYZE 27/28 tests\testPUCCHTrialIndependentRetained.m
+DIAGNOSTICS candidate=2 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+CANDIDATE {"id":"NOCOMMA","message":"Extra comma is unnecessary.","fix":1,"line":61,"column":[4,4]}
+ANALYZE 28/28 tests\testUCIDecoderCRC.m
+DIAGNOSTICS candidate=1 base=0
+CANDIDATE {"id":"CFERR","message":"Cannot open or read the Code Analyzer settings from file 'C:\\Users\\anup0\\AppData\\Roaming\\MathWorks\\MATLAB\\R2025b\\MLintDefaultSettings.txt'. Using default settings instead.","fix":0,"line":0,"column":[0,0]}
+ANALYZER_COMPLETED 28 files; diagnostics retained, no runtime qualification.

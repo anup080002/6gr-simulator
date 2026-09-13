@@ -18,6 +18,7 @@ opt = p.Results;
 
 rootDir = fileparts(mfilename("fullpath"));
 resultsDir = fullfile(rootDir, "results");
+logsDir = fullfile(rootDir, "logs");
 doChecks = opt.Verbose;
 if ~isempty(opt.RunToolboxChecks)
     doChecks = logical(opt.RunToolboxChecks);
@@ -35,6 +36,9 @@ pathChanged = localPruneSiblingToolkitRoots(rootDir) || pathChanged;
 
 % Generated result folders are not source code and must stay off the MATLAB path.
 pathChanged = localPruneGeneratedTrees(resultsDir) || pathChanged;
+% Logs can contain preserved source/patch evidence. Never execute those
+% snapshots as current tests or packages, including on cached setup calls.
+pathChanged = localPruneGeneratedTrees(logsDir) || pathChanged;
 
 % Add root
 if ~contains(path, rootDir)
@@ -52,7 +56,7 @@ if opt.AddSubfolders
             if strlength(d)==0
                 continue;
             end
-            if localPathIsUnder(d, resultsDir)
+            if localPathIsUnder(d, resultsDir) || localPathIsUnder(d, logsDir)
                 continue;
             end
             if contains(d, filesep + "+") || contains(d, filesep + "@")

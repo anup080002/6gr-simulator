@@ -1,0 +1,1417 @@
+diff --git a/+sixgr/+link/runPUCCHWaveformTrial.m b/+sixgr/+link/runPUCCHWaveformTrial.m
+index e835f089..8d91bb42 100644
+--- a/+sixgr/+link/runPUCCHWaveformTrial.m
++++ b/+sixgr/+link/runPUCCHWaveformTrial.m
+@@ -78,12 +78,29 @@ if prepareOnly || received
+         'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
+         'Shared PUCCH receiver thresholds must come from resolved YAML; no argument override.');
+ end
+-[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
+-    opt.Assignment,detectorPolicy,opt.DetectionThreshold);
++receiverAssignment=opt.Assignment;
+ context = opt.ReceiverContext;
+-if isempty(context)
++independentReception=received && isfield(receivedContext,'GNBReception');
++if independentReception
++    hypothesis=receivedContext.GNBReception;
++    assert(isstruct(hypothesis) && isscalar(hypothesis) && ...
++        all(isfield(hypothesis,{'Assignment','Context'})) && ...
++        isempty(setdiff(string(fieldnames(hypothesis)),["Assignment","Context"])), ...
++        'sixgr:link:InvalidGNBUCIReceiveHypothesis', ...
++        'The gNB receive boundary accepts only a typed allocation and payload-free schema.');
++    assert(isa(hypothesis.Assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment') && ...
++        isscalar(hypothesis.Assignment) && ...
++        isa(hypothesis.Context,'sixgr.phy.pucch.UCIReportContext') && isscalar(hypothesis.Context) && ...
++        hypothesis.Assignment.ReportContextDigest==hypothesis.Context.Digest, ...
++        'sixgr:link:InvalidGNBUCIReceiveHypothesis', ...
++        'Receiver allocation and schema must be independently bound; no TX assignment substitution.');
++    receiverAssignment=hypothesis.Assignment;
++    context=hypothesis.Context;
++elseif isempty(context)
+     context = sixgr.phy.pucch.UCIReportContext.fromReport(opt.Report);
+ end
++[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
++    receiverAssignment,detectorPolicy,opt.DetectionThreshold);
+ carrier = opt.Carrier;
+ if isempty(carrier)
+     if isa(cfg,"nrCarrierConfig")
+@@ -165,7 +182,7 @@ trial.AppliedTimingCorrectionSamples = 0;
+ try
+     if received
+         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
+-        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,opt.Assignment,context, ...
++        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,receiverAssignment,context, ...
+             receivedContext.Observation,prior);
+     else
+         rxArgs = {"NoiseVariance",noiseVariance, ...
+@@ -265,12 +282,26 @@ trial.ExpectedBits = reference;
+ trial.DecodedBits = decoded;
+ trial.ExpectedBitCount = numel(reference);
+ trial.DecodedBitCount = numel(decoded);
++trial.ReceiverExpectedBitCount=context.Sequence1Length+context.Sequence2Length;
++trial.ReceiverExpectedHARQBitCount=context.HARQACKBits;
++trial.ReceiverExpectedSRBitCount=context.SRBits;
++trial.ReceiverExpectedCSIPart1BitCount=context.CSIPart1Bits;
++trial.ReceiverExpectedCSIPart2BitCount=context.CSIPart2Bits;
++trial.ReceiverAssignmentDigest=rx.AssignmentDigest;
++trial.ReceiverContextDigest=rx.ReportContextDigest;
++trial.IndependentReceiverAssignment=logical(rx.ReceiverOnlyAssignment);
++trial.ReceiverExpectedBitCountSource="receiver_length_context";
++trial.ReceiverFields=rx.DecodedFields;
+ trial.UCIExpectedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(reference);
+ trial.UCIDecodedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(decoded);
+ trial.UCIBitErrorVector = localErrorVector(reference,decoded);
+ trial.UCICodedBitCount = numel(tx.Coding.CodedBits);
+-trial.UCICRCBitCount = tx.Coding.Plan.CRCBits;
+-trial.UCICRCApplicable = tx.Coding.Plan.CRCBits > 0;
++trial.TransmitterUCICRCBitCount=tx.Coding.Plan.CRCBits;
++trial.TransmitterUCICRCApplicable=tx.Coding.Plan.CRCBits>0;
++trial.UCICRCBitCount = rx.UCICRCBitCount;
++trial.UCICRCApplicable = rx.CRCApplicable;
++trial.UCICRCValueRole="receiver_decoding_hypothesis";
++trial.CodeBlockCRCError=rx.CodeBlockCRCError;
+ trial.CRCApplicable = trial.UCICRCApplicable;
+ if trial.CRCApplicable
+     trial.CRCPass = double(~trial.CRCFailed);
+@@ -289,6 +320,8 @@ trial.ReceiverUsable = rx.ReceiverUsable;
+ trial.RequestedFormat = opt.Assignment.Format;
+ trial.ResolvedFormat = opt.Assignment.Format;
+ trial.PUCCHFormat = opt.Assignment.Format;
++trial.ReceiverPUCCHFormat=receiverAssignment.Format;
++trial.ReceiverPUCCHResourceId=string(receiverAssignment.Resource.ID);
+ trial.FormatAdapted = false;
+ trial.FormatAdaptationReason = "none_strict_assignment";
+ trial.ControlResourceValidity = true;
+@@ -311,7 +344,7 @@ trial.NoiseVarStatus = "OK";
+ trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
+ trial.NoiseVarReason = "";
+ trial.NoiseVarStrictFailure = false;
+-if ~isfinite(trial.NoiseVariance) && opt.Assignment.Format==0
++if ~isfinite(trial.NoiseVariance) && receiverAssignment.Format==0
+     trial.NoiseVarStatus="unavailable";
+     trial.NoiseVarReason="not_required_by_normalized_sequence_correlation_no_variance_substitution";
+ end
+@@ -470,7 +503,7 @@ trial.ChannelEstimateAttempted = ~isempty(tx.DMRS.Indices) && ...
+ trial.ChannelEstimateAvailable = ~trial.ChannelEstimateAttempted || ...
+     ~isempty(rx.ChannelEstimate);
+ trial.ChannelEstimateSource = localChannelEstimateSource( ...
+-    channelMeta.Profile,trial.ChannelEstimateAttempted,opt.Assignment.Format);
++    channelMeta.Profile,trial.ChannelEstimateAttempted,receiverAssignment.Format);
+ trial.EqualizationAttempted = trial.ChannelEstimateAttempted;
+ trial.EqualizationAvailable = ~trial.EqualizationAttempted || ...
+     ~isempty(rx.ChannelEstimate);
+diff --git a/+sixgr/+phy/+pucch/PUCCHReceiver.m b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+index 65769256..884c9b7f 100644
+--- a/+sixgr/+phy/+pucch/PUCCHReceiver.m
++++ b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+@@ -195,10 +195,15 @@ classdef PUCCHReceiver
+             if assignment.Format <= 1
+                 decoded = localCellBits(soft);
+                 crcPassed = true;
++                crcApplicable=false; crcErrors=false(0,1);
++                crcBitCount=0;
+             else
+                 decodedResult = sixgr.phy.pucch.UCIDecoder.decode(soft{1},totalA);
+                 decoded = decodedResult.Bits;
+                 crcPassed = decodedResult.CRCPassed;
++                crcApplicable=decodedResult.CRCApplicable;
++                crcErrors=decodedResult.CodeBlockCRCError;
++                crcBitCount=decodedResult.Plan.CRCBits;
+             end
+             decodeLatency_ms = 1e3 .* toc(decodeTic);
+             energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
+@@ -231,7 +236,9 @@ classdef PUCCHReceiver
+                 "DecodedSequence1",sequence1, ...
+                 "DecodedSequence2",sequence2, ...
+                 "DecodedFields",localFields(sequence1,sequence2,reportContext), ...
+-                "CRCPassed",crcPassed,"WrongRNTI",false, ...
++                "CRCPassed",crcPassed,"CRCApplicable",crcApplicable, ...
++                "CodeBlockCRCError",crcErrors,"WrongRNTI",false, ...
++                "ExpectedPayloadBitCount",totalA,"UCICRCBitCount",crcBitCount, ...
+                 "WrongResource",false,"WrongSequence",false, ...
+                 "MeasuredSINR_dB",measuredSINR_dB, ...
+                 "MeasuredSINRApplicable",isfinite(measuredSINR_dB), ...
+diff --git a/+sixgr/+phy/+pucch/UCIDecoder.m b/+sixgr/+phy/+pucch/UCIDecoder.m
+index cf823c4b..9927a8e3 100644
+--- a/+sixgr/+phy/+pucch/UCIDecoder.m
++++ b/+sixgr/+phy/+pucch/UCIDecoder.m
+@@ -1,22 +1,39 @@
+ classdef UCIDecoder
+-    %UCIDECODER Strict UCI decoder that never converts failures to success.
+-
++    % Preserve the actual decoder's per-codeblock CRC outcome.
+     methods (Static)
+-        function result = decode(llr, A)
+-            plan = sixgr.phy.pucch.UCIEncodingPlan(A,numel(llr));
+-            if A == 0
+-                bits = int8(zeros(0,1));
++        function result=decode(llr,A)
++            plan=sixgr.phy.pucch.UCIEncodingPlan(A,numel(llr));
++            if ~plan.Valid
++                error(plan.ErrorID,'UCI payload exceeds the pinned 1706-bit profile.');
++            end
++            applicable=plan.CRCBits>0;
++            if A==0
++                bits=int8(zeros(0,1)); rawErrors=false(0,1);
+             else
+                 try
+-                    bits = nrUCIDecode(llr,A);
+-                catch ME
+-                    error("sixgr:phy:pucch:UCIDecodeFailed", ...
+-                        "nrUCIDecode failed for A=%d, E=%d: %s", ...
+-                        A,numel(llr),ME.message);
++                    [bits,rawErrors]=nrUCIDecode(llr,A);
++                catch cause
++                    error('sixgr:phy:pucch:UCIDecodeFailed', ...
++                        'nrUCIDecode failed for A=%d, E=%d: %s',A,numel(llr),cause.message);
+                 end
+             end
+-            result = struct("Bits",int8(bits(:)),"Plan",plan, ...
+-                "CRCPassed",true,"FailureReason","");
++            if applicable
++                assert((islogical(rawErrors)||isnumeric(rawErrors)) && isreal(rawErrors) && ...
++                    isvector(rawErrors) && numel(rawErrors)==plan.CodeBlocks && ...
++                    all(isfinite(rawErrors(:))) && all(rawErrors(:)==0 | rawErrors(:)==1), ...
++                    'sixgr:phy:pucch:MissingUCICRCEvidence', ...
++                    'CRC-protected UCI requires one actual binary result per decoded code block.');
++                passed=~any(rawErrors(:)); status="checked";
++                errors=logical(rawErrors(:));
++            else
++                % No CRC exists for small-block UCI. Keep the boolean gate's
++                % neutral value, but never label it a measured CRC pass.
++                passed=true; status="not_applicable"; errors=false(0,1);
++            end
++            reason=""; if ~passed, reason="uci_crc_failed"; end
++            result=struct('Bits',int8(bits(:)),'Plan',plan,'CRCPassed',logical(passed), ...
++                'CRCApplicable',logical(applicable),'CRCStatus',status, ...
++                'CodeBlockCRCError',errors,'FailureReason',reason);
+         end
+     end
+ end
+diff --git a/+sixgr/+phy/+refsig/causalMeasurementState.m b/+sixgr/+phy/+refsig/causalMeasurementState.m
+index f1281bec..a18ecbcc 100644
+--- a/+sixgr/+phy/+refsig/causalMeasurementState.m
++++ b/+sixgr/+phy/+refsig/causalMeasurementState.m
+@@ -6,13 +6,20 @@ function out = causalMeasurementState(measurements, consumerSlot, varargin)
+ % AvailableSlot <= KnownAtSlot and age at consumerSlot <= MaxAgeSlots.
+ % KnownAtSlot defaults to consumerSlot. A future grant can require freshness
+ % at transmission while using only information available at its decision.
++% Sample-clock mode requires a matching receiver clock on every valid row.
++% It validates chronology, not RF execution: the publisher must bind these
++% coordinates from its actual observation and shared receiver completion.
+ 
+ opt = struct( ...
+     "SignalType", "", ...
+     "TargetType", "", ...
+     "TargetId", NaN, ...
+     "MaxAgeSlots", inf, ...
+-    "KnownAtSlot", []);
++    "KnownAtSlot", [], ...
++    "KnownAtSample", [], ...
++    "ClockSampleRateHz", [], ...
++    "ClockEpoch", [], ...
++    "SlotStartSamples", []);
+ if ~isempty(varargin)
+     if mod(numel(varargin), 2) ~= 0
+         error("sixgr:phy:refsig:CausalMeasurementBadNV", ...
+@@ -31,6 +38,14 @@ if ~isempty(varargin)
+                 opt.MaxAgeSlots = double(varargin{ii + 1});
+             case "knownatslot"
+                 opt.KnownAtSlot = double(varargin{ii + 1});
++            case "knownatsample"
++                opt.KnownAtSample = varargin{ii + 1};
++            case "clocksampleratehz"
++                opt.ClockSampleRateHz = varargin{ii + 1};
++            case "clockepoch"
++                opt.ClockEpoch = varargin{ii + 1};
++            case "slotstartsamples"
++                opt.SlotStartSamples = varargin{ii + 1};
+             otherwise
+                 error("sixgr:phy:refsig:CausalMeasurementUnknownOption", ...
+                     "Unknown causal measurement option '%s'.", key);
+@@ -57,6 +72,29 @@ end
+ 
+ out = localEmptyResult(consumerSlot, maxAge);
+ out.KnownAtSlot = double(knownAtSlot);
++sampleMode = ~isempty(opt.KnownAtSample) || ~isempty(opt.ClockSampleRateHz) || ...
++    ~isempty(opt.ClockEpoch) || ~isempty(opt.SlotStartSamples);
++if sampleMode
++    localClockScalar(opt.KnownAtSample, true, 'KnownAtSample');
++    localClockScalar(opt.ClockSampleRateHz, false, 'ClockSampleRateHz');
++    localClockScalar(opt.ClockEpoch, true, 'ClockEpoch');
++    boundaries=opt.SlotStartSamples;
++    if ~isnumeric(boundaries) || ~isreal(boundaries) || ~isvector(boundaries) || numel(boundaries)<2 || ...
++            any(~isfinite(boundaries) | boundaries<0 | boundaries~=fix(boundaries) | boundaries>flintmax) || ...
++            boundaries(1)~=0 || any(diff(boundaries)<=0) || ...
++            knownAtSlot<1 || knownAtSlot~=fix(knownAtSlot) || knownAtSlot>=numel(boundaries)
++        error('sixgr:phy:refsig:InvalidMeasurementKnowledgeClock', ...
++            'SlotStartSamples must contain exact increasing OFDM boundaries from the shared clock origin.');
++    end
++    boundaries=double(boundaries(:));
++    if opt.KnownAtSample<boundaries(knownAtSlot) || opt.KnownAtSample>=boundaries(knownAtSlot+1)
++        error('sixgr:phy:refsig:InvalidMeasurementKnowledgeClock', ...
++            'KnownAtSample must be inside KnownAtSlot on the executed OFDM calendar.');
++    end
++    out.KnownAtSample = double(opt.KnownAtSample);
++    out.ClockSampleRateHz = double(opt.ClockSampleRateHz);
++    out.ClockEpoch = double(opt.ClockEpoch);
++end
+ if isempty(T) || height(T) == 0
+     out.Status = "no_measurements";
+     out.Blocker = "no_reference_signal_measurements_available";
+@@ -88,12 +126,77 @@ if any(valid & isfinite(availableSlot) & isfinite(producerSlot) & availableSlot
+         "A valid measurement cannot be available before its producer slot.");
+ end
+ notFuture = valid & isfinite(availableSlot) & availableSlot <= knownAtSlot;
++availableSample = nan(height(candidate),1);
++clockFields = ["ObservationStartSample","ObservationEndSampleExclusive", ...
++    "ObservationSampleRateHz","ResultAvailableAtSample","MeasurementClockEpoch"];
++hasClockFields = ismember(clockFields,string(candidate.Properties.VariableNames));
++domain=localStringColumn(candidate,'MeasurementClockDomain','');
++if any(valid & (ismissing(domain) | ~ismember(domain,["","slot_only","shared_receiver_sample_clock/v1"])))
++    error('sixgr:phy:refsig:InvalidMeasurementClockDomain','Unknown measurement clock domain.');
++end
++clockValuesPresent=false(height(candidate),1);
++for field=clockFields(hasClockFields)
++    raw=candidate.(field);
++    if ~isnumeric(raw) || ~isreal(raw) || ~iscolumn(raw) || numel(raw)~=height(candidate)
++        if any(valid)
++            error('sixgr:phy:refsig:InvalidMeasurementSampleClock','Receiver clock fields must be real numeric scalar columns.');
++        end
++    else
++        clockValuesPresent=clockValuesPresent | ~isnan(raw);
++    end
++end
++if any(valid & domain=="slot_only" & clockValuesPresent)
++    error('sixgr:phy:refsig:InvalidMeasurementClockDomain', ...
++        'A slot-only label cannot suppress retained sample-clock evidence.');
++end
++clocked=domain=="shared_receiver_sample_clock/v1" | (domain=="" & clockValuesPresent);
++if sampleMode && any(valid)
++    if ~all(hasClockFields)
++        error('sixgr:phy:refsig:MissingMeasurementSampleClock', ...
++            'Sample-clock consumers require complete receiver clock fields on valid measurements.');
++    end
++    values = zeros(nnz(valid),numel(clockFields));
++    for k = 1:numel(clockFields)
++        raw = candidate.(clockFields(k));
++        if ~isnumeric(raw) || ~isreal(raw) || ~iscolumn(raw) || numel(raw)~=height(candidate)
++            error('sixgr:phy:refsig:InvalidMeasurementSampleClock', ...
++                'Receiver clock fields must be real numeric scalar columns.');
++        end
++        values(:,k)=double(raw(valid));
++    end
++    samples=values(:,[1 2 4]);
++    if any(~isfinite(values),'all') || any(samples<0 | samples~=fix(samples) | samples>flintmax,'all') || ...
++            any(values(:,2)<=values(:,1) | values(:,4)<values(:,2)) || ...
++            any(values(:,3)~=double(opt.ClockSampleRateHz)) || ...
++            any(values(:,5)~=double(opt.ClockEpoch))
++        error('sixgr:phy:refsig:InvalidMeasurementSampleClock', ...
++            'Measurement availability must follow its complete capture on the consumer sample clock.');
++    end
++    slots=availableSlot(valid);
++    if any(~isfinite(slots) | slots<1 | slots~=fix(slots) | slots>=numel(boundaries)) || ...
++            any(values(:,4)<boundaries(slots) | values(:,4)>=boundaries(slots+1))
++        error('sixgr:phy:refsig:InvalidMeasurementSampleClock', ...
++            'AvailableSlot must contain the result sample on the executed OFDM calendar.');
++    end
++    availableSample(valid)=values(:,4);
++    notFuture=notFuture & availableSample<=double(opt.KnownAtSample);
++elseif ~sampleMode && any(valid & clocked)
++    % Clocked rows cannot silently fall back to a slot-only chronology.
++    % Slot-start callers must pass that boundary's actual sample index.
++    error('sixgr:phy:refsig:MeasurementSampleKnowledgeRequired', ...
++        'Clocked measurements require KnownAtSample and ClockSampleRateHz.');
++end
+ if ~any(notFuture)
+     out.Status = "future_measurement_not_available";
+     out.Blocker = "reference_signal_measurement_available_after_consumer_slot";
+     if knownAtSlot < consumerSlot
+         out.Blocker = "reference_signal_measurement_available_after_knowledge_slot";
+     end
++    if sampleMode
++        out.Blocker = "reference_signal_measurement_not_available_at_sample_clock";
++        futureSamples=availableSample(valid & isfinite(availableSample));
++        if ~isempty(futureSamples), out.NextAvailableSample=min(futureSamples); end
++    end
+     futureSlots = availableSlot(valid & isfinite(availableSlot));
+     if ~isempty(futureSlots)
+         out.NextAvailableSlot = min(futureSlots);
+@@ -116,6 +219,12 @@ end
+ freshIdx = find(fresh);
+ [~, bestRel] = max(availableSlot(freshIdx));
+ bestIdx = freshIdx(bestRel);
++if sampleMode
++    % Several results can arrive in one slot. Select by actual availability,
++    % then source age, rather than whichever row was appended first.
++    [~, order]=sortrows([availableSample(freshIdx),producerSlot(freshIdx)],[-1 -2]);
++    bestIdx=freshIdx(order(1));
++end
+ selected = candidate(bestIdx, :);
+ out.Usable = true;
+ out.Status = "usable";
+@@ -130,6 +239,7 @@ out.MeasurementId = string(localScalarTableValue(selected, "MeasurementId", ""))
+ out.SourceSignal = string(localScalarTableValue(selected, "SourceSignal", out.SignalType));
+ out.MeasurementSource = string(localScalarTableValue(selected, "MeasurementSource", ""));
+ out.SelectedRow = selected;
++out.ResultAvailableAtSample=availableSample(bestIdx);
+ end
+ 
+ function out = localEmptyResult(consumerSlot, maxAge)
+@@ -149,6 +259,11 @@ out = struct( ...
+     "SourceSignal", "", ...
+     "MeasurementSource", "", ...
+     "NextAvailableSlot", NaN, ...
++    "KnownAtSample", NaN, ...
++    "ClockSampleRateHz", NaN, ...
++    "ClockEpoch", NaN, ...
++    "ResultAvailableAtSample", NaN, ...
++    "NextAvailableSample", NaN, ...
+     "MinAgeSlots", NaN, ...
+     "SelectedRow", table());
+ end
+@@ -187,7 +302,14 @@ end
+ 
+ function values = localLogicalColumn(T, name, defaultValue)
+ if ismember(string(name), string(T.Properties.VariableNames))
+-    values = logical(T.(char(name)));
++    raw = T.(char(name));
++    if ~(islogical(raw) || isnumeric(raw)) || ~isreal(raw) || ...
++            ~iscolumn(raw) || numel(raw)~=height(T) || ...
++            any(~isfinite(double(raw)) | (raw~=0 & raw~=1))
++        error('sixgr:phy:refsig:InvalidMeasurementValidity', ...
++            'Measurement Valid flags must be explicit binary scalar values, never NaN.');
++    end
++    values = logical(raw);
+ else
+     values = repmat(logical(defaultValue), height(T), 1);
+ end
+@@ -205,3 +327,12 @@ if isempty(raw)
+ end
+ value = raw(1);
+ end
++
++function localClockScalar(value,isSample,name)
++if ~isnumeric(value) || ~isreal(value) || ~isscalar(value) || ~isfinite(value) || ...
++        (isSample && (value<0 || value~=fix(value) || value>flintmax)) || ...
++        (~isSample && value<=0)
++    error('sixgr:phy:refsig:InvalidMeasurementKnowledgeClock', ...
++        '%s must identify an exact nonnegative sample or a positive sample rate.',name);
++end
++end
+diff --git a/+sixgr/+truth/bindReceivedCSIRSClock.m b/+sixgr/+truth/bindReceivedCSIRSClock.m
+new file mode 100644
+index 00000000..68ca85b2
+--- /dev/null
++++ b/+sixgr/+truth/bindReceivedCSIRSClock.m
+@@ -0,0 +1,41 @@
++function rows=bindReceivedCSIRSClock(rows,prepared,observation,timing,availableAtSample,epoch)
++% Bind CSI rows to the completed shared DL receiver, without changing RF data.
++if isempty(rows), return; end
++assert(istable(rows),'sixgr:truth:CSIRSClockTableRequired','Retain actual receiver rows.');
++e=sixgr.truth.receivedDataSymbolTiming(prepared,observation,timing,availableAtSample);
++assert(e.Direction=="DL",'sixgr:truth:CSIRSClockDirection','CSI-RS requires a DL capture.');
++validateattributes(epoch,{'numeric'},{'scalar','real','finite','integer','nonnegative','<=',flintmax});
++assert(all(ismember({'Slot','RNTI'},rows.Properties.VariableNames)) && ...
++    all(rows.Slot==e.DataAbsoluteSlot+1) && all(rows.RNTI==e.RNTI), ...
++    'sixgr:truth:CSIRSClockIdentityMismatch','CSI rows must belong to this executed DL allocation.');
++% Locate the completion event in the exact CP-OFDM calendar. No average-slot
++% division: high numerologies may have nonuniform sample lengths.
++carrier=prepared.Tx.Carrier;
++slot0=e.DataAbsoluteSlot;
++start=sixgr.phy.frame.slotStartSample(carrier,slot0,e.SampleRateHz);
++assert(availableAtSample>=start,'sixgr:truth:CSIRSClockBeforeSource','Completion precedes the source slot.');
++stop=sixgr.phy.frame.slotStartSample(carrier,slot0+1,e.SampleRateHz);
++while availableAtSample>=stop
++    slot0=slot0+1; start=stop;
++    stop=sixgr.phy.frame.slotStartSample(carrier,slot0+1,e.SampleRateHz);
++end
++values=struct('ObservationStartSample',e.ObservationStartSample, ...
++    'ObservationEndSampleExclusive',e.ObservationEndSampleExclusive, ...
++    'ObservationSampleRateHz',e.SampleRateHz, ...
++    'ResultAvailableAtSample',e.ResultAvailableAtSample, ...
++    'MeasurementClockEpoch',double(epoch), ...
++    'ObservationDeliverySlot',slot0+1, ...
++    'DeliverySlotStartSample',start,'DeliverySlotEndSampleExclusive',stop, ...
++    'MeasurementClockDomain',"shared_receiver_sample_clock/v1", ...
++    'RuntimeTransportMode',"shared_physical_stream_CSIRS_received_completion");
++for name=string(fieldnames(values)).'
++    bound=repmat(values.(name),height(rows),1);
++    if ismember(name,rows.Properties.VariableNames)
++        assert(isequaln(rows.(name),bound), ...
++            'sixgr:truth:ConflictingCSIRSReceiverClock', ...
++            'Existing CSI receiver-clock evidence cannot be overwritten or rebound to a later event.');
++    else
++        rows.(name)=bound;
++    end
++end
++end
+diff --git a/+sixgr/+truth/bindSharedDLCSICompletion.m b/+sixgr/+truth/bindSharedDLCSICompletion.m
+new file mode 100644
+index 00000000..10a46c78
+--- /dev/null
++++ b/+sixgr/+truth/bindSharedDLCSICompletion.m
+@@ -0,0 +1,32 @@
++function res=bindSharedDLCSICompletion(res,prepared,observation,owner)
++% Bind actual receiver CSI before the coordinator commits any DL result.
++% Empty CSI tables stay empty. This is chronology/provenance, not RF repair.
++assert(isstruct(res) && isscalar(res), ...
++    'sixgr:truth:CSICompletionResultRequired','Retain one actual completed DL result.');
++if ~isfield(res,'CSIRSTrialTable'), return; end
++assert(istable(res.CSIRSTrialTable),'sixgr:truth:CSIRSClockTableRequired', ...
++    'CSI result evidence must be a table, including when it is empty.');
++if isempty(res.CSIRSTrialTable), return; end
++assert(isa(owner,'sixgr.truth.CoupledWaveformStream') && isscalar(owner) && ...
++    isa(prepared,'sixgr.link.PreparedDataTransmission') && isscalar(prepared) && ...
++    prepared.Direction=="DL" && ...
++    isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(observation), ...
++    'sixgr:truth:CSICompletionOwnerRequired', ...
++    'Shared CSI must use its actual DL prepared transmission, receive capture and physical owner.');
++assert(isfield(res,'ExecutionStage') && string(res.ExecutionStage)=="received_shared_stream_completed" && ...
++    isfield(res,'ReceiveTiming'), ...
++    'sixgr:truth:CSICompletionNotReceived','A prepared or standalone result cannot claim shared CSI completion.');
++available=owner.Events.NextSampleIndex;
++assert(~owner.Events.Faulted && ~owner.Physical.Faulted && ...
++    owner.Physical.NextSampleIndex==available && ...
++    observation.SampleRateHz==owner.SampleRateHz && prepared.SampleRateHz==owner.SampleRateHz && ...
++    observation.EndSampleExclusive<=available, ...
++    'sixgr:truth:CSICompletionClockMismatch', ...
++    'CSI publication must follow the actual complete capture on one nonfaulted physical/event clock.');
++bound=sixgr.truth.bindReceivedCSIRSClock(res.CSIRSTrialTable,prepared,observation, ...
++    res.ReceiveTiming,available,owner.Physical.ConfigurationEpoch);
++for row=1:height(bound)
++    sixgr.truth.csirsMeasurementAvailability(bound(row,:),true);
++end
++res.CSIRSTrialTable=bound;
++end
+diff --git a/+sixgr/+truth/CoupledTruthRuntime.m b/+sixgr/+truth/CoupledTruthRuntime.m
+index 0c4cf91a..8632ac89 100644
+--- a/+sixgr/+truth/CoupledTruthRuntime.m
++++ b/+sixgr/+truth/CoupledTruthRuntime.m
+@@ -3,6 +3,56 @@ classdef CoupledTruthRuntime
+ % Keep this file ASCII-only.
+ 
+ methods(Static)
++    function [state,rows,mapping]=commitScheduledHARQFeedbackRuntime(state,cfg,ue,targetSlot,observed,observation,observationID)
++        % Common gNB disposition boundary for independently decoded UCI.
++        % Association is the physical DL schedule, never UE pending-row order.
++        owner=state.SharedWaveformStream;
++        assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer'), ...
++            'sixgr:truth:ScheduledFeedbackObservationRequired','Retain the complete actual receive buffer.');
++        observation.readComplete();
++        assert(observation.SampleRateHz==owner.SampleRateHz && ...
++            observation.EndSampleExclusive<=owner.Events.NextSampleIndex, ...
++            'sixgr:truth:ScheduledFeedbackObservationClock','Feedback cannot precede actual capture completion.');
++        observationID=string(observationID);
++        assert(isscalar(observationID) && ~ismissing(observationID) && strlength(observationID)>0, ...
++            'sixgr:truth:ScheduledFeedbackObservationIdentity','Retain the receiver observation identity.');
++        [rows,mapping]=sixgr.truth.prepareScheduledHARQFeedback(state,cfg,ue,targetSlot,observed);
++        committed=sixgr.util.structGet(state,'SharedHARQFeedbackCommittedMappings',strings(0,1));
++        assert(~any(committed==mapping.Digest),'sixgr:truth:DuplicateScheduledHARQFeedback', ...
++            'One scheduled feedback obligation cannot be applied twice or on two transports.');
++        for k=1:numel(rows)
++            rows(k).ObservationID=observationID;
++            rows(k).Slot=targetSlot;
++            rows(k).AvailableAtSample=owner.Events.NextSampleIndex;
++            rows(k).ObservationStartSample=observation.StartSample;
++            rows(k).ObservationEndSampleExclusive=observation.EndSampleExclusive;
++            rows(k).ObservationSampleRateHz=observation.SampleRateHz;
++            rows(k).Source="independent_gNB_mapping_and_completed_UCI_observation";
++            % Validate publication compatibility before touching shared handles.
++            rows(k).HARQFeedbackApplied=~rows(k).StaleFeedbackIgnored;
++            rows(k).StateChangeApplied=rows(k).HARQFeedbackApplied;
++        end
++        nextTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
++            sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table()),struct2table(rows));
++        for k=1:numel(rows)
++            row=rows(k); pid=row.HarqID+1;
++            applied=state.DLHarq.onFeedback(row.RNTI,row.HarqID,row.FeedbackOutcome, ...
++                'SourceSlot',row.SourceSlot,'FeedbackSlot',targetSlot);
++            assert(applied==row.HARQFeedbackApplied,'sixgr:truth:HARQDispositionMismatch', ...
++                'Disposition must match the prevalidated process attempt.');
++            if ~applied, continue; end
++            if row.ObservedAck
++                state.DLHarq.clearSoftBuffer(row.RNTI,row.HarqID);
++                if ue<=size(state.DLCombinedLLR,1) && pid<=size(state.DLCombinedLLR,2)
++                    state.DLCombinedLLR{ue,pid}=[];
++                end
++            end
++            row.Ack=row.ObservedAck;
++            state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state,row,'DL');
++        end
++        state.SharedGNBUCIHARQTable=nextTable;
++        state.SharedHARQFeedbackCommittedMappings=[committed;mapping.Digest];
++    end
+     function state=recordSchedulerDecisionRuntime(state,info,direction,cellId)
+         % One production entry for actual candidate, resource and HARQ decisions.
+         state=sixgr.truth.CoupledTruthRuntime.appendSchedulerDecisionRows( ...
+@@ -488,6 +538,12 @@ methods(Static)
+         end
+         plan.RuntimeViewMode = "future_ul_grant_planning";
+         plan.PlanningDecisionSlot = double(decisionSlot);
++        owner=sixgr.util.structGet(state,'SharedWaveformStream',[]);
++        if isa(owner,'sixgr.truth.CoupledWaveformStream') && isscalar(owner)
++            plan.PlanningDecisionSample=owner.Events.NextSampleIndex;
++            plan.PlanningDecisionSampleRateHz=owner.SampleRateHz;
++            plan.PlanningDecisionClockEpoch=owner.Physical.ConfigurationEpoch;
++        end
+         plan.PlanningTrafficThroughSlot = double(trafficSlot);
+         plan.TimingControlAbsoluteSlot0Based = double(decisionSlot)-1;
+         % Keep physical runtime time unchanged. CurrentSlot/CurrentFrame and
+@@ -1139,56 +1195,11 @@ methods(Static)
+         bits=int8(rx.DecodedSequence1(:));
+         usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
+         assert(all(bits==0 | bits==1),'sixgr:truth:InvalidReceivedHARQBit','Received UCI must be binary.');
+-        rows=struct([]);
+-        for k=1:mapping.BitCount
+-            identity=mapping.Records(k);
+-            ledger=state.SharedDataTXLedger;
+-            hit=find(cellfun(@(r)r.Identity.TransmissionID==identity.TransmissionID,ledger));
+-            assert(isscalar(hit),'sixgr:truth:MissingPUCCHReceiveOnlyGrant','Each receive bit must retain its actual DL grant.');
+-            grant=ledger{hit}.Grant;
+-            outcome="DTX"; if usable, outcome="NACK"; if bits(k), outcome="ACK"; end, end
+-            row=struct('ObservationID',string(c.ObservationID),'Slot',c.Slot,'UEIndex',item.UE, ...
+-                'RNTI',identity.RNTI,'HarqID',identity.HARQProcess,'NDI',identity.NDI, ...
+-                'SourceSlot',identity.SourceSlot,'BitIndex',identity.BitIndex, ...
+-                'TransmissionID',identity.TransmissionID,'PHYGrantContextId',identity.PHYGrantContextId, ...
+-                'TBSBits',double(grant.TBSBits),'RV',double(grant.HARQ.RV), ...
+-                'FeedbackOutcome',outcome,'ReceiverUsable',logical(usable), ...
+-                'ObservedAck',outcome=="ACK",'AvailableAtSample',post.EndSampleExclusive, ...
+-                'MappingDigest',mapping.Digest,'Source',"actual_gnb_receive_only_PUCCH_observation");
+-            if isempty(rows), rows=row; else, rows(end+1)=row; end %#ok<AGROW>
+-        end
+-        % Validate every process before changing any shared HARQ handle.
+-        processes=cell(numel(rows),1);
+-        for k=1:numel(rows)
+-            row=rows(k);
+-            ui=find(state.DLHarq.UEList==row.RNTI); pid=row.HarqID+1;
+-            assert(isscalar(ui) && pid>=1 && pid<=numel(state.DLHarq.UEProcs{ui}), ...
+-                'sixgr:truth:MissingPUCCHReceiveOnlyHARQ','Retain the actual scheduled HARQ entity and process.');
+-            process=state.DLHarq.UEProcs{ui}(pid);
+-            assert(~process.AwaitingFeedback || process.LastTxSlot~=row.SourceSlot || process.NDI==row.NDI, ...
+-                'sixgr:truth:InconsistentScheduledHARQNDI','A same-slot pending process cannot change its scheduled NDI.');
+-            stale=~process.AwaitingFeedback || process.LastTxSlot~=row.SourceSlot || process.NDI~=row.NDI;
+-            rows(k).StaleFeedbackIgnored=logical(stale);
+-            processes{k}=process;
+-        end
+-        for k=1:numel(rows)
+-            row=rows(k); pid=row.HarqID+1; process=processes{k};
+-            applied=state.DLHarq.onFeedback(row.RNTI,row.HarqID,row.FeedbackOutcome, ...
+-                'SourceSlot',row.SourceSlot,'FeedbackSlot',c.Slot);
+-            assert(applied==~row.StaleFeedbackIgnored,'sixgr:truth:HARQDispositionMismatch', ...
+-                'The entity disposition must agree with the scheduled process snapshot.');
+-            if row.StaleFeedbackIgnored, continue; end
+-            if row.ObservedAck && item.UE<=size(state.DLCombinedLLR,1) && pid<=size(state.DLCombinedLLR,2)
+-                state.DLCombinedLLR{item.UE,pid}=[];
+-            end
+-            feedback=row; feedback.Ack=row.ObservedAck;
+-            feedback.ServingCell=mapping.LastGrant.ServingCell;
+-            feedback.IsRetransmission=process.TxCount>1;
+-            state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state,feedback,'DL');
+-        end
+-        bitTable=struct2table(rows);
+-        state.SharedGNBUCIHARQTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+-            sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table()),bitTable);
++        normalized=struct('MappingDigest',mapping.Digest,'UEIndex',mapping.UEIndex, ...
++            'RNTI',mapping.RNTI,'TargetSlot',mapping.TargetSlot,'DecodedBits',bits, ...
++            'DecodeOk',logical(usable),'DTXFlag',logical(rx.DTX),'Transport',"PUCCH");
++        [state,~,~]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
++            state,cfg,item.UE,c.Slot,normalized,post,c.ObservationID);
+         trial=struct('Slot',c.Slot,'Channel',"PUCCH",'Direction',"UL",'UEIndex',item.UE, ...
+             'RNTI',mapping.RNTI,'ServingCell',mapping.LastGrant.ServingCell, ...
+             'PUCCHGrantId',string(c.ObservationID),'PUCCHResourceId',string(h.Assignment.Resource.ID), ...
+@@ -6089,6 +6100,19 @@ methods(Static, Access=private)
+             ["EstimatedCFO_Hz","EstimatedOscillatorCFO_Hz","EstimatedCFO_PreCorrection_Hz"], NaN);
+         meas.EvidenceSource = sixgr.truth.CoupledTruthRuntime.rowFirstString(row, ...
+             ["TrackingEstimateSource","RuntimeEvidenceSource","NMSEReferenceSource"], "");
++        meas.MeasurementClockDomain="slot_only";
++        rowNames=strings(0,1);
++        if istable(row), rowNames=string(row.Properties.VariableNames);
++        elseif isstruct(row), rowNames=string(fieldnames(row)); end
++        if ismember('MeasurementClockDomain',rowNames) && ...
++                string(row.MeasurementClockDomain)=="shared_receiver_sample_clock/v1"
++            clockFields=["ObservationStartSample","ObservationEndSampleExclusive", ...
++                "ObservationSampleRateHz","ResultAvailableAtSample","MeasurementClockEpoch", ...
++                "DeliverySlotStartSample","DeliverySlotEndSampleExclusive","MeasurementClockDomain"];
++            for clockField=clockFields
++                meas.(clockField)=row.(clockField);
++            end
++        end
+         [state,meas]=sixgr.truth.filterUEReferenceMeasurement(state,meas);
+         state.ReferenceSignalMeasurementTable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             state.ReferenceSignalMeasurementTable, struct2table(meas, "AsArray", true));
+@@ -6107,10 +6131,12 @@ methods(Static, Access=private)
+             knowledgeSlot = min(knowledgeSlot, ...
+                 sixgr.truth.CoupledTruthRuntime.schedulingKnowledgeSlot(state));
+         end
++        clockArgs=sixgr.truth.referenceMeasurementClockArguments(state,T, ...
++            signalType,targetType,targetId,knowledgeSlot);
+         result = sixgr.phy.refsig.causalMeasurementState(T, consumerSlot, ...
+             "SignalType", signalType, "TargetType", targetType, ...
+             "TargetId", targetId, "MaxAgeSlots", maxAgeSlots, ...
+-            "KnownAtSlot",knowledgeSlot);
++            "KnownAtSlot",knowledgeSlot,clockArgs{:});
+     end
+ 
+     function result = consumeReferenceSignalPathlossImpl(state, signalType, targetType, targetId, consumerSlot, maxAgeSlots, referenceSignalId)
+@@ -6816,20 +6842,20 @@ methods(Static, Access=private)
+                 "CSI-RS primary evidence requires an actual receiver measurement source; received '%s'.", ...
+                 source);
+         end
++        shared=(isfield(state,'SharedWaveformStream') && ...
++            isa(state.SharedWaveformStream,'sixgr.truth.CoupledWaveformStream')) || ...
++            (ismember('RuntimeTransportMode',row.Properties.VariableNames) && ...
++            string(row.RuntimeTransportMode)=="shared_physical_stream_CSIRS_received_completion");
++        [availableSlot,usable]=sixgr.truth.csirsMeasurementAvailability(row,shared);
+         state.ControlTrials.CSIRS = ...
+             sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             sixgr.util.structGet(state.ControlTrials, "CSIRS", table()), row);
+ 
+         slotIdx = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+             row, "Slot", state.CurrentSlot));
+-        usable = logical(row.Transmitted(end)) && logical(row.Observed(end)) && ...
+-            logical(row.Consumed(end)) && ...
+-            logical(row.ResourceExtractionAvailable(end)) && ...
+-            logical(row.ChannelEstimateAvailable(end)) && ...
+-            logical(row.CSIMeasurementAvailable(end));
+         state = sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementImpl( ...
+             state, "CSI-RS", "UE", ueIdx, row, ...
+-            "ProducerSlot", slotIdx, "AvailableSlot", slotIdx, ...
++            "ProducerSlot", slotIdx, "AvailableSlot", availableSlot, ...
+             "Valid", usable, "Direction", "DL", "SourceSignal", "CSI-RS", ...
+             "MeasurementSource", "CoupledTruthRuntime.applyCSIRSTrial");
+     end
+diff --git a/+sixgr/+truth/csirsMeasurementAvailability.m b/+sixgr/+truth/csirsMeasurementAvailability.m
+new file mode 100644
+index 00000000..83892b1e
+--- /dev/null
++++ b/+sixgr/+truth/csirsMeasurementAvailability.m
+@@ -0,0 +1,59 @@
++function [availableSlot,usable,clocked]=csirsMeasurementAvailability(row,requireClock)
++% Validate publication chronology; actual sample binding belongs to the RX owner.
++flags=["Transmitted","Observed","Consumed","ResourceExtractionAvailable", ...
++    "ChannelEstimateAvailable","CSIMeasurementAvailable"];
++for name=flags
++    assert(ismember(name,string(row.Properties.VariableNames)), ...
++        'sixgr:truth:CSIRSProducerSchemaIncomplete','Missing CSI receiver flag %s.',name);
++    value=row.(name);
++    assert((isnumeric(value)||islogical(value)) && isscalar(value) && isreal(value) && ...
++        isfinite(double(value)) && (value==0||value==1), ...
++        'sixgr:truth:InvalidCSIRSProducerFlag','CSI receiver flags must be explicit binary scalars.');
++end
++usable=all(table2array(row(:,cellstr(flags)))==1);
++sourceSlot=row.Slot;
++validateattributes(sourceSlot,{'numeric'},{'scalar','real','finite','integer','positive'});
++availableSlot=sourceSlot;
++if ismember('ObservationDeliverySlot',row.Properties.VariableNames)
++    availableSlot=row.ObservationDeliverySlot;
++    validateattributes(availableSlot,{'numeric'},{'scalar','real','finite','integer','>=',sourceSlot});
++end
++domain="";
++if ismember('MeasurementClockDomain',row.Properties.VariableNames)
++    domain=string(row.MeasurementClockDomain);
++    assert(isscalar(domain) && ~ismissing(domain) && ...
++        any(domain==["slot_only","shared_receiver_sample_clock/v1"]), ...
++        'sixgr:truth:InvalidCSIRSReceiverClock','Unknown CSI measurement clock domain.');
++end
++clocked=domain=="shared_receiver_sample_clock/v1";
++if ~clocked
++    for field=["ResultAvailableAtSample","MeasurementClockEpoch"]
++        if ismember(field,row.Properties.VariableNames)
++            value=row.(field);
++            assert(isnumeric(value) && isscalar(value) && isreal(value) && isnan(value), ...
++                'sixgr:truth:InvalidCSIRSReceiverClock', ...
++                'Sample availability/epoch cannot be discarded by a missing or slot-only domain.');
++        end
++    end
++end
++assert(~requireClock || clocked,'sixgr:truth:MissingCSIRSReceiverClock', ...
++    'Shared CSI publication requires the actual completed receiver sample clock.');
++if ~clocked, return; end
++names=["ObservationStartSample","ObservationEndSampleExclusive", ...
++    "ObservationSampleRateHz","ResultAvailableAtSample","MeasurementClockEpoch", ...
++    "DeliverySlotStartSample","DeliverySlotEndSampleExclusive","ObservationDeliverySlot"];
++assert(all(ismember(names,string(row.Properties.VariableNames))), ...
++    'sixgr:truth:InvalidCSIRSReceiverClock','Incomplete CSI receiver clock.');
++for name=names
++    value=row.(name);
++    assert(isnumeric(value) && isreal(value) && isscalar(value) && isfinite(value) && ...
++        value>=0 && value<=flintmax && (name=="ObservationSampleRateHz" || value==fix(value)), ...
++        'sixgr:truth:InvalidCSIRSReceiverClock','Invalid CSI receiver clock field %s.',name);
++end
++assert(row.ObservationSampleRateHz>0 && ...
++    row.ObservationEndSampleExclusive>row.ObservationStartSample && ...
++    row.ResultAvailableAtSample>=row.ObservationEndSampleExclusive && ...
++    row.ResultAvailableAtSample>=row.DeliverySlotStartSample && ...
++    row.ResultAvailableAtSample<row.DeliverySlotEndSampleExclusive, ...
++    'sixgr:truth:InvalidCSIRSReceiverClock','CSI cannot be published before capture completion or outside its delivery slot.');
++end
+diff --git a/+sixgr/+truth/mapScheduledHARQFeedback.m b/+sixgr/+truth/mapScheduledHARQFeedback.m
+new file mode 100644
+index 00000000..d1a65cb6
+--- /dev/null
++++ b/+sixgr/+truth/mapScheduledHARQFeedback.m
+@@ -0,0 +1,83 @@
++function rows=mapScheduledHARQFeedback(mapping,observed)
++% Associate normalized receiver bits with independent gNB schedule identities.
++% Pure association only: the owning receiver must build/validate mapping from
++% actual transmitted scheduling evidence and bind the physical receive window.
++% This helper neither proves PHY execution nor mutates HARQ or scoring state.
++arguments
++    mapping (1,1) struct
++    observed (1,1) struct
++end
++required=["Records","BitCount","UEIndex","RNTI","TargetSlot", ...
++    "ConfigurationEpoch","ContextDigest","LastGrant","Source","Digest"];
++assert(all(isfield(mapping,required)),'sixgr:truth:InvalidScheduledFeedbackMapping', ...
++    'Retain the complete independent gNB mapping.');
++digest=sixgr.phy.pucch.PUCCHUtil.hash(rmfield(mapping,{'LastGrant','Digest'}));
++assert(isequal(string(mapping.Digest),string(digest)), ...
++    'sixgr:truth:ChangedScheduledFeedbackMapping','The bound mapping identity changed.');
++n=mapping.BitCount;
++validateattributes(n,{'numeric'},{'scalar','real','finite','integer','positive'});
++records=mapping.Records;
++fields=["BitIndex","TransmissionID","PHYGrantContextId","UEIndex","RNTI", ...
++    "HARQProcess","NDI","SourceSlot","TargetSlot","ConfigurationEpoch"];
++assert(isstruct(records) && numel(records)==n && all(isfield(records,fields)), ...
++    'sixgr:truth:InvalidScheduledFeedbackMapping','Retain every gNB bit identity.');
++assert(isequal([records.BitIndex],1:n) && ...
++    numel(unique(string({records.TransmissionID})))==n && ...
++    all(strlength(string({records.TransmissionID}))>0) && ...
++    all(strlength(string({records.PHYGrantContextId}))>0), ...
++    'sixgr:truth:InvalidScheduledFeedbackMapping','Bit ordinals and transmission identities must be unique.');
++for k=1:n
++    r=records(k);
++    validateattributes(r.HARQProcess,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
++    validateattributes(r.SourceSlot,{'numeric'},{'scalar','real','finite','integer','positive'});
++    localFlag(r.NDI);
++    assert(r.UEIndex==mapping.UEIndex && r.RNTI==mapping.RNTI && ...
++        r.TargetSlot==mapping.TargetSlot && r.ConfigurationEpoch==mapping.ConfigurationEpoch, ...
++        'sixgr:truth:InvalidScheduledFeedbackMapping','Do not mix gNB feedback contexts.');
++end
++assert(all(isfield(observed,["MappingDigest","UEIndex","RNTI","TargetSlot", ...
++    "DecodedBits","DecodeOk","DTXFlag","Transport"])), ...
++    'sixgr:truth:MissingScheduledFeedbackBinding','Bind normalized receiver output to its gNB hypothesis.');
++assert(isequal(string(observed.MappingDigest),string(mapping.Digest)) && ...
++    isequal(observed.UEIndex,mapping.UEIndex) && isequal(observed.RNTI,mapping.RNTI) && ...
++    isequal(observed.TargetSlot,mapping.TargetSlot), ...
++    'sixgr:truth:ScheduledFeedbackContextMismatch','Receiver and scheduling hypothesis identities differ.');
++transport=string(observed.Transport);
++assert(isscalar(transport) && any(transport==["PUCCH","PUSCH"]), ...
++    'sixgr:truth:InvalidScheduledFeedbackTransport','Use one explicit UCI transport.');
++decodeOK=localFlag(observed.DecodeOk); dtx=localFlag(observed.DTXFlag);
++bits=observed.DecodedBits;
++assert((isnumeric(bits)||islogical(bits)) && isreal(bits) && ...
++    (isvector(bits)||isempty(bits)) && all(isfinite(bits(:))) && ...
++    all(bits(:)==0 | bits(:)==1), ...
++    'sixgr:truth:InvalidReceivedHARQBit','Validate receiver bits before any conversion or state update.');
++lengthOK=numel(bits)==n;
++usable=decodeOK && ~dtx && lengthOK;
++rows=records;
++for k=1:n
++    outcome="DTX"; reason="receiver_feedback_unusable";
++    if usable
++        outcome="NACK"; if bits(k)==1, outcome="ACK"; end
++        reason="decoded_uci_bit";
++    elseif dtx
++        reason="receiver_reported_dtx";
++    elseif decodeOK && ~lengthOK
++        reason="receiver_vector_length_mismatch";
++    end
++    rows(k).FeedbackOutcome=outcome;
++    rows(k).FeedbackOutcomeReason=reason;
++    rows(k).ObservedAck=outcome=="ACK";
++    rows(k).ReceiverUsable=usable;
++    rows(k).ReceiverVectorLengthMatches=lengthOK;
++    rows(k).MappingDigest=string(mapping.Digest);
++    rows(k).UCITransport=transport;
++    rows(k).AssociationRole="gNB_bit_identity_association_not_PHY_execution_proof";
++end
++end
++
++function flag=localFlag(value)
++assert((isnumeric(value)||islogical(value)) && isreal(value) && ...
++    isscalar(value) && isfinite(value) && any(value==[0 1]), ...
++    'sixgr:truth:InvalidScheduledFeedbackFlag','Validity and NDI flags must be scalar binary values.');
++flag=logical(value);
++end
+diff --git a/+sixgr/+truth/prepareScheduledHARQFeedback.m b/+sixgr/+truth/prepareScheduledHARQFeedback.m
+new file mode 100644
+index 00000000..2b24dd4b
+--- /dev/null
++++ b/+sixgr/+truth/prepareScheduledHARQFeedback.m
+@@ -0,0 +1,52 @@
++function [rows,mapping]=prepareScheduledHARQFeedback(state,cfg,ue,targetSlot,observed)
++% Read-only preflight of independently mapped DL HARQ feedback.
++% The receive owner must separately validate actual UCI IQ, clock, assignment,
++% transport, duplicate-occasion guard and normalized decode evidence.
++% No entity, decoder buffer, scheduler, feedback ledger or primary row mutates.
++mapping=sixgr.truth.buildScheduledHARQACKMapping(state,cfg,ue,targetSlot);
++rows=sixgr.truth.mapScheduledHARQFeedback(mapping,observed);
++harq=state.DLHarq;
++assert(isa(harq,'sixgr.l2.mac.HARQEntity') && isscalar(harq) && ...
++    strcmpi(harq.Direction,'DL'),'sixgr:truth:MissingScheduledFeedbackHARQ', ...
++    'Retain the actual DL HARQ entity for these scheduling obligations.');
++attempts=[[rows.RNTI].',[rows.HARQProcess].',[rows.SourceSlot].'];
++assert(size(unique(attempts,'rows'),1)==numel(rows), ...
++    'sixgr:truth:DuplicateScheduledFeedbackAttempt', ...
++    'One physical process attempt cannot consume two independent feedback bits.');
++ledger=state.SharedDataTXLedger;
++for k=1:numel(rows)
++    row=rows(k);
++    hit=find(cellfun(@(record)string(record.Identity.TransmissionID)==string(row.TransmissionID),ledger));
++    assert(isscalar(hit),'sixgr:truth:MissingScheduledFeedbackGrant', ...
++        'Each scheduled bit needs exactly one physically committed DL grant.');
++    grant=ledger{hit}.Grant;
++    actualBits=ledger{hit}.TransportBlockBits;
++    assert(isnumeric(actualBits) && isvector(actualBits) && ~isempty(actualBits) && ...
++        all(actualBits(:)==0 | actualBits(:)==1) && ...
++        isscalar(grant.TBSBits) && grant.TBSBits==numel(actualBits) && ...
++        mod(grant.TBSBits,8)==0, ...
++        'sixgr:truth:ScheduledFeedbackTBSMismatch', ...
++        'Feedback TBS must be the retained actual transport-block size.');
++    ui=find(harq.UEList==row.RNTI); pid=row.HARQProcess+1;
++    assert(isscalar(ui) && pid>=1 && pid<=numel(harq.UEProcs{ui}), ...
++        'sixgr:truth:MissingScheduledFeedbackHARQ', ...
++        'Validate every scheduled process before any feedback is applied.');
++    process=harq.UEProcs{ui}(pid);
++    assert(~process.AwaitingFeedback || process.LastTxSlot~=row.SourceSlot || ...
++        process.NDI==row.NDI,'sixgr:truth:InconsistentScheduledHARQNDI', ...
++        'A same-slot pending process cannot change its scheduled NDI.');
++    stale=~process.AwaitingFeedback || process.LastTxSlot~=row.SourceSlot || process.NDI~=row.NDI;
++    rows(k).HarqID=row.HARQProcess;
++    rows(k).ServingCell=double(grant.ServingCell);
++    rows(k).TBSBits=double(grant.TBSBits);
++    rows(k).RV=double(grant.HARQ.RV);
++    rows(k).Direction="DL";
++    rows(k).FeedbackForDirection="DL";
++    rows(k).DueSlot=targetSlot;
++    rows(k).IsRetransmission=logical(grant.HARQ.IsRetransmission);
++    rows(k).StaleFeedbackIgnored=logical(stale);
++    rows(k).FeedbackDispositionPrevalidated=true;
++    rows(k).HARQFeedbackApplied=false; % Preflight has made no state change.
++    rows(k).StateChangeApplied=false;
++end
++end
+diff --git a/+sixgr/+truth/referenceMeasurementClockArguments.m b/+sixgr/+truth/referenceMeasurementClockArguments.m
+new file mode 100644
+index 00000000..31d43006
+--- /dev/null
++++ b/+sixgr/+truth/referenceMeasurementClockArguments.m
+@@ -0,0 +1,59 @@
++function args=referenceMeasurementClockArguments(state,T,signalType,targetType,targetId,knowledgeSlot)
++% Read the actual physical owner; never infer knowledge from a measurement's
++% availability. Planning snapshots freeze the sample as well as the slot.
++args={};
++if isempty(T), return; end
++required={'SignalType','TargetType','TargetId','Valid'};
++assert(all(ismember(required,T.Properties.VariableNames)), ...
++    'sixgr:truth:MeasurementConsumerSchema','Reference measurements need identity and validity.');
++valid=T.Valid;
++assert((isnumeric(valid)||islogical(valid)) && isreal(valid) && iscolumn(valid) && ...
++    numel(valid)==height(T) && all(isfinite(double(valid))) && all(valid==0 | valid==1), ...
++    'sixgr:phy:refsig:InvalidMeasurementValidity','Measurement validity must be explicitly binary.');
++mask=upper(string(T.SignalType))==upper(string(signalType)) & ...
++    upper(string(T.TargetType))==upper(string(targetType)) & double(T.TargetId)==targetId & valid==1;
++if ~any(mask), return; end
++clocked=false(height(T),1);
++if ismember('MeasurementClockDomain',T.Properties.VariableNames)
++    clocked=string(T.MeasurementClockDomain)=="shared_receiver_sample_clock/v1";
++end
++for name=["ObservationStartSample","ObservationEndSampleExclusive", ...
++        "ObservationSampleRateHz","ResultAvailableAtSample","MeasurementClockEpoch"]
++    if ismember(name,T.Properties.VariableNames) && isnumeric(T.(name))
++        clocked=clocked | ~isnan(T.(name));
++    end
++end
++if ~any(mask & clocked), return; end
++owner=sixgr.util.structGet(state,'SharedWaveformStream',[]);
++assert(isa(owner,'sixgr.truth.CoupledWaveformStream') && isscalar(owner), ...
++    'sixgr:truth:MeasurementPhysicalClockRequired', ...
++    'Clocked runtime measurement consumers require the actual shared physical owner.');
++fs=owner.SampleRateHz; now=owner.Events.NextSampleIndex;
++epoch=owner.Physical.ConfigurationEpoch;
++if string(sixgr.util.structGet(state,'RuntimeViewMode','execution'))=="future_ul_grant_planning"
++    names={'PlanningDecisionSample','PlanningDecisionSampleRateHz','PlanningDecisionClockEpoch'};
++    assert(all(isfield(state,names)), ...
++        'sixgr:truth:MeasurementPlanningClockRequired','A planning view must retain its actual decision sample clock.');
++    sample=state.PlanningDecisionSample;
++    assert(isnumeric(sample) && isreal(sample) && isscalar(sample) && isfinite(sample) && ...
++        sample>=0 && sample==fix(sample) && sample<=now && ...
++        isequal(state.PlanningDecisionSampleRateHz,fs) && isequal(state.PlanningDecisionClockEpoch,epoch), ...
++        'sixgr:truth:MeasurementPlanningClockMismatch','Planning knowledge cannot advance with a shared mutable handle.');
++    now=double(sample);
++end
++carrier=sixgr.phy.grid.makeCarrier(state.CfgMobility);
++validateattributes(knowledgeSlot,{'numeric'},{'real','scalar','finite','integer','positive'});
++available=double(T.AvailableSlot(mask));
++available=available(isfinite(available));
++validateattributes(available,{'numeric'},{'real','integer','positive'});
++% Build the exact CP-OFDM calendar, including any explicitly retained future
++% result slots. Average slot duration only sizes this array, never sets time.
++last=max([knowledgeSlot; available(:); ceil(now/fs*1000*carrier.SubcarrierSpacing/15)+2]);
++boundaries=arrayfun(@(slot)sixgr.phy.frame.slotStartSample(carrier,slot,fs),0:last);
++% Historical slot requests cannot acquire knowledge from a later physical
++% event. Current-slot calls keep the owner's exact intra-slot position.
++sample=min(now,boundaries(knowledgeSlot+1)-1);
++slot=find(boundaries<=sample,1,'last');
++args={'KnownAtSlot',slot,'KnownAtSample',sample,'ClockSampleRateHz',fs, ...
++    'ClockEpoch',epoch,'SlotStartSamples',boundaries};
++end
+diff --git a/+sixgr/+truth/runWaveformLinkBundle.m b/+sixgr/+truth/runWaveformLinkBundle.m
+index 9962dbf2..8c7d9881 100644
+--- a/+sixgr/+truth/runWaveformLinkBundle.m
++++ b/+sixgr/+truth/runWaveformLinkBundle.m
+@@ -12687,6 +12687,11 @@ end
+ output=sixgr.truth.executeGrantPHYJob(job);
+ assert(output.ReadyForReceiverCommit,'sixgr:truth:SharedDataReceptionMissing','A receiver attempt must produce actual trial evidence.');
+ res=output.Result;
++if job.Direction=="DL"
++    % Complete the CSI receive clock before committing shared HARQ/CSI
++    % state or exporting the coordinator's authoritative measurement rows.
++    res=sixgr.truth.bindSharedDLCSICompletion(res,p,receiver,state.SharedWaveformStream);
++end
+ if connectedDL
+     assert(isfield(res,'ReceivedHARQState') && isa(res.ReceivedHARQState,'sixgr.link.ReceivedDLHARQState'), ...
+         'sixgr:truth:MissingReceivedDLHARQCommit','Shared DL completion must return the UE-owned soft state.');
+diff --git a/tests/testAll.m b/tests/testAll.m
+index 085f5b0e..cdff388d 100644
+--- a/tests/testAll.m
++++ b/tests/testAll.m
+@@ -47,6 +47,12 @@ tests = { ...
+     @testPDSCHOccasionAllocationPreflight, ...
+     @testResourceAllocationValidator, ...
+     @testPUCCHReceiverOnlyAssignment, ...
++    @testUCIDecoderCRC, ...
++    @testPUCCHReceiverCRC, ...
++    @testPUCCHTrialIndependentReceive, ...
++    @testPUCCHTrialIndependentRetained, ...
++    @testCSIMixedClockConsumer, ...
++    @testCSIPhysicalKnowledgeConsumer, ...
+     @testPUCCHObservationReceiver, ...
+     @testSharedPUCCHReceiveOnlyClock, ...
+     @testPUCCHReceiverAssignmentEquivalence, ...
+diff --git a/tests/testCSIMixedClockConsumer.m b/tests/testCSIMixedClockConsumer.m
+new file mode 100644
+index 00000000..06a82ff7
+--- /dev/null
++++ b/tests/testCSIMixedClockConsumer.m
+@@ -0,0 +1,60 @@
++function ok=testCSIMixedClockConsumer()
++% Declared chronology/schema fixtures; no CSI RF execution claim.
++setup6GRSimToolkit('Verbose',false);
++T=table(["CSI-RS";"SSB"],["UE";"UE"],[1;1],[4;3],[9;3],[true;true], ...
++    [300;NaN],[810;NaN],[1000;NaN],[820;NaN],[7;NaN], ...
++    ["shared_receiver_sample_clock/v1";"slot_only"], ...
++    'VariableNames',{'SignalType','TargetType','TargetId','ProducerSlot','AvailableSlot','Valid', ...
++    'ObservationStartSample','ObservationEndSampleExclusive','ObservationSampleRateHz', ...
++    'ResultAvailableAtSample','MeasurementClockEpoch','MeasurementClockDomain'});
++snapshot=T;
++legacy=sixgr.phy.refsig.causalMeasurementState(T,9,'SignalType','SSB');
++assert(legacy.Usable && legacy.ProducerSlot==3 && isnan(legacy.ResultAvailableAtSample));
++opts={'SignalType','CSI-RS','KnownAtSample',819,'ClockSampleRateHz',1000, ...
++    'ClockEpoch',7,'SlotStartSamples',0:100:900};
++before=sixgr.phy.refsig.causalMeasurementState(T,9,opts{:});
++at=sixgr.phy.refsig.causalMeasurementState(T,9,opts{:},'KnownAtSample',820);
++assert(~before.Usable && at.Usable && at.ResultAvailableAtSample==820);
++expect(@()sixgr.phy.refsig.causalMeasurementState(T,9,'SignalType','CSI-RS'), ...
++    'sixgr:phy:refsig:MeasurementSampleKnowledgeRequired');
++bad=T; bad.MeasurementClockDomain(1)="slot_only";
++expect(@()sixgr.phy.refsig.causalMeasurementState(bad,9,opts{:}), ...
++    'sixgr:phy:refsig:InvalidMeasurementClockDomain');
++bad=T; bad.MeasurementClockDomain(1)="unrecognized_clock";
++expect(@()sixgr.phy.refsig.causalMeasurementState(bad,9,opts{:}), ...
++    'sixgr:phy:refsig:InvalidMeasurementClockDomain');
++bad=T; bad.MeasurementClockDomain(1)=missing;
++expect(@()sixgr.phy.refsig.causalMeasurementState(bad,9,opts{:}), ...
++    'sixgr:phy:refsig:InvalidMeasurementClockDomain');
++bad=T; bad.ResultAvailableAtSample(1)=NaN;
++expect(@()sixgr.phy.refsig.causalMeasurementState(bad,9,opts{:}), ...
++    'sixgr:phy:refsig:InvalidMeasurementSampleClock');
++assert(isequaln(T,snapshot));
++state=struct('NumUsers',1,'CurrentSlot',9,'ControlTrials',struct());
++row=table(4,true,true,true,true,true,true,"declared_unit_fixture_no_RF",9, ...
++    'VariableNames',{'Slot','Transmitted','Observed','Consumed','ResourceExtractionAvailable', ...
++    'ChannelEstimateAvailable','CSIMeasurementAvailable','MeasurementSource','ObservationDeliverySlot'});
++row.ObservationStartSample=300; row.ObservationEndSampleExclusive=810;
++row.ResultAvailableAtSample=820; row.ObservationSampleRateHz=1000;
++row.MeasurementClockEpoch=7; row.MeasurementClockDomain="shared_receiver_sample_clock/v1";
++row.DeliverySlotStartSample=800; row.DeliverySlotEndSampleExclusive=900;
++published=sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,row);
++expect(@()sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime( ...
++    published,'CSI-RS','UE',1,9,inf),'sixgr:truth:MeasurementPhysicalClockRequired');
++for domain=["slot_only","unrecognized_clock"]
++    bad=row; bad.MeasurementClockDomain=domain;
++    expect(@()sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,bad), ...
++        'sixgr:truth:InvalidCSIRSReceiverClock');
++end
++bad=removevars(row,'MeasurementClockDomain');
++expect(@()sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,bad), ...
++    'sixgr:truth:InvalidCSIRSReceiverClock');
++fprintf('CSI_MIXED_CLOCK_CONSUMER_PASS padded_slot_rows=1 sample_CSI_strict=1 domain_downgrade_rejected=1 RF_executions=0\n');
++ok=true;
++end
++function expect(fn,id)
++try, fn(); catch cause
++    assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
++end
++error('test:MissingRejection','Expected %s.',id);
++end
+diff --git a/tests/testCSIPhysicalKnowledgeConsumer.m b/tests/testCSIPhysicalKnowledgeConsumer.m
+new file mode 100644
+index 00000000..a9bfcd31
+--- /dev/null
++++ b/tests/testCSIPhysicalKnowledgeConsumer.m
+@@ -0,0 +1,66 @@
++function ok=testCSIPhysicalKnowledgeConsumer(outputRoot)
++% Actual physical-owner clock with declared CSI boundary fixtures. This test
++% does not transmit or measure CSI-RS and is not integrated CSI qualification.
++setup6GRSimToolkit('Verbose',false);
++if nargin<1
++    logsRoot=fullfile(pwd,'logs');
++    if ~isfolder(logsRoot), mkdir(logsRoot); end
++    outputRoot=tempname(logsRoot);
++end
++assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve earlier evidence.');
++mkdir(outputRoot);
++s=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml');
++cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
++multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
++state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
++state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
++[state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
++assert(owner.Events.NextSampleIndex==0);
++carrier=sixgr.phy.grid.makeCarrier(cfg); fs=owner.SampleRateHz;
++slotEnd=sixgr.phy.frame.slotStartSample(carrier,1,fs);
++row=table(1,true,true,true,true,true,true,"declared_CSI_boundary_not_RF_measurement",1, ...
++    'VariableNames',{'Slot','Transmitted','Observed','Consumed','ResourceExtractionAvailable', ...
++    'ChannelEstimateAvailable','CSIMeasurementAvailable','MeasurementSource','ObservationDeliverySlot'});
++row.ObservationStartSample=0; row.ObservationEndSampleExclusive=1;
++row.ResultAvailableAtSample=2; row.ObservationSampleRateHz=fs;
++row.MeasurementClockEpoch=owner.Physical.ConfigurationEpoch;
++row.MeasurementClockDomain="shared_receiver_sample_clock/v1";
++row.DeliverySlotStartSample=0; row.DeliverySlotEndSampleExclusive=slotEnd;
++state=sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,row);
++state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
++    state,'SSB','UE',1,struct('Slot',1),'ProducerSlot',1,'AvailableSlot',1, ...
++    'Valid',true,'MeasurementSource','declared_slot_only_schema_fixture');
++before=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(state,'CSI-RS','UE',1,1,inf);
++assert(~before.Usable && before.KnownAtSample==0 && before.NextAvailableSample==2);
++ssb=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(state,'SSB','UE',1,1,inf);
++assert(ssb.Usable && isnan(ssb.ResultAvailableAtSample));
++state.CurrentCanonicalSlot=1; state.LastTrafficFrameApplied=0;
++plan=sixgr.truth.CoupledTruthRuntime.futureULPlanningView(state,5);
++assert(plan.PlanningDecisionSample==0 && plan.PlanningDecisionSampleRateHz==fs && ...
++    plan.PlanningDecisionClockEpoch==owner.Physical.ConfigurationEpoch);
++% Advance the actual configured physical owner with no queued transmitter
++% contribution. No sample-clock value is assigned by the test.
++[state,~]=owner.advanceSlot(state,cfg,@noEvents);
++assert(owner.Events.NextSampleIndex==slotEnd);
++state.CurrentSlot=2; state.CurrentCanonicalSlot=2;
++live=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(state,'CSI-RS','UE',1,2,inf);
++frozen=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(plan,'CSI-RS','UE',1,5,inf);
++assert(live.Usable && live.KnownAtSample==slotEnd && live.ResultAvailableAtSample==2);
++assert(~frozen.Usable && frozen.KnownAtSample==0, ...
++    'Advancing the shared handle cannot reveal later knowledge to an older planning view.');
++bad=plan; bad.PlanningDecisionSample=slotEnd+1;
++reject(@()sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime(bad,'CSI-RS','UE',1,5,inf), ...
++    'sixgr:truth:MeasurementPlanningClockMismatch');
++save(fullfile(outputRoot,'clock_consumer_results.mat'),'cfg','row','before','ssb','live','frozen');
++fprintf('CSI_PHYSICAL_KNOWLEDGE_CONSUMER_PASS published_and_consumed=1 physical_clock_advanced=%g frozen_planning_clock=0 CSI_RF_executions=0\n',slotEnd);
++ok=true;
++end
++function state=noEvents(state,events,owner) %#ok<INUSD>
++assert(isempty(events),'test:UnexpectedEvents','No CSI transmitter or receiver event is declared in this clock unit test.');
++end
++function reject(fn,id)
++try, fn(); catch cause
++    assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
++end
++error('test:MissingRejection','Expected %s.',id);
++end
+diff --git a/tests/testPUCCHReceiverCRC.m b/tests/testPUCCHReceiverCRC.m
+new file mode 100644
+index 00000000..7b8465a4
+--- /dev/null
++++ b/tests/testPUCCHReceiverCRC.m
+@@ -0,0 +1,27 @@
++function ok=testPUCCHReceiverCRC()
++% Detected desired and wrong-RNTI waveforms; CRC is not replaced by DTX.
++setup6GRSimToolkit('Verbose',false);
++bits=int8(mod((1:32).',2));
++configured=sixgr.phy.pucch.PUCCHFixtureFactory.connected(2,bits,'RNTI',321);
++context=sixgr.phy.pucch.UCIReportContext(struct('ReportID',"gnb_crc_observation", ...
++    'ConfigurationEpoch',1,'Sequence1Length',32,'Sequence2Length',0, ...
++    'HARQACKBits',32,'SRBits',0,'CSIPart1Bits',0,'CSIPart2Bits',0,'PriorityIndex',0));
++assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
++    'ObservationID',"gnb_crc_observation",'ResourceID',configured.Assignment.Resource.ID, ...
++    'RNTI',321,'AbsoluteSlot0',0,'Source',"declared_gNB_CRC_component", ...
++    'TimingSource',"received_PUCCH_DMRS"),configured.RRCContext,context);
++for rnti=[321 322]
++    txFixture=sixgr.phy.pucch.PUCCHFixtureFactory.connected(2,bits,'RNTI',rnti);
++    tx=sixgr.phy.pucch.PUCCHTransmitter.transmit(txFixture.Carrier,txFixture.Assignment,txFixture.Report);
++    [waveform,~]=sixgr.link.addRuntimeComplexNoise(tx.Waveform,1e-8,18000+rnti,0,struct());
++    rx=sixgr.phy.pucch.PUCCHReceiver.receive(waveform,configured.Carrier,assignment,context, ...
++        'NoiseVariance',NaN,'NoiseVarianceMode','received_dmrs_estimate', ...
++        'ChannelProfile','AWGN','DetectionThreshold',0.2);
++    assert(rx.CRCApplicable && numel(rx.CodeBlockCRCError)==1 && ...
++        ~rx.DTX && rx.ReceiverUsable && rx.ReceiverOnlyAssignment && ~rx.OraclePayloadBitsUsed);
++    assert(rx.CRCPassed==(rnti==321) && rx.CodeBlockCRCError==(rnti~=321));
++    if rnti==321, assert(isequal(rx.DecodedSequence1,bits)); end
++end
++fprintf('PUCCH_RECEIVER_CRC_PASS desired=pass wrong_RNTI=CRC_fail both_waveforms_detected\n');
++ok=true;
++end
+diff --git a/tests/testPUCCHTrialIndependentReceive.m b/tests/testPUCCHTrialIndependentReceive.m
+new file mode 100644
+index 00000000..a63fc266
+--- /dev/null
++++ b/tests/testPUCCHTrialIndependentReceive.m
+@@ -0,0 +1,135 @@
++function ok=testPUCCHTrialIndependentReceive(outputRoot)
++% Actual codec/connector observations, not scheduled missing-DCI qualification.
++setup6GRSimToolkit('Verbose',false);
++if nargin<1
++    logsRoot=fullfile(pwd,'logs');
++    if ~isfolder(logsRoot), mkdir(logsRoot); end
++    outputRoot=tempname(logsRoot);
++end
++assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve earlier evidence.');
++mkdir(outputRoot);
++source=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
++    'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
++cfg=sixgr.lls6g.buildInternalConfig(source,tempname);
++cfg.channel.model='AWGN'; cfg.channel.awgnOnly=true;
++cfg.channel.fading.enabled=false; cfg.channel.fading.type='AWGN';
++cfg.run.noiseOperatingMode='standalone_awgn_snr_argument';
++cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,5,1);
++cfg.lls6g.userContext.RuntimeSlotStartTime_s=4e-3;
++cfg.lls6g.userContext.RuntimeServingPathloss_dB=77;
++cfg.lls6g.userContext.RuntimeServingPathlossSource='unit_fixture_analytic_reference_not_field_measurement';
++cfg.lls6g.userContext.RuntimeServingPathlossReferenceRS='SSB-0';
++cfg.lls6g.userContext.RuntimeServingPathlossMeasurementId='unit_fixture_not_measured_access';
++cfg.lls6g.userContext.RuntimeServingPathlossMeasurementSlot=1;
++cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalType='SSB';
++cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalId=0;
++identity=cfg.phy.frame.DefaultIdentity;
++ue=struct('UEID',1,'RNTI',cfg.phy.pusch.RNTI,'ServingCell',1,'PUCCHCell',1, ...
++    'ComponentCarrier',identity.ScheduledCCID,'ActiveULBWP',identity.ULBWPID);
++rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
++frame=struct('K1',4,'K1Source','decoded_dci','PDSCHEndSlot',1,'TargetSlot',5, ...
++    'DecodedPRI',0,'PRIFieldWidth',3,'PRIProvenance','unit_fixture', ...
++    'FirstCCE',0,'NumCCE',4,'SlotSymbolOwnership','UUUUUUUUUUUUUU', ...
++    'FlexibleResolutionProvided',false,'TriggeringEventID','unit_fixture');
++% Receiver contexts are constructed before any UE payload or transmitter.
++hypotheses=cell(2,1);
++for i=1:2
++    count=[3 12]; count=count(i);
++    harq=count; sr=0; csi=0;
++    if count==12, harq=2; sr=1; csi=9; end
++    context=sixgr.phy.pucch.UCIReportContext(struct('ReportID',"gnb-declared-"+count, ...
++        'ConfigurationEpoch',rrc.ConfigurationEpoch,'Sequence1Length',count,'Sequence2Length',0, ...
++        'HARQACKBits',harq,'SRBits',sr,'CSIPart1Bits',csi,'CSIPart2Bits',0,'PriorityIndex',0));
++    set=sixgr.phy.pucch.PUCCHResourceSetResolver.resolveBitCount(count,rrc,rrc.ConfigurationEpoch);
++    assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
++        'ObservationID',context.ReportID,'ResourceID',set.ResourceIDs(1),'RNTI',ue.RNTI, ...
++        'AbsoluteSlot0',4,'Source','declared_gNB_component_not_scheduled_feedback', ...
++        'TimingSource','received_DMRS'),rrc,context);
++    hypotheses{i}=struct('Assignment',assignment,'Context',context);
++end
++audit=table();
++for txCount=[3 12]
++    bits=int8(mod((1:txCount).',2));
++    connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ(cfg,ue,bits,frame);
++    if txCount==12
++        data=connected.Report.Data;
++        data.HARQACKReport=struct('Bits',bits(1:2));
++        data.SchedulingRequestReports=struct('Bits',bits(3));
++        data.CSIReports=struct('Part1Bits',bits(4:12),'Part2Bits',int8([]),'Priority',0,'ReportID',1);
++        connected.Report=sixgr.phy.pucch.UCIReport(data);
++        connected.Assignment=sixgr.phy.pucch.PUCCHTransmissionAssignment.fromCombinedUCI( ...
++            connected.Report,connected.UEContext,frame);
++    end
++    args={'Assignment',connected.Assignment,'Report',connected.Report, ...
++        'Carrier',sixgr.phy.grid.makeCarrier(cfg),'ChannelProfile','AWGN', ...
++        'SNR_dB',34,'TimingAdvanceSamples',0};
++    pending=sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'PrepareOnly',true);
++    p=pending.PreparedTransmission;
++    array=sixgr.rf.AntennaArrayFactory.build(cfg,'ue','signal','pucch','numPorts',size(p.Tx.Waveform,2));
++    x=p.Tx.Waveform*cast(array.PortToElementMatrix.','like',p.Tx.Waveform);
++    desired=x*cast(eye(size(x,2),p.NumReceiveAntennas)*10^(-77/20),'like',x);
++    [energy,~]=sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
++        p.Tx.Carrier,desired,p.Tx.PUCCHIndices,'SignalFamily','PUCCH');
++    rng(34000+txCount,'twister');
++    [y,noise]=sixgr.phy.waveform.addOccupiedREAWGN(desired,p.Tx.Carrier,34,'SignalEnergyPerOccupiedRE',energy);
++    replay=struct('SampleNoiseVariance',noise.SampleNoiseVariance, ...
++        'SampleNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end', ...
++        'NoiseVarianceSource','explicit_isolated_occupied_re_awgn', ...
++        'NoiseOperatingMode','standalone_awgn_snr_argument','AppliedAWGNSNR_dB',34,'ApproximationMode','none');
++    input=struct('Prepared',p,'Observation',buffer(p,y),'PhysicalMeasurementObservation',buffer(p,y), ...
++        'TransmitterObservation',buffer(p,x),'DesiredReferenceObservation',buffer(p,desired), ...
++        'Replay',replay,'ChannelState',struct('UnitConnectorConsumedSamples',size(x,1)), ...
++        'Channel',struct('Profile','AWGN','Source','unit_analytic_attenuating_connector'));
++    for i=1:2
++        h=hypotheses{i}; rxCount=h.Context.Sequence1Length;
++        input.GNBReception=h;
++        before=rng;
++        trial=sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',input);
++        assert(isequal(before,rng),'Completion must not regenerate random RF/noise/TX.');
++        direct=sixgr.link.receivePUCCHObservation(p.ReceiverConfig,h.Assignment,h.Context,input.Observation);
++        names=string(fieldnames(direct)); latency=cellstr(names(endsWith(names,'Latency_ms')));
++        assert(isequaln(rmfield(trial.Rx,latency),rmfield(direct,latency)), ...
++            'Trial wrapper must reproduce the receiver-only API exactly.');
++        assert(trial.IndependentReceiverAssignment && trial.ReceiverExpectedBitCount==rxCount && ...
++            trial.ExpectedBitCount==txCount && trial.CRCApplicable==(rxCount>=12) && ...
++            trial.TransmitterUCICRCApplicable==(txCount>=12));
++        assert(isequaln(trial.ReceiverFields,direct.DecodedFields));
++        if rxCount<12, assert(isnan(trial.CRCPass)); else, assert(trial.CRCPass==direct.CRCPassed); end
++        if txCount==rxCount
++            assert(~trial.DTXFlag && trial.UCIContentMatch && trial.Ok);
++            if txCount==12
++                assert(isequal(trial.ReceiverFields.HARQACK,bits(1:2)) && ...
++                    isequal(trial.ReceiverFields.SR,bits(3)) && isequal(trial.ReceiverFields.CSIPart1,bits(4:12)));
++            end
++        end
++        changed=input; changed.Replay.SampleNoiseVariance=12345;
++        changed.Replay.InterferenceCovariance=1e6*eye(p.NumReceiveAntennas);
++        counterfactual=sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',changed);
++        assert(isequaln(rmfield(trial.Rx,latency),rmfield(counterfactual.Rx,latency)));
++        bad=input; bad.GNBReception.Assignment=connected.Assignment;
++        reject(@()sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',bad), ...
++            'sixgr:link:InvalidGNBUCIReceiveHypothesis');
++        bad=input; bad.GNBReception.ExpectedBits=bits;
++        reject(@()sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',bad), ...
++            'sixgr:link:InvalidGNBUCIReceiveHypothesis');
++        save(fullfile(outputRoot,sprintf('tx_%d_rx_%d.mat',txCount,rxCount)), ...
++            'cfg','h','input','trial','direct','txCount','rxCount');
++        audit=[audit;table(txCount,rxCount,trial.CRCApplicable,trial.TransmitterUCICRCApplicable, ...
++            trial.CRCPass,trial.DTXFlag,true,'VariableNames', ...
++            {'TXBits','RXExpectedBits','ReceiverCRCApplicable','TransmitterCRCApplicable','ReceiverCRCPass','DTX','DirectRXEqual'})]; %#ok<AGROW>
++    end
++end
++writetable(audit,fullfile(outputRoot,'receiver_authority_audit.csv'));
++fprintf('PUCCH_TRIAL_INDEPENDENT_PASS cases=4 combined_fields=1 differing_CRC_lengths=2 no_injected_metadata_consumed=1 evidence=component\n');
++ok=true;
++end
++function b=buffer(p,x)
++b=sixgr.phy.waveform.WaveformObservationBuffer(p.StartSample,p.StartSample+size(x,1),p.SampleRateHz,size(x,2));
++b.append(sixgr.phy.waveform.WaveformChunk(x,p.StartSample),p.SampleRateHz);
++end
++function reject(fn,id)
++try, fn(); catch cause
++    assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
++end
++error('test:MissingRejection','Expected %s.',id);
++end
+diff --git a/tests/testPUCCHTrialIndependentRetained.m b/tests/testPUCCHTrialIndependentRetained.m
+new file mode 100644
+index 00000000..05c53581
+--- /dev/null
++++ b/tests/testPUCCHTrialIndependentRetained.m
+@@ -0,0 +1,65 @@
++function ok=testPUCCHTrialIndependentRetained(outputRoot)
++% Retained actual shared IQ and received SRS timing. Counts are prescribed
++% component hypotheses, not an independently scheduled missing-DCI test.
++setup6GRSimToolkit('Verbose',false);
++if nargin<1
++    logsRoot=fullfile(pwd,'logs');
++    if ~isfolder(logsRoot), mkdir(logsRoot); end
++    outputRoot=tempname(logsRoot);
++end
++assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve existing evidence.');
++mkdir(outputRoot);
++capture=fullfile('docs','lls','evidence_20260913','pucch_baseline_signal_04','received_pucch.mat');
++x=load(capture); p=x.item.Context.Prepared; cfg=p.ReceiverConfig;
++prior=x.timingReferences{1};
++[~,pre,tx,replay,actual]=sixgr.truth.sharedObservationEvidence(x.item.Planes,p);
++input=struct('Prepared',p,'Observation',actual,'PhysicalMeasurementObservation',pre, ...
++    'TransmitterObservation',tx,'Replay',replay,'ChannelState',struct(), ...
++    'Channel',struct('Profile',sixgr.channel.resolveConcreteProfile(cfg)), ...
++    'ReceivedULTimingReference',prior);
++ue=struct('UEID',1,'RNTI',1,'ServingCell',1,'PUCCHCell',1, ...
++    'ComponentCarrier',cfg.phy.frame.DefaultIdentity.ScheduledCCID, ...
++    'ActiveULBWP',cfg.phy.frame.DefaultIdentity.ULBWPID);
++rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
++audit=table();
++for count=1:2
++    context=sixgr.phy.pucch.UCIReportContext(struct( ...
++        'ReportID',"gnb-retained-format0-"+count,'ConfigurationEpoch',rrc.ConfigurationEpoch, ...
++        'Sequence1Length',count,'Sequence2Length',0,'HARQACKBits',count, ...
++        'SRBits',0,'CSIPart1Bits',0,'CSIPart2Bits',0,'PriorityIndex',0));
++    assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
++        'ObservationID',context.ReportID,'ResourceID',0,'RNTI',1,'AbsoluteSlot0',8, ...
++        'Source','retained_component_prescribed_resource_and_length', ...
++        'TimingSource','prior_received_SRS_clock'),rrc,context);
++    input.GNBReception=struct('Assignment',assignment,'Context',context);
++    saved=rng;
++    trial=sixgr.link.runPUCCHWaveformTrial(x.item.Context.Config, ...
++        x.item.Context.Arguments{:},'ReceivedContext',input);
++    direct=sixgr.link.receivePUCCHObservation(cfg,assignment,context,actual,prior);
++    assert(isequal(saved,rng));
++    names=string(fieldnames(direct)); latency=cellstr(names(endsWith(names,'Latency_ms')));
++    assert(isequaln(rmfield(trial.Rx,latency),rmfield(direct,latency)));
++    assert(trial.IndependentReceiverAssignment && trial.ReceiverExpectedBitCount==count && ...
++        ~trial.CRCApplicable && isnan(trial.CRCPass) && isempty(trial.CodeBlockCRCError) && ...
++        ~trial.Rx.PreparedTransmitterConsumed && ~trial.Rx.InjectedNoiseVarianceConsumed && ...
++        ~trial.Rx.ReceiveTiming.OracleTimingUsed);
++    changed=input; changed.GNBReception.Context=x.item.Context.Prepared.RequestBinding.ReceiverContext;
++    % The historical request may omit its context. Either way it cannot
++    % replace the context bound into the independent receive assignment.
++    reject(@()sixgr.link.runPUCCHWaveformTrial(x.item.Context.Config, ...
++        x.item.Context.Arguments{:},'ReceivedContext',changed), ...
++        'sixgr:link:InvalidGNBUCIReceiveHypothesis');
++    audit=[audit;table(count,trial.DetectionMetric,trial.DetectionThreshold,trial.DTXFlag, ...
++        string(trial.UCIDecodedBitVector),true,'VariableNames', ...
++        {'RXExpectedBits','DetectionMetric','DetectionThreshold','DTX','DecodedBits','DirectRXEqual'})]; %#ok<AGROW>
++end
++writetable(audit,fullfile(outputRoot,'retained_receiver_authority_audit.csv'));
++fprintf('PUCCH_TRIAL_RETAINED_INDEPENDENT_PASS hypotheses=2 actual_shared_IQ=1 prior_received_SRS=1 evidence=retained_component\n');
++ok=true;
++end
++function reject(fn,id)
++try, fn(); catch cause
++    assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
++end
++error('test:MissingRejection','Expected %s.',id);
++end
+diff --git a/tests/testUCIDecoderCRC.m b/tests/testUCIDecoderCRC.m
+new file mode 100644
+index 00000000..8ca85294
+--- /dev/null
++++ b/tests/testUCIDecoderCRC.m
+@@ -0,0 +1,35 @@
++function ok=testUCIDecoderCRC()
++% Actual native decoding is the CRC authority, not expected payload equality.
++setup6GRSimToolkit('Verbose',false);
++failedBlocksExercised=0;
++for A=[1 2 3 11 12 19 20 359 360 1013 1706]
++    E=max(96,4*A); payload=int8(mod((1:A).',2));
++    coded=nrUCIEncode(payload,E); coded(coded==-1)=1;
++    for k=find(coded==-2).', coded(k)=coded(k-1); end
++    llr=12*(1-2*double(coded));
++    [nativeBits,nativeErrors]=nrUCIDecode(llr,A);
++    actual=sixgr.phy.pucch.UCIDecoder.decode(llr,A);
++    assert(isequal(actual.Bits,nativeBits) && isequal(actual.Bits,payload) && actual.CRCPassed);
++    assert(actual.CRCApplicable==(A>=12));
++    if A<12
++        assert(isempty(actual.CodeBlockCRCError) && actual.CRCStatus=="not_applicable");
++        continue;
++    end
++    assert(isequal(actual.CodeBlockCRCError,logical(nativeErrors(:))));
++    stream=RandStream('mt19937ar','Seed',12000+A);
++    corrupted=randn(stream,E,1);
++    [nativeBits,nativeErrors]=nrUCIDecode(corrupted,A);
++    actual=sixgr.phy.pucch.UCIDecoder.decode(corrupted,A);
++    assert(isequal(actual.Bits,nativeBits) && ...
++        isequal(actual.CodeBlockCRCError,logical(nativeErrors(:))) && ...
++        numel(actual.CodeBlockCRCError)==actual.Plan.CodeBlocks && ...
++        actual.CRCPassed==~any(nativeErrors(:)));
++    if any(nativeErrors(:)), assert(actual.FailureReason=="uci_crc_failed"); end
++    failedBlocksExercised=failedBlocksExercised+nnz(nativeErrors);
++end
++assert(failedBlocksExercised>0,'test:CRCFailureNotExercised','Exercise actual failed code blocks.');
++empty=sixgr.phy.pucch.UCIDecoder.decode(zeros(0,1),0);
++assert(~empty.CRCApplicable && isempty(empty.Bits) && isempty(empty.CodeBlockCRCError));
++fprintf('UCI_CRC_NATIVE_AUTHORITY_PASS coding_cases=11 failed_codeblocks_exercised=%d\n',failedBlocksExercised);
++ok=true;
++end

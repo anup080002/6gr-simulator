@@ -1,0 +1,5 @@
+name,ok,msg,duration_s
+testSetupExcludesLogSnapshots,1,,13.35133
+testCSIPhysicalKnowledgeConsumer,1,,30.5450211
+testFutureULPlanningCausality,1,,10.702505
+testPUCCHFeedbackScoringExport,1,,1.4337968

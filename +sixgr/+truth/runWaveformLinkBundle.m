@@ -318,18 +318,10 @@ finalConstellation = localAppendCompatTable( ...
     sixgr.util.structGet(rawTrials, "ULConstellation", table()));
 finalWaveformPreview = table();
 if isCoupledTruth
-    % The coupled runtime owns the exact post-IFFT shared-stream samples.
-    % Live publication already consumed this table while slots executed;
-    % finalization must pass the same evidence again instead of replacing it
-    % with a header-only table.  Missing samples are a truth-contract failure,
-    % not permission to manufacture or silently omit waveform evidence.
-    finalWaveformPreview = sixgr.util.structGet( ...
-        slotTrace, "SharedWaveformPreviewTable", table());
-    if ~(istable(finalWaveformPreview) && ~isempty(finalWaveformPreview))
-        error("sixgr:truth:MissingFinalSharedWaveformPreview", ...
-            ["Coupled truth execution completed without the exact shared-stream " ...
-             "waveform preview required for final artifact publication."]);
-    end
+    % Publish the samples retained by the execution path that actually ran.
+    % Immediate per-grant PHY execution is not a shared continuous stream.
+    % Both paths must retain their real preview; neither may rescue the other.
+    finalWaveformPreview = sixgr.truth.finalCoupledWaveformPreview(slotTrace);
 end
 sixgr.truth.exportLLSLiveSignalChainTables( ...
     rootRunFolder, finalSignalTrials, finalConstellation, struct( ...
@@ -4321,6 +4313,11 @@ for chunkStart = 1:chunkSize:numel(grants)
         % duplicate same-slot producer rows and broke one-to-one lineage.
         laStates{ueIdx} = sixgr.util.structGet(chunk(bi), "LinkAdaptationState", laStates{ueIdx});
         chunkWaveformPreviewT = localAppendCompatTable(chunkWaveformPreviewT, sixgr.util.structGet(chunk(bi), "WaveformPreviewTable", table()));
+        % Live refreshes only receive this chunk. Retain every committed
+        % grant's actual waveform preview for final publication as well.
+        runtimeState.WaveformPreviewTable = localAppendCompatTable( ...
+            sixgr.util.structGet(runtimeState, "WaveformPreviewTable", table()), ...
+            sixgr.util.structGet(chunk(bi), "WaveformPreviewTable", table()));
         chunkLastUEIdx = double(ueIdx);
         chunkHadCommittedGrant = true;
     end
@@ -12687,6 +12684,11 @@ end
 output=sixgr.truth.executeGrantPHYJob(job);
 assert(output.ReadyForReceiverCommit,'sixgr:truth:SharedDataReceptionMissing','A receiver attempt must produce actual trial evidence.');
 res=output.Result;
+if job.Direction=="DL"
+    % Complete the CSI receive clock before committing shared HARQ/CSI
+    % state or exporting the coordinator's authoritative measurement rows.
+    res=sixgr.truth.bindSharedDLCSICompletion(res,p,receiver,state.SharedWaveformStream);
+end
 if connectedDL
     assert(isfield(res,'ReceivedHARQState') && isa(res.ReceivedHARQState,'sixgr.link.ReceivedDLHARQState'), ...
         'sixgr:truth:MissingReceivedDLHARQCommit','Shared DL completion must return the UE-owned soft state.');

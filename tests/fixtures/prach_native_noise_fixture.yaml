@@ -1,0 +1,23 @@
+{
+  "inherits": [
+    "../../simulator/configs/scenarios/prach_detection.yaml"
+  ],
+  "meta": {
+    "scenario_id": "prach_native_noise_fixture",
+    "description": "Actual PRACH native allocation retention regression fixture"
+  },
+  "simulation": {
+    "monte_carlo_iterations": 1
+  },
+  "random_access": {
+    "min_detection_trials": 1,
+    "num_prach_occasions": 1,
+    "active_preamble_pattern": [
+      0
+    ],
+    "num_ues_per_ro": 0
+  },
+  "output": {
+    "save_figures": false
+  }
+}

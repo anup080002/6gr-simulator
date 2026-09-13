@@ -1,0 +1,8 @@
+name,ok,msg,duration_s
+testCSIMixedClockConsumer,1,,1.8548938
+testFinalCoupledWaveformPreview,1,,0.0918349
+testPUSCHHARQACKBindingPreflight,1,,0.2316662
+testPUSCHHARQACKPreflightReducer,1,,1.9358127
+testSharedPUCCHCodebookBinding,1,,21.0834567
+testUCIDecoderCRC,1,,0.9690843
+testPUCCHReceiverCRC,1,,3.948378

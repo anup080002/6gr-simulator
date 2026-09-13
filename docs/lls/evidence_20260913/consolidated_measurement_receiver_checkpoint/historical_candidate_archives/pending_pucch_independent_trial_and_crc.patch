@@ -1,0 +1,491 @@
+diff --git a/+sixgr/+phy/+pucch/UCIDecoder.m b/+sixgr/+phy/+pucch/UCIDecoder.m
+index cf823c4b..9927a8e3 100644
+--- a/+sixgr/+phy/+pucch/UCIDecoder.m
++++ b/+sixgr/+phy/+pucch/UCIDecoder.m
+@@ -1,22 +1,39 @@
+ classdef UCIDecoder
+-    %UCIDECODER Strict UCI decoder that never converts failures to success.
+-
++    % Preserve the actual decoder's per-codeblock CRC outcome.
+     methods (Static)
+-        function result = decode(llr, A)
+-            plan = sixgr.phy.pucch.UCIEncodingPlan(A,numel(llr));
+-            if A == 0
+-                bits = int8(zeros(0,1));
++        function result=decode(llr,A)
++            plan=sixgr.phy.pucch.UCIEncodingPlan(A,numel(llr));
++            if ~plan.Valid
++                error(plan.ErrorID,'UCI payload exceeds the pinned 1706-bit profile.');
++            end
++            applicable=plan.CRCBits>0;
++            if A==0
++                bits=int8(zeros(0,1)); rawErrors=false(0,1);
+             else
+                 try
+-                    bits = nrUCIDecode(llr,A);
+-                catch ME
+-                    error("sixgr:phy:pucch:UCIDecodeFailed", ...
+-                        "nrUCIDecode failed for A=%d, E=%d: %s", ...
+-                        A,numel(llr),ME.message);
++                    [bits,rawErrors]=nrUCIDecode(llr,A);
++                catch cause
++                    error('sixgr:phy:pucch:UCIDecodeFailed', ...
++                        'nrUCIDecode failed for A=%d, E=%d: %s',A,numel(llr),cause.message);
+                 end
+             end
+-            result = struct("Bits",int8(bits(:)),"Plan",plan, ...
+-                "CRCPassed",true,"FailureReason","");
++            if applicable
++                assert((islogical(rawErrors)||isnumeric(rawErrors)) && isreal(rawErrors) && ...
++                    isvector(rawErrors) && numel(rawErrors)==plan.CodeBlocks && ...
++                    all(isfinite(rawErrors(:))) && all(rawErrors(:)==0 | rawErrors(:)==1), ...
++                    'sixgr:phy:pucch:MissingUCICRCEvidence', ...
++                    'CRC-protected UCI requires one actual binary result per decoded code block.');
++                passed=~any(rawErrors(:)); status="checked";
++                errors=logical(rawErrors(:));
++            else
++                % No CRC exists for small-block UCI. Keep the boolean gate's
++                % neutral value, but never label it a measured CRC pass.
++                passed=true; status="not_applicable"; errors=false(0,1);
++            end
++            reason=""; if ~passed, reason="uci_crc_failed"; end
++            result=struct('Bits',int8(bits(:)),'Plan',plan,'CRCPassed',logical(passed), ...
++                'CRCApplicable',logical(applicable),'CRCStatus',status, ...
++                'CodeBlockCRCError',errors,'FailureReason',reason);
+         end
+     end
+ end
+diff --git a/+sixgr/+phy/+pucch/PUCCHReceiver.m b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+index 65769256..884c9b7f 100644
+--- a/+sixgr/+phy/+pucch/PUCCHReceiver.m
++++ b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+@@ -195,10 +195,15 @@ classdef PUCCHReceiver
+             if assignment.Format <= 1
+                 decoded = localCellBits(soft);
+                 crcPassed = true;
++                crcApplicable=false; crcErrors=false(0,1);
++                crcBitCount=0;
+             else
+                 decodedResult = sixgr.phy.pucch.UCIDecoder.decode(soft{1},totalA);
+                 decoded = decodedResult.Bits;
+                 crcPassed = decodedResult.CRCPassed;
++                crcApplicable=decodedResult.CRCApplicable;
++                crcErrors=decodedResult.CodeBlockCRCError;
++                crcBitCount=decodedResult.Plan.CRCBits;
+             end
+             decodeLatency_ms = 1e3 .* toc(decodeTic);
+             energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
+@@ -231,7 +236,9 @@ classdef PUCCHReceiver
+                 "DecodedSequence1",sequence1, ...
+                 "DecodedSequence2",sequence2, ...
+                 "DecodedFields",localFields(sequence1,sequence2,reportContext), ...
+-                "CRCPassed",crcPassed,"WrongRNTI",false, ...
++                "CRCPassed",crcPassed,"CRCApplicable",crcApplicable, ...
++                "CodeBlockCRCError",crcErrors,"WrongRNTI",false, ...
++                "ExpectedPayloadBitCount",totalA,"UCICRCBitCount",crcBitCount, ...
+                 "WrongResource",false,"WrongSequence",false, ...
+                 "MeasuredSINR_dB",measuredSINR_dB, ...
+                 "MeasuredSINRApplicable",isfinite(measuredSINR_dB), ...
+diff --git a/+sixgr/+link/runPUCCHWaveformTrial.m b/+sixgr/+link/runPUCCHWaveformTrial.m
+index e835f089..8d91bb42 100644
+--- a/+sixgr/+link/runPUCCHWaveformTrial.m
++++ b/+sixgr/+link/runPUCCHWaveformTrial.m
+@@ -78,12 +78,29 @@ if prepareOnly || received
+         'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
+         'Shared PUCCH receiver thresholds must come from resolved YAML; no argument override.');
+ end
+-[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
+-    opt.Assignment,detectorPolicy,opt.DetectionThreshold);
++receiverAssignment=opt.Assignment;
+ context = opt.ReceiverContext;
+-if isempty(context)
++independentReception=received && isfield(receivedContext,'GNBReception');
++if independentReception
++    hypothesis=receivedContext.GNBReception;
++    assert(isstruct(hypothesis) && isscalar(hypothesis) && ...
++        all(isfield(hypothesis,{'Assignment','Context'})) && ...
++        isempty(setdiff(string(fieldnames(hypothesis)),["Assignment","Context"])), ...
++        'sixgr:link:InvalidGNBUCIReceiveHypothesis', ...
++        'The gNB receive boundary accepts only a typed allocation and payload-free schema.');
++    assert(isa(hypothesis.Assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment') && ...
++        isscalar(hypothesis.Assignment) && ...
++        isa(hypothesis.Context,'sixgr.phy.pucch.UCIReportContext') && isscalar(hypothesis.Context) && ...
++        hypothesis.Assignment.ReportContextDigest==hypothesis.Context.Digest, ...
++        'sixgr:link:InvalidGNBUCIReceiveHypothesis', ...
++        'Receiver allocation and schema must be independently bound; no TX assignment substitution.');
++    receiverAssignment=hypothesis.Assignment;
++    context=hypothesis.Context;
++elseif isempty(context)
+     context = sixgr.phy.pucch.UCIReportContext.fromReport(opt.Report);
+ end
++[detectionThreshold,detectionThresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold( ...
++    receiverAssignment,detectorPolicy,opt.DetectionThreshold);
+ carrier = opt.Carrier;
+ if isempty(carrier)
+     if isa(cfg,"nrCarrierConfig")
+@@ -165,7 +182,7 @@ trial.AppliedTimingCorrectionSamples = 0;
+ try
+     if received
+         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
+-        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,opt.Assignment,context, ...
++        rx=sixgr.link.receivePUCCHObservation(cfgRuntime,receiverAssignment,context, ...
+             receivedContext.Observation,prior);
+     else
+         rxArgs = {"NoiseVariance",noiseVariance, ...
+@@ -265,12 +282,26 @@ trial.ExpectedBits = reference;
+ trial.DecodedBits = decoded;
+ trial.ExpectedBitCount = numel(reference);
+ trial.DecodedBitCount = numel(decoded);
++trial.ReceiverExpectedBitCount=context.Sequence1Length+context.Sequence2Length;
++trial.ReceiverExpectedHARQBitCount=context.HARQACKBits;
++trial.ReceiverExpectedSRBitCount=context.SRBits;
++trial.ReceiverExpectedCSIPart1BitCount=context.CSIPart1Bits;
++trial.ReceiverExpectedCSIPart2BitCount=context.CSIPart2Bits;
++trial.ReceiverAssignmentDigest=rx.AssignmentDigest;
++trial.ReceiverContextDigest=rx.ReportContextDigest;
++trial.IndependentReceiverAssignment=logical(rx.ReceiverOnlyAssignment);
++trial.ReceiverExpectedBitCountSource="receiver_length_context";
++trial.ReceiverFields=rx.DecodedFields;
+ trial.UCIExpectedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(reference);
+ trial.UCIDecodedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(decoded);
+ trial.UCIBitErrorVector = localErrorVector(reference,decoded);
+ trial.UCICodedBitCount = numel(tx.Coding.CodedBits);
+-trial.UCICRCBitCount = tx.Coding.Plan.CRCBits;
+-trial.UCICRCApplicable = tx.Coding.Plan.CRCBits > 0;
++trial.TransmitterUCICRCBitCount=tx.Coding.Plan.CRCBits;
++trial.TransmitterUCICRCApplicable=tx.Coding.Plan.CRCBits>0;
++trial.UCICRCBitCount = rx.UCICRCBitCount;
++trial.UCICRCApplicable = rx.CRCApplicable;
++trial.UCICRCValueRole="receiver_decoding_hypothesis";
++trial.CodeBlockCRCError=rx.CodeBlockCRCError;
+ trial.CRCApplicable = trial.UCICRCApplicable;
+ if trial.CRCApplicable
+     trial.CRCPass = double(~trial.CRCFailed);
+@@ -289,6 +320,8 @@ trial.ReceiverUsable = rx.ReceiverUsable;
+ trial.RequestedFormat = opt.Assignment.Format;
+ trial.ResolvedFormat = opt.Assignment.Format;
+ trial.PUCCHFormat = opt.Assignment.Format;
++trial.ReceiverPUCCHFormat=receiverAssignment.Format;
++trial.ReceiverPUCCHResourceId=string(receiverAssignment.Resource.ID);
+ trial.FormatAdapted = false;
+ trial.FormatAdaptationReason = "none_strict_assignment";
+ trial.ControlResourceValidity = true;
+@@ -311,7 +344,7 @@ trial.NoiseVarStatus = "OK";
+ trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
+ trial.NoiseVarReason = "";
+ trial.NoiseVarStrictFailure = false;
+-if ~isfinite(trial.NoiseVariance) && opt.Assignment.Format==0
++if ~isfinite(trial.NoiseVariance) && receiverAssignment.Format==0
+     trial.NoiseVarStatus="unavailable";
+     trial.NoiseVarReason="not_required_by_normalized_sequence_correlation_no_variance_substitution";
+ end
+@@ -470,7 +503,7 @@ trial.ChannelEstimateAttempted = ~isempty(tx.DMRS.Indices) && ...
+ trial.ChannelEstimateAvailable = ~trial.ChannelEstimateAttempted || ...
+     ~isempty(rx.ChannelEstimate);
+ trial.ChannelEstimateSource = localChannelEstimateSource( ...
+-    channelMeta.Profile,trial.ChannelEstimateAttempted,opt.Assignment.Format);
++    channelMeta.Profile,trial.ChannelEstimateAttempted,receiverAssignment.Format);
+ trial.EqualizationAttempted = trial.ChannelEstimateAttempted;
+ trial.EqualizationAvailable = ~trial.EqualizationAttempted || ...
+     ~isempty(rx.ChannelEstimate);
+diff --git a/tests/testUCIDecoderCRC.m b/tests/testUCIDecoderCRC.m
+new file mode 100644
+index 00000000..8ca85294
+--- /dev/null
++++ b/tests/testUCIDecoderCRC.m
+@@ -0,0 +1,35 @@
++function ok=testUCIDecoderCRC()
++% Actual native decoding is the CRC authority, not expected payload equality.
++setup6GRSimToolkit('Verbose',false);
++failedBlocksExercised=0;
++for A=[1 2 3 11 12 19 20 359 360 1013 1706]
++    E=max(96,4*A); payload=int8(mod((1:A).',2));
++    coded=nrUCIEncode(payload,E); coded(coded==-1)=1;
++    for k=find(coded==-2).', coded(k)=coded(k-1); end
++    llr=12*(1-2*double(coded));
++    [nativeBits,nativeErrors]=nrUCIDecode(llr,A);
++    actual=sixgr.phy.pucch.UCIDecoder.decode(llr,A);
++    assert(isequal(actual.Bits,nativeBits) && isequal(actual.Bits,payload) && actual.CRCPassed);
++    assert(actual.CRCApplicable==(A>=12));
++    if A<12
++        assert(isempty(actual.CodeBlockCRCError) && actual.CRCStatus=="not_applicable");
++        continue;
++    end
++    assert(isequal(actual.CodeBlockCRCError,logical(nativeErrors(:))));
++    stream=RandStream('mt19937ar','Seed',12000+A);
++    corrupted=randn(stream,E,1);
++    [nativeBits,nativeErrors]=nrUCIDecode(corrupted,A);
++    actual=sixgr.phy.pucch.UCIDecoder.decode(corrupted,A);
++    assert(isequal(actual.Bits,nativeBits) && ...
++        isequal(actual.CodeBlockCRCError,logical(nativeErrors(:))) && ...
++        numel(actual.CodeBlockCRCError)==actual.Plan.CodeBlocks && ...
++        actual.CRCPassed==~any(nativeErrors(:)));
++    if any(nativeErrors(:)), assert(actual.FailureReason=="uci_crc_failed"); end
++    failedBlocksExercised=failedBlocksExercised+nnz(nativeErrors);
++end
++assert(failedBlocksExercised>0,'test:CRCFailureNotExercised','Exercise actual failed code blocks.');
++empty=sixgr.phy.pucch.UCIDecoder.decode(zeros(0,1),0);
++assert(~empty.CRCApplicable && isempty(empty.Bits) && isempty(empty.CodeBlockCRCError));
++fprintf('UCI_CRC_NATIVE_AUTHORITY_PASS coding_cases=11 failed_codeblocks_exercised=%d\n',failedBlocksExercised);
++ok=true;
++end
+diff --git a/tests/testPUCCHReceiverCRC.m b/tests/testPUCCHReceiverCRC.m
+new file mode 100644
+index 00000000..7b8465a4
+--- /dev/null
++++ b/tests/testPUCCHReceiverCRC.m
+@@ -0,0 +1,27 @@
++function ok=testPUCCHReceiverCRC()
++% Detected desired and wrong-RNTI waveforms; CRC is not replaced by DTX.
++setup6GRSimToolkit('Verbose',false);
++bits=int8(mod((1:32).',2));
++configured=sixgr.phy.pucch.PUCCHFixtureFactory.connected(2,bits,'RNTI',321);
++context=sixgr.phy.pucch.UCIReportContext(struct('ReportID',"gnb_crc_observation", ...
++    'ConfigurationEpoch',1,'Sequence1Length',32,'Sequence2Length',0, ...
++    'HARQACKBits',32,'SRBits',0,'CSIPart1Bits',0,'CSIPart2Bits',0,'PriorityIndex',0));
++assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
++    'ObservationID',"gnb_crc_observation",'ResourceID',configured.Assignment.Resource.ID, ...
++    'RNTI',321,'AbsoluteSlot0',0,'Source',"declared_gNB_CRC_component", ...
++    'TimingSource',"received_PUCCH_DMRS"),configured.RRCContext,context);
++for rnti=[321 322]
++    txFixture=sixgr.phy.pucch.PUCCHFixtureFactory.connected(2,bits,'RNTI',rnti);
++    tx=sixgr.phy.pucch.PUCCHTransmitter.transmit(txFixture.Carrier,txFixture.Assignment,txFixture.Report);
++    [waveform,~]=sixgr.link.addRuntimeComplexNoise(tx.Waveform,1e-8,18000+rnti,0,struct());
++    rx=sixgr.phy.pucch.PUCCHReceiver.receive(waveform,configured.Carrier,assignment,context, ...
++        'NoiseVariance',NaN,'NoiseVarianceMode','received_dmrs_estimate', ...
++        'ChannelProfile','AWGN','DetectionThreshold',0.2);
++    assert(rx.CRCApplicable && numel(rx.CodeBlockCRCError)==1 && ...
++        ~rx.DTX && rx.ReceiverUsable && rx.ReceiverOnlyAssignment && ~rx.OraclePayloadBitsUsed);
++    assert(rx.CRCPassed==(rnti==321) && rx.CodeBlockCRCError==(rnti~=321));
++    if rnti==321, assert(isequal(rx.DecodedSequence1,bits)); end
++end
++fprintf('PUCCH_RECEIVER_CRC_PASS desired=pass wrong_RNTI=CRC_fail both_waveforms_detected\n');
++ok=true;
++end
+diff --git a/tests/testPUCCHTrialIndependentReceive.m b/tests/testPUCCHTrialIndependentReceive.m
+new file mode 100644
+index 00000000..a63fc266
+--- /dev/null
++++ b/tests/testPUCCHTrialIndependentReceive.m
+@@ -0,0 +1,135 @@
++function ok=testPUCCHTrialIndependentReceive(outputRoot)
++% Actual codec/connector observations, not scheduled missing-DCI qualification.
++setup6GRSimToolkit('Verbose',false);
++if nargin<1
++    logsRoot=fullfile(pwd,'logs');
++    if ~isfolder(logsRoot), mkdir(logsRoot); end
++    outputRoot=tempname(logsRoot);
++end
++assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve earlier evidence.');
++mkdir(outputRoot);
++source=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
++    'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
++cfg=sixgr.lls6g.buildInternalConfig(source,tempname);
++cfg.channel.model='AWGN'; cfg.channel.awgnOnly=true;
++cfg.channel.fading.enabled=false; cfg.channel.fading.type='AWGN';
++cfg.run.noiseOperatingMode='standalone_awgn_snr_argument';
++cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,5,1);
++cfg.lls6g.userContext.RuntimeSlotStartTime_s=4e-3;
++cfg.lls6g.userContext.RuntimeServingPathloss_dB=77;
++cfg.lls6g.userContext.RuntimeServingPathlossSource='unit_fixture_analytic_reference_not_field_measurement';
++cfg.lls6g.userContext.RuntimeServingPathlossReferenceRS='SSB-0';
++cfg.lls6g.userContext.RuntimeServingPathlossMeasurementId='unit_fixture_not_measured_access';
++cfg.lls6g.userContext.RuntimeServingPathlossMeasurementSlot=1;
++cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalType='SSB';
++cfg.lls6g.userContext.RuntimeServingPathlossReferenceSignalId=0;
++identity=cfg.phy.frame.DefaultIdentity;
++ue=struct('UEID',1,'RNTI',cfg.phy.pusch.RNTI,'ServingCell',1,'PUCCHCell',1, ...
++    'ComponentCarrier',identity.ScheduledCCID,'ActiveULBWP',identity.ULBWPID);
++rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
++frame=struct('K1',4,'K1Source','decoded_dci','PDSCHEndSlot',1,'TargetSlot',5, ...
++    'DecodedPRI',0,'PRIFieldWidth',3,'PRIProvenance','unit_fixture', ...
++    'FirstCCE',0,'NumCCE',4,'SlotSymbolOwnership','UUUUUUUUUUUUUU', ...
++    'FlexibleResolutionProvided',false,'TriggeringEventID','unit_fixture');
++% Receiver contexts are constructed before any UE payload or transmitter.
++hypotheses=cell(2,1);
++for i=1:2
++    count=[3 12]; count=count(i);
++    harq=count; sr=0; csi=0;
++    if count==12, harq=2; sr=1; csi=9; end
++    context=sixgr.phy.pucch.UCIReportContext(struct('ReportID',"gnb-declared-"+count, ...
++        'ConfigurationEpoch',rrc.ConfigurationEpoch,'Sequence1Length',count,'Sequence2Length',0, ...
++        'HARQACKBits',harq,'SRBits',sr,'CSIPart1Bits',csi,'CSIPart2Bits',0,'PriorityIndex',0));
++    set=sixgr.phy.pucch.PUCCHResourceSetResolver.resolveBitCount(count,rrc,rrc.ConfigurationEpoch);
++    assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
++        'ObservationID',context.ReportID,'ResourceID',set.ResourceIDs(1),'RNTI',ue.RNTI, ...
++        'AbsoluteSlot0',4,'Source','declared_gNB_component_not_scheduled_feedback', ...
++        'TimingSource','received_DMRS'),rrc,context);
++    hypotheses{i}=struct('Assignment',assignment,'Context',context);
++end
++audit=table();
++for txCount=[3 12]
++    bits=int8(mod((1:txCount).',2));
++    connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ(cfg,ue,bits,frame);
++    if txCount==12
++        data=connected.Report.Data;
++        data.HARQACKReport=struct('Bits',bits(1:2));
++        data.SchedulingRequestReports=struct('Bits',bits(3));
++        data.CSIReports=struct('Part1Bits',bits(4:12),'Part2Bits',int8([]),'Priority',0,'ReportID',1);
++        connected.Report=sixgr.phy.pucch.UCIReport(data);
++        connected.Assignment=sixgr.phy.pucch.PUCCHTransmissionAssignment.fromCombinedUCI( ...
++            connected.Report,connected.UEContext,frame);
++    end
++    args={'Assignment',connected.Assignment,'Report',connected.Report, ...
++        'Carrier',sixgr.phy.grid.makeCarrier(cfg),'ChannelProfile','AWGN', ...
++        'SNR_dB',34,'TimingAdvanceSamples',0};
++    pending=sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'PrepareOnly',true);
++    p=pending.PreparedTransmission;
++    array=sixgr.rf.AntennaArrayFactory.build(cfg,'ue','signal','pucch','numPorts',size(p.Tx.Waveform,2));
++    x=p.Tx.Waveform*cast(array.PortToElementMatrix.','like',p.Tx.Waveform);
++    desired=x*cast(eye(size(x,2),p.NumReceiveAntennas)*10^(-77/20),'like',x);
++    [energy,~]=sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
++        p.Tx.Carrier,desired,p.Tx.PUCCHIndices,'SignalFamily','PUCCH');
++    rng(34000+txCount,'twister');
++    [y,noise]=sixgr.phy.waveform.addOccupiedREAWGN(desired,p.Tx.Carrier,34,'SignalEnergyPerOccupiedRE',energy);
++    replay=struct('SampleNoiseVariance',noise.SampleNoiseVariance, ...
++        'SampleNoiseVarianceDomain','receiver_sample_waveform_post_composite_front_end', ...
++        'NoiseVarianceSource','explicit_isolated_occupied_re_awgn', ...
++        'NoiseOperatingMode','standalone_awgn_snr_argument','AppliedAWGNSNR_dB',34,'ApproximationMode','none');
++    input=struct('Prepared',p,'Observation',buffer(p,y),'PhysicalMeasurementObservation',buffer(p,y), ...
++        'TransmitterObservation',buffer(p,x),'DesiredReferenceObservation',buffer(p,desired), ...
++        'Replay',replay,'ChannelState',struct('UnitConnectorConsumedSamples',size(x,1)), ...
++        'Channel',struct('Profile','AWGN','Source','unit_analytic_attenuating_connector'));
++    for i=1:2
++        h=hypotheses{i}; rxCount=h.Context.Sequence1Length;
++        input.GNBReception=h;
++        before=rng;
++        trial=sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',input);
++        assert(isequal(before,rng),'Completion must not regenerate random RF/noise/TX.');
++        direct=sixgr.link.receivePUCCHObservation(p.ReceiverConfig,h.Assignment,h.Context,input.Observation);
++        names=string(fieldnames(direct)); latency=cellstr(names(endsWith(names,'Latency_ms')));
++        assert(isequaln(rmfield(trial.Rx,latency),rmfield(direct,latency)), ...
++            'Trial wrapper must reproduce the receiver-only API exactly.');
++        assert(trial.IndependentReceiverAssignment && trial.ReceiverExpectedBitCount==rxCount && ...
++            trial.ExpectedBitCount==txCount && trial.CRCApplicable==(rxCount>=12) && ...
++            trial.TransmitterUCICRCApplicable==(txCount>=12));
++        assert(isequaln(trial.ReceiverFields,direct.DecodedFields));
++        if rxCount<12, assert(isnan(trial.CRCPass)); else, assert(trial.CRCPass==direct.CRCPassed); end
++        if txCount==rxCount
++            assert(~trial.DTXFlag && trial.UCIContentMatch && trial.Ok);
++            if txCount==12
++                assert(isequal(trial.ReceiverFields.HARQACK,bits(1:2)) && ...
++                    isequal(trial.ReceiverFields.SR,bits(3)) && isequal(trial.ReceiverFields.CSIPart1,bits(4:12)));
++            end
++        end
++        changed=input; changed.Replay.SampleNoiseVariance=12345;
++        changed.Replay.InterferenceCovariance=1e6*eye(p.NumReceiveAntennas);
++        counterfactual=sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',changed);
++        assert(isequaln(rmfield(trial.Rx,latency),rmfield(counterfactual.Rx,latency)));
++        bad=input; bad.GNBReception.Assignment=connected.Assignment;
++        reject(@()sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',bad), ...
++            'sixgr:link:InvalidGNBUCIReceiveHypothesis');
++        bad=input; bad.GNBReception.ExpectedBits=bits;
++        reject(@()sixgr.link.runPUCCHWaveformTrial(cfg,args{:},'ReceivedContext',bad), ...
++            'sixgr:link:InvalidGNBUCIReceiveHypothesis');
++        save(fullfile(outputRoot,sprintf('tx_%d_rx_%d.mat',txCount,rxCount)), ...
++            'cfg','h','input','trial','direct','txCount','rxCount');
++        audit=[audit;table(txCount,rxCount,trial.CRCApplicable,trial.TransmitterUCICRCApplicable, ...
++            trial.CRCPass,trial.DTXFlag,true,'VariableNames', ...
++            {'TXBits','RXExpectedBits','ReceiverCRCApplicable','TransmitterCRCApplicable','ReceiverCRCPass','DTX','DirectRXEqual'})]; %#ok<AGROW>
++    end
++end
++writetable(audit,fullfile(outputRoot,'receiver_authority_audit.csv'));
++fprintf('PUCCH_TRIAL_INDEPENDENT_PASS cases=4 combined_fields=1 differing_CRC_lengths=2 no_injected_metadata_consumed=1 evidence=component\n');
++ok=true;
++end
++function b=buffer(p,x)
++b=sixgr.phy.waveform.WaveformObservationBuffer(p.StartSample,p.StartSample+size(x,1),p.SampleRateHz,size(x,2));
++b.append(sixgr.phy.waveform.WaveformChunk(x,p.StartSample),p.SampleRateHz);
++end
++function reject(fn,id)
++try, fn(); catch cause
++    assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
++end
++error('test:MissingRejection','Expected %s.',id);
++end
+diff --git a/tests/testPUCCHTrialIndependentRetained.m b/tests/testPUCCHTrialIndependentRetained.m
+new file mode 100644
+index 00000000..05c53581
+--- /dev/null
++++ b/tests/testPUCCHTrialIndependentRetained.m
+@@ -0,0 +1,65 @@
++function ok=testPUCCHTrialIndependentRetained(outputRoot)
++% Retained actual shared IQ and received SRS timing. Counts are prescribed
++% component hypotheses, not an independently scheduled missing-DCI test.
++setup6GRSimToolkit('Verbose',false);
++if nargin<1
++    logsRoot=fullfile(pwd,'logs');
++    if ~isfolder(logsRoot), mkdir(logsRoot); end
++    outputRoot=tempname(logsRoot);
++end
++assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve existing evidence.');
++mkdir(outputRoot);
++capture=fullfile('docs','lls','evidence_20260913','pucch_baseline_signal_04','received_pucch.mat');
++x=load(capture); p=x.item.Context.Prepared; cfg=p.ReceiverConfig;
++prior=x.timingReferences{1};
++[~,pre,tx,replay,actual]=sixgr.truth.sharedObservationEvidence(x.item.Planes,p);
++input=struct('Prepared',p,'Observation',actual,'PhysicalMeasurementObservation',pre, ...
++    'TransmitterObservation',tx,'Replay',replay,'ChannelState',struct(), ...
++    'Channel',struct('Profile',sixgr.channel.resolveConcreteProfile(cfg)), ...
++    'ReceivedULTimingReference',prior);
++ue=struct('UEID',1,'RNTI',1,'ServingCell',1,'PUCCHCell',1, ...
++    'ComponentCarrier',cfg.phy.frame.DefaultIdentity.ScheduledCCID, ...
++    'ActiveULBWP',cfg.phy.frame.DefaultIdentity.ULBWPID);
++rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
++audit=table();
++for count=1:2
++    context=sixgr.phy.pucch.UCIReportContext(struct( ...
++        'ReportID',"gnb-retained-format0-"+count,'ConfigurationEpoch',rrc.ConfigurationEpoch, ...
++        'Sequence1Length',count,'Sequence2Length',0,'HARQACKBits',count, ...
++        'SRBits',0,'CSIPart1Bits',0,'CSIPart2Bits',0,'PriorityIndex',0));
++    assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
++        'ObservationID',context.ReportID,'ResourceID',0,'RNTI',1,'AbsoluteSlot0',8, ...
++        'Source','retained_component_prescribed_resource_and_length', ...
++        'TimingSource','prior_received_SRS_clock'),rrc,context);
++    input.GNBReception=struct('Assignment',assignment,'Context',context);
++    saved=rng;
++    trial=sixgr.link.runPUCCHWaveformTrial(x.item.Context.Config, ...
++        x.item.Context.Arguments{:},'ReceivedContext',input);
++    direct=sixgr.link.receivePUCCHObservation(cfg,assignment,context,actual,prior);
++    assert(isequal(saved,rng));
++    names=string(fieldnames(direct)); latency=cellstr(names(endsWith(names,'Latency_ms')));
++    assert(isequaln(rmfield(trial.Rx,latency),rmfield(direct,latency)));
++    assert(trial.IndependentReceiverAssignment && trial.ReceiverExpectedBitCount==count && ...
++        ~trial.CRCApplicable && isnan(trial.CRCPass) && isempty(trial.CodeBlockCRCError) && ...
++        ~trial.Rx.PreparedTransmitterConsumed && ~trial.Rx.InjectedNoiseVarianceConsumed && ...
++        ~trial.Rx.ReceiveTiming.OracleTimingUsed);
++    changed=input; changed.GNBReception.Context=x.item.Context.Prepared.RequestBinding.ReceiverContext;
++    % The historical request may omit its context. Either way it cannot
++    % replace the context bound into the independent receive assignment.
++    reject(@()sixgr.link.runPUCCHWaveformTrial(x.item.Context.Config, ...
++        x.item.Context.Arguments{:},'ReceivedContext',changed), ...
++        'sixgr:link:InvalidGNBUCIReceiveHypothesis');
++    audit=[audit;table(count,trial.DetectionMetric,trial.DetectionThreshold,trial.DTXFlag, ...
++        string(trial.UCIDecodedBitVector),true,'VariableNames', ...
++        {'RXExpectedBits','DetectionMetric','DetectionThreshold','DTX','DecodedBits','DirectRXEqual'})]; %#ok<AGROW>
++end
++writetable(audit,fullfile(outputRoot,'retained_receiver_authority_audit.csv'));
++fprintf('PUCCH_TRIAL_RETAINED_INDEPENDENT_PASS hypotheses=2 actual_shared_IQ=1 prior_received_SRS=1 evidence=retained_component\n');
++ok=true;
++end
++function reject(fn,id)
++try, fn(); catch cause
++    assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
++end
++error('test:MissingRejection','Expected %s.',id);
++end
+diff --git a/tests/testAll.m b/tests/testAll.m
+index 085f5b0e..40497b1e 100644
+--- a/tests/testAll.m
++++ b/tests/testAll.m
+@@ -47,6 +47,10 @@ tests = { ...
+     @testPDSCHOccasionAllocationPreflight, ...
+     @testResourceAllocationValidator, ...
+     @testPUCCHReceiverOnlyAssignment, ...
++    @testUCIDecoderCRC, ...
++    @testPUCCHReceiverCRC, ...
++    @testPUCCHTrialIndependentReceive, ...
++    @testPUCCHTrialIndependentRetained, ...
+     @testPUCCHObservationReceiver, ...
+     @testSharedPUCCHReceiveOnlyClock, ...
+     @testPUCCHReceiverAssignmentEquivalence, ...

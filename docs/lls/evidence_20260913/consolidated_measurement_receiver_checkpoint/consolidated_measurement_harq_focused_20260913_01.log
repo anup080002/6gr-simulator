@@ -1,0 +1,27 @@
+CSI_MIXED_CLOCK_CONSUMER_PASS padded_slot_rows=1 sample_CSI_strict=1 domain_downgrade_rejected=1 RF_executions=0
+PUSCH_HARQ_ACK_PREFLIGHT_UNIT_PASS reordered rows, later invalid binding, timeline, owner, binary and clock guards
+PUSCH_HARQ_ACK_PREFLIGHT_REDUCER_PASS late-failure no-mutation guards and usable false-ACK semantics
+SHARED_PUCCH_CODEBOOK_BINDING_UNIT_PASS gaps, wrap, reordered identities, scoring independence, negative guards
+UCI_CRC_NATIVE_AUTHORITY_PASS coding_cases=11 failed_codeblocks_exercised=10
+{Error using javaMethod
+No class java.security.MessageDigest can be located on the Java class path.
+
+Error in sixgr.phy.waveform.WaveformHash.bytes (line 11)
+            md = javaMethod("getInstance","java.security.MessageDigest","SHA-256");
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.waveform.WaveformHash.numeric (line 44)
+            digest = sixgr.phy.waveform.WaveformHash.bytes(payload);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.waveform.CanonicalOFDMModulator.toolbox (line 67)
+            info.GridSHA256=sixgr.phy.waveform.WaveformHash.numeric(grid);
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.waveform.ofdmModulate (line 3)
+[waveform,info] = sixgr.phy.waveform.CanonicalOFDMModulator.toolbox( ...
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.pucch.PUCCHTransmitter.transmit (line 44)
+            [waveform,ofdmInfo] = sixgr.phy.waveform.ofdmModulate( ...
+                                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testPUCCHReceiverCRC (line 15)
+    tx=sixgr.phy.pucch.PUCCHTransmitter.transmit(txFixture.Carrier,txFixture.Assignment,txFixture.Report);
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "status": "running",
+  "started_utc": "2026-09-13T11:36:24.2101587Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "C:/Program Files/MATLAB/R2026a/bin/matlab.exe",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "8412775e52ffba94f2cb9cb6dc9779d6ac54192a",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260913T113624204Z_b6e8619b',false,{});"
+}

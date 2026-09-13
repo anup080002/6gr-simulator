@@ -1,5 +1,8 @@
 # Main integration status — 2026-09-13
 
+Current checkpoint: [consolidated measurement and receiver repairs](consolidated_measurement_receiver_checkpoint_20260913.md).
+The sections below describe the preceding checkpoint and are retained for history.
+
 This supersedes current-status statements in the earlier candidate/handoff
 notes. Historical evidence and patches are preserved, not rewritten.
 The 12 dB baseline is **not yet qualified**.

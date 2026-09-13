@@ -1,0 +1,7 @@
+Exception: C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main\scripts\run_server_testall.ps1:65
+Line |
+  65 |  … 'passed') { throw "Validation did not pass (MATLAB exit $exitCode). S …
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Validation did not pass (MATLAB exit 1). See summary.json and matlab.log.
+
+

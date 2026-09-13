@@ -1,0 +1,7 @@
+{Error using assert
+Assertion failed.
+
+Error in testPUSCHHARQACKPreflightReducer (line 45)
+assert(isequaln(harq.Stats,stats) && isequaln(harq.UEProcs,processes));
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

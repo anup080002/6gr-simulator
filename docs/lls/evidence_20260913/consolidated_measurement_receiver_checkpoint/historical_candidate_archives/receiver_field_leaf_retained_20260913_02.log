@@ -1,0 +1,5 @@
+RETAINED_PUCCH_FIELD_PASS tx_bits=12 receiver_expected_bits=12 harq_bits=2
+RETAINED_PUCCH_FIELD_PASS tx_bits=12 receiver_expected_bits=3 harq_bits=3
+RETAINED_PUCCH_FIELD_PASS tx_bits=3 receiver_expected_bits=12 harq_bits=2
+RETAINED_PUCCH_FIELD_PASS tx_bits=3 receiver_expected_bits=3 harq_bits=3
+RETAINED_PUCCH_FIELD_EXTRACTION_PASS cases=4 no_new_PHY_execution=1

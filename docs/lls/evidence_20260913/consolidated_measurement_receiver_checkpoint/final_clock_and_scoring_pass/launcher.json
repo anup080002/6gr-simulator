@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-13T16:33:29.1377645Z",
+  "repository": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testSetupExcludesLogSnapshots",
+    "testCSIPhysicalKnowledgeConsumer",
+    "testFutureULPlanningCausality",
+    "testPUCCHFeedbackScoringExport"
+  ],
+  "allow_dirty": true,
+  "suite_pass": false,
+  "git_commit": "8412775e52ffba94f2cb9cb6dc9779d6ac54192a",
+  "git_status_before": "M +sixgr/+link/runPUCCHWaveformTrial.m\r\n M +sixgr/+lls6g/+runners/runSingle.m\r\n M +sixgr/+phy/+pucch/PUCCHReceiver.m\r\n M +sixgr/+phy/+pucch/UCIDecoder.m\r\n M +sixgr/+phy/+refsig/causalMeasurementState.m\r\n M +sixgr/+rach/generateZCDPEWaveform.m\r\n M +sixgr/+rach/runPRACHLLS.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M +sixgr/+truth/buildScheduledPUCCHHARQReception.m\r\n M +sixgr/+truth/runWaveformLinkBundle.m\r\n M setup6GRSimToolkit.m\r\n M tests/testAll.m\r\n M tests/testLLSPUSCHHARQACKRuntimeFeedback.m\r\n M tests/testPUCCHBaselineNoiseRF.m\r\n?? +sixgr/+truth/bindReceivedCSIRSClock.m\r\n?? +sixgr/+truth/bindReceivedPUCCHCodebookRows.m\r\n?? +sixgr/+truth/bindScheduledPUCCHFeedbackRows.m\r\n?? +sixgr/+truth/bindSharedDLCSICompletion.m\r\n?? +sixgr/+truth/buildConfiguredPUCCHReceiveContext.m\r\n?? +sixgr/+truth/csirsMeasurementAvailability.m\r\n?? +sixgr/+truth/extractPUCCHReceiverFields.m\r\n?? +sixgr/+truth/finalCoupledWaveformPreview.m\r\n?? +sixgr/+truth/mapScheduledHARQFeedback.m\r\n?? +sixgr/+truth/preparePUSCHHARQACKBindings.m\r\n?? +sixgr/+truth/prepareScheduledHARQFeedback.m\r\n?? +sixgr/+truth/referenceMeasurementClockArguments.m\r\n?? tests/fixtures/prach_native_noise_fixture.yaml\r\n?? tests/fixtures/prach_native_nr_fixture.yaml\r\n?? tests/fixtures/prach_native_zcdpe_fixture.yaml\r\n?? tests/testCSIMixedClockConsumer.m\r\n?? tests/testCSIPhysicalKnowledgeConsumer.m\r\n?? tests/testConfiguredCombinedPUCCHReception.m\r\n?? tests/testFinalCoupledWaveformPreview.m\r\n?? tests/testPRACHNativeRetention.m\r\n?? tests/testPUCCHFeedbackScoringExport.m\r\n?? tests/testPUCCHReceiverCRC.m\r\n?? tests/testPUCCHReceiverFieldAuthority.m\r\n?? tests/testPUCCHTrialIndependentReceive.m\r\n?? tests/testPUCCHTrialIndependentRetained.m\r\n?? tests/testPUSCHHARQACKBindingPreflight.m\r\n?? tests/testPUSCHHARQACKPreflightReducer.m\r\n?? tests/testSetupExcludesLogSnapshots.m\r\n?? tests/testSharedPUCCHCodebookBinding.m\r\n?? tests/testUCIDecoderCRC.m",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/logs/testall_20260913T163329122Z_848ce423',false,{'testSetupExcludesLogSnapshots','testCSIPhysicalKnowledgeConsumer','testFutureULPlanningCausality','testPUCCHFeedbackScoringExport'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "M +sixgr/+link/runPUCCHWaveformTrial.m\r\n M +sixgr/+lls6g/+runners/runSingle.m\r\n M +sixgr/+phy/+pucch/PUCCHReceiver.m\r\n M +sixgr/+phy/+pucch/UCIDecoder.m\r\n M +sixgr/+phy/+refsig/causalMeasurementState.m\r\n M +sixgr/+rach/generateZCDPEWaveform.m\r\n M +sixgr/+rach/runPRACHLLS.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M +sixgr/+truth/buildScheduledPUCCHHARQReception.m\r\n M +sixgr/+truth/runWaveformLinkBundle.m\r\n M setup6GRSimToolkit.m\r\n M tests/testAll.m\r\n M tests/testLLSPUSCHHARQACKRuntimeFeedback.m\r\n M tests/testPUCCHBaselineNoiseRF.m\r\n?? +sixgr/+truth/bindReceivedCSIRSClock.m\r\n?? +sixgr/+truth/bindReceivedPUCCHCodebookRows.m\r\n?? +sixgr/+truth/bindScheduledPUCCHFeedbackRows.m\r\n?? +sixgr/+truth/bindSharedDLCSICompletion.m\r\n?? +sixgr/+truth/buildConfiguredPUCCHReceiveContext.m\r\n?? +sixgr/+truth/csirsMeasurementAvailability.m\r\n?? +sixgr/+truth/extractPUCCHReceiverFields.m\r\n?? +sixgr/+truth/finalCoupledWaveformPreview.m\r\n?? +sixgr/+truth/mapScheduledHARQFeedback.m\r\n?? +sixgr/+truth/preparePUSCHHARQACKBindings.m\r\n?? +sixgr/+truth/prepareScheduledHARQFeedback.m\r\n?? +sixgr/+truth/referenceMeasurementClockArguments.m\r\n?? tests/fixtures/prach_native_noise_fixture.yaml\r\n?? tests/fixtures/prach_native_nr_fixture.yaml\r\n?? tests/fixtures/prach_native_zcdpe_fixture.yaml\r\n?? tests/testCSIMixedClockConsumer.m\r\n?? tests/testCSIPhysicalKnowledgeConsumer.m\r\n?? tests/testConfiguredCombinedPUCCHReception.m\r\n?? tests/testFinalCoupledWaveformPreview.m\r\n?? tests/testPRACHNativeRetention.m\r\n?? tests/testPUCCHFeedbackScoringExport.m\r\n?? tests/testPUCCHReceiverCRC.m\r\n?? tests/testPUCCHReceiverFieldAuthority.m\r\n?? tests/testPUCCHTrialIndependentReceive.m\r\n?? tests/testPUCCHTrialIndependentRetained.m\r\n?? tests/testPUSCHHARQACKBindingPreflight.m\r\n?? tests/testPUSCHHARQACKPreflightReducer.m\r\n?? tests/testSetupExcludesLogSnapshots.m\r\n?? tests/testSharedPUCCHCodebookBinding.m\r\n?? tests/testUCIDecoderCRC.m",
+  "git_commit_after": "8412775e52ffba94f2cb9cb6dc9779d6ac54192a",
+  "finished_utc": "2026-09-13T16:35:01.4458425Z",
+  "launcher_exit_code": 0
+}

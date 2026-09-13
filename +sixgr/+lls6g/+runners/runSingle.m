@@ -1571,6 +1571,10 @@ controlTrialT = localBindCanonicalRuntimeIdentity( ...
 probabilitySweepT = localBuildPRACHProbabilitySweepTable(study);
 controlTrace = struct();
 if localShouldWriteCSV(scfg)
+    % Publish native occupancy retained from actual transmitted preambles.
+    % The reference template and noise-only detector do not create TX rows.
+    nativeLayout=sixgr.report.resultLayout(runFolder);
+    sixgr.truth.writeObservedREAllocationArtifacts(study.ObservedREAllocationTable,cfg,nativeLayout);
     sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_trials.csv"), controlTrialT);
     sixgr.util.csvWriteTable(fullfile(runFolder, "control", "csv", "prach_detection_summary.csv"), study.SummaryBySNR);
     sixgr.util.csvWriteTable(fullfile(runFolder, "air_interface", "csv", "prach_trials.csv"), controlTrialT);
@@ -1601,6 +1605,7 @@ result = struct();
 result.Ok = istable(controlTrialT) && ~isempty(controlTrialT);
 result.Control = controlTrace;
 result.Study = study;
+result.ObservedREAllocationTable = study.ObservedREAllocationTable;
 result.TrialTable = controlTrialT;
 result.SummaryTable = study.SummaryBySNR;
 end

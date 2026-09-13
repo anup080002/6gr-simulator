@@ -27,6 +27,7 @@ outputDir = localResolveOutputDir(baseStruct);
 trialRows = cell(0, 1);
 roRows = cell(0, 1);
 corrRows = cell(0, 1);
+nativeRows = cell(0, 1);
 scenarioExports = cell(0, 1);
 trialCount = 0;
 roCount = 0;
@@ -54,7 +55,12 @@ for iScenario = 1:numel(scenarioMatrix)
                         fprintf("PRACH simulate start: scenario=%s snr=%.3f threshold=%.6g trial=%d ro=%d\n", ...
                             scenarioCfg.ScenarioID, snrDb, threshold, iTrial, iRO);
                     end
-                    simOut = localSimulateOccasion(scenarioCfg, occasions(iRO), snrDb, threshold, trialSeed);
+                    attemptID = sprintf('scenario_%d_snr_%d_threshold_%d_trial_%d_ro_%d', ...
+                        iScenario,iSNR,iThreshold,iTrial,iRO);
+                    simOut = localSimulateOccasion(scenarioCfg, occasions(iRO), snrDb, threshold, trialSeed,attemptID);
+                    if ~isempty(simOut.ObservedREAllocationTable)
+                        nativeRows{end+1,1}=simOut.ObservedREAllocationTable; %#ok<AGROW>
+                    end
                     if verbose
                         fprintf("PRACH simulate complete: scenario=%s trial=%d ro=%d detected=%d\n", ...
                             scenarioCfg.ScenarioID, iTrial, iRO, logical(simOut.ROSummary.detected));
@@ -110,6 +116,11 @@ out.ScenarioConfigs = localCellStructArray(scenarioExports);
 out.TrialTable = trialTable;
 out.ROTable = roTable;
 out.CorrelationTraceTable = correlationTraceTable;
+if isempty(nativeRows)
+    out.ObservedREAllocationTable = table();
+else
+    out.ObservedREAllocationTable = vertcat(nativeRows{:});
+end
 out.SummaryBySNR = metrics.SummaryBySNR;
 out.SummaryByScenario = metrics.SummaryByScenario;
 out.Confusion = metrics.Confusion;
@@ -180,7 +191,7 @@ function trialSeed = localTrialSeed(baseSeed, iScenario, iSNR, iThreshold, iTria
 trialSeed = round(double(baseSeed) + 100000*iScenario + 10000*iSNR + 1000*iThreshold + 100*iTrial + iRO);
 end
 
-function simOut = localSimulateOccasion(cfg, occasion, snrDb, threshold, trialSeed)
+function simOut = localSimulateOccasion(cfg, occasion, snrDb, threshold, trialSeed,attemptID)
 rng(double(trialSeed), "twister");
 servingPlan = localResolveServingPlan(cfg, occasion.Ordinal);
 interfererPlan = localResolveInterfererPlan(cfg, occasion.Ordinal);
@@ -190,6 +201,7 @@ refTx = localGeneratePRACHLikeWaveform(cfg, occasion, localReferencePreamble(ser
 rxWave = complex(zeros(size(refTx.Waveform, 1), cfg.NumRxAntennas));
 servingTruth = cell(0, 1);
 interfererTruth = cell(0, 1);
+nativeRows = cell(0,1);
 
 for iUE = 1:numel(servingPlan)
     if ~servingPlan(iUE).Active
@@ -198,6 +210,8 @@ for iUE = 1:numel(servingPlan)
     ueTx = localGeneratePRACHLikeWaveform(cfg, occasion, servingPlan(iUE).PreambleIndex, servingPlan(iUE).DPI_d);
     servingTruth{end+1, 1} = localApplyChannelAndImpairments(cfg, ueTx, servingPlan(iUE), trialSeed + iUE);
     rxWave = rxWave + servingTruth{end}.RxWaveform;
+    nativeRows{end+1,1}=localNativeAllocation(ueTx,cfg,occasion,servingPlan(iUE), ...
+        snrDb,threshold,trialSeed,attemptID,"serving"); %#ok<AGROW>
 end
 
 for iUE = 1:numel(interfererPlan)
@@ -207,6 +221,8 @@ for iUE = 1:numel(interfererPlan)
     ueTx = localGeneratePRACHLikeWaveform(cfg, occasion, interfererPlan(iUE).PreambleIndex, interfererPlan(iUE).DPI_d);
     interfererTruth{end+1, 1} = localApplyChannelAndImpairments(cfg, ueTx, interfererPlan(iUE), trialSeed + 100 + iUE);
     rxWave = rxWave + 10^(cfg.InterCellRelativePower_dB / 20) * interfererTruth{end}.RxWaveform;
+    nativeRows{end+1,1}=localNativeAllocation(ueTx,cfg,occasion,interfererPlan(iUE), ...
+        snrDb,threshold,trialSeed,attemptID,"interferer"); %#ok<AGROW>
 end
 
 [servingTruth, interfererTruth] = deal(localCellStructArray(servingTruth), localCellStructArray(interfererTruth));
@@ -234,6 +250,35 @@ simOut.ROSummary = localClassifyRO(cfg, det, noiseDet, servingTruth, interfererT
     computeLatencyMs, airInterfaceObservationMs);
 simOut.CorrelationTraceRows = localBuildCorrelationTraceRows(cfg, det, simOut.ROSummary, servingTruth, occasion, snrDb, threshold, noiseVar, trialSeed);
 simOut.UERows = localExpandUERows(cfg, simOut.ROSummary, servingTruth, occasion, snrDb, threshold);
+if isempty(nativeRows)
+    simOut.ObservedREAllocationTable=table();
+else
+    simOut.ObservedREAllocationTable=vertcat(nativeRows{:});
+end
+end
+
+function T=localNativeAllocation(tx,cfg,occasion,plan,snrDb,threshold,seed,attemptID,role)
+% Capture only a transmitter that was actually added to this receive sum.
+% refTx and the independent noise-only detector are not transmissions.
+assert(string(tx.WaveformGenerationBackend)=="matlab_5g_toolbox_nrPRACHOFDMModulate_zero_windowing", ...
+    'sixgr:rach:NativeAllocationRequiresStandardWaveform', ...
+    'Primary native PRACH allocation cannot label an explicit fallback modulator as standard execution.');
+id=string(attemptID)+"_"+role+"_ue_"+string(plan.UEId);
+T=sixgr.truth.buildObservedREAllocation(tx,'Channel','PRACH','Direction','UL', ...
+    'AbsoluteSlot',double(occasion.SlotIndex1)-1,'CellID',double(tx.Carrier.NCellID), ...
+    'UEID',double(plan.UEId),'AllocationID',id);
+assert(~isempty(T),'sixgr:rach:TransmittedPRACHWithoutNativeAllocation', ...
+    'An active transmitted preamble must retain its actual native-grid occupancy.');
+n=height(T);
+T.PRACHStudyScenarioID=repmat(string(cfg.ScenarioID),n,1);
+T.PRACHStudyAttemptID=repmat(string(attemptID),n,1);
+T.PRACHStudyTransmitterRole=repmat(role,n,1);
+T.PRACHStudySeed=repmat(double(seed),n,1);
+T.PRACHStudySNR_dB=repmat(double(snrDb),n,1);
+T.PRACHStudyDetectionThreshold=repmat(double(threshold),n,1);
+T.PRACHStudyPreambleIndex=repmat(double(tx.PreambleIndex),n,1);
+T.PRACHStudyDesign=repmat(string(localPRACHDesign(cfg)),n,1);
+T.PRACHStudyDPIIndex=repmat(double(plan.DPI_d),n,1);
 end
 
 function tx = localGeneratePRACHLikeWaveform(cfg, occasion, preambleIndex, dpiIndex)
