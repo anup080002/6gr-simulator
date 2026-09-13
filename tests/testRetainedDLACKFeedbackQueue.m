@@ -60,6 +60,23 @@ assert(isa(entry.Event,'sixgr.phy.pucch.HARQACKEvent') && ...
     ~entry.Event.Data.DecodeAttempted && ~entry.Event.Data.DeliverTransportBlock && ...
     entry.AvailableAtSample==now && entry.ControlAvailableAtSample==control.AvailableAtSample && ...
     ~entry.FeedbackTransmissionQualified);
+book=sixgr.truth.buildReceivedHARQACKCodebook(state,current,1,a.HARQFeedbackAbsoluteSlot+1);
+assert(numel(book.Events)==1 && book.Events.Digest==entry.Event.Digest && ...
+    book.Bits(end)==1 && all(book.SourceEventIndex(1:end-1)==0));
+poisoned=state;
+poisoned.SharedDLHARQExpectations={struct('Ack',false)};
+poisoned.PendingFeedbackTable.Ack=false;
+poisoned.PUCCHGrantTraceTable=table(false,'VariableNames',{'ExpectedAck'});
+same=sixgr.truth.buildReceivedHARQACKCodebook(poisoned,current,1,a.HARQFeedbackAbsoluteSlot+1);
+assert(same.Digest==book.Digest,'UE codebook must not use the gNB expectation or observer rows.');
+bad=state; bad.SharedUEHARQACKEvents{1}.AvailableAtSample=now+1;
+localReject(@()sixgr.truth.buildReceivedHARQACKCodebook(bad,current,1,a.HARQFeedbackAbsoluteSlot+1), ...
+    'sixgr:truth:FutureHARQFeedbackAtUCIEncoding');
+bad=state; bad.SharedUEHARQACKEvents{1}.SampleRateHz=2*owner.SampleRateHz;
+localReject(@()sixgr.truth.buildReceivedHARQACKCodebook(bad,current,1,a.HARQFeedbackAbsoluteSlot+1), ...
+    'sixgr:truth:FutureHARQFeedbackAtUCIEncoding');
+empty=sixgr.truth.buildReceivedHARQACKCodebook(state,current,1,a.HARQFeedbackAbsoluteSlot+2);
+assert(isempty(empty.Bits) && isempty(empty.Events));
 [decision,after]=saved.before.acknowledgeRetained(current,a);
 localReject(@()sixgr.truth.commitReceivedDLHARQACKEvent( ...
     state,current,control,decision,after,now),'sixgr:truth:DuplicateReceivedHARQEvent');
@@ -88,7 +105,7 @@ mkdir(outputRoot);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'protocol_decisions.csv'),struct2table(protocol),'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'pending_feedback.csv'),state.PendingFeedbackTable,'PreserveSchema',true);
 sixgr.util.csvWriteTable(fullfile(outputRoot,'pucch_reservations.csv'),state.PUCCHGrantTraceTable,'PreserveSchema',true);
-fprintf('RETAINED_DL_ACK_QUEUE_PASS guards=9 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=%s\n',outputRoot);
+fprintf('RETAINED_DL_ACK_QUEUE_PASS guards=11 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=%s\n',outputRoot);
 ok=true;
 end
 

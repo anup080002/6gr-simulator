@@ -3,6 +3,7 @@ classdef PUSCHUCIPayload
 
     properties (SetAccess = private)
         HARQACK
+        HARQACKReport
         CSIPart1
         CSIPart2
         ConfiguredGrantUCI
@@ -13,7 +14,8 @@ classdef PUSCHUCIPayload
     methods
         function obj = PUSCHUCIPayload(varargin)
             ip = inputParser;
-            ip.addParameter("HARQACK", [], @(x) isnumeric(x) || islogical(x));
+            ip.addParameter("HARQACK", [], @(x) isnumeric(x) || islogical(x) || ...
+                isa(x,'sixgr.phy.pucch.HARQACKCodebookState'));
             ip.addParameter("CSIPart1", [], @(x) isnumeric(x) || islogical(x));
             ip.addParameter("CSIPart2", [], @(x) isnumeric(x) || islogical(x));
             ip.addParameter("ConfiguredGrantUCI", [], @(x) isnumeric(x) || islogical(x));
@@ -27,7 +29,18 @@ classdef PUSCHUCIPayload
                 error("sixgr:pusch:SchedulingRequestNotCarriedOnPUSCH", ...
                     "Scheduling Request is routed to PUCCH and cannot enter the PUSCH UCI encoder.");
             end
-            obj.HARQACK = localBits(o.HARQACK, "HARQACK");
+            if isa(o.HARQACK,'sixgr.phy.pucch.HARQACKCodebookState')
+                book=o.HARQACK;
+                assert(isscalar(book) && isstruct(book.ProcedureContext) && ...
+                    isfield(book.ProcedureContext,'Transport') && book.ProcedureContext.Transport=="PUSCH", ...
+                    'sixgr:pusch:HARQACKProcedureRequired', ...
+                    'Typed PUSCH HARQ payload requires its received-UL-DAI procedure.');
+                obj.HARQACKReport=book;
+                obj.HARQACK=book.Bits;
+            else
+                obj.HARQACKReport=[];
+                obj.HARQACK = localBits(o.HARQACK, "HARQACK");
+            end
             obj.CSIPart1 = localBits(o.CSIPart1, "CSIPart1");
             obj.CSIPart2 = localBits(o.CSIPart2, "CSIPart2");
             obj.ConfiguredGrantUCI = localBits(o.ConfiguredGrantUCI, "ConfiguredGrantUCI");
@@ -68,6 +81,9 @@ classdef PUSCHUCIPayload
                 "OCSI1", numel(obj.CSIPart1), ...
                 "OCSI2", numel(obj.CSIPart2), ...
                 "OCGUCI", numel(obj.ConfiguredGrantUCI));
+            if ~isempty(obj.HARQACKReport)
+                value.HARQACKReport=obj.HARQACKReport;
+            end
         end
     end
 end

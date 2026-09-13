@@ -1,0 +1,206 @@
+{
+  "schema": "sixgr.focused_feedback_component_evidence/v1",
+  "base_commit": "5b07063c5fe1e6e0487b4be68585ff218bd7f5af",
+  "scope": "received UL Type-2 codebook and independent UE/gNB mapping components; NOT shared UCI integration, detector qualification, main full-suite pass or 12 dB pass",
+  "runs": [
+    {
+      "log": "sixgr_ul_dai_focused_20260913_01.log",
+      "exit_code": 1,
+      "status": "failed empty-event shape check before repair"
+    },
+    {
+      "log": "sixgr_ul_dai_focused_20260913_02.log",
+      "exit_code": 1,
+      "passed": [
+        "testReceivedULTotalDAICodebook",
+        "testType2HARQACKLayout",
+        "testType2HARQRuntimePlan",
+        "testRetainedDLACKFeedbackQueue",
+        "testPUSCHUCIReceiverEvidence"
+      ],
+      "failed": [
+        "testScheduledHARQACKMapping"
+      ],
+      "note": "Mapping hash/test subsequently changed; other passing test dependencies remained unchanged."
+    },
+    {
+      "log": "sixgr_ul_dai_mapping_20260913_03.log",
+      "exit_code": 0,
+      "passed": [
+        "testScheduledHARQACKMapping",
+        "testUCIPUSCHPhaseCore"
+      ],
+      "marker": "UL_DAI_MAPPING_FOCUSED_PASS"
+    }
+  ],
+  "required_integrated_guards": "pending",
+  "required_full_testAll": "pending",
+  "sources": [
+    {
+      "path": "+sixgr/+phy/+pucch/HARQACKCodebookBuilder.m",
+      "sha256": "079ad8f426409d1bbe44f75456b0ec2289571daa00e881e803194727656fddab"
+    },
+    {
+      "path": "+sixgr/+phy/+pucch/HARQACKCodebookState.m",
+      "sha256": "7a5cd806e19619aa30fced2681bcfdcf08d3650770e5754b096341a21dc96578"
+    },
+    {
+      "path": "+sixgr/+phy/+pucch/type2HARQACKLayout.m",
+      "sha256": "209739b2d7df2cf3499654f6b20b6a85d50d2d472c92f01d03e07d4e23d8a7f8"
+    },
+    {
+      "path": "+sixgr/+phy/+pucch/PUCCHConfigBuilder.m",
+      "sha256": "6a371e09958292f9ea7a10c42c5159df5378d5e4721a9897bb7828ecdc340ee1"
+    },
+    {
+      "path": "+sixgr/+phy/+ul/+pusch/PUSCHUCIPayload.m",
+      "sha256": "acbdd9d8d869901d8091d4ebdc916ae278e951f8eb072f371d5a30793e3b2bb4"
+    },
+    {
+      "path": "+sixgr/+truth/buildReceivedHARQACKCodebook.m",
+      "sha256": "f1455ed1e299db82a57507d22a7661146d653dd7069dd88448d31fa5fc0618f2"
+    },
+    {
+      "path": "+sixgr/+truth/buildScheduledHARQACKMapping.m",
+      "sha256": "38d42f62419aa17510112f3ffa21a85c575dabacdf678a5d2d09f849b5e3d0af"
+    },
+    {
+      "path": "tests/testReceivedULTotalDAICodebook.m",
+      "sha256": "b04ed5700d0d6f959eac77c17708efb51d600742fc047dd2b603459229869f19"
+    },
+    {
+      "path": "tests/testScheduledHARQACKMapping.m",
+      "sha256": "aee49b6961e6fd2f3efb1353cbe97fe7887a7e92d990d6ed97173091d4d32f2d"
+    },
+    {
+      "path": "tests/testRetainedDLACKFeedbackQueue.m",
+      "sha256": "ef24eb66da9c8f9ec6448048a13f05f7f4ba740098516e27f956b1fd05b02ed3"
+    },
+    {
+      "path": "tests/testType2HARQRuntimePlan.m",
+      "sha256": "acfa2ab6834fe99bf76042bd89f93caaf764a1ce80179e61449e4e42d0e390c9"
+    },
+    {
+      "path": "tests/testAll.m",
+      "sha256": "df6daf7cc10b6502f8d555468006d94adbab39e42c3b26120ce90161c94152cf"
+    }
+  ],
+  "artifacts": [
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_harq_mapping_03/scheduled_bit_mapping.csv",
+      "sha256": "69378c00c487b4664f4dc53de2f61eec429a3e6bdbff8208f88d3fda38caa06e"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_harq_mapping_03/scheduled_mapping_4.mat",
+      "sha256": "c7ff3d2c5b7ccacd51fd295f9df49b1eaa059671fb78b8a7e7851cd671441c20"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_harq_mapping_03/waveform/raw/continuous_tx_iq_gnb_1_port1_cf64le.bin",
+      "sha256": "48a861c74ffcd44f3af281a02a18ddc20b0a4a224164b13e431843a5b2da2877"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_harq_mapping_03/waveform/raw/continuous_tx_iq_gnb_1_port2_cf64le.bin",
+      "sha256": "19b3687a9994575d0b065c4efc7b285f1d1d830520b68338eb2e9ebe60e4fcb6"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_harq_mapping_03/waveform/raw/continuous_tx_iq_ue_1_port1_cf64le.bin",
+      "sha256": "36bd753facc985aad613c884a2040210d208b1aa520e957b31ba2e1e19cd4185"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/scheduled_harq_mapping_03/waveform/raw/continuous_tx_iq_ue_1_port2_cf64le.bin",
+      "sha256": "36bd753facc985aad613c884a2040210d208b1aa520e957b31ba2e1e19cd4185"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_codebook_queue_02/pending_feedback.csv",
+      "sha256": "3186642c892a461f8d7d42c766e5d40bbab1f1175ac395ed4c71713181684839"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_codebook_queue_02/protocol_decisions.csv",
+      "sha256": "34ac43f1d7c97a2d4c9f29c43a6faa4db8f61230415a86f3160afe05e69fff70"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_harq_codebook_queue_02/pucch_reservations.csv",
+      "sha256": "c30aa4a090643b93fc893deac2518ff3f61b06ff96cff311cd08e91d4ab5e7e5"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_ul_dai_mapping_20260913_03.log",
+      "sha256": "570df498f228a521f988fafa3a5dcb514544cadd28cb22171341242ea0b8c30e"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_1_0.mat",
+      "sha256": "bd88f02be354937180728da85dabc66e720fd344f6e70501363f8ad3cfff7642"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_1_1.mat",
+      "sha256": "bd7b6a5bf3dfa43529495e8736f166802fc5232d0b5f092d8ed32c729610c800"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_1_2.mat",
+      "sha256": "304a558fcb45da83d538ed836954b370f35aaa8638b5a4f4d30dac8a536ecb8b"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_1_3.mat",
+      "sha256": "f30441bfceeb013418d3902e51130af6dce7d8c99f449b0c49e0ed116899ee8d"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_2_0.mat",
+      "sha256": "5f424cf315f7551304598a8bb5b46f548cd879d733f7588b541bd2997a1b35d3"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_2_1.mat",
+      "sha256": "8627577639fd9a62b746f335d31eb5fb441f897c6aac018f0f52e6f736ec94cf"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_2_2.mat",
+      "sha256": "6320cafd69987a0b3e8d17189feb1d789615774f8c89f212199f382058e44aa0"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_2_3.mat",
+      "sha256": "2203a64974243e49722755e3000726daa0611a3bf150906be596159547f0e466"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_3_0.mat",
+      "sha256": "52c43b54228a53bfdcaabc9d5542ebd904699f37948d48d795820891b8e868c2"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_3_1.mat",
+      "sha256": "a0ae4fe969ef4cd437e0aae7e0bd2c6a5e5e8fc1b8e4f8802dd8030b7a8ffb8d"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_3_2.mat",
+      "sha256": "1614785797cd67a9d91d1efaa420a2d4d089601a3cd98e0b7c397b5f6835129a"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_3_3.mat",
+      "sha256": "772635d80b6d9a1faeb22dc0951842d6a85eca8a1090c927f5d670ccbd7bf13c"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_4_0.mat",
+      "sha256": "4cbec8cbc5f12559e15085866330854dabd66895bc4635e768ab91624e9c2dfa"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_4_1.mat",
+      "sha256": "f235134211cf081cb112235b59f34f3be09bc289d08d687aee26ebced4472567"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_4_2.mat",
+      "sha256": "b1fe448cb0c4f6c7ea321aab23338488ff00df9d35701c823a9861511fcbe2bb"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_4_3.mat",
+      "sha256": "3ac4063fc99467d16fa3d47353ca4fdd9ce3a070e18b1ac1969e30bd836ef9b7"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/received_ul_dai_codebooks_02/received_ul_dai_codebooks.csv",
+      "sha256": "08d56b085d56894607103b06871333d1391c3ddc2feed0a685e54ce504f474d3"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_ul_dai_focused_20260913_01.log",
+      "sha256": "1c756fd0b62d9b8184393d10a0cab650efb33750abb718ad1e0a02ea2443da25"
+    },
+    {
+      "path": "docs/lls/evidence_20260913/sixgr_ul_dai_focused_20260913_02.log",
+      "sha256": "b941c2c3b44ca0e0baeae138ecaf50326d0b6914bcc25f2749c29a87e01c618f"
+    }
+  ]
+}

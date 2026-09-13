@@ -1,11 +1,22 @@
-function [events,sourceIndices]=type2HARQACKLayout(events,epoch)
+function [events,sourceIndices]=type2HARQACKLayout(events,epoch,ulTotalDAI)
 % TS 38.213 18.8.0 9.1.3.1, two-bit counter DAI, scalar TB feedback.
 % Only received events are retained. A zero source index denotes a protocol
 % NACK position inferred from DAI, NOT an observed PDSCH or receiver DTX.
 % There is no scheduler ledger input: undetectable whole missed DAI cycles
 % and trailing missed assignments cannot be reconstructed by the UE.
+if nargin<3, ulTotalDAI=[]; end
+if ~isempty(ulTotalDAI)
+    ulTotalDAI=localInteger(ulTotalDAI,1,4,'ReceivedULTotalDAI');
+end
 sourceIndices=zeros(0,1);
-if isempty(events), return; end
+if isempty(events)
+    % TS 38.213 9.1.3.2: with no received DL assignment and UL total DAI=4,
+    % omit HARQ-ACK. Other indicated positions are protocol NACKs, not DTX.
+    if ~isempty(ulTotalDAI) && ulTotalDAI~=4
+        sourceIndices=zeros(ulTotalDAI,1);
+    end
+    return;
+end
 n=numel(events); key=zeros(n,3); dai=zeros(n,1); total=nan(n,1);
 priority=zeros(n,1);
 hasOccasion=arrayfun(@(e)isfield(e.Data,'MonitoringOccasionIndex'),events);
@@ -68,6 +79,9 @@ end
 % present, including when its highest-cell received DCI omits that field.
 lastTotal=total(key(:,1)==key(end,1) & isfinite(total));
 if isempty(lastTotal), lastTotal=previous; else, lastTotal=lastTotal(1); end
+% PUSCH uses the received UL grant's total DAI after the monitoring loops.
+% Do not overwrite a received DL event or invent a trailing DL reception.
+if ~isempty(ulTotalDAI), lastTotal=ulTotalDAI; end
 if lastTotal<previous, wraps=wraps+1; end
 sourceIndices=zeros(4*wraps+lastTotal,1);
 sourceIndices(positions)=(1:n).';

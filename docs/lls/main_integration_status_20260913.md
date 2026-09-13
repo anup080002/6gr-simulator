@@ -4,6 +4,10 @@ This supersedes current-status statements in the earlier candidate/handoff
 notes. Historical evidence and patches are preserved, not rewritten.
 The 12 dB baseline is **not yet qualified**.
 
+Subsequent isolated checkpoint work and its bounded test results are recorded
+in [received UL DAI and independent mapping](received_ul_dai_and_independent_mapping_20260913.md).
+That work is not yet merged into the main revision being validated below.
+
 ## Consolidated and applied
 
 Main was clean at `b03aed95`, then fast-forwarded to `06e534af`, retaining all

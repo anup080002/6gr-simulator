@@ -62,6 +62,25 @@ harqReport=struct([]);
 if isa(harq,'sixgr.phy.pucch.HARQACKCodebookState')
     assert(isscalar(harq) && harq.ConfigurationEpoch==epoch, ...
         'sixgr:phy:pucch:StaleConfiguration','HARQ codebook must match the current PUCCH configuration epoch.');
+    if isstruct(harq.ProcedureContext) && isfield(harq.ProcedureContext,'Transport')
+        assert(harq.ProcedureContext.Transport~="PUSCH", ...
+            'sixgr:phy:pucch:UnsupportedHARQCodebook', ...
+            'A received-UL-DAI codebook cannot be reused as a PUCCH codebook.');
+    end
+    for event=harq.Events(:).'
+        for identity=["RNTI","TargetSlot"]
+            if ~isfield(event.Data,identity), continue; end
+            expected=double(ueData.RNTI);
+            if identity=="TargetSlot", expected=double(frame.TargetSlot); end
+            assert(event.Data.(identity)==expected, ...
+                'sixgr:phy:pucch:MixedHARQContext', ...
+                'Typed HARQ event %s differs from its UCI report owner.',identity);
+        end
+        if isfield(event.Data,'UEId')
+            assert(event.Data.UEId==ueData.UEID,'sixgr:phy:pucch:MixedHARQContext', ...
+                'Typed HARQ event belongs to a different UE.');
+        end
+    end
     harqReport=harq;
     harq=harq.Bits;
 else

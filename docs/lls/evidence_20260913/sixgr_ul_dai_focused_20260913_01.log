@@ -1,0 +1,13 @@
+{Error using assert
+Every received scalar-TB event must own exactly one ordered codebook position.
+
+Error in sixgr.phy.pucch.HARQACKCodebookState (line 29)
+            assert(isequal(sourceIndices(sourceIndices>0),(1:numel(events)).'), ...
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.pucch.HARQACKCodebookBuilder.buildForPUSCH (line 66)
+            state=sixgr.phy.pucch.HARQACKCodebookState('TYPE2_DYNAMIC',events,epoch,index,procedure);
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedULTotalDAICodebook (line 43)
+        none=sixgr.phy.pucch.HARQACKCodebookBuilder.buildForPUSCH(cfg,a,struct([]));
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

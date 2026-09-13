@@ -24,5 +24,27 @@ assert(planned.Report.Data.HARQACKReport.Digest==book.Digest);
 serialized=sixgr.phy.pucch.UCIReportSerializer.serialize(planned.Report);
 assert(isequal(serialized.Sequence1.Bits,int8([0;1])));
 assert(planned.Plan.Data.DueSlot==4 && ~isfield(planned,'Assignment'));
+wrong=e; wrong.TargetSlot=5;
+wrong=sixgr.phy.pucch.HARQACKCodebookBuilder.build('TYPE2_DYNAMIC',wrong,epoch);
+localReject(@()sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ(cfg,ue,wrong,frame), ...
+    'sixgr:phy:pucch:MixedHARQContext');
+wrong=e; wrong.RNTI=2;
+wrong=sixgr.phy.pucch.HARQACKCodebookBuilder.build('TYPE2_DYNAMIC',wrong,epoch);
+localReject(@()sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ(cfg,ue,wrong,frame), ...
+    'sixgr:phy:pucch:MixedHARQContext');
+wrong=e; wrong.UEId=2;
+wrong=sixgr.phy.pucch.HARQACKCodebookBuilder.build('TYPE2_DYNAMIC',wrong,epoch);
+localReject(@()sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ(cfg,ue,wrong,frame), ...
+    'sixgr:phy:pucch:MixedHARQContext');
+% A PUSCH-specific procedure cannot silently change a PUCCH payload length.
+wrong=sixgr.phy.pucch.HARQACKCodebookState(book.CodebookType,book.Events,epoch, ...
+    book.SourceEventIndex,struct('Transport',"PUSCH"));
+localReject(@()sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ(cfg,ue,wrong,frame), ...
+    'sixgr:phy:pucch:UnsupportedHARQCodebook');
 fprintf('TYPE2_HARQ_RUNTIME_PLAN_PASS\n'); ok=true;
+end
+
+function localReject(fn,id)
+try, fn(); catch cause, assert(strcmp(cause.identifier,id),'Expected %s; got %s: %s',id,cause.identifier,cause.message); return; end
+error('test:MissingRejection','Expected %s',id);
 end
