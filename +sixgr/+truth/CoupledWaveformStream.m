@@ -7,7 +7,7 @@ classdef CoupledWaveformStream < handle
         Events
         SampleRateHz
         Pending = struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{})
-        DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{})
+        DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
         ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{},'TransferProof',{})
     end
     properties (Access=private)
@@ -383,7 +383,8 @@ classdef CoupledWaveformStream < handle
                 'The same immutable data transmission cannot be queued twice.');
             array=sixgr.rf.AntennaArrayFactory.build(prepared.ReceiverConfig,role, ...
                 'signal',lower(family),'numPorts',size(prepared.Tx.Waveform,2));
-            samples=prepared.Tx.Waveform*cast(array.PortToElementMatrix.','like',prepared.Tx.Waveform);
+            projection=cast(array.PortToElementMatrix,'like',prepared.Tx.Waveform);
+            samples=prepared.Tx.Waveform*projection.';
             node=obj.Nodes(string({obj.Nodes.ID})==tx);
             assert(size(samples,2)==node.NumAntennas && ...
                 size(samples,2)==prepared.NumPhysicalTransmitAntennas && ...
@@ -407,6 +408,9 @@ classdef CoupledWaveformStream < handle
             % active contribution sample. Merely preparing/enqueueing IQ
             % must not count a transmitted TB or advance HARQ state.
             context.TransmissionIdentity=identity;
+            % Retain the exact applied mapping, including its execution
+            % precision. Rebuilding an array later is not applied evidence.
+            context.WaveformToElementMatrix=projection;
             context.FirstActiveSample=firstActive;
             context.Prepared=prepared;
             boundary=id+"_tx_committed";
@@ -674,7 +678,8 @@ classdef CoupledWaveformStream < handle
                             obj.DataTransmissions(end+1)=struct( ...
                                 'Identity',d.Context.TransmissionIdentity, ...
                                 'FirstActiveSample',d.Context.FirstActiveSample, ...
-                                'CommittedAtSample',obj.Events.NextSampleIndex);
+                                'CommittedAtSample',obj.Events.NextSampleIndex, ...
+                                'WaveformToElementMatrix',d.Context.WaveformToElementMatrix);
                         end
                         completed(end+1)=struct('Kind',d.Kind,'UE',d.UE,'Context',d.Context,'Planes',struct([])); %#ok<AGROW>
                     end

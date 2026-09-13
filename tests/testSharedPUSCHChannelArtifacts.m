@@ -214,7 +214,9 @@ function state=localEvents(state,items)
 owner=state.SharedWaveformStream;
 for item=items
     if item.Kind=="DataTX"
-        state=sixgr.truth.commitSharedDataTransmission(state,item); continue;
+        state=sixgr.truth.commitSharedDataTransmission(state,item);
+        localVerifyAppliedULWeights(state,item);
+        continue;
     end
     c=item.Context; p=c.Prepared;
     if any(item.Kind==["PBCH","SSBOccasion"])
@@ -486,6 +488,34 @@ for item=items
         error('test:UnexpectedSharedEvent','Unexpected event %s.',item.Kind);
     end
 end
+end
+
+function localVerifyAppliedULWeights(state,item)
+% Compare exported weights with actual mapped symbols, not a PMI label.
+p=item.Context.Prepared;
+assert(p.Direction=="UL");
+records=state.SharedWaveformStream.DataTransmissions;
+id=item.Context.TransmissionIdentity.TransmissionID;
+hit=arrayfun(@(r)r.Identity.TransmissionID==id,records);
+assert(nnz(hit)==1);
+projection=records(hit).WaveformToElementMatrix;
+W=double(projection)*double(p.Tx.PrecodeInfo.MatrixPorts);
+assert(size(W,1)==p.NumPhysicalTransmitAntennas);
+actual=double(p.Tx.PUSCHWaveformSymbols)*double(projection).';
+fromLayers=double(p.Tx.PUSCHLayerSymbols)*W.';
+assert(isequal(size(actual),size(fromLayers)) && ...
+    norm(actual-fromLayers,'fro')<=1e-10*max(1,norm(actual,'fro')), ...
+    'Exported physical weights must reproduce the actually mapped PUSCH data symbols.');
+if ~logical(sixgr.util.structGet(p.ReceiverConfig,'outputs.antennaPatternSamplesEnabled',false)), return; end
+r=state.AppliedDataPrecoderWeights;
+r=r(r.TransmissionID==id,:);
+assert(height(r)==numel(W) && all(r.MatrixSHA256==sixgr.phy.mimo.MatrixContract.digest(W)));
+retained=complex(zeros(size(W)));
+for j=1:height(r)
+    retained(r.ElementIndex0(j)+1,r.LayerIndex0(j)+1)= ...
+        complex(str2double(r.WeightReal(j)),str2double(r.WeightImag(j)));
+end
+assert(isequal(retained,W),'Decimal CSV weights must retain the actual composed matrix exactly.');
 end
 
 function state=localReceivedDLReservations(state,cfg,dueSlot)

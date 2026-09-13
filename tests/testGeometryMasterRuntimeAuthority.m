@@ -82,6 +82,19 @@ assert(isequal(double(probeBudget.SymbolAllocation), [3 10]) && ...
     "Changed YAML-derived PDSCH allocation was replaced by a runtime literal.");
 
 probeState.CurrentSlotDLNumSymbols = 10;
+alternative = sixgr.truth.CoupledTruthRuntime.configuredSlotBudgetRuntime(probeState);
+catalog = cfgProbe.phy.pdsch.timeDomainAllocations;
+eligible = catalog(:,2)>=0 & catalog(:,2)+catalog(:,3)<=10 & catalog(:,4)==0;
+firstLegal = find(eligible,1,'first');
+assert(~isempty(firstLegal) && alternative.NPRB==numel(7:16) && ...
+    isequal(double(alternative.PRBSet),7:16) && ...
+    isequal(double(alternative.SymbolAllocation),double(catalog(firstLegal,2:3))) && ...
+    alternative.TDRAIndex==catalog(firstLegal,1) && alternative.TDRASlotOffset==0, ...
+    'An unavailable preferred TDRA must select an authored legal row without clipping or changing K0.');
+% Now make every authored row unavailable, retaining the original fail-closed
+% assertion. The previous fixture left several legal catalog rows installed.
+probeState.CfgMobility.phy.pdsch.timeDomainAllocations = [0 3 10 0];
+probeState.CfgMobility.phy.pdsch.TimeDomainAllocations = [0 3 10 0];
 unavailable = sixgr.truth.CoupledTruthRuntime.configuredSlotBudgetRuntime(probeState);
 assert(double(unavailable.NPRB) == 0 && isempty(unavailable.PRBSet), ...
     "An unavailable configured TDRA must not be shifted into the TDD partition.");
