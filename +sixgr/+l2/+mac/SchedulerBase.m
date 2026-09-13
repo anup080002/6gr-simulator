@@ -54,6 +54,11 @@ classdef (Abstract) SchedulerBase < handle
         HARQ = []                    % optional sixgr.l2.mac.HARQEntity
     end
 
+    properties(SetAccess=private)
+        % Execution ownership, not a scenario policy or per-row bypass.
+        HARQFeedbackOwner (1,1) string = "scheduler"
+    end
+
     properties(SetAccess=protected)
         Carrier = []                 % nrCarrierConfig (optional helper)
         SlotDuration_s (1,1) double = NaN
@@ -120,6 +125,12 @@ classdef (Abstract) SchedulerBase < handle
                             obj.Logger = val;
                         case 'harq'
                             obj.HARQ = val;
+                        case 'harqfeedbackowner'
+                            owner = string(val);
+                            assert(isscalar(owner) && any(owner == ["scheduler","coupled_runtime"]), ...
+                                'sixgr:SchedulerBase:InvalidHARQFeedbackOwner', ...
+                                'HARQ feedback must have one explicit scheduler or coupled-runtime owner.');
+                            obj.HARQFeedbackOwner = owner;
                     end
                 end
             end
@@ -305,21 +316,25 @@ classdef (Abstract) SchedulerBase < handle
                 rnti = double(rntiList(k));
                 tbsBits = double(tbsList(k));
                 ack = logical(ackList(k));
+                if ~isempty(obj.HARQ) && obj.HARQFeedbackOwner == "scheduler"
+                    harqId = double(harqIdList(k));
+                    if isfinite(harqId)
+                        if isfinite(double(sourceSlotList(k)))
+                            applied = obj.HARQ.onFeedback(rnti, harqId, outcomeList(k), "SourceSlot", double(sourceSlotList(k)));
+                        else
+                            applied = obj.HARQ.onFeedback(rnti, harqId, outcomeList(k));
+                        end
+                        if ~applied, continue; end
+                    end
+                end
+                % The coupled runtime calls this only after its HARQ entity
+                % accepted feedback; never invoke that shared entity twice.
+                % Scheduler-owned stale feedback was rejected above.
                 obj.updateAvgThroughput(rnti, tbsBits, ack);
                 if any(outcomeList(k)==["ACK","NACK"]) && ...
                         ~localOLLAIsExternallyManaged(ollaAuthorityList(k)) && ...
                         localFeedbackEligibleForOLLA(isRetxKnownList(k), isRetxList(k), rvList(k))
                     obj.updateOLLADelta(rnti, ack);
-                end
-                if ~isempty(obj.HARQ)
-                    harqId = double(harqIdList(k));
-                    if isfinite(harqId)
-                        if isfinite(double(sourceSlotList(k)))
-                            obj.HARQ.onFeedback(rnti, harqId, outcomeList(k), "SourceSlot", double(sourceSlotList(k)));
-                        else
-                            obj.HARQ.onFeedback(rnti, harqId, outcomeList(k));
-                        end
-                    end
                 end
             end
         end

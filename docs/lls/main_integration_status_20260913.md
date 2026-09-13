@@ -4,6 +4,15 @@ This supersedes current-status statements in the earlier candidate/handoff
 notes. Historical evidence and patches are preserved, not rewritten.
 The 12 dB baseline is **not yet qualified**.
 
+Latest repair: [HARQ disposition and single feedback owner](harq_feedback_disposition_20260913.md).
+The final repair sources passed ten focused tests, including actual shared
+waveform fixtures; the earlier eighteen-test NR/export/E2E batch predates the
+scheduler ownership change and is not final-source qualification. Mandatory
+final-source guards and full testAll remain pending. The first server handoff
+was published to GitHub main at ef053a47; this descendant is the next
+development-testing handoff, not a 12 dB release. Both existing full suites
+remain on their frozen older revisions; no live checkout is updated.
+
 Latest server handoff: [Windows testAll and log bundles](server_testall_handoff_20260913.md)
 and [actual gNB receive-only integration](gnb_receive_only_integration_20260913.md).
 The consolidated `2faf8d91` guard batch finished with **12 passes, exit 0**;

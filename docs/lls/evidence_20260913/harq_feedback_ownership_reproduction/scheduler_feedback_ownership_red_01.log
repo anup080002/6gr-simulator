@@ -1,0 +1,7 @@
+{Error using assert
+One accepted feedback must not create a second stale HARQ callback.
+
+Error in testSchedulerHARQFeedbackOwnership (line 31)
+                assert(h.Stats.StaleFeedbackIgnored==0, ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-13T09:49:26.4035469Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "C:/Program Files/MATLAB/R2026a/bin/matlab.exe",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testHARQFeedbackDisposition",
+    "testReceivedHARQFeedbackOutcome",
+    "testLLSPUSCHHARQACKRuntimeFeedback",
+    "testLLSULHARQDirectionalFeedback",
+    "testSharedPUCCHFeedbackClock",
+    "testSharedPUCCHReceiveOnlyClock"
+  ],
+  "allow_dirty": true,
+  "suite_pass": false,
+  "git_commit": "ef053a4714f9590bd062a4fc8049c2726535d40f",
+  "git_status_before": "M +sixgr/+l2/+mac/HARQEntity.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M tests/testAll.m\r\n M tests/testLLSPUSCHHARQACKRuntimeFeedback.m\r\n?? tests/FeedbackDispositionRecorder.m\r\n?? tests/testHARQFeedbackDisposition.m",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260913T094926370Z_71ea502a',false,{'testHARQFeedbackDisposition','testReceivedHARQFeedbackOutcome','testLLSPUSCHHARQACKRuntimeFeedback','testLLSULHARQDirectionalFeedback','testSharedPUCCHFeedbackClock','testSharedPUCCHReceiveOnlyClock'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "M +sixgr/+l2/+mac/HARQEntity.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M tests/testAll.m\r\n M tests/testLLSPUSCHHARQACKRuntimeFeedback.m\r\n?? tests/FeedbackDispositionRecorder.m\r\n?? tests/testHARQFeedbackDisposition.m",
+  "git_commit_after": "ef053a4714f9590bd062a4fc8049c2726535d40f",
+  "finished_utc": "2026-09-13T09:55:36.9778264Z",
+  "launcher_exit_code": 0
+}

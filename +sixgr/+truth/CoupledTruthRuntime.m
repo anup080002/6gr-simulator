@@ -1173,8 +1173,10 @@ methods(Static)
         end
         for k=1:numel(rows)
             row=rows(k); pid=row.HarqID+1; process=processes{k};
-            state.DLHarq.onFeedback(row.RNTI,row.HarqID,row.FeedbackOutcome, ...
+            applied=state.DLHarq.onFeedback(row.RNTI,row.HarqID,row.FeedbackOutcome, ...
                 'SourceSlot',row.SourceSlot,'FeedbackSlot',c.Slot);
+            assert(applied==~row.StaleFeedbackIgnored,'sixgr:truth:HARQDispositionMismatch', ...
+                'The entity disposition must agree with the scheduled process snapshot.');
             if row.StaleFeedbackIgnored, continue; end
             if row.ObservedAck && item.UE<=size(state.DLCombinedLLR,1) && pid<=size(state.DLCombinedLLR,2)
                 state.DLCombinedLLR{item.UE,pid}=[];
@@ -1238,6 +1240,12 @@ methods(Static)
         % Public boundary for focused directional-HARQ regression tests.
         state = sixgr.truth.CoupledTruthRuntime.applyDecodedULHARQOutcome( ...
             state, feedbackRow);
+    end
+
+    function state = applyObservedPUCCHFeedbackRuntime(state, rows, observed)
+        % Reducer boundary: observed bits remain receiver evidence. This
+        % method does not create a transmission or qualify its bit mapping.
+        state=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedback(state,rows,observed);
     end
 
     function state = schedulePUCCHGrantRuntime(state, feedbackRow)
@@ -4646,11 +4654,11 @@ methods(Static, Access=private)
                 if any(schedulerName == ["pf", "proportional_fair", "proportionalfair"])
                     cells{cellId} = sixgr.l2.mac.SchedulerPF(cfg, ...
                         "Direction", upper(char(string(direction))), ...
-                        "HARQ", harqEntity);
+                        "HARQ", harqEntity, "HARQFeedbackOwner", "coupled_runtime");
                 elseif any(schedulerName == ["rr", "round_robin", "roundrobin"])
                     cells{cellId} = sixgr.l2.mac.SchedulerRR(cfg, ...
                         "Direction", upper(char(string(direction))), ...
-                        "HARQ", harqEntity);
+                        "HARQ", harqEntity, "HARQFeedbackOwner", "coupled_runtime");
                 else
                     error("sixgr:truth:CoupledTruthRuntime:UnsupportedScheduler", ...
                         "Configured scheduler '%s' is unsupported by coupled truth. " + ...
@@ -8945,10 +8953,12 @@ methods(Static, Access=private)
             feedbackRow, "HarqID", NaN));
         ack = logical(sixgr.truth.CoupledTruthRuntime.rowLogical( ...
             feedbackRow, "Ack", false));
-        state.ULHarq.onFeedback(rnti, harqId0, ack, ...
+        applied=state.ULHarq.onFeedback(rnti, harqId0, ack, ...
             "SourceSlot", sourceSlot, "FeedbackSlot", dueSlot);
-        state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback( ...
-            state, feedbackRow, "UL");
+        if applied
+            state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback( ...
+                state, feedbackRow, "UL");
+        end
     end
 
     function grant = applyMeasuredFeedbackAMCToGrant(grant, feedback, scheduler, cfg, direction)
@@ -12835,7 +12845,12 @@ methods(Static, Access=private)
         multiplexed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MultiplexedOnPUSCH", false(n, 1)));
         runtimeStateUpdated = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "RuntimeStateUpdated", false(n, 1)));
         puschUCIDecodeOk = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "PUSCHUCIDecodeOk", false(n, 1)));
-        transferred = multiplexed & runtimeStateUpdated;
+        staleFeedback = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+            T, "StaleFeedbackIgnored", NaN(n, 1))) == 1;
+        % A real received UCI result remains observed/finalized when the
+        % process-attempt guard rejects its feedback. Unknown rows (NaN)
+        % must not become observations through logical(NaN).
+        transferred = multiplexed & (runtimeStateUpdated | staleFeedback);
         observed = executed | transferred;
         decodeOk = (executed & standaloneDecodeOk) | (transferred & puschUCIDecodeOk);
         crashed = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Crash", false(n, 1)));
@@ -12868,6 +12883,7 @@ methods(Static, Access=private)
         isCSI = contains(uciType, "csi");
         gatingEffect = repmat("harq_feedback_resource_grant_and_state_update_when_due", n, 1);
         gatingEffect(isCSI) = "csi_report_decode_and_link_adaptation_update_when_due";
+        gatingEffect(observed & staleFeedback) = "stale_feedback_ignored_no_harq_or_adaptation_update";
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ControlGatingEffect", gatingEffect, true);
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeStateConsumer", "pending_feedback_due_slot", false);
         if any(observed)
@@ -12876,6 +12892,7 @@ methods(Static, Access=private)
             consumer(executed & isCSI) = "CoupledTruthRuntime.processDueFeedback.CSI";
             consumer(transferred & ~isCSI) = "HARQEntity.onFeedback_via_PUSCH_UCI";
             consumer(transferred & isCSI) = "CoupledTruthRuntime.applyDecodedPUSCHUCI.CSI";
+            consumer(observed & staleFeedback) = "HARQEntity.stale_feedback_guard";
             T.RuntimeStateConsumer = consumer;
         end
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeConsumer", string(T.RuntimeStateConsumer), true);
@@ -14366,10 +14383,10 @@ methods(Static, Access=private)
             else
                 feedbackOutcome = "DTX";
             end
-            harq.onFeedback(rnti, rowHarqId, feedbackOutcome, ...
+            applied=harq.onFeedback(rnti, rowHarqId, feedbackOutcome, ...
                 "SourceSlot", rowSourceSlot, "FeedbackSlot", currentSlot);
             pid = rowHarqId + 1;
-            if observedAck
+            if applied && observedAck
                 try
                     harq.clearSoftBuffer(rnti, rowHarqId);
                 catch
@@ -14383,8 +14400,10 @@ methods(Static, Access=private)
             feedbackForScheduler.Ack(1) = observedAck;
             feedbackForScheduler.FeedbackOutcome(1) = string(feedbackOutcome);
             feedbackForScheduler.Processed(1) = true;
-            state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback( ...
-                state, feedbackForScheduler, "DL");
+            if applied
+                state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback( ...
+                    state, feedbackForScheduler, "DL");
+            end
             pending.Processed(pendingIdx) = true;
 
             bitMatches = decodedVectorAvailable && ...
@@ -14404,15 +14423,19 @@ methods(Static, Access=private)
             traceT.BitsCompared(traceIdx) = 1;
             traceT.BitErrors(traceIdx) = double(~bitMatches);
             traceT.UCIContentMatch(traceIdx) = bitMatches;
-            traceT.RuntimeStateUpdated(traceIdx) = true;
+            traceT.RuntimeStateUpdated(traceIdx) = applied;
+            traceT = sixgr.truth.CoupledTruthRuntime.setHARQDispositionAt(traceT,traceIdx,applied,~applied);
             traceT.PUSCHUCITransmissionSlot(traceIdx)=transmissionSlot;
             traceT.PUSCHUCIDeliverySlot(traceIdx)=currentSlot;
             traceT.RuntimeStateConsumer(traceIdx) = "HARQEntity.onFeedback_from_PUSCH_UCI";
-            traceT.ControlStateChanged(traceIdx) = true;
-            traceT.StateChangeApplied(traceIdx) = true;
+            traceT.ControlStateChanged(traceIdx) = applied;
+            traceT.StateChangeApplied(traceIdx) = applied;
             traceT.Status(traceIdx) = sixgr.truth.CoupledTruthRuntime. ...
                 ternaryString(bitMatches, "PASS", "FAIL");
-            if decodedVectorAvailable
+            if ~applied
+                traceT.PUCCHGrantState(traceIdx) = "pusch_uci_stale_feedback_ignored";
+                traceT.Notes(traceIdx) = "Actual received UCI retained; stale process-attempt feedback did not update buffers or adaptation.";
+            elseif decodedVectorAvailable
                 traceT.PUCCHGrantState(traceIdx) = "pusch_uci_feedback_applied";
                 traceT.Notes(traceIdx) = "DL HARQ feedback consumed from the same-UE PUSCH receiver UCI output; no standalone PUCCH waveform executed.";
             else
@@ -15939,6 +15962,16 @@ methods(Static, Access=private)
     end
 
     function state=applyObservedPUCCHFeedback(state,rows,observedFeedback)
+                appliedCount=0; staleCount=0;
+                trials=sixgr.util.structGet(state,'ControlTrials.PUCCH',table());
+                occasion=string(sixgr.util.structGet(observedFeedback,'PhysicalOccasionId',""));
+                hit=[];
+                if ~isempty(trials) && strlength(occasion)>0 && ...
+                        ismember('PhysicalPUCCHOccasionId',trials.Properties.VariableNames)
+                    hit=find(string(trials.PhysicalPUCCHOccasionId)==occasion);
+                    assert(isscalar(hit),'sixgr:truth:AmbiguousPUCCHDispositionTrial', ...
+                        'One actual physical occasion must own its feedback disposition.');
+                end
                 harqMask=sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(rows);
                 for ci=find(~harqMask).'
                     csiObserved=observedFeedback;
@@ -15969,10 +16002,14 @@ methods(Static, Access=private)
                 end
                 dueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, ...
                     'DueSlot',sixgr.truth.CoupledTruthRuntime.rowValue(row,'ScheduledAbsoluteSlot',NaN)));
-                harq.onFeedback(double(row.RNTI), double(row.HarqID), bitObserved.FeedbackOutcome, ...
+                applied=harq.onFeedback(double(row.RNTI), double(row.HarqID), bitObserved.FeedbackOutcome, ...
                     "SourceSlot", double(row.SourceSlot), "FeedbackSlot", dueSlot);
+                bitObserved.HARQFeedbackApplied=applied;
+                bitObserved.StaleFeedbackIgnored=~applied;
+                appliedCount=appliedCount+double(applied);
+                staleCount=staleCount+double(~applied);
                 pid = double(row.HarqID) + 1;
-                if observedAck
+                if applied && observedAck
                     try
                         harq.clearSoftBuffer(double(row.RNTI), double(row.HarqID));
                     catch
@@ -15985,7 +16022,9 @@ methods(Static, Access=private)
                 rowAck.Ack(1) = observedAck;
                 rowAck.FeedbackOutcome(1) = bitObserved.FeedbackOutcome;
                 rowAck.Processed(1) = true;
-                state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state, rowAck, direction);
+                if applied
+                    state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state, rowAck, direction);
+                end
                 state = sixgr.truth.CoupledTruthRuntime.updatePUCCHGrantTraceAfterObservation(state, row, bitObserved);
                 state = sixgr.truth.CoupledTruthRuntime.markPendingFeedbackProcessedByGrantId(state, ...
                     sixgr.truth.CoupledTruthRuntime.rowValue(row, "PUCCHGrantId", ""));
@@ -15996,6 +16035,22 @@ methods(Static, Access=private)
                     state.DLHarq = harq;
                     state.DLCombinedLLR = buffers;
                 end
+                end
+                % A physical trial may contain several HARQ bits. Publish
+                % accepted/stale counts without relabeling its decode result.
+                if ~isempty(hit)
+                    for name=["HARQFeedbackAppliedCount","StaleHARQFeedbackCount"]
+                        if ~ismember(name,string(trials.Properties.VariableNames))
+                            trials.(name)=NaN(height(trials),1);
+                        end
+                    end
+                    trials.HARQFeedbackAppliedCount(hit)=appliedCount;
+                    trials.StaleHARQFeedbackCount(hit)=staleCount;
+                    changed=appliedCount>0 || logical(sixgr.util.structGet(observedFeedback,'CSIDecodeOk',false));
+                    trials.RuntimeStateUpdated(hit)=changed;
+                    trials.ControlStateChanged(hit)=changed;
+                    trials.StateChangeApplied(hit)=changed;
+                    state.ControlTrials.PUCCH=trials;
                 end
     end
 
@@ -17056,7 +17111,10 @@ methods(Static, Access=private)
         traceT.CurrentDecodeOK(idx) = decodeOk;
         traceT.CombinedDecodeOK(idx) = decodeOk;
         traceT.GrantExecutedFlag(idx) = true;
-        traceT.RuntimeStateUpdated(idx) = true;
+        applied=logical(sixgr.util.structGet(observed,'HARQFeedbackApplied',false));
+        stale=logical(sixgr.util.structGet(observed,'StaleFeedbackIgnored',false));
+        traceT=sixgr.truth.CoupledTruthRuntime.setHARQDispositionAt(traceT,idx,applied,stale);
+        traceT.RuntimeStateUpdated(idx) = ~stale;
         uciType = lower(strtrim(string(sixgr.truth.CoupledTruthRuntime. ...
             rowValue(grantRow, "UCIType", "harq_ack"))));
         stateConsumer = "HARQEntity.onFeedback";
@@ -17065,9 +17123,12 @@ methods(Static, Access=private)
         end
         traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
             traceT, "RuntimeStateConsumer", idx, stateConsumer);
-        traceT.ControlStateChanged(idx) = decodeOk;
-        traceT.StateChangeApplied(idx) = decodeOk;
-        if decodeOk
+        changed=~stale && (applied || decodeOk);
+        traceT.ControlStateChanged(idx) = changed;
+        traceT.StateChangeApplied(idx) = changed;
+        if stale
+            traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "PUCCHGrantState", idx, "waveform_observed_stale_feedback_ignored");
+        elseif decodeOk
             traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "PUCCHGrantState", idx, "waveform_observed_feedback_applied");
         else
             traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt(traceT, "PUCCHGrantState", idx, "waveform_observed_feedback_decode_failed");
@@ -17147,6 +17208,17 @@ methods(Static, Access=private)
             end
         end
         state.PUCCHGrantTraceTable = traceT;
+    end
+
+    function traceT = setHARQDispositionAt(traceT,idx,applied,stale)
+        % Unknown/unprocessed rows must not acquire a fabricated disposition.
+        for name=["HARQFeedbackApplied","StaleFeedbackIgnored"]
+            if ~ismember(name,string(traceT.Properties.VariableNames))
+                traceT.(name)=NaN(height(traceT),1);
+            end
+        end
+        traceT.HARQFeedbackApplied(idx)=double(applied);
+        traceT.StaleFeedbackIgnored(idx)=double(stale);
     end
 
     function state = markPendingFeedbackProcessedByGrantId(state, grantId)

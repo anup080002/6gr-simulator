@@ -1,0 +1,11 @@
+name,ok,msg,duration_s
+testSchedulerHARQFeedbackOwnership,1,,29.9123344
+testHARQFeedbackDisposition,1,,1.9790585
+testCoupledTruthOLLARetransmissionExclusion,1,,7.0426938
+testSchedulerHARQStateUnblockAndLineage,1,,56.049207
+testLLSPUSCHHARQACKRuntimeFeedback,1,,41.4069171
+testLLSULHARQDirectionalFeedback,1,,0.3806387
+testSharedPUCCHFeedbackClock,1,,123.029633
+testSharedPUCCHReceiveOnlyClock,1,,95.9470897
+testReceivedHARQFeedbackOutcome,1,,17.1261453
+testSchedulerGrantConsistency,1,,12.5758525

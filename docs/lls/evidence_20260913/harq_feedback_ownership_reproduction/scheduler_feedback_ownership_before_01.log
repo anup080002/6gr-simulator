@@ -1,0 +1,3 @@
+DECLARED_MAC_REPRO accepted=1 stale_before=0 stale_after=1 scheduler_updates=1
+DECLARED_STANDALONE_STALE_REPRO stale=1 scheduler_updates=1
+KNOWN_DEFECTS_REPRODUCED_NOT_PASS

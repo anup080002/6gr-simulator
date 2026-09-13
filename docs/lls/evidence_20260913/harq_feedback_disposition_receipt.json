@@ -1,0 +1,315 @@
+{
+  "schema_version": 1,
+  "base_commit": "ef053a4714f9590bd062a4fc8049c2726535d40f",
+  "status": "focused_passed_not_full_suite_or_12db",
+  "baseline_12db_qualified": false,
+  "source_identity_note": "Raw SHA-256 binds the tested local bytes. Git blob IDs bind repository-normalized text across CRLF/LF checkouts. Unchanged files inherit base_commit. Each dirty diagnostic batch was frozen; these reports do not certify a clean full-suite revision.",
+  "batches": [
+    {
+      "archive": "harq_feedback_disposition_01",
+      "scope": "focused_tests",
+      "count": 6,
+      "exit_code": 0,
+      "sources": [
+        {
+          "path": "+sixgr/+l2/+mac/HARQEntity.m",
+          "sha256": "b8783be806d6677fcae4f8fd2f22d2ffac37ff8bb3431fd5d8833f2361549804",
+          "git_blob": "0089be89c00d830bfb232f5f10ef170a38d836db"
+        },
+        {
+          "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+          "sha256": "6db126a90d0bbc011588d55381bffc7525db1108c48a7731f856be62e60d75f1",
+          "git_blob": "7578c156b4b2a8e7150830db763beb2f1440d78a"
+        },
+        {
+          "path": "tests/testAll.m",
+          "sha256": "ee881b41f09262e2728fc3f044a71b7d0c931376720404996501a5014d5d19db",
+          "git_blob": "c04d1a89a701996106a6af53a19df2a529bd7419"
+        },
+        {
+          "path": "tests/testLLSPUSCHHARQACKRuntimeFeedback.m",
+          "sha256": "11c2305f2a6c00ee4af3f9e5ae433e999131647de22730d54a12772dc6d1eb5d",
+          "git_blob": "10227e89314c7cc891f87ab076e5eb7e3a8ae99b"
+        },
+        {
+          "path": "tests/testHARQFeedbackDisposition.m",
+          "sha256": "e55576f3ae697a7b8a5b14e49a2a50ee7577ff31d62dc7b701dc9d25877988ff",
+          "git_blob": "17d34fce96b539179e283e5a21e42a582e47fddf"
+        },
+        {
+          "path": "tests/FeedbackDispositionRecorder.m",
+          "sha256": "f800fbb14eb0fba8eb184bcd26f4b12d902d73736740443a4e0602c84e478a91",
+          "git_blob": "98208d540ea2f1a20b01d1da1316c566eb02577d"
+        }
+      ],
+      "limitation": "Precedes canonical stale-observation export and scheduler ownership repair."
+    },
+    {
+      "archive": "harq_feedback_disposition_02",
+      "scope": "focused_tests",
+      "count": 18,
+      "exit_code": 0,
+      "sources": [
+        {
+          "path": "+sixgr/+l2/+mac/HARQEntity.m",
+          "sha256": "b8783be806d6677fcae4f8fd2f22d2ffac37ff8bb3431fd5d8833f2361549804",
+          "git_blob": "0089be89c00d830bfb232f5f10ef170a38d836db"
+        },
+        {
+          "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+          "sha256": "6304f2c8a1fedf4bd2d30eafcf28d0154781b00ac38ec37d89468fa29b818098",
+          "git_blob": "146e7e6c7f7741c2f4014dc8beee356e59c41252"
+        },
+        {
+          "path": "tests/testAll.m",
+          "sha256": "ee881b41f09262e2728fc3f044a71b7d0c931376720404996501a5014d5d19db",
+          "git_blob": "c04d1a89a701996106a6af53a19df2a529bd7419"
+        },
+        {
+          "path": "tests/testLLSPUSCHHARQACKRuntimeFeedback.m",
+          "sha256": "bfb93b59b04670bd8077e6036bdb54725baec3fa14b671e97b3d9d004152a640",
+          "git_blob": "606d71c8917d61dbf15b8d215a7e6d198d548db9"
+        },
+        {
+          "path": "tests/testHARQFeedbackDisposition.m",
+          "sha256": "e55576f3ae697a7b8a5b14e49a2a50ee7577ff31d62dc7b701dc9d25877988ff",
+          "git_blob": "17d34fce96b539179e283e5a21e42a582e47fddf"
+        },
+        {
+          "path": "tests/FeedbackDispositionRecorder.m",
+          "sha256": "f800fbb14eb0fba8eb184bcd26f4b12d902d73736740443a4e0602c84e478a91",
+          "git_blob": "98208d540ea2f1a20b01d1da1316c566eb02577d"
+        }
+      ],
+      "limitation": "Includes required NR/export/E2E guards but precedes SchedulerBase feedback-ownership repair; not validation of final source."
+    },
+    {
+      "archive": "harq_feedback_ownership_03",
+      "scope": "focused_tests",
+      "count": 10,
+      "exit_code": 0,
+      "sources": [
+        {
+          "path": "+sixgr/+l2/+mac/HARQEntity.m",
+          "sha256": "b8783be806d6677fcae4f8fd2f22d2ffac37ff8bb3431fd5d8833f2361549804",
+          "git_blob": "0089be89c00d830bfb232f5f10ef170a38d836db"
+        },
+        {
+          "path": "+sixgr/+l2/+mac/SchedulerBase.m",
+          "sha256": "02bba20c0367632da7c40f7bd9e540b619474792231d13b26b08a4b40ff6bf76",
+          "git_blob": "2bd88f1b153aec50d5566b6d1615e4442e92b097"
+        },
+        {
+          "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+          "sha256": "40730fb2b114bab8ca91d6ee927407a597487b9adc3539c234b5b0465d823279",
+          "git_blob": "0c4cf91a2080627694642a67dfa18f3603e69efc"
+        },
+        {
+          "path": "tests/testAll.m",
+          "sha256": "ba5c84679ed5d11a99f44bff16d7c079f0958e022615f044ead2fbb8e8889692",
+          "git_blob": "085f5b0e68da7a2f41b62dcc0dbcb93f8e3495f1"
+        },
+        {
+          "path": "tests/testLLSPUSCHHARQACKRuntimeFeedback.m",
+          "sha256": "bfb93b59b04670bd8077e6036bdb54725baec3fa14b671e97b3d9d004152a640",
+          "git_blob": "606d71c8917d61dbf15b8d215a7e6d198d548db9"
+        },
+        {
+          "path": "tests/testHARQFeedbackDisposition.m",
+          "sha256": "e55576f3ae697a7b8a5b14e49a2a50ee7577ff31d62dc7b701dc9d25877988ff",
+          "git_blob": "17d34fce96b539179e283e5a21e42a582e47fddf"
+        },
+        {
+          "path": "tests/FeedbackDispositionRecorder.m",
+          "sha256": "f800fbb14eb0fba8eb184bcd26f4b12d902d73736740443a4e0602c84e478a91",
+          "git_blob": "98208d540ea2f1a20b01d1da1316c566eb02577d"
+        },
+        {
+          "path": "tests/testSchedulerHARQFeedbackOwnership.m",
+          "sha256": "378caabe1eb2b97aa15a39259ca8dbe13305963245286ee4926c61d849817375",
+          "git_blob": "d446b006299e7d1b79ac940bdf30f6330dc2cea4"
+        }
+      ],
+      "limitation": "Final source focused checks only. Mandatory broader guard batch and full testAll remain pending."
+    }
+  ],
+  "reproduction": {
+    "before_script_exit_code": 0,
+    "before_script_meaning": "Known defects reproduced, not a correctness pass.",
+    "red_test_exit_code": 1,
+    "red_identifier": "test:DuplicateHARQCallback",
+    "red_source": "harq_feedback_ownership_reproduction/scheduler_feedback_ownership_red_01_test.m.txt",
+    "final_test_difference": "The final test adds three explicit AMC/baseline configuration lines so its OLLA assertions exercise enabled adaptation; the originally failing duplicate-callback assertion is unchanged."
+  },
+  "artifacts": [
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/environment.json",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/environment.json",
+      "sha256": "bc90920a3202b74df6f69e582a7fb2ec7e0914efe35956694d68a21795615257",
+      "bytes": 12073
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/failures.csv",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/failures.csv",
+      "sha256": "fb1f5a0dc9284db615b1ee2420ae7ece1f43b2a3f82eb2ef83b971d92b4d4033",
+      "bytes": 24
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/launcher.json",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/launcher.json",
+      "sha256": "938c92c0bf93215f86c65a863ada9d4aabaa87b65b05fc9b6c2f7344f0fdccce",
+      "bytes": 1934
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/matlab.log",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/matlab.log",
+      "sha256": "8fbc4a526a29f7abfbd7973919c2e38a93cb3f3cff884b098844f300b72d587c",
+      "bytes": 8037
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/summary.json",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/summary.json",
+      "sha256": "b097b64899752cd604e32379b6bdecea81f1315ee30a2643b7e6c274238ddb9e",
+      "bytes": 553
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/test_report.json",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/test_report.json",
+      "sha256": "4a5188ddd54e48462b75bc12e3126cd79102f3c2a8dc2026c1c5f21d02c9a62e",
+      "bytes": 788
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/test_report.mat",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/test_report.mat",
+      "sha256": "ccda20c05f49f72f787e4984d85875ec8f1c095cb8f686ba1d6aca4108dffbd2",
+      "bytes": 923
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_01/tests.csv",
+      "source": "logs/testall_20260913T094926370Z_71ea502a/tests.csv",
+      "sha256": "99b4c42f9041e7cc2be0125d55bc967b5de2d7ee5b7b04770c67f53786048e99",
+      "bytes": 303
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/environment.json",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/environment.json",
+      "sha256": "bc90920a3202b74df6f69e582a7fb2ec7e0914efe35956694d68a21795615257",
+      "bytes": 12073
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/failures.csv",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/failures.csv",
+      "sha256": "fb1f5a0dc9284db615b1ee2420ae7ece1f43b2a3f82eb2ef83b971d92b4d4033",
+      "bytes": 24
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/launcher.json",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/launcher.json",
+      "sha256": "13f3bda63caf03d468d5c4f5a273121de9ef9f8adb1c82804cd53dd9718bd1ce",
+      "bytes": 2636
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/matlab.log",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/matlab.log",
+      "sha256": "deb84da2fabd3b0dc7e05f16717dc085b3779744075ed556ca2c4ffe8cb69e43",
+      "bytes": 104158
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/summary.json",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/summary.json",
+      "sha256": "0449b3040690a0f5217c4ca15a27c037244b7673978823c8cbf2706f325b409a",
+      "bytes": 870
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/test_report.json",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/test_report.json",
+      "sha256": "f7dcf49068ca9462e6dac366ce05978d6ca56314ed3708597d6e9b46d4ec7e23",
+      "bytes": 2045
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/test_report.mat",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/test_report.mat",
+      "sha256": "99ba6c468e66af734a82119154d71fd902b2949812ab218d3f0289e72e87f5de",
+      "bytes": 1518
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_disposition_02/tests.csv",
+      "source": "logs/testall_20260913T095611325Z_72d3de52/tests.csv",
+      "sha256": "60c86a03f43a7d5f039fef0d455381bbabd7e5b9b35de16d1f1f5aaf37b86f97",
+      "bytes": 776
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/environment.json",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/environment.json",
+      "sha256": "bc90920a3202b74df6f69e582a7fb2ec7e0914efe35956694d68a21795615257",
+      "bytes": 12073
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/failures.csv",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/failures.csv",
+      "sha256": "fb1f5a0dc9284db615b1ee2420ae7ece1f43b2a3f82eb2ef83b971d92b4d4033",
+      "bytes": 24
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/launcher.json",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/launcher.json",
+      "sha256": "de602369acd30ea1aae55ca9e5ebb719054dcd66c147296eda4912f14d1f7fcb",
+      "bytes": 2446
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/matlab.log",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/matlab.log",
+      "sha256": "e593d973d055a846e8fccf92bb842a2e20f2054499b4de3c5cb113a79ce4ff8c",
+      "bytes": 8681
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/summary.json",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/summary.json",
+      "sha256": "1a08670c6ae9775e6d7093d179956d82c9765d802a4713bfb6f4b29675e4dac8",
+      "bytes": 711
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/test_report.json",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/test_report.json",
+      "sha256": "f1ecd877c8ca83f7dc600cb2bdb5e138260dbd86a025375b7b32edbb6f371606",
+      "bytes": 1306
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/test_report.mat",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/test_report.mat",
+      "sha256": "83f73dca3a922a76dd4c9314f03e760be19544cdd521d74623b755018a310ea9",
+      "bytes": 1161
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_03/tests.csv",
+      "source": "logs/testall_20260913T104409043Z_b7c5c527/tests.csv",
+      "sha256": "8a3f948d88694e9c20296aae642c451833a975fb2e34e674540602396027af50",
+      "bytes": 508
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_reproduction/scheduler_feedback_ownership_before_01.log",
+      "source": "logs/scheduler_feedback_ownership_before_01.log",
+      "sha256": "811d5854f1d63e869c4052db2e974e07594e0a2b39dab5f53c7faf986184463e",
+      "bytes": 173
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_reproduction/scheduler_feedback_ownership_red_01.log",
+      "source": "logs/scheduler_feedback_ownership_red_01.log",
+      "sha256": "2b3be92dbcc2eb0096dd7d91a3da512e7c21a3563efed6e49f21e536367da3f1",
+      "bytes": 268
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_reproduction/scheduler_feedback_ownership_red_01_test.m.txt",
+      "source": "logs/scheduler_feedback_ownership_red_01_test.m",
+      "sha256": "9d2c26fe8e8ce8c6875ff5e9ebe585dea8d087b3777de7edaa09f7f8e9baeb37",
+      "bytes": 5858
+    },
+    {
+      "path": "docs/lls/evidence_20260913/harq_feedback_ownership_reproduction/harq_disposition_01.log",
+      "source": "logs/harq_disposition_01.log",
+      "sha256": "e905234ee75cc76dcf6ef39d37762e2d8c753da0c4b1d6b52bcd712626b9629b",
+      "bytes": 59
+    }
+  ]
+}
+

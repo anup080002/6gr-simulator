@@ -20,6 +20,7 @@ rnti = 811;
 dueSlot = 5;
 harq = sixgr.l2.mac.HARQEntityDL(struct());
 feedbackRows = repmat(localFeedbackRow(), 2, 1);
+transmittedGrants=cell(2,1);
 for bitIdx = 1:2
     sourceSlot = bitIdx;
     txp = harq.allocate(rnti, sourceSlot, 8, "NewData", true);
@@ -35,6 +36,7 @@ for bitIdx = 1:2
         'RV',double(txp.HARQ.RV),'Modulation','QPSK','NumLayers',1, ...
         'RateMatchedBitCount',2*ceil((64+24)/.3/2));
     harq.onTx(rnti, harqId0, zeros(64, 1, "uint8"), grant, sourceSlot);
+    transmittedGrants{bitIdx}=grant;
 
     feedbackRows(bitIdx).Direction = "DL";
     feedbackRows(bitIdx).UEIndex = 1;
@@ -279,6 +281,42 @@ harqOut = struct( ...
 coded=nrUCIEncode(harqOut.DecodedHARQACKBits,480,'QPSK');
 [~,ackEvidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(50*(1-2*double(coded)),2,'QPSK');
 harqOut.UCIReceiverEvidence=struct('HARQACK',ackEvidence);
+% The same decoded short-code ACKs must not mutate newer process attempts.
+% This is a declared MAC/UCI decoder fixture, not a shared waveform run.
+staleState=state;
+staleHARQ=sixgr.l2.mac.HARQEntityDL(struct());
+for bitIdx=1:2
+    txp=staleHARQ.allocate(rnti,bitIdx+2,8,'NewData',true);
+    assert(txp.HARQ.HarqID==bitIdx-1);
+    staleHARQ.onTx(rnti,bitIdx-1,zeros(64,1,'uint8'),transmittedGrants{bitIdx},bitIdx+2);
+    staleHARQ.storeSoftBuffer(rnti,bitIdx-1,struct('LLRSum',ones(8,1),'ObservationWeight',1));
+end
+recorder=FeedbackDispositionRecorder();
+staleState.DLHarq=staleHARQ; staleState.DLSchedulers={recorder};
+staleState=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHHARQACKRuntime(staleState,harqOut);
+assert(staleHARQ.Stats.Ack==0 && staleHARQ.Stats.StaleFeedbackIgnored==2 && ...
+    isempty(recorder.Updates) && all(cellfun(@(x)isequal(x,ones(8,1)),staleState.DLCombinedLLR(1,1:2))));
+for pid=0:1
+    assert(~isempty(fieldnames(staleHARQ.getSoftBuffer(rnti,pid))));
+end
+staleTrace=staleState.PUCCHGrantTraceTable;
+assert(all(staleState.PendingFeedbackTable.Processed) && all(staleTrace.StaleFeedbackIgnored==1) && ...
+    ~any(staleTrace.HARQFeedbackApplied) && ~any(staleTrace.RuntimeStateUpdated) && ...
+    ~any(staleTrace.StateChangeApplied) && ~any(staleTrace.ControlStateChanged) && ...
+    all(staleTrace.PUCCHGrantState=="pusch_uci_stale_feedback_ignored"));
+canonicalStale=sixgr.truth.CoupledTruthRuntime.canonicalizePersistedPUCCHGrantTraceTable(staleTrace);
+assert(all(canonicalStale.ControlObservationAvailable) && all(canonicalStale.FinalizedFlag) && ...
+    ~any(canonicalStale.StateChangeApplied) && ~any(canonicalStale.RuntimeStateUpdated) && ...
+    all(canonicalStale.RuntimeMaterializationStatus=="active_integrated_pusch_uci_feedback_runtime") && ...
+    all(canonicalStale.RuntimeStateConsumer=="HARQEntity.stale_feedback_guard") && ...
+    all(canonicalStale.ValueSource=="runtime_pusch_uci_feedback_trace") && ...
+    ~canonicalStale.FalseAck(1) && canonicalStale.FalseAck(2), ...
+    'Stale received UCI stays observed/finalized with scoring intact, not pending or state-applied.');
+unknown=staleTrace;
+unknown.HARQFeedbackApplied(:)=NaN; unknown.StaleFeedbackIgnored(:)=NaN;
+unknown=sixgr.truth.CoupledTruthRuntime.canonicalizePersistedPUCCHGrantTraceTable(unknown);
+assert(~any(unknown.ControlObservationAvailable) && ~any(unknown.FinalizedFlag), ...
+    'An unknown disposition must not create a received observation.');
 state = sixgr.truth.CoupledTruthRuntime. ...
     applyDecodedPUSCHHARQACKRuntime(state, harqOut);
 assert(all(state.PendingFeedbackTable.Processed), ...

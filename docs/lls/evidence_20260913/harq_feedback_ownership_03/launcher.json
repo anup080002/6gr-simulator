@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-13T10:44:09.0756097Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "C:/Program Files/MATLAB/R2026a/bin/matlab.exe",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testSchedulerHARQFeedbackOwnership",
+    "testHARQFeedbackDisposition",
+    "testCoupledTruthOLLARetransmissionExclusion",
+    "testSchedulerHARQStateUnblockAndLineage",
+    "testLLSPUSCHHARQACKRuntimeFeedback",
+    "testLLSULHARQDirectionalFeedback",
+    "testSharedPUCCHFeedbackClock",
+    "testSharedPUCCHReceiveOnlyClock",
+    "testReceivedHARQFeedbackOutcome",
+    "testSchedulerGrantConsistency"
+  ],
+  "allow_dirty": true,
+  "suite_pass": false,
+  "git_commit": "ef053a4714f9590bd062a4fc8049c2726535d40f",
+  "git_status_before": "M +sixgr/+l2/+mac/HARQEntity.m\r\n M +sixgr/+l2/+mac/SchedulerBase.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M tests/testAll.m\r\n M tests/testLLSPUSCHHARQACKRuntimeFeedback.m\r\n?? tests/FeedbackDispositionRecorder.m\r\n?? tests/testHARQFeedbackDisposition.m\r\n?? tests/testSchedulerHARQFeedbackOwnership.m",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260913T104409043Z_b7c5c527',false,{'testSchedulerHARQFeedbackOwnership','testHARQFeedbackDisposition','testCoupledTruthOLLARetransmissionExclusion','testSchedulerHARQStateUnblockAndLineage','testLLSPUSCHHARQACKRuntimeFeedback','testLLSULHARQDirectionalFeedback','testSharedPUCCHFeedbackClock','testSharedPUCCHReceiveOnlyClock','testReceivedHARQFeedbackOutcome','testSchedulerGrantConsistency'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "M +sixgr/+l2/+mac/HARQEntity.m\r\n M +sixgr/+l2/+mac/SchedulerBase.m\r\n M +sixgr/+truth/CoupledTruthRuntime.m\r\n M tests/testAll.m\r\n M tests/testLLSPUSCHHARQACKRuntimeFeedback.m\r\n?? tests/FeedbackDispositionRecorder.m\r\n?? tests/testHARQFeedbackDisposition.m\r\n?? tests/testSchedulerHARQFeedbackOwnership.m",
+  "git_commit_after": "ef053a4714f9590bd062a4fc8049c2726535d40f",
+  "finished_utc": "2026-09-13T10:51:53.7617755Z",
+  "launcher_exit_code": 0
+}

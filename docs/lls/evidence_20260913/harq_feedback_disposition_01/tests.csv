@@ -1,0 +1,7 @@
+name,ok,msg,duration_s
+testHARQFeedbackDisposition,1,,13.1449618
+testReceivedHARQFeedbackOutcome,1,,20.3586467
+testLLSPUSCHHARQACKRuntimeFeedback,1,,59.7725659
+testLLSULHARQDirectionalFeedback,1,,0.4150418
+testSharedPUCCHFeedbackClock,1,,122.3379087
+testSharedPUCCHReceiveOnlyClock,1,,90.6432942

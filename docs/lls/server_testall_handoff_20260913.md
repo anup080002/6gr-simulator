@@ -2,6 +2,10 @@
 
 This is a development validation handoff, **not** a successful 12 dB release.
 Shared feedback/combined UCI and the full measurement closure remain open.
+The subsequent [HARQ ownership repair](harq_feedback_disposition_20260913.md)
+adds stale-feedback and duplicate-callback guards. Ten focused tests passed
+on that repair; full testAll and cross-MATLAB-version compatibility are still
+to be established on the selected checkout revision.
 The same-chain sweep already includes `[-30,-20,-10,0,10,12,20,30,40]`.
 Do not start that sweep until the local 12 dB scenario and its measurement
 audit are qualified; testAll alone is not that qualification.

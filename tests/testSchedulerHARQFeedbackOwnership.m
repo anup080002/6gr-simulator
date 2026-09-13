@@ -1,0 +1,117 @@
+function ok=testSchedulerHARQFeedbackOwnership()
+% Declared MAC feedback, real PF/RR and HARQ objects; no PHY/run qualification.
+setup6GRSimToolkit('Verbose',false);
+cfg=sixgr.config.defaultConfig();
+cfg.phy.linkAdaptation.mode="amc";
+cfg.phy.linkAdaptation.dlPolicy="baseline";
+cfg.phy.linkAdaptation.ulPolicy="baseline";
+cfg.phy.linkAdaptation.outerLoopFlag=true;
+cfg.phy.linkAdaptation.deltaMCSPolicy="olla";
+cfg.phy.linkAdaptation.ollaStepDown=.9;
+cfg.phy.linkAdaptation.ollaStepUp=.1;
+cfg.phy.linkAdaptation.ollaMarginMinDb=-10;
+cfg.phy.linkAdaptation.ollaMarginMaxDb=10;
+cfg.phy.linkAdaptation.targetBLER=.1;
+cases=0;
+for schedulerName=["PF","RR"]
+    cfg.mac.scheduler.type=schedulerName;
+    for direction=["DL","UL"]
+        for outcome=["ACK","NACK","DTX"]
+            % Coupled UL feedback is local CRC ACK/NACK, never UE PUCCH DTX.
+            if direction=="DL" || outcome~="DTX"
+                [h,row,soft]=localProcess(cfg,direction);
+                schedulers=sixgr.truth.CoupledTruthRuntime.createSchedulersRuntime(cfg,1,direction,h);
+                scheduler=schedulers{1};
+                state=struct('CfgMobility',struct(),'DLHarq',h,'ULHarq',h, ...
+                    'DLSchedulers',{schedulers},'ULSchedulers',{schedulers}, ...
+                    'DLCombinedLLR',{{soft.LLRSum}},'ULCombinedLLR',{{soft.LLRSum}}, ...
+                    'PUCCHGrantTraceTable',table(),'PendingFeedbackTable',table(), ...
+                    'ControlTrials',struct('PUCCH',table()));
+                observed=struct('DecodeOk',outcome~="DTX",'DTXFlag',outcome=="DTX", ...
+                    'DecodedBits',int8(outcome=="ACK"));
+                row.Ack=outcome=="ACK";
+                state=localApply(state,row,observed,direction);
+                assert(h.Stats.StaleFeedbackIgnored==0, ...
+                    'test:DuplicateHARQCallback','One accepted feedback must not create a second stale HARQ callback.');
+                assert(scheduler.HARQFeedbackOwner=="coupled_runtime");
+                localAssertAccepted(h,scheduler,outcome);
+                before=scheduler.getUEStats();
+                state=localApply(state,row,observed,direction);
+                assert(h.Stats.StaleFeedbackIgnored==1 && isequaln(before,scheduler.getUEStats()));
+                row.SourceSlot=1; row.DueSlot=2;
+                localApply(state,row,observed,direction);
+                assert(h.Stats.StaleFeedbackIgnored==2 && isequaln(before,scheduler.getUEStats()));
+                cases=cases+1;
+            end
+
+            % Standalone scheduler is the owner: reject stale feedback before
+            % changing PF throughput or local first-transmission OLLA.
+            [h,row,soft]=localProcess(cfg,direction);
+            constructor=str2func("sixgr.l2.mac.Scheduler"+schedulerName);
+            scheduler=constructor(cfg,'Direction',direction,'HARQ',h);
+            feedback=table2struct(row);
+            feedback.Outcome=outcome; feedback.Ack=outcome=="ACK";
+            feedback.SourceSlot=1;
+            before=scheduler.getUEStats();
+            scheduler.updateAfterRx(feedback);
+            assert(h.Stats.StaleFeedbackIgnored==1 && isequaln(before,scheduler.getUEStats()), ...
+                'test:StaleSchedulerMutation','Stale process feedback must not update scheduler statistics.');
+            assert(isequaln(h.getSoftBuffer(321,0),soft));
+            assert(scheduler.HARQFeedbackOwner=="scheduler");
+            feedback.SourceSlot=3;
+            % Cover both supported input representations.
+            if schedulerName=="RR", feedback=struct2table(feedback); end
+            scheduler.updateAfterRx(feedback);
+            localAssertAccepted(h,scheduler,outcome);
+            before=scheduler.getUEStats();
+            scheduler.updateAfterRx(feedback);
+            assert(h.Stats.StaleFeedbackIgnored==2 && isequaln(before,scheduler.getUEStats()));
+            cases=cases+1;
+        end
+    end
+end
+try
+    sixgr.l2.mac.SchedulerPF(cfg,'HARQFeedbackOwner','unknown');
+    error('test:ExpectedError','Unknown feedback owner must be rejected.');
+catch cause
+    assert(string(cause.identifier)=="sixgr:SchedulerBase:InvalidHARQFeedbackOwner");
+end
+ok=true;
+fprintf('SCHEDULER_HARQ_FEEDBACK_OWNERSHIP_PASS cases=%d declared_MAC_only=1\n',cases);
+end
+
+function state=localApply(state,row,observed,direction)
+if direction=="UL"
+    state=sixgr.truth.CoupledTruthRuntime.applyDecodedULHARQOutcomeRuntime(state,row);
+else
+    state=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedbackRuntime(state,row,observed);
+end
+end
+
+function localAssertAccepted(h,scheduler,outcome)
+assert(h.Stats.Ack==double(outcome=="ACK") && h.Stats.Nack==double(outcome=="NACK") && ...
+    h.Stats.Dtx==double(outcome=="DTX"));
+stats=scheduler.getUEStats();
+assert(isscalar(stats) && stats.NumScheduledSlots==1);
+[delta,count]=scheduler.getOLLAMCSDelta(321);
+expected=.1*double(outcome=="ACK")-.9*double(outcome=="NACK");
+assert(count==double(outcome~="DTX") && abs(delta-expected)<1e-12);
+end
+
+function [h,row,soft]=localProcess(cfg,direction)
+h=sixgr.l2.mac.HARQEntity(cfg,'Direction',direction);
+allocation=h.allocate(321,3,100,'NewData',true);
+assert(allocation.HARQ.HarqID==0);
+layout=sixgr.phy.phycode.resolveCodingLayout('Direction',direction, ...
+    'TransportBlockSize',800,'TargetCodeRate',.3,'RV',0,'Modulation','QPSK', ...
+    'NumLayers',1,'RateMatchedBitCount',2748);
+grant=struct('TBSBits',800,'Direction',direction,'Modulation','QPSK', ...
+    'NumLayers',1,'TargetCodeRate',.3,'CodingLayout',layout);
+h.onTx(321,0,ones(800,1,'uint8'),grant,3);
+soft=struct('LLRSum',[1;-2;3],'ObservationWeight',1);
+h.storeSoftBuffer(321,0,soft);
+row=struct2table(struct('RNTI',321,'UEIndex',1,'HarqID',0,'Direction',direction, ...
+    'FeedbackForDirection',direction,'SourceSlot',3,'DueSlot',4,'ServingCell',1, ...
+    'TBSBits',800,'RV',0,'IsRetransmission',false,'Ack',true, ...
+    'Processed',false,'PUCCHGrantId',"declared-owner-test",'UCIType',"harq_ack"));
+end

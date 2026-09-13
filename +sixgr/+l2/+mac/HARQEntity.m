@@ -435,8 +435,11 @@ classdef HARQEntity < handle
             obj.UEProcs{ui} = procs;
         end
 
-        function onFeedback(obj, rnti, harqId0, feedback, varargin)
+        function applied = onFeedback(obj, rnti, harqId0, feedback, varargin)
             % onFeedback Apply a typed ACK/NACK/DTX outcome.
+            % Callers may update dependent buffers/adaptation only when this
+            % exact process attempt accepted the feedback (not a stale one).
+            applied = false;
             rnti = double(rnti);
             pid = double(harqId0) + 1;
             if isa(feedback, "sixgr.l2.mac.HARQFeedbackEvent")
@@ -537,6 +540,7 @@ classdef HARQEntity < handle
             end
 
             obj.UEProcs{ui} = procs;
+            applied = true;
         end
 
         function ledger = getDeliveryLedger(obj)
