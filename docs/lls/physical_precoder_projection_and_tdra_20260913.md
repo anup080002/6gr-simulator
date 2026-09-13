@@ -35,10 +35,19 @@ TDRA policy or gate was changed.
   retained captures; they do not qualify the new MATLAB projection path.
 - New focused MATLAB batch is running in this development worktree:
   `%TEMP%/sixgr_physical_precoder_tdra_20260913_01.log`.
-  Geometry runtime authority and baseline TDRA budget have passed; late UCI,
-  late CSI and executed DL matrix evidence are pending.
-- Required full-suite, LLS/config, export/grant and E2E runs on this changed
-  revision remain pending. No full-simulator or conformance PASS is claimed.
+  Geometry runtime authority (50.76 s), baseline TDRA budget (21.18 s) and
+  late-UCI delivery (226.32 s) have passed. Late CSI and executed DL matrix
+  evidence are pending. The late-UCI test includes the new matrix-to-symbol
+  and exact decimal-weight checks, then actual slot-10 reception delivered
+  in slot 11. Its retained run is
+  `%TEMP%/tpb7845fe8_6795_4560_8db8_48d441283e02`.
+- A sequential validation job was launched on MATLAB source revision
+  `ff00f0c1`: LLS/config, strict-mode, export/grant and both E2E guards first,
+  followed by `testAll` even if the guard process fails. Logs are
+  `%TEMP%/sixgr_projection_revision_guards_20260913.log` and
+  `%TEMP%/sixgr_projection_revision_full_20260913.log`. At this update the
+  guard process is live and the full suite is queued, not yet started.
+  Results remain pending; no full-simulator or conformance PASS is claimed.
 - The preceding development revision's six configuration/LLS guards passed
   (exit 0). The receiver revision's twelve guards, including both E2E tests,
   passed (exit 0). Neither substitutes for validation of this patch.
