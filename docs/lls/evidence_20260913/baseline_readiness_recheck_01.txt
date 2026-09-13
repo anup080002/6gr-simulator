@@ -1,0 +1,22 @@
+READINESS_CHECK FAIL testCSIRSPlannedCalendar
+Error using assert
+CSI-RS planning failed: nrCSIRSIndices returned no active reference-signal RE. [ChannelAllocationMaterializer.materializeReferenceSignal:278]
+
+Error in testCSIRSPlannedCalendar>localCheck (line 21)
+assert(height(c)==1 && c.resolved && c.status=="PASS", ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCSIRSPlannedCalendar (line 7)
+localCheck(cfg,"CSI_RS");
+^^^^^^^^^^^^^^^^^^^^^^^^
+CSI_NONOCCASION_CAPACITY slot0=62 calendar=5:1 scheduled=0 enabled_G=3108 disabled_G=3108 extra_reserved_re=0 enabled_TBS=1064 disabled_TBS=1064
+READINESS_CHECK PASS testCSIRSNonoccasionDataCapacity
+READINESS_CHECK PASS testTwoPortULYAMLAndSRS
+    AbsoluteSlot0    BudgetPRBs    SymbolStart    NumSymbols    TDRAIndex    GrantCount    Verified    ErrorID    ErrorDetail                                    EvidenceScope                                 
+    _____________    __________    ___________    __________    _________    __________    ________    _______    ___________    ______________________________________________________________________________
+
+          3              25             2             8             1            1          true         ""           ""         "baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy"
+          8              25             2             8             1            1          true         ""           ""         "baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy"
+
+BASELINE_SPECIAL_SLOT_SCHEDULER_PASS
+READINESS_CHECK PASS testBaselineSpecialSlotScheduler
+READINESS_CHECK_TOTAL tests=4 failures=1
