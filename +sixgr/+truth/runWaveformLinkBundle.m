@@ -9280,6 +9280,10 @@ for gi = 1:numel(grants)
     % Reserve exact payload + DM-RS coordinates across both scheduling
     % passes. A search-space/CORESET ID or the scheduled data direction does
     % not create a separate physical resource pool.
+    % Counter DAI is finalized after grant/control eligibility, never in a
+    % tentative scheduler candidate or as a function of successful UE RX.
+    [grant,candidateDAILedger]=sixgr.truth.prepareScheduledDLDAI( ...
+        sixgr.util.structGet(state,'ScheduledDLDAILedger',struct()),cfgU,grant);
     cfgControl = localResolvePDCCHTrialConfig(cfgU, pdcchSNR_dB, 1, 1, grant);
     [controlCarrier, ~] = sixgr.phy.grid.makeCarrier(cfgControl);
     [state.PDCCHResourceLedger, occupiedControlREs] = ...
@@ -9300,6 +9304,7 @@ for gi = 1:numel(grants)
             'Key',localSharedGrantControlKey(grant,direction), ...
             'ReceivedDLTimingReference',timing.DLReference);
         state.SharedWaveformStream.queuePDCCH(ueIdx,prepared,context);
+        state.ScheduledDLDAILedger=candidateDAILedger;
         state.PDCCHResourceLedger=sixgr.truth.PDCCHSlotResourceLedger.reserve( ...
             state.PDCCHResourceLedger,controlSlotIdx,servingCell,controlCarrier,prepared.TxInfo.AllocatedRECoordinates);
         queuedGrants=localAppendCoupledPendingULGrants(queuedGrants,grant);
@@ -9316,6 +9321,7 @@ for gi = 1:numel(grants)
         state.PDCCHResourceLedger = sixgr.truth.PDCCHSlotResourceLedger.reserve( ...
             state.PDCCHResourceLedger, controlSlotIdx, servingCell, ...
             controlCarrier, allocatedControlREs);
+        state.ScheduledDLDAILedger=candidateDAILedger;
     end
     state = sixgr.truth.CoupledTruthRuntime.commitRuntimeChannelState( ...
         state,pdcchUpdatedChannelState);
