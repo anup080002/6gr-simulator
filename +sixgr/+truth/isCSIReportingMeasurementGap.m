@@ -1,0 +1,19 @@
+function active=isCSIReportingMeasurementGap(cfg,slot)
+% Installed gap exclusion for serving-cell CSI, not a gap-target measurement.
+validateattributes(slot,{'numeric'},{'scalar','real','finite','integer','positive'});
+gap=sixgr.util.structGet(cfg,'phy.rsla.measurement_gaps',struct());
+active=false;
+if isempty(fieldnames(gap)), return; end % No measurement gap is installed.
+assert(isfield(gap,'enabled') && isscalar(gap.enabled) && ...
+    (islogical(gap.enabled)||isnumeric(gap.enabled)) && isreal(gap.enabled) && ...
+    any(gap.enabled==[0 1]),'sixgr:truth:InvalidCSIReportingGap','Gap enablement must be explicitly binary.');
+if ~gap.enabled, return; end
+assert(all(isfield(gap,{'period_slots','offset_slots','length_slots'})), ...
+    'sixgr:truth:InvalidCSIReportingGap','An enabled gap needs period, offset and length.');
+values=[gap.period_slots,gap.offset_slots,gap.length_slots];
+assert(isnumeric(values) && isreal(values) && numel(values)==3 && all(isfinite(values)) && ...
+    all(values==fix(values)) && gap.period_slots>=1 && gap.offset_slots>=0 && ...
+    gap.offset_slots<gap.period_slots && gap.length_slots>=1 && gap.length_slots<=gap.period_slots, ...
+    'sixgr:truth:InvalidCSIReportingGap','Invalid installed integer-slot measurement gap.');
+active=mod((slot-1)-gap.offset_slots,gap.period_slots)<gap.length_slots;
+end

@@ -506,6 +506,11 @@ methods(Static)
         state=sixgr.truth.CoupledTruthRuntime.recordSlotTraceStart( ...
             state,direction,sweepIdx,sweepCount,state.CurrentSlot, ...
             state.CanonicalSlotsPerSweepPoint,snr_dB);
+        if isfield(state,'SharedWaveformStream')
+            state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
+        else
+            state=sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(state);
+        end
         [state,queuedUL,blockedT]=sixgr.truth.CoupledTruthRuntime. ...
             reconcileQueuedPUSCHAfterDLFeedbackImpl(state,queuedUL,uciOnPUSCHAvailable);
         state=sixgr.truth.CoupledTruthRuntime.processDueFeedback(state);
@@ -884,6 +889,7 @@ methods(Static)
 
     function state=armSharedPUCCHFeedbackRuntime(state)
         if ~isfield(state,'SharedWaveformStream'), return; end
+        state=sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(state);
         % CSI-only reports need a real resource reservation before the UL
         % capture origin, just like HARQ. These are CSI grants, not invented
         % HARQ processes/bits. Encoding is still deferred to the event clock.
@@ -939,6 +945,105 @@ methods(Static)
             armed(end+1,1)=key;
         end
         state.SharedArmedPUCCHOccasions=armed;
+    end
+
+    function state=refreshPeriodicCSIReportsRuntime(state)
+        % Configured occasions are independent of PDSCH execution. Missing
+        % eligible CSI leaves a configured obligation, never invented UCI.
+        sixgr.truth.CoupledTruthRuntime.assertRuntimeExecutionView(state);
+        cfg=state.CfgMobility;
+        if ~logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',false)) || ...
+                string(sixgr.util.structGet(cfg,'phy.csi.reportTrigger',""))~="periodic"
+            return;
+        end
+        first=sixgr.util.structGet(state,'SweepPointStartSlot',1);
+        last=first+state.CanonicalSlotsPerSweepPoint-1;
+        owner=sixgr.util.structGet(state,'SharedWaveformStream',[]);
+        shared=isa(owner,'sixgr.truth.CoupledWaveformStream');
+        retained=sixgr.util.structGet(state,'ControlTrials.CSIRS',table());
+        obligations=sixgr.util.structGet(state,'CSIReportObligationTable',table());
+        for ue=1:state.NumUsers
+            cellId=state.CurrentServingIdx(ue);
+            if ~(isfinite(cellId) && cellId>=1), continue; end
+            id=cfg.phy.frame.DefaultIdentity;
+            ueData=struct('UEID',ue,'RNTI',state.MultiUser.RNTIStart+ue-1, ...
+                'ServingCell',cellId,'PUCCHCell',cellId, ...
+                'ComponentCarrier',id.ScheduledCCID,'ActiveULBWP',id.ULBWPID);
+            calendar=sixgr.truth.buildPeriodicCSIReportObligations(cfg,ueData,first,last);
+            for oi=1:height(calendar)
+                obligation=calendar(oi,:); slot=obligation.ReportSlot;
+                reference=obligation.CSIReferenceSlot;
+                obligation.ProducerStatus="awaiting_eligible_received_CSI";
+                if ~obligation.ULResourceAvailable
+                    obligation.ProducerStatus=obligation.ResourceBlocker;
+                elseif ~isfinite(reference) || reference<first
+                    obligation.ProducerStatus="no_CSI_reference_resource_in_current_sweep";
+                elseif slot<=state.CurrentSlot
+                    obligation.ProducerStatus="report_slot_reached_no_new_payload_preparation";
+                elseif reference>=state.CurrentSlot
+                    obligation.ProducerStatus="reference_resource_not_yet_complete";
+                else
+                    ready=true;
+                    if shared
+                        carrier=sixgr.phy.grid.makeCarrier(cfg);
+                        ready=sixgr.phy.frame.slotStartSample(carrier,reference,owner.SampleRateHz)<= ...
+                            owner.Events.NextSampleIndex;
+                        timing=sixgr.util.structGet(state,'ConnectedULTimingByUE',{});
+                        ready=ready && numel(timing)>=ue && ~isempty(timing{ue});
+                    end
+                    selected=table();
+                    if ready && ~isempty(retained) && ...
+                            all(ismember({'UEIndex','ServingCell','Slot'},retained.Properties.VariableNames))
+                        indices=find(retained.UEIndex==ue & retained.ServingCell==cellId & ...
+                            retained.Slot>=first & retained.Slot<=reference);
+                        for mi=reshape(indices,1,[])
+                            candidate=retained(mi,:);
+                            [available,usable,clocked]=sixgr.truth.csirsMeasurementAvailability(candidate,shared);
+                            usable=usable && available<=state.CurrentSlot && ...
+                                ~sixgr.truth.isCSIReportingMeasurementGap(cfg,double(candidate.Slot));
+                            if clocked
+                                assert(shared,'sixgr:truth:MeasurementPhysicalClockRequired', ...
+                                    'A clocked CSI report source requires its actual physical owner.');
+                                usable=usable && candidate.MeasurementClockEpoch==owner.Physical.ConfigurationEpoch && ...
+                                    candidate.ObservationSampleRateHz==owner.SampleRateHz && ...
+                                    candidate.ResultAvailableAtSample<=owner.Events.NextSampleIndex;
+                            end
+                            if usable && (isempty(selected) || candidate.Slot>=selected.Slot)
+                                selected=candidate;
+                            end
+                        end
+                    end
+                    if ~isempty(selected)
+                        reports=state.PendingCSITable;
+                        existing=find(string(reports.ReportIdentity)==string(obligation.ObligationID));
+                        assert(numel(existing)<=1,'sixgr:truth:DuplicateCSIReportObligation', ...
+                            'One installed periodic occasion has at most one UE report.');
+                        frozen=~isempty(existing) && (reports.Processed(existing) || ...
+                            reports.RightCensored(existing) || ...
+                            string(reports.CSIUCITransport(existing))~="pucch" || ...
+                            reports.CSIUCIMultiplexedOnPUSCH(existing));
+                        unchanged=~isempty(existing) && reports.SourceSlot(existing)>=selected.Slot;
+                        if ~frozen && ~unchanged
+                            state=sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
+                                state,ue,'DL',selected,cfg,selected,table2struct(obligation));
+                        end
+                        obligation.ProducerStatus="eligible_received_CSI_report_queued";
+                    elseif ~ready
+                        obligation.ProducerStatus="awaiting_physical_reference_completion_or_received_UL_timing";
+                    end
+                end
+                hit=[];
+                if ~isempty(obligations)
+                    hit=find(string(obligations.ObligationID)==string(obligation.ObligationID));
+                end
+                if isempty(hit)
+                    obligations=sixgr.truth.CoupledTruthRuntime.appendCompatTable(obligations,obligation);
+                else
+                    obligations=sixgr.truth.CoupledTruthRuntime.replaceCompatTableRow(obligations,hit,obligation);
+                end
+            end
+        end
+        state.CSIReportObligationTable=obligations;
     end
 
     function state=armSharedDLHARQOccasionFromGrantRuntime(state,grant,ueIdx)
@@ -1669,6 +1774,11 @@ methods(Static, Access=private)
         state = sixgr.truth.CoupledTruthRuntime.recordSlotTraceStart( ...
             state,direction,sweepIdx,sweepCount,state.CurrentSlot, ...
             state.CanonicalSlotsPerSweepPoint,snr_dB);
+        if isfield(state,'SharedWaveformStream')
+            state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
+        else
+            state=sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(state);
+        end
         state = sixgr.truth.CoupledTruthRuntime.processDueFeedback(state);
     end
 
@@ -3005,6 +3115,11 @@ methods(Static, Access=private)
         referenceMeasurementT = sixgr.util.structGet(state, "ReferenceSignalMeasurementTable", table());
         sixgr.util.csvWriteTable(fullfile(layout.AirInterfaceCSVDir, "csi_feedback_reports.csv"), csiReportT);
         sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "csi_feedback_reports.csv"), csiReportT);
+        csiObligations=sixgr.util.structGet(state,'CSIReportObligationTable',table());
+        if ~isempty(csiObligations)
+            sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
+                "configured_csi_report_obligations.csv"),csiObligations);
+        end
         gnbHARQ=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
         if ~isempty(gnbHARQ)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "gnb_harq_feedback_observations.csv"),gnbHARQ);
@@ -3578,10 +3693,9 @@ methods(Static, Access=private)
             state = sixgr.truth.CoupledTruthRuntime.applyCSIRSTrialImpl( ...
                 state, ueIdx, csiMeasurementRow);
         end
-        sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue( ...
-            trialT(end, :), "Slot", state.CurrentSlot));
-        if sixgr.truth.CoupledTruthRuntime.isCSIReportOccasion( ...
-                cfgU, sourceSlot, direction)
+        % DL reports use the UL report calendar and retained CSI-RS evidence,
+        % not a PDSCH source-slot predicate. UL adaptation is gNB knowledge.
+        if upper(string(direction))=="UL"
             state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
                 state, ueIdx, direction, trialT(end, :), cfgU, csiMeasurementRow);
         end
@@ -6906,6 +7020,15 @@ methods(Static, Access=private)
                 "Measured CSI-RS producer row is missing: %s", ...
                 strjoin(missing, ", "));
         end
+        if ismember('UEIndex',row.Properties.VariableNames)
+            assert(isequal(double(row.UEIndex),double(ueIdx)), ...
+                'sixgr:truth:CSIRSReceiverIdentityMismatch','The CSI callback UE and producer identity differ.');
+        else
+            row.UEIndex=double(ueIdx); % Actual receiver callback identity.
+        end
+        if ~ismember('ServingCell',row.Properties.VariableNames)
+            row.ServingCell=double(state.CurrentServingIdx(ueIdx));
+        end
         source = lower(strtrim(string(row.MeasurementSource(end))));
         forbidden = ["proxy","fallback","synthetic","configured_only"];
         if strlength(source) == 0 || any(contains(source, forbidden))
@@ -9450,7 +9573,7 @@ methods(Static, Access=private)
         end
     end
 
-    function state = enqueueCSIReport(state, ueIdx, direction, row, cfgExecuted, csiMeasurementRow)
+    function state = enqueueCSIReport(state, ueIdx, direction, row, cfgExecuted, csiMeasurementRow, obligation)
         if nargin < 5 || ~isstruct(cfgExecuted)
             cfgExecuted = struct();
         end
@@ -9514,7 +9637,17 @@ methods(Static, Access=private)
         end
         report.SourceSlot = double(sourceSlot);
         report.DueSlot = double(sourceSlot + state.CSIFeedbackSlots);
-        if upper(string(direction)) == "DL"
+        periodic=nargin>=7 && ~isempty(fieldnames(obligation));
+        if periodic
+            assert(upper(string(direction))=="DL" && measuredCSIRSAvailable && ...
+                obligation.UEIndex==ueIdx && obligation.RNTI==report.RNTI && ...
+                obligation.ULResourceAvailable && sourceSlot<=obligation.CSIReferenceSlot && ...
+                sixgr.truth.periodicCSIReportSlotMask(obligation.ReportSlot, ...
+                    cfgExecuted.phy.csi.reportPeriodicitySlots,cfgExecuted.phy.csi.reportOffsetSlots), ...
+                'sixgr:truth:InvalidCSIReportObligation','The report must own a configured occasion and eligible received measurement.');
+            report.DueSlot=obligation.ReportSlot;
+            report.CSIReferenceSlot=obligation.CSIReferenceSlot;
+        elseif upper(string(direction)) == "DL"
             report.DueSlot = sixgr.truth.CoupledTruthRuntime. ...
                 nextLegalULControlSlot(state.CfgMobility, report.DueSlot);
             if measuredCSIRSAvailable
@@ -9531,6 +9664,7 @@ methods(Static, Access=private)
         report.MeasurementSource = "receiver_channel_estimate_and_post_equalization_measurement";
         report.ReportIdentity = char(upper(string(direction)) + "_UE" + string(ueIdx) + ...
             "_SRC" + string(sourceSlot) + "_DUE" + string(report.DueSlot));
+        if periodic, report.ReportIdentity=char(obligation.ObligationID); end
         report.DeliveryStatus = "pending_causal_feedback_delay";
         csi = sixgr.truth.CoupledTruthRuntime.resolveMeasuredRuntimeCSIForRow(row, state.CfgMobility, direction);
         report.CQI = double(csi.CQI);
@@ -9663,8 +9797,27 @@ methods(Static, Access=private)
             report.DeliveredSlot = double(state.CurrentSlot);
             report.DeliveryStatus = "delivered_to_runtime_scheduler";
         end
-        state.PendingCSITable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
-            state.PendingCSITable, struct2table(report, "AsArray", true));
+        replaceIndex=[];
+        if periodic
+            replaceIndex=find(string(state.PendingCSITable.ReportIdentity)==string(report.ReportIdentity));
+        end
+        if isempty(replaceIndex)
+            state.PendingCSITable = sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                state.PendingCSITable, struct2table(report, "AsArray", true));
+        else
+            assert(isscalar(replaceIndex),'sixgr:truth:DuplicateCSIReportObligation','One pending report per occasion.');
+            state.PendingCSITable=sixgr.truth.CoupledTruthRuntime.replaceCompatTableRow( ...
+                state.PendingCSITable,replaceIndex,struct2table(report,'AsArray',true));
+            trace=state.PUCCHGrantTraceTable;
+            hit=find(string(trace.PUCCHGrantId)=="PUCCH-CSI-"+string(report.ReportIdentity));
+            if ~isempty(hit)
+                assert(isscalar(hit) && ~trace.GrantExecutedFlag(hit) && ...
+                    trace.UCIBitCount(hit)==report.CSIUCIBitCount, ...
+                    'sixgr:truth:ChangedCSIResourceAfterBinding','A refreshed measurement cannot change an executed or differently sized CSI grant.');
+                trace.SourceSlot(hit)=report.SourceSlot;
+                state.PUCCHGrantTraceTable=trace;
+            end
+        end
         if report.DueSlot <= state.CurrentSlot && upper(string(direction)) == "UL"
             if upper(string(direction)) == "UL"
                 priorLatest = state.LatestULFeedback(ueIdx);
@@ -15541,6 +15694,9 @@ methods(Static, Access=private)
             "SlotSymbolOwnership", string(ownership), ...
             "FlexibleResolutionProvided", false, ...
             "TriggeringEventID", string(report.ReportIdentity));
+        if isfinite(sixgr.util.structGet(report,'CSIReferenceSlot',NaN))
+            frameState.K1Source="configured_periodic_CSI_report_occasion";
+        end
         connected = sixgr.phy.pucch.PUCCHConfigBuilder.planCSI( ...
             cfgU, ueState, part1, part2, frameState);
 
@@ -15741,6 +15897,7 @@ methods(Static, Access=private)
             "SourceSlot", NaN, "DueSlot", NaN, "EnqueuedSlot", NaN, "DeliveredSlot", NaN, ...
             "MeasurementAvailableSlot", NaN, "MeasurementAvailableAtSample", NaN, ...
             "MeasurementClockEpoch", NaN, "MeasurementClockDomain", "", ...
+            "CSIReferenceSlot", NaN, ...
             "SourceSignal", "", "MeasurementSource", "", "ReportIdentity", "", ...
             "DeliveryStatus", "not_enqueued", ...
             "CSIReportConfigID", "", "CSIConfigurationEpoch", NaN, ...

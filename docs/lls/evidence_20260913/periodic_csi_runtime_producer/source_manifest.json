@@ -1,0 +1,77 @@
+{
+  "base_commit": "032ad7e6102dcdb2a9d10f6952175d5ca4729008",
+  "captured_utc": "2026-09-13T17:42:36.5774923Z",
+  "capture_scope": "post_focused_run_checkpoint_not_pre_run_snapshot",
+  "files": [
+    {
+      "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "sha256": "2E34D5B736D70DA76990161E4393AC46DCC5E603EEDF0D3DDFE3A7372A450774",
+      "git_blob": "e0751034c521d147cef9892bea3d32f9bba6450d"
+    },
+    {
+      "path": "+sixgr/+truth/buildPeriodicCSIReportObligations.m",
+      "sha256": "6F717346F5117A5BB40FD5FD280B0501B1A86FDF23F5565A453B7B565CA44D77",
+      "git_blob": "88ba7491a646183823019271a793e6b25ca85db9"
+    },
+    {
+      "path": "+sixgr/+truth/periodicCSIReferenceSlot.m",
+      "sha256": "7EDD88CD7150739EEBDAEE4F61DAC201B6FDB180496489F8DC766A0F9ED5E644",
+      "git_blob": "86b4d6e3c33da67ad9ca8c3235391a93a8bfddbd"
+    },
+    {
+      "path": "+sixgr/+truth/isCSIReportingMeasurementGap.m",
+      "sha256": "29C3DE36AD974C803940ED4D1C08830337C2C5045D23AAA2AE9C268A070311E7",
+      "git_blob": "691bf2ca8b02b43e85c70af329035983c829843e"
+    },
+    {
+      "path": "+sixgr/+truth/periodicCSIReportSlotMask.m",
+      "sha256": "B7E7EAA7A7DA8489A943460CAFDE5AB4EC2779F8F961EAEE6E7A8D9650AB747C",
+      "git_blob": "2462f2ad4cccb4ada93056899f4ccabf27813963"
+    },
+    {
+      "path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd.yaml",
+      "sha256": "ED0A031B5111508E628DA0C7E5D75DE3A117AD2383CAE1B60F342AD5225C23E4",
+      "git_blob": "9fa66a9b6a52ccc43d762f93e818e64ebf6fa765"
+    },
+    {
+      "path": "tests/testAll.m",
+      "sha256": "417135D538C4E5FBF434D9D7B8D290A7742DD94D369B88673E214707FD40C2A9",
+      "git_blob": "62f49b48f6c85b87f42e7bf5093f917b1cc0c61f"
+    },
+    {
+      "path": "tests/testPeriodicCSIReportObligations.m",
+      "sha256": "BC8C4B249E9B7818B552E4DE81B909C92B55D923F0553835C07707A2982EDF7D",
+      "git_blob": "818380d65839f3373bdc7a26bd835127bd26f5dd"
+    },
+    {
+      "path": "tests/testSharedCSIReportClock.m",
+      "sha256": "25917416BD3C9E1D7A3373EA9F98DB20A14F1C44EC2F769FF30E080A15A7D59B",
+      "git_blob": "c0ef2c17aa8db8338930709eaf45665a9d91bbe2"
+    },
+    {
+      "path": "tests/testPeriodicCSIRuntimeProducer.m",
+      "sha256": "49116CDAE4B00044E01D778FF45A58F11C34F5CA516C4086D7621AAB189314B8",
+      "git_blob": "069c0b289e95818b274f1cb80ffb22d97801c280"
+    },
+    {
+      "path": "tests/testSharedPeriodicCSIProducer.m",
+      "sha256": "85D6A5FEAE0008839CA42CAE871DF3E97A6E751B7894403DC2007F72B0D41929",
+      "git_blob": "baeccbedfeefb6dd1fcc437227a6fb72f56b43b6"
+    },
+    {
+      "path": "tests/testCSIReportPublicationClock.m",
+      "sha256": "6A6BE6650C48F7607C3C5267A4FF419B14EA1EC535962BF4FEAC279092427A1E",
+      "git_blob": "b1a1c853b9ce51e87b9a0a721fadd38dc7c73132"
+    },
+    {
+      "path": "tests/testCoupledTruthCSIReportSourceAuthority.m",
+      "sha256": "E477E0E76A27AECF2FEE296E14939ECCF64C0F30CF63FDD3D6651C92FC9B0A17",
+      "git_blob": "9dde5b7be9b9d7bb32f5e826218706db3e294b77"
+    },
+    {
+      "path": "tests/testFutureULPlanningCausality.m",
+      "sha256": "2503191C844AE3F8D56973B68B23BBE79589238AC8400D092F4D0306AE57F442",
+      "git_blob": "8edaffc82c944ae045320cf9e39f80beb7c43032"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+name,ok,msg,duration_s
+testPeriodicCSIRuntimeProducer,1,,59.6274091
+testSharedPeriodicCSIProducer,1,,68.4942585
+testPeriodicCSIReportObligations,1,,14.6708136
+testCSIReportPublicationClock,1,,17.1169854
+testSharedCSIReportClock,1,,36.4441437
+testCoupledTruthCSIReportSourceAuthority,1,,19.7779898
+testFutureULPlanningCausality,1,,14.6617947

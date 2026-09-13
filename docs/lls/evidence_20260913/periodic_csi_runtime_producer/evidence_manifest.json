@@ -1,0 +1,182 @@
+[
+  {
+    "path": "fixture_red/environment.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\environment.json",
+    "sha256": "BC90920A3202B74DF6F69E582A7FB2EC7E0914EFE35956694D68A21795615257",
+    "bytes": 12073
+  },
+  {
+    "path": "fixture_red/failures.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\failures.csv",
+    "sha256": "1DE9BE1D63C341B3BC3C082BB2E0961A90B2CFEC5C6D924B1CBC848F388337FF",
+    "bytes": 195
+  },
+  {
+    "path": "fixture_red/launcher_error.txt",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\launcher_error.txt",
+    "sha256": "A3D4CD76873FD5489C5E818E195F9BC40EB43AB5CE0C97822107F758EF8B1FFB",
+    "bytes": 371
+  },
+  {
+    "path": "fixture_red/launcher.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\launcher.json",
+    "sha256": "36B930C20B3BF8D25DB1197D1EB080C067C13975EA611F87E2FABF6D0709F073",
+    "bytes": 2218
+  },
+  {
+    "path": "fixture_red/matlab.log",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\matlab.log",
+    "sha256": "DE720F56DE91E61C8D7F349501C01FDBAC011323025EC57EFCB276F16A1118EA",
+    "bytes": 10733
+  },
+  {
+    "path": "fixture_red/summary.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\summary.json",
+    "sha256": "99876952E92697AFA3622DD6C253808537A40EDAA63541C7C64701AAEA823150",
+    "bytes": 843
+  },
+  {
+    "path": "fixture_red/test_report.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\test_report.json",
+    "sha256": "DAE134DE0E92B525F476CAA54689AB179734662F4B2B9C228914405BEA629061",
+    "bytes": 762
+  },
+  {
+    "path": "fixture_red/test_report.mat",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\test_report.mat",
+    "sha256": "14C23826A4EAF6ADB836061F87D96637CFB287D37BC539BDBE79AD3781220173",
+    "bytes": 954
+  },
+  {
+    "path": "fixture_red/tests.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T172534312Z_c128bfd1\\tests.csv",
+    "sha256": "6D510709001C13CBE6F51B76BF75B3C253F63A94939BEF6791B07472B9C40950",
+    "bytes": 344
+  },
+  {
+    "path": "focused_seven_pass/environment.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\environment.json",
+    "sha256": "BC90920A3202B74DF6F69E582A7FB2EC7E0914EFE35956694D68A21795615257",
+    "bytes": 12073
+  },
+  {
+    "path": "focused_seven_pass/failures.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\failures.csv",
+    "sha256": "FB1F5A0DC9284DB615B1EE2420AE7ECE1F43B2A3F82EB2EF83B971D92B4D4033",
+    "bytes": 24
+  },
+  {
+    "path": "focused_seven_pass/launcher.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\launcher.json",
+    "sha256": "E87CC57E48666EBBCD4609E45A41D2729C28D08BB65DDF0FD0D7C82534305568",
+    "bytes": 2441
+  },
+  {
+    "path": "focused_seven_pass/matlab.log",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\matlab.log",
+    "sha256": "1890775B7E431DF611CD94CD7B40076B871CD5854A10F83CE898246757E29831",
+    "bytes": 8447
+  },
+  {
+    "path": "focused_seven_pass/summary.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\summary.json",
+    "sha256": "6F9608B64D01D2C4129887B6D984C4C7B097A1BC1FBC72EBF60FAA5D07B222BE",
+    "bytes": 586
+  },
+  {
+    "path": "focused_seven_pass/test_report.json",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\test_report.json",
+    "sha256": "9D409357E8C7B973F158FF2CAAD85918D659B94121BE2E8CCFAA3FC8319A9E87",
+    "bytes": 906
+  },
+  {
+    "path": "focused_seven_pass/test_report.mat",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\test_report.mat",
+    "sha256": "C25330E15FFA79A9CFE30E0B940BBD0A4351AA7F1E2645F3D7A78C5C32AB0F00",
+    "bytes": 973
+  },
+  {
+    "path": "focused_seven_pass/tests.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\testall_20260913T173058413Z_a8337342\\tests.csv",
+    "sha256": "99F374ED9380B9DDC0750F5CF87B7D545907D25522D925FB0A65F1DE51C49C45",
+    "bytes": 349
+  },
+  {
+    "path": "producer_data/configured_CSI_obligations.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tp6b78db11_7251_4865_9188_6b97b5330e13\\configured_CSI_obligations.csv",
+    "sha256": "B825C69F459A049EFDBDFAAA22C1BDEB370F3755022D1D9CC9DF8B42203365EC",
+    "bytes": 3498
+  },
+  {
+    "path": "producer_data/periodic_producer.mat",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tp6b78db11_7251_4865_9188_6b97b5330e13\\periodic_producer.mat",
+    "sha256": "4B17DEDD5122D2D896F882DB80B8D32C3218650300B5E5136044D153B38DE778",
+    "bytes": 228763
+  },
+  {
+    "path": "producer_data/queued_periodic_CSI.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tp6b78db11_7251_4865_9188_6b97b5330e13\\queued_periodic_CSI.csv",
+    "sha256": "60DA65DF0DE2D856076FB37F393B5387B55ED25577DDE6C6E40E83C2A030B476",
+    "bytes": 3837
+  },
+  {
+    "path": "shared_transport_data/actual_PUCCH_trial.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpa1d52752_637d_49e6_ac45_76b53dd7b6b4\\actual_PUCCH_trial.csv",
+    "sha256": "823673E9FDCDE228EA4BAC85BF5A98A6F6FD064FCB79EF1CB2CF78B55E9A61EF",
+    "bytes": 7369
+  },
+  {
+    "path": "shared_transport_data/configured_CSI_obligations.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpa1d52752_637d_49e6_ac45_76b53dd7b6b4\\configured_CSI_obligations.csv",
+    "sha256": "6C705A09870341579EE9A89E1151BEF5CA77D74DD1D6FC5BDD602E2566242967",
+    "bytes": 934
+  },
+  {
+    "path": "shared_transport_data/periodic_CSI_received_report.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpa1d52752_637d_49e6_ac45_76b53dd7b6b4\\periodic_CSI_received_report.csv",
+    "sha256": "1D2903C920A70D0795C0270CF6B16F2B37110D92EAC74644F2D7DEF13ABDC98C",
+    "bytes": 3514
+  },
+  {
+    "path": "shared_transport_data/shared_periodic_CSI.mat",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpa1d52752_637d_49e6_ac45_76b53dd7b6b4\\shared_periodic_CSI.mat",
+    "sha256": "83320C6E5B4D825DBFAC4B99347F91E12F77B40C2201F4788FC69643F3C6C451",
+    "bytes": 739312
+  },
+  {
+    "path": "calendar_data/configured_obligations.mat",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpc8478597_7cd6_414b_b7c6_e9b070ee5a2d\\configured_obligations.mat",
+    "sha256": "10B6B66324343CA5281678D8D9BF5CAF44283662CD0EA99F9D3D18D6235EE810",
+    "bytes": 447765
+  },
+  {
+    "path": "calendar_data/historical_offset1_CSI_obligations.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpc8478597_7cd6_414b_b7c6_e9b070ee5a2d\\historical_offset1_CSI_obligations.csv",
+    "sha256": "321BD1D0C1C329334FC9E4E9E24957F1102E4F50739FD2F2988953948C691E02",
+    "bytes": 3942
+  },
+  {
+    "path": "calendar_data/production_offset3_CSI_obligations.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tpc8478597_7cd6_414b_b7c6_e9b070ee5a2d\\production_offset3_CSI_obligations.csv",
+    "sha256": "39F6D4184BBEF59A50130D243238EC54BD0B21C8BACFF72AC818B10C0E6674DE",
+    "bytes": 3069
+  },
+  {
+    "path": "publication_clock_data/CSI_report_clock.mat",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tp200355e8_eb52_4182_a272_1bc7a04095b3\\CSI_report_clock.mat",
+    "sha256": "057516F4E436E0890867FB5392882B6DC30CF817CD1C4F3BB48E3C73176A5200",
+    "bytes": 222563
+  },
+  {
+    "path": "publication_clock_data/published_measurement.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tp200355e8_eb52_4182_a272_1bc7a04095b3\\published_measurement.csv",
+    "sha256": "C1F3B08916D7E6BFA62DE65E0C45627208C825FCFA908E087F234FC397219282",
+    "bytes": 982
+  },
+  {
+    "path": "publication_clock_data/queued_report.csv",
+    "original": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\logs\\tp200355e8_eb52_4182_a272_1bc7a04095b3\\queued_report.csv",
+    "sha256": "6F62BCDCE54824FA81EE4863773228557C235238BFC38DF8AE7AF087F7B25C09",
+    "bytes": 2891
+  }
+]

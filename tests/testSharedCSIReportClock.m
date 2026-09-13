@@ -13,7 +13,7 @@ s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenario
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
-state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
 state.CurrentServingIdx(:)=1;
 state.TestStaleCSIScalarMetadata=logical(staleScalarMetadata);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});

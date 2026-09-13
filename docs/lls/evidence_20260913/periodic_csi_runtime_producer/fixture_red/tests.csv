@@ -1,0 +1,6 @@
+name,ok,msg,duration_s
+testPeriodicCSIRuntimeProducer,0,Assertion failed.,47.4520034
+testPeriodicCSIReportObligations,1,,15.8663584
+testCSIReportPublicationClock,1,,29.8967445
+testSharedCSIReportClock,0,Report slots must be exact positive integers on the UL BWP calendar.,24.8132475
+testCoupledTruthCSIReportSourceAuthority,1,,25.4530863

@@ -1,0 +1,7 @@
+Exception: C:\Users\anup0\AppData\Local\Temp\sixgr_type2_runtime_20260913\scripts\run_server_testall.ps1:65
+Line |
+  65 |  … 'passed') { throw "Validation did not pass (MATLAB exit $exitCode). S …
+     |                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+     | Validation did not pass (MATLAB exit 1). See summary.json and matlab.log.
+
+

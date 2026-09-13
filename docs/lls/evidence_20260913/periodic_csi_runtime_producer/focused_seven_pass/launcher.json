@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-13T17:30:58.4423830Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testPeriodicCSIRuntimeProducer",
+    "testSharedPeriodicCSIProducer",
+    "testPeriodicCSIReportObligations",
+    "testCSIReportPublicationClock",
+    "testSharedCSIReportClock",
+    "testCoupledTruthCSIReportSourceAuthority",
+    "testFutureULPlanningCausality"
+  ],
+  "allow_dirty": true,
+  "suite_pass": false,
+  "git_commit": "032ad7e6102dcdb2a9d10f6952175d5ca4729008",
+  "git_status_before": "M +sixgr/+truth/CoupledTruthRuntime.m\r\n M +sixgr/+truth/buildPeriodicCSIReportObligations.m\r\n M simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd.yaml\r\n M tests/testAll.m\r\n M tests/testPeriodicCSIReportObligations.m\r\n M tests/testSharedCSIReportClock.m\r\n?? +sixgr/+truth/isCSIReportingMeasurementGap.m\r\n?? +sixgr/+truth/periodicCSIReferenceSlot.m\r\n?? tests/testPeriodicCSIRuntimeProducer.m\r\n?? tests/testSharedPeriodicCSIProducer.m",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260913T173058413Z_a8337342',false,{'testPeriodicCSIRuntimeProducer','testSharedPeriodicCSIProducer','testPeriodicCSIReportObligations','testCSIReportPublicationClock','testSharedCSIReportClock','testCoupledTruthCSIReportSourceAuthority','testFutureULPlanningCausality'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "M +sixgr/+truth/CoupledTruthRuntime.m\r\n M +sixgr/+truth/buildPeriodicCSIReportObligations.m\r\n M simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd.yaml\r\n M tests/testAll.m\r\n M tests/testPeriodicCSIReportObligations.m\r\n M tests/testSharedCSIReportClock.m\r\n?? +sixgr/+truth/isCSIReportingMeasurementGap.m\r\n?? +sixgr/+truth/periodicCSIReferenceSlot.m\r\n?? tests/testPeriodicCSIRuntimeProducer.m\r\n?? tests/testSharedPeriodicCSIProducer.m",
+  "git_commit_after": "032ad7e6102dcdb2a9d10f6952175d5ca4729008",
+  "finished_utc": "2026-09-13T17:35:50.1783905Z",
+  "launcher_exit_code": 0
+}

@@ -6,6 +6,9 @@ assert(strcmpi(which('sixgr.truth.buildPeriodicCSIReportObligations'), ...
     fullfile(root,'+sixgr','+truth','buildPeriodicCSIReportObligations.m')));
 s=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+assert(cfg.phy.csi.reportOffsetSlots==3,'Production TDD CSI must use its configured UL report offset.');
+alternative=cfg; % Current production calendar.
+cfg.phy.csi.reportOffsetSlots=1; % Explicit historical regression input.
 id=cfg.phy.frame.DefaultIdentity;
 ue=struct('UEID',1,'RNTI',1,'ServingCell',1,'PUCCHCell',1, ...
     'ComponentCarrier',id.ScheduledCCID,'ActiveULBWP',id.ULBWPID);
@@ -15,9 +18,7 @@ assert(all(nominal.ResourceBlocker=="configured_CSI_symbols_not_UL_on_nominal_re
     numel(unique(nominal.ObligationID))==height(nominal));
 assert(all(cellfun(@(x)isa(x,'sixgr.phy.pucch.UCIReportContext') && ...
     x.HARQACKBits==0 && x.SRBits==0 && x.CSIPart1Bits>0,contexts)));
-% Declared alternative tests the calendar independently. Production YAML is
-% NOT changed here: its PDSCH-triggered producer must first be replaced.
-alternative=cfg; alternative.phy.csi.reportOffsetSlots=3;
+% Compare the historical unavailable occasions with the production calendar.
 [legal,~]=sixgr.truth.buildPeriodicCSIReportObligations(alternative,ue,1,58);
 assert(isequal(legal.ReportSlot,(4:5:54).') && all(legal.ULResourceAvailable) && ...
     all(legal.ResourceBlocker==""));
@@ -48,10 +49,10 @@ reject(@()sixgr.truth.buildPeriodicCSIReportObligations(bad,ue,1,58), ...
 logsRoot=fullfile(root,'logs');
 if ~isfolder(logsRoot), mkdir(logsRoot); end
 folder=tempname(logsRoot); mkdir(folder);
-writetable(nominal,fullfile(folder,'baseline_nominal_CSI_obligations.csv'));
-writetable(legal,fullfile(folder,'declared_alternative_CSI_obligations.csv'));
+writetable(nominal,fullfile(folder,'historical_offset1_CSI_obligations.csv'));
+writetable(legal,fullfile(folder,'production_offset3_CSI_obligations.csv'));
 save(fullfile(folder,'configured_obligations.mat'),'cfg','ue','nominal','contexts','alternative','legal');
-fprintf('PERIODIC_CSI_OBLIGATIONS_PASS baseline_nominal_unavailable=12 alternative_available=11 no_shift=1 RF_executions=0 folder=%s\n',folder);
+fprintf('PERIODIC_CSI_OBLIGATIONS_PASS historical_nominal_unavailable=12 production_available=11 no_shift=1 RF_executions=0 folder=%s\n',folder);
 ok=true;
 end
 

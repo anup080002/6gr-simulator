@@ -2026,7 +2026,9 @@ csi_acquisition_and_reporting:
   report_trigger: periodic
   report_periodicity: 5ms
   csi_report_periodicity_slots: 5
-  csi_report_offset_slots: 1
+  # Zero-based UL report offset, independent of the CSI-RS/PDSCH source slot.
+  # Resource 10 uses symbols 12-13 on one-based slots 4,9,14,... .
+  csi_report_offset_slots: 3
   report_payload_mode: compressed
   crc_attached_mode: true
   crc_free_mode: false
