@@ -6,6 +6,18 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [shared retained-ACK feedback checkpoint](lls/retained_dl_ack_feedback_20260913.md)
+adds the main callback's protocol-only branch, received K1/PRI queue binding,
+separate protocol availability evidence and CSV domain checks. The queue and
+timing guards pass, and actual ordinary SRS/PUCCH regression passes; 122 Python
+semantic/inventory tests pass. Final-source queue/timing, actual SRS/PUCCH and
+scheduler-grant checks exit 0; NDI/RV/retransmission flags now reach the OLLA
+consumer instead of being lost in the PUCCH trace. The complete shared retransmission-to-UCI
+sequence and terminal counter reductions remain **unqualified**. Failed-DCI
+handling is still an explicit stop condition. No final 12 dB run was started;
+all other mandatory gates below remain open. The preserved empty-clock IQ
+files are component artifacts, not a successful waveform baseline.
+
 The [retained DL ACK checkpoint](lls/retained_dl_ack_20260913.md) separates
 the UE's protocol-only repeated ACK from current PHY decoding. Actual archived
 receptions, 11 new negative checks, the four-attempt HARQ replay, canonical

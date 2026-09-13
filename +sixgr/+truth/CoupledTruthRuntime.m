@@ -1124,6 +1124,72 @@ methods(Static)
         state = sixgr.truth.CoupledTruthRuntime.appendPUCCHGrantTraceFromFeedback(state, feedbackRow);
     end
 
+    function [state,protocol]=queueRetainedDLACKRuntime(state,cfg,ue,control,availableAtSample)
+        % Queue a UE protocol decision, never a fabricated PDSCH trial.
+        owner=state.SharedWaveformStream;
+        assert(isa(owner,'sixgr.truth.CoupledWaveformStream') && ...
+            availableAtSample==owner.Events.NextSampleIndex, ...
+            'sixgr:truth:RetainedACKSharedClockRequired','Use the actual shared completion event.');
+        controls=state.SharedReceivedGrantControls;
+        hit=find(cellfun(@(x)x.Key==control.Key,controls));
+        assert(isscalar(hit) && isequaln(controls{hit},control) && control.Allowed, ...
+            'sixgr:truth:RetainedACKReceivedControlRequired','Retain the actual accepted shared PDCCH result.');
+        a=control.ReceivedAssignment;
+        sixgr.phy.pdcch.validateConnectedAssignment(cfg,a);
+        validateattributes(control.AvailableAtSample,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+        carrier=sixgr.phy.grid.makeCarrier(cfg);
+        assert(control.AvailableAtSample>=sixgr.phy.frame.slotStartSample( ...
+            carrier,a.ControlAbsoluteSlot,owner.SampleRateHz) && ...
+            availableAtSample>=sixgr.phy.frame.slotStartSample(carrier,a.DataAbsoluteSlot,owner.SampleRateHz), ...
+            'sixgr:truth:RetainedACKClockSlotMismatch','Control/data slot coordinates must agree with the shared sample clock.');
+        before=state.SharedUEDLHARQEntities{ue};
+        assert(before.UEId==ue,'sixgr:truth:RetainedACKUEIdentity','Use this UE owned HARQ entity.');
+        [~,next,protocol]=before.acknowledgeRetained(cfg,a);
+        protocol.ControlAvailableAtSample=control.AvailableAtSample;
+        protocol.DecisionAvailableAtSample=availableAtSample;
+        protocol.SampleRateHz=owner.SampleRateHz;
+        protocol.HARQFeedbackAbsoluteSlot=a.HARQFeedbackAbsoluteSlot;
+        protocol.PUCCHResourceIndicator=a.PUCCHResourceIndicator;
+        grant=control.Grant;
+        assert(grant.RNTI==a.RNTI && grant.Slot==a.DataAbsoluteSlot+1 && ...
+            grant.HARQ.HarqID==a.HARQProcess && grant.HARQ.NDI==a.NDI && ...
+            grant.K1==a.K1Slots && grant.HARQFeedbackAbsoluteSlot==a.HARQFeedbackAbsoluteSlot && ...
+            grant.PUCCHResourceIndicator==a.PUCCHResourceIndicator, ...
+            'sixgr:truth:RetainedACKFeedbackAuthorityMismatch', ...
+            'Received K1/PRI/process/NDI must agree with the actual bound grant, not replace them.');
+        fb=sixgr.truth.CoupledTruthRuntime.emptyFeedbackRow();
+        fb.Direction='DL'; fb.UEIndex=ue; fb.RNTI=a.RNTI;
+        fb.HarqID=a.HARQProcess; fb.NDI=a.NDI; fb.RV=a.RV; fb.IsRetransmission=true;
+        fb.SourceSlot=a.DataAbsoluteSlot+1; fb.DueSlot=a.HARQFeedbackAbsoluteSlot+1;
+        fb.Ack=true; fb.CurrentDecodeOK=false; fb.CombinedDecodeOK=false;
+        fb.ServingCell=state.CurrentServingIdx(ue); fb.BaseStationID=fb.ServingCell;
+        [fb.ComponentCarrier,fb.ActiveULBWP]= ...
+            sixgr.truth.CoupledTruthRuntime.resolvePUCCHCarrierBWP(cfg,grant);
+        fb.TBSBits=protocol.RetainedTBSBits; fb.UCIBitCount=1;
+        fb.PRIValue=a.PUCCHResourceIndicator; fb.PRIProvenance='received_connected_dci';
+        fb.FirstCCE=grant.PDCCHGrantFirstCCE; fb.NumCCE=grant.PDCCHGrantNumCCE;
+        fb.HARQProtocolDecisionEvidenceJSON=string(jsonencode(protocol));
+        sixgr.truth.assertRetainedDLACKAvailable(fb,availableAtSample,owner.SampleRateHz);
+        resource=sixgr.truth.CoupledTruthRuntime.resolvePUCCHResourceAssignment(state,fb);
+        fb.RequestedFormat=resource.RequestedFormat; fb.ResolvedFormat=resource.ResolvedFormat;
+        fb.PUCCHResourceId=resource.ResourceId;
+        fb.PUCCHPRBStart=resource.PRBStart; fb.PUCCHPRBCount=resource.PRBCount;
+        fb.PUCCHSymbolStart=resource.SymbolStart; fb.PUCCHNumSymbols=resource.NumSymbols;
+        fb.UCIType=resource.UCIType; fb.ControlResourceSource=resource.ControlResourceSource;
+        fb.ControlResourceValidity=resource.ControlResourceValidity;
+        fb.FormatAdaptationReason=resource.FormatAdaptationReason;
+        fb.PUCCHGrantId=sixgr.truth.CoupledTruthRuntime.composePUCCHGrantId(state,fb);
+        pending=sixgr.util.structGet(state,'PendingFeedbackTable',table());
+        assert(isempty(pending) || ~any(string(pending.PUCCHGrantId)==string(fb.PUCCHGrantId)), ...
+            'sixgr:truth:DuplicateRetainedACKReservation','One received assignment must queue feedback once.');
+        state.PendingFeedbackTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            pending,struct2table(fb,'AsArray',true));
+        state=sixgr.truth.CoupledTruthRuntime.appendPUCCHGrantTraceFromFeedback(state,fb);
+        state.SharedUEDLHARQEntities{ue}=next;
+        state.SharedDLProtocolDecisionTable=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            sixgr.util.structGet(state,'SharedDLProtocolDecisionTable',table()),struct2table(protocol,'AsArray',true));
+    end
+
     function [grantsOut, blockedT, keep] = excludeULGrantsCollidingWithPUCCHRuntime(state, grantsIn, dueSlot)
         [grantsOut, blockedT, keep] = sixgr.truth.CoupledTruthRuntime.excludeULGrantsCollidingWithPUCCHImpl(state, grantsIn, dueSlot);
     end
@@ -2744,6 +2810,11 @@ methods(Static, Access=private)
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_coverage_layer.csv"), state.CoverageLayerTable);
         sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "live_harq_observation_summary.csv"), state.HARQSummaryTable);
         sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv"), state.HARQTimelineTable);
+        protocolT=sixgr.util.structGet(state,'SharedDLProtocolDecisionTable',table());
+        if ~isempty(protocolT)
+            sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, ...
+                'received_dl_protocol_decisions.csv'),protocolT,'PreserveSchema',true);
+        end
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"), sixgr.util.structGet(state, "DLGrantTraceTable", table()));
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"), sixgr.util.structGet(state, "ULGrantTraceTable", table()));
         sixgr.util.csvWriteTable(fullfile(layout.PacketFlowCSVDir, "live_application_packet_delivery_ledger.csv"), ...
@@ -14410,6 +14481,7 @@ methods(Static, Access=private)
     function due = collectPUCCHDueHARQACKImpl(state, dueSlot)
         proto = struct("UEIndex", NaN, "RNTI", NaN, "HarqID", NaN, "SourceSlot", NaN, ...
             "PUCCHGrantId", "", "AckBit", int8(0), "EvidenceSource", "");
+        proto.DueSlot=NaN; proto.PRIValue=NaN; proto.TBSBits=NaN;
         timing=sixgr.truth.copyHARQReceiveTimingFields(struct());
         for name=string(fieldnames(timing)).', proto.(name)=timing.(name); end
         due = repmat(proto, 0, 1);
@@ -14477,6 +14549,11 @@ methods(Static, Access=private)
             "AckBit", int8(logical(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Ack", ...
                 sixgr.truth.CoupledTruthRuntime.rowValue(row, "ExpectedAck", false)))), ...
             "EvidenceSource", char(string(source)));
+        for name=["DueSlot","PRIValue","TBSBits"]
+            due.(name)=double(sixgr.truth.CoupledTruthRuntime.rowValue(row,name,NaN));
+        end
+        due.DueSlot=double(sixgr.truth.CoupledTruthRuntime.rowValue(row,'DueSlot', ...
+            sixgr.truth.CoupledTruthRuntime.rowValue(row,'ScheduledAbsoluteSlot',NaN)));
         timing=sixgr.truth.copyHARQReceiveTimingFields(row);
         for name=string(fieldnames(timing)).', due.(name)=timing.(name); end
     end
@@ -14904,7 +14981,8 @@ methods(Static, Access=private)
             "Frame", NaN, "Slot", NaN, "ScheduledAbsoluteSlot", NaN, "SourceSlot", NaN, ...
             "UEIndex", NaN, "UEID", NaN, "RNTI", NaN, "ServingCell", NaN, "BaseStationID", NaN, ...
             "ComponentCarrier", NaN, "ActiveULBWP", NaN, ...
-            "HarqID", NaN, "TBSBits", NaN, "ExpectedAck", false, "ObservedAck", false, ...
+            "HarqID", NaN, "NDI", NaN, "RV", NaN, "IsRetransmission", false, ...
+            "TBSBits", NaN, "ExpectedAck", false, "ObservedAck", false, ...
             "DecodedAck", false, "FalseAck", false, "FalseNack", false, "MissedFeedback", false, ...
             "ExpectedHARQCurrentDecodeOK", false, "ExpectedHARQCombinedDecodeOK", false, ...
             "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
@@ -16732,6 +16810,9 @@ methods(Static, Access=private)
         row.ComponentCarrier = double(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "ComponentCarrier", NaN));
         row.ActiveULBWP = double(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "ActiveULBWP", NaN));
         row.HarqID = double(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "HarqID", NaN));
+        row.NDI = double(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "NDI", NaN));
+        row.RV = double(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "RV", NaN));
+        row.IsRetransmission = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(fbRow, "IsRetransmission", false));
         row.TBSBits = double(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "TBSBits", NaN));
         row.ExpectedAck = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(fbRow, "Ack", false));
         row.ExpectedHARQCurrentDecodeOK = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(fbRow, "CurrentDecodeOK", false));

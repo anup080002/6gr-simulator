@@ -131,6 +131,7 @@ MIMO_COMPANION_TABLES = (
 )
 HARQ_OBSERVATION_TIMELINE = "harq/csv/live_harq_observation_timeline.csv"
 HARQ_OBSERVATION_SUMMARY = "harq/csv/live_harq_observation_summary.csv"
+DL_PROTOCOL_DECISIONS = "harq/csv/received_dl_protocol_decisions.csv"
 KPI_DELIVERY_TABLES = {
     "DL": {
         "trace": "reports/csv/kpi_harq_delivery_trace_dl.csv",
@@ -3168,6 +3169,97 @@ def _audit_mimo_companion_outputs(
             checks.extend(_audit_mimo_per_trial_companion(
                 relative, header, rows, rank_rows
             ))
+    return checks
+
+
+def _audit_dl_protocol_decisions(run_root: Path, link_rows: dict[str, list[dict[str, str]]]) -> list[AuditCheck]:
+    header, rows = _read_rows(run_root / DL_PROTOCOL_DECISIONS)
+    if not header:
+        return []
+    required = {
+        "ContractVersion", "UEId", "RNTI", "HARQProcess", "NDI", "ControlAbsoluteSlot",
+        "DataAbsoluteSlot", "ReceivedAssignmentDigest", "PriorAcknowledgedAssignmentDigest",
+        "PriorAcknowledgedDataAbsoluteSlot", "InitialAssignmentDigest", "RetainedTBSBits",
+        "ACK", "DecodeAttempted", "DeliverTransportBlock", "FeedbackTransmissionQualified",
+        "Source", "ControlAvailableAtSample", "DecisionAvailableAtSample", "SampleRateHz",
+        "HARQFeedbackAbsoluteSlot", "PUCCHResourceIndicator",
+    }
+    checks = [_check("harq_protocol", DL_PROTOCOL_DECISIONS, "required_columns", rows,
+                     sorted(required - set(header)))]
+    failures: list[str] = []
+    forbidden = {"CRCPass", "SINR_dB", "EVM_pct", "TimingOffsetSamples", "DataDecodeAvailableAtSample"}
+    failures.extend(f"current_measurement_column:{name}" for name in sorted(forbidden & set(header)))
+    trials: dict[str, list[dict[str, str]]] = {}
+    for trial in link_rows.get("DL", []):
+        trials.setdefault(trial.get("ReceivedAssignmentDigest", ""), []).append(trial)
+    seen: dict[str, dict[str, str]] = {}
+    for index, row in enumerate(rows, 1):
+        prefix = f"row{index}"
+        digest = row.get("ReceivedAssignmentDigest", "")
+        for key in ("ReceivedAssignmentDigest", "PriorAcknowledgedAssignmentDigest", "InitialAssignmentDigest"):
+            value = row.get(key, "")
+            if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+                failures.append(f"{prefix}:invalid_digest:{key}")
+        if digest in seen or digest in trials:
+            failures.append(f"{prefix}:duplicate_or_new_decode_for_protocol_assignment")
+        if (row.get("ContractVersion") != "received_dl_retained_ack/v1" or
+                row.get("Source") != "received_dci_and_ue_retained_decoded_tb" or
+                _number(row, "ACK") != 1 or any(_number(row, key) != 0 for key in
+                ("DecodeAttempted", "DeliverTransportBlock", "FeedbackTransmissionQualified"))):
+            failures.append(f"{prefix}:invalid_protocol_disposition")
+        integers = ("UEId", "RNTI", "HARQProcess", "NDI", "ControlAbsoluteSlot", "DataAbsoluteSlot",
+                    "PriorAcknowledgedDataAbsoluteSlot", "RetainedTBSBits", "ControlAvailableAtSample",
+                    "DecisionAvailableAtSample", "HARQFeedbackAbsoluteSlot", "PUCCHResourceIndicator")
+        values = {key: _number(row, key) for key in integers}
+        if any(v is None or v < 0 or not v.is_integer() for v in values.values()):
+            failures.append(f"{prefix}:invalid_integer_domain")
+        elif not (values["UEId"] >= 1 and values["RNTI"] >= 1 and values["NDI"] in (0, 1) and
+                  values["RetainedTBSBits"] > 0 and values["RetainedTBSBits"] % 8 == 0 and
+                  values["ControlAbsoluteSlot"] <= values["DataAbsoluteSlot"] and
+                  values["PriorAcknowledgedDataAbsoluteSlot"] < values["DataAbsoluteSlot"] and
+                  values["HARQFeedbackAbsoluteSlot"] >= values["DataAbsoluteSlot"] and
+                  values["ControlAvailableAtSample"] <= values["DecisionAvailableAtSample"] and
+                  (_number(row, "SampleRateHz") or 0) > 0):
+            failures.append(f"{prefix}:invalid_causal_or_payload_domain")
+        initial = trials.get(row.get("InitialAssignmentDigest", ""), [])
+        if len(initial) != 1:
+            failures.append(f"{prefix}:missing_unique_initial_decode_lineage")
+        else:
+            first = initial[0]
+            mapping = {"UEId": "UEIndex", "RNTI": "RNTI", "HARQProcess": "HARQProcess", "NDI": "NDI",
+                       "RetainedTBSBits": "TBSize_bits"}
+            first_slot = _number(first, "Slot")
+            prior_slot = _number(row, "PriorAcknowledgedDataAbsoluteSlot")
+            if (any(_number(row, k) != _number(first, v) for k, v in mapping.items()) or
+                    first_slot is None or prior_slot is None or first_slot - 1 > prior_slot):
+                failures.append(f"{prefix}:initial_decode_identity_mismatch")
+        prior_digest = row.get("PriorAcknowledgedAssignmentDigest", "")
+        prior_protocol = seen.get(prior_digest)
+        prior_trials = trials.get(prior_digest, [])
+        if prior_protocol is not None:
+            mappings = {"UEId": "UEId", "RNTI": "RNTI", "HARQProcess": "HARQProcess", "NDI": "NDI",
+                        "RetainedTBSBits": "RetainedTBSBits", "PriorAcknowledgedDataAbsoluteSlot": "DataAbsoluteSlot"}
+            if (any(_number(row, k) != _number(prior_protocol, v) for k, v in mappings.items()) or
+                    row.get("InitialAssignmentDigest") != prior_protocol.get("InitialAssignmentDigest") or
+                    (_number(prior_protocol, "DecisionAvailableAtSample") or 0) >
+                    (_number(row, "DecisionAvailableAtSample") or 0)):
+                failures.append(f"{prefix}:prior_protocol_identity_or_clock_mismatch")
+        elif len(prior_trials) == 1:
+            prior = prior_trials[0]
+            mappings = {"UEId": "UEIndex", "RNTI": "RNTI", "HARQProcess": "HARQProcess", "NDI": "NDI",
+                        "RetainedTBSBits": "TBSize_bits"}
+            slot = _number(prior, "Slot")
+            available = _number(prior, "DataDecodeAvailableAtSample")
+            if (any(_number(row, k) != _number(prior, v) for k, v in mappings.items()) or
+                    _number(prior, "CRCPass") != 1 or slot is None or
+                    _number(row, "PriorAcknowledgedDataAbsoluteSlot") != slot - 1 or
+                    available is None or available > (_number(row, "DecisionAvailableAtSample") or 0)):
+                failures.append(f"{prefix}:prior_decode_identity_or_clock_mismatch")
+        else:
+            failures.append(f"{prefix}:missing_unique_prior_ACK_lineage")
+        seen[digest] = row
+    checks.append(_check("harq_protocol", DL_PROTOCOL_DECISIONS,
+                         "retained_ACK_identity_clock_and_no_duplicate_decode", rows, failures))
     return checks
 
 
@@ -8602,6 +8694,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     checks.extend(_audit_mimo_rank_layer_output(run_root, link_rows))
     checks.extend(_audit_mimo_companion_outputs(run_root, link_rows))
     checks.extend(_audit_harq_observation_tables(run_root, link_rows))
+    checks.extend(_audit_dl_protocol_decisions(run_root, link_rows))
     checks.extend(_audit_kpi_delivery_outputs(
         run_root, link_rows, resolved_primary_tables
     ))

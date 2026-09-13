@@ -7,6 +7,10 @@ if istable(rows), rows=table2struct(rows); end
 assert(isstruct(rows),'sixgr:truth:HARQTimingRowRequired','Use retained HARQ reservations.');
 for k=1:numel(rows)
     row=rows(k); f=sixgr.truth.copyHARQReceiveTimingFields(row);
+    if strlength(string(f.HARQProtocolDecisionEvidenceJSON))>0
+        sixgr.truth.assertRetainedDLACKAvailable(row,encodingSample,sampleRateHz);
+        continue;
+    end
     token=string(f.DataReceiveTimingEvidenceJSON);
     assert(isscalar(token) && ~ismissing(token) && strlength(token)>0, ...
         'sixgr:truth:MissingUCIReceiveTiming', ...

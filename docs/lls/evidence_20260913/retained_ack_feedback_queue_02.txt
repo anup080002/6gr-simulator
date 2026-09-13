@@ -1,0 +1,8 @@
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=10 sample=76800
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=20 sample=153600
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=30 sample=230400
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=40 sample=307200
+RETAINED_ACK_EMPTY_CLOCK_ADVANCE slot=50 sample=384000
+[Warning: Directory already exists.] 
+[> In testRetainedDLACKFeedbackQueue (line 65)] 
+RETAINED_DL_ACK_QUEUE_PASS guards=5 protocol_rows=1 new_decode_rows=0 gNB_feedback_updates=0 no_UCI_execution_claim=1 folder=docs/lls/evidence_20260913/retained_ack_feedback_queue_02

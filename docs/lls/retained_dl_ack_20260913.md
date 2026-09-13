@@ -1,5 +1,10 @@
 # UE retained-ACK disposition checkpoint
 
+Follow-up: [shared feedback integration](retained_dl_ack_feedback_20260913.md)
+now adds the coordinator branch and queue/timing contracts. The full shared
+retransmission/UCI sequence remains unqualified; the original checkpoint
+and evidence below are preserved.
+
 This checkpoint does **not** qualify the main shared scheduler or the final
 58-slot 12 dB run. No full baseline was restarted.
 

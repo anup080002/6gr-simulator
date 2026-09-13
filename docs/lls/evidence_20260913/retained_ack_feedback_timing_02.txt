@@ -1,0 +1,4 @@
+RETAINED_DL_ACK_FEEDBACK_TIMING_PASS guards=15 collector_and_trace=1 fixture_clocks_not_main_run=1 folder=docs/lls/evidence_20260913/retained_ack_feedback_timing_02
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS

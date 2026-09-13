@@ -12662,6 +12662,26 @@ if connectedDL
         dlEntities{item.UE}=sixgr.link.ReceivedDLHARQState(job.Cfg,item.UE);
     end
     job.ReceivedContext.ReceivedHARQState=dlEntities{item.UE};
+    if ~dlEntities{item.UE}.requiresDecode(job.Cfg,control.ReceivedAssignment)
+        % The actual TX remains in the physical-owner ledger. This event
+        % acknowledges retained UE state, not a new CRC or delivered TB.
+        sixgr.truth.validateSharedDataReceptionTX(state, ...
+            struct('SharedTransmissionID',c.TransmissionIdentity.TransmissionID), ...
+            job.GrantSnapshot,p.Tx.TransportBlock,item.UE,'DL',job.GrantSnapshot.Slot);
+        state.SharedUEDLHARQEntities=dlEntities;
+        [state,~]=sixgr.truth.CoupledTruthRuntime.queueRetainedDLACKRuntime( ...
+            state,job.Cfg,item.UE,control,state.SharedWaveformStream.Events.NextSampleIndex);
+        ids=sixgr.util.structGet(state,'SharedDataRXCommittedIDs',strings(0,1));
+        state.SharedDataRXCommittedIDs=[ids;string(c.TransmissionIdentity.TransmissionID)];
+        state.DLCompletedSlots=max(double(sixgr.util.structGet(state,'DLCompletedSlots',0)), ...
+            double(job.GrantSnapshot.Slot));
+        source=find(double(state.SlotTraceTable.CanonicalSlot)==double(job.GrantSnapshot.Slot));
+        assert(isscalar(source),'sixgr:truth:MissingSharedSourceSlotTrace', ...
+            'Protocol completion requires its already-started source-slot trace.');
+        state.DLCompletedFrames=max(double(sixgr.util.structGet(state,'DLCompletedFrames',0)), ...
+            double(state.SlotTraceTable.FrameLocal(source)));
+        return;
+    end
 end
 output=sixgr.truth.executeGrantPHYJob(job);
 assert(output.ReadyForReceiverCommit,'sixgr:truth:SharedDataReceptionMissing','A receiver attempt must produce actual trial evidence.');
