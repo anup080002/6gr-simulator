@@ -1,0 +1,6 @@
+{Subscripted assignment between dissimilar structures.
+
+Error in testReceivedHARQFeedbackOutcome (line 29)
+    rows(index)=struct('Case',expected(index),'SignalPresent',index<3, ...
+    ^^^^^^^^^^^
+} 

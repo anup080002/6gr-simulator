@@ -1085,26 +1085,10 @@ methods(Static)
             validateAndOrderPUCCHPhysicalOccasion(feedbackRow);
         [state, observed] = sixgr.truth.CoupledTruthRuntime.observePUCCHFeedback( ...
             state, feedbackRow, csiReport);
-        decodedBits = int8(sixgr.util.structGet(observed, "DecodedBits", int8([])));
         for rowIndex = 1:height(feedbackRow)
-            rowObserved = observed;
             expectedAck = logical(sixgr.truth.CoupledTruthRuntime. ...
                 rowExpectedPUCCHAck(feedbackRow(rowIndex, :)));
-            rowObserved.ExpectedAck = expectedAck;
-            if rowIndex <= numel(decodedBits)
-                observedAck = logical(decodedBits(rowIndex));
-                rowObserved.ObservedAck = observedAck;
-                rowObserved.DecodedAck = observedAck;
-                rowObserved.FalseAck = logical(~expectedAck && observedAck);
-                rowObserved.FalseNack = logical(expectedAck && ~observedAck);
-                rowObserved.MissedFeedback = false;
-            else
-                rowObserved.ObservedAck = false;
-                rowObserved.DecodedAck = false;
-                rowObserved.FalseAck = false;
-                rowObserved.FalseNack = false;
-                rowObserved.MissedFeedback = true;
-            end
+            rowObserved = sixgr.truth.resolveReceivedHARQBit(observed,rowIndex,expectedAck);
             grantId = string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
                 feedbackRow(rowIndex, :), "PUCCHGrantId", ""));
             if strlength(strtrim(grantId)) > 0
@@ -8672,6 +8656,10 @@ methods(Static, Access=private)
         else
             outcome = "NACK";
         end
+        outcome = string(sixgr.truth.CoupledTruthRuntime.rowValue(row,'FeedbackOutcome',outcome));
+        assert(isscalar(outcome) && any(outcome==["ACK","NACK","DTX"]) && ...
+            ack==(outcome=="ACK"), 'sixgr:truth:InvalidSchedulerHARQOutcome', ...
+            'Scheduler ACK flag and received ACK/NACK/DTX outcome must agree.');
         [state, ollaAuthority] = sixgr.truth.CoupledTruthRuntime. ...
             updateReceiverOwnedOLLAAfterFeedback(state, row, direction);
         rxFeedback = struct( ...
@@ -8713,7 +8701,8 @@ methods(Static, Access=private)
         previousState = sixgr.truth.CoupledTruthRuntime. ...
             seedRuntimeLinkAdaptationState(cfg, direction, previousState, servingCell);
         feedback = struct( ...
-            "AckObservedValid", true, ...
+            "AckObservedValid", string(sixgr.truth.CoupledTruthRuntime.rowValue( ...
+                row,"FeedbackOutcome",""))~="DTX", ...
             "AckObserved", logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "Ack", false)), ...
             "RV", double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "RV", NaN)), ...
             "IsRetransmission", logical(sixgr.truth.CoupledTruthRuntime.rowLogical( ...
@@ -14239,6 +14228,7 @@ methods(Static, Access=private)
             end
             feedbackForScheduler = pendingRow;
             feedbackForScheduler.Ack(1) = observedAck;
+            feedbackForScheduler.FeedbackOutcome(1) = string(feedbackOutcome);
             feedbackForScheduler.Processed(1) = true;
             state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback( ...
                 state, feedbackForScheduler, "DL");
@@ -14251,6 +14241,9 @@ methods(Static, Access=private)
             traceT.FalseAck(traceIdx) = decodedVectorAvailable && observedAck && ~expectedRowBit;
             traceT.FalseNack(traceIdx) = decodedVectorAvailable && ~observedAck && expectedRowBit;
             traceT.MissedFeedback(traceIdx) = ~decodedVectorAvailable;
+            traceT.FeedbackOutcome(traceIdx) = string(feedbackOutcome);
+            traceT.FeedbackOutcomeReason(traceIdx) = sixgr.truth.CoupledTruthRuntime. ...
+                ternaryString(decodedVectorAvailable,"decoded_uci_bit","receiver_feedback_unusable");
             traceT.PUSCHUCIDecodeOk(traceIdx) = bitMatches;
             traceT.PUCCHDecodeOk(traceIdx) = false;
             traceT.CurrentDecodeOK(traceIdx) = decodedVectorAvailable;
@@ -14270,8 +14263,8 @@ methods(Static, Access=private)
                 traceT.PUCCHGrantState(traceIdx) = "pusch_uci_feedback_applied";
                 traceT.Notes(traceIdx) = "DL HARQ feedback consumed from the same-UE PUSCH receiver UCI output; no standalone PUCCH waveform executed.";
             else
-                traceT.PUCCHGrantState(traceIdx) = "pusch_uci_dtx_applied_as_nack";
-                traceT.Notes(traceIdx) = "PUSCH receiver produced no usable HARQ-ACK vector; DTX was applied as NACK without substituting expected bits.";
+                traceT.PUCCHGrantState(traceIdx) = "pusch_uci_dtx_applied";
+                traceT.Notes(traceIdx) = "PUSCH receiver produced no usable HARQ-ACK vector; DTX requests retransmission but is not a decoded NACK or an OLLA observation.";
             end
 
             timeline = sixgr.util.structGet(state, "HARQTimelineTable", table());
@@ -14984,6 +14977,7 @@ methods(Static, Access=private)
             "HarqID", NaN, "NDI", NaN, "RV", NaN, "IsRetransmission", false, ...
             "TBSBits", NaN, "ExpectedAck", false, "ObservedAck", false, ...
             "DecodedAck", false, "FalseAck", false, "FalseNack", false, "MissedFeedback", false, ...
+            "FeedbackOutcome", "", "FeedbackOutcomeReason", "", ...
             "ExpectedHARQCurrentDecodeOK", false, "ExpectedHARQCombinedDecodeOK", false, ...
             "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
             "UCIBitCount", NaN, "UCIType", "", ...
@@ -15803,25 +15797,12 @@ methods(Static, Access=private)
                         state,rows(ci,:),csiObserved);
                 end
                 rows=rows(harqMask,:);
-                decodedBits = int8(sixgr.util.structGet( ...
-                    observedFeedback, "DecodedBits", int8([])));
-                decodeUsable = logical(sixgr.util.structGet( ...
-                    observedFeedback, "DecodeOk", false));
                 for i = 1:height(rows)
                     row = rows(i, :);
                     expectedAck = logical( ...
                         sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row));
-                    observedAck = false;
-                    if decodeUsable && i <= numel(decodedBits)
-                        observedAck = logical(decodedBits(i));
-                    end
-                    bitObserved = observedFeedback;
-                    bitObserved.ExpectedAck = expectedAck;
-                    bitObserved.ObservedAck = observedAck;
-                    bitObserved.DecodedAck = observedAck;
-                    bitObserved.FalseAck = logical(~expectedAck && observedAck);
-                    bitObserved.FalseNack = logical(expectedAck && decodeUsable && ~observedAck);
-                    bitObserved.MissedFeedback = logical(~decodeUsable || i > numel(decodedBits));
+                    bitObserved = sixgr.truth.resolveReceivedHARQBit(observedFeedback,i,expectedAck);
+                    observedAck = bitObserved.ObservedAck;
                 direction = upper(string(row.FeedbackForDirection));
                 if strlength(strtrim(direction)) == 0
                     direction = upper(string(row.Direction));
@@ -15833,8 +15814,10 @@ methods(Static, Access=private)
                     harq = state.DLHarq;
                     buffers = state.DLCombinedLLR;
                 end
-                harq.onFeedback(double(row.RNTI), double(row.HarqID), observedAck, ...
-                    "SourceSlot", double(row.SourceSlot));
+                dueSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, ...
+                    'DueSlot',sixgr.truth.CoupledTruthRuntime.rowValue(row,'ScheduledAbsoluteSlot',NaN)));
+                harq.onFeedback(double(row.RNTI), double(row.HarqID), bitObserved.FeedbackOutcome, ...
+                    "SourceSlot", double(row.SourceSlot), "FeedbackSlot", dueSlot);
                 pid = double(row.HarqID) + 1;
                 if observedAck
                     try
@@ -15847,6 +15830,7 @@ methods(Static, Access=private)
                 end
                 rowAck = row;
                 rowAck.Ack(1) = observedAck;
+                rowAck.FeedbackOutcome(1) = bitObserved.FeedbackOutcome;
                 rowAck.Processed(1) = true;
                 state = sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state, rowAck, direction);
                 state = sixgr.truth.CoupledTruthRuntime.updatePUCCHGrantTraceAfterObservation(state, row, bitObserved);
@@ -16900,6 +16884,10 @@ methods(Static, Access=private)
             traceT.MissedFeedback(idx) = logical(sixgr.util.structGet(observed, "MissedFeedback", ~decodeOk));
         end
         traceT.PUCCHDecodeOk(idx) = decodeOk;
+        traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+            traceT,'FeedbackOutcome',idx,sixgr.util.structGet(observed,'FeedbackOutcome',""));
+        traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+            traceT,'FeedbackOutcomeReason',idx,sixgr.util.structGet(observed,'FeedbackOutcomeReason',""));
         traceT.CurrentDecodeOK(idx) = decodeOk;
         traceT.CombinedDecodeOK(idx) = decodeOk;
         traceT.GrantExecutedFlag(idx) = true;

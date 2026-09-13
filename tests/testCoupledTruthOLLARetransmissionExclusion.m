@@ -128,6 +128,21 @@ assert(abs(double(afterNextNewTransmission.DeltaMCS) + 0.8) < 1e-12 && ...
     afterNextNewTransmission.OLLAUpdateCount == 2, ...
     "A later first-transmission ACK must apply exactly one configured OLLA up-step.");
 
+% Received UCI failure is not a decoded NACK about the data channel.
+dtx=localFeedback(false,0,false,19);
+dtx.FeedbackOutcome="DTX";
+state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedbackRuntime(state,dtx,"DL");
+afterDTX=state.DLLinkAdaptationState{1};
+assert(afterDTX.DeltaMCS==afterNextNewTransmission.DeltaMCS && ...
+    afterDTX.OLLAUpdateCount==2 && ~afterDTX.LastOLLAFeedbackEligible && ...
+    string(afterDTX.LastOLLAFeedbackExclusionReason)=="no_ack_nack_feedback");
+% Standalone scheduler-local OLLA follows the same outcome distinction.
+standalone=sixgr.l2.mac.SchedulerRR(cfg,"Direction","DL");
+standalone.updateAfterRx(struct('RNTI',4101,'TBSBits',800,'Ack',false, ...
+    'Outcome','DTX','RV',0,'IsRetransmission',false));
+[delta,count]=standalone.getOLLAMCSDelta(4101);
+assert(delta==0 && count==0);
+
 % The receiver-owned CQI/ILLA state and OLLA state have different update
 % denominators. Every valid CQI can advance the adaptation state, but an
 % RV>0/retransmission outcome must not be counted as an OLLA observation.

@@ -1,0 +1,7 @@
+{Error using assert
+Assertion failed.
+
+Error in testReceivedHARQFeedbackOutcome (line 22)
+    assert(bit.FeedbackOutcome==expected(index));
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

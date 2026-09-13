@@ -6,6 +6,18 @@ This ledger tracks the CODEX-01..40 repair stream against concrete repo files an
 
 ## Current execution gate and ordered roadmap
 
+The [received ACK/NACK/DTX checkpoint](lls/received_harq_outcomes_20260913.md)
+repairs PUCCH's Boolean-DTX collapse, preserves PUSCH feedback outcomes,
+separates HARQ NACK/DTX counters and excludes unusable UCI from runtime and
+scheduler-local OLLA. Focused MATLAB processes exit 0 and 122 Python tests
+pass. A new mandatory detector gate is open: the unchanged 0.2 threshold
+produced 60 false detections in 64 retained noise-only component trials.
+This is not baseline false-alarm qualification. Detector YAML authority and
+format/metric calibration must be repaired before the final run. The
+allocator edit was refused again; the main missed-DCI observation path,
+combined shared retained-ACK sequence, special-slot/TA and terminal
+measurement/publication gates remain open. No full run or push occurred.
+
 The [shared retained-ACK feedback checkpoint](lls/retained_dl_ack_feedback_20260913.md)
 adds the main callback's protocol-only branch, received K1/PRI queue binding,
 separate protocol availability evidence and CSV domain checks. The queue and

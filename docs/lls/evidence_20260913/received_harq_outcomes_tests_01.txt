@@ -1,0 +1,10 @@
+{Error using assert
+Assertion failed.
+
+Error in testReceivedHARQFeedbackOutcome>localMACOutcome (line 74)
+    assert(isempty(next));
+    ^^^^^^^^^^^^^^^^^^^^^
+Error in testReceivedHARQFeedbackOutcome (line 28)
+    localMACOutcome(bit.FeedbackOutcome);
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

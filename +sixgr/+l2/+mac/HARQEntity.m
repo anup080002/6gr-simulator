@@ -50,7 +50,7 @@ classdef HARQEntity < handle
     end
 
     properties
-        Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
+        Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Dtx',0,'Drop',0, ...
             'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
             'SoftBufferClear',0,'FirstSuccessDelivery',0)
     end
@@ -140,7 +140,7 @@ classdef HARQEntity < handle
             obj.UEList = double.empty(1,0);
             obj.UEProcs = {};
             obj.DeliveryLedger = table();
-            obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Drop',0, ...
+            obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Dtx',0,'Drop',0, ...
                 'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
                 'SoftBufferClear',0,'FirstSuccessDelivery',0);
         end
@@ -513,10 +513,14 @@ classdef HARQEntity < handle
                 procs(pid) = obj.resetProc(procs(pid));
                 obj.Stats.Ack = obj.Stats.Ack + 1;
             else
-                obj.Stats.Nack = obj.Stats.Nack + 1;
+                if outcome=="DTX"
+                    obj.Stats.Dtx = double(sixgr.util.structGet(obj.Stats,'Dtx',0)) + 1;
+                else
+                    obj.Stats.Nack = obj.Stats.Nack + 1;
+                end
                 obj.markDeliveryFeedback(rnti, harqId0, false, sourceSlot, feedbackSlot, lower(outcome));
 
-                % NACK: if max transmissions reached, drop; else schedule retx
+                % NACK/DTX: if max transmissions reached, drop; else schedule retx
                 maxTx = 1 + obj.MaxRetx;
                 if procs(pid).TxCount >= maxTx
                     if ~isempty(fieldnames(procs(pid).SoftBuffer))

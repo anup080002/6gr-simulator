@@ -1,0 +1,3 @@
+NO_SIGNAL_FALSE_ALARMS 60/64 (component observation, not threshold qualification)
+RECEIVED_HARQ_ACK_NACK_DTX_PASS
+[TR38901Plus] Resolved config: Scenario=UrbanMacro Fc_Hz=4000000000 PathlossModel=nrPathLoss ShadowSigma_dB=6 PathlossEnabled=1 ShadowEnabled=1 LOSEnabled=1

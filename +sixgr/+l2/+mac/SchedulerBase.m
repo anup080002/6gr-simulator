@@ -306,7 +306,8 @@ classdef (Abstract) SchedulerBase < handle
                 tbsBits = double(tbsList(k));
                 ack = logical(ackList(k));
                 obj.updateAvgThroughput(rnti, tbsBits, ack);
-                if ~localOLLAIsExternallyManaged(ollaAuthorityList(k)) && ...
+                if any(outcomeList(k)==["ACK","NACK"]) && ...
+                        ~localOLLAIsExternallyManaged(ollaAuthorityList(k)) && ...
                         localFeedbackEligibleForOLLA(isRetxKnownList(k), isRetxList(k), rvList(k))
                     obj.updateOLLADelta(rnti, ack);
                 end
