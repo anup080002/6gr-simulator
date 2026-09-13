@@ -1,5 +1,10 @@
 # PUCCH power-domain repair and remaining 12 dB gates
 
+Follow-up: [receiver disposition and special-slot TDRA repair](pucch_disposition_and_tdra_20260913.md)
+records subsequent fixes and terminal focused-test results. The original
+observations below are retained as checkpoint history, not current claims
+that every listed implementation defect remains untouched.
+
 This checkpoint is not a qualified full baseline. Do not launch another
 58-slot run while the mandatory gates below remain open. Retain failed
 captures; do not reconstruct missing runtime measurements after execution.

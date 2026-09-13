@@ -1,0 +1,9 @@
+AbsoluteSlot0,DLSymbolStart,DLNumSymbols,IsSpecialSlot,LegalConfiguredTDRAExists,BudgetPRBs,SelectedStart,SelectedLength,SelectionMatchesLegalCatalogRow,DCITDRAIndex,UnavailableReason,EvidenceScope
+0,0,14,0,1,25,2,12,1,0,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+1,0,14,0,1,25,2,12,1,0,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+2,0,14,0,1,25,2,12,1,0,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+3,0,10,1,1,25,2,8,1,1,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+5,0,14,0,1,25,2,12,1,0,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+6,0,14,0,1,25,2,12,1,0,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+7,0,14,0,1,25,2,12,1,0,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification
+8,0,10,1,1,25,2,8,1,1,,actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification

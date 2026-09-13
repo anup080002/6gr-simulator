@@ -1,0 +1,19 @@
+             Capture                                                 SourceCSV                                       ReceiverDTX    ProjectedDTX        ProjectedReason                                EvidenceScope                        
+    __________________________    _______________________________________________________________________________    ___________    ____________    _______________________    _____________________________________________________________
+
+    "pucch_baseline_signal_02"    "docs\lls\evidence_20260913\pucch_baseline_signal_02\received_pucch_trials.csv"       true           true         "receiver_reported_dtx"    "projection_of_retained_actual_receiver_decision_not_new_phy"
+    "pucch_baseline_signal_03"    "docs\lls\evidence_20260913\pucch_baseline_signal_03\received_pucch_trials.csv"       false          false        ""                         "projection_of_retained_actual_receiver_decision_not_new_phy"
+
+PUCCH_RECEIVER_DISPOSITION_PASS
+PUCCH_NORMALIZED_REFERENCE_PASS: original IFFT restored; absolute mode preserved; missing scale rejected.
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=1 CRC=0 sample=46087 noise=0.0001
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_PUCCH_FEEDBACK_CLOCK_PASS
+
+ans =
+
+  logical
+
+   1
+

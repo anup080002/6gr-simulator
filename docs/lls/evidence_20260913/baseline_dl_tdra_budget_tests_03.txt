@@ -1,0 +1,21 @@
+    AbsoluteSlot0    DLSymbolStart    DLNumSymbols    IsSpecialSlot    LegalConfiguredTDRAExists    BudgetPRBs    SelectedStart    SelectedLength    SelectionMatchesLegalCatalogRow    DCITDRAIndex    UnavailableReason                                    EvidenceScope                                
+    _____________    _____________    ____________    _____________    _________________________    __________    _____________    ______________    _______________________________    ____________    _________________    _____________________________________________________________________________
+
+          0                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          1                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          2                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          3                0               10             true                   true                   25              2                 8                       true                       1                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          5                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          6                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          7                0               14             false                  true                   25              2                12                       true                       0                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+          8                0               10             true                   true                   25              2                 8                       true                       1                 ""            "actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification"
+
+BASELINE_DL_TDRA_BUDGET_PASS
+PDSCH TDRA: mapping A/B, extended CP, repetition and four negatives passed.\n[PASS] testTDDCausalWiringShortYAMLAuthority rows=34697 exactRE=187028
+
+ans =
+
+  logical
+
+   1
+

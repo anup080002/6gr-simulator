@@ -1,0 +1,6 @@
+{Unrecognized field name "rnti".
+
+Error in testBaselineDLTDRABudget (line 30)
+        candidate=struct('SymbolAllocation',selected,'RNTI',double(cfg.phy.rnti),'K0',0);
+                                                                   ^^^^^^^^^^^^
+} 

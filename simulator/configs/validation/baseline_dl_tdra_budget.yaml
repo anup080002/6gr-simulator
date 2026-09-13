@@ -1,0 +1,4 @@
+profile_id: baseline_dl_tdra_budget_v1
+research_class: optional_research_experiment
+scenario_path: simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+evidence_scope: actual_runtime_budget_from_resolved_yaml_not_waveform_or_harq_qualification

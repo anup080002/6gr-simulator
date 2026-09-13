@@ -10266,6 +10266,17 @@ methods(Static, Access=private)
             end
             if ~sixgr.truth.CoupledTruthRuntime.symbolAllocationFitsPartition( ...
                     budget.SymbolAllocation, slotAllocation)
+                selection=sixgr.truth.selectConfiguredTDRARow( ...
+                    state.CfgMobility,direction,slotAllocation,runtimeSlot-1-controlSlot);
+                if ~isempty(selection)
+                    budget.SymbolAllocation=selection.SymbolAllocation;
+                    budget.TDRAIndex=selection.Index;
+                    budget.TDRASelectionSource=selection.Source;
+                    budget.TDRASlotOffset=selection.SlotOffset;
+                end
+            end
+            if ~sixgr.truth.CoupledTruthRuntime.symbolAllocationFitsPartition( ...
+                    budget.SymbolAllocation, slotAllocation)
                 budget.NPRB = 0;
                 budget.PRBSet = zeros(1, 0);
                 budget.UnavailableReason = ...
@@ -16890,6 +16901,10 @@ methods(Static, Access=private)
             traceT.MissedFeedback(idx) = logical(sixgr.util.structGet(observed, "MissedFeedback", ~decodeOk));
         end
         traceT.PUCCHDecodeOk(idx) = decodeOk;
+        receiverDisposition=sixgr.truth.pucchReceiverDisposition(observed);
+        traceT.DTXFlag(idx)=receiverDisposition.DTXFlag;
+        traceT=sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+            traceT,'DTXReason',idx,receiverDisposition.DTXReason);
         traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
             traceT,'FeedbackOutcome',idx,sixgr.util.structGet(observed,'FeedbackOutcome',""));
         traceT = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...

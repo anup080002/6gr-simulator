@@ -1,0 +1,110 @@
+{
+  "Sources": [
+    {
+      "Path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "SHA256": "38a69eb0398511bd395c1782ea5cf2d24f4ae68a63eb0510572c26be0917216f"
+    },
+    {
+      "Path": "+sixgr/+truth/pucchReceiverDisposition.m",
+      "SHA256": "2ed27b8c9d5d99acb5e1363b2e39b5ecc8674662c30addf6202e89c4cb10b37f"
+    },
+    {
+      "Path": "+sixgr/+truth/selectConfiguredTDRARow.m",
+      "SHA256": "26a259966c20731e901228d0830eddfee7f0461238854bddfbcf89c0d6b34c91"
+    },
+    {
+      "Path": "+sixgr/+truth/bindPUCCHPowerLedger.m",
+      "SHA256": "583009f41e127e3dd83c1340919a43dd1fa29101250d4d1cd67f37451fa6d20c"
+    },
+    {
+      "Path": "+sixgr/+link/runPUCCHWaveformTrial.m",
+      "SHA256": "d46f61605253e753ef47b20a7256ba24c031a1e51f56beaa8b43e61d0abeaf2c"
+    },
+    {
+      "Path": "tests/testBaselineDLTDRABudget.m",
+      "SHA256": "a029d03fe075f4ba74e1ee739b1064b0a713354409ab59de3e9a86963a45d284"
+    },
+    {
+      "Path": "tests/testPUCCHReceiverDisposition.m",
+      "SHA256": "fa8edd7f42eb71065d9f8297f2414323da71a9e5bcb604cbc5d78c0cc3850be1"
+    },
+    {
+      "Path": "tests/testSharedPUCCHFeedbackClock.m",
+      "SHA256": "6805c6702db6712c7c821288602a7cd06247e2de6189ae0954478230275cfcfe"
+    },
+    {
+      "Path": "tests/verifyPUCCHPowerExport.m",
+      "SHA256": "13b6f632623c7444cf54144a2f80a9e29dc4b51b31cccf5b5d199500988bc0d3"
+    },
+    {
+      "Path": "simulator/configs/validation/baseline_dl_tdra_budget.yaml",
+      "SHA256": "114337e6be603f4c37cfdb7bdb56db1a2e73f3bbe6c6b6351405175f3b32d239"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
+      "SHA256": "ce5caf0aaa9e8064740ed61c8a161156df501a1a271a61cb55080bc191c6e541"
+    }
+  ],
+  "Captures": [
+    {
+      "Path": "baseline_dl_tdra_budget_01/dl_tdra_budget.csv",
+      "Bytes": 1090,
+      "SHA256": "c5742a1d4d82197e0a40bd31c08c4e5d2c4006d638fb8554a35cb82dc4351f1b"
+    },
+    {
+      "Path": "baseline_dl_tdra_budget_01/dl_tdra_budget.mat",
+      "Bytes": 307838,
+      "SHA256": "8c665e0aed35620bea8467bead0ca7cdf48c7172f95a71455c7a30419be11ad2"
+    },
+    {
+      "Path": "baseline_dl_tdra_budget_03/dl_tdra_budget.csv",
+      "Bytes": 1005,
+      "SHA256": "5097ddd1e1a6a50e2c972dfb12c0bd641c0231c46a715278286542231a4b724a"
+    },
+    {
+      "Path": "baseline_dl_tdra_budget_03/dl_tdra_budget.mat",
+      "Bytes": 307837,
+      "SHA256": "c0bf7a362d04687cf7a386d68301b4e70501e8f3d1e7c9adc0578424a621d9be"
+    },
+    {
+      "Path": "pucch_baseline_signal_04/configuration.mat",
+      "Bytes": 602896,
+      "SHA256": "e9e1c2cd4b96f816bbaddb6b2a364a5df948b272a34cfcb10ab9b6086c392b94"
+    },
+    {
+      "Path": "pucch_baseline_signal_04/received_pucch_grants.csv",
+      "Bytes": 4789,
+      "SHA256": "0b37725e09653d0d8d488d3d5cc113db446982c07442c5a8b79a55628ab588b7"
+    },
+    {
+      "Path": "pucch_baseline_signal_04/received_pucch_trials.csv",
+      "Bytes": 6825,
+      "SHA256": "1c8ce8c1f06a5b588add836969f6b59dc42c9ac7c2943feaf01fe3ad1ad01318"
+    },
+    {
+      "Path": "pucch_baseline_signal_04/received_pucch.mat",
+      "Bytes": 2217027,
+      "SHA256": "2f2d6d3417f6b346394b36b68dbc8b7df2c3dfeb2158aa2b2e7f338fc53fb895"
+    },
+    {
+      "Path": "pucch_baseline_signal_04/received_srs.mat",
+      "Bytes": 11575574,
+      "SHA256": "c09aa29f6d87efce6e99f6f441c48f6485217f8708680f83d363b00aeb30e853"
+    },
+    {
+      "Path": "pucch_disposition_projection_01/receiver_disposition_projection.csv",
+      "Bytes": 433,
+      "SHA256": "c4b895c6764dde70d63a95cc6eeae1192d6530dedd766bfc3e9bf662a2bc612b"
+    }
+  ],
+  "BaseCommit": "5ba034cbf579679b2af7f7ca798da9754799bf87",
+  "SourceHashScope": "checkpoint_files_after_all_tests; PUCCH_04_preceded_TDRA_budget_edit_in_CoupledTruthRuntime; no_claim_of_identical_whole_source_revision_for_all_cases",
+  "TerminalExits": {
+    "pucch_disposition_and_power_tests_01": 0,
+    "baseline_dl_tdra_budget_tests_01": 1,
+    "baseline_dl_tdra_budget_tests_02": 1,
+    "baseline_dl_tdra_budget_tests_03": 0,
+    "tdra_scheduler_grant_consistency_01": 0
+  },
+  "FullBaselineQualified": false
+}

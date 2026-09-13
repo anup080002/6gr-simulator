@@ -9,11 +9,15 @@ assert(isfinite(T.PUCCHRequestedTxPower_dBm) && isfinite(T.PUCCHPowerControlPath
 fixedReference=upper(string(cfg.integration.run_mode))=="FIXED_SNR_SWEEP" && ...
     cfg.integration.configured_snr_is_link_authority;
 if fixedReference
+    assert(~T.PUCCHPowerHeadroomApplicable && isnan(T.PUCCHPowerHeadroom_dB));
+    assert(T.PUCCHPowerControlTargetHeadroom_dB==T.PUCCHPCMAX_dBm-T.PUCCHRequestedTxPower_dBm);
+    assert(contains(string(T.PUCCHPowerHeadroomSource),"diagnostic_only"));
     assert(T.PUCCHNormalizedPowerReference && ~T.PUCCHPhysicalPowerApplicable && isnan(T.PUCCHAppliedTxPower_dBm));
     assert(T.PUCCHNormalizedReferenceEnergyPerRE==1 && ...
         isfinite(T.PUCCHNormalizedActiveMeanSquare) && T.PUCCHNormalizedActiveMeanSquare>0);
     assert(string(T.PUCCHAppliedTxPowerReferencePlane)=="normalized_occupied_re_pre_node_rf_contribution");
 else
+    assert(T.PUCCHPowerHeadroomApplicable && isfinite(T.PUCCHPowerHeadroom_dB));
     assert(T.PUCCHAppliedTxPower_dBm==min(T.PUCCHPCMAX_dBm,T.PUCCHRequestedTxPower_dBm));
     assert(string(T.PUCCHAppliedTxPowerReferencePlane)=="pre_node_rf_transmitter_contribution");
 end
@@ -22,7 +26,8 @@ cleanup=onCleanup(@()localRemove(file)); %#ok<NASGU>
 sixgr.util.csvWriteTable(file,T,'PreserveSchema',true);
 persisted=sixgr.util.csvReadTable(file,'TextType','string');
 for name=["PUCCHPowerControlMu","PUCCHPowerControlMRB","PUCCHPowerBandwidthTerm_dB", ...
-        "PUCCHRequestedTxPower_dBm","PUCCHAppliedTxPower_dBm"]
+        "PUCCHRequestedTxPower_dBm","PUCCHAppliedTxPower_dBm", ...
+        "PUCCHPowerHeadroom_dB","PUCCHPowerControlTargetHeadroom_dB"]
     assert(isequaln(double(T.(name)),double(persisted.(name))) || ...
         abs(double(T.(name))-double(persisted.(name)))<1e-12, ...
         'Actual PUCCH power evidence did not survive CSV serialization: %s.',name);

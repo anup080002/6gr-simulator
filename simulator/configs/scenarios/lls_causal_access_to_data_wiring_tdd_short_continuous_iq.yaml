@@ -63,6 +63,8 @@ pusch:
 pdsch:
   dmrs_nscid: 0
   # Full-DL and special-slot DL allocations, both with K0=0.
+  # If the preferred allocation does not fit, runtime selects the first
+  # catalog row fitting the DL partition and actual control-to-data offset.
   time_domain_allocations:
     - [0, 2, 12, 0]
     - [1, 2, 8, 0]
