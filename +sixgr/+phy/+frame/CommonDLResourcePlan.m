@@ -70,6 +70,44 @@ classdef CommonDLResourcePlan
                 'ControlCandidateValidated',false,'ProxyUsed',false,'FallbackUsed',false);
         end
 
+        function [available,evidence] = checkConnectedPDSCH(obj,allocation,slot0)
+            % Dedicated periodic NZP-CSI-RS with trs-Info is excluded at RE
+            % granularity by TS 38.211 7.3.1.5. This is NOT the common/RA
+            % allocation policy, aperiodic CSI-RS or the TRS-ResourceSet IE.
+            % Eligibility here precedes the final rank/MCS-specific PHY
+            % feasibility check; it does not freeze capacity or a TB.
+            [available,evidence] = obj.checkPDSCH(allocation,slot0);
+            isTRS = evidence.ConflictingOwners == "TRS";
+            evidence.TRSRateMatchedRECount = 0;
+            if ~any(isTRS), return; end
+            assert(obj.TRS.TRSInfoEnabled && obj.TRS.CSIRSType == "nzp" && ...
+                any(obj.TRS.SlotAuthority == ["periodic_offset","explicit_slot_numbers"]), ...
+                'sixgr:phy:frame:MissingDedicatedTRSAuthority', ...
+                'Connected TRS sharing requires configured periodic NZP-CSI-RS with trs-Info.');
+            cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Config,slot0+1);
+            carrier = obj.carrierAt(slot0);
+            prbs = allocation.PRBStart+(0:allocation.NumPRB-1);
+            symbols = [allocation.SymbolStart allocation.NumSymbols];
+            [data,~,pdsch] = sixgr.phy.grid.allocREsPDSCH(carrier,cfg, ...
+                'PRBSet',prbs,'SymbolAllocation',symbols);
+            plane = 12*carrier.NSizeGrid*carrier.SymbolsPerSlot;
+            trs = intersect(obj.trsRE(slot0),localRectangle(carrier,prbs, ...
+                symbols(1)+(0:symbols(2)-1)));
+            reserved = unique(mod(double(pdsch.ReservedRE(:)),plane));
+            pilots = [reshape(nrPDSCHDMRSIndices(carrier,pdsch),[],1); ...
+                reshape(nrPDSCHPTRSIndices(carrier,pdsch),[],1)];
+            occupied = unique(mod(double([data(:);pilots(:)])-1,plane));
+            assert(all(ismember(trs,reserved)) && isempty(intersect(trs,occupied)), ...
+                'sixgr:phy:frame:UnreservedConnectedTRS', ...
+                'Dedicated TRS REs must be reserved before PDSCH coding and must not collide with data or pilots.');
+            evidence.TRSRateMatchedRECount = numel(trs);
+            evidence.ConflictingOwners(isTRS) = [];
+            evidence.OverlapRECounts(isTRS) = [];
+            available = isempty(evidence.ConflictingOwners);
+            evidence.Available = available;
+            evidence.Source = "configured_connected_DL_ownership_with_verified_TRS_RE_reservation_not_measured";
+        end
+
         function validateSIB1TRS(obj)
             if isempty(obj.SIB1Slot0) || isempty(obj.TRS), return; end
             slots = sixgr.util.structGet(obj.Config,'phy.trs.slotNumbers', ...

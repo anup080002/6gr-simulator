@@ -3,6 +3,10 @@
 Follow-up to [the power-reference checkpoint](pucch_power_and_remaining_gates_20260913.md).
 This is focused component/budget evidence, not a qualified full 58-slot run.
 
+Follow-up: [main scheduler/TRS special-slot repair](special_slot_scheduler_trs_20260913.md)
+records the subsequent real scheduler-grant and received-control allocation
+checks. The remaining gates below are retained as this earlier checkpoint's scope.
+
 ## Receiver disposition and power export
 
 The physical PUCCH receiver and `resolveReceivedHARQBit` retained the DTX

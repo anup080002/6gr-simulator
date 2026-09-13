@@ -1222,11 +1222,10 @@ classdef (Abstract) SchedulerBase < handle
 
         function [available,evidence] = ssbSafePRBSet(obj,slot,budget,available,symAlloc,grant)
             % Derive common-DL exclusions for this actual data occasion.
-            % Connected-mode PDSCH is emitted as a separate waveform on the
-            % shared stream, so overlapping SSB, Type-0/SIB1 or TRS REs must
-            % be excluded before DCI/TBS freezing.  Treating that overlap as
-            % harmless rate matching would be incorrect: no rate-matching
-            % pattern is signalled to either independently coded PDSCH.
+            % Retain SSB/Type-0/SIB1 exclusions. Dedicated periodic TRS can
+            % share PRBs only when the canonical allocator reserves its REs
+            % before coding (also used by received-DCI allocation). Final
+            % rank/MCS-specific feasibility still runs before DCI/TBS freeze.
             evidence = table();
             commonEnabled = logical(sixgr.util.structGet(obj.Cfg,"phy.ssb.enable",false)) || ...
                 logical(sixgr.util.structGet(obj.Cfg,"phy.sib1.enable",false)) || ...
@@ -1257,7 +1256,7 @@ classdef (Abstract) SchedulerBase < handle
             for prb=before
                 allocation=struct('PRBStart',double(prb),'NumPRB',1, ...
                     'SymbolStart',double(symAlloc(1)),'NumSymbols',double(symAlloc(2)));
-                [free,conflict]=plan.checkPDSCH(allocation,double(timing.DataAbsoluteSlot));
+                [free,conflict]=plan.checkConnectedPDSCH(allocation,double(timing.DataAbsoluteSlot));
                 if ~free
                     excluded(end+1)=prb; %#ok<AGROW>
                     owners=[owners;string(conflict.ConflictingOwners(:))]; %#ok<AGROW>

@@ -1,0 +1,9 @@
+profile_id: baseline_special_slot_scheduler_v1
+research_class: optional_research_experiment
+scenario_path: simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+evidence_scope: baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy
+ue_fixture:
+  buffer_bytes: 12000
+  cqi: 10
+  rank: 1
+  head_of_line_delay_ms: 1

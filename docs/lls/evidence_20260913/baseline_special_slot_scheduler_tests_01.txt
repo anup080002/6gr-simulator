@@ -1,0 +1,13 @@
+    AbsoluteSlot0    BudgetPRBs    SymbolStart    NumSymbols    TDRAIndex    GrantCount    Verified                ErrorID                                        ErrorDetail                                                             EvidenceScope                                 
+    _____________    __________    ___________    __________    _________    __________    ________    _______________________________    ____________________________________________________________    ______________________________________________________________________________
+
+          3              25             2             8             1            1          false      "MATLAB:nonExistentField"          "Unrecognized field name "time_domain_resource_assignment"."    "baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy"
+          8              25             2             8             1            0          false      "sixgr:test:SpecialSlotNoGrant"    "An eligible queued UE produced no grant."                      "baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy"
+
+{Error using assert
+Special-slot scheduler/timing/DCI checks failed; inspect retained evidence.
+
+Error in testBaselineSpecialSlotScheduler (line 62)
+assert(~isempty(results) && all(results.Verified), ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

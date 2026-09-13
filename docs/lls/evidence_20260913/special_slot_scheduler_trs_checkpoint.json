@@ -1,0 +1,68 @@
+{
+  "Schema": "sixgr.focused_checkpoint.v1",
+  "Status": "local_unqualified_baseline_checkpoint",
+  "Full58SlotRunStarted": false,
+  "RemotePush": false,
+  "SourceHashes": [
+    {
+      "Path": "+sixgr/+l2/+mac/SchedulerBase.m",
+      "SHA256": "205E28A79B62D23E5E68F76CDF360E878FA52652C0CB7A913866FF09258E28A9"
+    },
+    {
+      "Path": "+sixgr/+phy/+frame/CommonDLResourcePlan.m",
+      "SHA256": "0CE9595C2D61FCCE5306390D40D26FCC6EA86413AAE7E71E3821066D888E2ED3"
+    },
+    {
+      "Path": "+sixgr/+phy/+grid/allocREsPDSCH.m",
+      "SHA256": "6FDA9153551656D36B86C656F0EFE8BB88DE7B9B1B98374487549FB5C06F6402"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHReceiver.m",
+      "SHA256": "0BF3D8578F22A9CBD38C59657558177D9A4CB8ACBC0C0AFA377698D77DEED7A7"
+    },
+    {
+      "Path": "tests/testBaselineSpecialSlotScheduler.m",
+      "SHA256": "53A2EF4945FE1DFD8CD1EE3B36C7635F993DE246CC61219D5F083A9929544973"
+    },
+    {
+      "Path": "tests/testConnectedTRSResourceSharing.m",
+      "SHA256": "AA69E637950482C4EC22C381C9513DE76B628A18D2FA7BFBA3CD1D9F763E4BD5"
+    },
+    {
+      "Path": "simulator/configs/validation/baseline_special_slot_scheduler.yaml",
+      "SHA256": "92D0DC3110E21E3AF2B110E5D9A92A1C2F7CF17A8A963533412BBA04D3C0178D"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml",
+      "SHA256": "CE5CAF0AAA9E8064740ED61C8A161156DF501A1A271A61CB55080BC191C6E541"
+    }
+  ],
+  "SourceHashScope": "Current working-file bytes after both passing processes; failed _01/_02 predate production TRS repair and _01 predates test-only DCI field correction",
+  "Tests": [
+    {
+      "Log": "baseline_special_slot_scheduler_tests_01.txt",
+      "ExitCode": 1,
+      "Scope": "Retained failure: test field name plus real slot8 no-grant defect"
+    },
+    {
+      "Log": "baseline_special_slot_scheduler_tests_02.txt",
+      "ExitCode": 1,
+      "Scope": "Slot3 passes; slot8 excludes all 25 PRBs for TRS"
+    },
+    {
+      "Log": "baseline_special_slot_scheduler_tests_03.txt",
+      "ExitCode": 0,
+      "Scope": "Main-created scheduler actual grants on special slots3/8, TDRA budgets and grant consistency; declared UE inputs, not access or received data PHY"
+    },
+    {
+      "Log": "connected_trs_resource_sharing_tests_01.txt",
+      "ExitCode": 0,
+      "Scope": "Actual isolated noiseless PDCCH decode and independent received allocation; 36 TRS RE reserved, G1788 vs1932; common ownership, TRS exact reservation/collision and TDRA guards"
+    }
+  ],
+  "RemainingIssuesDocument": "docs/lls/special_slot_scheduler_trs_20260913.md",
+  "PatchFailuresStillUnresolved": [
+    "+sixgr/+phy/+grid/allocREsPDSCH.m",
+    "+sixgr/+phy/+pucch/PUCCHReceiver.m"
+  ]
+}

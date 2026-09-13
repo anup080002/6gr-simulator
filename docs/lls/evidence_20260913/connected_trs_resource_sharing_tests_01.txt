@@ -1,0 +1,3 @@
+CONNECTED_TRS_SHARING_PASS slot0=8 reserved_RE=36 G=1788 G_without_TRS=1932 received_DCI=1 shared_stream_qualified=0
+PASS testCommonDLResourceScheduling: configured SI/TRS ownership, both duplex profiles, RNG preservation.
+PDSCH TDRA: mapping A/B, extended CP, repetition and four negatives passed.\n
