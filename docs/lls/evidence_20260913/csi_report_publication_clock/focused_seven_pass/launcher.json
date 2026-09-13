@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-13T17:07:38.9284465Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testCSIReportPublicationClock",
+    "testCoupledTruthCSIReportSourceAuthority",
+    "testCSIPhysicalKnowledgeConsumer",
+    "testPeriodicCSIReportObligations",
+    "testCSIReportOccasionAuthority",
+    "testSharedCSIReportClock",
+    "testFutureULPlanningCausality"
+  ],
+  "allow_dirty": true,
+  "suite_pass": false,
+  "git_commit": "dbf21bfd79ccd7779df41bd4aff7a5d5ed0bd003",
+  "git_status_before": "M +sixgr/+truth/CoupledTruthRuntime.m\r\n M tests/testAll.m\r\n M tests/testCoupledTruthCSIReportSourceAuthority.m\r\n?? +sixgr/+truth/buildPeriodicCSIReportObligations.m\r\n?? +sixgr/+truth/periodicCSIReportSlotMask.m\r\n?? tests/testCSIReportPublicationClock.m\r\n?? tests/testPeriodicCSIReportObligations.m",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260913T170738902Z_2c260ffa',false,{'testCSIReportPublicationClock','testCoupledTruthCSIReportSourceAuthority','testCSIPhysicalKnowledgeConsumer','testPeriodicCSIReportObligations','testCSIReportOccasionAuthority','testSharedCSIReportClock','testFutureULPlanningCausality'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "M +sixgr/+truth/CoupledTruthRuntime.m\r\n M tests/testAll.m\r\n M tests/testCoupledTruthCSIReportSourceAuthority.m\r\n?? +sixgr/+truth/buildPeriodicCSIReportObligations.m\r\n?? +sixgr/+truth/periodicCSIReportSlotMask.m\r\n?? tests/testCSIReportPublicationClock.m\r\n?? tests/testPeriodicCSIReportObligations.m",
+  "git_commit_after": "dbf21bfd79ccd7779df41bd4aff7a5d5ed0bd003",
+  "finished_utc": "2026-09-13T17:10:36.8638363Z",
+  "launcher_exit_code": 0
+}

@@ -1,0 +1,8 @@
+name,ok,msg,duration_s
+testCSIReportPublicationClock,1,,39.0372988
+testCoupledTruthCSIReportSourceAuthority,1,,19.6911889
+testCSIPhysicalKnowledgeConsumer,1,,15.8116282
+testPeriodicCSIReportObligations,1,,10.4819541
+testCSIReportOccasionAuthority,1,,0.4086044
+testSharedCSIReportClock,1,,33.9534793
+testFutureULPlanningCausality,1,,12.8820545

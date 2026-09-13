@@ -1,0 +1,13 @@
+function mask=periodicCSIReportSlotMask(slots,period,offset)
+% TS 38.214 5.2.1.4: configured report transmission slots, not source slots.
+% Inputs are one-based slots on the report's UL BWP calendar. Callers own
+% numerology conversion; this function must never round a different clock.
+valid=@(x)isnumeric(x) && isreal(x) && all(isfinite(x(:))) && ...
+    all(x(:)==fix(x(:))) && all(abs(x(:))<=flintmax);
+assert(valid(slots) && all(slots(:)>=1), ...
+    'sixgr:truth:InvalidCSIReportSlot','Report slots must be exact positive integers on the UL BWP calendar.');
+assert(valid(period) && isscalar(period) && period>=1 && ...
+    valid(offset) && isscalar(offset) && offset>=0 && offset<period, ...
+    'sixgr:truth:InvalidCSIReportTiming','Periodic report period/offset must be exact integers with period>=1 and 0<=offset<period.');
+mask=mod(mod(double(slots)-1,double(period))-double(offset),double(period))==0;
+end

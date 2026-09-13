@@ -1,0 +1,37 @@
+[
+  {
+    "path": "+sixgr/+truth/CoupledTruthRuntime.m",
+    "sha256": "8431693DE84B3DF0F1B3C96A24BE292D4EDEC53062EDCEA90573B7ABC7F64AAA",
+    "git_blob": "efc49aa3d4bea812724de6bbacc6d7358a50130f"
+  },
+  {
+    "path": "+sixgr/+truth/buildPeriodicCSIReportObligations.m",
+    "sha256": "316FB6F111B7D67093F6427554093B77B2D31AA2F3EF88FC0D006E3551F5189B",
+    "git_blob": "7745dce6f4e209a2415e4561e0eebe2b5b0e07a1"
+  },
+  {
+    "path": "+sixgr/+truth/periodicCSIReportSlotMask.m",
+    "sha256": "B7E7EAA7A7DA8489A943460CAFDE5AB4EC2779F8F961EAEE6E7A8D9650AB747C",
+    "git_blob": "2462f2ad4cccb4ada93056899f4ccabf27813963"
+  },
+  {
+    "path": "tests/testAll.m",
+    "sha256": "EC5E4745526B59716B21916703517819DEFBC0F11A49CC688439E70965D3D23B",
+    "git_blob": "8b697d9b2fe2d1044f6f630191e2875db8ddaf83"
+  },
+  {
+    "path": "tests/testCoupledTruthCSIReportSourceAuthority.m",
+    "sha256": "E477E0E76A27AECF2FEE296E14939ECCF64C0F30CF63FDD3D6651C92FC9B0A17",
+    "git_blob": "9dde5b7be9b9d7bb32f5e826218706db3e294b77"
+  },
+  {
+    "path": "tests/testCSIReportPublicationClock.m",
+    "sha256": "6A6BE6650C48F7607C3C5267A4FF419B14EA1EC535962BF4FEAC279092427A1E",
+    "git_blob": "b1a1c853b9ce51e87b9a0a721fadd38dc7c73132"
+  },
+  {
+    "path": "tests/testPeriodicCSIReportObligations.m",
+    "sha256": "B9F6EF300A76EE4581B3E8337D175AFBFD347BC6C5C0CA4B4353051A9B6D315D",
+    "git_blob": "a7e4aa2c003bd4b1e6340db548aef02cd238454a"
+  }
+]

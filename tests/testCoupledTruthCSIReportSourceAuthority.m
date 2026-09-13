@@ -55,7 +55,12 @@ csirsRow = table(true, true, true, 12, 2, 1, 3, 11.25, ...
     'SINRSource','SINRValueRole','SINRValueStatus','MeasurementSource'});
 csirsTrial = dmrsRow;
 csirsRow.LI=0; % Explicit receiver-measurement fixture: first layer strongest.
+csirsRow.Slot=6;
+csirsRow.Transmitted=true;
+csirsRow.Consumed=true;
+csirsRow.ResourceExtractionAvailable=true;
 csirsTrial.Slot(:) = 6;
+state = sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,csirsRow);
 state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
     state, 1, "DL", csirsTrial, cfg, csirsRow);
 assert(string(state.PendingCSITable.SourceSignal(end)) == "CSI-RS" && ...
@@ -329,6 +334,8 @@ assert(height(csiTrace)==1 && csiTrace.MultiplexedOnPUSCH && ...
 state.CurrentSlot = dueSlot + 1;
 csirsTrial.Slot(:) = state.CurrentSlot;
 csirsRow.CQI(:) = 8;
+csirsRow.Slot(:) = state.CurrentSlot;
+state = sixgr.truth.CoupledTruthRuntime.applyCSIRSTrial(state,1,csirsRow);
 state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
     state, 1, "DL", csirsTrial, cfg, csirsRow);
 state.PendingCSITable = state.PendingCSITable(end, :);

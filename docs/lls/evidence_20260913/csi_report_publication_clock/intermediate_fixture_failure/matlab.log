@@ -1,0 +1,190 @@
+SERVER_VALIDATION_START scope=focused_tests MATLAB=26.1.0.3312084 (R2026a) Update 4 release=2026a
+TOOLBOX 5G Toolbox | 26.1 | (R2026a)
+TOOLBOX 6G Exploration Library for 5G Toolbox | 26.1.5 | (R2026a)
+TOOLBOX AUTOSAR Blockset | 26.1 | (R2026a)
+TOOLBOX Aerospace Blockset | 26.1 | (R2026a)
+TOOLBOX Aerospace Toolbox | 26.1 | (R2026a)
+TOOLBOX Antenna Toolbox | 26.1 | (R2026a)
+TOOLBOX Audio Toolbox | 26.1 | (R2026a)
+TOOLBOX Automated Driving Toolbox | 26.1 | (R2026a)
+TOOLBOX Bioinformatics Toolbox | 26.1 | (R2026a)
+TOOLBOX Bluetooth Toolbox | 26.1 | (R2026a)
+TOOLBOX C2000 Microcontroller Blockset | 26.1 | (R2026a)
+TOOLBOX Communications Toolbox | 26.1 | (R2026a)
+TOOLBOX Computer Vision Toolbox | 26.1 | (R2026a)
+TOOLBOX Control System Toolbox | 26.1 | (R2026a)
+TOOLBOX Curve Fitting Toolbox | 26.1 | (R2026a)
+TOOLBOX DDS Blockset | 26.1 | (R2026a)
+TOOLBOX DSP HDL Toolbox | 26.1 | (R2026a)
+TOOLBOX DSP System Toolbox | 26.1 | (R2026a)
+TOOLBOX Data Acquisition Toolbox | 26.1 | (R2026a)
+TOOLBOX Database Toolbox | 26.1 | (R2026a)
+TOOLBOX Datafeed Toolbox | 26.1 | (R2026a)
+TOOLBOX Deep Learning HDL Toolbox | 26.1 | (R2026a)
+TOOLBOX Deep Learning Toolbox | 26.1 | (R2026a)
+TOOLBOX Econometrics Toolbox | 26.1 | (R2026a)
+TOOLBOX Embedded Coder | 26.1 | (R2026a)
+TOOLBOX Financial Instruments Toolbox | 26.1 | (R2026a)
+TOOLBOX Financial Toolbox | 26.1 | (R2026a)
+TOOLBOX Fixed-Point Designer | 26.1 | (R2026a)
+TOOLBOX Fuzzy Logic Toolbox | 26.1 | (R2026a)
+TOOLBOX GPU Coder | 26.1 | (R2026a)
+TOOLBOX Global Optimization Toolbox | 26.1 | (R2026a)
+TOOLBOX HDL Coder | 26.1 | (R2026a)
+TOOLBOX HDL Verifier | 26.1 | (R2026a)
+TOOLBOX Image Acquisition Toolbox | 26.1 | (R2026a)
+TOOLBOX Image Processing Toolbox | 26.1 | (R2026a)
+TOOLBOX Industrial Communication Toolbox | 26.1 | (R2026a)
+TOOLBOX Instrument Control Toolbox | 26.1 | (R2026a)
+TOOLBOX LTE Toolbox | 26.1 | (R2026a)
+TOOLBOX Lidar Toolbox | 26.1 | (R2026a)
+TOOLBOX MATLAB | 26.1 | (R2026a)
+TOOLBOX MATLAB Coder | 26.1 | (R2026a)
+TOOLBOX MATLAB Compiler | 26.1 | (R2026a)
+TOOLBOX MATLAB Compiler SDK | 26.1 | (R2026a)
+TOOLBOX MATLAB Report Generator | 26.1 | (R2026a)
+TOOLBOX MATLAB Test | 26.1 | (R2026a)
+TOOLBOX Mapping Toolbox | 26.1 | (R2026a)
+TOOLBOX Medical Imaging Toolbox | 26.1 | (R2026a)
+TOOLBOX Mixed-Signal Blockset | 26.1 | (R2026a)
+TOOLBOX Model Predictive Control Toolbox | 26.1 | (R2026a)
+TOOLBOX Model-Based Calibration Toolbox | 26.1 | (R2026a)
+TOOLBOX Motor Control Blockset | 26.1 | (R2026a)
+TOOLBOX Navigation Toolbox | 26.1 | (R2026a)
+TOOLBOX Optimization Toolbox | 26.1 | (R2026a)
+TOOLBOX Parallel Computing Toolbox | 26.1 | (R2026a)
+TOOLBOX Partial Differential Equation Toolbox | 26.1 | (R2026a)
+TOOLBOX Phased Array System Toolbox | 26.1 | (R2026a)
+TOOLBOX Powertrain Blockset | 26.1 | (R2026a)
+TOOLBOX Predictive Maintenance Toolbox | 26.1 | (R2026a)
+TOOLBOX RF Blockset | 26.1 | (R2026a)
+TOOLBOX RF PCB Toolbox | 26.1 | (R2026a)
+TOOLBOX RF Toolbox | 26.1 | (R2026a)
+TOOLBOX ROS Toolbox | 26.1 | (R2026a)
+TOOLBOX Radar Toolbox | 26.1 | (R2026a)
+TOOLBOX Raspberry Pi Blockset | 26.1 | (R2026a)
+TOOLBOX Reinforcement Learning Toolbox | 26.1 | (R2026a)
+TOOLBOX Requirements Toolbox | 26.1 | (R2026a)
+TOOLBOX Risk Management Toolbox | 26.1 | (R2026a)
+TOOLBOX Robotics System Toolbox | 26.1 | (R2026a)
+TOOLBOX Robust Control Toolbox | 26.1 | (R2026a)
+TOOLBOX STM32 Microcontroller Blockset | 26.1 | (R2026a)
+TOOLBOX Satellite Communications Toolbox | 26.1 | (R2026a)
+TOOLBOX Sensor Fusion and Tracking Toolbox | 26.1 | (R2026a)
+TOOLBOX SerDes Toolbox | 26.1 | (R2026a)
+TOOLBOX Signal Integrity Toolbox | 26.1 | (R2026a)
+TOOLBOX Signal Processing Toolbox | 26.1 | (R2026a)
+TOOLBOX SimBiology | 26.1 | (R2026a)
+TOOLBOX SimEvents | 26.1 | (R2026a)
+TOOLBOX Simscape | 26.1 | (R2026a)
+TOOLBOX Simscape Battery | 26.1 | (R2026a)
+TOOLBOX Simscape Driveline | 26.1 | (R2026a)
+TOOLBOX Simscape Electrical | 26.1 | (R2026a)
+TOOLBOX Simscape Fluids | 26.1 | (R2026a)
+TOOLBOX Simscape Multibody | 26.1 | (R2026a)
+TOOLBOX Simulink | 26.1 | (R2026a)
+TOOLBOX Simulink 3D Animation | 26.1 | (R2026a)
+TOOLBOX Simulink Check | 26.1 | (R2026a)
+TOOLBOX Simulink Code Inspector | 26.1 | (R2026a)
+TOOLBOX Simulink Coder | 26.1 | (R2026a)
+TOOLBOX Simulink Compiler | 26.1 | (R2026a)
+TOOLBOX Simulink Control Design | 26.1 | (R2026a)
+TOOLBOX Simulink Coverage | 26.1 | (R2026a)
+TOOLBOX Simulink Design Optimization | 26.1 | (R2026a)
+TOOLBOX Simulink Design Verifier | 26.1 | (R2026a)
+TOOLBOX Simulink Desktop Real-Time | 26.1 | (R2026a)
+TOOLBOX Simulink FMU Builder | 26.1 | (R2026a)
+TOOLBOX Simulink Fault Analyzer | 26.1 | (R2026a)
+TOOLBOX Simulink PLC Coder | 26.1 | (R2026a)
+TOOLBOX Simulink Real-Time | 26.1 | (R2026a)
+TOOLBOX Simulink Report Generator | 26.1 | (R2026a)
+TOOLBOX Simulink Test | 26.1 | (R2026a)
+TOOLBOX SoC Blockset | 26.1 | (R2026a)
+TOOLBOX Spreadsheet Link | 26.1 | (R2026a)
+TOOLBOX Stateflow | 26.1 | (R2026a)
+TOOLBOX Statistics and Machine Learning Toolbox | 26.1 | (R2026a)
+TOOLBOX Symbolic Math Toolbox | 26.1 | (R2026a)
+TOOLBOX System Composer | 26.1 | (R2026a)
+TOOLBOX System Identification Toolbox | 26.1 | (R2026a)
+TOOLBOX Text Analytics Toolbox | 26.1 | (R2026a)
+TOOLBOX UAV Toolbox | 26.1 | (R2026a)
+TOOLBOX Vehicle Dynamics Blockset | 26.1 | (R2026a)
+TOOLBOX Vehicle Network Toolbox | 26.1 | (R2026a)
+TOOLBOX Vision HDL Toolbox | 26.1 | (R2026a)
+TOOLBOX WLAN Toolbox | 26.1 | (R2026a)
+TOOLBOX Wavelet Toolbox | 26.1 | (R2026a)
+TOOLBOX Wireless HDL Toolbox | 26.1 | (R2026a)
+TOOLBOX Wireless Network Toolbox | 26.1 | (R2026a)
+TOOLBOX Wireless Testbench | 26.1 | (R2026a)
+[setup] Added paths under: C:\Users\anup0\AppData\Local\Temp\sixgr_type2_runtime_20260913
+[setup] OK  : 5G Toolbox                   (nrOFDMInfo)
+[setup] OK  : 5G Toolbox                   (nrPUSCH)
+[setup] OK  : 5G Toolbox                   (nrPDSCH)
+[setup] OK  : 5G Toolbox                   (nrLDPCEncode)
+[setup] OK  : 5G Toolbox                   (nrRateRecoverLDPC)
+[setup] OK  : COMM Toolbox                 (awgn)
+[setup] OK  : DL Toolbox                   (trainNetwork)
+[setup] OK  : PCT                          (parpool)
+[setup] OK  : PHASED                       (phased.URA)
+[setup] OK  : WNS Lib                      (wirelessNetworkSimulator)
+[setup] OK  : Site Viewer                  (siteviewer)
+[setup] OK  : RF Prop                      (txsite)
+[setup] OK  : 5G Toolbox                   (nrPathLoss)
+[setup] Done.
+[setup] YAML runtime: ready      backend=external_python
+[setup] YAML python:  C:\ProgramData\anaconda3\python.EXE
+[setup] YAML version: 3.12.4
+CSI_REPORT_PUBLICATION_CLOCK_PASS actual_clock=7680 publication_rows=1 report_due=4 CSI_RF_executions=0 folder=C:\Users\anup0\AppData\Local\Temp\sixgr_type2_runtime_20260913\logs\tp8e9b2b06_7c2c_48c0_b937_2f4914e8a05e
+[PASS] testCSIReportPublicationClock (41.83s)
+PUSCH_RECEIVED_CSI_SCHEDULER_AUTHORITY_PASS
+Error using assert
+Publish the actual CSI receiver row through applyCSIRSTrial before queuing its report.
+
+Error in sixgr.truth.CoupledTruthRuntime/enqueueCSIReport (line 9502)
+                assert(published,'sixgr:truth:UnpublishedCSIReportMeasurement', ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime (line 1521)
+        state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReport( ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCoupledTruthCSIReportSourceAuthority (line 337)
+state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in executeRegressionTest (line 7)
+outcome = feval(fn);
+          ^^^^^^^^^
+Error in runFocusedTests (line 37)
+        executeRegressionTest(fn);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testAll (line 18)
+    report = runFocusedTests(requestedNames, "ShowSlowest", double(opt.ShowSlowest));
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in run_server_testall (line 29)
+        if isempty(names), report=testAll; else, report=testAll('Names',names); end
+                                                        ^^^^^^^^^^^^^^^^^^^^^^
+[FAIL] testCoupledTruthCSIReportSourceAuthority (21.62s)
+       Publish the actual CSI receiver row through applyCSIRSTrial before queuing its report.
+CSI_PHYSICAL_KNOWLEDGE_CONSUMER_PASS published_and_consumed=1 physical_clock_advanced=7680 frozen_planning_clock=0 CSI_RF_executions=0
+[PASS] testCSIPhysicalKnowledgeConsumer (16.98s)
+PERIODIC_CSI_OBLIGATIONS_PASS baseline_nominal_unavailable=12 alternative_available=11 no_shift=1 RF_executions=0 folder=C:\Users\anup0\AppData\Local\Temp\sixgr_type2_runtime_20260913\logs\tpf5821369_032f_49c4_a829_880223a6cb2d
+[PASS] testPeriodicCSIReportObligations (9.95s)
+testCSIReportOccasionAuthority: PASS
+[PASS] testCSIReportOccasionAuthority (0.39s)
+Slowest 5 test(s):
+   1. testCSIReportPublicationClock (41.83s)
+   2. testCoupledTruthCSIReportSourceAuthority (21.62s)
+   3. testCSIPhysicalKnowledgeConsumer (16.98s)
+   4. testPeriodicCSIReportObligations (9.95s)
+   5. testCSIReportOccasionAuthority (0.39s)
+Error using assert
+1 of 5 tests failed. Share this run's logs folder.
+
+Error in run_server_testall (line 40)
+        assert(report.ok,'sixgr:tests:ServerRegressionFailed', ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+{Error using assert
+1 of 5 tests failed. Share this run's logs folder.
+
+Error in run_server_testall (line 40)
+        assert(report.ok,'sixgr:tests:ServerRegressionFailed', ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

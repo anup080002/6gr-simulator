@@ -1,0 +1,6 @@
+name,ok,msg,duration_s
+testCSIReportPublicationClock,1,,41.832823
+testCoupledTruthCSIReportSourceAuthority,0,Publish the actual CSI receiver row through applyCSIRSTrial before queuing its report.,21.6188327
+testCSIPhysicalKnowledgeConsumer,1,,16.9846999
+testPeriodicCSIReportObligations,1,,9.9513572
+testCSIReportOccasionAuthority,1,,0.3910189
