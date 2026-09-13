@@ -1,0 +1,10 @@
+{Error using assert
+CSI-RS planning failed: disabled by resolved YAML
+
+Error in testCSIRSPlannedCalendar>localCheck (line 20)
+assert(height(c)==1 && c.resolved && c.status=="PASS", ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCSIRSPlannedCalendar (line 7)
+localCheck(cfg);
+^^^^^^^^^^^^^^^
+} 

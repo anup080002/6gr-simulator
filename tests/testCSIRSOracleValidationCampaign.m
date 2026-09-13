@@ -11,6 +11,8 @@ cfg.phy.carrier.NCellID = 17;
 cfg.phy.carrier.NSizeGrid = 24;
 cfg.phy.numerology.scs_kHz = 30;
 cfg.phy.csirs.enable = true;
+cfg.phy.csirs.period_slots = 4;
+cfg.phy.csirs.offset_slots = 0;
 cfg.phy.csirs.rbOffset = 0;
 cfg.phy.csirs.numRB = 24;
 cfg.phy.csirs.density = "one";
@@ -33,4 +35,3 @@ assert(all(string(T.EffectiveChannelConvention) == "csirs_effective_channel_grid
     "CSI-RS validation rows must declare the effective-channel convention.");
 ok = true;
 end
-

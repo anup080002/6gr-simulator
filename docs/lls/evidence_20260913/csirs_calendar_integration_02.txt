@@ -1,0 +1,10 @@
+{Error using assert
+CSI-RS planning failed: nrCSIRSIndices returned no active reference-signal RE. [ChannelAllocationMaterializer.materializeReferenceSignal:278]
+
+Error in testCSIRSPlannedCalendar>localCheck (line 20)
+assert(height(c)==1 && c.resolved && c.status=="PASS", ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCSIRSPlannedCalendar (line 7)
+localCheck(cfg);
+^^^^^^^^^^^^^^^
+} 

@@ -40,6 +40,16 @@ elseif isstruct(cfgOrCsirs)
         info = struct('Channel','CSI-RS','Enabled',false);
         return;
     end
+    % All config-driven callers share the same absolute resource calendar:
+    % TX generation, independently received PDSCH allocation and grid plans.
+    % An enabled resource is not a transmission in every slot.
+    carrierSlot0=double(carrier.NFrame)*double(carrier.SlotsPerFrame)+double(carrier.NSlot);
+    absoluteSlot0=double(sixgr.util.structGet(cfgOrCsirs, ...
+        'lls6g.runtime.AbsoluteSlotIndex0',carrierSlot0));
+    assert(isscalar(absoluteSlot0) && isfinite(absoluteSlot0) && absoluteSlot0==carrierSlot0, ...
+        'sixgr:phy:csirs:CalendarClockMismatch', ...
+        'CSI-RS configuration and carrier must identify the same absolute slot.');
+    [scheduled,periodicity]=sixgr.phy.refsig.csirsOccasion(cfgOrCsirs,absoluteSlot0);
     numResources = double(sixgr.util.structGet(cfgOrCsirs, 'phy.csirs.numResources', 1));
     if ~(isscalar(numResources) && isfinite(numResources) && ...
             numResources >= 1 && numResources == round(numResources))
@@ -55,6 +65,7 @@ elseif isstruct(cfgOrCsirs)
     if numResources > 1 || localHasConfiguredResourceSet(cfgOrCsirs)
         [csirsInd, csirsSym, info, csirs] = ...
             localGenerateConfiguredResourceSet(carrier, cfgOrCsirs, opts.IndexBase, numResources);
+        info=localCalendarEvidence(info,scheduled,absoluteSlot0,periodicity,csirsInd,csirsSym);
         return;
     end
     csirs = localBuildFromCfg(carrier, cfgOrCsirs);
@@ -122,11 +133,16 @@ info.NumResources = 1;
 info.ResourceMappingTable = localCSIRSResourceMappingTable(carrier, csirs, csirsInd, csirsSym, opts.IndexBase, resourceID);
 info.CausalMeasurementRole = "CSI-RS -> DL CSI/RI/PMI/CQI measurement producer";
 info.MeasurementStateContract = "ProducerSlot/AvailableSlot must be <= consuming grant slot; runtime estimator remains pilot-based";
+if isstruct(cfgOrCsirs)
+    info=localCalendarEvidence(info,scheduled,absoluteSlot0,periodicity,csirsInd,csirsSym);
+end
 
 end
 
 function [combinedInd, combinedSym, info, primaryConfig] = ...
         localGenerateConfiguredResourceSet(carrier, cfg, indexBase, numResources)
+[scheduled,~]=sixgr.phy.refsig.csirsOccasion(cfg, ...
+    double(carrier.NFrame)*double(carrier.SlotsPerFrame)+double(carrier.NSlot));
 resourceIDs = localRequiredResourceVector(cfg, 'phy.csirs.resourceIDs', numResources, ...
     'sixgr:phy:csirs:MissingResourceIDs');
 rowNumbers = localRequiredResourceVector(cfg, 'phy.csirs.rowNumbers', numResources, ...
@@ -167,7 +183,7 @@ for ordinal = 1:numResources
     resourceConfig = localBuildFromCfg(carrier, cfgResource);
     [indices, indexInfo] = localCSIRSIndices(carrier, resourceConfig, indexBase);
     symbols = nrCSIRS(carrier, resourceConfig);
-    if isempty(indices) || isempty(symbols)
+    if scheduled && (isempty(indices) || isempty(symbols))
         error('sixgr:phy:csirs:EmptyResource', ...
             'Configured CSI-RS resource %g resolved to no REs.', resourceIDs(ordinal));
     end
@@ -232,6 +248,19 @@ info.MeasurementStateContract = ...
     "Every CRI candidate is a disjoint transmitted NZP CSI-RS resource measured at the receiver";
 end
 
+function info=localCalendarEvidence(info,scheduled,slot0,periodicity,indices,symbols)
+assert(isempty(indices)==~scheduled && isempty(symbols)==~scheduled, ...
+    'sixgr:phy:csirs:CalendarMaterializationMismatch', ...
+    'CSI-RS Toolbox materialization must agree with the absolute configured calendar.');
+info.Scheduled=scheduled;
+info.AbsoluteSlot0=slot0;
+info.Periodicity=periodicity;
+if ~scheduled
+    info.Source="configured_periodic_calendar_not_received_measurement";
+    info.NoDataReason="outside_configured_period_offset";
+end
+end
+
 function values = localRequiredResourceVector(cfg, path, count, identifier)
 values = double(sixgr.util.structGet(cfg, path, []));
 if ~(isvector(values) && numel(values) == count && all(isfinite(values)))
@@ -275,11 +304,16 @@ csirs.SymbolLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.symbolLocati
 csirs.SubcarrierLocations = double(sixgr.util.structGet(cfg, 'phy.csirs.subcarrierLocations', localDefaultSubcarrierLocations(row)));
 csirs.NumRB = double(sixgr.util.structGet(cfg, 'phy.csirs.numRB', carrier.NSizeGrid));
 csirs.RBOffset = double(sixgr.util.structGet(cfg, 'phy.csirs.rbOffset', 0));
-% Slot occasion selection is enforced by the production PDSCH transmitter
-% before calling this generator.  Keep the Toolbox resource active for the
-% selected occasion rather than allowing nrCSIRSConfig to hide an empty
-% non-occasion behind an apparently enabled feature.
-csirs.CSIRSPeriod = 'on';
+% Retain the YAML calendar in the resource object as well as the current
+% generator result, so future-slot planning cannot turn it into all-slot CSI.
+period=double(cfg.phy.csirs.period_slots);
+offset=double(cfg.phy.csirs.offset_slots);
+if period==1
+    % Explicit every-slot fixtures use the Toolbox's all-slot representation.
+    csirs.CSIRSPeriod='on';
+else
+    csirs.CSIRSPeriod=[period offset];
+end
 try
     if isempty(densityReq)
         densityReq = localDefaultDensity(row);

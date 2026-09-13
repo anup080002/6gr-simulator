@@ -5,7 +5,8 @@ This plan is for rebuilding the scenario path as a measured PHY/MAC execution pa
 ## Current 12 dB qualification checkpoint (2026-09-13)
 
 The full 58-slot validation is held. Current evidence and mandatory remaining
-work are tracked in [special-slot scheduler/TRS repair](special_slot_scheduler_trs_20260913.md)
+work now include [CSI-RS calendar repair and readiness](csirs_calendar_and_remaining_gates_20260913.md).
+Earlier scoped work is tracked in [special-slot scheduler/TRS repair](special_slot_scheduler_trs_20260913.md)
 and [gNB feedback expectation/PUCCH disposition](gnb_feedback_expectation_20260913.md).
 The latter separates actual TX commitment from UE control reception; it does
 not yet complete receive-only missed-DCI feedback or dynamic Type-2 codebooks.

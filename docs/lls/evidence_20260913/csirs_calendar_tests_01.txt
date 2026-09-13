@@ -1,0 +1,17 @@
+{Error using nr5g.internal.getCSIRSLocations (line 41)
+For the CSI-RS resource corresponding to the row number 3, number of RBs allocated (52) must not exceed the size of the carrier grid (25) in order to confine to the carrier
+resource grid.
+
+Error in nrCSIRSIndices (line 152)
+    [csirslocations,csirsParams] = nr5g.internal.getCSIRSLocations(carrier,csirs);
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.refsig.csirs>localCSIRSIndices (line 468)
+    [ind, indInfo] = nrCSIRSIndices(carrier, csirs);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.phy.refsig.csirs (line 85)
+[csirsInd, csirsIndInfo] = localCSIRSIndices(carrier, csirs, opts.IndexBase);
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCSIRSGeneratorCalendar (line 30)
+[ind,sym]=sixgr.phy.refsig.csirs(carrier,resource);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

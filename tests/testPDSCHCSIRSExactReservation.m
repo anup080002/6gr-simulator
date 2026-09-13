@@ -17,6 +17,9 @@ cfg.phy.pdsch.dmrs.maxLength = 1;
 cfg.phy.pdsch.dmrs.nPorts = 2;
 cfg.phy.pdsch.enablePTRS = false;
 cfg.phy.csirs.enable = true;
+% Explicit active-slot calendar for this resource-mapping fixture.
+cfg.phy.csirs.period_slots = 4;
+cfg.phy.csirs.offset_slots = 0;
 cfg.phy.csirs.nPorts = 4;
 cfg.phy.csirs.numResources = 1;
 cfg.phy.csirs.resourceID = 0;

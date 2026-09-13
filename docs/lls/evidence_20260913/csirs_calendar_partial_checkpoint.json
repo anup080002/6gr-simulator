@@ -1,0 +1,164 @@
+{
+  "BaseCommit": "97b04304205b6b96cf6c0c5d0d7a90a766f86380",
+  "RecordedUTC": "2026-09-13T03:13:03.7056529Z",
+  "Files": [
+    {
+      "Path": "docs/lls/csirs_calendar_and_remaining_gates_20260913.md",
+      "Bytes": 9565,
+      "SHA256": "0E0996A43FACC1A6CCDEB4A09B249436AE84A68CEF647062D0F80202F79D5E80"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_estimator_regressions_01.txt",
+      "Bytes": 42,
+      "SHA256": "7732AE2F0344832A538A7BD88C7B637821709954859BCEC11A0F7ADAFD98A0D5"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_integration_01.txt",
+      "Bytes": 325,
+      "SHA256": "1EA234718ED7BB9A9D26DD5843E51BD396CAB8A0C9EE6E65B2D3A891024393A6"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_integration_02.txt",
+      "Bytes": 417,
+      "SHA256": "966FAA94BB459E9F1F5D7ECFB35393A47580EB10EF3C060C7FBA594F97A8D156"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_runtime_regressions_01.txt",
+      "Bytes": 2263,
+      "SHA256": "EEB96602A6F3B9691C1916E8A6D04433B74670C3A2686EAE98C91228EFE91893"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_special_scheduler_03/slot_3_CandidateTable.csv",
+      "Bytes": 1118,
+      "SHA256": "A7FDA337E926B9271A0FFE8445FD835B6F24A9F75C84829DCF042B6472F4F9E2"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_special_scheduler_03/slot_3_DecisionTable.csv",
+      "Bytes": 1118,
+      "SHA256": "A7FDA337E926B9271A0FFE8445FD835B6F24A9F75C84829DCF042B6472F4F9E2"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_special_scheduler_03/slot_8_CandidateTable.csv",
+      "Bytes": 1118,
+      "SHA256": "EE5A8B2A2E7ABF0C183AE47D2C86226C0C80089A8D5BED2722190E130BC86AE9"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_special_scheduler_03/slot_8_DecisionTable.csv",
+      "Bytes": 1118,
+      "SHA256": "EE5A8B2A2E7ABF0C183AE47D2C86226C0C80089A8D5BED2722190E130BC86AE9"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_special_scheduler_03/special_slot_scheduler.csv",
+      "Bytes": 303,
+      "SHA256": "55230ED4707CB8BE63E92BF7881A18CC0CCB9FBACE24246AE1DC253B96DD749F"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_special_scheduler_03/special_slot_scheduler.mat",
+      "Bytes": 379805,
+      "SHA256": "C936CA0E536B4FA6251ACA2574A8B36E0D12802F4CB47C830C4C47814FD83BCD"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_tests_01.txt",
+      "Bytes": 961,
+      "SHA256": "B610C43239BFB8F9EBE75DF9C6DED5D181D3E869E9461EE1A7FD7BF8F641D260"
+    },
+    {
+      "Path": "docs/lls/evidence_20260913/csirs_calendar_tests_02.txt",
+      "Bytes": 202,
+      "SHA256": "FDB043DF50BABA8DE8BC632066F503F5AE542F2CC767246640DC6FF35FDBA9C6"
+    },
+    {
+      "Path": "docs/lls/pending_csirs_planner_calendar.patch",
+      "Bytes": 1411,
+      "SHA256": "CC98F97BC4EDA52C4BC30DD0351CBF58E31824C4FBF2BC3D87981A37F172CEA3"
+    },
+    {
+      "Path": "tests/testCSIRSGeneratorCalendar.m",
+      "Bytes": 2909,
+      "SHA256": "C7A92CAB30E548A8B5F7AE547A651496353C414EE2B4BA6B2EB2E362262B2264"
+    },
+    {
+      "Path": "tests/testCSIRSPlannedCalendar.m",
+      "Bytes": 1620,
+      "SHA256": "BC71D9CD606D99A991C4964EDCB0F11433910CEB8BAFEE39435E8882FA9D7A35"
+    },
+    {
+      "Path": "+sixgr/+phy/+refsig/csirs.m",
+      "Bytes": 22332,
+      "SHA256": "9A0508D78903FA0DD863B7231805F72B63B26F96AF12DB3656B91B2D7EF1E9A2"
+    },
+    {
+      "Path": "docs/lls/true_lls_engineering_plan.md",
+      "Bytes": 7735,
+      "SHA256": "360A524ADCE4C938E2AD483ABB23AA21B1311F6E271A9F715A55A8509140F057"
+    },
+    {
+      "Path": "tests/testCSIRSMultiResourceYAMLAuthority.m",
+      "Bytes": 3483,
+      "SHA256": "F342245099CE2FEC090016E2C1C9F2CB62B7EA2ABBA545DA1053D3C4DD404A24"
+    },
+    {
+      "Path": "tests/testCSIRSOracleValidationCampaign.m",
+      "Bytes": 1773,
+      "SHA256": "87AE4FFF3F7228462849947437EDBA63B25D6341296F08A2C78989BE5B856D4C"
+    },
+    {
+      "Path": "tests/testCSIRuntimeExecution.m",
+      "Bytes": 27146,
+      "SHA256": "C8F261CF4C8760579FFE5DC6EA2DCB62C18617F3EA356A106288BE1C84DC6A61"
+    },
+    {
+      "Path": "tests/testChannelEstimateOraclePath.m",
+      "Bytes": 6609,
+      "SHA256": "2BC656E23B0DABF15916D94C1C5F091B681F8DEE7F9D059D2F88B62418D6F1AE"
+    },
+    {
+      "Path": "tests/testPDSCHCSIRSExactReservation.m",
+      "Bytes": 3217,
+      "SHA256": "5E4DAD12C04B4742532DD2FD8CE96BCADDBE4093D88CBEAFCBD6A7D7556E12F9"
+    },
+    {
+      "Path": "tests/testReferenceSignalCausalProducersConsumers.m",
+      "Bytes": 6927,
+      "SHA256": "FC2505D14327A2B6B2CAC2F836D1E88140D81BEE814B6EC4D23A964535F7CAD9"
+    }
+  ],
+  "Status": "WIP_NOT_QUALIFIED_DO_NOT_START_FINAL_BASELINE",
+  "Tests": [
+    {
+      "log": "csirs_calendar_tests_01.txt",
+      "exit_code": 1,
+      "reason": "explicit-object test fixture RB count"
+    },
+    {
+      "log": "csirs_calendar_tests_02.txt",
+      "exit_code": 0,
+      "tests": 5
+    },
+    {
+      "log": "csirs_calendar_estimator_regressions_01.txt",
+      "exit_code": 0,
+      "tests": 3
+    },
+    {
+      "log": "csirs_calendar_integration_01.txt",
+      "exit_code": 1,
+      "reason": "planner character-array selector"
+    },
+    {
+      "log": "csirs_calendar_integration_02.txt",
+      "exit_code": 1,
+      "reason": "planner unconditionally materializes inactive CSI occasion"
+    },
+    {
+      "log": "csirs_calendar_runtime_regressions_01.txt",
+      "exit_code": 1,
+      "completed_tests": 2,
+      "failed_test": "testCSIRuntimeExecution",
+      "reason": "HARQExecutedClockMismatch"
+    }
+  ],
+  "Full58SlotRunStarted": false,
+  "TestAllStarted": false,
+  "Pushed": false
+}

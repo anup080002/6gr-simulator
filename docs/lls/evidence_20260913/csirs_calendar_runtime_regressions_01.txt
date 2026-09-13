@@ -1,0 +1,20 @@
+CONNECTED_TRS_SHARING_PASS slot0=8 reserved_RE=36 G=1836 G_without_TRS=1980 received_DCI=1 shared_stream_qualified=0
+    AbsoluteSlot0    BudgetPRBs    SymbolStart    NumSymbols    TDRAIndex    GrantCount    Verified    ErrorID    ErrorDetail                                    EvidenceScope                                 
+    _____________    __________    ___________    __________    _________    __________    ________    _______    ___________    ______________________________________________________________________________
+
+          3              25             2             8             1            1          true         ""           ""         "baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy"
+          8              25             2             8             1            1          true         ""           ""         "baseline_scheduler_grants_with_declared_ue_inputs_not_access_or_received_phy"
+
+BASELINE_SPECIAL_SLOT_SCHEDULER_PASS
+    Status     Crash    FailureReason                                                                                                                          Notes                                                                                                                           TruthStatus    CSIComputationStatus    CSIComputationErrorIdentifier
+    _______    _____    _____________    __________________________________________________________________________________________________________________________________________________________________________________________________________________________________________________    ___________    ____________________    _____________________________
+
+    "CRASH"    true          ""          "sixgr:link:HARQExecutedClockMismatch | A supplied grant clock must match execution, not be silently overwritten. | stack=bindExecutedHARQClock:15 <- localBuildHARQGrantSnapshot:7446 <- runDLPDSCHThroughput:931 <- testCSIRuntimeExecution:356"        ""                  ""                          ""              
+
+{Error using assert
+Strict non-occasion PDSCH must retain its measured receiver row.
+
+Error in testCSIRuntimeExecution (line 373)
+assert(decodeUsableNoOccasion, ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

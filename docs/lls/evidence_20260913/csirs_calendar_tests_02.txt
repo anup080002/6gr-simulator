@@ -1,0 +1,2 @@
+CSIRS_GENERATOR_CALENDAR_PASS baseline_period=5 offset=1
+CSI_NONOCCASION_CAPACITY slot0=62 calendar=5:1 scheduled=0 enabled_G=3108 disabled_G=3108 extra_reserved_re=0 enabled_TBS=1064 disabled_TBS=1064

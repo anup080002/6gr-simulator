@@ -19,6 +19,9 @@ cfg = sixgr.util.structSet(cfg, "phy.beamManagement.trpCount", 4);
 
 resourceCfg = cfg;
 resourceCfg.phy.csirs.enable = true;
+% Explicit active occasion for this isolated resource-set mapping fixture.
+resourceCfg.phy.csirs.period_slots = 4;
+resourceCfg.phy.csirs.offset_slots = 0;
 resourceCfg.phy.csirs.nPorts = 2;
 resourceCfg.phy.csirs.numResources = 2;
 resourceCfg.phy.csirs.resourceSetID = 0;

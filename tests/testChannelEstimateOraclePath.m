@@ -82,6 +82,8 @@ assert(~logical(infoLMMSE.EstimatorUsesTrueChannel) && string(infoLMMSE.UsedOrac
 
 cfgCSI = struct();
 cfgCSI.phy.csirs.enable = true;
+cfgCSI.phy.csirs.period_slots = 4;
+cfgCSI.phy.csirs.offset_slots = 0;
 cfgCSI.phy.csirs.nPorts = 1;
 cfgCSI.phy.csirs.rowNumber = 2;
 cfgCSI.phy.csirs.symbolLocations = 6;
