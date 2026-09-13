@@ -2056,6 +2056,7 @@ pdsch:
   distribution_matching_policy: none
   scrambling_policy: nr_38211
   dmrs_policy: configured_type1_mapping_a
+  dmrs_nscid: 0
   # Optional measured-DMRS LS shortcut for an explicitly flat, static,
   # rank-one PRG channel only. The receiver rejects ineligible use rather
   # than expanding a scalar estimate across a fading resource grid.

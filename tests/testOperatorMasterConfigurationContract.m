@@ -212,6 +212,8 @@ assert(~isempty(sixgr.util.structGet(cfg, ...
     "%s did not attach the explicitly configured component carrier.", fileName);
 
 localAssertAllocation(cfg.phy.pdsch, raw.pdsch, fileName + " PDSCH");
+localAssertEqual(double(cfg.phy.pdsch.dmrs.NSCID), ...
+    double(raw.pdsch.dmrs_nscid), fileName + " PDSCH DM-RS NSCID");
 localAssertAllocation(cfg.phy.pusch, raw.pusch, fileName + " PUSCH");
 localAssertEqual(double(cfg.phy.pdcch.SymbolAllocation), ...
     [double(raw.pdcch.start_symbol) double(raw.pdcch.num_symbols)], ...
@@ -407,6 +409,7 @@ raw.bwp.dl.n_size_bwp = 260;
 raw.bwp.ul.n_start_bwp = 7;
 raw.bwp.ul.n_size_bwp = 250;
 raw.pdsch.mapping_type = "B";
+raw.pdsch.dmrs_nscid = 1;
 raw.pdsch.prb_start = 11;
 raw.pdsch.num_prb = 23;
 raw.pdsch.start_symbol = 3;

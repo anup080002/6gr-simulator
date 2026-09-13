@@ -1946,6 +1946,7 @@ pdsch:
   distribution_matching_policy: none
   scrambling_policy: nr_38211
   dmrs_policy: configured_type1_mapping_a
+  dmrs_nscid: 0
   # Geometry channels are frequency/time selective; retain full
   # per-resource channel estimation unless an operator explicitly selects
   # an independently qualified flat/static calibration case.
