@@ -1,0 +1,10 @@
+schema_version: 1
+research_class: optional_research_experiment
+codec: tar_zstd
+compression_level: 9
+window_log: 27
+threads: 0
+read_block_bytes: 1048576
+max_total_bytes: 8589934592
+max_members: 4096
+retain_source_files: true
