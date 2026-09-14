@@ -4,6 +4,19 @@ Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificat
 
 ## TDD measurement diagnosis and fixture repair, after 09:30 IST
 
+Runtime follow-up on 450e3467: the TDD DL reference comparison passed inside
+the actual staged execution, then TDD UL case 2 failed the fixture expression
+abs(NaN-NaN)<1e-12 for requested transmit power. bindPUSCHPowerControlContext
+explicitly returns Enabled=false, Status=disabled and RequestedPower_dBm=NaN
+for this normalized scenario; runULPUSCHThroughput preserves those fields.
+The follow-up fixture requires exact disabled/unavailable semantics in that
+branch and retains finite numerical equality when power control is enabled.
+FDD completed all four cases successfully on 450e3467. Evidence is retained in
+the measurement checkout at logs/testall_20260914T040450406Z_734232aa, including
+the TDD UL case-2 input at logs/tpd62ebe0f_3371_4eb6_8998_b9b27d4c2d0e.
+TDD cases 3/4 still require execution after the power-availability assertion
+repair. Do not treat the earlier first-failure stop as their pass.
+
 The original TDD capture is retained at
 logs/tpd41dbd63_8f97_4864_959f_45ecbe814973/received_data_stages.mat in the main
 checkout. Its measured sample SNR is 19.8773 dB: normalized occupied-RE TX,
