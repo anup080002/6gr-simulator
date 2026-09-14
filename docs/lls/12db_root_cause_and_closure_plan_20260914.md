@@ -2,6 +2,52 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD shared-DL-to-PUSCH candidate: 14 September 2026, 12:41 IST
+
+The 962168ee admission watcher ended at 12:39:38 IST without starting MATLAB.
+Its last check saw six workers and 3,977,612 KB free RAM. The additional four
+workers were process-pool children of main suite worker 10448, created at
+12:31:17 for test6GLLSMultiUserBeamforming. Worker 25036 remains the other full
+suite. None was stopped. The completed watcher was verified absent and the
+candidate checkout clean before editing; both old suites still have frozen
+source. This was an admission timeout, not a test pass or failed test.
+
+Coverage root cause: the existing nonempty PUSCH fixture's ACK/NACK donors are
+isolated DL decodes, while the independent common-commit regression is empty.
+Neither proves nonempty shared DL -> UE Type-2 -> PUSCH -> normal completion.
+testSharedPUSCHChannelArtifacts now has a separate shared-DL mode and registered
+testTDDSharedPUSCHNonemptyCompletion. It retains actual shared SS/PBCH timing for
+both control receptions, accepted DL DAI, physical DL transmission, the actual
+UE HARQ decision/event, normal DL completion, received UL DAI and PUSCH
+generation, independent gNB UCI context, common feedback receipt and normal UL
+completion. Assertions compare feedback to the actual decoded UE decision;
+there is no noise tuning or inserted ACK/NACK. The test arms the normal
+PUCCH occasion and exercises its explicit transfer to PUSCH.
+
+The dedicated diagnostic YAML aligns slot-6 DL feedback with slot-10 PUSCH
+using K1=[4] in both installed authorities, without rewriting receiver timing.
+Production 12 dB and existing legacy component modes are preserved. This
+one-grant component still does not qualify missing DCI, mixed CSI/SR, complete
+access, detector performance or all-measurement 12 dB operation.
+
+A separate production caller gap was found and patched:
+prepareSharedPUCCHFeedbackRuntime still required an empty SR inventory before
+selecting independent HARQ reception, preventing its new calendar-aware helper
+from being selected for transmitted HARQ. That outer inventory restriction is
+removed; CSI/PUSCH restrictions remain. The called independent helper must
+reject missing SR configuration and real overlap before waveform preparation.
+testConfiguredSRCalendar includes a labelled structural caller guard; it does
+not mislabel that source check as a normal-coordinator RF execution.
+
+Native syntax and whitespace checks precede the candidate commit. Runtime
+verification remains outstanding. Next queue: SR calendar, independent
+receive-only PUCCH, empty and nonempty shared PUSCH completion, producer/receipt
+guards and same-chain sweep config, followed by required final-source full
+testAll when focused tests pass and capacity permits. The earlier 12:45
+publish/queue checkpoint remains the immediate target. The 13:52 runtime
+checkpoint is at risk from worker admission; no new pass estimate is inferred
+from the static checks. FDD-focused work remains deferred.
+
 ## TDD SR calendar and archive checkpoint: 14 September 2026, 12:28 IST
 
 FDD remains preserved and deferred. No new FDD-focused run is authorized by

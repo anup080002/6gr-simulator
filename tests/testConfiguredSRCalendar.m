@@ -107,6 +107,13 @@ obligation=struct('ObservationID',"configured_sr_csi_component", ...
 context=sixgr.truth.buildConfiguredPUCCHReceiveContext(obligation,csi);
 assert(context.HARQACKBits==2 && context.SRBits==1 && context.CSIPart1Bits==csi.part1BitCount());
 assert(context.Sequence1Length==3+csi.part1BitCount());
+% Structural caller guard only; the calendar/overlap tests above do not
+% constitute a transmitted-HARQ normal-coordinator RF test.
+source=fileread(fullfile(root,'+sixgr','+truth','CoupledTruthRuntime.m'));
+caller=extractBetween(string(source),'function state=prepareSharedPUCCHFeedbackRuntime(state,item)', ...
+    'function state=completeSharedPUCCHFeedbackRuntime(state,item)');
+assert(isscalar(caller) && contains(caller,'execution.GNBReception=sixgr.truth.buildScheduledPUCCHHARQReception(') && ...
+    ~contains(caller,"isempty(sixgr.util.structGet(cfg,'validation.pucch_resources.sr_resource_ids'"));
 writetable(legal,fullfile(outputFolder,'configured_SR_opportunities.csv'));
 writetable(blocked,fullfile(outputFolder,'blocked_nominal_SR_opportunities.csv'));
 writetable(array2table(counts,'VariableNames',{'K','EncodedSRBits'}),fullfile(outputFolder,'algebraic_overlap_counts.csv'));

@@ -1,8 +1,9 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
-% come from isolated coded DL receptions, not this shared CDL owner.
+% use isolated coded DL receptions in legacy modes. independentSharedHARQ
+% instead produces its feedback through this same shared CDL owner.
 % One grant does not qualify access or adaptation.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, mode="TDD"; end
@@ -13,7 +14,10 @@ if nargin<5, twoPortUL=false; end
 if nargin<6, receivedAuthority=false; end
 if nargin<7, withHARQ=false; end
 if nargin<10, independentEmptyUCI=false; end
-if independentEmptyUCI
+if nargin<11, independentSharedHARQ=false; end
+assert(~(independentEmptyUCI && independentSharedHARQ));
+independentCompletion=independentEmptyUCI || independentSharedHARQ;
+if independentCompletion
     assert(string(mode)=="TDD" && receivedAuthority && twoPortUL && ...
         ~withCSI && ~withHARQ && ~deferUCIDelivery && ~withCoincidentSRS);
 end
@@ -45,9 +49,9 @@ if twoPortUL
     assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
 end
 if withCSI || withHARQ, localSaveScenarioEvidence(s,cfg,root); end
-if independentEmptyUCI
+if independentCompletion
     localSaveScenarioEvidence(s,cfg,root, ...
-        'component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; empty gNB UCI obligation; no DL HARQ, full coordinator or 12 dB qualification');
+        'component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; independent UCI receive/commit; selected DL source explicitly retained; not full coordinator or 12 dB qualification');
 end
 % This component bypasses runSingle, which normally initializes the run
 % RNG. Bind the UE drop to the resolved YAML seed, not the preceding test.
@@ -62,8 +66,10 @@ state.CurrentServingIdx(:)=1; state.TestRoot=root;
 state.TestDeferUCIDelivery=logical(deferUCIDelivery);
 state.TestWithCSI=logical(withCSI);
 state.TestWithHARQ=logical(withHARQ);
-state.TestIndependentEmptyUCI=logical(independentEmptyUCI);
-if independentEmptyUCI, assert(~cfg.phy.csi.reportCSI); end
+state.TestIndependentCompletion=logical(independentCompletion);
+state.TestIndependentSharedHARQ=logical(independentSharedHARQ);
+state.TestScheduledDLDAILedger=struct();
+if independentCompletion, assert(~cfg.phy.csi.reportCSI); end
 state.TestPUSCHRows=table();
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if receivedAuthority
@@ -97,7 +103,7 @@ state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( 
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
 localQueueSRS(state,cfg,5);
 for slot=1:lastSlot
-    if independentEmptyUCI
+    if independentCompletion
         % Real slot entry retains the source-slot trace required by the
         % normal completion reducer. No caller-created completed trace row.
         state=sixgr.truth.CoupledTruthRuntime.beginSlot( ...
@@ -105,6 +111,9 @@ for slot=1:lastSlot
     end
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if independentSharedHARQ && slot==6
+        state=localQueueSharedCSISource(state,cfg,slot,true);
+    end
     if withCSI && slot==10-state.CSIFeedbackSlots
         state=localQueueSharedCSISource(state,cfg,slot);
     end
@@ -131,7 +140,7 @@ for slot=1:lastSlot
     end
     if slot==9 || (withHARQ && slot==19)
         assert(isfield(state,'TestSRS') && state.TestSRS.AvailableAtSample<=owner.Events.NextSampleIndex);
-        if slot==9 && ~independentEmptyUCI, state=localReceivedDLReservations(state,cfg,10); end
+        if slot==9 && ~independentCompletion, state=localReceivedDLReservations(state,cfg,10); end
         if slot==19
             assert(~state.TestLastULHARQ.CombinedDecodeOK && state.ULHarq.hasPendingRetx(cfg.phy.pusch.RNTI,slot), ...
                 'This fixture requires a real receiver NACK; never manufacture retransmission feedback.');
@@ -140,11 +149,11 @@ for slot=1:lastSlot
         ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,slot);
         ul.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
         [grant,ul]=localGrant(state,ul,slot-1);
-        if independentEmptyUCI
+        if independentCompletion
             % No isolated DL donor or fabricated HARQ row. Encode the actual
-            % independently empty gNB schedule into the ordinary UL DCI.
-            grant=sixgr.truth.prepareScheduledULDAI(struct(),ul,grant);
-            assert(grant.ULTotalDAIAuthority.ScheduledDLAssignmentCount==0);
+            % accepted shared DL schedule into the ordinary UL DCI.
+            grant=sixgr.truth.prepareScheduledULDAI(state.TestScheduledDLDAILedger,ul,grant);
+            assert(grant.ULTotalDAIAuthority.ScheduledDLAssignmentCount==double(independentSharedHARQ));
         end
         if withCoincidentSRS
             % The authored TDD allocation ends before the configured SRS
@@ -179,7 +188,7 @@ for slot=1:lastSlot
 end
 attempts=1+logical(withHARQ);
 assert(state.TestPUSCHReceived && state.ULHarq.Stats.Tx==attempts && state.ULQueueBits(1)==0);
-assert(numel(owner.DataTransmissions)==attempts+logical(withCSI) && ~owner.hasPending('PUSCH',1));
+assert(numel(owner.DataTransmissions)==attempts+logical(withCSI)+logical(independentSharedHARQ) && ~owner.hasPending('PUSCH',1));
 if withCSI
     assert(state.TestSharedCSIReceived && state.DLHarq.Stats.Tx==3 && ...
         ~owner.hasPending('PDSCH',1));
@@ -203,6 +212,17 @@ if independentEmptyUCI
     assert(numel(state.SharedPUSCHHARQFeedbackReceipts)==1 && ...
         isempty(sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table())));
     fprintf('TDD_INDEPENDENT_PUSCH_EMPTY_UCI_PASS actual_UL_TX=1 DL_TX=0 HARQ_updates=0 common_commit_receipts=1\n');
+end
+if independentSharedHARQ
+    assert(state.TestSharedHARQReceived && state.DLHarq.Stats.Tx==1 && ...
+        numel(state.SharedUEHARQACKEvents)==1 && height(state.SharedGNBUCIHARQTable)==1 && ...
+        numel(state.SharedPUSCHHARQFeedbackReceipts)==1 && ...
+        state.DLHarq.Stats.Ack==double(state.TestExpectedSharedACK) && ...
+        state.DLHarq.Stats.Nack==double(~state.TestExpectedSharedACK) && ...
+        state.DLCompletedSlots==6 && state.ULCompletedSlots==10 && ...
+        numel(unique(state.SharedDataRXCommittedIDs))==2);
+    fprintf('TDD_INDEPENDENT_SHARED_HARQ_PASS actual_DL_TX=1 actual_UL_TX=1 common_commit_receipts=1 ACK=%d\n', ...
+        state.TestExpectedSharedACK);
 end
 fprintf('SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: %s actual SRS/DCI/PUSCH/UCI, seed=%g root=%s\n',mode,cfg.run.seed,root);
 ok=true;
@@ -254,6 +274,14 @@ for item=items
     if item.Kind=="DataTX"
         state=sixgr.truth.commitSharedDataTransmission(state,item);
         if item.Context.Prepared.Direction=="UL", localVerifyAppliedULWeights(state,item); end
+        if state.TestIndependentSharedHARQ && item.Context.Prepared.Direction=="DL"
+            state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime( ...
+                state,state.SharedDataTXLedger{end}.Grant,item.UE);
+        end
+        continue;
+    end
+    if item.Kind=="PreparePUCCH" && state.TestIndependentSharedHARQ
+        state=sixgr.truth.CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime(state,item);
         continue;
     end
     c=item.Context; p=c.Prepared;
@@ -321,11 +349,23 @@ for item=items
         grant.PDCCHGrantDCIFieldsHash=hash(decoded.Fields); grant.PDCCHGrantFieldsHash=hash(authored.Fields);
         grant.PDCCHGrantBindingRequired=true; grant.DCICrcPass=logical(rx.Ok);
         grant.PDCCHPayloadMatch=isequal(rx.DCIBits(:),grant.DCI.Bits(:)); grant.DecodedDCIFields=decoded.Fields;
-        if isfield(c,'SharedCSISource') && c.SharedCSISource
+        if isfield(c,'SharedCSISource') && (c.SharedCSISource || ...
+                logical(sixgr.util.structGet(c,'SharedHARQSource',false)))
             grant.PDCCHCausalGrantDecodeOk=logical(rx.CausalGrantDecodeOk);
             state.TestCSIReceivedControl=struct('Grant',grant, ...
                 'ReceivedAssignment',receivedAssignment,'AvailableAtSample',owner.Events.NextSampleIndex);
-            save(fullfile(state.TestRoot,'shared_csi_control.mat'),'item','rx','rxInfo','grant');
+            if state.TestIndependentSharedHARQ
+                key="DL_ue_"+grant.UEIndex+"_rnti_"+grant.RNTI+ ...
+                    "_control_"+(grant.TimingDecision.ControlAbsoluteSlot+1)+"_data_"+grant.Slot;
+                control=struct('Key',key,'Grant',grant,'Allowed',logical(rx.CausalGrantDecodeOk), ...
+                    'ReceivedAssignment',receivedAssignment,'AvailableAtSample',owner.Events.NextSampleIndex);
+                controls=sixgr.util.structGet(state,'SharedReceivedGrantControls',{});
+                state.SharedReceivedGrantControls=[controls;{control}];
+                state.TestSharedDLControl=control;
+            end
+            controlArtifact='shared_csi_control.mat';
+            if state.TestIndependentSharedHARQ, controlArtifact='shared_dl_harq_control.mat'; end
+            save(fullfile(state.TestRoot,controlArtifact),'item','rx','rxInfo','grant');
             continue;
         end
         slot=double(grant.ScheduledAbsoluteSlot)+1;
@@ -337,13 +377,14 @@ for item=items
         controlFrame=floor((controlSlot-1)/state.SlotsPerFrame)+1;
         grant=sixgr.truth.bindQueuedULGrantOccasion( ...
             grant,controlSlot,slot,controlFrame,frame,grant.K2);
-        if state.TestIndependentEmptyUCI
+        if state.TestIndependentCompletion
             assert(~isempty(fieldnames(receivedAssignment)));
             key="UL_ue_"+grant.UEIndex+"_rnti_"+grant.RNTI+ ...
                 "_control_"+controlSlot+"_data_"+grant.Slot;
-            state.SharedReceivedGrantControls={struct('Key',key,'Grant',grant, ...
+            controls=sixgr.util.structGet(state,'SharedReceivedGrantControls',{});
+            state.SharedReceivedGrantControls=[controls;{struct('Key',key,'Grant',grant, ...
                 'Allowed',logical(rx.CausalGrantDecodeOk),'ReceivedAssignment',receivedAssignment, ...
-                'AvailableAtSample',owner.Events.NextSampleIndex)};
+                'AvailableAtSample',owner.Events.NextSampleIndex)}];
         end
         [cfg,~]=sixgr.truth.bindSharedDataOccasion(c.ULConfig,slot,frame,owner.SampleRateHz);
         hasDueACK=any(~state.PendingFeedbackTable.Processed);
@@ -365,7 +406,9 @@ for item=items
             'Canonical queued PUSCH must retain its actual due slot during late UCI reconciliation.');
         uci=sixgr.util.structGet(grant,'ExpectedUCIPayload',sixgr.phy.ul.pusch.PUSCHUCIPayload());
         if hasDueACK
-        assert(isequal(int8(uci.HARQACK(:)),int8([1;0])) && ...
+        expectedACK=int8([1;0]);
+        if state.TestIndependentSharedHARQ, expectedACK=int8(state.TestExpectedSharedACK); end
+        assert(isequal(int8(uci.HARQACK(:)),expectedACK) && ...
             all(string(state.PendingFeedbackTable.DeliveryMechanism)=="pusch_uci") && ...
             all(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH));
         else
@@ -411,6 +454,10 @@ for item=items
         end
         owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job));
     elseif item.Kind=="PDSCH"
+        if state.TestIndependentSharedHARQ
+            state=localCompleteSharedHARQSource(state,item,p,pre,tx,replay,receiver);
+            continue;
+        end
         assert(state.TestWithCSI && c.SharedCSISource && isfield(state,'TestCSIReceivedControl'));
         control=state.TestCSIReceivedControl;
         assert(control.AvailableAtSample<=receiver.EndSampleExclusive);
@@ -458,9 +505,9 @@ for item=items
             'UL timing truth must include the shared-clock observation displacement and executed channel delay.');
         job.ReceivedContext=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
             'TransmitterObservation',tx,'Replay',replay,'ChannelState',owner.directionalChannelState(1,'UL'));
-        if state.TestIndependentEmptyUCI
+        if state.TestIndependentCompletion
             job=sixgr.truth.bindSharedPUSCHReceiverContext(state,job);
-            assert(job.ReceivedContext.UCIReceiveContext.Data.HARQACKBitCount==0 && ...
+            assert(job.ReceivedContext.UCIReceiveContext.Data.HARQACKBitCount==double(state.TestIndependentSharedHARQ) && ...
                 isempty(job.ReceivedContext.UCIReportConfiguration));
             poisoned=state; poisoned.PendingFeedbackTable=table(true,'VariableNames',{'Ack'});
             poison=job; poison.ExpectedUCIBits=ones(99,1,'int8');
@@ -470,7 +517,7 @@ for item=items
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
         if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
-        if state.TestIndependentEmptyUCI
+        if state.TestIndependentCompletion
             for field=["DCI","ULTotalDAIAuthority","UCIOnPUSCHFeedbackBitIndices", ...
                     "UCIOnPUSCHFeedbackGrantIds","ExpectedUCIBits"]
                 assert(isfield(out.HARQ.GrantSnapshot,field) && ...
@@ -487,7 +534,9 @@ for item=items
             'Shared PUSCH must estimate disturbance from received reference REs, not injected-noise metadata.');
         hasUCI=job.ExpectedUCIPayload.hasPayload();
         if hasUCI
-            assert(out.HARQ.HARQACKContentMatch && isequal(out.HARQ.DecodedHARQACKBits,int8([1;0])));
+            expectedACK=int8([1;0]);
+            if state.TestIndependentSharedHARQ, expectedACK=int8(state.TestExpectedSharedACK); end
+            assert(out.HARQ.HARQACKContentMatch && isequal(out.HARQ.DecodedHARQACKBits,expectedACK));
         else
             assert(isempty(out.HARQ.DecodedHARQACKBits));
         end
@@ -497,7 +546,7 @@ for item=items
         % actual CDL/SRS/PUSCH captures, without a known-delay/oracle input.
         out.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...
             p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
-        if state.TestIndependentEmptyUCI
+        if state.TestIndependentCompletion
             [state,out.HARQ]=sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
                 state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext);
             before=state.DLHarq.Stats;
@@ -540,7 +589,7 @@ for item=items
             % do not change the captured waveform or its availability time.
             state.TestDeferredUCI=out.HARQ;
             assert(all(~state.PendingFeedbackTable.Processed));
-        elseif hasUCI
+        elseif hasUCI && ~state.TestIndependentCompletion
             state=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,out.HARQ);
             assert(all(state.PendingFeedbackTable.Processed) && ...
                 state.DLHarq.Stats.Ack==1 && state.DLHarq.Stats.Nack==1);
@@ -699,7 +748,8 @@ if state.TestWithCSI
 end
 end
 
-function state=localQueueSharedCSISource(state,cfg,slot)
+function state=localQueueSharedCSISource(state,cfg,slot,sharedHARQ)
+if nargin<4, sharedHARQ=false; end
 owner=state.SharedWaveformStream;
 [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
 dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,slot);
@@ -710,6 +760,11 @@ allocated=state.DLHarq.allocate(grant.RNTI,slot,grant.TBSBytes,'NewData',true);
 grant=sixgr.link.resolveWaveformGrant(dl,'DL',frame,'Slot',slot,'SFN',frame-1, ...
     'ControlAbsoluteSlot',slot-1,'HARQProcess',allocated.HARQ.HarqID);
 assert(grant.Valid && grant.ExactPHYFeasible && allocated.HARQ.NDI==grant.HARQ.NDI);
+if sharedHARQ
+    [grant,candidateLedger]=sixgr.truth.prepareScheduledDLDAI(state.TestScheduledDLDAILedger,dl,grant);
+    assert(grant.TimingDecision.DataAbsoluteSlot==5 && grant.TimingDecision.FeedbackAbsoluteSlot==9, ...
+        'test:SharedHARQFixtureTiming','Authored K1 must place slot-6 DL feedback on slot-10 PUSCH.');
+end
 grant.ControlDecodeOk=false; grant.PDCCHGrantBindingOk=false;
 job=sixgr.truth.buildGrantPHYJob(dl,'DL',cfg.channel.snr_dB,frame,[], ...
     struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',true));
@@ -720,12 +775,58 @@ grant=job.GrantSnapshot;
 assert(isequal(grant.GrantContextId,job.GrantContextId) && ...
     string(grant.PHYGrantContextId)==job.GrantContextId);
 control=sixgr.link.prepareSharedPDCCHTransmission(dl,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
-owner.queuePDCCH(1,control,struct('Grant',grant,'SharedCSISource',true));
+controlContext=struct('Grant',grant,'SharedCSISource',~sharedHARQ,'SharedHARQSource',sharedHARQ);
+if sharedHARQ
+    assert(isfield(state,'TestReceivedDLClock'),'Actual shared SS/PBCH timing is required for connected DL control.');
+    controlContext.ReceivedDLTimingReference=state.TestReceivedDLClock;
+end
+owner.queuePDCCH(1,control,controlContext);
+if sharedHARQ, state.TestScheduledDLDAILedger=candidateLedger; end
 result=sixgr.truth.executeGrantPHYJob(job);
 assert(~result.ReadyForReceiverCommit && isempty(result.Result.TrialTable));
-owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job,'SharedCSISource',true));
+owner.queueData(1,result.Result.PreparedTransmission,struct('Job',job,'SharedCSISource',~sharedHARQ,'SharedHARQSource',sharedHARQ));
 state.DLQueueBits(1)=state.DLQueueBits(1)+grant.TBSBits;
 state.TestSharedCSIReceived=false;
+end
+
+
+function state=localCompleteSharedHARQSource(state,item,p,pre,tx,replay,receiver)
+% Same actual shared DCI/decoder/event/slot reducer used by the coordinator.
+owner=state.SharedWaveformStream;
+control=state.TestSharedDLControl;
+assert(control.AvailableAtSample<=receiver.EndSampleExclusive);
+job=item.Context.Job; job.PrepareOnly=false;
+job.GrantSnapshot=sixgr.truth.bindReceivedPDCCHGrantEvidence(job.GrantSnapshot,control.Grant);
+replay=sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,item.Context.DesiredReferencePlane,replay);
+job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
+    'PhysicalMeasurementObservation',pre,'TransmitterObservation',tx,'Replay',replay, ...
+    'ChannelState',owner.directionalChannelState(1,'DL'), ...
+    'ReceivedAssignment',control.ReceivedAssignment,'UEIndex',1, ...
+    'ReceivedHARQState',sixgr.link.ReceivedDLHARQState(job.Cfg,1));
+result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
+assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+out=sixgr.truth.bindSharedDLCSICompletion(out,p,receiver,owner);
+[state,out.ReceivedHARQACKEvent]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
+    state,job.Cfg,control,out.ReceivedHARQDecision,out.ReceivedHARQState,owner.Events.NextSampleIndex);
+state.SharedUEDLHARQEntities={out.ReceivedHARQState};
+out.HARQ.SharedTransmissionID=item.Context.TransmissionIdentity.TransmissionID;
+out.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...
+    p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
+[state,out.TrialTable]=sixgr.truth.CoupledTruthRuntime.completeSlot( ...
+    state,job.Cfg,1,'DL',out.TrialTable,out);
+state.TestExpectedSharedACK=logical(out.ReceivedHARQDecision.ACK);
+state.TestSharedHARQReceived=true;
+assert(height(state.PendingFeedbackTable)==1 && state.PendingFeedbackTable.SourceSlot==6 && ...
+    state.PendingFeedbackTable.DueSlot==10 && ~state.PendingFeedbackTable.Processed && ...
+    state.PendingFeedbackTable.Ack==state.TestExpectedSharedACK && ...
+    state.DLHarq.Stats.Ack==0 && state.DLHarq.Stats.Nack==0);
+sourceRow=sixgr.truth.exportSharedChannelObservation(state.TestRoot,out.TrialTable, ...
+    item.Planes,p,item.Context.DesiredReferencePlane);
+sixgr.channel.validateSharedChannelObservationArtifact(state.TestRoot,sourceRow);
+sixgr.util.csvWriteTable(fullfile(state.TestRoot,'shared_received_dl_harq.csv'),sourceRow,'PreserveSchema',true);
+save(fullfile(state.TestRoot,'shared_received_dl_harq.mat'),'item','out','control','sourceRow','-v7.3');
+fprintf('SHARED_DL_HARQ_SOURCE_RECEIVED slot=6 due=10 ACK=%d completed_sample=%d\n', ...
+    state.TestExpectedSharedACK,owner.Events.NextSampleIndex);
 end
 
 function localVerifyCSI(state)
