@@ -121,7 +121,19 @@ for item=items
             'sixgr:truth:UnresolvedCombinedPUCCHReceiveHypothesis');
         bad=c; bad.validation.pucch_resources.sr_resource_ids=0;
         localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
+            'sixgr:truth:MissingInstalledSRCalendar');
+        % Configured receiver obligations, never UE positive/pending SR bits.
+        srFixture=sixgr.lls6g.config.readConfigFile(fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
+            'simulator','configs','scenarios','lls_tdd_configured_sr_calendar_fixture.yaml'));
+        bad.validation.pucch_resources.scheduling_request_resources=srFixture.pucch_resources.scheduling_request_resources;
+        localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
             'sixgr:truth:UnresolvedSRPUCCHReceiveHypothesis');
+        % The next-slot calendar has no SR in this receive window. Retain
+        % exactly the same independently scheduled HARQ count and resource.
+        bad.validation.pucch_resources.scheduling_request_resources.offset_slots=4;
+        noSR=sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
+        assert(noSR.Context.HARQACKBits==h.Context.HARQACKBits && noSR.Context.SRBits==0 && ...
+            noSR.Assignment.Data.ResourceID==h.Assignment.Data.ResourceID);
         bad=c; bad.validation.pucch_resources=rmfield(bad.validation.pucch_resources,'sr_resource_ids');
         localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
             'sixgr:phy:pucch:StaleConfiguration');
@@ -151,7 +163,7 @@ for item=items
         direct=sixgr.link.receivePUCCHObservation(c,h.Assignment,h.Context,post,timingReferences{1});
         assert(isequal(direct.DecodedSequence1,received.Receiver.DecodedSequence1) && ...
             direct.DTX==received.Receiver.DTX && direct.DetectionMetric==received.Receiver.DetectionMetric);
-        fprintf('SHARED_PUCCH_RECEIVE_ONLY_GUARDS_PASS rejections=8 unchanged_rejected_HARQ_state=1 actual_IQ_replay_equivalence=1\n');
+        fprintf('SHARED_PUCCH_RECEIVE_ONLY_GUARDS_PASS rejections=9 configured_SR_overlap_guard=1 unchanged_rejected_HARQ_state=1 actual_IQ_replay_equivalence=1\n');
         save(fullfile(state.TestEvidenceRoot,'received_pucch_absent.mat'),'item','received','timingReferences');
     else
         error('test:UnexpectedPhysicalEvent','Unexpected physical event %s.',item.Kind);

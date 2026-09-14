@@ -2802,6 +2802,11 @@ cfg = sixgr.util.structSet(cfg, "validation.strict", logical(localGetNested(s, "
 pucchSection = localGetNested(s, "pucch_resources", struct());
 if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
     cfg = sixgr.util.structSet(cfg, "validation.pucch_resources", pucchSection);
+    % Fixed protocol capability catalog travels with the resolved runtime
+    % config. SR obligations must not accept a caller-selected period table.
+    srCatalogPath=fullfile(fileparts(fileparts(fileparts(mfilename('fullpath')))), ...
+        'simulator','configs','control','scheduling_request_periods_r18.yaml');
+    cfg.phy.pucch.srPeriodCatalog=sixgr.lls6g.config.readConfigFile(srCatalogPath);
     % Installed DCI interpretation is independent of this study's PUCCH
     % transmit enable switch. Preserve the authored list; do not synthesize
     % a replacement list or enable any receiver/transmitter by retaining it.

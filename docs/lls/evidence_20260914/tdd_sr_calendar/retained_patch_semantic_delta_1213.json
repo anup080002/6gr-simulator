@@ -1,0 +1,189 @@
+{
+  "source_revision": "35ec47cbf19e1216ba030e8b5c2f7eef420e9f29",
+  "scope": "Semantic reconciliation of the remaining eight ambiguous archives; no runtime qualification",
+  "runtime_qualified": false,
+  "remaining_of_original_fifteen": 0,
+  "known_unintegrated_SR_schema_candidate_still_pending": true,
+  "FDD": "deferred_not_qualified",
+  "proof": {
+    "composite_checks": 77,
+    "all_passed": true,
+    "checks_file": "logs/composite_semantic_checks_20260914_1211.json",
+    "last_archive_historical_revision": "03f6d6c7",
+    "last_archive_historical_postimages_present": 61,
+    "last_archive_historical_postimages_total": 61,
+    "last_archive_registry_added_tests_unique": 31
+  },
+  "reviewed_changes": [
+    "Common feedback commit adds UL transport authority and transport-independent obligationDigest to reject cross-transport duplicates; original disposition checks retained.",
+    "prepareScheduledHARQFeedback preserves its entire HARQ/NDI/TBS preflight body and delegates only transport-specific mapping to mapScheduledHARQTransportFeedback.",
+    "PRI switches to CSI-only purpose only when no HARQ bits exist; mixed HARQ/CSI retains HARQ PRI authority.",
+    "Legacy expected-bit validation remains exact after an earlier strict independent-commit receipt path; no fallback from independent to producer-sized mapping.",
+    "CSI mixed-clock fixture adds configured serving identity and verifies publication ownership.",
+    "Physical-clock fixture uses actual slot entry and explicit declared SSB filter inputs; sample-clock advancement and no-RF labels remain unchanged.",
+    "Final composite was wholly integrated at 03f6d6c7. Current HARQ timing change adds explicit UL BWP spacing aliases with disagreement rejection and corresponding tests; actual timing values/widths unchanged.",
+    "Final composite shared-PUSCH fixture differs by the later explicitly scoped empty-UCI option, provenance retention and normal slot-completion regression. Existing modes remain retained. Registry additions remain uniquely present."
+  ],
+  "records": [
+    {
+      "canonical_sha256": "5EA5813188879975534E0365A7BE32ECD091D3F4ADD5806B270EF84A6FEEADD3",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_receiver_fields_20260913.patch",
+          "raw_sha256": "5EA5813188879975534E0365A7BE32ECD091D3F4ADD5806B270EF84A6FEEADD3"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_consolidated_receiver_fields_20260913.patch",
+          "raw_sha256": "5EA5813188879975534E0365A7BE32ECD091D3F4ADD5806B270EF84A6FEEADD3"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_receiver_fields_20260913.patch",
+          "raw_sha256": "5EA5813188879975534E0365A7BE32ECD091D3F4ADD5806B270EF84A6FEEADD3"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_receiver_fields_20260913.patch",
+          "raw_sha256": "5EA5813188879975534E0365A7BE32ECD091D3F4ADD5806B270EF84A6FEEADD3"
+        }
+      ],
+      "postimage_blocks": 66,
+      "matched": 61,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "6E2C763A64C6DE1A87BDBF3AE58135CEECC552C61BD5410AD0F1425AE5679EF7",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\shared_harq_integration_evidence_20260913_01\\pending_consolidated_shared_harq_20260913_02.patch",
+          "raw_sha256": "6E2C763A64C6DE1A87BDBF3AE58135CEECC552C61BD5410AD0F1425AE5679EF7"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\shared_harq_integration_evidence_20260913_01\\pending_consolidated_shared_harq_20260913.patch",
+          "raw_sha256": "51D2B8E6E772A9589D7CB44469AE0A5A13D94B1DCB499B9825DC55426D2EB732"
+        }
+      ],
+      "postimage_blocks": 78,
+      "matched": 72,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "A260106E64F84EC7211FD5ADF79C0443A387B4985B2FD27E319059B3EF58AC55",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pusch_preflight_integration_evidence_20260913_01\\pending_consolidated_pusch_preflight_20260913.patch",
+          "raw_sha256": "A260106E64F84EC7211FD5ADF79C0443A387B4985B2FD27E319059B3EF58AC55"
+        }
+      ],
+      "postimage_blocks": 89,
+      "matched": 82,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "D3DECFFF6EA393EA47DAEC5478C14DDD673E4AD52F127121A6C2105457EC9C81",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_preview_20260913.patch",
+          "raw_sha256": "D3DECFFF6EA393EA47DAEC5478C14DDD673E4AD52F127121A6C2105457EC9C81"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_consolidated_feedback_csi_preview_20260913.patch",
+          "raw_sha256": "D3DECFFF6EA393EA47DAEC5478C14DDD673E4AD52F127121A6C2105457EC9C81"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_preview_20260913.patch",
+          "raw_sha256": "D3DECFFF6EA393EA47DAEC5478C14DDD673E4AD52F127121A6C2105457EC9C81"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_preview_20260913.patch",
+          "raw_sha256": "D3DECFFF6EA393EA47DAEC5478C14DDD673E4AD52F127121A6C2105457EC9C81"
+        }
+      ],
+      "postimage_blocks": 42,
+      "matched": 37,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "DE8D2C086FE948E32343E2D10C0D94A350480A7EB57CC4D15920D9290B0FAAC2",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_preview_noise_20260913.patch",
+          "raw_sha256": "DE8D2C086FE948E32343E2D10C0D94A350480A7EB57CC4D15920D9290B0FAAC2"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_consolidated_feedback_csi_preview_noise_20260913.patch",
+          "raw_sha256": "DE8D2C086FE948E32343E2D10C0D94A350480A7EB57CC4D15920D9290B0FAAC2"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_preview_noise_20260913.patch",
+          "raw_sha256": "DE8D2C086FE948E32343E2D10C0D94A350480A7EB57CC4D15920D9290B0FAAC2"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_preview_noise_20260913.patch",
+          "raw_sha256": "DE8D2C086FE948E32343E2D10C0D94A350480A7EB57CC4D15920D9290B0FAAC2"
+        }
+      ],
+      "postimage_blocks": 45,
+      "matched": 40,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "F45DBDA1C9671EC844C5589E21DE2DD9343D44EE4EA99BCAD2BAF95E69042F65",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_all_20260913.patch",
+          "raw_sha256": "F45DBDA1C9671EC844C5589E21DE2DD9343D44EE4EA99BCAD2BAF95E69042F65"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_consolidated_all_20260913.patch",
+          "raw_sha256": "F45DBDA1C9671EC844C5589E21DE2DD9343D44EE4EA99BCAD2BAF95E69042F65"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_all_20260913.patch",
+          "raw_sha256": "F45DBDA1C9671EC844C5589E21DE2DD9343D44EE4EA99BCAD2BAF95E69042F65"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_all_20260913.patch",
+          "raw_sha256": "F45DBDA1C9671EC844C5589E21DE2DD9343D44EE4EA99BCAD2BAF95E69042F65"
+        }
+      ],
+      "postimage_blocks": 61,
+      "matched": 56,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "FCD59C89E9F3B8B218448DB4332EBD212870DF9CB17B136EE3A45060FCEF089E",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_20260913.patch",
+          "raw_sha256": "FCD59C89E9F3B8B218448DB4332EBD212870DF9CB17B136EE3A45060FCEF089E"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_consolidated_feedback_csi_20260913.patch",
+          "raw_sha256": "FCD59C89E9F3B8B218448DB4332EBD212870DF9CB17B136EE3A45060FCEF089E"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_20260913.patch",
+          "raw_sha256": "FCD59C89E9F3B8B218448DB4332EBD212870DF9CB17B136EE3A45060FCEF089E"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_consolidated_feedback_csi_20260913.patch",
+          "raw_sha256": "FCD59C89E9F3B8B218448DB4332EBD212870DF9CB17B136EE3A45060FCEF089E"
+        }
+      ],
+      "postimage_blocks": 38,
+      "matched": 33,
+      "reviewed_disposition": "integrated_with_reviewed_transport_and_fixture_evolution"
+    },
+    {
+      "canonical_sha256": "C443ACF27E2BE733E5FBBF4EC82FFFA590C4C6A1F350C0CAF74CEAAE15637B56",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\consolidation_candidate_20260914_01\\pending_consolidated_repairs_line_endings_01.patch",
+          "raw_sha256": "C443ACF27E2BE733E5FBBF4EC82FFFA590C4C6A1F350C0CAF74CEAAE15637B56"
+        }
+      ],
+      "postimage_blocks": 61,
+      "matched": 51,
+      "reviewed_disposition": "historically_integrated_03f6d6c7_then_reviewed_alias_registry_and_fixture_evolution"
+    }
+  ]
+}

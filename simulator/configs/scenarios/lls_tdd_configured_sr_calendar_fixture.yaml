@@ -1,0 +1,18 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+
+meta:
+  scenario_id: lls_tdd_configured_sr_calendar_fixture
+  description: Explicit TDD SR resource calendar and independent receiver-obligation regression.
+  purpose: Configured opportunities only; not SR MAC lifecycle, RF or 12 dB qualification.
+  research_class: optional_research_experiment
+
+pucch_resources:
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 3
+      priority_index: 0
+      additional_periodicity_capability: false

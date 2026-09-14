@@ -1,0 +1,25 @@
+schema_version: 1
+reference: TS_38.331_V18.8.0_SchedulingRequestResourceConfig
+research_class: baseline_benchmark
+scope: whole_slot_SR_periods_only_symbol_periodicities_require_separate_implementation
+max_sr_resources_per_bwp: 8
+max_scheduling_request_id: 7
+periods_by_scs:
+  - scs_khz: 15
+    allowed_slot_periods: [1, 2, 4, 5, 8, 10, 16, 20, 40, 80]
+    additional_capability_slot_periods: []
+  - scs_khz: 30
+    allowed_slot_periods: [1, 2, 4, 5, 8, 10, 16, 20, 40, 80, 160]
+    additional_capability_slot_periods: [5]
+  - scs_khz: 60
+    allowed_slot_periods: [1, 2, 4, 8, 16, 20, 40, 80, 160, 320]
+    additional_capability_slot_periods: []
+  - scs_khz: 120
+    allowed_slot_periods: [1, 2, 4, 5, 8, 10, 16, 40, 80, 160, 320, 640]
+    additional_capability_slot_periods: [5, 10]
+  - scs_khz: 480
+    allowed_slot_periods: [1, 2, 4, 8, 16, 40, 80, 160, 320, 640, 1280, 2560]
+    additional_capability_slot_periods: []
+  - scs_khz: 960
+    allowed_slot_periods: [1, 2, 4, 8, 16, 40, 80, 160, 320, 640, 1280, 2560, 5120]
+    additional_capability_slot_periods: []

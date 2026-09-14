@@ -2,6 +2,64 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD SR calendar and archive checkpoint: 14 September 2026, 12:28 IST
+
+FDD remains preserved and deferred. No new FDD-focused run is authorized by
+this checkpoint; the two previously running full suites are left untouched.
+
+The remaining eight ambiguous archive variants have now been semantically
+reconciled against 35ec47cb and historical 03f6d6c7. All fifteen originally
+ambiguous variants are accounted for. The last review checked 77 literal
+invariants across seven composites; the eighth was wholly present at its
+historical revision. Evidence is under evidence_20260914/tdd_sr_calendar/.
+This closes the ambiguous-archive review, NOT runtime qualification, branch
+consolidation or the whole inventory/measurement acceptance milestone.
+
+SR root cause: the TDD baseline installs an SR PUCCH resource ID but does not
+install SR configuration identity, period, offset, priority or capability.
+A resource ID alone cannot tell the independent gNB which SR occasions overlap
+HARQ. The current patch adds the schema, an explicit diagnostic TDD YAML,
+a fixed TS 38.331 Release-18 whole-slot period catalog in the runtime config,
+buildConfiguredSRCalendar, and resolveLongPUCCHSROverlap. Calendar rows are
+labelled configured opportunities, not transmissions, detections or MAC events.
+Nominal occasions blocked by DL symbols are retained as blocked, never moved
+to convenient UL slots. Cell/BWP, identities, period/capability and inventory
+consistency are checked before receiver use.
+
+buildScheduledPUCCHHARQReception now consumes installed SR occasions rather
+than rejecting every nonempty resource inventory. Overlapping SR still fails
+closed because this HARQ-only receiver does not yet implement general SR/HARQ
+multiplexing or priority arbitration. CSI and UCI-on-PUSCH guards remain intact.
+The authored production 12 dB scenario is unchanged; no arbitrary baseline SR
+policy, positive SR bits, detector threshold, SNR or power value was inserted.
+The MAC SR timer/counter lifecycle and complete mixed transport remain open.
+
+testConfiguredSRCalendar is registered in testAll. It checks the authored YAML
+path, 58-slot available/blocked occasions, identity/config rejection, the
+installed six-numerology catalog, K=0:8 algebraic Format 2/3/4 bit counts and the
+configured HARQ/SR/CSI receiver schema. testSharedPUCCHReceiveOnlyClock now checks
+missing SR configuration, overlapping SR rejection and unchanged HARQ-only
+assignment on a configured non-SR slot. Calendar evidence goes under logs/
+with raw/resolved configs, schema/version/environment/seed information.
+These are bounded calendar/schema tests, not signal-present SR or 12 dB proof.
+
+Native mlint checked all seven changed MATLAB files without SYNER/EOLPAR;
+its malformed positive control produced SYNER. The schema JSON parsed and
+git diff --check passed. MATLAB verification is still pending. The 35ec47cb
+watcher expired at 12:17:07 IST without starting MATLAB (30 guarded checks;
+last free RAM 581,092 KB, two workers). No pass or failure is inferred.
+At 12:26 free RAM remained 1,317,876 KB, below the unchanged 2,097,152 KB guard.
+
+Updated execution checkpoint: freeze/publish this TDD candidate and queue
+calendar + actual PUCCH/PUSCH focused regressions by 12:45 IST. Admission and
+completion depend on safe RAM, so no runtime pass deadline is promised.
+Archive-review target 13:52 is met in the limited semantic sense above.
+CSI/timing 13:52 remains at risk; shared-PUSCH 21:52 and 16–17 September
+qualification remain estimates. Nonempty shared HARQ, missing UL DCI,
+mixed UCI/MAC SR, detector qualification, all-measurement integrated 12 dB,
+final-source testAll/applicable guards and qualified main consolidation are
+still required before announcing completion.
+
 ## TDD normal-completion clock repair: 14 September 2026, 12:05 IST
 
 Code inspection of completeSlotImpl found sourceSlot was assigned only when

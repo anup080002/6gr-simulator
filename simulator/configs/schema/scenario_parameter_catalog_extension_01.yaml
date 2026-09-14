@@ -424,6 +424,7 @@
       "multi_user_assignment": {"required": false, "type": "struct", "nested_rule": "pucch_multi_user_assignment_object"},
       "dl_data_to_ul_ack": {"required": false, "type": "number_list"},
       "sr_resource_ids": {"required": false, "type": "number_list"},
+      "scheduling_request_resources": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_sr_resource_configuration_object"},
       "csi_resource_ids": {"required": false, "type": "number_list"},
       "sps_pucch_an_resource_ids": {"required": false, "type": "number_list"},
       "power_control": {"required": false, "type": "struct"},
@@ -596,6 +597,15 @@
       "periodicity_slots": {"required": false, "type": "integer", "min": 1},
       "offset_slots": {"required": false, "type": "integer", "min": 0},
       "require_scheduler_request_state_update": {"required": false, "type": "boolean"}
+    }},
+    "pucch_sr_resource_configuration_object": {"parameters": {
+      "scheduling_request_resource_id": {"required": true, "type": "integer", "min": 1, "max": 8},
+      "scheduling_request_id": {"required": true, "type": "integer", "min": 0, "max": 7},
+      "resource_id": {"required": true, "type": "integer", "min": 0},
+      "periodicity_slots": {"required": true, "type": "integer", "min": 1},
+      "offset_slots": {"required": true, "type": "integer", "min": 0},
+      "priority_index": {"required": true, "type": "integer", "allowed_values": [0, 1]},
+      "additional_periodicity_capability": {"required": true, "type": "boolean"}
     }},
     "pucch_csi_object": {"parameters": {
       "periodicity_slots": {"required": false, "type": "integer", "min": 1},
