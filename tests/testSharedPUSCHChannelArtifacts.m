@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -12,6 +12,11 @@ if nargin<4, withCSI=false; end
 if nargin<5, twoPortUL=false; end
 if nargin<6, receivedAuthority=false; end
 if nargin<7, withHARQ=false; end
+if nargin<10, independentEmptyUCI=false; end
+if independentEmptyUCI
+    assert(string(mode)=="TDD" && receivedAuthority && twoPortUL && ...
+        ~withCSI && ~withHARQ && ~deferUCIDelivery && ~withCoincidentSRS);
+end
 assert(any(string(mode)==["TDD","FDD"]));
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_pusch_shared_queue_fdd_fixture.yaml'; end
@@ -53,6 +58,8 @@ state.CurrentServingIdx(:)=1; state.TestRoot=root;
 state.TestDeferUCIDelivery=logical(deferUCIDelivery);
 state.TestWithCSI=logical(withCSI);
 state.TestWithHARQ=logical(withHARQ);
+state.TestIndependentEmptyUCI=logical(independentEmptyUCI);
+if independentEmptyUCI, assert(~cfg.phy.csi.reportCSI); end
 state.TestPUSCHRows=table();
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if receivedAuthority
@@ -114,7 +121,7 @@ for slot=1:lastSlot
     end
     if slot==9 || (withHARQ && slot==19)
         assert(isfield(state,'TestSRS') && state.TestSRS.AvailableAtSample<=owner.Events.NextSampleIndex);
-        if slot==9, state=localReceivedDLReservations(state,cfg,10); end
+        if slot==9 && ~independentEmptyUCI, state=localReceivedDLReservations(state,cfg,10); end
         if slot==19
             assert(~state.TestLastULHARQ.CombinedDecodeOK && state.ULHarq.hasPendingRetx(cfg.phy.pusch.RNTI,slot), ...
                 'This fixture requires a real receiver NACK; never manufacture retransmission feedback.');
@@ -123,6 +130,12 @@ for slot=1:lastSlot
         ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,slot);
         ul.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
         [grant,ul]=localGrant(state,ul,slot-1);
+        if independentEmptyUCI
+            % No isolated DL donor or fabricated HARQ row. Encode the actual
+            % independently empty gNB schedule into the ordinary UL DCI.
+            grant=sixgr.truth.prepareScheduledULDAI(struct(),ul,grant);
+            assert(grant.ULTotalDAIAuthority.ScheduledDLAssignmentCount==0);
+        end
         if withCoincidentSRS
             % The authored TDD allocation ends before the configured SRS
             % symbol. Exercise both actual contributions and one shared
@@ -174,6 +187,12 @@ end
 if withCoincidentSRS
     assert(state.TestLastSRSObservationID==state.TestPUSCHObservationID, ...
         'Coincident SRS and PUSCH must share one verified immutable channel artifact.');
+end
+if independentEmptyUCI
+    assert(state.DLHarq.Stats.Tx==0 && state.DLHarq.Stats.Ack==0 && state.DLHarq.Stats.Nack==0);
+    assert(numel(state.SharedPUSCHHARQFeedbackReceipts)==1 && ...
+        isempty(sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table())));
+    fprintf('TDD_INDEPENDENT_PUSCH_EMPTY_UCI_PASS actual_UL_TX=1 DL_TX=0 HARQ_updates=0 common_commit_receipts=1\n');
 end
 fprintf('SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: %s actual SRS/DCI/PUSCH/UCI, seed=%g root=%s\n',mode,cfg.run.seed,root);
 ok=true;
@@ -421,6 +440,15 @@ for item=items
             'UL timing truth must include the shared-clock observation displacement and executed channel delay.');
         job.ReceivedContext=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
             'TransmitterObservation',tx,'Replay',replay,'ChannelState',owner.directionalChannelState(1,'UL'));
+        if state.TestIndependentEmptyUCI
+            job=sixgr.truth.bindSharedPUSCHReceiverContext(state,job);
+            assert(job.ReceivedContext.UCIReceiveContext.Data.HARQACKBitCount==0 && ...
+                isempty(job.ReceivedContext.UCIReportConfiguration));
+            poisoned=state; poisoned.PendingFeedbackTable=table(true,'VariableNames',{'Ack'});
+            poison=job; poison.ExpectedUCIBits=ones(99,1,'int8');
+            same=sixgr.truth.bindSharedPUSCHReceiverContext(poisoned,poison);
+            assert(isequaln(same.ReceivedContext.UCIReceiveContext,job.ReceivedContext.UCIReceiveContext));
+        end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
         if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
@@ -442,6 +470,16 @@ for item=items
         % actual CDL/SRS/PUSCH captures, without a known-delay/oracle input.
         out.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...
             p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
+        if state.TestIndependentEmptyUCI
+            [state,out.HARQ]=sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
+                state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext);
+            before=state.DLHarq.Stats;
+            state=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,out.HARQ);
+            assert(isequaln(state.DLHarq.Stats,before));
+            localReject(@()sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
+                state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext), ...
+                'sixgr:truth:DuplicateSharedPUSCHHARQReception');
+        end
         assert(sixgr.truth.receivedPUSCHUCIOccasion(owner,out.HARQ,out.HARQ.GrantSnapshot)==job.StartSlotIndex);
         missing=rmfield(out.HARQ,'ReceivedTimingEvidence');
         localReject(@()sixgr.truth.receivedPUSCHUCIOccasion(owner,missing,out.HARQ.GrantSnapshot), ...

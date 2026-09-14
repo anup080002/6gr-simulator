@@ -2,6 +2,32 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD coordinator candidate: 14 September 2026, 11:34 IST
+
+Implemented, not yet runtime-verified: localCompleteSharedDataPlan now calls
+bindSharedPUSCHReceiverContext for connected UL with UCI multiplexing enabled.
+The helper binds the actual completed receive window, gNB DL scheduling ledger
+and independent configured CSI calendar before executeGrantPHYJob. After actual
+receive timing is available, the normal coordinator invokes
+completeSharedPUSCHHARQFeedbackRuntime before legacy slot completion; the latter
+must validate the retained receipt instead of applying feedback a second time.
+No detector, SNR, power, loss, code rate or numerical acceptance gate changed.
+
+Registered testTDDSharedPUSCHIndependentCompletion uses real shared SS/PBCH,
+SRS, received UL DCI and PUSCH with an explicitly empty gNB HARQ/CSI obligation.
+It checks context independence from poisoned UE pending/scoring data, no fake
+HARQ rows, a single common commit receipt and duplicate-commit rejection.
+It calls the same production binding/commit helpers; the full runner connection
+is additionally checked structurally, NOT claimed as an integrated RF run.
+Nonempty independent HARQ, missed DCI and general mixed ownership still need
+actual execution. The component's inherited high-SNR setting is explicitly not
+the authored 12 dB operating point; no production SNR has been increased.
+
+Native mlint checked five changed MATLAB sources: no SYNER/EOLPAR. The malformed
+control still produced SYNER. Existing style/performance warnings are not a
+runtime pass. Targeted TDD execution is next, subject to the unchanged worker/RAM
+guard. Final-source testAll and applicable config/NR/export/E2E tests remain due.
+
 ## User scope change: TDD first, FDD deferred (14 September 2026)
 
 The user explicitly requested that work now focus only on TDD to shorten the

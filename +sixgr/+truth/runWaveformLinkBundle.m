@@ -12657,6 +12657,14 @@ job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
     'ChannelState',state.SharedWaveformStream.directionalChannelState(item.UE,job.Direction));
 job.ReceivedContext.ReceivedAssignment=control.ReceivedAssignment;
 job.ReceivedContext.UEIndex=item.UE;
+independentPUSCHUCI=job.Direction=="UL" && ...
+    localPUSCHUCIOnPUSCHAvailable(job.Cfg) && isfield( ...
+    sixgr.util.structGet(job.Cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
+if independentPUSCHUCI
+    % gNB schedule/calendar, not the UE's pending/encoded UCI, determines
+    % the receive width even when the UE has no report or missed a DL DCI.
+    job=sixgr.truth.bindSharedPUSCHReceiverContext(state,job);
+end
 connectedDL=job.Direction=="DL" && isfield( ...
     sixgr.util.structGet(job.Cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
 if connectedDL
@@ -12720,6 +12728,12 @@ end
 res.HARQ.SharedTransmissionID=c.TransmissionIdentity.TransmissionID;
 res.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...
     p,receiver,res.ReceiveTiming,state.SharedWaveformStream.Events.NextSampleIndex);
+if independentPUSCHUCI
+    [state,res.HARQ]=sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
+        state,job.Cfg,res.HARQ,receiver,job.ReceivedContext.UCIReceiveContext);
+    % The later legacy completion validates this receipt; it cannot apply a
+    % second feedback update or fall back to transmitter-sized bit mapping.
+end
 receiveFields=sixgr.truth.harqFeedbackReceiveTimingFields(res.HARQ,res.HARQ.GrantSnapshot,true);
 for name=string(fieldnames(receiveFields)).'
     res.TrialTable.(name)=repmat(receiveFields.(name),height(res.TrialTable),1);
