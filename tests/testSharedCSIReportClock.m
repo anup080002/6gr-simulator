@@ -103,6 +103,9 @@ assert(owner.Events.NextSampleIndex==before && numel(owner.Pending)==1);
 assert(height(state.PUCCHGrantTraceTable)==1+double(withHARQ));
 csiGrant=state.PUCCHGrantTraceTable(string(state.PUCCHGrantTraceTable.UCIType)=="csi_part1_part2",:);
 assert(height(csiGrant)==1 && isnan(csiGrant.HarqID) && ~csiGrant.GrantExecutedFlag);
+assert(isnan(csiGrant.PRIValue) && ...
+    string(csiGrant.PRIProvenance)=="configured_csi_report_resource", ...
+    'CSI-only reservation must not export a manufactured HARQ PRI.');
 state.TestCSIExpected=expected; state.TestCSIWithHARQ=withHARQ;
 for slot=1:due+1
     [state,~,blocked]=sixgr.truth.CoupledTruthRuntime.startSlotWithQueuedUL( ...

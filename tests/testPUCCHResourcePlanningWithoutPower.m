@@ -33,7 +33,8 @@ calibration.validation.pucch_resources.power_control.require_measured_reference_
 connected=sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ(calibration,ue,true,frame);
 assert(connected.Assignment.Resource.Digest==planned.Plan.Resource.Digest);
 assert(connected.Assignment.Data.DueSlot==planned.Plan.Data.DueSlot);
-pri=sixgr.phy.pucch.resolveConfiguredPRI(cfg,1,1,NaN,'csi');
+% Combined HARQ/CSI keeps HARQ DCI PRI; CSI-only authority has no PRI.
+pri=sixgr.phy.pucch.resolveConfiguredPRI(cfg,1,1,NaN,'harq');
 frame.DecodedPRI=pri.PRIValue; frame.PRIProvenance=pri.Source;
 combined=sixgr.phy.pucch.PUCCHConfigBuilder.planCombined( ...
     cfg,ue,int8([1;0]),int8([1;0;1;0]),int8([]),frame);

@@ -2,6 +2,120 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## Implementation checkpoint: 2026-09-14, 10:31 IST
+
+Implementation resumed on the explicit goal continuation after the planning
+response. The original 09:52:49 start and target checkpoints are unchanged.
+The preceding turn added the plan and verified the concrete resource-authority
+mismatch; this turn applies its repair. No detector or 12 dB pass is claimed.
+
+Applied, runtime verification pending:
+
+- CSI-only PUCCHResourcePlan now selects the installed CSI resource directly,
+  not a HARQ resource-set PRI. resolveConfiguredCSIResourceID rejects an
+  unresolved multi-resource list instead of inventing report/BWP associations.
+  Multiple-report/SR/mixed-UCI coordination remains a separate unfinished step.
+- resolveConfiguredPRI's legacy CSI call returns the configured resource, with
+  PRIValue/ResourceSetId unavailable (NaN). HARQ-bearing combined reports retain
+  HARQ PRI; the runtime no longer selects the CSI-purpose branch merely because
+  a combined HARQ report also contains CSI.
+- prepareDLCSIReportAssignment retains that exact plan provenance. The primary
+  CSI reservation trace rejects manufactured PRI rather than backfilling one
+  through the HARQ selector. No power, noise, loss or detector threshold changed.
+- New testCSIOnlyPUCCHResourceAuthority distinguishes resource 23 outside HARQ
+  sets from HARQ-selected resource 10, compares calendar/TX identity, checks
+  PRI/list-order/payload-value independence, preserves combined HARQ PRI, checks
+  unavailable trace fields and rejects ambiguous/fractional/unknown identities.
+  Shared CSI RF clock tests additionally require honest reservation provenance.
+- Registered the new test and two existing planning/power tests previously
+  absent from testAll. Existing numerical power gates remain unchanged.
+
+Native mlint checked the ten changed MATLAB files: no SYNER/EOLPAR in sources;
+the retained malformed control produced the expected SYNER. Warnings are kept
+in logs/csi_resource_authority_20260914/native_check_01.txt. git diff --check
+passed. These are syntax checks, not execution proof.
+
+The distinguishing pre-fix run was NOT executed: its memory guard rejected
+launch at 1,952,944 KB free, with two full-suite workers still live. Later
+checks remained below the 2,097,152 KB floor. Neither existing suite was stopped
+or edited. Required next execution on this frozen checkpoint: focused resource,
+power, collision, periodic calendar and shared CSI TDD/FDD/combined tests; then
+testAll and applicable NR/config/scenario/export/E2E guards. Old-revision running
+suites do not satisfy those obligations. Main must remain unchanged/unqualified
+until the integration and full acceptance gates are actually met.
+
+## Authoritative planning-only checkpoint: 2026-09-14, 10:22 IST
+
+The latest request asks for a strict repair/fixture timeline and a planning
+pause. This update changes documentation only: no source repair, new MATLAB
+job, merge to main or detector qualification is performed. Existing MATLAB
+jobs remain running. The assistant cannot itself change the application's
+Plan mode; implementation is paused for this request, not blocked by a skill.
+This section supersedes stale present-tense statuses below; historical failures
+and receipts remain preserved.
+
+Verified checkout state: main be983bf4 is clean; both development checkouts are
+at e02aae0e and clean before this documentation update. The two live full-suite
+workers are 10448 (main) and 25036 (shared-PUSCH checkpoint). Neither running
+suite is a terminal pass or qualification of future changes. Focused receipts
+retain 5/5 passes at c4ce36c3 and 5/5 at 8a007054; the latter explicitly records
+baseline_12db_qualified=false. The normal coordinator still does not call
+completeSharedPUSCHHARQFeedbackRuntime. Main is not the consolidated candidate.
+
+### Calendar checkpoints, without resetting the previous clock
+
+Original recorded resumption remains 14 September 2026, 09:52:49 IST.
+The following are target checkpoints assuming uninterrupted resumed work,
+not guaranteed successful outcomes or a promise of unattended execution.
+Record this planning interruption separately. If a target is not met, retain
+the original target and mark MISSED with evidence and a revised forecast.
+
+| Original target (IST) | Deliverable | Required test at that checkpoint |
+| --- | --- | --- |
+| 14 Sep 10:52 (+1 h) | Finish branch/patch/failure inventory and evidence index | Account for every retained edit; distinguish running, failed, incomplete and passed runs |
+| 14 Sep 13:52 (+4 h) | Timing/CRI final-source fixture rerun; explicit enabled-CFO TDD fixture | CSI execution/source/clock positives and invalid inputs; disabled CFO stays unavailable, enabled CFO is measured; TDD/FDD staged references |
+| 14 Sep 21:52 (+12 h) | Source-aware CSI resource selection, configured mixed-UCI ownership and normal independent PUSCH completion | Distinct CSI/HARQ resource IDs, overlap/nonoverlap, missing/all-missed DL/UL DCI, DAI wrap, no producer, CSI-only, HARQ+CSI, SR disposition, duplicate/stale/late feedback in TDD/FDD |
+| 15 Sep 01:52 (+16 h) | Decoder reference regression; detector diagnosis and candidate/holdout-policy freeze | Original failures retained; real RV/rank/CRC/erasure cases; no holdout-driven threshold adjustment |
+| 15 Sep 05:52 (+20 h) | Physical detector qualification harness ready and campaign launched | Real acquired timing and RF samples; independent noise-only and signal-present episodes; frozen confidence gates |
+| 15 Sep 09:52 (+24 h) | All-measurement/export checkers complete; coherent candidate frozen | Independent energy/noise/loss, reference power, SINR, EVM, channel estimates, bit/CRC/throughput, CSI/SRS and CSV/PNG checks |
+| 16-17 Sep 09:52 (provisional qualification window) | Required final-source regressions and detector campaign; integrated 12 dB only after prerequisite gates pass | Terminal required test results, both detector error classes, actual integrated measurement/artifact acceptance |
+| After acceptance | Consolidate/push qualified source and portable evidence, verify remote identity and clean tracked tree | Preserve branches/patch history and failures; then same-chain sweep [-30,-20,-10,0,10,12,20,30,40] |
+
+### Newly confirmed resource-authority prerequisite: repair and fixtures
+
+buildPeriodicCSIReportObligations.m uses the exact installed CSIResources ID.
+PUCCHResourcePlan.m instead always invokes PUCCHResourceSetResolver.resolve
+and selects a HARQ resource-set ordinal through PRI. resolveConfiguredPRI.m
+also requires CSI resource IDs to belong to exactly one HARQ resource set,
+then can select another resource in that set. Baseline coincident resource
+IDs hide this disagreement. This is code-level evidence, not yet a failing
+runtime reproducer or a completed fix.
+
+1. PUCCHResourcePlan.m, PUCCHConfigBuilder.m and resolveConfiguredPRI.m:
+   separate configured CSI-only resource authority from HARQ DCI PRI authority.
+   Do not manufacture a decoded PRI for periodic CSI. Preserve real DCI PRI for
+   HARQ-bearing combined reports. Validate report/BWP/configuration identity.
+2. CoupledTruthRuntime.m / prepareDLCSIReportAssignment: retain the actual
+   configured resource provenance in assignments and traces. Align the calendar
+   and transmitter without deriving the gNB schedule from UE report contents.
+3. Scenario YAML, schema.m, validateScenarioConfig.m and buildInternalConfig.m:
+   explicitly represent applicable simultaneous HARQ/CSI configuration and
+   collision policy before wiring mixed-UCI ownership. Validate timing and SR
+   disposition; do not blindly combine every same-slot report.
+4. Extend testPUCCHResourcePlanningWithoutPower, testPUCCHMultiUserPRIAuthority,
+   testPUCCHPowerResourceAuthority and testSRSPUCCHExactCollisionFDDTDD. Include
+   a configured CSI resource different from all HARQ-selected resources, CSI
+   resources outside HARQ sets, reordered lists, invalid/ambiguous identities,
+   combined HARQ retaining PRI, and unchanged real-resource power calculations.
+5. Then complete the coordinator and actual common-commit tests described in
+   section A. Pure planning, mapping and receipt tests do not replace these.
+
+At every checkpoint report original target, actual time, commit, changed
+files, positive/negative test counts, first remaining failure and /logs path.
+Use distinct states: diagnosed, implemented-unverified, focused-pass,
+integrated-pass. Do not call all four "fixed". No deadline authorizes weakened
+assertions, proxy measurements, altered power/noise or removal of real losses.
+
 ## Implementation resumed: 2026-09-14, 09:52:49 IST
 
 Verified second checkpoint: 8a007054 focused run also finished with five

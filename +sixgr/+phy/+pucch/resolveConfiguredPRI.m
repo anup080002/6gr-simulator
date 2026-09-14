@@ -3,8 +3,9 @@ function authority = resolveConfiguredPRI(cfg, ueIndex, rnti, explicitPRI, purpo
 %
 % The DCI resource indicator selects an ordinal within an RRC-configured
 % PUCCH resource set.  This function is the single production authority
-% used by scheduler, HARQ-ACK, CSI and waveform-replay paths.  It never
-% invents a resource when the configured multi-user policy is incomplete.
+% used by scheduler, HARQ-ACK and waveform-replay paths. For legacy CSI
+% callers the result carries configured CSI resource authority, with PRI
+% and HARQ ResourceSetId unavailable (NaN), never a manufactured DCI field.
 
 arguments
     cfg (1,1) struct
@@ -22,26 +23,18 @@ end
 sets = sixgr.util.structGet(section, "resource_sets", struct([]));
 assignment = sixgr.util.structGet(section, "multi_user_assignment", struct());
 if purpose == "csi"
-    configuredPurposeIds = double(sixgr.util.structGet( ...
-        section, "csi_resource_ids", []));
-    configuredPurposeIds = configuredPurposeIds(:).';
-    if isempty(configuredPurposeIds) || any(~isfinite(configuredPurposeIds))
-        error("sixgr:phy:pucch:MissingConfiguredCSIResource", ...
-            "CSI-on-PUCCH requires exact configured csi_resource_ids.");
-    end
-    matchingSets = false(numel(sets), 1);
-    for index = 1:numel(sets)
-        candidateIds = double(sixgr.util.structGet( ...
-            sets(index), "resource_ids", []));
-        matchingSets(index) = all(ismember(configuredPurposeIds, candidateIds));
-    end
-    matchingIndices = find(matchingSets);
-    if numel(matchingIndices) ~= 1
-        error("sixgr:phy:pucch:AmbiguousConfiguredCSIResourceSet", ...
-            ["Configured CSI PUCCH resources must resolve to exactly one " + ...
-             "RRC resource set; resolved %d sets."], numel(matchingIndices));
-    end
-    setId = double(sixgr.util.structGet(sets(matchingIndices), "id", NaN));
+    configuredPurposeIds = sixgr.util.structGet( ...
+        section, "csi_resource_ids", []);
+    id=sixgr.phy.pucch.resolveConfiguredCSIResourceID(configuredPurposeIds);
+    resources=sixgr.util.structGet(section,"resources",struct([]));
+    assert(isstruct(resources) && ~isempty(resources) && isfield(resources,'id') && ...
+        nnz([resources.id]==id)==1, ...
+        'sixgr:phy:pucch:InvalidResourceIndicator', ...
+        'The configured CSI resource must identify exactly one installed PUCCH resource.');
+    authority=struct('PRIValue',NaN,'ResourceSetId',NaN,'ResourceId',id, ...
+        'Source','configured_csi_report_resource', ...
+        'Authority',"configured_csi_report_resource",'ResourceListSize',1);
+    return;
 else
     setId = double(sixgr.util.structGet(assignment, "resource_set_id", 0));
 end
