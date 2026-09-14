@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-14T04:40:03.7374408Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testSharedPUSCHProducerMapping",
+    "testSharedPUSCHCommitReceipt",
+    "testPUSCHHARQACKBindingPreflight",
+    "testPUSCHHARQACKPreflightReducer",
+    "testPUSCHIndependentReceiveBoundary"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "8a007054e933baf3b8a3e735350d836e7e8190ec",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260914T044003711Z_1b18940f',false,{'testSharedPUSCHProducerMapping','testSharedPUSCHCommitReceipt','testPUSCHHARQACKBindingPreflight','testPUSCHHARQACKPreflightReducer','testPUSCHIndependentReceiveBoundary'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "",
+  "git_commit_after": "8a007054e933baf3b8a3e735350d836e7e8190ec",
+  "finished_utc": "2026-09-14T04:41:07.0184086Z",
+  "launcher_exit_code": 0
+}

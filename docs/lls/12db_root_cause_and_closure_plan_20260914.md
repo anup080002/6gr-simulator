@@ -4,6 +4,13 @@ Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificat
 
 ## Implementation resumed: 2026-09-14, 09:52:49 IST
 
+Verified second checkpoint: 8a007054 focused run also finished with five
+passes, zero failures, clean unchanged source and both exit codes zero
+(launcher terminal 10:11:07 IST). It covers producer mapping, receipt guard,
+reservation preflight/reducer and the independent codec, NOT the complete
+physical common-commit adapter. Portable receipts for both runs are in
+docs/lls/evidence_20260914/shared_pusch_receiver_checkpoint/.
+
 Verified 10:09 IST: c4ce36c3 focused run finished with 5 passes, 0 failures,
 unchanged clean source and MATLAB/launcher exit codes 0. New independent CSI
 calendar, 11 codec cases with malformed/CRC/unavailable/oracle negatives,
