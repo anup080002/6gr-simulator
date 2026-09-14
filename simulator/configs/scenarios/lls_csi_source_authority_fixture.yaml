@@ -23,3 +23,4 @@ mimo:
   phase07_strict:
     csi_report:
       num_csi_resources: 4
+      number_of_beams: 4

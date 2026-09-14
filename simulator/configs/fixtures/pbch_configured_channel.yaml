@@ -1,0 +1,7 @@
+fixture_kind: isolated_pbch_channel_test_only
+research_class: optional_research_experiment
+# Explicit spatial authority; never infer configured elements from IQ width.
+waveform_domain: physical_element_domain
+physical_element_count: 1
+precoder_matrix_real: [1]
+precoder_matrix_imag: [0]

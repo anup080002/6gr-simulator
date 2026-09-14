@@ -58,7 +58,7 @@ for caseIndex = reshape(caseIndices,1,[])
     if direction=="UL"
         [cfg,grant] = localSoundedULGrant(cfg,controlSlot0);
     else
-        grant = sixgr.link.resolveWaveformGrant(cfg,direction,controlSlot0);
+        grant = localDLGrant(cfg,controlSlot0);
     end
     assert(grant.Valid && grant.ExactPHYFeasible && grant.DCI.BitExactPDCCHPayload);
     slot = double(grant.ScheduledAbsoluteSlot)+1;
@@ -100,6 +100,12 @@ for caseIndex = reshape(caseIndices,1,[])
     assert(localCount(afterTX,txName)==localCount(before,txName)+1 && ...
         localCount(afterTX,rxName)==localCount(before,rxName));
     prepared = pending.PreparedTransmission;
+    assert(grant.Slot==slot && grant.Frame==frame && ...
+        grant.PHYGrant.Slot==slot && grant.PHYGrant.Frame==frame);
+    sixgr.link.bindExecutedHARQClock(grant,prepared.Tx.Carrier,slot);
+    badClock=grant; badClock.Frame=frame+1;
+    localReject(@()sixgr.link.bindExecutedHARQClock(badClock,prepared.Tx.Carrier,slot), ...
+        'sixgr:link:HARQExecutedClockMismatch');
     if direction=="UL"
         calendar=prepared.RequestBinding.Grant;
         if withUCI, calendar.ExpectedUCIPayload=uci; end
@@ -405,7 +411,7 @@ cfg.phy.pusch.srsDecision = struct('Authoritative',choice.Valid, ...
     'MeasurementID',measurementId,'MeasurementSlot',srsSlot,'RI',choice.RI, ...
     'TPMI',choice.TPMI,'NumPorts',choice.PUSCHCodebookNumPorts);
 p = cfg.phy.pusch;
-grant = struct('Direction','UL','Frame',0,'Slot',controlSlot0, ...
+grant = struct('Direction','UL','ControlAbsoluteSlot',controlSlot0, ...
     'RNTI',p.RNTI,'UEIndex',1,'BaseStationID',1,'ServingCell',1, ...
     'PRBSet',p.prbSet,'SymbolAllocation',p.symbolAllocation, ...
     'Modulation',p.modulation,'TargetCodeRate',p.codeRate, ...
@@ -415,18 +421,45 @@ grant = struct('Direction','UL','Frame',0,'Slot',controlSlot0, ...
     'SRSCausalUsable',choice.Valid,'SRSValid',choice.Valid, ...
     'SRSCausalMeasurementId',measurementId,'LastSuccessfulSRSSlot',srsSlot, ...
     'HARQ',struct('HarqID',0,'NDI',true,'RV',0,'IsRetransmission',false));
-scheduler = sixgr.l2.mac.SchedulerPF(cfg,'Direction','UL');
 if isfield(cfg,'SharedULTimingContext')
     grant.TimingAdvanceTicks=cfg.SharedULTimingContext.ReceivedRARTiming.NTA_Tc+ ...
         cfg.SharedULTimingContext.Offset.NTAOffset_Tc;
 end
-grant = scheduler.attachCanonicalTimingDecision(grant);
-grant = scheduler.finalizeExactPHYFeasibility(grant);
-grant.DCI = scheduler.buildDCIBitfield(grant);
-grant.PHYGrant = sixgr.phy.grant.freezePHYGrant(cfg,'UL',grant,'Frame',0, ...
-    'Slot',controlSlot0,'HARQContext',grant.HARQ);
-grant.PHYGrantContextId = grant.PHYGrant.GrantContextId;
+grant = localFreezeFixtureGrant(cfg,grant);
 assert(info.OFDMInfo.SampleRate>0 && double(grant.ControlAbsoluteSlot)>srsSlot0);
+end
+
+function grant=localDLGrant(cfg,controlSlot0)
+p=cfg.phy.pdsch;
+layers=double(sixgr.util.structGet(cfg,'phy.pdsch.numLayers',1));
+grant=struct('Direction','DL','ControlAbsoluteSlot',controlSlot0, ...
+    'RNTI',p.RNTI,'UEIndex',1,'BaseStationID',1,'ServingCell',1, ...
+    'PRBSet',p.prbSet,'SymbolAllocation',p.symbolAllocation, ...
+    'Modulation',p.modulation,'TargetCodeRate',p.codeRate, ...
+    'MCSIndex',p.mcsIndex,'MCS',p.mcsIndex,'RV',0, ...
+    'Layers',layers,'NumLayers',layers, ...
+    'PortCount',double(sixgr.util.structGet(cfg,'phy.pdsch.numPorts',layers)), ...
+    'HARQ',struct('HarqID',0,'NDI',true,'RV',0,'IsRetransmission',false));
+[grant.DMRSPortSet,grant.DMRSPortSetSource]= ...
+    sixgr.phy.grant.resolveScheduledDMRSPortSet(cfg,'DL',layers,grant);
+grant=localFreezeFixtureGrant(cfg,grant);
+end
+
+function grant=localFreezeFixtureGrant(cfg,grant)
+% Resolve the control/data relationship before freezing immutable PHY fields.
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction',grant.Direction);
+grant=scheduler.attachCanonicalTimingDecision(grant);
+dataSlot0=double(grant.TimingDecision.DataAbsoluteSlot);
+grant.Slot=dataSlot0+1;
+grant.Frame=floor(dataSlot0/double(carrier.SlotsPerFrame))+1;
+grant.SFN=mod(grant.Frame-1,1024);
+assert(grant.ScheduledAbsoluteSlot==dataSlot0);
+grant=scheduler.finalizeExactPHYFeasibility(grant);
+grant.DCI=scheduler.buildDCIBitfield(grant);
+grant.PHYGrant=sixgr.phy.grant.freezePHYGrant(cfg,grant.Direction,grant, ...
+    'Frame',grant.Frame,'Slot',grant.Slot,'HARQContext',grant.HARQ);
+grant.PHYGrantContextId=grant.PHYGrant.GrantContextId;
 end
 
 function buffer = localBuffer(prepared,x,plane)
@@ -456,9 +489,10 @@ function out=localJob(cfg,direction,varargin)
 context=struct(varargin{:});
 job=sixgr.truth.buildGrantPHYJob(cfg,direction,cfg.channel.snr_dB, ...
     context.StartFrameIndex,[],context);
-% This isolated grant fixture retains the scheduler's zero-based allocation
-% coordinates; the throughput entry point takes a one-based runtime slot.
-job.StartSlotIndex=context.StartSlotIndex;
+assert(job.StartSlotIndex==context.StartSlotIndex && ...
+    job.GrantSnapshot.Slot==context.StartSlotIndex && ...
+    job.GrantSnapshot.Frame==context.StartFrameIndex, ...
+    'The fixture must freeze canonical clocks before job construction.');
 result=sixgr.truth.executeGrantPHYJob(job);
 out=result.Result;
 if strlength(job.GrantContextId)>0

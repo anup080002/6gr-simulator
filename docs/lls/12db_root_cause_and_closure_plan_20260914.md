@@ -2,6 +2,49 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## Follow-up checkpoint: diagnosed regression repairs applied, not yet verified
+
+The focused run on e925ec6c terminated with 17 passes and four failures. It was
+not a full testAll run. CSI runtime execution and shared CSI report-clock tests
+passed. The following follow-up source repairs are now applied, with runtime
+verification pending at this checkpoint:
+
+- PBCH: explicitly configured physical-element/precoder fixture; scalar error
+  messages retain typed missing/mismatched-authority guards; channel application
+  validates the actual producer's spatial contract without manufacturing config.
+- CSI source fixture: four resources now explicitly declare four beams; the
+  test retains CRI=3 and adds the inconsistent-beam-count rejection.
+- Staged DL/UL data: derive one-based data slot/frame from the canonical timing
+  decision before freezing the grant; remove the fixture's post-freeze job-slot
+  override; add explicit clock-mismatch negatives and a registered FDD wrapper.
+- Resolved PUSCH codewords: preserve the original standalone RV=[0,2] failed
+  decode and its bit-exact public reference; add independently encoded RV=[0,0]
+  positives and actual retained-observation combination with RV=[0,2]. All TB
+  sizes, target rates, ranks, modulation, LLR magnitude and iteration limits
+  remain unchanged. Partial mapping cases cover initial and combined positives.
+  The deliberate CRC-error negative now has a decodable unmodified control.
+
+PUSCH diagnosis used the saved rank-5 failing stimulus: public encoder bits and
+all observed recovered-LLR signs match; both public decoder paths and the local
+decoder return identical failed TBs. A version-bound diagnostic parity-graph
+audit explains the unresolved punctured positions under this iterative decoder.
+At ranks 5-8, real initial-RV and combined observations decode correctly and
+match direct public primitives. Public system comparisons must explicitly align
+soft-buffer retention: its default flush-after-success differs from a call with
+an explicitly retained prior buffer. These are codec diagnostics, not MAC/RF
+qualification. No production decoder or power/threshold setting was changed.
+
+Retained local evidence: logs/testall_20260914T021507124Z_056fa106 and
+logs/pending_integration_evidence_20260913/pusch_decode_diagnosis_20260914.
+The detailed diagnostic/fixture addendum remains under the same pending evidence
+root as focused_fixture_plan_20260914.md. The failed originals are preserved.
+
+Next gates: focused repairs including all four staged-data cases in TDD and FDD;
+then final-source full testAll and the required NR/config/channel/scenario/E2E
+guards. Normal shared-PUSCH integration, PUCCH physical qualification and the
+integrated 12 dB measurement/artifact audit remain open. No checkpoint commit
+constitutes qualification or permission to skip these gates.
+
 ## Current checkpoint and why the work remained open
 
 Component fixes were previously described under broad issue headings without

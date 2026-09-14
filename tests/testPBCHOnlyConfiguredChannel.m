@@ -2,6 +2,10 @@ function ok=testPBCHOnlyConfiguredChannel()
 % The no-SIB1 path must execute configured noise/channel and received-only sync.
 setup6GRSimToolkit('Verbose',false);
 cfg=sixgr.config.defaultConfig();
+fixture=sixgr.lls6g.config.readConfigFile('simulator/configs/fixtures/pbch_configured_channel.yaml');
+cfg.phy.ssb.waveformDomain=fixture.waveform_domain;
+cfg.phy.ssb.precoderPhysicalElementCount=fixture.physical_element_count;
+cfg.phy.ssb.precoderMatrices=complex(fixture.precoder_matrix_real,fixture.precoder_matrix_imag);
 cfg.run.strictMode=true; cfg.run.seed=88120;
 cfg.phy.carrier.NCellID=17; cfg.phy.carrier.NSizeGrid=51;
 cfg.phy.carrier.SubcarrierSpacing=30; cfg.phy.carrier.SubcarrierSpacing_kHz=30;
@@ -44,6 +48,19 @@ assert(measured(2)>measured(1)+6 && abs(variances(1)/variances(2)-10)<1e-10);
 cfg.channel.model="TDL-C"; cfg.channel.awgnOnly=false;
 cfg.channel.tdlProfile="TDL-C"; cfg.channel.fading.model="TDL-C";
 [wave,info,contract]=sixgr.phy.dl.SSB_Tx(cfg,'NumSubframes',5,'SSBIndex',0);
+missing=cfg;
+missing.phy.ssb=rmfield(missing.phy.ssb,{'precoderMatrices','precoderPhysicalElementCount'});
+localReject(@()sixgr.link.applySSBPBCHChannel(wave,info,contract,missing,struct(),NaN), ...
+    'sixgr:link:MissingSSBPhysicalElementCount');
+wrong=cfg; wrong.phy.ssb.precoderPhysicalElementCount=fixture.physical_element_count+1;
+localReject(@()sixgr.link.applySSBPBCHChannel(wave,info,contract,wrong,struct(),NaN), ...
+    'sixgr:link:SSBPhysicalElementCountMismatch');
+wrongContract=contract; wrongContract.PhysicalTransmitAntennaElements=contract.PhysicalTransmitAntennaElements+1;
+localReject(@()sixgr.link.applySSBPBCHChannel(wave,info,wrongContract,cfg,struct(),NaN), ...
+    'sixgr:link:SSBPBCHSpatialContractMismatch');
+wrongContract=contract; wrongContract.WaveformDomain='logical_rf_chain_post_analog_precoder';
+localReject(@()sixgr.link.applySSBPBCHChannel(wave,info,wrongContract,cfg,struct(),NaN), ...
+    'sixgr:link:SSBPBCHWaveformDomainMismatch');
 capture=sixgr.link.applySSBPBCHChannel(wave,info,contract,cfg,struct(),NaN);
 assert(capture.ChannelReplay.RuntimeChannelStateUsed && capture.ChannelReplay.InjectedNoiseVariance>0);
 assert(capture.RuntimeDLChannelState.Initialized && capture.RuntimeDLChannelState.Materialized);
@@ -51,4 +68,14 @@ assert(capture.RuntimeDLChannelState.Meta.Fc_Hz==cfg.channel.fc_Hz, ...
     'The fading channel must retain the catalog carrier, not a hidden default.');
 assert(~isequal(capture.Waveform,capture.TransmitWaveform));
 ok=true; fprintf('PBCH_ONLY_CONFIGURED_CHANNEL_PASS AWGN=2 fading=1; no integrated 12 dB qualification.\n');
+end
+
+function localReject(action,identifier)
+try
+    action();
+catch err
+    assert(strcmp(err.identifier,identifier),'Expected %s, observed %s: %s',identifier,err.identifier,err.message);
+    return;
+end
+error('sixgr:test:ExpectedFailure','Expected rejection: %s',identifier);
 end
