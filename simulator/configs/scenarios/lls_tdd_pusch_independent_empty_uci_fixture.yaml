@@ -13,3 +13,13 @@ reference_signals:
   pmi_reporting_enabled: false
   ri_reporting_enabled: false
   cri_reporting_enabled: false
+
+# Keep inherited policy aliases consistent with the explicit no-report
+# fixture. Otherwise a descendant can restore the parent's baseline CRI
+# policy while retaining csi_reporting_enabled=false.
+csi_acquisition_and_reporting:
+  dl_csi_enabled: false
+  cqi_policy: disabled
+  pmi_policy: disabled
+  ri_policy: disabled
+  cri_policy: disabled

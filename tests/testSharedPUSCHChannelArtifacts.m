@@ -45,6 +45,16 @@ s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 if nargin<8, outputRoot=tempname; end
 root=outputRoot; mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
+if independentCompletion
+    for name=["csi","cqi","pmi","ri","cri"]
+        assert(~s.get("reference_signals."+name+"_reporting_enabled"), ...
+            'test:IndependentPUSCHReportingAuthority', ...
+            'The inherited no-report fixture must keep %s reporting disabled.',name);
+    end
+    for name=["cqi","pmi","ri","cri"]
+        assert(string(s.get("csi_acquisition_and_reporting."+name+"_policy"))=="disabled");
+    end
+end
 if twoPortUL
     assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
 end
@@ -266,6 +276,13 @@ grant=scheduler.finalizeExactPHYFeasibility(grant);
 grant.DCI=scheduler.buildDCIBitfield(grant);
 grant.PHYGrant=sixgr.phy.grant.freezePHYGrant(cfg,'UL',grant,'Frame',0,'Slot',slot0,'HARQContext',grant.HARQ);
 grant.PHYGrantContextId=grant.PHYGrant.GrantContextId;
+if state.TestIndependentCompletion
+    % This fixture bypasses buildTrialContextFromGrant's new-TB identity
+    % binding. Assign the actual first grant identity before encoding, never
+    % manufacture a missing identity after reception/completion.
+    grant.TransportBlockId=char(grant.PHYGrantContextId);
+    grant.TBId=grant.TransportBlockId;
+end
 end
 
 function state=localEvents(state,items)
@@ -273,6 +290,12 @@ owner=state.SharedWaveformStream;
 for item=items
     if item.Kind=="DataTX"
         state=sixgr.truth.commitSharedDataTransmission(state,item);
+        if state.TestIndependentCompletion
+            executed=state.SharedDataTXLedger{end};
+            assert(strlength(string(executed.Grant.HARQTBContext.TBId))>0 && ...
+                string(executed.Grant.HARQTBContext.TBId)== ...
+                string(item.Context.Prepared.RequestBinding.Grant.TransportBlockId));
+        end
         if item.Context.Prepared.Direction=="UL", localVerifyAppliedULWeights(state,item); end
         if state.TestIndependentSharedHARQ && item.Context.Prepared.Direction=="DL"
             state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime( ...
@@ -518,6 +541,12 @@ for item=items
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
         if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
         if state.TestIndependentCompletion
+            assert(string(out.HARQ.GrantSnapshot.HARQTBContext.TBId)== ...
+                string(p.RequestBinding.Grant.TransportBlockId) && ...
+                string(out.HARQ.Context.TransportBlockContext.TBId)== ...
+                string(p.RequestBinding.Grant.TransportBlockId), ...
+                'test:SharedPUSCHTransportIdentityLost', ...
+                'Receiver completion must retain the identity assigned before actual encoding.');
             for field=["DCI","ULTotalDAIAuthority","UCIOnPUSCHFeedbackBitIndices", ...
                     "UCIOnPUSCHFeedbackGrantIds","ExpectedUCIBits"]
                 assert(isfield(out.HARQ.GrantSnapshot,field) && ...
@@ -762,6 +791,8 @@ grant=sixgr.link.resolveWaveformGrant(dl,'DL',frame,'Slot',slot,'SFN',frame-1, .
 assert(grant.Valid && grant.ExactPHYFeasible && allocated.HARQ.NDI==grant.HARQ.NDI);
 if sharedHARQ
     [grant,candidateLedger]=sixgr.truth.prepareScheduledDLDAI(state.TestScheduledDLDAILedger,dl,grant);
+    grant.TransportBlockId=char(grant.PHYGrant.GrantContextId);
+    grant.TBId=grant.TransportBlockId;
     assert(grant.TimingDecision.DataAbsoluteSlot==5 && grant.TimingDecision.FeedbackAbsoluteSlot==9, ...
         'test:SharedHARQFixtureTiming','Authored K1 must place slot-6 DL feedback on slot-10 PUSCH.');
 end
