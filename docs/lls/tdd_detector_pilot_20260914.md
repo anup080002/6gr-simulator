@@ -35,3 +35,8 @@ testAll, NR and result-integrity guards remain required for the new code.
 
 Run via `scripts/run_server_testall.ps1 -Tests testPUCCHDetectorPilot` on a
 clean frozen checkout; the emitted log identifies the complete pilot folder.
+
+First run on b25b71c4 (`logs/testall_20260914T113257935Z_fd2eaefa`) failed
+before PHY execution because the authored seed paths used internal `rf`
+instead of scenario `rf_frontend`. The YAML mapping is corrected; missing
+seed paths still fail loudly, and no randomness source is silently omitted.

@@ -5,7 +5,7 @@ scenario_path: simulator/configs/scenarios/lls_pucch_baseline_signal_fixture.yam
 episodes: 1
 seed_base: 970001
 seed_stride: 101
-scenario_seed_paths: [simulation.random_seed, run_control.seed, run_control.random_seed_master, run_control.random_seed_list, rf.oscillator.seed, rf.phase_noise.seed]
+scenario_seed_paths: [simulation.random_seed, run_control.seed, run_control.random_seed_master, run_control.random_seed_list, rf_frontend.oscillator.seed, rf_frontend.phase_noise.seed]
 last_slot: 45
 broadcast_slots: [1, 21, 41]
 srs_slots: [5, 10, 15, 20, 25, 30, 35, 40]
