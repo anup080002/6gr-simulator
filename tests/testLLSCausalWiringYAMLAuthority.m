@@ -21,6 +21,28 @@ cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, ...
     "sixgr_causal_wiring_yaml_authority"));
 sixgr.config.assertRuntimeFeatureAuthority(cfg);
 
+% A self-contained scenario must not depend on the standalone receiver's
+% fallback catalog at shared-stream execution. Preserve the authored values.
+detectorCatalog=sixgr.lls6g.config.readConfigFile(fullfile(root,'simulator', ...
+    'configs','control','pucch_receiver_thresholds.yaml'));
+for detectorField=string(fieldnames(detectorCatalog.pucch)).'
+    assert(isfield(raw.pucch,detectorField), ...
+        'Self-contained FDD YAML is missing pucch.%s.',detectorField);
+    assert(isequal(raw.pucch.(detectorField),detectorCatalog.pucch.(detectorField)) && ...
+        isequal(cfg.phy.pucch.receiverDetectionThresholds.(detectorField),raw.pucch.(detectorField)), ...
+        'FDD detector policy must retain the unchanged explicit catalog value for %s.',detectorField);
+end
+bad=scfg.toStruct();
+bad.pucch=rmfield(bad.pucch,'detection_threshold_format2');
+rejected=false;
+try
+    sixgr.lls6g.buildInternalConfig(bad,tempname);
+catch cause
+    if ~strcmp(cause.identifier,'sixgr:lls6g:config:InvalidPUCCHDetectionThreshold'), rethrow(cause); end
+    rejected=true;
+end
+assert(rejected,'A partially installed PUCCH detector policy must fail, not fill a default.');
+
 assert(double(sixgr.util.structGet(cfg, "run.totalSlots", NaN)) == 12);
 strictEvidence = sixgr.util.structGet(cfg, ...
     "validation.strict_component_evidence", struct());

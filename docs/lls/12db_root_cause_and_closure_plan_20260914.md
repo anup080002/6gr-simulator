@@ -2,6 +2,53 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## Resumed implementation: 2026-09-14, 11:13 IST
+
+The user requested revised estimates and continued implementation. The planning
+pause is over; the original 09:52:49 start remains unchanged. The 10:52 inventory
+checkpoint was partially missed. Revised semantic-reconciliation estimate:
+14 September 13:52 IST. Preserve that original missed target in future reports.
+
+The 3abf9625 batch has terminated on unchanged clean source: 3 passed, 1 failed.
+testSharedPUSCHCSIReceiveObligation and both required E2E tests passed; the
+shared-CSI variant wrapper failed at its first FDD case. This is a failed batch,
+not full-suite or 12 dB qualification. Worker 2968 and launcher 22836 were
+confirmed absent at 11:12:45 IST before any source was edited. The other two
+full suites remain running on unchanged older revisions and were not stopped.
+
+Confirmed new root cause: the FDD fixture inherits the self-contained
+lls_causal_access_to_data_wiring.yaml, which lacked all six detector-threshold
+policy fields. The shared PUCCH receiver correctly rejected absent YAML
+authority with PUCCHDetectionYAMLAuthorityRequired. The FDD base now explicitly
+declares the UNCHANGED catalog values. No receive-boundary guard, detector
+threshold, power/noise/loss setting or numerical acceptance gate was relaxed.
+testLLSCausalWiringYAMLAuthority now checks raw/catalog/resolved identity and
+rejects a partially installed policy. testSharedCSIReportClockVariants runs all
+four cases and retains every original failure before failing the aggregate.
+
+The patch audit indexed 128 saved patch copies / 60 newline-normalized text
+variants, and identified three archived tests absent from production tests/.
+Those tests are now recovered and registered: testCausalMeasurementSampleClock,
+testScheduledHARQFeedbackMapper and testScheduledHARQFeedbackPreflight. Their
+evolved production helpers are NOT overwritten with old archived versions.
+The mapper gains a Boolean success return for testAll; assertions are preserved.
+Native mlint reports no source SYNER/EOLPAR; the malformed control still reports
+SYNER. These are implemented-unverified repairs until the focused run finishes.
+
+The read-only inventory and per-file postimage/receipt comparisons are retained
+under main logs/retained_patch_*_20260914_*.json. Fifteen older variants still
+need semantic reconciliation. The saved SR-calendar/schema and BSR-triggered
+SR MAC candidates remain unintegrated dependencies of mixed-UCI ownership.
+Archive preservation or a component pass does not mean runtime integration.
+
+Immediate validation: FDD YAML authority and detector-policy guards, recovered
+sample-clock/mapping/preflight checks, and all shared CSI variants. Estimate
+45-90 minutes after checkout/memory availability; 13:52 remains an at-risk
+checkpoint, not a guaranteed pass. Final-source testAll and applicable NR,
+config, scenario, export and E2E suites remain required after further repairs.
+Normal PUSCH integration, physical detector qualification, all-measurement
+12 dB execution and qualified main consolidation remain unfinished.
+
 ## Verified resource-authority result: 2026-09-14, 10:37 IST
 
 Clean unchanged 05184937 completed seven focused tests with zero failures and
