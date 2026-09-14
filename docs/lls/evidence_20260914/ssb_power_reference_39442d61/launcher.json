@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-14T12:15:19.0710081Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testSSBPowerReferenceContract"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "39442d6131ac9e65d60a12ccb7fdd4546764f23f",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228/logs/testall_20260914T121519045Z_a28dc2ee',false,{'testSSBPowerReferenceContract'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "",
+  "git_commit_after": "39442d6131ac9e65d60a12ccb7fdd4546764f23f",
+  "finished_utc": "2026-09-14T12:17:14.7393071Z",
+  "launcher_exit_code": 0
+}

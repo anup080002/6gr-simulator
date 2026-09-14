@@ -1,6 +1,7 @@
 # TDD Format-0 detector development pilot
 
-Status: scheduling pilot passed; power-reference repair runtime verification pending. This is not a
+Status: scheduling pilot and repaired SSB power-contract test passed separately;
+the detector pilot on the repaired power source and final regression remain due. This is not a
 qualified detector, a held-out campaign, a main integration pass or a 12 dB run.
 
 The existing idle `work/shared-pusch-completion-20260914` checkout was safely
@@ -129,3 +130,30 @@ inherited `connected_control_smoke`, which the catalog does not allow for
 GEOMETRY_NETWORK. The fixture now explicitly selects the existing supported
 `connected_network` subprofile. No mode-validation rejection is relaxed;
 the power repair remains runtime-unverified at this checkpoint.
+
+## Verified power-reference repair on 39442d61
+
+`logs/testall_20260914T121519045Z_a28dc2ee` completed with launcher exit 0,
+unchanged HEAD and a clean tracked tree before/after. The expanded
+`testSSBPowerReferenceContract` passed in 74.38 seconds on R2026a Update 4.
+Each of the following verified actual transmitted SSS EPRE for four beams
+and recovered the same declaration through actual SIB1 waveform decoding:
+
+| Mode | Authored device budget | Actual / decoded SSS EPRE |
+| --- | ---: | ---: |
+| Physical device-budget reference | 30 dBm | 5 dBm |
+| Physical device-budget reference | 33 dBm | 8 dBm |
+| Normalized IFFT sample-unit reference, not device power | 30 dBm (unapplied) | -55 dBm |
+| Normalized IFFT sample-unit reference, not device power | 33 dBm (unapplied) | -55 dBm |
+
+The original 1e-6 dB waveform agreement tolerance was retained. Resolution
+idempotence, physical/normalized provenance and explicit-absolute-power
+rejection in normalized mode also passed. Receipts are preserved under
+`docs/lls/evidence_20260914/ssb_power_reference_39442d61/`.
+
+This closes the specific declaration-versus-emitted-sample mismatch, not
+integrated receiver measurement/export closure. Earlier detector pilots used
+the old mismatched declaration and remain diagnostic. The repaired-source
+pilot is now a required full-suite entry; final-source testAll and explicit
+NR/config/result-integrity guards, statistical detector qualification and
+integrated 12 dB acceptance remain outstanding.
