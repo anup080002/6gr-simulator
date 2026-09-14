@@ -19,6 +19,7 @@ classdef CoupledWaveformStream < handle
         TxIQRecorder = []
         Decisions = struct('ID',{},'Kind',{},'UE',{},'Context',{})
         PDCCHResourceLedger = struct()
+        PUSCHReceiveOnlyCompletions = cell(0,1)
     end
     methods (Static)
         function [state,obj]=initialize(state,cfg,userCfg)
@@ -492,6 +493,15 @@ classdef CoupledWaveformStream < handle
             obj.PUSCHReceiveOnlyRegistrations(end+1)=struct('ID',id,'UE',ue, ...
                 'GrantContextID',grantID,'StartSample',first,'EndSampleExclusive',stop);
         end
+        function item=readPUSCHReceiveOnlyCompletion(obj,id)
+            id=string(id);
+            assert(isscalar(id) && ~ismissing(id) && strlength(id)>0, ...
+                'sixgr:truth:InvalidPUSCHReceiveOnlyObservationID','Use one retained receive-only observation identity.');
+            hits=find(cellfun(@(x)x.Context.ObservationID==id,obj.PUSCHReceiveOnlyCompletions));
+            assert(isscalar(hits),'sixgr:truth:PUSCHReceiveOnlyObservationNotCompleted', ...
+                'Only this physical owner''s completed observation can enter the receiver.');
+            item=obj.PUSCHReceiveOnlyCompletions{hits};
+        end
         function queueULDataPreparation(obj,ue,first,context)
             validateattributes(first,{'numeric'},{'scalar','real','finite','integer','>=',obj.Events.NextSampleIndex});
             obj.Serial=obj.Serial+1; id="ul_data_preparation_"+obj.Serial;
@@ -730,6 +740,9 @@ classdef CoupledWaveformStream < handle
                                 'A received PUCCH window cannot become a trial without actual prior encoding.');
                         end
                         completed(end+1)=struct('Kind',p.Kind,'UE',p.UE,'Context',p.Context,'Planes',p.Planes); %#ok<AGROW>
+                        if p.Kind=="PUSCHReceiveOnly"
+                            obj.PUSCHReceiveOnlyCompletions{end+1,1}=completed(end);
+                        end
                     end
                     obj.Pending(done)=[];
                     % Receiver completions at the deadline precede expiry.
