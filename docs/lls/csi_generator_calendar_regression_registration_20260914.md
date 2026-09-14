@@ -82,6 +82,8 @@ SHA-256 of terminal local evidence; raw ignored logs are not uploaded:
 
 Both summaries correctly retain `baseline_12db_qualified=false` and
 `scope=focused_tests`; both launchers retain `suite_pass=false`.
-Current-source `testSharedCSIReportClock`, full `testAll` and the required
-NR guard sets remain due. No assertion, physical operating point, detector
+At this checkpoint, current-source `testSharedCSIReportClock`, full `testAll`
+and the required NR guard sets remained due. The waveform test subsequently
+passed as recorded in [the waveform and suite-stop receipt](tdd_csi_waveform_and_suite_stop_20260914.md).
+No assertion, physical operating point, detector
 threshold or qualification gate was weakened for these passes.
