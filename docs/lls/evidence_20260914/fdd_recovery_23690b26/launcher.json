@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "status": "failed_or_incomplete",
+  "started_utc": "2026-09-14T05:46:18.2603101Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testLLSCausalWiringYAMLAuthority",
+    "testPUCCHDetectionYAMLAuthority",
+    "testCausalMeasurementSampleClock",
+    "testScheduledHARQFeedbackMapper",
+    "testScheduledHARQFeedbackPreflight",
+    "testSharedCSIReportClockVariants"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "23690b2642c334ef4c174c99079c4b50e9a542a5",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260914T054618238Z_b599ab86',false,{'testLLSCausalWiringYAMLAuthority','testPUCCHDetectionYAMLAuthority','testCausalMeasurementSampleClock','testScheduledHARQFeedbackMapper','testScheduledHARQFeedbackPreflight','testSharedCSIReportClockVariants'});",
+  "matlab_exit_code": 1,
+  "git_status_after": "",
+  "git_commit_after": "23690b2642c334ef4c174c99079c4b50e9a542a5",
+  "error": "Validation did not pass (MATLAB exit 1). See summary.json and matlab.log.",
+  "finished_utc": "2026-09-14T05:54:54.7537979Z",
+  "launcher_exit_code": 1
+}

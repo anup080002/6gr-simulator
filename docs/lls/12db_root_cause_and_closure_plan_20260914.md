@@ -2,6 +2,67 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## User scope change: TDD first, FDD deferred (14 September 2026)
+
+The user explicitly requested that work now focus only on TDD to shorten the
+12 dB critical path. This overrides the FDD rerun proposed in the next section:
+DO NOT launch it. Preserve the already prepared FDD fixture/helper edits and
+their failed evidence as unqualified deferred work; do not delete or report them
+as verified. The new 12:30 FDD-focused target below is withdrawn by this scope
+change, not marked achieved. Existing full suites remain undisturbed.
+
+Immediate order for TDD:
+
+1. Normal shared PUSCH receive/completion wiring in runWaveformLinkBundle.m:
+   localCompleteSharedDataPlan currently supplies no UCIReceiveContext, and
+   does not call completeSharedPUSCHHARQFeedbackRuntime. Bind the gNB schedule
+   and completed observation through buildSharedPUSCHUCIReceiveContext before
+   decoding, then apply the common commit before legacy completion. Preserve
+   independent CSI obligations and the no-second-HARQ-update receipt guard.
+2. Missing-DCI/gap and mixed HARQ/CSI/SR transport ownership in TDD, including
+   a real gNB receive-only PUSCH window when the UE misses UL DCI. An isolated
+   component pass does not qualify that missing coordinator path.
+3. TDD physical PUCCH noise-only false-ACK and signal-present missed-ACK
+   qualification; no threshold retuning from held-out qualification outcomes.
+4. TDD enabled-impairment timing and same-run measurement/export closure,
+   followed by the authored integrated 12 dB run and same-chain sweep config.
+
+Both TDD CSI variants in the 23690b26 batch passed. This removes those two
+specific component failures from the TDD worklist, not the integrated closure
+requirements. The inventory estimate remains 13:52 IST today; shared-PUSCH
+integration target remains 21:52 IST today. Earlier full-regression and 12 dB
+estimates remain provisional pending measured TDD execution durations. FDD is
+not a focused TDD acceptance gate, but required testAll failures must still be
+reported honestly and cannot be hidden when qualifying the whole repository.
+
+## Focused recovery result and next repair: 2026-09-14, 11:28 IST
+
+Clean 23690b26 completed six tests: four passed and two failed. The recovered
+sample-clock, scheduled HARQ mapper and preflight regressions passed, as did
+the detector YAML-authority smoke test (NOT detector qualification). All four
+CSI variants ran: both TDD cases passed; both FDD cases reached decoded CSI
+delivery, then failed in verifyPUCCHPowerExport on absent cfg.integration.
+The FDD physical-link-budget scenario does not enable that optional section.
+The helper now tests explicitly configured normalized mode using the same
+configuration contract as applyPowerContext, retains every numeric power
+assertion and adds physical-versus-normalized applicability checks. No RF,
+noise, power, loss or detector algorithm has changed in this repair.
+
+testLLSCausalWiringYAMLAuthority retained obsolete RA slots [2 5 6 7]. The
+existing testRADuplexAllocationTiming expects [3 6 9 10]: SIB1 owns slot 2,
+and TRS owns slots 7/8. The authority test now retains an exact expected
+calendar and checks the rejected SIB1/TRS resource owners plus availability
+of the chosen DL allocations. Actual slots are printed before the assertion.
+Runtime verification of these repairs is pending; failed receipts are kept at
+docs/lls/evidence_20260914/fdd_recovery_23690b26/ and original logs are preserved.
+Worker 11872 and launcher 13204 exited before the checkout was edited.
+
+Next: rerun both failing tests and testRADuplexAllocationTiming, then continue
+normal shared PUSCH/mixed-UCI integration. Revised inventory checkpoint stays
+14 September 13:52 IST, with a 12:30 IST target for this focused repair result
+subject to safe launch capacity. Final-source testAll and applicable guards
+remain required. Neither this batch nor the older live suites qualifies 12 dB.
+
 ## Resumed implementation: 2026-09-14, 11:13 IST
 
 The user requested revised estimates and continued implementation. The planning

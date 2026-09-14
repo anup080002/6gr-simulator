@@ -155,8 +155,22 @@ assert(double(ra.PRACHOccasionSlot) == 1);
 assert(double(ra.PRACHOccasionSymbol) == 0);
 assert(double(ra.PRACHFrequencyIndex) == 0);
 assert(double(ra.RARNTI) == 15);
-assert(double(ra.Msg2Slot) == 2 && double(ra.Msg3Slot) == 5 && ...
-    double(ra.Msg4Slot) == 6 && double(ra.SetupCompleteSlot) == 7);
+slots=double([ra.Msg2Slot ra.Msg3Slot ra.Msg4Slot ra.SetupCompleteSlot]);
+fprintf('FDD_RA_AUTHORITY slots=[%g %g %g %g] allocation_plan_only=1\n',slots);
+% The authored Type-0 occasion reserves slot 2 for SIB1; TRS reserves slots
+% 7/8. Match the existing duplex-allocation regression, retaining an exact
+% calendar assertion and independently checking why the old slots are illegal.
+assert(isequal(slots,[3 6 9 10]), ...
+    'FDD RA must avoid SIB1 slot 2 and TRS slots 7/8; got [%g %g %g %g].',slots);
+ownership=sixgr.phy.frame.CommonDLResourcePlan(cfg);
+[available,evidence]=ownership.checkPDSCH(ra.Msg2PDSCH,2);
+assert(~available && any(evidence.ConflictingOwners=="SIB1_PDSCH_and_Type0_PDCCH"));
+for reservedSlot=[7 8]
+    [available,evidence]=ownership.checkPDSCH(ra.Msg4PDSCH,reservedSlot);
+    assert(~available && any(evidence.ConflictingOwners=="TRS"));
+end
+assert(ownership.checkPDSCH(ra.Msg2PDSCH,ra.Msg2Slot));
+assert(ownership.checkPDSCH(ra.Msg4PDSCH,ra.Msg4Slot));
 assert(ra.TimingSchedule.Msg3K2Slots == 1 && ra.TimingSchedule.Msg3AdditionalDelaySlots == 2);
 
 assert(logical(sixgr.util.structGet(cfg, "outputs.rawIQCaptureEnabled", false)));

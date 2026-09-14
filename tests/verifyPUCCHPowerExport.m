@@ -6,8 +6,12 @@ assert(T.PUCCHPowerControlMu==mu && T.PUCCHPowerControlMRB==T.PUCCHPRBCount);
 assert(abs(T.PUCCHPowerBandwidthTerm_dB-10*log10(2^mu*T.PUCCHPRBCount))<1e-12);
 assert(string(T.PUCCHPowerBandwidthSource)=="selected_pucch_resource_and_active_carrier_scs");
 assert(isfinite(T.PUCCHRequestedTxPower_dBm) && isfinite(T.PUCCHPowerControlPathloss_dB));
-fixedReference=upper(string(cfg.integration.run_mode))=="FIXED_SNR_SWEEP" && ...
-    cfg.integration.configured_snr_is_link_authority;
+% Integration is optional for the physical-link-budget FDD fixture. Only an
+% explicitly configured normalized sweep changes the absolute-power contract,
+% matching applyPowerContext; never infer the expected plane from output rows.
+fixedReference=upper(strtrim(string(sixgr.util.structGet(cfg, ...
+    'integration.run_mode',''))))=="FIXED_SNR_SWEEP" && ...
+    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
 if fixedReference
     assert(~T.PUCCHPowerHeadroomApplicable && isnan(T.PUCCHPowerHeadroom_dB));
     assert(T.PUCCHPowerControlTargetHeadroom_dB==T.PUCCHPCMAX_dBm-T.PUCCHRequestedTxPower_dBm);
@@ -17,6 +21,7 @@ if fixedReference
         isfinite(T.PUCCHNormalizedActiveMeanSquare) && T.PUCCHNormalizedActiveMeanSquare>0);
     assert(string(T.PUCCHAppliedTxPowerReferencePlane)=="normalized_occupied_re_pre_node_rf_contribution");
 else
+    assert(T.PUCCHPhysicalPowerApplicable && ~T.PUCCHNormalizedPowerReference);
     assert(T.PUCCHPowerHeadroomApplicable && isfinite(T.PUCCHPowerHeadroom_dB));
     assert(T.PUCCHAppliedTxPower_dBm==min(T.PUCCHPCMAX_dBm,T.PUCCHRequestedTxPower_dBm));
     assert(string(T.PUCCHAppliedTxPowerReferencePlane)=="pre_node_rf_transmitter_contribution");
