@@ -29,14 +29,17 @@ try
         if isempty(names), report=testAll; else, report=testAll('Names',names); end
         save(fullfile(logDir,'test_report.mat'),'report');
         localJSON(fullfile(logDir,'test_report.json'),report);
-        if ~isempty(report.results)
-            rows=struct2table(report.results);
-            writetable(rows,fullfile(logDir,'tests.csv'));
-            writetable(rows(~rows.ok,:),fullfile(logDir,'failures.csv'));
-        end
         summary.test_count=numel(report.results);
         summary.failed_count=nnz(~[report.results.ok]);
         summary.duration_s=report.total_duration_s;
+        if ~isempty(report.results)
+            % Each struct is one test, including a scalar failed report with
+            % character fields of different lengths. Never expand its fields
+            % into rows or let CSV conversion hide the original test result.
+            rows=struct2table(report.results,'AsArray',true);
+            writetable(rows,fullfile(logDir,'tests.csv'));
+            writetable(rows(~rows.ok,:),fullfile(logDir,'failures.csv'));
+        end
         assert(report.ok,'sixgr:tests:ServerRegressionFailed', ...
             '%d of %d tests failed. Share this run''s logs folder.',summary.failed_count,summary.test_count);
     end
