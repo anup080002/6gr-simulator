@@ -46,9 +46,15 @@ try
 catch cause
     summary.status='failed'; summary.finished_utc=localUTC();
     summary.error_identifier=cause.identifier;
-    summary.error_report=getReport(cause,'extended','hyperlinks','off');
-    localJSON(fullfile(logDir,'summary.json'),summary);
-    fprintf(2,'%s\n',summary.error_report);
+    [summary.error_report,summary.error_diagnostic]=sixgr.util.formatExceptionDiagnostic(cause);
+    fprintf(2,'SERVER_VALIDATION_FAILED identifier=%s\n%s\n',cause.identifier,summary.error_report);
+    try
+        localJSON(fullfile(logDir,'summary.json'),summary);
+    catch writeFailure
+        % A secondary diagnostic write failure must not replace the test error.
+        fprintf(2,'SERVER_DIAGNOSTIC_WRITE_FAILED identifier=%s message=%s\n', ...
+            writeFailure.identifier,writeFailure.message);
+    end
     rethrow(cause);
 end
 end

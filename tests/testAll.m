@@ -24,6 +24,7 @@ end
 
 tests = { ...
     @testSetupExcludesLogSnapshots, ...
+    @testExceptionDiagnosticPreservation, ...
     @testLLSRecoveryErrorMessages, ...
     @testConstellationPublicationBackend, ...
     @testLiveCSVPlotPublication, ...
@@ -689,7 +690,8 @@ suiteStart = tic;
 for k = 1:numel(tests)
     fn = tests{k};
     name = func2str(fn);
-    r = struct("name", name, "ok", false, "msg", "", "duration_s", NaN);
+    r = struct("name", name, "ok", false, "msg", "", "duration_s", NaN, ...
+        "identifier", "", "extended_report_available", false, "diagnostic_rendering_error", "");
     testStart = tic;
     fprintf("FULLSTACK_TEST_START %s\n", name);
     try
@@ -698,8 +700,13 @@ for k = 1:numel(tests)
     catch ME
         r.ok = false;
         r.msg = ME.message;
-        fprintf(2,'%s\n',getReport(ME,'extended','hyperlinks','off'));
         report.ok = false;
+        r.identifier = ME.identifier;
+        [diagnosticText,diagnostic] = sixgr.util.formatExceptionDiagnostic(ME);
+        r.extended_report_available = diagnostic.ExtendedReportAvailable;
+        r.diagnostic_rendering_error = diagnostic.RenderingErrorIdentifier;
+        fprintf(2,'TEST_FAILURE identifier=%s extended_report=%d rendering_error=%s\n%s\n', ...
+            r.identifier,r.extended_report_available,r.diagnostic_rendering_error,diagnosticText);
     end
     r.duration_s = toc(testStart);
     report.results = [report.results; r]; %#ok<AGROW>
