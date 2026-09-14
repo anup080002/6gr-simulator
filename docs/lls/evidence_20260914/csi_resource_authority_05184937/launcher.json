@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-14T05:02:56.9424882Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testCSIOnlyPUCCHResourceAuthority",
+    "testPUCCHResourcePlanningWithoutPower",
+    "testPUCCHPowerResourceAuthority",
+    "testPUCCHMultiUserPRIAuthority",
+    "testSRSPUCCHExactCollisionFDDTDD",
+    "testPeriodicCSIReportObligations",
+    "testSharedCSIReportClock"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "051849374b0edb2b2da14cea93dc1d7520ef6a5a",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260914T050256906Z_91f1726f',false,{'testCSIOnlyPUCCHResourceAuthority','testPUCCHResourcePlanningWithoutPower','testPUCCHPowerResourceAuthority','testPUCCHMultiUserPRIAuthority','testSRSPUCCHExactCollisionFDDTDD','testPeriodicCSIReportObligations','testSharedCSIReportClock'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "",
+  "git_commit_after": "051849374b0edb2b2da14cea93dc1d7520ef6a5a",
+  "finished_utc": "2026-09-14T05:07:17.6422571Z",
+  "launcher_exit_code": 0
+}

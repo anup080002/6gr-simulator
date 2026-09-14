@@ -2,6 +2,28 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## Verified resource-authority result: 2026-09-14, 10:37 IST
+
+Clean unchanged 05184937 completed seven focused tests with zero failures and
+both exit codes zero. The new CSI resource/trace regression, planning without
+power, all nine PRB/numerology power vectors, multi-user HARQ PRI, FDD/TDD exact
+SRS collisions, periodic calendar and actual shared TDD CSI delivery passed.
+Terminal launcher time: 2026-09-14T05:07:17.6422571Z. Portable exact receipts:
+docs/lls/evidence_20260914/csi_resource_authority_05184937/.
+
+Full log bundle and calendar artifacts were also copied into the main
+checkout's logs/csi_resource_authority_05184937/ without removing originals.
+Original/copied ZIP SHA256 both equal
+8331D2529684D309BBE8B7068BF3877487C4C5689A2463F9CDCA20762F204094.
+
+The following checkpoint adds a registered testSharedCSIReportClockVariants
+wrapper for actual FDD CSI, combined TDD/FDD HARQ+CSI and stale scalar metadata.
+That wrapper is NOT covered by the seven-test receipt. Production source is
+unchanged from 05184937. Final-source testAll and required guards still must
+run; the two live older suites do not qualify this change. General mixed-UCI
+ownership, normal PUSCH coordinator integration, physical detector campaign,
+all-measurement integrated 12 dB and final consolidation remain unfinished.
+
 ## Implementation checkpoint: 2026-09-14, 10:31 IST
 
 Implementation resumed on the explicit goal continuation after the planning
