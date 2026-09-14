@@ -14686,6 +14686,11 @@ methods(Static, Access=private)
             end
             trace.Notes(ti)="Independent gNB scheduled bit joined by DL identity; no standalone PUCCH or second HARQ update.";
             if ~isempty(timeline)
+                % A first struct2table HARQ row has cellstr columns; later
+                % appends can normalize them to strings. Retain all rows
+                % and text while accepting either real runtime schema.
+                timeline.FeedbackMechanism=string(timeline.FeedbackMechanism);
+                timeline.FeedbackEvidenceSource=string(timeline.FeedbackEvidenceSource);
                 timeline.FeedbackMechanism(b.TimelineIndex)="pusch_uci";
                 timeline.FeedbackEvidenceSource(b.TimelineIndex)="independent_scheduled_pusch_rx_uci";
             end
@@ -14906,6 +14911,8 @@ methods(Static, Access=private)
             end
 
             if istable(timeline) && ~isempty(timeline)
+                timeline.FeedbackMechanism=string(timeline.FeedbackMechanism);
+                timeline.FeedbackEvidenceSource=string(timeline.FeedbackEvidenceSource);
                 timeline.FeedbackMechanism(b.TimelineIndex) = "pusch_uci";
                 timeline.FeedbackEvidenceSource(b.TimelineIndex) = "same_waveform_pusch_rx_uci";
                 state.HARQTimelineTable = timeline;

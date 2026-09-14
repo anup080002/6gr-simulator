@@ -77,3 +77,17 @@ It asserts that actual received DCI and the normal DL completion snapshot retain
 that selected PRI and its provenance. No receive-time default or fabricated
 decoded PRI is introduced, and the production missing-provenance gate is unchanged.
 The nonempty rerun and final paired acceptance remain pending.
+
+## Follow-up run on 2f44f605
+
+`logs/testall_20260914T110110383Z_b8ba372a` passed real DL completion and
+decoded the slot-10 PUSCH with its actual HARQ bit. Common producer bookkeeping
+then failed assigning a string into the first HARQ row's cellstr provenance
+column. Normal `struct2table` creation and later table concatenation can yield
+different text storage types. Both PUSCH reducers now normalize the two existing
+timeline text columns to strings before their indexed provenance update. They
+do not create rows, supply missing columns or alter ACK decisions. The physical
+test additionally checks that row count and source identities are unchanged and
+that the completed row identifies independent received PUSCH evidence.
+This production fix still requires runtime verification, final-source `testAll`,
+and result-integrity/NR guard tests. No integrated 12 dB qualification is claimed.
