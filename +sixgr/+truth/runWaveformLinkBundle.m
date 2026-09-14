@@ -12578,6 +12578,10 @@ assert(~any(cellfun(@(x)x.Key==c.Key,controls)), ...
 controls{end+1}=struct('Key',c.Key,'Grant',grant,'Allowed',allowed, ...
     'ReceivedAssignment',receivedAssignment, ...
     'AvailableAtSample',post.EndSampleExclusive);
+if ~allowed
+    controls{end}.ReceiverTrial=raw;
+    controls{end}.RejectedControlObservation=post;
+end
 state.SharedReceivedGrantControls=controls;
 if c.Direction=="DL" && allowed && isfinite(raw.DecodedDCITCICodepoint)
     grant.ReceivedTCICodepoint=raw.DecodedDCITCICodepoint;
@@ -12642,6 +12646,10 @@ hit=find(cellfun(@(x)x.Key==c.Key,controls));
 assert(numel(hit)==1,'sixgr:truth:SharedDataControlNotReceived', ...
     'Data reception needs the exact actual received control result, never a queued grant.');
 control=controls{hit};
+if ~control.Allowed && job.Direction=="DL"
+    state=sixgr.truth.completeSharedDLWithoutAcceptedControl(state,item,control);
+    return;
+end
 assert(control.Allowed,'sixgr:truth:SharedDataDTXDispositionRequired', ...
     'PDSCH transmitted with failed DCI needs a DTX/feedback disposition; it cannot be decoded using scheduler oracle authority.');
 [job.GrantSnapshot,receivedEvidenceFields]=sixgr.truth.bindReceivedPDCCHGrantEvidence( ...

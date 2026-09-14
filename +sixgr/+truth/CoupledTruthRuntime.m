@@ -3186,6 +3186,11 @@ methods(Static, Access=private)
                 "configured_csi_report_obligations.csv"),csiObligations);
         end
         gnbHARQ=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
+        noDecode=sixgr.util.structGet(state,'SharedDLNoDecodeDispositionTable',table());
+        if ~isempty(noDecode)
+            sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
+                "dl_no_decode_dispositions.csv"),noDecode,'PreserveSchema',true);
+        end
         if ~isempty(gnbHARQ)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, "gnb_harq_feedback_observations.csv"),gnbHARQ);
         end

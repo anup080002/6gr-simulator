@@ -2,6 +2,57 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD rejected-DL-DCI handling: 14 September 2026, 12:56 IST
+
+The 4a6984e3 admission watcher terminated at 12:52:09 IST without launching
+MATLAB (30 checks; last six workers and 718,220 KB free RAM). Its process
+was verified absent before source/HEAD changes. Both previous full suites
+and the main suite's four process-pool workers remain untouched.
+
+The shared data completion's unconditional control.Allowed assertion is a
+confirmed missing-DL-DCI implementation gap. A candidate repair now calls
+completeSharedDLWithoutAcceptedControl for rejected DL control. It requires
+the exact retained rejection, a non-crashed attempted PDCCH decode, its
+complete receive buffer, matching physically executed DL payload/grant and
+completed receive planes, and the original source-slot trace. It records
+a separate no-decode disposition and completes that physical observation;
+it does not invoke PDSCH decoding, create a UE HARQ event/producer, or apply
+gNB feedback. Receiver crashes and missing/inconsistent evidence still fail.
+
+Only nonempty disposition rows are exported to control/dl_no_decode_dispositions.csv.
+No PDSCH CRC, EVM, BER, ACK/NACK or throughput trial is created. Normal data
+validation rejects a second decode after this no-decode disposition. The
+negative preflight test explicitly has zero RF execution; the physical-queue
+test adds duplicate-disposition rejection against an actual transmitted
+payload. Seven changed MATLAB files passed native syntax checks; the malformed
+positive control produced SYNER. Runtime and actual rejected-DCI positive
+RF/CSV qualification remain due. This is an implementation candidate, not
+closure of missing-DCI behavior across all transports.
+
+Still required: actual missed DL DCI through both UCI transports, mixed
+HARQ/CSI/SR, and missing UL DCI. The latter currently cancels an unexecuted
+grant and returns without a gNB receive-only PUSCH observation. It requires
+physical-owner support that cannot fabricate UE IQ, a TB or a UL TX count.
+
+New observed full-suite failure, explicitly DEFERRED: the existing main
+test6GLLSMultiUserBeamforming uses the FDD scenario
+lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_validation.yaml and disables
+PBCH/PRACH/PDCCH/SRS/TRS gating. At slot 1, scheduler DL grant construction
+raised sixgr:l2:mac:MissingReceivedULTiming with zero DL/UL data rows. Its
+failure report and config identity are preserved under
+evidence_20260914/deferred_fdd_multiuser_failure/. This is not a TDD 12 dB
+failure and is not a terminal summary of the still-running full suite.
+No FDD-focused repair or rerun was undertaken.
+
+Revised timing: the earlier 13:52 runtime checkpoint is now replaced by a
+14:30 IST evidence/checkpoint estimate, dependent on worker/RAM admission;
+it is not a promised pass or a reset of the original missed inventory time.
+Prepare/queue this candidate by 13:05 IST. After admission, the expanded
+focused tests need their actual runtime before any new completion estimate.
+Keep the required full testAll and NR/export/E2E guards on the final source;
+existing suites cannot qualify these newer commits. Shared feedback, detector,
+all-measurement integrated 12 dB and qualified main consolidation remain open.
+
 ## TDD shared-DL-to-PUSCH candidate: 14 September 2026, 12:41 IST
 
 The 962168ee admission watcher ended at 12:39:38 IST without starting MATLAB.

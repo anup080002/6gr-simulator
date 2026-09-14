@@ -304,6 +304,10 @@ for item=items
     duplicateState.SharedDataRXCommittedIDs=identity.TransmissionID;
     localReject(@()sixgr.truth.validateSharedDataReceptionTX(duplicateState,proof,committed.Grant, ...
         p.Tx.TransportBlock,item.UE,'DL',committed.Grant.Slot),'sixgr:truth:DuplicateSharedDataRXCommit');
+    noDecodeState=state;
+    noDecodeState.SharedDataNoDecodeCommittedIDs=identity.TransmissionID;
+    localReject(@()sixgr.truth.validateSharedDataReceptionTX(noDecodeState,proof,committed.Grant, ...
+        p.Tx.TransportBlock,item.UE,'DL',committed.Grant.Slot),'sixgr:truth:DuplicateSharedDataRXCommit');
     state.TestDataRXCount=sixgr.util.structGet(state,'TestDataRXCount',0)+1;
     state.TestDataIntervals=[tx.StartSample tx.EndSampleExclusive post.StartSample post.EndSampleExclusive];
 end

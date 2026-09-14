@@ -1,0 +1,10 @@
+{
+  "SchemaVersion": "sixgr_resolved_config_identity/v1",
+  "ScenarioID": "lls_multiuser_smoke",
+  "ConfigHash": "cb82953b34d076924fb5025f6e6e6fc1cbb0f0d3f3b40b0006cbbdd5c2beb657",
+  "ResolvedJSONSHA256": "946b98c8a16d45fbc4e0fd60f1be995192c362a53888ad5914e05f8cf4eee17b",
+  "ResolvedYAMLSHA256": "352b0b6b3bb3e5a7e9cbace6835163878261a2b3773d1aecf8fc526fac68e279",
+  "RuntimeViewJSONSHA256": "2a432cdfb2558ca7c4a6f82abb8169af2fdab65b05de2eaf12661f4e584c6988",
+  "RuntimeViewYAMLSHA256": "3865227607c4b2e56c23de4595f7d9124fb1815295da09c68ebfeb848873fd25",
+  "GeneratedUTC": "2026-09-14T07:02:28Z"
+}

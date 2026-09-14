@@ -1,0 +1,16 @@
+{
+  "StartedUTC": "",
+  "CompletedUTC": "2026-09-14T07:13:12Z",
+  "ElapsedSeconds": null,
+  "Profile": "waveform_bundle",
+  "RunFolder": "C:\\Users\\anup0\\AppData\\Local\\Temp\\tped3f6e2f_a858_4b25_9d04_7abb81ecbf79\\u\\lls\\lls_multiuser_smoke\\smoke",
+  "RunTag": "smoke",
+  "UseMex": false,
+  "UseMexAutoEnabled": false,
+  "UseParallel": true,
+  "RequestedWorkers": 24,
+  "EffectiveWorkers": 24,
+  "ParallelDisabledReason": "",
+  "MaxNumCompThreads": 4,
+  "WarningCount": 0
+}

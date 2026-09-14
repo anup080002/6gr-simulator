@@ -1,0 +1,48 @@
+Error using assert
+Shared-stream scheduling requires this UE's received timing authority.
+
+Error in sixgr.l2.mac.attachReceivedULTimingAuthority (line 13)
+    assert(~required,'sixgr:l2:mac:MissingReceivedULTiming', ...
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.l2.mac.SchedulerPF/schedule (line 701)
+                    g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(stateIndex));
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledTruthRuntime/scheduleDirectionImpl (line 2382)
+            [cellGrants, schedInfo] = scheduler.schedule( ...
+                                      ^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledTruthRuntime.scheduleDirection (line 582)
+        [state, grants, info] = sixgr.truth.CoupledTruthRuntime.scheduleDirectionImpl(state, cfg, direction);
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep (line 3679)
+            [runtimeState, dlGrants, dlInfo] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(runtimeState, cfg, "DL");
+                                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle>localExportLinkRawTrialTables (line 1511)
+        localCollectCoupledTruthMultiUserLinkTrialsAcrossSweep(cfg, runFolder, multiUser, nTrials, snrGrid, ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.runWaveformLinkBundle (line 275)
+rawTrials = localExportLinkRawTrialTables(trialExecutionCfg, runFolder, res, sweepPlan.PrimaryTrialsPerSNR, snrGrid(:), multiUser, saveFigures, liveMobilityArtifacts);
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localRunWaveformBundleScenario (line 245)
+link = sixgr.truth.runWaveformLinkBundle(cfg, fullfile(runFolder, "air_interface"), opt);
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle>localExecutePreparedScenario (line 2630)
+            result = localRunWaveformBundleScenario(cfg, scfg, runFolder, executionOptions);
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.lls6g.runners.runSingle (line 78)
+execOut = localExecutePreparedScenario(scfg, runFolder, leaf, logicalRunFolder, executionOptions);
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in run_6g_phy_lls_single (line 14)
+out = sixgr.lls6g.runners.runSingle(configPath, outputDir, runTag);
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in test6GLLSMultiUserBeamforming (line 87)
+out = run_6g_phy_lls_single(scenarioPath, tmp, "smoke");
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in executeRegressionTest (line 7)
+outcome = feval(fn);
+          ^^^^^^^^^
+Error in testAll (line 702)
+        executeRegressionTest(fn);
+        ^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in run_server_testall (line 29)
+        if isempty(names), report=testAll; else, report=testAll('Names',names); end
+                                  ^^^^^^^

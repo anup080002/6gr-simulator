@@ -2,6 +2,8 @@ function validateSharedDataReceptionTX(state,harqOut,grant,bits,ue,direction,slo
 % A received shared-stream trial must join its already committed TX once.
 id=string(sixgr.util.structGet(harqOut,'SharedTransmissionID',''));
 received=sixgr.util.structGet(state,'SharedDataRXCommittedIDs',strings(0,1));
+received=[received;sixgr.util.structGet(state, ...
+    'SharedDataNoDecodeCommittedIDs',strings(0,1))];
 assert(~any(received==id), ...
     'sixgr:truth:DuplicateSharedDataRXCommit','One received attempt cannot update HARQ/CSI/statistics twice.');
 ledger=sixgr.util.structGet(state,'SharedDataTXLedger',{});
