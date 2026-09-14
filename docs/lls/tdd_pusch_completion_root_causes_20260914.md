@@ -40,3 +40,15 @@ Required final-source `testAll` and applicable NR/config guards remain due.
 These focused tests do not qualify the full coordinator, missing-DCI handling,
 mixed HARQ/CSI/SR, detector statistics, all measurements, the integrated 12 dB
 scenario, other MATLAB releases, or the PHY sweep. FDD repairs remain deferred.
+
+## Follow-up run on 29868472
+
+`logs/testall_20260914T104600823Z_2941e075` again returned two failures.
+The previous missing-TBId and contradictory-CRI checks were passed. The empty
+case then failed on missing `LargeScaleState.BeamIndex`: the fixture discarded
+the updated state returned by its first normal `applyUserContext` call. That
+actual initialized state is now retained, not replaced by fabricated beam or
+power fields. The nonempty case reached DAI preparation but lacked the runtime
+serving-cell index, which is now bound from the actual DL user context before
+DAI preparation. No physical loss or beam gain is injected to satisfy telemetry.
+The next focused rerun is pending; neither case is claimed complete yet.

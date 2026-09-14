@@ -83,7 +83,9 @@ if independentCompletion, assert(~cfg.phy.csi.reportCSI); end
 state.TestPUSCHRows=table();
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if receivedAuthority
-    [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
+    % Retain the real large-scale/serving-cell state created by the normal
+    % user-context bind; completion telemetry consumes that same state.
+    [dl,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
     prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
         'UseRuntimeChannel',true,'RuntimeSlot',0);
     assert(isfield(prototype,'PreparedBroadcast'),'%s',prototype.FailureReason);
@@ -790,6 +792,9 @@ grant=sixgr.link.resolveWaveformGrant(dl,'DL',frame,'Slot',slot,'SFN',frame-1, .
     'ControlAbsoluteSlot',slot-1,'HARQProcess',allocated.HARQ.HarqID);
 assert(grant.Valid && grant.ExactPHYFeasible && allocated.HARQ.NDI==grant.HARQ.NDI);
 if sharedHARQ
+    % resolveWaveformGrant carries PHY cell identity, whereas scheduled DAI
+    % also requires the runtime serving-cell index from the bound UE view.
+    grant.ServingCell=double(dl.lls6g.userContext.RuntimeServingCell);
     [grant,candidateLedger]=sixgr.truth.prepareScheduledDLDAI(state.TestScheduledDLDAILedger,dl,grant);
     grant.TransportBlockId=char(grant.PHYGrant.GrantContextId);
     grant.TBId=grant.TransportBlockId;
