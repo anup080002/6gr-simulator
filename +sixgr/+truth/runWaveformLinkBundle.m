@@ -12597,6 +12597,9 @@ localAppendRuntimeLog("INFO","Shared %s DCI received: ue=%d control_slot=%d data
     c.Direction,item.UE,c.Slot,grant.Slot,allowed,post.EndSampleExclusive);
 if c.Direction~="UL", return; end
 if ~allowed
+    if sixgr.phy.frame.resolveDuplexMode(c.UserCfg{item.UE})=="TDD"
+        state=sixgr.truth.queueSharedPUSCHAfterRejectedControl(state,c.UserCfg{item.UE},controls{end});
+    end
     state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state,grant,'UL');
     return;
 end
@@ -12840,6 +12843,10 @@ for item=received
     end
     if item.Kind=="PUCCHReceiveOnly"
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item);
+        continue;
+    end
+    if item.Kind=="PUSCHReceiveOnly"
+        state=sixgr.truth.completeSharedPUSCHAfterRejectedControl(state,item.Context.ObservationID);
         continue;
     end
     if any(item.Kind==["PDSCH","PUSCH"])

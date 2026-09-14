@@ -1,0 +1,11 @@
+inherits:
+  - ./lls_pdcch_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_rejected_ul_control_fixture
+  description: Known-candidate PDCCH carrying retained UL grant bits at a negative operating point.
+  purpose: Physical rejection stimulus for receive-only contracts, not acquired timing or connected blind monitoring.
+  research_class: optional_research_experiment
+
+simulation:
+  snr_db: -30

@@ -1,0 +1,11 @@
+inherits:
+  - ./lls_received_ul_harq_shared_fixture.yaml
+
+meta:
+  scenario_id: lls_rejected_ul_receive_only_fixture
+  description: Scheduled gNB PUSCH capture after an actually rejected component UL command.
+  purpose: Negative receive-only component stimulus, not access or 12 dB qualification.
+  research_class: optional_research_experiment
+
+simulation:
+  snr_db: -30

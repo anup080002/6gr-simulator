@@ -3187,6 +3187,11 @@ methods(Static, Access=private)
         end
         gnbHARQ=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
         noDecode=sixgr.util.structGet(state,'SharedDLNoDecodeDispositionTable',table());
+        receiveOnly=sixgr.util.structGet(state,'SharedRejectedULReceiveAuditTable',table());
+        if ~isempty(receiveOnly)
+            sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
+                "rejected_ul_receive_only_audit.csv"),receiveOnly,'PreserveSchema',true);
+        end
         if ~isempty(noDecode)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
                 "dl_no_decode_dispositions.csv"),noDecode,'PreserveSchema',true);

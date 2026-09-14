@@ -20,6 +20,7 @@ function [rx, info] = PDCCH_Rx(rxWaveform, cfg, varargin)
 %     "NoiseVar"       : override noise variance (else estimate)
 %     "ExpectedDCIBits": optional finalized-grant DCI bits for causal match
 %     "SampleRate_Hz"  : sample rate (only needed for some timing APIs)
+%     "TimingSearchWindowSamples": valid offset interval in an actual capture
 %
 %   Outputs:
 %     RX.DCIBits        : recovered DCI payload bits
@@ -46,6 +47,7 @@ ip.addParameter('ExpectedDCIBits', [], @(x) isempty(x) || isnumeric(x) || islogi
 ip.addParameter('NoiseOnlyWaveform', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('SampleRate_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>0));
 ip.addParameter('InputTimingAlignment',struct(),@(x)isstruct(x)&&isscalar(x));
+ip.addParameter('TimingSearchWindowSamples',[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
 ip.parse(varargin{:});
 opt = ip.Results;
 hasConnectedPolicy=isfield(sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct()),'connected_dci');
@@ -185,6 +187,19 @@ skipTimingEstimate = logical(blind) && ~allowBlindCandidateTiming;
 timingOffset = NaN;
 timingSource = "nrTimingEstimate_pdcch_dmrs";
 inputAligned=~isempty(fieldnames(opt.InputTimingAlignment));
+sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
+expectedSamples = double(sampling.CurrentSlotSamples);
+extent=sixgr.phy.dl.pdcchObservationExtent(carrier, ...
+    {candSymInd,candDMRSInd},sampling.ToolboxOFDMInfo);
+search=double(opt.TimingSearchWindowSamples(:).');
+unboundedTimingOffset=NaN; searchMetric=[];
+if ~isempty(search)
+    validateattributes(search,{'numeric'},{'real','finite','integer','nonnegative','numel',2});
+    assert(~inputAligned && ~skipTimingEstimate && search(1)<=search(2) && ...
+        search(2)<=size(rxWave,1)-extent.MinimumReceiveSamples, ...
+        'sixgr:phy:pdcch:InvalidReceivedTimingSearch', ...
+        'Every requested timing hypothesis must retain all monitored symbols in actual samples; no padding or second clock shift.');
+end
 if inputAligned
     alignment=opt.InputTimingAlignment;
     expected=sixgr.phy.frame.pdcchReceivedClockAlignment(alignment.Reference, ...
@@ -196,9 +211,19 @@ if inputAligned
 elseif ~skipTimingEstimate
     try
         if isempty(sampleRateHz)
-            timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1});
+            [timingOffset,timingMagnitude] = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1});
         else
-            timingOffset = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1}, 'SampleRate', sampleRateHz);
+            [timingOffset,timingMagnitude] = nrTimingEstimate(carrier, rxWave, candDMRSInd{1}, candDMRSSym{1}, 'SampleRate', sampleRateHz);
+        end
+        if ~isempty(search)
+            unboundedTimingOffset=timingOffset;
+            offsets=search(1):search(2);
+            searchMetric=sum(double(timingMagnitude(offsets+1,:)),2);
+            assert(all(isfinite(searchMetric)) && any(searchMetric>0), ...
+                'sixgr:phy:pdcch:InvalidTimingCorrelation','Retain a finite nonzero received-reference correlation.');
+            [~,peak]=max(searchMetric);
+            timingOffset=offsets(peak);
+            timingSource="nrTimingEstimate_pdcch_dmrs_bounded_received_window";
         end
     catch cause
         failure=MException('sixgr:phy:pdcch:TimingEstimationFailed', ...
@@ -213,6 +238,9 @@ timingResolution = sixgr.phy.sync.resolveTimingApplication(timingOffset, ...
     "ApplicationMode", "signed_waveform_shift", ...
     "SkipRequested", skipTimingEstimate, ...
     "Source", timingSource);
+timingResolution.SearchWindowSamples=search;
+timingResolution.SearchMetric=searchMetric;
+timingResolution.UnboundedEstimate_samples=unboundedTimingOffset;
 if inputAligned
     % The observation origin already applies this measured shift. Applying
     % it a second time inside the receiver would corrupt the control grid.
@@ -228,10 +256,6 @@ rxWave = localApplyTimingCorrection(rxWave, timingResolution.AppliedCorrection_s
 
 % Decode when the monitored control symbols have actually arrived. The
 % unreceived remainder of a slot is neither silence nor receiver evidence.
-sampling = sixgr.phy.frame.OFDMSamplingResolver.resolve(carrier);
-expectedSamples = double(sampling.CurrentSlotSamples);
-extent=sixgr.phy.dl.pdcchObservationExtent(carrier, ...
-    {candSymInd,candDMRSInd},sampling.ToolboxOFDMInfo);
 if size(rxWave,1)<extent.MinimumReceiveSamples
     error('sixgr:phy:pdcch:IncompleteReceivedControlSymbols', ...
         'Actual received samples do not cover every monitored PDCCH/DM-RS symbol after timing alignment.');
