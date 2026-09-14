@@ -724,11 +724,80 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
         'DecoderNoiseVar',double(nVarForDecode),'ReceiverSINR',receiverSINR, ...
         'ReceiverPipelineLatency_ms',1e3*toc(receiverPipelineTic), ...
         'ExecutionBackend',"nrPUSCHDecode_partial_UCI_independent_ULSCH_truth");
+    rx=sixgr.phy.ul.pusch.annotateUCIReceiverEvidence(rx,uciOnPUSCH);
+    % CSI-dependent data mapping can fail after the front end has completed.
+    % Preserve those actual observations without claiming an unattempted CRC.
+    rx.ChannelEstimateAttempted=true;
+    rx.ChannelEstimateAvailable=~isempty(Hest);
+    rx.ChannelEstimateSource="pusch_dmrs_channel_estimate";
+    rx.ChannelEstimateMethod=char(string(sixgr.util.structGet(estInfo,'Method','')));
+    rx.ChannelEstimateEngine=char(string(sixgr.util.structGet(estInfo,'EngineUsed','')));
+    rx.ResourceExtractionAttempted=true;
+    rx.ResourceExtractionAvailable=~isempty(rxSym);
+    rx.EqualizationAttempted=true;
+    rx.EqualizationAvailable=~isempty(eqSym);
+    rx.ULSCHDecodeAttempted=any(dataReception.DecodeAttempted);
+    rx.ULSCHDecodeAvailable=any(dataReception.DecodeAttempted);
+    rx.LLRAvailable=any(cellfun(@(x)~isempty(x),cwLLRForULSCH));
+    rx.LLRFinite=rx.LLRAvailable && all(cellfun(@(x)all(isfinite(x(:))),cwLLRForULSCH));
+    rx.PreEqualizationNoiseVariance=double(nVar);
+    rx.PreEqualizationNoiseVarianceDomain="resource_grid_pre_equalization";
+    rx.PreEqualizationNoiseVarianceSource=char(string(noiseStatus.Source));
+    rx.PostEqualizationNoiseVariance=double(nVarPostEqDiagnostic);
+    rx.PostEqualizationNoiseVarianceDomain="unit_constellation_layer_symbol_post_equalization";
+    rx.PostEqualizationNoiseVarianceSource=char(string(sixgr.util.structGet( ...
+        nVarPostEqInfo,'Source','post_equalization_noise_variance_unavailable')));
+    rx.SampleToGridNoiseVarianceGain=double(sixgr.util.structGet( ...
+        noiseTransformInfo,'OFDMSampleToGridNoiseVarianceGain',NaN));
+    rx.NoiseVarReason=char(string(noiseStatus.Reason));
+    rx.NoiseVarStrictFailure=false;
+    rx.ReceiverHestSINR_dB=double(receiverSINR.Value);
+    rx.ReceiverHestSINRSource=char(receiverSINR.Source);
+    rx.ReceiverHestSINRValueRole=char(receiverSINR.ValueRole);
+    rx.ReceiverHestSINRValueStatus=char(receiverSINR.ValueStatus);
+    rx.ReceiverHestSINRNAReason=char(receiverSINR.NAReason);
+    rx.PostEqSINR_dB=double(postEqSINR_dB);
+    rx.PostEqSINRWidebanddB=double(postEqSINR_dB);
+    rx.PostEqSINRSource=char(string(sixgr.util.structGet(postEqSINRInfo,'Source','')));
+    rx.PostEqSINRValueRole=char(string(sixgr.util.structGet(postEqSINRInfo,'ValueRole','')));
+    rx.PostEqSINRValueStatus=char(string(sixgr.util.structGet(postEqSINRInfo,'ValueStatus','unavailable')));
+    rx.PostEqSINRNAReason=char(string(sixgr.util.structGet(postEqSINRInfo,'NAReason','')));
+    rx.PostEqSINRPerLayer_dB=double(sixgr.util.structGet(postEqSINRInfo,'PerLayerSINR_dB',NaN));
+    rx.SINRComputationMethod=char(string(sixgr.util.structGet( ...
+        postEqSINRInfo,'Method',char(lower(string(equalizerAlg))))));
+    rx.EqualizerType=char(string(equalizerInfo.AlgorithmUsed));
+    rx.EqualizerEngine=char(string(equalizerInfo.EngineUsed));
+    rx.MeasuredInterferenceCovarianceTrace=localCovarianceTraceMean(Rint);
+    rx.MeasuredPreEqualizationNoiseVariance=double(nVar);
+    rx.EqualizedSymbolsForEvidence=layerEqSym;
+    rx.LayerEqualizedSymbolsForEvidence=layerEqSym;
+    rx.PortEqualizedSymbolsForEvidence=eqSym;
+    rx.DecoderInputSymbolsForEvidence=decoderInputSym;
+    rx.EqualizerCSIForEvidence=csi;
+    rx.PUSCHRxSymbolsForEvidence=puschRxSym;
+    rx.QAMEqualizedSymbolsForEvidence=qamEqSym;
+    rx.QAMEqualizedSymbolDomain="layer";
+    rx.QAMEqualizedSymbolSource=char(string(qamEqInfo.Status));
+    rx.ChannelEstimationLatency_ms=double(channelEstimationLatency_ms);
+    rx.EqualizationLatency_ms=double(equalizationLatency_ms);
+    rx.ReceiverStageLatencySource="matlab_tic_toc_production_pusch_receiver_stages";
     if hasPHYGrant, rx.PHYGrant=phyGrant; rx.PHYGrantDimensionContract=phyGrantContract; end
     rx=localAnnotateReceiveCombiner(rx,receiveCombinerInfo);
+    partialEvidence=sixgr.phy.ul.validatePUSCHReceiverEvidence(rx,'StrictMode',strictMode);
+    % Actual front-end measurements can remain available, but an unresolved
+    % codeword cannot pass the complete PUSCH evidence/transport gate.
+    rx.StrictReceiverEvidenceOk=false;
+    rx.StrictOk=false;
+    rx.TruthStatus="partial_receiver_evidence";
+    rx.PostEqSINRReceiverDerived=logical(partialEvidence.PostEqSINRReceiverDerived);
+    rx.PostEqSINRAvailable=logical(partialEvidence.PostEqSINRAvailable);
+    rx.ConfiguredSNRLikeSourceRejected=logical(partialEvidence.ConfiguredSNRLikeSourceRejected);
+    rx.SINRValidationStatus=char(string(partialEvidence.SINRValidationStatus));
+    rx.SINRValidationReason=char(string(partialEvidence.SINRValidationReason));
     info=struct('CarrierInfo',cinfo,'PUSCHInfo',puschInfo, ...
         'UCIOnPUSCH',uciOnPUSCH,'ReceiveCombiner',receiveCombinerInfo, ...
         'TransportBlockDecodeAttempted',dataReception.DecodeAttempted, ...
+        'ReceiverStageEvidence',partialEvidence, ...
         'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
         'ExecutionBackend',rx.ExecutionBackend);
     return;
@@ -1135,40 +1204,7 @@ if hasPHYGrant
     rx.PHYGrant = phyGrant;
     rx.PHYGrantDimensionContract = phyGrantContract;
 end
-rx.UCIOnPUSCHApplied = logical(uciOnPUSCH.Applied);
-rx.UCIOnPUSCHSource = char(string(uciOnPUSCH.Source));
-if rx.UCIOnPUSCHApplied
-    rx.UCIOnPUSCHEvidenceSource = "same_waveform_pusch_rx_uci_demultiplexer";
-else
-    rx.UCIOnPUSCHEvidenceSource = "";
-end
-
-rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
-rx.DecodedHARQACKBits = int8(uciOnPUSCH.DecodedHARQACKBits(:));
-if isfield(uciOnPUSCH, 'ContentMatch')
-    rx.ExpectedHARQACKBits = int8(uciOnPUSCH.ExpectedHARQACKBits(:));
-    rx.HARQACKContentMatch = logical(uciOnPUSCH.ContentMatch);
-else
-    rx.UCIReferenceScoringAvailable = false;
-    rx.UCIReceiveContextDigest = uciOnPUSCH.ReceiverContextDigest;
-end
-rx.HARQACKDecodeStatus = char(string(uciOnPUSCH.Status));
-rx.HARQACKDecodeReason = char(string(uciOnPUSCH.Reason));
-rx.CSI1BitCount = double(uciOnPUSCH.CSI1BitCount);
-rx.CSI2BitCount = double(uciOnPUSCH.CSI2BitCount);
-rx.ConfiguredGrantUCIBitCount = double(uciOnPUSCH.ConfiguredGrantUCIBitCount);
-rx.DecodedCSIPart1Bits = int8(uciOnPUSCH.DecodedCSIPart1Bits(:));
-rx.DecodedCSIPart2Bits = int8(uciOnPUSCH.DecodedCSIPart2Bits(:));
-rx.DecodedConfiguredGrantUCIBits = int8(uciOnPUSCH.DecodedConfiguredGrantUCIBits(:));
-rx.UCIReceiverEvidence=uciOnPUSCH.UCIReceiverEvidence;
-if isfield(uciOnPUSCH, 'ContentMatch')
-    rx.ExpectedCSIPart1Bits = int8(uciOnPUSCH.ExpectedCSIPart1Bits(:));
-    rx.ExpectedCSIPart2Bits = int8(uciOnPUSCH.ExpectedCSIPart2Bits(:));
-    rx.ExpectedConfiguredGrantUCIBits = int8(uciOnPUSCH.ExpectedConfiguredGrantUCIBits(:));
-    rx.CSI1ContentMatch = logical(uciOnPUSCH.CSI1ContentMatch);
-    rx.CSI2ContentMatch = logical(uciOnPUSCH.CSI2ContentMatch);
-    rx.ConfiguredGrantUCIContentMatch = logical(uciOnPUSCH.ConfiguredGrantUCIContentMatch);
-end
+rx=sixgr.phy.ul.pusch.annotateUCIReceiverEvidence(rx,uciOnPUSCH);
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
     rx.CodewordLLRCell = cwLLRCell;
@@ -3457,33 +3493,7 @@ rx.PTRSMeanCPE_deg = double(cpeCorrInfo.MeanCPE_deg);
 rx.PTRSCPECorrectionReason = char(string(cpeCorrInfo.NAReason));
 rx.PTRSCPECorrectionStatus = char(localPTRSCorrectionStatus(cpeCorrInfo));
 rx.PTRSReceiverEvidenceSource = "sixgr.phy.ul.PUSCH_Rx.ptrs_cpe";
-rx.UCIOnPUSCHApplied = logical(uci.Applied);
-rx.UCIOnPUSCHSource = char(string(uci.Source));
-if rx.UCIOnPUSCHApplied
-    rx.UCIOnPUSCHEvidenceSource = "same_waveform_pusch_rx_uci_demultiplexer";
-else
-    rx.UCIOnPUSCHEvidenceSource = "";
-end
-rx.HARQACKBitCount = double(uci.HARQACKBitCount);
-rx.CSI1BitCount = double(uci.CSI1BitCount);
-rx.CSI2BitCount = double(uci.CSI2BitCount);
-rx.ConfiguredGrantUCIBitCount = double(uci.ConfiguredGrantUCIBitCount);
-rx.DecodedHARQACKBits = int8(uci.DecodedHARQACKBits(:));
-rx.DecodedCSIPart1Bits = int8(uci.DecodedCSIPart1Bits(:));
-rx.DecodedCSIPart2Bits = int8(uci.DecodedCSIPart2Bits(:));
-rx.DecodedConfiguredGrantUCIBits = int8(uci.DecodedConfiguredGrantUCIBits(:));
-rx.UCIReceiverEvidence=uci.UCIReceiverEvidence;
-if isfield(uci, 'ContentMatch')
-    rx.ExpectedHARQACKBits = int8(uci.ExpectedHARQACKBits(:));
-    rx.HARQACKContentMatch = logical(uci.ContentMatch);
-    rx.CSI1ContentMatch = logical(uci.CSI1ContentMatch);
-    rx.CSI2ContentMatch = logical(uci.CSI2ContentMatch);
-    rx.ConfiguredGrantUCIContentMatch = logical(uci.ConfiguredGrantUCIContentMatch);
-else
-    rx.UCIReferenceScoringAvailable = false;
-    rx.UCIReceiveContextDigest = uci.ReceiverContextDigest;
-end
-rx.HARQACKDecodeStatus = char(string(uci.Status));
+rx=sixgr.phy.ul.pusch.annotateUCIReceiverEvidence(rx,uci);
 if ~logical(compactOutput)
     rx.ChannelEstimate = Hest;
     rx.Carrier = carrier;
