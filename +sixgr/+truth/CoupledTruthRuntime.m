@@ -3,6 +3,68 @@ classdef CoupledTruthRuntime
 % Keep this file ASCII-only.
 
 methods(Static)
+    function [state,harqOut]=completeSharedPUSCHHARQFeedbackRuntime(state,cfg,harqOut,observation,context)
+        % Complete independent reception once, then join UE bookkeeping by
+        % source identity. Expected UE bits never choose the gNB RX width.
+        grant=harqOut.GrantSnapshot;
+        owner=state.SharedWaveformStream;
+        target=sixgr.truth.receivedPUSCHUCIOccasion(owner,harqOut,grant);
+        binding=sixgr.truth.puschUCIObservationBinding(grant,observation);
+        timing=harqOut.ReceivedTimingEvidence;
+        assert(observation.SampleRateHz==owner.SampleRateHz && ...
+            observation.StartSample==timing.ObservationStartSample && ...
+            observation.EndSampleExclusive==timing.ObservationEndSampleExclusive, ...
+            'sixgr:truth:PUSCHHARQObservationClockMismatch', ...
+            'The UCI result must retain its exact completed receive buffer.');
+        [csi,report]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
+        [fresh,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
+            state,cfg,grant,binding.ObservationID,csi,report);
+        assert(isa(context,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && isscalar(context) && ...
+            fresh.Digest==context.Digest && ...
+            isequal(string(harqOut.UCIReceiveContextDigest),context.Digest), ...
+            'sixgr:truth:PUSCHHARQReceiveContextMismatch', ...
+            'Rebuild the scheduled schema independently before committing received UCI.');
+        rx=harqOut.IndependentUCICompletionFlags;
+        rx.DecodedHARQACKBits=harqOut.DecodedHARQACKBits;
+        rx.UCIReceiverEvidence=harqOut.UCIReceiverEvidence;
+        actual=sixgr.truth.normalizeReceivedPUSCHHARQ(rx,context);
+        assert(isequaln(actual,harqOut.IndependentHARQObservation), ...
+            'sixgr:truth:ChangedIndependentPUSCHHARQEvidence', ...
+            'Retain the exact normalized receiver evidence, not post-hoc TX scoring.');
+        receipts=sixgr.util.structGet(state,'SharedPUSCHHARQFeedbackReceipts',{});
+        id=binding.ObservationID;
+        assert(~any(cellfun(@(r)r.ObservationID==id,receipts)), ...
+            'sixgr:truth:DuplicateSharedPUSCHHARQReception','One receive window may commit only once.');
+        normalized=struct('MappingDigest',context.Data.HARQMappingDigest, ...
+            'UEIndex',grant.UEIndex,'RNTI',grant.RNTI,'TargetSlot',target, ...
+            'DecodedBits',actual.DecodedBits,'DecodeOk',actual.DecodeOk, ...
+            'DTXFlag',actual.DTXFlag,'Transport',"PUSCH");
+        dispositions=struct([]);
+        if ~isempty(mapping)
+            [dispositions,checked]=sixgr.truth.prepareScheduledHARQFeedback( ...
+                state,cfg,grant.UEIndex,target,normalized,grant);
+            assert(isequaln(checked,mapping),'sixgr:truth:ChangedScheduledPUSCHHARQMapping', ...
+                'The independently scheduled mapping changed before commit.');
+        end
+        next=sixgr.truth.CoupledTruthRuntime.prepareSharedPUSCHProducerBookkeeping( ...
+            state,grant,mapping,dispositions,target);
+        receipt=struct('ObservationID',id,'GrantContextID',string(grant.PHYGrant.GrantContextId), ...
+            'ReceiverContextDigest',context.Digest,'HARQMappingDigest',context.Data.HARQMappingDigest, ...
+            'AvailableAtSample',owner.Events.NextSampleIndex);
+        receipt.Digest=sixgr.phy.pucch.PUCCHUtil.hash(receipt);
+        % Everything that can reject bookkeeping has run before this shared
+        % handle mutation. Empty HARQ has no fabricated disposition/TBS row.
+        if ~isempty(mapping)
+            state=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
+                state,cfg,grant.UEIndex,target,normalized,observation,id,grant);
+        end
+        for name=["PendingFeedbackTable","PUCCHGrantTraceTable","HARQTimelineTable","HARQSummaryTable"]
+            if isfield(next,name), state.(name)=next.(name); end
+        end
+        state.SharedPUSCHHARQFeedbackReceipts=[receipts,{receipt}];
+        harqOut.SharedPUSCHHARQFeedbackReceipt=receipt;
+    end
+
     function [state,rows,mapping]=commitScheduledHARQFeedbackRuntime(state,cfg,ue,targetSlot,observed,observation,observationID,ulGrant)
         % Common gNB disposition boundary for independently decoded UCI.
         % Association is the physical DL schedule, never UE pending-row order.
@@ -13934,8 +13996,7 @@ methods(Static, Access=private)
                      "unmerged CSI report for the same UE and due slot."]);
             end
             receivedBook=sixgr.truth.receivedPUSCHCodebookForGrant(state,grantsOut(gi));
-            hasProtocolBits=~isempty(receivedBook) && ~isempty(receivedBook.Bits);
-            if isempty(matched) && isempty(matchedCSI) && ~hasProtocolBits
+            if isempty(matched) && isempty(matchedCSI) && isempty(receivedBook)
                 continue;
             end
             ackBits = int8([]);
@@ -14562,6 +14623,57 @@ methods(Static, Access=private)
         end
     end
 
+    function next=prepareSharedPUSCHProducerBookkeeping(state,grant,mapping,dispositions,target)
+        next=state;
+        pending=sixgr.util.structGet(state,'PendingFeedbackTable',table());
+        trace=sixgr.util.structGet(state,'PUCCHGrantTraceTable',table());
+        timeline=sixgr.util.structGet(state,'HARQTimelineTable',table());
+        bindings=sixgr.truth.bindSharedPUSCHProducerRows( ...
+            grant,pending,trace,timeline,mapping,target,state.CurrentSlot);
+        if isempty(bindings.Rows), return; end
+        for name=["PUSCHUCITransmissionSlot","PUSCHUCIDeliverySlot"]
+            if ~ismember(name,string(trace.Properties.VariableNames)), trace.(name)=nan(height(trace),1); end
+        end
+        for k=1:numel(bindings.Rows)
+            b=bindings.Rows(k); ti=b.TraceIndex;
+            d=dispositions(bindings.ScheduledBitIndices(k));
+            usable=d.ReceiverUsable; ack=d.ObservedAck;
+            applied=~d.StaleFeedbackIgnored;
+            matched=usable && ack==b.ExpectedAck;
+            pending.Processed(b.PendingIndex)=true;
+            trace.ObservedAck(ti)=ack; trace.DecodedAck(ti)=ack;
+            trace.FalseAck(ti)=usable && ack && ~b.ExpectedAck;
+            trace.FalseNack(ti)=usable && ~ack && b.ExpectedAck;
+            trace.MissedFeedback(ti)=~usable;
+            trace.FeedbackOutcome(ti)=d.FeedbackOutcome;
+            trace.FeedbackOutcomeReason(ti)=d.FeedbackOutcomeReason;
+            trace.PUSCHUCIDecodeOk(ti)=usable; trace.PUCCHDecodeOk(ti)=false;
+            trace.CurrentDecodeOK(ti)=usable; trace.CombinedDecodeOK(ti)=usable;
+            trace.BitsCompared(ti)=1; trace.BitErrors(ti)=double(~matched);
+            trace.UCIContentMatch(ti)=matched; trace.RuntimeStateUpdated(ti)=applied;
+            trace=sixgr.truth.CoupledTruthRuntime.setHARQDispositionAt(trace,ti,applied,~applied);
+            trace.PUSCHUCITransmissionSlot(ti)=target; trace.PUSCHUCIDeliverySlot(ti)=state.CurrentSlot;
+            trace.RuntimeStateConsumer(ti)="common_independent_scheduled_PUSCH_HARQ_commit";
+            trace.ControlStateChanged(ti)=applied; trace.StateChangeApplied(ti)=applied;
+            trace.Status(ti)=sixgr.truth.CoupledTruthRuntime.ternaryString(matched,"PASS","FAIL");
+            if ~applied
+                trace.PUCCHGrantState(ti)="pusch_uci_stale_feedback_ignored";
+            elseif usable
+                trace.PUCCHGrantState(ti)="pusch_uci_feedback_applied";
+            else
+                trace.PUCCHGrantState(ti)="pusch_uci_dtx_applied";
+            end
+            trace.Notes(ti)="Independent gNB scheduled bit joined by DL identity; no standalone PUCCH or second HARQ update.";
+            if ~isempty(timeline)
+                timeline.FeedbackMechanism(b.TimelineIndex)="pusch_uci";
+                timeline.FeedbackEvidenceSource(b.TimelineIndex)="independent_scheduled_pusch_rx_uci";
+            end
+        end
+        next.PendingFeedbackTable=pending; next.PUCCHGrantTraceTable=trace;
+        next.HARQTimelineTable=timeline;
+        next.HARQSummaryTable=sixgr.truth.CoupledTruthRuntime.buildHARQSummary(timeline);
+    end
+
     function state = consumeDecodedPUSCHHARQACK(state, harqOut)
         % Apply DL HARQ-ACK only from the UCI bits actually decoded by the
         % current PUSCH receiver.  Expected bits remain an oracle used to
@@ -14572,6 +14684,19 @@ methods(Static, Access=private)
         end
         grant = sixgr.util.structGet(harqOut, "GrantSnapshot", ...
             sixgr.util.structGet(harqOut, "Context.GrantSnapshot", struct()));
+        if isfield(harqOut,'UCIReceiveContextDigest')
+            receipt=sixgr.util.structGet(harqOut,'SharedPUSCHHARQFeedbackReceipt',struct());
+            receipts=sixgr.util.structGet(state,'SharedPUSCHHARQFeedbackReceipts',{});
+            assert(isstruct(receipt) && isscalar(receipt) && ...
+                all(isfield(receipt,{'ObservationID','GrantContextID','ReceiverContextDigest','HARQMappingDigest','AvailableAtSample','Digest'})) && ...
+                receipt.Digest==sixgr.phy.pucch.PUCCHUtil.hash(rmfield(receipt,'Digest')) && ...
+                receipt.GrantContextID==string(grant.PHYGrant.GrantContextId) && ...
+                receipt.ReceiverContextDigest==string(harqOut.UCIReceiveContextDigest) && ...
+                nnz(cellfun(@(r)isequaln(r,receipt),receipts))==1, ...
+                'sixgr:truth:MissingIndependentPUSCHHARQCommit', ...
+                'Independent shared UCI must pass the common commit boundary; never fall back to TX-row-sized feedback.');
+            return;
+        end
         expectedBits = sixgr.util.structGet(harqOut, ...
             "ExpectedHARQACKBits", sixgr.util.structGet(grant, ...
             "ExpectedUCIBits", int8([])));

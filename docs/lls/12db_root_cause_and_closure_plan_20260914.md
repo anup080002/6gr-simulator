@@ -4,6 +4,33 @@ Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificat
 
 ## Implementation resumed: 2026-09-14, 09:52:49 IST
 
+Verified 10:09 IST: c4ce36c3 focused run finished with 5 passes, 0 failures,
+unchanged clean source and MATLAB/launcher exit codes 0. New independent CSI
+calendar, 11 codec cases with malformed/CRC/unavailable/oracle negatives,
+16 received UL DCIs and their gap/producer bindings, plus all staged TDD/FDD
+cases passed. Run: shared-pusch-completion checkout
+logs/testall_20260914T042926281Z_59290fea (terminal 10:08:29 IST).
+The later common-commit adapter below is not covered by that earlier revision.
+
+Follow-up development on work/shared-pusch-commit-path-20260914 adds the
+common PUSCH completion adapter, prevalidated producer bookkeeping using
+separate transmitted versus scheduled bit positions, and a retained-receipt
+guard against entering the legacy HARQ reducer after independent commit.
+The adapter is NOT yet called by the normal coordinator. Its physical
+completion/mutation tests remain owed; pure mapping/receipt tests alone do
+not qualify it. Receiver completion flags now retain the actual strict-noise
+early exit, without inventing decoder output. No production threshold/power
+or noise setting has changed.
+
+Specific remaining coordinator prerequisite: overlappingPUCCHReservations
+currently plans mixed resources from UE producer rows, whereas independent
+gNB ownership must also work when those rows are absent. A configured CSI
+calendar alone does not resolve all combined HARQ/CSI/SR resource changes.
+Do not wire every scheduled DL obligation onto every same-slot PUSCH or use
+the UE's UCIOnPUSCHApplied flag to choose gNB receiver widths. Finish the
+payload-free scheduled resource/transport ownership decision, including
+nonoverlap and no-producer cases, before installing the normal adapter.
+
 T_resume is now recorded from the actual system clock as
 2026-09-14T09:52:49.6737913+05:30. The prior turn made progress by verifying
 the terminal four-test result and preserving the fixture plan. Work resumed
