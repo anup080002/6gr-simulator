@@ -466,6 +466,9 @@ trial.PUCCHPowerHeadroomSource="typed_pucch_power_control_margin_not_mac_phr";
 if ~trial.PUCCHPowerHeadroomApplicable
     trial.PUCCHPowerHeadroom_dB=NaN;
     trial.PUCCHPowerHeadroomSource="not_applicable_normalized_esn0_absolute_target_is_diagnostic_only";
+    if logical(sixgr.util.structGet(tx,'Power.NormalizedPowerReference',false))
+        trial.PUCCHPowerHeadroomSource="not_applicable_normalized_esn0_no_absolute_power_target";
+    end
 end
 trial.PUCCHPowerControlPathloss_dB = double(sixgr.util.structGet( ...
     tx,"Power.PathlossdB",NaN));

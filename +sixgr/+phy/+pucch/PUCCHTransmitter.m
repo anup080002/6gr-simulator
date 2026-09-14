@@ -47,8 +47,17 @@ classdef PUCCHTransmitter
                 assignment.PowerControlState);
             activeSymbols=double(assignment.Resource.Data.StartSymbol)+ ...
                 (0:double(assignment.Resource.Data.NumSymbols)-1);
-            [waveform,scale,reference] = localApplyPower( ...
-                waveform,power.AppliedPowerdBm,ofdmInfo,activeSymbols);
+            normalized=logical(sixgr.phy.pucch.PUCCHUtil.field(power,'NormalizedPowerReference',false));
+            if normalized
+                % Keep the original generated IFFT. No absolute power is
+                % fabricated and no scale is applied only to undo it later.
+                scale=1;
+                [~,~,reference]=sixgr.rf.measureActiveOFDMTotalPower( ...
+                    waveform,struct('OFDM',ofdmInfo),'ActiveSymbolIndices',activeSymbols);
+            else
+                [waveform,scale,reference] = localApplyPower( ...
+                    waveform,power.AppliedPowerdBm,ofdmInfo,activeSymbols);
+            end
             % Canonical simulator samples use sqrt(mW), so mean |x|^2 is
             % directly expressed in mW and converts to dBm without a
             % watts-to-milliwatts factor.
@@ -64,6 +73,14 @@ classdef PUCCHTransmitter
             power.WaveformAmplitudeUnit="sqrt_mW";
             power.WaveformScale=scale;
             power.PreScalingActivePower=reference;
+            if normalized
+                power.NormalizedActiveMeanSquare=measured_mW;
+                power.NormalizedSlotAverageMeanSquare=mean(sum(abs(double(waveform)).^2,2));
+                power.MeasuredWaveformPowerdBm=NaN;
+                power.MeasuredSlotAveragePowerdBm=NaN;
+                power.PowerError_dB=NaN;
+                power.WaveformAmplitudeUnit="normalized_complex_baseband";
+            end
             tx = struct( ...
                 "Waveform",waveform,"Grid",mapped.Grid,"Carrier",carrier, ...
                 "PUCCH",pucch,"Assignment",assignment,"Report",report, ...

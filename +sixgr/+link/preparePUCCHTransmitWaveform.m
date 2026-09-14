@@ -25,17 +25,29 @@ end
 
 appliedPower_dBm = double(sixgr.util.structGet(tx, ...
     "Power.AppliedPowerdBm",NaN));
-if ~(isscalar(appliedPower_dBm) && isfinite(appliedPower_dBm))
+fixedReference=upper(string(sixgr.util.structGet(cfg,'integration.run_mode','')))=="FIXED_SNR_SWEEP" && ...
+    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+normalizedTX=logical(sixgr.util.structGet(tx,'Power.NormalizedPowerReference',false));
+if normalizedTX && ~fixedReference
+    error('sixgr:phy:pucch:PowerOperatingModeMismatch', ...
+        'A normalized PUCCH transmitter cannot supply an absolute-power execution.');
+end
+if normalizedTX
+    if ~isscalar(appliedPower_dBm) || ~isnan(appliedPower_dBm) || ...
+            ~isequal(sixgr.util.structGet(tx,'Power.ReferenceEnergyPerOccupiedRE',NaN),1) || ...
+            ~isequal(sixgr.util.structGet(tx,'Power.WaveformScale',NaN),1)
+        error('sixgr:phy:pucch:InvalidPowerControlState', ...
+            'Normalized PUCCH must retain its original unit-RE IFFT and no absolute target.');
+    end
+elseif ~(isscalar(appliedPower_dBm) && isfinite(appliedPower_dBm))
     error("sixgr:phy:pucch:InvalidPowerControlState", ...
         "Typed PUCCH power control did not provide a finite applied transmit power.");
 end
 
 txInfo = struct("OFDM",tx.OFDMInfo);
-fixedReference=upper(string(sixgr.util.structGet(cfg,'integration.run_mode','')))=="FIXED_SNR_SWEEP" && ...
-    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
 inputWaveform=tx.Waveform;
 removedAbsoluteScale=1;
-if fixedReference
+if fixedReference && ~normalizedTX
     % The typed standalone transmitter already applied its absolute target.
     % Undo only that recorded TX-side linear scale, retaining the original
     % IFFT waveform and all relative RE powers. Never normalize from RX IQ.

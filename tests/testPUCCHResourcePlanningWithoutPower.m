@@ -4,6 +4,10 @@ setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_tdd_connected_feedback_fixture.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+% Missing measured power must block absolute-power transmission. Normalized
+% materialization is covered separately and does not apply this equation.
+cfg.integration.run_mode='GEOMETRY_NETWORK';
+cfg.integration.configured_snr_is_link_authority=false;
 assert(cfg.validation.pucch_resources.power_control.require_measured_reference_rs);
 if isfield(cfg.lls6g,'userContext'), cfg.lls6g=rmfield(cfg.lls6g,'userContext'); end
 ue=struct('UEID',1,'RNTI',1,'ServingCell',1,'PUCCHCell',1, ...

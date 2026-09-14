@@ -222,3 +222,36 @@ restoration workflow and failure/corruption tests remain necessary before
 adoption. The original evidence and earlier failed diagnostic attempt remain
 preserved. Script SHA-256:
 `5d33f9fc88fe410fdb70b0bb61a14b01b18e495cda92e4cb0621a3727fc1ea85`.
+
+## Normalized PUCCH materialization follow-through
+
+Review after `a637bc16` found the next consumer still requiring a physical
+pathloss: `PUCCHConfigBuilder.localPower` enforced measured absolute power
+even for the explicitly normalized mode. `PUCCHTransmitter` then applied an
+absolute target, which `preparePUCCHTransmitWaveform` undid using its recorded
+linear scale. Thus merely correcting SSB binding was insufficient to make
+the pilot's complete normalized transmit path valid.
+
+The follow-on candidate introduces an explicit normalized variant of the
+typed power-control state. It retains resource/numerology and unit occupied-RE
+authority; absolute P0, pathloss, target power, PCMAX and headroom are NaN,
+not invented zero values. Unapplied YAML power-control configuration is
+retained separately. The transmitter emits its original generated IFFT
+without an apply/undo absolute-power pair. The transmit boundary rejects
+mixing a normalized TX with a physical configuration or a non-unit recorded
+TX scale. Existing explicit physical-TX-to-normalized-reference replay is
+still supported using its recorded scale, not receiver-derived scaling.
+
+`testPUCCHNormalizedMaterialization` checks actual generated IFFT equality,
+independence from unapplied absolute calibration, absent absolute metrics,
+mode-mismatch/forged-state rejection and the retained physical requirement
+for a measured pathloss. This is TX-only evidence, not a detector episode.
+The existing physical resource, planning and measured-power fixtures now
+explicitly select the physical mode; original physical assertions remain.
+Normalized CSV checks now require unavailable absolute quantities instead
+of requiring a manufactured unapplied power target.
+
+No detector threshold, noise level, statistical gate or episode count has
+changed. These changes still need runtime verification. At 18:29 IST both
+old suites were live, and free physical RAM was below the 2,097,152 KiB launch
+gate. No third MATLAB was launched and no live source was edited.

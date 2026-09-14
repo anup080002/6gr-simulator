@@ -13,6 +13,11 @@ for scenario = scenarios
     source = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
         "simulator","configs","scenarios",scenario));
     cfg = sixgr.lls6g.buildInternalConfig(source,tempname);
+    % Explicit physical-power fixture: retain every original equation,
+    % closure and missing-measurement assertion after normalized scenarios
+    % were introduced. This test is not a configured-Es/N0 campaign.
+    cfg.integration.run_mode='GEOMETRY_NETWORK';
+    cfg.integration.configured_snr_is_link_authority=false;
     cfg.lls6g.userContext.RuntimeServingPathloss_dB = 103;
     cfg.lls6g.userContext.RuntimeServingPathlossSource = ...
         "exact_generated_tx_sss_epre_minus_ue_measured_noise_debiased_ss_rsrp";
@@ -91,6 +96,8 @@ for scenario = scenarios
     mkdir(tmp);
     cleanup = onCleanup(@() rmdir(tmp,"s")); %#ok<NASGU>
     runtimeCfg = sixgr.lls6g.buildInternalConfig(source,fullfile(tmp,"run"));
+    runtimeCfg.integration.run_mode='GEOMETRY_NETWORK';
+    runtimeCfg.integration.configured_snr_is_link_authority=false;
     mu = struct("Enabled",false,"NumUsers",1,"RNTIStart", ...
         double(sixgr.util.structGet(runtimeCfg,"phy.rnti",1)), ...
         "ExecutionModel","slot_coupled_truth");
