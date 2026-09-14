@@ -1,0 +1,34 @@
+{
+  "Status": "passed_retained_accounting_audit_not_detector_qualification",
+  "Scope": "retained_development_receiver_accounting_only; power_correctness_not_qualified_by_this_audit",
+  "GitRevision": "5084694ccd76e888f971f694a2d346929e21f0b5",
+  "Root": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\logs\\tpd658d619_5813_43bd_ac91_f97af303ac4d",
+  "ExistingReceiverRows": 8,
+  "NewIndependentEpisodes": 0,
+  "DetectorQualified": false,
+  "Counts": {
+    "FalseACKBits": 0,
+    "FalseACKBitOpportunities": 3,
+    "MissedACKBits": 0,
+    "TransmittedACKBits": 5,
+    "NACKToACKBits": 0,
+    "TransmittedNACKBits": 5,
+    "SignalBitErrors": 0,
+    "SignalBits": 10
+  },
+  "AccountingSelfTestsPassed": true,
+  "EvidenceHashesVerified": true,
+  "SourceScriptSHA256": "dcf9a5862cce3636d4a1c6eacc7c48c726235781e61232270c54ef4f0b9595c3",
+  "InputSHA256": {
+    "physical_trials.csv": "98f5e51549ec16ae6466202d2b0f57baff85e6410ccd2e4bc373e615ce6ae6fb",
+    "case_summary.csv": "62eeae7f8677b1816ae1dd9756ce7e08d775c379f0068503f235e0179062b822",
+    "meta/pilot_policy.json": "052752bceaa77f4d81699fd9a52daacccb237a61e38968200e1244b8191c37da",
+    "receipt.json": "a9babe5b76186360d6919920673e3ef1b9e06ee3203c305e936999c1efaa3875"
+  },
+  "NextRequiredHarnessRepairs": [
+    "validate exact case coverage",
+    "export ReceiverUsable and per-bit error counters",
+    "validate episode seed range and no development/held-out overlap",
+    "freeze receiver policy before held-out physical campaign"
+  ]
+}

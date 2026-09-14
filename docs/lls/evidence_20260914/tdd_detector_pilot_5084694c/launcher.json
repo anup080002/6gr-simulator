@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "status": "failed_or_incomplete",
+  "started_utc": "2026-09-14T13:11:05.6111022Z",
+  "repository": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testNormalizedSSBPowerAuthority",
+    "testPUCCHNormalizedMaterialization",
+    "testConnectedSSBPowerAuthority",
+    "testSharedRAPowerReference",
+    "testPUCCHNormalizedTransmitReference",
+    "testPUCCHPowerResourceAuthority",
+    "testPUCCHResourcePlanningWithoutPower",
+    "testPUCCHMeasuredReferencePowerControl",
+    "testPUCCHDetectorPilot"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "5084694ccd76e888f971f694a2d346929e21f0b5",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/logs/testall_20260914T131105593Z_e249b716',false,{'testNormalizedSSBPowerAuthority','testPUCCHNormalizedMaterialization','testConnectedSSBPowerAuthority','testSharedRAPowerReference','testPUCCHNormalizedTransmitReference','testPUCCHPowerResourceAuthority','testPUCCHResourcePlanningWithoutPower','testPUCCHMeasuredReferencePowerControl','testPUCCHDetectorPilot'});",
+  "matlab_exit_code": 1,
+  "git_status_after": "",
+  "git_commit_after": "5084694ccd76e888f971f694a2d346929e21f0b5",
+  "error": "Validation did not pass (MATLAB exit 1). See summary.json and matlab.log.",
+  "finished_utc": "2026-09-14T13:26:54.8991352Z",
+  "launcher_exit_code": 1
+}

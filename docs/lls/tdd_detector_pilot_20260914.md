@@ -280,3 +280,30 @@ returned by `applyUserContext`, then accessed its original unpopulated
 large-scale ledger. Its equality assertion now uses the returned state and
 actual selected serving cell. No propagation value or assertion tolerance
 was changed. The remaining assertions in that test require a fresh rerun.
+
+## Fresh fixture PASS and retained pilot accounting (19:00 IST)
+
+The required rerun completed on clean frozen `6da4bc10`:
+`testNormalizedSSBPowerAuthority` PASS in 48.61 s, launcher exit zero,
+unchanged revision and tracked state. Its physical-mode, missing/future
+SIB1 and clock rejection assertions also completed. Production code is
+identical to the eight-case pilot's `5084694c` revision.
+
+The independent retained-sample accounting audit passed: zero false ACKs
+over three noise bit opportunities, zero missed ACKs over five transmitted
+ACK bits, zero NACK-to-ACK errors over five NACK bits and zero signal bit
+errors over ten bits. These are the same eight development-case rows, not
+new independent episodes. Hashes and receiver independence were checked.
+`DetectorQualified` remains false; the original 12/1,024 failure remains open.
+
+Concise receipts are tracked under
+`docs/lls/evidence_20260914/tdd_detector_pilot_5084694c` and
+`docs/lls/evidence_20260914/normalized_ssb_fixture_6da4bc10`.
+The original 8-pass/1-fail batch remains recorded as failed; only the separate
+corrected-fixture rerun is recorded as passed. Raw physical MAT evidence is
+preserved locally in the pilot log folder, not included in these small receipts.
+
+Next gate: full unfiltered `testAll` on the frozen consolidated working
+candidate, followed by the applicable explicit NR and export-integrity guards.
+No full-suite pass, final main merge, all-measurement closure or integrated
+12 dB acceptance is claimed by these focused results.

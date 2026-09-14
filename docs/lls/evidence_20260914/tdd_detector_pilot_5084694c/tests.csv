@@ -1,0 +1,10 @@
+name,ok,msg,duration_s,identifier,extended_report_available,diagnostic_rendering_error
+testNormalizedSSBPowerAuthority,0,"Unrecognized field name ""Pathloss_dB"".",48.9912189,MATLAB:nonExistentField,1,
+testPUCCHNormalizedMaterialization,1,"",13.3094095,,0,
+testConnectedSSBPowerAuthority,1,"",24.7791537,,0,
+testSharedRAPowerReference,1,"",2.9665964,,0,
+testPUCCHNormalizedTransmitReference,1,"",1.2082783,,0,
+testPUCCHPowerResourceAuthority,1,"",10.0804869,,0,
+testPUCCHResourcePlanningWithoutPower,1,"",8.4896068,,0,
+testPUCCHMeasuredReferencePowerControl,1,"",26.5321571,,0,
+testPUCCHDetectorPilot,1,"",717.3194056,,0,

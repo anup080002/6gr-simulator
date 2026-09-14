@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-14T13:28:23.8745467Z",
+  "repository": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testNormalizedSSBPowerAuthority"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "6da4bc10400295b714dc177df698ec7364b1a4c0",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main/logs/testall_20260914T132823849Z_589f2b4a',false,{'testNormalizedSSBPowerAuthority'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "",
+  "git_commit_after": "6da4bc10400295b714dc177df698ec7364b1a4c0",
+  "finished_utc": "2026-09-14T13:30:17.8174608Z",
+  "launcher_exit_code": 0
+}

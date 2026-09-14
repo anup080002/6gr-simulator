@@ -1,0 +1,9 @@
+Episode,Seed,CaseID,ReceiverUsable,EventError,FalseACKBits,FalseACKBitOpportunities,MissedACKBits,TransmittedACKBits,NACKToACKBits,TransmittedNACKBits,SignalBitErrors,SignalBits,EvidenceSHA256
+1,970001,noise_1,False,False,0,1,0,0,0,0,0,0,065afad094d6e827e7ee9234ec0826a87ff2baf11d2ade6391dceb984b00de34
+1,970001,noise_2,False,False,0,2,0,0,0,0,0,0,ef58b1547c6cddffd0055dfdd18105b4e97b2b3ff0e6056ab757effd7c1798c3
+1,970001,signal_0,True,False,0,0,0,0,0,1,0,1,0b2476f8fb29f9a29fa5c9b5ad29ca2a4ece50b9cc540e92d25e215ff4bd31aa
+1,970001,signal_1,True,False,0,0,0,1,0,0,0,1,36e1552670e93b2c8b0b6994be83647d29ffbb442134538bd7b05b54bb044363
+1,970001,signal_00,True,False,0,0,0,0,0,2,0,2,d10e2c7b6254bd68513045e5f5faa9347566388d00e1e367666e0607ae9e5896
+1,970001,signal_01,True,False,0,0,0,1,0,1,0,2,762bcd49a00f8ff182be4e90ff3344eb909da29bd16d7bb0eefbff68183b7678
+1,970001,signal_10,True,False,0,0,0,1,0,1,0,2,23751fc2652f532803f7e40ba1020a64bb8dfb2658f6aa96e5105228166e409a
+1,970001,signal_11,True,False,0,0,0,2,0,0,0,2,f5e09c9fa533babbac8dd8a38eb6ec4c9d3ad7d265a7b78d30b5665a5d4ea528
