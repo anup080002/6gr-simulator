@@ -1,0 +1,27 @@
+profile_id: tdd_format0_detector_development_pilot_v1
+research_class: optional_research_experiment
+stage: development_pilot
+scenario_path: simulator/configs/scenarios/lls_pucch_baseline_signal_fixture.yaml
+episodes: 1
+seed_base: 970001
+seed_stride: 101
+scenario_seed_paths: [simulation.random_seed, run_control.seed, run_control.random_seed_master, run_control.random_seed_list, rf.oscillator.seed, rf.phase_noise.seed]
+last_slot: 45
+broadcast_slots: [1, 21, 41]
+srs_slots: [5, 10, 15, 20, 25, 30, 35, 40]
+initial_tag:
+  source: explicitly_preconfigured_component_RAR_command_not_access_qualification
+  command: 0
+  validity_ms: 50
+family_alpha: 0.05
+event_error_limit: 0.01
+qualification_episodes_per_case: 600
+cases:
+  - {id: noise_1, slot: 9, harq_bits: 1, signal_present: false, payload: []}
+  - {id: noise_2, slot: 14, harq_bits: 2, signal_present: false, payload: []}
+  - {id: signal_0, slot: 19, harq_bits: 1, signal_present: true, payload: [0]}
+  - {id: signal_1, slot: 24, harq_bits: 1, signal_present: true, payload: [1]}
+  - {id: signal_00, slot: 29, harq_bits: 2, signal_present: true, payload: [0, 0]}
+  - {id: signal_01, slot: 34, harq_bits: 2, signal_present: true, payload: [0, 1]}
+  - {id: signal_10, slot: 39, harq_bits: 2, signal_present: true, payload: [1, 0]}
+  - {id: signal_11, slot: 44, harq_bits: 2, signal_present: true, payload: [1, 1]}
