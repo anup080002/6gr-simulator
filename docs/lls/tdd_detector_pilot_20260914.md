@@ -40,3 +40,11 @@ First run on b25b71c4 (`logs/testall_20260914T113257935Z_fd2eaefa`) failed
 before PHY execution because the authored seed paths used internal `rf`
 instead of scenario `rf_frontend`. The YAML mapping is corrected; missing
 seed paths still fail loudly, and no randomness source is silently omitted.
+
+The c5fcba34 rerun (`logs/testall_20260914T113622405Z_7eb9e80d`) recovered
+SSB timing but failed the reference-measurement filter because the new pilot
+row omitted ServingCell. It now retains the actual broadcast serving-cell
+identity and uses normal startSlot initialization for the sweep clock. SSB
+receiver evidence is saved before acceptance/publication, and exceptions emit
+their original JSON diagnostic before the larger partial-state MAT save.
+The pilot remains incomplete; no physical case or qualification pass is claimed.

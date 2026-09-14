@@ -49,7 +49,8 @@ for episode=1:v.episodes
     save(fullfile(folder,'configuration.mat'),'cfg','v','seed');
     multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
     state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,folder,multi,struct(),v.last_slot);
-    state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1; state.CurrentServingIdx(:)=1;
+    state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,v.last_slot,cfg.channel.snr_dB);
+    state.CurrentServingIdx(:)=1;
     state.DetectorPilot=struct('Policy',v,'Folder',folder,'Episode',episode,'Seed',seed,'Rows',table());
     [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
     try
@@ -84,8 +85,9 @@ for episode=1:v.episodes
         assert(height(state.DetectorPilot.Rows)==numel(cases),'test:IncompletePilot','Every case requires actual receive evidence.');
     catch err
         [diagnosticText,diagnostic]=sixgr.util.formatExceptionDiagnostic(err);
-        save(fullfile(folder,'episode_failure.mat'),'diagnosticText','diagnostic','state','-v7.3');
         fprintf('%s\n',diagnosticText);
+        sixgr.util.jsonWrite(fullfile(folder,'failure_diagnostic.json'),diagnostic);
+        save(fullfile(folder,'episode_failure.mat'),'diagnosticText','diagnostic','state','-v7.3');
         failures(end+1)=struct('Episode',episode,'Identifier',err.identifier,'Message',err.message); %#ok<AGROW>
         fprintf('DETECTOR_PILOT_EPISODE_FAILED episode=%d id=%s message=%s\n',episode,err.identifier,err.message);
     end
@@ -186,7 +188,10 @@ for item=items
         p=item.Context.Prepared; h=item.Context.SSBOccasionHorizon;
         r=sixgr.phy.broadcast.recoverSIB1FromWaveform(post,p.ReceiverConfig, ...
             'RecoveryScope','SSB_MIB','CandidateSSBIndex',h.SSBIndex,'PhysicalMeasurementObservation',pre);
-        assert(r.BCHCrcPass && r.MIBDecoded,'test:PilotSSB','Actual SSB acquisition failed.');
+        save(fullfile(state.DetectorPilot.Folder,sprintf('ssb_%06d.mat',state.CurrentSlot)), ...
+            'r','item','pre','post','tx','replay','-v7.3');
+        assert(r.BCHCrcPass && r.MIBDecoded && isfinite(r.SS_RSRP_dBm), ...
+            'test:PilotSSB','Actual SSB acquisition/measurement failed.');
         ch=owner.channelState(1,'DL');
         reference=sixgr.phy.frame.receivedDLTimingReference(p.ReceiverConfig,r,post,ch.ChannelTrimSamples);
         if ~isfield(state,'ConnectedULTimingByUE') || isempty(state.ConnectedULTimingByUE{1})
@@ -200,14 +205,12 @@ for item=items
             state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(state.CfgMobility,0,1,1)};
             state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz=carrier.SubcarrierSpacing;
         end
-        row=table(double(r.SSBIndex),double(r.SS_RSRP_dBm),double(r.SS_SINR_dB), ...
-            'VariableNames',{'ReferenceSignalId','SS_RSRP_dBm','SS_SINR_dB'});
+        row=table(double(item.Context.ServingCell),double(r.SSBIndex),double(r.SS_RSRP_dBm),double(r.SS_SINR_dB), ...
+            'VariableNames',{'ServingCell','ReferenceSignalId','SS_RSRP_dBm','SS_SINR_dB'});
         state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime(state, ...
             'SSB','UE',1,row,'ProducerSlot',state.CurrentSlot,'AvailableSlot',state.CurrentSlot, ...
             'Valid',true,'Direction','DL','SourceSignal','SSB', ...
             'MeasurementSource','actual_shared_SSB_pre_rx_rf_measurement');
-        save(fullfile(state.DetectorPilot.Folder,sprintf('ssb_%06d.mat',state.CurrentSlot)), ...
-            'r','reference','pre','post','tx','replay','-v7.3');
         continue;
     end
     if item.Kind=="SRS"
