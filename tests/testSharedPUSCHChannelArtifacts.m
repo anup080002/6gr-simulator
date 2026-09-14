@@ -327,6 +327,14 @@ for item=items
         controlFrame=floor((controlSlot-1)/state.SlotsPerFrame)+1;
         grant=sixgr.truth.bindQueuedULGrantOccasion( ...
             grant,controlSlot,slot,controlFrame,frame,grant.K2);
+        if state.TestIndependentEmptyUCI
+            assert(~isempty(fieldnames(receivedAssignment)));
+            key="UL_ue_"+grant.UEIndex+"_rnti_"+grant.RNTI+ ...
+                "_control_"+controlSlot+"_data_"+grant.Slot;
+            state.SharedReceivedGrantControls={struct('Key',key,'Grant',grant, ...
+                'Allowed',logical(rx.CausalGrantDecodeOk),'ReceivedAssignment',receivedAssignment, ...
+                'AvailableAtSample',owner.Events.NextSampleIndex)};
+        end
         [cfg,~]=sixgr.truth.bindSharedDataOccasion(c.ULConfig,slot,frame,owner.SampleRateHz);
         hasDueACK=any(~state.PendingFeedbackTable.Processed);
         if hasDueACK
