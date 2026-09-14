@@ -1249,7 +1249,7 @@ methods(Static)
             end
             [cfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(state.CfgMobility,state,ue,'UL');
             cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
-            hypothesis=sixgr.truth.buildScheduledPUCCHHARQReception(state,cfg,ue,slot,item.Context.ObservationID);
+            hypothesis=sixgr.truth.buildScheduledHARQTransportReception(state,cfg,ue,slot,item.Context.ObservationID);
             book=sixgr.truth.buildReceivedHARQACKCodebook(state,cfg,ue,slot);
             assert(isempty(book.Events),'sixgr:truth:MissingReceivedPUCCHProducer', ...
                 'Received UE feedback events cannot disappear into an absent-transmitter receive window.');
@@ -1262,7 +1262,11 @@ methods(Static)
                 assert(~receivedDL,'sixgr:truth:MissingReceivedPUCCHProducer', ...
                     'A received DL command needs its UE feedback producer, not an invented absence.');
             end
-            state.SharedWaveformStream.bindPUCCHReceiveOnly(item.Context.ObservationID,cfg,hypothesis);
+            if hypothesis.SelectedTransport=="PUSCH"
+                state.SharedWaveformStream.bindUnselectedPUCCHObservation(item.Context.ObservationID,cfg,hypothesis);
+            else
+                state.SharedWaveformStream.bindPUCCHReceiveOnly(item.Context.ObservationID,cfg,hypothesis);
+            end
             return;
         end
         harqRows=rows(sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(rows),:);
@@ -3188,6 +3192,11 @@ methods(Static, Access=private)
         gnbHARQ=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
         noDecode=sixgr.util.structGet(state,'SharedDLNoDecodeDispositionTable',table());
         receiveOnly=sixgr.util.structGet(state,'SharedRejectedULReceiveAuditTable',table());
+        unselected=sixgr.util.structGet(state,'SharedUnselectedPUCCHAuditTable',table());
+        if ~isempty(unselected)
+            sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
+                "unselected_pucch_capture_audit.csv"),unselected,'PreserveSchema',true);
+        end
         if ~isempty(receiveOnly)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
                 "rejected_ul_receive_only_audit.csv"),receiveOnly,'PreserveSchema',true);

@@ -1,0 +1,31 @@
+inherits:
+  - ./lls_rejected_ul_receive_only_fixture.yaml
+
+meta:
+  scenario_id: lls_rejected_ul_due_harq_fixture
+  description: Actual shared DL transmission and rejected UL control with independently scheduled PUSCH HARQ reception.
+  purpose: No-UE-feedback-producer physical component; not measured missed-DL-DCI probability or 12 dB qualification.
+  research_class: optional_research_experiment
+
+tdd_timing:
+  dl_harq_feedback_k1: [4]
+
+pucch_resources:
+  dl_data_to_ul_ack: [4]
+  sr_resource_ids: []
+  overlap_policy:
+    uci_on_pusch_enabled: true
+
+reference_signals:
+  csi_reporting_enabled: false
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
+
+csi_acquisition_and_reporting:
+  dl_csi_enabled: false
+  cqi_policy: disabled
+  pmi_policy: disabled
+  ri_policy: disabled
+  cri_policy: disabled

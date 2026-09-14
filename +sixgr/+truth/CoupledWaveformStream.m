@@ -21,6 +21,7 @@ classdef CoupledWaveformStream < handle
         PDCCHResourceLedger = struct()
         PUSCHReceiveOnlyCompletions = cell(0,1)
         ScheduledControlRegistrations = cell(0,1)
+        UnselectedPUCCHRegistrations = cell(0,1)
     end
     methods (Static)
         function [state,obj]=initialize(state,cfg,userCfg)
@@ -607,6 +608,41 @@ classdef CoupledWaveformStream < handle
                 'Retain exact pending-UCI reservation lineage before disposing this capture.');
             obj.Pending(k).Context.TransferProof=proof;
             obj.Pending(k).Kind="TransferredPUCCHObservation";
+        end
+        function bindUnselectedPUCCHObservation(obj,id,cfg,hypothesis)
+            k=find(string({obj.Pending.ID})==string(id));
+            assert(isscalar(k) && obj.Pending(k).Kind=="PUCCH" && ...
+                obj.Pending(k).Context.AwaitingPreparation && hypothesis.SelectedTransport=="PUSCH", ...
+                'sixgr:truth:InvalidUnselectedPUCCHBinding','Bind one unencoded observation to the scheduled PUSCH receiver.');
+            p=obj.Pending(k); g=hypothesis.ScheduledULControl.Binding.Grant;
+            controls=obj.readTransmittedULControls(p.UE,p.Context.Slot);
+            assert(hypothesis.Mapping.UEIndex==p.UE && hypothesis.Mapping.TargetSlot==p.Context.Slot && ...
+                hypothesis.Assignment.Data.ObservationID==string(id) && ...
+                nnz(cellfun(@(r)isequaln(r,hypothesis.ScheduledULControl),controls))==1, ...
+                'sixgr:truth:UnselectedPUCCHAuthorityMismatch','Retain this actual gNB command and DL occasion.');
+            record=struct('PUCCHObservationID',string(id),'UEIndex',p.UE,'TargetSlot',p.Context.Slot, ...
+                'ULGrantContextID',string(g.PHYGrant.GrantContextId), ...
+                'GNBControlObservationID',hypothesis.ScheduledULControl.ObservationID, ...
+                'HARQMappingDigest',hypothesis.PUSCHMapping.Digest, ...
+                'SelectedAtSample',obj.Events.NextSampleIndex,'Source',"gnb_scheduled_PUSCH_not_UE_transport_transfer");
+            assert(~any(cellfun(@(r)r.UEIndex==record.UEIndex && r.TargetSlot==record.TargetSlot, ...
+                obj.UnselectedPUCCHRegistrations)), ...
+                'sixgr:truth:DuplicateUnselectedPUCCHBinding','Select the receiver once per physical occasion.');
+            obj.UnselectedPUCCHRegistrations{end+1,1}=record;
+            obj.Pending(k).Context.Config=cfg;
+            obj.Pending(k).Context.TransportSelection=record;
+            obj.Pending(k).Context.AwaitingPreparation=false;
+            obj.Pending(k).Kind="PUCCHNotSelected";
+            % Actual captures remain. No UE TX is suppressed here: caller
+            % must prove there is no received UE producer before this bind.
+        end
+        function selection=readUnselectedPUCCHForPUSCH(obj,grant)
+            records=obj.UnselectedPUCCHRegistrations;
+            hits=find(cellfun(@(r)r.ULGrantContextID==string(grant.PHYGrant.GrantContextId) && ...
+                r.UEIndex==grant.UEIndex && r.TargetSlot==double(grant.Slot),records));
+            assert(isscalar(hits),'sixgr:truth:MissingScheduledPUSCHReceiverSelection', ...
+                'Receive-only HARQ must own the physical occasion before feedback completion.');
+            selection=records{hits};
         end
         function bindPUCCHReceiveOnly(obj,id,cfg,hypothesis)
             k=find(string({obj.Pending.ID})==string(id));

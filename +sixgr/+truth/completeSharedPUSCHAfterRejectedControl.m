@@ -1,7 +1,7 @@
 function state=completeSharedPUSCHAfterRejectedControl(state,observationID)
 % Complete scheduled receive-only data without pretending that a TB was sent.
-% Nonempty UCI / receiver HARQ combining require their own ownership reducer;
-% until integrated, these combinations fail explicitly, never disappear.
+% Scheduled HARQ can complete without a UE producer. Existing UE producers,
+% CSI and receiver-owned retransmission combining remain separate obligations.
 owner=state.SharedWaveformStream;
 item=owner.readPUSCHReceiveOnlyCompletion(observationID);
 windows=sixgr.util.structGet(state,'SharedRejectedULReceiveWindows',{});
@@ -25,14 +25,43 @@ assert(~any(cellfun(@(x)x.ObservationID==string(observationID),receipts)), ...
     'sixgr:truth:DuplicateRejectedULReceiveCompletion','Do not decode or publish one receive-only window twice.');
 cfg=item.Context.Config;
 [csi,report]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
-[context,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext(state,cfg,grant,string(observationID),csi,report);
-assert(isempty(mapping) && context.Data.HARQACKBitCount==0 && isempty(report), ...
+postIndex=find(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
+assert(isscalar(postIndex),'sixgr:truth:IncompletePUSCHReceiveOnlyPlanes','Require one actual post-RF receive window.');
+binding=sixgr.truth.puschUCIObservationBinding(grant,item.Planes(postIndex).Observation);
+[context,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext(state,cfg,grant,binding.ObservationID,csi,report);
+assert(isempty(report), ...
     'sixgr:truth:RejectedULUCITransportOwnershipRequired', ...
-    'Rejected UL DCI with due HARQ/CSI needs independent PUCCH/PUSCH ownership; do not use transmitted-PUSCH reservations.');
+    'Rejected UL DCI with CSI needs independent reporting ownership, never transmitted-PUSCH reservations.');
+selection=struct();
+if ~isempty(mapping)
+    selection=owner.readUnselectedPUCCHForPUSCH(grant);
+    assert(selection.HARQMappingDigest==mapping.Digest && ...
+        selection.GNBControlObservationID==transmission.ObservationID && ...
+        selection.SelectedAtSample<=owner.Events.NextSampleIndex, ...
+        'sixgr:truth:ChangedScheduledPUSCHReceiverSelection','Use the same independently selected gNB receiver.');
+    book=sixgr.truth.buildReceivedHARQACKCodebook(state,cfg,grant.UEIndex,double(grant.Slot));
+    assert(isempty(book.Events),'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
+        'An actual UE PUCCH producer needs its own TX disposition, not silent removal.');
+end
 assert(isfield(grant.HARQ,'IsRetransmission') && isequal(logical(grant.HARQ.IsRetransmission),false), ...
     'sixgr:truth:RejectedULReceiverHARQCombiningRequired', ...
     'A receive-only retransmission needs gNB-owned combining; current-observation decode is not combined HARQ.');
 result=sixgr.truth.receiveSharedPUSCHWithoutTransmission(state,observationID);
+assert(result.UCIReceiveContext.Digest==context.Digest && isequaln(result.HARQMapping,mapping), ...
+    'sixgr:truth:ChangedRejectedULReceiveContext','The decoder must use the prevalidated scheduled schema.');
+dispositions=struct([]); normalized=struct();
+if ~isempty(mapping)
+    actual=result.IndependentHARQObservation;
+    normalized=struct('MappingDigest',mapping.Digest,'UEIndex',grant.UEIndex, ...
+        'RNTI',grant.RNTI,'TargetSlot',double(grant.Slot),'DecodedBits',actual.DecodedBits, ...
+        'DecodeOk',actual.DecodeOk,'DTXFlag',actual.DTXFlag,'Transport',"PUSCH");
+    dispositions=sixgr.truth.prepareScheduledHARQFeedback(state,cfg,grant.UEIndex,double(grant.Slot),normalized,grant);
+end
+result.TransportSelection=selection;
+result.DLHARQFeedbackAppliedCount=0;
+if ~isempty(dispositions), result.DLHARQFeedbackAppliedCount=nnz(~[dispositions.StaleFeedbackIgnored]); end
+result.HARQStateCommitted=result.DLHARQFeedbackAppliedCount>0;
+result.ULHARQStateCommitted=false;
 result.ControlKey=window.ControlKey;
 result.ControlAvailableAtSample=window.ControlAvailableAtSample;
 result.GNBControlObservationID=window.GNBControlObservationID;
@@ -49,12 +78,17 @@ row=struct('ObservationID',string(observationID),'ControlKey',window.ControlKey,
     'AvailableAtSample',owner.Events.NextSampleIndex,'SampleRateHz',owner.SampleRateHz, ...
     'DecodeAttempted',result.Receiver.DecodeAttempted,'ReceiverUsable',result.Receiver.ReceiverUsable, ...
     'ReceiverCRCError',result.Receiver.CRCError, ...
-    'UETransmissionExecuted',false,'TransmittedTBScored',false,'HARQStateCommitted',false, ...
+    'UETransmissionExecuted',false,'TransmittedTBScored',false,'HARQStateCommitted',result.HARQStateCommitted, ...
+    'DLHARQFeedbackAppliedCount',result.DLHARQFeedbackAppliedCount,'ULHARQStateCommitted',false, ...
     'Disposition',result.Disposition,'Source',result.Source);
 previous=sixgr.util.structGet(state,'SharedRejectedULReceiveAuditTable',table());
 next=[previous;struct2table(row,'AsArray',true)];
-% Audit-only receiver result. No UL trial, BER/BLER denominator, grant TBS,
-% goodput, UE producer, DL feedback or HARQ TX/ACK/NACK row is manufactured.
+% No UL trial, BER/BLER denominator, grant TBS, goodput or UE producer is
+% manufactured. DL feedback comes only from the actual independent receiver.
+if ~isempty(mapping)
+    [state,result.DLHARQDispositions]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
+        state,cfg,grant.UEIndex,double(grant.Slot),normalized,result.Observation,result.Binding.ObservationID,grant);
+end
 state.SharedRejectedULReceiveResults=[receipts,{result}];
 state.SharedRejectedULReceiveAuditTable=next;
 end

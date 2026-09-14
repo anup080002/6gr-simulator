@@ -12845,6 +12845,10 @@ for item=received
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item);
         continue;
     end
+    if item.Kind=="PUCCHNotSelected"
+        state=sixgr.truth.completeUnselectedPUCCHObservation(state,item);
+        continue;
+    end
     if item.Kind=="PUSCHReceiveOnly"
         state=sixgr.truth.completeSharedPUSCHAfterRejectedControl(state,item.Context.ObservationID);
         continue;
