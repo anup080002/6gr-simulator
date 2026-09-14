@@ -14,7 +14,7 @@ classdef HARQFeedbackTiming
                 assert(isstruct(ul) && isscalar(ul), ...
                     'sixgr:phy:pdcch:InvalidFeedbackTimingContext', ...
                     'Feedback timing requires one active UL BWP, not a BWP list.');
-                scs = sixgr.util.structGet(ul,'SubcarrierSpacing_kHz',[]);
+                scs = localULBWPSpacing(ul);
                 source = "configured_active_UL_BWP";
             end
             localInteger(scs,'PUCCH subcarrier spacing');
@@ -103,6 +103,22 @@ classdef HARQFeedbackTiming
             slots=values(double(indicator)+1);
         end
     end
+end
+
+function scs=localULBWPSpacing(ul)
+% Match the explicit BWP field spellings accepted by FrameRuntimeStateBuilder.
+% Do not use the DL carrier when a UL BWP exists or ignore contradictory aliases.
+names=["SCSKHz","SubcarrierSpacingKHz","SubcarrierSpacing_kHz","scs_khz"];
+scs=[];
+for name=names
+    if ~isfield(ul,name), continue; end
+    value=ul.(name);
+    localInteger(value,"UL BWP "+name);
+    assert(isempty(scs) || isequal(double(value),double(scs)), ...
+        'sixgr:phy:pdcch:InvalidFeedbackTimingContext', ...
+        'Explicit UL BWP subcarrier-spacing aliases must agree.');
+    scs=double(value);
+end
 end
 
 function localInteger(value,name)

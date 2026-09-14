@@ -3,9 +3,10 @@ classdef CoupledTruthRuntime
 % Keep this file ASCII-only.
 
 methods(Static)
-    function [state,rows,mapping]=commitScheduledHARQFeedbackRuntime(state,cfg,ue,targetSlot,observed,observation,observationID)
+    function [state,rows,mapping]=commitScheduledHARQFeedbackRuntime(state,cfg,ue,targetSlot,observed,observation,observationID,ulGrant)
         % Common gNB disposition boundary for independently decoded UCI.
         % Association is the physical DL schedule, never UE pending-row order.
+        if nargin<8, ulGrant=struct(); end
         owner=state.SharedWaveformStream;
         assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer'), ...
             'sixgr:truth:ScheduledFeedbackObservationRequired','Retain the complete actual receive buffer.');
@@ -16,9 +17,9 @@ methods(Static)
         observationID=string(observationID);
         assert(isscalar(observationID) && ~ismissing(observationID) && strlength(observationID)>0, ...
             'sixgr:truth:ScheduledFeedbackObservationIdentity','Retain the receiver observation identity.');
-        [rows,mapping]=sixgr.truth.prepareScheduledHARQFeedback(state,cfg,ue,targetSlot,observed);
+        [rows,mapping,obligationDigest]=sixgr.truth.prepareScheduledHARQFeedback(state,cfg,ue,targetSlot,observed,ulGrant);
         committed=sixgr.util.structGet(state,'SharedHARQFeedbackCommittedMappings',strings(0,1));
-        assert(~any(committed==mapping.Digest),'sixgr:truth:DuplicateScheduledHARQFeedback', ...
+        assert(~any(committed==obligationDigest),'sixgr:truth:DuplicateScheduledHARQFeedback', ...
             'One scheduled feedback obligation cannot be applied twice or on two transports.');
         for k=1:numel(rows)
             rows(k).ObservationID=observationID;
@@ -51,7 +52,7 @@ methods(Static)
             state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedback(state,row,'DL');
         end
         state.SharedGNBUCIHARQTable=nextTable;
-        state.SharedHARQFeedbackCommittedMappings=[committed;mapping.Digest];
+        state.SharedHARQFeedbackCommittedMappings=[committed;obligationDigest];
     end
     function state=recordSchedulerDecisionRuntime(state,info,direction,cellId)
         % One production entry for actual candidate, resource and HARQ decisions.
@@ -8021,23 +8022,10 @@ methods(Static, Access=private)
     end
 
     function cri = sanitizeFeedbackCRI(rawCRI, cfg)
-        cri = NaN;
-        rawCRI = double(rawCRI);
-        if isempty(rawCRI)
-            return;
-        end
-        rawCRI = rawCRI(1);
-        if ~(isscalar(rawCRI) && isfinite(rawCRI))
-            return;
-        end
         numCandidates = sixgr.util.structGet(cfg, "phy.csi.numResourceCandidates", ...
             sixgr.util.structGet(cfg, "phy.csirs.numResources", ...
             sixgr.util.structGet(cfg, "phy.beamManagement.trpCount", 1)));
-        numCandidates = max(1, round(double(numCandidates)));
-        idx = round(double(rawCRI));
-        if idx >= 0 && idx < numCandidates
-            cri = double(idx);
-        end
+        cri = sixgr.truth.validateMeasuredCRI(rawCRI,numCandidates);
     end
 
     function cri = resolveFallbackCRI(cfg)
@@ -9672,8 +9660,11 @@ methods(Static, Access=private)
         report.LI = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LI", NaN));
         report.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
             sixgr.truth.CoupledTruthRuntime.rowValue(row, "PMI", NaN), state.CfgMobility, direction, report.RI));
-        report.CRI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI( ...
-            sixgr.truth.CoupledTruthRuntime.rowValue(row, "CRI", NaN), state.CfgMobility));
+        % Generic rowValue selects the first numeric element and masks Inf.
+        % CRI must reach its validator intact, including malformed inputs.
+        rawCRI=NaN;
+        if sixgr.truth.CoupledTruthRuntime.rowHasField(row,"CRI"), rawCRI=row.CRI; end
+        report.CRI = sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI(rawCRI,state.CfgMobility);
         report.SINR_dB = double(csi.SINR_dB);
         report.SINRSource = char(string(csi.SINRSource));
         report.SINRValueRole = char(string(csi.SINRValueRole));
@@ -9692,7 +9683,9 @@ methods(Static, Access=private)
                 report.(field)=double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow,field,NaN));
             end
             report.LI = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "LI", NaN));
-            report.CRI = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "CRI", NaN));
+            rawCRI=NaN;
+            if ismember('CRI',csiMeasurementRow.Properties.VariableNames), rawCRI=csiMeasurementRow.CRI; end
+            report.CRI = sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackCRI(rawCRI,cfgExecuted);
             report.SINR_dB = double(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINR_dB", NaN));
             report.SINRSource = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINRSource", "")));
             report.SINRValueRole = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(csiMeasurementRow, "SINRValueRole", "")));

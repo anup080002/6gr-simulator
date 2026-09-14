@@ -348,6 +348,12 @@ cfgNoOccasion.phy.pdsch.codeRate = 308/1024;
 cfgNoOccasion.phy.pdsch.targetCodeRate = 308/1024;
 cfgNoOccasion.phy.pdsch.PMI = 0;
 cfgNoOccasion.phy.pdsch.PMISource = "focused_test_explicit_pmi";
+% Declare the receiver's RRC timing table independently of scheduler-selected
+% K1. Do not change duplex mode, absolute slots or physical test conditions.
+fixtureRoot = fileparts(fileparts(mfilename('fullpath')));
+feedbackFixture = sixgr.lls6g.config.readConfigFile(fullfile(fixtureRoot, ...
+    'simulator','configs','fixtures','csi_runtime_execution.yaml'));
+cfgNoOccasion.phy.pucch.dlDataToULACK = feedbackFixture.dl_data_to_ul_ack;
 grantNoOccasion = localStrictNoOccasionGrant(cfgNoOccasion);
 phyGrantNoOccasion = sixgr.phy.grant.freezePHYGrant( ...
     cfgNoOccasion, "DL", grantNoOccasion, ...
@@ -454,17 +460,42 @@ assert(grant.Slot==slot0+1 && ...
     grant.Frame==floor(slot0/double(carrier.SlotsPerFrame))+1 && ...
     grant.ControlAbsoluteSlot==controlSlot0 && grant.ScheduledAbsoluteSlot==slot0);
 grant=scheduler.finalizeExactPHYFeasibility(grant);
+% The fixture must supply receiver configuration; production must not infer
+% it from a chosen K1 or the scheduled grant. Exercise that same factory.
+missingTiming=cfg;
+missingTiming.phy.pucch=rmfield(missingTiming.phy.pucch,'dlDataToULACK');
+localRejectMissingTiming(missingTiming,grant);
+missingTiming.phy.pucch.dlDataToULACK=[];
+localRejectMissingTiming(missingTiming,grant);
 grant.DCI=scheduler.buildDCIBitfield(grant);
+assert(isequal(double(grant.DCI.ContextData.DLDataToULACK(:).'), ...
+    double(cfg.phy.pucch.dlDataToULACK(:).')), ...
+    'Frozen DCI context must preserve the explicitly installed receiver timing list.');
 control=sixgr.link.preparePDCCHTransmission(cfg,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
 [rx,~]=sixgr.phy.dl.PDCCH_Rx(control.TransmitSamples,cfg,'Carrier',control.Tx.Carrier, ...
     'PDCCH',control.Tx.PDCCH,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits), ...
     'ExpectedDCIBits',grant.DCI.Bits,'SampleRate_Hz',control.SampleRateHz);
 assert(rx.Ok && rx.CausalGrantDecodeOk && isequal(rx.DCIBits(:),grant.DCI.Bits(:)));
 decoded=sixgr.phy.pdcch.decodeDCIPayload(rx.DCIBits,grant.DCI.Format,grant.DCI.ContextData);
+assert(decoded.Fields.pdsch_to_harq_feedback_timing_slots==grant.TimingDecision.K1, ...
+    'Received DCI must recover the scheduled K1 through the installed timing table.');
 grant.ControlDecodeOk=logical(rx.CausalGrantDecodeOk);
 grant.PDCCHGrantBindingRequired=true; grant.PDCCHGrantBindingOk=grant.ControlDecodeOk;
 grant.PDCCHGrantDCIId=decoded.PayloadHash; grant.PDCCHGrantDCIFormat=decoded.Format;
 grant.PDCCHGrantDCIFieldsHash=sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(orderfields(decoded.Fields)),'UTF-8')));
 grant.PDCCHGrantFieldsHash=grant.PDCCHGrantDCIFieldsHash;
 grant.DCICrcPass=logical(rx.Ok); grant.PDCCHPayloadMatch=isequal(rx.DCIBits(:),grant.DCI.Bits(:));
+end
+
+function localRejectMissingTiming(cfg,grant)
+try
+    sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant(cfg,grant,'1_1');
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:phy:pdcch:InvalidFeedbackTimingList'), ...
+        'Missing timing fixture must reject explicitly; got %s: %s', ...
+        cause.identifier,cause.message);
+    return;
+end
+error('testCSIRuntimeExecution:MissingTimingRejection', ...
+    'A scheduled CSI test grant must not synthesize its missing receiver timing list.');
 end

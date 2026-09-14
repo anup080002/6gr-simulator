@@ -11,6 +11,11 @@ for metric=metrics
     assert(e.AcceptedCount==2 && e.ExcludedCount==3 && e.NoiseFloorBoundCount==1);
     assert(e.Median_dB==15 && contains(text,'15.000 dB') && ~contains(text,'100.000 dB'));
     assert(isequaln(T,before),'Progress formatting must not alter raw measurements.');
+    quarantined=T(1:3,:);
+    quarantined.(statusName)=["OK_PROXY";"OK_FALLBACK";"OK_LOWER_BOUND_NOISE_FLOOR"];
+    retained=quarantined;
+    [~,e]=sixgr.truth.formatLiveSINRStatistic(quarantined,metric,metric);
+    assert(e.AcceptedCount==0 && isnan(e.Median_dB) && isequaln(quarantined,retained));
     bounded=T(4,:);
     [text,e]=sixgr.truth.formatLiveSINRStatistic(bounded,metric,metric);
     assert(e.AcceptedCount==0 && isnan(e.Median_dB) && contains(text,'unavailable'));

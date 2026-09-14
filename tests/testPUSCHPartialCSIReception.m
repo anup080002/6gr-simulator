@@ -5,7 +5,7 @@ p=nrPUSCHConfig('PRBSet',0:11,'SymbolAllocation',[0 14], ...
     'NumLayers',1,'Modulation','QPSK','BetaOffsetACK',20, ...
     'BetaOffsetCSI1',6.25,'BetaOffsetCSI2',6.25);
 cases=0;
-for quantity=["cri-RI-PMI-CQI","cri-RI-CQI"]
+for quantity=["cri-RI-PMI-CQI","cri-RI-CQI","cri-RI-LI-PMI-CQI"]
  for rank=[1 2]
   for tbs=[0 512]
     request=struct('ReportConfigID',"partial_csi_fixture",'Epoch',0, ...
@@ -14,8 +14,20 @@ for quantity=["cri-RI-PMI-CQI","cri-RI-CQI"]
         'ReportQuantity',quantity,'NumCSIResources',3, ...
         'FrequencyGranularity',"wideband",'UCIChannel',"PUSCH");
     schema=sixgr.phy.mimo.CSIReportConfiguration(request,0);
+    % Four-port mode-1 PMI is five bits for BOTH ranks. LI contributes
+    % zero/one bits for ranks one/two and creates a genuinely variable map.
+    if quantity=="cri-RI-CQI"
+        expectedPart2Counts=0;
+    elseif quantity=="cri-RI-PMI-CQI"
+        expectedPart2Counts=5;
+    else
+        expectedPart2Counts=[5 6];
+    end
+    assert(isequal(schema.part2BitCountCandidates(),expectedPart2Counts), ...
+        'The authored negative fixture must exercise the intended Part-2 geometry.');
     [~,values]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,0);
     values.RI=rank; values.CRI=2; values.CQI_CW0=9;
+    if contains(quantity,'-LI-'), values.LI=rank-1; end
     report=schema.build(values);
     % Literal spare CRI=3 for three resources. Production build rejects it;
     % only this negative codec fixture authors its invalid wire bits.
@@ -51,9 +63,12 @@ for quantity=["cri-RI-PMI-CQI","cri-RI-CQI"]
             assert(isempty(rx.ULSCHLLR{1}));
         end
     end
-    if quantity=="cri-RI-CQI"
-        assert(rx.ULSCHMappingResolved && rx.ResolvedCSI2BitCount==0);
+    if isscalar(expectedPart2Counts)
+        assert(rx.ULSCHMappingResolved && rx.ResolvedCSI2BitCount==expectedPart2Counts);
         assert(rx.CSI2LengthAuthority=="single_length_in_active_report_configuration");
+        assert(isequal(rx.DecodedCSIPart2,report.Part2Bits), ...
+            'Fixed-length coded Part 2 remains observable despite invalid CSI semantics.');
+        assert(~rx.CSIPart1Usable && ~rx.UCIReceiverEvidence.CSI1.SchemaUsable);
     else
         assert(numel(schema.part2BitCountCandidates())>1 && isnan(rx.ResolvedCSI2BitCount));
         assert(isempty(rx.DecodedCSIPart2) && isnan(rx.CSI2CRCOK));

@@ -1,20 +1,31 @@
-function ok=testPUSCHResolvedCodewordDecode()
+function ok=testPUSCHResolvedCodewordDecode(outputRoot)
 % Actual public LDPC/CRC codecs on declared LLR fixtures, not RF evidence.
 setup6GRSimToolkit('Verbose',false);
+if nargin<1, outputRoot=tempname(fullfile(pwd,'logs')); end
+assert(~isfolder(outputRoot),'test:EvidenceAlreadyExists','Preserve prior codec diagnostics.');
+mkdir(outputRoot);
+runtimeVersion=version; toolboxVersions=ver;
 cases=0;
 for rank=5:8
     p=nrPUSCHConfig('NumLayers',rank,'Modulation',{'QPSK','16QAM'});
     [layers,~]=sixgr.phy.ul.pusch.PUSCHLayerMapper.layerCounts(rank);
     tbs=[512 10240]; rate=[.3 .6]; rv=[0 2];
-    [llr,bits,layouts]=localEncode(p,layers,tbs,rate,rv,false);
+    [llr,bits,layouts,encodedStages]=localEncode(p,layers,tbs,rate,rv,false);
     full=sixgr.phy.ul.pusch.decodeResolvedULSCH(llr,true(1,2),p,tbs,rate,rv, ...
         layouts,25,'Normalized min-sum',[],[]);
-    assert(full.AllTransportBlocksPassed && isequal(full.TransportBlocks,bits));
     % Independent public system decoder reference uses both codewords.
     reference=nrULSCHDecoder('MultipleHARQProcesses',false,'TargetCodeRate',rate, ...
         'TransportBlockLength',tbs,'LDPCDecodingAlgorithm','Normalized min-sum', ...
         'MaximumLDPCIterationCount',25);
     [expected,errors]=reference(llr,p.Modulation,p.NumLayers,rv);
+    % Retain both independent results BEFORE a failing assertion. Do not
+    % change rate/RV/iterations merely to obtain a green noiseless fixture.
+    save(fullfile(outputRoot,sprintf('resolved_codewords_rank_%d.mat',rank)), ...
+        'p','layers','tbs','rate','rv','llr','bits','layouts','encodedStages', ...
+        'full','expected','errors','runtimeVersion','toolboxVersions');
+    fprintf('PUSCH_RESOLVED_REFERENCE rank=%d candidate_crc=%s public_crc=%s evidence=%s\n', ...
+        rank,mat2str(full.CRCError),mat2str(errors),outputRoot);
+    assert(full.AllTransportBlocksPassed && isequal(full.TransportBlocks,bits));
     assert(isequal(full.TransportBlocks,reshape(expected,1,[])) && ...
         isequal(full.CRCError,double(reshape(errors,1,[]))));
     for mask={[true false],[false true],[false false]}
@@ -60,8 +71,9 @@ assert(failed.DecodeAttempted(2) && failed.CRCError(2)==1 && failed.CRCPass(2)==
 ok=true; fprintf('PUSCH_RESOLVED_CODEWORD_DECODE_PASS partial_cases=%d plus public reference and CRC negative.\n',cases);
 end
 
-function [llr,bits,layouts]=localEncode(p,layers,tbs,rate,rv,badCRC)
+function [llr,bits,layouts,encodedStages]=localEncode(p,layers,tbs,rate,rv,badCRC)
 llr=cell(1,2); bits=cell(1,2); layouts=cell(1,2);
+encodedStages=cell(1,2);
 modulation=string(p.Modulation); qm=[2 4];
 for cw=1:2
     bits{cw}=int8(mod((1:tbs(cw)).'+floor((1:tbs(cw)).'/7),2));
@@ -73,6 +85,8 @@ for cw=1:2
     quantum=qm(cw)*layers(cw);
     length=quantum*ceil((tbs(cw)/rate(cw))/quantum);
     matched=nrRateMatchLDPC(coded,length,rv(cw),char(modulation(cw)),layers(cw));
+    encodedStages{cw}=struct('WithTBCRC',withCRC,'SegmentedBlocks',segmented, ...
+        'MotherCodeBits',coded,'RateMatchedBits',matched,'ULSCHInfo',sch);
     llr{cw}=100*(1-2*double(matched));
     layouts{cw}=sixgr.phy.phycode.resolveCodingLayout('Direction','UL', ...
         'TransportBlockSize',tbs(cw),'TargetCodeRate',rate(cw),'RV',rv(cw), ...

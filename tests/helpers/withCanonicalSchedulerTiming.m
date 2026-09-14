@@ -5,6 +5,13 @@ function cfg = withCanonicalSchedulerTiming(cfg)
 % scheduler tests an explicit control/data/feedback allocation, configured
 % K rows, timing advance, and pinned Release-18 capability profile.
 
+% DCI 1_1 needs an independently declared receiver timing list. Load this
+% test-only YAML; production must not infer an RRC list from scheduler K1.
+root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
+feedback=sixgr.lls6g.config.readConfigFile(fullfile(root,'simulator','configs', ...
+    'fixtures','scheduler_feedback_timing.yaml'));
+cfg=sixgr.util.structSet(cfg,'phy.pucch.dlDataToULACK',feedback.dl_data_to_ul_ack);
+
 cfg = sixgr.util.structSet(cfg, "phy.duplex.mode", "FDD");
 cfg = sixgr.util.structSet(cfg, ...
     "phy.duplex.fdd.dlCenterFrequencyHz", 4.0e9);

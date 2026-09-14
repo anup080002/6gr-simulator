@@ -12780,6 +12780,13 @@ state.SharedULLinkAdaptationStates=us;
 end
 
 function state=localCompleteSharedControlObservations(state,received)
+% The owner has already physically committed every DataTX in this callback
+% batch. Publish all of those grant/expectation records before any receiver
+% reads the scheduling snapshot, including at a coincident event deadline.
+% Preserve relative order inside each class; no future samples are consumed.
+received=reshape(received,1,[]);
+isTX=string({received.Kind})=="DataTX";
+received=[received(isTX),received(~isTX)];
 for item=received
     context=item.Context;
     if item.Kind=="DataTX"

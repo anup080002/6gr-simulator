@@ -157,6 +157,39 @@ for caseIndex = reshape(caseIndices,1,[])
         'Replay',replay, ...
         'ChannelState',struct('Initialized',false,'UseFading',false,'Obj',[], ...
         'ReceiverNoiseState',noiseState));
+    if caseIndex==4
+        % A declared two-bit codec obligation, bound to the actual UL DCI and
+        % receive window. This is not a physically derived DL HARQ codebook.
+        binding=sixgr.truth.puschUCIObservationBinding(grant,context.Observation);
+        receiveData=struct('ObservationID',binding.ObservationID, ...
+            'AssignmentDigest',binding.AssignmentDigest,'ConfigurationEpoch',binding.ConfigurationEpoch, ...
+            'HARQMappingDigest',"declared_two_bit_codec_obligation_not_actual_dl", ...
+            'HARQACKBitCount',2,'ConfiguredGrantUCIBitCount',0, ...
+            'CSIReportConfigID',"",'CSIConfigurationEpoch',NaN);
+        context.UCIReceiveContext=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(receiveData);
+        % Declared metadata checks for the real receiver's pre-demapping
+        % strict-noise failure path. No fabricated PHY result is exported.
+        unavailable=struct('NoiseVarStrictFailure',true,'DecodeAttempted',false, ...
+            'ULSCHDecodeAttempted',false,'ReceiverUsable',false);
+        snapshot=unavailable;
+        score=sixgr.link.scoreIndependentPUSCHUCI(unavailable,context.UCIReceiveContext,uci);
+        assert(~score.HARQACKContentMatch && isequaln(snapshot,unavailable));
+        unexplained=rmfield(unavailable,'NoiseVarStrictFailure');
+        localReject(@()sixgr.link.scoreIndependentPUSCHUCI(unexplained,context.UCIReceiveContext,uci), ...
+            'sixgr:pusch:MissingIndependentUCIEvidence');
+        leaked=unavailable; leaked.DecodedHARQACKBits=int8(1);
+        localReject(@()sixgr.link.scoreIndependentPUSCHUCI(leaked,context.UCIReceiveContext,uci), ...
+            'sixgr:pusch:InvalidIndependentUCIScoringBits');
+        bad=context; wrong=receiveData; wrong.ObservationID=wrong.ObservationID+"-different";
+        bad.UCIReceiveContext=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(wrong);
+        localReject(@()runner(cfg,args{:},'ReceivedContext',bad),'sixgr:pusch:UCIReceiveObservationMismatch');
+        bad=context; wrong=receiveData; wrong.AssignmentDigest="different_scheduled_grant";
+        bad.UCIReceiveContext=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(wrong);
+        localReject(@()runner(cfg,args{:},'ReceivedContext',bad),'sixgr:pusch:UCIReceiveObservationMismatch');
+        bad=context; wrong=receiveData; wrong.ConfigurationEpoch=wrong.ConfigurationEpoch+1;
+        bad.UCIReceiveContext=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(wrong);
+        localReject(@()runner(cfg,args{:},'ReceivedContext',bad),'sixgr:pusch:UCIReceiveObservationMismatch');
+    end
     bad = context;
     bad.Observation = sixgr.phy.waveform.WaveformObservationBuffer( ...
         prepared.ReceiveStartSample,prepared.ReceiveStartSample+size(y,1),prepared.SampleRateHz,size(y,2));
@@ -184,6 +217,14 @@ for caseIndex = reshape(caseIndices,1,[])
     rng(459,'twister'); rngBefore = rng;
     beforeRX = sixgr.runtime.RuntimeCallLedger.snapshot();
     completed = runner(cfg,args{:},'ReceivedContext',context);
+    if caseIndex==4
+        assert(completed.HARQ.UCIReceiveContextDigest==context.UCIReceiveContext.Digest && ...
+            string(completed.HARQ.UCIReceiverEvidence.ReceiverContextDigest)==context.UCIReceiveContext.Digest);
+        assert(completed.HARQ.UCIReferenceScoringSource== ...
+            "post_reception_reference_comparison_not_receiver_authority");
+        assert(isequal(completed.HARQ.DecodedHARQACKBits,int8([1;0])) && ...
+            completed.HARQ.HARQACKContentMatch);
+    end
     afterRX = sixgr.runtime.RuntimeCallLedger.snapshot();
     assert(isequal(rngBefore,rng),'Receive completion must not reset/consume the TX RNG.');
     assert(localCount(afterRX,txName)==localCount(beforeRX,txName) && ...

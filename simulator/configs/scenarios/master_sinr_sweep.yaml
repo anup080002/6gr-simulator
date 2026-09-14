@@ -1096,6 +1096,23 @@ canonical_control:
       note17_band: false
     sib1:
       enabled: false
+      # Keep the same configurable common-control surface as geometry mode.
+      # SIB1 and random access remain disabled by this master's own flags.
+      pdcch_config_common:
+        commonControlResourceSet:
+          controlResourceSetId: 1
+          frequencyDomainResources: '111100000000000000000000000000000000000000000'
+          duration: 2
+          cce_REG_MappingType: nonInterleaved
+          precoderGranularity: sameAsREG-bundle
+        commonSearchSpaceList:
+          - searchSpaceId: 1
+            controlResourceSetId: 1
+            monitoringSlotPeriodicityAndOffset: {periodicity: sl1, offset: 0}
+            monitoringSymbolsWithinSlot: '10000000000000'
+            nrofCandidates: [0, 0, 1, 0, 0]
+            searchSpaceType: common
+        ra_SearchSpace: 1
       si_rnti: 65535
       coreset0_from_mib_required: true
       searchspace0_from_mib_required: true
@@ -1133,6 +1150,13 @@ canonical_control:
     common_downlink_beam_source: runtime_antenna_mapping
     four_step_ra_required: false
     msg4_contention_resolution_required: false
+    msg4_dci:
+      ndi: 1
+      harq_process: 0
+      tpc_command_for_pucch: 1
+      pucch_resource_indicator: 0
+      pdsch_to_harq_feedback_timing: 1
+      harq_ack_repetitions_configured: false
     preamble_count: 64
     zero_correlation_zone: 8
     detection_threshold: 0.35

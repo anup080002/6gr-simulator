@@ -1,0 +1,4 @@
+fixture_kind: isolated_csi_runtime_test_only
+# Receiver RRC configuration, not reconstructed from the selected grant K1.
+# Keep the existing test's scheduler, duplex and absolute-slot conditions.
+dl_data_to_ul_ack: [1, 2, 3, 4, 5, 6, 7, 8]

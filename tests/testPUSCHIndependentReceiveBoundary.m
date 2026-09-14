@@ -8,7 +8,7 @@ makeContext=@sixgr.phy.ul.pusch.PUSCHUCIReceiveContext;
 p=nrPUSCHConfig('PRBSet',0:11,'SymbolAllocation',[0 14], ...
     'NumLayers',1,'Modulation','QPSK', ...
     'BetaOffsetACK',20,'BetaOffsetCSI1',6.25,'BetaOffsetCSI2',6.25);
-cases=0;
+cases=0; puncturedCases=0;
 for count=[0 1 2 3 5 12 20]
     bits=int8(mod((1:count).',2));
     payload=sixgr.phy.ul.pusch.PUSCHUCIPayload('HARQACK',bits);
@@ -16,7 +16,19 @@ for count=[0 1 2 3 5 12 20]
     [llr,data]=localEncode(p,512,payload);
     rx=decoder(p,.3,512,llr,context,4);
     assert(isequal(rx.DecodedHARQACK,bits));
-    assert(isequal(int8(rx.ULSCHLLR{1}<0),data));
+    punctured=localCheckData(rx.ULSCHLLR{1},p,512,llr,data,payload);
+    puncturedCases=puncturedCases+double(any(punctured));
+    if any(punctured)
+        invented=rx.ULSCHLLR{1}; invented(find(punctured,1))=100;
+        localReject(@()localCheckData(invented,p,512,llr,data,payload), ...
+            'sixgr:test:ULSCHDataEvidenceMismatch');
+    end
+    observed=find(~punctured,1);
+    if ~isempty(observed)
+        corrupted=rx.ULSCHLLR{1}; corrupted(observed)=-corrupted(observed);
+        localReject(@()localCheckData(corrupted,p,512,llr,data,payload), ...
+            'sixgr:test:ULSCHDataEvidenceMismatch');
+    end
     assert(~isfield(rx,'HARQACKContentMatch') && ~isfield(rx,'CSI1ContentMatch'), ...
         'Receiver output must not contain transmitter scoring.');
     good=scorer(rx,payload);
@@ -70,7 +82,7 @@ for rank=[1 2]
         isequal(rx.DecodedCSIPart2,report.Part2Bits));
     assert(rx.CSIPart1DecodedBeforePart2 && rx.ResolvedCSI2BitCount==numel(report.Part2Bits));
     assert(rx.CSI2LengthAuthority=="received_csi_part1_and_active_report_configuration");
-    assert(isequal(int8(rx.ULSCHLLR{1}<0),data));
+    localCheckData(rx.ULSCHLLR{1},p,tbs,llr,data,payload);
     if ~isempty(legacyReference)
         old=legacyReference(p,.3,tbs,llr,payload,4,installed);
         compatibility=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex(p,.3,tbs,llr,payload,4,installed);
@@ -116,7 +128,8 @@ bad=localObligation(2); bad.ObservationID=missing;
 localReject(@()makeContext(bad),'sixgr:pusch:InvalidUCIReceiveObligation');
 bad=localObligation(2); bad.CSIConfigurationEpoch=0;
 localReject(@()makeContext(bad),'sixgr:pusch:InvalidUCIReceiveObligation');
-fprintf('PUSCH_INDEPENDENT_RECEIVE_BOUNDARY_PASS codec_cases=%d plus malformed/oracle/CSI-binding rejection\n',cases);
+assert(puncturedCases>0,'The fixture must exercise actual HARQ-ACK puncturing.');
+fprintf('PUSCH_INDEPENDENT_RECEIVE_BOUNDARY_PASS codec_cases=%d punctured_cases=%d plus malformed/oracle/CSI-binding rejection\n',cases,puncturedCases);
 ok=true;
 end
 
@@ -137,6 +150,28 @@ bits=encoded.Codewords{1};
 bits(bits==-1)=1;
 y=find(bits==-2); bits(y)=bits(y-1);
 llr=100*(1-2*double(bits));
+end
+
+function punctured=localCheckData(actual,p,tbs,llr,data,payload)
+% Post-reception codec scoring only. A punctured uncoded bit is an erasure,
+% not a recovered zero/one. The production receiver never receives data.
+c=payload.toStruct();
+reference=nrULSCHDemultiplex(p,.3,tbs,c.OACK,c.OCSI1,c.OCSI2+c.OCGUCI,llr);
+indices=nrULSCHDemultiplex(p,.3,tbs,c.OACK,c.OCSI1,c.OCSI2+c.OCGUCI, ...
+    (1:numel(llr)).');
+assert(numel(indices)==numel(data) && all(indices==fix(indices)) && ...
+    all(indices>=0 & indices<=numel(llr)), ...
+    'sixgr:test:ULSCHDataEvidenceMismatch','Public demultiplexer map must cover the exact data stream.');
+punctured=indices==0;
+expected=zeros(size(indices));
+expected(~punctured)=llr(indices(~punctured));
+assert(isequal(actual,reference) && isequal(actual,expected), ...
+    'sixgr:test:ULSCHDataEvidenceMismatch', ...
+    'Retain exact public-demultiplexer LLRs, including every puncturing erasure.');
+assert(isequal(int8(actual(~punctured)<0),data(~punctured)) && ...
+    all(actual(punctured)==0), ...
+    'sixgr:test:ULSCHDataEvidenceMismatch', ...
+    'Every observed data bit must match; a punctured position must remain zero LLR.');
 end
 
 function localReject(action,identifier)

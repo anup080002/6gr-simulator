@@ -1,5 +1,6 @@
 function ok = testCoupledTruthCSIReportSourceAuthority()
 %TESTCOUPLEDTRUTHCSIREPORTSOURCEAUTHORITY Keep CSI producer labels truthful.
+% Declared measurement/ledger inputs and actual UCI codecs, not CSI-RS RF evidence.
 
 setup6GRSimToolkit("Verbose", false);
 tmp = tempname;
@@ -8,8 +9,20 @@ cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
 
 scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
     "simulator", "configs", "scenarios", ...
-    "lls_causal_access_to_data_wiring.yaml"));
+    "lls_csi_source_authority_fixture.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scenario, fullfile(tmp, "run"));
+assert(cfg.phy.csi.reportConfiguration.NumCSIResources==4 && ...
+    cfg.phy.csirs.numResources==4 && isequal(double(cfg.phy.csirs.resourceIDs(:).'),0:3));
+for cri=0:3, assert(sixgr.truth.validateMeasuredCRI(cri,4)==cri); end
+assert(isnan(sixgr.truth.validateMeasuredCRI(NaN,4)) && ...
+    isnan(sixgr.truth.validateMeasuredCRI([],4)));
+for invalid={-1,4,Inf,0.25,1i,[0 1],'0'}
+    localRejectCRI(@()sixgr.truth.validateMeasuredCRI(invalid{1},4));
+end
+for invalidCount={0,1.5,NaN,Inf,[1 2]}
+    localRejectCRI(@()sixgr.truth.validateMeasuredCRI(0,invalidCount{1}), ...
+        'sixgr:mimo:InvalidCSIResourceCount');
+end
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
@@ -27,6 +40,10 @@ dmrsRow = table(4, 10, 8.5, 1, 0, true, true, 2, 17, ...
     'VariableNames', {'Slot','WidebandCQI','SINR_dB','RIEstimate', ...
     'PMI','CRCPass','MUMIMOEnabled','MUMIMOGroupSize','MUMIMOGroupId', ...
     'SINRSource','SINRValueRole','SINRValueStatus'});
+dmrsRow.CRI=0; % Explicit component report selection; never inferred by runtime.
+missingCRI=dmrsRow; missingCRI.CRI=NaN;
+localRejectCRI(@()sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
+    state,1,"DL",missingCRI,cfg,table()));
 state = sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
     state, 1, "DL", dmrsRow, cfg, table());
 assert(string(state.PendingCSITable.SourceSignal(end)) == "PDSCH-DMRS", ...
@@ -364,6 +381,18 @@ assert(any(string(refT.SignalType) == "PDSCH-DMRS") && ...
     "Reference-signal evidence must preserve the actual producer signal for each report.");
 
 ok = true;
+end
+
+function localRejectCRI(action,identifier)
+if nargin<2, identifier='sixgr:mimo:InvalidCRI'; end
+try
+    action();
+catch cause
+    assert(strcmp(cause.identifier,identifier), ...
+        'Expected invalid CRI rejection, got %s: %s',cause.identifier,cause.message);
+    return;
+end
+error('test:MissingCRIRejection','A malformed CSI resource measurement must not be serialized.');
 end
 
 function localCheckReceivedPUSCHLengthAuthority(state,grant,dueSlot)

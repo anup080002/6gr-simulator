@@ -111,7 +111,12 @@ classdef ChannelFactory
 
             % Resolve carrier frequency if possible (used by some models)
             if isempty(opt.Fc_Hz)
-                opt.Fc_Hz = sixgr.util.structGet(cfg, "phy.fc_Hz", 3.5e9);
+                opt.Fc_Hz = sixgr.channel.ChannelFactory.resolveCarrierFrequency(cfg);
+            else
+                validateattributes(opt.Fc_Hz, {'numeric'}, ...
+                    {'real','scalar','finite','positive'}, ...
+                    'ChannelFactory.create', 'Fc_Hz');
+                opt.Fc_Hz = double(opt.Fc_Hz);
             end
             if strlength(opt.Scenario) == 0
                 opt.Scenario = string(sixgr.util.structGet(cfg, "channel.propagationScenario", ...
@@ -352,6 +357,32 @@ classdef ChannelFactory
                 any(modelRaw == ["NRTDL","NRCDL"]));
         end
 
+        function fc = resolveCarrierFrequency(cfg)
+            % Match normalizeConfig authority: resolved PHY, then catalog
+            % channel frequency. The historical carrier alias is last and
+            % may only supply a value when canonical fields are absent.
+            % Do not skip invalid explicit values or invent an RF carrier.
+            paths = ["phy.fc_Hz", "channel.fc_Hz", "carrier.fc_Hz"];
+            sections = ["phy", "channel", "carrier"];
+            for k = 1:numel(paths)
+                section = sixgr.util.structGet(cfg, sections(k), struct());
+                if ~(isstruct(section) && isscalar(section) && isfield(section,'fc_Hz'))
+                    continue;
+                end
+                raw = section.fc_Hz;
+                if ~(isnumeric(raw) && isreal(raw) && isscalar(raw) && ...
+                        isfinite(raw) && raw > 0)
+                    error('ChannelFactory:InvalidCarrierFrequency', ...
+                        '%s must be a finite positive numeric scalar in Hz.', paths(k));
+                end
+                fc = double(raw);
+                return;
+            end
+            error('ChannelFactory:MissingCarrierFrequency', ...
+                ['Provide resolved phy.fc_Hz or catalog channel.fc_Hz ' ...
+                 '(legacy carrier.fc_Hz is accepted when both are absent).']);
+        end
+
         function key = runtimeChannelKey(cfg, direction, varargin)
             ip = inputParser;
             ip.addParameter("UEIndex", NaN, @(x) isnumeric(x) && isscalar(x));
@@ -378,7 +409,7 @@ classdef ChannelFactory
             if strlength(strtrim(carrierKey)) == 0
                 nSize = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN));
                 scs = double(sixgr.util.structGet(cfg, "phy.carrier.SubcarrierSpacing", NaN));
-                fc = double(sixgr.util.structGet(cfg, "phy.fc_Hz", sixgr.util.structGet(cfg, "carrier.fc_Hz", NaN)));
+                fc = sixgr.channel.ChannelFactory.resolveCarrierFrequency(cfg);
                 carrierKey = "nrb=" + string(nSize) + ":scs=" + string(scs) + ":fc=" + string(fc);
             end
             if direction == "UL"

@@ -56,6 +56,22 @@ cfg=struct('phy',struct('carrier',struct('SubcarrierSpacing',120), ...
     'pucch',struct('dlDataToULACK',[8 4 2])));
 bound=sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(cfg,data);
 assert(bound.PUCCHSubcarrierSpacingKHz==30 && isequal(cfg.phy.pucch.dlDataToULACK,[8 4 2]));
+% All explicit frame-builder BWP spellings must retain the UL numerology,
+% even when DL runs on a different clock. No carrier fallback for missing UL.
+for alias=["SCSKHz","SubcarrierSpacingKHz","SubcarrierSpacing_kHz","scs_khz"]
+    same=cfg; same.phy.bwp.ul=struct(alias,cfg.phy.bwp.ul.SubcarrierSpacing_kHz);
+    observed=sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(same,data);
+    assert(isequaln(observed,bound));
+    same.phy.bwp.ul.SubcarrierSpacing_kHz=cfg.phy.bwp.ul.SubcarrierSpacing_kHz;
+    observed=sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(same,data);
+    assert(isequaln(observed,bound));
+end
+conflict=cfg; conflict.phy.bwp.ul.SCSKHz=cfg.phy.carrier.SubcarrierSpacing;
+localReject(@()sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(conflict,data),'InvalidFeedbackTimingContext');
+absent=cfg; absent.phy.bwp.ul=struct('BWPID',0);
+localReject(@()sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(absent,data),'InvalidFeedbackTimingValue');
+malformed=cfg; malformed.phy.bwp.ul.SCSKHz=[];
+localReject(@()sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(malformed,data),'InvalidFeedbackTimingValue');
 bound.DCIFormat="1_1";
 for values={8,[8 4],[8 4 2],[8 4 2 7 3]}
     bound.DLDataToULACK=values{1};

@@ -117,11 +117,16 @@ end
 % This intentionally invalid UCI is a test stimulus, not a valid CSI report
 % or an injected runtime measurement. The existing valid-waveform checks above
 % remain unchanged. Variable Part-2 sizes leave this codeword's data unresolved.
-request.ReportQuantity="cri-RI-PMI-CQI";
+request.ReportQuantity="cri-RI-LI-PMI-CQI";
 request.NumCSIResources=3; request.Rank=2;
 invalidSchema=sixgr.phy.mimo.CSIReportConfiguration(request,0);
+% Keep mode-2 four-port geometry. PMI alone has six bits at either rank;
+% LI adds zero/one bits, so received RI is genuinely needed for Part 2.
+assert(isequal(invalidSchema.part2BitCountCandidates(),[6 7]), ...
+    'The partial-waveform fixture must have different configured Part-2 lengths.');
 [~,invalidValues]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,0);
 invalidValues.RI=2; invalidValues.CRI=2; invalidValues.CQI_CW0=9;
+invalidValues.LI=1;
 validReport=invalidSchema.build(invalidValues);
 badPart1=validReport.Part1Bits;
 assert(invalidSchema.Part1Fields(1)=="CRI" && invalidSchema.Part1Widths(1)==2);

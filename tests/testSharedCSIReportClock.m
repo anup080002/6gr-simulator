@@ -41,6 +41,13 @@ row=table(1,10,18.5,1,2,true,"receiver_post_equalization_sinr", ...
     "measured_post_equalization_scheduling_input","OK", ...
     'VariableNames',{'Slot','WidebandCQI','SINR_dB','RIEstimate','PMI','CRCPass', ...
     'SINRSource','SINRValueRole','SINRValueStatus'});
+row.CRI=0; % Declared CSI component input for the configured single resource.
+assert(cfg.phy.csi.reportConfiguration.NumCSIResources==1);
+for badCRI={NaN,Inf,0.25,[0 0]}
+    malformed=row; malformed.CRI=badCRI{1};
+    localRejectCRI(@()sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime( ...
+        state,1,'DL',malformed,cfg,table()));
+end
 state=sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime(state,1,'DL',row,cfg,table());
 expected=state.PendingCSITable(1,:); due=double(expected.DueSlot);
 assert(expected.RI==row.RIEstimate,'The measured RI alias must survive the runtime producer adapter.');
@@ -112,6 +119,7 @@ assert(report.Processed && report.CSIUCIDecodeOk && string(report.CSIUCITranspor
 assert(report.CQI==expected.CQI && report.RI==expected.RI && report.PMI==expected.PMI, ...
     'test:DecodedCSIFields','Received CQI/RI/PMI=[%g %g %g]; sent=[%g %g %g].', ...
     report.CQI,report.RI,report.PMI,expected.CQI,expected.RI,expected.PMI);
+assert(report.CRI==row.CRI,'Actual CSI delivery must preserve its configured resource identity.');
 assert(state.LatestDLFeedback.Valid && ...
     state.LatestDLFeedback.SchedulerCQIRawCQI==expected.CQI && ...
     state.LatestDLFeedback.CQI==report.SchedulerResolvedCQI);
@@ -159,6 +167,17 @@ end
 fprintf('SHARED_CSI_REPORT_CLOCK_PASS: %s HARQ=%d CSI bits=%g due=%g delivered=%g.\n', ...
     mode,withHARQ,report.CSIUCIDecodedBitCount,due,report.DeliveredSlot);
 ok=true;
+end
+
+function localRejectCRI(action)
+try
+    action();
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:mimo:InvalidCRI'), ...
+        'Expected invalid CRI rejection, got %s: %s',cause.identifier,cause.message);
+    return;
+end
+error('test:MissingCRIRejection','A malformed CSI resource measurement must not be serialized.');
 end
 
 function state=localReceive(state,items)

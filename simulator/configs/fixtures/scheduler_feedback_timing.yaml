@@ -1,0 +1,4 @@
+# Explicit connected-DCI receive configuration for withCanonicalSchedulerTiming.
+# Test authoring only; production must not use this as a missing-list fallback.
+fixture_kind: scheduler_timing_test_not_runtime_default
+dl_data_to_ul_ack: [2]

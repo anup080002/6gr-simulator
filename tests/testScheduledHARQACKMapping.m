@@ -42,6 +42,7 @@ for slot=1:2
 end
 localReject(@()sixgr.truth.buildScheduledHARQACKMapping(state,dl,1,due(1)), ...
     'sixgr:truth:MissingScheduledHARQMapping');
+assert(isempty(sixgr.truth.scheduledHARQExpectationsForOccasion(state,1,due(1))));
 for slot=1:3
     state.CurrentSlot=slot;
     [state,~]=owner.advanceSlot(state,cfg,@localReceive);
@@ -67,6 +68,41 @@ for target=unique(due)
     poisoned.PUCCHGrantTraceTable=table(false,'VariableNames',{'ExpectedAck'});
     same=sixgr.truth.buildScheduledHARQACKMapping(poisoned,dl,1,target);
     assert(isequaln(mapping,same));
+    complete=sixgr.truth.scheduledHARQExpectationsForOccasion(state,1,target);
+    assert(numel(complete)==mapping.BitCount);
+    absent=state; absent.SharedDLHARQExpectations={};
+    localReject(@()sixgr.truth.scheduledHARQExpectationsForOccasion(absent,1,target), ...
+        'sixgr:truth:IncompleteScheduledHARQExpectations');
+    localReject(@()sixgr.truth.buildScheduledHARQACKMapping(absent,dl,1,target), ...
+        'sixgr:truth:IncompleteScheduledHARQExpectations');
+    absent.SharedDataTXLedger={};
+    localReject(@()sixgr.truth.scheduledHARQExpectationsForOccasion(absent,1,target), ...
+        'sixgr:truth:HARQMappingUnexecutedSchedule');
+    duplicate=state;
+    duplicate.SharedDLHARQExpectations{end+1}=complete{1};
+    localReject(@()sixgr.truth.scheduledHARQExpectationsForOccasion(duplicate,1,target), ...
+        'sixgr:truth:IncompleteScheduledHARQExpectations');
+    % Other target slots are empty only after the entire physical ledger
+    % has been checked; deleting a different-slot expectation still fails.
+    emptyTarget=max(due)+1;
+    assert(isempty(sixgr.truth.scheduledHARQExpectationsForOccasion(state,1,emptyTarget)));
+    localReject(@()sixgr.truth.scheduledHARQExpectationsForOccasion(duplicate,1,emptyTarget), ...
+        'sixgr:truth:IncompleteScheduledHARQExpectations');
+    % Preflight over actual transmitted TB/HARQ state, with declared unusable
+    % receiver flags. No UCI reception, feedback commit or new CRC is claimed.
+    observed=struct('MappingDigest',mapping.Digest,'UEIndex',mapping.UEIndex, ...
+        'RNTI',mapping.RNTI,'TargetSlot',target,'Transport',"PUCCH", ...
+        'DecodedBits',int8([]),'DecodeOk',false,'DTXFlag',true);
+    beforeStats=state.DLHarq.Stats;
+    [preflight,rebuilt,obligation]=sixgr.truth.prepareScheduledHARQFeedback(state,dl,1,target,observed);
+    assert(isequaln(mapping,rebuilt) && obligation==mapping.Digest && ...
+        numel(preflight)==mapping.BitCount && all([preflight.FeedbackDispositionPrevalidated]) && ...
+        ~any([preflight.HARQFeedbackApplied]) && ~any([preflight.StateChangeApplied]) && ...
+        isequaln(beforeStats,state.DLHarq.Stats));
+    for row=preflight
+        hit=find(cellfun(@(tx)tx.Identity.TransmissionID==row.TransmissionID,state.SharedDataTXLedger));
+        assert(isscalar(hit) && row.TBSBits==numel(state.SharedDataTXLedger{hit}.TransportBlockBits));
+    end
     bad=state; bad.SharedDataTXLedger={};
     localReject(@()sixgr.truth.buildScheduledHARQACKMapping(bad,dl,1,target), ...
         'sixgr:truth:HARQMappingUnexecutedSchedule');

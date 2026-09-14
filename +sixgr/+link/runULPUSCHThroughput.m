@@ -100,6 +100,24 @@ expectedUCIBits = int8(expectedUCIPayload.HARQACK(:));
 if receivedCompletion
     executionContract.Backend = "scheduler_shared_stream_receiver";
 end
+uciReceiveContext=sixgr.util.structGet(p.Results.ReceivedContext,'UCIReceiveContext',[]);
+uciReportConfiguration=sixgr.util.structGet(p.Results.ReceivedContext,'UCIReportConfiguration',[]);
+independentUCI=~isempty(uciReceiveContext);
+if independentUCI
+    assert(receivedCompletion && isa(uciReceiveContext,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && ...
+        isscalar(uciReceiveContext),'sixgr:pusch:MissingUCIReceiveContext', ...
+        'Independent PUSCH UCI requires a typed gNB context and actual shared receive completion.');
+    binding=sixgr.truth.puschUCIObservationBinding(grantSnapshotOverride,p.Results.ReceivedContext.Observation);
+    assert(uciReceiveContext.Data.ObservationID==binding.ObservationID && ...
+        uciReceiveContext.Data.AssignmentDigest==binding.AssignmentDigest && ...
+        uciReceiveContext.Data.ConfigurationEpoch==binding.ConfigurationEpoch, ...
+        'sixgr:pusch:UCIReceiveObservationMismatch', ...
+        'The independent UCI context must match this scheduled UL grant and completed receive window.');
+    uciReceiveBudget=uciReceiveContext.bitBudget(uciReportConfiguration);
+else
+    assert(isempty(uciReportConfiguration),'sixgr:pusch:MissingUCIReceiveContext', ...
+        'An installed CSI receive schema requires its independent receive context.');
+end
 
 out = struct();
 out.Ok = false;
@@ -860,13 +878,15 @@ for n = 1:numFrames
         if ~isempty(rvOverride)
             txArgs = [txArgs {"RV", rvOverride}]; %#ok<AGROW>
         end
-        if expectedUCIPayload.hasPayload()
+        if expectedUCIPayload.hasPayload() || independentUCI
             uciInitial=sixgr.link.resolvePUSCHUCIInitialMCS( ...
                 cfgFrame,grantSnapshotOverride,harqContext,isRetransmission,trialMCS(n));
             trialUCIInitialMCS(n)=uciInitial.MCS;
             trialUCIInitialMCSSource(n)=uciInitial.Source;
-            txArgs = [txArgs {"UCIPayload", expectedUCIPayload, ...
-                "InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
+            if expectedUCIPayload.hasPayload()
+                txArgs = [txArgs {"UCIPayload", expectedUCIPayload, ...
+                    "InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
+            end
         end
         if receivedCompletion
             tx = preparedTransmission.Tx;
@@ -1244,12 +1264,14 @@ for n = 1:numFrames
             "CodingLayout", tx.CodingLayout, ...
             "SkipTimingEstimate", useIdealTimingSync};
         trialULReceiveAllocationAuthority(n)="legacy_transmitter_metadata";
-        if receivedCompletion && isfield(cfgFrame.phy.pusch,'receivedDCIAssignment')
+        if independentUCI || (receivedCompletion && isfield(cfgFrame.phy.pusch,'receivedDCIAssignment'))
             % gNB receives using its own frozen scheduling state, not what
             % the UE decoded and not the UE transmitter's resource objects.
             rxArgs={"SkipTimingEstimate",useIdealTimingSync};
             trialULReceiveAllocationAuthority(n)="gnb_own_scheduled_grant";
-            cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedDCIAssignment');
+            if isfield(cfgFrame.phy.pusch,'receivedDCIAssignment')
+                cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedDCIAssignment');
+            end
             if isfield(cfgFrame.phy.pusch,'receivedHARQState')
                 cfgFrame.phy.pusch=rmfield(cfgFrame.phy.pusch,'receivedHARQState');
             end
@@ -1272,7 +1294,11 @@ for n = 1:numFrames
                 "ReceiveCombiningMatrix", receiveCombiner, ...
                 "ReceiveCombiningMatrixSHA256", receiveCombinerDigest}]; %#ok<AGROW>
         end
-        if expectedUCIPayload.hasPayload()
+        if independentUCI
+            rxArgs = [rxArgs {"UCIReceiveContext",uciReceiveContext, ...
+                "UCIReportConfiguration",uciReportConfiguration, ...
+                "InitialIMCSPerCodeword",uciInitial.MCS}]; %#ok<AGROW>
+        elseif expectedUCIPayload.hasPayload()
             rxArgs = [rxArgs {"ExpectedUCIPayload", expectedUCIPayload, ...
                 "InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
         end
@@ -1298,6 +1324,11 @@ for n = 1:numFrames
         end
         rxCallTic = tic;
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        if independentUCI
+            % Comparison occurs only after reception. Do not write its result
+            % into rx, change decoded bits, or use it as a decoder-validity gate.
+            uciScoring=sixgr.link.scoreIndependentPUSCHUCI(rx,uciReceiveContext,expectedUCIPayload);
+        end
         if receivedCompletion
             out.ReceiveTiming = rx.ReceiveTiming;
         end
@@ -1346,10 +1377,17 @@ for n = 1:numFrames
         trialUCIOnPUSCHEvidenceSource(n) = string(sixgr.util.structGet( ...
             rx, "UCIOnPUSCHEvidenceSource", ""));
         trialHARQACKBitCount(n) = double(sixgr.util.structGet(rx, "HARQACKBitCount", numel(expectedUCIBits)));
+        if independentUCI
+            trialHARQACKBitCount(n)=double(sixgr.util.structGet(rx,'HARQACKBitCount',uciReceiveBudget.OACK));
+        end
         lastExpectedHARQACKBits = int8(sixgr.util.structGet(rx, "ExpectedHARQACKBits", expectedUCIBits));
         lastDecodedHARQACKBits = int8(sixgr.util.structGet(rx, "DecodedHARQACKBits", int8([])));
         lastExpectedCSIPart1Bits = int8(sixgr.util.structGet(rx, "ExpectedCSIPart1Bits", int8([])));
         lastExpectedCSIPart2Bits = int8(sixgr.util.structGet(rx, "ExpectedCSIPart2Bits", int8([])));
+        if independentUCI
+            lastExpectedCSIPart1Bits=int8(expectedUCIPayload.CSIPart1(:));
+            lastExpectedCSIPart2Bits=int8(expectedUCIPayload.CSIPart2(:));
+        end
         lastDecodedCSIPart1Bits = int8(sixgr.util.structGet(rx, "DecodedCSIPart1Bits", int8([])));
         lastDecodedCSIPart2Bits = int8(sixgr.util.structGet(rx, "DecodedCSIPart2Bits", int8([])));
         lastUCIReceiverEvidence=sixgr.util.structGet(rx,'UCIReceiverEvidence',struct());
@@ -1360,12 +1398,24 @@ for n = 1:numFrames
             isempty(lastExpectedCSIPart1Bits)));
         lastCSI2ContentMatch = logical(sixgr.util.structGet(rx, "CSI2ContentMatch", ...
             isempty(lastExpectedCSIPart2Bits)));
+        if independentUCI
+            lastCSI1ContentMatch=uciScoring.CSI1ContentMatch;
+            lastCSI2ContentMatch=uciScoring.CSI2ContentMatch;
+        end
         trialExpectedHARQACKBits(n) = localBitVectorToken(lastExpectedHARQACKBits);
         trialDecodedHARQACKBits(n) = localBitVectorToken(lastDecodedHARQACKBits);
         trialCSI1BitCount(n) = double(sixgr.util.structGet(rx, ...
             "CSI1BitCount", numel(lastExpectedCSIPart1Bits)));
         trialCSI2BitCount(n) = double(sixgr.util.structGet(rx, ...
             "CSI2BitCount", numel(lastExpectedCSIPart2Bits)));
+        if independentUCI
+            trialCSI1BitCount(n)=double(sixgr.util.structGet(rx,'CSI1BitCount',uciReceiveBudget.OCSI1));
+            % Before Part 1 is received, a scheduled CSI report does not
+            % authorize the transmitter's Part-2 length as receiver metadata.
+            absentCSI2=NaN;
+            if strlength(uciReceiveContext.Data.CSIReportConfigID)==0, absentCSI2=0; end
+            trialCSI2BitCount(n)=double(sixgr.util.structGet(rx,'CSI2BitCount',absentCSI2));
+        end
         trialExpectedCSIPart1Bits(n) = localBitVectorToken(lastExpectedCSIPart1Bits);
         trialExpectedCSIPart2Bits(n) = localBitVectorToken(lastExpectedCSIPart2Bits);
         trialDecodedCSIPart1Bits(n) = localBitVectorToken(lastDecodedCSIPart1Bits);
@@ -1373,6 +1423,7 @@ for n = 1:numFrames
         trialCSI1ContentMatch(n) = lastCSI1ContentMatch;
         trialCSI2ContentMatch(n) = lastCSI2ContentMatch;
         trialHARQACKContentMatch(n) = logical(sixgr.util.structGet(rx, "HARQACKContentMatch", false));
+        if independentUCI, trialHARQACKContentMatch(n)=uciScoring.HARQACKContentMatch; end
         trialHARQACKDecodeStatus(n) = string(sixgr.util.structGet(rx, "HARQACKDecodeStatus", ""));
         trialHARQACKDecodeReason(n) = string(sixgr.util.structGet(rx, "HARQACKDecodeReason", ""));
         trialEqualizerType(n) = string(sixgr.util.structGet(rx, "EqualizerType", ""));
@@ -2216,6 +2267,10 @@ if isstruct(out.HARQ)
     out.HARQ.DecodedCSIPart1Bits = int8(lastDecodedCSIPart1Bits(:));
     out.HARQ.DecodedCSIPart2Bits = int8(lastDecodedCSIPart2Bits(:));
     out.HARQ.UCIReceiverEvidence=lastUCIReceiverEvidence;
+    if independentUCI
+        out.HARQ.UCIReceiveContextDigest=uciReceiveContext.Digest;
+        out.HARQ.UCIReferenceScoringSource="post_reception_reference_comparison_not_receiver_authority";
+    end
     out.HARQ.CSI1ContentMatch = logical(lastCSI1ContentMatch);
     out.HARQ.CSI2ContentMatch = logical(lastCSI2ContentMatch);
     out.HARQ.UCIOnPUSCHEvidenceSource = char(string( ...

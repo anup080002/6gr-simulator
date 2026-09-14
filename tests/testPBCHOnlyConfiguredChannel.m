@@ -47,6 +47,8 @@ cfg.channel.tdlProfile="TDL-C"; cfg.channel.fading.model="TDL-C";
 capture=sixgr.link.applySSBPBCHChannel(wave,info,contract,cfg,struct(),NaN);
 assert(capture.ChannelReplay.RuntimeChannelStateUsed && capture.ChannelReplay.InjectedNoiseVariance>0);
 assert(capture.RuntimeDLChannelState.Initialized && capture.RuntimeDLChannelState.Materialized);
+assert(capture.RuntimeDLChannelState.Meta.Fc_Hz==cfg.channel.fc_Hz, ...
+    'The fading channel must retain the catalog carrier, not a hidden default.');
 assert(~isequal(capture.Waveform,capture.TransmitWaveform));
 ok=true; fprintf('PBCH_ONLY_CONFIGURED_CHANNEL_PASS AWGN=2 fading=1; no integrated 12 dB qualification.\n');
 end

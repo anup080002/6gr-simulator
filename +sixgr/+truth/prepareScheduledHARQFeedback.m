@@ -1,10 +1,11 @@
-function [rows,mapping]=prepareScheduledHARQFeedback(state,cfg,ue,targetSlot,observed)
+function [rows,mapping,obligationDigest]=prepareScheduledHARQFeedback(state,cfg,ue,targetSlot,observed,ulGrant)
 % Read-only preflight of independently mapped DL HARQ feedback.
 % The receive owner must separately validate actual UCI IQ, clock, assignment,
 % transport, duplicate-occasion guard and normalized decode evidence.
 % No entity, decoder buffer, scheduler, feedback ledger or primary row mutates.
-mapping=sixgr.truth.buildScheduledHARQACKMapping(state,cfg,ue,targetSlot);
-rows=sixgr.truth.mapScheduledHARQFeedback(mapping,observed);
+if nargin<6, ulGrant=struct(); end
+base=sixgr.truth.buildScheduledHARQACKMapping(state,cfg,ue,targetSlot);
+[rows,mapping,obligationDigest]=sixgr.truth.mapScheduledHARQTransportFeedback(base,cfg,observed,ulGrant);
 harq=state.DLHarq;
 assert(isa(harq,'sixgr.l2.mac.HARQEntity') && isscalar(harq) && ...
     strcmpi(harq.Direction,'DL'),'sixgr:truth:MissingScheduledFeedbackHARQ', ...
