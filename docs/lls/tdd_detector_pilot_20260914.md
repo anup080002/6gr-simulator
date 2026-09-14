@@ -1,6 +1,6 @@
 # TDD Format-0 detector development pilot
 
-Status: implementation candidate; physical pilot has not passed. This is not a
+Status: scheduling pilot passed; power-correct rerun pending. This is not a
 qualified detector, a held-out campaign, a main integration pass or a 12 dB run.
 
 The existing idle `work/shared-pusch-completion-20260914` checkout was safely
@@ -58,3 +58,22 @@ preceding slot using the target slot's carrier timeline, with an explicit
 assertion and sample-clock log proving preparation precedes its actual TX
 start. The production committed-interval guard, timing authority, waveform,
 power and detector threshold are unchanged. Rerun acceptance is still pending.
+
+The 9982c815 rerun (`logs/testall_20260914T114707484Z_29190359`) passed
+all eight actual noise/signal cases in 578.75 seconds, with zero observed case
+errors and launcher exit 0 on unchanged clean source. Actual evidence is in
+`logs/tp9434fe2c_208e_4082_8033_1d89a791590a`. The first SRS was queued at
+sample 23040 before its actual transmit start 30620; all eight SRS preparations
+passed the new causal guard. This verifies the scheduling repair only.
+
+Concurrent source review found that the pilot's explicitly preconfigured
+common SSB power used a literal 0 dBm instead of the configured broadcast
+power contract. Those eight rows are retained as diagnostic evidence, not
+power-correct acceptance or qualification. The pilot now resolves common
+power from its scenario, verifies agreement against the actual prepared
+broadcast contract, installs that declaration through the existing codec
+fixture, and exports both contracts with explicit non-on-air provenance.
+Measured SSB RSRP remains actual receiver output; no pathloss, gain, noise or
+waveform power is substituted. Every refresh checks declaration consistency.
+The corrected-source pilot, SSB power-contract test, full testAll and required
+NR/result-integrity guards remain due.
