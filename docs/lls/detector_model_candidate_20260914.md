@@ -1,5 +1,11 @@
 # Model-derived detector development candidate, not qualification
 
+Update, 14 September: the paired physical candidate pilot has now passed on
+`9ef53d44`, with zero observed errors in all eight cases. This does not qualify
+the detector. See [the campaign implementation checkpoint](tdd_detector_campaign_runner_20260914.md)
+for exact evidence and the still-pending campaign/runtime acceptance work.
+The preparation-time statements below are retained as history.
+
 ## Decision and scope
 
 The original retained 12 false ACKs / 1,024 bits failure at threshold 0.42

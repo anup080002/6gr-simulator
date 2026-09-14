@@ -1,0 +1,15 @@
+# Preregistered statistical campaign policy. Not a qualification result.
+schema_version: 1
+research_class: optional_research_experiment
+stage: held_out_campaign
+profile_id: tdd_format0_model_candidate_held_out_v1
+episode_policy_path: simulator/configs/validation/pucch_tdd_detector_model_candidate_pilot.yaml
+episodes: 600
+seed_base: 1000000000
+seed_stride: 1009
+family_alpha: 0.05
+event_error_limit: 0.01
+# Known-history exclusion, NOT proof that all historical use is known.
+development_seeds: [970001, 4702601]
+development_history_complete: false
+execution_batch_episodes: 1
