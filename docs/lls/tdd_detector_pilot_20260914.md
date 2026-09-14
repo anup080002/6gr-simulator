@@ -255,3 +255,28 @@ No detector threshold, noise level, statistical gate or episode count has
 changed. These changes still need runtime verification. At 18:29 IST both
 old suites were live, and free physical RAM was below the 2,097,152 KiB launch
 gate. No third MATLAB was launched and no live source was edited.
+
+## 5084694c physical pilot PASS; fixture follow-up
+
+The memory gate admitted the focused batch at 18:41 IST. It completed on
+unchanged, clean `5084694c`, with eight passes and one fixture failure:
+`logs/testall_20260914T131105593Z_e249b716`. Its launcher exit is 1 and the
+whole batch is not relabelled as passed.
+
+`testPUCCHDetectorPilot` passed in 717.32 s. All eight declared noise/signal
+cases completed with zero observed event errors; actual received timing,
+independent reception and full evidence are retained at
+`logs/tpd658d619_5813_43bd_ac91_f97af303ac4d`. Both noise-only metrics were
+below the unchanged 0.42 threshold. This closes the pilot's execution path,
+not statistical detector qualification or integrated 12 dB acceptance.
+
+The seven other passing tests were normalized PUCCH materialization,
+connected SSB physical authority, shared RA authority, legacy normalized
+transmit reference, resource/numerology power vectors, planning without
+power, and measured physical PUCCH power control.
+
+The failing `testNormalizedSSBPowerAuthority` discarded the updated state
+returned by `applyUserContext`, then accessed its original unpopulated
+large-scale ledger. Its equality assertion now uses the returned state and
+actual selected serving cell. No propagation value or assertion tolerance
+was changed. The remaining assertions in that test require a fresh rerun.
