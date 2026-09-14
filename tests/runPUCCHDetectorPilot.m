@@ -66,13 +66,22 @@ for episode=1:v.episodes
                 owner.queueDownlink('PBCH',1,p.PreparedBroadcast, ...
                     struct('Config',dl,'Slot',slot,'ServingCell',1,'TrackingOnly',true));
             end
-            if ismember(slot,v.srs_slots)
+            % A timing-advanced SRS capture starts before its nominal slot.
+            % Queue the complete contribution before advancing that prefix;
+            % never rewrite an already committed transmitter interval.
+            srsSlot=slot+1;
+            if ismember(srsSlot,v.srs_slots)
                 [ul,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
-                ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,slot);
-                ul.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*state.SlotDuration_s;
-                args={'SlotIndex',slot,'SNR_dB',cfg.channel.snr_dB, ...
+                ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,srsSlot);
+                ul.lls6g.userContext.RuntimeSlotStartTime_s=(srsSlot-1)*state.SlotDuration_s;
+                args={'SlotIndex',srsSlot,'SNR_dB',cfg.channel.snr_dB, ...
                     'TimingAdvanceSamples',ul.SharedULTimingContext.ReceivedRARTiming.Samples};
                 p=sixgr.link.runSRSChannelEstimation(ul,args{:},'PrepareOnly',true);
+                assert(p.PreparedTransmission.StartSample>=owner.Events.NextSampleIndex, ...
+                    'test:PilotLateSRSPreparation','SRS must be queued before its actual timing-advanced TX start.');
+                fprintf('DETECTOR_PILOT_SRS_ARM slot=%d clock=%.0f tx_start=%.0f rx_start=%.0f\n', ...
+                    srsSlot,owner.Events.NextSampleIndex,p.PreparedTransmission.StartSample, ...
+                    p.PreparedTransmission.ReceiveStartSample);
                 owner.queueUplinkControl(1,p.PreparedTransmission,struct('Config',ul,'Arguments',{args}));
             end
             % Arm at the preceding boundary, before the timing-advanced TX.

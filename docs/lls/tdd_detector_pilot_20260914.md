@@ -1,6 +1,6 @@
 # TDD Format-0 detector development pilot
 
-Status: implementation candidate; first runtime test pending. This is not a
+Status: implementation candidate; physical pilot has not passed. This is not a
 qualified detector, a held-out campaign, a main integration pass or a 12 dB run.
 
 The existing idle `work/shared-pusch-completion-20260914` checkout was safely
@@ -48,3 +48,13 @@ identity and uses normal startSlot initialization for the sweep clock. SSB
 receiver evidence is saved before acceptance/publication, and exceptions emit
 their original JSON diagnostic before the larger partial-state MAT save.
 The pilot remains incomplete; no physical case or qualification pass is claimed.
+
+The 3956628c rerun (`logs/testall_20260914T114125650Z_601f8af2`) passed
+the earlier SSB publication boundary, then failed with
+`WAVEFORM:CommittedTransmission` while queueing SRS. The pilot had waited
+until the nominal SRS slot, although the received timing/TA authority places
+the waveform capture start before that boundary. SRS is now prepared in the
+preceding slot using the target slot's carrier timeline, with an explicit
+assertion and sample-clock log proving preparation precedes its actual TX
+start. The production committed-interval guard, timing authority, waveform,
+power and detector threshold are unchanged. Rerun acceptance is still pending.
