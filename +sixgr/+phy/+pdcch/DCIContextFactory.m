@@ -14,6 +14,8 @@ classdef DCIContextFactory
             end
             context = sixgr.phy.pdcch.DCIContextFactory.fromOperatorControl( ...
                 control, dciFormat);
+            data = sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(cfg,context.Data);
+            context = sixgr.phy.pdcch.DCIContext(data);
         end
 
         function context = fromOperatorControl(control, dciFormat)
@@ -195,6 +197,7 @@ classdef DCIContextFactory
                     localActiveTDRA(cfg, grant, "DL", data.DLTimeDomainAllocations);
                 [data.ULTimeDomainAllocations, ulSource] = ...
                     localActiveTDRA(cfg, grant, "UL", data.ULTimeDomainAllocations);
+                data = sixgr.phy.pdcch.HARQFeedbackTiming.bindRuntime(cfg,data);
                 context = sixgr.phy.pdcch.DCIContext(data);
                 if direction == "DL"
                     source = dlSource;

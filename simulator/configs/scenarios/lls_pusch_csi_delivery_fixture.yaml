@@ -3,8 +3,8 @@ inherits:
 
 meta:
   scenario_id: lls_pusch_csi_delivery_fixture
-  description: Received CSI-RS feedback on shared PUSCH with deferred scheduler delivery.
-  purpose: Isolated DL measurement followed by shared UL waveform transport; not end-to-end access qualification.
+  description: Shared CSI-RS receiver publication and PUSCH feedback with deferred scheduler delivery.
+  purpose: Shared DL CSI source and UL transport; isolated coded DL HARQ source; prescribed access state; not integrated 12 dB qualification.
   research_class: optional_research_experiment
 
 link_adaptation:

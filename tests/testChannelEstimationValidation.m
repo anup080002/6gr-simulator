@@ -224,6 +224,9 @@ end
 
 function cfg = localBasicPDSCHCfg()
 cfg = sixgr.config.defaultConfig();
+% Isolated narrow-grid PDSCH fixture: no SS/PBCH waveform is transmitted.
+% Actual broadcast exclusions remain covered by testSSBPRBSymbolReservation.
+cfg.phy.ssb.enable = false;
 cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;

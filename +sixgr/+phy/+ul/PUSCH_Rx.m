@@ -22,6 +22,12 @@ function [rx, info] = PUSCH_Rx(rxWaveform, cfg, varargin)
 %     "ReceiveCombiningMatrix": frozen Nrx-by-Nout MU receive projection
 %     "ReceiveCombiningMatrixSHA256": expected digest of that projection
 %     "TimingSearchWindowSamples": bounded search in an actual gNB capture
+%     "UCIReceiveContext": payload-free gNB UCI receive obligation
+%     "UCIReportConfiguration": installed CSI schema for that obligation
+%   UCIReceiveContext excludes ExpectedUCIPayload. Its capture/schedule
+%   identity must be validated upstream; a context digest alone is not proof.
+%   This path requires gNB-owned TB/RV/rate authority and explicit retained
+%   InitialIMCSPerCodeword; it must not infer them from receiver defaults.
 %
 %   CFG.phy.pusch.dmrs.dataToDMRSEPREDifference_dB controls the PUSCH
 %   data-EPRE minus DM-RS-EPRE difference. The default is 0 dB. The
@@ -63,6 +69,10 @@ ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(
 ip.addParameter('MaxIterations', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x>=1));
 ip.addParameter('Algorithm', [], @(x) isempty(x) || ischar(x) || isstring(x));
 ip.addParameter('ExpectedUCIPayload', [], @(x) isempty(x) || isa(x, "sixgr.phy.ul.pusch.PUSCHUCIPayload"));
+ip.addParameter('UCIReceiveContext', [], @(x) isempty(x) || ...
+    (isa(x, 'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && isscalar(x)));
+ip.addParameter('UCIReportConfiguration', [], @(x) isempty(x) || ...
+    (isa(x, 'sixgr.phy.mimo.CSIReportConfiguration') && isscalar(x)));
 ip.addParameter('InitialIMCSPerCodeword', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('PHYGrant', struct(), @(x) isempty(x) || isstruct(x));
 ip.addParameter('HARQSoftBufferLLR', [], @(x) isempty(x) || isnumeric(x) || isstruct(x));
@@ -87,6 +97,16 @@ ip.addParameter('ExecutionProfile', "data_pusch", ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+if ~isempty(opt.UCIReceiveContext)
+    assert(isempty(opt.ExpectedUCIPayload), ...
+        'sixgr:pusch:ConflictingUCIReceiveAuthority', ...
+        'Independent PUSCH reception cannot accept a transmitted UCI payload; score after reception.');
+    opt.UCIReceiveContext.bitBudget(opt.UCIReportConfiguration);
+else
+    assert(isempty(opt.UCIReportConfiguration), ...
+        'sixgr:pusch:MissingUCIReceiveContext', ...
+        'An explicit receive CSI schema requires its scheduled UCI receive context.');
+end
 receiverPipelineTic = tic;
 executionProfile = lower(strtrim(string(opt.ExecutionProfile)));
 sixgr.config.assertRuntimeFeatureUse(cfg, "cfo_correction", ...
@@ -101,6 +121,19 @@ if hasPHYGrant
     sixgr.phy.grant.assertPHYGrantDimensions(phyGrant, "pusch_rx_entry");
     cfg = sixgr.phy.grant.applyPHYGrantToConfig(cfg, phyGrant);
     opt = sixgr.phy.ul.pusch.resolveFrozenReceiveCoding(opt,phyGrant);
+end
+if ~isempty(opt.UCIReceiveContext)
+    for name=["TransportBlockSize","TargetCodeRate","RV"]
+        value=opt.(name);
+        assert(~isempty(value) && isreal(value) && all(isfinite(value(:))), ...
+            'sixgr:pusch:MissingUCIReceiveCodingAuthority', ...
+            'Independent UCI reception requires explicit or frozen-gNB %s.',name);
+    end
+    value=opt.InitialIMCSPerCodeword;
+    assert(~isempty(value) && isreal(value) && all(isfinite(value(:))) && ...
+        all(value(:)>=0 & value(:)==fix(value(:))), ...
+        'sixgr:pusch:MissingUCIReceiveCodingAuthority', ...
+        'Independent UCI reception requires the gNB original-TB MCS reference per codeword.');
 end
 profScope = sixgr.perf.TimeProfiler.scope("sixgr.phy.ul.PUSCH_Rx", ...
     "Stage", "ul_pusch_rx", ...
@@ -637,12 +670,69 @@ end
     cwLLRCell, csi, pusch.Modulation, postEqSINR_dB, ...
     nVarForDecode, nVarDecodeInfo);
 cwLLR = cwLLRCell{1};
-[cwLLRForULSCH, uciOnPUSCH] = localDemultiplexTypedUCIFromPUSCH( ...
-    localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
-    expectedUCIPayload, initialIMCS, cfg);
+if isempty(opt.UCIReceiveContext)
+    [cwLLRForULSCH, uciOnPUSCH] = localDemultiplexTypedUCIFromPUSCH( ...
+        localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
+        expectedUCIPayload, initialIMCS, cfg);
+else
+    [cwLLRForULSCH, uciOnPUSCH] = sixgr.phy.ul.pusch.receiveConfiguredUCI( ...
+        localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
+        opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration);
+end
 
 % Resolve LDPC rate recovery only AFTER received UCI has established the
 % actual UL-SCH resource count. Expected TX CSI lengths are not RX authority.
+if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
+    % Independent UCI remains available even when received CSI cannot select
+    % the data resources. Do not give LDPC an empty guessed codeword or report
+    % a CRC failure for a transport block that was never decoded. Resolved
+    % codeword LLRs are independently decoded, using only their own coding
+    % and soft-combining authority. Unknown maps have no CRC decision.
+    partialLayouts=opt.CodingLayout;
+    if hasPHYGrant
+        assert(nCodewords==1,'sixgr:phy:ul:PUSCHFrozenGrantCodewordMismatch', ...
+            'High-rank frozen grants require per-codeword immutable coding layouts.');
+        if isempty(partialLayouts), partialLayouts=phyGrant.CodingLayout; end
+    end
+    dataReception=sixgr.phy.ul.pusch.decodeResolvedULSCH(cwLLRForULSCH, ...
+        uciOnPUSCH.ULSCHMappingResolved,pusch,trBlkSize,targetCodeRate,rv, ...
+        partialLayouts,maxIter,alg,opt.HARQSoftBufferLLR,opt.HARQSoftBufferLayout);
+    rx=struct('ReceiveTiming',receiveTiming,'TransportBlockSize',trBlkSize, ...
+        'TransportBlock',dataReception.TransportBlocks{1}, ...
+        'TransportBlocks',{dataReception.TransportBlocks}, ...
+        'Ok',dataReception.AllTransportBlocksPassed,'ReceiverUsable',true, ...
+        'DecodeAttempted',any(dataReception.DecodeAttempted), ...
+        'DecodeUsable',any(dataReception.DecodeAttempted), ...
+        'TransportBlockDecodeAttempted',dataReception.DecodeAttempted, ...
+        'TransportBlockCRCAvailable',dataReception.CRCAvailable, ...
+        'TransportBlockCRCPassPerCodeword',dataReception.CRCPass, ...
+        'TransportBlockCRCErrorPerCodeword',dataReception.CRCError, ...
+        'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
+        'FailureReason',"ulsch_resource_mapping_unresolved_after_csi_part1_rejection", ...
+        'ULSCHMappingResolved',uciOnPUSCH.ULSCHMappingResolved, ...
+        'ULSCHLLR',{cwLLRForULSCH},'CodewordLLR',{cwLLRCell}, ...
+        'UCIOnPUSCH',uciOnPUSCH,'UCIReceiverEvidence',uciOnPUSCH.UCIReceiverEvidence, ...
+        'DecodedHARQACKBits',uciOnPUSCH.DecodedHARQACKBits, ...
+        'DecodedCSIPart1Bits',uciOnPUSCH.DecodedCSIPart1Bits, ...
+        'DecodedCSIPart2Bits',uciOnPUSCH.DecodedCSIPart2Bits, ...
+        'DecodedConfiguredGrantUCIBits',uciOnPUSCH.DecodedConfiguredGrantUCIBits, ...
+        'UCIReferenceScoringAvailable',false, ...
+        'UCIReceiveContextDigest',uciOnPUSCH.ReceiverContextDigest, ...
+        'Hest',Hest,'ChannelEstimateInfo',estInfo,'EqualizedSymbols',eqSym, ...
+        'NoiseVar',double(nVar),'NoiseVarDomain',"resource_grid_pre_equalization", ...
+        'NoiseVarSource',string(noiseStatus.Source),'NoiseVarStatus',string(noiseStatus.Status), ...
+        'DecoderNoiseVar',double(nVarForDecode),'ReceiverSINR',receiverSINR, ...
+        'ReceiverPipelineLatency_ms',1e3*toc(receiverPipelineTic), ...
+        'ExecutionBackend',"nrPUSCHDecode_partial_UCI_independent_ULSCH_truth");
+    if hasPHYGrant, rx.PHYGrant=phyGrant; rx.PHYGrantDimensionContract=phyGrantContract; end
+    rx=localAnnotateReceiveCombiner(rx,receiveCombinerInfo);
+    info=struct('CarrierInfo',cinfo,'PUSCHInfo',puschInfo, ...
+        'UCIOnPUSCH',uciOnPUSCH,'ReceiveCombiner',receiveCombinerInfo, ...
+        'TransportBlockDecodeAttempted',dataReception.DecodeAttempted, ...
+        'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
+        'ExecutionBackend',rx.ExecutionBackend);
+    return;
+end
 ulschRateMatchedBitCount=double(cellfun(@numel,cwLLRForULSCH));
 codingLayouts = localResolveRxCodingLayouts(opt.CodingLayout, phyGrant, "UL", ...
     trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ...
@@ -1054,24 +1144,31 @@ else
 end
 
 rx.HARQACKBitCount = double(uciOnPUSCH.HARQACKBitCount);
-rx.ExpectedHARQACKBits = int8(uciOnPUSCH.ExpectedHARQACKBits(:));
 rx.DecodedHARQACKBits = int8(uciOnPUSCH.DecodedHARQACKBits(:));
-rx.HARQACKContentMatch = logical(uciOnPUSCH.ContentMatch);
+if isfield(uciOnPUSCH, 'ContentMatch')
+    rx.ExpectedHARQACKBits = int8(uciOnPUSCH.ExpectedHARQACKBits(:));
+    rx.HARQACKContentMatch = logical(uciOnPUSCH.ContentMatch);
+else
+    rx.UCIReferenceScoringAvailable = false;
+    rx.UCIReceiveContextDigest = uciOnPUSCH.ReceiverContextDigest;
+end
 rx.HARQACKDecodeStatus = char(string(uciOnPUSCH.Status));
 rx.HARQACKDecodeReason = char(string(uciOnPUSCH.Reason));
 rx.CSI1BitCount = double(uciOnPUSCH.CSI1BitCount);
 rx.CSI2BitCount = double(uciOnPUSCH.CSI2BitCount);
 rx.ConfiguredGrantUCIBitCount = double(uciOnPUSCH.ConfiguredGrantUCIBitCount);
-rx.ExpectedCSIPart1Bits = int8(uciOnPUSCH.ExpectedCSIPart1Bits(:));
-rx.ExpectedCSIPart2Bits = int8(uciOnPUSCH.ExpectedCSIPart2Bits(:));
-rx.ExpectedConfiguredGrantUCIBits = int8(uciOnPUSCH.ExpectedConfiguredGrantUCIBits(:));
 rx.DecodedCSIPart1Bits = int8(uciOnPUSCH.DecodedCSIPart1Bits(:));
 rx.DecodedCSIPart2Bits = int8(uciOnPUSCH.DecodedCSIPart2Bits(:));
 rx.DecodedConfiguredGrantUCIBits = int8(uciOnPUSCH.DecodedConfiguredGrantUCIBits(:));
-rx.CSI1ContentMatch = logical(uciOnPUSCH.CSI1ContentMatch);
-rx.CSI2ContentMatch = logical(uciOnPUSCH.CSI2ContentMatch);
 rx.UCIReceiverEvidence=uciOnPUSCH.UCIReceiverEvidence;
-rx.ConfiguredGrantUCIContentMatch = logical(uciOnPUSCH.ConfiguredGrantUCIContentMatch);
+if isfield(uciOnPUSCH, 'ContentMatch')
+    rx.ExpectedCSIPart1Bits = int8(uciOnPUSCH.ExpectedCSIPart1Bits(:));
+    rx.ExpectedCSIPart2Bits = int8(uciOnPUSCH.ExpectedCSIPart2Bits(:));
+    rx.ExpectedConfiguredGrantUCIBits = int8(uciOnPUSCH.ExpectedConfiguredGrantUCIBits(:));
+    rx.CSI1ContentMatch = logical(uciOnPUSCH.CSI1ContentMatch);
+    rx.CSI2ContentMatch = logical(uciOnPUSCH.CSI2ContentMatch);
+    rx.ConfiguredGrantUCIContentMatch = logical(uciOnPUSCH.ConfiguredGrantUCIContentMatch);
+end
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
     rx.CodewordLLRCell = cwLLRCell;
@@ -3371,16 +3468,21 @@ rx.HARQACKBitCount = double(uci.HARQACKBitCount);
 rx.CSI1BitCount = double(uci.CSI1BitCount);
 rx.CSI2BitCount = double(uci.CSI2BitCount);
 rx.ConfiguredGrantUCIBitCount = double(uci.ConfiguredGrantUCIBitCount);
-rx.ExpectedHARQACKBits = int8(uci.ExpectedHARQACKBits(:));
 rx.DecodedHARQACKBits = int8(uci.DecodedHARQACKBits(:));
 rx.DecodedCSIPart1Bits = int8(uci.DecodedCSIPart1Bits(:));
 rx.DecodedCSIPart2Bits = int8(uci.DecodedCSIPart2Bits(:));
 rx.DecodedConfiguredGrantUCIBits = int8(uci.DecodedConfiguredGrantUCIBits(:));
-rx.HARQACKContentMatch = logical(uci.ContentMatch);
-rx.CSI1ContentMatch = logical(uci.CSI1ContentMatch);
-rx.CSI2ContentMatch = logical(uci.CSI2ContentMatch);
 rx.UCIReceiverEvidence=uci.UCIReceiverEvidence;
-rx.ConfiguredGrantUCIContentMatch = logical(uci.ConfiguredGrantUCIContentMatch);
+if isfield(uci, 'ContentMatch')
+    rx.ExpectedHARQACKBits = int8(uci.ExpectedHARQACKBits(:));
+    rx.HARQACKContentMatch = logical(uci.ContentMatch);
+    rx.CSI1ContentMatch = logical(uci.CSI1ContentMatch);
+    rx.CSI2ContentMatch = logical(uci.CSI2ContentMatch);
+    rx.ConfiguredGrantUCIContentMatch = logical(uci.ConfiguredGrantUCIContentMatch);
+else
+    rx.UCIReferenceScoringAvailable = false;
+    rx.UCIReceiveContextDigest = uci.ReceiverContextDigest;
+end
 rx.HARQACKDecodeStatus = char(string(uci.Status));
 if ~logical(compactOutput)
     rx.ChannelEstimate = Hest;

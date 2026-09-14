@@ -623,6 +623,8 @@ pucch_resources:
   enabled: true
   profile: nr_rel18_pucch_strict
   configuration_epoch: 1
+  # Ordered RRC list for DCI 1_1; scheduler K1 candidates remain unchanged.
+  dl_data_to_ul_ack: [4, 5, 6, 7, 8]
   multi_user_assignment:
     mode: rnti_modulo_resource_set
     resource_set_id: 0

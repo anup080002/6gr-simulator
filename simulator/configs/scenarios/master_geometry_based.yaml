@@ -1072,6 +1072,23 @@ canonical_control:
       note17_band: false
     sib1:
       enabled: true
+      # RAR and Msg4 use a Type-1 common search space carried by SIB1.
+      # This is separate from MIB-derived CORESET0/SearchSpace0 for SIB1.
+      pdcch_config_common:
+        commonControlResourceSet:
+          controlResourceSetId: 1
+          frequencyDomainResources: '111100000000000000000000000000000000000000000'
+          duration: 2
+          cce_REG_MappingType: nonInterleaved
+          precoderGranularity: sameAsREG-bundle
+        commonSearchSpaceList:
+          - searchSpaceId: 1
+            controlResourceSetId: 1
+            monitoringSlotPeriodicityAndOffset: {periodicity: sl1, offset: 0}
+            monitoringSymbolsWithinSlot: '10000000000000'
+            nrofCandidates: [0, 0, 1, 0, 0]
+            searchSpaceType: common
+        ra_SearchSpace: 1
       si_rnti: 65535
       coreset0_from_mib_required: true
       searchspace0_from_mib_required: true
@@ -1184,6 +1201,15 @@ canonical_control:
       msg4_processing_delay_slots: 1
       setup_complete_k2_slots: 1
     dci_payload_bits: 32
+    # Explicit TC-RNTI DCI 1_0 field authority; payload size is derived by
+    # the codec, not by the legacy dci_payload_bits compatibility field.
+    msg4_dci:
+      ndi: 1
+      harq_process: 0
+      tpc_command_for_pucch: 1
+      pucch_resource_indicator: 0
+      pdsch_to_harq_feedback_timing: 1
+      harq_ack_repetitions_configured: false
     msg2_pdsch:
       prb_start: 0
       num_prb: 24

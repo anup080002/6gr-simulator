@@ -76,16 +76,27 @@ schStrict = sixgr.l2.mac.SchedulerPF(cfgStrict, "Direction", "DL");
 assert(~logical(info.UsedFastNREApprox), "Strict TBS mode must not use the fast NRE approximation.");
 assert(double(nrePerPRB) < 12 * 13, "Strict TBS mode must use actual RE counting with DMRS/overhead removed.");
 
-invalidTypeBFailed = false;
-try
-    schStrict.estimateTBS("QPSK", 1, 12, [0 14], 0.5, "ForceExact", true);
-catch ME
-    invalidTypeBFailed = strcmp(string(ME.identifier), ...
-        "sixgr:SchedulerBase:ExactResourceAccountingFailed") && ...
-        contains(string(ME.message), "no DM-RS resource elements");
+% Independently verify the invalid allocation has no Toolbox DM-RS, then
+% require that exact rejection (not an unrelated error or a zero-sized TBS).
+carrierInvalid = sixgr.phy.grid.makeCarrier(cfgStrict);
+pdschInvalid = sixgr.phy.grid.pdschConfigFromConfig(carrierInvalid, cfgStrict, ...
+    "PRBSet", 0:11, "SymbolAllocation", [0 14], "Modulation", "QPSK", "NumLayers", 1);
+assert(isempty(nrPDSCHDMRSIndices(carrierInvalid, pdschInvalid)), ...
+    "The declared invalid type-B fixture must contain no Toolbox DM-RS REs.");
+for attempt = 1:2
+    % Repeated calls must not cache invalid accounting as a usable TBS.
+    invalidTypeBFailed = false;
+    try
+        schStrict.estimateTBS("QPSK", 1, 12, [0 14], 0.5, "ForceExact", true);
+    catch ME
+        invalidTypeBFailed = strcmp(string(ME.identifier), ...
+            "sixgr:SchedulerBase:ExactResourceAccountingFailed") && ...
+            numel(ME.cause) == 1 && strcmp(string(ME.cause{1}.identifier), ...
+            "sixgr:pdsch:NoDMRSResources") && ~isempty(ME.cause{1}.stack);
+    end
+    assert(invalidTypeBFailed, ...
+        "An invalid full-slot mapping-type-B allocation must retain its no-DMRS cause and fail closed on attempt %d.", attempt);
 end
-assert(invalidTypeBFailed, ...
-    "An invalid full-slot mapping-type-B allocation must fail closed when it produces no DM-RS REs.");
 
 cfgDefault = sixgr.config.defaultConfig();
 cfgDefault = sixgr.config.normalizeConfig(cfgDefault);

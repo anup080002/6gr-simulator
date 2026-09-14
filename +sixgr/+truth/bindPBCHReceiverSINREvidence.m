@@ -28,4 +28,15 @@ row.SINRValueRole = row.MeasuredTrialSINRValueRole;
 row.SINRSource = row.MeasuredTrialSINRSource;
 row.SINRValueStatus = row.MeasuredTrialSINRValueStatus;
 row.SINRValueDefinition = "measured_trial_sinr_from_pbch_dmrs_channel_estimate";
+replay=sixgr.util.structGet(receiver,'RuntimeChannelReplay',struct());
+if isstruct(replay) && isscalar(replay) && ~isempty(fieldnames(replay))
+    variance=double(sixgr.util.structGet(replay,'InjectedNoiseVariance',NaN));
+    row.RuntimeNoiseApplied=isfinite(variance) && variance>0;
+    row.RuntimeNoiseVarianceMean=variance;
+    row.RuntimeNoiseVarianceDomain="time_sample_per_receive_branch";
+    row.RuntimeChannelStateUsed=logical(sixgr.util.structGet(replay,'RuntimeChannelStateUsed',false));
+    row.RuntimeChannelLinkKeys=string(sixgr.util.structGet(replay,'RuntimeChannelLinkKey',""));
+    row.AppliedAWGNSNR_dB=double(sixgr.util.structGet(replay,'AppliedAWGNSNR_dB',NaN));
+    row.AppliedAWGNSNRSource=string(sixgr.util.structGet(replay,'NoiseOperatingMode',""));
+end
 end

@@ -3471,9 +3471,7 @@ row.PowerNormalizationGridSubcarrierCount = double(sixgr.util.structGet(powerCon
 row.PowerNormalizationGridActiveSymbolCount = double(sixgr.util.structGet(powerContext, "NormalizationGridActiveSymbolCount", NaN));
 row.PowerNormalizationGridMeanEnergyPerRE = double(sixgr.util.structGet(powerContext, "NormalizationGridMeanEnergyPerRE", NaN));
 row.FullBWPActivityFactor = double(sixgr.util.structGet(powerContext, "FullBWPActivityFactor", NaN));
-row.ReferenceInputPower_dBm = double(sixgr.util.structGet(powerContext, "ReferenceInputPower_dBm", NaN));
-row.ReferenceOutputPower_dBm = double(sixgr.util.structGet(powerContext, "ReferenceOutputPower_dBm", NaN));
-row.ActualEmittedPower_dBm = double(sixgr.util.structGet(powerContext, "OutputTotalPower_dBm", NaN));
+row = sixgr.report.bindTransmitPowerEvidence(row, powerContext);
 row.ActualEmittedPowerBackoffFromBudget_dB = double(sixgr.util.structGet(powerContext, "ActualEmittedPowerBackoffFromBudget_dB", NaN));
 row.PowerClosureError_dB = double(sixgr.util.structGet(powerContext, "PowerClosureError_dB", NaN));
 row.PowerConversionEquation = string(sixgr.util.structGet(powerContext, "ConversionEquation", ""));
@@ -3613,6 +3611,7 @@ row = struct( ...
     "RuntimeMaterializationStatus", "", "TxRuntimeMaterializationStatus", "", ...
     "RxRuntimeObservationStatus", "", "RuntimeBlocker", "", "RuntimeEvidenceSource", "", ...
     "RuntimeEventObserved", false, "SourceArtifact", "", "SourceTable", "");
+row = sixgr.report.bindTransmitPowerEvidence(row, struct());
 end
 
 function cellID = localCarrierCellID(carrier)
@@ -3953,9 +3952,7 @@ row.PowerNormalizationGridSubcarrierCount = double(sixgr.util.structGet(powerCon
 row.PowerNormalizationGridActiveSymbolCount = double(sixgr.util.structGet(powerContext, "NormalizationGridActiveSymbolCount", NaN));
 row.PowerNormalizationGridMeanEnergyPerRE = double(sixgr.util.structGet(powerContext, "NormalizationGridMeanEnergyPerRE", NaN));
 row.FullBWPActivityFactor = double(sixgr.util.structGet(powerContext, "FullBWPActivityFactor", NaN));
-row.ReferenceInputPower_dBm = double(sixgr.util.structGet(powerContext, "ReferenceInputPower_dBm", NaN));
-row.ReferenceOutputPower_dBm = double(sixgr.util.structGet(powerContext, "ReferenceOutputPower_dBm", NaN));
-row.ActualEmittedPower_dBm = double(sixgr.util.structGet(powerContext, "OutputTotalPower_dBm", NaN));
+row = sixgr.report.bindTransmitPowerEvidence(row, powerContext);
 row.ActualEmittedPowerBackoffFromBudget_dB = double(sixgr.util.structGet(powerContext, "ActualEmittedPowerBackoffFromBudget_dB", NaN));
 row.PowerClosureError_dB = double(sixgr.util.structGet(powerContext, "PowerClosureError_dB", NaN));
 row.PowerConversionEquation = string(sixgr.util.structGet(powerContext, "ConversionEquation", ""));
@@ -4356,6 +4353,7 @@ row = struct( ...
     "PowerClosureError_dB", NaN, "PowerConversionEquation", "", ...
     "AbsolutePowerReferencePlane", "", "SamplePowerReferencePlane", "", ...
     "InterferencePowerReferencePlane", "");
+row = sixgr.report.bindTransmitPowerEvidence(row, struct());
 end
 
 function id = localCompositeRFChainId(txId, rxId)

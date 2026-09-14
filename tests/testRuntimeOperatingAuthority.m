@@ -5,6 +5,15 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", ...
     "master_geometry_based.yaml");
 scenario = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+% A non-default Msg4 DCI must survive canonical normalization; equality to
+% the default alone would not detect a missing canonical-to-runtime mapping.
+changedAccess = scenario.toStruct();
+changedAccess.canonical_control.random_access.msg4_dci.ndi = 0;
+changedAccess.canonical_control.random_access.msg4_dci.harq_process = 3;
+changedAccess = sixgr.lls6g.config.normalizeScenarioAliases(changedAccess);
+assert(isequaln(changedAccess.random_access.msg4_dci, ...
+    changedAccess.canonical_control.random_access.msg4_dci), ...
+    "Explicit Msg4 DCI authority must override stale/default runtime mirrors.");
 cfg = sixgr.lls6g.buildInternalConfig(scenario, ...
     fullfile(tempdir, "sixgr_runtime_operating_authority_test"));
 
@@ -126,7 +135,25 @@ badSource.reference_signals.trs_enabled = false;
 localAssertThrows(@() sixgr.config.installRuntimeOperatingAuthority(cfg, badSource), ...
     "sixgr:config:ContradictoryRuntimeAuthority");
 
+% Initial-access common control is explicit YAML authority, not a hidden
+% connected-PDCCH or SearchSpaceZero fallback in the RA constructor.
+authoredCommon=scenario.get("initial_access.sib1.pdcch_config_common",struct());
+assert(isequaln(cfg.initial_access.sib1.pdcch_config_common,authoredCommon));
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+[commonControl,commonEvidence]=sixgr.phy.ra.resolveRARCommonControl(cfg,carrier);
+assert(commonControl.CORESET.CORESETID==authoredCommon.commonControlResourceSet.controlResourceSetId && ...
+    commonControl.SearchSpace.SearchSpaceID==authoredCommon.ra_SearchSpace && ...
+    commonEvidence.NCCE==8 && commonControl.AggregationLevel==4 && ...
+    commonEvidence.Source=="scenario_common_control_pending_sib1");
+missingCommon=cfg;
+missingCommon.initial_access.sib1=rmfield(missingCommon.initial_access.sib1,'pdcch_config_common');
+localAssertThrows(@()sixgr.phy.ra.resolveRARCommonControl(missingCommon,carrier), ...
+    "sixgr:phy:ra:UnsupportedRARCommonControl");
+zeroSpace=cfg; zeroSpace.initial_access.sib1.pdcch_config_common.ra_SearchSpace=0;
+localAssertThrows(@()sixgr.phy.ra.resolveRARCommonControl(zeroSpace,carrier), ...
+    "sixgr:phy:ra:UnsupportedRARCommonControl");
 ra = sixgr.mac.ra.RAConfig(cfg, "UEId", 1, "AttemptId", 1);
+assert(isequaln(ra.Msg4DCI,scenario.get("random_access.msg4_dci",struct())));
 assert(ra.Msg2PDSCH.EnablePTRS && ra.Msg3PUSCH.EnablePTRS && ...
     ra.Msg4PDSCH.EnablePTRS && ra.SetupCompletePUSCH.EnablePTRS, ...
     "YAML PT-RS authority must reach SIB/RA data-channel waveform objects.");

@@ -2774,6 +2774,25 @@ if isfield(s.control,'connected_dci')
     cfg.phy.pdcch.dciPayloadSizeSource='installed_connected_RRC_context';
     sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfg, ...
         sixgr.phy.grid.makeCarrier(cfg),cfg.phy.pdsch.RNTI,true);
+elseif isstruct(strictControl) && isfield(strictControl,'dci_context')
+    % The early layout pass precedes installed PUCCH/BWP configuration.
+    % Replace it with the same complete RRC timing context used by packing
+    % and independent decoding; a changed list can change the payload size.
+    formats=string(s.control.dci_formats(:));
+    contexts=cell(numel(formats),1); sizes=zeros(numel(formats),1);
+    digests=strings(numel(formats),1);
+    for i=1:numel(formats)
+        context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,formats(i));
+        contexts{i}=context.Data; digests(i)=context.Digest;
+        aligned=sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(context);
+        sizes(i)=aligned.Selected.AlignedBits;
+    end
+    cfg.phy.pdcch.dciContextData=contexts;
+    cfg.phy.pdcch.dciContextDigests=digests;
+    cfg.phy.pdcch.dciPayloadSizesByFormat=sizes;
+    cfg.phy.pdcch.dciPayloadBits=sizes(1);
+    cfg.phy.pdcch.KBits=sizes(1);
+    cfg.phy.pdcch.payloadSizeSource="installed_RRC_feedback_timing_context";
 end
 end
 
@@ -2783,6 +2802,11 @@ cfg = sixgr.util.structSet(cfg, "validation.strict", logical(localGetNested(s, "
 pucchSection = localGetNested(s, "pucch_resources", struct());
 if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
     cfg = sixgr.util.structSet(cfg, "validation.pucch_resources", pucchSection);
+    % Installed DCI interpretation is independent of this study's PUCCH
+    % transmit enable switch. Preserve the authored list; do not synthesize
+    % a replacement list or enable any receiver/transmitter by retaining it.
+    cfg = sixgr.util.structSet(cfg,"phy.pucch.dlDataToULACK", ...
+        localGetNested(s,"pucch_resources.dl_data_to_ul_ack",[]));
     if logical(localGetNested(s, "pucch_resources.enabled", false))
         profile = string(localGetNested(s,"pucch_resources.profile",""));
         epoch = double(localGetNested(s,"pucch_resources.configuration_epoch",NaN));
@@ -2869,8 +2893,6 @@ if builtin("isstruct", pucchSection) && ~isempty(fieldnames(pucchSection))
         cfg = sixgr.util.structSet(cfg,"phy.pucch.configurationEpoch",epoch);
         cfg = sixgr.util.structSet(cfg,"phy.pucch.resourceSets",resourceSets);
         cfg = sixgr.util.structSet(cfg,"phy.pucch.resources",resources);
-        cfg = sixgr.util.structSet(cfg,"phy.pucch.dlDataToULACK", ...
-            localGetNested(s,"pucch_resources.dl_data_to_ul_ack",[]));
         harqACKResourceID = double(localGetNested(s, ...
             "pucch_resources.harq_ack.resource_id", NaN));
         if ~(isscalar(harqACKResourceID) && isfinite(harqACKResourceID) && ...

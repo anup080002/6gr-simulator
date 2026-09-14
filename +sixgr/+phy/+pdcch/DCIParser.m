@@ -130,6 +130,14 @@ classdef DCIParser
                     derived.pdsch_to_harq_feedback_timing_slots=data.DLDataToULACK(indicator+1);
                 end
             end
+            if direction=="DL" && isfield(data,'HARQFeedbackTimingConfigured')
+                indicator=[];
+                if isfield(fields,'pdsch_to_harq_feedback_timing')
+                    indicator=fields.pdsch_to_harq_feedback_timing;
+                end
+                derived.pdsch_to_harq_feedback_timing_slots = ...
+                    sixgr.phy.pdcch.HARQFeedbackTiming.decode(data,indicator);
+            end
             if isfield(fields, "tpc_command_for_pusch")
                 derived.tpc = double(fields.tpc_command_for_pusch);
             elseif isfield(fields, "tpc_command_for_pucch")

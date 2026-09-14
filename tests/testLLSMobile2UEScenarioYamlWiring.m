@@ -1,4 +1,4 @@
-function ok = testLLSMobile2UEScenarioYamlWiring()
+function ok = testLLSMobile2UEScenarioYamlWiring(outputRoot, runnerFn)
 %TESTLLSMOBILE2UESCENARIOYAMLWIRING Verify the mobile 2UE study YAML is present and runtime-wired.
 
 setup6GRSimToolkit("Verbose", false);
@@ -38,10 +38,18 @@ for idx = 1:numel(requiredSections)
         "Resolved mobile study config must contain section '%s'.", requiredSections{idx});
 end
 
-tmp = tempname;
+if nargin < 1 || strlength(string(outputRoot)) == 0
+    logsRoot = fullfile(pwd, 'logs');
+    if ~isfolder(logsRoot), mkdir(logsRoot); end
+    outputRoot = tempname(logsRoot);
+end
+if nargin < 2, runnerFn = @sixgr.system.SystemLevelRunner.run; end
+tmp = char(outputRoot);
+assert(~isfolder(tmp), 'test:EvidenceExists', 'Choose a new retained test directory.');
 mkdir(tmp);
-c = onCleanup(@() localCleanupTempFolder(tmp)); %#ok<NASGU>
+fprintf('MOBILE_2UE_TEST_ARTIFACT_ROOT=%s\n', tmp);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+save(fullfile(tmp, 'test_configuration.mat'), 'cfg', 'resolved', 'scenarioPath');
 
 assert(logical(sixgr.util.structGet(cfg, "phy.waveform.windowingEnabled", false)), ...
     "waveform.windowing_enabled must wire into phy.waveform.windowingEnabled.");
@@ -234,13 +242,15 @@ assert(all(abs(initialDistances_m - [50; 500]) < 1e-9), ...
 assert(all(double(ue.max_ue_bs_distance_m) == 500), ...
     "deployment_topology.max_ue_distance_from_bs_m must wire into the UE drop distance bounds.");
 ctx = sixgr.core.SimContext(cfg, "RunFolder", fullfile(tmp, "run"));
+loggerCleanup = onCleanup(@() ctx.Logger.close()); %#ok<NASGU>
 ctx.Logger.EchoToConsole = false;
-out = sixgr.system.SystemLevelRunner.run(ctx, struct( ...
+out = runnerFn(ctx, struct( ...
     "PHYBackend", "waveform", ...
     "DetailedTrace", true, ...
     "NumTTI", 4, ...
     "SimDuration_s", 4 * 0.5e-3));
 ctx.Logger.close();
+save(fullfile(tmp, 'test_output.mat'), 'out', '-v7.3');
 assert(logical(out.Ok), ...
     "The mobile 2UE scenario must complete a 4-slot waveform-backed system run. Errors: %s", ...
     strjoin(cellstr(out.Errors), " | "));
@@ -255,14 +265,4 @@ assert(isempty(slot4UL), ...
     "The one-symbol UL tail in the canonical special slot must not emit executable UL data grants.");
 
 ok = true;
-end
-
-function localCleanupTempFolder(tmp)
-runLog = fullfile(tmp, "run", "logs", "run.log");
-if exist(runLog, "file") == 2
-    fclose("all");
-end
-if isfolder(tmp)
-    rmdir(tmp, "s");
-end
 end

@@ -100,6 +100,9 @@ end
 
 function cfg = localBasicStrictPDSCHCfg()
 cfg = sixgr.config.defaultConfig();
+% Isolated narrow-carrier PDSCH calibration; no SS/PBCH is transmitted here.
+% SSB reservation/collision coverage remains in testSSBPRBSymbolReservation.
+cfg.phy.ssb.enable = false;
 cfg.run.shortRun = true;
 cfg.run.strictMode = true;
 cfg.run.noProxyTruthContract = true;

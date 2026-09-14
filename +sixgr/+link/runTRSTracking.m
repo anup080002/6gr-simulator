@@ -136,6 +136,7 @@ out.ActualEmittedPower_dBm = NaN;
 out.ActualEmittedPowerBackoffFromBudget_dB = NaN;
 out.PowerClosureError_dB = NaN;
 out.PowerConversionEquation = "";
+out = sixgr.report.bindTransmitPowerEvidence(out, struct());
 out.ObservedREAllocationTable = table();
 
 configuredTRS = logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
@@ -232,12 +233,8 @@ try
         powerContext,"NormalizationGridMeanEnergyPerRE",NaN));
     out.FullBWPActivityFactor = double(sixgr.util.structGet( ...
         powerContext,"FullBWPActivityFactor",NaN));
-    out.ReferenceInputPower_dBm = double(sixgr.util.structGet( ...
-        powerContext,"ReferenceInputPower_dBm",NaN));
-    out.PowerReferenceOutput_dBm = double(sixgr.util.structGet( ...
-        powerContext,"ReferenceOutputPower_dBm",NaN));
-    out.ActualEmittedPower_dBm = double(sixgr.util.structGet( ...
-        powerContext,"OutputTotalPower_dBm",NaN));
+    out = sixgr.report.bindTransmitPowerEvidence(out, powerContext);
+    out.PowerReferenceOutput_dBm = out.ReferenceOutputPower_dBm;
     out.ActualEmittedPowerBackoffFromBudget_dB = double(sixgr.util.structGet( ...
         powerContext,"ActualEmittedPowerBackoffFromBudget_dB",NaN));
     out.PowerClosureError_dB = double(sixgr.util.structGet( ...

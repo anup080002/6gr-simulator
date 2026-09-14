@@ -61,6 +61,11 @@ classdef DCISchemaEngine
             nTime = max(1, ceil(log2(size(timeRows, 1))));
             nHARQ = max(1, ceil(log2(double(data.HARQProcessCount))));
             definitions = sixgr.phy.pdcch.DCISchemaEngine.emptyDefinitions();
+            feedbackWidth=3; feedbackMax=7;
+            if fmt=="1_1" && isfield(data,'HARQFeedbackTimingConfigured')
+                [feedbackValues,feedbackWidth]=sixgr.phy.pdcch.HARQFeedbackTiming.table(data);
+                feedbackMax=numel(feedbackValues)-1;
+            end
 
             ulWidth=6; ulMax=63; ulClause="38.212 7.3.1.1 (legacy mapping; not table-qualified)";
             sriWidth=data.SRSResourceIndicatorWidth; sriMax=2^sriWidth-1;
@@ -107,7 +112,7 @@ classdef DCISchemaEngine
                         localDef("dai", data.DAIWidth, 0, 2^data.DAIWidth-1, "HARQ-ACK codebook", "38.212 7.3.1.2")
                         localDef("tpc_command_for_pucch", 2, 0, 3, "PUCCH power control", "38.212 7.3.1.2")
                         localDef("pucch_resource_indicator", 3, 0, 7, "PUCCH resource set", "38.212 7.3.1.2")
-                        localDef("pdsch_to_harq_feedback_timing", 3, 0, 7, "dl-DataToUL-ACK", "38.212 7.3.1.2")];
+                        localDef("pdsch_to_harq_feedback_timing", 3, 0, 7, "38.213 9.2.3 PUCCH numerology table", "38.212 7.3.1.2.1")];
                 case "0_1"
                     definitions = [
                         definitions
@@ -149,7 +154,7 @@ classdef DCISchemaEngine
                         localDef("dai", data.DAIWidth, 0, 2^data.DAIWidth-1, "HARQ-ACK codebook", "38.212 7.3.1.2")
                         localDef("tpc_command_for_pucch", 2, 0, 3, "PUCCH power control", "38.212 7.3.1.2")
                         localDef("pucch_resource_indicator", 3, 0, 7, "PUCCH resource set", "38.212 7.3.1.2")
-                        localDef("pdsch_to_harq_feedback_timing", 3, 0, 7, "dl-DataToUL-ACK", "38.212 7.3.1.2")
+                        localDef("pdsch_to_harq_feedback_timing", feedbackWidth, 0, feedbackMax, "dl-DataToUL-ACK", "38.212 7.3.1.2.2")
                         localDef("antenna_ports", dlAntennaWidth, 0, 2^dlAntennaWidth-1, "PDSCH DM-RS configuration", "38.212 7.3.1.2.2")
                         localOptional(data.TCIPresent, "transmission_configuration_indication", data.TCIWidth, "active TCI states", "38.212 7.3.1.2")
                         localDef("srs_request", data.SRSRequestWidth, 0, 2^data.SRSRequestWidth-1, "SRS request configuration", "38.212 7.3.1.2")

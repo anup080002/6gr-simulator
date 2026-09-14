@@ -35,16 +35,27 @@ for invalid = [-1 0.5 NaN Inf]
 end
 
 % Exercise actual coded waveforms on both sides of a 30 kHz frame boundary.
-% These are isolated waveform fixtures, not a TDD/FDD scenario slot plan.
+% These remain isolated sequence fixtures, not a complete RA scheduling test.
+% Respect the anchor's two-DL/eight-UL TDD map while crossing the frame edge.
 cfg = raStrictAnchorConfig();
 cfg.phy.pusch.transformPrecoding = false;
 cfg.random_access.msg3_pusch.transform_precoding = false;
 cfg.random_access.setup_complete_pusch.transform_precoding = false;
 ra = sixgr.mac.ra.RAConfig(cfg);
-ra.Msg2Slot = 19;
+ra.Msg2Slot = 11;
 ra.Msg3Slot = 23;
-ra.Msg4Slot = 24;
-ra.SetupCompleteSlot = 25;
+ra.Msg4Slot = 30;
+ra.SetupCompleteSlot = 32;
+frame=sixgr.phy.FrameStructureEngine(cfg,'FrameCoreOnly',true);
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+[control,~]=sixgr.phy.ra.resolveRARCommonControl(cfg,carrier);
+controlSymbols=[control.SearchSpace.StartSymbolWithinSlot control.CORESET.Duration];
+assert(frame.IsDLAllocation(ra.Msg2Slot,controlSymbols) && ...
+    frame.IsDLAllocation(ra.Msg4Slot,controlSymbols));
+assert(frame.IsDLAllocation(ra.Msg2Slot,[ra.Msg2PDSCH.SymbolStart ra.Msg2PDSCH.NumSymbols]) && ...
+    frame.IsDLAllocation(ra.Msg4Slot,[ra.Msg4PDSCH.SymbolStart ra.Msg4PDSCH.NumSymbols]));
+assert(frame.IsULAllocation(ra.Msg3Slot,[ra.Msg3PUSCH.SymbolStart ra.Msg3PUSCH.NumSymbols]) && ...
+    frame.IsULAllocation(ra.SetupCompleteSlot,[ra.SetupCompletePUSCH.SymbolStart ra.SetupCompletePUSCH.NumSymbols]));
 grant = sixgr.mac.ra.buildRARULGrant(ra);
 rar = sixgr.mac.ra.encodeMACRAR("RAPID", ra.PreambleIndex, ...
     "TimingAdvanceCommand", 0, "TemporaryCRNTI", ra.TempCRNTI, "ULGrant", grant);

@@ -146,6 +146,9 @@ classdef CSIReportConfiguration
                 values (1,1) struct
             end
             obj.assertQualifiedWireLayout();
+            if any(obj.Part1Fields=="CRI") && isfield(values,'CRI')
+                localValidateCRI(values.CRI,obj.NumCSIResources);
+            end
             if any(obj.Part1Fields=="RI")
                 assert(isfield(values,'RI') && ~isempty(values.RI), ...
                     'sixgr:mimo:MissingCSIReportMeasurement','RI requires an explicit measured rank.');
@@ -228,6 +231,9 @@ classdef CSIReportConfiguration
             end
             values=localDeserializeFields(receivedConfig.Part1Fields, ...
                 receivedConfig.Part1Widths,part1Bits(:),struct());
+            if isfield(values,'CRI')
+                localValidateCRI(values.CRI,obj.NumCSIResources);
+            end
             if isfield(values,'RI')
                 riValues=localRIValues(obj.SchemaRequest); values.RI=riValues(values.RI);
             end
@@ -260,6 +266,14 @@ classdef CSIReportConfiguration
             values.UCIChannel = obj.UCIChannel;
         end
     end
+end
+
+function localValidateCRI(value,count)
+% Bit width permits spare binary values when the resource count is not a
+% power of two. Neither TX nor RX may turn a spare value into a resource.
+assert((isnumeric(value)||islogical(value)) && isscalar(value) && isreal(value) && ...
+    isfinite(value) && value==fix(value) && value>=0 && value<count, ...
+    'sixgr:mimo:InvalidCRI','CRI must identify a configured resource in [0,%d].',count-1);
 end
 
 function localValidateBinaryBits(bits)

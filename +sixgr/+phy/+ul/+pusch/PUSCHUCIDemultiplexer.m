@@ -9,13 +9,82 @@ classdef PUSCHUCIDemultiplexer
                 error("sixgr:pusch:MissingUCIPayload", ...
                     "UCI demultiplexing requires the expected typed payload contract.");
             end
+            % Legacy/component adapter: lengths still originate at TX here.
+            % Runtime callers must migrate to receive with a gNB-owned schema;
+            % this adapter is not evidence of independent reception.
+            reference=expectedPayload.toStruct();
+            p=struct('OACK',reference.OACK,'OCSI1',reference.OCSI1, ...
+                'OCSI2',reference.OCSI2,'OCGUCI',reference.OCGUCI);
+            result = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.decodeSchema( ...
+                pusch,targetCodeRate,transportBlockSize,codewordLLR, ...
+                p,initialIMCS,reportConfig);
+            scoring = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.score(result,expectedPayload);
+            for name=reshape(string(fieldnames(scoring)),1,[])
+                result.(name)=scoring.(name);
+            end
+            result.Source="nrULSCHDemultiplex_nrUCIDecode_typed_payload";
+        end
+
+        function result = receive(pusch,targetCodeRate,transportBlockSize, ...
+                codewordLLR,context,initialIMCS,reportConfig)
+            % Payload-free receive boundary. No TX bits, lengths or scoring.
+            if nargin<7, reportConfig=[]; end
+            assert(isa(context,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && isscalar(context), ...
+                'sixgr:pusch:MissingUCIReceiveContext', ...
+                'PUSCH reception requires its independently installed receive schema.');
+            p=context.bitBudget(reportConfig);
+            try
+                result=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.decodeSchema( ...
+                    pusch,targetCodeRate,transportBlockSize,codewordLLR,p,initialIMCS,reportConfig,true);
+                result.ULSCHMappingResolved=true(1,double(pusch.NumCodewords));
+                result.CSIPart1Usable=p.OCSI1>0 && ~isempty(reportConfig) && ...
+                    result.UCIReceiverEvidence.CSI1.DecodeUsable;
+                result.PartialReception=false;
+                result.CSIRejectionIdentifier="";
+            catch err
+                % Only received CSI interpretation failures permit partial
+                % reception. Invalid configuration, ownership, resource and
+                % implementation errors remain fatal, never rescue paths.
+                receivedErrors=["sixgr:pusch:UnresolvedReceivedCSIPart1", ...
+                    "sixgr:mimo:InvalidCRI","sixgr:mimo:InvalidRI", ...
+                    "sixgr:mimo:InvalidCSIPadding"];
+                if p.OCSI1==0 || ~ismember(string(err.identifier),receivedErrors)
+                    rethrow(err);
+                end
+                result=sixgr.phy.ul.pusch.receiveInvariantUCI( ...
+                    pusch,targetCodeRate,transportBlockSize,codewordLLR, ...
+                    context,initialIMCS,reportConfig,err);
+            end
+            result.ReceiverContextDigest=context.Digest;
+            result.UCIReceiverEvidence.ReceiverContextDigest=context.Digest;
+            result.UCIReceiverEvidence.HARQMappingDigest=context.Data.HARQMappingDigest;
+            if ~result.PartialReception
+                result.Source="nrULSCHDemultiplex_nrUCIDecode_independent_receive_schema";
+            end
+        end
+
+        function scoring = score(result,payload)
+            % Optional post-reception comparison; never changes RX evidence.
+            assert(isa(payload,'sixgr.phy.ul.pusch.PUSCHUCIPayload') && isscalar(payload), ...
+                'sixgr:pusch:MissingUCIPayload','Scoring requires a typed TX reference.');
+            scoring=struct( ...
+                'HARQACKContentMatch',isequal(result.DecodedHARQACK(:),payload.HARQACK(:)), ...
+                'CSI1ContentMatch',isequal(result.DecodedCSIPart1(:),payload.CSIPart1(:)), ...
+                'CSI2ContentMatch',isequal(result.DecodedCSIPart2(:),payload.CSIPart2(:)), ...
+                'ConfiguredGrantUCIMatch',isequal(result.DecodedConfiguredGrantUCI(:),payload.ConfiguredGrantUCI(:)));
+        end
+    end
+
+    methods (Static, Access=private)
+        function result = decodeSchema(pusch,targetCodeRate,transportBlockSize, ...
+                codewordLLR,p,initialIMCS,reportConfig,independentReceive)
+            if nargin<8, independentReceive=false; end
             nCodewords = double(pusch.NumCodewords);
             targetCodeRate = localPerCodeword(targetCodeRate, nCodewords, "TargetCodeRate");
             transportBlockSize = localPerCodeword(transportBlockSize, nCodewords, "TransportBlockSize");
             initialIMCS = localPerCodeword(initialIMCS, nCodewords, "InitialIMCS");
             codewordLLR = localLLRCells(codewordLLR, nCodewords);
-            owner = localOwner(expectedPayload, initialIMCS);
-            p = expectedPayload.toStruct();
+            owner = localOwner(p, initialIMCS);
             sizeSource="explicit_fixed_length_uci_contract";
             part1First=false;
             if ~isempty(reportConfig) && p.OCSI1>0
@@ -33,17 +102,29 @@ classdef PUSCHUCIDemultiplexer
                 % consider only presence states permitted by configuration.
                 presence=unique((reportConfig.part2BitCountCandidates()+p.OCGUCI)>0);
                 if transportBlockSize(owner+1)>0, presence=false; end
-                matches=0; resolvedCount=NaN; firstBits=int8([]);
+                matches=0; resolvedCount=NaN; firstBits=int8([]); lastRejection=[];
                 for present=reshape(presence,1,[])
                     [~,~,firstLLR,~]=nrULSCHDemultiplex(pusch,targetCodeRate,transportBlockSize, ...
                         p.OACK,p.OCSI1,double(present),localUnwrapOne(codewordLLR));
                     [bits,evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(firstLLR,p.OCSI1,modulation);
                     if ~evidence.DecodeUsable, continue; end
-                    [~,resolved]=reportConfig.decodePart1(bits);
+                    try
+                        [~,resolved]=reportConfig.decodePart1(bits);
+                    catch err
+                        if ~independentReceive || ~ismember(string(err.identifier), ...
+                                ["sixgr:mimo:InvalidCRI","sixgr:mimo:InvalidRI","sixgr:mimo:InvalidCSIPadding"])
+                            rethrow(err);
+                        end
+                        % A wrong UCI-only presence interpretation must not
+                        % prevent checking another configured presence state.
+                        lastRejection=err;
+                        continue;
+                    end
                     count=resolved.part2BitCount();
                     if transportBlockSize(owner+1)==0 && (count+p.OCGUCI>0)~=present, continue; end
                     matches=matches+1; resolvedCount=count; firstBits=bits;
                 end
+                if matches==0 && ~isempty(lastRejection), rethrow(lastRejection); end
                 assert(matches==1,'sixgr:pusch:UnresolvedReceivedCSIPart1', ...
                     'CSI Part 2/UL-SCH cannot be demapped without one usable received Part-1 interpretation.');
                 p.OCSI2=resolvedCount;
@@ -52,7 +133,7 @@ classdef PUSCHUCIDemultiplexer
             end
             combinedCSI2Length = p.OCSI2 + p.OCGUCI;
 
-            if expectedPayload.hasPayload()
+            if p.OACK+p.OCSI1+p.OCSI2+p.OCGUCI>0
                 [ulsch, ackLLR, csi1LLR, csi2LLR] = nrULSCHDemultiplex( ...
                     pusch, targetCodeRate, transportBlockSize, ...
                     p.OACK, p.OCSI1, combinedCSI2Length, ...
@@ -93,17 +174,12 @@ classdef PUSCHUCIDemultiplexer
                 "HARQACKCRCOK", ackEvidence.CRCPass, ...
                 "CSI1CRCOK", csi1Evidence.CRCPass, ...
                 "CSI2CRCOK", csi2Evidence.CRCPass, ...
-                "HARQACKContentMatch", isequal(decodedACK(:), expectedPayload.HARQACK(:)), ...
-                "CSI1ContentMatch", isequal(decodedCSI1(:), expectedPayload.CSIPart1(:)), ...
-                "CSI2ContentMatch", isequal(decodedCSI2(:), expectedPayload.CSIPart2(:)), ...
                 "UCIReceiverEvidence",struct('HARQACK',ackEvidence,'CSI1',csi1Evidence, ...
                     'CSI2AndConfiguredGrantUCI',csi2Evidence, ...
                     'CSI2LengthAuthority',sizeSource, ...
                     'CSIPart1DecodedBeforePart2',part1First, ...
                     'ResolvedCSI1BitCount',p.OCSI1,'ResolvedCSI2BitCount',p.OCSI2), ...
-                "ConfiguredGrantUCIMatch", ...
-                    isequal(decodedCGUCI(:), expectedPayload.ConfiguredGrantUCI(:)), ...
-                "Source", "nrULSCHDemultiplex_nrUCIDecode_typed_payload");
+                "Source", "nrULSCHDemultiplex_nrUCIDecode_receive_schema_core");
         end
     end
 end
@@ -137,8 +213,8 @@ for cw = 1:count
 end
 end
 
-function owner = localOwner(payload, initialIMCS)
-if ~payload.hasPayload() || numel(initialIMCS) == 1
+function owner = localOwner(p, initialIMCS)
+if p.OACK+p.OCSI1+p.OCSI2+p.OCGUCI==0 || numel(initialIMCS) == 1
     owner = 0;
     return;
 end

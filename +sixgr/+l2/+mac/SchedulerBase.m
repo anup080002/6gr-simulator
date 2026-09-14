@@ -987,9 +987,12 @@ classdef (Abstract) SchedulerBase < handle
                             sixgr.l2.mac.schedulerCache('set', 'NRE', nreKey, double(nrePerPRB));
                         end
                     catch ME
-                        error("sixgr:SchedulerBase:ExactResourceAccountingFailed", ...
+                        failure = MException("sixgr:SchedulerBase:ExactResourceAccountingFailed", ...
                             "Exact %s resource accounting failed for TBS sizing: %s", ...
                             upper(char(obj.Direction)), ME.message);
+                        % Keep the typed rejection and original stack available
+                        % to callers; message wording is not a validation API.
+                        throw(addCause(failure, ME));
                     end
                 end
             end
@@ -2314,7 +2317,8 @@ switch fmt
         fields.dai = double(dai);
         fields.tpc_command_for_pucch = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
         fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
-        fields.pdsch_to_harq_feedback_timing = double(k1);
+        fields.pdsch_to_harq_feedback_timing = ...
+            sixgr.phy.pdcch.HARQFeedbackTiming.encode(dciContext,k1);
     case "0_0"
         fields.frequency_hopping = localClampDCIValue(sixgr.util.structGet(grant, "FrequencyHoppingFlag", 0), 1);
         fields.tpc_command_for_pusch = localClampDCIValue(sixgr.util.structGet(grant, "TPCCommandForPUSCH", ...
@@ -2327,7 +2331,11 @@ switch fmt
         fields.dai = double(dai);
         fields.tpc_command_for_pucch = localClampDCIValue(sixgr.util.structGet(grant, "TPC", 1), 2);
         fields.pucch_resource_indicator = localClampDCIValue(sixgr.util.structGet(grant, "PUCCHResourceIndicator", 0), 3);
-        fields.pdsch_to_harq_feedback_timing = double(k1);
+        [feedbackIndicator,feedbackWidth] = ...
+            sixgr.phy.pdcch.HARQFeedbackTiming.encode(dciContext,k1);
+        if feedbackWidth>0
+            fields.pdsch_to_harq_feedback_timing = feedbackIndicator;
+        end
         fields.antenna_ports = localDLAntennaPortField(grant);
         if isfield(dciContext.Data,'DLReferenceSignaling')
             fields.antenna_ports=sixgr.phy.pdcch.DLReferenceSignaling.antennaFromGrant(dciContext.Data,cfg,grant);

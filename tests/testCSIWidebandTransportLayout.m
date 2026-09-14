@@ -86,6 +86,44 @@ assert(config.decode(encoded.Part1Bits,encoded.Part2Bits).RI==2);
 bad=encoded.Part1Bits; bad(3:4)=int8([1;0]);
 localReject(@()config.decode(bad,encoded.Part2Bits),'sixgr:mimo:InvalidRI');
 cases=cases+7;
+% CRI uses ceil(log2(N)) bits but only N of those values name resources.
+% Cover both transports, every valid value and every spare value for these
+% cardinalities. The bit strings below use MATLAB dec2bin, not the serializer.
+for channel=["PUCCH","PUSCH"]
+ for count=[1 2 3 5 6 7 8 16 31 32 33 63 64]
+    request=struct('ReportConfigID',"cri_domain_fixture",'Epoch',0, ...
+        'CodebookType',"typeI-SinglePanel",'Ports',1,'Rank',1,'MaxRank',1, ...
+        'ReportQuantity',"cri-CQI",'NumCSIResources',count, ...
+        'FrequencyGranularity',"wideband",'UCIChannel',channel);
+    config=sixgr.phy.mimo.CSIReportConfiguration(request,0);
+    width=ceil(log2(count));
+    for cri=0:2^width-1
+        criBits=zeros(0,1,'int8');
+        if width>0, criBits=int8(dec2bin(cri,width).'-'0'); end
+        bits=[criBits;int8([1;0;0;1])];
+        values=struct('CRI',cri,'CQI_CW0',9);
+        if cri<count
+            encoded=config.build(values);
+            assert(isequal(encoded.Part1Bits,bits));
+            decoded=config.decode(bits,int8([]));
+            assert(decoded.CRI==cri && decoded.CQI_CW0==9);
+        else
+            localReject(@()config.build(values),'sixgr:mimo:InvalidCRI');
+            localReject(@()config.decodePart1(bits),'sixgr:mimo:InvalidCRI');
+            localReject(@()config.decode(bits,int8([])),'sixgr:mimo:InvalidCRI');
+        end
+    end
+    for invalid={-1,count,0.5,NaN,Inf,1i,'0'}
+        values=struct('CRI',invalid{1},'CQI_CW0',9);
+        localReject(@()config.build(values),'sixgr:mimo:InvalidCRI');
+    end
+    if count==1
+        encoded=config.build(struct('CQI_CW0',9));
+        assert(isequal(encoded.Part1Bits,int8([1;0;0;1])), ...
+            'The single configured resource uses zero CRI bits, not a fabricated measurement.');
+    end
+ end
+end
 ok=true; fprintf('CSI_WIDEBAND_WIRE_FORMAT_PASS literal_cases=%d plus padding/rank guards\n',cases);
 end
 

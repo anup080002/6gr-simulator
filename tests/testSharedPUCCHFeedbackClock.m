@@ -33,9 +33,17 @@ if nargin>=4 && strlength(string(evidenceRoot))>0
     resolvedScenario=s.Data;
     save(fullfile(evidenceRoot,'configuration.mat'),'cfg','resolvedScenario','feedbackCfg','feedbackScenario');
 end
-state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
 state.CurrentServingIdx(:)=1;
+assert(isnan(state.CanonicalSlotsPerSweepPoint));
+localReject(@()sixgr.truth.CoupledTruthRuntime.refreshPeriodicCSIReportsRuntime(state), ...
+    'sixgr:truth:InvalidCSIReportSlot');
+fprintf('PUCCH_CALENDAR_UNINITIALIZED_REJECTED late_count=%d\n',lateCount);
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,cfg.channel.snr_dB);
+assert(state.SweepPointStartSlot==1 && state.CanonicalSlotsPerSweepPoint==10 && ...
+    state.CurrentSlot==1 && state.CurrentFrame==1 && state.CurrentCanonicalSlot==1);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
+assert(owner.Events.NextSampleIndex==0 && owner.Physical.NextSampleIndex==0, ...
+    'Calendar initialization must not invent physical execution.');
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 carrier=sixgr.phy.grid.makeCarrier(ul); fs=owner.SampleRateHz;
 reference=struct('Source',"received_SSB_timing_and_decoded_BCH", ...

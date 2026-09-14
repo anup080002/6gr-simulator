@@ -981,6 +981,7 @@ mappings = {
     "random_access.final_crnti", "random_access.final_crnti", "identity"
     "random_access.timing", "random_access.timing", "identity"
     "random_access.dci_payload_bits", "random_access.dci_payload_bits", "identity"
+    "random_access.msg4_dci", "random_access.msg4_dci", "identity"
     "random_access.msg2_pdsch", "random_access.msg2_pdsch", "identity"
     "random_access.msg3_pusch", "random_access.msg3_pusch", "identity"
     "random_access.msg4_pdsch", "random_access.msg4_pdsch", "identity"

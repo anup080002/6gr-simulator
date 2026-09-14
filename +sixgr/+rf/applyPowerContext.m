@@ -100,6 +100,8 @@ y = x .* cast(scale, "like", x);
 [y, paInfo] = localApplyPAContext(y, cfg, ctx, txInfo, ip.Results.ApplyPA);
 [outputTotal_mW, outputPerPort_mW] = localTotalActivePower_mW(y, txInfo);
 
+ctx.FixedSNRNormalizedReference = false;
+ctx.PhysicalDevicePowerClaim = true;
 ctx.ScaleApplied = true;
 ctx.AmplitudeScale = double(scale);
 ctx.InputTotalPower_mW = double(inputTotal_mW);

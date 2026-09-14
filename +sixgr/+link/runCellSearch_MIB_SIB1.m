@@ -271,13 +271,24 @@ try
     if ~isempty(p.Results.SSBIndex)
         ssbArgs = [ssbArgs, {"SSBIndex", round(double(p.Results.SSBIndex))}]; %#ok<AGROW>
     end
-    [txWave, ~, txInfo] = sixgr.phy.dl.SSB_Tx(cfg, ssbArgs{:});
-    sampleRateHz = localResolveSampleRate(txInfo, cfg);
-    injectedCFO_Hz = localResolveInjectedCFOHz(cfg);
-    injectedTimingOffset = localResolveInjectedTimingOffsetSamples(cfg);
-    rxWaveRaw = localApplyCellSearchImpairments(txWave, sampleRateHz, injectedCFO_Hz, injectedTimingOffset);
-    estimatedCFO_PreCorrection_Hz = localEstimateWaveformCFO(txWave, rxWaveRaw, sampleRateHz, injectedTimingOffset);
-    rxWave = localApplyCFOCorrection(rxWaveRaw, sampleRateHz, estimatedCFO_PreCorrection_Hz);
+    [txWave, waveInfo, txInfo] = sixgr.phy.dl.SSB_Tx(cfg, ssbArgs{:});
+    capture=sixgr.link.applySSBPBCHChannel(txWave,waveInfo,txInfo,cfg, ...
+        p.Results.InitialDLChannelState,p.Results.RuntimeSlot);
+    cfg=capture.ReceiverConfig;
+    sampleRateHz=capture.SampleRateHz;
+    rxWave=capture.Waveform;
+    out.RuntimeDLChannelState=capture.RuntimeDLChannelState;
+    out.RuntimeChannelReplay=capture.ChannelReplay;
+    out.RuntimeChannelStateUsed=logical(sixgr.util.structGet(capture.ChannelReplay,'RuntimeChannelStateUsed',false));
+    out.PowerContext=capture.PowerContext;
+    out.SSBTxEvidence=localBuildSSBTxEvidence(capture.SSBTx);
+    out.ObservationStartSample=double(capture.ChannelReplay.ImpairmentStartSample);
+    out.ObservationEndSampleExclusive=double(capture.ChannelReplay.ImpairmentEndSampleExclusive);
+    out.ObservationSampleRateHz=sampleRateHz;
+    out.ObservationCompletionTime_s=out.ObservationEndSampleExclusive/sampleRateHz;
+    out.ObservationCoverageSource="actual_complete_pbch_receiver_input_sample_extent";
+    injectedCFO_Hz=double(capture.ChannelReplay.InjectedCFO_Hz);
+    injectedTimingOffset=double(capture.ChannelReplay.InjectedTimingOffset_samples);
     out.DetectionAttempted = true;
     out.MeasurementAttempted = true;
     rxArgs = {"SampleRate_Hz", sampleRateHz};
@@ -289,6 +300,10 @@ try
             round(double(p.Results.SSBIndex))}]; %#ok<AGROW>
     end
     [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWave, cfg, rxArgs{:});
+    % Only the synchronizer sees the final noisy received samples. Never
+    % pre-correct them with a comparison against the transmitted waveform.
+    estimatedCFO_PreCorrection_Hz=double(sync.FreqOffset_Hz);
+    out.CFOEstimateSource="SSB_Rx_received_PSS_CP_synchronization";
     out.PSSDetected = logical(sixgr.util.structGet(sync, "PSSDetected", false));
     out.SSSDetected = logical(sixgr.util.structGet(sync, "SSSDetected", false));
     out.NCellIDRecovered = logical(sixgr.util.structGet(sync, "NCellIDRecovered", false));
@@ -366,7 +381,8 @@ try
     out.BLER = double(~out.Ok);
     out.InjectedCFO_Hz = injectedCFO_Hz;
     out.EstimatedCFO_PreCorrection_Hz = estimatedCFO_PreCorrection_Hz;
-    out.ResidualCFO_PostCorrection_Hz = localEstimateWaveformCFO(txWave, rxWave, sampleRateHz, injectedTimingOffset);
+    out.ResidualCFO_PostCorrection_Hz = injectedCFO_Hz-estimatedCFO_PreCorrection_Hz;
+    out.ResidualCFOMeasurementStatus="simulation_injected_CFO_minus_received_estimate_not_independent_measurement";
     out.InjectedTimingOffset_samples = injectedTimingOffset;
     out.RawTimingEstimate_samples = double(sixgr.util.structGet(sync, "RawTimingEstimate_samples", ...
         sixgr.util.structGet(sync, "TimingOffset", NaN)));
@@ -389,11 +405,8 @@ try
         ", injected CFO=" + string(round(out.InjectedCFO_Hz, 3)) + " Hz" + ...
         ", residual CFO=" + string(round(out.ResidualCFO_PostCorrection_Hz, 3)) + " Hz";
 
-    % Optional consolidated wrapper (best-effort).
-    try
-        rec = sixgr.phy.rrc.MIB_SIB1_Recovery(txWave, cfg, "SampleRate_Hz", txInfo.SampleRate_Hz); %#ok<NASGU>
-    catch
-    end
+    % No second unused recovery of the clean TX waveform. All receiver
+    % outcomes above belong to the same impaired physical capture.
 catch ME
     msg = string(ME.message);
     if contains(msg, "Too many output arguments")
