@@ -29,7 +29,8 @@ if fixedSNRNormalizedReference
     % device EIRP, geometry pathloss, or 38.213 power-control result here
     % would silently replace that operating point.  Preserve the actual
     % IFFT samples and make the arbitrary-but-declared unit mapping
-    % explicit: one unit-energy occupied RE is represented as 1 mW.
+    % explicit: an occupied grid RE has unit normalized energy; the retained
+    % IFFT sample mapping is |sample|^2 mW, not 1 mW per physical subcarrier.
     % This branch is limited to the connected FIXED_SNR_SWEEP integration
     % mode; physical-link-budget runs retain the absolute-power path.
     if logical(sixgr.util.structGet(cfg, "rf.pa.enable", ...
@@ -76,9 +77,10 @@ if fixedSNRNormalizedReference
     ctx.ExpectedEmittedPower_mW = double(outputTotal_mW);
     ctx.PerPortPowerSumError_mW = ctx.PerPortPowerSum_mW - double(outputTotal_mW);
     ctx.ConversionEquation = ...
-        "x_out=x_ifft; occupied_RE_Es_reference=1_mW; no_absolute_power_scaling";
+        "x_out=x_ifft; normalized_grid_RE_Es_reference=1; sample_abs2_mapping=mW; no_device_power_scaling";
     ctx.FixedSNRNormalizedReference = true;
     ctx.FixedSNRReferenceEnergyPerOccupiedRE = 1;
+    ctx.FixedSNRReferenceEnergyDomain = "normalized_resource_grid_not_physical_subcarrier_mW";
     ctx.PhysicalDevicePowerClaim = false;
     ctx.PAEnabled = false;
     ctx.PAApplied = false;

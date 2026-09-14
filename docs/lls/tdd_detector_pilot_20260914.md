@@ -1,6 +1,6 @@
 # TDD Format-0 detector development pilot
 
-Status: scheduling pilot passed; power-correct rerun pending. This is not a
+Status: scheduling pilot passed; power-reference repair runtime verification pending. This is not a
 qualified detector, a held-out campaign, a main integration pass or a 12 dB run.
 
 The existing idle `work/shared-pusch-completion-20260914` checkout was safely
@@ -77,3 +77,48 @@ Measured SSB RSRP remains actual receiver output; no pathloss, gain, noise or
 waveform power is substituted. Every refresh checks declaration consistency.
 The corrected-source pilot, SSB power-contract test, full testAll and required
 NR/result-integrity guards remain due.
+
+## Actual-sample power mismatch diagnosed on cd4ea4a1
+
+Run `logs/testall_20260914T115858921Z_46e68901` returned launcher exit 1:
+the pilot executed eight cases without observed errors (589.98 s), but
+`testSSBPowerReferenceContract` failed (40.22 s). Actual SSS EPRE was
+-54.4141866723 dBm against a 5 dBm declaration. Neither the pilot pass nor
+agreement between its two metadata contracts closes this failing sample check.
+
+Root cause: the inherited canonical configuration is FIXED_SNR_SWEEP with
+configured_snr_is_link_authority=true. `applyPowerContext` correctly retains
+the normalized IFFT samples without device-budget scaling, but
+`resolveSSBPowerContract` still derived SSB power from the unapplied 30 dBm
+budget. With 300 subcarriers and Nfft=512, that contract introduced
+5 - (30 - 10*log10(300)) = -0.228787452803374 dB relative SSB offset.
+The unscaled unit-tone sample reference is -20*log10(512) dBm, predicting
+-54.41418667231999 dBm, within 2e-11 dB of the failing diagnostic.
+This is not receiver noise or a loosened floating-point tolerance.
+
+Repair: the existing quantized-full-BWP policy now resolves its base from the
+canonical integration mode. Physical mode retains the device budget. Normalized
+mode measures useful-sample power of a deterministic unit-RE IFFT calibration,
+then quantizes SSB EPRE in that declared sample-unit reference. It does not apply
+a device budget, rescale received measurements, change configured Es/N0, or
+change detector thresholds. Calibration is not counted as an air-interface
+trial. Normalized contracts explicitly deny a physical-device-power claim and
+leave the unapplied device-budget field unavailable. Explicit absolute SSB
+power is rejected in normalized mode. The existing SIB1 integer range remains
+unchanged; a unit-reference configuration outside it fails, not clips.
+
+The absolute-power test now has an explicit geometry/physical-power YAML
+fixture; its original 30/33 dBm, actual-SSS and received-SIB1 assertions remain.
+Added normalized checks verify that changing an ignored device budget changes
+neither the normalized declaration nor actual SSS EPRE, and check actual SIB1
+recovery and configuration-resolution idempotence. Both this test and the
+detector infrastructure pilot are now registered in `testAll`; neither was in
+that full-suite list previously. Their new-source runtime results are pending.
+
+References: the [OFDM API](https://www.mathworks.com/help/5g/ref/nrofdmdemodulate.html)
+defines the matching modulated/demodulated grid, with
+[sample-rate/FFT configuration](https://www.mathworks.com/help/5g/ug/configure-ofdm-sample-rate-and-fft-size.html).
+The integer SIB1 power field is constrained by
+[TS 38.331](https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.06.00_60/ts_138331v180600p.pdf).
+The numerical mismatch above comes from local source and executed evidence,
+not from an inferred compliance result.

@@ -360,7 +360,9 @@ power_and_rf_frontend:
   # the signal-specific TS 38.213 power-control equations.
   downlink_power_normalization_policy: fixed_epre_over_configured_bwp
   # Broadcast an integer SSS EPRE and apply the same power to actual SSB REs.
-  # Quantization is floor(PfullBWP - 10*log10(12*NRB)), not a fixed dBm value.
+  # The full-BWP reference follows canonical_control.integration: normalized
+  # fixed-SNR uses actual unscaled unit-grid OFDM samples, not the ignored
+  # device budget; physical mode uses PfullBWP - 10*log10(12*NRB).
   ssb_power_reference_policy: quantized_full_bwp_epre
   uplink_power_normalization_policy: active_ofdm_total_power
   ue_noise_figure_db: 7

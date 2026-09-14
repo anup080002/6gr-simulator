@@ -1,0 +1,20 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
+
+meta:
+  scenario_id: lls_ssb_physical_power_contract_fixture
+  research_class: optional_research_experiment
+  description: >
+    TDD component fixture for absolute device-budget SSB EPRE and actual
+    SIB1 receiver checks. This is not the normalized 12 dB sweep scenario.
+
+canonical_control:
+  launch:
+    run_class: ue_placement_geometry_lls
+    scenario_mode: ue_placement_geometry
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: true
+  integration:
+    run_mode: GEOMETRY_NETWORK
+    configured_snr_is_link_authority: false
