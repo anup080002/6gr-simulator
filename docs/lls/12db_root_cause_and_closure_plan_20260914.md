@@ -2,6 +2,46 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD measurement diagnosis and fixture repair, after 09:30 IST
+
+The original TDD capture is retained at
+logs/tpd41dbd63_8f97_4864_959f_45ecbe814973/received_data_stages.mat in the main
+checkout. Its measured sample SNR is 19.8773 dB: normalized occupied-RE TX,
+the unchanged 77 dB connector attenuation and unchanged variance 1e-13.
+The FDD fixture instead has physical-power scaling and 75.0943 dB sample SNR.
+The configured 12 dB label is not the noise authority of this component fixture.
+
+Independent original-IQ diagnosis found ideal expected EVM approximately 5.07%,
+ideal observed EVM 5.06%, and public estimated-channel/unit-response-MMSE/PTRS
+reception matching all 3385 production symbols to max error 5.5511e-16 at
+EVM 5.4996167023%. The initially different public results omitted PTRS phase
+correction and used a different CDM setting; those attempts remain preserved.
+Thus the original noisy TDD input does not satisfy the high-SNR premise of the
+2% fixture assertion. No power, attenuation, sample variance, estimator,
+iterations, production PHY or scenario configuration was altered.
+
+Applied fixture repair in the measurement-closure work branch (runtime proof
+pending): TDD now verifies every equalized symbol, reported EVM and noise-domain
+values against independent public primitives; a changed-symbol negative must
+fail. It explicitly verifies unavailable CFO for the authored disabled path.
+FDD retains the original abs(CFO)<5 Hz and EVM<2% assertions. This is not a
+universal TDD EVM relaxation or an integrated 12 dB qualification. An additional
+enabled-estimation TDD case and normal-path shared HARQ qualification remain open.
+
+Independent scripts/results are in the main checkout's
+logs/pending_integration_evidence_20260913/fixture_repairs_20260914_01/:
+independent_staged_evm_ptrs.log/.mat (matched), independent_staged_evm.log/.mat
+and independent_staged_evm_aligned.log/.mat (different conventions), and
+compare_unbiased_evm.log/public_unbiased_comparison.mat (failed intermediate).
+
+Server logging repair be983bf4 is pushed to main: singleton struct reports now
+export one row per test with AsArray=true and record counts before CSV writing.
+testServerRegressionReport independently exercised one passing and one failing
+probe; both preserved counts, messages, identifiers and terminal status. This
+avoids a secondary struct2table exception masking the real failure. The required
+full testAll is running on clean, frozen be983bf4 under
+logs/testall_20260914T035615537Z_ef864a72; it is not a completed pass.
+
 ## Latest verified checkpoint: 2026-09-14, 09:20 IST
 
 This section supersedes the historical statuses below. Source revision

@@ -281,13 +281,23 @@ for caseIndex = reshape(caseIndices,1,[])
         isequaln(executedGrant,completed.HARQ.GrantSnapshot));
     assert(all(completed.NoiseDomainValidation.Status=="PASS"));
     if direction=="DL"
-        % This fixture applies only integer delay, attenuation and weak
-        % noise. Blind frequency estimation must not invent a large CFO
-        % because the capture starts before the received CP boundary.
-        assert(abs(completed.TrialTable.EstimatedCFO_Hz)<5, ...
-            'Measured DL CFO must remain near zero in the no-CFO fixture.');
-        assert(completed.TrialTable.EVM_rms<0.02, ...
-            'High-SNR delayed DL reception must not retain spurious CFO EVM.');
+        if string(mode)=="TDD"
+            % Original normalized-RE fixture: about 20 dB sample SNR, not
+            % the physical-power FDD fixture's 75 dB. Retain its original
+            % noise/power and verify every symbol independently instead of
+            % imposing the physically inapplicable high-SNR 2% EVM bound.
+            assert(~cfg.phy.rx.cfoCorrectionEnabled && ...
+                isnan(completed.TrialTable.EstimatedCFO_Hz) && ...
+                string(completed.TrialTable.CFOEstimateAvailability)=="missing");
+            verifyStagedDLReference(completed,prepared,y,arrival,variance);
+        else
+            % High-SNR physical fixture: measured acquisition must not
+            % invent CFO because capture precedes the received CP boundary.
+            assert(abs(completed.TrialTable.EstimatedCFO_Hz)<5, ...
+                'Measured DL CFO must remain near zero in the no-CFO fixture.');
+            assert(completed.TrialTable.EVM_rms<0.02, ...
+                'High-SNR delayed DL reception must not retain spurious CFO EVM.');
+        end
         frozenPrecoder=completed.HARQ.GrantSnapshot.PHYGrant.PrecodingState;
         assert(isequaln(completed.TrialTable.RequestedPrecoderPMI,double(frozenPrecoder.PMI)) && ...
             string(completed.TrialTable.RequestedPrecoderSource)=="frozen_PHYGrant_precoding_state", ...
