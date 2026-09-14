@@ -27,6 +27,7 @@ req = { ...
 localRequire(cfg, req);
 cCore = sixgr.config.loadCoreCatalog();
 localValidateCatalogFields(cfg, sixgr.util.structGet(cCore, 'parameters', struct()), '');
+sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(cfg.phy.pusch.shortUCIDecision);
 frameEngine = sixgr.phy.FrameStructureEngine(cfg);
 frameSnapshot = frameEngine.toStruct();
 cfg = sixgr.util.structSet(cfg, "phy.frameStructure", frameSnapshot);

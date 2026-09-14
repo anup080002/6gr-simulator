@@ -3590,6 +3590,8 @@ scalarPairs = {
     "uci_beta_offset_csi1", "uci.betaOffsetCSI1"
     "uci_beta_offset_csi2", "uci.betaOffsetCSI2"
     "uci_scaling", "uci.scaling"
+    "short_uci_decision_algorithm", "shortUCIDecision.algorithm"
+    "short_uci_minimum_posterior", "shortUCIDecision.minimumPosterior"
     "repetition_type", "repetition.type"
     "repetition_count", "repetition.count"
     "dmrs_residual_post_eq_sinr_bound_enabled", "measurements.dmrsResidualPostEqSINRBoundEnabled"

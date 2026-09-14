@@ -1,8 +1,10 @@
 function result=receiveInvariantUCI(pusch,targetCodeRate,transportBlockSize, ...
-        codewordLLR,context,initialIMCS,reportConfig,rejection)
+        codewordLLR,context,initialIMCS,reportConfig,rejection,shortPolicy)
 % Retain actual received fields only where every configured mapping agrees.
 % A failed CSI interpretation is not a reason to discard independent ACK.
 % This does not qualify a short-UCI detector or supply a missing TB CRC.
+if nargin<9, shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(); end
+shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(shortPolicy);
 budget=context.bitBudget(reportConfig);
 plan=sixgr.phy.ul.pusch.inspectUCIResourceInvariance(pusch,targetCodeRate, ...
     transportBlockSize,codewordLLR,context,initialIMCS,reportConfig);
@@ -14,9 +16,9 @@ assert(isscalar(modulation) || numel(modulation)==numel(streams), ...
     'sixgr:pusch:InvalidUCIBitBudget','Modulation must identify the UCI-owning codeword.');
 if ~isscalar(modulation), modulation=modulation(plan.OwnerCodeword+1); end
 [ack,ackLLR,ackEvidence]=localField(received,plan.HARQSourceIndices1Based, ...
-    plan.HARQMappingInvariant,budget.OACK,modulation);
+    plan.HARQMappingInvariant,budget.OACK,modulation,shortPolicy);
 [csi1,csi1LLR,csi1Evidence]=localField(received,plan.CSI1SourceIndices1Based, ...
-    plan.CSI1MappingInvariant,budget.OCSI1,modulation);
+    plan.CSI1MappingInvariant,budget.OCSI1,modulation,shortPolicy);
 % Preserve the decoder's actual CRC/usability flags separately. A CRC-free
 % decoded bit vector is not proof of a valid configured CSI report.
 csi1Evidence.SchemaUsable=false;
@@ -45,7 +47,7 @@ if isscalar(plan.CandidatePart2BitCounts)
     [~,~,~,csi2LLR]=nrULSCHDemultiplex(pusch,targetCodeRate,transportBlockSize, ...
         budget.OACK,budget.OCSI1,part2Count+budget.OCGUCI,source);
     [combined,csi2Evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence( ...
-        csi2LLR,part2Count+budget.OCGUCI,modulation);
+        csi2LLR,part2Count+budget.OCGUCI,modulation,shortPolicy);
     csi2Evidence.DecodeAttempted=part2Count+budget.OCGUCI>0;
     csi2=combined(1:part2Count);
     cguci=combined(part2Count+(1:budget.OCGUCI));
@@ -68,14 +70,14 @@ result=struct('ULSCHLLR',{ulsch},'ULSCHMappingResolved',plan.ULSCHMappingInvaria
     'Source',"received_LLR_with_configured_invariant_resource_mapping");
 end
 
-function [bits,llr,evidence]=localField(received,index,invariant,count,modulation)
+function [bits,llr,evidence]=localField(received,index,invariant,count,modulation,shortPolicy)
 bits=zeros(0,1,'int8'); llr=zeros(0,1);
 if ~invariant
     evidence=localUnavailable(count,modulation,"unresolved_resource_mapping");
     return;
 end
 llr=received(index);
-[bits,evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(llr,count,modulation);
+[bits,evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(llr,count,modulation,shortPolicy);
 evidence.DecodeAttempted=count>0;
 evidence.ResourceMappingResolved=true;
 end

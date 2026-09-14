@@ -409,6 +409,10 @@
           "nPorts": {"value_type": "integer", "default": 1, "min": 1},
           "portSet": {"value_type": "integer_vector", "default": [0], "min": 0}
         },
+        "shortUCIDecision": {
+          "algorithm": {"value_type": "string", "default": "codeword_posterior", "allowed_values": ["codeword_posterior"]},
+          "minimumPosterior": {"value_type": "number", "default": 0.99, "min": 0.5, "max": 1}
+        },
         "measurements": {
           "dmrsResidualPostEqSINRBoundEnabled": {"value_type": "boolean", "default": true},
           "decisionDirectedPostEqSINRBoundEnabled": {"value_type": "boolean", "default": true},

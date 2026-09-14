@@ -677,7 +677,7 @@ if isempty(opt.UCIReceiveContext)
 else
     [cwLLRForULSCH, uciOnPUSCH] = sixgr.phy.ul.pusch.receiveConfiguredUCI( ...
         localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
-        opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration);
+        opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration, cfg.phy.pusch.shortUCIDecision);
 end
 
 % Resolve LDPC rate recovery only AFTER received UCI has established the
@@ -3241,7 +3241,7 @@ try
     end
     result = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
         pusch, targetCodeRate, trBlkSize, localUnwrapSingleCell(cwLLRCells), ...
-        expectedPayload, initialIMCS, reportConfig);
+        expectedPayload, initialIMCS, reportConfig, cfg.phy.pusch.shortUCIDecision);
 catch ME
     throwAsCaller(MException("sixgr:phy:ul:PUSCHUCIDemultiplexFailed", ...
         "Typed UCI demultiplex/decode failed (%s): %s", ME.identifier, ME.message));

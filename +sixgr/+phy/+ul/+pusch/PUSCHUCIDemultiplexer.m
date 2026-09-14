@@ -3,8 +3,9 @@ classdef PUSCHUCIDemultiplexer
 
     methods (Static)
         function result = demultiplex(pusch, targetCodeRate, transportBlockSize, ...
-                codewordLLR, expectedPayload, initialIMCS, reportConfig)
+                codewordLLR, expectedPayload, initialIMCS, reportConfig, shortPolicy)
             if nargin<7, reportConfig=[]; end
+            if nargin<8, shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(); end
             if ~isa(expectedPayload, "sixgr.phy.ul.pusch.PUSCHUCIPayload")
                 error("sixgr:pusch:MissingUCIPayload", ...
                     "UCI demultiplexing requires the expected typed payload contract.");
@@ -17,7 +18,7 @@ classdef PUSCHUCIDemultiplexer
                 'OCSI2',reference.OCSI2,'OCGUCI',reference.OCGUCI);
             result = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.decodeSchema( ...
                 pusch,targetCodeRate,transportBlockSize,codewordLLR, ...
-                p,initialIMCS,reportConfig);
+                p,initialIMCS,reportConfig,false,shortPolicy);
             scoring = sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.score(result,expectedPayload);
             for name=reshape(string(fieldnames(scoring)),1,[])
                 result.(name)=scoring.(name);
@@ -26,16 +27,17 @@ classdef PUSCHUCIDemultiplexer
         end
 
         function result = receive(pusch,targetCodeRate,transportBlockSize, ...
-                codewordLLR,context,initialIMCS,reportConfig)
+                codewordLLR,context,initialIMCS,reportConfig,shortPolicy)
             % Payload-free receive boundary. No TX bits, lengths or scoring.
             if nargin<7, reportConfig=[]; end
+            if nargin<8, shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(); end
             assert(isa(context,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && isscalar(context), ...
                 'sixgr:pusch:MissingUCIReceiveContext', ...
                 'PUSCH reception requires its independently installed receive schema.');
             p=context.bitBudget(reportConfig);
             try
                 result=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.decodeSchema( ...
-                    pusch,targetCodeRate,transportBlockSize,codewordLLR,p,initialIMCS,reportConfig,true);
+                    pusch,targetCodeRate,transportBlockSize,codewordLLR,p,initialIMCS,reportConfig,true,shortPolicy);
                 result.ULSCHMappingResolved=true(1,double(pusch.NumCodewords));
                 result.CSIPart1Usable=p.OCSI1>0 && ~isempty(reportConfig) && ...
                     result.UCIReceiverEvidence.CSI1.DecodeUsable;
@@ -53,7 +55,7 @@ classdef PUSCHUCIDemultiplexer
                 end
                 result=sixgr.phy.ul.pusch.receiveInvariantUCI( ...
                     pusch,targetCodeRate,transportBlockSize,codewordLLR, ...
-                    context,initialIMCS,reportConfig,err);
+                    context,initialIMCS,reportConfig,err,shortPolicy);
             end
             result.ReceiverContextDigest=context.Digest;
             result.UCIReceiverEvidence.ReceiverContextDigest=context.Digest;
@@ -77,8 +79,8 @@ classdef PUSCHUCIDemultiplexer
 
     methods (Static, Access=private)
         function result = decodeSchema(pusch,targetCodeRate,transportBlockSize, ...
-                codewordLLR,p,initialIMCS,reportConfig,independentReceive)
-            if nargin<8, independentReceive=false; end
+                codewordLLR,p,initialIMCS,reportConfig,independentReceive,shortPolicy)
+            shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(shortPolicy);
             nCodewords = double(pusch.NumCodewords);
             targetCodeRate = localPerCodeword(targetCodeRate, nCodewords, "TargetCodeRate");
             transportBlockSize = localPerCodeword(transportBlockSize, nCodewords, "TransportBlockSize");
@@ -106,7 +108,7 @@ classdef PUSCHUCIDemultiplexer
                 for present=reshape(presence,1,[])
                     [~,~,firstLLR,~]=nrULSCHDemultiplex(pusch,targetCodeRate,transportBlockSize, ...
                         p.OACK,p.OCSI1,double(present),localUnwrapOne(codewordLLR));
-                    [bits,evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(firstLLR,p.OCSI1,modulation);
+                    [bits,evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(firstLLR,p.OCSI1,modulation,shortPolicy);
                     if ~evidence.DecodeUsable, continue; end
                     try
                         [~,resolved]=reportConfig.decodePart1(bits);
@@ -149,13 +151,13 @@ classdef PUSCHUCIDemultiplexer
             assert(isscalar(modulation) || numel(modulation)==nCodewords, ...
                 'sixgr:pusch:InvalidUCIBitBudget','Modulation must identify the actual UCI-owning codeword.');
             if ~isscalar(modulation), modulation=modulation(owner+1); end
-            [decodedACK,ackEvidence] = sixgr.phy.ul.pusch.decodeUCIWithEvidence(ackLLR,p.OACK,modulation);
-            [decodedCSI1,csi1Evidence] = sixgr.phy.ul.pusch.decodeUCIWithEvidence(csi1LLR,p.OCSI1,modulation);
+            [decodedACK,ackEvidence] = sixgr.phy.ul.pusch.decodeUCIWithEvidence(ackLLR,p.OACK,modulation,shortPolicy);
+            [decodedCSI1,csi1Evidence] = sixgr.phy.ul.pusch.decodeUCIWithEvidence(csi1LLR,p.OCSI1,modulation,shortPolicy);
             if part1First
                 assert(isequal(decodedCSI1,firstBits),'sixgr:pusch:CSI1ResourceMappingMismatch', ...
                     'Resolving CSI Part-2 size must not change received CSI Part-1 resources.');
             end
-            [decodedCSI2Combined,csi2Evidence] = sixgr.phy.ul.pusch.decodeUCIWithEvidence(csi2LLR,combinedCSI2Length,modulation);
+            [decodedCSI2Combined,csi2Evidence] = sixgr.phy.ul.pusch.decodeUCIWithEvidence(csi2LLR,combinedCSI2Length,modulation,shortPolicy);
             decodedCSI2 = decodedCSI2Combined(1:p.OCSI2);
             decodedCGUCI = decodedCSI2Combined(p.OCSI2 + (1:p.OCGUCI));
 

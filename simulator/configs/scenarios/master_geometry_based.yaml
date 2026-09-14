@@ -2147,6 +2147,9 @@ pusch:
   uci_beta_offset_csi1: 6.25
   uci_beta_offset_csi2: 6.25
   uci_scaling: 1
+  # Receiver implementation policy; conditional LLR confidence, not a 3GPP detector threshold.
+  short_uci_decision_algorithm: codeword_posterior
+  short_uci_minimum_posterior: 0.99
   repetition_type: none
   repetition_count: 1
   dmrs_residual_post_eq_sinr_bound_enabled: true

@@ -5,6 +5,7 @@ p=nrPUSCHConfig('PRBSet',0:11,'SymbolAllocation',[0 14], ...
     'NumLayers',1,'Modulation','QPSK','BetaOffsetACK',20, ...
     'BetaOffsetCSI1',6.25,'BetaOffsetCSI2',6.25);
 cases=0;
+policy=struct('algorithm',"codeword_posterior",'minimumPosterior',0.995);
 for quantity=["cri-RI-PMI-CQI","cri-RI-CQI","cri-RI-LI-PMI-CQI"]
  for rank=[1 2]
   for tbs=[0 512]
@@ -45,12 +46,14 @@ for quantity=["cri-RI-PMI-CQI","cri-RI-CQI","cri-RI-LI-PMI-CQI"]
         'HARQACKBitCount',5,'ConfiguredGrantUCIBitCount',0, ...
         'CSIReportConfigID',"partial_csi_fixture",'CSIConfigurationEpoch',0);
     context=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(d);
-    rx=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.receive(p,.3,tbs,llr,context,4,schema);
+    rx=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.receive(p,.3,tbs,llr,context,4,schema,policy);
     assert(rx.PartialReception && ~rx.CSIPart1Usable);
     assert(rx.CSIRejectionIdentifier=="sixgr:mimo:InvalidCRI");
     assert(isequal(rx.DecodedHARQACK,ack) && rx.UCIReceiverEvidence.HARQACK.DecodeUsable);
     assert(isequal(rx.DecodedCSIPart1,invalid));
     assert(rx.UCIReceiverEvidence.CSI1.DecodeUsable && ~rx.UCIReceiverEvidence.CSI1.SchemaUsable);
+    assert(rx.UCIReceiverEvidence.CSI1.ShortConfidence.MinimumPosterior==policy.minimumPosterior && ...
+        rx.UCIReceiverEvidence.HARQACK.ShortConfidence.MinimumPosterior==policy.minimumPosterior);
     assert(~rx.UCIReceiverEvidence.CSI1.CRCApplicable && isnan(rx.CSI1CRCOK));
     plan=rx.ResourceResolution;
     assert(isequal(rx.ULSCHMappingResolved,plan.ULSCHMappingInvariant));
@@ -74,10 +77,17 @@ for quantity=["cri-RI-PMI-CQI","cri-RI-CQI","cri-RI-LI-PMI-CQI"]
         assert(isempty(rx.DecodedCSIPart2) && isnan(rx.CSI2CRCOK));
         assert(~rx.UCIReceiverEvidence.CSI2AndConfiguredGrantUCI.DecodeAttempted);
     end
-    [actual,adapter]=sixgr.phy.ul.pusch.receiveConfiguredUCI(llr,p,.3,tbs,context,4,schema);
+    [actual,adapter]=sixgr.phy.ul.pusch.receiveConfiguredUCI(llr,p,.3,tbs,context,4,schema,policy);
     assert(isequaln(actual,rx.ULSCHLLR) && adapter.Status=="decoded_usable");
     assert(adapter.PartialReception && ~adapter.CSIPart1Usable);
     assert(~adapter.ReferenceScoringAvailable && ~isfield(rx,'HARQACKContentMatch'));
+    % Actual demultiplexer resource indices, not an injected decision. Weak
+    % ACK evidence must remain unusable even while invalid-CRI partial CSI
+    % reception preserves independently known fields.
+    weak=llr; index=plan.HARQSourceIndices1Based; weak(index)=weak(index)*1e-7;
+    partial=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.receive(p,.3,tbs,weak,context,4,schema,policy);
+    assert(partial.PartialReception && ~partial.UCIReceiverEvidence.HARQACK.DecodeUsable && ...
+        partial.UCIReceiverEvidence.HARQACK.ShortConfidence.MinimumPosterior==policy.minimumPosterior);
     % The old TX-reference adapter keeps its existing fail-loud contract.
     localReject(@()sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.demultiplex( ...
         p,.3,tbs,llr,payload,4,schema),'sixgr:mimo:InvalidCRI');

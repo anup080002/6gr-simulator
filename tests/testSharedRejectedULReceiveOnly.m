@@ -1,4 +1,4 @@
-function ok=testSharedRejectedULReceiveOnly(withHARQ)
+function [ok,result]=testSharedRejectedULReceiveOnly(withHARQ)
 % Physical component: known-candidate UL DCI is actually decoded/rejected,
 % then the normal receive-only reducers capture/decode without UE PUSCH.
 % Two explicitly resolved endpoint fixtures: UE known-candidate control and

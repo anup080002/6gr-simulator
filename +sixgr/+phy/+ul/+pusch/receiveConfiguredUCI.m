@@ -1,13 +1,14 @@
 function [ulschLLR,info]=receiveConfiguredUCI(cwLLR,pusch,targetCodeRate, ...
-        transportBlockSize,context,initialIMCS,reportConfig)
+        transportBlockSize,context,initialIMCS,reportConfig,shortPolicy)
 % Payload-free adapter from actual PUSCH LLRs to receiver evidence.
 % Caller owns capture/grant binding. No cfg/UE-state/TX-reference input.
 if nargin<7, reportConfig=[]; end
+if nargin<8, shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(); end
 assert(isa(context,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && isscalar(context), ...
     'sixgr:pusch:MissingUCIReceiveContext','Use the independently installed gNB receive context.');
 budget=context.bitBudget(reportConfig);
 result=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.receive( ...
-    pusch,targetCodeRate,transportBlockSize,cwLLR,context,initialIMCS,reportConfig);
+    pusch,targetCodeRate,transportBlockSize,cwLLR,context,initialIMCS,reportConfig,shortPolicy);
 ulschLLR=result.ULSCHLLR;
 ack=result.UCIReceiverEvidence.HARQACK;
 status="not_requested"; reason="";
