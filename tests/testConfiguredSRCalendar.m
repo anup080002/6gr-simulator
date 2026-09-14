@@ -70,7 +70,15 @@ expectedPeriods={ [1 2 4 5 8 10 16 20 40 80], ...
 additional={[],5,[],[5 10],[],[]};
 for k=1:numel(expectedPeriods)
     assert(isequal(double(catalog.periods_by_scs(k).allowed_slot_periods(:).'),expectedPeriods{k}));
-    assert(isequal(double(catalog.periods_by_scs(k).additional_capability_slot_periods(:).'),additional{k}));
+    % Apply the same vector convention to both sides. For an empty list,
+    % (:).' is 1-by-0 whereas the literal [] above is 0-by-0; isequal checks
+    % dimensions as well as values. Keep every expected period unchanged.
+    observedAdditional=double(catalog.periods_by_scs(k).additional_capability_slot_periods(:).');
+    expectedAdditional=double(additional{k}(:).');
+    assert(isequal(observedAdditional,expectedAdditional), ...
+        'test:SRAdditionalCapabilityMismatch', ...
+        'Additional-capability SR periods differ at %g kHz: expected %s, observed %s.', ...
+        catalog.periods_by_scs(k).scs_khz,mat2str(expectedAdditional),mat2str(observedAdditional));
 end
 
 % Explicit algebraic overlap tables, not additional installed/RF resources.
