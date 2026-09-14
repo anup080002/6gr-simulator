@@ -97,6 +97,12 @@ state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( 
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
 localQueueSRS(state,cfg,5);
 for slot=1:lastSlot
+    if independentEmptyUCI
+        % Real slot entry retains the source-slot trace required by the
+        % normal completion reducer. No caller-created completed trace row.
+        state=sixgr.truth.CoupledTruthRuntime.beginSlot( ...
+            state,cfg,cfg,1,'UL',1,1,slot,lastSlot,cfg.channel.snr_dB);
+    end
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
     if withCSI && slot==10-state.CSIFeedbackSlots
@@ -500,6 +506,27 @@ for item=items
             localReject(@()sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
                 state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext), ...
                 'sixgr:truth:DuplicateSharedPUSCHHARQReception');
+            out.HARQ.SharedTransmissionID=c.TransmissionIdentity.TransmissionID;
+            % Exercise the normal reducer after the common feedback commit,
+            % including the no-CSI UL branch and its once-only TX/RX ledger.
+            beforeUL=state.ULHarq.Stats;
+            absent=state; absent.SlotTraceTable=state.SlotTraceTable([],:);
+            localReject(@()sixgr.truth.CoupledTruthRuntime.completeSlot( ...
+                absent,job.Cfg,1,'UL',out.TrialTable,out), ...
+                'sixgr:truth:MissingSharedSourceSlotTrace');
+            for invalidSlot=[NaN state.CurrentSlot+1]
+                bad=out.TrialTable; bad.Slot(:)=invalidSlot;
+                localReject(@()sixgr.truth.CoupledTruthRuntime.completeSlot( ...
+                    state,job.Cfg,1,'UL',bad,out),'sixgr:truth:InvalidSharedSourceSlot');
+            end
+            assert(isequaln(state.ULHarq.Stats,beforeUL), ...
+                'Invalid source-slot metadata must fail before shared HARQ handle mutation.');
+            [state,out.TrialTable]=sixgr.truth.CoupledTruthRuntime.completeSlot( ...
+                state,job.Cfg,1,'UL',out.TrialTable,out);
+            assert(isequaln(state.DLHarq.Stats,before) && ...
+                state.ULHarq.Stats.Tx==1 && state.ULHarq.Stats.Ack==1 && ...
+                state.ULCompletedSlots==job.StartSlotIndex && ...
+                nnz(state.SharedDataRXCommittedIDs==out.HARQ.SharedTransmissionID)==1);
         end
         assert(sixgr.truth.receivedPUSCHUCIOccasion(owner,out.HARQ,out.HARQ.GrantSnapshot)==job.StartSlotIndex);
         missing=rmfield(out.HARQ,'ReceivedTimingEvidence');

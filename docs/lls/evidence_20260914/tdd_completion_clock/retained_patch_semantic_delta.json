@@ -1,0 +1,61 @@
+{
+  "source_revision": "1e4fbb99f826e48895d86e9469f1322d0725dec3",
+  "previous_delta": "logs/retained_patch_semantic_delta_20260914_1146.json",
+  "scope": "Read-only semantic reconciliation of four older variants against their integrated replacements; not runtime qualification",
+  "runtime_qualified": false,
+  "remaining_of_previous_fifteen": 8,
+  "records": [
+    {
+      "canonical_sha256": "2469AA9573AB8A2BEF5051CAB5C8F2086C2ECA7523E72EB0FA16DFA8BD0EFAB2",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pusch_empty_obligation_candidate_01\\pending_pusch_empty_obligation.patch",
+          "raw_sha256": "2469AA9573AB8A2BEF5051CAB5C8F2086C2ECA7523E72EB0FA16DFA8BD0EFAB2"
+        }
+      ],
+      "replacement_sha256": "A5DFD59F994A8DDB04A1F95D6AE02C75E1E5FFCA5C7BB864C4B646DBC0825C4B",
+      "replacement_inventory_disposition": "current_postimage_blocks_match_review_scope_only",
+      "reviewed_disposition": "superseded_by_integrated_replacement_preserve_archive",
+      "review_note": "Older empty-obligation patch superseded by candidate_02: configured UE/RNTI guards and three rejection cases added; the candidate_02 postimages are integrated. Current complete physical DL ledger checks and empty authority reconstruction retained."
+    },
+    {
+      "canonical_sha256": "6CFB7C58E4A3A4859ADA7096DF69DEFC5F492D8574774F25542297E4EF2E44CA",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pusch_rx_context_candidate_01\\revision_01\\pending_pusch_rx_context.patch",
+          "raw_sha256": "6CFB7C58E4A3A4859ADA7096DF69DEFC5F492D8574774F25542297E4EF2E44CA"
+        }
+      ],
+      "replacement_sha256": "658BECCBCE8D098280434B5F675188ED21A3A13959392B098FA19F940DFCE96E",
+      "replacement_inventory_disposition": "historical_integration_receipt_03f6d6c7",
+      "reviewed_disposition": "superseded_by_integrated_replacement_preserve_archive",
+      "review_note": "Older receiver-context patch superseded by the integrated final candidate: explicit gNB-owned TB/rate/RV/original-MCS requirements and negative tests added. Current adapter also retains partial-CSI metadata and actual resolved bit counts; no transmitter payload input."
+    },
+    {
+      "canonical_sha256": "702591CC358012668BD8164C853FF29E057D76EEE1F213B1B274B7D8ACC62072",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pbch_only_channel_candidate_01\\revision_01\\pending_pbch_only_channel.patch",
+          "raw_sha256": "702591CC358012668BD8164C853FF29E057D76EEE1F213B1B274B7D8ACC62072"
+        }
+      ],
+      "replacement_sha256": "E5EC248862C7BFA27BF9AAEC1F246ACE0253F3442687180DE60EC17C3AE36E15",
+      "replacement_inventory_disposition": "historical_integration_receipt_03f6d6c7",
+      "reviewed_disposition": "superseded_by_integrated_replacement_preserve_archive",
+      "review_note": "Older PBCH-only patch superseded by the integrated final candidate: receiver SINR applicability/receiver-derived status replace a finite-value-only gate. Current channel path retains configured physical power/noise/impairments and additionally validates actual producer spatial/domain contracts; test now uses authored spatial fixture plus rejection cases."
+    },
+    {
+      "canonical_sha256": "BC4052D64A72D9A786BCF2ECBFD39B475C7F7D35E9984A4D8593C1547B8DFAAE",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pusch_caller_receive_context_candidate_01\\pending_pusch_caller_receive_context.patch",
+          "raw_sha256": "BC4052D64A72D9A786BCF2ECBFD39B475C7F7D35E9984A4D8593C1547B8DFAAE"
+        }
+      ],
+      "replacement_sha256": "0FBA6D0E614C7EBC00DBD7C814DE4E354D8593A0EBEA827888785F1A0CA1DE95",
+      "replacement_inventory_disposition": "historical_integration_receipt_e925ec6c",
+      "reviewed_disposition": "superseded_by_integrated_replacement_preserve_archive",
+      "review_note": "Older caller-context patch superseded by integrated candidate_02: scoring isolated after reception, explicit strict-noise unavailable-result handling, receiver-context budgets replace TX-derived fallback counts, unknown CSI Part-2 stays NaN. Current caller still uses those paths plus later independent common-commit plumbing."
+    }
+  ]
+}

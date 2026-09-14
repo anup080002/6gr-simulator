@@ -3721,6 +3721,25 @@ methods(Static, Access=private)
             return;
         end
         row = trialT(end, :);
+        % Resolve the transmitted slot independently of CSI presence. UL
+        % never enters the DL CSI branch below, and a DL attempt may have no
+        % CSI rows. Validate the trace before any shared HARQ handle mutates.
+        sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
+        if isfield(state,'SharedWaveformStream')
+            sourceSlot = sixgr.truth.CoupledTruthRuntime.rowValue(row,"Slot",NaN);
+            assert(ismember('Slot',row.Properties.VariableNames) && ...
+                isnumeric(sourceSlot) && isreal(sourceSlot) && isscalar(sourceSlot) && isfinite(sourceSlot) && ...
+                sourceSlot>=1 && sourceSlot==fix(sourceSlot) && sourceSlot<=state.CurrentSlot, ...
+                'sixgr:truth:InvalidSharedSourceSlot', ...
+                'Shared completion requires the actual non-future transmitted slot.');
+            trace=state.SlotTraceTable;
+            source=find(double(trace.CanonicalSlot)==sourceSlot);
+            assert(numel(source)==1,'sixgr:truth:MissingSharedSourceSlotTrace', ...
+                'A shared receive completion requires its already-started source-slot trace.');
+            sourceFrameLocal=double(trace.FrameLocal(source));
+            validateattributes(sourceFrameLocal,{'numeric'}, ...
+                {'scalar','real','finite','integer','positive'});
+        end
         [state, harqFields] = sixgr.truth.CoupledTruthRuntime.updateHARQState(state, ueIdx, direction, cfgU, row, res);
         if upper(string(direction)) == "UL"
             % A same-UE PUSCH can carry due DL HARQ-ACK instead of a
@@ -3736,7 +3755,6 @@ methods(Static, Access=private)
         if upper(string(direction)) == "DL"
             csiT = sixgr.util.structGet(res, "CSIRSTrialTable", table());
             if istable(csiT) && ~isempty(csiT)
-                sourceSlot = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "Slot", state.CurrentSlot));
                 mask = true(height(csiT), 1);
                 if ismember("Slot", string(csiT.Properties.VariableNames))
                     mask = mask & isfinite(double(csiT.Slot)) & ...
@@ -3780,11 +3798,7 @@ methods(Static, Access=private)
             % Receiver tails can finish in a later physical slot. Completion
             % describes the original transmission, not the callback clock.
             canonicalSlot=sourceSlot;
-            trace=state.SlotTraceTable;
-            source=find(double(trace.CanonicalSlot)==canonicalSlot);
-            assert(numel(source)==1,'sixgr:truth:MissingSharedSourceSlotTrace', ...
-                'A shared receive completion requires its already-started source-slot trace.');
-            frameLocal=double(trace.FrameLocal(source));
+            frameLocal=sourceFrameLocal;
         end
         if upper(string(direction)) == "UL"
             state.ULCompletedFrames = max(double(sixgr.util.structGet(state, "ULCompletedFrames", 0)), frameLocal);

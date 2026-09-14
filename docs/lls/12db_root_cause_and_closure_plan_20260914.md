@@ -2,6 +2,40 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD normal-completion clock repair: 14 September 2026, 12:05 IST
+
+Code inspection of completeSlotImpl found sourceSlot was assigned only when
+DL CSI rows existed, but used by every shared completion after HARQ updates.
+UL and DL-without-CSI therefore had an undefined-variable path. The reducer
+now resolves the actual trial source slot independently of CSI and validates
+its unique retained slot trace before any shared HARQ handle mutation. Missing,
+nonfinite and future shared source slots cannot borrow the callback slot.
+
+testTDDSharedPUSCHIndependentCompletion now enters actual runtime slots and
+continues its real shared PUSCH result through completeSlot after common UCI
+commit. It checks one UL TX/ACK/RX commit and the original completed slot, plus
+missing-trace and NaN/future-slot rejection before handle mutation. This is
+still the empty-UCI component, not nonempty HARQ or full-coordinator proof.
+The nonempty shared-DL regression remains next after this reducer boundary.
+Native mlint checked both changed MATLAB files with no SYNER/EOLPAR; the
+malformed positive control produced SYNER. Runtime verification remains due.
+
+The 1e4fbb99 launch watcher ended at 12:00:30 IST without starting MATLAB:
+all 30 capacity checks were below 2,097,152 KB free RAM. Its final observation
+was 894,576 KB with two actual MATLAB workers. Worker IDs 10448 and 25036
+remain the existing full suites; neither was stopped. The watcher process
+was verified absent before this edit. No test failure or pass is inferred
+from this admission timeout. Focused TDD rerun is next when capacity permits;
+final-source full testAll and applicable NR/config/export/E2E guards remain due.
+
+Four more archive variants (2469AA95, 6CFB7C58, 702591CC, BC4052D6) are older
+versions of integrated replacements. The replacements retain stricter identity,
+coding-authority, receiver-status and unavailable-evidence handling. Their
+semantic reconciliation is preserved in evidence_20260914/tdd_completion_clock/
+retained_patch_semantic_delta.json. Eight of the original fifteen semantic
+reviews remain. Inventory target 13:52 IST and shared-PUSCH target 21:52 IST
+remain estimates, not completion promises. FDD remains explicitly deferred.
+
 ## TDD receive-to-commit root cause: 14 September 2026, 11:49 IST
 
 41854a9b completed its focused batch with three passes and one failure. The new
