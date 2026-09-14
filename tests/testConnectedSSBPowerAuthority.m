@@ -3,6 +3,11 @@ function ok=testConnectedSSBPowerAuthority()
 for fixture=["lls_pdcch_shared_queue_fixture.yaml","lls_pusch_shared_queue_fdd_fixture.yaml"]
     s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
     cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+    % This declared selector fixture checks the absolute-power equation.
+    % Do not inherit a normalized-Es/N0 operating mode that intentionally
+    % has no applied absolute device/link budget. No waveform is executed.
+    cfg.integration.run_mode='GEOMETRY_NETWORK';
+    cfg.integration.configured_snr_is_link_authority=false;
     multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
     state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
     state.CurrentSlot=1; state.CurrentServingIdx(:)=1;

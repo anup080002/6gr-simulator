@@ -1,0 +1,64 @@
+function ok=testNormalizedSSBPowerAuthority()
+% Declared selector/codec inputs, not additional physical RF episodes.
+s=sixgr.lls6g.config.loadScenarioConfig( ...
+    'simulator/configs/scenarios/lls_pucch_baseline_signal_fixture.yaml');
+cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+cfg.lls6g.userContext=struct();
+assert(strcmpi(cfg.integration.run_mode,'FIXED_SNR_SWEEP') && ...
+    cfg.integration.configured_snr_is_link_authority);
+multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
+state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
+state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
+state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,-55,1,1)};
+% Exercise the old failure even when a caller supplies a numeric reference
+% row. Mode authority must not turn that relative value into physical loss.
+measurement=table(0,1,-54.38924037,12, ...
+    'VariableNames',{'ReferenceSignalId','ServingCell','SS_RSRP_dBm','SS_SINR_dB'});
+state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
+    state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
+    'Direction','DL','SourceSignal','SSB','MeasurementSource','declared_mode_boundary_fixture');
+state.CurrentSlot=5;
+[bound,decision]=sixgr.truth.bindSharedSSBPowerReference(cfg,state,1,5,0);
+assert(~decision.ReferenceUsable && ~decision.AbsolutePowerReferenceApplicable && ...
+    decision.Status=="not_applicable_normalized_fixed_esn0" && ...
+    decision.OperatingPointAuthority=="configured_occupied_re_esn0" && ...
+    isnan(decision.Pathloss_dB) && isnan(decision.MeasuredRSRP_dBm) && ...
+    isnan(bound.lls6g.userContext.RuntimeServingPathloss_dB));
+[bound,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
+assert(isnan(bound.lls6g.userContext.RuntimeServingPathloss_dB));
+assert(bound.lls6g.userContext.RuntimePropagationPathloss_dB==state.LargeScaleState.Pathloss_dB(1,1), ...
+    'Mode-boundary binding must not modify the physical propagation ledger.');
+% A stale physical value from an earlier mode cannot survive the switch.
+stale=cfg; stale.lls6g.userContext.RuntimeServingPathloss_dB=123;
+[bound,~]=sixgr.truth.bindSharedSSBPowerReference(stale,state,1,5,0);
+assert(isnan(bound.lls6g.userContext.RuntimeServingPathloss_dB));
+% The RA wrapper must reach its normalized-mode decision before an unrelated
+% physical loss guard; it must still require real received common authority.
+cfg.random_access.associated_ssb_index=0;
+[bound,ra]=sixgr.truth.bindSharedRAPowerReference(cfg,state,1,5);
+assert(ra.ReferenceUsable && isnan(ra.Pathloss_dB) && ...
+    isnan(bound.lls6g.userContext.RuntimeServingPathloss_dB));
+missing=state; missing.UECommonCellConfigurationByUE={struct()};
+[~,ra]=sixgr.truth.bindSharedRAPowerReference(cfg,missing,1,5);
+assert(~ra.ReferenceUsable && ra.Status=="no_available_decoded_sib1");
+future=state; future.RuntimeViewMode="future_ul_grant_planning";
+future.PlanningDecisionSlot=3; future.UECommonCellConfigurationByUE{1}.AvailableSlot=4;
+[~,ra]=sixgr.truth.bindSharedRAPowerReference(cfg,future,1,5);
+assert(~ra.ReferenceUsable,'Normalized operation cannot consume future SIB1.');
+localReject(@()sixgr.truth.bindSharedSSBPowerReference(cfg,state,1,6,0), ...
+    'sixgr:truth:SSBPowerReferenceKnowledgeClock');
+% Preserve the original physical-mode negative-loss rejection, including
+% either missing half of the explicit normalized-mode authority pair.
+physical=cfg; physical.integration.configured_snr_is_link_authority=false;
+localReject(@()sixgr.truth.bindSharedSSBPowerReference(physical,state,1,5,0), ...
+    'sixgr:truth:InvalidSSBPowerReference');
+physical=cfg; physical.integration.run_mode='GEOMETRY_NETWORK';
+localReject(@()sixgr.truth.bindSharedSSBPowerReference(physical,state,1,5,0), ...
+    'sixgr:truth:InvalidSSBPowerReference');
+ok=true;
+disp('NORMALIZED_SSB_POWER_AUTHORITY_PASS: no absolute pathloss, unchanged physical/knowledge guards; no RF episodes.');
+end
+function localReject(f,id)
+try, f(); catch e, assert(string(e.identifier)==id,e.message); return; end
+error('testNormalizedSSBPowerAuthority:MissingRejection','Expected %s.',id);
+end

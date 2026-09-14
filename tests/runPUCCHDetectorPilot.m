@@ -197,9 +197,30 @@ for item=items
         p=item.Context.Prepared; h=item.Context.SSBOccasionHorizon;
         r=sixgr.phy.broadcast.recoverSIB1FromWaveform(post,p.ReceiverConfig, ...
             'RecoveryScope','SSB_MIB','CandidateSSBIndex',h.SSBIndex,'PhysicalMeasurementObservation',pre);
+        fixedNormalizedEsN0=strcmpi(string(sixgr.util.structGet( ...
+            item.Context.Config,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
+            logical(sixgr.util.structGet(item.Context.Config, ...
+            'integration.configured_snr_is_link_authority',false));
+        % This partial-SSB receiver does not go through the full broadcast
+        % completion's power-domain labelling. Preserve its actual numeric
+        % measurement, but never publish normalized samples as physical dBm.
+        measuredRSRP=double(r.SS_RSRP_dBm);
+        if fixedNormalizedEsN0
+            r.SS_RSRP_dB_re_NormalizedIFFTSample=measuredRSRP;
+            r.SS_RSRPPerReceiveAntenna_dB_re_NormalizedIFFTSample=r.SS_RSRPPerReceiveAntenna_dBm;
+            r.SS_RSRPRawObserved_dB_re_NormalizedIFFTSample=r.SS_RSRPRawObserved_dBm;
+            r.SS_RSRPRawObservedPerReceiveAntenna_dB_re_NormalizedIFFTSample=r.SS_RSRPRawObservedPerReceiveAntenna_dBm;
+            r.SSBWindowRSSIPerReceiveAntenna_dB_re_NormalizedIFFTSample=r.SSBWindowRSSIPerReceiveAntenna_dBm;
+            r.SSBWindowPowerMeasurementJSON_NormalizedIFFTSample=r.SSBWindowPowerMeasurementJSON;
+            r.SS_RSRP_dBm=NaN; r.SS_RSRPPerReceiveAntenna_dBm="";
+            r.SS_RSRPRawObserved_dBm=NaN; r.SS_RSRPRawObservedPerReceiveAntenna_dBm="";
+            r.SSBWindowRSSIPerReceiveAntenna_dBm=""; r.SSBWindowPowerMeasurementJSON="";
+            r.PowerReferencePlane="normalized_IFFT_sample_unit_mapping_not_device_budget";
+            r.SSPhysicalMeasurementStatus="available_normalized_not_absolute_dbm";
+        end
         save(fullfile(state.DetectorPilot.Folder,sprintf('ssb_%06d.mat',state.CurrentSlot)), ...
             'r','item','pre','post','tx','replay','-v7.3');
-        assert(r.BCHCrcPass && r.MIBDecoded && isfinite(r.SS_RSRP_dBm), ...
+        assert(r.BCHCrcPass && r.MIBDecoded && isfinite(measuredRSRP), ...
             'test:PilotSSB','Actual SSB acquisition/measurement failed.');
         ch=owner.channelState(1,'DL');
         reference=sixgr.phy.frame.receivedDLTimingReference(p.ReceiverConfig,r,post,ch.ChannelTrimSamples);
@@ -232,6 +253,13 @@ for item=items
         assert(state.UECommonCellConfigurationByUE{1}.SSPBCHBlockPower_dBm== ...
             configuredPower.SSPBCHBlockPower_dBm,'test:PilotSSBPowerChanged', ...
             'Every SSB refresh must match the installed common power declaration.');
+        if fixedNormalizedEsN0
+            % Actual samples/timing and every normalized measurement remain
+            % in this occasion's MAT. The absolute-RSRP ledger must not gain
+            % an invented dBm row merely to satisfy a power-control shape.
+            assert(isnan(r.SS_RSRP_dBm) && isfinite(r.SS_RSRP_dB_re_NormalizedIFFTSample));
+            continue;
+        end
         row=table(double(item.Context.ServingCell),double(r.SSBIndex),double(r.SS_RSRP_dBm),double(r.SS_SINR_dB), ...
             'VariableNames',{'ServingCell','ReferenceSignalId','SS_RSRP_dBm','SS_SINR_dB'});
         state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime(state, ...

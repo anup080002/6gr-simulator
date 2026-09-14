@@ -157,3 +157,68 @@ the old mismatched declaration and remain diagnostic. The repaired-source
 pilot is now a required full-suite entry; final-source testAll and explicit
 NR/config/result-integrity guards, statistical detector qualification and
 integrated 12 dB acceptance remain outstanding.
+
+## 18:20 IST integration failure and candidate repair
+
+The unfiltered `c5b21306` suite independently passed
+`testSSBPowerReferenceContract` in 51.65 s. Its next detector pilot,
+`logs/tp7786460f_0d72_41dd_a710_9d46ff062217`, failed before the first SRS:
+`sixgr:truth:InvalidSSBPowerReference` in `bindSharedSSBPowerReference`.
+The extended diagnostic and failure state are retained; the suite continues.
+
+The declaration is now correctly -55 in the normalized IFFT sample mapping.
+The first actual recovered RSRP is -54.38924037 in the same numerical mapping.
+The partial-SSB pilot bypassed the full broadcast completion's normalized
+power-domain labelling, published this value as absolute dBm, and the shared
+binding attempted to use the difference as physical pathloss. Normalized
+fixed-Es/N0 deliberately does not apply an absolute device/link budget.
+The RA wrapper already had that distinction, but evaluated the shared
+physical binding first, so its mode handling could be reached too late.
+
+Candidate changes, not yet runtime-qualified:
+
+- `bindSharedSSBPowerReference.m`: explicitly authored normalized mode marks
+  absolute power reference as not applicable, clears stale pathloss and
+  records configured occupied-RE Es/N0 authority. Physical nonnegative-loss
+  rejection and SIB1 cell/epoch/knowledge validation are unchanged.
+- `runPUCCHDetectorPilot.m`: retains actual partial-SSB power numbers in
+  explicitly normalized IFFT fields, clears misleading absolute-dBm fields,
+  and does not publish a fake absolute-RSRP row. Actual SSB acquisition,
+  samples, SINR, timing and all numerical measurements remain in each MAT.
+  No RX sample, detector threshold, seed, SNR, TA or noise value is changed.
+- `testNormalizedSSBPowerAuthority.m`: reproduces the prior numerical case;
+  checks direct and connected-UL binding, stale-value clearing, RA handling,
+  missing/future SIB1 and unchanged physical/clock rejection. Registered in
+  `testAll`. These are declared selector inputs, not physical episodes.
+- The existing connected-SSB selector test now explicitly selects physical
+  power mode for its original 5 - (-90) = 95 dB assertions. Its inherited
+  scenario had changed to normalized mode. The original assertions and
+  cases remain; it and the unchanged RA selector test are registered in
+  the full suite alongside the new normalized-mode test. This is a fixture
+  authority correction, not resumed FDD feature development.
+
+Required next evidence: targeted new test and unchanged
+`testSharedRAPowerReference`, then actual `testPUCCHDetectorPilot`, then
+final-source full `testAll` and applicable NR/result-integrity guards. A pass
+does not qualify the detector's original 12/1024 false-ACK result.
+
+## Executed lossless-storage diagnostic, not an adopted writer
+
+`logs/pucch_detector_diagnosis_20260914/lossless_archive_full_01/receipt.json`
+records all 33 files of the historical cd4ea4a1 pilot, including configuration,
+CSV, JSON and complete MAT evidence. Source size 1,750,814,187 bytes;
+128-MiB-window Zstandard archive payload 168,276,338 bytes (90.39% reduction).
+Every file was decompressed, length/SHA-256 checked against the source, and
+the source was rehashed unchanged. Compression took 16.14 s total; stream
+restoration plus hashing took 10.94 s, excluding the additional audit reads.
+No source evidence was deleted or changed and no RF episode was added.
+
+This proves a byte-exact storage option, not a PHY speedup or deployed
+archiver. The 600-episode storage extrapolation is about 94.03 GiB of archive
+payload, excluding receipts, scratch space and differing future outcomes.
+The previous roughly 98-hour unoptimized PHY/pilot-duration estimate is not
+replaced by the compression duration. Archive integration, dependency setup,
+restoration workflow and failure/corruption tests remain necessary before
+adoption. The original evidence and earlier failed diagnostic attempt remain
+preserved. Script SHA-256:
+`5d33f9fc88fe410fdb70b0bb61a14b01b18e495cda92e4cb0621a3727fc1ea85`.

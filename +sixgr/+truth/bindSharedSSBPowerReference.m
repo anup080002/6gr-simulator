@@ -55,6 +55,20 @@ if ~commonUsable
     measurement.Status="no_available_decoded_sib1_power";
     measurement.Blocker="selected_cell_requires_received_sib1_power_at_current_epoch_and_knowledge_slot";
 end
+fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
+    cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
+    logical(sixgr.util.structGet(cfg, ...
+    'integration.configured_snr_is_link_authority',false));
+if fixedNormalizedEsN0
+    % Unit-RE Es/N0 execution has no applied absolute device/link budget.
+    % In particular, a numerical SSB reference minus a normalized fading
+    % measurement is not a physical pathloss input. Do not clamp it, use a
+    % model substitute, or evaluate a physical-power guard before this mode
+    % boundary. SIB1 cell/epoch/knowledge checks above remain applicable.
+    measurement.Usable=false;
+    measurement.Status="not_applicable_normalized_fixed_esn0";
+    measurement.Blocker="absolute_power_reference_not_applied_in_this_operating_mode";
+end
 % Clear every earlier model/reference result before considering this attempt.
 meta=cfg.lls6g.userContext;
 meta.RuntimeServingPathloss_dB=NaN;
@@ -65,6 +79,9 @@ meta.RuntimeServingPathlossMeasurementSlot=NaN;
 meta.RuntimeServingPathlossMeasurementAgeSlots=NaN;
 meta.RuntimeServingPathlossReferenceSignalType='SSB';
 meta.RuntimeServingPathlossReferenceSignalId=selected;
+if fixedNormalizedEsN0
+    meta.RuntimeServingPathlossSource='not_applicable_normalized_fixed_esn0';
+end
 pathloss=NaN; txEPRE=NaN; rsrp=NaN; filteredRSRP=NaN; physicalPL=NaN;
 filterSource=""; filterHash=""; filterAlpha=NaN; filterCount=NaN;
 source="ue_decoded_sib1_power_minus_filtered_ssb_rsrp";
@@ -107,4 +124,10 @@ end
 decision.ServingCell=double(cellId); decision.ReferenceConfigurationEpoch=double(epoch);
 decision.UERSRPFilterSource=filterSource; decision.UERSRPFilterConfigHash=filterHash;
 decision.UERSRPFilterEffectiveAlpha=filterAlpha; decision.UERSRPFilterUpdateCount=filterCount;
+decision.AbsolutePowerReferenceApplicable=~fixedNormalizedEsN0;
+decision.OperatingPointAuthority="received_sib1_and_filtered_absolute_rsrp";
+if fixedNormalizedEsN0
+    decision.Source(:)="normalized_fixed_esn0_no_absolute_power_reference";
+    decision.OperatingPointAuthority(:)="configured_occupied_re_esn0";
+end
 end
