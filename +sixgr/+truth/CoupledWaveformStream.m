@@ -9,6 +9,7 @@ classdef CoupledWaveformStream < handle
         Pending = struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{})
         DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
         ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{},'TransferProof',{})
+        PUSCHReceiveOnlyRegistrations = struct('ID',{},'UE',{},'GrantContextID',{},'StartSample',{},'EndSampleExclusive',{})
     end
     properties (Access=private)
         Nodes = struct('ID',{},'Direction',{},'NumAntennas',{},'RF',{})
@@ -375,6 +376,9 @@ classdef CoupledWaveformStream < handle
                 tx="ue_"+ue; rx="gnb_"+link.Cell+"_rx"; role="ue"; family="PUSCH";
             end
             identity=sixgr.truth.preparedDataTransmissionIdentity(prepared,ue);
+            assert(~any(string({obj.PUSCHReceiveOnlyRegistrations.GrantContextID})==identity.PHYGrantContextId), ...
+                'sixgr:truth:ConflictingPUSCHReceiveOnlyTransmission', ...
+                'A receive-only grant cannot subsequently acquire a UE transmission.');
             pending=obj.Pending(string({obj.Pending.Kind})==family & [obj.Pending.UE]==ue);
             duplicate=any(arrayfun(@(x) ...
                 x.Context.TransmissionIdentity.TransmissionID==identity.TransmissionID,pending));
@@ -440,6 +444,53 @@ classdef CoupledWaveformStream < handle
             context.Prepared=prepared;
             obj.Pending(end+1)=struct('ID',id,'Kind',family,'UE',ue, ...
                 'Context',context,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+        end
+        function id=queuePUSCHReceiveOnly(obj,ue,cfg,grant,first,stop)
+            % Physical capture only. Scheduling supplies the gNB window;
+            % this does not establish failed DCI, decode bits, or apply HARQ.
+            % No UE preparation, timing advance, IQ, power or TB is consumed.
+            validateattributes(ue,{'numeric'},{'scalar','real','finite','integer','positive'});
+            validateattributes(first,{'numeric'},{'scalar','real','finite','integer','>=',obj.Events.NextSampleIndex});
+            validateattributes(stop,{'numeric'},{'scalar','real','finite','integer','>',first});
+            sixgr.phy.grant.assertGrantTimingIdentity(grant,'UL');
+            sixgr.phy.grant.assertPHYGrantDimensions(grant.PHYGrant,'pusch_receive_only_registration');
+            assert(grant.UEIndex==ue && grant.RNTI==cfg.phy.pusch.RNTI, ...
+                'sixgr:truth:PUSCHReceiveOnlyIdentityMismatch','Use the scheduled UE and installed RNTI.');
+            carrier=sixgr.phy.grid.makeCarrier(cfg);
+            info=nrOFDMInfo(carrier);
+            slot0=grant.TimingDecision.DataAbsoluteSlot;
+            nominal=sixgr.phy.frame.slotStartSample(carrier,slot0,obj.SampleRateHz);
+            nominalStop=sixgr.phy.frame.slotStartSample(carrier,slot0+1,obj.SampleRateHz);
+            assert(double(info.SampleRate)==obj.SampleRateHz && first<=nominal && stop>=nominalStop, ...
+                'sixgr:truth:IncompleteScheduledPUSCHWindow', ...
+                'The gNB window must contain the scheduled slot on the physical clock; no padding is created.');
+            [~,~,~,partition]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,slot0+1);
+            symbols=grant.SymbolAllocation(1)+(0:grant.SymbolAllocation(2)-1);
+            ul=partition.ULSymbolAllocation;
+            assert(~isempty(symbols) && all(symbols>=ul(1) & symbols<sum(ul)), ...
+                'sixgr:truth:ScheduledPUSCHOutsideUL','The scheduled allocation must occupy actual UL symbols.');
+            grantID=string(grant.PHYGrant.GrantContextId);
+            assert(isscalar(grantID) && ~ismissing(grantID) && strlength(grantID)>0, ...
+                'sixgr:truth:PUSCHReceiveOnlyIdentityMismatch','Retain a nonempty frozen grant identity.');
+            assert(~any(string({obj.PUSCHReceiveOnlyRegistrations.GrantContextID})==grantID), ...
+                'sixgr:truth:DuplicatePUSCHReceiveOnlyObservation','One scheduled grant has one receive-only registration.');
+            pending=obj.Pending(string({obj.Pending.Kind})=="PUSCH");
+            transmitted=obj.DataTransmissions;
+            assert(~any(arrayfun(@(x)x.Context.TransmissionIdentity.PHYGrantContextId==grantID,pending)) && ...
+                ~any(arrayfun(@(x)x.Identity.PHYGrantContextId==grantID,transmitted)), ...
+                'sixgr:truth:ConflictingPUSCHReceiveOnlyTransmission', ...
+                'An already prepared or executed UE transmission is not receive-only.');
+            link=obj.linkForUE(ue,"UL");
+            obj.Serial=obj.Serial+1; id="pusch_receive_only_"+obj.Serial;
+            for plane=["gnb_"+link.Cell+"_rx:pre_rf","gnb_"+link.Cell+"_rx:post_rf"]
+                obj.Events.observe(plane,id,first,stop);
+            end
+            context=struct('Grant',grant,'Config',cfg,'ObservationID',id, ...
+                'Source',"scheduled_gnb_capture_without_UE_transmission");
+            obj.Pending(end+1)=struct('ID',id,'Kind',"PUSCHReceiveOnly",'UE',ue, ...
+                'Context',context,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+            obj.PUSCHReceiveOnlyRegistrations(end+1)=struct('ID',id,'UE',ue, ...
+                'GrantContextID',grantID,'StartSample',first,'EndSampleExclusive',stop);
         end
         function queueULDataPreparation(obj,ue,first,context)
             validateattributes(first,{'numeric'},{'scalar','real','finite','integer','>=',obj.Events.NextSampleIndex});
@@ -591,15 +642,20 @@ classdef CoupledWaveformStream < handle
         function [state,completed]=advanceSlot(obj,state,cfg,onReceived)
             if nargin<4, onReceived=[]; end
             carrier=sixgr.phy.grid.makeCarrier(cfg);
-            carrier.NSlot=state.CurrentSlot-1;
+            % Received grant ordinals may retain an integer MATLAB class.
+            % OFDM vector indexing must not mix integer scalars and double
+            % index arrays (or saturate unsigned subtraction at slot zero).
+            validateattributes(state.CurrentSlot,{'numeric'}, ...
+                {'scalar','real','finite','integer','positive','<=',flintmax});
+            carrier.NSlot=double(state.CurrentSlot)-1;
             info=nrOFDMInfo(carrier);
             first=sixgr.phy.frame.slotStartSample(carrier,state.CurrentSlot-1,obj.SampleRateHz);
             stop=sixgr.phy.frame.slotStartSample(carrier,state.CurrentSlot,obj.SampleRateHz);
             if obj.Events.NextSampleIndex~=first
                 error('sixgr:truth:SchedulerPhysicalClockMismatch','Slot scheduling and physical sample consumption are not contiguous.');
             end
-            symbols=carrier.SymbolsPerSlot;
-            localSlot=mod(carrier.NSlot,carrier.SlotsPerSubframe);
+            symbols=double(carrier.SymbolsPerSlot);
+            localSlot=mod(double(carrier.NSlot),double(carrier.SlotsPerSubframe));
             lengths=double(info.SymbolLengths(localSlot*symbols+(1:symbols)));
             if sum(lengths)~=stop-first
                 error('sixgr:truth:SlotSampleExtentMismatch','Actual OFDM symbol lengths must cover the scheduler slot.');
@@ -815,6 +871,8 @@ end
 function count=localExpectedSharedPlaneCount(pending)
 if string(pending.Kind)=="ContinuousTxIQ"
     count=1;
+elseif string(pending.Kind)=="PUSCHReceiveOnly"
+    count=2; % Actual pre/post RF only: no invented UE transmitter plane.
 else
     count=3+double(isfield(pending.Context,'DesiredReferencePlane'));
 end
