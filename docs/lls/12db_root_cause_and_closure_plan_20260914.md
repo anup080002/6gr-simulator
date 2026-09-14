@@ -2,6 +2,19 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD focused checkpoint: 14 September 2026, 11:39 IST
+
+The c0c428c5 batch terminated: three passed, one failed. Producer mapping,
+commit-receipt guards and all nine same-chain sweep configuration points passed.
+The new empty-UCI fixture failed schema validation before PHY execution because
+its inherited CQI/PMI/RI/CRI flags remained enabled while CSI reporting was off.
+Those four dependent flags are now explicitly off only in that component
+fixture, matching its empty-obligation purpose. Production TDD reporting and
+the 12 dB scenario are unchanged. Original logs/failed receipts are retained;
+worker 25748 and launcher 10748 exited before this repair. The new shared
+receive/common-commit path still requires runtime proof; no pass is inferred
+from configuration or structural checks. Rerun the same focused set next.
+
 ## TDD coordinator candidate: 14 September 2026, 11:34 IST
 
 Implemented, not yet runtime-verified: localCompleteSharedDataPlan now calls

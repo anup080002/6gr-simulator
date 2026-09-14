@@ -9,3 +9,7 @@ meta:
 
 reference_signals:
   csi_reporting_enabled: false
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
