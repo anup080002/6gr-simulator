@@ -17,4 +17,5 @@ canonical_control:
     geometry_enabled: true
   integration:
     run_mode: GEOMETRY_NETWORK
+    subprofile: connected_network
     configured_snr_is_link_authority: false

@@ -122,3 +122,10 @@ The integer SIB1 power field is constrained by
 [TS 38.331](https://www.etsi.org/deliver/etsi_ts/138300_138399/138331/18.06.00_60/ts_138331v180600p.pdf).
 The numerical mismatch above comes from local source and executed evidence,
 not from an inferred compliance result.
+
+The first cba54e24 power rerun (`logs/testall_20260914T121318907Z_a8a0058f`)
+failed during configuration in 21.58 s: the new physical-mode fixture still
+inherited `connected_control_smoke`, which the catalog does not allow for
+GEOMETRY_NETWORK. The fixture now explicitly selects the existing supported
+`connected_network` subprofile. No mode-validation rejection is relaxed;
+the power repair remains runtime-unverified at this checkpoint.
