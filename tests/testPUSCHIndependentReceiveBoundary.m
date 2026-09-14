@@ -47,6 +47,7 @@ for count=[0 1 2 3 5 12 20]
     end
     assert(rx.UCIReceiverEvidence.ReceiverContextDigest==context.Digest);
     assert(rx.UCIReceiverEvidence.HARQACK.InformationBitCount==count);
+    localNormalizedHARQ(rx,context);
     if count>0, assert(rx.UCIReceiverEvidence.HARQACK.DecodeUsable); end
     localReject(@()decoder(p,.3,512,llr,payload,4), ...
         'sixgr:pusch:MissingUCIReceiveContext');
@@ -82,6 +83,7 @@ for rank=[1 2]
         isequal(rx.DecodedCSIPart2,report.Part2Bits));
     assert(rx.CSIPart1DecodedBeforePart2 && rx.ResolvedCSI2BitCount==numel(report.Part2Bits));
     assert(rx.CSI2LengthAuthority=="received_csi_part1_and_active_report_configuration");
+    localNormalizedHARQ(rx,context);
     localCheckData(rx.ULSCHLLR{1},p,tbs,llr,data,payload);
     if ~isempty(legacyReference)
         old=legacyReference(p,.3,tbs,llr,payload,4,installed);
@@ -131,6 +133,59 @@ localReject(@()makeContext(bad),'sixgr:pusch:InvalidUCIReceiveObligation');
 assert(puncturedCases>0,'The fixture must exercise actual HARQ-ACK puncturing.');
 fprintf('PUSCH_INDEPENDENT_RECEIVE_BOUNDARY_PASS codec_cases=%d punctured_cases=%d plus malformed/oracle/CSI-binding rejection\n',cases,puncturedCases);
 ok=true;
+end
+
+function localNormalizedHARQ(decoded,context)
+% Actual codec evidence; this does not declare physical receive completion.
+rx=struct('DecodedHARQACKBits',decoded.DecodedHARQACK, ...
+    'UCIReceiverEvidence',decoded.UCIReceiverEvidence);
+before=rx;
+observed=sixgr.truth.normalizeReceivedPUSCHHARQ(rx,context);
+assert(observed.DecodeOk && ~observed.DTXFlag && observed.DecodeAttempted && ...
+    observed.InformationBitCount==context.Data.HARQACKBitCount && ...
+    isequal(observed.DecodedBits,decoded.DecodedHARQACK) && isequaln(rx,before));
+% Neither expected bits, data CRC nor unrelated CSI usability owns HARQ.
+poison=rx; poison.ExpectedHARQACKBits=ones(99,1); poison.HARQACKContentMatch=false;
+poison.CRCPass=false; poison.ReceiverUsable=false; poison.HARQACKDecodeStatus="failed";
+poison.UCIReceiverEvidence.CSI1=struct('DecodeUsable',false);
+assert(isequaln(observed,sixgr.truth.normalizeReceivedPUSCHHARQ(poison,context)));
+bad=rx; bad.UCIReceiverEvidence.ReceiverContextDigest="different_context";
+localReject(@()sixgr.truth.normalizeReceivedPUSCHHARQ(bad,context), ...
+    'sixgr:truth:PUSCHHARQReceiveContextMismatch');
+bad=rx; bad.UCIReceiverEvidence.HARQACK.Source="expected_bits";
+localReject(@()sixgr.truth.normalizeReceivedPUSCHHARQ(bad,context), ...
+    'sixgr:truth:InvalidPUSCHUCIReceiverEvidence');
+for value={NaN,Inf,.5,1+1i,[0;2]}
+    bad=rx; bad.DecodedHARQACKBits=value{1};
+    localReject(@()sixgr.truth.normalizeReceivedPUSCHHARQ(bad,context), ...
+        'sixgr:truth:InvalidReceivedHARQBit');
+end
+n=context.Data.HARQACKBitCount;
+if n>0
+    absent=rx; absent.DecodedHARQACKBits=int8([]);
+    failed=sixgr.truth.normalizeReceivedPUSCHHARQ(absent,context);
+    assert(~failed.DecodeOk && failed.DTXFlag && isempty(failed.DecodedBits));
+    bad=rx; bad.UCIReceiverEvidence.HARQACK.DecodeUsable=false;
+    failed=sixgr.truth.normalizeReceivedPUSCHHARQ(bad,context);
+    assert(~failed.DecodeOk && failed.DTXFlag && isequal(failed.DecodedBits,observed.DecodedBits));
+end
+if n>=12
+    bad=rx; bad.UCIReceiverEvidence.HARQACK.CodeBlockErrors(:)=true;
+    bad.UCIReceiverEvidence.HARQACK.CRCPass=0;
+    failed=sixgr.truth.normalizeReceivedPUSCHHARQ(bad,context);
+    assert(~failed.DecodeOk && failed.DTXFlag);
+end
+unavailable=struct('NoiseVarStrictFailure',true,'DecodeAttempted',false, ...
+    'ULSCHDecodeAttempted',false,'ReceiverUsable',false);
+failed=sixgr.truth.normalizeReceivedPUSCHHARQ(unavailable,context);
+assert(~failed.DecodeOk && ~failed.DecodeAttempted && failed.DTXFlag==(n>0) && ...
+    isempty(failed.DecodedBits));
+unexplained=rmfield(unavailable,'NoiseVarStrictFailure');
+localReject(@()sixgr.truth.normalizeReceivedPUSCHHARQ(unexplained,context), ...
+    'sixgr:truth:MissingIndependentPUSCHHARQEvidence');
+unavailable.DecodedHARQACKBits=int8(1);
+localReject(@()sixgr.truth.normalizeReceivedPUSCHHARQ(unavailable,context), ...
+    'sixgr:truth:MissingIndependentPUSCHHARQEvidence');
 end
 
 function d=localObligation(count)

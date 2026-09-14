@@ -14,7 +14,7 @@ for field=["UCIOnPUSCHFeedbackGrantIds","UCIOnPUSCHCSIReportIdentity"]
         string(sixgr.util.structGet(saved,field,""))), ...
         'sixgr:truth:LateSharedPUSCHUCIChange','Encoded UCI must retain its exact HARQ/CSI source identity.');
 end
-for field=["UCIOnPUSCHFeedbackSourceSlots","UCIOnPUSCHFeedbackHARQIds"]
+for field=["UCIOnPUSCHFeedbackSourceSlots","UCIOnPUSCHFeedbackHARQIds","UCIOnPUSCHFeedbackBitIndices"]
     a=double(sixgr.util.structGet(grant,field,[]));
     b=double(sixgr.util.structGet(saved,field,[]));
     assert(isequaln(a(:),b(:)),'sixgr:truth:LateSharedPUSCHUCIChange', ...

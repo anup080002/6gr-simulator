@@ -2,6 +2,81 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## Implementation resumed: 2026-09-14, 09:52:49 IST
+
+T_resume is now recorded from the actual system clock as
+2026-09-14T09:52:49.6737913+05:30. The prior turn made progress by verifying
+the terminal four-test result and preserving the fixture plan. Work resumed
+on the explicit goal continuation; there is no remaining planning approval
+pause. Checkpoints are active-work budgets and do not imply background work
+between turns. Preserve the original targets when reporting interruptions.
+
+Current development additions, NOT YET runtime verified: independent periodic
+PUSCH CSI receive-obligation construction; actual HARQ receiver normalization
+including pre-demapper strict-noise failure; throughput handoff of that exact
+receiver evidence; codec negatives, real staged-reception assertions and
+received-UL-DAI producer/gap bindings. Normal coordinator/common-commit wiring,
+missed-UL-DCI receive-only handling and combined ownership remain unfinished.
+This development checkpoint is not deployable or a 12 dB qualification.
+
+## Planning checkpoint: 2026-09-14, approximately 09:52 IST
+
+This section supersedes older status statements below, not their evidence.
+The four-test run on clean, unchanged eb56deb8 completed at 09:50:35 IST:
+4 passed, 0 failed, MATLAB and launcher exit codes 0. TDD/FDD staged-data,
+measured PUSCH power control and normalized UL power checks passed. Evidence:
+measurement checkout logs/testall_20260914T041220484Z_133e0990/{launcher.json,
+summary.json,test_report.json,matlab.log}. This is NOT integrated 12 dB proof.
+Main remains be983bf4 with a live full testAll, not a terminal pass; that run
+does not include eb56deb8. The shared-PUSCH development checkout contains
+uncommitted producer work, not a complete or tested transport adapter.
+
+### Recovery schedule and reporting contract
+
+The user requested a planning pause. No new implementation or validation job
+is launched by this documentation update; existing jobs are left running.
+T_resume means the next actual implementation resumption, whose wall-clock
+time must be recorded before work starts. The earlier unanchored T0 cannot be
+retroactively dated. This recovery estimate does not erase earlier delays.
+Deadlines below are cumulative active-work time, not promises of unattended
+execution. Runtime qualification is separately budgeted and may fail.
+
+| Checkpoint | Repair/fixture deliverable | Test and acceptance gate |
+| --- | --- | --- |
+| T_resume + 1 hour | Freeze inventory of branches, patches, source hashes and original failures; record start and calendar equivalents | Every change accounted for; incomplete old runs remain incomplete; no source edits in a running checkout |
+| + 4 hours | Finish timing/CSI fixture closure: tests/testCSIRuntimeExecution.m, testSharedCSIReportClock.m, testCoupledTruthCSIReportSourceAuthority.m, testDataChannelStreamStages.m; add explicit enabled-CFO TDD fixture without altering the disabled scenario | Existing CSI positives/invalid-input negatives and all staged TDD/FDD cases pass on candidate source; available versus disabled measurements tested separately |
+| + 12 hours | Complete normal shared-PUSCH producer, independent RX, once-only commit, missed-UL-DCI capture and mixed ownership in CoupledTruthRuntime.m, runWaveformLinkBundle.m, validatePreparedPUSCHUCI.m and codebook-binding helpers | Normal-path TDD/FDD tests: missed leading/interior/trailing/all DCI, DAI wrap, 4/8 all-missed assignments, no HARQ, CSI-only, HARQ+CSI, SR collision, late/stale/duplicate feedback. No TX-derived receiver width or invented UE transmission |
+| + 16 hours | Revalidate decoder repair and independent/public-reference fixtures; finish PUCCH detector diagnosis and freeze configuration-owned candidate, qualification seeds/counts/conditions | Existing RV/rank/partial/CRC negatives retained. No threshold selected from holdout outcomes; no claim of detector qualification yet |
+| + 20 hours | Finish real-RF PUCCH qualification harness: PUCCHReceiver.m, PUCCHDetector.m, resolveDetectionThreshold.m only where diagnosis warrants; noise/signal tests and validation YAML | Pilot proves actual acquired timing, RF observations, independent episodes and failure retention; launch frozen false-ACK AND signal-error campaign with predeclared confidence gates |
+| + 24 hours | Complete measurement/export checkers in section E; freeze one coherent candidate and evidence index | Independently check every enabled family, unit/reference plane, missing-value policy and export provenance. Candidate-ready is not qualified |
+| Next 24-48 elapsed hours, provisional | Run required full suite/guards and detector campaign on frozen final source; after these pass, run authored integrated 12 dB and inspect CSV/PNG artifacts | Terminal zero-failure required results; detector gates pass; integrated measurements and artifacts pass. Unknown test runtime or a failure can move completion, not acceptance criteria |
+| After qualification | Consolidate into main, commit/push code and portable evidence index, verify remote hash and clean tracked tree; retain original logs/branches | Same source as qualification; preserved patch ancestry/content; no destructive cleanup. Then execute same-chain sweep [-30,-20,-10,0,10,12,20,30,40] |
+
+At each checkpoint publish: target, actual time, commit, files changed, tests
+passed/failed/not run, original exception and evidence path. If a target is
+missed, mark MISSED at that checkpoint and give the specific remaining work
+and revised estimate. Never silently restart the clock, weaken an assertion,
+change power/noise to manufacture success, or call component success closure.
+The 24-hour candidate and additional 24-48-hour qualification budgets are
+engineering estimates, not a guarantee that unresolved bugs pass by a date.
+
+### What is fixed versus what is genuinely missing
+
+- CSI timing-list/CRI and canonical DL clock fixture repairs have focused
+  passes. The new TDD/FDD and power-availability run also passed. Final-source
+  regression and integrated availability/consumption evidence are still owed.
+- Shared HARQ still has an implementation gap: producer rows cannot stand in
+  for protocol gap positions or complete gNB obligations. The normal receiver
+  and common commit must be wired together before producer WIP is deployable.
+- PUCCH's retained 12/1024 false-ACK result still fails its configured sample
+  gate. Independent replay agreement does not qualify the operating threshold.
+  Signal-present error qualification is a separate mandatory gate.
+- All-measurement closure is missing integrated evidence, not proof that every
+  formula is wrong. Section E names exact audit locations and repair conditions.
+- Consolidation is incomplete: main lacks the newer measurement commits and
+  shared-PUSCH edits remain uncommitted. Preserve them; do not advertise main
+  or GitHub as the final qualified codebase yet.
+
 ## TDD measurement diagnosis and fixture repair, after 09:30 IST
 
 Runtime follow-up on 450e3467: the TDD DL reference comparison passed inside

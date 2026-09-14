@@ -753,6 +753,7 @@ lastExpectedCSIPart2Bits = int8([]);
 lastDecodedCSIPart1Bits = int8([]);
 lastDecodedCSIPart2Bits = int8([]);
 lastUCIReceiverEvidence = struct();
+lastIndependentHARQObservation = struct();
 lastCSI1ContentMatch = false;
 lastCSI2ContentMatch = false;
 puschPowerControlState = struct( ...
@@ -1325,6 +1326,7 @@ for n = 1:numFrames
         rxCallTic = tic;
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
         if independentUCI
+            lastIndependentHARQObservation=sixgr.truth.normalizeReceivedPUSCHHARQ(rx,uciReceiveContext);
             % Comparison occurs only after reception. Do not write its result
             % into rx, change decoded bits, or use it as a decoder-validity gate.
             uciScoring=sixgr.link.scoreIndependentPUSCHUCI(rx,uciReceiveContext,expectedUCIPayload);
@@ -2269,6 +2271,7 @@ if isstruct(out.HARQ)
     out.HARQ.UCIReceiverEvidence=lastUCIReceiverEvidence;
     if independentUCI
         out.HARQ.UCIReceiveContextDigest=uciReceiveContext.Digest;
+        out.HARQ.IndependentHARQObservation=lastIndependentHARQObservation;
         out.HARQ.UCIReferenceScoringSource="post_reception_reference_comparison_not_receiver_authority";
     end
     out.HARQ.CSI1ContentMatch = logical(lastCSI1ContentMatch);

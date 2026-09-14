@@ -13893,7 +13893,9 @@ methods(Static, Access=private)
             dueCSI = table();
             dueCSIIndices = zeros(0, 1);
         end
-        if isempty(due) && isempty(dueCSI)
+        sharedType2=isfield(state,'SharedWaveformStream') && isfield( ...
+            sixgr.util.structGet(state.CfgMobility,'phy.pdcch.operatorControl',struct()),'connected_dci');
+        if isempty(due) && isempty(dueCSI) && ~sharedType2
             return;
         end
 
@@ -13931,7 +13933,9 @@ methods(Static, Access=private)
                     ["A single PUSCH occasion cannot consume more than one " + ...
                      "unmerged CSI report for the same UE and due slot."]);
             end
-            if isempty(matched) && isempty(matchedCSI)
+            receivedBook=sixgr.truth.receivedPUSCHCodebookForGrant(state,grantsOut(gi));
+            hasProtocolBits=~isempty(receivedBook) && ~isempty(receivedBook.Bits);
+            if isempty(matched) && isempty(matchedCSI) && ~hasProtocolBits
                 continue;
             end
             ackBits = int8([]);
@@ -13987,8 +13991,24 @@ methods(Static, Access=private)
                 error("sixgr:truth:MissingPUSCHUCIGrantContext", ...
                     "UCI-on-PUSCH requires the exact frozen PUSCH grant context identity.");
             end
+            % Received UL DAI and UE-local events own Type-2 wire positions.
+            % Protocol gaps have no pending producer row.
+            harqPayload=ackBits(:);
+            producerBitIndices=(1:numel(grantIds)).';
+            if ~isempty(receivedBook)
+                if isempty(matched)
+                    producerRows=table();
+                else
+                    producerRows=struct2table(matched(:),'AsArray',true);
+                    producerRows.ScheduledAbsoluteSlot=producerRows.DueSlot;
+                end
+                binding=sixgr.truth.bindReceivedPUSCHCodebookRows(receivedBook,producerRows);
+                harqPayload=receivedBook;
+                ackBits=receivedBook.Bits;
+                producerBitIndices=binding.ProducerBitIndices;
+            end
             typedPayload = sixgr.phy.ul.pusch.PUSCHUCIPayload( ...
-                "HARQACK", ackBits(:), "CSIPart1", csiPart1(:), ...
+                "HARQACK", harqPayload, "CSIPart1", csiPart1(:), ...
                 "CSIPart2", csiPart2(:), ...
                 "CSIPart2DependsOnPart1", ~isempty(csiPart2));
             grantsOut(gi).ExpectedUCIPayload = typedPayload;
@@ -14009,6 +14029,7 @@ methods(Static, Access=private)
             grantsOut(gi).UCIOnPUSCHFeedbackGrantIds = char(strjoin(grantIds, "|"));
             grantsOut(gi).UCIOnPUSCHFeedbackSourceSlots = double(sourceSlots(:).');
             grantsOut(gi).UCIOnPUSCHFeedbackHARQIds = double(harqIds(:).');
+            grantsOut(gi).UCIOnPUSCHFeedbackBitIndices = double(producerBitIndices(:).');
             grantsOut(gi).UCIOnPUSCHFeedbackBitCount = double(numel(ackBits));
             grantsOut(gi).UCIOnPUSCHEvidenceSource = ...
                 "pending_feedback_table_reserved_after_pdcch_grant_binding";
@@ -14018,7 +14039,7 @@ methods(Static, Access=private)
 
             if ~isempty(grantIds)
                 state = sixgr.truth.CoupledTruthRuntime. ...
-                    markFeedbackRowsReservedForPUSCH(state, grantIds, contextId);
+                    markFeedbackRowsReservedForPUSCH(state, grantIds, contextId,producerBitIndices);
             end
             if ~isempty(matchedCSIIndices)
                 state.PendingCSITable = sixgr.truth.CoupledTruthRuntime. ...
@@ -14320,6 +14341,7 @@ methods(Static, Access=private)
             grantsOut(gi).UCIOnPUSCHFeedbackGrantIds = "";
             grantsOut(gi).UCIOnPUSCHFeedbackSourceSlots = [];
             grantsOut(gi).UCIOnPUSCHFeedbackHARQIds = [];
+            grantsOut(gi).UCIOnPUSCHFeedbackBitIndices = [];
             grantsOut(gi).UCIOnPUSCHFeedbackBitCount = 0;
             grantsOut(gi).UCIOnPUSCHEvidenceSource = "";
             grantsOut(gi).UCIOnPUSCHCSIReportIdentity = "";
@@ -14465,8 +14487,16 @@ methods(Static, Access=private)
         end
     end
 
-    function state = markFeedbackRowsReservedForPUSCH(state, grantIds, contextId)
+    function state = markFeedbackRowsReservedForPUSCH(state, grantIds, contextId,producerBitIndices)
         grantIds = string(grantIds(:));
+        if nargin<4, producerBitIndices=(1:numel(grantIds)).'; end
+        assert(isnumeric(producerBitIndices) && isreal(producerBitIndices) && ...
+            numel(producerBitIndices)==numel(grantIds) && ...
+            all(isfinite(producerBitIndices(:))) && all(producerBitIndices(:)>=1) && ...
+            all(producerBitIndices(:)==fix(producerBitIndices(:))) && ...
+            numel(unique(producerBitIndices))==numel(grantIds), ...
+            'sixgr:truth:InvalidPUSCHHARQACKReservation', ...
+            'Each real producer needs one unique position; gaps have no producer.');
         pending = sixgr.util.structGet(state, "PendingFeedbackTable", table());
         if istable(pending) && ~isempty(pending) && ...
                 ismember("PUCCHGrantId", string(pending.Properties.VariableNames))
@@ -14491,7 +14521,7 @@ methods(Static, Access=private)
                 end
                 pending.DeliveryMechanism(mask) = "pusch_uci";
                 pending.PUSCHGrantContextId(mask) = contextId;
-                pending.MultiplexedBitIndex(mask) = bitIdx;
+                pending.MultiplexedBitIndex(mask) = producerBitIndices(bitIdx);
             end
             state.PendingFeedbackTable = pending;
         end
@@ -14523,7 +14553,7 @@ methods(Static, Access=private)
                 end
                 traceT.MultiplexedOnPUSCH(mask) = true;
                 traceT.PUSCHGrantContextId(mask) = contextId;
-                traceT.MultiplexedBitIndex(mask) = bitIdx;
+                traceT.MultiplexedBitIndex(mask) = producerBitIndices(bitIdx);
                 traceT.PUCCHGrantState(mask) = "transferred_to_pusch_uci";
                 traceT.Status(mask) = "PENDING_PUSCH_UCI";
                 traceT.Notes(mask) = "Scheduled PUCCH HARQ-ACK transferred to the same-UE PUSCH UCI payload before the due slot.";
