@@ -134,7 +134,38 @@ reservation.PUCCHGrantId="PUCCH-CSI-"+reportIdentity;
 reservation.UCIType="csi_part1_part2";
 reservation.UCIBitCount=double(state.PendingCSITable.CSIUCIBitCount(1));
 reservation.ControlResourceSource="explicit_CSI_transport_ledger_component_fixture";
+% Preserve the original malformed reservation as a negative test. CSI-only
+% reservations must carry configured CSI authority, never a HARQ DCI PRI.
+localRejectCRI(@()sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime( ...
+    state,struct2table(reservation)),'sixgr:truth:InvalidCSIResourceProvenance');
+authority=sixgr.phy.pucch.resolveConfiguredPRI(cfg,reservation.UEIndex, ...
+    reservation.RNTI,NaN,'csi');
+ue=struct('UEID',reservation.UEIndex,'RNTI',reservation.RNTI, ...
+    'ServingCell',reservation.ServingCell,'PUCCHCell',reservation.ServingCell, ...
+    'ComponentCarrier',reservation.ComponentCarrier,'ActiveULBWP',reservation.ActiveULBWP);
+rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
+resource=rrc.resourceByID(authority.ResourceId);
+reservation.PRIValue=authority.PRIValue;
+reservation.PRIProvenance=authority.Source;
+reservation.PUCCHResourceId=string(resource.ID);
+reservation.RequestedFormat=resource.Format;
+reservation.ResolvedFormat=resource.Format;
+reservation.PUCCHPRBStart=resource.Data.StartPRB;
+reservation.PUCCHPRBCount=resource.Data.NumPRBs;
+reservation.PUCCHSymbolStart=resource.Data.StartSymbol;
+reservation.PUCCHNumSymbols=resource.Data.NumSymbols;
+reservation.ControlResourceValidity=true; % Exact configured resource above, not RF success.
+badPRI=reservation; badPRI.PRIValue=0;
+localRejectCRI(@()sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime( ...
+    state,struct2table(badPRI)),'sixgr:truth:InvalidCSIResourceProvenance');
 state=sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime(state,struct2table(reservation));
+csiReservation=state.PUCCHGrantTraceTable( ...
+    string(state.PUCCHGrantTraceTable.PUCCHGrantId)==reservation.PUCCHGrantId,:);
+assert(height(csiReservation)==1 && isnan(csiReservation.PRIValue) && ...
+    string(csiReservation.PRIProvenance)==string(authority.Source) && ...
+    string(csiReservation.PUCCHResourceId)==string(resource.ID) && ...
+    isnan(csiReservation.TBSBits) && ~csiReservation.GrantExecutedFlag, ...
+    'Configured CSI reservation must not manufacture HARQ PRI, TBS or PUCCH execution.');
 puschGrant = struct("Direction", "UL", "UEIndex", 1, "RNTI", 701, ...
     "GrantContextId", "CSI-PUSCH-CONTEXT", "Slot", dueSlot, ...
     "ScheduledAbsoluteSlot", dueSlot,"SymbolAllocation",[0 14]);
@@ -394,7 +425,7 @@ try
     action();
 catch cause
     assert(strcmp(cause.identifier,identifier), ...
-        'Expected invalid CRI rejection, got %s: %s',cause.identifier,cause.message);
+        'Expected %s, got %s: %s',identifier,cause.identifier,cause.message);
     return;
 end
 error('test:MissingCRIRejection','A malformed CSI resource measurement must not be serialized.');
