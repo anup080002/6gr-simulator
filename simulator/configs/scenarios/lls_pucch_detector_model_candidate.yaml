@@ -1,0 +1,14 @@
+inherits:
+  - ./lls_pucch_baseline_signal_fixture.yaml
+
+meta:
+  scenario_id: lls_pucch_detector_model_candidate
+  research_class: optional_research_experiment
+  description: >
+    Unqualified Format-0 detector development candidate. Threshold is derived
+    from an analytical white-complex-Gaussian union bound, not fitted to RF
+    outcomes. Physical noise and signal-present testing remain required.
+    This does not change or qualify the baseline 12 dB receiver policy.
+
+pucch:
+  detection_threshold_format0_two_symbols: 0.77

@@ -1,0 +1,11 @@
+schema_version: 1
+research_class: optional_research_experiment
+scope: analytical_candidate_design_not_rf_qualification
+null_model: circular_white_complex_gaussian_within_each_block
+resource_elements_per_block: 12
+symbol_count: 2
+receive_branch_count: 2
+maximum_hypothesis_count: 4
+# Engineering design margin, not a 3GPP requirement or measured probability.
+target_model_false_detection_bound: 0.001
+threshold_decimal_places: 2

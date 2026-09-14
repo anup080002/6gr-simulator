@@ -1,0 +1,30 @@
+{
+  "Source": "analytical_union_bound_not_physical_measurement",
+  "DetectorQualified": false,
+  "PhysicalEpisodes": 0,
+  "UnroundedThreshold": 0.7650033068912473,
+  "CandidateThreshold": 0.77,
+  "ModelFalseDetectionUpperBound": 0.0008143893934884291,
+  "TargetModelBound": 0.001,
+  "CorrelationBlocks": 4,
+  "Hypotheses": 4,
+  "RequiresIIDWithinBlock": true,
+  "RequiresIndependentBlocks": false,
+  "RequiresIndependentHypotheses": false,
+  "SignalPresentPerformanceEstablished": false,
+  "Configuration": {
+    "schema_version": 1,
+    "research_class": "optional_research_experiment",
+    "scope": "analytical_candidate_design_not_rf_qualification",
+    "null_model": "circular_white_complex_gaussian_within_each_block",
+    "resource_elements_per_block": 12,
+    "symbol_count": 2,
+    "receive_branch_count": 2,
+    "maximum_hypothesis_count": 4,
+    "target_model_false_detection_bound": 0.001,
+    "threshold_decimal_places": 2
+  },
+  "SelfTestsPassed": true,
+  "ConfigSHA256": "841aeb523cd5b536da9cb1d9c770e07862bf52d12dff4fe30cc1dd71ca81eb4f",
+  "ScriptSHA256": "04b62850f4f8de0b51ba473311a926dbab855ef9ac0a0e65d4401dd39ed6b790"
+}
