@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "status": "failed_or_incomplete",
+  "started_utc": "2026-09-14T06:13:03.3452302Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testTDDSharedPUSCHIndependentCompletion",
+    "testSharedPUSCHProducerMapping",
+    "testSharedPUSCHCommitReceipt",
+    "test12dBSameChainSweepConfig"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "41854a9b42996d204f66dc89a92a9ff7b60d893d",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260914T061303251Z_abe6cf37',false,{'testTDDSharedPUSCHIndependentCompletion','testSharedPUSCHProducerMapping','testSharedPUSCHCommitReceipt','test12dBSameChainSweepConfig'});",
+  "matlab_exit_code": 1,
+  "git_status_after": "",
+  "git_commit_after": "41854a9b42996d204f66dc89a92a9ff7b60d893d",
+  "error": "Validation did not pass (MATLAB exit 1). See summary.json and matlab.log.",
+  "finished_utc": "2026-09-14T06:17:42.5522979Z",
+  "launcher_exit_code": 1
+}

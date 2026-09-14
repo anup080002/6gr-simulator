@@ -45,6 +45,10 @@ if twoPortUL
     assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
 end
 if withCSI || withHARQ, localSaveScenarioEvidence(s,cfg,root); end
+if independentEmptyUCI
+    localSaveScenarioEvidence(s,cfg,root, ...
+        'component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; empty gNB UCI obligation; no DL HARQ, full coordinator or 12 dB qualification');
+end
 % This component bypasses runSingle, which normally initializes the run
 % RNG. Bind the UE drop to the resolved YAML seed, not the preceding test.
 priorRNG=rng;
@@ -460,6 +464,15 @@ for item=items
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
         if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
+        if state.TestIndependentEmptyUCI
+            for field=["DCI","ULTotalDAIAuthority","UCIOnPUSCHFeedbackBitIndices", ...
+                    "UCIOnPUSCHFeedbackGrantIds","ExpectedUCIBits"]
+                assert(isfield(out.HARQ.GrantSnapshot,field) && ...
+                    isequaln(out.HARQ.GrantSnapshot.(field),job.GrantSnapshot.(field)), ...
+                    'test:PUSCHReceiveGrantAuthorityLost', ...
+                    'PUSCH completion must preserve scheduled/producer authority exactly: %s.',field);
+            end
+        end
         assert(out.TrialTable.TrueTimingOffset_samples==expectedTiming && ...
             abs(out.TrialTable.ResidualTimingError_PostCorrection_samples)<=1, ...
             'The practical PUSCH timing estimate must reconcile against receiver-arrival truth within one sample.');
@@ -713,7 +726,10 @@ assert(saved.MeasurementAvailableAtSample==state.TestCSISource.CSIRSTrialTable.R
 disp('SHARED_PUSCH_LATE_CSI_DELIVERY_PASS: measured CSI-RS report retained across actual PUSCH and late delivery.');
 end
 
-function localSaveScenarioEvidence(s,cfg,root)
+function localSaveScenarioEvidence(s,cfg,root,scope)
+if nargin<4
+    scope='component: isolated HARQ source and shared physical transport; CSI source specified by resolved scenario; not full-run qualification';
+end
 meta=fullfile(root,'meta'); mkdir(meta);
 inputs=fullfile(meta,'input_configs'); mkdir(inputs);
 for k=1:numel(s.SourceFiles)
@@ -728,7 +744,7 @@ sixgr.util.jsonWrite(fullfile(meta,'schema_validation_report.json'), ...
 [status,changes]=system('git status --porcelain'); assert(status==0);
 sixgr.util.jsonWrite(fullfile(meta,'environment_summary.json'),struct( ...
     'MATLABVersion',version,'Platform',computer,'Toolboxes',ver,'GitHash',strtrim(revision), ...
-    'WorktreeStatus',changes,'Scope','component: isolated HARQ source and shared physical transport; CSI source specified by resolved scenario; not full-run qualification'));
+    'WorktreeStatus',changes,'Scope',scope));
 sixgr.util.jsonWrite(fullfile(meta,'seeds.json'),struct('RunSeed',cfg.run.seed));
 end
 

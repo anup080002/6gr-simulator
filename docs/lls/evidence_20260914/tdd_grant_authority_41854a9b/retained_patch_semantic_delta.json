@@ -1,0 +1,225 @@
+{
+  "source_revision": "41854a9b42996d204f66dc89a92a9ff7b60d893d",
+  "previous_inventory": "logs/retained_patch_disposition_20260914_1104.json",
+  "scope": "Three archived variants semantically reconciled; not runtime or full-inventory qualification",
+  "runtime_qualified": false,
+  "remaining_of_previous_fifteen": 12,
+  "records": [
+    {
+      "canonical_sha256": "36F3CD3FE588E8B38C4227624BFE6A7D3883ECB8AB87A0773B3D8F576D9080AD",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_uci_crc_native_authority.patch",
+          "raw_sha256": "36F3CD3FE588E8B38C4227624BFE6A7D3883ECB8AB87A0773B3D8F576D9080AD"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_uci_crc_native_authority.patch",
+          "raw_sha256": "36F3CD3FE588E8B38C4227624BFE6A7D3883ECB8AB87A0773B3D8F576D9080AD"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_uci_crc_native_authority.patch",
+          "raw_sha256": "36F3CD3FE588E8B38C4227624BFE6A7D3883ECB8AB87A0773B3D8F576D9080AD"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_uci_crc_native_authority.patch",
+          "raw_sha256": "36F3CD3FE588E8B38C4227624BFE6A7D3883ECB8AB87A0773B3D8F576D9080AD"
+        }
+      ],
+      "initial_classification": "retained_content_audit_not_inferred_from_filename",
+      "postimage_blocks": 6,
+      "matched": 3,
+      "exact_postimage_blocks_present": false,
+      "files": [
+        {
+          "path": "+sixgr/+phy/+pucch/UCIDecoder.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "+sixgr/+phy/+pucch/PUCCHReceiver.m",
+          "exists": true,
+          "postimage_blocks": 2,
+          "matched": 0,
+          "unmatched": [
+            {
+              "hunk": 1,
+              "first_line": "            if assignment.Format <= 1",
+              "lines": 13
+            },
+            {
+              "hunk": 2,
+              "first_line": "                \"DecodedSequence1\",sequence1, ...",
+              "lines": 8
+            }
+          ]
+        },
+        {
+          "path": "tests/testUCIDecoderCRC.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testPUCCHReceiverCRC.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testAll.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 0,
+          "unmatched": [
+            {
+              "hunk": 1,
+              "first_line": "    @testPDSCHOccasionAllocationPreflight, ...",
+              "lines": 8
+            }
+          ]
+        }
+      ],
+      "reviewed_disposition": "superseded_by_4241BC7F_receiver_CRC_extension_integrated",
+      "review_note": "Native decoder CRC and tests match; receiver retains every CRC addition and further records its own CRC bit count. Four tests uniquely registered."
+    },
+    {
+      "canonical_sha256": "4241BC7F00B15939146131E2808CE9EA89C817B431A08F00567FE7B9ACEC6592",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_pucch_independent_trial_and_crc.patch",
+          "raw_sha256": "4241BC7F00B15939146131E2808CE9EA89C817B431A08F00567FE7B9ACEC6592"
+        },
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\pending_pucch_independent_trial_and_crc.patch",
+          "raw_sha256": "4241BC7F00B15939146131E2808CE9EA89C817B431A08F00567FE7B9ACEC6592"
+        },
+        {
+          "path": "C:/Users/anup0/AppData/Local/Temp/sixgr_pucch_rx_9fbb6c408dfe4eb09e7cdec366629228\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_pucch_independent_trial_and_crc.patch",
+          "raw_sha256": "4241BC7F00B15939146131E2808CE9EA89C817B431A08F00567FE7B9ACEC6592"
+        },
+        {
+          "path": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913\\docs\\lls\\evidence_20260913\\consolidated_measurement_receiver_checkpoint\\historical_candidate_archives\\pending_pucch_independent_trial_and_crc.patch",
+          "raw_sha256": "4241BC7F00B15939146131E2808CE9EA89C817B431A08F00567FE7B9ACEC6592"
+        }
+      ],
+      "initial_classification": "retained_content_audit_not_inferred_from_filename",
+      "postimage_blocks": 14,
+      "matched": 13,
+      "exact_postimage_blocks_present": false,
+      "files": [
+        {
+          "path": "+sixgr/+phy/+pucch/UCIDecoder.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "+sixgr/+phy/+pucch/PUCCHReceiver.m",
+          "exists": true,
+          "postimage_blocks": 2,
+          "matched": 2,
+          "unmatched": []
+        },
+        {
+          "path": "+sixgr/+link/runPUCCHWaveformTrial.m",
+          "exists": true,
+          "postimage_blocks": 6,
+          "matched": 6,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testUCIDecoderCRC.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testPUCCHReceiverCRC.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testPUCCHTrialIndependentReceive.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testPUCCHTrialIndependentRetained.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 1,
+          "unmatched": []
+        },
+        {
+          "path": "tests/testAll.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 0,
+          "unmatched": [
+            {
+              "hunk": 1,
+              "first_line": "    @testPDSCHOccasionAllocationPreflight, ...",
+              "lines": 10
+            }
+          ]
+        }
+      ],
+      "reviewed_disposition": "integrated_postimages_with_registry_context_evolved",
+      "review_note": "All non-registry postimages match current source. All four added tests remain uniquely registered; adjacent registry context changed."
+    },
+    {
+      "canonical_sha256": "F2D04D138EE9F89D7BD90DDAAFF050B7407B15236F519C84887F94170CB43DB5",
+      "copies": [
+        {
+          "path": "C:/Users/anup0/OneDrive/Documents/Simulator/6GR Simulator_v2_clean_main\\logs\\pending_integration_evidence_20260913\\mobile_2ue_watchdog_candidate_01\\pending_mobile_watchdog_evidence.patch",
+          "raw_sha256": "F2D04D138EE9F89D7BD90DDAAFF050B7407B15236F519C84887F94170CB43DB5"
+        }
+      ],
+      "initial_classification": "retained_content_audit_not_inferred_from_filename",
+      "postimage_blocks": 5,
+      "matched": 4,
+      "exact_postimage_blocks_present": false,
+      "files": [
+        {
+          "path": "+sixgr/+system/SystemLevelRunner.m",
+          "exists": true,
+          "postimage_blocks": 1,
+          "matched": 0,
+          "unmatched": [
+            {
+              "hunk": 1,
+              "first_line": "                                servedBitsTotalDL + servedBitsTotalUL, ...",
+              "lines": 45
+            }
+          ]
+        },
+        {
+          "path": "tests/testLLSMobile2UEScenarioYamlWiring.m",
+          "exists": true,
+          "postimage_blocks": 4,
+          "matched": 4,
+          "unmatched": []
+        }
+      ],
+      "reviewed_disposition": "superseded_by_value_only_HARQ_snapshot_integrated",
+      "review_note": "Whole diagnostic postimage matches after exactly two handle-to-value snapshot replacements. Snapshot recursively rejects opaque/handle fields. Original watchdog error retained; test postimages match."
+    }
+  ],
+  "additional_proof": {
+    "source_revision": "41854a9b42996d204f66dc89a92a9ff7b60d893d",
+    "archive": "F2D04D138EE9F89D7BD90DDAAFF050B7407B15236F519C84887F94170CB43DB5",
+    "only_hunk_change": "Both scheduler HARQ handle captures replaced by snapshotHARQSchedulingState value projections",
+    "postimage_with_two_replacements_present": true,
+    "registry_four_unique": true
+  }
+}

@@ -2,6 +2,37 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## TDD receive-to-commit root cause: 14 September 2026, 11:49 IST
+
+41854a9b completed its focused batch with three passes and one failure. The new
+test executed actual SS/PBCH timing, SRS, UL DCI and coded PUSCH reception. It
+passed the independent receive-context binding and the existing PUSCH CRC/EVM
+checks, then failed rebuilding the gNB schema at common feedback commit.
+Confirmed code-level cause: runULPUSCHThroughput.localBuildHARQGrantSnapshot
+uses a field whitelist that omitted ULTotalDAIAuthority and
+UCIOnPUSCHFeedbackBitIndices. The input grant had those fields, but its returned
+HARQ snapshot discarded them. The existing common commit correctly rejected
+the incomplete authority. Both fields are now preserved exactly from the input
+grant; a regression checks returned DCI, UL DAI, producer identities/positions
+and reference bits before commit. No receiver guard, radio parameter or test
+numerical gate is weakened. Runtime verification of this repair is pending.
+
+Original failed batch: logs/testall_20260914T061303251Z_abe6cf37/. Worker 5136
+and launcher 13776 exited before source edits. Portable receipts are preserved
+under docs/lls/evidence_20260914/tdd_grant_authority_41854a9b/.
+The empty-obligation regression now stores its artifacts under repo logs/,
+prints that path before execution and saves exact inputs, resolved config,
+schema result, version/environment and seed with explicitly bounded scope.
+
+Three old archive variants were reconciled against 41854a9b: 36F3CD3F,
+4241BC7F and F2D04D13. CRC/native receiver changes and their four test entries
+are present; watchdog capture differs only by two safer value-snapshot calls.
+Detailed postimage and semantic evidence is retained separately from runtime
+qualification. Twelve of the earlier fifteen variants remain to reconcile.
+The 13:52 inventory target and 21:52 shared-PUSCH target remain estimates.
+Nonempty independent HARQ, missed DCI, mixed feedback, physical detector
+qualification and final-source full regression/all-measurement 12 dB remain due.
+
 ## TDD focused checkpoint: 14 September 2026, 11:39 IST
 
 The c0c428c5 batch terminated: three passed, one failed. Producer mapping,

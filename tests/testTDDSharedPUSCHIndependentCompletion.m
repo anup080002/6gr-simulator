@@ -4,7 +4,11 @@ function ok=testTDDSharedPUSCHIndependentCompletion()
 root=fileparts(fileparts(mfilename('fullpath')));
 fixture=fullfile(root,'simulator','configs','scenarios', ...
     'lls_tdd_pusch_independent_empty_uci_fixture.yaml');
-ok=testSharedPUSCHChannelArtifacts('TDD',false,false,false,true,true,false,tempname,fixture,true);
+logsRoot=fullfile(root,'logs','tdd_shared_pusch_independent_completion');
+if ~isfolder(logsRoot), mkdir(logsRoot); end
+outputRoot=tempname(logsRoot);
+fprintf('TDD_INDEPENDENT_PUSCH_ARTIFACT_ROOT=%s\n',outputRoot);
+ok=testSharedPUSCHChannelArtifacts('TDD',false,false,false,true,true,false,outputRoot,fixture,true);
 % Structural wiring guard only; the RF fixture above exercises these same
 % helpers, but is not evidence that the whole normal coordinator ran.
 source=fileread(fullfile(root,'+sixgr','+truth','runWaveformLinkBundle.m'));
