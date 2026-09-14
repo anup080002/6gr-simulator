@@ -70,3 +70,37 @@ design artifact, not a primary PHY KPI or a substitute for measured data.
 
 No physical candidate run has started; three older MATLAB suites are still
 using their frozen sources. No FDD repair is included.
+
+## Executable paired physical gate
+
+`testPUCCHDetectorModelCandidatePilot` is registered in full testAll and can
+also run through the standard focused launcher. It first validates scenario
+isolation, then runs all physical cases. It requires complete evidence,
+finite detector metrics, the actually applied configured threshold, actual
+Format-0/two-symbol/two-branch geometry, receiver independence, no oracle
+timing or zero padding, and matching MAT/CSV decoded bits and error counts.
+Any noise ACK or wrong/erased signal payload fails this development gate.
+A pass would still leave DetectorQualified=false and add no independent
+episode to the held-out qualification count. Runtime verification is pending.
+
+## Executed retained-metric rescoring, not a candidate receiver run
+
+After deriving the candidate, the diagnostic rescored all 1,024 archived
+noise-hypothesis records (512 shared captures at two widths) and all eight
+physical pilot receipt rows. It reads the completed independent replay/audit
+CSVs, not raw IQ, and verifies the old noise decisions and false-ACK counts
+before projecting the stricter threshold. No cases were selected or removed.
+
+The original one-bit 2/512 and two-bit 12/1,024 false-ACK counts are preserved.
+At the predeclared 0.77 candidate, projected false ACKs are zero for both
+widths; retained maximum metrics are 0.463090241474084 and 0.481780132390211.
+The six existing signal-present pilot rows have metrics 0.956642469638327
+through 0.970752362188895 and retain their correct decoded payloads under
+this threshold projection. Both pilot noise cases remain rejected.
+
+This supplies a development compatibility check, not additional independent
+episodes, a raw-IQ replay, new candidate receiver execution, a confidence
+statement, or a qualification pass. It does not test new fading/AGC/timing
+realizations. The physical wrapper and the later held-out campaign remain
+required. Receipt and input hashes:
+`evidence_20260914/detector_analytical_design/retained_metric_rescore.json`.
