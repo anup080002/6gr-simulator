@@ -52,3 +52,16 @@ power fields. The nonempty case reached DAI preparation but lacked the runtime
 serving-cell index, which is now bound from the actual DL user context before
 DAI preparation. No physical loss or beam gain is injected to satisfy telemetry.
 The next focused rerun is pending; neither case is claimed complete yet.
+
+## Follow-up run on e5a169d2
+
+`logs/testall_20260914T105101676Z_dcb8a6b4` returned one pass and one failure.
+The empty-HARQ test passed, including normal completion, one actual UL TX,
+zero DL HARQ updates and one common-commit receipt. The nonempty case decoded
+its DL control but the fixture attempted to inspect an UL SRS field on DL DCI.
+Its installed DCI context carries UL reference configuration even for a DL
+message; that is not evidence that an UL-only field exists in that message.
+The SRS-field assertion is now scoped to DCI 0_1, exactly like the adjacent
+UL-precoding assertion. It remains required for the actual UL control.
+Diagnosis will rerun the nonempty case, followed by both tests on the final
+candidate. The combined task is not complete yet.

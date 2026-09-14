@@ -364,7 +364,7 @@ for item=items
             assert(decoded.Fields.precoding_information_and_number_of_layers_tpmi==grant.TPMI && ...
                 decoded.Fields.precoding_information_and_number_of_layers_rank_minus1==grant.NumLayers-1);
         end
-        if isfield(grant.DCI.ContextData,'ULReferenceSignaling')
+        if string(grant.DCI.Format)=="0_1" && isfield(grant.DCI.ContextData,'ULReferenceSignaling')
             assert(~isfield(decoded.Fields,'srs_resource_indicator') && decoded.Fields.srs_resource_index0based==0);
             state.TestDecodedULReferenceFields=decoded.Fields;
         end
