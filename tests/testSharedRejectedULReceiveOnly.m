@@ -31,6 +31,8 @@ dl.lls6g.userContext.RuntimeSlotStartTime_s= ...
 p=sixgr.link.prepareSharedPDCCHTransmission(dl,'DCIBits',grant.DCI.Bits, ...
     'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
 owner.queuePDCCH(grant.UEIndex,p,struct('Grant',grant,'GNBConfig',cfg));
+reject(@()owner.readTransmittedULControls(grant.UEIndex,double(grant.Slot)), ...
+    'sixgr:truth:ScheduledULControlNotTransmitted');
 for slot=1:double(grant.Slot)+1
     state.CurrentSlot=slot;
     [state,~]=owner.advanceSlot(state,cfg,@receive);
@@ -54,8 +56,9 @@ assert(height(roundtrip)==1 && roundtrip.ObservationID==audit.ObservationID && .
 resolvedScenario=s.Data; resolvedControlScenario=controlScenario.Data; runtimeVersion=version;
 controlReceiver=state.TestControlReceiver; controlInfo=state.TestControlInfo;
 controlObservation=state.SharedReceivedGrantControls{1}.RejectedControlObservation;
+gnbControlEvidence=state.TestGNBControls;
 save(fullfile(output,'rejected_ul_receive_only.mat'),'result','audit','controlReceiver','controlInfo', ...
-    'controlObservation','cfg','controlCfg','resolvedScenario','resolvedControlScenario','runtimeVersion','-v7.3');
+    'controlObservation','gnbControlEvidence','cfg','controlCfg','resolvedScenario','resolvedControlScenario','runtimeVersion','-v7.3');
 fprintf('SHARED_REJECTED_UL_RECEIVE_ONLY_PASS physical_control_rejections=1 gNB_receive_only=1 UE_TX=0 HARQ_commits=0 root=%s\n',output);
 ok=true;
 end
@@ -68,6 +71,14 @@ for item=items
     end
     assert(item.Kind=="PDCCH");
     p=item.Context.Prepared;
+    grant=item.Context.Grant;
+    scheduled=state.SharedWaveformStream.readTransmittedULControls(item.UE,double(grant.Slot));
+    assert(isscalar(scheduled) && isequaln(scheduled{1}.Binding.Grant,grant) && ...
+        scheduled{1}.AvailableAtSample<=state.SharedWaveformStream.Events.NextSampleIndex && ...
+        scheduled{1}.TransmitObservation.isComplete());
+    reject(@()sixgr.truth.assertNoScheduledPUSCHOverlap(state,item.Context.GNBConfig,item.UE, ...
+        double(grant.Slot),grant.SymbolAllocation), ...
+        'sixgr:truth:UnresolvedScheduledPUSCHReceiveHypothesis');
     [post,~,~,~,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
     [rx,info]=sixgr.link.completePDCCHReception(p,receiver);
     timing=info.TimingEstimate;
@@ -91,6 +102,8 @@ for item=items
         'Grant',item.Context.Grant,'ReceiverTrial',raw,'RejectedControlObservation',post, ...
         'AvailableAtSample',post.EndSampleExclusive,'ReceivedAssignment',struct());
     state.SharedReceivedGrantControls={control};
+    assert(isequaln(scheduled,state.SharedWaveformStream.readTransmittedULControls(item.UE,double(grant.Slot))), ...
+        'Actual UE rejection must not erase the gNB transmitted UL-command hypothesis.');
     % Explicit negative mutations must fail before any observation is armed.
     bad=control; bad.AvailableAtSample=bad.AvailableAtSample+1;
     broken=state; broken.SharedReceivedGrantControls={bad};
@@ -101,11 +114,16 @@ for item=items
     reject(@()sixgr.truth.queueSharedPUSCHAfterRejectedControl(broken,item.Context.GNBConfig,bad), ...
         'sixgr:truth:RejectedULHasReceivedAssignment');
     assert(isempty(state.SharedWaveformStream.PUSCHReceiveOnlyRegistrations));
+    bad=control; bad.Grant.TBSBits=bad.Grant.TBSBits+8;
+    broken=state; broken.SharedReceivedGrantControls={bad};
+    reject(@()sixgr.truth.queueSharedPUSCHAfterRejectedControl(broken,item.Context.GNBConfig,bad), ...
+        'sixgr:truth:RejectedULScheduledGrantMismatch');
     [state,~]=sixgr.truth.queueSharedPUSCHAfterRejectedControl(state,item.Context.GNBConfig,control);
     reject(@()sixgr.truth.queueSharedPUSCHAfterRejectedControl(state,item.Context.GNBConfig,control), ...
         'sixgr:truth:DuplicateRejectedULReceiveWindow');
     assert(isempty(state.SharedWaveformStream.DataTransmissions));
     state.TestControlReceiver=rx; state.TestControlInfo=info;
+    state.TestGNBControls=scheduled;
 end
 end
 

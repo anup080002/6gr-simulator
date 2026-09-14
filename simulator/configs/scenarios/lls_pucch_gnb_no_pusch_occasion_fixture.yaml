@@ -1,0 +1,12 @@
+inherits:
+  - ./lls_pucch_gnb_receive_only_fixture.yaml
+
+meta:
+  scenario_id: lls_pucch_gnb_no_pusch_occasion_fixture
+  research_class: optional_research_experiment
+  description: Independent gNB HARQ reception with UCI-on-PUSCH enabled but no UL command in the feedback occasion.
+  purpose: Physical scheduling authority regression; not combined UCI or detector qualification.
+
+pucch_resources:
+  overlap_policy:
+    uci_on_pusch_enabled: true

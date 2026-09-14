@@ -1289,8 +1289,7 @@ methods(Static)
         % configured CSI/SR/PUSCH obligations from a combined hypothesis.
         if height(harqRows)==height(rows) && isempty(fieldnames(csi)) && ...
                 all(upper(string(rows.FeedbackForDirection))=="DL") && ...
-                ~logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',true)) && ...
-                ~logical(sixgr.util.structGet(cfg,'phy.pucch.uciOnPUSCHEnabled',true))
+                ~logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',true))
             % Installed SR inventory may have no occasion in this window.
             % The independent hypothesis validates its calendar and rejects
             % missing configuration or real overlap before waveform creation.
@@ -1460,6 +1459,7 @@ methods(Static)
             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
         evidence=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
         evidence{end+1}=struct('ObservationID',string(c.ObservationID),'Mapping',mapping,'Receiver',rx, ...
+            'TransportScheduleEvidence',current.TransportScheduleEvidence, ...
             'AvailableAtSample',post.EndSampleExclusive);
         state.SharedGNBUCIReceptions=evidence;
         state.SharedLastPUCCHAvailableAtSample=post.EndSampleExclusive;

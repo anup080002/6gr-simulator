@@ -16,6 +16,14 @@ reference_signals:
   ri_reporting_enabled: false
   cri_reporting_enabled: false
 
+# Preserve the declared HARQ-only scope when descendants re-resolve aliases.
+csi_acquisition_and_reporting:
+  dl_csi_enabled: false
+  cqi_policy: disabled
+  pmi_policy: disabled
+  ri_policy: disabled
+  cri_policy: disabled
+
 pucch_resources:
   sr_resource_ids: []
   overlap_policy:

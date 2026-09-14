@@ -1,11 +1,14 @@
 function hypothesis=buildScheduledPUCCHHARQReception(state,cfg,ue,targetSlot,observationID)
 % Independent HARQ-only gNB allocation from actual transmitted DL grants.
-% CSI/SR or UCI-on-PUSCH need their own installed receive hypotheses; do not
+% Overlapping CSI/SR or PUSCH need their own installed hypotheses; do not
 % silently omit them or borrow the UE's serialized length to force a decode.
-assert(~logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',true)) && ...
-    ~logical(sixgr.util.structGet(cfg,'phy.pucch.uciOnPUSCHEnabled',true)), ...
+assert(~logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',true)), ...
     'sixgr:truth:UnresolvedCombinedPUCCHReceiveHypothesis', ...
-    'HARQ-only receive ownership requires CSI reporting and UCI-on-PUSCH disabled; combined hypotheses remain separate.');
+    'HARQ-only receive ownership requires CSI reporting disabled; combined CSI hypotheses remain separate.');
+uciOnPUSCH=sixgr.util.structGet(cfg,'phy.pucch.uciOnPUSCHEnabled',[]);
+assert((islogical(uciOnPUSCH)||isnumeric(uciOnPUSCH)) && isscalar(uciOnPUSCH) && ...
+    isreal(uciOnPUSCH) && isfinite(uciOnPUSCH) && any(uciOnPUSCH==[0 1]), ...
+    'sixgr:truth:InvalidPUCCHTransportConfiguration','UCI-on-PUSCH enablement must be explicitly binary.');
 mapping=sixgr.truth.buildScheduledHARQACKMapping(state,cfg,ue,targetSlot);
 grant=mapping.LastGrant;
 cellId=double(grant.ServingCell);
@@ -32,6 +35,11 @@ priRow=struct('ResourceSetID',set.ID,'ResourceListSize',numel(set.ResourceIDs), 
 pri=sixgr.phy.pucch.PUCCHResourceIndicatorResolver.resolveVector(priRow);
 assert(pri.Valid,'sixgr:truth:InvalidScheduledPUCCHResource','The transmitted DCI must select a valid configured PUCCH resource.');
 resource=rrc.resourceByID(set.ResourceIDs(pri.Ordinal));
+transport=struct();
+if uciOnPUSCH
+    transport=sixgr.truth.assertNoScheduledPUSCHOverlap(state,cfg,ue,targetSlot, ...
+        [resource.Data.StartSymbol resource.Data.NumSymbols]);
+end
 % Resource inventory alone does not mean an SR occurs in this slot. Use
 % installed receiver-side occasions, never a UE pending-positive flag.
 % General SR/HARQ multiplexing and priority arbitration are not implemented
@@ -54,5 +62,6 @@ assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
     'AbsoluteSlot0',targetSlot-1,'Source',mapping.Source, ...
     'TimingSource','received_UL_pilot_not_UE_transmit_origin'),rrc,context);
 hypothesis=struct('Mapping',mapping,'Assignment',assignment,'Context',context, ...
+    'TransportScheduleEvidence',transport, ...
     'Source',"gnb_actual_transmitted_schedule_and_installed_RRC");
 end

@@ -1,12 +1,15 @@
-function ok=testSharedPUCCHReceiveOnlyClock(outputRoot)
+function [ok,state]=testSharedPUCCHReceiveOnlyClock(outputRoot,configPath)
 % Actual shared DL TX, SRS and absent-PUCCH receiver observation.
 % UE PDCCH/PDSCH reception is deliberately unexecuted: this component does
 % not claim a measured missed-DCI rate or full connected baseline pass.
 if nargin<1, outputRoot=tempname; end
+if nargin<2, configPath='simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml'; end
 assert(~isfolder(outputRoot),'test:EvidenceAlreadyExists','Preserve earlier observations.');
 setup6GRSimToolkit('Verbose',false);
-s=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml');
+s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+previousRNG=rng; cleanup=onCleanup(@()rng(previousRNG));
+rng(double(cfg.run.seed),'twister');
 mkdir(outputRoot); resolvedScenario=s.Data;
 save(fullfile(outputRoot,'configuration.mat'),'cfg','resolvedScenario');
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
@@ -116,9 +119,20 @@ for item=items
         bad=c; bad.phy.csi.reportCSI=true;
         localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
             'sixgr:truth:UnresolvedCombinedPUCCHReceiveHypothesis');
-        bad=c; bad.phy.pucch.uciOnPUSCHEnabled=true;
+        bad=c; bad.phy.pucch.uciOnPUSCHEnabled=NaN;
         localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
-            'sixgr:truth:UnresolvedCombinedPUCCHReceiveHypothesis');
+            'sixgr:truth:InvalidPUCCHTransportConfiguration');
+        if c.phy.pucch.uciOnPUSCHEnabled
+            assert(h.TransportScheduleEvidence.OverlappingPUSCHCount==0 && ...
+                isempty(state.SharedWaveformStream.readTransmittedULControls(1,item.Context.Slot)));
+            poisoned=state;
+            poisoned.SharedPendingULGrants=struct('UEIndex',1,'Slot',item.Context.Slot,'ExpectedUCIBits',ones(99,1));
+            poisoned.PendingFeedbackTable=table(true,'VariableNames',{'Ack'});
+            independent=sixgr.truth.buildScheduledPUCCHHARQReception(poisoned,c,1,item.Context.Slot,h.Assignment.Data.ObservationID);
+            assert(independent.Mapping.Digest==h.Mapping.Digest && independent.Assignment.Digest==h.Assignment.Digest && ...
+                isequaln(independent.TransportScheduleEvidence,h.TransportScheduleEvidence), ...
+                'UE pending grants/ACKs must not replace the physically transmitted gNB control schedule.');
+        end
         bad=c; bad.validation.pucch_resources.sr_resource_ids=0;
         localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
             'sixgr:truth:MissingInstalledSRCalendar');

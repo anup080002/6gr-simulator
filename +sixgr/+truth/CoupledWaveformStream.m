@@ -20,6 +20,7 @@ classdef CoupledWaveformStream < handle
         Decisions = struct('ID',{},'Kind',{},'UE',{},'Context',{})
         PDCCHResourceLedger = struct()
         PUSCHReceiveOnlyCompletions = cell(0,1)
+        ScheduledControlRegistrations = cell(0,1)
     end
     methods (Static)
         function [state,obj]=initialize(state,cfg,userCfg)
@@ -336,6 +337,12 @@ classdef CoupledWaveformStream < handle
                     'Blind PDCCH on the shared stream requires a previously received DL clock, not silent zero timing.');
                 stop=first+prepared.MinimumReceiveSamples+double(ch.ChannelPadSamples)+double(margin);
             end
+            binding=sixgr.truth.scheduledPDCCHGrantBinding(prepared,context,ue);
+            if ~isempty(fieldnames(binding))
+                assert(~any(cellfun(@(r)r.Binding.GrantContextID==binding.GrantContextID, ...
+                    obj.ScheduledControlRegistrations)), ...
+                    'sixgr:truth:DuplicateScheduledPDCCHGrant','One frozen grant cannot be registered as two control transmissions.');
+            end
             obj.Serial=obj.Serial+1; id="pdcch_observation_"+obj.Serial;
             obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,first));
             % Retain the transmitted control prefix on the transmitter
@@ -344,6 +351,12 @@ classdef CoupledWaveformStream < handle
             % complete generated waveform remains queued above.
             prepared.TransmitObservationStartSample=first;
             prepared.TransmitObservationEndSampleExclusive=first+prepared.MinimumReceiveSamples;
+            if ~isempty(fieldnames(binding))
+                obj.ScheduledControlRegistrations{end+1,1}=struct('ObservationID',id, ...
+                    'Binding',binding,'TransmitterID',tx+":tx", ...
+                    'StartSample',first,'EndSampleExclusive',prepared.TransmitObservationEndSampleExclusive, ...
+                    'TransmitObservation',[],'AvailableAtSample',NaN);
+            end
             obj.Events.observe(tx+":tx",id,first,prepared.TransmitObservationEndSampleExclusive);
             for plane=[rx+":pre_rf",rx+":post_rf"]
                 obj.Events.observe(plane,id,receiveFirst,stop);
@@ -501,6 +514,47 @@ classdef CoupledWaveformStream < handle
             assert(isscalar(hits),'sixgr:truth:PUSCHReceiveOnlyObservationNotCompleted', ...
                 'Only this physical owner''s completed observation can enter the receiver.');
             item=obj.PUSCHReceiveOnlyCompletions{hits};
+        end
+        function controls=readTransmittedULControls(obj,ue,targetSlot)
+            % Independent gNB schedule: no UE accepted-command, pending UCI,
+            % transmitted PUSCH payload or ACK state participates.
+            validateattributes(ue,{'numeric'},{'scalar','integer','positive','finite'});
+            validateattributes(targetSlot,{'numeric'},{'scalar','integer','positive','finite'});
+            assert(any([obj.Links.UE]==ue),'sixgr:truth:ScheduledULControlUEUnknown','Require a configured physical UE.');
+            registered=obj.ScheduledControlRegistrations;
+            ul=registered(cellfun(@(r)r.Binding.Direction=="UL" && r.Binding.UEIndex==ue,registered));
+            ids=string(cellfun(@(r)r.Binding.GrantContextID,ul,'UniformOutput',false));
+            % Missing control provenance cannot masquerade as an empty UL
+            % occasion merely because an execution/receive record survived.
+            actual=obj.DataTransmissions;
+            actual=actual(arrayfun(@(r)r.Identity.Direction=="UL" && r.Identity.UEIndex==ue,actual));
+            for tx=reshape(actual,1,[])
+                assert(any(ids==tx.Identity.PHYGrantContextId), ...
+                    'sixgr:truth:MissingScheduledULControlLedger','Every actual ordinary UL attempt needs its retained gNB command.');
+            end
+            pending=obj.Pending(string({obj.Pending.Kind})=="PUSCH" & [obj.Pending.UE]==ue);
+            for p=reshape(pending,1,[])
+                assert(any(ids==p.Context.TransmissionIdentity.PHYGrantContextId), ...
+                    'sixgr:truth:MissingScheduledULControlLedger','A prepared ordinary PUSCH cannot lose its scheduled control.');
+            end
+            captures=obj.PUSCHReceiveOnlyRegistrations;
+            for capture=reshape(captures([captures.UE]==ue),1,[])
+                assert(any(ids==capture.GrantContextID), ...
+                    'sixgr:truth:MissingScheduledULControlLedger','Receive-only ordinary UL also requires its real scheduled command.');
+            end
+            controls=cell(0,1);
+            for k=1:numel(ul)
+                r=ul{k}; g=r.Binding.Grant;
+                if double(g.TimingDecision.DataAbsoluteSlot)+1~=targetSlot, continue; end
+                observation=r.TransmitObservation;
+                assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && observation.isComplete() && ...
+                    observation.SampleRateHz==obj.SampleRateHz && observation.StartSample==r.StartSample && ...
+                    observation.EndSampleExclusive==r.EndSampleExclusive && ...
+                    r.AvailableAtSample==r.EndSampleExclusive && r.AvailableAtSample<=obj.Events.NextSampleIndex, ...
+                    'sixgr:truth:ScheduledULControlNotTransmitted', ...
+                    'A queued or incomplete control is not a physically transmitted UL command.');
+                controls{end+1,1}=r; %#ok<AGROW>
+            end
         end
         function queueULDataPreparation(obj,ue,first,context)
             validateattributes(first,{'numeric'},{'scalar','real','finite','integer','>=',obj.Events.NextSampleIndex});
@@ -711,6 +765,22 @@ classdef CoupledWaveformStream < handle
                         k=find(string({obj.Pending.ID})==item.ID,1);
                         if isempty(k), error('sixgr:truth:UnknownSharedObservation','No prepared receiver owns this completion.'); end
                         obj.Pending(k).Planes(end+1)=rmfield(item,'ID');
+                        if obj.Pending(k).Kind=="PDCCH"
+                            control=find(cellfun(@(r)r.ObservationID==item.ID && ...
+                                r.TransmitterID==item.ReceiverID,obj.ScheduledControlRegistrations));
+                            if ~isempty(control)
+                                assert(isscalar(control),'sixgr:truth:DuplicateScheduledPDCCHGrant','A transmitted prefix has one owner.');
+                                r=obj.ScheduledControlRegistrations{control};
+                                assert(isempty(r.TransmitObservation) && item.Observation.isComplete() && ...
+                                    item.Observation.StartSample==r.StartSample && ...
+                                    item.Observation.EndSampleExclusive==r.EndSampleExclusive && ...
+                                    r.EndSampleExclusive==obj.Events.NextSampleIndex, ...
+                                    'sixgr:truth:ScheduledPDCCHTransmitClockMismatch','Retain the actual complete gNB TX prefix once.');
+                                r.TransmitObservation=item.Observation;
+                                r.AvailableAtSample=obj.Events.NextSampleIndex;
+                                obj.ScheduledControlRegistrations{control}=r;
+                            end
+                        end
                     end
                     previousCount=numel(completed);
                     done=find(arrayfun(@(x)numel(x.Planes)== ...

@@ -1,7 +1,7 @@
 function [state,id]=queueSharedPUSCHAfterRejectedControl(state,cfg,control)
 % The UE stays silent; the gNB retains its scheduled receive opportunity.
 % This registers observations only, without UE timing advance or preparation.
-grant=sixgr.truth.validateSharedRejectedULControl(state,control);
+[grant,transmission]=sixgr.truth.scheduledGrantForRejectedULControl(state,control);
 owner=state.SharedWaveformStream; fs=owner.SampleRateHz;
 [cfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,grant.UEIndex,'UL');
 cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,grant.Slot,grant.Frame);
@@ -23,6 +23,7 @@ id=owner.queuePUSCHReceiveOnly(grant.UEIndex,cfg,grant,first,stop);
 rows{end+1}=struct('ControlKey',string(control.Key),'ObservationID',id, ...
     'GrantContextID',string(grant.PHYGrant.GrantContextId), ...
     'ControlAvailableAtSample',control.AvailableAtSample, ...
+    'GNBControlObservationID',transmission.ObservationID,'GNBControlAvailableAtSample',transmission.AvailableAtSample, ...
     'StartSample',first,'EndSampleExclusive',stop, ...
     'TimingGuardSamples',guard,'TimingGuardSource',source);
 state.SharedRejectedULReceiveWindows=rows;
