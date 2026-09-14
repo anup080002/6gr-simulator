@@ -224,6 +224,15 @@ for caseIndex = reshape(caseIndices,1,[])
     rng(459,'twister'); rngBefore = rng;
     beforeRX = sixgr.runtime.RuntimeCallLedger.snapshot();
     completed = runner(cfg,args{:},'ReceivedContext',context);
+    % Preserve the actual failing stimulus before any result assertion. These
+    % are component diagnostics, not replacement primary run measurements.
+    diagnosticRoot=tempname(fullfile(pwd,'logs'));
+    mkdir(diagnosticRoot);
+    save(fullfile(diagnosticRoot,'received_data_stages.mat'), ...
+        'mode','caseIndex','cfg','grant','prepared','context','completed', ...
+        'signal','x','y','variance','arrival','args','-v7.3');
+    fprintf('RECEIVED_DATA_STAGE_EVIDENCE: %s case=%d root=%s\n', ...
+        mode,caseIndex,diagnosticRoot);
     if caseIndex==4
         assert(completed.HARQ.UCIReceiveContextDigest==context.UCIReceiveContext.Digest && ...
             string(completed.HARQ.UCIReceiverEvidence.ReceiverContextDigest)==context.UCIReceiveContext.Digest);

@@ -2,7 +2,86 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
-## Follow-up checkpoint: diagnosed regression repairs applied, not yet verified
+## Latest verified checkpoint: 2026-09-14, 09:20 IST
+
+This section supersedes the historical statuses below. Source revision
+17661058069612ba9e9a61ea0f9cb09b688a0e6c is not qualified for the integrated
+12 dB run. No full-suite pass is claimed.
+
+- On 0b9096b1, the eight-test focused run finished with six passes and two
+  failures. PBCH configured channel, resolved PUSCH codewords, CSI source
+  authority, CSI runtime execution, shared CSI report clock and RA-associated
+  SSB projection passed. Both staged-data failures were a newly added assertion
+  reading Slot/Frame from the wrong frozen-grant struct level.
+- 17661058 corrected that assertion to ChannelStateKey.Slot/Frame. Its two-test
+  rerun terminated with one pass and one failure: all four FDD staged-data cases
+  passed; TDD reached real coded DL reception and failed the CFO assertion.
+- TDD observed CFO=NaN, EVM_rms=0.054996, timing offset=7 samples. Its unchanged
+  gates require abs(CFO)<5 Hz and EVM_rms<0.02. The latter gate was not reached
+  but the observed EVM would fail it. FDD DL observed CFO=0.0075503 Hz and
+  EVM_rms=0.00014754. Different authored configurations prevent treating this
+  difference alone as proof of a duplex-specific receiver defect.
+- Confirmed CFO configuration/fixture mismatch: the TDD YAML explicitly sets
+  impairments.cfo_correction_enable=false; buildInternalConfig maps this to
+  both receiver correction flags. PDSCH_Rx/localEstimateCalibrationReceiverCFO
+  returns unavailable when that flag is false. The fixture unconditionally
+  requires a finite measurement. EVM's root cause remains unisolated.
+- Normal shared-PUSCH adapter integration, physical PUCCH qualification,
+  final-source testAll and integrated measurement/export closure remain open.
+
+Evidence directories (preserved including failures):
+logs/testall_20260914T033328430Z_901f08bf and
+logs/testall_20260914T033905053Z_c92ace94. The latter finished at
+03:42:38.518 UTC, duration 181.880 seconds. No MATLAB worker remained when
+checked at 03:46 UTC. This checkpoint changes documentation only.
+
+## Time-boxed repair and fixture schedule
+
+Retain the previously recorded T0 (implementation resumption) and deadlines;
+do not restart T0 after each new failure. These are accountable working-time
+checkpoints, not guaranteed passing outcomes or an unattended-execution promise.
+The earlier record did not establish an exact wall-clock T0, so an exact calendar
+deadline cannot honestly be reconstructed from it. Record actual start/end times
+on each subsequent repair and test. If a deadline is missed, record MISSED with
+the original deadline, evidence, outstanding action and revised estimate.
+
+| Deadline from T0 | Work and responsible files | Fixture/test gate | Current state |
+| --- | --- | --- | --- |
+| +1 active hour | Freeze failure inventory and retain original exceptions/logs | Terminal focused reports, revision/config identity | Reports retained |
+| +4 active hours | CSI/PBCH fixtures; tests/testDataChannelStreamStages.m; PDSCH_Rx.m receiver tracking; runDLPDSCHThroughput.m measurement publication | CSI/PBCH positives and malformed-input negatives; all four staged-data cases in both duplex modes | CSI/PBCH and FDD pass; TDD CFO/EVM open |
+| +12 active hours | CoupledTruthRuntime.m normal producer/consumer; runWaveformLinkBundle.m independent RX and missed-UL-DCI observation; validatePreparedPUSCHUCI.m binding | Missing leading/interior/trailing/all DL DCI, DAI wrap, missing UL DCI, zero HARQ, CSI coexistence, SR disposition, duplicate/stale/late feedback; actual normal path in TDD/FDD | Open |
+| +16 active hours | tests/testPUSCHResolvedCodewordDecode.m, unchanged production decoder unless an independent mismatch is demonstrated | Original RV failure retained; initial/combined codewords and partial/CRC negatives, ranks 5-8, public-reference equality | Focused pass; full regression owed |
+| +20 active hours | PUCCHReceiver.m/PUCCHDetector.m/resolveDetectionThreshold.m and qualification YAML/tests | Independent retained-IQ replay; frozen false-ACK and signal-error qualification with acquired timing and real RF samples | Replay diagnosed; qualification open |
+| +24 active hours | Measurement families and export files in section E; freeze repair candidate | Independent power/noise/loss, reference measurements, SINR, EVM, bits/CRC/throughput, CSI/SRS, CSV/PNG checks implemented | Open |
+| Additional 24-48 elapsed hours, provisional | Frozen-source full testAll, required guards and detector campaign; then authored 12 dB execution | Every required test terminal; all integrated measurement gates and exported artifacts checked | Not started on final candidate |
+| After qualified 12 dB | Consolidate/publish validated main and evidence index; then same-chain sweep | Clean tracked worktree, ancestry/patch preservation, remote commit identity; sweep [-30,-20,-10,0,10,12,20,30,40] | Pending |
+
+Immediate TDD fixture work:
+
+1. Retain resolved config, actual prepared grant/DM-RS allocation, receiver
+   tracking/synchronization state, paired constellation and pre/post-RF samples
+   before assertions. Separate configuration-disabled estimation from an
+   estimator failure or an export dropping an available measurement.
+2. Define explicit estimation-enabled no-CFO fixtures in YAML for both duplex
+   modes, retaining the original correction-disabled case as a separate negative
+   availability test. Do not insert CFO=0, silently enable correction in the
+   production scenario, or weaken the original finite-measurement gate.
+3. Isolate EVM with the same transmitted symbols, received samples, allocation,
+   precoder, channel estimate and equalizer. Account for authored reserved REs,
+   active RF processing and normalization. Repair the first proven mismatch;
+   no SNR/noise/power/iteration tuning to satisfy the limit.
+4. Check receiver decision paths for dependence on injected impairment truth;
+   audit-only truth must not choose estimator/correction behavior. In particular,
+   inspect localSuppressBlindCFOCorrectionForRuntimeAligned if exercised.
+5. Re-run TDD/FDD positive cases and disabled-estimation, wrong-clock,
+   incomplete-observation and changed-frozen-grant negatives before a broad run.
+
+Each completed fix requires a focused result on its recorded revision. Final
+closure additionally requires one unchanged-source full regression and integrated
+12 dB evidence. A disabled measurement is unavailable, never a manufactured zero;
+an enabled required measurement that is unavailable blocks acceptance.
+
+## Historical follow-up: diagnosed regression repairs applied, not yet verified
 
 The focused run on e925ec6c terminated with 17 passes and four failures. It was
 not a full testAll run. CSI runtime execution and shared CSI report-clock tests
