@@ -101,7 +101,8 @@ for caseIndex = reshape(caseIndices,1,[])
         localCount(afterTX,rxName)==localCount(before,rxName));
     prepared = pending.PreparedTransmission;
     assert(grant.Slot==slot && grant.Frame==frame && ...
-        grant.PHYGrant.Slot==slot && grant.PHYGrant.Frame==frame);
+        grant.PHYGrant.ChannelStateKey.Slot==slot && ...
+        grant.PHYGrant.ChannelStateKey.Frame==frame);
     sixgr.link.bindExecutedHARQClock(grant,prepared.Tx.Carrier,slot);
     badClock=grant; badClock.Frame=frame+1;
     localReject(@()sixgr.link.bindExecutedHARQClock(badClock,prepared.Tx.Carrier,slot), ...
