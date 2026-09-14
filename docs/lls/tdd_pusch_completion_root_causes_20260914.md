@@ -65,3 +65,15 @@ The SRS-field assertion is now scoped to DCI 0_1, exactly like the adjacent
 UL-precoding assertion. It remains required for the actual UL control.
 Diagnosis will rerun the nonempty case, followed by both tests on the final
 candidate. The combined task is not complete yet.
+
+## Follow-up run on 75a7281f
+
+`logs/testall_20260914T105533899Z_cc63ad9a` failed the nonempty case with
+`sixgr:truth:MissingDecodedPUCCHResourceIndicator` at normal DL completion.
+The fixture's isolated waveform-grant construction bypassed the scheduler's
+configured PUCCH resource-authority binding. The fixture now calls the existing
+scheduler method before repacking DCI and freezing the pre-transmission grant.
+It asserts that actual received DCI and the normal DL completion snapshot retain
+that selected PRI and its provenance. No receive-time default or fabricated
+decoded PRI is introduced, and the production missing-provenance gate is unchanged.
+The nonempty rerun and final paired acceptance remain pending.

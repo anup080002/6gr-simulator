@@ -380,6 +380,10 @@ for item=items
             state.TestCSIReceivedControl=struct('Grant',grant, ...
                 'ReceivedAssignment',receivedAssignment,'AvailableAtSample',owner.Events.NextSampleIndex);
             if state.TestIndependentSharedHARQ
+                assert(decoded.Fields.pucch_resource_indicator==grant.PUCCHResourceIndicator && ...
+                    receivedAssignment.PUCCHResourceIndicator==grant.PUCCHResourceIndicator && ...
+                    strlength(string(grant.PUCCHResourceIndicatorSource))>0, ...
+                    'test:SharedHARQPRI','Actual received DL DCI must retain the configured scheduler PRI.');
                 key="DL_ue_"+grant.UEIndex+"_rnti_"+grant.RNTI+ ...
                     "_control_"+(grant.TimingDecision.ControlAbsoluteSlot+1)+"_data_"+grant.Slot;
                 control=struct('Key',key,'Grant',grant,'Allowed',logical(rx.CausalGrantDecodeOk), ...
@@ -795,6 +799,15 @@ if sharedHARQ
     % resolveWaveformGrant carries PHY cell identity, whereas scheduled DAI
     % also requires the runtime serving-cell index from the bound UE view.
     grant.ServingCell=double(dl.lls6g.userContext.RuntimeServingCell);
+    % The isolated waveform-grant helper does not run the scheduler's
+    % connected PUCCH selection step. Bind that real YAML authority before
+    % repacking control and freezing the pre-transmission grant, never at RX.
+    scheduler=sixgr.l2.mac.SchedulerPF(dl,'Direction','DL');
+    grant=scheduler.attachPUCCHResourceAuthorityToGrant(grant);
+    grant.DCI=scheduler.buildDCIBitfield(grant);
+    grant.PHYGrant=sixgr.phy.grant.freezePHYGrant(dl,'DL',grant, ...
+        'Slot',grant.Slot,'Frame',grant.Frame,'HARQContext',grant.HARQ);
+    grant.PHYGrantContextId=char(string(grant.PHYGrant.GrantContextId));
     [grant,candidateLedger]=sixgr.truth.prepareScheduledDLDAI(state.TestScheduledDLDAILedger,dl,grant);
     grant.TransportBlockId=char(grant.PHYGrant.GrantContextId);
     grant.TBId=grant.TransportBlockId;
@@ -848,6 +861,9 @@ state.SharedUEDLHARQEntities={out.ReceivedHARQState};
 out.HARQ.SharedTransmissionID=item.Context.TransmissionIdentity.TransmissionID;
 out.HARQ.ReceivedTimingEvidence=sixgr.truth.receivedDataSymbolTiming( ...
     p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
+assert(out.HARQ.GrantSnapshot.PUCCHResourceIndicator==control.ReceivedAssignment.PUCCHResourceIndicator && ...
+    string(out.HARQ.GrantSnapshot.PUCCHResourceIndicatorSource)==string(control.Grant.PUCCHResourceIndicatorSource), ...
+    'test:SharedHARQPRI','Normal DL completion must retain the pre-transmission PRI and provenance.');
 [state,out.TrialTable]=sixgr.truth.CoupledTruthRuntime.completeSlot( ...
     state,job.Cfg,1,'DL',out.TrialTable,out);
 state.TestExpectedSharedACK=logical(out.ReceivedHARQDecision.ACK);
