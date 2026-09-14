@@ -1,0 +1,13 @@
+# Receiver implementation parameters, not 3GPP-mandated AGC coefficients.
+# These tune the retained sample-stream AGC; they do not enable an impairment
+# or substitute for the main scheduler's unfinished shared-stream integration.
+rf_frontend:
+  receiver:
+    agc:
+      stream_profile:
+        control_model: causal_windowed_joint_rms_attack_hold_release
+        research_class: agreed_starting_point
+        attack: 1.0
+        release: 0.5
+        hold_samples: 128
+        update_period_samples: 64

@@ -1,0 +1,25 @@
+inherits:
+  - ./lls_received_ul_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_tdd_pusch_independent_empty_uci_fixture
+  description: TDD actual shared PUSCH completion with an independently empty gNB UCI obligation.
+  purpose: Zero-obligation receive/commit regression; not nonempty HARQ, missing DCI, access or 12 dB qualification.
+  research_class: optional_research_experiment
+
+reference_signals:
+  csi_reporting_enabled: false
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+  cri_reporting_enabled: false
+
+# Keep inherited policy aliases consistent with the explicit no-report
+# fixture. Otherwise a descendant can restore the parent's baseline CRI
+# policy while retaining csi_reporting_enabled=false.
+csi_acquisition_and_reporting:
+  dl_csi_enabled: false
+  cqi_policy: disabled
+  pmi_policy: disabled
+  ri_policy: disabled
+  cri_policy: disabled

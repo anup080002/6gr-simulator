@@ -2,6 +2,26 @@
 
 Date: 2026-09-14. This is a repair/acceptance plan, not a conformance certificate.
 
+## Latest verified TDD completion: 14 September 2026, 16:40 IST
+
+The selected two-test shared-PUSCH completion task passed together on clean,
+frozen `9754f87def193db8a658a5472de53e6aae95bd77` (R2026a Update 4):
+`testTDDSharedPUSCHIndependentCompletion` and
+`testTDDSharedPUSCHNonemptyCompletion`. The real nonempty DL-to-PUSCH path
+completed with one DL TX, one UL TX and one common feedback commit receipt.
+The fixture PRI authority and production first-row timeline text-storage errors
+were repaired without changing decoder decisions or weakening validation.
+Details: [focused closure](tdd_pusch_completion_root_causes_20260914.md);
+receipt: [runtime evidence](evidence_20260914/tdd_pusch_completion_9754f87d/README.md).
+
+This is not whole shared-feedback or 12 dB acceptance. Still open: missing/all-
+missed DCI across transports, mixed HARQ/CSI/SR, detector qualification, integrated
+measurement/export closure, final-source full regression and explicit guard
+results, and then the integrated 12 dB scenario. FDD repairs remain deferred.
+Older suite processes were verified absent on 14 September around 16:06 IST;
+their stale running summaries must not be treated as live or passing runs.
+Historical checkpoints below remain for audit, not as current running status.
+
 ## TDD rejected-DL-DCI handling: 14 September 2026, 12:56 IST
 
 The 4a6984e3 admission watcher terminated at 12:52:09 IST without launching

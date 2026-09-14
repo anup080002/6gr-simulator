@@ -1,0 +1,16 @@
+inherits:
+  - ./lls_tdd_pusch_independent_empty_uci_fixture.yaml
+
+meta:
+  scenario_id: lls_tdd_pusch_independent_shared_harq_fixture
+  description: Actual shared DL decode followed by independent Type-2 HARQ reception on PUSCH.
+  purpose: Shared nonempty feedback and completion regression, not access, mixed CSI/SR or 12 dB qualification.
+  research_class: optional_research_experiment
+
+# Both installed timing authorities refer to the same list. Slot-6 DL
+# feedback targets slot-10 PUSCH; no post-decode feedback-slot rewriting.
+tdd_timing:
+  dl_harq_feedback_k1: [4]
+
+pucch_resources:
+  dl_data_to_ul_ack: [4]

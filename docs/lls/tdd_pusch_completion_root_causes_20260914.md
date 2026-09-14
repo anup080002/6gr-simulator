@@ -1,5 +1,25 @@
 # TDD shared-PUSCH focused completion repair
 
+## Verified focused closure: 14 September 2026, 16:40 IST
+
+Both required tests passed together on clean, frozen revision
+`9754f87def193db8a658a5472de53e6aae95bd77` with MATLAB R2026a Update 4.
+Run: `logs/testall_20260914T110611429Z_fea335dc`; launcher exit 0, unchanged
+HEAD and clean tracked state before/after. The empty case passed in 110.78 s;
+the nonempty case passed in 116.14 s. Receipts are retained in
+`docs/lls/evidence_20260914/tdd_pusch_completion_9754f87d/`.
+
+The nonempty case executed one DL TX and one UL TX, decoded the actual DL ACK
+through PUSCH, retained source identities/provenance, and produced exactly one
+common commit receipt. Duplicate and invalid-source-slot rejection assertions
+also passed. The empty case produced no DL HARQ updates. This closes the two-test
+TDD shared-PUSCH completion task, not all shared-feedback integration.
+
+Full final-source `testAll` and required guard results are still due. Missing/all-
+missed DCI across transports, combined HARQ/CSI/SR, detector statistical qualification,
+integrated measurement/export closure and the 12 dB scenario remain open. FDD
+repair is deferred. Earlier pending statements below describe historical runs.
+
 ## Retained failing run
 
 Revision: `3e2db7e1cf954de7bec6b6f2a189f5a9ab4944fa`.

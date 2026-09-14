@@ -1,0 +1,22 @@
+{
+  "kpis": {
+    "bler": true,
+    "throughput_mbps": true,
+    "spectral_efficiency": true,
+    "evm": true,
+    "sinr": true,
+    "latency_us": true,
+    "prach_false_alarm": true,
+    "prach_miss_detection": true,
+    "harq_retx_count": true,
+    "csi_accuracy": true,
+    "beam_failure_rate": true,
+    "flops": true,
+    "memory_mb": true,
+    "energy_per_bit": true,
+    "sgcs": true,
+    "nmse": true,
+    "processing_energy": true,
+    "rf_chain_energy": true
+  }
+}

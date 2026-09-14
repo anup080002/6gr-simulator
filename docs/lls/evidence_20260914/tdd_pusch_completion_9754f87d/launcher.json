@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "status": "focused_passed_not_testall",
+  "started_utc": "2026-09-14T11:06:11.4450311Z",
+  "repository": "C:\\Users\\anup0\\AppData\\Local\\Temp\\sixgr_type2_runtime_20260913",
+  "matlab_requested": "matlab",
+  "powershell_version": "7.6.6",
+  "preflight_only": false,
+  "selected_tests": [
+    "testTDDSharedPUSCHIndependentCompletion",
+    "testTDDSharedPUSCHNonemptyCompletion"
+  ],
+  "allow_dirty": false,
+  "suite_pass": false,
+  "git_commit": "9754f87def193db8a658a5472de53e6aae95bd77",
+  "git_status_before": "",
+  "matlab_executable": "C:\\Program Files\\MATLAB\\R2026a\\bin\\matlab.exe",
+  "batch": "cd('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913'); addpath(fullfile(pwd,'scripts')); run_server_testall('C:/Users/anup0/AppData/Local/Temp/sixgr_type2_runtime_20260913/logs/testall_20260914T110611429Z_fea335dc',false,{'testTDDSharedPUSCHIndependentCompletion','testTDDSharedPUSCHNonemptyCompletion'});",
+  "matlab_exit_code": 0,
+  "git_status_after": "",
+  "git_commit_after": "9754f87def193db8a658a5472de53e6aae95bd77",
+  "finished_utc": "2026-09-14T11:10:33.3643771Z",
+  "launcher_exit_code": 0
+}

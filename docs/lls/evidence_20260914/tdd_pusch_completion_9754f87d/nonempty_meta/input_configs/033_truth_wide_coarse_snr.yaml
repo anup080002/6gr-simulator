@@ -1,0 +1,11 @@
+{
+  "kpi_spec": {
+    "per_snr_curve_points": [-30, -20, -10, 0, 10, 20, 30, 40]
+  },
+  "sweeps_and_matrix": {
+    "snr_sweep": {
+      "enabled": true,
+      "values_db": [-30, -20, -10, 0, 10, 20, 30, 40]
+    }
+  }
+}

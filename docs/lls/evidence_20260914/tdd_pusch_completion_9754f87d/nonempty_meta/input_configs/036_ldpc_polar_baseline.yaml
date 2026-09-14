@@ -1,0 +1,10 @@
+{
+  "coding": {
+    "data_code_type": "LDPC",
+    "control_code_type": "Polar",
+    "tb_crc_type": "24A",
+    "cb_crc_type": "24B",
+    "base_graph": 2,
+    "max_decoder_iterations": 8
+  }
+}

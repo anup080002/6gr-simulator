@@ -1,0 +1,124 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short.yaml
+
+meta:
+  scenario_id: lls_causal_access_to_data_wiring_tdd_short_continuous_iq
+  description: >
+    Exact 58-slot configured-12-dB TDD LLS with disk-backed capture of every
+    shared-clock physical transmitter sample after waveform composition,
+    power scaling and retained TX RF processing and before propagation.
+  version: "1.0.0"
+  owner: sixgr
+  research_class: baseline_benchmark
+  maturity_tag: regression
+  scenario_group: causal_access_to_data_wiring
+  tags: [lls, truth, tdd, 5mhz, configured_snr, continuous_iq, keysight]
+
+run_control:
+  continuous_raw_iq_capture_enable: true
+
+# Receiver implementation settings, not universal 3GPP constants. Format 0
+# uses normalized correlation; Formats 1-4 still need separate metric/ROC
+# qualification and retain their existing energy-aware thresholds.
+pucch:
+  detection_threshold_format0_one_symbol: 0.49
+  detection_threshold_format0_two_symbols: 0.42
+
+# Explicit LLS higher-layer initialization; not a simulated MAC CE.
+# Type-A average-delay transfer is verified at the PDSCH DM-RS receiver.
+mimo:
+  qcl_tci:
+    enabled: true
+    state_id: 17
+    codepoint: 0
+    configuration_epoch: 1
+    activation_absolute_slot0: 0
+    source_resource_id: 100
+    source_max_age_slots: 20
+    timing_search_radius_samples: 4
+    initialization_source: lls_preconfigured_higher_layer_context
+
+reference_signals:
+  pdsch_dmrs_max_length: 1
+  pusch_dmrs_num_cdm_groups_without_data: 2
+  pusch_dmrs_config_type: 1
+  pusch_dmrs_max_length: 1
+  # Sound both UE logical ports; rank remains one. A one-port sounding
+  # resource cannot select a spatial TPMI across two physical UE elements.
+  srs_ports: 2
+  srs:
+    num_ports: 2
+    port_set: [0, 1]
+  trs:
+    resource_ids: [100, 101, 102, 103]
+
+pusch:
+  num_antenna_ports: 2
+  dmrs_nscid: 0
+  # RRC TDRA rows: [index, start symbol, length, K2].
+  time_domain_allocations:
+    - [0, 0, 13, 1]
+    - [1, 0, 13, 2]
+
+pdsch:
+  dmrs_nscid: 0
+  # Full-DL and special-slot DL allocations, both with K0=0.
+  # If the preferred allocation does not fit, runtime selects the first
+  # catalog row fitting the DL partition and actual control-to-data offset.
+  time_domain_allocations:
+    - [0, 2, 12, 0]
+    - [1, 2, 8, 0]
+
+control:
+  connected_monitoring:
+    cce_reg_mapping: noninterleaved
+    reg_bundle_size: 6
+    interleaver_size: 0
+    shift_index: 1
+    precoder_granularity: sameAsREG-bundle
+    start_symbol: 0
+    period_slots: 1
+    offset_slots: 0
+    duration_slots: 1
+    dmrs_scrambling_id: 1
+  connected_dci:
+    spec_release: Release-18
+    spec_version: "18.8.0"
+    configuration_epoch: 1
+    serving_cell_index: 0
+    component_carrier_index: 0
+    search_space_id: 1
+    coreset_id: 0
+    rnti_type: C-RNTI
+    frequency_allocation_type: type1_riv
+    vrb_interleaving: false
+    prb_bundling: staticBundling
+    rate_match_pattern_group_count: 0
+    aperiodic_zp_csirs_resource_set_count: 0
+    harq_ack_codebook: dynamic
+    supplementary_uplink: false
+    cross_carrier_scheduling: false
+    cbg_enabled: false
+    csi_request_bits: 0
+    beta_offsets: semiStatic
+    tci_present: true
+    # Explicit absence of optional Rel-16/17/18 DCI extension fields.
+    additional_dci_features: []
+  dl_reference_signaling:
+    dmrs_configuration_type: 1
+    dmrs_max_length: 1
+    dmrs_type_enhanced: false
+    two_tci_states: false
+    max_codewords: 1
+  ul_reference_signaling:
+    srs_resource_count: 1
+    dmrs_configuration_type: 1
+    dmrs_max_length: 1
+    dmrs_type_enhanced: false
+    multipanel_sdm: false
+  ul_precoding:
+    num_ports: 2
+    max_rank: 1
+    codebook_subset: fullyAndPartialAndNonCoherent
+    transmission_scheme: codebook
+    full_power_mode: not_configured

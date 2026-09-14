@@ -1,0 +1,8 @@
+{
+  "waveform": {
+    "dl_waveform": "CP-OFDM",
+    "ul_waveform": "CP-OFDM",
+    "transform_precoding_enabled": false,
+    "experimental_dl_dfts_ofdm_enabled": false
+  }
+}
