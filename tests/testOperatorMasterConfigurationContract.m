@@ -26,6 +26,7 @@ geometry = localLoadAndBuild(scenarioDir, "master_geometry_based.yaml", ...
 
 localAssertModeDifferences(fixed, geometry);
 localAssertMasterSurfaceParity(fixed.Raw, geometry.Raw);
+localAssertSRMutationsRejected(fixed.Raw, fixed.Cfg);
 localAssertMutationsPropagate(fixed.Raw, tmp);
 localAssertFixedGridOverridePropagates(fixed.Resolved);
 
@@ -185,6 +186,7 @@ localAssertEqual(double(carrier(1).ul_carrier_grid.n_size_grid), ...
 end
 
 function localAssertBuiltSurface(raw, cfg, fileName)
+localAssertSRPolicy(raw, cfg);
 radio = raw.canonical_control.radio;
 localAssertEqual(double(cfg.phy.carrier.NSizeGrid), ...
     double(radio.n_size_grid), fileName + " carrier grid");
@@ -272,6 +274,72 @@ assert(logical(context.UECapability1024QAM) == ...
     logical(context.BandAllows1024QAM) == ...
         logical(raw.pdsch6gr.mcs_band_allows_1024qam), ...
     "%s did not preserve the explicit PDSCH MCS capability context.", fileName);
+end
+
+function localAssertSRPolicy(raw, cfg)
+% Validate the authored resource calendar even while its feature is disabled.
+% This does not enable PUCCH, execute SR, or claim MAC/RF qualification.
+declared=raw.pucch_resources;
+installed=cfg.validation.pucch_resources;
+assert(isequaln(installed.scheduling_request_resources,declared.scheduling_request_resources) && ...
+    logical(installed.enabled)==logical(declared.enabled), ...
+    'test:OperatorSRAuthority','SR schedules and the feature enable flag must preserve YAML authority.');
+configs=declared.scheduling_request_resources;
+assert(isstruct(configs) && ~isempty(configs), ...
+    'test:OperatorMissingSRCalendar','Installed SR IDs require explicit identity, period, offset and priority.');
+assert(isequal(sort(unique(double([configs.resource_id]))), ...
+    sort(unique(double(declared.sr_resource_ids(:).')))), ...
+    'test:OperatorSRResourceCoverage','Every installed SR resource must have a schedule.');
+catalog=cfg.phy.pucch.srPeriodCatalog.periods_by_scs;
+policy=catalog([catalog.scs_khz]==cfg.phy.carrier.SubcarrierSpacing);
+assert(isscalar(policy),'test:OperatorSRNumerology','Exactly one SR period policy must match the built carrier.');
+for c=reshape(configs,1,[])
+    assert(ismember(c.periodicity_slots,policy.allowed_slot_periods), ...
+        'test:OperatorSRPeriod','SR period is not in the installed numerology catalog.');
+    assert(~ismember(c.periodicity_slots,policy.additional_capability_slot_periods) || ...
+        logical(c.additional_periodicity_capability), ...
+        'test:OperatorSRCapability','This SR period requires explicitly declared additional capability.');
+    resource=declared.resources([declared.resources.id]==c.resource_id);
+    assert(isscalar(resource) && ismember(resource.format,[0 1]), ...
+        'test:OperatorSRResourceFormat','Standalone SR requires an installed Format-0/1 resource.');
+    % Exercise two actual frame-calendar occasions without constructing a
+    % transmitted report, pending-positive bit or fabricated receive row.
+    slots=1:(2*c.periodicity_slots+c.offset_slots);
+    occasions=slots(mod(slots-1-c.offset_slots,c.periodicity_slots)==0);
+    assert(numel(occasions)==2,'test:OperatorSROccasions','Expected two configured period recurrences.');
+    for slot=occasions
+        [~,allowed,~,partition]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,slot);
+        ul=partition.ULSymbolAllocation;
+        assert(allowed && resource.starting_symbol>=ul(1) && ...
+            resource.starting_symbol+resource.nrof_symbols<=sum(ul), ...
+            'test:OperatorSRSymbolLegality','Configured SR symbols do not fit nominal UL slot %d.',slot);
+    end
+end
+end
+
+function localAssertSRMutationsRejected(raw,cfg)
+% Mutate only the candidate calendar, retaining the same real TDD frame.
+mixed=raw.pucch_resources.scheduling_request_resources;
+mixed.offset_slots=mixed.offset_slots-1;
+extra=raw.pucch_resources.scheduling_request_resources;
+extra.periodicity_slots=5;
+extra.additional_periodicity_capability=false;
+missing=struct([]);
+cases={mixed,extra,missing};
+ids={'test:OperatorSRSymbolLegality','test:OperatorSRCapability','test:OperatorMissingSRCalendar'};
+for k=1:numel(cases)
+    badRaw=raw; badCfg=cfg;
+    badRaw.pucch_resources.scheduling_request_resources=cases{k};
+    badCfg.validation.pucch_resources.scheduling_request_resources=cases{k};
+    try
+        localAssertSRPolicy(badRaw,badCfg);
+    catch cause
+        assert(strcmp(cause.identifier,ids{k}), ...
+            'Expected %s, got %s: %s',ids{k},cause.identifier,cause.message);
+        continue;
+    end
+    error('test:OperatorSRMissingRejection','Expected %s.',ids{k});
+end
 end
 
 function localAssertAllocation(actual, declared, label)

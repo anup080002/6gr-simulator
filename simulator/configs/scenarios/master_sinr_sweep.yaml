@@ -2651,6 +2651,16 @@ pucch_resources:
     resource_id: 0
     k1_slots: 4
   sr_resource_ids: [0]
+  # 30-kHz TDD: period 10 needs no extra SR capability; offset 4 selects
+  # the full UL slot (the preceding mixed slot has only one UL symbol).
+  scheduling_request_resources:
+  - scheduling_request_resource_id: 1
+    scheduling_request_id: 0
+    resource_id: 0
+    periodicity_slots: 10
+    offset_slots: 4
+    priority_index: 0
+    additional_periodicity_capability: false
   csi_resource_ids: [10]
   sps_pucch_an_resource_ids: [1]
   power_control:
