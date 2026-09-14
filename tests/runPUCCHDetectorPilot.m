@@ -4,24 +4,8 @@ function result=runPUCCHDetectorPilot(configPath,outputRoot)
 % decoded DL outcomes. No transmitted object is supplied to the PUCCH RX.
 assert(~isfolder(outputRoot),'test:EvidenceExists','Use a new pilot output folder.');
 v=sixgr.lls6g.config.readConfigFile(configPath);
-assert(string(v.stage)=="development_pilot" && ...
-    string(v.research_class)=="optional_research_experiment");
-validateattributes(v.episodes,{'numeric'},{'scalar','integer','positive','finite'});
-validateattributes(v.seed_base,{'numeric'},{'scalar','integer','nonnegative','finite'});
-validateattributes(v.seed_stride,{'numeric'},{'scalar','integer','positive','finite'});
-validateattributes(v.family_alpha,{'numeric'},{'scalar','>',0,'<',1});
-validateattributes(v.event_error_limit,{'numeric'},{'scalar','>',0,'<',1});
-validateattributes(v.qualification_episodes_per_case,{'numeric'},{'scalar','integer','positive'});
-cases=v.cases; assert(isstruct(cases) && numel(cases)==8);
-assert(numel(unique(string({cases.id})))==numel(cases) && ...
-    numel(unique([cases.slot]))==numel(cases));
-for c=cases(:).'
-    assert(ismember(c.harq_bits,[1 2]) && islogical(c.signal_present));
-    assert((~c.signal_present && isempty(c.payload)) || ...
-        (c.signal_present && numel(c.payload)==c.harq_bits && all(ismember(c.payload,[0 1]))));
-    assert(c.slot>1 && c.slot<v.last_slot && c.slot==fix(c.slot));
-end
-assert(isempty(intersect([cases.slot],v.srs_slots)));
+validatePUCCHDetectorPilotPolicy(v);
+cases=v.cases;
 mkdir(outputRoot); mkdir(fullfile(outputRoot,'meta'));
 copyfile(configPath,fullfile(outputRoot,'meta','pilot_config.yaml'));
 scenario=sixgr.lls6g.config.loadScenarioConfig(v.scenario_path);
@@ -92,6 +76,8 @@ for episode=1:v.episodes
             [state,~]=owner.advanceSlot(state,cfg,@localEvents);
         end
         assert(height(state.DetectorPilot.Rows)==numel(cases),'test:IncompletePilot','Every case requires actual receive evidence.');
+        assert(isequal(sort(string(state.DetectorPilot.Rows.CaseID)),sort(string({cases.id}).')), ...
+            'test:IncompletePilot','Duplicate receive rows cannot replace a missing case.');
     catch err
         [diagnosticText,diagnostic]=sixgr.util.formatExceptionDiagnostic(err);
         fprintf('%s\n',diagnosticText);
@@ -304,9 +290,10 @@ for item=items
         assert(item.Kind=="PUCCHReceiveOnly" && ~isfield(c,'Prepared') && ...
             ~any(tx.readComplete()~=0,'all'),'test:PilotNoiseTX','Noise-only case cannot contain a transmitter contribution.');
     end
+    counts=countPUCCHDetectorPilotErrors(testCase,out.DecodedSequence1, ...
+        out.ReceiverUsable,out.DTX);
     decoded=int8(out.DecodedSequence1(:));
-    eventError=any(decoded==1);
-    if testCase.signal_present, eventError=~out.ReceiverUsable || ~isequal(decoded,int8(testCase.payload(:))); end
+    eventError=counts.EventError;
     path=fullfile(state.DetectorPilot.Folder,string(testCase.id)+".mat");
     save(path,'item','out','pre','post','tx','replay','hypothesis','testCase','-v7.3');
     row=table(state.DetectorPilot.Episode,state.DetectorPilot.Seed,string(testCase.id), ...
@@ -319,6 +306,10 @@ for item=items
         'DecodedPayloadJSON','DTX','DetectionMetric','DetectionThreshold','EventError', ...
         'ObservationStartSample','ObservationEndSampleExclusive','SampleRateHz','TimingSource', ...
         'TimingReferenceAgeSlots','EvidencePath','EvidenceSHA256'});
+    row=[row struct2table(rmfield(counts,'EventError'),'AsArray',true)];
+    assert(isempty(state.DetectorPilot.Rows) || ...
+        ~any(string(state.DetectorPilot.Rows.CaseID)==string(testCase.id)), ...
+        'test:DuplicatePilotReception','One physical case cannot be counted twice in an episode.');
     if isempty(state.DetectorPilot.Rows), state.DetectorPilot.Rows=row; else, state.DetectorPilot.Rows=[state.DetectorPilot.Rows;row]; end
     fprintf('DETECTOR_PILOT_CASE episode=%d case=%s metric=%.9g error=%d\n',state.DetectorPilot.Episode,testCase.id,out.DetectionMetric,eventError);
 end
