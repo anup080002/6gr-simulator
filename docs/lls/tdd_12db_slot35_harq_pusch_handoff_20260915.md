@@ -1,6 +1,8 @@
 # 5 MHz TDD / 12 dB: slot-35 handoff repair
 
-Status at 15 September 2026, 23:36 IST: **not integrated-12-dB acceptance**.
+Latest status at 16 September 2026, 00:23 IST: **not integrated-12-dB acceptance**.
+The joint pre-DCI repair below is now implemented and focused-tested. The
+earlier lifetime-only evidence is retained separately for provenance.
 
 ## Retained failure and root causes
 
@@ -32,7 +34,7 @@ trial rows existed at the failure checkpoint. Retain the failed-run artifacts.
 - `harqPUSCHMultiplexingProcessingTime.m` calculates capability-1 N1/d1,1 and
   N2/d2,1 plus the multiplexing symbol, with the smallest participating SCS.
   It uses actual NR PDSCH/PUSCH resource maps, including DM-RS-only first UL
-  symbols. **This duration helper is not yet wired into joint scheduling.**
+  symbols. This duration helper is now wired into joint pre-DCI scheduling.
   Its scope explicitly excludes switching/d2,2 and aperiodic-CSI budgets;
   a caller must not treat it as a universal timing qualification.
 - Both new tests are registered in `testAll`.
@@ -48,7 +50,59 @@ SHA256, respectively:
 `39F3A29987AFBB8EF097A3C498CBF61C68B72688EAB02168CB502F8D457F7944`
 and `C4512F5128FDFA81811FBBBD76BFD372861901A463D1C0069E34C143224B2777`.
 
-## Next repair, in order
+## Joint repair implemented on 16 September
+
+- `runWaveformLinkBundle.m` separates tentative UL planning from control
+  transmission, jointly resolves DL/UL timing, then prepares both DCIs.
+  Existing first-SRS reservation priority remains before UL DCI preparation.
+- `buildHARQPUSCHTimingConstraints.m` uses the actual frozen allocations and
+  processing budgets. It rejects unsupported switching, aperiodic CSI and
+  cross-numerology scope instead of silently assuming zero extra delay.
+- `evaluateHARQPUSCHTimingConstraints.m` tests the earliest advanced start
+  of the transitive overlapping UL group against PDSCH/PDCCH readiness.
+  `TimingRelationEngine.m` applies this evidence to authored K1 candidates.
+- `planJointHARQPUSCHTiming.m` preserves already transmitted controls and
+  resolves tentative controls before enqueue. `CoupledWaveformStream.m`
+  exposes completed gNB scheduling observations independently of UE decoding.
+- `SchedulerBase.m` can refreeze the same attempt after canonical timing
+  selection; retransmission rebinding removes stale prior-attempt constraints.
+  Data occasion, symbols, PRBs, real TBS and HARQ identity are asserted unchanged.
+- `CoupledTruthRuntime.m` exports nonempty scheduling audit rows to
+  `joint_harq_pusch_timing_decisions.csv`. These are planning records, not
+  measured receive success, power, SINR or ACK observations.
+
+### Focused evidence, MATLAB R2026a
+
+| Log under `logs/` | Terminal result |
+| --- | --- |
+| `joint_harq_pusch_timing_v6_20260916.log` | Exit 0, six tests: joint timing, multiplexing math, allocation timing, production timing migration, retransmission binding, physical missed-UL-DCI receive-only |
+| `joint_harq_pusch_physical_completion_20260916.log` | Exit 1: both nonempty-HARQ and empty-UCI physical PUSCH tests passed; the source-order test failed because its locator expected the old function signature |
+| `joint_first_srs_order_guard_20260916.log` | Exit 0: repaired source locator; original first-SRS assertions retained, additional joint-before-DCI assertions passed |
+
+SHA256 in that order:
+`D4068207EF782BEBCD84A0E08D89C7543A27753DDD4B18541674FC751D84212B`,
+`5FB8BB8DDFC560E490C215589A2EC875C6D4A3CFDDB9ECBAD5808392D5110FBC`,
+`AB7886E44272B1E56206B1BDFF4703F38C7BA68444B6B4DE2EB406FE4F116043`.
+
+The joint unit fixture uses the actual short-slot resource geometry and
+selects configured K1=5 instead of K1=1 while preserving its 1032-bit TB.
+Its explicitly labeled SRS metadata is a unit fixture, not physical SRS
+acceptance. The separate positive PUSCH companions execute physical SRS,
+control and data; they are not the configured-12-dB integrated scenario.
+Earlier failed development logs v1-v5 are retained, not counted as passes.
+
+## Remaining acceptance, in order
+
+Run the unchanged 5 MHz TDD configured-12-dB scenario as an integration
+diagnostic, followed by final-source full `testAll` and required guards.
+The older full suites on 73867a4 and 9bb69197 cannot qualify this repair.
+Combined CSI/SR/HARQ, all requested measurements and exported artifacts,
+original detector qualification and MATLAB R2023b remain unqualified.
+FDD and 400 MHz remain deferred. Do not force the measured SINR to 12 dB.
+
+The original repair checklist below is retained as a description of the
+required coverage; implementation steps 1-3 now have focused evidence above,
+whereas integrated acceptance in steps 4-5 remains open.
 
 1. Split future-UL candidate planning from UL DCI preparation in
    `localScheduleCoupledFutureULGrantsFromDLControl`. Make tentative DL/UL

@@ -516,6 +516,22 @@ classdef CoupledWaveformStream < handle
                 'Only this physical owner''s completed observation can enter the receiver.');
             item=obj.PUSCHReceiveOnlyCompletions{hits};
         end
+        function controls=readTransmittedSchedulingControls(obj)
+            % Read-only gNB scheduling authority for pre-DCI joint planning.
+            % Do not expose queued commands as transmitted constraints or
+            % borrow UE decoding/ACK state to fill a missing TX observation.
+            controls=obj.ScheduledControlRegistrations;
+            for k=1:numel(controls)
+                r=controls{k}; observation=r.TransmitObservation;
+                assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
+                    observation.isComplete() && observation.SampleRateHz==obj.SampleRateHz && ...
+                    observation.StartSample==r.StartSample && ...
+                    observation.EndSampleExclusive==r.EndSampleExclusive && ...
+                    r.AvailableAtSample==r.EndSampleExclusive && r.AvailableAtSample<=obj.Events.NextSampleIndex, ...
+                    'sixgr:truth:JointTimingAfterControlEnqueue', ...
+                    'Joint planning must precede current DCI enqueue; prior commands need complete physical gNB TX evidence.');
+            end
+        end
         function controls=readTransmittedULControls(obj,ue,targetSlot)
             % Independent gNB schedule: no UE accepted-command, pending UCI,
             % transmitted PUSCH payload or ACK state participates.

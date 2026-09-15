@@ -95,12 +95,20 @@ localReject(@()sixgr.truth.coupledSRSAttemptDue(futureAttempt,cfg,5,1), ...
     'sixgr:truth:NoncausalSRSAttemptHistory');
 
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
-first=strfind(code,'function [state, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl');
+first=regexp(code,'function[^\r\n]*= localScheduleCoupledFutureULGrantsFromDLControl\(','start');
 last=strfind(code,'function decision = localResolveCoupledULTimingDecision');
+assert(isscalar(first) && isscalar(last) && first<last);
 body=code(first(1):last(1)-1);
 reservation=strfind(body,'sixgr.truth.planFirstSRSULResources');
 dci=strfind(body,'[state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH');
 assert(numel(reservation)==1 && numel(dci)==1 && reservation<dci);
+% The shared path separates tentative planning from control enqueue. Both
+% SRS priority and joint HARQ timing must finish before either data DCI.
+joint=strfind(code,'sixgr.truth.planJointHARQPUSCHTiming(');
+dlDCI=strfind(code,'[runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH');
+assert(isscalar(joint) && isscalar(dlDCI) && joint<dlDCI);
+assert(contains(body,'if planOnly, return; end') && ...
+    contains(body,'localTransmitCoupledFutureULGrants(state,cfg,userCfg,pendingULGrants,grants,snr_dB)'));
 ok=true;
 fprintf('FIRST_SRS_UL_PRE_DCI_PASS\n');
 end

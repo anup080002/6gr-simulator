@@ -1292,8 +1292,11 @@ classdef (Abstract) SchedulerBase < handle
                 'Direction','InputPRBSetJSON','ExcludedPRBSetJSON','AvailablePRBSetJSON','Reason'});
         end
 
-        function grantOut = freezePHYGrantForGrant(obj, grantIn)
+        function grantOut = freezePHYGrantForGrant(obj, grantIn, varargin)
             % Freeze the final scheduler grant dimensional contract once.
+            options=inputParser;
+            options.addParameter('TimingAlreadySelected',false,@(x)islogical(x)&&isscalar(x));
+            options.parse(varargin{:});
             grantOut = grantIn;
             if nargin < 2 || ~(isstruct(grantOut) && ~isempty(fieldnames(grantOut)))
                 return;
@@ -1313,7 +1316,14 @@ classdef (Abstract) SchedulerBase < handle
             % YAML timing catalog.  Retaining an old explicit K1 can point a
             % later retransmission at a fixed DL slot in TDD even when another
             % configured K1 candidate is valid.
-            grantOut = sixgr.l2.mac.rebindHARQRetransmissionTiming(grantOut);
+            if options.Results.TimingAlreadySelected
+                % Joint pre-DCI planning refreezes THIS attempt, not a new
+                % retransmission. Its selected timing must already agree
+                % with all canonical grant aliases before being retained.
+                sixgr.phy.grant.assertGrantTimingIdentity(grantOut,grantOut.Direction);
+            else
+                grantOut = sixgr.l2.mac.rebindHARQRetransmissionTiming(grantOut);
+            end
             grantOut = obj.attachCanonicalTimingDecision(grantOut);
             grantOut = obj.finalizeExactPHYFeasibility(grantOut);
             if ~logical(sixgr.util.structGet(grantOut,"ExactPHYFeasible",false))

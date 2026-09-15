@@ -1101,6 +1101,18 @@ for index = 1:numel(candidates)
         otherwise
             candidate = engine.resolveHARQACK(request);
     end
+    if procedure=="HARQ_ACK" && isfield(grant,'HARQACKPUSCHTimingConstraints')
+        candidate.PUSCHMultiplexingTiming=struct([]);
+        if candidate.Valid
+            [muxValid,muxReason,muxEvidence]=sixgr.phy.frame.evaluateHARQPUSCHTimingConstraints( ...
+                candidate,grant.HARQACKPUSCHTimingConstraints);
+            candidate.PUSCHMultiplexingTiming=muxEvidence;
+            if ~muxValid
+                candidate.Valid=false; candidate.Status="REJECTED";
+                candidate.ReasonCode=muxReason;
+            end
+        end
+    end
     if isempty(attempts)
         attempts = candidate;
     else

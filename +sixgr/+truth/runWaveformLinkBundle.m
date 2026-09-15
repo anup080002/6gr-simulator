@@ -3691,6 +3691,15 @@ for sweepIdx = 1:numel(snrGrid)
                 round(double(sweepIdx)), round(double(numel(snrGrid))), round(double(frameLocal)), round(double(nFramesPerPoint)), ...
                 round(double(sixgr.util.structGet(dlInfo, "ActiveUsers", NaN))), ...
                 round(double(sixgr.util.structGet(dlInfo, "GrantedUsers", NaN))), numel(dlGrants));
+            plannedSharedUL=repmat(struct(),0,1);
+            if isfield(runtimeState,'SharedWaveformStream')
+                [runtimeState,pendingULGrants,plannedSharedUL]=localScheduleCoupledFutureULGrantsFromDLControl( ...
+                    runtimeState,cfg,userCfg,pendingULGrants,snrVal,sweepIdx,numel(snrGrid),frameLocal,nFramesPerPoint,true);
+                if localPUSCHUCIOnPUSCHAvailable(cfg)
+                    [runtimeState,dlGrants,plannedSharedUL]=sixgr.truth.planJointHARQPUSCHTiming( ...
+                        runtimeState,userCfg,dlGrants,plannedSharedUL);
+                end
+            end
             [runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH(runtimeState, userCfg, dlGrants, "DL", snrVal);
             if isfield(runtimeState,'SharedWaveformStream')
                 % Authored DL samples are transmitted before the UE knows
@@ -3710,8 +3719,13 @@ for sweepIdx = 1:numel(snrGrid)
             % Executing PDSCH first mutates per-UE feedback/PHY state and
             % incorrectly made the UL decision depend on a later data-plane
             % event instead of the decoded DCI authority.
-            [runtimeState, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl( ...
-                runtimeState, cfg, userCfg, pendingULGrants, snrVal, sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
+            if isfield(runtimeState,'SharedWaveformStream')
+                [runtimeState,pendingULGrants]=localTransmitCoupledFutureULGrants( ...
+                    runtimeState,cfg,userCfg,pendingULGrants,plannedSharedUL,snrVal);
+            else
+                [runtimeState, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl( ...
+                    runtimeState, cfg, userCfg, pendingULGrants, snrVal, sweepIdx, numel(snrGrid), frameLocal, nFramesPerPoint);
+            end
             [runtimeState, dlTrials, dlConstT, dlStates] = localExecuteCoupledDirectionBatch( ...
                 runtimeState, cfg, runFolder, multiUser, userCfg, dlGrants, "DL", snrVal, absoluteFrame, dlStates, ...
                 dlTrials, ulTrials, dlConstT, ulConstT, dlTablePath, ulTablePath, dlConstellationPath, ulConstellationPath, ...
@@ -3870,7 +3884,9 @@ end
 localWriteCoupledRuntimeTables(runtimeState, fileparts(char(string(runFolder))));
 end
 
-function [state, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl(state, cfg, userCfg, pendingULGrants, snr_dB, sweepIdx, sweepCount, frameLocal, nFramesPerPoint)
+function [state, pendingULGrants, plannedGrants] = localScheduleCoupledFutureULGrantsFromDLControl(state, cfg, userCfg, pendingULGrants, snr_dB, sweepIdx, sweepCount, frameLocal, nFramesPerPoint, planOnly)
+if nargin<10, planOnly=false; end
+plannedGrants=repmat(struct(),0,1);
 if nargin < 4 || ~isstruct(pendingULGrants)
     pendingULGrants = repmat(struct(), 0, 1);
 end
@@ -3978,6 +3994,16 @@ if ~uciOnPUSCHAvailable
     if isempty(grants), return; end
 end
 
+plannedGrants=grants;
+if planOnly, return; end
+[state,pendingULGrants]=localTransmitCoupledFutureULGrants(state,cfg,userCfg,pendingULGrants,grants,snr_dB);
+end
+
+function [state,pendingULGrants]=localTransmitCoupledFutureULGrants(state,cfg,userCfg,pendingULGrants,grants,snr_dB)
+if isempty(grants), return; end
+dueSlot=sixgr.truth.runtimeULGrantSlot(grants(1));
+controlSlot=double(state.CurrentSlot);
+uciOnPUSCHAvailable=localPUSCHUCIOnPUSCHAvailable(cfg);
 [state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH(state, userCfg, grants, "UL", snr_dB);
 if isfield(state,'SharedWaveformStream')
     % The receiver callback owns acceptance and future UE preparation.

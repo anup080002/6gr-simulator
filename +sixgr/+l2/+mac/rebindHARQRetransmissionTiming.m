@@ -20,6 +20,11 @@ end
 if isfield(grant, "TimingDecision")
     grant.TimingDecision = struct();
 end
+if isfield(grant,'HARQACKPUSCHTimingConstraints')
+    % Constraints name the previous attempt's PDSCH endpoint and UL group.
+    % The next attempt needs a fresh joint plan before its DCI is queued.
+    grant=rmfield(grant,'HARQACKPUSCHTimingConstraints');
+end
 for field = ["ControlSlot", "ControlFrame", ...
         "ScheduledAbsoluteSlot", "HARQFeedbackAbsoluteSlot", ...
         "DataAbsoluteSlot", "FeedbackAbsoluteSlot"]
