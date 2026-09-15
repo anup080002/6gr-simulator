@@ -48,6 +48,17 @@ missingDB = sixgr.artifact.writeBrowserPublicationReceipt(root, struct( ...
     "MissingTableCount", NaN, "MissingChartCount", NaN, ...
     "GeneratedAtUTC", "2026-08-05T12:00:00Z"));
 assert(missingDB.Status == "FAIL" && ~missingDB.DatabasePersisted);
+% The missing timestamp guard must preserve its own diagnostic, not throw
+% MATLAB:error:badMessageArgument while formatting a string-array message.
+caught=false;
+try
+    sixgr.artifact.writeBrowserPublicationReceipt(root,struct());
+catch cause
+    caught=true;
+    assert(strcmp(cause.identifier,'sixgr:artifact:BrowserReceiptTimestampRequired'));
+    assert(contains(cause.message,'immutable execution completion timestamp'));
+end
+assert(caught,'Missing receipt timestamps must remain rejected.');
 
 ok = true;
 fprintf("PASS testBrowserPublicationReceipt: publication receipt is actual and fail-closed.\n");
