@@ -20,6 +20,14 @@ assert(~missing.ConfiguredEffectiveOk && ...
     ~missing.ConfiguredEffectivePolicyOk && ...
     ~missing.ConfiguredEffectiveSupplementalEvaluated, ...
     "Required MIMO evidence must fail closed when the artifact is absent.");
+% A pre-existing distinct note used to prevent whole-string deduplication.
+seed=status; seed.StatusNotes="Original execution failed.";
+first=sixgr.truth.applyPersistedMIMOConfiguredEffectiveStatus(seed,runFolder,cfg);
+again=first;
+for pass=1:5
+    again=sixgr.truth.applyPersistedMIMOConfiguredEffectiveStatus(again,runFolder,cfg);
+    assert(isequaln(first,again),'Repeated MIMO status reduction must be fully idempotent.');
+end
 
 mimoPath = fullfile(layout.BeamformingCSVDir, ...
     "mimo_configured_vs_effective.csv");

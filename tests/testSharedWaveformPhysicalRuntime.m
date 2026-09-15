@@ -67,6 +67,17 @@ for event={wholeEvent,splitEvent}
 end
 splitEvent.observe(dlScoring,dlScoring,0,stop);
 splitEvent.observe(ulScoring,ulScoring,0,stop);
+% A real DL observation can finish after the tail-safe TDD reversal.
+% Keep its TX interval separate and retain the actually executed inactive
+% DL scoring samples, rather than creating a second channel execution.
+splitEvent.observe('gnb:tx','tdd_gain_crossing',0,stop);
+for plane=["ue_rx:pre_rf","ue_rx:post_rf",dlScoring]
+    splitEvent.observe(plane,'tdd_gain_crossing',0,stop+512);
+end
+splitEvent.observe('ue:tx','tdd_ul_gain_crossing',stop,stop+512);
+for plane=["gnb_rx:pre_rf","gnb_rx:post_rf",ulScoring]
+    splitEvent.observe(plane,'tdd_ul_gain_crossing',0,stop+512);
+end
 result=wholeEvent.advanceUntilEvent(stop);
 actual=struct([]); next=0;
 for last=unique([1 17 71 777 stop])
@@ -92,6 +103,8 @@ for last=unique([1 17 71 777 stop])
     actual=[actual event.Completed]; %#ok<AGROW>
     next=last;
 end
+crossing=actual(string({actual.ID})=="tdd_gain_crossing");
+actual=actual(string({actual.ID})~="tdd_gain_crossing");
 scoring=actual(endsWith(string({actual.ReceiverID}),':desired_pre_noise'));
 actual=actual(~endsWith(string({actual.ReceiverID}),':desired_pre_noise'));
 assert(numel(actual)==numel(result.Completed) && numel(scoring)==2);
@@ -199,6 +212,39 @@ for plane=["ue:tx","gnb_rx:pre_rf","gnb_rx:post_rf"]
     splitEvent.observe(plane,plane+":ul_gain_capture",stop,stop+size(u,1));
 end
 event=splitEvent.advanceUntilEvent(stop+size(u,1));
+crossing=[crossing event.Completed(string({event.Completed.ID})=="tdd_gain_crossing")];
+event.Completed=event.Completed(string({event.Completed.ID})~="tdd_gain_crossing");
+ulCrossing=event.Completed(string({event.Completed.ID})=="tdd_ul_gain_crossing");
+event.Completed=event.Completed(string({event.Completed.ID})~="tdd_ul_gain_crossing");
+crossEnergy=sixgr.truth.bindSharedLargeScaleEvidence(table(4,'VariableNames',{'Slot'}),crossing);
+assert(crossEnergy.LargeScaleInputEnergy_mWsample==energyTrial.LargeScaleInputEnergy_mWsample && ...
+    crossEnergy.LargeScaleOutputEnergy_mWsample==energyTrial.LargeScaleOutputEnergy_mWsample && ...
+    crossEnergy.LargeScaleExpectedOutputEnergy_mWsample==energyTrial.LargeScaleExpectedOutputEnergy_mWsample && ...
+    crossEnergy.LargeScaleSampleElementCount==energyTrial.LargeScaleSampleElementCount, ...
+    'A direction-inactive interval must not add reverse-link energy or fabricated gain-stage samples.');
+assert(isequal(reshape(jsondecode(crossEnergy.LargeScaleMeasurementInactiveIntervalsJSON),1,[]),[stop stop+512]) && ...
+    crossEnergy.LargeScaleMeasurementEndSampleExclusive==stop+512, ...
+    'Keep the complete observation coverage and explicitly disclose inactive gain-stage intervals.');
+crossPost=find(string({crossing.ReceiverID})=="ue_rx:post_rf");
+bad=crossing;
+bad(crossPost).Segments{1}.Execution.Links.LossReplay= ...
+    rmfield(bad(crossPost).Segments{1}.Execution.Links.LossReplay,'GainStageMeasurement');
+localError(@()sixgr.truth.bindSharedLargeScaleEvidence(table(4,'VariableNames',{'Slot'}),bad), ...
+    'sixgr:truth:MissingExecutedGainEnergy');
+bad=crossing;
+entries=bad(crossPost).Segments{end}.Execution.ScoringPlanes;
+hit=find(string({entries.ID})==dlScoring); assert(isscalar(hit));
+entries(hit).Active=true;
+bad(crossPost).Segments{end}.Execution.ScoringPlanes=entries;
+localError(@()sixgr.truth.bindSharedLargeScaleEvidence(table(4,'VariableNames',{'Slot'}),bad), ...
+    'sixgr:truth:MissingExecutedGainEnergy');
+bad=crossing(string({crossing.ReceiverID})~=dlScoring);
+localError(@()sixgr.truth.bindSharedLargeScaleEvidence(table(4,'VariableNames',{'Slot'}),bad), ...
+    'sixgr:truth:MissingExecutedGainEnergy');
+bad=crossing;
+bad(string({bad.ReceiverID})==dlScoring).Observation=crossing(crossPost).Observation;
+localError(@()sixgr.truth.bindSharedLargeScaleEvidence(table(4,'VariableNames',{'Slot'}),bad), ...
+    'sixgr:truth:InactiveGainEvidenceNonzeroContribution');
 ulChannel=event.Execution.ChannelReferences;
 assert(isscalar(ulChannel) && ulChannel.TX=="ue" && ulChannel.RX=="gnb_rx" && ...
     ulChannel.Reference.ObservationStartSample==stop && ...
@@ -211,6 +257,14 @@ assert(size(ulReference,2)==nt && any(ulReference(:)~=0) && all(dlInactive(:)==0
 ulPlanes=event.Completed(ismember(string({event.Completed.ReceiverID}), ...
     ["ue:tx","gnb_rx:pre_rf","gnb_rx:post_rf"]));
 ulEnergy=sixgr.truth.bindSharedLargeScaleEvidence(table(5,'VariableNames',{'Slot'}),ulPlanes);
+ulCrossEnergy=sixgr.truth.bindSharedLargeScaleEvidence(table(5,'VariableNames',{'Slot'}),ulCrossing);
+assert(ulCrossEnergy.LargeScaleInputEnergy_mWsample==ulEnergy.LargeScaleInputEnergy_mWsample && ...
+    ulCrossEnergy.LargeScaleOutputEnergy_mWsample==ulEnergy.LargeScaleOutputEnergy_mWsample && ...
+    ulCrossEnergy.LargeScaleSampleElementCount==ulEnergy.LargeScaleSampleElementCount, ...
+    'A receive prefix before TDD reversal must not import the prior DL gain energy.');
+inactiveIntervals=jsondecode(ulCrossEnergy.LargeScaleMeasurementInactiveIntervalsJSON);
+assert(inactiveIntervals(1,1)==0 && inactiveIntervals(end,2)==stop && ...
+    all(inactiveIntervals(2:end,1)==inactiveIntervals(1:end-1,2)));
 ulRF=sixgr.truth.bindSharedRFExecutionEvidence(table(5,'VariableNames',{'Slot'}),ulPlanes);
 validatedULRF=sixgr.channel.validateSharedRFExecutionEvidence(ulRF);
 assert(validatedULRF.Ok,'Actual UL RF manifest validation failed: %s',validatedULRF.FailureReason);

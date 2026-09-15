@@ -171,9 +171,5 @@ end
 end
 
 function notes = localJoinStatusNotes(existing, addition)
-existing = string(existing);
-addition = string(addition);
-parts = strtrim([existing(:); addition(:)]);
-parts = unique(parts(strlength(parts) > 0), "stable");
-notes = strjoin(parts, " | ");
+notes=sixgr.util.joinStatusNotes(existing,addition);
 end

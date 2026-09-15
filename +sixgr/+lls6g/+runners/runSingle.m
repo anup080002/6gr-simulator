@@ -6992,19 +6992,7 @@ end
 end
 
 function note = localJoinStatusNotes(varargin)
-parts = strings(0, 1);
-for i = 1:nargin
-    txt = strtrim(string(varargin{i}));
-    if strlength(txt) > 0
-        parts(end+1, 1) = txt; %#ok<AGROW>
-    end
-end
-if isempty(parts)
-    note = "";
-    return;
-end
-parts = unique(parts, "stable");
-note = strjoin(parts, " | ");
+note=sixgr.util.joinStatusNotes(varargin{:});
 end
 
 function metadata = localBenchmarkMetadata(scfg, descriptor, aiEnabled)

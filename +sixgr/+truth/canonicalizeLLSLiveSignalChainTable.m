@@ -80,13 +80,18 @@ appliedCQI = nan(n, 1);
 for field = ["LinkAdaptationAppliedFeedbackSourceSlot", ...
         "FeedbackSourceSlot", "CQIFeedbackSourceSlot"]
     if ismember(field, names)
-        candidate = double(T.(char(field)));
+        candidate = sixgr.truth.numericMeasurementColumn(T.(char(field)),field);
+        assert(numel(candidate)==n,'sixgr:truth:InvalidNumericMeasurementColumn', ...
+            '%s requires one scalar per trial row.',field);
         take = ~isfinite(feedbackSourceSlot) & isfinite(candidate);
         feedbackSourceSlot(take) = candidate(take);
     end
 end
 if ismember("AppliedLinkAdaptationResolvedCQI", names)
-    appliedCQI = double(T.AppliedLinkAdaptationResolvedCQI);
+    appliedCQI = sixgr.truth.numericMeasurementColumn( ...
+        T.AppliedLinkAdaptationResolvedCQI,'AppliedLinkAdaptationResolvedCQI');
+    assert(numel(appliedCQI)==n,'sixgr:truth:InvalidNumericMeasurementColumn', ...
+        'AppliedLinkAdaptationResolvedCQI requires one scalar per trial row.');
 end
 % A decoded grant, a finite MCS, or a textual "adaptive" policy is not
 % proof that causal CSI was applied to this grant.  The applied flag is
@@ -95,7 +100,16 @@ end
 % bootstrap rows whose selection-source text was overwritten downstream.
 noCausalFeedbackEvidence = ~isfinite(feedbackSourceSlot) & ~isfinite(appliedCQI);
 if any(noCausalFeedbackEvidence)
-    applied = logical(T.LinkAdaptationApplied);
+    raw = T.LinkAdaptationApplied;
+    if ischar(raw) || isstring(raw) || iscellstr(raw)
+        raw=lower(strtrim(string(raw)));
+        raw(raw=="true")="1"; raw(raw=="false")="0";
+    end
+    applied = sixgr.truth.numericMeasurementColumn(raw,'LinkAdaptationApplied');
+    assert(numel(applied)==n && all(applied==0 | applied==1), ...
+        'sixgr:truth:InvalidLinkAdaptationAppliedEvidence', ...
+        'LinkAdaptationApplied must contain one explicit binary flag per trial row.');
+    applied=logical(applied);
     applied(noCausalFeedbackEvidence) = false;
     T.LinkAdaptationApplied = applied;
 end

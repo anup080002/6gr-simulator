@@ -1083,13 +1083,7 @@ end
 end
 
 function notes = localJoinStatusNotes(existing, addition)
-existingParts = string(existing);
-additionParts = string(addition);
-parts = [existingParts(:); additionParts(:)];
-parts = strtrim(parts(:));
-parts = parts(strlength(parts) > 0);
-parts = unique(parts, "stable");
-notes = strjoin(parts, " | ");
+notes=sixgr.util.joinStatusNotes(existing,addition);
 end
 
 function mu = localDeriveNumerologyMu(scsKHz)
