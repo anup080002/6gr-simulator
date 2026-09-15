@@ -3734,6 +3734,7 @@ for sweepIdx = 1:numel(snrGrid)
                     height(lateFeedbackBlockedPUSCH), numel(pendingULGrants));
             end
         end
+        sharedDueULGrants=repmat(struct(),0,1);
         if allowUL
             if allowDL
                 runtimeState = sixgr.truth.CoupledTruthRuntime.startSlot(runtimeState, cfg, "UL", sweepIdx, numel(snrGrid), absoluteFrame, totalCanonicalSlots, snrVal);
@@ -3776,6 +3777,7 @@ for sweepIdx = 1:numel(snrGrid)
                 end
             end
             runtimeState = localRecordQueuedULScheduleForCurrentSlot(runtimeState, ulGrants);
+            sharedDueULGrants=ulGrants;
             if ~isempty(ulGrants) && ~isfield(runtimeState,'SharedWaveformStream')
                 [runtimeState, ulTrials, ulConstT, ulStates] = localExecuteCoupledDirectionBatch( ...
                     runtimeState, cfg, runFolder, multiUser, userCfg, ulGrants, "UL", snrVal, absoluteFrame, ulStates, ...
@@ -3784,9 +3786,9 @@ for sweepIdx = 1:numel(snrGrid)
             end
         end
         if isfield(runtimeState,'SharedWaveformStream')
-            runtimeState.SharedPendingULGrants=pendingULGrants;
-            [runtimeState,~]=runtimeState.SharedWaveformStream.advanceSlot( ...
-                runtimeState,cfg,@localCompleteSharedControlObservations);
+            [runtimeState,~]=sixgr.truth.advanceSharedSlotWithULGrants( ...
+                runtimeState,cfg,pendingULGrants,sharedDueULGrants, ...
+                @localCompleteSharedControlObservations);
             [runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates] = ...
                 localDrainSharedDataPlans(runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates);
             pendingULGrants=sixgr.util.structGet(runtimeState,'SharedPendingULGrants',repmat(struct(),0,1));
