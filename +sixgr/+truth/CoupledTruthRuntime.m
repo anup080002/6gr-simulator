@@ -1976,6 +1976,10 @@ methods(Static, Access=private)
         end
         userMeta = sixgr.util.structGet(cfgU, "lls6g.userContext", struct());
         userMeta.RuntimeServingCell = servingCell;
+        % Receiver reference identity uses the runtime layout index, not
+        % the PCI, deployment CellID, or RRC serving-cell index. Rebind it
+        % together with the serving link before freezing a PHY job.
+        userMeta.RuntimeServingCellIndex = servingCell;
         userMeta.RuntimeServingCellID = double(servingPhyIdentity.CellID);
         userMeta.RuntimeServingPCI = double(servingPhyIdentity.PCI);
         userMeta.RuntimeServingNCellID = double(servingPhyIdentity.NCellID);
