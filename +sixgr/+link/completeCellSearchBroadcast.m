@@ -93,6 +93,8 @@ if logical(options.UseRuntimeChannel)
         double(rec.ObservedSSBOccasionIndex));
     rec.ReferenceSignalId = double(rec.ObservedSSBOccasionIndex);
     rec.ReferenceSignalTxEPRE_dBm = double(txSSBPower.AggregateEPRE_dBm);
+    rec.ReferenceSignalTxMeasurementFFTSize=txSSBPower.Nfft;
+    rec.ReferenceSignalTxMeasurementGridScaleToSqrtW=txSSBPower.GridScaleToSqrtW;
     rec.SSSTxPowerDeltaFromSignalled_dB = rec.ReferenceSignalTxEPRE_dBm - rec.SignalledSSPBCHBlockPower_dBm;
     rec.ReferenceSignalTxEPREPerAntenna_dBm = string( ...
         txSSBPower.PerTransmitPortEPREToken_dBm);
@@ -220,6 +222,11 @@ out.PBCH = struct("Ok", logical(rec.BCHCrcPass), "ErrFlag", double(~logical(rec.
     "PostEqualizationNoiseVarianceSource", string(sixgr.util.structGet(rec, "PostEqualizationNoiseVarianceSource", "")), ...
     "StrictReceiverEvidenceOk", logical(sixgr.util.structGet(rec, "StrictReceiverEvidenceOk", false)));
 out.SIB1 = rec;
+powerEvidence=sixgr.link.ssbPowerReferenceEvidence(rec);
+for field=string(fieldnames(powerEvidence)).'
+    out.(field)=powerEvidence.(field);
+    out.PBCH.(field)=powerEvidence.(field);
+end
 for field=["SSBWindowRSSIPerReceiveAntenna_dBm","SSBWindowPowerMeasurementJSON"]
     out.(field)=string(sixgr.util.structGet(rec,field,""));
     out.PBCH.(field)=out.(field);
@@ -380,6 +387,7 @@ function measurement = localMeasureTransmitSSBEPRE( ...
 measurement = struct( ...
     "Available", false, ...
     "AggregateEPRE_dBm", NaN, ...
+    "Nfft",NaN,"GridScaleToSqrtW",NaN, ...
     "PerTransmitPortEPREToken_dBm", "", ...
     "Source", "unavailable_exact_tx_sss_epre", ...
     "FailureReason", "");
@@ -416,6 +424,8 @@ try
     perPort_dBm = nan(size(eprePerPort_W));
     perPort_dBm(valid) = 10 * log10(eprePerPort_W(valid)) + 30;
     measurement.Available = true;
+    measurement.Nfft=nfft;
+    measurement.GridScaleToSqrtW=nfft*sqrt(1000);
     measurement.AggregateEPRE_dBm = ...
         10 * log10(sum(eprePerPort_W(valid))) + 30;
     measurement.PerTransmitPortEPREToken_dBm = ...

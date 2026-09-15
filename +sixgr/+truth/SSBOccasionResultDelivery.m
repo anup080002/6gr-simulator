@@ -45,6 +45,10 @@ methods(Static)
         row.SS_RSRP_dB_re_UnitOccupiedRE_Es=double(sixgr.util.structGet(r,'SS_RSRP_dB_re_UnitOccupiedRE_Es',NaN));
         row.SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es= ...
             string(sixgr.util.structGet(r,'SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es',""));
+        powerEvidence=sixgr.link.ssbPowerReferenceEvidence(r);
+        for field=string(fieldnames(powerEvidence)).'
+            row.(field)=powerEvidence.(field);
+        end
         row.MeasurementClockEpoch=state.SharedWaveformStream.Physical.ConfigurationEpoch;
         row.ResultCompletedAtSample=state.SharedWaveformStream.Events.NextSampleIndex;
         row.RecoveryScope=string(r.RecoveryScope);
@@ -80,6 +84,13 @@ methods(Static)
             % Preserve actual sample-clock/RSSI evidence in the already exported
             % canonical measurement ledger, including failures and missing data.
             ledger=state.ReferenceSignalMeasurementTable;
+            powerFields=sixgr.link.ssbPowerReferenceEvidence();
+            for field=string(fieldnames(powerFields)).'
+                if ~ismember(field,string(ledger.Properties.VariableNames))
+                    ledger.(field)=repmat(powerFields.(field),height(ledger),1);
+                end
+                ledger.(field)(end)=row.(field);
+            end
             for field=["ObservationStartSample","ObservationEndSampleExclusive","ObservationSampleRateHz","BurstSlot","MeasuredNCellID","ExpectedNCellID"]
                 if ~ismember(field,string(ledger.Properties.VariableNames)), ledger.(field)=nan(height(ledger),1); end
                 ledger.(field)(end)=row.(field);

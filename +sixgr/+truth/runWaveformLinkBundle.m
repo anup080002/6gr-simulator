@@ -12309,6 +12309,10 @@ for k = 1:nTrials
             out, "SSSINRNoiseInterferenceRECount", NaN));
         r.SSPhysicalMeasurementStatus = string(sixgr.util.structGet( ...
             out, "SSPhysicalMeasurementStatus", "unavailable"));
+        powerEvidence=sixgr.link.ssbPowerReferenceEvidence(out);
+        for field=string(fieldnames(powerEvidence)).'
+            r.(field)=powerEvidence.(field);
+        end
         r.SSSINRFailureReason = string(sixgr.util.structGet( ...
             out, "SSSINRFailureReason", ""));
         r.ReferenceSignalId = double(sixgr.util.structGet( ...
@@ -17311,6 +17315,10 @@ row.SSSINRReferencePlane = "";
 row.SSSINRNoiseInterferencePowerPerReceiveAntenna_W = "";
 row.SSSINRDesiredPowerPerReceiveAntenna_W = "";
 row.SSSINRNoiseInterferenceRECount = NaN;
+powerEvidence=sixgr.link.ssbPowerReferenceEvidence();
+for field=string(fieldnames(powerEvidence)).'
+    row.(field)=powerEvidence.(field);
+end
 row.SSPhysicalMeasurementStatus = "unavailable";
 row.SSSINRFailureReason = "";
 row.ReferenceSignalId = NaN;

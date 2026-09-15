@@ -78,6 +78,14 @@ assert(all(isfinite(T.SS_SINR_dB)));
 if normalized
     assert(all(isnan(T.SS_RSRP_dBm)) && all(isfinite(T.SS_RSRP_dB_re_UnitOccupiedRE_Es)) && ...
         all(T.PowerReferencePlane=="normalized_fixed_esn0_unit_occupied_re_es"));
+    assert(all(abs(T.SSPowerReferenceOffset_dB-20*log10(T.SSMeasurementFFTSize))<1e-10));
+    for k=1:height(T)
+        desired=str2double(split(T.SSSINRDesiredPowerPerReceiveAntenna_UnitOccupiedRE_Es(k),'|'));
+        disturbance=str2double(split(T.SSSINRNoiseInterferencePowerPerReceiveAntenna_UnitOccupiedRE_Es(k),'|'));
+        assert(abs(T.SS_RSRP_dB_re_UnitOccupiedRE_Es(k)-max(10*log10(desired)))<1e-8 && ...
+            abs(T.SS_SINR_dB(k)-max(10*log10(desired./disturbance)))<1e-8, ...
+            'Actual SSB delivery must preserve same-reference RSRP and SINR operand closure.');
+    end
 else
     assert(all(isfinite(T.SS_RSRP_dBm)));
 end
@@ -105,6 +113,11 @@ if normalized
     if isnumeric(raw), assert(all(isnan(raw)));
     else, assert(all(ismissing(string(raw)) | strlength(string(raw))==0)); end
     assert(all(strlength(ledger.SSBWindowPowerMeasurementJSON)==0));
+    for field=["SSSINRDesiredPowerPerReceiveAntenna_UnitOccupiedRE_Es", ...
+            "SSSINRNoiseInterferencePowerPerReceiveAntenna_UnitOccupiedRE_Es"]
+        assert(isequal(string(persisted.(field)),string(ledger.(field))), ...
+            'Normalized signal/disturbance operands must survive the actual measurement-ledger CSV.');
+    end
 else
     assert(isequal(string(persisted.SSBWindowPowerMeasurementJSON),ledger.SSBWindowPowerMeasurementJSON));
 end
