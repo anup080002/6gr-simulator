@@ -1496,7 +1496,11 @@ def missing_chart_contract_inventory(run_root: Path) -> list[dict[str, str]]:
 def validate_run_root(run_root: Path) -> Path:
     resolved = run_root.resolve()
     production_root = (REPO_ROOT / "results" / "lls").resolve()
-    allowed_roots = [(production_root, 2)]
+    # Match the repo-local logs authority admitted by resolveResultsRoot.m.
+    # The same exact-run depth and persisted-marker checks remain mandatory;
+    # logs itself, a scenario parent, siblings and escaped paths are not runs.
+    logs_root = (REPO_ROOT / "logs").resolve()
+    allowed_roots = [(production_root, 2), (logs_root, 2)]
     scratch_token = os.environ.get("SIXGR_REGRESSION_SCRATCH_ROOT", "").strip()
     if scratch_token:
         scratch_root = Path(scratch_token).expanduser().resolve()

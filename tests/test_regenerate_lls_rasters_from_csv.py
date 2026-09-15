@@ -195,6 +195,82 @@ def test_run_root_guard_accepts_only_exact_regression_scratch_run(
         MODULE.validate_run_root(scratch)
 
 
+def _write_log_run_marker_fixture(run: Path) -> None:
+    # Declared path-authority fixture only, not waveform or CRC evidence.
+    (run / "meta").mkdir(parents=True)
+    (run / "reports" / "csv").mkdir(parents=True)
+    (run / "air_interface" / "csv").mkdir(parents=True)
+    (run / "meta" / "scenario_config_identity.json").write_text("{}", encoding="utf-8")
+    (run / "meta" / "scenario_config_resolved.json").write_text(
+        json.dumps({"scenario": {"runner_profile": "ctrl6gr_pdcch_study"},
+                    "simulation": {"link_direction": "dl"}}), encoding="utf-8"
+    )
+    (run / "reports" / "csv" / "scenario_summary.csv").write_text(
+        "RunCompletion\nfailed\n", encoding="utf-8"
+    )
+    (run / "air_interface" / "csv" / "pdcch_trials.csv").write_text(
+        "TrialId,CRCOK,Source\n1,0,explicit_path_authority_fixture\n", encoding="utf-8"
+    )
+
+
+@pytest.mark.parametrize("relative", ["logs/scenario/run_1", "logs/scenario_runs/lls/scenario/run_1"])
+def test_run_root_guard_accepts_exact_logs_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, relative: str
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.delenv("SIXGR_REGRESSION_SCRATCH_ROOT", raising=False)
+    run = MODULE.REPO_ROOT / relative
+    _write_log_run_marker_fixture(run)
+    assert MODULE.validate_run_root(run) == run.resolve()
+
+
+@pytest.mark.parametrize("relative", ["logs", "logs/scenario"])
+def test_run_root_guard_rejects_broad_logs_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, relative: str
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.delenv("SIXGR_REGRESSION_SCRATCH_ROOT", raising=False)
+    with pytest.raises(SystemExit, match="exact scenario/run folder"):
+        MODULE.validate_run_root(MODULE.REPO_ROOT / relative)
+
+
+@pytest.mark.parametrize("relative", ["logs_sibling/scenario/run_1", "logs/../../outside/scenario/run_1"])
+def test_run_root_guard_rejects_logs_sibling_and_escape(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, relative: str
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.delenv("SIXGR_REGRESSION_SCRATCH_ROOT", raising=False)
+    run = MODULE.REPO_ROOT / relative
+    _write_log_run_marker_fixture(run.resolve())
+    with pytest.raises(SystemExit, match="Refusing raster replacement outside"):
+        MODULE.validate_run_root(run)
+
+
+def test_run_root_guard_requires_logs_run_markers(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.delenv("SIXGR_REGRESSION_SCRATCH_ROOT", raising=False)
+    run = MODULE.REPO_ROOT / "logs" / "scenario" / "run_1"
+    run.mkdir(parents=True)
+    with pytest.raises(SystemExit):
+        MODULE.validate_run_root(run)
+
+
+def test_run_root_guard_rejects_empty_logs_authority(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path / "repo")
+    monkeypatch.delenv("SIXGR_REGRESSION_SCRATCH_ROOT", raising=False)
+    run = MODULE.REPO_ROOT / "logs" / "scenario" / "run_1"
+    _write_log_run_marker_fixture(run)
+    (run / "air_interface" / "csv" / "pdcch_trials.csv").write_text(
+        "TrialId,CRCOK\n", encoding="utf-8"
+    )
+    with pytest.raises(SystemExit, match="header-only or empty authority CSVs"):
+        MODULE.validate_run_root(run)
+
+
 def test_run_root_guard_does_not_trust_scratch_siblings(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
