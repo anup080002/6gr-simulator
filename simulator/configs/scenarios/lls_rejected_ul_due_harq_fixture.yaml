@@ -13,6 +13,7 @@ tdd_timing:
 pucch_resources:
   dl_data_to_ul_ack: [4]
   sr_resource_ids: []
+  scheduling_request_resources: []
   overlap_policy:
     uci_on_pusch_enabled: true
 

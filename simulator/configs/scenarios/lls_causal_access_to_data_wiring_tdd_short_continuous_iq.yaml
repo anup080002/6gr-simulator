@@ -24,6 +24,20 @@ pucch:
   detection_threshold_format0_one_symbol: 0.49
   detection_threshold_format0_two_symbols: 0.42
 
+# Installed SR opportunities for resource 0, already present in the inherited
+# inventory. Slot numbering on the wire is zero-based: sl5/offset3 gives
+# one-based slots 4,9,14,... with resource symbols 12:13 in the TDD UL region.
+# This configures opportunities, not positive SRs or decoded feedback.
+pucch_resources:
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 3
+      priority_index: 0
+      additional_periodicity_capability: false
+
 # Explicit LLS higher-layer initialization; not a simulated MAC CE.
 # Type-A average-delay transfer is verified at the PDSCH DM-RS receiver.
 mimo:

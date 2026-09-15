@@ -11,9 +11,14 @@ cfg=sixgr.lls6g.buildInternalConfig(s,outputFolder);
 id=cfg.phy.frame.DefaultIdentity;
 ue=struct('UEID',1,'RNTI',1,'ServingCell',1,'PUCCHCell',1, ...
     'ComponentCarrier',id.ScheduledCCID,'ActiveULBWP',id.ULBWPID);
-reject(@()sixgr.truth.buildConfiguredSRCalendar(cfg,ue,1,58), ...
+baseline=sixgr.truth.buildConfiguredSRCalendar(cfg,ue,1,58);
+assert(isequal(baseline.Slot,(4:5:54).') && all(baseline.ULResourceAvailable));
+assert(isequal(double(cfg.validation.pucch_resources.sr_resource_ids(:)),0));
+bad=cfg;
+bad.validation.pucch_resources=rmfield(bad.validation.pucch_resources,'scheduling_request_resources');
+reject(@()sixgr.truth.buildConfiguredSRCalendar(bad,ue,1,58), ...
     'sixgr:truth:MissingInstalledSRCalendar');
-fprintf('SR_BASELINE_MISSING_CALENDAR_REPRODUCED\n');
+fprintf('SR_BASELINE_INSTALLED_CALENDAR_PASS missing_calendar_rejection_preserved=1\n');
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile(root,'simulator','configs','scenarios', ...
     'lls_tdd_configured_sr_calendar_fixture.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,outputFolder);
@@ -21,6 +26,7 @@ catalog=cfg.phy.pucch.srPeriodCatalog;
 fixture=cfg.validation.pucch_resources;
 localSaveEvidence(s,cfg,root,outputFolder);
 legal=sixgr.truth.buildConfiguredSRCalendar(cfg,ue,1,58);
+assert(isequaln(baseline,legal),'The baseline must install the independently checked SR fixture calendar.');
 assert(isequal(legal.Slot,(4:5:54).') && all(legal.ULResourceAvailable));
 assert(all(legal.StartSymbol==12 & legal.NumSymbols==2) && all(legal.ResourceBlocker==""));
 assert(all(legal.EvidenceClass=="configured_SR_opportunity_not_transmission_or_reception"));
