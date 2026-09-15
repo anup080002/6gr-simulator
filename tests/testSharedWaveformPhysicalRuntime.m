@@ -53,6 +53,10 @@ guard=double(state.ChannelPadSamples)+9;
 % the actual idle interval before that boundary, not an RX padding tail.
 stop=round(4e-3*fs);
 assert(stop-size(x,1)>=guard);
+% Capture the same direction-crossing windows used by the gain checks.
+% No extra channel execution or coefficient fill is permitted.
+split.requestLinkChannelReference(splitEvent,'serving','ue_rx',0,stop+512);
+split.requestLinkChannelReference(splitEvent,'serving','gnb_rx',0,stop+512);
 for event={wholeEvent,splitEvent}
     e=event{1};
     % This proves node composition happens BEFORE RF/PA. These are known
@@ -85,6 +89,8 @@ for last=unique([1 17 71 777 stop])
     assert(event.Execution.StartSample==next && event.Execution.EndSampleExclusive==last);
     assert(numel(event.Execution.Links)==1 && numel(event.Execution.RX)==2);
     a=max(next,3); b=min(last,41); references=event.Execution.ChannelReferences;
+    references=references(arrayfun(@(c)c.Reference.ObservationStartSample==3 && ...
+        c.Reference.ObservationEndSampleExclusive==41,references));
     if a<b
         assert(isscalar(references) && references.LinkID=="serving" && ...
             references.Reference.ObservationStartSample==3 && ...
@@ -246,6 +252,7 @@ bad(string({bad.ReceiverID})==dlScoring).Observation=crossing(crossPost).Observa
 localError(@()sixgr.truth.bindSharedLargeScaleEvidence(table(4,'VariableNames',{'Slot'}),bad), ...
     'sixgr:truth:InactiveGainEvidenceNonzeroContribution');
 ulChannel=event.Execution.ChannelReferences;
+ulChannel=ulChannel(arrayfun(@(c)c.Reference.ObservationStartSample==stop,ulChannel));
 assert(isscalar(ulChannel) && ulChannel.TX=="ue" && ulChannel.RX=="gnb_rx" && ...
     ulChannel.Reference.ObservationStartSample==stop && ...
     ulChannel.Reference.NumTransmitAntennas==nr && ulChannel.Reference.NumReceiveAntennas==nt && ...
@@ -265,6 +272,8 @@ assert(ulCrossEnergy.LargeScaleInputEnergy_mWsample==ulEnergy.LargeScaleInputEne
 inactiveIntervals=jsondecode(ulCrossEnergy.LargeScaleMeasurementInactiveIntervalsJSON);
 assert(inactiveIntervals(1,1)==0 && inactiveIntervals(end,2)==stop && ...
     all(inactiveIntervals(2:end,1)==inactiveIntervals(1:end-1,2)));
+localChannelCrossing(crossing,dlScoring,fs,[0 stop],[stop stop+512]);
+localChannelCrossing(ulCrossing,ulScoring,fs,[stop stop+512],[0 stop]);
 ulRF=sixgr.truth.bindSharedRFExecutionEvidence(table(5,'VariableNames',{'Slot'}),ulPlanes);
 validatedULRF=sixgr.channel.validateSharedRFExecutionEvidence(ulRF);
 assert(validatedULRF.Ok,'Actual UL RF manifest validation failed: %s',validatedULRF.FailureReason);
@@ -315,4 +324,62 @@ try, action(); catch cause
     assert(string(cause.identifier)==id,'Expected %s; got %s: %s',id,cause.identifier,cause.message); return;
 end
 error('test:ExpectedError','Expected %s.',id);
+end
+
+function localChannelCrossing(planes,scoringID,fs,activeBounds,inactiveBounds)
+% This is a physical-capture fixture, not a decoded TRS/data claim. The
+% envelope supplies only the exact observation-clock contract.
+scoring=find(string({planes.ReceiverID})==scoringID);
+observation=planes(scoring).Observation;
+envelope=struct('ExecutionStage',"trs_waveform_prepared_not_received", ...
+    'SampleRateHz',fs,'TransmitStartSample',observation.StartSample, ...
+    'NumSamples',observation.EndSampleExclusive-observation.StartSample);
+root=tempname(fullfile(pwd,'logs')); mkdir(root);
+[row,context]=sixgr.truth.exportSharedChannelObservation(root, ...
+    table(1,'VariableNames',{'Slot'}),planes,envelope,scoringID);
+verified=sixgr.channel.validateSharedChannelObservationArtifact(root,row);
+assert(row.ChannelObservationStartSample==observation.StartSample && ...
+    row.ChannelObservationEndSampleExclusive==observation.EndSampleExclusive && ...
+    row.RuntimeChannelStartSample==activeBounds(1) && ...
+    row.RuntimeChannelEndSample==activeBounds(2) && ...
+    row.RuntimeChannelCanonicalInputSamples==diff(activeBounds), ...
+    'Whole RX observation and actually executed coefficient clocks must remain distinct.');
+assert(row.RuntimeChannelCaptureScope=="actual_contiguous_direction_active_interval_within_receive_window" && ...
+    isequal(context.PostChannelWaveform,observation.readComplete()));
+inactive=verified.Manifest.InactiveIntervals;
+if isvector(inactive), inactive=reshape(inactive,1,2); end
+assert(inactive(1,1)==inactiveBounds(1) && inactive(end,2)==inactiveBounds(2));
+saved=load(verified.MATPath,'Captures');
+gains=cellfun(@(c)c.Reference.PathGains,saved.Captures,'UniformOutput',false);
+times=cellfun(@(c)c.Reference.SampleTimes_s,saved.Captures,'UniformOutput',false);
+assert(isequal(context.RuntimeChannelPathGains,cat(1,gains{:})) && ...
+    isequal(context.RuntimeChannelPathGainSampleTimes_s,vertcat(times{:})) && ...
+    size(context.RuntimeChannelPathGains,1)==diff(activeBounds), ...
+    'Diagnostic coefficients must be exactly the captured active arrays, with no invented zero prefix/tail.');
+% Removing one active coefficient must still fail rather than become inactive.
+bad=planes;
+rxID=extractBefore(string(planes(endsWith(string({planes.ReceiverID}),':post_rf')).ReceiverID),':post_rf');
+changed=false;
+for k=1:numel(bad(scoring).Segments)
+    captures=bad(scoring).Segments{k}.Execution.ChannelReferences;
+    hit=find(arrayfun(@(c)c.RX==rxID && ...
+        c.Reference.ObservationStartSample==observation.StartSample && ...
+        c.Reference.ObservationEndSampleExclusive==observation.EndSampleExclusive,captures),1);
+    if isempty(hit), continue; end
+    captures(hit).Reference.PathGains=captures(hit).Reference.PathGains(2:end,:,:,:);
+    bad(scoring).Segments{k}.Execution.ChannelReferences=captures;
+    changed=true;
+    break;
+end
+assert(changed,'The negative fixture must actually remove an active coefficient.');
+localError(@()sixgr.truth.exportSharedChannelObservation(root, ...
+    table(1,'VariableNames',{'Slot'}),bad,envelope,scoringID), ...
+    'sixgr:truth:InvalidSharedChannelReference');
+bad=planes;
+bad(scoring).Observation=planes(endsWith(string({planes.ReceiverID}),':post_rf')).Observation;
+localError(@()sixgr.truth.exportSharedChannelObservation(root, ...
+    table(1,'VariableNames',{'Slot'}),bad,envelope,scoringID), ...
+    'sixgr:truth:InactiveChannelDiagnosticNonzeroContribution');
+fprintf('TDD_CHANNEL_CROSSING_PASS active=[%d,%d) inactive=[%d,%d) folder=%s\n', ...
+    activeBounds,inactiveBounds,root);
 end
