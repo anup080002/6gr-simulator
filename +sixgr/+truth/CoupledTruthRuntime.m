@@ -1293,11 +1293,16 @@ methods(Static)
             if ~isempty(csiIndex), csi=table2struct(reports(csiIndex,:)); end
         end
         execution=struct('Config',cfg,'PrepareOnly',true);
+        identity=cfg.phy.frame.DefaultIdentity;
+        receiveUE=struct('UEID',ue,'RNTI',state.MultiUser.RNTIStart+ue-1, ...
+            'ServingCell',state.CurrentServingIdx(ue),'PUCCHCell',state.CurrentServingIdx(ue), ...
+            'ComponentCarrier',identity.ScheduledCCID,'ActiveULBWP',identity.ULBWPID);
+        receiveCalendar=sixgr.truth.configuredCSIReportCalendar(cfg,receiveUE,slot);
         % Wire the installed HARQ-only procedure without silently removing
         % configured CSI/SR/PUSCH obligations from a combined hypothesis.
         if height(harqRows)==height(rows) && isempty(fieldnames(csi)) && ...
                 all(upper(string(rows.FeedbackForDirection))=="DL") && ...
-                ~logical(sixgr.util.structGet(cfg,'phy.csi.reportCSI',true))
+                (isempty(receiveCalendar) || ~any(receiveCalendar.ULResourceAvailable))
             % Installed SR inventory may have no occasion in this window.
             % The independent hypothesis validates its calendar and rejects
             % missing configuration or real overlap before waveform creation.

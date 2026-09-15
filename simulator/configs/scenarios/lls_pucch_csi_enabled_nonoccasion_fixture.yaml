@@ -1,0 +1,19 @@
+inherits:
+  - ./lls_pucch_baseline_signal_fixture.yaml
+
+meta:
+  scenario_id: lls_pucch_csi_enabled_nonoccasion_fixture
+  research_class: optional_research_experiment
+  description: >
+    TDD shared receive-only HARQ component with CSI reporting enabled.
+    Its installed CSI calendar uses slots 5 and 10, independently of the
+    tested HARQ reception in slot 9. CSI source/reception is not executed
+    by this bounded component; it does not qualify a combined CSI occasion.
+
+csi_acquisition_and_reporting:
+  csi_report_offset_slots: 4
+
+pucch_resources:
+  sr_resource_ids: []
+  overlap_policy:
+    uci_on_pusch_enabled: false

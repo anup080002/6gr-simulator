@@ -28,6 +28,21 @@ snapshot=nominal;
 assert(isequaln(snapshot,again) && all(cellfun(@(a,b)a.Digest==b.Digest,contexts,againContexts)));
 empty=sixgr.truth.buildPeriodicCSIReportObligations(cfg,ue,3,3);
 assert(isempty(empty));
+% The receiver wrapper distinguishes disabled CSI, non-occasions and actual
+% obligations without consulting UE measurement or pending-payload state.
+assert(isempty(sixgr.truth.configuredCSIReportCalendar(alternative,ue,35)));
+active=sixgr.truth.configuredCSIReportCalendar(alternative,ue,34);
+assert(height(active)==1 && active.ReportSlot==34 && active.ULResourceAvailable);
+disabled=alternative; disabled.phy.csi.reportCSI=false;
+assert(isempty(sixgr.truth.configuredCSIReportCalendar(disabled,ue,34)));
+for value={NaN,.5,[true false],"true"}
+    bad=alternative; bad.phy.csi.reportCSI=value{1};
+    reject(@()sixgr.truth.configuredCSIReportCalendar(bad,ue,34), ...
+        'sixgr:truth:InvalidCSIReceiveEnablement');
+end
+bad=alternative; bad.phy.csi.reportTrigger='aperiodic';
+reject(@()sixgr.truth.configuredCSIReportCalendar(bad,ue,34), ...
+    'sixgr:truth:UnresolvedCSIReceiveActivation');
 badUE=ue; badUE.ExpectedBits=int8([1;0]);
 reject(@()sixgr.truth.buildPeriodicCSIReportObligations(cfg,badUE,1,58), ...
     'sixgr:truth:InvalidCSIReportingIdentity');
