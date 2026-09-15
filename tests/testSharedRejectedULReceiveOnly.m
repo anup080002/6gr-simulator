@@ -107,6 +107,12 @@ if withHARQ
     stats=state.DLHarq.Stats; outcome=string(d.FeedbackOutcome);
     assert(stats.Ack==double(outcome=="ACK") && stats.Nack==double(outcome=="NACK") && stats.Dtx==double(outcome=="DTX"));
     writetable(d,fullfile(output,'independent_pusch_harq_feedback.csv'));
+    decisions=state.SharedPUSCHHARQDecisionAuditTable;
+    assert(height(decisions)==1 && decisions.ObservationID==result.UCIReceiveContext.Data.ObservationID && ...
+        decisions.ReceiverUsable==actual.DecodeOk && decisions.ReceiverErasure==actual.DTXFlag && ...
+        decisions.AvailableAtSample==result.ReceiverInvokedAtSample);
+    sixgr.util.csvWriteTable(fullfile(output,'pusch_harq_receiver_decisions.csv'),decisions, ...
+        'PreserveSchema',true,'RoundTripNumericText',true);
     unselected=state.SharedUnselectedPUCCHObservations;
     save(fullfile(output,'unselected_pucch_observation.mat'),'unselected','-v7.3');
 end

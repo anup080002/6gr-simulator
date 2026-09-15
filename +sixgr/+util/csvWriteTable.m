@@ -13,6 +13,8 @@ end
 p = inputParser;
 p.addParameter("PreserveSchema", false, ...
     @(x) islogical(x) && isscalar(x));
+p.addParameter("RoundTripNumericText", false, ...
+    @(x) islogical(x) && isscalar(x));
 p.parse(varargin{:});
 
 filePath = char(filePath);
@@ -35,10 +37,23 @@ if isempty(targetDir)
 end
 temporaryPath = [tempname(targetDir), '.csv'];
 temporaryCleanup = onCleanup(@() localDeleteIfPresent(temporaryPath)); %#ok<NASGU>
+wireTable = T;
+if p.Results.RoundTripNumericText
+    % Evidence at a decision boundary must survive decimal serialization.
+    % Keep the original typed table for the database mirror.
+    for name = string(T.Properties.VariableNames)
+        values = T.(name);
+        if isfloat(values)
+            assert(isreal(values), "sixgr:util:csvWriteTable:ComplexRoundTrip", ...
+                "RoundTripNumericText requires real floating-point columns.");
+            wireTable.(name) = compose('%.17g', double(values));
+        end
+    end
+end
 try
-    writetable(T, temporaryPath, 'Delimiter', ',', 'QuoteStrings', true);
+    writetable(wireTable, temporaryPath, 'Delimiter', ',', 'QuoteStrings', true);
 catch
-    writetable(T, temporaryPath);
+    writetable(wireTable, temporaryPath);
 end
 localPublishWithRetry(temporaryPath, filePath);
 

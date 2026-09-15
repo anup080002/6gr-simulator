@@ -22,7 +22,8 @@ options.VariableNamesLine = 1;
 options.DataLines = [2 Inf];
 names = string(options.VariableNames);
 vectors = endsWith(names,"BitVector","IgnoreCase",true) | ...
-    endsWith(names,"BitErrorVector","IgnoreCase",true);
+    endsWith(names,"BitErrorVector","IgnoreCase",true) | ...
+    endsWith(names,"BitsJSON","IgnoreCase",true);
 if any(vectors)
     options = setvartype(options,cellstr(names(vectors)),"string");
     options = setvaropts(options,cellstr(names(vectors)), ...

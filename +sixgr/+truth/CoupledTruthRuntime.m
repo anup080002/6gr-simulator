@@ -35,6 +35,9 @@ methods(Static)
         id=binding.ObservationID;
         assert(~any(cellfun(@(r)r.ObservationID==id,receipts)), ...
             'sixgr:truth:DuplicateSharedPUSCHHARQReception','One receive window may commit only once.');
+        decisionAudit=sixgr.truth.appendPUSCHHARQDecisionAudit( ...
+            sixgr.util.structGet(state,'SharedPUSCHHARQDecisionAuditTable',table()), ...
+            rx,context,observation,owner.Events.NextSampleIndex);
         normalized=struct('MappingDigest',context.Data.HARQMappingDigest, ...
             'UEIndex',grant.UEIndex,'RNTI',grant.RNTI,'TargetSlot',target, ...
             'DecodedBits',actual.DecodedBits,'DecodeOk',actual.DecodeOk, ...
@@ -62,6 +65,7 @@ methods(Static)
             if isfield(next,name), state.(name)=next.(name); end
         end
         state.SharedPUSCHHARQFeedbackReceipts=[receipts,{receipt}];
+        state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
         harqOut.SharedPUSCHHARQFeedbackReceipt=receipt;
     end
 
@@ -3192,6 +3196,12 @@ methods(Static, Access=private)
         gnbHARQ=sixgr.util.structGet(state,'SharedGNBUCIHARQTable',table());
         noDecode=sixgr.util.structGet(state,'SharedDLNoDecodeDispositionTable',table());
         receiveOnly=sixgr.util.structGet(state,'SharedRejectedULReceiveAuditTable',table());
+        puschDecisions=sixgr.util.structGet(state,'SharedPUSCHHARQDecisionAuditTable',table());
+        if ~isempty(puschDecisions)
+            sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...
+                "pusch_harq_receiver_decisions.csv"),puschDecisions, ...
+                'PreserveSchema',true,'RoundTripNumericText',true);
+        end
         unselected=sixgr.util.structGet(state,'SharedUnselectedPUCCHAuditTable',table());
         if ~isempty(unselected)
             sixgr.util.csvWriteTable(fullfile(layout.ControlCSVDir, ...

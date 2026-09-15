@@ -49,6 +49,9 @@ assert(isfield(grant.HARQ,'IsRetransmission') && isequal(logical(grant.HARQ.IsRe
 result=sixgr.truth.receiveSharedPUSCHWithoutTransmission(state,observationID);
 assert(result.UCIReceiveContext.Digest==context.Digest && isequaln(result.HARQMapping,mapping), ...
     'sixgr:truth:ChangedRejectedULReceiveContext','The decoder must use the prevalidated scheduled schema.');
+decisionAudit=sixgr.truth.appendPUSCHHARQDecisionAudit( ...
+    sixgr.util.structGet(state,'SharedPUSCHHARQDecisionAuditTable',table()), ...
+    result.Receiver,context,result.Observation,owner.Events.NextSampleIndex);
 dispositions=struct([]); normalized=struct();
 if ~isempty(mapping)
     actual=result.IndependentHARQObservation;
@@ -91,4 +94,5 @@ if ~isempty(mapping)
 end
 state.SharedRejectedULReceiveResults=[receipts,{result}];
 state.SharedRejectedULReceiveAuditTable=next;
+state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
 end
