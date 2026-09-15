@@ -251,22 +251,42 @@ end
 
 function out = localPDCCH(cfg,totalSlots,frame)
 rows = repmat(localEmptyRow(),0,1); count = 0;
-period = max(1,double(sixgr.util.structGet(cfg, ...
-    "phy.pdcch.searchSpace.slotPeriodAndOffset",[1 0])));
-if numel(period)>1,offset=period(2);period=period(1);else,offset=0;end
 [carrier,~]=sixgr.phy.grid.makeCarrier(cfg);
-[k,~]=sixgr.phy.pdcch.dciPayloadSizeBits(double(carrier.NSizeGrid), ...
-    string(sixgr.util.structGet(cfg,"phy.pdcch.dciFormat","1_0")));
+connected=isfield(sixgr.util.structGet(cfg,"phy.pdcch.operatorControl",struct()), ...
+    'connected_monitoring');
+if connected
+    % Planning is resource geometry, not a dummy DCI transmission. Use the
+    % same installed identity and monitoring object as connected reception.
+    context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,'1_1');
+    [pdcch,~]=sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build( ...
+        cfg,carrier,context.Data.RNTIValue,false);
+    period=pdcch.SearchSpace.SlotPeriodAndOffset(1);
+    offset=pdcch.SearchSpace.SlotPeriodAndOffset(2);
+    duration=pdcch.SearchSpace.Duration;
+    resolver="ConnectedPDCCHConfiguration+nrPDCCHResources";
+else
+    calendar=double(sixgr.util.structGet(cfg, ...
+        "phy.pdcch.searchSpace.slotPeriodAndOffset",[1 0]));
+    period=calendar(1); offset=0;
+    if numel(calendar)>1, offset=calendar(2); end
+    duration=1;
+    [k,~]=sixgr.phy.pdcch.dciPayloadSizeBits(double(carrier.NSizeGrid), ...
+        string(sixgr.util.structGet(cfg,"phy.pdcch.dciFormat","1_0")));
+    resolver="buildPDCCHConfigFromScenario+nrPDCCHResources";
+end
 for slot0 = 0:(totalSlots-1)
-    if mod(slot0-offset,period) ~= 0 || ~frame.IsDLSlot(slot0), continue; end
+    if mod(slot0-offset,period) >= duration || ~frame.IsDLSlot(slot0), continue; end
     c = localCarrierAtSlot(carrier,slot0);
-    [tx,~]=sixgr.phy.dl.PDCCH_Tx(cfg,"Carrier",c, ...
-        "DCIBits",int8(zeros(k,1)),"K",k,"OFDMModulate",false);
+    if ~connected
+        [tx,~]=sixgr.phy.dl.PDCCH_Tx(cfg,"Carrier",c, ...
+            "DCIBits",int8(zeros(k,1)),"K",k,"OFDMModulate",false);
+        pdcch=tx.PDCCH;
+    end
     materialized = sixgr.phy.frame.ChannelAllocationMaterializer. ...
-        materializePDCCH(c,tx.PDCCH,"AbsoluteSlot",slot0);
+        materializePDCCH(c,pdcch,"AbsoluteSlot",slot0);
     rows = [rows; localResultRows(materialized,slot0,"PDCCH",1,1, ...
         "RRC_SearchSpace_CORESET_and_DCI", ...
-        "buildPDCCHConfigFromScenario+nrPDCCHResources")]; %#ok<AGROW>
+        resolver)]; %#ok<AGROW>
     count = count + size(materialized.ActualCoordinates0Based,1);
 end
 if count == 0, error("sixgr:truth:NoPDCCHOccasion","No legal PDCCH occasion resolved."); end

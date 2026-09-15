@@ -103,3 +103,43 @@ termination and with unchanged source, is:
 
 Keep logs/monitored_lls_runs and the scenario output directory as well; the
 test-suite ZIP does not automatically include the separate scenario/IQ files.
+
+## Integrated attempt and preflight repair, 07:45–07:54 IST
+
+Clean revision 5cec590b ran the exact scenario. It failed before slot zero:
+EnabledAllocationUnresolved / ConnectedMonitoringIdentityMismatch.
+buildPlannedREAllocation called PDCCH_Tx with a legacy/default RNTI while the
+connected factory required the installed data-channel C-RNTI. Planning also
+read the legacy monitoring calendar, not the connected offset/duration.
+
+Repair: connected planning directly materializes the installed PDCCH object
+and Toolbox REs using DCIContextFactory identity. No dummy DCI transmission
+is necessary to calculate planned geometry. The actual receiver identity
+guard is unchanged. Planned rows remain explicitly non-runtime evidence.
+Monitoring uses the installed period, offset and consecutive-slot duration,
+consistent with the [Toolbox TS 38.213 search-space contract](https://www.mathworks.com/help/5g/ref/nrsearchspaceconfig.html).
+
+A separate output-root defect silently redirected the absolute logs output
+request to results. resolveResultsRoot now admits the explicit repo-local
+logs tree, with canonical path containment and traversal/sibling regressions.
+Other external-root restrictions remain. This is an output location change,
+not a PHY or scientific policy change.
+
+Frozen dirty-source regression based on 5cec590b:
+logs/testall_20260915T022150605Z_df23cfda, MATLAB exit 0:
+
+| Test | Result |
+| --- | --- |
+| testConnectedPDCCHPlannedAllocation | PASS, 66.44 s; every enabled allocation on exact scenario, exact Toolbox RE equality, offset/duration and unchanged bad-RNTI rejection |
+| testResolveResultsRoot | PASS, 0.38 s; logs retained, traversal/siblings not admitted |
+| testDefaultRunFolderProfileRoot | PASS, 0.33 s |
+| testCSIRSPlannedCalendar | PASS, 9.04 s |
+
+The first integrated attempt is NOT successful. Its original failure report
+and partial exports are retained, including a ZIP under logs:
+tdd_5mhz_12db_5cec590b_20260915_failed_preflight.zip.
+After the preflight failure was recorded, engine 22704 was deliberately
+stopped during report recovery; launcher reported -1. No PHY slot executed.
+The stop receipt records this explicitly. No files were deleted.
+The next integrated attempt must use a new run tag and clean revision.
+Full testAll/guards and statistical detector qualification are still pending.

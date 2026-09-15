@@ -3,12 +3,14 @@ function p = resolveResultsRoot(inPath)
 %
 % Relative paths are always interpreted from the repository root, never the
 % caller's current working directory. Absolute paths are accepted when they
-% live under <repo>/results.  Regression workers may additionally opt into
+% live under <repo>/results or the explicit <repo>/logs diagnostic tree.
+% Regression workers may additionally opt into
 % one externally configured scratch tree through
 % SIXGR_REGRESSION_SCRATCH_ROOT; no other external path is accepted.
 
 repoRoot = localRepoRoot();
 repoResults = localNormalizePath(fullfile(repoRoot, "results"));
+repoLogs = localNormalizePath(fullfile(repoRoot, "logs"));
 
 p = localNormalizePath(inPath);
 if strlength(string(p)) == 0
@@ -17,8 +19,11 @@ if strlength(string(p)) == 0
 end
 
 if localIsAbsolutePath(p)
+    % Resolve dot segments before containment checks: callers may later
+    % clean a run leaf, so lexical prefix matching alone is insufficient.
+    p = localNormalizePath(char(java.io.File(p).getCanonicalPath()));
     regressionScratch = localRegressionScratchRoot();
-    if localPathStartsWith(p, repoResults) || ...
+    if localPathStartsWith(p, repoResults) || localPathStartsWith(p, repoLogs) || ...
             (strlength(string(regressionScratch)) > 0 && ...
             localPathStartsWith(p, regressionScratch))
         return;
@@ -32,7 +37,10 @@ if strcmpi(p, ".") || strcmpi(p, filesep)
     return;
 end
 
-if strcmpi(p, "results") || startsWith(lower(string(p)), lower("results" + filesep))
+if strcmpi(p, "logs") || startsWith(lower(string(p)), lower("logs" + filesep))
+    p = localNormalizePath(char(java.io.File(fullfile(repoRoot,p)).getCanonicalPath()));
+    if ~localPathStartsWith(p,repoLogs), p=repoResults; end
+elseif strcmpi(p, "results") || startsWith(lower(string(p)), lower("results" + filesep))
     p = localNormalizePath(fullfile(repoRoot, p));
 else
     p = localNormalizePath(fullfile(repoResults, p));

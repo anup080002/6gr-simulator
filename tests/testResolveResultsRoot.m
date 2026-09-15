@@ -20,6 +20,17 @@ setenv("SIXGR_REGRESSION_SCRATCH_ROOT", regressionScratch);
 p5 = sixgr.report.resolveResultsRoot(fullfile(regressionScratch, "task-a"));
 p6 = sixgr.report.resolveResultsRoot(fullfile(fileparts(regressionScratch), "outside-task"));
 repoFromUtility = sixgr.utils.getRepoRoot();
+repoLogs=fullfile(repoRoot,"logs");
+assert(strcmpi(sixgr.report.resolveResultsRoot(fullfile("logs","scenario_runs")), ...
+    fullfile(repoLogs,"scenario_runs")),'Explicit relative diagnostic logs root must be retained.');
+assert(strcmpi(sixgr.report.resolveResultsRoot(fullfile(repoLogs,"scenario_runs")), ...
+    fullfile(repoLogs,"scenario_runs")),'Explicit absolute diagnostic logs root must be retained.');
+assert(strcmpi(sixgr.report.resolveResultsRoot(fullfile(repoLogs,"..","outside_logs")), ...
+    repoResults),'Dot segments must not escape the admitted logs tree.');
+assert(strcmpi(sixgr.report.resolveResultsRoot(fullfile("logs","..","outside_logs")), ...
+    repoResults),'Relative dot segments must not escape the admitted logs tree.');
+assert(strcmpi(sixgr.report.resolveResultsRoot(fullfile(repoRoot,"logs_sibling")), ...
+    repoResults),'A logs prefix alone must not admit a sibling directory.');
 
 assert(strcmpi(char(string(p0)), char(string(repoResults))), "Empty result root must resolve to repo-local /results.");
 assert(strcmpi(char(string(p1)), char(string(repoResults))), "Relative 'results' must resolve to repo-local /results.");
