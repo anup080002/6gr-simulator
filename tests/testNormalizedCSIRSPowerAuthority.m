@@ -1,0 +1,47 @@
+function ok=testNormalizedCSIRSPowerAuthority()
+% Unit-domain relabeling is not evidence that a CSI resource was measured.
+cfg.integration.run_mode="FIXED_SNR_SWEEP";
+cfg.integration.configured_snr_is_link_authority=true;
+base=struct('PhysicalMeasurementStatus',"not_attempted", ...
+    'MeasurementSource',"",'MeasurementRSRP_dBm',NaN, ...
+    'MeasurementRSSI_dBm',NaN,'MeasurementRSRQ_dB',NaN);
+% The real receiver preallocates relative fields before any measurement.
+% Their presence is not evidence that the unit conversion has executed.
+base.MeasurementRSRP_dB_re_UnitOccupiedRE_Es=NaN;
+base.MeasurementRSSI_dB_re_UnitOccupiedRE_Es=NaN;
+for status=["not_attempted","unavailable_selected_resource_not_measured", ...
+        "unavailable_missing_runtime_csirs_configuration", ...
+        "unavailable_nr_csirs_measurement_failed"]
+    input=base; input.PhysicalMeasurementStatus=status;
+    out=sixgr.phy.refsig.normalizeCSIRSPowerReference(input,cfg);
+    assert(out.PhysicalMeasurementStatus==status && out.MeasurementSource==input.MeasurementSource, ...
+        'Relabeling a unit domain must not promote absent CSI into an available measurement.');
+    assert(isnan(out.MeasurementRSRP_dBm) && isnan(out.MeasurementRSRP_dB_re_UnitOccupiedRE_Es));
+end
+input=base; input.PhysicalMeasurementStatus="available";
+input.MeasurementSource="nrCSIRSMeasurements_runtime_pre_front_end_antenna_plane_grid";
+input.MeasurementRSRP_dBm=-50; input.MeasurementRSSI_dBm=-30;
+input.MeasurementRSRQ_dB=-6;
+out=sixgr.phy.refsig.normalizeCSIRSPowerReference(input,cfg);
+assert(out.PhysicalMeasurementStatus=="available_normalized_fixed_esn0_not_absolute_dbm" && ...
+    out.MeasurementSource=="actual_csirs_re_measurement_relative_to_unit_occupied_re_es" && ...
+    out.MeasurementRSRP_dB_re_UnitOccupiedRE_Es==-50 && ...
+    out.MeasurementRSSI_dB_re_UnitOccupiedRE_Es==-30 && out.MeasurementRSRQ_dB==-6 && ...
+    isnan(out.MeasurementRSRP_dBm) && isnan(out.MeasurementRSSI_dBm));
+physical=cfg; physical.integration.configured_snr_is_link_authority=false;
+assert(isequaln(input,sixgr.phy.refsig.normalizeCSIRSPowerReference(input,physical)), ...
+    'A physical-power run must retain its absolute measurements unchanged.');
+reject(@()sixgr.phy.refsig.normalizeCSIRSPowerReference(out,cfg), ...
+    'sixgr:phy:CSIRSPowerReferenceAlreadyNormalized');
+input.MeasurementRSRP_dBm=NaN;
+reject(@()sixgr.phy.refsig.normalizeCSIRSPowerReference(input,cfg), ...
+    'sixgr:phy:MissingCSIRSPowerMeasurement');
+fprintf('NORMALIZED_CSIRS_AVAILABILITY_PASS absent_measurements_not_promoted=1 physical_mode_unchanged=1\n');
+ok=true;
+end
+function reject(fn,id)
+try, fn(); catch cause
+    assert(strcmp(cause.identifier,id),'Expected %s; got %s.',id,cause.identifier); return;
+end
+error('test:ExpectedError','Expected %s.',id);
+end
