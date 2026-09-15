@@ -76,6 +76,9 @@ classdef BroadcastResultDelivery
                 ready(k).Trial.ObservationDeliveryTime_s=repmat(now_s,n,1);
                 ready(k).Trial.ObservationDeliverySource=repmat( ...
                     "canonical_slot_start_after_complete_received_window",n,1);
+                if ismember('MeasurementClockEpoch',ready(k).Trial.Properties.VariableNames)
+                    ready(k).Trial=sixgr.truth.bindSharedReferenceDeliveryClock(ready(k).Trial,state);
+                end
             end
             state.PendingBroadcastResults=items(~due);
         end

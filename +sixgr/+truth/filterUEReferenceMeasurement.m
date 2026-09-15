@@ -2,6 +2,12 @@ function [state,measurement]=filterUEReferenceMeasurement(state,measurement)
 % Retain UE-owned filter state, separate from TX/pathloss diagnostic fields.
 % Preconnection policy is explicit UE implementation, not received RRC.
 if string(measurement.SignalType)~="SSB" || string(measurement.TargetType)~="UE" || ~measurement.Valid, return; end
+if string(sixgr.util.structGet(measurement,'PowerReferencePlane',""))=="normalized_fixed_esn0_unit_occupied_re_es"
+    assert(isnan(measurement.RSRP_dBm) && ...
+        isfinite(measurement.RSRP_dB_re_UnitOccupiedRE_Es), ...
+        'sixgr:truth:NormalizedSSBPowerReference','Relative SSB power must not enter the absolute-dBm UE filter.');
+    return; % Relative RSRP/SINR remains measured; absolute pathloss is unavailable.
+end
 cfg=sixgr.util.structGet(state,'CfgMobility',struct());
 policy=sixgr.rrc.resolvePreconnectionRSRPFilter(cfg);
 if isempty(fieldnames(policy)), return; end

@@ -12897,6 +12897,8 @@ for item=received
         [raw,~,recovery]=localCollectCoupledPBCHBeamSweep(context.Config,context.SNR,ch,context.Slot,output);
         trial=localAnnotateCoupledControlTrial(raw,context.Slot,context.Frame,item.UE,context.RNTI,"DL",context.ServingCell);
         trial.ObservationPurpose=repmat("initial_cell_search_pbch_acquisition",height(trial),1);
+        trial.MeasurementClockEpoch=repmat(state.SharedWaveformStream.Physical.ConfigurationEpoch,height(trial),1);
+        trial.ResultCompletedAtSample=repmat(state.SharedWaveformStream.Events.NextSampleIndex,height(trial),1);
         if context.TrackingOnly
             trial.ObservationPurpose(:)="periodic_serving_ssb_beam_and_pathloss_tracking";
             trial.SSBMeasurementDeliveryMode=repmat("per_occasion",height(trial),1);

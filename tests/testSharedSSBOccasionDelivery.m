@@ -1,10 +1,13 @@
-function ok=testSharedSSBOccasionDelivery()
+function ok=testSharedSSBOccasionDelivery(normalized)
 % Actual shared TDD radio samples; connected/SIB1 state is a codec fixture.
 % This checks periodic measurement delivery, not initial-access completion.
 setup6GRSimToolkit('Verbose',false);
-s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
-    'lls_causal_access_to_data_wiring_tdd.yaml'));
-root=tempname; cfg=sixgr.lls6g.buildInternalConfig(s,root);
+if nargin<1, normalized=false; end
+fixture='lls_ssb_physical_power_contract_fixture.yaml';
+if normalized, fixture='lls_causal_access_to_data_wiring_tdd.yaml'; end
+s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
+root=tempname(fullfile(pwd,'logs')); mkdir(root);
+cfg=sixgr.lls6g.buildInternalConfig(s,root);
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),6);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;
@@ -12,9 +15,14 @@ state.CurrentServingIdx(:)=1;
 state.CellAcquisitionState(1)="acquired"; % Declared connected component fixture.
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 [dl,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
-state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,0,1,1)};
 prototype=sixgr.link.runCellSearch_MIB_SIB1(dl,'PrepareOnly',true, ...
     'UseRuntimeChannel',true,'RuntimeSlot',0);
+power=prototype.PreparedBroadcast.Tx.SSBPowerReferenceContract;
+assert(power.PhysicalDevicePowerClaim==~normalized, ...
+    'The companion fixture must actually apply its declared power-reference mode.');
+% Explicit codec fixture carrying the same SIB1 declaration as this TX;
+% an arbitrary 0-dBm declaration is not the prepared SSB's power contract.
+state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,power.SSPBCHBlockPower_dBm,1,1)};
 c=struct('Config',dl,'Slot',1,'ServingCell',1,'TrackingOnly',true);
 owner.queueDownlink("PBCH",1,prototype.PreparedBroadcast,c);
 assert(nnz(string({owner.Pending.Kind})=="SSBOccasion")==numel(cfg.phy.ssb.activeCandidateIndices0Based));
@@ -24,9 +32,35 @@ for slot=1:6
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state=sixgr.truth.SSBOccasionResultDelivery.deliver(state);
     if slot==2
+        ledgerAtFirstDelivery=state.ReferenceSignalMeasurementTable;
+        save(fullfile(root,'first_delivery_measurements.mat'),'ledgerAtFirstDelivery','power','normalized');
         [~,early]=sixgr.truth.bindSharedSSBPowerReference(dl,state,1,slot,0);
-        assert(early.ReferenceUsable && early.AvailableSlot==2 && early.ProducerSlot==1, ...
-            'The first complete received SSB must supply slot-2 power control without waiting for slot 6.');
+        save(fullfile(root,'early_ssb_decision.mat'),'early','normalized');
+        if normalized
+            assert(~early.ReferenceUsable && isnan(early.Pathloss_dB), ...
+                'Normalized SSB samples cannot create an absolute pathloss input.');
+        else
+            assert(early.ReferenceUsable && early.AvailableSlot==2 && early.ProducerSlot==1, ...
+                'The first complete received SSB must supply slot-2 power control without waiting for slot 6.');
+        end
+        first=state.ReferenceSignalMeasurementTable(1,:);
+        assert(first.MeasurementClockDomain=="shared_receiver_sample_clock/v1" && ...
+            first.ResultCompletedAtSample==first.ObservationEndSampleExclusive && ...
+            first.ResultAvailableAtSample==owner.Events.NextSampleIndex && ...
+            first.MeasurementClockEpoch==owner.Physical.ConfigurationEpoch);
+        measured=sixgr.truth.CoupledTruthRuntime.consumeReferenceSignalMeasurementRuntime( ...
+            state,'SSB','UE',1,slot,inf);
+        assert(measured.Usable && measured.ResultAvailableAtSample==owner.Events.NextSampleIndex, ...
+            'The complete published SSB measurement must be consumable on the actual sample clock.');
+        bad=first; bad.MeasurementClockDomain="slot_only";
+        rejected=false;
+        try
+            sixgr.phy.refsig.causalMeasurementState(bad,slot);
+        catch cause
+            assert(strcmp(cause.identifier,'sixgr:phy:refsig:InvalidMeasurementClockDomain'));
+            rejected=true;
+        end
+        assert(rejected,'The original clock-domain assertion must remain active.');
         assert(~isfield(state,'TestFullBroadcastComplete'),'Early measurement must precede full broadcast completion.');
     end
     [state,~]=owner.advanceSlot(state,cfg,@received);
@@ -40,20 +74,40 @@ end
 T=state.DeliveredSSBOccasionMeasurements;
 assert(height(T)==numel(cfg.phy.ssb.activeCandidateIndices0Based) && ...
     all(T.CRCPass) && all(T.MeasurementValid) && all(T.AvailableSlot<6) && all(~T.SIB1ReceptionAttempted));
-assert(all(isfinite(T.SS_RSRP_dBm)) && all(isfinite(T.SS_SINR_dB)));
+assert(all(isfinite(T.SS_SINR_dB)));
+if normalized
+    assert(all(isnan(T.SS_RSRP_dBm)) && all(isfinite(T.SS_RSRP_dB_re_UnitOccupiedRE_Es)) && ...
+        all(T.PowerReferencePlane=="normalized_fixed_esn0_unit_occupied_re_es"));
+else
+    assert(all(isfinite(T.SS_RSRP_dBm)));
+end
 ledger=state.ReferenceSignalMeasurementTable;
 assert(height(ledger)==height(T) && numel(unique(string(ledger.MeasurementId)))==height(T));
-assert(all(ledger.UERSRPFilterUpdateCount==1),'Full-burst completion must not update an occasion filter twice.');
-assert(all(isfinite(ledger.ObservationEndSampleExclusive)) && ...
-    all(strlength(ledger.SSBWindowPowerMeasurementJSON)>0));
+if normalized
+    assert(all(isnan(ledger.UEFilteredRSRP_dBm)) && all(isnan(ledger.UERSRPFilterUpdateCount)) && ...
+        all(strlength(ledger.SSBWindowPowerMeasurementJSON)==0) && ...
+        all(strlength(ledger.SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es)>0));
+else
+    assert(all(ledger.UERSRPFilterUpdateCount==1),'Full-burst completion must not update an occasion filter twice.');
+    assert(all(strlength(ledger.SSBWindowPowerMeasurementJSON)>0));
+end
+assert(all(isfinite(ledger.ObservationEndSampleExclusive)));
 file=fullfile(root,'ssb_occasion_measurements.csv');
 sixgr.util.csvWriteTable(file,ledger,'PreserveSchema',true);
 persisted=sixgr.util.csvReadTable(file,'TextType','string');
 for field=["RSRP_dBm","SINR_dB","ObservationEndSampleExclusive","SSBOccasionBCHCRCPass"]
-    assert(all(abs(double(persisted.(field))-double(ledger.(field)))<1e-10), ...
+    a=double(persisted.(field)); b=double(ledger.(field));
+    assert(all((isnan(a)&isnan(b)) | abs(a-b)<1e-10), ...
         'Actual SSB measurements must survive CSV export.');
 end
-assert(isequal(string(persisted.SSBWindowPowerMeasurementJSON),ledger.SSBWindowPowerMeasurementJSON));
+if normalized
+    raw=persisted.SSBWindowPowerMeasurementJSON;
+    if isnumeric(raw), assert(all(isnan(raw)));
+    else, assert(all(ismissing(string(raw)) | strlength(string(raw))==0)); end
+    assert(all(strlength(ledger.SSBWindowPowerMeasurementJSON)==0));
+else
+    assert(isequal(string(persisted.SSBWindowPowerMeasurementJSON),ledger.SSBWindowPowerMeasurementJSON));
+end
 trial=table(ones(height(T),1),T.ReferenceSignalId,'VariableNames',{'Slot','SSBIndex'});
 sixgr.truth.SSBOccasionResultDelivery.assertDelivered(state,1,trial);
 try

@@ -24,10 +24,6 @@ if logical(options.UseRuntimeChannel) ~= logical(prepared.RuntimeChannelDeferred
         "Completion must retain the preparation's runtime-channel authority.");
 end
 cfg = prepared.Config;
-fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
-    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
-    logical(sixgr.util.structGet(cfg, ...
-    "integration.configured_snr_is_link_authority", false));
 receiverCfg = prepared.ReceiverConfig;
 tx = prepared.Tx;
 runtimeTxWaveform = prepared.TransmitSamples;
@@ -125,51 +121,7 @@ if logical(options.UseRuntimeChannel)
         rec.MeasuredReferenceSignalPathlossSource = "";
     end
 end
-if fixedNormalizedEsN0
-    % A configured-SNR LLS deliberately has no absolute device/link-budget
-    % calibration.  The samples and measurements above are real, but their
-    % scale is relative to the declared unit occupied-RE Es.  Never expose
-    % that arbitrary numerical reference as antenna-connector dBm or use it
-    % to manufacture pathloss.
-    rec.SS_RSRP_dB_re_UnitOccupiedRE_Es = double(sixgr.util.structGet( ...
-        rec, "SS_RSRP_dBm", NaN));
-    rec.SS_RSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = string( ...
-        sixgr.util.structGet(rec, "SS_RSRPPerReceiveAntenna_dBm", ""));
-    rec.SS_RSRPRawObserved_dB_re_UnitOccupiedRE_Es = double( ...
-        sixgr.util.structGet(rec, "SS_RSRPRawObserved_dBm", NaN));
-    rec.SS_RSRPRawObservedPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = ...
-        string(sixgr.util.structGet(rec, ...
-        "SS_RSRPRawObservedPerReceiveAntenna_dBm", ""));
-    rec.SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = ...
-        string(sixgr.util.structGet(rec, ...
-        "SSBWindowRSSIPerReceiveAntenna_dBm", ""));
-    rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es = double( ...
-        sixgr.util.structGet(rec, "ReferenceSignalTxEPRE_dBm", NaN));
-    rec.ReferenceSignalTxEPREPerAntenna_dB_re_UnitOccupiedRE_Es = ...
-        string(sixgr.util.structGet(rec, ...
-        "ReferenceSignalTxEPREPerAntenna_dBm", ""));
-    rec.MeasuredReferenceSignalChannelGain_dB = ...
-        rec.SS_RSRP_dB_re_UnitOccupiedRE_Es - ...
-        rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es;
-    rec.SS_RSRP_dBm = NaN;
-    rec.SS_RSRPPerReceiveAntenna_dBm = "";
-    rec.SS_RSRPRawObserved_dBm = NaN;
-    rec.SS_RSRPRawObservedPerReceiveAntenna_dBm = "";
-    rec.SSBWindowRSSIPerReceiveAntenna_dBm = "";
-    rec.SSBWindowPowerMeasurementJSON = "";
-    rec.ReferenceSignalTxEPRE_dBm = NaN;
-    rec.ReferenceSignalTxEPREPerAntenna_dBm = "";
-    rec.SSSTxPowerDeltaFromSignalled_dB = NaN;
-    rec.MeasuredReferenceSignalPathloss_dB = NaN;
-    rec.MeasuredReferenceSignalPathlossSource = ...
-        "unavailable_normalized_fixed_esn0_has_no_absolute_link_budget";
-    rec.ReferenceSignalTxMeasurementSource = ...
-        "actual_ifft_sss_epre_relative_to_unit_occupied_re_es";
-    rec.PowerReferencePlane = ...
-        "normalized_fixed_esn0_unit_occupied_re_es";
-    rec.SSPhysicalMeasurementStatus = ...
-        "available_normalized_fixed_esn0_not_absolute_dbm";
-end
+rec=sixgr.link.normalizeReceivedSSBPowerReference(rec,cfg);
 rec = sixgr.phy.broadcast.attachSIB1ValidationComparison(tx, rec);
 out.ComputeLatency_ms = 1e3 * toc(tStart);
 out.ProcedureDelay_ms = NaN;

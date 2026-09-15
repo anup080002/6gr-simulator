@@ -16,9 +16,11 @@ methods(Static)
         r=sixgr.phy.broadcast.recoverSIB1FromWaveform(post,p.ReceiverConfig, ...
             'RecoveryScope','SSB_MIB','CandidateSSBIndex',h.SSBIndex, ...
             'PhysicalMeasurementObservation',pre);
+        r=sixgr.link.normalizeReceivedSSBPowerReference(r,p.Config);
         carrier=sixgr.phy.grid.makeCarrier(p.ReceiverConfig);
         valid=r.NCellID==carrier.NCellID && r.SSBMIBComplete && r.BCHCrcPass && r.MIBDecoded && ...
-            r.SSBIndex==h.SSBIndex && isfinite(r.SS_RSRP_dBm);
+            r.SSBIndex==h.SSBIndex && (isfinite(r.SS_RSRP_dBm) || ...
+            isfinite(sixgr.util.structGet(r,'SS_RSRP_dB_re_UnitOccupiedRE_Es',NaN)));
         samplesPerSlot=fs*state.SlotDuration_s;
         assert(samplesPerSlot==fix(samplesPerSlot),'sixgr:truth:SSBOccasionSlotClock','Slot boundary must be on the sample clock.');
         producer=floor((c.BroadcastStartSample+h.SSBStartSample)/samplesPerSlot)+1;
@@ -39,6 +41,12 @@ methods(Static)
         row.MeasuredNCellID=double(r.NCellID);
         row.ExpectedNCellID=double(carrier.NCellID);
         row.PowerReferencePlane="actual_pre_rx_rf_antenna_connector";
+        if isfield(r,'PowerReferencePlane'), row.PowerReferencePlane=string(r.PowerReferencePlane); end
+        row.SS_RSRP_dB_re_UnitOccupiedRE_Es=double(sixgr.util.structGet(r,'SS_RSRP_dB_re_UnitOccupiedRE_Es',NaN));
+        row.SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es= ...
+            string(sixgr.util.structGet(r,'SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es',""));
+        row.MeasurementClockEpoch=state.SharedWaveformStream.Physical.ConfigurationEpoch;
+        row.ResultCompletedAtSample=state.SharedWaveformStream.Events.NextSampleIndex;
         row.RecoveryScope=string(r.RecoveryScope);
         row.SIB1ReceptionAttempted=logical(r.SIB1ReceptionAttempted);
         pending=sixgr.util.structGet(state,'PendingSSBOccasionMeasurements',table());
@@ -64,6 +72,7 @@ methods(Static)
                     'sixgr:truth:DuplicateSSBOccasion','A received SSB occasion may update the filter only once.');
             end
             row.AvailableSlot=double(state.CurrentSlot);
+            row=sixgr.truth.bindSharedReferenceDeliveryClock(row,state);
             state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
                 state,'SSB','UE',ue,row,'ProducerSlot',row.ProducerSlot, ...
                 'AvailableSlot',state.CurrentSlot,'Valid',row.MeasurementValid,'Direction','DL', ...
@@ -75,7 +84,8 @@ methods(Static)
                 if ~ismember(field,string(ledger.Properties.VariableNames)), ledger.(field)=nan(height(ledger),1); end
                 ledger.(field)(end)=row.(field);
             end
-            for field=["SSBWindowRSSIPerReceiveAntenna_dBm","SSBWindowPowerMeasurementJSON"]
+            for field=["SSBWindowRSSIPerReceiveAntenna_dBm","SSBWindowPowerMeasurementJSON", ...
+                    "SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"]
                 if ~ismember(field,string(ledger.Properties.VariableNames)), ledger.(field)=strings(height(ledger),1); end
                 ledger.(field)(end)=row.(field);
             end
