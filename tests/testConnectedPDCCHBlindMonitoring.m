@@ -17,6 +17,7 @@ cfg.phy.pdcch.operatorControl.connected_monitoring.shift_index=3;
 for fmt=["0_1","1_1"]
     localReceive(cfg,fmt,true);
 end
+localReceiveBoth(cfg);
 
 % Same-length formats must still be discriminated by received fields,
 % not a transmitted format hint or the order in which contexts are tested.
@@ -112,4 +113,62 @@ end
 function localReject(fn,id)
 try, fn(); catch ME, assert(strcmp(ME.identifier,id),'Expected %s, got %s: %s',id,ME.identifier,ME.message); return; end
 error('test:MissingRejection','Expected %s.',id);
+end
+
+function localReceiveBoth(cfg)
+% Two nonoverlapping same-UE commands in one actual, synchronized OFDM
+% observation. This is a unit-channel component, not fading qualification.
+cfg.phy.pdcch.aggregationLevel=2;
+cfg.phy.pdcch.aggregationLevels=[1 2 4 8];
+prepared=cell(2,1); authored=cell(2,1); occupied=zeros(0,2);
+formats=["0_1","1_1"];
+for k=1:2
+    context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,formats(k));
+    schema=sixgr.phy.pdcch.DCISchemaEngine.resolve(context);
+    fields=struct();
+    for def=schema.Definitions(:).', fields.(def.Name)=def.ValueMin; end
+    fields.mcs=10; fields.ndi=1;
+    authored{k}=sixgr.phy.pdcch.DCIPacker.pack(fields,context);
+    prepared{k}=sixgr.link.preparePDCCHTransmission(cfg,'DCIBits',authored{k}.Bits, ...
+        'RNTI',cfg.phy.pdsch.RNTI,'ReservedRECoordinates',occupied);
+    occupied=[occupied;prepared{k}.TxInfo.AllocatedRECoordinates]; %#ok<AGROW>
+end
+assert(isempty(intersect(prepared{1}.TxInfo.AllocatedRECoordinates, ...
+    prepared{2}.TxInfo.AllocatedRECoordinates,'rows')));
+wave=prepared{1}.TransmitSamples+prepared{2}.TransmitSamples;
+p=prepared{1};
+obs=sixgr.phy.waveform.WaveformObservationBuffer(p.RuntimeStartSample, ...
+    p.RuntimeStartSample+size(wave,1),p.SampleRateHz,size(wave,2));
+obs.append(sixgr.phy.waveform.WaveformChunk(wave,p.RuntimeStartSample),p.SampleRateHz);
+[scalar,allInfo]=sixgr.link.completePDCCHReception(p,obs);
+assert(~scalar.Ok && scalar.AmbiguousValidHypotheses && numel(allInfo.ContextValidHypotheses)==2, ...
+    'The generic scalar API must still reject arbitrary selection of two distinct valid DCIs.');
+for k=1:2
+    directions=["UL","DL"];
+    [rx,info]=sixgr.link.selectConnectedPDCCHDirection(scalar,allInfo,directions(k));
+    assert(rx.Ok && isequal(rx.DCIBits,authored{k}.Bits) && ...
+        isequaln(info.ContextValidHypotheses,allInfo.ContextValidHypotheses) && ...
+        info.CompositeValidHypothesisCount==2 && info.ValidHypothesisCount==1);
+    assignment=sixgr.phy.pdcch.materializeConnectedDCI(rx,info,cfg);
+    assert(assignment.Direction==directions(k));
+    % TX bits remain scoring-only: poisoning them cannot change dispatch.
+    changed=p; changed.Tx.DCIBits=int8(zeros(11,1));
+    [poisoned,poisonInfo]=sixgr.link.completePDCCHReception(changed,obs);
+    [independent,~]=sixgr.link.selectConnectedPDCCHDirection(poisoned,poisonInfo,directions(k));
+    assert(independent.Ok && isequal(independent.DCIBits,rx.DCIBits) && ...
+        ~independent.DCIPayloadMatch && ~independent.CausalGrantDecodeOk);
+end
+% No opposite-direction result and no same-direction conflict may be
+% resolved by expected bits. These are explicit reducer-negative fixtures.
+onlyUL=allInfo;
+onlyUL.ContextValidHypotheses=allInfo.ContextValidHypotheses(cellfun( ...
+    @(h)string(h.DecodedDCI.Direction)=="UL",allInfo.ContextValidHypotheses));
+[missing,~]=sixgr.link.selectConnectedPDCCHDirection(scalar,onlyUL,"DL");
+assert(~missing.Ok && isempty(fieldnames(missing.DecodedDCI)));
+conflict=onlyUL; other=onlyUL.ContextValidHypotheses{1};
+other.DCIBits(1)=1-other.DCIBits(1);
+conflict.ContextValidHypotheses{end+1}=other;
+[rejected,~]=sixgr.link.selectConnectedPDCCHDirection(scalar,conflict,"UL");
+assert(~rejected.Ok && rejected.AmbiguousValidHypotheses);
+fprintf('CONNECTED_MULTI_DCI_DISPATCH_PASS: both directions, no TX selector, same-direction conflict rejected.\n');
 end

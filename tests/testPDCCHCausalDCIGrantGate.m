@@ -44,6 +44,13 @@ badTrial = table("PASS", true, false, false, true, false, false, false, true, tr
 
 state = localMinimalPDCCHGateState();
 grant = struct("UEIndex", 1, "Slot", 1, "Frame", 0, "ServingCell", 1);
+% Explicit gate fixture, separate from the waveform comparison above. Data
+% Slot alone is not a received control clock; preserve that rejection.
+localReject(@()sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state,grant,"DL",goodTrial), ...
+    'sixgr:truth:MissingPDCCHControlSlot');
+grant.ControlAbsoluteSlot=0;
+goodTrial.Slot=1;
+badTrial.Slot=1;
 [state, goodGrant, allowGood] = sixgr.truth.CoupledTruthRuntime.applyPDCCHGrantTrial(state, grant, "DL", goodTrial); %#ok<ASGLU>
 assert(logical(allowGood) && logical(goodGrant.ControlDecodeOk) && ...
     strcmpi(char(string(goodGrant.PDCCHControlFailureReason)), "pdcch_dci_crc_and_payload_match"), ...
@@ -84,4 +91,12 @@ state.DLGrantTraceTable = table();
 state.ULGrantTraceTable = table();
 state.InitialAccessEvents = table();
 state.InitialAccessLifecycleTraceTable = table();
+end
+
+function localReject(fn,id)
+try, fn(); catch cause
+    assert(strcmp(cause.identifier,id),'Expected %s; got %s.',id,cause.identifier);
+    return;
+end
+error('test:MissingRejection','Expected %s.',id);
 end

@@ -14435,6 +14435,11 @@ if isfinite(double(nVar)) && double(nVar)>=0
 end
 [rx,rxInfo] = sixgr.link.completePDCCHReception(preparedPDCCH,observation, ...
     "NoiseVariance",noiseVariance);
+if rxInfo.ReceiverConfiguredMonitoring && ~isempty(fieldnames(grantContext))
+    % One shared slot may carry both UL and DL commands for the same UE.
+    % Route by received semantic direction, never by expected TX payload.
+    [rx,rxInfo]=sixgr.link.selectConnectedPDCCHDirection(rx,rxInfo,grantContext.Direction);
+end
 controlLatency_ms = toc(tDecode)*1e3;
 radioTTI_ms = localSlotDuration(cfgTrial)*1e3;
 [be, bt] = localBitErrors(tx.DCIBits, rx.DCIBits);
@@ -14634,6 +14639,9 @@ r.PDCCHCandidateDMRSRECountVector = localFormatNumericVector(localColumnOrDefaul
 r.PDCCHCandidateAggregationLevelVector = localFormatNumericVector(localColumnOrDefault(candidateT, "AggregationLevel", nan(height(candidateT), 1)));
 r.PDCCHCandidateWithinAggregationVector = localFormatNumericVector(localColumnOrDefault(candidateT, "CandidateIndexWithinAggregation", nan(height(candidateT), 1)));
 r.PDCCHHypothesisReductionClass = string(sixgr.util.structGet(rxInfo, "HypothesisReductionClass", ""));
+r.PDCCHHypothesisReductionScope = string(sixgr.util.structGet(rxInfo, "DirectionalConsumer", "all_monitored_DCI"));
+r.PDCCHCompositeHypothesisReductionClass = string(sixgr.util.structGet(rxInfo, "CompositeHypothesisReductionClass", rxInfo.HypothesisReductionClass));
+r.PDCCHCompositeValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "CompositeValidHypothesisCount", rxInfo.ValidHypothesisCount));
 r.PDCCHEquivalentValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "EquivalentValidHypothesisCount", 0));
 r.PDCCHAmbiguousValidHypothesisCount = double(sixgr.util.structGet(rxInfo, "AmbiguousHypothesisCount", 0));
 r.PDCCHCRCDecodeSource = "nrDCIDecode_crc_masked_by_rnti";
@@ -16939,6 +16947,9 @@ row.PDCCHMinimumReceiveSamples = NaN;
 row.PDCCHDemodulatedSymbols = NaN;
 row.PDCCHReceivePaddingApplied = false;
 row.PDCCHEquivalentValidHypothesisCount = 0;
+row.PDCCHHypothesisReductionScope = "";
+row.PDCCHCompositeHypothesisReductionClass = "";
+row.PDCCHCompositeValidHypothesisCount = NaN;
 row.PDCCHAmbiguousValidHypothesisCount = 0;
 row.PDCCHCRCDecodeSource = "";
 row.PDCCHBlindDecodeEvidenceSource = "";
