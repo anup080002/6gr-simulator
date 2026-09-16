@@ -11,6 +11,10 @@ frame=struct('K1',1,'K1Source','configured_periodic_CSI_report_occasion', ...
     'PDSCHEndSlot',3,'TargetSlot',4,'DecodedPRI',0,'PRIFieldWidth',3, ...
     'PRIProvenance','irrelevant_harq_pri','FirstCCE',0,'NumCCE',8, ...
     'SlotSymbolOwnership',"UUUUUUUUUUUUUU",'FlexibleResolutionProvided',false);
+% The target installs an overlapping SR occasion. Explicit idle state still
+% contributes a negative SR indication; resource tests must not omit it.
+initial=sixgr.truth.initializeConfiguredSRProcedures(cfg,ue);
+frame.SchedulingRequestStates=sixgr.phy.pucch.SchedulingRequestState.atSlot(initial,3);
 % An installed CSI resource need not occur in any HARQ resource set.
 section=cfg.validation.pucch_resources;
 resource=section.resources([section.resources.id]==10);

@@ -332,8 +332,37 @@ for item=items
         end
         continue;
     end
-    if item.Kind=="PreparePUCCH" && state.TestIndependentSharedHARQ
+    if item.Kind=="PreparePUCCH"
         state=sixgr.truth.CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime(state,item);
+        continue;
+    end
+    if item.Kind=="PUCCHReceiveOnly"
+        % Installed CSI occasions exist before this fixture produces CSI.
+        % Keep and decode their actual captures; never fabricate Prepared.
+        assert(state.TestWithCSI && isempty(item.Context.GNBReception.Mapping) && ...
+            ~isfield(item.Context,'Prepared'));
+        state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item);
+        observationID=string(item.Context.ObservationID);
+        reports=state.SharedGNBCSIReportTable;
+        row=reports(string(reports.ObservationID)==observationID,:);
+        assert(height(row)==1 && row.AvailableAtSample==owner.Events.NextSampleIndex);
+        receipt=state.SharedGNBUCIReceptions{end};
+        assert(receipt.ObservationID==observationID && isempty(receipt.Mapping));
+        % Retain the actual detector decision even when no PUCCH was prepared.
+        % A usable decode here is false-report evidence, not a TX claim and
+        % not permission to force DTX using transmitter-side knowledge.
+        receiver=receipt.Receiver;
+        save(fullfile(state.TestRoot,char(observationID+"_CSI_receive_only.mat")), ...
+            'item','row','receiver','-v7.3');
+        fprintf('PUSCH_FIXTURE_PERIODIC_CSI_RX_ONLY slot=%g decoded=%d no_PUCCH_prepared=1\n',row.DueSlot,row.CSIUCIDecodeOk);
+        continue;
+    end
+    if item.Kind=="PUCCHNotSelected"
+        state=sixgr.truth.completeUnselectedPUCCHObservation(state,item);
+        continue;
+    end
+    if item.Kind=="PUCCH"
+        state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
         continue;
     end
     c=item.Context; p=c.Prepared;
@@ -632,7 +661,9 @@ for item=items
                 state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext);
             if state.TestWithCSI
                 save(fullfile(state.TestRoot,'independent_csi_completion.mat'),'out','job','receiver','-v7.3');
-                reports=sixgr.util.structGet(state,'SharedGNBCSIReportTable',table());
+                allReports=sixgr.util.structGet(state,'SharedGNBCSIReportTable',table());
+                observationID=out.HARQ.SharedPUSCHHARQFeedbackReceipt.ObservationID;
+                reports=allReports(string(allReports.ObservationID)==observationID,:);
                 assert(height(reports)==1 && reports.CSIUCIDecodeOk && state.LatestDLFeedback(1).Valid, ...
                     'test:IndependentCSIPublicationMissing', ...
                     'The common independent receive completion must publish received CSI without the legacy producer-bound adapter.');
@@ -640,8 +671,11 @@ for item=items
                     reports.SourceSlotAuthority=="configured_CSI_reference_resource_not_UE_measurement_slot" && ...
                     isnan(reports.SINR_dB) && isnan(reports.CRCPass));
                 path=fullfile(state.TestRoot,'received_csi_reports.csv');
-                sixgr.util.csvWriteTable(path,reports,'PreserveSchema',true,'RoundTripNumericText',true);
-                saved=sixgr.util.csvReadTable(path,'TextType','string');
+                sixgr.util.csvWriteTable(path,allReports,'PreserveSchema',true,'RoundTripNumericText',true);
+                savedAll=sixgr.util.csvReadTable(path,'TextType','string');
+                assert(height(savedAll)==height(allReports));
+                saved=savedAll(string(savedAll.ObservationID)==observationID,:);
+                assert(height(saved)==1);
                 assert(saved.CSIUCIDecodeOk && saved.CQI==reports.CQI && isnan(saved.SINR_dB));
                 if state.TestForgetCSIProducer
                     assert(strlength(reports.UEReferenceRecordJSON)==0);
