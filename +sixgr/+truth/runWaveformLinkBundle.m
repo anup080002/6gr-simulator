@@ -3830,8 +3830,22 @@ for sweepIdx = 1:numel(snrGrid)
         break;
     end
 end
+if isfield(runtimeState,'SharedWaveformStream')
+    [runtimeState,~]=runtimeState.SharedWaveformStream.drainDataReceiveTail( ...
+        runtimeState,cfg,@localCompleteSharedControlObservations);
+    [runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates] = ...
+        localDrainSharedDataPlans(runtimeState,dlTrials,ulTrials,dlConstT,ulConstT,dlStates,ulStates);
+    if isfield(runtimeState,'SharedReceiveTailTable')
+        tail=runtimeState.SharedReceiveTailTable;
+        sixgr.util.csvWriteTable(fullfile(rootRunFolder,'reports','csv','shared_receive_tail.csv'),tail);
+        localAppendRuntimeLog('INFO', ...
+            'Drained actual shared data receive tail: samples=[%d,%d) observations=%d scheduled_slots=%d dl_rows=%d ul_rows=%d.', ...
+            tail.StartSample,tail.EndSampleExclusive,tail.PendingDataObservationCount, ...
+            tail.ScheduledSlotCount,height(dlTrials),height(ulTrials));
+    end
+end
 if isfield(runtimeState,'SharedWaveformStream') && ...
-        any(ismember(string({runtimeState.SharedWaveformStream.Pending.Kind}),["PDSCH","PUSCH"]))
+        any(ismember(string({runtimeState.SharedWaveformStream.Pending.Kind}),["PDSCH","PUSCH","PUSCHReceiveOnly"]))
     error('sixgr:truth:SharedDataReceiveTailNotDrained', ...
         'The scheduling horizon ended with actual data observations pending. Drain those physical receive tails before finalizing results.');
 end

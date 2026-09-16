@@ -457,6 +457,7 @@ classdef CoupledWaveformStream < handle
                     prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
             end
             context.Prepared=prepared;
+            context.ReceiveEndSampleExclusive=prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples);
             obj.Pending(end+1)=struct('ID',id,'Kind',family,'UE',ue, ...
                 'Context',context,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
         end
@@ -501,7 +502,8 @@ classdef CoupledWaveformStream < handle
                 obj.Events.observe(plane,id,first,stop);
             end
             context=struct('Grant',grant,'Config',cfg,'ObservationID',id, ...
-                'Source',"scheduled_gnb_capture_without_UE_transmission");
+                'Source',"scheduled_gnb_capture_without_UE_transmission", ...
+                'ReceiveEndSampleExclusive',stop);
             obj.Pending(end+1)=struct('ID',id,'Kind',"PUSCHReceiveOnly",'UE',ue, ...
                 'Context',context,'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
             obj.PUSCHReceiveOnlyRegistrations(end+1)=struct('ID',id,'UE',ue, ...
@@ -755,8 +757,53 @@ classdef CoupledWaveformStream < handle
                 end
             end
         end
-        function [state,completed]=advanceSlot(obj,state,cfg,onReceived)
+        function [state,completed]=drainDataReceiveTail(obj,state,cfg,onReceived)
+            % Scheduling is closed, but a transmitted allocation's channel/
+            % receive-clock tail is not padding and still needs real RF/noise.
+            % Bound this drain by already registered data windows. Do not run
+            % startSlot, create grants, or extend the scheduled TX-IQ export.
             if nargin<4, onReceived=[]; end
+            completed=struct('Kind',{},'UE',{},'Context',{},'Planes',{});
+            selected=ismember(string({obj.Pending.Kind}),["PDSCH","PUSCH","PUSCHReceiveOnly"]);
+            if ~any(selected), return; end
+            pending=obj.Pending(selected);
+            first=obj.Events.NextSampleIndex;
+            scheduledSlot=state.CurrentSlot;
+            carrier=sixgr.phy.grid.makeCarrier(cfg);
+            assert(first==sixgr.phy.frame.slotStartSample(carrier,scheduledSlot,obj.SampleRateHz), ...
+                'sixgr:truth:ReceiveTailHorizonClockMismatch', ...
+                'Close the scheduled slot before draining registered receive tails.');
+            for p=pending
+                if any(p.Kind==["PDSCH","PUSCH"])
+                    assert(p.Context.Prepared.EndSampleExclusive<=first, ...
+                        'sixgr:truth:ReceiveTailContainsFutureDataTX', ...
+                        'A future data transmission is not the receive tail of the closed horizon.');
+                else
+                    assert(sixgr.truth.runtimeULGrantSlot(p.Context.Grant)<=scheduledSlot, ...
+                        'sixgr:truth:ReceiveTailContainsFutureDataTX', ...
+                        'Only already scheduled source-slot receive-only windows may drain.');
+                end
+            end
+            last=max(arrayfun(@(p)p.Context.ReceiveEndSampleExclusive,pending));
+            validateattributes(last,{'numeric'},{'scalar','real','finite','integer','>',first});
+            while obj.Events.NextSampleIndex<last
+                state.CurrentSlot=state.CurrentSlot+1;
+                [state,items]=obj.advanceSlot(state,cfg,onReceived,last);
+                completed=[completed,items]; %#ok<AGROW>
+            end
+            assert(~any(ismember(string({obj.Pending.Kind}),["PDSCH","PUSCH","PUSCHReceiveOnly"])), ...
+                'sixgr:truth:SharedDataReceiveTailNotDrained', ...
+                'Every registered data receive window must complete on actual samples.');
+            state.CurrentSlot=scheduledSlot;
+            state.SharedReceiveTailTable=table(double(scheduledSlot),first,last,last-first, ...
+                obj.SampleRateHz,numel(pending), ...
+                "actual_shared_channel_noise_RF_after_scheduling_horizon", ...
+                'VariableNames',{'ScheduledSlotCount','StartSample','EndSampleExclusive', ...
+                'SampleCount','SampleRateHz','PendingDataObservationCount','Source'});
+        end
+        function [state,completed]=advanceSlot(obj,state,cfg,onReceived,receiveTailEndSample)
+            if nargin<4, onReceived=[]; end
+            drainingTail=nargin>=5;
             carrier=sixgr.phy.grid.makeCarrier(cfg);
             % Received grant ordinals may retain an integer MATLAB class.
             % OFDM vector indexing must not mix integer scalars and double
@@ -767,16 +814,22 @@ classdef CoupledWaveformStream < handle
             info=nrOFDMInfo(carrier);
             first=sixgr.phy.frame.slotStartSample(carrier,state.CurrentSlot-1,obj.SampleRateHz);
             stop=sixgr.phy.frame.slotStartSample(carrier,state.CurrentSlot,obj.SampleRateHz);
+            nominalStop=stop;
+            if drainingTail
+                validateattributes(receiveTailEndSample,{'numeric'}, ...
+                    {'scalar','real','finite','integer','>',first});
+                stop=min(stop,receiveTailEndSample);
+            end
             if obj.Events.NextSampleIndex~=first
                 error('sixgr:truth:SchedulerPhysicalClockMismatch','Slot scheduling and physical sample consumption are not contiguous.');
             end
             symbols=double(carrier.SymbolsPerSlot);
             localSlot=mod(double(carrier.NSlot),double(carrier.SlotsPerSubframe));
             lengths=double(info.SymbolLengths(localSlot*symbols+(1:symbols)));
-            if sum(lengths)~=stop-first
+            if sum(lengths)~=nominalStop-first
                 error('sixgr:truth:SlotSampleExtentMismatch','Actual OFDM symbol lengths must cover the scheduler slot.');
             end
-            if ~isempty(obj.TxIQRecorder)
+            if ~isempty(obj.TxIQRecorder) && ~drainingTail
                 txNodes=obj.Nodes(~endsWith(string({obj.Nodes.ID}),"_rx"));
                 for node=txNodes
                     obj.Serial=obj.Serial+1;
@@ -789,13 +842,14 @@ classdef CoupledWaveformStream < handle
                         'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
                 end
             end
-            boundaries=[first first+cumsum(lengths)];
+            boundaries=min([first first+cumsum(lengths)],stop);
             [~,~,~,partition]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,state.CurrentSlot);
             dl=double(partition.DLSymbolAllocation); ul=double(partition.ULSymbolAllocation);
             completed=struct('Kind',{},'UE',{},'Context',{},'Planes',{});
             % A slot is committed only after every producer has prepared its
             % contributions. Symbol boundaries preserve TDD guard intervals.
             for symbol=0:symbols-1
+                if obj.Events.NextSampleIndex>=stop, break; end
                 inDL=symbol>=dl(1) && symbol<sum(dl);
                 inUL=symbol>=ul(1) && symbol<sum(ul);
                 if xor(inDL,inUL)
@@ -879,6 +933,8 @@ classdef CoupledWaveformStream < handle
                             continue;
                         end
                         if d.Kind=="DataTX"
+                            assert(~drainingTail,'sixgr:truth:ReceiveTailContainsFutureDataTX', ...
+                                'Receive-tail draining cannot count a new data transmission.');
                             assert(obj.Events.NextSampleIndex==d.Context.FirstActiveSample+1, ...
                                 'sixgr:truth:DataTXCommitClockMismatch', ...
                                 'TX evidence belongs to the first actually consumed active sample.');

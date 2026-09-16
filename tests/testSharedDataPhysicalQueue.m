@@ -8,7 +8,13 @@ fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_trs_shared_scoring_fdd_fixture.yaml'; end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios',fixture));
-cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+[~,captureID]=fileparts(tempname);
+captureRoot=fullfile(pwd,'logs','shared_data_receive_tail',captureID);
+cfg=sixgr.lls6g.buildInternalConfig(s,captureRoot);
+cfg.run.rootRunFolder=captureRoot;
+% Explicit component capture policy: the RX tail must not grow the fixed
+% scheduled TX stream or alter its bytes/slot accounting.
+cfg.outputs.continuousRawIQCaptureEnabled=true;
 % This fixture validates the shared data queue in isolation.  Common DL
 % scheduling collisions are covered separately; do not request a PDSCH in
 % the configured slot-0 SS/PBCH rectangle.
@@ -59,12 +65,35 @@ assert(numel(owner.Pending)==2 && isempty(owner.DataTransmissions));
 state.DLQueueBits(1)=grant.TBSBits+g2.TBSBits; % Explicit fixture queue, not a measured application flow.
 assert(state.DLHarq.Stats.Tx==0);
 [state,~]=owner.advanceSlot(state,cfg,@localReceive);
-for slot=2:3
-    if ~owner.hasPending('PDSCH',1), break; end
-    % Consume real subsequent physical samples for the retained channel tail.
-    state.CurrentSlot=slot;
-    [state,~]=owner.advanceSlot(state,cfg,@localReceive);
-end
+firstSlotEnd=owner.Events.NextSampleIndex;
+localReject(@()owner.drainDataReceiveTail(state,cfg,@localReceive), ...
+    'sixgr:truth:ReceiveTailContainsFutureDataTX');
+assert(owner.Events.NextSampleIndex==firstSlotEnd && state.DLHarq.Stats.Tx==1, ...
+    'Reject future scheduled transmissions before advancing any tail samples.');
+state.CurrentSlot=2;
+[state,~]=owner.advanceSlot(state,cfg,@localReceive);
+assert(owner.hasPending('PDSCH',1),'test:MissingReceiveTail', ...
+    'The final coded allocation must reproduce a real receive tail beyond the scheduling horizon.');
+tailStart=owner.Events.NextSampleIndex;
+channel=owner.channelState(1,'DL');
+expectedTailEnd=p2.ReceiveEndSampleExclusive+double(channel.ChannelPadSamples);
+[state,tailCompleted]=owner.drainDataReceiveTail(state,cfg,@localReceive);
+assert(state.CurrentSlot==2 && owner.Events.NextSampleIndex==expectedTailEnd && ...
+    expectedTailEnd>tailStart && ...
+    state.SharedReceiveTailTable.StartSample==tailStart && ...
+    state.SharedReceiveTailTable.EndSampleExclusive==expectedTailEnd && ...
+    all(string({tailCompleted.Kind})=="PDSCH"), ...
+    'Only actual receive-tail samples may extend physical time; no extra scheduled slot or TB.');
+[state,repeated]=owner.drainDataReceiveTail(state,cfg,@localReceive);
+assert(isempty(repeated) && owner.Events.NextSampleIndex==expectedTailEnd, ...
+    'Repeated finalization must not execute RF or duplicate received results.');
+capture=owner.finalizeContinuousTxIQCapture(tailStart,2);
+assert(capture.Ok && all(capture.ManifestTable.SampleCountPerPort==tailStart) && ...
+    all(capture.ManifestTable.SchedulerSlotCount==2) && ...
+    all(capture.ManifestTable.SegmentCount==2), ...
+    'The exact continuous TX capture must end at the scheduling boundary, not the RX tail.');
+sixgr.util.csvWriteTable(fullfile(captureRoot,'receive_tail.csv'),state.SharedReceiveTailTable);
+disp("RECEIVE_TAIL_COMPONENT_EVIDENCE: "+captureRoot);
 assert(~owner.hasPending('PDSCH',1) && state.TestDataObservationCompleted);
 assert(numel(owner.DataTransmissions)==2 && state.TestDataTXCount==2 && state.TestDataRXCount==2);
 assert(state.DLHarq.Stats.Tx==2 && state.DLQueueBits(1)==0 && numel(state.SharedDataTXLedger)==2);
