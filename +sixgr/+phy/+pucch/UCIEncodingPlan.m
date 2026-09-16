@@ -9,6 +9,10 @@ classdef UCIEncodingPlan
         CRCBits
         Segmentation
         CodeBlocks
+        TotalCRCBits
+        CodeBlockPaddingBits
+        InformationAndCRCBits
+        CodeBlockInputBits
         Valid
         ErrorID
         RateMatchingDigest
@@ -46,6 +50,13 @@ classdef UCIEncodingPlan
             end
             obj.Segmentation = A >= 1013 || (A >= 360 && E >= 1088);
             obj.CodeBlocks = 1 + double(obj.Segmentation);
+            % CRCBits is per code block, not the total allocation overhead.
+            % TS 38.212 5.2.1 and 6.3.1.2: odd segmented payloads also
+            % prepend one filler bit. It is not an information or CRC bit.
+            obj.TotalCRCBits = obj.CodeBlocks * obj.CRCBits;
+            obj.CodeBlockPaddingBits = obj.CodeBlocks * ceil(A/obj.CodeBlocks) - A;
+            obj.InformationAndCRCBits = A + obj.TotalCRCBits;
+            obj.CodeBlockInputBits = obj.InformationAndCRCBits + obj.CodeBlockPaddingBits;
             obj.RateMatchingDigest = sixgr.phy.pucch.PUCCHUtil.hash( ...
                 struct("A",A,"E",E,"Family",obj.CodingFamily, ...
                 "CRC",obj.CRCPolynomial,"Segmented",obj.Segmentation));

@@ -1,0 +1,25 @@
+PUSCH_CSI_PRESENCE_DECISION_PASS ambiguous_TB_CRC=1 no_TB_no_decision=1 no_prior_or_TX_authority=1
+[PASS] testPUSCHCSIPresenceDecision (11.39s)
+PUSCH_RECEIVED_CSI_WAVEFORM_PASS: valid layout contracts and invalid-CSI independent HARQ.
+[PASS] testPUSCHReceivedCSIWaveform (11.36s)
+PUSCH_CSI_ABSENCE_MAPPING_PASS index_cases=24 erasure_cases=4 actual_UCI_codec=1 RF_qualification=0
+[PASS] testPUSCHCSIAbsenceMapping (2.58s)
+PUSCH_PARTIAL_CSI_RECEPTION_PASS declared_codec_cases=12; no RF qualification.
+[PASS] testPUSCHPartialCSIReception (3.16s)
+PUSCH_UCI_RECEIVER_EVIDENCE_PASS: modulation-specific UCI, actual CRC and failed-CRC rejection.
+[PASS] testPUSCHUCIReceiverEvidence (1.16s)
+PUSCH_UCI_ANNOTATION_PASS: declared metadata, no PHY qualification.
+[PASS] testPUSCHUCIAnnotation (0.05s)
+[PASS] testConfig (23.65s)
+[PASS] test6GParameterCatalog (14.99s)
+[PASS] test6GScenarioConfigValidation (19.81s)
+Slowest 9 test(s):
+   1. testConfig (23.65s)
+   2. test6GScenarioConfigValidation (19.81s)
+   3. test6GParameterCatalog (14.99s)
+   4. testPUSCHCSIPresenceDecision (11.39s)
+   5. testPUSCHReceivedCSIWaveform (11.36s)
+   6. testPUSCHPartialCSIReception (3.16s)
+   7. testPUSCHCSIAbsenceMapping (2.58s)
+   8. testPUSCHUCIReceiverEvidence (1.16s)
+   9. testPUSCHUCIAnnotation (0.05s)

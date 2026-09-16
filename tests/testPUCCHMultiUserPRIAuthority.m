@@ -10,6 +10,10 @@ scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
     "simulator", "configs", "scenarios", ...
     "lls_mimo4x4_multiuser_beamformed.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scenario, fullfile(tmp, "run"));
+% This resource-selection fixture explicitly requests combined HARQ/CSI.
+% Permission must not be inferred from payload construction later in the test.
+cfg.validation.pucch_resources.format2.simultaneous_harq_ack_csi=true;
+cfg.validation.pucch_resources.format2.max_code_rate=0.35;
 section = cfg.validation.pucch_resources;
 assert(string(section.multi_user_assignment.mode) == ...
     "rnti_modulo_resource_set");

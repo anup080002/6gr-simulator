@@ -3592,6 +3592,7 @@ scalarPairs = {
     "uci_scaling", "uci.scaling"
     "short_uci_decision_algorithm", "shortUCIDecision.algorithm"
     "short_uci_minimum_posterior", "shortUCIDecision.minimumPosterior"
+    "csi_presence_decision_algorithm", "csiPresenceDecisionAlgorithm"
     "repetition_type", "repetition.type"
     "repetition_count", "repetition.count"
     "dmrs_residual_post_eq_sinr_bound_enabled", "measurements.dmrsResidualPostEqSINRBoundEnabled"

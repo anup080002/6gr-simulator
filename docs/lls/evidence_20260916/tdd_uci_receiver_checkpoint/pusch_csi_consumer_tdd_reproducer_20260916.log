@@ -1,0 +1,16 @@
+{Error using assert
+Scheduler CSI requires Part-2 sizing from received Part 1, not stored TX payload lengths.
+
+Error in sixgr.truth.CoupledTruthRuntime/consumeDecodedPUSCHCSI (line 15051)
+        assert(all(isfield(evidence,{'CSI2LengthAuthority','CSIPart1DecodedBeforePart2', ...
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime (line 1629)
+        state = sixgr.truth.CoupledTruthRuntime. ...
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCoupledTruthCSIReportSourceAuthority>localCheckReceivedPUSCHLengthAuthority (line 484)
+    rejectedState=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,unavailable);
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCoupledTruthCSIReportSourceAuthority (line 216)
+localCheckReceivedPUSCHLengthAuthority(state,puschGrant,dueSlot);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

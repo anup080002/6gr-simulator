@@ -420,6 +420,9 @@
       "profile": {"required": false, "type": "string"},
       "configuration_epoch": {"required": false, "type": "integer", "min": 0},
       "resource_sets": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_resource_set_object"},
+      "format2": {"required": false, "type": "struct", "nested_rule": "pucch_format_configuration_object"},
+      "format3": {"required": false, "type": "struct", "nested_rule": "pucch_format_configuration_object"},
+      "format4": {"required": false, "type": "struct", "nested_rule": "pucch_format_configuration_object"},
       "resources": {"required": false, "type": "struct_array", "item_nested_rule": "pucch_resource_object"},
       "multi_user_assignment": {"required": false, "type": "struct", "nested_rule": "pucch_multi_user_assignment_object"},
       "dl_data_to_ul_ack": {"required": false, "type": "number_list"},
@@ -552,6 +555,10 @@
       "periodSlots": {"required": false, "type": "integer", "min": 1},
       "maxGrantsPerAuditSlot": {"required": false, "type": "integer", "min": 0},
       "unsampledGrantPolicy": {"required": false, "type": "string", "allowed_values": ["unavailable_no_feedback", "full_replay"]}
+    }},
+    "pucch_format_configuration_object": {"parameters": {
+      "simultaneous_harq_ack_csi": {"required": false, "type": "boolean"},
+      "max_code_rate": {"required": false, "type": "number", "allowed_numeric_values": [0.08, 0.15, 0.25, 0.35, 0.45, 0.60, 0.80]}
     }},
     "pucch_resource_set_object": {"parameters": {
       "set_id": {"required": false, "type": "integer", "min": 0},

@@ -1,0 +1,11 @@
+CSI_WIRE_ONLY_AUTHORITY measured_reference_sinr=11.25 changed_reference_sinr=80 receiver_cqi=11/11
+{Error using assert
+Unreported UE SINR/source CRC must not alter scheduler feedback from identical received CSI bits.
+
+Error in testCoupledTruthCSIReportSourceAuthority>localCheckReceivedPUSCHLengthAuthority (line 516)
+assert(isequaln(state.LatestDLFeedback,referenceResult.LatestDLFeedback), ...
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+Error in testCoupledTruthCSIReportSourceAuthority (line 216)
+localCheckReceivedPUSCHLengthAuthority(state,puschGrant,dueSlot);
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+} 

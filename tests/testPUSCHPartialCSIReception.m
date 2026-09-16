@@ -50,10 +50,22 @@ for quantity=["cri-RI-PMI-CQI","cri-RI-CQI","cri-RI-LI-PMI-CQI"]
     assert(rx.PartialReception && ~rx.CSIPart1Usable);
     assert(rx.CSIRejectionIdentifier=="sixgr:mimo:InvalidCRI");
     assert(isequal(rx.DecodedHARQACK,ack) && rx.UCIReceiverEvidence.HARQACK.DecodeUsable);
-    assert(isequal(rx.DecodedCSIPart1,invalid));
-    assert(rx.UCIReceiverEvidence.CSI1.DecodeUsable && ~rx.UCIReceiverEvidence.CSI1.SchemaUsable);
-    assert(rx.UCIReceiverEvidence.CSI1.ShortConfidence.MinimumPosterior==policy.minimumPosterior && ...
-        rx.UCIReceiverEvidence.HARQACK.ShortConfidence.MinimumPosterior==policy.minimumPosterior);
+    % A conditional present-CSI decoder still recovers the invalid wire
+    % word. That does not resolve presence or make its resources invariant.
+    [~,~,conditionalLLR]=nrULSCHDemultiplex(p,.3,tbs,5, ...
+        numel(invalid),numel(report.Part2Bits),llr);
+    [conditionalBits,conditionalEvidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence( ...
+        conditionalLLR,numel(invalid),'QPSK',policy);
+    assert(isequal(conditionalBits,invalid) && conditionalEvidence.DecodeUsable);
+    assert(conditionalEvidence.ShortConfidence.MinimumPosterior==policy.minimumPosterior);
+    assert(isempty(rx.DecodedCSIPart1) && isnan(rx.ResolvedCSI1BitCount) && ~rx.CSIPresenceResolved);
+    [csiUsable,csiCRC]=sixgr.truth.puschCSIReceiverUsable(rx, ...
+        rx.DecodedCSIPart1,rx.DecodedCSIPart2,[rx.ResolvedCSI1BitCount rx.ResolvedCSI2BitCount]);
+    assert(~csiUsable && isnan(csiCRC) && ~rx.CSIReportDetected, ...
+        'Partial reception must remain unavailable CSI at the runtime consumer boundary.');
+    assert(~rx.UCIReceiverEvidence.CSI1.DecodeUsable && ~rx.UCIReceiverEvidence.CSI1.SchemaUsable);
+    assert(~rx.UCIReceiverEvidence.CSI1.DecodeAttempted && ~rx.UCIReceiverEvidence.CSI1.ResourceMappingResolved);
+    assert(rx.UCIReceiverEvidence.HARQACK.ShortConfidence.MinimumPosterior==policy.minimumPosterior);
     assert(~rx.UCIReceiverEvidence.CSI1.CRCApplicable && isnan(rx.CSI1CRCOK));
     plan=rx.ResourceResolution;
     assert(isequal(rx.ULSCHMappingResolved,plan.ULSCHMappingInvariant));
@@ -66,14 +78,13 @@ for quantity=["cri-RI-PMI-CQI","cri-RI-CQI","cri-RI-LI-PMI-CQI"]
             assert(isempty(rx.ULSCHLLR{1}));
         end
     end
-    if isscalar(expectedPart2Counts)
-        assert(rx.ULSCHMappingResolved && rx.ResolvedCSI2BitCount==expectedPart2Counts);
-        assert(rx.CSI2LengthAuthority=="single_length_in_active_report_configuration");
-        assert(isequal(rx.DecodedCSIPart2,report.Part2Bits), ...
-            'Fixed-length coded Part 2 remains observable despite invalid CSI semantics.');
-        assert(~rx.CSIPart1Usable && ~rx.UCIReceiverEvidence.CSI1.SchemaUsable);
+    assert(rx.ULSCHMappingResolved==(tbs==0), ...
+        'A fixed present-only CSI length must not manufacture resolved UL-SCH resources.');
+    if isequal(expectedPart2Counts,0)
+        assert(rx.ResolvedCSI2BitCount==0 && isempty(rx.DecodedCSIPart2));
+        assert(rx.CSI2LengthAuthority=="invariant_length_and_mapping_including_CSI_absence");
     else
-        assert(numel(schema.part2BitCountCandidates())>1 && isnan(rx.ResolvedCSI2BitCount));
+        assert(isnan(rx.ResolvedCSI2BitCount));
         assert(isempty(rx.DecodedCSIPart2) && isnan(rx.CSI2CRCOK));
         assert(~rx.UCIReceiverEvidence.CSI2AndConfiguredGrantUCI.DecodeAttempted);
     end

@@ -1,0 +1,43 @@
+PUSCH_RECEIVED_CSI_SCHEDULER_AUTHORITY_PASS
+[PASS] testCoupledTruthCSIReportSourceAuthority (57.41s)
+PUSCH_CSI_PRESENCE_DECISION_PASS ambiguous_TB_CRC=1 no_TB_no_decision=1 no_prior_or_TX_authority=1
+[PASS] testPUSCHCSIPresenceDecision (4.38s)
+PUSCH_RECEIVED_CSI_WAVEFORM_PASS: valid layout contracts and invalid-CSI independent HARQ.
+[PASS] testPUSCHReceivedCSIWaveform (8.55s)
+PUSCH_PARTIAL_CSI_RECEPTION_PASS declared_codec_cases=12; no RF qualification.
+[PASS] testPUSCHPartialCSIReception (3.13s)
+PUSCH_CSI_ABSENCE_MAPPING_PASS index_cases=24 erasure_cases=4 actual_UCI_codec=1 RF_qualification=0
+[PASS] testPUSCHCSIAbsenceMapping (2.58s)
+PUSCH_UCI_RECEIVER_EVIDENCE_PASS: modulation-specific UCI, actual CRC and failed-CRC rejection.
+[PASS] testPUSCHUCIReceiverEvidence (1.34s)
+SHARED_CSI_SOURCE_RECEIVED slot=7 completed_sample=53775 CQI=15 RI=1 PMI=3
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=1 CRC=1 sample=23047 noise=1e-13
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=6 process=2 CRC=0 sample=46087 noise=0.0001
+RECEIVED_CONSTELLATION_CAPTURE_PASS: UL samples=3522 EVM_pct=0.127050340331 root=C:\Users\anup0\AppData\Local\Temp\tp30670695_59dd_4ec4_83eb_d6d96fde5985
+    Direction    Slot    EstimatedCFO_PreCorrection_Hz    EstimatedCFO_Hz    TimingOffset_samples     EVM_rms     PostEqSINR_dB
+    _________    ____    _____________________________    _______________    ____________________    _________    _____________
+
+      "UL"        10                -10.647                   -10.647                 90             0.0012705         45      
+
+SHARED_PUSCH_LATE_CSI_DELIVERY_PASS: measured CSI-RS report retained across actual PUSCH and late delivery.
+SHARED_PUSCH_LATE_UCI_DELIVERY_PASS: actual slot-10 reception delivered in slot 11.
+SHARED_PUSCH_CHANNEL_ARTIFACTS_PASS: TDD actual SRS/DCI/PUSCH/UCI, seed=4.7026e+06 root=C:\Users\anup0\AppData\Local\Temp\tpabecb890_cbcb_428d_be98_c4ea5005b8c4
+[PASS] testSharedPUSCHLateCSIDelivery (226.31s)
+[PASS] testConfig (15.20s)
+[PASS] testLLS_DL (78.23s)
+[PASS] testLLS_UL (58.31s)
+[PASS] testLLS_ReferencePoints (93.51s)
+[PASS] testStrictProxyGuards (0.62s)
+[PASS] testStrictMode_NoFallbackAnywhere (6.09s)
+[PASS] testSchedulerGrantConsistency (12.22s)
+Slowest 10 test(s):
+   1. testSharedPUSCHLateCSIDelivery (226.31s)
+   2. testLLS_ReferencePoints (93.51s)
+   3. testLLS_DL (78.23s)
+   4. testLLS_UL (58.31s)
+   5. testCoupledTruthCSIReportSourceAuthority (57.41s)
+   6. testConfig (15.20s)
+   7. testSchedulerGrantConsistency (12.22s)
+   8. testPUSCHReceivedCSIWaveform (8.55s)
+   9. testStrictMode_NoFallbackAnywhere (6.09s)
+  10. testPUSCHCSIPresenceDecision (4.38s)

@@ -675,9 +675,30 @@ if isempty(opt.UCIReceiveContext)
         localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
         expectedUCIPayload, initialIMCS, cfg);
 else
+    % Only the receiver's coding policy enters CSI-presence selection.
+    % A supplied layout remains an assertion checked AFTER selection; its
+    % TX-dependent rate-matched length must never select a hypothesis.
+    presenceNref=cell(1,nCodewords);
+    for cw=1:nCodewords
+        supplied=struct();
+        if iscell(opt.CodingLayout)
+            assert(numel(opt.CodingLayout)==nCodewords, ...
+                'sixgr:phy:ul:PUSCHCodingLayoutMismatch','One supplied layout per codeword is required.');
+            supplied=opt.CodingLayout{cw};
+        elseif nCodewords==1
+            supplied=opt.CodingLayout;
+            if isempty(supplied) || (isstruct(supplied) && isempty(fieldnames(supplied)))
+                supplied=sixgr.util.structGet(phyGrant,'CodingLayout',struct());
+            end
+        end
+        presenceNref{cw}=sixgr.util.structGet(supplied,'Nref',[]);
+    end
+    presenceCoding=struct('RV',rv,'MaxIterations',maxIter,'Algorithm',alg, ...
+        'Nref',{presenceNref},'PresenceDecisionAlgorithm',cfg.phy.pusch.csiPresenceDecisionAlgorithm);
     [cwLLRForULSCH, uciOnPUSCH] = sixgr.phy.ul.pusch.receiveConfiguredUCI( ...
         localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
-        opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration, cfg.phy.pusch.shortUCIDecision);
+        opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration, ...
+        cfg.phy.pusch.shortUCIDecision,presenceCoding);
 end
 
 % Resolve LDPC rate recovery only AFTER received UCI has established the

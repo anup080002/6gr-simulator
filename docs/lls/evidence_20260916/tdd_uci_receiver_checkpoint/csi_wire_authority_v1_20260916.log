@@ -1,0 +1,30 @@
+CSI_WIRE_ONLY_AUTHORITY measured_reference_sinr=NaN changed_reference_sinr=NaN receiver_cqi=11/11
+CSI_RECEIVED_FIELD_AUDIT_CSV_PASS root=C:\Users\anup0\AppData\Local\Temp\sixgr_tdd_combined_receiver_20260916\logs\csi_wire_authority\tpa8885cd8_a1de_465b_a42f_d9672fa521d3
+PUSCH_RECEIVED_CSI_SCHEDULER_AUTHORITY_PASS
+[PASS] testCoupledTruthCSIReportSourceAuthority (56.29s)
+PUSCH_UCI_RECEIVER_EVIDENCE_PASS: modulation-specific UCI, actual CRC and failed-CRC rejection.
+[PASS] testPUSCHUCIReceiverEvidence (1.13s)
+PUSCH_CSI_PRESENCE_DECISION_PASS ambiguous_TB_CRC=1 no_TB_no_decision=1 no_prior_or_TX_authority=1
+[PASS] testPUSCHCSIPresenceDecision (2.64s)
+PUSCH_RECEIVED_CSI_WAVEFORM_PASS: valid layout contracts and invalid-CSI independent HARQ.
+[PASS] testPUSCHReceivedCSIWaveform (10.38s)
+[PASS] testCausalFeedbackAMC (2.72s)
+[PASS] testLinkExportPipeline (47.32s)
+[PASS] testArtifactIntegrity (0.58s)
+[PASS] testOrganizeRunResults_E2EArtifactPreservation (1.67s)
+[PASS] testSchedulerGrantConsistency (16.39s)
+Slowest 9 test(s):
+   1. testCoupledTruthCSIReportSourceAuthority (56.29s)
+   2. testLinkExportPipeline (47.32s)
+   3. testSchedulerGrantConsistency (16.39s)
+   4. testPUSCHReceivedCSIWaveform (10.38s)
+   5. testCausalFeedbackAMC (2.72s)
+   6. testPUSCHCSIPresenceDecision (2.64s)
+   7. testOrganizeRunResults_E2EArtifactPreservation (1.67s)
+   8. testPUSCHUCIReceiverEvidence (1.13s)
+   9. testArtifactIntegrity (0.58s)
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_CSI_REPORT_CLOCK_PASS: TDD HARQ=0 CSI bits=7 due=4 delivered=5.
+RECEIVED_DL_FEEDBACK_FIXTURE: slot=3 process=0 CRC=1 sample=23047 noise=1e-13
+PUCCH_POWER_EXPORT_PASS: actual shared receiver ledger, scoped power plane, CSV roundtrip.
+SHARED_CSI_REPORT_CLOCK_PASS: TDD HARQ=1 CSI bits=7 due=4 delivered=5.

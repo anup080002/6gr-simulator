@@ -1,5 +1,5 @@
 function [ulschLLR,info]=receiveConfiguredUCI(cwLLR,pusch,targetCodeRate, ...
-        transportBlockSize,context,initialIMCS,reportConfig,shortPolicy)
+        transportBlockSize,context,initialIMCS,reportConfig,shortPolicy,coding)
 % Payload-free adapter from actual PUSCH LLRs to receiver evidence.
 % Caller owns capture/grant binding. No cfg/UE-state/TX-reference input.
 if nargin<7, reportConfig=[]; end
@@ -7,8 +7,15 @@ if nargin<8, shortPolicy=sixgr.phy.ul.pusch.resolveShortUCIDecisionPolicy(); end
 assert(isa(context,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && isscalar(context), ...
     'sixgr:pusch:MissingUCIReceiveContext','Use the independently installed gNB receive context.');
 budget=context.bitBudget(reportConfig);
-result=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.receive( ...
-    pusch,targetCodeRate,transportBlockSize,cwLLR,context,initialIMCS,reportConfig,shortPolicy);
+if nargin>=9 && ~isempty(reportConfig)
+    result=sixgr.phy.ul.pusch.receiveWithCSIPresence( ...
+        pusch,targetCodeRate,transportBlockSize,cwLLR,context,initialIMCS,reportConfig,shortPolicy,coding);
+else
+    % Standalone fixed-schema component adapter. Without current data
+    % evidence this call does not establish configured CSI's presence.
+    result=sixgr.phy.ul.pusch.PUSCHUCIDemultiplexer.receive( ...
+        pusch,targetCodeRate,transportBlockSize,cwLLR,context,initialIMCS,reportConfig,shortPolicy);
+end
 ulschLLR=result.ULSCHLLR;
 ack=result.UCIReceiverEvidence.HARQACK;
 status="not_requested"; reason="";
@@ -40,4 +47,7 @@ info=struct( ...
     'CSIRejectionIdentifier',result.CSIRejectionIdentifier, ...
     'ReceiverContextDigest',result.ReceiverContextDigest, ...
     'ReferenceScoringAvailable',false,'Status',status,'Reason',reason);
+for name=["CSIPresenceResolved","CSIReportDetected","CSIPresenceEvidence"]
+    if isfield(result,name), info.(name)=result.(name); end
+end
 end

@@ -18,12 +18,14 @@ for count=double(v.harq_bit_counts(:).')
             data=f.Report.Data; data.HARQACKReport=struct('Bits',ack);
             data.SchedulingRequestReports=struct('Bits',int8(sr));
             report=sixgr.phy.pucch.UCIReport(data);
+            assignment=sixgr.phy.pucch.PUCCHTransmissionAssignment.fromCombinedUCI( ...
+                report,f.UEContext,f.FrameState);
             context=sixgr.phy.pucch.UCIReportContext.fromReport(report);
             reference=nrPUCCH(f.Carrier,f.Assignment.Resource.toolboxConfig(),{ack,int8(sr)});
             expectedPresent=~isempty(reference);
             tx=[]; rx=[]; txError=""; rxError=""; txMatch=false; rxMatch=false;
             try
-                tx=sixgr.phy.pucch.PUCCHTransmitter.transmit(f.Carrier,f.Assignment,report);
+                tx=sixgr.phy.pucch.PUCCHTransmitter.transmit(f.Carrier,assignment,report);
                 actual=tx.Grid(tx.PUCCHIndices);
                 if expectedPresent
                     txMatch=isequal(size(actual),size(reference)) && max(abs(actual-reference))<1e-12;

@@ -46,7 +46,8 @@ else
     rx.UCIReferenceScoringAvailable=false;
     rx.UCIReceiveContextDigest=uci.ReceiverContextDigest;
 end
-for name=["PartialReception","CSIPart1Usable","CSIRejectionIdentifier","ULSCHMappingResolved"]
+for name=["PartialReception","CSIPart1Usable","CSIRejectionIdentifier","ULSCHMappingResolved", ...
+        "CSIPresenceResolved","CSIReportDetected","CSIPresenceEvidence"]
     if isfield(uci,name), rx.(name)=uci.(name); end
 end
 end

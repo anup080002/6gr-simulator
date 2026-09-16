@@ -117,7 +117,9 @@ classdef UCIReportSerializer
                     if isfield(input(index),"Bits")
                         next = sixgr.phy.pucch.PUCCHUtil.bits(input(index).Bits);
                     elseif isfield(input(index),"Value")
-                        next = int8(logical(input(index).Value));
+                        next = sixgr.phy.pucch.PUCCHUtil.bits(input(index).Value);
+                        assert(isscalar(next),'sixgr:phy:pucch:InvalidUCIBit', ...
+                            'An SR indication Value must be exactly one binary value.');
                     else
                         continue;
                     end

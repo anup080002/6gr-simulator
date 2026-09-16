@@ -1,0 +1,192 @@
+{
+  "BaseRevision": "5d20e64dbd7a8fb53880c58c9d2eab2b3a864aea",
+  "CapturedUTC": "2026-09-16T06:38:35.9608683Z",
+  "BatchLog": "logs/pusch_csi_presence_v1_20260916.log",
+  "BatchStatus": "completed",
+  "ExitCode": 0,
+  "LogSHA256": "1B24B216FF0815F88C435390C583BD3266EE87B163A4FCEE2BBA3893EA183565",
+  "CompletedUTC": "2026-09-16T06:41:50.9713108Z",
+  "SourceHashesUnchangedAtCompletion": true,
+  "PassedSelectedGuards": 9,
+  "ReceiverAlgorithmStatisticallyQualified": false,
+  "FullSuiteQualified": false,
+  "Integrated12dBQualified": false,
+  "Files": [
+    {
+      "Path": "+sixgr/+lls6g/buildInternalConfig.m",
+      "SHA256": "52FC7188285CB3C52BEB7ACD4D2F05FA660146555452D0CBA867915022124D21"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/executePUCCHImpactExperiment.m",
+      "SHA256": "63415035B690EB80CF11D40263D7BEF886BF33A3A8CF62C63F844C206F3C5584"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHConfigBuilder.m",
+      "SHA256": "0E3ED33C61519B9D44A6990D564DC8D27FD7ADB4C94A82E9C350B6926BAA96BA"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHFixtureFactory.m",
+      "SHA256": "B273C9AD06A926C6D8610751C82C85C368CDE9EEDB4307C6C707957A7CC5EB74"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHFormatValidator.m",
+      "SHA256": "3B094DCA9CCAF79EDB8BAE1BD9AF5579A56698E5BA12E99EC261E4417FB22AC4"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHGridMapper.m",
+      "SHA256": "C686E190ECC3AD1D02DF63DB7E6B60C449DC3A3036986F65FD9F538A95036A25"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHReceiver.m",
+      "SHA256": "7E58C7304AC096C74C3ACD65E657E963EE71D10B92EA599E8832BDEF43E692A4"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHReceptionAssignment.m",
+      "SHA256": "883ADDB083B1ADB25E603FFA0CB17685C3E589E8EC30A58C606BDF7230B983FB"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHResource.m",
+      "SHA256": "351446EC94980422C54B7629106A4992FD3E78707DBACAC5B4A132762EA0BF64"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHResourcePlan.m",
+      "SHA256": "CCAA7D578207A8D5C7BB533091CCEE3DC8E9EF6B5C857757B2D989C3F82643D3"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHResourceSetResolver.m",
+      "SHA256": "D1163A6205E6800BD2BA88A8AF5B7C96BFA9275288B4D49AADC75F1B0573FBCA"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHRRCContext.m",
+      "SHA256": "21F6A01FA7B65B00D4B1EDEB964E090E0F3A96479DCD1EBB14349D1A592B3838"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHTransmissionAssignment.m",
+      "SHA256": "7B84971ED6BF47B6D214FB92FAD9D8F70C11A29D4DD6AA649CA6D3A97C4DBD59"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/PUCCHTransmitter.m",
+      "SHA256": "94EF0335F4622B6EFBBA275212DEFFAFCE53051C3DA9853C0A1096B2B9BAC6B7"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/UCIEncodingPlan.m",
+      "SHA256": "36DCB46435D60A9E0A2D241DB5C5FCAF1B6AAB8C94F4614187168605BE09B941"
+    },
+    {
+      "Path": "+sixgr/+phy/+pucch/UCIReportSerializer.m",
+      "SHA256": "B7D8307C380BB773A4C2331A85D22A2BF97F99FF9D345AB4C6025761FC5C13EF"
+    },
+    {
+      "Path": "+sixgr/+phy/+ul/+pusch/annotateUCIReceiverEvidence.m",
+      "SHA256": "D16A2DA8036375D3A555B119435649C14696E38B5A21460E1DB8015D9F79D92A"
+    },
+    {
+      "Path": "+sixgr/+phy/+ul/+pusch/inspectUCIResourceInvariance.m",
+      "SHA256": "B61215F770B3BCB762B7711411371CE4927430B2C6C0B4803E3970BF417A226B"
+    },
+    {
+      "Path": "+sixgr/+phy/+ul/+pusch/receiveConfiguredUCI.m",
+      "SHA256": "AAEC0EA4730A9734722090D82396C7B86DE19060256629E13154579CB6C3A1B7"
+    },
+    {
+      "Path": "+sixgr/+phy/+ul/+pusch/receiveInvariantUCI.m",
+      "SHA256": "C1396C7F0293A7343A6FA2327137BADA26F9E6BFC87E8F45C1CA1929E23BE5B3"
+    },
+    {
+      "Path": "+sixgr/+phy/+ul/+pusch/receiveWithCSIPresence.m",
+      "SHA256": "FD6CFCD3F88C90EE2349457401A5F2D89ABBCACCE79E68B0B968C6E86F07698E"
+    },
+    {
+      "Path": "+sixgr/+phy/+ul/PUSCH_Rx.m",
+      "SHA256": "BEF77AACD84A645F538312E2EF5D5D3F41BA9F61AB6C3EF203E1281B72D62F3B"
+    },
+    {
+      "Path": "+sixgr/+truth/CoupledTruthRuntime.m",
+      "SHA256": "F6A7293F0B1D5C7AD6F1B66D2875F2A7A0A2C87EAE299DDB71AF40E5324103C8"
+    },
+    {
+      "Path": "+sixgr/+truth/puschCSIReceiverUsable.m",
+      "SHA256": "7B3E70B09BEEE89BB6641C20DB7AA97F11C9E2E559CD69C3ECCE898BF59FD507"
+    },
+    {
+      "Path": "simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd.yaml",
+      "SHA256": "F5CC3F58D363B363A3563FA081F48484485B82D6C356501BDCC5BAAC570C5DF3"
+    },
+    {
+      "Path": "simulator/configs/schema/core_parameter_catalog.yaml",
+      "SHA256": "BE081229AF91C022EE196F027D08299141D62B9DFA6EABEABC56F663A900CE9E"
+    },
+    {
+      "Path": "simulator/configs/schema/scenario_parameter_catalog_extension_01.yaml",
+      "SHA256": "55457158EFBF30DB4F0A836F1809784F65890DC25F8C18C14B304C8E43254A2D"
+    },
+    {
+      "Path": "simulator/configs/schema/scenario_parameter_catalog_extension_07.yaml",
+      "SHA256": "D38608B061365796232D9823495019EA854A678909A8C7067660B7F73158AE88"
+    },
+    {
+      "Path": "tests/testAll.m",
+      "SHA256": "85D40DA32C422CB1CF78C1E85A96DAD3C168E84B39B54172D42F7D9D9A6D9D7D"
+    },
+    {
+      "Path": "tests/testConfiguredCombinedPUCCHReception.m",
+      "SHA256": "8D192963814EBC297C406F37CD3C1773F5CB7F02F442FAF557B25C0A3130DED8"
+    },
+    {
+      "Path": "tests/testPUCCHCodeRateAllocation.m",
+      "SHA256": "791CF5CE4AA560A9262EE1406821978455E357F38C34B8C5FF86ECBFDA1E1181"
+    },
+    {
+      "Path": "tests/testPUCCHCSIWholeReportSelection.m",
+      "SHA256": "1AEF70E92FE853507059F928BC0A5D83E5C81C7DF6081AF8235E6D71FD1E7D72"
+    },
+    {
+      "Path": "tests/testPUCCHFormat0SRSemantics.m",
+      "SHA256": "5E90F3D61823CF6C423B8EF0334B0FE1B4D804442CEA7CBE7202313430ED4D2D"
+    },
+    {
+      "Path": "tests/testPUCCHMultiplexingPermission.m",
+      "SHA256": "8AD008CE83F5CC0C47F59E64C19D6DABBAC188B6AB09C076B0747A6E0A77B039"
+    },
+    {
+      "Path": "tests/testPUCCHMultiUserPRIAuthority.m",
+      "SHA256": "BEDE2626AB745CEA2890EFDB7AFF2FF8FD6F15AAF1147F0B2BD2AE68F5D18A96"
+    },
+    {
+      "Path": "tests/testPUCCHShortSRContract.m",
+      "SHA256": "CD1B78E2B170C3F0B3DD04967A2157B5E452B6576F4B5DFD09BB82EC867EFB86"
+    },
+    {
+      "Path": "tests/testPUCCHTrialIndependentReceive.m",
+      "SHA256": "ECE0EBFAC2EB3C9D08850287AF6221A7E424930DBACB503173674CC5BCA8F3F4"
+    },
+    {
+      "Path": "tests/testPUSCHCSIAbsenceMapping.m",
+      "SHA256": "956A8E85231522F6798273F53B9B911E68A63922E45FE1E954244AE08D07FF77"
+    },
+    {
+      "Path": "tests/testPUSCHCSIPresenceDecision.m",
+      "SHA256": "3AEB6F6DF197770BD9014F5D2336ADB88534FCB0ACA03E55FFD98C113B14B03C"
+    },
+    {
+      "Path": "tests/testPUSCHPartialCSIReception.m",
+      "SHA256": "04BEBA7CEFEA78BD90284208F597A3153335D165158FE6AEAD86531253E84BF7"
+    },
+    {
+      "Path": "tests/testPUSCHReceivedCSIWaveform.m",
+      "SHA256": "468BAD0AE7436C53F66028F2B46888B2A83CA7DC92D387F5A44E160D86A4B78E"
+    },
+    {
+      "Path": "tests/testPUSCHUCIResourceInvariance.m",
+      "SHA256": "8C6CF5FFDC2FCEA33F806591B389CC54CC6E7DBDCC26A5863E1E7236F4028F63"
+    },
+    {
+      "Path": "tests/testSharedCSIReportClock.m",
+      "SHA256": "63F02F210DB8C9676972A92AC6676CDC7264102B83526B6A5FB7349A46C87D85"
+    },
+    {
+      "Path": "tests/testUCICodingOverhead.m",
+      "SHA256": "EC97A4CF8177564C4FCE111FF03CF8B7149FB555B4C4E17977E7F29CB76E9F8E"
+    }
+  ]
+}

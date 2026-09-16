@@ -57,6 +57,13 @@ classdef PUCCHResourceSetResolver
             end
             serialized = sixgr.phy.pucch.UCIReportSerializer.serialize(report);
             oUCI = serialized.InformationBitCount;
+            owners=string(serialized.Layout.BitOwner);
+            harqCount=sum(owners=="HARQ_ACK");
+            srCount=sum(owners=="SR");
+            if harqCount<=2 && srCount==1 && ...
+                    ~any(owners=="CSI_PART1" | owners=="CSI_PART2")
+                oUCI=max(1,harqCount);
+            end
             selected=sixgr.phy.pucch.PUCCHResourceSetResolver.resolveBitCount( ...
                 oUCI,rrcContext,report.ConfigurationEpoch);
         end

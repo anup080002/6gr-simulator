@@ -69,6 +69,10 @@ classdef PUCCHTransmissionAssignment
             assert(isa(spatial,'sixgr.phy.pucch.PUCCHSpatialRelationState'), ...
                 'sixgr:phy:pucch:InactiveSpatialRelation','A typed active spatial relation is required.');
             data=plan.Data;
+            % Freeze the exact payload/ownership used for resource selection.
+            % ReportID and epoch alone do not bind the coding-rate budget.
+            data.ReportDigest=plan.ReportDigest;
+            data.RequestedReportDigest=plan.RequestedReportDigest;
             data.PowerControlStateID=power.Data.StateID;
             data.SpatialRelationStateID=spatial.Data.SpatialRelationID;
             data.CollisionResolution="no_unresolved_collision";
@@ -76,8 +80,8 @@ classdef PUCCHTransmissionAssignment
             obj=sixgr.phy.pucch.PUCCHTransmissionAssignment(data,plan.Resource,power,spatial);
         end
 
-        function obj = fromCombinedUCI(report,ueContext,frameState)
-            obj = sixgr.phy.pucch.PUCCHTransmissionAssignment.resolve( ...
+        function [obj,transmittedReport] = fromCombinedUCI(report,ueContext,frameState)
+            [obj,transmittedReport] = sixgr.phy.pucch.PUCCHTransmissionAssignment.resolve( ...
                 report,ueContext,frameState,"combined_uci");
         end
 
@@ -176,7 +180,7 @@ classdef PUCCHTransmissionAssignment
     end
 
     methods (Static, Access=private)
-        function obj = resolve(report,ueContext,frameState,source)
+        function [obj,transmittedReport] = resolve(report,ueContext,frameState,source)
             if ~isa(report,"sixgr.phy.pucch.UCIReport") || ...
                     ~isa(ueContext,"sixgr.phy.pucch.PUCCHUEContext")
                 error("sixgr:phy:pucch:MissingUCIReportContext", ...
@@ -186,6 +190,7 @@ classdef PUCCHTransmissionAssignment
                 ueContext.Data.RRCContext,frameState,source);
             obj=sixgr.phy.pucch.PUCCHTransmissionAssignment.fromResourcePlan( ...
                 plan,ueContext.Data.PowerControlState,ueContext.Data.SpatialRelationState);
+            transmittedReport=plan.TransmittedReport;
         end
     end
 end

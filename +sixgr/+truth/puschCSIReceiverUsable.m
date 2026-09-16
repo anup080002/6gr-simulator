@@ -3,6 +3,16 @@ function [usable,crcPass]=puschCSIReceiverUsable(harqOut,part1,part2,expectedCou
 e=sixgr.util.structGet(harqOut,'UCIReceiverEvidence',struct());
 assert(isstruct(e) && isscalar(e) && all(isfield(e,{'CSI1','CSI2AndConfiguredGrantUCI'})), ...
     'sixgr:truth:MissingPUSCHCSIReceiverEvidence','PUSCH CSI delivery requires retained per-part decoder evidence.');
+if isfield(e,'CSIPresenceResolved') || isfield(e,'CSIReportDetected')
+    assert(all(isfield(e,{'CSIPresenceResolved','CSIReportDetected'})) && ...
+        islogical(e.CSIPresenceResolved) && isscalar(e.CSIPresenceResolved) && ...
+        islogical(e.CSIReportDetected) && isscalar(e.CSIReportDetected), ...
+        'sixgr:truth:InvalidPUSCHCSIReceiverEvidence', ...
+        'Presence resolution and detection must remain explicit receiver decisions.');
+    if ~e.CSIPresenceResolved || ~e.CSIReportDetected
+        usable=false; crcPass=NaN; return;
+    end
+end
 parts={part1,part2}; names={'CSI1','CSI2AndConfiguredGrantUCI'};
 usable=true; applicable=false; crcOK=true;
 for k=1:2

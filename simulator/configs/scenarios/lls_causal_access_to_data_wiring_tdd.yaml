@@ -816,6 +816,12 @@ pucch_resources:
   enabled: true
   profile: nr_rel18_pucch_strict
   configuration_epoch: 1
+  # TS 38.331 PUCCH-FormatConfig: permission belongs to this format only.
+  format2:
+    simultaneous_harq_ack_csi: true
+    # Declared resource policy, not an SNR/ACK target. Two PRBs x two
+    # symbols provide E=64; 12 information + 6 CRC bits require 18/64.
+    max_code_rate: 0.35
   resource_sets:
     -
       id: 0

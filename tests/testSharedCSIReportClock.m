@@ -126,15 +126,38 @@ assert(report.CRI==row.CRI,'Actual CSI delivery must preserve its configured res
 assert(state.LatestDLFeedback.Valid && ...
     state.LatestDLFeedback.SchedulerCQIRawCQI==expected.CQI && ...
     state.LatestDLFeedback.CQI==report.SchedulerResolvedCQI);
+assert(isnan(state.LatestDLFeedback.SINR_dB) && isnan(state.LatestDLFeedback.FeedbackCRCPass), ...
+    'Actual PUCCH CSI must not publish unreported UE SINR or a source data-TB CRC.');
+assert(strlength(report.UEReferenceRecordJSON)>0 && string(report.SourceSignal)=="received_CSI_UCI");
 assert(isequal(sixgr.runtime.RawCSVArrayCodec.decode(report.CSIUCIDecodedBitsToken), ...
     [sixgr.runtime.RawCSVArrayCodec.decode(expected.CSIPart1BitsToken); ...
      sixgr.runtime.RawCSVArrayCodec.decode(expected.CSIPart2BitsToken)]));
 assert(height(state.ControlTrials.PUCCH)==1 && state.ControlTrials.PUCCH.PUCCHDecodeOk);
+assert(state.ControlTrials.PUCCH.UECSIRequestedReportCount==1 && ...
+    state.ControlTrials.PUCCH.UECSITransmittedReportCount==1 && ...
+    state.ControlTrials.PUCCH.UECSISelectionReason=="all_requested_reports_selected");
 verifyPUCCHPowerExport(state.ControlTrials.PUCCH,cfg);
 assert(state.ControlTrials.PUCCH.LogicalFeedbackCount==1+double(withHARQ));
 assert(all(state.PUCCHGrantTraceTable.GrantExecutedFlag));
 assert(state.DLHarq.Stats.Ack==double(withHARQ) && state.DLHarq.Stats.Nack==0);
 assert(~owner.hasPending('PUCCH',1));
+% Analytic reducer checks on a COPY after actual delivery. These are not
+% omitted-report RF episodes. A CSI reservation must not claim execution
+% merely because the shared physical occasion carried HARQ. Preserve a
+% possible independent receiver false detection instead of masking it.
+for receiverCSI=[false true]
+    observed=struct('CSIDecodeOk',receiverCSI,'DTXFlag',false,'UECSIRequestedReportCount',1, ...
+        'UECSITransmittedReportCount',0,'UECSISelectionReason',"whole_reports_omitted_by_capacity");
+    counterfactual=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedbackRuntime(state,csiGrant,observed);
+    hit=string(counterfactual.PUCCHGrantTraceTable.PUCCHGrantId)==string(csiGrant.PUCCHGrantId);
+    trace=counterfactual.PUCCHGrantTraceTable(hit,:);
+    assert(~trace.GrantExecutedFlag && trace.Status=="OMITTED" && ...
+        trace.PUCCHGrantState=="csi_report_omitted_by_capacity");
+    assert(trace.PUCCHDecodeOk==receiverCSI);
+    assert(isequaln(counterfactual.LatestDLFeedback,state.LatestDLFeedback));
+    assert(isequaln(counterfactual.PUCCHGrantTraceTable.GrantExecutedFlag(~hit), ...
+        state.PUCCHGrantTraceTable.GrantExecutedFlag(~hit)));
+end
 % The PUCCH above actually decoded CSI. Inject an explicitly analytic SRS
 % delivery-boundary fixture afterward: opposite-direction quality/TPMI must
 % not replace those received bits or refresh their measurement/delivery age.

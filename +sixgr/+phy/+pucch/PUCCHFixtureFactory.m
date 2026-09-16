@@ -9,6 +9,7 @@ classdef PUCCHFixtureFactory
             addParameter(p,"SCS",15,@(x)isnumeric(x)&&isscalar(x));
             addParameter(p,"ResourceID",NaN,@(x)isnumeric(x)&&isscalar(x));
             addParameter(p,"ConfigurationEpoch",1,@(x)isnumeric(x)&&isscalar(x));
+            addParameter(p,"SimultaneousHARQACKCSI",false,@(x)islogical(x)&&isscalar(x));
             parse(p,varargin{:});
             opt=p.Results;
             format=double(format);
@@ -20,7 +21,7 @@ classdef PUCCHFixtureFactory
             carrier=nrCarrierConfig;
             carrier.NSizeGrid=double(opt.NSizeGrid);
             carrier.SubcarrierSpacing=double(opt.SCS);
-            numSymbols=[2 4 2 4 4]; numPRBs=[1 1 4 4 1];
+            numSymbols=[2 4 2 4 6]; numPRBs=[1 1 4 4 1];
             if ~ismember(format,0:4)
                 error("sixgr:phy:pucch:InvalidFormatPayload", ...
                     "Fixture format must be in [0,4].");
@@ -70,6 +71,13 @@ classdef PUCCHFixtureFactory
                 "ResourceSets",setData,"Resources",resource.Data, ...
                 "DLDataToULACK",1,"SRResources",resource.ID, ...
                 "CSIResources",resource.ID,"SPSPUCCHANResources",resource.ID);
+            if format>=2
+                rrcData.FormatConfigurations=struct('Format',format, ...
+                    'SimultaneousHARQACKCSI',opt.SimultaneousHARQACKCSI,'MaxCodeRate',0.80);
+            end
+            rrcData.CarrierConfiguration=struct('NSizeGrid',carrier.NSizeGrid, ...
+                'NStartGrid',carrier.NStartGrid,'SubcarrierSpacing',carrier.SubcarrierSpacing, ...
+                'CyclicPrefix',carrier.CyclicPrefix);
             rrc=sixgr.phy.pucch.PUCCHRRCContext(rrcData);
             ue=sixgr.phy.pucch.PUCCHUEContext(struct( ...
                 "UEID",100+format,"RNTI",double(opt.RNTI), ...

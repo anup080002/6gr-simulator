@@ -19,7 +19,7 @@ classdef PUCCHReceptionAssignment
                 'sixgr:phy:pucch:WrongResource','Provide one receiver allocation identity.');
             names=["ObservationID","ResourceID","RNTI","AbsoluteSlot0","Source","TimingSource"];
             sixgr.phy.pucch.UCIReport.requireFields(data,names);
-            assert(isempty(setdiff(string(fieldnames(data)),names)), ...
+            assert(isempty(setdiff(string(fieldnames(data)),[names,"ResourceSelectionProcedure"])), ...
                 'sixgr:phy:pucch:OracleInputForbidden', ...
                 'Receiver allocation accepts only observation/resource identity and provenance.');
             assert(isa(rrc,'sixgr.phy.pucch.PUCCHRRCContext') && isscalar(rrc) && ...
@@ -49,12 +49,43 @@ classdef PUCCHReceptionAssignment
             assert(context.ConfigurationEpoch==rrc.ConfigurationEpoch, ...
                 'sixgr:phy:pucch:StaleConfiguration','Receiver hypothesis and installed RRC epochs differ.');
             resource=rrc.resourceByID(data.ResourceID);
+            rrc.assertMultiplexingAllowed(resource.Format,context.HARQACKBits, ...
+                context.CSIPart1Bits+context.CSIPart2Bits);
             assert(resource.Data.RNTI==data.RNTI, ...
                 'sixgr:phy:pucch:WrongRNTI','Receiver RNTI differs from the installed resource.');
             counts=[context.Sequence1Length context.Sequence2Length];
             validateattributes(counts,{'numeric'},{'real','finite','integer','nonnegative','numel',2});
-            sixgr.phy.pucch.PUCCHFormatValidator.validateResource(resource.Data,sum(counts));
+            sixgr.phy.pucch.PUCCHFormatValidator.validateResource(resource.Data,sum(counts),context);
+            allocationBudget=struct();
+            if resource.Format>=2
+                procedure="dynamic_harq";
+                omission=isfield(data,'ResourceSelectionProcedure') && ...
+                    isequal(string(data.ResourceSelectionProcedure),"dynamic_harq_csi_omission");
+                if omission
+                    assert(context.HARQACKBits>0,'sixgr:phy:pucch:InvalidAllocationProcedure', ...
+                        'Dynamic HARQ/CSI omission requires a HARQ-bearing receive hypothesis.');
+                    procedure="dynamic_harq_csi_omission";
+                elseif context.HARQACKBits==0
+                    procedure="configured_csi";
+                elseif context.CSIPart1Bits>0 || context.CSIPart2Bits>0
+                    assert(isfield(data,'ResourceSelectionProcedure') && ...
+                        isequal(string(data.ResourceSelectionProcedure),"dynamic_harq_csi"), ...
+                        'sixgr:phy:pucch:MissingReceiveAllocationProcedure', ...
+                        'Mixed HARQ/CSI needs the gNB-owned resource procedure, not a TX-selected width.');
+                    procedure="dynamic_harq_csi";
+                end
+                if isfield(data,'ResourceSelectionProcedure')
+                    assert(isequal(string(data.ResourceSelectionProcedure),procedure), ...
+                        'sixgr:phy:pucch:InvalidAllocationProcedure', ...
+                        'Receiver resource procedure conflicts with its declared UCI schema.');
+                end
+                [resource,allocationBudget]=rrc.allocateResource( ...
+                    data.ResourceID,context,data.AbsoluteSlot0,procedure);
+                assert(~isempty(resource),'sixgr:phy:pucch:CSIResourceCapacityExceeded', ...
+                    'The receive hypothesis exceeds installed CSI capacity; resolve report selection first.');
+            end
             obj.Data=data;
+            obj.Data.AllocationBudget=allocationBudget;
             obj.Data.ReportID=context.ReportID;
             obj.Data.ConfigurationEpoch=context.ConfigurationEpoch;
             obj.Resource=resource;

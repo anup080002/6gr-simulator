@@ -44,7 +44,8 @@ for i=1:2
     assignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
         'ObservationID',context.ReportID,'ResourceID',set.ResourceIDs(1),'RNTI',ue.RNTI, ...
         'AbsoluteSlot0',4,'Source','declared_gNB_component_not_scheduled_feedback', ...
-        'TimingSource','received_DMRS'),rrc,context);
+        'TimingSource','received_DMRS', ...
+        'ResourceSelectionProcedure',localProcedure(csi)),rrc,context);
     hypotheses{i}=struct('Assignment',assignment,'Context',context);
 end
 audit=table();
@@ -126,6 +127,10 @@ end
 function b=buffer(p,x)
 b=sixgr.phy.waveform.WaveformObservationBuffer(p.StartSample,p.StartSample+size(x,1),p.SampleRateHz,size(x,2));
 b.append(sixgr.phy.waveform.WaveformChunk(x,p.StartSample),p.SampleRateHz);
+end
+function value=localProcedure(csiBits)
+value="dynamic_harq";
+if csiBits>0, value="dynamic_harq_csi"; end
 end
 function reject(fn,id)
 try, fn(); catch cause

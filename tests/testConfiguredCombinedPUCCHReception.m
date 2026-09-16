@@ -21,12 +21,14 @@ context=sixgr.truth.buildConfiguredPUCCHReceiveContext(obligation,installed);
 % Construct the receiver before any payload. This context stays byte-identical
 % across different HARQ/SR values and the transmitter's rank choice.
 digest=context.Digest;
-fixture=sixgr.phy.pucch.PUCCHFixtureFactory.connected(2,int8(zeros(context.Sequence1Length,1)));
+fixture=sixgr.phy.pucch.PUCCHFixtureFactory.connected(2,int8(zeros(context.Sequence1Length,1)), ...
+    'SimultaneousHARQACKCSI',true);
 rxAssignment=sixgr.phy.pucch.PUCCHReceptionAssignment(struct( ...
     'ObservationID',obligation.ObservationID,'ResourceID',fixture.Assignment.Resource.ID, ...
     'RNTI',fixture.Report.Data.RNTI,'AbsoluteSlot0',0, ...
     'Source',"declared_gNB_component_obligation_and_installed_RRC", ...
-    'TimingSource',"received_PUCCH_DMRS"),fixture.RRCContext,context);
+    'TimingSource',"received_PUCCH_DMRS", ...
+    'ResourceSelectionProcedure',"dynamic_harq_csi"),fixture.RRCContext,context);
 audit=table();
 for rank=1:2
     txRequest=request; txRequest.Rank=rank;
@@ -40,7 +42,12 @@ for rank=1:2
     d.SchedulingRequestReports=struct('Bits',sr);
     d.CSIReports=struct('Part1Bits',csi.Part1Bits,'Part2Bits',csi.Part2Bits,'Priority',0,'ReportID',1);
     report=sixgr.phy.pucch.UCIReport(d);
-    assignment=sixgr.phy.pucch.PUCCHTransmissionAssignment.fromCombinedUCI(report,fixture.UEContext,fixture.FrameState);
+    plan=sixgr.phy.pucch.PUCCHResourcePlan(report,fixture.UEContext.Data, ...
+        fixture.RRCContext,fixture.FrameState,"declared_component_dynamic_harq");
+    power=fixture.UEContext.Data.PowerControlState.Data;
+    power.MRB=plan.Resource.Data.NumPRBs;
+    assignment=sixgr.phy.pucch.PUCCHTransmissionAssignment.fromResourcePlan(plan, ...
+        sixgr.phy.pucch.PUCCHPowerControlState(power),fixture.UEContext.Data.SpatialRelationState);
     tx=sixgr.phy.pucch.PUCCHTransmitter.transmit(fixture.Carrier,assignment,report);
     [waveform,~]=sixgr.link.addRuntimeComplexNoise(tx.Waveform,1e-8,91+rank,0,struct());
     rx=sixgr.phy.pucch.PUCCHReceiver.receive(waveform,fixture.Carrier,rxAssignment,context, ...

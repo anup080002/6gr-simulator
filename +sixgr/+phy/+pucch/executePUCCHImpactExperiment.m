@@ -20,7 +20,8 @@ payloadCount = localPayloadCount(family,pairIndex,treated);
 format = localFormat(family,pairIndex,treated,payloadCount);
 bits = int8(mod((0:payloadCount-1).'+pairIndex+double(treated),2));
 fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected( ...
-    format,bits,"RNTI",400+pairIndex,"NSizeGrid",24);
+    format,bits,"RNTI",400+pairIndex,"NSizeGrid",24, ...
+    "SimultaneousHARQACKCSI",ismember(family,["F01","F04","F06","F07","F10"]));
 
 if ismember(family,["F01","F04","F06","F07","F10"])
     fixture = localMixedReportFixture(fixture,family,pairIndex,treated);

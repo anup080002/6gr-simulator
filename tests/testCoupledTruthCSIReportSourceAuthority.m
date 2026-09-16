@@ -168,7 +168,7 @@ assert(height(csiReservation)==1 && isnan(csiReservation.PRIValue) && ...
     'Configured CSI reservation must not manufacture HARQ PRI, TBS or PUCCH execution.');
 puschGrant = struct("Direction", "UL", "UEIndex", 1, "RNTI", 701, ...
     "GrantContextId", "CSI-PUSCH-CONTEXT", "Slot", dueSlot, ...
-    "ScheduledAbsoluteSlot", dueSlot,"SymbolAllocation",[0 14]);
+    "ScheduledAbsoluteSlot", dueSlot,"SymbolAllocation",[resource.Data.StartSymbol resource.Data.NumSymbols]);
 for enabled=[false true]
     disjoint=puschGrant; disjoint.SymbolAllocation=[0 10];
     [untouched,retained,blocked]=sixgr.truth.CoupledTruthRuntime. ...
@@ -464,7 +464,73 @@ catch err
     assert(strcmp(err.identifier,'sixgr:truth:MissingReceivedCSILengthAuthority')); rejected=true;
 end
 assert(rejected,'Runtime must reject CSI with no received sizing authority.');
+% Declared reducer inputs for absent/unresolved receiver decisions. These
+% are not RF evidence; actual presence waveforms have their own regression.
+for presenceResolved=[true false]
+    unavailable=out;
+    unavailable.DecodedCSIPart1Bits=int8([]);
+    unavailable.DecodedCSIPart2Bits=int8([]);
+    unavailable.UCIReceiverEvidence.CSIPresenceResolved=presenceResolved;
+    unavailable.UCIReceiverEvidence.CSIReportDetected=false;
+    unavailable.UCIReceiverEvidence.CSIPart1DecodedBeforePart2=false;
+    unavailable.UCIReceiverEvidence.ResolvedCSI1BitCount=NaN;
+    unavailable.UCIReceiverEvidence.ResolvedCSI2BitCount=NaN;
+    unavailable.UCIReceiverEvidence.CSI2LengthAuthority="unresolved_csi_presence_or_received_part1";
+    if presenceResolved
+        unavailable.UCIReceiverEvidence.ResolvedCSI1BitCount=0;
+        unavailable.UCIReceiverEvidence.ResolvedCSI2BitCount=0;
+        unavailable.UCIReceiverEvidence.CSI2LengthAuthority="explicit_fixed_length_uci_contract";
+    end
+    rejectedState=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,unavailable);
+    assert(rejectedState.PendingCSITable.Processed(1) && ...
+        ~rejectedState.PendingCSITable.CSIUCIDecodeOk(1) && ...
+        isnan(rejectedState.PendingCSITable.CSIUCICRCPass(1)) && ...
+        rejectedState.PendingCSITable.CSIUCIDecodedBitCount(1)==0 && ...
+        string(rejectedState.PendingCSITable.CSIUCITransport(1))=="pusch_decode_failed");
+    assert(isequaln(rejectedState.LatestDLFeedback,state.LatestDLFeedback), ...
+        'Unavailable CSI must not replace the last scheduler feedback.');
+    rejectedTrace=rejectedState.PUCCHGrantTraceTable;
+    rejectedHit=string(rejectedTrace.PUCCHGrantId)=="PUCCH-CSI-"+string(state.PendingCSITable.ReportIdentity(1));
+    assert(nnz(rejectedHit)==1 && ~rejectedTrace.PUSCHUCIDecodeOk(rejectedHit) && ...
+        ~rejectedTrace.ControlStateChanged(rejectedHit) && ~rejectedTrace.GrantExecutedFlag(rejectedHit));
+    malformed=unavailable;
+    malformed.UCIReceiverEvidence=rmfield(malformed.UCIReceiverEvidence,'CSI2LengthAuthority');
+    localRejectCRI(@()sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,malformed), ...
+        'sixgr:truth:MissingReceivedCSILengthAuthority');
+end
+malformed=out; malformed.UCIReceiverEvidence.CSI2LengthAuthority="stored_tx_payload";
+localRejectCRI(@()sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,malformed), ...
+    'sixgr:truth:MissingReceivedCSILengthAuthority');
+% Same received CSI bits; only UE-side fields NOT encoded in this CSI
+% report change. They must not reach the gNB scheduler through a side door.
+referenceState=state;
+referenceState.PendingCSITable.SINR_dB(1)=80;
+referenceState.PendingCSITable.CRCPass(1)=1;
+referenceState.PendingCSITable.SubbandSINRVector_dB(1)="80,80";
+referenceState.PendingCSITable.PostEqSINRPerLayer_dB(1)="80,80";
+referenceResult=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(referenceState,out);
 state=sixgr.truth.CoupledTruthRuntime.applyDecodedPUSCHUCIRuntime(state,out);
+fprintf('CSI_WIRE_ONLY_AUTHORITY measured_reference_sinr=%g changed_reference_sinr=%g receiver_cqi=%g/%g\n', ...
+    state.LatestDLFeedback(1).SINR_dB,referenceResult.LatestDLFeedback(1).SINR_dB, ...
+    state.LatestDLFeedback(1).CQI,referenceResult.LatestDLFeedback(1).CQI);
+assert(isequaln(state.LatestDLFeedback,referenceResult.LatestDLFeedback), ...
+    'Unreported UE SINR/source CRC must not alter scheduler feedback from identical received CSI bits.');
+assert(isnan(state.LatestDLFeedback(1).SINR_dB) && isnan(state.LatestDLFeedback(1).FeedbackCRCPass), ...
+    'CSI CQI/RI/PMI/CRI carries neither a measured SINR nor a data-TB CRC.');
+assert(isempty(state.LatestDLFeedback(1).SubbandSINRVector_dB) && ...
+    isempty(state.LatestDLFeedback(1).PostEqSINRPerLayer_dB));
+audit=jsondecode(referenceResult.PendingCSITable.UEReferenceRecordJSON(1));
+assert(audit.SINR_dB==80 && audit.CRCPass==1 && string(audit.SubbandSINRVector_dB)=="80,80", ...
+    'UE reference measurements must remain available as audit, not scheduler inputs.');
+logsRoot=fullfile(fileparts(fileparts(mfilename('fullpath'))),'logs','csi_wire_authority');
+if ~isfolder(logsRoot), mkdir(logsRoot); end
+outputRoot=tempname(logsRoot); mkdir(outputRoot);
+path=fullfile(outputRoot,'received_csi_report.csv');
+sixgr.util.csvWriteTable(path,referenceResult.PendingCSITable,'PreserveSchema',true,'RoundTripNumericText',true);
+saved=sixgr.util.csvReadTable(path,'TextType','string');
+savedAudit=jsondecode(saved.UEReferenceRecordJSON(1));
+assert(isnan(saved.SINR_dB(1)) && isnan(saved.CRCPass(1)) && savedAudit.SINR_dB==80 && savedAudit.CRCPass==1);
+fprintf('CSI_RECEIVED_FIELD_AUDIT_CSV_PASS root=%s\n',outputRoot);
 assert(state.PendingCSITable.CSIUCIDecodeOk(1) && state.PendingCSITable.Processed(1));
 assert(string(state.PendingCSITable.CSIUCITransport(1))=="pusch_decoded");
 decoded=config.decode(received.DecodedCSIPart1,received.DecodedCSIPart2);

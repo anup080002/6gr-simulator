@@ -57,6 +57,13 @@ classdef PUCCHReceiver
                     "Receiver report and assignment contexts differ.");
             end
             pucch = assignment.Resource.toolboxConfig();
+            if isfield(assignment.Data,'AllocationBudget') && ...
+                    ~isempty(fieldnames(assignment.Data.AllocationBudget))
+                sixgr.phy.pucch.PUCCHResource.validateAllocationCarrier(assignment.Data.AllocationBudget,carrier);
+            end
+            totalA=reportContext.Sequence1Length+reportContext.Sequence2Length;
+            sixgr.phy.pucch.PUCCHFormatValidator.validateResource( ...
+                assignment.Resource.Data,totalA,reportContext);
             assert(~noncoherent || assignment.Format==0, ...
                 'sixgr:phy:pucch:NoncoherentNoiseModeFormatMismatch', ...
                 'Noise-independent sequence correlation is only the Format-0 path.');
@@ -170,8 +177,10 @@ classdef PUCCHReceiver
                 equalizationLatency_ms = 1e3 .* toc(equalizationTic);
                 channelEstimationMode = "dmrs_per_resource_mmse_equalization";
             end
-            totalA = reportContext.Sequence1Length + ...
-                reportContext.Sequence2Length;
+            decodeLengths=totalA;
+            if assignment.Format==0 && reportContext.SRBits>0
+                decodeLengths=[reportContext.HARQACKBits reportContext.SRBits];
+            end
             gridDisturbanceVariance = localEffectiveScalarVariance( ...
                 nVar,rintGrid,max(1,size(grid,3)));
             decodeNoiseVariance=NaN;
@@ -184,11 +193,11 @@ classdef PUCCHReceiver
                     % Format 0's normalized cyclic-shift detector does not
                     % take nVar internally. Do not supply/export a fictitious
                     % variance or add a noise-dependent energy rescue gate.
-                    [soft,constellation,metric]=nrPUCCHDecode(carrier,pucch,totalA,eq, ...
+                    [soft,constellation,metric]=nrPUCCHDecode(carrier,pucch,decodeLengths,eq, ...
                         'DetectionThreshold',opt.DetectionThreshold);
                 else
                 [soft,constellation,metric] = nrPUCCHDecode( ...
-                    carrier,pucch,totalA,eq,decodeNoiseVariance, ...
+                    carrier,pucch,decodeLengths,eq,decodeNoiseVariance, ...
                     "DetectionThreshold",opt.DetectionThreshold);
                 end
             catch ME
@@ -221,6 +230,10 @@ classdef PUCCHReceiver
             decision = sixgr.phy.pucch.PUCCHDetector.decide( ...
                 assignment.Format,detectionMetric, ...
                 opt.DetectionThreshold,decoded);
+            if assignment.Format==1 && reportContext.SRBits==1 && ...
+                    reportContext.HARQACKBits==0 && ~decision.DTX
+                decoded=int8(1); % Presence on the configured SR resource.
+            end
             if decision.DTX
                 decoded = int8(zeros(0,1));
             end
@@ -395,7 +408,12 @@ info.Domain = "resource_grid_pre_equalization";
 end
 
 function bits = localCellBits(input)
-if iscell(input), bits = int8(input{1}(:)); else, bits = int8(input(:)); end
+if iscell(input)
+    bits=int8(zeros(0,1));
+    for k=1:numel(input), bits=[bits;int8(input{k}(:))]; end %#ok<AGROW>
+else
+    bits=int8(input(:));
+end
 end
 
 function [one,two] = localSplit(bits,n1,n2)

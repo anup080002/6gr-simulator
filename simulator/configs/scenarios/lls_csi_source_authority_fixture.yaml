@@ -1,9 +1,9 @@
 inherits:
-  - ./lls_causal_access_to_data_wiring.yaml
+  - ./lls_causal_access_to_data_wiring_tdd.yaml
 
 meta:
   scenario_id: lls_csi_source_authority_fixture
-  description: Four-resource CSI source and transport-ledger component fixture.
+  description: Four-resource TDD CSI source and transport-ledger component fixture.
   purpose: Declared CSI inputs and actual UCI codecs; not received CSI-RS or integrated-run qualification.
   research_class: optional_research_experiment
 

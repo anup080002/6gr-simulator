@@ -13,7 +13,26 @@ classdef PUCCHTransmitter
                 error("sixgr:phy:pucch:StaleConfiguration", ...
                     "PUCCH report and assignment ownership differ.");
             end
+            if isfield(assignment.Data,'ReportDigest')
+                bound=assignment.Data.ReportDigest;
+                validText=(ischar(bound)&&isrow(bound)) || (isstring(bound)&&isscalar(bound));
+                assert(validText && ~ismissing(string(bound)) && string(bound)==report.Digest, ...
+                    'sixgr:phy:pucch:PlannedReportMismatch', ...
+                    'The transmitted report must exactly match the report used for resource planning.');
+            else
+                % Explicit isolated calibration has no payload-derived plan.
+                % Missing binding is never a connected-mode compatibility path.
+                assert(string(assignment.Data.AssignmentSource)=="calibration" && ...
+                    isequal(assignment.Data.ConnectedModeEvidenceEligible,false) && ...
+                    ~isfield(assignment.Data,'AllocationBudget'), ...
+                    'sixgr:phy:pucch:MissingPlannedReportBinding', ...
+                    'A planned PUCCH assignment must retain its exact report digest.');
+            end
             powerState=assignment.PowerControlState.Data;
+            if isfield(assignment.Data,'AllocationBudget') && ...
+                    ~isempty(fieldnames(assignment.Data.AllocationBudget))
+                sixgr.phy.pucch.PUCCHResource.validateAllocationCarrier(assignment.Data.AllocationBudget,carrier);
+            end
             mu=log2(double(carrier.SubcarrierSpacing)/15);
             if double(powerState.Mu)~=mu || ...
                     double(powerState.MRB)~=double(assignment.Resource.Data.NumPRBs)
@@ -22,12 +41,27 @@ classdef PUCCHTransmitter
             end
             serialized = sixgr.phy.pucch.UCIReportSerializer.serialize(report);
             bits = [serialized.Sequence1.Bits;serialized.Sequence2.Bits];
+            context=sixgr.phy.pucch.UCIReportContext.fromReport(report);
             sixgr.phy.pucch.PUCCHFormatValidator.validateResource( ...
-                assignment.Resource.Data,numel(bits));
+                assignment.Resource.Data,numel(bits),context);
             pucch = assignment.Resource.toolboxConfig();
             [~,info] = nrPUCCHIndices(carrier,pucch);
+            transmissionPresent=true;
             if assignment.Format <= 1
-                symbols = nrPUCCH(carrier,pucch,bits);
+                owners=string(serialized.Layout.BitOwner);
+                harq=bits(owners=="HARQ_ACK");
+                sr=bits(owners=="SR");
+                transmissionPresent=~isempty(harq) || isempty(sr) || logical(sr);
+                if assignment.Format==0
+                    symbols=nrPUCCH(carrier,pucch,{harq,sr});
+                elseif isempty(harq)
+                    % Format-1 positive SR is the fixed BPSK symbol for 0,
+                    % not modulation of the semantic SR value 1.
+                    if transmissionPresent, symbols=nrPUCCH(carrier,pucch,int8(0));
+                    else, symbols=complex(zeros(0,1)); end
+                else
+                    symbols=nrPUCCH(carrier,pucch,harq);
+                end
                 coding = struct("Plan",sixgr.phy.pucch.UCIEncodingPlan( ...
                     numel(bits),numel(bits)),"CodedBits",bits, ...
                     "CodedDigest",sixgr.phy.pucch.PUCCHUtil.hash(bits.'));
@@ -40,7 +74,7 @@ classdef PUCCHTransmitter
                 symbols = nrPUCCH(carrier,pucch,coding.CodedBits);
             end
             mapped = sixgr.phy.pucch.PUCCHGridMapper.map( ...
-                carrier,assignment,symbols);
+                carrier,assignment,symbols,transmissionPresent);
             [waveform,ofdmInfo] = sixgr.phy.waveform.ofdmModulate( ...
                 carrier,mapped.Grid);
             power = sixgr.phy.pucch.PUCCHPowerController.resolve( ...
@@ -48,7 +82,7 @@ classdef PUCCHTransmitter
             activeSymbols=double(assignment.Resource.Data.StartSymbol)+ ...
                 (0:double(assignment.Resource.Data.NumSymbols)-1);
             normalized=logical(sixgr.phy.pucch.PUCCHUtil.field(power,'NormalizedPowerReference',false));
-            if normalized
+            if normalized || ~transmissionPresent
                 % Keep the original generated IFFT. No absolute power is
                 % fabricated and no scale is applied only to undo it later.
                 scale=1;
@@ -73,6 +107,12 @@ classdef PUCCHTransmitter
             power.WaveformAmplitudeUnit="sqrt_mW";
             power.WaveformScale=scale;
             power.PreScalingActivePower=reference;
+            power.TransmissionPresent=transmissionPresent;
+            if ~transmissionPresent
+                power.UnappliedRequestedPowerdBm=power.AppliedPowerdBm;
+                power.AppliedPowerdBm=NaN;
+                power.PowerError_dB=NaN;
+            end
             if normalized
                 power.NormalizedActiveMeanSquare=measured_mW;
                 power.NormalizedSlotAverageMeanSquare=mean(sum(abs(double(waveform)).^2,2));
@@ -83,6 +123,7 @@ classdef PUCCHTransmitter
             end
             tx = struct( ...
                 "Waveform",waveform,"Grid",mapped.Grid,"Carrier",carrier, ...
+                "TransmissionPresent",transmissionPresent, ...
                 "PUCCH",pucch,"Assignment",assignment,"Report",report, ...
                 "PUCCHIndices",mapped.DataIndices, ...
                 "DMRSIndices",mapped.DMRS.Indices, ...

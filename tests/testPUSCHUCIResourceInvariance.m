@@ -28,17 +28,20 @@ for rank=[1 2]
         'CSIReportConfigID',"invariant_mapping_fixture",'CSIConfigurationEpoch',0);
     context=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(d);
     plan=sixgr.phy.ul.pusch.inspectUCIResourceInvariance(p,.3,tbs,llr,context,4,schema);
-    assert(plan.HARQMappingInvariant && plan.CSI1MappingInvariant);
+    assert(plan.HARQMappingInvariant && ~plan.CSI1MappingInvariant);
+    assert(isempty(plan.CSI1SourceIndices1Based));
+    assert(isequal(plan.CandidateCSIInformationBitCounts(1,:),[0 0]));
     assert(~plan.PhysicalExecutionEvidence && plan.ReceiverContextDigest==context.Digest);
-    assert(numel(plan.CandidateMaps)==numel(schema.part2BitCountCandidates()));
+    assert(numel(plan.CandidateMaps)==1+numel(schema.part2BitCountCandidates()));
     % Changing received VALUES must not change any resource identity.
     other=sixgr.phy.ul.pusch.inspectUCIResourceInvariance(p,.3,tbs,-llr,context,4,schema);
     assert(isequaln(plan,other));
-    for candidate=schema.part2BitCountCandidates()
+    for candidateIndex=1:numel(plan.CandidateMaps)
+        candidate=plan.CandidateMaps{candidateIndex};
         [mappedData,ack,first]=nrULSCHDemultiplex(p,.3,tbs,5, ...
-            schema.part1BitCount(),candidate,llr);
+            candidate.Part1BitCount,candidate.Part2BitCount,llr);
         assert(isequal(ack,llr(plan.HARQSourceIndices1Based)) && ...
-            isequal(first,llr(plan.CSI1SourceIndices1Based)));
+            isequal(first,llr(candidate.CSI1)));
         if plan.ULSCHMappingInvariant
             recovered=zeros(size(plan.ULSCHSourceIndices1Based{1}));
             index=plan.ULSCHSourceIndices1Based{1}; present=index>0;
@@ -49,6 +52,8 @@ for rank=[1 2]
                 'An unresolved UL-SCH map must not select one candidate as a fallback.');
         end
     end
+    assert(plan.ULSCHMappingInvariant==(tbs==0), ...
+        'Absent CSI changes this data-bearing allocation even with fixed present-only Part-2 length.');
     [ack,e]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(llr(plan.HARQSourceIndices1Based),5,'QPSK');
     assert(e.DecodeUsable && isequal(ack,payload.HARQACK));
     assert(~e.CRCApplicable && isnan(e.CRCPass));
