@@ -45,7 +45,15 @@ rec.SSMeasurementGridScaleToSqrtW=NaN;
 rec.ReferenceSignalTxMeasurementGridScaleToSqrtW=NaN;
 rec.MeasuredReferenceSignalChannelGain_dB= ...
     rec.SS_RSRP_dB_re_UnitOccupiedRE_Es-rec.ReferenceSignalTxEPRE_dB_re_UnitOccupiedRE_Es;
-rec.SSBWindowPowerMeasurementJSON=""; % Its schema declares dBm, unavailable here.
+[rec.SSBWindowRelativePowerMeasurementJSON,windowEvidence]=localNormalizeWindow( ...
+    string(sixgr.util.structGet(rec,'SSBWindowPowerMeasurementJSON',"")),nfft,scale);
+if ~isempty(fieldnames(windowEvidence))
+    rec.SSBWindowReferenceRSRQPerReceiveAntenna_dB= ...
+        strjoin(compose('%.15g',windowEvidence.ReferenceRSRQPerAntenna_dB(:).'),'|');
+    rec.SSBWindowReferenceRSRQScope=string(windowEvidence.Scope);
+    rec.SSBWindowReferenceRSRQNumRB=double(windowEvidence.NumRB);
+end
+rec.SSBWindowPowerMeasurementJSON=""; % Physical-unit schema stays unavailable.
 rec.SSSTxPowerDeltaFromSignalled_dB=NaN;
 rec.MeasuredReferenceSignalPathloss_dB=NaN;
 rec.MeasuredReferenceSignalPathlossSource="unavailable_normalized_fixed_esn0_has_no_absolute_link_budget";
@@ -60,6 +68,46 @@ rec.SSPowerReferenceNormalized=true;
 if available
     rec.SSPhysicalMeasurementStatus="available_normalized_fixed_esn0_not_absolute_dbm";
 end
+end
+
+function [token,evidence]=localNormalizeWindow(token,nfft,scale)
+evidence=struct();
+assert(isscalar(token) && ~ismissing(token),'sixgr:link:InvalidSSBWindowPowerEvidence', ...
+    'Expected one same-producer SSB window evidence token.');
+if strlength(strtrim(token))==0, token=""; return; end
+evidence=jsondecode(token);
+required={'Source','Scope','AmplitudeUnit','CPIncluded','NumReceiveAntennas', ...
+    'NumRB','NumSubcarriers','SymbolIndicesWithinSSB0Based','SymbolPowerPerAntenna_W', ...
+    'RSSIPerAntenna_dBm','ReferenceRSRPPerAntenna_dBm','ReferenceRSRQPerAntenna_dB'};
+assert(isstruct(evidence) && isscalar(evidence) && all(isfield(evidence,required)) && ...
+    string(evidence.Scope)=="ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI" && ...
+    string(evidence.AmplitudeUnit)=="sqrt_W" && ~evidence.CPIncluded && ...
+    evidence.NumRB>0 && evidence.NumRB==fix(evidence.NumRB) && ...
+    evidence.NumSubcarriers==12*evidence.NumRB, ...
+    'sixgr:link:InvalidSSBWindowPowerEvidence', ...
+    'Preserve actual SSB RB/symbol/branch scope; do not relabel it full-carrier RSSI/RSRQ.');
+offset=localOffset(nfft,scale);
+assert(isfinite(offset),'sixgr:link:MissingSSBPowerScale','Window evidence requires the same actual RX grid scale.');
+rsrp=double(evidence.ReferenceRSRPPerAntenna_dBm(:));
+rssi=double(evidence.RSSIPerAntenna_dBm(:));
+rsrq=double(evidence.ReferenceRSRQPerAntenna_dB(:));
+expected=10*log10(double(evidence.NumRB))+rsrp-rssi;
+assert(numel(rsrp)==evidence.NumReceiveAntennas && isequal(size(rsrp),size(rssi),size(rsrq)) && ...
+    isequal(isfinite(expected),isfinite(rsrq)) && all(abs(expected(isfinite(expected))-rsrq(isfinite(rsrq)))<1e-4), ...
+    'sixgr:link:SSBWindowRSRQClosure','Window reference RSRQ must retain its own matching RSRP/RSSI operands.');
+symbolPower=double(evidence.SymbolPowerPerAntenna_W);
+assert(size(symbolPower,1)==numel(evidence.SymbolIndicesWithinSSB0Based) && ...
+    size(symbolPower,2)==evidence.NumReceiveAntennas && all(isfinite(symbolPower),'all') && all(symbolPower>=0,'all'), ...
+    'sixgr:link:InvalidSSBWindowPowerEvidence','Window symbol powers must match actual symbol/branch dimensions.');
+evidence.SymbolPowerPerAntenna_UnitOccupiedRE_Es=symbolPower*scale^2;
+evidence.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es=rssi+offset;
+evidence.ReferenceRSRPPerAntenna_dB_re_UnitOccupiedRE_Es=rsrp+offset;
+evidence=rmfield(evidence,{'SymbolPowerPerAntenna_W','RSSIPerAntenna_dBm','ReferenceRSRPPerAntenna_dBm'});
+evidence.AmplitudeUnit="sqrt_UnitOccupiedRE_Es";
+evidence.PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es";
+evidence.PowerReferenceOffset_dB=offset;
+evidence.ReferenceEstimator="nrSSBMeasurements_not_primary_noise_debiased_SSS_RSRP";
+token=string(jsonencode(evidence));
 end
 
 function offset=localOffset(nfft,scale)

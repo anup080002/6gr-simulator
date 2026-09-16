@@ -80,6 +80,11 @@ if normalized
         all(T.PowerReferencePlane=="normalized_fixed_esn0_unit_occupied_re_es"));
     assert(all(abs(T.SSPowerReferenceOffset_dB-20*log10(T.SSMeasurementFFTSize))<1e-10));
     for k=1:height(T)
+        window=jsondecode(T.SSBWindowRelativePowerMeasurementJSON(k));
+        assert(string(window.Scope)=="ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI");
+        ratio=10*log10(window.NumRB)+window.ReferenceRSRPPerAntenna_dB_re_UnitOccupiedRE_Es(:)- ...
+            window.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es(:);
+        assert(max(abs(ratio-window.ReferenceRSRQPerAntenna_dB(:)))<1e-4);
         desired=str2double(split(T.SSSINRDesiredPowerPerReceiveAntenna_UnitOccupiedRE_Es(k),'|'));
         disturbance=str2double(split(T.SSSINRNoiseInterferencePowerPerReceiveAntenna_UnitOccupiedRE_Es(k),'|'));
         assert(abs(T.SS_RSRP_dB_re_UnitOccupiedRE_Es(k)-max(10*log10(desired)))<1e-8 && ...
@@ -114,7 +119,9 @@ if normalized
     else, assert(all(ismissing(string(raw)) | strlength(string(raw))==0)); end
     assert(all(strlength(ledger.SSBWindowPowerMeasurementJSON)==0));
     for field=["SSSINRDesiredPowerPerReceiveAntenna_UnitOccupiedRE_Es", ...
-            "SSSINRNoiseInterferencePowerPerReceiveAntenna_UnitOccupiedRE_Es"]
+            "SSSINRNoiseInterferencePowerPerReceiveAntenna_UnitOccupiedRE_Es", ...
+            "SSBWindowRelativePowerMeasurementJSON","SSBWindowReferenceRSRQPerReceiveAntenna_dB", ...
+            "SSBWindowReferenceRSRQScope"]
         assert(isequal(string(persisted.(field)),string(ledger.(field))), ...
             'Normalized signal/disturbance operands must survive the actual measurement-ledger CSV.');
     end
