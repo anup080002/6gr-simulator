@@ -150,7 +150,10 @@ classdef PUCCHReceiver
                     error("sixgr:phy:pucch:ReceivedNoiseEstimateUnavailable", ...
                         "Actual received DM-RS did not yield a usable disturbance estimate; no supplied-noise rescue.");
                 end
-                if (estimateNoise || isempty(rintGrid)) && isfinite(estimatedNoise) && estimatedNoise > 0
+                % The caller selects the disturbance authority explicitly.
+                % An absent interference covariance does not authorize
+                % replacing a provided (already converted) noise variance.
+                if estimateNoise
                     nVar = estimatedNoise;
                     noiseSource="received_pucch_dmrs_noise_plus_residual_estimate";
                 end

@@ -52,6 +52,23 @@ for format=1:4
         'InterferenceCovariance',covariance,'ChannelProfile','TDL-C');
     assert(abs(known.GridNoiseVariance-provided*gain)<1e-12*provided*gain);
     assert(string(known.GridNoiseVarianceSource)=="provided_variance_converted_to_resource_grid");
+    % No covariance is still an explicit provided-variance policy. Cover
+    % both sample conversion and already-grid input without replacing either
+    % with an unrelated pilot residual. This checks authority, not ACK rate.
+    for domain=["sample","grid"]
+        supplied=provided;
+        if domain=="grid", supplied=provided*gain; end
+        explicit=sixgr.phy.pucch.PUCCHReceiver.receive(input,f.Carrier, ...
+            f.Assignment,f.Context,'NoiseVariance',supplied, ...
+            'NoiseVarianceDomain',domain,'NoiseVarianceMode','provided', ...
+            'ChannelProfile','TDL-C');
+        expectedGrid=provided*gain;
+        assert(abs(explicit.GridNoiseVariance-expectedGrid)<1e-12*expectedGrid);
+        assert(abs(explicit.EffectiveGridNoiseInterferenceVariance-expectedGrid)<1e-12*expectedGrid);
+        assert(string(explicit.GridNoiseVarianceSource)=="provided_variance_converted_to_resource_grid");
+        assert(isempty(explicit.InterferenceCovariance) && ~explicit.OraclePayloadBitsUsed);
+        assert(abs(explicit.EqualizerInfo.EqualizerResult.PreEqualizationNoiseVariance-expectedGrid)<1e-12*expectedGrid);
+    end
     fprintf('PASS PUCCH Format %d: actual UCI decode after retained AGC/ADC; received DM-RS variance %.8g.\n', ...
         format,rx.GridNoiseVariance);
 end
