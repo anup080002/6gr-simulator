@@ -39,8 +39,18 @@ power=jsondecode(trial.AllocationCarrierPowerMeasurementJSON);
 assert(power.Direction==direction && power.RNTI==trial.RNTI && ...
     power.NumReceiveAntennas==trial.PhysicalRxAntennas, ...
     'Carrier power must come from this actual received grant and all physical branches.');
-values=10*log10(mean(power.SymbolPowerPerAntenna_W,1))+30;
-assert(max(abs(values(:)-power.RSSIPerAntenna_dBm(:)))<1e-9);
+normalized=strcmpi(string(sixgr.util.structGet(cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
+    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+if normalized
+    assert(power.PowerReferencePlane=="normalized_fixed_esn0_unit_occupied_re_es" && ...
+        ~isfield(power,'SymbolPowerPerAntenna_W') && ~isfield(power,'RSSIPerAntenna_dBm'));
+    values=10*log10(mean(power.SymbolPowerPerAntenna_UnitOccupiedRE_Es,1));
+    assert(max(abs(values(:)-power.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es(:)))<1e-9);
+else
+    assert(power.PowerReferencePlane=="receiver_antenna_connector_pre_composite_front_end");
+    values=10*log10(mean(power.SymbolPowerPerAntenna_W,1))+30;
+    assert(max(abs(values(:)-power.RSSIPerAntenna_dBm(:)))<1e-9);
+end
 trialPath=fullfile(root,'air_interface','csv','dl_pdsch_trials.csv');
 if direction=="UL", trialPath=fullfile(root,'air_interface','csv','ul_pusch_trials.csv'); end
 sixgr.util.csvWriteTable(trialPath,trial,'PreserveSchema',true);
@@ -93,7 +103,15 @@ else
     powerChart=charts(find(string({charts.name})==powerName));
 end
 assert(isscalar(powerChart) && string(powerChart.status)=="measured_checkpoint", ...
-    'Actual physical carrier RSSI must publish source-bound CSV and PNG.');
+    'Actual received carrier RSSI must publish source-bound CSV and PNG with its own reference units.');
+powerCSV=sixgr.util.csvReadTable(fullfile(fileparts(receipt.Manifest),powerChart.csv),'TextType','string');
+if normalized
+    assert(ismember('rssi_db_re_unit_occupied_re_es',powerCSV.Properties.VariableNames) && ...
+        ~ismember('rssi_dbm',powerCSV.Properties.VariableNames));
+    assert(max(abs(powerCSV.rssi_db_re_unit_occupied_re_es(:)-values(:)))<1e-9);
+else
+    assert(max(abs(powerCSV.rssi_dbm(:)-values(:)))<1e-9);
+end
 stem="pdsch"; if direction=="UL", stem="pusch"; end
 files=dir(fullfile(root,'reports','live_measurements','*','csv',stem+"_evm_per_symbol.csv"));
 assert(numel(files)==1,'Exactly one current measured-symbol CSV is expected.');

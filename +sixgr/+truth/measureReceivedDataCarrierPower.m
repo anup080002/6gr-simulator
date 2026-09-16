@@ -1,5 +1,5 @@
 function fields=measureReceivedDataCarrierPower(prepared,context,timing)
-% Physical per-branch carrier power over actual received data symbols.
+% Per-branch carrier power over actual received data symbols, with explicit units.
 % This allocation-window diagnostic is NOT the UE SMTC/CSI NR-RSSI report.
 % Never turn receiver-normalized amplitudes or a configured SNR into watts.
 rx=context.Observation; pre=context.PhysicalMeasurementObservation;
@@ -16,19 +16,11 @@ assert(size(grid,1)==12*carrier.NSizeGrid && size(grid,2)==carrier.SymbolsPerSlo
     size(grid,3)==rx.NumReceiveAntennas,'sixgr:truth:PhysicalPowerGridMismatch', ...
     'Retain the full executed carrier grid and all physical receive branches.');
 symbols=e.SymbolAllocation(1)+(0:e.SymbolAllocation(2)-1);
-% Repository antenna-plane samples carry sqrt(mW); Toolbox FFT is not
-% unitary. Per-RE physical watts are abs(grid/Nfft)^2/1000.
-gridW=double(grid)/(double(info.Nfft)*sqrt(1000));
-power=reshape(sum(abs(gridW(:,symbols+1,:)).^2,1),numel(symbols),rx.NumReceiveAntennas);
-branch=mean(power,1);
-assert(all(isfinite(power(:))) && all(branch>0),'sixgr:truth:UnavailablePhysicalCarrierPower', ...
-    'Do not fill unavailable or zero-energy receive branches with finite power.');
-rssi=10*log10(branch)+30;
-e.ContractVersion="received_data_carrier_power/v1";
+powerEvidence=sixgr.truth.measureDataCarrierGridPower(grid,double(info.Nfft),symbols,prepared.InputConfig);
+for name=string(fieldnames(powerEvidence)).'
+    e.(name)=powerEvidence.(name);
+end
 e.Scope="received_data_symbol_window_full_carrier_not_ue_NR_RSSI_report";
-e.PowerReferencePlane="receiver_antenna_connector_pre_composite_front_end";
-e.Source="actual_physical_received_IQ_OFDM_carrier_energy";
-e.InputAmplitudeUnit="sqrt_mW"; e.GridAmplitudeUnit="sqrt_W";
 e.FrequencyAlignment="nominal_carrier_no_oracle_CFO_correction";
 e.CPIncluded=false; e.CyclicPrefixFraction=double(info.CyclicPrefixFraction);
 e.Nfft=double(info.Nfft); e.NumRB=double(carrier.NSizeGrid);
@@ -36,8 +28,14 @@ e.FirstPRB0Based=double(carrier.NStartGrid);
 e.SubcarrierSpacing_kHz=double(carrier.SubcarrierSpacing);
 e.Bandwidth_Hz=12*e.NumRB*e.SubcarrierSpacing_kHz*1000;
 e.SymbolIndices0Based=symbols; e.NumReceiveAntennas=rx.NumReceiveAntennas;
-e.SymbolPowerPerAntenna_W=power; e.RSSIPerAntenna_dBm=rssi;
 e.PhysicalObservationSHA256=sixgr.phy.waveform.WaveformHash.numeric(raw);
 fields=struct('AllocationCarrierPowerMeasurementJSON',string(jsonencode(e)), ...
-    'AllocationCarrierRSSIPerReceiveAntenna_dBm',string(jsonencode(rssi)));
+    'AllocationCarrierRSSIPerReceiveAntenna_dBm',"", ...
+    'AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es',"");
+if isfield(e,'RSSIPerAntenna_dBm')
+    fields.AllocationCarrierRSSIPerReceiveAntenna_dBm=string(jsonencode(e.RSSIPerAntenna_dBm));
+else
+    fields.AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es= ...
+        string(jsonencode(e.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es));
+end
 end

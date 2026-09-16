@@ -262,20 +262,33 @@ for caseIndex = reshape(caseIndices,1,[])
         completed.ExecutionStage=="received_shared_stream_completed");
     verifyReceivedConstellationCapture(completed,cfg,1);
     % Scaling only the physical measurement observation must scale reported
-    % watts, independently of the digital/AGC-normalized receiver waveform.
+    % energy in its declared units, independently of the digital/AGC receiver waveform.
     scaled=context; scaled.PhysicalMeasurementObservation=localBuffer(prepared,2*y);
     changed=sixgr.truth.measureReceivedDataCarrierPower(prepared,scaled,completed.ReceiveTiming);
     before=jsondecode(completed.TrialTable.AllocationCarrierPowerMeasurementJSON);
     after=jsondecode(changed.AllocationCarrierPowerMeasurementJSON);
-    assert(max(abs(after.RSSIPerAntenna_dBm-before.RSSIPerAntenna_dBm-20*log10(2)))<1e-9);
+    normalized=strcmpi(string(sixgr.util.structGet(cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
+        logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+    if normalized
+        assert(max(abs(after.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es- ...
+            before.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es-20*log10(2)))<1e-9);
+    else
+        assert(max(abs(after.RSSIPerAntenna_dBm-before.RSSIPerAntenna_dBm-20*log10(2)))<1e-9);
+    end
     assert(~strcmp(after.PhysicalObservationSHA256,before.PhysicalObservationSHA256));
-    % Independent absolute calibration: unit constant antenna-plane IQ is
-    % exactly 1 mW at DC, inside the configured carrier, for each branch.
+    % Independent constant-IQ calibration: FFT DC energy is Nfft^2.
+    % This is 1 mW only when samples have the absolute sqrt(mW) contract.
     tone=context; tone.PhysicalMeasurementObservation=localBuffer(prepared,complex(ones(size(y))));
     calibrated=sixgr.truth.measureReceivedDataCarrierPower(prepared,tone,completed.ReceiveTiming);
     calibration=jsondecode(calibrated.AllocationCarrierPowerMeasurementJSON);
-    assert(max(abs(calibration.RSSIPerAntenna_dBm))<1e-8, ...
-        'Unit sqrt(mW) IQ must measure 0 dBm independently of Nfft and antenna count.');
+    if normalized
+        assert(max(abs(calibration.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es- ...
+            20*log10(calibration.Nfft)))<1e-8 && ~isfield(calibration,'RSSIPerAntenna_dBm'), ...
+            'Unit normalized constant IQ must retain its actual FFT DC energy, not become 0 dBm.');
+    else
+        assert(max(abs(calibration.RSSIPerAntenna_dBm))<1e-8, ...
+            'Unit sqrt(mW) IQ must measure 0 dBm independently of Nfft and antenna count.');
+    end
     verifyReceivedDataSymbolTiming(completed,prepared,context.Observation,arrival);
     assert(isequal(completed.HARQ.TransportBlockBits,completed.HARQ.DecodedTransportBlockBits));
     [retainedBits,decodedBits,executedGrant] = sixgr.truth.validateExecutedHARQPayload( ...

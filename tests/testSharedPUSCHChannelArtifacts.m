@@ -669,6 +669,20 @@ for item=items
         row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes);
         row=sixgr.truth.exportSharedChannelObservation(state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
         path=fullfile(state.TestRoot,'received_pusch.csv');
+        powerEvidence=jsondecode(row.AllocationCarrierPowerMeasurementJSON);
+        if strcmpi(string(sixgr.util.structGet(job.Cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
+                logical(sixgr.util.structGet(job.Cfg,'integration.configured_snr_is_link_authority',false))
+            assert(powerEvidence.PowerReferencePlane=="normalized_fixed_esn0_unit_occupied_re_es" && ...
+                strlength(row.AllocationCarrierRSSIPerReceiveAntenna_dBm)==0 && ...
+                ~isfield(powerEvidence,'SymbolPowerPerAntenna_W'));
+            expectedPower=10*log10(mean(powerEvidence.SymbolPowerPerAntenna_UnitOccupiedRE_Es,1));
+            assert(max(abs(expectedPower(:)-powerEvidence.RSSIPerAntenna_dB_re_UnitOccupiedRE_Es(:)))<1e-10);
+            mirroredPower=jsondecode(row.AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es);
+            assert(max(abs(expectedPower(:)-mirroredPower(:)))<1e-10);
+        else
+            assert(powerEvidence.PowerReferencePlane=="receiver_antenna_connector_pre_composite_front_end" && ...
+                strlength(row.AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es)==0);
+        end
         if logical(sixgr.util.structGet(job.Cfg,'integration.configured_snr_is_link_authority',false))
             assert(isnan(row.RuntimeGeometryDistance2D_m) && ...
                 isnan(row.RuntimeGeometryDistance3D_m) && ...
@@ -681,6 +695,8 @@ for item=items
         end
         sixgr.util.csvWriteTable(path,row,'PreserveSchema',true);
         persisted=sixgr.util.csvReadTable(path,'TextType','string');
+        assert(string(persisted.AllocationCarrierPowerMeasurementJSON)==row.AllocationCarrierPowerMeasurementJSON, ...
+            'Actual received carrier power scope and units must survive CSV unchanged.');
         if isfield(job.Cfg.phy.pusch,'receivedDCIAssignment')
             assert(all(persisted.ULTransmissionAuthority==row.ULTransmissionAuthority) && ...
                 all(persisted.ULReceiveAllocationAuthority==row.ULReceiveAllocationAuthority) && ...

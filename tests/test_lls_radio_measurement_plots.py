@@ -92,6 +92,57 @@ def test_data_carrier_rssi_rejects_boolean_scalar_energy():
     assert result["csv_status"] == "unavailable_exact_reason"
 
 
+def normalized_data_carrier_payload(change="", direction="UL"):
+    row = next(csv.DictReader(io.StringIO(data_carrier_power_payload(direction=direction).decode())))
+    e = json.loads(row["AllocationCarrierPowerMeasurementJSON"])
+    factor = e["Nfft"]**2*1000
+    e.update(ContractVersion="received_data_carrier_power/v2",
+             PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es",
+             Source="actual_normalized_received_IQ_OFDM_carrier_energy",
+             InputAmplitudeUnit="normalized_OFDM_waveform_unit_occupied_re_es",
+             GridAmplitudeUnit="sqrt_UnitOccupiedRE_Es")
+    e["SymbolPowerPerAntenna_UnitOccupiedRE_Es"] = [[p*factor for p in s] for s in e.pop("SymbolPowerPerAntenna_W")]
+    e["RSSIPerAntenna_dB_re_UnitOccupiedRE_Es"] = [p+20*math.log10(e["Nfft"]) for p in e.pop("RSSIPerAntenna_dBm")]
+    row["AllocationCarrierRSSIPerReceiveAntenna_dBm"] = ""
+    row["AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"] = json.dumps(e["RSSIPerAntenna_dB_re_UnitOccupiedRE_Es"])
+    row["TransmitPowerReferencePlane"] = "normalized_fixed_esn0_unit_occupied_re_es"
+    if change == "physical_claim": e["RSSIPerAntenna_dBm"] = [0, 0]
+    if change == "wrong_units": e["GridAmplitudeUnit"] = "sqrt_W"
+    if change == "energy": e["SymbolPowerPerAntenna_UnitOccupiedRE_Es"][0][0] *= 2
+    if change == "mirror": row["AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"] = "[0, 0]"
+    if change == "physical_tx": row["TransmitPowerReferencePlane"] = "receiver_antenna_connector_pre_composite_front_end"
+    row["AllocationCarrierPowerMeasurementJSON"] = json.dumps(e)
+    output = io.StringIO(); writer = csv.DictWriter(output, list(row)); writer.writeheader(); writer.writerow(row)
+    return output.getvalue().encode()
+
+
+@pytest.mark.parametrize("direction,path,name", [("UL", radio.TRIALS[1], "PUSCH-window carrier RSSI timeline"),
+                                                ("DL", radio.TRIALS[0], "PDSCH-window carrier RSSI timeline")])
+def test_normalized_carrier_power_has_relative_csv_and_png_units(direction, path, name):
+    result, rows = chart(name, {path: normalized_data_carrier_payload(direction=direction)})
+    assert len(rows) == 2 and "rssi_dbm" not in rows[0] and "symbol_powers_w" not in rows[0]
+    for row in rows:
+        powers = json.loads(row["symbol_powers_unit_occupied_re_es"])
+        assert math.isclose(float(row["rssi_db_re_unit_occupied_re_es"]), 10*math.log10(sum(powers)/len(powers)), abs_tol=1e-10)
+    assert b"Carrier-window RSSI (dB re unit occupied-RE Es)" in result["img_bytes"]
+    assert b"Carrier-window RSSI (dBm)" not in result["img_bytes"]
+    assert m._rasterize_contract_png(result["img_bytes"], source_mime_type="image/svg+xml").startswith(b"\x89PNG\r\n\x1a\n")
+
+
+@pytest.mark.parametrize("change", ["physical_claim", "wrong_units", "energy", "mirror", "physical_tx"])
+def test_normalized_carrier_power_rejects_inconsistent_units_and_operands(change):
+    result, _ = chart("PUSCH-window carrier RSSI timeline", {radio.TRIALS[1]: normalized_data_carrier_payload(change)})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_old_physical_carrier_metadata_cannot_qualify_a_normalized_trial():
+    row = next(csv.DictReader(io.StringIO(data_carrier_power_payload().decode())))
+    row["TransmitPowerReferencePlane"] = "normalized_fixed_esn0_unit_occupied_re_es"
+    output = io.StringIO(); writer = csv.DictWriter(output, list(row)); writer.writeheader(); writer.writerow(row)
+    result, _ = chart("PUSCH-window carrier RSSI timeline", {radio.TRIALS[1]: output.getvalue().encode()})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
 def ssb_power_payload(change="", n_rx=2):
     powers = [[1e-8*(symbol+1)*(branch+1) for branch in range(n_rx)] for symbol in range(4)]
     rssis = [10*math.log10(sum(p[b] for p in powers)/4)+30 for b in range(n_rx)]

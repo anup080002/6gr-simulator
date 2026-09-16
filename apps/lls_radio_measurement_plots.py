@@ -664,6 +664,7 @@ def _ssb_window_power(m, name, existing, fetch, run_id):
 def _data_carrier_power(m, name, existing, fetch, run_id):
     sources = CHART_SOURCES[name]
     rows, series, seen = [], defaultdict(list), set()
+    planes = set()
     for path, samples in m._all_available_rows(existing, fetch, sources):
         for index, row in enumerate(samples, 1):
             token = m._row_text(row, "AllocationCarrierPowerMeasurementJSON")
@@ -674,14 +675,36 @@ def _data_carrier_power(m, name, existing, fetch, run_id):
                 e = json.loads(token)
             except (TypeError, ValueError) as exc:
                 raise ValueError("Invalid received carrier-power evidence JSON.") from exc
-            required = {"ContractVersion": "received_data_carrier_power/v1",
+            if not isinstance(e, dict):
+                raise ValueError("Carrier power requires one measurement object.")
+            normalized = e.get("PowerReferencePlane") == "normalized_fixed_esn0_unit_occupied_re_es"
+            required = {"ContractVersion": "received_data_carrier_power/v2" if normalized else "received_data_carrier_power/v1",
                 "Scope": "received_data_symbol_window_full_carrier_not_ue_NR_RSSI_report",
-                "PowerReferencePlane": "receiver_antenna_connector_pre_composite_front_end",
-                "Source": "actual_physical_received_IQ_OFDM_carrier_energy",
-                "InputAmplitudeUnit": "sqrt_mW", "GridAmplitudeUnit": "sqrt_W",
+                "PowerReferencePlane": "normalized_fixed_esn0_unit_occupied_re_es" if normalized else "receiver_antenna_connector_pre_composite_front_end",
+                "Source": "actual_normalized_received_IQ_OFDM_carrier_energy" if normalized else "actual_physical_received_IQ_OFDM_carrier_energy",
+                "InputAmplitudeUnit": "normalized_OFDM_waveform_unit_occupied_re_es" if normalized else "sqrt_mW",
+                "GridAmplitudeUnit": "sqrt_UnitOccupiedRE_Es" if normalized else "sqrt_W",
                 "FrequencyAlignment": "nominal_carrier_no_oracle_CFO_correction", "CPIncluded": False}
-            if not isinstance(e, dict) or any(e.get(k) != v for k, v in required.items()):
-                raise ValueError("Carrier-window RSSI requires actual physical IQ with explicit scope and units.")
+            if any(e.get(k) != v for k, v in required.items()):
+                raise ValueError("Carrier-window RSSI requires actual received IQ with explicit scope and units.")
+            tx_plane = m._row_text(row, "TransmitPowerReferencePlane")
+            if tx_plane and ((tx_plane == "normalized_fixed_esn0_unit_occupied_re_es") != normalized):
+                raise ValueError("Carrier-window power units conflict with the executed transmit reference plane.")
+            planes.add(normalized)
+            if len(planes) > 1:
+                raise ValueError("Do not combine absolute dBm and normalized carrier power on one axis.")
+            if normalized:
+                if ("RSSIPerAntenna_dBm" in e or "SymbolPowerPerAntenna_W" in e or
+                        m._row_text(row, "AllocationCarrierRSSIPerReceiveAntenna_dBm")):
+                    raise ValueError("Normalized carrier power must not claim absolute watts/dBm.")
+                rssi_field, power_field = "RSSIPerAntenna_dB_re_UnitOccupiedRE_Es", "SymbolPowerPerAntenna_UnitOccupiedRE_Es"
+                mirror_field = "AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"
+            else:
+                if ("RSSIPerAntenna_dB_re_UnitOccupiedRE_Es" in e or "SymbolPowerPerAntenna_UnitOccupiedRE_Es" in e or
+                        m._row_text(row, "AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es")):
+                    raise ValueError("Physical carrier power must not mix normalized power operands.")
+                rssi_field, power_field = "RSSIPerAntenna_dBm", "SymbolPowerPerAntenna_W"
+                mirror_field = "AllocationCarrierRSSIPerReceiveAntenna_dBm"
             def positive(field, integer=False):
                 v = e.get(field)
                 if (not isinstance(v, (float, int)) or isinstance(v, bool) or not math.isfinite(v)
@@ -710,9 +733,9 @@ def _data_carrier_power(m, name, existing, fetch, run_id):
                     e.get("RNTI") != m._row_float(row, "RNTI") or
                     e.get("DataAbsoluteSlot") != identity["slot"]-1):
                 raise ValueError("Carrier power lacks exact received grant, UE, slot or waveform identity.")
-            rssis = _numbers(json.dumps(e.get("RSSIPerAntenna_dBm")))
-            mirrors = _numbers(m._row_text(row, "AllocationCarrierRSSIPerReceiveAntenna_dBm"))
-            powers = e.get("SymbolPowerPerAntenna_W")
+            rssis = _numbers(json.dumps(e.get(rssi_field)))
+            mirrors = _numbers(m._row_text(row, mirror_field))
+            powers = e.get(power_field)
             if n_rx == 1 and len(symbols) == 1 and isinstance(powers, (int, float)):
                 # MATLAB jsonencode serializes a 1x1 numeric matrix as a scalar.
                 powers = [[powers]]
@@ -727,22 +750,28 @@ def _data_carrier_power(m, name, existing, fetch, run_id):
                 values = [p[branch] for p in powers]
                 if any(not isinstance(v, (int, float)) or isinstance(v, bool) or not math.isfinite(v) or v < 0 for v in values) or sum(values) <= 0:
                     raise ValueError("Invalid physical symbol energy.")
-                value = 10*math.log10(sum(values)/len(values))+30
+                value = 10*math.log10(sum(values)/len(values)) + (0 if normalized else 30)
                 if abs(value-rssis[branch]) > 1e-7 or abs(value-mirrors[branch]) > 1e-7:
-                    raise ValueError("Carrier RSSI fails per-branch linear-energy/dBm closure.")
+                    raise ValueError("Carrier RSSI fails per-branch linear-energy/reference-unit closure.")
                 key = (grant, first, stop, branch)
                 if key in seen:
                     raise ValueError("Duplicate received grant/branch carrier-power identity.")
                 seen.add(key)
                 rows.append({**identity, "grant_context_id": grant, "receive_antenna_index_1based": branch+1,
-                    "rssi_dbm": value, "num_rb": n_rb, "bandwidth_hz": bw, "sample_rate_hz": fs, "nfft": nfft,
-                    "symbol_indices_0based": json.dumps(symbols), "symbol_powers_w": json.dumps(values),
+                    ("rssi_db_re_unit_occupied_re_es" if normalized else "rssi_dbm"): value,
+                    "num_rb": n_rb, "bandwidth_hz": bw, "sample_rate_hz": fs, "nfft": nfft,
+                    "symbol_indices_0based": json.dumps(symbols),
+                    ("symbol_powers_unit_occupied_re_es" if normalized else "symbol_powers_w"): json.dumps(values),
                     "observation_start_sample": first, "observation_end_sample_exclusive": stop,
                     "power_reference_plane": e["PowerReferencePlane"], "measurement_scope": e["Scope"],
                     "physical_observation_sha256": digest})
                 series[f"{identity['direction']} U{identity['ue_index']} Rx{branch+1}"].append([identity["slot"], value])
-    return _finish(m, name, run_id, rows, series, "Received data slot", "Carrier-window RSSI (dBm)",
-        "Actual antenna-plane carrier energy over received data symbols, per branch. Includes noise/interference; no oracle CFO correction. Not a UE NR-RSSI report.", sources)
+    normalized = planes == {True}
+    units = "Carrier-window RSSI (dB re unit occupied-RE Es)" if normalized else "Carrier-window RSSI (dBm)"
+    note = ("Actual pre-front-end carrier energy over received data symbols, per branch. "
+            + ("Normalized fixed-reference sweep, not absolute dBm. " if normalized else "Absolute antenna-plane power. ")
+            + "Includes noise/interference; no oracle CFO correction. Not a UE NR-RSSI report.")
+    return _finish(m, name, run_id, rows, series, "Received data slot", units, note, sources)
 
 
 def radio_measurement_chart(name, existing, fetch, run_id):

@@ -47,6 +47,7 @@ DOMAIN_COLUMNS["measurement"] += (
     " ULNormalizedWindowRSSI_dB ULNormalizedWindowRSSISource"
     " ULNormalizedWindowPowerRatio_dB ULNormalizedWindowPowerRatioSource ULNormalizedPowerEvidenceJSON"
     " AllocationCarrierPowerMeasurementJSON AllocationCarrierRSSIPerReceiveAntenna_dBm"
+    " AllocationCarrierRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"
 )
 DOMAIN_COLUMNS["beam_mimo"] += (
     " AppliedCodebookPortIndexSet AppliedCodebookPortIndexDefinition"
