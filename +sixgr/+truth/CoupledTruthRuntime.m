@@ -221,6 +221,19 @@ methods(Static)
         state.CurrentDirection = "";
         state.CurrentUEIndex = NaN;
         state.NumUsers = nUsers;
+        state.UEConfiguredSRProcedures=cell(nUsers,nCells);
+        if ~isempty(sixgr.util.structGet(cfgMob,'validation.pucch_resources.scheduling_request_resources',struct([])))
+            identity=cfgMob.phy.frame.DefaultIdentity;
+            for srUE=1:nUsers
+                for srCell=1:nCells
+                    srIdentity=struct('UEID',srUE,'RNTI',multiUser.RNTIStart+srUE-1, ...
+                        'ServingCell',srCell,'PUCCHCell',srCell,'ComponentCarrier',identity.ScheduledCCID, ...
+                        'ActiveULBWP',identity.ULBWPID);
+                    state.UEConfiguredSRProcedures{srUE,srCell}= ...
+                        sixgr.truth.initializeConfiguredSRProcedures(cfgMob,srIdentity);
+                end
+            end
+        end
         state.MIMOExecutionState = struct( ...
             "Initialized", true, ...
             "ExecutionSource", "sixgr.mimo.executeSpatialComposite", ...
@@ -16075,6 +16088,29 @@ methods(Static, Access=private)
             "typed_csi_report_waiting_for_receiver_decode";
     end
 
+    function frame=attachPUCCHSRProcedureState(state,cfg,ue,frame,execution)
+        if nargin<5, execution=struct(); end
+        if isempty(sixgr.util.structGet(cfg,'validation.pucch_resources.scheduling_request_resources',struct([])))
+            return;
+        end
+        if isfield(execution,'ReceivedContext')
+            assert(isfield(execution,'UETransmitFrameState') && ...
+                isfield(execution.UETransmitFrameState,'SchedulingRequestStates'), ...
+                'sixgr:truth:MissingRetainedSRProcedureState','Keep the exact TX-time SR snapshot for TX audit.');
+            frame.SchedulingRequestStates=execution.UETransmitFrameState.SchedulingRequestStates;
+        else
+            assert(~logical(sixgr.util.structGet(cfg,'mac.phase08.sr.enabled',false)), ...
+                'sixgr:truth:UnboundMACSRProcedure', ...
+                'Enabled MAC SR triggers/timers must be bound to the physical UE procedure owner.');
+            assert(isfield(state,'UEConfiguredSRProcedures') && ...
+                ue.UEID<=size(state.UEConfiguredSRProcedures,1) && ...
+                ue.ServingCell<=size(state.UEConfiguredSRProcedures,2), ...
+                'sixgr:truth:MissingSRProcedureState','Normal PUCCH planning requires initialized UE SR state.');
+            frame.SchedulingRequestStates=sixgr.phy.pucch.SchedulingRequestState.atSlot( ...
+                state.UEConfiguredSRProcedures{ue.UEID,ue.ServingCell},frame.TargetSlot-1);
+        end
+    end
+
     function [cfgU,connected,feedbackT,reportConfig,part1,part2] = prepareDLCSIReportAssignment(state,report,dueSlot)
         % Pure scheduling/serialization; no waveform, channel or RF execution.
         ueIdx = max(1, round(double(report.UEIndex)));
@@ -16132,6 +16168,7 @@ methods(Static, Access=private)
         if isfinite(sixgr.util.structGet(report,'CSIReferenceSlot',NaN))
             frameState.K1Source="configured_periodic_CSI_report_occasion";
         end
+        frameState=sixgr.truth.CoupledTruthRuntime.attachPUCCHSRProcedureState(state,cfgU,ueState,frameState);
         connected = sixgr.phy.pucch.PUCCHConfigBuilder.planCSI( ...
             cfgU, ueState, part1, part2, frameState);
 
@@ -16947,6 +16984,7 @@ methods(Static, Access=private)
             "FlexibleResolutionProvided",false, ...
             "TriggeringEventID",sixgr.truth.CoupledTruthRuntime.rowValue( ...
             row,"PUCCHGrantId",physicalOccasionId));
+        frameState=sixgr.truth.CoupledTruthRuntime.attachPUCCHSRProcedureState(state,cfgU,ueState,frameState,execution);
         if hasCSI && isempty(expectedBits)
             frameState.K1Source="configured_csi_report_delay_and_duplex_resolution";
             connected=sixgr.phy.pucch.PUCCHConfigBuilder.planCSI( ...
@@ -16987,6 +17025,7 @@ methods(Static, Access=private)
             observed=struct('Prepared',prepared.PreparedTransmission,'Config',cfgU, ...
                 'FeedbackRows',feedbackRow,'CSIReport',csiReport,'Arguments',{args}, ...
                 'Slot',dueSlot,'UE',ueIdx);
+            observed.UETransmitFrameState=frameState; % TX audit only, never gNB schema authority.
             if isfield(execution,'UEHARQCodebook')
                 observed.UEHARQCodebook=execution.UEHARQCodebook;
                 observed.UECodebookRows=sixgr.truth.bindReceivedPUCCHCodebookRows(execution.UEHARQCodebook,feedbackRow);
@@ -18129,6 +18168,7 @@ methods(Static, Access=private)
             "SlotSymbolOwnership",string(ownership), ...
             "FlexibleResolutionProvided",false, ...
             "TriggeringEventID","runtime_harq");
+        frameState=sixgr.truth.CoupledTruthRuntime.attachPUCCHSRProcedureState(state,cfgPUCCH,ueState,frameState);
         connected=sixgr.phy.pucch.PUCCHConfigBuilder.planHARQ( ...
             cfgPUCCH,ueState,expectedAck,frameState);
         assigned=connected.Plan;
@@ -18394,6 +18434,7 @@ methods(Static, Access=private)
             "SlotSymbolOwnership",string(ownership), ...
             "FlexibleResolutionProvided",false, ...
             "TriggeringEventID","runtime_interfering_harq");
+        frameState=sixgr.truth.CoupledTruthRuntime.attachPUCCHSRProcedureState(state,cfgIn,ueState,frameState);
         connected = sixgr.phy.pucch.PUCCHConfigBuilder.connectedHARQ( ...
             cfgIn,ueState,ack,frameState);
         sixgr.truth.CoupledTruthRuntime.assertPUCCHAssignmentMatchesGrant( ...

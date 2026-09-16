@@ -45,6 +45,21 @@ classdef SchedulingRequestState
     end
 
     methods (Static)
+        function snapshots=atSlot(states,absoluteSlot)
+            % Non-consuming projection. Pending/timer decisions remain with
+            % the UE procedure owner; planning is not an SR transmission.
+            assert(isa(states,'sixgr.phy.pucch.SchedulingRequestState') && ~isempty(states), ...
+                'sixgr:truth:MissingSRProcedureState','Use explicitly installed SR procedure states.');
+            validateattributes(absoluteSlot,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+            snapshots=states;
+            for k=1:numel(states)
+                data=states(k).Data;
+                assert(absoluteSlot>=data.AbsoluteSlot,'sixgr:truth:StaleSRProcedureState', ...
+                    'Do not reconstruct an earlier transmission from later UE procedure state.');
+                data.AbsoluteSlot=absoluteSlot;
+                snapshots(k)=sixgr.phy.pucch.SchedulingRequestState(data);
+            end
+        end
         function obj = fromVector(row)
             data = struct( ...
                 "SchedulingRequestID",sixgr.phy.pucch.PUCCHUtil.number( ...

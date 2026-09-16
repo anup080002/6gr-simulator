@@ -111,9 +111,46 @@ report=sixgr.phy.pucch.UCIReport(struct( ...
     'ConfigurationEpoch',epoch,'TargetSlot',due,'PriorityIndex',0, ...
     'HARQACKReport',harqReport,'SchedulingRequestReports',struct([]), ...
     'CSIReports',csi,'ReportSource',source,'TriggeringEventIDs',event));
+if ~isempty(rrc.Data.SchedulingRequestResources)
+    names={'UEID','RNTI','ServingCell','PUCCHCell','ComponentCarrier','ActiveULBWP'};
+    installedUE=struct();
+    for k=1:numel(names), installedUE.(names{k})=ueData.(names{k}); end
+    calendar=sixgr.truth.buildConfiguredSRCalendar(cfg,installedUE,due,due);
+    resource=sixgr.phy.pucch.PUCCHResourcePlan.selectResource(report,rrc,frame,"combined_uci");
+    windows=localPreMultiplexingWindows(report,rrc,frame);
+    states=sixgr.phy.pucch.PUCCHUtil.field(frame,'SchedulingRequestStates',[]);
+    selected=sixgr.phy.pucch.PUCCHUtil.field(frame,'SelectedSRResourceConfigurationID',[]);
+    [sr,~]=sixgr.truth.buildPUCCHSRWireIndicator(calendar,due,resource,report.PriorityIndex,states,selected,windows);
+    data=report.Data; data.SchedulingRequestReports=sr;
+    report=sixgr.phy.pucch.UCIReport(data);
+end
 plan=sixgr.phy.pucch.PUCCHResourcePlan(report,ueData,rrc,frame,"combined_uci");
 out=struct('RRCContext',rrc,'RequestedReport',report,'Report',plan.TransmittedReport,'Plan',plan, ...
     'ReceiverContext',sixgr.phy.pucch.UCIReportContext.fromReport(plan.TransmittedReport));
+end
+
+function windows=localPreMultiplexingWindows(report,rrc,frame)
+% Count each configured SR opportunity once across the original resources,
+% not from an allocation whose size already depends on the SR indication.
+parts={};
+if ~isempty(report.Data.HARQACKReport)
+    data=report.Data; data.CSIReports=struct([]);
+    parts{end+1}=sixgr.phy.pucch.UCIReport(data);
+end
+if ~isempty(report.Data.CSIReports)
+    data=report.Data; data.HARQACKReport=struct([]);
+    parts{end+1}=sixgr.phy.pucch.UCIReport(data);
+end
+windows=zeros(numel(parts),2);
+for k=1:numel(parts)
+    r=sixgr.phy.pucch.PUCCHResourcePlan.selectResource(parts{k},rrc,frame,"combined_uci");
+    windows(k,:)=[r.Data.StartSymbol r.Data.NumSymbols];
+end
+if size(windows,1)==2
+    assert(windows(1,1)<sum(windows(2,:)) && windows(2,1)<sum(windows(1,:)), ...
+        'sixgr:phy:pucch:NonOverlappingCombinedUCI', ...
+        'Nonoverlapping HARQ and CSI resources require separate transmissions, not combined UCI.');
+end
 end
 
 function [rrc,section,epoch]=localRRC(cfg,ueData)

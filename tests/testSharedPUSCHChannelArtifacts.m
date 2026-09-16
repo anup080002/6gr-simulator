@@ -313,6 +313,10 @@ end
 function state=localEvents(state,items)
 owner=state.SharedWaveformStream;
 for item=items
+    if item.Kind=="PUCCHTX"
+        state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
+        continue;
+    end
     if item.Kind=="DataTX"
         state=sixgr.truth.commitSharedDataTransmission(state,item);
         if state.TestIndependentCompletion

@@ -222,6 +222,9 @@ else
         isfinite(state.ControlTrials.PUCCH.NoiseVariance));
 end
 assert(~owner.hasPending('PUCCH',1));
+assert(numel(owner.PUCCHTransmissions)==1 && numel(state.SharedPUCCHTXLedger)==1);
+assert(isequaln(state.SharedPUCCHTXLedger,state.TestPUCCHTXLedgerBeforeRX), ...
+    'The gNB receiver outcome must not manufacture or rewrite UE transmission evidence.');
 assert(state.TestSRSArtifactVerified,'Actual received SRS must publish independently verifiable channel arrays.');
 ok=true; disp('SHARED_PUCCH_FEEDBACK_CLOCK_PASS');
 end
@@ -324,6 +327,15 @@ for item=events
             height(state.SharedWaveformStream.Pending(armed).Context.FeedbackRows), ...
             height(state.PUCCHGrantTraceTable));
         assert(all(~state.PendingFeedbackTable.Processed) && all(~state.PUCCHGrantTraceTable.GrantExecutedFlag));
+        owner=state.SharedWaveformStream;
+        assert(isempty(owner.PUCCHTransmissions), 'Enqueueing PUCCH must not count physical transmission.');
+        pending=owner.Pending(armed); p=pending.Context.Prepared;
+        identity=sixgr.truth.preparedPUCCHTransmissionIdentity(p,item.UE,pending.ID);
+        forged=struct('Kind',"PUCCHTX",'UE',item.UE,'Context',struct( ...
+            'Prepared',p,'TransmissionIdentity',identity,'FirstActiveSample',p.StartSample, ...
+            'WaveformToElementMatrix',[]));
+        localReject(@()sixgr.truth.commitSharedPUCCHTransmission(state,forged), ...
+            'sixgr:truth:SharedPUCCHTXNotExecuted');
         assert(state.SharedWaveformStream.hasPending('PUCCH',1));
         lateState=state;
         unexpected=state.PUCCHGrantTraceTable(1,:);
@@ -332,6 +344,23 @@ for item=events
         localReject(@()sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(lateState), ...
             'sixgr:truth:LateSharedPUCCHFeedback');
         state.TestPUCCHPrepared=true;
+    elseif item.Kind=="PUCCHTX"
+        owner=state.SharedWaveformStream;
+        assert(owner.Events.NextSampleIndex==item.Context.FirstActiveSample+1 && ...
+            isempty(state.ControlTrials.PUCCH) && all(~state.PendingFeedbackTable.Processed));
+        changed=item; changed.Context.TransmissionIdentity.RNTI=changed.Context.TransmissionIdentity.RNTI+1;
+        localReject(@()sixgr.truth.commitSharedPUCCHTransmission(state,changed), ...
+            'sixgr:truth:SharedPUCCHTXIdentityMismatch');
+        changed=item; changed.Context.FirstActiveSample=changed.Context.FirstActiveSample+1;
+        localReject(@()sixgr.truth.commitSharedPUCCHTransmission(state,changed), ...
+            'sixgr:truth:SharedPUCCHTXNotExecuted');
+        changed=item; changed.Context.WaveformToElementMatrix=2*changed.Context.WaveformToElementMatrix;
+        localReject(@()sixgr.truth.commitSharedPUCCHTransmission(state,changed), ...
+            'sixgr:truth:SharedPUCCHTXNotExecuted');
+        state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
+        localReject(@()sixgr.truth.commitSharedPUCCHTransmission(state,item), ...
+            'sixgr:truth:DuplicateSharedPUCCHTXCommit');
+        state.TestPUCCHTXLedgerBeforeRX=state.SharedPUCCHTXLedger;
     elseif item.Kind=="PUCCH"
         if isfield(state,'TestPhysicalEvidenceRoot')
             timingReferences=state.ReceivedULTimingReferences;

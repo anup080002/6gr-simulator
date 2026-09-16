@@ -1,4 +1,4 @@
-function ok=testSharedCSIReportClock(mode,withHARQ,staleScalarMetadata)
+function ok=testSharedCSIReportClock(mode,withHARQ,staleScalarMetadata,receiveAudit,scenarioFile)
 % Actual PUCCH IQ/CDL/RF/thermal noise, followed by decoded CSI delivery.
 % Input CSI and DL clock/TAG are declared component inputs. Optional HARQ
 % comes from an actual isolated PDSCH connector, not this shared CDL owner;
@@ -7,8 +7,15 @@ setup6GRSimToolkit('Verbose',false);
 if nargin<1, mode="TDD"; end
 if nargin<2, withHARQ=false; end
 if nargin<3, staleScalarMetadata=false; end
+if nargin<4, receiveAudit=[]; end
+if nargin<5, scenarioFile=""; end
+assert(isempty(receiveAudit) || isa(receiveAudit,'function_handle'));
 file='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", file='lls_trs_shared_scoring_fdd_fixture.yaml'; end
+if strlength(string(scenarioFile))>0
+    assert(string(mode)=="TDD",'The configured-SR shared fixture is TDD.');
+    file=char(scenarioFile);
+end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',file));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
@@ -16,6 +23,7 @@ state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10)
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
 state.CurrentServingIdx(:)=1;
 state.TestStaleCSIScalarMetadata=logical(staleScalarMetadata);
+state.TestCSIReceiveAudit=receiveAudit; % Optional read-only retained-IQ diagnostic.
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 carrier=sixgr.phy.grid.makeCarrier(ul); fs=owner.SampleRateHz;
@@ -208,6 +216,10 @@ end
 
 function state=localReceive(state,items)
 for item=items
+    if item.Kind=="PUCCHTX"
+        state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
+        continue;
+    end
     if item.Kind=="PreparePUCCH"
         state=sixgr.truth.CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime(state,item);
         assert(~state.PendingCSITable.Processed(state.TestCSIReportIndex) && isempty(state.ControlTrials.PUCCH));
@@ -231,6 +243,7 @@ for item=items
         assert(rejected,'Already encoded PUCCH CSI must not be copied into late PUSCH.');
     elseif item.Kind=="PUCCH"
         assert(~state.PendingCSITable.Processed(state.TestCSIReportIndex));
+        if ~isempty(state.TestCSIReceiveAudit), state.TestCSIReceiveAudit(state,item); end
         if state.TestStaleCSIScalarMetadata
             % Fault-inject only stale scalar annotations AFTER real IQ was
             % encoded and received. Keep its identity and coded bit payload

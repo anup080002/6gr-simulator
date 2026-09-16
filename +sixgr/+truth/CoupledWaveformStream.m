@@ -8,6 +8,7 @@ classdef CoupledWaveformStream < handle
         SampleRateHz
         Pending = struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{})
         DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
+        PUCCHTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
         ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{},'TransferProof',{})
         PUSCHReceiveOnlyRegistrations = struct('ID',{},'UE',{},'GrantContextID',{},'StartSample',{},'EndSampleExclusive',{})
     end
@@ -221,8 +222,20 @@ classdef CoupledWaveformStream < handle
             node=obj.Nodes(string({obj.Nodes.ID})==tx);
             assert(size(samples,2)==node.NumAntennas, ...
                 'sixgr:truth:SharedULControlAntennaLayout','Prepared ports must map to the actual physical UE radio.');
+            active=find(any(samples~=0,2),1,'first');
+            assert(~isempty(active),'sixgr:truth:EmptySharedULControl','A scheduled SRS/PUCCH must contain actual transmit energy.');
             if isempty(armed)
-                obj.Serial=obj.Serial+1; id=lower(prepared.Channel)+"_observation_"+obj.Serial;
+                id=lower(prepared.Channel)+"_observation_"+(obj.Serial+1);
+            else
+                id=obj.Pending(armed).ID;
+            end
+            if prepared.Channel=="PUCCH"
+                identity=sixgr.truth.preparedPUCCHTransmissionIdentity(prepared,ue,id);
+                assert(identity.RFConfigurationEpoch==obj.Physical.ConfigurationEpoch, ...
+                    'sixgr:truth:SharedPUCCHTXIdentityMismatch','The preparation must use the physical owner epoch.');
+            end
+            if isempty(armed)
+                obj.Serial=obj.Serial+1;
                 obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk(samples,prepared.StartSample));
             else
                 id=obj.Pending(armed).ID; plan=obj.Pending(armed).Context;
@@ -241,12 +254,21 @@ classdef CoupledWaveformStream < handle
                 obj.Events.enqueue(tx,id,sixgr.phy.waveform.WaveformChunk( ...
                     samples(consumed+1:end,:),obj.Events.NextSampleIndex));
             end
-            active=find(any(samples~=0,2),1,'first');
-            assert(~isempty(active),'sixgr:truth:EmptySharedULControl','A scheduled SRS/PUCCH must contain actual transmit energy.');
             boundary=id+"_ul_start";
             obj.Events.decisionBoundary(boundary,prepared.StartSample+active-1);
             obj.Decisions(end+1)=struct('ID',boundary,'Kind',"ULTransmitBoundary", ...
                 'UE',ue,'Context',struct());
+            if prepared.Channel=="PUCCH"
+                txContext=struct('Prepared',prepared,'TransmissionIdentity',identity, ...
+                    'FirstActiveSample',prepared.StartSample+active-1, ...
+                    'WaveformToElementMatrix',cast(array.PortToElementMatrix,'like',prepared.Tx.Waveform));
+                % The pre-sample boundary above only switches the RF link.
+                % Commit after one active sample has actually been consumed.
+                boundary=id+"_tx_committed";
+                obj.Events.decisionBoundary(boundary,txContext.FirstActiveSample+1);
+                obj.Decisions(end+1)=struct('ID',boundary,'Kind',"PUCCHTX", ...
+                    'UE',ue,'Context',txContext);
+            end
             if isempty(armed)
                 obj.Events.observe(tx+":tx",id,prepared.StartSample,prepared.EndSampleExclusive);
             end
@@ -939,6 +961,21 @@ classdef CoupledWaveformStream < handle
                                 'sixgr:truth:DataTXCommitClockMismatch', ...
                                 'TX evidence belongs to the first actually consumed active sample.');
                             obj.DataTransmissions(end+1)=struct( ...
+                                'Identity',d.Context.TransmissionIdentity, ...
+                                'FirstActiveSample',d.Context.FirstActiveSample, ...
+                                'CommittedAtSample',obj.Events.NextSampleIndex, ...
+                                'WaveformToElementMatrix',d.Context.WaveformToElementMatrix);
+                        end
+                        if d.Kind=="PUCCHTX"
+                            assert(~drainingTail,'sixgr:truth:ReceiveTailContainsFuturePUCCHTX', ...
+                                'Receive-tail draining cannot start a future PUCCH transmission.');
+                            assert(obj.Events.NextSampleIndex==d.Context.FirstActiveSample+1, ...
+                                'sixgr:truth:PUCCHTXCommitClockMismatch', ...
+                                'PUCCH TX evidence belongs to the first consumed active sample.');
+                            assert(~any(arrayfun(@(r)r.Identity.TransmissionID== ...
+                                d.Context.TransmissionIdentity.TransmissionID,obj.PUCCHTransmissions)), ...
+                                'sixgr:truth:DuplicatePhysicalPUCCHTX','A physical PUCCH starts once.');
+                            obj.PUCCHTransmissions(end+1)=struct( ...
                                 'Identity',d.Context.TransmissionIdentity, ...
                                 'FirstActiveSample',d.Context.FirstActiveSample, ...
                                 'CommittedAtSample',obj.Events.NextSampleIndex, ...

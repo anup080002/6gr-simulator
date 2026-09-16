@@ -12856,10 +12856,14 @@ function state=localCompleteSharedControlObservations(state,received)
 % reads the scheduling snapshot, including at a coincident event deadline.
 % Preserve relative order inside each class; no future samples are consumed.
 received=reshape(received,1,[]);
-isTX=string({received.Kind})=="DataTX";
+isTX=ismember(string({received.Kind}),["DataTX","PUCCHTX"]);
 received=[received(isTX),received(~isTX)];
 for item=received
     context=item.Context;
+    if item.Kind=="PUCCHTX"
+        state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
+        continue;
+    end
     if item.Kind=="DataTX"
         state=sixgr.truth.commitSharedDataTransmission(state,item);
         if item.Context.Prepared.Direction=="DL"

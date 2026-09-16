@@ -103,6 +103,10 @@ ok=true;
 end
 function state=receive(state,items)
 for item=items
+    if item.Kind=="PUCCHTX"
+        state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
+        continue;
+    end
     if item.Kind=="PreparePUCCH"
         state=sixgr.truth.CoupledTruthRuntime.prepareSharedPUCCHFeedbackRuntime(state,item);
     elseif item.Kind=="PUCCH"

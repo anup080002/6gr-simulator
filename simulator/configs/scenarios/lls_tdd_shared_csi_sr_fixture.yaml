@@ -1,0 +1,18 @@
+inherits:
+  - ./lls_pdcch_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_tdd_shared_csi_sr_fixture
+  description: Shared PUCCH CSI and configured SR wire-layout component fixture.
+  purpose: Validate normal SR-state planning and actual shared PUCCH delivery; not independent gNB scheduling or 12 dB qualification.
+  research_class: optional_research_experiment
+
+pucch_resources:
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 3
+      priority_index: 0
+      additional_periodicity_capability: false

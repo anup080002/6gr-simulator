@@ -44,37 +44,8 @@ classdef PUCCHResourcePlan
             srOnly=~isempty(owners) && all(owners=="SR");
             csiOnly=any(owners=="CSI_PART1" | owners=="CSI_PART2") && ...
                 ~any(owners=="HARQ_ACK");
-            if srOnly
-                [resource,srConfigurationID]=localSRResource(report,rrc,source);
-                resourceSetID=NaN;
-                priValue=NaN;
-                priProvenance="configured_sr_resource";
-            elseif csiOnly
-                id=sixgr.phy.pucch.resolveConfiguredCSIResourceID(rrc.Data.CSIResources);
-                resource=rrc.resourceByID(id);
-                resourceSetID=NaN;
-                priValue=NaN;
-                priProvenance="configured_csi_report_resource";
-            else
-                set=sixgr.phy.pucch.PUCCHResourceSetResolver.resolve(report,rrc);
-                priRow=struct('ResourceSetID',set.ID,'ResourceListSize',numel(set.ResourceIDs), ...
-                    'PRIFieldWidth',sixgr.phy.pucch.PUCCHUtil.field(frame,'PRIFieldWidth', ...
-                    ceil(log2(max(1,numel(set.ResourceIDs))))), ...
-                    'PRIValue',sixgr.phy.pucch.PUCCHUtil.field(frame,'DecodedPRI',0), ...
-                    'FirstCCE',sixgr.phy.pucch.PUCCHUtil.field(frame,'FirstCCE',NaN), ...
-                    'NumCCE',sixgr.phy.pucch.PUCCHUtil.field(frame,'NumCCE',NaN), ...
-                    'RequiresSet0CCEFormula',set.ID==0 && numel(set.ResourceIDs)>8);
-                pri=sixgr.phy.pucch.PUCCHResourceIndicatorResolver.resolveVector(priRow);
-                if ~pri.Valid
-                    error(pri.ErrorID,'Invalid decoded PUCCH PRI: set=%g count=%g PRI=%g firstCCE=%g numCCE=%g.', ...
-                        priRow.ResourceSetID,priRow.ResourceListSize,priRow.PRIValue, ...
-                        priRow.FirstCCE,priRow.NumCCE);
-                end
-                resource=rrc.resourceByID(set.ResourceIDs(pri.Ordinal));
-                resourceSetID=set.ID;
-                priValue=priRow.PRIValue;
-                priProvenance=sixgr.phy.pucch.PUCCHUtil.field(frame,'PRIProvenance','decoded_dci');
-            end
+            [resource,resourceSetID,priValue,priProvenance,srConfigurationID]= ...
+                sixgr.phy.pucch.PUCCHResourcePlan.selectResource(report,rrc,frame,source);
             rrc.assertMultiplexingAllowed(resource.Format,sum(owners=="HARQ_ACK"), ...
                 sum(owners=="CSI_PART1" | owners=="CSI_PART2"));
             k1=double(sixgr.phy.pucch.PUCCHUtil.field(frame,'K1',NaN));
@@ -146,6 +117,47 @@ classdef PUCCHResourcePlan
                 'RRCContextDigest',obj.RRCContextDigest));
         end
         function value=get.Format(obj), value=obj.Resource.Format; end
+    end
+    methods (Static)
+        function [resource,resourceSetID,priValue,priProvenance,srConfigurationID]=selectResource(report,rrc,frame,source)
+            % RRC/PRI selection before allocation, shared with SR wire planning.
+            serialized=sixgr.phy.pucch.UCIReportSerializer.serialize(report);
+            owners=string(serialized.Layout.BitOwner);
+            srOnly=~isempty(owners) && all(owners=="SR");
+            csiOnly=any(owners=="CSI_PART1" | owners=="CSI_PART2") && ~any(owners=="HARQ_ACK");
+            srConfigurationID=NaN;
+            if srOnly
+                [resource,srConfigurationID]=localSRResource(report,rrc,source);
+                resourceSetID=NaN;
+                priValue=NaN;
+                priProvenance="configured_sr_resource";
+            elseif csiOnly
+                id=sixgr.phy.pucch.resolveConfiguredCSIResourceID(rrc.Data.CSIResources);
+                resource=rrc.resourceByID(id);
+                resourceSetID=NaN;
+                priValue=NaN;
+                priProvenance="configured_csi_report_resource";
+            else
+                set=sixgr.phy.pucch.PUCCHResourceSetResolver.resolve(report,rrc);
+                priRow=struct('ResourceSetID',set.ID,'ResourceListSize',numel(set.ResourceIDs), ...
+                    'PRIFieldWidth',sixgr.phy.pucch.PUCCHUtil.field(frame,'PRIFieldWidth', ...
+                    ceil(log2(max(1,numel(set.ResourceIDs))))), ...
+                    'PRIValue',sixgr.phy.pucch.PUCCHUtil.field(frame,'DecodedPRI',0), ...
+                    'FirstCCE',sixgr.phy.pucch.PUCCHUtil.field(frame,'FirstCCE',NaN), ...
+                    'NumCCE',sixgr.phy.pucch.PUCCHUtil.field(frame,'NumCCE',NaN), ...
+                    'RequiresSet0CCEFormula',set.ID==0 && numel(set.ResourceIDs)>8);
+                pri=sixgr.phy.pucch.PUCCHResourceIndicatorResolver.resolveVector(priRow);
+                if ~pri.Valid
+                    error(pri.ErrorID,'Invalid decoded PUCCH PRI: set=%g count=%g PRI=%g firstCCE=%g numCCE=%g.', ...
+                        priRow.ResourceSetID,priRow.ResourceListSize,priRow.PRIValue, ...
+                        priRow.FirstCCE,priRow.NumCCE);
+                end
+                resource=rrc.resourceByID(set.ResourceIDs(pri.Ordinal));
+                resourceSetID=set.ID;
+                priValue=priRow.PRIValue;
+                priProvenance=sixgr.phy.pucch.PUCCHUtil.field(frame,'PRIProvenance','decoded_dci');
+            end
+        end
     end
 end
 

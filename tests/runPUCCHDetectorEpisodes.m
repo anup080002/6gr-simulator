@@ -136,6 +136,10 @@ end
 function state=localEvents(state,items)
 owner=state.SharedWaveformStream; v=state.DetectorPilot.Policy;
 for item=items
+    if item.Kind=="PUCCHTX"
+        state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
+        continue;
+    end
     if item.Kind=="PreparePUCCH"
         c=item.Context.PilotCase; cfg=item.Context.Config;
         ue=struct('UEID',1,'RNTI',cfg.phy.pusch.RNTI,'ServingCell',1,'PUCCHCell',1, ...
