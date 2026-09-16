@@ -74,6 +74,7 @@ if normalizedEsN0
     assert(abs(row.MeasurementRSRQ_dB-(10*log10(row.MeasurementNumRB)+ ...
         row.MeasurementRSRQNumeratorRSRP_dB_re_UnitOccupiedRE_Es- ...
         row.MeasurementRSRQDenominatorRSSI_dB_re_UnitOccupiedRE_Es))<1e-9);
+    localAssertDLReceiverSINREvidence(result.TrialTable);
     cfg.phy.csirs.enable=false;
     absent=sixgr.link.runDLPDSCHThroughput(cfg,"NumFrames",1, ...
         "SNR_dB",12,"ExecutionProfile","phy_calibration");
@@ -82,6 +83,7 @@ if normalizedEsN0
         all(~startsWith(string(absent.TrialTable.MeasuredCSIRSRPPhysicalStatus),"available")) && ...
         all(string(absent.TrialTable.MeasuredCSIRSRPSource)==""), ...
         'Actual no-CSI PDSCH reception must not export an available CSI measurement.');
+    localAssertDLReceiverSINREvidence(absent.TrialTable);
     ok=true; return;
 end
 
@@ -319,4 +321,55 @@ assert(abs(double(coupledCSI.MeasuredReferenceSignalPathloss_dB) - ...
     ["Waveform-measured and geometry-model pathloss must close without " + ...
      "configured-SNR or receiver-gain substitution."]);
 ok = true;
+end
+
+function localAssertDLReceiverSINREvidence(T)
+% This existing one-layer physical receive fixture also guards the complete
+% receiver-to-primary-CSV handoff. Do not substitute EVM for raw equalizer
+% diagnostics or infer that a configured residual bound was actually used.
+fields=["PostEqSINRRawEqualizer_dB","PostEqSINRRawEqualizerPerLayer_dB", ...
+    "PostEqSINRDMRSResidualBoundApplied","PostEqSINRDecisionResidualBoundApplied", ...
+    "DMRSResidualPostEqSINRBoundEnabled","DecisionDirectedPostEqSINRBoundEnabled", ...
+    "PostEqSINRDMRSResidual_dB","PostEqDecisionResidual_dB"];
+assert(~isempty(T) && all(ismember(fields,string(T.Properties.VariableNames))) && ...
+    all(T.Layers==1),'Retain all receiver-produced bound operands in the actual one-layer DL trial.');
+for k=1:height(T)
+    raw=double(T.PostEqSINRRawEqualizer_dB(k));
+    assert(isfinite(raw) && abs(raw-double(T.ReceiverHestSINR_dB(k)))<1e-12);
+    rawToken=string(T.PostEqSINRRawEqualizerPerLayer_dB(k));
+    assert(startsWith(rawToken,"[") && endsWith(rawToken,"]") && ...
+        abs(str2double(extractBetween(rawToken,2,strlength(rawToken)-1))-raw)<1e-12, ...
+        'The raw one-layer vector must preserve its exact producer value.');
+    expected=raw;
+    if T.DMRSResidualPostEqSINRBoundEnabled(k) && isfinite(T.PostEqSINRDMRSResidual_dB(k))
+        expected=min(expected,T.PostEqSINRDMRSResidual_dB(k));
+    end
+    if T.DecisionDirectedPostEqSINRBoundEnabled(k) && isfinite(T.PostEqDecisionResidual_dB(k))
+        expected=min(expected,T.PostEqDecisionResidual_dB(k));
+    end
+    assert(abs(T.PostEqSINR_dB(k)-expected)<1e-10, ...
+        'The final one-layer estimate must close on its exported receiver operands.');
+    if T.PostEqSINRDecisionResidualBoundApplied(k)
+        assert(T.DecisionDirectedPostEqSINRBoundEnabled(k) && ...
+            T.PostEqSINRValueStatus(k)=="OK_DECISION_RESIDUAL_BOUNDED");
+    elseif T.PostEqSINRDMRSResidualBoundApplied(k)
+        assert(T.DMRSResidualPostEqSINRBoundEnabled(k) && ...
+            T.PostEqSINRValueStatus(k)=="OK_DMRS_RESIDUAL_BOUNDED");
+    else
+        assert(T.PostEqSINRValueStatus(k)=="OK");
+    end
+end
+root=tempname(fullfile(pwd,'logs')); mkdir(root);
+file=fullfile(root,'dl_receiver_sinr_evidence.csv');
+% Request the existing exact numeric-evidence serialization contract for
+% this bit-exact round-trip guard; ordinary display CSV precision is not
+% an assertion that every binary floating-point value survives unchanged.
+sixgr.util.csvWriteTable(file,T,'PreserveSchema',true,'RoundTripNumericText',true);
+persisted=sixgr.util.csvReadTable(file,'TextType','string');
+for field=fields
+    assert(isequaln(persisted.(field),T.(field)), ...
+        'Receiver SINR field %s changed during primary CSV round trip.',field);
+end
+fprintf('DL_RECEIVER_SINR_EVIDENCE_PASS rows=%d raw=%g bounded=%g csv=%s\n', ...
+    height(T),T.PostEqSINRRawEqualizer_dB(1),T.PostEqSINR_dB(1),file);
 end

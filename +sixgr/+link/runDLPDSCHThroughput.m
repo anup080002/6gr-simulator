@@ -267,6 +267,14 @@ trialPostEqSINRValueRole = strings(numFrames,1);
 trialPostEqSINRValueStatus = strings(numFrames,1);
 trialPostEqSINRNAReason = strings(numFrames,1);
 trialPostEqSINRPerLayer = strings(numFrames,1);
+trialPostEqSINRRawEqualizer = NaN(numFrames,1);
+trialPostEqSINRRawEqualizerPerLayer = strings(numFrames,1);
+trialPostEqSINRDMRSResidualBoundApplied = false(numFrames,1);
+trialPostEqSINRDecisionResidualBoundApplied = false(numFrames,1);
+trialDMRSResidualPostEqSINRBoundEnabled = false(numFrames,1);
+trialDecisionDirectedPostEqSINRBoundEnabled = false(numFrames,1);
+trialPostEqSINRDMRSResidual = NaN(numFrames,1);
+trialPostEqDecisionResidual = NaN(numFrames,1);
 trialEVMProxySINR = NaN(numFrames,1);
 trialEVMProxySINRSource = strings(numFrames,1);
 trialEVMProxySINRValueRole = strings(numFrames,1);
@@ -1336,6 +1344,20 @@ for n = 1:numFrames
         trialPostEqSINRValueStatus(n) = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
         trialPostEqSINRNAReason(n) = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
         trialPostEqSINRPerLayer(n) = localFormatNumericVector(sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN));
+        % Preserve receiver-produced diagnostics; do not reconstruct an
+        % unbounded estimate or residual from the final scheduling SINR/EVM.
+        trialPostEqSINRRawEqualizer(n) = double(sixgr.util.structGet(rx, "PostEqSINRRawEqualizer_dB", NaN));
+        rawLayerSINR = double(sixgr.util.structGet(rx, "PostEqSINRRawEqualizerPerLayer_dB", NaN));
+        % Brackets retain the vector type even for one layer; 17 digits and
+        % unchanged NaN positions retain every receiver-produced coordinate.
+        trialPostEqSINRRawEqualizerPerLayer(n) = "[" + ...
+            strjoin(compose('%.17g',rawLayerSINR(:).'),' ') + "]";
+        trialPostEqSINRDMRSResidualBoundApplied(n) = logical(sixgr.util.structGet(rx, "PostEqSINRDMRSResidualBoundApplied", false));
+        trialPostEqSINRDecisionResidualBoundApplied(n) = logical(sixgr.util.structGet(rx, "PostEqSINRDecisionResidualBoundApplied", false));
+        trialDMRSResidualPostEqSINRBoundEnabled(n) = logical(sixgr.util.structGet(rx, "DMRSResidualPostEqSINRBoundEnabled", false));
+        trialDecisionDirectedPostEqSINRBoundEnabled(n) = logical(sixgr.util.structGet(rx, "DecisionDirectedPostEqSINRBoundEnabled", false));
+        trialPostEqSINRDMRSResidual(n) = double(sixgr.util.structGet(rx, "PostEqSINRDMRSResidual_dB", NaN));
+        trialPostEqDecisionResidual(n) = double(sixgr.util.structGet(rx, "PostEqDecisionResidual_dB", NaN));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
@@ -2531,6 +2553,14 @@ end
         T.PostEqSINRValueStatus = trialPostEqSINRValueStatus(idx);
         T.PostEqSINRNAReason = trialPostEqSINRNAReason(idx);
         T.PostEqSINRPerLayer_dB = trialPostEqSINRPerLayer(idx);
+        T.PostEqSINRRawEqualizer_dB = trialPostEqSINRRawEqualizer(idx);
+        T.PostEqSINRRawEqualizerPerLayer_dB = trialPostEqSINRRawEqualizerPerLayer(idx);
+        T.PostEqSINRDMRSResidualBoundApplied = trialPostEqSINRDMRSResidualBoundApplied(idx);
+        T.PostEqSINRDecisionResidualBoundApplied = trialPostEqSINRDecisionResidualBoundApplied(idx);
+        T.DMRSResidualPostEqSINRBoundEnabled = trialDMRSResidualPostEqSINRBoundEnabled(idx);
+        T.DecisionDirectedPostEqSINRBoundEnabled = trialDecisionDirectedPostEqSINRBoundEnabled(idx);
+        T.PostEqSINRDMRSResidual_dB = trialPostEqSINRDMRSResidual(idx);
+        T.PostEqDecisionResidual_dB = trialPostEqDecisionResidual(idx);
         T.CQISource = trialCQISource(idx);
         T.SchedulerCQIRawCQI = trialSchedulerCQIRawCQI(idx);
         T.SchedulerAdjustedSINR_dB = trialSchedulerAdjustedSINR(idx);
@@ -5409,6 +5439,14 @@ T.PostEqSINRValueRole = strings(0,1);
 T.PostEqSINRValueStatus = strings(0,1);
 T.PostEqSINRNAReason = strings(0,1);
 T.PostEqSINRPerLayer_dB = strings(0,1);
+T.PostEqSINRRawEqualizer_dB = zeros(0,1);
+T.PostEqSINRRawEqualizerPerLayer_dB = strings(0,1);
+T.PostEqSINRDMRSResidualBoundApplied = false(0,1);
+T.PostEqSINRDecisionResidualBoundApplied = false(0,1);
+T.DMRSResidualPostEqSINRBoundEnabled = false(0,1);
+T.DecisionDirectedPostEqSINRBoundEnabled = false(0,1);
+T.PostEqSINRDMRSResidual_dB = zeros(0,1);
+T.PostEqDecisionResidual_dB = zeros(0,1);
 T.DecoderTruthProxySINR_dB = zeros(0,1);
 T.DecoderTruthProxySINRSource = strings(0,1);
 T.SINRValueRole = strings(0,1);
