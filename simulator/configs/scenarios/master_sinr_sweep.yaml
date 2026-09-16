@@ -2152,6 +2152,7 @@ pusch:
   tbs_policy: allocation_based_exact_38214
   ulsch_enabled: true
   uci_multiplexing_mode: disabled_fixed_link
+  csi_presence_decision_algorithm: unique_current_tb_crc
   dmrs_policy: configured_type1_mapping_a
   ptrs_policy: disabled
   codeword_count: 1
@@ -2562,6 +2563,10 @@ pucch_resources:
   enabled: false
   profile: nr_rel18_pucch_strict
   configuration_epoch: 1
+  # Explicit inactive policy; these declarations do not enable feedback.
+  format2: {simultaneous_harq_ack_csi: false, max_code_rate: 0.35}
+  format3: {simultaneous_harq_ack_csi: false, max_code_rate: 0.35}
+  format4: {simultaneous_harq_ack_csi: false, max_code_rate: 0.35}
   resource_sets:
   - id: 0
     max_payload_bits: 2

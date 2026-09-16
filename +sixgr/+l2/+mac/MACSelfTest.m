@@ -115,6 +115,9 @@ classdef MACSelfTest
                 localHARQCheck(name);
             elseif any(contains(name,["SPS","ConfiguredGrant"]))
                 localPersistentGrantCheck(name);
+            elseif any(name==["testBSRTriggersAndTimers","testBSRFormats"])
+                assert(vectorResult.Passed);
+                localBSRCheck();
             elseif any(contains(name,["BSR","PHR","SchedulingRequest"]))
                 assert(vectorResult.Passed);
             elseif any(contains(name,["LogicalChannel","MACPDU","MACCE"]))
@@ -142,6 +145,25 @@ classdef MACSelfTest
             end
         end
     end
+end
+
+function localBSRCheck()
+machine=sixgr.l2.mac.BSRStateMachine(1,2,2,4);
+machine.arrival(0,1000); report=machine.buildReport(2,0);
+assert(report.Indices==15 && report.TableID=="5bit");
+assert(machine.PendingTrigger=="regular" && isnan(machine.LastReportSlot));
+machine.recordTransmission(report,0); assert(machine.PendingTrigger=="none");
+machine.advanceTo(2); assert(machine.PendingTrigger=="periodic");
+machine.arrival(1,200);
+assert(~machine.buildReport(4,2).Transmit);
+report=machine.buildReport(5,2);
+assert(report.LCID==62 && report.MACSubPDUBytes==5 && isequal(report.Indices,[74 48]));
+machine.trigger("regular"); machine.recordTransmission(report,3);
+assert(machine.PendingTrigger=="regular");
+retx=sixgr.l2.mac.BSRStateMachine(2,1,20,4);
+retx.arrival(0,10); report=retx.buildReport(2,0); retx.recordTransmission(report,0);
+retx.receivedNewDataGrant(3); retx.advanceTo(4); assert(retx.PendingTrigger=="none");
+retx.advanceTo(7); assert(retx.PendingTrigger=="regular");
 end
 
 function localHARQCheck(name)

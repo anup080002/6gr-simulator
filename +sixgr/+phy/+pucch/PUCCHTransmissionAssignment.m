@@ -123,15 +123,18 @@ classdef PUCCHTransmissionAssignment
                 report,ueContext,frameState,"sps_harq");
         end
 
-        function obj = fromSR(srState,ueContext,frameState)
-            if ~isa(srState,"sixgr.phy.pucch.SchedulingRequestState")
+        function [obj,report] = fromSR(srState,ueContext,frameState)
+            if ~isa(srState,"sixgr.phy.pucch.SchedulingRequestState") || ~isscalar(srState)
                 error("sixgr:phy:pucch:MissingSRConfiguration", ...
                     "SR assignment requires SchedulingRequestState.");
             end
-            report = sixgr.phy.pucch.UCIReport(localReportState( ...
+            sixgr.phy.pucch.UCIReport.requireFields(srState.Data,["ResourceID","Priority"]);
+            state = localReportState( ...
                 ueContext,frameState,"SR_ONLY", ...
                 "SR-" + string(srState.Data.SchedulingRequestID), ...
-                struct([]),srState,struct([])));
+                struct([]),srState,struct([]));
+            state.PriorityIndex=srState.Data.Priority;
+            report = sixgr.phy.pucch.UCIReport(state);
             obj = sixgr.phy.pucch.PUCCHTransmissionAssignment.resolve( ...
                 report,ueContext,frameState,"sr");
         end

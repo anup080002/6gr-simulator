@@ -2050,6 +2050,7 @@ pusch:
   tbs_policy: allocation_based_exact_38214
   ulsch_enabled: true
   uci_multiplexing_mode: configured_uci_on_pusch_when_colliding
+  csi_presence_decision_algorithm: unique_current_tb_crc
   dmrs_policy: configured_type1_mapping_a
   ptrs_policy: enabled_from_yaml
   codeword_count: 1
@@ -2461,6 +2462,10 @@ pucch_resources:
   enabled: true
   profile: nr_rel18_pucch_strict
   configuration_epoch: 1
+  # Authored combined-feedback policy, not a universal NR coding-rate value.
+  format2: {simultaneous_harq_ack_csi: true, max_code_rate: 0.35}
+  format3: {simultaneous_harq_ack_csi: true, max_code_rate: 0.35}
+  format4: {simultaneous_harq_ack_csi: true, max_code_rate: 0.35}
   resource_sets:
   - id: 0
     max_payload_bits: 2

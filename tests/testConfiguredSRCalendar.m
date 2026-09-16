@@ -24,6 +24,9 @@ s=sixgr.lls6g.config.loadScenarioConfig(fullfile(root,'simulator','configs','sce
 cfg=sixgr.lls6g.buildInternalConfig(s,outputFolder);
 catalog=cfg.phy.pucch.srPeriodCatalog;
 fixture=cfg.validation.pucch_resources;
+rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
+assert(isequaln(rrc.Data.SchedulingRequestResources,fixture.scheduling_request_resources), ...
+    'Configured SR identity/occasion associations must survive the runtime RRC mapping.');
 localSaveEvidence(s,cfg,root,outputFolder);
 legal=sixgr.truth.buildConfiguredSRCalendar(cfg,ue,1,58);
 assert(isequaln(baseline,legal),'The baseline must install the independently checked SR fixture calendar.');

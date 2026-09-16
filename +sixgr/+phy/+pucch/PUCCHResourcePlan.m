@@ -41,9 +41,15 @@ classdef PUCCHResourcePlan
             requestedReport=report;
             selection=localCSISelection(report,report);
             owners=string(serialized.Layout.BitOwner);
+            srOnly=~isempty(owners) && all(owners=="SR");
             csiOnly=any(owners=="CSI_PART1" | owners=="CSI_PART2") && ...
                 ~any(owners=="HARQ_ACK");
-            if csiOnly
+            if srOnly
+                [resource,srConfigurationID]=localSRResource(report,rrc,source);
+                resourceSetID=NaN;
+                priValue=NaN;
+                priProvenance="configured_sr_resource";
+            elseif csiOnly
                 id=sixgr.phy.pucch.resolveConfiguredCSIResourceID(rrc.Data.CSIResources);
                 resource=rrc.resourceByID(id);
                 resourceSetID=NaN;
@@ -74,6 +80,12 @@ classdef PUCCHResourcePlan
             k1=double(sixgr.phy.pucch.PUCCHUtil.field(frame,'K1',NaN));
             k1Source=string(sixgr.phy.pucch.PUCCHUtil.field(frame,'K1Source','decoded_dci'));
             pdschEnd=double(sixgr.phy.pucch.PUCCHUtil.field(frame,'PDSCHEndSlot',report.Data.TargetSlot-k1));
+            if srOnly
+                % SR has a configured occasion, not a decoded HARQ K1/PRI.
+                pdschEnd=double(report.Data.TargetSlot);
+                k1=0;
+                k1Source="configured_sr_occasion";
+            end
             ownership=string(sixgr.phy.pucch.PUCCHUtil.field(frame,'SlotSymbolOwnership','UUUUUUUUUUUUUU'));
             timing=sixgr.phy.pucch.PUCCHTimingResolver.resolve(pdschEnd,k1,k1Source, ...
                 ownership,resource.Data.StartSymbol,resource.Data.NumSymbols, ...
@@ -121,6 +133,7 @@ classdef PUCCHResourcePlan
                 'ResourceSetID',resourceSetID,'ResourceID',resource.ID,'PRIValue',priValue, ...
                 'PRIProvenance',priProvenance);
             obj.Data.AllocationBudget=allocationBudget;
+            if srOnly, obj.Data.SRResourceConfigurationID=srConfigurationID; end
             obj.Data.CSISelection=selection; % UE TX disposition, never RX evidence.
             obj.Resource=resource;
             obj.ReportDigest=report.Digest;
@@ -134,6 +147,62 @@ classdef PUCCHResourcePlan
         end
         function value=get.Format(obj), value=obj.Resource.Format; end
     end
+end
+
+function [resource,configurationID]=localSRResource(report,rrc,source)
+% Standalone SR uses its installed SR resource, never the HARQ PRI.
+inventory=rrc.Data.SRResources;
+assert(isnumeric(inventory) && isreal(inventory) && isvector(inventory) && ...
+    all(isfinite(inventory) & inventory>=0 & inventory==fix(inventory)), ...
+    'sixgr:phy:pucch:MissingSRConfiguration','Install explicit SR resource IDs.');
+sr=report.Data.SchedulingRequestReports;
+configurationID=NaN;
+if isa(sr,'sixgr.phy.pucch.SchedulingRequestState')
+    assert(isscalar(sr),'sixgr:phy:pucch:UnresolvedSRResource', ...
+        'Resolve one standalone SR resource before transmission planning.');
+    data=sr.Data;
+    sixgr.phy.pucch.UCIReport.requireFields(data,["ResourceID","Priority"]);
+    id=data.ResourceID;
+    assert(isnumeric(id) && isreal(id) && isscalar(id) && isfinite(id) && ...
+        id>=0 && id==fix(id) && ismember(id,inventory), ...
+        'sixgr:phy:pucch:UninstalledSRResource','The SR procedure must name an installed SR resource.');
+    configs=sixgr.util.structGet(rrc.Data,'SchedulingRequestResources',struct([]));
+    fields=["scheduling_request_resource_id","scheduling_request_id","resource_id", ...
+        "periodicity_slots","offset_slots","priority_index"];
+    assert(isstruct(configs) && ~isempty(configs) && all(isfield(configs,fields)), ...
+        'sixgr:phy:pucch:MissingSRConfiguration','Install SR identity/period/offset/resource associations.');
+    for field=fields
+        for index=1:numel(configs)
+            value=configs(index).(field);
+            assert(isnumeric(value) && isreal(value) && isscalar(value) && isfinite(value) && ...
+                value>=0 && value==fix(value), ...
+                'sixgr:phy:pucch:MissingSRConfiguration','Invalid installed SR field %s.',field);
+        end
+    end
+    assert(numel(unique([configs.scheduling_request_resource_id]))==numel(configs) && ...
+        all([configs.scheduling_request_resource_id]>0) && ...
+        all([configs.periodicity_slots]>[configs.offset_slots]) && ...
+        all(ismember([configs.priority_index],[0 1])), ...
+        'sixgr:phy:pucch:MissingSRConfiguration','SR resource identities, occasions and priorities must be valid and unique.');
+    selected=configs([configs.scheduling_request_id]==data.SchedulingRequestID & ...
+        [configs.resource_id]==id);
+    assert(isscalar(selected) && selected.periodicity_slots==data.PeriodSlots && ...
+        selected.offset_slots==data.OffsetSlots && isequal(selected.priority_index,data.Priority) && ...
+        isequal(report.Data.PriorityIndex,data.Priority), ...
+        'sixgr:phy:pucch:SRConfigurationMismatch','SR procedure and installed configuration must agree.');
+    assert(sr.Data.IsOccasion && report.Data.TargetSlot==sr.Data.AbsoluteSlot+1, ...
+        'sixgr:phy:pucch:InvalidSROccasion','SR assignment must use its exact configured one-based target slot.');
+    configurationID=selected.scheduling_request_resource_id;
+else
+    % Explicit bit-level component APIs may declare positive/negative SR.
+    % Without procedure identity, only a unique installed resource is known.
+    assert(string(source)~="sr" && numel(inventory)==1, ...
+        'sixgr:phy:pucch:UnresolvedSRResource','A multi-resource SR assignment needs typed procedure identity.');
+    id=inventory(1);
+end
+resource=rrc.resourceByID(id);
+assert(ismember(resource.Format,[0 1]),'sixgr:phy:pucch:InvalidSRResourceFormat', ...
+    'Standalone SR requires configured PUCCH Format 0 or 1.');
 end
 
 function [report,resource,budget]=localSelectCSIReports(requested,rrc,id,slot0)

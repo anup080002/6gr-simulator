@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -15,11 +15,13 @@ if nargin<6, receivedAuthority=false; end
 if nargin<7, withHARQ=false; end
 if nargin<10, independentEmptyUCI=false; end
 if nargin<11, independentSharedHARQ=false; end
+if nargin<12, forgetCSIProducer=false; end
+assert(~forgetCSIProducer || (independentSharedHARQ && withCSI));
 assert(~(independentEmptyUCI && independentSharedHARQ));
 independentCompletion=independentEmptyUCI || independentSharedHARQ;
 if independentCompletion
     assert(string(mode)=="TDD" && receivedAuthority && twoPortUL && ...
-        ~withCSI && ~withHARQ && ~deferUCIDelivery && ~withCoincidentSRS);
+        (~withCSI || independentSharedHARQ) && ~withHARQ && ~deferUCIDelivery && ~withCoincidentSRS);
 end
 assert(any(string(mode)==["TDD","FDD"]));
 fixture='lls_pdcch_shared_queue_fixture.yaml';
@@ -29,11 +31,11 @@ if withCSI
     fixture='lls_pusch_csi_delivery_fixture.yaml';
 end
 if twoPortUL
-    assert(string(mode)=="TDD" && ~withCSI);
+    assert(string(mode)=="TDD" && (~withCSI || independentSharedHARQ));
     fixture='lls_two_port_ul_shared_queue_fixture.yaml';
 end
 if receivedAuthority
-    assert(twoPortUL && ~withCSI);
+    assert(twoPortUL && (~withCSI || independentSharedHARQ));
     fixture='lls_received_ul_shared_queue_fixture.yaml';
 end
 if withHARQ
@@ -45,7 +47,7 @@ s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 if nargin<8, outputRoot=tempname; end
 root=outputRoot; mkdir(root);
 cfg=sixgr.lls6g.buildInternalConfig(s,root);
-if independentCompletion
+if independentCompletion && ~withCSI
     for name=["csi","cqi","pmi","ri","cri"]
         assert(~s.get("reference_signals."+name+"_reporting_enabled"), ...
             'test:IndependentPUSCHReportingAuthority', ...
@@ -58,7 +60,7 @@ end
 if twoPortUL
     assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
 end
-if withCSI || withHARQ, localSaveScenarioEvidence(s,cfg,root); end
+if (withCSI || withHARQ) && ~independentCompletion, localSaveScenarioEvidence(s,cfg,root); end
 if independentCompletion
     localSaveScenarioEvidence(s,cfg,root, ...
         'component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; independent UCI receive/commit; selected DL source explicitly retained; not full coordinator or 12 dB qualification');
@@ -78,8 +80,13 @@ state.TestWithCSI=logical(withCSI);
 state.TestWithHARQ=logical(withHARQ);
 state.TestIndependentCompletion=logical(independentCompletion);
 state.TestIndependentSharedHARQ=logical(independentSharedHARQ);
+state.TestForgetCSIProducer=logical(forgetCSIProducer);
 state.TestScheduledDLDAILedger=struct();
-if independentCompletion, assert(~cfg.phy.csi.reportCSI); end
+if independentCompletion, assert(logical(cfg.phy.csi.reportCSI)==logical(withCSI)); end
+if independentCompletion && withCSI
+    assert(sixgr.truth.periodicCSIReportSlotMask(10,cfg.phy.csi.reportPeriodicitySlots, ...
+        cfg.phy.csi.reportOffsetSlots) && sixgr.truth.periodicCSIReferenceSlot(cfg,10)==6);
+end
 state.TestPUSCHRows=table();
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if receivedAuthority
@@ -123,10 +130,13 @@ for slot=1:lastSlot
     end
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if independentCompletion && withCSI
+        state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
+    end
     if independentSharedHARQ && slot==6
         state=localQueueSharedCSISource(state,cfg,slot,true);
     end
-    if withCSI && slot==10-state.CSIFeedbackSlots
+    if withCSI && ~independentCompletion && slot==10-state.CSIFeedbackSlots
         state=localQueueSharedCSISource(state,cfg,slot);
     end
     if withHARQ && slot==11, localQueueSRS(state,cfg,15); end
@@ -152,6 +162,12 @@ for slot=1:lastSlot
     end
     if slot==9 || (withHARQ && slot==19)
         assert(isfield(state,'TestSRS') && state.TestSRS.AvailableAtSample<=owner.Events.NextSampleIndex);
+        if independentCompletion && withCSI
+            reports=state.PendingCSITable;
+            assert(height(reports)==1 && reports.SourceSlot==6 && reports.CSIReferenceSlot==6 && ...
+                reports.DueSlot==10 && ~reports.Processed && state.TestSharedCSIReceived);
+            state.TestExpectedCSI=reports;
+        end
         if slot==9 && ~independentCompletion, state=localReceivedDLReservations(state,cfg,10); end
         if slot==19
             assert(~state.TestLastULHARQ.CombinedDecodeOK && state.ULHarq.hasPendingRetx(cfg.phy.pusch.RNTI,slot), ...
@@ -200,8 +216,8 @@ for slot=1:lastSlot
 end
 attempts=1+logical(withHARQ);
 assert(state.TestPUSCHReceived && state.ULHarq.Stats.Tx==attempts && state.ULQueueBits(1)==0);
-assert(numel(owner.DataTransmissions)==attempts+logical(withCSI)+logical(independentSharedHARQ) && ~owner.hasPending('PUSCH',1));
-if withCSI
+assert(numel(owner.DataTransmissions)==attempts+logical(withCSI && ~independentCompletion)+logical(independentSharedHARQ) && ~owner.hasPending('PUSCH',1));
+if withCSI && ~independentCompletion
     assert(state.TestSharedCSIReceived && state.DLHarq.Stats.Tx==3 && ...
         ~owner.hasPending('PDSCH',1));
 end
@@ -544,7 +560,7 @@ for item=items
         if state.TestIndependentCompletion
             job=sixgr.truth.bindSharedPUSCHReceiverContext(state,job);
             assert(job.ReceivedContext.UCIReceiveContext.Data.HARQACKBitCount==double(state.TestIndependentSharedHARQ) && ...
-                isempty(job.ReceivedContext.UCIReportConfiguration));
+                isempty(job.ReceivedContext.UCIReportConfiguration)==~state.TestWithCSI);
             poisoned=state; poisoned.PendingFeedbackTable=table(true,'VariableNames',{'Ack'});
             poison=job; poison.ExpectedUCIBits=ones(99,1,'int8');
             same=sixgr.truth.bindSharedPUSCHReceiverContext(poisoned,poison);
@@ -590,8 +606,45 @@ for item=items
             p,receiver,out.ReceiveTiming,owner.Events.NextSampleIndex);
         if state.TestIndependentCompletion
             priorTimeline=state.HARQTimelineTable;
+            if state.TestWithCSI
+                beforeCSI=state.DLHarq.Stats;
+                bad=out.HARQ; bad.DecodedCSIPart1Bits=NaN;
+                localReject(@()sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
+                    state,job.Cfg,bad,receiver,job.ReceivedContext.UCIReceiveContext), ...
+                    'sixgr:truth:InvalidReceivedCSIBit');
+                assert(isequaln(state.DLHarq.Stats,beforeCSI), ...
+                    'Malformed CSI must reject before shared HARQ handle mutation.');
+                if state.TestForgetCSIProducer
+                    % Delete only test-side UE bookkeeping AFTER the actual
+                    % on-air CSI was generated and independently decoded.
+                    % This is not a no-transmitter/noise-only RF episode.
+                    state.PendingCSITable=state.PendingCSITable([],:);
+                    out.HARQ.GrantSnapshot.UCIOnPUSCHCSIReportIdentity="poisoned_TX_identity";
+                    out.HARQ.ExpectedCSIPart1Bits=ones(99,1,'int8');
+                    out.HARQ.ExpectedCSIPart2Bits=ones(101,1,'int8');
+                end
+            end
             [state,out.HARQ]=sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
                 state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext);
+            if state.TestWithCSI
+                save(fullfile(state.TestRoot,'independent_csi_completion.mat'),'out','job','receiver','-v7.3');
+                reports=sixgr.util.structGet(state,'SharedGNBCSIReportTable',table());
+                assert(height(reports)==1 && reports.CSIUCIDecodeOk && state.LatestDLFeedback(1).Valid, ...
+                    'test:IndependentCSIPublicationMissing', ...
+                    'The common independent receive completion must publish received CSI without the legacy producer-bound adapter.');
+                assert(reports.CSIReferenceSlot==6 && reports.SourceSlot==6 && reports.DueSlot==10 && ...
+                    reports.SourceSlotAuthority=="configured_CSI_reference_resource_not_UE_measurement_slot" && ...
+                    isnan(reports.SINR_dB) && isnan(reports.CRCPass));
+                path=fullfile(state.TestRoot,'received_csi_reports.csv');
+                sixgr.util.csvWriteTable(path,reports,'PreserveSchema',true,'RoundTripNumericText',true);
+                saved=sixgr.util.csvReadTable(path,'TextType','string');
+                assert(saved.CSIUCIDecodeOk && saved.CQI==reports.CQI && isnan(saved.SINR_dB));
+                if state.TestForgetCSIProducer
+                    assert(strlength(reports.UEReferenceRecordJSON)==0);
+                else
+                    assert(strlength(reports.UEReferenceRecordJSON)>0);
+                end
+            end
             if state.TestIndependentSharedHARQ
                 timeline=state.HARQTimelineTable;
                 assert(height(timeline)==height(priorTimeline) && ...
@@ -888,6 +941,12 @@ job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
 result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
 assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
 out=sixgr.truth.bindSharedDLCSICompletion(out,p,receiver,owner);
+if state.TestWithCSI
+    csi=out.CSIRSTrialTable;
+    assert(height(csi)==1 && csi.Observed && csi.CSIMeasurementAvailable && ...
+        csi.Slot==6 && csi.ResultAvailableAtSample==owner.Events.NextSampleIndex);
+    state.TestSharedCSIReceived=true; state.TestCSISource=out;
+end
 [state,out.ReceivedHARQACKEvent]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
     state,job.Cfg,control,out.ReceivedHARQDecision,out.ReceivedHARQState,owner.Events.NextSampleIndex);
 state.SharedUEDLHARQEntities={out.ReceivedHARQState};
@@ -934,8 +993,20 @@ sixgr.util.csvWriteTable(path,report,'PreserveSchema',true);
 saved=sixgr.util.csvReadTable(path,'TextType','string');
 assert(saved.SourceSlot==expected.SourceSlot && saved.DueSlot==expected.DueSlot && ...
     saved.DeliveredSlot==state.CurrentSlot && saved.CSIUCIDecodeOk);
-assert(saved.MeasurementAvailableAtSample==state.TestCSISource.CSIRSTrialTable.ResultAvailableAtSample && ...
-    saved.MeasurementClockDomain=="shared_receiver_sample_clock/v1");
+% UE completion timing is retained as audit, not transmitted in CSI UCI.
+% Check the exact original clock and identity after the CSV round trip.
+audit=jsondecode(saved.UEReferenceRecordJSON);
+csi=state.TestCSISource.CSIRSTrialTable;
+assert(audit.MeasurementAvailableAtSample==csi.ResultAvailableAtSample && ...
+    audit.MeasurementAvailableSlot==expected.MeasurementAvailableSlot && ...
+    audit.MeasurementClockEpoch==csi.MeasurementClockEpoch && ...
+    string(audit.MeasurementClockDomain)=="shared_receiver_sample_clock/v1" && ...
+    string(audit.ReportIdentity)==expected.ReportIdentity && ...
+    audit.SourceSlot==expected.SourceSlot && audit.DueSlot==expected.DueSlot);
+assert(isnan(saved.MeasurementAvailableAtSample) && isnan(saved.MeasurementAvailableSlot) && ...
+    isnan(saved.MeasurementClockEpoch) && ...
+    (ismissing(saved.MeasurementClockDomain) || strlength(saved.MeasurementClockDomain)==0) && ...
+    isnan(saved.SINR_dB) && saved.SourceSignal=="received_CSI_UCI");
 disp('SHARED_PUSCH_LATE_CSI_DELIVERY_PASS: measured CSI-RS report retained across actual PUSCH and late delivery.');
 end
 

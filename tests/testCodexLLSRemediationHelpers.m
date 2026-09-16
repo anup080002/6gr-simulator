@@ -36,12 +36,18 @@ assert(k1 == 2 && decision.Valid, ...
 short = sixgr.l2.mac.BSR_PHR.buildBSR(struct("LCG0", 1500), 10);
 assert(string(short.Format) == "short" && ~short.Truncated, ...
     "One active LCG must use Short BSR.");
-trunc = sixgr.l2.mac.BSR_PHR.buildBSR([100 200 0 0 0 0 0 0], 2);
+priority=struct('HighestPriorityWithData',[1 2 8 8 8 8 8 8], ...
+    'HighestPriorityConfigured',[1 2 8 8 8 8 8 8]);
+trunc = sixgr.l2.mac.BSR_PHR.buildBSR([100 200 0 0 0 0 0 0], 2,priority);
 assert(string(trunc.Format) == "short_truncated" && trunc.Truncated, ...
     "Multiple active LCGs with <3 bytes padding must use Short Truncated BSR.");
-long = sixgr.l2.mac.BSR_PHR.buildBSR([100 200 0 0 0 0 0 0], 4);
+assert(trunc.LCID==59 && trunc.MACSubPDUBytes==2);
+limited=sixgr.l2.mac.BSR_PHR.buildBSR([100 200 0 0 0 0 0 0],4,priority);
+assert(limited.LCID==60 && limited.Truncated && limited.MACSubPDUBytes==4);
+long = sixgr.l2.mac.BSR_PHR.buildBSR([100 200 0 0 0 0 0 0], 5);
 assert(string(long.Format) == "long" && ~long.Truncated, ...
     "Multiple active LCGs with enough padding must use Long BSR.");
+assert(long.MACSubPDUBytes==5);
 
 pdcpCfg = sixgr.util.structSet(struct(), "l2.pdcp.rohc.enable", true);
 pdcp = sixgr.l2.pdcp.PDCP(pdcpCfg);

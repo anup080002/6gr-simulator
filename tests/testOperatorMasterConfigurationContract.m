@@ -187,6 +187,7 @@ end
 
 function localAssertBuiltSurface(raw, cfg, fileName)
 localAssertSRPolicy(raw, cfg);
+localAssertUCIPolicy(raw, cfg);
 radio = raw.canonical_control.radio;
 localAssertEqual(double(cfg.phy.carrier.NSizeGrid), ...
     double(radio.n_size_grid), fileName + " carrier grid");
@@ -274,6 +275,28 @@ assert(logical(context.UECapability1024QAM) == ...
     logical(context.BandAllows1024QAM) == ...
         logical(raw.pdsch6gr.mcs_band_allows_1024qam), ...
     "%s did not preserve the explicit PDSCH MCS capability context.", fileName);
+end
+
+function localAssertUCIPolicy(raw, cfg)
+assert(string(cfg.phy.pusch.csiPresenceDecisionAlgorithm)== ...
+    string(raw.pusch.csi_presence_decision_algorithm), ...
+    'test:OperatorCSIPresenceAuthority','PUSCH receiver policy must preserve YAML authority.');
+for format=2:4
+    name=char("format"+format);
+    assert(isequaln(cfg.validation.pucch_resources.(name),raw.pucch_resources.(name)), ...
+        'test:OperatorPUCCHPolicyAuthority','Per-format PUCCH policy must survive config construction.');
+    sixgr.phy.pucch.PUCCHResource.validateMaxCodeRate(raw.pucch_resources.(name).max_code_rate);
+end
+if ~raw.pucch_resources.enabled, return; end % Do not enable an inactive feature for a test.
+ue=struct('UEID',1,'RNTI',raw.pusch.rnti,'ServingCell',1,'PUCCHCell',1, ...
+    'ComponentCarrier',0,'ActiveULBWP',0);
+rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
+for format=2:4
+    policy=raw.pucch_resources.(char("format"+format));
+    assert(rrc.maxCodeRate(format)==policy.max_code_rate && ...
+        rrc.allowsHARQCSI(format)==policy.simultaneous_harq_ack_csi, ...
+        'test:OperatorInstalledPUCCHPolicy','The installed receiver must use the declared format policy.');
+end
 end
 
 function localAssertSRPolicy(raw, cfg)

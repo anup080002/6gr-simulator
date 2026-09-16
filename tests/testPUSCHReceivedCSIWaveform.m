@@ -88,6 +88,21 @@ for explicitLayout=[false true]
     assert(independent.CSIPresenceResolved && independent.CSIReportDetected && ...
         independent.CSIPresenceEvidence.SelectedCandidate==2 && ...
         isequal(independent.CSIPresenceEvidence.CandidateTBCRCPass,[0;1]));
+    normalized=sixgr.truth.normalizeReceivedPUSCHCSI(independent,context,installed);
+    assert(normalized.DecodeOk && normalized.Fields.RI==2 && normalized.Fields.CQI_CW0==11 && ...
+        isequal(normalized.DecodedPart1,report.Part1Bits) && isequal(normalized.DecodedPart2,report.Part2Bits));
+    poisoned=independent;
+    poisoned.ExpectedCSIPart1Bits=ones(99,1); poisoned.ExpectedCSIPart2Bits=NaN;
+    poisoned.GrantSnapshot=struct('UCIOnPUSCHCSIReportIdentity',"wrong_TX_report");
+    assert(isequaln(normalized,sixgr.truth.normalizeReceivedPUSCHCSI(poisoned,context,installed)));
+    for badBits={NaN,Inf,.5,[1 2],complex(1,1)}
+        bad=independent; bad.DecodedCSIPart1Bits=badBits{1};
+        localReject(@()sixgr.truth.normalizeReceivedPUSCHCSI(bad,context,installed), ...
+            'sixgr:truth:InvalidReceivedCSIBit');
+    end
+    bad=independent; bad.UCIReceiverEvidence.ReceiverContextDigest="wrong_context";
+    localReject(@()sixgr.truth.normalizeReceivedPUSCHCSI(bad,context,installed), ...
+        'sixgr:truth:PUSCHCSIReceiveContextMismatch');
     assert(~independent.CSIPresenceEvidence.PriorHARQSoftBufferUsed && ...
         ~independent.CSIPresenceEvidence.TransmitterMetadataUsed);
     assert(isequal(independent.DecodedHARQACKBits,payload.HARQACK) && ...
@@ -150,6 +165,8 @@ assert(absentRx.CSI1BitCount==0 && absentRx.CSI2BitCount==0 && ...
 [usable,crc]=sixgr.truth.puschCSIReceiverUsable(absentRx, ...
     absentRx.DecodedCSIPart1Bits,absentRx.DecodedCSIPart2Bits,[0 0]);
 assert(~usable && isnan(crc),'A correctly received absent-CSI interpretation cannot publish CSI.');
+normalizedAbsent=sixgr.truth.normalizeReceivedPUSCHCSI(absentRx,context,installed);
+assert(~normalizedAbsent.DecodeOk && isnan(normalizedAbsent.CRCPass) && isempty(fieldnames(normalizedAbsent.Fields)));
 % Actual OFDM negative fixture: spare CRI must not erase independent HARQ.
 % This intentionally invalid UCI is a test stimulus, not a valid CSI report
 % or an injected runtime measurement. The existing valid-waveform checks above

@@ -8,9 +8,23 @@ classdef SchedulingRequestState
 
     methods
         function obj = SchedulingRequestState(data)
+            assert(isstruct(data) && isscalar(data), ...
+                'sixgr:phy:pucch:MissingSRConfiguration','SR state must be one procedure-state structure.');
             required = ["SchedulingRequestID","PeriodSlots","OffsetSlots", ...
                 "AbsoluteSlot","PendingPositiveSR","ProhibitTimerActive"];
             sixgr.phy.pucch.UCIReport.requireFields(data,required);
+            for name=["SchedulingRequestID","PeriodSlots","OffsetSlots","AbsoluteSlot"]
+                value=data.(name);
+                assert(isnumeric(value) && isreal(value) && isscalar(value) && ...
+                    isfinite(value) && value>=0 && value==fix(value), ...
+                    'sixgr:phy:pucch:MissingSRConfiguration','%s must be a finite nonnegative integer.',name);
+            end
+            for name=["PendingPositiveSR","ProhibitTimerActive"]
+                value=data.(name);
+                assert((isnumeric(value)||islogical(value)) && isreal(value) && ...
+                    isscalar(value) && isfinite(value) && any(value==[0 1]), ...
+                    'sixgr:phy:pucch:InvalidSRState','%s must be a scalar binary flag.',name);
+            end
             period = double(data.PeriodSlots);
             offset = double(data.OffsetSlots);
             slot = double(data.AbsoluteSlot);

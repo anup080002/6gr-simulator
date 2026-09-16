@@ -41,24 +41,25 @@ classdef BSR_PHR < handle
                     if isstring(key), key = char(key); end
                     switch lower(char(key))
                         case 'numlcg'
+                            validateattributes(val,{'numeric'},{'scalar','real','finite','integer','>=',1,'<=',8});
                             obj.NumLCG = double(val);
+                        otherwise
+                            error('sixgr:BSR_PHR:BadNV','Unknown option %s.',string(key));
                     end
                 end
             end
-            obj.NumLCG = max(1, min(8, round(obj.NumLCG)));
             obj.LCGBufferBytes = zeros(1, obj.NumLCG);
         end
 
         function setLCGBuffer(obj, lcgId, bytes)
-            lcgId = double(lcgId);
-            if lcgId < 0 || lcgId > obj.NumLCG-1
-                error('sixgr:BSR_PHR:BadLCG','LCG ID must be in [0..%d].', obj.NumLCG-1);
-            end
-            obj.LCGBufferBytes(lcgId+1) = max(0, double(bytes));
+            validateattributes(lcgId,{'numeric'},{'scalar','real','finite','integer','>=',0,'<',obj.NumLCG});
+            validateattributes(bytes,{'numeric'},{'scalar','real','finite','integer','nonnegative','<=',flintmax});
+            obj.LCGBufferBytes(lcgId+1) = double(bytes);
         end
 
         function addLCGBuffer(obj, lcgId, bytesDelta)
-            lcgId = double(lcgId);
+            validateattributes(lcgId,{'numeric'},{'scalar','real','finite','integer','>=',0,'<',obj.NumLCG});
+            validateattributes(bytesDelta,{'numeric'},{'scalar','real','finite','integer'});
             obj.setLCGBuffer(lcgId, obj.LCGBufferBytes(lcgId+1) + double(bytesDelta));
         end
 
@@ -67,7 +68,7 @@ classdef BSR_PHR < handle
             %
             % Name-Value:
             %  'Format'    : 'short'|'long'|'auto' (default 'auto')
-            %  'Truncated' : true/false (default false)  (reserved)
+            %  Truncation requires buildBSR's explicit budget and priorities.
             ip = inputParser;
             ip.addParameter('Format','auto',@(x) ischar(x) || isstring(x));
             ip.addParameter('Truncated',false,@(x) islogical(x) && isscalar(x));
@@ -75,9 +76,10 @@ classdef BSR_PHR < handle
             opt = ip.Results;
 
             fmt = lower(char(string(opt.Format)));
-            %#ok<NASGU> truncated = logical(opt.Truncated); % reserved
+            assert(~opt.Truncated,'sixgr:mac:MissingBSRPaddingContext', ...
+                'Use buildBSR with a byte budget and logical-channel priorities for truncation.');
 
-            lcgBytes = obj.LCGBufferBytes;
+            lcgBytes=sixgr.l2.mac.BSR_PHR.localLCGBufferVector(obj.LCGBufferBytes);
             active = find(lcgBytes > 0);
             if isempty(active)
                 % Nothing to report; return empty
@@ -95,6 +97,8 @@ classdef BSR_PHR < handle
 
             switch fmt
                 case 'short'
+                    assert(numel(active)==1,'sixgr:mac:InvalidShortBSRSelection', ...
+                        'A full Short BSR cannot silently omit other active LCGs.');
                     lcgId = active(1)-1;
                     payload = sixgr.l2.mac.BSR_PHR.encodeShortBSR(lcgId, lcgBytes(active(1)));
                     ce = struct('LCID',61,'Payload',payload,'IsFixed',true,'Name','ShortBSR'); % LCID 61
@@ -129,116 +133,144 @@ classdef BSR_PHR < handle
     end
 
     methods(Static)
-        function ce = buildBSR(lcgBufferMap, maxPaddingBytes)
-            % buildBSR Select Short, Short-Truncated, or Long BSR by payload budget.
-            if nargin < 2 || isempty(maxPaddingBytes)
-                maxPaddingBytes = inf;
-            end
+        function ce = buildBSR(lcgBufferMap,maxPaddingBytes,priorities)
+            % Padding BSR (38.321 5.4.5): budget INCLUDES the MAC subheader.
+            % LCP priorities use LCGID+1 indexing (lower number is higher).
+            % HighestPriorityWithData and HighestPriorityConfigured differ
+            % when the highest-priority logical channel has an empty queue.
+            if nargin<3, priorities=struct(); end
+            validateattributes(maxPaddingBytes,{'numeric'}, ...
+                {'scalar','real','finite','integer','nonnegative'});
             lcgBytes = sixgr.l2.mac.BSR_PHR.localLCGBufferVector(lcgBufferMap);
             active = find(lcgBytes > 0);
-            if isempty(active)
+            if isempty(active) || maxPaddingBytes<2
                 ce = struct([]);
                 return;
             end
-            maxPaddingBytes = double(maxPaddingBytes);
-            if ~(isscalar(maxPaddingBytes) && isfinite(maxPaddingBytes))
-                maxPaddingBytes = inf;
-            end
-
+            selected=active;
             if numel(active) == 1
                 fmt = "short";
                 lcgId = active(1) - 1;
                 payload = sixgr.l2.mac.BSR_PHR.encodeShortBSR(lcgId, lcgBytes(active(1)));
                 lcid = 61;
-                name = "ShortBSR";
-                truncated = false;
-            elseif maxPaddingBytes < 3
-                fmt = "short_truncated";
-                [~, ord] = max(lcgBytes(active));
-                lcgId = active(ord) - 1;
-                payload = sixgr.l2.mac.BSR_PHR.encodeShortBSR(lcgId, lcgBytes(active(ord)));
-                lcid = 60;
-                name = "ShortTruncatedBSR";
-                truncated = true;
             else
                 fmt = "long";
                 payload = sixgr.l2.mac.BSR_PHR.encodeLongBSR(lcgBytes);
                 lcid = 62;
-                name = "LongBSR";
-                truncated = false;
+                fullHeader=sixgr.l2.mac.MACSubheaderCodec.encode('UL',lcid,numel(payload));
+                if maxPaddingBytes<numel(fullHeader)+numel(payload)
+                    if maxPaddingBytes==2
+                        order=sixgr.l2.mac.BSR_PHR.priorityOrder( ...
+                            priorities,'HighestPriorityWithData',active);
+                        selected=order(1);
+                        payload=sixgr.l2.mac.BSR_PHR.encodeShortBSR( ...
+                            selected-1,lcgBytes(selected));
+                        lcid=59; fmt="short_truncated";
+                    else
+                        lcid=60; fmt="long_truncated";
+                        emptyHeader=sixgr.l2.mac.MACSubheaderCodec.encode('UL',lcid,1);
+                        count=maxPaddingBytes-numel(emptyHeader)-1;
+                        selected=[]; % A bitmap with zero size fields is legal.
+                        if count>0
+                            order=sixgr.l2.mac.BSR_PHR.priorityOrder( ...
+                                priorities,'HighestPriorityConfigured',active);
+                            selected=sort(order(1:count));
+                        end
+                        payload=sixgr.l2.mac.BSR_PHR.longPayload(lcgBytes,selected);
+                    end
+                end
             end
-
+            schema=sixgr.l2.mac.MACCESchemaRegistry.resolve('UL',lcid);
+            header=sixgr.l2.mac.MACSubheaderCodec.encode('UL',lcid,numel(payload));
+            total=numel(header)+numel(payload);
+            assert(total<=maxPaddingBytes,'sixgr:mac:MACPDUCapacityExceeded', ...
+                'BSR including its subheader exceeds the supplied padding.');
             ce = struct('LCID', lcid, 'Payload', uint8(payload(:)), ...
-                'IsFixed', fmt ~= "long", 'Name', char(name), ...
-                'Format', char(fmt), 'Truncated', logical(truncated), ...
-                'ActiveLCGCount', double(numel(active)));
+                'IsFixed',schema.SizeType=="fixed",'Name',char(schema.Name), ...
+                'Format',char(fmt),'Truncated',ismember(lcid,[59 60]), ...
+                'ActiveLCGCount',double(numel(active)), ...
+                'ReportedLCGIDs',reshape(selected-1,1,[]),'MACSubPDUBytes',total);
         end
 
         function payload = encodeShortBSR(lcgId, bufferBytes)
             % Short BSR MAC CE payload (1 octet):
             %   bits[7:5] LCG ID (3 bits)
             %   bits[4:0] Buffer Size index (5 bits)
-            lcgId = double(lcgId);
-            if lcgId < 0 || lcgId > 7
-                error('sixgr:BSR_PHR:BadLCG','LCG ID must be 0..7 for short BSR.');
-            end
+            validateattributes(lcgId,{'numeric'},{'scalar','real','finite','integer','>=',0,'<=',7});
             idx = sixgr.l2.mac.BSR_PHR.bufferSizeIndex5bit(bufferBytes);
             b = bitshift(uint8(lcgId),5) + uint8(idx);
             payload = uint8(b);
         end
 
-        function [lcgId, bufferBytesEst] = decodeShortBSR(payload)
-            b = uint8(payload(1));
+        function [lcgId,upperInclusive,lowerExclusive,index] = decodeShortBSR(payload)
+            % Quantization bounds, not an exact queue-byte measurement.
+            b=sixgr.l2.mac.BSR_PHR.octets(payload);
+            assert(numel(b)==1,'sixgr:mac:InvalidBSRPayloadLength','Short BSR needs exactly one payload octet.');
             lcgId = double(bitshift(b,-5));
-            idx = double(bitand(b, uint8(31)));
-            bufferBytesEst = sixgr.l2.mac.BSR_PHR.bufferSizeFromIndex5bit(idx);
+            index = double(bitand(b,uint8(31)));
+            [upperInclusive,lowerExclusive]=sixgr.l2.mac.BSR_PHR.bufferSizeFromIndex5bit(index);
         end
 
         function payload = encodeLongBSR(lcgBytes)
             % Long BSR payload (variable):
             %   Oct1: bitmap LCG7..LCG0 (bit=1 => include buffer size field)
             %   Then: Buffer Size fields (8-bit indices) for each LCGi=1 in ascending i.
-            lcgBytes = double(lcgBytes(:).');
-            nLCG = min(numel(lcgBytes), 8);
-            lcgBytes = [lcgBytes(1:nLCG) zeros(1,8-nLCG)];
-
-            bitmap = uint8(0);
-            for i = 0:7
-                if lcgBytes(i+1) > 0
-                    bitmap = bitor(bitmap, bitshift(uint8(1), i));
-                end
-            end
-
-            fields = uint8([]);
-            for i = 0:7
-                if bitand(bitmap, bitshift(uint8(1),i)) ~= 0
-                    idx8 = sixgr.l2.mac.BSR_PHR.bufferSizeIndex8bit(lcgBytes(i+1));
-                    fields(end+1,1) = uint8(idx8); %#ok<AGROW>
-                end
-            end
-
-            payload = [bitmap; fields];
+            lcgBytes=sixgr.l2.mac.BSR_PHR.localLCGBufferVector(lcgBytes);
+            payload=sixgr.l2.mac.BSR_PHR.longPayload(lcgBytes,find(lcgBytes>0));
         end
 
-        function lcgBytesEst = decodeLongBSR(payload)
-            b = uint8(payload(:));
-            if isempty(b)
-                lcgBytesEst = zeros(1,8);
-                return;
-            end
-            bitmap = b(1);
-            ptr = 2;
-            lcgBytesEst = zeros(1,8);
-            for i = 0:7
-                if bitand(bitmap, bitshift(uint8(1),i)) ~= 0
-                    if ptr > numel(b)
-                        break;
+        function [upperInclusive,lowerExclusive,indices] = decodeLongBSR(payload)
+            % Unreported LCGs remain NaN, never silently empty queues.
+            report=sixgr.l2.mac.BSR_PHR.decodeBSR(62,payload);
+            upperInclusive=report.UpperInclusive;
+            lowerExclusive=report.LowerExclusive;
+            indices=report.BufferSizeIndices;
+        end
+
+        function report=decodeBSR(lcid,payload,priorities)
+            if nargin<3, priorities=struct(); end
+            validateattributes(lcid,{'numeric'},{'scalar','real','finite','integer','>=',59,'<=',62});
+            b=sixgr.l2.mac.BSR_PHR.octets(payload);
+            report=struct('LCID',lcid,'BufferSizeIndices',nan(1,8), ...
+                'LowerExclusive',nan(1,8),'UpperInclusive',nan(1,8), ...
+                'BufferSizeFieldPresent',false(1,8),'LCGBitmap',NaN, ...
+                'BitmapMeaning',"not_present");
+            if ismember(lcid,[59 61])
+                [id,upper,lower,index]=sixgr.l2.mac.BSR_PHR.decodeShortBSR(b);
+                selected=id+1; indices=index; tableID="5bit";
+            else
+                assert(~isempty(b),'sixgr:mac:InvalidBSRPayloadLength','Long BSR needs a bitmap.');
+                active=find(bitget(b(1),1:8));
+                count=numel(b)-1;
+                if lcid==62
+                    assert(count==numel(active),'sixgr:mac:InvalidBSRPayloadLength', ...
+                        'Long BSR payload length must exactly match its bitmap.');
+                    selected=active;
+                    report.BitmapMeaning="buffer_size_field_present";
+                else
+                    assert(count<=numel(active),'sixgr:mac:InvalidBSRPayloadLength', ...
+                        'Long Truncated BSR has more fields than active LCGs.');
+                    selected=[];
+                    if count==numel(active), selected=active;
+                    elseif count>0
+                        order=sixgr.l2.mac.BSR_PHR.priorityOrder( ...
+                            priorities,'HighestPriorityConfigured',active);
+                        selected=sort(order(1:count));
                     end
-                    idx8 = double(b(ptr));
-                    ptr = ptr + 1;
-                    lcgBytesEst(i+1) = sixgr.l2.mac.BSR_PHR.bufferSizeFromIndex8bit(idx8);
+                    report.BitmapMeaning="data_available";
+                end
+                report.LCGBitmap=double(b(1));
+                indices=double(b(2:end)).'; tableID="8bit";
+                upper=zeros(size(indices)); lower=upper;
+                for k=1:numel(indices)
+                    [upper(k),lower(k)]=sixgr.l2.mac.BSR_PHR.indexBounds(indices(k),tableID);
                 end
             end
+            report.BufferSizeIndices(selected)=indices;
+            report.UpperInclusive(selected)=upper;
+            report.LowerExclusive(selected)=lower;
+            report.BufferSizeFieldPresent(selected)=true;
+            report.TableID=tableID;
         end
 
         function payload = encodeSingleEntryPHR(ph_dB, pcmax_dBm, powerBackoff)
@@ -282,59 +314,25 @@ classdef BSR_PHR < handle
         end
 
         function idx = bufferSizeIndex5bit(bufferBytes)
-            % Table 6.1.3.1-1 (5-bit buffer size levels, bytes).
-            levels = sixgr.l2.mac.BSR_PHR.table5bitLevels();
-            x = double(bufferBytes);
-            if ~isfinite(x) || x <= 0
-                idx = 0;
-                return;
-            end
-            k = find(x <= levels, 1, 'first');
-            if isempty(k)
-                idx = 31;
-            else
-                idx = k-1;
-            end
+            validateattributes(bufferBytes,{'numeric'},{'scalar','real','finite','integer','nonnegative','<=',flintmax});
+            idx=sixgr.l2.mac.BSRTableR18.indexForBytes(bufferBytes,"5bit");
         end
 
-        function bytes = bufferSizeFromIndex5bit(idx)
-            levels = sixgr.l2.mac.BSR_PHR.table5bitLevels();
-            idx = max(0, min(31, round(double(idx))));
-            if idx == 31
-                bytes = levels(end);
-            else
-                bytes = levels(idx+1);
-            end
+        function [upperInclusive,lowerExclusive] = bufferSizeFromIndex5bit(idx)
+            [upperInclusive,lowerExclusive]=sixgr.l2.mac.BSR_PHR.indexBounds(idx,"5bit");
         end
 
         function idx = bufferSizeIndex8bit(bufferBytes)
-            % 8-bit buffer size index (Table 6.1.3.1-2).
-            % For simulator coherence we implement a smooth approximation:
-            %  - Map bytes to a monotonic index in [0..255] using log scaling.
-            % If you need strict conformance, replace this with the exact table.
-            x = double(bufferBytes);
-            if ~isfinite(x) || x <= 0
-                idx = 0;
-                return;
-            end
-            % log-scale mapping roughly spanning [10..~2e6] bytes typical table.
-            idx = round(64 * log10(max(x,1)));
-            idx = max(0, min(255, idx));
+            validateattributes(bufferBytes,{'numeric'},{'scalar','real','finite','integer','nonnegative','<=',flintmax});
+            idx=sixgr.l2.mac.BSRTableR18.indexForBytes(bufferBytes,"8bit");
         end
 
-        function bytes = bufferSizeFromIndex8bit(idx)
-            % Inverse of bufferSizeIndex8bit approximation.
-            idx = max(0, min(255, round(double(idx))));
-            bytes = 10^(idx/64);
+        function [upperInclusive,lowerExclusive] = bufferSizeFromIndex8bit(idx)
+            [upperInclusive,lowerExclusive]=sixgr.l2.mac.BSR_PHR.indexBounds(idx,"8bit");
         end
 
         function levels = table5bitLevels()
-            % Upper bounds (bytes) for indices 0..31 (index 31 is ">150000").
-            levels = [ ...
-                0, 10, 14, 20, 28, 38, 53, 74, ...
-                102, 142, 198, 276, 384, 535, 745, 1038, ...
-                1446, 2014, 2806, 3909, 5446, 7587, 10570, 14726, ...
-                20516, 28581, 39818, 55474, 77284, 107669, 150000, 150000];
+            levels=sixgr.l2.mac.BSRTableR18.upperBounds("5bit");
         end
 
         function phIdx = quantizePH(ph_dB)
@@ -367,34 +365,75 @@ classdef BSR_PHR < handle
 
         function lcgBytes = localLCGBufferVector(lcgBufferMap)
             lcgBytes = zeros(1, 8);
-            if isempty(lcgBufferMap)
+            if isnumeric(lcgBufferMap) && isempty(lcgBufferMap)
                 return;
             end
             if isnumeric(lcgBufferMap)
+                validateattributes(lcgBufferMap,{'numeric'}, ...
+                    {'vector','real','finite','integer','nonnegative','<=',flintmax});
+                assert(numel(lcgBufferMap)<=8,'sixgr:mac:InvalidLCGBufferMap','Non-extended BSR supports eight LCGs.');
                 vals = double(lcgBufferMap(:).');
-                lcgBytes(1:min(8, numel(vals))) = vals(1:min(8, numel(vals)));
+                lcgBytes(1:numel(vals)) = vals;
             elseif isa(lcgBufferMap, 'containers.Map')
                 keysList = keys(lcgBufferMap);
                 for i = 1:numel(keysList)
-                    key = double(keysList{i});
-                    if key >= 0 && key <= 7
-                        lcgBytes(key + 1) = double(lcgBufferMap(keysList{i}));
-                    end
+                    key=keysList{i}; value=lcgBufferMap(key);
+                    validateattributes(key,{'numeric'},{'scalar','real','finite','integer','>=',0,'<=',7});
+                    validateattributes(value,{'numeric'},{'scalar','real','finite','integer','nonnegative','<=',flintmax});
+                    lcgBytes(key+1)=double(value);
                 end
-            elseif isstruct(lcgBufferMap)
+            elseif isstruct(lcgBufferMap) && isscalar(lcgBufferMap)
                 names = fieldnames(lcgBufferMap);
                 for i = 1:numel(names)
-                    tok = regexp(names{i}, '\d+', 'match', 'once');
-                    if isempty(tok)
-                        continue;
-                    end
-                    key = str2double(tok);
-                    if isfinite(key) && key >= 0 && key <= 7
-                        lcgBytes(key + 1) = double(lcgBufferMap.(names{i}));
-                    end
+                    tok=regexp(names{i},'^LCG([0-7])$','tokens','once');
+                    assert(~isempty(tok),'sixgr:mac:InvalidLCGBufferMap','Expected exact LCG0 through LCG7 field names.');
+                    value=lcgBufferMap.(names{i});
+                    validateattributes(value,{'numeric'},{'scalar','real','finite','integer','nonnegative','<=',flintmax});
+                    lcgBytes(str2double(tok{1})+1)=double(value);
                 end
+            else
+                error('sixgr:mac:InvalidLCGBufferMap','Provide a numeric LCG vector, numeric-key map or scalar LCG structure.');
             end
-            lcgBytes(~isfinite(lcgBytes) | lcgBytes < 0) = 0;
+        end
+    end
+
+    methods (Static,Access=private)
+        function bytes=octets(input)
+            assert(isnumeric(input) && isreal(input) && (isvector(input) || isempty(input)) && ...
+                all(isfinite(input(:))) && all(input(:)==fix(input(:))) && ...
+                all(input(:)>=0 & input(:)<=255), ...
+                'sixgr:mac:InvalidBSROctet','BSR payload must contain integer octets before uint8 conversion.');
+            bytes=uint8(input(:));
+        end
+
+        function [upper,lower]=indexBounds(index,tableID)
+            bounds=sixgr.l2.mac.BSRTableR18.upperBounds(tableID);
+            validateattributes(index,{'numeric'}, ...
+                {'scalar','real','finite','integer','>=',0,'<',numel(bounds)});
+            upper=bounds(index+1);
+            assert(~isnan(upper),'sixgr:mac:ReservedBSRIndex','Reserved BSR index cannot become a queue estimate.');
+            lower=NaN;
+            if index>0, lower=bounds(index); end
+        end
+
+        function payload=longPayload(buffers,selected)
+            bitmap=uint8(0);
+            for id=find(buffers>0)
+                bitmap=bitor(bitmap,bitshift(uint8(1),id-1));
+            end
+            indices=arrayfun(@(id)sixgr.l2.mac.BSR_PHR.bufferSizeIndex8bit(buffers(id)),selected);
+            payload=[bitmap;uint8(indices(:))];
+        end
+
+        function ordered=priorityOrder(priorities,field,active)
+            assert(isstruct(priorities) && isscalar(priorities) && isfield(priorities,field), ...
+                'sixgr:mac:MissingBSRPriority','Truncated BSR requires LCP-derived %s by LCG.',field);
+            values=priorities.(field);
+            validateattributes(values,{'numeric'},{'vector','real','numel',8});
+            validateattributes(values(active),{'numeric'},{'real','finite','integer','positive'});
+            weights=reshape(double(values(active)),[],1);
+            [~,order]=sortrows([weights active(:)],[1 2]);
+            ordered=reshape(active(order),1,[]);
         end
     end
 end

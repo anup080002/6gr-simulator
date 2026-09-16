@@ -1,0 +1,84 @@
+{
+  "TargetCommit": "08f9ec6058f35ccaea86ea19ca02d4dfe1a28af3",
+  "CheckedUTC": "2026-09-16T07:30:02.0488024Z",
+  "ReadOnly": true,
+  "Patches": [
+    {
+      "Patch": "pending_12db_same_chain_sweep.patch",
+      "SHA256": "C8D07B2BD3F0FBF5FD12BB0EAF349DCAA96F3A8381AF0CEF181604005C4D7A41",
+      "ForwardExit": 1,
+      "ReverseExit": 0,
+      "ForwardDiagnostic": "error: patch failed: simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml:1\nerror: simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_snr_sweep.yaml: patch does not apply",
+      "ReverseDiagnostic": "",
+      "Disposition": "already_present_exact_reverse_check",
+      "Proof": "git apply --reverse --check exits 0; no application required."
+    },
+    {
+      "Patch": "pending_csirs_planner_calendar.patch",
+      "SHA256": "CC98F97BC4EDA52C4BC30DD0351CBF58E31824C4FBF2BC3D87981A37F172CEA3",
+      "ForwardExit": 128,
+      "ReverseExit": 128,
+      "ForwardDiagnostic": "error: No valid patches in input (allow with \"--allow-empty\")",
+      "ReverseDiagnostic": "error: No valid patches in input (allow with \"--allow-empty\")",
+      "Disposition": "already_present_source_verified",
+      "Proof": "apply_patch format, not git-diff format. buildPlannedREAllocation.m:14-15 normalizes then reshapes target channels; localCSIRS:339+ resolves runtime slot configuration, skips unscheduled occasions and enumerates that slot's resources. Obsolete outside-loop CSIRSPeriod assignment is absent."
+    },
+    {
+      "Patch": "pending_received_harq_calendar_tests.patch",
+      "SHA256": "D115F57D4C9800F778EE036879762D9E34A2365CB1753A08D251BB44618D1701",
+      "ForwardExit": 1,
+      "ReverseExit": 1,
+      "ForwardDiagnostic": "error: patch failed: tests/testReceivedDLHARQReplay.m:1\nerror: tests/testReceivedDLHARQReplay.m: patch does not apply\nerror: patch failed: tests/testReceivedDLCombiningEvidence.m:4\nerror: tests/testReceivedDLCombiningEvidence.m: patch does not apply\nerror: patch failed: tests/testReceivedDLReportEvidence.m:4\nerror: tests/testReceivedDLReportEvidence.m: patch does not apply\nerror: patch failed: tests/testReceivedDLQCLAuthority.m:4\nerror: tests/testReceivedDLQCLAuthority.m: patch does not apply\nerror: patch failed: tests/testReceivedDLDisabledCSI.m:3\nerror: tests/testReceivedDLDisabledCSI.m: patch does not apply\nerror: patch failed: tests/testAll.m:49\nerror: tests/testAll.m: patch does not apply",
+      "ReverseDiagnostic": "error: patch failed: tests/testAll.m:49\nerror: tests/testAll.m: patch does not apply\nerror: patch failed: tests/testReceivedDLQCLAuthority.m:4\nerror: tests/testReceivedDLQCLAuthority.m: patch does not apply",
+      "Disposition": "already_present_with_newer_context",
+      "Proof": "All five changed test paths use received_dl_harq_calendar_02. All eleven proposed test registrations appear exactly once. QCL fixture now uses actual CoupledTruthRuntime.applyUserContext instead of the patch's unchanged hand-set serving-cell context; do not revert it."
+    },
+    {
+      "Patch": "pending_sinr_limit_plot_provenance.patch",
+      "SHA256": "3AD0840F0B5A29F00819EEC3D9F39DC739C4BE0823E3C3090F1E54D91CB6595C",
+      "ForwardExit": 1,
+      "ReverseExit": 0,
+      "ForwardDiagnostic": "error: patch failed: apps/lls_contract_materializer.py:27\nerror: apps/lls_contract_materializer.py: patch does not apply\nerror: patch failed: apps/lls_radio_measurement_plots.py:103\nerror: apps/lls_radio_measurement_plots.py: patch does not apply\nerror: tests/test_lls_sinr_limit_provenance.py: already exists in working directory",
+      "ReverseDiagnostic": "",
+      "Disposition": "already_present_exact_reverse_check",
+      "Proof": "git apply --reverse --check exits 0 for all three patch targets; runtime qualification separate."
+    },
+    {
+      "Patch": "pending_type2_harq_consumers.patch",
+      "SHA256": "D4AC21D0CEBE9DD711DD4111294D970C2262CD981B4F224C16271B37729ECA3D",
+      "ForwardExit": 128,
+      "ReverseExit": 128,
+      "ForwardDiagnostic": "error: No valid patches in input (allow with \"--allow-empty\")",
+      "ReverseDiagnostic": "error: No valid patches in input (allow with \"--allow-empty\")",
+      "Disposition": "already_present_with_additional_guards",
+      "Proof": "PUCCHConfigBuilder.m:61-112 retains the typed codebook, validates epoch plus transport/UE/slot and does not reset harqReport. runPUCCHPhaseValidation.m:240-245 uses SourceEventIndex and leaves DAI gaps without fabricated PDSCH identity."
+    },
+    {
+      "Patch": "pending_type2_vector_manifest.patch",
+      "SHA256": "E885D3444FD07164303039702BA3CBDC9774C019E6DDF2BE7DFC30D30C2F4FCC",
+      "ForwardExit": 128,
+      "ReverseExit": 128,
+      "ForwardDiagnostic": "error: No valid patches in input (allow with \"--allow-empty\")",
+      "ReverseDiagnostic": "error: No valid patches in input (allow with \"--allow-empty\")",
+      "Disposition": "already_present_manifest_and_bytes_verified",
+      "Proof": "Both patched manifest entries match current file SHA256, each has 24 parsed CSV rows and the prescribed TYPE2_CORRECTION oracle label.",
+      "Files": [
+        {
+          "Path": "tests/vectors/pucch/pucch_harq_codebook_test_vectors.csv",
+          "SHA256": "291d423acb1523f5454a67463a6297f3cc276f821d2a2f127108f1b0ef206d50",
+          "Rows": 24
+        },
+        {
+          "Path": "tests/vectors/pucch/expected_pucch_harq_codebook.csv",
+          "SHA256": "29c492060d9c203fedcabce54bab74a1b1f00bff7d50f7a31d7d7e78f7ed1245",
+          "Rows": 24
+        }
+      ]
+    }
+  ],
+  "Scope": "Six top-level docs/lls/pending_*.patch files only. Not full historical archive/stash reconciliation or runtime qualification.",
+  "SourceChanged": false,
+  "PatchesDeleted": false,
+  "HistoricalArchivesAndStashReconciled": false,
+  "SemanticVerificationUTC": "2026-09-16 07:36:15 UTC"
+}

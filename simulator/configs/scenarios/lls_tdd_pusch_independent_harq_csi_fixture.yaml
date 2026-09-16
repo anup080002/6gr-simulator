@@ -1,0 +1,25 @@
+inherits:
+  - ./lls_received_ul_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_tdd_pusch_independent_harq_csi_fixture
+  description: Shared DL HARQ and measured periodic CSI on independently received PUSCH.
+  purpose: Normal combined receiver and publication regression; inherited high-margin component point is not 12 dB qualification.
+  research_class: optional_research_experiment
+
+# One actual slot-6 DL supplies HARQ and CSI-RS. At equal 15 kHz
+# numerology and one configured resource, slot 6 is the reference for
+# the periodic slot-10 report (TS 38.214 5.2.2.5).
+reference_signals:
+  csi_rs_periodicity_slots: 5
+  csi_rs_offset_slots: 0
+
+csi_acquisition_and_reporting:
+  csi_report_periodicity_slots: 5
+  csi_report_offset_slots: 4
+
+tdd_timing:
+  dl_harq_feedback_k1: [4]
+
+pucch_resources:
+  dl_data_to_ul_ack: [4]
