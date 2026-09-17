@@ -108,11 +108,31 @@ if harqEnabled
 end
 if adaptationEnabled
     meta.LinkAdaptationInput="ideal_delayed_received_DMRS_noise_with_perfect_identity_channel_no_CSI_report_waveform";
-    meta.LinkAdaptationPolicy="coded_calibrated_ILLA_rank_QAM_selection_plus_first_transmission_CRC_OLLA";
+    meta.LinkAdaptationPolicy="coded_calibrated_ILLA_rank_QAM_rate_selection_plus_first_transmission_CRC_OLLA";
     meta.AdaptationTargetFirstTransmissionBLER=s.research_adaptation.target_bler;
     meta.CalibrationSHA256=controllers{1}.CalibrationSHA256;
     meta.ApproximationMode="ideal_delayed_HARQ_and_measurement_feedback_actual_coded_data_waveforms";
-    copyfile(s.research_adaptation.calibration_file,fullfile(root,'meta','adaptation_calibration.csv'));
+    library=controllers{1}.Calibration;
+    assert(controllers{2}.CalibrationSHA256==library.SHA256, ...
+        'sixgr:research:CalibrationChanged','DL and UL must consume the same immutable calibration library.');
+    meta.CalibrationSources=struct('Files',library.SourceFiles,'SHA256',library.SourceSHA256);
+    for f=1:numel(library.SourceFiles)
+        source=library.SourceFiles(f); origin=fileparts(source);
+        destination=fullfile(root,'meta','adaptation_calibration',sprintf('%03d',f)); mkdir(destination);
+        copyfile(source,fullfile(destination,'trials.csv'));
+        assert(sixgr.util.sha256File(fullfile(destination,'trials.csv'))==library.SourceSHA256(f), ...
+            'sixgr:research:CalibrationChanged','Calibration must not change between selection and snapshot.');
+        for name=["provenance.json","resolved_config.json"]
+            copyfile(fullfile(origin,name),fullfile(destination,name));
+        end
+        if isfolder(fullfile(origin,'meta')), copyfile(fullfile(origin,'meta'),fullfile(destination,'meta')); end
+    end
+    % Preserve the legacy primary-file artifact, while retaining every source.
+    copyfile(fullfile(root,'meta','adaptation_calibration','001','trials.csv'), ...
+        fullfile(root,'meta','adaptation_calibration.csv'));
+    evidence=[controllers{1}.Calibration.Evidence(:);controllers{2}.Calibration.Evidence(:)];
+    sixgr.util.csvWriteTable(fullfile(root,'adaptation','csv','calibration_gates.csv'), ...
+        struct2table(evidence),'PreserveSchema',true);
 end
 if physical
     meta.PhysicalArray=spatial.Manifest;
@@ -124,6 +144,7 @@ sourcePaths=[string(mfilename('fullpath'))+".m", ...
     string(which('sixgr.phy.research.SharedChannelLink')), ...
     string(which('sixgr.phy.research.IdealDelayedHARQ')), ...
     string(which('sixgr.phy.research.AWGNLinkAdaptation')), ...
+    string(which('sixgr.phy.research.loadAWGNCalibration')), ...
     string(which('sixgr.phy.research.exportLabIQ')), ...
     string(which('sixgr.phy.research.PhysicalArrayLink'))];
 sourceEvidence=struct([]);

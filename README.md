@@ -267,9 +267,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Additional rate calibration failed; preserve i
 
 The additional rate profile executes 120 actual initial TBs (two rates, both
 directions, 30 trials at 30 dB each), preserving the original calibration.
-The multiple-source evidence loader passed focused checks, but controller
-integration and full-band rate qualification remain pending; the combined
-five-candidate YAML is not yet an accepted final-run command.
+The multiple-source evidence loader and its controller integration passed
+focused checks. Full-band lower-rate qualification remains pending; the
+combined five-candidate YAML is not yet an accepted final-run command.
 
 The YAML chooses the calibration destination under `results/`. Existing
 calibration CSVs are never overwritten: choose a new `calibration_file` in

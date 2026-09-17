@@ -7,6 +7,7 @@ classdef AWGNLinkAdaptation < handle
         OLLA
         ThresholdDb
         CalibrationSHA256
+        Calibration
         FeedbackCount = 0
         MeasurementSlot = -Inf
         NoiseVariance = NaN
@@ -27,57 +28,9 @@ classdef AWGNLinkAdaptation < handle
             assert(p.target_bler<1 && p.calibration_confidence<1 && ...
                 p.margin_min_db<=0 && p.margin_max_db>=0 && p.margin_min_db<p.margin_max_db, ...
                 'sixgr:research:InvalidAdaptationPolicy','BLER/confidence must be below one and OLLA bounds must contain zero.');
-            assert(isfile(p.calibration_file),'sixgr:research:MissingAdaptationCalibration', ...
-                'Generate actual coded calibration first: %s.',p.calibration_file);
-            provenanceFile=fullfile(fileparts(p.calibration_file),'provenance.json');
-            assert(isfile(provenanceFile),'sixgr:research:MissingCalibrationProvenance','Calibration environment provenance is required.');
-            provenance=jsondecode(fileread(provenanceFile));
-            assert(isfield(provenance,'MATLAB') && string(provenance.MATLAB)==string(version), ...
-                'sixgr:research:CalibrationEnvironmentMismatch', ...
-                'Regenerate calibration on this MATLAB version; do not silently reuse another receiver implementation.');
-            savedConfig=fullfile(fileparts(p.calibration_file),'resolved_config.json');
-            assert(isfile(savedConfig),'sixgr:research:MissingCalibrationProvenance','The executed calibration configuration is required.');
-            calibratedScenario=jsondecode(fileread(savedConfig));
-            obj.CalibrationSHA256=sixgr.util.sha256File(p.calibration_file);
-            T=readtable(p.calibration_file,'TextType','string');
-            required=["TrialIndex","Direction","Candidate","ProfileHash","CodecSHA256","ReferenceSNRdB", ...
-                "MeasuredLayerSINRdB","CRCPass","TBExact","Source"];
-            assert(all(ismember(required,string(T.Properties.VariableNames))) && ...
-                numel(unique(T.TrialIndex))==height(T) && all(T.Source=="actual_coded_research_calibration") && ...
-                all(T.CodecSHA256==sixgr.util.sha256File(which('sixgr.phy.research.SharedChannelLink'))) && ...
-                all(ismember(T.CRCPass,[0 1])) && all(ismember(T.TBExact,[0 1])) && ...
-                all(T.TBExact(logical(T.CRCPass))), ...
-                'sixgr:research:InvalidAdaptationCalibration','Calibration needs current-code executed CRC and exact-payload evidence.');
-            obj.ThresholdDb=Inf(1,numel(p.candidate_layers));
-            for k=1:numel(obj.ThresholdDb)
-                sc=sixgr.phy.research.AWGNLinkAdaptation.candidate(s,obj.Direction,k);
-                savedCandidate=sixgr.phy.research.AWGNLinkAdaptation.candidate(calibratedScenario,obj.Direction,k);
-                hash=sixgr.phy.research.AWGNLinkAdaptation.profileHash(savedCandidate,obj.Direction);
-                rows=T.Direction==obj.Direction & T.Candidate==k;
-                % First bind rows to their saved executed input. Then compare
-                % active PHY settings; YAML reload can add inactive aliases.
-                compatible=sixgr.phy.research.AWGNLinkAdaptation.physicalProfileHash(sc,obj.Direction)== ...
-                    sixgr.phy.research.AWGNLinkAdaptation.physicalProfileHash(savedCandidate,obj.Direction);
-                assert(any(rows) && all(T.ProfileHash(rows)==hash) && compatible, ...
-                    'sixgr:research:CalibrationProfileMismatch', ...
-                    'Candidate %d/%s needs profile %s; recorded profiles: %s.', ...
-                    k,obj.Direction,hash,strjoin(unique(T.ProfileHash(rows)),","));
-                points=unique(T.ReferenceSNRdB(rows));
-                for point=reshape(points,1,[])
-                    at=rows & T.ReferenceSNRdB==point; n=sum(at); errors=sum(~logical(T.CRCPass(at)));
-                    if errors==n, blerUpper=1; else, blerUpper=betaincinv(p.calibration_confidence,errors+1,n-errors); end
-                    if n>=p.calibration_trials_per_point && blerUpper<=p.target_bler
-                        measured=T.MeasuredLayerSINRdB(at);
-                        assert(all(isfinite(measured)),'sixgr:research:InvalidCalibrationMeasurement','Finite receiver SINR is required.');
-                        threshold=10*log10(mean(10.^(measured/10)));
-                        obj.ThresholdDb(k)=min(obj.ThresholdDb(k),threshold);
-                    end
-                end
-            end
-            assert(any(isfinite(obj.ThresholdDb)),'sixgr:research:UnqualifiedAdaptationCandidates', ...
-                'No candidate meets the configured pointwise binomial upper-bound gate.');
-            assert(isfinite(obj.ThresholdDb(p.bootstrap_candidate)), ...
-                'sixgr:research:UnqualifiedBootstrap','The bootstrap candidate needs coded calibration support.');
+            obj.Calibration=sixgr.phy.research.loadAWGNCalibration(s,obj.Direction);
+            obj.CalibrationSHA256=obj.Calibration.SHA256;
+            obj.ThresholdDb=obj.Calibration.ThresholdDb;
             key=struct('UEID',s.(section).rnti,'Direction',obj.Direction, ...
                 'ServingCellID',s.(section).nid,'ScheduledCellID',s.(section).nid, ...
                 'BWPID',0,'MCSTable',"research_explicit_candidate_menu",'ConfigurationEpoch',obj.CalibrationSHA256);

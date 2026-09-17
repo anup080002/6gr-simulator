@@ -1,4 +1,4 @@
-function ok=testResearchAWGNAdaptation(calibrationPath)
+function ok=testResearchAWGNAdaptation(calibrationPath,additionalCalibrationPath)
 % Actual coded calibration + controller integration, not full-band acceptance.
 setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false);
 c=sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd,'tests','fixtures','research_adaptation.yaml'));
@@ -10,6 +10,10 @@ s.research_adaptation.calibration_file=char(fullfile(root,'calibration','trials.
 if nargin>0
     assert(isfile(calibrationPath),'Only existing coded calibration can be reused.');
     s.research_adaptation.calibration_file=char(calibrationPath);
+end
+if nargin>1
+    assert(isfile(additionalCalibrationPath),'Only existing coded calibration can be reused.');
+    s.research_adaptation.calibration_files={char(additionalCalibrationPath)};
 end
 config=fullfile(root,'config.yaml'); sixgr.lls6g.config.writeYAML(config,s);
 % The calibrator and runner both consume the front-door normalized reload,
@@ -28,6 +32,16 @@ bad=s; bad.research_dl.num_prbs=9;
 localThrows(@()sixgr.phy.research.AWGNLinkAdaptation(bad,"DL"),'sixgr:research:CalibrationProfileMismatch');
 out=run_6g_phy_lls_single(config,fullfile(root,'execution'),tag);
 assert(out.ResultOk && out.Manifest.LinkAdaptationEnabled);
+assert(numel(out.Manifest.CalibrationSources.Files)==numel(ctl.Calibration.SourceFiles));
+for f=1:numel(ctl.Calibration.SourceFiles)
+    copied=fullfile(out.RunFolder,'meta','adaptation_calibration',sprintf('%03d',f));
+    assert(sixgr.util.sha256File(fullfile(copied,'trials.csv'))==ctl.Calibration.SourceSHA256(f));
+    assert(isfile(fullfile(copied,'provenance.json')) && isfile(fullfile(copied,'resolved_config.json')));
+end
+gates=readtable(fullfile(out.RunFolder,'adaptation','csv','calibration_gates.csv'), ...
+    'TextType','string','Delimiter',',','ReadVariableNames',true);
+assert(all(gates.Eligible) && all(gates.Source=="pointwise_calibration_gate_not_integrated_BLER"));
+assert(all(ismember(["DL","UL"],gates.Direction)));
 T=out.TrialTable; S=out.SummaryTable;
 assert(all(T.PhysicalTxElements==4 & T.PhysicalRxElements==4));
 assert(all(T.CRCPass & T.TBExact) && ~any(T.IsRetransmission));

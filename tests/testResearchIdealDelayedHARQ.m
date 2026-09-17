@@ -22,6 +22,7 @@ for d=["DL","UL"]
     changed.(section).num_layers=2;
     changed.(section).dmrs_port_set=[0 1];
     changed.(section).modulation='256QAM';
+    changed.(section).target_code_rate=0.82;
     % A second transmission need not recover an almost-erased systematic RV.
     % Exercise the configured IR sequence; still require exact recovery within
     % its fixed maximum, with no decoder/noise/gate change to the actual run.
@@ -32,6 +33,8 @@ for d=["DL","UL"]
         assert(isequal(repeated,tb));
         assert(retx.Allocation.NumLayers==p.Allocation.NumLayers && ...
             retx.Allocation.Modulation==p.Allocation.Modulation && ...
+            retx.Allocation.TargetCodeRate==p.Allocation.TargetCodeRate && ...
+            retx.Allocation.TransportBlockSize==p.Allocation.TransportBlockSize && ...
             isequal(retx.Allocation.Precoder,p.Allocation.Precoder));
         tx=sixgr.phy.research.SharedChannelLink.transmit(sc,attemptSlot,repeated,d,'HARQKey',retx.HARQKey);
         h.transmitted(retx,tx); options=h.receiveOptions(retx);
@@ -55,7 +58,8 @@ for d=["DL","UL"]
     assert(~h.Entity.onFeedback(h.RNTI,retx.HARQ.HarqID,true,'SourceSlot',attemptSlot,'FeedbackSlot',attemptSlot+4));
     h.advance(attemptSlot+8); [fresh,~,~]=h.reserve(changed,attemptSlot+8);
     assert(fresh.HARQKey~=p.HARQKey && ~fresh.HARQ.IsRetransmission);
-    assert(fresh.Allocation.NumLayers==2 && fresh.Allocation.Modulation=="256QAM");
+    assert(fresh.Allocation.NumLayers==2 && fresh.Allocation.Modulation=="256QAM" && ...
+        fresh.Allocation.TargetCodeRate==changed.(section).target_code_rate);
     assert(h.Feedback(1).AttemptIndex==1 && all([h.Feedback(2:end).AttemptIndex]>1));
     nextOptions=h.receiveOptions(fresh); assert(isempty(nextOptions{4}));
     fprintf('RESEARCH_IDEAL_HARQ_COMPONENT_PASS direction=%s attempts=%d NACK_ACK=1 unique_bits=%d feedback_delay_slots=%d\n', ...

@@ -203,15 +203,37 @@ rejection of a still-running producer. Evidence is in
 `logs/research_adaptive_full264_20260918/calibration_library_checks.log`,
 ending with `CALIBRATION_LIBRARY_AND_RATE_CONFIG_PASS`.
 
-The original 540-trial calibration remains running, with its executed MATLAB
-sources unchanged (SHA256 rechecked after the helper tests). Run the additional
-rate calibration serially after it finishes. The controller still consumes
-one calibration file: wiring in the tested loader and retaining its per-source
-provenance in the integrated run are pending. Do not launch the combined YAML
-as an accepted adaptive run yet. Never concatenate candidate indices or pool
-potentially dependent trials to manufacture a confidence pass.
-Then validate the integrated rank/QAM/rate decision loop, frozen HARQ
-retransmission allocation and unique-payload goodput. `testAll` stays stopped.
+The original 540-trial calibration completed at about 01:01 IST, with its
+executed MATLAB sources unchanged through process exit. Only then was the
+controller changed to consume the tested multi-source loader. The runner
+retains every calibration CSV, saved input and provenance file under numbered
+`meta/adaptation_calibration` directories; it exports per-source pointwise
+confidence gates separately from decoded KPIs. Candidate indices are never
+concatenated and trials from different files are not pooled into a pass.
+
+The multi-source controller integration passed on retained actual 8-PRB
+evidence split across two files. All 6 DL and 8 UL payloads decoded exactly,
+with bootstrap-to-feedback-driven modulation switching, causal OLLA updates,
+source hash checks and both calibration snapshots retained. The log
+`logs/research_adaptive_full264_20260918/multisource_adaptation_integration.log`
+ends with `MULTISOURCE_ADAPTATION_INTEGRATION_BATCH_PASS`. The full-band
+original calibration also loaded successfully in both controllers.
+
+The strengthened HARQ test changed the proposed next rank, QAM and code rate
+while a TB was outstanding. Both directions retained the original retransmission
+code rate/TB size, recovered the exact payload through RVs 0/2/3, and counted
+it once. See `harq_rate_freeze.log`, ending with `HARQ_CODE_RATE_FREEZE_BATCH_PASS`.
+Configuration/catalog and loader regression checks passed in
+`adaptation_config_and_library_checks.log`. `testAll` stays stopped.
+
+At 30 dB in the original full-band calibration, 1024-QAM/rank 2/rate 0.9 and
+256-QAM/rank 4/rate 0.9 each had zero failures in 30 trials per direction.
+1024-QAM/rank 4/rate 0.9 had 12/30 DL and 10/30 UL failures and did not qualify
+at that point; it qualified only at the tested 32 dB point. This is pointwise
+calibration evidence, not integrated adaptive-run or statistical holdout
+qualification. The additional 0.82/0.85 full-band calibration and final
+throughput/IQ campaign remain pending. Do not call the combined YAML accepted
+until those executions and their artifacts are checked.
 
 ### Four-port IQ export verified 18 September
 
