@@ -21,6 +21,46 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ## Existing capability and verified source boundaries
 
+### Fixed-budget code-rate comparison (17 September, 11:16 IST)
+
+`research_400mhz_rate_matrix.yaml` extends the normal matrix entry point with
+an explicit `research_rate_comparison` result profile. Four YAML candidates
+use target code rates 0.75, 0.80, 0.85 and 0.90, with unchanged two-layer
+400 MHz / 7 GHz TDD, 30 dB reference SNR, unit-total-power precoding and
+noise policy. Each executes 80 slots (10 ms), including 30 DL and 40 UL
+TB opportunities. Waveforms are still executed when capture is disabled;
+the comparison omits bulky IQ files, and the selected operating point must
+subsequently be rerun with IQ capture enabled.
+
+Both directions must meet the YAML zero-observed-BLER selection gate.
+Negative observations are retained, not converted into passes; the original
+strict capture scenario still requires all TBs to succeed. Comparison
+completion, all-candidate success and selection availability are separate
+states. Ranking uses delivered unique TB bits divided by the full TDD
+sample-clock duration, never configured TBS or active-slot-only rates.
+An empty qualifying set produces no selected row. The result is best
+observed among these configured candidates, not a global optimum or
+statistical reliability qualification.
+
+The preflight rejects changed SNR, layer count, physical/timing policies,
+duplicate IDs and abort-on-negative-result candidate policies. Focused
+configuration/catalog validation exited 0 (2/2 tests, 34.34 s), with logs
+under `logs/research_rate_matrix_config_20260917`. At this checkpoint the
+new comparison runtime has not yet completed, and final-source regression
+is pending. Existing frozen-source regressions do not qualify this new
+matrix profile.
+
+Run the actual comparison on the Windows server from this branch:
+
+```powershell
+New-Item -ItemType Directory -Path logs/wideband_rate_server_01 -ErrorAction Stop
+matlab -wait -singleCompThread -logfile logs/wideband_rate_server_01/matlab.log -batch "setup6GRSimToolkit('Verbose',false); r=run_6g_phy_lls_matrix('simulator/configs/scenarios/research_400mhz_rate_matrix.yaml','logs/wideband_rate_server_01','run_01'); assert(r.ExecutionCompleted);"
+```
+
+Inspect `reports/csv/rate_comparison.csv`, `eligible_ranked.csv`,
+`best_observed.csv` and each child run's raw `trials.csv`. A completed
+comparison is not an assertion that every candidate passed.
+
 ### Integrated research lab checkpoint (17 September, 11:02 IST)
 
 `lls_7ghz_400mhz_1024qam_tdd_30db.yaml` now uses the normal

@@ -13,6 +13,10 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 matrixCfg = sixgr.lls6g.config.readConfigFile(configPath);
 sixgr.lls6g.config.validateScenarioConfig(matrixCfg, ...
     "Kind", "matrix", "AllowPartial", false, "Context", configPath);
+if string(sixgr.util.structGet(matrixCfg,'execution.result_profile','standard')) == "research_rate_comparison"
+    out=sixgr.lls6g.runners.runResearchRateMatrix(matrixCfg,configPath,outputDir,runTag);
+    return;
+end
 
 matrixID = string(matrixCfg.meta.matrix_id);
 leaf = localResolveLeaf(runTag);

@@ -18,6 +18,8 @@ sections:
       max_parallel_jobs: {required: true, type: integer, min: 1}
       repeat_count: {required: true, type: integer, min: 1}
       save_combined_summary: {required: true, type: boolean}
+      result_profile: {required: false, type: string, allowed_values: [standard, research_rate_comparison]}
+      maximum_observed_bler: {required: false, type: number, min: 0, max: 1}
   scenarios:
     required: true
     parameters: {}

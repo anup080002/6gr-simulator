@@ -1,0 +1,16 @@
+inherits:
+  - lls_7ghz_400mhz_1024qam_tdd_30db.yaml
+meta:
+  scenario_id: research_400mhz_rate075
+  description: Ten-ms code-rate candidate; retain failures as observations, not acceptance passes.
+simulation:
+  n_slots: 80
+research_link:
+  capture_iq: false
+  export_keysight: false
+  save_plots: false
+  require_all_tb_success: false
+research_dl:
+  target_code_rate: 0.75
+research_ul:
+  target_code_rate: 0.75

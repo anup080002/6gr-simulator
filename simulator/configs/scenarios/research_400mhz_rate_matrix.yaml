@@ -1,0 +1,15 @@
+meta:
+  matrix_id: research_400mhz_rate_matrix
+  description: Compare actual two-layer DL/UL 1024-QAM goodput at fixed 30 dB reference SNR, power and TDD horizon.
+execution:
+  result_profile: research_rate_comparison
+  maximum_observed_bler: 0
+  stop_on_failure: false
+  max_parallel_jobs: 1
+  repeat_count: 1
+  save_combined_summary: true
+scenarios:
+  - research_400mhz_rate075.yaml
+  - research_400mhz_rate080.yaml
+  - research_400mhz_rate085.yaml
+  - research_400mhz_rate090.yaml

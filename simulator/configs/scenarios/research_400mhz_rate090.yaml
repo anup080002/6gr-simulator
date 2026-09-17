@@ -1,0 +1,8 @@
+inherits:
+  - research_400mhz_rate075.yaml
+meta:
+  scenario_id: research_400mhz_rate090
+research_dl:
+  target_code_rate: 0.9
+research_ul:
+  target_code_rate: 0.9
