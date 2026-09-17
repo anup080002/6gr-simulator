@@ -149,5 +149,6 @@ state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
 if ~isempty(fieldnames(producer))
     state.PendingFeedbackTable=nextProducer.PendingFeedbackTable;
     state.PUCCHGrantTraceTable=nextProducer.PUCCHGrantTraceTable;
+    if isfield(nextProducer,'PendingCSITable'), state.PendingCSITable=nextProducer.PendingCSITable; end
 end
 end

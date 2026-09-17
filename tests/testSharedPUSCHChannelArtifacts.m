@@ -20,7 +20,7 @@ if nargin<13, unconsumedULCommand=false; end
 if nargin<14, pucchOnlyCompletion=false; end
 assert(~pucchOnlyCompletion || (independentSharedHARQ && withCSI && ...
     ~unconsumedULCommand && ~forgetCSIProducer));
-assert(~unconsumedULCommand || (independentSharedHARQ && ~withCSI && ~forgetCSIProducer));
+assert(~unconsumedULCommand || (independentSharedHARQ && ~forgetCSIProducer));
 assert(~forgetCSIProducer || (independentSharedHARQ && withCSI));
 assert(~(independentEmptyUCI && independentSharedHARQ));
 independentCompletion=independentEmptyUCI || independentSharedHARQ;
@@ -257,7 +257,21 @@ if unconsumedULCommand
         state.ULHarq.Stats.Tx==0 && isempty(state.ULHarq.getDeliveryLedger()) && ...
         all(state.PendingFeedbackTable.Processed) && ~any(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH) && ...
         all(state.PUCCHGrantTraceTable.Status=="TX_ONLY") && ...
-        isempty(state.ControlTrials.PUCCH) && height(state.SharedGNBUCIHARQTable)==1);
+        ~any(state.ControlTrials.PUCCH.Slot==10) && height(state.SharedGNBUCIHARQTable)==1);
+    if withCSI
+        reports=state.PendingCSITable;
+        received=state.SharedGNBCSIReportTable;
+        received=received(received.DueSlot==10,:);
+        assert(height(reports)==1 && reports.Processed && ...
+            string(reports.CSIUCITransport)=="pucch_transmitted_unselected" && ...
+            ~reports.CSIUCIMultiplexedOnPUSCH && ~reports.CSIUCIDecodeOk && ...
+            isnan(reports.DeliveredSlot) && isnan(reports.CSIUCICRCPass) && ...
+            height(received)==1 && received.CSIUCIChannel=="PUSCH" && ...
+            nnz(contains(lower(string(state.PUCCHGrantTraceTable.UCIType)),"harq"))==1 && ...
+            height(state.PUCCHGrantTraceTable)==2);
+        sixgr.util.csvWriteTable(fullfile(root,'unselected_csi_tx_only.csv'),reports,'PreserveSchema',true);
+        sixgr.util.csvWriteTable(fullfile(root,'independent_pusch_csi_reception.csv'),received,'PreserveSchema',true);
+    end
     sixgr.util.csvWriteTable(fullfile(root,'unselected_pucch_capture_audit.csv'),audit,'PreserveSchema',true);
     sixgr.util.csvWriteTable(fullfile(root,'pucch_tx_only_trace.csv'),state.PUCCHGrantTraceTable,'PreserveSchema',true);
     fprintf('SHARED_UNSELECTED_PUCCH_PRODUCER_PASS actual_DL_RX=1 actual_PUCCH_TX=1 PUSCH_TX=0 gNB_PUSCH_RX=1 UL_DCI_decoder_unexecuted=1 root=%s\n',root);
@@ -962,12 +976,19 @@ result=sixgr.truth.receiveSharedPUSCHWithoutTransmission(state,item.Context.Obse
 observer=state; observer.PendingFeedbackTable=table(); observer.PUCCHGrantTraceTable=table();
 observer.SharedUEHARQACKEvents={}; observer.SharedReceivedGrantControls={};
 observer.ExpectedHARQACKBits=int8([0;0;0;0]);
+observer.PendingCSITable=table(); observer.ExpectedCSIPart1Bits=ones(19,1,'int8');
 again=sixgr.truth.receiveSharedPUSCHWithoutTransmission(observer,item.Context.ObservationID);
 assert(again.UCIReceiveContext.Digest==result.UCIReceiveContext.Digest && ...
     isequaln(again.HARQMapping,result.HARQMapping) && ...
     isequaln(again.IndependentHARQObservation,result.IndependentHARQObservation) && ...
     isequaln(again.ULHARQReceiverDecision,result.ULHARQReceiverDecision), ...
     'Fixed-IQ gNB ownership/results must not depend on UE producer state.');
+if state.TestWithCSI
+    [~,report]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,g);
+    csi=sixgr.truth.normalizeReceivedPUSCHCSI(result.Receiver,result.UCIReceiveContext,report);
+    replayCSI=sixgr.truth.normalizeReceivedPUSCHCSI(again.Receiver,again.UCIReceiveContext,report);
+    assert(isequaln(csi,replayCSI),'Fixed-IQ CSI reception must not depend on UE report/payload.');
+end
 [selection,producer]=owner.readUnselectedPUCCHForPUSCH(g);
 assert(~isempty(fieldnames(producer)) && numel(producer.UEHARQCodebook.Events)==1);
 actual=result.IndependentHARQObservation;
@@ -985,6 +1006,8 @@ localReject(@()sixgr.truth.validateUnselectedPUCCHTransmission(state,wrong,produ
     'sixgr:truth:UnselectedPUCCHTXIncomplete');
 localReject(@()sixgr.truth.stageUnselectedPUCCHProducerDisposition(next,selection,producer,result.HARQMapping,dispositions), ...
     'sixgr:truth:UnselectedPUCCHProducerAlreadyDisposed');
+state=sixgr.truth.CoupledTruthRuntime.stageSharedReceiveOnlyPUSCHCSIRuntime( ...
+    state,cfg,g,result.Receiver,result.UCIReceiveContext,result.Observation);
 [state,applied]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
     state,cfg,g.UEIndex,double(g.Slot),normalized,result.Observation,result.Binding.ObservationID,g);
 assert(numel(applied)==1 && applied.HARQFeedbackApplied && applied.ObservedAck==dispositions.ObservedAck);
@@ -996,6 +1019,7 @@ localReject(@()sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntim
     state,cfg,g.UEIndex,double(g.Slot),other,result.Observation,"unused_PUCCH_decoder"), ...
     'sixgr:truth:DuplicateScheduledHARQFeedback');
 state.PendingFeedbackTable=next.PendingFeedbackTable; state.PUCCHGrantTraceTable=next.PUCCHGrantTraceTable;
+if isfield(next,'PendingCSITable'), state.PendingCSITable=next.PendingCSITable; end
 state=sixgr.truth.stageSharedULHARQReception(state,cfg,g,result.Observation,result.ULHARQReceiverDecision);
 event=sixgr.truth.prepareSharedULHARQSchedulerFeedback(state,g,result.ULHARQReceiverDecision);
 assert(state.ULHarq.onFeedback(event.RNTI,event.HarqID,event.Outcome, ...

@@ -668,7 +668,12 @@ classdef CoupledWaveformStream < handle
                     ~isempty(p.Context.UEHARQCodebook.Events), ...
                     'sixgr:truth:UnselectedPUCCHProducerRequired', ...
                     'A prepared PUCCH must retain its independently received UE HARQ events.');
-                sixgr.truth.bindReceivedPUCCHCodebookRows(p.Context.UEHARQCodebook,p.Context.FeedbackRows);
+                rows=p.Context.FeedbackRows;
+                types=lower(string(rows.UCIType));
+                harq=contains(types,"harq");
+                assert(all(harq | types=="csi_part1_part2"), ...
+                    'sixgr:truth:UnsupportedPUCCHPayloadOwnership','Retain explicit HARQ/CSI producer ownership.');
+                sixgr.truth.bindReceivedPUCCHCodebookRows(p.Context.UEHARQCodebook,rows(harq,:));
                 txIdentity=sixgr.truth.preparedPUCCHTransmissionIdentity(p.Context.Prepared,p.UE,id);
                 txID=txIdentity.TransmissionID;
                 producer=p.Context;
