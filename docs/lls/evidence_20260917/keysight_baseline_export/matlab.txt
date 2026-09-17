@@ -1,0 +1,9 @@
+    EndpointID    Direction    PortIndex    SampleCount    SampleRateHz    CenterFrequencyHz    KeysightInt16ClippedComponentCount    KeysightInt16MaxComplexError     Status 
+    __________    _________    _________    ___________    ____________    _________________    __________________________________    ____________________________    ________
+
+     "gnb_1"        "DL"           1        4.4544e+05       7.68e+06          2.35e+09                         0                              2.1561e-05             {'PASS'}
+     "gnb_1"        "DL"           2        4.4544e+05       7.68e+06          2.35e+09                         0                              2.1561e-05             {'PASS'}
+     "ue_1"         "UL"           1        4.4544e+05       7.68e+06          2.35e+09                         0                              2.1519e-05             {'PASS'}
+     "ue_1"         "UL"           2        4.4544e+05       7.68e+06          2.35e+09                         0                              2.1519e-05             {'PASS'}
+
+BASELINE_KEYSIGHT_EXPORT_COMPLETE ports=4 wideband400MHzExecuted=0 integratedScenarioPassed=0 physicalInstrumentImportExecuted=0

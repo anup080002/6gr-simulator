@@ -113,6 +113,26 @@ not contain receiver noise or embed the requested 30 dB received operating
 point. Any received-IQ delivery must use a separately identified receiver
 capture; do not label pre-channel TX IQ as a 30 dB received waveform.
 
+### Executed baseline export preflight
+
+The existing exporter was exercised on 17 September against the sealed
+**5 MHz / 2.35 GHz** failed-run capture from `68140bb9`, using exporter source
+`363465d9bf335429fd7d8b5b3d219c62e62a9984`. MATLAB exited **0**. All four
+physical antenna streams (two DL, two UL) produced CSV, WIQ and VSA MAT
+files; source hashes and format readback were checked by the exporter.
+Each stream retains 445,440 samples at 7.68 Msamples/s. All int16 clipped
+component counts are zero; maximum complex quantization error is about
+2.16e-5 in the documented normalized playback domain.
+
+The local package is under
+`logs/keysight_5mhz_baseline_export_20260917/package`. Its small manifest
+and console evidence are preserved in
+`docs/lls/evidence_20260917/keysight_baseline_export`.
+This verifies the existing file packaging path only: the source scenario
+failed overall, no 400 MHz waveform was generated, and no physical
+instrument/software import was executed. Do not promote this baseline
+package as the requested wideband result.
+
 The latest requested first operating point is explicitly **30 dB**, with the
 objective of high bidirectional throughput. Compare useful successfully
 decoded TB bits over both the full TDD wall-clock interval and each direction's
