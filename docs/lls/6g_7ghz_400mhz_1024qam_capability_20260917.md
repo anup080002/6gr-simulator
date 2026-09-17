@@ -64,6 +64,31 @@ on that server, not inferred from the local R2026a installation.
 Capability probes are under `logs/6g_7ghz_400mhz_1024qam_capability_20260917`.
 They inspect APIs and the constellation only; they are not link-run evidence.
 
+## Executed capability probe: 17 September, 09:30 IST
+
+On source `f8dddfeddf594f5a39999c75e2d706df84cae2c7`, MATLAB
+R2026a Update 4, the probe exited **0**. This is a capability inspection,
+not a waveform-link acceptance test:
+
+| Check | Observed result |
+| --- | --- |
+| Native PDSCH `1024QAM` configuration | Accepted |
+| Native PUSCH `1024QAM` configuration | Rejected: `MATLAB:nrPUSCHConfig:Modulation:unrecognizedStringChoice` |
+| Repository strict UL modulation `1024QAM` | Rejected: `sixgr:pusch:UnsupportedModulation` |
+| Standard FR1, 400 MHz, 120 kHz grid | Rejected: `sixgr:phy:frame:UnsupportedBandwidthSCSCombination` |
+| Explicit custom 7 GHz, 400 MHz, 120 kHz, 264-PRB grid | Accepted |
+| All 1,024 constellation points, hard-decision round trip | Exact bit equality |
+| Exhaustive constellation mean energy | 0.99999999999999956 |
+
+Probe log SHA256:
+`38020BD2F045FCDEE378189E2E8DD6AD4582375EECF62189474E3AD75C8AE6E8`.
+The preserved text log is
+`docs/lls/evidence_20260917/wideband_capability_probe/matlab.txt`.
+No 400 MHz channel, coded UL transmission, 30 dB link or throughput result
+was executed by this probe. R2023b remains unverified. The next implementation
+boundary is the explicit YAML-to-runtime custom carrier and experimental
+coded Qm=10 uplink described above; the strict NR rejection must remain.
+
 ## Keysight IQ deliverable
 
 Reuse `run_control.continuous_raw_iq_capture_enable` and the existing sealed
@@ -82,6 +107,11 @@ playback scale and quantization-error/clipping checks. Playback normalization
 is a documented file-format conversion, not additional simulated TX power or
 a change to the captured floating-point reference. Actual Keysight software
 import/demodulation remains separate from file-generation verification.
+
+These are transmitter-output samples, captured before the channel. They do
+not contain receiver noise or embed the requested 30 dB received operating
+point. Any received-IQ delivery must use a separately identified receiver
+capture; do not label pre-channel TX IQ as a 30 dB received waveform.
 
 The latest requested first operating point is explicitly **30 dB**, with the
 objective of high bidirectional throughput. Compare useful successfully

@@ -1,0 +1,40 @@
+CAPABILITY_INSPECTION_JSON
+{
+  "MATLABVersion": "26.1.0.3312084 (R2026a) Update 4",
+  "SourceCommit": "f8dddfeddf594f5a39999c75e2d706df84cae2c7",
+  "RequestedCenterFrequencyHz": 7.0E+9,
+  "RequestedChannelBandwidthHz": 4.0E+8,
+  "RequestedDLModulation": "1024QAM",
+  "RequestedULModulation": "1024QAM",
+  "LinkRunExecuted": false,
+  "StandardConformanceClaim": false,
+  "NativeDL": {
+    "Accepted": true,
+    "ErrorIdentifier": "",
+    "Message": ""
+  },
+  "NativeUL": {
+    "Accepted": false,
+    "ErrorIdentifier": "MATLAB:nrPUSCHConfig:Modulation:unrecognizedStringChoice",
+    "Message": "Expected Modulation to match one of these values:\n\n'QPSK', 'pi/2-BPSK', '16QAM', '64QAM', '256QAM'\n\nThe input, '1024QAM', did not match any of the valid values."
+  },
+  "RepositoryUL": {
+    "Accepted": false,
+    "ErrorIdentifier": "sixgr:pusch:UnsupportedModulation",
+    "Message": "Strict PUSCH modulation must be one of PI/2-BPSK, QPSK, 16QAM, 64QAM, 256QAM; received '1024QAM'."
+  },
+  "StandardCarrier": {
+    "Accepted": false,
+    "ErrorIdentifier": "sixgr:phy:frame:UnsupportedBandwidthSCSCombination",
+    "Message": "No TS 38.104 Release-18 gNB transmission-bandwidth configuration exists for FR1, 400 MHz, 120 kHz SCS."
+  },
+  "CustomCarrier": {
+    "Accepted": true,
+    "ErrorIdentifier": "",
+    "Message": ""
+  },
+  "ConstellationSymbolCount": 1024,
+  "ConstellationMeanEnergy": 0.99999999999999956,
+  "ConstellationBitRoundTrip": true
+}
+CAPABILITY_INSPECTION_COMPLETE link_run_executed=0
