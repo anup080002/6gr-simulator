@@ -21,6 +21,32 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ## Existing capability and verified source boundaries
 
+### Selected-source regression failure (17 September, observed 14:42 IST)
+
+The unfiltered suite on `6be2985f9f6b78b4349c91ab71da81f32e25f7c8`
+has a confirmed **`testResearchTDDLink` failure** (123.20 seconds):
+`MATLAB:table:UnrecognizedVarName`, `ClippedComponents`, at test line 33.
+The preceding line uses `readtable` without an explicit CSV delimiter.
+The original CSV contains that column; independent comma-delimited parsing
+reads eight rows with zero clipped components. This establishes an import/
+table-access failure, not a missing column in the exported file. Automatic
+delimiter detection is the leading explanation, consistent with the earlier
+selected-capture verifier issue; its inferred delimiter has not been inspected
+in this failed test's MATLAB workspace.
+
+The native 1 ms fixture manifest records completed execution and 7/7 successful
+transport blocks. Assertions after the failing table access were not executed;
+this run must not be relabeled as a passing test. It is separate from the
+previously completed 10 ms, rate-0.82 capture. Original manifest and CSV receipts
+are preserved in `evidence_20260917/research_tdd_test_csv_failure`.
+
+On this same source, research carrier, coded UL, coded DL and rate-matrix
+configuration tests passed. The full suite continues after the failure; there
+is no terminal full-suite verdict yet. No source/test repair, threshold change,
+or rerun was made, respecting the instruction not to fix bugs. The narrow
+prospective repair is to make the test's CSV import explicit, then rerun its
+unchanged assertions; that repair is not implemented or verified here.
+
 ### Completed focused-regression checkpoint (17 September, 13:29 IST)
 
 All **21 focused guards passed** on immutable source
