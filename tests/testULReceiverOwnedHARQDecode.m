@@ -18,6 +18,17 @@ for k=1:size(cases,1)
     llr=20*(1-2*double(coded)); llr(coded<0)=Inf;
     [pass,it,actual]=sixgr.phy.harq.decodeCombinedULSCH(own,llr,cfg);
     assert(pass && isfinite(it) && isequal(actual,bits));
+    % Use the real decoder verdict with contradictory reference metadata.
+    % This is a coding-boundary test, not an RF/CRC-collision rate claim.
+    current=struct('Ok',false,'TransportBlock',1-actual);
+    combined=struct('CRCPass',pass,'TransportBlock',actual);
+    decision=sixgr.link.resolveULHARQReceiverOutcome(current,combined);
+    assert(~decision.CurrentDecodeOK && decision.CombinedDecodeOK && ...
+        decision.SelectedCombinedDecode && isequal(decision.DecodedTransportBlockBits,bits));
+    current.ExpectedBits=1-bits; combined.ExpectedBits=1-bits;
+    combined.ReferenceContentMatch=false;
+    assert(isequaln(decision,sixgr.link.resolveULHARQReceiverOutcome(current,combined)), ...
+        'TX-reference disagreement cannot override the actual combined receiver CRC.');
     if info.C>1
         % Valid LDPC parity and valid TB CRC cannot rescue a failed CB CRC.
         % Corrupt only a CB CRC bit, then re-encode the LDPC codeword.
@@ -29,6 +40,10 @@ for k=1:size(cases,1)
         [badPass,~,badBits]=sixgr.phy.harq.decodeCombinedULSCH(own,badLLR,cfg);
         assert(~badPass && isequal(badBits,bits), ...
             'Failed code-block CRC must reject the combined TB even when the TB CRC remains valid.');
+        rejected=sixgr.link.resolveULHARQReceiverOutcome(current, ...
+            struct('CRCPass',badPass,'TransportBlock',badBits,'ExpectedBits',bits));
+        assert(~rejected.CombinedDecodeOK && ~rejected.SelectedCombinedDecode, ...
+            'Exact reference content cannot rescue a failed combined receiver CRC.');
     end
     localReject(@()sixgr.phy.harq.decodeCombinedULSCH(own,llr(1:end-1,:),cfg), ...
         'sixgr:phy:harq:ULCombinedLLRShapeMismatch');

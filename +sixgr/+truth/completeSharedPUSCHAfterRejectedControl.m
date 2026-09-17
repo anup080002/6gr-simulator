@@ -1,7 +1,8 @@
 function state=completeSharedPUSCHAfterRejectedControl(state,observationID)
 % Complete scheduled receive-only data without pretending that a TB was sent.
-% Scheduled HARQ can complete without a UE producer. Existing UE producers,
-% CSI and receiver-owned retransmission combining remain separate obligations.
+% Scheduled HARQ/CSI can complete without a UE producer. Existing UE PUCCH
+% producers remain guarded. UL scheduling follows the gNB receiver outcome,
+% not the UE's rejected-command flag or an invented onTx event.
 owner=state.SharedWaveformStream;
 item=owner.readPUSCHReceiveOnlyCompletion(observationID);
 windows=sixgr.util.structGet(state,'SharedRejectedULReceiveWindows',{});
@@ -29,9 +30,6 @@ postIndex=find(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
 assert(isscalar(postIndex),'sixgr:truth:IncompletePUSCHReceiveOnlyPlanes','Require one actual post-RF receive window.');
 binding=sixgr.truth.puschUCIObservationBinding(grant,item.Planes(postIndex).Observation);
 [context,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext(state,cfg,grant,binding.ObservationID,csi,report);
-assert(isempty(report), ...
-    'sixgr:truth:RejectedULUCITransportOwnershipRequired', ...
-    'Rejected UL DCI with CSI needs independent reporting ownership, never transmitted-PUSCH reservations.');
 selection=struct();
 if ~isempty(mapping)
     selection=owner.readUnselectedPUCCHForPUSCH(grant);
@@ -43,12 +41,16 @@ if ~isempty(mapping)
     assert(isempty(book.Events),'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
         'An actual UE PUCCH producer needs its own TX disposition, not silent removal.');
 end
-assert(isfield(grant.HARQ,'IsRetransmission') && isequal(logical(grant.HARQ.IsRetransmission),false), ...
-    'sixgr:truth:RejectedULReceiverHARQCombiningRequired', ...
-    'A receive-only retransmission needs gNB-owned combining; current-observation decode is not combined HARQ.');
 result=sixgr.truth.receiveSharedPUSCHWithoutTransmission(state,observationID);
 assert(result.UCIReceiveContext.Digest==context.Digest && isequaln(result.HARQMapping,mapping), ...
     'sixgr:truth:ChangedRejectedULReceiveContext','The decoder must use the prevalidated scheduled schema.');
+nextUL=sixgr.truth.stageSharedULHARQReception(state,cfg,grant, ...
+    result.Observation,result.ULHARQReceiverDecision);
+schedulerEvent=sixgr.truth.prepareSharedULHARQSchedulerFeedback(state,grant,result.ULHARQReceiverDecision);
+% Parse and stage CSI on value-state first, before shared HARQ handle writes.
+% This neither marks a UE report sent nor manufactures successful CSI.
+sixgr.truth.CoupledTruthRuntime.stageSharedReceiveOnlyPUSCHCSIRuntime( ...
+    state,cfg,grant,result.Receiver,context,result.Observation);
 decisionAudit=sixgr.truth.appendPUSCHHARQDecisionAudit( ...
     sixgr.util.structGet(state,'SharedPUSCHHARQDecisionAuditTable',table()), ...
     result.Receiver,context,result.Observation,owner.Events.NextSampleIndex);
@@ -65,12 +67,36 @@ result.DLHARQFeedbackAppliedCount=0;
 if ~isempty(dispositions), result.DLHARQFeedbackAppliedCount=nnz(~[dispositions.StaleFeedbackIgnored]); end
 result.HARQStateCommitted=result.DLHARQFeedbackAppliedCount>0;
 result.ULHARQStateCommitted=false;
+result.ULHARQReceiverStateCommitted=true;
+result.ULHARQSchedulerStateCommitted=true;
+result.ULHARQSchedulerEvent=schedulerEvent;
 result.ControlKey=window.ControlKey;
 result.ControlAvailableAtSample=window.ControlAvailableAtSample;
 result.GNBControlObservationID=window.GNBControlObservationID;
 result.GNBControlAvailableAtSample=window.GNBControlAvailableAtSample;
 result.Disposition="received_UL_command_rejected_UE_silent_gNB_capture_decoded";
 result.TransmittedTBScored=false;
+rx=result.Receiver;
+assert(isscalar(rx.TransportBlockSize) && islogical(rx.ULSCHDecodeAttempted) && ...
+    isscalar(rx.ULSCHDecodeAttempted), ...
+    'sixgr:truth:InvalidReceiveOnlyCRCObservation', ...
+    'This ordinary receive-only grant requires one TB and explicit data-decode availability.');
+crcAvailable=rx.ULSCHDecodeAttempted;
+crcError=NaN;
+if crcAvailable
+    if isfield(rx,'TransportBlockCRCAvailable')
+        assert(isequal(rx.TransportBlockCRCAvailable,true), ...
+            'sixgr:truth:InvalidReceiveOnlyCRCObservation','An attempted scalar TB needs its actual CRC result.');
+        crcError=rx.TransportBlockCRCErrorPerCodeword;
+    else
+        crcError=rx.CRCError;
+    end
+    assert((islogical(crcError)||isnumeric(crcError)) && isreal(crcError) && ...
+        isscalar(crcError) && isfinite(crcError) && any(crcError==[0 1]), ...
+        'sixgr:truth:InvalidReceiveOnlyCRCObservation','Validate an actual binary CRC decision before exporting it.');
+end
+% A strict-noise stop or unresolved CSI/data map has no measured TB CRC.
+% In particular, do not export the legacy strict-stop CRCError=true sentinel.
 row=struct('ObservationID',string(observationID),'ControlKey',window.ControlKey, ...
     'GrantContextID',window.GrantContextID,'UEIndex',grant.UEIndex,'RNTI',grant.RNTI, ...
     'ScheduledSlot',double(grant.TimingDecision.DataAbsoluteSlot)+1, ...
@@ -80,9 +106,11 @@ row=struct('ObservationID',string(observationID),'ControlKey',window.ControlKey,
     'ObservationStartSample',window.StartSample,'ObservationEndSampleExclusive',window.EndSampleExclusive, ...
     'AvailableAtSample',owner.Events.NextSampleIndex,'SampleRateHz',owner.SampleRateHz, ...
     'DecodeAttempted',result.Receiver.DecodeAttempted,'ReceiverUsable',result.Receiver.ReceiverUsable, ...
-    'ReceiverCRCError',result.Receiver.CRCError, ...
+    'ReceiverCRCAvailable',crcAvailable,'ReceiverCRCError',double(crcError), ...
     'UETransmissionExecuted',false,'TransmittedTBScored',false,'HARQStateCommitted',result.HARQStateCommitted, ...
     'DLHARQFeedbackAppliedCount',result.DLHARQFeedbackAppliedCount,'ULHARQStateCommitted',false, ...
+    'ULHARQReceiverStateCommitted',true,'ULHARQSchedulerStateCommitted',true, ...
+    'ULHARQSchedulerOutcome',schedulerEvent.Outcome, ...
     'Disposition',result.Disposition,'Source',result.Source);
 previous=sixgr.util.structGet(state,'SharedRejectedULReceiveAuditTable',table());
 next=[previous;struct2table(row,'AsArray',true)];
@@ -92,7 +120,16 @@ if ~isempty(mapping)
     [state,result.DLHARQDispositions]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
         state,cfg,grant.UEIndex,double(grant.Slot),normalized,result.Observation,result.Binding.ObservationID,grant);
 end
+[state,result.IndependentCSIObservation]=sixgr.truth.CoupledTruthRuntime.stageSharedReceiveOnlyPUSCHCSIRuntime( ...
+    state,cfg,grant,result.Receiver,context,result.Observation);
+applied=state.ULHarq.onFeedback(schedulerEvent.RNTI,schedulerEvent.HarqID,schedulerEvent.Outcome, ...
+    'SourceSlot',schedulerEvent.SourceSlot,'FeedbackSlot',schedulerEvent.FeedbackSlot);
+assert(applied,'sixgr:truth:ULHARQSchedulerCommitLost','The prevalidated receive attempt must commit exactly once.');
+% Feed the same actual ACK/NACK/DTX into adaptation. This internal scheduled
+% grant context is not a transmitted-TB row or a scored goodput sample.
+state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedbackRuntime(state,schedulerEvent,'UL');
 state.SharedRejectedULReceiveResults=[receipts,{result}];
+state.SharedGNBULHARQReceivers=nextUL.SharedGNBULHARQReceivers;
 state.SharedRejectedULReceiveAuditTable=next;
 state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
 end

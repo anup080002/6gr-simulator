@@ -58,6 +58,9 @@ if prepared.Direction=="DL"
 end
 % Queue/packet ledgers are value state: validate their update before the
 % shared HARQ handle mutates, then publish both updates together.
+if prepared.Direction=="UL" && isfield(prepared.Tx,'UEHARQIsRetransmission')
+    grant.ExecutedUEHARQIsRetransmission=prepared.Tx.UEHARQIsRetransmission;
+end
 nextState=sixgr.truth.CoupledTruthRuntime.commitGrantExecution(state,item.UE,prepared.Direction,grant);
 entity.onTx(identity.RNTI,pid,uint8(bits(:)),grant,grant.Slot);
 state=nextState;

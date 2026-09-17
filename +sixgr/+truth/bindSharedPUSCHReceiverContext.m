@@ -16,4 +16,9 @@ context=sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
     state,job.Cfg,job.GrantSnapshot,binding.ObservationID,obligation,report);
 job.ReceivedContext.UCIReceiveContext=context;
 job.ReceivedContext.UCIReportConfiguration=report;
+[attempt,prior]=sixgr.truth.prepareSharedULHARQReception(state,job.Cfg,job.GrantSnapshot,observation);
+% The receiver ledger, not a TX-preparation job's cached prior, owns soft state.
+job.PreviousCombinedLLR=prior;
+job.ReceivedContext.ULHARQReceiverKey=attempt.Attempt.ReceiverKey;
+job.ReceivedContext.ULHARQReceiverAttempt=attempt;
 end

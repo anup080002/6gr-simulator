@@ -206,6 +206,7 @@ for slot=1:lastSlot
         dl.lls6g.userContext.RuntimeSlotStartTime_s=(slot-1)*sixgr.time.slotDurationSec(cfg);
         p=sixgr.link.prepareSharedPDCCHTransmission(dl,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
         controlContext=struct('Grant',grant,'ULConfig',ul);
+        if independentCompletion, controlContext.ScheduledULHARQConfig=ul; end
         if receivedAuthority
             assert(isfield(state,'TestReceivedDLClock'),'Actual received SS/PBCH clock is required.');
             controlContext.ReceivedDLTimingReference=state.TestReceivedDLClock;
@@ -406,6 +407,11 @@ for item=items
         sixgr.channel.validateSharedChannelObservationArtifact(state.TestRoot,row);
         state.TestLastSRSObservationID=row.ChannelObservationID;
     elseif item.Kind=="PDCCH"
+        if state.TestIndependentCompletion && string(c.Grant.Direction)=="UL"
+            assert(any(cellfun(@(x)x.GrantContextID==string(c.Grant.PHYGrant.GrantContextId), ...
+                state.SharedGNBULHARQCommands)), ...
+                'The gNB command is committed at transmission, before UE reception.');
+        end
         [rx,rxInfo]=sixgr.link.completePDCCHReception(p,receiver);
         receivedAssignment=struct();
         if isfield(sixgr.util.structGet(p.ReceiverConfig,'phy.pdcch.operatorControl',struct()),'connected_dci')
@@ -596,13 +602,27 @@ for item=items
                 isempty(job.ReceivedContext.UCIReportConfiguration)==~state.TestWithCSI);
             poisoned=state; poisoned.PendingFeedbackTable=table(true,'VariableNames',{'Ack'});
             poison=job; poison.ExpectedUCIBits=ones(99,1,'int8');
+            poison.PreviousCombinedLLR=ones(99,1);
             same=sixgr.truth.bindSharedPUSCHReceiverContext(poisoned,poison);
             assert(isequaln(same.ReceivedContext.UCIReceiveContext,job.ReceivedContext.UCIReceiveContext));
+            assert(same.ReceivedContext.ULHARQReceiverKey==job.ReceivedContext.ULHARQReceiverKey, ...
+                'UE payload/audit poisoning cannot change the scheduled gNB HARQ identity.');
+            assert(isequaln(same.PreviousCombinedLLR,job.PreviousCombinedLLR) && ...
+                isequaln(same.ReceivedContext.ULHARQReceiverAttempt,job.ReceivedContext.ULHARQReceiverAttempt), ...
+                'Transmit-preparation cache poisoning cannot replace gNB-owned prior soft state.');
+            changedEpoch=job.GrantSnapshot;
+            changedEpoch.HARQ.NDIEpoch=changedEpoch.HARQ.NDIEpoch+1;
+            assert(sixgr.truth.scheduledULHARQReceiverKey(job.Cfg,changedEpoch)~= ...
+                job.ReceivedContext.ULHARQReceiverKey, ...
+                'The same NDI bit in another epoch must not reuse the retained gNB soft-buffer key.');
         end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
         if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
         if state.TestIndependentCompletion
+            assert(out.HARQ.ReceiverHARQKey==job.ReceivedContext.ULHARQReceiverKey && ...
+                string(out.HARQ.SoftBuffer.HARQKey)==job.ReceivedContext.ULHARQReceiverKey, ...
+                'Normal shared UL decoding must retain its scheduled receiver identity with actual soft state.');
             assert(string(out.HARQ.GrantSnapshot.HARQTBContext.TBId)== ...
                 string(p.RequestBinding.Grant.TransportBlockId) && ...
                 string(out.HARQ.Context.TransportBlockContext.TBId)== ...
@@ -659,6 +679,11 @@ for item=items
             end
             [state,out.HARQ]=sixgr.truth.CoupledTruthRuntime.completeSharedPUSCHHARQFeedbackRuntime( ...
                 state,job.Cfg,out.HARQ,receiver,job.ReceivedContext.UCIReceiveContext);
+            ulState=state.SharedGNBULHARQReceivers;
+            assert(isscalar(ulState) && ulState{1}.Attempt.ReceiverKey==out.HARQ.ReceiverHARQKey && ...
+                ulState{1}.CRCPass==out.HARQ.CombinedDecodeOK && ...
+                ulState{1}.Attempt.EndSampleExclusive==receiver.EndSampleExclusive);
+            if ulState{1}.CRCPass, assert(isempty(ulState{1}.SoftBuffer)); end
             if state.TestWithCSI
                 save(fullfile(state.TestRoot,'independent_csi_completion.mat'),'out','job','receiver','-v7.3');
                 allReports=sixgr.util.structGet(state,'SharedGNBCSIReportTable',table());

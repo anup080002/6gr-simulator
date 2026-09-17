@@ -1,13 +1,15 @@
 function ok=testSharedPUSCHReceiveOnlyCapture(decodeReceiver)
 % Real shared CDL/RF capture with a retained scheduled grant and no UE TX.
-% Optional current-observation decoder; no new DCI reception, feedback
+% Optional decoder uses a physically transmitted gNB command, not UE DCI
+% acceptance. No UE control decode, feedback
 % commit, transmitted-TB scoring, or 12 dB acceptance is claimed.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, decodeReceiver=false; end
 root=fileparts(fileparts(mfilename('fullpath')));
 outputRoot=tempname(fullfile(root,'logs')); mkdir(outputRoot);
-s=sixgr.lls6g.config.loadScenarioConfig(fullfile(root,'simulator','configs','scenarios', ...
-    'lls_received_ul_harq_shared_fixture.yaml'));
+fixture='lls_received_ul_harq_shared_fixture.yaml';
+if decodeReceiver, fixture='lls_pusch_receive_only_command_fixture.yaml'; end
+s=sixgr.lls6g.config.loadScenarioConfig(fullfile(root,'simulator','configs','scenarios',fixture));
 cfg=sixgr.lls6g.buildInternalConfig(s,outputRoot);
 retained=load(fullfile(root,'docs','lls','evidence_20260913','scheduled_ul_dai_03', ...
     'scheduled_ul_dai_0.mat'),'fixed');
@@ -19,6 +21,16 @@ slot0=grant.TimingDecision.DataAbsoluteSlot;
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,outputRoot,multi,struct(),slot0+1);
 state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
+if decodeReceiver
+    assert(~cfg.phy.pdcch.blindSearch,'The component command capture requires explicit known-candidate YAML authority.');
+    [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
+    controlSlot=double(grant.TimingDecision.ControlAbsoluteSlot)+1;
+    dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,controlSlot);
+    dl=sixgr.truth.bindSharedDataOccasion(dl,controlSlot,grant.Frame,owner.SampleRateHz);
+    preparedControl=sixgr.link.prepareSharedPDCCHTransmission(dl,'DCIBits',grant.DCI.Bits, ...
+        'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
+    owner.queuePDCCH(1,preparedControl,struct('Grant',grant));
+end
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(ul,slot0+1);
 carrier=sixgr.phy.grid.makeCarrier(ul); fs=owner.SampleRateHz;
@@ -44,17 +56,24 @@ assert(owner.Events.NextSampleIndex==beforeClock && isempty(owner.DataTransmissi
 reject(@()owner.queuePUSCHReceiveOnly(1,ul,grant,first,stop), ...
     'sixgr:truth:DuplicatePUSCHReceiveOnlyObservation');
 captures=struct([]);
+controlCaptures=struct([]);
 for slot=1:slot0+1
     % Preserve the retained ordinal's integer class: advanceSlot must handle
     % received grant ordinals without mixed-class OFDM index arithmetic.
     state.CurrentSlot=slot;
     [state,items]=owner.advanceSlot(state,cfg);
-    if ~isempty(items), captures=[captures items]; end %#ok<AGROW>
+    if ~isempty(items)
+        controlCaptures=[controlCaptures items(string({items.Kind})=="PDCCH")]; %#ok<AGROW>
+        captures=[captures items(string({items.Kind})~="PDCCH")]; %#ok<AGROW>
+    end
 end
 while owner.hasPending('PUSCHReceiveOnly',1)
     state.CurrentSlot=state.CurrentSlot+1;
     [state,items]=owner.advanceSlot(state,cfg);
-    if ~isempty(items), captures=[captures items]; end %#ok<AGROW>
+    if ~isempty(items)
+        controlCaptures=[controlCaptures items(string({items.Kind})=="PDCCH")]; %#ok<AGROW>
+        captures=[captures items(string({items.Kind})~="PDCCH")]; %#ok<AGROW>
+    end
 end
 assert(isscalar(captures) && captures.Kind=="PUSCHReceiveOnly" && captures.Context.ObservationID==id);
 reject(@()owner.readPUSCHReceiveOnlyCompletion(id+"_unregistered"), ...
@@ -73,6 +92,9 @@ assert(isempty(owner.DataTransmissions) && state.ULHarq.Stats.Tx==0 && state.DLH
 resolvedScenario=s.Data; runtimeVersion=version;
 save(fullfile(outputRoot,'receive_only_capture.mat'),'captures','cfg','resolvedScenario','runtimeVersion','grant','-v7.3');
 if decodeReceiver
+    assert(isscalar(controlCaptures) && ...
+        isscalar(owner.readTransmittedULControls(1,double(grant.Slot))));
+    save(fullfile(outputRoot,'transmitted_control_capture.mat'),'controlCaptures','-v7.3');
     clockBefore=owner.Events.NextSampleIndex;
     % Contradictory UE bookkeeping is a declared negative-control input,
     % never physical evidence or a source for the gNB's receive bit count.

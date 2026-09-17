@@ -1,0 +1,16 @@
+inherits:
+  - ./lls_rejected_ul_receive_only_fixture.yaml
+
+meta:
+  scenario_id: lls_rejected_ul_csi_fixture
+  description: Scheduled CSI reception after an actually rejected UL command without a UE PUSCH producer.
+  purpose: Missing-UL-DCI receiver completion and unavailable CSI audit, not detector or 12 dB qualification.
+  research_class: optional_research_experiment
+
+reference_signals:
+  csi_rs_periodicity_slots: 5
+  csi_rs_offset_slots: 0
+
+csi_acquisition_and_reporting:
+  csi_report_periodicity_slots: 5
+  csi_report_offset_slots: 4

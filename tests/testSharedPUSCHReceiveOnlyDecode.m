@@ -1,5 +1,5 @@
 function ok=testSharedPUSCHReceiveOnlyDecode()
 % Actual shared no-transmission observation -> independent current-RV RX.
-% Retained scheduled grant, not a newly executed missed-DCI procedure.
+% Actual gNB command from retained allocation, no UE DCI decode or missed-DCI-rate claim.
 ok=testSharedPUSCHReceiveOnlyCapture(true);
 end

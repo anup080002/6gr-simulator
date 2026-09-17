@@ -52,7 +52,7 @@ classdef HARQEntity < handle
     properties
         Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Dtx',0,'Drop',0, ...
             'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
-            'SoftBufferClear',0,'FirstSuccessDelivery',0)
+            'SoftBufferClear',0,'FirstSuccessDelivery',0,'ScheduledUL',0,'ScheduledULDrop',0)
     end
 
     methods
@@ -142,7 +142,7 @@ classdef HARQEntity < handle
             obj.DeliveryLedger = table();
             obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Dtx',0,'Drop',0, ...
                 'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
-                'SoftBufferClear',0,'FirstSuccessDelivery',0);
+                'SoftBufferClear',0,'FirstSuccessDelivery',0,'ScheduledUL',0,'ScheduledULDrop',0);
         end
 
         function tf = hasUE(obj, rnti)
@@ -195,11 +195,15 @@ classdef HARQEntity < handle
                 return;
             end
             p = procs(pid);
+            grant = p.LastGrant;
+            ctx = p.TBContext;
+            if isempty(fieldnames(grant)), grant = p.LastScheduledGrant; end
+            if isempty(fieldnames(ctx)), ctx = p.ScheduledTBContext; end
             harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
-                'RV', p.RV, 'HARQRound', max(0, double(p.TxCount)), ...
+                'RV', p.RV, 'HARQRound', max(double(p.ScheduledAttemptCount), double(p.TxCount)), ...
                 'IsRetransmission', true);
-            retx = struct('HARQ',harq,'TBSBytes',p.TBSBytes,'LastGrant',p.LastGrant, ...
-                'TB',p.TB,'TBContext',p.TBContext);
+            retx = struct('HARQ',harq,'TBSBytes',p.TBSBytes,'LastGrant',grant, ...
+                'TB',p.TB,'TBContext',ctx);
         end
 
         function txp = allocate(obj, rnti, slot, tbsBytes, varargin)
@@ -291,12 +295,74 @@ classdef HARQEntity < handle
             p = procs(pid);
             obj.assertStoredTBContract(double(rnti), pid - 1, p);
             harq = struct('HarqID', pid-1, 'NDI', p.NDI, 'NDIEpoch', p.NDIEpoch, ...
-                'RV', p.RV, 'HARQRound', max(0, double(p.TxCount)), ...
+                'RV', p.RV, 'HARQRound', max(double(p.ScheduledAttemptCount), double(p.TxCount)), ...
                 'IsRetransmission', isRetx);
             txp = struct('HARQ',harq,'ProcessIndex',pid,'ExpectTBSizeBytes',p.TBSBytes,'NoFreeProcess',false);
 
             % Write back
             obj.UEProcs{ui} = procs;
+        end
+
+        function onScheduledULGrant(obj, grant, commandID)
+            % gNB scheduling lifecycle, NOT proof of a UE data transmission.
+            % The shared runtime separately proves actual PDCCH execution.
+            % This method also supports explicitly declared MAC unit tests.
+            assert(strcmp(obj.Direction,'UL') && isstruct(grant) && isscalar(grant), ...
+                'sixgr:mac:ScheduledULGrantRequired','Use an UL scheduled grant.');
+            rnti=double(grant.RNTI); pid=double(grant.HARQ.HarqID)+1;
+            slot=double(grant.Slot); bits=double(grant.TBSBits);
+            validateattributes(slot,{'double'},{'scalar','integer','positive','finite'});
+            validateattributes(bits,{'double'},{'scalar','integer','positive','finite'});
+            assert(mod(bits,8)==0 && isstring(commandID) && isscalar(commandID) && ...
+                ~ismissing(commandID) && strlength(commandID)>0, ...
+                'sixgr:mac:ScheduledULGrantRequired','Retain command identity and actual scheduled byte-aligned TBS.');
+            [ui,procs]=obj.getUE(rnti,false);
+            assert(ui>=1 && pid==fix(pid) && pid>=1 && pid<=numel(procs), ...
+                'sixgr:mac:ScheduledULProcessUnallocated','Scheduling must allocate the process first.');
+            p=procs(pid);
+            assert(p.Active && ~p.AwaitingFeedback && p.NDI==grant.HARQ.NDI && ...
+                p.NDIEpoch==grant.HARQ.NDIEpoch && p.RV==grant.HARQ.RV && ...
+                slot>p.LastScheduledSlot && commandID~=p.LastScheduledCommandID, ...
+                'sixgr:mac:ScheduledULProcessMismatch', ...
+                'Reject pending, duplicate, stale or foreign scheduled attempts.');
+            assert((p.ScheduledAttemptCount==0 && p.TxCount==0) || bits==8*p.TBSBytes, ...
+                'sixgr:mac:ScheduledULTBSChanged','Unchanged NDI must retain its scheduled TB size.');
+            ctx=p.ScheduledTBContext;
+            if isempty(fieldnames(ctx))
+                ctx=sixgr.harq.createTBContext(struct('Grant',grant,'Direction','UL', ...
+                    'EvidenceRole',"scheduled_receive_not_UE_transmission"));
+            end
+            p.ScheduledTBContext=ctx;
+            p.LastScheduledGrant=grant;
+            p.LastScheduledCommandID=commandID;
+            p.LastScheduledSlot=slot;
+            p.ScheduledAttemptCount=p.ScheduledAttemptCount+1;
+            p.TBSBytes=bits/8;
+            p.AwaitingFeedback=true;
+            p.NeedsRetx=false;
+            procs(pid)=p;
+            obj.UEProcs{ui}=procs;
+            obj.Stats.ScheduledUL=obj.Stats.ScheduledUL+1;
+        end
+
+        function retx=scheduledULReplay(obj,grant)
+            % Preparation for an already issued command must not reopen it
+            % to scheduling through peekRetx/NeedsRetx.
+            [ui,procs]=obj.getUE(double(grant.RNTI),false);
+            pid=double(grant.HARQ.HarqID)+1;
+            assert(strcmp(obj.Direction,'UL') && ui>=1 && pid>=1 && pid<=numel(procs), ...
+                'sixgr:mac:ScheduledULProcessUnallocated','Require the allocated scheduled UL process.');
+            p=procs(pid);
+            assert(p.Active && p.AwaitingFeedback && p.ScheduledAttemptCount>1 && ...
+                p.LastScheduledSlot==grant.Slot && p.NDI==grant.HARQ.NDI && ...
+                p.NDIEpoch==grant.HARQ.NDIEpoch && p.RV==grant.HARQ.RV, ...
+                'sixgr:mac:ScheduledULProcessMismatch','Use the outstanding issued retransmission command.');
+            original=p.LastGrant; ctx=p.TBContext;
+            if isempty(fieldnames(original)), original=p.LastScheduledGrant; end
+            if isempty(fieldnames(ctx)), ctx=p.ScheduledTBContext; end
+            h=grant.HARQ; h.HARQRound=p.ScheduledAttemptCount-1;
+            retx=struct('HARQ',h,'TBSBytes',p.TBSBytes,'LastGrant',original, ...
+                'TB',p.TB,'TBContext',ctx);
         end
 
         function onTx(obj, rnti, harqId0, tbBytes, grant, slot)
@@ -320,6 +386,15 @@ classdef HARQEntity < handle
                 tbBytes = tbBytes(:);
             end
             actualPayloadBits = double(numel(tbBytes));
+            if procs(pid).ScheduledAttemptCount>0
+                assert(procs(pid).AwaitingFeedback && slot==procs(pid).LastScheduledSlot && ...
+                    actualPayloadBits==8*procs(pid).TBSBytes && ...
+                    grant.HARQ.NDI==procs(pid).NDI && grant.HARQ.NDIEpoch==procs(pid).NDIEpoch && ...
+                    grant.HARQ.RV==procs(pid).RV && ...
+                    string(grant.PHYGrant.GrantContextId)==string(procs(pid).LastScheduledGrant.PHYGrant.GrantContextId), ...
+                    'sixgr:mac:ExecutedULScheduledAttemptMismatch', ...
+                    'An actual UE transmission must match the outstanding physical gNB command.');
+            end
             if actualPayloadBits > 0 && mod(actualPayloadBits, 8) ~= 0
                 error('sixgr:HARQEntity:NonByteAlignedTB', ...
                     ['HARQ TB for RNTI=%d process=%d contains %d bits; ' ...
@@ -397,6 +472,11 @@ classdef HARQEntity < handle
             harqStruct.NDI = logical(procs(pid).NDI);
             harqStruct.NDIEpoch = double(procs(pid).NDIEpoch);
             harqStruct.IsRetransmission = double(procs(pid).TxCount) > 1;
+            if procs(pid).ScheduledAttemptCount>0
+                % The gNB command history and actual UE TX count differ
+                % after missed DCI. Keep the scheduled grant's identity.
+                harqStruct.IsRetransmission = procs(pid).ScheduledAttemptCount>1;
+            end
             grant.HARQ = harqStruct;
             grant.IsRetransmission = logical(harqStruct.IsRetransmission);
             ctx = sixgr.util.structGet(grant, 'HARQTBContext', struct());
@@ -492,8 +572,15 @@ classdef HARQEntity < handle
                 obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
                 return;
             end
-            if isfinite(sourceSlot) && isfinite(double(p.LastTxSlot)) && ...
-                    abs(double(sourceSlot) - double(p.LastTxSlot)) > 1e-9
+            expectedSlot=p.LastTxSlot;
+            if p.ScheduledAttemptCount>0
+                expectedSlot=p.LastScheduledSlot;
+                assert(isfinite(sourceSlot) && isfinite(feedbackSlot) && feedbackSlot>sourceSlot, ...
+                    'sixgr:mac:ScheduledULFeedbackClockRequired', ...
+                    'Scheduled UL feedback needs explicit completed receive and publication slots.');
+            end
+            if isfinite(sourceSlot) && isfinite(double(expectedSlot)) && ...
+                    abs(double(sourceSlot) - double(expectedSlot)) > 1e-9
                 obj.Stats.StaleFeedbackIgnored = obj.Stats.StaleFeedbackIgnored + 1;
                 return;
             end
@@ -510,7 +597,8 @@ classdef HARQEntity < handle
                 if ~isempty(fieldnames(procs(pid).SoftBuffer))
                     obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                 end
-                if double(procs(pid).TxCount) >= 1
+                if double(procs(pid).TxCount) >= 1 && ...
+                        (~isfinite(sourceSlot) || sourceSlot==p.LastTxSlot)
                     obj.Stats.FirstSuccessDelivery = obj.Stats.FirstSuccessDelivery + 1;
                 end
                 procs(pid) = obj.resetProc(procs(pid));
@@ -525,12 +613,13 @@ classdef HARQEntity < handle
 
                 % NACK/DTX: if max transmissions reached, drop; else schedule retx
                 maxTx = 1 + obj.MaxRetx;
-                if procs(pid).TxCount >= maxTx
+                if max(procs(pid).TxCount,procs(pid).ScheduledAttemptCount) >= maxTx
                     if ~isempty(fieldnames(procs(pid).SoftBuffer))
                         obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                     end
                     procs(pid) = obj.resetProc(procs(pid));
-                    obj.Stats.Drop = obj.Stats.Drop + 1;
+                    if p.TxCount>0, obj.Stats.Drop = obj.Stats.Drop + 1; end
+                    if p.ScheduledAttemptCount>0, obj.Stats.ScheduledULDrop=obj.Stats.ScheduledULDrop+1; end
                     obj.markDeliveryFeedback(rnti, harqId0, false, sourceSlot, feedbackSlot, "max_retx_drop");
                 else
                     procs(pid).NeedsRetx = true;
@@ -674,6 +763,11 @@ classdef HARQEntity < handle
             p.RVIdx = 1;
             p.RV = 0;
             p.TxCount = 0;
+            p.ScheduledAttemptCount = 0;
+            p.LastScheduledSlot = -inf;
+            p.LastScheduledCommandID = "";
+            p.LastScheduledGrant = struct();
+            p.ScheduledTBContext = struct();
             p.AwaitingFeedback = false;
             p.NeedsRetx = false;
             p.TBSBytes = 0;

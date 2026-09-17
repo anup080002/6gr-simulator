@@ -3,6 +3,32 @@ classdef CoupledTruthRuntime
 % Keep this file ASCII-only.
 
 methods(Static)
+    function [state,actual]=stageSharedReceiveOnlyPUSCHCSIRuntime(state,cfg,grant,rx,context,observation)
+        % Receive-only CSI uses the same installed schema/publication as a
+        % normal PUSCH. No UE reservation or prepared transmitter is required.
+        owner=state.SharedWaveformStream;
+        binding=sixgr.truth.puschUCIObservationBinding(grant,observation);
+        assert(observation.SampleRateHz==owner.SampleRateHz && ...
+            observation.EndSampleExclusive<=owner.Events.NextSampleIndex, ...
+            'sixgr:truth:PUSCHHARQObservationClockMismatch', ...
+            'CSI publication requires the completed physical receive window.');
+        [obligation,report,calendar]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
+        fresh=sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
+            state,cfg,grant,binding.ObservationID,obligation,report);
+        assert(isa(context,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && ...
+            isscalar(context) && fresh.Digest==context.Digest, ...
+            'sixgr:truth:PUSCHCSIReceiveContextMismatch', ...
+            'The actual decoder must use this independently scheduled CSI context.');
+        actual=sixgr.truth.normalizeReceivedPUSCHCSI(rx,context,report);
+        received=sixgr.truth.CoupledTruthRuntime.prepareIndependentPUSCHCSIReport( ...
+            state,cfg,grant,actual,calendar,binding,observation);
+        if ~isempty(received)
+            % A rejected UL command does not transfer a UE PUCCH producer to
+            % PUSCH. Leave all producer reservations and TX scoring untouched.
+            state=sixgr.truth.CoupledTruthRuntime.stageIndependentCSI(state,received,false);
+        end
+    end
+
     function [state,harqOut]=completeSharedPUSCHHARQFeedbackRuntime(state,cfg,harqOut,observation,context)
         % Complete independent reception once, then join UE bookkeeping by
         % source identity. Expected UE bits never choose the gNB RX width.
@@ -35,6 +61,12 @@ methods(Static)
         id=binding.ObservationID;
         assert(~any(cellfun(@(r)r.ObservationID==id,receipts)), ...
             'sixgr:truth:DuplicateSharedPUSCHHARQReception','One receive window may commit only once.');
+        soft=harqOut.SoftBuffer;
+        if ~rx.ULSCHDecodeAttempted, soft=[]; end
+        ulDecision=struct('ReceiverAttempt',harqOut.ReceiverHARQAttempt, ...
+            'DecodeAttempted',rx.ULSCHDecodeAttempted, ...
+            'CRCPass',harqOut.CombinedDecodeOK,'SoftBuffer',soft);
+        nextUL=sixgr.truth.stageSharedULHARQReception(state,cfg,grant,observation,ulDecision);
         actualCSI=sixgr.truth.normalizeReceivedPUSCHCSI(harqOut,context,report);
         receivedCSI=sixgr.truth.CoupledTruthRuntime.prepareIndependentPUSCHCSIReport( ...
             state,cfg,grant,actualCSI,calendar,binding,observation);
@@ -76,6 +108,7 @@ methods(Static)
             if isfield(next,name), state.(name)=next.(name); end
         end
         state.SharedPUSCHHARQFeedbackReceipts=[receipts,{receipt}];
+        state.SharedGNBULHARQReceivers=nextUL.SharedGNBULHARQReceivers;
         state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
         if ~isempty(receivedCSI)
             state=sixgr.truth.CoupledTruthRuntime.stageIndependentPUSCHCSI(state,receivedCSI);
@@ -364,6 +397,8 @@ methods(Static)
         state.PUCCHExecutedCurrentSlotGrantSnapshot = table();
         state.DLCombinedLLR = cell(nUsers, numHarqProc);
         state.ULCombinedLLR = cell(nUsers, numHarqProc);
+        state.SharedGNBULHARQReceivers = {};
+        state.SharedGNBULHARQCommands = {};
         state.HARQFeedbackSlots = max(1, round(double(sixgr.util.structGet(cfg, "phy.harq.feedbackTimingSlots", 4))));
         state.CSIFeedbackSlots = ...
             sixgr.truth.CoupledTruthRuntime.resolveConfiguredCSIFeedbackSlots(cfg);
@@ -437,6 +472,8 @@ methods(Static)
         state.ULHarq = harqUL;
         state.DLCombinedLLR = cell(nUsers, numHarqProc);
         state.ULCombinedLLR = cell(nUsers, numHarqProc);
+        state.SharedGNBULHARQReceivers = {};
+        state.SharedGNBULHARQCommands = {};
         state = sixgr.truth.CoupledTruthRuntime.rightCensorPendingCausalEventsImpl( ...
             state, round(double(startSlot)), ...
             "independent_snr_point_boundary_state_reset", ...
@@ -2490,7 +2527,7 @@ methods(Static, Access=private)
         end
     end
 
-    function context = resolveHARQTrialContextImpl(state, ueIdx, direction)
+    function context = resolveHARQTrialContextImpl(state, ueIdx, direction, scheduledGrant)
         context = struct();
         direction = upper(string(direction));
         rnti = double(max(1, round(double(state.MultiUser.RNTIStart + ueIdx - 1))));
@@ -2502,6 +2539,10 @@ methods(Static, Access=private)
             softBuffers = state.DLCombinedLLR;
         end
         retx = harq.peekRetx(rnti, sixgr.util.structGet(state, "CurrentSlot", NaN));
+        if nargin>=4 && direction=="UL" && ...
+                ~isempty(sixgr.util.structGet(state,'SharedGNBULHARQCommands',{}))
+            retx=harq.scheduledULReplay(scheduledGrant);
+        end
         if isempty(retx)
             context.HARQContext = struct("Direction", char(direction), ...
                 "UEIndex", double(ueIdx), "RNTI", double(rnti), ...
@@ -2910,7 +2951,7 @@ methods(Static, Access=private)
         isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
             grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
         if isRetx
-            context = sixgr.truth.CoupledTruthRuntime.resolveHARQTrialContextImpl(state, ueIdx, direction);
+            context = sixgr.truth.CoupledTruthRuntime.resolveHARQTrialContextImpl(state, ueIdx, direction, grant);
             replayGrant = sixgr.util.structGet(context, "GrantSnapshot", struct());
             if ~(isstruct(replayGrant) && ~isempty(fieldnames(replayGrant)))
                 replayGrant = grant;
@@ -3580,6 +3621,11 @@ methods(Static, Access=private)
         end
         isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
             grant, sixgr.util.structGet(grant, "PHYGrant", struct()), struct());
+        if direction=="UL" && isfield(grant,'ExecutedUEHARQIsRetransmission')
+            assert(islogical(grant.ExecutedUEHARQIsRetransmission) && isscalar(grant.ExecutedUEHARQIsRetransmission), ...
+                'sixgr:truth:InvalidExecutedUEHARQState','Use actual UE transmitter state for queue reservation.');
+            isRetx=grant.ExecutedUEHARQIsRetransmission;
+        end
         if ~isRetx && tbsBits > 0
             state = sixgr.truth.CoupledTruthRuntime.reserveGrantBits(state, ueIdx, direction, tbsBits, grant);
         end
@@ -15328,12 +15374,14 @@ methods(Static, Access=private)
         state=sixgr.truth.CoupledTruthRuntime.stageIndependentCSI(state,report);
     end
 
-    function state=stageIndependentCSI(state,report)
+    function state=stageIndependentCSI(state,report,joinProducerAudit)
         % Value-state staging only: no HARQ handles or physical event writes.
+        if nargin<3, joinProducerAudit=true; end
         if report.CSIUCIDecodeOk && report.DeliveryStatus=="delivered_to_runtime_scheduler"
             [state,report]=sixgr.truth.CoupledTruthRuntime.publishCSIReport(state,report);
         end
-        pending=sixgr.util.structGet(state,'PendingCSITable',table());
+        pending=table();
+        if joinProducerAudit, pending=sixgr.util.structGet(state,'PendingCSITable',table()); end
         hit=[];
         if ~isempty(pending) && ismember('ReportIdentity',pending.Properties.VariableNames)
             hit=find(string(pending.ReportIdentity)==report.ReportIdentity);
@@ -15358,7 +15406,8 @@ methods(Static, Access=private)
         else
             % An existing TX transport trace may outlive its optional UE
             % report record. Record reception without invented comparison.
-            trace=sixgr.util.structGet(state,'PUCCHGrantTraceTable',table());
+            trace=table();
+            if joinProducerAudit, trace=sixgr.util.structGet(state,'PUCCHGrantTraceTable',table()); end
             if report.CSIUCIChannel=="PUSCH" && ~isempty(trace) && ...
                     any(string(trace.PUCCHGrantId)=="PUCCH-CSI-"+report.ReportIdentity)
                 state=sixgr.truth.CoupledTruthRuntime.completeCSIGrantOnPUSCH(state,report,false);

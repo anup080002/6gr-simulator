@@ -1,15 +1,20 @@
-function [ok,result]=testSharedRejectedULReceiveOnly(withHARQ)
+function [ok,result]=testSharedRejectedULReceiveOnly(withHARQ,withCSI,repeatMiss)
 % Physical component: known-candidate UL DCI is actually decoded/rejected,
 % then the normal receive-only reducers capture/decode without UE PUSCH.
 % Two explicitly resolved endpoint fixtures: UE known-candidate control and
 % gNB installed connected-UL schema. Not acquired/blind or full coordinator.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, withHARQ=false; end
+if nargin<2, withCSI=false; end
+if nargin<3, repeatMiss=false; end
+assert(~repeatMiss || (~withHARQ && ~withCSI),'Repeated-miss fixture owns data-only UL.');
+assert(~(withHARQ && withCSI),'Combined transport ownership requires its separate physical regression.');
 root=fileparts(fileparts(mfilename('fullpath')));
 output=tempname(fullfile(root,'logs')); mkdir(output);
 folder=fullfile(root,'simulator','configs','scenarios');
 fixture='lls_rejected_ul_receive_only_fixture.yaml';
 if withHARQ, fixture='lls_rejected_ul_due_harq_fixture.yaml'; end
+if withCSI, fixture='lls_rejected_ul_csi_fixture.yaml'; end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile(folder,fixture));
 controlScenario=sixgr.lls6g.config.loadScenarioConfig(fullfile(folder,'lls_rejected_ul_control_fixture.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,output);
@@ -17,11 +22,20 @@ controlCfg=sixgr.lls6g.buildInternalConfig(controlScenario,output);
 assert(cfg.channel.snr_dB==controlCfg.channel.snr_dB && ~controlCfg.phy.pdcch.blindSearch);
 saved=load(fullfile(root,'docs','lls','evidence_20260913','scheduled_ul_dai_03','scheduled_ul_dai_0.mat'),'fixed');
 grant=saved.fixed;
+if withCSI
+    [obligation,report,calendar]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
+    assert(~isempty(report) && strlength(obligation.ReportConfigID)>0 && ...
+        height(calendar)==1 && calendar.ReportSlot==grant.Slot && calendar.ULResourceAvailable, ...
+        'test:MissingRejectedULCSIStimulus','The scheduled UL slot must actually overlap installed CSI.');
+end
 prior=rng; cleanup=onCleanup(@()rng(prior));
 rng(double(cfg.run.seed),'twister');
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,output,multi,struct(),grant.Slot+1);
 state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
+allocation=state.ULHarq.allocate(grant.RNTI,grant.Slot,grant.TBSBytes,'NewData',true);
+assert(allocation.HARQ.HarqID==grant.HARQ.HarqID && allocation.HARQ.NDI==grant.HARQ.NDI && ...
+    allocation.HARQ.NDIEpoch==grant.HARQ.NDIEpoch && allocation.HARQ.RV==grant.HARQ.RV);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 state.TestWithHARQ=withHARQ; state.TestEvidenceRoot=output;
 if withHARQ
@@ -61,7 +75,7 @@ dl.lls6g.userContext.RuntimeSlotStartTime_s= ...
 % metadata is explicitly a component input, never connected receiver proof.
 p=sixgr.link.prepareSharedPDCCHTransmission(dl,'DCIBits',grant.DCI.Bits, ...
     'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
-owner.queuePDCCH(grant.UEIndex,p,struct('Grant',grant,'GNBConfig',cfg));
+owner.queuePDCCH(grant.UEIndex,p,struct('Grant',grant,'GNBConfig',cfg,'ScheduledULHARQConfig',cfg));
 reject(@()owner.readTransmittedSchedulingControls(), ...
     'sixgr:truth:JointTimingAfterControlEnqueue');
 reject(@()owner.readTransmittedULControls(grant.UEIndex,double(grant.Slot)), ...
@@ -72,6 +86,34 @@ for slot=1:double(grant.Slot)+1
 end
 assert(isfield(state,'SharedRejectedULReceiveResults') && isscalar(state.SharedRejectedULReceiveResults));
 result=state.SharedRejectedULReceiveResults{1};
+receivers=state.SharedGNBULHARQReceivers;
+assert(isscalar(receivers) && result.ULHARQReceiverStateCommitted && ...
+    ~result.ULHARQStateCommitted && ...
+    receivers{1}.Attempt.ReceiverKey==result.ULHARQReceiverObservation.ReceiverKey && ...
+    receivers{1}.DecodeAttempted==result.Receiver.ULSCHDecodeAttempted && ...
+    receivers{1}.CRCPass==result.ULHARQReceiverDecision.CRCPass && ...
+    isempty(state.ULHarq.getDeliveryLedger()), ...
+    'Receiver-only soft-state completion must not invent a UE transmission or TB delivery.');
+if withCSI
+    actual=result.IndependentCSIObservation;
+    received=state.SharedGNBCSIReportTable;
+    assert(isscalar(actual) && height(received)==1 && isempty(state.PendingCSITable) && ...
+        isempty(state.PUCCHGrantTraceTable) && received.ReportIdentity==calendar.ObligationID && ...
+        received.ReceiverContextDigest==result.UCIReceiveContext.Digest && ...
+        received.ObservationID==result.Binding.ObservationID && ...
+        received.AvailableAtSample==result.ReceiverInvokedAtSample && ...
+        received.CSIUCIDecodeOk==actual.DecodeOk && received.CSIUCIChannel=="PUSCH");
+    sixgr.util.csvWriteTable(fullfile(output,'rejected_ul_received_csi.csv'),received, ...
+        'PreserveSchema',true,'RoundTripNumericText',true);
+    % Retain a false detection before failing, never force DTX from known TX
+    % absence or weaken a noise episode's assertion to make this fixture pass.
+    save(fullfile(output,'rejected_ul_csi_receiver.mat'),'result','received','cfg','-v7.3');
+    assert(~actual.DecodeOk && received.DeliveryStatus=="receiver_csi_unavailable_not_delivered", ...
+        'test:RejectedULFalseCSI','No-PUSCH episode produced usable CSI; preserve and investigate receiver evidence.');
+    reject(@()sixgr.truth.CoupledTruthRuntime.stageSharedReceiveOnlyPUSCHCSIRuntime( ...
+        state,cfg,grant,result.Receiver,result.UCIReceiveContext,result.Observation), ...
+        'sixgr:truth:DuplicateIndependentCSIReport');
+end
 assert(~state.TestControlReceiver.CausalGrantDecodeOk && ~result.PreparedTransmitterConsumed && ...
     ~result.OraclePayloadBitsUsed && result.HARQStateCommitted==withHARQ && ~result.TransmittedTBScored && ...
     numel(owner.DataTransmissions)==double(withHARQ) && state.ULHarq.Stats.Tx==0 && state.DLHarq.Stats.Tx==double(withHARQ) && ...
@@ -86,6 +128,26 @@ assert(height(roundtrip)==1 && roundtrip.ObservationID==audit.ObservationID && .
     roundtrip.ObservationEndSampleExclusive==audit.ObservationEndSampleExclusive && ...
     roundtrip.AvailableAtSample>=roundtrip.ObservationEndSampleExclusive && ...
     ~roundtrip.TransmittedTBScored && ~roundtrip.UETransmissionExecuted && roundtrip.HARQStateCommitted==withHARQ);
+assert(roundtrip.ULHARQReceiverStateCommitted && roundtrip.ULHARQSchedulerStateCommitted && ...
+    state.ULHarq.Stats.ScheduledUL==1 && state.ULHarq.Stats.Tx==0 && ...
+    state.ULHarq.Stats.FirstSuccessDelivery==0 && ...
+    string(roundtrip.ULHARQSchedulerOutcome)==result.ULHARQSchedulerEvent.Outcome);
+retry=state.ULHarq.peekRetx(grant.RNTI);
+assert(state.ULHarq.hasPendingRetx(grant.RNTI) && ~isempty(retry) && isempty(retry.TB), ...
+    'The gNB must retain an unsuccessful scheduled attempt without inventing a UE TB.');
+assert(audit.ReceiverCRCAvailable==result.Receiver.ULSCHDecodeAttempted && ...
+    roundtrip.ReceiverCRCAvailable==audit.ReceiverCRCAvailable && ...
+    isequaln(roundtrip.ReceiverCRCError,audit.ReceiverCRCError));
+if audit.ReceiverCRCAvailable
+    if isfield(result.Receiver,'TransportBlockCRCErrorPerCodeword')
+        actualCRC=result.Receiver.TransportBlockCRCErrorPerCodeword;
+    else
+        actualCRC=result.Receiver.CRCError;
+    end
+    assert(audit.ReceiverCRCError==double(actualCRC));
+else
+    assert(isnan(audit.ReceiverCRCError),'An unattempted TB must not acquire a CRC failure or pass.');
+end
 if withHARQ
     assert(height(state.SharedGNBUCIHARQTable)==1 && state.SharedGNBUCIHARQTable.UCITransport=="PUSCH" && ...
         state.SharedGNBUCIHARQTable.HARQFeedbackApplied && isempty(state.ControlTrials.PUCCH) && ...
@@ -125,6 +187,9 @@ gnbControlEvidence=state.TestGNBControls;
 save(fullfile(output,'rejected_ul_receive_only.mat'),'result','audit','controlReceiver','controlInfo', ...
     'controlObservation','gnbControlEvidence','cfg','controlCfg','resolvedScenario','resolvedControlScenario','runtimeVersion','-v7.3');
 fprintf('SHARED_REJECTED_UL_RECEIVE_ONLY_PASS physical_control_rejections=1 gNB_receive_only=1 UE_UL_TX=0 DL_HARQ_commits=%d root=%s\n',withHARQ,output);
+if repeatMiss
+    state=repeatMissedCommand(state,cfg,controlCfg,grant,output);
+end
 ok=true;
 end
 
@@ -158,6 +223,13 @@ for item=items
     assert(isscalar(scheduled) && isequaln(scheduled{1}.Binding.Grant,grant) && ...
         scheduled{1}.AvailableAtSample<=state.SharedWaveformStream.Events.NextSampleIndex && ...
         scheduled{1}.TransmitObservation.isComplete());
+    assert(any(cellfun(@(x)x.CommandObservationID==scheduled{1}.ObservationID, ...
+        state.SharedGNBULHARQCommands)), ...
+        'The gNB command must already be recorded before the UE receiver runs.');
+    reject(@()sixgr.truth.commitSharedULHARQCommand(state,item.Context.GNBConfig,grant), ...
+        'sixgr:truth:DuplicateULHARQScheduledCommand');
+    assert(~state.ULHarq.cancelTentativeTx(grant.RNTI,grant.HARQ.HarqID), ...
+        'Actual gNB command execution cannot be canceled by a missing UE decode.');
     reject(@()sixgr.truth.assertNoScheduledPUSCHOverlap(state,item.Context.GNBConfig,item.UE, ...
         double(grant.Slot),grant.SymbolAllocation), ...
         'sixgr:truth:UnresolvedScheduledPUSCHReceiveHypothesis');
@@ -169,7 +241,7 @@ for item=items
     assert(isequal(window,[0 receiver.EndSampleExclusive-receiver.StartSample-p.MinimumReceiveSamples]) && ...
         timing.AppliedCorrection_samples==window(1)+peak-1 && ~info.ReceivePaddingApplied, ...
         'The selected offset must maximize actual correlation inside the complete-symbol window, without padding.');
-    if ~state.TestWithHARQ
+    if ~state.TestWithHARQ && isempty(sixgr.util.structGet(state,'SharedReceivedGrantControls',{}))
         assert(timing.UnboundedEstimate_samples>window(2), ...
             'test:TimingRegressionNotExercised','The original retained stimulus must reproduce its out-of-window noise peak.');
     end
@@ -182,10 +254,10 @@ for item=items
     raw=struct('Crash',false,'DecodeAttempted',true,'PDCCHCausalGrantDecodeOk',logical(rx.CausalGrantDecodeOk), ...
         'PDCCHObservationStartSample',info.ObservationStartSample, ...
         'PDCCHObservationEndSampleExclusive',info.ObservationEndSampleExclusive);
-    control=struct('Key',"actual_component_ul_command",'Allowed',logical(rx.CausalGrantDecodeOk), ...
+    control=struct('Key',"actual_component_ul_command_"+string(grant.PHYGrant.GrantContextId),'Allowed',logical(rx.CausalGrantDecodeOk), ...
         'Grant',item.Context.Grant,'ReceiverTrial',raw,'RejectedControlObservation',post, ...
         'AvailableAtSample',post.EndSampleExclusive,'ReceivedAssignment',struct());
-    state.SharedReceivedGrantControls={control};
+    state.SharedReceivedGrantControls=[sixgr.util.structGet(state,'SharedReceivedGrantControls',{}),{control}];
     assert(isequaln(scheduled,state.SharedWaveformStream.readTransmittedULControls(item.UE,double(grant.Slot))), ...
         'Actual UE rejection must not erase the gNB transmitted UL-command hypothesis.');
     % Explicit negative mutations must fail before any observation is armed.
@@ -197,7 +269,8 @@ for item=items
     broken=state; broken.SharedReceivedGrantControls={bad};
     reject(@()sixgr.truth.queueSharedPUSCHAfterRejectedControl(broken,item.Context.GNBConfig,bad), ...
         'sixgr:truth:RejectedULHasReceivedAssignment');
-    assert(isempty(state.SharedWaveformStream.PUSCHReceiveOnlyRegistrations));
+    assert(numel(state.SharedWaveformStream.PUSCHReceiveOnlyRegistrations)== ...
+        numel(state.SharedReceivedGrantControls)-1);
     bad=control; bad.Grant.TBSBits=bad.Grant.TBSBits+8;
     broken=state; broken.SharedReceivedGrantControls={bad};
     reject(@()sixgr.truth.queueSharedPUSCHAfterRejectedControl(broken,item.Context.GNBConfig,bad), ...
@@ -210,6 +283,72 @@ for item=items
     state.TestControlReceiver=rx; state.TestControlInfo=info;
     state.TestGNBControls=scheduled;
 end
+end
+
+function state=repeatMissedCommand(state,cfg,controlCfg,initial,output)
+% A second actual rejected PDCCH plus another physical gNB PUSCH capture.
+owner=state.SharedWaveformStream;
+prior=state.SharedGNBULHARQReceivers{1};
+assert(prior.DecodeAttempted && ~prior.CRCPass && ~isempty(prior.SoftBuffer));
+retry=state.ULHarq.peekRetx(initial.RNTI);
+assert(~isempty(retry) && isempty(retry.TB));
+g=retry.LastGrant; g.HARQ=retry.HARQ; g.IsRetransmission=true; g.RV=retry.HARQ.RV;
+g.HARQTBContext=retry.TBContext;
+% Preserve the exact retained SRS-backed allocation as a declared initial
+% condition. This is not a fresh SRS measurement in this physical episode.
+donor=initial.PHYGrant.LegacyGrantSnapshot;
+prec=initial.PHYGrant.PrecodingState;
+assert(donor.SRSCausalUsable && donor.SRSValid && prec.AuthoritativeSRSDecisionUsed && ...
+    string(donor.SRSCausalMeasurementId)==string(prec.SRSMeasurementID) && ...
+    donor.LastSuccessfulSRSSlot==prec.SRSMeasurementSlot && ...
+    donor.RI==g.NumLayers && donor.TPMI==prec.TPMI);
+for name=["SRSCausalUsable","SRSValid","SRSCausalMeasurementId","LastSuccessfulSRSSlot","RI"]
+    g.(name)=donor.(name);
+end
+decoded=sixgr.phy.pdcch.decodeDCIPayload(g.DCI.Bits,'0_1',g.DCI.ContextData);
+[~,g.TPMI]=sixgr.phy.pdcch.ULPrecodingField.decode(g.DCI.ContextData, ...
+    decoded.Fields.precoding_information_and_number_of_layers);
+control0=double(initial.TimingDecision.ControlAbsoluteSlot)+10;
+ul=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,control0+1);
+g=sixgr.l2.mac.rebindHARQRetransmissionTiming(g);
+g.Slot=control0; g.Frame=floor(control0/state.SlotsPerFrame); g.ControlAbsoluteSlot=control0;
+% TB/process identity survives; this new scheduled occasion gets a new
+% frozen grant identity. Never reuse the donor command's explicit override.
+g.GrantContextId="";
+scheduler=sixgr.l2.mac.SchedulerPF(ul,'Direction','UL');
+g=scheduler.attachCanonicalTimingDecision(g);
+g=scheduler.finalizeExactPHYFeasibility(g);
+g.DCI=scheduler.buildDCIBitfield(g);
+g.PHYGrant=sixgr.phy.grant.freezePHYGrant(ul,'UL',g,'Slot',control0,'Frame',g.Frame,'HARQContext',g.HARQ);
+g.PHYGrantContextId=g.PHYGrant.GrantContextId;
+assert(string(g.PHYGrant.GrantContextId)~=string(initial.PHYGrant.GrantContextId));
+g=sixgr.truth.prepareScheduledULDAI(struct(),ul,g);
+target=double(g.TimingDecision.DataAbsoluteSlot)+1;
+g=sixgr.truth.bindQueuedULGrantOccasion(g,control0+1,target, ...
+    floor(control0/state.SlotsPerFrame)+1,floor((target-1)/state.SlotsPerFrame)+1,g.TimingDecision.K2);
+[dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(controlCfg,state,1,'DL');
+dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,control0+1);
+dl=sixgr.truth.bindSharedDataOccasion(dl,control0+1,g.ControlFrame,owner.SampleRateHz);
+p=sixgr.link.prepareSharedPDCCHTransmission(dl,'DCIBits',g.DCI.Bits,'RNTI',g.RNTI,'K',numel(g.DCI.Bits));
+owner.queuePDCCH(1,p,struct('Grant',g,'GNBConfig',cfg,'ScheduledULHARQConfig',cfg));
+for slot=double(state.CurrentSlot)+1:target+1
+    state.CurrentSlot=slot;
+    [state,~]=owner.advanceSlot(state,cfg,@receive);
+end
+assert(numel(state.SharedRejectedULReceiveResults)==2 && state.ULHarq.Stats.ScheduledUL==2 && ...
+    state.ULHarq.Stats.Tx==0 && isempty(state.ULHarq.getDeliveryLedger()) && isempty(owner.DataTransmissions));
+second=state.SharedRejectedULReceiveResults{2};
+current=state.SharedGNBULHARQReceivers{1};
+assert(second.Receiver.ULSCHDecodeAttempted && second.ULHARQReceiverObservation.CombiningApplied && ...
+    current.Attempt.ReceiverKey==prior.Attempt.ReceiverKey && ...
+    current.Attempt.CommandObservationID~=prior.Attempt.CommandObservationID && ...
+    current.Attempt.DataAbsoluteSlot>prior.Attempt.DataAbsoluteSlot && ...
+    ~second.ULHARQReceiverDecision.CRCPass && state.ULHarq.hasPendingRetx(g.RNTI), ...
+    'Require two actual missed commands and receiver-owned combining, never a manufactured erasure.');
+audit=state.SharedRejectedULReceiveAuditTable;
+sixgr.util.csvWriteTable(fullfile(output,'repeated_missing_ul_dci.csv'),audit,'PreserveSchema',true);
+save(fullfile(output,'repeated_missing_ul_dci.mat'),'prior','current','second','g','audit','-v7.3');
+fprintf('SHARED_REJECTED_UL_RETRY_PASS actual_rejected_commands=2 receive_only_captures=2 UE_TX=0 combining=1 root=%s\n',output);
 end
 
 function [state,ledger]=queueDL(state,cfg)

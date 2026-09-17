@@ -9343,6 +9343,9 @@ for gi = 1:numel(grants)
             'Frame',controlFrameIdx,'RNTI',rnti,'ServingCell',servingCell, ...
             'Key',localSharedGrantControlKey(grant,direction), ...
             'ReceivedDLTimingReference',timing.DLReference);
+        if direction=="UL" && sixgr.phy.frame.resolveDuplexMode(cfgU)=="TDD"
+            context.ScheduledULHARQConfig=cfgU;
+        end
         state.SharedWaveformStream.queuePDCCH(ueIdx,prepared,context);
         state.ScheduledDLDAILedger=candidateDAILedger;
         state.PDCCHResourceLedger=sixgr.truth.PDCCHSlotResourceLedger.reserve( ...
@@ -12645,8 +12648,9 @@ if c.Direction~="UL", return; end
 if ~allowed
     if sixgr.phy.frame.resolveDuplexMode(c.UserCfg{item.UE})=="TDD"
         state=sixgr.truth.queueSharedPUSCHAfterRejectedControl(state,c.UserCfg{item.UE},controls{end});
+    else
+        state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state,grant,'UL');
     end
-    state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state,grant,'UL');
     return;
 end
 state=sixgr.truth.recordReceivedULGrant(state,grant);

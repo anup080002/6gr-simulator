@@ -1,0 +1,21 @@
+inherits:
+  - ./lls_received_ul_harq_shared_fixture.yaml
+
+meta:
+  scenario_id: lls_pusch_receive_only_command_fixture
+  description: Physical gNB command and no-UE-PUSCH capture for receiver-state contracts.
+  purpose: Known-candidate control capture; no acquired timing or UE blind-decoding qualification.
+  research_class: optional_research_experiment
+
+# No UE control decoder is executed in this component fixture. Its physical
+# command registration uses the explicitly configured known-candidate mode.
+# SNR, channel, power and RF impairments remain those of the parent fixture.
+control:
+  blind_search_enabled: false
+
+# This fixture registers only a connected command; it does not execute
+# broadcast acquisition. SIB1 acquisition requires blind search and cannot
+# remain enabled in a known-candidate-only component configuration.
+initial_access:
+  sib1:
+    enabled: false

@@ -361,6 +361,12 @@ classdef CoupledWaveformStream < handle
                 stop=first+prepared.MinimumReceiveSamples+double(ch.ChannelPadSamples)+double(margin);
             end
             binding=sixgr.truth.scheduledPDCCHGrantBinding(prepared,context,ue);
+            if isfield(context,'ScheduledULHARQConfig')
+                assert(~isempty(fieldnames(binding)) && string(binding.Grant.Direction)=="UL" && ...
+                    sixgr.phy.frame.resolveDuplexMode(context.ScheduledULHARQConfig)=="TDD", ...
+                    'sixgr:truth:ScheduledULHARQCommandContext', ...
+                    'The shared UL scheduling lifecycle requires an explicit TDD UL command.');
+            end
             if ~isempty(fieldnames(binding))
                 assert(~any(cellfun(@(r)r.Binding.GrantContextID==binding.GrantContextID, ...
                     obj.ScheduledControlRegistrations)), ...
@@ -910,6 +916,11 @@ classdef CoupledWaveformStream < handle
                                 r.TransmitObservation=item.Observation;
                                 r.AvailableAtSample=obj.Events.NextSampleIndex;
                                 obj.ScheduledControlRegistrations{control}=r;
+                                commandContext=obj.Pending(k).Context;
+                                if isfield(commandContext,'ScheduledULHARQConfig')
+                                    state=sixgr.truth.commitSharedULHARQCommand( ...
+                                        state,commandContext.ScheduledULHARQConfig,r.Binding.Grant);
+                                end
                             end
                         end
                     end

@@ -103,6 +103,7 @@ end
 uciReceiveContext=sixgr.util.structGet(p.Results.ReceivedContext,'UCIReceiveContext',[]);
 uciReportConfiguration=sixgr.util.structGet(p.Results.ReceivedContext,'UCIReportConfiguration',[]);
 independentUCI=~isempty(uciReceiveContext);
+receiverHARQKey="";
 if independentUCI
     assert(receivedCompletion && isa(uciReceiveContext,'sixgr.phy.ul.pusch.PUSCHUCIReceiveContext') && ...
         isscalar(uciReceiveContext),'sixgr:pusch:MissingUCIReceiveContext', ...
@@ -114,6 +115,10 @@ if independentUCI
         'sixgr:pusch:UCIReceiveObservationMismatch', ...
         'The independent UCI context must match this scheduled UL grant and completed receive window.');
     uciReceiveBudget=uciReceiveContext.bitBudget(uciReportConfiguration);
+    receiverHARQKey=sixgr.truth.scheduledULHARQReceiverKey(cfg,grantSnapshotOverride);
+    assert(isequal(sixgr.util.structGet(p.Results.ReceivedContext,'ULHARQReceiverKey',[]),receiverHARQKey), ...
+        'sixgr:link:ULHARQReceiverKeyMismatch','Rebuild the scheduled receiver key before consuming prior soft state.');
+    sixgr.link.validateULHARQSoftBufferIdentity(previousCombinedLLR,receiverHARQKey);
 else
     assert(isempty(uciReportConfiguration),'sixgr:pusch:MissingUCIReceiveContext', ...
         'An installed CSI receive schema requires its independent receive context.');
@@ -2016,14 +2021,12 @@ for n = 1:numFrames
 
         txBits = int8(tx.TransportBlock(:));
         rxBits = int8(rx.TransportBlock(:));
-        finalRxBits = rxBits;
         currentRecLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
         currentCodingLayout = sixgr.util.structGet(rx, "CodingLayout", struct());
         assert(isstruct(currentCodingLayout) && ~isempty(fieldnames(currentCodingLayout)), ...
             'sixgr:link:ULReceiverHARQCodingLayoutRequired', ...
             'UL HARQ combining must use the actual receiver coding layout, never transmitter metadata.');
-        [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout);
-        combinedDecodeOK = false;
+        [combinedLLR, harqCombining] = localCombineRateRecoveredLLR(previousCombinedLLR, currentRecLLR, currentCodingLayout,receiverHARQKey);
         combinedDecodeIt = NaN;
         L = min(numel(txBits), numel(rxBits));
         if L == 0
@@ -2056,9 +2059,6 @@ for n = 1:numFrames
             continue;
         end
 
-        currentBe = sum(txBits(1:L) ~= rxBits(1:L));
-        finalBe = currentBe;
-        finalBitsCompared = L;
         bitTot = bitTot + double(numel(txBits));
         if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
             trialDecIt(n) = mean(double(rx.ActiveIterations(:)), "omitnan");
@@ -2077,38 +2077,36 @@ for n = 1:numFrames
             end
         end
 
-        currentDecodeOK = rx.Ok && currentBe == 0 && numel(rxBits) == numel(txBits);
+        % TX bits are scoring evidence only. They cannot select a receiver
+        % decode, trigger combining, clear a soft buffer, or determine ACK.
+        receiverOutcome=sixgr.link.resolveULHARQReceiverOutcome(rx,[]);
+        currentDecodeOK = receiverOutcome.CurrentDecodeOK;
         hasPriorHARQEvidence = localHARQPriorAvailable(previousCombinedLLR);
         if hasPriorHARQEvidence && ~currentDecodeOK
             [combinedDecodeOK, combinedDecodeIt, combinedRxBits] = ...
                 sixgr.phy.harq.decodeCombinedULSCH(currentCodingLayout,localEnsureLLRMatrix(combinedLLR),cfgFrame);
-            if combinedDecodeOK
-                [combinedBe, combinedBitsCompared] = localFinalBitErrors(txBits, combinedRxBits);
-                combinedDecodeOK = combinedBitsCompared == numel(txBits) && combinedBe == 0;
-                finalBe = combinedBe;
-                finalBitsCompared = combinedBitsCompared;
-                if combinedDecodeOK
-                    finalRxBits = int8(combinedRxBits(:));
-                end
-            end
+            receiverOutcome=sixgr.link.resolveULHARQReceiverOutcome(rx, ...
+                struct('CRCPass',combinedDecodeOK,'TransportBlock',combinedRxBits));
         else
-            combinedDecodeOK = logical(currentDecodeOK);
             if isfinite(trialDecIt(n))
                 combinedDecodeIt = double(trialDecIt(n));
             end
         end
-        finalDecodeOK = logical(combinedDecodeOK);
+        finalDecodeOK = receiverOutcome.CombinedDecodeOK;
+        finalRxBits = receiverOutcome.DecodedTransportBlockBits;
+        [finalBe,finalBitsCompared] = localFinalBitErrors(txBits,finalRxBits);
+        contentMatch = finalBitsCompared==numel(txBits) && ...
+            numel(finalRxBits)==numel(txBits) && finalBe==0;
         trialBitErr(n) = double(finalBe);
         trialBitTot(n) = double(finalBitsCompared);
         bitErr = bitErr + double(finalBe);
-        if finalDecodeOK
+        trialCRC(n) = double(finalDecodeOK);
+        if finalDecodeOK && contentMatch
             bitGood = bitGood + double(numel(txBits));
-            trialCRC(n) = 1;
             trialStatus(n) = "PASS";
             trialGoodBits(n) = double(numel(txBits));
         else
             blockErr = blockErr + 1;
-            trialCRC(n) = 0;
             trialStatus(n) = "FAIL";
             trialGoodBits(n) = 0;
         end
@@ -2161,6 +2159,9 @@ for n = 1:numFrames
             "LLRCombiningGain_dB", harqCombining.LLRCombiningGain_dB, ...
             "CurrentDecodeOK", logical(currentDecodeOK), ...
             "CombinedDecodeOK", logical(finalDecodeOK), ...
+            "ReceiverOutcomeSource", receiverOutcome.Source, ...
+            "ReceiverHARQKey", receiverHARQKey, ...
+            "ReferenceContentMatch", logical(contentMatch), ...
             "DecoderIterations", combinedDecodeIt, ...
             "GrantSnapshot", grantSnapshot, ...
             "TransportBlockContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
@@ -2206,7 +2207,8 @@ simDur_s = numFrames * slotDur_s;
 out.BER = bitErr / max(bitTot, 1);
 out.BLER = blockErr / max(numFrames, 1);
 % Scheduled PHY throughput counts every transmitted transport block,
-% including HARQ retransmissions. Goodput counts only CRC-clean delivery;
+% including HARQ retransmissions. Goodput additionally requires decoded
+% content to match the reference, independently of the receiver CRC verdict;
 % offered throughput counts newly offered traffic and excludes retransmitted
 % copies. These three quantities must never be aliases.
 out.Throughput_Mbps = (bitTot / max(simDur_s, eps)) / 1e6;
@@ -2270,6 +2272,9 @@ if isstruct(out.HARQ)
     out.HARQ.DecodedCSIPart2Bits = int8(lastDecodedCSIPart2Bits(:));
     out.HARQ.UCIReceiverEvidence=lastUCIReceiverEvidence;
     if independentUCI
+        out.HARQ.ReceiverHARQKey=receiverHARQKey;
+        out.HARQ.ReceiverHARQAttempt=sixgr.util.structGet( ...
+            p.Results.ReceivedContext,'ULHARQReceiverAttempt',struct());
         out.HARQ.UCIReceiveContextDigest=uciReceiveContext.Digest;
         out.HARQ.IndependentHARQObservation=lastIndependentHARQObservation;
         out.HARQ.IndependentUCICompletionFlags=struct( ...
@@ -6617,12 +6622,12 @@ if isfinite(nmse_dB) && nmse_dB > 6
 end
 end
 
-function [combined, diag] = localCombineRateRecoveredLLR(prev, cur, currentLayout)
+function [combined, diag] = localCombineRateRecoveredLLR(prev, cur, currentLayout,receiverKey)
 if nargin < 3
     currentLayout = struct();
 end
 [combined, info] = sixgr.phy.harq.combineSoftLLR(localEnsureLLRMatrix(cur), prev, ...
-    "CurrentLayout", currentLayout);
+    "CurrentLayout", currentLayout,"HARQKey",receiverKey);
 diag = localHARQCombiningDiagnostics(prev, cur, combined, info);
 end
 
@@ -7264,6 +7269,14 @@ if nargin < 6
     previousCombinedLLR = [];
 end
 tbContext = localReplayTBContext(grantSnapshot, harqContext);
+if string(sixgr.util.structGet(tbContext,'EvidenceRole',""))=="scheduled_receive_not_UE_transmission"
+    % A missed initial command has no UE TB coding history. Retain gNB
+    % scheduling identity separately; validate this first actual encoding
+    % using the actual transmitter layout, never a scheduled layout as TX.
+    assert(isfield(tx,'UEHARQIsRetransmission') && isequal(tx.UEHARQIsRetransmission,false), ...
+        'sixgr:link:ScheduledULContextNotUEHistory','Scheduled-only context requires a fresh actual UE buffer.');
+    tbContext=struct();
+end
 softCombiningEvidence = localHARQPriorAvailable(previousCombinedLLR);
 rvSequence = double(sixgr.util.structGet(tbContext, "RVSequence", ...
     sixgr.util.structGet(cfg, "phy.harq.rvSequence", [0 2 3 1])));

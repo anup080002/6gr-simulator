@@ -23,6 +23,18 @@ for caseIndex = reshape(caseIndices,1,[])
     direction = directions(caseIndex);
     withUCI = caseIndex>=3;
     cfg = base;
+    if caseIndex==4 && string(mode)=="TDD"
+        % Independent gNB identity requires an installed connected-DCI
+        % schema. The older stage-only fixture has no connected_dci policy;
+        % do not reconstruct receiver configuration from its TX grant.
+        connected=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator', ...
+            'configs','scenarios','lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml'));
+        cfg=sixgr.lls6g.buildInternalConfig(connected,tempname);
+        cfg.channel.model='AWGN';
+        cfg.channel.fading.enabled=false;
+        cfg.channel.fading.type='AWGN';
+        sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,'0_1');
+    end
     if direction == "UL"
         cfg.lls6g.userContext.RuntimeServingPathloss_dB = 77;
         cfg.lls6g.userContext.RuntimeServingPathlossSource = 'unit_test_analytic_reference_pathloss';
@@ -174,6 +186,11 @@ for caseIndex = reshape(caseIndices,1,[])
             'HARQACKBitCount',2,'ConfiguredGrantUCIBitCount',0, ...
             'CSIReportConfigID',"",'CSIConfigurationEpoch',NaN);
         context.UCIReceiveContext=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(receiveData);
+        context.ULHARQReceiverKey=sixgr.truth.scheduledULHARQReceiverKey(cfg,grant);
+        bad=rmfield(context,'ULHARQReceiverKey');
+        localReject(@()runner(cfg,args{:},'ReceivedContext',bad),'sixgr:link:ULHARQReceiverKeyMismatch');
+        bad=context; bad.ULHARQReceiverKey="gNB-UL-TB-foreign";
+        localReject(@()runner(cfg,args{:},'ReceivedContext',bad),'sixgr:link:ULHARQReceiverKeyMismatch');
         % Declared metadata checks for the real receiver's pre-demapping
         % strict-noise failure path. No fabricated PHY result is exported.
         unavailable=struct('NoiseVarStrictFailure',true,'DecodeAttempted',false, ...
@@ -471,7 +488,7 @@ grant = struct('Direction','UL','ControlAbsoluteSlot',controlSlot0, ...
     'NumLogicalPorts',choice.PUSCHCodebookNumPorts,'TPMI',choice.TPMI, ...
     'SRSCausalUsable',choice.Valid,'SRSValid',choice.Valid, ...
     'SRSCausalMeasurementId',measurementId,'LastSuccessfulSRSSlot',srsSlot, ...
-    'HARQ',struct('HarqID',0,'NDI',true,'RV',0,'IsRetransmission',false));
+    'HARQ',struct('HarqID',0,'NDI',true,'NDIEpoch',1,'RV',0,'IsRetransmission',false));
 if isfield(cfg,'SharedULTimingContext')
     grant.TimingAdvanceTicks=cfg.SharedULTimingContext.ReceivedRARTiming.NTA_Tc+ ...
         cfg.SharedULTimingContext.Offset.NTAOffset_Tc;
