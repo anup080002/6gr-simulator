@@ -267,9 +267,13 @@ if ($LASTEXITCODE -ne 0) { throw 'Additional rate calibration failed; preserve i
 
 The additional rate profile executes 120 actual initial TBs (two rates, both
 directions, 30 trials at 30 dB each), preserving the original calibration.
-The multiple-source evidence loader and its controller integration passed
-focused checks. Full-band lower-rate qualification remains pending; the
-combined five-candidate YAML is not yet an accepted final-run command.
+The multiple-source loader and controller integration passed focused checks.
+Full-band rates 0.82 and 0.85 each had 0/30 initial CRC failures in both DL and
+UL at 30 dB, meeting the configured pointwise 95%-confidence/10%-BLER gate.
+The combined five-candidate configuration preflight also passed. Its integrated
+throughput/IQ execution remains pending: the existing 3-DL/4-UL/1-mixed pattern
+cannot deliver >6 Gbit/s DL, and the proposed DL-heavy TDD split has not yet
+been approved. No integrated adaptive or >6 Gbit/s pass is claimed.
 
 The YAML chooses the calibration destination under `results/`. Existing
 calibration CSVs are never overwritten: choose a new `calibration_file` in

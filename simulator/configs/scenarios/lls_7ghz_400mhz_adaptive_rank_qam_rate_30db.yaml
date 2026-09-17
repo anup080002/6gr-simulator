@@ -5,6 +5,9 @@ inherits:
 meta:
   scenario_id: lls_7ghz_400mhz_adaptive_rank_qam_rate_30db
   description: Full-band identity-AWGN rank, QAM and code-rate adaptation up to 0.9 with ideal delayed HARQ.
+simulation:
+  # Separate from both calibration seeds; repeatable execution, not a replay.
+  random_seed: 20260920
 research_adaptation:
   candidate_modulations: [1024QAM, 1024QAM, 256QAM, 1024QAM, 1024QAM]
   candidate_layers: [2, 4, 4, 4, 4]

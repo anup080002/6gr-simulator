@@ -231,9 +231,8 @@ At 30 dB in the original full-band calibration, 1024-QAM/rank 2/rate 0.9 and
 1024-QAM/rank 4/rate 0.9 had 12/30 DL and 10/30 UL failures and did not qualify
 at that point; it qualified only at the tested 32 dB point. This is pointwise
 calibration evidence, not integrated adaptive-run or statistical holdout
-qualification. The additional 0.82/0.85 full-band calibration and final
-throughput/IQ campaign remain pending. Do not call the combined YAML accepted
-until those executions and their artifacts are checked.
+qualification. The additional 0.82/0.85 calibration subsequently completed as
+recorded below; the integrated throughput/IQ campaign remains pending.
 
 ### Four-port IQ export verified 18 September
 
@@ -260,3 +259,36 @@ shows the inferred delimiter and successful explicit comma import. The test
 now specifies the documented CSV delimiter/header without changing assertions
 or waveform outputs. This is component verification, not full-band throughput
 acceptance, statistical BLER qualification or a verified Keysight import.
+
+### Lower-rate full-band calibration complete: 18 September, 01:20 IST
+
+All 120 additional independent initial attempts completed: 30 each for
+1024-QAM/rank 4 at rates 0.82 and 0.85 in DL and UL, with zero CRC failures
+and exact payload recovery. Each point meets the configured one-sided 95%
+binomial upper-bound gate for 10% BLER; this does not establish zero true
+BLER or integrated adaptive-run qualification. The executed-source hashes
+were unchanged through process exit. The log is
+`logs/research_adaptive_full264_20260918/rate_calibration_082_085.log`.
+
+Both immutable calibration datasets are retained:
+
+| Dataset | Actual trials | CSV SHA256 |
+| --- | ---: | --- |
+| `results/research_adaptation_calibration/full264_20260918/trials.csv` | 540 | `971f3a9d4bce57125f9b9fbf266703dff4cd0bbe295e5a97b0901eaedf4f59e5` |
+| `results/research_adaptation_calibration/rates082_085_30db_20260918/trials.csv` | 120 | `8b45fd678e14620dc12f6e62362dd825bb373ef3377c0841f1c93cee0d730fe6` |
+
+The combined full-band profile passed constructor/allocation preflight in
+both directions, with all five candidate profiles matched, four physical
+ports, 264 PRBs, 120 kHz SCS, FFT 4096 and 491.52 MHz sampling. The audit
+verified the lower-rate eligibility and retained rank-4/rate-0.9 rejection
+at 30 dB. See `combined_full264_preflight.log`, ending with
+`COMBINED_FULL264_PREFLIGHT_PASS_NOT_INTEGRATED_RUN` in the same log folder.
+
+The integrated profile uses seed 20260920, distinct from calibration seeds
+11 and 20260919. Its actual throughput and final IQ artifacts have not yet
+been executed. The pending user choice is the TDD tradeoff: retain the existing
+3-DL/4-UL/1-mixed pattern, or use the proposed 5-DL/2-UL/1-mixed pattern for
+the >6 Gbit/s DL attempt. The existing pattern cannot meet that DL target,
+even with zero decoding errors; changing the pattern reduces UL airtime.
+No proposed TDD change has been silently applied and no throughput target is
+declared passed from calibration or allocation arithmetic.

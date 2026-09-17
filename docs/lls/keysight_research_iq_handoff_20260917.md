@@ -1,5 +1,11 @@
 # Research IQ handoff: 7 GHz / 400 MHz / TDD / 1024-QAM
 
+This handoff describes the retained **two-layer** captures. The newer four-port
+adaptive rank/QAM/code-rate work is tracked in
+[the four-port integration record](research_4x4_awgn_harq_integration_20260917.md).
+Do not treat these older fixed-mode captures as evidence that the new adaptive
+400 MHz run has passed.
+
 ## Available verified package
 
 ### Selected rate-0.82 capture: ten milliseconds
@@ -26,8 +32,9 @@ The native capture and file readback passed. An independent audit verified
 20 artifact hashes, all stream lengths, MAT container headers, TDD silence,
 RX noise presence and delivered-bit accounting. Small receipts and the
 read-only audit script are in `evidence_20260917/research_selected_iq_10ms`.
-Final-source full regression is running; actual Keysight import is not
-verified. This remains an optional research experiment, not qualified NR
+Full regression was subsequently stopped at the user's request; no full-suite
+qualification is claimed. Actual Keysight import is not verified. This remains
+an optional research experiment, not qualified NR
 or standardized 6G behavior.
 
 The original auxiliary CSV check failed because MATLAB guessed underscore
