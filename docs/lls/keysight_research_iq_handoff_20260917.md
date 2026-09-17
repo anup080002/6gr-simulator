@@ -12,6 +12,14 @@ Keysight application or instrument test. Its measured payload result was
 3/3 DL and 4/4 UL TBs correct. The code-rate comparison runs separately;
 this package is not yet a best-throughput selection.
 
+A separate read-only PowerShell audit verified all 20 unique file hashes,
+all eight WIQ byte/sample counts, the contiguous TDD clock and unique-TB
+goodput accounting. It also checked exact TX silence over 1,105,792
+inactive complex samples across ports and nonzero RX noise in all 18
+inactive port/slot intervals. The receipt is
+`evidence_20260917/research_tdd_link_committed_30db/independent_export_audit.json`.
+This audit did not reexecute PHY decoding or Keysight import.
+
 ## Choose the correct capture point
 
 | Directory | Meaning |

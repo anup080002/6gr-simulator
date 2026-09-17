@@ -50,6 +50,14 @@ new comparison runtime has not yet completed, and final-source regression
 is pending. Existing frozen-source regressions do not qualify this new
 matrix profile.
 
+First completed candidate: rate 0.75 executed all 80 slots / 10 ms from
+clean commit `91046b231f28449dea7961906a01e60deb6d648e`, with **30/30 DL
+and 40/40 UL TBs correct**. The 4,915,200-sample clock gives the same
+1.720512 Gbit/s DL and 2.294016 Gbit/s UL goodput as the one-ms observation.
+Receipts are in `evidence_20260917/research_rate075_10ms`. This is one of
+four candidates, not a final winner or statistical BLER qualification;
+the remaining candidates continue in the same live process.
+
 Run the actual comparison on the Windows server from this branch:
 
 ```powershell
