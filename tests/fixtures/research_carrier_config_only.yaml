@@ -1,0 +1,15 @@
+# Configuration-translation fixture only: not a waveform acceptance scenario.
+inherits:
+  - ../../simulator/configs/scenarios/dl_4ghz_baseline.yaml
+  - ../../simulator/configs/bands/band_7ghz_400mhz_research.yaml
+meta:
+  scenario_id: research_carrier_config_only
+  description: Custom carrier configuration translation with initial access explicitly disabled; no link execution.
+  research_class: optional_research_experiment
+reference_signals:
+  ssb_enabled: false
+  pbch_enabled: false
+initial_access:
+  enabled: false
+random_access:
+  enabled: false

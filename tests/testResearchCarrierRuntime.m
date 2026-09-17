@@ -42,6 +42,22 @@ assert(isequal(replayed.DefaultIdentity,snapshot.DefaultIdentity));
 
 baseline=sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
     'simulator','configs','scenarios','dl_4ghz_baseline.yaml'));
+% Exercise the real full-scenario mapper, not only the frame component.
+resolved=sixgr.util.mergeStruct(baseline.toStruct(),raw);
+sixgr.lls6g.config.validateScenarioConfig(resolved);
+% Enabled NR initial access is not silently accepted on a CUSTOM carrier.
+localThrows(@()sixgr.lls6g.buildInternalConfig(resolved, ...
+    fullfile(tempdir,'research_carrier_config_validation')), ...
+    "sixgr:phy:frame:UnsupportedFrequencyRange");
+labConfig=sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
+    'tests','fixtures','research_carrier_config_only.yaml'));
+internal=sixgr.lls6g.buildInternalConfig(labConfig, ...
+    fullfile(tempdir,'research_carrier_config_validation'));
+assert(internal.frequency.research_mode);
+assert(internal.phy.carrier.NSizeGrid==raw.frequency.n_size_grid);
+assert(internal.phy.waveform.sampleRate_Hz==raw.waveform.explicit_sample_rate_hz);
+assert(internal.phy.waveform.fftSize==raw.waveform.explicit_fft_size);
+assert(internal.phy.frameStructure.CarrierGrid.StandardNR==false);
 wrongClass=baseline.toStruct();
 wrongClass.frequency.research_mode=true;
 localThrows(@()sixgr.lls6g.config.validateScenarioConfig(wrongClass), ...

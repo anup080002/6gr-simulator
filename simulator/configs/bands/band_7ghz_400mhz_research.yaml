@@ -18,6 +18,11 @@ frequency:
   research_mode: true
   minimum_low_guardband_hz: 9920000
   minimum_high_guardband_hz: 9920000
+global_radio_scope:
+  numerology_mu: 3
+frame_timing:
+  slot_duration_ms: 0.125
+  slots_per_frame: 80
 frame:
   scs_khz: 120
   cp_type: normal

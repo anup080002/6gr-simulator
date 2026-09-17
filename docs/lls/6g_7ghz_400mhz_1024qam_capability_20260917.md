@@ -92,6 +92,28 @@ coded Qm=10 uplink described above; the strict NR rejection must remain.
 
 ## Implemented frame component: 17 September, 10:09 IST
 
+Follow-up at 10:24 IST: the full scenario loader and `buildInternalConfig`
+translation also pass in `testResearchCarrierRuntime` (MATLAB exit 0,
+26.84 s test execution). The carrier fragment now owns coherent derived
+timing aliases: mu=3, 0.125 ms slots and 80 slots/frame. The explicit
+configuration-only fixture is `tests/fixtures/research_carrier_config_only.yaml`;
+it disables initial access, SSB/PBCH and PRACH. It does not execute a waveform
+or establish a connected link. The test also retains the rejection of enabled
+NR SSB timing on a CUSTOM carrier; no automatic signal disabling was added.
+Failed full-config and malformed-fixture iterations remain under
+`logs/research_carrier_full_config_20260917` and
+`logs/research_carrier_lab_config_20260917`; passing evidence is under
+`logs/research_carrier_lab_config_v2_20260917` and the small tracked receipt
+`docs/lls/evidence_20260917/research_carrier_full_config`.
+
+Required guards followed by unfiltered `testAll` are running on the immutable
+`cef3851621cfaa27d7362cbe7664ae2e33217b77` checkpoint in the separate validation
+worktree, with logs in `logs/checkpoint_cef38516_validation_20260917`.
+The original launcher failed before any tests because MATLAB `run` changed
+directory; its log is retained and the retry explicitly selects the checkout.
+That checkpoint run does not cover the later full-config fixture/timing-alias
+addition, and is not a final-source or 400 MHz link qualification.
+
 `simulator/configs/bands/band_7ghz_400mhz_research.yaml` is a reusable band/frame
 fragment, not yet a complete runnable bidirectional 1024-QAM scenario. It
 declares the research opt-in, TDD pattern, 264 PRBs at 120 kHz, 4096-point FFT,

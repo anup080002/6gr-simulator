@@ -1,0 +1,1 @@
+{"schema_version":1,"status":"passed","scope":"focused_tests","started_utc":"2026-09-17T04:53:09.487Z","matlab_version":"26.1.0.3312084 (R2026a) Update 4","matlab_release":"2026a","computer":"PCWIN64","selected_tests":["testResearchCarrierRuntime"],"baseline_12db_qualified":false,"test_count":1,"failed_count":0,"duration_s":26.8527079,"finished_utc":"2026-09-17T04:54:14.591Z"}
