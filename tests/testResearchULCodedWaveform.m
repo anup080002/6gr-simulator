@@ -23,7 +23,7 @@ assert(isequal(size(tx.Grid),[frame.NRB*12 frame.SymbolsPerSlot a.NumLayers]));
 % SNR authority is average transmitted data-RE EPRE per receive port on an
 % explicitly identity AWGN channel; use the measured OFDM noise transform.
 dataPower=mean(abs(tx.Grid(a.DataIndices)).^2,'all');
-referenceSNRdB=40;
+for referenceSNRdB=s.simulation.snr_db+reshape(s.simulation.snr_sweep_offsets_db,1,[])
 noiseGridVariance=dataPower/10^(referenceSNRdB/10);
 noiseSampleVariance=noiseGridVariance/tx.OFDM.SampleToGridNoiseVarianceGain;
 noise=sqrt(noiseSampleVariance/2)*(randn(size(tx.Waveform))+1j*randn(size(tx.Waveform)));
@@ -36,7 +36,18 @@ assert(size(rx.ChannelEstimate,1)==frame.NRB*12 && ...
 assert(rx.NoiseVariance>0 && rx.NoiseSource=="received_DMRS_nrChannelEstimate");
 evm=sqrt(mean(abs(rx.EqualizedSymbols(:)-tx.LayerSymbols(:)).^2)/ ...
     mean(abs(tx.LayerSymbols(:)).^2));
-assert(evm<0.03,'Research UL high-SNR EVM regression.');
+if referenceSNRdB==40
+    assert(evm<0.03,'Research UL high-SNR EVM regression.');
+end
+assert(evm<1.5*10^(-referenceSNRdB/20), ...
+    'Research UL EVM exceeds the declared AWGN/channel-estimation error budget.');
+fprintf('RESEARCH_UL_CODED_WAVEFORM_POINT Qm=%d G=%d TBS=%d layers=%d EVM=%g measured_noise=%g reference_noise=%g reference_SNR_dB=%g integrated_TDD=0\n', ...
+    a.Qm,a.G,a.TransportBlockSize,a.NumLayers,evm,rx.NoiseVariance,noiseGridVariance,referenceSNRdB);
+end
+% Wrong receive-only identity must not recover the transmitted payload.
+wrongIdentity=s; wrongIdentity.research_ul.rnti=s.research_ul.rnti+1;
+wrongRx=sixgr.phy.ul.research.PUSCHLink.receive(wrongIdentity,slot,tx.Waveform+noise);
+assert(~wrongRx.CRCPass && ~isequal(wrongRx.TransportBlock,tb));
 % Standard receiver and procedure guards remain fail-closed.
 localThrows(@()sixgr.phy.ul.pusch.PUSCHModulator.normalizeModulation('1024QAM'), ...
     'sixgr:pusch:UnsupportedModulation');
@@ -49,8 +60,7 @@ localThrows(@()sixgr.phy.ul.research.PUSCHLink.allocation(bad,slot), ...
 localThrows(@()sixgr.phy.ul.research.PUSCHLink.allocation(s,0), ...
     'sixgr:research:ULSlotRequired');
 ok=true;
-fprintf('RESEARCH_UL_CODED_WAVEFORM_PASS Qm=%d G=%d TBS=%d layers=%d EVM=%g measured_noise=%g reference_noise=%g reference_SNR_dB=%g integrated_TDD=0\n', ...
-    a.Qm,a.G,a.TransportBlockSize,a.NumLayers,evm,rx.NoiseVariance,noiseGridVariance,referenceSNRdB);
+fprintf('RESEARCH_UL_CODED_WAVEFORM_PASS independent_receive_identity_rejection=1 integrated_TDD=0\n');
 end
 
 function localThrows(action,id)

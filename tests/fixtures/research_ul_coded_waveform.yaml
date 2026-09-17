@@ -2,7 +2,11 @@
 inherits:
   - research_carrier_config_only.yaml
   - ../../simulator/configs/coding/research_ul_1024qam.yaml
+  - ../../simulator/configs/coding/research_dl_1024qam.yaml
 meta:
   scenario_id: research_ul_coded_waveform
   description: Full 400 MHz research UL coded waveform component and independent DMRS receiver.
   research_class: optional_research_experiment
+simulation:
+  snr_db: 30
+  snr_sweep_offsets_db: [10, 0]

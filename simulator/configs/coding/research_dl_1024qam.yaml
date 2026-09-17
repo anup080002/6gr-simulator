@@ -1,0 +1,29 @@
+# DL lab waveform on a custom research carrier, not connected NR compliance.
+meta:
+  research_class: optional_research_experiment
+research_dl:
+  enabled: true
+  modulation: 1024QAM
+  target_code_rate: 0.75
+  num_layers: 2
+  prb_start: 0
+  num_prbs: 264
+  symbol_allocation: [0, 14]
+  mapping_type: A
+  rnti: 1
+  nid: 1
+  transform_precoding: false
+  uci_enabled: false
+  harq_enabled: false
+  precoding: identity_unit_total_power
+  dmrs_configuration_type: 1
+  dmrs_length: 1
+  dmrs_type_a_position: 2
+  dmrs_additional_position: 1
+  dmrs_cdm_groups_without_data: 2
+  dmrs_port_set: [0, 1]
+  dmrs_identity: 1
+  dmrs_n_scid: 0
+  rv: 0
+  decoder_iterations: 25
+  decoder_algorithm: Normalized min-sum

@@ -1,0 +1,4 @@
+name,ok,msg,duration_s,identifier,extended_report_available,diagnostic_rendering_error
+testResearchULCodedWaveform,1,,45.0558835,,0,
+testResearchDLCodedWaveform,1,,11.4549439,,0,
+test6GParameterCatalog,1,,0.9597529,,0,

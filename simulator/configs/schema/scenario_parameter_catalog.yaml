@@ -16,6 +16,7 @@ top_level_order:
   - control
   - pdsch6gr
   - research_ul
+  - research_dl
   - harq
   - random_access
   - impairments
@@ -599,7 +600,7 @@ sections:
       ul_mcs_index: {required: true, type: integer, min: 0, max: 28}
   research_ul:
     required: false
-    parameters:
+    parameters: &research_shared_channel_parameters
       enabled: {required: true, type: boolean}
       modulation: {required: true, type: string, allowed_values: [QPSK, 16QAM, 64QAM, 256QAM, 1024QAM]}
       target_code_rate: {required: true, type: number, min_exclusive: 0, max: 1}
@@ -625,6 +626,9 @@ sections:
       rv: {required: true, type: integer, min: 0, max: 3}
       decoder_iterations: {required: true, type: integer, min: 1}
       decoder_algorithm: {required: true, type: string, allowed_values: [Belief propagation, Layered belief propagation, Normalized min-sum, Offset min-sum]}
+  research_dl:
+    required: false
+    parameters: *research_shared_channel_parameters
   control:
     required: true
     parameters:

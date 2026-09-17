@@ -22,6 +22,19 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ### Research UL implementation checkpoint (17 September, 10:34 IST)
 
+Follow-up at 10:43 IST: shared coding/receive mechanics now live in
+`+sixgr/+phy/+research/SharedChannelLink.m`; `PUSCHLink` remains the explicit
+UL entry point. `research_dl` adds native PDSCH 1024-QAM modulation on the
+research carrier without claiming connected NR capability negotiation.
+Both full-width two-layer DL and UL component tests pass at 40 and **30 dB**
+configured reference Es/N0, with exact TB recovery. At 30 dB the receiver
+RMS EVM was 3.77308% DL and 3.79169% UL. The UL wrong-receiver-RNTI test
+correctly rejected the payload. These are single-slot component observations,
+not statistically qualified BLER, integrated TDD throughput or TX EVM.
+The parameter catalog test also passed: **3/3 tests, MATLAB exit 0**.
+Logs: `logs/research_dl_ul_30db_components_20260917`; small receipts:
+`docs/lls/evidence_20260917/research_dl_ul_30db_components`.
+
 `+sixgr/+phy/+ul/+research/PUSCHLink.m` now provides explicitly opted-in
 research allocation, coded transmission and independent scheduled reception.
 The YAML surface is `research_ul`, with reusable settings in
