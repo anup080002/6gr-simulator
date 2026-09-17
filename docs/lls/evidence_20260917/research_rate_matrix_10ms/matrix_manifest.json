@@ -1,0 +1,14 @@
+{
+  "Status": "completed",
+  "ExecutionCompleted": true,
+  "AllCandidatesPassed": false,
+  "ResearchClass": "optional_research_experiment",
+  "StandardNR": false,
+  "SelectionMeaning": "best_observed_bidirectional_goodput_among_configured_candidates",
+  "SelectionGate": "both_directions_observed_BLER_at_or_below_configured_limit",
+  "MaximumObservedBLER": 0,
+  "StatisticallyQualified": false,
+  "GlobalOptimumClaimed": false,
+  "SelectionAvailable": true,
+  "SelectedScenarioID": "research_400mhz_rate080"
+}

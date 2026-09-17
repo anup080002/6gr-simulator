@@ -1,0 +1,28 @@
+{
+  "ExecutionCompleted": true,
+  "AllCandidatesPassed": false,
+  "CandidateCount": 4,
+  "FixedNoiseBudgetVerified": true,
+  "BestObserved": {
+    "ScenarioID": "research_400mhz_rate080",
+    "ConfigHash": "3a82bf0d04c6f8c31f304b3c972b4fa49e4b99aec261f25efe9a848a3197fb83",
+    "RunFolder": "C:\\Users\\anup0\\OneDrive\\Documents\\Simulator\\6GR Simulator_v2_clean_main\\logs\\research_rate_matrix_91046b23_20260917\\execution\\lls\\research_400mhz_rate_matrix\\committed_source\\runs\\lls\\research_400mhz_rate080\\candidate_2",
+    "DLTargetCodeRate": 0.8,
+    "ULTargetCodeRate": 0.8,
+    "ReferenceSNRdB": 30,
+    "Layers": 2,
+    "HorizonSeconds": 0.01,
+    "DLTransportBlocks": 30,
+    "ULTransportBlocks": 40,
+    "DLBLER": 0,
+    "ULBLER": 0,
+    "DLGoodputBitsPerSecond": 1.819512E+9,
+    "ULGoodputBitsPerSecond": 2.426016E+9,
+    "CombinedGoodputBitsPerSecond": 4.245528E+9,
+    "AllTBsPassed": true,
+    "EligibleForSelection": true,
+    "Source": "actual_coded_research_waveform",
+    "StandardNR": false
+  },
+  "StatisticalQualification": false
+}

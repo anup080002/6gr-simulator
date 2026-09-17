@@ -32,9 +32,11 @@ among rates 0.75, 0.80, 0.82, 0.85 and 0.90 for the fixed two-layer setup.
 
 Rate 0.85 completed with 6/30 DL and 5/40 UL TBs correct (observed BLER 0.8
 and 0.875); its actual goodput fell to 0.3833904 / 0.319492 Gbit/s. Rate
-0.90 is still executing, but its observed CRC failures already disqualify it
-under the preconfigured zero-observed-BLER selection gate. Do not present
-its unfinished run as a final throughput/BLER result. The original four-rate
+0.90 subsequently completed with 0/30 DL and 0/40 UL TBs correct: observed
+BLER is 1 in both directions and delivered goodput is zero. The completed
+four-rate comparison and independent accounting receipt are retained in
+`evidence_20260917/research_rate_matrix_10ms`. Execution completion does not
+mean all candidates passed. The original four-rate
 matrix excludes the later refinement point and therefore selects 0.80;
 the independent 0.82 run provides the additional selection evidence.
 
@@ -43,8 +45,11 @@ point with full-frame IQ capture, playback export, plots and strict all-TB
 success enabled. It changes only output/acceptance flags and scenario
 identity, not PHY/noise/decoder settings. The capture reruns the actual
 waveforms and receiver; it does not reuse a pass flag or fabricate samples.
-At this checkpoint capture execution and final-source full regression are
-still pending. A same-seed capture repeat is not an independent statistical
+The capture was launched at 12:05 IST from immutable commit
+`6be2985f9f6b78b4349c91ab71da81f32e25f7c8`; logs are under
+`logs/research_selected_iq_6be2985f_20260917`. Its driver runs unfiltered
+`testAll` and required focused guards after capture. Capture completion and
+final-source full regression are still pending. A same-seed capture repeat is not an independent statistical
 reliability trial. Research/initial-access limitations remain unchanged.
 
 ```powershell
