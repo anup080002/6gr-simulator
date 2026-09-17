@@ -21,6 +21,22 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ## Existing capability and verified source boundaries
 
+### Rate-matrix checkpoint guards complete (17 September, 14:58 IST)
+
+All **18 focused guards passed**, zero failures, on immutable source
+`91046b231f28449dea7961906a01e60deb6d648e` (MATLAB R2026a Update 4,
+10,523.45 seconds). Coverage includes fixed-link-budget rate-matrix config,
+scenario/catalog validation and runners, DL/UL reference points, strict proxy
+guards, scheduler grants, exports/artifact preservation, and both required
+E2E truth/proxy tests. Original receipts are preserved in
+`evidence_20260917/checkpoint_91046b23_focused_guards`.
+
+This checkpoint predates the selected rate-0.82 IQ YAML. These 18 tests do not
+include `testResearchTDDLink`; they do not override the newer-source failure
+below, qualify R2023b/Keysight import, or establish final-source acceptance.
+Its unfiltered `testAll` started at 14:58:50 IST in the same existing process.
+All four existing validation jobs continue; no extra MATLAB job was launched.
+
 ### Selected-source regression failure (17 September, observed 14:42 IST)
 
 The unfiltered suite on `6be2985f9f6b78b4349c91ab71da81f32e25f7c8`
