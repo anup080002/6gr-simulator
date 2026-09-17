@@ -176,3 +176,39 @@ configuration snapshots plus incrementally written actual trial rows are in
 `results/research_adaptation_calibration/full264_20260918`. Completion and
 candidate qualification must be checked from those artifacts; launch is not
 completion. The batch does not launch the final adaptive IQ campaign.
+
+### Code-rate adaptation authorized 18 September
+
+The user approved calibrated code rates below 0.9, retaining 0.9 as the
+maximum. At the 00:27 IST checkpoint, the full-band DL 1024-QAM/rank-4
+rate-0.9 point had completed 30 trials at 30 dB with 12 CRC failures.
+This candidate does not qualify at that point under the configured 10%
+first-attempt BLER confidence gate. The original CSV remains unchanged.
+
+`simulator/configs/scenarios/lls_7ghz_400mhz_rate_calibration_30db.yaml`
+adds a separate calibration profile for 1024-QAM/rank 4 at rates 0.82 and
+0.85, with 30 independent initial attempts per direction per rate at 30 dB
+(120 planned trials). It inherits the same 264-PRB allocation, four physical
+ports, receiver and noise-reference policy, uses a distinct configured seed,
+and writes to a separate results directory. These rates are candidates,
+not already qualified settings or a promised >6 Gbit/s result.
+
+The additional calibration YAML and the combined five-candidate YAML
+`lls_7ghz_400mhz_adaptive_rank_qam_rate_30db.yaml` passed runtime config loading.
+The new `loadAWGNCalibration` helper passed focused checks using retained
+actual 8-PRB calibration: exact single-source thresholds, reordered candidate
+identity, evidence split across files, wrong-profile rejection, duplicate
+content rejection, insufficient-count rejection without pooling files, and
+rejection of a still-running producer. Evidence is in
+`logs/research_adaptive_full264_20260918/calibration_library_checks.log`,
+ending with `CALIBRATION_LIBRARY_AND_RATE_CONFIG_PASS`.
+
+The original 540-trial calibration remains running, with its executed MATLAB
+sources unchanged (SHA256 rechecked after the helper tests). Run the additional
+rate calibration serially after it finishes. The controller still consumes
+one calibration file: wiring in the tested loader and retaining its per-source
+provenance in the integrated run are pending. Do not launch the combined YAML
+as an accepted adaptive run yet. Never concatenate candidate indices or pool
+potentially dependent trials to manufacture a confidence pass.
+Then validate the integrated rank/QAM/rate decision loop, frozen HARQ
+retransmission allocation and unique-payload goodput. `testAll` stays stopped.

@@ -675,6 +675,7 @@ sections:
       margin_max_db: {required: true, type: number}
       max_measurement_age_slots: {required: true, type: integer, min: 1}
       calibration_file: {required: true, type: string, nonempty: true}
+      calibration_files: {required: false, type: string_list}
       calibration_snr_db: {required: true, type: number_list}
       calibration_trials_per_point: {required: true, type: integer, min: 1}
       calibration_confidence: {required: true, type: number, min_exclusive: 0, max: 1}

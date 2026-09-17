@@ -1,0 +1,18 @@
+# Additional actual-PHY calibration only; not final adaptive-run acceptance.
+# Preserve the separate rank/QAM calibration and its unchanged evidence.
+# The consumer must explicitly reconcile these candidates by physical profile,
+# not by candidate index, before combining this dataset with the original one.
+inherits:
+  - lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_rate_calibration_30db
+  description: Additional full-band 1024-QAM rank-4 rate calibration at 30 dB; no throughput qualification claimed.
+simulation:
+  random_seed: 20260919
+research_adaptation:
+  candidate_modulations: [1024QAM, 1024QAM]
+  candidate_layers: [4, 4]
+  candidate_code_rates: [0.82, 0.85]
+  bootstrap_candidate: 1
+  calibration_snr_db: [30]
+  calibration_file: results/research_adaptation_calibration/rates082_085_30db_20260918/trials.csv

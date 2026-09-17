@@ -236,7 +236,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Four-layer run failed; preserve results and lo
 
 The latest requested **4x4 identity-AWGN adaptive benchmark** supersedes that
 physical-CDL run as the active task. Its candidate menu is 1024-QAM/rank 2,
-1024-QAM/rank 4, and 256-QAM/rank 4, with rate 0.9 and ideal delayed HARQ.
+1024-QAM/rank 4, and 256-QAM/rank 4, initially with rate 0.9 and ideal delayed HARQ.
+Code-rate adaptation up to 0.9 is now approved; additional 1024-QAM/rank-4
+rates 0.82 and 0.85 require their own coded calibration before selection.
 The new ILLA/OLLA path requires actual coded calibration for the exact
 allocation; it does not reuse the two-layer capture as calibration. See
 [adaptive implementation and acceptance boundary](docs/lls/research_4x4_awgn_harq_integration_20260917.md).
@@ -259,7 +261,15 @@ New-Item -ItemType Directory -Path $logRoot -ErrorAction Stop | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Focused preflight failed; preserve logs and do not launch calibration.' }
 & $matlabExe -wait -singleCompThread -logfile "$logRoot/calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml');"
 if ($LASTEXITCODE -ne 0) { throw 'Calibration failed; preserve its partial CSV, provenance and logs.' }
+& $matlabExe -wait -singleCompThread -logfile "$logRoot/rate_calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_rate_calibration_30db.yaml');"
+if ($LASTEXITCODE -ne 0) { throw 'Additional rate calibration failed; preserve its partial CSV and logs.' }
 ```
+
+The additional rate profile executes 120 actual initial TBs (two rates, both
+directions, 30 trials at 30 dB each), preserving the original calibration.
+The multiple-source evidence loader passed focused checks, but controller
+integration and full-band rate qualification remain pending; the combined
+five-candidate YAML is not yet an accepted final-run command.
 
 The YAML chooses the calibration destination under `results/`. Existing
 calibration CSVs are never overwritten: choose a new `calibration_file` in
