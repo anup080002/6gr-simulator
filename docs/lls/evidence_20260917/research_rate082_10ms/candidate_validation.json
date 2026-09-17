@@ -1,0 +1,33 @@
+{
+  "ExecutionCompleted": true,
+  "AllTBsPassed": true,
+  "SourceCommit": "15aa291cc7115519e6cdfd7de59276f907f98350",
+  "FixedNoiseBudgetVerified": true,
+  "Summary": [
+    {
+      "Direction": "DL",
+      "TransportBlocks": 30,
+      "SuccessfulUniqueTBs": 30,
+      "BLER": 0,
+      "DeliveredUniqueBits": 1.86828E+7,
+      "HorizonSeconds": 0.01,
+      "GoodputBitsPerSecond": 1.86828E+9,
+      "BER": 0,
+      "Source": "actual_coded_research_waveform",
+      "StandardNR": false
+    },
+    {
+      "Direction": "UL",
+      "TransportBlocks": 40,
+      "SuccessfulUniqueTBs": 40,
+      "BLER": 0,
+      "DeliveredUniqueBits": 2.49104E+7,
+      "HorizonSeconds": 0.01,
+      "GoodputBitsPerSecond": 2.49104E+9,
+      "BER": 0,
+      "Source": "actual_coded_research_waveform",
+      "StandardNR": false
+    }
+  ],
+  "FinalRegressionPending": true
+}

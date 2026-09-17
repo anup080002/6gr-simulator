@@ -21,6 +21,40 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ## Existing capability and verified source boundaries
 
+### Selected capture operating point (17 September, 11:55 IST)
+
+The intermediate **rate 0.82 passed 30/30 DL and 40/40 UL TBs** over 80
+slots / 10 ms from clean commit `15aa291cc7115519e6cdfd7de59276f907f98350`.
+Native allocation produced 622,760 information bits per TB. Actual delivered
+goodput is **1.868280 Gbit/s DL, 2.491040 Gbit/s UL**, or 4.359320 Gbit/s
+combined over the full TDD clock. This is the highest passing tested point
+among rates 0.75, 0.80, 0.82, 0.85 and 0.90 for the fixed two-layer setup.
+
+Rate 0.85 completed with 6/30 DL and 5/40 UL TBs correct (observed BLER 0.8
+and 0.875); its actual goodput fell to 0.3833904 / 0.319492 Gbit/s. Rate
+0.90 is still executing, but its observed CRC failures already disqualify it
+under the preconfigured zero-observed-BLER selection gate. Do not present
+its unfinished run as a final throughput/BLER result. The original four-rate
+matrix excludes the later refinement point and therefore selects 0.80;
+the independent 0.82 run provides the additional selection evidence.
+
+`lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml` repeats the selected
+point with full-frame IQ capture, playback export, plots and strict all-TB
+success enabled. It changes only output/acceptance flags and scenario
+identity, not PHY/noise/decoder settings. The capture reruns the actual
+waveforms and receiver; it does not reuse a pass flag or fabricate samples.
+At this checkpoint capture execution and final-source full regression are
+still pending. A same-seed capture repeat is not an independent statistical
+reliability trial. Research/initial-access limitations remain unchanged.
+
+```powershell
+New-Item -ItemType Directory -Path logs/wideband_selected_iq_01 -ErrorAction Stop
+matlab -wait -singleCompThread -logfile logs/wideband_selected_iq_01/matlab.log -batch "setup6GRSimToolkit('Verbose',false); r=run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml','logs/wideband_selected_iq_01','run_01'); assert(r.Ok);"
+```
+
+The source and small measured receipts are on the work branch. Large raw
+IQ stays under `logs`; running the command regenerates it on the server.
+
 ### Fixed-budget code-rate comparison (17 September, 11:16 IST)
 
 `research_400mhz_rate_matrix.yaml` extends the normal matrix entry point with

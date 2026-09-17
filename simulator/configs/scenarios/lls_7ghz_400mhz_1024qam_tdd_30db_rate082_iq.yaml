@@ -1,0 +1,12 @@
+# Best passing tested rate for the fixed two-layer lab configuration.
+# This is not a global throughput optimum or statistical BLER qualification.
+inherits:
+  - research_400mhz_rate082.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq
+  description: Strict ten-ms repeat of the passing rate-0.82 lab point, with separate clean TX and noisy RX IQ exports.
+research_link:
+  capture_iq: true
+  export_keysight: true
+  save_plots: true
+  require_all_tb_success: true

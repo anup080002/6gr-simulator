@@ -1,0 +1,3 @@
+Direction,TransportBlocks,SuccessfulUniqueTBs,BLER,DeliveredUniqueBits,HorizonSeconds,GoodputBitsPerSecond,BER,Source,StandardNR
+"DL",30,6,0.8,3833904,0.01,383390400,0.00026740366999278,"actual_coded_research_waveform",0
+"UL",40,5,0.875,3194920,0.01,319492000,0.000227196612121743,"actual_coded_research_waveform",0
