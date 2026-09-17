@@ -1,0 +1,52 @@
+# Fixed-rank research observation, not standardized 6G/UL-1024QAM conformance.
+inherits:
+  - lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_4layer_64gnb_4ue_30db
+  description: Four-layer DL/UL, 64 gNB and 4 UE physical polarized elements, fixed DFT beams, CDL-C, configured 30 dB noise reference.
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 30
+  doppler_hz: 0
+  mobility_kmph: 0
+  los_enabled: false
+  pathloss_enabled: false
+  pathloss_model: none
+  shadow_fading_enabled: false
+  spatial_consistency_enabled: false
+research_dl:
+  num_layers: 4
+  dmrs_port_set: [0, 1, 2, 3]
+research_ul:
+  num_layers: 4
+  dmrs_port_set: [0, 1, 2, 3]
+research_link:
+  channel: physical_cdl
+  noise_reference: unit_constellation_per_layer_before_channel
+  # CSV/PNG and resolved antenna/precoder evidence; no multi-GB IQ retention.
+  capture_iq: false
+  export_keysight: false
+  require_all_tb_success: true
+research_spatial:
+  # nrCDL order: vertical, horizontal, polarization, panel rows, panel columns.
+  gnb_size: [8, 4, 2, 1, 1]
+  ue_size: [2, 1, 2, 1, 1]
+  spacing_wavelength: [0.5, 0.5, 1, 1]
+  polarization_angles_deg: [45, -45]
+  gnb_orientation_deg: [0, 0, 0]
+  ue_orientation_deg: [180, 0, 0]
+  element: '38.901'
+  polarization_model: Model-2
+  # Open-loop semi-unitary DFT beams: no transmitted-data/perfect-CSI selection.
+  gnb_dft_vertical: [0, 0, 0, 0]
+  gnb_dft_horizontal: [0, 1, 0, 1]
+  gnb_dft_polarization: [0, 0, 1, 1]
+  ue_dft_vertical: [0, 1, 0, 1]
+  ue_dft_horizontal: [0, 0, 0, 0]
+  ue_dft_polarization: [0, 0, 1, 1]
+  seed: 17
+  normalize_path_gains: true
+  normalize_channel_outputs: false
+  burst_policy: static_independent_slots
+  timing: configured_channel_filter_delay

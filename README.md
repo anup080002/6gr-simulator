@@ -215,6 +215,63 @@ File readback was verified; actual Keysight application import was not.
 Large generated IQ/log directories stay local, not in GitHub; the source,
 YAMLs and small evidence receipts are committed.
 
+The separate **four-layer / 64 gNB-element / 4 UE-element** scenario is
+`lls_7ghz_400mhz_4layer_64gnb_4ue_30db.yaml`. It uses actual polarized
+physical-element CDL-C propagation, fixed semi-unitary DFT beams, and
+per-resource DMRS channel estimation. It is **not** the passing two-layer
+identity-AWGN capture above. Its 30 dB value fixes noise relative to the
+pre-channel layer power; measured SINR and decoding success are not forced.
+It retains 1024-QAM/rate 0.82 and the 80-slot TDD horizon. Timing is configured,
+the channel is static with independently filtered slot bursts, and there is
+no adaptive CSI/beam feedback. CSV/PNG and antenna evidence go to `results/`;
+raw multichannel IQ capture is disabled. Run from the repository root:
+
+```powershell
+$runTag = 'tdd_400mhz_4layer_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff')
+$logRoot = 'logs/' + $runTag
+New-Item -ItemType Directory -Path $logRoot -ErrorAction Stop | Out-Null
+& $matlabExe -wait -singleCompThread -logfile "$logRoot/matlab.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_4layer_64gnb_4ue_30db.yaml','results','$runTag'); assert(out.Ok && out.ResultOk);"
+if ($LASTEXITCODE -ne 0) { throw 'Four-layer run failed; preserve results and logs. Do not label it a pass.' }
+```
+
+The latest requested **4x4 identity-AWGN adaptive benchmark** supersedes that
+physical-CDL run as the active task. Its candidate menu is 1024-QAM/rank 2,
+1024-QAM/rank 4, and 256-QAM/rank 4, with rate 0.9 and ideal delayed HARQ.
+The new ILLA/OLLA path requires actual coded calibration for the exact
+allocation; it does not reuse the two-layer capture as calibration. See
+[adaptive implementation and acceptance boundary](docs/lls/research_4x4_awgn_harq_integration_20260917.md).
+No full-band adaptive 30 dB or >6 Gbit/s pass is claimed here.
+
+The full-width candidate is
+`simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml`.
+It retains the existing 120 kHz / 264-PRB carrier and 3-DL/4-UL/1-mixed
+pattern; it is not the proposed DL-heavy >6 Gbit/s benchmark. Calibration
+executes 540 real independent initial TBs (three candidates, both directions,
+three reference-SNR points, 30 trials per point). It does not run `testAll`
+or generate a final IQ capture. From the repository root on the other server:
+
+```powershell
+$matlabExe = 'C:/Program Files/MATLAB/R2023b/bin/matlab.exe'
+$runTag = 'adaptive_calibration_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff')
+$logRoot = 'logs/' + $runTag
+New-Item -ItemType Directory -Path $logRoot -ErrorAction Stop | Out-Null
+& $matlabExe -wait -singleCompThread -logfile "$logRoot/preflight.log" -batch "setup6GRSimToolkit('Verbose',false); assert(testResearchFixedPorts()); assert(testResearchIdealDelayedHARQ());"
+if ($LASTEXITCODE -ne 0) { throw 'Focused preflight failed; preserve logs and do not launch calibration.' }
+& $matlabExe -wait -singleCompThread -logfile "$logRoot/calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml');"
+if ($LASTEXITCODE -ne 0) { throw 'Calibration failed; preserve its partial CSV, provenance and logs.' }
+```
+
+The YAML chooses the calibration destination under `results/`. Existing
+calibration CSVs are never overwritten: choose a new `calibration_file` in
+the YAML for a new campaign. Regenerate calibration on each MATLAB version;
+the current focused qualification used R2026a. MathWorks documents 1024-QAM
+support since R2023a for [PDSCH configuration](https://www.mathworks.com/help/5g/ref/nrpdschconfig.html)
+and [LDPC rate matching](https://www.mathworks.com/help/5g/ref/nrratematchldpc.html),
+but this is not proof that the complete repository passes on R2023b. Keep the
+preflight and calibration logs for that verification.
+
+Full-suite commands below are optional operator instructions, not part of
+the four-layer run; `testAll` remains stopped for the current work.
 For an independent full-suite run on the other server, with logs under `logs/`:
 
 ```powershell

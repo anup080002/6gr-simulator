@@ -1,0 +1,25 @@
+# Full-band research candidate, not a qualified >6 Gbit/s benchmark.
+# Retains the existing 120 kHz, 3-DL / 4-UL / 1-mixed TDD carrier.
+# The proposed DL-heavy pattern remains a separate user decision.
+inherits:
+  - lls_7ghz_400mhz_1024qam_tdd_30db.yaml
+  - ../coding/research_perfect_awgn_receiver.yaml
+  - ../coding/research_ideal_delayed_harq.yaml
+  - ../mimo/research_identity_4x4.yaml
+  - ../coding/research_adaptive_rank_qam.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_adaptive_rank_qam_30db
+  description: Full 264-PRB 4x4 identity-AWGN adaptive rank/QAM candidate with ideal delayed HARQ; not yet qualified.
+simulation:
+  n_slots: 80
+  snr_db: 30
+research_dl:
+  num_layers: 4
+  dmrs_port_set: [0, 1, 2, 3]
+  target_code_rate: 0.9
+research_ul:
+  num_layers: 4
+  dmrs_port_set: [0, 1, 2, 3]
+  target_code_rate: 0.9
+research_adaptation:
+  calibration_file: results/research_adaptation_calibration/full264_20260918/trials.csv

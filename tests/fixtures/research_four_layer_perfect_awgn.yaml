@@ -1,0 +1,19 @@
+# Component qualification only. This does NOT enable the requested HARQ
+# campaign or approve a change to the final scenario's SCS/TDD pattern.
+inherits:
+  - ../../simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db.yaml
+  - ../../simulator/configs/coding/research_perfect_awgn_receiver.yaml
+meta:
+  scenario_id: research_four_layer_perfect_awgn_component
+  description: Four-layer rate-0.9 BG1 perfect-identity-CSI receiver component, not final throughput acceptance.
+research_dl:
+  num_layers: 4
+  dmrs_port_set: [0, 1, 2, 3]
+  target_code_rate: 0.9
+research_ul:
+  num_layers: 4
+  dmrs_port_set: [0, 1, 2, 3]
+  target_code_rate: 0.9
+research_link:
+  capture_iq: false
+  export_keysight: false

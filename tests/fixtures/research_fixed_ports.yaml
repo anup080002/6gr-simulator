@@ -1,0 +1,10 @@
+inherits:
+  - research_four_layer_perfect_awgn.yaml
+  - ../../simulator/configs/mimo/research_identity_4x4.yaml
+meta:
+  scenario_id: research_fixed_ports_component
+  description: Fixed four physical ports and noise reference across rank/modulation changes; not adaptation qualification.
+research_dl:
+  num_prbs: 8
+research_ul:
+  num_prbs: 8

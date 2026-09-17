@@ -1,0 +1,14 @@
+# Ideal error-free delayed CRC feedback, not an executed PUCCH/PDCCH channel.
+harq:
+  enabled: true
+research_dl:
+  harq_enabled: true
+research_ul:
+  harq_enabled: true
+research_harq:
+  feedback_mode: ideal_delayed
+  num_processes: 16
+  max_transmissions: 4
+  rv_sequence: [0, 2, 3, 1]
+  feedback_delay_slots: 4
+  feedback_drain_slots: 4

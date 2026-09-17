@@ -1,0 +1,9 @@
+inherits:
+  - research_ideal_delayed_harq.yaml
+meta:
+  scenario_id: research_ideal_harq_runner_component
+  description: Integrated clock/export component fixture; not the final 30 dB throughput scenario.
+simulation:
+  snr_db: 40
+research_harq:
+  num_processes: 16

@@ -1,0 +1,12 @@
+inherits:
+  - research_four_layer_perfect_awgn.yaml
+  - ../../simulator/configs/coding/research_ideal_delayed_harq.yaml
+meta:
+  scenario_id: research_ideal_delayed_harq_component
+  description: Small-allocation component test of actual coded HARQ attempts, not throughput acceptance.
+research_dl:
+  num_prbs: 8
+research_ul:
+  num_prbs: 8
+research_harq:
+  num_processes: 1

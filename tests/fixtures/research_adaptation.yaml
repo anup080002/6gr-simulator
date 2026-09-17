@@ -1,0 +1,14 @@
+inherits:
+  - research_fixed_ports.yaml
+  - ../../simulator/configs/coding/research_ideal_delayed_harq.yaml
+  - ../../simulator/configs/coding/research_adaptive_rank_qam.yaml
+meta:
+  scenario_id: research_adaptation_component
+  description: Eight-PRB coded calibration and causal adaptive TDD component, not full-band throughput qualification.
+simulation:
+  n_slots: 16
+  snr_db: 48
+research_adaptation:
+  calibration_snr_db: [40]
+  calibration_trials_per_point: 30
+  calibration_file: results/component_validation/adaptation_component/calibration/trials.csv

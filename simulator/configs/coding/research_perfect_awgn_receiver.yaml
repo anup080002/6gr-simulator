@@ -1,0 +1,6 @@
+# Explicit ideal channel knowledge for the identity-AWGN research benchmark.
+# Noise remains independently estimated from received DMRS, not TX samples.
+research_receiver:
+  channel_estimation: perfect_identity_awgn
+  noise_estimation: received_dmrs
+  ldpc_base_graph: BG1

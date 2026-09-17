@@ -18,6 +18,11 @@ top_level_order:
   - research_ul
   - research_dl
   - research_link
+  - research_spatial
+  - research_receiver
+  - research_harq
+  - research_awgn_mimo
+  - research_adaptation
   - harq
   - random_access
   - impairments
@@ -633,15 +638,74 @@ sections:
   research_link:
     required: false
     parameters:
-      channel: {required: true, type: string, allowed_values: [identity_awgn]}
+      channel: {required: true, type: string, allowed_values: [identity_awgn, physical_cdl]}
       timing: {required: true, type: string, allowed_values: [preconfigured_slot_boundary]}
       rf: {required: true, type: string, allowed_values: [ideal_no_impairments]}
-      noise_reference: {required: true, type: string, allowed_values: [unit_constellation_per_port_after_precoding]}
+      noise_reference: {required: true, type: string, allowed_values: [unit_constellation_per_port_after_precoding, unit_constellation_per_layer_before_channel]}
       capture_iq: {required: true, type: boolean}
       export_keysight: {required: true, type: boolean}
       save_plots: {required: true, type: boolean}
       require_all_tb_success: {required: true, type: boolean}
       sweep_snr_db: {required: true, type: number_list}
+  research_harq:
+    required: false
+    parameters:
+      feedback_mode: {required: true, type: string, allowed_values: [ideal_delayed]}
+      num_processes: {required: true, type: integer, min: 1, max: 32}
+      max_transmissions: {required: true, type: integer, min: 1}
+      rv_sequence: {required: true, type: number_list, allowed_numeric_values: [0, 1, 2, 3]}
+      feedback_delay_slots: {required: true, type: integer, min: 1}
+      feedback_drain_slots: {required: true, type: integer, min: 1}
+  research_awgn_mimo:
+    required: false
+    parameters:
+      physical_ports: {required: true, type: integer, min: 1, max: 4}
+      reference_data_re_power: {required: true, type: number, min_exclusive: 0}
+  research_adaptation:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      candidate_modulations: {required: true, type: string_list, allowed_values: [256QAM, 1024QAM]}
+      candidate_layers: {required: true, type: number_list, allowed_numeric_values: [2, 4]}
+      candidate_code_rates: {required: true, type: number_list}
+      bootstrap_candidate: {required: true, type: integer, min: 1}
+      target_bler: {required: true, type: number, min_exclusive: 0, max: 1}
+      ack_step_db: {required: true, type: number, min_exclusive: 0}
+      margin_min_db: {required: true, type: number}
+      margin_max_db: {required: true, type: number}
+      max_measurement_age_slots: {required: true, type: integer, min: 1}
+      calibration_file: {required: true, type: string, nonempty: true}
+      calibration_snr_db: {required: true, type: number_list}
+      calibration_trials_per_point: {required: true, type: integer, min: 1}
+      calibration_confidence: {required: true, type: number, min_exclusive: 0, max: 1}
+  research_receiver:
+    required: false
+    parameters:
+      channel_estimation: {required: true, type: string, allowed_values: [dmrs, perfect_identity_awgn]}
+      noise_estimation: {required: true, type: string, allowed_values: [received_dmrs]}
+      ldpc_base_graph: {required: true, type: string, allowed_values: [auto, BG1]}
+  research_spatial:
+    required: false
+    parameters:
+      gnb_size: {required: true, type: number_list}
+      ue_size: {required: true, type: number_list}
+      spacing_wavelength: {required: true, type: number_list}
+      polarization_angles_deg: {required: true, type: number_list}
+      gnb_orientation_deg: {required: true, type: number_list}
+      ue_orientation_deg: {required: true, type: number_list}
+      element: {required: true, type: string, allowed_values: ['38.901']}
+      polarization_model: {required: true, type: string, allowed_values: [Model-1, Model-2]}
+      gnb_dft_vertical: {required: true, type: number_list}
+      gnb_dft_horizontal: {required: true, type: number_list}
+      gnb_dft_polarization: {required: true, type: number_list}
+      ue_dft_vertical: {required: true, type: number_list}
+      ue_dft_horizontal: {required: true, type: number_list}
+      ue_dft_polarization: {required: true, type: number_list}
+      seed: {required: true, type: integer, min: 0}
+      normalize_path_gains: {required: true, type: boolean}
+      normalize_channel_outputs: {required: true, type: boolean}
+      burst_policy: {required: true, type: string, allowed_values: [static_independent_slots]}
+      timing: {required: true, type: string, allowed_values: [configured_channel_filter_delay]}
   control:
     required: true
     parameters:

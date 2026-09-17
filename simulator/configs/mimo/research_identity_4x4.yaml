@@ -1,0 +1,6 @@
+# Fixed physical identity channel, independent of scheduled rank.
+# Total expected constellation power is one across the active layer precoder.
+# Reference SNR uses this fixed EPRE, never 1/current-rank.
+research_awgn_mimo:
+  physical_ports: 4
+  reference_data_re_power: 0.25
