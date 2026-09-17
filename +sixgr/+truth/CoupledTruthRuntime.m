@@ -1430,7 +1430,7 @@ methods(Static)
             book=sixgr.truth.buildReceivedHARQACKCodebook(state,cfg,ue,slot);
             execution.UEHARQCodebook=book;
             execution.UECodebookRows=sixgr.truth.bindReceivedPUCCHCodebookRows(book,rows);
-            execution.GNBReception=sixgr.truth.buildScheduledPUCCHHARQReception( ...
+            execution.GNBReception=sixgr.truth.buildScheduledHARQTransportReception( ...
                 state,cfg,ue,slot,item.Context.ObservationID);
             execution.ScheduledRowIndices=sixgr.truth.bindScheduledPUCCHFeedbackRows( ...
                 execution.GNBReception.Mapping,rows);
@@ -1449,6 +1449,12 @@ methods(Static)
         prepared.ObservationID=item.Context.ObservationID;
         prepared.Key=item.Context.Key;
         state.SharedWaveformStream.queueUplinkControl(ue,prepared.Prepared,prepared);
+        if isfield(execution,'GNBReception') && execution.GNBReception.SelectedTransport=="PUSCH"
+            % A missed UL DCI leaves the UE's actual PUCCH intact. The
+            % independently scheduled gNB receiver still expects PUSCH.
+            state.SharedWaveformStream.bindUnselectedPUCCHObservation( ...
+                item.Context.ObservationID,cfg,execution.GNBReception);
+        end
         if ~isempty(csiIndex)
             % Bind this report only. setStringColumn's fourth argument is a
             % scalar whole-column overwrite flag, not a pending-row mask.

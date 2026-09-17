@@ -351,11 +351,69 @@ Terminal log SHA256:
 Earlier failed runs remain preserved as failed. This is a focused TDD
 checkpoint, not complete Missing-DCI, detector, full-suite or 12 dB acceptance.
 
-Still open: a surviving real UE PUCCH producer when gNB selected PUSCH;
+### Surviving UE PUCCH ownership increment, Sep 17
+
+The main IDE checkout now extends the existing HARQ-only preparation path
+to select gNB transport independently (`buildScheduledHARQTransportReception`)
+while retaining actual UE PUCCH samples. `CoupledWaveformStream` records the
+producer's immutable transmit identity alongside the PUSCH selection.
+`validateUnselectedPUCCHTransmission` requires actual owner and MAC sample
+receipts; preparation alone is insufficient. The value-state disposition
+joins only matching DL identities, marks the actual PUCCH `TX_ONLY`, and
+leaves PUCCH decoder metrics unavailable. The common PUSCH commit remains
+the only gNB HARQ update. Rejected-UL completion accepts an existing producer
+only with this proof, rather than removing the ownership guard outright.
+
+`testSharedUnselectedPUCCHProducer` passed in 198.36 s on the dirty main
+checkout: actual shared DL DCI/PDSCH reception, actual PUCCH TX, zero PUSCH
+data TX, actual scheduled gNB PUSCH capture and one HARQ update. Its UE
+UL-command decoder is deliberately **unexecuted**. No fabricated rejection
+or CRC flag is supplied, and this test does not qualify physical missed-DCI
+probability or the complete rejected-control coordinator path.
+Evidence: `logs/unselected_pucch_producer_20260917_focused/`; source 4,636
+files, SHA256 `3ECA46DF175301FD131AFC3372639F4E04E8270B084AB2F86CB96F84D040B3CD`.
+Terminal log SHA256 `F744EFC96D6177E801AB811C757878F7D24181014AEBF0CBE5A72A82673883C1`.
+A strengthened retained-IQ observer-removal/cross-transport duplicate test
+and the no-producer/normal-PUSCH regressions subsequently passed on the next
+source revision; see the receipt below.
+
+Protocol reference: [TS 38.213 V18.8.0, clause 9.3](https://www.etsi.org/deliver/etsi_ts/138200_138299/138213/18.08.00_60/ts_138213v180800p.pdf)
+describes UE UCI multiplexing for overlapping UE PUSCH/PUCCH transmissions.
+The gNB's scheduled expectation is not evidence that the UE transmitted a
+PUSCH. The chosen gNB receiver policy is an implementation decision, not a
+claim that 3GPP requires suppressing PUCCH reception after missed UL DCI.
+
+Still open: complete physically rejected-UL plus surviving-PUCCH qualification;
 combined HARQ/CSI/SR independent reception; physical missing first/middle/
 last/all DCI, wrapped DAI/changed last PRI acceptance; final coordinator
 integration and the mandatory full `testAll`/guard set. Do not claim that
 only the 12 dB run remains. FDD and 400 MHz are deferred.
+
+### Surviving-PUCCH guards and regression receipt, Sep 17 06:27 IST
+
+`logs/unselected_pucch_producer_20260917_guards/` completed **3/3**, exit 0:
+`testSharedUnselectedPUCCHProducer` (215.77 s),
+`testSharedRejectedULDueHARQ` (101.02 s), and
+`testTDDSharedPUSCHNonemptyCompletion` (175.45 s).
+The first replayed the same actual captured IQ after removing UE feedback
+bookkeeping and poisoning optional expected bits: the gNB receive schema,
+mapping and decoder decisions remained identical. Missing actual TX evidence,
+foreign transmission identity, duplicate producer disposition and same-/cross-
+transport duplicate HARQ commits were rejected. Exported PUCCH rows retained
+`TX_ONLY`, no PUCCH decoder invocation, NaN bit-error/detection measurements,
+and the actual independent PUSCH observation identity.
+
+The 4,636-file source aggregate was unchanged throughout execution:
+`4800D3163460EE592D2865C197F8A4CAC59A3715EDC200E8012D405A3A293519`.
+Terminal log SHA256:
+`C62981BC4CC047D111B04CFBA724FA66B214758C9907231971DDB46184AA1B9B`.
+The no-producer test executed an actual rejected UL control reception; the
+surviving-producer test deliberately left its UL control decoder unexecuted.
+These remain separate component cases, not proof of their fully integrated
+combination, all missing-DCI cases, detector qualification or 12 dB acceptance.
+The full `testAll` running from frozen parent `951bb75b` cannot qualify this
+new increment. A subsequent baseline run is diagnostic until final-source
+regressions and measurement/export acceptance are complete.
 
 ## Sep 17 mapping/staged regression: 7 passed, 1 failed
 

@@ -23,6 +23,7 @@ classdef CoupledWaveformStream < handle
         PUSCHReceiveOnlyCompletions = cell(0,1)
         ScheduledControlRegistrations = cell(0,1)
         UnselectedPUCCHRegistrations = cell(0,1)
+        UnselectedPUCCHProducers = cell(0,1)
     end
     methods (Static)
         function [state,obj]=initialize(state,cfg,userCfg)
@@ -658,9 +659,20 @@ classdef CoupledWaveformStream < handle
         function bindUnselectedPUCCHObservation(obj,id,cfg,hypothesis)
             k=find(string({obj.Pending.ID})==string(id));
             assert(isscalar(k) && obj.Pending(k).Kind=="PUCCH" && ...
-                obj.Pending(k).Context.AwaitingPreparation && hypothesis.SelectedTransport=="PUSCH", ...
-                'sixgr:truth:InvalidUnselectedPUCCHBinding','Bind one unencoded observation to the scheduled PUSCH receiver.');
+                hypothesis.SelectedTransport=="PUSCH", ...
+                'sixgr:truth:InvalidUnselectedPUCCHBinding','Bind one observation to the scheduled PUSCH receiver.');
             p=obj.Pending(k); g=hypothesis.ScheduledULControl.Binding.Grant;
+            producer=struct(); txID="";
+            if ~p.Context.AwaitingPreparation
+                assert(isfield(p.Context,'Prepared') && isfield(p.Context,'UEHARQCodebook') && ...
+                    ~isempty(p.Context.UEHARQCodebook.Events), ...
+                    'sixgr:truth:UnselectedPUCCHProducerRequired', ...
+                    'A prepared PUCCH must retain its independently received UE HARQ events.');
+                sixgr.truth.bindReceivedPUCCHCodebookRows(p.Context.UEHARQCodebook,p.Context.FeedbackRows);
+                txIdentity=sixgr.truth.preparedPUCCHTransmissionIdentity(p.Context.Prepared,p.UE,id);
+                txID=txIdentity.TransmissionID;
+                producer=p.Context;
+            end
             controls=obj.readTransmittedULControls(p.UE,p.Context.Slot);
             identity=hypothesis.Mapping; digest="";
             if isempty(identity), identity=hypothesis; else, digest=hypothesis.PUSCHMapping.Digest; end
@@ -672,25 +684,28 @@ classdef CoupledWaveformStream < handle
                 'ULGrantContextID',string(g.PHYGrant.GrantContextId), ...
                 'GNBControlObservationID',hypothesis.ScheduledULControl.ObservationID, ...
                 'HARQMappingDigest',digest, ...
+                'PUCCHTransmissionID',txID, ...
                 'SelectedAtSample',obj.Events.NextSampleIndex,'Source',"gnb_scheduled_PUSCH_not_UE_transport_transfer");
             assert(~any(cellfun(@(r)r.UEIndex==record.UEIndex && r.TargetSlot==record.TargetSlot, ...
                 obj.UnselectedPUCCHRegistrations)), ...
                 'sixgr:truth:DuplicateUnselectedPUCCHBinding','Select the receiver once per physical occasion.');
             obj.UnselectedPUCCHRegistrations{end+1,1}=record;
+            obj.UnselectedPUCCHProducers{end+1,1}=producer;
             obj.Pending(k).Context.Config=cfg;
             obj.Pending(k).Context.TransportSelection=record;
             obj.Pending(k).Context.AwaitingPreparation=false;
             obj.Pending(k).Kind="PUCCHNotSelected";
-            % Actual captures remain. No UE TX is suppressed here: caller
-            % must prove there is no received UE producer before this bind.
+            % Any independently prepared UE samples stay queued. Selection
+            % changes only which gNB decoder owns feedback, never UE TX.
         end
-        function selection=readUnselectedPUCCHForPUSCH(obj,grant)
+        function [selection,producer]=readUnselectedPUCCHForPUSCH(obj,grant)
             records=obj.UnselectedPUCCHRegistrations;
             hits=find(cellfun(@(r)r.ULGrantContextID==string(grant.PHYGrant.GrantContextId) && ...
                 r.UEIndex==grant.UEIndex && r.TargetSlot==double(grant.Slot),records));
             assert(isscalar(hits),'sixgr:truth:MissingScheduledPUSCHReceiverSelection', ...
                 'Receive-only HARQ must own the physical occasion before feedback completion.');
             selection=records{hits};
+            producer=obj.UnselectedPUCCHProducers{hits};
         end
         function bindPUCCHReceiveOnly(obj,id,cfg,hypothesis)
             k=find(string({obj.Pending.ID})==string(id));

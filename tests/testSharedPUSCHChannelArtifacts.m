@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -16,6 +16,8 @@ if nargin<7, withHARQ=false; end
 if nargin<10, independentEmptyUCI=false; end
 if nargin<11, independentSharedHARQ=false; end
 if nargin<12, forgetCSIProducer=false; end
+if nargin<13, unconsumedULCommand=false; end
+assert(~unconsumedULCommand || (independentSharedHARQ && ~withCSI && ~forgetCSIProducer));
 assert(~forgetCSIProducer || (independentSharedHARQ && withCSI));
 assert(~(independentEmptyUCI && independentSharedHARQ));
 independentCompletion=independentEmptyUCI || independentSharedHARQ;
@@ -62,8 +64,12 @@ if twoPortUL
 end
 if (withCSI || withHARQ) && ~independentCompletion, localSaveScenarioEvidence(s,cfg,root); end
 if independentCompletion
+    scope='component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; independent UCI receive/commit; selected DL source explicitly retained; not full coordinator or 12 dB qualification';
+    if unconsumedULCommand
+        scope='component: actual shared DL DCI/PDSCH reception and PUCCH TX; gNB UL command transmitted but UE UL decoder deliberately unexecuted; scheduled PUSCH capture; NOT physical missed-DCI probability or full coordinator qualification';
+    end
     localSaveScenarioEvidence(s,cfg,root, ...
-        'component: actual shared SS/PBCH timing, SRS, UL DCI and PUSCH; independent UCI receive/commit; selected DL source explicitly retained; not full coordinator or 12 dB qualification');
+        scope);
 end
 % This component bypasses runSingle, which normally initializes the run
 % RNG. Bind the UE drop to the resolved YAML seed, not the preceding test.
@@ -81,6 +87,7 @@ state.TestWithHARQ=logical(withHARQ);
 state.TestIndependentCompletion=logical(independentCompletion);
 state.TestIndependentSharedHARQ=logical(independentSharedHARQ);
 state.TestForgetCSIProducer=logical(forgetCSIProducer);
+state.TestUnconsumedULCommand=logical(unconsumedULCommand);
 state.TestScheduledDLDAILedger=struct();
 if independentCompletion, assert(logical(cfg.phy.csi.reportCSI)==logical(withCSI)); end
 if independentCompletion && withCSI
@@ -215,6 +222,21 @@ for slot=1:lastSlot
     end
     [state,~]=owner.advanceSlot(state,cfg,@localEvents);
 end
+if unconsumedULCommand
+    audit=state.SharedUnselectedPUCCHAuditTable;
+    assert(state.TestSharedHARQReceived && height(audit)==1 && audit.PUCCHTransmissionExecuted && ...
+        ~audit.PUCCHDecoderInvoked && ~audit.PUCCHFeedbackCommitted && ...
+        numel(owner.PUCCHTransmissions)==1 && numel(state.SharedPUCCHTXLedger)==1 && ...
+        numel(owner.DataTransmissions)==1 && owner.DataTransmissions.Identity.Direction=="DL" && ...
+        state.ULHarq.Stats.Tx==0 && isempty(state.ULHarq.getDeliveryLedger()) && ...
+        all(state.PendingFeedbackTable.Processed) && ~any(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH) && ...
+        all(state.PUCCHGrantTraceTable.Status=="TX_ONLY") && ...
+        isempty(state.ControlTrials.PUCCH) && height(state.SharedGNBUCIHARQTable)==1);
+    sixgr.util.csvWriteTable(fullfile(root,'unselected_pucch_capture_audit.csv'),audit,'PreserveSchema',true);
+    sixgr.util.csvWriteTable(fullfile(root,'pucch_tx_only_trace.csv'),state.PUCCHGrantTraceTable,'PreserveSchema',true);
+    fprintf('SHARED_UNSELECTED_PUCCH_PRODUCER_PASS actual_DL_RX=1 actual_PUCCH_TX=1 PUSCH_TX=0 gNB_PUSCH_RX=1 UL_DCI_decoder_unexecuted=1 root=%s\n',root);
+    ok=true; return;
+end
 attempts=1+logical(withHARQ);
 assert(state.TestPUSCHReceived && state.ULHarq.Stats.Tx==attempts && state.ULQueueBits(1)==0);
 assert(numel(owner.DataTransmissions)==attempts+logical(withCSI && ~independentCompletion)+logical(independentSharedHARQ) && ~owner.hasPending('PUSCH',1));
@@ -314,6 +336,11 @@ end
 function state=localEvents(state,items)
 owner=state.SharedWaveformStream;
 for item=items
+    if item.Kind=="PUSCHReceiveOnly"
+        assert(state.TestUnconsumedULCommand);
+        state=localCompleteUnselectedProducer(state,item);
+        continue;
+    end
     if item.Kind=="PUCCHTX"
         state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
         continue;
@@ -411,6 +438,23 @@ for item=items
             assert(any(cellfun(@(x)x.GrantContextID==string(c.Grant.PHYGrant.GrantContextId), ...
                 state.SharedGNBULHARQCommands)), ...
                 'The gNB command is committed at transmission, before UE reception.');
+        end
+        if state.TestUnconsumedULCommand && string(c.Grant.Direction)=="UL"
+            % Declared unreceived-command boundary: do not execute a UE
+            % decoder or fabricate a CRC rejection/received assignment.
+            g=c.Grant; t=g.TimingDecision; target=double(t.DataAbsoluteSlot)+1;
+            g=sixgr.truth.bindQueuedULGrantOccasion(g,double(t.ControlAbsoluteSlot)+1,target, ...
+                floor(double(t.ControlAbsoluteSlot)/state.SlotsPerFrame)+1, ...
+                floor((target-1)/state.SlotsPerFrame)+1,t.K2);
+            cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(c.ULConfig,target,g.Frame);
+            cfg=sixgr.truth.bindSharedDataOccasion(cfg,target,g.Frame,owner.SampleRateHz);
+            carrier=sixgr.phy.grid.makeCarrier(cfg);
+            guard=sixgr.phy.sync.resolveTimingSearchGuard(cfg,owner.SampleRateHz);
+            first=sixgr.phy.frame.slotStartSample(carrier,target-1,owner.SampleRateHz)-guard;
+            stop=sixgr.phy.frame.slotStartSample(carrier,target,owner.SampleRateHz)+guard;
+            owner.queuePUSCHReceiveOnly(item.UE,cfg,g,first,stop);
+            save(fullfile(state.TestRoot,'unconsumed_UL_control_capture.mat'),'item','g','-v7.3');
+            continue;
         end
         [rx,rxInfo]=sixgr.link.completePDCCHReception(p,receiver);
         receivedAssignment=struct();
@@ -852,6 +896,57 @@ for item=items
         error('test:UnexpectedSharedEvent','Unexpected event %s.',item.Kind);
     end
 end
+end
+
+function state=localCompleteUnselectedProducer(state,item)
+owner=state.SharedWaveformStream; g=item.Context.Grant; cfg=item.Context.Config;
+result=sixgr.truth.receiveSharedPUSCHWithoutTransmission(state,item.Context.ObservationID);
+% Same completed physical samples, no new RF/channel execution. Remove UE
+% producer bookkeeping and poison its optional expected payload: gNB field
+% ownership and decisions must depend only on its installed schedule/IQ.
+observer=state; observer.PendingFeedbackTable=table(); observer.PUCCHGrantTraceTable=table();
+observer.SharedUEHARQACKEvents={}; observer.SharedReceivedGrantControls={};
+observer.ExpectedHARQACKBits=int8([0;0;0;0]);
+again=sixgr.truth.receiveSharedPUSCHWithoutTransmission(observer,item.Context.ObservationID);
+assert(again.UCIReceiveContext.Digest==result.UCIReceiveContext.Digest && ...
+    isequaln(again.HARQMapping,result.HARQMapping) && ...
+    isequaln(again.IndependentHARQObservation,result.IndependentHARQObservation) && ...
+    isequaln(again.ULHARQReceiverDecision,result.ULHARQReceiverDecision), ...
+    'Fixed-IQ gNB ownership/results must not depend on UE producer state.');
+[selection,producer]=owner.readUnselectedPUCCHForPUSCH(g);
+assert(~isempty(fieldnames(producer)) && numel(producer.UEHARQCodebook.Events)==1);
+actual=result.IndependentHARQObservation;
+normalized=struct('MappingDigest',result.HARQMapping.Digest,'UEIndex',g.UEIndex, ...
+    'RNTI',g.RNTI,'TargetSlot',double(g.Slot),'DecodedBits',actual.DecodedBits, ...
+    'DecodeOk',actual.DecodeOk,'DTXFlag',actual.DTXFlag,'Transport',"PUSCH");
+dispositions=sixgr.truth.prepareScheduledHARQFeedback(state,cfg,g.UEIndex,double(g.Slot),normalized,g);
+for k=1:numel(dispositions), dispositions(k).ObservationID=result.Binding.ObservationID; end
+next=sixgr.truth.stageUnselectedPUCCHProducerDisposition(state,selection,producer,result.HARQMapping,dispositions);
+broken=state; broken.SharedPUCCHTXLedger={};
+localReject(@()sixgr.truth.stageUnselectedPUCCHProducerDisposition(broken,selection,producer,result.HARQMapping,dispositions), ...
+    'sixgr:truth:UnselectedPUCCHTXNotExecuted');
+wrong=selection; wrong.PUCCHTransmissionID="foreign_transmission";
+localReject(@()sixgr.truth.validateUnselectedPUCCHTransmission(state,wrong,producer), ...
+    'sixgr:truth:UnselectedPUCCHTXIncomplete');
+localReject(@()sixgr.truth.stageUnselectedPUCCHProducerDisposition(next,selection,producer,result.HARQMapping,dispositions), ...
+    'sixgr:truth:UnselectedPUCCHProducerAlreadyDisposed');
+[state,applied]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
+    state,cfg,g.UEIndex,double(g.Slot),normalized,result.Observation,result.Binding.ObservationID,g);
+assert(numel(applied)==1 && applied.HARQFeedbackApplied && applied.ObservedAck==dispositions.ObservedAck);
+localReject(@()sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
+    state,cfg,g.UEIndex,double(g.Slot),normalized,result.Observation,result.Binding.ObservationID,g), ...
+    'sixgr:truth:DuplicateScheduledHARQFeedback');
+other=normalized; other.Transport="PUCCH"; other.MappingDigest=result.HARQMapping.BaseMapping.Digest;
+localReject(@()sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
+    state,cfg,g.UEIndex,double(g.Slot),other,result.Observation,"unused_PUCCH_decoder"), ...
+    'sixgr:truth:DuplicateScheduledHARQFeedback');
+state.PendingFeedbackTable=next.PendingFeedbackTable; state.PUCCHGrantTraceTable=next.PUCCHGrantTraceTable;
+state=sixgr.truth.stageSharedULHARQReception(state,cfg,g,result.Observation,result.ULHARQReceiverDecision);
+event=sixgr.truth.prepareSharedULHARQSchedulerFeedback(state,g,result.ULHARQReceiverDecision);
+assert(state.ULHarq.onFeedback(event.RNTI,event.HarqID,event.Outcome, ...
+    'SourceSlot',event.SourceSlot,'FeedbackSlot',event.FeedbackSlot));
+state=sixgr.truth.CoupledTruthRuntime.updateSchedulerAfterFeedbackRuntime(state,event,'UL');
+save(fullfile(state.TestRoot,'unselected_pucch_pusch_receiver.mat'),'result','selection','producer','applied','-v7.3');
 end
 
 function localVerifyAppliedULWeights(state,item)

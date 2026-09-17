@@ -1,7 +1,7 @@
 function state=completeSharedPUSCHAfterRejectedControl(state,observationID)
 % Complete scheduled receive-only data without pretending that a TB was sent.
-% Scheduled HARQ/CSI can complete without a UE producer. Existing UE PUCCH
-% producers remain guarded. UL scheduling follows the gNB receiver outcome,
+% Scheduled HARQ/CSI can complete with or without an independent UE PUCCH
+% producer. UL scheduling follows the gNB receiver outcome,
 % not the UE's rejected-command flag or an invented onTx event.
 owner=state.SharedWaveformStream;
 item=owner.readPUSCHReceiveOnlyCompletion(observationID);
@@ -30,16 +30,23 @@ postIndex=find(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
 assert(isscalar(postIndex),'sixgr:truth:IncompletePUSCHReceiveOnlyPlanes','Require one actual post-RF receive window.');
 binding=sixgr.truth.puschUCIObservationBinding(grant,item.Planes(postIndex).Observation);
 [context,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext(state,cfg,grant,binding.ObservationID,csi,report);
-selection=struct();
+selection=struct(); producer=struct();
 if ~isempty(mapping)
-    selection=owner.readUnselectedPUCCHForPUSCH(grant);
+    [selection,producer]=owner.readUnselectedPUCCHForPUSCH(grant);
     assert(selection.HARQMappingDigest==mapping.Digest && ...
         selection.GNBControlObservationID==transmission.ObservationID && ...
         selection.SelectedAtSample<=owner.Events.NextSampleIndex, ...
         'sixgr:truth:ChangedScheduledPUSCHReceiverSelection','Use the same independently selected gNB receiver.');
     book=sixgr.truth.buildReceivedHARQACKCodebook(state,cfg,grant.UEIndex,double(grant.Slot));
-    assert(isempty(book.Events),'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
-        'An actual UE PUCCH producer needs its own TX disposition, not silent removal.');
+    if isempty(book.Events)
+        assert(isempty(fieldnames(producer)),'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
+            'Do not invent a PUCCH producer without received UE events.');
+    else
+        assert(isfield(producer,'UEHARQCodebook') && producer.UEHARQCodebook.Digest==book.Digest, ...
+            'sixgr:truth:RejectedULExistingPUCCHProducerOwnershipRequired', ...
+            'Retain the actual independent UE PUCCH producer, not silent removal.');
+        sixgr.truth.validateUnselectedPUCCHTransmission(state,selection,producer);
+    end
 end
 result=sixgr.truth.receiveSharedPUSCHWithoutTransmission(state,observationID);
 assert(result.UCIReceiveContext.Digest==context.Digest && isequaln(result.HARQMapping,mapping), ...
@@ -61,6 +68,11 @@ if ~isempty(mapping)
         'RNTI',grant.RNTI,'TargetSlot',double(grant.Slot),'DecodedBits',actual.DecodedBits, ...
         'DecodeOk',actual.DecodeOk,'DTXFlag',actual.DTXFlag,'Transport',"PUSCH");
     dispositions=sixgr.truth.prepareScheduledHARQFeedback(state,cfg,grant.UEIndex,double(grant.Slot),normalized,grant);
+    for di=1:numel(dispositions), dispositions(di).ObservationID=result.Binding.ObservationID; end
+end
+nextProducer=state;
+if ~isempty(fieldnames(producer))
+    nextProducer=sixgr.truth.stageUnselectedPUCCHProducerDisposition(state,selection,producer,mapping,dispositions);
 end
 result.TransportSelection=selection;
 result.DLHARQFeedbackAppliedCount=0;
@@ -74,7 +86,7 @@ result.ControlKey=window.ControlKey;
 result.ControlAvailableAtSample=window.ControlAvailableAtSample;
 result.GNBControlObservationID=window.GNBControlObservationID;
 result.GNBControlAvailableAtSample=window.GNBControlAvailableAtSample;
-result.Disposition="received_UL_command_rejected_UE_silent_gNB_capture_decoded";
+result.Disposition="received_UL_command_rejected_UE_PUSCH_silent_gNB_capture_decoded";
 result.TransmittedTBScored=false;
 rx=result.Receiver;
 assert(isscalar(rx.TransportBlockSize) && islogical(rx.ULSCHDecodeAttempted) && ...
@@ -107,7 +119,9 @@ row=struct('ObservationID',string(observationID),'ControlKey',window.ControlKey,
     'AvailableAtSample',owner.Events.NextSampleIndex,'SampleRateHz',owner.SampleRateHz, ...
     'DecodeAttempted',result.Receiver.DecodeAttempted,'ReceiverUsable',result.Receiver.ReceiverUsable, ...
     'ReceiverCRCAvailable',crcAvailable,'ReceiverCRCError',double(crcError), ...
-    'UETransmissionExecuted',false,'TransmittedTBScored',false,'HARQStateCommitted',result.HARQStateCommitted, ...
+    'UETransmissionExecuted',false,'UETransmissionRole',"scheduled_PUSCH_only", ...
+    'UEDataTransmissionExecuted',false,'UEPUCCHTransmissionExecuted',~isempty(fieldnames(producer)), ...
+    'TransmittedTBScored',false,'HARQStateCommitted',result.HARQStateCommitted, ...
     'DLHARQFeedbackAppliedCount',result.DLHARQFeedbackAppliedCount,'ULHARQStateCommitted',false, ...
     'ULHARQReceiverStateCommitted',true,'ULHARQSchedulerStateCommitted',true, ...
     'ULHARQSchedulerOutcome',schedulerEvent.Outcome, ...
@@ -132,4 +146,8 @@ state.SharedRejectedULReceiveResults=[receipts,{result}];
 state.SharedGNBULHARQReceivers=nextUL.SharedGNBULHARQReceivers;
 state.SharedRejectedULReceiveAuditTable=next;
 state.SharedPUSCHHARQDecisionAuditTable=decisionAudit;
+if ~isempty(fieldnames(producer))
+    state.PendingFeedbackTable=nextProducer.PendingFeedbackTable;
+    state.PUCCHGrantTraceTable=nextProducer.PUCCHGrantTraceTable;
+end
 end
