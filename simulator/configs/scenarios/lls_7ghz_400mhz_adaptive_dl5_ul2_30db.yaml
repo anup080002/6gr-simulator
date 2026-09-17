@@ -1,0 +1,12 @@
+# User-approved DL-heavy TDD attempt; throughput must be measured, not assumed.
+# Preserve the original 3-DL/4-UL carrier profile and immutable calibrations.
+inherits:
+  - lls_7ghz_400mhz_adaptive_rank_qam_rate_30db.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_adaptive_dl5_ul2_30db
+  description: Four-port identity-AWGN adaptive 400 MHz benchmark with 5 DL, 2 UL and 1 mixed slot; ideal delayed HARQ.
+frame:
+  tdd_common:
+    Pattern1:
+      NumDownlinkSlots: 5
+      NumUplinkSlots: 2

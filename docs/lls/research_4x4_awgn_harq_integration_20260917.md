@@ -292,3 +292,23 @@ the >6 Gbit/s DL attempt. The existing pattern cannot meet that DL target,
 even with zero decoding errors; changing the pattern reduces UL airtime.
 No proposed TDD change has been silently applied and no throughput target is
 declared passed from calibration or allocation arithmetic.
+
+### DL-heavy split approved and preflight passed
+
+The user subsequently selected 5 DL / 2 UL / 1 mixed. The new scenario
+`simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_dl5_ul2_30db.yaml` inherits
+the calibrated five-candidate profile and overrides only the TDD full-slot
+counts. The original scenario remains unchanged. It retains 120 kHz SCS,
+FFT 4096, 491.52 MHz sampling, four physical ports, 264 PRBs, seed 20260920,
+ideal delayed HARQ and code rates no greater than 0.9.
+
+`testResearchDLHeavyConfig` verified 50 full-slot DL and 20 full-slot UL
+opportunities over 80 data slots, no overlap, and unchanged active PHY
+fingerprints for all five candidates in both directions. Both calibrated
+controllers then loaded successfully. Evidence is
+`logs/research_adaptive_dl5_ul2_20260918/preflight.log`, ending with
+`DL5_UL2_CALIBRATED_PREFLIGHT_PASS`. No PHY algorithm or decoder was changed.
+The fixed full-slot data allocations do not use the mixed slot's partial DL
+symbols. The four feedback-drain slots remain in the goodput denominator.
+The full-band throughput/IQ execution is the next gate; preflight is not a
+payload-delivery or >6 Gbit/s pass. `testAll` remains stopped.
