@@ -292,6 +292,13 @@ separate >6 Gbit/s goal; inspect measured DL goodput in `reports/csv/summary.csv
 The 7 GHz / 400 MHz / 120 kHz waveform remains an optional research experiment,
 with explicitly ideal feedback, not a standardized 6G conformance result.
 
+Measured on R2026a, source `ef799fcb`, seed 20260920: **5.926550 Gbit/s DL
+and 2.396846 Gbit/s UL** over 10.5 ms. All 49 DL and 20 UL unique payloads
+were delivered; one DL initial failure recovered on its second attempt.
+Payload acceptance passed, but the **>6 Gbit/s DL target was not met**.
+Four-port TX/RX IQ, CSV and PNG exports completed and their artifact audit
+passed. See [the measured outcome and evidence](docs/lls/research_dl5_ul2_outcome_20260918.md).
+
 The YAML chooses the calibration destination under `results/`. Existing
 calibration CSVs are never overwritten: choose a new `calibration_file` in
 the YAML for a new campaign. Regenerate calibration on each MATLAB version;

@@ -312,3 +312,14 @@ The fixed full-slot data allocations do not use the mixed slot's partial DL
 symbols. The four feedback-drain slots remain in the goodput denominator.
 The full-band throughput/IQ execution is the next gate; preflight is not a
 payload-delivery or >6 Gbit/s pass. `testAll` remains stopped.
+
+### Approved integrated attempt completed
+
+The execution at clean source `ef799fcb` subsequently completed with all
+49 DL and 20 UL unique payloads delivered, zero pending/dropped TBs and
+four-port TX/RX IQ exported. One DL initial failure recovered by HARQ.
+Full-clock goodput was 5.926550 Gbit/s DL and 2.396846 Gbit/s UL: payload
+acceptance passed, but the separate >6 Gbit/s DL target was missed.
+The source, ledger, timeline and 36 IQ-file hash checks passed. See
+[the detailed measured outcome](research_dl5_ul2_outcome_20260918.md) for
+the actual candidate choices, BLER populations, artifact hashes and limits.
