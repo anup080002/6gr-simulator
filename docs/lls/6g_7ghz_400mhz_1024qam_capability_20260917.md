@@ -40,6 +40,19 @@ mean all candidates passed. The original four-rate
 matrix excludes the later refinement point and therefore selects 0.80;
 the independent 0.82 run provides the additional selection evidence.
 
+A read-only native allocation audit subsequently sampled 301 rates from
+0.82 through 0.85 in each direction, keeping the executed allocation fixed.
+Rates 0.8200--0.8296 on that grid all map to 622,760 TB bits; rates
+0.8297--0.8500 map to 638,984 bits. Increasing the nominal rate within the
+first group therefore cannot increase this run's already error-free payload
+goodput. The next sampled TB size equals the executed failing 0.85
+candidate's size. Native rate recovery was identical at each group's sampled
+endpoints using a synthetic position-label probe (not received LLRs).
+This is allocation/coding evidence only: no additional waveform trials,
+continuous-range optimum, or reliability qualification is claimed. MATLAB
+exited 0; the script and output are retained as `audit_rate_quantization.m`
+and `rate_quantization.log` in `evidence_20260917/research_selected_iq_10ms`.
+
 `lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml` repeats the selected
 point with full-frame IQ capture, playback export, plots and strict all-TB
 success enabled. It changes only output/acceptance flags and scenario
