@@ -1,0 +1,8 @@
+inherits:
+  - research_ideal_harq_runner.yaml
+meta:
+  scenario_id: research_four_port_iq_component
+  description: Four-port actual coded TDD and ideal delayed HARQ IQ-export component, not full-band acceptance.
+research_link:
+  capture_iq: true
+  export_keysight: true

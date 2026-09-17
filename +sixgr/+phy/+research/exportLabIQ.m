@@ -10,13 +10,15 @@ sixgr.util.matSave(raw,struct('Waveform',wave,'SampleRateHz',fs,'CenterFrequency
 saved=load(raw,'Waveform');
 assert(isequal(saved.Waveform,wave),'sixgr:research:IQReadback','Exact IQ MAT readback differs.');
 clear saved
-scale=max(abs([real(wave(:));imag(wave(:))]));
+% Same common endpoint scale, without concatenating two full real copies.
+scale=max(max(abs(real(wave)),[],'all'),max(abs(imag(wave)),[],'all'));
 assert(isfinite(scale) && scale>0,'sixgr:research:EmptyPlayback','Cannot normalize a silent endpoint.');
+rawHash=string(sixgr.util.sha256File(raw));
 receipts=struct([]);
 for port=1:size(wave,2)
     row=struct('Direction',direction,'CapturePoint',point,'Port',port, ...
         'SampleCount',size(wave,1),'SampleRateHz',fs,'CenterFrequencyHz',fc, ...
-        'CommonEndpointFullScale',scale,'RawMAT',string(raw),'RawSHA256',localHash(raw), ...
+        'CommonEndpointFullScale',scale,'RawMAT',string(raw),'RawSHA256',rawHash, ...
         'WIQFile',"",'WIQSHA256',"",'VSAMATFile',"",'VSAMATSHA256',"", ...
         'QuantizationMaxError',NaN,'ClippedComponents',0, ...
         'InstrumentImportVerified',false,'StandardNR',false);
@@ -39,15 +41,10 @@ for port=1:size(wave,2)
             'InputCenter',fc,'InputZoom',1,'XDomain',2),UseArtifactStore=false);
         v=load(vsa);
         assert(isequal(v.Y,single(normalized)) && v.XDelta==1/fs);
-        row.WIQFile=string(file); row.WIQSHA256=localHash(file);
-        row.VSAMATFile=string(vsa); row.VSAMATSHA256=localHash(vsa);
+        row.WIQFile=string(file); row.WIQSHA256=string(sixgr.util.sha256File(file));
+        row.VSAMATFile=string(vsa); row.VSAMATSHA256=string(sixgr.util.sha256File(vsa));
         row.QuantizationMaxError=err;
     end
     if isempty(receipts), receipts=row; else, receipts(port)=row; end %#ok<AGROW>
 end
-end
-
-function hash=localHash(path)
-fid=fopen(path,'r'); assert(fid>=0); closer=onCleanup(@()fclose(fid)); %#ok<NASGU>
-hash=string(sixgr.util.sha256Hex(fread(fid,Inf,'*uint8')));
 end

@@ -124,6 +124,7 @@ sourcePaths=[string(mfilename('fullpath'))+".m", ...
     string(which('sixgr.phy.research.SharedChannelLink')), ...
     string(which('sixgr.phy.research.IdealDelayedHARQ')), ...
     string(which('sixgr.phy.research.AWGNLinkAdaptation')), ...
+    string(which('sixgr.phy.research.exportLabIQ')), ...
     string(which('sixgr.phy.research.PhysicalArrayLink'))];
 sourceEvidence=struct([]);
 mkdir(fullfile(root,'meta','executed_sources'));
@@ -348,10 +349,15 @@ try
     if p.capture_iq
         for d=1:2
             for point=["TX","RX"]
-                if point=="TX", wave=vertcat(txParts{:,d}); else, wave=vertcat(rxParts{:,d}); end
+                if point=="TX"
+                    wave=vertcat(txParts{:,d}); txParts(:,d)={[]};
+                else
+                    wave=vertcat(rxParts{:,d}); rxParts(:,d)={[]};
+                end
                 receipt=sixgr.phy.research.exportLabIQ(root,wave,frame.SampleRate_Hz, ...
                     s.frequency.center_frequency_hz,directions(d),point,p.export_keysight);
                 if isempty(iq), iq=receipt(:); else, iq=[iq;receipt(:)]; end %#ok<AGROW>
+                clear wave
             end
         end
         sixgr.util.csvWriteTable(fullfile(root,'waveform','iq_manifest.csv'),struct2table(iq));

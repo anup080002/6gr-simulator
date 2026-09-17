@@ -212,3 +212,29 @@ as an accepted adaptive run yet. Never concatenate candidate indices or pool
 potentially dependent trials to manufacture a confidence pass.
 Then validate the integrated rank/QAM/rate decision loop, frozen HARQ
 retransmission allocation and unique-payload goodput. `testAll` stays stopped.
+
+### Four-port IQ export verified 18 September
+
+`testResearchIQExport` passed on R2026a. The log
+`logs/research_adaptive_full264_20260918/iq_export_component_explicit_csv.log`
+ends with `FOUR_PORT_IQ_COMPONENT_BATCH_PASS`. Actual coded DL/UL TX and RX
+waveforms matched the previous common-scale, int16 WIQ and single-precision
+VSA contracts exactly; independent file hashing matched the streaming hashes.
+The exporter now hashes each raw MAT once and avoids full-file hash buffers;
+the runner releases endpoint capture chunks after assembly/export. No
+measured speedup or bounded-memory streaming-capture claim is made.
+
+The clocked four-port, 8-PRB fixture delivered all seven unique TBs with zero
+pending/dropped TBs. Its 12-slot horizon includes four feedback-drain slots:
+737,280 samples per stream at 491.52 MHz, 16 TX/RX stream receipts, no clipping,
+and verified zero TX samples during inactive intervals. Exact evidence is in
+`results/component_validation/iq_export_20260918_004526_944/lls/research_four_port_iq_component/clocked`.
+The runner also snapshots and hashes `exportLabIQ.m` with its executed sources.
+
+The first test attempt stopped at CSV import after waveform export succeeded:
+MATLAB inferred underscore delimiters from long paths. The original failure
+is retained in `iq_export_component.log`; `iq_csv_import_diagnostic_retry.log`
+shows the inferred delimiter and successful explicit comma import. The test
+now specifies the documented CSV delimiter/header without changing assertions
+or waveform outputs. This is component verification, not full-band throughput
+acceptance, statistical BLER qualification or a verified Keysight import.
