@@ -128,11 +128,18 @@ for item=items
         assert(h.Mapping.BitCount==2 && h.Context.HARQACKBits==2);
         c=pending(hit).Context.Config;
         bad=c; bad.phy.csi.reportCSI=true;
-        % Keep the original real-overlap rejection on the tested occasion,
-        % even when this component is run with another installed calendar.
+        % The installed overlap now has a gNB-owned combined receive schema;
+        % UE report absence must not erase that obligation.
         bad.phy.csi.reportOffsetSlots=mod(item.Context.Slot-1,bad.phy.csi.reportPeriodicitySlots);
-        localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
-            'sixgr:truth:UnresolvedCombinedPUCCHReceiveHypothesis');
+        combined=sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
+        assert(combined.Mapping.Digest==h.Mapping.Digest && combined.Context.HARQACKBits==2 && ...
+            combined.Context.CSIPart1Bits==combined.CSIReportConfiguration.part1BitCount() && ...
+            combined.Context.CSIPart1Bits>0 && combined.Assignment.Format>=2);
+        poisoned=state; poisoned.PendingCSITable=table(true,"invented_report", ...
+            'VariableNames',{'Processed','ReportIdentity'});
+        poisoned.SharedUEHARQACKEvents={};
+        same=sixgr.truth.buildScheduledPUCCHHARQReception(poisoned,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
+        assert(isequaln(same,combined),'UE producer state must not determine the combined receiver schema.');
         noCSIHere=bad;
         noCSIHere.phy.csi.reportOffsetSlots=mod(bad.phy.csi.reportOffsetSlots+1, ...
             bad.phy.csi.reportPeriodicitySlots);

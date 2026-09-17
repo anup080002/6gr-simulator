@@ -493,3 +493,28 @@ under `logs/tdd_5mhz_12db_68140bb9_20260917/`; they do not establish receiver
 accuracy, all-measurement closure or terminal acceptance. All open combined-
 feedback, physical missing-DCI and qualification items above remain explicit.
 GitHub publication and 400 MHz remain after accepted 12 dB, as requested.
+# 17 September: independent combined PUCCH checkpoint
+
+Normal shared HARQ/CSI/SR PUCCH now derives the gNB receive schema from the
+transmitted DL schedule and installed CSI/SR calendars, not the UE producer
+layout. Completion binds HARQ rows separately from CSI reservations and uses
+the receiver's labelled HARQ field for receive-only feedback.
+
+Focused batch `logs/tdd_combined_pucch_integration_20260917` completed 4/4
+with unchanged source SHA256
+`25F522C4BD537676D4AF2E44AE6EB69EA462069357C29A1E19DC2D6A112B7257`.
+The strengthened replay batch `logs/tdd_combined_pucch_replay_guards_20260917`
+completed 3/3, exit 0, with unchanged 4,638-file source SHA256
+`B4D39B542655A17A12F4F7A90A15DCE059215EE401B8551AEB8B322796E0609C`.
+It passed the combined physical episode and retained-IQ replay after removing
+UE bookkeeping and poisoning optional expected bits, plus existing unselected
+PUCCH-producer and rejected-UL-control guards. No extra RF execution was used
+for the replay. The actual negative SR bit was checked exactly.
+
+This is component evidence, not 12 dB acceptance or detector qualification.
+An earlier receive-only CSI occasion in this fixture produced a false CSI
+detection without a PUCCH producer; the observation is retained, not suppressed.
+Mixed surviving PUCCH/scheduled PUSCH CSI ownership, short HARQ/SR hypotheses,
+additional physical missing-DCI cases, detector qualification and final-source
+full regression remain open. The live 58-slot 12 dB diagnostic is on earlier
+commit `68140bb9`, not this candidate.

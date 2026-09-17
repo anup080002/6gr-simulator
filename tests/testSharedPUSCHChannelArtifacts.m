@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -17,6 +17,9 @@ if nargin<10, independentEmptyUCI=false; end
 if nargin<11, independentSharedHARQ=false; end
 if nargin<12, forgetCSIProducer=false; end
 if nargin<13, unconsumedULCommand=false; end
+if nargin<14, pucchOnlyCompletion=false; end
+assert(~pucchOnlyCompletion || (independentSharedHARQ && withCSI && ...
+    ~unconsumedULCommand && ~forgetCSIProducer));
 assert(~unconsumedULCommand || (independentSharedHARQ && ~withCSI && ~forgetCSIProducer));
 assert(~forgetCSIProducer || (independentSharedHARQ && withCSI));
 assert(~(independentEmptyUCI && independentSharedHARQ));
@@ -68,6 +71,9 @@ if independentCompletion
     if unconsumedULCommand
         scope='component: actual shared DL DCI/PDSCH reception and PUCCH TX; gNB UL command transmitted but UE UL decoder deliberately unexecuted; scheduled PUSCH capture; NOT physical missed-DCI probability or full coordinator qualification';
     end
+    if pucchOnlyCompletion
+        scope='component: actual shared DL reception and combined HARQ/CSI/SR PUCCH; independent gNB layout and common completion; no scheduled UL command; not 12 dB or missing-DCI-rate qualification';
+    end
     localSaveScenarioEvidence(s,cfg,root, ...
         scope);
 end
@@ -88,6 +94,7 @@ state.TestIndependentCompletion=logical(independentCompletion);
 state.TestIndependentSharedHARQ=logical(independentSharedHARQ);
 state.TestForgetCSIProducer=logical(forgetCSIProducer);
 state.TestUnconsumedULCommand=logical(unconsumedULCommand);
+state.TestPUCCHOnlyCompletion=logical(pucchOnlyCompletion);
 state.TestScheduledDLDAILedger=struct();
 if independentCompletion, assert(logical(cfg.phy.csi.reportCSI)==logical(withCSI)); end
 if independentCompletion && withCSI
@@ -167,7 +174,7 @@ for slot=1:lastSlot
         if state.TestWithCSI, localVerifyCSI(state); end
         disp('SHARED_PUSCH_LATE_UCI_DELIVERY_PASS: actual slot-10 reception delivered in slot 11.');
     end
-    if slot==9 || (withHARQ && slot==19)
+    if (slot==9 || (withHARQ && slot==19)) && ~pucchOnlyCompletion
         assert(isfield(state,'TestSRS') && state.TestSRS.AvailableAtSample<=owner.Events.NextSampleIndex);
         if independentCompletion && withCSI
             reports=state.PendingCSITable;
@@ -221,6 +228,25 @@ for slot=1:lastSlot
         owner.queuePDCCH(1,p,controlContext);
     end
     [state,~]=owner.advanceSlot(state,cfg,@localEvents);
+end
+if pucchOnlyCompletion
+    assert(state.TestSharedHARQReceived && state.TestSharedCSIReceived && ...
+        numel(owner.PUCCHTransmissions)==1 && numel(owner.DataTransmissions)==1 && ...
+        isempty(owner.readTransmittedULControls(1,10)) && state.ULHarq.Stats.Tx==0 && ...
+        height(state.SharedGNBUCIHARQTable)==1 && all(state.PendingFeedbackTable.Processed));
+    receipts=state.SharedGNBUCIReceptions;
+    trial=state.ControlTrials.PUCCH(state.ControlTrials.PUCCH.Slot==10,:);
+    report=state.SharedGNBCSIReportTable(state.SharedGNBCSIReportTable.DueSlot==10,:);
+    assert(height(trial)==1 && trial.IndependentReceiverAssignment && ...
+        trial.ReceiverExpectedHARQBitCount==1 && trial.ReceiverExpectedSRBitCount==1 && ...
+        trial.ReceiverExpectedCSIPart1BitCount>0 && height(report)==1 && report.CSIUCIDecodeOk && ...
+        state.DLHarq.Stats.Ack==double(state.TestExpectedSharedACK) && ...
+        state.DLHarq.Stats.Nack==double(~state.TestExpectedSharedACK));
+    sixgr.util.csvWriteTable(fullfile(root,'combined_pucch_trial.csv'),trial,'PreserveSchema',true);
+    sixgr.util.csvWriteTable(fullfile(root,'combined_pucch_csi.csv'),report,'PreserveSchema',true);
+    save(fullfile(root,'combined_pucch_completion.mat'),'trial','report','receipts');
+    fprintf('TDD_INDEPENDENT_COMBINED_PUCCH_PASS actual_DL_RX=1 HARQ=1 SR=1 CSI=1 UL_command=0 root=%s\n',root);
+    ok=true; return;
 end
 if unconsumedULCommand
     audit=state.SharedUnselectedPUCCHAuditTable;
@@ -390,7 +416,36 @@ for item=items
         continue;
     end
     if item.Kind=="PUCCH"
+        if state.TestPUCCHOnlyCompletion
+            % Same actual IQ with UE bookkeeping removed and optional TX
+            % references poisoned. No new RF/channel execution or forced DTX.
+            observer=state; observer.PendingFeedbackTable=table();
+            observer.PUCCHGrantTraceTable=table(); observer.PendingCSITable=table();
+            observer.SharedUEHARQACKEvents={}; observer.SharedReceivedGrantControls={};
+            observer.ExpectedHARQACKBits=int8([0;0;0;0]);
+            observer.ExpectedCSIPart1Bits=int8(ones(19,1));
+            c=item.Context; original=c.GNBReception;
+            independent=sixgr.truth.buildScheduledPUCCHHARQReception( ...
+                observer,c.Config,item.UE,c.Slot,c.ObservationID);
+            assert(independent.Mapping.Digest==original.Mapping.Digest && ...
+                independent.Assignment.Digest==original.Assignment.Digest && ...
+                independent.Context.Digest==original.Context.Digest, ...
+                'UE bookkeeping or TX references must not own the combined receive schema.');
+            [~,~,~,~,capture]=sixgr.truth.sharedObservationEvidence(item.Planes,c.Prepared);
+            replay=sixgr.link.receivePUCCHObservation(c.Config,independent.Assignment, ...
+                independent.Context,capture,state.ReceivedULTimingReferences{item.UE});
+        end
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(state,item);
+        if state.TestPUCCHOnlyCompletion
+            actual=state.SharedGNBUCIReceptions{end}.Receiver;
+            assert(isequaln(actual.DecodedFields,replay.DecodedFields) && ...
+                actual.ReceiverUsable==replay.ReceiverUsable && actual.DTX==replay.DTX && ...
+                actual.CRCPassed==replay.CRCPassed && isequal(actual.DecodedFields.SR,int8(0)), ...
+                'Retained-IQ independent reception must preserve HARQ/CSI/SR fields and decisions.');
+            save(fullfile(state.TestRoot,'combined_pucch_independent_replay.mat'), ...
+                'item','independent','actual','replay','-v7.3');
+            fprintf('COMBINED_PUCCH_OBSERVER_REMOVAL_REPLAY_PASS additional_RF_executions=0 negative_SR_exact=1\n');
+        end
         continue;
     end
     c=item.Context; p=c.Prepared;

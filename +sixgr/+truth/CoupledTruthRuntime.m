@@ -1419,21 +1419,22 @@ methods(Static)
             'ServingCell',state.CurrentServingIdx(ue),'PUCCHCell',state.CurrentServingIdx(ue), ...
             'ComponentCarrier',identity.ScheduledCCID,'ActiveULBWP',identity.ULBWPID);
         receiveCalendar=sixgr.truth.configuredCSIReportCalendar(cfg,receiveUE,slot);
-        % Wire the installed HARQ-only procedure without silently removing
-        % configured CSI/SR/PUSCH obligations from a combined hypothesis.
-        if height(harqRows)==height(rows) && isempty(fieldnames(csi)) && ...
-                all(upper(string(rows.FeedbackForDirection))=="DL") && ...
-                (isempty(receiveCalendar) || ~any(receiveCalendar.ULResourceAvailable))
-            % Installed SR inventory may have no occasion in this window.
-            % The independent hypothesis validates its calendar and rejects
-            % missing configuration or real overlap before waveform creation.
+        % The gNB expectation comes from its transmitted schedule, including
+        % missing UE events and CSI reports. Producer presence cannot select
+        % whether this physical reception gets an independent schema.
+        if ~isempty(sixgr.truth.scheduledHARQExpectationsForOccasion(state,ue,slot))
             book=sixgr.truth.buildReceivedHARQACKCodebook(state,cfg,ue,slot);
-            execution.UEHARQCodebook=book;
-            execution.UECodebookRows=sixgr.truth.bindReceivedPUCCHCodebookRows(book,rows);
+            if ~isempty(harqRows)
+                execution.UEHARQCodebook=book;
+                execution.UECodebookRows=sixgr.truth.bindReceivedPUCCHCodebookRows(book,harqRows);
+            else
+                assert(isempty(book.Events),'sixgr:truth:MissingReceivedPUCCHProducer', ...
+                    'Received HARQ events require their own producer rows even alongside CSI.');
+            end
             execution.GNBReception=sixgr.truth.buildScheduledHARQTransportReception( ...
                 state,cfg,ue,slot,item.Context.ObservationID);
             execution.ScheduledRowIndices=sixgr.truth.bindScheduledPUCCHFeedbackRows( ...
-                execution.GNBReception.Mapping,rows);
+                execution.GNBReception.Mapping,harqRows);
         elseif isempty(harqRows) && height(receiveCalendar)==1 && receiveCalendar.ULResourceAvailable && ...
                 isfinite(receiveCalendar.CSIReferenceSlot) && receiveCalendar.CSIReferenceSlot>= ...
                 sixgr.util.structGet(state,'SweepPointStartSlot',1) && ...
@@ -1493,7 +1494,8 @@ methods(Static)
             assert(current.Mapping.Digest==c.GNBReception.Mapping.Digest && ...
                 current.Assignment.Digest==c.GNBReception.Assignment.Digest, ...
                 'sixgr:truth:ChangedPUCCHReceiveHypothesis','The bound gNB allocation changed before completion.');
-            indices=sixgr.truth.bindScheduledPUCCHFeedbackRows(current.Mapping,c.FeedbackRows);
+            harqRows=c.FeedbackRows(sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(c.FeedbackRows),:);
+            indices=sixgr.truth.bindScheduledPUCCHFeedbackRows(current.Mapping,harqRows);
             assert(isequal(indices,c.ScheduledRowIndices), ...
                 'sixgr:truth:ScheduledPUCCHProducerMismatch','The logical-to-gNB association changed.');
             c.ReceivedContext.GNBReception=struct('Assignment',c.GNBReception.Assignment, ...
@@ -1501,6 +1503,22 @@ methods(Static)
         end
         [state,observed]=sixgr.truth.CoupledTruthRuntime.observePUCCHFeedback( ...
             state,c.FeedbackRows,c.CSIReport,c);
+        independentCSI=isfield(c,'GNBReception') && ...
+            ~isempty(c.GNBReception.CSIReportConfiguration);
+        if independentCSI
+            % Validate and stage the CSI result before any shared HARQ handle
+            % changes. The report calendar, not the UE report, owns identity.
+            h=c.GNBReception;
+            actual=sixgr.truth.normalizeReceivedPUCCHCSI(observed.Receiver,h.Context,h.CSIReportConfiguration);
+            observed.CSIDecodeOk=actual.DecodeOk;
+            observed.CSICRCPass=actual.CRCPass;
+            identity=struct('UEIndex',h.UEIndex,'RNTI',h.RNTI,'TargetSlot',h.TargetSlot, ...
+                'Transport',"PUCCH",'PUSCHGrantContextID',"");
+            report=sixgr.truth.CoupledTruthRuntime.prepareIndependentCSIReport( ...
+                state,c.Config,identity,actual,h.CSIReportCalendar(h.CSIReportResourceOverlap,:), ...
+                struct('ObservationID',c.ObservationID),post);
+            state=sixgr.truth.CoupledTruthRuntime.stageIndependentCSI(state,report);
+        end
         if isfield(c,'GNBReception')
             mapping=c.GNBReception.Mapping;
             normalized=struct('MappingDigest',mapping.Digest,'UEIndex',mapping.UEIndex, ...
@@ -1512,8 +1530,8 @@ methods(Static)
             % The gNB already applied all scheduled dispositions once,
             % including obligations with no UE producer after a missed DCI.
             % Existing UE bookkeeping is updated by identity only.
-            for ri=1:height(c.FeedbackRows)
-                row=c.FeedbackRows(ri,:); di=c.ScheduledRowIndices(ri);
+            for ri=1:height(harqRows)
+                row=harqRows(ri,:); di=c.ScheduledRowIndices(ri);
                 expected=sixgr.truth.CoupledTruthRuntime.rowExpectedPUCCHAck(row);
                 bitObserved=sixgr.truth.resolveReceivedHARQBit(observed,di,logical(expected));
                 bitObserved.DecodeOk=dispositions(di).ReceiverUsable;
@@ -1530,6 +1548,10 @@ methods(Static)
                 state=sixgr.truth.CoupledTruthRuntime.markPendingFeedbackProcessedByGrantId( ...
                     state,sixgr.truth.CoupledTruthRuntime.rowValue(row,'PUCCHGrantId',''));
             end
+            csiRows=c.FeedbackRows(~sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(c.FeedbackRows),:);
+            if ~isempty(csiRows)
+                state=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedback(state,csiRows,observed);
+            end
             trials=state.ControlTrials.PUCCH;
             hit=find(string(trials.PhysicalPUCCHOccasionId)==string(observed.PhysicalOccasionId));
             assert(isscalar(hit),'sixgr:truth:AmbiguousPUCCHDispositionTrial','Retain one received physical trial.');
@@ -1538,20 +1560,29 @@ methods(Static)
             end
             trials.HARQFeedbackAppliedCount(hit)=sum([dispositions.HARQFeedbackApplied]);
             trials.StaleHARQFeedbackCount(hit)=sum([dispositions.StaleFeedbackIgnored]);
-            changed=any([dispositions.HARQFeedbackApplied]);
+            changed=any([dispositions.HARQFeedbackApplied]) || ...
+                (independentCSI && report.CSIUCIDecodeOk && report.DeliveryStatus=="delivered_to_runtime_scheduler");
             trials.RuntimeStateUpdated(hit)=changed; trials.ControlStateChanged(hit)=changed;
             trials.StateChangeApplied(hit)=changed;
             state.ControlTrials.PUCCH=trials;
         else
             state=sixgr.truth.CoupledTruthRuntime.applyObservedPUCCHFeedback(state,c.FeedbackRows,observed);
         end
-        if isfield(c.CSIReport,'ReportIdentity')
+        if isfield(c.CSIReport,'ReportIdentity') && ~independentCSI
             reports=state.PendingCSITable;
             hit=find(string(reports.ReportIdentity)==string(c.CSIReport.ReportIdentity));
             assert(isscalar(hit),'sixgr:truth:SharedPUCCHCSIIdentity','Retain one exact CSI report until received completion.');
             report=sixgr.truth.CoupledTruthRuntime.applyCombinedPUCCHCSIObservation(state,c.CSIReport,observed);
             state.PendingCSITable=sixgr.truth.CoupledTruthRuntime.replaceCompatTableRow( ...
                 reports,hit,struct2table(report,'AsArray',true));
+        end
+        if isfield(c,'GNBReception')
+            receipts=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
+            receipts{end+1}=struct('ObservationID',string(c.ObservationID),'Mapping',c.GNBReception.Mapping, ...
+                'Receiver',observed.Receiver,'Assignment',c.GNBReception.Assignment, ...
+                'Context',c.GNBReception.Context,'TransportScheduleEvidence',current.TransportScheduleEvidence, ...
+                'AvailableAtSample',post.EndSampleExclusive);
+            state.SharedGNBUCIReceptions=receipts;
         end
         state.SharedLastPUCCHAvailableAtSample=post.EndSampleExclusive;
         state.SharedPUCCHRXCommittedIDs=[committed;key];
@@ -1589,12 +1620,21 @@ methods(Static)
         references=sixgr.util.structGet(state,'ReceivedULTimingReferences',{});
         prior=[]; if numel(references)>=item.UE, prior=references{item.UE}; end
         rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,post,prior);
-        bits=int8(rx.DecodedSequence1(:));
+        bits=int8(rx.DecodedFields.HARQACK(:));
         usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
         assert(all(bits==0 | bits==1),'sixgr:truth:InvalidReceivedHARQBit','Received UCI must be binary.');
         normalized=struct('MappingDigest',mapping.Digest,'UEIndex',mapping.UEIndex, ...
             'RNTI',mapping.RNTI,'TargetSlot',mapping.TargetSlot,'DecodedBits',bits, ...
             'DecodeOk',logical(usable),'DTXFlag',logical(rx.DTX),'Transport',"PUCCH");
+        if ~isempty(h.CSIReportConfiguration)
+            actual=sixgr.truth.normalizeReceivedPUCCHCSI(rx,h.Context,h.CSIReportConfiguration);
+            identity=struct('UEIndex',h.UEIndex,'RNTI',h.RNTI,'TargetSlot',h.TargetSlot, ...
+                'Transport',"PUCCH",'PUSCHGrantContextID',"");
+            report=sixgr.truth.CoupledTruthRuntime.prepareIndependentCSIReport( ...
+                state,cfg,identity,actual,h.CSIReportCalendar(h.CSIReportResourceOverlap,:), ...
+                struct('ObservationID',c.ObservationID),post);
+            state=sixgr.truth.CoupledTruthRuntime.stageIndependentCSI(state,report);
+        end
         [state,~,~]=sixgr.truth.CoupledTruthRuntime.commitScheduledHARQFeedbackRuntime( ...
             state,cfg,item.UE,c.Slot,normalized,post,c.ObservationID);
         trial=struct('Slot',c.Slot,'Channel',"PUCCH",'Direction',"UL",'UEIndex',item.UE, ...
@@ -1603,7 +1643,9 @@ methods(Static)
             'PUCCHFormat',h.Assignment.Format,'PUCCHDecodeOk',logical(usable),'ReceiverUsable',logical(usable), ...
             'DTXFlag',logical(rx.DTX),'DetectionMetric',rx.DetectionMetric,'DetectionThreshold',rx.DetectionThreshold, ...
             'DetectionThresholdSource',string(rx.DetectionThresholdSource), ...
-            'ReceiverExpectedHARQBitCount',mapping.BitCount,'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString(bits), ...
+            'ReceiverExpectedHARQBitCount',mapping.BitCount,'ReceiverExpectedSRBitCount',h.Context.SRBits, ...
+            'ReceiverExpectedCSIPart1BitCount',h.Context.CSIPart1Bits, ...
+            'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString(rx.DecodedSequence1), ...
             'ObservationStartSample',post.StartSample,'ObservationEndSampleExclusive',post.EndSampleExclusive, ...
             'ObservationSampleRateHz',post.SampleRateHz,'ObservationCompletionTime_s',post.EndSampleExclusive/post.SampleRateHz, ...
             'NoiseVariance',rx.GridNoiseVariance,'NoiseVarianceDomain',"resource_grid_pre_equalization", ...
@@ -17122,8 +17164,9 @@ methods(Static, Access=private)
             validateAndOrderPUCCHPhysicalOccasion(feedbackRow);
         row = feedbackRow(end, :);
         if isfield(execution,'UEHARQCodebook')
-            binding=sixgr.truth.bindReceivedPUCCHCodebookRows(execution.UEHARQCodebook,feedbackRow);
-            row=feedbackRow(binding.LastRowIndex,:);
+            sourceRows=feedbackRow(sixgr.truth.CoupledTruthRuntime.pucchHARQRowMask(feedbackRow),:);
+            binding=sixgr.truth.bindReceivedPUCCHCodebookRows(execution.UEHARQCodebook,sourceRows);
+            row=sourceRows(binding.LastRowIndex,:);
         end
         ueIdx = max(1, round(double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "UEIndex", NaN))));
         if ~(isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(sixgr.util.structGet(state, "NumUsers", 0)))
@@ -17299,13 +17342,19 @@ methods(Static, Access=private)
                 'FeedbackRows',feedbackRow,'CSIReport',csiReport,'Arguments',{args}, ...
                 'Slot',dueSlot,'UE',ueIdx);
             observed.UETransmitFrameState=frameState; % TX audit only, never gNB schema authority.
-            if isfield(execution,'GNBReception'), observed.GNBReception=execution.GNBReception; end
+            if isfield(execution,'GNBReception')
+                observed.GNBReception=execution.GNBReception;
+                if ~isempty(execution.GNBReception.Mapping)
+                    observed.ScheduledRowIndices=sixgr.truth.bindScheduledPUCCHFeedbackRows( ...
+                        execution.GNBReception.Mapping,harqRows);
+                end
+            end
             if isfield(execution,'UEHARQCodebook')
                 observed.UEHARQCodebook=execution.UEHARQCodebook;
-                observed.UECodebookRows=sixgr.truth.bindReceivedPUCCHCodebookRows(execution.UEHARQCodebook,feedbackRow);
+                observed.UECodebookRows=sixgr.truth.bindReceivedPUCCHCodebookRows(execution.UEHARQCodebook,harqRows);
                 observed.GNBReception=execution.GNBReception;
                 observed.ScheduledRowIndices=sixgr.truth.bindScheduledPUCCHFeedbackRows( ...
-                    execution.GNBReception.Mapping,feedbackRow);
+                    execution.GNBReception.Mapping,harqRows);
             end
             return; % No RX row, HARQ update, channel or RF execution.
         elseif isfield(execution,'ReceivedContext')
@@ -17352,6 +17401,7 @@ methods(Static, Access=private)
                 pucchRET);
         end
         [decodedReport,wireLayoutOk] = sixgr.truth.extractPUCCHReceiverFields(trial);
+        if isfield(execution,'GNBReception'), observed.Receiver=trial.Receiver; end
         decodedBits = int8(decodedReport.HARQACKBits);
         crcApplicable = logical(sixgr.util.structGet(trial, "CRCApplicable", false));
         crcPass = true;
@@ -17697,6 +17747,9 @@ methods(Static, Access=private)
             "ReceiverAssignmentDigest", string(sixgr.util.structGet(trial,'ReceiverAssignmentDigest',"")), ...
             "IndependentReceiverAssignment", logical(sixgr.util.structGet(trial,'IndependentReceiverAssignment',false)), ...
             "ReceiverExpectedHARQBitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedHARQBitCount',NaN)), ...
+            "ReceiverExpectedSRBitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedSRBitCount',NaN)), ...
+            "ReceiverExpectedCSIPart1BitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedCSIPart1BitCount',NaN)), ...
+            "ReceiverExpectedCSIPart2BitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedCSIPart2BitCount',NaN)), ...
             "UCIType", char(uciType), ...
             "ControlResourceSource", char(string(sixgr.truth.CoupledTruthRuntime.rowValue(fbRow, "ControlResourceSource", "runtime_deterministic_pucch_resource_assignment"))), ...
             "ControlResourceValidity", logical(sixgr.util.structGet(trial, "ControlResourceValidity", true)), ...
