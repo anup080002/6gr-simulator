@@ -78,6 +78,47 @@ RX package again when reproducing the existing simulated receive condition.
 
 ## Recording import versus demodulation
 
+### Synchronized two-channel companion files
+
+The selected ten-ms capture also has four derived two-channel recordings at:
+
+`logs/research_selected_iq_6be2985f_20260917/keysight_two_channel_vsa`
+
+Choose `dl_rx_two_channel_vsa.mat` or `ul_rx_two_channel_vsa.mat` to retain
+the simulated noisy receive condition. Corresponding `dl_tx_...` and
+`ul_tx_...` files contain clean transmit samples. Each MAT file contains
+`Y1` and `Y2` on the same sample clock, with the original common endpoint
+normalization. Arrays are copied exactly from the verified per-port VSA
+files: no resampling, time concatenation, port summation, new quantization,
+waveform generation or additional noise is performed. The original capture
+package is not modified. Raw `raw_iq.mat` remains the amplitude authority.
+
+All four recordings passed exact MATLAB readback (exit 0), and all eight
+source VSA hashes were reverified unchanged. Output hashes, source paths,
+the packaging helper and console receipts are in
+`evidence_20260917/research_two_channel_vsa`. The four MAT files plus CSV
+manifest occupy 210,676,723 bytes locally; large files are not in Git.
+This is derived playback packaging, not another PHY execution or a verified
+Keysight import.
+
+Keysight documents `Y1`/`Y2` for two-channel recordings and use of simulated
+hardware when physical input channels are unavailable. Select a two-channel
+input setup before recalling a joint recording. Application/version-specific
+import and MIMO demodulator configuration remain unverified. See
+[recording headers](https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/data_header.htm)
+and [multi-channel recall](https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/saving_and_recalling_recordings.htm).
+
+To create companion files after generating a capture on another server,
+use its existing run folder (whose manifest paths must remain accessible)
+and a new, nonexistent output directory:
+
+```matlab
+addpath('docs/lls/evidence_20260917/research_two_channel_vsa');
+package_two_channel_vsa(runFolder, 'logs/keysight_two_channel_01');
+```
+
+### Recall and analysis settings
+
 In 89600 VSA, use **File > Recall > Recall Recording** and select the
 MATLAB recording format for a `port_N_vsa.mat` file. Keysight documents
 MATLAB v5/v7 recording support. The emitted fields are `Y`,
@@ -87,11 +128,12 @@ See [recording recall](https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsyst
 [MAT support](https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/matlab.htm),
 and [header definitions](https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/data_header.htm).
 
-The files currently contain one VSA input channel each. Do not treat one
-port as a complete two-layer MIMO measurement, sum ports, or concatenate
-ports in time. A synchronized multi-channel setup is needed for a joint
-two-port analysis; its import procedure depends on the installed Keysight
-application/version. The exact raw MAT retains both ports on the same
+The original `port_N_vsa.mat` files contain one VSA input channel each;
+the companion `*_two_channel_vsa.mat` files contain both channels. Do not
+treat one port as a complete two-layer MIMO measurement, sum ports, or
+concatenate ports in time. A synchronized multi-channel setup is needed
+for joint analysis; the exact procedure depends on the installed Keysight
+application/version. The exact raw MAT also retains both ports on the same
 sample clock.
 
 Importing a recording does not configure the OFDM demodulator. This is a

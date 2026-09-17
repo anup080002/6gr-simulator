@@ -1,0 +1,39 @@
+{
+  "ArtifactKind": "derived_playback_container_not_new_measurement",
+  "SourceCommit": "6be2985f9f6b78b4349c91ab71da81f32e25f7c8",
+  "OriginalVSASourceHashesVerified": 8,
+  "SourceManifestSHA256": "26A79E21E90852E416E976EC2F7C05D7A9A65E83210DCD7993A8E64B2CB1E0DA",
+  "Package": "logs/research_selected_iq_6be2985f_20260917/keysight_two_channel_vsa",
+  "PackagingMATLABExitCode": 0,
+  "ExactArrayReadbackRecordings": 4,
+  "ChannelsPerRecording": 2,
+  "SamplesPerChannel": 4915200,
+  "CommonEndpointNormalizationPreserved": true,
+  "Level5MATHeadersVerified": 4,
+  "Recordings": [
+    {
+      "File": "dl_tx_two_channel_vsa.mat",
+      "Bytes": 27591913,
+      "SHA256": "FFEFC2345902E476C8493DE46A276F175CA8B71012C839C3D1D5F6F33AFE2A80"
+    },
+    {
+      "File": "dl_rx_two_channel_vsa.mat",
+      "Bytes": 73198658,
+      "SHA256": "D9E50868579F93EBCB61789198A2C12ABF3E1F1DFF6E290A4501643B2F2266D2"
+    },
+    {
+      "File": "ul_tx_two_channel_vsa.mat",
+      "Bytes": 36700446,
+      "SHA256": "A876847BA51B864EA9B0BBA3B126EAE4315A1E0801317DCD5C80E6282476869B"
+    },
+    {
+      "File": "ul_rx_two_channel_vsa.mat",
+      "Bytes": 73182611,
+      "SHA256": "38BEB7CD6F4D89EDE7B295AA4407E99507478C05A828C3741C668DAD73223472"
+    }
+  ],
+  "KeysightImportVerified": false,
+  "WaveformRegenerated": false,
+  "ResamplingApplied": false,
+  "AdditionalNoiseApplied": false
+}
