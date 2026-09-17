@@ -58,6 +58,17 @@ Receipts are in `evidence_20260917/research_rate075_10ms`. This is one of
 four candidates, not a final winner or statistical BLER qualification;
 the remaining candidates continue in the same live process.
 
+Rate 0.80 subsequently also completed 70/70 TBs correctly over 10 ms:
+**1.819512 Gbit/s DL and 2.426016 Gbit/s UL**. The saved resolved configs
+for 0.75 and 0.80 differ only in target code rates and scenario/provenance
+identity. Rate 0.85 has produced real CRC failures in both directions; its
+remaining observations and rate 0.90 continue without modifying the run.
+`research_400mhz_rate082.yaml` adds one intermediate 10-ms point through
+configuration only; no PHY, decoder, power or noise policy changes are made.
+It is not declared passed or selected before execution. The completed rate
+0.75 run's EVM-equivalent receive SINR averages 28.4455 dB DL / 28.4489 dB UL;
+the configured 30 dB reference SNR is not forced onto that measured metric.
+
 Run the actual comparison on the Windows server from this branch:
 
 ```powershell

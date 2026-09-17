@@ -1,0 +1,9 @@
+# Intermediate candidate after rate 0.80 passed and rate 0.85 showed CRC failures.
+inherits:
+  - research_400mhz_rate075.yaml
+meta:
+  scenario_id: research_400mhz_rate082
+research_dl:
+  target_code_rate: 0.82
+research_ul:
+  target_code_rate: 0.82
