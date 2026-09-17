@@ -56,6 +56,17 @@ weakened. This observation used the dirty development tree over `1cb4eaad`.
 The subsequent checkpoint adds runner return-contract/provenance fields;
 committed-source execution and complete regression are still required.
 
+Follow-up at 11:08 IST: execution from clean, frozen commit
+`3f0ed1e4ae7debe3d4136c733fd2dcce4d2e4b40` completed successfully with
+`GitDirty=false`, 7/7 exact TBs, the same DL/UL goodput and completed IQ
+exports. Receipts are in `evidence_20260917/research_tdd_link_committed_30db`.
+The full package is directly under
+`logs/checkpoint_3f0ed1e4_validation_20260917/execution/lls/lls_7ghz_400mhz_1024qam_tdd_30db/committed_source`.
+That frozen checkout is now running the required guards, followed by the
+unfiltered `testAll`; neither regression stage has a final verdict yet.
+The separate older `cef38516` validation remains running and cannot qualify
+these newer feature changes.
+
 Explicitly disabled/unexecuted: initial access, PDCCH/PUCCH, CSI/SRS,
 HARQ/UCI, acquired timing, RF impairments, AI and energy accounting. Legacy
 NR data MCS/coding/MIMO fields do not own this profile's allocations;
