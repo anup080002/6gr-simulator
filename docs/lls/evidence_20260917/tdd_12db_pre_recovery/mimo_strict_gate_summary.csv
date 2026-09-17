@@ -1,0 +1,9 @@
+Gate,EvidenceRowCount,Pass,FailureReason
+"configuration_validation",12,1,""
+"configured_vs_effective",2,1,""
+"antenna_runtime_domain",2,0,"directions=UL,details=runtime_antenna_domain_does_not_match_configured_execution_contract"
+"antenna_port_mapping",2,1,""
+"applied_precoder",25,1,""
+"beam_codebook",3,1,""
+"beam_sweep_measurement",25,1,""
+"receiver_oracle_guard",25,1,""
