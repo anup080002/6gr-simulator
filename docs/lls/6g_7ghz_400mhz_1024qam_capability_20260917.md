@@ -45,12 +45,33 @@ point with full-frame IQ capture, playback export, plots and strict all-TB
 success enabled. It changes only output/acceptance flags and scenario
 identity, not PHY/noise/decoder settings. The capture reruns the actual
 waveforms and receiver; it does not reuse a pass flag or fabricate samples.
-The capture was launched at 12:05 IST from immutable commit
-`6be2985f9f6b78b4349c91ab71da81f32e25f7c8`; logs are under
-`logs/research_selected_iq_6be2985f_20260917`. Its driver runs unfiltered
-`testAll` and required focused guards after capture. Capture completion and
-final-source full regression are still pending. A same-seed capture repeat is not an independent statistical
-reliability trial. Research/initial-access limitations remain unchanged.
+The capture completed from immutable commit
+`6be2985f9f6b78b4349c91ab71da81f32e25f7c8`, with native manifest
+`Status=completed`, `ResultOk=true`, and **70/70 TBs correct**. Its 58-file,
+804,357,388-byte package is under
+`logs/research_selected_iq_6be2985f_20260917/execution/lls/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq/committed_source`.
+All eight TX/RX port streams contain 4,915,200 samples. Exact raw MAT and
+playback-file readback passed in the exporter; clipping is zero. Independent
+PowerShell verification passed all 20 unique file hashes, eight WIQ lengths
+and VSA MAT headers, 80 contiguous TDD slots, 11,057,920 inactive zero TX
+samples, 180 inactive RX intervals containing noise, and unique-TB goodput.
+The 70 same-seed EVM values match the earlier rate-0.82 execution exactly.
+
+The original auxiliary MATLAB verifier failed after capture because
+`readtable` guessed `_` as the delimiter and did not recognize the CSV
+header. This did not change the native capture verdict. A separate read-only
+MATLAB verification specifying comma delimiter and first-line variable names
+passed (exit 0), retaining the original sample-count, quantization, CRC,
+exact-TB and same-seed metric assertions. Both the original failure and
+successful verification are preserved in
+`evidence_20260917/research_selected_iq_10ms`; no captured file or PHY policy
+was changed. Use explicit CSV options when reading this path-rich manifest.
+
+Unfiltered `testAll` started on the capture source at 12:22 IST, with required
+focused guards queued afterward. Final-source full regression and actual
+Keysight import remain unverified. A same-seed capture repeat is not an
+independent statistical reliability trial. Research/initial-access
+limitations remain unchanged.
 
 ```powershell
 New-Item -ItemType Directory -Path logs/wideband_selected_iq_01 -ErrorAction Stop

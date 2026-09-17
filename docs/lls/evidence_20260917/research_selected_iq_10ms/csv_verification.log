@@ -1,0 +1,37 @@
+AUTOMATIC_IMPORT_COLUMNS Var1,Var2,Var3,Var4,Var5,Var6,Var7,Var8,Var9,Var10,Var11,Var12,Var13,Var14,Var15,Var16,Var17,Var18,Var19,Var20,Var21,Var22,Var23,Var24,Var25,Var26,Var27,Var28,Var29,Var30,Var31,Var32,Var33,Var34,Var35,Var36,Var37,Var38,Var39,Var40,Var41,Var42,Var43,Var44,Var45,Var46,Var47,Var48,Var49,Var50,Var51,Var52,Var53
+  DelimitedTextImportOptions with properties:
+
+   Format Properties:
+                    Delimiter: {'_'}
+                   Whitespace: '\b\t '
+                   LineEnding: {'\n'  '\r'  '\r\n'}
+                 CommentStyle: {}
+    ConsecutiveDelimitersRule: 'split'
+        LeadingDelimitersRule: 'keep'
+       TrailingDelimitersRule: 'ignore'
+                EmptyLineRule: 'skip'
+                     Encoding: 'UTF-8'
+
+   Replacement Properties:
+                  MissingRule: 'fill'
+              ImportErrorRule: 'fill'
+             ExtraColumnsRule: 'addvars'
+
+   Variable Import Properties: Set types by name using setvartype
+                VariableNames: {'Var1', 'Var2', 'Var3' ... and 50 more}
+                VariableTypes: {'char', 'char', 'char' ... and 50 more}
+        SelectedVariableNames: {'Var1', 'Var2', 'Var3' ... and 50 more}
+              VariableOptions: [1-by-53 matlab.io.VariableImportOptions] 
+	Access VariableOptions sub-properties using setvaropts/getvaropts
+           VariableNamingRule: 'modify'
+
+   Location Properties:
+                    DataLines: [2 Inf]
+            VariableNamesLine: 0
+               RowNamesColumn: 0
+            VariableUnitsLine: 0
+     VariableDescriptionsLine: 0 
+	To display a preview of the table, use preview
+
+EXPLICIT_CSV_IMPORT_COLUMNS Direction,CapturePoint,Port,SampleCount,SampleRateHz,CenterFrequencyHz,CommonEndpointFullScale,RawMAT,RawSHA256,WIQFile,WIQSHA256,VSAMATFile,VSAMATSHA256,QuantizationMaxError,ClippedComponents,InstrumentImportVerified,StandardNR
+COMPLETED_CAPTURE_CSV_VERIFICATION_PASS streams=8 trials=70 same_seed_repeat=1 independent_statistical_repeat=0

@@ -2,6 +2,45 @@
 
 ## Available verified package
 
+### Selected rate-0.82 capture: ten milliseconds
+
+The highest passing tested rate for the fixed two-layer configuration now
+has a complete IQ package from clean commit
+`6be2985f9f6b78b4349c91ab71da81f32e25f7c8`:
+
+`logs/research_selected_iq_6be2985f_20260917/execution/lls/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq/committed_source`
+
+All 30 DL and 40 UL transport blocks passed CRC and exact-payload checks.
+Goodput over the complete 10 ms TDD interval is **1.868280 Gbit/s DL** and
+**2.491040 Gbit/s UL**. Every TX/RX port stream contains 4,915,200 samples
+at 491.52 Msamples/s. The package contains 58 files / 804,357,388 bytes;
+large IQ files remain local under `logs`, not in Git. The source scenario
+is `simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml`.
+
+This is best observed among rates 0.75, 0.80, 0.82, 0.85 and 0.90 with the
+same link budget and configuration, not a global throughput optimum. The
+capture repeats the same seed; it is not an independent reliability trial.
+Rates 0.85 and 0.90 produced real failures retained in the comparison.
+
+The native capture and file readback passed. An independent audit verified
+20 artifact hashes, all stream lengths, MAT container headers, TDD silence,
+RX noise presence and delivered-bit accounting. Small receipts and the
+read-only audit script are in `evidence_20260917/research_selected_iq_10ms`.
+Final-source full regression is running; actual Keysight import is not
+verified. This remains an optional research experiment, not qualified NR
+or standardized 6G behavior.
+
+The original auxiliary CSV check failed because MATLAB guessed underscore
+as delimiter. A subsequent read-only MATLAB check passed with explicit CSV
+options (exit 0). Both receipts are retained. Read the manifest using:
+
+```matlab
+iq = readtable(fullfile(runFolder,'waveform','iq_manifest.csv'), ...
+    'Delimiter',',','ReadVariableNames',true,'TextType','string');
+```
+
+### Earlier rate-0.75 package: one millisecond
+
 The clean-source, one-ms lab run from
 `3f0ed1e4ae7debe3d4136c733fd2dcce4d2e4b40` is preserved at:
 
