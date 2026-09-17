@@ -1,0 +1,67 @@
+# Preconfigured synchronized research lab link; not a 3GPP 6G conformance case.
+inherits:
+  - dl_4ghz_baseline.yaml
+  - ../bands/band_7ghz_400mhz_research.yaml
+  - ../channels/awgn.yaml
+  - ../coding/research_dl_1024qam.yaml
+  - ../coding/research_ul_1024qam.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_1024qam_tdd_30db
+  description: Real coded bidirectional TDD lab waveform, identity AWGN, configured timing, no initial access or feedback.
+  research_class: optional_research_experiment
+scenario:
+  runner_profile: research_tdd_link
+  target_cases: [dl, ul, pdsch, pusch, dmrs]
+simulation:
+  link_direction: both
+  n_slots: 8
+  snr_db: 30
+  snr_sweep_offsets_db: []
+  reference_sweep_enabled: false
+  harq_diagnostics_enabled: false
+  adaptive_sweep_enabled: false
+research_link:
+  channel: identity_awgn
+  timing: preconfigured_slot_boundary
+  rf: ideal_no_impairments
+  noise_reference: unit_constellation_per_port_after_precoding
+  capture_iq: true
+  export_keysight: true
+  save_plots: true
+  require_all_tb_success: true
+  sweep_snr_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+reference_signals:
+  ssb_enabled: false
+  pbch_enabled: false
+  pdcch_dmrs_enabled: false
+  csi_rs_enabled: false
+  srs_enabled: false
+  trs_enabled: false
+  tracking_rs_enabled: false
+  ptrs_enabled: false
+  csi_reporting_enabled: false
+  cqi_reporting_enabled: false
+  pmi_reporting_enabled: false
+  ri_reporting_enabled: false
+initial_access:
+  enabled: false
+random_access:
+  enabled: false
+control:
+  pdcch_enabled: false
+  pucch_enabled: false
+  blind_search_enabled: false
+harq:
+  enabled: false
+users:
+  enabled: false
+ai_ml:
+  enabled: false
+energy_efficiency:
+  enabled: false
+impairments:
+  cfo_enabled: false
+  phase_noise_enabled: false
+  iq_imbalance_enabled: false
+  pa_nonlinearity_enabled: false
+  timing_offset_enabled: false

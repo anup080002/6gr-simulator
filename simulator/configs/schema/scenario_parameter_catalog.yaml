@@ -17,6 +17,7 @@ top_level_order:
   - pdsch6gr
   - research_ul
   - research_dl
+  - research_link
   - harq
   - random_access
   - impairments
@@ -72,7 +73,7 @@ sections:
       runner_profile:
         required: true
         type: string
-        allowed_values: [waveform_bundle, system_level_lls, full_stack_qualification, pdcch_blind_decode_sweep, pdcch_strict_validation, trs_strict_validation, srs_strict_validation, channel_rf_strict_validation, prach_detection, prach_strict_validation, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
+        allowed_values: [waveform_bundle, research_tdd_link, system_level_lls, full_stack_qualification, pdcch_blind_decode_sweep, pdcch_strict_validation, trs_strict_validation, srs_strict_validation, channel_rf_strict_validation, prach_detection, prach_strict_validation, random_access_four_step, ctrl6gr_pdcch_study, pdsch6gr_truth_study, generic_sweep, ai_benchmark]
       scale_profile:
         required: false
         type: string
@@ -629,6 +630,18 @@ sections:
   research_dl:
     required: false
     parameters: *research_shared_channel_parameters
+  research_link:
+    required: false
+    parameters:
+      channel: {required: true, type: string, allowed_values: [identity_awgn]}
+      timing: {required: true, type: string, allowed_values: [preconfigured_slot_boundary]}
+      rf: {required: true, type: string, allowed_values: [ideal_no_impairments]}
+      noise_reference: {required: true, type: string, allowed_values: [unit_constellation_per_port_after_precoding]}
+      capture_iq: {required: true, type: boolean}
+      export_keysight: {required: true, type: boolean}
+      save_plots: {required: true, type: boolean}
+      require_all_tb_success: {required: true, type: boolean}
+      sweep_snr_db: {required: true, type: number_list}
   control:
     required: true
     parameters:

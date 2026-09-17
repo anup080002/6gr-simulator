@@ -14,6 +14,13 @@ end
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+if string(scfg.get("scenario.runner_profile")) == "research_tdd_link"
+    assert(isempty(fieldnames(executionOptions)), ...
+        'sixgr:research:UnsupportedExecutionOptions', ...
+        'Research TDD runs do not support legacy runtime resume options.');
+    out = sixgr.lls6g.runners.runResearchTDD(scfg, outputDir, runTag);
+    return;
+end
 leaf = localResolveLeaf(runTag);
 backend = lower(string(scfg.get("output.backend", "filesystem")));
 backendOverride = lower(strtrim(string(getenv("SIXGR_OUTPUT_BACKEND_OVERRIDE"))));

@@ -8,7 +8,8 @@ unfinished mixed-feedback edits are preserved; they are not verified or
 included in the frozen diagnostic. No existing acceptance assertion, noise
 level, detector threshold or transmit power is to be changed to obtain a pass.
 
-The requested full link is **not implemented/qualified yet**. This is an
+The preconfigured research lab link now executes; the requested fully
+qualified/best-throughput capability is **not complete yet**. This is an
 explicit 6G research experiment, not an assertion of standardized 6G behavior.
 Retain the requested 7 GHz center frequency; do not substitute 28/30 GHz or
 mislabel the carrier as FR2/FR3 just to pass NR bandwidth validation. Retain
@@ -19,6 +20,61 @@ from the preceding request is 30 dB; preserve the later sweep
 [-30, -20, -10, 0, 10, 20, 30, 40] dB.
 
 ## Existing capability and verified source boundaries
+
+### Integrated research lab checkpoint (17 September, 11:02 IST)
+
+`lls_7ghz_400mhz_1024qam_tdd_30db.yaml` now uses the normal
+`run_6g_phy_lls_single` entry point with the explicitly separate
+`research_tdd_link` profile. Actual coded DL and UL share one continuous
+eight-slot TDD clock. A two-layer, code-rate-0.75, 1024-QAM run passed all
+seven TB CRC/exact-payload checks (three DL, four UL). The complete 491,520
+sample interval at 491.52 Msamples/s is 1 ms, including the unused mixed
+slot. Observed delivered goodput is 1.720512 Gbit/s DL and 2.294016 Gbit/s UL.
+
+The channel is explicitly normalized identity AWGN: 30 dB refers to expected
+data-RE energy per port after the unit-total-power precoder divided by grid
+noise variance. It is not forced post-equalization SINR or geometry-based
+power. DMRS-based reception uses only configured scheduling and received
+IQ. RMS receive EVM was 0.0377561–0.0379933; BER was zero for these seven
+TBs only. This is not a statistically qualified BLER result.
+
+Continuous clean TX and noisy RX captures are separately labeled for both
+directions and both ports. Exact raw floating-point MAT files, normalized
+per-port VSA MAT and interleaved little-endian int16 WIQ files passed
+readback checks; clipping was zero. `exportLabIQ` is distinct from the
+full-stack TX recorder because this lab runner must not claim the latter's
+shared physical RF replay provenance. No physical Keysight import occurred.
+The 7 GHz value is carrier metadata, not simulated passband upconversion.
+
+Evidence: `evidence_20260917/research_tdd_link_30db`. The entire 55-file,
+80,893,047-byte package is preserved under
+`logs/research_tdd_link_v2_20260917/artifacts` with zero SHA256 mismatches;
+the original remains intact. Focused MATLAB validation exited 0, 2/2 tests
+passed in 111.72 s. The first attempt's new-runner struct initialization
+failure remains in `logs/research_tdd_link_v1_20260917`; no assertion was
+weakened. This observation used the dirty development tree over `1cb4eaad`.
+The subsequent checkpoint adds runner return-contract/provenance fields;
+committed-source execution and complete regression are still required.
+
+Explicitly disabled/unexecuted: initial access, PDCCH/PUCCH, CSI/SRS,
+HARQ/UCI, acquired timing, RF impairments, AI and energy accounting. Legacy
+NR data MCS/coding/MIMO fields do not own this profile's allocations;
+`research_dl` and `research_ul` do. Existing 12 dB acceptance failures remain
+untouched. Candidate-rate/layer search for best observed throughput, longer
+qualification, final-source full regression, and actual Keysight import
+remain pending. The complete requested SNR grid remains in YAML; this
+single-run profile executes only `simulation.snr_db`.
+
+Windows PowerShell, from the checked-out repository (use a new tag):
+
+```powershell
+git pull --ff-only origin work/tdd-normalized-ssb-20260914
+New-Item -ItemType Directory -Path logs/wideband_30db_server_01 -ErrorAction Stop
+matlab -wait -singleCompThread -logfile logs/wideband_30db_server_01/matlab.log -batch "setup6GRSimToolkit('Verbose',false); run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db.yaml','logs/wideband_30db_server_01','run_01');"
+```
+
+R2023b compatibility remains unverified; preserve and share the entire log
+folder if the server rejects an API. Do not bypass failed guards.
 
 ### Research UL implementation checkpoint (17 September, 10:34 IST)
 
