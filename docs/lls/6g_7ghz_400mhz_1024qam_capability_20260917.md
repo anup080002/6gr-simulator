@@ -21,6 +21,24 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ## Existing capability and verified source boundaries
 
+### Completed focused-regression checkpoint (17 September, 13:29 IST)
+
+All **21 focused guards passed** on immutable source
+`3f0ed1e4ae7debe3d4136c733fd2dcce4d2e4b40` (MATLAB R2026a Update 4,
+8,488.69 seconds). Coverage includes research carrier/DL/UL/TDD components,
+configuration and scenario runners, DL/UL reference points, strict proxy
+guards, scheduler grants, exports/artifact preservation and both required
+E2E truth/proxy tests. The summary, per-test results and zero-failure report
+are retained in `evidence_20260917/checkpoint_3f0ed1e4_focused_guards`.
+
+This source predates the rate-comparison profile and later selected-rate
+YAML additions. It is not a final-source full-suite result, R2023b
+qualification, detector qualification, or a change to the failed 12 dB
+acceptance verdict. Its queued unfiltered `testAll` began at 13:29 IST in
+the same existing process. The selected-capture source `6be2985f` also
+continues its own unfiltered suite; no new MATLAB process was launched for
+this checkpoint transition.
+
 ### Selected capture operating point (17 September, 11:55 IST)
 
 The intermediate **rate 0.82 passed 30/30 DL and 40/40 UL TBs** over 80
