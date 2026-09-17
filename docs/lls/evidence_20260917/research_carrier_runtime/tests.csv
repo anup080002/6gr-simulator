@@ -1,0 +1,5 @@
+name,ok,msg,duration_s,identifier,extended_report_available,diagnostic_rendering_error
+testResearchCarrierRuntime,1,,28.8409127,,0,
+testTransmissionBandwidthCatalog,1,,4.972816,,0,
+testFrameStructureEngine,1,,1.6089652,,0,
+testFrameRuntimeStateBuilder,1,,12.6070601,,0,

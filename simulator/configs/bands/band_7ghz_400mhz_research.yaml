@@ -1,0 +1,40 @@
+# Reusable carrier fragment, not yet a complete coded DL/UL scenario.
+# 7 GHz is within the FR1 frequency range; this bandwidth/numerology combination
+# is explicitly a custom research grid, not a standardized FR1 carrier.
+meta:
+  research_class: optional_research_experiment
+frequency:
+  range_name: FR1
+  band_name: research_7ghz_400mhz
+  center_frequency_hz: 7000000000
+  bandwidth_hz: 400000000
+  bandwidth_options_hz: [400000000]
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  numerology_options_khz: [120]
+  n_size_grid: 264
+  custom_frequency_override_allowed: true
+  research_mode: true
+  minimum_low_guardband_hz: 9920000
+  minimum_high_guardband_hz: 9920000
+frame:
+  scs_khz: 120
+  cp_type: normal
+  slot_format: mixed
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 120
+    Pattern1:
+      PeriodicityMilliseconds: 1
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 12
+      NumUplinkSlots: 4
+      NumUplinkSymbols: 0
+waveform:
+  fft_size: 4096
+  sample_rate_hz: 491520000
+  explicit_fft_size: 4096
+  explicit_sample_rate_hz: 491520000
+  windowing_samples: 0
+tdd_timing:
+  k1_selection_policy: first_valid_configured

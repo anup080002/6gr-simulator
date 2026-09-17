@@ -25,9 +25,10 @@ from the preceding request is 30 dB; preserve the later sweep
   Candidate geometry: 264 PRBs, 120 kHz SCS, 380.16 MHz occupied bandwidth
   inside a 400 MHz channel, with a 4096-point FFT at 491.52 Msamples/s.
   These are proposed experiment settings, not a normative 7 GHz NR profile.
-- `+sixgr/+lls6g/+config/validateScenarioConfig.m` currently reaches the custom
-  grid API only through the FR3 label. YAML-to-runtime research-carrier
-  selection needs an explicit independent mode, not a false frequency label.
+- `frequency.research_mode` now exposes the existing research-grid opt-in
+  through the YAML catalog, scenario validator and internal config adapter.
+  The frame carrier/BWP objects retain explicit CUSTOM/nonstandard provenance;
+  the source band fragment still names the physical 7 GHz range as FR1.
 - `+sixgr/+phy/+ul/+pusch/PUSCHModulator.m` explicitly rejects 1024-QAM.
   `PUSCHMCSResolver.m` supports only the existing NR qam64/qam256/low-SE tables.
 - `+sixgr/+phy/+ul/PUSCH_Tx.m` uses native PUSCH configuration, indices,
@@ -88,6 +89,37 @@ No 400 MHz channel, coded UL transmission, 30 dB link or throughput result
 was executed by this probe. R2023b remains unverified. The next implementation
 boundary is the explicit YAML-to-runtime custom carrier and experimental
 coded Qm=10 uplink described above; the strict NR rejection must remain.
+
+## Implemented frame component: 17 September, 10:09 IST
+
+`simulator/configs/bands/band_7ghz_400mhz_research.yaml` is a reusable band/frame
+fragment, not yet a complete runnable bidirectional 1024-QAM scenario. It
+declares the research opt-in, TDD pattern, 264 PRBs at 120 kHz, 4096-point FFT,
+491.52 Msamples/s and 9.92 MHz minimum guardband on each side. All values are
+YAML-owned. The existing frame engine is reused; no parallel frame engine
+or standard-FR1 bandwidth exception was introduced.
+
+The new carrier/BWP runtime support preserves `ResearchMode=true`,
+`StandardNR=false`, the CUSTOM runtime label, guardbands and independent
+DL/UL BWP identities across serialization/reconstruction. Standard-mode
+400 MHz FR1 rejection and opt-in rejection remain enforced; the new runtime
+support is TDD-only. Scenario validation requires the explicit
+`optional_research_experiment` classification.
+
+Focused MATLAB validation exited **0**, **4/4 passed**:
+`testResearchCarrierRuntime`, `testTransmissionBandwidthCatalog`,
+`testFrameStructureEngine`, `testFrameRuntimeStateBuilder`.
+Receipts are in `evidence_20260917/research_carrier_runtime` and full local
+logs in `logs/research_carrier_runtime_20260917`. The new test is registered
+in `testAll`. Earlier failed iterations (missing explicit guardbands, then
+missing internal TDD reference-clock wiring in the new test fixture) remain
+preserved under the corresponding `logs/research_carrier_frame*` folders.
+
+This proves the YAML fragment -> frame/OFDM resolver -> carrier/BWP runtime
+component path. Full resolved research-scenario construction and execution,
+coded Qm=10 UL, complete regression, final wideband IQ, measured 30 dB link
+performance and throughput remain unfinished. Existing 12 dB defects were
+not repaired by this feature work.
 
 ## Keysight IQ deliverable
 

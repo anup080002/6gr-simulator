@@ -164,6 +164,9 @@ sections:
       max_mimo_size: {required: true, type: integer, min: 1}
       max_supported_center_frequency_hz: {required: false, type: number, min_exclusive: 0}
       custom_frequency_override_allowed: {required: false, type: boolean}
+      research_mode: {required: false, type: boolean}
+      minimum_low_guardband_hz: {required: false, type: number, min: 0}
+      minimum_high_guardband_hz: {required: false, type: number, min: 0}
       mobility_defaults_kmph: {required: true, type: number, min: 0}
       channel_model_defaults: {required: true, type: string}
       reference_signal_defaults: {required: true, type: string}
@@ -201,6 +204,9 @@ sections:
         allowed_values: [CP-OFDM, DFT-s-OFDM]
       fft_size: {required: true, type: integer, min: 64}
       sample_rate_hz: {required: true, type: number, min_exclusive: 0}
+      explicit_fft_size: {required: false, type: integer, min: 64}
+      explicit_sample_rate_hz: {required: false, type: number, min_exclusive: 0}
+      windowing_samples: {required: false, type: integer, min: 0}
       windowing_enabled: {required: true, type: boolean}
       transform_precoding_enabled: {required: true, type: boolean}
       experimental_dl_dfts_ofdm_enabled: {required: false, type: boolean}

@@ -1,0 +1,10 @@
+{
+  "source": "C:/Users/anup0/AppData/Local/Temp/sixgr_tdd_12db_68140bb9_20260917/results/lls/lls_causal_access_to_data_wiring_tdd_short_continuous_iq/tdd_5mhz_12db_68140bb9_20260917",
+  "destination_relative_to_this_folder": "artifacts",
+  "files": 1392,
+  "bytes": 3961101003,
+  "sha256_mismatches": 0,
+  "originals_retained": true,
+  "copied_after_matlab_exit": true,
+  "purpose": "forensic copy of failed run, not a relabeled or re-executed result"
+}

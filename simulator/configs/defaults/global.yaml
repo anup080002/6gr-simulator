@@ -55,6 +55,7 @@
     "max_mimo_size": 8,
     "max_supported_center_frequency_hz": 52600000000,
     "custom_frequency_override_allowed": true,
+    "research_mode": false,
     "mobility_defaults_kmph": 3,
     "channel_model_defaults": "TDL-C",
     "reference_signal_defaults": "nr_rel18",

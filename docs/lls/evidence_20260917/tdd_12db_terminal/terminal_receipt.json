@@ -1,0 +1,21 @@
+{
+  "exit_code": 1,
+  "terminal_observed_ist": "2026-09-17T10:02:16+05:30",
+  "commit": "68140bb94be8501f4c07faf5038746c1ae543112",
+  "scenario_overrides": [],
+  "dl_trials": 20,
+  "dl_crc_passes": 20,
+  "ul_trials": 5,
+  "ul_crc_passes": 5,
+  "baseline12dbQualified": false,
+  "terminal_error": "sixgr:artifact:TerminalBrowserClosureFailed",
+  "recovery_error": "sixgr:artifact:BrowserMaterializationFailed",
+  "recovery_failure_detail": "FER same-trial population reconciliation: frame_count_raw_mismatch in rows 1 and 2",
+  "log_sha256": "261780FD383571786BD8CF05BF32FA9E24A24386679EE6ED86B640EAECDBB0BE",
+  "preserved_pre_recovery_required_failure_count": 4,
+  "recovered_manifest_status": "failed",
+  "recovered_manifest_required_failure_count": 1,
+  "recovered_manifest_required_failed_case": "runtime_incomplete_recovered_from_persisted_raw_evidence",
+  "recovered_manifest_strict_truth_failure_count": 2,
+  "note": "Recovery reduced status differently; none of the four original required failures was repaired. MATLAB process exit observed, not merely a manifest terminal label."
+}
