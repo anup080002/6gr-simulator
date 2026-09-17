@@ -453,3 +453,43 @@ Terminal log SHA256:
 The original mapping batch remains failed; only its failing TDD case was
 rerun here. No full `testDataChannelStreamStages`, `testAll`, required guard
 set, FDD, R2023b or 12 dB pass is inferred from this subset invocation.
+
+## Sep 17 SR fixture repair: focused 4/4, integrated 12 dB still running
+
+The parent-revision full suite at `951bb75b` was stopped as superseded after
+125 completed passes and one failure; `testSSBSharedReceivedBurst` was still
+in progress. Its original log and external incomplete disposition remain in
+`logs/missing_dci_checkpoint_951bb75b_testall_20260917/`. It is not a full-suite
+pass, and its wrapper's pre-stop `running` summary is not terminal evidence.
+
+The recorded failure in `testPUCCHNormalizedMaterialization` came from an
+inherited slot-19 SR opportunity without explicit UE SR procedure state.
+The fixture now asserts that missing state is rejected, then supplies an
+explicit idle state and checks the negative SR bit. Original waveform,
+normalization, power/pathloss and invalid-input assertions remain unchanged.
+
+The first four-test retry retained three passes and exposed a second stale
+fixture: `testConfiguredSRCalendar` inspected the old PUCCH-only preparation
+function name. The actual caller now uses `buildScheduledHARQTransportReception`
+to select the gNB transport independently. The structural check now requires
+that call and additionally requires its installed SR-calendar and overlap
+guard. No production guard, calendar expectation or RF assertion was relaxed.
+
+The second batch, `logs/tdd_sr_fixture_retry_20260917/`, exited 0: all four
+tests passed (`testPUCCHNormalizedMaterialization`,
+`testPUCCHNormalizedTransmitReference`, `testPUCCHMultiplexingPermission`,
+`testConfiguredSRCalendar`). Source 4,636 files was unchanged, SHA256
+`15B98A7450D2A35749CCA8A521385ADB69CD1FA22CECF993599F89FDE0F1DB66`;
+terminal log SHA256
+`9FDFFD3745AF9CBD560C408CA1549E478311F058CF20EF13558058772DFCA02A`.
+These are fixture/configuration checks, not detector or full-suite qualification.
+
+The unchanged 58-slot 5 MHz/configured-12-dB scenario is executing from frozen
+production commit `68140bb9`. By slot 36 it had completed random access,
+received SRS and actual connected DL/UL DCI, and exported its first UL data
+CRC pass (0/640 bit errors). The first three retained DL rows had CRC passes
+and 0/3,192 bit errors. Independent export-algebra checks and snapshots are
+under `logs/tdd_5mhz_12db_68140bb9_20260917/`; they do not establish receiver
+accuracy, all-measurement closure or terminal acceptance. All open combined-
+feedback, physical missing-DCI and qualification items above remain explicit.
+GitHub publication and 400 MHz remain after accepted 12 dB, as requested.
