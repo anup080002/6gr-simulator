@@ -143,6 +143,91 @@ Use this table as the quick decision guide.
 
 ## Quick Start Commands
 
+### Current TDD runs: 5 MHz / 12 dB and 400 MHz / 30 dB
+
+Use **`main`** as the consolidated delivery branch. From Windows PowerShell,
+clone once (Git LFS is needed for tracked MATLAB evidence):
+
+```powershell
+git clone --branch main https://github.com/anup080002/6gr-simulator.git
+Set-Location .\6gr-simulator
+git lfs install
+git lfs pull
+```
+
+For an existing clean clone, use `git switch main` and `git pull --ff-only
+origin main`. Preserve local edits first; do not reset or clean them away.
+
+These are **different YAML scenarios**, not two bandwidth overrides of one
+qualified full-stack scenario. As of 17 September 2026:
+
+| Scenario | YAML under `simulator/configs/scenarios/` | Verified outcome |
+| --- | --- | --- |
+| 5 MHz TDD, configured 12 dB, continuous TX IQ | `lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml` | All 58 slots plus receive tail executed on `68140bb9`; overall acceptance **failed** despite 20/20 DL and 5/5 UL CRC-passing attempts. |
+| 400 MHz TDD, 7 GHz metadata, configured 30 dB reference SNR, DL/UL 1024-QAM | `lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml` | Research capture **completed successfully** on `6be2985f`: 30/30 DL and 40/40 UL TBs correct over 10 ms; 1.868280 Gbit/s DL and 2.491040 Gbit/s UL. |
+
+The 400 MHz run uses two layers, code rate 0.82, ideal AWGN and preconfigured
+timing. Its goodput includes the complete TDD interval. It is the highest
+passing rate tested for this fixed configuration, not a global throughput
+maximum or standardized 6G/full-stack qualification. Control/access, HARQ,
+CSI/SRS and RF impairments are disabled in that research YAML. The 30 dB value
+is a configured reference SNR, not a guarantee of 30 dB measured SINR.
+Full regression qualification is unfinished and has recorded failures.
+The 10.5 GHz study is deferred; neither command below selects it.
+
+Run **one scenario at a time** from the repository root. Select the installed
+MATLAB executable; the recorded runs used R2026a Update 4. R2023b compatibility
+is **not qualified**:
+
+```powershell
+$matlabExe = 'C:\Program Files\MATLAB\R2026a\bin\matlab.exe'
+# On the other server, use its installed path, for example:
+# $matlabExe = 'C:\Program Files\MATLAB\R2023b\bin\matlab.exe'
+```
+
+**5 MHz / 12 dB diagnostic (known failed acceptance; not a passing release):**
+
+```powershell
+$runTag = 'tdd_5mhz_12db_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff') + '_' + [guid]::NewGuid().ToString('N').Substring(0,8)
+$runRoot = 'logs/' + $runTag
+New-Item -ItemType Directory -Path $runRoot -ErrorAction Stop | Out-Null
+& $matlabExe -wait -singleCompThread -logfile "$runRoot/matlab.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml','$runRoot','$runTag'); assert(out.Ok,'5 MHz / 12 dB scenario acceptance failed; preserve the logs.');"
+if ($LASTEXITCODE -ne 0) { throw "5 MHz run failed. Preserve $runRoot and its matlab.log." }
+```
+
+**400 MHz / 7 GHz / 1024-QAM DL+UL research run with IQ capture:**
+
+```powershell
+$runTag = 'tdd_400mhz_30db_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff') + '_' + [guid]::NewGuid().ToString('N').Substring(0,8)
+$runRoot = 'logs/' + $runTag
+New-Item -ItemType Directory -Path $runRoot -ErrorAction Stop | Out-Null
+& $matlabExe -wait -singleCompThread -logfile "$runRoot/matlab.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml','$runRoot','$runTag'); assert(out.Ok && out.ResultOk,'400 MHz research scenario acceptance failed; preserve the logs.');"
+if ($LASTEXITCODE -ne 0) { throw "400 MHz run failed. Preserve $runRoot and its matlab.log." }
+```
+
+Both commands retain console logs and scenario artifacts beneath their unique
+`logs/<runTag>/` directory. Copy that directory when reporting failures.
+In the 400 MHz scenario run folder, `waveform/dl_tx`, `ul_tx`, `dl_rx` and
+`ul_rx` contain exact `raw_iq.mat`, per-port VSA MAT and WIQ files. Each stream
+has 4,915,200 samples at 491.52 Msamples/s. TX is clean; RX includes AWGN, so
+do not add noise again when replaying the captured receive condition.
+File readback was verified; actual Keysight application import was not.
+Large generated IQ/log directories stay local, not in GitHub; the source,
+YAMLs and small evidence receipts are committed.
+
+For an independent full-suite run on the other server, with logs under `logs/`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_server_testall.ps1 -MatlabExe $matlabExe -PreflightOnly
+if ($LASTEXITCODE -ne 0) { throw 'MATLAB preflight failed; inspect logs before running the suite.' }
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\run_server_testall.ps1 -MatlabExe $matlabExe
+if ($LASTEXITCODE -ne 0) { throw 'testAll failed; preserve its logs directory.' }
+```
+
+Details: [5 MHz terminal outcome](docs/lls/tdd_5mhz_12db_68140bb9_outcome_20260917.md),
+[400 MHz IQ / Keysight handoff](docs/lls/keysight_research_iq_handoff_20260917.md),
+and [source consolidation](docs/lls/main_delivery_consolidation_20260917.md).
+
 ### A. Setup once per MATLAB session
 
 ```matlab

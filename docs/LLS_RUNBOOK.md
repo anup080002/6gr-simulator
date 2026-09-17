@@ -1,5 +1,12 @@
 # YAML LLS runbook
 
+**17 September 2026 update:** use the [current README commands](../README.md#current-tdd-runs-5-mhz--12-db-and-400-mhz--30-db)
+for the requested 5 MHz continuous-IQ diagnostic and 7 GHz / 400 MHz research
+capture, with all outputs under `logs/`. The 5 MHz run terminated with failed
+acceptance; the 400 MHz research capture completed with 70/70 TBs correct.
+Neither result establishes full-suite qualification. The older checkpoint
+notes below are historical, not a claim that the 12 dB run is still pending.
+
 Current 12 dB checkpoint: the continuous-IQ YAML now enables two logical
 SRS/PUSCH ports at rank one, with an explicit `control.ul_precoding` table
 context. The corrected focused shared-clock test passed; the next full run
@@ -98,12 +105,15 @@ An existing 28 GHz/400 MHz research preset can be launched with:
 matlab -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_fr2_28ghz_400mhz_4site_indoor.yaml','results','fr2_400mhz_probe_01'); assert(out.Ok)"
 ```
 
-This is not the requested single-carrier 7 GHz/400 MHz case. The present
-`band_7ghz.yaml` catalog supports up to 100 MHz. The one-carrier 7 GHz/400 MHz
-waveform remains a pending `optional_research_experiment`; do not relabel the
-28 GHz preset or combine four 100 MHz carriers to claim that target. Its
-command will be added only after numerology, grid/FFT/sample rate, PRACH/SSB,
-control/BWP, shared-stream memory and Keysight playback gates pass.
+This 28 GHz preset is not the requested 7 GHz/400 MHz case. The separate
+`lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml` now runs a single-carrier,
+two-layer DL/UL 1024-QAM `optional_research_experiment` using the explicit
+`band_7ghz_400mhz_research.yaml` carrier definition. Its ten-ms capture passed
+30/30 DL and 40/40 UL TBs on source `6be2985f`. Use the README's logged
+PowerShell command and read the [IQ handoff](lls/keysight_research_iq_handoff_20260917.md).
+This is an ideal-AWGN, preconfigured-timing lab link, not a completed
+PRACH/SSB/control/HARQ/CSI/SRS integration. Actual Keysight import and full
+regression qualification remain unverified; 7 GHz is RF metadata.
 
 ## 6. Enable or disable features through a child YAML
 
