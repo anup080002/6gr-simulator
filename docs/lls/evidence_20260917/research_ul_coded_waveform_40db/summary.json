@@ -1,0 +1,1 @@
+{"schema_version":1,"status":"passed","scope":"focused_tests","started_utc":"2026-09-17T05:02:21.527Z","matlab_version":"26.1.0.3312084 (R2026a) Update 4","matlab_release":"2026a","computer":"PCWIN64","selected_tests":["testResearchULCodedWaveform"],"baseline_12db_qualified":false,"test_count":1,"failed_count":0,"duration_s":38.3056081,"finished_utc":"2026-09-17T05:03:42.328Z"}

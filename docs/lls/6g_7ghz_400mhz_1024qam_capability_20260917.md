@@ -20,6 +20,34 @@ from the preceding request is 30 dB; preserve the later sweep
 
 ## Existing capability and verified source boundaries
 
+### Research UL implementation checkpoint (17 September, 10:34 IST)
+
+`+sixgr/+phy/+ul/+research/PUSCHLink.m` now provides explicitly opted-in
+research allocation, coded transmission and independent scheduled reception.
+The YAML surface is `research_ul`, with reusable settings in
+`simulator/configs/coding/research_ul_1024qam.yaml`. It reuses the repository
+CRC/LDPC/rate-match and canonical OFDM functions. Native PUSCH supplies only
+RE and DMRS geometry; its QPSK G/TBS and native data coder/decoder are never
+used as the research payload. Actual G and TBS use configured Qm=10. Outputs
+retain `StandardNR=false`; the ordinary NR UL modulator still rejects 1024-QAM.
+
+The full-width 264-PRB, two-layer, 400 MHz UL component test passed (MATLAB
+exit 0): G=760320 bits, TBS=573504 bits, exact recovered TB and passing CRC,
+EVM=0.0120131 (1.20131%). This first component test used a 40 dB reference
+Es/N0 point and identity AWGN channel, not the requested final 30 dB point.
+Measured DMRS noise variance was 5.23942e-5 versus injected grid variance
+4.99195e-5. The fixed identity precoder has unit Frobenius-norm squared;
+noise is transformed using the measured OFDM noise gain, not a power boost.
+
+The receiver takes only resolved config, absolute slot and received IQ; it
+rebuilds the allocation and DMRS, estimates a per-resource channel/noise,
+equalizes and decodes. Timing is explicitly a preconfigured lab boundary.
+UCI, HARQ and transform precoding are explicitly disabled/unsupported in
+this research component, not silently bypassed. No integrated TDD, DL,
+Keysight playback, fading qualification or throughput acceptance is claimed
+by this component test. Logs: `logs/research_ul_coded_waveform_20260917`;
+small receipts: `docs/lls/evidence_20260917/research_ul_coded_waveform_40db`.
+
 - `+sixgr/+phy/+frame/CarrierGridConfig.m` already provides an explicit
   `custom` API with nonstandard provenance and occupied-bandwidth checks.
   Candidate geometry: 264 PRBs, 120 kHz SCS, 380.16 MHz occupied bandwidth

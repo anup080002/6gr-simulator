@@ -15,6 +15,7 @@ top_level_order:
   - modulation
   - control
   - pdsch6gr
+  - research_ul
   - harq
   - random_access
   - impairments
@@ -596,6 +597,34 @@ sections:
       # valid configured initial operating point.
       dl_mcs_index: {required: true, type: integer, min: 0, max: 28}
       ul_mcs_index: {required: true, type: integer, min: 0, max: 28}
+  research_ul:
+    required: false
+    parameters:
+      enabled: {required: true, type: boolean}
+      modulation: {required: true, type: string, allowed_values: [QPSK, 16QAM, 64QAM, 256QAM, 1024QAM]}
+      target_code_rate: {required: true, type: number, min_exclusive: 0, max: 1}
+      num_layers: {required: true, type: integer, min: 1, max: 4}
+      prb_start: {required: true, type: integer, min: 0}
+      num_prbs: {required: true, type: integer, min: 1, max: 275}
+      symbol_allocation: {required: true, type: number_list}
+      mapping_type: {required: true, type: string, allowed_values: [A, B]}
+      rnti: {required: true, type: integer, min: 0, max: 65535}
+      nid: {required: true, type: integer, min: 0, max: 1023}
+      transform_precoding: {required: true, type: boolean}
+      uci_enabled: {required: true, type: boolean}
+      harq_enabled: {required: true, type: boolean}
+      precoding: {required: true, type: string, allowed_values: [identity_unit_total_power]}
+      dmrs_configuration_type: {required: true, type: integer, min: 1, max: 2}
+      dmrs_length: {required: true, type: integer, min: 1, max: 2}
+      dmrs_type_a_position: {required: true, type: integer, min: 2, max: 3}
+      dmrs_additional_position: {required: true, type: integer, min: 0, max: 3}
+      dmrs_cdm_groups_without_data: {required: true, type: integer, min: 1, max: 3}
+      dmrs_port_set: {required: true, type: number_list}
+      dmrs_identity: {required: true, type: integer, min: 0, max: 65535}
+      dmrs_n_scid: {required: true, type: integer, min: 0, max: 1}
+      rv: {required: true, type: integer, min: 0, max: 3}
+      decoder_iterations: {required: true, type: integer, min: 1}
+      decoder_algorithm: {required: true, type: string, allowed_values: [Belief propagation, Layered belief propagation, Normalized min-sum, Offset min-sum]}
   control:
     required: true
     parameters:
