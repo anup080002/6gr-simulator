@@ -21,6 +21,11 @@ This README is intended to be the practical "start here" document for the codeba
 
 ## Table of Contents
 
+For the measured four-layer 400 MHz run, use the
+[exact Windows PowerShell commands](#exact-command-measured-400-mhz-four-layer-adaptive-run).
+`main` is the single development branch; old merged branch tips are retained
+as `archive/consolidated-20260918/*` tags, not alternative runnable branches.
+
 1. [What This Repository Contains](#what-this-repository-contains)
 2. [Recommended First-Time Setup](#recommended-first-time-setup)
 3. [Which Runner Should You Use](#which-runner-should-you-use)
@@ -242,28 +247,18 @@ rates 0.82 and 0.85 require their own coded calibration before selection.
 The new ILLA/OLLA path requires actual coded calibration for the exact
 allocation; it does not reuse the two-layer capture as calibration. See
 [adaptive implementation and acceptance boundary](docs/lls/research_4x4_awgn_harq_integration_20260917.md).
-No full-band adaptive 30 dB or >6 Gbit/s pass is claimed here.
+The approved DL-heavy run has now completed with payload acceptance passing;
+the separate >6 Gbit/s target was missed. Its exact command and measured result
+are below. The earlier physical-CDL and two-layer commands are different runs.
 
 The full-width candidate is
 `simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml`.
 It retains the existing 120 kHz / 264-PRB carrier and 3-DL/4-UL/1-mixed
 pattern; it is not the proposed DL-heavy >6 Gbit/s benchmark. Calibration
 executes 540 real independent initial TBs (three candidates, both directions,
-three reference-SNR points, 30 trials per point). It does not run `testAll`
-or generate a final IQ capture. From the repository root on the other server:
-
-```powershell
-$matlabExe = 'C:/Program Files/MATLAB/R2023b/bin/matlab.exe'
-$runTag = 'adaptive_calibration_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff')
-$logRoot = 'logs/' + $runTag
-New-Item -ItemType Directory -Path $logRoot -ErrorAction Stop | Out-Null
-& $matlabExe -wait -singleCompThread -logfile "$logRoot/preflight.log" -batch "setup6GRSimToolkit('Verbose',false); assert(testResearchFixedPorts()); assert(testResearchIdealDelayedHARQ());"
-if ($LASTEXITCODE -ne 0) { throw 'Focused preflight failed; preserve logs and do not launch calibration.' }
-& $matlabExe -wait -singleCompThread -logfile "$logRoot/calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml');"
-if ($LASTEXITCODE -ne 0) { throw 'Calibration failed; preserve its partial CSV, provenance and logs.' }
-& $matlabExe -wait -singleCompThread -logfile "$logRoot/rate_calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_rate_calibration_30db.yaml');"
-if ($LASTEXITCODE -ne 0) { throw 'Additional rate calibration failed; preserve its partial CSV and logs.' }
-```
+three reference-SNR points, 30 trials per point). Calibration does not run
+`testAll` or generate a final IQ capture. The complete command block below
+generates both required calibration datasets if they are absent.
 
 The additional rate profile executes 120 actual initial TBs (two rates, both
 directions, 30 trials at 30 dB each), preserving the original calibration.
@@ -272,17 +267,83 @@ Full-band rates 0.82 and 0.85 each had 0/30 initial CRC failures in both DL and
 UL at 30 dB, meeting the configured pointwise 95%-confidence/10%-BLER gate.
 The combined five-candidate configuration preflight also passed. The user has
 approved the separate **5-DL/2-UL/1-mixed** scenario below for the >6 Gbit/s DL
-attempt. Its slot/profile preflight passed; no integrated throughput pass is
-claimed until execution and artifacts are checked. The original 3-DL/4-UL
-profile is retained unchanged.
+attempt. Execution and artifacts have now been checked: see the measured
+outcome below. The original 3-DL/4-UL profile is retained unchanged.
 
-After both calibration commands above succeed on the same MATLAB version:
+### Exact command: measured 400 MHz four-layer adaptive run
+
+Use this YAML, not the older two-layer or 64-element CDL YAML:
+`simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_dl5_ul2_30db.yaml`.
+It reproduces the adaptive experiment that selected four layers throughout
+the recorded run. Rank 2 remains allowed by the approved adaptive menu;
+1024-QAM is the maximum modulation, not a forced startup modulation.
+This is a throughput attempt, not a guaranteed maximum or >6 Gbit/s pass.
+
+Open **Windows Terminal / PowerShell**. For a new server checkout, first run
+these commands from the parent directory where the repository should be created:
 
 ```powershell
-$runTag = 'adaptive_dl5_ul2_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff')
-& $matlabExe -wait -singleCompThread -logfile "$logRoot/$runTag.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_dl5_ul2_30db.yaml','results','$runTag'); disp(out.SummaryTable);"
-if ($LASTEXITCODE -ne 0) { throw 'Integrated execution failed; preserve its logs and result artifacts.' }
+git clone --branch main --single-branch https://github.com/anup080002/6gr-simulator.git
+if ($LASTEXITCODE -ne 0) { throw 'Clone failed; do not continue.' }
+Set-Location -LiteralPath '.\6gr-simulator'
 ```
+
+For an existing checkout, open its repository root and use `git switch main`
+and `git pull --ff-only origin main`; stop on any error rather than discarding
+local edits. Then paste this **entire self-contained block**. It prefers the
+validated R2026a installation, otherwise uses the requested R2023b server
+installation; the selected executable is printed. R2023b end-to-end execution
+has not yet been qualified. MATLAB and 5G Toolbox must be installed/licensed.
+
+```powershell
+$ErrorActionPreference = 'Stop'
+if (-not (Test-Path -LiteralPath '.\setup6GRSimToolkit.m')) { throw 'Run from the repository root.' }
+$matlabExe = 'C:/Program Files/MATLAB/R2026a/bin/matlab.exe'
+if (-not (Test-Path -LiteralPath $matlabExe)) { $matlabExe = 'C:/Program Files/MATLAB/R2023b/bin/matlab.exe' }
+if (-not (Test-Path -LiteralPath $matlabExe)) { throw 'MATLAB R2026a or R2023b was not found at its default installation path.' }
+Write-Host "MATLAB executable: $matlabExe"
+$scenarioYaml = 'simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_dl5_ul2_30db.yaml'
+$runTag = 'adaptive_dl5_ul2_' + (Get-Date -Format 'yyyyMMdd_HHmmssfff')
+$logRoot = 'logs/' + $runTag
+New-Item -ItemType Directory -Path $logRoot -ErrorAction Stop | Out-Null
+& $matlabExe -wait -singleCompThread -logfile "$logRoot/preflight.log" -batch "setup6GRSimToolkit('Verbose',false); assert(testResearchFixedPorts()); assert(testResearchIdealDelayedHARQ()); assert(testResearchDLHeavyConfig());"
+if ($LASTEXITCODE -ne 0) { throw "Focused preflight failed. See $logRoot/preflight.log" }
+if (-not (Test-Path -LiteralPath 'results/research_adaptation_calibration/full264_20260918/trials.csv')) {
+    & $matlabExe -wait -singleCompThread -logfile "$logRoot/calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_rank_qam_30db.yaml');"
+    if ($LASTEXITCODE -ne 0) { throw "Primary calibration failed. Preserve $logRoot/calibration.log and partial results." }
+}
+if (-not (Test-Path -LiteralPath 'results/research_adaptation_calibration/rates082_085_30db_20260918/trials.csv')) {
+    & $matlabExe -wait -singleCompThread -logfile "$logRoot/rate_calibration.log" -batch "setup6GRSimToolkit('Verbose',false); sixgr.phy.research.calibrateAWGNAdaptation('simulator/configs/scenarios/lls_7ghz_400mhz_rate_calibration_30db.yaml');"
+    if ($LASTEXITCODE -ne 0) { throw "Rate calibration failed. Preserve $logRoot/rate_calibration.log and partial results." }
+}
+& $matlabExe -wait -singleCompThread -logfile "$logRoot/execution.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('$scenarioYaml','results','$runTag'); disp(out.SummaryTable); assert(out.ResultOk,'Payload delivery failed; preserve artifacts.');"
+if ($LASTEXITCODE -ne 0) { throw "Execution failed. See $logRoot/execution.log; do not delete its results." }
+$resultRoot = 'results/lls/lls_7ghz_400mhz_adaptive_dl5_ul2_30db/' + $runTag
+$summary = @(Import-Csv -LiteralPath "$resultRoot/reports/csv/summary.csv")
+$summary | Format-Table Direction,GoodputBitsPerSecond,FirstTransmissionBLER,BLER,PendingTransportBlocks
+$dl = $summary | Where-Object Direction -eq 'DL'
+Write-Host ('DL >6 Gbps target met: ' + ([double]$dl.GoodputBitsPerSecond -gt 6e9))
+Write-Host "Results: $resultRoot"
+Write-Host "Logs: $logRoot"
+```
+
+The first invocation on a fresh checkout runs **660 calibration trials**,
+then the integrated scenario. Later invocations retain existing calibration;
+the MATLAB loader still checks its completeness, source/profile fingerprints
+and MATLAB version. A present CSV is not assumed to be valid. On a stale,
+incomplete or version-mismatched calibration, stop and preserve its evidence;
+use a fresh checkout for a new-version campaign. Do not copy R2026a calibration
+into the R2023b checkout. No calibration, previous run or log is overwritten.
+This block runs focused checks only, **not `testAll`**.
+
+Outputs under the printed result folder:
+
+- `reports/csv/summary.csv`, `trials.csv`, `layer_measurements.csv`;
+- `reports/image/tdd_goodput.png`;
+- `harq/csv/`, `adaptation/csv/`, `air_interface/csv/timeline.csv`;
+- `waveform/iq_manifest.csv` plus `dl_tx`, `dl_rx`, `ul_tx`, `ul_rx`
+  subfolders containing raw MAT, per-port WIQ and VSA MAT IQ;
+- `meta/manifest.json` and executed configuration/source provenance.
 
 This uses 80 data slots plus four feedback-drain slots, with 50 full-slot DL
 and 20 full-slot UL opportunities. The fixed 14-symbol data allocations do
