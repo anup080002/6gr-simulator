@@ -26,6 +26,11 @@ For the measured four-layer 400 MHz run, use the
 `main` is the single development branch; old merged branch tips are retained
 as `archive/consolidated-20260918/*` tags, not alternative runnable branches.
 
+For the India Mobile Congress two-screen exhibit, see the
+[recorded dashboard and M9484C / N9042B / N9032B operating guide](docs/lls/imc_recorded_demo_runbook.md).
+It includes exact commands for the offline DL/UL replay and checked four-channel
+VSA MAT packaging. This displays measured simulator results, not live RF throughput.
+
 1. [What This Repository Contains](#what-this-repository-contains)
 2. [Recommended First-Time Setup](#recommended-first-time-setup)
 3. [Which Runner Should You Use](#which-runner-should-you-use)
