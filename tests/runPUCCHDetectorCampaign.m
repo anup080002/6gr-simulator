@@ -46,6 +46,10 @@ for n=1:v.episodes
     folder=fullfile(root,sprintf('attempt_%06d',n));
     ep=p; ep.stage='held_out_campaign_episode'; ep.episodes=1; ep.seed_base=seeds(n);
     if ~isfolder(folder) && launched<v.execution_batch_episodes
+        [canStillPass,~]=localCanStillPass(v,p,rows,incomplete);
+        if ~canStillPass
+            break; % A registered failed/missing attempt is never replaced.
+        end
         localSourceCheck(revision);
         mkdir(folder); % Durable attempt marker BEFORE executing RF.
         episodePath=fullfile(folder,'episode_policy.json');
@@ -77,6 +81,7 @@ for n=1:v.episodes
 end
 localSourceCheck(revision);
 summary=summarizePUCCHDetectorCampaign(v,p,rows);
+[canStillPass,terminalReason]=localCanStillPass(v,p,rows,incomplete);
 if ~isempty(rows)
     sixgr.util.csvWriteTable(fullfile(root,'physical_trials.csv'),rows,'PreserveSchema',true);
 end
@@ -87,13 +92,50 @@ receipt=struct('Status','partial','GitRevision',strtrim(revision), ...
     'NewAttemptsThisInvocation',launched,'IncompleteAttempts',incomplete, ...
     'AllPhysicalCasesPresent',all(summary.UnavailableEpisodes==0), ...
     'AllConfidenceGatesPassed',all(summary.ConfidenceGatePassed), ...
+    'QualificationStillPossible',logical(canStillPass), ...
+    'TerminalFailureReason',string(terminalReason), ...
     'DevelopmentHistoryDeclaredComplete',v.development_history_complete, ...
     'IndependentEvidenceReviewComplete',false,'DetectorQualified',false, ...
     'Scope','registered_campaign_evidence_pending_independent_review_not_12db_acceptance');
 if receipt.AllPhysicalCasesPresent, receipt.Status='physical_campaign_complete_pending_review'; end
 if ~isempty(incomplete), receipt.Status='incomplete_attempts_preserved'; end
+if ~canStillPass
+    receipt.Status='candidate_rejected_terminal';
+    receipt.Scope='registered_campaign_candidate_rejected_not_detector_qualification';
+end
 sixgr.util.jsonWrite(fullfile(root,'run_status.json'),receipt);
 fprintf('DETECTOR_CAMPAIGN_BATCH rows=%d new_attempts=%d qualified=0\n',height(rows),launched);
+end
+
+function [possible,reason]=localCanStillPass(v,p,rows,incomplete)
+% Best-case bound: assume every not-yet-started episode is error-free.  A
+% started incomplete attempt is permanently unavailable by campaign design.
+if ~isempty(incomplete)
+    possible=false;
+    reason="started_attempt_missing_required_physical_cases";
+    return;
+end
+possible=true; reason="";
+caseCount=numel(p.cases);
+for k=1:caseCount
+    errors=0;
+    if ~isempty(rows)
+        errors=sum(rows.EventError(rows.CaseID==string(p.cases(k).id)));
+    end
+    if errors>=v.episodes
+        possible=false;
+        reason="observed_event_count_exhausted_campaign:"+string(p.cases(k).id);
+        return;
+    end
+    bestCaseUpper=betaincinv(1-v.family_alpha/caseCount, ...
+        errors+1,v.episodes-errors);
+    if bestCaseUpper>v.event_error_limit
+        possible=false;
+        reason="best_case_confidence_bound_exceeds_event_error_limit:"+ ...
+            string(p.cases(k).id);
+        return;
+    end
+end
 end
 
 function localSourceCheck(revision)
@@ -126,9 +168,11 @@ for k=1:height(rows)
         char(java.io.File(expected).getCanonicalPath())) && ...
         string(sixgr.util.sha256File(expected))==rows.EvidenceSHA256(k), ...
         'test:CampaignEvidence','Evidence path/hash mismatch.');
-    saved=load(expected,'out','testCase','post','tx','hypothesis');
+    saved=load(expected);
     assert(isequaln(saved.testCase,c),'test:CampaignEvidence','Declared case mismatch.');
-    rx=saved.out; samples=saved.post.readComplete();
+    rx=saved.out;
+    [samples,postStart,postEnd,postRate]=localSavedObservation(saved,"post");
+    [txSamples,~,~,~]=localSavedObservation(saved,"tx");
     assert(~isempty(samples) && all(isfinite(samples),'all') && ...
         rx.IndependentReceiverAssignment && ~rx.PreparedTransmitterConsumed && ...
         ~rx.OraclePayloadBitsUsed && ~rx.InjectedNoiseVarianceConsumed && ...
@@ -142,19 +186,38 @@ for k=1:height(rows)
         abs(rows.DetectionMetric(k)-rx.DetectionMetric)<=8*eps(max(1,abs(rx.DetectionMetric))) && ...
         rows.Slot(k)==c.slot && rows.HARQBits(k)==c.harq_bits && ...
         rows.SignalPresent(k)==c.signal_present && rows.DTX(k)==rx.DTX && ...
-        rows.ObservationStartSample(k)==saved.post.StartSample && ...
-        rows.ObservationEndSampleExclusive(k)==saved.post.EndSampleExclusive && ...
-        rows.SampleRateHz(k)==saved.post.SampleRateHz && ...
+        rows.ObservationStartSample(k)==postStart && ...
+        rows.ObservationEndSampleExclusive(k)==postEnd && ...
+        rows.SampleRateHz(k)==postRate && ...
         isequal(double(decoded(:)),double(rx.DecodedSequence1(:))) && ...
         isequal(double(declared(:)),double(c.payload(:))), ...
         'test:CampaignEvidence','RX policy/payload/CSV mismatch.');
     if ~c.signal_present
-        assert(~any(saved.tx.readComplete()~=0,'all'),'test:CampaignEvidence','Noise case contains TX samples.');
+        assert(~any(txSamples~=0,'all'),'test:CampaignEvidence','Noise case contains TX samples.');
     end
     counts=countPUCCHDetectorPilotErrors(c,rx.DecodedSequence1,rx.ReceiverUsable,rx.DTX);
     for field=string(fieldnames(counts)).'
         assert(rows.(field)(k)==double(counts.(field)), ...
             'test:CampaignEvidence','Physical CSV error count differs from retained receiver output.');
     end
+end
+end
+
+function [samples,startSample,endSample,sampleRate]=localSavedObservation(saved,name)
+compactName=char(name+"Evidence");
+legacyName=char(name);
+if isfield(saved,compactName)
+    evidence=saved.(compactName);
+    assert(evidence.Complete,'test:CampaignEvidence','Saved observation is incomplete.');
+    samples=evidence.Samples;
+    startSample=evidence.StartSample;
+    endSample=evidence.EndSampleExclusive;
+    sampleRate=evidence.SampleRateHz;
+else
+    observation=saved.(legacyName); % Audit retained schema-v1 evidence.
+    samples=observation.readComplete();
+    startSample=observation.StartSample;
+    endSample=observation.EndSampleExclusive;
+    sampleRate=observation.SampleRateHz;
 end
 end

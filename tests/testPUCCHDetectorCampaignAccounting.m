@@ -42,6 +42,11 @@ one=rows; one.EventError(1)=1;
 summary=summarizePUCCHDetectorCampaign(v,p,one);
 assert(~summary.ConfidenceGatePassed(1) && all(summary.ConfidenceGatePassed(2:end)) && ...
     summary.ConservativeFailureUpperBound(1)>0.01);
+% The execution driver must stop a frozen campaign as soon as even the
+% best-case final confidence bound cannot pass.  One event is already
+% terminal for this 600-episode/Bonferroni design.
+bestCaseUpper=betaincinv(1-v.family_alpha/count,2,v.episodes-1);
+assert(bestCaseUpper>v.event_error_limit);
 missing=summarizePUCCHDetectorCampaign(v,p,rows(2:end,:));
 assert(missing.ExecutedEpisodes(1)==599 && missing.UnavailableEpisodes(1)==1 && ...
     missing.ObservedEventErrors(1)==0 && ~missing.ConfidenceGatePassed(1));

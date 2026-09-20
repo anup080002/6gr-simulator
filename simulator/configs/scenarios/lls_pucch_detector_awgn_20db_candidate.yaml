@@ -1,0 +1,17 @@
+inherits:
+  - ./lls_pucch_detector_model_candidate.yaml
+  - ../channels/shared_identity_awgn.yaml
+
+meta:
+  scenario_id: lls_pucch_detector_awgn_20db_candidate
+  research_class: optional_research_experiment
+  description: >
+    Format-0 detector qualification candidate for the configured-SNR 5 MHz
+    TDD AWGN operating point. The 0.77 normalized-correlation threshold is
+    unchanged from its preregistered white-complex-Gaussian design. This
+    profile does not claim CDL fading-channel missed-detection performance;
+    fading reliability remains an integrated link result.
+
+simulation:
+  snr_db: 20
+

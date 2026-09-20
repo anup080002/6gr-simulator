@@ -82,7 +82,16 @@ for episode=1:v.episodes
         [diagnosticText,diagnostic]=sixgr.util.formatExceptionDiagnostic(err);
         fprintf('%s\n',diagnosticText);
         sixgr.util.jsonWrite(fullfile(folder,'failure_diagnostic.json'),diagnostic);
-        save(fullfile(folder,'episode_failure.mat'),'diagnosticText','diagnostic','state','-v7.3');
+        % Do not serialize the complete shared stream/state on failure.  It
+        % contains repeated disk-backed observations and made one failed
+        % detector episode hundreds of MiB.  Retain the causal checkpoint
+        % and completed evidence rows; individual SSB/SRS/PUCCH artifacts
+        % retain the actual bounded receive samples.
+        failureSummary=struct('Episode',episode,'Seed',seed, ...
+            'CurrentSlot',double(state.CurrentSlot), ...
+            'CompletedRows',state.DetectorPilot.Rows);
+        save(fullfile(folder,'episode_failure.mat'), ...
+            'diagnosticText','diagnostic','failureSummary','-v7.3');
         failures(end+1)=struct('Episode',episode,'Identifier',err.identifier,'Message',err.message); %#ok<AGROW>
         fprintf('DETECTOR_PILOT_EPISODE_FAILED episode=%d id=%s message=%s\n',episode,err.identifier,err.message);
     end
@@ -208,8 +217,11 @@ for item=items
             r.PowerReferencePlane="normalized_IFFT_sample_unit_mapping_not_device_budget";
             r.SSPhysicalMeasurementStatus="available_normalized_not_absolute_dbm";
         end
+        preEvidence=localObservationEvidence(pre);
+        postEvidence=localObservationEvidence(post);
+        txEvidence=localObservationEvidence(tx);
         save(fullfile(state.DetectorPilot.Folder,sprintf('ssb_%06d.mat',state.CurrentSlot)), ...
-            'r','item','pre','post','tx','replay','-v7.3');
+            'r','preEvidence','postEvidence','txEvidence','-v7.3');
         assert(r.BCHCrcPass && r.MIBDecoded && isfinite(measuredRSRP), ...
             'test:PilotSSB','Actual SSB acquisition/measurement failed.');
         ch=owner.channelState(1,'DL');
@@ -266,10 +278,13 @@ for item=items
             'TransmitterObservation',tx,'Replay',replay,'ScoringChannelReferences',{refs}, ...
             'ChannelState',owner.directionalChannelState(1,'UL'));
         out=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
+        preEvidence=localObservationEvidence(pre);
+        postEvidence=localObservationEvidence(post);
+        txEvidence=localObservationEvidence(tx);
+        save(fullfile(state.DetectorPilot.Folder,sprintf('srs_%06d.mat',state.CurrentSlot)), ...
+            'out','preEvidence','postEvidence','txEvidence','-v7.3');
         assert(out.Ok,'test:PilotSRS','Actual SRS acquisition failed.');
         state.ReceivedULTimingReferences={sixgr.phy.sync.ReceivedULTimingReference(p,post,out.ReceiveTiming)};
-        save(fullfile(state.DetectorPilot.Folder,sprintf('srs_%06d.mat',state.CurrentSlot)), ...
-            'item','out','pre','post','tx','replay','-v7.3');
         continue;
     end
     assert(any(item.Kind==["PUCCH","PUCCHReceiveOnly"]),'test:PilotUnexpectedEvent','Unexpected event %s.',item.Kind);
@@ -299,7 +314,11 @@ for item=items
     decoded=int8(out.DecodedSequence1(:));
     eventError=counts.EventError;
     path=fullfile(state.DetectorPilot.Folder,string(testCase.id)+".mat");
-    save(path,'item','out','pre','post','tx','replay','hypothesis','testCase','-v7.3');
+    preEvidence=localObservationEvidence(pre);
+    postEvidence=localObservationEvidence(post);
+    txEvidence=localObservationEvidence(tx);
+    save(path,'out','preEvidence','postEvidence','txEvidence', ...
+        'hypothesis','testCase','-v7.3');
     row=table(state.DetectorPilot.Episode,state.DetectorPilot.Seed,string(testCase.id), ...
         testCase.slot,logical(testCase.signal_present),testCase.harq_bits,string(jsonencode(testCase.payload)), ...
         string(jsonencode(decoded)),logical(out.DTX),double(out.DetectionMetric),double(out.DetectionThreshold), ...
@@ -317,4 +336,19 @@ for item=items
     if isempty(state.DetectorPilot.Rows), state.DetectorPilot.Rows=row; else, state.DetectorPilot.Rows=[state.DetectorPilot.Rows;row]; end
     fprintf('DETECTOR_PILOT_CASE episode=%d case=%s metric=%.9g error=%d\n',state.DetectorPilot.Episode,testCase.id,out.DetectionMetric,eventError);
 end
+end
+
+function evidence=localObservationEvidence(observation)
+% Bounded immutable evidence for one receiver window.  Saving the stream
+% handle or event item recursively retains unrelated continuous-clock
+% buffers and duplicates them in every case artifact.
+samples=observation.readComplete();
+assert(~isempty(samples) && all(isfinite(samples),'all'), ...
+    'test:PilotObservation','Physical observation must be complete and finite.');
+evidence=struct('Samples',samples, ...
+    'StartSample',double(observation.StartSample), ...
+    'EndSampleExclusive',double(observation.EndSampleExclusive), ...
+    'SampleRateHz',double(observation.SampleRateHz), ...
+    'ObservationClass',string(class(observation)), ...
+    'Complete',logical(observation.isComplete()));
 end

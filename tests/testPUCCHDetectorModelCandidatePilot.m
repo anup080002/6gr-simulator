@@ -21,8 +21,13 @@ for k=1:height(rows)
     path=rows.EvidencePath(k);
     assert(string(sixgr.util.sha256File(path))==rows.EvidenceSHA256(k), ...
         'test:DetectorCandidateEvidence','Physical evidence hash mismatch.');
-    saved=load(path,'out','testCase','post','hypothesis');
-    samples=saved.post.readComplete();
+    saved=load(path);
+    if isfield(saved,'postEvidence')
+        assert(saved.postEvidence.Complete);
+        samples=saved.postEvidence.Samples;
+    else
+        samples=saved.post.readComplete();
+    end
     resource=saved.hypothesis.Assignment.Resource;
     assert(resource.Format==0 && resource.Data.NumPRBs==1 && ...
         resource.Data.NumSymbols==design.symbol_count && ...

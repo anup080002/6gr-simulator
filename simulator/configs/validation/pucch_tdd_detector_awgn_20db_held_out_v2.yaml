@@ -1,0 +1,17 @@
+# New population after the CDL-A/12 dB v1 experiment rejected the candidate
+# for that materially different channel. No v1 evidence is relabelled or
+# pooled into this configured-AWGN qualification campaign.
+schema_version: 1
+research_class: optional_research_experiment
+stage: held_out_campaign
+profile_id: tdd_format0_awgn_20db_candidate_held_out_v2
+episode_policy_path: simulator/configs/validation/pucch_tdd_detector_awgn_20db_development.yaml
+episodes: 600
+seed_base: 2000000000
+seed_stride: 1009
+family_alpha: 0.05
+event_error_limit: 0.01
+development_seeds: [970001, 4702601, 1000004036]
+development_history_complete: false
+execution_batch_episodes: 1
+
