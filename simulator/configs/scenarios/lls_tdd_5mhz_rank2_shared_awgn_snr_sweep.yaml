@@ -1,0 +1,42 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep
+  description: >
+    Eight-point configured-SNR diagnostic using the complete 5 MHz TDD
+    shared-clock identity-AWGN runtime with rank adaptation capped at rank
+    two, TS 38.214 MCS tables, ILLA, OLLA, CSI-RS, SRS, DM-RS, HARQ and
+    shared PUCCH/PUSCH feedback. Each SNR point starts with independent link
+    and initial-access state. This is integrated truth evidence, not a
+    statistically qualified BLER publication campaign.
+  purpose: >
+    Measure the same integrated 5 MHz rank-two runtime at -30, -20, -10, 0,
+    10, 20, 30 and 40 dB without carrying causal state between SNR points.
+  research_class: optional_research_experiment
+  tags: [lls, truth, tdd, 5mhz, shared_clock, identity_awgn, dl_rank2, ul_rank2, nr_mcs, illa, olla, configured_snr_sweep]
+
+canonical_control:
+  launch:
+    scenario_mode: fixed_snr_sweep
+    sweep_enabled: true
+    fixed_link_campaign_enabled: false
+    geometry_enabled: false
+
+# snr_db is the nominal anchor. The authoritative point list is repeated in
+# both supported sweep fields so all normalized runtime aliases remain equal.
+simulation:
+  snr_db: 0
+  snr_sweep_offsets_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: true
+    state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
+    values_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+
+output:
+  profile: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep
