@@ -676,6 +676,23 @@ def test_constellation_preview_includes_late_adapted_samples(monkeypatch) -> Non
     assert references == [(0.707, 0.707), (0.154, -0.463)]
 
 
+def test_symbol_decision_histogram_retains_resolved_constellation_sources() -> None:
+    payload = materializer._encode_csv(  # noqa: SLF001
+        ["Direction", "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag"],
+        [["DL", 0.70, -0.70, 0.707, -0.707]],
+    )
+    path = "air_interface/csv/dl_constellation_samples.csv"
+    result = materializer._specialized_chart_materialization(  # noqa: SLF001
+        "symbol decision error histogram",
+        {path: {"artifact_id": 1}},
+        lambda _artifact_id: payload,
+        91,
+    )
+    assert result is not None
+    assert result["source_table_path"] == path
+    assert result["source_row_count"] == 1
+
+
 def test_contract_cleanup_never_removes_runtime_source_csv(tmp_path: Path) -> None:
     stale = tmp_path / "analytics" / "image" / "contract__old__chart.png"
     source = tmp_path / "air_interface" / "csv" / "dl_pdsch_trials.csv"

@@ -1,0 +1,19 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+  - ../mimo/shared_four_port_control.yaml
+  - ../channels/shared_identity_awgn.yaml
+  - ../coding/research_connected_ul_mcs.yaml
+meta:
+  scenario_id: lls_tdd_5mhz_four_port_shared_awgn_12db
+  description: Four-port 5 MHz configured-12-dB TDD shared-clock access, control, data and feedback.
+  purpose: Normal coordinator integration candidate; acceptance requires executed measurement and control checks.
+  research_class: optional_research_experiment
+  tags: [lls, truth, tdd, 5mhz, shared_clock, identity_awgn, four_port, configured_snr]
+simulation:
+  snr_db: 12
+# Bootstrap QPSK comes from the explicit experimental MCS catalog. Do not
+# force Qm=10 at 12 dB or reuse an ideal-feedback throughput calibration.
+random_access:
+  num_rx_antennas: 4
+output:
+  profile: lls_tdd_5mhz_four_port_shared_awgn_12db

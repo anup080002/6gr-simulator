@@ -7119,19 +7119,19 @@ end
 if direction == "UL"
     replayPRBSet = localGrantReplayPRBSet(cfgGrant, grant);
     [carrier, ~] = sixgr.phy.grid.makeCarrier(cfgGrant);
-    [~, info, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfgGrant, ...
+    [~, info, pusch] = sixgr.phy.grid.allocPUSCHTransport(carrier, cfgGrant, ...
         "PRBSet", replayPRBSet, ...
         "SymbolAllocation", sixgr.util.structGet(grant, "SymbolAllocation", []), ...
         "Modulation", char(string(sixgr.util.structGet(grant, "Modulation", "QPSK"))), ...
         "NumLayers", double(sixgr.util.structGet(grant, "NumLayers", sixgr.util.structGet(grant, "Layers", 1))));
-    nrePerPRB = localExtractGrantNREPerPRB(info, numel(pusch.PRBSet), char(string(pusch.Modulation)), double(pusch.NumLayers));
+    nrePerPRB = localExtractGrantNREPerPRB(info, numel(pusch.PRBSet), char(string(info.Modulation)), double(pusch.NumLayers));
     xOverhead = double(sixgr.util.structGet(grant, "TBSInputXOverhead", ...
         sixgr.util.structGet(grant, "XOverhead", ...
         sixgr.util.structGet(cfgGrant, "phy.pusch.xOverhead", 0))));
     targetCodeRate = double(sixgr.util.structGet(grant, "TargetCodeRate", ...
         sixgr.util.structGet(cfgGrant, "phy.pusch.codeRate", 0.5)));
     if isfinite(double(nrePerPRB)) && double(nrePerPRB) > 0 && ~isempty(pusch.PRBSet)
-        tbsBits = double(nrTBS(char(pusch.Modulation), double(pusch.NumLayers), double(numel(pusch.PRBSet)), double(nrePerPRB), ...
+        tbsBits = double(nrTBS(char(info.Modulation), double(pusch.NumLayers), double(numel(pusch.PRBSet)), double(nrePerPRB), ...
             targetCodeRate, double(xOverhead)));
         grant.GrantPHYDataStatus = "ok";
     else
@@ -7143,7 +7143,7 @@ if direction == "UL"
     grant.TransformPrecoding = logical(sixgr.util.structGet(cfgGrant, "phy.pusch.transformPrecoding", false));
     grant.XOverhead = xOverhead;
     grant.NREPerPRB = double(nrePerPRB);
-    grant.TBSInputModulation = char(string(pusch.Modulation));
+    grant.TBSInputModulation = char(string(info.Modulation));
     grant.TBSInputNumLayers = double(pusch.NumLayers);
     grant.TBSInputNPRB = double(numel(pusch.PRBSet));
     grant.TBSInputNREPerPRB = double(nrePerPRB);
@@ -12775,11 +12775,12 @@ end
 res.TrialTable=sixgr.truth.bindSharedLargeScaleEvidence(res.TrialTable,item.Planes);
 res.TrialTable=sixgr.truth.bindSharedRFExecutionEvidence(res.TrialTable,item.Planes);
 if logical(sixgr.util.structGet(job.Cfg,'outputs.phySignalDiagnosticEnabled',false)) && ...
-        logical(job.ReceivedContext.ChannelState.UseFading)
+        (logical(job.ReceivedContext.ChannelState.UseFading) || ...
+        sixgr.channel.IdentityAWGNRuntime.isState(job.ReceivedContext.ChannelState))
     [res.TrialTable,channelDiagnosticContext]=sixgr.truth.exportSharedChannelObservation( ...
         sixgr.util.structGet(c.Config,'run.rootRunFolder',""),res.TrialTable, ...
         item.Planes,p,c.DesiredReferencePlane);
-    % The actual fading coefficients are deliberately unavailable to the
+    % The executed channel coefficients are deliberately unavailable to the
     % practical receiver. Add them to publication evidence only after the
     % decode and CRC decision have completed.
     res.SignalDiagnostic=sixgr.link.buildPHYSignalDiagnosticSnapshot( ...
@@ -12802,8 +12803,8 @@ end
 if job.Direction=="UL" && isfield(res,'ReceiveTiming') && ...
         isfield(res,'TrialTable') && ~isempty(res.TrialTable) && ...
         ismember('CRCPass',res.TrialTable.Properties.VariableNames) && res.TrialTable.CRCPass(end)==1
-    if ~isfield(state,'ReceivedULTimingReferences'), state.ReceivedULTimingReferences=cell(state.NumUsers,1); end
-    state.ReceivedULTimingReferences{item.UE}=sixgr.phy.sync.ReceivedULTimingReference(p,receiver,res.ReceiveTiming);
+    state=sixgr.truth.storeReceivedULTimingReference(state,item.UE, ...
+        sixgr.phy.sync.ReceivedULTimingReference(p,receiver,res.ReceiveTiming));
 end
 plan.Cfg=job.Cfg;
 [trial,plan.ConstellationTable,plan.WaveformPreviewTable]= ...
@@ -12961,6 +12962,13 @@ for item=received
     elseif item.Kind=="TRS"
         [~,~,references]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,context.DesiredReferencePlane);
         output=sixgr.link.completeTRSReception(p,post,replay,ch,'ScoringChannelReferences',references);
+        if output.Crash
+            % A receiver exception has no measured result to publish. Keep
+            % its cause visible instead of failing later on absent clocks.
+            identifier=char(output.FailureIdentifier);
+            if isempty(identifier), identifier='sixgr:truth:SharedTRSReceiverFailure'; end
+            error(identifier,'%s',char(output.FailureReason));
+        end
         state=sixgr.truth.recordSharedQCLTimingReference(state,p,post,output,item.UE,context.ServingCell);
         [raw,~,observed]=localCollectTRSTrials(context.Config,context.SNR,1,ch,output);
         trial=localAnnotateCoupledControlTrial(raw,context.Slot,context.Frame,item.UE,context.RNTI,"DL",context.ServingCell);
@@ -13050,8 +13058,7 @@ input.ScoringChannelReferences=channelReferences;
 output=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
 receivedClock=sixgr.truth.retainReceivedSRSTimingReference(p,receiver,output);
 if ~isempty(receivedClock)
-    if ~isfield(state,'ReceivedULTimingReferences'), state.ReceivedULTimingReferences=cell(state.NumUsers,1); end
-    state.ReceivedULTimingReferences{item.UE}=receivedClock;
+    state=sixgr.truth.storeReceivedULTimingReference(state,item.UE,receivedClock);
 end
 [raw,~,observed]=localCollectSRSTrials(c.Config,c.SNR,1,ch,c.Slot,output);
 trial=localAnnotateCoupledControlTrial(raw,c.Slot,c.Frame,item.UE,c.RNTI,"UL",c.ServingCell);
@@ -13073,7 +13080,7 @@ trial.DesiredLinkScoringLinkID=referenceEvidence.LinkID;
 trial.DesiredLinkScoringAdditionalChannelExecutions=referenceEvidence.AdditionalChannelExecutions;
 trial.DesiredLinkScoringChannelMatrixReference=referenceEvidence.ChannelMatrixReference;
 trial.AppliedChannelReferenceSegmentCount=numel(channelReferences);
-trial.AppliedChannelReferenceSource="same_executed_NR_channel_path_gains_and_filters";
+trial.AppliedChannelReferenceSource=string(channelReferences{1}.Reference.Source);
 trial.AppliedChannelReferenceUsedByReceiver=false;
 trial=sixgr.truth.bindSharedSRSNMSEEvidence(trial,output);
 trial.ReceivedRARTimingAdvanceCommand=c.Config.SharedULTimingContext.ReceivedRARTiming.Command;
@@ -13086,7 +13093,7 @@ trial.ObservationDeliverySource="not_yet_delivered_to_scheduler";
 % Publish the already executed uplink coefficients only after the practical
 % SRS receiver has completed. Scoring captures are not receiver estimates.
 if logical(sixgr.util.structGet(c.Config,'outputs.phySignalDiagnosticEnabled',false)) && ...
-        logical(ch.UseFading)
+        (logical(ch.UseFading) || sixgr.channel.IdentityAWGNRuntime.isState(ch))
     trial=sixgr.truth.exportSharedChannelObservation( ...
         c.Config.run.rootRunFolder,trial,item.Planes,p,c.DesiredReferencePlane);
 end

@@ -24,6 +24,9 @@ if attempted
         'The actual demultiplexer output must belong to this independent receive context.');
     usable=sixgr.truth.puschUCIFieldUsable(e.HARQACK,bits,count);
     source="actual_nrUCIDecode_field_evidence";
+    if isequal(sixgr.util.structGet(e.HARQACK,'StandardNR',[]),false)
+        source="actual_experimental_Qm10_UCI_field_evidence";
+    end
 else
     assert(isequal(sixgr.util.structGet(rx,'NoiseVarStrictFailure',[]),true) && ...
         isequal(sixgr.util.structGet(rx,'DecodeAttempted',[]),false) && ...

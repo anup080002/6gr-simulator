@@ -714,12 +714,13 @@ def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
         # numeric UEIndex.  Numeric reconciliation must try the next alias.
         "Frame": "1", "Slot": "2", "UEID": "UE3", "UEIndex": "3", "CRCPass": "0",
         "Layers": "1", "MCSIndex": "10", "Modulation": "16QAM",
-        "IsWarmupFrame": "0",
+        "IsWarmupFrame": "0", "MeasuredDMRSPortCount": "1",
     }
     row = {
         "RunId": "run-1", "ScenarioName": "scenario-1", "TrialId": "1",
         "Direction": "DL", "CellId": "1", "UEId": "3", "Frame": "1",
         "Slot": "2", "ConfiguredRank": "1", "ConfiguredLayers": "1",
+        "ConfiguredMaximumRank": "1", "ConfiguredMaximumLayers": "1",
         "ScheduledRank": "1", "ScheduledLayers": "1", "TransmittedRank": "1",
         "TransmittedLayers": "1", "ReceiverEstimatedRank": "1",
         "SpatialChannelRankEstimate": "1", "SpatialChannelTxPorts": "2",
@@ -735,7 +736,7 @@ def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
         "EffectiveDecodedModulation": "16QAM", "ConfiguredMCS": "10",
         "ConfiguredInitialMCS": "10", "ConfiguredMaximumMCS": "10",
         "ScheduledMCS": "10", "TransmittedMCS": "10",
-        "EffectiveDecodedMCS": "10", "DMRSPorts": "0",
+        "EffectiveDecodedMCS": "10", "DMRSPorts": "0", "MeasuredDMRSPortCount": "1",
         "ConfiguredMCSSelectionPolicy": "fixed",
         "ActualMCSSelectionMode": "configured_fixed",
         "MCSSelectionSource": "configured_fixed_mcs",
@@ -1227,6 +1228,127 @@ def _beam_aggregate_rows() -> tuple[dict[str, str], dict[str, str], dict[str, st
         "status_classification": "derived_rank_layer_histogram",
     })
     return analytics, utilization, histogram
+
+
+def test_antenna_audit_checks_each_adaptive_trial_not_bootstrap_layers() -> None:
+    for direction in ("DL", "UL"):
+        config = _strict_mimo_config_row()
+        config.update({"Direction": direction, "TxAntennaPortCount": "4"})
+        array = _antenna_array_row(config)
+        array.update({
+            "Direction": direction, "TxAntennaPortCount": "4",
+            "ExpectedRuntimeTxCount": "4", "ObservedLogicalTxPortCount": "4",
+            "ObservedLogicalRxBranchCount": "4",
+        })
+        ranks = []
+        for layers in (1, 2, 4):
+            _, rank = _mimo_source_and_rank_row()
+            rank.update({
+                "Direction": direction, "TransmittedLayers": str(layers),
+                "LogicalTxPortCount": "4", "LogicalRxBranchCount": "4",
+                "AntennaRuntimeObjectCreated": "1",
+                "ChannelUsesSameRuntimeAntennaAssumptions": "0",
+            })
+            ranks.append(rank)
+        checks = _audit_mimo_antenna_array_table(
+            "beamforming/csv/antenna_array_config.csv", list(array), [array], ranks, [config]
+        )
+        assert all(check.passed for check in checks), [check.details for check in checks]
+        # A single invalid trial must not disappear behind the valid modal count.
+        for field, value in (
+            ("LogicalTxPortCount", "1"), ("LogicalTxPortCount", "5"),
+            ("LogicalRxBranchCount", "1"), ("LogicalRxBranchCount", "NaN"),
+            ("TransmittedLayers", "1.5"), ("TransmittedLayers", "0"),
+        ):
+            corrupt = [dict(rank) for rank in ranks]
+            corrupt[1][field] = value
+            checks = _audit_mimo_antenna_array_table(
+                "beamforming/csv/antenna_array_config.csv", list(array), [array], corrupt, [config]
+            )
+            failures = " | ".join(check.details for check in checks if not check.passed)
+            assert "LogicalPortLayerMatch_formula_mismatch" in failures, (field, value, failures)
+
+
+def test_runtime_dmrs_mapping_uses_every_measured_count_not_nominal_rank() -> None:
+    config = _strict_mimo_config_row()
+    mapping = _antenna_port_row()
+    ranks = []
+    for layers in (1, 2, 4):
+        _, rank = _mimo_source_and_rank_row()
+        rank.update({"TransmittedLayers": str(layers), "MeasuredDMRSPortCount": str(layers)})
+        ranks.append(rank)
+    # Modal transmitted count is still one. A deficient rank-four trial
+    # must fail even though the old nominal/modal comparison would pass.
+    checks = _audit_mimo_antenna_port_mapping_table(
+        "beamforming/csv/antenna_port_mapping.csv", list(mapping), [mapping], ranks, [config]
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+    adaptive = dict(mapping)
+    adaptive["ObservedTransmittedLayers"] = "4"
+    checks = _audit_mimo_antenna_port_mapping_table(
+        "beamforming/csv/antenna_port_mapping.csv", list(adaptive), [adaptive], [ranks[-1]], [config]
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+    for invalid in ("1", "1.5", "0", "NaN", "Inf", ""):
+        corrupt = [dict(rank) for rank in ranks]
+        corrupt[2]["MeasuredDMRSPortCount"] = invalid
+        checks = _audit_mimo_antenna_port_mapping_table(
+            "beamforming/csv/antenna_port_mapping.csv", list(mapping), [mapping], corrupt, [config]
+        )
+        failures = " | ".join(check.details for check in checks if not check.passed)
+        assert "Status_formula_mismatch" in failures, (invalid, failures)
+
+
+def test_runtime_dmrs_count_cannot_be_invented_by_rank_export() -> None:
+    raw, rank = _mimo_source_and_rank_row()
+    rank["MeasuredDMRSPortCount"] = "2"
+    checks = _audit_mimo_rank_layer_table(
+        "beamforming/csv/rank_layer_trials.csv", list(rank), [rank], {"DL": [raw]}
+    )
+    failures = " | ".join(check.details for check in checks if not check.passed)
+    assert "MeasuredDMRSPortCount_not_primary_source" in failures
+
+
+def test_dmrs_count_does_not_require_or_invent_port_identities() -> None:
+    raw, rank = _mimo_source_and_rank_row()
+    rank["DMRSPorts"] = ""
+    checks = _audit_mimo_rank_layer_table(
+        "beamforming/csv/rank_layer_trials.csv", list(rank), [rank], {"DL": [raw]}
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_nominal_dmrs_audit_is_independent_of_adaptive_runtime_ports() -> None:
+    for direction in ("DL", "UL"):
+        config = _strict_mimo_config_row()
+        config["Direction"] = direction
+        validation = _mimo_validation_rows(config)
+        configured = _mimo_configured_effective_row()
+        configured["Direction"] = direction
+        _, rank = _mimo_source_and_rank_row()
+        rank.update({
+            "Direction": direction, "DMRSPorts": "0|1|2|3",
+            "TransmittedLayers": "4", "TransmittedRank": "4",
+            "AdaptiveMode": "1", "FixedAnchorMode": "0",
+        })
+        config.update({"AdaptiveMode": "1", "FixedAnchorMode": "0"})
+        checks = _audit_mimo_config_strict_table(
+            "beamforming/csv/mimo_config_strict.csv", list(config), [config],
+            [rank], [configured], validation,
+        )
+        assert all(check.passed for check in checks), [check.details for check in checks]
+        for field, value in (
+            ("DMRSPorts", ""), ("DMRSPorts", "0|0"), ("DMRSPorts", "1"),
+            ("DMRSPorts", "0|1|2|3"), ("DMRSPortCount", "4"),
+        ):
+            corrupt = dict(config)
+            corrupt[field] = value
+            checks = _audit_mimo_config_strict_table(
+                "beamforming/csv/mimo_config_strict.csv", list(corrupt), [corrupt],
+                [rank], [configured], validation,
+            )
+            failures = " | ".join(check.details for check in checks if not check.passed)
+            assert "nominal_DMRS_configuration_mismatch" in failures, (field, value, failures)
 
 
 def test_remaining_mimo_tables_reconcile_config_rank_and_primary_trials() -> None:
@@ -1976,6 +2098,53 @@ def test_visual_audit_tables_are_domain_contracted_and_fail_closed(tmp_path: Pat
         check.artifact_path == "reports/csv/visual_artifact_integrity.csv"
         for check in checks
     )
+
+
+def test_fer_includes_finalized_warmup_and_unavailable_sinr_trials() -> None:
+    for direction in ("DL", "UL"):
+        raw = [
+            {"UEIndex": "1", "SFN": "3", "IsWarmupFrame": "1", "CRCPass": "0"},
+            {"UEIndex": "1", "SFN": "4", "PostEqSINR_dB": "NaN", "CRCPass": "0"},
+            {"UEIndex": "1", "SFN": "5", "PostEqSINR_dB": "12", "CRCPass": "1"},
+            {"UEIndex": "1", "SFN": "6", "FallbackFlag": "1", "CRCPass": "0"},
+            {"UEIndex": "1", "SFN": "7", "FinalizedFlag": "0", "CRCPass": "0"},
+        ]
+        for scope in ("1", "all"):
+            row = {
+                "Scope": "executed_frames", "Direction": direction, "UEIndex": scope,
+                "ObservedFrames": "3", "ErroredFrames": "2", "FER": str(2 / 3),
+                "BLER": str(2 / 3), "BER": "0.1", "TraceSource": "raw_trials",
+            }
+            checks = _audit_derived_link_table(
+                "air_interface/csv/fer_summary.csv", list(row), [row], {direction: raw}
+            )
+            assert all(check.passed for check in checks), [check.details for check in checks]
+            # Dropping failed frames must fail, even when reported FER is internally consistent.
+            row.update({"ObservedFrames": "1", "ErroredFrames": "0", "FER": "0"})
+            checks = _audit_derived_link_table(
+                "air_interface/csv/fer_summary.csv", list(row), [row], {direction: raw}
+            )
+            failures = " | ".join(check.details for check in checks if not check.passed)
+            assert "frame_count_raw_mismatch" in failures
+            assert "fer_raw_mismatch" in failures
+
+
+def test_fer_uses_absolute_frames_and_counts_crashes_without_crc() -> None:
+    row = {
+        "Scope": "run", "Direction": "DL", "ObservedFrames": "4",
+        "ErroredFrames": "3", "FER": "0.75", "BLER": "0", "BER": "0",
+        "TraceSource": "dl_frame_grouped_raw_link_trials",
+    }
+    raw = [
+        {"Frame": "1", "SFN": "0", "CRCPass": "1"},
+        {"Frame": "1025", "SFN": "0", "CRCPass": "NaN", "Crash": "1"},
+        {"Frame": "1026", "SFN": "1", "CRCPass": "NaN", "Status": "CRASH"},
+        {"Frame": "1027", "SFN": "2", "CRCPass": "NaN", "Status": "FAIL"},
+    ]
+    checks = _audit_derived_link_table(
+        "air_interface/csv/fer_summary.csv", list(row), [row], {"DL": raw}
+    )
+    assert all(check.passed for check in checks), [check.details for check in checks]
 
 
 def test_derived_bler_curve_requires_exact_failure_count_arithmetic() -> None:

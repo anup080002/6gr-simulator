@@ -50,6 +50,16 @@ assert(out.DetailTable.StageOutcome(1) == "PASS");
 assert(out.ParameterBindingTable.Status(1) == "PASS");
 assert(all(isfile([out.DetailPath; out.ParameterBindingPath; out.GatePath])));
 
+% A successful different row cannot stand in for a measured failed row.
+% This matters for mixed DL/UL CSI: only DL carries the configured CRI.
+mixed=table([NaN;2;3],[true;false;false], ...
+    'VariableNames',{'Sample','DecodeOK'});
+sixgr.util.csvWriteTable(fullfile(runFolder,"measured","stage.csv"),mixed);
+sameRow=sixgr.truth.exportCausalPHYChainAudit(runFolder,scfg,cfg, ...
+    "RunId","success_requires_same_measured_row","WriteArtifacts",false);
+assert(~sameRow.Ok && sameRow.DetailTable.StageOutcome(1)=="FAILED_MEASUREMENT");
+sixgr.util.csvWriteTable(fullfile(runFolder,"measured","stage.csv"),measuredT);
+
 % The Top-50 inventory consumes the persisted causal audit as the exact
 % source for its end-to-end chain-status visual.  This guards both the
 % explicit semantic schema and the production ordering requirement that

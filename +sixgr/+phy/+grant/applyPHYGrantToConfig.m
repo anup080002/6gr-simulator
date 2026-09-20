@@ -19,6 +19,13 @@ end
 ant = phyGrant.AntennaArchitecture;
 ra = phyGrant.ResourceAllocation;
 cl = phyGrant.CodingLayout;
+if direction=="UL" && sixgr.phy.grant.assertExperimentalCodingLayout(cl)
+    % The frozen coding context, not a later scheduler candidate, owns this
+    % replay. Never reconstruct old codepoints from an ambient table name.
+    cfgOut.phy.pusch.mcsTable=char(string(cl.MCSTable));
+    cfgOut.phy.pusch.experimentalMCSTable=cl.ExperimentalMCSTable;
+    cfgOut.phy.pusch.researchTransportPolicy=cl.ResearchTransportPolicy;
+end
 prec = phyGrant.PrecodingState;
 normalizationConvention = lower(strtrim(string(sixgr.util.structGet( ...
     prec, "NormalizationConvention", ""))));

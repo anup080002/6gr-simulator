@@ -8,6 +8,16 @@ assert(frame.NRB==264 && frame.SCSkHz==120 && frame.FFTSize==4096 && frame.Sampl
 assert(s.frequency.center_frequency_hz==7e9 && s.frequency.bandwidth_hz==400e6);
 assert(s.simulation.n_slots==80 && s.simulation.snr_db==30 && s.simulation.random_seed==20260920);
 assert(s.research_awgn_mimo.physical_ports==4 && s.research_dl.num_prbs==264 && s.research_ul.num_prbs==264);
+assert(s.simulation.awgn_reference_re_energy==.25 && ...
+    s.simulation.awgn_reference_re_energy==s.research_awgn_mimo.reference_data_re_power);
+bad=s; bad.simulation.awgn_reference_re_energy=1;
+try
+    sixgr.lls6g.config.validateScenarioConfig(bad);
+    error('test:ExpectedRejection','Contradictory noise references were accepted.');
+catch ME
+    assert(strcmp(ME.identifier,'sixgr:lls6g:config:ConflictingAWGNReferenceEnergy'), ...
+        'Unexpected rejection: %s',ME.identifier);
+end
 assert(s.research_link.capture_iq && s.research_link.export_keysight && s.research_link.save_plots);
 assert(s.research_adaptation.enabled && s.harq.enabled && ...
     all(s.research_adaptation.candidate_code_rates<=0.9));

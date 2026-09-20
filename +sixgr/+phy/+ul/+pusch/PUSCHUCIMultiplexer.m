@@ -4,9 +4,10 @@ classdef PUSCHUCIMultiplexer
     methods (Static)
         function result = multiplex(pusch, targetCodeRate, transportBlockSize, ...
                 ulschRateMatchedBits, payload, initialIMCS)
-            if ~isa(pusch, "nrPUSCHConfig")
+            experimental=isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter');
+            if ~isa(pusch, "nrPUSCHConfig") && ~experimental
                 error("sixgr:pusch:InvalidPUSCHConfiguration", ...
-                    "UCI multiplexing requires an explicit nrPUSCHConfig.");
+                    "UCI multiplexing requires a native configuration or explicit research adapter.");
             end
             if ~isa(payload, "sixgr.phy.ul.pusch.PUSCHUCIPayload")
                 error("sixgr:pusch:MissingUCIPayload", ...
@@ -22,8 +23,13 @@ classdef PUSCHUCIMultiplexer
 
             p = payload.toStruct();
             csi2Combined = [payload.CSIPart2; payload.ConfiguredGrantUCI];
-            info = nrULSCHInfo(pusch, targetCodeRate, transportBlockSize, ...
-                p.OACK, p.OCSI1, numel(csi2Combined));
+            if experimental
+                info=pusch.resourcePlan(targetCodeRate,transportBlockSize, ...
+                    [p.OACK p.OCSI1 numel(csi2Combined)]);
+            else
+                info = nrULSCHInfo(pusch, targetCodeRate, transportBlockSize, ...
+                    p.OACK, p.OCSI1, numel(csi2Combined));
+            end
             gULSCH = double(info.GULSCH(:).');
             if numel(gULSCH) ~= nCodewords
                 error("sixgr:pusch:InvalidUCIBitBudget", ...
@@ -41,7 +47,17 @@ classdef PUSCHUCIMultiplexer
             ack = localEncode(payload.HARQACK, info.GACK(owner + 1), modulation);
             csi1 = localEncode(payload.CSIPart1, info.GCSI1(owner + 1), modulation);
             csi2 = localEncode(csi2Combined, info.GCSI2(owner + 1), modulation);
-            if payload.hasPayload()
+            if experimental
+                codewords=sixgr.phy.research.PUSCHUCIResourceAdapter.multiplex( ...
+                    info,ulschRateMatchedBits{1},ack,csi1,csi2);
+                names=["ULSCHIndices","ACKIndices","CSI1Indices","CSI2Indices"];
+                muxInfo=struct();
+                for k=1:4
+                    index=info.StreamIndices{k}; muxInfo.(names(k))=uint32(index(index>0));
+                end
+                muxInfo.UCIXIndices=uint32(find(codewords==-1));
+                muxInfo.UCIYIndices=uint32(find(codewords==-2)); muxInfo.QUCI=0;
+            elseif payload.hasPayload()
                 [codewords, muxInfo] = nrULSCHMultiplex( ...
                     pusch, targetCodeRate, transportBlockSize, ...
                     localUnwrapOne(ulschRateMatchedBits), ack, csi1, csi2);
@@ -76,6 +92,10 @@ classdef PUSCHUCIMultiplexer
                 "PlaceholderXCount", numel(sixgr.util.structGet(muxInfo, "UCIXIndices", [])), ...
                 "PlaceholderYCount", numel(sixgr.util.structGet(muxInfo, "UCIYIndices", [])), ...
                 "Source", "nrULSCHInfo_nrUCIEncode_nrULSCHMultiplex_typed_payload");
+            if experimental
+                result.Source="experimental_explicit_Qm_ULSCH_UCI_typed_payload";
+                result.StandardNR=false;
+            end
         end
     end
 end
@@ -138,7 +158,7 @@ if ~(isscalar(g) && isfinite(g) && g > 0 && g == fix(g))
     error("sixgr:pusch:InvalidUCIBitBudget", ...
         "Nonempty UCI payload requires a positive integer coded-bit allocation.");
 end
-bits = int8(nrUCIEncode(payload, g, modulation));
+bits = sixgr.phy.research.encodePUSCHUCI(payload, g, modulation);
 bits = bits(:);
 end
 

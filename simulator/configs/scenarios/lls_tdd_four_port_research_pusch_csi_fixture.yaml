@@ -1,0 +1,23 @@
+inherits:
+  - ./lls_tdd_pusch_independent_harq_csi_fixture.yaml
+  - ../coding/research_connected_ul_mcs.yaml
+  - ../channels/shared_identity_awgn.yaml
+  - ../mimo/shared_four_port_control.yaml
+meta:
+  scenario_id: lls_tdd_four_port_research_pusch_csi_fixture
+  description: Four-port shared SRS, decoded control and experimental 1024-QAM PUSCH with independent HARQ and CSI completion.
+  purpose: Bounded 5 MHz integration test, not 400 MHz throughput or full-access qualification.
+  research_class: optional_research_experiment
+simulation:
+  snr_db: 30
+modulation_and_mapping:
+  high_order_modulation_stress_enabled: true
+  ul_mcs_index: 4
+  ul_max_modulation: 1024QAM
+pusch:
+  mcs_index: 4
+  fixed_mcs: 4
+  modulation: 1024QAM
+  target_code_rate_per_codeword: [0.5]
+output_control:
+  impairment_visibility: full

@@ -24,6 +24,10 @@ classdef PUSCHUCIDemultiplexer
                 result.(name)=scoring.(name);
             end
             result.Source="nrULSCHDemultiplex_nrUCIDecode_typed_payload";
+            if isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter')
+                result.Source="experimental_explicit_Qm_UCI_typed_payload_component";
+                result.StandardNR=false;
+            end
         end
 
         function result = receive(pusch,targetCodeRate,transportBlockSize, ...
@@ -62,6 +66,10 @@ classdef PUSCHUCIDemultiplexer
             result.UCIReceiverEvidence.HARQMappingDigest=context.Data.HARQMappingDigest;
             if ~result.PartialReception
                 result.Source="nrULSCHDemultiplex_nrUCIDecode_independent_receive_schema";
+            end
+            if isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter')
+                result.Source="experimental_explicit_Qm_UCI_independent_receive_schema";
+                result.StandardNR=false;
             end
         end
 
@@ -106,7 +114,7 @@ classdef PUSCHUCIDemultiplexer
                 if transportBlockSize(owner+1)>0, presence=false; end
                 matches=0; resolvedCount=NaN; firstBits=int8([]); lastRejection=[];
                 for present=reshape(presence,1,[])
-                    [~,~,firstLLR,~]=nrULSCHDemultiplex(pusch,targetCodeRate,transportBlockSize, ...
+                    [~,~,firstLLR,~]=sixgr.phy.ul.pusch.demultiplexUCIStreams(pusch,targetCodeRate,transportBlockSize, ...
                         p.OACK,p.OCSI1,double(present),localUnwrapOne(codewordLLR));
                     [bits,evidence]=sixgr.phy.ul.pusch.decodeUCIWithEvidence(firstLLR,p.OCSI1,modulation,shortPolicy);
                     if ~evidence.DecodeUsable, continue; end
@@ -136,7 +144,7 @@ classdef PUSCHUCIDemultiplexer
             combinedCSI2Length = p.OCSI2 + p.OCGUCI;
 
             if p.OACK+p.OCSI1+p.OCSI2+p.OCGUCI>0
-                [ulsch, ackLLR, csi1LLR, csi2LLR] = nrULSCHDemultiplex( ...
+                [ulsch, ackLLR, csi1LLR, csi2LLR] = sixgr.phy.ul.pusch.demultiplexUCIStreams( ...
                     pusch, targetCodeRate, transportBlockSize, ...
                     p.OACK, p.OCSI1, combinedCSI2Length, ...
                     localUnwrapOne(codewordLLR));

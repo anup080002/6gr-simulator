@@ -1,4 +1,4 @@
-function root=verifyReceivedConstellationCapture(out,cfg,ue)
+function root=verifyReceivedConstellationCapture(out,cfg,ue,root)
 % Independently reconcile actual receiver pairs; no constellation fitting.
 T=out.ConstellationSamples;
 assert(istable(T)&&~isempty(T),'test:MissingReceivedPairs','Completed data receiver must retain paired symbols.');
@@ -27,7 +27,8 @@ coords=[T.OFDMSymbolIndex,T.SubcarrierIndex,T.LayerIndex];
 assert(size(unique(coords,'rows'),1)==height(T));
 assert(all(T.UEIndex==ue), ...
     'The producer must retain the component grant UE identity; the test must not fill it in.');
-root=tempname; sixgr.util.ensureFolder(root);
+if nargin<4, root=tempname; end
+sixgr.util.ensureFolder(root);
 [dl,ul]=sixgr.truth.constellationArtifactPaths(cfg,fullfile(root,'air_interface','csv'));
 direction=string(T.Direction(1)); path=dl; if direction=="UL", path=ul; end
 sixgr.util.csvWriteTable(path,T,'PreserveSchema',true);

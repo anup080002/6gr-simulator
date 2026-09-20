@@ -24,13 +24,17 @@ classdef CodebookEngine
                 return;
             end
 
-            if codebookType == "typei-singlepanel" && ports > 2 && rankValue <= 2
+            if codebookType == "typei-singlepanel" && ports > 2 && ...
+                    (rankValue <= 2 || (ports == 4 && rankValue <= 4))
                 [matrices,indices,components,layout] = ...
                     sixgr.phy.mimo.TypeISinglePanelCodebook.enumerate(request);
                 result = localResult(matrices,indices,request,layout.Specification);
                 result.PMIComponents = components;
                 result.PMIIndexDimensions = layout.Dimensions;
                 result.MatrixAuthority = "ts38214_rank1_rank2_single_panel_formulas";
+                if rankValue>=3
+                    result.MatrixAuthority = "ts38214_four_port_rank3_rank4_single_panel_formulas";
+                end
                 return;
             end
 
@@ -41,7 +45,7 @@ classdef CodebookEngine
             error("sixgr:mimo:UnsupportedProfile", ...
                 "Strict candidate enumeration for profile %s (%s, %d ports, " + ...
                 "rank %d) requires its frozen independent matrix pack; the " + ...
-                "enabled enumerated subset is two-port Type-I and larger single-panel ranks 1/2.", ...
+                "enabled subset is Type-I ranks 1/2 and four-port ranks 3/4.", ...
                 profileID, codebookType, ports, rankValue);
         end
 

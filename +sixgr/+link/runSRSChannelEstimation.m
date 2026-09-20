@@ -401,6 +401,7 @@ try
     end
     out.NMSEReferenceAGCGain_dB=double(sixgr.util.structGet(replay,'NMSEReferenceAGCGain_dB',NaN));
     nmse = localNormalizedMSE(hEst, hTrue);
+    sharedScoringAvailable=false;
     if received && isfield(context,'ScoringChannelReferences')
         % Independent scoring happens AFTER the practical receiver. These
         % tensors are never an argument to SRS_Rx or channelEstimate.
@@ -411,6 +412,9 @@ try
         out.ChannelNMSEReferenceEvidence=referenceEvidence;
         nmse=out.ChannelNMSEScoring.Linear;
         nmseReferenceSource=referenceEvidence.Source;
+        % Availability follows the validated executed-channel reference,
+        % not a fading-only label. Identity AWGN retains its own source tag.
+        sharedScoringAvailable=true;
     end
     estimatedDopplerHz = localEstimateDopplerHz(hEst, symTimes_s);
     out.DopplerEstimateCRLB_Hz = localDopplerCRLBHz(hEst, symTimes_s, rx.NoiseVar);
@@ -422,7 +426,8 @@ try
     end
     out.TrueChannelNMSE_dB = double(out.NMSE_dB);
     out.NMSEReferenceSource = char(string(nmseReferenceSource));
-    out.TrueChannelOracleAvailable = startsWith(string(nmseReferenceSource), "applied_channel_gain_truth");
+    out.TrueChannelOracleAvailable = sharedScoringAvailable || ...
+        startsWith(string(nmseReferenceSource), "applied_channel_gain_truth");
     out.ChannelNMSEThreshold_dB = localResolveSRSNMSEThreshold(cfgSRS);
     out.InterpolationLoss_dB = localInterpolationLossNormalized(symIdx, hEst, hTrue);
     out.MismatchSensitivity_dB = localStaticMismatchSensitivity(hTrue);

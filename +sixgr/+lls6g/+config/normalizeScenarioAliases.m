@@ -146,15 +146,15 @@ cfg = localSyncValue(cfg, newBase, oldBase, "coding.control_coding_scheme", "cod
 cfg = localSyncValue(cfg, newBase, oldBase, "coding.ldpc_max_iterations", "receiver_algorithms.decoder_iterations", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.dl_max_modulation", "modulation.dl_modulation_order", "modulation_to_order");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.ul_max_modulation", "modulation.ul_modulation_order", "modulation_to_order");
-cfg = localSyncValue(cfg, newBase, oldBase, "modulation.dl_mcs_table", "modulation.mcs_table", "identity");
+cfg = localInheritMCSTable(cfg, newBase, oldBase, "modulation.dl_mcs_table");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.cqi_table", "reference_signals.cqi_table", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.pi2_bpsk_enable", "modulation.pi2_bpsk_enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation.constellation_shaping_enable", "modulation.constellation_shaping_enabled", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.dl_max_modulation", "modulation.dl_modulation_order", "modulation_to_order");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.ul_max_modulation", "modulation.ul_modulation_order", "modulation_to_order");
-cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.dl_mcs_table", "modulation.mcs_table", "identity");
-cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.ul_mcs_table", "modulation.mcs_table", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.mcs_table", "modulation.mcs_table", "identity");
+cfg = localInheritMCSTable(cfg, newBase, oldBase, "modulation_and_mapping.dl_mcs_table");
+cfg = localInheritMCSTable(cfg, newBase, oldBase, "modulation_and_mapping.ul_mcs_table");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.dl_mcs_index", "modulation.dl_mcs_index", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.ul_mcs_index", "modulation.ul_mcs_index", "identity");
 cfg = localSyncValue(cfg, newBase, oldBase, "modulation_and_mapping.cqi_table", "reference_signals.cqi_table", "identity");
@@ -1655,6 +1655,15 @@ elseif newDiff && oldDiff
         cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
     end
 end
+end
+
+function cfg=localInheritMCSTable(cfg,newBase,oldBase,directionalPath)
+% Common MCS is a default for a direction, not an alias of that direction.
+% Reuse source-file precedence, but never copy a directional override back
+% into the common field (which would silently change the opposite link).
+common=sixgr.util.structGet(cfg,'modulation.mcs_table',[]);
+cfg=localSyncValue(cfg,newBase,oldBase,directionalPath,'modulation.mcs_table','identity');
+cfg=sixgr.util.structSet(cfg,'modulation.mcs_table',common);
 end
 
 function cfg = localPreferModernRuntimeValue(cfg, newPath, oldPath, mode)

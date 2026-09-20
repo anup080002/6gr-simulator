@@ -427,11 +427,11 @@ if strlength(successField) > 0
     values = T.(char(successField));
     switch successMode
         case "any_true"
-            successOk = any(localTruthFlag(values));
+            successOk = any(valid & localTruthFlag(values));
         case "all_true"
             successOk = all(localTruthFlag(values));
         case "any_equals"
-            successOk = any(localEqualsMask(values, successValue));
+            successOk = any(valid & localEqualsMask(values, successValue));
         case "all_equals"
             successOk = all(localEqualsMask(values, successValue));
         otherwise

@@ -1,5 +1,5 @@
 function profile = resolveMCSProfile(mcsTable, mcsIndex)
-%RESOLVEMCSPROFILE Resolve a 3GPP NR MCS table/index into modulation and code rate.
+%RESOLVEMCSPROFILE Resolve a named MCS table/index into modulation and code rate.
 %
 %   PROFILE = sixgr.link.resolveMCSProfile(MCSTABLE, MCSINDEX) returns a
 %   struct with fields:
@@ -15,6 +15,8 @@ function profile = resolveMCSProfile(mcsTable, mcsIndex)
 %   qam64_table1
 %   qam256_table2
 %   qam64LowSE_table3
+% Catalog-defined experimental_* tables are explicitly labelled StandardNR=false.
+% Their codepoints are lab policy, not standardized MCS or SINR calibration.
 
 tableToken = lower(strtrim(string(mcsTable)));
 idx = round(double(mcsIndex));
@@ -76,6 +78,17 @@ switch tableToken
             1.3281 1.4766 1.6953 1.9141 2.1602 2.4063 ...
             2.5664 2.7305 3.0293 3.3223 3.6094 3.9023 4.2129 4.5234];
     otherwise
+        definition=sixgr.phy.research.resolveExperimentalMCSTable(tableToken);
+        if isempty(definition), return; end
+        row=definition.Rows(definition.Rows(:,1)==idx,:);
+        if isempty(row), return; end
+        profile.Valid=true;
+        profile.Qm=row(2);
+        profile.Modulation=char(localQmToModulation(profile.Qm));
+        profile.TargetCodeRate=row(3);
+        profile.SpectralEfficiency=row(2)*row(3);
+        profile.StandardNR=false;
+        profile.ResearchClass=definition.ResearchClass;
         return;
 end
 
@@ -100,6 +113,8 @@ switch round(double(qm))
         modText = "64QAM";
     case 8
         modText = "256QAM";
+    case 10
+        modText = "1024QAM";
     otherwise
         modText = "";
 end

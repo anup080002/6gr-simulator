@@ -49,29 +49,41 @@ end
 cfg.phy.(root)=p;
 carrier=sixgr.phy.grid.makeCarrier(cfg);
 cfg.lls6g.userContext.RuntimeSlotStartTime_s=assignment.DataAbsoluteSlot*1e-3*15/carrier.SubcarrierSpacing;
+researchTransport=[];
 if assignment.Direction=="DL"
     [indices,info,data]=sixgr.phy.grid.allocREsPDSCH(carrier,cfg);
     overhead=sixgr.phy.dl.resolvePDSCHXOverhead(cfg,assignment.SymbolAllocation);
 else
-    [indices,info,data]=sixgr.phy.grid.allocREsPUSCH(carrier,cfg);
+    researchTransport=sixgr.phy.research.configuredPUSCHTransport(cfg,carrier);
+    if isempty(researchTransport)
+        [indices,info,data]=sixgr.phy.grid.allocREsPUSCH(carrier,cfg);
+    else
+        data=researchTransport.Geometry;
+        [indices,info]=nrPUSCHIndices(carrier,data);
+    end
     overhead=double(cfg.phy.pusch.xOverhead);
 end
+actualModulation=string(data.Modulation);
+if ~isempty(researchTransport), actualModulation=researchTransport.Modulation; end
 validateattributes(overhead,{'double'},{'scalar','finite','integer','nonnegative'});
 assert(isequal(double(data.PRBSet(:).'),p.prbSet) && ...
     isequal(double(data.SymbolAllocation(:).'),assignment.SymbolAllocation) && ...
     isequal(double(data.DMRS.DMRSPortSet(:).'),assignment.DMRSPortSet) && ...
     data.DMRS.NSCID==assignment.NSCID && ...
     data.DMRS.NumCDMGroupsWithoutData==assignment.NumCDMGroupsWithoutData && ...
-    data.NumLayers==assignment.NumLayers && string(data.Modulation)==assignment.Modulation, ...
+    data.NumLayers==assignment.NumLayers && actualModulation==assignment.Modulation, ...
     'sixgr:phy:pdcch:ReceivedAllocationOverridden', ...
     'An installed catalog or legacy alias must not override received dynamic fields.');
 account=sixgr.phy.resource.computeResourceAccounting(channel,carrier,data, ...
     'ChannelIndices',indices,'AllocationInfo',info,'IndexBase','1based', ...
     'TargetCodeRate',allocationRate,'XOverhead',overhead);
+if ~isempty(researchTransport)
+    account=researchTransport.resourceAccounting(carrier,indices,allocationRate,overhead);
+end
 nominalTBS=NaN;
 tbsRole="retained_HARQ_TBS_required_no_nominal_size";
 if ~requiresHistory
-    nominalTBS=nrTBS(data.Modulation,data.NumLayers,numel(data.PRBSet), ...
+    nominalTBS=nrTBS(char(actualModulation),data.NumLayers,numel(data.PRBSet), ...
         account.NREPerPRBForTBS,assignment.TargetCodeRate,overhead);
     tbsRole="new_transport_block_nominal_size_not_HARQ_state";
 end
@@ -82,4 +94,9 @@ allocation=struct('Config',cfg,'Carrier',carrier,'ChannelConfig',data, ...
     'Source',"received_dci_and_installed_reference_policy", ...
     'TBSRole',tbsRole, ...
     'ExecutionQualified',false);
+if ~isempty(researchTransport)
+    allocation.ResearchTransport=researchTransport;
+    allocation.StandardNR=false;
+    allocation.ChannelConfigRole="native_geometry_only_not_transport_modulation";
+end
 end

@@ -22,6 +22,7 @@ top_level_order:
   - research_receiver
   - research_harq
   - research_awgn_mimo
+  - research_pusch_uci
   - research_adaptation
   - harq
   - random_access
@@ -129,6 +130,7 @@ sections:
       random_seed: {required: true, type: integer, min: 0}
       deterministic_mode: {required: true, type: boolean}
       snr_db: {required: true, type: number}
+      awgn_reference_re_energy: {required: false, type: number, min_exclusive: 0}
       noise_operating_mode:
         required: false
         type: string
@@ -253,6 +255,7 @@ sections:
       delay_spread_ns: {required: true, type: number, min: 0}
       doppler_hz: {required: true, type: number, min: 0}
       per_sample_fading_enabled: {required: false, type: boolean}
+      shared_identity_awgn_enabled: {required: false, type: boolean}
       doppler_source_mode: {required: false, type: string, allowed_values: [configured, derive_from_ue_speed]}
       mobility_kmph: {required: true, type: number, min: 0}
       los_enabled: {required: true, type: boolean}
@@ -661,6 +664,10 @@ sections:
     parameters:
       physical_ports: {required: true, type: integer, min: 1, max: 4}
       reference_data_re_power: {required: true, type: number, min_exclusive: 0}
+  research_pusch_uci:
+    required: false
+    parameters:
+      resource_mapping: {required: true, type: string, allowed_values: [symbol_preserving_single_codeword_ulsch]}
   research_adaptation:
     required: false
     parameters:
@@ -767,7 +774,7 @@ sections:
       ul_precoding:
         required: false
         type: struct
-        description: Explicit higher-layer two-port PUSCH codebook context for TS 38.212 DCI 0_1; validated against SRS/PUSCH before grant packing.
+        description: Explicit higher-layer two/four-port PUSCH codebook context for TS 38.212 DCI 0_1; validated against SRS/PUSCH before grant packing.
       ul_reference_signaling: {required: false, type: struct}
       dl_reference_signaling: {required: false, type: struct}
       connected_dci: {required: false, type: struct}
@@ -1523,6 +1530,14 @@ nested_sections:
       config: {required: false, type: struct}
       notes: {required: false, type: string}
 value_maps:
+  # Lab codepoints, NOT TS 38.214 MCS indices or calibrated SINR thresholds.
+  # A new definition needs a new name; installed contexts bind its contents.
+  experimental_mcs_tables:
+    - name: experimental_square_qam_v1
+      research_class: optional_research_experiment
+      indices: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+      qm: [2, 4, 6, 8, 10, 8, 8, 8, 10, 10, 10]
+      code_rates: [0.5, 0.5, 0.5, 0.5, 0.5, 0.82, 0.85, 0.9, 0.82, 0.85, 0.9]
   modulation_order_to_name:
     - {order: 1, name: "BPSK"}
     - {order: 2, name: "QPSK"}

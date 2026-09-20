@@ -1,0 +1,9 @@
+# Opt-in physical sample-clock identity link for shared control/data work.
+# Not a fading/array model, and not a qualification of 1024-QAM DCI/UCI.
+# simulation.awgn_reference_re_energy owns the fixed SNR reference; inherit
+# the four-port reference fragment when reproducing its 0.25-RE convention.
+inherits:
+  - awgn.yaml
+channels:
+  shared_identity_awgn_enabled: true
+  doppler_source_mode: configured

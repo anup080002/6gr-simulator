@@ -52,7 +52,7 @@ for k=1:size(budgets,1)
         end
         ack=zeros(0,1); csi1=ack; csi2=ack;
     else
-        [data,ack,csi1,csi2]=nrULSCHDemultiplex(pusch,targetCodeRate,transportBlockSize, ...
+        [data,ack,csi1,csi2]=sixgr.phy.ul.pusch.demultiplexUCIStreams(pusch,targetCodeRate,transportBlockSize, ...
             budget.OACK,firstCount,combinedCount,localUnwrap(labels));
     end
     if ~iscell(data), data={data}; end
@@ -116,6 +116,9 @@ plan=struct('Source',"configured_public_demultiplexer_index_probe", ...
     'ULSCHSourceIndices1Based',{dataMap},'CandidateMaps',{maps}, ...
     'IndexSpace',"concatenated_received_codewords_zero_is_puncturing_erasure", ...
     'PhysicalExecutionEvidence',false);
+if isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter')
+    plan.Source="configured_explicit_Qm_demultiplexer_index_probe";
+end
 end
 
 function value=localUnwrap(cells)

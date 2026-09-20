@@ -50,6 +50,8 @@ sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ul.PUSCH_Tx", ...
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PUSCH', [], @(x) isempty(x) || isobject(x));
+ip.addParameter('ResearchTransport', [], @(x) isempty(x) || ...
+    (isa(x,'sixgr.phy.research.PUSCHUCIResourceAdapter') && isscalar(x)));
 ip.addParameter('TransportBlockBits', [], @(x) isempty(x) || isnumeric(x) || islogical(x) || iscell(x));
 ip.addParameter('TransportBlockSizeOverride', [], @(x) isempty(x) || ...
     (isnumeric(x) && isvector(x) && all(x>0)));
@@ -69,6 +71,12 @@ ip.addParameter('ExecutionProfile', "data_pusch", ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+researchTransport=opt.ResearchTransport;
+if ~isempty(researchTransport)
+    assert(isempty(opt.PUSCH) || isequal(opt.PUSCH,researchTransport.Geometry), ...
+        'sixgr:research:TransportGeometryMismatch','PUSCH geometry and transport must agree.');
+    opt.PUSCH=researchTransport.Geometry;
+end
 executionProfile = lower(strtrim(string(opt.ExecutionProfile)));
 phyGrant = opt.PHYGrant;
 hasPHYGrant = isstruct(phyGrant) && ~isempty(fieldnames(phyGrant));
@@ -87,6 +95,12 @@ else
 end
 
 % Allocation / PUSCH config
+if isempty(researchTransport) && startsWith(string(sixgr.util.structGet(cfg,'phy.pusch.mcsTable','')),"experimental_")
+    researchTransport=sixgr.phy.research.configuredPUSCHTransport(cfg,carrier);
+    assert(isempty(opt.PUSCH) || isequal(opt.PUSCH,researchTransport.Geometry), ...
+        'sixgr:research:TransportGeometryMismatch','Transmitter geometry must match installed allocation.');
+    opt.PUSCH=researchTransport.Geometry;
+end
 if isempty(opt.PUSCH)
     if hasPHYGrant
         [puschInd, puschInfo, pusch] = localBuildPUSCHFromFrozenGrant(carrier, cfg, phyGrant);
@@ -97,13 +111,21 @@ else
     pusch = opt.PUSCH;
     pusch = localEnsureTransformPrecodingOwnership(pusch, cfg);
     if hasPHYGrant
-        localAssertExplicitPUSCHMatchesGrant(pusch, phyGrant);
+        actualModulation=pusch.Modulation;
+        if ~isempty(researchTransport), actualModulation=researchTransport.Modulation; end
+        localAssertExplicitPUSCHMatchesGrant(pusch, phyGrant, actualModulation);
     end
     try
         [puschInd, puschInfo] = nrPUSCHIndices(carrier, pusch, 'IndexStyle', 'index');
     catch
         [puschInd, puschInfo] = nrPUSCHIndices(carrier, pusch);
     end
+end
+transport=pusch;
+if ~isempty(researchTransport)
+    assert(isequal(pusch,researchTransport.Geometry), ...
+        'sixgr:research:TransportGeometryMismatch','Runtime policy cannot silently mutate experimental geometry.');
+    transport=researchTransport;
 end
 sixgr.config.assertRuntimeFeatureUse(cfg, ...
     localProcedureFeature("ptrs", executionProfile), ...
@@ -157,6 +179,10 @@ resourceAccounting = sixgr.phy.resource.computeResourceAccounting("PUSCH", carri
     "IndexBase", "1based", ...
     "TargetCodeRate", targetCodeRate(1), ...
     "XOverhead", xOverhead);
+if ~isempty(researchTransport)
+    [resourceAccounting,puschInfo]=researchTransport.resourceAccounting( ...
+        carrier,puschInd,targetCodeRate,xOverhead);
+end
 localAssertPUSCHResourceAccounting(resourceAccounting, pusch, hasPHYGrant);
 puschInfo.ResourceAccounting = resourceAccounting;
 puschInfo.LayerDataRE = resourceAccounting.LayerDataRE;
@@ -174,7 +200,7 @@ if ~(isfinite(nrePerPRB) && nrePerPRB > 0)
         round(double(nPRB)), mat2str(localResolveSymbolAllocation(pusch)), char(string(pusch.Modulation)), round(double(pusch.NumLayers)));
 end
 [trBlkSize, scheduledTrBlkSize, transportBlockSizeSource] = localResolvePUSCHTransportBlockSize( ...
-    opt.TransportBlockSizeOverride, phyGrant, hasPHYGrant, pusch, nPRB, nrePerPRB, targetCodeRate, xOverhead);
+    opt.TransportBlockSizeOverride, phyGrant, hasPHYGrant, transport, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 
 % Transport block bits
 trBlkCells = localResolveTransportBlockCells(opt.TransportBlockBits, trBlkSize);
@@ -196,9 +222,9 @@ if isempty(initialIMCS)
         sixgr.util.structGet(phyGrant, "CodingLayout.MCSIndex", 0)));
 end
 [dataBitBudgetG, uciInfo] = localResolvePUSCHUCIBitBudget( ...
-    pusch, targetCodeRate, trBlkSize, G, uciPayload, initialIMCS);
+    transport, targetCodeRate, trBlkSize, G, uciPayload, initialIMCS);
 codingLayouts = localResolveTxCodingLayouts( ...
-    phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, pusch, dataBitBudgetG);
+    phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, transport, dataBitBudgetG);
 codingLayout = codingLayouts{1};
 tbCRCType = string(cellfun(@(x) string(x.TBCRCType), codingLayouts));
 tbCRCLen = double(cellfun(@(x) x.TBCRCLength, codingLayouts));
@@ -213,7 +239,7 @@ if nCodewords == 1
     [cbs, segInfoCells{1}] = sixgr.phy.tb.segmentLDPC(tbCrcCells{1}, bgn(1));
     ldpcEnc = int8(sixgr.phy.phycode.ldpcEncode(cbs, bgn(1)));
     [ulSchCodeword, rateMatchInfoCells{1}] = sixgr.phy.phycode.rateMatchLDPC( ...
-        ldpcEnc, dataBitBudgetG(1), rv(1), localModulationAt(pusch.Modulation, 1), pusch.NumLayers);
+        ldpcEnc, dataBitBudgetG(1), rv(1), localModulationAt(transport.Modulation, 1), pusch.NumLayers);
     codewords = {int8(ulSchCodeword(:))};
 else
     % The release-valid rank-5-to-8 path uses the 5G Toolbox UL-SCH
@@ -234,7 +260,7 @@ else
 end
 if uciPayload.hasPayload()
     mux = sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...
-        pusch, targetCodeRate, trBlkSize, codewords, ...
+        transport, targetCodeRate, trBlkSize, codewords, ...
         uciPayload, initialIMCS);
     codewords = mux.Codewords;
     uciInfo = localMergeUCIInfo(uciInfo, mux);
@@ -261,9 +287,9 @@ end
 
 % ---------------------- PUSCH modulation & mapping ----------------------
 [puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH( ...
-    carrier, pusch, localUnwrapSingleCell(codewords));
+    carrier, pusch, localUnwrapSingleCell(codewords), researchTransport, prec);
 [puschLayerSym, dftInputSym, puschDomainInfo] = localResolvePUSCHSymbolDomains( ...
-    carrier, pusch, localUnwrapSingleCell(codewords), puschSym, prec);
+    carrier, pusch, localUnwrapSingleCell(codewords), puschSym, prec, transport.Modulation);
 % Preserve the native nrPUSCH domain independently from the executed
 % logical-port domain.  Non-codebook grants may carry an authoritative
 % rectangular layer-to-port matrix (for example, three layers on four
@@ -394,6 +420,16 @@ tx.CodingLayout = codingLayout;
 tx.CodingLayouts = codingLayouts;
 tx.Carrier = carrier;
 tx.PUSCH = pusch;
+tx.Modulation = string(transport.Modulation);
+if ~isempty(researchTransport)
+    tx.ResearchTransport=researchTransport;
+    tx.PUSCHRole="native_geometry_only_not_transport_modulation";
+    tx.StandardNR=false;
+    tx.ExecutionBackend="experimental_Qm_production_PUSCH_LDPC_OFDM";
+    codewordLayerMapping.MappingEngine="explicit_Qm_scramble_symbol_modulate_layer_map";
+    codewordLayerMapping.InverseEngine="explicit_Qm_symbol_demodulate_layer_demap";
+    codewordLayerMapping.SupportedScope="experimental_single_codeword_CP_OFDM";
+end
 tx.PUSCHIndices = puschInd;
 tx.PUSCHSymbolsForEvidence = puschLayerSym;
 tx.PUSCHLayerSymbolsForEvidence = puschLayerSym;
@@ -524,6 +560,12 @@ info.TxContext = localBuildTxContext(tx, trBlk, tbCrc, codewords, txGrid, txWave
     puschLayerInd, puschLayerSym, puschInd, puschSym, dftInputSym, ...
     dmrsInd, dmrsSym, ptrsInd, ptrsSym, carrier, pusch, codingLayouts, ...
     resourceAccounting, prec, precodePowerInfo, codewordLayerMapping, phyGrant, hasPHYGrant);
+if ~isempty(researchTransport)
+    info.TxContext.PUSCH.Modulation=string(transport.Modulation);
+    info.TxContext.StandardNR=false;
+    info.TxContext.ExecutionBackend=tx.ExecutionBackend;
+    info.StandardNR=false; info.ExecutionBackend=tx.ExecutionBackend;
+end
 tx.TxContext = info.TxContext;
 if hasPHYGrant
     info.PHYGrant = phyGrant;
@@ -650,7 +692,8 @@ end
 mappingType = upper(strtrim(mappingType));
 end
 
-function localAssertExplicitPUSCHMatchesGrant(pusch, phyGrant)
+function localAssertExplicitPUSCHMatchesGrant(pusch, phyGrant, actualModulation)
+if nargin<3, actualModulation=pusch.Modulation; end
 ra = sixgr.util.structGet(phyGrant, "ResourceAllocation", struct());
 cl = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
 ant = sixgr.util.structGet(phyGrant, "AntennaArchitecture", struct());
@@ -685,7 +728,7 @@ if ~isempty(frozenDMRSPortSet)
         "PUSCH DM-RS port set does not match frozen PHYGrant.");
 end
 grantMod = char(string(sixgr.util.structGet(cl, "Modulation", "")));
-puschMod = char(string(localObjectValue(pusch, "Modulation", "")));
+puschMod = char(string(actualModulation));
 if strlength(string(grantMod)) > 0 && ~strcmpi(strtrim(puschMod), strtrim(grantMod))
     error("sixgr:phy:ul:PUSCHGrantModulationMismatch", ...
         "PUSCH Modulation '%s' does not match frozen PHYGrant '%s'.", puschMod, grantMod);
@@ -865,6 +908,11 @@ uciInfo = struct( ...
     "GACKReserved", NaN, ...
     "Source", "no_uci_payload_requested");
 dataG = double(G);
+if isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter')
+    rmInfo=pusch.resourcePlan(targetCodeRate,trBlkSize,[p.OACK p.OCSI1 combinedCSI2]);
+    assert(rmInfo.G==sum(G),'sixgr:research:UCIBudgetMismatch', ...
+        'The experimental transport and physical allocation must have identical G.');
+end
 if ~payload.hasPayload()
     return;
 end
@@ -872,8 +920,10 @@ if exist("nrULSCHMultiplex", "file") ~= 2
     error('sixgr:pusch:UCIProcessingUnavailable', ...
         'Typed UCI on PUSCH requires nrULSCHMultiplex from 5G Toolbox.');
 end
-rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, ...
-    p.OACK, p.OCSI1, combinedCSI2);
+if ~isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter')
+    rmInfo = nrULSCHInfo(pusch, targetCodeRate, trBlkSize, ...
+        p.OACK, p.OCSI1, combinedCSI2);
+end
 gULSCH = double(rmInfo.GULSCH);
 gACK = double(rmInfo.GACK);
 gCSI1 = double(rmInfo.GCSI1);
@@ -891,6 +941,9 @@ uciInfo.GCSI1 = gCSI1;
 uciInfo.GCSI2Combined = gCSI2;
 uciInfo.GACKReserved = double(sixgr.util.structGet(rmInfo, "GACKRvd", NaN));
 uciInfo.Source = "nrULSCHInfo_ts38212_6_2_7_typed_uci_on_pusch";
+if isa(pusch,'sixgr.phy.research.PUSCHUCIResourceAdapter')
+    uciInfo.Source="experimental_explicit_Qm_ULSCH_UCI_resource_map";
+end
 end
 
 function info = localMergeUCIInfo(info, mux)
@@ -1039,14 +1092,14 @@ mapping.UCIOnPUSCHApplied = logical(sixgr.util.structGet(uciInfo, "UCIOnPUSCHApp
 mapping.HARQACKBitCount = double(sixgr.util.structGet(uciInfo, "HARQACKBitCount", 0));
 mapping.Equation = "b_G_to_scrambled_bits_to_QAM_d_to_layers_S_to_optional_DFT_to_ports_X";
 end
-function [layerSym, dftInputSym, info] = localResolvePUSCHSymbolDomains(carrier, pusch, codeword, portSym, prec)
+function [layerSym, dftInputSym, info] = localResolvePUSCHSymbolDomains(carrier, pusch, codeword, portSym, prec, modulation)
 portSym = localEnsure2D(portSym);
 nLayers = localPositiveIntegerValue(localObjectValue(pusch, "NumLayers", size(portSym, 2)), "PUSCH.NumLayers");
 nPorts = localPositiveIntegerValue(localObjectValue(pusch, "NumAntennaPorts", max(size(portSym, 2), nLayers)), "PUSCH.NumAntennaPorts");
 transformPrecoding = logical(localObjectValue(pusch, "TransformPrecoding", false));
 scheme = lower(strtrim(string(localObjectValue(pusch, "TransmissionScheme", "nonCodebook"))));
 isCodebook = scheme == "codebook";
-dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword);
+dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword, modulation);
 if transformPrecoding
     if isCodebook
         layerSym = localPostTransformLayerSymbols(carrier, pusch, codeword, nLayers);
@@ -1301,7 +1354,7 @@ info.AssociatedDMRSPortSet = ptrsPortSet;
 info.AssociatedLayerColumns = selectedLayerColumns;
 end
 
-function dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword)
+function dftInputSym = localScrambledLayerSymbols(carrier, pusch, codeword, modulation)
 % nrPUSCH uses carrier.NCellID when pusch.NID is empty. Mirror that
 % ownership here so the independently reconstructed layer-domain evidence
 % uses the same scrambling sequence as the toolbox modulator.
@@ -1316,12 +1369,12 @@ if iscell(scrambled)
     modulated = cell(size(scrambled));
     for cw = 1:numel(scrambled)
         modulated{cw} = nrSymbolModulate(scrambled{cw}(:), ...
-            localModulationAt(pusch.Modulation, cw));
+            localModulationAt(modulation, cw));
     end
     dftInputSym = sixgr.phy.ul.pusch.PUSCHLayerMapper.map( ...
         modulated, double(pusch.NumLayers));
 else
-    modulated = nrSymbolModulate(scrambled(:), char(string(pusch.Modulation)));
+    modulated = nrSymbolModulate(scrambled(:), char(string(modulation)));
     dftInputSym = nrLayerMap(modulated, double(pusch.NumLayers));
 end
 end
@@ -1692,8 +1745,18 @@ if isempty(txIdx) || isempty(layoutIdx) || numel(txIdx) ~= numel(layoutIdx) || a
 end
 end
 
-function [puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword)
+function [puschSym, ptrsSym, puschSymInfo] = localModulatePUSCH(carrier, pusch, codeword, researchTransport, prec)
 puschSymInfo = struct();
+if ~isempty(researchTransport)
+    puschSym=localScrambledLayerSymbols(carrier,pusch,codeword,researchTransport.Modulation);
+    if strcmpi(pusch.TransmissionScheme,'codebook')
+        puschSym=puschSym*prec.MatrixNR;
+    end
+    ptrsSym=[];
+    puschSymInfo.Source="experimental_explicit_Qm_native_geometry_and_precoder";
+    puschSymInfo.StandardNR=false;
+    return;
+end
 [puschSym, ptrsSym] = nrPUSCH(carrier, pusch, codeword);
 end
 

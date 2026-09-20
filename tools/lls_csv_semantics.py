@@ -1547,6 +1547,7 @@ def _audit_mimo_rank_layer_table(
     required_columns = {
         "RunId", "ScenarioName", "TrialId", "Direction", "CellId", "UEId",
         "Frame", "Slot", "ConfiguredRank", "ConfiguredLayers",
+        "ConfiguredMaximumRank", "ConfiguredMaximumLayers",
         "ScheduledRank", "ScheduledLayers", "TransmittedRank",
         "TransmittedLayers", "ReceiverEstimatedRank", "EffectiveDecodedRank",
         "SpatialChannelRankEstimate", "SpatialChannelTxPorts",
@@ -1557,7 +1558,7 @@ def _audit_mimo_rank_layer_table(
         "PhysicalRxAntennas", "LogicalTxPortCount", "LogicalRxBranchCount",
         "ConfiguredModulation", "ScheduledModulation", "TransmittedModulation",
         "EffectiveDecodedModulation", "ConfiguredMCS", "ScheduledMCS",
-        "TransmittedMCS", "EffectiveDecodedMCS", "DMRSPorts",
+        "TransmittedMCS", "EffectiveDecodedMCS", "DMRSPorts", "MeasuredDMRSPortCount",
         "ConfiguredMCSSelectionPolicy", "ActualMCSSelectionMode",
         "MCSSelectionSource", "MCSAuthority", "ModulationAuthority",
         "AppliedOperatingPointSource", "LinkAdaptationScheduled",
@@ -1632,6 +1633,8 @@ def _audit_mimo_rank_layer_table(
             prefix = f"{direction}:row={local_index}"
             configured_rank = _number(row, "ConfiguredRank")
             configured_layers = _number(row, "ConfiguredLayers")
+            configured_maximum_rank = _number(row, "ConfiguredMaximumRank")
+            configured_maximum_layers = _number(row, "ConfiguredMaximumLayers")
             scheduled_rank = _number(row, "ScheduledRank")
             scheduled_layers = _number(row, "ScheduledLayers")
             transmitted_rank = _number(row, "TransmittedRank")
@@ -1647,7 +1650,8 @@ def _audit_mimo_rank_layer_table(
             logical_tx = _number(row, "LogicalTxPortCount")
             logical_rx = _number(row, "LogicalRxBranchCount")
             spatial_values = (
-                configured_rank, configured_layers, scheduled_rank,
+                configured_rank, configured_layers, configured_maximum_rank,
+                configured_maximum_layers, scheduled_rank,
                 scheduled_layers, transmitted_rank, transmitted_layers,
                 receiver_rank, tx_ports, rx_antennas, logical_tx, logical_rx,
             )
@@ -1656,6 +1660,10 @@ def _audit_mimo_rank_layer_table(
             elif not (
                 transmitted_rank <= min(tx_ports, rx_antennas)
                 and transmitted_layers <= tx_ports
+                and configured_rank <= configured_maximum_rank
+                and configured_layers <= configured_maximum_layers
+                and transmitted_rank <= configured_maximum_rank
+                and transmitted_layers <= configured_maximum_layers
                 and receiver_rank <= min(tx_ports, rx_antennas)
                 and logical_tx >= transmitted_layers
                 and logical_rx >= 1
@@ -1706,18 +1714,55 @@ def _audit_mimo_rank_layer_table(
                 and finite_layer_sinr
             ):
                 value_failures.append(prefix + ":LayerSINRdB_not_per_transmitted_layer")
-            dmrs_ports = [token for token in _text(row, "DMRSPorts").split("|") if token]
-            if transmitted_layers is not None and dmrs_ports != [
-                str(index) for index in range(int(transmitted_layers))
-            ]:
-                value_failures.append(prefix + ":DMRSPorts_not_one_per_transmitted_layer")
+            measured_dmrs_count = _number(row, "MeasuredDMRSPortCount")
+            if not (
+                _whole(measured_dmrs_count, 1)
+                and transmitted_layers is not None
+                and measured_dmrs_count >= transmitted_layers
+            ):
+                value_failures.append(prefix + ":MeasuredDMRSPortCount_invalid")
+            # A receiver-measured count is not evidence of the actual 3GPP
+            # port identities. Blank identities are therefore valid. When
+            # identities are present, require an explicit, unique, integer
+            # set whose size agrees with the measured count; never infer
+            # 0..rank-1 here.
+            dmrs_ports = [token.strip() for token in _text(row, "DMRSPorts").split("|") if token.strip()]
+            if dmrs_ports:
+                try:
+                    numeric_dmrs_ports = [float(token) for token in dmrs_ports]
+                except ValueError:
+                    numeric_dmrs_ports = []
+                if not (
+                    measured_dmrs_count is not None
+                    and len(numeric_dmrs_ports) == int(measured_dmrs_count)
+                    and all(_whole(value, 0) for value in numeric_dmrs_ports)
+                    and len(set(numeric_dmrs_ports)) == len(numeric_dmrs_ports)
+                ):
+                    value_failures.append(prefix + ":DMRSPorts_invalid_measured_identity_set")
 
-            spatial_match = (
+            adaptive = _boolean(row, "AdaptiveMode") is True
+            exact_spatial_match = (
                 transmitted_rank is not None and configured_rank is not None
                 and transmitted_layers is not None and configured_layers is not None
                 and transmitted_rank == configured_rank
                 and transmitted_layers == configured_layers
             )
+            if adaptive:
+                spatial_contract_match = (
+                    scheduled_rank is not None and transmitted_rank is not None
+                    and scheduled_layers is not None and transmitted_layers is not None
+                    and configured_maximum_rank is not None
+                    and configured_maximum_layers is not None
+                    and scheduled_rank == transmitted_rank
+                    and scheduled_layers == transmitted_layers
+                    and 1 <= transmitted_rank <= configured_maximum_rank
+                    and 1 <= transmitted_layers <= configured_maximum_layers
+                    and transmitted_rank <= min(tx_ports, rx_antennas)
+                    and transmitted_layers <= logical_tx
+                    and transmitted_layers <= logical_rx
+                )
+            else:
+                spatial_contract_match = exact_spatial_match
             operating_match = (
                 (not configured_modulation or transmitted_modulation == configured_modulation)
                 and (
@@ -1725,7 +1770,6 @@ def _audit_mimo_rank_layer_table(
                     or _close(_number(row, "TransmittedMCS"), _number(row, "ConfiguredMCS"), atol=0)
                 )
             )
-            adaptive = _boolean(row, "AdaptiveMode") is True
             adaptive_match, adaptive_reason = _adaptive_policy_expectation(row)
             operating_contract = operating_match if not adaptive else adaptive_match
             mu_required = _boolean(row, "MUExecutionRequired") is True
@@ -1745,8 +1789,8 @@ def _audit_mimo_rank_layer_table(
                     and _is_sha256(_text(row, "AppliedPrecoderMatrixSHA256"))
                 )
             expected_flags = {
-                "ExactSpatialMatch": spatial_match,
-                "SpatialContractMatch": spatial_match,
+                "ExactSpatialMatch": exact_spatial_match,
+                "SpatialContractMatch": spatial_contract_match,
                 "ExactOperatingPointMatch": operating_match,
                 "FixedOperatingPointMatch": operating_match,
                 "AdaptivePolicyRequired": adaptive,
@@ -1754,8 +1798,8 @@ def _audit_mimo_rank_layer_table(
                 "AdaptivePolicyConformance": adaptive_match,
                 "OperatingPointContractMatch": operating_contract,
                 "MUExecutionMatch": expected_mu_match,
-                "ExactConfiguredMatch": spatial_match and operating_match,
-                "ExecutionContractMatch": spatial_match and operating_contract,
+                "ExactConfiguredMatch": exact_spatial_match and operating_match,
+                "ExecutionContractMatch": spatial_contract_match and operating_contract,
             }
             for name, expected in expected_flags.items():
                 if _boolean(row, name) is not expected:
@@ -1767,7 +1811,7 @@ def _audit_mimo_rank_layer_table(
 
             crc_pass = _boolean(row, "DecodeCrcPass")
             strict_eligible = _boolean(row, "StrictEligible")
-            execution_contract = spatial_match and operating_contract
+            execution_contract = spatial_contract_match and operating_contract
             execution_ok = strict_eligible is True and execution_contract and expected_mu_match
             reliability_ok = strict_eligible is True and crc_pass is True
             reliability_status = (
@@ -1817,6 +1861,7 @@ def _audit_mimo_rank_layer_table(
                     ("TransmittedRank", _number(raw, "TransmittedRank", "TransmittedLayers", "PrecodingNumLayers", "Layers"), transmitted_rank),
                     ("TransmittedLayers", _number(raw, "TransmittedLayers", "PrecodingNumLayers", "Layers"), transmitted_layers),
                     ("TransmittedMCS", _number(raw, "TransmittedMCS", "MCS", "MCSIndex"), _number(row, "TransmittedMCS")),
+                    ("MeasuredDMRSPortCount", _number(raw, "MeasuredDMRSPortCount"), _number(row, "MeasuredDMRSPortCount")),
                     ("TransmittedModulation", _text(raw, "TransmittedModulation", "Modulation").upper(), transmitted_modulation),
                 )
                 for name, expected, observed in comparisons:
@@ -2315,6 +2360,10 @@ def _audit_mimo_layer_metrics_table(
     offset = 0
     for rank_index, rank in enumerate(rank_rows, start=1):
         layers = int(_number(rank, "TransmittedLayers") or 0)
+        measured_ports = [
+            token.strip() for token in _text(rank, "DMRSPorts").split("|")
+            if token.strip()
+        ]
         source_sinr = [
             float(token) for token in _text(rank, "LayerSINRdB").split("|")
             if token.strip()
@@ -2331,8 +2380,14 @@ def _audit_mimo_layer_metrics_table(
                 expected = _number(rank, field) if field in {"TrialId", "CellId", "UEId", "Slot"} else _text(rank, field)
                 if observed != expected:
                     failures.append(prefix + f":{field}_not_rank_source")
-            if _number(row, "LayerIndex") != layer_index or _number(row, "DMRSPort") != layer_index - 1:
-                failures.append(prefix + ":layer_or_dmrs_index_invalid")
+            if _number(row, "LayerIndex") != layer_index:
+                failures.append(prefix + ":layer_index_invalid")
+            expected_dmrs_port = (
+                float(measured_ports[layer_index - 1])
+                if layer_index <= len(measured_ports) else None
+            )
+            if not _optional_number_equal(_number(row, "DMRSPort"), expected_dmrs_port):
+                failures.append(prefix + ":DMRSPort_not_measured_identity_source")
             expected_codeword = 1 if layers <= 4 else min(2, math.ceil(layer_index / 4))
             if _number(row, "CodewordIndex") != expected_codeword:
                 failures.append(prefix + ":CodewordIndex_invalid")
@@ -2849,12 +2904,19 @@ def _audit_mimo_antenna_array_table(
         expected_rx = _number(config, "PhysicalRxAntennaCount" if full_element else "RxAntennaPortCount")
         runtime_object = runtime and all(_boolean(item, "AntennaRuntimeObjectCreated") is True for item in subset)
         same_assumptions = runtime and all(_boolean(item, "ChannelUsesSameRuntimeAntennaAssumptions") is True for item in subset)
-        configured_layers = _number(config, "ConfiguredLayers")
-        logical_match = bool(
-            runtime and logical_tx is not None and logical_rx is not None
-            and configured_layers is not None and logical_tx == configured_layers
-            and logical_rx >= configured_layers
-        )
+        # Precoder output ports need not equal its input layers, and adaptive
+        # trials need not use the bootstrap rank. Match the MATLAB reducer's
+        # per-trial contract; modal summaries must not hide an invalid trial.
+        configured_tx_ports = _number(config, "TxAntennaPortCount")
+        logical_match = runtime and configured_tx_ports is not None
+        for item in subset:
+            tx = _number(item, "LogicalTxPortCount")
+            rx = _number(item, "LogicalRxBranchCount")
+            layers = _number(item, "TransmittedLayers")
+            logical_match = logical_match and all(
+                value is not None and value == int(value)
+                for value in (tx, rx, layers)
+            ) and 1 <= layers <= tx <= configured_tx_ports and rx >= layers
         exact_match = logical_match
         if full_element:
             exact_match = bool(
@@ -2936,7 +2998,14 @@ def _audit_mimo_antenna_port_mapping_table(
         expected_hash = _text(subset[0], "SourceRowsHash") if subset else "empty"
         if _text(row, "SourceRowsHash") != expected_hash:
             failures.append(prefix + ":SourceRowsHash_not_rank_source")
-        ok = bool(subset and transmitted is not None and transmitted <= (_number(config, "DMRSPortCount") or -1))
+        # Nominal/bootstrap DM-RS count is not the count received on every
+        # adaptive grant. Never let a modal rank conceal an invalid trial.
+        ok = bool(subset) and all(
+            _whole(_number(item, "MeasuredDMRSPortCount"), 1)
+            and _whole(_number(item, "TransmittedLayers"), 1)
+            and _number(item, "MeasuredDMRSPortCount") >= _number(item, "TransmittedLayers")
+            for item in subset
+        )
         if _text(row, "Status").lower() != ("pass" if ok else "fail"):
             failures.append(prefix + ":Status_formula_mismatch")
         if ok != (not bool(_text(row, "FailureReason"))):
@@ -3063,7 +3132,6 @@ def _audit_mimo_config_strict_table(
         expected_text = {
             "ConfiguredModulation": _mode_text(subset, "ConfiguredModulation"),
             "ConfiguredMCSSelectionPolicy": _mode_text(subset, "ConfiguredMCSSelectionPolicy"),
-            "DMRSPorts": _mode_text(subset, "DMRSPorts"),
         }
         for field, expected in expected_text.items():
             if _text(row, field) != expected:
@@ -3090,6 +3158,18 @@ def _audit_mimo_config_strict_table(
         if _number(row, "NCellID") is None or (_number(row, "NSizeGrid") or 0) <= 0 or (_number(row, "SubcarrierSpacingKHz") or 0) <= 0:
             failures.append(prefix + ":carrier_configuration_invalid")
         layers = _number(row, "ConfiguredLayers")
+        # buildMIMOConfigFromScenario defines the nominal/bootstrap DM-RS
+        # list as 0:(ConfiguredLayers-1). It is not the modal runtime list
+        # after rank adaptation; runtime ports have their own trial audit.
+        nominal_ports = _text(row, "DMRSPorts").split("|")
+        valid_nominal_layers = layers is not None and layers >= 1 and layers == int(layers)
+        if (
+            not valid_nominal_layers
+            or _number(row, "DMRSPortCount") != layers
+            or len(nominal_ports) != layers
+            or any(port != str(index) for index, port in enumerate(nominal_ports))
+        ):
+            failures.append(prefix + ":nominal_DMRS_configuration_mismatch")
         expected_codewords = None if layers is None else (1 if layers <= 4 else 2)
         if not _optional_number_equal(_number(row, "ConfiguredCodewords"), expected_codewords):
             failures.append(prefix + ":ConfiguredCodewords_formula_mismatch")
@@ -4413,7 +4493,10 @@ def _audit_derived_link_table(
             reconciliation_failures.append("distance_table_trial_count_mismatch")
     elif name == "fer_summary.csv":
         for index, row in enumerate(rows, start=1):
-            raw = _raw_rows_for_scope(link_rows, _text(row, "Direction"), _text(row, "UEIndex"))
+            # FER covers executed frames, including warm-up and failed trials
+            # whose SINR is unavailable. Measurement-curve filtering would
+            # silently exclude these frames (and potentially their failures).
+            raw = _finalized_truth_rows_for_scope(link_rows, _text(row, "Direction"), _text(row, "UEIndex"))
             frame_groups: dict[tuple[str, ...], list[dict[str, str]]] = {}
             for item in raw:
                 if _boolean(item, "FixedLinkCampaign") is True:
@@ -4426,11 +4509,15 @@ def _audit_derived_link_table(
                 else:
                     frame_key = (
                         "runtime_frame",
-                        _text(item, "SFN", "Frame"),
-                        _text(item, "SweepPointIndex"),
+                        _text(item, "Frame", "SFN"),
                     )
                 frame_groups.setdefault(frame_key, []).append(item)
-            errored = sum(any(_boolean(item, "CRCPass") is False for item in group) for group in frame_groups.values())
+            errored = sum(any(
+                _boolean(item, "CRCPass") is False
+                or (_number(item, "Crash") or 0) != 0
+                or _text(item, "Status").upper() in {"FAIL", "CRASH"}
+                for item in group
+            ) for group in frame_groups.values())
             observed = len(frame_groups)
             if not _close(_number(row, "ObservedFrames"), observed, atol=0) or not _close(_number(row, "ErroredFrames"), errored, atol=0):
                 reconciliation_failures.append(f"row={index}:frame_count_raw_mismatch")

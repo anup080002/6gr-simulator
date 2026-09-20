@@ -68,17 +68,30 @@ nVarEst = [];
 estInfo = struct();
 try
     [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo);
+    cdmLengths = localSRSCDMLengths(srs);
     if localSRSFrequencyHoppingEnabled(srs) && numel(srsSymbols) > 1
-        [Hest, nVarEst, estInfo] = localEstimateSRSHopped(carrier, rxGrid, srsInd, srsSym, srsSymbols, srsInfo);
+        [Hest, nVarEst, estInfo] = localEstimateSRSHopped( ...
+            carrier, rxGrid, srsInd, srsSym, srsSymbols, cdmLengths);
     else
-        [Hest, nVarEst, estInfo] = localEstimateSRSNoHop(carrier, rxGrid, srsInd, srsSym, srsInfo, avgWindow);
+        [Hest, nVarEst, estInfo] = localEstimateSRSNoHop( ...
+            carrier, rxGrid, srsInd, srsSym, cdmLengths, avgWindow);
     end
-catch
+catch primaryCause
     try
         [Hest, nVarEst, estInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, srsInd, srsSym);
-    catch
+        if ~isstruct(estInfo), estInfo = struct(); end
+        estInfo.PrimaryEstimatorFallbackUsed = true;
+        estInfo.PrimaryEstimatorFailureIdentifier = string(primaryCause.identifier);
+        estInfo.PrimaryEstimatorFailureMessage = string(primaryCause.message);
+    catch fallbackCause
         Hest = [];
         nVarEst = [];
+        estInfo = struct( ...
+            'PrimaryEstimatorFallbackUsed',true, ...
+            'PrimaryEstimatorFailureIdentifier',string(primaryCause.identifier), ...
+            'PrimaryEstimatorFailureMessage',string(primaryCause.message), ...
+            'FallbackEstimatorFailureIdentifier',string(fallbackCause.identifier), ...
+            'FallbackEstimatorFailureMessage',string(fallbackCause.message));
     end
 end
 noiseCandidate = opt.NoiseVar;
@@ -150,24 +163,23 @@ info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 
 end
 
-function [Hest, nVarEst, estInfo] = localEstimateSRSNoHop(carrier, rxGrid, srsInd, srsSym, srsInfo, avgWindow)
-if isfield(srsInfo,'CDMLengths')
-    [Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym, ...
-        'CDMLengths', srsInfo.CDMLengths, 'AveragingWindow', avgWindow);
-else
-    [Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym, ...
-        'AveragingWindow', avgWindow);
-end
+function [Hest, nVarEst, estInfo] = localEstimateSRSNoHop(carrier, rxGrid, srsInd, srsSym, cdmLengths, avgWindow)
+[Hest, nVarEst, estInfo] = nrChannelEstimate(carrier, rxGrid, srsInd, srsSym, ...
+    'CDMLengths', cdmLengths, 'AveragingWindow', avgWindow);
 if isstruct(estInfo)
     estInfo.AveragingWindow = avgWindow;
+    estInfo.CDMLengths = cdmLengths;
+    estInfo.CDMLengthsSource = "nr_srs_cyclic_shift_port_multiplexing";
     estInfo.FrequencyHoppingHandled = false;
 end
 end
 
-function [Hest, nVarEst, estInfo] = localEstimateSRSHopped(carrier, rxGrid, srsInd, srsSym, srsSymbols, srsInfo)
+function [Hest, nVarEst, estInfo] = localEstimateSRSHopped(carrier, rxGrid, srsInd, srsSym, srsSymbols, cdmLengths)
 Hest = [];
 nVals = [];
-estInfo = struct("AveragingWindow", [0 0], "FrequencyHoppingHandled", true, "HopCount", numel(srsSymbols));
+estInfo = struct("AveragingWindow", [0 0], "CDMLengths", cdmLengths, ...
+    "CDMLengthsSource", "nr_srs_cyclic_shift_port_multiplexing", ...
+    "FrequencyHoppingHandled", true, "HopCount", numel(srsSymbols));
 if isempty(srsInd)
     nVarEst = NaN;
     return;
@@ -183,7 +195,8 @@ for ii = 1:numel(srsSymbols)
     if ~any(mask)
         continue;
     end
-    [Hpart, nPart, infoPart] = localEstimateSRSNoHop(carrier, rxGrid, srsInd(mask), srsSymVec(mask), srsInfo, [0 0]);
+    [Hpart, nPart, infoPart] = localEstimateSRSNoHop( ...
+        carrier, rxGrid, srsInd(mask), srsSymVec(mask), cdmLengths, [0 0]);
     if isempty(Hpart)
         continue;
     end
@@ -202,6 +215,7 @@ for ii = 1:numel(srsSymbols)
         estInfo.FirstHopInfo = infoPart;
     end
 end
+
 if isempty(nVals)
     nVarEst = NaN;
 else
@@ -209,19 +223,41 @@ else
 end
 end
 
-function [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo)
-combSize = double(sixgr.util.structGet(srsInfo, "CombSize", sixgr.util.structGet(srsInfo, "KSRS", NaN)));
-if ~isfinite(combSize)
-    combSize = double(sixgr.util.structGet(srs, "CombSize", NaN));
+function cdmLengths = localSRSCDMLengths(srs)
+% nrSRS multiplexes its antenna ports by cyclic shifts of the same base
+% sequence. The practical channel estimator must jointly despread every
+% configured SRS port; treating those orthogonal ports as independent
+% residuals classifies their signal energy as noise.
+nPorts = double(srs.NumSRSPorts);
+if ~(isscalar(nPorts) && isfinite(nPorts) && any(nPorts == [1 2 4]))
+    error('sixgr:phy:ul:UnsupportedSRSPortCount', ...
+        'SRS receiver requires NumSRSPorts to be one of [1 2 4], got %g.',nPorts);
 end
-if ~isfinite(combSize)
-    combSize = 2;
+comb = double(srs.KTC);
+if ~(isscalar(comb) && isfinite(comb) && any(comb == [2 4]))
+    error('sixgr:phy:ul:UnsupportedSRSComb', ...
+        'SRS receiver requires KTC to be 2 or 4, got %g.',comb);
+end
+% nrChannelEstimate consumes the complete SRS port set jointly. KTC changes
+% the occupied-RE pattern, but all configured SRS ports remain members of
+% the frequency-domain orthogonal cover presented to the estimator.
+cdmLengths = [nPorts 1];
+end
+
+function [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo)
+% nrSRSConfig owns the native comb as KTC. Do not pass this handle object to
+% struct-only configuration helpers: doing so used to throw and silently
+% divert all SRS reception to the generic fallback estimator.
+combSize = double(srs.KTC);
+if ~(isscalar(combSize) && isfinite(combSize) && any(combSize == [2 4]))
+    error('sixgr:phy:ul:UnsupportedSRSComb', ...
+        'SRS receiver requires KTC to be 2 or 4, got %g.',combSize);
 end
 srsSymbols = [];
 if ~isempty(srsInd)
     K = double(carrier.NSizeGrid) * 12;
     L = double(carrier.SymbolsPerSlot);
-    nPorts = max(1, round(double(sixgr.util.structGet(srs, "NumSRSPorts", 1))));
+    nPorts = max(1, round(double(srs.NumSRSPorts)));
     [~, symIdx, ~] = ind2sub([K, L, nPorts], double(srsInd(:)));
     srsSymbols = unique(double(symIdx(:)), "stable");
 end
@@ -233,21 +269,17 @@ end
 end
 
 function tf = localSRSFrequencyHoppingEnabled(srs)
-raw = [];
 try
-    raw = srs.FrequencyHopping;
+    bSRS = double(srs.BSRS);
+    bHop = double(srs.BHop);
 catch
     tf = false;
     return;
 end
-if ischar(raw) || isstring(raw)
-    token = lower(strtrim(string(raw)));
-    tf = ~(token == "" || token == "neither" || token == "disabled" || token == "off" || token == "none");
-elseif isnumeric(raw) || islogical(raw)
-    tf = any(double(raw(:)) ~= 0);
-else
-    tf = false;
-end
+% TS 38.211 / nrSRSConfig native frequency hopping is active when b_hop is
+% smaller than B_SRS. There is no nrSRSConfig.FrequencyHopping property.
+tf = isscalar(bSRS) && isfinite(bSRS) && isscalar(bHop) && ...
+    isfinite(bHop) && bSRS > 0 && bHop < bSRS;
 end
 
 % -------------------------------------------------------------------------

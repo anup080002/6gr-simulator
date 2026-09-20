@@ -323,7 +323,7 @@ rows = repmat(localEmptyRow(),0,1); count = 0;
 for slot0 = 0:(totalSlots-1)
     actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
     c=sixgr.phy.grid.makeCarrier(actual);
-    [~,~,pusch]=sixgr.phy.grid.allocREsPUSCH(c,actual);
+    [~,~,pusch]=sixgr.phy.grid.allocPUSCHTransport(c,actual);
     if ~frame.IsULAllocation(slot0,double(pusch.SymbolAllocation)), continue; end
     m = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePUSCH(c,pusch,"AbsoluteSlot",slot0);

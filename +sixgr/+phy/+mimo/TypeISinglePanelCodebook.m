@@ -1,6 +1,6 @@
 classdef TypeISinglePanelCodebook
-    %TYPEISINGLEPANELCODEBOOK Exact rank-1/2, >2-port Type-I single-panel PMI.
-    % TS 38.214 V18.9.0, clause 5.2.2.2.1 and Tables -2, -3, -5, -6.
+    %TYPEISINGLEPANELCODEBOOK Type-I rank-1/2 and four-port rank-3/4 PMI.
+    % TS 38.214 V18.9.0, clause 5.2.2.2.1, Tables -2 through -8.
     % A scalar PMI is only an internal lossless index, NOT an on-air field.
     % Ordering: i2 fastest, then i11, i12, i13; all indices are zero-based.
     methods (Static)
@@ -16,9 +16,9 @@ classdef TypeISinglePanelCodebook
                 error('sixgr:mimo:UnsupportedAntennaTuple', ...
                     'Type-I panel/oversampling tuple must satisfy TS 38.214 Table 5.2.2.2.1-2.');
             end
-            if ~ismember(rank,[1 2])
+            if ~(ismember(rank,[1 2]) || (ports==4 && ismember(rank,[3 4])))
                 error('sixgr:mimo:UnsupportedRank', ...
-                    'This formula implementation covers Type-I single-panel ranks 1 and 2 only.');
+                    'Implemented Type-I ranks are 1/2 and four-port ranks 3/4.');
             end
             offsets=[0 0];
             if rank==2
@@ -32,8 +32,15 @@ classdef TypeISinglePanelCodebook
                     offsets=[0 0;o1 0;0 o2;2*o1 0];
                 end
             end
-            dims=[2^(3-rank),n1*o1,n2*o2,size(offsets,1)];
-            if mode==2
+            if rank>=3
+                % Table -4: N1=2,N2=1 has only i13=0, (k1,k2)=(O1,0).
+                % Tables -7/-8 use the same layout for modes 1 and 2.
+                offsets=[o1 0];
+                dims=[2,n1*o1,n2*o2,1];
+            else
+                dims=[2^(3-rank),n1*o1,n2*o2,size(offsets,1)];
+            end
+            if mode==2 && rank<=2
                 dims(1)=4*dims(1);
                 dims(2)=dims(2)/2;
                 if n2>1, dims(3)=dims(3)/2; end
@@ -42,6 +49,9 @@ classdef TypeISinglePanelCodebook
                 'O1',o1,'O2',o2,'CodebookMode',mode,'Dimensions',dims, ...
                 'Offsets',offsets,'ComponentNames',["PMI_I2","PMI_I11","PMI_I12","PMI_I13"], ...
                 'Specification',"TS38.214-V18.9.0-Tables5.2.2.2.1-2-3-5-6");
+            if rank>=3
+                layout.Specification="TS38.214-V18.9.0-Tables5.2.2.2.1-2-4-7-8";
+            end
         end
 
         function [W,components] = matrix(request,index)
@@ -121,7 +131,7 @@ end
 
 function [W,allowed]=localMatrix(t,c,request)
 l=c.PMI_I11; m=c.PMI_I12; phase=c.PMI_I2;
-if t.CodebookMode==2
+if t.CodebookMode==2 && t.Rank<=2
     phaseCount=2^(3-t.Rank);
     offset=floor(phase/phaseCount);
     phase=mod(phase,phaseCount);
@@ -140,7 +150,13 @@ if t.Rank==1
 else
     delta=t.Offsets(c.PMI_I13+1,:);
     w=localSteering(t,l+delta(1),m+delta(2));
-    W=[v w;phi*v -phi*w]/sqrt(2*t.Ports);
+    if t.Rank==2
+        W=[v w;phi*v -phi*w]/sqrt(2*t.Ports);
+    elseif t.Rank==3
+        W=[v w v;phi*v phi*w -phi*v]/sqrt(3*t.Ports);
+    else
+        W=[v w v w;phi*v phi*w -phi*v -phi*w]/sqrt(4*t.Ports);
+    end
 end
 % Empty bitmaps mean no subset restriction. Bit a_0 is the first entry.
 beamBit=t.N2*t.O2*l+m;

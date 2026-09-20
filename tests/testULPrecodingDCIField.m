@@ -36,7 +36,7 @@ for maxRank=1:2
     localReject(@()sixgr.phy.pdcch.ULPrecodingField.encode(data,1,3));
     data.ULPrecoding.codebook_subset="fullyAndPartialAndNonCoherent";
 end
-data.ULPrecoding.num_ports=4;
+data.ULPrecoding.num_ports=8;
 localReject(@()sixgr.phy.pdcch.ULPrecodingField.resolve(data));
 ok=true;
 end

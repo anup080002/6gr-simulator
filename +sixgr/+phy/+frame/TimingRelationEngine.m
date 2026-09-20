@@ -618,7 +618,7 @@ layers=localOptional(grant,["NumLayers","Layers"], ...
     sixgr.util.structGet(cfg,'phy.pusch.nLayers',NaN)));
 ports=sixgr.phy.grant.resolveScheduledDMRSPortSet(cfg,'UL',layers,grant);
 cfg=sixgr.util.structSet(cfg,'phy.pusch.dmrs.scheduledPortSet',ports);
-[~,~,pusch]=sixgr.phy.grid.allocREsPUSCH(carrier,cfg,args{:});
+[~,~,pusch]=sixgr.phy.grid.allocPUSCHTransport(carrier,cfg,args{:});
 budget=sixgr.phy.frame.puschPreparationProcessingTime(carrier,pusch,mus);
 end
 

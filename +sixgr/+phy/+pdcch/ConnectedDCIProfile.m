@@ -96,15 +96,33 @@ classdef ConnectedDCIProfile
                 'LegacyCompatibility',false,'ConnectedPolicy',p,'DLDataToULACK',feedback, ...
                 'ULPrecoding',control.ul_precoding,'ULReferenceSignaling',control.ul_reference_signaling, ...
                 'DLReferenceSignaling',control.dl_reference_signaling);
-            if fmt=="0_1", data.ScheduledBWP=double(ul.BWPID); end
+            % MCS bits have meaning only under the installed directional
+            % tables. Bind both paired formats before accepting control,
+            % not only later when constructing a data allocation.
+            data.DLMCSTable=string(cfg.phy.pdsch.mcsTable);
+            data.ULMCSTable=string(cfg.phy.pusch.mcsTable);
+            experimentalUL=sixgr.phy.research.resolveExperimentalMCSTable(data.ULMCSTable);
+            if ~isempty(experimentalUL)
+                assert(isequaln(sixgr.util.structGet(cfg.phy.pusch,'experimentalMCSTable',[]),experimentalUL), ...
+                    'sixgr:research:MCSTableContextMismatch','Reinstall changed experimental MCS contents explicitly.');
+                data.ExperimentalULMCSTable=experimentalUL;
+                data.ExperimentalULTransportPolicy=cfg.phy.pusch.researchTransportPolicy;
+                data.ResearchClass=experimentalUL.ResearchClass;
+            end
+            if fmt=="0_1"
+                data.ScheduledBWP=double(ul.BWPID);
+                data.LayerCapability=double(control.ul_precoding.max_rank);
+            end
             sixgr.phy.pdcch.ULPrecodingField.resolve(data);
             sixgr.phy.pdcch.ULReferenceSignaling.resolve(data);
             sixgr.phy.pdcch.DLReferenceSignaling.resolve(data);
-            assert(data.ULPrecoding.max_rank==1 && cfg.phy.pusch.numLayers==1 && ...
+            assert(data.ULPrecoding.max_rank==cfg.phy.pusch.maxLayers && ...
+                cfg.phy.pusch.numLayers>=1 && cfg.phy.pusch.numLayers<=data.ULPrecoding.max_rank && ...
+                (data.ULPrecoding.max_rank==1 || isequal(sixgr.util.structGet(cfg,'phy.pusch.enablePTRS',[]),false)) && ...
                 data.ULReferenceSignaling.srs_resource_count==1 && ...
                 cfg.phy.srs.nPorts==data.ULPrecoding.num_ports && ...
                 cfg.phy.pusch.NumAntennaPorts==data.ULPrecoding.num_ports, ...
-                'sixgr:phy:pdcch:ULPrecodingContextMismatch','This connected profile supports rank-one UL; SRS/PUSCH ports must match the active codebook. Higher rank requires PTRS-DMRS association integration.');
+                'sixgr:phy:pdcch:ULPrecodingContextMismatch','SRS/PUSCH ports and selected rank must match the installed codebook. Multilayer connected operation requires PTRS disabled until its DCI association is integrated.');
             assert(any(string(control.search_space_type)==["ue","ue_specific","USS"]), ...
                 'sixgr:phy:pdcch:ConnectedRuntimeMismatch','The connected profile requires UE-specific monitoring.');
             context=sixgr.phy.pdcch.DCIContext(data);

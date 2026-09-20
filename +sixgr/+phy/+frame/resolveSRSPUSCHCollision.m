@@ -148,7 +148,7 @@ for index = 1:size(optional, 1)
         args = [args, optional(index, 1), {value}]; %#ok<AGROW>
     end
 end
-[~, ~, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg, args{:});
+[~, ~, pusch] = sixgr.phy.grid.allocPUSCHTransport(carrier, cfg, args{:});
 end
 
 function value = localRequiredNumericVector(s, fieldName)

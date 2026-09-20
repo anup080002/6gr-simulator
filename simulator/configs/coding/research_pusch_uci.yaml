@@ -1,0 +1,5 @@
+# Explicit research adapter policy; does not enable a runner or ideal feedback.
+meta:
+  research_class: optional_research_experiment
+research_pusch_uci:
+  resource_mapping: symbol_preserving_single_codeword_ulsch

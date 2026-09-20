@@ -172,14 +172,14 @@ else
     fixedSNRReference = logical(sixgr.util.structGet(cfg, ...
         "integration.configured_snr_is_link_authority", false));
     if fixedSNRReference
-        % A configured-SNR LLS is referenced to unit energy on an occupied
+        % A configured-SNR LLS uses the declared energy of an occupied
         % resource-grid RE.  Calibrate sample-domain noise once through the
         % exact OFDM transform; never re-estimate it from an arbitrary stream
         % chunk, which would make the physical result depend on scheduler
         % partitioning and on instantaneous fading.
         carrier = sixgr.phy.grid.makeCarrier(cfg);
         calibration = sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier);
-        signalEnergy = 1;
+        [signalEnergy,referencePolicy]=sixgr.link.resolveAWGNReferenceEnergy(cfg);
         gridVariance = signalEnergy .* 10.^(-appliedSnr_dB/10);
         sampleVariance = gridVariance ./ ...
             double(calibration.SampleToGridNoiseVarianceGain);
@@ -208,8 +208,8 @@ else
         [y, state.ReceiverNoiseState] = sixgr.link.addRuntimeComplexNoise( ...
             y,sampleVariance,noiseSeed,startSample,noiseState);
         replay.InjectedNoiseVariance = double(sampleVariance);
-        replay.NoiseVarianceSource = ...
-            "fixed_unit_occupied_re_esn0_canonical_ofdm_transform";
+        replay.NoiseVarianceSource=referencePolicy.NoiseVarianceSource;
+        replay.AWGNReferenceEnergySource=referencePolicy.EnergySource;
         replay.NoiseSequenceSource = ...
             "persistent_threefry_time_major_complex_draws";
         replay.NoiseStreamSeed = double(noiseSeed);
@@ -223,8 +223,7 @@ else
             double(calibration.SampleToGridNoiseVarianceGain);
         replay.SNRReferencePlane = ...
             "occupied_resource_grid_re_pre_equalization";
-        replay.SharedNoiseCalibrationSource = ...
-            "fixed_once_from_unit_occupied_re_energy_and_canonical_ofdm_noise_transform";
+        replay.SharedNoiseCalibrationSource=referencePolicy.CalibrationSource;
     else
         [y, replay.InjectedNoiseVariance] = ...
             localAddAwgnAtEffectiveSNR(y, appliedSnr_dB);

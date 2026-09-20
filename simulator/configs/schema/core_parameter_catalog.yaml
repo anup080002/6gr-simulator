@@ -224,6 +224,8 @@
       "delaySpread_s": {"value_type": "number", "min": 0},
       "doppler_Hz": {"value_type": "number", "min": 0},
       "awgnOnly": {"value_type": "boolean"},
+      "awgnReferenceREEnergy": {"value_type": "number", "default": 1, "min_exclusive": 0},
+      "sharedIdentityAWGNEnabled": {"value_type": "boolean"},
       "pathloss": {
         "model": {"value_type": "string", "default": "nrPathLoss", "allowed_values": ["nrPathLoss", "CI", "ABG", "custom", "freeSpace", "none"]}
       },
@@ -400,7 +402,7 @@
         "NumAntennaPorts": {"value_type": "integer", "default": 1, "allowed_values": [1, 2, 4, 8]},
         "rv": {"value_type": "integer", "default": 0, "allowed_values": [0, 1, 2, 3]},
         "xOverhead": {"value_type": "integer", "default": 0, "min": 0},
-        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3"]},
+        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3", "experimental_square_qam_v1"]},
         "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "transformPrecoding": {"value_type": "boolean", "default": true},
         "dmrs": {

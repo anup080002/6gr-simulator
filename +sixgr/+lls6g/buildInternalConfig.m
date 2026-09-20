@@ -568,6 +568,9 @@ cfg.channel.nTxAnt = double(s.mimo.n_tx_ant);
 cfg.channel.nRxAnt = double(s.mimo.n_rx_ant);
 cfg.channel.snr_dB = localNumericScalarOrNaN(localGetNested(s, "simulation.snr_db", NaN));
 cfg = sixgr.util.structSet(cfg, "run.noiseOperatingMode", char(localResolveNoiseOperatingMode(s)));
+cfg.channel.awgnReferenceREEnergy=localGetNested(s, ...
+    "simulation.awgn_reference_re_energy",cfg.channel.awgnReferenceREEnergy);
+sixgr.link.resolveAWGNReferenceEnergy(cfg);
 dopplerSourceMode = localResolveDopplerSourceMode(s);
 resolvedDopplerHz = localResolveChannelDopplerHz(s, mobilitySpeedKmh, dopplerSourceMode);
 cfg.channel.dopplerSourceMode = char(dopplerSourceMode);
@@ -585,6 +588,8 @@ cfg = localStructSetIfPresent(cfg, "channel.normalizePathGains", ...
 cfg = localStructSetIfPresent(cfg, "channel.normalizeChannelOutputs", ...
     localGetNested(s, "channels.normalize_channel_outputs", []));
 cfg.channel.awgnOnly = upper(string(s.channels.model_type)) == "AWGN";
+cfg.channel.sharedIdentityAWGNEnabled = logical(localGetNested( ...
+    s, "channels.shared_identity_awgn_enabled", false));
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
 cfg.channel.pathlossModel = char(string(s.channels.pathloss_model));
@@ -685,6 +690,8 @@ switch channelModel
             "Unsupported channels.model_type '%s'.", channelModel);
 end
 cfg.channel.configuredDelayProfile = char(configuredProfile);
+% This selects a physical sample-clock owner, not a fading approximation.
+sixgr.channel.IdentityAWGNRuntime.enabled(cfg);
 cfg.channel.profileResolutionSource = char(profileResolutionSource);
 cfg.channel.profileResolutionReason = char(profileResolutionReason);
 
@@ -1351,8 +1358,15 @@ cfg.phy.pdsch.enable = any(ismember(targetCases, localCatalogStringList(catalog.
 cfg.phy.pdsch.nLayers = double(dlLayerCount);
 cfg.phy.pdsch.numLayers = double(dlLayerCount);
 cfg.phy.pdsch.rank = double(dlLayerCount);
-cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxLayers", double(dlLayerCount));
-cfg = sixgr.util.structSet(cfg, "phy.maxDLLayers", double(dlLayerCount));
+% The initial PDSCH rank is an allocation choice, not the installed MIMO
+% capability.  Keep the YAML ceiling independent so received RI can change
+% future grants without rewriting the already finalized bootstrap grant.
+dlLayerCapability = double(localGetNested(s, "mimo.max_dl_layers", dlLayerCount));
+validateattributes(dlLayerCapability, {'numeric'}, ...
+    {'scalar','integer','>=',dlLayerCount,'<=',8});
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxLayers", dlLayerCapability);
+cfg = sixgr.util.structSet(cfg, "phy.pdsch.maxRankDefault", dlLayerCapability);
+cfg = sixgr.util.structSet(cfg, "phy.maxDLLayers", dlLayerCapability);
 cfg.phy.pdsch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
 cfg.pdsch6gr.EnablePTRS = cfg.phy.pdsch.enablePTRS;
 ptrsPortAssociationPolicy = lower(strtrim(string(localGetNested(s, ...
@@ -1714,8 +1728,13 @@ cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.
 cfg.phy.pusch.nLayers = double(ulLayerCount);
 cfg.phy.pusch.numLayers = double(ulLayerCount);
 cfg.phy.pusch.rank = double(ulLayerCount);
-cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", double(ulLayerCount));
-cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", double(ulLayerCount));
+% A bootstrap allocation rank is not the installed rank-adaptation ceiling.
+% Preserve the separately validated YAML capability for scheduler/SRS use.
+ulLayerCapability = double(localGetNested(s, "mimo.max_ul_layers", ulLayerCount));
+validateattributes(ulLayerCapability, {'numeric'}, {'scalar','integer','>=',ulLayerCount,'<=',8});
+cfg = sixgr.util.structSet(cfg, "phy.pusch.maxLayers", ulLayerCapability);
+cfg = sixgr.util.structSet(cfg, "phy.pusch.maxRankDefault", ulLayerCapability);
+cfg = sixgr.util.structSet(cfg, "phy.maxULLayers", ulLayerCapability);
 cfg.phy.pusch.transformPrecoding = logical(s.waveform.transform_precoding_enabled);
 cfg.phy.pusch.enablePTRS = logical(s.reference_signals.ptrs_enabled);
 detectPUCCHPUSCHOverlap = logical(localGetNested(s, ...
@@ -2765,6 +2784,17 @@ end
 % strict validation have completed.  Legacy aliases remain compatibility
 % views, while contradictory YAML authorities now fail before execution.
 cfg = sixgr.config.installRuntimeOperatingAuthority(cfg, s);
+experimentalUL=sixgr.phy.research.resolveExperimentalMCSTable(cfg.phy.pusch.mcsTable);
+if ~isempty(experimentalUL)
+    assert(string(s.meta.research_class)==experimentalUL.ResearchClass && ...
+        string(sixgr.util.structGet(s,'research_pusch_uci.resource_mapping',''))== ...
+        "symbol_preserving_single_codeword_ulsch", ...
+        'sixgr:research:ExplicitUCIAdapterRequired', ...
+        'Experimental UL MCS requires optional_research_experiment and research_pusch_uci policy.');
+    cfg.phy.pusch.experimentalMCSTable=experimentalUL;
+    cfg.phy.pusch.researchTransportPolicy=struct('meta',struct('research_class',s.meta.research_class), ...
+        'research_pusch_uci',s.research_pusch_uci);
+end
 if isfield(s.control,'connected_dci')
     sixgr.phy.pdcch.ConnectedDCIProfile.validatePolicy(s.control.connected_dci);
     for binding={"searchSpace","search_space_id";"coreset","coreset_id"}.'
@@ -3626,7 +3656,8 @@ end
 
 % Maintain the aliases used by existing grant and HARQ materializers.
 cfg = localCopyRuntimeField(cfg, s, "pusch.num_layers", targetBase + ".nLayers");
-cfg = localCopyRuntimeField(cfg, s, "pusch.num_layers", targetBase + ".maxLayers");
+% maxLayers is installed separately from mimo.max_ul_layers. Copying the
+% current allocation rank here would silently erase the adaptation ceiling.
 cfg = localCopyRuntimeField(cfg, s, "pusch.num_antenna_ports", targetBase + ".numAntennaPorts");
 cfg = localCopyRuntimeField(cfg, s, "pusch.transmission_scheme", targetBase + ".TransmissionScheme");
 cfg = localCopyRuntimeField(cfg, s, "pusch.tpmi", targetBase + ".PMI");

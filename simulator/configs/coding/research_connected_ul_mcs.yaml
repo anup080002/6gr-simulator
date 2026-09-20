@@ -1,0 +1,13 @@
+# Explicit lab codepoints; no NR UL 1024-QAM or ILLA calibration claim.
+inherits:
+  - ./research_pusch_uci.yaml
+modulation_and_mapping:
+  ul_mcs_table: experimental_square_qam_v1
+  ul_mcs_index: 0
+  ul_max_modulation: QPSK
+pusch:
+  mcs_table: experimental_square_qam_v1
+  mcs_index: 0
+  fixed_mcs: 0
+  modulation: QPSK
+  target_code_rate_per_codeword: [0.5]

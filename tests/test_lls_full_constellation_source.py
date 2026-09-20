@@ -33,6 +33,23 @@ class FullConstellationSource(unittest.TestCase):
             m._specialized_chart_materialization("pre-equalization constellation",
                 {self.path: {"artifact_id": 1}}, lambda _: self.payload, 1)
 
+    def test_full_materializer_preserves_missing_preeq_as_explicit_unavailable(self):
+        result = m._materialize_specialized_chart_or_unavailable(
+            "pre-equalization constellation",
+            {self.path: {"artifact_id": 1}}, lambda _: self.payload, 1)
+        self.assertEqual(result["csv_status"], "unavailable_exact_reason")
+        self.assertEqual(result["source_row_count"], 0)
+        self.assertEqual(result["source_mapping_status"],
+                         "unavailable_exact_plane_not_captured")
+        self.assertIn("were not substituted", result["note"])
+
+        result = m._materialize_specialized_chart_or_unavailable(
+            "post-equalization constellation",
+            {self.path: {"artifact_id": 1}}, lambda _: self.payload, 1)
+        self.assertEqual(result["csv_status"],
+                         "specialized_runtime_constellation_dataset")
+        self.assertEqual(result["source_row_count"], len(self.rows))
+
     def test_unlabeled_fitted_samples_rejected(self):
         payload = m._encode_csv(["Direction", "EqualizedReal", "EqualizedImag"], [["UL", 1, 1]])
         with self.assertRaisesRegex(ValueError, "no-payload-fit provenance"):

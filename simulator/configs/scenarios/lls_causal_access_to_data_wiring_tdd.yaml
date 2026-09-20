@@ -1309,7 +1309,7 @@ validation:
         required: true
         consumer_source_files: ["+sixgr/+phy/+refsig/csirs.m", "+sixgr/+phy/+rsla/CSIRSResourceEngine.m"]
         measurement_artifact: "air_interface/csv/csi_rs_trials.csv"
-        measured_fields: ["Scheduled", "Transmitted", "Observed", "Consumed", "ChannelEstimateAvailable"]
+        measured_fields: ["Scheduled", "Transmitted", "Observed", "Consumed", "ChannelEstimateAvailable", "ReferenceMeasuredSINR_dB", "SINR_dB"]
         measurement_min_rows: 1
         success_field: "CSIComputationStatus"
         success_mode: "all_equals"
@@ -1322,8 +1322,12 @@ validation:
         required: true
         consumer_source_files: ["+sixgr/+phy/+dl/CSI_Feedback.m", "+sixgr/+link/computeLinkAdaptationDecision.m"]
         measurement_artifact: "control/csv/csi_feedback_reports.csv"
-        measured_fields: ["CQI", "RI", "PMI", "CRI", "SINR_dB"]
+        # SINR remains a UE CSI-RS measurement, not a field in this decoded
+        # CQI/RI/PMI/CRI report. Validate it at csi_rs_measurement above.
+        measured_fields: ["CQI", "RI", "PMI", "CRI", "ReportIdentity", "DeliveredSlot", "CSIUCIDecodedBitCount"]
         measurement_min_rows: 1
+        success_field: "CSIUCIDecodeOk"
+        success_mode: "any_true"
       - stage_id: "beam_precoder_application"
         order: 190
         subsystem: "beamforming"

@@ -353,8 +353,9 @@ classdef ChannelFactory
             modelRaw = upper(strtrim(string(sixgr.util.structGet(cfg, "channel.model", ...
                 sixgr.util.structGet(cfg, "channel.type", "AWGN")))));
             awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
-            tf = ~awgnOnly && (startsWith(modelRaw, "TDL") || startsWith(modelRaw, "CDL") || ...
-                any(modelRaw == ["NRTDL","NRCDL"]));
+            tf = sixgr.channel.IdentityAWGNRuntime.enabled(cfg) || ...
+                (~awgnOnly && (startsWith(modelRaw, "TDL") || startsWith(modelRaw, "CDL") || ...
+                any(modelRaw == ["NRTDL","NRCDL"])));
         end
 
         function fc = resolveCarrierFrequency(cfg)
@@ -442,7 +443,9 @@ classdef ChannelFactory
             % reciprocal adapters retain per-direction state because their
             % endpoint implementations are intentionally independent.
             key = char(string(linkKey));
-            if sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg)
+            if sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg) || ...
+                    (sixgr.channel.IdentityAWGNRuntime.enabled(cfg) && ...
+                    sixgr.phy.frame.resolveDuplexMode(cfg)=="TDD")
                 key = sixgr.channel.ChannelFactory.localRuntimeSeedKey(cfg, linkKey);
             end
         end
@@ -645,6 +648,11 @@ classdef ChannelFactory
             modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
             awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
             if awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF"
+                if sixgr.channel.IdentityAWGNRuntime.enabled(cfg)
+                    state=sixgr.channel.IdentityAWGNRuntime.materialize( ...
+                        state,cfg,txInfo,opt.NumTxAnt,opt.NumRxAnt);
+                    return;
+                end
                 state.Materialized = true;
                 state.UseFading = false;
                 fsObserved = sixgr.util.structGet(txInfo, "OFDM.SampleRate", NaN);
@@ -919,7 +927,8 @@ classdef ChannelFactory
                 error("ChannelFactory:ProjectedInputDimensionMismatch", ...
                     "Preprojected samples must be finite floating-point samples on every materialized channel transmit port; implicit projection/padding is forbidden.");
             end
-            if captureReference
+            identityReference=captureReference && sixgr.channel.IdentityAWGNRuntime.isState(state);
+            if captureReference && ~identityReference
                 object = state.Obj;
                 if ~(logical(state.UseFading) && ...
                         (isa(object,'nrCDLChannel') || isa(object,'nrTDLChannel')) && ...
@@ -1063,6 +1072,19 @@ classdef ChannelFactory
                 replay.RuntimeChannelExternalLogicalTxPorts = NaN;
             end
             if ~(logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
+                if sixgr.channel.IdentityAWGNRuntime.isState(state)
+                    assert(size(x,2)==state.NumTxAnt && state.NumTxAnt==state.NumRxAnt, ...
+                        'ChannelFactory:IdentityAWGNPortMismatch', ...
+                        'The identity operator consumes one physical column per port.');
+                    if identityReference
+                        reference=sixgr.channel.IdentityAWGNRuntime.reference(state,size(x,1));
+                    end
+                    replay.ChannelModelApplied="AWGN";
+                    replay.RuntimeChannelTimingTruthSource="executed_identity_operator_zero_delay";
+                    replay.RuntimeChannelPathDelays_s=0;
+                    replay.RuntimeChannelCanonicalInputSamples=size(x,1);
+                    replay.RuntimeChannelObjectClockExact=true;
+                end
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
                 replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
                 state.CurrentSampleIndex = replay.RuntimeChannelEndSample;
@@ -1622,7 +1644,9 @@ classdef ChannelFactory
 
         function key = localRuntimeSeedKey(cfg, linkKey)
             key = char(string(linkKey));
-            if ~sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg)
+            if ~sixgr.channel.ChannelFactory.supportsRuntimeTDDReciprocity(cfg) && ...
+                    ~(sixgr.channel.IdentityAWGNRuntime.enabled(cfg) && ...
+                    sixgr.phy.frame.resolveDuplexMode(cfg)=="TDD")
                 return;
             end
             token = string(key);

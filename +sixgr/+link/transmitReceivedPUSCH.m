@@ -11,6 +11,9 @@ cfg=allocation.Config;
 if isfield(cfg.phy,'canonicalGrant'), cfg.phy=rmfield(cfg.phy,'canonicalGrant'); end
 if isfield(cfg.phy.pusch,'srsDecision'), cfg.phy.pusch=rmfield(cfg.phy.pusch,'srsDecision'); end
 args={'TransportBlockBits',bits};
+if isfield(allocation,'ResearchTransport')
+    args=[args {'ResearchTransport',allocation.ResearchTransport}];
+end
 if ~isempty(uci) && uci.hasPayload()
     args=[args {'UCIPayload',uci,'InitialIMCSPerCodeword',assignment.MCS}];
 end

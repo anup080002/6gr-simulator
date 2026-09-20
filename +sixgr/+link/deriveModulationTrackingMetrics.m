@@ -212,8 +212,10 @@ end
 function modulation = localResolveModulation(tx, cfg, direction)
 modulation = "";
 if direction == "UL"
-    modulation = string(sixgr.util.structGet(tx, "PUSCH.Modulation", ...
-        sixgr.util.structGet(cfg, "phy.pusch.modulation", "")));
+    modulation = sixgr.link.resolvePUSCHTransportModulation(tx);
+    if strlength(modulation)==0
+        modulation=string(sixgr.util.structGet(cfg,"phy.pusch.modulation",""));
+    end
 else
     modulation = string(sixgr.util.structGet(tx, "PDSCH.Modulation", ...
         sixgr.util.structGet(cfg, "phy.pdsch.modulation", "")));

@@ -271,6 +271,8 @@ for direction = ["DL","UL"]
         row.Slot = localNum(tr, "Slot", NaN);
         row.ConfiguredRank = double(cfgRow.ConfiguredRank(1));
         row.ConfiguredLayers = double(cfgRow.ConfiguredLayers(1));
+        row.ConfiguredMaximumRank = double(cfgRow.ConfiguredMaximumRank(1));
+        row.ConfiguredMaximumLayers = double(cfgRow.ConfiguredMaximumLayers(1));
         row.ConfiguredModulation = string(cfgRow.ConfiguredModulation(1));
         row.ConfiguredMCS = double(cfgRow.ConfiguredMCS(1));
         row.ConfiguredInitialMCS = double(cfgRow.ConfiguredInitialMCS(1));
@@ -282,6 +284,8 @@ for direction = ["DL","UL"]
         row.ScheduledMCS = localFirstNum(tr, ["ScheduledMCS","MCS","MCSIndex"], NaN);
         row.TransmittedRank = localFirstNum(tr, ["TransmittedRank","TransmittedLayers","PrecodingNumLayers","Layers"], NaN);
         row.TransmittedLayers = localFirstNum(tr, ["TransmittedLayers","PrecodingNumLayers","Layers"], NaN);
+        row.MeasuredDMRSPortCount = localFirstNum(tr, ...
+            ["MeasuredDMRSPortCount"], NaN);
         row.TransmittedModulation = localFirstTextTable(tr, ["TransmittedModulation","Modulation"], "");
         row.TransmittedMCS = localFirstNum(tr, ["TransmittedMCS","MCS","MCSIndex"], NaN);
         row.ActualMCSSelectionMode = localFirstTextTable(tr, ["ActualMCSSelectionMode"], "");
@@ -314,6 +318,13 @@ for direction = ["DL","UL"]
             ["PhysicalRxAntennas","RxWaveformBranches"], NaN);
         row.LogicalTxPortCount = localFirstNum(tr, ...
             ["NumLogicalTxPorts","PrecodingNumLogicalPorts","PrecodingNumLayers","Layers"],NaN);
+        if any(ismember(["NumLogicalTxPorts","PrecodingNumLogicalPorts"], ...
+                string(tr.Properties.VariableNames)))
+            % An explicitly unavailable port measurement is not a layer
+            % count. Legacy rows without either port field retain fallback.
+            row.LogicalTxPortCount=localFirstNum(tr, ...
+                ["NumLogicalTxPorts","PrecodingNumLogicalPorts"],NaN);
+        end
         row.LogicalRxBranchCount = localFirstNum(tr, ...
             ["NumLogicalRxBranches","EffectiveDecodedLayers","PrecodingNumLayers","Layers"],NaN);
         row.BSAntennaNumPorts = localFirstNum(tr, ...
@@ -400,7 +411,13 @@ for direction = ["DL","UL"]
         end
         row.EffectiveDecodedModulation = row.TransmittedModulation;
         row.EffectiveDecodedMCS = row.TransmittedMCS;
-        row.DMRSPorts = string(strjoin(string(0:(max(1, round(row.TransmittedLayers))-1)), "|"));
+        % A measured count proves how many DM-RS port dimensions reached
+        % the receiver; it does not identify their 3GPP port numbers. Keep
+        % identities unavailable unless the primary receiver row carries
+        % an explicit measured identity set.
+        measuredDMRSPorts = localParseVector(localFirstTextTable(tr, ...
+            ["MeasuredDMRSPortSet","MeasuredDMRSPorts"], ""));
+        row.DMRSPorts = localVectorToken(measuredDMRSPorts);
         row.PrecoderId = localFirstTextTable(tr, ["AppliedPrecoderPMI","PMI","ConfiguredPMI"], "");
         row.BeamId = localFirstTextTable(tr, ["AppliedBeamIndexSet","SelectedBeamIndex"], "");
         row.CSIReportId = localFirstTextTable(tr, ["CSIReportId","CSIPayloadHex"], "");
@@ -469,7 +486,7 @@ for direction = ["DL","UL"]
         row.DecodeCrcPass = crcPass;
         row.AdaptationEvidenceId = localFirstTextTable(tr, ["CSIReportId","CSIPayloadHex","GrantContextId"], "");
         row.ExactSpatialMatch = localExactSpatialMatch(row);
-        row.SpatialContractMatch = row.ExactSpatialMatch;
+        row.SpatialContractMatch = localSpatialContractMatch(row);
         row.ExactOperatingPointMatch = localExactOperatingPointMatch(row);
         row.FixedOperatingPointMatch = row.ExactOperatingPointMatch;
         row.AdaptivePolicyRequired = row.AdaptiveMode;
@@ -479,7 +496,7 @@ for direction = ["DL","UL"]
             (row.AdaptiveMode && row.AdaptivePolicyMatch);
         row.MUExecutionMatch = localMURowExecutionMatch(row);
         row.ExactConfiguredMatch = row.ExactSpatialMatch && row.ExactOperatingPointMatch;
-        row.ExecutionContractMatch = row.ExactSpatialMatch && row.OperatingPointContractMatch;
+        row.ExecutionContractMatch = row.SpatialContractMatch && row.OperatingPointContractMatch;
         row.MismatchCause = localMismatchCause(row);
         row.StrictEligible = ~localBool(tr, "IsWarmupFrame", false);
         row.SourceArtifactRef = sourceArtifact;
@@ -529,7 +546,9 @@ for direction = ["DL","UL"]
             lr.Slot = row.Slot;
             lr.LayerIndex = l;
             lr.CodewordIndex = localTernary(row.TransmittedLayers <= 4, 1, min(2, ceil(l/4)));
-            lr.DMRSPort = l - 1;
+            if l <= numel(measuredDMRSPorts)
+                lr.DMRSPort = measuredDMRSPorts(l);
+            end
             if l <= numel(perLayer), lr.PostEqSINRdB = perLayer(l); end
             lr.EVMdB = localEVMdB(localNum(tr, "EVM_rms", NaN));
             lr.ChannelEstimateNMSEdB = localNum(tr, "NMSE_dB", NaN);
@@ -826,10 +845,19 @@ for i = 1:height(cfgT)
         all(localColumnLogical(sub,"ChannelUsesSameRuntimeAntennaAssumptions",false));
     rows(i).RuntimeAntennaObjectCreated = rows(i).RuntimePopulated && ...
         all(localColumnLogical(sub,"AntennaRuntimeObjectCreated",false));
-    configuredLayers = double(cfgT.ConfiguredLayers(i));
+    % Precoder output ports are not its input layers. Rank-one UL can
+    % legitimately occupy two codebook ports; rank-two can occupy four.
+    % Validate every executed row, not the modal count (which hides a bad
+    % minority row). Rank/adaptation policy is checked by the spatial gate.
+    txPorts=localColumn(sub,"LogicalTxPortCount");
+    rxBranches=localColumn(sub,"LogicalRxBranchCount");
+    layers=localColumn(sub,"TransmittedLayers");
     rows(i).LogicalPortLayerMatch = rows(i).RuntimePopulated && ...
-        rows(i).ObservedLogicalTxPortCount == configuredLayers && ...
-        rows(i).ObservedLogicalRxBranchCount >= configuredLayers;
+        all(isfinite(txPorts) & txPorts==fix(txPorts) & ...
+            isfinite(rxBranches) & rxBranches==fix(rxBranches) & ...
+            isfinite(layers) & layers==fix(layers) & layers>=1 & ...
+            txPorts>=layers & txPorts<=rows(i).TxAntennaPortCount & ...
+            rxBranches>=layers);
     if rows(i).FullElementDomainRequired
         rows(i).ExactRuntimeAntennaMatch = rows(i).RuntimePopulated && ...
             rows(i).ObservedPhysicalTxAntennaCount == rows(i).ExpectedRuntimeTxCount && ...
@@ -872,7 +900,13 @@ for i = 1:height(cfgT)
     else
         rows(i).SourceRowsHash = "empty";
     end
-    ok = height(sub) > 0 && isfinite(rows(i).ObservedTransmittedLayers) && rows(i).ObservedTransmittedLayers <= rows(i).DMRSPortCount;
+    measuredCounts = localColumn(sub, "MeasuredDMRSPortCount");
+    transmittedLayers = localColumn(sub, "TransmittedLayers");
+    ok = height(sub) > 0 && ...
+        all(isfinite(measuredCounts) & measuredCounts == fix(measuredCounts) & ...
+            measuredCounts >= 1 & isfinite(transmittedLayers) & ...
+            transmittedLayers == fix(transmittedLayers) & ...
+            transmittedLayers >= 1 & measuredCounts >= transmittedLayers);
     rows(i).Status = string(localTernary(ok, "pass", "fail"));
     rows(i).FailureReason = string(localTernary(ok, "", "missing_or_invalid_port_layer_mapping_evidence"));
 end
@@ -1133,6 +1167,29 @@ tf = isfinite(row.TransmittedRank) && isfinite(row.TransmittedLayers) && ...
     row.TransmittedLayers == row.ConfiguredLayers;
 end
 
+function tf = localSpatialContractMatch(row)
+if ~logical(row.AdaptiveMode)
+    tf = localExactSpatialMatch(row);
+    return;
+end
+% In an adaptive scenario ConfiguredRank/ConfiguredLayers are the bootstrap
+% operating point, not a ceiling.  The executed grant must match the
+% scheduler decision and remain within the separately installed capability.
+tf = isfinite(row.ScheduledRank) && isfinite(row.ScheduledLayers) && ...
+    isfinite(row.TransmittedRank) && isfinite(row.TransmittedLayers) && ...
+    isfinite(row.ConfiguredMaximumRank) && ...
+    isfinite(row.ConfiguredMaximumLayers) && ...
+    row.ScheduledRank == row.TransmittedRank && ...
+    row.ScheduledLayers == row.TransmittedLayers && ...
+    row.TransmittedRank >= 1 && ...
+    row.TransmittedRank <= row.ConfiguredMaximumRank && ...
+    row.TransmittedLayers >= 1 && ...
+    row.TransmittedLayers <= row.ConfiguredMaximumLayers && ...
+    row.TransmittedRank <= min(row.NumTxPorts,row.NumRxAntennas) && ...
+    row.TransmittedLayers <= row.LogicalTxPortCount && ...
+    row.TransmittedLayers <= row.LogicalRxBranchCount;
+end
+
 function tf = localExactOperatingPointMatch(row)
 configuredModulation = upper(strtrim(string(row.ConfiguredModulation)));
 transmittedModulation = upper(strtrim(string(row.TransmittedModulation)));
@@ -1381,20 +1438,24 @@ end
 
 function reason = localMismatchCause(row)
 parts = strings(0,1);
-if ~(isfinite(row.TransmittedRank) && row.TransmittedRank == row.ConfiguredRank)
-    parts(end+1,1) = "transmitted_rank_mismatch"; %#ok<AGROW>
-end
-
-if ~(isfinite(row.TransmittedLayers) && row.TransmittedLayers == row.ConfiguredLayers)
-    parts(end+1,1) = "transmitted_layers_mismatch"; %#ok<AGROW>
-end
-if strlength(row.ConfiguredModulation) > 0 && ...
-        upper(strtrim(string(row.TransmittedModulation))) ~= upper(strtrim(string(row.ConfiguredModulation)))
-    parts(end+1,1) = "modulation_mismatch"; %#ok<AGROW>
-end
-if isfinite(row.ConfiguredMCS) && ...
-        row.TransmittedMCS ~= row.ConfiguredMCS
-    parts(end+1,1) = "mcs_mismatch"; %#ok<AGROW>
+if row.AdaptiveMode
+    if ~row.SpatialContractMatch
+        parts(end+1,1) = "adaptive_spatial_schedule_or_capability_mismatch"; %#ok<AGROW>
+    end
+else
+    if ~(isfinite(row.TransmittedRank) && row.TransmittedRank == row.ConfiguredRank)
+        parts(end+1,1) = "transmitted_rank_mismatch"; %#ok<AGROW>
+    end
+    if ~(isfinite(row.TransmittedLayers) && row.TransmittedLayers == row.ConfiguredLayers)
+        parts(end+1,1) = "transmitted_layers_mismatch"; %#ok<AGROW>
+    end
+    if strlength(row.ConfiguredModulation) > 0 && ...
+            upper(strtrim(string(row.TransmittedModulation))) ~= upper(strtrim(string(row.ConfiguredModulation)))
+        parts(end+1,1) = "modulation_mismatch"; %#ok<AGROW>
+    end
+    if isfinite(row.ConfiguredMCS) && row.TransmittedMCS ~= row.ConfiguredMCS
+        parts(end+1,1) = "mcs_mismatch"; %#ok<AGROW>
+    end
 end
 if row.AdaptiveMode && ~row.AdaptivePolicyMatch
     parts(end+1,1) = "adaptive_policy_mismatch:" + string(row.AdaptivePolicyFailureReason); %#ok<AGROW>
@@ -1474,6 +1535,7 @@ function row = localRankTrialRow()
 row = struct("RunId","", "ScenarioName","", "TrialId",NaN, "Direction","", ...
     "CellId",NaN, "UEId",NaN, "Frame",NaN, "Slot",NaN, ...
     "ConfiguredRank",NaN, "ConfiguredLayers",NaN, "ScheduledRank",NaN, ...
+    "ConfiguredMaximumRank",NaN, "ConfiguredMaximumLayers",NaN, ...
     "ScheduledLayers",NaN, "TransmittedRank",NaN, "TransmittedLayers",NaN, ...
     "ReceiverEstimatedRank",NaN, ...
     "SpatialChannelRankEstimate",NaN, "SpatialChannelTxPorts",NaN, ...
@@ -1491,7 +1553,8 @@ row = struct("RunId","", "ScenarioName","", "TrialId",NaN, "Direction","", ...
     "ConfiguredModulation","", "ScheduledModulation","", "TransmittedModulation","", ...
     "EffectiveDecodedModulation","", "ConfiguredMCS",NaN, ...
     "ConfiguredInitialMCS",NaN, "ConfiguredMaximumMCS",NaN, "ScheduledMCS",NaN, ...
-    "TransmittedMCS",NaN, "EffectiveDecodedMCS",NaN, "DMRSPorts","", ...
+    "TransmittedMCS",NaN, "EffectiveDecodedMCS",NaN, ...
+    "DMRSPorts","", "MeasuredDMRSPortCount",NaN, ...
     "ConfiguredMCSSelectionPolicy","", "ActualMCSSelectionMode","", ...
     "MCSSelectionSource","", "MCSAuthority","", "ModulationAuthority","", ...
     "AppliedOperatingPointSource","", "LinkAdaptationScheduled",false, ...

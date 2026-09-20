@@ -46,4 +46,20 @@ function [dmrsInd, dmrsSym, info] = dmrsPUSCH(carrier, puschCfg, varargin)
     catch
         info.CDMLengths = [];
     end
+    info.CDMLengthsSource="nrPUSCHDMRSIndices_metadata";
+    if isempty(info.CDMLengths)
+        % Newer toolbox releases expose no secondary indices output. The
+        % computed DM-RS property still owns OCC despreading. Empty lengths
+        % make multiport pilot structure appear to be receiver noise.
+        try
+            info.CDMLengths=reshape(double(puschCfg.DMRS.CDMLengths),1,[]);
+        catch
+            error('sixgr:phy:dmrsPUSCH:CDMLengthsUnavailable', ...
+                'PUSCH channel estimation requires authoritative DM-RS CDM lengths.');
+        end
+        info.CDMLengthsSource="nrPUSCHDMRSConfig_computed_CDM_lengths";
+    end
+    assert(numel(info.CDMLengths)==2 && all(isfinite(info.CDMLengths)) && ...
+        all(info.CDMLengths>=1 & info.CDMLengths==fix(info.CDMLengths)), ...
+        'sixgr:phy:dmrsPUSCH:InvalidCDMLengths','DM-RS CDM lengths must be two positive integers.');
 end

@@ -1,0 +1,119 @@
+inherits:
+  - ./lls_tdd_5mhz_four_port_shared_awgn_12db.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_rank2_shared_awgn_20db
+  description: Four-dimensional 5 MHz TDD shared-clock AWGN execution at 20 dB with measured-CSI DL rank adaptation capped at rank two.
+  purpose: Integrated rank-1/rank-2 PDSCH, ILLA, OLLA, CSI-RS, DM-RS, HARQ and shared-feedback verification.
+  research_class: optional_research_experiment
+  tags: [lls, truth, tdd, 5mhz, shared_clock, identity_awgn, rank2, illa, olla, configured_snr]
+
+simulation:
+  snr_db: 20
+
+# Four physical/logical dimensions are retained so the rank-two ceiling is
+# constrained by policy, not by a missing gNB transmit or UE receive branch.
+# The shared identity-AWGN parent supplies a full-rank 4x4 channel matrix;
+# rank one and rank two therefore have independent nonzero spatial modes.
+mimo:
+  n_tx_ant: 4
+  n_rx_ant: 4
+  max_dl_layers: 2
+  # This fixture qualifies DL rank adaptation only. Keep UL at its
+  # bootstrap rank so an inherited four-layer UL capability cannot create
+  # a configured/effective mismatch or contaminate the SRS comparison.
+  max_ul_layers: 1
+  rank_adaptation_policy: measured_ri
+  phase07_strict:
+    ports: 4
+    max_rank: 2
+    rank_domain: [1, 2]
+    csi_report:
+      report_quantity: cri-RI-PMI-CQI
+
+antenna_and_array:
+  bs_num_txrus: 4
+  bs_num_rxrus: 4
+  bs_num_antenna_elements: 4
+  ue_num_txrus: 4
+  ue_num_rxrus: 4
+  ue_num_antenna_elements: 4
+
+# Keep DCI 0_1 capability consistent with the rank-one UL ceiling while
+# retaining four physical/logical ports for SRS and receive measurements.
+control:
+  ul_precoding:
+    max_rank: 1
+
+# Rank one is the bootstrap PDSCH allocation. A causally delivered RI may
+# select rank two only for a future grant; issued grants remain immutable.
+pdsch:
+  layer_count: 1
+  rank: 1
+  num_antenna_ports: 4
+  # Type-I codebook matrices preserve unit total scheduled transmit power
+  # across rank. A rank-two 4x2 matrix therefore has W'*W=I/2 and must not
+  # be validated with the per-layer-unit-power semi-unitary convention.
+  precoder_normalization_convention: unit_frobenius
+  link_adaptation_mode: amc
+  amc_policy: baseline
+
+# Keep the same fixed-total-power convention in the reverse direction.
+# UL remains rank one in this DL-rank-adaptation qualification scenario.
+pusch:
+  precoder_normalization_convention: unit_frobenius
+
+# Keep a four-port reference-signal pool. The runtime grant selects the first
+# nLayers DM-RS ports while the four-port CSI-RS channel supports RI/PMI/CQI
+# measurement over the complete physical spatial domain.
+reference_signals:
+  pdsch_dmrs_ports: 4
+  pdsch_dmrs_config_type: 1
+  pdsch_dmrs_type_a_position: 2
+  pdsch_dmrs_num_cdm_groups_without_data: 1
+  pdsch_dmrs:
+    port_set: [0, 1, 2, 3]
+  csi_rs_enabled: true
+  csi_rs_ports: 4
+  csi_rs_port_count: 4
+  csi_reporting_enabled: true
+  cqi_reporting_enabled: true
+  pmi_reporting_enabled: true
+  ri_reporting_enabled: true
+  cri_reporting_enabled: true
+  csi_feedback_mode: PMI+CQI+RI+CRI
+  channel_state_information_mode: PMI+CQI+RI+CRI
+
+csi_acquisition_and_reporting:
+  dl_csi_enabled: true
+  csi_rs_baseline_flag: true
+  feedback_based_flag: true
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  pmi_codebook_mode: type1_su_mimo
+  cqi_policy: baseline
+  pmi_policy: baseline
+  ri_policy: baseline
+  cri_policy: baseline
+  report_trigger: periodic
+
+link_adaptation:
+  fixed_or_amc: amc
+  operating_point_mode: adaptive
+  inner_loop_flag: true
+  outer_loop_flag: true
+  cqi_source: csi_feedback
+  pdsch_link_adaptation_policy: baseline
+  rank_adaptation_policy: measured_ri
+  delta_mcs_policy: ack_nack_olla
+  target_bler: 0.1
+
+channels:
+  model_type: AWGN
+  profile: AWGN
+  shared_identity_awgn_enabled: true
+  doppler_hz: 0
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+
+output:
+  profile: lls_tdd_5mhz_rank2_shared_awgn_20db

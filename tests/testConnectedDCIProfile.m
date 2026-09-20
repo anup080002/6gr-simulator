@@ -68,6 +68,9 @@ localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'0_1'), .
 bad=cfg; bad.phy.pusch.NumAntennaPorts=1;
 localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'0_1'), ...
     'sixgr:phy:pdcch:ULPrecodingContextMismatch');
+bad=cfg; bad.phy.pusch.numLayers=2; % Installed maxRank remains one.
+localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'0_1'), ...
+    'sixgr:phy:pdcch:ULPrecodingContextMismatch');
 bad=cfg; bad.phy.pdcch.operatorControl.ul_precoding.max_rank=2;
 localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'0_1'), ...
     'sixgr:phy:pdcch:ULPrecodingContextMismatch');

@@ -54,6 +54,8 @@ sixgr.runtime.RuntimeCallLedger.record("sixgr.phy.ul.PUSCH_Rx", ...
 ip = inputParser;
 ip.addParameter('Carrier', [], @(x) isempty(x) || isobject(x));
 ip.addParameter('PUSCH', [], @(x) isempty(x) || isobject(x));
+ip.addParameter('ResearchTransport', [], @(x) isempty(x) || ...
+    (isa(x,'sixgr.phy.research.PUSCHUCIResourceAdapter') && isscalar(x)));
 ip.addParameter('PUSCHIndices', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('TransportBlockSize', [], @(x) isempty(x) || ...
     (isnumeric(x) && isvector(x) && all(x>0)));
@@ -97,6 +99,15 @@ ip.addParameter('ExecutionProfile', "data_pusch", ...
     @(x) ischar(x) || (isstring(x) && isscalar(x)));
 ip.parse(varargin{:});
 opt = ip.Results;
+researchTransport=opt.ResearchTransport;
+if ~isempty(researchTransport)
+    assert(isempty(opt.PUSCH) || isequal(opt.PUSCH,researchTransport.Geometry), ...
+        'sixgr:research:TransportGeometryMismatch','PUSCH geometry and transport must agree.');
+    assert(~isempty(opt.UCIReceiveContext) && isempty(opt.ExpectedUCIPayload), ...
+        'sixgr:pusch:MissingUCIReceiveContext', ...
+        'Experimental PUSCH requires receiver-owned UCI context, never transmitted payload authority.');
+    opt.PUSCH=researchTransport.Geometry;
+end
 if ~isempty(opt.UCIReceiveContext)
     assert(isempty(opt.ExpectedUCIPayload), ...
         'sixgr:pusch:ConflictingUCIReceiveAuthority', ...
@@ -156,6 +167,14 @@ else
 end
 
 % PUSCH config and indices
+if isempty(researchTransport) && startsWith(string(sixgr.util.structGet(cfg,'phy.pusch.mcsTable','')),"experimental_")
+    researchTransport=sixgr.phy.research.configuredPUSCHTransport(cfg,carrier);
+    assert(isempty(opt.PUSCH) || isequal(opt.PUSCH,researchTransport.Geometry), ...
+        'sixgr:research:TransportGeometryMismatch','Receiver geometry must match independently installed scheduling.');
+    assert(~isempty(opt.UCIReceiveContext) && isempty(opt.ExpectedUCIPayload), ...
+        'sixgr:pusch:MissingUCIReceiveContext','Experimental reception requires independent UCI context, never transmitted payload authority.');
+    opt.PUSCH=researchTransport.Geometry;
+end
 if isempty(opt.PUSCH)
     [puschInd, puschInfo, pusch] = sixgr.phy.grid.allocREsPUSCH(carrier, cfg);
 else
@@ -175,6 +194,12 @@ else
             [~, puschInfo] = nrPUSCHIndices(carrier, pusch); %#ok<ASGLU>
         end
     end
+end
+transport=pusch;
+if ~isempty(researchTransport)
+    assert(isequal(pusch,researchTransport.Geometry), ...
+        'sixgr:research:TransportGeometryMismatch','Runtime policy cannot silently mutate experimental geometry.');
+    transport=researchTransport;
 end
 sixgr.config.assertRuntimeFeatureUse(cfg, ...
     localProcedureFeature("ptrs", executionProfile), ...
@@ -238,13 +263,19 @@ if isempty(trBlkSize)
     xOverhead = localResolvePUSCHXOverhead(pusch, cfg);
     nPRB = numel(pusch.PRBSet);
     nrePerPRB = localResolvePUSCHNREPerPRBOrError(carrier, pusch, puschInfo, nPRB);
-    trBlkSize = nrTBS(pusch.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
+    trBlkSize = nrTBS(transport.Modulation, pusch.NumLayers, nPRB, nrePerPRB, targetCodeRate, xOverhead);
 end
 trBlkSize = double(trBlkSize(:).');
 if numel(trBlkSize) ~= nCodewords || ...
         any(~isfinite(trBlkSize) | trBlkSize <= 0 | trBlkSize ~= fix(trBlkSize))
     error("sixgr:phy:ul:PUSCHBadTransportBlockSize", ...
         "PUSCH RX requires one positive integer transport block size per codeword.");
+end
+if ~isempty(researchTransport)
+    researchTransport.resourcePlan(targetCodeRate,trBlkSize,[0 0 0]);
+    [researchAccount,puschInfo]=researchTransport.resourceAccounting( ...
+        carrier,puschInd,targetCodeRate,localResolvePUSCHXOverhead(pusch,cfg));
+    puschInfo.ResourceAccounting=researchAccount;
 end
 
 % DMRS
@@ -514,6 +545,7 @@ if ~logical(noiseStatus.IsValid)
     rx.ReceiverStageLatencySource = ...
         "matlab_tic_toc_production_pusch_receiver_stages";
     info.ReceiveCombiner = receiveCombinerInfo;
+    [rx,info]=localAnnotateResearchTransport(rx,info,researchTransport);
     return;
 end
 
@@ -613,7 +645,7 @@ if dmrsResidualBoundEnabled
         postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo, pilotPostEqInfo);
 end
 [layerEqSym, layerEqInfo] = localResolvePUSCHLayerEqualizedSymbols(eqSym, [], pusch);
-decisionPostEqInfo = localEstimatePUSCHDecisionDirectedPostEqResidual(layerEqSym, pusch);
+decisionPostEqInfo = localEstimatePUSCHDecisionDirectedPostEqResidual(layerEqSym, transport);
 decisionDirectedBoundEnabled = logical(sixgr.util.structGet(cfg, ...
     "phy.pusch.measurements.decisionDirectedPostEqSINRBoundEnabled", true));
 if decisionDirectedBoundEnabled
@@ -651,10 +683,18 @@ if ~(isscalar(nVarForDecode) && isfinite(nVarForDecode) && nVarForDecode > 0)
     nVarForDecode = double(nVar);
 end
 nVarForDecode = double(max(nVarForDecode, eps));
-try
-    [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, rxPUSCH, decoderInputSym, nVarForDecode);
-catch
-    cwLLR = nrPUSCHDecode(carrier, rxPUSCH, decoderInputSym, nVarForDecode);
+if ~isempty(researchTransport)
+    assert(decoderInputInfo.Domain=="layer", ...
+        'sixgr:research:ReceiverLayerDomainRequired','Use the actual effective-layer equalizer output.');
+    [cwLLR,puschRxSym]=researchTransport.demodulate(decoderInputSym,nVarForDecode, ...
+        carrier,targetCodeRate,trBlkSize,opt.UCIReceiveContext,opt.UCIReportConfiguration);
+    decoderInputInfo.Status="experimental_explicit_Qm_layer_demodulation";
+else
+    try
+        [cwLLR, puschRxSym] = nrPUSCHDecode(carrier, rxPUSCH, decoderInputSym, nVarForDecode);
+    catch
+        cwLLR = nrPUSCHDecode(carrier, rxPUSCH, decoderInputSym, nVarForDecode);
+    end
 end
 if nCodewords == 2
     qamEqSym = layerEqSym;
@@ -664,10 +704,14 @@ if nCodewords == 2
 else
     [qamEqSym, qamEqInfo] = localResolvePUSCHQAMEqualizedSymbols(puschRxSym, layerEqSym);
 end
+if ~isempty(researchTransport)
+    qamEqInfo.Status="experimental_explicit_Qm_layer_demapper_symbols";
+    qamEqInfo.Source="independent_equalized_layer_symbols";
+end
 
 [cwLLR, cwLLRCell, codewordLLRInfo] = localNormalizePUSCHCodewordLLR(cwLLR, nCodewords);
 [cwLLRCell, llrCSIInfo] = localApplyCSIToPUSCHCodewordLLRs( ...
-    cwLLRCell, csi, pusch.Modulation, postEqSINR_dB, ...
+    cwLLRCell, csi, transport.Modulation, postEqSINR_dB, ...
     nVarForDecode, nVarDecodeInfo);
 cwLLR = cwLLRCell{1};
 if isempty(opt.UCIReceiveContext)
@@ -696,7 +740,7 @@ else
     presenceCoding=struct('RV',rv,'MaxIterations',maxIter,'Algorithm',alg, ...
         'Nref',{presenceNref},'PresenceDecisionAlgorithm',cfg.phy.pusch.csiPresenceDecisionAlgorithm);
     [cwLLRForULSCH, uciOnPUSCH] = sixgr.phy.ul.pusch.receiveConfiguredUCI( ...
-        localUnwrapSingleCell(cwLLRCell), pusch, targetCodeRate, trBlkSize, ...
+        localUnwrapSingleCell(cwLLRCell), transport, targetCodeRate, trBlkSize, ...
         opt.UCIReceiveContext, initialIMCS, opt.UCIReportConfiguration, ...
         cfg.phy.pusch.shortUCIDecision,presenceCoding);
 end
@@ -716,7 +760,7 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
         if isempty(partialLayouts), partialLayouts=phyGrant.CodingLayout; end
     end
     dataReception=sixgr.phy.ul.pusch.decodeResolvedULSCH(cwLLRForULSCH, ...
-        uciOnPUSCH.ULSCHMappingResolved,pusch,trBlkSize,targetCodeRate,rv, ...
+        uciOnPUSCH.ULSCHMappingResolved,transport,trBlkSize,targetCodeRate,rv, ...
         partialLayouts,maxIter,alg,opt.HARQSoftBufferLLR,opt.HARQSoftBufferLayout);
     rx=struct('ReceiveTiming',receiveTiming,'TransportBlockSize',trBlkSize, ...
         'TransportBlock',dataReception.TransportBlocks{1}, ...
@@ -821,11 +865,12 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
         'ReceiverStageEvidence',partialEvidence, ...
         'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
         'ExecutionBackend',rx.ExecutionBackend);
+    [rx,info]=localAnnotateResearchTransport(rx,info,researchTransport);
     return;
 end
 ulschRateMatchedBitCount=double(cellfun(@numel,cwLLRForULSCH));
 codingLayouts = localResolveRxCodingLayouts(opt.CodingLayout, phyGrant, "UL", ...
-    trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ...
+    trBlkSize, targetCodeRate, rv, transport.Modulation, pusch.NumLayers, ...
     ulschRateMatchedBitCount);
 codingLayout = codingLayouts{1};
 bgn = double(cellfun(@(x) x.BaseGraph, codingLayouts));
@@ -896,7 +941,7 @@ if numel(cwLLRForULSCH) ~= double(codingLayout.RateMatchedBitCount)
 end
 codewordLayerMapping.ULSCHDemapperLLRCountPerCodeword = double(numel(cwLLRForULSCH));
 codewordLayerMapping.TotalULSCHDemapperLLRCount = double(numel(cwLLRForULSCH));
-[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLRForULSCH, trBlkSize, targetCodeRate, rv, pusch.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks, [], ...
+[recLLR, rateRecoverInfo] = sixgr.phy.phycode.rateRecoverLDPC(cwLLRForULSCH, trBlkSize, targetCodeRate, rv, transport.Modulation, pusch.NumLayers, ldpcSeg.NumCodeBlocks, [], ...
     "CodingLayout", codingLayout);
 [recLLR, harqCombiningInfo] = sixgr.phy.harq.combineSoftLLR(recLLR, opt.HARQSoftBufferLLR, ...
     "CurrentLayout", codingLayout, "PriorLayout", opt.HARQSoftBufferLayout);
@@ -1315,11 +1360,40 @@ info.LLRScaling = llrCSIInfo;
 info.RateRecover = rateRecoverInfo;
 info.DecodedBitLineage = decodedBitLineage;
 info.StrictReceiverEvidence = strictEvidence;
+[rx,info]=localAnnotateResearchTransport(rx,info,researchTransport);
 if hasPHYGrant
     info.PHYGrant = phyGrant;
     info.PHYGrantDimensionContract = phyGrantContract;
 end
 
+end
+
+function [rx,info]=localAnnotateResearchTransport(rx,info,transport)
+if isempty(transport), return; end
+rx.Modulation=transport.Modulation;
+rx.ResearchTransport=transport;
+rx.PUSCHRole="native_geometry_only_not_transport_modulation";
+rx.StandardNR=false; info.StandardNR=false;
+rx.ExecutionBackend="experimental_Qm_production_PUSCH_receiver";
+info.ExecutionBackend=rx.ExecutionBackend;
+for name=["LLRScaleSource","DemapperNoiseVarianceConvention","LLRNoiseVarianceSource"]
+    if isfield(rx,name)
+        rx.(name)=replace(string(rx.(name)),"nrPUSCHDecode","experimental_explicit_Qm_demapper");
+    end
+end
+if isfield(info,'LLRScaling')
+    for name=["Source","NoiseVarianceConvention","Reason"]
+        if isfield(info.LLRScaling,name)
+            info.LLRScaling.(name)=replace(string(info.LLRScaling.(name)), ...
+                "nrPUSCHDecode","experimental_explicit_Qm_demapper");
+        end
+    end
+end
+if isfield(rx,'CodewordLayerMapping')
+    rx.CodewordLayerMapping.MappingEngine="explicit_Qm_scramble_symbol_modulate_layer_map";
+    rx.CodewordLayerMapping.InverseEngine="explicit_Qm_symbol_demodulate_layer_demap";
+    info.CodewordLayerMapping=rx.CodewordLayerMapping;
+end
 end
 
 function value = localCovarianceTraceMean(R)

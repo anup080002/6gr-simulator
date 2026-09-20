@@ -10683,6 +10683,75 @@ def _runtime_throughput_sinr_chart(existing, fetch_artifact_bytes, run_id):
     }
 
 
+class ConstellationPlaneUnavailableError(ValueError):
+    """The requested receiver plane was not captured by this run.
+
+    This is deliberately distinct from malformed or contradictory receiver
+    evidence. Direct callers still fail closed, while the full contract
+    materializer may publish an explicit unavailable-state artifact for the
+    one missing plane without relabeling samples from another plane.
+    """
+
+    def __init__(self, chart_name: str):
+        self.chart_name = str(chart_name)
+        super().__init__(
+            "Requested constellation plane has no valid samples; "
+            "do not substitute a different receiver plane"
+        )
+
+
+def _unavailable_constellation_plane_materialization(chart_name: str, run_id: Any) -> dict[str, Any]:
+    checked_sources = (
+        "air_interface/csv/dl_constellation_samples.csv|"
+        "air_interface/csv/ul_constellation_samples.csv|"
+        "air_interface/csv/dl_constellation_preview.csv|"
+        "air_interface/csv/ul_constellation_preview.csv|"
+        "reports/csv/equalized_constellations.csv|"
+        "analytics/csv/constellation_analytics.csv"
+    )
+    if chart_name == "pre-equalization constellation":
+        reason = (
+            "The run does not export raw pre-equalization I/Q sample clouds; "
+            "post-equalization receiver samples remain a different plane and were not substituted."
+        )
+    else:
+        reason = (
+            "No finite receiver samples with the exact requested constellation-plane provenance "
+            "are available; no constellation was synthesized or borrowed from another plane."
+        )
+    return {
+        "csv_bytes": _encode_csv(
+            ["run_id", "chart_name", "status", "reason", "checked_sources"],
+            [[run_id, chart_name, "unavailable_exact_reason", reason, checked_sources]],
+        ),
+        "img_bytes": _render_reason_svg(
+            chart_name,
+            "The requested receiver plane was not captured.",
+            [reason, "No proxy, fitted, synthetic, or cross-plane samples were generated."],
+        ),
+        "csv_status": "unavailable_exact_reason",
+        "image_status": "generated_unavailable_reason_svg",
+        "source_table_path": checked_sources,
+        "source_row_count": 0,
+        "source_mapping_status": "unavailable_exact_plane_not_captured",
+        "note": reason,
+    }
+
+
+def _materialize_specialized_chart_or_unavailable(
+    chart_name: str,
+    existing: dict[str, dict[str, Any]],
+    fetch_artifact_bytes: Callable[[int], bytes],
+    run_id: Any,
+) -> dict[str, Any] | None:
+    try:
+        return _specialized_chart_materialization(
+            chart_name, existing, fetch_artifact_bytes, run_id
+        )
+    except ConstellationPlaneUnavailableError as exc:
+        return _unavailable_constellation_plane_materialization(exc.chart_name, run_id)
+
+
 def _specialized_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -12108,7 +12177,7 @@ def _specialized_chart_materialization(
                     "source_row_count": len(csv_rows),
                     "note": "Full canonical captures take precedence over aliases/previews. Receiver samples are not payload-fitted, and post-equalized data cannot substitute for pre-equalization observations.",
                 }
-            raise ValueError("Requested constellation plane has no valid samples; do not substitute a different receiver plane")
+            raise ConstellationPlaneUnavailableError(chart_name)
         if chart_name == "EVM RMS":
             trial_sources = _all_available_rows(existing, fetch_artifact_bytes, ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"])
             named_values: list[tuple[str, float]] = []
@@ -12153,7 +12222,9 @@ def _specialized_chart_materialization(
                     "img_bytes": _render_svg_plot(chart_name, "Histogram of equalized-symbol distance to the nearest exported reference symbol.", dataset, [f"samples={len(values)}"]),
                     "csv_status": "specialized_runtime_symbol_error_dataset",
                     "image_status": "generated_specialized_runtime_summary_svg",
-                    "source_table_path": f"{dl_preview_path}|{ul_preview_path}",
+                    "source_table_path": "|".join(sorted({
+                        str(row["source_table_logical_path"]) for row in csv_rows
+                    })),
                     "source_row_count": len(csv_rows),
                     "note": "Decision-error histogram derived from preview equalized and reference symbols.",
                 }
@@ -13504,7 +13575,9 @@ def materialize_run_contract_artifacts(
                 )
                 continue
             special = _finalize_chart_materialization_result(
-                _specialized_chart_materialization(chart_name, source_lookup, fetch_artifact_bytes, run_id)
+                _materialize_specialized_chart_or_unavailable(
+                    chart_name, source_lookup, fetch_artifact_bytes, run_id
+                )
             )
             if special is not None:
                 chart_csv_bytes = bytes(special["csv_bytes"])

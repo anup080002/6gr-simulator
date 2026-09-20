@@ -45,6 +45,11 @@ assignment=struct('Direction',decoded.Direction,'DCIFormat',decoded.Format, ...
     'DMRSFrontLoadSymbols',f.dmrs_front_load_symbols,'NSCID',f.dmrs_sequence_initialization, ...
     'AntennaPortCodepoint',f.antenna_ports,'Fields',f, ...
     'Source',"received_dci_bits_plus_installed_connected_context",'ExecutionQualified',false);
+if isfield(profile,'StandardNR') && ~profile.StandardNR
+    assignment.StandardNR=false;
+    assignment.ResearchClass=profile.ResearchClass;
+    assignment.MCSSemantics="installed_experimental_codepoints_not_NR_MCS";
+end
 if decoded.Direction=="UL"
     assignment.TPMI=f.precoding_information_and_number_of_layers_tpmi;
     assignment.SRSResourceIndex=f.srs_resource_index0based;

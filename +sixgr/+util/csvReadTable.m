@@ -10,6 +10,19 @@ if ~(ischar(filePath) || (isstring(filePath) && isscalar(filePath)))
         "filePath must be char or string scalar.");
 end
 
+% Extremely long received-evidence rows can exceed MATLAB's type-inference
+% sample. Callers with a declared schema may supply ColumnTypes (a scalar
+% struct mapping column names to import types); no values are supplied.
+columnTypes = struct();
+for k = numel(varargin)-1:-2:1
+    if strcmpi(string(varargin{k}),"ColumnTypes")
+        columnTypes = varargin{k+1};
+        varargin(k:k+1) = [];
+    end
+end
+assert(isstruct(columnTypes) && isscalar(columnTypes), ...
+    'sixgr:util:csvReadTable:BadColumnTypes', ...
+    'ColumnTypes must be a scalar struct of declared column import types.');
 options = detectImportOptions(char(string(filePath)), ...
     "FileType", "text", ...
     "Delimiter", ",", ...
@@ -21,6 +34,16 @@ options = detectImportOptions(char(string(filePath)), ...
 options.VariableNamesLine = 1;
 options.DataLines = [2 Inf];
 names = string(options.VariableNames);
+declaredNames = string(fieldnames(columnTypes));
+assert(all(ismember(declaredNames,names)), ...
+    'sixgr:util:csvReadTable:MissingDeclaredColumn', ...
+    'CSV is missing a column required by ColumnTypes.');
+for name = declaredNames(:)'
+    options = setvartype(options,char(name),columnTypes.(name));
+end
+if ~isempty(declaredNames)
+    options.ImportErrorRule = 'error';
+end
 vectors = endsWith(names,"BitVector","IgnoreCase",true) | ...
     endsWith(names,"BitErrorVector","IgnoreCase",true) | ...
     endsWith(names,"BitsJSON","IgnoreCase",true);

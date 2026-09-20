@@ -60,6 +60,9 @@ classdef ReceivedULHARQState
                     'TargetCodeRate',prior.InitialTargetCodeRate, ...
                     'InitialIMCSPerCodeword',prior.InitialMCS};
                 if ~isempty(uci) && uci.hasPayload(), args=[args {'UCIPayload',uci}]; end
+                if isfield(allocation,'ResearchTransport')
+                    args=[args {'ResearchTransport',allocation.ResearchTransport}];
+                end
                 [tx,info]=sixgr.phy.ul.PUSCH_Tx(cfg,args{:});
                 assert(tx.TransportBlockSize==prior.TBSBits && ...
                     isequal(tx.TransportBlock,prior.TransportBlockBits) && ...

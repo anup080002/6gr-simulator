@@ -16,10 +16,10 @@ evidence=struct('Algorithm',policy.algorithm,'PolicySource',policy.Source, ...
 if count>2
     period=32;
 else
-    names=["pi/2-BPSK","QPSK","16QAM","64QAM","256QAM"];
-    orders=[1 2 4 6 8]; index=find(names==string(modulation));
+    names=["pi/2-BPSK","QPSK","16QAM","64QAM","256QAM","1024QAM"];
+    orders=[1 2 4 6 8 10]; index=find(names==string(modulation));
     assert(isscalar(index),'sixgr:pusch:UnsupportedShortUCIModulation', ...
-        'Short UCI requires a modulation supported by nrUCIEncode/nrUCIDecode.');
+        'Short UCI requires a native modulation or the explicit experimental Qm=10 codec.');
     period=orders(index);
     if count==2, period=3*period; end
 end
@@ -27,7 +27,7 @@ messages=zeros(2^count,count,'int8');
 for b=1:count, messages(:,b)=int8(bitget(uint16((0:2^count-1).'),b)); end
 codebook=zeros(period,2^count);
 for k=1:2^count
-    coded=nrUCIEncode(messages(k,:).',period,char(modulation));
+    coded=sixgr.phy.research.encodePUSCHUCI(messages(k,:).',period,modulation);
     % Public NR encoder placeholders in the descrambled decoder domain.
     coded(coded==-1)=1;
     repeat=find(coded==-2); coded(repeat)=coded(repeat-1);

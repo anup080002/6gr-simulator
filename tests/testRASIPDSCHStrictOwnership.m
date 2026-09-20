@@ -19,6 +19,16 @@ rar = sixgr.mac.ra.encodeMACRAR( ...
 [msg2Rx,rarRx] = sixgr.phy.ra.recoverMsg2RAR( ...
     msg2Tx.Waveform,cfg,ra,msg2Schedule,msg2Tx);
 localAssertStrict(msg2Tx.PDSCH,msg2Rx,"msg2_rar");
+% Explicit unit-channel spatial fixture, not shared RF qualification. Feed
+% all four branches to the receiver, without transmitter-weight combining.
+unitSpatialRow=[1 1i -1 -1i]/2;
+[msg2Diversity,rarDiversity]=sixgr.phy.ra.recoverMsg2RAR( ...
+    msg2Tx.Waveform*unitSpatialRow,cfg,ra,msg2Schedule,msg2Tx);
+localAssertStrict(msg2Tx.PDSCH,msg2Diversity,"msg2_rar");
+localAssertReceiveDiversity(msg2Diversity);
+% Absent RAR backoff is represented by NaN in both decoded structures.
+assert(isequal(msg2Diversity.TransportBlock,msg2Rx.TransportBlock) && ...
+    isequaln(rarDiversity,rarRx));
 localAssertCommonReference(msg2Tx.PDSCH.IntegrationBinding,0,"msg2_rar");
 localAssertCommonReference(msg2Rx.IntegrationBinding,0,"msg2_rar");
 badIntegration=msg2Tx.PDSCHIntegrationContext;
@@ -53,6 +63,13 @@ msg4 = sixgr.mac.ra.buildMsg4ContentionResolution( ...
 assert(logical(controlRx.CausalGrantDecodeOk));
 localAssertStrict(msg4Tx.PDSCH,msg4Rx, ...
     "msg4_contention_resolution");
+[controlDiversity,msg4Diversity,decodedDiversity]=sixgr.phy.ra.recoverMsg4Waveform( ...
+    msg4Tx.Waveform*unitSpatialRow,cfg,ra,msg4Schedule,msg4Tx);
+assert(controlDiversity.CausalGrantDecodeOk && ...
+    isequal(msg4Diversity.TransportBlock,msg4Rx.TransportBlock) && ...
+    isequaln(decodedDiversity,msg4Decoded));
+localAssertStrict(msg4Tx.PDSCH,msg4Diversity,"msg4_contention_resolution");
+localAssertReceiveDiversity(msg4Diversity);
 assert(string(msg4Decoded.ContentionIdentity) ...
     == string(msg3.ContentionIdentity));
 localAssertCommonReference(msg4Tx.PDSCH.IntegrationBinding,0,"msg4_contention_resolution");
@@ -93,6 +110,15 @@ assert(string(sibTx.PDSCHControlEvent.FieldProvenance.DMRSConfiguration) ...
 localAssertSIBSpatialMapping(sibCfg);
 
 ok = true;
+end
+
+function localAssertReceiveDiversity(rx)
+assert(string(rx.ReceiverConfig.ChannelModel)=="AWGN");
+assert(rx.ChannelEstimationMode=="dmrs_nr_channel_estimate_per_resource" && ...
+    size(rx.OFDMGrid,3)==4 && size(rx.EffectiveLayerChannelEstimate,3)==4 && ...
+    size(rx.EffectiveLayerChannelEstimate,4)==1);
+assert(~rx.ChannelEstimationInfo.EstimatorUsesTrueChannel && ...
+    isempty(rx.ChannelGainPerPhysicalPort));
 end
 
 function localAssertSIBSpatialMapping(cfg)

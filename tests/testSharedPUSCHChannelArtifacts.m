@@ -1,4 +1,4 @@
-function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion)
+function [ok,state]=testSharedPUSCHChannelArtifacts(mode,withCoincidentSRS,deferUCIDelivery,withCSI,twoPortUL,receivedAuthority,withHARQ,outputRoot,configPath,independentEmptyUCI,independentSharedHARQ,forgetCSIProducer,unconsumedULCommand,pucchOnlyCompletion,expectedULPorts)
 % Actual shared SRS -> received UL DCI -> coded PUSCH with HARQ-ACK UCI.
 % Initial TAG remains an explicit component input. In a configured-Es/N0
 % fixture, geometry/pathloss are deliberately not applicable. The two UCI bits
@@ -18,6 +18,8 @@ if nargin<11, independentSharedHARQ=false; end
 if nargin<12, forgetCSIProducer=false; end
 if nargin<13, unconsumedULCommand=false; end
 if nargin<14, pucchOnlyCompletion=false; end
+if nargin<15, expectedULPorts=2; end
+assert(isscalar(expectedULPorts) && any(expectedULPorts==[2 4]));
 assert(~pucchOnlyCompletion || (independentSharedHARQ && withCSI && ...
     ~unconsumedULCommand && ~forgetCSIProducer));
 assert(~unconsumedULCommand || (independentSharedHARQ && ~forgetCSIProducer));
@@ -63,7 +65,8 @@ if independentCompletion && ~withCSI
     end
 end
 if twoPortUL
-    assert(cfg.phy.srs.nPorts==2 && cfg.phy.pusch.NumAntennaPorts==2 && cfg.phy.pusch.numLayers==1);
+    assert(cfg.phy.srs.nPorts==expectedULPorts && ...
+        cfg.phy.pusch.NumAntennaPorts==expectedULPorts && cfg.phy.pusch.numLayers==1);
 end
 if (withCSI || withHARQ) && ~independentCompletion, localSaveScenarioEvidence(s,cfg,root); end
 if independentCompletion
@@ -257,7 +260,8 @@ if unconsumedULCommand
         state.ULHarq.Stats.Tx==0 && isempty(state.ULHarq.getDeliveryLedger()) && ...
         all(state.PendingFeedbackTable.Processed) && ~any(state.PUCCHGrantTraceTable.MultiplexedOnPUSCH) && ...
         all(state.PUCCHGrantTraceTable.Status=="TX_ONLY") && ...
-        ~any(state.ControlTrials.PUCCH.Slot==10) && height(state.SharedGNBUCIHARQTable)==1);
+        localNoPUCCHTrialAtSlot(state.ControlTrials.PUCCH,10) && ...
+        height(state.SharedGNBUCIHARQTable)==1);
     if withCSI
         reports=state.PendingCSITable;
         received=state.SharedGNBCSIReportTable;
@@ -332,6 +336,9 @@ srsCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(srsCfg,srsSlot);
 srsCfg.lls6g.userContext.RuntimeSlotStartTime_s=(srsSlot-1)*sixgr.time.slotDurationSec(cfg);
 args={'SlotIndex',srsSlot,'SNR_dB',cfg.channel.snr_dB,'TimingAdvanceSamples',0};
 prepared=sixgr.link.runSRSChannelEstimation(srsCfg,args{:},'PrepareOnly',true);
+assert(prepared.PreparedTransmission.NumReceiveAntennas== ...
+    srsCfg.lls6g.userContext.RuntimeServingBSAntenna.NumElements, ...
+    'SRS reception must bind physical gNB branches, not logical CSI port count.');
 state.SharedWaveformStream.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
 end
 
@@ -492,7 +499,11 @@ for item=items
             'TransmitterObservation',tx,'Replay',replay,'ScoringChannelReferences',{refs}, ...
             'ChannelState',owner.directionalChannelState(1,'UL'));
         out=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
-        assert(out.Ok,'test:SharedSRSFailed','Actual SRS receiver must pass before a sounded grant.');
+        if ~out.Ok
+            save(fullfile(state.TestRoot,'srs_receiver_failure.mat'),'out','input','c','-v7.3');
+        end
+        assert(out.Ok,'test:SharedSRSFailed', ...
+            'Actual SRS receiver must pass before a sounded grant: %s; %s',out.FailureReason,out.Notes);
         state.TestSRS=struct('RI',out.EstimatedRI,'TPMI',out.EstimatedTPMI, ...
             'Slot',double(c.Arguments{2}), ...
             'ID',sixgr.phy.waveform.WaveformHash.numeric(receiver.readComplete()), ...
@@ -753,7 +764,9 @@ for item=items
         assert(out.TrialTable.TrueTimingOffset_samples==expectedTiming && ...
             abs(out.TrialTable.ResidualTimingError_PostCorrection_samples)<=1, ...
             'The practical PUSCH timing estimate must reconcile against receiver-arrival truth within one sample.');
-        verifyReceivedConstellationCapture(out,job.Cfg,item.UE);
+        verifyReceivedConstellationCapture(out,job.Cfg,item.UE, ...
+            fullfile(state.TestRoot,'received_constellation', ...
+            sprintf('ul_slot_%d',job.StartSlotIndex)));
         assert(string(out.TrialTable.NoiseVarSource)=="runtime_channel_estimate", ...
             'Shared PUSCH must estimate disturbance from received reference REs, not injected-noise metadata.');
         hasUCI=job.ExpectedUCIPayload.hasPayload();
@@ -923,7 +936,14 @@ for item=items
                 'A geometry-authority PUSCH row must retain distinct executed horizontal/slant ranges.');
         end
         sixgr.util.csvWriteTable(path,row,'PreserveSchema',true);
-        persisted=sixgr.util.csvReadTable(path,'TextType','string');
+        columnTypes=struct();
+        for name=string(row.Properties.VariableNames)
+            value=row.(name);
+            if isnumeric(value) || islogical(value) || isstring(value)
+                columnTypes.(name)=class(value);
+            end
+        end
+        persisted=sixgr.util.csvReadTable(path,'TextType','string','ColumnTypes',columnTypes);
         assert(string(persisted.AllocationCarrierPowerMeasurementJSON)==row.AllocationCarrierPowerMeasurementJSON, ...
             'Actual received carrier power scope and units must survive CSV unchanged.');
         if isfield(job.Cfg.phy.pusch,'receivedDCIAssignment')
@@ -1267,6 +1287,13 @@ sixgr.util.jsonWrite(fullfile(meta,'environment_summary.json'),struct( ...
     'MATLABVersion',version,'Platform',computer,'Toolboxes',ver,'GitHash',strtrim(revision), ...
     'WorktreeStatus',changes,'Scope',scope));
 sixgr.util.jsonWrite(fullfile(meta,'seeds.json'),struct('RunSeed',cfg.run.seed));
+end
+
+function tf=localNoPUCCHTrialAtSlot(trials,slot)
+% An unused PUCCH producer is represented by a genuinely empty table. Do
+% not require a fabricated Slot column merely to prove that no trial ran.
+tf=isempty(trials) || ...
+    (~ismember('Slot',trials.Properties.VariableNames) || ~any(trials.Slot==slot));
 end
 
 function localReject(fn,id)

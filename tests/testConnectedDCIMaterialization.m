@@ -55,6 +55,13 @@ for singleEntry=[false true]
         diagnostic=info; diagnostic.ExpectedDCIBits=int8(zeros(3,1));
         again=sixgr.phy.pdcch.materializeConnectedDCI(rx,diagnostic,changed);
         assert(again.AssignmentDigest==a.AssignmentDigest);
+        for name={'pdsch','pusch'}
+            stale=selected; root=name{1}; replacement="qam256_table2";
+            if string(stale.phy.(root).mcsTable)==replacement, replacement="qam64_table1"; end
+            stale.phy.(root).mcsTable=char(replacement);
+            localReject(@()sixgr.phy.pdcch.materializeConnectedDCI(rx,info,stale), ...
+                'sixgr:phy:pdcch:stale_bwp_context');
+        end
         corrupted=rx; corrupted.DecodedDCI.Fields.dmrs_sequence_initialization=0;
         localReject(@()sixgr.phy.pdcch.materializeConnectedDCI(corrupted,info,selected), ...
             'sixgr:phy:pdcch:ReceivedSemanticMismatch');

@@ -70,7 +70,17 @@ classdef PreparedUplinkControlTransmission
             end
             obj.EndSampleExclusive=obj.StartSample+size(tx.Waveform,1);
             obj.NumPhysicalTransmitAntennas=size(array.PortToElementMatrix,1);
-            obj.NumReceiveAntennas=sixgr.phy.ul.resolveULDirectionalAntennaCount(rxCfg,'rx',size(tx.Waveform,2));
+            % Shared pre/post-RF captures are physical-element samples before
+            % receive combining. Runtime logical ports (e.g. two CSI ports
+            % on four elements) must not shrink the expected capture width.
+            rxArray=sixgr.util.structGet(rxCfg, ...
+                'lls6g.userContext.RuntimeServingBSAntenna',struct());
+            if isempty(fieldnames(rxArray))
+                rxArray=sixgr.rf.AntennaArrayFactory.build(rxCfg,'bs');
+            end
+            validateattributes(rxArray.NumElements,{'numeric'}, ...
+                {'scalar','integer','positive','finite'});
+            obj.NumReceiveAntennas=double(rxArray.NumElements);
         end
 
         function validateReceived(obj,channel,cfg,options)
@@ -158,7 +168,12 @@ classdef PreparedUplinkControlTransmission
             end
             assert(buffer.StartSample==first && buffer.SampleRateHz==obj.SampleRateHz && ...
                 buffer.NumReceiveAntennas==antennas && intervalOK, ...
-                'sixgr:link:ULControlObservationMismatch','Observation clock, coverage and physical branches must match.');
+                'sixgr:link:ULControlObservationMismatch', ...
+                ['%s %s observation mismatch: start actual/expected=%g/%g, ' ...
+                'rate=%g/%g, branches=%g/%g, end=%g, TX end=%g, RX minimum end=%g.'], ...
+                obj.Channel,string(plane),buffer.StartSample,first, ...
+                buffer.SampleRateHz,obj.SampleRateHz,buffer.NumReceiveAntennas,antennas, ...
+                buffer.EndSampleExclusive,obj.EndSampleExclusive,obj.ReceiveEndSampleExclusive);
             samples=buffer.readComplete();
         end
 

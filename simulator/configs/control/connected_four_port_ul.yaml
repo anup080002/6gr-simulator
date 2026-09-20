@@ -1,0 +1,26 @@
+# Ordinary four-port CP-OFDM UL signaling; no PTRS association shortcut.
+# This fragment enables capability, not a claim that SRS or feedback executed.
+control:
+  ul_precoding:
+    num_ports: 4
+    max_rank: 4
+    codebook_subset: fullyAndPartialAndNonCoherent
+    transmission_scheme: codebook
+    full_power_mode: not_configured
+pusch:
+  num_antenna_ports: 4
+reference_signals:
+  ptrs_enabled: false
+  ptrs_cpe_correction_enabled: false
+  pusch_dmrs_ports: 4
+  pusch_dmrs_num_cdm_groups_without_data: 2
+  pusch_dmrs_config_type: 1
+  pusch_dmrs_max_length: 1
+  pusch_dmrs:
+    port_set: [0, 1, 2, 3]
+  srs_ports: 4
+  srs:
+    num_ports: 4
+    port_set: [0, 1, 2, 3]
+mimo:
+  max_ul_layers: 4

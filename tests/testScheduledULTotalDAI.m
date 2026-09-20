@@ -16,6 +16,13 @@ assert(grant.PHYGrant.IsFrozen && grant.TimingDecision.Valid);
 cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,grant.ControlAbsoluteSlot+1);
 dataSlot=grant.TimingDecision.DataAbsoluteSlot;
 assert(grant.ControlAbsoluteSlot==8 && dataSlot==9);
+% The retained allocation supplies real frozen PHY geometry, but its DCI
+% context predates the installed policy. Recreate the actually transmitted
+% control word through the production scheduler before testing total DAI;
+% never weaken the runtime's installed-context guard.
+scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','UL');
+grant.TPMI=grant.PHYGrant.PrecodingState.TPMI;
+grant.DCI=scheduler.buildDCIBitfield(grant);
 mkdir(outputRoot); rows=table();
 for count=0:8
     ledger=struct();

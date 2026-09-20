@@ -11,8 +11,7 @@ cases=0;
 for n=1:8
     retained=load(fullfile('docs','lls','evidence_20260913','scheduled_ul_dai_03', ...
         sprintf('scheduled_ul_dai_%d.mat',n)),'fixed');
-    grant=retained.fixed;
-    current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,grant.ControlAbsoluteSlot+1);
+    [grant,current]=localInstallCurrentULControl(cfg,retained.fixed);
     base=localBase(grant);
     before=grant;
     mapping=sixgr.truth.bindScheduledPUSCHHARQMapping(base,current,grant);
@@ -89,8 +88,7 @@ function localEmptyObligation(cfg)
 % not a newly executed UL waveform or a measured CSI report.
 retained=load(fullfile('docs','lls','evidence_20260913','scheduled_ul_dai_03', ...
     'scheduled_ul_dai_0.mat'),'fixed');
-grant=retained.fixed;
-current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,grant.ControlAbsoluteSlot+1);
+[grant,current]=localInstallCurrentULControl(cfg,retained.fixed);
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),3);
 state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
@@ -125,11 +123,12 @@ localReject(@()sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
 for n=[1 4 8]
     nonempty=load(fullfile('docs','lls','evidence_20260913','scheduled_ul_dai_03', ...
         sprintf('scheduled_ul_dai_%d.mat',n)),'fixed');
-    other=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,nonempty.fixed.ControlAbsoluteSlot+1);
+    [otherGrant,other]=localInstallCurrentULControl(cfg,nonempty.fixed);
     localReject(@()sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
-        state,other,nonempty.fixed,"declared_empty_ul_observation",absent), ...
+        state,other,otherGrant,"declared_empty_ul_observation",absent), ...
         'sixgr:truth:NonemptyScheduledPUSCHHARQAuthority');
 end
+
 bad=grant; bad.ULTotalDAIAuthority.Digest="changed";
 localReject(@()sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
     state,current,bad,"declared_empty_ul_observation",absent), ...
@@ -159,6 +158,21 @@ localReject(@()sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
     'sixgr:pusch:CSIReceiveConfigurationMismatch');
 assert(isempty(owner.DataTransmissions) && state.DLHarq.Stats.Tx==0 && ...
     state.DLHarq.Stats.Ack==0 && state.DLHarq.Stats.Nack==0);
+end
+
+function [grant,current]=localInstallCurrentULControl(cfg,grant)
+% The archived grants retain physical allocation and DAI-ledger evidence.
+% Re-encode their control fields using the currently installed context,
+% exactly as production does before PDCCH waveform preparation.
+current=sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+    cfg,double(grant.TimingDecision.ControlAbsoluteSlot)+1);
+scheduler=sixgr.l2.mac.SchedulerPF(current,'Direction','UL');
+grant.TPMI=grant.PHYGrant.PrecodingState.TPMI;
+grant.DCI=scheduler.buildDCIBitfield(grant);
+a=grant.ULTotalDAIAuthority;
+ledger=struct('Version',1,'LastControlAbsoluteSlot',a.ControlAbsoluteSlot, ...
+    'Entries',a.ScheduledDLAssignments);
+grant=sixgr.truth.prepareScheduledULDAI(ledger,current,grant);
 end
 
 function base=localBase(grant)

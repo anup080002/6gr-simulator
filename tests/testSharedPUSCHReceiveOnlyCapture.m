@@ -14,6 +14,15 @@ cfg=sixgr.lls6g.buildInternalConfig(s,outputRoot);
 retained=load(fullfile(root,'docs','lls','evidence_20260913','scheduled_ul_dai_03', ...
     'scheduled_ul_dai_0.mat'),'fixed');
 grant=retained.fixed;
+% Retain the captured PHY allocation while scheduling a current DCI 0_1
+% under this fixture's installed BWP/context. A stale retained control word
+% is not valid receiver authority.
+cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+    cfg,double(grant.TimingDecision.ControlAbsoluteSlot)+1);
+scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','UL');
+grant.TPMI=grant.PHYGrant.PrecodingState.TPMI;
+grant.DCI=scheduler.buildDCIBitfield(grant);
+grant=sixgr.truth.prepareScheduledULDAI(struct(),cfg,grant);
 previousRNG=rng; cleanup=onCleanup(@()rng(previousRNG)); %#ok<NASGU>
 rng(double(cfg.run.seed),'twister');
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');

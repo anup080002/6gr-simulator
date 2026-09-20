@@ -1,4 +1,4 @@
-function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,evidenceRoot,feedbackScenarioPath)
+function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,evidenceRoot,feedbackScenarioPath,retainLaterPilot)
 % Actual PUCCH IQ/CDL/RF/thermal-noise reception and delayed HARQ reducer.
 % Source DL TB/ACK now come from an isolated coded PDSCH connector fixture;
 % that DL is not claimed to pass through this shared CDL owner. TAG and
@@ -6,6 +6,7 @@ function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,e
 % the pilot-free PUCCH clock must come from that actual earlier SRS receiver.
 if nargin<1, includeLateFeedback=false; end
 if nargin<2, mode="TDD"; end
+if nargin<6, retainLaterPilot=false; end
 assert(any(string(mode)==["TDD","FDD"]),'test:BadDuplexFixture','Use an explicit duplex fixture.');
 lateCount=double(includeLateFeedback);
 validateattributes(lateCount,{'numeric'},{'scalar','integer','>=',0,'<=',2});
@@ -111,9 +112,20 @@ srsCfg.lls6g.userContext.RuntimeSlotStartTime_s=4e-3;
 args={'SlotIndex',5,'SNR_dB',12,'TimingAdvanceSamples',0};
 prepared=sixgr.link.runSRSChannelEstimation(srsCfg,args{:},'PrepareOnly',true);
 owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
-for slot=1:10
+for slot=1:(10+double(retainLaterPilot))
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if retainLaterPilot && slot==9
+        % Prepare before the timing-advanced slot-10 waveform starts.
+        pilotSlot=slot+1;
+        [laterCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
+        laterCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(laterCfg,pilotSlot);
+        laterCfg.lls6g.userContext.RuntimeSlotStartTime_s= ...
+            sixgr.phy.frame.slotStartSample(carrier,pilotSlot-1,fs)/fs;
+        laterArgs={'SlotIndex',pilotSlot,'SNR_dB',12,'TimingAdvanceSamples',0};
+        later=sixgr.link.runSRSChannelEstimation(laterCfg,laterArgs{:},'PrepareOnly',true);
+        owner.queueUplinkControl(1,later.PreparedTransmission,struct('Config',laterCfg,'Arguments',{laterArgs}));
+    end
     if slot==5
         assert(row.DataDecodeAvailableAtSample<=owner.Events.NextSampleIndex);
         state.PendingFeedbackTable=struct2table(row);
@@ -226,6 +238,28 @@ assert(numel(owner.PUCCHTransmissions)==1 && numel(state.SharedPUCCHTXLedger)==1
 assert(isequaln(state.SharedPUCCHTXLedger,state.TestPUCCHTXLedgerBeforeRX), ...
     'The gNB receiver outcome must not manufacture or rewrite UE transmission evidence.');
 assert(state.TestSRSArtifactVerified,'Actual received SRS must publish independently verifiable channel arrays.');
+if retainLaterPilot
+    % Replay earlier actual PUCCH after a second actual SRS completed.
+    % This isolates callback ordering without fabricating pilot clocks.
+    item=state.TestReceivedPUCCH;
+    [~,~,~,~,capture]=sixgr.truth.sharedObservationEvidence(item.Planes,item.Context.Prepared);
+    history=state.ReceivedULTimingHistory{1};
+    assert(numel(history)==2 && history{2}.AvailableAtSample>capture.StartSample);
+    prior=sixgr.truth.selectReceivedULTimingReference(state,1,capture.StartSample);
+    assert(isequaln(prior,history{1}));
+    [actual,timing]=prior.align(item.Context.Prepared,capture);
+    [expected,expectedTiming]=history{1}.align(item.Context.Prepared,capture);
+    assert(isequal(actual,expected) && isequaln(timing,expectedTiming));
+    localReject(@()history{2}.align(item.Context.Prepared,capture), ...
+        'sixgr:phy:sync:FutureULTimingReference');
+    assert(isempty(sixgr.truth.selectReceivedULTimingReference(state,1,history{1}.AvailableAtSample-1)));
+    assert(isequaln(sixgr.truth.selectReceivedULTimingReference(state,1,history{2}.AvailableAtSample),history{2}));
+    localReject(@()sixgr.truth.storeReceivedULTimingReference(state,1,history{1}), ...
+        'sixgr:truth:OutOfOrderULTimingReference');
+    repeated=sixgr.truth.storeReceivedULTimingReference(state,1,history{2});
+    assert(isequaln(repeated.ReceivedULTimingHistory,state.ReceivedULTimingHistory));
+    fprintf('RECEIVED_UL_TIMING_HISTORY_PASS actual_SRS=2 earlier_PUCCH_replay=1 future_guard_preserved=1\n');
+end
 ok=true; disp('SHARED_PUCCH_FEEDBACK_CLOCK_PASS');
 end
 
@@ -245,7 +279,11 @@ for item=events
             'ChannelState',state.SharedWaveformStream.directionalChannelState(1,'UL'));
         output=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
         if isfield(state,'TestPhysicalEvidenceRoot')
-            save(fullfile(state.TestPhysicalEvidenceRoot,'received_srs.mat'),'output','input','p');
+            name='received_srs.mat';
+            if isfield(state,'ReceivedULTimingHistory') && ~isempty(state.ReceivedULTimingHistory{1})
+                name=sprintf('received_srs_%d.mat',numel(state.ReceivedULTimingHistory{1})+1);
+            end
+            save(fullfile(state.TestPhysicalEvidenceRoot,name),'output','input','p');
         end
         if ~output.Ok
             diagnosticFile=string(tempname)+"_shared_srs_failure.mat";
@@ -281,13 +319,14 @@ for item=events
         catch clockFailure
             assert(strcmp(clockFailure.identifier,'sixgr:phy:sync:ULTimingOutsideCapture'));
         end
-        state.ReceivedULTimingReferences={measuredClock};
+        state=sixgr.truth.storeReceivedULTimingReference(state,1,measuredClock);
         % Persist the actual uplink captures, then independently reload both
         % the primary CSV binding and coefficient MAT/segment CSV. This is
         % not a reconstructed H, configured profile substitute, or extra
         % channel execution used to manufacture an estimator reference.
         root=tempname; mkdir(root);
-        row=table(5,"SRS","UL",'VariableNames',{'Slot','Channel','Direction'});
+        assert(strcmp(c.Arguments{1},'SlotIndex'));
+        row=table(c.Arguments{2},"SRS","UL",'VariableNames',{'Slot','Channel','Direction'});
         row=sixgr.truth.exportSharedChannelObservation(root,row,item.Planes,p,c.DesiredReferencePlane);
         primary=fullfile(root,'received_srs_channel.csv');
         sixgr.util.csvWriteTable(primary,row,'PreserveSchema',true);
@@ -372,7 +411,7 @@ for item=events
             height(item.Context.FeedbackRows),height(state.PUCCHGrantTraceTable));
         assert(all(~state.PendingFeedbackTable.Processed),'No feedback may be applied before actual RX completion.');
         if height(state.PendingFeedbackTable)<=2
-            missing=rmfield(state,'ReceivedULTimingReferences');
+            missing=rmfield(state,{'ReceivedULTimingReferences','ReceivedULTimingHistory'});
             localReject(@()sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(missing,item), ...
                 'sixgr:phy:pucch:PUCCHTimingReferenceRequired');
         end
@@ -387,6 +426,7 @@ for item=events
         end
         assert(state.SharedLastPUCCHAvailableAtSample==state.SharedWaveformStream.Events.NextSampleIndex);
         state.TestPUCCHReceived=true;
+        state.TestReceivedPUCCH=item;
     else
         error('test:UnexpectedSharedEvent','Unexpected event %s.',item.Kind);
     end

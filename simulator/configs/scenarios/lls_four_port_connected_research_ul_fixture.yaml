@@ -1,0 +1,11 @@
+inherits:
+  - ./lls_four_port_connected_ul_fixture.yaml
+  - ../coding/research_connected_ul_mcs.yaml
+  - ../channels/shared_identity_awgn.yaml
+  - ../mimo/research_identity_4x4.yaml
+meta:
+  scenario_id: lls_four_port_connected_research_ul_fixture
+  description: Experimental decoded-control UL transport fixture, not full-feedback throughput qualification.
+  research_class: optional_research_experiment
+simulation:
+  snr_db: 30

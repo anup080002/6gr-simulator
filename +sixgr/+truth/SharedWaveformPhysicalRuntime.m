@@ -53,7 +53,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                 carrier=sixgr.phy.grid.makeCarrier(cfg);
                 calibration=sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier);
                 requested=double(sixgr.truth.resolveWaveformOperatingPointMetadata(cfg));
-                signalEnergy=1;
+                [signalEnergy,referencePolicy]=sixgr.link.resolveAWGNReferenceEnergy(cfg);
                 gridVariance=signalEnergy*10^(-requested/10);
                 variance=gridVariance/double(calibration.SampleToGridNoiseVarianceGain);
                 ledger.ConfiguredSNR_dB=requested;
@@ -63,8 +63,9 @@ classdef SharedWaveformPhysicalRuntime < handle
                 ledger.SampleNoiseVariance=variance;
                 ledger.SampleToGridNoiseVarianceGain=double(calibration.SampleToGridNoiseVarianceGain);
                 ledger.SNRReferencePlane='occupied_resource_grid_re_pre_equalization';
-                ledger.SharedNoiseCalibrationSource= ...
-                    'fixed_once_from_unit_occupied_re_energy_and_canonical_ofdm_noise_transform';
+                ledger.SharedNoiseCalibrationSource=referencePolicy.CalibrationSource;
+                ledger.AWGNReferenceEnergySource=referencePolicy.EnergySource;
+                ledger.NoiseVarianceSource=referencePolicy.NoiseVarianceSource;
                 ledger.ThermalSampleNoiseBandwidth_Hz=NaN;
                 ledger.ThermalNoisePSD_mWPerHz=NaN;
             else
@@ -134,7 +135,10 @@ classdef SharedWaveformPhysicalRuntime < handle
                 error('WAVEFORM:TDDRetargetMustReverseEndpoints','Retarget requires the opposite link direction.');
             end
             state=link.State;
-            if ~sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg) || ...
+            identity=sixgr.channel.IdentityAWGNRuntime.enabled(cfg) && ...
+                sixgr.channel.IdentityAWGNRuntime.isState(state) && ...
+                sixgr.phy.frame.resolveDuplexMode(cfg)=="TDD";
+            if (~identity && ~sixgr.channel.ChannelFactory.supportsDynamicRuntimeTDDReciprocity(cfg)) || ...
                     ~logical(sixgr.util.structGet(state,'Meta.RuntimeTDDReciprocityExact',false))
                 error('WAVEFORM:DynamicReciprocalStateRequired','Retarget only a declared shared dynamic reciprocal channel.');
             end
@@ -150,6 +154,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                 error('WAVEFORM:TDDRetargetEndpointMismatch','Reverse the physical TX/RX layout and direction.');
             end
             required=double(state.ChannelPadSamples)+1;
+            if identity, required=0; end % No FIR memory in the executed y=x operator.
             if link.TrailingIdleSamples<required
                 error('WAVEFORM:TDDChannelTailNotConsumed', ...
                     'Before direction reversal consume at least %.0f actual zero-input samples; observed %.0f.', ...
@@ -166,6 +171,9 @@ classdef SharedWaveformPhysicalRuntime < handle
             try
                 state.Direction=char(direction);
                 state.LinkKey=char(nextKey);
+                if identity
+                    state.Meta.RuntimeTDDReciprocityDirection=direction;
+                end
                 info=struct('OFDM',struct('SampleRate',obj.SampleRateHz));
                 state=sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
                     state,cfg,complex(zeros(1,obj.Transmitters(tx).RF.NumAntennas)),info);
@@ -320,8 +328,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                     replay.InjectedNoiseVarianceDomain='receiver_sample_waveform_pre_composite_front_end';
                     if lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)))== ...
                             "standalone_awgn_snr_argument"
-                        replay.NoiseVarianceSource= ...
-                            'fixed_unit_occupied_re_esn0_canonical_ofdm_transform';
+                        replay.NoiseVarianceSource=node.NoiseReplay.NoiseVarianceSource;
                     else
                         replay.NoiseVarianceSource= ...
                             'receiver_thermal_noise_plus_nf_absolute_sqrt_mW';
@@ -335,6 +342,8 @@ classdef SharedWaveformPhysicalRuntime < handle
                         node.NoiseReplay,'RequestedAWGNReferenceSNR_dB',NaN));
                     replay.SignalEnergyPerOccupiedRE=double(sixgr.util.structGet( ...
                         node.NoiseReplay,'SignalEnergyPerOccupiedRE',NaN));
+                    replay.AWGNReferenceEnergySource=string(sixgr.util.structGet( ...
+                        node.NoiseReplay,'AWGNReferenceEnergySource','not_applicable_thermal_noise'));
                     replay.GridNoiseVariance=double(sixgr.util.structGet( ...
                         node.NoiseReplay,'GridNoiseVariance',NaN));
                     replay.ReferenceAWGNGridNoiseVariance=replay.GridNoiseVariance;
@@ -418,6 +427,11 @@ classdef SharedWaveformPhysicalRuntime < handle
             [~,ledger]=sixgr.link.applyWaveformImpairments( ...
                 complex(zeros(1,obj.Receivers(rx).RF.NumAntennas)),cfg,obj.SampleRateHz,'ApplyRFChain',false);
             validateattributes(ledger.AppliedLargeScaleAmplitudeGain,{'numeric'},{'real','scalar','finite','positive'});
+            if sixgr.channel.IdentityAWGNRuntime.enabled(cfg)
+                assert(ledger.AppliedLargeScaleAmplitudeGain==1, ...
+                    'WAVEFORM:IdentityAWGNUnexpectedLoss', ...
+                    'The explicit identity-AWGN lab channel must not acquire hidden large-scale gain or loss.');
+            end
             % Retain the geometry supplied to this executed link, not a
             % later report-time config snapshot. These are physical-model
             % inputs, not receiver-estimated ranges.

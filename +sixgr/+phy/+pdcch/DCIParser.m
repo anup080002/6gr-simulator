@@ -64,6 +64,9 @@ classdef DCIParser
                 "Schema", schema, ...
                 "SizeDetails", alignment.Selected, ...
                 "Alignment", alignment);
+            if dci.Direction=="UL" && isfield(context.Data,'ExperimentalULMCSTable')
+                dci.StandardProfile="experimental_mcs_with_nr_dci_layout";
+            end
         end
 
         function derived = resolveSemantics(fields, context)
@@ -78,6 +81,10 @@ classdef DCIParser
             end
             fmt = string(data.DCIFormat);
             if startsWith(fmt, "0_")
+                if isfield(data,'ExperimentalULMCSTable')
+                    assert(any(data.ExperimentalULMCSTable.Rows(:,1)==fields.mcs), ...
+                        'sixgr:phy:pdcch:field_out_of_range','Unconfigured experimental MCS codepoint.');
+                end
                 nBWP = double(data.ActiveULBWPSize);
                 allocations = data.ULTimeDomainAllocations;
                 direction = "UL";

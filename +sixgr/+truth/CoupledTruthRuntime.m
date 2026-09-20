@@ -1114,16 +1114,33 @@ methods(Static)
                 'ActiveULBWP',id.ULBWPID,'FeedbackForDirection',"DL");
             key=sixgr.truth.CoupledTruthRuntime.sharedPUCCHOccasionKey(row);
             if any(armed==key), continue; end
-            [receiveCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfg,state,ue,'UL');
-            receiveCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(receiveCfg,slot);
-            carrier=sixgr.phy.grid.makeCarrier(receiveCfg); fs=owner.SampleRateHz;
-            begin=sixgr.phy.frame.slotStartSample(carrier,slot-1,fs);
-            stop=sixgr.phy.frame.slotStartSample(carrier,slot,fs);
-            timing=sixgr.link.resolveConnectedULTransmissionTiming(receiveCfg,begin/fs,fs,stop-begin);
+            [receiveCfg,timing]=sixgr.truth.CoupledTruthRuntime.configuredCSIReceiveTiming(state,cfg,ue,slot);
+            if isempty(timing), continue; end
             owner.queuePUCCHPreparation(ue,timing,receiveCfg,struct('Slot',slot,'Key',key));
             armed(end+1,1)=key; %#ok<AGROW>
         end
         state.SharedArmedPUCCHOccasions=armed;
+    end
+
+    function [receiveCfg,timing]=configuredCSIReceiveTiming(state,cfg,ue,slot)
+        [receiveCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContextImpl(cfg,state,ue,'UL');
+        receiveCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(receiveCfg,slot);
+        carrier=sixgr.phy.grid.makeCarrier(receiveCfg); fs=state.SharedWaveformStream.SampleRateHz;
+        begin=sixgr.phy.frame.slotStartSample(carrier,slot-1,fs);
+        stop=sixgr.phy.frame.slotStartSample(carrier,slot,fs);
+        try
+            timing=sixgr.link.resolveConnectedULTransmissionTiming(receiveCfg,begin/fs,fs,stop-begin);
+        catch err
+            % A received RAR may be installed before its application time.
+            % Keep the configured calendar but do not schedule a connected
+            % CSI contribution outside the TAG lifetime. Future *received*
+            % authority, malformed timing and existing grants still fail.
+            if ~any(string(err.identifier)==["sixgr:link:ConnectedULBeforeTAApplication", ...
+                    "sixgr:link:ConnectedULAfterTAExpiry"])
+                rethrow(err);
+            end
+            timing=[];
+        end
     end
 
     function state=refreshPeriodicCSIReportsRuntime(state)
@@ -1190,6 +1207,12 @@ methods(Static)
                             if usable && (isempty(selected) || candidate.Slot>=selected.Slot)
                                 selected=candidate;
                             end
+                        end
+                    end
+                    if shared && ~isempty(selected)
+                        [~,timing]=sixgr.truth.CoupledTruthRuntime.configuredCSIReceiveTiming(state,cfg,ue,slot);
+                        if isempty(timing)
+                            selected=table(); ready=false;
                         end
                     end
                     if ~isempty(selected)
@@ -1484,9 +1507,9 @@ methods(Static)
             'Source',"shared_physical_owner_received_observation", ...
             'RuntimeChannelPhysicalTxElements',channel.NumTxAnt, ...
             'RuntimeChannelNumRxAntennas',channel.NumRxAnt));
-        references=sixgr.util.structGet(state,'ReceivedULTimingReferences',{});
-        if numel(references)>=item.UE && ~isempty(references{item.UE})
-            c.ReceivedContext.ReceivedULTimingReference=references{item.UE};
+        prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,receiver.StartSample);
+        if ~isempty(prior)
+            c.ReceivedContext.ReceivedULTimingReference=prior;
         end
         if isfield(c,'GNBReception')
             current=sixgr.truth.buildScheduledPUCCHHARQReception( ...
@@ -1617,8 +1640,7 @@ methods(Static)
             post.EndSampleExclusive==pre.EndSampleExclusive && ...
             post.EndSampleExclusive==owner.Events.NextSampleIndex, ...
             'sixgr:truth:PUCCHReceiveOnlyClockMismatch','Commit only at actual complete gNB reception.');
-        references=sixgr.util.structGet(state,'ReceivedULTimingReferences',{});
-        prior=[]; if numel(references)>=item.UE, prior=references{item.UE}; end
+        prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,post.StartSample);
         rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,post,prior);
         bits=int8(rx.DecodedFields.HARQACK(:));
         usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
@@ -5414,8 +5436,11 @@ methods(Static, Access=private)
         ueState.SchedulerAdjustedSINR_dB = double(sixgr.util.structGet(feedback, "SchedulerAdjustedSINR_dB", NaN));
         ueState.SchedulerSINRBackoff_dB = double(sixgr.util.structGet(feedback, "SchedulerSINRBackoff_dB", NaN));
         ueState.SchedulerCQISource = char(string(sixgr.util.structGet(feedback, "SchedulerCQISource", "")));
+        % UL grants also travel on downlink PDCCH. An SRS/PUSCH SINR is
+        % not the received downlink-control link-quality authority.
+        controlFeedback = sixgr.truth.CoupledTruthRuntime.latestFeedbackForDirection(state, ueIdx, "DL");
         ueState.PDCCHAggregationLevel = double(sixgr.truth.CoupledTruthRuntime.resolveSchedulerPDCCHAggregationLevel( ...
-            state.CfgMobility, ueState.MeasuredSINR_dB));
+            state.CfgMobility, double(sixgr.util.structGet(controlFeedback, "SINR_dB", NaN))));
         ueState.MCSIndex = double(schedulerMCSIndex);
         ueState.FeedbackMCSIndex = double(feedbackMCSIndex);
         ueState.MCSIndexAuthority = char(string(schedulerMCSAuthority));
@@ -10977,31 +11002,16 @@ methods(Static, Access=private)
 
     function maxLayers = resolveMaxGrantLayers(cfg, direction)
         direction = upper(string(direction));
-        if direction == "UL"
-            candidates = [ ...
-                "phy.pusch.maxLayers"
-                "phy.maxULLayers"
-                "phy.pusch.nLayers"
-                "phy.pusch.numLayers"
-                "phy.pusch.dmrs.nPorts"];
-        else
-            candidates = [ ...
-                "phy.pdsch.maxLayers"
-                "phy.maxDLLayers"
-                "phy.pdsch.nLayers"
-                "phy.pdsch.numLayers"
-                "phy.pdsch.dmrs.nPorts"];
+        if direction == "UL" || direction == "DL"
+            % A current/bootstrap grant is not an upper bound on a future
+            % received SRS/CSI decision. Reuse the physical port/codebook
+            % and configured-capability policy used by grant construction.
+            policy=sixgr.mimo.resolveRankExecutionPolicy(cfg,direction,1);
+            maxLayers=double(policy.MaxSupportedLayers);
+            return;
         end
-        vals = nan(numel(candidates), 1);
-        for i = 1:numel(candidates)
-            vals(i) = double(sixgr.util.structGet(cfg, candidates(i), NaN));
-        end
-        vals = vals(isfinite(vals) & vals >= 1);
-        if isempty(vals)
-            maxLayers = 1;
-        else
-            maxLayers = max(1, round(min(vals)));
-        end
+        error('sixgr:truth:BadGrantDirection', ...
+            'Grant direction must be DL or UL, got %s.', char(direction));
     end
 
     function previousState = linkAdaptationStateForUE(state, direction, ueIdx)
@@ -11331,6 +11341,7 @@ methods(Static, Access=private)
         if isempty(levels)
             levels = 4;
         end
+        levels = sixgr.phy.pdcch.resolveExecutableAggregationLevels(cfg, levels);
         policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
         configuredAL = double(sixgr.util.structGet(cfg, "phy.pdcch.schedulerAggregationLevel", NaN));
         if policy == "configured_scheduler_level" && isfinite(configuredAL)
@@ -11369,6 +11380,7 @@ methods(Static, Access=private)
         if isempty(levels)
             levels = 4;
         end
+        levels = sixgr.phy.pdcch.resolveExecutableAggregationLevels(cfg, levels);
         policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
         configuredAL = double(sixgr.util.structGet(cfg, "phy.pdcch.schedulerAggregationLevel", NaN));
         if policy == "configured_scheduler_level" && isfinite(configuredAL)

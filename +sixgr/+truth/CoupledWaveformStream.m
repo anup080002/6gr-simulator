@@ -469,7 +469,7 @@ classdef CoupledWaveformStream < handle
             % independent sample-domain power accounting. Never pass this
             % noiseless plane to channel estimation or decoding.
             context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
-            if logical(ch.UseFading) && logical(sixgr.util.structGet( ...
+            if (logical(ch.UseFading) || sixgr.channel.IdentityAWGNRuntime.isState(ch)) && logical(sixgr.util.structGet( ...
                     prepared.ReceiverConfig,'outputs.phySignalDiagnosticEnabled',false))
                 % Capture this actual receive interval, including its tail,
                 % on the retained channel's one execution. Never reuse the

@@ -162,6 +162,7 @@ out.ExecutionProfile = executionContract.Profile;
 out.ExecutionTaxonomy = executionContract.Taxonomy;
 out.ExecutionBackend = executionContract.Backend;
 out.ApproximationMode = "none";
+out.ExperimentalPUSCHTransport = false;
 out.CalibrationProvenance = executionContract.CalibrationProvenance;
 out.StrictSchedulingOwnership = executionContract.Profile == "scheduler_truth";
 out.TxWaveformCapture = struct();
@@ -266,6 +267,7 @@ trialSymbolStart = NaN(numFrames,1);
 trialNumSymbols = NaN(numFrames,1);
 trialLayers = NaN(numFrames,1);
 trialModulation = strings(numFrames,1);
+trialExperimentalTransport = false(numFrames,1);
 trialCodeRate = NaN(numFrames,1);
 trialTB = NaN(numFrames,1);
 trialCRC = NaN(numFrames,1);
@@ -1117,11 +1119,9 @@ for n = 1:numFrames
                 trialLayers(n) = double(tx.PUSCH.NumLayers);
             catch
             end
-            try
-                trialModulation(n) = string(tx.PUSCH.Modulation);
-            catch
-            end
         end
+        [trialModulation(n),trialExperimentalTransport(n)]=sixgr.link.resolvePUSCHTransportModulation(tx);
+        out.ExperimentalPUSCHTransport=out.ExperimentalPUSCHTransport || trialExperimentalTransport(n);
         if isfield(tx, "TransportBlockSize")
             trialTB(n) = double(tx.TransportBlockSize);
         end
@@ -2492,6 +2492,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ExecutionTaxonomy = repmat(executionContract.Taxonomy, stopIdx, 1);
         T.ExecutionBackend = repmat(executionContract.Backend, stopIdx, 1);
         T.ApproximationMode = repmat("none", stopIdx, 1);
+        T.ExperimentalPUSCHTransport = trialExperimentalTransport(idx);
         T.CalibrationProvenance = repmat( ...
             executionContract.CalibrationProvenance, stopIdx, 1);
         T.StrictSchedulingOwnership = repmat( ...
@@ -4868,6 +4869,7 @@ T.ExecutionProfile = strings(0,1);
 T.ExecutionTaxonomy = strings(0,1);
 T.ExecutionBackend = strings(0,1);
 T.ApproximationMode = strings(0,1);
+T.ExperimentalPUSCHTransport = false(0,1);
 T.CalibrationProvenance = strings(0,1);
 T.StrictSchedulingOwnership = false(0,1);
 T.ConfiguredSNR_dB = zeros(0,1);
@@ -6795,7 +6797,7 @@ numTxAnt = NaN;
 if isfield(tx, "Grid") && ~isempty(tx.Grid)
     numTxAnt = double(size(tx.Grid, 3));
 end
-puschMod = localObjectValue(pusch, "Modulation", "");
+puschMod = sixgr.link.resolvePUSCHTransportModulation(tx);
 puschLayers = localObjectValue(pusch, "NumLayers", NaN);
 puschPRBSet = localObjectValue(pusch, "PRBSet", []);
 puschSymbolAllocation = localObjectValue(pusch, "SymbolAllocation", []);

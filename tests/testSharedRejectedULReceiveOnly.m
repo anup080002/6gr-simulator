@@ -22,6 +22,12 @@ controlCfg=sixgr.lls6g.buildInternalConfig(controlScenario,output);
 assert(cfg.channel.snr_dB==controlCfg.channel.snr_dB && ~controlCfg.phy.pdcch.blindSearch);
 saved=load(fullfile(root,'docs','lls','evidence_20260913','scheduled_ul_dai_03','scheduled_ul_dai_0.mat'),'fixed');
 grant=saved.fixed;
+scheduledCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+    cfg,double(grant.TimingDecision.ControlAbsoluteSlot)+1);
+scheduler=sixgr.l2.mac.SchedulerPF(scheduledCfg,'Direction','UL');
+grant.TPMI=grant.PHYGrant.PrecodingState.TPMI;
+grant.DCI=scheduler.buildDCIBitfield(grant);
+grant=sixgr.truth.prepareScheduledULDAI(struct(),scheduledCfg,grant);
 if withCSI
     [obligation,report,calendar]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
     assert(~isempty(report) && strlength(obligation.ReportConfigID)>0 && ...
@@ -60,9 +66,9 @@ if withHARQ
         old.Fields.precoding_information_and_number_of_layers);
     assert(rank==grant.NumLayers && tpmi==grant.PHYGrant.PrecodingState.TPMI);
     grant.TPMI=tpmi;
-    scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','UL');
+    scheduler=sixgr.l2.mac.SchedulerPF(scheduledCfg,'Direction','UL');
     grant.DCI=scheduler.buildDCIBitfield(grant);
-    grant=sixgr.truth.prepareScheduledULDAI(dlLedger,cfg,grant);
+    grant=sixgr.truth.prepareScheduledULDAI(dlLedger,scheduledCfg,grant);
     assert(grant.ULTotalDAIAuthority.ScheduledDLAssignmentCount==1);
 end
 [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(controlCfg,state,grant.UEIndex,'DL');
@@ -75,7 +81,8 @@ dl.lls6g.userContext.RuntimeSlotStartTime_s= ...
 % metadata is explicitly a component input, never connected receiver proof.
 p=sixgr.link.prepareSharedPDCCHTransmission(dl,'DCIBits',grant.DCI.Bits, ...
     'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
-owner.queuePDCCH(grant.UEIndex,p,struct('Grant',grant,'GNBConfig',cfg,'ScheduledULHARQConfig',cfg));
+owner.queuePDCCH(grant.UEIndex,p,struct('Grant',grant,'GNBConfig',cfg, ...
+    'ScheduledULHARQConfig',scheduledCfg));
 reject(@()owner.readTransmittedSchedulingControls(), ...
     'sixgr:truth:JointTimingAfterControlEnqueue');
 reject(@()owner.readTransmittedULControls(grant.UEIndex,double(grant.Slot)), ...

@@ -32,6 +32,7 @@
     "deterministic_mode": true,
     "snr_db": 20,
     "noise_operating_mode": "receiver_noise_figure_thermal_noise",
+    "awgn_reference_re_energy": 1,
     "min_duration_s": 0.02,
     "snr_sweep_offsets_db": [0],
     "reference_sweep_enabled": true,

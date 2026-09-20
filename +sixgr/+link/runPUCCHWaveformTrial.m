@@ -129,6 +129,12 @@ catch ME
     return;
 end
 
+% Validate the transmitter against its own typed UCI contract before any
+% channel or receiver processing.  Do not compare this layout with the
+% independently scheduled gNB hypothesis: valid differences must remain
+% observable decode failures in missing-DCI/absent-producer tests.
+sixgr.phy.pucch.validateTransmitUCILayout(tx.Report,tx.Serialization);
+
 cfgRuntime = localRuntimeConfig(cfg,carrier,opt);
 if prepareOnly
     [tx.Waveform,cfgRuntime,powerEvidence]=sixgr.link.preparePUCCHTransmitWaveform( ...
