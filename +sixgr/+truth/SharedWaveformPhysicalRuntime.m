@@ -144,8 +144,12 @@ classdef SharedWaveformPhysicalRuntime < handle
             end
             if ~isequaln(sixgr.util.structGet(cfg,'channel',struct()), ...
                     sixgr.util.structGet(link.Config,'channel',struct()))
+                changed=localDifferingTopLevelFields( ...
+                    sixgr.util.structGet(link.Config,'channel',struct()), ...
+                    sixgr.util.structGet(cfg,'channel',struct()));
                 error('WAVEFORM:TDDRetargetChannelChanged', ...
-                    'A direction reversal cannot silently replace the channel profile, frequency or fading parameters.');
+                    ['A direction reversal cannot silently replace the channel profile, frequency or fading parameters. ' ...
+                    'Differing channel fields: %s.'],strjoin(changed,','));
             end
             direction=string(obj.Transmitters(tx).RF.Chain.Direction);
             if direction==string(state.Direction) || direction~=string(obj.Receivers(rx).RF.Chain.Direction) || ...
@@ -480,4 +484,16 @@ classdef SharedWaveformPhysicalRuntime < handle
             end
         end
     end
+end
+
+function changed=localDifferingTopLevelFields(a,b)
+names=union(string(fieldnames(a)),string(fieldnames(b)));
+changed=strings(0,1);
+for k=1:numel(names)
+    if ~isequaln(sixgr.util.structGet(a,names(k),[]), ...
+            sixgr.util.structGet(b,names(k),[]))
+        changed(end+1,1)=names(k); %#ok<AGROW>
+    end
+end
+if isempty(changed), changed="unknown_nested_or_type_difference"; end
 end
