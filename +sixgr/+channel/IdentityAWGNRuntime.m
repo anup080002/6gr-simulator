@@ -24,6 +24,21 @@ classdef IdentityAWGNRuntime
                 "explicit_identity_AWGN_shared_sample_operator";
         end
 
+        function contract=physicalContract(cfg)
+            % Identity AWGN executes y=x. Geometry/LOS/delay/Doppler values
+            % remain useful runtime reporting metadata, but they cannot
+            % change that physical operator and may evolve between TDD
+            % directions. Keep every operative AWGN/channel field strict.
+            assert(sixgr.channel.IdentityAWGNRuntime.enabled(cfg));
+            contract=sixgr.util.structGet(cfg,'channel',struct());
+            nonoperative=["distance2D_m","distance3D_m", ...
+                "propagationDistance2D_m","propagationDistance_m", ...
+                "propagationDelay_s","doppler_Hz", ...
+                "runtimeSignedDoppler_Hz","losProbability","runtimeLOS"];
+            present=intersect(nonoperative,string(fieldnames(contract)),'stable');
+            if ~isempty(present), contract=rmfield(contract,cellstr(present)); end
+        end
+
         function state=materialize(state,cfg,txInfo,numTx,numRx)
             assert(sixgr.channel.IdentityAWGNRuntime.enabled(cfg));
             validateattributes(numTx,{'numeric'},{'scalar','integer','finite','positive'});

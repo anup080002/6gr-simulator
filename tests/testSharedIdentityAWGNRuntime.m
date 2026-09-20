@@ -94,7 +94,20 @@ folder=tempname(parent); mkdir(folder);
 verified=sixgr.channel.validateSharedChannelObservationArtifact(folder,row);
 assert(string(verified.Manifest.Source)=="executed_identity_AWGN_operator" && ...
     row.ChannelObservationSource=="executed_identity_AWGN_operator");
-owner.retargetTDDLink('identity','ue','gnb_rx',cfg);
+% Large-scale geometry metadata can change while the explicitly selected
+% identity operator remains y=x. These fields are non-operative for AWGN
+% and must not create a false TDD channel-profile change.
+reverseCfg=cfg;
+reverseCfg.channel.runtimeLOS=true;
+reverseCfg.channel.losProbability=0.25;
+reverseCfg.channel.distance2D_m=100;
+reverseCfg.channel.distance3D_m=101;
+reverseCfg.channel.propagationDistance2D_m=100;
+reverseCfg.channel.propagationDistance_m=101;
+reverseCfg.channel.propagationDelay_s=101/299792458;
+reverseCfg.channel.doppler_Hz=7;
+reverseCfg.channel.runtimeSignedDoppler_Hz=-7;
+owner.retargetTDDLink('identity','ue','gnb_rx',reverseCfg);
 states=owner.channelStates();
 assert(states{1}.CurrentSampleIndex==size(x,1) && states{1}.Direction=="UL" && ...
     string(states{1}.StateKey)==string(initial.StateKey) && states{1}.Meta.RuntimeTDDReciprocityDirection=="UL");

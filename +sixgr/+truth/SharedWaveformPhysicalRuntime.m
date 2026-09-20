@@ -142,11 +142,14 @@ classdef SharedWaveformPhysicalRuntime < handle
                     ~logical(sixgr.util.structGet(state,'Meta.RuntimeTDDReciprocityExact',false))
                 error('WAVEFORM:DynamicReciprocalStateRequired','Retarget only a declared shared dynamic reciprocal channel.');
             end
-            if ~isequaln(sixgr.util.structGet(cfg,'channel',struct()), ...
-                    sixgr.util.structGet(link.Config,'channel',struct()))
-                changed=localDifferingTopLevelFields( ...
-                    sixgr.util.structGet(link.Config,'channel',struct()), ...
-                    sixgr.util.structGet(cfg,'channel',struct()));
+            priorChannel=sixgr.util.structGet(link.Config,'channel',struct());
+            nextChannel=sixgr.util.structGet(cfg,'channel',struct());
+            if identity
+                priorChannel=sixgr.channel.IdentityAWGNRuntime.physicalContract(link.Config);
+                nextChannel=sixgr.channel.IdentityAWGNRuntime.physicalContract(cfg);
+            end
+            if ~isequaln(nextChannel,priorChannel)
+                changed=localDifferingTopLevelFields(priorChannel,nextChannel);
                 error('WAVEFORM:TDDRetargetChannelChanged', ...
                     ['A direction reversal cannot silently replace the channel profile, frequency or fading parameters. ' ...
                     'Differing channel fields: %s.'],strjoin(changed,','));
