@@ -6,6 +6,7 @@ rng(42, "twister");
 
 cfg = sixgr.config.defaultConfig();
 cfg.channel.model = "AWGN";
+cfg.channel.awgnOnly = true;
 cfg.phy.pdsch.executionProfile = "phy_calibration";
 cfg.channel.snr_dB = 15;
 cfg.run.noiseOperatingMode = "standalone_awgn_snr_argument";
@@ -20,6 +21,9 @@ cfg.phy.pdsch.numLayers = 1;
 cfg.phy.pdsch.numPorts = 1;
 cfg.phy.pdsch.dmrs.nPorts = 1;
 cfg.phy.pdsch.dmrs.portSet = 0;
+% This is an isolated reduced-carrier PDSCH calibration, not an initial-
+% access execution. Do not reserve an SS/PBCH block that cannot fit 12 RB.
+cfg.phy.ssb.enable = false;
 cfg.phy.csirs.enable = false;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
@@ -31,6 +35,8 @@ if isfield(out, "Skipped") && out.Skipped
     return;
 end
 T = out.TrialTable;
+assert(all(~logical(T.Crash)), ...
+    "LLR reference trials must reach the decoder without crashed rows.");
 assert(ismember("LLRMeanAbs", string(T.Properties.VariableNames)), ...
     "Trial table must export LLRMeanAbs.");
 llr = double(T.LLRMeanAbs);
