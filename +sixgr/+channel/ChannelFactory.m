@@ -153,6 +153,13 @@ classdef ChannelFactory
             meta.ChannelArrayHandlingBlocker = "";
             meta.ChannelUsesCountOnlyAntennaModel = false;
             meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
+            meta.ElementPatternChannelApplicability = "";
+            meta.AntennaChannelConsistencyStatus = "";
+            meta.AntennaChannelConsistencyReason = "";
+            meta.TransmitElementPatternApplied = false;
+            meta.ReceiveElementPatternApplied = false;
+            meta.TransmitElementPatternSource = "";
+            meta.ReceiveElementPatternSource = "";
             meta.ChannelGeometryCouplingLevel = "";
             meta.GeometryAdapterType = "";
             meta.GeometryAdapterSource = "";
@@ -2199,11 +2206,21 @@ classdef ChannelFactory
                     meta.GeometryAdapterPortMapping = "";
                 case "awgn"
                     meta.ChannelArrayModel = "awgn_no_array_channel";
-                    meta.ChannelArrayHandlingStatus = "no_fading_channel_object";
+                    meta.ChannelArrayHandlingStatus = "awgn_identity_spatial_dimensions_no_array_kernel";
                     meta.ChannelArrayHandlingBlocker = "";
-                    meta.ChannelUsesCountOnlyAntennaModel = true;
+                    % AWGN does not consume an antenna model at all.  Calling
+                    % this count-only conflates the configured waveform
+                    % dimensions with an executed spatial propagation model.
+                    meta.ChannelUsesCountOnlyAntennaModel = false;
                     meta.ChannelUsesSameRuntimeAntennaAssumptions = false;
                     meta.ChannelGeometryCouplingLevel = "not_applicable_no_fading_channel_object";
+                    meta.ElementPatternChannelApplicability = "not_applicable_awgn_identity_channel";
+                    meta.AntennaChannelConsistencyStatus = "classified_not_applicable_pending_runtime_dimension_check";
+                    meta.AntennaChannelConsistencyReason = "awgn_has_no_spatial_propagation_kernel_or_element_pattern_application";
+                    meta.TransmitElementPatternApplied = false;
+                    meta.ReceiveElementPatternApplied = false;
+                    meta.TransmitElementPatternSource = "not_applied_not_applicable_awgn_identity_channel";
+                    meta.ReceiveElementPatternSource = "not_applied_not_applicable_awgn_identity_channel";
                     meta.GeometryAdapterType = "";
                     meta.GeometryAdapterSource = "";
                     meta.GeometryAdapterLimitation = "";

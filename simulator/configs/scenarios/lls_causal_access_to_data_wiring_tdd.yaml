@@ -1381,9 +1381,9 @@ validation:
         required: true
         consumer_source_files: ["+sixgr/+rf/AntennaArrayFactory.m", "+sixgr/+channel/ChannelFactory.m"]
         measurement_artifact: "reports/csv/antenna_runtime_evidence.csv"
-        measured_fields: ["BSAntennaElementClass", "UEAntennaElementClass", "TransmitElementPatternApplied", "ReceiveElementPatternApplied", "ChannelUsesSameRuntimeAntennaAssumptions"]
+        measured_fields: ["BSAntennaElementClass", "UEAntennaElementClass", "ElementPatternChannelApplicability", "AntennaChannelConsistencyStatus", "TransmitElementPatternApplied", "ReceiveElementPatternApplied", "ChannelUsesSameRuntimeAntennaAssumptions", "AntennaChannelConsistencyOk"]
         measurement_min_rows: 2
-        success_field: "ChannelUsesSameRuntimeAntennaAssumptions"
+        success_field: "AntennaChannelConsistencyOk"
         success_mode: "all_true"
       - stage_id: "harq_state_and_soft_combining"
         order: 230

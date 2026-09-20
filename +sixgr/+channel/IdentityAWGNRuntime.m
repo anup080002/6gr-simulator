@@ -42,6 +42,21 @@ classdef IdentityAWGNRuntime
             state.PendingIdleSamples=0;
             state.ChannelPadSamples=0; state.ChannelTrimSamples=0;
             state.Meta.IdentityOperatorSource="explicit_identity_AWGN_shared_sample_operator";
+            state.Meta.ChannelArrayModel="awgn_no_array_channel";
+            state.Meta.ChannelObjectSource="sixgr.channel.IdentityAWGNRuntime.materialize";
+            state.Meta.ChannelObjectClass="explicit_identity_sample_operator";
+            state.Meta.ChannelArrayHandlingStatus="awgn_identity_spatial_dimensions_no_array_kernel";
+            state.Meta.ChannelArrayHandlingBlocker="";
+            state.Meta.ChannelUsesCountOnlyAntennaModel=false;
+            state.Meta.ChannelUsesSameRuntimeAntennaAssumptions=false;
+            state.Meta.ChannelGeometryCouplingLevel="not_applicable_no_fading_channel_object";
+            state.Meta.ElementPatternChannelApplicability="not_applicable_awgn_identity_channel";
+            state.Meta.AntennaChannelConsistencyStatus="classified_not_applicable_runtime_dimensions_validated";
+            state.Meta.AntennaChannelConsistencyReason="explicit_identity_awgn_equal_physical_tx_rx_dimensions_no_element_pattern_application";
+            state.Meta.TransmitElementPatternApplied=false;
+            state.Meta.ReceiveElementPatternApplied=false;
+            state.Meta.TransmitElementPatternSource="not_applied_not_applicable_awgn_identity_channel";
+            state.Meta.ReceiveElementPatternSource="not_applied_not_applicable_awgn_identity_channel";
             state.Meta.RuntimeTDDReciprocityExact= ...
                 sixgr.phy.frame.resolveDuplexMode(cfg)=="TDD";
             state.Meta.RuntimeTDDReciprocityDirection=string(state.Direction);
