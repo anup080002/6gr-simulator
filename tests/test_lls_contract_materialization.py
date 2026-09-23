@@ -345,7 +345,7 @@ def test_image_artifact_audit_is_materialized_after_contract_charts() -> None:
     )
     chart_loop = source.index("for chart_spec in _chart_specs():")
     late_audit = source.index('late_image_audit_name = "all_image_artifact_audit"')
-    coverage = source.index("coverage = coverage_summary(final_artifacts, feature_policy)")
+    coverage = source.index("coverage = coverage_summary(final_artifacts, feature_policy, fetch_artifact_bytes=fetch_artifact_bytes)")
     assert chart_loop < late_audit < coverage
     assert "post_render_exact_image_artifact_audit" in source
 

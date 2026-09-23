@@ -14,6 +14,49 @@ def chart(name, path, fields, values):
 
 
 class SparseSignalEvidence(unittest.TestCase):
+    @staticmethod
+    def observation_rows():
+        fields = ["UEID", "BaseStationID", "ObservationStartSample",
+                  "ObservationEndSampleExclusive", "ObservationSampleRateHz",
+                  "ObservationCompletionTime_s", "ObservationCoverageSource",
+                  "PSSDetected", "SSSDetected", "BCHCrcPass", "Crash",
+                  "ProxyUsed", "FallbackFlag", "PlaceholderFlag"]
+        values = [[1, 1, start, start + 38400, 7680000, (start + 38400) / 7680000,
+                   "complete_contiguous_received_sample_buffer", 0, 0, 0, 0, 0, 0, 0]
+                  for start in (0, 0, 153600)]
+        return fields, values
+
+    def test_ssb_occasion_chart_uses_received_windows_without_decoded_beam(self):
+        fields, values = self.observation_rows()
+        result, rows = chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv", fields, values)
+        self.assertEqual(result["source_row_count"], 3)
+        self.assertEqual([float(row["start_time_ms"]) for row in rows], [0, 0, 20])
+        self.assertEqual([float(row["end_time_ms"]) for row in rows], [5, 5, 25])
+        self.assertEqual([int(row["capture_ordinal"]) for row in rows], [1, 1, 2])
+        self.assertTrue(all(row["bch_crc_pass"] == "0.0" for row in rows))
+        self.assertTrue(all("ssb_index" not in row for row in rows))
+        self.assertIn(b"not decoded beam", result["img_bytes"])
+        self.assertFalse(m._is_placeholder_materialization_status(result["image_status"]))
+
+    def test_ssb_occasion_chart_rejects_unmeasured_or_corrupt_capture_clock(self):
+        for field, value in (("ObservationStartSample", -1), ("ObservationEndSampleExclusive", 0),
+                             ("ObservationSampleRateHz", 0), ("ObservationCompletionTime_s", .010),
+                             ("ObservationCoverageSource", "planned_capture"), ("ProxyUsed", 1),
+                             ("PSSDetected", "NaN"), ("UEID", "NaN")):
+            fields, values = self.observation_rows()
+            values[0][fields.index(field)] = value
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "SSB reception"):
+                chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv", fields, values)
+
+    def test_ssb_capture_identity_keeps_sweep_points_separate(self):
+        fields, values = self.observation_rows()
+        fields.append("ConfiguredSNR_dB")
+        for row, snr in zip(values, [-30, -20, -20]):
+            row.append(snr)
+        _, rows = chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv", fields, values)
+        self.assertEqual([int(row["capture_ordinal"]) for row in rows], [1, 2, 3])
+        self.assertEqual([float(row["configured_snr_db"]) for row in rows], [-30, -20, -20])
+
     def test_one_prach_occasion_is_not_a_time_trend(self):
         result, rows = chart("PRACH peak search timeline", "air_interface/csv/prach_trials.csv",
                              ["Slot", "DetectionMetric"], [[5, .87], [5, .89]])

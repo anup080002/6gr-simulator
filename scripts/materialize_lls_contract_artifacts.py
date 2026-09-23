@@ -226,6 +226,9 @@ def main() -> int:
             "charts_available": coverage.get("charts_available"),
             "charts_policy_disabled": coverage.get("charts_policy_disabled"),
             "charts_missing": len(coverage.get("missing_chart_names") or []),
+            "charts_unavailable": coverage.get("charts_unavailable", 0),
+            "unavailable_chart_names": coverage.get("unavailable_chart_names", []),
+            "unavailable_chart_source_paths": coverage.get("unavailable_chart_source_paths", []),
         }
         print(json.dumps(payload, indent=2))
         if args.strict and (
@@ -261,6 +264,7 @@ def main() -> int:
         coverage = materializer.coverage_summary(
             refreshed,
             dash.extract_run_feature_policy(run_row),
+            fetch_artifact_bytes=dash.fetch_artifact_bytes,
         )
 
     payload = {
@@ -277,6 +281,9 @@ def main() -> int:
         "charts_available": coverage.get("charts_available"),
         "charts_policy_disabled": coverage.get("charts_policy_disabled"),
         "charts_missing": len(coverage.get("missing_chart_names") or []),
+        "charts_unavailable": coverage.get("charts_unavailable", 0),
+        "unavailable_chart_names": coverage.get("unavailable_chart_names", []),
+        "unavailable_chart_source_paths": coverage.get("unavailable_chart_source_paths", []),
     }
     print(json.dumps(payload, indent=2))
 

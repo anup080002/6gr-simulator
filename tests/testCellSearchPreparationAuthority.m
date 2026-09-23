@@ -45,5 +45,35 @@ first=stream.readThrough(n);
 assert(isequal(first.Samples,p.TransmitSamples(1:n,:)) && stream.NextSampleIndex==n);
 assert(n<p.NumSamples,"The regression must exercise a multi-slot capture.");
 fprintf('CELL_SEARCH_PREPARATION_AUTHORITY_PASS: %d real TX samples, no channel or decoder execution.\n',p.NumSamples);
+% Exercise the same completed-observation adapter used by shared reception.
+% This is an explicit absent-producer observation, not a channel simulation
+% of the prepared TX samples and not evidence of successful acquisition.
+observation=sixgr.phy.waveform.WaveformObservationBuffer( ...
+    0,p.NumSamples,p.SampleRateHz,double(cfg.phy.nRxAnt));
+options=struct('UseRuntimeChannel',true,'RuntimeSlot',0, ...
+    'CandidateSSBIndices',[],'SSBIndex',[],'WriteArtifacts',false,'RunFolder',"");
+try
+    sixgr.link.completeCellSearchBroadcast(p,observation,out,options,tic);
+    error('test:ExpectedIncompleteObservation','An incomplete observation was decoded.');
+catch cause
+    assert(strcmp(cause.identifier,'WAVEFORM:IncompleteObservation'));
+end
+samples=complex(zeros(p.NumSamples,double(cfg.phy.nRxAnt)));
+observation.append(sixgr.phy.waveform.WaveformChunk(samples,0),p.SampleRateHz);
+absent=sixgr.link.completeCellSearchBroadcast(p,observation,out,options,tic);
+assert(~absent.Ok && ~absent.Crash && ~absent.DecodeAttempted && ...
+    absent.FailureIdentifier=="sixgr:phy:ia:SSBNotDetected" && ...
+    ~absent.SSBIdentityVerified && isnan(absent.SS_SINR_dB) && ...
+    isnan(absent.SSBIndex),'No producer must not yield a measured or decoded serving beam.');
+invalid=p;
+invalid.ReceiverConfig.phy.sync.freqSearchBW_Hz=0;
+invalid.ReceiverConfig.phy.sync.cfoHypothesesHz=100;
+failed=sixgr.link.completeCellSearchBroadcast(invalid,observation,out,options,tic);
+assert(failed.Crash && ~failed.Ok && ~failed.DecodeAttempted && ...
+    failed.FailureIdentifier=="sixgr:phy:sync:CFOHypothesisOutsideSearchRange" && ...
+    failed.SIB1.Crash && failed.Status=="ERROR", ...
+    'Shared completion must preserve the receiver error instead of reporting physical outage.');
+assert(observation.isComplete() && isequal(observation.readComplete(),samples));
+disp('CELL_SEARCH_COMPLETION_ERROR_AUTHORITY_PASS incomplete_rejected=1 absent_producer=1 config_error=1');
 ok=true;
 end

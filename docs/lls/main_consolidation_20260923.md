@@ -114,3 +114,32 @@ the user's standing instruction. This remains a development checkpoint,
 not full-regression, full-sweep or full-control 400 MHz qualification.
 Generated outputs, logs and local environments are preserved under the
 existing ignore policy; a clean Git working tree does not delete them.
+
+## Follow-up consolidation after fcded09b
+
+This checkpoint includes all six pending source/test files: strict no-data
+chart applicability, actual SS/PBCH receive-window publication, command-line
+coverage reporting, and the shared cell-search completion regression. It
+does not generate constellation or data-BLER samples for unacquired links.
+Receive-window charts explicitly do not claim decoded beam identities.
+
+Local and freshly fetched remote `main` matched at `fcded09b` before this
+checkpoint; there is one branch and one registered checkout. Both historical
+integration commits remain ancestors, and their recovery stashes are kept.
+
+Verification receipts:
+
+- `logs/ssb_reception_chart_regressions_20260923.xml`: 296 Python tests passed.
+  The consolidation rerun uses `logs/consolidation_chart_guards_20260923.xml`.
+- `logs/cell_search_completion_error_20260923.log`: shared SSB preparation
+  and completion assertions passed, including absent-producer and error identity.
+- `logs/nr_phy_reference_guards_20260923.log`: configuration, strict proxy
+  guards, DL, UL and reference-point batch completed with its final pass marker.
+- `logs/no_data_chart_export_e2e_guards_20260923.log`: four export guards
+  passed; the subsequent E2E campaign was still running during consolidation.
+
+No new MATLAB run or `testAll` is launched. Existing sweep and E2E processes
+are left untouched. Full sweep publication, detector statistics and full-control
+400 MHz acceptance remain unqualified. Results, generated logs and local
+environments are preserved locally, not force-added to GitHub. This is a
+development checkpoint, not a claim that pending runtime issues are resolved.

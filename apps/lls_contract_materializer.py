@@ -28,7 +28,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-23-contract-v79-empty-primary-schema"
+MATERIALIZER_VERSION = "2026-09-23-contract-v81-ssb-reception-timing"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -6044,6 +6044,70 @@ def _pdcch_detection_probability_chart_materialization(
     }
 
 
+def _ssb_reception_timeline_chart(chart_name, existing, fetch_artifact_bytes, run_id):
+    if chart_name != "SSB occasion timeline":
+        return None
+    source_path, records = _first_available_rows(existing, fetch_artifact_bytes, [
+        "air_interface/csv/pbch_trials.csv", "reports/csv/live_ssb_occasion_state.csv",
+    ])
+    if not records:
+        return None
+    captures = {}
+    rows = []
+    for index, record in enumerate(records, 1):
+        start = _row_float(record, "ObservationStartSample")
+        stop = _row_float(record, "ObservationEndSampleExclusive")
+        rate = _row_float(record, "ObservationSampleRateHz")
+        completion = _row_float(record, "ObservationCompletionTime_s")
+        ue = _row_float(record, "UEID")
+        cell = _row_float(record, "BaseStationID")
+        numeric = (start, stop, rate, completion, ue, cell)
+        if (any(value is None or not math.isfinite(value) for value in numeric)
+                or start < 0 or stop <= start or rate <= 0
+                or any(value != int(value) for value in (start, stop, ue, cell))
+                or ue < 1 or cell < 1
+                or not math.isclose(completion, stop / rate, rel_tol=1e-10, abs_tol=1e-12)
+                or _row_text(record, "ObservationCoverageSource") != "complete_contiguous_received_sample_buffer"):
+            raise ValueError("SSB reception timeline requires an actual complete, identity-bound sample clock")
+        if any(_row_float(record, flag) != 0 for flag in ("ProxyUsed", "FallbackFlag", "PlaceholderFlag")):
+            raise ValueError("SSB reception timeline cannot use proxy, fallback or placeholder evidence")
+        flags = {field: _row_float(record, field)
+                 for field in ("PSSDetected", "SSSDetected", "BCHCrcPass", "Crash")}
+        if any(value not in (0, 1) for value in flags.values()):
+            raise ValueError("SSB reception timeline requires explicit receiver outcome flags")
+        sweep = _row_float(record, "SweepPointIndex")
+        configured_snr = _row_float(record, "ConfiguredSNR_dB", "SNR_dB")
+        key = (ue, cell, start, stop, rate, sweep, configured_snr)
+        if key not in captures:
+            captures[key] = len(captures) + 1
+        rows.append(dict(
+            run_id=run_id, chart_name=chart_name, source_row=index,
+            capture_ordinal=captures[key], ue_id=ue, cell_id=cell,
+            sweep_point_index=sweep, configured_snr_db=configured_snr,
+            observation_start_sample=start, observation_end_sample_exclusive=stop,
+            sample_rate_hz=rate, start_time_ms=1000 * start / rate,
+            end_time_ms=1000 * completion, pss_detected=flags["PSSDetected"],
+            sss_detected=flags["SSSDetected"], bch_crc_pass=flags["BCHCrcPass"],
+            crash=flags["Crash"], source_table_logical_path=source_path))
+    series = [dict(name=f"Capture {ordinal}: UE {int(key[0])}, cell {int(key[1])}",
+                   points=[[1000 * key[2] / key[4], ordinal], [1000 * key[3] / key[4], ordinal]])
+              for key, ordinal in captures.items()]
+    return {
+        "csv_bytes": _encode_dict_rows(list(rows[0]), rows),
+        "img_bytes": _render_multi_series_svg(
+            chart_name, "Actual SS/PBCH receive windows; not decoded beam identities or individual SSB symbol boundaries.",
+            series, [f"Receiver rows={len(rows)}", f"Distinct captures={len(captures)}",
+                     "Candidate trials sharing a capture retain separate CSV rows."],
+            x_label="Received sample-clock time (ms)", y_label="Capture ordinal (not beam index)",
+            evidence_shape_policy="observed_timeline"),
+        "csv_status": "specialized_runtime_ssb_reception_timing_dataset",
+        "image_status": "generated_specialized_runtime_summary_svg",
+        "source_table_path": source_path,
+        "source_row_count": len(records),
+        "note": "Each segment is a completed received sample interval, not a configured or recovered SSB identity. Source rows and outcomes are preserved without averaging candidates.",
+    }
+
+
 def _ssb_index_timeline_chart_materialization(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -8186,7 +8250,6 @@ def _explicit_runtime_metric_chart_materialization(
         "error/warning/fallback stacked time series": {"sources": ["reports/csv/live_case_status.csv"], "fields": ["fallback_rows", "placeholder_rows"], "kind": "timeline", "label": "Fallback/placeholder rows"},
         "truth policy violations by category": {"sources": ["analytics/csv/truth_policy_analytics.csv"], "fields": ["StrictTruthFailureCount", "StrictProxyGuardFailureCount"], "kind": "distribution", "label": "Truth-policy violation count"},
         "DL/UL/guard slot pattern chart": {"sources": ["reports/csv/slot_trace.csv"], "fields": ["DLNumSymbols", "ULNumSymbols", "GuardNumSymbols"], "x_fields": ["CanonicalSlot"], "kind": "timeline", "label": "DL/UL/guard symbols"},
-        "SSB occasion timeline": {"sources": ["reports/csv/live_ssb_occasion_state.csv"], "fields": ["SSBIndex", "BeamIndex"], "x_fields": ["Slot"], "kind": "timeline", "label": "SSB index"},
         "PRACH occasion timeline": {"sources": ["reports/csv/live_prach_occasion_state.csv"], "fields": ["PRACHCarrierSlot"], "x_fields": ["Slot"], "kind": "timeline", "label": "PRACH carrier slot"},
         "CORESET/search-space occupancy chart": {"sources": ["reports/csv/live_coreset_state.csv", "air_interface/csv/pdcch_trials.csv"], "fields": ["UsedCCECount", "CORESETUtilization", "ControlCapacityUtilization", "AggregationLevel"], "x_fields": ["Slot"], "kind": "timeline", "label": "Used CCE / aggregation level"},
         "SR/BSR event timeline": {"sources": ["reports/csv/live_sr_state.csv", "reports/csv/live_bsr_state.csv"], "fields": ["RuntimeStateUpdated", "TBSBits"], "x_fields": ["Slot"], "kind": "timeline", "label": "SR/BSR runtime event"},
@@ -11153,6 +11216,9 @@ def _specialized_chart_materialization(
     )
     if pdcch_probability_chart is not None:
         return pdcch_probability_chart
+    ssb_reception_chart = _ssb_reception_timeline_chart(chart_name, existing, fetch_artifact_bytes, run_id)
+    if ssb_reception_chart is not None:
+        return ssb_reception_chart
     ssb_index_chart = _ssb_index_timeline_chart_materialization(chart_name, existing, fetch_artifact_bytes, run_id)
     if ssb_index_chart is not None:
         return ssb_index_chart
@@ -13526,9 +13592,56 @@ def _existing_contract_artifacts_current(
     return True
 
 
+# These charts require actual data-channel attempts. Do not infer this from
+# fuzzy names/domains: generic BLER may include PBCH, and zero delivered
+# throughput can still be measured over the completed observation interval.
+_DATA_ATTEMPT_ONLY_CHARTS = frozenset({
+    "pre-equalization constellation", "post-equalization constellation",
+    "constellation per layer", "constellation per modulation order",
+    "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
+    "dl_bler_vs_snr", "ul_bler_vs_snr",
+})
+
+
+def _no_data_chart_sources(artifacts, fetch_artifact_bytes=None) -> list[str]:
+    existing = {str(art.get("logical_path") or ""): art for art in artifacts}
+    if fetch_artifact_bytes is None:
+        paths = {int(art.get("artifact_id") or 0): str(art.get("filesystem_path") or "")
+                 for art in artifacts}
+
+        def fetch_artifact_bytes(artifact_id):
+            path = paths.get(int(artifact_id), "")
+            if not path:
+                raise FileNotFoundError("No indexed filesystem source for chart applicability")
+            return _windows_long_path(Path(path)).read_bytes()
+
+    try:
+        sources = _recorded_no_data_beam_sources(existing, fetch_artifact_bytes)
+        if not sources:
+            return []
+        # Contradictory sample exports must still reach strict validation;
+        # never hide them under an acquisition-outage explanation.
+        for path in (
+            "air_interface/csv/dl_constellation_samples.csv",
+            "air_interface/csv/ul_constellation_samples.csv",
+            "air_interface/csv/dl_constellation_preview.csv",
+            "air_interface/csv/ul_constellation_preview.csv",
+            "reports/csv/equalized_constellations.csv",
+        ):
+            if path in existing:
+                columns, rows = _artifact_rows_by_path(existing, fetch_artifact_bytes, path)
+                if not columns or rows:
+                    return []
+        return sources
+    except (OSError, UnicodeError, csv.Error, KeyError, ValueError):
+        return []
+
+
 def coverage_summary(
     artifacts: list[dict[str, Any]],
     feature_policy: dict[str, bool] | None = None,
+    *,
+    fetch_artifact_bytes: Callable[[int], bytes] | None = None,
 ) -> dict[str, Any]:
     feature_policy = dict(feature_policy or {})
     logical_paths = {str(art.get("logical_path") or "").strip() for art in artifacts if str(art.get("logical_path") or "").strip()}
@@ -13536,6 +13649,8 @@ def coverage_summary(
     chart_specs = _chart_specs()
     missing_tables: list[str] = []
     missing_charts: list[str] = []
+    unavailable_charts: list[str] = []
+    no_data_sources = _no_data_chart_sources(artifacts, fetch_artifact_bytes)
     policy_disabled_tables = 0
     policy_disabled_charts = 0
     for table_spec in table_specs:
@@ -13557,7 +13672,15 @@ def coverage_summary(
             policy_disabled_charts += 1
             continue
         img_path = chart_contract_image_path(chart_spec)
+        if no_data_sources and chart_name in _DATA_ATTEMPT_ONLY_CHARTS:
+            # An existing image of nonexistent attempts is not success.
+            # Leave contradictory/stale chart artifacts subject to failure.
+            if csv_path not in logical_paths and img_path not in logical_paths:
+                unavailable_charts.append(chart_name)
+                continue
         if csv_path not in logical_paths or img_path not in logical_paths:
+            missing_charts.append(chart_name)
+        elif no_data_sources and chart_name in _DATA_ATTEMPT_ONLY_CHARTS:
             missing_charts.append(chart_name)
     return {
         "tables_total": len(table_specs),
@@ -13565,7 +13688,10 @@ def coverage_summary(
         "tables_available": len(table_specs) - policy_disabled_tables - len(missing_tables),
         "charts_total": len(chart_specs),
         "charts_policy_disabled": policy_disabled_charts,
-        "charts_available": len(chart_specs) - policy_disabled_charts - len(missing_charts),
+        "charts_available": len(chart_specs) - policy_disabled_charts - len(missing_charts) - len(unavailable_charts),
+        "charts_unavailable": len(unavailable_charts),
+        "unavailable_chart_names": unavailable_charts,
+        "unavailable_chart_source_paths": no_data_sources if unavailable_charts else [],
         "missing_table_paths": missing_tables,
         "missing_chart_names": missing_charts,
     }
@@ -13645,7 +13771,7 @@ def materialize_run_contract_artifacts(
                 "created": created,
                 "manifest_path": manifest_logical_path(),
                 "coverage_path": coverage_logical_path(),
-                "coverage": coverage_summary(artifacts, feature_policy),
+                "coverage": coverage_summary(artifacts, feature_policy, fetch_artifact_bytes=fetch_artifact_bytes),
                 "skipped": True,
                 "lock_busy": True,
             }
@@ -13675,7 +13801,8 @@ def materialize_run_contract_artifacts(
         coverage_art = existing.get(coverage_logical_path())
         coverage_meta_json = _artifact_metadata_json(coverage_art, db_connection_factory)
         coverage_current = bool(coverage_art) and coverage_meta_json.find(MATERIALIZER_VERSION) >= 0
-        coverage_snapshot = coverage_summary(list(existing.values()), feature_policy)
+        coverage_snapshot = coverage_summary(list(existing.values()), feature_policy,
+                                             fetch_artifact_bytes=fetch_artifact_bytes)
         if manifest_current and coverage_current and not force:
             return {
                 "created": created,
@@ -13809,6 +13936,7 @@ def materialize_run_contract_artifacts(
             existing[target_path] = new_artifact
             source_lookup[target_path] = new_artifact
 
+        no_data_chart_sources = _no_data_chart_sources(list(source_lookup.values()), fetch_artifact_bytes)
         for chart_spec in _chart_specs():
             chart_name = str(chart_spec.get("chart_name") or "")
             target_csv = chart_contract_csv_path(chart_spec)
@@ -13817,6 +13945,14 @@ def materialize_run_contract_artifacts(
             ):
                 continue
             target_img = chart_contract_image_path(chart_spec)
+            if (no_data_chart_sources and chart_name in _DATA_ATTEMPT_ONLY_CHARTS
+                    and target_csv not in existing and target_img not in existing):
+                # This is manifest-level absence evidence, never a plotted
+                # reason card or a fabricated primary numeric table.
+                source_paths = "|".join(no_data_chart_sources)
+                manifest_rows.append([target_csv, "table_csv", "unavailable_no_data_attempts", source_paths, chart_name])
+                manifest_rows.append([target_img, "image_png", "unavailable_no_data_attempts", source_paths, chart_name])
+                continue
             if target_csv in existing and target_img in existing:
                 plot_lineage_rows.append(
                     _contract_plot_lineage_row(
@@ -14276,7 +14412,7 @@ def materialize_run_contract_artifacts(
         manifest_meta,
     )
     final_artifacts = list(existing.values())
-    coverage = coverage_summary(final_artifacts, feature_policy)
+    coverage = coverage_summary(final_artifacts, feature_policy, fetch_artifact_bytes=fetch_artifact_bytes)
     coverage_bytes = _encode_csv(
         [
             "run_id",
@@ -14291,6 +14427,9 @@ def materialize_run_contract_artifacts(
             "charts_missing",
             "missing_table_paths",
             "missing_chart_names",
+            "charts_unavailable",
+            "unavailable_chart_names",
+            "unavailable_chart_source_paths",
         ],
         [[
             run_id,
@@ -14305,6 +14444,9 @@ def materialize_run_contract_artifacts(
             len(coverage["missing_chart_names"]),
             "; ".join(coverage["missing_table_paths"]) or "[]",
             "; ".join(coverage["missing_chart_names"]) or "[]",
+            coverage["charts_unavailable"],
+            "; ".join(coverage["unavailable_chart_names"]) or "[]",
+            "; ".join(coverage["unavailable_chart_source_paths"]) or "[]",
         ]],
     )
     coverage_meta = {
