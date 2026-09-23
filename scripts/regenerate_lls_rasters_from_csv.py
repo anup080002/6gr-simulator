@@ -1594,6 +1594,13 @@ def validate_run_root(run_root: Path) -> Path:
     missing = [str(path) for path in required_markers if not io_path(path).is_file()]
     if missing:
         raise SystemExit("Run folder is missing required authority files: " + "; ".join(missing))
+    # Root authority is not a successful-link qualification. A completed
+    # acquisition outage has real PBCH/slot evidence but zero data attempts.
+    # Admit only its explicitly empty DL/UL schemas, never a missing file,
+    # absent component evidence, incomplete execution or a failed decode
+    # whose data trial disappeared. All semantic and coverage gates below
+    # still run; this does not manufacture a BLER or constellation.
+    recorded_empty_data: set[Path] | None = None
     empty_csv_authorities: list[str] = []
     for authority_path in required_markers:
         if authority_path.suffix.lower() != ".csv":
@@ -1604,7 +1611,13 @@ def validate_run_root(run_root: Path) -> Path:
             raise SystemExit(
                 f"Run authority CSV is unreadable: {authority_path}: {error}"
             ) from error
-        if column_count <= 0 or row_count <= 0:
+        if row_count == 0 and column_count > 0 and authority_path in {
+            resolved / "air_interface/csv/dl_pdsch_trials.csv",
+            resolved / "air_interface/csv/ul_pusch_trials.csv",
+        } and recorded_empty_data is None:
+            recorded_empty_data = _recorded_empty_data_authorities(resolved)
+        if (column_count <= 0 or
+                (row_count <= 0 and authority_path not in (recorded_empty_data or set()))):
             empty_csv_authorities.append(str(authority_path))
     if empty_csv_authorities:
         raise SystemExit(
@@ -1612,6 +1625,29 @@ def validate_run_root(run_root: Path) -> Path:
             + "; ".join(empty_csv_authorities)
         )
     return resolved
+
+
+def _recorded_empty_data_authorities(run_root: Path) -> set[Path]:
+    paths = (
+        "reports/csv/run_state.csv", "reports/csv/slot_trace.csv",
+        "air_interface/csv/pbch_trials.csv",
+        "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv",
+    )
+    payloads: dict[int, bytes] = {}
+    artifacts: dict[str, dict[str, Any]] = {}
+    try:
+        for index, path in enumerate(paths):
+            payloads[index] = io_path(run_root / path).read_bytes()
+            artifacts[path] = {"artifact_id": index}
+        # Share the existing independent source/clock-count checks used to
+        # explain unavailable applied data beams. Configuration enablement,
+        # a failure label or an empty file alone is never this authority.
+        sources = contract_materializer._recorded_no_data_beam_sources(
+            artifacts, payloads.__getitem__
+        )
+    except (OSError, UnicodeError, csv.Error):
+        return set()
+    return {run_root / path for path in paths[-2:]} if sources else set()
 
 
 def _as_config_bool(value: Any, *, default: bool) -> bool:

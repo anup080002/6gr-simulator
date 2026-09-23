@@ -16,10 +16,15 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     if nargin < 3
         error('sixgr:phy:sync:freqOffsetCorrect:BadInput', 'rxWaveform, blockPattern, sampleRateHz are required');
     end
+    if ~(isnumeric(rxWaveform) && ismatrix(rxWaveform) && ~isempty(rxWaveform) && ...
+            all(isfinite(real(rxWaveform(:))) & isfinite(imag(rxWaveform(:)))))
+        error('sixgr:phy:sync:InvalidSSBObservation', ...
+            'SSB frequency search requires a nonempty finite sample-by-receive-branch matrix.');
+    end
 
     p = inputParser;
     p.addParameter('SearchBW_Hz', [], @(x) isempty(x) || (isnumeric(x) && isscalar(x) && x >= 0));
-    p.addParameter('NID2Candidates', 0:2, @(x) isnumeric(x) && isvector(x));
+    p.addParameter('NID2Candidates', 0:2, @isnumeric);
     p.addParameter('CFOHypothesesHz', [], ...
         @(x) isempty(x) || (isnumeric(x) && isvector(x) && all(isfinite(x))));
     p.addParameter('TimingSearchGuardSamples', 0, ...
@@ -47,11 +52,13 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         searchBW_Hz = min(1.2e6, 0.45 * sampleRateHz);
     end
 
-    candNID2 = unique(opt.NID2Candidates(:).');
-    candNID2 = candNID2(candNID2 >= 0 & candNID2 <= 2);
-    if isempty(candNID2)
-        candNID2 = 0:2;
+    nid2 = opt.NID2Candidates;
+    if ~(isreal(nid2) && isvector(nid2) && ~isempty(nid2) && ...
+            all(isfinite(nid2(:))) && all(ismember(nid2(:),0:2)))
+        error('sixgr:phy:sync:InvalidNID2Hypotheses', ...
+            'NID2Candidates must contain explicit integers from 0, 1 and 2; invalid lists are not replaced by a blind search.');
     end
+    candNID2 = unique(double(nid2(:).'));
 
     % Candidate frequency offsets (Hz). An explicit caller-supplied grid is
     % authoritative; the nine-point grid is retained only for legacy calls.

@@ -81,6 +81,11 @@ try
          'CandidateSSBIndex', p.Results.CandidateSSBIndex, ...
          'SSBTiming', timing);
 catch ME
+    % A physical search with no candidate is a missed detection. Preserve
+    % configuration/capture failures instead of scoring them as outage.
+    if ~strcmp(ME.identifier,'sixgr:phy:sync:PSSCandidateNotDetected')
+        rethrow(ME);
+    end
     error('sixgr:phy:ia:SSBNotDetected', ...
         'PSS/NID2 frequency search failed without transmitter-cell-ID oracle: %s', ME.message);
 end
@@ -191,6 +196,9 @@ try
     [NCellID, NID1, sssInfo] = ...
         localRecoverPhysicalCellIDFromSSS(rxSSBGrid, NID2);
 catch ME
+    if ~strcmp(ME.identifier,'sixgr:phy:dl:SSB_Rx:SSSDetectionFailed')
+        rethrow(ME);
+    end
     error('sixgr:phy:ia:SSBNotDetected', ...
         'SSS physical-cell-ID search failed: %s', ME.message);
 end

@@ -282,6 +282,80 @@ def test_run_root_guard_does_not_trust_scratch_siblings(
         MODULE.validate_run_root(tmp_path / "isolated_regression_sibling" / "scenario" / "run_1")
 
 
+def _write_completed_acquisition_outage(run: Path) -> None:
+    # Publisher authority fixture only, not independently executed PHY evidence.
+    _write_log_run_marker_fixture(run)
+    (run / "meta/scenario_config_resolved.json").write_text(json.dumps({
+        "scenario": {"runner_profile": "waveform_bundle"},
+        "simulation": {"link_direction": "both"},
+    }), encoding="utf-8")
+    sources = {
+        "reports/csv/run_state.csv": (
+            "CanonicalSlotsPerSweepPoint,CurrentCanonicalSlot,DLGrantRows,ULGrantRows\n"
+            "2,2,0,0\n"),
+        "reports/csv/slot_trace.csv": (
+            "CanonicalSlot,SweepPointIndex,DLGrantCount,ULGrantCount,"
+            "DLExecutedGrantCount,ULExecutedGrantCount,DLTrialRows,ULTrialRows\n"
+            "1,1,0,0,0,0,0,0\n2,1,0,0,0,0,0,0\n"),
+        "air_interface/csv/pbch_trials.csv": (
+            "CRCPass,Crash,SSBIdentityVerified,SelectedBeamFlag\n0,0,0,0\n"),
+        "air_interface/csv/dl_pdsch_trials.csv": "Slot,CRCPass\n",
+        "air_interface/csv/ul_pusch_trials.csv": "Slot,CRCPass\n",
+    }
+    for path, text in sources.items():
+        (run / path).write_text(text, encoding="utf-8")
+
+
+def test_run_root_accepts_proven_empty_data_authority_without_qualifying_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results/lls/outage/run_1"
+    _write_completed_acquisition_outage(run)
+    before = {path: path.read_bytes() for path in run.rglob("*") if path.is_file()}
+    assert MODULE.validate_run_root(run) == run.resolve()
+    assert {path: path.read_bytes() for path in before} == before
+    assert (run / "reports/csv/scenario_summary.csv").read_text() == "RunCompletion\nfailed\n"
+    assert MODULE.read_csv_shape(run / "air_interface/csv/dl_pdsch_trials.csv") == (0, 2)
+    assert MODULE.read_csv_shape(run / "air_interface/csv/ul_pusch_trials.csv") == (0, 2)
+
+
+@pytest.mark.parametrize("path,replacement", [
+    ("air_interface/csv/dl_pdsch_trials.csv", None),
+    ("air_interface/csv/ul_pusch_trials.csv", ""),
+    ("air_interface/csv/ul_pusch_trials.csv", "Slot\n"),
+    ("air_interface/csv/dl_pdsch_trials.csv", "Slot,CRCPass\n1,0\n"),
+    ("air_interface/csv/pbch_trials.csv", "CRCPass,Crash,SSBIdentityVerified,SelectedBeamFlag\n"),
+    ("air_interface/csv/pbch_trials.csv", "CRCPass,Crash,SSBIdentityVerified,SelectedBeamFlag\n1,0,1,1\n"),
+    ("air_interface/csv/pbch_trials.csv", "CRCPass,Crash,SSBIdentityVerified,SelectedBeamFlag\n0,1,0,0\n"),
+    ("air_interface/csv/pbch_trials.csv", "CRCPass,Crash,SSBIdentityVerified,SelectedBeamFlag\nNaN,0,0,0\n"),
+    ("reports/csv/run_state.csv", "CanonicalSlotsPerSweepPoint,CurrentCanonicalSlot,DLGrantRows,ULGrantRows\n2,1,0,0\n"),
+    ("reports/csv/run_state.csv", "CanonicalSlotsPerSweepPoint,CurrentCanonicalSlot,DLGrantRows,ULGrantRows\n2,2,0,1\n"),
+    ("reports/csv/slot_trace.csv", "CanonicalSlot,SweepPointIndex,DLGrantCount,ULGrantCount,DLExecutedGrantCount,ULExecutedGrantCount,DLTrialRows,ULTrialRows\n1,1,0,0,0,0,0,0\n2,2,0,0,0,0,0,0\n"),
+    ("reports/csv/slot_trace.csv", None),
+    ("reports/csv/scenario_summary.csv", "RunCompletion\n"),
+    ("meta/scenario_config_resolved.json", json.dumps({
+        "scenario": {"runner_profile": "ctrl6gr_pdcch_study"},
+        "simulation": {"link_direction": "dl"}})),
+])
+def test_run_root_outage_does_not_exempt_missing_or_contradictory_authority(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, path: str, replacement: str | None,
+) -> None:
+    monkeypatch.setattr(MODULE, "REPO_ROOT", tmp_path)
+    run = tmp_path / "results/lls/outage/run_1"
+    _write_completed_acquisition_outage(run)
+    # The component case must still require its own nonempty trials even
+    # when unrelated no-data link receipts are present.
+    (run / "air_interface/csv/pdcch_trials.csv").write_text("TrialId,CRCOK\n", encoding="utf-8")
+    target = run / path
+    if replacement is None:
+        target.unlink()
+    else:
+        target.write_text(replacement, encoding="utf-8")
+    with pytest.raises(SystemExit):
+        MODULE.validate_run_root(run)
+
+
 def test_run_root_guard_uses_component_waveform_authority(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

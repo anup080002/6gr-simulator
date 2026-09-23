@@ -78,3 +78,39 @@ Neither that run nor the already-running focused E2E batch was restarted,
 stopped or edited by consolidation. Full-control 400 MHz acceptance,
 statistical detector qualification, paired-rank campaign quality and complete
 Type-II CSI wire/runtime integration remain separate open work.
+
+## Follow-up consolidation after fb68e089
+
+The next user-requested source checkpoint includes the subsequent receiver
+error-classification and empty-data raster-authority repairs, with their
+regressions. Configuration/capture errors retain their original identity
+instead of being counted as ordinary SSB non-detection. Invalid NID2 lists
+are rejected rather than replaced with a blind search. The raster root
+guard accepts existing empty DL/UL schemas only with independent completed
+clock and acquisition-outage evidence; it does not waive artifact coverage,
+create data rows or qualify the run.
+
+At review, local and remote `main` both pointed to `fb68e089`; there was one
+branch and one registered worktree, with no divergent remote commits.
+Historical reconciled stashes remain preserved, not reapplied.
+
+Verification receipts checked for this follow-up:
+
+- `logs/ssb_receiver_error_after_20260923.log`: all four focused tests passed,
+  including invalid configuration/capture rejection, signal-present blind
+  PBCH reception, detector-policy configuration and the eight-slot physical
+  outage case. That last case retained four PBCH rows, 1,024 waveform rows
+  and zero data trials; it is not an end-to-end sweep-publication pass.
+- `logs/empty_primary_export_guards_20260923.log`: the previously running
+  export and E2E truth/proxy batch has now completed with its final pass
+  marker, superseding its running status in the earlier checkpoint above.
+- `logs/outage_publication_guard_regressions_20260923.xml`: 279 Python tests,
+  zero failures, errors or skips. A fresh precommit rerun is recorded in
+  `logs/consolidation_publication_guards_20260923.xml`.
+
+No new MATLAB suite or scenario is launched by this consolidation. The
+existing eight-point sweep is left running. No `testAll` is started, per
+the user's standing instruction. This remains a development checkpoint,
+not full-regression, full-sweep or full-control 400 MHz qualification.
+Generated outputs, logs and local environments are preserved under the
+existing ignore policy; a clean Git working tree does not delete them.
