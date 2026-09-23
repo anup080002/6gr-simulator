@@ -43,6 +43,12 @@ for tuple=[2 1 2;2 2 2;2 2 3;4 1 4].'
                 assert(isequal(tx.Bits,localIndependentBits(request,c)));
                 [rx,W]=sixgr.phy.mimo.TypeIICodebook.deserializePMI(request,tx.Bits,rxCounts);
                 assert(isequal(rx,c));
+                countFields=sixgr.phy.mimo.TypeIICodebook.serializeCountIndicators(request,rxCounts,[1 2]);
+                assert(numel(countFields.Bits)==2*ceil(log2(2*L-1)));
+                assert(~countFields.CompleteCSIReport);
+                [received,Wreceived]=sixgr.phy.mimo.TypeIICodebook.deserializePMIFromCountIndicators( ...
+                    request,tx.Bits,countFields.Bits,[1 2]);
+                assert(isequal(received,c) && isequal(Wreceived,W));
                 assert(norm(W-sixgr.phy.mimo.TypeIICodebook.matrix(request,c),'fro')<1e-14);
                 assert(numel(tx.Owners)==numel(tx.Bits));
                 if count==2*L
@@ -52,6 +58,17 @@ for tuple=[2 1 2;2 2 2;2 2 3;4 1 4].'
                     coded=sixgr.phy.pucch.UCIEncoder.encode(sequence,512,"QPSK");
                     decoded=sixgr.phy.pucch.UCIDecoder.decode(100*(1-2*double(coded.CodedBits)),numel(tx.Bits));
                     assert(decoded.CRCPassed && isequal(int8(decoded.Bits(:)),tx.Bits));
+                    countSequence=sixgr.phy.pucch.UCISequence(1,countFields.Bits, ...
+                        countFields.Owners,countFields.Owners);
+                    codedCounts=sixgr.phy.pucch.UCIEncoder.encode(countSequence,128,"QPSK");
+                    decodedCounts=sixgr.phy.pucch.UCIDecoder.decode( ...
+                        100*(1-2*double(codedCounts.CodedBits)),numel(countFields.Bits));
+                    assert(isequal(int8(decodedCounts.Bits(:)),countFields.Bits));
+                    % These short fields use small-block coding, not a CRC
+                    % that is absent on the physical sequence.
+                    [codedRX,codedW]=sixgr.phy.mimo.TypeIICodebook.deserializePMIFromCountIndicators( ...
+                        request,decoded.Bits,decodedCounts.Bits,[1 2]);
+                    assert(isequal(codedRX,c) && isequal(codedW,W));
                     channelCases=channelCases+1;
                 end
                 cases=cases+1;
@@ -72,10 +89,37 @@ poisoned=request; poisoned.TransmittedComponents=struct('invalid',NaN);
 poisoned.PendingCSITable="unavailable";
 [decoded,W]=sixgr.phy.mimo.TypeIICodebook.deserializePMI(poisoned,tx.Bits,[1 6]);
 assert(isequal(decoded,c));
+% Independently specified count-indicator vector: M0-1=0, M1-1=5.
+countBits=int8([0;0;0;1;0;1]);
+countReport=sixgr.phy.mimo.TypeIICodebook.serializeCountIndicators(request,[1 6],[1 2]);
+assert(isequal(countReport.Bits,countBits));
+[fromReceivedCounts,Wcounts]=sixgr.phy.mimo.TypeIICodebook.deserializePMIFromCountIndicators( ...
+    poisoned,tx.Bits,countBits,[1 2]);
+assert(isequal(fromReceivedCounts,c) && isequal(Wcounts,W));
+localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+    request,int8([1;1;0;1;0;1]),[1 2]),'sixgr:mimo:InvalidTypeIINonzeroCounts');
+localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializePMIFromCountIndicators( ...
+    request,tx.Bits,int8([1;0;1;0;0;0]),[1 2]), ...
+    'sixgr:mimo:TypeIICoefficientCountMismatch');
 assert(norm(W-sixgr.phy.mimo.TypeIICodebook.matrix(request,c),'fro')<1e-14);
 localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializePMI(request,tx.Bits,[6 1]), ...
     'sixgr:mimo:TypeIICoefficientCountMismatch'); % Same total size, wrong ownership.
 request=localRequest(2,1,1,2,4);
+% Rank-one report still reserves a zero second-layer indicator when rank
+% two is allowed. Restricting to rank one removes that field, not the first.
+countReport=sixgr.phy.mimo.TypeIICodebook.serializeCountIndicators(request,3,[1 2]);
+assert(isequal(countReport.Bits,int8([1;0;0;0])));
+restricted=sixgr.phy.mimo.TypeIICodebook.serializeCountIndicators(request,3,1);
+assert(isequal(restricted.Bits,int8([1;0])));
+assert(sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators(request,restricted.Bits,1)==3);
+localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+    request,int8([1;0;0;1]),[1 2]),'sixgr:mimo:InvalidTypeIIInactiveCount');
+localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+    request,int8([1;0]),[1 2]),'sixgr:mimo:InvalidTypeIICountLength');
+localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+    request,[1;0;NaN;0],[1 2]),'sixgr:mimo:InvalidTypeIICountBits');
+localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+    request,int8([1;0;0;0]),2),'sixgr:mimo:InvalidRI');
 bits=expected;
 localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializePMI(request,bits(1:end-1),3), ...
     'sixgr:mimo:InvalidTypeIIPMILength');
@@ -99,7 +143,7 @@ count=sixgr.phy.mimo.TypeIICodebook.pmiBitCount(request,1);
 bad=int8(zeros(count,1)); bad(5:7)=1; % Six groups; binary 111 is not a beam group.
 localReject(@()sixgr.phy.mimo.TypeIICodebook.deserializePMI(request,bad,1), ...
     'sixgr:mimo:InvalidPMI');
-fprintf('TYPEII_PMI_WIRE_CODEC_PASS component_cases=%d asymmetric_counts=1 channel_codecs=%d complete_csi_report=0\n',cases,channelCases);
+fprintf('TYPEII_PMI_WIRE_CODEC_PASS component_cases=%d received_count_fields=%d asymmetric_counts=1 channel_codecs=%d complete_csi_report=0\n',cases,cases,channelCases);
 ok=true;
 end
 

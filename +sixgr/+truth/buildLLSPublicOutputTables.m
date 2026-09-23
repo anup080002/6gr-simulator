@@ -130,19 +130,6 @@ else
 end
 end
 
-function role = iSINRRole(source)
-switch string(source)
-    case "receiver_hest_estimate"
-        role = "receiver_hest_estimate";
-    case "decoder_internal"
-        role = "decoder_internal";
-    case "large_scale_model"
-        role = "large_scale_model";
-    otherwise
-        role = "unavailable";
-end
-end
-
 function [noiseVar, noiseSource, noiseStatus, noiseReason] = iNoise(row)
 noiseVar = iFirstNum(row, ["NoiseVar","NoiseVariance","nVar"], NaN);
 noiseSource = iFirstText(row, ["NoiseVarSource"], "");
@@ -266,6 +253,7 @@ rows = repmat(struct( ...
     "PTRSConfigId", "", "NoiseVar", NaN, "NoiseVarSource", "", "NoiseVarStatus", "", "NoiseVarReason", "", ...
     "ConfiguredSNR_dB", NaN, "AppliedAWGNSNR_dB", NaN, "ChannelEstimationSource", "", "EqualizerType", "", ...
     "EVM_dB", NaN, "EVM_percent", NaN, "EVMSource", "", "SINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", ...
+    "SINRValueStatus", "", ...
     "CRCApplicable", false, "CRCPass", NaN, "DecodeAttempted", false, "DecodeUsable", false, ...
     "HARQProcessId", NaN, "NDI", NaN, "RV", NaN, "TPMI", NaN, "AppliedPrecoderPMI", NaN, ...
     "AppliedPrecoderSource", "", "AppliedBeamIndexSet", "", "BeamIndexSetMaterialized", false, ...
@@ -274,7 +262,12 @@ rows = repmat(struct( ...
     "source_artifact_ref", "", "runtime_evidence", ""), n, 1);
 for i = 1:n
     row = sourceT(i, :);
-    [sinrValue, sinrSource] = iSINR(row);
+    % Preserve the receiver's numeric/provenance tuple. A generic field-name
+    % label cannot distinguish data post-EQ SINR from pilot/model/proxy SINR.
+    [sinrValue,sinrSource,sinrRole,sinrStatus]=sixgr.link.selectReceiverDataSINR(row);
+    if ~isfinite(sinrValue)
+        sinrSource="unavailable"; sinrRole="unavailable"; sinrStatus="NOT_AVAILABLE";
+    end
     [noiseVar, noiseSource, noiseStatus, noiseReason] = iNoise(row);
     [evmPercent, evmSource] = iEVMPercent(row);
     evmDb = iFirstNum(row, ["EVM_dB"], NaN);
@@ -314,7 +307,8 @@ for i = 1:n
     rows(i).EVMSource = evmSource;
     rows(i).SINR_dB = sinrValue;
     rows(i).SINRSource = sinrSource;
-    rows(i).SINRValueRole = iSINRRole(sinrSource);
+    rows(i).SINRValueRole = sinrRole;
+    rows(i).SINRValueStatus = sinrStatus;
     rows(i).CRCApplicable = crcApplicable;
     rows(i).CRCPass = iIf(crcApplicable, double(iFirstLogical(row, ["CRCPass", "tb_crc_pass_flag", "DecodeSuccess"], false)), NaN);
     rows(i).DecodeAttempted = iFirstLogical(row, ["DecodeAttempted", "DetectionAttempted"], false);

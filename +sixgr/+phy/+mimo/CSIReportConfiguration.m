@@ -105,12 +105,25 @@ classdef CSIReportConfiguration
 
         function n = part2BitCount(obj)
             n = sum(obj.Part2Widths);
+            assert(isfinite(n),'sixgr:mimo:UnresolvedCSIPart2Length', ...
+                'Type-II Part-2 length requires decoded Part-1 coefficient counts.');
         end
 
         function counts = part2BitCountCandidates(obj)
             % Resource discovery before RI reception uses only configured
             % possibilities, never the transmitter's selected RI/bit count.
             request=obj.SchemaRequest;
+            if localTypeII(obj)
+                counts=[];
+                for rank=obj.AllowedRanks
+                    request.Rank=rank;
+                    minimum=sixgr.phy.mimo.TypeIICodebook.pmiBitCount(request,ones(1,rank));
+                    li=double(contains(lower(obj.ReportQuantity),'-li-'))*localBits(rank-1);
+                    counts=[counts li+minimum+(0:rank*(2*request.NumberOfBeams-1))*log2(request.PhaseAlphabetSize)]; %#ok<AGROW>
+                end
+                counts=unique(counts);
+                return;
+            end
             counts=zeros(size(obj.AllowedRanks));
             for index=1:numel(obj.AllowedRanks)
                 request.Rank=obj.AllowedRanks(index);
@@ -129,6 +142,10 @@ classdef CSIReportConfiguration
         function assertQualifiedWireLayout(obj)
             % Legacy advanced schema-size formulas are internal inspection
             % objects, not implementations of TS 38.212 CSI wire formats.
+            if localTypeII(obj)
+                localTypeIIWidebandSchema(obj.SchemaRequest);
+                return;
+            end
             assert(lower(obj.CodebookType)=="typei-singlepanel" && ...
                 lower(obj.FrequencyGranularity)=="wideband" && ...
                 (all(obj.AllowedRanks<=2) || ...
@@ -145,6 +162,7 @@ classdef CSIReportConfiguration
             values=obj.decode(part1,part2);
             request=obj.SchemaRequest;
             if isfield(values,'RI'), request.Rank=values.RI; end
+            if localTypeII(obj), request.NonzeroCoefficientCount=values.NonzeroCoefficientCount; end
             request.UCIChannel=upper(string(channel));
             target=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
             encoded=target.build(values);
@@ -168,10 +186,32 @@ classdef CSIReportConfiguration
                 values.RI=find(riValues==obj.Rank); % Restricted codebook ordinal; see Table 6.3.1.1.2-3.
             end
             values.ZERO_PADDING=0; % Normative reserved padding, not a measurement.
+            if localTypeII(obj)
+                assert(isfield(values,'PMIComponents'), ...
+                    'sixgr:mimo:MissingCSIReportMeasurement','Type-II needs measured PMI components.');
+                pmi=sixgr.phy.mimo.TypeIICodebook.serializePMI(obj.SchemaRequest,values.PMIComponents);
+                counts=pmi.NonzeroCoefficientCount;
+                if isfield(obj.SchemaRequest,'NonzeroCoefficientCount')
+                    assert(isequal(counts,obj.SchemaRequest.NonzeroCoefficientCount), ...
+                        'sixgr:mimo:TypeIICoefficientCountMismatch','Bound coefficient counts differ from measured PMI.');
+                end
+                if contains(lower(obj.ReportQuantity),'-li-') && isfield(values,'LI')
+                    assert(isnumeric(values.LI) && isreal(values.LI) && isscalar(values.LI) && ...
+                        isfinite(values.LI) && values.LI==fix(values.LI) && values.LI>=0 && values.LI<obj.Rank, ...
+                        'sixgr:mimo:InvalidLI','LI must identify a reported layer.');
+                end
+                values.NONZERO_AMPLITUDE_COUNT_L0=counts(1)-1;
+                values.NONZERO_AMPLITUDE_COUNT_L1=0;
+                if obj.Rank==2, values.NONZERO_AMPLITUDE_COUNT_L1=counts(2)-1; end
+                [part1Bits,part1Owners]=localSerializeFields(obj.Part1Fields,obj.Part1Widths,values);
+                [liBits,liOwners]=localSerializeFields(obj.Part2Fields(1:end-1),obj.Part2Widths(1:end-1),values);
+                part2Bits=[liBits;pmi.Bits]; part2Owners=[liOwners;pmi.Owners];
+            else
             [part1Bits, part1Owners] = localSerializeFields( ...
                 obj.Part1Fields,obj.Part1Widths,values);
             [part2Bits, part2Owners] = localSerializeFields( ...
                 obj.Part2Fields,obj.Part2Widths,values);
+            end
             part1Names = part1Owners;
             part2Names = part2Owners;
             report = struct( ...
@@ -205,10 +245,12 @@ classdef CSIReportConfiguration
                     "CSI Part 1 has %d bits; schema requires %d.", ...
                     numel(part1Bits),obj.part1BitCount());
             end
-            if numel(part2Bits) ~= obj.part2BitCount()
+            resolved=obj;
+            if localTypeII(obj), [~,resolved]=obj.decodePart1(part1Bits); end
+            if numel(part2Bits) ~= resolved.part2BitCount()
                 error("sixgr:mimo:InvalidCSIPart2Length", ...
                     "CSI Part 2 has %d bits; schema requires %d.", ...
-                    numel(part2Bits),obj.part2BitCount());
+                    numel(part2Bits),resolved.part2BitCount());
             end
         end
 
@@ -217,6 +259,7 @@ classdef CSIReportConfiguration
             % the rank used by a pending transmitter-side report object.
             obj.assertQualifiedWireLayout();
             localValidateBinaryBits(part1Bits);
+            part1Bits=part1Bits(:);
             if numel(part1Bits) ~= obj.part1BitCount()
                 error("sixgr:mimo:InvalidCSIPart1Length", ...
                     "CSI Part 1 has %d bits; schema requires %d.",numel(part1Bits),obj.part1BitCount());
@@ -234,6 +277,9 @@ classdef CSIReportConfiguration
                 end
                 request = obj.SchemaRequest;
                 request.Rank = riValues(prefix.RI);
+                if localTypeII(obj) && isfield(request,'NonzeroCoefficientCount')
+                    request=rmfield(request,'NonzeroCoefficientCount');
+                end
                 receivedConfig = sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
                 assert(obj.part1BitCount()==receivedConfig.part1BitCount(), ...
                     'sixgr:mimo:RankDependentCSIPart1Schema', ...
@@ -248,6 +294,16 @@ classdef CSIReportConfiguration
                 riValues=localRIValues(obj.SchemaRequest); values.RI=riValues(values.RI);
             end
             if obj.Ports==1, values.RI=1; end % No transmitted spatial choice for one CSI-RS port.
+            if localTypeII(obj)
+                request=receivedConfig.SchemaRequest;
+                countStart=find(startsWith(obj.Part1Fields,'NONZERO_AMPLITUDE_COUNT_'),1);
+                offset=sum(obj.Part1Widths(1:countStart-1));
+                counts=sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+                    request,part1Bits(offset+1:end),obj.AllowedRanks);
+                values.NonzeroCoefficientCount=counts;
+                request.NonzeroCoefficientCount=counts;
+                receivedConfig=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Epoch);
+            end
         end
 
         function values = decode(obj, part1Bits, part2Bits)
@@ -256,9 +312,18 @@ classdef CSIReportConfiguration
             % transmitter-side values used to construct the report.
             [values, receivedConfig] = obj.decodePart1(part1Bits);
             localValidateBinaryBits(part2Bits);
+            part2Bits=part2Bits(:);
             receivedConfig.validateDecoded(part1Bits, part2Bits);
-            values = localDeserializeFields(receivedConfig.Part2Fields, ...
-                receivedConfig.Part2Widths, part2Bits(:), values);
+            if localTypeII(obj)
+                liWidth=sum(receivedConfig.Part2Widths(1:end-1));
+                values=localDeserializeFields(receivedConfig.Part2Fields(1:end-1), ...
+                    receivedConfig.Part2Widths(1:end-1),part2Bits(1:liWidth),values);
+                [values.PMIComponents,values.Precoder_W]=sixgr.phy.mimo.TypeIICodebook.deserializePMI( ...
+                    receivedConfig.SchemaRequest,part2Bits(liWidth+1:end),values.NonzeroCoefficientCount);
+            else
+                values = localDeserializeFields(receivedConfig.Part2Fields, ...
+                    receivedConfig.Part2Widths, part2Bits(:), values);
+            end
             if obj.Ports>2 && lower(obj.CodebookType)=="typei-singlepanel" && ...
                     contains(lower(obj.ReportQuantity),'pmi') && isfield(values,"PMI_I11")
                 % Reconstruct the internal index ONLY from received fields
@@ -303,6 +368,10 @@ if cb=="typei-singlepanel"
     [p1f,p1w,p2f,p2w]=localTypeIWidebandSchema(request);
     return;
 end
+if cb=="typeii" && strcmpi(granularity,"wideband")
+    [p1f,p1w,p2f,p2w]=localTypeIIWidebandSchema(request);
+    return;
+end
 if ~(contains(cb,"typeii") || contains(cb,"typei"))
     error("sixgr:mimo:InvalidCodebookType", ...
         "Unsupported CSI codebook type %s.", codebookType);
@@ -324,6 +393,35 @@ p2f = ["PMI_COEFFICIENTS","LI"];
 p2w = [rankValue*beamCount*(localBits(phaseAlphabet-1)+1)*subbands, ...
        localBits(rankValue-1)];
 
+end
+
+function tf=localTypeII(obj)
+tf=lower(obj.CodebookType)=="typeii" && lower(obj.FrequencyGranularity)=="wideband";
+end
+
+function [p1f,p1w,p2f,p2w]=localTypeIIWidebandSchema(request)
+% TS 38.212 Tables 6.3.1.1.2-5, 6.3.2.1.2-3 and -4.
+layout=sixgr.phy.mimo.TypeIICodebook.layout(request);
+ranks=localAllowedRanks(request,layout.Ports);
+assert(all(ismember(ranks,[1 2])) && ...
+    upper(string(request.ConfiguredUCIChannel))=="PUSCH" && ...
+    upper(string(localField(request,'UCIChannel','PUCCH'))) == "PUSCH", ...
+    'sixgr:mimo:UnsupportedCSIReportLayout', ...
+    'Wideband Type-II codec requires a PUSCH-configured PUSCH report and ranks one/two.');
+quantity=lower(string(request.ReportQuantity));
+assert(any(quantity==["cri-ri-pmi-cqi","cri-ri-li-pmi-cqi"]), ...
+    'sixgr:mimo:UnsupportedCSIReportLayout','Unsupported wideband Type-II report quantity.');
+p1f=["CRI","RI","CQI_CW0","NONZERO_AMPLITUDE_COUNT_L0"];
+p1w=[localBits(request.NumCSIResources-1),localBits(numel(ranks)-1),4,ceil(log2(2*layout.NumberOfBeams-1))];
+if ismember(2,ranks)
+    p1f(end+1)="NONZERO_AMPLITUDE_COUNT_L1"; p1w(end+1)=p1w(end);
+end
+p2f=strings(1,0); p2w=zeros(1,0);
+if contains(quantity,'-li-'), p2f="LI"; p2w=localBits(layout.Rank-1); end
+p2f(end+1)="PMI_WIDEBAND"; p2w(end+1)=NaN;
+if isfield(request,'NonzeroCoefficientCount')
+    p2w(end)=sixgr.phy.mimo.TypeIICodebook.pmiBitCount(request,request.NonzeroCoefficientCount);
+end
 end
 
 function ranks=localAllowedRanks(request,ports)

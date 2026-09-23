@@ -143,3 +143,45 @@ are left untouched. Full sweep publication, detector statistics and full-control
 400 MHz acceptance remain unqualified. Results, generated logs and local
 environments are preserved locally, not force-added to GitHub. This is a
 development checkpoint, not a claim that pending runtime issues are resolved.
+
+## Follow-up consolidation after ea49b5b4
+
+This user-requested checkpoint consolidates all ten pending source/test files:
+Type-II wideband PUSCH report/count-field decoding, independently received
+Part-1 sizing of Part 2, malformed-count rejection preserving independent
+HARQ reception, and receiver-owned public DL/UL SINR provenance. The new
+report regression is included with the existing component and waveform tests.
+No scenario is silently switched to Type-II. Full measured Type-II report
+generation and end-to-end shared-runtime qualification remain separate work.
+
+Freshly fetched local and remote main matched at ea49b5b4 before staging.
+There is one local branch and one registered worktree. The historical
+cd397f33 and 471334ff integrations remain ancestors; their two recovery
+stashes are preserved, not reapplied over subsequent fixes.
+
+Verification receipts reviewed for this checkpoint:
+
+- `logs/typeii_received_count_fields_v2_20260923.log`: 88 component cases,
+  16 channel-codec cases and 16 toolbox matrix comparisons passed.
+- `logs/typeii_received_report_waveform_20260923.log`: 24 typed-report
+  coded-LLR cases, malformed-count handling, wire/report binding, received
+  CSI Part-2 sizing and the physical Type-II PUSCH waveform test passed;
+  the final `TYPEII_REPORT_AND_WAVEFORM_GUARDS_PASS` marker is present.
+- `logs/public_data_sinr_provenance_20260923.log`: public DL/UL provenance
+  cases and 66 receiver-SINR selector cases passed.
+- `logs/public_sinr_semantic_guards_20260923.xml`: 130 Python tests, zero
+  failures, errors or skips.
+- `logs/public_sinr_retained_replay_guards_20260923.log`: replay preserved
+  all 20 DL and five UL retained measurement values and their provenance;
+  output coverage and the four export/integrity guards passed. Its subsequent
+  E2E truth/proxy campaign is still running at checkpoint preparation; its
+  final result is not claimed here.
+
+No new testAll or scenario is launched for consolidation, following the
+standing user instruction not to start testAll. The existing eight-point
+sweep and E2E verification continue untouched. Full-regression, eight-point
+publication and full-control 400 MHz acceptance are not claimed. The sweep
+started before this commit and is not a frozen-revision run of this checkpoint.
+Generated results, logs and local environments remain preserved locally under
+existing ignore rules; they are not force-added to GitHub or deleted to make
+the working tree clean.

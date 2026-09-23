@@ -1,9 +1,57 @@
 classdef TypeIICodebook
     %TYPEIICODEBOOK Exact wideband Type-II PMI-to-precoder reconstruction.
     % TS 38.214 V18.9.0 5.2.2.2.3, Tables -1/-2/-5. All component indices
-    % here are zero-based. This is not a CSI wire encoder or a PMI selector.
+    % here are zero-based. Component codecs do not qualify a full runtime
+    % CSI report or select PMI from a channel estimate.
     % No channel matrix, transmitted symbols or preferred rank are inputs.
     methods (Static)
+        function report = serializeCountIndicators(request,counts,allowedRanks)
+            % TS 38.212 Tables 6.3.1.1.2-5 and 6.3.2.1.2-3.
+            % M includes the implicit strongest coefficient. Its indicator
+            % encodes the remaining M-1 nonzero coefficients. Keep the
+            % second field when rank two is allowed, even for reported RI=1.
+            layout=sixgr.phy.mimo.TypeIICodebook.layout(request);
+            [width,fields]=localCountIndicatorLayout(layout,allowedRanks);
+            counts=localNonzeroCounts(counts,layout.NumberOfBeams,layout.Rank);
+            codepoints=zeros(1,fields);
+            codepoints(1:layout.Rank)=counts-1;
+            bits=int8(zeros(fields*width,1)); owners=strings(fields*width,1);
+            for layer=1:fields
+                span=(layer-1)*width+(1:width);
+                bits(span)=int8(bitget(uint32(codepoints(layer)),width:-1:1)).';
+                owners(span)="NONZERO_AMPLITUDE_COUNT_L"+(layer-1);
+            end
+            report=struct('Bits',bits,'Owners',owners,'CompleteCSIReport',false);
+        end
+
+        function counts = deserializeCountIndicators(request,bits,allowedRanks)
+            % request.Rank must be the decoded RI. This accepts only the
+            % received count fields, never transmitter component metadata.
+            layout=sixgr.phy.mimo.TypeIICodebook.layout(request);
+            [width,fields]=localCountIndicatorLayout(layout,allowedRanks);
+            assert((isnumeric(bits)||islogical(bits)) && isreal(bits) && ...
+                isvector(bits) && all(bits(:)==0 | bits(:)==1), ...
+                'sixgr:mimo:InvalidTypeIICountBits','Count indicators must be binary received fields.');
+            assert(numel(bits)==fields*width, ...
+                'sixgr:mimo:InvalidTypeIICountLength', ...
+                'Count indicator length is fixed by allowed ranks and NumberOfBeams.');
+            words=reshape(double(bits),width,fields);
+            codepoints=2.^((width-1):-1:0)*words;
+            assert(all(codepoints(layout.Rank+1:end)==0), ...
+                'sixgr:mimo:InvalidTypeIIInactiveCount', ...
+                'The inactive second-layer indicator must be all zeros for received rank one.');
+            counts=localNonzeroCounts(codepoints(1:layout.Rank)+1, ...
+                layout.NumberOfBeams,layout.Rank);
+        end
+
+        function [components,W] = deserializePMIFromCountIndicators(request,bits,countBits,allowedRanks)
+            % Bridge received Part-1 count fields to variable-length PMI.
+            % An inconsistent Part 1/2 is an error, not a layout hypothesis.
+            counts=sixgr.phy.mimo.TypeIICodebook.deserializeCountIndicators( ...
+                request,countBits,allowedRanks);
+            [components,W]=sixgr.phy.mimo.TypeIICodebook.deserializePMI(request,bits,counts);
+        end
+
         function report = serializePMI(request,components)
             % TS 38.212 Table 6.3.2.1.2-1, X1 followed by wideband X2.
             % This encodes PMI only, not LI or the full CSI Part 1/2 report.
@@ -206,6 +254,16 @@ classdef TypeIICodebook
                 'sixgr:mimo:UnsupportedTypeIIProfile','Nonempty Type-II subset restrictions require a separately validated restriction decoder.');
         end
     end
+end
+
+function [width,fields]=localCountIndicatorLayout(layout,allowedRanks)
+assert(isnumeric(allowedRanks) && isreal(allowedRanks) && isrow(allowedRanks) && ...
+    ~isempty(allowedRanks) && all(ismember(allowedRanks,[1 2])) && ...
+    isequal(allowedRanks,unique(allowedRanks,'sorted')) && ...
+    ismember(layout.Rank,allowedRanks), ...
+    'sixgr:mimo:InvalidRI','Type-II requires explicit allowed ranks containing the received RI.');
+width=ceil(log2(2*layout.NumberOfBeams-1));
+fields=1+ismember(2,allowedRanks);
 end
 
 function counts=localNonzeroCounts(counts,L,r)

@@ -1,9 +1,14 @@
-function ok=testPUSCHReceivedCSIWaveform(outputRoot,configuredChannel)
+function ok=testPUSCHReceivedCSIWaveform(outputRoot,configuredChannel,codebookType)
 % OFDM/DM-RS/LDPC/CSI round trip on an explicitly authored AWGN component.
 % This is not a fading, access, scheduler, or link-adaptation qualification.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, outputRoot=tempname(fullfile(pwd,'logs')); end
 if nargin<2, configuredChannel="PUSCH"; end
+if nargin<3, codebookType="typeI-SinglePanel"; end
+isTypeII=string(codebookType)=="typeII";
+assert(isscalar(string(codebookType)) && any(string(codebookType)==["typeI-SinglePanel","typeII"]));
+assert(~isTypeII || string(configuredChannel)=="PUSCH", ...
+    'Wideband Type-II physical fixture requires a PUSCH-configured report.');
 assert(isscalar(string(configuredChannel)) && ...
     ismember(string(configuredChannel),["PUSCH","PUCCH"]));
 assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve previous waveform evidence.');
@@ -32,8 +37,16 @@ request=struct('ReportConfigID',"received_csi_waveform_fixture",'Epoch',0, ...
     'N1',2,'N2',1,'O1',4,'O2',1,'CodebookMode',2, ...
     'ReportQuantity',"cri-RI-LI-PMI-CQI",'NumCSIResources',4, ...
     'FrequencyGranularity',"wideband",'UCIChannel',string(configuredChannel));
+if isTypeII
+    request.CodebookType="typeII"; request.NumberOfBeams=2; request.PhaseAlphabetSize=4;
+    values=struct('PMIComponents',struct('Q1',2,'Q2',0,'BeamGroupIndex',0, ...
+        'StrongestCoefficientIndices',[0 2], ...
+        'WidebandAmplitudeIndices',[7 1;0 3;0 7;0 5], ...
+        'PhaseIndices',[0 1;0 2;0 0;0 3]));
+else
+    [~,values]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,5);
+end
 reportCfg=sixgr.phy.mimo.CSIReportConfiguration(request,0);
-[~,values]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,5);
 values.RI=2; values.CRI=2; values.CQI_CW0=11; values.LI=1;
 report=reportCfg.build(values);
 payload=sixgr.phy.ul.pusch.PUSCHUCIPayload('HARQACK',int8([1;0]), ...
@@ -103,6 +116,10 @@ for explicitLayout=[false true]
     normalized=sixgr.truth.normalizeReceivedPUSCHCSI(independent,context,installed);
     assert(normalized.DecodeOk && normalized.Fields.RI==2 && normalized.Fields.CQI_CW0==11 && ...
         isequal(normalized.DecodedPart1,report.Part1Bits) && isequal(normalized.DecodedPart2,report.Part2Bits));
+    if isTypeII
+        assert(isequal(normalized.Fields.PMIComponents,values.PMIComponents) && ...
+            isequal(normalized.Fields.NonzeroCoefficientCount,[1 4]));
+    end
     poisoned=independent;
     poisoned.ExpectedCSIPart1Bits=ones(99,1); poisoned.ExpectedCSIPart2Bits=NaN;
     poisoned.GrantSnapshot=struct('UCIOnPUSCHCSIReportIdentity',"wrong_TX_report");
@@ -189,9 +206,14 @@ request.NumCSIResources=3; request.Rank=2;
 invalidSchema=sixgr.phy.mimo.CSIReportConfiguration(request,0);
 % Keep mode-2 four-port geometry. PMI alone has six bits at either rank;
 % LI adds zero/one bits, so received RI is genuinely needed for Part 2.
-assert(isequal(invalidSchema.part2BitCountCandidates(),[6 7]), ...
-    'The partial-waveform fixture must have different configured Part-2 lengths.');
-[~,invalidValues]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,0);
+if isTypeII
+    assert(numel(invalidSchema.part2BitCountCandidates())>2);
+    invalidValues=values;
+else
+    assert(isequal(invalidSchema.part2BitCountCandidates(),[6 7]), ...
+        'The partial-waveform fixture must have different configured Part-2 lengths.');
+    [~,invalidValues]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,0);
+end
 invalidValues.RI=2; invalidValues.CRI=2; invalidValues.CQI_CW0=9;
 invalidValues.LI=1;
 validReport=invalidSchema.build(invalidValues);
@@ -236,7 +258,7 @@ assert(~partial.Ok && ~partial.DecodeAttempted && ~any(partial.TransportBlockDec
 assert(~all(partial.ULSCHMappingResolved) && isempty(partial.TransportBlock));
 assert(~any(isfield(partial,{'CRCError','CRCPass','TBCRCPass','HARQACKContentMatch'})), ...
     'Unattempted transport-block CRC and unavailable TX scoring must not be fabricated.');
-ok=true; fprintf('PUSCH_RECEIVED_CSI_WAVEFORM_PASS: configured=%s valid layout contracts and invalid-CSI independent HARQ.\n',configuredChannel);
+ok=true; fprintf('PUSCH_RECEIVED_CSI_WAVEFORM_PASS: configured=%s codebook=%s valid layout contracts and invalid-CSI independent HARQ.\n',configuredChannel,codebookType);
 end
 
 function localReject(fn,id)

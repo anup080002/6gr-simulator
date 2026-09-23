@@ -53,7 +53,8 @@ classdef PUSCHUCIDemultiplexer
                 % implementation errors remain fatal, never rescue paths.
                 receivedErrors=["sixgr:pusch:UnresolvedReceivedCSIPart1", ...
                     "sixgr:mimo:InvalidCRI","sixgr:mimo:InvalidRI", ...
-                    "sixgr:mimo:InvalidCSIPadding"];
+                    "sixgr:mimo:InvalidCSIPadding", ...
+                    "sixgr:mimo:InvalidTypeIINonzeroCounts","sixgr:mimo:InvalidTypeIIInactiveCount"];
                 if p.OCSI1==0 || ~ismember(string(err.identifier),receivedErrors)
                     rethrow(err);
                 end
@@ -122,7 +123,8 @@ classdef PUSCHUCIDemultiplexer
                         [~,resolved]=reportConfig.decodePart1(bits);
                     catch err
                         if ~independentReceive || ~ismember(string(err.identifier), ...
-                                ["sixgr:mimo:InvalidCRI","sixgr:mimo:InvalidRI","sixgr:mimo:InvalidCSIPadding"])
+                                ["sixgr:mimo:InvalidCRI","sixgr:mimo:InvalidRI","sixgr:mimo:InvalidCSIPadding", ...
+                                 "sixgr:mimo:InvalidTypeIINonzeroCounts","sixgr:mimo:InvalidTypeIIInactiveCount"])
                             rethrow(err);
                         end
                         % A wrong UCI-only presence interpretation must not
