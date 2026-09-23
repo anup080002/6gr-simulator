@@ -1,8 +1,11 @@
-function ok=testPUSCHReceivedCSIWaveform(outputRoot)
+function ok=testPUSCHReceivedCSIWaveform(outputRoot,configuredChannel)
 % OFDM/DM-RS/LDPC/CSI round trip on an explicitly authored AWGN component.
 % This is not a fading, access, scheduler, or link-adaptation qualification.
 setup6GRSimToolkit('Verbose',false);
 if nargin<1, outputRoot=tempname(fullfile(pwd,'logs')); end
+if nargin<2, configuredChannel="PUSCH"; end
+assert(isscalar(string(configuredChannel)) && ...
+    ismember(string(configuredChannel),["PUSCH","PUCCH"]));
 assert(~isfolder(outputRoot),'test:EvidenceExists','Preserve previous waveform evidence.');
 mkdir(outputRoot);
 prior=rng; cleanup=onCleanup(@()rng(prior)); %#ok<NASGU>
@@ -28,7 +31,7 @@ request=struct('ReportConfigID',"received_csi_waveform_fixture",'Epoch',0, ...
     'CodebookType',"typeI-SinglePanel",'Ports',4,'Rank',2,'MaxRank',2, ...
     'N1',2,'N2',1,'O1',4,'O2',1,'CodebookMode',2, ...
     'ReportQuantity',"cri-RI-LI-PMI-CQI",'NumCSIResources',4, ...
-    'FrequencyGranularity',"wideband",'UCIChannel',"PUSCH");
+    'FrequencyGranularity',"wideband",'UCIChannel',string(configuredChannel));
 reportCfg=sixgr.phy.mimo.CSIReportConfiguration(request,0);
 [~,values]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,5);
 values.RI=2; values.CRI=2; values.CQI_CW0=11; values.LI=1;
@@ -61,7 +64,11 @@ for explicitLayout=[false true]
     assert(e.ResolvedCSI2BitCount==rx.CSI2BitCount);
     assert(rx.CodingLayout.RateMatchedBitCount==tx.CodingLayout.RateMatchedBitCount);
     assert(~rx.CSI1ContentMatch && ~rx.CSI2ContentMatch);
-    assert(~e.CSI1.CRCApplicable && isnan(e.CSI1.CRCPass));
+    if numel(report.Part1Bits)>11
+        assert(e.CSI1.CRCApplicable && e.CSI1.CRCPass==1);
+    else
+        assert(~e.CSI1.CRCApplicable && isnan(e.CSI1.CRCPass));
+    end
 
     % Independently declared receive obligation: never derive its HARQ width
     % from payload.HARQACK or the UE report. This component does not claim a
@@ -73,6 +80,11 @@ for explicitLayout=[false true]
         'CSIReportConfigID',"received_csi_waveform_fixture",'CSIConfigurationEpoch',0);
     context=sixgr.phy.ul.pusch.PUSCHUCIReceiveContext(obligation);
     installed=sixgr.phy.mimo.CSIReportConfiguration(request,0);
+    installed=installed.forTransport("PUSCH");
+    assert(installed.ConfiguredUCIChannel==string(configuredChannel));
+    if string(configuredChannel)=="PUCCH"
+        assert(isempty(report.Part2Bits) && installed.part2BitCount()==0);
+    end
     % A contradictory TX-side/config report cannot determine receiver sizing.
     rxCfg=cfg;
     rxCfg.phy.pusch.ExpectedUCIPayload=poison;
@@ -172,6 +184,7 @@ assert(~normalizedAbsent.DecodeOk && isnan(normalizedAbsent.CRCPass) && isempty(
 % or an injected runtime measurement. The existing valid-waveform checks above
 % remain unchanged. Variable Part-2 sizes leave this codeword's data unresolved.
 request.ReportQuantity="cri-RI-LI-PMI-CQI";
+request.UCIChannel="PUSCH"; % Independently configured two-part negative fixture.
 request.NumCSIResources=3; request.Rank=2;
 invalidSchema=sixgr.phy.mimo.CSIReportConfiguration(request,0);
 % Keep mode-2 four-port geometry. PMI alone has six bits at either rank;
@@ -223,7 +236,7 @@ assert(~partial.Ok && ~partial.DecodeAttempted && ~any(partial.TransportBlockDec
 assert(~all(partial.ULSCHMappingResolved) && isempty(partial.TransportBlock));
 assert(~any(isfield(partial,{'CRCError','CRCPass','TBCRCPass','HARQACKContentMatch'})), ...
     'Unattempted transport-block CRC and unavailable TX scoring must not be fabricated.');
-ok=true; fprintf('PUSCH_RECEIVED_CSI_WAVEFORM_PASS: valid layout contracts and invalid-CSI independent HARQ.\n');
+ok=true; fprintf('PUSCH_RECEIVED_CSI_WAVEFORM_PASS: configured=%s valid layout contracts and invalid-CSI independent HARQ.\n',configuredChannel);
 end
 
 function localReject(fn,id)

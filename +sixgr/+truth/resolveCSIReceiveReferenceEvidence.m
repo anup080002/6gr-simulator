@@ -1,9 +1,7 @@
 function [eligible, evidence] = resolveCSIReceiveReferenceEvidence(state,cfg,ue,servingCell,calendar,targetSlot)
-%RESOLVECSIRECEIVEREFERENCEEVIDENCE Bind configured CSI occasions to RX evidence.
-% A periodic calendar row is only a receive obligation when a causal,
-% completed CSI-RS receiver observation exists in the active sweep.  This
-% function intentionally does not inspect pending CSI reports or UE payload
-% bits; those are producer state and would be a receiver oracle.
+% GNB receive applicability from its own executed reference TX, not UE RX.
+% UE measurement success belongs to the separate report producer. A failed
+% or absent UE report after an eligible reference must remain observable.
 
 validateattributes(ue,{'numeric'},{'scalar','real','finite','integer','positive'});
 validateattributes(servingCell,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
@@ -20,50 +18,71 @@ assert(ismember('CSIReferenceSlot',calendar.Properties.VariableNames), ...
     'sixgr:truth:InvalidCSIReceiveCalendar', ...
     'The installed CSI calendar must identify its CSI reference slot.');
 
-retained=sixgr.util.structGet(state,'ControlTrials.CSIRS',table());
-if ~istable(retained) || isempty(retained)
+ledger=sixgr.util.structGet(state,'SharedDataTXLedger',{});
+if isempty(ledger)
     return;
 end
-required={'UEIndex','ServingCell','Slot'};
-assert(all(ismember(required,retained.Properties.VariableNames)), ...
-    'sixgr:truth:CSIRSProducerSchemaIncomplete', ...
-    'CSI receive evidence must identify UE, serving cell and source slot.');
 first=sixgr.util.structGet(state,'SweepPointStartSlot',1);
 validateattributes(first,{'numeric'},{'scalar','real','finite','integer','positive'});
-shared=isa(sixgr.util.structGet(state,'SharedWaveformStream',[]), ...
-    'sixgr.truth.CoupledWaveformStream');
+owner=sixgr.util.structGet(state,'SharedWaveformStream',[]);
+assert(isa(owner,'sixgr.truth.CoupledWaveformStream') && isscalar(owner), ...
+    'sixgr:truth:CSIReferenceTXOwnerRequired','A retained TX requires its actual physical owner.');
+records=owner.DataTransmissions;
 
-selectedRows=zeros(0,1);
+rows=cell(0,1);
 for ci=1:height(calendar)
     reference=double(calendar.CSIReferenceSlot(ci));
     if ~(isfinite(reference) && reference==fix(reference) && ...
             reference>=first && reference<=targetSlot)
         continue;
     end
-    candidates=find(double(retained.UEIndex)==double(ue) & ...
-        double(retained.ServingCell)==double(servingCell) & ...
-        double(retained.Slot)>=double(first) & double(retained.Slot)<=reference);
     best=0;
     bestSlot=-Inf;
-    for ri=reshape(candidates,1,[])
-        candidate=retained(ri,:);
-        [availableSlot,usable,clocked]=sixgr.truth.csirsMeasurementAvailability(candidate,shared);
-        usable=usable && availableSlot<=targetSlot && ...
-            ~sixgr.truth.isCSIReportingMeasurementGap(cfg,double(candidate.Slot));
-        if shared
-            usable=usable && clocked;
+    for ri=1:numel(ledger)
+        entry=ledger{ri};
+        r=sixgr.util.structGet(entry,'CSIReference',struct([]));
+        if isempty(r), continue; end
+        id=entry.Identity;
+        % Cell-common CSI-RS can be embedded in another UE's PDSCH. Match
+        % installed resource/BWP identity, not that UE's receive success.
+        if id.Direction~="DL" || r.ServingCell~=servingCell || ...
+                r.Slot<first || r.Slot>reference || ~r.ReportEnabled || ...
+                r.PhysicalConfigurationEpoch~=owner.Physical.ConfigurationEpoch || ...
+                id.SampleRateHz~=owner.SampleRateHz || ...
+                id.EndSampleExclusive>owner.Events.NextSampleIndex || ...
+                ~isequaln(r.ReferenceConfiguration,cfg.phy.csirs) || ...
+                ~isequaln(r.ReportConfiguration,cfg.phy.csi.reportConfiguration) || ...
+                ~isequaln(r.FrameIdentity,cfg.phy.frame.DefaultIdentity) || ...
+                sixgr.truth.isCSIReportingMeasurementGap(cfg,r.Slot)
+            continue;
         end
-        if usable && double(candidate.Slot)>=bestSlot
+        hit=find(arrayfun(@(x)x.Identity.TransmissionID==id.TransmissionID,records));
+        assert(isscalar(hit) && isequaln(records(hit).Identity,id) && ...
+            records(hit).FirstActiveSample==entry.FirstActiveSample && ...
+            records(hit).CommittedAtSample==entry.CommittedAtSample && ...
+            entry.CommittedAtSample<=id.EndSampleExclusive, ...
+            'sixgr:truth:CSIReferenceTXNotExecuted', ...
+            'A caller-created preparation/ledger cannot establish reference execution.');
+        if r.Slot>=bestSlot
             best=ri;
-            bestSlot=double(candidate.Slot);
+            bestSlot=r.Slot;
         end
     end
     if best>0
         eligible(ci)=true;
-        selectedRows(end+1,1)=best; %#ok<AGROW>
+        entry=ledger{best}; r=entry.CSIReference;
+        rows{end+1,1}=struct('UEIndex',ue,'ServingCell',servingCell, ...
+            'Slot',r.Slot,'CSIReferenceSlot',reference,'ReportSlot',targetSlot, ...
+            'TransmissionID',entry.Identity.TransmissionID, ...
+            'EmbeddingUEIndex',entry.Identity.UEIndex, ...
+            'TransmissionEndSampleExclusive',entry.Identity.EndSampleExclusive, ...
+            'SampleRateHz',owner.SampleRateHz, ...
+            'PhysicalConfigurationEpoch',r.PhysicalConfigurationEpoch, ...
+            'ResourceSetID',r.ResourceSetID,'WaveformMappedRE',r.WaveformMappedRE, ...
+            'Source',"gnb_completed_reference_TX_not_UE_measurement_outcome"); %#ok<AGROW>
     end
 end
-if ~isempty(selectedRows)
-    evidence=retained(selectedRows,:);
+if ~isempty(rows)
+    evidence=struct2table(vertcat(rows{:}),'AsArray',true);
 end
 end

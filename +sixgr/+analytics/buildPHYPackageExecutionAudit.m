@@ -21,6 +21,13 @@ profilePath = fullfile(layout.ReportCSVDir, "runtime_function_profile.csv");
 summaryPath = fullfile(layout.ReportCSVDir, "runtime_profiler_summary.csv");
 ledgerPath = fullfile(layout.ReportCSVDir, "runtime_call_ledger.csv");
 profileT = localReadTable(profilePath);
+% Normalize the immutable profiler snapshot once, not once per source file
+% in both inventories. This preserves exact-path matching without an
+% O(source files * profiler rows) loop of scalar table/string conversions.
+profilePaths = strings(height(profileT),1);
+if ismember("FileName",string(profileT.Properties.VariableNames))
+    profilePaths = localNormalizePath(string(profileT.FileName));
+end
 profilerSummaryT = localReadTable(summaryPath);
 ledgerT = localReadTable(ledgerPath);
 [ledgerAvailable, ledgerIdentityComplete] = localLedgerState(ledgerT);
@@ -39,7 +46,7 @@ rows = repmat(localEmptyRow(), height(inventory), 1);
 for i = 1:height(inventory)
     relativePath = replace(string(inventory.file_path(i)), "\", "/");
     absolutePath = localNormalizePath(fullfile(repoRoot, char(relativePath)));
-    profileMask = localExactProfileFileMask(profileT, absolutePath);
+    profileMask = strcmpi(profilePaths, absolutePath);
     qualifiedName = localQualifiedName(relativePath);
     ledgerMask = localExactLedgerFunctionMask(ledgerT, qualifiedName);
     called = any(profileMask) || any(ledgerMask);
@@ -91,7 +98,7 @@ summaryT = localBuildSummary(detailT, ledgerAvailable, profileAvailable, profile
     exportedFunctions, capturedFunctions);
 gateT = localBuildEvidenceGate(detailT, ledgerAvailable, ledgerIdentityComplete, ...
     profileAvailable, profileComplete, exportedFunctions, capturedFunctions);
-functionT = localBuildFunctionInventory(inventory, profileT, ledgerT, ...
+functionT = localBuildFunctionInventory(inventory, profileT, profilePaths, ledgerT, ...
     repoRoot, profileAvailable, profileComplete);
 
 detailPath = fullfile(layout.ReportCSVDir, "phy_package_execution_audit.csv");
@@ -233,21 +240,9 @@ end
 complete = available && isfinite(capturedCount) && capturedCount > 0 && exportedCount >= capturedCount;
 end
 
-function mask = localExactProfileFileMask(profileT, absolutePath)
-mask = false(height(profileT), 1);
-if height(profileT) == 0 || ~ismember("FileName", string(profileT.Properties.VariableNames))
-    return;
-end
-paths = strings(height(profileT), 1);
-for i = 1:height(profileT)
-    paths(i) = localNormalizePath(string(profileT.FileName(i)));
-end
-mask = strcmpi(paths, absolutePath);
-end
-
 function path = localNormalizePath(path)
 path = replace(string(path), "\", "/");
-while contains(path, "//")
+while any(contains(path, "//"),"all")
     path = replace(path, "//", "/");
 end
 path = lower(path);
@@ -519,7 +514,7 @@ end
 T = struct2table(rows);
 end
 
-function T = localBuildFunctionInventory(inventory, profileT, ledgerT, ...
+function T = localBuildFunctionInventory(inventory, profileT, profilePaths, ledgerT, ...
         repoRoot, profileAvailable, profileComplete)
 rows = repmat(localEmptyFunctionRow(), 0, 1);
 for fileIndex = 1:height(inventory)
@@ -529,7 +524,7 @@ for fileIndex = 1:height(inventory)
         fullfile(repoRoot, char(relativePath)), ...
         string(inventory.primary_function_or_class(fileIndex)));
     sourceSHA256 = localFileSHA256(fullfile(repoRoot, char(relativePath)));
-    fileProfileMask = localExactProfileFileMask(profileT, absolutePath);
+    fileProfileMask = strcmpi(profilePaths, absolutePath);
     primaryQualifiedName = localQualifiedName(relativePath);
     for declarationIndex = 1:height(declarations)
         row = localEmptyFunctionRow();

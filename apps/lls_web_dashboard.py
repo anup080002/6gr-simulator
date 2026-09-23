@@ -4844,6 +4844,16 @@ def _filesystem_run_folders() -> list[Path]:
             for run_dir in scenario_dir.iterdir():
                 if not run_dir.is_dir():
                     continue
+                # A running sweep has no terminal parent manifest yet.
+                # Discover only its independently evidenced point runs;
+                # do not invent a parent result or merge child artifacts.
+                sweep_dir = run_dir / "sweeps"
+                extended_sweep_dir = _windows_extended_path(sweep_dir)
+                if extended_sweep_dir.is_dir():
+                    for entry in extended_sweep_dir.iterdir():
+                        point_dir = sweep_dir / entry.name
+                        if entry.is_dir() and _is_discoverable_filesystem_run_folder(point_dir):
+                            folders.append(point_dir)
                 if _is_discoverable_filesystem_run_folder(run_dir):
                     folders.append(run_dir)
                     continue

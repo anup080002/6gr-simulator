@@ -51,6 +51,33 @@ T = table(direction, legacy, sampleN, gridN, receiverN, preEqN, postEqN, ...
 report = sixgr.phy.rx.validateNoiseDomainEvidence(T, "ThrowOnFailure", true);
 assert(all(report.Status == "PASS"), "The valid explicit-domain fixture must pass.");
 
+preDecoder=T;
+preDecoder.LLRNoiseVariance(2)=preDecoder.PreEqualizationNoiseVariance(2);
+preDecoder.LLRNoiseVarianceSource(2)="configured_pre_equalization_noise_variance";
+preDecoder.LLRNoiseVarianceDomain(2)="pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode";
+report=sixgr.phy.rx.validateNoiseDomainEvidence(preDecoder,"ThrowOnFailure",true);
+assert(all(report.Status=="PASS"));
+wrongDecoder=preDecoder;
+wrongDecoder.LLRNoiseVarianceDomain(2)="unit_constellation_soft_demapper_input";
+localAssertError(@()sixgr.phy.rx.validateNoiseDomainEvidence( ...
+    wrongDecoder,"ThrowOnFailure",true),"sixgr:phy:rx:NoiseDomainEvidenceInvalid");
+wrongDecoder=preDecoder;
+wrongDecoder.LLRNoiseVariance(2)=preDecoder.PostEqualizationNoiseVariance(2);
+localAssertError(@()sixgr.phy.rx.validateNoiseDomainEvidence( ...
+    wrongDecoder,"ThrowOnFailure",true),"sixgr:phy:rx:NoiseDomainEvidenceInvalid");
+researchDecoder=preDecoder;
+researchDecoder.LLRNoiseVarianceDomain(2)= ...
+    "pre_equalization_channel_estimator_noise_variance_for_experimental_explicit_Qm_demapper";
+sixgr.phy.rx.validateNoiseDomainEvidence(researchDecoder,"ThrowOnFailure",true);
+postDecoder=T;
+postDecoder.LLRNoiseVarianceSource(2)="post_equalization_sinr_decoder_noise_variance";
+postDecoder.LLRNoiseVarianceDomain(2)="post_equalization_decoder_symbol_domain";
+sixgr.phy.rx.validateNoiseDomainEvidence(postDecoder,"ThrowOnFailure",true);
+wrongDecoder=postDecoder;
+wrongDecoder.LLRNoiseVariance(2)=wrongDecoder.PreEqualizationNoiseVariance(2);
+localAssertError(@()sixgr.phy.rx.validateNoiseDomainEvidence( ...
+    wrongDecoder,"ThrowOnFailure",true),"sixgr:phy:rx:NoiseDomainEvidenceInvalid");
+
 bounded = T;
 bounded.PostEqSINRValueStatus = ["OK_DMRS_RESIDUAL_BOUNDED"; ...
     "OK_DECISION_DIRECTED_RESIDUAL_BOUNDED"];
@@ -67,6 +94,11 @@ bad = T;
 bad.PostEqSINRAvailable(1) = false;
 localAssertError(@()sixgr.phy.rx.validateNoiseDomainEvidence( ...
     bad, "ThrowOnFailure", true), "sixgr:phy:rx:NoiseDomainEvidenceInvalid");
+
+bad=T;
+bad.PostEqSINRValueStatus(2)="OK_PROXY";
+localAssertError(@()sixgr.phy.rx.validateNoiseDomainEvidence( ...
+    bad,"ThrowOnFailure",true),"sixgr:phy:rx:NoiseDomainEvidenceInvalid");
 
 replay = struct( ...
     "InjectedNoiseVariance", 0.25, ...

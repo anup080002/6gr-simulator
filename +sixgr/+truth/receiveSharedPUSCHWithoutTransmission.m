@@ -25,7 +25,7 @@ assert(extractBefore(ids(preIndex),':pre_rf')==receiverID, ...
     post,item.Planes(postIndex).Segments,receiverID);
 binding=sixgr.truth.puschUCIObservationBinding(grant,observation);
 [receiverAttempt,priorSoft]=sixgr.truth.prepareSharedULHARQReception(state,cfg,grant,observation);
-[obligation,report]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
+[obligation,report]=sixgr.truth.resolveSharedPUSCHCSIReceiveObligation(state,cfg,grant);
 [context,mapping]=sixgr.truth.buildSharedPUSCHUCIReceiveContext( ...
     state,cfg,grant,binding.ObservationID,obligation,report);
 % Remove UE-owned optional fields, as on the normal independent receive path.

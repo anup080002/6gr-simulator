@@ -26,13 +26,24 @@ for withLI=[false true]
   assert(decoded.RI==rank && decoded.PMI==values.PMI && decoded.CQI_CW0==9);
   assert(isfield(decoded,'LI')==withLI);
   [puschBits,pusch]=rx.transcode(encoded.Part1Bits,int8([]),"PUSCH");
+  assert(pusch.UCIChannel=="PUSCH" && pusch.ConfiguredUCIChannel=="PUCCH");
+  assert(isequal(puschBits.Part1Bits,encoded.Part1Bits) && isempty(puschBits.Part2Bits), ...
+      'PUCCH-configured CSI must retain its payload when transported by PUSCH.');
+  % Native PUSCH reporting is a distinct installed configuration, not the
+  % result of moving a PUCCH-configured report to an overlapping PUSCH.
+  nativeRequest=request; nativeRequest.Rank=rank; nativeRequest.UCIChannel="PUSCH";
+  native=sixgr.phy.mimo.CSIReportConfiguration(nativeRequest,0);
+  nativeBits=native.build(values);
   expectedPart1="1001001"; expectedPart2="11";
   if rank==2
       expectedPart1="1011001"; expectedPart2="0";
       if withLI, expectedPart2="10"; end
   end
-  assert(isequal(puschBits.Part1Bits,localBits(expectedPart1)) && ...
-      isequal(puschBits.Part2Bits,localBits(expectedPart2)));
+  assert(isequal(nativeBits.Part1Bits,localBits(expectedPart1)) && ...
+      isequal(nativeBits.Part2Bits,localBits(expectedPart2)));
+  independentRX=rx.forTransport("PUSCH");
+  received=independentRX.decode(puschBits.Part1Bits,puschBits.Part2Bits);
+  assert(received.RI==rank && received.PMI==values.PMI && received.CQI_CW0==9);
   [back,~]=pusch.transcode(puschBits.Part1Bits,puschBits.Part2Bits,"PUCCH");
   assert(isequal(back.Part1Bits,encoded.Part1Bits) && isempty(back.Part2Bits));
   if rank==2 && ~withLI
@@ -59,20 +70,29 @@ values=struct('CRI',2,'RI',2,'CQI_CW0',9,'LI',1,'PMI_I11',3,'PMI_I13',1,'PMI_I2'
 encoded=config.build(values);
 assert(isequal(encoded.Part1Bits,localBits("101011111001")));
 [pusch,~]=config.transcode(encoded.Part1Bits,encoded.Part2Bits,"PUSCH");
-assert(isequal(pusch.Part2Bits,localBits("01111")));
+assert(isequal(pusch.Part1Bits,encoded.Part1Bits) && isempty(pusch.Part2Bits));
+nativeRequest=request; nativeRequest.UCIChannel="PUSCH";
+native=sixgr.phy.mimo.CSIReportConfiguration(nativeRequest,0); nativeBits=native.build(values);
+assert(isequal(nativeBits.Part2Bits,localBits("01111")));
 request.ReportQuantity="cri-RI-LI-PMI-CQI";
 config=sixgr.phy.mimo.CSIReportConfiguration(request,0);
 encoded=config.build(values);
 assert(isequal(encoded.Part1Bits,localBits("1011011111001")));
 [pusch,~]=config.transcode(encoded.Part1Bits,encoded.Part2Bits,"PUSCH");
-assert(isequal(pusch.Part2Bits,localBits("101111")));
+assert(isequal(pusch.Part1Bits,encoded.Part1Bits) && isempty(pusch.Part2Bits));
+nativeRequest=request; nativeRequest.UCIChannel="PUSCH";
+native=sixgr.phy.mimo.CSIReportConfiguration(nativeRequest,0); nativeBits=native.build(values);
+assert(isequal(nativeBits.Part2Bits,localBits("101111")));
 % TS 38.214 5.2.1.4.2: i1-only reporting is not full PMI; omit i2/LI.
 request.ReportQuantity="cri-RI-i1-CQI";
 config=sixgr.phy.mimo.CSIReportConfiguration(request,0);
 encoded=config.build(values);
 assert(isequal(encoded.Part1Bits,localBits("10101111001")));
 [pusch,puschConfig]=config.transcode(encoded.Part1Bits,encoded.Part2Bits,"PUSCH");
-assert(isequal(pusch.Part2Bits,localBits("0111")));
+assert(isequal(pusch.Part1Bits,encoded.Part1Bits) && isempty(pusch.Part2Bits));
+nativeRequest=request; nativeRequest.UCIChannel="PUSCH";
+native=sixgr.phy.mimo.CSIReportConfiguration(nativeRequest,0); nativeBits=native.build(values);
+assert(isequal(nativeBits.Part2Bits,localBits("0111")));
 decoded=puschConfig.decode(pusch.Part1Bits,pusch.Part2Bits);
 assert(decoded.PMI_I11==3 && decoded.PMI_I13==1 && ...
     ~isfield(decoded,'PMI_I2') && ~isfield(decoded,'PMI') && ~isfield(decoded,'LI'));

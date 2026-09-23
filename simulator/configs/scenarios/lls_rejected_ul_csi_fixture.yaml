@@ -14,3 +14,14 @@ reference_signals:
 csi_acquisition_and_reporting:
   csi_report_periodicity_slots: 5
   csi_report_offset_slots: 4
+
+# Execute a slot-6 CSI-RS-bearing DL contribution. Keep its HARQ occasion
+# separate from the tested slot-10 CSI-only PUSCH receive obligation.
+tdd_timing:
+  dl_harq_feedback_k1: [3]
+
+harq:
+  feedback_timing_slots: 3
+
+pucch_resources:
+  dl_data_to_ul_ack: [3]

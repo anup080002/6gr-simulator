@@ -434,11 +434,12 @@ end
 function localCheckReceivedPUSCHLengthAuthority(state,grant,dueSlot)
 % Actual UCI codecs and a scheduler-ledger fixture, not an RF/access claim.
 payload=grant.ExpectedUCIPayload;
-assert(~isempty(payload.CSIPart2));
 request=state.CfgMobility.phy.csi.reportConfiguration;
 config=sixgr.phy.mimo.CSIReportConfiguration(request, ...
     double(state.PendingCSITable.CSIConfigurationEpoch(1)));
 config=config.forTransport("PUSCH");
+assert(config.ConfiguredUCIChannel=="PUCCH" && isempty(payload.CSIPart2), ...
+    'Relocated wideband PUCCH CSI retains its one-part reporting format.');
 p=nrPUSCHConfig; p.PRBSet=0:11;
 info=nrULSCHInfo(p,.3,512,0,numel(payload.CSIPart1),numel(payload.CSIPart2));
 mux=sixgr.phy.ul.pusch.PUSCHUCIMultiplexer.multiplex( ...

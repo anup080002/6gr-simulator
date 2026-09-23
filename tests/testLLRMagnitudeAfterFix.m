@@ -30,10 +30,9 @@ cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 
 out = sixgr.link.runDLPDSCHThroughput(cfg, "NumFrames", 8, "SNR_dB", 15);
-if isfield(out, "Skipped") && out.Skipped
-    ok = true;
-    return;
-end
+assert(~(isfield(out, "Skipped") && out.Skipped), ...
+    'test:LLRReferenceNotExecuted', ...
+    'Skipped PHY execution cannot qualify receiver LLR scaling.');
 T = out.TrialTable;
 assert(all(~logical(T.Crash)), ...
     "LLR reference trials must reach the decoder without crashed rows.");
@@ -56,5 +55,7 @@ if ismember("DecoderIterations", string(T.Properties.VariableNames))
     end
 end
 
+fprintf('LLR_REFERENCE_EXECUTED trials=%d finite_LLR_rows=%d median_mean_abs=%.9g statistical_qualification=0\n', ...
+    height(T),numel(llr),median(llr));
 ok = true;
 end

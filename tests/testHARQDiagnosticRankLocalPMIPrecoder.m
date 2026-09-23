@@ -23,7 +23,9 @@ cfg.phy.mimo.N1 = 1;
 cfg.phy.mimo.N2 = 1;
 cfg.phy.mimo.O1 = 1;
 cfg.phy.mimo.O2 = 1;
-cfg.phy.carrier.NSizeGrid = 12;
+cfg.phy.carrier.NSizeGrid = 24;
+cfg.channel.bandwidth_Hz = 10e6;
+cfg.phy.ssb.enable = false;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.pdsch.enable = true;
 cfg.phy.pdsch.prbSet = 0:5;
@@ -68,6 +70,16 @@ assert(istable(artifacts.PacketTable) && ~isempty(artifacts.PacketTable), ...
     "Rank-local PMI HARQ probe emitted no real waveform packet evidence.");
 assert(all(string(artifacts.PacketTable.Direction) == "DL"), ...
     "Rank-local PMI HARQ probe emitted an unexpected direction.");
+disp(artifacts.PacketTable(:,["SNR_dB","MeasuredSINR_dB","CurrentDecodeOK"]));
+T = artifacts.PacketTable;
+assert(all(T.CurrentDecodeOK) && all(isfinite(T.MeasuredSINR_dB)), ...
+    "High-SNR probe must decode and export actual post-EQ SINR.");
+assert(all(abs(T.AppliedNoiseSNR_dB-T.SNR_dB)<1e-10));
+assert(all(abs(10*log10(T.MeasuredInjectedGridNoiseVariance./T.GridNoiseVariance))<0.8), ...
+    "Demodulated injected-noise variance must agree with the fixed reference.");
+assert(all(T.NoiseCalibrationSource == "sixgr.phy.waveform.addOccupiedREAWGN"));
+assert(all(abs(T.GridNoiseVariance-T.SampleNoiseVariance.* ...
+    T.SampleToGridNoiseVarianceGain)<1e-12));
 ok = true;
 end
 

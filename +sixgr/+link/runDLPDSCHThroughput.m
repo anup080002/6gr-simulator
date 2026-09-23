@@ -248,6 +248,8 @@ trialTB = NaN(numFrames,1);
 trialCRC = NaN(numFrames,1);
 trialDecIt = NaN(numFrames,1);
 trialEVM = NaN(numFrames,1);
+trialEVMLayers = strings(numFrames,1);
+trialEVMLayerSource = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
@@ -324,6 +326,7 @@ trialOLLAUpdateCount = NaN(numFrames,1);
 trialOLLAStateAuthority = strings(numFrames,1);
 trialOLLAState = strings(numFrames,1);
 trialRankSelectionPolicy = strings(numFrames,1);
+trialConfiguredLayers = NaN(numFrames,1);
 trialRankSelectionSource = strings(numFrames,1);
 trialRankDecisionReason = strings(numFrames,1);
 trialRankDowngradeApplied = false(numFrames,1);
@@ -416,6 +419,7 @@ trialTimingEstimateStatus = strings(numFrames,1);
 trialTimingEstimateWasClipped = false(numFrames,1);
 trialConfiguredSNR = snr_dB * ones(numFrames,1);
 trialAppliedAWGNSNR = NaN(numFrames,1);
+trialAppliedAWGNSNRSource = strings(numFrames,1);
 trialDesiredSignalPowerBeforeNoise = NaN(numFrames,1);
 trialCompositeSignalPowerBeforeNoise = NaN(numFrames,1);
 trialAppliedNoiseSNR = NaN(numFrames,1);
@@ -965,6 +969,7 @@ for n = 1:numFrames
         trialOLLAStateAuthority(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAStateAuthority", ""));
         trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
         trialRankSelectionPolicy(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionPolicy", ""));
+        trialConfiguredLayers(n) = double(sixgr.util.structGet(grantSnapshot, "ConfiguredLayers", NaN));
         trialRankSelectionSource(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionSource", ""));
         trialRankDecisionReason(n) = string(sixgr.util.structGet(grantSnapshot, "RankDecisionReason", ""));
         trialRankDowngradeApplied(n) = logical(sixgr.util.structGet(grantSnapshot, "RankDowngradeApplied", false));
@@ -1360,6 +1365,7 @@ for n = 1:numFrames
         trialPostEqDecisionResidual(n) = double(sixgr.util.structGet(rx, "PostEqDecisionResidual_dB", NaN));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+        trialAppliedAWGNSNRSource(n) = string(sixgr.util.structGet(replay, "AppliedAWGNSNRSource", ""));
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
         trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
         trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
@@ -1731,6 +1737,8 @@ for n = 1:numFrames
         end
         [modTrack, constT] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfgFrame, "DL");
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
+        trialEVMLayers(n)=strjoin(compose('%.17g',modTrack.EVMPerLayer_rms),'|');
+        trialEVMLayerSource(n)=modTrack.EVMPerLayerSource;
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
         [dataSINR, dataSINRMeta] = localEVMProxySINR(modTrack);
@@ -2367,6 +2375,8 @@ end
             'Status','Crash', ...
             'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.EVMPerLayer_rms=trialEVMLayers(idx);
+        T.EVMPerLayerSource=trialEVMLayerSource(idx);
         T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
         qclTable=struct2table(trialQCLRuntime(idx));
         for qclName=string(qclTable.Properties.VariableNames)
@@ -2478,6 +2488,11 @@ end
             trialRxAnt(idx), 1);
         configuredRxAnt = max(1, round(double(configuredRxAnt)));
         T.ConfiguredLayers = repmat(configuredLayers, stopIdx, 1);
+        if schedulerDrivenGrant
+            % cfg has already been materialized for this grant's rank. It
+            % is not the installed configuration's initial layer count.
+            T.ConfiguredLayers = trialConfiguredLayers(idx);
+        end
         T.ConfiguredTxAntennas = repmat(configuredTxAnt, stopIdx, 1);
         T.ConfiguredRxAntennas = repmat(configuredRxAnt, stopIdx, 1);
         configuredMCS = localFirstFiniteScalar( ...
@@ -2535,6 +2550,7 @@ end
         T.SymbolStart = trialSymbolStart(idx);
         T.NumSymbols = trialNumSymbols(idx);
         T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
+        T.AppliedAWGNSNRSource = trialAppliedAWGNSNRSource(idx);
         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
         T.InjectedCarrierPhaseOffset_rad = trialCarrierPhaseOffsetRad(idx);
         T.CarrierPhaseOffsetApplied = trialCarrierPhaseOffsetApplied(idx);
@@ -2803,7 +2819,7 @@ else
 end
 end
 
-function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier, occupiedIndices)
+function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier, occupiedIndices, cfg)
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", txInfo);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
@@ -2824,9 +2840,16 @@ if isempty(carrier)
     error("sixgr:link:MissingOFDMNoiseCalibration", ...
         "Standalone AWGN requires the transmitting carrier for occupied-grid noise calibration.");
 end
-[signalEnergyPerOccupiedRE, receivedEnergyEvidence] = ...
+[measuredReceivedEnergy, receivedEnergyEvidence] = ...
     sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
         carrier,referenceWaveform,occupiedIndices,"SignalFamily","PDSCH");
+% Freeze the configured reference before channel/precoder realization. The
+% received energy is evidence, never the authority for injected noise.
+% Absolute-power callers express the same reference in their TX sample
+% units; normalized fixed-SNR callers have a unit power-context scale.
+[configuredReferenceEnergy, referencePolicy] = sixgr.link.resolveAWGNReferenceEnergy(cfg);
+referencePowerScale = localOccupiedRESignalEnergy(txInfo);
+signalEnergyPerOccupiedRE = configuredReferenceEnergy .* referencePowerScale;
 [y, referenceNoise] = sixgr.phy.waveform.addOccupiedREAWGN( ...
     x, carrier, appliedSNR_dB, ...
     "SignalEnergyPerOccupiedRE", signalEnergyPerOccupiedRE);
@@ -2842,7 +2865,11 @@ noiseInfo.AppliedNoiseSNR_dB = 10 .* log10(max( ...
     double(referenceNoise.SignalEnergyPerOccupiedRE) ./ ...
     max(effectiveGridNoiseVariance, realmin), realmin));
 noiseInfo.AppliedNoiseSNRSource = ...
-    "occupied_re_signal_energy_over_effective_grid_noise_variance";
+    "configured_reference_re_energy_over_effective_grid_noise_variance";
+noiseInfo.ConfiguredReferenceREEnergy = configuredReferenceEnergy;
+noiseInfo.ReferenceEnergyPowerScale = referencePowerScale;
+noiseInfo.NoiseCalibrationSource = referencePolicy.CalibrationSource;
+noiseInfo.MeasuredSignalEnergyPerOccupiedRE = measuredReceivedEnergy;
 noiseInfo.SignalEnergyMeasurementSource = char(string(receivedEnergyEvidence.Source));
 noiseInfo.SignalEnergyMeasurementPlane = char(string(receivedEnergyEvidence.MeasurementPlane));
 noiseInfo.SignalEnergyObservationCount = double(receivedEnergyEvidence.ObservationCount);
@@ -2907,9 +2934,10 @@ if ~isstruct(powerContext)
     return;
 end
 netScale = double(sixgr.util.structGet(powerContext, "AmplitudeScale", 1));
-if isscalar(netScale) && isfinite(netScale) && netScale > 0
-    signalEnergy = netScale .^ 2;
-end
+assert(isreal(netScale) && isscalar(netScale) && isfinite(netScale) && netScale > 0, ...
+    'sixgr:link:InvalidAWGNReferencePowerScale', ...
+    'The fixed AWGN reference requires a finite positive TX amplitude scale.');
+signalEnergy = netScale .^ 2;
 end
 
 function [effectiveNVar, source] = localReceiverEffectiveNoiseVariance(baseNVar, replay, baseSource)
@@ -4808,7 +4836,7 @@ end
 [y, replay.InjectedNoiseVariance, noiseInfo] = localAddAwgn( ...
     y, replay, desiredWaveform, txInfo, ...
     sixgr.util.structGet(tx, "Carrier", []), ...
-    sixgr.util.structGet(tx, "PDSCHIndices", []));
+    sixgr.util.structGet(tx, "PDSCHIndices", []), cfg);
 localLogPDSCHCompositeStageDiagnostics(cfg, tx, [], y, "post_noise_pre_front_end");
 noiseFields = fieldnames(noiseInfo);
 for ni = 1:numel(noiseFields)
@@ -5340,6 +5368,8 @@ assert(numel(varTypes) == numel(varNames), ...
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConditionNumberStatus = strings(0,1);
 T.ComputeLatencySource = strings(0,1);
+T.EVMPerLayer_rms = strings(0,1);
+T.EVMPerLayerSource = strings(0,1);
 T.QCLMeasurementStatus = strings(0,1);
 T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
 T.SymbolDecisionStatus = strings(0,1);
@@ -5436,6 +5466,7 @@ T.HARQContextHash = strings(0,1);
 T.HARQContextStatus = strings(0,1);
 T.HARQRV = zeros(0,1);
 T.AppliedAWGNSNR_dB = zeros(0,1);
+T.AppliedAWGNSNRSource = strings(0,1);
 T.ReceiverHestSINR_dB = zeros(0,1);
 T.ReceiverHestSINRApplicable = false(0,1);
 T.ReceiverHestSINRSource = strings(0,1);
@@ -7414,6 +7445,7 @@ grant = struct( ...
     "NumLogicalPorts", double(sixgr.util.structGet(prec, "NumLogicalPorts", NaN)), ...
     "NumRFChains", double(sixgr.util.structGet(prec, "NumRFChains", NaN)));
 preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode", ...
+    "ConfiguredLayers", ...
     "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
     "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
     "OLLAUpdateCount","OLLAStateAuthority","OLLAState", ...
@@ -8883,6 +8915,14 @@ T = table( ...
     'PostEqSINRWidebanddB','EVM_rms','ChannelEstimateNMSE', ...
     'ChannelEstimateSource','StrictReceiverEvidenceOk', ...
     'StrictOk','TruthStatus','Source','Status'});
+T.ConfiguredSNR_dB = double(snr_dB);
+T.AppliedAWGNSNR_dB = double(channelEvidence.SNRdB);
+T.SignalEnergyPerOccupiedRE = channelEvidence.SignalEnergyPerOccupiedRE;
+T.SNRReferencePlane = channelEvidence.SNRReferencePlane;
+T.ReplaySampleNoiseVariance = channelEvidence.TimeNoiseVariance;
+T.ReplayGridNoiseVariance = channelEvidence.GridNoiseVariance;
+T.SampleToGridNoiseVarianceGain = channelEvidence.SampleToGridNoiseVarianceGain;
+T.NoiseVarianceSource = channelEvidence.NoiseVarianceSource;
 
 out = struct();
 out.Ok = true;
@@ -9030,24 +9070,40 @@ else
 end
 
 signalPower = mean(abs(waveform(:)).^2);
+[referenceEnergy, noisePolicy] = sixgr.link.resolveAWGNReferenceEnergy(cfg);
+gain = double(tx.OFDMInfo.SampleToGridNoiseVarianceGain);
+if ~(isscalar(gain) && isfinite(gain) && gain > 0)
+    error("sixgr:pdsch:InvalidStrictNoiseVariance", ...
+        "Strict PDSCH requires a calibrated positive OFDM noise gain.");
+end
 if isinf(snr_dB) && snr_dB > 0
     timeNoise = 0;
+    gridNoise = 0;
+elseif isfinite(snr_dB)
+    % Fixed occupied-RE Es/N0 is independent of waveform occupancy, rank
+    % and instantaneous channel attenuation.  Never cancel fading by
+    % recalibrating the noise from the received waveform's average power.
+    ofdmOptions = tx.ReferenceConfig.get("OFDMOptions");
+    [waveform, noiseEvidence] = sixgr.phy.waveform.addOccupiedREAWGN( ...
+        waveform, tx.Carrier, double(snr_dB), ...
+        "Seed", localRNGSeed(seed), ...
+        "SignalEnergyPerOccupiedRE", referenceEnergy, ...
+        "OFDMOptions", ofdmOptions);
+    if abs(double(noiseEvidence.SampleToGridNoiseVarianceGain)-gain) ...
+            > 1e-10*gain
+        error("sixgr:pdsch:StrictNoiseTransformMismatch", ...
+            "Noise calibration must match the executed transmitter OFDM transform.");
+    end
+    timeNoise = double(noiseEvidence.SampleNoiseVariance);
+    gridNoise = double(noiseEvidence.GridNoiseVariance);
 else
-    timeNoise = signalPower / 10^(double(snr_dB) / 10);
+    error("sixgr:pdsch:InvalidStrictNoiseVariance", ...
+        "Strict PDSCH SNR must be finite or positive infinity for no noise.");
 end
 if ~(isfinite(timeNoise) && timeNoise >= 0)
     error("sixgr:pdsch:InvalidStrictNoiseVariance", ...
         "Strict PDSCH channel produced invalid time-domain noise variance.");
 end
-rng(localRNGSeed(seed), "twister");
-if timeNoise > 0
-    noise = sqrt(timeNoise / 2) .* complex( ...
-        randn(size(waveform), "like", real(waveform)), ...
-        randn(size(waveform), "like", real(waveform)));
-    waveform = waveform + cast(noise, "like", waveform);
-end
-gain = double(tx.OFDMInfo.SampleToGridNoiseVarianceGain);
-gridNoise = timeNoise * gain;
 if ~(isfinite(gridNoise) && gridNoise >= 0)
     error("sixgr:pdsch:InvalidStrictNoiseVariance", ...
         "Strict PDSCH channel produced invalid grid-domain noise variance.");
@@ -9061,6 +9117,12 @@ evidence = struct( ...
     "TimeNoiseVariance", double(timeNoise), ...
     "GridNoiseVariance", double(gridNoise), ...
     "SNRdB", double(snr_dB), ...
+    "SignalEnergyPerOccupiedRE", referenceEnergy, ...
+    "SNRReferencePlane", "occupied_resource_grid_re_pre_equalization", ...
+    "SampleToGridNoiseVarianceGain", gain, ...
+    "NoiseVarianceSource", noisePolicy.NoiseVarianceSource, ...
+    "ReferenceEnergySource", noisePolicy.EnergySource, ...
+    "WaveformPowerUsedForNoise", false, ...
     "Source", "canonical_strict_runtime_channel");
 end
 

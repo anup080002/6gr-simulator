@@ -1646,7 +1646,8 @@ if strlength(effectiveSINRMethod) > 0
 end
 eesmBeta_dB = double(localGetNested(s, "csi_acquisition_and_reporting.eesm_beta_db", ...
     localGetNested(s, "link_adaptation.eesm_beta_db", NaN)));
-if isfinite(eesmBeta_dB) && eesmBeta_dB > 0
+% beta>0 is a linear-domain constraint, not a dB-domain constraint.
+if isfinite(eesmBeta_dB)
     cfg = sixgr.util.structSet(cfg, "phy.csi.eesmBeta_dB", double(eesmBeta_dB));
     cfg = sixgr.util.structSet(cfg, "phy.pdsch.eesmBeta_dB", double(eesmBeta_dB));
     cfg = sixgr.util.structSet(cfg, "phy.pusch.eesmBeta_dB", double(eesmBeta_dB));
@@ -4149,6 +4150,7 @@ syncPairs = {
     "frequency_tracking_mode", "frequencyTrackingMode"
     "pss_detection_threshold", "pssDetectionThreshold"
     "sss_hypothesis_test_threshold", "sssHypothesisTestThreshold"
+    "ssb_detector_target_false_alarm_probability", "ssbDetectorTargetFalseAlarmProbability"
     "max_timing_uncertainty_samples", "maxTimingUncertaintySamples"
     "max_timing_uncertainty_us", "maxTimingUncertainty_us"
     "max_received_ul_timing_age_slots", "maxReceivedULTimingAgeSlots"
@@ -5347,6 +5349,18 @@ if isfield(s.system, "scheduler") && isstruct(s.system.scheduler)
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlotDL", maxActiveUEsPerCellPerSlotDL);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxActiveUEsPerCellPerSlotUL", maxActiveUEsPerCellPerSlotUL);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.maxPRBAllocationPerUE", maxPRBAllocationPerUE);
+    % This catalog field previously never reached the scheduler, leaving
+    % its constructor minimum in force even with an explicit YAML policy.
+    minPRBsPerGrant = localGetNested(s, "scheduler.min_prbs_per_grant", []);
+    if ~isempty(minPRBsPerGrant)
+        assert(isnumeric(minPRBsPerGrant) && isscalar(minPRBsPerGrant) && ...
+            isfinite(minPRBsPerGrant) && minPRBsPerGrant >= 1 && ...
+            minPRBsPerGrant == fix(minPRBsPerGrant) && ...
+            minPRBsPerGrant <= maxPRBAllocationPerUE, ...
+            'sixgr:lls6g:InvalidSchedulerMinimumPRBs', ...
+            'scheduler.min_prbs_per_grant must be a positive integer no greater than the maximum PRBs per grant.');
+        cfg = sixgr.util.structSet(cfg, "mac.scheduler.minPRBPerUE", double(minPRBsPerGrant));
+    end
     tbsMode = char(string(localGetNested(s, "system.scheduler.tbsMode", "faithful")));
     cfg = sixgr.util.structSet(cfg, "system.scheduler.tbsMode", tbsMode);
     cfg = sixgr.util.structSet(cfg, "mac.scheduler.tbsMode", tbsMode);

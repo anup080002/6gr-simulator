@@ -1,0 +1,60 @@
+diff --git a/apps/lls_contract_materializer.py b/apps/lls_contract_materializer.py
+index 8818f689..937e7b1a 100644
+--- a/apps/lls_contract_materializer.py
++++ b/apps/lls_contract_materializer.py
+@@ -11,6 +11,7 @@ import os
+ import re
+ from collections import Counter, defaultdict
+ from contextlib import contextmanager, nullcontext
++from functools import lru_cache
+ from pathlib import Path
+ from typing import Any, Callable
+ 
+@@ -2576,8 +2577,21 @@ _ROW_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+ }
+ 
+ 
+-def _normalized_row_key(name: Any) -> str:
+-    return re.sub(r"[^a-z0-9]+", "", str(name or "").strip().lower())
++def _normalized_row_key(name: Any) -> str:
++    return _normalized_row_text(str(name or ""))
++
++
++@lru_cache(maxsize=8192)
++def _normalized_row_text(name: str) -> str:
++    return re.sub(r"[^a-z0-9]+", "", name.strip().lower())
++
++
++@lru_cache(maxsize=256)
++def _row_alias_columns(schema: tuple, wanted: frozenset[str]) -> tuple:
++    # Cache only immutable column identities, never receiver/measurement
++    # values. Schema order is significant: preserve the original first
++    # nonblank alias rule, including colliding normalized column names.
++    return tuple(key for key in schema if _normalized_row_key(key) in wanted)
+ 
+ 
+ def _row_candidate_keys(*names: str) -> list[str]:
+@@ -2605,16 +2619,16 @@ def _row_value(row: dict[str, str], *names: str) -> Any:
+                 return value
+             if blank_exact is None:
+                 blank_exact = value
+-    wanted = set(_row_candidate_keys(*names))
++    wanted = frozenset(_row_candidate_keys(*names))
+     if not wanted:
+         return blank_exact
+     blank_alias: Any = None
+-    for key, value in row.items():
+-        if _normalized_row_key(key) in wanted:
+-            if _nonblank_text(value):
+-                return value
+-            if blank_alias is None:
+-                blank_alias = value
++    for key in _row_alias_columns(tuple(row), wanted):
++        value = row[key]
++        if _nonblank_text(value):
++            return value
++        if blank_alias is None:
++            blank_alias = value
+     if blank_exact is not None:
+         return blank_exact
+     return blank_alias

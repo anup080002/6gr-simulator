@@ -1517,6 +1517,10 @@ nested_sections:
   scenario_sweep:
     path: scenario.sweep
     parameters:
+      execution_error_policy:
+        required: false
+        type: string
+        allowed_values: [abort, retain_failure_and_continue]
       base_profile:
         required: false
         type: string

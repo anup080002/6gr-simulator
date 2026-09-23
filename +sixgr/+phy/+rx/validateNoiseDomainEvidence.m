@@ -149,6 +149,40 @@ aliasOk = (dl | ul) & alias == expectedAlias & isfinite(aliasError) & ...
 add("legacy_noise_variance_alias", all(aliasOk), localFiniteMax(aliasError), ...
     "legacy NoiseVariance is not an exact, explicitly named DL/UL compatibility alias");
 
+% Validate the executed demapper convention, not just nonempty labels.
+% Pre-EQ variance plus equalizer CSI and post-EQ variance without a second
+% CSI weight are distinct supported paths; exporting one as the other is
+% wrong even when both numbers are finite.
+llrSource = string(T.LLRNoiseVarianceSource);
+llrDomain = string(T.LLRNoiseVarianceDomain);
+llrVariance = double(T.LLRNoiseVariance);
+preDecoder = ul & llrSource == "configured_pre_equalization_noise_variance";
+postDecoder = ul & llrSource == "post_equalization_sinr_decoder_noise_variance";
+if any(preDecoder)
+    domainOk = ismember(llrDomain(preDecoder), [ ...
+        "pre_equalization_channel_estimator_noise_variance_for_nrPUSCHDecode", ...
+        "pre_equalization_channel_estimator_noise_variance_for_experimental_explicit_Qm_demapper"]);
+    expectedVariance = double(T.PreEqualizationNoiseVariance(preDecoder));
+    errorValue = abs(llrVariance(preDecoder)-expectedVariance);
+    valueOk = isfinite(expectedVariance) & expectedVariance > 0 & ...
+        isfinite(errorValue) & errorValue <= 1e-12*abs(expectedVariance);
+    add("ul_pre_equalization_decoder_domain",all(domainOk),nnz(~domainOk), ...
+        "pre-EQ decoder noise must retain its actual channel-estimator domain");
+    add("ul_pre_equalization_decoder_value",all(valueOk),localFiniteMax(errorValue), ...
+        "pre-EQ decoder noise must equal the actual pre-EQ estimator variance");
+end
+if any(postDecoder)
+    domainOk = llrDomain(postDecoder) == "post_equalization_decoder_symbol_domain";
+    expectedVariance = double(T.PostEqualizationNoiseVariance(postDecoder));
+    errorValue = abs(llrVariance(postDecoder)-expectedVariance);
+    valueOk = isfinite(expectedVariance) & expectedVariance > 0 & ...
+        isfinite(errorValue) & errorValue <= 1e-12*abs(expectedVariance);
+    add("ul_post_equalization_decoder_domain",all(domainOk),nnz(~domainOk), ...
+        "post-EQ decoder noise must retain its actual equalized-symbol domain");
+    add("ul_post_equalization_decoder_value",all(valueOk),localFiniteMax(errorValue), ...
+        "post-EQ decoder noise must equal the actual post-EQ variance");
+end
+
 if all(ismember(["PostEqSINRAvailable","PostEqSINR_dB", ...
         "PostEqSINRValueStatus"], string(T.Properties.VariableNames)))
     available = logical(T.PostEqSINRAvailable);
@@ -159,7 +193,7 @@ if all(ismember(["PostEqSINRAvailable","PostEqSINR_dB", ...
     % values retain an explicit OK_* status; use the same success-token
     % contract as validatePUSCHReceiverEvidence instead of rejecting the
     % additional provenance suffix.
-    valueStatusOk = valueStatus == "OK" | startsWith(valueStatus, "OK_");
+    valueStatusOk = sixgr.util.isAcceptableSINRStatus(valueStatus);
     availabilityOk = (available & isfinite(sinr) & valueStatusOk) | ...
         (~available & ~isfinite(sinr) & ~valueStatusOk);
     add("post_equalization_sinr_availability", all(availabilityOk), ...

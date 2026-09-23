@@ -1,5 +1,6 @@
-function tables = buildLLSPublicOutputTables(baseTables, contract, meta)
+function tables = buildLLSPublicOutputTables(baseTables, contract, meta, receivedCSIReports)
 %BUILDLLSPUBLICOUTPUTTABLES Build public family-specific LLS tables.
+if nargin < 4, receivedCSIReports = table(); end
 
 tables = struct();
 tables.pdsch_runtime_event_table = iDataRuntimeEventTable(iTable(baseTables, "pdsch_table"), meta, "PDSCH");
@@ -9,7 +10,7 @@ tables.pucch_uci_table = iPUCCHTable(iTable(baseTables, "pucch_table"), meta);
 tables.prach_detection_table = iPRACHTable(iTable(baseTables, "prach_table"), meta);
 tables.srs_measurement_table = iSRSTable(iTable(baseTables, "srs_table"), meta);
 tables.csi_rs_runtime_event_table = iCSIRSTable(iTable(baseTables, "csi_rs_table"), meta);
-tables.csi_report_table = iCSIReportTable(iTable(baseTables, "table_cqi_pmi_ri"), iTable(baseTables, "table_mcs_tbs_evolution"), meta);
+tables.csi_report_table = iCSIReportTable(receivedCSIReports, meta);
 tables.trs_receiver_tracking_public_table = iTRSTable(iTable(baseTables, "trs_receiver_tracking_table"), meta);
 tables.ssb_pbch_cell_search_table = iSSBPBCHTable(iTable(baseTables, "ssb_pbch_table"), meta);
 tables.noise_variance_evidence_table = iNoiseVarianceTable(tables, meta);
@@ -545,11 +546,18 @@ T = iBuildMinimalTable(sourceT, meta, "csi_rs_runtime_event_table", { ...
     "RuntimeMaterializationStatus", ["RuntimeMaterializationStatus"]; "RuntimeEvidenceStatus", ["RuntimeEvidenceStatus","runtime_evidence","RuntimeEvidenceSource"]});
 end
 
-function T = iCSIReportTable(cqiTable, mcsTrace, meta)
+function T = iCSIReportTable(cqiTable, meta)
 if ~(istable(cqiTable) && ~isempty(cqiTable))
     T = table();
     return;
 end
+% Scheduler selections and UE reference payloads are not received CSI.
+required = ["SourceSignal","Direction","ReportIdentity","CSIUCIDecodeOk"];
+assert(all(ismember(required,string(cqiTable.Properties.VariableNames))) && ...
+    all(string(cqiTable.SourceSignal) == "received_CSI_UCI") && ...
+    all(string(cqiTable.Direction) == "DL"), ...
+    'sixgr:report:CSIReportReceiverAuthority', ...
+    'Public CSI reports require independently received DL CSI-UCI records.');
 rows = repmat(struct("OutputId", "csi_report_table", "RunId", iLogicalRunId(meta), "TrialId", NaN, "SFN", NaN, "Slot", NaN, ...
     "UEId", NaN, "RNTI", NaN, "CQI", NaN, "PMI", NaN, "RI", NaN, "LI", NaN, "CRI", NaN, "ReportType", "", ...
     "RankSelectionPolicy", "", "RankSelectionSource", "", "RankDecisionReason", "", ...
@@ -557,38 +565,52 @@ rows = repmat(struct("OutputId", "csi_report_table", "RunId", iLogicalRunId(meta
     "ReportQuantity", "", "WidebandOrSubband", "", "MeasurementSource", "", "CSIRSResourceId", NaN, ...
     "CQIDerivedMCS", NaN, "CQIDerivedModulation", "", "SubbandCQIVector", "", "SubbandPMIVector", "", ...
     "EffectiveSINR_dB", NaN, "CalibrationProfile", "", "RuntimeEvidenceStatus", "", ...
-    "run_id", meta.run_id, "producer_module", "sixgr.truth.buildLLSPublicOutputTables", "source_artifact_ref", "reports/csv/table_cqi_pmi_ri.csv", ...
-    "runtime_evidence", "derived_from_runtime_feedback_rows"), height(cqiTable), 1);
+    "ReportIdentity", "", "CSIReportConfigID", "", "CSIConfigurationEpoch", NaN, ...
+    "SourceSlot", NaN, "DueSlot", NaN, "DeliveredSlot", NaN, ...
+    "CSIUCITransport", "", "CSIUCIDecodeOk", NaN, "CSIUCICRCPass", NaN, "DeliveryStatus", "", ...
+    "run_id", meta.run_id, "producer_module", "sixgr.truth.buildLLSPublicOutputTables", "source_artifact_ref", "control/csv/received_csi_reports.csv", ...
+    "runtime_evidence", "independently_received_csi_uci"), height(cqiTable), 1);
 for i = 1:height(cqiTable)
     row = cqiTable(i, :);
-    cqi = iFirstNum(row, ["wideband_cqi","CQI"], NaN);
+    decoded = iFirstNum(row, "CSIUCIDecodeOk", NaN);
+    usable = isfinite(decoded) && decoded == 1;
     rows(i).TrialId = i;
-    rows(i).SFN = iFirstNum(row, ["frame"], NaN);
-    rows(i).Slot = iFirstNum(row, ["slot"], NaN);
-    rows(i).UEId = iFirstNum(row, ["ue_id"], NaN);
-    rows(i).RNTI = NaN;
-    rows(i).CQI = cqi;
-    rows(i).PMI = iFirstNum(row, ["pmi","PMI"], NaN);
-    rows(i).RI = iFirstNum(row, ["ri","RI"], NaN);
-    rows(i).LI = NaN;
-    rows(i).CRI = iFirstNum(row, ["cri","CRI"], NaN);
+    rows(i).SFN = iFirstNum(row, ["Frame","SFN"], NaN);
+    rows(i).Slot = iFirstNum(row, "DeliveredSlot", NaN);
+    rows(i).UEId = iFirstNum(row, ["UEIndex","UEID"], NaN);
+    rows(i).RNTI = iFirstNum(row, "RNTI", NaN);
+    if usable
+        for field = ["CQI","PMI","RI","LI","CRI"]
+            rows(i).(field) = iFirstNum(row, field, NaN);
+        end
+        % Keep the actual installed-table mapping; MCS index alone does not
+        % determine modulation across different 38.214 MCS tables.
+        rows(i).CQIDerivedMCS = iFirstNum(row, "RawCQIDerivedMCS", NaN);
+        rows(i).CQIDerivedModulation = iFirstText(row, "RawCQIDerivedModulation", "");
+        rows(i).SubbandCQIVector = iFirstText(row, ["SubbandCQI","subbandCQI"], "");
+        rows(i).SubbandPMIVector = iFirstText(row, "SubbandPMI", "");
+    end
     rows(i).RankSelectionPolicy = iFirstText(row, ["rank_selection_policy", "RankSelectionPolicy"], "");
     rows(i).RankSelectionSource = iFirstText(row, ["rank_selection_source", "RankSelectionSource"], "");
     rows(i).RankDecisionReason = iFirstText(row, ["rank_decision_reason", "RankDecisionReason"], "");
     rows(i).RankDowngradeApplied = iFirstLogical(row, ["rank_downgrade_applied", "RankDowngradeApplied"], false);
     rows(i).MaxSupportedLayers = iFirstNum(row, ["max_supported_layers", "MaxSupportedLayers"], NaN);
-    rows(i).ReportType = iFirstText(row, ["report_type"], "scheduler_observation");
-    rows(i).ReportQuantity = "CQI_PMI_RI";
-    rows(i).WidebandOrSubband = iIf(strlength(iFirstText(row, ["subband_cqi_vector_ref", "subband_cqi_vector", "SubbandCQI", "subbandCQI"], "")) > 0, "subband", "wideband");
-    rows(i).MeasurementSource = iFirstText(row, ["based_on"], "");
-    rows(i).CSIRSResourceId = NaN;
-    rows(i).CQIDerivedMCS = iCQIDerivedMCS(cqi, mcsTrace, rows(i).UEId);
-    rows(i).CQIDerivedModulation = iModulationFromMCS(rows(i).CQIDerivedMCS);
-    rows(i).SubbandCQIVector = iFirstText(row, ["subband_cqi_vector", "SubbandCQI", "subbandCQI"], "");
-    rows(i).SubbandPMIVector = iFirstText(row, ["subband_pmi_vector", "SubbandPMI"], "");
-    rows(i).EffectiveSINR_dB = iFirstNum(row, ["EffectiveSINR_dB", "PostEqSINR_dB", "MeasuredTrialSINR_dB", "MeasuredWidebandSINR_dB", "SINR_dB"], NaN);
-    rows(i).CalibrationProfile = iFirstText(row, ["calibration_profile"], "heuristic_cqi_scheduler_observation");
-    rows(i).RuntimeEvidenceStatus = "derived_from_runtime_feedback_rows";
+    rows(i).ReportType = "received_CSI_UCI";
+    rows(i).ReportQuantity = iFirstText(row, "ReportQuantity", "");
+    rows(i).WidebandOrSubband = iFirstText(row, "FrequencyGranularity", "");
+    rows(i).MeasurementSource = iFirstText(row, "MeasurementSource", "");
+    rows(i).CSIRSResourceId = iFirstNum(row, "CSIRSResourceId", NaN);
+    % Numeric UE SINR is not a decoded CQI/PMI/RI wire field. Never recover
+    % it from UEReferenceRecordJSON or a scheduler threshold estimate.
+    rows(i).CalibrationProfile = iFirstText(row, "CalibrationProfile", "");
+    rows(i).RuntimeEvidenceStatus = "independently_received_csi_uci";
+    for field = ["ReportIdentity","CSIReportConfigID","CSIUCITransport","DeliveryStatus"]
+        rows(i).(field) = iFirstText(row, field, "");
+    end
+    for field = ["CSIConfigurationEpoch","SourceSlot", ...
+            "DueSlot","DeliveredSlot","CSIUCIDecodeOk","CSIUCICRCPass"]
+        rows(i).(field) = iFirstNum(row, field, NaN);
+    end
 end
 T = struct2table(rows);
 end
@@ -757,57 +779,6 @@ chars = char(txt);
 value = sum(chars == '0' | chars == '1');
 if value == 0
     value = NaN;
-end
-end
-
-function value = iCQIDerivedMCS(cqi, mcsTrace, ueId)
-value = NaN;
-if ~(isfinite(cqi) && istable(mcsTrace) && ~isempty(mcsTrace))
-    return;
-end
-cqiCol = iFirstPresentVar(mcsTrace, ["CQI", "wideband_cqi", "cqi_input", "cqi"]);
-mcsCol = iFirstPresentVar(mcsTrace, ["CQIDerivedMCS", "cqi_derived_mcs", "mcs_selected", "MCSIndex"]);
-if strlength(cqiCol) == 0 || strlength(mcsCol) == 0
-    return;
-end
-mask = abs(double(mcsTrace.(cqiCol)) - double(cqi)) < 0.5;
-if isfinite(ueId) && ismember("UEId", string(mcsTrace.Properties.VariableNames))
-    mask = mask & abs(double(mcsTrace.UEId) - double(ueId)) < 0.5;
-elseif isfinite(ueId) && ismember("ue_id", string(mcsTrace.Properties.VariableNames))
-    mask = mask & abs(double(mcsTrace.ue_id) - double(ueId)) < 0.5;
-end
-if any(mask)
-    mcsVals = mcsTrace.(mcsCol);
-    value = double(mcsVals(find(mask, 1, "first")));
-end
-end
-
-function col = iFirstPresentVar(T, candidates)
-col = "";
-if ~istable(T)
-    return;
-end
-vars = string(T.Properties.VariableNames);
-candidates = string(candidates);
-for i = 1:numel(candidates)
-    if ismember(candidates(i), vars)
-        col = candidates(i);
-        return;
-    end
-end
-end
-
-function value = iModulationFromMCS(mcs)
-if ~isfinite(mcs)
-    value = "";
-elseif mcs < 10
-    value = "QPSK";
-elseif mcs < 17
-    value = "16QAM";
-elseif mcs < 28
-    value = "64QAM";
-else
-    value = "256QAM";
 end
 end
 

@@ -25,7 +25,7 @@ channelEstT = localBuildChannelEstimationTable(localTailTable(trialT, 2048));
 channelStateT = localBuildChannelStateTable(localTailTable(trialT, 2048));
 stageTraceT = localBuildTxRxStageTraceTable(localTailTable(trialT, 2048));
 
-sixgr.util.csvWriteTable(artifacts.WaveformPreviewPath, waveformT);
+sixgr.util.csvWriteTable(artifacts.WaveformPreviewPath, waveformT,'RoundTripNumericText',true);
 sixgr.util.csvWriteTable(artifacts.ModulationTracePath, moddemT);
 sixgr.util.csvWriteTable(artifacts.ChannelEstimationTracePath, channelEstT);
 sixgr.util.csvWriteTable(artifacts.ChannelStateTracePath, channelStateT);

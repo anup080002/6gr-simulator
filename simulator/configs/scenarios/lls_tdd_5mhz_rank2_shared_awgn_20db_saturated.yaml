@@ -1,0 +1,27 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+  - ../defaults/traffic_saturated_200mbps.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_rank2_shared_awgn_20db_saturated
+  description: Saturated-load 5 MHz TDD rank-two adaptive 20 dB execution with complete inherited physical control and shared feedback.
+  purpose: Measure throughput with persistent DL/UL backlog; retain initial access, PDCCH, PUCCH, CSI, SRS, TRS, ILLA, OLLA and HARQ.
+  research_class: optional_research_experiment
+
+# Single-UE throughput case: retain real PUCCH and time-overlap/UCI
+# resolution, but do not exclude the whole configured PUCCH frequency
+# pool on every PUSCH occasion. Unsupported overlaps still fail closed.
+scheduler:
+  # SSB leaves two contiguous two-PRB edge blocks on this 25-PRB carrier.
+  # Permit a legal small grant; never bridge or disable the SSB reservation.
+  min_prbs_per_grant: 2
+
+pucch_resources:
+  overlap_policy:
+    detect_pucch_pusch_overlap: true
+    uci_on_pusch_enabled: true
+    reserve_configured_pucch_prbs_from_pusch: false
+    unsupported_overlap_policy: reject_before_waveform
+
+output:
+  profile: lls_tdd_5mhz_rank2_shared_awgn_20db_saturated

@@ -321,7 +321,7 @@ if isCoupledTruth
     % Publish the samples retained by the execution path that actually ran.
     % Immediate per-grant PHY execution is not a shared continuous stream.
     % Both paths must retain their real preview; neither may rescue the other.
-    finalWaveformPreview = sixgr.truth.finalCoupledWaveformPreview(slotTrace);
+    finalWaveformPreview = sixgr.truth.finalCoupledWaveformPreview(slotTrace,finalSignalTrials);
 end
 sixgr.truth.exportLLSLiveSignalChainTables( ...
     rootRunFolder, finalSignalTrials, finalConstellation, struct( ...
@@ -9361,9 +9361,33 @@ for gi = 1:numel(grants)
         sixgr.util.structGet(state, "PDCCHResourceLedger", struct()), ...
         controlSlotIdx, servingCell, controlCarrier);
     if isfield(state,'SharedWaveformStream')
-        prepared=sixgr.link.prepareSharedPDCCHTransmission(cfgControl, ...
-            'Grant',grant,'RNTI',rnti,'DCIBits',grant.DCI.Bits, ...
-            'ReservedRECoordinates',occupiedControlREs);
+        try
+            prepared=sixgr.link.prepareSharedPDCCHTransmission(cfgControl, ...
+                'Grant',grant,'RNTI',rnti,'DCIBits',grant.DCI.Bits, ...
+                'ReservedRECoordinates',occupiedControlREs);
+        catch ME
+            if ~strcmp(ME.identifier,'sixgr:phy:pdcch:NoFreeCandidate')
+                rethrow(ME);
+            end
+            reason="control_blocked_no_nonoverlapping_pdcch_candidate";
+            [state,grant]=sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
+                state,grant,direction,reason);
+            state=sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime( ...
+                state,grant,direction);
+            pdcchT=localBuildMissingPDCCHGrantBindingTrial(cfgU,NaN,reason);
+            pdcchT=localAnnotateCoupledControlTrial(pdcchT,controlSlotIdx, ...
+                controlFrameIdx,ueIdx,rnti,direction,servingCell);
+            [pdcchT,grant]=localAnnotateGrantControlTrial( ...
+                pdcchT,grant,cfgU,direction);
+            state.ControlTrials.PDCCH=localAppendCompatTable( ...
+                state.ControlTrials.PDCCH,pdcchT);
+            localAppendRuntimeLog("INFO", ...
+                ["Blocked coupled %s grant before transmission: control_slot=%d " + ...
+                 "ue=%d reason=%s occupied_control_res=%d."], ...
+                char(direction),round(controlSlotIdx),round(ueIdx), ...
+                char(reason),size(occupiedControlREs,1));
+            continue;
+        end
         timing=sixgr.truth.CoupledTruthRuntime.receivedULTimingContextRuntime(state,ueIdx,servingCell);
         assert(isfield(timing,'DLReference'), ...
             'sixgr:truth:ScheduledDCIReceivedClockRequired', ...
@@ -10931,6 +10955,8 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'SINRMeasurementDomain','PowerReferencePlane', ...
     'PUSCHSchedulingSINRAnchor_dB','PUSCHSchedulingSINRAnchorSource', ...
     'PUSCHSchedulingSINRAnchorPowerReferencePlane','PUSCHSchedulingSINRAnchorValueStatus', ...
+    'PredictedPUSCHReferenceSignalPower','PredictedPUSCHDisturbancePower', ...
+    'PUSCHToSRSReferenceEnergyRatio','PUSCHToSRSReferenceEnergySource', ...
     'ReferenceTxPower_dBm','ReferenceTxPowerSource','ServingRxPower_dBm','ServingRxPowerSource', ...
     'ThermalNoisePower_dBm','NoisePowerSource','NoiseFigure_dB','NoiseBandwidth_Hz', ...
     'PowerContextAmplitudeUnit','PowerContextTotalTxPower_dBm','PowerContextTxGain_dB','PowerContextRxGain_dB','PowerContextAdditionalLoss_dB', ...
@@ -11142,9 +11168,8 @@ end
 if all(strlength(string(T.SNRValueRole)) == 0)
     T.SNRValueRole(:) = "configured_operating_point_metadata";
 end
-if all(~isfinite(double(T.ConfiguredLayers)))
-    T.ConfiguredLayers(:) = double(localConfiguredLayerCount(cfg, direction));
-end
+% ConfiguredLayers belongs to the original scheduler configuration. cfg
+% here may already contain the adaptive grant rank; missing stays missing.
 if all(~isfinite(double(T.ConfiguredTxAntennas)))
     T.ConfiguredTxAntennas(:) = double(localConfiguredTxAntennaCount(cfg, direction));
 end
@@ -12299,7 +12324,13 @@ for k = 1:nTrials
         r.ExplicitBeamWeightsApplied = logical(sixgr.util.structGet( ...
             ssbTx, "ExplicitBeamWeightsApplied", false));
         r.BeamformingApplied = logical(sixgr.util.structGet(ssbTx, "BeamformingApplied", false));
-        r.AppliedBeamIndexSet = char(string(r.BeamIndex));
+        % Failed acquisition has no observed beam identity. In MATLAB a
+        % string converted from NaN is missing, and char(missing) throws
+        % before the completed observation clock below can be retained.
+        % Keep the existing empty identity; never substitute a configured beam.
+        if isfinite(r.BeamIndex)
+            r.AppliedBeamIndexSet = string(r.BeamIndex);
+        end
         r.PrecodingNumPorts = r.SSBWaveformPorts;
         r.PrecodingNumLayers = 1;
         r.PrecodingMatrixRows = 1;
@@ -12743,7 +12774,8 @@ plan.GrantSnapshot=job.GrantSnapshot;
 [post,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
 assert(control.AvailableAtSample<=post.EndSampleExclusive, ...
     'sixgr:truth:FutureSharedDCIAuthority','Control authority must already be available to the receiver.');
-replay=sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,c.DesiredReferencePlane,replay);
+replay=sixgr.truth.bindSharedDataNoiseEvidence( ...
+    item.Planes,p,c.DesiredReferencePlane,replay,job.SNR_dB);
 job.PrepareOnly=false;
 job.ReceivedContext=struct('Prepared',p,'Observation',receiver, ...
     'PhysicalMeasurementObservation',pre,'TransmitterObservation',tx,'Replay',replay, ...
@@ -12974,6 +13006,13 @@ for item=received
             'SSBIndex',[],'WriteArtifacts',false,'RunFolder','','RunId','shared_runtime', ...
             'PhysicalMeasurementObservation',pre,'TransmitObservation',tx);
         output=sixgr.link.completeCellSearchBroadcast(p,post,prototype,options,tic);
+        % Retain the actually completed broadcast observation even when no
+        % cell is acquired. Do not put it into the data-grant preview table.
+        preview=sixgr.link.buildBroadcastWaveformPreview(tx,post,context.SNR, ...
+            context.Frame,context.Slot,item.UE,context.ServingCell);
+        preview=localAppendCompatTable(sixgr.util.structGet( ...
+            state,'SharedBroadcastWaveformPreviewTable',table()),preview);
+        state.SharedBroadcastWaveformPreviewTable=preview(max(1,height(preview)-4095):end,:);
         for candidate=1:numel(output.CandidateResults)
             received=output.CandidateResults{candidate}.SIB1;
             if received.BCHCrcPass && received.MIBDecoded
@@ -16231,6 +16270,14 @@ for k = 1:nTrials
             outSRS, "PredictedPUSCHPostEqSINRAnchorSource", ""));
         r.PredictedPUSCHPostEqSINRPowerReferencePlane = string(sixgr.util.structGet( ...
             outSRS, "PredictedPUSCHPostEqSINRPowerReferencePlane", ""));
+        r.PredictedPUSCHReferenceSignalPower = double(sixgr.util.structGet( ...
+            outSRS,"PredictedPUSCHReferenceSignalPower",NaN));
+        r.PredictedPUSCHDisturbancePower = double(sixgr.util.structGet( ...
+            outSRS,"PredictedPUSCHDisturbancePower",NaN));
+        r.PUSCHToSRSReferenceEnergyRatio = double(sixgr.util.structGet( ...
+            outSRS,"PUSCHToSRSReferenceEnergyRatio",NaN));
+        r.PUSCHToSRSReferenceEnergySource = string(sixgr.util.structGet( ...
+            outSRS,"PUSCHToSRSReferenceEnergySource",""));
         r.SRSOccupiedPRBCount = double(sixgr.util.structGet(outSRS, "SRSOccupiedPRBCount", NaN));
         r.SRSCarrierPRBCount = double(sixgr.util.structGet(outSRS, "SRSCarrierPRBCount", NaN));
         r.SRSBandwidthFraction = double(sixgr.util.structGet(outSRS, "SRSBandwidthFraction", NaN));
@@ -17235,6 +17282,10 @@ row.PredictedPUSCHPostEqSINRCalibrationOffset_dB = NaN;
 row.PredictedPUSCHPostEqSINRAnchor_dB = NaN;
 row.PredictedPUSCHPostEqSINRAnchorSource = "";
 row.PredictedPUSCHPostEqSINRPowerReferencePlane = "";
+row.PredictedPUSCHReferenceSignalPower = NaN;
+row.PredictedPUSCHDisturbancePower = NaN;
+row.PUSCHToSRSReferenceEnergyRatio = NaN;
+row.PUSCHToSRSReferenceEnergySource = "";
 row.PUSCHSchedulingSINRAnchor_dB = NaN;
 row.PUSCHSchedulingSINRAnchorSource = "";
 row.PUSCHSchedulingSINRAnchorPowerReferencePlane = "";
@@ -18446,7 +18497,9 @@ end
 direction = directionFromTable(T);
 T.ConfiguredTxAntennas = repmat(double(localConfiguredTxAntennaCount(cfg, direction)), n, 1);
 T.ConfiguredRxAntennas = repmat(double(localConfiguredRxAntennaCount(cfg, direction)), n, 1);
-T.ConfiguredLayers = repmat(double(localConfiguredLayerCount(cfg, direction)), n, 1);
+if ~ismember("ConfiguredLayers", string(T.Properties.VariableNames))
+    T.ConfiguredLayers = NaN(n, 1);
+end
 T.ExecutionModel = repmat(string(multiUser.ExecutionModel), n, 1);
 T.BeamSelectionStrategy = repmat(string(sixgr.util.structGet(userMeta, "BeamSelectionStrategy", multiUser.BeamSelectionStrategy)), n, 1);
 T.BeamIndexSet = repmat(string(sixgr.util.structGet(userMeta, "BeamIndexSet", "")), n, 1);

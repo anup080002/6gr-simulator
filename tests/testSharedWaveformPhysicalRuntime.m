@@ -118,7 +118,7 @@ desired=scoring(string({scoring.ReceiverID})==dlScoring).Observation.readComplet
 inactive=scoring(string({scoring.ReceiverID})==ulScoring).Observation.readComplete();
 assert(any(desired(:)~=0) && all(inactive(:)==0));
 % Subtract the actually emitted noiseless link contribution from the
-% pre-RF receiver, which includes the once-generated thermal noise.
+% pre-RF receiver, which includes the once-generated configured noise.
 observed=actual(string({actual.ReceiverID})=="ue_rx:pre_rf").Observation.readComplete();
 measuredNoise=mean(abs(observed-desired).^2,'all');
 injected=result.Execution.RX(1).Replay.InjectedNoiseVariance;

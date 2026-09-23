@@ -9,10 +9,10 @@ function estimate = estimateSRSRITPMI(Hest, nVar, cfg, varargin)
 % The channel-estimate/noise pair is sufficient to rank spatial candidates,
 % but it is not, by itself, an absolute PUSCH data-channel power reference.
 % Callers that need a scheduler-facing SINR must therefore supply the
-% receiver-measured SRS reference-SINR and its provenance.  The estimator
-% preserves the relative per-layer MMSE prediction and anchors its linear
-% wideband mean to that measured receiver quantity.  Unanchored layer SINRs
-% remain diagnostic and are never labelled as scheduling truth.
+% receiver-measured SRS reference power/SINR and a declared SRS-to-data
+% energy conversion. Calibrate disturbance BEFORE precoding and MMSE;
+% never force the layer mean to equal a reference-signal SINR, because
+% doing so erases the native codebook's rank-dependent power split.
 
 ip = inputParser;
 ip.addParameter("AbsoluteSINRAnchor_dB", NaN, ...
@@ -21,6 +21,10 @@ ip.addParameter("AbsoluteSINRAnchorSource", "", ...
     @(x) ischar(x) || isstring(x));
 ip.addParameter("AbsoluteSINRAnchorPowerReferencePlane", "", ...
     @(x) ischar(x) || isstring(x));
+ip.addParameter("ReferenceSignalPower", NaN, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("ReferencePowerSource", "", @(x) ischar(x) || isstring(x));
+ip.addParameter("PUSCHToSRSReferenceEnergyRatio", NaN, @(x) isnumeric(x) && isscalar(x));
+ip.addParameter("PUSCHToSRSReferenceEnergySource", "", @(x) ischar(x) || isstring(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 %   3. Score TPMI codebook candidates with the same MI objective across PRBs
@@ -47,6 +51,10 @@ estimate = struct( ...
     "SelectedPostEqSINRAnchor_dB", NaN, ...
     "SelectedPostEqSINRAnchorSource", "", ...
     "SelectedPostEqSINRPowerReferencePlane", "", ...
+    "SelectedReferenceSignalPower", NaN, ...
+    "SelectedDisturbancePower", NaN, ...
+    "SelectedPUSCHToSRSReferenceEnergyRatio", NaN, ...
+    "SelectedPUSCHToSRSReferenceEnergySource", "", ...
     "SelectedBeamIndices", [], ...
     "SelectedCodebookPortIndices1Based", [], ...
     "CodebookPortIndexDefinition", "nonzero_nrPUSCHCodebook_antenna_port_support_not_spatial_beam_ID", ...
@@ -88,8 +96,38 @@ transformPrecoding = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPreco
 estimate.TransformPrecoding = logical(transformPrecoding);
 estimate.TransmissionScheme = char(scheme);
 
+anchor_dB = double(opt.AbsoluteSINRAnchor_dB);
+anchorSource = strtrim(string(opt.AbsoluteSINRAnchorSource));
+anchorPlane = strtrim(string(opt.AbsoluteSINRAnchorPowerReferencePlane));
+referencePower = double(opt.ReferenceSignalPower);
+energyRatio = double(opt.PUSCHToSRSReferenceEnergyRatio);
+energySource = strtrim(string(opt.PUSCHToSRSReferenceEnergySource));
+% The currently executable absolute conversion is the explicit normalized
+% fixed-Es/N0 path: SRS and PUSCH preserve unit-grid symbols before their
+% own native mappings. Thermal link-budget totals alone cannot establish
+% a PUSCH/SRS per-RE ratio; leave that unsupported conversion diagnostic.
+anchorUsable = isfinite(anchor_dB) && isfinite(referencePower) && referencePower>0 && ...
+    isfinite(double(nVar)) && isscalar(nVar) && nVar>0 && ...
+    anchorSource == "measured_ul_srs_pilot_reconstruction_sinr" && ...
+    anchorPlane == "receiver_srs_resource_elements_after_ofdm_demodulation" && ...
+    string(opt.ReferencePowerSource) == "received_reference_grid_plus_receiver_hest" && ...
+    energyRatio == 1 && energySource == "normalized_fixed_snr_unit_grid_reference_no_device_power_scaling";
+predictionNoise = max(double(nVar),eps);
+if anchorUsable
+    candidateNoise = max(double(nVar),referencePower/10^(anchor_dB/10));
+    anchorUsable = isfinite(candidateNoise) && candidateNoise>0;
+    if anchorUsable, predictionNoise = candidateNoise; end
+end
+if anchorUsable
+    Hprb = Hprb .* sqrt(energyRatio);
+    estimate.SelectedReferenceSignalPower = referencePower;
+    estimate.SelectedDisturbancePower = predictionNoise;
+    estimate.SelectedPUSCHToSRSReferenceEnergyRatio = energyRatio;
+    estimate.SelectedPUSCHToSRSReferenceEnergySource = energySource;
+end
+
 [cond_dB] = localRankConditionNumber(Hprb);
-[ri, rankMetric, rankCandidateCount] = localEstimateRankByMI(Hprb, max(double(nVar), eps), cfg);
+[ri, rankMetric, rankCandidateCount] = localEstimateRankByMI(Hprb, predictionNoise, cfg);
 estimate.RI = double(ri);
 estimate.ConditionNumber_dB = double(cond_dB);
 estimate.RankMutualInformation = double(rankMetric);
@@ -109,7 +147,7 @@ estimate.PUSCHCodebookNumPorts = double(tpmiNumPorts);
 estimate.PortSelectionSource = char(portSource);
 [riJoint, tpmi, metric, candidateCount, beamIndices, layerSINR_dB, ...
     minimumLayerSINR_dB, widebandMeanSINR_dB] = localEstimateRankTPMI( ...
-    Htpmi, max(double(nVar), eps), cfg, tpmiNumPorts, transformPrecoding);
+    Htpmi, predictionNoise, cfg, tpmiNumPorts, transformPrecoding);
 if isfinite(riJoint)
     estimate.RI = double(riJoint);
     estimate.RankMutualInformation = double(metric);
@@ -121,26 +159,8 @@ estimate.TPMI = double(tpmi);
 estimate.TPMICandidateCount = double(candidateCount);
 estimate.TPMIMutualInformation = double(metric);
 estimate.SelectedCodebookPortIndices1Based = double(beamIndices);
-anchor_dB = double(opt.AbsoluteSINRAnchor_dB);
-anchorSource = strtrim(string(opt.AbsoluteSINRAnchorSource));
-anchorPlane = strtrim(string(opt.AbsoluteSINRAnchorPowerReferencePlane));
-anchorSourceLower = lower(anchorSource);
-anchorPlaneLower = lower(anchorPlane);
-measuredREAnchor = anchorSourceLower == ...
-    "measured_ul_srs_pilot_reconstruction_sinr" && ...
-    anchorPlaneLower == "receiver_srs_resource_elements_after_ofdm_demodulation";
-runtimePowerAnchor = anchorSourceLower == ...
-    "runtime_ul_srs_power_control_link_budget_sinr" && ...
-    anchorPlaneLower == ...
-    "receiver_input_equivalent_srs_total_power_over_noise_bandwidth_before_adc";
-anchorUsable = isfinite(anchor_dB) && (measuredREAnchor || runtimePowerAnchor);
 if anchorUsable && ~isempty(layerSINR_dB) && isfinite(widebandMeanSINR_dB)
-    calibrationOffset_dB = anchor_dB - double(widebandMeanSINR_dB);
-    layerSINR_dB = double(layerSINR_dB) + calibrationOffset_dB;
-    minimumLayerSINR_dB = min(layerSINR_dB);
-    layerLinear = 10.^(double(layerSINR_dB) ./ 10);
-    widebandMeanSINR_dB = 10 .* log10(max(mean(layerLinear), eps));
-    estimate.SelectedPostEqSINRCalibrationOffset_dB = double(calibrationOffset_dB);
+    estimate.SelectedPostEqSINRCalibrationOffset_dB = 0;
     estimate.SelectedPostEqSINRAnchor_dB = double(anchor_dB);
     estimate.SelectedPostEqSINRAnchorSource = char(anchorSource);
     estimate.SelectedPostEqSINRPowerReferencePlane = char(anchorPlane);
@@ -150,13 +170,8 @@ estimate.SelectedMinimumLayerMeanPostEqSINR_dB = double(minimumLayerSINR_dB);
 estimate.SelectedWidebandMeanPostEqSINR_dB = double(widebandMeanSINR_dB);
 if ~isempty(layerSINR_dB) && all(isfinite(layerSINR_dB))
     if anchorUsable
-        if runtimePowerAnchor
-            estimate.SelectedPostEqSINRSource = ...
-                "receiver_power_plane_srs_sinr_anchored_selected_ri_tpmi_mmse_relative_layer_prediction";
-        else
-            estimate.SelectedPostEqSINRSource = ...
-                "receiver_measured_srs_sinr_anchored_selected_ri_tpmi_mmse_relative_layer_prediction";
-        end
+        estimate.SelectedPostEqSINRSource = ...
+            "receiver_measured_srs_reference_power_selected_ri_tpmi_mmse_layer_prediction";
         estimate.SelectedPostEqSINRValueRole = ...
             "power_plane_calibrated_predicted_pusch_data_channel_scheduling_input";
         estimate.SelectedPostEqSINRValueStatus = "PASS";

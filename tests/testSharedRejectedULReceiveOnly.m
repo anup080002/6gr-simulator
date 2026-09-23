@@ -43,8 +43,8 @@ allocation=state.ULHarq.allocate(grant.RNTI,grant.Slot,grant.TBSBytes,'NewData',
 assert(allocation.HARQ.HarqID==grant.HARQ.HarqID && allocation.HARQ.NDI==grant.HARQ.NDI && ...
     allocation.HARQ.NDIEpoch==grant.HARQ.NDIEpoch && allocation.HARQ.RV==grant.HARQ.RV);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
-state.TestWithHARQ=withHARQ; state.TestEvidenceRoot=output;
-if withHARQ
+state.TestWithHARQ=withHARQ; state.TestWithCSI=withCSI; state.TestEvidenceRoot=output;
+if withHARQ || withCSI
     % Explicit connected-clock component input, not simulated random access.
     carrier=sixgr.phy.grid.makeCarrier(cfg); fs=owner.SampleRateHz;
     reference=struct('Source',"received_SSB_timing_and_decoded_BCH", ...
@@ -58,6 +58,8 @@ if withHARQ
     state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,0,1,1)};
     state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz=carrier.SubcarrierSpacing;
     [state,dlLedger]=queueDL(state,cfg);
+end
+if withHARQ
     % The retained allocation is a declared component input, not a current
     % SRS measurement. Rebuild the control context BEFORE TX under the new
     % installed K1 list, preserving the declared frozen UL physical allocation.
@@ -102,6 +104,11 @@ assert(isscalar(receivers) && result.ULHARQReceiverStateCommitted && ...
     isempty(state.ULHarq.getDeliveryLedger()), ...
     'Receiver-only soft-state completion must not invent a UE transmission or TB delivery.');
 if withCSI
+    [~,eligibleReport,~,referenceEvidence]=sixgr.truth.resolveSharedPUSCHCSIReceiveObligation(state,cfg,grant);
+    assert(~isempty(eligibleReport) && height(referenceEvidence)==1 && referenceEvidence.Slot==6 && ...
+        isempty(state.ControlTrials.CSIRS), ...
+        'test:RejectedULCSIReferenceAuthority', ...
+        'Require actual slot-6 CSI-RS transmission, not a UE measurement or configured calendar alone.');
     actual=result.IndependentCSIObservation;
     received=state.SharedGNBCSIReportTable;
     assert(isscalar(actual) && height(received)==1 && isempty(state.PendingCSITable) && ...
@@ -123,7 +130,8 @@ if withCSI
 end
 assert(~state.TestControlReceiver.CausalGrantDecodeOk && ~result.PreparedTransmitterConsumed && ...
     ~result.OraclePayloadBitsUsed && result.HARQStateCommitted==withHARQ && ~result.TransmittedTBScored && ...
-    numel(owner.DataTransmissions)==double(withHARQ) && state.ULHarq.Stats.Tx==0 && state.DLHarq.Stats.Tx==double(withHARQ) && ...
+    numel(owner.DataTransmissions)==double(withHARQ || withCSI) && state.ULHarq.Stats.Tx==0 && ...
+    state.DLHarq.Stats.Tx==double(withHARQ || withCSI) && ...
     isempty(state.PendingFeedbackTable) && ~owner.hasPending('PUSCHReceiveOnly',1));
 reject(@()sixgr.truth.completeSharedPUSCHAfterRejectedControl(state,result.ObservationID), ...
     'sixgr:truth:DuplicateRejectedULReceiveCompletion');
@@ -204,7 +212,9 @@ function state=receive(state,items)
 for item=items
     if item.Kind=="DataTX"
         state=sixgr.truth.commitSharedDataTransmission(state,item);
-        state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime(state,state.SharedDataTXLedger{end}.Grant,item.UE);
+        if state.TestWithHARQ
+            state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime(state,state.SharedDataTXLedger{end}.Grant,item.UE);
+        end
         continue;
     elseif item.Kind=="PDSCH"
         % Deliberately unexecuted UE decoder: no fabricated received event.
@@ -248,7 +258,7 @@ for item=items
     assert(isequal(window,[0 receiver.EndSampleExclusive-receiver.StartSample-p.MinimumReceiveSamples]) && ...
         timing.AppliedCorrection_samples==window(1)+peak-1 && ~info.ReceivePaddingApplied, ...
         'The selected offset must maximize actual correlation inside the complete-symbol window, without padding.');
-    if ~state.TestWithHARQ && isempty(sixgr.util.structGet(state,'SharedReceivedGrantControls',{}))
+    if ~state.TestWithHARQ && ~state.TestWithCSI && isempty(sixgr.util.structGet(state,'SharedReceivedGrantControls',{}))
         assert(timing.UnboundedEstimate_samples>window(2), ...
             'test:TimingRegressionNotExercised','The original retained stimulus must reproduce its out-of-window noise peak.');
     end
@@ -286,7 +296,8 @@ for item=items
     reject(@()sixgr.truth.queueSharedPUSCHAfterRejectedControl(state,item.Context.GNBConfig,control), ...
         'sixgr:truth:DuplicateRejectedULReceiveWindow');
     actual=state.SharedWaveformStream.DataTransmissions;
-    assert(numel(actual)==double(state.TestWithHARQ) && all(arrayfun(@(x)x.Identity.Direction=="DL",actual)));
+    assert(numel(actual)==double(state.TestWithHARQ || state.TestWithCSI) && ...
+        all(arrayfun(@(x)x.Identity.Direction=="DL",actual)));
     state.TestControlReceiver=rx; state.TestControlInfo=info;
     state.TestGNBControls=scheduled;
 end
@@ -359,7 +370,9 @@ fprintf('SHARED_REJECTED_UL_RETRY_PASS actual_rejected_commands=2 receive_only_c
 end
 
 function [state,ledger]=queueDL(state,cfg)
-% Physical slot-6 DL; installed K1=4 points to the ordinary slot-10 UL grant.
+% Actual slot-6 reference transmission. HARQ mode uses K1=4 for slot 10;
+% CSI-only mode uses its installed K1=3, outside the tested slot-10 feedback
+% obligation. Its UE DL decoder/other feedback occasion are not exercised.
 owner=state.SharedWaveformStream;
 [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
 dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,6);
@@ -373,7 +386,9 @@ g=scheduler.attachPUCCHResourceAuthorityToGrant(g); g.DCI=scheduler.buildDCIBitf
 g.PHYGrant=sixgr.phy.grant.freezePHYGrant(dl,'DL',g,'Slot',g.Slot,'Frame',g.Frame,'HARQContext',g.HARQ);
 g.PHYGrantContextId=char(string(g.PHYGrant.GrantContextId));
 [g,ledger]=sixgr.truth.prepareScheduledDLDAI(struct(),dl,g);
-assert(g.TimingDecision.FeedbackAbsoluteSlot==9 && allocated.HARQ.NDI==g.HARQ.NDI);
+feedback0=9;
+if state.TestWithCSI, feedback0=8; end
+assert(g.TimingDecision.FeedbackAbsoluteSlot==feedback0 && allocated.HARQ.NDI==g.HARQ.NDI);
 job=sixgr.truth.buildGrantPHYJob(dl,'DL',cfg.channel.snr_dB,1,[], ...
     struct('GrantSnapshot',g,'PHYGrant',g.PHYGrant,'PrepareOnly',true));
 job.StartSlotIndex=6;

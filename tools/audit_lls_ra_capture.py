@@ -26,7 +26,7 @@ def number(row, field):
         return None
 
 
-def audit_rows(rows, require_complete=False):
+def audit_rows(rows, require_complete=False, awgn_reference=None):
     checks = []
 
     def check(index, stage, name, passed, details=""):
@@ -78,6 +78,51 @@ def audit_rows(rows, require_complete=False):
         link = row.get("RuntimeChannelLinkKey", "")
         check(index, stage, "channel_direction_binding", direction in {"UL", "DL"} and
               link.startswith(f"dir={direction};") and number(row, "RuntimeChannelStateUsed") == 1)
+        if row.get("NoiseOperatingMode") == "standalone_awgn_snr_argument":
+            # Normalized waveform energy is not dBm/mW. The saved resolved
+            # scenario supplies the independent reference; never infer it
+            # from the same noise variance being checked.
+            requested, measured, reference, expected, residual = (number(row, f) for f in (
+                "AppliedTxPower_dB_re_UnitOccupiedRE_Es", "MeasuredTxPowerBeforeRF_dB_re_UnitOccupiedRE_Es",
+                "ReferenceOutputPower_dB_re_UnitOccupiedRE_Es", "ExpectedWaveformPower_re_UnitOccupiedRE_Es",
+                "TxPowerClosureError_dB"))
+            normalized = (row.get("PowerNormalizationPolicy") == "unit_occupied_re_fixed_esn0"
+                          and row.get("AppliedTxPowerValueRole") == "normalized_waveform_power_not_physical_dbm"
+                          and number(row, "PhysicalDevicePowerClaim") == 0
+                          and all(number(row, f) is None for f in (
+                              "AppliedTxPower_dBm", "MeasuredTxPowerBeforeRF_dBm", "ReferenceOutputPower_dBm",
+                              "ExpectedEmittedPower_mW", "NoiseVariancePreFrontEnd_mW")))
+            check(index, stage, "normalized_power_domain_not_device_power", normalized)
+            power = (all(v is not None for v in (requested, measured, reference, expected, residual))
+                     and expected > 0)
+            check(index, stage, "normalized_tx_power_closure", power and
+                  math.isclose(requested, measured, rel_tol=0, abs_tol=1e-8) and
+                  math.isclose(reference, measured, rel_tol=0, abs_tol=1e-8) and
+                  math.isclose(expected, 10**(measured/10), rel_tol=1e-10) and
+                  abs(residual) < 1e-8)
+            policy = awgn_reference or {}
+            snr, energy = number(policy, "snr_db"), number(policy, "awgn_reference_re_energy")
+            grid, sample, gain, applied, recorded_snr = (number(row, f) for f in (
+                "ReferenceAWGNGridNoiseVariance", "ReferenceAWGNSampleNoiseVariance",
+                "SampleToGridNoiseVarianceGain", "NoiseVariancePreFrontEnd_re_UnitOccupiedRE_Es",
+                "RequestedAWGNReferenceSNR_dB"))
+            valid = (snr is not None and energy is not None and energy > 0
+                     and all(v is not None and v > 0 for v in (grid, sample, gain, applied))
+                     and recorded_snr is not None and number(row, "NoiseApplied") == 1)
+            check(index, stage, "fixed_awgn_reference_noise_closure", valid and
+                  math.isclose(recorded_snr, snr, rel_tol=0, abs_tol=1e-10) and
+                  math.isclose(grid, energy * 10**(-snr/10), rel_tol=1e-10) and
+                  math.isclose(sample * gain, grid, rel_tol=1e-10) and
+                  math.isclose(applied, sample, rel_tol=1e-10),
+                  "Saved configured reference Es/SNR -> occupied grid variance -> sample variance, not receiver-estimator qualification.")
+            reference_kind = "unit" if energy == 1 else "configured"
+            noise_source = ("fixed_unit_occupied_re_esn0_canonical_ofdm_transform" if energy == 1 else
+                            "fixed_configured_occupied_re_esn0_canonical_ofdm_transform")
+            check(index, stage, "fixed_awgn_noise_authority", valid and
+                  row.get("NoiseVarianceSource") == noise_source and
+                  row.get("SharedNoiseCalibrationSource") ==
+                  f"fixed_once_from_{reference_kind}_occupied_re_energy_and_canonical_ofdm_noise_transform")
+            continue
         requested, measured, residual = (number(row, field) for field in (
             "AppliedTxPower_dBm", "MeasuredTxPowerBeforeRF_dBm", "TxPowerClosureError_dB"))
         reference, activity, expected = (number(row, field) for field in (
@@ -120,7 +165,13 @@ def main():
         parser.error("Audit output must not modify the measured run.")
     payload = io_path(root / SOURCE).read_bytes()
     rows = list(csv.DictReader(io.StringIO(payload.decode("utf-8-sig"))))
-    report = audit_rows(rows, args.require_complete)
+    reference, reference_hash = None, None
+    if any(row.get("NoiseOperatingMode") == "standalone_awgn_snr_argument" for row in rows):
+        config_bytes = io_path(root / "meta/scenario_config_resolved.json").read_bytes()
+        reference = json.loads(config_bytes)["simulation"]
+        reference_hash = hashlib.sha256(config_bytes).hexdigest()
+    report = audit_rows(rows, args.require_complete, reference)
+    report["resolved_config_sha256"] = reference_hash
     report.update(source=SOURCE, source_run=str(root), source_sha256=hashlib.sha256(payload).hexdigest())
     if args.output:
         io_path(args.output).mkdir(parents=True, exist_ok=True)

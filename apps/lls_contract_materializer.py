@@ -11,6 +11,7 @@ import os
 import re
 from collections import Counter, defaultdict
 from contextlib import contextmanager, nullcontext
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable
 
@@ -27,7 +28,7 @@ from lls_contract_aliases import (
 )
 
 
-MATERIALIZER_VERSION = "2026-09-13-contract-v69-sinr-limit-provenance"
+MATERIALIZER_VERSION = "2026-09-23-contract-v79-empty-primary-schema"
 FILESYSTEM_CONTRACT_CACHE_PATH = (
     "artifact_generation/browser_contract_exact_source_cache.json"
 )
@@ -2090,6 +2091,10 @@ def _render_svg_plot(title: str, subtitle: str, dataset: dict[str, Any] | None, 
                 x_px = left + 55 + idx * max(bar_w + 4, (plot_w - 100) / max(len(points), 1))
                 y_px = axis_bottom - ((y_val - min_y) / (max_y - min_y)) * (axis_bottom - axis_top)
                 parts.append(f'<rect x="{x_px:.1f}" y="{y_px:.1f}" width="{bar_w:.1f}" height="{(axis_bottom - y_px):.1f}" fill="#0f766e" opacity="0.88"/>')
+                if y_val == 0.0:
+                    # A zero-height bar is otherwise invisible. Mark its
+                    # exact endpoint without flooring or changing the metric.
+                    parts.append(f'<circle data-zero-bar-marker="true" cx="{x_px + bar_w/2:.1f}" cy="{y_px:.1f}" r="4.0" fill="#ffffff" stroke="#0f766e" stroke-width="2"/>')
                 tick_labels = dataset.get("tick_labels") or []
                 label = str(tick_labels[idx])[:14] if idx < len(tick_labels) else _format_axis_tick(x_val)
                 parts.append(f'<line x1="{x_px + bar_w/2:.1f}" y1="{axis_bottom}" x2="{x_px + bar_w/2:.1f}" y2="{axis_bottom + 5}" stroke="#64748b"/>')
@@ -2577,7 +2582,20 @@ _ROW_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
 
 
 def _normalized_row_key(name: Any) -> str:
-    return re.sub(r"[^a-z0-9]+", "", str(name or "").strip().lower())
+    return _normalized_row_text(str(name or ""))
+
+
+@lru_cache(maxsize=8192)
+def _normalized_row_text(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.strip().lower())
+
+
+@lru_cache(maxsize=256)
+def _row_alias_columns(schema: tuple, wanted: frozenset[str]) -> tuple:
+    # Cache only immutable column identities, never receiver/measurement
+    # values. Schema order is significant: preserve the original first
+    # nonblank alias rule, including colliding normalized column names.
+    return tuple(key for key in schema if _normalized_row_key(key) in wanted)
 
 
 def _row_candidate_keys(*names: str) -> list[str]:
@@ -2605,16 +2623,16 @@ def _row_value(row: dict[str, str], *names: str) -> Any:
                 return value
             if blank_exact is None:
                 blank_exact = value
-    wanted = set(_row_candidate_keys(*names))
+    wanted = frozenset(_row_candidate_keys(*names))
     if not wanted:
         return blank_exact
     blank_alias: Any = None
-    for key, value in row.items():
-        if _normalized_row_key(key) in wanted:
-            if _nonblank_text(value):
-                return value
-            if blank_alias is None:
-                blank_alias = value
+    for key in _row_alias_columns(tuple(row), wanted):
+        value = row[key]
+        if _nonblank_text(value):
+            return value
+        if blank_alias is None:
+            blank_alias = value
     if blank_exact is not None:
         return blank_exact
     return blank_alias
@@ -3091,7 +3109,12 @@ def _render_scatter_panels_svg(
     summary_lines: list[str],
 ) -> bytes:
     width = 1180
-    height = 760
+    panel_w, panel_h = 320, 250
+    base_x, base_y = 44, 110
+    panel_rows = (len(panels) + 1) // 2
+    panel_extent = panel_rows * (panel_h + 28) - 28 if panel_rows else 0
+    summary_height = max(548, 60 + min(len(summary_lines), 20) * 22 + 90)
+    height = max(760, base_y + max(panel_extent, summary_height) + 40)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
         '<rect width="100%" height="100%" fill="#f8fafc"/>',
@@ -3100,12 +3123,8 @@ def _render_scatter_panels_svg(
     ]
     if not panels:
         return _render_reason_svg(title, subtitle, summary_lines + ["No constellation preview samples were available for this chart."])
-    panel_w = 320
-    panel_h = 250
-    base_x = 44
-    base_y = 110
     colors = {"DL": "#0f766e", "UL": "#1d4ed8"}
-    for idx, (panel_title, points, ideal_points) in enumerate(panels[:3]):
+    for idx, (panel_title, points, ideal_points) in enumerate(panels):
         row = idx // 2
         col = idx % 2
         x0 = base_x + col * (panel_w + 28)
@@ -3139,7 +3158,7 @@ def _render_scatter_panels_svg(
             color = colors.get(direction, "#475569")
             parts.append(f'<circle cx="{px:.2f}" cy="{py:.2f}" r="2.0" fill="{color}" fill-opacity="0.72" />')
     info_x = 740
-    parts.append(f'<rect x="{info_x}" y="{base_y}" width="396" height="548" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
+    parts.append(f'<rect x="{info_x}" y="{base_y}" width="396" height="{summary_height}" rx="14" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.5"/>')
     parts.append(f'<text x="{info_x + 18}" y="{base_y + 30}" font-family="Segoe UI,Arial,sans-serif" font-size="18" font-weight="700" fill="#0f172a">Run Summary</text>')
     y = base_y + 60
     for line in summary_lines[:20]:
@@ -4900,9 +4919,9 @@ def _select_source_table_artifact(
         source_data = fetch_artifact_bytes(int(art["artifact_id"]))
         header, rows = _decode_csv(source_data)
         source_data, header, rows = _canonicalize_contract_source_rows(path, header, rows)
-        if not fallback[0]:
-            fallback = (art, source_data, header, rows)
         if not rows:
+            if not fallback[0] and header and all(str(name).strip() for name in header):
+                fallback = (art, source_data, header, rows)
             continue
         _, dict_rows = _decode_csv_dicts(source_data)
         if _table_placeholder_summary_status(dict_rows) in {"source_artifact_missing", "source_artifact_present_but_empty"}:
@@ -4983,19 +5002,28 @@ def _encode_dict_rows(header: list[str], rows: list[dict[str, Any]]) -> bytes:
 
 
 def _trial_row_bler(row: dict[str, str]) -> float | None:
-    crc_pass = _row_text(row, "CRCPass")
-    if crc_pass:
-        return 0.0 if crc_pass.lower() in {"1", "true", "pass", "passed", "ok", "ack"} else 1.0
-    codeblock_bler = _row_float(row, "CodeBlockBLER")
-    if codeblock_bler is not None:
-        return float(codeblock_bler)
+    # This population is transport blocks with an actual binary CRC result.
+    # Unknown/non-attempted outcomes are not failures, and a code-block
+    # fraction has a different denominator: it cannot substitute for TB BLER.
+    raw = _row_value(row, "CRCPass")
+    token = str(raw).strip().lower() if raw is not None else ""
+    if token in {"true", "pass", "passed", "ok", "ack"}:
+        return 0.0
+    if token in {"false", "fail", "failed", "nack"}:
+        return 1.0
+    number = _coerce_float(raw)
+    if number in (0.0, 1.0):
+        return 1.0 - number
     return None
 
 
 def _trial_row_ber(row: dict[str, str]) -> float | None:
     bit_errors = _row_float(row, "BitErrors")
     bits_compared = _row_float(row, "BitsCompared")
-    if bit_errors is None or bits_compared is None or bits_compared <= 0:
+    if (bit_errors is None or bits_compared is None or not math.isfinite(bit_errors)
+            or not math.isfinite(bits_compared) or bits_compared <= 0
+            or bit_errors < 0 or bit_errors > bits_compared
+            or bit_errors != int(bit_errors) or bits_compared != int(bits_compared)):
         return None
     return float(bit_errors) / float(bits_compared)
 
@@ -6033,10 +6061,20 @@ def _ssb_index_timeline_chart_materialization(
         return None
     csv_rows: list[dict[str, Any]] = []
     points: list[list[float]] = []
+    failed_identity_rows = 0
     for idx, row in enumerate(records, start=1):
         slot = _row_float(row, "Slot")
-        # An antenna/codebook beam index is not necessarily an SS/PBCH index.
         ssb = _row_float(row, "SSBIndex", "SSBIdx")
+        if ssb is not None and (ssb < 0 or ssb != int(ssb)):
+            raise ValueError("SSB index evidence must contain nonnegative integer identities")
+        if (_row_float(row, "SSBIdentityVerified") == 0
+                and _row_float(row, "CRCPass") == 0):
+            # Failed acquisition has no decoded identity. In particular,
+            # configured/candidate indices in Notes or beam fields cannot
+            # supply one when the receiver explicitly rejected identity.
+            failed_identity_rows += 1
+            continue
+        # An antenna/codebook beam index is not necessarily an SS/PBCH index.
         if ssb is None:
             match = re.search(r"SSBIdx=(\d+)", _row_text(row, "Notes"))
             if match:
@@ -6048,6 +6086,24 @@ def _ssb_index_timeline_chart_materialization(
         points.append([float(slot) if slot is not None else None, float(ssb)])
         csv_rows.append({"run_id": run_id, "chart_name": chart_name, "slot": slot, "ssb_index": ssb, "source_table_logical_path": source_path})
     if not csv_rows:
+        if failed_identity_rows == len(records):
+            reason = (
+                "All recorded SS/PBCH attempts failed CRC and identity verification; "
+                "no decoded SSB index is available. No configured or beam index was substituted."
+            )
+            return {
+                "csv_bytes": _encode_csv(
+                    ["run_id", "chart_name", "status", "reason", "source_table_logical_path"],
+                    [[run_id, chart_name, "unavailable_exact_reason", reason, source_path]],
+                ),
+                "img_bytes": _render_reason_svg(chart_name, "No verified SSB identity.", [reason]),
+                "csv_status": "unavailable_exact_reason",
+                "image_status": "generated_unavailable_reason_svg",
+                "source_table_path": source_path,
+                "source_row_count": 0,
+                "source_mapping_status": "unavailable",
+                "note": reason,
+            }
         raise ValueError("SSB index timeline requires actual SSBIndex/SSBIdx evidence; a selected beam index is not a substitute")
     known_slots = [point[0] for point in points if point[0] is not None]
     unique_slots = _unique_numeric_count(known_slots)
@@ -6279,6 +6335,29 @@ def _srs_map_chart_materialization(
         "source_row_count": len(grid_rows),
         "note": "SRS map derived from truthful per-UE/per-slot SRS runtime observations without inventing absent RE-level coordinates.",
     }
+
+
+def _ber_rows_by_exact_x(
+    rows: list[tuple[float, float, float]], *, x_label: str,
+    chart_name: str, run_id: int, source_path: str,
+) -> tuple[bytes, dict[str, Any]]:
+    # Adaptive TB sizes require bit weighting, not a mean of trial BERs.
+    grouped: dict[float, list[tuple[float, float]]] = defaultdict(list)
+    for x, errors, bits in rows:
+        if math.isfinite(x) and _trial_row_ber({"BitErrors": errors, "BitsCompared": bits}) is not None:
+            grouped[round(float(x), 6)].append((errors, bits))
+    points, records = [], []
+    for x, pairs in sorted(grouped.items()):
+        errors, bits = sum(p[0] for p in pairs), sum(p[1] for p in pairs)
+        rate = errors / bits
+        points.append([x, rate])
+        records.append(dict(run_id=run_id, chart_name=chart_name, **{x_label: x},
+                            BER=rate, BitErrors=errors, BitsCompared=bits,
+                            ObservedTrialCount=len(pairs), source_table_logical_path=source_path))
+    fields = ["run_id", "chart_name", x_label, "BER", "BitErrors", "BitsCompared",
+              "ObservedTrialCount", "source_table_logical_path"]
+    return _encode_dict_rows(fields, records), dict(
+        mode=_honest_chart_mode(points, "line"), x_label=x_label, y_label="BER", points=points)
 
 
 def _metric_rows_by_exact_x(
@@ -7017,6 +7096,42 @@ def _runtime_antenna_radiation_chart(
     }
 
 
+def _recorded_no_data_beam_sources(existing, fetch_artifact_bytes) -> list[str]:
+    """Explain absent data beam evidence; never qualify PHY or acquisition.
+
+    Missing artifacts are not zero observations. Require explicit empty data
+    tables, failed acquisition and a complete single-point zero-grant trace.
+    """
+    paths = ["reports/csv/run_state.csv", "reports/csv/slot_trace.csv",
+             "air_interface/csv/pbch_trials.csv",
+             "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"]
+    sources = [_artifact_rows_by_path(existing, fetch_artifact_bytes, path) for path in paths]
+    if any(not columns for columns, _ in sources):
+        return []
+    state, slots, pbch, dl, ul = [rows for _, rows in sources]
+    if len(state) != 1 or not slots or not pbch or dl or ul:
+        return []
+    if any("CRCPass" not in sources[index][0] for index in (3, 4)):
+        return []
+    if (_row_float(state[0], "CanonicalSlotsPerSweepPoint") != len(slots)
+            or _row_float(state[0], "CurrentCanonicalSlot") != len(slots)
+            or any(_row_float(state[0], name) != 0 for name in ("DLGrantRows", "ULGrantRows"))):
+        return []
+    if [_row_float(row, "CanonicalSlot") for row in slots] != list(range(1, len(slots) + 1)):
+        return []
+    sweep_indices = {_row_float(row, "SweepPointIndex") for row in slots}
+    if len(sweep_indices) != 1 or None in sweep_indices:
+        return []
+    count_fields = ("DLGrantCount", "ULGrantCount", "DLExecutedGrantCount",
+                    "ULExecutedGrantCount", "DLTrialRows", "ULTrialRows")
+    if any(_row_float(row, name) != 0 for row in slots for name in count_fields):
+        return []
+    if any(_row_float(row, name) != 0 for row in pbch
+           for name in ("CRCPass", "Crash", "SSBIdentityVerified", "SelectedBeamFlag")):
+        return []
+    return paths
+
+
 def _runtime_beam_pattern_chart(
     chart_name: str,
     existing: dict[str, dict[str, Any]],
@@ -7029,6 +7144,25 @@ def _runtime_beam_pattern_chart(
     patterns_path = "beamforming/csv/applied_data_precoder_patterns.csv"
     _, weights = _artifact_rows_by_path(existing, fetch_artifact_bytes, weights_path)
     _, patterns = _artifact_rows_by_path(existing, fetch_artifact_bytes, patterns_path)
+    if not weights and not patterns:
+        outage_sources = _recorded_no_data_beam_sources(existing, fetch_artifact_bytes)
+        if outage_sources:
+            reason = ("Recorded complete slot trace has zero data grants and executions; "
+                      "PBCH acquisition failed and both data-trial tables are explicitly empty. "
+                      "There is no data precoder to plot; no configured weights or PMI were substituted.")
+            sources = "|".join(outage_sources)
+            return {
+                "csv_bytes": _encode_csv(
+                    ["run_id", "chart_name", "status", "reason", "source_table_logical_path"],
+                    [[run_id, chart_name, "unavailable_exact_reason", reason, sources]]),
+                "img_bytes": _render_reason_svg(chart_name, "No executed data beam.", [reason]),
+                "csv_status": "unavailable_exact_reason",
+                "image_status": "generated_unavailable_reason_svg",
+                "source_table_path": sources,
+                "source_row_count": 0,
+                "source_mapping_status": "unavailable",
+                "note": reason,
+            }
     # Missing applied matrices must never fall through to a requested-PMI proxy.
     grid, source, selected = validate_samples(weights, patterns)
     return {
@@ -7923,6 +8057,7 @@ def _configured_sweep_chart_materialization(
 
     required_direction = "DL" if chart_key.startswith("dl_") else ("UL" if chart_key.startswith("ul_") else "")
     pairs: list[tuple[float, float]] = []
+    ber_rows: list[tuple[float, float, float]] = []
     used_paths: list[str] = []
     selected_x_labels: Counter[str] = Counter()
     for source_path, rows in trial_sources:
@@ -7946,6 +8081,8 @@ def _configured_sweep_chart_materialization(
             if metric is None or not math.isfinite(float(metric)):
                 continue
             pairs.append((float(configured_snr), float(metric)))
+            if chart_key.endswith("ber_vs_snr"):
+                ber_rows.append((float(configured_snr), _row_float(row, "BitErrors"), _row_float(row, "BitsCompared")))
             source_used = True
         if source_used:
             used_paths.append(source_path)
@@ -7971,6 +8108,10 @@ def _configured_sweep_chart_materialization(
         source_path=source_path_text,
     )
     point_count = len(dataset.get("points", []))
+    if chart_key.endswith("ber_vs_snr"):
+        csv_bytes, dataset = _ber_rows_by_exact_x(ber_rows, x_label=x_label,
+            chart_name=chart_name, run_id=run_id, source_path=source_path_text)
+        point_count = len(dataset.get("points", []))
     dataset["sample_count"] = len(pairs)
     if chart_key.endswith("bler_vs_snr") or chart_key.endswith("ber_vs_snr"):
         dataset["y_axis_min"] = 0.0
@@ -8035,7 +8176,6 @@ def _explicit_runtime_metric_chart_materialization(
         "energy per bit over time": {"sources": ["reports/csv/live_energy_efficiency_table.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["energy_per_bit_j"], "kind": "timeline", "label": "Energy per bit (J/bit)"},
         "joules/GB over time": {"sources": ["reports/csv/live_energy_efficiency_table.csv", "reports/csv/live_power_runtime_table.csv"], "fields": ["joules_per_gb"], "kind": "timeline", "label": "Energy (J/GB)"},
         "PAPR distribution": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PAPR_dB"], "kind": "distribution", "label": "PAPR (dB)"},
-        "measured_sinr_vs_slot": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PostEqSINR_dB", "MeasuredTrialSINR_dB"], "kind": "timeline", "label": "Measured post-equalization SINR (dB)"},
         "noise variance trend": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["NoiseVariance", "LLRNoiseVariance"], "kind": "timeline", "label": "Noise variance"},
         "clipping event histogram": {"sources": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"], "fields": ["PeakClippingEvents"], "kind": "distribution", "label": "Clipping events"},
         "code-block error rates": {"sources": ["reports/csv/live_pdsch_code_block_table.csv", "air_interface/csv/dl_pdsch_trials.csv"], "fields": ["code_block_bler", "CodeBlockBLER"], "kind": "distribution", "label": "Code-block BLER"},
@@ -9841,6 +9981,9 @@ def _runtime_phy_signal_diagnostic_chart(
         "post-impairment waveform",
         "stage overlay plots",
         "UE-wise / link-wise waveform comparison",
+        "pre-equalization constellation",
+        "channel impulse response",
+        "tap power profile",
         "true H(tau) if available",
         "estimated Hhat(tau)",
         "true H(f) if available",
@@ -9868,6 +10011,49 @@ def _runtime_phy_signal_diagnostic_chart(
     ]
     if not exact_rows:
         return None
+
+    if chart_name == "pre-equalization constellation":
+        # These are captured receive-antenna REs before equalization, not
+        # transmitted reference symbols or demixed per-layer samples.
+        csv_rows = []
+        groups = defaultdict(list)
+        for row in exact_rows:
+            if _row_text(row, "Panel") != "pre_equalization_re_cloud":
+                continue
+            i_value, q_value = _row_float(row, "IValue"), _row_float(row, "QValue")
+            if i_value is None or q_value is None:
+                continue
+            snapshot = _row_text(row, "SnapshotID")
+            direction = _row_text(row, "Direction")
+            series = _row_text(row, "Series")
+            antenna = _row_text(row, "RxAntennaIndex")
+            groups[(snapshot, direction, series, antenna)].append([i_value, q_value])
+            csv_rows.append({
+                "run_id": run_id, "chart_name": chart_name, "snapshot_id": snapshot,
+                "direction": direction, "ue_index": _row_text(row, "UEIndex"),
+                "cell_id": _row_text(row, "CellID"), "sfn": _row_text(row, "SFN"),
+                "slot": _row_text(row, "Slot"), "series": series,
+                "rx_antenna_index": antenna, "point_index": _row_text(row, "PointIndex"),
+                "plane": "pre_equalization_re_cloud", "i_value": i_value, "q_value": q_value,
+                "source_table_logical_path": source_path,
+            })
+        if not csv_rows:
+            return None
+        return {
+            "csv_bytes": _encode_dict_rows(list(csv_rows[0]), csv_rows),
+            "img_bytes": _render_multi_series_svg(
+                chart_name, "Captured receiver-antenna data REs before equalization; no layer separation is implied.",
+                [{"name": f"{direction} / {series} / Rx={antenna} / {snapshot}", "points": points}
+                 for (snapshot, direction, series, antenna), points in groups.items()],
+                [f"points={len(csv_rows)}", f"source={source_path}", "plane=pre_equalization_re_cloud"],
+                x_label="Received RE I", y_label="Received RE Q", mode="scatter",
+                evidence_shape_policy="operating_point"),
+            "csv_status": "specialized_runtime_exact_pre_equalization_dataset",
+            "image_status": "generated_specialized_runtime_pre_equalization_svg",
+            "source_table_path": source_path, "source_row_count": len(csv_rows),
+            "source_mapping_status": "exact",
+            "note": "Exact captured pre-equalization plane; no post-equalization or reference-plane substitution.",
+        }
 
     if chart_name in {
         "Tx waveform", "Rx waveform", "magnitude vs sample", "phase vs sample",
@@ -10036,10 +10222,10 @@ def _runtime_phy_signal_diagnostic_chart(
             "note": subtitle,
         }
 
-    if chart_name in {"true H(tau) if available", "estimated Hhat(tau)"}:
+    if chart_name in {"true H(tau) if available", "estimated Hhat(tau)", "channel impulse response", "tap power profile"}:
         panel = (
             "true_channel_impulse_response"
-            if chart_name == "true H(tau) if available"
+            if chart_name != "estimated Hhat(tau)"
             else "estimated_channel_impulse_response"
         )
         response_rows = [row for row in exact_rows if _row_text(row, "Panel") == panel]
@@ -10050,6 +10236,7 @@ def _runtime_phy_signal_diagnostic_chart(
         csv_rows: list[dict[str, Any]] = []
         magnitude_points: list[list[float]] = []
         phase_points: list[list[float]] = []
+        power_points: list[list[float]] = []
         for row in response_rows:
             delay_s = _row_float(row, "XValue")
             i_value = _row_float(row, "IValue")
@@ -10061,6 +10248,10 @@ def _runtime_phy_signal_diagnostic_chart(
             delay_ns = float(delay_s) * 1e9
             magnitude_points.append([delay_ns, float(magnitude_db)])
             phase_points.append([delay_ns, float(phase_deg)])
+            # Instantaneous power of the captured complex tap, without
+            # configured-PDP substitution, normalization or a dB floor.
+            power_linear = float(i_value) ** 2 + float(q_value) ** 2
+            power_points.append([delay_ns, power_linear])
             csv_rows.append({
                 "run_id": run_id, "chart_name": chart_name, "snapshot_id": snapshot_id,
                 "direction": _row_text(row, "Direction"), "ue_index": _row_text(row, "UEIndex"),
@@ -10069,6 +10260,7 @@ def _runtime_phy_signal_diagnostic_chart(
                 "delay_s": float(delay_s), "delay_ns": delay_ns,
                 "i_value": float(i_value), "q_value": float(q_value),
                 "magnitude_db": float(magnitude_db), "phase_deg": float(phase_deg),
+                "power_linear": power_linear,
                 "tensor_sha256": _row_text(row, "GridSHA256"),
                 "source_table_logical_path": source_path,
             })
@@ -10077,18 +10269,21 @@ def _runtime_phy_signal_diagnostic_chart(
         evidence = "executed_runtime_path_gain_tensor" if panel.startswith("true_") else "receiver_channel_estimate_ifft"
         return {
             "csv_bytes": _encode_dict_rows(
-                ["run_id", "chart_name", "snapshot_id", "direction", "ue_index", "cell_id", "sfn", "slot", "series", "delay_s", "delay_ns", "i_value", "q_value", "magnitude_db", "phase_deg", "tensor_sha256", "source_table_logical_path"],
+                ["run_id", "chart_name", "snapshot_id", "direction", "ue_index", "cell_id", "sfn", "slot", "series", "delay_s", "delay_ns", "i_value", "q_value", "magnitude_db", "phase_deg", "power_linear", "tensor_sha256", "source_table_logical_path"],
                 csv_rows,
             ),
             "img_bytes": _render_multi_series_svg(
                 chart_name,
-                "Executed complex channel impulse response." if panel.startswith("true_") else "Bandwidth-limited impulse response of the receiver's own complex channel estimate.",
-                [
+                "Instantaneous captured tap power |h|^2; not an ensemble-averaged PDP." if chart_name == "tap power profile" else (
+                    "Executed complex channel impulse response." if panel.startswith("true_") else "Bandwidth-limited impulse response of the receiver's own complex channel estimate."),
+                [{"name": "Captured tap power (linear)", "points": power_points}] if chart_name == "tap power profile" else [
                     {"name": "Magnitude (dB)", "points": magnitude_points},
                     {"name": "Phase (deg)", "points": phase_points},
                 ],
                 [f"snapshot={snapshot_id}", f"points={len(csv_rows)}", f"source={source_path}", f"evidence={evidence}"],
-                x_label="Excess delay (ns)", y_label="Magnitude (dB) / phase (deg)",
+                x_label="Excess delay (ns)",
+                y_label="Tap power (linear)" if chart_name == "tap power profile" else "Magnitude (dB) / phase (deg)",
+                mode="scatter", evidence_shape_policy="operating_point",
             ),
             "csv_status": "specialized_runtime_exact_channel_impulse_dataset",
             "image_status": "generated_specialized_runtime_channel_response_svg",
@@ -10146,6 +10341,7 @@ def _runtime_phy_signal_diagnostic_chart(
                 ],
                 [f"snapshot={snapshot_id}", f"points={len(csv_rows)}", f"source={source_path}", "evidence=executed_runtime_path_gain_tensor"],
                 x_label="Frequency offset (MHz)", y_label="Magnitude (dB) / phase (deg)",
+                evidence_shape_policy="observed_relation" if len({p[0] for p in magnitude_points}) > 1 else "operating_point",
             ),
             "csv_status": "specialized_runtime_exact_true_channel_frequency_dataset",
             "image_status": "generated_specialized_runtime_channel_response_svg",
@@ -12003,8 +12199,27 @@ def _specialized_chart_materialization(
                         ("Tx power", "TxPower", lambda row: (_row_float(row, "TxMagnitude") or 0.0) ** 2 if _row_float(row, "TxMagnitude") is not None else None),
                         ("Rx power", "RxPower", lambda row: (_row_float(row, "RxMagnitude") or 0.0) ** 2 if _row_float(row, "RxMagnitude") is not None else None),
                     ]
+                preview_identity = ("ObservationKind", "Direction", "Frame", "Slot", "UEIndex",
+                                    "ServingCell", "TxAntennaIndex", "RxAntennaIndex", "TxPlane",
+                                    "RxPlane", "Source", "EvidenceScope", "ObservationStartSample",
+                                    "ObservationEndSampleExclusive", "ObservationSampleRateHz")
+                identity_fields = [key for key in preview_identity if any(key in row for row in records)]
+                if "ObservationKind" in identity_fields:
+                    summary.append("observation=" + ",".join(sorted({
+                        _row_text(row, "ObservationKind") for row in records})))
+
+                def preview_trace_name(metric, identity):
+                    fields = dict(zip(identity_fields, identity))
+                    kind = fields.get("ObservationKind", "").replace("broadcast_window", "broadcast")
+                    label = " ".join(value for value in (
+                        kind, fields.get("Direction", ""),
+                        "s" + fields["Slot"] if fields.get("Slot") else "",
+                        "T" + fields["TxAntennaIndex"] if fields.get("TxAntennaIndex") else "",
+                        "R" + fields["RxAntennaIndex"] if fields.get("RxAntennaIndex") else "") if value)
+                    return (label + " | " if label else "") + metric
+
                 for series_name, metric_name, resolver in metric_specs:
-                    points: list[list[float]] = []
+                    grouped_points: dict[tuple[str, ...], list[list[float]]] = defaultdict(list)
                     for row in records:
                         x_val = _row_float(row, x_label) if use_time_axis else _row_float(row, "SampleIndex")
                         if x_val is None:
@@ -12012,20 +12227,24 @@ def _specialized_chart_materialization(
                         y_val = resolver(row)
                         if y_val is None or not math.isfinite(y_val):
                             continue
-                        points.append([float(x_val), float(y_val)])
+                        identity = tuple(_row_text(row, key) for key in identity_fields)
+                        trace_name = preview_trace_name(series_name, identity)
+                        grouped_points[identity].append([float(x_val), float(y_val)])
                         csv_rows.append(
                             {
                                 "run_id": run_id,
                                 "chart_name": chart_name,
                                 x_label: x_val,
-                                "series_name": series_name,
+                                "series_name": trace_name,
                                 "metric_name": metric_name,
                                 "metric_value": y_val,
                                 "source_table_logical_path": source_path,
+                                **dict(zip(identity_fields, identity)),
                             }
                         )
-                    if points:
-                        series.append({"name": series_name, "points": _downsample_points(points, 256)})
+                    for identity, points in grouped_points.items():
+                        trace_name = preview_trace_name(series_name, identity)
+                        series.append({"name": trace_name, "points": _downsample_points(points, 256)})
                 if series:
                     flat_values = [
                         abs(float(point[1]))
@@ -12038,7 +12257,7 @@ def _specialized_chart_materialization(
                     else:
                         img_bytes = _render_multi_series_svg(chart_name, "Sample-domain waveform traces rendered from persisted runtime preview samples.", series, summary, x_label=x_label, y_label="Amplitude / derived value")
                     return {
-                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", x_label, "series_name", "metric_name", "metric_value", "source_table_logical_path"], csv_rows),
+                        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", x_label, "series_name", "metric_name", "metric_value", "source_table_logical_path", *identity_fields], csv_rows),
                         "img_bytes": img_bytes,
                         "csv_status": "specialized_runtime_waveform_dataset",
                         "image_status": "generated_specialized_runtime_waveform_svg",
@@ -12243,7 +12462,8 @@ def _specialized_chart_materialization(
                     return mcs_chart
             if chart_name in {"BLER vs SNR", "BLER vs SINR", "BER vs SNR", "FER vs SNR"}:
                 pairs: list[tuple[float, float]] = []
-                used_source_path = ""
+                ber_rows: list[tuple[float, float, float]] = []
+                used_source_paths: set[str] = set()
                 is_snr_axis = chart_name.endswith("vs SNR")
                 x_label = "AppliedAWGNSNR_dB" if is_snr_axis else "PostEqSINR_dB"
                 y_label = "BLER" if "BLER" in chart_name else ("FER" if "FER" in chart_name else "BER")
@@ -12255,7 +12475,6 @@ def _specialized_chart_materialization(
                         x_val, row_x_label = _row_quality_axis_value(row, allow_receiver_hest=False)
                     if x_val is None:
                         continue
-                    selected_x_labels[row_x_label] += 1
                     if y_label == "BER":
                         y_val = _trial_row_ber(row)
                     elif y_label == "FER":
@@ -12264,12 +12483,20 @@ def _specialized_chart_materialization(
                         y_val = _trial_row_bler(row)
                     if y_val is None:
                         continue
+                    selected_x_labels[row_x_label] += 1
                     pairs.append((float(x_val), float(y_val)))
-                    used_source_path = used_source_path or source_path
+                    if y_label == "BER":
+                        ber_rows.append((float(x_val), _row_float(row, "BitErrors"), _row_float(row, "BitsCompared")))
+                    used_source_paths.add(source_path)
                 if pairs:
+                    used_source_path = "|".join(sorted(used_source_paths))
                     if selected_x_labels:
                         x_label = selected_x_labels.most_common(1)[0][0]
-                    if not is_snr_axis:
+                    if y_label == "BER":
+                        csv_bytes, dataset = _ber_rows_by_exact_x(ber_rows, x_label=x_label,
+                            chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials")
+                        chart_note = "BER uses paired receiver bit-error counts divided by compared bits at each operating point."
+                    elif not is_snr_axis:
                         csv_bytes, dataset = _metric_rows_by_binned_x(pairs, x_label=x_label, y_label=y_label, chart_name=chart_name, run_id=run_id, source_path=used_source_path or "multiple_runtime_trials", bin_width=1.0)
                         chart_note = "Reliability-vs-SINR curve binned by data-domain trial SINR where available; receiver-Hest diagnostic SINR is intentionally not used as the x-axis fallback."
                     else:
@@ -12302,8 +12529,8 @@ def _specialized_chart_materialization(
                     if chart_name == "BER":
                         bit_errors = _row_float(row, "BitErrors")
                         bits_compared = _row_float(row, "BitsCompared")
-                        if bit_errors is not None and bits_compared is not None and bits_compared > 0:
-                            counts["BER errors"] += max(0.0, float(bit_errors))
+                        if _trial_row_ber(row) is not None:
+                            counts["BER errors"] += float(bit_errors)
                             counts["BER denominator"] += float(bits_compared)
                     elif chart_name == "BLER":
                         value = _trial_row_bler(row)
@@ -12978,8 +13205,11 @@ def _specialized_chart_materialization(
         preview_sources = _all_available_rows(
             existing,
             fetch_artifact_bytes,
-            ["air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv", "reports/csv/equalized_constellations.csv"],
+            ["air_interface/csv/dl_constellation_samples.csv", "air_interface/csv/ul_constellation_samples.csv",
+             "air_interface/csv/dl_constellation_preview.csv", "air_interface/csv/ul_constellation_preview.csv",
+             "reports/csv/equalized_constellations.csv"],
         )
+        chosen_sources: dict[str, str] = {}
         group_field = "CodewordIndex" if chart_name == "constellation per codeword" else "LayerIndex"
         panels: list[tuple[str, list[tuple[float, float, str]], list[tuple[float, float]]]] = []
         csv_rows: list[dict[str, Any]] = []
@@ -12988,12 +13218,27 @@ def _specialized_chart_materialization(
         for source_path, rows in preview_sources:
             default_direction = "DL" if "/dl_" in source_path else ("UL" if "/ul_" in source_path else "")
             for row in rows:
-                group_value = _row_float(row, group_field)
-                eq_r = _row_float(row, "EqualizedReal")
-                eq_i = _row_float(row, "EqualizedImag")
-                if group_value is None or eq_r is None or eq_i is None:
+                direction = _row_text(row, "Direction").upper() or default_direction
+                if direction not in {"DL", "UL"}:
                     continue
-                direction = _row_text(row, "Direction") or default_direction
+                if default_direction and direction != default_direction:
+                    raise ValueError("Constellation direction contradicts its source table")
+                chosen_sources.setdefault(direction, source_path)
+                if chosen_sources[direction] != source_path:
+                    continue  # Report aliases must not duplicate physical samples.
+                if _non_runtime_evidence_field(row):
+                    raise ValueError("Non-runtime evidence cannot become a measured constellation")
+                group_value = _row_float(row, group_field)
+                if "RawEqualizedReal" in row or "RawEqualizedImag" in row:
+                    eq_r = _row_float(row, "RawEqualizedReal")
+                    eq_i = _row_float(row, "RawEqualizedImag")
+                elif _row_text(row, "EqualizationSource") == "receiver_output_without_payload_gain_or_phase_fit":
+                    eq_r = _row_float(row, "EqualizedReal")
+                    eq_i = _row_float(row, "EqualizedImag")
+                else:
+                    raise ValueError("Layer/codeword constellation requires raw receiver samples or explicit no-payload-fit provenance")
+                if group_value is None or group_value != int(group_value) or eq_r is None or eq_i is None:
+                    raise ValueError("Layer/codeword constellation requires finite receiver samples and an integral group identity")
                 group_name = f"{direction or 'link'} {group_field} {int(round(group_value))}"
                 grouped_points[group_name].append((float(eq_r), float(eq_i), direction or "link"))
                 ref_r = _row_float(row, "ReferenceSymbolReal")
@@ -13013,17 +13258,18 @@ def _specialized_chart_materialization(
                         "source_table_logical_path": source_path,
                     }
                 )
-        for group_name, points in list(grouped_points.items())[:8]:
+        for group_name, points in grouped_points.items():
             panels.append((group_name, points[:450], grouped_ideal.get(group_name, [])[:64]))
         if panels:
             return {
                 "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "direction", group_field, "EqualizedReal", "EqualizedImag", "ReferenceSymbolReal", "ReferenceSymbolImag", "source_table_logical_path"], csv_rows),
-                "img_bytes": _render_scatter_panels_svg(chart_name, "Equalized constellation samples grouped by runtime RE-mapped codeword/layer coordinates.", panels, [f"samples={len(csv_rows)}"]),
+                "img_bytes": _render_scatter_panels_svg(chart_name, "Equalized constellation samples grouped by runtime RE-mapped codeword/layer coordinates.", panels,
+                    [f"samples={len(csv_rows)}", "Preview: first 450 samples per panel", "CSV: all retained samples"]),
                 "csv_status": "specialized_runtime_constellation_dataset",
                 "image_status": "generated_specialized_runtime_constellation_svg",
-                "source_table_path": "|".join(source_path for source_path, _rows in preview_sources),
+                "source_table_path": "|".join(dict.fromkeys(row["source_table_logical_path"] for row in csv_rows)),
                 "source_row_count": len(csv_rows),
-                "note": "Constellation grouping uses codeword/layer coordinates exported by the PHY runtime preview.",
+                "note": "Constellation grouping uses raw receiver samples and runtime codeword/layer coordinates from one source per direction; aliases are not counted twice.",
             }
     if chart_name in {"EVM per symbol", "PDSCH EVM per symbol", "PUSCH EVM per symbol", "EVM per subcarrier", "EVM per layer"}:
         evm_chart = _runtime_evm_profile_chart(chart_name, existing, fetch_artifact_bytes, run_id)
@@ -13497,6 +13743,14 @@ def materialize_run_contract_artifacts(
                         status = "copied_source_table"
                         note = f"Canonical contract table copied from {source_art['logical_path']}."
                         source_row_count = len(rows)
+                    elif header and all(str(name).strip() for name in header):
+                        # A producer-owned zero-row table is real evidence of
+                        # no observations, not a missing source or a reason
+                        # row. Preserve its schema without inventing samples.
+                        data = source_data
+                        status = "copied_empty_source_table"
+                        note = "Canonical contract table preserves the source schema and zero observations."
+                        source_row_count = 0
                     else:
                         header, summary_rows = _summary_csv_rows(
                             run_id,

@@ -4,7 +4,7 @@ function ok = testMatSaveFilesystemAtomic()
 % Keep the destination inside the repository so this regression exercises
 % the synchronized OneDrive result volume that exposed the production
 % corruption.  matSave itself must stage outside this tree.
-root = tempname(pwd);
+root = tempname(fileparts(fileparts(mfilename('fullpath'))));
 mkdir(root);
 cleanupRoot = onCleanup(@() localRemove(root)); %#ok<NASGU>
 target = fullfile(root, "nested", "runtime_result.mat");

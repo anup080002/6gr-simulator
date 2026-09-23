@@ -286,6 +286,11 @@
         "dl": {"value_type": "string", "default": "CP-OFDM", "allowed_values": ["CP-OFDM"]},
         "ul": {"value_type": "string", "default": "DFT-s-OFDM", "allowed_values": ["DFT-s-OFDM", "CP-OFDM"]}
       },
+      "synchronization": {
+        "ssbDetectorTargetFalseAlarmProbability": {"value_type": "number", "default": 0.001, "min_exclusive": 0, "max_exclusive": 1},
+        "pssDetectionThreshold": {"value_type": "number", "default": 0, "min": 0},
+        "sssHypothesisTestThreshold": {"value_type": "number", "default": 0, "min": 0}
+      },
       "ssb": {
         "enable": {"value_type": "boolean", "default": true},
         "blockPattern": {"value_type": "string", "default": "Case B", "allowed_values": ["Case A", "Case B", "Case C", "Case D", "Case E", "Case F", "Case G"]},

@@ -1,0 +1,26 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_snr_sweep.yaml
+  - ../defaults/traffic_saturated_200mbps.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep_saturated
+  description: Saturated-load independent 5 MHz TDD shared-control runs at -30, -20, -10, 0, 10, 20, 30 and 40 dB.
+  purpose: Retain physical outage and decoding evidence at each independently initialized fixed-SNR point; do not force low-SNR access success.
+  research_class: optional_research_experiment
+
+scheduler:
+  min_prbs_per_grant: 2
+
+pucch_resources:
+  overlap_policy:
+    detect_pucch_pusch_overlap: true
+    uci_on_pusch_enabled: true
+    reserve_configured_pucch_prbs_from_pusch: false
+    unsupported_overlap_policy: reject_before_waveform
+
+scenario:
+  sweep:
+    output_name: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep_saturated
+
+output:
+  profile: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep_saturated

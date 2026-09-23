@@ -22,6 +22,11 @@
     "target_cases": ["bundle"],
     "notes": "All scenario values must be overridden through config inheritance only."
   },
+  "synchronization": {
+    "ssb_detector_target_false_alarm_probability": 0.001,
+    "pss_detection_threshold": 0,
+    "sss_hypothesis_test_threshold": 0
+  },
   "simulation": {
     "link_direction": "both",
     "n_frames": 8,

@@ -273,6 +273,8 @@ trialTB = NaN(numFrames,1);
 trialCRC = NaN(numFrames,1);
 trialDecIt = NaN(numFrames,1);
 trialEVM = NaN(numFrames,1);
+trialEVMLayers = strings(numFrames,1);
+trialEVMLayerSource = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
@@ -346,6 +348,7 @@ trialOLLAUpdateCount = NaN(numFrames,1);
 trialOLLAStateAuthority = strings(numFrames,1);
 trialOLLAState = strings(numFrames,1);
 trialRankSelectionPolicy = strings(numFrames,1);
+trialConfiguredLayers = NaN(numFrames,1);
 trialRankSelectionSource = strings(numFrames,1);
 trialRankDecisionReason = strings(numFrames,1);
 trialRankDowngradeApplied = false(numFrames,1);
@@ -383,6 +386,7 @@ trialReceiverInputSampleNoiseVarianceSource = strings(numFrames,1);
 trialPreEqualizationNoiseVarianceSource = strings(numFrames,1);
 trialPostEqualizationNoiseVarianceSource = strings(numFrames,1);
 trialLLRNoiseVarianceSource = strings(numFrames,1);
+trialLLRNoiseVarianceDomain = repmat("not_available_receiver_llr_noise_domain",numFrames,1);
 trialNoiseVarStatus = strings(numFrames,1);
 trialNoiseVarSource = strings(numFrames,1);
 trialNoiseVarReason = strings(numFrames,1);
@@ -455,6 +459,7 @@ trialTimingEstimateStatus = strings(numFrames,1);
 trialTimingEstimateWasClipped = false(numFrames,1);
 trialConfiguredSNR = snr_dB * ones(numFrames,1);
 trialAppliedAWGNSNR = NaN(numFrames,1);
+trialAppliedAWGNSNRSource = strings(numFrames,1);
 trialDesiredSignalPowerBeforeNoise = NaN(numFrames,1);
 trialCompositeSignalPowerBeforeNoise = NaN(numFrames,1);
 trialAppliedNoiseSNR = NaN(numFrames,1);
@@ -990,6 +995,7 @@ for n = 1:numFrames
         trialOLLAStateAuthority(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAStateAuthority", ""));
         trialOLLAState(n) = string(sixgr.util.structGet(grantSnapshot, "OLLAState", ""));
         trialRankSelectionPolicy(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionPolicy", ""));
+        trialConfiguredLayers(n) = double(sixgr.util.structGet(grantSnapshot, "ConfiguredLayers", NaN));
         trialRankSelectionSource(n) = string(sixgr.util.structGet(grantSnapshot, "RankSelectionSource", ""));
         trialRankDecisionReason(n) = string(sixgr.util.structGet(grantSnapshot, "RankDecisionReason", ""));
         trialRankDowngradeApplied(n) = logical(sixgr.util.structGet(grantSnapshot, "RankDowngradeApplied", false));
@@ -1478,6 +1484,8 @@ for n = 1:numFrames
         trialLLRNoiseVariance(n) = double(sixgr.util.structGet(rx, "LLRNoiseVariance", NaN));
         trialLLRNoiseVarianceSource(n) = string(sixgr.util.structGet(rx, ...
             "LLRNoiseVarianceSource", ""));
+        trialLLRNoiseVarianceDomain(n) = string(sixgr.util.structGet(rx, ...
+            "LLRNoiseVarianceDomain", "not_available_receiver_llr_noise_domain"));
         trialPostEqSINRAvailable(n) = logical(sixgr.util.structGet(rx, "PostEqSINRAvailable", false));
         trialPostEqSINRReceiverDerived(n) = logical(sixgr.util.structGet(rx, "PostEqSINRReceiverDerived", false));
         trialSINRValidationStatus(n) = string(sixgr.util.structGet(rx, "SINRValidationStatus", ""));
@@ -1505,6 +1513,7 @@ for n = 1:numFrames
         trialPostEqDecisionResidualSource(n) = string(sixgr.util.structGet(rx, "PostEqDecisionResidualSource", ""));
         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
         trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
+        trialAppliedAWGNSNRSource(n) = string(sixgr.util.structGet(replay, "AppliedAWGNSNRSource", ""));
         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
         trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
         trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
@@ -1810,6 +1819,8 @@ for n = 1:numFrames
         end
         [modTrack, constT] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfgFrame, "UL");
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
+        trialEVMLayers(n)=strjoin(compose('%.17g',modTrack.EVMPerLayer_rms),'|');
+        trialEVMLayerSource(n)=modTrack.EVMPerLayerSource;
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
         [dataSINR, dataSINRMeta] = localEVMProxySINR(modTrack);
@@ -2457,6 +2468,8 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
             'Status','Crash', ...
              'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.EVMPerLayer_rms=trialEVMLayers(idx);
+        T.EVMPerLayerSource=trialEVMLayerSource(idx);
         T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
         T.EstimatedChannelReferenceCorrelationMagnitude = trialChannelReferenceCorrelation(idx);
         T.SymbolDecisionStatus = trialSymbolDecisionStatus(idx);
@@ -2523,7 +2536,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.SignalEnergyPerOccupiedRE = trialSignalEnergyPerOccupiedRE(idx);
         T.PreEqualizationNoiseVarianceDomain = repmat("resource_grid_pre_equalization", stopIdx, 1);
         T.PostEqualizationNoiseVarianceDomain = repmat("unit_constellation_layer_symbol_post_equalization", stopIdx, 1);
-        T.LLRNoiseVarianceDomain = repmat("unit_constellation_soft_demapper_input", stopIdx, 1);
+        T.LLRNoiseVarianceDomain = trialLLRNoiseVarianceDomain(idx);
         T.NoiseVarianceUnit = repmat("normalized_complex_power", stopIdx, 1);
         T.NoiseVarianceNormalization = repmat("native_domain_power_per_complex_value", stopIdx, 1);
         T.NoiseVarianceAliasOf = repmat("PreEqualizationNoiseVariance", stopIdx, 1);
@@ -2560,6 +2573,11 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         configuredRxAnt = localConfiguredULAntennaCount(cfg, "rx", ...
             localFirstFiniteScalar(trialRxAnt(idx), 1));
         T.ConfiguredLayers = repmat(configuredLayers, stopIdx, 1);
+        if schedulerDrivenGrant
+            % Missing original authority stays unavailable; never replace
+            % it with the adaptive grant's materialized layer count.
+            T.ConfiguredLayers = trialConfiguredLayers(idx);
+        end
         T.ConfiguredTxAntennas = repmat(configuredTxAnt, stopIdx, 1);
         T.ConfiguredRxAntennas = repmat(configuredRxAnt, stopIdx, 1);
         T.RV = trialRV(idx);
@@ -2590,6 +2608,7 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.SymbolStart = trialSymbolStart(idx);
         T.NumSymbols = trialNumSymbols(idx);
         T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
+        T.AppliedAWGNSNRSource = trialAppliedAWGNSNRSource(idx);
         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
         T.InjectedCarrierPhaseOffset_rad = trialCarrierPhaseOffsetRad(idx);
         T.CarrierPhaseOffsetApplied = trialCarrierPhaseOffsetApplied(idx);
@@ -2927,7 +2946,7 @@ else
 end
 end
 
-function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier, occupiedIndices)
+function [y, nVar, noiseInfo] = localAddAwgn(x, replay, referenceWaveform, txInfo, carrier, occupiedIndices, cfg)
 noiseInfo = localNoiseCalibrationInfo(x, referenceWaveform, NaN, "unavailable", txInfo);
 noiseMode = string(sixgr.util.structGet(replay, "NoiseOperatingMode", "receiver_noise_figure_thermal_noise"));
 if noiseMode == "receiver_noise_figure_thermal_noise"
@@ -2947,9 +2966,16 @@ if isempty(carrier)
     error("sixgr:link:MissingOFDMNoiseCalibration", ...
         "Standalone AWGN requires the transmitting carrier for occupied-grid noise calibration.");
 end
-[signalEnergyPerOccupiedRE, receivedEnergyEvidence] = ...
+[measuredReceivedEnergy, receivedEnergyEvidence] = ...
     sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
         carrier,referenceWaveform,occupiedIndices,"SignalFamily","PUSCH");
+% Keep fading, rank and precoder effects in the measured signal instead of
+% cancelling them by recalibrating AWGN from each received realization.
+% The TX scale only converts the configured normalized reference into the
+% sample units used by absolute-power callers; it is one in fixed-SNR mode.
+[configuredReferenceEnergy, referencePolicy] = sixgr.link.resolveAWGNReferenceEnergy(cfg);
+referencePowerScale = localOccupiedRESignalEnergy(txInfo);
+signalEnergyPerOccupiedRE = configuredReferenceEnergy .* referencePowerScale;
 [y, referenceNoise] = sixgr.phy.waveform.addOccupiedREAWGN( ...
     x, carrier, appliedSNR_dB, ...
     "SignalEnergyPerOccupiedRE", signalEnergyPerOccupiedRE);
@@ -2965,7 +2991,11 @@ noiseInfo.AppliedNoiseSNR_dB = 10 .* log10(max( ...
     double(referenceNoise.SignalEnergyPerOccupiedRE) ./ ...
     max(effectiveGridNoiseVariance, realmin), realmin));
 noiseInfo.AppliedNoiseSNRSource = ...
-    "occupied_re_signal_energy_over_effective_grid_noise_variance";
+    "configured_reference_re_energy_over_effective_grid_noise_variance";
+noiseInfo.ConfiguredReferenceREEnergy = configuredReferenceEnergy;
+noiseInfo.ReferenceEnergyPowerScale = referencePowerScale;
+noiseInfo.NoiseCalibrationSource = referencePolicy.CalibrationSource;
+noiseInfo.MeasuredSignalEnergyPerOccupiedRE = measuredReceivedEnergy;
 noiseInfo.SignalEnergyMeasurementSource = char(string(receivedEnergyEvidence.Source));
 noiseInfo.SignalEnergyMeasurementPlane = char(string(receivedEnergyEvidence.MeasurementPlane));
 noiseInfo.SignalEnergyObservationCount = double(receivedEnergyEvidence.ObservationCount);
@@ -2990,21 +3020,19 @@ noiseInfo.SignalEnergyPerOccupiedRE = ...
 end
 
 function signalEnergy = localOccupiedRESignalEnergy(txInfo)
-% The native PUSCH mapper emits unit-energy data symbols. Physical power
-% control scales those symbols before the standalone AWGN reference plane,
-% so the grid-domain noise variance must carry the same net scale.
+% bindPUSCHPowerControlContext only resolves a target. applyPowerContext
+% is the sole amplitude scaler. PowerControlAmplitudeScale is an alias of
+% that applied scale, not a second multiplier.
 signalEnergy = 1;
 powerContext = sixgr.util.structGet(txInfo, "PowerContext", struct());
 if ~isstruct(powerContext)
     return;
 end
 powerScale = double(sixgr.util.structGet(powerContext, "AmplitudeScale", 1));
-powerControlScale = double(sixgr.util.structGet(powerContext, ...
-    "PowerControlAmplitudeScale", 1));
-netScale = powerScale .* powerControlScale;
-if isscalar(netScale) && isfinite(netScale) && netScale > 0
-    signalEnergy = netScale .^ 2;
-end
+assert(isreal(powerScale) && isscalar(powerScale) && isfinite(powerScale) && powerScale > 0, ...
+    'sixgr:link:InvalidAWGNReferencePowerScale', ...
+    'The fixed AWGN reference requires a finite positive TX amplitude scale.');
+signalEnergy = powerScale .^ 2;
 end
 
 function [effectiveNVar, source] = localReceiverEffectiveNoiseVariance(baseNVar, replay, baseSource)
@@ -4494,7 +4522,7 @@ end
 [y, replay.InjectedNoiseVariance, noiseInfo] = localAddAwgn( ...
     y, replay, desiredWaveform, txInfo, ...
     sixgr.util.structGet(tx, "Carrier", []), ...
-    sixgr.util.structGet(tx, "PUSCHIndices", []));
+    sixgr.util.structGet(tx, "PUSCHIndices", []), cfg);
 noiseFields = fieldnames(noiseInfo);
 for ni = 1:numel(noiseFields)
     replay.(noiseFields{ni}) = noiseInfo.(noiseFields{ni});
@@ -4855,6 +4883,8 @@ assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ComputeLatencySource = strings(0,1);
+T.EVMPerLayer_rms = strings(0,1);
+T.EVMPerLayerSource = strings(0,1);
 T.ULTransmissionAuthority = strings(0,1);
 T.ULReceivedAssignmentDigest = strings(0,1);
 T.ULReceiveAllocationAuthority = strings(0,1);
@@ -4915,6 +4945,7 @@ T.CodeBlockLayoutHash = strings(0,1);
 T.HARQContextHash = strings(0,1);
 T.HARQContextStatus = strings(0,1);
 T.AppliedAWGNSNR_dB = zeros(0,1);
+T.AppliedAWGNSNRSource = strings(0,1);
 T.NoiseVarStatus = strings(0,1);
 T.NoiseVarSource = strings(0,1);
 T.NoiseVarReason = strings(0,1);
@@ -6877,6 +6908,7 @@ grant = struct( ...
     "NumLogicalPorts", double(sixgr.util.structGet(prec, "NumLogicalPorts", NaN)), ...
     "NumRFChains", double(sixgr.util.structGet(prec, "NumRFChains", NaN)));
 preserveFields = ["UEIndex","RNTI","ServingCell","CQIUsed","RIUsed","PMI","CRI","MCSTable","CQITable","AMCMode", ...
+    "ConfiguredLayers", ...
     "OuterLoopEnabled","OuterLoopApplied","OLLADeltaDb","OLLADeltaMCS","OLLAMarginMinDb","OLLAMarginMaxDb", ...
     "OLLAAdjustedMCSBeforeCQICeiling","OLLABaseRequiredSINR_dB","OLLATargetRequiredSINR_dB","OLLAThresholdSource", ...
     "OLLAUpdateCount","OLLAStateAuthority","OLLAState", ...

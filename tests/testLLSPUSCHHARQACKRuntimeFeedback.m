@@ -5,8 +5,13 @@ setup6GRSimToolkit("Verbose", false);
 
 scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile( ...
     "simulator", "configs", "scenarios", ...
-    "lls_causal_access_to_data_wiring.yaml"));
+    "lls_tdd_5mhz_rank2_shared_awgn_20db.yaml"));
 resolved = sixgr.lls6g.buildInternalConfig(scenario, tempdir);
+% Use the target's installed TDD resource/format policy. The legacy FDD
+% fixture has no format-2 max_code_rate and cannot exercise three-bit HARQ
+% resource selection. Do not add a receiver default to conceal that error.
+assert(resolved.validation.pucch_resources.format2.max_code_rate == ...
+    scenario.get('pucch_resources.format2.max_code_rate'));
 assert(logical(sixgr.util.structGet(resolved, ...
     "phy.pucch.uciOnPUSCHEnabled", false)) && ...
     string(sixgr.util.structGet(resolved, ...
@@ -233,8 +238,12 @@ fprintf('PUSCH_PUCCH_DECISION_CSV_ROUNDTRIP_PASS: %s\n',exportRoot);
 assert(isequal(candidateKeep,[true false]), ...
     'Pre-DCI cancellation must identify only the actual overlapping candidate.');
 code=fileread(which('sixgr.truth.runWaveformLinkBundle'));
-first=strfind(code,'function [state, pendingULGrants] = localScheduleCoupledFutureULGrantsFromDLControl');
+first=regexp(code, ...
+    '(?m)^function[^\r\n=]*=\s*localScheduleCoupledFutureULGrantsFromDLControl\(');
 last=strfind(code,'function decision = localResolveCoupledULTimingDecision');
+assert(isscalar(first) && isscalar(last) && first<last, ...
+    'test:MissingULSchedulingBoundary', ...
+    'The pre-DCI UL planner and its transmit boundary must remain identifiable.');
 planner=code(first(1):last(1)-1);
 guard=strfind(planner,'excludeULGrantsCollidingWithPUCCHRuntime(planState,candidates,dueSlot)');
 dci=strfind(planner,'[state, qualifiedGrants] = localQualifyCoupledGrantsWithPDCCH');
@@ -373,7 +382,14 @@ assert(string(traceT.Status(1)) == "PASS" && string(traceT.Status(2)) == "FAIL" 
 % due on the new occasion.  Production must discard the stale binding and
 % bind the new grant identity; replaying the already processed ACK is a
 % causal runtime error.
-nextDueSlot = dueSlot + 2;
+% The target TDD pattern repeats every five slots. Slot 7 was legal only
+% in the old FDD fixture; use the next full UL occasion, not a DL slot.
+[~,~,~,dlPartition] = sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(resolved,dueSlot+2);
+assert(dlPartition.ULSymbolAllocation(2)==0);
+localAssertError(@()sixgr.phy.pucch.PUCCHTimingResolver.resolve( ...
+    dueSlot+1,1,"declared_invalid_fixture",repmat('D',1,14),12,2,false), ...
+    'sixgr:phy:pucch:IllegalTDDResource');
+nextDueSlot = dueSlot + 5;
 nextFeedback = feedbackRows(1);
 nextFeedback.SourceSlot = dueSlot + 1;
 nextFeedback.DueSlot = nextDueSlot;
@@ -393,7 +409,7 @@ state = sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime( ...
 staleReusedGrant = puschGrant;
 staleReusedGrant.Slot = nextDueSlot;
 staleReusedGrant.ScheduledAbsoluteSlot = nextDueSlot;
-staleReusedGrant.GrantContextId = "UL-PUSCH-UCI-REUSED-7";
+staleReusedGrant.GrantContextId = "UL-PUSCH-UCI-REUSED-" + string(nextDueSlot);
 [state, reboundGrant] = sixgr.truth.CoupledTruthRuntime. ...
     multiplexDueHARQACKOnPUSCHRuntime(state, staleReusedGrant, nextDueSlot);
 assert(string(reboundGrant.UCIOnPUSCHFeedbackGrantIds) == ...

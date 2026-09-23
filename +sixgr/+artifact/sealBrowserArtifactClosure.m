@@ -7,6 +7,7 @@ arguments
     options.GeneratedAtUTC (1,1) string = ""
     options.MaxPasses (1,1) double {mustBeInteger,mustBePositive} = 3
     options.Required (1,1) logical = true
+    options.ReplaceExistingRastersFromCSV (1,1) logical = true
 end
 
 passes = repmat(struct( ...
@@ -25,7 +26,7 @@ for passIndex = 1:options.MaxPasses
     forceMaterialization = passIndex > 1;
     materialization = sixgr.artifact.materializeBrowserContractArtifacts( ...
         runFolder, "Force", forceMaterialization, ...
-        "ReplaceExistingRastersFromCSV", true);
+        "ReplaceExistingRastersFromCSV", options.ReplaceExistingRastersFromCSV);
     materialization.RunID = options.RunID;
     generatedAt = options.GeneratedAtUTC;
     if strlength(strtrim(generatedAt)) == 0

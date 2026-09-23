@@ -89,7 +89,14 @@ else
     feedbackMode = "wideband_same_sinr_model";
 end
 
-[perCodewordCQI, perCodewordSINR_dB] = localPerCodewordCQI(rankIndicator, perLayerSINR_dB, tableToken);
+% The provenance decision applies to the whole measurement, including its
+% layer vector. A rejected wideband value must not be rescued by that same
+% input's otherwise finite per-layer values.
+perCodewordCQI = [];
+perCodewordSINR_dB = [];
+if sinrInputAccepted
+    [perCodewordCQI, perCodewordSINR_dB] = localPerCodewordCQI(rankIndicator, perLayerSINR_dB, tableToken);
+end
 if ~isempty(perCodewordCQI) && all(isfinite(perCodewordCQI))
     if isfinite(double(widebandCQI))
         widebandCQI = min(double(widebandCQI), min(double(perCodewordCQI)));
@@ -454,7 +461,7 @@ switch rawMethod
         [beta_dB, betaSource, betaValueRole] = localResolveEESMBeta(cfg, direction);
         betaLin = 10^(beta_dB / 10);
         sinrLin = 10 .^ (perRB / 10);
-        effectiveLin = -betaLin * log(mean(exp(-sinrLin ./ max(betaLin, eps)), "omitnan"));
+        effectiveLin = sixgr.util.eesmLinear(sinrLin,betaLin);
         if isfinite(effectiveLin) && effectiveLin > 0
             effectiveSINR_dB = 10 * log10(max(effectiveLin, eps));
         end
@@ -470,7 +477,7 @@ if nargin < 2 || isempty(direction)
 end
 dir = upper(string(direction));
 [catalogBeta, catalogSource, catalogRole] = localResolveEESMBetaFromMCSCatalog(cfg, dir);
-if isfinite(catalogBeta) && catalogBeta > 0
+if isfinite(catalogBeta)
     beta_dB = catalogBeta;
     source = catalogSource;
     valueRole = catalogRole;
@@ -496,7 +503,8 @@ for i = 1:numel(candidates)
         break;
     end
 end
-if ~(isfinite(beta_dB) && beta_dB > 0)
+% beta is positive in the linear domain; zero/negative dB are valid.
+if ~isfinite(beta_dB)
     beta_dB = 1.5;
     source = "resolveWidebandCQI.lab_default_scalar_beta";
     valueRole = "uncalibrated_lab_default";
@@ -548,7 +556,7 @@ for i = 1:numel(catalogPaths)
     end
     if ~isempty(matchIdx)
         candidate = double(betaVec(matchIdx(1)));
-        if isfinite(candidate) && candidate > 0
+        if isfinite(candidate)
             beta_dB = candidate;
             source = string(catalogPaths(i));
             valueRole = "configured_mcs_index_beta_catalog";

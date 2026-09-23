@@ -43,6 +43,28 @@ for duplex = ["TDD", "FDD"]
         assert(all(samples.ObservationSymbolCount == numel(reference)));
         assert(max(abs(samples.SymbolEVM_rms-expected)) < 1e-12);
 
+        % Layer measurements must retain their own symbol pairs and power
+        % normalization. Repeating aggregate EVM is not per-layer evidence.
+        reference=[ref,2*ref];
+        measured=reference.*[1.1,1.25];
+        metrics=localMeasure(reference,measured,duplex,direction);
+        expectedLayers=zeros(1,2);
+        for layer=1:2
+            independent=comm.EVM('Normalization','Average reference signal power', ...
+                'ReferenceSignalSource','Input port');
+            expectedLayers(layer)=independent(reference(:,layer),measured(:,layer))/100;
+        end
+        assert(isfield(metrics,'EVMPerLayer_rms'), ...
+            'test:MissingLayerEVM','Matched layer-domain symbols must publish real per-layer EVM.');
+        assert(isequal(size(metrics.EVMPerLayer_rms),[1 2]) && ...
+            all(abs(metrics.EVMPerLayer_rms-expectedLayers)<1e-12), ...
+            'test:AggregateEVMNotLayerEvidence','Each layer must match its independently normalized symbol comparison.');
+        independent=comm.EVM('Normalization','Average reference signal power', ...
+            'ReferenceSignalSource','Input port');
+        expectedAggregate=independent(reference(:),measured(:))/100;
+        assert(abs(metrics.EVM_rms-expectedAggregate)<1e-12 && ...
+            all(abs(metrics.EVMPerLayer_rms-metrics.EVM_rms)>1e-3));
+
         for invalid = [NaN, Inf]
             broken = ref;
             broken(end) = invalid;

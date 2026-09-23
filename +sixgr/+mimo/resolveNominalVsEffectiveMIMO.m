@@ -536,6 +536,11 @@ for direction = ["DL","UL"]
                 string(localNonemptyReason(row.MismatchCause));
         end
         rows(end+1, 1) = row; %#ok<AGROW>
+        layerEVMToken=localFirstTextTable(tr,"EVMPerLayer_rms","");
+        layerEVM=str2double(split(string(layerEVMToken),'|')).';
+        layerEVMSource=localFirstTextTable(tr,"EVMPerLayerSource","");
+        layerEVMApplicable=layerEVMSource=="paired_layer_symbols_average_reference_power_no_payload_fit" && ...
+            numel(layerEVM)==row.TransmittedLayers;
         for l = 1:max(1, round(max(row.TransmittedLayers, 1)))
             lr = localLayerRow();
             lr.RunId = runId;
@@ -550,9 +555,18 @@ for direction = ["DL","UL"]
                 lr.DMRSPort = measuredDMRSPorts(l);
             end
             if l <= numel(perLayer), lr.PostEqSINRdB = perLayer(l); end
-            lr.EVMdB = localEVMdB(localNum(tr, "EVM_rms", NaN));
-            lr.ChannelEstimateNMSEdB = localNum(tr, "NMSE_dB", NaN);
-            lr.LLRMeanAbs = localNum(tr, "LLRMeanAbs", NaN);
+            if layerEVMApplicable && isfinite(layerEVM(l)) && layerEVM(l)>=0
+                lr.EVMrms=layerEVM(l);
+                lr.EVMdB=20*log10(layerEVM(l)); % Zero error is exactly -Inf dB, not an invented floor.
+                lr.EVMSource=layerEVMSource;
+                lr.EVMStatus="measured_per_layer";
+            end
+            % Channel-estimate NMSE and codeword LLR aggregates are not
+            % per-layer quantities. Preserve them in explicitly trial-scoped
+            % columns; unavailable layer measurements must stay unavailable.
+            lr.TrialEVMdB = localEVMdB(localNum(tr, "EVM_rms", NaN));
+            lr.TrialChannelEstimateNMSEdB = localNum(tr, "NMSE_dB", NaN);
+            lr.TrialLLRMeanAbs = localNum(tr, "LLRMeanAbs", NaN);
             lr.DecodeCrcPass = crcPass;
             lr.BER = localSafeDivide(localNum(tr, "BitErrors", NaN), localNum(tr, "BitsCompared", NaN));
             lr.BLERContribution = double(~crcPass);
@@ -1603,7 +1617,12 @@ function row = localLayerRow()
 row = struct("RunId","", "TrialId",NaN, "CellId",NaN, "UEId",NaN, "Direction","", ...
     "Slot",NaN, "LayerIndex",NaN, "CodewordIndex",NaN, "DMRSPort",NaN, ...
     "PostEqSINRdB",NaN, "EVMdB",NaN, "ChannelEstimateNMSEdB",NaN, ...
+    "EVMrms",NaN, "EVMSource","", "EVMStatus","unavailable_no_layer_symbol_evidence", ...
+    "TrialEVMdB",NaN, "TrialChannelEstimateNMSEdB",NaN, "TrialLLRMeanAbs",NaN, ...
+    "ChannelEstimateNMSEStatus","unavailable_trial_aggregate_only", ...
+    "LLRStatus","unavailable_trial_aggregate_only", ...
     "LLRMeanAbs",NaN, "DecodeCrcPass",false, "BER",NaN, "BLERContribution",NaN, ...
+    "DecodeMetricScope","transport_block_context_not_per_layer_decoding", ...
     "Status","not_evaluated");
 end
 

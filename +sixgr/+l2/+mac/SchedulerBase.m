@@ -832,6 +832,7 @@ classdef (Abstract) SchedulerBase < handle
             amc.TargetCodeRate = double(targetCodeRate);
             amc.NumLayers = double(nLayers);
             amc.InitialNumLayers = double(requestedLayers);
+            amc.ConfiguredLayers = double(rankDecision.ConfiguredLayers);
             amc.RankSelectionPolicy = char(string(rankDecision.Policy));
             amc.RankSelectionSource = char(string(rankDecision.DecisionReason));
             amc.RankDecisionReason = char(string(rankDecision.DecisionReason));
@@ -1133,6 +1134,7 @@ classdef (Abstract) SchedulerBase < handle
                 "SchedulerSINRBackoff_dB", double(sixgr.util.structGet(amc, "SchedulerSINRBackoff_dB", NaN)), ...
                 "SchedulerCQISource", char(string(sixgr.util.structGet(amc, "SchedulerCQISource", ""))), ...
                 "RankSelectionPolicy", char(string(sixgr.util.structGet(amc, "RankSelectionPolicy", ""))), ...
+                "ConfiguredLayers", double(sixgr.util.structGet(amc, "ConfiguredLayers", NaN)), ...
                 "RankSelectionSource", char(string(sixgr.util.structGet(amc, "RankSelectionSource", ""))), ...
                 "RankDecisionReason", char(string(sixgr.util.structGet(amc, "RankDecisionReason", ""))), ...
                 "RankDowngradeApplied", logical(sixgr.util.structGet(amc, "RankDowngradeApplied", false)), ...
@@ -1700,6 +1702,48 @@ classdef (Abstract) SchedulerBase < handle
             harq = sixgr.util.structGet(grantOut, "HARQ", struct());
             isRetx = sixgr.phy.grant.isExplicitHARQRetransmission( ...
                 grantOut, sixgr.util.structGet(grantOut, "PHYGrant", struct()), harq);
+            if upper(string(grantOut.Direction)) == "DL" && ~isRetx
+                % Nominal nrTBS N_RE excludes neither CSI-RS nor TRS
+                % reservations. Their actual rate-matching cost belongs
+                % in G, not in a modified TBS formula. Constrain a new AMC
+                % grant before DCI/freeze, while preserving any in-flight TB.
+                codingInfo = nrDLSCHInfo(double(exactBits),double(targetCodeRate));
+                initialRate = (double(exactBits)+double(codingInfo.L)) / ...
+                    double(actualInfo.G);
+                grantOut.ExactInitialCodeRateWithTBCRC = initialRate;
+                grantOut.ExactInitialCodeRateSource = "exact_nrTBS_plus_TBCRC_over_actual_G";
+                if initialRate > 0.95
+                    selectedMCS = double(sixgr.util.structGet(grantOut, ...
+                        "MCSIndex",sixgr.util.structGet(grantOut,"MCS",NaN)));
+                    tableName = string(sixgr.util.structGet(grantOut, ...
+                        "MCSTable",obj.resolveMCSTable()));
+                    if cqiDrivenGrant && isfinite(selectedMCS) && selectedMCS > 0
+                        for lowerMCS = (round(selectedMCS)-1):-1:0
+                            lowerProfile = sixgr.link.resolveMCSProfile(tableName,lowerMCS);
+                            if ~logical(lowerProfile.Valid), continue; end
+                            candidate = grantOut;
+                            candidate.MCSIndex = double(lowerMCS);
+                            candidate.MCS = double(lowerMCS);
+                            candidate.Modulation = char(string(lowerProfile.Modulation));
+                            candidate.TargetCodeRate = double(lowerProfile.TargetCodeRate);
+                            candidate.CodedCapacityMCSBackoffApplied = true;
+                            candidate.CodedCapacityOriginalMCS = double(sixgr.util.structGet( ...
+                                grantOut,"CodedCapacityOriginalMCS",selectedMCS));
+                            candidate.MCSValueStatus = "cqi_mcs_reduced_for_actual_coded_capacity";
+                            % Re-resolve references and G too: a modulation
+                            % change can alter PT-RS placement. Never scale G
+                            % heuristically or edit an issued DCI.
+                            grantOut = obj.finalizeExactPHYFeasibility(candidate);
+                            return;
+                        end
+                    end
+                    grantOut.Valid = false;
+                    grantOut.ExactPHYFeasible = false;
+                    grantOut.ExactPHYInfeasibilityReason = "initial_dl_code_rate_exceeds_actual_capacity";
+                    grantOut.GrantBlocker = grantOut.ExactPHYInfeasibilityReason;
+                    return;
+                end
+            end
             scheduledBits = double(exactBits);
             scheduledBytes = double(exactBytes);
             existingTBSBits = double(sixgr.util.structGet(grantOut, "TBSBits", ...
@@ -1751,6 +1795,18 @@ classdef (Abstract) SchedulerBase < handle
             grantOut.TBSBits = double(scheduledBits);
             grantOut.TBSBytes = double(scheduledBytes);
             grantOut.TransportBlockSize = double(scheduledBits);
+            if ~isRetx && logical(sixgr.util.structGet(grantOut, ...
+                    "CodedCapacityMCSBackoffApplied",false))
+                beforeBytes = double(sixgr.util.structGet(grantOut,"BufferBytesBefore",NaN));
+                if isfinite(beforeBytes)
+                    grantOut.BufferBytesAfter = max(0,beforeBytes-scheduledBytes);
+                    grantOut.QueuePaddingBytes = max(0,scheduledBytes-beforeBytes);
+                    grantOut.QueuePaddingBits = 8*grantOut.QueuePaddingBytes;
+                end
+                if isfield(grantOut,"AppliedLinkAdaptationMCS")
+                    grantOut.AppliedLinkAdaptationMCS = double(grantOut.MCSIndex);
+                end
+            end
             grantOut.Valid = logical(sixgr.util.structGet(grantOut, "Valid", true));
         end
 
@@ -2844,7 +2900,26 @@ queueAwareReduction = (localQueueAwareRankMCSReductionEnabled(obj.Cfg) && ...
 candidateProfiles = localCandidateMCSProfiles(amc, obj.Cfg, queueAwareReduction);
 if localPreserveAMCMCSForQueueLimit(amc) && ~queueAwareReduction && ~isempty(candidateProfiles)
     cand = candidateProfiles(1);
-    [chosenIdx, chosenCand] = localFindSmallestPositiveTB(obj, cand, rawPRBSet, symAlloc, opt);
+    % Preserve the received/fixed AMC profile, not a minimum-size grant.
+    % Serve the largest standards-sized TB fitting the available queue;
+    % among equal-TBS allocations use the fewest PRBs.  Choosing the first
+    % positive TBS here starved finite queues even with spare bandwidth.
+    [chosenIdx, chosenCand] = localFindLargestQueueFit( ...
+        obj, cand, rawPRBSet, symAlloc, queueBytes, opt);
+    if chosenCand.Valid
+        [minIdx, minCand] = localFindSmallestSubsetForBits( ...
+            obj, cand, rawPRBSet, symAlloc, queueBytes, ...
+            chosenIdx, chosenCand.TBSBits, opt);
+        if minCand.Valid
+            chosenIdx = minIdx;
+            chosenCand = minCand;
+        end
+    else
+        % A queue smaller than the minimum legal TB requires explicit MAC
+        % padding; do not change MCS/rank or manufacture a nonstandard TBS.
+        [chosenIdx, chosenCand] = localFindSmallestPositiveTB( ...
+            obj, cand, rawPRBSet, symAlloc, opt);
+    end
     if chosenCand.Valid
         prbSubset = rawPRBSet(1:chosenIdx);
         best = localBuildQueueLimitedBest(cand, prbSubset, chosenCand, queueBytes);

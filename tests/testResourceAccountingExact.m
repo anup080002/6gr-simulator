@@ -8,6 +8,8 @@ if ~localHaveRequired5G()
         "checked by localHaveRequired5G; unavailable tests cannot pass."]);
 end
 
+savedRNG = rng;
+rngCleanup = onCleanup(@() rng(savedRNG)); %#ok<NASGU>
 rng(4202, "twister");
 carrier = nrCarrierConfig;
 carrier.NSizeGrid = 52;
@@ -20,14 +22,24 @@ pdschPTRSSeen = false;
 puschPTRSSeen = false;
 reservedSeen = false;
 codebookPortSeen = false;
+modulations = ["QPSK", "16QAM", "64QAM", "256QAM"];
+dlCoverage = zeros(4,4);
+ulCoverage = zeros(4,4);
 
 for k = 1:200
     pdsch = localPDSCHConfig(k);
+    dlCoverage(pdsch.NumLayers,modulations==string(pdsch.Modulation)) = ...
+        dlCoverage(pdsch.NumLayers,modulations==string(pdsch.Modulation)) + 1;
     [pdschInd, pdschInfo] = sixgr.phy.grid.allocREsPDSCH(carrier, pdsch);
     acct = pdschInfo.ResourceAccounting;
-    localAssertAccounting(acct, pdschInfo.IndicesInfo);
+    % The reference must not consume the DUT's ResourceAccounting or echoed
+    % IndicesInfo. Independently resolve the requested allocation in MATLAB.
+    [referenceIndices, referenceInfo] = nrPDSCHIndices(carrier, pdsch);
+    assert(isequal(double(pdschInd),double(referenceIndices)), ...
+        'PDSCH mapped RE indices differ from direct nrPDSCHIndices.');
+    localAssertAccounting(acct, referenceInfo);
     rate = targetRates(mod(k - 1, numel(targetRates)) + 1);
-    refTBS = double(nrTBS(pdsch.Modulation, pdsch.NumLayers, numel(pdsch.PRBSet), acct.NREPerPRBForTBS, rate, 0));
+    refTBS = double(nrTBS(pdsch.Modulation, pdsch.NumLayers, numel(pdsch.PRBSet), referenceInfo.NREPerPRB, rate, 0));
     dutTBS = double(nrTBS(pdsch.Modulation, pdsch.NumLayers, numel(pdsch.PRBSet), pdschInfo.NREPerPRB, rate, 0));
     pdschTBSDelta(k) = dutTBS - refTBS;
 
@@ -40,11 +52,16 @@ for k = 1:200
     reservedSeen = reservedSeen || acct.ReservedRE > 0;
 
     pusch = localPUSCHConfig(k);
+    ulCoverage(pusch.NumLayers,modulations==string(pusch.Modulation)) = ...
+        ulCoverage(pusch.NumLayers,modulations==string(pusch.Modulation)) + 1;
     [puschInd, puschInfo] = sixgr.phy.grid.allocREsPUSCH(carrier, pusch);
     acct = puschInfo.ResourceAccounting;
-    localAssertAccounting(acct, puschInfo.PUSCHIndicesInfo);
+    [referenceIndices, referenceInfo] = nrPUSCHIndices(carrier, pusch);
+    assert(isequal(double(puschInd),double(referenceIndices)), ...
+        'PUSCH mapped RE indices differ from direct nrPUSCHIndices.');
+    localAssertAccounting(acct, referenceInfo);
     rate = targetRates(mod(k, numel(targetRates)) + 1);
-    refTBS = double(nrTBS(pusch.Modulation, pusch.NumLayers, numel(pusch.PRBSet), acct.NREPerPRBForTBS, rate, 0));
+    refTBS = double(nrTBS(pusch.Modulation, pusch.NumLayers, numel(pusch.PRBSet), referenceInfo.NREPerPRB, rate, 0));
     dutTBS = double(nrTBS(pusch.Modulation, pusch.NumLayers, numel(pusch.PRBSet), puschInfo.NREPerPRB, rate, 0));
     puschTBSDelta(k) = dutTBS - refTBS;
 
@@ -65,10 +82,14 @@ assert(all(puschTBSDelta == 0), "Every PUSCH TBS input vector must match nrTBS e
 assert(pdschPTRSSeen && puschPTRSSeen, "PDSCH and PUSCH allocation sweep must include PTRS resources.");
 assert(reservedSeen, "PDSCH allocation sweep must include reserved RE resources.");
 assert(codebookPortSeen, "PUSCH allocation sweep must include a port-mapped codebook case.");
+assert(all(dlCoverage(:)>0) && all(ulCoverage(:)>0), ...
+    'Independent resource checks must cover every rank 1:4/modulation pairing in both directions.');
 
 fprintf("ResourceAccountingExact: PDSCH=%d PUSCH=%d maxTBSDelta=%g auditedULG=%d\n", ...
     numel(pdschTBSDelta), numel(puschTBSDelta), ...
     max(abs([pdschTBSDelta(:); puschTBSDelta(:)])), 83532);
+fprintf('ResourceAccountingExact: independent rank/modulation pairs DL=%d UL=%d\n', ...
+    nnz(dlCoverage),nnz(ulCoverage));
 ok = true;
 end
 
@@ -79,7 +100,7 @@ nPRB = 6 + mod(7 * k, 31);
 startPRB = mod(3 * k, 52 - nPRB);
 pdsch = nrPDSCHConfig;
 pdsch.PRBSet = startPRB:(startPRB + nPRB - 1);
-pdsch.Modulation = char(mods(mod(k - 1, numel(mods)) + 1));
+pdsch.Modulation = char(mods(mod(floor((k - 1)/4), numel(mods)) + 1));
 pdsch.NumLayers = layers;
 pdsch.RNTI = 100 + k;
 pdsch.NID = mod(k, 1008);
@@ -114,7 +135,7 @@ nPRB = 6 + mod(5 * k, 33);
 startPRB = mod(2 * k, 52 - nPRB);
 pusch = nrPUSCHConfig;
 pusch.PRBSet = startPRB:(startPRB + nPRB - 1);
-pusch.Modulation = char(mods(mod(k, numel(mods)) + 1));
+pusch.Modulation = char(mods(mod(floor((k - 1)/4) + 1, numel(mods)) + 1));
 pusch.NumLayers = layers;
 pusch.RNTI = 200 + k;
 pusch.NID = mod(k + 11, 1008);
@@ -197,11 +218,13 @@ cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsIndex", 0);
 cfg = sixgr.util.structSet(cfg, "phy.pdsch.mcsContext", localCalibrationMCSContext());
 cfg = sixgr.util.structSet(cfg, "phy.csirs.enable", false);
 [txDL, ~] = sixgr.phy.dl.PDSCH_Tx(cfg, "CompactOutput", false);
+[~, independentDL] = nrPDSCHIndices(carrier,txDL.PDSCH);
+localAssertFullTXAccounting(txDL.ResourceAccounting,independentDL,'PDSCH');
 assert(numel(txDL.Codeword) == double(txDL.ResourceAccounting.CodedBitCountG), ...
     "PDSCH_Tx codeword length must equal ResourceAccounting G.");
 assert(double(txDL.ScheduledTransportBlockSize) == double(nrTBS(txDL.PDSCH.Modulation, txDL.PDSCH.NumLayers, ...
-    numel(txDL.PDSCH.PRBSet), txDL.ResourceAccounting.NREPerPRBForTBS, txDL.TargetCodeRate, txDL.XOverhead)), ...
-    "PDSCH_Tx scheduled TBS must match nrTBS from accounting inputs.");
+    numel(txDL.PDSCH.PRBSet), independentDL.NREPerPRB, txDL.TargetCodeRate, txDL.XOverhead)), ...
+    "PDSCH_Tx scheduled TBS must match independently resolved nrPDSCHIndices/nrTBS.");
 
 cfg = sixgr.util.structSet(cfg, "phy.pusch.prbSet", 0:23);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.symbolAllocation", [0 14]);
@@ -213,13 +236,25 @@ cfg = sixgr.util.structSet(cfg, "phy.pusch.TPMI", 0);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.enablePTRS", false);
 cfg = sixgr.util.structSet(cfg, "phy.pusch.codeRate", 449/1024);
 [txUL, ~] = sixgr.phy.ul.PUSCH_Tx(cfg, "CompactOutput", false);
+[~, independentUL] = nrPUSCHIndices(carrier,txUL.PUSCH);
+localAssertFullTXAccounting(txUL.ResourceAccounting,independentUL,'PUSCH');
 assert(numel(txUL.Codeword) == double(txUL.ResourceAccounting.CodedBitCountG), ...
     "PUSCH_Tx codeword length must equal ResourceAccounting G.");
 assert(double(txUL.ResourceAccounting.LayerDataRE) < double(txUL.ResourceAccounting.PortMappedRE), ...
     "Representative PUSCH codebook case must expose port-mapped RE separately from layer data RE.");
 assert(double(txUL.ScheduledTransportBlockSize) == double(nrTBS(txUL.PUSCH.Modulation, txUL.PUSCH.NumLayers, ...
-    numel(txUL.PUSCH.PRBSet), txUL.ResourceAccounting.NREPerPRBForTBS, txUL.TargetCodeRate, txUL.XOverhead)), ...
-    "PUSCH_Tx scheduled TBS must match nrTBS from accounting inputs.");
+    numel(txUL.PUSCH.PRBSet), independentUL.NREPerPRB, txUL.TargetCodeRate, txUL.XOverhead)), ...
+    "PUSCH_Tx scheduled TBS must match independently resolved nrPUSCHIndices/nrTBS.");
+end
+
+function localAssertFullTXAccounting(accounting,reference,channel)
+% The canonical transmitter plan has a distinct schema from allocation
+% helpers. Compare its physical quantities, not optional diagnostic labels.
+assert(accounting.DisjointMasks && ...
+    double(accounting.LayerDataRE)==double(reference.Gd) && ...
+    double(accounting.CodedBitCountG)==sum(double(reference.G)) && ...
+    double(accounting.NREPerPRBForTBS)==double(reference.NREPerPRB), ...
+    '%s full transmitter resource accounting differs from independent MATLAB indices.',channel);
 end
 
 function context = localCalibrationMCSContext()

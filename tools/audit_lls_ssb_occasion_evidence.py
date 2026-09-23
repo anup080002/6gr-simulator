@@ -61,14 +61,25 @@ def audit_rows(rows, slot_duration_s):
             delivery_sample = (available - 1) * slot_duration_s * fs
             check("no_future_observation", end <= delivery_sample + 1e-6,
                   f"Observation ends at sample {end}; delivery slot starts at {delivery_sample}.")
+        normalized = row.get("PowerReferencePlane") == "normalized_fixed_esn0_unit_occupied_re_es"
+        power_unit = "UnitOccupiedRE_Es" if normalized else "W"
+        db_unit = "dB_re_UnitOccupiedRE_Es" if normalized else "dBm"
+        payload_field = "SSBWindowRelativePowerMeasurementJSON" if normalized else "SSBWindowPowerMeasurementJSON"
+        if normalized:
+            physical = ("RSRP_dBm", "SS_RSRP_dBm", "ReferenceSignalTxEPRE_dBm")
+            physical_tokens = ("SSBWindowPowerMeasurementJSON", "SSBWindowRSSIPerReceiveAntenna_dBm")
+            check("normalized_power_no_absolute_claim",
+                  all(number(row.get(key)) is None for key in physical) and
+                  all(str(row.get(key, "")).strip().lower() in ("", "nan") for key in physical_tokens),
+                  "Normalized fixed-Es/N0 observations must not claim physical dBm or watt-window evidence.")
         if str(row.get("Valid", "")).lower() in ("1", "true"):
             check("valid_serving_identity", number(row.get("MeasuredNCellID")) is not None and
                   number(row.get("MeasuredNCellID")) == number(row.get("ExpectedNCellID")),
                   "Valid serving measurement must match decoded serving PCI.")
-            check("valid_rsrp_available", number(row.get("RSRP_dBm")) is not None,
+            check("valid_rsrp_available", number(row.get("RSRP_" + db_unit)) is not None,
                   "Valid measurement requires actual finite RSRP; no field-range clamp.")
         # BCH decode status is deliberately not used to redefine measurement validity.
-        payload = row.get("SSBWindowPowerMeasurementJSON", "")
+        payload = row.get(payload_field, "")
         if not payload or payload.lower() == "nan":
             check("window_power_evidence", False, "This occasion has no retained RSSI power evidence.")
             continue
@@ -78,17 +89,23 @@ def audit_rows(rows, slot_duration_s):
                 raise ValueError("Expected a JSON object.")
             check("ssb_window_scope", data.get("Scope") ==
                   "ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI" and
-                  data.get("AmplitudeUnit") == "sqrt_W" and data.get("CPIncluded") is False,
-                  "Only the declared useful-symbol, physical-power SSB window is audited.")
+                  data.get("AmplitudeUnit") == "sqrt_" + power_unit and data.get("CPIncluded") is False,
+                  "Only the declared useful-symbol SSB window in its explicit power units is audited.")
+            if normalized:
+                check("normalized_window_reference_authority",
+                      data.get("PowerReferencePlane") == row["PowerReferencePlane"] and
+                      not any(key in data for key in ("SymbolPowerPerAntenna_W", "RSSIPerAntenna_dBm",
+                                                      "ReferenceRSRPPerAntenna_dBm")),
+                      "The relative window must retain its reference plane and remove physical-unit aliases.")
             count = number(data.get("NumReceiveAntennas"))
             if count is None or count < 1 or count != int(count):
                 raise ValueError("Invalid receive antenna count.")
             count = int(count)
-            powers = [vector(item) for item in data["SymbolPowerPerAntenna_W"]]
-            rssi = vector(data["RSSIPerAntenna_dBm"])
-            rsrp = vector(data["ReferenceRSRPPerAntenna_dBm"])
+            powers = [vector(item) for item in data["SymbolPowerPerAntenna_" + power_unit]]
+            rssi = vector(data["RSSIPerAntenna_" + db_unit])
+            rsrp = vector(data["ReferenceRSRPPerAntenna_" + db_unit])
             rsrq = vector(data["ReferenceRSRQPerAntenna_dB"])
-            tokens = str(row["SSBWindowRSSIPerReceiveAntenna_dBm"]).split("|")
+            tokens = str(row["SSBWindowRSSIPerReceiveAntenna_" + db_unit]).split("|")
             dimensions = len(powers) == 4 and all(len(item) == count for item in powers)
             dimensions = dimensions and all(len(item) == count for item in (rssi, rsrp, rsrq, tokens))
             check("per_antenna_dimensions", dimensions, "Four useful SSB symbols by declared receive antennas.")
@@ -100,10 +117,11 @@ def audit_rows(rows, slot_duration_s):
             for ant in range(count):
                 values = [number(item[ant]) for item in powers]
                 usable = all(value is not None and value >= 0 for value in values)
-                mean_w = sum(values) / len(values) if usable else 0
-                check(f"antenna_{ant}_rssi_power_closure", mean_w > 0 and
-                      close(rssi[ant], 10 * math.log10(mean_w) + 30) if mean_w > 0 else False,
-                      "RSSI is 10*log10(mean symbol power in W)+30 dBm.")
+                mean_power = sum(values) / len(values) if usable else 0
+                offset = 0 if normalized else 30
+                check(f"antenna_{ant}_rssi_power_closure", mean_power > 0 and
+                      close(rssi[ant], 10 * math.log10(mean_power) + offset) if mean_power > 0 else False,
+                      f"RSSI is 10*log10(mean symbol power in {power_unit})+{offset} {db_unit}.")
                 check(f"antenna_{ant}_rssi_csv_closure", close(rssi[ant], tokens[ant]),
                       "CSV antenna token must equal the retained JSON power result.")
                 usable_ratio = number(rsrp[ant]) is not None and number(rssi[ant]) is not None

@@ -373,10 +373,14 @@ switch upper(string(direction))
     case "UL"
         [tx, txInfo] = sixgr.phy.ul.PUSCH_Tx(cfgAttempt, tbBitsArg{:}, "RV", rv);
         chState = localInitChannelState(cfgAttempt, tx, txInfo, direction);
-        rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
-        [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PUSCH", tx.PUSCH, ...
+        [rxWave, noiseInfo] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
+        [rx, rxInfo] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PUSCH", tx.PUSCH, ...
             "PUSCHIndices", tx.PUSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, "RV", tx.RV, ...
+            "NoiseVar", noiseInfo.SampleNoiseVariance, "NoiseVarDomain", "time", ...
+            "CodingLayout", tx.CodingLayout, ...
+            "HARQSoftBufferLLR", combinedPrev, ...
+            "HARQSoftBufferLayout", sixgr.util.structGet(combinedPrev,"CodingLayout",struct()), ...
             "SkipTimingEstimate", logical(sixgr.util.structGet(chState, "UseFading", false)));
         recLLR = sixgr.util.structGet(rx, "RateRecoveredLLR", []);
         decIt = mean(double(sixgr.util.structGet(rx, "ActiveIterations", NaN)), "omitnan");
@@ -385,11 +389,12 @@ switch upper(string(direction))
             tbBitsArg{:}, "RV", rv, ...
             "ExecutionProfile", "phy_calibration");
         chState = localInitChannelState(cfgAttempt, tx, txInfo, direction);
-        rxWave = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
-        [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, ...
+        [rxWave, noiseInfo] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
+        [rx, rxInfo] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgAttempt, "Carrier", tx.Carrier, "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, "TransportBlockSize", tx.TransportBlockSize, ...
             "TargetCodeRate", tx.TargetCodeRate, "RV", tx.RV, ...
             "CodingPlan", tx.CodingPlans, ...
+            "NoiseVar", noiseInfo.SampleNoiseVariance, "NoiseVarDomain", "time", ...
             "HARQSoftBufferLLR", combinedPrev, ...
             "HARQSoftBufferLayout", sixgr.util.structGet( ...
                 combinedPrev,"CodingPlans",struct()), ...
@@ -404,20 +409,32 @@ if isempty(tbBits)
 else
     tbBits = int8(tbBits(:));
 end
-diag = sixgr.link.evaluateHARQDecode(tx, rx, cfgAttempt, []);
-if upper(string(direction)) == "DL"
-    % The canonical receiver already performed position-aware combining.
+% Do not run a second LDPC decoder to decide this physical attempt's ACK.
+% Receiver iteration counts and combining evidence belong to its executed
+% decode, not a probe-only reconstruction with different coding assumptions.
+iterations = mean(double(sixgr.util.structGet(rx,"ActiveIterations",NaN)),"omitnan");
+diag = struct('DecoderIterations',iterations,'CombinedDecoderIterations',iterations, ...
+    'LLRCombiningGain_dB',NaN);
+    % Both canonical receivers already performed position-aware combining.
     % Preserve that cumulative soft buffer and outcome; do not combine the
     % same prior a second time in the diagnostic wrapper.
-    diag.CombinedLLR = sixgr.util.structGet(rx, "RecLLR", []);
+    diag.CombinedLLR = sixgr.util.structGet(rx, "RecLLR", ...
+        sixgr.util.structGet(rx,"RateRecoveredLLR",[]));
     diag.HARQSoftBuffer = sixgr.util.structGet( ...
         rx, "HARQSoftBuffer", struct());
-    if isstruct(diag.HARQSoftBuffer) && isscalar(diag.HARQSoftBuffer)
+    if upper(string(direction)) == "DL" && ...
+            isstruct(diag.HARQSoftBuffer) && isscalar(diag.HARQSoftBuffer)
         diag.HARQSoftBuffer.CodingPlans = tx.CodingPlans;
     end
     diag.SoftBuffer = diag.HARQSoftBuffer;
     diag.HARQSoftCombiningInfo = sixgr.util.structGet( ...
-        rx, "HARQSoftCombiningInfoPerCodeword", {});
+        rx, "HARQSoftCombiningInfoPerCodeword", ...
+        sixgr.util.structGet(rxInfo,"HARQSoftCombining",struct()));
+    combining = diag.HARQSoftCombiningInfo;
+    if iscell(combining) && numel(combining)==1, combining=combining{1}; end
+    if isstruct(combining) && isscalar(combining)
+        diag.LLRCombiningGain_dB = double(sixgr.util.structGet(combining,"LLRCombiningGain_dB",NaN));
+    end
     diag.HARQSoftCombiningReason = char(string(sixgr.util.structGet( ...
         rx, "HARQSoftCombiningReason", "")));
     diag.HARQSoftCombiningApplied = logical(sixgr.util.structGet( ...
@@ -428,18 +445,18 @@ if upper(string(direction)) == "DL"
         sixgr.util.structGet(rx, ...
         "HARQSoftCombiningOverlapPositionCount", NaN));
     diag.CombinedDecodeOK = logical(sixgr.util.structGet(rx, "Ok", false));
-end
 rxBits = int8(sixgr.util.structGet(rx, "TransportBlock", int8([])));
 [bitErr, bitsCompared] = localBitErrors(tbBits, rxBits);
 diag.BitErrors = double(bitErr);
 diag.BitsCompared = double(bitsCompared);
 diag.CurrentDecodeOK = logical(sixgr.util.structGet(rx, "Ok", false)) && bitErr == 0 && numel(rxBits(:)) == numel(tbBits(:));
-fallbackMetrics = localExtractLinkAdaptationMetrics(cfgAttempt, rx, struct("MeasuredSINR_dB", NaN));
-measuredSINR = localExtractSINR(rx);
-if ~isfinite(measuredSINR)
-    measuredSINR = double(sixgr.util.structGet(fallbackMetrics, "SINR_dB", NaN));
+diag.CurrentAttemptStandaloneCRCMeasured = ~diag.HARQSoftCombiningApplied;
+if ~diag.CurrentAttemptStandaloneCRCMeasured
+    diag.CurrentDecodeOK = NaN; % only the cumulative decoder was executed
 end
+measuredSINR = localExtractSINR(rx);
 diag.MeasuredSINR_dB = measuredSINR;
+diag.NoiseInfo = noiseInfo;
 if ~isfield(diag, "Notes")
     diag.Notes = "";
 end
@@ -563,7 +580,8 @@ row.Slot = double(slotIdx);
 row.HARQProcess = double(sixgr.util.structGet(harqInfo, "HarqID", NaN));
 row.RV = double(sixgr.util.structGet(harqInfo, "RV", NaN));
 row.IsRetransmission = logical(sixgr.util.structGet(harqInfo, "IsRetransmission", attempt > 1));
-row.CurrentDecodeOK = logical(diag.CurrentDecodeOK);
+row.CurrentDecodeOK = double(diag.CurrentDecodeOK);
+row.CurrentAttemptStandaloneCRCMeasured = logical(diag.CurrentAttemptStandaloneCRCMeasured);
 row.CombinedDecodeOK = logical(diag.CombinedDecodeOK);
 row.ACK = logical(diag.CombinedDecodeOK);
 row.NACK = ~logical(diag.CombinedDecodeOK);
@@ -580,6 +598,17 @@ row.BitsCompared = double(diag.BitsCompared);
 row.DecoderIterations = double(diag.DecoderIterations);
 row.CombinedDecoderIterations = double(diag.CombinedDecoderIterations);
 row.MeasuredSINR_dB = double(diag.MeasuredSINR_dB);
+noise = diag.NoiseInfo;
+row.SNRReferencePlane = string(noise.SNRReferencePlane);
+row.SignalEnergyPerOccupiedRE = double(noise.SignalEnergyPerOccupiedRE);
+row.GridNoiseVariance = double(noise.GridNoiseVariance);
+row.SampleNoiseVariance = double(noise.SampleNoiseVariance);
+row.SampleToGridNoiseVarianceGain = double(noise.SampleToGridNoiseVarianceGain);
+row.AppliedNoiseSNR_dB = 10*log10(row.SignalEnergyPerOccupiedRE/row.GridNoiseVariance);
+row.MeasuredInjectedNoiseSNR_dB = double(noise.MeasuredInjectedNoiseSNR_dB);
+row.MeasuredSignalEnergyPerOccupiedRE = double(noise.MeasuredSignalEnergyPerOccupiedRE);
+row.MeasuredInjectedGridNoiseVariance = double(noise.MeasuredInjectedGridNoiseVariance);
+row.NoiseCalibrationSource = string(noise.Source);
 row.HARQCombiningApplied = logical(sixgr.util.structGet(diag, "HARQSoftCombiningApplied", false));
 row.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(diag, "HARQSoftCombiningPositionAware", false));
 row.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(diag, "HARQSoftCombiningOverlapPositionCount", NaN));
@@ -592,12 +621,18 @@ function row = localEmptyPacketRow()
 row = struct( ...
     "Direction", "", "SNR_dB", NaN, "PacketID", NaN, "Attempt", NaN, ...
     "Frame", NaN, "Slot", NaN, "HARQProcess", NaN, "RV", NaN, ...
-    "IsRetransmission", false, "CurrentDecodeOK", false, "CombinedDecodeOK", false, ...
+    "IsRetransmission", false, "CurrentDecodeOK", NaN, "CombinedDecodeOK", false, ...
+    "CurrentAttemptStandaloneCRCMeasured", false, ...
     "ACK", false, "NACK", false, "DTX", false, "StopCondition", "", ...
     "RTT_slots", NaN, "RTT_ms", NaN, "FeedbackBits", NaN, ...
     "RetransmissionCount", NaN, "RecoveryAfterRetx", false, "TBSize_bits", NaN, ...
     "BitErrors", NaN, "BitsCompared", NaN, "DecoderIterations", NaN, ...
     "CombinedDecoderIterations", NaN, "MeasuredSINR_dB", NaN, ...
+    "SNRReferencePlane", "", "SignalEnergyPerOccupiedRE", NaN, ...
+    "GridNoiseVariance", NaN, "SampleNoiseVariance", NaN, ...
+    "SampleToGridNoiseVarianceGain", NaN, "AppliedNoiseSNR_dB", NaN, ...
+    "MeasuredInjectedNoiseSNR_dB", NaN, "NoiseCalibrationSource", "", ...
+    "MeasuredSignalEnergyPerOccupiedRE", NaN, "MeasuredInjectedGridNoiseVariance", NaN, ...
     "HARQCombiningApplied", false, "HARQSoftCombiningPositionAware", false, ...
     "HARQSoftCombiningOverlapPositionCount", NaN, "LLRCombiningGain_dB", NaN, ...
     "ProbeMode", "", "Notes", "");
@@ -608,20 +643,9 @@ T = struct2table(repmat(localEmptyPacketRow(), 0, 1));
 end
 
 function sinr_dB = localExtractSINR(rx)
-sinr_dB = NaN;
-try
-    csi = sixgr.util.structGet(rx, "CSI", []);
-    if isstruct(csi)
-        x = sixgr.util.structGet(csi, "SINRPerRE", []);
-        x = double(x(:));
-        x = x(isfinite(x) & x > 0);
-        if ~isempty(x)
-            sinr_dB = 10 * log10(mean(x, "omitnan"));
-            return;
-        end
-    end
-catch
-end
+% Do not mix a pre-EQ channel estimate with dimensionless post-EQ noise.
+% The receiver already owns the actual post-equalization data measurement.
+sinr_dB = sixgr.link.selectReceiverDataSINR(rx);
 end
 
 function cfgOut = localSanitizeHARQProbeConfig(cfg, direction)
@@ -841,6 +865,17 @@ state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
 if nargin < 4
     direction = "";
 end
+state.Carrier = tx.Carrier;
+% Match the shared receiver's fixed reference. Never recalibrate noise
+% from instantaneous fading, antenna gain, occupancy, or selected rank.
+state.ReferenceREEnergy = sixgr.link.resolveAWGNReferenceEnergy(cfg);
+if upper(string(direction)) == "UL"
+    state.OccupiedIndices = tx.PUSCHIndices;
+    state.SignalFamily = "PUSCH";
+else
+    state.OccupiedIndices = tx.PDSCHIndices;
+    state.SignalFamily = "PDSCH";
+end
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
@@ -911,7 +946,7 @@ else
 end
 end
 
-function y = localApplyChannelAndAwgn(x, snr_dB, state)
+function [y, noiseInfo] = localApplyChannelAndAwgn(x, snr_dB, state)
 y = x;
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
@@ -941,7 +976,19 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
         end
     end
 end
-y = localAddAwgn(y, snr_dB);
+reference = y;
+signalEnergy = sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
+    state.Carrier, reference, state.OccupiedIndices, ...
+    "SignalFamily", state.SignalFamily);
+[y, noiseInfo] = sixgr.phy.waveform.addOccupiedREAWGN( ...
+    reference, state.Carrier, snr_dB, ...
+    "SignalEnergyPerOccupiedRE", state.ReferenceREEnergy);
+measuredNoise = sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
+    state.Carrier, y-reference, state.OccupiedIndices, ...
+    "SignalFamily", "injected_noise_on_data_REs");
+noiseInfo.MeasuredInjectedNoiseSNR_dB = 10*log10(signalEnergy/measuredNoise);
+noiseInfo.MeasuredSignalEnergyPerOccupiedRE = signalEnergy;
+noiseInfo.MeasuredInjectedGridNoiseVariance = measuredNoise;
 end
 
 function fs = localResolveSampleRate(tx, txInfo)
@@ -995,14 +1042,6 @@ else
 end
 padSamples = max(0, round(filterDelay + maxPathDelay));
 trimSamples = max(0, round(filterDelay));
-end
-
-function y = localAddAwgn(x, snr_dB)
-snrLin = 10.^(double(snr_dB) / 10);
-sigPow = mean(abs(x(:)).^2);
-nVar = sigPow / max(snrLin, eps);
-n = sqrt(nVar / 2) * (randn(size(x)) + 1i * randn(size(x)));
-y = x + n;
 end
 
 function T = localEmptyProbeMetricTable()
@@ -1190,7 +1229,8 @@ metrics = struct( ...
 csi = sixgr.util.structGet(rx, "CSI", []);
 if ~isstruct(csi)
     hEst = sixgr.util.structGet(rx, "ChannelEstimate", []);
-    nVar = double(sixgr.util.structGet(rx, "NoiseVar", NaN));
+    nVar = double(sixgr.util.structGet(rx, "PreEqualizationNoiseVariance", ...
+        sixgr.util.structGet(rx, "PreEqualizationNoiseVar", NaN)));
     if ~isempty(hEst)
         try
             csiArgs = localBuildCSIFeedbackArgs(rx);

@@ -2405,8 +2405,33 @@ def _audit_mimo_layer_metrics_table(
             if ber is None or not 0 <= ber <= 1:
                 failures.append(prefix + ":BER_invalid")
             for field in ("EVMdB", "ChannelEstimateNMSEdB", "LLRMeanAbs"):
+                scope_status = {"ChannelEstimateNMSEdB": "ChannelEstimateNMSEStatus",
+                                "LLRMeanAbs": "LLRStatus"}.get(field)
+                if scope_status and scope_status in header:
+                    # A trial aggregate is retained explicitly, never copied
+                    # into a layer measurement. This validates scope, not
+                    # qualification of an unavailable per-layer quantity.
+                    if (_text(row, scope_status) != "unavailable_trial_aggregate_only"
+                            or _number(row, field) is not None
+                            or _number(row, "Trial" + field) is None):
+                        failures.append(prefix + f":{field}_trial_scope_invalid")
+                    continue
+                if field == "EVMdB" and "EVMrms" in header:
+                    rms = _number(row, "EVMrms")
+                    valid_db = (rms == 0 and _text(row, field).lower() == "-inf") or (
+                        rms is not None and rms > 0
+                        and _close(_number(row, field), 20 * math.log10(rms), atol=1e-8)
+                    )
+                    if (not valid_db or _text(row, "EVMStatus") != "measured_per_layer"
+                            or _text(row, "EVMSource") !=
+                            "paired_layer_symbols_average_reference_power_no_payload_fit"):
+                        failures.append(prefix + ":EVM_layer_evidence_invalid")
+                    continue
                 if _number(row, field) is None:
                     failures.append(prefix + f":{field}_missing")
+            if "DecodeMetricScope" in header and _text(row, "DecodeMetricScope") != \
+                    "transport_block_context_not_per_layer_decoding":
+                failures.append(prefix + ":DecodeMetricScope_invalid")
             expected_status = "pass" if layer_index <= len(source_sinr) else "missing_layer_receiver_metric"
             if _text(row, "Status") != expected_status:
                 failures.append(prefix + ":Status_mismatch")
@@ -4232,11 +4257,36 @@ def _measured_analysis_rows(
     return selected
 
 
+def _observed_transport_crc(row: dict[str, str]) -> bool | None:
+    # Presence establishes authority: never rescue an invalid primary CRC
+    # with an alias or a generic execution Status=PASS.
+    field = next((name for name in ("CRCPass", "TBCrcPass") if name in row), None)
+    if field is None:
+        return None
+    outcome = _boolean(row, field)
+    if outcome is not None:
+        return outcome
+    number = _number(row, field)
+    return bool(number) if number in (0.0, 1.0) else None
+
+
+def _observed_bit_errors(row: dict[str, str]) -> tuple[float, float] | None:
+    errors, bits = _number(row, "BitErrors"), _number(row, "BitsCompared")
+    if (errors is None or bits is None or not math.isfinite(errors)
+            or not math.isfinite(bits) or bits <= 0 or errors < 0 or errors > bits
+            or errors != int(errors) or bits != int(bits)):
+        return None
+    return errors, bits
+
+
 def _raw_error_rates(rows: list[dict[str, str]]) -> tuple[float, float, int]:
-    failures = sum(_boolean(row, "CRCPass") is False for row in rows)
-    bit_errors = sum((_number(row, "BitErrors") or 0.0) for row in rows)
-    bits_compared = sum((_number(row, "BitsCompared") or 0.0) for row in rows)
-    bler = failures / len(rows) if rows else math.nan
+    outcomes = [_observed_transport_crc(row) for row in rows]
+    observed = sum(outcome is not None for outcome in outcomes)
+    failures = sum(outcome is False for outcome in outcomes)
+    pairs = [pair for row in rows if (pair := _observed_bit_errors(row)) is not None]
+    bit_errors = sum(pair[0] for pair in pairs)
+    bits_compared = sum(pair[1] for pair in pairs)
+    bler = failures / observed if observed else math.nan
     ber = bit_errors / bits_compared if bits_compared > 0 else math.nan
     return bler, ber, failures
 
@@ -4436,6 +4486,12 @@ def _audit_derived_link_table(
             raw = _raw_rows_for_scope(link_rows, _text(row, "Direction"), _text(row, "UEIndex"))
             count = _number(row, "N_Trials", "TrialCount")
             bler, ber, _failures = _raw_error_rates(raw)
+            unknown_crc = sum(_observed_transport_crc(item) is None for item in raw)
+            if unknown_crc:
+                reconciliation_failures.append(f"row={index}:crc_outcome_unavailable:{unknown_crc}")
+            unknown_ber = sum(_observed_bit_errors(item) is None for item in raw)
+            if unknown_ber:
+                reconciliation_failures.append(f"row={index}:paired_bit_error_evidence_unavailable:{unknown_ber}")
             if not raw or not _close(count, len(raw), atol=0):
                 reconciliation_failures.append(f"row={index}:trial_count_mismatch")
                 continue

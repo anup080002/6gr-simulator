@@ -92,6 +92,8 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
         localSSBCandidateSearchSegments( ...
         xIn, ssbTiming, sampleRateHz, ...
         double(opt.TimingSearchGuardSamples), opt.CandidateSSBIndex);
+    detectionHypotheses=0;
+    minimumReferenceLength=Inf;
 
     for nid2Index = 1:numel(candNID2)
         nid2 = candNID2(nid2Index);
@@ -141,6 +143,11 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
                     sampleRateHz, candidateStartSymbols(segmentIndex));
                 x = localFreqShift(searchSegments{segmentIndex}, ...
                     sampleRateHz, -fHz);
+                % Count every searched lag, not just the winning peak or
+                % CFO/PCI candidates. References can have different CPs.
+                detectionHypotheses=detectionHypotheses+ ...
+                    max(0,size(x,1)-numel(ref)+1);
+                minimumReferenceLength=min(minimumReferenceLength,numel(ref));
                 segmentMetric = localCorrMetric(x, ref);
                 if segmentMetric > m
                     m = segmentMetric;
@@ -227,6 +234,9 @@ function [rxOut, freqOffsetHz, NID2, info] = freqOffsetCorrect(rxWaveform, block
     info.SearchDuration_ms = 1e3 * info.SearchSamples / ...
         double(sampleRateHz);
     info.Metric = bestMetric;
+    info.DetectionHypothesisCount=double(detectionHypotheses);
+    info.MinimumReferenceLengthSamples=double(minimumReferenceLength);
+    info.DetectionMetricDefinition='rms_receive_branch_normalized_correlation';
     referenceLength = numel(selectedReference);
     timingLagsPerWindow = max(0, ...
         searchWindows(:,2)-searchWindows(:,1)+1-referenceLength+1);

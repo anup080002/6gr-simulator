@@ -21,13 +21,17 @@ ip.addRequired("carrier");
 ip.addRequired("snr_dB", ...
     @(v) isnumeric(v) && isreal(v) && isscalar(v) && isfinite(v));
 ip.addParameter("Seed", [], @localValidSeed);
+% Use the same FFT/sample-rate options as the executed modulator.  A
+% carrier alone does not describe an explicitly oversampled waveform.
+ip.addParameter("OFDMOptions", {}, @(v) iscell(v) && mod(numel(v),2) == 0);
 ip.addParameter("SignalEnergyPerOccupiedRE", 1, ...
     @(v) isnumeric(v) && isreal(v) && isscalar(v) && ...
     isfinite(v) && v > 0);
 ip.parse(txWaveform, carrier, snr_dB, varargin{:});
 opt = ip.Results;
 
-calibration = sixgr.phy.waveform.calibrateOFDMNoiseTransform(carrier);
+calibration = sixgr.phy.waveform.calibrateOFDMNoiseTransform( ...
+    carrier, opt.OFDMOptions{:});
 sampleToGridGain = double(calibration.SampleToGridNoiseVarianceGain);
 if ~(isscalar(sampleToGridGain) && isfinite(sampleToGridGain) && ...
         sampleToGridGain > 0)

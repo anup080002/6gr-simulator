@@ -1984,6 +1984,7 @@ end
 function result = localRunGenericSweep(cfg, scfg, runFolder, parentRunTag)
 sweepCfg = scfg.get("scenario.sweep", struct());
 baseProfile = lower(string(sixgr.util.structGet(sweepCfg, "base_profile")));
+errorPolicy = string(sixgr.util.structGet(sweepCfg, "execution_error_policy", "abort"));
 overrides = sixgr.util.structGet(sweepCfg, "overrides", struct([]));
 if isempty(overrides)
     error("sixgr:lls6g:runner:EmptySweep", ...
@@ -1991,6 +1992,7 @@ if isempty(overrides)
 end
 
 rows = repmat(struct("Label","", "PointScenarioID","", "RunFolder","", "Ok", false, ...
+    "Returned",false, "ExecutionStatus","", "ErrorIdentifier","", "ErrorMessage","", ...
     "RunID","", "ConfigHash","", "ResearchClass","", "StudyBucket",""), 0, 1);
 folderTokens = strings(numel(overrides), 1);
 for i = 1:numel(overrides)
@@ -2026,18 +2028,41 @@ for i = 1:numel(overrides)
         parentRunTag, "sweep_point", i, label);
     % A sweep point is a new waveform execution.  Parent resume/finalize
     % options and ExecutionID must never be inherited by the child.
-    subExec = localExecutePreparedScenario(subScfg, subFolder, ...
-        childRunID, subFolder, struct());
+    subExec = sixgr.lls6g.runners.executeSweepPoint( ...
+        @() localExecutePreparedScenario(subScfg, subFolder, ...
+        childRunID, subFolder, struct()), errorPolicy);
+    if ~subExec.Returned
+        failureReceipt = subExec;
+        failureReceipt.RunID = childRunID;
+        failureReceipt.ConfigHash = string(subScfg.ConfigHash);
+        failureReceipt.Label = label;
+        failureReceipt.EvidenceClass = "execution_failure_not_phy_measurement";
+        sixgr.util.jsonWrite(fullfile(subFolder, "meta", ...
+            "sweep_execution_failure.json"), failureReceipt);
+        warning('sixgr:lls6g:runner:SweepPointExecutionFailed', ...
+            'Sweep point %s failed (%s): %s. Retaining failure and continuing.', ...
+            label, subExec.ErrorIdentifier, subExec.ErrorMessage);
+    end
     researchClass = string(subScfg.get("meta.research_class", ""));
     rows(end+1,1) = struct( ... %#ok<AGROW>
         "Label", label, ...
         "PointScenarioID", string(subScfg.ScenarioID), ...
         "RunFolder", string(subFolder), ...
         "Ok", logical(subExec.Ok), ...
+        "Returned", logical(subExec.Returned), ...
+        "ExecutionStatus", subExec.ExecutionStatus, ...
+        "ErrorIdentifier", subExec.ErrorIdentifier, ...
+        "ErrorMessage", subExec.ErrorMessage, ...
         "RunID", childRunID, ...
         "ConfigHash", string(subScfg.ConfigHash), ...
         "ResearchClass", researchClass, ...
         "StudyBucket", localStudyBucketFromClass(researchClass));
+    % Durable partial coverage: a later exception must not erase which
+    % points returned, failed acceptance, or threw. No PHY rows are invented.
+    if localShouldWriteCSV(scfg)
+        sixgr.util.csvWriteTable(fullfile(runFolder, "reports", "csv", ...
+            "sweep_summary.csv"), struct2table(rows));
+    end
 end
 
 summaryT = struct2table(rows);
@@ -2658,6 +2683,18 @@ try
         case "random_access_four_step"
             result = localRunFourStepRAScenario(cfg, scfg, runFolder);
         case "generic_sweep"
+            % MATLAB owns one process-global profiler. Persist this
+            % orchestration-only preflight before starting child runs;
+            % each child retains its requested complete PHY profiling.
+            if profilerState.OwnsSession
+                profilerArtifacts = localExportProfilerArtifacts( ...
+                    layout, profilerCfg, profilerState, ...
+                    "Scope=sweep_parent_preflight_only; complete per-point execution profiles are stored under sweeps/<label>/reports/csv.");
+                profilerArtifactsExported = true;
+                profilerState.OwnsSession = false;
+                localDBLog("INFO", ...
+                    "Sweep parent preflight profile saved; each child owns its configured execution profiler.");
+            end
             result = localRunGenericSweep(cfg, scfg, runFolder, runTag);
         case "ai_benchmark"
             result = localRunAIBenchmark(cfg, scfg, runFolder);
@@ -2671,7 +2708,8 @@ try
     end
     localDBLog("INFO", "Runner profile completed. result.Ok=%d", ...
         double(logical(sixgr.util.structGet(result, "Ok", false))));
-    if logical(sixgr.util.structGet(cfg, "perf.exportTimeProfile", false))
+    if profile ~= "generic_sweep" && ...
+            logical(sixgr.util.structGet(cfg, "perf.exportTimeProfile", false))
         localDBLog("INFO", "Exporting TX/RX chain time-profile and complexity coverage artifacts.");
         sixgr.perf.TimeProfiler.export(runFolder, cfg);
     end
@@ -2880,9 +2918,21 @@ try
         if requiresPrimaryLinkTrials && ...
                 ~logical(sixgr.util.structGet(runtimeEvidenceRefinalization, ...
                 "RawEvidencePresent", false))
-            error("sixgr:lls6g:runner:MissingSealedPrimaryTrialEvidence", ...
-                "Runner profile '%s' requires persisted primary DL or UL trial evidence.", ...
-                profile);
+            outage = sixgr.link.classifyCompletedAcquisitionOutage( ...
+                rawTrialContainer, double(scfg.get("run_control.total_slots", NaN)));
+            % A recorded acquisition outage is a FAILED operating point,
+            % not missing execution. Keep every acceptance gate and data
+            % table unchanged, but allow publication of its failure evidence.
+            if ~outage.Recognized || logical(result.Ok) || ...
+                    double(sixgr.util.structGet(rawEvidenceSnapshot,"RowCount",0))<outage.PBCHAttempts
+                error("sixgr:lls6g:runner:MissingSealedPrimaryTrialEvidence", ...
+                    "Runner profile '%s' requires persisted primary DL or UL trial evidence (%s).", ...
+                    profile, outage.Reason);
+            end
+            runtimeEvidenceRefinalization.AcquisitionOutage = outage;
+            localDBLog("INFO", ...
+                "Retaining failed acquisition point: slots=%d PBCH_attempts=%d data_trials=0; no data KPI or constellation is available.", ...
+                outage.CompletedSlots, outage.PBCHAttempts);
         end
     else
         % Control/reference-signal profiles own their measured waveform
@@ -2974,7 +3024,19 @@ try
     % Browser chart production consumes the canonical coverage tables above.
     % Every raster is paired with its exact generated chart-dataset CSV.
     localDBLog("INFO", "Materializing strict browser contract artifacts before final visual and terminal status reduction.");
-    contractMaterialization = localMaterializeBrowserContractArtifacts(runFolder);
+    % Failed acquisition can have measured broadcast/control observations but
+    % no data trials. Publish those exact observations non-destructively;
+    % raster replacement requires nonempty primary data authority and must
+    % not be enabled by substituting control rows into the data tables.
+    % The typed physical classifier above is the only authority for this
+    % choice. Scientific acceptance and strict browser coverage stay intact.
+    replacePrimaryRasters = ~logical(sixgr.util.structGet( ...
+        runtimeEvidenceRefinalization, "AcquisitionOutage.Recognized", false));
+    if ~replacePrimaryRasters
+        localDBLog("INFO", "Publishing acquisition-outage observations without data-raster replacement; all scientific failure gates remain active.");
+    end
+    contractMaterialization = sixgr.artifact.materializeBrowserContractArtifacts( ...
+        runFolder, "ReplaceExistingRastersFromCSV", replacePrimaryRasters);
     % Root status uses the logical run tag as RunId; retain the database
     % primary key separately so the receipt cannot conflate the two IDs.
     contractMaterialization.RunID = string(runTag);
@@ -3303,6 +3365,7 @@ try
             "GeneratedAtUTC", terminalGeneratedAt, ...
             "MaxPasses", 1 + 2*double(browserPublicationRequired || ...
                 visualClosureRequired), ...
+            "ReplaceExistingRastersFromCSV", replacePrimaryRasters, ...
             "Required", browserPublicationRequired || visualClosureRequired);
         reportBundle.TerminalArtifactClosure = terminalClosure;
         outputCoverage.VisualArtifactIntegrity = ...
@@ -3429,7 +3492,8 @@ catch ME
         end
     end
     try
-        if logical(sixgr.util.structGet(cfg, "perf.exportTimeProfile", false))
+        if profile ~= "generic_sweep" && ...
+                logical(sixgr.util.structGet(cfg, "perf.exportTimeProfile", false))
             sixgr.perf.TimeProfiler.export(runFolder, cfg);
         end
     catch timeProfileME
@@ -7244,6 +7308,7 @@ mappings = {
     "synchronization.frequency_tracking_mode", "PHY_Synchronization", "phy.synchronization.frequencyTrackingMode"
     "synchronization.pss_detection_threshold", "PHY_Synchronization", "phy.synchronization.pssDetectionThreshold"
     "synchronization.sss_hypothesis_test_threshold", "PHY_Synchronization", "phy.synchronization.sssHypothesisTestThreshold"
+    "synchronization.ssb_detector_target_false_alarm_probability", "PHY_Synchronization", "phy.synchronization.ssbDetectorTargetFalseAlarmProbability"
     "synchronization.max_timing_uncertainty_samples", "PHY_Synchronization", "phy.synchronization.maxTimingUncertaintySamples"
     "synchronization.ota_timing_advance_enable", "PHY_Synchronization", "phy.synchronization.otaTimingAdvanceEnabled"
     "synchronization.timing_advance_granularity_ts", "PHY_Synchronization", "phy.synchronization.timingAdvanceGranularityTs"

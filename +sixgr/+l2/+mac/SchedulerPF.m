@@ -435,6 +435,8 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                 [candidatePRBSet,chunkStart]=sixgr.l2.mac.contiguousPRBChunk( ...
                     prbAvail,cursor,prbChunk,obj.MinPRBPerUE);
                 if isempty(candidatePRBSet)
+                    candidateRows = localFinalizeCandidateRejections(candidateRows, ...
+                        "NO_LEGAL_CONTIGUOUS_PRB_ALLOCATION");
                     break;
                 end
                 groupOrd = ord(ii);
@@ -599,6 +601,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.SchedulerSINRBackoff_dB = double(sixgr.util.structGet(plan, "SchedulerSINRBackoff_dB", NaN));
                     g.SchedulerCQISource = char(string(sixgr.util.structGet(plan, "SchedulerCQISource", "")));
                     g.RankSelectionPolicy = char(string(sixgr.util.structGet(plan, "RankSelectionPolicy", "")));
+                    g.ConfiguredLayers = double(sixgr.util.structGet(plan, "ConfiguredLayers", NaN));
                     g.RankSelectionSource = char(string(sixgr.util.structGet(plan, "RankSelectionSource", "")));
                     g.RankDecisionReason = char(string(sixgr.util.structGet(plan, "RankDecisionReason", "")));
                     g.RankDowngradeApplied = logical(sixgr.util.structGet(plan, "RankDowngradeApplied", false));
@@ -1014,6 +1017,7 @@ g.SchedulerAdjustedSINR_dB = NaN;
 g.SchedulerSINRBackoff_dB = NaN;
 g.SchedulerCQISource = "";
 g.RankSelectionPolicy = "";
+g.ConfiguredLayers = NaN;
 g.RankSelectionSource = "";
 g.RankDecisionReason = "";
 g.RankDowngradeApplied = false;

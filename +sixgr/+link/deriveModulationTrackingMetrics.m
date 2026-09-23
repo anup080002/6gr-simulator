@@ -4,6 +4,8 @@ function [metrics, constellationT] = deriveModulationTrackingMetrics(tx, rx, cfg
 direction = upper(string(direction));
 metrics = struct( ...
     "EVM_rms", NaN, ...
+    "EVMPerLayer_rms", zeros(1,0), ...
+    "EVMPerLayerSource", "", ...
     "EVMStatus", "unavailable", ...
     "EVMComputationDomain", "", ...
     "SymbolErrors", NaN, ...
@@ -98,6 +100,18 @@ if ~isempty(eqSymAligned) && ~isempty(refSym)
             metrics.EVMStatus = "warning_gt_100pct_check_timing_or_channel_estimate";
         end
         metrics.EVMComputationDomain = "receiver_equalized_symbols_average_reference_power_no_payload_fit";
+        % The validated input matrices retain layer identity before the
+        % aggregate comparison is flattened. Normalize each layer by its
+        % own reference power; never copy the wideband RMS or fit RX gain.
+        refLayers=reshape(refSym,size(txSym));
+        eqLayers=reshape(eqSymAligned,size(txSym));
+        referencePower=mean(abs(refLayers).^2,1);
+        layerEVM=nan(1,size(refLayers,2));
+        validPower=isfinite(referencePower) & referencePower>0;
+        errorPower=mean(abs(eqLayers-refLayers).^2,1);
+        layerEVM(validPower)=sqrt(errorPower(validPower)./referencePower(validPower));
+        metrics.EVMPerLayer_rms=layerEVM;
+        metrics.EVMPerLayerSource="paired_layer_symbols_average_reference_power_no_payload_fit";
     else
         metrics.EVMStatus = evmStatus;
     end

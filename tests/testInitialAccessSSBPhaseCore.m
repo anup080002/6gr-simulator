@@ -336,6 +336,8 @@ end
 
 function cfg = localProductionConfig()
 cfg = struct();
+defaults=sixgr.config.defaultConfig();
+cfg.phy.synchronization=defaults.phy.synchronization;
 cfg.channel.fc_Hz = 3.5e9;
 cfg.frequency.center_frequency_hz = 3.5e9;
 cfg.frequency.range_name = "FR1";

@@ -28,6 +28,7 @@ DATA_POWER_CHARTS = {"PDSCH-window carrier RSSI timeline": TRIALS[:1],
                      "PUSCH-window carrier RSSI timeline": TRIALS[1:]}
 PRECODER_CHARTS = {"reported versus applied PMI", "precoder ports and layers", "precoder matrix integrity"}
 CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tuple(DATA_POWER_CHARTS) + (SSB_POWER_CHART,) + tuple(sorted(PRECODER_CHARTS)) + (
+    "measured_sinr_vs_slot",
     "throughput vs SNR", "PDSCH BLER vs measured SINR", "PUSCH BLER vs measured SINR",
     "PUCCH BLER vs measured SINR", "CSI-RS pilot residual", "NMSE vs SNR / SINR",
 )
@@ -38,6 +39,7 @@ CHART_SOURCES.update({name: ("air_interface/csv/csi_rs_trials.csv",) for name in
 CHART_SOURCES[SSB_POWER_CHART] = ("air_interface/csv/pbch_trials.csv",)
 CHART_SOURCES.update(DATA_POWER_CHARTS)
 CHART_SOURCES.update({name: TRIALS + (FEEDBACK,) for name in PRECODER_CHARTS})
+CHART_SOURCES["measured_sinr_vs_slot"] = TRIALS
 CHART_SOURCES.update({"throughput vs SNR": TRIALS, "NMSE vs SNR / SINR": TRIALS + ("air_interface/csv/srs_trials.csv",),
     "PDSCH BLER vs measured SINR": TRIALS[:1], "PUSCH BLER vs measured SINR": TRIALS[1:],
     "PUCCH BLER vs measured SINR": ("air_interface/csv/pucch_trials.csv",),
@@ -119,6 +121,47 @@ def _finish(m, name, run_id, rows, series, x_label, y_label, note, sources, *, d
 
 def _measured_sinr(m, row):
     return m._measured_sinr_evidence(row)
+
+
+def _data_sinr_timeline(m, name, existing, fetch, run_id):
+    """Preserve receiver observations across directions and sweep restarts."""
+    rows, series, sources = [], defaultdict(list), []
+    blocked = ("proxy", "synthetic", "fallback", "configured", "sweep", "oracle",
+               "true_channel", "true-channel", "diagnostic", "not_scheduling",
+               "not_for_scheduling", "unavailable", "failed", "rejected", "receiver_hest",
+               "reference_signal_measurement", "pilot_sinr", "reference_signal_quality",
+               "not_post_equalization", "not_applicable", "estimated", "conservative_min",
+               "predicted", "prediction")
+    for path, trials in m._all_available_rows(existing, fetch, TRIALS):
+        sources.append(path)
+        for index, row in enumerate(trials, 1):
+            identity = _identity(m, row, path, index)
+            evidence = _measured_sinr(m, row)
+            status = evidence["status"].strip().lower()
+            provenance = (evidence["source"] + " " + evidence["role"]).lower()
+            valid = (evidence["value"] is not None and identity["slot"] is not None
+                     and bool(evidence["source"].strip()) and bool(evidence["role"].strip())
+                     and (status in {"ok", "pass", "measured"} or status.startswith("ok_"))
+                     and "post_equalization" in provenance
+                     and not any(token in provenance + " " + status for token in blocked))
+            point = m._row_text(row, "SweepPointIndex")
+            configured_snr = m._row_float(row, "ConfiguredSNR_dB")
+            rows.append({**identity, "sweep_point_index": point,
+                "configured_snr_db": configured_snr,
+                "configured_snr_value_role": "configured_operating_point_metadata" if configured_snr is not None else "unavailable",
+                "measured_sinr_db": evidence["value"] if valid else None,
+                "sinr_source_field": evidence["field"], "sinr_source": evidence["source"],
+                "sinr_value_role": evidence["role"], "sinr_value_status": evidence["status"],
+                "value_status": "available" if valid else "receiver_sinr_or_slot_unavailable_or_ineligible"})
+            if valid:
+                label = (f'{identity["direction"]} UE {identity["ue_index"] or "?"} '
+                         f'cell {identity["cell_id"] or "?"} point {point or "?"}')
+                if configured_snr is not None:
+                    label += f" ({configured_snr:g} dB reference)"
+                series[label].append([identity["slot"], evidence["value"]])
+    return _finish(m, name, run_id, rows, series, "Canonical slot",
+        "Measured post-equalization SINR (dB)",
+        "Individual receiver samples; direction, UE, cell and sweep points are never averaged together.", sources)
 
 
 def _control_evm(m, name, existing, fetch, run_id):
@@ -781,6 +824,8 @@ def radio_measurement_chart(name, existing, fetch, run_id):
     # initialized, and there is one renderer/persistence authority.
     import lls_contract_materializer as m
     try:
+        if name == "measured_sinr_vs_slot":
+            return _data_sinr_timeline(m, name, existing, fetch, run_id)
         if name in CONTROL_EVM:
             return _control_evm(m, name, existing, fetch, run_id)
         if name in CSI_FIELDS:

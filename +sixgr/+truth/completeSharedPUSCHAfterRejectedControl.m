@@ -25,7 +25,7 @@ receipts=sixgr.util.structGet(state,'SharedRejectedULReceiveResults',{});
 assert(~any(cellfun(@(x)x.ObservationID==string(observationID),receipts)), ...
     'sixgr:truth:DuplicateRejectedULReceiveCompletion','Do not decode or publish one receive-only window twice.');
 cfg=item.Context.Config;
-[csi,report]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,grant);
+[csi,report]=sixgr.truth.resolveSharedPUSCHCSIReceiveObligation(state,cfg,grant);
 postIndex=find(endsWith(string({item.Planes.ReceiverID}),':post_rf'));
 assert(isscalar(postIndex),'sixgr:truth:IncompletePUSCHReceiveOnlyPlanes','Require one actual post-RF receive window.');
 binding=sixgr.truth.puschUCIObservationBinding(grant,item.Planes(postIndex).Observation);

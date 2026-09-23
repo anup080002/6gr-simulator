@@ -1,0 +1,370 @@
+diff --git a/+sixgr/+truth/CoupledTruthRuntime.m b/+sixgr/+truth/CoupledTruthRuntime.m
+index 2d81f800..2fc47133 100644
+--- a/+sixgr/+truth/CoupledTruthRuntime.m
++++ b/+sixgr/+truth/CoupledTruthRuntime.m
+@@ -1662,21 +1662,28 @@ methods(Static)
+         trial=struct('Slot',c.Slot,'Channel',"PUCCH",'Direction',"UL",'UEIndex',item.UE, ...
+             'RNTI',mapping.RNTI,'ServingCell',mapping.LastGrant.ServingCell, ...
+             'PUCCHGrantId',string(c.ObservationID),'PUCCHResourceId',string(h.Assignment.Resource.ID), ...
+-            'PUCCHFormat',h.Assignment.Format,'PUCCHDecodeOk',logical(usable),'ReceiverUsable',logical(usable), ...
++            'PUCCHFormat',h.Assignment.Format,'PUCCHDecodeOk',logical(usable),'ReceiverUsable',logical(rx.ReceiverUsable), ...
+             'DTXFlag',logical(rx.DTX),'DetectionMetric',rx.DetectionMetric,'DetectionThreshold',rx.DetectionThreshold, ...
+             'DetectionThresholdSource',string(rx.DetectionThresholdSource), ...
+-            'ReceiverExpectedHARQBitCount',mapping.BitCount,'ReceiverExpectedSRBitCount',h.Context.SRBits, ...
+-            'ReceiverExpectedCSIPart1BitCount',h.Context.CSIPart1Bits, ...
+-            'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString(rx.DecodedSequence1), ...
++            'ReceiverExpectedHARQBitCount',mapping.BitCount,'ReceiverExpectedSRBitCount',h.Context.SRBits, ...
++            'ReceiverExpectedCSIPart1BitCount',h.Context.CSIPart1Bits, ...
++            'ReceiverExpectedCSIPart2BitCount',h.Context.CSIPart2Bits, ...
++            'ReceiverExpectedBitCount',h.Context.Sequence1Length+h.Context.Sequence2Length, ...
++            'ReceiverExpectedBitCountSource',"receiver_length_context", ...
++            'DecodedBitCount',numel(rx.DecodedSequence1)+numel(rx.DecodedSequence2), ...
++            'CRCApplicable',logical(rx.CRCApplicable),'CRCPass',NaN, ...
++            'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString([rx.DecodedSequence1(:);rx.DecodedSequence2(:)]), ...
+             'ObservationStartSample',post.StartSample,'ObservationEndSampleExclusive',post.EndSampleExclusive, ...
+             'ObservationSampleRateHz',post.SampleRateHz,'ObservationCompletionTime_s',post.EndSampleExclusive/post.SampleRateHz, ...
+             'NoiseVariance',rx.GridNoiseVariance,'NoiseVarianceDomain',"resource_grid_pre_equalization", ...
+             'NoiseVarSource',string(rx.GridNoiseVarianceSource),'ReceiverInjectedNoiseVarianceConsumed',false, ...
+-            'ReceiverOnlyAssignment',true,'PUCCHTransmissionPrepared',false,'OraclePayloadBitsUsed',false, ...
+-            'MappingDigest',mapping.Digest,'ReceiverAssignmentDigest',h.Assignment.Digest, ...
++            'ReceiverOnlyAssignment',1,'PUCCHTransmissionPrepared',0,'OraclePayloadBitsUsed',false, ...
++            'MappingDigest',mapping.Digest,'ReceiverAssignmentDigest',h.Assignment.Digest, ...
++            'ReceiverContextDigest',h.Context.Digest, ...
+             'ExecutionBackend',"pucch_shared_gnb_receive_only",'ApproximationMode',"none", ...
+-            'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
+-        state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
++            'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
++        if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
++        state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         evidence=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
+         evidence{end+1}=struct('ObservationID',string(c.ObservationID),'Mapping',mapping,'Receiver',rx, ...
+@@ -1763,17 +1770,23 @@ methods(Static)
+                 'PUCCHDecodeOk',actual.DecodeOk,'ReceiverUsable',rx.ReceiverUsable,'DTXFlag',rx.DTX, ...
+                 'DetectionMetric',rx.DetectionMetric,'DetectionThreshold',rx.DetectionThreshold, ...
+                 'DetectionThresholdSource',string(rx.DetectionThresholdSource), ...
+-                'ReceiverExpectedHARQBitCount',0,'ReceiverExpectedSRBitCount',h.Context.SRBits, ...
+-                'ReceiverExpectedCSIPart1BitCount',h.Context.CSIPart1Bits, ...
+-                'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString(rx.DecodedSequence1), ...
++                'ReceiverExpectedHARQBitCount',0,'ReceiverExpectedSRBitCount',h.Context.SRBits, ...
++                'ReceiverExpectedCSIPart1BitCount',h.Context.CSIPart1Bits, ...
++                'ReceiverExpectedCSIPart2BitCount',h.Context.CSIPart2Bits, ...
++                'ReceiverExpectedBitCount',h.Context.Sequence1Length+h.Context.Sequence2Length, ...
++                'ReceiverExpectedBitCountSource',"receiver_length_context", ...
++                'DecodedBitCount',numel(rx.DecodedSequence1)+numel(rx.DecodedSequence2), ...
++                'CRCApplicable',logical(rx.CRCApplicable),'CRCPass',NaN, ...
++                'UCIDecodedBitVector',sixgr.phy.pucch.PUCCHUtil.bitString([rx.DecodedSequence1(:);rx.DecodedSequence2(:)]), ...
+                 'ObservationStartSample',post.StartSample,'ObservationEndSampleExclusive',post.EndSampleExclusive, ...
+                 'ObservationSampleRateHz',post.SampleRateHz,'NoiseVariance',rx.GridNoiseVariance, ...
+                 'NoiseVarianceDomain',"resource_grid_pre_equalization",'NoiseVarSource',string(rx.GridNoiseVarianceSource), ...
+-                'ReceiverOnlyAssignment',true,'PUCCHTransmissionPrepared',false,'OraclePayloadBitsUsed',false, ...
++                'ReceiverOnlyAssignment',1,'PUCCHTransmissionPrepared',0,'OraclePayloadBitsUsed',false, ...
+                 'ReceiverAssignmentDigest',h.Assignment.Digest,'ReceiverContextDigest',h.Context.Digest, ...
+                 'ExecutionBackend',"pucch_shared_gnb_receive_only",'ApproximationMode',"none", ...
+-                'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
+-            state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
++                'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
++            if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
++            state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                 state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         end
+         state=sixgr.truth.CoupledTruthRuntime.stageIndependentCSI(state,report);
+@@ -13516,8 +13529,16 @@ methods(Static, Access=private)
+ 
+         status = upper(strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Status", repmat("", n, 1)))));
+         crcPass = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "CRCPass", nan(n, 1)));
+-        decodeSuccess = isfinite(crcPass) & crcPass ~= 0;
+-        decodeSuccess(~isfinite(crcPass) & status == "PASS") = true;
++        decodeSuccess = isfinite(crcPass) & crcPass ~= 0;
++        decodeSuccess(~isfinite(crcPass) & status == "PASS") = true;
++        if signalName == "PUCCH"
++            % The executed decoder outcome is independent of transmitter
++            % reference availability and export-stage completeness.
++            receivedDecode = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
++                T, "PUCCHDecodeOk", nan(n, 1)));
++            knownDecode = isfinite(receivedDecode) & (receivedDecode == 0 | receivedDecode == 1);
++            decodeSuccess(knownDecode) = receivedDecode(knownDecode) == 1;
++        end
+         pendingMask = status == "PENDING" | contains(status, "PENDING");
+         failureFlag = (status == "FAIL" | status == "CRASH") | (~decodeSuccess & ~pendingMask & status ~= "" & status ~= "NA");
+         observationAvailable = ~pendingMask & status ~= "CRASH";
+@@ -13549,7 +13570,23 @@ methods(Static, Access=private)
+         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "RuntimeConsumer", consumer, false);
+         T = sixgr.truth.CoupledTruthRuntime.applyPRACHFullRARuntimeTokens(signalName, T);
+         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "DecodeSuccess", decodeSuccess);
+-        T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "SuccessFlag", decodeSuccess);
++        successFlag = decodeSuccess;
++        if signalName == "PUCCH"
++            receiverOnly = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
++                T, "ReceiverOnlyAssignment", nan(n, 1)));
++            prepared = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
++                T, "PUCCHTransmissionPrepared", nan(n, 1)));
++            noProducer = receiverOnly == 1 & prepared == 0;
++            contentMatch = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
++                T, "UCIContentMatch", nan(n, 1)));
++            falseAck = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
++                T, "FalseAck", nan(n, 1)));
++            falseNack = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
++                T, "FalseNack", nan(n, 1)));
++            failureFlag = failureFlag | contentMatch == 0 | falseAck == 1 | falseNack == 1;
++            successFlag = decodeSuccess & ~failureFlag & ~noProducer;
++        end
++        T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "SuccessFlag", successFlag);
+         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FailureFlag", failureFlag);
+         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "ControlObservationAvailable", observationAvailable);
+         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "ValueSource", "runtime_control_reference_signal_observation", false);
+@@ -17756,8 +17793,13 @@ methods(Static, Access=private)
+             "UECSIOmittedReportIDs", string(sixgr.util.structGet(observed,'UECSIOmittedReportIDs',"")), ...
+             "UECSISelectionReason", string(sixgr.util.structGet(observed,'UECSISelectionReason',"")), ...
+             "GNBHARQMappingDigest", string(sixgr.util.structGet(observed,'GNBHARQMappingDigest',"")), ...
+-            "ReceiverAssignmentDigest", string(sixgr.util.structGet(trial,'ReceiverAssignmentDigest',"")), ...
+-            "IndependentReceiverAssignment", logical(sixgr.util.structGet(trial,'IndependentReceiverAssignment',false)), ...
++            "ReceiverAssignmentDigest", string(sixgr.util.structGet(trial,'ReceiverAssignmentDigest',"")), ...
++            "ReceiverContextDigest", string(sixgr.util.structGet(trial,'ReceiverContextDigest',"")), ...
++            "ReceiverOnlyAssignment", double(sixgr.util.structGet(trial,'ReceiverOnlyAssignment',NaN)), ...
++            "PUCCHTransmissionPrepared", double(sixgr.util.structGet(trial,'PUCCHTransmissionPrepared',NaN)), ...
++            "IndependentReceiverAssignment", logical(sixgr.util.structGet(trial,'IndependentReceiverAssignment',false)), ...
++            "ReceiverExpectedBitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedBitCount',NaN)), ...
++            "ReceiverExpectedBitCountSource", string(sixgr.util.structGet(trial,'ReceiverExpectedBitCountSource',"")), ...
+             "ReceiverExpectedHARQBitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedHARQBitCount',NaN)), ...
+             "ReceiverExpectedSRBitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedSRBitCount',NaN)), ...
+             "ReceiverExpectedCSIPart1BitCount", double(sixgr.util.structGet(trial,'ReceiverExpectedCSIPart1BitCount',NaN)), ...
+@@ -17848,8 +17890,12 @@ methods(Static, Access=private)
+         decoderRole = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRValueRole", repmat("", n, 1))));
+         decoderStatus = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRValueStatus", repmat("", n, 1))));
+         decoderReason = strtrim(string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "DecoderTruthProxySINRNAReason", repmat("", n, 1))));
+-        proxyLike = isfinite(decoderProxySINR) | contains(lower(decoderSource), "evm_proxy") | ...
+-            contains(lower(decoderSource), "proxy") | contains(lower(decoderRole), "proxy");
++        % The explicit unavailable marker is not evidence of an executed
++        % proxy. A finite value is still quarantined regardless of its label.
++        unavailableDecoder = decoderSource == "unavailable_decoder_truth_proxy_not_materialized";
++        proxyLike = isfinite(decoderProxySINR) | ...
++            (contains(lower(decoderSource), "proxy") & ~unavailableDecoder) | ...
++            contains(lower(decoderRole), "proxy");
+         decoderProxySINR(proxyLike) = NaN;
+         mask = proxyLike;
+         decoderSource(mask) = "evm_proxy_quarantined_not_decoder_truth";
+@@ -18010,7 +18056,7 @@ methods(Static, Access=private)
+             T.MeasurementUsable = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "MeasurementUsable", false(n, 1)) | ...
+                 (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR))));
+         end
+-        if ismember("ReceiverUsable", string(T.Properties.VariableNames))
++        if signalBase ~= "pucch" && ismember("ReceiverUsable", string(T.Properties.VariableNames))
+             T.ReceiverUsable = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "ReceiverUsable", false(n, 1)) | ...
+                 (~crash & (isfinite(receiverSINR) | isfinite(measuredSINR))));
+         end
+@@ -18064,11 +18110,12 @@ methods(Static, Access=private)
+             receiverOk = ~dmrsRequired | (isfinite(receiverSINR) & ...
+                 (sixgr.util.isAcceptableSINRStatus(hestStatus) | strlength(hestStatus) == 0));
+             noiseOk = isfinite(noiseVar) & noiseVar > 0 & (noiseStatus == "ok" | startsWith(noiseStatus, "ok_") | strlength(noiseStatus) == 0) & ~noiseStrictFailure;
+-            strict = ~crash & uciMatch & detectionOk & crcOk & resourceOk & controlResourceOk & ...
+-                noiseOk & receiverOk & (~dmrsRequired | (chanOk & eqOk));
+-            T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "StrictReceiverEvidenceOk", strict);
+-            T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "StrictOk", strict);
+-            T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "ReceiverUsable", strict);
++            strict = ~crash & uciMatch & detectionOk & crcOk & resourceOk & controlResourceOk & ...
++                noiseOk & receiverOk & (~dmrsRequired | (chanOk & eqOk));
++            T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "StrictReceiverEvidenceOk", strict);
++            T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "StrictOk", strict);
++            % Preserve the actual receiver decision, including false
++            % detections. Strict export acceptance is a separate assertion.
+             if ismember("Status", string(T.Properties.VariableNames))
+                 statusStrict = string(T.Status);
+                 statusStrict(~strict & lower(strtrim(statusStrict)) == "pass") = "FAIL";
+diff --git a/+sixgr/+link/runPUCCHWaveformTrial.m b/+sixgr/+link/runPUCCHWaveformTrial.m
+index 57bff341..f12e0f2a 100644
+--- a/+sixgr/+link/runPUCCHWaveformTrial.m
++++ b/+sixgr/+link/runPUCCHWaveformTrial.m
+@@ -134,6 +134,8 @@ end
+ % independently scheduled gNB hypothesis: valid differences must remain
+ % observable decode failures in missing-DCI/absent-producer tests.
+ sixgr.phy.pucch.validateTransmitUCILayout(tx.Report,tx.Serialization);
++trial.PUCCHTransmissionPrepared = true;
++trial.ReceiverOnlyAssignment = false;
+ 
+ cfgRuntime = localRuntimeConfig(cfg,carrier,opt);
+ if prepareOnly
+diff --git a/+sixgr/+link/runDLPDSCHThroughput.m b/+sixgr/+link/runDLPDSCHThroughput.m
+index bf9e1881..75d18887 100644
+--- a/+sixgr/+link/runDLPDSCHThroughput.m
++++ b/+sixgr/+link/runDLPDSCHThroughput.m
+@@ -415,7 +415,8 @@ trialTimingEstimateApplicationPolicy = strings(numFrames,1);
+ trialTimingEstimateStatus = strings(numFrames,1);
+ trialTimingEstimateWasClipped = false(numFrames,1);
+ trialConfiguredSNR = snr_dB * ones(numFrames,1);
+-trialAppliedAWGNSNR = NaN(numFrames,1);
++trialAppliedAWGNSNR = NaN(numFrames,1);
++trialAppliedAWGNSNRSource = strings(numFrames,1);
+ trialDesiredSignalPowerBeforeNoise = NaN(numFrames,1);
+ trialCompositeSignalPowerBeforeNoise = NaN(numFrames,1);
+ trialAppliedNoiseSNR = NaN(numFrames,1);
+@@ -1359,7 +1360,8 @@ for n = 1:numFrames
+         trialPostEqSINRDMRSResidual(n) = double(sixgr.util.structGet(rx, "PostEqSINRDMRSResidual_dB", NaN));
+         trialPostEqDecisionResidual(n) = double(sixgr.util.structGet(rx, "PostEqDecisionResidual_dB", NaN));
+         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
+-        trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
++        trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
++        trialAppliedAWGNSNRSource(n) = string(sixgr.util.structGet(replay, "AppliedAWGNSNRSource", ""));
+         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+         trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+         trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+@@ -2534,7 +2536,8 @@ end
+         T.PRBCount = trialPRB(idx);
+         T.SymbolStart = trialSymbolStart(idx);
+         T.NumSymbols = trialNumSymbols(idx);
+-        T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
++        T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
++        T.AppliedAWGNSNRSource = trialAppliedAWGNSNRSource(idx);
+         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
+         T.InjectedCarrierPhaseOffset_rad = trialCarrierPhaseOffsetRad(idx);
+         T.CarrierPhaseOffsetApplied = trialCarrierPhaseOffsetApplied(idx);
+@@ -5435,7 +5438,8 @@ T.CodeBlockLayoutHash = strings(0,1);
+ T.HARQContextHash = strings(0,1);
+ T.HARQContextStatus = strings(0,1);
+ T.HARQRV = zeros(0,1);
+-T.AppliedAWGNSNR_dB = zeros(0,1);
++T.AppliedAWGNSNR_dB = zeros(0,1);
++T.AppliedAWGNSNRSource = strings(0,1);
+ T.ReceiverHestSINR_dB = zeros(0,1);
+ T.ReceiverHestSINRApplicable = false(0,1);
+ T.ReceiverHestSINRSource = strings(0,1);
+diff --git a/+sixgr/+link/runULPUSCHThroughput.m b/+sixgr/+link/runULPUSCHThroughput.m
+index 79042f94..a00bb38b 100644
+--- a/+sixgr/+link/runULPUSCHThroughput.m
++++ b/+sixgr/+link/runULPUSCHThroughput.m
+@@ -454,7 +454,8 @@ trialTimingEstimateApplicationPolicy = strings(numFrames,1);
+ trialTimingEstimateStatus = strings(numFrames,1);
+ trialTimingEstimateWasClipped = false(numFrames,1);
+ trialConfiguredSNR = snr_dB * ones(numFrames,1);
+-trialAppliedAWGNSNR = NaN(numFrames,1);
++trialAppliedAWGNSNR = NaN(numFrames,1);
++trialAppliedAWGNSNRSource = strings(numFrames,1);
+ trialDesiredSignalPowerBeforeNoise = NaN(numFrames,1);
+ trialCompositeSignalPowerBeforeNoise = NaN(numFrames,1);
+ trialAppliedNoiseSNR = NaN(numFrames,1);
+@@ -1504,7 +1505,8 @@ for n = 1:numFrames
+         trialPostEqDecisionResidualNoiseVar(n) = double(sixgr.util.structGet(rx, "PostEqDecisionResidualNoiseVar", NaN));
+         trialPostEqDecisionResidualSource(n) = string(sixgr.util.structGet(rx, "PostEqDecisionResidualSource", ""));
+         trialConfiguredSNR(n) = double(sixgr.util.structGet(replay, "ConfiguredSNR_dB", snr_dB));
+-        trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
++        trialAppliedAWGNSNR(n) = double(sixgr.util.structGet(replay, "AppliedAWGNSNR_dB", NaN));
++        trialAppliedAWGNSNRSource(n) = string(sixgr.util.structGet(replay, "AppliedAWGNSNRSource", ""));
+         trialDesiredSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "DesiredSignalPowerBeforeNoise", NaN));
+         trialCompositeSignalPowerBeforeNoise(n) = double(sixgr.util.structGet(replay, "CompositeSignalPowerBeforeNoise", NaN));
+         trialAppliedNoiseSNR(n) = double(sixgr.util.structGet(replay, "AppliedNoiseSNR_dB", NaN));
+@@ -2589,7 +2591,8 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
+         T.PRBCount = trialPRB(idx);
+         T.SymbolStart = trialSymbolStart(idx);
+         T.NumSymbols = trialNumSymbols(idx);
+-        T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
++        T.AppliedAWGNSNR_dB = trialAppliedAWGNSNR(idx);
++        T.AppliedAWGNSNRSource = trialAppliedAWGNSNRSource(idx);
+         T.InjectedCarrierPhaseOffset_deg = trialCarrierPhaseOffsetDeg(idx);
+         T.InjectedCarrierPhaseOffset_rad = trialCarrierPhaseOffsetRad(idx);
+         T.CarrierPhaseOffsetApplied = trialCarrierPhaseOffsetApplied(idx);
+@@ -4914,7 +4917,8 @@ T.ShortIRRetx = false(0,1);
+ T.CodeBlockLayoutHash = strings(0,1);
+ T.HARQContextHash = strings(0,1);
+ T.HARQContextStatus = strings(0,1);
+-T.AppliedAWGNSNR_dB = zeros(0,1);
++T.AppliedAWGNSNR_dB = zeros(0,1);
++T.AppliedAWGNSNRSource = strings(0,1);
+ T.NoiseVarStatus = strings(0,1);
+ T.NoiseVarSource = strings(0,1);
+ T.NoiseVarReason = strings(0,1);
+diff --git a/+sixgr/+util/matSave.m b/+sixgr/+util/matSave.m
+index e06edc32..dfdadfda 100644
+--- a/+sixgr/+util/matSave.m
++++ b/+sixgr/+util/matSave.m
+@@ -45,7 +45,17 @@ catch firstME
+     end
+ end
+ 
++% Bind the single MAT inventory to immutable serialized bytes. Both
++% destination readbacks below must match this exact validated payload.
++sourceInfo = dir(tmpPath);
++sourceBytes = localFileBytes(sourceInfo);
++sourceHash = string(sixgr.util.sha256File(tmpPath));
+ localValidateSavedPayload(tmpPath, 1);
++if localFileBytes(dir(tmpPath)) ~= sourceBytes || ...
++        string(sixgr.util.sha256File(tmpPath)) ~= sourceHash
++    error("sixgr:util:matSave:ValidatedSourceChanged", ...
++        "Serialized MAT source changed while its inventory was validated.");
++end
+ 
+ if options.UseArtifactStore && sixgr.db.isArtifactStoreActive()
+     handled = sixgr.db.captureFileArtifact(tmpPath, "mat_binary", ...
+@@ -57,7 +67,7 @@ if options.UseArtifactStore && sixgr.db.isArtifactStoreActive()
+     return;
+ end
+ 
+-localPublishValidatedCopy(tmpPath, filePath);
++localPublishValidatedCopy(tmpPath, filePath, sourceBytes, sourceHash);
+ end
+ 
+ function localSavePayload(filePath, data, useV73)
+@@ -99,11 +109,11 @@ end
+ throw(wrapped);
+ end
+ 
+-function localPublishValidatedCopy(tmpPath, filePath)
++function localPublishValidatedCopy(tmpPath, filePath, sourceBytes, sourceHash)
+ % Do not MOVE a local HDF5 MAT into a synchronised tree.  On OneDrive the
+ % cross-volume move can be acknowledged before the provider makes the
+ % destination locally reopenable.  COPY keeps the already-validated source
+-% alive until the destination itself has passed WHOS/LOAD validation.
++% alive until the destination bytes match the inventoried source.
+ %
+ % A sibling staging copy is validated first so a provider that cannot make
+ % newly copied bytes readable fails before an existing final artifact is
+@@ -118,23 +128,18 @@ stagePath = fullfile(targetDir, sprintf("m_%s%s", stageId(1:12), targetExt));
+ cleanupStage = onCleanup(@() localDeleteIfExists(stagePath)); %#ok<NASGU>
+ 
+ localCopyWithRetry(tmpPath, stagePath, "StagingCopyFailed");
+-localValidatePublishedBytes(stagePath, tmpPath, 4);
++localValidatePublishedBytes(stagePath, sourceBytes, sourceHash, 4);
+ localCopyWithRetry(stagePath, filePath, "FinalCopyFailed");
+-localValidatePublishedBytes(filePath, tmpPath, 8);
++localValidatePublishedBytes(filePath, sourceBytes, sourceHash, 8);
+ end
+ 
+-function localValidatePublishedBytes(publishedPath, sourcePath, maxAttempts)
++function localValidatePublishedBytes(publishedPath, sourceBytes, sourceHash, maxAttempts)
+ % HDF5 in MATLAB R2026a on Windows cannot reopen some valid v7.3 files
+ % through absolute paths beyond MAX_PATH.  Validate the bytes that are
+ % actually readable from the published destination by round-tripping them
+-% to a short local path, then reopening that local copy.  Size and SHA-256
+-% checks prevent a partial or different destination from being accepted.
+-sourceInfo = dir(sourcePath);
+-if isempty(sourceInfo)
+-    error("sixgr:util:matSave:MissingValidatedSource", ...
+-        "Validated MAT source '%s' disappeared before publication.", sourcePath);
+-end
+-sourceHash = string(sixgr.util.sha256File(sourcePath));
++% to a short local path. Size and SHA-256 prove byte identity with the
++% already inventoried source; repeating its expensive MAT inventory adds
++% no new payload validation. Both staging and final readbacks remain mandatory.
+ verifyPath = char(string(tempname()) + ".mat");
+ cleanupVerify = onCleanup(@() localDeleteIfExists(verifyPath)); %#ok<NASGU>
+ lastME = [];
+@@ -143,10 +148,10 @@ for attempt = 1:max(1, round(double(maxAttempts)))
+         localDeleteIfExists(verifyPath);
+         localCopyWithRetry(publishedPath, verifyPath, "VerificationReadbackFailed");
+         verifyInfo = dir(verifyPath);
+-        if isempty(verifyInfo) || double(verifyInfo.bytes) ~= double(sourceInfo.bytes)
++        if isempty(verifyInfo) || double(verifyInfo.bytes) ~= sourceBytes
+             error("sixgr:util:matSave:PublishedSizeMismatch", ...
+                 "Published MAT '%s' read back %g byte(s); expected %g.", ...
+-                publishedPath, localFileBytes(verifyInfo), double(sourceInfo.bytes));
++                publishedPath, localFileBytes(verifyInfo), sourceBytes);
+         end
+         verifyHash = string(sixgr.util.sha256File(verifyPath));
+         if verifyHash ~= sourceHash
+@@ -154,7 +159,6 @@ for attempt = 1:max(1, round(double(maxAttempts)))
+                 "Published MAT '%s' differs from the validated serialized payload.", ...
+                 publishedPath);
+         end
+-        localValidateSavedPayload(verifyPath, 1);
+         return;
+     catch ME
+         lastME = ME;

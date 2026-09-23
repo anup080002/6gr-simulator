@@ -527,7 +527,7 @@ if ~logical(noiseStatus.IsValid)
     [rx, info] = localBuildUnavailableNoiseVarianceRx( ...
         trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
-        nVar, noiseStatus, logical(opt.CompactOutput));
+        nVar, noiseStatus, logical(opt.CompactOutput), chEstDMRSInd, chEstDMRSSym);
     rx.ReceiveTiming = receiveTiming;
     rx.DMRSEPREDifference = dmrsPowerInfo;
     rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
@@ -1218,7 +1218,7 @@ rx.LLRCSIWeightRawMedian = double(llrCSIInfo.RawCSIMedian);
 rx.LLRCSIWeightMedianBeforeNormalization = double(llrCSIInfo.WeightMedianBeforeNormalization);
 rx.LLRCSIWeightNormalizationScale = double(llrCSIInfo.NormalizationScale);
 rx.LLRNoiseVariance = double(nVarForDecode);
-rx.LLRNoiseVarianceDomain = "unit_constellation_soft_demapper_input";
+rx.LLRNoiseVarianceDomain = string(nVarDecodeInfo.Domain);
 rx.LLRNoiseVarianceSource = char(string(sixgr.util.structGet( ...
     nVarDecodeInfo, "Source", "pusch_soft_demapper")));
 rx.DecoderNoiseVarianceConfiguredMode = char(string(sixgr.util.structGet( ...
@@ -1264,7 +1264,10 @@ rx.PTRSReceiverEvidenceSource = "sixgr.phy.ul.PUSCH_Rx.ptrs_cpe";
 rx.RecLLR = recLLR;
 rx.RateRecoveredLLR = recLLR;
 rx.RateRecoverInfo = rateRecoverInfo;
-rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, dmrsInfo, ...
+% Count the DM-RS references actually used by channel estimation separately
+% from their precoded antenna-grid footprint. A rank-one codebook PUSCH
+% can span four physical ports without containing four DM-RS layer ports.
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, chEstDMRSInd, dmrsInd, chEstDMRSSym, dmrsInfo, ...
     cwLLRForULSCH, recLLR, recLLRBatch, rateRecoverInfo, actIter, parity, cbCrcErr, alg, useMexLDPC, crcErr);
 if hasPHYGrant
     rx.PHYGrant = phyGrant;
@@ -1376,10 +1379,14 @@ rx.PUSCHRole="native_geometry_only_not_transport_modulation";
 rx.StandardNR=false; info.StandardNR=false;
 rx.ExecutionBackend="experimental_Qm_production_PUSCH_receiver";
 info.ExecutionBackend=rx.ExecutionBackend;
-for name=["LLRScaleSource","DemapperNoiseVarianceConvention","LLRNoiseVarianceSource"]
+for name=["LLRScaleSource","DemapperNoiseVarianceConvention","LLRNoiseVarianceSource","LLRNoiseVarianceDomain"]
     if isfield(rx,name)
         rx.(name)=replace(string(rx.(name)),"nrPUSCHDecode","experimental_explicit_Qm_demapper");
     end
+end
+if isfield(info,'DecoderNoiseVariance') && isfield(info.DecoderNoiseVariance,'Domain')
+    info.DecoderNoiseVariance.Domain=replace(string(info.DecoderNoiseVariance.Domain), ...
+        "nrPUSCHDecode","experimental_explicit_Qm_demapper");
 end
 if isfield(info,'LLRScaling')
     for name=["Source","NoiseVarianceConvention","Reason"]
@@ -3921,7 +3928,7 @@ end
 function [rx, info] = localBuildUnavailableNoiseVarianceRx( ...
         trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
-        nVar, noiseStatus, compactOutput)
+        nVar, noiseStatus, compactOutput, chEstDMRSInd, chEstDMRSSym)
 rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.TransportBlock = int8([]);
@@ -4001,7 +4008,7 @@ rx.DemapperLLRCount = 0;
 rx.ULSCHDemapperLLRCount = 0;
 rx.RateRecoveredLLRCount = 0;
 rx.PUSCHRxSymbolsForEvidence = complex([]);
-rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, dmrsInd, dmrsInd, dmrsSym, struct(), ...
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, chEstDMRSInd, dmrsInd, chEstDMRSSym, struct(), ...
     [], [], [], struct(), [], [], [], "", false);
 strictEvidence = sixgr.phy.ul.validatePUSCHReceiverEvidence(rx, "StrictMode", logical(noiseStatus.StrictFailure));
 rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);

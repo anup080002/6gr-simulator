@@ -288,6 +288,8 @@ adaptiveCfg.pdsch.mcs_index = 20;
 adaptiveCfg.pdsch.modulation = "256QAM";
 adaptiveCfg.pusch.mcs_index = 20;
 adaptiveCfg.pusch.modulation = "256QAM";
+adaptiveCfg.phy.pdsch = struct('nLayers',2,'maxLayers',2);
+adaptiveCfg.phy.pusch = struct('numLayers',2,'maxLayers',2);
 adaptiveTrials = struct("DL", localAdaptiveTrialTable("DL"), ...
     "UL", localAdaptiveTrialTable("UL"));
 sixgr.analytics.writeRFInterferenceReconciliation(adaptiveCfg, tmp, ...
@@ -301,6 +303,59 @@ assert(localAsLogical(mimo.DLExecutionPolicyOk(1)) && ...
     localAsLogical(mimo.ULExecutionPolicyOk(1)) && ...
     localAsLogical(mimo.MimoKpiReconciliationOk(1)), ...
     "Causally evidenced adaptive decisions must pass the separate execution-policy contract.");
+
+% Bootstrap rank one is not an adaptive ceiling. These are explicitly
+% declared audit fixtures, not new physical or antenna-pattern evidence.
+rankCfg=adaptiveCfg;
+rankCfg.mimo.max_dl_layers=1; rankCfg.mimo.max_ul_layers=1;
+rankCfg.phy.pdsch.nLayers=1; rankCfg.phy.pusch.numLayers=1;
+rankCfg.scenario.bs.nTxAnt=4; rankCfg.scenario.bs.nRxAnt=4;
+rankCfg.channel.sharedIdentityAWGNEnabled=true;
+rankTrials=adaptiveTrials;
+for direction=["DL","UL"]
+    t=rankTrials.(direction); n=height(t);
+    for name=["Rank","Layers","ScheduledRank","ScheduledLayers","TransmittedRank","TransmittedLayers"]
+        t.(name)=repmat([1;2],n/2,1);
+    end
+    for name=["ConfiguredTxAntennas","ConfiguredRxAntennas","PhysicalTxAntennas", ...
+            "PhysicalRxAntennas","TxWaveformColumns","RxWaveformBranches", ...
+            "NumTxPorts","NumRxAntennas","NumLogicalTxPorts","NumLogicalRxBranches"]
+        t.(name)=repmat(4,n,1);
+    end
+    t.ChannelModelApplied=repmat("AWGN",n,1);
+    t.ChannelArrayModel=repmat("awgn_no_array_channel",n,1);
+    t.ChannelObjectSource=repmat("sixgr.channel.IdentityAWGNRuntime.materialize",n,1);
+    t.ChannelObjectClass=repmat("explicit_identity_sample_operator",n,1);
+    t.ChannelArrayHandlingStatus=repmat("awgn_identity_spatial_dimensions_no_array_kernel",n,1);
+    t.ElementPatternChannelApplicability=repmat("not_applicable_awgn_identity_channel",n,1);
+    t.ChannelUsesSameRuntimeAntennaAssumptions(:)=false;
+    t.TransmitElementPatternApplied=false(n,1); t.ReceiveElementPatternApplied=false(n,1);
+    rankTrials.(direction)=t;
+end
+for variant=["valid","wrong_grant","above_capability","missing_ports","false_pattern","fading"]
+    candidate=rankTrials;
+    switch variant
+        case "wrong_grant", candidate.DL.ScheduledLayers(2)=1;
+        case "above_capability"
+            for name=["Rank","Layers","ScheduledRank","ScheduledLayers","TransmittedRank","TransmittedLayers"]
+                candidate.DL.(name)(2)=3;
+            end
+        case "missing_ports", candidate.DL.NumLogicalTxPorts(2)=NaN;
+        case "false_pattern", candidate.DL.TransmitElementPatternApplied(2)=true;
+        case "fading", candidate.DL.ChannelModel(2)="CDL-D";
+    end
+    a=sixgr.analytics.writeRFInterferenceReconciliation(rankCfg, ...
+        fullfile(tmp,"adaptive_identity_"+variant),candidate,mobilityArtifacts,struct());
+    m=a.Tables.MIMO;
+    assert(logical(m.MimoKpiReconciliationOk)==(variant=="valid"), ...
+        'Adaptive identity-AWGN evidence classification failed: %s.',variant);
+    assert(~m.DLConfiguredEffectiveExactOk && ~m.ULConfiguredEffectiveExactOk, ...
+        'Adaptive rank changes must never become exact bootstrap matches.');
+    if variant=="valid"
+        assert(m.DL_RankExactFraction==0.5 && m.UL_RankExactFraction==0.5);
+        assert(m.DL_RuntimeArrayEvaluationStatus=="explicit_awgn_identity_spatial_operator");
+    end
+end
 
 report = sixgr.analytics.buildPhase7ReadinessArtifacts(cfg, tmp);
 assert(isfield(report, "Gates"), "Phase 7 report must expose gates.");
@@ -334,6 +389,12 @@ T.CSIReportId = "csi-report-" + string((1:n).');
 T.WidebandCQI = repmat(8, n, 1);
 T.CQIDerivedMCS = ones(n, 1);
 T.MCSValueStatus = repmat("measured_feedback_adapted", n, 1);
+T.Layers=T.Rank;
+T.ScheduledRank=T.Rank; T.ScheduledLayers=T.Rank;
+T.TransmittedRank=T.Rank; T.TransmittedLayers=T.Rank;
+T.NumTxPorts=T.PhysicalTxAntennas; T.NumRxAntennas=T.PhysicalRxAntennas;
+T.NumLogicalTxPorts=T.PhysicalTxAntennas;
+T.NumLogicalRxBranches=T.PhysicalRxAntennas;
 end
 
 function cfg = localScenarioConfig()

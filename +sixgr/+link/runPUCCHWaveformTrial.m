@@ -134,6 +134,8 @@ end
 % independently scheduled gNB hypothesis: valid differences must remain
 % observable decode failures in missing-DCI/absent-producer tests.
 sixgr.phy.pucch.validateTransmitUCILayout(tx.Report,tx.Serialization);
+trial.PUCCHTransmissionPrepared = true;
+trial.ReceiverOnlyAssignment = false;
 
 cfgRuntime = localRuntimeConfig(cfg,carrier,opt);
 if prepareOnly
@@ -204,14 +206,10 @@ try
         rx = sixgr.phy.pucch.PUCCHReceiver.receive( ...
             rxWaveform,carrier,opt.Assignment,context,rxArgs{:});
     end
-    trial.EstimatedTimingOffsetSamples=rx.ReceiveTiming.TimingOffsetSamples;
-    trial.AppliedTimingCorrectionSamples=rx.ReceiveTiming.AppliedTimingCorrectionSamples;
-    trial.TimingEstimateSource=rx.ReceiveTiming.TimingSource;
-    % Prior pilot prediction is not a fresh measurement. A measured zero
-    % correction is nevertheless a current estimate actually used by RX.
-    trial.TimingEstimateUsed=isfinite(rx.ReceiveTiming.TimingOffsetSamples) && ...
-        string(rx.ReceiveTiming.TimingSource)=="received_reference_correlation_bounded_search" && ...
-        ~rx.ReceiveTiming.OracleTimingUsed;
+    stageEvidence=sixgr.link.pucchReceiverStageEvidence(rx,receiverAssignment);
+    for field=string(fieldnames(stageEvidence)).'
+        trial.(field)=stageEvidence.(field);
+    end
 catch ME
     if received, rethrow(ME); end
     trial.ReceiverDecodeFailed = true;
@@ -507,15 +505,8 @@ if ~opt.SignalPresent
 end
 trial.ResourceExtractionAttempted = true;
 trial.ResourceExtractionAvailable = true;
-trial.ChannelEstimateAttempted = ~isempty(tx.DMRS.Indices) && ...
-    upper(string(channelMeta.Profile)) ~= "AWGN";
-trial.ChannelEstimateAvailable = ~trial.ChannelEstimateAttempted || ...
-    ~isempty(rx.ChannelEstimate);
-trial.ChannelEstimateSource = localChannelEstimateSource( ...
-    channelMeta.Profile,trial.ChannelEstimateAttempted,receiverAssignment.Format);
-trial.EqualizationAttempted = trial.ChannelEstimateAttempted;
-trial.EqualizationAvailable = ~trial.EqualizationAttempted || ...
-    ~isempty(rx.ChannelEstimate);
+% Stage flags above come from the executed canonical receiver, including
+% DM-RS estimation/MMSE on AWGN. Propagation policy cannot replace them.
 trial.PUCCHControlSINR_dB = rx.MeasuredSINR_dB;
 trial.PUCCHReceiverEvidenceSource = ...
     "canonical_typed_pucch_waveform_receiver";
@@ -561,18 +552,6 @@ trial = struct( ...
     "ExecutionBackend","waveform_truth", ...
     "ApproximationMode","none","EvidenceClass","waveform_truth", ...
     "Receiver",struct(),"Transmitter",struct(),"Channel",struct());
-end
-
-function value = localChannelEstimateSource(profile,attempted,format)
-if attempted
-    value = "pucch_dmrs_per_resource_nrChannelEstimate";
-elseif double(format) == 0 && upper(string(profile)) ~= "AWGN"
-    value = "not_applicable_format0_noncoherent_sequence_detection";
-elseif upper(string(profile)) == "AWGN"
-    value = "explicit_awgn_unit_channel";
-else
-    value = "not_attempted";
-end
 end
 
 function cfgRuntime = localRuntimeConfig(cfg,carrier,opt)

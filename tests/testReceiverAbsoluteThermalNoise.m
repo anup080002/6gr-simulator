@@ -46,6 +46,20 @@ for direction=["DL","UL"]
     assert(replay.ThermalSampleNoiseBandwidth_Hz==7.68e6);
     assert(replay.ThermalSampleNoiseVariance_mW==sixgr.link.resolveReceiverThermalNoiseVariance(replay));
     assert(string(replay.AppliedAWGNSNRValueRole)=="link_budget_prediction_not_measured_SINR_or_noise_control");
+    % Verify the actual shared receiver in explicitly thermal-noise mode.
+    owner=sixgr.truth.SharedWaveformPhysicalRuntime(7.68e6,0,1);
+    owner.addTransmitter('silent',cfg,direction,2,false);
+    owner.addReceiver('receiver',cfg,direction,2,false);
+    input=struct('ID',"silent",'Chunk',sixgr.phy.waveform.WaveformChunk( ...
+        complex(zeros(n,2)),0));
+    [physical,execution]=owner.process(input,0,n,[]);
+    applied=execution.RX.Replay;
+    assert(isnan(applied.AppliedAWGNSNR_dB) && ...
+        applied.AppliedAWGNSNRSource=="not_applicable_thermal_noise", ...
+        'Thermal noise must not acquire a fictitious fixed-AWGN SNR.');
+    assert(applied.InjectedNoiseVariance==replay.ThermalSampleNoiseVariance_mW);
+    samples=physical(string({physical.ID})=="receiver:pre_rf").Chunk.Samples;
+    assert(all(abs(mean(abs(samples).^2,1)/applied.InjectedNoiseVariance-1)<.025));
 end
 ok=true;
 disp('RECEIVER_ABSOLUTE_THERMAL_NOISE_PASS: PSD*Fs, no serving-RSRP/fading/port-count scaling.');

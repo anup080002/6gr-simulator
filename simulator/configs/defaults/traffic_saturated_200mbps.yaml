@@ -1,0 +1,29 @@
+# Explicit finite offered load: 100 Mbps DL and 100 Mbps UL per configured
+# flow owner. For the 5 MHz/25-PRB/rank-2/64QAM scenario each direction
+# exceeds even the no-overhead, rate-one bound (50.4 Mbps). This maintains
+# backlog without changing PHY power, noise, HARQ or control resources.
+traffic:
+  model: full_buffer
+  transport: UDP
+  flowDirection: BIDIR
+  dlRatio: 0.5
+  ulRatio: 0.5
+  targetRate_Mbps: 200
+  fullBufferBitsPerTTI: 200000
+  jitterPct: 0
+  flows:
+    - name: saturated_bidirectional_flow
+      qfi: 9
+      fiveQi: 9
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 20
+      packetSize_bytes: 512
+      packetInterval_ms: 1
+      rate_Mbps: 200
+      weight: 1
+      jitterPct: 0
+      burstiness: saturation
+      service_profile: eMBB
+      ue_class: UE_CLASS_EMBB
+      ue_count: 1

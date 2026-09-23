@@ -304,26 +304,16 @@ ollaDetail = struct( ...
     "BaseRequiredSINR_dB", NaN, ...
     "TargetRequiredSINR_dB", NaN, ...
     "ThresholdSource", "");
-if string(adaptationDomain) == "legacy_mcs"
-    dynamicMCS = double(cqiBasedMCS) + double(adaptationState.DeltaMCS) + double(adaptationState.StaticDeltaMCS);
-    selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
-    mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
-    if selectedMCS > maxMCS
-        selectedMCS = maxMCS;
-        adaptationState.DeltaMCS = double(maxMCS) - double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
-    elseif selectedMCS < 0
-        selectedMCS = 0;
-        adaptationState.DeltaMCS = -double(cqiBasedMCS) - double(adaptationState.StaticDeltaMCS);
-    end
-else
-    [ollaAdjustedMCSBeforeCQICeiling, ollaDetail] = sixgr.link.applyOLLADeltaDbToMCSIndex( ...
-        double(cqiBasedMCS), double(adaptationState.DeltaMCS), mcsTable, cqiTable, direction, ...
-        "Config", cfg);
-    dynamicMCS = double(ollaAdjustedMCSBeforeCQICeiling) + double(adaptationState.StaticDeltaMCS);
-    selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
-    mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
-    selectedMCS = max(0, min(double(maxMCS), double(selectedMCS)));
-end
+% Inner-loop smoothing may use the legacy MCS domain, but the shared HARQ
+% outer-loop state always carries dB. Never add it to an ordinal MCS index
+% or overwrite it using MCS bounds.
+[ollaAdjustedMCSBeforeCQICeiling, ollaDetail] = sixgr.link.applyOLLADeltaDbToMCSIndex( ...
+    double(cqiBasedMCS), double(adaptationState.DeltaMCS), mcsTable, cqiTable, direction, ...
+    "Config", cfg);
+dynamicMCS = double(ollaAdjustedMCSBeforeCQICeiling) + double(adaptationState.StaticDeltaMCS);
+selectedMCS = floor(min(double(dynamicMCS), double(cqiCeilingMCS)));
+mcsClampedToCQI = isfinite(cqiCeilingMCS) && floor(double(dynamicMCS)) > floor(double(cqiCeilingMCS));
+selectedMCS = max(0, min(double(maxMCS), double(selectedMCS)));
 profile = sixgr.link.resolveMCSProfile(mcsTable, selectedMCS);
 if ~logical(sixgr.util.structGet(profile, "Valid", false))
     decision.Reason = "invalid_mcs_profile";
@@ -348,15 +338,10 @@ decision.OLLAUpdateAppliedAtThisEvent = logical(ollaFeedbackEligible) && ...
     double(ollaCountAfter) == double(ollaCountBefore) + 1;
 decision.OLLAFeedbackEligible = logical(ollaFeedbackEligible);
 decision.OLLAFeedbackExclusionReason = char(ollaFeedbackExclusionReason);
-if string(adaptationDomain) == "legacy_mcs"
-    decision.OLLAOffsetMCS = double(adaptationState.DeltaMCS);
-    decision.OLLAMCSBoundMin = double(adaptationState.DeltaMCSMin);
-    decision.OLLAMCSBoundMax = double(adaptationState.DeltaMCSMax);
-else
-    decision.OLLAOffsetMCS = NaN;
-    decision.OLLAMCSBoundMin = NaN;
-    decision.OLLAMCSBoundMax = NaN;
-end
+% Retired index-domain fields must not relabel the dB state.
+decision.OLLAOffsetMCS = NaN;
+decision.OLLAMCSBoundMin = NaN;
+decision.OLLAMCSBoundMax = NaN;
 decision.StaticDeltaMCS = double(adaptationState.StaticDeltaMCS);
 decision.Modulation = char(string(profile.Modulation));
 decision.TargetCodeRate = double(profile.TargetCodeRate);
@@ -365,11 +350,7 @@ if mcsClampedToCQI
     decision.MCSValueStatus = "clamped_to_cqi_max";
 elseif adaptationState.OuterLoopEnabled && isfinite(double(adaptationState.DeltaMCS)) && ...
         abs(double(adaptationState.DeltaMCS)) > 0
-    if string(adaptationDomain) == "legacy_mcs"
-        decision.MCSValueStatus = "measured_cqi_mapped_olla_adjusted";
-    else
-        decision.MCSValueStatus = "measured_cqi_mapped_olla_db_margin_adjusted";
-    end
+    decision.MCSValueStatus = "measured_cqi_mapped_olla_db_margin_adjusted";
 else
     decision.MCSValueStatus = "measured_cqi_mapped";
 end
@@ -1067,7 +1048,7 @@ switch string(adaptationDomain)
     case "bler_margin"
         domain = "bler_margin_proxy_delta_db";
     case "legacy_mcs"
-        domain = "delta_mcs";
+        domain = "delta_db_required_sinr_margin";
     otherwise
         domain = "delta_db_required_sinr_margin";
 end

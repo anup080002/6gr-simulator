@@ -22,8 +22,13 @@ classdef BroadcastResultDelivery
                 values=trial.(name);
                 if ~isnumeric(values)||~isreal(values)||size(values,2)~=1|| ...
                         any(~isfinite(values))||any(values~=values(1))
+                    cause="";
+                    if ismember('FailureReason',trial.Properties.VariableNames)
+                        cause=strjoin(unique(string(trial.FailureReason))," | ");
+                    end
                     error("sixgr:truth:InvalidBroadcastObservationClock", ...
-                        "Every candidate must belong to the same finite received broadcast window.");
+                        "Every candidate must belong to the same finite received broadcast window. Invalid field=%s; receiver/row failure=%s", ...
+                        name,cause);
                 end
             end
             first=double(trial.ObservationStartSample(1));

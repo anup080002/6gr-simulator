@@ -166,6 +166,8 @@ cfg.scenario.bs.nRxAnt = 1;
 cfg.scenario.ue.nTxAnt = 1;
 cfg.scenario.ue.nRxAnt = 1;
 cfg.phy.carrier.NSizeGrid = 12;
+% This is a data/OFDM component fixture, not an initial-access carrier.
+cfg.phy.ssb.enable = false;
 cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.rx.useIdealTimingSync = true;
 cfg.phy.channelEstimation.method = "LS";

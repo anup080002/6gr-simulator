@@ -70,3 +70,48 @@ def test_full_bwp_budget_is_not_actual_emitted_power():
     assert audit_rows([row])["passed"]
     del row["FullBWPActivityFactor"]
     assert not audit_rows([row])["passed"]
+
+
+def normalized_fixture():
+    row = fixture()
+    for field in ("AppliedTxPower_dBm", "MeasuredTxPowerBeforeRF_dBm", "ReferenceOutputPower_dBm",
+                  "ExpectedEmittedPower_mW", "NoiseVariancePreFrontEnd_mW"):
+        row[field] = "NaN"
+    row.update(NoiseOperatingMode="standalone_awgn_snr_argument", NoiseApplied="1",
+               PhysicalDevicePowerClaim="0", PowerNormalizationPolicy="unit_occupied_re_fixed_esn0",
+               AppliedTxPowerValueRole="normalized_waveform_power_not_physical_dbm",
+               AppliedTxPower_dB_re_UnitOccupiedRE_Es="-30", MeasuredTxPowerBeforeRF_dB_re_UnitOccupiedRE_Es="-30",
+               ReferenceOutputPower_dB_re_UnitOccupiedRE_Es="-30", ExpectedWaveformPower_re_UnitOccupiedRE_Es="0.001",
+               RequestedAWGNReferenceSNR_dB="20", ReferenceAWGNGridNoiseVariance="0.0025",
+               ReferenceAWGNSampleNoiseVariance="0.0000048828125", SampleToGridNoiseVarianceGain="512",
+               NoiseVariancePreFrontEnd_re_UnitOccupiedRE_Es="0.0000048828125",
+               NoiseVarianceSource="fixed_configured_occupied_re_esn0_canonical_ofdm_transform",
+               SharedNoiseCalibrationSource="fixed_once_from_configured_occupied_re_energy_and_canonical_ofdm_noise_transform")
+    return row
+
+
+def test_normalized_awgn_requires_independent_config_not_dbm_or_thermal_labels():
+    row = normalized_fixture()
+    reference = dict(snr_db=20, awgn_reference_re_energy=0.25)
+    assert audit_rows([row], awgn_reference=reference)["passed"]
+    for invalid in (None, {}, dict(snr_db=19, awgn_reference_re_energy=0.25),
+                    dict(snr_db=20, awgn_reference_re_energy=1)):
+        assert not audit_rows([row], awgn_reference=invalid)["passed"]
+
+
+@pytest.mark.parametrize("field,value", [
+    ("PhysicalDevicePowerClaim", "1"), ("AppliedTxPower_dBm", "-30"),
+    ("PowerNormalizationPolicy", "active_ofdm_total_power"),
+    ("AppliedTxPowerValueRole", "physical_dbm"),
+    ("MeasuredTxPowerBeforeRF_dB_re_UnitOccupiedRE_Es", "-29"),
+    ("ExpectedWaveformPower_re_UnitOccupiedRE_Es", "0.002"),
+    ("TxPowerClosureError_dB", "1"), ("NoiseApplied", "0"),
+    ("RequestedAWGNReferenceSNR_dB", "0"), ("ReferenceAWGNGridNoiseVariance", "0.25"),
+    ("ReferenceAWGNSampleNoiseVariance", "0.0001"), ("SampleToGridNoiseVarianceGain", "1024"),
+    ("NoiseVariancePreFrontEnd_re_UnitOccupiedRE_Es", "0.001"),
+    ("NoiseVarianceSource", "instantaneous_waveform_power"),
+    ("SharedNoiseCalibrationSource", "receiver_estimated_noise")])
+def test_normalized_awgn_corruption_is_not_masked(field, value):
+    row = normalized_fixture()
+    row[field] = value
+    assert not audit_rows([row], awgn_reference=dict(snr_db=20, awgn_reference_re_energy=0.25))["passed"]

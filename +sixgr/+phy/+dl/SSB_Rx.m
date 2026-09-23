@@ -35,6 +35,22 @@ if p.Results.TimingOnly
     return;
 end
 
+% Receiver policy comes from the resolved YAML/core catalog, never from
+% configured SNR, transmitted cell identity, or a successful PBCH CRC.
+detector=sixgr.util.structGet(cfg,'phy.synchronization',struct());
+required={'ssbDetectorTargetFalseAlarmProbability', ...
+    'pssDetectionThreshold','sssHypothesisTestThreshold'};
+if ~all(isfield(detector,required))
+    error('sixgr:phy:sync:MissingSSBDetectionPolicy', ...
+        'SSB reception requires the catalog-backed synchronization detector policy.');
+end
+alpha=double(detector.ssbDetectorTargetFalseAlarmProbability);
+validateattributes(alpha,{'numeric'},{'real','scalar','finite','>',0,'<',1});
+validateattributes(detector.pssDetectionThreshold,{'numeric'}, ...
+    {'real','scalar','finite','nonnegative'});
+validateattributes(detector.sssHypothesisTestThreshold,{'numeric'}, ...
+    {'real','scalar','finite','nonnegative'});
+
 fs = p.Results.SampleRate_Hz;
 if isempty(fs)
     fs = sixgr.util.structGet(cfg,'phy.sampleRate_Hz',[]);
@@ -69,6 +85,15 @@ catch ME
         'PSS/NID2 frequency search failed without transmitter-cell-ID oracle: %s', ME.message);
 end
 NID2 = mod(double(NID2),3);
+pssDecision=sixgr.phy.sync.normalizedCorrelationDecision( ...
+    finfo.Metric,finfo.MinimumReferenceLengthSamples, ...
+    finfo.DetectionHypothesisCount,size(rxWaveform,2),alpha, ...
+    double(detector.pssDetectionThreshold));
+if ~pssDecision.Detected
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'PSS correlation %.9g did not exceed receiver threshold %.9g (%d hypotheses).', ...
+        pssDecision.NormalizedMetric,pssDecision.Threshold,pssDecision.HypothesisCount);
+end
 
 % The blind PSS/NID2 search already evaluates every canonical SS/PBCH
 % candidate window.  Reuse its winning correlation lag as the timing
@@ -169,6 +194,21 @@ catch ME
     error('sixgr:phy:ia:SSBNotDetected', ...
         'SSS physical-cell-ID search failed: %s', ME.message);
 end
+% The SSS window/PCI family was selected by the preceding PSS search.
+% Include that full family in the nominal bound, not only the final 336
+% SSS sequences. The legacy SSS metric is a SUM over branches; normalize
+% it before testing, while preserving the original metric in debug output.
+sssDecision=sixgr.phy.sync.normalizedCorrelationDecision( ...
+    sssInfo.Metric/sssInfo.NumberReceiveAntennas,numel(nrSSSIndices), ...
+    sssInfo.SearchSpaceSize*finfo.DetectionHypothesisCount, ...
+    sssInfo.NumberReceiveAntennas,alpha, ...
+    double(detector.sssHypothesisTestThreshold)/sssInfo.NumberReceiveAntennas);
+sssDecision.ContinuousFineCFOQualificationRequired=logical(finfo.FineCFO.Enabled);
+if ~sssDecision.Detected
+    error('sixgr:phy:ia:SSBNotDetected', ...
+        'SSS normalized correlation %.9g did not exceed receiver threshold %.9g (%d hypotheses).', ...
+        sssDecision.NormalizedMetric,sssDecision.Threshold,sssDecision.HypothesisCount);
+end
 
 sync = struct();
 sync.SampleRate_Hz = fs;
@@ -192,17 +232,15 @@ sync.NCellID = double(NCellID);
 sync.NCellIDSource = 'blind_pss_sss_correlation';
 sync.ConfiguredCellIDUsed = false;
 sync.UsedConfiguredCellID = false;
-% These are stage outcomes, not values inferred later by a report.  This
-% function only reaches the sync construction after the blind PSS search
-% returned a finite timing/NID2 hypothesis and the exhaustive SSS search
-% returned a valid NID1/physical-cell-ID hypothesis.  Preserve those two
-% receiver decisions explicitly so downstream initial-access tables do not
-% have to guess success from PBCH CRC or from nonzero correlation metrics.
-sync.PSSDetected = true;
+% A finite argmax is a candidate, not a detection. These flags now require
+% explicit receiver thresholds, independently of subsequent PBCH decoding.
+sync.PSSDetected = pssDecision.Detected;
 sync.PSSDetectionSource = 'blind_pss_candidate_window_correlation';
-sync.SSSDetected = true;
+sync.SSSDetected = sssDecision.Detected;
 sync.SSSDetectionSource = 'blind_sss_336_hypothesis_correlation';
 sync.NCellIDRecovered = true;
+sync.PSSDetectionDecision=pssDecision;
+sync.SSSDetectionDecision=sssDecision;
 
 % Attach debug info
 sync.FreqInfo = finfo;

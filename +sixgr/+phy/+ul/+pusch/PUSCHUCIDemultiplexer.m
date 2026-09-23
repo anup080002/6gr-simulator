@@ -103,7 +103,7 @@ classdef PUSCHUCIDemultiplexer
                     'Runtime CSI decoding requires its active immutable report configuration.');
                 assert(reportConfig.UCIChannel=="PUSCH", ...
                     'sixgr:pusch:CSITransportLayoutMismatch', ...
-                    'PUSCH demultiplexing requires the PUSCH CSI layout, not unchanged PUCCH report bits.');
+                    'PUSCH demultiplexing requires a PUSCH receive binding while retaining the configured CSI reporting format.');
                 p.OCSI1=reportConfig.part1BitCount();
                 modulation=string(pusch.Modulation);
                 if ~isscalar(modulation), modulation=modulation(owner+1); end

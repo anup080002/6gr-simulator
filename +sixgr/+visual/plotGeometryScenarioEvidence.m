@@ -245,17 +245,9 @@ fig = localNewFigure();
 cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
 ax = axes(fig);
 hold(ax, "on");
-dirs = unique(upper(localColumnText(sinrT, "Direction", strings(height(sinrT), 1))), "stable");
-dirs = dirs(strlength(dirs) > 0);
-if isempty(dirs)
+if localPlotByDirection(sinrT, "CanonicalSlot", "MeasuredSINR_dB") == 0
     reason = "measured_sinr_direction_missing";
     return;
-end
-for i = 1:numel(dirs)
-    mask = upper(localColumnText(sinrT, "Direction", strings(height(sinrT), 1))) == dirs(i);
-    slice = sortrows(sinrT(mask, :), "CanonicalSlot");
-    plot(ax, double(slice.CanonicalSlot), double(slice.MeasuredSINR_dB), localDirectionStyle(dirs(i)), ...
-        "LineWidth", 1.2, "MarkerSize", 5, "DisplayName", dirs(i));
 end
 title(ax, "Measured SINR vs Slot");
 xlabel(ax, "Canonical Slot");
@@ -382,20 +374,20 @@ for i = 1:numel(ueVals)
 end
 end
 
-function localPlotByDirection(T, xField, yField)
-dirs = unique(upper(localColumnText(T, "Direction", strings(height(T), 1))), "stable");
-dirs = dirs(strlength(dirs) > 0);
-for i = 1:numel(dirs)
-    mask = upper(localColumnText(T, "Direction", strings(height(T), 1))) == dirs(i);
-    slice = sortrows(T(mask, :), xField);
+function plotted = localPlotByDirection(T, xField, yField)
+groups = sixgr.visual.groupReceiverTimeSeries(T);
+plotted = 0;
+for i = 1:numel(groups)
+    slice = sortrows(T(groups(i).Rows, :), xField);
     x = localFirstAvailableNumeric(slice, xField);
     y = localFirstAvailableNumeric(slice, yField);
     maskFinite = isfinite(x) & isfinite(y);
     if ~any(maskFinite)
         continue;
     end
-    plot(x(maskFinite), y(maskFinite), localDirectionStyle(dirs(i)), ...
-        "LineWidth", 1.1, "MarkerSize", 4, "DisplayName", dirs(i));
+    plot(x(maskFinite), y(maskFinite), localDirectionStyle(groups(i).Direction), ...
+        "LineWidth", 1.1, "MarkerSize", 4, "DisplayName", groups(i).Label);
+    plotted = plotted + 1;
 end
 end
 

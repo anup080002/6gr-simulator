@@ -37,6 +37,7 @@ if isstruct(replay) && isscalar(replay) && ~isempty(fieldnames(replay))
     row.RuntimeChannelStateUsed=logical(sixgr.util.structGet(replay,'RuntimeChannelStateUsed',false));
     row.RuntimeChannelLinkKeys=string(sixgr.util.structGet(replay,'RuntimeChannelLinkKey',""));
     row.AppliedAWGNSNR_dB=double(sixgr.util.structGet(replay,'AppliedAWGNSNR_dB',NaN));
-    row.AppliedAWGNSNRSource=string(sixgr.util.structGet(replay,'NoiseOperatingMode',""));
+    row.AppliedAWGNSNRSource=string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource', ...
+        sixgr.util.structGet(replay,'NoiseOperatingMode',"")));
 end
 end

@@ -504,9 +504,10 @@ muRequested = localBool(cfg, ["mimo.mu_mimo_enable","mimo.mu_mimo_enabled"], fal
 mimoCfg = sixgr.mimo.buildMIMOConfigFromScenario(cfg);
 dlCfg = mimoCfg(upper(string(mimoCfg.Direction)) == "DL", :);
 ulCfg = mimoCfg(upper(string(mimoCfg.Direction)) == "UL", :);
+spatial = sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg, struct('DL',dlT,'UL',ulT));
 
-dl = localMIMODirectionContract(dlT, "DL", cfgDLLayers, cfgBSTx, cfgUERx, maximumMCS, cfg, dlCfg);
-ul = localMIMODirectionContract(ulT, "UL", cfgULLayers, cfgUETx, cfgBSRx, maximumMCS, cfg, ulCfg);
+dl = localMIMODirectionContract(dlT, "DL", cfgDLLayers, cfgBSTx, cfgUERx, maximumMCS, cfg, dlCfg, spatial.RankLayerTrials);
+ul = localMIMODirectionContract(ulT, "UL", cfgULLayers, cfgUETx, cfgBSRx, maximumMCS, cfg, ulCfg, spatial.RankLayerTrials);
 muPairRows = dl.MUPairedRows + ul.MUPairedRows;
 muExecutionOk = ~muRequested || muPairRows > 0;
 observed = dl.ObservedRows > 0 && ul.ObservedRows > 0;
@@ -553,7 +554,7 @@ T = table(cfgDLLayers, cfgULLayers, bootstrapMCS, maximumMCS, ...
     'MimoKpiReconciliationOk','EvidenceSource'});
 end
 
-function out = localMIMODirectionContract(T, direction, configuredLayers, configuredTx, configuredRx, maximumMCS, cfg, cfgRow)
+function out = localMIMODirectionContract(T, direction, configuredLayers, configuredTx, configuredRx, maximumMCS, cfg, cfgRow, rankTrials)
 out = struct( ...
     "ObservedRows", double(localHeight(T)), "RankMean", NaN, "RankMax", NaN, ...
     "RankExactFraction", NaN, "PhysicalAntennaExactFraction", NaN, ...
@@ -625,6 +626,11 @@ elseif scalarAWGNSISOIdentity
     % mandatory.
     out.RuntimeArrayModelOk = true;
     out.RuntimeArrayEvaluationStatus = "explicit_awgn_siso_scalar_identity";
+elseif sixgr.analytics.identityAWGNRuntimeEvidence(T,cfg,configuredTx,configuredRx)
+    % An executed square identity operator has spatial dimensions but no
+    % propagation-array or element-pattern claim. Never label it as one.
+    out.RuntimeArrayModelOk = true;
+    out.RuntimeArrayEvaluationStatus = "explicit_awgn_identity_spatial_operator";
 else
     out.RuntimeArrayModelOk = false;
     out.RuntimeArrayEvaluationStatus = "runtime_array_model_mismatch";
@@ -678,9 +684,18 @@ end
 out.MUPairedRows = double(nnz(isfinite(groupSize) & groupSize >= 2 & muEnabled));
 spatialAndProfileOk = rankExact && out.RuntimeArrayModelOk && out.MCSRangeOk && out.MCSProfileExactOk;
 out.ExactOk = spatialAndProfileOk && out.ConfiguredMCSExactOk && out.ConfiguredModulationExactOk;
+rankPolicyOk = rankExact;
+if out.AdaptiveMode
+    % Reuse the canonical scheduled/transmitted/capability contract. A
+    % bootstrap mismatch is expected under AMC; a grant mismatch is not.
+    selected = rankTrials(upper(string(rankTrials.Direction))==direction,:);
+    rankPolicyOk = height(selected)==height(T) && ...
+        all(logical(selected.SpatialContractMatch));
+end
 operatingPointPolicyOk = (~out.AdaptiveMode && out.ConfiguredMCSExactOk && ...
     out.ConfiguredModulationExactOk) || (out.AdaptiveMode && out.AdaptivePolicyOk);
-out.ExecutionPolicyOk = spatialAndProfileOk && operatingPointPolicyOk;
+out.ExecutionPolicyOk = rankPolicyOk && out.RuntimeArrayModelOk && ...
+    out.MCSRangeOk && out.MCSProfileExactOk && operatingPointPolicyOk;
 end
 
 function tf = localAdaptiveOperatingPointPolicyOk(T, transmittedMCS, transmittedModulation, maximumMCS, adaptiveMode)

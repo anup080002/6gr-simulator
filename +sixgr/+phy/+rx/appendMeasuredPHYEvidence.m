@@ -24,7 +24,7 @@ end
 if nargin < 9
     rateRecoveredBatch = [];
 end
-if nargin < 10 || ~isstruct(rateRecoverInfo)
+if nargin < 10 || ~(isstruct(rateRecoverInfo) || iscell(rateRecoverInfo))
     rateRecoverInfo = struct();
 end
 if nargin < 11
@@ -301,12 +301,16 @@ if ~iscell(raw)
 end
 values = zeros(0, 1);
 for index = 1:numel(raw)
-    if ~isstruct(raw{index})
-        continue;
+    if ~isstruct(raw{index}) || ~isscalar(raw{index})
+        return;
     end
     candidate = double(sixgr.util.structGet(raw{index}, "NrefUsed", NaN));
     if isscalar(candidate) && isfinite(candidate)
         values(end + 1, 1) = candidate; %#ok<AGROW>
+    else
+        % A common per-transmission value requires evidence from every
+        % codeword. Do not silently discard an unavailable codeword.
+        return;
     end
 end
 if ~isempty(values) && numel(unique(values)) == 1

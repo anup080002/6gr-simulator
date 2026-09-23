@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps"))
 from lls_applied_beam import validate_samples, render_surface
 from lls_contract_materializer import _runtime_beam_pattern_chart
+from lls_contract_materializer import _encode_dict_rows
 sys.path.insert(0, str(ROOT / "tools"))
 from lls_csv_semantics import _audit_applied_data_precoder, audit_run
 
@@ -58,6 +59,63 @@ class AppliedBeamTest(unittest.TestCase):
     def test_pmi_only_cannot_be_a_pattern(self):
         with self.assertRaisesRegex(ValueError, "exact executed weights"):
             _runtime_beam_pattern_chart("beam pattern 3d", {}, lambda _: b"PMI\n0\n", 1)
+
+    @staticmethod
+    def outage_sources():
+        # Declared publisher fixture, not a simulated acquisition campaign.
+        return {
+            "reports/csv/run_state.csv": [dict(CanonicalSlotsPerSweepPoint=2,
+                CurrentCanonicalSlot=2, DLGrantRows=0, ULGrantRows=0)],
+            "reports/csv/slot_trace.csv": [dict(CanonicalSlot=k, SweepPointIndex=1,
+                DLGrantCount=0, ULGrantCount=0, DLExecutedGrantCount=0,
+                ULExecutedGrantCount=0, DLTrialRows=0, ULTrialRows=0) for k in (1, 2)],
+            "air_interface/csv/pbch_trials.csv": [dict(CRCPass=0, Crash=0,
+                SSBIdentityVerified=0, SelectedBeamFlag=0)],
+            "air_interface/csv/dl_pdsch_trials.csv": [],
+            "air_interface/csv/ul_pusch_trials.csv": [],
+        }
+
+    @staticmethod
+    def materialize_sources(sources):
+        payloads = {index: _encode_dict_rows(list(rows[0]) if rows else ["CRCPass"], rows)
+                    for index, rows in enumerate(sources.values())}
+        existing = {name: dict(artifact_id=index) for index, name in enumerate(sources)}
+        return _runtime_beam_pattern_chart("beam pattern 3d", existing, payloads.__getitem__, 1)
+
+    def test_recorded_no_grant_outage_does_not_invent_applied_beam(self):
+        result = self.materialize_sources(self.outage_sources())
+        self.assertEqual(result["source_mapping_status"], "unavailable")
+        self.assertEqual(result["source_row_count"], 0)
+        self.assertEqual(result["csv_status"], "unavailable_exact_reason")
+        self.assertNotIn(b"Directivity_dBi", result["csv_bytes"])
+        self.assertIn(b"no data precoder", result["csv_bytes"])
+
+    def test_missing_or_contradictory_outage_evidence_cannot_hide_missing_beam(self):
+        mutations = [
+            lambda s: s.pop("air_interface/csv/ul_pusch_trials.csv"),
+            lambda s: s["air_interface/csv/dl_pdsch_trials.csv"].append(dict(CRCPass=0)),
+            lambda s: s["reports/csv/slot_trace.csv"][0].update(DLGrantCount=1),
+            lambda s: s["reports/csv/slot_trace.csv"][0].update(ULExecutedGrantCount=1),
+            lambda s: s["reports/csv/slot_trace.csv"][0].update(ULTrialRows="NaN"),
+            lambda s: s["reports/csv/slot_trace.csv"][1].update(CanonicalSlot=1),
+            lambda s: s["reports/csv/slot_trace.csv"][1].update(SweepPointIndex=2),
+            lambda s: s["reports/csv/run_state.csv"][0].update(CurrentCanonicalSlot=1),
+            lambda s: s["reports/csv/run_state.csv"][0].update(DLGrantRows=1),
+            lambda s: s["air_interface/csv/pbch_trials.csv"][0].update(CRCPass=1),
+            lambda s: s["air_interface/csv/pbch_trials.csv"][0].update(Crash=1),
+            lambda s: s["air_interface/csv/pbch_trials.csv"].clear(),
+        ]
+        for mutate in mutations:
+            sources = self.outage_sources()
+            mutate(sources)
+            with self.subTest(mutation=mutate), self.assertRaisesRegex(ValueError, "exact executed weights"):
+                self.materialize_sources(sources)
+
+    def test_partial_applied_matrix_still_requires_angular_evidence(self):
+        sources = self.outage_sources()
+        sources["beamforming/csv/applied_data_precoder_weights.csv"] = self.weights
+        with self.assertRaisesRegex(ValueError, "exact executed weights"):
+            self.materialize_sources(sources)
 
     def test_tampered_coefficient_rejected(self):
         rows = copy.deepcopy(self.weights)

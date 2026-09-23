@@ -77,6 +77,10 @@ for direction = ["DL","UL"]
     localRejectUnchanged(state,row,bad,direction,'sixgr:truth:ExecutedHARQSizeMismatch');
     planning = state; planning.RuntimeViewMode="future_ul_grant_planning";
     localRejectUnchanged(planning,row,h,direction,'sixgr:truth:ExecutionFromPlanningView');
+    sweepState = state; sweepState.CurrentSweepPointIndex = 3;
+    staleRow = row; staleRow.SweepPointIndex = 2;
+    localRejectUnchanged(sweepState,staleRow,h,direction, ...
+        'sixgr:truth:ExecutedSweepPointMismatch');
 end
 ok = true;
 disp('PASS testExecutedHARQPayloadAuthority: no fabricated payload or grant, no mutation on rejection.');

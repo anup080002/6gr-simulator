@@ -1,0 +1,30 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_outage_publication_fixture
+  description: Eight-slot negative acquisition case for actual broadcast capture and no-data publication at minus 30 dB.
+  purpose: Exercise the shared physical receiver and output path without interpreting absence of data as decoded data or constellation evidence.
+  research_class: optional_research_experiment
+
+run_control:
+  total_slots: 8
+  warmup_slots: 0
+  measurement_slots: 8
+  total_time_ms: 8
+  warmup_time_ms: 0
+  measurement_time_ms: 8
+
+simulation:
+  snr_db: -30
+  n_frames: 1
+  n_slots: 8
+  n_subframes: 8
+  min_duration_s: 0.008
+
+random_access:
+  num_slots: 8
+  num_subframes: 8
+
+output:
+  profile: lls_tdd_5mhz_outage_publication_fixture

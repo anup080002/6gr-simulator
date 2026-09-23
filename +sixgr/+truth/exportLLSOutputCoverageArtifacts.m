@@ -116,7 +116,7 @@ tables.csi_rs_table = localBuildCSIRSRuntimeOrSummaryTable(src, meta);
 tables.trs_receiver_tracking_table = localBuildRuntimeMirrorTable(src.ReceiverTrackingTrace, meta, ...
     "sixgr.truth.CoupledTruthRuntime.writeTables", "reports/csv/live_receiver_tracking_trace.csv", ...
     "runtime_receiver_tracking_trace_rows", "DL");
-publicTables = sixgr.truth.buildLLSPublicOutputTables(tables, contract, meta);
+publicTables = sixgr.truth.buildLLSPublicOutputTables(tables, contract, meta, src.ReceivedCSIReports);
 publicNames = fieldnames(publicTables);
 for iPublic = 1:numel(publicNames)
     tables.(publicNames{iPublic}) = publicTables.(publicNames{iPublic});
@@ -398,6 +398,7 @@ src.PUCCHTrials = localReadFirstOptionalTable( ...
     fullfile(layout.ControlCSVDir, "pucch_trials.csv"), ...
     fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"));
 src.PUCCHGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_pucch_grants.csv"));
+src.ReceivedCSIReports = localReadOptionalTable(fullfile(layout.ControlCSVDir, "received_csi_reports.csv"));
 src.SRSTrials = localReadFirstOptionalTable( ...
     fullfile(layout.ControlCSVDir, "srs_trials.csv"), ...
     fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
@@ -6931,7 +6932,9 @@ switch string(outputName)
         val = "control/csv/pdcch_trials.csv|control/csv/pbch_trials.csv|control/csv/prach_trials.csv|control/csv/pucch_trials.csv|control/csv/srs_trials.csv|reports/csv/live_receiver_tracking_trace.csv";
     case "csi_rs_runtime_event_table"
         val = "air_interface/csv/csi_rs_trials.csv|reports/csv/live_csirs_stats.csv";
-    case {"csi_report_table", "mcs_cqi_decision_trace_table"}
+    case "csi_report_table"
+        val = "control/csv/received_csi_reports.csv";
+    case "mcs_cqi_decision_trace_table"
         val = "reports/csv/table_cqi_pmi_ri.csv|reports/csv/table_mcs_tbs_evolution.csv";
     case "noise_variance_evidence_table"
         val = "reports/csv/pdsch_runtime_event_table.csv|reports/csv/pusch_runtime_event_table.csv|reports/csv/pucch_uci_table.csv|reports/csv/srs_measurement_table.csv";
@@ -7021,7 +7024,9 @@ switch string(outputName)
             "pucch_uci_table", "srs_measurement_table", "trs_receiver_tracking_public_table", ...
             "csi_rs_runtime_event_table"}
         val = "control_or_reference_runtime_rows_exported";
-    case {"csi_report_table", "mcs_cqi_decision_trace_table"}
+    case "csi_report_table"
+        val = "independent_csi_receiver_records_exported";
+    case "mcs_cqi_decision_trace_table"
         val = "scheduler_feedback_trace_exported";
     case "noise_variance_evidence_table"
         val = "runtime_receiver_public_tables_exported";

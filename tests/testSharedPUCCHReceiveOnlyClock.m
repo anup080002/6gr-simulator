@@ -1,20 +1,27 @@
-function [ok,state]=testSharedPUCCHReceiveOnlyClock(outputRoot,configPath)
+function [ok,state]=testSharedPUCCHReceiveOnlyClock(outputRoot,configPath,sourceSlots)
 % Actual shared DL TX, SRS and absent-PUCCH receiver observation.
 % UE PDCCH/PDSCH reception is deliberately unexecuted: this component does
 % not claim a measured missed-DCI rate or full connected baseline pass.
 if nargin<1, outputRoot=tempname; end
 if nargin<2, configPath='simulator/configs/scenarios/lls_pucch_gnb_receive_only_fixture.yaml'; end
+if nargin<3, sourceSlots=[6 7]; end
+assert(isequal(sourceSlots,[6 7]) || isequal(sourceSlots,[6 7 8]), ...
+    'test:InvalidReceiveOnlySources','Use two or three actual grants before feedback slot 9.');
 assert(~isfolder(outputRoot),'test:EvidenceAlreadyExists','Preserve earlier observations.');
 setup6GRSimToolkit('Verbose',false);
 s=sixgr.lls6g.config.loadScenarioConfig(configPath);
-cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+cfg=sixgr.lls6g.buildInternalConfig(s,outputRoot);
+% Match the scenario runner's artifact authority when continuous IQ is
+% enabled. Do not disable capture to make the exact target YAML fit a test.
+cfg.run.rootRunFolder=outputRoot;
 previousRNG=rng; cleanup=onCleanup(@()rng(previousRNG));
 rng(double(cfg.run.seed),'twister');
 mkdir(outputRoot); resolvedScenario=s.Data;
 save(fullfile(outputRoot,'configuration.mat'),'cfg','resolvedScenario');
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
-state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
-state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
+state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,outputRoot,multi,struct(),10);
+state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,cfg.channel.snr_dB);
+state.CurrentServingIdx(:)=1;
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 carrier=sixgr.phy.grid.makeCarrier(ul); fs=owner.SampleRateHz;
@@ -44,11 +51,12 @@ args={'SlotIndex',5,'SNR_dB',cfg.channel.snr_dB,'TimingAdvanceSamples',0};
 prepared=sixgr.link.runSRSChannelEstimation(srsCfg,args{:},'PrepareOnly',true);
 owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
 state.TestEvidenceRoot=outputRoot; state.TestDLReceives=0;
+state.TestExpectedHARQBits=numel(sourceSlots);
 daiLedger=struct(); state.DLQueueBits(1)=0;
 for slot=1:10
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
-    if any(slot==[6 7])
+    if any(slot==sourceSlots)
         [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
         dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,slot);
         dl.lls6g.userContext.RuntimeSlotStartTime_s=sixgr.phy.frame.slotStartSample(carrier,slot-1,fs)/fs;
@@ -68,12 +76,37 @@ for slot=1:10
     end
     [state,~]=owner.advanceSlot(state,cfg,@localEvents);
 end
-assert(numel(state.SharedDataTXLedger)==2 && state.TestDLReceives==2 && ...
+assert(numel(state.SharedDataTXLedger)==numel(sourceSlots) && state.TestDLReceives==numel(sourceSlots) && ...
     isempty(state.PendingFeedbackTable) && isempty(state.PUCCHGrantTraceTable) && ...
     isempty(sixgr.util.structGet(state,'SharedUEHARQACKEvents',{})));
-assert(height(state.SharedGNBUCIHARQTable)==2 && height(state.ControlTrials.PUCCH)==1 && ...
+assert(height(state.SharedGNBUCIHARQTable)==numel(sourceSlots) && height(state.ControlTrials.PUCCH)==1 && ...
     numel(state.SharedGNBUCIReceptions)==1 && all(~state.SharedGNBUCIHARQTable.StaleFeedbackIgnored));
 rx=state.SharedGNBUCIReceptions{1}.Receiver;
+trial=state.ControlTrials.PUCCH;
+assert(trial.ReceiverUsable==rx.ReceiverUsable && trial.DTXFlag==rx.DTX);
+assert(isa(trial.ReceiverOnlyAssignment,'double') && ...
+    isa(trial.PUCCHTransmissionPrepared,'double') && ...
+    trial.ReceiverOnlyAssignment==1 && trial.PUCCHTransmissionPrepared==0, ...
+    'Receiver-only flags must share the nullable numeric schema of prepared observations.');
+assert(trial.ReceiverExpectedBitCountSource=="receiver_length_context" && ...
+    strlength(trial.ReceiverContextDigest)>0);
+assert(trial.CRCApplicable==rx.CRCApplicable);
+if rx.CRCApplicable
+    assert(trial.CRCPass==double(rx.CRCPassed));
+else
+    assert(isnan(trial.CRCPass),'No CRC bit may be invented for a CRC-free payload.');
+end
+widths=[trial.ReceiverExpectedHARQBitCount trial.ReceiverExpectedSRBitCount ...
+    trial.ReceiverExpectedCSIPart1BitCount trial.ReceiverExpectedCSIPart2BitCount];
+if numel(sourceSlots)==3
+    assert(isequal(widths,[3 1 0 0]) && trial.PUCCHFormat==2, ...
+        'The three-grant absent-producer case must physically observe the four-bit HARQ/SR obligation.');
+end
+assert(all(isfinite(widths)) && sum(widths)==trial.ReceiverExpectedBitCount && ...
+    trial.DecodedBitCount==numel(rx.DecodedSequence1)+numel(rx.DecodedSequence2));
+exported=sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable("PUCCH",trial);
+assert(exported.ReceiverUsable==rx.ReceiverUsable && ...
+    exported.DecodeSuccess==trial.PUCCHDecodeOk && ~exported.SuccessFlag);
 assert(rx.IndependentReceiverAssignment && ~rx.PreparedTransmitterConsumed && ~rx.OraclePayloadBitsUsed);
 outcomes=string(state.SharedGNBUCIHARQTable.FeedbackOutcome);
 assert(state.DLHarq.Stats.Ack==nnz(outcomes=="ACK") && ...
@@ -81,8 +114,8 @@ assert(state.DLHarq.Stats.Ack==nnz(outcomes=="ACK") && ...
 assert(~owner.hasPending('PUCCH',1) && ~owner.hasPending('PUCCHReceiveOnly',1));
 writetable(state.SharedGNBUCIHARQTable,fullfile(outputRoot,'gnb_harq_feedback_observations.csv'));
 writetable(state.ControlTrials.PUCCH,fullfile(outputRoot,'pucch_receive_only_trials.csv'));
-fprintf('SHARED_PUCCH_RECEIVE_ONLY_PASS actual_DL_TX=2 UE_UCI_producers=0 outcomes=%s folder=%s\n', ...
-    strjoin(outcomes,','),outputRoot);
+fprintf('SHARED_PUCCH_RECEIVE_ONLY_PASS actual_DL_TX=%d UE_UCI_producers=0 outcomes=%s folder=%s\n', ...
+    numel(sourceSlots),strjoin(outcomes,','),outputRoot);
 ok=true;
 end
 
@@ -125,11 +158,12 @@ for item=items
         hit=find(string({pending.Kind})=="PUCCHReceiveOnly");
         assert(isscalar(hit) && ~isfield(pending(hit).Context,'Prepared'));
         h=pending(hit).Context.GNBReception;
-        assert(h.Mapping.BitCount==2 && h.Context.HARQACKBits==2);
+        assert(h.Mapping.BitCount==state.TestExpectedHARQBits && ...
+            h.Context.HARQACKBits==state.TestExpectedHARQBits);
         c=pending(hit).Context.Config;
         bad=c; bad.phy.csi.reportCSI=true;
         % A configured calendar alone cannot create CSI ownership: the gNB
-        % must have completed causal CSI-RS receiver evidence in this sweep.
+        % must have completed causal CSI-RS transmission in this sweep.
         bad.phy.csi.reportOffsetSlots=mod(item.Context.Slot-1,bad.phy.csi.reportPeriodicitySlots);
         noEvidence=sixgr.truth.buildScheduledPUCCHHARQReception( ...
             state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
@@ -154,17 +188,15 @@ for item=items
             'DeliverySlotEndSampleExclusive',2);
         withEvidence=state;
         withEvidence.ControlTrials.CSIRS=struct2table(evidence,'AsArray',true);
-        combined=sixgr.truth.buildScheduledPUCCHHARQReception( ...
+        forgedUEEvidence=sixgr.truth.buildScheduledPUCCHHARQReception( ...
             withEvidence,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
-        assert(combined.Mapping.Digest==h.Mapping.Digest && combined.Context.HARQACKBits==2 && ...
-            combined.Context.CSIPart1Bits==combined.CSIReportConfiguration.part1BitCount() && ...
-            combined.Context.CSIPart1Bits>0 && combined.Assignment.Format>=2 && ...
-            height(combined.CSIReferenceEvidence)==1);
+        assert(isequaln(forgedUEEvidence,noEvidence), ...
+            'Invented UE measurements must not establish gNB reference-TX authority.');
         poisoned=withEvidence; poisoned.PendingCSITable=table(true,"invented_report", ...
             'VariableNames',{'Processed','ReportIdentity'});
         poisoned.SharedUEHARQACKEvents={};
         same=sixgr.truth.buildScheduledPUCCHHARQReception(poisoned,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
-        assert(isequaln(same,combined),'UE producer state must not determine the combined receiver schema.');
+        assert(isequaln(same,noEvidence),'UE producer state must not determine the combined receiver schema.');
         noCSIHere=bad;
         noCSIHere.phy.csi.reportOffsetSlots=mod(bad.phy.csi.reportOffsetSlots+1, ...
             bad.phy.csi.reportPeriodicitySlots);
@@ -194,14 +226,27 @@ for item=items
                 'UE pending grants/ACKs must not replace the physically transmitted gNB control schedule.');
         end
         bad=c; bad.validation.pucch_resources.sr_resource_ids=0;
+        % The exact target already installs an SR calendar. Remove it in
+        % this counterexample; changing the resource ID alone is not an
+        % absent-calendar fixture.
+        bad.validation.pucch_resources.scheduling_request_resources=struct([]);
         localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
             'sixgr:truth:MissingInstalledSRCalendar');
         % Configured receiver obligations, never UE positive/pending SR bits.
         srFixture=sixgr.lls6g.config.readConfigFile(fullfile(fileparts(fileparts(mfilename('fullpath'))), ...
             'simulator','configs','scenarios','lls_tdd_configured_sr_calendar_fixture.yaml'));
         bad.validation.pucch_resources.scheduling_request_resources=srFixture.pucch_resources.scheduling_request_resources;
-        localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
-            'sixgr:truth:UnresolvedSRPUCCHReceiveHypothesis');
+        if state.TestExpectedHARQBits<=2
+            localReject(@()sixgr.truth.buildScheduledPUCCHHARQReception(state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID), ...
+                'sixgr:truth:UnresolvedSRPUCCHReceiveHypothesis');
+        else
+            combined=sixgr.truth.buildScheduledPUCCHHARQReception( ...
+                state,bad,1,item.Context.Slot,h.Assignment.Data.ObservationID);
+            assert(combined.Context.HARQACKBits==3 && combined.Context.SRBits==1 && ...
+                combined.Context.CSIPart1Bits==0 && combined.Context.CSIPart2Bits==0 && ...
+                combined.Context.Sequence1Length+combined.Context.Sequence2Length==4, ...
+                'Three scheduled HARQ bits plus configured SR must retain a four-bit independent layout.');
+        end
         % The next-slot calendar has no SR in this receive window. Retain
         % exactly the same independently scheduled HARQ count and resource.
         bad.validation.pucch_resources.scheduling_request_resources.offset_slots=4;
@@ -233,11 +278,25 @@ for item=items
         received=state.SharedGNBUCIReceptions{end};
         timingReferences=state.ReceivedULTimingReferences;
         h=item.Context.GNBReception; c=item.Context.Config;
-        post=item.Planes(endsWith(planes,":post_rf")).Observation;
-        direct=sixgr.link.receivePUCCHObservation(c,h.Assignment,h.Context,post,timingReferences{1});
+        assert(state.ControlTrials.PUCCH.ReceiverContextDigest(end)==h.Context.Digest, ...
+            'Exported context must match the independently frozen receiver hypothesis.');
+        row=state.ControlTrials.PUCCH(end,:);
+        measured=sixgr.link.pucchReceiverStageEvidence(received.Receiver,h.Assignment);
+        for field=string(fieldnames(measured)).'
+            assert(ismember(field,string(row.Properties.VariableNames)) && ...
+                isequaln(row.(field),measured.(field)), ...
+                'Actual receiver-only stage/resource evidence was dropped or changed: %s.',field);
+        end
+        postPlane=item.Planes(endsWith(planes,":post_rf"));
+        receiverID=extractBefore(string(postPlane.ReceiverID),":post_rf");
+        [receiverInput,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
+            postPlane.Observation,postPlane.Segments,receiverID);
+        direct=sixgr.link.receivePUCCHObservation(c,h.Assignment,h.Context,receiverInput,timingReferences{1});
         assert(isequal(direct.DecodedSequence1,received.Receiver.DecodedSequence1) && ...
             direct.DTX==received.Receiver.DTX && direct.DetectionMetric==received.Receiver.DetectionMetric);
-        fprintf('SHARED_PUCCH_RECEIVE_ONLY_GUARDS_PASS rejections=9 configured_SR_overlap_guard=1 unchanged_rejected_HARQ_state=1 actual_IQ_replay_equivalence=1\n');
+        assert(isfield(received.Receiver,'ReceiverGainCompensation') && ...
+            isequaln(received.Receiver.ReceiverGainCompensation,gain));
+        fprintf('SHARED_PUCCH_RECEIVE_ONLY_GUARDS_PASS HARQ_bits=%d configured_SR_overlap_guard=1 unchanged_rejected_HARQ_state=1 actual_IQ_replay_equivalence=1\n',state.TestExpectedHARQBits);
         save(fullfile(state.TestEvidenceRoot,'received_pucch_absent.mat'),'item','received','timingReferences');
     else
         error('test:UnexpectedPhysicalEvent','Unexpected physical event %s.',item.Kind);

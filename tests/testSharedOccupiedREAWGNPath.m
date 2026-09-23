@@ -9,8 +9,28 @@ end
 
 localCheckCarrier("normal", 30, 24, 84101);
 localCheckCarrier("extended", 60, 24, 84102);
+localCheckExplicitFFT();
 localAssertNoProductionDependencyOnConformanceNoise();
 ok = true;
+end
+
+function localCheckExplicitFFT()
+carrier = nrCarrierConfig('NSizeGrid', 6, 'SubcarrierSpacing', 30);
+ofdmOptions = {'Nfft', 512, 'Windowing', 0};
+grid = localUnitEnergyQPSK(72, 14, 256);
+waveform = nrOFDMModulate(carrier, grid, ofdmOptions{:});
+before = rng;
+[received, evidence] = sixgr.phy.waveform.addOccupiedREAWGN( ...
+    waveform, carrier, 20, 'Seed', 84103, ...
+    'SignalEnergyPerOccupiedRE', .25, 'OFDMOptions', ofdmOptions);
+assert(isequal(before, rng), 'Explicit-FFT noise consumed caller RNG.');
+% Independent FFT scaling and direct demodulation, not exported labels.
+expectedGridVariance = .25 * 10^(-20/10);
+assert(abs(evidence.SampleNoiseVariance - expectedGridVariance/512)<1e-14);
+noiseGrid = nrOFDMDemodulate(carrier, received-waveform, 'Nfft', 512);
+errorDb = 10*log10(mean(abs(noiseGrid(:)).^2)/expectedGridVariance);
+assert(abs(errorDb)<.1, 'Explicit-FFT physical noise differs by %g dB.',errorDb);
+fprintf('EXPLICIT_FFT_NOISE nfft=512 error_dB=%.9g RNG_preserved=1\n',errorDb);
 end
 
 function localCheckCarrier(cyclicPrefix, scs_kHz, nSizeGrid, seed)

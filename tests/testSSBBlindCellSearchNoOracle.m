@@ -28,9 +28,36 @@ assert(double(sync.NCellID) == 17, ...
 assert(~logical(sync.ConfiguredCellIDUsed), "SSB_Rx must not consume configured cell ID.");
 assert(string(sync.NCellIDSource) == "blind_pss_sss_correlation", ...
     "SSB_Rx must report blind PSS/SSS PCI recovery as the cell-ID source.");
+assert(sync.PSSDetectionDecision.Detected && sync.SSSDetectionDecision.Detected);
+assert(sync.PSSDetectionDecision.NormalizedMetric>sync.PSSDetectionDecision.Threshold);
+assert(sync.SSSDetectionDecision.NormalizedMetric>sync.SSSDetectionDecision.Threshold);
+assert(sync.SSSDetectionDecision.HypothesisCount==336*sync.PSSDetectionDecision.HypothesisCount);
 
 [pbch, ~] = sixgr.phy.dl.PBCH_Recovery(rxSSBGrid, sync, cfgRx);
 assert(logical(pbch.Ok), "PBCH decode must pass using the blind recovered PCI.");
 assert(double(pbch.NCellID) == 17, "PBCH recovery must use the blind recovered PCI.");
+% Strong, genuinely transmitted PSS with absent SSS must pass the first
+% gate and fail the SSS gate; a PSS-only test cannot qualify cell detection.
+first=round(sync.TimingOffset)+1;
+symbolWithinSlot=mod(sync.SelectedCandidateStartSymbol,14);
+count=sync.Nfft+sync.CyclicPrefixLengthsPerSlot(symbolWithinSlot+1);
+last=first+count-1;
+assert(first>=1 && last<=size(txWave,1));
+pssOnly=zeros(size(txWave),'like',txWave);
+pssOnly(first:last,:)=txWave(first:last,:);
+power=mean(abs(pssOnly(first:last,:)).^2,'all');
+stream=RandStream('mt19937ar','Seed',382171);
+noise=sqrt(power/2000)*complex(randn(stream,size(pssOnly)),randn(stream,size(pssOnly)));
+rejected=false;
+try
+    sixgr.phy.dl.SSB_Rx(pssOnly+noise,cfgRx,'SampleRate_Hz',txInfo.SampleRate_Hz);
+catch cause
+    assert(strcmp(cause.identifier,'sixgr:phy:ia:SSBNotDetected') && ...
+        contains(cause.message,'SSS normalized correlation'), ...
+        'Expected the independent SSS gate, got %s: %s',cause.identifier,cause.message);
+    rejected=true;
+end
+assert(rejected,'PSS alone must not become a detected cell.');
+fprintf('SSB_BLIND_DETECTION_PASS signal_present_PBCH=1 PSS_only_SSS_rejected=1\n');
 ok = true;
 end

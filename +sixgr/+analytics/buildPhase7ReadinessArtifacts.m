@@ -2781,7 +2781,7 @@ rows = [rows; localMeasuredSINRRowsFromTrials(dlT, "DL", slotDuration_s, "air_in
 rows = [rows; localMeasuredSINRRowsFromTrials(ulT, "UL", slotDuration_s, "air_interface/csv/ul_pusch_trials.csv")]; %#ok<AGROW>
 T = localStructRowsToTable(rows);
 if istable(T) && height(T) > 0
-    T = sortrows(T, {'CanonicalSlot','Direction','UeId','CellId'});
+    T = sortrows(T, {'SweepPointIndex','CanonicalSlot','Direction','UeId','CellId'});
 end
 end
 
@@ -2791,16 +2791,30 @@ if ~(istable(T) && height(T) > 0)
     return;
 end
 
-sinr = localFirstAvailableTableColumn(T, ["MeasuredTrialSINR_dB","PostEqSINR_dB","MeasuredSINR_dB","ReceiverHestSINR_dB","LargeScaleSINR_dB"]);
+% Data-SINR publication uses the same qualified receiver plane as its
+% runtime consumer. A pilot/link-budget value cannot fill a missing data
+% measurement, and an invalid row must not inherit another row's source.
+sinr = NaN(height(T),1);
+sinrSource = strings(height(T),1);
+sinrRole = strings(height(T),1);
+sinrStatus = strings(height(T),1);
+for index = 1:height(T)
+    [sinr(index),sinrSource(index),sinrRole(index),sinrStatus(index)] = ...
+        sixgr.link.selectReceiverDataSINR(T(index,:));
+end
 slot = localFirstAvailableTableColumn(T, ["Slot","CanonicalSlot","TTI"]);
+sweepPoint = localFirstAvailableTableColumn(T, "SweepPointIndex");
+configuredSNR = localFirstAvailableTableColumn(T, "ConfiguredSNR_dB");
 ue = localFirstAvailableTableColumn(T, ["UEID","UEIndex","UE","RNTI"]);
 cellId = localFirstAvailableTableColumn(T, ["CellID","ServingCell","BaseStationID"]);
-mcs = localFirstAvailableTableColumn(T, ["MCS","MCSIndex","CQIDerivedMCS"]);
-rank = localFirstAvailableTableColumn(T, ["RankEstimate","RankIndicator","Rank"]);
-layers = localFirstAvailableTableColumn(T, ["Layers","NumLayers"]);
-modulation = localFirstAvailableTableText(T, ["Modulation","CQIDerivedModulation"]);
+mcs = localFirstAvailableTableColumn(T, ["MCS","MCSIndex"]);
+% RankEstimate/RankIndicator describe channel or feedback hypotheses, not
+% the PDSCH/PUSCH allocation that produced the samples (for example RI=4
+% from a four-port channel while an already-issued rank-one grant runs).
+rank = localFirstAvailableTableColumn(T, ["TransmittedRank","EffectiveRank","Rank"]);
+layers = localFirstAvailableTableColumn(T, ["TransmittedLayers","EffectiveLayers","Layers","NumLayers"]);
+modulation = localFirstAvailableTableText(T, "Modulation");
 status = localFirstAvailableTableText(T, "Status");
-sinrSource = localFirstAvailableTableText(T, ["MeasuredTrialSINRSource","PostEqSINRSource","SINRSource","ReceiverHestSINRSource"]);
 
 mask = isfinite(sinr) & isfinite(slot);
 for i = find(mask(:)).'
@@ -2809,9 +2823,16 @@ for i = find(mask(:)).'
     row.UeId = localSafeIndex(ue, i, NaN);
     row.CellId = localSafeIndex(cellId, i, NaN);
     row.CanonicalSlot = localSafeIndex(slot, i, NaN);
+    row.SweepPointIndex = localSafeIndex(sweepPoint, i, NaN);
+    row.ConfiguredSNR_dB = localSafeIndex(configuredSNR, i, NaN);
+    if isfinite(row.ConfiguredSNR_dB)
+        row.ConfiguredSNRValueRole = "configured_operating_point_metadata";
+    end
     row.Time_s = (double(row.CanonicalSlot) - 1) * slotDuration_s;
     row.MeasuredSINR_dB = localSafeIndex(sinr, i, NaN);
     row.SINRSource = localSafeIndexText(sinrSource, i, "");
+    row.SINRValueRole = localSafeIndexText(sinrRole, i, "");
+    row.SINRValueStatus = localSafeIndexText(sinrStatus, i, "");
     row.MCS = localSafeIndex(mcs, i, NaN);
     row.Rank = localSafeIndex(rank, i, NaN);
     row.Layers = localSafeIndex(layers, i, NaN);
@@ -2825,7 +2846,9 @@ end
 function row = localEmptyMeasuredSINRRow()
 row = struct( ...
     "Direction", "", "UeId", NaN, "CellId", NaN, "CanonicalSlot", NaN, "Time_s", NaN, ...
-    "MeasuredSINR_dB", NaN, "SINRSource", "", "MCS", NaN, "Rank", NaN, "Layers", NaN, ...
+    "SweepPointIndex", NaN, "ConfiguredSNR_dB", NaN, "ConfiguredSNRValueRole", "", ...
+    "MeasuredSINR_dB", NaN, "SINRSource", "", "SINRValueRole", "", ...
+    "SINRValueStatus", "", "MCS", NaN, "Rank", NaN, "Layers", NaN, ...
     "Modulation", "", "Status", "", "SourceTable", "");
 end
 

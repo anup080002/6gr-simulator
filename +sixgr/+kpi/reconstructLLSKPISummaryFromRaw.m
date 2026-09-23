@@ -116,7 +116,14 @@ metrics = struct( ...
     "MeanDeliveryLatency_ms", NaN, ...
     "P95DeliveryLatency_ms", NaN, ...
     "BLER", NaN, ...
+    "CRCObservedTrialCount", 0, ...
+    "CRCUnknownTrialCount", 0, ...
+    "CRCFailureCount", 0, ...
     "BER", NaN, ...
+    "BERBitErrors", 0, ...
+    "BERBitsCompared", 0, ...
+    "BERUnavailableTrialCount", 0, ...
+    "BERComplete", false, ...
     "DuplicateDeliveryCount", 0, ...
     "Status", "missing_raw_data", ...
     "FailureReason", "raw_table_missing_or_empty");
@@ -172,13 +179,17 @@ metrics.SchemaValid = true;
 metrics.GoodputMax_Mbps = localMaxFinite(localOptionalNumeric(E, "Goodput_Mbps", NaN(height(E), 1)));
 scheduledBits = localFirstNumeric(E, ["ScheduledBits","TBSize_bits","OfferedBits","TBS"], NaN(height(E), 1));
 goodBitsRaw = localFirstNumeric(E, ["GoodputBits","GoodBits","DeliveredBits","PayloadBits"], NaN(height(E), 1));
-crcPass = localOptionalLogical(E, "TBCrcPass", localOptionalLogical(E, "CRCPass", true(height(E), 1)));
+crcPass = sixgr.kpi.readCRCObservations(E);
+crcKnown = isfinite(crcPass);
+metrics.CRCObservedTrialCount = nnz(crcKnown);
+metrics.CRCUnknownTrialCount = nnz(~crcKnown);
+metrics.CRCFailureCount = nnz(crcPass==0);
 goodBits = goodBitsRaw;
 tbSize = localFirstNumeric(E, ["TBSize_bits","TBS","ScheduledBits"], NaN(height(E), 1));
 missingGoodBits = ~isfinite(goodBits);
-goodBits(missingGoodBits & crcPass & isfinite(tbSize)) = tbSize(missingGoodBits & crcPass & isfinite(tbSize));
-goodBits(~crcPass) = 0;
-goodBits(~isfinite(goodBits)) = 0;
+goodBits(missingGoodBits & crcPass==1 & isfinite(tbSize)) = tbSize(missingGoodBits & crcPass==1 & isfinite(tbSize));
+goodBits(crcPass==0) = 0;
+goodBits(~crcKnown) = NaN;
 scheduledBits(~isfinite(scheduledBits)) = 0;
 
 [resourceExposureSec, resourceExposureSource] = localDurationSec(E);
@@ -219,16 +230,29 @@ if ~isfinite(metrics.TBGoodput_Mbps) && isfinite(metrics.GoodputMax_Mbps)
     metrics.TBGoodput_Mbps = metrics.GoodputMax_Mbps;
 end
 
-if any(isfinite(double(crcPass)))
-    metrics.BLER = sum(~crcPass) / max(numel(crcPass), 1);
+if metrics.CRCObservedTrialCount>0
+    metrics.BLER = metrics.CRCFailureCount / metrics.CRCObservedTrialCount;
 end
 bitErrors = localOptionalNumeric(E, "BitErrors", NaN(height(E), 1));
 bitsCompared = localOptionalNumeric(E, "BitsCompared", NaN(height(E), 1));
-if sum(bitsCompared(isfinite(bitsCompared)), "omitnan") > 0
-    metrics.BER = sum(bitErrors(isfinite(bitErrors)), "omitnan") / sum(bitsCompared(isfinite(bitsCompared)), "omitnan");
-end
+berEvidence=sixgr.kpi.aggregateBitErrorEvidence(bitErrors,bitsCompared);
+metrics.BER=berEvidence.BER;
+metrics.BERBitErrors=berEvidence.BitErrors;
+metrics.BERBitsCompared=berEvidence.BitsCompared;
+metrics.BERUnavailableTrialCount=berEvidence.UnavailableTrialCount;
+metrics.BERComplete=berEvidence.Complete;
 metrics.Status = "pass";
 metrics.FailureReason = "";
+if metrics.CRCUnknownTrialCount>0
+    metrics.Status = "incomplete_crc_evidence";
+    metrics.FailureReason = "unavailable_crc_observations:"+metrics.CRCUnknownTrialCount;
+    % Known first successes are not a complete total when CRCs are missing.
+    metrics.DeliveredBits=NaN;
+    metrics.TBGoodput_Mbps=NaN;
+    metrics.TBGooDput_Mbps=NaN;
+    metrics.GoodputMax_Mbps=NaN;
+    metrics.SpectralEfficiency_bpsHz=NaN;
+end
 contribT = localBuildContributionTable(E, direction, runId, scenarioName, sourcePath, scheduledBits, goodBits, traceT, resourceExposureSec, durationSec);
 end
 
@@ -815,7 +839,7 @@ for i = 1:height(T)
     if ~isKey(firstSchedule, keyChar)
         firstSchedule(keyChar) = attemptTime(i);
     end
-    delivered = logical(crcPass(i)) && isfinite(goodBits(i)) && goodBits(i) > 0;
+    delivered = crcPass(i)==1 && isfinite(goodBits(i)) && goodBits(i) > 0;
     duplicate = false;
     counted = 0;
     firstSuccess = false;
@@ -851,7 +875,7 @@ for i = 1:height(T)
     traceRows(i).FirstSuccessTime_s = firstSuccessTime;
     traceRows(i).DeliveryLatency_ms = deliveryLatencyMs;
     traceRows(i).ScheduledBits = scheduledBits(i);
-    traceRows(i).TBCrcPass = logical(crcPass(i));
+    traceRows(i).TBCrcPass = crcPass(i);
     traceRows(i).DeliveredThisAttempt = delivered;
     traceRows(i).FirstSuccessDelivery = firstSuccess;
     traceRows(i).DuplicateDelivery = duplicate;
@@ -865,12 +889,18 @@ for i = 1:height(T)
         traceRows(i).DeliveryStatus = "first_success_delivery_counted";
     end
     traceRows(i).Status = "pass";
+    if ~isfinite(crcPass(i))
+        traceRows(i).CountedGoodputBits=NaN;
+        traceRows(i).DeliveryStatus="unknown_crc_not_counted";
+        traceRows(i).Status="incomplete_crc_evidence";
+    end
 end
 traceT = struct2table(traceRows);
 end
 
 function keys = localTransportBlockKeys(T, direction)
 keys = strings(height(T), 1);
+crc = sixgr.kpi.readCRCObservations(T);
 active = containers.Map("KeyType", "char", "ValueType", "char");
 delivered = containers.Map("KeyType", "char", "ValueType", "logical");
 instance = containers.Map("KeyType", "char", "ValueType", "double");
@@ -893,7 +923,7 @@ for i = 1:height(T)
         delivered(active(baseChar)) = false;
     end
     keys(i) = string(active(baseChar));
-    if localOptionalLogical(T(i, :), "TBCrcPass", localOptionalLogical(T(i, :), "CRCPass", false)) && ...
+    if crc(i)==1 && ...
             localFirstNumeric(T(i, :), ["GoodputBits","GoodBits","DeliveredBits","PayloadBits","TBSize_bits"], NaN) > 0
         delivered(active(baseChar)) = true;
     end
@@ -979,7 +1009,12 @@ row.RequiredSNR_DL_10pctBLER = NaN;
 row.RequiredSNR_UL_10pctBLER = NaN;
 row.KPIFormulaVersion = "kpi_registry_v1";
 row.KPIReconciliationPass = strcmp(ul.Status, "pass") && strcmp(dl.Status, "pass");
-row.StrictOk = row.KPIReconciliationPass || ~strictMode;
+row.StrictOk = (row.KPIReconciliationPass || ~strictMode) && ...
+    ul.CRCUnknownTrialCount==0 && dl.CRCUnknownTrialCount==0;
+row.ULCRCObservedTrialCount=ul.CRCObservedTrialCount;
+row.DLCRCObservedTrialCount=dl.CRCObservedTrialCount;
+row.ULCRCUnknownTrialCount=ul.CRCUnknownTrialCount;
+row.DLCRCUnknownTrialCount=dl.CRCUnknownTrialCount;
 row.Status = string(localTernary(row.KPIReconciliationPass, "pass", "fail"));
 row.FailureReason = strjoin(unique([string(ul.FailureReason); string(dl.FailureReason)], "stable"), "|");
 row.ULSourceRowsHash = ul.SourceRowsHash;
@@ -1102,6 +1137,13 @@ for i = 1:numel(defs)
         rows(i).StrictOk = pass && strcmp(d.Metrics.Status, "pass");
         rows(i).Status = string(localTernary(rows(i).StrictOk, "pass", "fail"));
         rows(i).FailureReason = string(localTernary(rows(i).StrictOk, "", d.Metrics.FailureReason));
+        if endsWith(d.KPIName,"_BER") && ~d.Metrics.BERComplete
+            % Preserve independently valid throughput/latency evidence.
+            % Only BER's completeness gate depends on bit comparisons.
+            rows(i).StrictOk=false;
+            rows(i).Status="fail";
+            rows(i).FailureReason="paired_bit_error_evidence_unavailable:"+d.Metrics.BERUnavailableTrialCount;
+        end
     else
         rows(i).ReconciliationPass = true;
         rows(i).StrictOk = true;
@@ -1460,7 +1502,7 @@ rows = repmat(localContributionRow(), height(E), 1);
 perRowDuration = resourceExposureSec / max(height(E), 1);
 perRowDuration = localBestPerRowDurationSec(E, repmat(perRowDuration, height(E), 1));
 perRowDuration = localDistributeUniqueSlotDuration(E, perRowDuration, resourceExposureSec);
-crcPass = localOptionalLogical(E, "TBCrcPass", localOptionalLogical(E, "CRCPass", true(height(E), 1)));
+crcPass = sixgr.kpi.readCRCObservations(E);
 for i = 1:height(E)
     rows(i).RunId = string(runId);
     rows(i).ScenarioName = string(scenarioName);
@@ -1494,6 +1536,9 @@ for i = 1:height(E)
     rows(i).DuplicateDelivery = logical(traceT.DuplicateDelivery(i));
     rows(i).Included = true;
     rows(i).Status = "pass";
+    if ~isfinite(crcPass(i))
+        rows(i).Status="incomplete_crc_evidence";
+    end
 end
 T = struct2table(rows);
 end
@@ -1684,7 +1729,7 @@ t = NaN(n, 1);
 for name = ["AttemptStartTime_s","ScheduleTime_s","EventTime_s","Time_s","RuntimeSlotStartTime_s"]
     if ismember(name, string(T.Properties.VariableNames))
         vals = localOptionalNumeric(T, name, NaN(n, 1));
-        mask = isfinite(vals);
+        mask = ~isfinite(t) & isfinite(vals);
         t(mask) = vals(mask);
         if all(isfinite(t))
             return;
@@ -1694,13 +1739,18 @@ end
 frame = localOptionalNumeric(T, "Frame", NaN(n, 1));
 slot = localOptionalNumeric(T, "Slot", NaN(n, 1));
 slotDurationSec = max(eps, double(slotDurationSec));
-for i = 1:n
+% Shared runtime Slot is absolute, while Frame is descriptive metadata.
+% Its explicit zero-based absolute index must not gain another frame offset.
+absoluteSlot0 = localOptionalNumeric(T, "RuntimeAbsoluteSlotIndex0", NaN(n, 1));
+mask = ~isfinite(t) & isfinite(absoluteSlot0) & absoluteSlot0>=0 & ...
+    absoluteSlot0==fix(absoluteSlot0);
+t(mask) = absoluteSlot0(mask)*slotDurationSec;
+for i = find(~isfinite(t)).'
     if isfinite(frame(i)) && isfinite(slot(i))
         t(i) = max(0, double(frame(i) - 1)) * 0.01 + max(0, double(slot(i) - 1)) * slotDurationSec;
     elseif isfinite(slot(i))
         t(i) = max(0, double(slot(i) - 1)) * slotDurationSec;
-    else
-        t(i) = max(0, i - 1) * slotDurationSec;
+    % No row-number clock: absent radio-clock evidence remains unavailable.
     end
 end
 end
@@ -1908,9 +1958,9 @@ elseif contains(kpiName, "SpectralEfficiency")
 elseif contains(kpiName, "Latency")
     v = metrics.MeanDeliveryLatency_ms;
 elseif contains(kpiName, "BLER")
-    v = NaN;
+    v = metrics.CRCFailureCount;
 elseif contains(kpiName, "BER")
-    v = NaN;
+    v = metrics.BERBitErrors;
 else
     v = NaN;
 end
@@ -1936,6 +1986,10 @@ elseif contains(kpiName, "Latency")
     v = metrics.FirstSuccessDeliveryCount;
 elseif contains(kpiName, "Throughput")
     v = metrics.AggregationDurationSec;
+elseif endsWith(kpiName,"_BER")
+    v = metrics.BERBitsCompared;
+elseif endsWith(kpiName,"_BLER")
+    v = metrics.CRCObservedTrialCount;
 else
     v = metrics.SourceRowCount;
 end

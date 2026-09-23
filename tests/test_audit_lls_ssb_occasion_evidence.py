@@ -72,6 +72,69 @@ class SSBOccasionAuditTest(unittest.TestCase):
         self.assertEqual(0, result["ObservedOccasions"])
         self.assertEqual([], result["Checks"])
 
+    def normalized_row(self, antennas=1):
+        row = self.row()
+        row.update(PowerReferencePlane="normalized_fixed_esn0_unit_occupied_re_es",
+                   RSRP_dBm="NaN", RSRP_dB_re_UnitOccupiedRE_Es="-6",
+                   SSBWindowPowerMeasurementJSON="", SSBWindowRSSIPerReceiveAntenna_dBm="")
+        powers = [2 * (ant + 1) for ant in range(antennas)]
+        rssi = [10 * AUDIT.math.log10(power) for power in powers]
+        rsrp = [-10.0] * antennas
+        data = dict(Scope="ssb_240_subcarrier_four_symbol_window_not_full_carrier_RSSI",
+                    AmplitudeUnit="sqrt_UnitOccupiedRE_Es", CPIncluded=False,
+                    NumReceiveAntennas=antennas, NumRB=20,
+                    PowerReferencePlane=row["PowerReferencePlane"],
+                    SymbolPowerPerAntenna_UnitOccupiedRE_Es=[powers] * 4,
+                    RSSIPerAntenna_dB_re_UnitOccupiedRE_Es=rssi,
+                    ReferenceRSRPPerAntenna_dB_re_UnitOccupiedRE_Es=rsrp,
+                    ReferenceRSRQPerAntenna_dB=[10 * AUDIT.math.log10(20) + p - i
+                                               for p, i in zip(rsrp, rssi)])
+        row["SSBWindowRSSIPerReceiveAntenna_dB_re_UnitOccupiedRE_Es"] = "|".join(map(str, rssi))
+        row["SSBWindowRelativePowerMeasurementJSON"] = json.dumps(data)
+        return row
+
+    def test_normalized_singleton_and_multiantenna_arithmetic(self):
+        for antennas in (1, 2, 4):
+            self.assertEqual([], self.failures(self.normalized_row(antennas)))
+
+    def test_normalized_measurement_cannot_claim_absolute_power(self):
+        for field, value in (("RSRP_dBm", "-80"), ("SS_RSRP_dBm", "-80"),
+                             ("ReferenceSignalTxEPRE_dBm", "0"),
+                             ("SSBWindowPowerMeasurementJSON", "{}"),
+                             ("SSBWindowRSSIPerReceiveAntenna_dBm", "-70")):
+            row = self.normalized_row()
+            row[field] = value
+            self.assertIn("normalized_power_no_absolute_claim", self.failures(row))
+
+    def test_normalized_schema_and_units_are_not_inferred(self):
+        for field, value in (("AmplitudeUnit", "sqrt_W"),
+                             ("PowerReferencePlane", "unknown"),
+                             ("SymbolPowerPerAntenna_W", [[2]] * 4),
+                             ("CPIncluded", True), ("NumReceiveAntennas", 2)):
+            row = self.normalized_row()
+            data = json.loads(row["SSBWindowRelativePowerMeasurementJSON"])
+            data[field] = value
+            row["SSBWindowRelativePowerMeasurementJSON"] = json.dumps(data)
+            self.assertTrue(self.failures(row), field)
+        row = self.normalized_row()
+        del row["PowerReferencePlane"]
+        self.assertIn("window_power_evidence", self.failures(row))
+
+    def test_normalized_rssi_and_rsrq_corruptions_fail_without_clamping(self):
+        for field in ("RSSIPerAntenna_dB_re_UnitOccupiedRE_Es",
+                      "ReferenceRSRQPerAntenna_dB", "SymbolPowerPerAntenna_UnitOccupiedRE_Es"):
+            row = self.normalized_row()
+            data = json.loads(row["SSBWindowRelativePowerMeasurementJSON"])
+            if field.startswith("Symbol"):
+                data[field][0][0] *= 10
+            else:
+                data[field][0] += 30
+            row["SSBWindowRelativePowerMeasurementJSON"] = json.dumps(data)
+            self.assertTrue(self.failures(row), field)
+        row = self.normalized_row()
+        row["RSRP_dB_re_UnitOccupiedRE_Es"] = "NaN"
+        self.assertIn("valid_rsrp_available", self.failures(row))
+
 
 if __name__ == "__main__":
     unittest.main()

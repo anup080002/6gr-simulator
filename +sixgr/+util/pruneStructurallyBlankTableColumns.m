@@ -518,7 +518,9 @@ end
 
 function tf = localColumnHasRuntimeContent(col)
 if isnumeric(col)
-    tf = any(isfinite(double(col)));
+    % A table variable may contain one column per transmitted layer.
+    % Its keep decision must be scalar without collapsing its values.
+    tf = any(isfinite(double(col)), "all");
     return;
 end
 
@@ -540,7 +542,7 @@ mask = strlength(normalized) > 0 ...
     & normalized ~= "nat" ...
     & normalized ~= "<missing>" ...
     & normalized ~= "not_applicable";
-if ~any(mask)
+if ~any(mask, "all")
     tf = false;
     return;
 end

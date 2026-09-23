@@ -30,6 +30,37 @@ assert(isequal(out.RankLayerTrials.MeasuredDMRSPortCount,[1;2;4;1;2;4]), ...
 assert(all(strlength(out.RankLayerTrials.DMRSPorts)==0) && ...
     all(isnan(out.LayerMetrics.DMRSPort)), ...
     'A measured count must not manufacture DM-RS port identities.');
+% Aggregate EVM/NMSE/LLR cannot be promoted into every layer's measurement.
+measured=raw;
+for direction=["DL","UL"]
+    measured.(direction).EVM_rms=[0.1;0.2;0.3];
+    measured.(direction).NMSE_dB=[-20;-21;-22];
+    measured.(direction).LLRMeanAbs=[4;5;6];
+end
+aggregateOnly=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,measured,'StrictMode',true);
+assert(all(isnan(aggregateOnly.LayerMetrics.EVMdB)) && ...
+    all(isnan(aggregateOnly.LayerMetrics.ChannelEstimateNMSEdB)) && ...
+    all(isnan(aggregateOnly.LayerMetrics.LLRMeanAbs)) && ...
+    all(isfinite(aggregateOnly.LayerMetrics.TrialEVMdB)) && ...
+    all(isfinite(aggregateOnly.LayerMetrics.TrialChannelEstimateNMSEdB)) && ...
+    all(isfinite(aggregateOnly.LayerMetrics.TrialLLRMeanAbs)));
+for direction=["DL","UL"]
+    measured.(direction).EVMPerLayer_rms=["0";"0.05|0.2";"0.1|0.2|0.3|0.4"];
+    measured.(direction).EVMPerLayerSource=repmat( ...
+        "paired_layer_symbols_average_reference_power_no_payload_fit",3,1);
+end
+perLayer=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,measured,'StrictMode',true);
+assert(isequal(perLayer.LayerMetrics.EVMrms,[0;.05;.2;.1;.2;.3;.4;0;.05;.2;.1;.2;.3;.4]));
+assert(all(perLayer.LayerMetrics.EVMStatus=="measured_per_layer") && ...
+    perLayer.LayerMetrics.EVMdB(1)==-Inf,'Zero measured error must not gain a reporting floor.');
+bad=measured; bad.DL.EVMPerLayer_rms(2)="0.05";
+rejected=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,bad,'StrictMode',true);
+selected=rejected.LayerMetrics.Direction=="DL" & rejected.LayerMetrics.TrialId==2;
+assert(all(isnan(rejected.LayerMetrics.EVMrms(selected))), ...
+    'Wrong layer count must not be padded or repeated.');
+bad=measured; bad.UL.EVMPerLayerSource(:)="aggregate_copied_into_layers";
+rejected=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,bad,'StrictMode',true);
+assert(all(isnan(rejected.LayerMetrics.EVMrms(rejected.LayerMetrics.Direction=="UL"))));
 % A bad minority row cannot be hidden by a mode/median or a valid other link.
 for direction=["DL","UL"]
     for invalid=[0,1,1.5,NaN,Inf]

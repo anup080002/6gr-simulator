@@ -40,10 +40,24 @@ args={'NoiseVariance',NaN,'ChannelProfile',sixgr.channel.resolveConcreteProfile(
     'DetectionThreshold',threshold};
 timing=[];
 if assignment.Format==0
-    assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
-        'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
-        'Pilot-free Format 0 requires an available retained measured gNB UL clock.');
-    [raw,timing]=prior.alignObservation(cfg,observation,slot0);
+    if isempty(prior) && receiverOnly && context.HARQACKBits==0 && context.SRBits==1 && ...
+            context.CSIPart1Bits==0 && context.CSIPart2Bits==0
+        % Standalone positive SR has one receiver-known sequence (m_cs=0).
+        % Acquisition never uses the UE pending bit or a prepared waveform.
+        % Noise-only episodes use the same bounded search and detector.
+        pucch=assignment.Resource.toolboxConfig();
+        indices=nrPUCCHIndices(carrier,pucch);
+        symbols=nrPUCCH(carrier,pucch,{int8([]),int8(1)});
+        [raw,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
+            carrier,raw,indices,symbols,[0 size(raw,1)-(stop-first)]);
+        timing.TimingSource="received_configured_SR_sequence_bounded_search";
+        timing.TimingValueRole="candidate_alignment_not_proof_of_SR_detection";
+    else
+        assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
+            'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
+            'HARQ-bearing Format 0 requires an available retained measured gNB UL clock.');
+        [raw,timing]=prior.alignObservation(cfg,observation,slot0);
+    end
     args=[args {'NoiseVarianceMode','noncoherent_correlation'}];
 else
     % Received DM-RS, not injected noise/covariance or TX pilot samples.

@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from PIL import Image
+import pytest
 
 
 REPO_ROOT = Path(__file__).absolute().parents[1]
@@ -39,6 +40,56 @@ def test_direct_contract_aliases_remain_producer_owned_cache_inputs() -> None:
     assert "reports/csv/all_csv_artifact_audit.csv" not in contract_paths
     assert "reports/csv/all_image_artifact_audit.csv" not in contract_paths
     assert materializer.manifest_logical_path() in contract_paths
+
+
+def test_empty_primary_table_keeps_its_schema_without_a_placeholder(tmp_path, monkeypatch) -> None:
+    source_path = "air_interface/csv/empty_trials.csv"
+    target_path = "reports/csv/empty_trials.csv"
+    payload = b"Slot,CRCPass,MeasuredSINR_dB\r\n"
+    source = tmp_path / source_path
+    source.parent.mkdir(parents=True)
+    source.write_bytes(payload)
+    monkeypatch.setattr(materializer, "_table_specs", lambda: [{
+        "table_name": "empty_trials", "logical_path": target_path,
+        "section_title": "Receiver trials", "section_slug": "receiver-trials",
+    }])
+    monkeypatch.setattr(materializer, "_chart_specs", lambda: [])
+    monkeypatch.setitem(materializer.CONTRACT_TABLE_ALIAS_PATHS, "empty_trials", [source_path])
+    artifacts = _filesystem_artifacts(tmp_path)
+    result = materializer.materialize_run_contract_artifacts(
+        {"run_id": 1, "run_folder": str(tmp_path), "status_text": "failed"},
+        artifacts, fetch_artifact_bytes=lambda _: payload,
+        db_connection_factory=None, feature_policy={}, force=True, filesystem_only=True,
+    )
+    header, rows = materializer._decode_csv((tmp_path / target_path).read_bytes())
+    assert header == ["Slot", "CRCPass", "MeasuredSINR_dB"] and rows == []
+    assert target_path not in result["coverage"]["missing_table_paths"]
+    assert source.read_bytes() == payload
+
+
+@pytest.mark.parametrize("payload", [
+    None, b"", b"status,reason\nsource_artifact_present_but_empty,no observations\n",
+])
+def test_absent_or_placeholder_source_is_not_a_primary_table(tmp_path, monkeypatch, payload) -> None:
+    source_path = "air_interface/csv/empty_trials.csv"
+    target_path = "reports/csv/empty_trials.csv"
+    monkeypatch.setattr(materializer, "_table_specs", lambda: [{
+        "table_name": "empty_trials", "logical_path": target_path,
+        "section_title": "Receiver trials", "section_slug": "receiver-trials",
+    }])
+    monkeypatch.setattr(materializer, "_chart_specs", lambda: [])
+    monkeypatch.setitem(materializer.CONTRACT_TABLE_ALIAS_PATHS, "empty_trials", [source_path])
+    if payload is not None:
+        source = tmp_path / source_path
+        source.parent.mkdir(parents=True)
+        source.write_bytes(payload)
+    result = materializer.materialize_run_contract_artifacts(
+        {"run_id": 1, "run_folder": str(tmp_path), "status_text": "failed"},
+        _filesystem_artifacts(tmp_path), fetch_artifact_bytes=lambda _: payload,
+        db_connection_factory=None, feature_policy={}, force=True, filesystem_only=True,
+    )
+    assert not (tmp_path / target_path).exists()
+    assert target_path in result["coverage"]["missing_table_paths"]
 
 
 def test_exact_filesystem_cache_detects_source_and_contract_byte_changes(monkeypatch) -> None:

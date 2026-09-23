@@ -4,17 +4,19 @@ function ok = testRankExecutionProvenanceExport()
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 expectedReason = "requested_rank_exceeds_supported_layers";
-localAssertSchedulerPath("DL", expectedReason);
-localAssertSchedulerPath("UL", expectedReason);
+for schedulerClass = ["sixgr.l2.mac.SchedulerPF", "sixgr.l2.mac.SchedulerRR"]
+    localAssertSchedulerPath("DL", expectedReason, schedulerClass);
+    localAssertSchedulerPath("UL", expectedReason, schedulerClass);
+end
 localAssertTrialTablePath("DL", expectedReason);
 localAssertTrialTablePath("UL", expectedReason);
 
 ok = true;
 end
 
-function localAssertSchedulerPath(direction, expectedReason)
+function localAssertSchedulerPath(direction, expectedReason, schedulerClass)
 cfg = localSchedulerCfg(direction);
-scheduler = sixgr.l2.mac.SchedulerPF(cfg, "Direction", direction);
+scheduler = feval(schedulerClass, cfg, "Direction", direction);
 ue = localUE(direction);
 
 [~, nLayers, ~, amc] = scheduler.selectAMC(ue);
@@ -110,6 +112,8 @@ assert(logical(s.RankDowngradeApplied), ...
     "%s must disclose the rank downgrade.", label);
 assert(double(s.MaxSupportedLayers) == 1, ...
     "%s must disclose the one-layer support limit.", label);
+assert(double(s.ConfiguredLayers) == 2, ...
+    "%s must preserve configured rank two independently of executed rank one.", label);
 end
 
 function cfg = localSchedulerCfg(direction)
@@ -155,11 +159,14 @@ else
     cfg.phy.nTxAnt = 1;
     cfg.phy.nRxAnt = 1;
 end
+cfg.phy.pdsch.symbolAllocation = [2 12];
+cfg.phy.pusch.symbolAllocation = [2 12];
 cfg = withCanonicalSchedulerTiming(cfg);
 end
 
 function cfg = localWaveformCfg(direction)
 cfg = sixgr.config.defaultConfig();
+cfg.phy.ssb.enable = false;
 cfg.run.shortRun = true;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;

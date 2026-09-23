@@ -2444,7 +2444,12 @@ function success = localPUCCHSuccessVector(T)
 n = height(T);
 success = nan(n, 1);
 if ismember("UCIContentMatch", string(T.Properties.VariableNames))
-    success = double(logical(T.UCIContentMatch));
+    % No transmitted payload (for example a negative standalone SR) has
+    % no content-match outcome. Preserve unavailable values for the
+    % caller's finite-evidence denominator; never count them as failures.
+    match = double(T.UCIContentMatch);
+    known = isfinite(match) & (match == 0 | match == 1);
+    success(known) = match(known);
     return;
 end
 if ismember("CRCOutcome", string(T.Properties.VariableNames))

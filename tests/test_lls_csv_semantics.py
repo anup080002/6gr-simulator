@@ -963,6 +963,33 @@ def test_mimo_companion_semantics_reconcile_all_direct_rank_derivatives() -> Non
     assert all(check.passed for check in checks), [check.details for check in checks]
 
 
+def test_mimo_layer_metrics_preserve_unavailable_layer_scope_and_zero_evm() -> None:
+    _raw, rank = _mimo_source_and_rank_row()
+    layer = {
+        "RunId": "run-1", "TrialId": "1", "CellId": "1", "UEId": "3",
+        "Direction": "DL", "Slot": "2", "LayerIndex": "1",
+        "CodewordIndex": "1", "DMRSPort": "0", "PostEqSINRdB": "8.5",
+        "EVMdB": "-Inf", "EVMrms": "0", "EVMStatus": "measured_per_layer",
+        "EVMSource": "paired_layer_symbols_average_reference_power_no_payload_fit",
+        "ChannelEstimateNMSEdB": "NaN", "LLRMeanAbs": "NaN",
+        "ChannelEstimateNMSEStatus": "unavailable_trial_aggregate_only",
+        "LLRStatus": "unavailable_trial_aggregate_only",
+        "TrialChannelEstimateNMSEdB": "-30", "TrialLLRMeanAbs": "5",
+        "DecodeMetricScope": "transport_block_context_not_per_layer_decoding",
+        "DecodeCrcPass": "0", "BER": "0.1", "BLERContribution": "1", "Status": "pass",
+    }
+    def audit(row):
+        return _audit_mimo_layer_metrics_table(
+            "beamforming/csv/mimo_layer_metrics.csv", list(row), [row], [rank])
+    assert all(check.passed for check in audit(layer))
+    for field, value in [("EVMrms", "0.1"), ("EVMrms", "NaN"),
+                         ("EVMSource", "copied_aggregate"),
+                         ("ChannelEstimateNMSEdB", "-30"), ("LLRMeanAbs", "5"),
+                         ("LLRStatus", ""), ("TrialLLRMeanAbs", "NaN"),
+                         ("DecodeMetricScope", "per_layer_crc")]:
+        assert any(not check.passed for check in audit(dict(layer, **{field: value})))
+
+
 def test_mimo_summary_accepts_causal_bootstrap_before_complete_shared_mu_group() -> None:
     _raw, bootstrap = _mimo_source_and_rank_row()
     bootstrap.update({

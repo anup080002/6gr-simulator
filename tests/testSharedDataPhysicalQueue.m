@@ -1,8 +1,20 @@
-function [ok,state]=testSharedDataPhysicalQueue(mode)
+function [ok,state]=testSharedDataPhysicalQueue(mode,verifyCSIReference)
 % Actual coded DL through the same CDL/RF/thermal-noise owner as PDCCH.
 % No access or main-scheduler qualification is claimed by this fixture.
 setup6GRSimToolkit('Verbose',false);
+% Structural coordinator guard, in addition to the physical queue below.
+% Data contexts retain the frozen Job; unlike PDCCH contexts they have no
+% top-level SNR field. This exact distinction caused a slot-31 runtime crash.
+source=string(fileread(which('sixgr.truth.runWaveformLinkBundle')));
+section=extractBetween(source,'function state=localCompleteSharedDataPlan(state,item)', ...
+    'function [state,dl,ul,dc,uc,ds,us]=localDrainSharedDataPlans');
+compact=regexprep(section,'\.\.\.[^\r\n]*|\s+','');
+assert(isscalar(compact) && contains(compact, ...
+    'bindSharedDataNoiseEvidence(item.Planes,p,c.DesiredReferencePlane,replay,job.SNR_dB)'), ...
+    'test:SharedDataNoiseJobAuthority', ...
+    'Shared data completion must bind the frozen PHY job SNR, not a nonexistent control-context field.');
 if nargin<1, mode="TDD"; end
+if nargin<2, verifyCSIReference=false; end
 assert(any(string(mode)==["TDD","FDD"]),'test:BadDuplexFixture','Use an explicit duplex fixture.');
 fixture='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", fixture='lls_trs_shared_scoring_fdd_fixture.yaml'; end
@@ -21,9 +33,16 @@ cfg.outputs.continuousRawIQCaptureEnabled=true;
 cfg.phy.ssb.enable=false;
 cfg.phy.sib1.enable=false;
 cfg.phy.trs.enable=false;
+if verifyCSIReference
+    % Declared component calendar; transmission itself must execute below.
+    cfg.phy.csirs.enable=true;
+    cfg.phy.csirs.period_slots=5; cfg.phy.csirs.offset_slots=0;
+    cfg.phy.csi.reportCSI=true;
+end
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),2);
 state.CurrentSlot=1; state.CurrentServingIdx(:)=1;
+state.TestCSIReferenceAuthority=verifyCSIReference;
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 [dl,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
 dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,1);
@@ -39,7 +58,7 @@ result=sixgr.truth.executeGrantPHYJob(job);
 p=result.Result.PreparedTransmission;
 assert(~result.ReadyForReceiverCommit && isempty(result.Result.TrialTable));
 before=owner.Events.NextSampleIndex;
-owner.queueData(1,p,struct('Purpose',"physical_queue_not_control_qualification"));
+owner.queueData(1,p,struct('Purpose',"physical_queue_not_control_qualification",'Job',job));
 assert(owner.Events.NextSampleIndex==before && owner.hasPending('PDSCH',1));
 assert(isempty(owner.DataTransmissions),'Enqueueing is not transmission.');
 if cfg.outputs.antennaPatternSamplesEnabled
@@ -60,7 +79,7 @@ j2=sixgr.truth.buildGrantPHYJob(dl2,'DL',cfg.channel.snr_dB,1,[], ...
     struct('GrantSnapshot',g2,'PHYGrant',g2.PHYGrant,'PrepareOnly',true));
 j2.StartSlotIndex=2;
 r2=sixgr.truth.executeGrantPHYJob(j2); p2=r2.Result.PreparedTransmission;
-owner.queueData(1,p2,struct('Purpose',"adjacent_grant_receive_tail_overlap"));
+owner.queueData(1,p2,struct('Purpose',"adjacent_grant_receive_tail_overlap",'Job',j2));
 assert(numel(owner.Pending)==2 && isempty(owner.DataTransmissions));
 state.DLQueueBits(1)=grant.TBSBits+g2.TBSBits; % Explicit fixture queue, not a measured application flow.
 assert(state.DLHarq.Stats.Tx==0);
@@ -96,6 +115,21 @@ sixgr.util.csvWriteTable(fullfile(captureRoot,'receive_tail.csv'),state.SharedRe
 disp("RECEIVE_TAIL_COMPONENT_EVIDENCE: "+captureRoot);
 assert(~owner.hasPending('PDSCH',1) && state.TestDataObservationCompleted);
 assert(numel(owner.DataTransmissions)==2 && state.TestDataTXCount==2 && state.TestDataRXCount==2);
+% Control-only captures must never hide missing data-waveform evidence once
+% the physical owner has actually transmitted a data block (even if a
+% caller also lost every trial row). This table is a declared guard fixture.
+missingPreview=state;
+missingPreview.SharedWaveformPreviewTable=table();
+missingPreview.SharedBroadcastWaveformPreviewTable=table("broadcast_window", ...
+    "shared_broadcast_observation_not_data_constellation", ...
+    "completed_shared_waveform_observation_buffers", ...
+    'VariableNames',{'ObservationKind','EvidenceScope','Source'});
+localReject(@()sixgr.truth.finalCoupledWaveformPreview(missingPreview,table()), ...
+    'sixgr:truth:MissingFinalSharedWaveformPreview');
+missingTrials=struct('DL',table(),'UL',table(),'CoupledRuntime',state);
+outage=sixgr.link.classifyCompletedAcquisitionOutage(missingTrials,2);
+assert(~outage.Recognized && outage.Reason=="data_transmitted_but_trials_missing", ...
+    'Executed data with lost receiver rows must not be published as acquisition outage.');
 assert(state.DLHarq.Stats.Tx==2 && state.DLQueueBits(1)==0 && numel(state.SharedDataTXLedger)==2);
 assert(owner.DataTransmissions(1).Identity.TransmissionID~=owner.DataTransmissions(2).Identity.TransmissionID);
 localReject(@()owner.queueData(1,p,struct()),'sixgr:truth:LateSharedDataPreparation');
@@ -113,6 +147,15 @@ for item=items
         assert(state.SharedWaveformStream.Events.NextSampleIndex==records(hit).CommittedAtSample);
         queueBefore=state.DLQueueBits(1); txBefore=state.DLHarq.Stats.Tx;
         state=sixgr.truth.commitSharedDataTransmission(state,item);
+        if state.TestCSIReferenceAuthority
+            calendar=table(item.Context.Prepared.ReceiverConfig.lls6g.runtime.AbsoluteSlotIndex0+1, ...
+                'VariableNames',{'CSIReferenceSlot'});
+            justStarted=state;
+            justStarted.SharedDataTXLedger=state.SharedDataTXLedger(end);
+            [eligible,~]=sixgr.truth.resolveCSIReceiveReferenceEvidence( ...
+                justStarted,state.CfgMobility,1,1,calendar,9);
+            assert(~any(eligible),'Starting a TX is not completed CSI-reference execution.');
+        end
         assert(state.DLHarq.Stats.Tx==txBefore+1 && ...
             state.DLQueueBits(1)==queueBefore-numel(item.Context.Prepared.Tx.TransportBlock));
         localReject(@()sixgr.truth.commitSharedDataTransmission(state,item), ...
@@ -279,7 +322,10 @@ for item=items
         abs(gainEvidence.LargeScaleOutputEnergy_mWsample-gainEvidence.LargeScaleExpectedOutputEnergy_mWsample) ...
         <=gainEvidence.LargeScalePowerClosureRelativeTolerance*gainEvidence.LargeScaleExpectedOutputEnergy_mWsample, ...
         'Adjacent data capture tails require sample-backed, explicitly scoped gain evidence.');
-    replay=sixgr.truth.bindSharedDataNoiseEvidence(item.Planes,p,item.Context.DesiredReferencePlane,replay);
+    assert(~isfield(item.Context,'SNR') && isfield(item.Context,'Job'), ...
+        'The physical regression must retain the production data-context shape.');
+    replay=sixgr.truth.bindSharedDataNoiseEvidence( ...
+        item.Planes,p,item.Context.DesiredReferencePlane,replay,item.Context.Job.SNR_dB);
     reference=item.Planes(string({item.Planes.ReceiverID})==item.Context.DesiredReferencePlane).Observation.readComplete();
     expected=mean(abs(double(reference(:))).^2);
     assert(replay.DesiredSignalPowerBeforeNoise==expected && ...
@@ -301,6 +347,11 @@ for item=items
     switch string(originalReplay.NoiseOperatingMode)
         case "standalone_awgn_snr_argument"
             closureID='sixgr:truth:SharedFixedSNRNoiseClosure';
+            configuredSNR=double(originalReplay.RequestedAWGNReferenceSNR_dB);
+            localReject(@()sixgr.truth.bindSharedDataNoiseEvidence( ...
+                item.Planes,p,item.Context.DesiredReferencePlane, ...
+                originalReplay,configuredSNR+1), ...
+                'sixgr:truth:FixedAWGNOperatingPointMismatch');
         case "receiver_noise_figure_thermal_noise"
             closureID='sixgr:truth:SharedThermalNoiseClosure';
         otherwise

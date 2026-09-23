@@ -82,6 +82,7 @@ decision.Policy = char(policy);
 decision.RequestedRank = double(requestedRank);
 decision.EffectiveRank = double(effectiveRank);
 decision.MaxSupportedLayers = double(maxLayers);
+decision.ConfiguredLayers = double(support.ConfiguredLayers);
 decision.DowngradeApplied = logical(downgrade);
 decision.DecisionReason = char(reason);
 decision.FixedRankAnchor = logical(fixedAnchor);

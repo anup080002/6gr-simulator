@@ -448,6 +448,16 @@ if isfield(entry, 'max') && isnumeric(value)
         error('sixgr:config:BadRange', '%s must be <= %g.', fieldName, double(entry.max));
     end
 end
+if isfield(entry, 'min_exclusive') && isnumeric(value)
+    if any(double(value(:)) <= double(entry.min_exclusive))
+        error('sixgr:config:BadRange', '%s must be > %g.', fieldName, double(entry.min_exclusive));
+    end
+end
+if isfield(entry, 'max_exclusive') && isnumeric(value)
+    if any(double(value(:)) >= double(entry.max_exclusive))
+        error('sixgr:config:BadRange', '%s must be < %g.', fieldName, double(entry.max_exclusive));
+    end
+end
 if isfield(entry, 'min_length') && isvector(value)
     if numel(value) < double(entry.min_length)
         error('sixgr:config:BadRange', '%s must contain at least %d entries.', fieldName, double(entry.min_length));

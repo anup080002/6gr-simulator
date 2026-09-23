@@ -412,12 +412,20 @@ for item=items
         continue;
     end
     if item.Kind=="PUCCHReceiveOnly"
-        % Installed CSI occasions exist before this fixture produces CSI.
-        % Keep and decode their actual captures; never fabricate Prepared.
+        % Before actual CSI-RS TX, only an installed SR remains applicable.
+        % Keep its actual capture and do not manufacture a CSI observation.
         assert(state.TestWithCSI && isempty(item.Context.GNBReception.Mapping) && ...
             ~isfield(item.Context,'Prepared'));
         state=sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHReceiveOnlyRuntime(state,item);
         observationID=string(item.Context.ObservationID);
+        if isempty(item.Context.GNBReception.CSIReportConfiguration)
+            rows=state.SharedGNBSRReceptionTable;
+            row=rows(rows.ObservationID==observationID,:);
+            assert(height(row)==1 && row.AvailableAtSample==owner.Events.NextSampleIndex && ...
+                ~row.UETransmissionExecuted && isempty(sixgr.util.structGet(state,'SharedGNBCSIReportTable',table())));
+            fprintf('PUSCH_FIXTURE_SR_RX_ONLY slot=%g CSI_bits=0 detected=%d no_PUCCH_prepared=1\n',row.Slot,row.PositiveSRDetected);
+            continue;
+        end
         reports=state.SharedGNBCSIReportTable;
         row=reports(string(reports.ObservationID)==observationID,:);
         assert(height(row)==1 && row.AvailableAtSample==owner.Events.NextSampleIndex);
@@ -687,6 +695,9 @@ for item=items
         end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+        assert(ismember('AppliedAWGNSNRSource',out.TrialTable.Properties.VariableNames) && ...
+            out.TrialTable.AppliedAWGNSNRSource==string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource',"")), ...
+            'The DL trial must retain the actual executed noise-calibration source.');
         out=sixgr.truth.bindSharedDLCSICompletion(out,p,receiver,owner);
         csi=out.CSIRSTrialTable;
         assert(height(csi)==1 && csi.Observed && csi.CSIMeasurementAvailable && ...
@@ -742,6 +753,9 @@ for item=items
         end
         result=sixgr.truth.executeGrantPHYJob(job); out=result.Result;
         assert(result.ReadyForReceiverCommit && height(out.TrialTable)==1);
+        assert(ismember('AppliedAWGNSNRSource',out.TrialTable.Properties.VariableNames) && ...
+            out.TrialTable.AppliedAWGNSNRSource==string(sixgr.util.structGet(replay,'AppliedAWGNSNRSource',"")), ...
+            'The UL trial must retain the actual executed noise-calibration source.');
         if ~state.TestWithHARQ, assert(out.TrialTable.CRCPass==1); end
         if state.TestIndependentCompletion
             assert(out.HARQ.ReceiverHARQKey==job.ReceivedContext.ULHARQReceiverKey && ...

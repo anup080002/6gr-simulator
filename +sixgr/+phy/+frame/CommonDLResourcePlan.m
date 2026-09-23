@@ -80,6 +80,13 @@ classdef CommonDLResourcePlan
             isTRS = evidence.ConflictingOwners == "TRS";
             evidence.TRSRateMatchedRECount = 0;
             if ~any(isTRS), return; end
+            % SSB and common SI remain hard exclusions. Do not attempt
+            % dedicated TRS sharing on an already unavailable candidate:
+            % the exact PDSCH allocator correctly rejects an SSB/DM-RS
+            % collision, but that is not a fatal scheduling error when
+            % another PRB region can be selected before grant freeze.
+            % Retain all owners/counts for the rejected candidate.
+            if any(~isTRS), return; end
             assert(obj.TRS.TRSInfoEnabled && obj.TRS.CSIRSType == "nzp" && ...
                 any(obj.TRS.SlotAuthority == ["periodic_offset","explicit_slot_numbers"]), ...
                 'sixgr:phy:frame:MissingDedicatedTRSAuthority', ...

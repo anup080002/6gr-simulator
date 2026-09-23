@@ -31,7 +31,7 @@ if ~isempty(csiCalendar)
         sixgr.truth.resolveCSIReceiveReferenceEvidence( ...
         state,cfg,ue,cellId,csiCalendar,targetSlot);
     % Configuration installs the periodic opportunity; it does not by
-    % itself prove that a CSI reference resource was received and completed.
+    % itself prove that the gNB executed a causal CSI reference resource.
     csiOverlap=resourceOverlap & referenceAvailable;
 end
 windows=[resource.Data.StartSymbol resource.Data.NumSymbols];
@@ -92,7 +92,7 @@ if ~isempty(overlapping)
     assert(isscalar(overlapping),'sixgr:truth:AmbiguousScheduledUCITransport', ...
         'Multiple overlapping scheduled PUSCHs require explicit receiver selection.');
     command=overlapping{1};
-    [csi,puschReport,puschCalendar]=sixgr.truth.buildSharedPUSCHCSIReceiveObligation(cfg,command.Binding.Grant);
+    [csi,puschReport,puschCalendar]=sixgr.truth.resolveSharedPUSCHCSIReceiveObligation(state,cfg,command.Binding.Grant);
     if ~isempty(report)
         assert(~isempty(puschReport) && height(puschCalendar)==1 && ...
             puschCalendar.ObligationID==selected.ObligationID && ...

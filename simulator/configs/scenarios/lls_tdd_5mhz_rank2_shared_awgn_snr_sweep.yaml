@@ -18,25 +18,99 @@ meta:
 
 canonical_control:
   launch:
-    scenario_mode: fixed_snr_sweep
-    sweep_enabled: true
+    scenario_mode: isolated_fixed_snr_points
+    sweep_enabled: false
     fixed_link_campaign_enabled: false
     geometry_enabled: false
 
-# snr_db is the nominal anchor. The authoritative point list is repeated in
-# both supported sweep fields so all normalized runtime aliases remain equal.
+# The parent is orchestration-only. Each child below resolves one fixed SNR
+# before its physical receiver, noise generator and channel owner are built.
 simulation:
   snr_db: 0
-  snr_sweep_offsets_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+  snr_sweep_offsets_db: [0]
   reference_sweep_enabled: false
   adaptive_sweep_enabled: false
 
 sweeps_and_matrix:
   snr_sweep:
-    enabled: true
+    enabled: false
     state_policy: independent_link_state_per_point
     initial_access_state_policy: independent_per_point
-    values_db: [-30, -20, -10, 0, 10, 20, 30, 40]
+    values_db: [0]
+
+scenario:
+  runner_profile: generic_sweep
+  sweep:
+    base_profile: waveform_bundle
+    # Retain unsuccessful points without preventing higher-SNR execution.
+    # This does not waive child acceptance or required artifact checks.
+    execution_error_policy: retain_failure_and_continue
+    output_name: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep
+    overrides:
+      - label: snr_m30_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_m30db
+          simulation:
+            snr_db: -30
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_m30db
+      - label: snr_m20_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_m20db
+          simulation:
+            snr_db: -20
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_m20db
+      - label: snr_m10_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_m10db
+          simulation:
+            snr_db: -10
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_m10db
+      - label: snr_0_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_0db
+          simulation:
+            snr_db: 0
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_0db
+      - label: snr_10_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_10db
+          simulation:
+            snr_db: 10
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_10db
+      - label: snr_20_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_20db_sweep_point
+          simulation:
+            snr_db: 20
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_20db_sweep_point
+      - label: snr_30_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_30db
+          simulation:
+            snr_db: 30
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_30db
+      - label: snr_40_db
+        config:
+          meta:
+            scenario_id: lls_tdd_5mhz_rank2_shared_awgn_40db
+          simulation:
+            snr_db: 40
+          output:
+            profile: lls_tdd_5mhz_rank2_shared_awgn_40db
 
 output:
   profile: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep

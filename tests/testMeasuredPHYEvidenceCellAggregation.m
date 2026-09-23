@@ -35,6 +35,16 @@ assert(rx.MeasuredLDPCDecoderMeanIterations == 4);
 assert(rx.MeasuredLDPCParityCheckFailures == 1);
 assert(rx.MeasuredCodeBlockDecodeErrorCount == 1);
 
+% A scalar common Nref may only represent complete, agreeing codewords.
+for inconsistent = {{struct('NrefUsed',99),struct('NrefUsed',100)}, ...
+        {struct('NrefUsed',99),struct()}, {struct('NrefUsed',99),[]}}
+    incomplete = sixgr.phy.rx.appendMeasuredPHYEvidence(struct(), carrier, ...
+        dmrsInd, dmrsAntInd, dmrsSym, dmrsInfo, rateMatched, ...
+        rateRecovered, rateRecoveredBatch, inconsistent{1});
+    assert(isnan(incomplete.MeasuredRateRecoverNrefBits), ...
+        'Different or missing codeword limits cannot be exported as one measured Nref.');
+end
+
 ok = true;
 fprintf("testMeasuredPHYEvidenceCellAggregation: PASS.\n");
 end

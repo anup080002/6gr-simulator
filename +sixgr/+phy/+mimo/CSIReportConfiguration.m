@@ -12,6 +12,7 @@ classdef CSIReportConfiguration
         NumCSIResources (1,1) double
         FrequencyGranularity (1,1) string
         UCIChannel (1,1) string
+        ConfiguredUCIChannel (1,1) string
         Part1Fields (1,:) string
         Part1Widths (1,:) double
         Part2Fields (1,:) string
@@ -68,6 +69,12 @@ classdef CSIReportConfiguration
                 error("sixgr:mimo:MissingCSIReportConfig", ...
                     "UCIChannel must be PUCCH or PUSCH.");
             end
+            configuredChannel=upper(string(localField(request,"ConfiguredUCIChannel",uciChannel)));
+            assert(isscalar(configuredChannel) && ismember(configuredChannel,["PUCCH","PUSCH"]), ...
+                'sixgr:mimo:MissingCSIReportConfig','ConfiguredUCIChannel must be PUCCH or PUSCH.');
+            % TS 38.214 5.2.3: a PUCCH-configured report multiplexed on
+            % PUSCH retains the payload definition of the configured report.
+            request.ConfiguredUCIChannel=configuredChannel;
             [part1Fields, part1Widths, part2Fields, part2Widths] = ...
                 localSchema(codebookType,ports,rankValue,string(request.ReportQuantity), ...
                     numResources,string(request.FrequencyGranularity),request);
@@ -83,6 +90,7 @@ classdef CSIReportConfiguration
             obj.NumCSIResources = numResources;
             obj.FrequencyGranularity = string(request.FrequencyGranularity);
             obj.UCIChannel = uciChannel;
+            obj.ConfiguredUCIChannel = configuredChannel;
             obj.Part1Fields = part1Fields;
             obj.Part1Widths = part1Widths;
             obj.Part2Fields = part2Fields;
@@ -131,8 +139,9 @@ classdef CSIReportConfiguration
         end
 
         function [encoded,target] = transcode(obj,part1,part2,channel)
-            % TX transport reassignment: preserve the original information
-            % fields, change only their channel-specific wire representation.
+            % Physical transport reassignment does not reconfigure CSI.
+            % Preserve the installed reporting format, including padding
+            % and Part-1/Part-2 ownership (TS 38.214 5.2.3).
             values=obj.decode(part1,part2);
             request=obj.SchemaRequest;
             if isfield(values,'RI'), request.Rank=values.RI; end
@@ -347,7 +356,8 @@ if ports>1 && contains(q,'ri'), prefix(end+1)="RI"; prefixWidths(end+1)=localBit
 cqi=strings(1,0); cqiWidths=zeros(1,0);
 if contains(q,'cqi'), cqi="CQI_CW0"; cqiWidths=4; end
 [li,liWidths,pmi,pmiWidths]=localTypeIRankFields(request);
-if upper(string(localField(request,'UCIChannel','PUCCH')))=="PUSCH"
+if upper(string(localField(request,'ConfiguredUCIChannel', ...
+        localField(request,'UCIChannel','PUCCH'))))=="PUSCH"
     p1f=[prefix cqi]; p1w=[prefixWidths cqiWidths];
     p2f=[li pmi]; p2w=[liWidths pmiWidths];
 else

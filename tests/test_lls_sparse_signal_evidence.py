@@ -50,6 +50,36 @@ class SparseSignalEvidence(unittest.TestCase):
             chart("SSB index timeline", "reports/csv/live_ssb_stage_table.csv",
                   ["Slot", "SSBIndex"], [[1, .5]])
 
+    def test_failed_acquisition_has_no_ssb_index_timeline(self):
+        result, rows = chart("SSB index timeline", "reports/csv/live_ssb_stage_table.csv",
+                             ["Slot", "SSBIdentityVerified", "CRCPass", "Notes", "SelectedBeamIndex"],
+                             [[1, 0, 0, "configured SSBIdx=3", 3], [2, 0, 0, "", 0]])
+        self.assertEqual(result["csv_status"], "unavailable_exact_reason")
+        self.assertEqual(result["source_row_count"], 0)
+        self.assertNotIn("ssb_index", rows[0])
+        self.assertIn("No configured or beam index was substituted", rows[0]["reason"])
+        self.assertTrue(m._is_placeholder_materialization_status(result["image_status"]))
+
+    def test_failed_candidate_does_not_join_verified_ssb_timeline(self):
+        result, rows = chart("SSB index timeline", "air_interface/csv/pbch_trials.csv",
+                             ["Slot", "SSBIndex", "SSBIdentityVerified", "CRCPass"],
+                             [[1, 3, 0, 0], [2, 1, 1, 1]])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(float(rows[0]["ssb_index"]), 1)
+        self.assertEqual(float(rows[0]["slot"]), 2)
+
+    def test_unknown_crc_is_not_proven_acquisition_failure(self):
+        with self.assertRaisesRegex(ValueError, "actual SSBIndex/SSBIdx"):
+            chart("SSB index timeline", "air_interface/csv/pbch_trials.csv",
+                  ["Slot", "SSBIndex", "SSBIdentityVerified", "CRCPass"],
+                  [[1, "NaN", 0, "NaN"]])
+
+    def test_acquisition_failure_does_not_hide_invalid_index_encoding(self):
+        with self.assertRaisesRegex(ValueError, "integer identities"):
+            chart("SSB index timeline", "air_interface/csv/pbch_trials.csv",
+                  ["Slot", "SSBIndex", "SSBIdentityVerified", "CRCPass"],
+                  [[1, .5, 0, 0]])
+
 
 if __name__ == "__main__":
     unittest.main()

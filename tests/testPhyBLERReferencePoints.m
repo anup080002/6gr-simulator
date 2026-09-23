@@ -42,14 +42,17 @@ for r = 1:size(refPts, 1)
     cfgM = sixgr.util.structSet(cfgM, "phy.pdsch.codeRate", profile.TargetCodeRate);
     cfgM = sixgr.util.structSet(cfgM, "phy.linkAdaptation.mode", "fixed_mcs");
     out = sixgr.link.runDLPDSCHThroughput(cfgM, "NumFrames", 4, "SNR_dB", snr);
-    if isfield(out, "Skipped") && out.Skipped
-        continue;
-    end
+    assert(~(isfield(out, "Skipped") && out.Skipped), ...
+        'test:BLERReferenceNotExecuted', ...
+        'A skipped MCS %d reference point is not a passed PHY check.',mcsIdx);
+    assert(~isempty(out.TrialTable),'Reference point must retain executed trials.');
     assert(isfinite(out.BLER), "BLER must be finite for MCS %d.", mcsIdx);
     assert(all(~logical(out.TrialTable.Crash)), ...
         "MCS %d reference point must execute without crashed trial rows.", mcsIdx);
     assert(out.BLER <= 0.55, ...
         "MCS %d at %.1f dB has BLER %.3f > 0.55.", mcsIdx, snr, out.BLER);
+    fprintf('BLER_REFERENCE_EXECUTED MCS=%d SNR_dB=%.1f trials=%d BLER=%.6g statistical_qualification=0\n', ...
+        mcsIdx,snr,height(out.TrialTable),out.BLER);
 end
 
 ok = true;

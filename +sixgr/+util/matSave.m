@@ -45,7 +45,17 @@ catch firstME
     end
 end
 
+% Bind the single MAT inventory to immutable serialized bytes. Both
+% destination readbacks below must match this exact validated payload.
+sourceInfo = dir(tmpPath);
+sourceBytes = localFileBytes(sourceInfo);
+sourceHash = string(sixgr.util.sha256File(tmpPath));
 localValidateSavedPayload(tmpPath, 1);
+if localFileBytes(dir(tmpPath)) ~= sourceBytes || ...
+        string(sixgr.util.sha256File(tmpPath)) ~= sourceHash
+    error("sixgr:util:matSave:ValidatedSourceChanged", ...
+        "Serialized MAT source changed while its inventory was validated.");
+end
 
 if options.UseArtifactStore && sixgr.db.isArtifactStoreActive()
     handled = sixgr.db.captureFileArtifact(tmpPath, "mat_binary", ...
@@ -57,7 +67,7 @@ if options.UseArtifactStore && sixgr.db.isArtifactStoreActive()
     return;
 end
 
-localPublishValidatedCopy(tmpPath, filePath);
+localPublishValidatedCopy(tmpPath, filePath, sourceBytes, sourceHash);
 end
 
 function localSavePayload(filePath, data, useV73)
@@ -99,11 +109,11 @@ end
 throw(wrapped);
 end
 
-function localPublishValidatedCopy(tmpPath, filePath)
+function localPublishValidatedCopy(tmpPath, filePath, sourceBytes, sourceHash)
 % Do not MOVE a local HDF5 MAT into a synchronised tree.  On OneDrive the
 % cross-volume move can be acknowledged before the provider makes the
 % destination locally reopenable.  COPY keeps the already-validated source
-% alive until the destination itself has passed WHOS/LOAD validation.
+% alive until the destination bytes match the inventoried source.
 %
 % A sibling staging copy is validated first so a provider that cannot make
 % newly copied bytes readable fails before an existing final artifact is
@@ -118,23 +128,18 @@ stagePath = fullfile(targetDir, sprintf("m_%s%s", stageId(1:12), targetExt));
 cleanupStage = onCleanup(@() localDeleteIfExists(stagePath)); %#ok<NASGU>
 
 localCopyWithRetry(tmpPath, stagePath, "StagingCopyFailed");
-localValidatePublishedBytes(stagePath, tmpPath, 4);
+localValidatePublishedBytes(stagePath, sourceBytes, sourceHash, 4);
 localCopyWithRetry(stagePath, filePath, "FinalCopyFailed");
-localValidatePublishedBytes(filePath, tmpPath, 8);
+localValidatePublishedBytes(filePath, sourceBytes, sourceHash, 8);
 end
 
-function localValidatePublishedBytes(publishedPath, sourcePath, maxAttempts)
+function localValidatePublishedBytes(publishedPath, sourceBytes, sourceHash, maxAttempts)
 % HDF5 in MATLAB R2026a on Windows cannot reopen some valid v7.3 files
 % through absolute paths beyond MAX_PATH.  Validate the bytes that are
 % actually readable from the published destination by round-tripping them
-% to a short local path, then reopening that local copy.  Size and SHA-256
-% checks prevent a partial or different destination from being accepted.
-sourceInfo = dir(sourcePath);
-if isempty(sourceInfo)
-    error("sixgr:util:matSave:MissingValidatedSource", ...
-        "Validated MAT source '%s' disappeared before publication.", sourcePath);
-end
-sourceHash = string(sixgr.util.sha256File(sourcePath));
+% to a short local path. Size and SHA-256 prove byte identity with the
+% already inventoried source; repeating its expensive MAT inventory adds
+% no new payload validation. Both staging and final readbacks remain mandatory.
 verifyPath = char(string(tempname()) + ".mat");
 cleanupVerify = onCleanup(@() localDeleteIfExists(verifyPath)); %#ok<NASGU>
 lastME = [];
@@ -143,10 +148,10 @@ for attempt = 1:max(1, round(double(maxAttempts)))
         localDeleteIfExists(verifyPath);
         localCopyWithRetry(publishedPath, verifyPath, "VerificationReadbackFailed");
         verifyInfo = dir(verifyPath);
-        if isempty(verifyInfo) || double(verifyInfo.bytes) ~= double(sourceInfo.bytes)
+        if isempty(verifyInfo) || double(verifyInfo.bytes) ~= sourceBytes
             error("sixgr:util:matSave:PublishedSizeMismatch", ...
                 "Published MAT '%s' read back %g byte(s); expected %g.", ...
-                publishedPath, localFileBytes(verifyInfo), double(sourceInfo.bytes));
+                publishedPath, localFileBytes(verifyInfo), sourceBytes);
         end
         verifyHash = string(sixgr.util.sha256File(verifyPath));
         if verifyHash ~= sourceHash
@@ -154,7 +159,6 @@ for attempt = 1:max(1, round(double(maxAttempts)))
                 "Published MAT '%s' differs from the validated serialized payload.", ...
                 publishedPath);
         end
-        localValidateSavedPayload(verifyPath, 1);
         return;
     catch ME
         lastME = ME;

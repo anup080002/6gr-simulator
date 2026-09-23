@@ -78,6 +78,38 @@ def test_dashboard_parent_run_excludes_nested_sweep_artifacts(tmp_path) -> None:
     assert "sweeps/point_1/reports/csv/child.csv" not in logical_paths
 
 
+def test_dashboard_discovers_sweep_points_before_and_after_parent_completion(
+    tmp_path, monkeypatch
+) -> None:
+    results = tmp_path / "results"
+    parent = results / "lls" / "sweep_scenario" / "sweep_run"
+    child = parent / "sweeps" / "snr_m30_db"
+    child_csv = child / "reports" / "csv"
+    child_csv.mkdir(parents=True)
+    (child_csv / "scenario_summary.csv").write_text(
+        "ScenarioID,RunCompletion,Ok\nsweep_scenario,failed,0\n", encoding="utf-8"
+    )
+    # Config-only future points and arbitrary debug descendants are not runs.
+    future = parent / "sweeps" / "snr_m20_db" / "meta"
+    future.mkdir(parents=True)
+    (future / "scenario_config_identity.json").write_text("{}", encoding="utf-8")
+    debug = parent / "debug" / "nested" / "reports" / "csv"
+    debug.mkdir(parents=True)
+    (debug / "scenario_summary.csv").write_text("Ok\n1\n", encoding="utf-8")
+    monkeypatch.setattr(dash, "_dashboard_result_roots", lambda: [results])
+    assert dash._filesystem_run_folders() == [child]
+    row = dash.filesystem_run_row_from_folder(child)
+    assert row is not None and row["status_text"] == "failed"
+    assert dash.filesystem_fetch_run(row["run_id"])["run_folder"] == str(child.absolute())
+    parent_csv = parent / "reports" / "csv"
+    parent_csv.mkdir(parents=True)
+    (parent_csv / "scenario_summary.csv").write_text(
+        "ScenarioID,RunCompletion,Ok\nsweep_scenario,completed_with_failures,0\n",
+        encoding="utf-8",
+    )
+    assert set(dash._filesystem_run_folders()) == {parent, child}
+
+
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
     packed_vector = "|".join("0" for _ in range(70000))
     raw = ("TrialID,MeasuredLDPCParityCheckVector,CRCPass\n"
@@ -86,6 +118,25 @@ def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
     assert header == ["TrialID", "MeasuredLDPCParityCheckVector", "CRCPass"]
     assert len(rows) == 1
     assert rows[0][1] == packed_vector
+
+
+def test_dashboard_preserves_sweep_execution_failure_without_phy_rows() -> None:
+    raw = (
+        'Label,Ok,Returned,ExecutionStatus,ErrorIdentifier,ErrorMessage\n'
+        'snr_m30_db,0,0,execution_error,sixgr:test:PublicationFailed,'
+        '"No data observations, retained failure\nsecond diagnostic line"\n'
+        'snr_20_db,1,1,completed_pass,,\n'
+    ).encode('utf-8')
+    header, rows = dash.parse_csv_bytes(raw)
+    records = [dict(zip(header, row)) for row in rows]
+    assert len(records) == 2
+    assert records[0]['Ok'] == '0'
+    assert records[0]['Returned'] == '0'
+    assert records[0]['ExecutionStatus'] == 'execution_error'
+    assert records[0]['ErrorIdentifier'] == 'sixgr:test:PublicationFailed'
+    assert records[0]['ErrorMessage'].endswith('\nsecond diagnostic line')
+    assert records[1]['Ok'] == '1'
+    assert not {'BLER', 'ThroughputMbps', 'CRCPass'}.intersection(header)
 
 
 def test_dashboard_discovers_active_filesystem_run_before_terminal_manifest(
