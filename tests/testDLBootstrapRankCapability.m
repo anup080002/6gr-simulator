@@ -1,9 +1,12 @@
-function ok=testDLBootstrapRankCapability()
+function ok=testDLBootstrapRankCapability(scenarioPath)
 % Config/policy regression, not proof of decoded multi-layer PDSCH.
 % Bootstrap rank and the installed adaptation ceiling are separate inputs.
 setup6GRSimToolkit('Verbose',false);
-source=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
-    'scenarios','lls_tdd_5mhz_four_port_shared_awgn_12db.yaml'));
+if nargin<1
+    scenarioPath=fullfile('simulator','configs','scenarios', ...
+        'lls_tdd_5mhz_four_port_shared_awgn_12db.yaml');
+end
+source=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg=sixgr.lls6g.buildInternalConfig(source,tempname);
 initial=double(source.get('pdsch.layer_count'));
 ceiling=double(source.get('mimo.max_dl_layers'));
@@ -42,7 +45,15 @@ issued=struct('Slot',4,'RNTI',4101,'MCSIndex',0,'MCS',0, ...
     'PRBSet',0:24,'SymbolAllocation',[2 12], ...
     'ExactPHYFeasibilityChecked',true,'NumLayers',initial, ...
     'Layers',initial,'RIUsed',initial,'Rank',initial, ...
-    'PrecodingNumLayers',initial);
+    'PrecodingNumLayers',initial,'PMI',1,'CRI',0);
+request=cfg.phy.csi.reportConfiguration; request.Rank=initial;
+if request.Ports==2
+    matrices=sixgr.phy.mimo.TypeI2PortCodebook.enumerate(initial);
+    issued.PrecodingMatrix=matrices(:,:,issued.PMI+1);
+else
+    issued.PrecodingMatrix=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,issued.PMI);
+end
+original=issued;
 issued=sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrantRuntime( ...
     issued,feedback,[],cfg,'DL');
 assert(issued.NumLayers==initial && issued.RIUsed==initial && ...
@@ -51,7 +62,32 @@ assert(issued.NumLayers==initial && issued.RIUsed==initial && ...
     string(issued.RankDecisionReason)=="measured_ri_deferred_to_future_grant", ...
     'test:DLFinalizedGrantRankMutation', ...
     'Received CSI must not rewrite the spatial contract of an issued DL grant.');
+assert(issued.PMI==1,'test:DLFinalizedGrantPMIMutation', ...
+    'New received CSI must not replace the PMI bound to an already finalized spatial contract.');
+assert(issued.CRI==original.CRI && isequal(issued.PrecodingMatrix,original.PrecodingMatrix));
+% Unknown PMI remains unknown; an explicit non-codebook matrix must not
+% acquire a convenient index from a later report.
+unknown=original; unknown.PMI=NaN;
+unknown=sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrantRuntime( ...
+    unknown,feedback,[],cfg,'DL');
+assert(isnan(unknown.PMI) && isequal(unknown.PrecodingMatrix,original.PrecodingMatrix));
+% A later fixed-rank policy is also not authority to rewrite this contract.
+fixed=cfg; fixed.runtime.link_adaptation.RankPolicy="fixed";
+fixed.phy.pdsch.nLayers=ceiling; fixed.phy.pdsch.numLayers=ceiling;
+retained=sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrantRuntime( ...
+    original,feedback,[],fixed,'DL');
+assert(retained.NumLayers==initial && retained.PMI==original.PMI && ...
+    isequal(retained.PrecodingMatrix,original.PrecodingMatrix));
+% Contradictory retained ranks are errors, not a request to round or choose
+% whichever alias happens to be inspected first.
+bad=original; bad.Layers=ceiling;
+try
+    sixgr.truth.CoupledTruthRuntime.applyMeasuredFeedbackAMCToGrantRuntime(bad,feedback,[],cfg,'DL');
+    error('test:MissingFinalizedRankError','Contradictory frozen rank was accepted.');
+catch ex
+    assert(string(ex.identifier)=="sixgr:truth:InconsistentFinalizedGrantRank",ex.message);
+end
 fprintf(['DL_BOOTSTRAP_RANK_CAPABILITY_PASS initial=%g maximum=%g ' ...
-    'future_rank=%g finalized_rank=%g\n'],initial,ceiling,future.NumLayers,issued.NumLayers);
+    'future_rank=%g finalized_rank=%g finalized_pmi=%g\n'],initial,ceiling,future.NumLayers,issued.NumLayers,issued.PMI);
 ok=true;
 end

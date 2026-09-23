@@ -252,6 +252,10 @@ classdef TypeIICodebook
                 'sixgr:mimo:UnsupportedTypeIIProfile','Subband-amplitude reconstruction is not enabled.');
             assert(~isfield(request,'CodebookSubsetRestriction') || isempty(request.CodebookSubsetRestriction), ...
                 'sixgr:mimo:UnsupportedTypeIIProfile','Nonempty Type-II subset restrictions require a separately validated restriction decoder.');
+            assert(~isfield(request,'Panels') || isequal(request.Panels,1), ...
+                'sixgr:mimo:UnsupportedTypeIIProfile','This Type-II profile requires one dual-polarized panel.');
+            assert(~isfield(request,'I2Restriction') || isempty(request.I2Restriction), ...
+                'sixgr:mimo:UnsupportedTypeIIProfile','Type-I i2 restrictions cannot be silently applied to a Type-II coefficient codebook.');
         end
     end
 end

@@ -185,3 +185,46 @@ started before this commit and is not a frozen-revision run of this checkpoint.
 Generated results, logs and local environments remain preserved locally under
 existing ignore rules; they are not force-added to GitHub or deleted to make
 the working tree clean.
+
+## Follow-up consolidation after 718d4e0a
+
+This user-requested development checkpoint includes all eight pending MATLAB
+source/test files: measured Type-II wideband CSI report generation and physical
+PUSCH report reception coverage, explicit unsupported-profile rejection, and
+preservation of finalized DL rank/PMI/CRI/precoder identity against later CSI.
+It also includes explicit RNTIs in the hand-written AMC regression grants and
+registration of the focused CSI tests. No scenario is switched to Type-II.
+Shared-runtime Type-II scheduling integration is not yet qualified.
+
+Freshly fetched local and remote main matched at 718d4e0a before staging.
+There is one local branch and one registered worktree. Historical integration
+commits cd397f33 and 471334ff remain ancestors; both reconciled recovery
+stashes and historical patch archives remain preserved, not reapplied.
+
+Retained verification receipts reviewed for this checkpoint:
+
+- `logs/typeii_measured_csirs_to_pusch_20260923.log`: six measured report
+  cases, independent physical PUSCH reception, wire/report binding and
+  receiver-owned CSI Part-2 sizing passed; the final batch pass marker exists.
+- `logs/typeii_profile_restriction_guards_20260923.log`: 16 toolbox matrix
+  comparisons, 88 component cases, 16 channel-codec cases and 24 received
+  report cases passed. Rounded toolbox amplitudes have an explicit bounded
+  comparison; the exact matrix power contract is not relaxed.
+- `logs/finalized_spatial_5mhz_rank2_20260923.log`: the actual 5 MHz / 20 dB
+  configuration passed the focused finalized-spatial-contract regression;
+  precoder vectors and independent PDSCH reception also passed.
+- `logs/finalized_spatial_adjacent_guards_20260923.log`: scheduler grant
+  consistency passed, but testSchedulerAMCNoFixedMCSFallback still fails
+  because the enabled TRS reservation has no supported explicit symbol pair.
+  The fixture RNTI repair does not close this remaining failure.
+
+At consolidation no MATLAB engine was active. The earlier v12 eight-point
+sweep stopped during the -10 dB point's export; its terminal sweep result is
+incomplete. The earlier public-SINR E2E batch also has no final pass receipt.
+These facts supersede the running-status observations in earlier sections;
+neither job is restarted or represented as passed by this checkpoint.
+
+No new MATLAB run or testAll is launched, following the standing instruction
+not to start testAll. This is not full-regression, final-source 5 MHz sweep,
+or full-control 400 MHz acceptance. Results, logs and local environments are
+preserved locally under existing ignore rules, not uploaded or deleted.

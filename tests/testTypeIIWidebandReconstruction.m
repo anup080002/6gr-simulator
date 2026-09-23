@@ -53,6 +53,10 @@ bad=request; bad.FrequencyGranularity="subband";
 localReject(bad,c,'sixgr:mimo:UnsupportedTypeIIProfile');
 bad=request; bad.CodebookSubsetRestriction=[1 0];
 localReject(bad,c,'sixgr:mimo:UnsupportedTypeIIProfile');
+bad=request; bad.Panels=2;
+localReject(bad,c,'sixgr:mimo:UnsupportedTypeIIProfile');
+bad=request; bad.I2Restriction=[1 0];
+localReject(bad,c,'sixgr:mimo:UnsupportedTypeIIProfile');
 
 assert(string(version('-release'))=="2026a",'Toolbox comparison is release-pinned.');
 carrier=nrCarrierConfig('NSizeGrid',4,'SubcarrierSpacing',15);

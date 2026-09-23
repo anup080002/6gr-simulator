@@ -3015,10 +3015,13 @@ methods(Static, Access=private)
                     grant.Rank = double(feedback.RI);
                     grant.RankIndicator = double(feedback.RI);
                 end
-                if isfinite(double(sixgr.util.structGet(feedback, "PMI", NaN)))
+                frozenSpatial=logical(sixgr.util.structGet(grant,"ExactPHYFeasibilityChecked",false));
+                frozenPHY=sixgr.util.structGet(grant,"PHYGrant",struct());
+                frozenSpatial=frozenSpatial || (isstruct(frozenPHY) && ~isempty(fieldnames(frozenPHY)));
+                if ~frozenSpatial && isfinite(double(sixgr.util.structGet(feedback, "PMI", NaN)))
                     grant.PMI = double(feedback.PMI);
                 end
-                if isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
+                if ~frozenSpatial && isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
                     grant.CRI = double(feedback.CRI);
                 end
                 schedulerUsesCQITable = sixgr.truth.CoupledTruthRuntime. ...
@@ -10920,6 +10923,42 @@ methods(Static, Access=private)
         end
         rankDecision = sixgr.mimo.resolveRankExecutionPolicy( ...
             cfg,direction,max(1,round(configuredRank)));
+        finalizedGrant = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
+        phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+        if ~finalizedGrant && isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
+            finalizedGrant = true;
+        end
+        if finalizedGrant
+            executableRICandidates = [ ...
+                double(sixgr.util.structGet(grant, "NumLayers", NaN)), ...
+                double(sixgr.util.structGet(grant, "Layers", NaN)), ...
+                double(sixgr.util.structGet(grant, "RIUsed", NaN))];
+            executableRI = sixgr.truth.CoupledTruthRuntime.firstNumeric(executableRICandidates, NaN);
+            if isfinite(double(executableRI)) && double(executableRI) >= 1
+                % A changed capability/configuration or newly received PMI
+                % cannot rewrite an already selected spatial contract.
+                nLayers = double(executableRI);
+                assert(nLayers==fix(nLayers) && ...
+                    all(isnan(executableRICandidates) | executableRICandidates==nLayers), ...
+                    'sixgr:truth:InconsistentFinalizedGrantRank', ...
+                    'Finalized spatial rank aliases must agree; do not round, clamp or replace them.');
+                grant.RI = double(nLayers);
+                grant.RIUsed = double(nLayers);
+                grant.Rank = double(nLayers);
+                grant.RankIndicator = double(nLayers);
+                grant.NumLayers = double(nLayers);
+                grant.Layers = double(nLayers);
+                grant.PrecodingNumLayers = double(nLayers);
+                grant.RankAuthority = "finalized_grant_spatial_contract";
+                grant.RankDecisionReason = "measured_ri_deferred_to_future_grant";
+                % Preserve PMI/CRI (including unavailable values) and the
+                % selected matrix as one decision. Feedback belongs to the
+                % next grant, not this frozen rank's index domain.
+                return;
+            end
+            error('sixgr:truth:InconsistentFinalizedGrantRank', ...
+                'A finalized spatial contract must retain its executable rank.');
+        end
         if logical(rankDecision.FixedRankAnchor)
             nLayers = double(rankDecision.EffectiveRank);
             grant.RI = nLayers;
@@ -10934,33 +10973,6 @@ methods(Static, Access=private)
                 sixgr.util.structGet(feedback,"PMI",sixgr.util.structGet(grant,"PMI",NaN)), ...
                 cfg,direction,nLayers));
             return;
-        end
-        finalizedGrant = logical(sixgr.util.structGet(grant, "ExactPHYFeasibilityChecked", false));
-        phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
-        if ~finalizedGrant && isstruct(phyGrant) && ~isempty(fieldnames(phyGrant))
-            finalizedGrant = true;
-        end
-        if finalizedGrant
-            executableRICandidates = [ ...
-                double(sixgr.util.structGet(grant, "NumLayers", NaN)), ...
-                double(sixgr.util.structGet(grant, "Layers", NaN)), ...
-                double(sixgr.util.structGet(grant, "RIUsed", NaN))];
-            executableRI = sixgr.truth.CoupledTruthRuntime.firstNumeric(executableRICandidates, NaN);
-            if isfinite(double(executableRI)) && double(executableRI) >= 1
-                nLayers = max(1, min(sixgr.truth.CoupledTruthRuntime.resolveMaxGrantLayers(cfg, direction), round(double(executableRI))));
-                grant.RI = double(nLayers);
-                grant.RIUsed = double(nLayers);
-                grant.Rank = double(nLayers);
-                grant.RankIndicator = double(nLayers);
-                grant.NumLayers = double(nLayers);
-                grant.Layers = double(nLayers);
-                grant.PrecodingNumLayers = double(nLayers);
-                grant.RankAuthority = "finalized_grant_spatial_contract";
-                grant.RankDecisionReason = "measured_ri_deferred_to_future_grant";
-                grant.PMI = double(sixgr.truth.CoupledTruthRuntime.sanitizeFeedbackPMI( ...
-                    sixgr.util.structGet(feedback, "PMI", sixgr.util.structGet(grant, "PMI", NaN)), cfg, direction, nLayers));
-                return;
-            end
         end
         ri = double(sixgr.util.structGet(feedback, "RI", sixgr.util.structGet(grant, "RIUsed", NaN)));
         if ~(isfinite(ri) && ri >= 1)

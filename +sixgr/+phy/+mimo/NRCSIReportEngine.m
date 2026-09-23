@@ -25,7 +25,7 @@ classdef NRCSIReportEngine
             end
             reportConfig = localToolboxReportConfig(carrier,reportRequest,cfg);
             rankDomain = double(sixgr.util.structGet(cfg,"RankDomain",[]));
-            reportConfig.RIRestriction = localRIRestriction(rankDomain);
+            reportConfig.RIRestriction = localRIRestriction(rankDomain,reportConfig.CodebookType);
 
             [ri,~,~] = nr5g.internal.nrRISelect( ...
                 carrier,csirs,reportConfig,H,nVar,"MaxSE");
@@ -33,18 +33,36 @@ classdef NRCSIReportEngine
                 nr5g.internal.nrCQIReport( ...
                 carrier,csirs,reportConfig,dmrs,ri,H,nVar);
             W = localWidebandPrecoder(pmiInfo.W,ri);
-            pmi = localPMIValues(pmiSet,pmiInfo.Codebook);
             cri = localMeasuredCRI(measurement, ...
                 double(reportRequest.NumCSIResources));
             typedRequest = reportRequest;
             typedRequest.Rank = double(ri);
             % Verify the selected component tuple maps to the same matrix
             % the scheduler will apply; no analytic H or oracle selection.
-            pmiComponents=struct("PMI_I11",pmi.i11,"PMI_I12",pmi.i12, ...
-                "PMI_I13",pmi.i13,"PMI_I2",pmi.i2);
-            schedulerPMI=sixgr.phy.mimo.TypeISinglePanelCodebook.linearIndex(typedRequest,pmiComponents);
-            schedulerW=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(typedRequest,schedulerPMI);
-            assert(schedulerPMI==pmi.LinearIndex && norm(schedulerW-W,'fro')<1e-12, ...
+            typeII=strcmpi(reportConfig.CodebookType,'type2');
+            matrixAuthority="ts38214_single_panel_formula_from_measured_pmi";
+            matrixBound=1e-12;
+            if typeII
+                pmiComponents=sixgr.phy.mimo.TypeIICodebook.fromToolboxPMI(typedRequest,pmiSet);
+                schedulerW=sixgr.phy.mimo.TypeIICodebook.matrix(typedRequest,pmiComponents);
+                % Type-II has coefficient fields, not a Type-I scalar index.
+                pmi=struct('i11',NaN,'i12',NaN,'i13',NaN,'i2',NaN,'LinearIndex',NaN);
+                matrixAuthority="ts38214_typeII_formula_from_measured_pmi_components";
+                % R2026a stores rounded amplitudes. Bound only that known
+                % representation difference; never relax the power contract.
+                exact=sqrt([0 1/64 1/32 1/16 1/8 1/4 1/2 1]);
+                rounded=[0 .125 .1768 .25 .3536 .5 .7071 1];
+                matrixBound=2*sqrt(2*typedRequest.NumberOfBeams-1)*max(abs(exact-rounded))+1e-12;
+            else
+                pmi = localPMIValues(pmiSet,pmiInfo.Codebook);
+                pmiComponents=struct("PMI_I11",pmi.i11,"PMI_I12",pmi.i12, ...
+                    "PMI_I13",pmi.i13,"PMI_I2",pmi.i2);
+                schedulerPMI=sixgr.phy.mimo.TypeISinglePanelCodebook.linearIndex(typedRequest,pmiComponents);
+                schedulerW=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(typedRequest,schedulerPMI);
+                assert(schedulerPMI==pmi.LinearIndex,'sixgr:mimo:PrecoderAuthorityMismatch', ...
+                    'Measured Type-I PMI must retain its exact codebook index.');
+            end
+            assert(norm(schedulerW-W,'fro')<=matrixBound, ...
                 'sixgr:mimo:PrecoderAuthorityMismatch', ...
                 'Measured CSI PMI and scheduler codebook must identify the same matrix.');
             toolboxMatrixDigest=sixgr.phy.mimo.MatrixContract.digest(W);
@@ -62,6 +80,7 @@ classdef NRCSIReportEngine
                 "PMI_I11",pmi.i11,"PMI_I12",pmi.i12, ...
                 "PMI_I13",pmi.i13,"PMI_I2",pmi.i2, ...
                 "LI",li);
+            if typeII, values.PMIComponents=pmiComponents; end
             typedReport = typedConfig.build(values);
             [singularValues,conditionNumberDB] = ...
                 localMeasuredSpatialCondition(measurement.ChannelEstimate,ri);
@@ -76,7 +95,7 @@ classdef NRCSIReportEngine
                 "CQI",double(cqiValue(1)),"LI",li, ...
                 "CRI",cri,"WidebandSINR_dB",effectiveSINR, ...
                 "Precoder_W",W, ...
-                "PrecoderMatrixAuthority","ts38214_single_panel_formula_from_measured_pmi", ...
+                "PrecoderMatrixAuthority",matrixAuthority, ...
                 "ToolboxPrecoderMatrixSHA256",toolboxMatrixDigest, ...
                 "PrecoderMatrixMaxAbsToolboxDifference",toolboxMatrixDifference, ...
                 "PrecoderMatrixSHA256",sixgr.phy.mimo.MatrixContract.digest(W), ...
@@ -113,6 +132,11 @@ classdef NRCSIReportEngine
                     "Specification","TS38.214_R18_via_MathWorks_R2026a", ...
                     "ExecutionEngine","nr5g.internal.nrRISelect+nrCQIReport", ...
                     "ConfiguredSNRUsed",false,"SVDThresholdUsed",false));
+            if typeII
+                csi.PMIComponents=pmiComponents;
+                csi.PMIIndexRepresentation="typeII_coefficient_fields_no_scalar_index";
+                csi.PrecoderMatrixToolboxFrobeniusBound=matrixBound;
+            end
         end
     end
 end
@@ -151,7 +175,17 @@ reportConfig.CQITable = string(sixgr.util.structGet(cfg,"CQITable", ...
 reportConfig.CodebookType = localCodebookType(request.CodebookType);
 reportConfig.PanelDimensions = [double(sixgr.util.structGet(request,"Panels",1)), ...
     double(request.N1),double(request.N2)];
-reportConfig.CodebookMode = double(request.CodebookMode);
+if strcmpi(reportConfig.CodebookType,'type2')
+    % Validate the same installed subset as the independent wire decoder
+    % before running any selection. Unsupported restrictions are not ignored.
+    wire=sixgr.phy.mimo.CSIReportConfiguration(request,double(request.Epoch));
+    wire.assertQualifiedWireLayout();
+    reportConfig.NumberOfBeams=double(request.NumberOfBeams);
+    reportConfig.PhaseAlphabetSize=double(request.PhaseAlphabetSize);
+    reportConfig.SubbandAmplitude=false; % Wideband-only qualified subset.
+else
+    reportConfig.CodebookMode = double(request.CodebookMode);
+end
 granularity = lower(string(request.FrequencyGranularity));
 reportConfig.CQIFormatIndicator = granularity;
 reportConfig.PMIFormatIndicator = granularity;
@@ -167,18 +201,22 @@ function token = localCodebookType(raw)
 token = lower(regexprep(string(raw),'[^a-zA-Z0-9]',''));
 if token == "typeisinglepanel" || token == "type1singlepanel"
     token = "type1SinglePanel";
+elseif token == "typeii"
+    token = "type2";
 else
     error("sixgr:mimo:UnsupportedProfile", ...
-        "High-port NR CSI currently enables only Type-I single-panel reporting.");
+        "High-port NR CSI enables Type-I single-panel and qualified wideband Type-II PUSCH reporting.");
 end
 end
 
-function restriction = localRIRestriction(rankDomain)
-if isempty(rankDomain) || any(~ismember(rankDomain,1:8))
+function restriction = localRIRestriction(rankDomain,codebookType)
+maximum=8;
+if strcmpi(codebookType,'type2'), maximum=2; end
+if isempty(rankDomain) || ~isvector(rankDomain) || any(~ismember(rankDomain,1:maximum))
     error("sixgr:mimo:InvalidRI", ...
-        "Strict Type-I RankDomain must contain explicit values in [1,8].");
+        "Strict %s RankDomain must contain explicit values in [1,%d].",codebookType,maximum);
 end
-restriction = zeros(1,8);
+restriction = zeros(1,maximum);
 restriction(rankDomain) = 1;
 end
 
