@@ -1,11 +1,14 @@
 # SixGR Foundation v2
 
-Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md#pucch-reporting-checkpoint).
+Current development snapshot: [26 September source consolidation and verification limits](docs/lls/main_consolidation_20260925.md#26-september-source-consolidation).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
 The latest PUCCH reporting repair separates receiver detection from payload
 correctness; its focused tests pass, but detector statistical qualification
 remains open. Source, scenario YAMLs and launchers are delivered on `main`;
 generated logs, results and instrument IQ packages remain separate local artifacts.
+The latest retained-symbol analysis and standalone QPSK likelihood helper are
+included as development work, **not installed in the live PUCCH receiver**.
+Their inclusion does not close detector qualification or full-scenario acceptance.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -179,6 +182,11 @@ Use this table as the quick decision guide.
 This is **400 MHz bandwidth at 7 GHz**, not a 4 GHz carrier. The dedicated YAML is
 [`lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml`](simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml).
 It preserves the existing 5 MHz and four-layer/shared-feedback scenarios.
+
+Use `scripts/run_vxg_vsa_demo.ps1` below for a **new complete digital package**;
+use `apps/vxg_vsa_demo_dashboard.py` below to **view the existing package only**.
+Neither command verifies physical instrument capability. Updating `main` does
+not rerun this experiment or replace the sealed measurements from `20260925_v1`.
 
 The run uses 120 kHz SCS, FFT 4096, native 491.52 MSa/s, normal CP, 264 PRBs,
 2x2 logical identity MIMO and two layers. Each port has 4,915,200 samples over

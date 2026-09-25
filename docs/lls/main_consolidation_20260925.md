@@ -171,3 +171,46 @@ output locations and hardware handoff files. Its sealed package and historical
 measurements are unchanged. Generated artifacts and both historical recovery
 stashes are preserved locally; only source, tests, configuration and documentation
 are delivered through Git.
+
+## 26 September source consolidation
+
+The user-requested single-branch checkpoint starts from `96c9c980`, which
+matched freshly fetched `origin/main`. Only `main` and one worktree exist;
+there is no separate development branch to merge. All ten outstanding
+source/configuration/diagnostic/test files are preserved with this README
+and checkpoint update. This is a development checkpoint, not a qualified release.
+
+- The symbol-domain PUCCH diagnostic now retains failed signal and absent-
+  producer observations rather than aborting before writing the evidence.
+- The analytical short-UCI null model and frozen validation YAML are design
+  checks, not a physical detector threshold or qualification campaign.
+- A standalone QPSK demapper uses each equalizer output's complex response
+  and disturbance variance. It is **not wired into the production receiver**.
+- The independent retained-symbol analyzer and associated regressions are
+  included. Seven previously captured observations reproduce the original
+  decoded words and detection metrics; analysis is not new waveform execution.
+- Production receiver integration, MATLAB execution of the four new focused
+  tests, physical detector qualification and full 5 MHz/400 MHz acceptance
+  remain pending. No detection threshold or running scenario YAML is changed.
+
+Verification for this checkpoint:
+
+| Check | Outcome |
+|---|---|
+| Independent retained-symbol Python checks | 6 passed; `logs/main_consolidation_retained_math_20260926.xml` |
+| Digital waveform package/integrity Python checks | 18 passed; `logs/main_consolidation_lab_package_20260926.xml`; dependency deprecation warnings only |
+| MATLAB Code Analyzer, seven changed/new MATLAB files | Exit 0, no diagnostics; static analysis only |
+| New MATLAB test execution / `testAll` | Not run; no MATLAB runtime or full-suite pass claimed |
+| Sealed 400 MHz root manifest SHA-256 | Unchanged: `dbfd394b1b1781461e41f64b8475531931050c2dbdc32f6d95bda3756a67d60b`; not a fresh full-package verification |
+
+The existing eight-point sweep is left running without receiver changes or
+restart. Its result is not certified by this source consolidation. The README
+continues to distinguish generation from viewing, names the exact 400 MHz /
+7 GHz rank-2 YAML, and retains the lab test's 30 dB failures, disabled physical
+feedback and unknown installed-hardware status.
+
+Both recovery stashes are retained; their documented integration commits
+`cd397f33` and `471334ff` are ancestors of `main`. Historical patches are not
+blindly reapplied over newer source. Ignored results, logs and the sealed IQ
+package remain on disk and are not part of the GitHub source push. Cleaning
+the tracked working tree does not delete those files.
