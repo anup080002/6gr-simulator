@@ -1,0 +1,116 @@
+diff --git a/+sixgr/+link/receivePUCCHObservation.m b/+sixgr/+link/receivePUCCHObservation.m
+index 83009447..25921c30 100644
+--- a/+sixgr/+link/receivePUCCHObservation.m
++++ b/+sixgr/+link/receivePUCCHObservation.m
+@@ -38,7 +38,8 @@ assert(~isempty(policy),'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
+ [threshold,thresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold(assignment,policy);
+ args={'NoiseVariance',NaN,'ChannelProfile',sixgr.channel.resolveConcreteProfile(cfg), ...
+     'DetectionThreshold',threshold};
+-timing=[];
++timing=[];
++priorRejection="";
+ if assignment.Format==0
+     if isempty(prior) && receiverOnly && context.HARQACKBits==0 && context.SRBits==1 && ...
+             context.CSIPart1Bits==0 && context.CSIPart2Bits==0
+@@ -59,14 +60,38 @@ if assignment.Format==0
+         [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
+     end
+     args=[args {'NoiseVarianceMode','noncoherent_correlation'}];
+-else
+-    % Received DM-RS, not injected noise/covariance or TX pilot samples.
+-    % The full actual capture bounds timing search; no padding is allowed.
+-    args=[args {'NoiseVarianceMode','received_dmrs_estimate', ...
+-        'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
+-end
+-rx=sixgr.phy.pucch.PUCCHReceiver.receive(raw,carrier,assignment,context,args{:});
+-if ~isempty(timing), rx.ReceiveTiming=timing; end
++else
++    % Received DM-RS, not injected noise/covariance or TX pilot samples.
++    args=[args {'NoiseVarianceMode','received_dmrs_estimate'}];
++    if ~isempty(prior)
++        assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
++            'sixgr:link:InvalidPUCCHTimingPrior','A timing prior must be a retained received UL pilot clock.');
++        try
++            [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
++        catch cause
++            % These states make an earlier clock inapplicable, not a new
++            % timing measurement. Formats with DM-RS can acquire their own
++            % known pilots. Malformed configuration and other errors stay fatal.
++            inapplicable=["sixgr:phy:sync:StaleULTimingReference", ...
++                "sixgr:phy:sync:ULTimingReferenceIdentityMismatch", ...
++                "sixgr:phy:sync:FutureULTimingReference", ...
++                "sixgr:phy:sync:IncompletePriorAlignedULObservation"];
++            if ~any(string(cause.identifier)==inapplicable), rethrow(cause); end
++            priorRejection=string(cause.identifier);
++        end
++    end
++    if isempty(timing)
++        % Full actual capture bounds acquisition; no padding or TX timing.
++        args=[args {'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
++    end
++end
++rx=sixgr.phy.pucch.PUCCHReceiver.receive(raw,carrier,assignment,context,args{:});
++if ~isempty(timing), rx.ReceiveTiming=timing; end
++if assignment.Format>=1
++    rx.ReceiveTiming.PriorClockProvided=~isempty(prior);
++    rx.ReceiveTiming.PriorClockApplied=~isempty(timing);
++    rx.ReceiveTiming.PriorClockRejectionReason=priorRejection;
++end
+ rx.DetectionThresholdSource=thresholdSource;
+ rx.ReceiverObservationStartSample=observation.StartSample;
+ rx.ReceiverObservationEndSampleExclusive=observation.EndSampleExclusive;
+diff --git a/+sixgr/+truth/CoupledTruthRuntime.m b/+sixgr/+truth/CoupledTruthRuntime.m
+index 387e93d9..c6c1f6e9 100644
+--- a/+sixgr/+truth/CoupledTruthRuntime.m
++++ b/+sixgr/+truth/CoupledTruthRuntime.m
+@@ -1677,7 +1677,7 @@ methods(Static)
+         rx.ReceiverGainCompensation=gain;
+         if h.Assignment.Format>=1
+             sixgr.truth.exportIndependentPUCCHObservation( ...
+-                state.RunFolder,cfg,h,item.Planes,rx,receiver);
++                state.RunFolder,cfg,h,item.Planes,rx,receiver,prior);
+         end
+         bits=int8(rx.DecodedFields.HARQACK(:));
+         usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
+@@ -1762,8 +1762,12 @@ methods(Static)
+         post.readComplete(); pre.readComplete(); tx.readComplete();
+         assert(post.SampleRateHz==owner.SampleRateHz && post.StartSample==pre.StartSample && ...
+             post.EndSampleExclusive==pre.EndSampleExclusive && post.EndSampleExclusive==owner.Events.NextSampleIndex, ...
+-            'sixgr:truth:PUCCHReceiveOnlyClockMismatch','Publish only at actual gNB receive completion.');
+-        if prepared
++            'sixgr:truth:PUCCHReceiveOnlyClockMismatch','Publish only at actual gNB receive completion.');
++        receiveCarrier=sixgr.phy.grid.makeCarrier(c.Config);
++        nominal=sixgr.phy.frame.slotStartSample(receiveCarrier,c.Slot-1,post.SampleRateHz);
++        prior=sixgr.truth.selectReceivedULTimingReference( ...
++            state,item.UE,post.EndSampleExclusive,nominal);
++        if prepared
+             % Preserve physical TX/power and bit-comparison audit from the
+             % retained immutable transmission. It cannot supply the RX schema.
+             [~,~,~,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,c.Prepared);
+@@ -1773,8 +1777,9 @@ methods(Static)
+                 'ChannelState',channel,'Channel',struct('Profile',sixgr.channel.resolveConcreteProfile(c.Config), ...
+                 'Source',"shared_physical_owner_received_observation", ...
+                 'RuntimeChannelPhysicalTxElements',channel.NumTxAnt,'RuntimeChannelNumRxAntennas',channel.NumRxAnt), ...
+-                'GNBReception',struct('Assignment',h.Assignment,'Context',h.Context));
+-            trial=sixgr.link.runPUCCHWaveformTrial(c.Config,c.Arguments{:},'ReceivedContext',input);
++                'GNBReception',struct('Assignment',h.Assignment,'Context',h.Context));
++            if ~isempty(prior), input.ReceivedULTimingReference=prior; end
++            trial=sixgr.link.runPUCCHWaveformTrial(c.Config,c.Arguments{:},'ReceivedContext',input);
+             assert(isfield(trial,'Receiver'),'sixgr:truth:ConfiguredCSIReceiverFailed', ...
+                 'The canonical receiver failed; no substitute CSI row is permitted.');
+             rx=trial.Receiver;
+@@ -1788,12 +1793,12 @@ methods(Static)
+         else
+             [receiver,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
+                 post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx");
+-            rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver);
++            rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior);
+             rx.ReceiverGainCompensation=gain;
+         end
+         if h.Assignment.Format>=1
+             sixgr.truth.exportIndependentPUCCHObservation( ...
+-                state.RunFolder,c.Config,h,item.Planes,rx,receiver);
++                state.RunFolder,c.Config,h,item.Planes,rx,receiver,prior);
+         end
+         actual=sixgr.truth.normalizeReceivedPUCCHCSI(rx,h.Context,h.CSIReportConfiguration);
+         identity=struct('UEIndex',h.UEIndex,'RNTI',h.RNTI,'TargetSlot',h.TargetSlot, ...

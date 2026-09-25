@@ -609,6 +609,10 @@ row.MeasuredInjectedNoiseSNR_dB = double(noise.MeasuredInjectedNoiseSNR_dB);
 row.MeasuredSignalEnergyPerOccupiedRE = double(noise.MeasuredSignalEnergyPerOccupiedRE);
 row.MeasuredInjectedGridNoiseVariance = double(noise.MeasuredInjectedGridNoiseVariance);
 row.NoiseCalibrationSource = string(noise.Source);
+row.ChannelSampleOperatorSource = string(noise.ChannelSampleOperatorSource);
+row.ChannelSpatialMatrixSHA256 = string(noise.ChannelSpatialMatrixSHA256);
+row.ChannelTxPortCount = double(noise.ChannelTxPortCount);
+row.ChannelRxBranchCount = double(noise.ChannelRxBranchCount);
 row.HARQCombiningApplied = logical(sixgr.util.structGet(diag, "HARQSoftCombiningApplied", false));
 row.HARQSoftCombiningPositionAware = logical(sixgr.util.structGet(diag, "HARQSoftCombiningPositionAware", false));
 row.HARQSoftCombiningOverlapPositionCount = double(sixgr.util.structGet(diag, "HARQSoftCombiningOverlapPositionCount", NaN));
@@ -633,6 +637,8 @@ row = struct( ...
     "SampleToGridNoiseVarianceGain", NaN, "AppliedNoiseSNR_dB", NaN, ...
     "MeasuredInjectedNoiseSNR_dB", NaN, "NoiseCalibrationSource", "", ...
     "MeasuredSignalEnergyPerOccupiedRE", NaN, "MeasuredInjectedGridNoiseVariance", NaN, ...
+    "ChannelSampleOperatorSource", "", "ChannelSpatialMatrixSHA256", "", ...
+    "ChannelTxPortCount", NaN, "ChannelRxBranchCount", NaN, ...
     "HARQCombiningApplied", false, "HARQSoftCombiningPositionAware", false, ...
     "HARQSoftCombiningOverlapPositionCount", NaN, "LLRCombiningGain_dB", NaN, ...
     "ProbeMode", "", "Notes", "");
@@ -860,7 +866,7 @@ end
 
 function state = localInitChannelState(cfg, tx, txInfo, direction)
 state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
-    "ChannelPadSamples", 0, "ChannelTrimSamples", 0);
+    "ChannelPadSamples", 0, "ChannelTrimSamples", 0, "RuntimeChannelState", []);
 
 if nargin < 4
     direction = "";
@@ -880,6 +886,19 @@ end
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
 if awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF"
+    if sixgr.channel.IdentityAWGNRuntime.enabled(cfg)
+        % The explicit AWGN spatial operator is not a fading object, but it
+        % still must act on the samples. Reuse the main channel owner so a
+        % rectangular DL channel and its reciprocal UL map are not bypassed.
+        numTx = size(tx.Waveform, 2);
+        numRx = localResolveProbeNumRxAnt(cfg, direction, numTx);
+        runtime = sixgr.channel.ChannelFactory.createRuntimeChannelState( ...
+            cfg, direction);
+        state.RuntimeChannelState = ...
+            sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...
+            runtime, cfg, tx.Waveform, txInfo, ...
+            "NumTxAnt", numTx, "NumRxAnt", numRx);
+    end
     return;
 end
 
@@ -928,6 +947,7 @@ if nargin < 3
 end
 if upper(string(direction)) == "UL"
     candidates = [ ...
+        sixgr.util.structGet(cfg, "scenario.bs.nRxAnt", NaN), ...
         sixgr.util.structGet(cfg, "channel.nRxAnt", NaN), ...
         sixgr.util.structGet(cfg, "phy.nRxAnt", NaN)];
 else
@@ -948,8 +968,18 @@ end
 
 function [y, noiseInfo] = localApplyChannelAndAwgn(x, snr_dB, state)
 y = x;
-if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
+operatorSource = "standalone_probe_identity_no_fading";
+operatorDigest = "";
+if ~isempty(state.RuntimeChannelState)
+    runtime = state.RuntimeChannelState;
+    y = sixgr.channel.ChannelFactory.applyRuntimeChannelState(runtime, x, ...
+        "InputSampleDomain", "materialized_channel_ports", ...
+        "OutputSampleAlignment", "continuous_raw_samples");
+    operatorSource = string(runtime.Meta.IdentityOperatorSource);
+    operatorDigest = sixgr.phy.mimo.MatrixContract.digest(runtime.Meta.AWGNSpatialMatrix);
+elseif isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
+    operatorSource = "standalone_probe_executed_fading_object:" + string(class(state.Obj));
     try
         reset(state.Obj);
     catch
@@ -989,6 +1019,10 @@ measuredNoise = sixgr.phy.waveform.measureReceivedOccupiedREEnergy( ...
 noiseInfo.MeasuredInjectedNoiseSNR_dB = 10*log10(signalEnergy/measuredNoise);
 noiseInfo.MeasuredSignalEnergyPerOccupiedRE = signalEnergy;
 noiseInfo.MeasuredInjectedGridNoiseVariance = measuredNoise;
+noiseInfo.ChannelSampleOperatorSource = operatorSource;
+noiseInfo.ChannelSpatialMatrixSHA256 = operatorDigest;
+noiseInfo.ChannelTxPortCount = size(x, 2);
+noiseInfo.ChannelRxBranchCount = size(reference, 2);
 end
 
 function fs = localResolveSampleRate(tx, txInfo)

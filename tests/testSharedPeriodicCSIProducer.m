@@ -289,6 +289,7 @@ for item=items
                 'StartSample',obs.StartSample,'EndSampleExclusive',obs.EndSampleExclusive);
         end
         state.TestPeriodicCSICaptures=captures;
+        if state.TestCSIWithReceivedClock, state.TestReceivedPUCCHItem=item; end
         assert(isfield(item.Context,'GNBReception') && isempty(item.Context.GNBReception.Mapping));
         h=item.Context.GNBReception;
         receiverID="gnb_"+h.ServingCell+"_rx";
