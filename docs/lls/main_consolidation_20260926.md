@@ -156,3 +156,66 @@ also includes fresh single-branch clone instructions for the 400 MHz / 7 GHz
 digital package. Full 5 MHz sweep acceptance, detector qualification, pending
 receiver integration and full 400 MHz physical shared-feedback acceptance
 remain open.
+
+## Conditional-presence development checkpoint
+
+This follow-up starts from `38754c53fbe4982cdb09dfc0435bfb88dd2485c2`, again
+checked against freshly fetched `origin/main`. There is one local branch,
+one remote delivery branch and one Git worktree. The two recovery stashes
+are retained, and both previously recorded recovery commits remain ancestors.
+No result, log, snapshot, stash or sealed instrument file is deleted.
+
+All four outstanding source/development files are included:
+
+| File | Scope |
+|---|---|
+| `+sixgr/+phy/+pucch/detectFormat2EqualizedWhiteNoisePresence.m` | Conditional data-only short-UCI presence helper; not called by the scenario receiver |
+| `simulator/configs/validation/pucch_whitened_presence_component.yaml` | Frozen development fixture and detector assumptions; not scenario policy |
+| `tests/testPUCCHWhitenedPresence.m` | Actual OFDM/DM-RS/equalizer component matrix; not statistical qualification |
+| `tests/diagnosePUCCHReceivedClockReuse.m` | Adds original/retimed conditional-presence measurements to the retained-IQ diagnostic; this extension has not yet been executed |
+
+These four files match their isolated snapshot copies. The nine source/test
+hashes in `candidate_v4_runtime_guards_receipt.json` and its guard-log hash
+were also rechecked. This verifies preservation of the tested candidate;
+it does not transfer that candidate's passing results to the unchanged main
+runtime. All three pending runtime patches still pass `git apply --check`
+together, but remain unapplied while the older main-source sweep is running.
+Permission to stop that sweep and complete the runtime merge is outstanding.
+
+The formerly unfinished broader guard batch has now completed: **20/20 tests
+passed with process exit zero**, including both E2E campaigns. Evidence:
+`logs/receiver_clock_candidate_20260926/candidate_v4_runtime_guards.log` and
+`candidate_v4_runtime_guards_receipt.json` in the same folder. The earlier
+18-passed checkpoint above is historical, not the latest result.
+
+A subsequent four-test snapshot batch also completed with process exit zero:
+
+1. `testPUCCHWhitenedPresence`: 24 waveform cases and 24 pilot/data-independence checks.
+2. `testPUCCHFlatJointShortUCI`: 27 math/codec cases.
+3. `testEqualizerNoiseAuthority`: 54 cases and seven invalid-input guards.
+4. `testPUCCHFormat2ReceiverLikelihood`: eight physical receiver cases.
+
+The authoritative launcher log is
+`logs/receiver_clock_candidate_20260926/whitened_presence_v1.log`.
+Component CSV and scope are retained under the isolated snapshot's
+`logs/pucch_whitened_presence_20260926_031916_791/` folder. The presence
+component recorded **0/12 noise-only detections**, **6/6 desired detections
+at 20 dB**, and **2/6 at -10 dB**. All four low-SNR misses remain visible.
+Its 64-data-RE fixture is not the 32-data-RE retained scenario allocation;
+the result is neither a missed-ACK campaign nor a physical false-ACK bound.
+The helper does not use injected noise variance or transmitted payload bits,
+and neither installs itself nor changes the existing detection threshold.
+
+Checkpoint verification reran **36 Python tests successfully**, with 13
+dependency deprecation warnings, for lab-package readback/sealing and the
+no-PDCCH-observation plot contract. Receipt:
+`logs/consolidation_20260926_presence_checkpoint.xml`. The documented
+PowerShell launcher parses without errors. No MATLAB scenario or `testAll`
+was started for this preservation operation.
+
+The README records the 400 MHz / 7 GHz experiment's original source identity,
+its exact launch and WebGUI commands, and the instrument handoff mapping.
+The sealed manifest hash remains unchanged from the value above. Generated
+IQ/results/logs remain local and must be transferred separately from GitHub.
+This is a clean-source checkpoint, not a claim that every candidate is merged,
+that all requested SNR points pass, or that physical hardware is verified.

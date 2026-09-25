@@ -1,0 +1,20 @@
+# Frozen development comparison, not an installed/qualified receiver policy.
+schema_version: 1
+research_class: optional_research_experiment
+stage: physical_receiver_component_not_statistical_qualification
+seed: 4702627
+payload_bits: [3, 11]
+receive_branches: [1, 2, 4]
+snr_db: [-10, 20]
+receiver_fixture: PUCCHFixtureFactory_connected_format2
+rnti: 321
+resource_id: 12
+channel_gain_amplitude: [0.012, 0.014, 0.016, 0.018]
+channel_gain_phase_rad: [0.3, 0.6, 0.9, 1.2]
+legacy_detection_threshold: 0.2
+target_model_false_alarm_probability: 0.01
+search_window_samples: [0, 48]
+transmit_offset_samples: 13
+wider_search_hypothesis_count: 97
+data_poison_amplitude: 10
+equalizer_scale_probe: 7

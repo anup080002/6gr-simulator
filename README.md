@@ -23,12 +23,22 @@ configured-CSI received-clock repair is preserved as a
 installed underneath the active sweep. This distinction is retained in the
 checkpoint record; committing all edits is not full runtime acceptance.
 The candidate clock, Format-2 likelihood and equalizer-noise repairs passed
-**15 focused MATLAB tests together**. All three complete source patches and
+**15 focused MATLAB tests and a separate 20-test runtime-guard batch** in the
+isolated source snapshot. All three complete source patches and
 their regression tests are preserved on `main`; the
 [candidate inventory](docs/lls/main_consolidation_20260926.md#receiver-candidate-preservation-follow-up)
 identifies what is still unapplied. Applying them requires a safe stop of the
 older sweep first. No detector threshold was lowered, and noise-only false
 detections remain an open qualification issue.
+
+The newer conditional equalizer-whitened Format-2 presence helper, frozen
+validation YAML and component test are also preserved on `main`, but are not
+an installed receiver policy. Its 24 waveform cases recorded 0/12 noise-only
+detections, 6/6 desired detections at 20 dB and 2/6 at -10 dB. These are small
+development samples, not statistical detector qualification. The corresponding
+retained-IQ diagnostic extension has not yet been executed. See the
+[latest preservation record](docs/lls/main_consolidation_20260926.md#conditional-presence-development-checkpoint)
+for exact evidence and what remains unmerged.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -207,6 +217,12 @@ Use `scripts/run_vxg_vsa_demo.ps1` below for a **new complete digital package**;
 use `apps/vxg_vsa_demo_dashboard.py` below to **view the existing package only**.
 Neither command verifies physical instrument capability. Updating `main` does
 not rerun this experiment or replace the sealed measurements from `20260925_v1`.
+
+The sealed measurements came from source commit
+`6244d24f20b2ee55d426cfab9aa81d7c203d10d7` with additional working-tree edits;
+the package retains the exact executed source snapshots. A new run on current
+`main` is a new experiment, not a reproduction established by `git pull` alone.
+Keep its new run folder and source identity alongside the original report.
 
 The run uses 120 kHz SCS, FFT 4096, native 491.52 MSa/s, normal CP, 264 PRBs,
 2x2 logical identity MIMO and two layers. Each port has 4,915,200 samples over
