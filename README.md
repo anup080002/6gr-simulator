@@ -1,7 +1,11 @@
 # SixGR Foundation v2
 
-Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md#later-same-day-source-consolidation).
+Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md#pucch-reporting-checkpoint).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
+The latest PUCCH reporting repair separates receiver detection from payload
+correctness; its focused tests pass, but detector statistical qualification
+remains open. Source, scenario YAMLs and launchers are delivered on `main`;
+generated logs, results and instrument IQ packages remain separate local artifacts.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)

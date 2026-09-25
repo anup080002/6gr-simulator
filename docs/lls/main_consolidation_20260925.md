@@ -128,3 +128,46 @@ integration commits `cd397f33` and `471334ff` were verified as ancestors of
 `main`. They are not reapplied over newer code. Generated results, logs and
 the approximately 12 GB lab package remain local under existing ignore rules,
 not deleted for a clean working tree and not silently included in the push.
+
+## PUCCH reporting checkpoint
+
+This later checkpoint includes `f20b73e7` on the same `main` branch. Receiver
+signal detection is now exported independently of UCI payload correctness:
+detected but corrupted payloads remain failed payloads, not missed detections.
+Invalid detector metrics remain unavailable and fail closed. No detection
+threshold, decoder decision or physical acceptance gate was relaxed.
+
+Verified retained evidence:
+
+- `logs/pucch_detection_outcome_20260925.log`: **8/8 focused MATLAB tests
+  passed**, including actual waveform, independent receiver, receive-only
+  shared clock and export checks.
+- `logs/pucch_detection_publication_20260925_v2.xml`: **99/99 Python tests
+  passed**, with zero failures, errors or skips.
+- The earlier batches have now finished: `logs/5mhz_core_measurement_guards_20260925.log`
+  reports **18/18 passed**, and `logs/5mhz_core_runtime_followup_20260925.log`
+  reports **4/4 passed**. These were run before the latest PUCCH reporting
+  commit and do not replace final-source full-scenario acceptance.
+
+The detector is **not statistically qualified**. The focused format-2
+component matrix detected all four tested noise-only observations; those
+failures are retained in
+`logs/tp4f0e02d6_30f4_4255_a4dc_ca9f2685f920/receiver_presence_and_payload.csv`.
+A reporting-test pass confirms faithful publication, not an acceptable
+false-detection rate. Generic CSI estimation bias and full measurement,
+5 MHz sweep and physical-feedback 400 MHz acceptance remain open.
+
+The eight-point 5 MHz sweep was already running when this documentation-only
+consolidation was made. Its tag is
+`5mhz_4tx2rx_snr_sweep_20260925_v21_pucch_presence`, with the matching log
+under `logs/` and results under
+`results/lls/lls_tdd_5mhz_rank2_shared_awgn_snr_sweep/`. No completed sweep
+result is claimed here. No active MATLAB/YAML source was changed, no process
+was restarted and no `testAll` was launched for this consolidation.
+
+The README's dedicated 400 MHz section identifies the **7 GHz carrier,
+400 MHz bandwidth, rank-2 VXG/VSA lab experiment**, its exact Windows commands,
+output locations and hardware handoff files. Its sealed package and historical
+measurements are unchanged. Generated artifacts and both historical recovery
+stashes are preserved locally; only source, tests, configuration and documentation
+are delivered through Git.
