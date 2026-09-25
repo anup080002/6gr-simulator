@@ -1,0 +1,84 @@
+diff --git a/+sixgr/+phy/+rx/collectPUCCHObservationModel.m b/+sixgr/+phy/+rx/collectPUCCHObservationModel.m
+new file mode 100644
+--- /dev/null
++++ b/+sixgr/+phy/+rx/collectPUCCHObservationModel.m
+@@ -0,0 +1,66 @@
++function model=collectPUCCHObservationModel(observation,execution)
++% Receiver-only model applicability metadata, never TX payload or channel truth.
++% Keep only executed operator/RF type and clock evidence. This collector does
++% not establish a detector's error rates or the correctness of received timing.
++id='sixgr:phy:rx:MissingPUCCHExecutionContext';
++assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
++    isscalar(observation) && observation.isComplete(),id,'Require the completed actual receive buffer.');
++required={'Segments','ReceiverID','TransmitterID','GainCompensation'};
++assert(isstruct(execution) && isscalar(execution) && all(isfield(execution,required)), ...
++    id,'Supply independently scheduled endpoints, receive segments and actual gain-compensation evidence.');
++rxID=string(execution.ReceiverID); txID=string(execution.TransmitterID);
++assert(isscalar(rxID) && strlength(rxID)>0 && isscalar(txID) && strlength(txID)>0 && ...
++    iscell(execution.Segments) && ~isempty(execution.Segments),id,'Receiver execution context is incomplete.');
++segments=execution.Segments; clean=cell(size(segments)); intervals=zeros(numel(segments),2);
++modes=strings(numel(segments),1);
++for k=1:numel(segments)
++    segment=segments{k};
++    assert(isstruct(segment) && isscalar(segment) && ...
++        all(isfield(segment,{'StartSample','EndSampleExclusive','Execution'})),id,'Missing executed segment clock.');
++    bounds=[segment.StartSample segment.EndSampleExclusive];
++    assert(isnumeric(bounds) && isreal(bounds) && numel(bounds)==2 && ...
++        all(isfinite(bounds) & bounds==fix(bounds)) && bounds(1)<bounds(2) && ...
++        bounds(2)>observation.StartSample && bounds(1)<observation.EndSampleExclusive, ...
++        id,'Each segment must overlap this actual receiver interval.');
++    intervals(k,:)=bounds;
++    e=segment.Execution;
++    assert(isstruct(e) && isscalar(e) && all(isfield(e,{'RX','TX','Links'})),id,'Missing executed RF/link records.');
++    r=e.RX(string({e.RX.ID})==rxID); t=e.TX(string({e.TX.ID})==txID);
++    assert(isscalar(r) && isscalar(t) && isfield(r.Replay,'NoiseOperatingMode'), ...
++        id,'Execution must identify the independently scheduled endpoints and receiver noise mode.');
++    noiseMode=string(r.Replay.NoiseOperatingMode);
++    assert(isscalar(noiseMode) && strlength(noiseMode)>0,id,'Receiver noise mode is unavailable.');
++    modes(k)=noiseMode;
++    links=e.Links(string({e.Links.RX})==rxID);
++    selected=struct('TX',{},'RX',{},'Replay',{});
++    for j=1:numel(links)
++        selected(j)=struct('TX',links(j).TX,'RX',links(j).RX, ...
++            'Replay',retain(links(j).Replay,{'RuntimeChannelTimingTruthSource','ChannelFadingApplied'}));
++    end
++    rfFields={'RFConfiguredStageCount','RFAppliedStageCount','AGCEnabled','AGCApplied'};
++    clean{k}=struct('StartSample',bounds(1),'EndSampleExclusive',bounds(2), ...
++        'Execution',struct('Links',selected, ...
++        'RX',struct('ID',rxID,'Replay',retain(r.Replay,rfFields)), ...
++        'TX',struct('ID',txID,'Replay',retain(t.Replay,rfFields))));
++end
++assert(intervals(1,1)<=observation.StartSample && intervals(end,2)>=observation.EndSampleExclusive && ...
++    all(intervals(2:end,1)==intervals(1:end-1,2)) && all(modes==modes(1)), ...
++    id,'Actual receive coverage must be contiguous with one declared noise operating mode.');
++model=struct('Source',"actual_receiver_execution_types_and_clocks_only", ...
++    'ReceiverID',rxID,'TransmitterID',txID,'NoiseOperatingMode',modes(1), ...
++    'ReceiveStreamExecutionSegments',{clean}, ...
++    'ReceiverGainCompensation',retain(execution.GainCompensation,{'GainOnlyRFExecuted'}), ...
++    'ObservationStartSample',observation.StartSample, ...
++    'ObservationEndSampleExclusive',observation.EndSampleExclusive, ...
++    'ObservationSampleRateHz',observation.SampleRateHz, ...
++    'PayloadOrChannelCoefficientsRetained',false,'InjectedVarianceRetained',false, ...
++    'PhysicalQualificationPassed',false);
++end
++function out=retain(input,names)
++assert(isstruct(input) && isscalar(input),'sixgr:phy:rx:MissingPUCCHExecutionContext', ...
++    'Execution metadata must be a scalar struct, not a synthesized replacement.');
++out=struct();
++for k=1:numel(names)
++    if isfield(input,names{k}), out.(names{k})=input.(names{k}); end
++end
++end
+diff --git a/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml b/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml
+new file mode 100644
+--- /dev/null
++++ b/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml
+@@ -0,0 +1,8 @@
++# Explicit opt-in receiver candidate, not statistical qualification.
++meta:
++  research_class: optional_research_experiment
++pucch:
++  format2_short_uci_receiver_policy:
++    algorithm: flat_joint_short_uci_v1
++    target_false_alarm_probability: 0.01
++    minimum_word_posterior: 0.99

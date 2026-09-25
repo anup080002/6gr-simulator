@@ -1,0 +1,14 @@
+# Frozen receiver-integration component settings; not a qualified scenario policy.
+schema_version: 1
+research_class: optional_research_experiment
+stage: core_receiver_component_not_statistical_qualification
+fixture_config: simulator/configs/validation/pucch_whitened_presence_component.yaml
+policy:
+  algorithm: flat_joint_short_uci_v1
+  target_false_alarm_probability: 0.01
+  minimum_word_posterior: 0.99
+payload_bits: [3, 11]
+resource_prbs: [2, 4]
+receive_branches: [1, 2, 4]
+snr_db: [-10, 20]
+seed: 4702628

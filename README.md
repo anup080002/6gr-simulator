@@ -36,9 +36,19 @@ validation YAML and component test are also preserved on `main`, but are not
 an installed receiver policy. Its 24 waveform cases recorded 0/12 noise-only
 detections, 6/6 desired detections at 20 dB and 2/6 at -10 dB. These are small
 development samples, not statistical detector qualification. The corresponding
-retained-IQ diagnostic extension has not yet been executed. See the
+retained-IQ diagnostic has now executed seven captures; five had eligible
+causally received SRS clocks. It did not establish detector qualification. See the
 [latest preservation record](docs/lls/main_consolidation_20260926.md#conditional-presence-development-checkpoint)
 for exact evidence and what remains unmerged.
+
+The opt-in joint short-UCI **core receiver candidate passed 16/16 focused
+MATLAB guards** in the isolated snapshot, including 48 waveform cases. Its
+patch, frozen component YAML and regression test are preserved on `main`.
+The shared-runtime observation collector and policy fragment are preserved as
+an **untested scaffold patch**, not enabled scenario configuration. See the
+[joint receiver checkpoint](docs/lls/main_consolidation_20260926.md#joint-receiver-preservation-checkpoint)
+for patch ordering and remaining integration work. The running older sweep
+still uses unchanged main receiver files; this is not a completed runtime merge.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -217,6 +227,11 @@ Use `scripts/run_vxg_vsa_demo.ps1` below for a **new complete digital package**;
 use `apps/vxg_vsa_demo_dashboard.py` below to **view the existing package only**.
 Neither command verifies physical instrument capability. Updating `main` does
 not rerun this experiment or replace the sealed measurements from `20260925_v1`.
+
+Delivery status: one branch (`main`) and one Git worktree. Source, launchers,
+YAMLs, tests and preserved development patches are versioned; generated IQ,
+results and logs are transferred separately. Pending 5 MHz receiver patches
+do not change or qualify this sealed 400 MHz data-channel demonstration.
 
 The sealed measurements came from source commit
 `6244d24f20b2ee55d426cfab9aa81d7c203d10d7` with additional working-tree edits;

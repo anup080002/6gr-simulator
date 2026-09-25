@@ -219,3 +219,69 @@ The sealed manifest hash remains unchanged from the value above. Generated
 IQ/results/logs remain local and must be transferred separately from GitHub.
 This is a clean-source checkpoint, not a claim that every candidate is merged,
 that all requested SNR points pass, or that physical hardware is verified.
+
+## Joint receiver preservation checkpoint
+
+This checkpoint starts from `cccd601ff6e33ee89c5176f17d99f55990090f18`,
+verified against freshly fetched `origin/main`. One branch and one worktree
+remain. The older eight-point sweep is still executing against main; permission
+to stop it and change its receiver files has not been received. No runtime
+source is replaced beneath that execution. This is preservation, not a claim
+that the pending receiver changes are installed.
+
+The final v5 candidate batch completed with **16/16 named tests passing and
+process exit zero**, confirmed from the completed launcher, not inferred from
+an unfinished log. The authoritative log is
+`logs/receiver_clock_candidate_20260926/joint_receiver_v5_final_guards.log`,
+SHA-256 `37ae6602b897e4c697a6afe77fe1cfe35484d62ea6e4d263c484c0d349ad2b3c`.
+
+The tests cover the joint receiver, gain-aware likelihood, CRC, independent
+assignment equivalence, combined UCI, flat-AWGN eligibility, configuration,
+strict proxy/no-fallback guards, DL/UL/reference points, scheduler consistency,
+receive-only/shared PUCCH clocks and configured-CSI received-clock handling.
+These tests executed in the isolated full source snapshot, not main.
+
+| Preserved development item | Validation and integration boundary |
+|---|---|
+| `pending_pucch_flat_joint_receiver_20260926.patch` | Incremental v5 receiver change; apply only after the three existing v4 patches. Reverse applicability against the tested snapshot passes. It is not a standalone patch against main. |
+| `tests/testPUCCHFlatJointReceiver.m` and `simulator/configs/validation/pucch_flat_joint_receiver_component.yaml` | Byte-identical to the tested snapshot; 48 waveform cases. The test requires the unapplied receiver patches. |
+| `pending_pucch_shared_model_scaffold_20260926.patch` | Preserves two new snapshot files: `collectPUCCHObservationModel.m` and `pucch_flat_joint_short_uci_candidate.yaml`. Not runtime-verified, not wired through schema/builders/callbacks and not enabled by any scenario. |
+
+The original three v4 patches still pass applicability checks together against
+main. Apply them first, then the incremental v5 patch; do not pass all four to a
+single applicability check that assumes every hunk targets the original main.
+The scaffold is deliberately separate from the tested receiver patch.
+
+The source inventory compared 5,487 tracked paths against the snapshot and
+normalized text line endings before identifying changes. Seven text files
+differ: five are covered by the pending receiver/equalizer patches; the other
+two are `exportLLSHARQDiagnostics.m` and `tests/testAll.m`, where main already
+contains the newer HARQ spatial repair and its test registrations. Those newer
+main changes are preserved, not overwritten by the older snapshot. The only
+additional snapshot source/config files are the two scaffold files above.
+
+Rechecked candidate SHA-256 values:
+
+- `PUCCHReceiver.m`: `904791bfec07d1aabfb079ae71aa47249ee06a5a73179df67176347dc0bccfe1`.
+- `testPUCCHFlatJointReceiver.m`: `4143d3a3c1f7cf81f996b7ef0f41cdc2f641cda99fa3c7738b9b34dd349eddd8`.
+- Component YAML: `2f3546b75a5bde5af00a3e4a47413bff7a4191f524589f1953477a5184bf1e49`.
+
+The separate retained-IQ diagnostic completed seven captures with five eligible
+received SRS priors. Correct best-word decoding is not automatically an accepted
+word: only two of seven joint estimates met the frozen 0.99 posterior threshold.
+The new component matrix recorded 0/24 noise-only detections and 12/12 correct
+accepted words at 20 dB. At -10 dB, the 32-data-RE cases accepted 0/6 and the
+64-data-RE cases accepted 3/6. These small development samples do not qualify
+false-ACK/missed-ACK rates or prove a -10 dB scenario pass.
+
+Remaining work includes independent prepared/receive-only runtime wiring,
+schema-backed opt-in policy, truthful joint-decoder confidence/LLR/variance
+export roles, physical statistical qualification and complete scenario reruns.
+No detector threshold or failure assertion was weakened in this consolidation.
+
+Consolidation checks reran **36 Python tests successfully**, with 13 dependency
+deprecation warnings, for lab packaging and no-observation publication guards.
+Receipt: `logs/consolidation_20260926_joint_receiver_checkpoint.xml`.
+The PowerShell launcher parsed without errors. The sealed 400 MHz manifest
+hash remains unchanged. No MATLAB scenario or `testAll` was started here.
+Results, logs, source snapshots, recovery stashes and instrument IQ are retained.
