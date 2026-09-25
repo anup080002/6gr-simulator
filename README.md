@@ -1,6 +1,6 @@
 # SixGR Foundation v2
 
-Current development snapshot: [26 September follow-up consolidation and verification limits](docs/lls/main_consolidation_20260925.md#26-september-follow-up-consolidation).
+Current development snapshot: [26 September receiver-candidate checkpoint and verification limits](docs/lls/main_consolidation_20260925.md#26-september-receiver-candidate-checkpoint).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
 The latest PUCCH reporting repair separates receiver detection from payload
 correctness; its focused tests pass, but detector statistical qualification
@@ -11,6 +11,10 @@ including CRC, combined HARQ/SR/CSI and received AGC/ADC cases. They and the
 independent DM-RS presence candidate remain **development code, not installed in
 the live PUCCH receiver**. The presence pilot retains missed signals and false
 detections; neither detector qualification nor full-scenario acceptance is closed.
+The joint short-UCI candidate, received-SRS-clock diagnostic and explicit
+no-PDCCH-observation publication helper are also preserved on `main`, but are
+not installed in the scenario runtime. The new configured-CSI timing regression
+still fails and is retained without weakening its assertion.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -208,14 +212,14 @@ reads back the files, checks the browser, and seals the artifact inventory.
 The run tag is generated automatically; existing runs are not overwritten:
 
 ```bat
-cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml"
 ```
 
 On another PC, substitute that PC's checkout path. From its repository root,
 the portable command is:
 
 ```bat
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml"
 ```
 
 Outputs are saved to `results/vxg_vsa/7ghz_400mhz_rank2_1024qam/<run_tag>/`;

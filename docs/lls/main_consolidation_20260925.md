@@ -272,3 +272,58 @@ Both historical recovery stashes, ignored logs/results and the sealed IQ
 package remain local and untouched. Their documented integration commits
 `cd397f33` and `471334ff` remain ancestors of `main`. The GitHub delivery contains
 source/configuration/tests/documentation, not the multi-GB generated artifacts.
+
+## 26 September receiver-candidate checkpoint
+
+This user-requested source checkpoint starts from `e3879768`, matching freshly
+fetched `origin/main`. All nine outstanding development files are retained,
+plus this note and the README update. One branch (`main`) and one worktree
+already contain the code; no branch merge or history rewrite is needed.
+Committing the candidates does not install them in the running receiver.
+
+### Included work and remaining failures
+
+- `decodeFormat2FlatShortUCI` jointly evaluates known pilots and legal short-UCI
+  words under an explicitly conditional flat-channel/white-Gaussian model.
+  Payload width remains independently specified. Its 27 mathematical/codec
+  checks passed; this is not physical detector qualification.
+- The 216-episode development pilot retains misses and false detections.
+  One unrelated-QPSK observation passes joint presence and a 0.99 conditional
+  word-posterior threshold. The candidate must not be called qualified.
+- `diagnosePUCCHReceivedClockReuse` replays retained IQ with actual causally
+  completed SRS timing; it neither regenerates samples nor supplies TX timing
+  to the receiver. Its results are diagnostics, not accepted runtime feedback.
+- `testConfiguredCSIReceivedClock` reproduces the missing SRS-clock handoff in
+  configured CSI PUCCH reception. The first producer case still fails with
+  `test:ConfiguredCSIReceivedClockBindingMissing`; later cases are not claimed
+  as tested. Production timing integration remains open.
+- The no-PDCCH-observation chart helper requires completed clock evidence and
+  schema-valid empty PDCCH trial tables. It emits explicitly unavailable status,
+  not invented channel-estimate samples or a scenario pass. Production
+  materializer integration remains open.
+- The active eight-point sweep and its runtime source are unchanged. Neither
+  this checkpoint nor focused tests establish successful sweep acceptance.
+
+### Verification and preservation
+
+- `logs/main_checkpoint_20260926.xml`: **80 focused Python tests passed**,
+  covering PDCCH/no-data publication guards and lab waveform packaging.
+- `logs/awgn_cross_path_focused_20260926.log`: **five focused MATLAB tests
+  passed** for OFDM noise conversion, shared occupied-RE/FRC noise, standalone
+  reference energy and the HARQ probe. Probe injected-noise error was at most
+  0.140 dB in these cases. These tests do not establish every channel or
+  standard-specific SNR convention as equivalent.
+- The new joint short-UCI math test is registered in `testAll.m`; **no
+  `testAll` was launched**, respecting the user's instruction. Existing failed
+  regressions and full-scenario qualification remain visible.
+- README run commands now explicitly name both the MATLAB executable and the
+  rank-2 VXG/VSA YAML. The test is **400 MHz bandwidth at 7 GHz**, not a 4 GHz
+  carrier. Its retained 30 dB failures, disabled physical feedback and unknown
+  instrument capability have not changed.
+- The sealed lab manifest remains
+  `dbfd394b1b1781461e41f64b8475531931050c2dbdc32f6d95bda3756a67d60b`.
+  Only this manifest identity was rechecked, not all waveform bytes.
+- Both recovery stashes remain preserved; their documented integration commits
+  `cd397f33` and `471334ff` are still ancestors of `main`. Results, logs and IQ
+  remain local under existing ignore rules. No evidence is deleted to make
+  the source tree clean, and generated packages are not included in this push.

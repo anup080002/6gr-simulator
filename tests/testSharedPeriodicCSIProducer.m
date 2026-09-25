@@ -1,7 +1,8 @@
-function [ok,state]=testSharedPeriodicCSIProducer(producerMode)
+function [ok,state]=testSharedPeriodicCSIProducer(producerMode,withReceivedClock)
 % Actual periodic PUCCH and CSI-RS-bearing DL IQ/CDL/RF/thermal noise.
 % UE CSI values/access timing remain declared component-boundary inputs,
 % not end-to-end CSI measurement or access qualification.
+if nargin<2, withReceivedClock=false; end
 if nargin==0
     [ok,state]=testSharedPeriodicCSIProducer("present");
     [removedOK,removed]=testSharedPeriodicCSIProducer("remove_after_tx");
@@ -27,6 +28,7 @@ state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10)
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
 state.CurrentServingIdx(:)=1;
 state.TestCSIProducerMode=producerMode;
+state.TestCSIWithReceivedClock=logical(withReceivedClock);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if producerMode=="present", verifyInstallationBoundary(state,cfg); end
 [ul,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
@@ -63,6 +65,16 @@ ssb=table(0,pl,"SSB-0","analytic_component_pathloss_selector_fixture",1,-pl,0, .
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,ssb,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
+if withReceivedClock
+    % Same real shared-SRS preparation as the HARQ timing fixture. The slot-9
+    % CSI receiver must use its completed slot-5 clock, never the UE TX time.
+    [srsCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
+    srsCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(srsCfg,5);
+    srsCfg.lls6g.userContext.RuntimeSlotStartTime_s=4e-3;
+    args={'SlotIndex',5,'SNR_dB',cfg.channel.snr_dB,'TimingAdvanceSamples',0};
+    prepared=sixgr.link.runSRSChannelEstimation(srsCfg,args{:},'PrepareOnly',true);
+    owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,'Arguments',{args}));
+end
 row=table(1,1,1,true,true,true,true,true,true,10,1,0,0,0,18.5, ...
     "declared_received_CSI_periodic_transport_fixture", ...
     'VariableNames',{'Slot','UEIndex','ServingCell','Transmitted','Observed','Consumed', ...
@@ -120,6 +132,16 @@ assert(trial.RuntimeStateUpdated && trial.ControlStateChanged==delivered && ...
     'test:CSITrialDispositionMismatch','Trial flags must match the completed CSI publication, including rejected reports.');
 rx=state.SharedGNBUCIReceptions{1}.Receiver;
 assert(rx.IndependentReceiverAssignment && ~rx.PreparedTransmitterConsumed && ~rx.OraclePayloadBitsUsed);
+if withReceivedClock
+    reference=state.ReceivedULTimingReferences{1};
+    assert(isa(reference,'sixgr.phy.sync.ReceivedULTimingReference') && reference.SourceSignal=="SRS");
+    assert(isfield(rx.ReceiveTiming,'ReferenceAvailableAtSample') && ...
+        rx.ReceiveTiming.ReferenceAvailableAtSample==reference.AvailableAtSample && ...
+        rx.ReceiveTiming.ReferenceAgeSlots==4 && ...
+        ~rx.ReceiveTiming.OracleTimingUsed && ~rx.ReceiveTiming.ReceiverZeroPaddingUsed, ...
+        'test:ConfiguredCSIReceivedClockBindingMissing', ...
+        'Configured CSI PUCCH must retain the causally completed, fresh SRS clock through reception.');
+end
 % The new callback publishes at completed reception, not the next legacy
 % processDueFeedback pass. Check exact CP-OFDM bounds, not a fixed delay.
 deliveryStart=sixgr.phy.frame.slotStartSample(carrier,report.DeliveredSlot-1,fs);
@@ -200,7 +222,8 @@ writetable(report,fullfile(folder,'periodic_CSI_received_report.csv'));
 writetable(state.ControlTrials.PUCCH,fullfile(folder,'actual_PUCCH_trial.csv'));
 writetable(state.CSIReportObligationTable,fullfile(folder,'configured_CSI_obligations.csv'));
 captures=state.TestPeriodicCSICaptures;
-save(fullfile(folder,'shared_periodic_CSI.mat'),'cfg','row','queuedReport','report','audit','captures','fs');
+timingReferences=sixgr.util.structGet(state,'ReceivedULTimingReferences',{});
+save(fullfile(folder,'shared_periodic_CSI.mat'),'cfg','row','queuedReport','report','audit','captures','fs','timingReferences');
 fprintf('PERIODIC_CSI_EVIDENCE mode=%s folder=%s\n',state.TestCSIProducerMode,folder);
 end
 function verifyInstallationBoundary(state,cfg)
@@ -233,6 +256,21 @@ for item=items
         continue;
     elseif item.Kind=="PDSCH"
         continue; % This transport fixture deliberately does not run a UE DL decoder.
+    elseif item.Kind=="SRS"
+        c=item.Context; p=c.Prepared;
+        [~,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
+        [~,~,channelReferences]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
+        input=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
+            'TransmitterObservation',tx,'Replay',replay,'ScoringChannelReferences',{channelReferences}, ...
+            'ChannelState',state.SharedWaveformStream.directionalChannelState(item.UE,'UL'));
+        output=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
+        reference=sixgr.truth.retainReceivedSRSTimingReference(p,receiver,output);
+        assert(isa(reference,'sixgr.phy.sync.ReceivedULTimingReference'), ...
+            'test:ConfiguredCSIReceivedClockUnavailable','Actual SRS must establish its received timing.');
+        state=sixgr.truth.storeReceivedULTimingReference(state,item.UE,reference);
+        fprintf('CONFIGURED_CSI_SRS_CLOCK_RECEIVED nominal=%g available=%g\n', ...
+            reference.NominalStartSample,reference.AvailableAtSample);
+        continue;
     end
     if item.Kind=="PUCCHTX"
         state=sixgr.truth.commitSharedPUCCHTransmission(state,item);
@@ -261,8 +299,15 @@ for item=items
         % noise variance may decide whether frontend calibration is applied.
         [receiverInput,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
             postPlane.Observation,postPlane.Segments,receiverID);
+        prior=[];
+        if state.TestCSIWithReceivedClock
+            carrier=sixgr.phy.grid.makeCarrier(item.Context.Config);
+            nominal=sixgr.phy.frame.slotStartSample(carrier,item.Context.Slot-1,receiverInput.SampleRateHz);
+            prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,receiverInput.EndSampleExclusive,nominal);
+            assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference'));
+        end
         direct=sixgr.link.receivePUCCHObservation( ...
-            item.Context.Config,h.Assignment,h.Context,receiverInput);
+            item.Context.Config,h.Assignment,h.Context,receiverInput,prior);
         if item.Kind=="PUCCHReceiveOnly"
             tx=find(string({captures.ReceiverID})=="ue_1:tx");
             assert(isscalar(tx) && all(captures(tx).Samples==0,'all'));
