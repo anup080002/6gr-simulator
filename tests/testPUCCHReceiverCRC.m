@@ -51,10 +51,18 @@ for procedure=["configured_csi","dynamic_harq"]
             ~rx.DTX && rx.ReceiverUsable && rx.ReceiverOnlyAssignment && ~rx.OraclePayloadBitsUsed);
         assert(rx.CRCPassed==(rnti==321) && rx.CodeBlockCRCError==(rnti~=321));
         if rnti==321, assert(isequal(rx.DecodedSequence1,bits)); end
+        % Verify the corrected likelihood using this actual receiver's
+        % estimated WH/covariance and independently installed RNTI/resource.
+        [llr,likelihood]=sixgr.phy.pucch.demapFormat2EqualizerOutput( ...
+            configured.Carrier,assignment.Resource.toolboxConfig(),rx.EqualizerInfo.EqualizerResult);
+        corrected=sixgr.phy.pucch.UCIDecoder.decode(llr,context.Sequence1Length);
+        assert(corrected.CRCApplicable && corrected.CRCPassed==(rnti==321) && ...
+            corrected.CodeBlockCRCError==(rnti~=321) && ~likelihood.TransmittedBitsUsed);
+        if rnti==321, assert(isequal(corrected.Bits,bits)); end
         fprintf('PUCCH_RECEIVER_CRC_CASE procedure=%s rnti=%d prbs=%d E=%d crc_passed=%d\n', ...
             procedure,rnti,expectedPRBs,tx.Coding.Plan.E,rx.CRCPassed);
     end
 end
-fprintf('PUCCH_RECEIVER_CRC_PASS procedures=2 desired=pass wrong_RNTI=CRC_fail all_waveforms_detected\n');
+fprintf('PUCCH_RECEIVER_CRC_PASS procedures=2 desired=pass wrong_RNTI=CRC_fail all_waveforms_detected gain_aware_likelihood_checked=1\n');
 ok=true;
 end

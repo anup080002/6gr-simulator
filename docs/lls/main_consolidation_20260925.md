@@ -214,3 +214,61 @@ Both recovery stashes are retained; their documented integration commits
 blindly reapplied over newer source. Ignored results, logs and the sealed IQ
 package remain on disk and are not part of the GitHub source push. Cleaning
 the tracked working tree does not delete those files.
+
+## 26 September follow-up consolidation
+
+This later checkpoint starts from `93f93edc`, matching freshly fetched
+`origin/main`. There is still only one local/remote development branch, `main`,
+and one worktree. All eleven outstanding source/configuration/test files are
+included with these documentation updates. No separate branch merge is needed.
+This preserves development work; it does not install an unqualified detector.
+
+### Included work and verified limits
+
+- The Format-2 demapper uses each received equalizer output's complex response
+  and disturbance covariance, then the independently configured scrambling
+  identity. It does not decide signal presence or infer a receiver layout from
+  transmitted payloads. Interlaced Format-2 remains explicitly unsupported by
+  this helper.
+- Focused CRC, combined HARQ/SR/CSI and received AGC/ADC tests now exercise
+  the helper without changing their existing receiver assertions. Five focused
+  tests are registered in `testAll.m`; registration is not suite execution.
+- Retained-sample analysis reproduces all seven original short-UCI decoder
+  outputs and correlation metrics. Windows long-path captures are copied
+  byte-for-byte to short diagnostic paths and SHA-256 checked, not regenerated.
+- An independent DM-RS presence candidate reuses the existing conditional
+  white-noise projection calculation. Its development pilot retains every
+  missed signal and false detection. It is not a qualified detector, and the
+  retained-capture diagnostic does not assert that its noise-model assumptions
+  are established.
+- Neither helper is wired into the production PUCCH receiver. No live scenario
+  YAML, detector threshold, shared feedback policy or active process is changed
+  by this consolidation. Receiver integration and qualification remain pending.
+
+### Verification evidence
+
+| Check | Observed outcome / local evidence |
+|---|---|
+| QPSK likelihood, null-model math, short-UCI compatibility and diagnostic retention | Four focused tests passed; `logs/pucch_soft_likelihood_focused_20260926.log` |
+| Format-2 likelihood and CRC/combined/AGC waveform checks | Four focused tests passed; likelihood test covers 78 cases; `logs/pucch_likelihood_crc_waveform_20260926.log` |
+| Retained receiver replay | Seven observations reproduced; `logs/pucch_retained_pilot_matlab_20260926_v3/receiver_symbol_analysis.csv` |
+| Independent presence development pilot | 216 observations: 0/72 noise-only detections, 48/48 desired detections at 0/20 dB, **21/24 desired misses at -10 dB**, and **2/72 unrelated-QPSK false detections**; `logs/pucch_dmrs_presence_pilot_20260926_v1/physical_pilot.csv` |
+| Python retained-math and waveform-package regressions | **24 passed**; `logs/main_final_consolidation_20260926.xml`; dependency deprecation warnings only |
+| Full regression / full scenario acceptance | Not established; no `testAll` launched, respecting the user's explicit instruction |
+| Sealed 400 MHz manifest | Unchanged SHA-256 `dbfd394b1b1781461e41f64b8475531931050c2dbdc32f6d95bda3756a67d60b`; this is not a new full-package verification |
+
+The pilot's unrelated-QPSK cases are explicitly outside its white-Gaussian
+null model. Zero detections in only 72 noise episodes is not a statistical
+qualification. Passing the diagnostic assertions does not convert its physical
+misses or false detections into passes.
+
+README commands now name the exact **400 MHz bandwidth / 7 GHz carrier** rank-2
+YAML explicitly and distinguish generating a new package from viewing the
+existing one. Historical 30 dB payload failures, disabled lab control/feedback,
+experimental UL mapping and unknown physical instrument capability remain
+visible. No 4 GHz-carrier test is claimed.
+
+Both historical recovery stashes, ignored logs/results and the sealed IQ
+package remain local and untouched. Their documented integration commits
+`cd397f33` and `471334ff` remain ancestors of `main`. The GitHub delivery contains
+source/configuration/tests/documentation, not the multi-GB generated artifacts.

@@ -17,6 +17,9 @@ candidate_word_algorithm: codeword_posterior
 candidate_word_minimum_posterior: 0.99
 codec_payload_bits: [3, 4, 5, 6, 7, 8, 9, 10, 11]
 codec_coded_lengths: [32, 64, 128]
+# CRC-boundary and combined-UCI compatibility cases for the same demapper.
+# These do not change the short-word candidate policy or a scenario resource.
+format2_crc_payload_bits: [12, 14, 15, 20]
 strong_llr_magnitude: 10
 weak_llr_scale: 0.0001
 demapper_symbol_count: 64

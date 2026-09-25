@@ -1,0 +1,24 @@
+# Frozen DEVELOPMENT pilot, not held-out statistical receiver qualification.
+schema_version: 1
+research_class: optional_research_experiment
+stage: development_physical_pilot
+seed_base: 626092600
+episodes_per_case: 8
+receive_branches: [1, 2, 4]
+snr_db: [-10, 0, 20]
+observation_types: [configured_pucch, noise_only, unrelated_qpsk]
+target_model_false_alarm_probability: 0.01
+search_window_samples: [0, 48]
+transmit_offsets_samples: [0, 13]
+payload_bits: 11
+carrier:
+  n_size_grid: 25
+  subcarrier_spacing_khz: 15
+  n_cell_id: 1
+resource:
+  prb_start: 4
+  prb_count: 2
+  symbol_start: 12
+  symbol_count: 2
+  nid: 1
+  rnti: 1

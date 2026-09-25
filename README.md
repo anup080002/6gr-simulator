@@ -1,14 +1,16 @@
 # SixGR Foundation v2
 
-Current development snapshot: [26 September source consolidation and verification limits](docs/lls/main_consolidation_20260925.md#26-september-source-consolidation).
+Current development snapshot: [26 September follow-up consolidation and verification limits](docs/lls/main_consolidation_20260925.md#26-september-follow-up-consolidation).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
 The latest PUCCH reporting repair separates receiver detection from payload
 correctness; its focused tests pass, but detector statistical qualification
 remains open. Source, scenario YAMLs and launchers are delivered on `main`;
 generated logs, results and instrument IQ packages remain separate local artifacts.
-The latest retained-symbol analysis and standalone QPSK likelihood helper are
-included as development work, **not installed in the live PUCCH receiver**.
-Their inclusion does not close detector qualification or full-scenario acceptance.
+The gain-aware QPSK/Format-2 likelihood helpers now pass focused MATLAB checks,
+including CRC, combined HARQ/SR/CSI and received AGC/ADC cases. They and the
+independent DM-RS presence candidate remain **development code, not installed in
+the live PUCCH receiver**. The presence pilot retains missed signals and false
+detections; neither detector qualification nor full-scenario acceptance is closed.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -206,7 +208,7 @@ reads back the files, checks the browser, and seals the artifact inventory.
 The run tag is generated automatically; existing runs are not overwritten:
 
 ```bat
-cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml"
 ```
 
 On another PC, substitute that PC's checkout path. From its repository root,
@@ -262,7 +264,7 @@ the test scope and sealed package identity; all cases remain in the CSVs/GUI.
 Open the completed local package without rerunning MATLAB:
 
 ```bat
-python apps\vxg_vsa_demo_dashboard.py "results\vxg_vsa\7ghz_400mhz_rank2_1024qam\20260925_v1"
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && python apps\vxg_vsa_demo_dashboard.py "results\vxg_vsa\7ghz_400mhz_rank2_1024qam\20260925_v1"
 ```
 
 Open `http://127.0.0.1:8991/webgui/`, or open `<run_folder>/webgui/index.html`
