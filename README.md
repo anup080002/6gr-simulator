@@ -3,6 +3,12 @@
 Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
 
+For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
+[the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
+and [the full native-IQ runbook and hardware checklist](docs/lls/vxg_vsa_rank2_runbook.md).
+This is separate from shared-feedback acceptance; digital export readiness does
+not verify installed Keysight options or physical RF measurements.
+
 This repository is a MATLAB-based 5G/6G simulator with three closely related uses:
 
 1. link-level PHY execution and diagnostics,
@@ -90,7 +96,7 @@ These are used for larger combined runs, truth validation, E2E coupling, structu
 
 ### 4. Browser WebGUI / interactive usage
 
-The browser workflow has one implementation and one launcher:
+The live scenario-management browser workflow has one implementation and launcher:
 
 - `apps/lls_web_dashboard.py`
 - `apps/start_lls_web_dashboard.ps1`
@@ -99,6 +105,11 @@ It loads scenarios, edits and downloads configuration, launches MATLAB LLS
 runs, and presents live status, tables, plots, files, and resource-grid
 evidence in one interface. The MATLAB `uifigure` utility remains a separate
 desktop tool; it is not another browser server.
+
+The separate `apps/vxg_vsa_demo_dashboard.py` exhibition viewer replays a completed,
+validated lab package. It does not launch live PHY runs or replace the scenario
+manager. Its default address is `http://127.0.0.1:8991/webgui/`, and its exported
+HTML also works offline.
 
 ## Recommended First-Time Setup
 
@@ -150,11 +161,106 @@ Use this table as the quick decision guide.
 | Run a matrix/regression of LLS scenarios | `run_6g_phy_lls_matrix` | Best front door for suite-style YAML execution |
 | Run the stricter truth-validation profile | `run_truth_validation_profile` | Truth E2E plus supplemental waveform/control artifacts |
 | Run the broader campaign orchestrator | `sixgr_run_3gpp_full_campaign` | More general and more configurable; used by compatibility flows too |
-| Launch the browser WebGUI | `apps/start_lls_web_dashboard.ps1` | The only supported browser launcher; defaults to `http://127.0.0.1:62906/` |
+| Launch the live scenario-manager WebGUI | `apps/start_lls_web_dashboard.ps1` | Defaults to `http://127.0.0.1:62906/` |
+| Generate the rank-2 Keysight waveform package | `scripts/run_vxg_vsa_demo.ps1` | Actual PHY execution, instrument exports, browser checks and artifact hashes |
+| View a completed rank-2 exhibition package | `apps/vxg_vsa_demo_dashboard.py` | Recorded digital evidence, not live RF; defaults to port 8991 |
 | Launch the MATLAB desktop utility | `Start6GRSimToolkit` or `SimSuiteGUI` | MATLAB-only interactive usage; not a browser server |
 | Use older compatibility path | `SixGR_Simulator` | Deprecated wrapper; forwards to the full campaign |
 
 ## Quick Start Commands
+
+### 400 MHz / 7 GHz rank-2 Keysight waveform demonstration
+
+**7 GHz / 400 MHz 6G research waveform using 3GPP-derived NR PHY structures.**
+This is **400 MHz bandwidth at 7 GHz**, not a 4 GHz carrier. The dedicated YAML is
+[`lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml`](simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml).
+It preserves the existing 5 MHz and four-layer/shared-feedback scenarios.
+
+The run uses 120 kHz SCS, FFT 4096, native 491.52 MSa/s, normal CP, 264 PRBs,
+2x2 logical identity MIMO and two layers. Each port has 4,915,200 samples over
+10 ms. The TDD period is 5 DL slots / one 10D+2G+2U mixed slot / 2 UL slots;
+data occupy full DL/UL slots only. DL uses MCS26/25/24 from the 1024-QAM table;
+UL uses experimental 1024-QAM at rate 948/1024, without an invented NR UL MCS.
+Real TBS/LDPC/CRC and received-DMRS estimation/MMSE are executed. Access,
+physical control/feedback, HARQ and link adaptation are disabled in this
+dedicated clean-waveform experiment, not silently bypassed in shared scenarios.
+
+Requirements: MATLAB R2024a+ with the needed 5G Toolbox features (executed here
+with R2026a), Python numpy/scipy/pandas/matplotlib/Playwright and its Chromium
+browser. The launcher checks Python/browser availability before MATLAB.
+
+From **Windows Command Prompt**, this one line executes MATLAB, exports and
+reads back the files, checks the browser, and seals the artifact inventory.
+The run tag is generated automatically; existing runs are not overwritten:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1"
+```
+
+On another PC, substitute that PC's checkout path. From its repository root,
+the portable command is:
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe"
+```
+
+Outputs are saved to `results/vxg_vsa/7ghz_400mhz_rank2_1024qam/<run_tag>/`;
+launcher, packaging and browser logs are in `logs/`. The package is about
+12.1 GB because full native/noisy IQ and multiple validated formats are retained.
+The launcher does not run `testAll` or enable RF.
+
+The completed local run `20260925_v1` contains 630 receiver trials across
+MCS26/25/24 and 30/35/40 dB. Primary MCS26 results are:
+
+| Simulated SNR | DL CRC passes | UL CRC passes | DL full-frame goodput | UL full-frame goodput | DL / UL RMS EVM |
+|---|---:|---:|---:|---:|---:|
+| 30 dB | 0/50 | 0/20 | 0 | 0 | 3.7814% / 3.7796% |
+| 35 dB | 50/50 | 20/20 | 3.524520 Gbit/s | 1.409808 Gbit/s | 2.1278% / 2.1285% |
+| 40 dB | 50/50 | 20/20 | 3.524520 Gbit/s | 1.409808 Gbit/s | 1.1964% / 1.1970% |
+
+All profiles passed their tested payloads at 35/40 dB. At 30 dB, MCS24 DL passed
+10/50 TBs; MCS25 DL and the fixed-rate UL failed all tested TBs. These finite
+samples are **not statistical BLER qualification**. Export/demo readiness is
+not an all-SNR payload pass, shared-feedback acceptance or RF measurement.
+The [versioned validation record](docs/lls/vxg_vsa_validation_20260925.md) preserves
+the test scope and sealed package identity; all cases remain in the CSVs/GUI.
+
+Open the completed local package without rerunning MATLAB:
+
+```bat
+python apps\vxg_vsa_demo_dashboard.py "results\vxg_vsa\7ghz_400mhz_rank2_1024qam\20260925_v1"
+```
+
+Open `http://127.0.0.1:8991/webgui/`, or open `<run_folder>/webgui/index.html`
+offline. Use F for fullscreen and Space for recorded replay. For another run,
+replace `20260925_v1` with its actual tag. After transfer, verify the complete
+package without modifying its bytes:
+
+```bat
+python apps\seal_lab_waveform_package.py "results\vxg_vsa\7ghz_400mhz_rank2_1024qam\20260925_v1" --verify-only
+```
+
+For Keysight, share these primary-profile files (paths relative to the run folder):
+
+| Destination | Files |
+|---|---|
+| VSG DL, two coherent outputs | `dl_tx/mcs26/dl_tx_port1.wiq`, `dl_tx/mcs26/dl_tx_port2.wiq` |
+| VSG UL, separate playback experiment | `ul_tx/mcs26/ul_tx_port1.wiq`, `ul_tx/mcs26/ul_tx_port2.wiq` |
+| 89600 VSA, DL two-channel recording | `vsa/mcs26/dl_tx_2ch_vsa.mat` |
+| 89600 VSA, UL two-channel recording | `vsa/mcs26/ul_tx_2ch_vsa.mat` |
+
+Also share `keysight/instrument_handoff.json`,
+`keysight/hardware_checklist_and_runbook.md`, `vsa/vsa_demod_config.json` and
+`validation/export_receipts.json`. WIQ is signed int16 **little-endian**,
+interleaved I/Q, with a common scale across both ports. Set native Fs to
+491.52 MSa/s and RF center to 7 GHz; preserve simultaneous start and port order.
+Do not use simulated noisy RX files for clean VSG transmission. The demodulation
+JSON is an engineering description, not a proprietary Keysight setup file.
+
+**PHYSICAL INSTRUMENT CAPABILITY VERIFIED: UNKNOWN.** Actual `*IDN?`/`*OPT?`,
+installed options, coherent TX/RX channels and import success remain unverified.
+The sealed results and logs stay local under existing Git ignore rules; cloning
+GitHub downloads the implementation, not this multi-GB recorded package.
 
 ### Current TDD runs: 5 MHz / 12 dB and 400 MHz / 30 dB
 

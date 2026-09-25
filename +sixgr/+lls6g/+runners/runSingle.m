@@ -14,6 +14,12 @@ end
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 scfg = sixgr.lls6g.config.loadScenarioConfig(configPath);
+if string(scfg.get("scenario.runner_profile")) == "lab_waveform_campaign"
+    assert(isempty(fieldnames(executionOptions)), ...
+        'sixgr:lab:UnsupportedExecutionOptions','Lab campaigns require a fresh run tag.');
+    out = sixgr.lls6g.runners.runLabWaveformCampaign(scfg, outputDir, runTag);
+    return;
+end
 if string(scfg.get("scenario.runner_profile")) == "research_tdd_link"
     assert(isempty(fieldnames(executionOptions)), ...
         'sixgr:research:UnsupportedExecutionOptions', ...

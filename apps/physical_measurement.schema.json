@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SixGR imported physical RF evidence (not simulated data)",
+  "type": "object",
+  "required": ["schema_version", "evidence_mode", "instrument_idn", "captured_utc", "direction", "profile", "carrier_hz", "bandwidth_hz", "rank", "measurement_scope", "metrics"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "evidence_mode": {"const": "physical_rf"},
+    "instrument_idn": {"type": "string", "minLength": 1},
+    "instrument_options": {"type": "string"},
+    "captured_utc": {"type": "string", "format": "date-time"},
+    "direction": {"enum": ["DL", "UL"]},
+    "profile": {"type": "string"},
+    "carrier_hz": {"type": "number", "exclusiveMinimum": 0},
+    "bandwidth_hz": {"type": "number", "exclusiveMinimum": 0},
+    "rank": {"type": "integer", "minimum": 1},
+    "measurement_scope": {"enum": ["per_layer_data_re", "per_port_full_frame"]},
+    "layer_or_port": {"type": "integer", "minimum": 1},
+    "metrics": {
+      "type": "object", "minProperties": 1,
+      "propertyNames": {"enum": ["evm_rms", "papr", "power", "frequency_error"]},
+      "additionalProperties": {
+        "type": "object", "required": ["value", "unit", "definition"],
+        "properties": {"value": {"type": "number"}, "unit": {"type": "string"}, "definition": {"type": "string"}}
+      }
+    },
+    "files": {
+      "description": "Optional paths relative to the run folder, SHA256 and units are mandatory per imported series.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object", "required": ["path", "sha256", "unit"],
+        "properties": {"path": {"type": "string"}, "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"}, "unit": {"type": "string"}}
+      }
+    }
+  }
+}

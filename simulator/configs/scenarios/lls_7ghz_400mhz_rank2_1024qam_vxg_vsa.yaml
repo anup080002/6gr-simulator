@@ -1,0 +1,52 @@
+# Dedicated data-channel instrument demonstration; not an access/network run.
+inherits:
+  - lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml
+meta:
+  scenario_id: lls_7ghz_400mhz_rank2_1024qam_vxg_vsa
+  description: 7 GHz / 400 MHz 6G research waveform using 3GPP-derived NR PHY structures.
+  research_class: optional_research_experiment
+scenario:
+  runner_profile: lab_waveform_campaign
+simulation:
+  n_frames: 1
+  n_slots: 80
+  n_subframes: 10
+  min_duration_s: 0.01
+  random_seed: 11
+  snr_db: 30
+frame:
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 120
+    Pattern1:
+      PeriodicityMilliseconds: 1
+      NumDownlinkSlots: 5
+      NumDownlinkSymbols: 10
+      NumUplinkSlots: 2
+      NumUplinkSymbols: 2
+mimo:
+  n_tx_ant: 2
+  n_rx_ant: 2
+  n_layers: 2
+research_dl:
+  target_code_rate: 0.92578125
+research_ul:
+  target_code_rate: 0.92578125
+research_receiver:
+  channel_estimation: dmrs
+  noise_estimation: received_dmrs
+  ldpc_base_graph: BG1
+lab_waveform:
+  dl_mcs_table: qam1024
+  dl_mcs_indices: [26, 25, 24]
+  rx_snr_db: [30, 35, 40]
+  ul_standards_status: research_extension
+  expected_duration_s: 0.01
+  output_group: 7ghz_400mhz_rank2_1024qam
+  min_playback_samples: 512
+  playback_sample_multiple: 8
+  visualization_points: 8192
+  psd_fft_size: 16384
+  psd_overlap_fraction: 0.5
+  psd_window: hann_periodic
+  occupied_power_fraction: 0.99
+  vsa_sample_rate_to_span_ratio: 1.28
