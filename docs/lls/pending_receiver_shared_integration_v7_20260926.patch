@@ -1,0 +1,1133 @@
+diff --git a/+sixgr/+link/receivePUCCHObservation.m b/+sixgr/+link/receivePUCCHObservation.m
+index 83009447..7e77d7cf 100644
+--- a/+sixgr/+link/receivePUCCHObservation.m
++++ b/+sixgr/+link/receivePUCCHObservation.m
+@@ -1,9 +1,10 @@
+-function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior)
++function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior,execution)
+ % Receive actual PUCCH samples without preparing or inspecting a UE waveform.
+ % ReceptionAssignment is the independent gNB hypothesis API. The legacy
+ % TransmissionAssignment remains explicitly labelled as transmitter-coupled;
+ % accepting it does not qualify an independent shared HARQ codebook.
+ if nargin<5, prior=[]; end
++if nargin<6, execution=struct(); end
+ receiverOnly=isa(assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment');
+ legacy=isa(assignment,'sixgr.phy.pucch.PUCCHTransmissionAssignment');
+ assert(isscalar(assignment) && (receiverOnly || legacy), ...
+@@ -38,7 +39,19 @@ assert(~isempty(policy),'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
+ [threshold,thresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold(assignment,policy);
+ args={'NoiseVariance',NaN,'ChannelProfile',sixgr.channel.resolveConcreteProfile(cfg), ...
+     'DetectionThreshold',threshold};
++jointPolicy=sixgr.util.structGet(cfg,'phy.pucch.format2ShortUCIReceiverPolicy',[]);
++jointModel=struct();
++% This policy owns only the explicitly named short Format-2 domain. Other
++% installed formats/widths retain their own physical decoder and detector.
++count=context.Sequence1Length+context.Sequence2Length;
++jointApplicable=~isempty(jointPolicy) && assignment.Format==2 && count>=3 && count<=11;
++if jointApplicable
++    jointModel=sixgr.phy.rx.collectPUCCHObservationModel(observation,execution);
++    args=[args {'ShortUCIReceiverPolicy',jointPolicy,'ReceivedExecutionEvidence',jointModel}];
++    thresholdSource="yaml.pucch.format2_short_uci_receiver_policy.target_false_alarm_probability_and_received_search_dimensions";
++end
+ timing=[];
++priorRejection="";
+ if assignment.Format==0
+     if isempty(prior) && receiverOnly && context.HARQACKBits==0 && context.SRBits==1 && ...
+             context.CSIPart1Bits==0 && context.CSIPart2Bits==0
+@@ -61,13 +74,45 @@ if assignment.Format==0
+     args=[args {'NoiseVarianceMode','noncoherent_correlation'}];
+ else
+     % Received DM-RS, not injected noise/covariance or TX pilot samples.
+-    % The full actual capture bounds timing search; no padding is allowed.
+-    args=[args {'NoiseVarianceMode','received_dmrs_estimate', ...
+-        'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
++    args=[args {'NoiseVarianceMode','received_dmrs_estimate'}];
++    if ~isempty(prior)
++        assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
++            'sixgr:link:InvalidPUCCHTimingPrior','A timing prior must be a retained received UL pilot clock.');
++        try
++            [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
++        catch cause
++            % These states make an earlier clock inapplicable, not a new
++            % timing measurement. Formats with DM-RS can acquire their own
++            % known pilots. Malformed configuration and other errors stay fatal.
++            inapplicable=["sixgr:phy:sync:StaleULTimingReference", ...
++                "sixgr:phy:sync:ULTimingReferenceIdentityMismatch", ...
++                "sixgr:phy:sync:FutureULTimingReference", ...
++                "sixgr:phy:sync:IncompletePriorAlignedULObservation"];
++            if ~any(string(cause.identifier)==inapplicable), rethrow(cause); end
++            priorRejection=string(cause.identifier);
++        end
++    end
++    if isempty(timing)
++        % Full actual capture bounds acquisition; no padding or TX timing.
++        args=[args {'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
++    end
+ end
+ rx=sixgr.phy.pucch.PUCCHReceiver.receive(raw,carrier,assignment,context,args{:});
+ if ~isempty(timing), rx.ReceiveTiming=timing; end
++if assignment.Format>=1
++    rx.ReceiveTiming.PriorClockProvided=~isempty(prior);
++    rx.ReceiveTiming.PriorClockApplied=~isempty(timing);
++    rx.ReceiveTiming.PriorClockRejectionReason=priorRejection;
++end
+ rx.DetectionThresholdSource=thresholdSource;
++if jointApplicable
++    rx.ReceiverObservationModel=jointModel;
++    % Minimal replay input: retain only the same sanitized execution types
++    % and clocks. No injected variance, channel tensor or TX IQ enters it.
++    rx.ReceiverExecutionContext=struct('Segments',{jointModel.ReceiveStreamExecutionSegments}, ...
++        'ReceiverID',jointModel.ReceiverID,'TransmitterID',jointModel.TransmitterID, ...
++        'GainCompensation',jointModel.ReceiverGainCompensation);
++end
+ rx.ReceiverObservationStartSample=observation.StartSample;
+ rx.ReceiverObservationEndSampleExclusive=observation.EndSampleExclusive;
+ rx.ReceiverObservationSampleRateHz=observation.SampleRateHz;
+diff --git a/+sixgr/+phy/+pucch/PUCCHReceiver.m b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+index 40731ec1..3832422a 100644
+--- a/+sixgr/+phy/+pucch/PUCCHReceiver.m
++++ b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+@@ -12,6 +12,8 @@ classdef PUCCHReceiver
+             addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
+             addParameter(p,"TimingSearchWindowSamples",[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
+             addParameter(p,"DetectionThreshold",0.2,@(x) isnumeric(x)&&isscalar(x));
++            addParameter(p,"ShortUCIReceiverPolicy",[],@(x) isempty(x)||(isstruct(x)&&isscalar(x)));
++            addParameter(p,"ReceivedExecutionEvidence",struct(),@(x) isstruct(x)&&isscalar(x));
+             addParameter(p,"InterferenceCovariance",[], ...
+                 @(x) isempty(x)||isnumeric(x));
+             addParameter(p,"InterferenceCovarianceSource","", ...
+@@ -62,6 +64,19 @@ classdef PUCCHReceiver
+                 sixgr.phy.pucch.PUCCHResource.validateAllocationCarrier(assignment.Data.AllocationBudget,carrier);
+             end
+             totalA=reportContext.Sequence1Length+reportContext.Sequence2Length;
++            jointPolicy=opt.ShortUCIReceiverPolicy;
++            jointModelEvidence=struct();
++            if ~isempty(jointPolicy)
++                localValidateJointPolicy(jointPolicy);
++                assert(receiveOnly && assignment.Format==2 && totalA>=3 && totalA<=11 && ...
++                    ~(isprop(pucch,'Interlacing') && pucch.Interlacing) && ...
++                    strcmpi(string(opt.ChannelProfile),"AWGN") && estimateNoise && ...
++                    isempty(opt.InterferenceCovariance), ...
++                    'sixgr:phy:pucch:UnsupportedJointShortUCIReceiver', ...
++                    ['The explicit joint policy requires independent non-interlaced Format-2 ' ...
++                     'reception, 3--11 bits and received-reference noise in a flat AWGN observation.']);
++                jointModelEvidence=sixgr.phy.rx.assertFlatStaticAWGNObservation(opt.ReceivedExecutionEvidence);
++            end
+             sixgr.phy.pucch.PUCCHFormatValidator.validateResource( ...
+                 assignment.Resource.Data,totalA,reportContext);
+             assert(~noncoherent || assignment.Format==0, ...
+@@ -204,6 +219,34 @@ classdef PUCCHReceiver
+                 error("sixgr:phy:pucch:UCIDecodeFailed", ...
+                     "PUCCH physical decode failed: %s",ME.message);
+             end
++            demapperEvidence=struct('Source',"toolbox_format_specific_decode", ...
++                'PerREGainAware',false,'PhysicalQualificationPassed',false);
++            varianceRole="scalar_toolbox_decode_argument";
++            if assignment.Format==2 && ~(isprop(pucch,'Interlacing') && pucch.Interlacing)
++                if ~estimateNoise && gridDisturbanceVariance==0
++                    % Preserve the explicitly requested noiseless reference
++                    % endpoint. It is not a finite-noise calibrated likelihood,
++                    % and is never selected for a received DM-RS noise estimate.
++                    result=equalizerInfo.EqualizerResult;
++                    assert(string(opt.NoiseVarianceMode)=="provided" && ...
++                        all(result.OutputNoiseInterferenceCovariance(:)==0), ...
++                        'sixgr:phy:pucch:InvalidNoiselessLikelihoodReference', ...
++                        'A noiseless endpoint requires explicitly zero executed disturbance.');
++                    demapperEvidence.Source="provided_zero_disturbance_toolbox_decode";
++                    demapperEvidence.NoiselessReference=true;
++                    varianceRole="explicit_zero_disturbance_reference_not_finite_noise_likelihood";
++                else
++                    % Keep the public decoder's presence statistic and
++                    % constellation. Decode UCI using y=g*s+z with the actual
++                    % MMSE response/covariance on each RE, not g=1 and mean(v).
++                    [soft{1},demapperEvidence]=sixgr.phy.pucch.demapFormat2EqualizerOutput( ...
++                        carrier,pucch,equalizerInfo.EqualizerResult);
++                    demapperEvidence.PerREGainAware=true;
++                    varianceRole="mean_output_variance_for_detector_only_codeword_uses_per_RE_covariance";
++                end
++            end
++            codewordLLR=zeros(0,1);
++            if assignment.Format>=2, codewordLLR=soft{1}; end
+             if assignment.Format <= 1
+                 decoded = localCellBits(soft);
+                 crcPassed = true;
+@@ -217,7 +260,6 @@ classdef PUCCHReceiver
+                 crcErrors=decodedResult.CodeBlockCRCError;
+                 crcBitCount=decodedResult.Plan.CRCBits;
+             end
+-            decodeLatency_ms = 1e3 .* toc(decodeTic);
+             energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
+             [detectionMetric,detectionMetricSource] = ...
+                 sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+@@ -225,11 +267,54 @@ classdef PUCCHReceiver
+             decision = sixgr.phy.pucch.PUCCHDetector.decide( ...
+                 assignment.Format,detectionMetric, ...
+                 opt.DetectionThreshold,decoded);
++            shortUCI=struct('Applied',false,'PhysicalQualificationPassed',false);
++            wordAccepted=true;
++            decoderAlgorithm="format_specific_equalized_uci";
++            llrRole="actual_codeword_decoder_input";
++            if ~isempty(jointPolicy)
++                % The one installed resource/schema determines the legal word
++                % set. Count acquisition searches; a causally aligned input
++                % without a local search contributes one timing hypothesis.
++                searches=1;
++                if ~isempty(opt.TimingSearchWindowSamples)
++                    searches=diff(opt.TimingSearchWindowSamples)+1;
++                end
++                shortUCI=sixgr.phy.pucch.decodeFormat2FlatShortUCI( ...
++                    carrier,pucch,grid,totalA,jointPolicy.target_false_alarm_probability,searches);
++                shortUCI.Applied=true;
++                shortUCI.ModelEvidence=jointModelEvidence;
++                shortUCI.Policy=jointPolicy;
++                presence=shortUCI.JointPresenceDecision;
++                assert(isstruct(presence) && isfield(presence,'CorrelationThreshold'), ...
++                    'sixgr:phy:pucch:InvalidJointShortUCIObservation', ...
++                    'The joint receiver must provide its physical presence evidence; no legacy rescue.');
++                decision=sixgr.phy.pucch.PUCCHDetector.decide(assignment.Format, ...
++                    presence.Correlation,presence.CorrelationThreshold,int8([]));
++                assert(decision.Detected==presence.Detected, ...
++                    'sixgr:phy:pucch:JointPresenceDecisionMismatch', ...
++                    'Presence probability and exported metric must describe the same decision.');
++                wordAccepted=shortUCI.UniqueMaximum && isfinite(shortUCI.ConditionalWordPosterior) && ...
++                    shortUCI.ConditionalWordPosterior>=jointPolicy.minimum_word_posterior;
++                shortUCI.WordAccepted=logical(wordAccepted);
++                decoded=shortUCI.Bits;
++                detectionMetricSource="joint_known_DMRS_and_legal_UCI_projection_search_union_bound";
++                decoderAlgorithm="flat_joint_short_uci_v1";
++                % Keep the conventional receiver LLRs for comparison, not as
++                % fabricated evidence of the joint decoder's actual input.
++                llrRole="equalized_receiver_comparison_not_joint_decoder_input";
++                varianceRole="equalized_receiver_comparison_not_joint_decoder_variance";
++            end
++            decodeLatency_ms = 1e3 .* toc(decodeTic);
+             if assignment.Format==1 && reportContext.SRBits==1 && ...
+                     reportContext.HARQACKBits==0 && ~decision.DTX
+                 decoded=int8(1); % Presence on the configured SR resource.
+             end
+-            if decision.DTX
++            receiverUsable=~decision.DTX && wordAccepted;
++            failure=localFailure(decision.DTX);
++            if ~decision.DTX && ~wordAccepted
++                failure="short_uci_word_confidence_below_policy";
++            end
++            if ~receiverUsable
+                 decoded = int8(zeros(0,1));
+             end
+             [sequence1,sequence2] = localSplit(decoded, ...
+@@ -240,7 +325,7 @@ classdef PUCCHReceiver
+             evmApplicable = assignment.Format >= 2;
+             rx = struct( ...
+                 "ReceiveTiming",timing, ...
+-                "ReceiverUsable",~decision.DTX, ...
++                "ReceiverUsable",logical(receiverUsable), ...
+                 "DetectionAttempted",true,"DTX",decision.DTX, ...
+                 "DetectionOutcome",decision.DetectionOutcome, ...
+                 "DetectionMetric",decision.DetectionMetric, ...
+@@ -261,7 +346,7 @@ classdef PUCCHReceiver
+                     equalizerInfo,channel,format0Noncoherent), ...
+                 "EVMPercent",localEVM(constellation,evmApplicable), ...
+                 "EVMApplicable",logical(evmApplicable), ...
+-                "FailureReason",localFailure(decision.DTX), ...
++                "FailureReason",failure, ...
+                 "ErrorID","","OraclePayloadBitsUsed",false, ...
+                 "AssignmentDigest",assignment.Digest, ...
+                 "ReceiverOnlyAssignment",receiveOnly, ...
+@@ -272,6 +357,10 @@ classdef PUCCHReceiver
+                 "GridNoiseVarianceSource",noiseSource, ...
+                 "GridNoiseVarianceValueRole","receiver_disturbance_variance_for_equalization_and_decode", ...
+                 "DecodeNoiseInterferenceVariance",decodeNoiseVariance, ...
++                "DecodeNoiseInterferenceVarianceRole",varianceRole, ...
++                "UCICodewordLLR",codewordLLR,"DemapperEvidence",demapperEvidence, ...
++                "UCICodewordLLRRole",llrRole,"DecoderAlgorithm",decoderAlgorithm, ...
++                "ShortUCIReceiverEvidence",shortUCI, ...
+                 "NoiseVarianceTransform",noiseTransform, ...
+                 "InterferenceCovariance",rintGrid, ...
+                 "InterferenceCovarianceAvailable",~isempty(rintGrid), ...
+@@ -291,10 +380,25 @@ classdef PUCCHReceiver
+                 "ReceiverPipelineLatency_ms",1e3 .* toc(receiverPipelineTic), ...
+                 "ReceiverStageLatencySource", ...
+                 "matlab_tic_toc_canonical_pucch_receiver_stages");
++            if ~isempty(jointPolicy)
++                rx.GridNoiseVarianceValueRole="received_DMRS_equalizer_comparison_not_joint_decoder_input";
++            end
+         end
+     end
+ end
+
++function localValidateJointPolicy(policy)
++id='sixgr:phy:pucch:InvalidJointShortUCIPolicy';
++assert(all(isfield(policy,{'algorithm','target_false_alarm_probability','minimum_word_posterior'})) && ...
++    isscalar(string(policy.algorithm)) && string(policy.algorithm)=="flat_joint_short_uci_v1", ...
++    id,'Supply the explicit supported joint short-UCI algorithm and both probability gates.');
++alpha=policy.target_false_alarm_probability; confidence=policy.minimum_word_posterior;
++assert(isnumeric(alpha) && isreal(alpha) && isscalar(alpha) && isfinite(alpha) && alpha>0 && alpha<1 && ...
++    isnumeric(confidence) && isreal(confidence) && isscalar(confidence) && ...
++    isfinite(confidence) && confidence>0 && confidence<=1, ...
++    id,'False-alarm probability must be in (0,1); minimum word posterior must be in (0,1].');
++end
++
+ function value = localEffectiveScalarVariance(nVar,Rgrid,nRx)
+ value = double(nVar);
+ if isempty(Rgrid)
+diff --git a/+sixgr/+phy/+rx/equalizeMMSE.m b/+sixgr/+phy/+rx/equalizeMMSE.m
+index b1b3efea..b96aa0d3 100644
+--- a/+sixgr/+phy/+rx/equalizeMMSE.m
++++ b/+sixgr/+phy/+rx/equalizeMMSE.m
+@@ -51,7 +51,7 @@ if ~isempty(ind)
+ end
+
+ [rxSym, hSym, dims] = localNormalizeInputs(rxSym, hSym);
+-nVarSafe = localSafeNoiseVariance(nVar, rxSym);
++nVarSafe = localSafeNoiseVariance(nVar);
+ if isempty(RIncludesNoise)
+     RIncludesNoise = ~isempty(Rint);
+ end
+@@ -130,16 +130,18 @@ staticChannelBatch = localIsStaticChannel(hSym) && Rmode ~= "per_re";
+
+ if nRx == 1 && nTx == 1 && alg ~= "ZF"
+     H = hSym(:, 1, 1);
+-    Rdiag = localSISOCovarianceDiagonal(Rmode, Rstatic, RperRE, nRE, nVar);
++    Rdiag = localSISOCovarianceDiagonal(Rmode, Rstatic, RperRE, nRE, nVar, RIncludesNoise);
+     denom = abs(H).^2 + Rdiag;
+-    W = conj(H) ./ max(denom, eps);
++    W = complex(zeros(size(H)));
++    usable = denom > 0;
++    W(usable) = conj(H(usable)) ./ denom(usable);
+     eqSym(:, 1) = W .* rxSym(:, 1);
+     WH = W .* H;
+     noiseOut = abs(W).^2 .* Rdiag;
+     signal = abs(WH).^2;
+-    gamma = signal ./ max(noiseOut, eps);
++    [gamma, rel] = localPhysicalSINR(signal, noiseOut);
+     sinrLin(:, 1) = gamma;
+-    reliability(:, 1) = gamma ./ max(1 + gamma, eps);
++    reliability(:, 1) = rel;
+     Wout(:, 1, 1) = W;
+     WHout(:, 1, 1) = WH;
+     residualLayerPower(:, 1) = 0;
+@@ -205,12 +207,13 @@ result.EqualizedSymbols = eqSym;
+ result.DemapperReliability = reliability;
+ result.CSI = reliability;
+ result.PostEqSINRLinear = sinrLin;
+-result.PostEqSINRPerRE_dB = 10 .* log10(max(sinrLin, eps));
++result.PostEqSINRPerRE_dB = 10 .* log10(sinrLin);
+ result.PerLayerSINR_dB = localGeometricLayerSINR(sinrLin);
+ result.W = Wout;
+ result.EffectiveResponseWH = WHout;
+ result.ResidualInterLayerPower = residualLayerPower;
+ result.OutputNoiseInterferenceCovariance = outputCov;
++result.NoiseCovarianceRole = "physical_disturbance_excludes_numerical_solve_loading";
+ result.CovarianceIncludesNoise = logical(RIncludesNoise || isempty(Rint));
+ result.CovarianceSource = covarianceSource;
+ result.NoiseAddedExactlyOnce = true;
+@@ -230,7 +233,8 @@ function [eqSym, reliability, sinrLin, Wout, WHout, ...
+         residualLayerPower, outputCov, regularized] = ...
+         localApplyStaticCovariance(rxSym, hSym, R, nRE, nTx, nRx)
+ % Apply one exact static disturbance-covariance factorization to all REs.
+-R = localHermitianPositiveDefinite(R);
++% localStableLeftSolve may stabilize its private solve matrix. Keep R here
++% physical, for W*R*W^H; a well-conditioned covariance needs no loading.
+ allH = reshape(permute(hSym, [2 3 1]), nRx, nTx*nRE);
+ [allRinvH, covarianceRegularized] = localStableLeftSolve(R, allH);
+
+@@ -293,7 +297,7 @@ if ismatrix(Rint) && size(Rint, 1) == nRx && size(Rint, 2) == nRx
+     mode = "static";
+     Rstatic = localPrepareCovariance(Rint, nVar, logical(RIncludesNoise));
+     source = localCovarianceSource(RIncludesNoise);
+-elseif ndims(Rint) == 3 && size(Rint, 1) == nRE && size(Rint, 2) == nRx && size(Rint, 3) == nRx
++elseif ndims(Rint) <= 3 && size(Rint, 1) == nRE && size(Rint, 2) == nRx && size(Rint, 3) == nRx
+     mode = "per_re";
+     RperRE = Rint;
+     source = localCovarianceSource(RIncludesNoise);
+@@ -332,21 +336,24 @@ if isempty(R)
+ end
+ R = (R + R') ./ 2;
+ if ~logical(includesNoise)
+-    R = R + max(double(nVar), eps) * eye(size(R, 1));
+-end
+-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+-    R = max(double(nVar), eps) * eye(size(R, 1));
++    R = R + double(nVar) * eye(size(R, 1));
+ end
++assert(all(isfinite(R(:))) && all(real(eig(R))>=-32*eps(norm(R,'fro'))), ...
++    'sixgr:phy:equalizeMMSE:InvalidCovariance', ...
++    'Disturbance covariance must be finite positive semidefinite; no white-noise replacement.');
+ end
+
+-function Rdiag = localSISOCovarianceDiagonal(mode, Rstatic, RperRE, nRE, nVar)
++function Rdiag = localSISOCovarianceDiagonal(mode, Rstatic, RperRE, nRE, nVar, includesNoise)
+ switch string(mode)
+     case "white"
+         Rdiag = repmat(double(nVar), nRE, 1);
+     case "static"
+-        Rdiag = repmat(max(real(Rstatic(1, 1)), eps), nRE, 1);
++        Rdiag = repmat(real(Rstatic(1, 1)), nRE, 1);
+     otherwise
+-        Rdiag = max(real(reshape(RperRE(:, 1, 1), [], 1)), eps);
++        Rdiag = zeros(nRE,1);
++        for kk=1:nRE
++            Rdiag(kk) = real(localPrepareCovariance(RperRE(kk,1,1),nVar,includesNoise));
++        end
+ end
+ end
+
+@@ -369,7 +376,6 @@ end
+ function [core, regularized] = localEqualizerCore(H, R, alg)
+ regularized = false;
+ H = double(H);
+-R = localHermitianPositiveDefinite(R);
+ if alg == "ZF"
+     A = H' * H;
+     B = H';
+@@ -394,9 +400,10 @@ sinr = NaN(nLayers, 1);
+ interLayer = NaN(nLayers, 1);
+ for layer = 1:nLayers
+     signal = abs(WH(layer, layer)).^2;
+-    interLayer(layer) = max(sum(abs(WH(layer, :)).^2) - signal, 0);
+-    noiseOut = max(real(outCov(layer, layer)), eps);
+-    sinr(layer) = signal ./ max(interLayer(layer) + noiseOut, eps);
++    other = [1:layer-1 layer+1:nLayers];
++    interLayer(layer) = sum(abs(WH(layer, other)).^2);
++    noiseOut = max(real(outCov(layer, layer)), 0);
++    [sinr(layer), reliability(layer,1)] = localPhysicalSINR(signal, interLayer(layer) + noiseOut);
+ end
+ core = struct();
+ core.W = W;
+@@ -404,20 +411,16 @@ core.WH = WH;
+ core.OutputCovariance = outCov;
+ core.ResidualInterLayerPower = interLayer;
+ core.SINRLinear = sinr;
+-core.Reliability = sinr ./ max(1 + sinr, eps);
++core.Reliability = reliability;
+ end
+
+-function R = localHermitianPositiveDefinite(R)
+-R = double(R);
+-R = (R + R') ./ 2;
+-if isempty(R)
+-    return;
+-end
+-diagLoad = max(norm(R, "fro") * 1e-12, eps);
+-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+-    R = eye(size(R, 1));
+-end
+-R = R + diagLoad * eye(size(R, 1));
++function [sinr, reliability] = localPhysicalSINR(signal, disturbance)
++sinr = signal ./ disturbance;
++reliability = signal ./ (signal + disturbance);
++% A zero useful response carries no bit information. Positive signal with
++% exactly zero disturbance retains infinite SINR and unit reliability.
++sinr(signal==0) = 0;
++reliability(signal==0) = 0;
+ end
+
+ function [X, regularized] = localStableLeftSolve(A, B)
+@@ -465,20 +468,16 @@ nLayers = size(sinrLin, 2);
+ perLayer = NaN(1, nLayers);
+ for layer = 1:nLayers
+     x = double(sinrLin(:, layer));
+-    x = x(isfinite(x) & x >= 0);
++    x = x(~isnan(x) & x >= 0);
+     if ~isempty(x)
+-        perLayer(layer) = 10 * log10(exp(mean(log(max(x, eps)), "omitnan")));
++        perLayer(layer) = 10/log(10) * mean(log(x));
+     end
+ end
+ end
+
+-function nVarSafe = localSafeNoiseVariance(nVar, rxSym)
++function nVarSafe = localSafeNoiseVariance(nVar)
++assert(isnumeric(nVar) && isreal(nVar) && isscalar(nVar) && isfinite(nVar) && nVar>=0, ...
++    'sixgr:phy:equalizeMMSE:InvalidNoiseVariance', ...
++    'Supply explicit finite nonnegative noise variance; no received-power-derived substitute.');
+ nVarSafe = double(nVar);
+-if ~(isscalar(nVarSafe) && isfinite(nVarSafe) && nVarSafe > 0)
+-    p = mean(abs(rxSym(:)).^2 + eps, "omitnan");
+-    if ~(isfinite(p) && p > 0)
+-        p = 1;
+-    end
+-    nVarSafe = 1e-12 * p;
+-end
+ end
+diff --git a/+sixgr/+truth/CoupledTruthRuntime.m b/+sixgr/+truth/CoupledTruthRuntime.m
+index 387e93d9..19c5f8e7 100644
+--- a/+sixgr/+truth/CoupledTruthRuntime.m
++++ b/+sixgr/+truth/CoupledTruthRuntime.m
+@@ -1673,11 +1673,14 @@ methods(Static)
+         prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,post.EndSampleExclusive,nominal);
+         [receiver,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
+             post,item.Planes(postIndex).Segments,"gnb_"+mapping.LastGrant.ServingCell+"_rx");
+-        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,receiver,prior);
++        execution=struct('Segments',{item.Planes(postIndex).Segments}, ...
++            'ReceiverID',"gnb_"+mapping.LastGrant.ServingCell+"_rx", ...
++            'TransmitterID',"ue_"+item.UE,'GainCompensation',gain);
++        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,receiver,prior,execution);
+         rx.ReceiverGainCompensation=gain;
+         if h.Assignment.Format>=1
+             sixgr.truth.exportIndependentPUCCHObservation( ...
+-                state.RunFolder,cfg,h,item.Planes,rx,receiver);
++                state.RunFolder,cfg,h,item.Planes,rx,receiver,prior);
+         end
+         bits=int8(rx.DecodedFields.HARQACK(:));
+         usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
+@@ -1721,6 +1724,8 @@ methods(Static)
+             'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
+         if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
+         trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
++        trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedControlNoiseAudit( ...
++            cfg,post,item.Planes(postIndex).Segments,"gnb_"+mapping.LastGrant.ServingCell+"_rx",state.CurrentSNR_dB));
+         state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         evidence=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
+@@ -1763,6 +1768,10 @@ methods(Static)
+         assert(post.SampleRateHz==owner.SampleRateHz && post.StartSample==pre.StartSample && ...
+             post.EndSampleExclusive==pre.EndSampleExclusive && post.EndSampleExclusive==owner.Events.NextSampleIndex, ...
+             'sixgr:truth:PUCCHReceiveOnlyClockMismatch','Publish only at actual gNB receive completion.');
++        receiveCarrier=sixgr.phy.grid.makeCarrier(c.Config);
++        nominal=sixgr.phy.frame.slotStartSample(receiveCarrier,c.Slot-1,post.SampleRateHz);
++        prior=sixgr.truth.selectReceivedULTimingReference( ...
++            state,item.UE,post.EndSampleExclusive,nominal);
+         if prepared
+             % Preserve physical TX/power and bit-comparison audit from the
+             % retained immutable transmission. It cannot supply the RX schema.
+@@ -1774,6 +1783,7 @@ methods(Static)
+                 'Source',"shared_physical_owner_received_observation", ...
+                 'RuntimeChannelPhysicalTxElements',channel.NumTxAnt,'RuntimeChannelNumRxAntennas',channel.NumRxAnt), ...
+                 'GNBReception',struct('Assignment',h.Assignment,'Context',h.Context));
++            if ~isempty(prior), input.ReceivedULTimingReference=prior; end
+             trial=sixgr.link.runPUCCHWaveformTrial(c.Config,c.Arguments{:},'ReceivedContext',input);
+             assert(isfield(trial,'Receiver'),'sixgr:truth:ConfiguredCSIReceiverFailed', ...
+                 'The canonical receiver failed; no substitute CSI row is permitted.');
+@@ -1788,12 +1798,15 @@ methods(Static)
+         else
+             [receiver,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
+                 post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx");
+-            rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver);
++            execution=struct('Segments',{item.Planes(postIndex).Segments}, ...
++                'ReceiverID',"gnb_"+h.ServingCell+"_rx",'TransmitterID',"ue_"+item.UE, ...
++                'GainCompensation',gain);
++            rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior,execution);
+             rx.ReceiverGainCompensation=gain;
+         end
+         if h.Assignment.Format>=1
+             sixgr.truth.exportIndependentPUCCHObservation( ...
+-                state.RunFolder,c.Config,h,item.Planes,rx,receiver);
++                state.RunFolder,c.Config,h,item.Planes,rx,receiver,prior);
+         end
+         actual=sixgr.truth.normalizeReceivedPUCCHCSI(rx,h.Context,h.CSIReportConfiguration);
+         identity=struct('UEIndex',h.UEIndex,'RNTI',h.RNTI,'TargetSlot',h.TargetSlot, ...
+@@ -1839,6 +1852,8 @@ methods(Static)
+             if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
+             trial.ObservationCompletionTime_s=post.EndSampleExclusive/post.SampleRateHz;
+             trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
++            trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedControlNoiseAudit( ...
++                c.Config,post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx",state.CurrentSNR_dB));
+             state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                 state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         end
+@@ -1879,7 +1894,10 @@ methods(Static)
+         receiveCarrier=sixgr.phy.grid.makeCarrier(c.Config);
+         nominal=sixgr.phy.frame.slotStartSample(receiveCarrier,c.Slot-1,post.SampleRateHz);
+         prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,post.EndSampleExclusive,nominal);
+-        rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior);
++        execution=struct('Segments',{item.Planes(postIndex).Segments}, ...
++            'ReceiverID',"gnb_"+h.ServingCell+"_rx",'TransmitterID',"ue_"+item.UE, ...
++            'GainCompensation',gain);
++        rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior,execution);
+         rx.ReceiverGainCompensation=gain;
+         sixgr.truth.exportIndependentPUCCHObservation( ...
+             state.RunFolder,c.Config,h,item.Planes,rx,receiver,prior);
+@@ -1967,6 +1985,8 @@ methods(Static)
+             'SRReceiverDisposition',disposition,'SuccessFlag',prepared && contentMatch==1, ...
+             'ExecutionBackend',"pucch_shared_gnb_SR_reception",'ApproximationMode',"none");
+         trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
++        trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedControlNoiseAudit( ...
++            c.Config,post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx",state.CurrentSNR_dB));
+         state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         if positive
+@@ -18252,6 +18272,9 @@ methods(Static, Access=private)
+             "CrashMessage", char(string(sixgr.util.structGet(trial, "CrashMessage", ""))), ...
+             "Notes", char(string(sixgr.util.structGet(trial, "Notes", "Active waveform-backed coupled PUCCH feedback observation."))));
+         row = sixgr.truth.bindPUCCHPowerLedger(row,trial);
++        if isfield(trial,'ReceiverNoiseAudit')
++            row=sixgr.util.mergeStruct(row,trial.ReceiverNoiseAudit);
++        end
+         if isfield(trial,'Receiver') && isfield(trial.Receiver,'ChannelEstimationMode')
+             row=sixgr.util.mergeStruct(row,sixgr.link.pucchReceiverStageEvidence(trial.Receiver));
+         end
+diff --git a/+sixgr/+link/runPUCCHWaveformTrial.m b/+sixgr/+link/runPUCCHWaveformTrial.m
+index d8331223..7c5b3b4c 100644
+--- a/+sixgr/+link/runPUCCHWaveformTrial.m
++++ b/+sixgr/+link/runPUCCHWaveformTrial.m
+@@ -190,8 +190,16 @@ trial.AppliedTimingCorrectionSamples = 0;
+ try
+     if received
+         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
++        execution=struct();
++        jointPolicy=sixgr.util.structGet(cfgRuntime,'phy.pucch.format2ShortUCIReceiverPolicy',[]);
++        count=context.Sequence1Length+context.Sequence2Length;
++        if ~isempty(jointPolicy) && receiverAssignment.Format==2 && count>=3 && count<=11
++            execution=struct('Segments',{replay.ReceiveStreamExecutionSegments}, ...
++                'ReceiverID',replay.ReceiverID,'TransmitterID',replay.TransmitterID, ...
++                'GainCompensation',replay.ReceiverGainCompensation);
++        end
+         rx=sixgr.link.receivePUCCHObservation(cfgRuntime,receiverAssignment,context, ...
+-            receivedContext.Observation,prior);
++            receivedContext.Observation,prior,execution);
+     else
+         rxArgs = {"NoiseVariance",noiseVariance, ...
+             "NoiseVarianceDomain","sample", ...
+@@ -319,6 +327,9 @@ trial.DTXFlag = logical(rx.DTX);
+ trial.DetectionMetric = rx.DetectionMetric;
+ trial.DetectionThreshold = rx.DetectionThreshold;
+ trial.DetectionThresholdSource = detectionThresholdSource;
++if received
++    trial.DetectionThresholdSource=rx.DetectionThresholdSource;
++end
+ trial.DetectionAttempted = rx.DetectionAttempted;
+ trial.DetectionUsable = rx.ReceiverUsable;
+ trial.ReceiverUsable = rx.ReceiverUsable;
+@@ -345,6 +356,13 @@ trial.DopplerHz = double(sixgr.util.structGet( ...
+ trial.ConfiguredSNR_dB = double(opt.SNR_dB);
+ trial.AppliedAWGNSNR_dB = double(sixgr.util.structGet( ...
+     replay,"AppliedAWGNSNR_dB",localAWGNSNR(opt)));
++if received && isfield(replay,'ReceiveStreamExecutionSegments')
++    % Independent post-decode bookkeeping, never practical RX input.
++    trial.ReceiverNoiseAudit=sixgr.link.receivedControlNoiseAudit( ...
++        cfgRuntime,receivedContext.Observation,replay.ReceiveStreamExecutionSegments, ...
++        replay.ReceiverID,trial.ConfiguredSNR_dB);
++    trial=sixgr.util.mergeStruct(trial,trial.ReceiverNoiseAudit);
++end
+ trial.NoiseVarStatus = "OK";
+ trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
+ trial.NoiseVarReason = "";
+diff --git a/+sixgr/+link/pucchReceiverStageEvidence.m b/+sixgr/+link/pucchReceiverStageEvidence.m
+index 21f87c42..2413fe37 100644
+--- a/+sixgr/+link/pucchReceiverStageEvidence.m
++++ b/+sixgr/+link/pucchReceiverStageEvidence.m
+@@ -58,6 +58,24 @@ end
+ if rx.NoncoherentSequenceDetection && isnan(rx.DecodeNoiseInterferenceVariance)
+     evidence.DecodeNoiseVarianceDomain="not_consumed_noncoherent_sequence_detection";
+ end
++% Preserve what the executed decoder actually consumed. Equalizer diagnostics
++% still exist for the joint receiver, but are not its likelihood inputs.
++for name=["DecoderAlgorithm","UCICodewordLLRRole","DecodeNoiseInterferenceVarianceRole","GridNoiseVarianceValueRole"]
++    if isfield(rx,name), evidence.(name)=string(rx.(name)); end
++end
++if isfield(rx,'ShortUCIReceiverEvidence') && rx.ShortUCIReceiverEvidence.Applied
++    joint=rx.ShortUCIReceiverEvidence; presence=joint.JointPresenceDecision;
++    evidence.ShortUCIReceiverApplied=true;
++    evidence.ShortUCIWordConfidencePassed=logical(joint.WordAccepted);
++    evidence.ShortUCIConditionalWordPosterior=joint.ConditionalWordPosterior;
++    evidence.ShortUCIMinimumWordPosterior=joint.Policy.minimum_word_posterior;
++    evidence.ShortUCISearchFalseAlarmBound=presence.SearchFalseAlarmBound;
++    evidence.ShortUCITargetFalseAlarmProbability=presence.TargetFalseAlarmProbability;
++    evidence.ShortUCIHypothesisCount=presence.HypothesisCount;
++    evidence.ShortUCIPhysicalQualificationPassed=logical(joint.PhysicalQualificationPassed);
++    evidence.ShortUCIModel=string(joint.Model);
++    evidence.DecodeNoiseVarianceDomain="equalized_symbol_comparison_only_not_joint_decoder_input";
++end
+ if nargin>1
+     assert(string(rx.AssignmentDigest)==string(assignment.Digest), ...
+         'sixgr:link:PUCCHReceiverEvidenceAssignmentMismatch', ...
+diff --git a/+sixgr/+lls6g/+config/validateScenarioConfig.m b/+sixgr/+lls6g/+config/validateScenarioConfig.m
+index edbb6192..a8bf28c6 100644
+--- a/+sixgr/+lls6g/+config/validateScenarioConfig.m
++++ b/+sixgr/+lls6g/+config/validateScenarioConfig.m
+@@ -214,6 +214,19 @@ if logical(sixgr.util.structGet(cfg,'channels.shared_identity_awgn_enabled',fals
+         'sixgr:lls6g:config:SharedIdentityAWGNRunnerRequired', ...
+         'Shared identity AWGN requires the slot_coupled_truth coordinator, not the ideal-feedback research runner.');
+ end
++jointPUCCH=sixgr.util.structGet(cfg,'pucch.format2_short_uci_receiver_policy',[]);
++if ~isempty(jointPUCCH)
++    assert(jointPUCCH.target_false_alarm_probability>0 && ...
++        jointPUCCH.target_false_alarm_probability<1 && jointPUCCH.minimum_word_posterior>0, ...
++        'sixgr:lls6g:config:InvalidJointShortUCIPolicy', ...
++        'pucch.format2_short_uci_receiver_policy requires false-alarm probability in (0,1) and word posterior in (0,1].');
++    assert(logical(cfg.control.pucch_enabled) && logical(cfg.pucch.enabled) && ...
++        string(cfg.meta.research_class)=="optional_research_experiment" && ...
++        (logical(sixgr.util.structGet(cfg,'channels.shared_identity_awgn_enabled',false)) || ~isempty(matrixReal)), ...
++        'sixgr:lls6g:config:JointShortUCIRequiresExplicitAWGN', ...
++        ['The opt-in short-UCI receiver requires enabled physical PUCCH, an explicit shared ' ...
++         'identity/fixed-matrix AWGN operator and optional_research_experiment classification.']);
++end
+ for signal=["srs","trs","csi_rs"]
+     estimatorPath="reference_signals."+signal+".runtime_channel_estimator";
+     if signal=="csi_rs", estimatorPath="reference_signals.csi_rs_runtime_channel_estimator"; end
+diff --git a/+sixgr/+lls6g/buildInternalConfig.m b/+sixgr/+lls6g/buildInternalConfig.m
+index 9fb42a39..d81fe5fd 100644
+--- a/+sixgr/+lls6g/buildInternalConfig.m
++++ b/+sixgr/+lls6g/buildInternalConfig.m
+@@ -1745,6 +1745,10 @@ for detectorField=detectorFields
+ end
+ end
+
++% Explicit opt-in only. Its observation assumptions are checked again at RX.
++cfg=localStructSetIfPresent(cfg,"phy.pucch.format2ShortUCIReceiverPolicy", ...
++    localGetNested(s,"pucch.format2_short_uci_receiver_policy",[]));
++
+ cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
+ cfg.phy.pusch.nLayers = double(ulLayerCount);
+ cfg.phy.pusch.numLayers = double(ulLayerCount);
+diff --git a/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml b/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml
+index 8c3a1fdf..06cd48b3 100644
+--- a/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml
++++ b/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml
+@@ -81,6 +81,7 @@
+       "rv_sequence": {"required": true, "type": "number_list", "min_items": 1}, "retransmission_policy": {"required": true, "type": "string"}
+     }},
+     "pucch": {"required": true, "parameters": {
++      "format2_short_uci_receiver_policy": {"required": false, "type": "struct", "nested_rule": "pucch_flat_joint_short_uci_policy"},
+       "detection_threshold_format0_one_symbol": {"required": false, "type": "number", "min": 0, "max": 1},
+       "detection_threshold_format0_two_symbols": {"required": false, "type": "number", "min": 0, "max": 1},
+       "detection_threshold_format1": {"required": false, "type": "number", "min": 0, "max": 1},
+@@ -150,6 +151,11 @@
+     }}
+   },
+   "nested_sections": {
++    "pucch_flat_joint_short_uci_policy": {"parameters": {
++      "algorithm": {"required": true, "type": "string", "allowed_values": ["flat_joint_short_uci_v1"]},
++      "target_false_alarm_probability": {"required": true, "type": "number", "min": 0, "max": 1},
++      "minimum_word_posterior": {"required": true, "type": "number", "min": 0, "max": 1}
++    }},
+     "csi_report_configuration": {"parameters": {
+       "report_config_id": {"required": true, "type": "string", "nonempty": true},
+       "epoch": {"required": true, "type": "integer", "min": 0},
+diff --git a/tests/testEqualizerStaticCovarianceBatch.m b/tests/testEqualizerStaticCovarianceBatch.m
+index dc7af9f9..f134e57b 100644
+--- a/tests/testEqualizerStaticCovarianceBatch.m
++++ b/tests/testEqualizerStaticCovarianceBatch.m
+@@ -21,7 +21,8 @@ assert(double(info.UniqueSolveCount) == nRE, ...
+     "A varying channel still requires one exact layer-domain filter per RE.");
+
+ Rprepared = (R+R')/2;
+-Rprepared = Rprepared + max(norm(Rprepared,"fro")*1e-12,eps)*eye(nRx);
++% The direct MMSE reference uses physical covariance. Numerical solve
++% loading is neither injected noise nor part of W*Rphysical*W^H.
+ reference = complex(zeros(nRE,nLayers));
+ referenceSINR = zeros(nRE,nLayers);
+ for re = 1:nRE
+diff --git a/tests/testPUCCHFlatJointReceiver.m b/tests/testPUCCHFlatJointReceiver.m
+index 358e763e..cefc1315 100644
+--- a/tests/testPUCCHFlatJointReceiver.m
++++ b/tests/testPUCCHFlatJointReceiver.m
+@@ -68,6 +68,14 @@ for count=reshape(p.payload_bits,1,[])
+                     ~rx.ReceiveTiming.OracleTimingUsed && ~rx.CRCApplicable && rx.UCICRCBitCount==0);
+                 assert(evidence.JointPresenceDecision.HypothesisCount==(diff(window)+1)*2^count && ...
+                     rx.ReceiverUsable==(~rx.DTX && evidence.WordAccepted));
++                stage=sixgr.link.pucchReceiverStageEvidence(rx,assignment);
++                assert(stage.DecoderAlgorithm=="flat_joint_short_uci_v1" && ...
++                    stage.UCICodewordLLRRole=="equalized_receiver_comparison_not_joint_decoder_input" && ...
++                    stage.DecodeNoiseInterferenceVarianceRole=="equalized_receiver_comparison_not_joint_decoder_variance" && ...
++                    stage.DecodeNoiseVarianceDomain=="equalized_symbol_comparison_only_not_joint_decoder_input" && ...
++                    stage.ShortUCIConditionalWordPosterior==evidence.ConditionalWordPosterior && ...
++                    stage.ShortUCIWordConfidencePassed==evidence.WordAccepted && ...
++                    ~stage.ShortUCIPhysicalQualificationPassed);
+                 if rx.ReceiverUsable
+                     assert(isequal(rx.DecodedSequence1,evidence.Bits));
+                 else
+@@ -85,6 +93,8 @@ for count=reshape(p.payload_bits,1,[])
+                     assert(~rejected.DTX && ~rejected.ReceiverUsable && isempty(rejected.DecodedSequence1) && ...
+                         rejected.DetectionOutcome=="detected" && ...
+                         rejected.FailureReason=="short_uci_word_confidence_below_policy");
++                    exported=sixgr.link.pucchReceiverStageEvidence(rejected,assignment);
++                    assert(exported.DetectionOutcome=="detected" && ~exported.ShortUCIWordConfidencePassed);
+                     withheld=withheld+1;
+                 end
+                 row=table(count,prbs,branches,snr,present,rx.DTX,rx.ReceiverUsable, ...
+diff --git a/tests/testSharedPeriodicCSIProducer.m b/tests/testSharedPeriodicCSIProducer.m
+index 1ad44172..608666b8 100644
+--- a/tests/testSharedPeriodicCSIProducer.m
++++ b/tests/testSharedPeriodicCSIProducer.m
+@@ -1,8 +1,9 @@
+-function [ok,state]=testSharedPeriodicCSIProducer(producerMode,withReceivedClock)
++function [ok,state]=testSharedPeriodicCSIProducer(producerMode,withReceivedClock,scenarioPath)
+ % Actual periodic PUCCH and CSI-RS-bearing DL IQ/CDL/RF/thermal noise.
+ % UE CSI values/access timing remain declared component-boundary inputs,
+ % not end-to-end CSI measurement or access qualification.
+ if nargin<2, withReceivedClock=false; end
++if nargin<3, scenarioPath='simulator/configs/scenarios/lls_pdcch_shared_queue_fixture.yaml'; end
+ if nargin==0
+     [ok,state]=testSharedPeriodicCSIProducer("present");
+     [removedOK,removed]=testSharedPeriodicCSIProducer("remove_after_tx");
+@@ -19,13 +20,13 @@ setup6GRSimToolkit('Verbose',false);
+ root=fileparts(fileparts(mfilename('fullpath')));
+ assert(strcmpi(which('sixgr.truth.CoupledTruthRuntime'), ...
+     fullfile(root,'+sixgr','+truth','CoupledTruthRuntime.m')));
+-s=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/lls_pdcch_shared_queue_fixture.yaml');
++s=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+ cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+ cfg.phy.ssb.enable=false; cfg.phy.sib1.enable=false; cfg.phy.trs.enable=false;
+ cfg.phy.csirs.period_slots=5; cfg.phy.csirs.offset_slots=0;
+ multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
+ state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
+-state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
++state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,cfg.channel.snr_dB);
+ state.CurrentServingIdx(:)=1;
+ state.TestCSIProducerMode=producerMode;
+ state.TestCSIWithReceivedClock=logical(withReceivedClock);
+@@ -96,7 +97,7 @@ end
+ queuedReport=table();
+ for slot=1:10
+     [state,~,blocked]=sixgr.truth.CoupledTruthRuntime.startSlotWithQueuedUL( ...
+-        state,cfg,'DL',1,1,slot,10,12,repmat(struct(),0,1),true);
++        state,cfg,'DL',1,1,slot,10,cfg.channel.snr_dB,repmat(struct(),0,1),true);
+     assert(isempty(blocked));
+     if slot<=4, assert(isempty(state.PendingCSITable)); end
+     if ~isempty(state.PendingCSITable) && ~state.PendingCSITable.Processed
+@@ -307,8 +308,10 @@ for item=items
+             prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,receiverInput.EndSampleExclusive,nominal);
+             assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference'));
+         end
++        execution=struct('Segments',{postPlane.Segments},'ReceiverID',receiverID, ...
++            'TransmitterID',"ue_"+item.UE,'GainCompensation',gain);
+         direct=sixgr.link.receivePUCCHObservation( ...
+-            item.Context.Config,h.Assignment,h.Context,receiverInput,prior);
++            item.Context.Config,h.Assignment,h.Context,receiverInput,prior,execution);
+         if item.Kind=="PUCCHReceiveOnly"
+             tx=find(string({captures.ReceiverID})=="ue_1:tx");
+             assert(isscalar(tx) && all(captures(tx).Samples==0,'all'));
+diff --git a/+sixgr/+phy/+rx/collectPUCCHObservationModel.m b/+sixgr/+phy/+rx/collectPUCCHObservationModel.m
+new file mode 100644
+--- /dev/null
++++ b/+sixgr/+phy/+rx/collectPUCCHObservationModel.m
+@@ -0,0 +1,71 @@
++function model=collectPUCCHObservationModel(observation,execution)
++% Receiver-only model applicability metadata, never TX payload or channel truth.
++% Keep only executed operator/RF type and clock evidence. This collector does
++% not establish a detector's error rates or the correctness of received timing.
++id='sixgr:phy:rx:MissingPUCCHExecutionContext';
++assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
++    isscalar(observation) && observation.isComplete(),id,'Require the completed actual receive buffer.');
++required={'Segments','ReceiverID','TransmitterID','GainCompensation'};
++assert(isstruct(execution) && isscalar(execution) && all(isfield(execution,required)), ...
++    id,'Supply independently scheduled endpoints, receive segments and actual gain-compensation evidence.');
++rxID=string(execution.ReceiverID); txID=string(execution.TransmitterID);
++assert(isscalar(rxID) && strlength(rxID)>0 && isscalar(txID) && strlength(txID)>0 && ...
++    iscell(execution.Segments) && ~isempty(execution.Segments),id,'Receiver execution context is incomplete.');
++segments=execution.Segments; clean=cell(size(segments)); intervals=zeros(numel(segments),2);
++modes=strings(numel(segments),1);
++for k=1:numel(segments)
++    segment=segments{k};
++    assert(isstruct(segment) && isscalar(segment) && ...
++        all(isfield(segment,{'StartSample','EndSampleExclusive','Execution'})),id,'Missing executed segment clock.');
++    bounds=[segment.StartSample segment.EndSampleExclusive];
++    assert(isnumeric(bounds) && isreal(bounds) && numel(bounds)==2 && ...
++        all(isfinite(bounds) & bounds==fix(bounds) & bounds>=0) && bounds(1)<bounds(2) && ...
++        bounds(2)>observation.StartSample && bounds(1)<observation.EndSampleExclusive, ...
++        id,'Each segment must overlap this actual receiver interval.');
++    intervals(k,:)=bounds;
++    e=segment.Execution;
++    assert(isstruct(e) && isscalar(e) && all(isfield(e,{'RX','TX','Links'})),id,'Missing executed RF/link records.');
++    assert(isstruct(e.RX) && all(isfield(e.RX,{'ID','Replay'})) && ...
++        isstruct(e.TX) && all(isfield(e.TX,{'ID','Replay'})) && ...
++        isstruct(e.Links) && all(isfield(e.Links,{'TX','RX','Replay'})), ...
++        id,'Executed endpoints and links need explicit identity and replay records.');
++    r=e.RX(string({e.RX.ID})==rxID); t=e.TX(string({e.TX.ID})==txID);
++    assert(isscalar(r) && isscalar(t) && isstruct(r.Replay) && isscalar(r.Replay) && ...
++        isfield(r.Replay,'NoiseOperatingMode'), ...
++        id,'Execution must identify the independently scheduled endpoints and receiver noise mode.');
++    noiseMode=string(r.Replay.NoiseOperatingMode);
++    assert(isscalar(noiseMode) && strlength(noiseMode)>0,id,'Receiver noise mode is unavailable.');
++    modes(k)=noiseMode;
++    links=e.Links(string({e.Links.RX})==rxID);
++    selected=struct('TX',{},'RX',{},'Replay',{});
++    for j=1:numel(links)
++        selected(j)=struct('TX',links(j).TX,'RX',links(j).RX, ...
++            'Replay',retain(links(j).Replay,{'RuntimeChannelTimingTruthSource','ChannelFadingApplied'}));
++    end
++    rfFields={'RFConfiguredStageCount','RFAppliedStageCount','AGCEnabled','AGCApplied','NoiseOperatingMode'};
++    clean{k}=struct('StartSample',bounds(1),'EndSampleExclusive',bounds(2), ...
++        'Execution',struct('Links',selected, ...
++        'RX',struct('ID',rxID,'Replay',retain(r.Replay,rfFields)), ...
++        'TX',struct('ID',txID,'Replay',retain(t.Replay,rfFields))));
++end
++assert(intervals(1,1)<=observation.StartSample && intervals(end,2)>=observation.EndSampleExclusive && ...
++    all(intervals(2:end,1)==intervals(1:end-1,2)) && all(modes==modes(1)), ...
++    id,'Actual receive coverage must be contiguous with one declared noise operating mode.');
++model=struct('Source',"actual_receiver_execution_types_and_clocks_only", ...
++    'ReceiverID',rxID,'TransmitterID',txID,'NoiseOperatingMode',modes(1), ...
++    'ReceiveStreamExecutionSegments',{clean}, ...
++    'ReceiverGainCompensation',retain(execution.GainCompensation,{'GainOnlyRFExecuted'}), ...
++    'ObservationStartSample',observation.StartSample, ...
++    'ObservationEndSampleExclusive',observation.EndSampleExclusive, ...
++    'ObservationSampleRateHz',observation.SampleRateHz, ...
++    'PayloadOrChannelCoefficientsRetained',false,'InjectedVarianceRetained',false, ...
++    'PhysicalQualificationPassed',false);
++end
++function out=retain(input,names)
++assert(isstruct(input) && isscalar(input),'sixgr:phy:rx:MissingPUCCHExecutionContext', ...
++    'Execution metadata must be a scalar struct, not a synthesized replacement.');
++out=struct();
++for k=1:numel(names)
++    if isfield(input,names{k}), out.(names{k})=input.(names{k}); end
++end
++end
+diff --git a/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml b/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml
+new file mode 100644
+--- /dev/null
++++ b/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml
+@@ -0,0 +1,8 @@
++# Explicit opt-in receiver candidate, not statistical qualification.
++meta:
++  research_class: optional_research_experiment
++pucch:
++  format2_short_uci_receiver_policy:
++    algorithm: flat_joint_short_uci_v1
++    target_false_alarm_probability: 0.01
++    minimum_word_posterior: 0.99
+diff --git a/simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml b/simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml
+new file mode 100644
+--- /dev/null
++++ b/simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml
+@@ -0,0 +1,13 @@
++inherits:
++  - ./lls_pdcch_shared_queue_fixture.yaml
++  - ../channels/shared_identity_awgn.yaml
++  - ../control/pucch_flat_joint_short_uci_candidate.yaml
++
++meta:
++  scenario_id: lls_pucch_flat_joint_shared_fixture
++  description: Physical shared-stream short-UCI receiver integration with explicit white AWGN.
++  purpose: Verify independent receiver wiring and producer absence; not statistical qualification or full access.
++  research_class: optional_research_experiment
++
++simulation:
++  snr_db: 20
+diff --git a/tests/testPUCCHObservationModelCollection.m b/tests/testPUCCHObservationModelCollection.m
+new file mode 100644
+--- /dev/null
++++ b/tests/testPUCCHObservationModelCollection.m
+@@ -0,0 +1,52 @@
++function ok=testPUCCHObservationModelCollection()
++% Metadata-contract guard only; physical shared execution has its own test.
++setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false);
++obs=sixgr.phy.waveform.WaveformObservationBuffer(10,30,7680000,2);
++obs.append(sixgr.phy.waveform.WaveformChunk(complex(zeros(20,2)),10),obs.SampleRateHz);
++rf=struct('RFConfiguredStageCount',0,'RFAppliedStageCount',0, ...
++    'AGCEnabled',false,'AGCApplied',false,'NoiseOperatingMode',"standalone_awgn_snr_argument");
++link=struct('TX',"tx",'RX',"rx",'Replay',struct( ...
++    'RuntimeChannelTimingTruthSource',"executed_fixed_matrix_operator_zero_delay", ...
++    'ChannelFadingApplied',false));
++e=struct('RX',struct('ID',"rx",'Replay',rf),'TX',struct('ID',"tx",'Replay',rf),'Links',link);
++segments={struct('StartSample',0,'EndSampleExclusive',20,'Execution',e), ...
++    struct('StartSample',20,'EndSampleExclusive',40,'Execution',e)};
++input=struct('Segments',{segments},'ReceiverID',"rx",'TransmitterID',"tx", ...
++    'GainCompensation',struct('GainOnlyRFExecuted',false));
++actual=sixgr.phy.rx.collectPUCCHObservationModel(obs,input);
++assert(~actual.PayloadOrChannelCoefficientsRetained && ~actual.InjectedVarianceRetained && ...
++    ~actual.PhysicalQualificationPassed && actual.ObservationStartSample==10 && ...
++    actual.ObservationEndSampleExclusive==30);
++sixgr.phy.rx.assertFlatStaticAWGNObservation(actual);
++replay=struct('Segments',{actual.ReceiveStreamExecutionSegments},'ReceiverID',actual.ReceiverID, ...
++    'TransmitterID',actual.TransmitterID,'GainCompensation',actual.ReceiverGainCompensation);
++assert(isequaln(actual,sixgr.phy.rx.collectPUCCHObservationModel(obs,replay)));
++poison=input;
++for k=1:2
++    poison.Segments{k}.Execution.TX.Replay.PayloadBits=int8([1 0 1]);
++    poison.Segments{k}.Execution.TX.Replay.TransmittedWaveform=complex(Inf);
++    poison.Segments{k}.Execution.RX.Replay.InjectedNoiseVariance=NaN;
++    poison.Segments{k}.Execution.RX.Replay.AppliedAWGNSNR_dB=Inf;
++    poison.Segments{k}.Execution.Links.Replay.ChannelCoefficients=complex(NaN);
++end
++poison.GainCompensation.AppliedGainMin_dB=Inf;
++assert(isequaln(actual,sixgr.phy.rx.collectPUCCHObservationModel(obs,poison)), ...
++    'test:PUCCHModelOracleLeak','Payload, coefficients, variance and gain magnitudes must not enter model eligibility.');
++bad=rmfield(input,'Segments'); reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{2}.StartSample=21; reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{1}.EndSampleExclusive=21; reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.ReceiverID="missing"; reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{1}.Execution.RX=struct(); reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{2}.Execution.RX.Replay.NoiseOperatingMode="thermal";
++reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++incomplete=sixgr.phy.waveform.WaveformObservationBuffer(10,30,obs.SampleRateHz,2);
++reject(@()sixgr.phy.rx.collectPUCCHObservationModel(incomplete,input));
++fprintf('PUCCH_OBSERVATION_MODEL_COLLECTION_PASS oracle_poisoning=1 invalid_context_guards=7 metadata_only=1\n');
++ok=true;
++end
++function reject(f)
++try, f(); catch cause
++    assert(strcmp(cause.identifier,'sixgr:phy:rx:MissingPUCCHExecutionContext')); return;
++end
++error('test:InvalidPUCCHExecutionAccepted','Missing or discontinuous physical execution must not be synthesized.');
++end
+diff --git a/tests/testSharedPUCCHJointReceiver.m b/tests/testSharedPUCCHJointReceiver.m
+new file mode 100644
+--- /dev/null
++++ b/tests/testSharedPUCCHJointReceiver.m
+@@ -0,0 +1,80 @@
++function ok=testSharedPUCCHJointReceiver()
++% Actual shared PUCCH/SRS/CSI-RS execution, with declared UE CSI/access boundary.
++% No statistical qualification claim or injected receiver payload/variance.
++path='simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml';
++s=sixgr.lls6g.config.loadScenarioConfig(path);
++cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
++s=s.toStruct();
++assert(isequaln(cfg.phy.pucch.format2ShortUCIReceiverPolicy,s.pucch.format2_short_uci_receiver_policy));
++for change=["zero_alpha","unit_alpha","zero_posterior","wrong_algorithm","missing_probability","no_explicit_channel","baseline_claim"]
++    bad=s;
++    switch change
++        case "zero_alpha", bad.pucch.format2_short_uci_receiver_policy.target_false_alarm_probability=0;
++        case "unit_alpha", bad.pucch.format2_short_uci_receiver_policy.target_false_alarm_probability=1;
++        case "zero_posterior", bad.pucch.format2_short_uci_receiver_policy.minimum_word_posterior=0;
++        case "wrong_algorithm", bad.pucch.format2_short_uci_receiver_policy.algorithm="undefined";
++        case "missing_probability", bad.pucch.format2_short_uci_receiver_policy=rmfield(bad.pucch.format2_short_uci_receiver_policy,'minimum_word_posterior');
++        case "no_explicit_channel", bad.channels.shared_identity_awgn_enabled=false;
++        case "baseline_claim", bad.meta.research_class='baseline_benchmark';
++    end
++    rejected=false;
++    try, sixgr.lls6g.config.validateScenarioConfig(bad); catch cause
++        assert(startsWith(string(cause.identifier),"sixgr:lls6g:")); rejected=true;
++    end
++    assert(rejected,'test:InvalidJointReceiverConfigAccepted','Invalid policy %s was accepted.',change);
++end
++states=cell(3,1); modes=["present","remove_after_tx","absent"];
++for k=1:numel(modes)
++    [passed,state]=testSharedPeriodicCSIProducer(modes(k),true,path); assert(passed);
++    states{k}=state; receipt=state.SharedGNBUCIReceptions{1}; rx=receipt.Receiver;
++    trial=state.ControlTrials.PUCCH;
++    assert(state.CurrentSNR_dB==cfg.channel.snr_dB, ...
++        'test:SharedJointSNRStateMismatch','The fixture slot state must use its actual configured operating point.');
++    assert(trial.ConfiguredSNR_dB==cfg.channel.snr_dB && trial.AppliedAWGNSNR_dB==cfg.channel.snr_dB && ...
++        ~trial.ReceiverNoiseAuditEstimatorInput && trial.InjectedNoiseVariancePreCompositeFrontEnd>0, ...
++        'test:SharedJointSNRExportMismatch','All producer modes must export the actual fixed-AWGN noise reference.');
++    assert(abs(trial.AWGNReferenceEnergyPerOccupiedRE / ...
++        (trial.InjectedNoiseVariancePreCompositeFrontEnd*trial.SampleToGridNoiseVarianceGain)-10^(cfg.channel.snr_dB/10))<1e-8);
++    assert(rx.DecoderAlgorithm=="flat_joint_short_uci_v1" && rx.ShortUCIReceiverEvidence.Applied && ...
++        rx.ReceiveTiming.PriorClockApplied && ~rx.PreparedTransmitterConsumed && ...
++        ~rx.InjectedNoiseVarianceConsumed && ~rx.InjectedInterferenceCovarianceConsumed && ...
++        ~rx.ReceiverObservationModel.PayloadOrChannelCoefficientsRetained);
++    assert(startsWith(rx.DetectionThresholdSource,"yaml.pucch.format2_short_uci_receiver_policy.") && ...
++        trial.DetectionThresholdSource==rx.DetectionThresholdSource && ...
++        trial.ShortUCIConditionalWordPosterior==rx.ShortUCIReceiverEvidence.ConditionalWordPosterior && ...
++        trial.ShortUCIWordConfidencePassed==rx.ShortUCIReceiverEvidence.WordAccepted && ...
++        ~trial.ShortUCIPhysicalQualificationPassed);
++    assert(trial.DecodeNoiseInterferenceVarianceRole=="equalized_receiver_comparison_not_joint_decoder_variance");
++    assert(trial.GridNoiseVarianceValueRole=="received_DMRS_equalizer_comparison_not_joint_decoder_input");
++    item=state.TestReceivedPUCCHItem;
++    model=rx.ReceiverObservationModel;
++    plane=item.Planes(string({item.Planes.ReceiverID})==model.ReceiverID+":post_rf");
++    actualInput=sixgr.phy.rx.compensateReceivedAGC(plane.Observation,plane.Segments,model.ReceiverID);
++    replay=sixgr.link.receivePUCCHObservation(item.Context.Config,receipt.Assignment,receipt.Context, ...
++        actualInput,state.ReceivedULTimingReferences{1},rx.ReceiverExecutionContext);
++    for field=["DecodedSequence1","DecodedSequence2","DetectionMetric","DetectionThreshold","ReceiverUsable","DTX"]
++        assert(isequaln(rx.(field),replay.(field)),'test:JointReplayMismatch','Retained receiver-only inputs changed %s.',field);
++    end
++    % Roundtrip the primary table, preserving actual confidence and roles.
++    folder=fullfile(state.RunFolder,'joint_receiver_checks'); if ~isfolder(folder), mkdir(folder); end
++    csv=fullfile(folder,'pucch_joint_receiver.csv'); writetable(trial,csv);
++    persisted=readtable(csv,'TextType','string');
++    assert(persisted.DecoderAlgorithm==trial.DecoderAlgorithm && ...
++        abs(persisted.ShortUCIConditionalWordPosterior-trial.ShortUCIConditionalWordPosterior)<1e-12 && ...
++        persisted.ShortUCIPhysicalQualificationPassed==trial.ShortUCIPhysicalQualificationPassed && ...
++        persisted.DecodeNoiseInterferenceVarianceRole==trial.DecodeNoiseInterferenceVarianceRole);
++    if modes(k)~="absent", assert(rx.ReceiverUsable && ~rx.DTX); end
++    % Saved IQ can be replayed with the sanitized model metadata. It does not
++    % preserve a TX payload/H/noise-variance oracle as receiver configuration.
++    serialized=string(jsonencode(rx.ReceiverObservationModel));
++    assert(~contains(serialized,'"InjectedNoiseVariance":') && ...
++        ~contains(serialized,'"ChannelCoefficients":') && ~contains(serialized,'"PayloadBits":'));
++    fprintf('SHARED_JOINT_RECEIVER_CASE mode=%s DTX=%d usable=%d posterior=%.9g threshold=%.9g\n', ...
++        modes(k),rx.DTX,rx.ReceiverUsable,rx.ShortUCIReceiverEvidence.ConditionalWordPosterior,rx.DetectionThreshold);
++end
++a=removevars(states{1}.SharedGNBCSIReportTable,'UEReferenceRecordJSON');
++b=removevars(states{2}.SharedGNBCSIReportTable,'UEReferenceRecordJSON');
++assert(isequaln(a,b),'Removing UE producer state must not change gNB reception.');
++fprintf('SHARED_JOINT_RECEIVER_PASS actual_shared_stream=1 producer_modes=3 detector_qualified=0\n');
++ok=true;
++end
+diff --git a/+sixgr/+link/receivedControlNoiseAudit.m b/+sixgr/+link/receivedControlNoiseAudit.m
+new file mode 100644
+--- /dev/null
++++ b/+sixgr/+link/receivedControlNoiseAudit.m
+@@ -0,0 +1,88 @@
++function audit=receivedControlNoiseAudit(cfg,observation,segments,receiverID,configuredSNR)
++% Post-decode noise-reference audit for a real receive window, even with no TX.
++% These injected variances are NOT receiver estimates and never decode inputs.
++id='sixgr:link:MissingControlNoiseExecution';
++assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
++    isscalar(observation) && observation.isComplete() && iscell(segments) && ~isempty(segments), ...
++    id,'Require the completed receive observation and its executed segments.');
++validateattributes(configuredSNR,{'numeric'},{'scalar','real','finite'});
++assert(isequal(double(configuredSNR),double(cfg.channel.snr_dB)), ...
++    'sixgr:link:ControlNoiseOperatingPointMismatch', ...
++    'Active control operating point must equal the resolved physical configuration.');
++fields={'NoiseOperatingMode','NoiseStreamSeed','InjectedNoiseVariance', ...
++    'InjectedNoiseVarianceDomain','NoiseVarianceSource','AppliedAWGNSNR_dB', ...
++    'AppliedAWGNSNRSource','AppliedAWGNSNRValueRole','RequestedAWGNReferenceSNR_dB', ...
++    'SignalEnergyPerOccupiedRE','AWGNReferenceEnergySource','ReferenceAWGNGridNoiseVariance', ...
++    'ReferenceAWGNSampleNoiseVariance','SampleToGridNoiseVarianceGain', ...
++    'SharedNoiseCalibrationSource','ThermalSampleNoiseBandwidth_Hz','ThermalNoisePSD_mWPerHz'};
++records=struct([]); intervals=zeros(numel(segments),2);
++for k=1:numel(segments)
++    segment=segments{k};
++    assert(isstruct(segment) && isscalar(segment) && ...
++        all(isfield(segment,{'Execution','StartSample','EndSampleExclusive'})) && ...
++        isfield(segment.Execution,'RX'),id,'Require actual receiver execution and clock records.');
++    nodes=segment.Execution.RX;
++    assert(isstruct(nodes) && all(isfield(nodes,{'ID','Replay'})),id,'Missing receiver identities.');
++    node=nodes(string({nodes.ID})==string(receiverID));
++    assert(isscalar(node) && isstruct(node.Replay) && isscalar(node.Replay) && ...
++        all(isfield(node.Replay,fields)),id,'Require each executed noise ledger field; no configuration substitutes.');
++    r=struct();
++    for f=fields, r.(f{1})=node.Replay.(f{1}); end
++    intervals(k,:)=[segment.StartSample segment.EndSampleExclusive];
++    if k==1, records=r; else, records(k)=r; end
++end
++assert(all(isfinite(intervals) & intervals==fix(intervals) & intervals>=0,'all') && ...
++    all(intervals(:,2)>intervals(:,1)) && ...
++    intervals(1,1)<=observation.StartSample && intervals(end,2)>=observation.EndSampleExclusive && ...
++    all(intervals(:,2)>observation.StartSample & intervals(:,1)<observation.EndSampleExclusive) && ...
++    all(intervals(2:end,1)==intervals(1:end-1,2)), ...
++    id,'Noise ledger must cover the same complete receive interval without gaps or overlap.');
++for f=fields
++    values={records.(f{1})};
++    assert(all(cellfun(@(v)isequaln(v,values{1}),values)), ...
++        'sixgr:link:ControlNoiseChangedWithinObservation', ...
++        'Do not flatten time-varying receiver noise-reference field %s.',f{1});
++end
++r=records(1); variance=double(r.InjectedNoiseVariance);
++assert(isfinite(variance) && isscalar(variance) && isreal(variance) && variance>0 && ...
++    string(r.InjectedNoiseVarianceDomain)=="receiver_sample_waveform_pre_composite_front_end", ...
++    'sixgr:link:ControlNoisePlaneMismatch','Executed injected variance must identify the pre-RF sample plane.');
++mode=string(r.NoiseOperatingMode);
++if mode=="standalone_awgn_snr_argument"
++    gain=double(r.SampleToGridNoiseVarianceGain); energy=double(r.SignalEnergyPerOccupiedRE);
++    assert(isscalar(gain) && isfinite(gain) && gain>0 && ...
++        isscalar(energy) && isfinite(energy) && energy>0, ...
++        'sixgr:link:ControlNoiseCalibrationMismatch','Fixed-reference energy and OFDM variance transform are required.');
++    applied=10*log10(energy/(variance*gain));
++    [expectedEnergy,policy]=sixgr.link.resolveAWGNReferenceEnergy(cfg);
++    assert(abs(applied-configuredSNR)<=1e-10 && abs(applied-r.AppliedAWGNSNR_dB)<=1e-10 && ...
++        abs(applied-r.RequestedAWGNReferenceSNR_dB)<=1e-10 && ...
++        abs(r.ReferenceAWGNGridNoiseVariance-variance*gain)<=1e-10*variance*gain && ...
++        abs(r.ReferenceAWGNSampleNoiseVariance-variance)<=1e-10*variance && ...
++        energy==expectedEnergy && string(r.SharedNoiseCalibrationSource)==policy.CalibrationSource, ...
++        'sixgr:link:ControlNoiseCalibrationMismatch', ...
++        'Applied fixed-AWGN reference must close through executed sample variance, OFDM transform and the active point.');
++elseif mode=="receiver_noise_figure_thermal_noise"
++    thermal=double(r.ThermalSampleNoiseBandwidth_Hz)*double(r.ThermalNoisePSD_mWPerHz);
++    assert(isfinite(thermal) && thermal>0 && abs(thermal-variance)<=1e-10*variance && ...
++        isnan(r.AppliedAWGNSNR_dB), ...
++        'sixgr:link:ControlNoiseCalibrationMismatch','Thermal execution must close as PSD times bandwidth, not a configured SNR.');
++else
++    error('sixgr:link:ControlNoiseModeUnsupported','Unsupported executed noise mode %s.',mode);
++end
++audit=rmfield(r,{'InjectedNoiseVariance','InjectedNoiseVarianceDomain','SignalEnergyPerOccupiedRE'});
++audit.ConfiguredSNR_dB=double(configuredSNR);
++audit.ConfiguredSNRSource="resolved_active_operating_point_not_measured_receiver_SINR";
++audit.AWGNReferenceEnergyPerOccupiedRE=r.SignalEnergyPerOccupiedRE;
++audit.AWGNReferenceEnergyValueRole="fixed_reference_not_measured_desired_signal_energy";
++audit.InjectedNoiseVariancePreCompositeFrontEnd=variance;
++audit.InjectedNoiseVariancePreCompositeFrontEndDomain=string(r.InjectedNoiseVarianceDomain);
++audit.InjectedNoiseVariancePreCompositeFrontEndSource=string(r.NoiseVarianceSource);
++audit.ReferenceAWGNGridNoiseVarianceDomain="equivalent_OFDM_grid_of_pre_front_end_injected_noise";
++audit.ReceiverNoiseAuditSource="actual_completed_receiver_execution_segments_no_TX_dependency";
++audit.ReceiverNoiseAuditEstimatorInput=false;
++audit.ReceiverNoiseAuditStartSample=observation.StartSample;
++audit.ReceiverNoiseAuditEndSampleExclusive=observation.EndSampleExclusive;
++audit.ReceiverNoiseAuditSampleRateHz=observation.SampleRateHz;
++audit.ReceiverNoiseAuditSegmentCount=numel(segments);
++end

@@ -285,3 +285,68 @@ Receipt: `logs/consolidation_20260926_joint_receiver_checkpoint.xml`.
 The PowerShell launcher parsed without errors. The sealed 400 MHz manifest
 hash remains unchanged. No MATLAB scenario or `testAll` was started here.
 Results, logs, source snapshots, recovery stashes and instrument IQ are retained.
+
+## Shared-integration v7 preservation checkpoint
+
+This delivery starts from `d5e26dc92d7b467e8d6fc571c89c0b7d5eb19ebc`,
+equal to freshly fetched `origin/main`. One branch and one Git worktree remain.
+The older main-source sweep (engine 13768) is still executing; permission to
+stop it is outstanding. **Runtime integration is not complete.** No main
+receiver file is replaced beneath that run.
+
+The inventory compared 4,822 tracked MATLAB/Python/PowerShell/YAML paths with
+the isolated snapshot, normalizing line endings. Twelve tracked candidate
+files differ and six new candidate files exist. The two other differences are
+`exportLLSHARQDiagnostics.m` and `tests/testAll.m`, where main has the newer
+HARQ spatial repair/registration; those main changes are retained.
+
+| Preserved artifact | Meaning |
+|---|---|
+| `pending_receiver_shared_integration_v6_20260926.patch` | Historical 17-file candidate used by the latest completed shared-receiver batch. Preserved with its failure, not accepted. |
+| `pending_receiver_shared_integration_v7_20260926.patch` | Current 18-file snapshot: clock/likelihood/equalizer fixes, opt-in receiver schema and physical execution wiring, plus the subsequent legacy compatibility correction and receive-only noise audit. Latest edits have not been runtime-verified. |
+
+Each consolidated patch is a **standalone alternative against the unchanged
+main runtime**, not an incremental patch. Use v7 for future integration after
+review/validation; do not stack v6, v7 or the earlier incremental patches.
+Forward applicability against main and reverse applicability against the
+current snapshot both pass for v7. No snapshot code or evidence was deleted.
+
+The v6 batch is now terminal: **4 passed, 1 failed, 4 not started** out of nine:
+
+- Passed: `testSharedPUCCHJointReceiver`, `testConfiguredCSIReceivedClock`,
+  `test6GScenarioConfigValidation`, `test6GParameterCatalog`.
+- Failed: `testPUCCHTrialIndependentReceive`, because the wrapper required
+  `ReceiveStreamExecutionSegments` from a legacy isolated receiver context
+  even when the joint policy was absent.
+- Not started: `testPUCCHObservationReceiver`,
+  `testPUCCHReceiverStageEvidence`, `testType2HARQACKLayout`,
+  `testType2HARQRuntimePlan`.
+
+Authoritative local log:
+`logs/receiver_clock_candidate_20260926/joint_receiver_v6_shared_snr_bound.log`.
+The passing shared test covers producer present, removed after transmission
+and absent, with received SRS timing; it is not detector qualification or a
+complete scenario. The v7 wrapper limits shared metadata requirements to the
+explicit joint policy. Its new control-noise audit uses completed receiver
+execution records, not transmitted bits, and is not a practical estimator
+input. These later changes still require focused execution and regression.
+
+Delivery verification: **36 Python tests passed** (13 dependency deprecation
+warnings), recorded in `logs/consolidation_20260926_shared_v7_checkpoint.xml`;
+the documented PowerShell launcher parses successfully. These packaging and
+publication tests do not validate the pending MATLAB receiver changes.
+No MATLAB scenario or `testAll` was launched for this delivery.
+
+The README identifies the test as **400 MHz bandwidth at 7 GHz**, retains exact
+Windows CMD launch/WebGUI commands and the Keysight file mapping, and separates
+digital packaging from physical instrument verification. The sealed package
+manifest remains SHA-256
+`dbfd394b1b1781461e41f64b8475531931050c2dbdc32f6d95bda3756a67d60b`.
+Generated results, logs and multi-GB IQ remain local/ignored and require a
+separate transfer; they are not downloaded with the source repository.
+
+Remaining before a complete runtime merge: safe stop/completion of the old
+sweep, final-source focused validation, then integration without overwriting
+main's newer HARQ repair. Full 5 MHz sweep, detector statistical qualification
+and full-control 400 MHz acceptance remain open. A clean Git status does not
+mean those scientific or integration tasks have passed.

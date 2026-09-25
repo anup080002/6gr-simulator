@@ -1,54 +1,27 @@
 # SixGR Foundation v2
 
-Current development snapshot: [26 September source consolidation, receiver candidate tests and remaining integration limits](docs/lls/main_consolidation_20260926.md).
-This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
-The latest PUCCH reporting repair separates receiver detection from payload
-correctness; its focused tests pass, but detector statistical qualification
-remains open. Source, scenario YAMLs and launchers are delivered on `main`;
-generated logs, results and instrument IQ packages remain separate local artifacts.
-The gain-aware QPSK/Format-2 likelihood helpers now pass focused MATLAB checks,
-including CRC, combined HARQ/SR/CSI and received AGC/ADC cases. They and the
-independent DM-RS presence candidate remain **development code, not installed in
-the live PUCCH receiver**. The presence pilot retains missed signals and false
-detections; neither detector qualification nor full-scenario acceptance is closed.
-The joint short-UCI candidate, received-SRS-clock diagnostic and explicit
-no-PDCCH-observation publication helper are also preserved on `main`, but are
-not installed in the scenario runtime. The configured-CSI timing regression
-passes against the isolated repaired receiver, but remains a known failure
-against the unchanged receiver currently installed on `main`.
-The standalone HARQ probe now executes the configured AWGN spatial channel;
-12 focused DL/UL cases cover 2x2 and 4x2 channels, including rank two. The
-configured-CSI received-clock repair is preserved as a
-[pending patch](docs/lls/pending_received_csi_pucch_clock_20260926.patch), not
-installed underneath the active sweep. This distinction is retained in the
-checkpoint record; committing all edits is not full runtime acceptance.
-The candidate clock, Format-2 likelihood and equalizer-noise repairs passed
-**15 focused MATLAB tests and a separate 20-test runtime-guard batch** in the
-isolated source snapshot. All three complete source patches and
-their regression tests are preserved on `main`; the
-[candidate inventory](docs/lls/main_consolidation_20260926.md#receiver-candidate-preservation-follow-up)
-identifies what is still unapplied. Applying them requires a safe stop of the
-older sweep first. No detector threshold was lowered, and noise-only false
-detections remain an open qualification issue.
+Delivery branch: **`main`**, with one Git worktree. Source, scenario YAMLs,
+launchers and development patches are versioned; generated results, logs and
+instrument IQ remain separate local artifacts. No result or recovery stash is
+removed by source consolidation.
 
-The newer conditional equalizer-whitened Format-2 presence helper, frozen
-validation YAML and component test are also preserved on `main`, but are not
-an installed receiver policy. Its 24 waveform cases recorded 0/12 noise-only
-detections, 6/6 desired detections at 20 dB and 2/6 at -10 dB. These are small
-development samples, not statistical detector qualification. The corresponding
-retained-IQ diagnostic has now executed seven captures; five had eligible
-causally received SRS clocks. It did not establish detector qualification. See the
-[latest preservation record](docs/lls/main_consolidation_20260926.md#conditional-presence-development-checkpoint)
-for exact evidence and what remains unmerged.
+Current status: [26 September consolidation record](docs/lls/main_consolidation_20260926.md#shared-integration-v7-preservation-checkpoint).
 
-The opt-in joint short-UCI **core receiver candidate passed 16/16 focused
-MATLAB guards** in the isolated snapshot, including 48 waveform cases. Its
-patch, frozen component YAML and regression test are preserved on `main`.
-The shared-runtime observation collector and policy fragment are preserved as
-an **untested scaffold patch**, not enabled scenario configuration. See the
-[joint receiver checkpoint](docs/lls/main_consolidation_20260926.md#joint-receiver-preservation-checkpoint)
-for patch ordering and remaining integration work. The running older sweep
-still uses unchanged main receiver files; this is not a completed runtime merge.
+| Item | Verified scope and remaining limit |
+|---|---|
+| 400 MHz / 7 GHz rank-2 Keysight package | Digital export/demo package exists. Not a 4 GHz carrier test; not a full physical-control/shared-feedback scenario. Hardware capability remains UNKNOWN. |
+| Installed HARQ probe repair | 12 focused DL/UL cases passed for configured 2x2 and 4x2 AWGN spatial channels. |
+| Earlier isolated receiver candidates | v4 batches passed 15/15 and 20/20 guards; v5 passed 16/16. These results apply to those exact candidate revisions, not to unchanged main. |
+| v6 shared-receiver candidate | Latest nine-test batch stopped after 4 passed, 1 failed and 4 not started. The shared producer-present/removed/absent test passed; the legacy independent-receiver guard failed on missing shared-execution metadata. |
+| v7 pending receiver changes | All 18 changed/new files are preserved in a standalone patch, including the subsequent compatibility correction and receive-only noise audit. Those latest edits are not runtime-verified or installed. |
+| Full acceptance | Eight-point 5 MHz sweep, detector qualification and full-control 400 MHz acceptance remain open. |
+
+The older sweep is still using main receiver files. They have not been replaced
+under that execution. The [v7 patch](docs/lls/pending_receiver_shared_integration_v7_20260926.patch)
+supersedes the incremental receiver patches for future integration; **do not
+stack them**. It first needs focused validation and a safe stop/completion of
+the old sweep. Preserving edits in Git is not the same as installing or
+qualifying them. `testAll` was not launched for this checkpoint.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
