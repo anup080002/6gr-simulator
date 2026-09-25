@@ -28,12 +28,20 @@ assert(~isfield(actual,'SuccessFlag') && ~isfield(actual,'CRCPass') && ...
 % A finite zero detector metric can be valid evidence of DTX. Preserve the
 % actual detector validity flag, not an inferred decode-success flag.
 rx.DetectionMetric=0; rx.DetectionMetricValid=true; rx.DTX=true;
+rx.DetectionOutcome="dtx";
 zeroMetric=sixgr.link.pucchReceiverStageEvidence(rx);
 assert(zeroMetric.DetectionMetricValid && rx.DTX && ...
     ~isfield(zeroMetric,'SuccessFlag'));
 rx.DetectionMetric=NaN; rx.DetectionMetricValid=false;
+assert(zeroMetric.DetectionOutcome=="dtx");
+rx.DetectionOutcome="unavailable";
 invalidMetric=sixgr.link.pucchReceiverStageEvidence(rx);
 assert(~invalidMetric.DetectionMetricValid);
+assert(invalidMetric.DetectionOutcome=="unavailable");
+rx.DetectionMetric=.5; rx.DetectionMetricValid=true; rx.DTX=false;
+rx.DetectionOutcome="detected"; rx.UCIContentMatch=false;
+assert(sixgr.link.pucchReceiverStageEvidence(rx).DetectionOutcome=="detected", ...
+    'Payload scoring must not relabel an executed detection.');
 rx=original;
 % SR acquisition selects and applies a received-sequence timing candidate;
 % reporting that application does not assert detection or timing lock.

@@ -12,6 +12,7 @@ for format=0:4
             assert(decision.DTX && ~decision.Detected && ~decision.DetectionMetricValid, ...
                 'Invalid metrics must never become detected because decoded bits exist.');
             assert(isscalar(decision.DetectionMetric) && isreal(decision.DetectionMetric));
+            assert(decision.DetectionOutcome=="unavailable");
             invalidCases=invalidCases+1;
         end
     end
@@ -24,6 +25,10 @@ for format=0:4
                 assert(decision.DetectionMetricValid && decision.DTX==(metric<threshold) && ...
                     decision.Detected==(metric>=threshold) && decision.DetectionMetric==metric && ...
                     decision.DetectionThreshold==threshold);
+                expected="detected";
+                if metric<threshold, expected="dtx"; end
+                assert(decision.DetectionOutcome==expected, ...
+                    'Detection outcome cannot depend on candidate payload bits.');
                 finiteCases=finiteCases+1;
             end
         end

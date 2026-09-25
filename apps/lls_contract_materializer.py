@@ -5504,21 +5504,33 @@ def _pucch_dtx_chart_materialization(
     counts: Counter[str] = Counter()
     csv_rows: list[dict[str, Any]] = []
     for row in records:
-        outcome = _row_text(row, "DetectionOutcome", "Status").strip().lower()
+        # Do not use the generic DetectionOutcome -> Status alias here:
+        # payload scoring FAIL does not mean missed signal detection.
+        outcome = str(row.get("DetectionOutcome") or row.get("detection_outcome") or "").strip().lower()
         bits_compared = _row_float(row, "BitsCompared")
         detection_attempted = _row_flag(row, "DetectionAttempted")
+        metric_valid = _row_flag(row, "DetectionMetricValid")
+        content_match = _row_flag(row, "UCIContentMatch")
+        bit_errors = _row_float(row, "BitErrors")
         dtx_flag = _row_flag(row, "DTXFlag", "DTX", "DtxDetected")
         missed_flag = _row_flag(row, "MissedDetection", "MissedDetectionFlag")
         false_alarm_flag = _row_flag(row, "FalseAlarm", "FalseAlarmFlag")
-        decode_ok = _row_flag(row, "CRCPass", "DecodeSuccess", "PUCCHDecodeOk", "DetectionUsable")
-        if dtx_flag is True or outcome in {"dtx", "not_detected", "no_signal"}:
-            bucket = "DTX"
+        receiver_fields = {key: value for key, value in row.items() if _normalized_row_key(key) != "status"}
+        decode_ok = _row_flag(receiver_fields, "CRCPass", "DecodeSuccess", "PUCCHDecodeOk", "DetectionUsable")
+        if detection_attempted is False:
+            bucket = "Detection not attempted"
+        elif metric_valid is False or outcome == "unavailable":
+            bucket = "Unavailable"
         elif false_alarm_flag is True:
             bucket = "False alarm"
         elif missed_flag is True or outcome in {"missed", "miss"}:
             bucket = "Missed detection"
-        elif detection_attempted is False:
-            bucket = "Detection not attempted"
+        elif dtx_flag is True or outcome in {"dtx", "not_detected", "no_signal"}:
+            bucket = "DTX"
+        elif outcome == "detected" and (content_match is False or (bit_errors is not None and bit_errors > 0)):
+            bucket = "Detected; payload incorrect"
+        elif outcome == "detected" and decode_ok is False:
+            bucket = "Detected; decode failure"
         elif decode_ok is True or outcome in {"detected", "pass", "ok", "success", "ack", "nack"}:
             bucket = "Decoded/observed"
         elif decode_ok is False or outcome in {"failed", "fail", "crc_fail", "decode_fail"}:
@@ -5535,6 +5547,9 @@ def _pucch_dtx_chart_materialization(
                 "dtx_bucket": bucket,
                 "detection_outcome": outcome,
                 "bits_compared": bits_compared,
+                "bit_errors": bit_errors,
+                "uci_content_match": "" if content_match is None else int(content_match),
+                "detection_metric_valid": "" if metric_valid is None else int(metric_valid),
                 "dtx_flag": "" if dtx_flag is None else int(bool(dtx_flag)),
                 "missed_detection_flag": "" if missed_flag is None else int(bool(missed_flag)),
                 "false_alarm_flag": "" if false_alarm_flag is None else int(bool(false_alarm_flag)),
@@ -5545,13 +5560,13 @@ def _pucch_dtx_chart_materialization(
     dataset, summary = _bar_dataset_from_named_values("PUCCH feedback bucket", "Count", [(key, float(value)) for key, value in counts.items()])
     summary.append(f"source={source_path}")
     return {
-        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ue_id", "dtx_bucket", "detection_outcome", "bits_compared", "dtx_flag", "missed_detection_flag", "false_alarm_flag", "decode_ok", "source_table_logical_path"], csv_rows),
+        "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "ue_id", "dtx_bucket", "detection_outcome", "bits_compared", "bit_errors", "uci_content_match", "detection_metric_valid", "dtx_flag", "missed_detection_flag", "false_alarm_flag", "decode_ok", "source_table_logical_path"], csv_rows),
         "img_bytes": _render_svg_plot(chart_name, "PUCCH DTX/miss/detect statistics from persisted PUCCH waveform trials.", dataset, summary),
         "csv_status": "specialized_runtime_pucch_dtx_dataset",
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": source_path,
         "source_row_count": len(records),
-        "note": "PUCCH buckets are derived from explicit DTX/missed/false-alarm/decode fields; zero compared bits alone is not treated as a DTX event.",
+        "note": "Receiver detection is separate from payload/CRC scoring. Invalid detector evidence is unavailable, not a physical DTX; zero compared bits alone is not a DTX event.",
     }
 
 

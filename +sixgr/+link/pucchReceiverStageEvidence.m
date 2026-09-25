@@ -27,6 +27,13 @@ if isfield(rx,'DetectionMetricValid')
         'sixgr:link:InvalidPUCCHMetricValidity','Detector validity must be a scalar boolean.');
     evidence.DetectionMetricValid=logical(flag);
 end
+if isfield(rx,'DetectionOutcome')
+    outcome=string(rx.DetectionOutcome);
+    assert(isscalar(outcome) && any(outcome==["detected","dtx","unavailable"]), ...
+        'sixgr:link:InvalidPUCCHDetectionOutcome', ...
+        'Detection outcome must come from the receiver presence decision.');
+    evidence.DetectionOutcome=outcome;
+end
 timing=rx.ReceiveTiming;
 evidence.ReceiverTimingEvidenceJSON=string(jsonencode(timing));
 evidence.EstimatedTimingOffsetSamples=timing.TimingOffsetSamples;

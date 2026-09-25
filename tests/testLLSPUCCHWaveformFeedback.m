@@ -400,14 +400,13 @@ assert(double(row.ExpectedBitCount(1)) == 1 && double(row.DecodedBitCount(1)) ==
     ~logical(row.ReceiverHestSINRApplicable(1)) && ...
     strcmpi(string(row.ChannelEstimationMode(1)), "awgn_direct_resource_extraction"), ...
     "Coupled one-bit AWGN PUCCH rows must expose encoded-payload evidence, zero CRC bits, and the explicit unit-channel receiver path.");
-if logical(row.DetectionUsable(1))
-    expectedOutcome = ternaryDetectionOutcome(logical(row.UCIContentMatch(1)));
-    assert(strcmpi(char(string(row.DetectionOutcome(1))), expectedOutcome), ...
-        "Coupled PUCCH rows must export a detection outcome that matches the UCI content result.");
-else
-    assert(strcmpi(char(string(row.DetectionOutcome(1))), "unavailable"), ...
-        "Coupled PUCCH rows must mark detection outcome unavailable when the runtime detection is unusable.");
+expectedOutcome="unavailable";
+if logical(row.DetectionMetricValid(1))
+    expectedOutcome="detected";
+    if logical(row.DTXFlag(1)), expectedOutcome="dtx"; end
 end
+assert(string(row.DetectionOutcome(1))==expectedOutcome, ...
+    "Coupled PUCCH detection must follow receiver evidence, not payload scoring.");
 assert(logical(row.RuntimeStateUpdated(1)) && strcmpi(char(string(row.RuntimeStateConsumer(1))), "HARQEntity.onFeedback"), ...
     "Coupled PUCCH rows must disclose the runtime state consumer.");
 assert(strlength(string(row.PUCCHGrantId(1))) > 0 && double(row.UEID(1)) == double(row.UEIndex(1)) && logical(row.ControlStateChanged(1)) == logical(row.PUCCHDecodeOk(1)), ...
@@ -470,14 +469,6 @@ row = struct( ...
     "PUCCHPRBStart", NaN, "PUCCHPRBCount", NaN, ...
     "PUCCHSymbolStart", NaN, "PUCCHNumSymbols", NaN, ...
     "UCIType", "", "ControlResourceSource", "", "PUCCHGrantId", "", "Processed", false);
-end
-
-function outcome = ternaryDetectionOutcome(contentMatch)
-if contentMatch
-    outcome = "detected";
-else
-    outcome = "missed";
-end
 end
 
 function localAssertTypedError(f, expectedId)

@@ -395,7 +395,7 @@ trial.ReceiverEVMPercent = double(sixgr.util.structGet(rx,"EVMPercent",NaN));
 trial.ReceiverEVMApplicable = logical(sixgr.util.structGet(rx, ...
     "EVMApplicable",false));
 trial.CRCOutcome = localCRCOutcome(trial.CRCApplicable,trial.CRCFailed);
-trial.DetectionOutcome = localDetectionOutcome(rx.DTX,comparison.ContentMismatch);
+trial.DetectionOutcome = rx.DetectionOutcome;
 trial.Crash = false;
 trial.CrashSource = "";
 trial.CrashMessage = "";
@@ -542,6 +542,7 @@ trial = struct( ...
     "ResourceMappingRejected",false, ...
     "WaveformGenerationFailed",false, ...
     "ReceiverDTX",false,"ReceiverDecodeFailed",false, ...
+    "DetectionOutcome","unavailable", ...
     "CRCFailed",false,"ContentMismatch",false, ...
     "WaveformGenerated",false,"StateChanged",false, ...
     "GrantCreated",false,"BitErrors",NaN,"BitsCompared",0, ...
@@ -967,12 +968,6 @@ function value = localCRCOutcome(applicable,failed)
 if ~applicable,value="not_applicable";
 elseif failed,value="fail";
 else,value="pass";end
-end
-
-function value = localDetectionOutcome(dtx,mismatch)
-if dtx,value="dtx";
-elseif mismatch,value="missed";
-else,value="detected";end
 end
 
 function value = localStatus(ok)

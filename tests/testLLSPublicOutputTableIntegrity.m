@@ -34,6 +34,8 @@ assert(~any(logical(pdsch.DecodeAttempted)) && ~any(logical(pdsch.DecodeUsable))
     "Public data runtime tables must not infer decode attempted/usable from row presence.");
 
 pucch = publicTables.pucch_uci_table;
+assert(pucch.DetectionOutcome=="unavailable", ...
+    'Payload equality alone cannot establish receiver detection.');
 assert(~logical(pucch.DetectionAttempted(1)) && ~logical(pucch.ReceiverUsable(1)) && ~logical(pucch.DetectionUsable(1)), ...
     "Public PUCCH table must not infer detection attempted/usable from noise presence.");
 
@@ -94,6 +96,17 @@ publicTables=sixgr.truth.buildLLSPublicOutputTables(baseTables,contract,meta);
 assert(publicTables.pdsch_runtime_event_table.SINR_dB==23.5 && ...
     publicTables.pdsch_runtime_event_table.SINRSource==postSource);
 disp('PUBLIC_DATA_SINR_PROVENANCE_PASS dl_ul_cases=16 qualified_alias=1');
+
+% Declared publisher fixtures: receiver presence is not validation scoring.
+baseTables=struct('pucch_table',table(["detected";"detected";"dtx";"unavailable"], ...
+    logical([1;0;0;1]),logical([0;1;0;0]),logical([0;0;1;1]), ...
+    'VariableNames',{'DetectionOutcome','UCIContentMatch','FalseAlarmFlag','DTXFlag'}));
+published=sixgr.truth.buildLLSPublicOutputTables(baseTables,contract,meta);
+assert(isequal(published.pucch_uci_table.DetectionOutcome,baseTables.pucch_table.DetectionOutcome));
+baseTables.pucch_table=removevars(baseTables.pucch_table,'DetectionOutcome');
+published=sixgr.truth.buildLLSPublicOutputTables(baseTables,contract,meta);
+assert(all(published.pucch_uci_table.DetectionOutcome=="unavailable"), ...
+    'Missing receiver outcome must not be reconstructed from payload or false-alarm scoring.');
 
 ok = true;
 end

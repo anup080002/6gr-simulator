@@ -201,18 +201,6 @@ else
 end
 end
 
-function outcome = iDetectionOutcome(usable, matchFlag, falseAlarmFlag)
-if ~logical(usable)
-    outcome = "unavailable";
-elseif logical(falseAlarmFlag)
-    outcome = "false_alarm";
-elseif logical(matchFlag)
-    outcome = "detected";
-else
-    outcome = "missed";
-end
-end
-
 function out = iIf(cond, a, b)
 if cond
     out = a;
@@ -401,7 +389,6 @@ for i = 1:height(sourceT)
     crcPass = iFirstLogical(row, ["CRCPass","DecodeSuccess"], false);
     rawCRCOutcome = iFirstText(row, ["CRCOutcome"], "");
     rawDetectionOutcome = iFirstText(row, ["DetectionOutcome"], "");
-    falseAlarm = iFirstLogical(row, ["FalseAlarmFlag"], false);
     rows(i).TrialId = i;
     rows(i).SFN = iFirstNum(row, ["Frame","SFN"], NaN);
     rows(i).Slot = iFirstNum(row, ["Slot"], NaN);
@@ -422,7 +409,7 @@ for i = 1:height(sourceT)
     if strlength(rawDetectionOutcome) > 0
         rows(i).DetectionOutcome = rawDetectionOutcome;
     else
-        rows(i).DetectionOutcome = iDetectionOutcome(rows(i).DetectionUsable, rows(i).UCIContentMatch, falseAlarm);
+        rows(i).DetectionOutcome = "unavailable";
     end
     rows(i).DetectionMetric = iFirstNum(row, ["DetectionMetric"], NaN);
     rows(i).NoiseVar = noiseVar;

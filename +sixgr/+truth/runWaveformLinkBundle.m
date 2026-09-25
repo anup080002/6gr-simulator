@@ -16087,8 +16087,7 @@ for k = 1:nTrials
         r.CRCApplicable = logical(sixgr.util.structGet(out, "CRCApplicable", false));
         r.CRCOutcome = string(sixgr.util.structGet(out, "CRCOutcome", ternaryPUCCHCRCOutcome(r.CRCApplicable, ok)));
         r.UCIContentMatch = logical(sixgr.util.structGet(out, "UCIContentMatch", ok));
-        r.DetectionOutcome = string(sixgr.util.structGet(out, "DetectionOutcome", ternaryPUCCHDetectionOutcome( ...
-            logical(sixgr.util.structGet(out, "DetectionUsable", false)), r.UCIContentMatch)));
+        r.DetectionOutcome = string(sixgr.util.structGet(out, "DetectionOutcome", "unavailable"));
         if logical(r.CRCApplicable)
             r.CRCPass = double(ok);
         else
@@ -17755,16 +17754,6 @@ elseif logical(ok)
     outcome = "pass";
 else
     outcome = "fail";
-end
-end
-
-function outcome = ternaryPUCCHDetectionOutcome(detectionUsable, contentMatch)
-if ~logical(detectionUsable)
-    outcome = "unavailable";
-elseif logical(contentMatch)
-    outcome = "detected";
-else
-    outcome = "missed";
 end
 end
 
