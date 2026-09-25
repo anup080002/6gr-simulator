@@ -23,10 +23,10 @@ Keysight file mapping are in the [README](../../README.md#400-mhz--7-ghz-rank-2-
 - The candidate passes the causally received SRS clock into configured CSI
   PUCCH reception, retains it in observation evidence, and distinguishes an
   inapplicable clock from malformed configuration. It changes neither UCI
-  ownership nor detector thresholds. Integration and focused execution remain
-  pending; `testConfiguredCSIReceivedClock` is still a known failing regression
-  against the installed receiver. The expanded eligibility assertions have
-  not yet been exercised against the candidate.
+  ownership nor detector thresholds. At the initial checkpoint, integration
+  and focused execution were pending. The follow-up below records the now
+  completed candidate tests; `testConfiguredCSIReceivedClock` remains a known
+  failing regression against the unchanged installed receiver.
 - Both historical recovery stashes are preserved. Their previously documented
   integration commits `cd397f33` and `471334ff` are ancestors of `main`; the
   stashes are not blindly reapplied over newer source.
@@ -60,7 +60,8 @@ Retained evidence:
   At 01:58 IST, 10 of 11 named tests had passed: spatial authority, configuration,
   DL/UL/reference points, link export, artifact integrity, organizer preservation,
   scheduler consistency and `testE2E_FastVsTruth`.
-  `testE2E_TruthPacketSemanticCampaign` was still running, not reported as passed.
+  `testE2E_TruthPacketSemanticCampaign` was still running at that checkpoint.
+  The completed log now records all 11 tests passing with process exit zero.
 - No `testAll` was started, respecting the user's explicit stop instruction.
   Registering tests does not mean the entire suite was executed or passed.
 - Checkpoint Python validation: **36 tests passed** for lab waveform packaging
@@ -93,3 +94,65 @@ This check verifies the manifest identity, not a new readback of every IQ file.
 The package is transferred separately from GitHub. Physical instrument
 capability and hardware import remain **UNKNOWN** pending actual instrument
 identity/options and coherent-channel evidence.
+
+## Receiver candidate preservation follow-up
+
+This follow-up starts from `6faace8611d3ede33483302bd4cae47d7282d07c`, verified
+against freshly fetched `origin/main`. There is still one branch and one Git
+worktree. The active older sweep continues to use unchanged receiver source;
+stopping it and applying the candidate are awaiting the user's decision.
+This is a clean-source preservation checkpoint, **not a completed runtime merge**.
+
+| Preserved source change | Exact patch | Installed on main? |
+|---|---|---|
+| Causally received SRS clock for configured CSI PUCCH; retain prior-clock evidence | `pending_received_csi_pucch_clock_20260926.patch` | No |
+| Actual Format-2 receiver uses per-RE equalizer gain and physical covariance for UCI likelihood | `pending_pucch_format2_receiver_likelihood_20260926.patch` | No |
+| Preserve physical zero noise, reject invalid noise/covariance, exclude solver loading from physical covariance; correct static-covariance test reference | `pending_equalizer_noise_authority_20260926.patch` | No |
+
+The new regression files `tests/testEqualizerNoiseAuthority.m` and
+`tests/testPUCCHFormat2ReceiverLikelihood.m` are included in this checkpoint.
+Their assertions require the candidate source: committing the tests without
+applying the patches does not make the installed receiver pass them. No
+assertion or detector threshold was weakened to obtain a clean Git status.
+
+All three patches pass `git apply --check` together against this checkpoint.
+They cover four production files and one existing test. Candidate execution
+took place in the full isolated source snapshot
+`C:/Users/anup0/AppData/Local/Temp/sixgr_clock_repair_20260926_014701`, not in a
+second Git branch or a mixed-source path overlay. Nine tested source/test
+SHA-256 values were rechecked against
+`logs/receiver_clock_candidate_20260926/candidate_v4_validation.json`; all match.
+The two new main regression files also match their tested snapshot bytes.
+
+Validation evidence:
+
+- **15/15 focused MATLAB tests passed**, process exit zero:
+  `logs/receiver_clock_candidate_20260926/gain_aware_validation_v4.log`.
+  Includes 54 equalizer-noise cases and seven invalid-input guards, actual
+  Format-2 waveform/decoder likelihood checks, CRC/received-noise checks,
+  combined UCI, inter-layer evidence and configured-CSI clock eligibility.
+  Noise-only false detections remain visible; this is not detector qualification.
+- At **02:49 IST on 26 September**, the separate 20-test candidate guard batch
+  had **18 passed, zero failed, one running and one not started**. The running
+  test was `testE2E_FastVsTruth`; the remaining test was
+  `testE2E_TruthPacketSemanticCampaign`. The snapshot's source is frozen during
+  execution. Authoritative ongoing log:
+  `logs/receiver_clock_candidate_20260926/candidate_v4_runtime_guards.log`.
+  This historical checkpoint is not a claim that all 20 completed.
+- **36 Python tests passed** again for lab package readback/sealing and the
+  no-PDCCH-observation plot contract, with 13 dependency deprecation warnings:
+  `logs/consolidation_20260926_receiver_checkpoint.xml`.
+- The documented PowerShell launcher parsed without errors; all 11 checked
+  Keysight handoff/dashboard files exist. The sealed package's manifest hash
+  remains the value recorded above. This does not claim a fresh full IQ readback.
+- No new MATLAB scenario or `testAll` was launched for this consolidation.
+  The earlier 11 main-source guards and the 15 candidate tests are different
+  validation populations and must not be combined into an end-to-end pass.
+
+Prior failed candidate attempts, both historical recovery stashes, the source
+snapshot, all logs and the sealed 400 MHz package are retained. Ignored
+generated files are intentionally not committed or deleted. The README now
+also includes fresh single-branch clone instructions for the 400 MHz / 7 GHz
+digital package. Full 5 MHz sweep acceptance, detector qualification, pending
+receiver integration and full 400 MHz physical shared-feedback acceptance
+remain open.

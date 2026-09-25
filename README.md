@@ -1,6 +1,6 @@
 # SixGR Foundation v2
 
-Current development snapshot: [26 September HARQ spatial-channel repair and consolidation limits](docs/lls/main_consolidation_20260926.md).
+Current development snapshot: [26 September source consolidation, receiver candidate tests and remaining integration limits](docs/lls/main_consolidation_20260926.md).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
 The latest PUCCH reporting repair separates receiver detection from payload
 correctness; its focused tests pass, but detector statistical qualification
@@ -13,14 +13,22 @@ the live PUCCH receiver**. The presence pilot retains missed signals and false
 detections; neither detector qualification nor full-scenario acceptance is closed.
 The joint short-UCI candidate, received-SRS-clock diagnostic and explicit
 no-PDCCH-observation publication helper are also preserved on `main`, but are
-not installed in the scenario runtime. The new configured-CSI timing regression
-still fails and is retained without weakening its assertion.
+not installed in the scenario runtime. The configured-CSI timing regression
+passes against the isolated repaired receiver, but remains a known failure
+against the unchanged receiver currently installed on `main`.
 The standalone HARQ probe now executes the configured AWGN spatial channel;
 12 focused DL/UL cases cover 2x2 and 4x2 channels, including rank two. The
 configured-CSI received-clock repair is preserved as a
 [pending patch](docs/lls/pending_received_csi_pucch_clock_20260926.patch), not
 installed underneath the active sweep. This distinction is retained in the
 checkpoint record; committing all edits is not full runtime acceptance.
+The candidate clock, Format-2 likelihood and equalizer-noise repairs passed
+**15 focused MATLAB tests together**. All three complete source patches and
+their regression tests are preserved on `main`; the
+[candidate inventory](docs/lls/main_consolidation_20260926.md#receiver-candidate-preservation-follow-up)
+identifies what is still unapplied. Applying them requires a safe stop of the
+older sweep first. No detector threshold was lowered, and noise-only false
+detections remain an open qualification issue.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -226,6 +234,16 @@ the portable command is:
 
 ```bat
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File "scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml"
+```
+
+For a **new checkout** on the other PC, first run these two commands from a
+directory where you want to keep the repository, then use the portable
+launcher above. Change `-MatlabExe` to the supported MATLAB installation on
+that PC; these commands do not install MATLAB, Python or their dependencies.
+
+```bat
+git clone --branch main --single-branch https://github.com/anup080002/6gr-simulator.git
+cd /d "6gr-simulator"
 ```
 
 Outputs are saved to `results/vxg_vsa/7ghz_400mhz_rank2_1024qam/<run_tag>/`;

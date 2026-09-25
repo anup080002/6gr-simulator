@@ -1,0 +1,48 @@
+diff --git a/+sixgr/+phy/+pucch/PUCCHReceiver.m b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+index 11e04176..a61fffe5 100644
+--- a/+sixgr/+phy/+pucch/PUCCHReceiver.m
++++ b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+@@ -204,6 +204,34 @@ classdef PUCCHReceiver
+                 error("sixgr:phy:pucch:UCIDecodeFailed", ...
+                     "PUCCH physical decode failed: %s",ME.message);
+             end
++            demapperEvidence=struct('Source',"toolbox_format_specific_decode", ...
++                'PerREGainAware',false,'PhysicalQualificationPassed',false);
++            varianceRole="scalar_toolbox_decode_argument";
++            if assignment.Format==2 && ~(isprop(pucch,'Interlacing') && pucch.Interlacing)
++                if ~estimateNoise && gridDisturbanceVariance==0
++                    % Preserve the explicitly requested noiseless reference
++                    % endpoint. It is not a finite-noise calibrated likelihood,
++                    % and is never selected for a received DM-RS noise estimate.
++                    result=equalizerInfo.EqualizerResult;
++                    assert(string(opt.NoiseVarianceMode)=="provided" && ...
++                        all(result.OutputNoiseInterferenceCovariance(:)==0), ...
++                        'sixgr:phy:pucch:InvalidNoiselessLikelihoodReference', ...
++                        'A noiseless endpoint requires explicitly zero executed disturbance.');
++                    demapperEvidence.Source="provided_zero_disturbance_toolbox_decode";
++                    demapperEvidence.NoiselessReference=true;
++                    varianceRole="explicit_zero_disturbance_reference_not_finite_noise_likelihood";
++                else
++                    % Keep the public decoder's presence statistic and
++                    % constellation. Decode UCI using y=g*s+z with the actual
++                    % MMSE response/covariance on each RE, not g=1 and mean(v).
++                    [soft{1},demapperEvidence]=sixgr.phy.pucch.demapFormat2EqualizerOutput( ...
++                        carrier,pucch,equalizerInfo.EqualizerResult);
++                    demapperEvidence.PerREGainAware=true;
++                    varianceRole="mean_output_variance_for_detector_only_codeword_uses_per_RE_covariance";
++                end
++            end
++            codewordLLR=zeros(0,1);
++            if assignment.Format>=2, codewordLLR=soft{1}; end
+             if assignment.Format <= 1
+                 decoded = localCellBits(soft);
+                 crcPassed = true;
+@@ -272,6 +300,8 @@ classdef PUCCHReceiver
+                 "GridNoiseVarianceSource",noiseSource, ...
+                 "GridNoiseVarianceValueRole","receiver_disturbance_variance_for_equalization_and_decode", ...
+                 "DecodeNoiseInterferenceVariance",decodeNoiseVariance, ...
++                "DecodeNoiseInterferenceVarianceRole",varianceRole, ...
++                "UCICodewordLLR",codewordLLR,"DemapperEvidence",demapperEvidence, ...
+                 "NoiseVarianceTransform",noiseTransform, ...
+                 "InterferenceCovariance",rintGrid, ...
+                 "InterferenceCovarianceAvailable",~isempty(rintGrid), ...
