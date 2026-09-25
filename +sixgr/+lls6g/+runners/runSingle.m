@@ -2947,19 +2947,24 @@ try
                 "RawEvidencePresent", false))
             outage = sixgr.link.classifyCompletedAcquisitionOutage( ...
                 rawTrialContainer, double(scfg.get("run_control.total_slots", NaN)));
-            % A recorded acquisition outage is a FAILED operating point,
-            % not missing execution. Keep every acceptance gate and data
-            % table unchanged, but allow publication of its failure evidence.
-            if ~outage.Recognized || logical(result.Ok) || ...
-                    double(sixgr.util.structGet(rawEvidenceSnapshot,"RowCount",0))<outage.PBCHAttempts
+            noData = sixgr.link.classifyCompletedNoDataExecution( ...
+                rawTrialContainer, double(scfg.get("run_control.total_slots", NaN)));
+            % Acquisition and data scheduling are separate physical facts.
+            % Publish a completed no-grant point without claiming data or
+            % scenario success, or hiding lost trials from an actual TX.
+            if ~noData.Recognized || logical(result.Ok) || ...
+                    double(sixgr.util.structGet(rawEvidenceSnapshot,"RowCount",0))<max(1,outage.PBCHAttempts)
                 error("sixgr:lls6g:runner:MissingSealedPrimaryTrialEvidence", ...
                     "Runner profile '%s' requires persisted primary DL or UL trial evidence (%s).", ...
-                    profile, outage.Reason);
+                    profile, noData.Reason);
             end
-            runtimeEvidenceRefinalization.AcquisitionOutage = outage;
+            runtimeEvidenceRefinalization.NoDataExecution = noData;
+            if outage.Recognized
+                runtimeEvidenceRefinalization.AcquisitionOutage = outage;
+            end
             localDBLog("INFO", ...
-                "Retaining failed acquisition point: slots=%d PBCH_attempts=%d data_trials=0; no data KPI or constellation is available.", ...
-                outage.CompletedSlots, outage.PBCHAttempts);
+                "Retaining completed no-data point: slots=%d acquisition_outage=%d; no data BLER or constellation is available; scenario acceptance is unchanged.", ...
+                noData.CompletedSlots, outage.Recognized);
         end
     else
         % Control/reference-signal profiles own their measured waveform

@@ -639,6 +639,7 @@ trialShapeLoss = NaN(numFrames,1);
 trialDMLatency = NaN(numFrames,1);
 trialHighOrderRobustness = NaN(numFrames,1);
 trialDetectorComplexity = NaN(numFrames,1);
+trialEqualizerWork = NaN(numFrames,3);
 trialDataRECount = NaN(numFrames,1);
 trialDataRECountPerLayer = NaN(numFrames,1);
 trialTotalDataRECount = NaN(numFrames,1);
@@ -1907,6 +1908,8 @@ for n = 1:numFrames
         trialDMLatency(n) = double(sixgr.util.structGet(modTrack, "DistributionMatchingLatency_ms", NaN));
         trialHighOrderRobustness(n) = double(sixgr.util.structGet(modTrack, "HighOrderRobustness", NaN));
         trialDetectorComplexity(n) = double(sixgr.util.structGet(modTrack, "DetectorComplexityUnits", NaN));
+        trialEqualizerWork(n,:) = [modTrack.EqualizerSolveCount, ...
+            modTrack.EqualizerUniqueSolveCount,modTrack.EqualizerCovarianceFactorizationCount];
         trialDataRECount(n) = double(sixgr.util.structGet(modTrack, "DataRECount", NaN));
         trialDataRECountPerLayer(n) = double(sixgr.util.structGet(modTrack, "DataRECountPerLayer", trialDataRECount(n)));
         trialTotalDataRECount(n) = double(sixgr.util.structGet(modTrack, "TotalDataRECount", NaN));
@@ -2501,6 +2504,9 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
             'Status','Crash', ...
              'LinkAdaptationApplied','LinkAdaptationScheduled','Notes'});
         T.ComputeLatencySource = trialComputeLatencySource(idx);
+        T.EqualizerSolveCount=trialEqualizerWork(idx,1);
+        T.EqualizerUniqueSolveCount=trialEqualizerWork(idx,2);
+        T.EqualizerCovarianceFactorizationCount=trialEqualizerWork(idx,3);
         T.EVMPerLayer_rms=trialEVMLayers(idx);
         T.EVMPerLayerSource=trialEVMLayerSource(idx);
         T.EVMErrorEnergy=trialEVMEnergies(idx,1);
@@ -4938,6 +4944,9 @@ end
 assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
+T.EqualizerSolveCount=zeros(0,1);
+T.EqualizerUniqueSolveCount=zeros(0,1);
+T.EqualizerCovarianceFactorizationCount=zeros(0,1);
 T.ComputeLatencySource = strings(0,1);
 T.MinimumSnapshotRank = zeros(0,1);
 T.SpatialSpanRank = zeros(0,1);

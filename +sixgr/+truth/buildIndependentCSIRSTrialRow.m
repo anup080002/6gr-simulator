@@ -115,6 +115,22 @@ row.ReferenceMeasuredSINRDomain = string(sixgr.util.structGet( ...
     obs,"SINRMeasurementDomain",""));
 row.ReferenceSINRMeasurementJSON = string(sixgr.util.structGet( ...
     obs,"ReferenceSINRMeasurementJSON",""));
+publication=sixgr.link.csiReferenceSINRPublication(obs,row.SNR_dB);
+for name=string(fieldnames(publication)).'
+    row.(name)=publication.(name);
+end
+% The shared physical receiver owns these audit values. Never rebuild them
+% from the requested operating point or use them as measured CSI SINR.
+executed=sixgr.util.structGet(reception,"NoiseExecutionEvidence",struct());
+for name=["AppliedAWGNSNR_dB","ReferenceAWGNGridNoiseVariance", ...
+        "ReferenceAWGNSampleNoiseVariance","SignalEnergyPerOccupiedRE", ...
+        "SampleToGridNoiseVarianceGain"]
+    row.(name)=double(sixgr.util.structGet(executed,name,NaN));
+end
+for name=["NoiseOperatingMode","AppliedAWGNSNRSource","AppliedAWGNSNRValueRole", ...
+        "AWGNReferenceEnergySource","SharedNoiseCalibrationSource"]
+    row.(name)=string(sixgr.util.structGet(executed,name,""));
+end
 row.ChannelEstimateDiagnosticSINR_dB = double(sixgr.util.structGet( ...
     obs,"ChannelEstimateDiagnosticSINR_dB",NaN));
 row.ChannelEstimateDiagnosticSINRSource = string(sixgr.util.structGet( ...
@@ -144,6 +160,8 @@ row.SINR_dB = double(sixgr.util.structGet(csi,"SINR_dB",NaN));
 row.SINRSource = string(sixgr.util.structGet(csi,"SINRSource",""));
 row.SINRValueRole = string(sixgr.util.structGet(csi,"SINRValueRole",""));
 row.SINRValueStatus = string(sixgr.util.structGet(csi,"SINRValueStatus",""));
+row.SINRValueDefinition = string(sixgr.util.structGet(csi,"SINRValueDefinition",""));
+row.SINRMeasurementDomain = string(sixgr.util.structGet(csi,"SINRMeasurementDomain",""));
 row.CQIEffectiveSINR_dB = double(sixgr.util.structGet(csi,"WidebandSINR_dB",row.SINR_dB));
 row.CQIEffectiveSINRSource = row.SINRSource;
 

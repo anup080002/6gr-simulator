@@ -7413,9 +7413,19 @@ def _runtime_antenna_radiation_chart(
 def _recorded_no_data_beam_sources(existing, fetch_artifact_bytes) -> list[str]:
     """Explain absent data beam evidence; never qualify PHY or acquisition.
 
-    Missing artifacts are not zero observations. Require explicit empty data
-    tables, failed acquisition and a complete single-point zero-grant trace.
+    Missing artifacts are not zero observations. Current exports must prove
+    both directions independently from their complete clock and grant ledgers.
+    Acquisition success alone says nothing about whether data was scheduled.
     """
+    if "reports/csv/scenario_summary.csv" in existing:
+        directional = [_recorded_direction_without_data_sources(
+            existing, fetch_artifact_bytes, direction) for direction in ("DL", "UL")]
+        if not all(directional):
+            return []
+        return list(dict.fromkeys(path for paths in directional for path in paths))
+    # Older outage artifacts lack the identity-bound directional ledgers.
+    # Retain their stricter, failed-acquisition-only proof; never use it to
+    # rescue incomplete or contradictory current-format execution evidence.
     paths = ["reports/csv/run_state.csv", "reports/csv/slot_trace.csv",
              "air_interface/csv/pbch_trials.csv",
              "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"]
@@ -7462,7 +7472,7 @@ def _runtime_beam_pattern_chart(
         outage_sources = _recorded_no_data_beam_sources(existing, fetch_artifact_bytes)
         if outage_sources:
             reason = ("Recorded complete slot trace has zero data grants and executions; "
-                      "PBCH acquisition failed and both data-trial tables are explicitly empty. "
+                      "both data-trial tables are explicitly empty. "
                       "There is no data precoder to plot; no configured weights or PMI were substituted.")
             sources = "|".join(outage_sources)
             return {

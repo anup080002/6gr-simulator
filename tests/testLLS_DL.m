@@ -42,6 +42,8 @@ assertMeasuredPAPRTrialEvidence(resLow.TrialTable);
 assertMeasuredPAPRTrialEvidence(resHigh.TrialTable);
 assertMeasuredEVMTrialEvidence(resLow.TrialTable);
 assertMeasuredEVMTrialEvidence(resHigh.TrialTable);
+assertMeasuredEqualizerWork(resLow.TrialTable);
+assertMeasuredEqualizerWork(resHigh.TrialTable);
 if istable(resLow.TrialTable) && istable(resHigh.TrialTable) && ...
         all(ismember(["WidebandCQI","MCS"], string(resLow.TrialTable.Properties.VariableNames))) && ...
         all(ismember(["WidebandCQI","MCS"], string(resHigh.TrialTable.Properties.VariableNames)))

@@ -28,6 +28,16 @@ assert(isempty(raw.CoupledRuntime.SharedWaveformStream.DataTransmissions));
 outage=sixgr.link.classifyCompletedAcquisitionOutage(raw,scfg.get('run_control.total_slots'));
 assert(outage.Recognized && ~outage.ScenarioPass && ~outage.DataBLERAvailable && ...
     ~outage.DataConstellationAvailable && outage.PBCHAttempts==height(B));
+noData=sixgr.link.classifyCompletedNoDataExecution(raw,8);
+assert(noData.Recognized && ~noData.ScenarioPass && ~noData.DataBLERAvailable && ...
+    ~noData.DataConstellationAvailable && noData.CompletedSlots==8);
+% Classification-only counterfactual: successful PBCH cannot manufacture a
+% data transmission, nor can no-data execution claim an acquisition failure.
+acquired=raw;
+acquired.PBCH.CRCPass(:)=1; acquired.PBCH.SSBIdentityVerified(:)=1;
+acquired.PBCH.SelectedBeamFlag(:)=1;
+assert(sixgr.link.classifyCompletedNoDataExecution(acquired,8).Recognized);
+assert(~sixgr.link.classifyCompletedAcquisitionOutage(acquired,8).Recognized);
 bad=raw; bad.PBCH.CRCPass=double(bad.PBCH.CRCPass); bad.PBCH.CRCPass(1)=NaN;
 assert(~sixgr.link.classifyCompletedAcquisitionOutage(bad,8).Recognized);
 bad=raw; bad.PBCH.CRCPass(1)=1;
@@ -38,11 +48,15 @@ bad=raw; bad.PBCH=table();
 assert(~sixgr.link.classifyCompletedAcquisitionOutage(bad,8).Recognized);
 bad=raw; bad.DL=table(NaN,'VariableNames',{'CRCPass'});
 assert(~sixgr.link.classifyCompletedAcquisitionOutage(bad,8).Recognized);
+assert(~sixgr.link.classifyCompletedNoDataExecution(bad,8).Recognized);
 bad=raw; bad.CoupledRuntime.SlotTraceTable(end,:)=[];
 assert(~sixgr.link.classifyCompletedAcquisitionOutage(bad,8).Recognized);
+assert(~sixgr.link.classifyCompletedNoDataExecution(bad,8).Recognized);
 bad=raw; bad.CoupledRuntime.SlotTraceTable.ULGrantCount(1)=1;
 assert(~sixgr.link.classifyCompletedAcquisitionOutage(bad,8).Recognized);
+assert(~sixgr.link.classifyCompletedNoDataExecution(bad,8).Recognized);
 assert(~sixgr.link.classifyCompletedAcquisitionOutage(raw,9).Recognized);
+assert(~sixgr.link.classifyCompletedNoDataExecution(raw,9).Recognized);
 fprintf('FIVE_MHZ_OUTAGE_PUBLICATION_PASS pbch_rows=%d waveform_rows=%d data_trials=0 folder=%s\n', ...
     height(B),height(T),root);
 ok=true;

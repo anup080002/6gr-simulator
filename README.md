@@ -1,6 +1,6 @@
 # SixGR Foundation v2
 
-Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md).
+Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md#later-same-day-source-consolidation).
 This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
@@ -208,6 +208,28 @@ Outputs are saved to `results/vxg_vsa/7ghz_400mhz_rank2_1024qam/<run_tag>/`;
 launcher, packaging and browser logs are in `logs/`. The package is about
 12.1 GB because full native/noisy IQ and multiple validated formats are retained.
 The launcher does not run `testAll` or enable RF.
+
+For this test, use the rank-2 `vxg_vsa` YAML above, not the older four-layer
+adaptive or shared-feedback YAMLs later in this README. From an existing clean
+checkout, update the single delivery branch before executing the launcher:
+
+```bat
+git switch main && git pull --ff-only origin main
+```
+
+The launcher prints `RUN_FOLDER` for the exact new execution. Within that folder:
+
+| What to inspect or share | Location |
+|---|---|
+| Engineering summary and all-case measurements | `reports/engineering_report.md`, `reports/csv/` |
+| Spectrum, PSD, PAPR, EVM and constellation plots | `reports/image/` |
+| Recorded WebGUI, without starting another simulation | `webgui/index.html` |
+| VSG/VSA file mapping and hardware checklist | `keysight/instrument_handoff.json`, `keysight/hardware_checklist_and_runbook.md` |
+| Readback validation and immutable file inventory | `validation/export_receipts.json`, `manifest.json` |
+
+These generated files are not downloaded by `git pull`: either run the launcher
+or transfer the existing complete package separately. Do not overwrite the
+sealed `20260925_v1` package with results from a newer source revision.
 
 The completed local run `20260925_v1` contains 630 receiver trials across
 MCS26/25/24 and 30/35/40 dB. Primary MCS26 results are:

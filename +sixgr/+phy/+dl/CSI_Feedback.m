@@ -300,6 +300,10 @@ csi.SINRSource = char(sinrSource);
 csi.SINRValueRole = char(sinrRole);
 csi.SINRValueStatus = char(sinrStatus);
 csi.SINRNAReason = char(sinrReason);
+if sinrRole=="measured_csi_receiver_objective_scheduling_input"
+    csi.SINRValueDefinition="selected_rank_PMI_receiver_objective_from_received_CSI_RS_channel_and_disturbance";
+    csi.SINRMeasurementDomain="selected_precoder_layer_receiver_objective";
+end
 csi.PostEqSINR_dB = double(postEqSINR_dB);
 csi.PostEqSINRSource = char(postEqSINRSource);
 csi.PostEqSINRValueRole = char(postEqSINRRole);
@@ -1340,6 +1344,8 @@ csi.CustomContainerUsed = payload.CustomContainerUsed;
 csi.SINRSource = "measured_csi_state_receiver_objective";
 csi.SINRValueRole = "measured_csi_receiver_objective_scheduling_input";
 csi.SINRValueStatus = "OK";
+csi.SINRValueDefinition="selected_rank_PMI_receiver_objective_from_received_CSI_RS_channel_and_disturbance";
+csi.SINRMeasurementDomain="selected_precoder_layer_receiver_objective";
 csi.SINRNAReason = "";
 csi.SubbandCQI = [];
 csi.SubbandPMI = [];

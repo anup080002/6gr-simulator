@@ -67,3 +67,64 @@ The active run tag is
 
 No `testAll` is launched for this checkpoint, following the user's explicit
 instruction. Existing focused passes do not certify the entire changed tree.
+
+## Later same-day source consolidation
+
+This section updates the earlier snapshot above; it does not rewrite the
+identity or outcomes of retained runs. The user requested preservation of all
+current edits and the 400 MHz / 7 GHz Keysight instructions on one branch.
+
+### Preserved changes
+
+- Freshly fetched `origin/main` and local `main` matched `1b8c24d9` before
+  this update. There is one local branch and one worktree; no branch merge
+  or history rewrite is needed. All 19 outstanding source/test files are
+  included, together with this note and the README update.
+- Independent CSI-RS publication now retains executed noise-calibration
+  metadata for audit and separately labels measured reference SINR and the
+  selected-precoder receiver objective. Audit metadata does not replace
+  receiver estimates.
+- DL/UL trial exports now carry instrumented equalizer solve/factorization
+  counters. Grid-size products are no longer presented as measured detector
+  operation counts.
+- Completed physical execution with no data grants is distinguished from
+  failed acquisition and from lost receiver evidence. Publication keeps data
+  measurements unavailable and scenario acceptance failed; it does not invent
+  a constellation or successful data rows.
+- README commands and output locations refer to the existing rank-2
+  400 MHz bandwidth / 7 GHz carrier lab test, not a 4 GHz carrier test.
+  Its disabled control/feedback and experimental UL limitations remain stated.
+
+### Verification at this consolidation checkpoint
+
+- `logs/main_source_consolidation_20260925.xml`: **67 Python tests passed**,
+  covering completed-no-data publication and lab waveform packaging. Only
+  dependency deprecation warnings were emitted.
+- `logs/5mhz_core_measurement_repair_20260925.log`: the CSI reference
+  publication, independent CSI completion and executed-work tests passed.
+  The 96-case noise-estimator diagnostic completed, but completion does not
+  mean its measured estimator bias is fixed.
+- The existing 18-test focused MATLAB batch has **13 completed passes and
+  no recorded failures at this snapshot**. This includes DL/UL/reference
+  points, config, strict proxy guards, scheduler consistency, export/artifact
+  guards and `testE2E_FastVsTruth`. `testE2E_TruthPacketSemanticCampaign`
+  and later tests are not claimed as passed until their completion records.
+  Log: `logs/5mhz_core_measurement_guards_20260925.log`.
+- The already queued runtime follow-up and an integrated target-scenario rerun
+  are not counted as completed verification. Neither `testAll` nor a new
+  scenario execution is launched by this consolidation.
+- The sealed lab-package root manifest still has SHA-256
+  `dbfd394b1b1781461e41f64b8475531931050c2dbdc32f6d95bda3756a67d60b`.
+  This check confirms the manifest is unchanged; the earlier complete
+  artifact verification is documented in `vxg_vsa_validation_20260925.md`.
+
+The pending PUCCH detection-label defect, generic CSI noise-estimator bias,
+statistical qualification and full shared-scenario acceptance are not closed
+by committing this work. The 400 MHz lab package still retains its 30 dB
+decoding failures and `PHYSICAL INSTRUMENT CAPABILITY VERIFIED: UNKNOWN`.
+
+Both historical recovery stashes remain preserved; their documented
+integration commits `cd397f33` and `471334ff` were verified as ancestors of
+`main`. They are not reapplied over newer code. Generated results, logs and
+the approximately 12 GB lab package remain local under existing ignore rules,
+not deleted for a clean working tree and not silently included in the push.
