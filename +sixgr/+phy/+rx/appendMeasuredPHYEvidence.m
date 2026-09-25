@@ -62,6 +62,8 @@ evidence = struct( ...
     "MeasuredDMRSAntennaRECount", localCountOrZero(dmrsAntInd), ...
     "MeasuredDMRSSymbolCount", NaN, ...
     "MeasuredDMRSPortCount", NaN, ...
+    "MeasuredDMRSPortSet", "", ...
+    "MeasuredDMRSPortSetSource", "", ...
     "MeasuredDMRSAntennaPortCount", NaN, ...
     "MeasuredDMRSCDMLengthFD", NaN, ...
     "MeasuredDMRSCDMLengthTD", NaN);
@@ -71,6 +73,20 @@ evidence.MeasuredDMRSSymbolCount = symbolCount;
 evidence.MeasuredDMRSPortCount = portCount;
 [~, antPortCount] = localIndexSymbolAndPortCounts(carrier, dmrsAntInd);
 evidence.MeasuredDMRSAntennaPortCount = antPortCount;
+
+% Port identity is not recoverable from a count.  Retain it only when the
+% reference generator supplies the logical port set from the exact PDSCH or
+% PUSCH configuration that produced the receiver's DM-RS indices/symbols.
+% This keeps the exported identity tied to executed reference resources and
+% prevents downstream MIMO reports from fabricating ports as 0:(count-1).
+portSet = localValidatedDMRSPortSet( ...
+    sixgr.util.structGet(dmrsInfo, "DMRSPortSet", []), portCount);
+if ~isempty(portSet)
+    evidence.MeasuredDMRSPortSet = string(mat2str(portSet));
+    evidence.MeasuredDMRSPortSetSource = string(sixgr.util.structGet( ...
+        dmrsInfo, "DMRSPortSetSource", ...
+        "executed_receiver_dmrs_configuration"));
+end
 
 if ~isempty(dmrsSym)
     evidence.MeasuredDMRSRECount = double(numel(dmrsSym));
@@ -82,6 +98,31 @@ if ~isempty(cdmLengths)
     if numel(cdmLengths) >= 2
         evidence.MeasuredDMRSCDMLengthTD = cdmLengths(2);
     end
+end
+end
+
+function ports = localValidatedDMRSPortSet(raw, measuredCount)
+ports = double([]);
+if isempty(raw)
+    return;
+end
+try
+    ports = double(raw(:).');
+catch
+    error("sixgr:phy:rx:InvalidMeasuredDMRSPortSet", ...
+        "Executed receiver DM-RS port identity must be numeric.");
+end
+if any(~isfinite(ports) | ports < 0 | ports ~= fix(ports)) || ...
+        numel(unique(ports)) ~= numel(ports)
+    error("sixgr:phy:rx:InvalidMeasuredDMRSPortSet", ...
+        "Executed receiver DM-RS ports must be unique nonnegative integers.");
+end
+if isscalar(measuredCount) && isfinite(measuredCount) && ...
+        measuredCount ~= numel(ports)
+    error("sixgr:phy:rx:MeasuredDMRSPortCountMismatch", ...
+        "Executed receiver DM-RS port identity has %d ports, but the " + ...
+        "receiver indices contain %d port dimensions.", ...
+        numel(ports), measuredCount);
 end
 end
 

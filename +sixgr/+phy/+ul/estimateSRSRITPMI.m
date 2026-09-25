@@ -79,6 +79,10 @@ if isempty(Hest)
     return;
 end
 
+assert(isnumeric(nVar) && isreal(nVar) && isscalar(nVar) && ...
+    isfinite(nVar) && nVar>0, ...
+    'sixgr:phy:ul:PositiveSRSNoiseVarianceRequired', ...
+    'SRS spatial prediction requires positive measured noise power; never substitute an absolute epsilon floor.');
 [Hprb, numRxAnt, numTxPorts] = localPRBAveragedChannel(Hest);
 estimate.PRBCount = double(size(Hprb, 3));
 estimate.SRSSymbolCount = double(size(Hprb, 4));
@@ -112,7 +116,7 @@ anchorUsable = isfinite(anchor_dB) && isfinite(referencePower) && referencePower
     anchorPlane == "receiver_srs_resource_elements_after_ofdm_demodulation" && ...
     string(opt.ReferencePowerSource) == "received_reference_grid_plus_receiver_hest" && ...
     energyRatio == 1 && energySource == "normalized_fixed_snr_unit_grid_reference_no_device_power_scaling";
-predictionNoise = max(double(nVar),eps);
+predictionNoise = double(nVar);
 if anchorUsable
     candidateNoise = max(double(nVar),referencePower/10^(anchor_dB/10));
     anchorUsable = isfinite(candidateNoise) && candidateNoise>0;
@@ -399,14 +403,17 @@ for prb = 1:size(Hprb, 3)
         if ~all(isfinite(H), "all")
             continue;
         end
-        Rtx = H' * H;
+        % Normalize by measured noise amplitude before forming powers.
+        % eps(1) has no receive-power unit and cannot floor nVar.
+        whitened = H ./ sqrt(double(nVar));
+        Rtx = whitened' * whitened;
         eigvals = sort(real(eig((Rtx + Rtx') / 2)), "descend");
         eigvals = eigvals(isfinite(eigvals) & eigvals > 0);
         if isempty(eigvals)
             continue;
         end
         n = min(max(1, round(double(rankIdx))), numel(eigvals));
-        acc = acc + sum(log2(1 + eigvals(1:n) ./ max(double(nVar), eps)));
+        acc = acc + sum(log2(1 + eigvals(1:n)));
         count = count + 1;
     end
 end
@@ -502,13 +509,23 @@ for prb = 1:size(Hprb, 3)
         end
         Heff = H * WportsByLayer;
         nLayers = size(Heff, 2);
-        regularized = eye(nLayers) + (Heff' * Heff) ./ max(double(nVar), eps);
-        if rcond(regularized) < 1e-12
-            regularized = regularized + eye(nLayers) .* (1e-12 * max(trace(regularized) / max(nLayers, 1), 1));
-        end
-        postEqCov = regularized \ eye(nLayers);
-        sinr = 1 ./ max(real(diag(postEqCov)), eps) - 1;
-        sinr = max(real(sinr), 0);
+        A = Heff ./ sqrt(double(nVar));
+        % QR solves the actual unit-noise MMSE problem without forming
+        % squared-condition normal equations or adding artificial noise.
+        % B=(A'*A+I)^(-1)*A'. Evaluate signal/interference/noise powers
+        % explicitly: 1/diag(errorCov)-1 loses weak signals to cancellation.
+        [Q,T] = qr([A; eye(nLayers)],0);
+        B = T \ Q(1:size(A,1),:)';
+        response = B*A;
+        desired = abs(diag(response)).^2;
+        cross = response-diag(diag(response));
+        disturbance = sum(abs(cross).^2,2)+sum(abs(B).^2,2);
+        sinr = zeros(nLayers,1);
+        observed = disturbance>0;
+        sinr(observed) = desired(observed)./disturbance(observed);
+        assert(all(isfinite(sinr) & sinr>=0), ...
+            'sixgr:phy:ul:InvalidSRSMMSEPrediction', ...
+            'Measured channel/noise produced invalid MMSE powers.');
         if isempty(layerSINRAccumulator)
             layerSINRAccumulator = zeros(size(sinr));
         end
@@ -523,9 +540,9 @@ end
 if count > 0
     metric = acc / count;
     layerMeanSINRLinear = max(layerSINRAccumulator ./ count, 0);
-    layerMeanSINR_dB = 10 .* log10(max(layerMeanSINRLinear(:).', eps));
+    layerMeanSINR_dB = 10 .* log10(layerMeanSINRLinear(:).');
     minimumLayerMeanSINR_dB = min(layerMeanSINR_dB);
-    widebandMeanSINR_dB = 10 .* log10(max(mean(layerMeanSINRLinear), eps));
+    widebandMeanSINR_dB = 10 .* log10(mean(layerMeanSINRLinear));
 end
 end
 

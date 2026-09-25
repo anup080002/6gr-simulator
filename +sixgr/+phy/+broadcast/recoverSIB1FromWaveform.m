@@ -29,6 +29,10 @@ if ~isempty(p.Results.PhysicalMeasurementObservation)
 end
 
 result = localEmptyResult();
+evidence = sixgr.phy.sync.ssbDetectionEvidence();
+for name = string(fieldnames(evidence)).'
+    result.(name) = evidence.(name);
+end
 result.RecoveryScope=string(p.Results.RecoveryScope);
 result.SIB1ReceptionAttempted=false;
 result.SSBMIBComplete=false;
@@ -51,7 +55,8 @@ try
     result.MeasurementAttempted = true;
     [rxSSB, sync] = sixgr.phy.dl.SSB_Rx(rxWaveform, cfg, ...
         "SampleRate_Hz", sampleRate, ...
-        "CandidateSSBIndex", p.Results.CandidateSSBIndex);
+        "CandidateSSBIndex", p.Results.CandidateSSBIndex, ...
+        "DetectionObserver", @retainDetectionDecision);
     result.PSSDetected = logical(sixgr.util.structGet(sync, "PSSDetected", false));
     result.SSSDetected = logical(sixgr.util.structGet(sync, "SSSDetected", false));
     result.NCellIDRecovered = logical(sixgr.util.structGet(sync, "NCellIDRecovered", false));
@@ -367,6 +372,22 @@ catch ME
     % ambiguous while correctly keeping StrictOk=false.
     result.Errors = string(getReport(ME, "extended", "hyperlinks", "off"));
 end
+
+    function retainDetectionDecision(stage, decision)
+        % A measured non-detection must survive the receiver's early error
+        % return. This observer cannot influence the physical decision.
+        result.(stage+"NormalizedMetric") = decision.NormalizedMetric;
+        result.(stage+"DetectionThreshold") = decision.Threshold;
+        result.(stage+"DetectionHypothesisCount") = decision.HypothesisCount;
+        result.(stage+"DetectionMetricValid") = decision.MetricValid;
+        result.(stage+"DetectionDecisionAvailable") = true;
+        result.(stage+"Detected") = decision.Detected;
+        result.DetectionMetric = decision.NormalizedMetric;
+        result.DetectionThreshold = decision.Threshold;
+        result.DetectionHypothesisCount = decision.HypothesisCount;
+        result.DetectionStage = stage;
+        result.DetectionMetricSource = stage+":"+decision.Source;
+    end
 end
 
 function context = localProcedureContext(cfg, carrier, dci, pdsch, receivedSSBIndex)

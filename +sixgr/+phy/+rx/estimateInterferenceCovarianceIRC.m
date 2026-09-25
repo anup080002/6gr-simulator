@@ -3,8 +3,10 @@ function [Rint, info, covarianceState] = estimateInterferenceCovarianceIRC(rxGri
 %
 %   RINT = sixgr.phy.rx.estimateInterferenceCovarianceIRC(...) computes a
 %   receive-antenna covariance matrix from DM-RS/PT-RS residuals:
-%       e_k = y_k - H_k * pinv(H_k) * y_k
-%       R   = E[e_k e_k'] + nVar I
+%       e_k = y_k - H_k * x_k   (x_k is the known reference-symbol vector)
+%       R   = E[e_k e_k']
+%   Residuals already include noise and channel-estimation error. Never
+%   project the observation onto H or add another noise-power term.
 %   The output is measured receiver evidence and is not a configured
 %   interference shortcut.
 
@@ -20,19 +22,21 @@ ip.addParameter("SourceResource","DMRS_RESIDUAL",@(x)ischar(x)||isstring(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
-info = struct('Available', false, 'Method', 'pilot_residual_covariance', ...
+info = struct('Available', false, 'Method', 'known_pilot_reconstruction_residual_covariance', ...
     'Source', 'dmrs_pilot_residual_runtime_evidence', 'Status', 'unavailable', ...
     'NRE', 0, 'SampleCount', 0, 'MinSamples', double(opt.MinSamples), ...
     'AgeSlots', double(opt.AgeSlots), 'MaxAgeSlots', double(opt.MaxAgeSlots), ...
     'PRGID', double(opt.PRGID), 'ShrinkageMethod', 'diagonal_target', ...
     'ShrinkageFactor', double(opt.ShrinkageFactor), ...
     'HermitianError', NaN, 'MinEigenvalue', NaN, ...
-    'ConditionNumber', NaN, 'Valid', false, 'NAReason', "");
+    'ConditionNumber', NaN, 'Valid', false, 'NAReason', "", ...
+    'ResidualContainsChannelEstimationError',true,'NoiseVarianceAdded',0, ...
+    'ResidualEquation',"y_minus_H_times_known_reference_symbols");
 
 nr = max(1, localNumRx(rxGrid));
 nVar = double(nVar);
 if ~(isscalar(nVar) && isfinite(nVar) && nVar >= 0)
-    nVar = 0;
+    error('sixgr:phy:irc:InvalidNoiseVariance','Noise variance must be finite and nonnegative.');
 end
 Rint = [];
 covarianceState = [];
@@ -43,35 +47,20 @@ if isempty(rxGrid) || isempty(hEst) || isempty(refInd) || isempty(refSym)
 end
 
 try
-    [rxP, hP] = localExtractPilotResources(rxGrid, hEst, refInd);
+    [rxP, hP, pilotP] = localExtractPilotResources(rxGrid, hEst, refInd, refSym);
     if isempty(rxP) || isempty(hP)
         info.NAReason = "no_reference_resources_extracted";
         return;
-    end
-    if isvector(rxP)
-        rxP = rxP(:);
     end
     nP = size(rxP, 1);
     Rsum = zeros(nr, nr);
     used = 0;
     for k = 1:nP
-        rk = squeeze(rxP(k, :)).';
-        hk = squeeze(hP(k, :, :));
-        if isempty(rk) || isempty(hk)
-            continue;
-        end
-        rk = rk(:);
-        if size(hk, 1) ~= numel(rk) && size(hk, 2) == numel(rk)
-            hk = hk.';
-        end
-        if size(hk, 1) ~= numel(rk)
-            continue;
-        end
-        proj = hk * (pinv(hk) * rk);
-        ek = rk - proj;
-        if numel(ek) ~= nr
-            continue;
-        end
+        rk = reshape(rxP(k,:),nr,1);
+        hk = reshape(hP(k,:,:),nr,size(hP,3));
+        ek = rk - hk*pilotP(k,:).';
+        assert(all(isfinite(ek)), 'sixgr:phy:irc:InvalidPilotResidual', ...
+            'Actual pilot reconstruction residual must be finite.');
         Rsum = Rsum + ek * ek';
         used = used + 1;
     end
@@ -90,7 +79,7 @@ try
     Rk = Rsum ./ used;
     target = trace(Rk)/nr*eye(nr);
     alpha = double(opt.ShrinkageFactor);
-    Rk = (1-alpha)*Rk + alpha*target + nVar.*eye(nr);
+    Rk = (1-alpha)*Rk + alpha*target;
     Rcandidate = (Rk + Rk') ./ 2;
     hermitianError = norm(Rcandidate-Rcandidate',"fro") / ...
         max(norm(Rcandidate,"fro"),realmin);
@@ -127,26 +116,30 @@ try
     info.CovarianceIncludesNoise = true;
 catch ME
     info.NAReason = string(ME.identifier);
+    Rint = [];
     covarianceState = [];
 end
 end
 
-function [rxP, hP] = localExtractPilotResources(rxGrid, hEst, refInd)
+function [rxP, hP, pilotP] = localExtractPilotResources(rxGrid, hEst, refInd, refSym)
 gridSize = size(rxGrid);
 K = gridSize(1);
 L = gridSize(2);
 Nr = localNumRx(rxGrid);
 
-baseInd = double(refInd(:));
-baseInd = baseInd(isfinite(baseInd) & baseInd >= 1);
-baseSpan = max(1, K * L);
-baseInd = mod(round(baseInd) - 1, baseSpan) + 1;
-baseInd = unique(baseInd, "stable");
-if isempty(baseInd)
-    rxP = [];
-    hP = [];
-    return;
-end
+Nt = size(hEst,4);
+assert(size(hEst,1)==K && size(hEst,2)==L && size(hEst,3)==Nr && ndims(hEst)<=4, ...
+    'sixgr:phy:irc:ChannelDimensions','Hest must be K-by-L-by-Nrx-by-Nport.');
+indices=double(refInd(:));
+symbols=double(refSym(:));
+assert(numel(indices)==numel(symbols) && all(isfinite(symbols)) && ...
+    all(isfinite(indices) & indices==fix(indices) & indices>=1 & indices<=K*L*Nt) && ...
+    numel(unique(indices))==numel(indices), ...
+    'sixgr:phy:irc:InvalidReference','Reference symbols require unique valid port-domain indices.');
+active=symbols~=0; indices=indices(active); symbols=symbols(active);
+baseInd=unique(mod(indices-1,K*L)+1,'stable');
+reference=complex(zeros(K*L,Nt)); reference(indices)=symbols;
+pilotP=reference(baseInd,:);
 
 nP = numel(baseInd);
 rxP = complex(zeros(nP, Nr));
@@ -155,35 +148,10 @@ for r = 1:Nr
     rxP(:, r) = plane(baseInd);
 end
 
-hSize = size(hEst);
-if numel(hSize) < 4
-    if numel(hSize) >= 3 && Nr == 1
-        Nt = hSize(3);
-        hP = complex(zeros(nP, Nr, Nt));
-        for t = 1:Nt
-            plane = hEst(:, :, t);
-            hP(:, 1, t) = plane(baseInd);
-        end
-    else
-        Nt = 1;
-        hP = complex(zeros(nP, Nr, Nt));
-        for r = 1:Nr
-            if numel(hSize) >= 3
-                plane = hEst(:, :, min(r, hSize(3)));
-            else
-                plane = hEst(:, :);
-            end
-            hP(:, r, 1) = plane(baseInd);
-        end
-    end
-    return;
-end
-
-Nt = hSize(4);
 hP = complex(zeros(nP, Nr, Nt));
 for r = 1:Nr
     for t = 1:Nt
-        plane = hEst(:, :, min(r, hSize(3)), t);
+        plane = hEst(:, :, r, t);
         hP(:, r, t) = plane(baseInd);
     end
 end

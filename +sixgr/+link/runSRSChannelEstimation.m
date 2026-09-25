@@ -133,6 +133,8 @@ out.PUSCHSchedulingSINRAnchorValueStatus = "NOT_AVAILABLE";
 out.CQI = NaN;
 out.CQISource = "";
 out.CQIValueStatus = "";
+out.CQISelectionSINR_dB = NaN;
+out.CQIAppliedSINRMargin_dB = NaN;
 out.MCSIndex = NaN;
 out.Modulation = "";
 out.TargetCodeRate = NaN;
@@ -314,6 +316,7 @@ try
     [rx, rxInfo] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
+        "ReceivedExecutionEvidence", replay, ...
         noiseVarArgs{:}, ...
         "StrictNoiseVarianceRequired", strictNoiseVarianceRequired);
     out.ReceiveTiming=rx.Timing;
@@ -577,10 +580,11 @@ try
         out.CQISource = "";
         out.CQIValueStatus = "unavailable";
     else
-        [out.CQI, out.CQISource, out.CQIValueStatus] = ...
+        [out.CQI, out.CQISource, out.CQIValueStatus, ...
+            out.CQISelectionSINR_dB, out.CQIAppliedSINRMargin_dB] = ...
             localResolvePowerPlaneCalibratedPUSCHCQI(srsULCSI, cfgSRS);
     end
-    if isfinite(out.CQI) && out.CQI >= 0
+    if isfinite(out.CQI) && out.CQI > 0
         [modStr, targetCodeRate, mcsIndex] = sixgr.link.amcFromCQI(out.CQI, "", NaN, cfgSRS, "UL");
         out.MCSIndex = double(mcsIndex);
         out.Modulation = char(string(modStr));
@@ -627,7 +631,7 @@ catch ME
     end
 end
 
-function [cqi, source, status] = ...
+function [cqi, source, status, selectionSINR_dB, margin_dB] = ...
         localResolvePowerPlaneCalibratedPUSCHCQI(srsEstimate, cfg)
 % SRS channel-estimation residuals include pilot processing gain and are not
 % a PUSCH data-channel CQI input.  Convert only the absolute-power-anchored
@@ -635,6 +639,8 @@ function [cqi, source, status] = ...
 cqi = NaN;
 source = "";
 status = "unavailable_power_plane_calibrated_pusch_prediction";
+selectionSINR_dB = NaN;
+margin_dB = NaN;
 sinr_dB = double(sixgr.util.structGet( ...
     srsEstimate, "SelectedMinimumLayerMeanPostEqSINR_dB", NaN));
 sinrSource = string(sixgr.util.structGet( ...
@@ -652,8 +658,9 @@ if ~trusted
     source = "rejected_unanchored_srs_spatial_prediction";
     return;
 end
-try
-    feedback = sixgr.link.resolveWidebandCQI(struct( ...
+% Configuration/coding errors are not low-signal measurement outcomes.
+% The caller's normal failure boundary records them (and shared RX throws).
+feedback = sixgr.link.resolveWidebandCQI(struct( ...
         "WidebandSINR_dB", sinr_dB, ...
         "SINRSource", char(sinrSource), ...
         "SINRValueRole", ...
@@ -661,15 +668,18 @@ try
         "SINRValueStatus", "PASS", ...
         "RankIndicator", double(sixgr.util.structGet(srsEstimate, "RI", NaN))), ...
         cfg, "UL");
-    cqi = double(sixgr.util.normalizeReportedCQI( ...
-        sixgr.util.structGet(feedback, "WidebandCQI", NaN)));
-catch
-    cqi = NaN;
-end
+cqi = double(feedback.WidebandCQI);
+selectionSINR_dB = double(feedback.EffectiveSINR_dB);
+margin_dB = double(feedback.AppliedSINRMargin_dB);
 if isfinite(cqi) && cqi > 0
     cqi = double(max(1, min(15, round(cqi))));
     source = "power_plane_calibrated_srs_to_pusch_minimum_layer_sinr_to_cqi";
     status = "OK";
+elseif isscalar(cqi) && isfinite(cqi) && cqi == 0 && feedback.SINRInputAccepted
+    % CQI 0 is an out-of-range selection, not absent receiver evidence.
+    % It must not authorize amcFromCQI's conservative MCS-0 fallback.
+    source = "power_plane_calibrated_srs_to_pusch_minimum_layer_sinr_to_cqi";
+    status = "measured_cqi_zero_out_of_range";
 else
     cqi = NaN;
     source = "power_plane_calibrated_srs_to_pusch_cqi_unavailable";

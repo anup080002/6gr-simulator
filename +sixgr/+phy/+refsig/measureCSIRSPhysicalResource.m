@@ -1,9 +1,12 @@
-function measurement=measureCSIRSPhysicalResource(carrier,csirs,gridSqrtW)
+function measurement=measureCSIRSPhysicalResource(carrier,csirs,gridSqrtW,cfg,execution)
 % Retain TS 38.215 Toolbox measurements at an explicitly physical grid
 % plane. This function does not infer watts from an AGC-normalized grid.
 % One identified CSI-RS resource per call; callers loop over resource IDs.
 raw=nrCSIRSMeasurements(carrier,csirs,gridSqrtW);
-sinr=sixgr.phy.refsig.measureCSISINRFromResourceGrid(carrier,csirs,gridSqrtW);
+if nargin<4, cfg=struct(); end
+if nargin<5, execution=struct(); end
+sinr=sixgr.phy.refsig.measureCSISINRFromResourceGrid(carrier,csirs,gridSqrtW,cfg,execution);
+sinr.PowerUnit="W_resource_grid";
 nRx=size(gridSqrtW,3);
 for field=["RSRPPerAntenna","RSSIPerAntenna","RSRQPerAntenna"]
     if ~isequal(size(raw.(field)),[nRx 1])

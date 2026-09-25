@@ -250,6 +250,9 @@ trialDecIt = NaN(numFrames,1);
 trialEVM = NaN(numFrames,1);
 trialEVMLayers = strings(numFrames,1);
 trialEVMLayerSource = strings(numFrames,1);
+trialEVMEnergies = NaN(numFrames,3);
+trialEVMStatus = strings(numFrames,1);
+trialEVMDomain = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
@@ -269,6 +272,10 @@ trialPostEqSINRValueRole = strings(numFrames,1);
 trialPostEqSINRValueStatus = strings(numFrames,1);
 trialPostEqSINRNAReason = strings(numFrames,1);
 trialPostEqSINRPerLayer = strings(numFrames,1);
+trialInterLayerMean=NaN(numFrames,1);
+trialInterLayerPerLayer=strings(numFrames,1);
+trialInterLayerSource=strings(numFrames,1);
+trialInterLayerStatus=repmat("unavailable_receiver_trial",numFrames,1);
 trialPostEqSINRRawEqualizer = NaN(numFrames,1);
 trialPostEqSINRRawEqualizerPerLayer = strings(numFrames,1);
 trialPostEqSINRDMRSResidualBoundApplied = false(numFrames,1);
@@ -466,6 +473,10 @@ trialResidualTimingPost = NaN(numFrames,1);
 trialTrueTiming = NaN(numFrames,1);
 trialTimingError = NaN(numFrames,1);
 trialRank = NaN(numFrames,1);
+trialMinimumSnapshotRank = NaN(numFrames,1);
+trialSpatialSpanRank = NaN(numFrames,1);
+trialSpatialRankDimensionLimit = NaN(numFrames,1);
+trialRankEstimateSource = strings(numFrames,1);
 trialCond = NaN(numFrames,1);
 trialConditionNumberStatus = strings(numFrames,1);
 trialRxAnt = NaN(numFrames,1);
@@ -560,6 +571,7 @@ trialCBGErr = NaN(numFrames,1);
 trialCBGCount = NaN(numFrames,1);
 trialCBGBLER = NaN(numFrames,1);
 trialPAPR = NaN(numFrames,1);
+trialPAPRMeasurementJSON = strings(numFrames,1);
 trialClipEvents = NaN(numFrames,1);
 trialSymErr = NaN(numFrames,1);
 trialSymTot = NaN(numFrames,1);
@@ -672,6 +684,7 @@ constellationChunks = cell(numFrames,1);
 waveformChunks = cell(numFrames,1);
 observedREChunks = cell(numFrames,1);
 signalDiagnostic = out.SignalDiagnostic;
+channelEstimateSnapshots = cell(numFrames,1);
 trialStatus = strings(numFrames,1);
 trialStatus(:) = "FAIL";
 trialCrash = false(numFrames,1);
@@ -808,6 +821,13 @@ for n = 1:numFrames
         end
 
         txArgs = {"ExecutionProfile", char(executionContract.Profile)};
+        if logical(sixgr.util.structGet(cfgFrame, ...
+                "lls6g.runtime.independentCellCommonCSIRSOwner", false))
+            % The shared physical stream emits the cell-common CSI-RS once.
+            % The UE-dedicated PDSCH still reserves those configured REs but
+            % must not emit a duplicate reference waveform.
+            txArgs = [txArgs {"CellCommonSignalOwnershipMode", "reserve_only"}]; %#ok<AGROW>
+        end
         if executionContract.Profile == "scheduler_truth"
             txArgs = [txArgs {"SchedulerGrantContext", grantSnapshotOverride}]; %#ok<AGROW>
         end
@@ -889,7 +909,9 @@ for n = 1:numFrames
             out.ChannelState = chStateIn;
             return;
         end
+        tx.PAPRMeasurementPoint = "post_power_context_pre_channel";
         if receivedCompletion
+            tx.PAPRMeasurementPoint = "post_node_rf_transmitter_composite_observation";
             tx.Waveform = preparedTransmission.readObservation( ...
                 p.Results.ReceivedContext.TransmitterObservation,preparedTransmission.NumPhysicalTransmitAntennas,"transmitter");
             trialTxWaveformColumns(n) = size(tx.Waveform,2);
@@ -906,6 +928,7 @@ for n = 1:numFrames
                 "ApplyPA", false, ...
                 "ApplyADC", false);
             tx.Waveform = cast(txRfOut.Waveform, "like", tx.Waveform);
+            tx.PAPRMeasurementPoint = "post_power_context_and_tx_rf_pre_channel";
             tx.TxRFImpairmentReplay = txRfOut.Replay;
             txInfo.TxRFImpairmentReplay = txRfOut.Replay;
             cfgFrame = sixgr.util.structSet(cfgFrame, "lls6g.txRFImpairmentReplay", txRfOut.Replay);
@@ -1159,6 +1182,7 @@ for n = 1:numFrames
             physicalMeasurementSource = "shared_stream_receiver_antenna_connector_observation";
         end
         rxArgs = {"ExecutionProfile", char(executionContract.Profile), ...
+            "ReceivedExecutionEvidence", replay, ...
             "Carrier", tx.Carrier, ...
             "PDSCH", tx.PDSCH, ...
             "PDSCHIndices", tx.PDSCHIndices, ...
@@ -1238,7 +1262,8 @@ for n = 1:numFrames
                 'TimingSearchWindowSamples',searchWindow, ...
                 'PhysicalMeasurementWaveform',physicalMeasurementWaveform, ...
                 'PhysicalMeasurementReferencePlane','receiver_antenna_connector_pre_composite_front_end', ...
-                'PhysicalMeasurementSource',physicalMeasurementSource);
+                'PhysicalMeasurementSource',physicalMeasurementSource, ...
+                'ReceivedExecutionEvidence',replay);
             assert(receivedDecision.DecodeAttempted && ~isempty(rx), ...
                 'sixgr:truth:RepeatedDLAckDispositionRequired', ...
                 'A previously decoded TB needs a protocol-only repeated ACK, not a fabricated PHY trial.');
@@ -1248,6 +1273,9 @@ for n = 1:numFrames
             [rx, ~] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgFrame, rxArgs{:});
         end
         if receivedCompletion
+            if logical(sixgr.util.structGet(cfgFrame,'outputs.phySignalDiagnosticEnabled',false))
+                channelEstimateSnapshots{n}=sixgr.phy.dl.capturePDSCHChannelEstimate(rx);
+            end
             out.ReceiveTiming=rx.ReceiveTiming;
             if qclEvidence.QCLTimingPriorUsed
                 assert(isequal(double(rx.ReceiveTiming.SearchWindowSamples(:).'),double(searchWindow(:).')), ...
@@ -1349,6 +1377,10 @@ for n = 1:numFrames
         trialPostEqSINRValueStatus(n) = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
         trialPostEqSINRNAReason(n) = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
         trialPostEqSINRPerLayer(n) = localFormatNumericVector(sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN));
+        trialInterLayerMean(n)=double(sixgr.util.structGet(rx,'ResidualInterLayerPowerMean',NaN));
+        trialInterLayerPerLayer(n)=localFormatNumericVector(sixgr.util.structGet(rx,'ResidualInterLayerPowerPerLayer',[]));
+        trialInterLayerSource(n)=string(sixgr.util.structGet(rx,'ResidualInterLayerPowerSource',''));
+        trialInterLayerStatus(n)=string(sixgr.util.structGet(rx,'ResidualInterLayerPowerStatus','unavailable_receiver_trial'));
         % Preserve receiver-produced diagnostics; do not reconstruct an
         % unbounded estimate or residual from the final scheduling SINR/EVM.
         trialPostEqSINRRawEqualizer(n) = double(sixgr.util.structGet(rx, "PostEqSINRRawEqualizer_dB", NaN));
@@ -1513,7 +1545,9 @@ for n = 1:numFrames
             unavailableCSIRSRow = localBuildCSIRSRuntimeTrialRow( ...
                 cfgFrame, grantSnapshot, tx, rx, unavailableMetrics, ...
                 frameIdx, trialSlot(n), snr_dB, slotDur_s);
-            if logical(unavailableCSIRSRow.RuntimeEventObserved)
+            if ~logical(sixgr.util.structGet(cfgFrame, ...
+                    "lls6g.runtime.independentCellCommonCSIRSOwner", false)) && ...
+                    logical(unavailableCSIRSRow.RuntimeEventObserved)
                 csirsRows(end+1, 1) = unavailableCSIRSRow; %#ok<AGROW>
             end
             blockErr = blockErr + 1;
@@ -1567,7 +1601,9 @@ for n = 1:numFrames
         trialCSIRSRQSource(n) = string(metrics.CSI_RSRQSource);
         csirsRow = localBuildCSIRSRuntimeTrialRow(cfgFrame, grantSnapshot, tx, rx, metrics, ...
             frameIdx, trialSlot(n), snr_dB, slotDur_s);
-        if logical(csirsRow.RuntimeEventObserved)
+        if ~logical(sixgr.util.structGet(cfgFrame, ...
+                "lls6g.runtime.independentCellCommonCSIRSOwner", false)) && ...
+                logical(csirsRow.RuntimeEventObserved)
             csirsRows(end+1, 1) = csirsRow; %#ok<AGROW>
         end
         receiverCQI = double(sixgr.util.normalizeReportedCQI(metrics.CQI));
@@ -1664,6 +1700,10 @@ for n = 1:numFrames
         trialSubbandCQIStatus(n) = string(metrics.SubbandCQIValueStatus);
         trialGain(n) = metrics.ChannelGain_dB;
         trialRank(n) = metrics.RankEstimate;
+        trialMinimumSnapshotRank(n) = metrics.MinimumSnapshotRank;
+        trialSpatialSpanRank(n) = metrics.SpatialSpanRank;
+        trialSpatialRankDimensionLimit(n) = metrics.SpatialRankDimensionLimit;
+        trialRankEstimateSource(n) = metrics.RankEstimateSource;
         trialCond(n) = metrics.ConditionNumber_dB;
         trialConditionNumberStatus(n) = string(metrics.ConditionNumberStatus);
         trialRxAnt(n) = metrics.NumRxAnt;
@@ -1739,10 +1779,14 @@ for n = 1:numFrames
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
         trialEVMLayers(n)=strjoin(compose('%.17g',modTrack.EVMPerLayer_rms),'|');
         trialEVMLayerSource(n)=modTrack.EVMPerLayerSource;
+        trialEVMEnergies(n,:)=[modTrack.EVMErrorEnergy, ...
+            modTrack.EVMReferenceEnergy,modTrack.EVMSymbolCount];
+        trialEVMStatus(n)=modTrack.EVMStatus;
+        trialEVMDomain(n)=modTrack.EVMComputationDomain;
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
         [dataSINR, dataSINRMeta] = localEVMProxySINR(modTrack);
-        if isfinite(dataSINR)
+        if ~isnan(dataSINR)
             trialEVMProxySINR(n) = double(dataSINR);
             trialEVMProxySINRSource(n) = string(dataSINRMeta.Source);
             trialEVMProxySINRValueRole(n) = string(dataSINRMeta.ValueRole);
@@ -1761,6 +1805,7 @@ for n = 1:numFrames
             trialCQIDerivedModulation(n) = string(cqiMod);
         end
         trialPAPR(n) = double(sixgr.util.structGet(modTrack, "PAPR_dB", NaN));
+        trialPAPRMeasurementJSON(n) = modTrack.PAPRMeasurementJSON;
         trialClipEvents(n) = double(sixgr.util.structGet(modTrack, "PeakClippingEvents", NaN));
         trialSymErr(n) = double(sixgr.util.structGet(modTrack, "SymbolErrors", NaN));
         trialSymTot(n) = double(sixgr.util.structGet(modTrack, "SymbolsCompared", NaN));
@@ -2164,6 +2209,7 @@ out.Notes = "Frames=" + string(numFrames) + ", SNR=" + string(snr_dB) + " dB";
 out.ConstellationSamples = localBuildConstellationSlice(numFrames);
 out.WaveformPreviewTable = localBuildWaveformPreviewSlice(numFrames);
 out.SignalDiagnostic = signalDiagnostic;
+out.ChannelEstimateSnapshots = channelEstimateSnapshots(1:numFrames);
 out.LinkAdaptationState = laState;
 out.StartFrameIndex = double(startFrameIndex);
 out.StartSlotIndex = double(startSlotIndex);
@@ -2377,6 +2423,16 @@ end
         T.ComputeLatencySource = trialComputeLatencySource(idx);
         T.EVMPerLayer_rms=trialEVMLayers(idx);
         T.EVMPerLayerSource=trialEVMLayerSource(idx);
+        T.EVMErrorEnergy=trialEVMEnergies(idx,1);
+        T.EVMReferenceEnergy=trialEVMEnergies(idx,2);
+        T.EVMSymbolCount=trialEVMEnergies(idx,3);
+        T.EVMStatus=trialEVMStatus(idx);
+        T.EVMComputationDomain=trialEVMDomain(idx);
+        T.EVMEnergyUnit=repmat("sum_squared_complex_symbol_amplitude_not_joules",height(T),1);
+        T.PAPRMeasurementJSON=trialPAPRMeasurementJSON(idx);
+        T.PilotReconstructionResidualRatio_dB=T.NMSE_dB;
+        T.NMSE_dB=NaN(height(T),1);
+        T.NMSESource=repmat("unavailable_without_independent_channel_reference",height(T),1);
         T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
         qclTable=struct2table(trialQCLRuntime(idx));
         for qclName=string(qclTable.Properties.VariableNames)
@@ -2569,6 +2625,10 @@ end
         T.PostEqSINRValueStatus = trialPostEqSINRValueStatus(idx);
         T.PostEqSINRNAReason = trialPostEqSINRNAReason(idx);
         T.PostEqSINRPerLayer_dB = trialPostEqSINRPerLayer(idx);
+        T.ResidualInterLayerPowerMean=trialInterLayerMean(idx);
+        T.ResidualInterLayerPowerPerLayer=trialInterLayerPerLayer(idx);
+        T.ResidualInterLayerPowerSource=trialInterLayerSource(idx);
+        T.ResidualInterLayerPowerStatus=trialInterLayerStatus(idx);
         T.PostEqSINRRawEqualizer_dB = trialPostEqSINRRawEqualizer(idx);
         T.PostEqSINRRawEqualizerPerLayer_dB = trialPostEqSINRRawEqualizerPerLayer(idx);
         T.PostEqSINRDMRSResidualBoundApplied = trialPostEqSINRDMRSResidualBoundApplied(idx);
@@ -2666,6 +2726,10 @@ end
         T.SINRComputationMethod = trialSINRComputationMethod(idx);
         T.ConfiguredSNRLikeSourceRejected = trialConfiguredSNRLikeSourceRejected(idx);
         T.ConditionNumberStatus = trialConditionNumberStatus(idx);
+        T.MinimumSnapshotRank = trialMinimumSnapshotRank(idx);
+        T.SpatialSpanRank = trialSpatialSpanRank(idx);
+        T.SpatialRankDimensionLimit = trialSpatialRankDimensionLimit(idx);
+        T.RankEstimateSource = trialRankEstimateSource(idx);
         T.BeamScoreVector_dB = trialBeamScoreVector(idx);
         T.TopBeamIndexSet = trialTopBeamIndexSet(idx);
         T.TopBeamGainSet_dB = trialTopBeamGainSet(idx);
@@ -3272,6 +3336,10 @@ row.PowerReferencePlane = string(sixgr.util.structGet(rxObs, "PowerReferencePlan
 row.CQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
 row.RI = double(sixgr.util.structGet(metrics, "RI", NaN));
 row.PMI = double(sixgr.util.structGet(metrics, "PMI", NaN));
+for field=["CSIReportConfigID","CSIUCIChannel","CSIPart1BitsToken","CSIPart2BitsToken"]
+    row.(field)=string(sixgr.util.structGet(metrics,field,""));
+end
+row.CSIConfigurationEpoch=double(sixgr.util.structGet(metrics,"CSIConfigurationEpoch",NaN));
 for field=["PMI_I11","PMI_I12","PMI_I13","PMI_I2"]
     row.(field)=double(sixgr.util.structGet(metrics,field,NaN));
 end
@@ -3330,6 +3398,10 @@ row.ConditionNumber_dB = double(sixgr.util.structGet(metrics, ...
 row.ConditionNumberStatus = string(sixgr.util.structGet(metrics, ...
     "ConditionNumberStatus", "not_evaluated"));
 row.RankEstimate = double(sixgr.util.structGet(metrics, "RankEstimate", NaN));
+row.MinimumSnapshotRank = metrics.MinimumSnapshotRank;
+row.SpatialSpanRank = metrics.SpatialSpanRank;
+row.SpatialRankDimensionLimit = metrics.SpatialRankDimensionLimit;
+row.RankEstimateSource = metrics.RankEstimateSource;
 row.SingularValues = string(sixgr.util.structGet(metrics, "SingularValues", ""));
 row.SpatialChannelEstimateConvention = string(sixgr.util.structGet(metrics, ...
     "SpatialChannelEstimateConvention", ""));
@@ -3363,6 +3435,8 @@ row.SpatialSignatureDomain = string(sixgr.util.structGet(metrics, ...
 row.SpatialSignatureStatus = string(sixgr.util.structGet(metrics, ...
     "SpatialSignatureStatus", "not_attempted"));
 row.SINR_dB = double(sixgr.util.structGet(metrics, "SINR_dB", NaN));
+row.CQIEffectiveSINR_dB = double(sixgr.util.structGet(metrics, "CQIEffectiveSINR_dB", NaN));
+row.CQIEffectiveSINRSource = string(sixgr.util.structGet(metrics, "CQIEffectiveSINRSource", ""));
 row.SINRSource = string(sixgr.util.structGet(metrics, "SINRSource", ""));
 row.SINRValueRole = string(sixgr.util.structGet(metrics, "SINRValueRole", ""));
 row.SINRValueStatus = string(sixgr.util.structGet(metrics, "SINRValueStatus", ""));
@@ -3574,6 +3648,8 @@ row = struct( ...
     "HestDimensions", "", "HestRxPorts", NaN, "HestTxPorts", NaN, ...
     "CQI", NaN, "RI", NaN, "PMI", NaN, "LI", NaN, "CRI", NaN, "CQISource", "", ...
     "PMI_I11",NaN,"PMI_I12",NaN,"PMI_I13",NaN,"PMI_I2",NaN, ...
+    "CSIReportConfigID","","CSIConfigurationEpoch",NaN,"CSIUCIChannel","", ...
+    "CSIPart1BitsToken","","CSIPart2BitsToken","", ...
     "CSIReportMode", "", "CSIPayloadBitLength", NaN, "CSIPayloadHex", "", ...
     "CSIComputationStatus", "not_attempted", "CSIComputationErrorIdentifier", "", ...
     "CSIMeasurementID", "", "CSIMeasurementDigest", "", ...
@@ -3594,6 +3670,8 @@ row = struct( ...
     "PMIType", "", "PMICodebookMode", "", ...
     "ConditionNumber_dB", NaN, "ConditionNumberStatus", "not_evaluated", ...
     "RankEstimate", NaN, "SingularValues", "", ...
+    "MinimumSnapshotRank", NaN, "SpatialSpanRank", NaN, ...
+    "SpatialRankDimensionLimit", NaN, "RankEstimateSource", "", ...
     "SpatialChannelEstimateConvention", "", ...
     "SpatialChannelSnapshotCount", NaN, ...
     "SpatialSignatureToken", "", "SpatialSignatureSHA256", "", ...
@@ -3609,6 +3687,7 @@ row = struct( ...
     "SpatialSignatureDomain", "", ...
     "SpatialSignatureStatus", "not_attempted", ...
     "SINR_dB", NaN, "SINRSource", "", ...
+    "CQIEffectiveSINR_dB", NaN, "CQIEffectiveSINRSource", "", ...
     "SINRValueRole", "", "SINRValueStatus", "", "SINRMeasurementDomain", "", ...
     "PowerReferencePlane", "", "CSIMeasurementAvailable", false, ...
     "ReportSourceSlot", NaN, "ReportDueSlot", NaN, "ReportDeliveredSlot", NaN, ...
@@ -5367,9 +5446,22 @@ assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:DLTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ConditionNumberStatus = strings(0,1);
+T.MinimumSnapshotRank = zeros(0,1);
+T.SpatialSpanRank = zeros(0,1);
+T.SpatialRankDimensionLimit = zeros(0,1);
+T.RankEstimateSource = strings(0,1);
 T.ComputeLatencySource = strings(0,1);
 T.EVMPerLayer_rms = strings(0,1);
 T.EVMPerLayerSource = strings(0,1);
+T.EVMErrorEnergy = zeros(0,1);
+T.EVMReferenceEnergy = zeros(0,1);
+T.EVMSymbolCount = zeros(0,1);
+T.EVMStatus = strings(0,1);
+T.EVMComputationDomain = strings(0,1);
+T.EVMEnergyUnit = strings(0,1);
+T.PAPRMeasurementJSON = strings(0,1);
+T.PilotReconstructionResidualRatio_dB=zeros(0,1);
+T.NMSESource=strings(0,1);
 T.QCLMeasurementStatus = strings(0,1);
 T.EstimatedChannelReferenceCorrelationMagnitude = zeros(0,1);
 T.SymbolDecisionStatus = strings(0,1);
@@ -5479,6 +5571,10 @@ T.PostEqSINRValueRole = strings(0,1);
 T.PostEqSINRValueStatus = strings(0,1);
 T.PostEqSINRNAReason = strings(0,1);
 T.PostEqSINRPerLayer_dB = strings(0,1);
+T.ResidualInterLayerPowerMean=NaN(0,1);
+T.ResidualInterLayerPowerPerLayer=strings(0,1);
+T.ResidualInterLayerPowerSource=strings(0,1);
+T.ResidualInterLayerPowerStatus=strings(0,1);
 T.PostEqSINRRawEqualizer_dB = zeros(0,1);
 T.PostEqSINRRawEqualizerPerLayer_dB = strings(0,1);
 T.PostEqSINRDMRSResidualBoundApplied = false(0,1);
@@ -5808,13 +5904,14 @@ meta = struct( ...
     "Definition", "10log10(1/EVM_rms^2)_post_decode_diagnostic_proxy_not_ts38214_post_equalization_sinr", ...
     "SchedulingEligible", false, ...
     "NAReason", "evm_unavailable");
-evm = double(sixgr.util.structGet(modTrack, "EVM_rms", NaN));
-if ~(isscalar(evm) && isfinite(evm) && evm > 0)
-    return;
-end
-sinr_dB = 10 * log10(1 / max(evm .^ 2, eps));
+[~, diagnostic] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
+sinr_dB = diagnostic.DiagnosticEVMProxySINR_dB;
+if isnan(sinr_dB), return; end
 meta.ValueStatus = "OK";
 meta.NAReason = "";
+if isinf(sinr_dB)
+    meta.ValueStatus = "zero_error_unbounded_diagnostic";
+end
 end
 
 function [cqi, modulation, targetCodeRate, mcsIndex] = localCQIAndMCSFromSINR(sinr_dB, cfg, direction)
@@ -6141,6 +6238,8 @@ metrics = struct( ...
     "PMI", NaN, ...
     "LI", NaN, ...
     "PMI_I11",NaN,"PMI_I12",NaN,"PMI_I13",NaN,"PMI_I2",NaN, ...
+    "CSIReportConfigID","","CSIConfigurationEpoch",NaN,"CSIUCIChannel","", ...
+    "CSIPart1BitsToken","","CSIPart2BitsToken","", ...
     "CRI", NaN, ...
     "PMIType", "", ...
     "PMICodebookMode", "", ...
@@ -6156,6 +6255,8 @@ metrics = struct( ...
     "CSIMeasurementSlot", NaN, ...
     "ChannelGain_dB", NaN, ...
     "RankEstimate", NaN, ...
+    "MinimumSnapshotRank", NaN, "SpatialSpanRank", NaN, ...
+    "SpatialRankDimensionLimit", NaN, "RankEstimateSource", "", ...
     "ConditionNumber_dB", NaN, ...
     "ConditionNumberStatus", "not_evaluated", ...
     "SingularValues", "", ...
@@ -6296,6 +6397,8 @@ if hasCSIMeasurement || ~strictCSI
     csi = sixgr.phy.dl.CSI_Feedback(Hcsi, nVarCSI, cfg, csiArgs{:});
     metrics.CSIComputationStatus = "runtime_measured_csi_complete";
     metrics.SINR_dB = double(sixgr.util.structGet(csi, "SINR_dB", NaN));
+    metrics.CQIEffectiveSINR_dB = double(sixgr.util.structGet(csi, "CQIEffectiveSINR_dB", NaN));
+    metrics.CQIEffectiveSINRSource = string(sixgr.util.structGet(csi, "CQIEffectiveSINRSource", ""));
     metrics.SINRSource = string(sixgr.util.structGet(csi, "SINRSource", ""));
     metrics.SINRValueRole = string(sixgr.util.structGet(csi, "SINRValueRole", ""));
     metrics.SINRValueStatus = string(sixgr.util.structGet(csi, "SINRValueStatus", ""));
@@ -6307,6 +6410,10 @@ if hasCSIMeasurement || ~strictCSI
     metrics.CQISource = "dl_csi_feedback:" + csiChannelSource;
     metrics.RI = double(sixgr.util.structGet(csi, "RI", NaN));
     metrics.PMI = double(sixgr.util.structGet(csi, "PMI", NaN));
+    for field=["CSIReportConfigID","CSIUCIChannel","CSIPart1BitsToken","CSIPart2BitsToken"]
+        metrics.(field)=string(sixgr.util.structGet(csi,field,""));
+    end
+    metrics.CSIConfigurationEpoch=double(sixgr.util.structGet(csi,"CSIConfigurationEpoch",NaN));
     for field=["PMI_I11","PMI_I12","PMI_I13","PMI_I2"]
         metrics.(field)=double(sixgr.util.structGet(csi,field,NaN));
     end
@@ -6430,10 +6537,6 @@ if isfinite(gain) && gain > 0
     if isfinite(pilotNmseLin) && pilotNmseLin >= 0
         metrics.NMSE_dB = 10 * log10(max(pilotNmseLin, eps));
         metrics.DetectionMetric = detectionMetric;
-    else
-        nmseLin = max(double(nVar), eps) / max(gain, eps);
-        metrics.NMSE_dB = 10 * log10(max(nmseLin, eps));
-        metrics.DetectionMetric = 1 / (1 + nmseLin);
     end
 end
 
@@ -6502,12 +6605,17 @@ if muMimoEnabled && duplexMode == "FDD"
     metrics.SpatialSignatureDomain = char(signatureInfo.SpatialDomain);
     metrics.SpatialSignatureStatus = "available_measured_fdd_dl_transmit_subspace";
 end
-try
-    [metrics.ConditionNumber_dB, metrics.ConditionNumberStatus, metrics.RankEstimate, singularValues] = ...
-        sixgr.mimo.channelConditionNumber(Hwb);
-    metrics.SingularValues = localFormatNumericVector(singularValues);
-catch
-end
+% A frequency/time covariance span can exceed Nrx. It is not the number
+% of simultaneous spatial modes and must never masquerade as measured RI.
+spatial = sixgr.mimo.channelSpatialRankEvidence(Hwb);
+metrics.RankEstimate = spatial.MaximumSnapshotNumericalRank;
+metrics.MinimumSnapshotRank = spatial.MinimumSnapshotNumericalRank;
+metrics.SpatialSpanRank = spatial.AggregateSpatialSpanRank;
+metrics.SpatialRankDimensionLimit = spatial.SimultaneousRankDimensionLimit;
+metrics.RankEstimateSource = spatial.RankSource + ":maximum_snapshot";
+metrics.ConditionNumber_dB = spatial.AggregateConditionNumber_dB;
+metrics.ConditionNumberStatus = spatial.AggregateConditionNumberStatus;
+metrics.SingularValues = localFormatNumericVector(spatial.AggregateSingularValues);
 beamMetrics = localComputeBeamMetrics(Hwb, cfg, metrics);
 beamFields = fieldnames(beamMetrics);
 for f = 1:numel(beamFields)
@@ -8916,6 +9024,10 @@ T = table( ...
     'ChannelEstimateSource','StrictReceiverEvidenceOk', ...
     'StrictOk','TruthStatus','Source','Status'});
 T.ConfiguredSNR_dB = double(snr_dB);
+T.ResidualInterLayerPowerMean=rx.ResidualInterLayerPowerMean;
+T.ResidualInterLayerPowerPerLayer=localFormatNumericVector(rx.ResidualInterLayerPowerPerLayer);
+T.ResidualInterLayerPowerSource=string(rx.ResidualInterLayerPowerSource);
+T.ResidualInterLayerPowerStatus=string(rx.ResidualInterLayerPowerStatus);
 T.AppliedAWGNSNR_dB = double(channelEvidence.SNRdB);
 T.SignalEnergyPerOccupiedRE = channelEvidence.SignalEnergyPerOccupiedRE;
 T.SNRReferencePlane = channelEvidence.SNRReferencePlane;
@@ -8952,7 +9064,8 @@ rxCSIObservation = sixgr.util.structGet(rx, "CSIRSObservation", struct());
 csiRuntimeObserved = logical(sixgr.util.structGet(txCSIEvent, "Scheduled", false)) || ...
     logical(sixgr.util.structGet(txCSIEvent, "Transmitted", false)) || ...
     logical(sixgr.util.structGet(rxCSIObservation, "Observed", false));
-if csiRuntimeObserved
+if csiRuntimeObserved && ~logical(sixgr.util.structGet(cfg, ...
+        "lls6g.runtime.independentCellCommonCSIRSOwner", false))
     csiMetrics = localAnalyzeChannelMetrics( ...
         sixgr.util.structGet(rx, "ChannelEstimate", []), ...
         double(gridNoiseVariance), cfg, rx, options.PrecoderBundle);

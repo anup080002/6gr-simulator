@@ -56,7 +56,7 @@ if assignment.Format==0
         assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
             'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
             'HARQ-bearing Format 0 requires an available retained measured gNB UL clock.');
-        [raw,timing]=prior.alignObservation(cfg,observation,slot0);
+        [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
     end
     args=[args {'NoiseVarianceMode','noncoherent_correlation'}];
 else

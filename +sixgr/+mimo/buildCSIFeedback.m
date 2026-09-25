@@ -45,6 +45,7 @@ if ~isempty(measurement)
     end
     if ~isempty(measurement.InterferenceCovariance)
         cfg.InterferenceCovariance = measurement.InterferenceCovariance;
+        cfg.InterferenceCovarianceIncludesNoise = measurement.InterferenceCovarianceIncludesNoise;
     end
 end
 

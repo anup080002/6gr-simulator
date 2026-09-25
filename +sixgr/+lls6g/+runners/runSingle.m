@@ -2082,6 +2082,27 @@ result = struct();
 result.Ok = all(summaryT.Ok);
 result.SummaryTable = summaryT;
 result.ArtifactIndexTable = artifactIndexT;
+if localShouldWriteCSV(scfg) && baseProfile == "waveform_bundle"
+    % Keep child truth artifacts intact. The parent contains explicitly
+    % labeled cross-run tables and comparative images, not copied PHY truth.
+    pythonRuntime = sixgr.lls6g.runners.resolveWebGUIContractPython( ...
+        "RequireMySQL", false);
+    if ~logical(sixgr.util.structGet(pythonRuntime, "Ok", false))
+        error("sixgr:lls6g:runner:SweepComparisonPythonUnavailable", ...
+            "Sweep comparative publication requires the configured report Python runtime.");
+    end
+    scriptPath = fullfile(localRepoRoot(), "scripts", "export_lls_sweep.py");
+    command = sprintf('"%s" "%s" --run-folder "%s"', ...
+        char(pythonRuntime.Executable), scriptPath, char(runFolder));
+    [comparisonStatus, comparisonOutput] = system(command);
+    result.SweepComparisonOk = comparisonStatus == 0;
+    result.SweepComparisonMessage = string(comparisonOutput);
+    result.Ok = result.Ok && result.SweepComparisonOk;
+    if ~result.SweepComparisonOk
+        warning("sixgr:lls6g:runner:SweepComparisonFailed", ...
+            "Shared sweep export failed; child evidence is retained: %s", comparisonOutput);
+    end
+end
 end
 
 function indexT = localBuildSweepArtifactIndex(runFolder, summaryT, baseProfile, scfg)

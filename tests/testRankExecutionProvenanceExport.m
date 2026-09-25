@@ -85,6 +85,13 @@ end
 assert(isstruct(out) && istable(out.TrialTable) && height(out.TrialTable) == 1, ...
     "%s throughput run must return one trial row.", direction);
 T = out.TrialTable;
+assert(out.Ok && all(T.ChannelEstimateAvailable), ...
+    '%s provenance fixture must execute its receiver: %s',direction,string(out.Notes));
+assert(all(ismember(["MinimumSnapshotRank","SpatialSpanRank", ...
+    "SpatialRankDimensionLimit","RankEstimateSource"], string(T.Properties.VariableNames))) && ...
+    T.RankEstimate<=T.SpatialRankDimensionLimit && ...
+    contains(T.RankEstimateSource,"numerical_svd_not_RI"), ...
+    '%s physical trials must separate per-snapshot numerical rank and aggregate span.',direction);
 required = ["RankSelectionPolicy","RankSelectionSource","RankDecisionReason", ...
     "RankDowngradeApplied","MaxSupportedLayers"];
 assert(all(ismember(required, string(T.Properties.VariableNames))), ...
@@ -176,6 +183,13 @@ cfg.channel.awgnOnly = true;
 cfg.run.interferenceExecutionMode = "none";
 cfg.mac.scheduler.fastNREApprox = false;
 cfg.mac.scheduler.tbsMode = "faithful";
+% Match the explicitly selected table-1 MCS 4 in both directions. The
+% default rate belongs to a different MCS; retaining it makes calibration
+% fail before any receiver/rank evidence exists.
+cfg.phy.pdsch.codeRate = 308/1024;
+cfg.phy.pdsch.targetCodeRate = 308/1024;
+cfg.phy.pusch.codeRate = 308/1024;
+cfg.phy.pusch.targetCodeRate = 308/1024;
 if direction == "DL"
     cfg.phy.pdsch.nLayers = 1;
     cfg.phy.pdsch.numLayers = 1;

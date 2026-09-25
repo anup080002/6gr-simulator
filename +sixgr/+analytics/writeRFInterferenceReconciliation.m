@@ -631,6 +631,9 @@ elseif sixgr.analytics.identityAWGNRuntimeEvidence(T,cfg,configuredTx,configured
     % propagation-array or element-pattern claim. Never label it as one.
     out.RuntimeArrayModelOk = true;
     out.RuntimeArrayEvaluationStatus = "explicit_awgn_identity_spatial_operator";
+    if ~isempty(sixgr.util.structGet(cfg,'channel.awgnSpatialMatrixDL',[]))
+        out.RuntimeArrayEvaluationStatus="explicit_awgn_fixed_matrix_spatial_operator";
+    end
 else
     out.RuntimeArrayModelOk = false;
     out.RuntimeArrayEvaluationStatus = "runtime_array_model_mismatch";

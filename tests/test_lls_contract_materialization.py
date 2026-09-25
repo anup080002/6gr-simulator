@@ -592,6 +592,39 @@ def test_explicit_evidence_shapes_preserve_flat_truth_without_enabling_fake_curv
     assert reason == "all_zero_metric_values"
 
 
+@pytest.mark.parametrize("samples", [
+    [[0, 0.030], [0, 0.034]],
+    [[0.01, 0.01]],
+    [[0.01, 0.02], [0.01, 0.02]],
+])
+def test_hol_first_grant_observations_are_not_suppressed_as_short_curves(samples) -> None:
+    source = "packet_flow/csv/live_application_packet_delivery_ledger.csv"
+    payload = materializer._encode_csv(
+        ["EnqueueTime_s", "FirstGrantTime_s"], samples)
+    existing = {source: {"artifact_id": 921, "logical_path": source}}
+    result = materializer._runtime_contract_gap_chart(
+        "HOL delay over time", existing, lambda _: payload, 91)
+    assert result is not None
+    assert result["source_row_count"] == len(samples)
+    _, rows = materializer._decode_csv_dicts(result["csv_bytes"])
+    assert [float(row["x_value"]) for row in rows] == [first for _, first in samples]
+    assert [float(row["y_value"]) for row in rows] == pytest.approx(
+        [1000 * (first - enqueue) for enqueue, first in samples])
+    png = materializer._rasterize_contract_png(
+        result["img_bytes"], source_mime_type="image/svg+xml",
+        source_logical_path="internal://test/hol-observations.vector")
+    assert not materializer._png_low_information_reason(png)
+
+
+def test_hol_missing_or_reversed_packet_times_do_not_create_samples() -> None:
+    source = "packet_flow/csv/live_application_packet_delivery_ledger.csv"
+    payload = materializer._encode_csv(
+        ["EnqueueTime_s", "FirstGrantTime_s"], [[0, ""], [0.02, 0.01]])
+    existing = {source: {"artifact_id": 921, "logical_path": source}}
+    assert materializer._runtime_contract_gap_chart(
+        "HOL delay over time", existing, lambda _: payload, 91) is None
+
+
 def test_reliability_uses_weighted_bit_denominator_and_exports_wilson_interval() -> None:
     payload = materializer._encode_csv(  # noqa: SLF001
         ["BitErrors", "BitsCompared", "CRCPass", "ConfiguredSNR_dB"],
@@ -1601,6 +1634,9 @@ def test_exact_phy_signal_diagnostic_materializes_only_observed_array_boundaries
     decoded_header, decoded_rows = materializer._decode_csv_dicts(phase["csv_bytes"])  # noqa: SLF001
     assert "phase_deg" in decoded_header
     assert {row["grid_sha256"] for row in decoded_rows} == {"abc"}
+    assert {float(row["raster_color_offset"]) for row in decoded_rows} == {0.0}
+    assert b"Receiver Hest phase (deg)" in phase["img_bytes"]
+    assert b"all_zero_heatmap_cells" not in phase["img_bytes"]
 
 
 def test_runtime_antenna_pattern_uses_actual_sampled_array_object() -> None:

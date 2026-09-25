@@ -255,12 +255,13 @@ trial.EstimatedCFO_Hz=double(estimatedCFO); trial.CFOEstimatorInfo=cfoInfo;
 serialized = tx.Serialization;
 reference = [serialized.Sequence1.Bits;serialized.Sequence2.Bits];
 decoded = [rx.DecodedSequence1;rx.DecodedSequence2];
-[bitErrors,bitsCompared,contentMismatch] = localCompare(reference,decoded);
+comparison = sixgr.link.compareUCIBitEvidence(reference,decoded);
 trial.ReceiverDTX = logical(rx.DTX);
 trial.CRCFailed = ~logical(rx.CRCPassed);
-trial.ContentMismatch = contentMismatch;
-trial.BitErrors = bitErrors;
-trial.BitsCompared = bitsCompared;
+trial.ContentMismatch = comparison.ContentMismatch;
+trial.BitErrors = comparison.BitErrors;
+trial.BitsCompared = comparison.BitsCompared;
+trial.BitComparisonStatus = comparison.BitComparisonStatus;
 trial.Receiver = rx;
 trial.Transmitter = tx;
 trial.Rx = rx;
@@ -298,7 +299,7 @@ trial.ReceiverExpectedBitCountSource="receiver_length_context";
 trial.ReceiverFields=rx.DecodedFields;
 trial.UCIExpectedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(reference);
 trial.UCIDecodedBitVector = sixgr.phy.pucch.PUCCHUtil.bitString(decoded);
-trial.UCIBitErrorVector = localErrorVector(reference,decoded);
+trial.UCIBitErrorVector = comparison.UCIBitErrorVector;
 trial.UCICodedBitCount = numel(tx.Coding.CodedBits);
 trial.TransmitterUCICRCBitCount=tx.Coding.Plan.CRCBits;
 trial.TransmitterUCICRCApplicable=tx.Coding.Plan.CRCBits>0;
@@ -312,7 +313,7 @@ if trial.CRCApplicable
 else
     trial.CRCPass = NaN;
 end
-trial.UCIContentMatch = ~contentMismatch;
+trial.UCIContentMatch = ~comparison.ContentMismatch;
 trial.AckObserved = ~isempty(decoded) && logical(decoded(1));
 trial.DTXFlag = logical(rx.DTX);
 trial.DetectionMetric = rx.DetectionMetric;
@@ -394,7 +395,7 @@ trial.ReceiverEVMPercent = double(sixgr.util.structGet(rx,"EVMPercent",NaN));
 trial.ReceiverEVMApplicable = logical(sixgr.util.structGet(rx, ...
     "EVMApplicable",false));
 trial.CRCOutcome = localCRCOutcome(trial.CRCApplicable,trial.CRCFailed);
-trial.DetectionOutcome = localDetectionOutcome(rx.DTX,contentMismatch);
+trial.DetectionOutcome = localDetectionOutcome(rx.DTX,comparison.ContentMismatch);
 trial.Crash = false;
 trial.CrashSource = "";
 trial.CrashMessage = "";
@@ -544,6 +545,7 @@ trial = struct( ...
     "CRCFailed",false,"ContentMismatch",false, ...
     "WaveformGenerated",false,"StateChanged",false, ...
     "GrantCreated",false,"BitErrors",NaN,"BitsCompared",0, ...
+    "BitComparisonStatus","unavailable_no_completed_receiver_comparison", ...
     "NoiseVariance",NaN,"FailureReason","","ErrorID","","ErrorMessage","", ...
     "ErrorStack","", ...
     "Seed",double(opt.Seed),"SNR_dB",double(opt.SNR_dB), ...
@@ -946,24 +948,6 @@ end
     waveform,txInfo,args{:});
 value = double(mean(perPortPower,"omitnan"));
 activeSymbolIndices = double(info.ActiveSymbolIndices(:));
-end
-
-function [errors,count,mismatch] = localCompare(reference,decoded)
-count = min(numel(reference),numel(decoded));
-errors = abs(numel(reference)-numel(decoded));
-if count > 0
-    errors = errors+sum(reference(1:count)~=decoded(1:count));
-end
-mismatch = errors ~= 0;
-end
-
-function value = localErrorVector(reference,decoded)
-n=max(numel(reference),numel(decoded));
-bits=false(n,1);
-common=min(numel(reference),numel(decoded));
-if common>0,bits(1:common)=reference(1:common)~=decoded(1:common);end
-if common<n,bits(common+1:end)=true;end
-value=sixgr.phy.pucch.PUCCHUtil.bitString(int8(bits));
 end
 
 function value = localAWGNSNR(opt)

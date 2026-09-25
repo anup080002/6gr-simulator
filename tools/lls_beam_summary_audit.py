@@ -10,8 +10,11 @@ SCOPES = {
     "ComponentCarrier": ("ComponentCarrier", "ComponentCarrierId"),
     "BWPId": ("BWPId", "ActiveBWP", "BWPID"),
     "BurstID": ("BurstID", "SSBBurstID"), "Frame": ("Frame",), "Slot": ("Slot",),
+    "PowerReferencePlane": ("PowerReferencePlane",),
 }
 QUALITY = ("PostEqSINR_dB", "MeasuredWidebandSINR_dB", "MeasuredTrialSINR_dB", "SINR_dB")
+NORMALIZED_PLANE = "normalized_fixed_esn0_unit_occupied_re_es"
+NORMALIZED_RSRP = "SS_RSRP_dB_re_UnitOccupiedRE_Es"
 
 
 def number(value):
@@ -60,15 +63,21 @@ def reconcile_beam_summary(rows, sources):
             failures.append(f"row{index}:no_exact_source_scope_or_operating_point")
             continue
         if metric in ("P1SelectedSSBBeamIndex", "P1SelectedSSBBeamScore", "P1SSBSweptBeamCount"):
-            eligible = [r for r in scoped if math.isfinite(number(r.get("SS_RSRP_dBm")))
+            # The declared power domain, not whichever column is finite,
+            # determines the measured score. Never compare dBm with unit Es.
+            normalized = row.get("PowerReferencePlane") == NORMALIZED_PLANE
+            score_axis = NORMALIZED_RSRP if normalized else "SS_RSRP_dBm"
+            if (normalized or present(row.get("ScoreAxis", ""))) and row.get("ScoreAxis") != score_axis:
+                failures.append(f"row{index}:score_axis_power_domain_mismatch")
+            eligible = [r for r in scoped if math.isfinite(number(r.get(score_axis)))
                         and math.isfinite(number(r.get("SSBIndex")))]
             if not eligible:
                 failures.append(f"row{index}:winner_without_scored_physical_ssb")
                 continue
-            winner = max(eligible, key=lambda r: number(r["SS_RSRP_dBm"]))
+            winner = max(eligible, key=lambda r: number(r[score_axis]))
             expected = {
                 "P1SelectedSSBBeamIndex": number(winner["SSBIndex"]),
-                "P1SelectedSSBBeamScore": number(winner["SS_RSRP_dBm"]),
+                "P1SelectedSSBBeamScore": number(winner[score_axis]),
                 "P1SSBSweptBeamCount": len({number(r.get("SSBIndex")) for r in scoped
                                            if math.isfinite(number(r.get("SSBIndex")))}),
             }[metric]
@@ -79,10 +88,19 @@ def reconcile_beam_summary(rows, sources):
             quality_rows = [winner]
         else:
             quality_rows = scoped
-            if metric == "P1SS_RSRP_dBm":
-                powers = [number(r.get("SS_RSRP_dBm")) for r in scoped
-                          if math.isfinite(number(r.get("SS_RSRP_dBm")))]
-                # Descriptive mean of the exported dBm observations, not a
+            power_metrics = {
+                "P1SS_RSRP_dBm": "SS_RSRP_dBm",
+                "P1" + NORMALIZED_RSRP: NORMALIZED_RSRP,
+                "P1SS_RSRPRawObserved_dB_re_UnitOccupiedRE_Es": "SS_RSRPRawObserved_dB_re_UnitOccupiedRE_Es",
+            }
+            if metric in power_metrics:
+                power_axis = power_metrics[metric]
+                normalized = row.get("PowerReferencePlane") == NORMALIZED_PLANE
+                if normalized != (power_axis != "SS_RSRP_dBm"):
+                    failures.append(f"row{index}:rsrp_metric_power_domain_mismatch")
+                powers = [number(r.get(power_axis)) for r in scoped
+                          if math.isfinite(number(r.get(power_axis)))]
+                # Descriptive mean in the declared observation domain, not a
                 # combined received-power measurement or serving-RSRP estimate.
                 if (not powers or number(row.get("SampleCount")) != len(powers)
                         or not math.isclose(number(row.get("MeanValue")), sum(powers)/len(powers), rel_tol=0, abs_tol=1e-9)):

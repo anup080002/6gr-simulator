@@ -3,8 +3,9 @@ function decision = resolveSRSPUCCHCollision( ...
 %RESOLVESRSPUCCHCOLLISION Exact shared-carrier SRS/PUCCH RE decision.
 %
 % FDD/TDD decides whether this UL occasion exists.  Once it exists, SRS
-% and PUCCH occupy the same physical UL carrier and their exact Toolbox RE
-% coordinates determine whether both transmissions can execute.
+% and PUCCH occupy the same physical UL carrier. TS 38.214 6.2.1 uses
+% symbol overlap for the SAME UE, even when its subcarriers are disjoint.
+% Cross-UE orthogonal scheduling retains its existing exact-RE test.
 
 arguments
     cfg (1,1) struct
@@ -52,10 +53,31 @@ pucchCoordinates = localTimeFrequencyCoordinates( ...
     pucchAllocation.ActualCoordinates0Based);
 overlapCoordinates = intersect(srsCoordinates, pucchCoordinates, ...
     "rows", "stable");
-collision = ~isempty(overlapCoordinates);
+srsSymbols=unique(srsCoordinates(:,2),'stable');
+pucchSymbols=unique(pucchCoordinates(:,2),'stable');
+overlapSymbols=intersect(srsSymbols,pucchSymbols,'stable');
+pucchUE=double(localOptional(pucchGrant,"UEIndex",NaN));
+sameUE=isfinite(pucchUE) && pucchUE==srsUEIndex;
+sameUESymbolCollision=sameUE && ~isempty(overlapSymbols);
+if sameUESymbolCollision && strictSRS.ResourceType=="aperiodic"
+    uci=lower(string(localOptional(pucchGrant,"UCIType","")));
+    assert(contains(uci,"harq") || contains(uci,"sr"), ...
+        'sixgr:phy:frame:AperiodicSRSPUCCHPriorityTimingRequired', ...
+        'Aperiodic SRS versus CSI-only PUCCH requires its received trigger and T_proc,2 priority proof.');
+end
+collision = ~isempty(overlapCoordinates) || sameUESymbolCollision;
+droppedSymbols=[]; retainedSymbols=srsSymbols;
+if sameUESymbolCollision
+    droppedSymbols=overlapSymbols;
+    retainedSymbols=setdiff(srsSymbols,overlapSymbols,'stable');
+end
 if collision
     action = "defer_srs_preserve_scheduled_pucch";
     status = "COLLISION_RESOLVED";
+    if sameUESymbolCollision && ~isempty(retainedSymbols)
+        action="drop_overlapping_srs_symbols_preserve_pucch";
+        status="PARTIAL_SRS_SYMBOL_SUPPRESSION_REQUIRED";
+    end
 else
     action = "execute_srs";
     status = "NO_COLLISION";
@@ -76,6 +98,12 @@ decision = struct( ...
     "SRSRECount", double(size(srsCoordinates, 1)), ...
     "PUCCHRECount", double(size(pucchCoordinates, 1)), ...
     "OverlapRECount", double(size(overlapCoordinates, 1)), ...
+    "SameUE",logical(sameUE), ...
+    "SameUESymbolCollision",logical(sameUESymbolCollision), ...
+    "OverlapSymbolCount",double(numel(overlapSymbols)), ...
+    "DroppedSRSSymbols0Based",localSymbolList(droppedSymbols), ...
+    "RetainedSRSSymbols0Based",localSymbolList(retainedSymbols), ...
+    "SameUEPriorityAuthority","TS38.214_6.2.1_same_carrier_symbol_overlap", ...
     "Collision", logical(collision), ...
     "Action", string(action), ...
     "Status", string(status), ...
@@ -86,6 +114,12 @@ decision = struct( ...
     "Exact", true, ...
     "ApproximationUsed", false, ...
     "OverlapCoordinates0Based", overlapCoordinates);
+end
+
+function value=localSymbolList(symbols)
+% mat2str(zeros(1,0)) differs between MATLAB releases. Export one explicit
+% empty-list representation instead of a MATLAB constructor expression.
+if isempty(symbols), value="[]"; else, value=string(mat2str(reshape(symbols,1,[]))); end
 end
 
 function data = localConfiguredResource(cfg, resourceId, rnti)

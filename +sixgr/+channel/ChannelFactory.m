@@ -1080,7 +1080,7 @@ classdef ChannelFactory
             end
             if ~(logical(sixgr.util.structGet(state, "UseFading", false)) && isfield(state, "Obj") && ~isempty(state.Obj))
                 if sixgr.channel.IdentityAWGNRuntime.isState(state)
-                    assert(size(x,2)==state.NumTxAnt && state.NumTxAnt==state.NumRxAnt, ...
+                    assert(size(x,2)==state.NumTxAnt, ...
                         'ChannelFactory:IdentityAWGNPortMismatch', ...
                         'The identity operator consumes one physical column per port.');
                     if identityReference
@@ -1091,6 +1091,10 @@ classdef ChannelFactory
                     replay.RuntimeChannelPathDelays_s=0;
                     replay.RuntimeChannelCanonicalInputSamples=size(x,1);
                     replay.RuntimeChannelObjectClockExact=true;
+                    if state.Meta.IdentityOperatorSource=="explicit_matrix_AWGN_shared_sample_operator"
+                        y=x*state.Meta.AWGNSpatialMatrix.';
+                        replay.RuntimeChannelTimingTruthSource="executed_fixed_matrix_operator_zero_delay";
+                    end
                 end
                 replay.ChannelFadingExecutionStatus = "runtime_channel_state_awgn_or_not_materialized";
                 replay.RuntimeChannelEndSample = replay.RuntimeChannelStartSample + size(x, 1);
@@ -1103,6 +1107,11 @@ classdef ChannelFactory
                 end
                 replay.RuntimeChannelOutputWaveformSHA256 = ...
                     replay.RuntimeChannelInputWaveformSHA256;
+                if sixgr.channel.IdentityAWGNRuntime.isState(state) && ...
+                        state.Meta.IdentityOperatorSource=="explicit_matrix_AWGN_shared_sample_operator"
+                    replay.RuntimeChannelOutputWaveformSHA256= ...
+                        sixgr.channel.ChannelFactory.runtimeNumericArraySHA256(y);
+                end
                 replay.ChannelRealizationId = ...
                     sixgr.channel.ChannelFactory.runtimeChannelRealizationId(state, replay);
                 return;

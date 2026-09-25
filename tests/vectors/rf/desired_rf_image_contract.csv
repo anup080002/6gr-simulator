@@ -17,7 +17,7 @@ rf_noise_figure_cascade.png,Noise-figure cascade,Stage,Noise figure,rf_noise_fig
 rf_blocker_desensitization.png,Receiver blocker desensitization,Blocker power,Desensitization,rf_blocker_trials.csv,900,600,1,2,20
 rf_intermodulation_spectrum.png,Receiver intermodulation spectrum,Frequency,Power,rf_intermodulation_trials.csv,900,600,1,2,20
 rf_evm_by_modulation.png,EVM by modulation,Modulation,EVM,rf_evm_measurement.csv,900,600,1,2,20
-rf_aclr_spectrum.png,Adjacent-channel leakage,Frequency offset,Power,rf_aclr_measurement.csv,900,600,1,2,20
+rf_aclr_spectrum.png,Adjacent-channel leakage ratio,Case index,ACLR (dB),rf_aclr_measurement.csv,900,600,1,2,20
 rf_sem_obue_spectrum.png,Spectrum emission and OBUE,Frequency offset,Power,rf_sem_obue_measurement.csv,900,600,1,2,20
 rf_ul_power_control_convergence.png,UL power-control convergence,Time,Transmit power,rf_power_control_state.csv,900,600,1,2,20
 rf_end_to_end_bler.png,End-to-end RF-impaired BLER,SNR,BLER,rf_receiver_metrics.csv,900,600,1,2,20

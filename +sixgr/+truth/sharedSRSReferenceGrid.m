@@ -59,5 +59,7 @@ evidence=struct('Source',"applied_channel_gain_truth_shared_NR_path_filter_refer
     'GainOrPhaseFitted',false,'AdditionalChannelExecutions',0);
 if base.Source=="executed_identity_AWGN_operator"
     evidence.Source="applied_identity_AWGN_operator_SRS_port_reference";
+elseif base.Source=="executed_fixed_matrix_AWGN_operator"
+    evidence.Source="applied_fixed_matrix_AWGN_operator_SRS_port_reference";
 end
 end

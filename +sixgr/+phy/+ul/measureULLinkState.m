@@ -48,6 +48,7 @@ metrics = struct( ...
     "ReferenceEffectiveDisturbancePower", NaN, ...
     "ReferencePowerSource", "", ...
     "PilotSINR_dB", NaN, ...
+    "PilotPerRBSINR_dB", [], ...
     "PilotSINRSource", "", ...
     "PilotSINRValueRole", "diagnostic_reference_signal_quality_not_for_scheduling", ...
     "PilotSINRValueStatus", "", ...
@@ -152,6 +153,9 @@ metrics.ReferenceEffectiveDisturbancePower = double(sixgr.util.structGet(referen
 metrics.ReferencePowerSource = string(sixgr.util.structGet(reference,"Source",""));
 measuredSINRAvailable = isfinite(sinr_dB);
 metrics.PilotSINR_dB = double(sinr_dB);
+% Retain the exact per-RB receiver calculation for measurement auditing;
+% this is not a post-equalization layer SINR or an SRS scheduling anchor.
+metrics.PilotPerRBSINR_dB = double(perRBSINR_dB);
 metrics.PilotSINRSource = char(string(sinrSource));
 metrics.PilotSINRValueRole = "diagnostic_reference_signal_quality_not_for_scheduling";
 metrics.PilotSINRValueStatus = char(string(sinrStatus));
@@ -247,7 +251,7 @@ rankEstimate = NaN;
 cond_dB = NaN;
 gainLin = mean(abs(Hwb(:)).^2, "omitnan");
 if isfinite(gainLin) && gainLin > 0
-    gain_dB = 10 * log10(max(gainLin, eps));
+    gain_dB = 10 * log10(gainLin);
 end
 try
     [cond, ~, rankEst] = sixgr.mimo.channelConditionNumber(Hwb);
@@ -446,7 +450,10 @@ for rb = 1:numel(perRBSINR_dB)
         disturbance = max(disturbance, reference.NoiseVariance);
     end
     if isfinite(signal) && signal > 0 && isfinite(disturbance) && disturbance >= 0
-        perRBSINR_dB(rb) = 10*log10(signal/max(disturbance,eps));
+        % Disturbance is measured in this grid's power units. Machine
+        % epsilon is not a physical noise floor; preserve scaling and the
+        % exact positive-signal/zero-disturbance limit.
+        perRBSINR_dB(rb) = 10*log10(signal/disturbance);
     end
 end
 end

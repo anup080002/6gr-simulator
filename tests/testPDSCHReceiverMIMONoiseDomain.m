@@ -117,3 +117,39 @@ for re = 1:nRE
     end
 end
 end
+
+function testCoupledLayersRetainExecutedInterference(testCase)
+setup6GRSimToolkit('Verbose',false);
+fixture=StrictPDSCHChainFixture.create(2,'NPRB',4);
+tx=sixgr.pdsch.PDSCHTransmitter(fixture.TransportBlocks,fixture.Assignment, ...
+    fixture.ResourcePlan,fixture.Carrier,fixture.ReferenceConfig, ...
+    'PrecoderBundle',fixture.PrecoderBundle);
+H=[1 .65;.25 1]; variance=.05;
+stream=RandStream('mt19937ar','Seed',48119);
+noise=sqrt(variance/(2*tx.OFDMInfo.SampleToGridNoiseVarianceGain))* ...
+    complex(randn(stream,size(tx.Waveform)),randn(stream,size(tx.Waveform)));
+receiver=rmfield(fixture.ReceiverConfig,'ReferenceChannelGain');
+receiver.ChannelModel='STATIC-MIMO'; receiver.NPhysicalRxAntennas=2;
+receiver.NoiseVariance=variance;
+rx=sixgr.pdsch.PDSCHReceiver(tx.Waveform*H.'+noise,fixture.Assignment, ...
+    fixture.ResourcePlan,fixture.Carrier,fixture.ReferenceConfig,receiver, ...
+    'CodingPlans',tx.CodingPlans,'PrecoderBundle',fixture.PrecoderBundle);
+eq=rx.EqualizationInfo.EqualizerResult;
+e=sixgr.phy.rx.interLayerEvidence(eq);
+verifyGreaterThan(testCase,min(e.ResidualInterLayerPowerPerLayer),0);
+% Independently reconstruct SINR's inter-layer + disturbance denominator
+% from the exact applied weights, not a second fitted channel/noise value.
+C=rx.EqualizationInfo.DisturbanceCovariance;
+residual=zeros(eq.NRE,2);
+for re=1:eq.NRE
+    W=reshape(eq.W(re,:,:),2,2);
+    A=reshape(eq.EffectiveResponseWH(re,:,:),2,2);
+    for layer=1:2
+        other=3-layer;
+        residual(re,layer)=abs(A(layer,other))^2/abs(A(layer,layer))^2;
+        total=residual(re,layer)+real(W(layer,:)*C*W(layer,:)');
+        verifyEqual(testCase,1/eq.PostEqSINRLinear(re,layer),total,'AbsTol',1e-10);
+    end
+end
+verifyEqual(testCase,e.ResidualInterLayerPowerPerLayer,mean(residual,1),'AbsTol',1e-12);
+end

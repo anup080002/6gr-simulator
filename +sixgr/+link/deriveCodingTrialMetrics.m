@@ -124,6 +124,20 @@ cbCount = NaN;
 cbgErr = NaN;
 cbgCount = NaN;
 
+% Canonical receiver accounting preserves unsegmented TB outcomes and
+% segmented per-CB outcomes, including mixed codeword layouts.
+measuredCount = double(sixgr.util.structGet(rx, "MeasuredCodeBlockDecodeCount", NaN));
+measuredErrors = double(sixgr.util.structGet(rx, "MeasuredCodeBlockDecodeErrorCount", NaN));
+if isscalar(measuredCount) && isscalar(measuredErrors) && ...
+        isfinite(measuredCount) && measuredCount>0 && isfinite(measuredErrors)
+    assert(measuredCount==fix(measuredCount) && measuredErrors==fix(measuredErrors) && ...
+        measuredErrors>=0 && measuredErrors<=measuredCount, ...
+        'sixgr:link:InvalidCodeBlockEvidence','Invalid measured code-block population.');
+    cbCount=measuredCount; cbErr=measuredErrors;
+    [cbgErr,cbgCount]=localResolveCBGErrorStats(cbErr,cbCount,cfg);
+    return;
+end
+
 cbCrcErr = double(sixgr.util.structGet(rx, "CodeBlockCRCError", []));
 cbCrcErr = cbCrcErr(isfinite(cbCrcErr));
 if ~isempty(cbCrcErr)

@@ -8,9 +8,18 @@ classdef CoupledWaveformStream < handle
         SampleRateHz
         Pending = struct('ID',{},'Kind',{},'UE',{},'Context',{},'Planes',{})
         DataTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
+        CSIRSTransmissions = struct('ComponentID',{},'SignalFamily',{}, ...
+            'ServingCell',{},'Slot',{},'FirstActiveSample',{}, ...
+            'CommittedAtSample',{},'EndSampleExclusive',{}, ...
+            'SampleRateHz',{},'PhysicalConfigurationEpoch',{}, ...
+            'ResourceSetID',{},'ResourceIDs',{},'WaveformMappedRE',{}, ...
+            'ReferenceConfiguration',{},'ReportConfiguration',{}, ...
+            'FrameIdentity',{})
         PUCCHTransmissions = struct('Identity',{},'FirstActiveSample',{},'CommittedAtSample',{},'WaveformToElementMatrix',{})
         ControlObservationDispositions = struct('ID',{},'UE',{},'Reason',{},'CompletedAtSample',{},'TransferProof',{})
+        SRSSuppressionLedger = struct('SRSObservationID',{},'PUCCHObservationID',{},'UE',{},'Decision',{},'Cancellation',{})
         PUSCHReceiveOnlyRegistrations = struct('ID',{},'UE',{},'GrantContextID',{},'StartSample',{},'EndSampleExclusive',{})
+        ContentionWindows = struct('UE',{},'RunId',{},'StartTicks',{})
     end
     properties (Access=private)
         Nodes = struct('ID',{},'Direction',{},'NumAntennas',{},'RF',{})
@@ -200,6 +209,44 @@ classdef CoupledWaveformStream < handle
             obj.Decisions(end+1)=struct('ID',id,'Kind',"RARExpiry",'UE',ue, ...
                 'Context',struct('RunId',ra.RunId,'ExpiryTicks',window.ExpiryTicksExclusive));
         end
+        function armContentionWindow(obj,ue,receiver)
+            assert(isa(receiver,'sixgr.phy.ra.Msg4ReceiveWindow'), ...
+                'sixgr:truth:ContentionReceiverRequired','Use the independent UE contention receiver.');
+            duplicate=any([obj.ContentionWindows.UE]==ue & ...
+                string({obj.ContentionWindows.RunId})==string(receiver.RAConfig.RunId));
+            assert(~duplicate, ...
+                'sixgr:truth:DuplicateContentionWindow','Arm the UE window once from its Msg3 transmission.');
+            % A decoded identity mismatch may end the previous attempt
+            % before its old observations drain. Those retain their RunId
+            % and must not prevent arming a different, causally retried UE
+            % attempt. The completion dispatcher ignores retired RunIds.
+            link=obj.linkForUE(ue,"DL"); ch=obj.channelState(ue,"DL");
+            w=receiver.Window; fs=obj.SampleRateHz;
+            obj.ContentionWindows(end+1)=struct('UE',ue,'RunId',receiver.RAConfig.RunId, ...
+                'StartTicks',w.StartTicks);
+            for slot=reshape(w.MonitoringSlots,1,[])
+                first=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot,0,w.Numerology);
+                last=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol(slot+1,0,w.Numerology);
+                a=localTicksSample(first.Ticks+w.ClockOffsetTicks,fs);
+                b=min(localTicksSample(last.Ticks+w.ClockOffsetTicks,fs)+double(ch.ChannelPadSamples), ...
+                    localTicksSample(w.ExpiryTicksExclusive,fs));
+                obj.Serial=obj.Serial+1; id="contention_monitor_"+obj.Serial;
+                for plane=["gnb_"+link.Cell+":tx","ue_"+ue+"_rx:pre_rf","ue_"+ue+"_rx:post_rf"]
+                    obj.Events.observe(plane,id,a,b);
+                end
+                context=struct('RunId',receiver.RAConfig.RunId,'AbsoluteSlot',slot);
+                obj.Pending(end+1)=struct('ID',id,'Kind',"Contention",'UE',ue,'Context',context, ...
+                    'Planes',struct('ReceiverID',{},'Observation',{},'Segments',{}));
+            end
+            for kind=["ContentionStart","ContentionExpiry"]
+                ticks=w.StartTicks;
+                if kind=="ContentionExpiry", ticks=w.ExpiryTicksExclusive; end
+                obj.Serial=obj.Serial+1; id=lower(kind)+"_"+obj.Serial;
+                obj.Events.decisionBoundary(id,localTicksSample(ticks,fs));
+                obj.Decisions(end+1)=struct('ID',id,'Kind',kind,'UE',ue, ...
+                    'Context',struct('RunId',receiver.RAConfig.RunId,'EventTicks',ticks));
+            end
+        end
         function queueUplinkControl(obj,ue,prepared,context)
             assert(isa(prepared,'sixgr.link.PreparedUplinkControlTransmission') && ...
                 prepared.SampleRateHz==obj.SampleRateHz && prepared.PhysicalTiming.WaveformTimingApplied, ...
@@ -294,6 +341,34 @@ classdef CoupledWaveformStream < handle
             else
                 context.AwaitingPreparation=false;
                 obj.Pending(armed).Context=context;
+            end
+            obj.resolvePreparedSRSPUCCHPriority(ue);
+        end
+        function resolvePreparedSRSPUCCHPriority(obj,ue)
+            % Do this only after actual UE encoding. A gNB receive-only
+            % PUCCH window (e.g. missed DCI) must not suppress a UE's SRS.
+            srsIndices=find(string({obj.Pending.Kind})=="SRS" & [obj.Pending.UE]==ue);
+            pucchIndices=find(string({obj.Pending.Kind})=="PUCCH" & [obj.Pending.UE]==ue);
+            for si=srsIndices
+                for pi=pucchIndices
+                    if ~isfield(obj.Pending(pi).Context,'Prepared'), continue; end
+                    s=obj.Pending(si); p=obj.Pending(pi);
+                    decision=sixgr.phy.frame.resolvePreparedSRSPUCCHPriority( ...
+                        s.Context.Prepared,p.Context.Prepared);
+                    if ~decision.Collision, continue; end
+                    assert(isempty(decision.RetainedSymbols0Based), ...
+                        'sixgr:truth:PartialSRSSymbolSuppressionRequired', ...
+                        'Do not cancel a whole SRS resource when some symbols must still transmit.');
+                    receipt=obj.Events.cancelUnemittedComponent("ue_"+ue,s.ID);
+                    proof=struct('SRSObservationID',s.ID,'PUCCHObservationID',p.ID, ...
+                        'UE',ue,'Decision',decision,'Cancellation',receipt);
+                    obj.SRSSuppressionLedger(end+1)=proof;
+                    obj.Pending(si).Context.SuppressionProof=proof;
+                    obj.Pending(si).Kind="SuppressedSRSObservation";
+                    % Keep its registered physical observation windows. They
+                    % still capture real noise/other signals, not a decoded SRS.
+                    break;
+                end
             end
         end
         function id=queuePDCCH(obj,ue,prepared,context)
@@ -762,6 +837,18 @@ classdef CoupledWaveformStream < handle
                 prepared.TransmitProjectionMatrix=matrix;
                 prepared.TransmitStartSample=first;
                 samples=samples*cast(matrix.','like',samples);
+            elseif kind=="CSIRS"
+                assert(isstruct(prepared) && isscalar(prepared) && ...
+                    string(sixgr.util.structGet(prepared,'ExecutionStage',''))== ...
+                    "csirs_waveform_prepared_not_received" && ...
+                    prepared.NumSamples==size(samples,1) && ...
+                    prepared.NumPhysicalTransmitAntennas==size(samples,2), ...
+                    'sixgr:truth:SharedCSIRSPreparationAuthority', ...
+                    ['Queue the independently prepared cell-common CSI-RS ' ...
+                     'physical-port waveform, never a PDSCH-derived substitute.']);
+                prepared.TransmitStartSample=first;
+                prepared.ReceiveStartSample=first;
+                prepared.ReceiveEndSampleExclusive=first+prepared.NumSamples;
             elseif kind~="PBCH"
                 error('sixgr:truth:UnsupportedSharedDownlinkPreparation','No sample-domain adapter for %s.',kind);
             end
@@ -780,6 +867,11 @@ classdef CoupledWaveformStream < handle
             end
             obj.Serial=obj.Serial+1; id="observation_"+obj.Serial;
             context.Prepared=prepared;
+            if kind=="CSIRS"
+                context.ComponentID=component;
+                context.TransmitterPlane=tx+":tx";
+                context.ServingCell=double(link.Cell);
+            end
             planes=[tx+":tx","ue_"+ue+"_rx:pre_rf","ue_"+ue+"_rx:post_rf"];
             for plane=planes
                 obj.Events.observe(plane,id,first,first+prepared.NumSamples);
@@ -970,6 +1062,50 @@ classdef CoupledWaveformStream < handle
                         if p.Kind=="PUCCH"
                             assert(isfield(p.Context,'Prepared'),'sixgr:truth:UnencodedPUCCHObservation', ...
                                 'A received PUCCH window cannot become a trial without actual prior encoding.');
+                        end
+                        if p.Kind=="CSIRS"
+                            componentID=string(p.Context.ComponentID);
+                            prior=find(string({obj.CSIRSTransmissions.ComponentID})==componentID);
+                            if isempty(prior)
+                                txPlane=string(p.Context.TransmitterPlane);
+                                planeIndex=find(string({p.Planes.ReceiverID})==txPlane);
+                                assert(isscalar(planeIndex) && ...
+                                    p.Planes(planeIndex).Observation.isComplete(), ...
+                                    'sixgr:truth:IncompletePhysicalCSIRSTransmission', ...
+                                    'CSI-RS transmission evidence requires its completed gNB TX observation.');
+                                txObservation=p.Planes(planeIndex).Observation;
+                                prepared=p.Context.Prepared;
+                                txSamples=txObservation.readComplete();
+                                firstActive=find(any(txSamples~=0,2),1,'first');
+                                assert(~isempty(firstActive) && ...
+                                    txObservation.StartSample==prepared.TransmitStartSample && ...
+                                    txObservation.EndSampleExclusive==prepared.ReceiveEndSampleExclusive && ...
+                                    txObservation.EndSampleExclusive<=obj.Events.NextSampleIndex, ...
+                                    'sixgr:truth:InvalidPhysicalCSIRSTransmissionClock', ...
+                                    'CSI-RS TX evidence must come from the executed nonzero shared-clock interval.');
+                                reference=prepared.ReferenceIdentity;
+                                csirsEvent=prepared.Tx.CSIRSRuntimeEvent;
+                                config=p.Context.Config;
+                                obj.CSIRSTransmissions(end+1)=struct( ...
+                                    'ComponentID',componentID,'SignalFamily',"CSI-RS", ...
+                                    'ServingCell',double(p.Context.ServingCell), ...
+                                    'Slot',double(p.Context.Slot), ...
+                                    'FirstActiveSample',double(txObservation.StartSample+firstActive-1), ...
+                                    'CommittedAtSample',double(obj.Events.NextSampleIndex), ...
+                                    'EndSampleExclusive',double(txObservation.EndSampleExclusive), ...
+                                    'SampleRateHz',double(obj.SampleRateHz), ...
+                                    'PhysicalConfigurationEpoch',double(obj.Physical.ConfigurationEpoch), ...
+                                    'ResourceSetID',double(reference.ResourceSetID), ...
+                                    'ResourceIDs',string(reference.ResourceIDs), ...
+                                    'WaveformMappedRE',double(csirsEvent.NRE), ...
+                                    'ReferenceConfiguration',config.phy.csirs, ...
+                                    'ReportConfiguration',config.phy.csi.reportConfiguration, ...
+                                    'FrameIdentity',config.phy.frame.DefaultIdentity);
+                            else
+                                assert(isscalar(prior), ...
+                                    'sixgr:truth:DuplicatePhysicalCSIRSTransmission', ...
+                                    'One cell-common CSI-RS component may be committed only once.');
+                            end
                         end
                         completed(end+1)=struct('Kind',p.Kind,'UE',p.UE,'Context',p.Context,'Planes',p.Planes); %#ok<AGROW>
                         if p.Kind=="PUSCHReceiveOnly"

@@ -13,17 +13,17 @@ end
 % Keep scenario identity and receiver/burst scopes, including missing identity
 % as missing. Never infer a UE, carrier, BWP, or burst from a row number.
 scope=["RunID","ExecutionID","UEIndex","ServingCell","ComponentCarrier", ...
-    "BWPId","BurstID","Frame","Slot"];
+    "BWPId","BurstID","Frame","Slot","PowerReferencePlane"];
 aliases={"RunID","ExecutionID",["UEIndex","UEID"], ...
     ["ServingCell","CellID","BaseStationID"], ...
     ["ComponentCarrier","ComponentCarrierId"],["BWPId","ActiveBWP","BWPID"], ...
-    ["BurstID","SSBBurstID"],"Frame","Slot"};
+    ["BurstID","SSBBurstID"],"Frame","Slot","PowerReferencePlane"};
 scopeValues=cell(size(scope));
 for j=1:numel(scope)
     name=findName(vars,aliases{j});
     if name=="", scopeValues{j}=repmat(missing,height(sourceT),1);
     else, scopeValues{j}=sourceT.(name); end
-    if ismember(scope(j),["RunID","ExecutionID","BurstID"])
+    if ismember(scope(j),["RunID","ExecutionID","BurstID","PowerReferencePlane"])
         values=scopeValues{j}; absent=ismissing(values);
         values=string(values); values(absent)=missing; scopeValues{j}=values;
     end
@@ -64,9 +64,13 @@ for g=1:numel(groups)
         % This is a measured strongest-SS-RSRP comparison, not evidence that
         % the access receiver selected/decoded this candidate. Do not compare
         % RSRP and correlation metrics or use an internal one-based beam ID.
-        if findName(vars,"SSBIndex")=="" || findName(vars,"SS_RSRP_dBm")=="", continue; end
+        scoreAxis="SS_RSRP_dBm";
+        if string(base.PowerReferencePlane)=="normalized_fixed_esn0_unit_occupied_re_es"
+            scoreAxis="SS_RSRP_dB_re_UnitOccupiedRE_Es";
+        end
+        if findName(vars,"SSBIndex")=="" || findName(vars,scoreAxis)=="", continue; end
         beams=numeric(sample,findName(vars,"SSBIndex"));
-        score=numeric(sample,findName(vars,"SS_RSRP_dBm"));
+        score=numeric(sample,findName(vars,scoreAxis));
         assert(~any(isfinite(beams)&(beams<0|beams~=fix(beams))), ...
             'sixgr:truth:InvalidPhysicalSSBIndex','SSBIndex must be a nonnegative integer.');
         valid=isfinite(score)&isfinite(beams);
@@ -75,7 +79,7 @@ for g=1:numel(groups)
         chosen=quality(base,sample(winner,:));
         chosen.SelectionPolicy="maximum_observed_SS_RSRP";
         chosen.SelectionEvidenceRole="posthoc_measured_candidate_comparison_not_receiver_decision";
-        chosen.ScoreAxis="SS_RSRP_dBm";
+        chosen.ScoreAxis=scoreAxis;
         chosen.BeamIndexConvention="physical_SSB_index_zero_based";
         chosen.TieCount=nnz(score(valid)==best);
         chosen.TiePolicy="first_source_row_among_equal_scores";

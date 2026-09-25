@@ -1,4 +1,4 @@
-function [T,diagnosticContext]=exportSharedChannelObservation(root,T,planes,prepared,planeID)
+function [T,diagnosticContext,captures,replays]=exportSharedChannelObservation(root,T,planes,prepared,planeID)
 % Publish actually executed coefficients after reception, never a receiver H.
 % Cropped-array, processor-waveform, manifest and file hashes are distinct.
 arguments
@@ -31,6 +31,14 @@ for k=1:numel(captures)
         string({links.TX})==capture.TX & string({links.RX})==capture.RX);
     assert(isscalar(link),'sixgr:truth:ChannelCaptureLinkMismatch','Exactly one executed physical link must own each capture.');
     replay=link.Replay;
+    % Propagation loss is executed by the shared physical owner AFTER the
+    % channel filter, and lives in LossReplay, not the filter's Replay.
+    % Return the actual segment loss for post-decode channel scoring.
+    replay.AppliedLargeScaleGain_dB=double(link.LossReplay.AppliedLargeScaleGain_dB);
+    assert(abs(10^(replay.AppliedLargeScaleGain_dB/20)- ...
+        double(link.LossReplay.AppliedLargeScaleAmplitudeGain))<= ...
+        64*eps(max(1,double(link.LossReplay.AppliedLargeScaleAmplitudeGain))), ...
+        'sixgr:truth:ChannelCaptureLossMismatch','The executed segment loss must match its applied amplitude.');
     replays{k}=replay;
     nt=r.NumTransmitAntennas; nr=r.NumReceiveAntennas; ns=r.EndSampleExclusive-r.StartSample;
     assert(r.SampleRateHz==observation.SampleRateHz && ...

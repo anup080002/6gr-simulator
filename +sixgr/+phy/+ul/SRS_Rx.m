@@ -30,6 +30,7 @@ ip.addParameter('ConfiguredNoiseVariance', [], @(x) isempty(x) || isnumeric(x));
 ip.addParameter('ConfiguredNoiseVarianceSource', 'configured_awgn_derivation', @(x) ischar(x) || isstring(x));
 ip.addParameter('StrictNoiseVarianceRequired', [], @(x) isempty(x) || islogical(x) || (isnumeric(x) && isscalar(x)));
 ip.addParameter('TimingSearchWindowSamples',[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
+ip.addParameter('ReceivedExecutionEvidence',struct(),@(x)isstruct(x)&&isscalar(x));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -66,6 +67,30 @@ end
 Hest = [];
 nVarEst = [];
 estInfo = struct();
+estimator=string(sixgr.util.structGet(cfg,'phy.srs.runtimeChannelEstimator','nr_channel_estimate'));
+assert(isscalar(estimator) && any(estimator==["nr_channel_estimate","flat_static_awgn_ls"]), ...
+    'sixgr:phy:ul:InvalidSRSEstimator','Select a supported explicit SRS estimator.');
+if estimator=="flat_static_awgn_ls"
+    assert(isempty(opt.NoiseVar) && isempty(opt.ConfiguredNoiseVariance), ...
+        'sixgr:phy:ul:FlatSRSNoiseOverrideForbidden', ...
+        'Flat practical SRS estimates noise from received pilots, not injected variance.');
+    assert(strcmpi(string(sixgr.util.structGet(cfg,'channel.model','')),'AWGN') && ...
+        sixgr.channel.IdentityAWGNRuntime.enabled(cfg), ...
+        'sixgr:phy:rx:FlatAWGNObservationRequired','Flat SRS LS is restricted to the explicit AWGN lab operator.');
+    modelEvidence=sixgr.phy.rx.assertFlatStaticAWGNObservation(opt.ReceivedExecutionEvidence);
+    reference=nrResourceGrid(carrier,srs.NumSRSPorts);
+    reference(srsInd)=srsSym;
+    K=size(rxGrid,1); L=size(rxGrid,2); R=size(rxGrid,3); P=double(srs.NumSRSPorts);
+    X=reshape(reference,K*L,P); Y=reshape(rxGrid,K*L,R);
+    occupied=any(X~=0,2);
+    estInfo=sixgr.phy.rx.estimateFlatAWGNMultiportChannel(Y(occupied,:),X(occupied,:));
+    Hest=repmat(reshape(estInfo.GainPerPortReceiveBranch.',1,1,R,P),K,L,1,1);
+    nVarEst=estInfo.NoiseVariance;
+    estInfo.ModelEvidence=modelEvidence;
+    estInfo.EngineUsed="received_joint_flat_static_awgn_ls";
+    estInfo.FrequencyHoppingHandled=localSRSFrequencyHoppingEnabled(srs);
+    estInfo.PrimaryEstimatorFallbackUsed=false;
+else
 try
     [avgWindow, srsSymbols] = localSRSChannelEstimateWindow(carrier, srs, srsInd, srsInfo);
     cdmLengths = localSRSCDMLengths(srs);
@@ -94,6 +119,7 @@ catch primaryCause
             'FallbackEstimatorFailureMessage',string(fallbackCause.message));
     end
 end
+end
 noiseCandidate = opt.NoiseVar;
 noiseSource = "runtime_metadata";
 noiseTransformInfo = struct( ...
@@ -107,6 +133,9 @@ configuredNoiseTransformInfo = struct( ...
 if isempty(noiseCandidate)
     noiseCandidate = nVarEst;
     noiseSource = "runtime_channel_estimate";
+    if estimator=="flat_static_awgn_ls"
+        noiseSource="received_flat_static_awgn_joint_ls_residual_dof_corrected";
+    end
 else
     [noiseCandidate, noiseTransformInfo] = sixgr.phy.waveform.convertNoiseVarianceToGridDomain( ...
         noiseCandidate, ofdmInfo, ...

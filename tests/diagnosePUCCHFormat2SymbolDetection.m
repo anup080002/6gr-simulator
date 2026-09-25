@@ -44,7 +44,8 @@ for k=1:numel(inputs)
         'DetectionThreshold',threshold);
     decoded=sixgr.phy.pucch.UCIDecoder.decode(soft{1},A);
     energyRatio=mean(abs(symbols).^2)/variance;
-    metric=sixgr.phy.pucch.PUCCHDetector.selectMetric(resource.Format,false,correlation,energyRatio);
+    metric=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+        resource.Format,false,correlation,energyRatio,A);
     decision=sixgr.phy.pucch.PUCCHDetector.decide(resource.Format,metric,threshold,decoded.Bits);
     receiverAccepted=decision.Detected && numel(decoded.Bits)==A && decoded.CRCPassed;
     if k==1

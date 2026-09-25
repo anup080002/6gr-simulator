@@ -104,7 +104,9 @@ if opt.SaveCSV
             end
             continue;
         end
-        sixgr.util.csvWriteTable(sidecarPath, sidecarTable);
+        % These versioned KPI contracts include unavailable-value columns.
+        % Blank evidence is not permission to change their declared schema.
+        sixgr.util.csvWriteTable(sidecarPath, sidecarTable, "PreserveSchema", true);
         artifacts.csv{end+1} = sidecarPath; %#ok<AGROW>
     end
     reportJSONDir = localKPIReportJSONDir(reportCSVDir);

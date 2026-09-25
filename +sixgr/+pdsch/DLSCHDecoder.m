@@ -132,7 +132,8 @@ if numel(transportBlock) ~= double(plan.TransportBlockSize)
 end
 cbCRCError = logical(double(cbCRCError(:)) ~= 0);
 if double(plan.NumCodeBlocks) == 1
-    cbCRCError = false;
+    % No CRC24B is present: an empty population is not a passed check.
+    cbCRCError = false(0,1);
 end
 decodePass = logical(tbCRCPass && ~any(cbCRCError));
 

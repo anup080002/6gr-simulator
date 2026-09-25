@@ -69,6 +69,7 @@ classdef ReceivedDLHARQState
             parser.addParameter('PhysicalMeasurementWaveform',[]);
             parser.addParameter('PhysicalMeasurementReferencePlane',"");
             parser.addParameter('PhysicalMeasurementSource',"");
+            parser.addParameter('ReceivedExecutionEvidence',struct());
             parser.parse(varargin{:}); opts=parser.Results;
             if ~fresh && prior.Decoded
                 rx=[];

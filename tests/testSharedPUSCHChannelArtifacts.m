@@ -137,7 +137,7 @@ measurement=table(0,loss,"SSB-0","analytic_component_pathloss_selector_fixture",
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
-localQueueSRS(state,cfg,5);
+if ~receivedAuthority, localQueueSRS(state,cfg,5); end
 for slot=1:lastSlot
     if independentCompletion
         % Real slot entry retains the source-slot trace required by the
@@ -147,6 +147,16 @@ for slot=1:lastSlot
     end
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if receivedAuthority && slot==4
+        % Freeze the slot-5 sounding only after real SS/PBCH acquisition.
+        % Preparing it at initialization retained the declared phase=6
+        % clock even after actual SS/PBCH established phase=0. Preparation
+        % in slot 4 still precedes the timing-advanced slot-5 transmission.
+        assert(isfield(state,'TestReceivedDLClock') && ...
+            state.TestReceivedDLClock.AvailableAtSample<=owner.Events.NextSampleIndex && ...
+            isequaln(state.ConnectedULTimingByUE{1}.DLReference,state.TestReceivedDLClock));
+        localQueueSRS(state,cfg,5);
+    end
     if independentCompletion && withCSI
         state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
     end
@@ -923,7 +933,22 @@ for item=items
             end
         end
         row=sixgr.truth.bindSharedRFExecutionEvidence(row,item.Planes);
-        row=sixgr.truth.exportSharedChannelObservation(state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
+        [row,~,channelCaptures,channelReplays]=sixgr.truth.exportSharedChannelObservation( ...
+            state.TestRoot,row,item.Planes,p,c.DesiredReferencePlane);
+        assert(numel(out.ChannelEstimateSnapshots)==1 && ~isempty(out.ChannelEstimateSnapshots{1}), ...
+            'The actual shared decoder must retain its pilot channel estimates.');
+        beforeHARQ=out.HARQ;
+        row=sixgr.truth.exportSharedPUSCHChannelEstimate(state.TestRoot,row, ...
+            out.ChannelEstimateSnapshots{1},p,channelCaptures,channelReplays,c.WaveformToElementMatrix);
+        assert(isequaln(beforeHARQ,out.HARQ) && isfinite(row.NMSE_dB) && ...
+            ~row.ChannelEstimateReferenceUsedByReceiver && ...
+            isfile(fullfile(state.TestRoot,row.ChannelEstimateResourcesCSV)));
+        measured=readtable(fullfile(state.TestRoot,row.ChannelEstimateResourcesCSV));
+        localVerifyChannelResourceArchive(state.TestRoot,row);
+        assert(height(measured)==row.ChannelEstimateComparedValues && ...
+            abs(10*log10(sum(measured.ChannelErrorEnergy)/sum(measured.ReferenceChannelEnergy))-row.NMSE_dB)<1e-10);
+        fprintf('SHARED_PUSCH_CHANNEL_NMSE_PASS nmse=%g values=%d folder=%s\n', ...
+            row.NMSE_dB,row.ChannelEstimateComparedValues,state.TestRoot);
         path=fullfile(state.TestRoot,'received_pusch.csv');
         powerEvidence=jsondecode(row.AllocationCarrierPowerMeasurementJSON);
         if strcmpi(string(sixgr.util.structGet(job.Cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
@@ -1216,6 +1241,15 @@ if state.TestWithCSI
     csi=out.CSIRSTrialTable;
     assert(height(csi)==1 && csi.Observed && csi.CSIMeasurementAvailable && ...
         csi.Slot==6 && csi.ResultAvailableAtSample==owner.Events.NextSampleIndex);
+    % Exercise the real CSI_Feedback -> throughput-row producer, not a
+    % hand-authored report row. Keep the measured wire fields losslessly.
+    assert(all(ismember({'CSIReportConfigID','CSIConfigurationEpoch','CSIUCIChannel', ...
+        'CSIPart1BitsToken','CSIPart2BitsToken'},csi.Properties.VariableNames)));
+    measuredRequest=job.Cfg.phy.csi.reportConfiguration;
+    measuredRequest.Rank=csi.RI;
+    measuredConfig=sixgr.phy.mimo.CSIReportConfiguration(measuredRequest,measuredRequest.Epoch);
+    measuredWire=sixgr.phy.mimo.bindMeasuredCSIWireReport(measuredConfig,table2struct(csi));
+    assert(numel(measuredWire.Part1Bits)+numel(measuredWire.Part2Bits)==csi.CSIPayloadBitLength);
     state.TestSharedCSIReceived=true; state.TestCSISource=out;
 end
 [state,out.ReceivedHARQACKEvent]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
@@ -1235,13 +1269,46 @@ assert(height(state.PendingFeedbackTable)==1 && state.PendingFeedbackTable.Sourc
     state.PendingFeedbackTable.DueSlot==10 && ~state.PendingFeedbackTable.Processed && ...
     state.PendingFeedbackTable.Ack==state.TestExpectedSharedACK && ...
     state.DLHarq.Stats.Ack==0 && state.DLHarq.Stats.Nack==0);
-sourceRow=sixgr.truth.exportSharedChannelObservation(state.TestRoot,out.TrialTable, ...
+[sourceRow,~,captures,replays]=sixgr.truth.exportSharedChannelObservation(state.TestRoot,out.TrialTable, ...
     item.Planes,p,item.Context.DesiredReferencePlane);
+assert(isnan(sourceRow.NMSE_dB) && isfinite(sourceRow.PilotReconstructionResidualRatio_dB), ...
+    'Before independent scoring, do not relabel a pilot residual as true channel NMSE.');
+assert(numel(out.ChannelEstimateSnapshots)==1 && ~isempty(out.ChannelEstimateSnapshots{1}));
+beforeHARQ=out.ReceivedHARQDecision;
+sourceRow=sixgr.truth.exportSharedDataChannelEstimate(state.TestRoot,sourceRow, ...
+    out.ChannelEstimateSnapshots{1},p,captures,replays,item.Context.WaveformToElementMatrix);
+assert(isequaln(beforeHARQ,out.ReceivedHARQDecision) && isfinite(sourceRow.NMSE_dB) && ...
+    ~sourceRow.ChannelEstimateReferenceUsedByReceiver);
+channelRows=readtable(fullfile(state.TestRoot,sourceRow.ChannelEstimateResourcesCSV));
+localVerifyChannelResourceArchive(state.TestRoot,sourceRow);
+assert(height(channelRows)==sourceRow.ChannelEstimateComparedValues && ...
+    abs(10*log10(sum(channelRows.ChannelErrorEnergy)/sum(channelRows.ReferenceChannelEnergy))-sourceRow.NMSE_dB)<1e-10);
+fprintf('SHARED_PDSCH_CHANNEL_NMSE_PASS nmse=%g pilot_residual=%g values=%d folder=%s\n', ...
+    sourceRow.NMSE_dB,sourceRow.PilotReconstructionResidualRatio_dB,height(channelRows),state.TestRoot);
 sixgr.channel.validateSharedChannelObservationArtifact(state.TestRoot,sourceRow);
 sixgr.util.csvWriteTable(fullfile(state.TestRoot,'shared_received_dl_harq.csv'),sourceRow,'PreserveSchema',true);
 save(fullfile(state.TestRoot,'shared_received_dl_harq.mat'),'item','out','control','sourceRow','-v7.3');
 fprintf('SHARED_DL_HARQ_SOURCE_RECEIVED slot=6 due=10 ACK=%d completed_sample=%d\n', ...
     state.TestExpectedSharedACK,owner.Events.NextSampleIndex);
+end
+
+function localVerifyChannelResourceArchive(root,row)
+archivePath=fullfile(root,row.ChannelEstimateMATFile);
+assert(sixgr.phy.waveform.WaveformHash.file(archivePath)==row.ChannelEstimateMATFileSHA256);
+archive=load(archivePath);
+assert(archive.Contract=="scored_data_channel_resource_archive/v1" && ...
+    archive.ResourcesCSVSHA256==row.ChannelEstimateResourcesCSVSHA256 && ...
+    height(archive.Resources)==row.ChannelEstimateComparedValues && ...
+    ~any(archive.Resources.ReferenceUsedByReceiver) && ...
+    ~any(archive.Resources.GainOrPhaseFitted));
+replay=string(tempname)+".csv";
+cleanup=onCleanup(@()delete(replay)); %#ok<NASGU>
+sixgr.util.csvWriteTable(replay,archive.Resources, ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
+assert(sixgr.phy.waveform.WaveformHash.file(replay)==archive.ResourcesCSVSHA256, ...
+    'The MAT archive must reproduce the original resource CSV bytes, not merely its aggregate NMSE.');
+fprintf('CHANNEL_RESOURCE_ARCHIVE_ROUNDTRIP_PASS channel=%s values=%d\n', ...
+    archive.Resources.Channel(1),height(archive.Resources));
 end
 
 function localVerifyCSI(state)

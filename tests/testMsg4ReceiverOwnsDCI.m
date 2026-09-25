@@ -1,6 +1,8 @@
-function ok = testMsg4ReceiverOwnsDCI()
+function ok = testMsg4ReceiverOwnsDCI(modes)
 % Actual ideal-channel component, not full MAC/RRC/access qualification.
-for mode = ["TDD","FDD"]
+if nargin<1, modes=["TDD","FDD"]; end
+assert(~isempty(modes) && all(ismember(string(modes),["TDD","FDD"])));
+for mode = reshape(string(modes),1,[])
     suffix=""; if mode=="TDD", suffix="_tdd"; end
     sc=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
         "lls_causal_access_to_data_wiring"+suffix+".yaml"));

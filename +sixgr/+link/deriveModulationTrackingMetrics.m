@@ -4,6 +4,10 @@ function [metrics, constellationT] = deriveModulationTrackingMetrics(tx, rx, cfg
 direction = upper(string(direction));
 metrics = struct( ...
     "EVM_rms", NaN, ...
+    "EVMErrorEnergy", NaN, ...
+    "EVMReferenceEnergy", NaN, ...
+    "EVMSymbolCount", NaN, ...
+    "EVMEnergyUnit", "sum_squared_complex_symbol_amplitude_not_joules", ...
     "EVMPerLayer_rms", zeros(1,0), ...
     "EVMPerLayerSource", "", ...
     "EVMStatus", "unavailable", ...
@@ -22,6 +26,7 @@ metrics = struct( ...
     "SymbolOrderingStatus", "", ...
     "ResidualInterferencePower_dB", NaN, ...
     "PAPR_dB", NaN, ...
+    "PAPRMeasurementJSON", "", ...
     "PeakClippingEvents", NaN, ...
     "LLRMeanAbs", NaN, ...
     "LLRStdAbs", NaN, ...
@@ -95,6 +100,12 @@ if ~isempty(eqSymAligned) && ~isempty(refSym)
     if ~isempty(eqNorm) && ~isempty(refNorm)
         err = eqNorm - refNorm;
         metrics.EVM_rms = sqrt(mean(abs(err).^2));
+        % Full matched allocation, before preview selection. Preserve the
+        % operands for independent CSV reconciliation; these are squared
+        % symbol amplitudes, not calibrated joules or conducted RF power.
+        metrics.EVMErrorEnergy = sum(abs(eqSymAligned-refSym).^2);
+        metrics.EVMReferenceEnergy = sum(abs(refSym).^2);
+        metrics.EVMSymbolCount = numel(refSym);
         metrics.EVMStatus = evmStatus;
         if isfinite(metrics.EVM_rms) && metrics.EVM_rms > 1
             metrics.EVMStatus = "warning_gt_100pct_check_timing_or_channel_estimate";
@@ -143,7 +154,8 @@ wf = sixgr.util.structGet(tx, "Waveform", []);
 if ~isempty(wf)
     ofdmInfo = sixgr.util.structGet(tx, "OFDMInfo", ...
         sixgr.util.structGet(tx, "OFDM", struct()));
-    metrics.PAPR_dB = localPAPRdB(wf, ofdmInfo);
+    [metrics.PAPR_dB,metrics.PAPRMeasurementJSON] = localPAPRdB(wf, ofdmInfo, ...
+        string(sixgr.util.structGet(tx,'PAPRMeasurementPoint','unspecified_supplied_tx_waveform')));
     metrics.PeakClippingEvents = localPeakClippingEvents(wf, cfg);
 end
 
@@ -361,30 +373,32 @@ end
 decSym = localEnsureColumn(decSym);
 end
 
-function papr_dB = localPAPRdB(waveform, ofdmInfo)
+function [papr_dB,evidenceJSON] = localPAPRdB(waveform, ofdmInfo, measurementPoint)
 papr_dB = NaN;
+evidenceJSON = "";
 if isempty(waveform)
     return;
 end
 x = localWaveformPortMatrix(waveform);
+inputSamples=size(x,1);
+domain="all_supplied_waveform_samples";
 if nargin >= 2
     usefulIdx = localUsefulSampleIndices(size(x, 1), ofdmInfo);
     if ~isempty(usefulIdx)
         x = x(usefulIdx, :);
+        domain="ofdm_useful_samples_CP_excluded";
     end
 end
-p = abs(x).^2;
-if isempty(p) || ~any(isfinite(p(:)))
+if isempty(x)
     return;
 end
-portMean = mean(p, 1, "omitnan");
-portPeak = max(p, [], 1, "omitnan");
-valid = isfinite(portMean) & portMean > 0 & isfinite(portPeak);
-if ~any(valid)
-    return;
-end
-portPAPR_dB = 10 * log10(portPeak(valid) ./ max(portMean(valid), eps));
-papr_dB = max(portPAPR_dB, [], "omitnan");
+measured=sixgr.phy.waveform.PAPRMeasurement.measure(x,1,'ReferenceDomain',domain);
+papr_dB=max(measured.PAPR_dB,[],'omitnan');
+evidenceJSON=string(jsonencode(struct('ContractVersion',"tx_papr/v1", ...
+    'Source',"actual_supplied_transmitter_waveform", ...
+    'MeasurementPoint',measurementPoint, ...
+    'InputWaveformSampleCount',inputSamples,'ReferenceDomain',domain, ...
+    'AggregateRule',"maximum_finite_per_port_PAPR",'PerPort',table2struct(measured))));
 end
 
 function idx = localUsefulSampleIndices(nSamples, ofdmInfo)

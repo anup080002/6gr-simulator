@@ -128,7 +128,7 @@ if normalized
 else
     assert(isequal(string(persisted.SSBWindowPowerMeasurementJSON),ledger.SSBWindowPowerMeasurementJSON));
 end
-trial=table(ones(height(T),1),T.ReferenceSignalId,'VariableNames',{'Slot','SSBIndex'});
+trial=table(ones(height(T),1),T.ReferenceSignalId,'VariableNames',{'Slot','RequestedSSBOccasionIndex'});
 sixgr.truth.SSBOccasionResultDelivery.assertDelivered(state,1,trial);
 try
     sixgr.truth.SSBOccasionResultDelivery.assertDelivered(state,1,[trial;trial(1,:)]);

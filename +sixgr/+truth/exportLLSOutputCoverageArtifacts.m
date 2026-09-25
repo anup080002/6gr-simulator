@@ -8336,9 +8336,7 @@ if exist(pathStr, "file") ~= 2
     return;
 end
 try
-    opts = detectImportOptions(pathStr, "Delimiter", ",");
-    opts.VariableNamingRule = "preserve";
-    T = readtable(pathStr, opts);
+    T = sixgr.util.csvReadTable(pathStr,"TextType","string");
 catch
     T = table();
 end

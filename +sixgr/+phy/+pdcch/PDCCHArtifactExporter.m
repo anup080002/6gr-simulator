@@ -16,46 +16,35 @@ classdef PDCCHArtifactExporter
         function audit = writeSemanticFigure(outputDir, contractRow)
             sourceNames = split(string(contractRow.SourceCSV), "|");
             sourceNames = sourceNames(strlength(sourceNames) > 0);
-            sourceRows = 0;
+            sourceTables = cell(numel(sourceNames),1);
             for ii = 1:numel(sourceNames)
                 sourcePath = fullfile(outputDir, sourceNames(ii));
                 if exist(sourcePath, "file") ~= 2
                     error("sixgr:phy:pdcch:missing_evidence_source", ...
                         "Figure source CSV is absent: %s.", sourcePath);
                 end
-                sourceRows = sourceRows + height(readtable(sourcePath, ...
-                    "VariableNamingRule", "preserve"));
+                sourceTables{ii} = readtable(sourcePath, ...
+                    "VariableNamingRule", "preserve", "TextType", "string");
             end
 
             width = max(double(contractRow.MinWidth), 1200);
             heightPixels = max(double(contractRow.MinHeight), 760);
-            seriesCount = max(double(contractRow.MinSeriesCount), 1);
-            requiredPoints = max(double(contractRow.MinFinitePointCount), seriesCount);
-            pointsPerSeries = max(2, ceil(requiredPoints / seriesCount));
-            availablePoints = max(2, sourceRows);
-            pointsPerSeries = min(pointsPerSeries, availablePoints);
 
             figureHandle = figure("Visible", "off", "Color", "white", ...
                 "Units", "pixels", "Position", [50 50 width heightPixels]);
             cleanup = onCleanup(@() close(figureHandle));
             axesHandle = axes(figureHandle);
             hold(axesHandle, "on");
-            colors = lines(seriesCount);
-            for seriesIndex = 1:seriesCount
-                x = (0:pointsPerSeries-1).';
-                phase = (seriesIndex - 1) / max(1, seriesCount);
-                y = seriesIndex + 0.3*sin(2*pi*(x/max(1, pointsPerSeries-1) + phase));
-                plot(axesHandle, x, y, "LineWidth", 1.5, ...
-                    "Color", colors(seriesIndex,:), ...
-                    "DisplayName", sprintf("production series %d", seriesIndex));
-            end
+            sixgr.phy.pdcch.plotArtifactEvidence(axesHandle, ...
+                string(contractRow.ImageFile),sourceNames,sourceTables);
             grid(axesHandle, "on");
             box(axesHandle, "on");
-            titleText = string(contractRow.ExpectedTitleToken) + " — contracted evidence";
-            title(axesHandle, titleText, "Interpreter", "none");
+            titleText = string(contractRow.ExpectedTitleToken) + " — CSV evidence";
+            title(axesHandle, titleText, "Interpreter", "none", "Color", "black");
             xlabel(axesHandle, string(contractRow.ExpectedXLabel), "Interpreter", "none");
             ylabel(axesHandle, string(contractRow.ExpectedYLabel), "Interpreter", "none");
-            legend(axesHandle, "Location", "best");
+            legend(axesHandle, "Location", "eastoutside", "Interpreter", "none", ...
+                "Color", "white", "TextColor", "black");
 
             lineObjects = findobj(axesHandle, "Type", "line");
             finitePoints = 0;

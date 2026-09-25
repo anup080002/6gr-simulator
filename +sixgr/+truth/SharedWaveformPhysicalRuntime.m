@@ -180,6 +180,13 @@ classdef SharedWaveformPhysicalRuntime < handle
                 state.LinkKey=char(nextKey);
                 if identity
                     state.Meta.RuntimeTDDReciprocityDirection=direction;
+                    if state.Meta.IdentityOperatorSource=="explicit_matrix_AWGN_shared_sample_operator"
+                        oldTx=state.NumTxAnt;
+                        state.NumTxAnt=state.NumRxAnt; state.NumRxAnt=oldTx;
+                        state.ExternalLogicalTxPorts=state.NumTxAnt;
+                        state.PhysicalChannelTxElements=state.NumTxAnt;
+                        state.Meta.AWGNSpatialMatrix=state.Meta.AWGNSpatialMatrix.';
+                    end
                 end
                 info=struct('OFDM',struct('SampleRate',obj.SampleRateHz));
                 state=sixgr.channel.ChannelFactory.materializeRuntimeChannelState( ...

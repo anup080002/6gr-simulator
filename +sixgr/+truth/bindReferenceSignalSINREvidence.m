@@ -24,4 +24,8 @@ row.ReceiverHestSINRApplicable=logical(available) && isfinite(value) && ...
 % report it. A reporting adapter must neither erase it nor mark it valid.
 row.SINRMeasurementDomain=string(sixgr.util.structGet(receiver,'SINRMeasurementDomain',""));
 row.PowerReferencePlane=string(sixgr.util.structGet(receiver,'PowerReferencePlane',""));
+if channel=="TRS"
+    row.SignedPilotSINRLinear=double(sixgr.util.structGet(receiver,'SignedPilotSINRLinear',NaN));
+    row.PilotPowerEvidenceJSON=string(sixgr.util.structGet(receiver,'PilotPowerEvidenceJSON',""));
+end
 end

@@ -115,7 +115,8 @@ assert(height(trace) == 10 && ...
 assert(any(trace.ReasonCode == "target_flexible_symbols_unresolved") && ...
     any(trace.ReasonCode == "insufficient_n1_processing_time") && ...
     any(trace.ReasonCode == "insufficient_n2_processing_time"));
-localAssertHARQTimingAdvanceBoundary(engine,harq,rHARQ);
+localAssertULTimingAdvanceBoundary(engine,harq,rHARQ);
+localAssertULTimingAdvanceBoundary(engine,mixed,rMixed);
 
 % Exhaust the pinned timing catalogs across every supported processing
 % capability numerology.  K0/K2 come from every selected TDRA catalog row;
@@ -150,23 +151,35 @@ assert(isfile(imagePath) && dir(imagePath).bytes > 1000);
 ok = true;
 end
 
-function localAssertHARQTimingAdvanceBoundary(engine,request,nominal)
+function localAssertULTimingAdvanceBoundary(engine,request,nominal)
 % Exact-clock deadline test, not a fabricated received RAR command.
+if request.Procedure=="HARQ_ACK"
+    resolve=@(r) engine.resolveHARQACK(r);
+    expectedReason="insufficient_n1_processing_time";
+else
+    assert(request.Procedure=="PUSCH");
+    resolve=@(r) engine.resolvePUSCH(r);
+    expectedReason="insufficient_n2_processing_time";
+end
 assert(nominal.Valid && nominal.TimingAdvanceTicks==0);
 slack=nominal.ProcessingGapTicks-nominal.MinimumProcessingTicks;
 assert(slack>=0);
 request.TestID=string(request.TestID)+"-ta-boundary";
 request.TimingAdvanceTicks=slack;
-boundary=engine.resolveHARQACK(request);
+boundary=resolve(request);
 assert(boundary.Valid && boundary.TimingAdvanceTicks==slack && ...
+    boundary.TargetTick==nominal.TargetTick && ...
+    boundary.TargetAbsoluteSlot==nominal.TargetAbsoluteSlot && ...
     boundary.WaveformPlacementTick==nominal.TargetTick-slack && ...
     boundary.ProcessingGapTicks==boundary.MinimumProcessingTicks);
 request.TimingAdvanceTicks=slack+int64(1);
-early=engine.resolveHARQACK(request);
-assert(~early.Valid && early.ReasonCode=="insufficient_n1_processing_time", ...
-    'One Tc too early after TA must fail, even though nominal K1 was valid.');
+early=resolve(request);
+assert(~early.Valid && early.ReasonCode==expectedReason && ...
+    early.TargetTick==nominal.TargetTick && ...
+    early.TargetAbsoluteSlot==nominal.TargetAbsoluteSlot, ...
+    'One Tc too early after TA must fail without changing the nominal K1/K2 target.');
 request=rmfield(request,'TimingAdvanceTicks');
-missing=engine.resolveHARQACK(request);
+missing=resolve(request);
 assert(~missing.Valid && missing.ReasonCode=="invalid_timing_advance");
 end
 
@@ -380,7 +393,7 @@ for mu = supportedMu
         "Pinned N1=%d should be feasible at mu=%d and K1=%d: %s.", ...
         capability.PDSCHN1Symbols, mu, max(catalogK1), ...
         legalN1Result.ReasonCode);
-    localAssertHARQTimingAdvanceBoundary(engine,legalN1,legalN1Result);
+    localAssertULTimingAdvanceBoundary(engine,legalN1,legalN1Result);
 
     illegalN1 = legalN1;
     illegalN1.TestID = "capability-n1-illegal-mu" + string(mu);
@@ -405,6 +418,7 @@ for mu = supportedMu
         "Pinned N2=%d should be feasible at mu=%d and K2=%d: %s.", ...
         capability.PUSCHN2Symbols, mu, legalK2, ...
         legalN2Result.ReasonCode);
+    localAssertULTimingAdvanceBoundary(engine,legalN2,legalN2Result);
 
     illegalN2 = legalN2;
     illegalN2.TestID = "capability-n2-illegal-mu" + string(mu);

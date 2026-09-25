@@ -7,6 +7,26 @@ p.parse(varargin{:});
 timing = p.Results.Timing;
 resources = localResolveSlotResources(cfg, tx);
 timingT = sixgr.util.structGet(timing, "Table", table());
+policy=string(sixgr.util.structGet(cfg,'DetectionPolicy','fixed_correlation'));
+projectionPolicy=policy=="white_noise_projection_v1";
+assert(isscalar(policy) && any(policy==["fixed_correlation","white_noise_projection_v1"]), ...
+    'sixgr:phy:trs:InvalidDetectionPolicy','Install a supported TRS detection policy.');
+searchHypotheses=NaN;
+if projectionPolicy
+    assert(tx.SampleRateHz==double(tx.OFDM.Nfft)*double(resources(1).Carrier.SubcarrierSpacing)*1000, ...
+        'sixgr:phy:trs:UnqualifiedResampledNoise', ...
+        'The projection candidate requires the native FFT sample clock; qualify resampled noise separately.');
+    assert(isequal(sixgr.util.structGet(rx,'WhiteGaussianNoiseModelEstablished',false),true), ...
+        'sixgr:phy:trs:UnestablishedWhiteNoiseModel', ...
+        'Projection candidate requires executed equal-variance white Gaussian noise and no RX RF distortion.');
+    assert(istable(timingT) && height(timingT)==numel(resources) && ...
+        ismember('TimingHypothesisCount',timingT.Properties.VariableNames) && ...
+        all(isfinite(timingT.TimingHypothesisCount) & timingT.TimingHypothesisCount>=1 & ...
+        timingT.TimingHypothesisCount==fix(timingT.TimingHypothesisCount)), ...
+        'sixgr:phy:trs:MissingTimingSearchEvidence','Retain every actual searched timing lag.');
+    % A union bound over every lag AND every configured receive window.
+    searchHypotheses=sum(timingT.TimingHypothesisCount);
+end
 rows = repmat(localDetectionRow(), numel(resources), 1);
 slotDetections = repmat(localSlotDetection(), 0, 1);
 for ii = 1:numel(resources)
@@ -15,7 +35,14 @@ for ii = 1:numel(resources)
     ofdmInfo = struct();
     rxGrid = [];
     metric = NaN;
+    threshold = double(cfg.DetectionThreshold);
+    statisticalDecision = false;
+    falseAlarmBound = NaN;
+    noiseAssumption = "";
+    if projectionPolicy, threshold=NaN; end
     phase = NaN;
+    branchPhase = [];
+    nRx = NaN;
     observed = 0;
     status = "detection_failed";
     attempted = true;
@@ -28,11 +55,29 @@ for ii = 1:numel(resources)
         assert(size(rxGrid,2)==window.SymbolCount, ...
             'sixgr:phy:trs:ReceiveSymbolCountMismatch', ...
             'Demodulated TRS symbols must match the retained sample window.');
-        rxRE = rxGrid(resources(ii).Indices);
+        % A one-port reference occupies one RE plane; it does not mean the
+        % receiver has one antenna. Extract the locations on every RX plane.
+        K=size(rxGrid,1); L=size(rxGrid,2); nRx=size(rxGrid,3);
+        indices=double(resources(ii).Indices(:));
+        assert(resources(ii).Ports==1 && all(indices>=1 & indices<=K*L), ...
+            'sixgr:phy:trs:ReferencePortIdentity', ...
+            'Tracking references must identify one logical TRS port.');
+        received=reshape(rxGrid,K*L,nRx);
+        rxRE = received(indices,:);
         ref = resources(ii).Symbols(:);
-        metric = localChunkedReferenceCorrelation(rxRE(:), ref);
-        phase = angle(sum(rxRE(:) .* conj(ref), "omitnan"));
-        observed = localObservedRECount(rxRE(:), double(rx.NoiseVariance), ...
+        [metric,branchPhase] = sixgr.phy.trs.correlateTRSReceiveBranches(rxRE,ref);
+        if projectionPolicy
+            decision=sixgr.phy.trs.whiteNoiseCoherenceDecision(rxRE,ref, ...
+                cfg.TargetFalseAlarmProbability,searchHypotheses);
+            metric=decision.Correlation;
+            threshold=decision.CorrelationThreshold;
+            statisticalDecision=decision.Detected;
+            falseAlarmBound=decision.SearchFalseAlarmBound;
+            noiseAssumption=decision.NoiseAssumption;
+        end
+        % There is no common absolute channel phase across RX antennas.
+        if nRx==1, phase=branchPhase; end
+        observed = localObservedRECount(rxRE, double(rx.NoiseVariance), ...
             string(sixgr.util.structGet(rx, "FaultMode", "normal")));
         status = "detection_metric_available";
     catch ME
@@ -40,8 +85,9 @@ for ii = 1:numel(resources)
         rxRE = complex(zeros(0, 1));
     end
     coverage = double(observed) ./ max(double(resources(ii).NRE), 1);
-    success = isfinite(metric) && metric >= double(cfg.DetectionThreshold) && ...
+    success = isfinite(metric) && metric >= threshold && ...
         coverage >= double(cfg.MinCoverageRatio);
+    if projectionPolicy, success=success && statisticalDecision; end
     row = localDetectionRow();
     row.RunId = string(cfg.RunId);
     row.ConfigHash = string(cfg.ConfigHash);
@@ -49,12 +95,21 @@ for ii = 1:numel(resources)
     row.DetectionAttempted = logical(attempted);
     row.DetectionSuccess = logical(success);
     row.DetectionMetric = double(metric);
-    row.DetectionThreshold = double(cfg.DetectionThreshold);
+    row.DetectionThreshold = threshold;
+    row.DetectionPolicy = policy;
+    row.TargetFalseAlarmProbability = double(sixgr.util.structGet(cfg,'TargetFalseAlarmProbability',NaN));
+    row.SearchHypothesisCount = searchHypotheses;
+    row.SearchFalseAlarmBound = falseAlarmBound;
+    row.NoiseAssumption = noiseAssumption;
     row.ExpectedRECount = double(resources(ii).NRE);
     row.ObservedRECount = double(observed);
     row.ResourceCoverageRatio = double(coverage);
     row.MinCoverageRatio = double(cfg.MinCoverageRatio);
     row.ReferencePhase_rad = double(phase);
+    row.ReferencePhasePerReceiveBranch_rad = strjoin(string(branchPhase),"|");
+    row.NumReceiveAntennas = double(nRx);
+    row.DetectionMetricSource = "all_receive_branches_noncoherent_reference_correlation_power";
+    if projectionPolicy, row.DetectionMetricSource="received_reference_projection_beta_tail_search_union_bound"; end
     row.NoiseVariance = double(rx.NoiseVariance);
     row.Status = string(status);
     row.TruthStatus = "real_lls_evidence";
@@ -69,12 +124,13 @@ for ii = 1:numel(resources)
     s = localSlotDetection();
     s.Slot = double(resources(ii).Slot);
     s.RxGrid = rxGrid;
-    s.RxRE = rxRE(:);
+    s.RxRE = rxRE;
     s.ReferenceSymbols = resources(ii).Symbols(:);
     s.ReferenceIndices = resources(ii).Indices(:);
     s.CyclicPrefixFraction = double(sixgr.util.structGet(ofdmInfo,'CyclicPrefixFraction',NaN));
     s.Detected = logical(success);
     s.PhaseRad = double(phase);
+    s.PhasePerReceiveBranchRad = branchPhase;
     s.Metric = double(metric);
     s.CoverageRatio = double(coverage);
     s.CorrectedWaveform = corrWave;
@@ -115,66 +171,31 @@ function row = localDetectionRow()
 row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, ...
     "DetectionAttempted", false, "DetectionSuccess", false, ...
     "DetectionMetric", NaN, "DetectionThreshold", NaN, "ExpectedRECount", NaN, ...
+    "DetectionPolicy", "", "TargetFalseAlarmProbability", NaN, ...
+    "SearchHypothesisCount", NaN, "SearchFalseAlarmBound", NaN, "NoiseAssumption", "", ...
     "ObservedRECount", NaN, "ResourceCoverageRatio", NaN, "MinCoverageRatio", NaN, ...
-    "ReferencePhase_rad", NaN, "NoiseVariance", NaN, "Status", "", "TruthStatus", "", ...
+    "ReferencePhase_rad", NaN, "ReferencePhasePerReceiveBranch_rad", "", ...
+    "NumReceiveAntennas", NaN, "DetectionMetricSource", "", ...
+    "NoiseVariance", NaN, "Status", "", "TruthStatus", "", ...
     "ReceiveStartSample1Based",NaN,"ReceiveEndSample1Based",NaN, ...
     "ReceivedSymbolCount",NaN,"EstimatedTimingOffset_samples",NaN,"ReceiveWindowSource","");
 end
 
 function row = localSlotDetection()
 row = struct("Slot", NaN, "RxGrid", [], "RxRE", [], "ReferenceSymbols", [], ...
-    "Detected", false, "PhaseRad", NaN, "Metric", NaN, "CoverageRatio", NaN, ...
+    "Detected", false, "PhaseRad", NaN, "PhasePerReceiveBranchRad", [], ...
+    "Metric", NaN, "CoverageRatio", NaN, ...
     "CorrectedWaveform", [], "ReferenceIndices", [], "CyclicPrefixFraction", NaN);
 end
 
-function metric = localChunkedReferenceCorrelation(rxRE, ref)
-rxRE = rxRE(:);
-ref = ref(:);
-n = min(numel(rxRE), numel(ref));
-if n == 0
-    metric = NaN;
-    return;
-end
-rxRE = rxRE(1:n);
-ref = ref(1:n);
-mask = isfinite(real(rxRE)) & isfinite(imag(rxRE)) & ...
-    isfinite(real(ref)) & isfinite(imag(ref));
-rxRE = rxRE(mask);
-ref = ref(mask);
-n = numel(rxRE);
-if n == 0
-    metric = NaN;
-    return;
-end
-
-whole = abs(sum(rxRE .* conj(ref), "omitnan")) ./ max(norm(rxRE) * norm(ref), eps);
-chunkSize = min(max(12, round(sqrt(double(n)))), n);
-nChunks = ceil(double(n) / double(chunkSize));
-chunkMetric = NaN(nChunks, 1);
-for kk = 1:nChunks
-    lo = (kk - 1) * chunkSize + 1;
-    hi = min(n, kk * chunkSize);
-    x = rxRE(lo:hi);
-    r = ref(lo:hi);
-    if numel(x) < 4
-        continue;
-    end
-    chunkMetric(kk) = abs(sum(x .* conj(r), "omitnan")) ./ max(norm(x) * norm(r), eps);
-end
-chunkMetric = chunkMetric(isfinite(chunkMetric));
-if isempty(chunkMetric)
-    metric = double(whole);
-else
-    metric = max(double(whole), median(double(chunkMetric), "omitnan"));
-end
-end
-
 function observed = localObservedRECount(rxRE, noiseVariance, faultMode)
-rxRE = rxRE(:);
-finiteMask = isfinite(real(rxRE)) & isfinite(imag(rxRE));
+% Count physical RE locations, not RE-count times the number of RX antennas.
+finiteMask = all(isfinite(rxRE),2);
 if lower(strtrim(string(faultMode))) == "missing_resource_subset"
-    ampThreshold = localCoverageAmplitudeThreshold(rxRE(finiteMask), noiseVariance);
-    observed = nnz(finiteMask & abs(rxRE) > ampThreshold);
+    amplitude=sqrt(sum(abs(rxRE).^2,2));
+    ampThreshold = localCoverageAmplitudeThreshold(amplitude(finiteMask), ...
+        size(rxRE,2)*noiseVariance);
+    observed = nnz(finiteMask & amplitude > ampThreshold);
 else
     observed = nnz(finiteMask);
 end

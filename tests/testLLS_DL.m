@@ -38,6 +38,10 @@ assert(double(resHigh.BLER) <= double(resLow.BLER) + 0.15, "DL BLER should impro
 assert(double(resHigh.Throughput_Mbps) + 0.1 >= double(resLow.Throughput_Mbps), "DL throughput should not regress at high SNR.");
 localAssertDerivedGrantContext(resLow.TrialTable, "DL low-SNR");
 localAssertDerivedGrantContext(resHigh.TrialTable, "DL high-SNR");
+assertMeasuredPAPRTrialEvidence(resLow.TrialTable);
+assertMeasuredPAPRTrialEvidence(resHigh.TrialTable);
+assertMeasuredEVMTrialEvidence(resLow.TrialTable);
+assertMeasuredEVMTrialEvidence(resHigh.TrialTable);
 if istable(resLow.TrialTable) && istable(resHigh.TrialTable) && ...
         all(ismember(["WidebandCQI","MCS"], string(resLow.TrialTable.Properties.VariableNames))) && ...
         all(ismember(["WidebandCQI","MCS"], string(resHigh.TrialTable.Properties.VariableNames)))

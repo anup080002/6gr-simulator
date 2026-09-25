@@ -37,6 +37,17 @@ bad=T; bad.Layers=[1;1];
 assert(~sixgr.analytics.identityAWGNRuntimeEvidence(bad,cfg,4,4));
 cfg.channel.sharedIdentityAWGNEnabled=false;
 assert(~sixgr.analytics.identityAWGNRuntimeEvidence(T,cfg,4,4));
+cfg.channel.awgnSpatialMatrixDL=[.8 0 .6 0;0 .6 0 .8];
+M=T;
+M.ChannelObjectClass(:)="explicit_fixed_matrix_sample_operator";
+M.ChannelArrayHandlingStatus(:)="awgn_configured_spatial_matrix_no_array_kernel";
+M.ElementPatternChannelApplicability(:)="not_applicable_awgn_fixed_matrix_channel";
+for field=["ConfiguredRxAntennas","PhysicalRxAntennas","RxWaveformBranches"]
+    M.(field)(:)=2;
+end
+assert(sixgr.analytics.identityAWGNRuntimeEvidence(M,cfg,4,2));
+M.Rank(2)=3;
+assert(~sixgr.analytics.identityAWGNRuntimeEvidence(M,cfg,4,2));
 fprintf('IDENTITY_AWGN_RUNTIME_EVIDENCE_PASS metadata_only=1 dimensions=1,2,4\n');
 ok=true;
 end

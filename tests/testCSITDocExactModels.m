@@ -45,6 +45,10 @@ state=sixgr.phy.mimo.CSIMeasurementState(MeasurementID="M1",UEID="1", ...
     MaxAgeSlots=4,ChannelEstimate=eye(2),NoiseVariance=.1);
 state.validateAt(6);
 assertThrows(@()state.validateAt(7),"sixgr:mimo:StaleMeasurementState");
+assertThrows(@()state.validateAt(1),"sixgr:mimo:StaleMeasurementState");
+for invalidSlot=[NaN Inf -1 .5]
+    assertThrows(@()state.validateAt(invalidSlot),"sixgr:mimo:InvalidMeasurementTime");
+end
 
 store=sixgr.phy.rsla.MeasurementStateStore();
 measurement=struct("Valid",true,"MeasurementID","M1","UEID",1, ...

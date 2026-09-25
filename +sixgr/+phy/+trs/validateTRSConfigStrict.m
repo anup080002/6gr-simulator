@@ -2,6 +2,14 @@ function validation = validateTRSConfigStrict(trsCfg)
 %VALIDATETRSCONFIGSTRICT Validate strict TRS/NZP-CSI-RS invariants.
 
 reasons = strings(0, 1);
+estimator=string(sixgr.util.structGet(trsCfg,'RuntimeChannelEstimator','nr_channel_estimate'));
+if ~isscalar(estimator) || ~any(estimator==["nr_channel_estimate","flat_static_awgn_ls"])
+    reasons(end+1,1)="invalid_runtime_channel_estimator";
+elseif estimator=="flat_static_awgn_ls" && ...
+        (~strcmpi(string(trsCfg.ChannelModel),'AWGN') || ...
+        ~sixgr.channel.IdentityAWGNRuntime.enabled(sixgr.util.structGet(trsCfg,'BaseConfig',struct())))
+    reasons(end+1,1)="flat_estimator_requires_explicit_awgn_operator";
+end
 toolboxMissing = false;
 needed = ["nrCarrierConfig","nrCSIRSConfig","nrCSIRS","nrCSIRSIndices", ...
     "nrOFDMModulate","nrOFDMDemodulate","nrTimingEstimate","nrChannelEstimate"];
@@ -36,6 +44,18 @@ elseif any(~isfinite(slots)) || any(slots~=fix(slots)) || ...
 end
 if ~(isfinite(double(trsCfg.DetectionThreshold)) && double(trsCfg.DetectionThreshold) > 0 && double(trsCfg.DetectionThreshold) < 1)
     reasons(end+1, 1) = "invalid_detection_threshold"; %#ok<AGROW>
+end
+policy=string(sixgr.util.structGet(trsCfg,'DetectionPolicy','fixed_correlation'));
+if ~isscalar(policy) || ~any(policy==["fixed_correlation","white_noise_projection_v1"])
+    reasons(end+1,1)="invalid_detection_policy";
+elseif policy=="white_noise_projection_v1"
+    alpha=double(sixgr.util.structGet(trsCfg,'TargetFalseAlarmProbability',NaN));
+    if ~isscalar(alpha) || ~isfinite(alpha) || alpha<=0 || alpha>=1
+        reasons(end+1,1)="projection_detector_requires_explicit_false_alarm_probability";
+    end
+    if ~strcmpi(string(trsCfg.ChannelModel),'AWGN')
+        reasons(end+1,1)="projection_detector_candidate_requires_awgn_channel";
+    end
 end
 if ~(isfinite(double(trsCfg.MinCoverageRatio)) && double(trsCfg.MinCoverageRatio) > 0 && double(trsCfg.MinCoverageRatio) <= 1)
     reasons(end+1, 1) = "invalid_min_coverage_ratio"; %#ok<AGROW>

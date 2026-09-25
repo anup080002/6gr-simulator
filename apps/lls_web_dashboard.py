@@ -47,6 +47,7 @@ import yaml
 
 import lls_output_contract as output_contract
 import lls_contract_materializer as contract_materializer
+from lls_sweep_report import observe_sweep
 from lls_runtime_visualization_evidence import verified_runtime_visualizations
 from lls_contract_aliases import (
     CONTRACT_CHART_ALIAS_PATHS,
@@ -10614,6 +10615,34 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("BeamIndex", "Precoder row (1-based)"),
         ("SelectedBeamFlag", "Selected beam"),
         ("SSBIndex", "SSB index"),
+        ("UEID", "UE"),
+        ("PSSDetected", "PSS detected"),
+        ("PSSNormalizedMetric", "PSS normalized correlation"),
+        ("PSSDetectionThreshold", "PSS detection threshold"),
+        ("PSSDetectionHypothesisCount", "PSS tested hypotheses"),
+        ("SSSNormalizedMetric", "SSS normalized correlation"),
+        ("SSSDetectionThreshold", "SSS detection threshold"),
+        ("SSSDetectionHypothesisCount", "SSS tested hypotheses"),
+        ("SSSDetected", "SSS detected"),
+        ("NCellIDRecovered", "Recovered PCI"),
+        ("SSBIdentityVerified", "SSB identity verified"),
+        ("MIBDecoded", "MIB decoded"),
+        ("DetectionOutcome", "Detection outcome"),
+        ("PSSTimingLagsEvaluated", "PSS lags searched"),
+        ("TimingOffset_samples", "SSB position (samples)"),
+        ("TimingEstimateStatus", "Timing status"),
+        ("ObservationSampleRateHz", "Observation sample rate (Hz)"),
+        ("EstimatedCFO_PreCorrection_Hz", "Estimated CFO (Hz)"),
+        ("CFOEstimateSource", "CFO source"),
+        ("ResidualCFO_PostCorrection_Hz", "Residual CFO (Hz)"),
+        ("ResidualCFOMeasurementStatus", "Residual CFO status"),
+        ("PSSDetectionSource", "PSS source"),
+        ("SSSDetectionSource", "SSS source"),
+        ("SS_RSRP_dBm", "SS-RSRP (dBm)"),
+        ("SS_RSRP_dB_re_UnitOccupiedRE_Es", "SS-RSRP (dB re unit Es)"),
+        ("SS_SINR_dB", "SS-SINR (dB)"),
+        ("PowerReferencePlane", "Power reference plane"),
+        ("SSPhysicalMeasurementStatus", "SS measurement status"),
         ("DetectionMetric", "Metric"),
         ("EVM_rms", "EVM"),
         ("NMSE_dB", "NMSE dB"),
@@ -10628,6 +10657,29 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("RNTI", "RNTI"),
         ("DetectionMetric", "Metric"),
         ("PRACHDesign", "Design"),
+        ("PreambleIndexTx", "TX preamble (audit)"),
+        ("DetectedPreambleIndex", "Detected preamble"),
+        ("PreambleDetected", "Preamble detected"),
+        ("DetectionAttempted", "Detection attempted"),
+        ("MissedDetection", "Missed detection"),
+        ("DTXFlag", "DTX"),
+        ("FalseAlarmClassification", "False alarm definition"),
+        ("PreambleDetectionThreshold", "Threshold"),
+        ("PreambleDetectionThresholdCalibrationStatus", "Qualification status"),
+        ("PeakToNoiseRatio_dB", "Peak/noise (dB)"),
+        ("CandidatesAboveThreshold", "Peaks above threshold"),
+        ("PRACHRawTimingEstimate_samples", "Raw timing (samples)"),
+        ("PRACHPropagationTimingEstimate_samples", "Propagation timing (samples)"),
+        ("PRACHTimingEstimateValid", "Timing valid"),
+        ("PRACHTimingSampleRate_Hz", "PRACH sample rate (Hz)"),
+        ("PRACHTimingEstimateSource", "Timing source"),
+        ("TimingAdvanceCommand", "RAR TA command"),
+        ("TimingAdvanceNTA_Tc", "TA NTA (Tc units)"),
+        ("TimingAdvance_samples", "TA (samples)"),
+        ("TimingAdvance_us", "TA (us)"),
+        ("TimingAdvanceSource", "TA source"),
+        ("Msg3TimingAdvanceApplied", "Msg3 TA applied"),
+        ("TAOutOfRangeFlag", "TA out of range"),
         ("DPI_d_true", "d true"),
         ("DPI_d_detected", "d detected"),
         ("DPICorrect", "DPI ok"),
@@ -10647,6 +10699,24 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("AggregationLevel", "AggLevel"),
         ("DCISize_bits", "DCI bits"),
         ("BlindDecodeCount", "Blind decodes"),
+        ("PDCCHBlindSearchEnabled", "Blind search enabled"),
+        ("PDCCHCandidatesAvailable", "Candidates available"),
+        ("PDCCHCandidatesAttempted", "Candidates attempted"),
+        ("PDCCHSelectedCandidateIndex", "Selected candidate"),
+        ("PDCCHCandidateFlatIndex", "Selected flat index"),
+        ("CORESETId", "CORESET ID"),
+        ("SearchSpaceId", "Search-space ID"),
+        ("DecodedDCIFormat", "Decoded DCI format"),
+        ("PDCCHDCICrcRNTI", "CRC RNTI"),
+        ("PDCCHMissedDetection", "Missed detection"),
+        ("PDCCHFalseAlarm", "False alarm"),
+        ("FalseAlarmClassification", "False alarm definition"),
+        ("DTXFlag", "DTX"),
+        ("DetectionAttempted", "Detection attempted"),
+        ("PDCCHBlindDecodeEvidenceSource", "Blind decode source"),
+        ("PDCCHCandidateDecodeOKVector", "Hypothesis decode vector"),
+        ("PDCCHCandidateAggregationLevelVector", "Hypothesis AL vector"),
+        ("PDCCHCandidateSINRVector_dB", "Hypothesis SINR vector (dB)"),
         ("ControlDecodeOk", "Decode ok"),
         ("CRCPass", "CRC pass"),
         ("DetectionMetric", "Metric"),
@@ -10662,6 +10732,18 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("BitsCompared", "Bits"),
         ("BitErrors", "Bit errors"),
         ("PUCCHDecodeOk", "Decode ok"),
+        ("DTXFlag", "DTX"),
+        ("DetectionAttempted", "Detection attempted"),
+        ("DetectionOutcome", "Detection outcome"),
+        ("DetectionThreshold", "Threshold"),
+        ("DetectionThresholdSource", "Threshold source"),
+        ("CRCApplicable", "CRC applicable"),
+        ("CRCOutcome", "CRC outcome"),
+        ("MissedFeedback", "Missed feedback"),
+        ("FalseAck", "False ACK"),
+        ("FalseNack", "False NACK"),
+        ("MissedSRDetection", "Missed SR"),
+        ("FalseSRDetection", "False SR"),
         ("DetectionMetric", "Metric"),
         ("Status", "Status"),
     ],
@@ -10828,6 +10910,7 @@ def summarize_control_trial_preview_rows(control_key: str, rows: list[dict[str, 
     specs = CONTROL_TRIAL_PREVIEW_COLUMNS.get(control_key) or []
     if not specs:
         return rows
+    specs = specs + [("SweepPointIndex", "Sweep point"), ("ConfiguredSNR_dB", "Configured SNR (dB)")]
     active_specs: list[tuple[str, str]] = []
     for source_key, label in specs:
         has_meaningful = any(normalize_preview_value(row.get(source_key)) is not None for row in rows)
@@ -11855,6 +11938,10 @@ def extract_run_feature_policy(run_row: dict[str, Any]) -> dict[str, Any]:
         "raw_iq_capture_enabled": raw_iq_capture_enabled,
         "raw_grid_capture_enabled": raw_grid_capture_enabled,
         "channel_snapshot_capture_enabled": channel_snapshot_capture_enabled,
+        "phy_signal_diagnostic_enabled": config_bool(
+            "output.phy_signal_diagnostic_enabled", "outputs.phySignalDiagnosticEnabled",
+            "lls6g.resolvedConfig.output.phy_signal_diagnostic_enabled", default=False,
+        ),
         "pathloss_enabled": pathloss_enabled,
         "noise_operating_mode": noise_operating_mode,
         "absolute_rx_power_calibrated": absolute_rx_power_calibrated,
@@ -15753,6 +15840,12 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
                 "ul_offered_mbps": None,
                 "dl_mcs": None,
                 "ul_mcs": None,
+                "dl_rank": None,
+                "ul_rank": None,
+                "dl_rank_display": "unavailable",
+                "ul_rank_display": "unavailable",
+                "_dl_executed_ranks": [],
+                "_ul_executed_ranks": [],
                 "dl_prbs": None,
                 "ul_prbs": None,
                 "dl_symbol_start": None,
@@ -15769,6 +15862,16 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             }
             records[key] = record
         return record
+
+    def update_executed_rank(record: dict[str, Any], prefix: str, row: dict[str, Any]) -> None:
+        # Executed trial evidence only: neither configured capability nor CSI RI
+        # proves the number of layers that this transport block transmitted.
+        values = [coerce_numeric(row.get(key)) for key in ("EffectiveLayers", "Layers", "EffectiveRank")]
+        values = [value for value in values if value is not None]
+        rank = None
+        if values and all(value >= 1 and float(value).is_integer() for value in values) and len(set(values)) == 1:
+            rank = int(values[0])
+        record[f"_{prefix}_executed_ranks"].append(rank)
 
     def update_symbol_span(record: dict[str, Any], prefix: str, row: dict[str, Any]) -> None:
         symbol_start = coerce_numeric(row.get("SymbolStart"))
@@ -15826,6 +15929,7 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         if record is None:
             continue
         record["_has_dl"] = True
+        update_executed_rank(record, "dl", row)
         goodput = coerce_numeric(row.get("Goodput_Mbps"))
         offered = coerce_numeric(row.get("OfferedThroughput_Mbps"))
         mcs = coerce_numeric(row.get("MCSIndex", row.get("MCS")))
@@ -15867,6 +15971,7 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
         if record is None:
             continue
         record["_has_ul"] = True
+        update_executed_rank(record, "ul", row)
         goodput = coerce_numeric(row.get("Goodput_Mbps"))
         offered = coerce_numeric(row.get("OfferedThroughput_Mbps"))
         mcs = coerce_numeric(row.get("MCSIndex", row.get("MCS")))
@@ -15913,6 +16018,16 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
 
     metric_rows: list[dict[str, Any]] = []
     for record in sorted(records.values(), key=lambda item: (int(item["ueid"]), int(item["slot"]))):
+        for prefix in ("dl", "ul"):
+            ranks = record.pop(f"_{prefix}_executed_ranks")
+            known = sorted({rank for rank in ranks if rank is not None})
+            if ranks and None not in ranks and len(known) == 1:
+                record[f"{prefix}_rank"] = known[0]
+                record[f"{prefix}_rank_display"] = str(known[0])
+            elif known:
+                record[f"{prefix}_rank_display"] = " / ".join(map(str, known)) + (
+                    " (partial evidence)" if None in ranks else " (multiple trials)"
+                )
         record["dl_mcs"] = (record["_dl_mcs_sum"] / record["_dl_mcs_count"]) if record["_dl_mcs_count"] else None
         record["ul_mcs"] = (record["_ul_mcs_sum"] / record["_ul_mcs_count"]) if record["_ul_mcs_count"] else None
         dl_span = (
@@ -16106,6 +16221,20 @@ def build_metric_explorer_payload(artifacts: list[dict[str, Any]], summary: dict
             "label": "DL MCS Index",
             "unit": "index",
             "source_table": "air_interface/csv/dl_pdsch_trials.csv",
+            "fidelity_level": "waveform_level",
+        },
+        {
+            "id": "dl_rank",
+            "label": "DL Executed Rank / Layers",
+            "unit": "layers",
+            "source_table": "air_interface/csv/dl_pdsch_trials.csv",
+            "fidelity_level": "waveform_level",
+        },
+        {
+            "id": "ul_rank",
+            "label": "UL Executed Rank / Layers",
+            "unit": "layers",
+            "source_table": "air_interface/csv/ul_pusch_trials.csv",
             "fidelity_level": "waveform_level",
         },
         {
@@ -16383,6 +16512,7 @@ def condense_live_payload(full_payload: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "run": full_payload.get("run"),
+        "sweep_progress": full_payload.get("sweep_progress"),
         "summary": full_payload.get("summary"),
         "counts": full_payload.get("counts"),
         "metrics": full_payload.get("metrics"),
@@ -16421,7 +16551,8 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
         f"{diagnostic_rollup['artifacts_total']}|"
         f"{diagnostic_rollup['latest_artifact_id']}"
     )
-    full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
+    sweep_progress = observe_sweep(run_row.get("run_folder") or REPO_ROOT)
+    full_cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}|{json.dumps(sweep_progress, sort_keys=True)}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == full_cache_version and run_id in LIVE_PAYLOAD_CACHE:
         return condense_live_payload(LIVE_PAYLOAD_CACHE[run_id])
 
@@ -16494,6 +16625,7 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
     cache_version = f"{full_cache_version}|lite"
     return {
         "run": run_compact,
+        "sweep_progress": sweep_progress,
         "summary": summary,
         "counts": counts,
         "metrics": [
@@ -16555,7 +16687,8 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
         artifacts = merge_db_and_filesystem_artifacts(db_artifacts, run_row)
     latest_artifact_id = max((int(art.get("artifact_id") or 0) for art in artifacts), default=0)
     artifact_version = f"{len(artifacts)}|{latest_artifact_id}"
-    cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}"
+    sweep_progress = observe_sweep(run_row.get("run_folder") or REPO_ROOT)
+    cache_version = f"{run_row.get('updated_utc')}|{run_row.get('status_text')}|{inserted_logs}|{artifact_version}|{json.dumps(sweep_progress, sort_keys=True)}"
     if inserted_logs == 0 and CACHED_PAYLOAD_VERSION.get(run_id) == cache_version and run_id in LIVE_PAYLOAD_CACHE:
         cached_payload = LIVE_PAYLOAD_CACHE[run_id]
         return condense_live_payload(cached_payload) if lite else cached_payload
@@ -16755,6 +16888,7 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     }
     payload = {
         "run": compact_run_row(run_row, artifacts),
+        "sweep_progress": sweep_progress,
         "summary": summary,
         "mode_validation": mode_validation,
         "counts": counts,
@@ -19203,31 +19337,35 @@ window.addEventListener('DOMContentLoaded', function () {
       .map(row => ({Slot:row.Slot,UE:row.UE,Direction:row.Direction,'Beamforming applied':row['Beamforming applied'],'Explicit weights applied':row['Explicit weights applied'],'Application stage':row['Application stage'],'Applied beam':row['Applied beam'] ?? row['Applied spatial beam'],'Requested PMI/TPMI':row['Requested CSI PMI'] ?? row['Requested TPMI'],'PMI request source':row['PMI request source'],'Applied PMI/TPMI':row['Applied basis PMI'] ?? row['Applied TPMI'],'Applied PMI status':row['Applied PMI status'],'Precoder match':row['Precoder match'],'Precoder SHA':row['Precoder SHA'],'Applied beam gain dB':row['Applied beam gain dB'],'Best measured beam':row['Best measured beam'],'Best beam gain dB':row['Best beam gain dB'],'Beam gap dB':row['Beam gap dB']}));
     const trafficRows = recent(metricRows.flatMap(row => {
       const rows = [];
-      if (row.dl_goodput_mbps !== null || row.dl_offered_mbps !== null) rows.push({Slot:row.slot,UE:row.ueid,Direction:'DL','Offered Mbps':row.dl_offered_mbps,'Goodput Mbps':row.dl_goodput_mbps,MCS:row.dl_mcs});
-      if (row.ul_goodput_mbps !== null || row.ul_offered_mbps !== null) rows.push({Slot:row.slot,UE:row.ueid,Direction:'UL','Offered Mbps':row.ul_offered_mbps,'Goodput Mbps':row.ul_goodput_mbps,MCS:row.ul_mcs});
+      if (row.dl_goodput_mbps !== null || row.dl_offered_mbps !== null) rows.push({Slot:row.slot,UE:row.ueid,Direction:'DL','Offered Mbps':row.dl_offered_mbps,'Goodput Mbps':row.dl_goodput_mbps,MCS:row.dl_mcs,'Rank / Layers':row.dl_rank_display ?? 'unavailable',PRBs:row.dl_prbs,Symbols:row.dl_symbol_start === null ? 'unavailable' : `${row.dl_symbol_start}–${row.dl_symbol_end}`});
+      if (row.ul_goodput_mbps !== null || row.ul_offered_mbps !== null) rows.push({Slot:row.slot,UE:row.ueid,Direction:'UL','Offered Mbps':row.ul_offered_mbps,'Goodput Mbps':row.ul_goodput_mbps,MCS:row.ul_mcs,'Rank / Layers':row.ul_rank_display ?? 'unavailable',PRBs:row.ul_prbs,Symbols:row.ul_symbol_start === null ? 'unavailable' : `${row.ul_symbol_start}–${row.ul_symbol_end}`});
       return rows;
     }));
     const tableSpecs = [
-      {id:'ssb_pbch', title:'SSB / PBCH', columns:['Frame','Slot','Cell','SSB index','Precoder row (1-based)','Selected beam','CRC pass','Metric'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
-      {id:'prach_rach', title:'PRACH / RACH', columns:['Frame','Slot','UE','Metric','False alarm','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
+      {id:'ssb_pbch', title:'SSB / PBCH synchronization', columns:['Frame','Slot','Cell','UE','Configured SNR (dB)','SSB index','Precoder row (1-based)','Selected beam','PSS detected','SSS detected','Recovered PCI','SSB identity verified','MIB decoded','CRC pass','Detection outcome','Status'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'ssb_sync_timing', title:'SSB measured timing / frequency synchronization', columns:['Slot','Cell','SSB index','PSS lags searched','SSB position (samples)','Observation sample rate (Hz)','Timing status','Estimated CFO (Hz)','CFO source','Residual CFO (Hz)','Residual CFO status','PSS source','SSS source'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'ssb_measurements', title:'SSB receiver measurements', columns:['Slot','Cell','SSB index','Configured SNR (dB)','SS-RSRP (dBm)','SS-RSRP (dB re unit Es)','SS-SINR (dB)','EVM','NMSE dB','Power reference plane','SS measurement status'], rows:recent(controlPreviews.pbch_trials), sourcePath:selectedPath(controlSelection.pbch_trials)},
+      {id:'prach_rach', title:'PRACH / RACH detection', columns:['Frame','Slot','UE','Configured SNR (dB)','TX preamble (audit)','Detected preamble','Detection attempted','Preamble detected','Metric','Threshold','Peak/noise (dB)','Peaks above threshold','Missed detection','False alarm','False alarm definition','DTX','Qualification status','Status'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
+      {id:'prach_timing', title:'PRACH timing / RAR timing advance', columns:['Slot','UE','Detected preamble','Raw timing (samples)','Propagation timing (samples)','PRACH sample rate (Hz)','Timing valid','Timing source','RAR TA command','TA NTA (Tc units)','TA (samples)','TA (us)','TA source','Msg3 TA applied','TA out of range'], rows:recent(controlPreviews.prach_trials), sourcePath:selectedPath(controlSelection.prach_trials)},
       {id:'initial_access', title:'Acquisition / Initial Access', columns:['Procedure','Frame','Slot','Endpoint','Outcome','Status'], rows:initialAccessRows, sourcePath:'canonical PBCH + PRACH trial rows'},
       {id:'beam', title:'Beam / Precoding', columns:['Slot','UE','Direction','Beamforming applied','Explicit weights applied','Application stage','Applied beam','Requested PMI/TPMI','PMI request source','Applied PMI/TPMI','Applied PMI status','Precoder match','Precoder SHA','Applied beam gain dB','Best measured beam','Best beam gain dB','Beam gap dB'], rows:beamRows, sourcePath:'canonical DL + UL trial precoder fields'},
-      {id:'pdcch', title:'PDCCH / DCI', columns:['Slot','UE','AggLevel','DCI bits','Decode ok','CRC pass'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
-      {id:'pucch', title:'PUCCH / UCI', columns:['Slot','UE','Format','Bits','Decode ok','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
+      {id:'pdcch', title:'PDCCH / DCI blind detection', columns:['Slot','UE','Configured SNR (dB)','RNTI','CORESET ID','Search-space ID','Blind search enabled','Candidates available','Candidates attempted','Blind decodes','Selected candidate','Selected flat index','AggLevel','Decoded DCI format','DCI bits','CRC RNTI','Decode ok','CRC pass','Detection attempted','Missed detection','False alarm','False alarm definition','DTX','Status'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
+      {id:'pdcch_hypotheses', title:'PDCCH receiver hypothesis evidence', columns:['Slot','UE','Blind decode source','Hypothesis AL vector','Hypothesis decode vector','Hypothesis SINR vector (dB)'], rows:recent(controlPreviews.pdcch_trials), sourcePath:selectedPath(controlSelection.pdcch_trials)},
+      {id:'pucch', title:'PUCCH / UCI detection and DTX', columns:['Slot','UE','Configured SNR (dB)','Format','Bits','Detection attempted','Detection outcome','Metric','Threshold','Threshold source','Decode ok','CRC applicable','CRC outcome','DTX','Missed feedback','False ACK','False NACK','Missed SR','False SR','Status'], rows:recent(controlPreviews.pucch_trials), sourcePath:selectedPath(controlSelection.pucch_trials)},
       {id:'pdsch', title:'PDSCH / DL-SCH', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.dl_trials), sourcePath:selectedPath(linkSelection.dl)},
       {id:'pusch', title:'PUSCH / UL-SCH', columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass'], rows:recent(dataPreviews.ul_trials), sourcePath:selectedPath(linkSelection.ul)},
       {id:'csi', title:'CSI / CSI-RS measurements', columns:['Slot','UE','Cell','CSI-RSRP dBm','CSI-SINR dB','Status'], rows:csiRows, sourcePath:'air_interface/csv/csi_rs_trials.csv'},
       {id:'srs', title:'SRS', columns:['Slot','UE','Metric','NMSE dB','Timing off','Status'], rows:recent(controlPreviews.srs_trials), sourcePath:selectedPath(controlSelection.srs_trials)},
       {id:'trs', title:'TRS / Tracking', columns:['Slot','UE','Metric','Est Doppler Hz','TRSValidityState','Update'], rows:recent(controlPreviews.trs_trials), sourcePath:selectedPath(controlSelection.trs_trials)},
-      {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS'], rows:trafficRows, sourcePath:'source-labelled runtime metric rows'},
+      {id:'traffic', title:'Traffic / Goodput', columns:['Slot','UE','Direction','Offered Mbps','Goodput Mbps','MCS','Rank / Layers','PRBs','Symbols'], rows:trafficRows, sourcePath:'executed PDSCH/PUSCH trial rows; rank/layers are transmitted values, not CSI RI or configured capability'},
     ];
     const channelTables = tableSpecs.map(spec => {
       const source = spec.sourcePath ? `<span class="source-link mono" title="${esc(spec.sourcePath)}">${esc(spec.sourcePath)}</span>` : '<span class="small">exact runtime table not published yet</span>';
       const body = spec.rows.length
         ? spec.rows.map(row => `<tr>${spec.columns.map(column => `<td>${esc(row[column] === null || row[column] === undefined || row[column] === '' ? '—' : row[column])}</td>`).join('')}</tr>`).join('')
-        : `<tr><td colspan="6">${unavailable('No exact runtime rows are available for this channel yet.')}</td></tr>`;
+        : `<tr><td colspan="${spec.columns.length}">${unavailable('No exact runtime rows are available for this channel yet.')}</td></tr>`;
       return `<article class="realtime-channel-table"><div class="toolbar" style="justify-content:space-between"><h4>${esc(spec.title)}</h4>${source}</div><div class="table-wrap"><table><thead><tr>${spec.columns.map(column => `<th>${esc(column)}</th>`).join('')}</tr></thead><tbody>${body}</tbody></table></div></article>`;
-    }).join('');
+    }).join('') + '<p class="mini-note">Detection, missed-detection, false-alarm and DTX entries are per-trial reported flags, not statistically qualified rates. A CRC failure is not automatically DTX. Missing values remain unavailable. PRACH raw timing, propagation timing and received RAR TA command are distinct; SSB position is not timing error. Blind decodes count hypotheses and can exceed the number of monitored PDCCH candidates. Normalized SS-RSRP is not absolute dBm.</p>';
     const policy = dashboard.folder_policy || {};
     return `<section class="panel"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Live Channel Tables</h3><p class="subtle">Each PHY/procedure channel has a channel-specific view. Columns are curated for that channel and values come only from its exact runtime preview or measurement rows.</p></div><div><span class="badge ${policy.manifest ? 'good' : 'warn'}">${esc(String(policy.status || 'folder policy unavailable').replaceAll('_',' '))}</span><a class="button-link" data-page="phy_grid" href="/phy-grid">Resource Grid</a></div></div><div class="realtime-channel-table-grid">${channelTables}</div><details><summary>Artifact counts and component cards</summary><div class="realtime-component-grid" style="margin-top:10px">${cards}</div></details><p class="mini-note" style="margin-top:9px">${esc(policy.note || 'Canonical paths remain authoritative; component views must be hash-verified mirrors.')}</p></section>`;
   }
@@ -20135,10 +20273,16 @@ window.addEventListener('DOMContentLoaded', function () {
       </div>
       ${liveEvidenceWarning}
       <section class="panel live-progress-summary"><div class="toolbar" style="justify-content:space-between"><div><h3 style="margin:0">Execution status</h3><p class="subtle">Compact values from the atomic live-stage row; no configured value is substituted for an unavailable measurement.</p></div><a class="button-link" data-page="phy_grid" href="/phy-grid">Open time-frequency grid</a></div>${progressBar}${objectTable(compactStage, 'Waiting for progress data.')}</section>
+      ${sweepProgressPanel(live.sweep_progress)}
       ${realtimeComponentPanel()}
       ${realtimeLogPanel()}
       ${realtimeUEStatusPanel()}
       <details class="panel live-stage-audit"><summary><strong>Full runtime stage audit record</strong> <span class="small">all persisted columns</span></summary><div style="margin-top:10px">${objectTable(stage, 'Waiting for progress data.')}</div></details>`;
+  }
+  function sweepProgressPanel(sweep) {
+    if (!sweep || !sweep.total) return '';
+    const rows = (sweep.points || []).map(point => `<tr><td>${esc(point.index)}</td><td>${esc(point.configured_snr_db ?? 'unavailable')}</td><td>${esc(point.status)}</td><td>${esc(point.current_slot ?? '—')} / ${esc(point.total_slots ?? '—')}</td><td>${esc(point.error || point.execution_status || '')}</td></tr>`).join('');
+    return `<section class="panel sweep-progress"><h3>SNR sweep progress</h3><p><strong>${esc(sweep.completed)} / ${esc(sweep.total)} completed</strong> · ${esc(sweep.passed)} passed · ${esc(sweep.failed)} failed · ${esc(sweep.ongoing)} ongoing · ${esc(sweep.pending)} pending</p><p class="subtle">${esc(sweep.note)}</p><div class="table-wrap"><table><thead><tr><th>Point</th><th>Configured SNR (dB)</th><th>Status</th><th>PHY slots</th><th>Result / error</th></tr></thead><tbody>${rows}</tbody></table></div><p class="small">Shared CSV/PNG index: <span class="mono">reports/csv/sweep_comparison_manifest.csv</span><br>Parent output: <span class="mono">${esc(sweep.run_folder)}</span></p></section>`;
   }
   function qualificationKeywords(section) {
     const map = {

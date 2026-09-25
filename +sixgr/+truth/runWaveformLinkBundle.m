@@ -64,8 +64,8 @@ if fixedLinkCampaignOnly
     campaign = localRunFixedLinkCampaign(cfgExec, fixedLinkGrid(:), sweepPlan, multiUser);
     fixedSummary = sixgr.util.structGet(campaign, "Summary", table());
     if istable(fixedSummary) && ~isempty(fixedSummary)
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), fixedSummary);
-        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedSummary);
+        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), fixedSummary, "PreserveSchema", true);
+        sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedSummary, "PreserveSchema", true);
     end
     if logical(persistenceEnabled)
         localWriteFixedLinkCampaignEvidence(runFolder, campaign);
@@ -500,14 +500,16 @@ end
 localLogStage(ctx, "Writing optional legacy sweep CSV artifacts when enabled.");
 stageStart = tic;
 if istable(res.SNRSweep) && ~isempty(res.SNRSweep)
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), res.SNRSweep);
+    % Undefined measurements at a zero-trial operating point are NaN, not
+    % unwired fields. Keep the same declared schema across the whole sweep.
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_snr_sweep.csv"), res.SNRSweep, "PreserveSchema", true);
 end
 if istable(res.ReferenceSweep) && ~isempty(res.ReferenceSweep)
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), res.ReferenceSweep);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_reference_snr_sweep.csv"), res.ReferenceSweep, "PreserveSchema", true);
 end
 fixedLinkSummary = sixgr.util.structGet(sixgr.util.structGet(res, "FixedLinkCampaign", struct()), "Summary", table());
 if istable(fixedLinkSummary) && ~isempty(fixedLinkSummary)
-    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedLinkSummary);
+    sixgr.util.csvWriteTable(fullfile(runFolder, "csv", "lls_fixed_link_campaign.csv"), fixedLinkSummary, "PreserveSchema", true);
 end
 if logical(persistenceEnabled)
     localWriteFixedLinkCampaignEvidence(runFolder, sixgr.util.structGet(res, "FixedLinkCampaign", struct()));
@@ -1012,8 +1014,7 @@ T = table();
 if exist(char(path), "file") ~= 2
     return;
 end
-T = readtable(char(path), "FileType", "text", "Delimiter", ",", ...
-    "ReadVariableNames", true, "VariableNamingRule", "preserve");
+T = sixgr.util.csvReadTable(path,"TextType","string");
 end
 
 function tf = localResolvePersistenceEnabled(opt)
@@ -1520,6 +1521,17 @@ if coupledTruth
     prachCorrelationTrace = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PRACHCorrelationTrace", table()));
     prachRAEvidence = localAppendRAEvidenceTables(prachRAEvidence, sixgr.util.structGet(controlTrials, "RAEvidenceTables", struct()));
     pdcchTrials = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PDCCH", table()));
+    if width(pdcchTrials) == 0
+        % Acquisition outage can prevent every PDCCH occasion. Preserve a
+        % typed zero-row CSV, not a two-byte file with no schema.
+        pdcchTrials = localEmptyLinkTrialTable(0);
+    end
+    if logical(sixgr.util.structGet(cfg,"outputs.phySignalDiagnosticEnabled",false))
+        channelEstimates=localBindCoupledRuntimeIdentity( ...
+            sixgr.util.structGet(controlTrials,"PDCCHChannelEstimate",table()),cfg,"PDCCH");
+        sixgr.report.exportPDCCHChannelEstimates(fileparts(char(string(runFolder))), ...
+            channelEstimates,saveFigures);
+    end
     pucchTrials = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "PUCCH", table()));
     srsTrials = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "SRS", table()));
     csirsTrials = localRuntimeControlTrials(sixgr.util.structGet(controlTrials, "CSIRS", table()));
@@ -8730,6 +8742,9 @@ for ueIdx = 1:numUsers
         servingCell = NaN;
     end
 
+    [state,~,~,~]=sixgr.truth.queueSharedPeriodicCSIRS( ...
+        state,cfgU,ueIdx,slotIdx,frameIdx,rnti,servingCell,snr_dB);
+
     % Resume prior RA attempts before this slot's control/data consumers.
     % Msg2/Msg4 are DL stages and must not wait for another PRACH occasion.
     hadPendingRA = localHasPendingRA(state, ueIdx);
@@ -9237,6 +9252,10 @@ if istable(currentPUCCHGrants) && ~isempty(currentPUCCHGrants)
     for ii = 1:height(pucchRows)
         decision = sixgr.phy.frame.resolveSRSPUCCHCollision( ...
             cfg, pucchRows(ii, :), slotIdx, ueIdx);
+        assert(decision.Action~="drop_overlapping_srs_symbols_preserve_pucch", ...
+            'sixgr:truth:PartialSRSSymbolSuppressionRequired', ...
+            ['This executor currently defers a whole SRS resource. It must not ' ...
+             'drop nonoverlapping symbols of a partially overlapping SRS resource.']);
         decision.GrantOrdinal = double(ii);
         [decision, decisionT] = localSerializeExactCollisionDecision(decision);
         T = localAppendCompatTable(T, decisionT);
@@ -10824,7 +10843,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'NoiseOnlyDetectionMetric','MissedDetection','FalseAlarm','FalseAlarmCandidateScope','FalseAlarmCandidateCount','DTXFlag','DTXReason', ...
     'PreambleIndex','RequestedPreambleIndex','DetectedPreambleIndex','PreambleIndexFromPeak', ...
     'PRACHRootSequenceIndex','PRACHZeroCorrelationZone','PRACHConfigurationIndex','PRACHOccasionIndex','PRACHCarrierSlot', ...
-    'MeasuredSINR_dB','WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
+    'MeasuredSINR_dB','WidebandCQI','CQIValueStatus','CQISelectionSINR_dB','CQIAppliedSINRMargin_dB','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate', ...
     'LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy','SchedulerGrantMCSSelectionMode', ...
     'CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OuterLoopEnabled','InnerLoopEnabled','OuterLoopApplied','InnerLoopApplied','OLLADeltaDb','OLLADeltaMCS','OLLAAdjustedMCSBeforeCQICeiling','OLLABaseRequiredSINR_dB','OLLATargetRequiredSINR_dB','OLLAThresholdSource','OLLAUpdateCount','OLLAState','CalibrationProfile', ...
     'RequestedOperatingPointSource','CQITable','MCSTable', ...
@@ -10922,7 +10941,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'MeasuredCodeBlockCRCErrorCount','MeasuredCodeBlockCRCCount','MeasuredCodeBlockCRCFailureRate', ...
     'MeasuredLDPCDecoderAlgorithm','MeasuredLDPCDecoderEngine','MeasuredLDPCIterationVector','MeasuredLDPCParityCheckVector','MeasuredCodeBlockDecodeErrorVector','MeasuredCodeBlockCRCErrorVector', ...
     'CodeBlockErrors','CodeBlockCount','CodeBlockBLER','CBGErrors','CBGCount','CBGBLER', ...
-    'PAPR_dB','PeakClippingEvents','SymbolErrors','SymbolsCompared','SymbolErrorRate', ...
+    'PAPR_dB','PAPRMeasurementJSON','PeakClippingEvents','SymbolErrors','SymbolsCompared','SymbolErrorRate', ...
     'ResidualInterferencePower_dB', ...
     'LLRMeanAbs','LLRStdAbs','LLRImbalance','ModulationMappingSensitivity', ...
     'ShapingRateLoss','DistributionMatchingLatency_ms','HighOrderRobustness', ...
@@ -10948,6 +10967,7 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'PRACHSNRCalibrationStatus','PRACHSNRCalibrationSource','PRACHSNRCalibrationError_dB','PRACHNoiseReferencePower', ...
     'ReceiverHestSINR_dB','ReceiverHestSINRSource','ReceiverHestSINRValueRole','ReceiverHestSINRValueStatus','ReceiverHestSINRNAReason', ...
     'PostEqSINR_dB','PostEqSINRSource','PostEqSINRValueRole','PostEqSINRValueStatus','PostEqSINRNAReason','PostEqSINRPerLayer_dB', ...
+    'ResidualInterLayerPowerMean','ResidualInterLayerPowerPerLayer','ResidualInterLayerPowerSource','ResidualInterLayerPowerStatus', ...
     'EVMProxySINR_dB','EVMProxySINRSource','EVMProxySINRValueRole','EVMProxySINRValueStatus','EVMProxySINRNAReason', ...
     'DecoderTruthProxySINR_dB','DecoderTruthProxySINRSource','DecoderTruthProxySINRValueRole','DecoderTruthProxySINRValueStatus','DecoderTruthProxySINRNAReason', ...
     'SINRValueRole','SINRSource','SINRValueStatus','SINRValueDefinition', ...
@@ -11037,7 +11057,7 @@ for i = 1:numel(vars)
                     case {'Direction','ChannelModel','ChannelModelApplied','Status','Notes','PMIType','PMICodebookMode','CSIReportMode','Modulation', ...
                             'TBSInputModulation','TBSInputSource','PTRSCPECorrectionReason','PTRSCPECorrectionStatus','PTRSReceiverEvidenceSource', ...
                             'CQIDerivedModulation','LinkAdaptationMode','ConfiguredLinkAdaptationMode','LinkAdaptationDomain','ActualMCSSelectionMode','ConfiguredMCSSelectionPolicy', ...
-                            'SchedulerGrantMCSSelectionMode','CQISource','MCSSelectionSource','MCSValueStatus','OLLADomain','OLLAState','CalibrationProfile', ...
+                            'SchedulerGrantMCSSelectionMode','CQISource','CQIValueStatus','MCSSelectionSource','MCSValueStatus','OLLADomain','OLLAState','CalibrationProfile', ...
                             'RequestedOperatingPointSource','CQITable','MCSTable','CSIPayloadHex', ...
                             'CRCOutcome','NoiseVarianceSource','NoiseVarStatus','NoiseVarSource','NoiseVarReason','FailureReason','TAOutOfRangeReason', ...
                             'ReplaySampleNoiseVarianceDomain','ReplayGridNoiseVarianceDomain','ReceiverInputSampleNoiseVarianceDomain', ...
@@ -11052,6 +11072,7 @@ for i = 1:numel(vars)
                             'ConfiguredSNRSource','SNRValueRole','AppliedAWGNSNRSource','PRACHSNRCalibrationStatus','PRACHSNRCalibrationSource', ...
                             'ReceiverHestSINRSource','ReceiverHestSINRValueRole','ReceiverHestSINRValueStatus','ReceiverHestSINRNAReason', ...
                             'PostEqSINRSource','PostEqSINRValueRole','PostEqSINRValueStatus','PostEqSINRNAReason','PostEqSINRPerLayer_dB', ...
+                            'ResidualInterLayerPowerPerLayer','ResidualInterLayerPowerSource','ResidualInterLayerPowerStatus', ...
                             'EVMProxySINRSource','EVMProxySINRValueRole','EVMProxySINRValueStatus','EVMProxySINRNAReason', ...
                             'DecoderTruthProxySINRSource','DecoderTruthProxySINRValueRole','DecoderTruthProxySINRValueStatus','DecoderTruthProxySINRNAReason', ...
                             'SINRValueRole','SINRSource','SINRValueStatus','SINRValueDefinition', ...
@@ -11275,17 +11296,7 @@ end
 if all(~isfinite(double(T.ResidualTimingError_PostCorrection_samples))) && any(isfinite(double(T.TimingError_samples)))
     T.ResidualTimingError_PostCorrection_samples = double(T.TimingError_samples);
 end
-warmMask = false(height(T), 1);
-if ismember("AdaptiveMode", string(T.Properties.VariableNames)) && ...
-        ismember("LinkAdaptationScheduled", string(T.Properties.VariableNames)) && ...
-        ismember("LinkAdaptationApplied", string(T.Properties.VariableNames))
-    % A fixed-MCS grant can legitimately record that adaptation machinery
-    % inspected the grant but did not apply an adaptive decision.  That is
-    % measured fixed-operation data, not an AMC bootstrap/warm-up row.
-    warmMask = logical(T.AdaptiveMode) & ...
-        logical(T.LinkAdaptationScheduled) & ~logical(T.LinkAdaptationApplied);
-end
-T.IsWarmupFrame = logical(warmMask);
+T = sixgr.analytics.applyTrialMeasurementPhase(T, cfg);
 if all(~isfinite(double(T.SFN)))
     T.SFN = mod(max(0, round(double(T.Frame)) - 1), 1024);
 end
@@ -12298,6 +12309,7 @@ for k = 1:nTrials
         r.SIB1ASN1DecodeOk = double(sib1Asn1DecodeOk);
         r.SIB1FailureReason = string(sixgr.util.structGet(sib1, "FailureReason", ""));
         r.SSBIndex = double(sixgr.util.structGet(out, "SSBIndex", ssbIndex));
+        r.RequestedSSBOccasionIndex = double(sixgr.util.structGet(out, "RequestedSSBOccasionIndex", NaN));
         r.PBCHHypothesisSSBIndex = double(sixgr.util.structGet(out, "PBCHHypothesisSSBIndex", NaN));
         r.SSBIdentityVerified = logical(sixgr.util.structGet(out, "SSBIdentityVerified", false));
         r.SSBIndexSource = string(sixgr.util.structGet(out, "SSBIndexSource", ""));
@@ -12450,6 +12462,10 @@ for k = 1:nTrials
             out, "PowerReferencePlane", ""));
         r.PBCHDMRSMetric = double(sixgr.util.structGet(out, "PBCHDMRSMetric", NaN));
         r.PSSMetric = double(sixgr.util.structGet(out, "PSSMetric", NaN));
+        detectorEvidence = sixgr.phy.sync.ssbDetectionEvidence(out);
+        for name = string(fieldnames(detectorEvidence)).'
+            r.(name) = detectorEvidence.(name);
+        end
         r.SSSMetric = double(sixgr.util.structGet(out, "SSSMetric", NaN));
         r.SSSMetricMargin = double(sixgr.util.structGet(out, "SSSMetricMargin", NaN));
         r.PSSDetected = logical(sixgr.util.structGet(out, "PSSDetected", false));
@@ -12626,6 +12642,11 @@ plans=localPrepareCoupledGrantBatch(state,cfg,multiUser,userCfg,grants,direction
 assert(numel(plans)==numel(grants) && all([plans.Valid]), ...
     'sixgr:truth:SharedGrantPreparationIncomplete','Every admitted grant requires an actual transmit preparation.');
 for plan=reshape(plans,1,[])
+    if upper(string(direction))=="DL" && isfield(state,'SharedWaveformStream') && ...
+            logical(sixgr.util.structGet(plan.Cfg,'phy.csirs.enable',false))
+        plan.Cfg=sixgr.util.structSet(plan.Cfg, ...
+            'lls6g.runtime.independentCellCommonCSIRSOwner',true);
+    end
     if upper(string(direction))=="UL" && isfield( ...
             sixgr.util.structGet(plan.Cfg,'phy.pdcch.operatorControl',struct()),'connected_dci')
         controls=sixgr.util.structGet(state,'SharedReceivedGrantControls',{});
@@ -12660,8 +12681,22 @@ end
 function state=localCompleteSharedScheduledPDCCH(state,item)
 c=item.Context; p=c.Prepared;
 [post,~,~,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
-[raw,receivedAssignment]=localCompletePDCCHTrial(p,receiver,c.Grant,c.SNR,1, ...
+[raw,receivedAssignment,channelEvidence]=localCompletePDCCHTrial(p,receiver,c.Grant,c.SNR,1, ...
     double(sixgr.util.structGet(replay,'SampleNoiseVariance',NaN)),replay);
+if ~isempty(channelEvidence)
+    n=height(channelEvidence);
+    channelEvidence.AbsoluteSlot0=repmat(double(c.Slot-1),n,1);
+    channelEvidence.UEIndex=repmat(double(item.UE),n,1);
+    channelEvidence.ServingCell=repmat(double(c.ServingCell),n,1);
+    channelEvidence.SNR_dB=repmat(double(c.SNR),n,1);
+    channelEvidence.ObservationStartSample=repmat(double(receiver.StartSample),n,1);
+    channelEvidence.ObservationEndSampleExclusive=repmat(double(receiver.EndSampleExclusive),n,1);
+    channelEvidence.GrantDirection=repmat(string(c.Direction),n,1);
+    channelEvidence.Direction=repmat("DL",n,1);
+    channelEvidence.SignalName=repmat("PDCCH",n,1);
+    state.ControlTrials.PDCCHChannelEstimate=localAppendCompatTable( ...
+        sixgr.util.structGet(state.ControlTrials,'PDCCHChannelEstimate',table()),channelEvidence);
+end
 if logical(sixgr.util.structGet(raw,'Crash',false))
     localAppendRuntimeLog("WARN", ...
         "Shared PDCCH receive completion failed: ue=%d slot=%d id=%s notes=%s", ...
@@ -12841,9 +12876,21 @@ res.TrialTable=sixgr.truth.bindSharedRFExecutionEvidence(res.TrialTable,item.Pla
 if logical(sixgr.util.structGet(job.Cfg,'outputs.phySignalDiagnosticEnabled',false)) && ...
         (logical(job.ReceivedContext.ChannelState.UseFading) || ...
         sixgr.channel.IdentityAWGNRuntime.isState(job.ReceivedContext.ChannelState))
-    [res.TrialTable,channelDiagnosticContext]=sixgr.truth.exportSharedChannelObservation( ...
+    [res.TrialTable,channelDiagnosticContext,channelCaptures,channelReplays]=sixgr.truth.exportSharedChannelObservation( ...
         sixgr.util.structGet(c.Config,'run.rootRunFolder',""),res.TrialTable, ...
         item.Planes,p,c.DesiredReferencePlane);
+    if any(job.Direction==["DL","UL"])
+        res.TrialTable.ChannelEstimateCaptureStatus="unavailable_no_receiver_pilot_estimate";
+        if isfield(res,'ChannelEstimateSnapshots') && numel(res.ChannelEstimateSnapshots)==1 && ...
+                ~isempty(res.ChannelEstimateSnapshots{1})
+            res.TrialTable=sixgr.truth.exportSharedDataChannelEstimate( ...
+                sixgr.util.structGet(c.Config,'run.rootRunFolder',""),res.TrialTable, ...
+                res.ChannelEstimateSnapshots{1},p,channelCaptures,channelReplays,c.WaveformToElementMatrix);
+        end
+        % The immutable files retain the pilot evidence. Do not accumulate
+        % full-band receiver captures in the long-lived runtime state.
+        if isfield(res,'ChannelEstimateSnapshots'), res=rmfield(res,'ChannelEstimateSnapshots'); end
+    end
     % The executed channel coefficients are deliberately unavailable to the
     % practical receiver. Add them to publication evidence only after the
     % decode and CRC decision have completed.
@@ -12926,7 +12973,12 @@ function state=localCompleteSharedControlObservations(state,received)
 % Preserve relative order inside each class; no future samples are consumed.
 received=reshape(received,1,[]);
 isTX=ismember(string({received.Kind}),["DataTX","PUCCHTX"]);
-received=[received(isTX),received(~isTX)];
+% Completed SRS timing is a dependency of buffered pilot-free PUCCH RX.
+% Every item in this callback already completed at the current physical
+% deadline. Publish pilots before their consumers, never advance the stream
+% to acquire a future pilot or depend on observation-registration order.
+isSRS=string({received.Kind})=="SRS";
+received=[received(isTX),received(isSRS),received(~isTX & ~isSRS)];
 for item=received
     context=item.Context;
     if item.Kind=="PUCCHTX"
@@ -12946,6 +12998,19 @@ for item=received
     end
     if item.Kind=="PDCCH"
         state=localCompleteSharedScheduledPDCCH(state,item);
+        continue;
+    end
+    if item.Kind=="CSIRS"
+        [state,~,~,~]=sixgr.truth.completeSharedCSIRSReception(state,item);
+        p=item.Context.Prepared;
+        observed=sixgr.truth.buildObservedREAllocation(p.Tx, ...
+            'Direction','DL','Channel','CSI-RS', ...
+            'AbsoluteSlot',item.Context.Slot-1, ...
+            'CellID',item.Context.ServingCell,'UEID',NaN, ...
+            'AllocationID',"csirs_cell_"+string(item.Context.ServingCell)+ ...
+                "_slot_"+string(item.Context.Slot-1));
+        state.ObservedREAllocationTable=localAppendObservedREAllocation( ...
+            sixgr.util.structGet(state,'ObservedREAllocationTable',table()),observed);
         continue;
     end
     if item.Kind=="PrepareULData"
@@ -12977,8 +13042,25 @@ for item=received
         state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
         continue;
     end
-    if any(item.Kind==["RA","RAR","RARExpiry"])
+    if any(item.Kind==["RA","RAR","RARExpiry","Contention","ContentionStart","ContentionExpiry"])
         state=localCompleteSharedRAObservation(state,item);
+        continue;
+    end
+    if item.Kind=="SuppressedSRSObservation"
+        proof=item.Context.SuppressionProof;
+        p=item.Context.Prepared;
+        decision=table(item.UE,p.ReceiveStartSample, ...
+            proof.Cancellation.CancelledAtSample, ...
+            string(jsonencode(proof.Decision.DroppedSymbols0Based)), ...
+            "srs_suppressed_for_actual_same_UE_PUCCH", ...
+            string(jsonencode(proof)),false, ...
+            'VariableNames',{'UEIndex','ReceiveStartSample','DecisionSample', ...
+            'DroppedSRSSymbols0Based','Action','PhysicalSuppressionProofJSON','SRSReceiverExecuted'});
+        state.ControlTrials.SRSResourceDecisions=localAppendCompatTable( ...
+            sixgr.util.structGet(state.ControlTrials,'SRSResourceDecisions',table()),decision);
+        localAppendRuntimeLog("INFO", ...
+            "SRS suppressed before emission for actual UE PUCCH: ue=%d SRS=%s PUCCH=%s.", ...
+            item.UE,char(proof.SRSObservationID),char(proof.PUCCHObservationID));
         continue;
     end
     if item.Kind=="SRS"
@@ -13616,7 +13698,9 @@ evidence.ra_runtime_stage_waveforms = stages(previousCount+1:end, :);
 for mapping={ ...
         {'RARMonitoringObservations','rar_monitoring_observations','PublishedRARObservations'}, ...
         {'RARMonitoringCandidates','rar_monitoring_candidates','PublishedRARCandidates'}, ...
-        {'RARMonitoringDecodedFields','rar_monitoring_decoded_fields','PublishedRARFields'}}
+        {'RARMonitoringDecodedFields','rar_monitoring_decoded_fields','PublishedRARFields'}, ...
+        {'ContentionMonitoringObservations','contention_monitoring_observations','PublishedContentionObservations'}, ...
+        {'UEContentionEvents','ue_contention_events','PublishedUEContentionEvents'}}
     keys=mapping{1}; values=sixgr.util.structGet(ra,keys{1},table());
     count=sixgr.util.structGet(attempt,keys{3},0);
     if height(values)<count, error('sixgr:truth:RARMonitoringEvidenceRegressed','Receiver rows were lost.'); end
@@ -13667,18 +13751,36 @@ if item.Kind~="RA"
     % must not be decoded as a new attempt or delivered after access ends.
     if ~localHasPendingRA(state,ue), return; end
     cp=state.PendingRAAttempts{ue}.Continuation;
-    if cp.RAConfig.RunId~=item.Context.RunId || cp.NextStage~=2, return; end
+    if cp.RAConfig.RunId~=item.Context.RunId, return; end
+    if any(item.Kind==["RAR","RARExpiry"])
+        if cp.NextStage~=2, return; end
+    else
+        receiver=sixgr.util.structGet(cp,'ContentionReceiver',[]);
+        if isempty(receiver), return; end
+        required="waiting";
+        if item.Kind=="ContentionStart", required="armed"; end
+        if receiver.MAC.Status~=required, return; end
+    end
 end
 attempt=state.PendingRAAttempts{ue};
 streams=struct(); action="execute"; stage="Msg2"; extra={};
-if item.Kind=="RARExpiry"
+if any(item.Kind==["ContentionStart","ContentionExpiry"])
+    action="start_contention_timer";
+    if item.Kind=="ContentionExpiry", action="expire_contention_timer"; end
+    stage="Msg4"; extra={'EventTicks',item.Context.EventTicks};
+    through=double(item.Context.EventTicks)/double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
+elseif item.Kind=="RARExpiry"
     action="expire_rar_window"; extra={'EventTicks',item.Context.ExpiryTicks};
     through=double(item.Context.ExpiryTicks)/double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
 else
     ids=string({item.Planes.ReceiverID});
     post=item.Planes(find(endsWith(ids,':post_rf'),1)).Observation;
     through=post.EndSampleExclusive/post.SampleRateHz;
-    if item.Kind=="RAR"
+    if item.Kind=="Contention"
+        stage="Msg4"; action="receive_contention_observation";
+        streams.ContentionPhysicalExecution=struct('Planes',item.Planes);
+        extra={'ContentionObservationSlot',item.Context.AbsoluteSlot};
+    elseif item.Kind=="RAR"
         action="receive_rar_observation";
         streams.RARPhysicalExecution=struct('Planes',item.Planes);
         extra={'RARObservationSlot',item.Context.AbsoluteSlot};
@@ -13698,6 +13800,15 @@ end
     'InitialDLChannelState',dl,'InitialULChannelState',ul, ...
     'StopAfterStage',stage,'StageAction',action,'ReceiveThroughTime_s',through,extra{:});
 retry=state.RARetryByUE{ue};
+% Preserve failed physical reception before classifying a MAC transition.
+if item.Kind=="RA"
+    sixgr.truth.exportSharedRAObservation(attempt.Config.run.rootRunFolder,attempt.Config, ...
+        attempt.Continuation,p,item.Planes,ra);
+elseif item.Kind=="RAR"
+    sixgr.truth.exportSharedRARObservation(attempt.Config.run.rootRunFolder,attempt.Config,item.Context,item.Planes,ra);
+elseif item.Kind=="Contention"
+    sixgr.truth.exportSharedRARObservation(attempt.Config.run.rootRunFolder,attempt.Config,item.Context,item.Planes,ra,"Contention");
+end
 if item.Kind=="RA" && stage=="Msg1"
     retry=retry.transmitted(attempt.Continuation.RAConfig.PRACHActiveEndTicksExclusive);
 elseif item.Kind=="RARExpiry"
@@ -13720,19 +13831,24 @@ elseif item.Kind=="RAR" && ~isempty(fieldnames(checkpoint)) && checkpoint.NextSt
     state.ConnectedULTimingByUE{ue,1}=sixgr.mac.ra.connectedTimingFromRAR( ...
         attempt.Config,common,checkpoint.RARRx,item.Context.AbsoluteSlot, ...
         post.EndSampleExclusive,post.SampleRateHz);
-elseif isempty(fieldnames(checkpoint)) && ra.RACompleted
+elseif isfield(ra,'ContentionReceiver') && ...
+        any(ra.ContentionReceiver.MAC.Status==["expired","identity_mismatch"])
+    [retry,retryRow]=retry.contentionFailed(ra.ContentionReceiver, ...
+        attempt.Continuation.RARReceiver,localSharedNowTicks(state));
+    state.ControlTrials.RAEvidenceTables=localAppendRAEvidenceTables( ...
+        sixgr.util.structGet(state.ControlTrials,'RAEvidenceTables',struct()),struct('ra_retry_events',retryRow));
+    % The initial TAG was installed by this attempt's RAR. Failed contention
+    % stops that provisional timing authority; a retry must receive a new TA.
+    state.ConnectedULTimingByUE{ue}=[];
+elseif isfield(ra,'ContentionReceiver') && ra.ContentionReceiver.MAC.Status=="succeeded"
+    if retry.Status~="completed", retry=retry.completed(); end
+elseif isempty(fieldnames(checkpoint)) && ra.RACompleted && retry.Status~="completed"
     retry=retry.completed();
 elseif isempty(fieldnames(checkpoint))
     error('sixgr:truth:MissingUEContentionFailureBoundary', ...
         'A post-RAR gNB decode failure cannot become an immediate UE retry; execute the UE contention timer first.');
 end
 state.RARetryByUE{ue}=retry;
-if item.Kind=="RA"
-    sixgr.truth.exportSharedRAObservation(attempt.Config.run.rootRunFolder,attempt.Config, ...
-        attempt.Continuation,p,item.Planes,ra);
-elseif item.Kind=="RAR"
-    sixgr.truth.exportSharedRARObservation(attempt.Config.run.rootRunFolder,attempt.Config,item.Context,item.Planes,ra);
-end
 attempt.Received=ra;
 % Publish the received stage even at the final configured slot. Eligibility
 % is consumed by the next scheduler decision; retaining receiver evidence
@@ -13752,6 +13868,10 @@ state.ControlTrials.RAEvidenceTables=localAppendRAEvidenceTables( ...
     sixgr.util.structGet(state.ControlTrials,'RAEvidenceTables',struct()),evidence);
 if ~isempty(trial), state=sixgr.truth.CoupledTruthRuntime.applyPRACHTrial(state,ue,trial); end
 if ~isempty(fieldnames(checkpoint))
+    if any(item.Kind==["ContentionStart","ContentionExpiry"]) || ...
+            (item.Kind=="Contention" && checkpoint.ContentionReceiver.MAC.Status=="waiting")
+        return;
+    end
     attempt=state.PendingRAAttempts{ue};
     [next,checkpoint]=sixgr.phy.ra.runFourStepRA(attempt.Config, ...
         'Continuation',checkpoint,'StageAction','prepare_next_stage');
@@ -13759,7 +13879,10 @@ if ~isempty(fieldnames(checkpoint))
     state.PendingRAAttempts{ue}=attempt;
     if ~isempty(fieldnames(next.PreparedTransmission))
         state.SharedWaveformStream.queueRA(ue,next.PreparedTransmission, ...
-            struct('Config',attempt.Config),next.PreparedTransmission.StageName=="Msg2");
+            struct('Config',attempt.Config),any(next.PreparedTransmission.StageName==["Msg2","Msg4"]));
+        if next.PreparedTransmission.StageName=="Msg3"
+            state.SharedWaveformStream.armContentionWindow(ue,checkpoint.ContentionReceiver);
+        end
     end
 end
 end
@@ -14418,6 +14541,7 @@ function names = localRAEvidenceTableNames()
 names = ["ra_attempts","ra_state_transitions","msg1_prach_detection", ...
     "ra_retry_events","ra_power_reference_decisions", ...
     "rar_monitoring_observations","rar_monitoring_candidates","rar_monitoring_decoded_fields", ...
+    "contention_monitoring_observations","ue_contention_events", ...
     "msg2_rar_trials","msg2_pdcch_candidates","msg2_dci_fields","msg4_dci_fields","msg3_pusch_trials", ...
     "msg4_contention_resolution","rrc_connection_events","rrc_setup_complete", ...
     "ra_timer_events","ra_negative_trials", ...
@@ -14546,11 +14670,12 @@ end
 T = struct2table(rows);
 end
 
-function [r,receivedAssignment] = localCompletePDCCHTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay)
+function [r,receivedAssignment,channelEvidence] = localCompletePDCCHTrial(preparedPDCCH,observation,grantContext,snr_dB,k,nVar,replay)
 % Receive-completion reducer for a retained control preparation. This stage
 % never regenerates TX, propagates fading, or executes an RF chain.
 cfgTrial = preparedPDCCH.ReceiverConfig;
 receivedAssignment=struct();
+channelEvidence=table();
 tx = preparedPDCCH.Tx;
 txInfo = preparedPDCCH.TxInfo;
 grantRNTI = double(txInfo.RNTI);
@@ -14571,6 +14696,9 @@ if rxInfo.ReceiverConfiguredMonitoring && ~isempty(fieldnames(grantContext))
     % One shared slot may carry both UL and DL commands for the same UE.
     % Route by received semantic direction, never by expected TX payload.
     [rx,rxInfo]=sixgr.link.selectConnectedPDCCHDirection(rx,rxInfo,grantContext.Direction);
+end
+if nargout>2 && logical(sixgr.util.structGet(cfgTrial,'outputs.phySignalDiagnosticEnabled',false))
+    channelEvidence=sixgr.link.buildPDCCHChannelEstimateTable(rx);
 end
 controlLatency_ms = toc(tDecode)*1e3;
 radioTTI_ms = localSlotDuration(cfgTrial)*1e3;
@@ -15241,7 +15369,7 @@ if isempty(levels)
 end
 levels = sixgr.phy.pdcch.resolveExecutableAggregationLevels(cfg, levels);
 if nargin >= 5 && isstruct(grantContext) && ~isempty(fieldnames(grantContext))
-    aggLevel = localSelectGrantPDCCHAggregationLevel(cfg, levels, snr_dB);
+    aggLevel = sixgr.phy.pdcch.resolveScheduledAggregationLevel(cfg,grantContext);
 else
     nTrials = max(1, round(double(nTrials)));
     idx = mod(max(1, round(double(trialIdx))) - 1, numel(levels)) + 1;
@@ -15273,29 +15401,6 @@ if nargin >= 5 && isstruct(grantContext) && ~isempty(fieldnames(grantContext))
     cfgTrial = sixgr.util.structSet(cfgTrial, "lls6g.userContext.RuntimeSlotStartTime_s", ...
         (double(controlSlot) - 1) * sixgr.time.slotDurationSec(cfgTrial));
 end
-end
-
-function aggLevel = localSelectGrantPDCCHAggregationLevel(cfg, levels, snr_dB)
-levels = unique(double(levels(ismember(levels, [1 2 4 8 16]))), "stable");
-if isempty(levels)
-    levels = 4;
-end
-policy = lower(strtrim(string(sixgr.util.structGet(cfg, "phy.pdcch.aggregationSelectionPolicy", "snr_threshold"))));
-configuredAL = double(sixgr.util.structGet(cfg, "phy.pdcch.schedulerAggregationLevel", NaN));
-if (policy == "configured_scheduler_level") && isfinite(configuredAL)
-    if any(levels == configuredAL)
-        aggLevel = configuredAL;
-        return;
-    end
-    [~, idx] = min(abs(levels - configuredAL));
-    aggLevel = double(levels(idx));
-    return;
-end
-if policy == "most_robust"
-    aggLevel = max(levels);
-    return;
-end
-aggLevel = localSelectPDCCHAggregationLevel(levels, snr_dB);
 end
 
 function aggLevel = localSelectPDCCHAggregationLevel(levels, snr_dB)
@@ -16036,6 +16141,10 @@ for k = 1:nTrials
         r.PostEqSINRValueStatus = string(sixgr.util.structGet(out, "PostEqSINRValueStatus", ""));
         r.PostEqSINRNAReason = string(sixgr.util.structGet(out, "PostEqSINRNAReason", ""));
         r.PostEqSINRPerLayer_dB = localFormatNumericVector(sixgr.util.structGet(out, "PostEqSINRPerLayer_dB", ""));
+        r.ResidualInterLayerPowerMean=double(sixgr.util.structGet(out,'ResidualInterLayerPowerMean',NaN));
+        r.ResidualInterLayerPowerPerLayer=localFormatNumericVector(sixgr.util.structGet(out,'ResidualInterLayerPowerPerLayer',[]));
+        r.ResidualInterLayerPowerSource=string(sixgr.util.structGet(out,'ResidualInterLayerPowerSource',''));
+        r.ResidualInterLayerPowerStatus=string(sixgr.util.structGet(out,'ResidualInterLayerPowerStatus','unavailable_receiver_trial'));
         r.MeasuredTrialSINR_dB = double(sixgr.util.structGet(out, "MeasuredTrialSINR_dB", NaN));
         r.MeasuredTrialSINRSource = string(sixgr.util.structGet(out, "MeasuredTrialSINRSource", ""));
         r.MeasuredTrialSINRValueRole = string(sixgr.util.structGet(out, "MeasuredTrialSINRValueRole", ""));
@@ -16246,6 +16355,10 @@ for k = 1:nTrials
         r.PUSCHSchedulingSINRAnchorValueStatus = string(sixgr.util.structGet( ...
             outSRS, "PUSCHSchedulingSINRAnchorValueStatus", "NOT_AVAILABLE"));
         r.WidebandCQI = double(sixgr.util.structGet(outSRS, "CQI", NaN));
+        r.CQISource = string(sixgr.util.structGet(outSRS,"CQISource",""));
+        r.CQIValueStatus = string(sixgr.util.structGet(outSRS,"CQIValueStatus",""));
+        r.CQISelectionSINR_dB = double(sixgr.util.structGet(outSRS,"CQISelectionSINR_dB",NaN));
+        r.CQIAppliedSINRMargin_dB = double(sixgr.util.structGet(outSRS,"CQIAppliedSINRMargin_dB",NaN));
         r.CQIDerivedMCS = double(sixgr.util.structGet(outSRS, "MCSIndex", NaN));
         r.CQIDerivedModulation = string(sixgr.util.structGet(outSRS, "Modulation", ""));
         r.CQIDerivedTargetCodeRate = double(sixgr.util.structGet(outSRS, "TargetCodeRate", NaN));
@@ -16413,6 +16526,8 @@ for k = 1:nTrials
         r.DetectionMetric = double(sixgr.util.structGet(out, "DetectionMetric", NaN));
         r.DetectionThreshold = double(sixgr.util.structGet(out, "DetectionThreshold", NaN));
         r.ResourceCoverageRatio = double(sixgr.util.structGet(out, "ResourceCoverageRatio", NaN));
+        r.TRSDetectionPolicy = string(sixgr.util.structGet(out,"TRSDetectionPolicy",""));
+        r.TRSDetectionEvidenceJSON = string(sixgr.util.structGet(out,"TRSDetectionEvidenceJSON",""));
         r.MinCoverageRatio = double(sixgr.util.structGet(out, "MinCoverageRatio", NaN));
         r.DetectionAttempted = logical(sixgr.util.structGet(out, "DetectionAttempted", false));
         r.DetectionSuccess = logical(sixgr.util.structGet(out, "DetectionSuccess", false));
@@ -16546,6 +16661,7 @@ row.Seed = seed0 + double(trialIdx) - 1;
 row.Frame = double(trialIdx);
 row.Slot = double(trialIdx);
 row.SSBIndex = NaN;
+row.RequestedSSBOccasionIndex = NaN;
 row.PBCHHypothesisSSBIndex = NaN;
 row.SSBIdentityVerified = false;
 row.SSBIndexSource = "";
@@ -16655,6 +16771,8 @@ row.ChannelNMSEThreshold_dB = NaN;
 row.PilotResidualNMSE_dB = NaN;
 row.DetectionMetric = NaN;
 row.DetectionThreshold = NaN;
+row.TRSDetectionPolicy = "";
+row.TRSDetectionEvidenceJSON = "";
 row.DetectionThresholdMode = "";
 row.ResourceCoverageRatio = NaN;
 row.MinCoverageRatio = NaN;
@@ -16932,6 +17050,10 @@ row.PostEqSINRValueRole = "";
 row.PostEqSINRValueStatus = "";
 row.PostEqSINRNAReason = "";
 row.PostEqSINRPerLayer_dB = "";
+row.ResidualInterLayerPowerMean=NaN;
+row.ResidualInterLayerPowerPerLayer="";
+row.ResidualInterLayerPowerSource="";
+row.ResidualInterLayerPowerStatus="unavailable_receiver_trial";
 row.MeasuredTrialSINR_dB = NaN;
 row.MeasuredTrialSINRSource = "";
 row.MeasuredTrialSINRValueRole = "";
@@ -16944,6 +17066,9 @@ row.SINRSource = "";
 row.SINRValueStatus = "";
 row.SINRValueDefinition = "";
 row.WidebandCQI = NaN;
+row.CQIValueStatus = "";
+row.CQISelectionSINR_dB = NaN;
+row.CQIAppliedSINRMargin_dB = NaN;
 row.CQIDerivedMCS = NaN;
 row.CQIDerivedModulation = "";
 row.CQIDerivedTargetCodeRate = NaN;
@@ -17219,6 +17344,8 @@ row.SINRMeasurementDomain = "";
 row.PowerReferencePlane = "";
 row.DesiredPilotPower = NaN;
 row.ResidualPilotPower = NaN;
+row.SignedPilotSINRLinear = NaN;
+row.PilotPowerEvidenceJSON = "";
 row.SpatialSignatureToken = "";
 row.SpatialSignatureSHA256 = "";
 row.SpatialSignatureRows = NaN;
@@ -17357,6 +17484,7 @@ row.CBGErrors = NaN;
 row.CBGCount = NaN;
 row.CBGBLER = NaN;
 row.PAPR_dB = NaN;
+row.PAPRMeasurementJSON = "";
 row.PeakClippingEvents = NaN;
 row.SymbolErrors = NaN;
 row.SymbolsCompared = NaN;
@@ -17477,6 +17605,10 @@ row.PathlossReferenceRS = "";
 row.PowerReferencePlane = "";
 row.PBCHDMRSMetric = NaN;
 row.PSSMetric = NaN;
+detectorEvidence = sixgr.phy.sync.ssbDetectionEvidence();
+for name = string(fieldnames(detectorEvidence)).'
+    row.(name) = detectorEvidence.(name);
+end
 row.SSSMetric = NaN;
 row.SSSMetricMargin = NaN;
 row.PSSDetected = false;
@@ -17525,6 +17657,10 @@ row.PostEqSINRValueRole = "";
 row.PostEqSINRValueStatus = "";
 row.PostEqSINRNAReason = "";
 row.PostEqSINRPerLayer_dB = "";
+row.ResidualInterLayerPowerMean=NaN;
+row.ResidualInterLayerPowerPerLayer="";
+row.ResidualInterLayerPowerSource="";
+row.ResidualInterLayerPowerStatus="unavailable_receiver_trial";
 row.DecoderTruthProxySINR_dB = NaN;
 row.DecoderTruthProxySINRSource = "";
 row.SINRValueRole = "";
@@ -17686,6 +17822,9 @@ T.PDCCHGrantAggregationLevel = NaN(nRows, 1);
 T.PDCCHGrantCandidateIndex = NaN(nRows, 1);
 T.PDCCHGrantDCIFormat = strings(nRows, 1);
 T = sixgr.link.appendMeasuredPHYEvidenceColumns(T, cell(nRows, 1));
+if nRows==0
+    T=sixgr.link.completeEmptyLinkTrialSchema(T);
+end
 end
 
 function T = localEmptyCSIRSTrialTable()
@@ -17722,6 +17861,7 @@ row = struct( ...
     "ConfiguredResourceIDs", "", "CSIRSPhysicalPortCount", NaN, ...
     "CSIRSPrecoderSource", "", "CSIRSPrecoderDigests", "", ...
     "PMIType", "", "PMICodebookMode", "", "SINR_dB", NaN, "SINRSource", "", ...
+    "CQIEffectiveSINR_dB", NaN, "CQIEffectiveSINRSource", "", ...
     "SINRValueRole", "", "SINRValueStatus", "", "SINRMeasurementDomain", "", ...
     "PowerReferencePlane", "", "CSIMeasurementAvailable", false, ...
     "ReportSourceSlot", NaN, "ReportDueSlot", NaN, "ReportDeliveredSlot", NaN, ...
@@ -18820,7 +18960,8 @@ if istable(ulSummary) && ~isempty(ulSummary)
     parts{end+1} = ulSummary; %#ok<AGROW>
 end
 if isempty(parts)
-    summary = table();
+    summary = localBuildDirectionUserSummaryFromRaw(table(), "", multiUser, struct());
+    summary.NumUsersConfigured = zeros(0, 1);
     return;
 end
 summary = table();
@@ -20984,42 +21125,12 @@ paprT = table();
 if ~isstruct(rawTrials)
     return;
 end
-
-dirs = ["DL","UL"];
-chunks = cell(numel(dirs), 1);
-for i = 1:numel(dirs)
-    if ~isfield(rawTrials, dirs(i))
-        continue;
+for direction=["DL","UL"]
+    if isfield(rawTrials,direction)
+        rawTrials.(direction)=localResolveTrialTable(rawTrials.(direction));
     end
-    Ti = localResolveTrialTable(rawTrials.(dirs(i)));
-    if ~(istable(Ti) && ismember("PAPR_dB", string(Ti.Properties.VariableNames)))
-        continue;
-    end
-    samples = double(Ti.PAPR_dB);
-    samples = samples(isfinite(samples));
-    if isempty(samples)
-        continue;
-    end
-    lo = floor(min(samples) * 2) / 2;
-    hi = ceil(max(samples) * 2) / 2;
-    if ~isfinite(lo) || ~isfinite(hi)
-        continue;
-    end
-    if hi <= lo
-        grid = lo;
-    else
-        grid = linspace(lo, hi, min(64, max(16, numel(unique(round(samples, 2)))))).';
-    end
-    ccdf = arrayfun(@(thr) mean(samples >= thr, "omitnan"), grid);
-    chunks{i} = table(repmat(dirs(i), numel(grid), 1), grid, ccdf, ...
-        'VariableNames', {'Direction','PAPR_dB','CCDF'});
 end
-
-chunks = chunks(~cellfun(@isempty, chunks));
-if isempty(chunks)
-    return;
-end
-paprT = vertcat(chunks{:});
+paprT=sixgr.report.buildPAPRCCDFTable(rawTrials);
 end
 
 function traceT = localBuildBeamScoreTraceTable(T, cfg)

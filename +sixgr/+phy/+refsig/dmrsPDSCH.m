@@ -50,8 +50,11 @@ info.IndexBase = opts.IndexBase;
 info.NumLayers = double(pdsch.NumLayers);
 try
     info.DMRSPortSet = pdsch.DMRS.DMRSPortSet;
+    info.DMRSPortSetSource = ...
+        "executed_nrPDSCHConfig.DMRS.DMRSPortSet";
 catch
     info.DMRSPortSet = [];
+    info.DMRSPortSetSource = "";
 end
 info.NRE = size(dmrsInd, 1);
 % dmrsIndInfo may be empty on newer toolbox releases

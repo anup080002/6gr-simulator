@@ -275,6 +275,9 @@ trialDecIt = NaN(numFrames,1);
 trialEVM = NaN(numFrames,1);
 trialEVMLayers = strings(numFrames,1);
 trialEVMLayerSource = strings(numFrames,1);
+trialEVMEnergies = NaN(numFrames,3);
+trialEVMStatus = strings(numFrames,1);
+trialEVMDomain = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
@@ -294,6 +297,10 @@ trialPostEqSINRValueRole = strings(numFrames,1);
 trialPostEqSINRValueStatus = strings(numFrames,1);
 trialPostEqSINRNAReason = strings(numFrames,1);
 trialPostEqSINRPerLayer = strings(numFrames,1);
+trialInterLayerMean=NaN(numFrames,1);
+trialInterLayerPerLayer=strings(numFrames,1);
+trialInterLayerSource=strings(numFrames,1);
+trialInterLayerStatus=repmat("unavailable_receiver_trial",numFrames,1);
 trialPostEqSINRRawEqualizer = NaN(numFrames,1);
 trialPostEqSINRDMRSResidualBoundApplied = false(numFrames,1);
 trialPostEqSINRDMRSResidual = NaN(numFrames,1);
@@ -519,6 +526,10 @@ trialResidualTimingPost = NaN(numFrames,1);
 trialTrueTiming = NaN(numFrames,1);
 trialTimingError = NaN(numFrames,1);
 trialRank = NaN(numFrames,1);
+trialMinimumSnapshotRank = NaN(numFrames,1);
+trialSpatialSpanRank = NaN(numFrames,1);
+trialSpatialRankDimensionLimit = NaN(numFrames,1);
+trialRankEstimateSource = strings(numFrames,1);
 trialCond = NaN(numFrames,1);
 trialRxAnt = NaN(numFrames,1);
 trialTxPorts = NaN(numFrames,1);
@@ -613,6 +624,7 @@ trialCBGErr = NaN(numFrames,1);
 trialCBGCount = NaN(numFrames,1);
 trialCBGBLER = NaN(numFrames,1);
 trialPAPR = NaN(numFrames,1);
+trialPAPRMeasurementJSON = strings(numFrames,1);
 trialClipEvents = NaN(numFrames,1);
 trialSymErr = NaN(numFrames,1);
 trialSymTot = NaN(numFrames,1);
@@ -646,6 +658,13 @@ trialCarrierPhaseOffsetStatus = strings(numFrames,1);
 trialEstDoppler = NaN(numFrames,1);
 trialDopplerErr = NaN(numFrames,1);
 trialPhaseTrackErr = NaN(numFrames,1);
+trialPilotResidualRatio = NaN(numFrames,1);
+trialPilotCommonPhaseRate = NaN(numFrames,1);
+trialPilotPhaseFitResidual = NaN(numFrames,1);
+trialPilotPhasePairCount = NaN(numFrames,1);
+trialPilotPhaseUnaliasedHalfWidth = NaN(numFrames,1);
+trialPilotPhaseSource = strings(numFrames,1);
+trialPilotPhaseStatus = strings(numFrames,1);
 trialQCL = NaN(numFrames,1);
 trialChannelReferenceCorrelation = NaN(numFrames,1);
 trialAgingLoss = NaN(numFrames,1);
@@ -720,6 +739,7 @@ constellationChunks = cell(numFrames,1);
 waveformChunks = cell(numFrames,1);
 observedREChunks = cell(numFrames,1);
 signalDiagnostic = out.SignalDiagnostic;
+channelEstimateSnapshots = cell(numFrames,1);
 trialRuntimeEvidence = cell(numFrames,1);
 trialMeasuredPHYEvidence = cell(numFrames,1);
 trialStatus = strings(numFrames,1);
@@ -891,14 +911,17 @@ for n = 1:numFrames
         if ~isempty(rvOverride)
             txArgs = [txArgs {"RV", rvOverride}]; %#ok<AGROW>
         end
+        % Preserve the typed procedure even for zero UCI bits. Physical
+        % multiplexing remains conditional inside PUSCH_Tx; the queued
+        % request/encoded-reference contract must not lose DAI authority.
+        txArgs = [txArgs {"UCIPayload", expectedUCIPayload}];
         if expectedUCIPayload.hasPayload() || independentUCI
             uciInitial=sixgr.link.resolvePUSCHUCIInitialMCS( ...
                 cfgFrame,grantSnapshotOverride,harqContext,isRetransmission,trialMCS(n));
             trialUCIInitialMCS(n)=uciInitial.MCS;
             trialUCIInitialMCSSource(n)=uciInitial.Source;
             if expectedUCIPayload.hasPayload()
-                txArgs = [txArgs {"UCIPayload", expectedUCIPayload, ...
-                    "InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
+                txArgs = [txArgs {"InitialIMCSPerCodeword", uciInitial.MCS}]; %#ok<AGROW>
             end
         end
         if receivedCompletion
@@ -1201,7 +1224,9 @@ for n = 1:numFrames
             out.ChannelState = chStateIn;
             return;
         end
+        tx.PAPRMeasurementPoint = "post_power_context_pre_channel";
         if receivedCompletion
+            tx.PAPRMeasurementPoint = "post_node_rf_transmitter_composite_observation";
             tx.Waveform = preparedTransmission.readObservation( ...
                 p.Results.ReceivedContext.TransmitterObservation,preparedTransmission.NumPhysicalTransmitAntennas,"transmitter");
             trialTxWaveformColumns(n) = size(tx.Waveform,2);
@@ -1218,6 +1243,7 @@ for n = 1:numFrames
                 "ApplyPA", false, ...
                 "ApplyADC", false);
             tx.Waveform = cast(txRfOut.Waveform, "like", tx.Waveform);
+            tx.PAPRMeasurementPoint = "post_power_context_and_tx_rf_pre_channel";
             tx.TxRFImpairmentReplay = txRfOut.Replay;
             txInfo.TxRFImpairmentReplay = txRfOut.Replay;
             cfgFrameRx = sixgr.util.structSet(cfgFrameRx, "lls6g.txRFImpairmentReplay", txRfOut.Replay);
@@ -1336,6 +1362,10 @@ for n = 1:numFrames
         end
         rxCallTic = tic;
         [rx, ~] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgFrame, rxArgs{:});
+        if logical(sixgr.util.structGet(cfgFrame,'outputs.phySignalDiagnosticEnabled',false)) && ...
+                isfield(rx,'ChannelEstimate') && ~isempty(rx.ChannelEstimate)
+            channelEstimateSnapshots{n}=sixgr.phy.ul.capturePUSCHChannelEstimate(rx);
+        end
         if independentUCI
             lastIndependentHARQObservation=sixgr.truth.normalizeReceivedPUSCHHARQ(rx,uciReceiveContext);
             % Comparison occurs only after reception. Do not write its result
@@ -1503,6 +1533,10 @@ for n = 1:numFrames
         trialPostEqSINRValueStatus(n) = string(sixgr.util.structGet(rx, "PostEqSINRValueStatus", ""));
         trialPostEqSINRNAReason(n) = string(sixgr.util.structGet(rx, "PostEqSINRNAReason", ""));
         trialPostEqSINRPerLayer(n) = localFormatNumericVector(sixgr.util.structGet(rx, "PostEqSINRPerLayer_dB", NaN));
+        trialInterLayerMean(n)=double(sixgr.util.structGet(rx,'ResidualInterLayerPowerMean',NaN));
+        trialInterLayerPerLayer(n)=localFormatNumericVector(sixgr.util.structGet(rx,'ResidualInterLayerPowerPerLayer',[]));
+        trialInterLayerSource(n)=string(sixgr.util.structGet(rx,'ResidualInterLayerPowerSource',''));
+        trialInterLayerStatus(n)=string(sixgr.util.structGet(rx,'ResidualInterLayerPowerStatus','unavailable_receiver_trial'));
         trialPostEqSINRRawEqualizer(n) = double(sixgr.util.structGet(rx, "PostEqSINRRawEqualizer_dB", NaN));
         trialPostEqSINRDMRSResidualBoundApplied(n) = logical(sixgr.util.structGet(rx, "PostEqSINRDMRSResidualBoundApplied", false));
         trialPostEqSINRDMRSResidual(n) = double(sixgr.util.structGet(rx, "PostEqSINRDMRSResidual_dB", NaN));
@@ -1666,6 +1700,13 @@ for n = 1:numFrames
         metrics = localAnalyzeChannelMetrics(sixgr.util.structGet(rx, "ChannelEstimate", []), trialNoise(n), cfgFrame, rx, ulPrecoding);
         trialNMSE(n) = metrics.NMSE_dB;
         trialDet(n) = metrics.DetectionMetric;
+        trialPilotResidualRatio(n) = metrics.PilotReconstructionResidualRatio_dB;
+        trialPilotCommonPhaseRate(n) = pilotTrack.CommonPhaseRate_Hz;
+        trialPilotPhaseFitResidual(n) = pilotTrack.PhaseFitResidualRMS_deg;
+        trialPilotPhasePairCount(n) = double(sixgr.util.structGet(pilotTrack,"PairCount",NaN));
+        trialPilotPhaseUnaliasedHalfWidth(n) = double(sixgr.util.structGet(pilotTrack,"UnaliasedHalfWidth_Hz",NaN));
+        trialPilotPhaseSource(n) = pilotTrack.Source;
+        trialPilotPhaseStatus(n) = pilotTrack.Status;
         selectedSINR = localSelectULMeasuredTrialSINRFromEvidence( ...
             trialPostEqSINR(n), trialPostEqSINRSource(n), trialPostEqSINRValueRole(n), ...
             trialPostEqSINRValueStatus(n), trialPostEqSINRNAReason(n));
@@ -1739,6 +1780,10 @@ for n = 1:numFrames
         trialCSIPayloadHex(n) = string(metrics.CSIPayloadHex);
         trialGain(n) = metrics.ChannelGain_dB;
         trialRank(n) = metrics.RankEstimate;
+        trialMinimumSnapshotRank(n) = metrics.MinimumSnapshotRank;
+        trialSpatialSpanRank(n) = metrics.SpatialSpanRank;
+        trialSpatialRankDimensionLimit(n) = metrics.SpatialRankDimensionLimit;
+        trialRankEstimateSource(n) = metrics.RankEstimateSource;
         trialCond(n) = metrics.ConditionNumber_dB;
         trialRxAnt(n) = metrics.NumRxAnt;
         trialTxPorts(n) = metrics.NumTxPorts;
@@ -1821,10 +1866,14 @@ for n = 1:numFrames
         trialEVM(n) = double(sixgr.util.structGet(modTrack, "EVM_rms", trialEVM(n)));
         trialEVMLayers(n)=strjoin(compose('%.17g',modTrack.EVMPerLayer_rms),'|');
         trialEVMLayerSource(n)=modTrack.EVMPerLayerSource;
+        trialEVMEnergies(n,:)=[modTrack.EVMErrorEnergy, ...
+            modTrack.EVMReferenceEnergy,modTrack.EVMSymbolCount];
+        trialEVMStatus(n)=modTrack.EVMStatus;
+        trialEVMDomain(n)=modTrack.EVMComputationDomain;
         [trialDecoderTruthProxySINR(n), decoderTruthProxyMeta] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
         trialDecoderTruthProxySINRSource(n) = string(sixgr.util.structGet(decoderTruthProxyMeta, "Source", ""));
         [dataSINR, dataSINRMeta] = localEVMProxySINR(modTrack);
-        if isfinite(dataSINR)
+        if ~isnan(dataSINR)
             trialEVMProxySINR(n) = double(dataSINR);
             trialEVMProxySINRSource(n) = string(dataSINRMeta.Source);
             trialEVMProxySINRValueRole(n) = string(dataSINRMeta.ValueRole);
@@ -1843,6 +1892,7 @@ for n = 1:numFrames
             trialCQIDerivedModulation(n) = string(cqiMod);
         end
         trialPAPR(n) = double(sixgr.util.structGet(modTrack, "PAPR_dB", NaN));
+        trialPAPRMeasurementJSON(n) = modTrack.PAPRMeasurementJSON;
         trialClipEvents(n) = double(sixgr.util.structGet(modTrack, "PeakClippingEvents", NaN));
         trialSymErr(n) = double(sixgr.util.structGet(modTrack, "SymbolErrors", NaN));
         trialSymTot(n) = double(sixgr.util.structGet(modTrack, "SymbolsCompared", NaN));
@@ -1880,17 +1930,9 @@ for n = 1:numFrames
         trialAgingLoss(n) = double(sixgr.util.structGet(modTrack, "ChannelAgingLoss_dB", NaN));
         trialInterpLoss(n) = double(sixgr.util.structGet(modTrack, "InterpolationLoss_dB", NaN));
         trialMismatch(n) = double(sixgr.util.structGet(modTrack, "MismatchSensitivity_dB", NaN));
-        if isfinite(double(sixgr.util.structGet(pilotTrack, "NMSE_dB", NaN)))
-            trialNMSE(n) = double(pilotTrack.NMSE_dB);
-            trialDet(n) = double(sixgr.util.structGet(pilotTrack, "DetectionMetric", trialDet(n)));
-        end
-        if isfinite(double(sixgr.util.structGet(pilotTrack, "EstimatedDopplerHz", NaN)))
-            trialEstDoppler(n) = double(pilotTrack.EstimatedDopplerHz);
-            trialDopplerErr(n) = trialEstDoppler(n) - dopplerHz;
-        end
-        if isfinite(double(sixgr.util.structGet(pilotTrack, "PhaseTrackingError_deg", NaN)))
-            trialPhaseTrackErr(n) = double(pilotTrack.PhaseTrackingError_deg);
-        end
+        % Pilot-channel common phase rate is not maximum Doppler/spread.
+        % Keep its measured value and fit residual in dedicated columns;
+        % do not overwrite independent modulation-trace measurements.
         trialEstDoppler(n) = localSanitizeEstimatedDoppler(trialEstDoppler(n), cfgFrame, trialNMSE(n));
         if isfinite(trialEstDoppler(n)) && isfinite(dopplerHz)
             trialDopplerErr(n) = trialEstDoppler(n) - dopplerHz;
@@ -2074,19 +2116,9 @@ for n = 1:numFrames
         if isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
             trialDecIt(n) = mean(double(rx.ActiveIterations(:)), "omitnan");
         end
-        if ~isfinite(trialEVM(n)) && isfield(rx, "EqualizedSymbols") && isfield(tx, "PUSCHSymbols")
-            try
-                refSym = double(tx.PUSCHSymbols(:));
-                eqSym = double(rx.EqualizedSymbols(:));
-                Lsym = min(numel(refSym), numel(eqSym));
-                [eqNorm, refNorm] = localNormalizeEVMInputs(eqSym(1:Lsym), refSym(1:Lsym));
-                if ~isempty(eqNorm)
-                    e = eqNorm - refNorm;
-                    trialEVM(n) = sqrt(mean(abs(e).^2, "omitnan"));
-                end
-            catch
-            end
-        end
+        % EVM is owned by the matched layer-domain measurement above.
+        % Never rescue unavailable evidence by truncating symbol vectors or
+        % independently normalizing RX power (which erases gain errors).
 
         % TX bits are scoring evidence only. They cannot select a receiver
         % decode, trigger combining, clear a soft buffer, or determine ACK.
@@ -2265,6 +2297,7 @@ end
 out.ConstellationSamples = localBuildConstellationSlice(numFrames);
 out.WaveformPreviewTable = localBuildWaveformPreviewSlice(numFrames);
 out.SignalDiagnostic = signalDiagnostic;
+out.ChannelEstimateSnapshots = channelEstimateSnapshots(1:numFrames);
 out.LinkAdaptationState = laState;
 out.StartFrameIndex = double(startFrameIndex);
 out.StartSlotIndex = double(startSlotIndex);
@@ -2470,6 +2503,13 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ComputeLatencySource = trialComputeLatencySource(idx);
         T.EVMPerLayer_rms=trialEVMLayers(idx);
         T.EVMPerLayerSource=trialEVMLayerSource(idx);
+        T.EVMErrorEnergy=trialEVMEnergies(idx,1);
+        T.EVMReferenceEnergy=trialEVMEnergies(idx,2);
+        T.EVMSymbolCount=trialEVMEnergies(idx,3);
+        T.EVMStatus=trialEVMStatus(idx);
+        T.EVMComputationDomain=trialEVMDomain(idx);
+        T.EVMEnergyUnit=repmat("sum_squared_complex_symbol_amplitude_not_joules",height(T),1);
+        T.PAPRMeasurementJSON=trialPAPRMeasurementJSON(idx);
         T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
         T.EstimatedChannelReferenceCorrelationMagnitude = trialChannelReferenceCorrelation(idx);
         T.SymbolDecisionStatus = trialSymbolDecisionStatus(idx);
@@ -2704,6 +2744,10 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.PostEqSINRValueStatus = trialPostEqSINRValueStatus(idx);
         T.PostEqSINRNAReason = trialPostEqSINRNAReason(idx);
         T.PostEqSINRPerLayer_dB = trialPostEqSINRPerLayer(idx);
+        T.ResidualInterLayerPowerMean=trialInterLayerMean(idx);
+        T.ResidualInterLayerPowerPerLayer=trialInterLayerPerLayer(idx);
+        T.ResidualInterLayerPowerSource=trialInterLayerSource(idx);
+        T.ResidualInterLayerPowerStatus=trialInterLayerStatus(idx);
         T.PostEqSINRRawEqualizer_dB = trialPostEqSINRRawEqualizer(idx);
         T.PostEqSINRDMRSResidualBoundApplied = trialPostEqSINRDMRSResidualBoundApplied(idx);
         T.PostEqSINRDMRSResidual_dB = trialPostEqSINRDMRSResidual(idx);
@@ -2735,6 +2779,10 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.OLLAStateAuthority = trialOLLAStateAuthority(idx);
         T.OLLAState = trialOLLAState(idx);
         T.RankSelectionPolicy = trialRankSelectionPolicy(idx);
+        T.MinimumSnapshotRank = trialMinimumSnapshotRank(idx);
+        T.SpatialSpanRank = trialSpatialSpanRank(idx);
+        T.SpatialRankDimensionLimit = trialSpatialRankDimensionLimit(idx);
+        T.RankEstimateSource = trialRankEstimateSource(idx);
         T.RankSelectionSource = trialRankSelectionSource(idx);
         T.RankDecisionReason = trialRankDecisionReason(idx);
         T.RankDowngradeApplied = trialRankDowngradeApplied(idx);
@@ -2765,6 +2813,14 @@ out.NoiseDomainValidation = sixgr.phy.rx.validateNoiseDomainEvidence( ...
         T.ULNormalizedWindowPowerRatio_dB = trialCSIRSRQ(idx);
         T.ULNormalizedWindowPowerRatioSource = trialCSIRSRQSource(idx);
         T.ULNormalizedPowerEvidenceJSON=trialULNormalizedPowerEvidence(idx);
+        T.PilotReconstructionResidualRatio_dB=trialPilotResidualRatio(idx);
+        T.PilotCommonPhaseRate_Hz=trialPilotCommonPhaseRate(idx);
+        T.PilotPhaseFitResidualRMS_deg=trialPilotPhaseFitResidual(idx);
+        T.PilotPhasePairCount=trialPilotPhasePairCount(idx);
+        T.PilotPhaseUnaliasedHalfWidth_Hz=trialPilotPhaseUnaliasedHalfWidth(idx);
+        T.PilotPhaseEvolutionSource=trialPilotPhaseSource(idx);
+        T.PilotPhaseEvolutionStatus=trialPilotPhaseStatus(idx);
+        T.NMSESource=repmat("unavailable_independent_applied_channel_reference_not_bound",numel(idx),1);
         T.BeamScoreVector_dB = trialBeamScoreVector(idx);
         T.TopBeamIndexSet = trialTopBeamIndexSet(idx);
         T.TopBeamGainSet_dB = trialTopBeamGainSet(idx);
@@ -4883,8 +4939,19 @@ assert(numel(varTypes) == numel(varNames), ...
     'sixgr:link:ULTrialSchemaTypeCountMismatch');
 T = table('Size', [0, numel(varNames)], 'VariableTypes', varTypes, 'VariableNames', varNames);
 T.ComputeLatencySource = strings(0,1);
+T.MinimumSnapshotRank = zeros(0,1);
+T.SpatialSpanRank = zeros(0,1);
+T.SpatialRankDimensionLimit = zeros(0,1);
+T.RankEstimateSource = strings(0,1);
 T.EVMPerLayer_rms = strings(0,1);
 T.EVMPerLayerSource = strings(0,1);
+T.EVMErrorEnergy = zeros(0,1);
+T.EVMReferenceEnergy = zeros(0,1);
+T.EVMSymbolCount = zeros(0,1);
+T.EVMStatus = strings(0,1);
+T.EVMComputationDomain = strings(0,1);
+T.EVMEnergyUnit = strings(0,1);
+T.PAPRMeasurementJSON = strings(0,1);
 T.ULTransmissionAuthority = strings(0,1);
 T.ULReceivedAssignmentDigest = strings(0,1);
 T.ULReceiveAllocationAuthority = strings(0,1);
@@ -5062,6 +5129,10 @@ T.PostEqSINRValueRole = strings(0,1);
 T.PostEqSINRValueStatus = strings(0,1);
 T.PostEqSINRNAReason = strings(0,1);
 T.PostEqSINRPerLayer_dB = strings(0,1);
+T.ResidualInterLayerPowerMean=NaN(0,1);
+T.ResidualInterLayerPowerPerLayer=strings(0,1);
+T.ResidualInterLayerPowerSource=strings(0,1);
+T.ResidualInterLayerPowerStatus=strings(0,1);
 T.PostEqSINRRawEqualizer_dB = zeros(0,1);
 T.PostEqSINRDMRSResidualBoundApplied = false(0,1);
 T.PostEqSINRDMRSResidual_dB = zeros(0,1);
@@ -5101,6 +5172,14 @@ T.ULNormalizedWindowRSSISource = strings(0,1);
 T.ULNormalizedWindowPowerRatio_dB = zeros(0,1);
 T.ULNormalizedWindowPowerRatioSource = strings(0,1);
 T.ULNormalizedPowerEvidenceJSON = strings(0,1);
+T.PilotReconstructionResidualRatio_dB = zeros(0,1);
+T.PilotCommonPhaseRate_Hz = zeros(0,1);
+T.PilotPhaseFitResidualRMS_deg = zeros(0,1);
+T.PilotPhasePairCount = zeros(0,1);
+T.PilotPhaseUnaliasedHalfWidth_Hz = zeros(0,1);
+T.PilotPhaseEvolutionSource = strings(0,1);
+T.PilotPhaseEvolutionStatus = strings(0,1);
+T.NMSESource = strings(0,1);
 T.AppliedLargeScaleGain_dB = zeros(0,1);
 T.AppliedLargeScaleLoss_dB = zeros(0,1);
 T.AppliedBasePathloss_dB = zeros(0,1);
@@ -5367,13 +5446,14 @@ meta = struct( ...
     "Definition", "10log10(1/EVM_rms^2)_post_decode_diagnostic_proxy_not_ts38214_post_equalization_sinr", ...
     "SchedulingEligible", false, ...
     "NAReason", "evm_unavailable");
-evm = double(sixgr.util.structGet(modTrack, "EVM_rms", NaN));
-if ~(isscalar(evm) && isfinite(evm) && evm > 0)
-    return;
-end
-sinr_dB = 10 * log10(1 / max(evm .^ 2, eps));
+[~, diagnostic] = sixgr.link.deriveDecoderTruthProxySINR(modTrack);
+sinr_dB = diagnostic.DiagnosticEVMProxySINR_dB;
+if isnan(sinr_dB), return; end
 meta.ValueStatus = "OK";
 meta.NAReason = "";
+if isinf(sinr_dB)
+    meta.ValueStatus = "zero_error_unbounded_diagnostic";
+end
 end
 
 function [cqi, modulation, targetCodeRate, mcsIndex] = localCQIAndMCSFromSINR(sinr_dB, cfg, direction)
@@ -5899,10 +5979,14 @@ if nargin < 5
 end
 metrics = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
     "ReceivedGrid", sixgr.util.structGet(rx, "RxGrid", []), ...
-    "ReferenceIndices", sixgr.util.structGet(rx, "DMRSIndices", []), ...
-    "ReferenceSymbols", sixgr.util.structGet(rx, "DMRSSymbols", []), ...
+    "ReferenceIndices", sixgr.util.structGet(rx, "ChannelEstimateReferenceIndices", []), ...
+    "ReferenceSymbols", sixgr.util.structGet(rx, "ChannelEstimateReferenceSymbols", []), ...
     "PrecoderInfo", precoderTrace, ...
     "ChannelEstimateDomain", "pusch_dmrs_effective_layer_domain");
+% Received-pilot reconstruction contains receiver noise as well as channel
+% estimation error. It is not independent Hest-versus-applied-H NMSE.
+metrics.PilotReconstructionResidualRatio_dB=metrics.NMSE_dB;
+metrics.NMSE_dB=NaN;
 % A PUSCH DM-RS estimate observes the already-precoded effective layer
 % channel.  It cannot be reused as an unprecoded SRS port-domain estimate
 % to rescore alternative TPMIs.  Preserve the waveform-applied TPMI as
@@ -5910,6 +5994,10 @@ metrics = sixgr.phy.ul.measureULLinkState(Hest, nVar, cfg, ...
 % explicit instead of manufacturing a best-beam hit from the wrong
 % codebook/domain.
 metrics.BeamObservationDomain = "pusch_dmrs_effective_layer_channel";
+metrics.MinimumSnapshotRank = NaN;
+metrics.SpatialSpanRank = NaN;
+metrics.SpatialRankDimensionLimit = NaN;
+metrics.RankEstimateSource = "";
 if strcmpi(string(sixgr.util.structGet(precoderTrace, "PrecodingMode", "")), "ul_codebook_tpmi")
     metrics.PMI = metrics.RuntimeAppliedPMI;
     if isfinite(metrics.RuntimeAppliedPMI)
@@ -5975,15 +6063,6 @@ end
 gain = mean(abs(Hest(:)).^2, "omitnan");
 if isfinite(gain) && gain > 0
     metrics.ChannelGain_dB = 10 * log10(gain);
-    [pilotNmseLin, detectionMetric] = localPilotResidualChannelMetrics(rx, Hest);
-    if isfinite(pilotNmseLin) && pilotNmseLin >= 0
-        metrics.NMSE_dB = 10 * log10(max(pilotNmseLin, eps));
-        metrics.DetectionMetric = detectionMetric;
-    else
-        nmseLin = max(double(nVar), eps) / max(gain, eps);
-        metrics.NMSE_dB = 10 * log10(max(nmseLin, eps));
-        metrics.DetectionMetric = 1 / (1 + nmseLin);
-    end
 end
 
 Hwb = localWidebandChannelMatrix(Hest);
@@ -5992,11 +6071,14 @@ if isempty(Hwb)
 end
 metrics.NumRxAnt = size(Hwb, 1);
 metrics.NumTxPorts = size(Hwb, 2);
-try
-    [metrics.ConditionNumber_dB, metrics.ConditionNumberStatus, metrics.RankEstimate] = ...
-        sixgr.mimo.channelConditionNumber(Hwb);
-catch
-end
+spatial = sixgr.mimo.channelSpatialRankEvidence(Hwb);
+metrics.RankEstimate = spatial.MaximumSnapshotNumericalRank;
+metrics.MinimumSnapshotRank = spatial.MinimumSnapshotNumericalRank;
+metrics.SpatialSpanRank = spatial.AggregateSpatialSpanRank;
+metrics.SpatialRankDimensionLimit = spatial.SimultaneousRankDimensionLimit;
+metrics.RankEstimateSource = spatial.RankSource + ":maximum_snapshot";
+metrics.ConditionNumber_dB = spatial.AggregateConditionNumber_dB;
+metrics.ConditionNumberStatus = spatial.AggregateConditionNumberStatus;
 beamMetrics = localComputeBeamMetrics(Hwb, cfg, metrics);
 beamFields = fieldnames(beamMetrics);
 for f = 1:numel(beamFields)
@@ -6367,219 +6449,16 @@ end
 selectedSet = localResolveBeamSetFromPMI(cfg, metrics, size(W, 1), size(W, 2));
 end
 
-function [nmseLin, detectionMetric] = localPilotResidualChannelMetrics(rx, Hest)
-nmseLin = NaN;
-detectionMetric = NaN;
-if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
-    return;
-end
-rxGrid = sixgr.util.structGet(rx, "RxGrid", []);
-dmrsInd = sixgr.util.structGet(rx, "DMRSIndices", []);
-dmrsSym = sixgr.util.structGet(rx, "DMRSSymbols", []);
-if isempty(rxGrid) || isempty(Hest) || isempty(dmrsInd) || isempty(dmrsSym)
-    return;
-end
-try
-    [dmrsRx, dmrsHest] = nrExtractResources(dmrsInd, rxGrid, Hest);
-catch
-    return;
-end
-[pilotObsH, pilotEstH] = localPilotChannelObservation(dmrsRx, dmrsHest, dmrsSym);
-if isempty(pilotObsH) || isempty(pilotEstH)
-    return;
-end
-nmseLin = localNormalizedPilotMSE(pilotEstH, pilotObsH);
-if isfinite(nmseLin) && nmseLin >= 0
-    detectionMetric = 1 / (1 + nmseLin);
-else
-    nmseLin = NaN;
-end
-end
 function metrics = localPilotTrackingMetrics(rx)
-metrics = struct( ...
-    "NMSE_dB", NaN, ...
-    "DetectionMetric", NaN, ...
-    "EstimatedDopplerHz", NaN, ...
-    "PhaseTrackingError_deg", NaN);
-if ~(isstruct(rx) && ~isempty(fieldnames(rx)))
+metrics=struct('CommonPhaseRate_Hz',NaN,'PhaseFitResidualRMS_deg',NaN, ...
+    'Source',"",'Status',"unavailable_receiver_channel_reference");
+if ~isstruct(rx) || isempty(sixgr.util.structGet(rx,"ChannelEstimate",[]))
     return;
 end
-rxGrid = sixgr.util.structGet(rx, "RxGrid", []);
-Hest = sixgr.util.structGet(rx, "ChannelEstimate", []);
-dmrsInd = sixgr.util.structGet(rx, "DMRSIndices", []);
-dmrsSym = sixgr.util.structGet(rx, "DMRSSymbols", []);
-carrier = sixgr.util.structGet(rx, "Carrier", []);
-if isempty(rxGrid) || isempty(Hest) || isempty(dmrsInd) || isempty(dmrsSym) || isempty(carrier)
-    return;
-end
-try
-    [dmrsRx, dmrsHest] = nrExtractResources(dmrsInd, rxGrid, Hest);
-catch
-    return;
-end
-[pilotObsH, pilotEstH] = localPilotChannelObservation(dmrsRx, dmrsHest, dmrsSym);
-if isempty(pilotObsH) || isempty(pilotEstH)
-    return;
-end
-nmseLin = localNormalizedPilotMSE(pilotEstH, pilotObsH);
-if isfinite(nmseLin) && nmseLin >= 0
-    metrics.NMSE_dB = 10 * log10(max(nmseLin, eps));
-    metrics.DetectionMetric = 1 / (1 + nmseLin);
-end
-
-pilotH = localCollapsePilotEstimate(pilotEstH);
-symTimes_s = localPilotSymbolTimes(carrier, dmrsInd);
-estHz = localEstimatePilotDoppler(symTimes_s, pilotH);
-metrics.EstimatedDopplerHz = estHz;
-if isfinite(estHz)
-    metrics.PhaseTrackingError_deg = localPilotPhaseTrackingError(symTimes_s, pilotH);
-end
-end
-
-function [pilotObsH, pilotEstH] = localPilotChannelObservation(dmrsRx, dmrsHest, dmrsSym)
-pilotObsH = [];
-pilotEstH = [];
-dmrsRef = double(dmrsSym(:));
-L = min([size(dmrsRx, 1), size(dmrsHest, 1), numel(dmrsRef)]);
-if ~(isfinite(L) && L >= 1)
-    return;
-end
-dmrsRx = double(dmrsRx(1:L, :, :, :));
-dmrsHest = double(dmrsHest(1:L, :, :, :));
-dmrsRef = reshape(dmrsRef(1:L), [L, 1, 1, 1]);
-valid = abs(dmrsRef) > sqrt(eps);
-if ~any(valid(:))
-    return;
-end
-pilotObsH = dmrsRx(valid) ./ dmrsRef(valid);
-pilotEstH = dmrsHest(valid);
-end
-
-function nmseLin = localNormalizedPilotMSE(hEst, hObs)
-nmseLin = NaN;
-hEst = double(hEst(:));
-hObs = double(hObs(:));
-N = min(numel(hEst), numel(hObs));
-if N == 0
-    return;
-end
-hEst = hEst(1:N);
-hObs = hObs(1:N);
-mask = isfinite(real(hEst)) & isfinite(imag(hEst)) & isfinite(real(hObs)) & isfinite(imag(hObs));
-if ~any(mask)
-    return;
-end
-hEst = hEst(mask);
-hObs = hObs(mask);
-alpha = (hObs' * hEst) / max(hObs' * hObs, eps);
-ref = alpha * hObs;
-den = mean(abs(ref).^2, "omitnan");
-if ~(isfinite(den) && den > 0)
-    return;
-end
-err = hEst - ref;
-nmseLin = mean(abs(err).^2, "omitnan") / max(den, eps);
-end
-
-function pilotH = localCollapsePilotEstimate(dmrsHest)
-pilotH = squeeze(mean(dmrsHest, [2 3 4], "omitnan"));
-pilotH = double(pilotH(:));
-end
-
-function symTimes_s = localPilotSymbolTimes(carrier, pilotInd)
-K = double(carrier.NSizeGrid) * 12;
-L = double(carrier.SymbolsPerSlot);
-[~, symIdx, ~] = ind2sub([K, L, 1], double(pilotInd(:)));
-symIdx = double(symIdx(:));
-symbolTimes = localSymbolCenterTimes(carrier);
-symTimes_s = symbolTimes(symIdx);
-end
-
-function symbolTimes_s = localSymbolCenterTimes(carrier)
-L = double(carrier.SymbolsPerSlot);
-symbolTimes_s = [];
-try
-    ofdmInfo = nrOFDMInfo(carrier);
-    sampleRateHz = double(sixgr.util.structGet(ofdmInfo, "SampleRate", NaN));
-    symbolLengths = double(sixgr.util.structGet(ofdmInfo, "SymbolLengths", []));
-    if isfinite(sampleRateHz) && sampleRateHz > 0 && ~isempty(symbolLengths)
-        symbolLengths = symbolLengths(:);
-        if numel(symbolLengths) < L
-            symbolLengths(end+1:L, 1) = symbolLengths(end);
-        end
-        symbolLengths = symbolLengths(1:L);
-        symbolTimes_s = (cumsum(symbolLengths) - 0.5 * symbolLengths) / sampleRateHz;
-    end
-catch
-end
-if isempty(symbolTimes_s)
-    slotDur_s = localSlotDuration(struct("phy", struct("carrier", struct("SubcarrierSpacing", carrier.SubcarrierSpacing))));
-    symbolTimes_s = ((0:L-1).' + 0.5) * (slotDur_s / max(L, 1));
-end
-end
-
-function estHz = localEstimatePilotDoppler(symTimes_s, hEst)
-estHz = NaN;
-symTimes_s = symTimes_s(:);
-hEst = hEst(:);
-N = min(numel(symTimes_s), numel(hEst));
-if N < 2
-    return;
-end
-symTimes_s = symTimes_s(1:N);
-hEst = hEst(1:N);
-mask = isfinite(symTimes_s) & isfinite(real(hEst)) & isfinite(imag(hEst));
-if nnz(mask) < 2
-    return;
-end
-[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
-if numel(uTimes) < 2
-    return;
-end
-hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
-phaseObs = unwrap(angle(hMean(:)));
-if numel(phaseObs) < 2
-    return;
-end
-p = polyfit(uTimes(:), phaseObs(:), 1);
-estHz = p(1) / (2 * pi);
-end
-
-function phaseErr_deg = localPilotPhaseTrackingError(symTimes_s, hEst)
-phaseErr_deg = NaN;
-symTimes_s = symTimes_s(:);
-hEst = hEst(:);
-N = min(numel(symTimes_s), numel(hEst));
-if N < 2
-    return;
-end
-symTimes_s = symTimes_s(1:N);
-hEst = hEst(1:N);
-mask = isfinite(symTimes_s) & isfinite(real(hEst)) & isfinite(imag(hEst));
-if nnz(mask) < 2
-    return;
-end
-[uTimes, ~, grp] = unique(symTimes_s(mask), "stable");
-if numel(uTimes) < 2
-    return;
-end
-hMean = accumarray(grp, hEst(mask), [], @localComplexMean);
-phaseObs = unwrap(angle(hMean(:)));
-if numel(phaseObs) < 2
-    return;
-end
-p = polyfit(uTimes(:), phaseObs(:), 1);
-phaseFit = polyval(p, uTimes(:));
-phaseErr_deg = sqrt(mean((phaseObs - phaseFit).^2, "omitnan")) * (180 / pi);
-end
-
-function y = localComplexMean(x)
-x = x(isfinite(real(x)) & isfinite(imag(x)));
-if isempty(x)
-    y = complex(NaN, NaN);
-else
-    y = mean(x, "omitnan");
-end
+refs=sixgr.phy.ul.puschChannelEstimateReferences(rx);
+metrics=sixgr.phy.rx.pilotChannelPhaseEvolution(rx.Carrier, ...
+    rx.ChannelEstimate,refs.Indices,refs.Symbols, ...
+    sixgr.util.structGet(rx,"ReceiverOFDMInfo",struct()));
 end
 
 function selectedSet = localResolveBeamSetFromPMI(cfg, metrics, nTx, beamCount)
@@ -7603,27 +7482,6 @@ for i = 1:nargin
         return;
     end
 end
-end
-
-function [eqNorm, refNorm] = localNormalizeEVMInputs(eqSym, refSym)
-eqNorm = [];
-refNorm = [];
-eqSym = eqSym(:);
-refSym = refSym(:);
-valid = isfinite(real(eqSym)) & isfinite(imag(eqSym)) & ...
-    isfinite(real(refSym)) & isfinite(imag(refSym));
-eqSym = eqSym(valid);
-refSym = refSym(valid);
-if isempty(eqSym) || isempty(refSym)
-    return;
-end
-eqPower = mean(abs(eqSym).^2, "omitnan");
-refPower = mean(abs(refSym).^2, "omitnan");
-if ~(isfinite(eqPower) && eqPower > eps && isfinite(refPower) && refPower > eps)
-    return;
-end
-eqNorm = eqSym ./ sqrt(eqPower);
-refNorm = refSym ./ sqrt(refPower);
 end
 
 function value = localObjectValue(obj, propName, defaultValue)

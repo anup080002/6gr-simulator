@@ -1,11 +1,13 @@
-function ok = testRAStageContinuation()
+function ok = testRAStageContinuation(modes)
 % Actual coded self-loop waveforms qualify continuation semantics, not RF.
 setup6GRSimToolkit('Verbose', false);
+if nargin<1, modes=["TDD","FDD"]; end
+assert(all(ismember(string(modes),["TDD","FDD"])) && ~isempty(modes));
 root = tempname;
 mkdir(root);
 cleanup = onCleanup(@() rmdir(root, 's')); %#ok<NASGU>
 stages = ["Msg1", "Msg2", "Msg3", "Msg4", "RRCSetupComplete"];
-for mode = ["TDD", "FDD"]
+for mode = reshape(string(modes),1,[])
     cfg = raStrictAnchorConfig();
     cfg.phy.duplex.mode = mode;
     cfg.initial_access.rrc.require_setup_complete = true;
@@ -111,7 +113,7 @@ for mode = ["TDD", "FDD"]
     localPreparedChain(cfg, whole, folder, stages);
 end
 ok = true;
-fprintf('RAStageContinuation PASS: TDD/FDD coded waveforms, decoded-stage resume, checkpoint round trip, no premature finalization.\n');
+fprintf('RAStageContinuation PASS: %s coded waveforms, decoded-stage resume, checkpoint round trip, no premature finalization.\n',strjoin(string(modes),'/'));
 end
 
 function localPreparedChain(cfg, whole, folder, stages)

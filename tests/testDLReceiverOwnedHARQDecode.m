@@ -1,10 +1,12 @@
-function ok=testDLReceiverOwnedHARQDecode()
+function ok=testDLReceiverOwnedHARQDecode(configPath)
 % Receiver-owned combined decoding and canonical CB/TB CRC decision gates.
 setup6GRSimToolkit('Verbose',false);
 prior=rng; cleanup=onCleanup(@()rng(prior)); %#ok<NASGU>
 rng(90214,'twister');
-s=sixgr.lls6g.config.loadScenarioConfig( ...
-    'simulator/configs/scenarios/lls_received_ul_shared_queue_fixture.yaml');
+if nargin<1
+    configPath='simulator/configs/scenarios/lls_received_ul_shared_queue_fixture.yaml';
+end
+s=sixgr.lls6g.config.loadScenarioConfig(configPath);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 cases=[1160 .3;3824 .5;3840 .5;10000 .6];
 for k=1:size(cases,1)
@@ -26,6 +28,8 @@ for k=1:size(cases,1)
         canonical=sixgr.pdsch.DLSCHDecoder(20*(1-2*double(matched)),'CodingPlan',plan);
         assert(canonical.CRCPass && canonical.TransportBlockCRCPass && ...
             all(canonical.CodeBlockCRCPass) && isequal(canonical.TransportBlock,bits));
+        assert(numel(canonical.CodeBlockCRCError)==info.C*double(info.C>1), ...
+            'The absent single-block CRC must not appear as one passed check.');
         if info.C>1
             % Corrupt CB CRC only; preserve payload, TB CRC, and LDPC parity.
             lastBinary=find(cb(:,1)>=0,1,'last'); cb(lastBinary,1)=1-cb(lastBinary,1);

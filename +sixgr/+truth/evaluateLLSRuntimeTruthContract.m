@@ -2298,13 +2298,14 @@ for field = ["RunID","ExecutionID"]
         localFirstTextColumn(T, field, ""));
 end
 
-genericOk = identityOk & ...
+runtimeRowEligible = identityOk & ...
     ~localFirstBoolColumn(T, ["Crash"], false) & ...
     ~localFirstBoolColumn(T, ["Skipped"], false) & ...
     ~localFirstBoolColumn(T, ["ToolboxMissing"], false) & ...
     ~localFirstBoolColumn(T, ["ProxyUsed"], false) & ...
     ~localFirstBoolColumn(T, ["FallbackFlag"], false) & ...
     ~localFirstBoolColumn(T, ["PlaceholderFlag"], false);
+genericOk = runtimeRowEligible;
 if localHasColumn(T, "Status")
     genericOk = genericOk & ismember(upper(strtrim(string(T.Status))), ...
         ["PASS","OK","SUCCESS","COMPLETED"]);
@@ -2419,7 +2420,17 @@ if component == "trs"
 end
 observed = unique(entity(componentOk & isfinite(entity)));
 coverageOk = numel(observed) >= requiredEntities;
-ok = any(componentOk) && all(componentOk) && coverageOk;
+if component == "sib1"
+    % Blind beam candidates and later SSB tracking occasions remain in the
+    % PBCH/SIB1 table even when they miss.  They must remain honest,
+    % identity-bound runtime attempts, but one complete waveform SIB1
+    % decode per required UE is sufficient proof of acquisition.  Requiring
+    % every alternate beam/occasion to decode SIB1 made valid acquisition
+    % structurally impossible at low SNR.
+    ok = all(runtimeRowEligible) && any(componentOk) && coverageOk;
+else
+    ok = any(componentOk) && all(componentOk) && coverageOk;
+end
 if ok
     status = "integrated_" + component + ...
         "_same_execution_waveform_evidence_present";

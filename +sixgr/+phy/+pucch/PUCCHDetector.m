@@ -2,26 +2,51 @@ classdef PUCCHDetector
     %PUCCHDETECTOR Format-aware DTX and detection decision.
 
     methods (Static)
-        function metric = selectMetric(format,noncoherent,sequenceMetric,energyRatio)
-            % Preserve the existing finite-evidence rule, never replace a
-            % required invalid sequence metric with an energy-only decision.
+        function [metric,source] = selectMetric( ...
+                format,noncoherent,sequenceMetric,energyRatio,payloadBitCount)
+            % Select only evidence that is defined for the executed PUCCH
+            % format and payload size. nrPUCCHDecode performs normalized-
+            % correlation DTX detection for formats 2--4 only for 3--11
+            % UCI bits. For 12 or more bits the UCI CRC is applicable and
+            % the toolbox detection metric is intentionally zero, so a
+            % separately measured energy-presence metric remains necessary.
+            assert(isnumeric(payloadBitCount) && isreal(payloadBitCount) && ...
+                isscalar(payloadBitCount) && isfinite(payloadBitCount) && ...
+                payloadBitCount>=0 && payloadBitCount==fix(payloadBitCount), ...
+                'sixgr:phy:pucch:InvalidDetectorPayloadBitCount', ...
+                'PUCCH detector payload bit count must be a nonnegative integer scalar.');
             if noncoherent
                 metric = sequenceMetric;
+                source = "toolbox_noncoherent_sequence_correlation";
+                return;
+            end
+            shortLongFormat = format>=2 && format<=4 && ...
+                payloadBitCount>=3 && payloadBitCount<=11;
+            if shortLongFormat
+                % This is the DTX statistic defined and executed by
+                % nrPUCCHDecode for short format-2/3/4 payloads. Do not
+                % replace an invalid/missing correlation with energy.
+                metric = sequenceMetric;
+                source = "toolbox_normalized_sequence_correlation";
                 return;
             end
             if ~localFiniteScalar(energyRatio) || energyRatio<0
                 metric = NaN;
+                source = "invalid_energy_observation";
                 return;
             end
             energyMetric = max(0,(energyRatio-1)/(energyRatio+1));
             if format<=1
                 if ~localFiniteScalar(sequenceMetric)
                     metric = sequenceMetric;
+                    source = "invalid_required_sequence_correlation";
                     return;
                 end
                 metric = min(double(sequenceMetric),double(energyMetric));
+                source = "sequence_and_energy_conjunction";
             else
                 metric = double(energyMetric);
+                source = "normalized_excess_energy_crc_aided";
             end
         end
 

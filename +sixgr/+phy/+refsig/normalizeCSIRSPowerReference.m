@@ -36,6 +36,30 @@ for name=textual
         sixgr.phy.refsig.convertCSIRSPowerToUnitRE(value,nfft,scale);
 end
 obs.MeasurementPowerReferenceOffset_dB=offset;
+% SINR is dimensionless, but its retained numerator/noise/error powers
+% are not. Convert the exact same evidence rather than leaving watt-scale
+% numbers under a unit-RE output reference. Signed estimates stay signed.
+sinrJSON=string(sixgr.util.structGet(obs,'ReferenceSINRMeasurementJSON',""));
+if strlength(sinrJSON)>0
+    assert(isfinite(scale) && scale>0,'sixgr:phy:MissingCSIRSPowerScale', ...
+        'Retained CSI-SINR powers require the actual physical-grid scale.');
+    evidence=jsondecode(sinrJSON);
+    evidence=localScalePowers(evidence, ...
+        ["DesiredPowerPerReceiveAntenna","NoiseInterferencePowerPerReceiveAntenna", ...
+         "ChannelEstimatorDisturbancePerReceiveAntenna"],scale^2);
+    if isfield(evidence,'SignalPowerEstimation')
+        evidence.SignalPowerEstimation=localScalePowers(evidence.SignalPowerEstimation, ...
+            ["RawPort3000PowerPerBranch","EstimatedNoiseBiasPerBranch", ...
+             "SignedPort3000PowerPerBranch","CoefficientErrorVariancePerPortReceiveBranch"],scale^2);
+    end
+    if isfield(evidence,'InterferenceMeasurement')
+        evidence.InterferenceMeasurement=localScalePowers(evidence.InterferenceMeasurement, ...
+            ["Covariance","PowerPerReceiveAntenna","MeanPower"],scale^2);
+    end
+    evidence.PowerUnit="relative_to_unit_occupied_RE_Es";
+    evidence.PowerScaleFromMeasurementGrid=scale^2;
+    obs.ReferenceSINRMeasurementJSON=string(jsonencode(evidence));
+end
 obs.MeasurementRSRP_dBm = NaN;
 obs.MeasurementRSRPPerReceiveAntenna_dBm = "";
 obs.MeasurementRSRPPerResource_dBm = "";
@@ -57,5 +81,22 @@ if available
         "actual_csirs_re_measurement_relative_to_unit_occupied_re_es";
     obs.PhysicalMeasurementStatus = ...
         "available_normalized_fixed_esn0_not_absolute_dbm";
+end
+end
+
+function out=localScalePowers(out,names,scale)
+for name=names
+    if ~isfield(out,name), continue; end
+    value=out.(name);
+    if isstruct(value)
+        assert(isfield(value,'json_type') && string(value.json_type)=="complex_array_split" && ...
+            all(isfield(value,{'real','imag','size'})), ...
+            'sixgr:phy:InvalidCSIRSComplexPower','Power evidence requires the declared complex-array encoding.');
+        value.real=value.real*scale;
+        value.imag=value.imag*scale;
+        out.(name)=value;
+    else
+        out.(name)=value*scale;
+    end
 end
 end

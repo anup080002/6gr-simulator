@@ -766,12 +766,62 @@ def _audit_identity(path: str, rows: list[dict[str, str]]) -> list[AuditCheck]:
     return checks
 
 
+def _verified_zero_attempt_sources(run_root: Path, direction: str) -> tuple[str, ...]:
+    # Reuse the publication proof: completed clock, consistent identity,
+    # zero grants/attempts/bits and no contradictory constellation samples.
+    from lls_contract_materializer import _recorded_direction_without_data_sources
+    trial_path = PRIMARY_LINK_TABLES[direction]
+    paths = ["reports/csv/scenario_summary.csv", "reports/csv/run_state.csv",
+        "reports/csv/slot_trace.csv", trial_path,
+        f"packet_flow/csv/live_{direction.lower()}_scheduler_grants.csv",
+        f"air_interface/csv/{direction.lower()}_constellation_samples.csv",
+        f"air_interface/csv/{direction.lower()}_constellation_preview.csv"]
+    payloads, existing = {}, {}
+    try:
+        for index, path in enumerate(paths):
+            file = _io_path(run_root / path)
+            if file.is_file():
+                payloads[index] = file.read_bytes()
+                existing[path] = {"artifact_id": index}
+        _, summary = _read_rows(run_root / paths[0])
+        if len(summary) != 1 or _number(summary[0], f"Effective{direction}TrialCount") != 0:
+            return ()
+        return tuple(_recorded_direction_without_data_sources(existing, payloads.__getitem__, direction))
+    except (OSError, UnicodeError, csv.Error, KeyError, ValueError):
+        return ()
+
+
+def _evm_energy_failures(row: dict[str, str]) -> list[str]:
+    """Reconcile measured symbol energies, not RF conformance or proxy SINR."""
+    error = _number(row, "EVMErrorEnergy")
+    reference = _number(row, "EVMReferenceEnergy")
+    count = _number(row, "EVMSymbolCount")
+    evm = _number(row, "EVM_rms")
+    failures = []
+    if error is None or error < 0 or reference is None or reference <= 0:
+        failures.append("invalid_evm_energy_operands")
+    elif evm is None or evm < 0 or not _close(
+        evm, math.sqrt(error / reference), atol=1e-12, rtol=1e-9
+    ):
+        failures.append("evm_energy_ratio_mismatch")
+    if count is None or count <= 0 or count != math.floor(count):
+        failures.append("invalid_evm_symbol_count")
+    if _text(row, "EVMEnergyUnit") != "sum_squared_complex_symbol_amplitude_not_joules":
+        failures.append("evm_energy_unit_mismatch")
+    if _text(row, "EVMComputationDomain") != "receiver_equalized_symbols_average_reference_power_no_payload_fit":
+        failures.append("evm_reference_plane_mismatch")
+    if _text(row, "EVMStatus") not in {"OK", "warning_gt_100pct_check_timing_or_channel_estimate"}:
+        failures.append("evm_measurement_status_invalid")
+    return failures
+
+
 def _audit_link_table(
     path: str,
     header: list[str],
     rows: list[dict[str, str]],
     direction: str,
     expected_count: int,
+    zero_attempt_sources: tuple[str, ...] = (),
 ) -> list[AuditCheck]:
     checks: list[AuditCheck] = []
     missing_columns = [name for name in LINK_REQUIRED_COLUMNS if name not in header]
@@ -782,12 +832,16 @@ def _audit_link_table(
             path,
             "expected_trial_count",
             rows,
-            [] if len(_measured_analysis_rows(rows)) == expected_count and expected_count > 0 else [
+            [] if len(_measured_analysis_rows(rows)) == expected_count and (
+                expected_count > 0 or (expected_count == 0 and not rows and len(zero_attempt_sources) == 5)) else [
                 f"expected={expected_count};actual_effective={len(_measured_analysis_rows(rows))};actual_total={len(rows)}"
             ],
         )
     )
     if not rows:
+        checks.append(_check("primary_link", path, "zero_attempt_runtime_authority", rows,
+            [] if expected_count == 0 and len(zero_attempt_sources) == 5 else
+            ["Empty measurement tables require completed-clock and zero-grant evidence, not configuration alone."]))
         return checks
     checks.extend(_audit_identity(path, rows))
 
@@ -978,8 +1032,25 @@ def _audit_link_table(
         if not _text(row, "MeasuredTrialSINRSource") or not _text(row, "PostEqSINRSource"):
             noise_failures.append(prefix + ":sinr_source_missing")
         evm = _number(row, "EVM_rms")
+        # Historical CSVs lack these operands and cannot be certified by
+        # this new check. Once any operand column is present, require the
+        # complete measured contract; partial exports must not bypass it.
+        if any(name in row for name in ("EVMErrorEnergy", "EVMReferenceEnergy", "EVMSymbolCount")):
+            noise_failures.extend(prefix + ":" + issue for issue in _evm_energy_failures(row))
         evm_sinr = _number(row, "EVMProxySINR_dB")
-        if evm is None or evm <= 0 or evm_sinr is None:
+        if evm == 0:
+            # Exact paired zero error is valid EVM. Its diagnostic ratio is
+            # +Inf, never a finite epsilon floor or primary scheduling SINR.
+            try:
+                diagnostic_ratio = float(row.get("EVMProxySINR_dB", ""))
+            except (TypeError, ValueError):
+                diagnostic_ratio = math.nan
+            if (diagnostic_ratio != math.inf or _number(row, "EVMErrorEnergy") != 0 or
+                    _evm_energy_failures(row)):
+                noise_failures.append(prefix + ":zero_evm_requires_zero_error_energy_and_infinite_diagnostic")
+            if _text(row, "EVMProxySINRValueStatus") != "zero_error_unbounded_diagnostic":
+                noise_failures.append(prefix + ":zero_evm_diagnostic_status_missing")
+        elif evm is None or evm < 0 or evm_sinr is None:
             noise_failures.append(prefix + ":evm_measurement_missing")
         elif not _close(evm_sinr, -20.0 * math.log10(evm), atol=1e-8, rtol=1e-8):
             noise_failures.append(prefix + ":evm_sinr_formula_mismatch")
@@ -1028,6 +1099,39 @@ def _audit_link_table(
     return checks
 
 
+def _pucch_bit_comparison_failures(row: dict[str, str]) -> list[str]:
+    """Missing/unequal decoded payloads are not paired bit substitutions."""
+    compared, errors = _number(row, "BitsCompared"), _number(row, "BitErrors")
+    expected = _number(row, "ExpectedBitCount")
+    decoded = _number(row, "DecodedBitCount")
+    if not _whole(compared):
+        return ["invalid_pucch_compared_bit_count"]
+    if compared == 0:
+        if errors is not None:
+            return ["unpaired_pucch_bits_reported_as_bit_errors"]
+        token = _text(row, "UCIBitErrorVector").translate(str.maketrans('', '', '[]|,; \t\r\n'))
+        if token and set(token) <= {'0', '1'}:
+            return ["unpaired_pucch_bits_have_fabricated_error_vector"]
+        if _whole(expected, 1) and decoded == expected:
+            return ["complete_pucch_payload_has_no_bit_comparison"]
+        return []
+    if not _whole(errors) or errors > compared:
+        return ["invalid_pucch_bit_error_count"]
+    if compared != expected or compared != decoded:
+        return ["pucch_bit_comparison_uses_missing_bits_or_blind_prefix"]
+    vectors = []
+    for field in ("UCIExpectedBitVector", "UCIDecodedBitVector", "UCIBitErrorVector"):
+        token = _text(row, field).translate(str.maketrans('', '', '[]|,; \t\r\n'))
+        if len(token) != compared or not set(token) <= {'0', '1'}:
+            return ["pucch_paired_bit_vector_unavailable"]
+        vectors.append(token)
+    reference, received, error_vector = vectors
+    actual = ''.join('1' if a != b else '0' for a, b in zip(reference, received))
+    if actual != error_vector or actual.count('1') != errors:
+        return ["pucch_bit_errors_disagree_with_actual_bit_pairs"]
+    return []
+
+
 def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]]) -> list[AuditCheck]:
     if not rows:
         return [_check("control_runtime", path, "present_rows_are_semantic", rows, [], required=False, evaluated=False)]
@@ -1058,6 +1162,10 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
         if not any(_number(row, name) is not None for name in measured_fields if name in header):
             failures.append(f"row={index}:no_finite_runtime_measurement")
     checks.append(_check("control_runtime", path, "runtime_measurement_and_truth", rows, failures))
+    if "pucch" in path.lower() and any(name in header for name in ("BitsCompared", "BitErrors")):
+        bit_failures = [f"row={index}:{issue}" for index, row in enumerate(rows, 1)
+                        for issue in _pucch_bit_comparison_failures(row)]
+        checks.append(_check("control_runtime", path, "paired_pucch_bit_evidence", rows, bit_failures))
     if "ReceiverHestSINRApplicable" in header:
         applicability_failures: list[str] = []
         for index, row in enumerate(rows, start=1):
@@ -1926,11 +2034,44 @@ def _mode_text(rows: list[dict[str, str]], field: str) -> str:
     return min(value for value, count in counts.items() if count == maximum)
 
 
+def _unobserved_mimo_row_failures(row: dict[str, str], *, configuration: bool) -> list[str]:
+    """Check disclosure, not physical success, after independent no-attempt proof."""
+    failures = []
+    for field in ("Status", "RuntimeEvidenceSource", "EvidenceClass"):
+        expected = {"Status": "not_validated", "RuntimeEvidenceSource": "no_runtime_trials",
+                    "EvidenceClass": "CONFIGURATION_WITH_RUNTIME_LINKAGE_PENDING"}[field]
+        if _text(row, field) != expected:
+            failures.append(field + "_claims_unobserved_execution")
+    if _boolean(row, "RuntimePopulated") is not False or _number(row, "RuntimeTrialCount") != 0:
+        failures.append("nonzero_unobserved_runtime_population")
+    for field in ("RuntimeRank2Fraction", "RuntimeExactMatchFraction",
+                  "RuntimeMeanConditionNumber_dB", "RuntimeMeanRateRank1_bpsHz", "RuntimeMeanRateRank2_bpsHz"):
+        if _number(row, field) is not None:
+            failures.append(field + "_without_trials")
+    if not configuration:
+        if _boolean(row, "ScenarioObjectivePass") is not False or _text(row, "FailureReason") != "no_runtime_trials":
+            failures.append("unobserved_objective_must_remain_unvalidated")
+        for field in ("StrictEligibleRowCount", "ExactMatchRowCount", "AdaptiveFeedbackDecisionRowCount",
+                      "ExactSpatialMatchRowCount", "ExactOperatingPointMatchRowCount",
+                      "AdaptivePolicyMatchRowCount", "ExecutionContractMatchRowCount"):
+            if _number(row, field) != 0:
+                failures.append(field + "_without_trials")
+        for field in ("DominantScheduledRank", "DominantTransmittedRank", "DominantEffectiveDecodedRank",
+                      "DominantScheduledLayers", "DominantTransmittedLayers", "DominantEffectiveDecodedLayers",
+                      "DominantEffectiveMCS", "ExactMatchPercent", "AdaptivePolicyMatchPercent"):
+            if _number(row, field) is not None:
+                failures.append(field + "_without_trials")
+        if _text(row, "DominantEffectiveModulation"):
+            failures.append("effective_modulation_without_trials")
+    return failures
+
+
 def _audit_mimo_configured_effective_table(
     path: str,
     header: list[str],
     rows: list[dict[str, str]],
     rank_rows: list[dict[str, str]],
+    zero_attempt_directions: frozenset[str] = frozenset(),
 ) -> list[AuditCheck]:
     required_columns = {
         "RunId", "ScenarioName", "Direction", "ConfiguredRank",
@@ -1967,6 +2108,7 @@ def _audit_mimo_configured_effective_table(
         _text(row, "Direction").upper() for row in rank_rows
         if _text(row, "Direction").upper() in {"DL", "UL"}
     }
+    expected_directions |= zero_attempt_directions
     observed_directions = [_text(row, "Direction").upper() for row in rows]
     if set(observed_directions) != expected_directions or len(observed_directions) != len(set(observed_directions)):
         failures.append("direction_rows_not_exactly_one_per_runtime_direction")
@@ -1979,6 +2121,11 @@ def _audit_mimo_configured_effective_table(
             and _boolean(item, "StrictEligible") is True
         ]
         if not subset:
+            if direction in zero_attempt_directions and not any(
+                    _text(item, "Direction").upper() == direction for item in rank_rows):
+                failures.extend(prefix + ":" + issue for issue in
+                                _unobserved_mimo_row_failures(row, configuration=False))
+                continue
             failures.append(prefix + ":no_strict_rank_layer_source_rows")
             continue
         if any(_text(item, "RunId") != _text(row, "RunId") for item in subset):
@@ -3112,6 +3259,7 @@ def _audit_mimo_config_strict_table(
     rank_rows: list[dict[str, str]],
     configured_rows: list[dict[str, str]],
     validation_rows: list[dict[str, str]],
+    zero_attempt_directions: frozenset[str] = frozenset(),
 ) -> list[AuditCheck]:
     required = {
         "RunId", "ScenarioName", "Direction", "NCellID", "NSizeGrid",
@@ -3134,6 +3282,7 @@ def _audit_mimo_config_strict_table(
     failures: list[str] = []
     observed_directions = [_text(row, "Direction").upper() for row in rows]
     expected_directions = {_text(row, "Direction").upper() for row in rank_rows if _text(row, "Direction").upper() in {"DL", "UL"}}
+    expected_directions |= zero_attempt_directions
     if set(observed_directions) != expected_directions or len(observed_directions) != len(set(observed_directions)):
         failures.append("direction_rows_not_exactly_one_per_runtime_direction")
     for index, row in enumerate(rows, start=1):
@@ -3141,6 +3290,17 @@ def _audit_mimo_config_strict_table(
         prefix = f"row={index}:{direction or 'missing'}"
         subset = [item for item in rank_rows if _text(item, "Direction").upper() == direction and _boolean(item, "StrictEligible") is True]
         summary = configured.get(direction)
+        if (not subset and summary is not None and direction in zero_attempt_directions
+                and not any(_text(item, "Direction").upper() == direction for item in rank_rows)):
+            failures.extend(prefix + ":" + issue for issue in
+                            _unobserved_mimo_row_failures(row, configuration=True))
+            failures.extend(prefix + ":summary:" + issue for issue in
+                            _unobserved_mimo_row_failures(summary, configuration=False))
+            for field in ("RunId", "ScenarioName", "ConfiguredRank", "ConfiguredLayers",
+                          "ConfiguredModulation", "ConfiguredMCS", "ConfiguredInitialMCS", "ConfiguredMaximumMCS"):
+                if _text(row, field) != _text(summary, field):
+                    failures.append(prefix + ":" + field + "_configuration_disagreement")
+            continue
         if not subset or summary is None:
             failures.append(prefix + ":missing_rank_or_configured_effective_source")
             continue
@@ -3236,7 +3396,7 @@ def _audit_mimo_companion_outputs(
     link_rows: dict[str, list[dict[str, str]]],
 ) -> list[AuditCheck]:
     _rank_header, rank_rows = _read_rows(run_root / MIMO_RANK_LAYER_TABLE)
-    if not rank_rows:
+    if not _rank_header and not rank_rows:
         return []
     table_rows = {
         relative: _read_rows(run_root / relative)
@@ -3247,6 +3407,10 @@ def _audit_mimo_companion_outputs(
     validation_rows = table_rows["beamforming/csv/mimo_config_validation.csv"][1]
     beam_rows = table_rows["beamforming/csv/beam_precoder_table.csv"][1]
     checks: list[AuditCheck] = []
+    zero_attempt_directions = frozenset(
+        direction for direction in ("DL", "UL")
+        if not link_rows.get(direction) and _verified_zero_attempt_sources(run_root, direction)
+    )
     for relative in MIMO_COMPANION_TABLES:
         header, rows = table_rows[relative]
         if not header and not rows:
@@ -3269,7 +3433,7 @@ def _audit_mimo_companion_outputs(
             ))
         elif relative.endswith("mimo_config_strict.csv"):
             checks.extend(_audit_mimo_config_strict_table(
-                relative, header, rows, rank_rows, configured_rows, validation_rows
+                relative, header, rows, rank_rows, configured_rows, validation_rows, zero_attempt_directions
             ))
         elif relative.endswith("mimo_config_validation.csv"):
             checks.extend(_audit_mimo_config_validation_table(
@@ -3277,7 +3441,7 @@ def _audit_mimo_companion_outputs(
             ))
         elif relative.endswith("mimo_configured_vs_effective.csv"):
             checks.extend(_audit_mimo_configured_effective_table(
-                relative, header, rows, rank_rows
+                relative, header, rows, rank_rows, zero_attempt_directions
             ))
         elif relative.endswith("mimo_layer_metrics.csv"):
             checks.extend(_audit_mimo_layer_metrics_table(
@@ -4291,11 +4455,89 @@ def _raw_error_rates(rows: list[dict[str, str]]) -> tuple[float, float, int]:
     return bler, ber, failures
 
 
+def _audit_papr_population_counts(groups, link_rows) -> list[str]:
+    aliases = {"ConfiguredSNR_dB": "SNR_dB", "EffectiveModulation": "Modulation",
+               "EffectiveLayers": "Layers", "MCSIndex": "MCS",
+               "TransformPrecodingApplied": "TransformPrecodingApplied", "ConfigHash": "ConfigHash"}
+    failures = []
+    used = {direction: set() for direction in link_rows}
+
+    def matches(raw, context):
+        for field, alias in aliases.items():
+            source = field if field in raw else alias
+            if source not in raw:
+                if field in context:
+                    return False
+                continue
+            if field not in context:
+                return False
+            expected = context[field]
+            if expected is None:
+                if _number(raw, source) is not None:
+                    return False
+            elif isinstance(expected, (int, float)):
+                if not _close(_number(raw, source), float(expected), atol=1e-12):
+                    return False
+            elif str(expected) != _text(raw, source):
+                return False
+        encoded = _text(raw, "PAPRMeasurementJSON")
+        if bool(encoded) != ("MeasurementContext" in context):
+            return False
+        if encoded:
+            evidence = json.loads(encoded)
+            window = context["MeasurementContext"]
+            for key, value in window.items():
+                if key != "PerPort" and evidence.get(key) != value:
+                    return False
+            ports = evidence["PerPort"]
+            if isinstance(ports, dict): ports = [ports]
+            expected_ports = window["PerPort"]
+            if isinstance(expected_ports, dict): expected_ports = [expected_ports]
+            if len(ports) != len(expected_ports) or any(
+                any(port.get(key) != value for key, value in expected.items())
+                for port, expected in zip(ports, expected_ports)):
+                return False
+        return True
+
+    for (direction, population_id), group in groups.items():
+        try:
+            encoded = _text(group[0], "PopulationContextJSON")
+            context = json.loads(encoded)
+            digest = direction + ":" + hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+            if context["Direction"] != direction or digest != population_id or any(
+                    _text(row, "PopulationContextJSON") != encoded for row in group):
+                raise ValueError("identity mismatch")
+            indices = [index for index, raw in enumerate(link_rows.get(direction, [])) if matches(raw, context)]
+            values = [_number(link_rows[direction][index], "PAPR_dB") for index in indices]
+            samples = [value for value in values if value is not None]
+            if not samples or used[direction].intersection(indices):
+                raise ValueError("missing or duplicate population")
+            used[direction].update(indices)
+            if [_number(row, "PAPR_dB") for row in group] != sorted(set(samples)):
+                raise ValueError("thresholds not exact observed values")
+            for row in group:
+                count = sum(value > _number(row, "PAPR_dB") for value in samples)
+                if (_text(row, "ThresholdComparator") != ">" or
+                    not _close(_number(row, "SampleCount"), len(samples), atol=0) or
+                    not _close(_number(row, "UnavailableSampleCount"), len(values)-len(samples), atol=0) or
+                    not _close(_number(row, "Exceedances"), count, atol=0) or
+                    not _close(_number(row, "CCDF"), count/len(samples), atol=1e-12)):
+                    raise ValueError("counts disagree with raw trials")
+        except (KeyError, ValueError, TypeError) as error:
+            failures.append(f"population={population_id}:papr_raw_reconciliation:{error}")
+    for direction, raw in link_rows.items():
+        expected = {index for index, row in enumerate(raw) if _number(row, "PAPR_dB") is not None}
+        if not expected.issubset(used.get(direction, set())):
+            failures.append(f"direction={direction}:papr_raw_population_missing")
+    return failures
+
+
 def _audit_derived_link_table(
     path: str,
     header: list[str],
     rows: list[dict[str, str]],
     link_rows: dict[str, list[dict[str, str]]],
+    zero_attempt_sources: tuple[str, ...] = (),
 ) -> list[AuditCheck]:
     """Validate derived link artifacts against the same persisted raw trials."""
 
@@ -4386,6 +4628,20 @@ def _audit_derived_link_table(
                 required=False,
                 evaluated=False,
             )
+        ]
+    direction = name[:2].upper()
+    directional_curve = name in {
+        f"{d}_measured_sinr_{metric}_curve.csv"
+        for d in ("dl", "ul") for metric in ("bler", "throughput")
+    }
+    if (not rows and directional_curve and not link_rows.get(direction)
+            and len(zero_attempt_sources) == 5):
+        # Absence is verified against the completed clock and grant ledger,
+        # not inferred from this empty derived table. No BLER/SINR is defined.
+        return [
+            _check("derived_link", path, "required_columns", rows, schema_failures),
+            _check("derived_link", path, "not_evaluated_no_data_attempts",
+                   rows, (), required=False, evaluated=False),
         ]
     if not rows:
         schema_failures.append("missing_runtime_rows")
@@ -4530,8 +4786,17 @@ def _audit_derived_link_table(
             if not _close(_number(row, "PassRate"), 1.0 - failures / len(raw), atol=1e-12):
                 reconciliation_failures.append(f"row={index}:pass_rate_raw_mismatch")
     elif name == "papr_ccdf.csv":
-        for direction in ("DL", "UL"):
-            group = [row for row in rows if _text(row, "Direction").upper() == direction]
+        # Independent sweep/rank/window populations need independent CCDFs.
+        # An unexecuted direction has no PAPR population, not a zero curve.
+        expected_directions = {direction for direction, raw in link_rows.items()
+                               if any(_number(row, "PAPR_dB") is not None for row in raw)}
+        if {_text(row, "Direction").upper() for row in rows} != expected_directions:
+            reconciliation_failures.append("papr_direction_population_mismatch")
+        groups: dict[tuple[str, str], list[dict[str, str]]] = {}
+        for row in rows:
+            key = (_text(row, "Direction").upper(), _text(row, "PopulationID"))
+            groups.setdefault(key, []).append(row)
+        for (direction, population_id), group in groups.items():
             thresholds = [_number(row, "PAPR_dB") for row in group]
             probabilities = [_number(row, "CCDF") for row in group]
             if (
@@ -4539,8 +4804,11 @@ def _audit_derived_link_table(
                 or any(value is None for value in thresholds + probabilities)
                 or any(float(thresholds[i]) >= float(thresholds[i + 1]) for i in range(len(thresholds) - 1))
                 or any(float(probabilities[i]) < float(probabilities[i + 1]) - 1e-12 for i in range(len(probabilities) - 1))
+                or any(value is not None and not 0 <= value <= 1 for value in probabilities)
             ):
-                reconciliation_failures.append(f"direction={direction}:ccdf_not_monotone")
+                reconciliation_failures.append(f"direction={direction}:population={population_id}:ccdf_not_monotone")
+        if "PopulationID" in header:
+            reconciliation_failures.extend(_audit_papr_population_counts(groups, link_rows))
     elif name == "distance_vs_sinr.csv":
         expected_distance_rows = sum(
             len(_measured_analysis_rows(value)) for value in link_rows.values()
@@ -7660,6 +7928,145 @@ def _audit_fixed_snr_reporting_tables(
     return checks
 
 
+def _no_transmission_kpi_context(run_root, direction):
+    sources = _verified_zero_attempt_sources(run_root, direction)
+    if not sources:
+        return None
+    _header, summary = _read_rows(run_root / "reports/csv/scenario_summary.csv")
+    _header, slots = _read_rows(run_root / "reports/csv/slot_trace.csv")
+    slot_ms = _number(summary[0], "SlotDuration_ms")
+    if slot_ms is None or slot_ms <= 0:
+        return None
+    return dict(sources=set(sources), slots=slots, duration=len(slots)*slot_ms/1000)
+
+
+def _no_transmission_kpi_failures(run_root, row, context):
+    """Validate a zero-attempt KPI against its completed runtime, not a label."""
+    if context is None:
+        return ["no_transmission_claim_has_no_completed_runtime_proof"]
+    direction=_text(row,"Direction").upper()
+    failures=[]
+    paths=_text(row,"NoTransmissionEvidencePaths").replace("\\", "/").split("|")
+    expected=set(context["sources"])
+    alias="packet_flow/csv/slot_trace.csv"
+    if alias in paths:
+        _columns, other=_read_rows(run_root/alias)
+        fields=["CanonicalSlot","SweepPointIndex","ConfiguredSNR_dB"] + [direction+name for name in
+            ("GrantCount","ExecutedGrantCount","TrialRows","TBSBits","SuccessCount","Scheduled")]
+        texts=["ScenarioID","ConfigHash",direction+"Status"]
+        if len(other)!=len(context["slots"]) or any(
+            any(_number(a,f)!=_number(b,f) for f in fields) or any(_text(a,f)!=_text(b,f) for f in texts)
+            for a,b in zip(other,context["slots"])):
+            failures.append("no_transmission_slot_trace_alias_disagrees")
+        expected.remove("reports/csv/slot_trace.csv"); expected.add(alias)
+    if len(paths)!=5 or set(paths)!=expected:
+        failures.append("no_transmission_proof_sources_mismatch")
+    if not _is_sha256(_text(row,"NoTransmissionEvidenceHash")):
+        failures.append("no_transmission_snapshot_digest_invalid")
+    warmup=_number(row,"WarmupDurationSec")
+    duration=_number(row,"MeasurementWindowSec")
+    if warmup is None or warmup<0 or warmup>=context["duration"] or not _close(
+            duration,context["duration"]-warmup,atol=2e-12):
+        failures.append("no_transmission_measurement_duration_invalid")
+    if _boolean(row,"MissingRawData") is not False or _boolean(row,"SchemaValid") is not True:
+        failures.append("no_transmission_proof_schema_invalid")
+    return failures
+
+
+def _packet_latency_kpi_failures(row, observations):
+    """Recompute packet latency independently of PHY transport-block clocks."""
+    direction = _text(row, "Direction").upper()
+    selected = [r for r in observations if _text(r, "Direction").upper() == direction]
+    if not selected:
+        return ["packet_latency_ledger_missing_or_empty"]
+    deliveries = {}
+    for item in selected:
+        success = _boolean(item, "DeliverySuccess")
+        if success is None:
+            return ["packet_latency_delivery_flag_invalid"]
+        if not success:
+            continue
+        start, finish = _number(item, "EnqueueTime_s"), _number(item, "DeliveryTime_s")
+        if start is None or finish is None or start < 0 or finish < start:
+            return ["packet_latency_radio_timestamp_invalid"]
+        identity = _text(item, "ApplicationPacketId") or _text(item, "PacketId")
+        if not identity:
+            return ["packet_latency_identity_missing"]
+        scope = tuple((field, _text(item, field)) for field in
+                      ("Direction", "SweepPointIndex", "UEId", "UEIndex", "RNTI") if field in item)
+        key = (identity, scope)
+        if key in deliveries:
+            old_start, old_finish = deliveries[key]
+            if abs(old_start-start) > 1e-12:
+                return ["same_packet_enqueue_time_disagrees"]
+            finish = min(finish, old_finish)
+        deliveries[key] = (start, finish)
+    values = [(finish-start)*1000 for start, finish in deliveries.values()]
+    failures = []
+    expected = {"FirstSuccessDeliveryCount":len(values), "DenominatorValue":len(values),
+                "NumeratorValue":sum(values)}
+    for field, value in expected.items():
+        if not _close(_number(row, field), value, atol=2e-12):
+            failures.append("packet_latency_"+field+"_population_mismatch")
+    actual = _number(row, "Value")
+    if (values and not _close(actual, sum(values)/len(values), atol=2e-12)) or (not values and actual is not None):
+        failures.append("packet_latency_value_not_from_packet_timestamps")
+    return failures
+
+
+def _received_harq_kpi_failures(row, observations):
+    """Recount received feedback; decoder CRCs are not ACK/NACK evidence."""
+    direction = _text(row, "Direction").upper()
+    failures = []
+    if any(_text(item, "FeedbackForDirection").upper() not in {"DL", "UL"}
+           for item in observations):
+        return ["received_feedback_direction_invalid"]
+    selected = [item for item in observations
+                if _text(item, "FeedbackForDirection").upper() == direction]
+    keys, tokens = set(), []
+    for item in selected:
+        token = _text(item, "FeedbackOutcome").upper()
+        usable = _boolean(item, "ReceiverUsable")
+        matches = _boolean(item, "ReceiverVectorLengthMatches")
+        if token not in {"ACK", "NACK", "DTX"} or usable is None or matches is None:
+            return ["received_feedback_outcome_invalid"]
+        if token in {"ACK", "NACK"} and (usable is not True or matches is not True
+                or _boolean(item, "ObservedAck") is not (token == "ACK")):
+            return ["received_feedback_outcome_not_usable_or_bit_mismatch"]
+        if any(name in item and _boolean(item, name) is not False
+               for name in ("ProxyUsed", "Skipped")):
+            return ["received_feedback_not_physical"]
+        numbers = [_number(item, name) for name in ("SweepPointIndex", "RNTI", "BitIndex")]
+        observation = _text(item, "ObservationID")
+        if not observation or any(not _whole(value, 1) for value in numbers):
+            return ["received_feedback_identity_invalid"]
+        key = (observation, *numbers)
+        if key in keys:
+            return ["duplicate_received_feedback_bit"]
+        keys.add(key)
+        start, end, available = [_number(item, name) for name in
+            ("ObservationStartSample", "ObservationEndSampleExclusive", "AvailableAtSample")]
+        if (any(not _whole(value, 0) for value in (start, end, available))
+                or end <= start or available < end):
+            return ["received_feedback_completion_invalid"]
+        tokens.append(token)
+    nack = tokens.count("NACK")
+    decoded = nack + tokens.count("ACK")
+    expected = {"NumeratorValue": nack, "DenominatorValue": decoded,
+                "FeedbackDTXCount": tokens.count("DTX"),
+                "FeedbackObservedCount": len(tokens), "SourceRowCount": len(tokens),
+                "EligibleRowCount": decoded, "ExcludedRowCount": tokens.count("DTX")}
+    for name, value in expected.items():
+        if not _close(_number(row, name), float(value), atol=0):
+            failures.append(name + "_not_received_feedback_population")
+    if decoded:
+        if not _close(_number(row, "Value"), nack / decoded, atol=2e-12):
+            failures.append("nack_rate_not_received_feedback_ratio")
+    elif _number(row, "Value") is not None:
+        failures.append("nack_rate_requires_decoded_ack_nack_population")
+    return failures
+
+
 def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     """Reconcile KPI registries, source manifests, formulas, and bindings."""
 
@@ -7721,6 +8128,9 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
         "UL", "DL", "PacketSDU", "ApplicationPackets", "HARQTimeline",
         "ULGrants", "DLGrants", "SlotTrace",
     }
+    if any(_text(item, "RequiredSourceTables") == "received_harq_feedback_observations"
+           for item in registry_rows):
+        expected_directions.add("HARQFeedback")
     manifest_by_direction: dict[str, dict[str, str]] = {}
     manifest_sources: dict[str, tuple[list[str], list[dict[str, str]]]] = {}
     for index, row in enumerate(manifest_rows, start=1):
@@ -7751,7 +8161,7 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
         ):
             manifest_failures.append(prefix + ":persisted_source_shape_or_exists_mismatch")
         source_hash = _text(row, "FileHash")
-        if actual_exists and not _is_sha256(source_hash):
+        if actual_exists and not (_is_sha256(source_hash) if actual_rows else source_hash=="empty"):
             manifest_failures.append(prefix + ":source_rows_hash_invalid")
         if not actual_exists and source_hash.lower() not in {"", "empty"}:
             manifest_failures.append(prefix + ":missing_source_hash_not_empty")
@@ -7790,6 +8200,9 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     if missing:
         reconstruction_failures.append("missing_columns=" + ",".join(missing))
     reconstruction_by_name: dict[str, dict[str, str]] = {}
+    no_tx_context = {direction: _no_transmission_kpi_context(run_root,direction)
+        for direction in ("DL","UL") if any(_text(row,"Direction").upper()==direction and
+            _boolean(row,"NoTransmittedDataProven") is True for row in reconstruction_rows)}
     for index, row in enumerate(reconstruction_rows, start=1):
         prefix = f"row={index}"
         name = _text(row, "KPIName")
@@ -7810,7 +8223,7 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
         ), {})
         if manifest_row and applicable is True:
             manifest_direction = _text(manifest_row, "Direction")
-            if manifest_direction == "HARQTimeline" and direction.upper() in {"DL", "UL"}:
+            if manifest_direction in {"HARQTimeline", "HARQFeedback", "PacketSDU", "ApplicationPackets"} and direction.upper() in {"DL", "UL"}:
                 expected_count = _number(
                     manifest_row, direction.upper() + "SubsetRowCount"
                 )
@@ -7826,6 +8239,20 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
                 reconstruction_failures.append(prefix + ":source_count_or_hash_manifest_mismatch")
         elif source_relative and _run_relative_path(run_root, source_relative) is None:
             reconstruction_failures.append(prefix + ":source_path_not_run_relative")
+        if name.endswith("_HARQ_NACK_Rate") and applicable is True:
+            if _text(manifest_row, "Direction") != "HARQFeedback":
+                reconstruction_failures.append(prefix + ":nack_rate_requires_received_feedback_source")
+            else:
+                _columns, feedback_rows = manifest_sources.get("HARQFeedback", ([], []))
+                reconstruction_failures.extend(prefix + ":" + failure for failure in
+                    _received_harq_kpi_failures(row, feedback_rows))
+        if name in {"UL_Latency_ms", "DL_Latency_ms"} and applicable is True:
+            if _text(manifest_row, "Direction") != "ApplicationPackets":
+                reconstruction_failures.append(prefix+":packet_latency_requires_packet_ledger")
+            else:
+                _columns, packet_rows = manifest_sources.get("ApplicationPackets", ([], []))
+                reconstruction_failures.extend(prefix+":"+failure for failure in
+                    _packet_latency_kpi_failures(row, packet_rows))
         source_rows = _number(row, "SourceRowCount")
         eligible = _number(row, "EligibleRowCount")
         excluded = _number(row, "ExcludedRowCount")
@@ -7838,7 +8265,31 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
         formula_executed = _boolean(row, "FormulaExecuted")
         status = _text(row, "Status").lower()
         reason = _text(row, "FailureReason")
+        no_tx = _boolean(row,"NoTransmittedDataProven") is True
+        no_tx_failures = (_no_transmission_kpi_failures(run_root,row,no_tx_context.get(direction.upper()))
+                          if no_tx else [])
+        reconstruction_failures.extend(prefix+":"+failure for failure in no_tx_failures)
+        unavailable_names = {direction+suffix for suffix in ("_BLER","_BER","_Latency_ms",
+            "_TB_Delivery_Latency_ms","_Goodput_Max_Mbps","_PHY_ScheduledThroughput_Mbps","_HARQ_NACK_Rate","_Retransmission_Rate")}
         if applicable is True:
+            if name.endswith("_Latency_ms") and status=="unavailable_no_successful_delivery":
+                _columns, source = manifest_sources.get(_text(manifest_row,"Direction"), ([], []))
+                population = [r for r in source if _text(r,"Direction").upper()==direction.upper()]
+                flag = "CRCPass" if "_TB_Delivery_" in name else "DeliverySuccess"
+                if (not population or any(_boolean(r,flag) is not False for r in population)
+                        or _boolean(row,"SchemaValid") is not True or _boolean(row,"MissingRawData") is not False
+                        or formula_executed is not False or strict is not False or recon_pass is not False
+                        or reason!="no_successful_delivery_in_source_population"
+                        or _number(row,"Value") is not None or _number(row,"ReconstructionValue") is not None
+                        or _number(row,"FirstSuccessDeliveryCount")!=0 or _number(row,"DenominatorValue")!=0):
+                    reconstruction_failures.append(prefix+":no_delivery_latency_not_backed_by_source")
+                continue
+            if no_tx and not no_tx_failures and name in unavailable_names:
+                if (formula_executed is not False or strict is not False or recon_pass is not False
+                        or status!="unavailable_no_transmissions" or reason!="completed_window_no_transmitted_data"
+                        or _number(row,"Value") is not None or _number(row,"ReconstructionValue") is not None):
+                    reconstruction_failures.append(prefix+":no_transmission_metric_not_honestly_unavailable")
+                continue
             if formula_executed is not True or strict is not True or recon_pass is not True or status != "pass":
                 reconstruction_failures.append(prefix + ":applicable_kpi_not_strict_pass")
             if reason or _number(row, "Value") is None or not _close(
@@ -7971,6 +8422,16 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
         if applicable is True:
             bits = _number(row, "Bits")
             duration = _number(row, "DurationSec")
+            recon=reconstruction_by_name.get(_text(row,"KPIName"),{})
+            if (_text(recon,"Status")=="unavailable_no_transmissions" and
+                    _boolean(recon,"NoTransmittedDataProven") is True and
+                    not _no_transmission_kpi_failures(run_root,recon,no_tx_context.get(_text(recon,"Direction").upper()))):
+                if (bits!=0 or duration!=0 or _number(row,"ComputedMbps") is not None or
+                        _number(row,"ExpectedMbps") is not None or _number(row,"Delta") is not None or
+                        _boolean(row,"Pass") is not False or _text(row,"Status")!="unavailable_no_transmissions" or
+                        _text(row,"FailureReason")!="no_scheduled_resource_exposure"):
+                    unit_failures.append(prefix+":zero_exposure_unit_conversion_invalid")
+                continue
             expected = bits / duration / 1e6 if bits is not None and duration and duration > 0 else None
             if not _close(_number(row, "ExpectedMbps"), expected, atol=2e-12) or not _close(
                 _number(row, "Delta"), abs((_number(row, "ExpectedMbps") or 0) - (_number(row, "ComputedMbps") or 0)), atol=2e-12,
@@ -7992,7 +8453,9 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     _alias_header, alias_rows = _read_rows(run_root / alias_rel)
     alias_failures: list[str] = []
     for index, row in enumerate(alias_rows, start=1):
-        if not _close(_number(row, "AliasValue"), _number(row, "CanonicalValue"), atol=2e-12) or _boolean(row, "Equal") is not True:
+        alias_value,canonical_value=_number(row,"AliasValue"),_number(row,"CanonicalValue")
+        if not ((alias_value is None and canonical_value is None) or
+                _close(alias_value,canonical_value,atol=2e-12)) or _boolean(row, "Equal") is not True:
             alias_failures.append(f"row={index}:alias_canonical_value_mismatch")
         if _text(row, "Status").lower() != "pass" or _text(row, "FailureReason"):
             alias_failures.append(f"row={index}:alias_status_invalid")
@@ -8005,7 +8468,8 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     _bug_header, bug_rows = _read_rows(run_root / bug_rel)
     bug_failures: list[str] = []
     for index, row in enumerate(bug_rows, start=1):
-        if not _close(_number(row, "CorrectExportedULValueMbps"), _number(row, "ULRawValueMbps"), atol=2e-12):
+        exported,raw=_number(row,"CorrectExportedULValueMbps"),_number(row,"ULRawValueMbps")
+        if not ((exported is None and raw is None) or _close(exported,raw,atol=2e-12)):
             bug_failures.append(f"row={index}:correct_ul_not_raw_ul")
         if _boolean(row, "BugDetected") is not False or _boolean(row, "BugPrevented") is not True:
             bug_failures.append(f"row={index}:known_bug_guard_invalid")
@@ -8843,6 +9307,7 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
                 rows,
                 direction,
                 _expected_link_count(summary, direction),
+                _verified_zero_attempt_sources(run_root, direction) if not rows else (),
             )
         )
     for path in control_paths:
@@ -8852,7 +9317,10 @@ def audit_run(run_root: Path) -> dict[str, list[dict[str, Any]]]:
     for path in DERIVED_LINK_TABLES:
         header, rows = _read_rows(run_root / path)
         if header or rows:
-            checks.extend(_audit_derived_link_table(path, header, rows, link_rows))
+            direction = Path(path).name[:2].upper()
+            proof = (_verified_zero_attempt_sources(run_root, direction)
+                     if not rows and direction in {"DL", "UL"} else ())
+            checks.extend(_audit_derived_link_table(path, header, rows, link_rows, proof))
     large_scale_path = "channel/csv/large_scale_parameters.csv"
     _large_scale_header, large_scale_rows = _read_rows(run_root / large_scale_path)
     if large_scale_rows:

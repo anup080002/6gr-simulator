@@ -132,6 +132,24 @@ switch channel
         parts = {localExecutedPart(tx, "Indices", "TRS")};
         defaultLayers = size(tx.Grid, 3);
         resolver = "executed_generateTRSWaveform_nrCSIRSIndices";
+    case "CSI-RS"
+        localRequireDirection(direction, "DL", channel);
+        event=sixgr.util.structGet(tx,"CSIRSRuntimeEvent",struct());
+        if ~logical(sixgr.util.structGet(event,"Transmitted",false))
+            error("sixgr:truth:MissingExecutedCSIRSTransmission", ...
+                "Standalone CSI-RS occupancy requires an actually transmitted runtime event.");
+        end
+        physicalIndices=double(sixgr.util.structGet(tx,"CSIRSPhysicalIndices",zeros(0,1)));
+        actualIndices=find(tx.Grid~=0);
+        if isempty(physicalIndices) || ...
+                ~isequal(sort(physicalIndices(:)),sort(double(actualIndices(:))))
+            error("sixgr:truth:ExecutedCSIRSPhysicalIndicesMismatch", ...
+                ['Standalone CSI-RS occupancy must equal the nonzero ' ...
+                 'executed physical-port grid coordinates exactly.']);
+        end
+        parts = {localExecutedPart(tx,"CSIRSPhysicalIndices","CSI-RS")};
+        defaultLayers = NaN; % Cell-common CSI-RS has ports, not UE data layers.
+        resolver = "executed_independent_CSIRS_physical_waveform_port_indices";
     case "PRACH"
         localRequireDirection(direction, "UL", channel);
         [nativeGrid, nativePortDomain] = sixgr.truth.executedPRACHNativeGrid(tx);

@@ -15,6 +15,12 @@ for duplex = ["TDD", "FDD"]
                 assert(abs(metrics.EVM_rms - expected) < 1e-12, ...
                     'Actual receiver EVM must equal independent comm.EVM, including gain/phase errors.');
                 assert(abs(metrics.EVM_rms - abs(gain-1)) < 1e-12);
+                assert(metrics.EVMSymbolCount==numel(reference));
+                assert(metrics.EVMErrorEnergy==sum(abs(measured-reference).^2) && ...
+                    metrics.EVMReferenceEnergy==sum(abs(reference).^2));
+                assert(abs(metrics.EVM_rms-sqrt(metrics.EVMErrorEnergy/ ...
+                    metrics.EVMReferenceEnergy))<1e-12);
+                assert(metrics.EVMEnergyUnit=="sum_squared_complex_symbol_amplitude_not_joules");
                 assert(isequal(complex(samples.EqualizedReal, samples.EqualizedImag), measured), ...
                     'Reporter must preserve the actual receiver symbols without payload fitting.');
                 assert(isequal(samples.EqualizedReal, samples.RawEqualizedReal) && ...
@@ -40,6 +46,7 @@ for duplex = ["TDD", "FDD"]
         expected = abs(0.07+0.03i) / sqrt(mean(abs(reference).^2));
         assert(abs(metrics.EVM_rms-expected) < 1e-12);
         assert(height(samples) == 512 && all(samples.CaptureScope == "paired_sample_preview"));
+        assert(metrics.EVMSymbolCount==numel(reference) && metrics.EVMSymbolCount>height(samples));
         assert(all(samples.ObservationSymbolCount == numel(reference)));
         assert(max(abs(samples.SymbolEVM_rms-expected)) < 1e-12);
 
@@ -73,6 +80,9 @@ for duplex = ["TDD", "FDD"]
         end
     end
 end
+source=fileread(which('sixgr.link.runULPUSCHThroughput'));
+assert(~contains(source,'localNormalizeEVMInputs'), ...
+    'UL throughput must not restore its separate-power/truncated-symbol EVM rescue.');
 ok = true;
 fprintf('ReceiverEVMReferenceNormalization PASS: DL/UL, TDD/FDD, gain/phase/zero/tiny power, invalid samples.\n');
 end

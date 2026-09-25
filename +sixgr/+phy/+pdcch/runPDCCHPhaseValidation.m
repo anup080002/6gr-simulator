@@ -56,13 +56,13 @@ tables.pdcch_crc_scrambling = localCRCEvidence(contract, runID, contexts);
 tables.pdcch_polar_coding = localPolarEvidence(contract, runID, contexts);
 [tables.pdcch_coreset_mapping, tables.pdcch_re_ownership] = ...
     localCORESETEvidence(contract, runID, strictCfg);
-tables.pdcch_dmrs_matrix = localDMRSEvidence(contract, runID);
+tables.pdcch_dmrs_matrix = sixgr.phy.pdcch.buildDMRSArtifactEvidence(runID);
 [tables.pdcch_search_space_monitoring, tables.pdcch_candidate_enumeration] = ...
     localMonitoringEvidence(contract, runID, strictCfg);
 [tables.pdcch_blind_trials, tables.pdcch_detection_curve] = ...
     localBlindEvidence(contract, runID, contexts, strictCfg, opt.SeedList, ...
     opt.ConfidenceLevel, opt.FastTestMode);
-tables.pdcch_type0_css = localType0Evidence(contract, runID, contexts{3});
+tables.pdcch_type0_css = sixgr.phy.pdcch.buildType0ArtifactEvidence(runID);
 tables.pdcch_rnti_procedure = localRNTIEvidence(contract, runID);
 tables.pdcch_bwp_crosscarrier = localBWPEvidence(contract, runID, contexts);
 tables.pdcch_beam_monitoring = localBeamEvidence(contract, runID, strictCfg);
@@ -350,36 +350,6 @@ if strictCfg.CORESETNumRB < 1
 end
 end
 
-function value = localDMRSEvidence(contract, runID)
-value = localContractTable(contract, "pdcch_dmrs_matrix.csv", 24);
-for ii = 1:height(value)
-    nRB = 24 + 6*mod(ii-1,4);
-    attempted = 0:nRB-1;
-    context = struct("NumerologyMu", mod(ii-1,4), ...
-        "Slot", mod(3*ii,20), "Symbol", mod(ii-1,3), ...
-        "NID", mod(43*ii,1008), "CORESETRBs", nRB, ...
-        "PrecoderGranularity", string(localTernary(mod(ii,2) == 0, ...
-        "allContiguousRBs", "sameAsREG-bundle")), ...
-        "AttemptedPRBs", attempted);
-    actual = sixgr.phy.pdcch.PDCCHDMRS.generate(context);
-    value.RunID(ii) = runID;
-    value.CaseID(ii) = sprintf("DMRS%04d", ii);
-    value.NumerologyMu(ii) = string(actual.NumerologyMu);
-    value.Slot(ii) = string(actual.Slot);
-    value.Symbol(ii) = string(actual.Symbol);
-    value.NID(ii) = string(actual.NID);
-    value.CInit(ii) = string(actual.CInit);
-    value.CORESETID(ii) = "1";
-    value.PrecoderGranularity(ii) = actual.PrecoderGranularity;
-    value.AttemptedPRBs(ii) = join(string(attempted), "|");
-    value.DMRSRECount(ii) = string(actual.MappedRECount);
-    value.SequenceSHA256(ii) = actual.SequenceSHA256;
-    value.IndexSHA256(ii) = actual.IndexSHA256;
-    value.IndependentMismatchCount(ii) = "0";
-    value.Status(ii) = actual.Status;
-end
-end
-
 function [monitoringTable, candidateTable] = localMonitoringEvidence(contract, runID, strictCfg)
 monitoringTable = localContractTable(contract, "pdcch_search_space_monitoring.csv", 0);
 candidateTable = localContractTable(contract, "pdcch_candidate_enumeration.csv", 0);
@@ -628,37 +598,6 @@ for ii = 1:height(curve)
     curve.EvidenceClass(ii) = string(localTernary(fastMode, ...
         "component_regression_not_waveform_truth", "waveform_truth"));
     curve.Status(ii) = "PASS";
-end
-end
-
-function value = localType0Evidence(contract, runID, context)
-value = localContractTable(contract, "pdcch_type0_css.csv", 40);
-payloadBits = sixgr.phy.pdcch.DCISizeAlignmentEngine.resolve(context).Selected.AlignedBits;
-for ii = 1:height(value)
-    coresetIndex = mod(ii-1,12);
-    searchIndex = mod(ii-1,14);
-    core = sixgr.phy.pdcch.Type0TableCatalog.coreset0("13-0", coresetIndex, 0);
-    search = sixgr.phy.pdcch.Type0TableCatalog.searchSpace0(searchIndex, ...
-        "TableID", "13-11", "PDCCHSCSKHz", 15);
-    value.RunID(ii) = runID;
-    value.CaseID(ii) = sprintf("TYPE0%04d", ii);
-    value.FR(ii) = "FR1";
-    value.SSBSCSkHz(ii) = "15";
-    value.PDCCHSCSKHz(ii) = "15";
-    value.PDCCHConfigSIB1(ii) = string(16*coresetIndex + searchIndex);
-    value.ControlResourceSetZero(ii) = string(coresetIndex);
-    value.SearchSpaceZero(ii) = string(searchIndex);
-    value.MultiplexingPattern(ii) = string(core.MultiplexingPattern);
-    value.CORESETRBs(ii) = string(core.CORESETRBs);
-    value.CORESETSymbols(ii) = string(core.CORESETSymbols);
-    value.OffsetRB(ii) = string(core.OffsetRB);
-    value.O(ii) = string(search.O);
-    value.M(ii) = string(search.M);
-    value.FirstSymbolRule(ii) = search.FirstSymbolRule;
-    value.MonitoringSlots(ii) = join(string(0:search.M:20), "|");
-    value.PayloadBits(ii) = string(payloadBits);
-    value.MismatchCount(ii) = "0";
-    value.Status(ii) = "PASS";
 end
 end
 

@@ -42,6 +42,14 @@ function [dmrsInd, dmrsSym, info] = dmrsPUSCH(carrier, puschCfg, varargin)
     info.IndexBase = opts.IndexBase;
     info.DMRSIndicesInfo = dmrsIndInfo;
     try
+        info.DMRSPortSet = double(puschCfg.DMRS.DMRSPortSet(:).');
+        info.DMRSPortSetSource = ...
+            "executed_nrPUSCHConfig.DMRS.DMRSPortSet";
+    catch
+        info.DMRSPortSet = [];
+        info.DMRSPortSetSource = "";
+    end
+    try
         info.CDMLengths = reshape(double(dmrsIndInfo.CDMLengths), 1, []);
     catch
         info.CDMLengths = [];

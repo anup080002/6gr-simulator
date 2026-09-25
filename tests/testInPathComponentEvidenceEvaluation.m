@@ -76,6 +76,22 @@ for component = ["sib1","prach","srs","trs"]
         ~result.LaunchedSupplementalWaveform);
 end
 
+% Blind SIB1 acquisition keeps failed alternate beams.  A later complete
+% decode for every UE qualifies acquisition without deleting those misses.
+mixedSIB1 = raw;
+missedSIB1 = mixedSIB1.PBCH;
+missedSIB1.Status(:) = "FAIL";
+missedSIB1.StrictOk(:) = false;
+for name = ["BCHCrcPass","MIBDecoded","SIB1StrictOk","SIB1TreeEqual", ...
+        "SIB1DCICrcPass","SIB1DLSCHCrcPass","SIB1ASN1DecodeOk"]
+    missedSIB1.(char(name))(:) = false;
+end
+mixedSIB1.PBCH = [missedSIB1; mixedSIB1.PBCH];
+result = sixgr.truth.evaluateInPathComponentEvidence(cfg, mixedSIB1, "sib1");
+assert(result.StrictOk && ~result.AllRowsComponentPass && ...
+    result.SuccessfulEntityCount == 2, ...
+    'Failed alternate SSB beams must not erase complete per-UE SIB1 acquisition evidence.');
+
 control = sixgr.truth.evaluateInPathControlEvidence(cfg, raw, ...
     "EnablePDCCH",true, "EnablePUCCH",true);
 assert(control.StrictOk && ~control.LaunchedSupplementalWaveform && ...

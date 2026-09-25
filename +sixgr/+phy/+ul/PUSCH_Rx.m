@@ -313,11 +313,13 @@ end
 
 % Timing estimate
 trackingCorrection = localResolveReceiverTrackingCorrection(opt.ReceiverTrackingState, cfg);
+captureOriginCFOCorrectionHz = 0;
 sampleRateHz = localCarrierSampleRateHz(carrier);
 knownTimingDelaySamples = localResolveKnownTimingDelaySamples(cfg, trackingCorrection, sampleRateHz);
 if logical(trackingCorrection.CFOEstimateAvailable) && isfinite(double(trackingCorrection.EstimatedCFO_Hz)) && ...
         isfinite(sampleRateHz) && sampleRateHz > 0
     rxWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -double(trackingCorrection.EstimatedCFO_Hz));
+    captureOriginCFOCorrectionHz = double(trackingCorrection.EstimatedCFO_Hz);
     trackingCorrection.CFOCorrectionApplied = true;
     trackingCorrection.CFOCorrectionApplied_Hz = double(trackingCorrection.EstimatedCFO_Hz);
 elseif logical(trackingCorrection.CFOEstimateAvailable)
@@ -428,6 +430,13 @@ end
 [rxGrid, ofdmInfo, trackingCorrection] = localApplyEstimatedCFOAndRedemodulate( ...
     carrier, rxWaveform, sampleRateHz, rxGrid, ofdmInfo, ...
     trackingCorrection, cfg, dmrsInd, dmrsSym);
+receiverChannelOperator = struct('ReceiveCombiningMatrix',receiveCombinerInfo.Matrix, ...
+    'CaptureOriginCFOCorrection_Hz',captureOriginCFOCorrectionHz, ...
+    'AlignedOriginCFOCorrection_Hz',double(sixgr.util.structGet( ...
+        trackingCorrection,'AlignedOriginCFOCorrection_Hz',0)), ...
+    'AppliedTimingCorrection_samples',double(timingResolution.AppliedCorrection_samples), ...
+    'SampleRateHz',sampleRateHz, ...
+    'Source',"actual_PUSCH_receiver_sample_operations_not_estimated_channel_fit");
 syncState = sixgr.phy.sync.resolveSynchronizationState( ...
     "SampleRate_Hz", sampleRateHz, ...
     "InjectedCFO_Hz", localResolveInjectedCFOHz(cfg), ...
@@ -527,7 +536,8 @@ if ~logical(noiseStatus.IsValid)
     [rx, info] = localBuildUnavailableNoiseVarianceRx( ...
         trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
-        nVar, noiseStatus, logical(opt.CompactOutput), chEstDMRSInd, chEstDMRSSym);
+        nVar, noiseStatus, logical(opt.CompactOutput), chEstDMRSInd, ...
+        chEstDMRSSym, dmrsInfo);
     rx.ReceiveTiming = receiveTiming;
     rx.DMRSEPREDifference = dmrsPowerInfo;
     rx.DMRSDataToDMRSEPREDifference_dB = double(dmrsPowerInfo.DataToDMRSEPREDifference_dB);
@@ -546,6 +556,8 @@ if ~logical(noiseStatus.IsValid)
         "matlab_tic_toc_production_pusch_receiver_stages";
     info.ReceiveCombiner = receiveCombinerInfo;
     [rx,info]=localAnnotateResearchTransport(rx,info,researchTransport);
+    rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch, ...
+        chEstDMRSInd,chEstDMRSSym,ofdmInfo,dmrsPowerInfo,opt.CompactOutput,receiverChannelOperator);
     return;
 end
 
@@ -595,9 +607,10 @@ catch
     numLayersForSINR = min(size(hestSym, 2), max(1, size(hestSym, 3)));
 end
 equalizerResultForSINR = sixgr.util.structGet(equalizerInfo, "EqualizerResult", struct());
-if logical(sinrProjectionInfo.Applied)
-    equalizerResultForSINR = struct();
-end
+% The received-DMRS reference was converted to the effective layer domain
+% BEFORE mimoDetect. Its executed WH/reliability already belongs to these
+% layers; discarding it here loses measured inter-layer coupling and causes
+% an unnecessary second equalizer computation for SINR.
 try
     [postEqSINR_dB, postEqSINRPerRE_dB, postEqSINRInfo] = sixgr.phy.rx.computePostEqSINR( ...
         hestSymForSINR, nVar, ...
@@ -828,6 +841,8 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
     rx.PostEqSINRValueStatus=char(string(sixgr.util.structGet(postEqSINRInfo,'ValueStatus','unavailable')));
     rx.PostEqSINRNAReason=char(string(sixgr.util.structGet(postEqSINRInfo,'NAReason','')));
     rx.PostEqSINRPerLayer_dB=double(sixgr.util.structGet(postEqSINRInfo,'PerLayerSINR_dB',NaN));
+    interLayer=sixgr.phy.rx.interLayerEvidence(equalizerResultForSINR);
+    for field=string(fieldnames(interLayer)).', rx.(field)=interLayer.(field); end
     rx.SINRComputationMethod=char(string(sixgr.util.structGet( ...
         postEqSINRInfo,'Method',char(lower(string(equalizerAlg))))));
     rx.EqualizerType=char(string(equalizerInfo.AlgorithmUsed));
@@ -866,6 +881,8 @@ if ~isempty(opt.UCIReceiveContext) && ~all(uciOnPUSCH.ULSCHMappingResolved)
         'CodewordDecodeEvidence',{dataReception.CodewordEvidence}, ...
         'ExecutionBackend',rx.ExecutionBackend);
     [rx,info]=localAnnotateResearchTransport(rx,info,researchTransport);
+    rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch, ...
+        chEstDMRSInd,chEstDMRSSym,ofdmInfo,dmrsPowerInfo,opt.CompactOutput,receiverChannelOperator);
     return;
 end
 ulschRateMatchedBitCount=double(cellfun(@numel,cwLLRForULSCH));
@@ -929,6 +946,8 @@ if nCodewords == 2
         "ReceiveCombiner", receiveCombinerInfo, ...
         "DecodeLatency_s", decodeLatency_s, ...
         "ExecutionBackend", "nrPUSCHDecode_nrULSCHDecoder_two_codeword_truth");
+    rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch, ...
+        chEstDMRSInd,chEstDMRSSym,ofdmInfo,dmrsPowerInfo,opt.CompactOutput,receiverChannelOperator);
     return;
 end
 cwLLRForULSCH = cwLLRForULSCH{1};
@@ -1152,6 +1171,8 @@ rx.PostEqSINRValueRole = char(string(sixgr.util.structGet(postEqSINRInfo, "Value
 rx.PostEqSINRValueStatus = char(string(sixgr.util.structGet(postEqSINRInfo, "ValueStatus", "unavailable")));
 rx.PostEqSINRNAReason = char(string(sixgr.util.structGet(postEqSINRInfo, "NAReason", "")));
 rx.PostEqSINRPerLayer_dB = double(sixgr.util.structGet(postEqSINRInfo, "PerLayerSINR_dB", NaN));
+interLayer=sixgr.phy.rx.interLayerEvidence(equalizerResultForSINR);
+for field=string(fieldnames(interLayer)).', rx.(field)=interLayer.(field); end
 rx.PostEqSINRRawEqualizer_dB = double(sixgr.util.structGet(postEqSINRInfo, "RawEqualizerSINR_dB", ...
     sixgr.util.structGet(postEqSINRInfo, "RawSINR_dB", NaN)));
 rx.PostEqSINRDMRSResidualBoundApplied = logical(sixgr.util.structGet(postEqSINRInfo, "DMRSResidualBoundApplied", false));
@@ -1274,6 +1295,8 @@ if hasPHYGrant
     rx.PHYGrantDimensionContract = phyGrantContract;
 end
 rx=sixgr.phy.ul.pusch.annotateUCIReceiverEvidence(rx,uciOnPUSCH);
+rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch, ...
+    chEstDMRSInd,chEstDMRSSym,ofdmInfo,dmrsPowerInfo,opt.CompactOutput,receiverChannelOperator);
 if ~logical(opt.CompactOutput)
     rx.CodewordLLR = cwLLR;
     rx.CodewordLLRCell = cwLLRCell;
@@ -1369,6 +1392,24 @@ if hasPHYGrant
     info.PHYGrantDimensionContract = phyGrantContract;
 end
 
+end
+
+function rx=localRetainChannelEstimatorInputs(rx,Hest,rxGrid,carrier,pusch,indices,symbols,ofdm,power,compact,operator)
+% Preserve the actual estimator inputs, separately from the native
+% antenna-port DMRS footprint. This is receiver evidence, not TX payload
+% authority or a perfect-channel reference, including failed decodes.
+if logical(compact), return; end
+rx.ChannelEstimate=Hest;
+rx.RxGrid=rxGrid;
+rx.Carrier=carrier;
+rx.PUSCH=pusch;
+rx.ChannelEstimateReferenceIndices=indices;
+rx.ChannelEstimateReferenceSymbols=symbols;
+rx.ChannelEstimateReferenceDomain="effective_layer_channel";
+rx.ChannelEstimateReferenceSource="actual_PUSCH_receiver_channel_estimator_inputs";
+rx.ReceiverOFDMInfo=ofdm;
+rx.ReceiverChannelOperator=operator;
+rx.DMRSAmplitudeScale=double(power.DMRSAmplitudeScale);
 end
 
 function [rx,info]=localAnnotateResearchTransport(rx,info,transport)
@@ -2097,6 +2138,7 @@ if localSuppressBlindCFOCorrectionForRuntimeAligned(cfg, tracking)
     return;
 end
 correctedWaveform = localApplyFrequencyCorrection(rxWaveform, sampleRateHz, -estimatedCFOHz);
+tracking.AlignedOriginCFOCorrection_Hz = estimatedCFOHz;
 [rxGrid, ofdmInfo] = sixgr.phy.waveform.ofdmDemodulate(carrier, correctedWaveform);
 tracking.CFOCorrectionApplied = true;
 tracking.CFOCorrectionApplied_Hz = estimatedCFOHz;
@@ -3711,6 +3753,7 @@ receiverAlgorithm = lower(strtrim(string(sixgr.util.structGet(legacy, ...
     "MUMIMOReceiverAlgorithm", ""))));
 info = struct( ...
     "ContractVersion", "PUSCHScheduledReceiveCombiner/v2", ...
+    "Matrix", eye(size(waveIn,2)), ...
     "Applied", false, ...
     "Status", "not_requested", ...
     "Source", "no_scheduler_frozen_receive_combiner", ...
@@ -3813,6 +3856,7 @@ if ~isempty(R)
     covarianceProjected = true;
 end
 info.Applied = true;
+info.Matrix = W;
 if fullObservationPreserved
     info.Status = "applied_full_dimensional_identity_preprocessor_for_per_re_irc";
 else
@@ -3928,7 +3972,7 @@ end
 function [rx, info] = localBuildUnavailableNoiseVarianceRx( ...
         trBlkSize, Hest, rxGrid, dmrsInd, dmrsSym, carrier, pusch, puschInfo, ...
         cinfo, ofdmInfo, estInfo, trackingCorrection, timingResolution, ...
-        nVar, noiseStatus, compactOutput, chEstDMRSInd, chEstDMRSSym)
+        nVar, noiseStatus, compactOutput, chEstDMRSInd, chEstDMRSSym, dmrsInfo)
 rx = struct();
 rx.TransportBlockSize = trBlkSize;
 rx.TransportBlock = int8([]);
@@ -4008,7 +4052,8 @@ rx.DemapperLLRCount = 0;
 rx.ULSCHDemapperLLRCount = 0;
 rx.RateRecoveredLLRCount = 0;
 rx.PUSCHRxSymbolsForEvidence = complex([]);
-rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, chEstDMRSInd, dmrsInd, chEstDMRSSym, struct(), ...
+rx = sixgr.phy.rx.appendMeasuredPHYEvidence(rx, carrier, chEstDMRSInd, ...
+    dmrsInd, chEstDMRSSym, dmrsInfo, ...
     [], [], [], struct(), [], [], [], "", false);
 strictEvidence = sixgr.phy.ul.validatePUSCHReceiverEvidence(rx, "StrictMode", logical(noiseStatus.StrictFailure));
 rx.StrictReceiverEvidenceOk = logical(strictEvidence.StrictReceiverEvidenceOk);

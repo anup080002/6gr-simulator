@@ -1,0 +1,10 @@
+inherits:
+  - ../scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml
+meta:
+  scenario_id: trs_4tx2rx_white_noise_candidate
+  research_class: optional_research_experiment
+  description: Receiver projection detector candidate; physical qualification required before target scenario activation.
+reference_signals:
+  trs:
+    detection_policy: white_noise_projection_v1
+    target_false_alarm_probability: 0.001

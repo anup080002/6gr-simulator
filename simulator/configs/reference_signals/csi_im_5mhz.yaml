@@ -1,0 +1,13 @@
+# Explicit periodic CSI-IM resource for the 5 MHz CSI-RS calendar.
+# Kept as an opt-in fragment until shared-slot collision checks are verified.
+reference_signals:
+  csi_im:
+    enabled: true
+    resource_id: 0
+    pattern: 1
+    subcarrier: 4
+    symbol: 7
+    starting_rb: 0
+    num_rbs: 24
+    period_slots: 5
+    offset_slots: 1

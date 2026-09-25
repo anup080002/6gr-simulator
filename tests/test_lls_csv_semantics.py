@@ -3856,15 +3856,15 @@ def test_kpi_mixed_harq_source_uses_direction_scoped_manifest_hashes(
         })
     _write_rows(tmp_path / "reports/csv/kpi_source_table_manifest.csv", manifest_rows)
     _write_rows(tmp_path / "reports/csv/kpi_formula_registry.csv", [{
-        "KPIName": "DL_HARQ_NACK_Rate", "Direction": "DL", "Layer": "HARQ",
+        "KPIName": "DL_Retransmission_Rate", "Direction": "DL", "Layer": "HARQ",
         "Units": "ratio", "RequiredSourceTables": "harq_timeline",
         "Tolerance": "1e-9", "StrictAllowed": "1", "FormulaVersion": "v1",
-        "FormulaEquation": "nack/events", "ProducerModule": "producer",
+        "FormulaEquation": "retx/attempts", "ProducerModule": "producer",
         "Status": "active",
     }])
     reconstruction = {
-        "KPIName": "DL_HARQ_NACK_Rate", "Direction": "DL",
-        "FormulaId": "DL_HARQ_NACK_Rate", "FormulaVersion": "v1",
+        "KPIName": "DL_Retransmission_Rate", "Direction": "DL",
+        "FormulaId": "DL_Retransmission_Rate", "FormulaVersion": "v1",
         "Value": "0", "SourceTablePaths": timeline_path,
         "SourceRowCount": "1", "EligibleRowCount": "1", "ExcludedRowCount": "0",
         "SourceRowsHash": "b" * 64, "MissingRawData": "0",

@@ -33,21 +33,24 @@ truthValid = validEst & isfinite(real(hTruth)) & isfinite(imag(hTruth));
     localMeasuredResidualMetrics(hLS(valid), hEst(valid));
 truthAvailable = any(truthValid);
 if any(truthValid)
-    [nmseDb, sinrDb, noiseVar, residualPower, signalPower] = localMeasuredResidualMetrics(hTruth(truthValid), hEst(truthValid));
+    [nmseDb, sinrDb, ~, residualPower, signalPower] = localMeasuredResidualMetrics(hTruth(truthValid), hEst(truthValid));
     nmseReferenceSource = "applied_channel_gain_truth";
 else
     nmseDb = NaN;
     sinrDb = NaN;
-    noiseVar = pilotResidualNoiseVar;
     residualPower = NaN;
     signalPower = NaN;
     nmseReferenceSource = "true_channel_oracle_unavailable_runtime_pilot_residual_only";
 end
+% A scoring reference may change NMSE, never the practical noise input to
+% RI/TPMI. Keep this pilot-fit residual's limited measurement authority
+% explicit: it is not an independently calibrated AWGN variance estimate.
+noiseVar = double(pilotResidualNoiseVar);
+noiseSource = "received_ls_minus_practical_estimator_residual";
+noiseStatus = "pilot_fit_residual_not_independently_qualified_noise";
 if ~(isscalar(noiseVar) && isfinite(noiseVar) && noiseVar > 0)
-    noiseVar = double(pilotResidualNoiseVar);
-end
-if ~(isscalar(noiseVar) && isfinite(noiseVar) && noiseVar > 0)
-    noiseVar = eps;
+    noiseVar = NaN;
+    noiseStatus = "unavailable_nonpositive_or_nonfinite_receiver_residual";
 end
 riTpmi = localEstimateRITPMI(hEst, meta, noiseVar, srsCfg);
 
@@ -79,7 +82,9 @@ row = struct("RunId", string(srsCfg.RunId), "TrialId", NaN, "UEId", double(srsCf
     "NMSEReferenceSource", string(nmseReferenceSource), ...
     "TrueChannelOracleAvailable", logical(truthAvailable), ...
     "EffectiveChannelConvention", "srs_resource_re_port_effective_channel_after_ul_waveform_impairments", ...
-    "NoiseVarianceEstimate", double(noiseVar), "PilotResidualPower", double(residualPower), ...
+    "NoiseVarianceEstimate", double(noiseVar), ...
+    "NoiseVarianceSource", noiseSource, "NoiseVarianceStatus", noiseStatus, ...
+    "PilotResidualPower", double(residualPower), ...
     "PilotSignalPower", double(signalPower), ...
     "RuntimePilotResidualPower", double(pilotResidualPower), ...
     "RuntimePilotSignalPower", double(pilotSignalPower), ...
@@ -120,6 +125,7 @@ ch = struct("ChannelEstimateAttempted", true, "SRSChannelEstimateAvailable", log
     "PerPortEstimateAvailable", logical(perPortAvailable), ...
     "NMSE_dB", double(exportNMSEdB), "WidebandSRSSINR_dB", double(exportSINRdB), ...
     "NoiseVarianceEstimate", double(noiseVar), ...
+    "NoiseVarianceSource", noiseSource, "NoiseVarianceStatus", noiseStatus, ...
     "NMSEReferenceSource", string(nmseReferenceSource), ...
     "TrueChannelOracleAvailable", logical(truthAvailable), ...
     "EffectiveChannelConvention", "srs_resource_re_port_effective_channel_after_ul_waveform_impairments", ...
@@ -423,7 +429,13 @@ end
 function estimate = localEstimateRITPMI(hEst, meta, noiseVar, srsCfg)
 Hgrid = localHestGrid(hEst, meta, srsCfg);
 cfg = sixgr.util.structGet(srsCfg, "BaseConfig", struct());
-estimate = sixgr.phy.ul.estimateSRSRITPMI(Hgrid, max(double(noiseVar), eps), cfg);
+if ~(isscalar(noiseVar) && isfinite(noiseVar) && noiseVar > 0)
+    estimate = sixgr.phy.ul.estimateSRSRITPMI([], NaN, cfg);
+    estimate.RISource = "srs_receiver_noise_unavailable";
+    estimate.TPMISource = "srs_receiver_noise_unavailable";
+    return;
+end
+estimate = sixgr.phy.ul.estimateSRSRITPMI(Hgrid, double(noiseVar), cfg);
 end
 
 function Hgrid = localHestGrid(hEst, meta, srsCfg)

@@ -1632,11 +1632,20 @@ def _recorded_empty_data_authorities(run_root: Path) -> set[Path]:
         "reports/csv/run_state.csv", "reports/csv/slot_trace.csv",
         "air_interface/csv/pbch_trials.csv",
         "air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv",
+        "reports/csv/scenario_summary.csv",
+        "packet_flow/csv/live_dl_scheduler_grants.csv",
+        "packet_flow/csv/live_ul_scheduler_grants.csv",
+        "air_interface/csv/dl_constellation_samples.csv",
+        "air_interface/csv/ul_constellation_samples.csv",
+        "air_interface/csv/dl_constellation_preview.csv",
+        "air_interface/csv/ul_constellation_preview.csv",
     )
     payloads: dict[int, bytes] = {}
     artifacts: dict[str, dict[str, Any]] = {}
     try:
         for index, path in enumerate(paths):
+            if not io_path(run_root / path).is_file():
+                continue  # The shared proof rejects missing required sources.
             payloads[index] = io_path(run_root / path).read_bytes()
             artifacts[path] = {"artifact_id": index}
         # Share the existing independent source/clock-count checks used to
@@ -1645,9 +1654,16 @@ def _recorded_empty_data_authorities(run_root: Path) -> set[Path]:
         sources = contract_materializer._recorded_no_data_beam_sources(
             artifacts, payloads.__getitem__
         )
-    except (OSError, UnicodeError, csv.Error):
+        if sources:
+            return {run_root / path for path in paths[3:5]}
+        allowed = set()
+        for direction, trial_path in zip(("DL", "UL"), paths[3:5]):
+            if contract_materializer._recorded_direction_without_data_sources(
+                    artifacts, payloads.__getitem__, direction):
+                allowed.add(run_root / trial_path)
+        return allowed
+    except (OSError, UnicodeError, csv.Error, KeyError, ValueError):
         return set()
-    return {run_root / path for path in paths[-2:]} if sources else set()
 
 
 def _as_config_bool(value: Any, *, default: bool) -> bool:

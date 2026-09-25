@@ -13,12 +13,18 @@ maxLayerInverseErr = 0;
 maxBER = 0;
 % Include asymmetric codeword modulation: identical QPSK on both codewords
 % can hide a one-based/zero-based mismatch in the measurement consumer.
-rankCases = [1:8 5 8];
+rankCases = [1:8 5 8 5];
 for caseIndex = 1:numel(rankCases)
     nLayers = rankCases(caseIndex);
     cfg = localCfg(nLayers);
-    if caseIndex > 8
+    if caseIndex == 9 || caseIndex == 10
         cfg.phy.pdsch.modulation = {'QPSK','16QAM'};
+    elseif caseIndex == 11
+        % One unsegmented and one segmented CW: neither population can
+        % inherit the other codeword's CRC applicability or failure count.
+        cfg.phy.pdsch.modulation = {'QPSK','64QAM'};
+        cfg.phy.pdsch.prbSet = 0:17;
+        cfg.phy.pdsch.codeRate = [0.3 0.8];
     end
     W = eye(nLayers);
     [tx, txInfo] = sixgr.phy.dl.PDSCH_Tx(cfg, "PrecodingMatrix", W);
@@ -80,6 +86,28 @@ for caseIndex = 1:numel(rankCases)
         "NoiseVarDomain", "grid", ...
         "SkipTimingEstimate", true);
     assert(logical(rx.Ok) && ~logical(rx.CRCError), "Rank-%d no-noise PDSCH must pass CRC.", nLayers);
+    localAssertCodeBlockEvidence(tx,rx);
+    if caseIndex == 11
+        counts=cellfun(@(x)double(x.NumCodeBlocks),tx.CodingLayouts);
+        assert(counts(1)==1 && counts(2)>1,'Mixed segmentation fixture is required.');
+    end
+    if nLayers == 1
+        % Deterministic received-noise experiment, not a fabricated CRC flag.
+        noisy = tx.Waveform + 20*sqrt(mean(abs(tx.Waveform(:)).^2)/2) ...
+            .* (randn(size(tx.Waveform))+1j*randn(size(tx.Waveform)));
+        [failed,~] = sixgr.phy.dl.PDSCH_Rx(noisy,cfg, ...
+            "Carrier",tx.Carrier,"PDSCH",tx.PDSCH,"PDSCHIndices",tx.PDSCHIndices, ...
+            "TransportBlockSize",tx.TransportBlockSize,"TargetCodeRate",tx.TargetCodeRate, ...
+            "RV",tx.RV,"CodingPlan",tx.CodingPlans,"CodingLayout",tx.CodingLayouts, ...
+            "PrecodingMatrix",W,"SkipTimingEstimate",true);
+        assert(~failed.Ok && failed.CRCError,'Noise experiment must exercise a failed TB.');
+        localAssertCodeBlockEvidence(tx,failed);
+        assert(failed.MeasuredCodeBlockDecodeErrorCount==1 && ...
+            failed.MeasuredCodeBlockDecodeFailureRate==1, ...
+            'A failed one-CB TB must not be exported as zero decoded-block errors.');
+        coding=sixgr.link.deriveCodingTrialMetrics(tx,txInfo,failed,cfg);
+        assert(coding.CodeBlockCount==1 && coding.CodeBlockErrors==1);
+    end
     cfg.outputs.constellationCaptureScope = "full_allocation";
     [~, samples] = sixgr.link.deriveModulationTrackingMetrics(tx, rx, cfg, "DL");
     assert(height(samples) == numel(tx.PDSCHLayerSymbolsForEvidence) && ...
@@ -123,9 +151,20 @@ end
 
 localAssertInvalidScopesFail();
 localAssertDelayedSharedCFO();
-fprintf("PDSCH codeword/layer ranks=1:8 plus mixed QPSK/16QAM ranks=5,8 maxLayerInverseErr=%.3g maxBER=%.3g\n", ...
-    maxLayerInverseErr, maxBER);
+fprintf("PDSCH codeword/layer cases=%d ranks=1:8 mixed_modulation_and_segmentation=PASS failed_single_CB=PASS maxLayerInverseErr=%.3g maxBER=%.3g\n", ...
+    numel(rankCases), maxLayerInverseErr, maxBER);
 ok = true;
+end
+
+function localAssertCodeBlockEvidence(tx,rx)
+counts=cellfun(@(x)double(x.NumCodeBlocks),tx.CodingLayouts);
+checks=sum(counts(counts>1));
+assert(rx.MeasuredCodeBlockDecodeCount==sum(counts));
+assert(rx.MeasuredCodeBlockCRCCount==checks, ...
+    'Count actual per-CB CRC checks, not codewords or absent one-CB CRCs.');
+assert(numel(rx.CodeBlockCRCError)==checks);
+assert(rx.MeasuredCodeBlockCRCErrorCount==sum(double(rx.CodeBlockCRCError)));
+if checks==0, assert(isnan(rx.MeasuredCodeBlockCRCFailureRate)); end
 end
 
 function localAssertDelayedSharedCFO()

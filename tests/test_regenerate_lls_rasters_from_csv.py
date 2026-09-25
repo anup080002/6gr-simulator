@@ -320,6 +320,25 @@ def test_run_root_accepts_proven_empty_data_authority_without_qualifying_run(
     assert MODULE.read_csv_shape(run / "air_interface/csv/ul_pusch_trials.csv") == (0, 2)
 
 
+def test_run_root_accepts_proven_ul_no_grants_with_real_dl(monkeypatch, tmp_path):
+    from test_directional_no_data_publication import fixture, artifacts
+    monkeypatch.setattr(MODULE, 'REPO_ROOT', tmp_path)
+    run=tmp_path/'results/lls/no_ul/run_1'
+    _write_completed_acquisition_outage(run)
+    entries,fetch=artifacts(fixture('UL'))
+    for entry in entries:
+        path=run/entry['logical_path']; path.parent.mkdir(parents=True,exist_ok=True)
+        path.write_bytes(fetch(entry['artifact_id']))
+    # This is a structural publication fixture, not a radio qualification.
+    (run/'air_interface/csv/dl_pdsch_trials.csv').write_text('Slot,CRCPass\n1,0\n')
+    before={p:p.read_bytes() for p in run.rglob('*') if p.is_file()}
+    assert MODULE.validate_run_root(run)==run.resolve()
+    assert all(p.read_bytes()==data for p,data in before.items())
+    (run/'packet_flow/csv/live_ul_scheduler_grants.csv').unlink()
+    with pytest.raises(SystemExit,match='empty authority CSVs'):
+        MODULE.validate_run_root(run)
+
+
 @pytest.mark.parametrize("path,replacement", [
     ("air_interface/csv/dl_pdsch_trials.csv", None),
     ("air_interface/csv/ul_pusch_trials.csv", ""),

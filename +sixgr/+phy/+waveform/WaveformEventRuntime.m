@@ -81,6 +81,16 @@ classdef WaveformEventRuntime < handle
             obj.Transmitters(k).CommittedThroughSample=double(stop);
         end
 
+        function receipt=cancelUnemittedComponent(obj,transmitterID,componentID)
+            obj.assertMutable();
+            k=obj.findID(obj.Transmitters,transmitterID,'Transmitter');
+            assert(obj.Transmitters(k).CommittedThroughSample==obj.NextSampleIndex, ...
+                'WAVEFORM:CommittedTransmission', ...
+                'Do not change a certified future transmitter interval.');
+            receipt=obj.Transmitters(k).Composer.cancelUnemittedComponent(componentID);
+            receipt.TransmitterID=string(transmitterID);
+        end
+
         function observe(obj,receiverID,id,first,stop)
             obj.assertMutable(); id=obj.validID(id);
             k=obj.findID(obj.Receivers,receiverID,'Receiver');

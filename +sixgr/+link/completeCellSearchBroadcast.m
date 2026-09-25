@@ -68,6 +68,9 @@ end
 candidateOutputs = cell(1, numel(candidateIndices));
 for candidateOrdinal = 1:numel(candidateIndices)
 out = observationOut;
+% The monitored window exists even when PSS/PBCH detection fails. Keep its
+% request identity separate from every receiver-measured/decoded identity.
+out.RequestedSSBOccasionIndex = candidateIndices(candidateOrdinal);
 receiverArgs = {};
 if isfinite(candidateIndices(candidateOrdinal))
     % A coupled P1 sweep transmits the configured active SS burst
@@ -136,6 +139,10 @@ out.Crash = logical(rec.Crash);
 out.FailureIdentifier = string(rec.FailureIdentifier);
 out.DetectionAttempted = logical(sixgr.util.structGet(rec, "DetectionAttempted", false));
 out.PSSDetected = logical(sixgr.util.structGet(rec, "PSSDetected", false));
+detectorEvidence = sixgr.phy.sync.ssbDetectionEvidence(rec);
+for name = string(fieldnames(detectorEvidence)).'
+    out.(name) = detectorEvidence.(name);
+end
 out.SSSDetected = logical(sixgr.util.structGet(rec, "SSSDetected", false));
 out.NCellIDRecovered = logical(sixgr.util.structGet(rec, "NCellIDRecovered", false));
 out.PSSDetectionSource = string(sixgr.util.structGet(rec, "PSSDetectionSource", ""));

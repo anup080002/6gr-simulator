@@ -80,7 +80,7 @@ for port = 1:P
         hReference(:, :, port) .* referenceMatrix(:, port);
 end
 
-validRows = any(abs(referenceMatrix) > sqrt(eps), 2) ...
+validRows = any(referenceMatrix ~= 0, 2) ...
     & all(isfinite(real(observed)) & isfinite(imag(observed)), 2) ...
     & all(isfinite(real(reconstructed)) ...
         & isfinite(imag(reconstructed)), 2);
@@ -105,8 +105,12 @@ effectiveDisturbance = residualPower;
 if isfinite(nVar)
     effectiveDisturbance = max(effectiveDisturbance, nVar);
 end
-effectiveDisturbance = max(effectiveDisturbance, eps);
-nmse = residualPower ./ max(signalPower, eps);
+% eps(1) is dimensionless floating-point spacing, not an absolute noise
+% power. Flooring power at eps changes SINR when a grid is expressed in
+% physical sqrt-watts instead of normalized amplitude. signalPower has
+% already been validated positive; zero disturbance gives the exact Inf
+% ratio and is not replaced by an invented noise level.
+nmse = residualPower ./ signalPower;
 sinr = signalPower ./ effectiveDisturbance;
 
 perRESignal = mean(abs(reconstructed).^2, 2, "omitnan");
@@ -115,7 +119,7 @@ perREDisturbance = perREResidual;
 if isfinite(nVar)
     perREDisturbance = max(perREDisturbance, nVar);
 end
-perRESINR = perRESignal ./ max(perREDisturbance, eps);
+perRESINR = perRESignal ./ perREDisturbance;
 [subcarrier, symbolIndex] = ind2sub([K L], physicalUnion);
 
 metrics = struct( ...

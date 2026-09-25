@@ -59,7 +59,9 @@ classdef ReceivedULHARQState
                     'TransportBlockSizeOverride',prior.TBSBits, ...
                     'TargetCodeRate',prior.InitialTargetCodeRate, ...
                     'InitialIMCSPerCodeword',prior.InitialMCS};
-                if ~isempty(uci) && uci.hasPayload(), args=[args {'UCIPayload',uci}]; end
+                % Retain an empty report's current received-DAI identity,
+                % not the previous attempt's report or an untyped absence.
+                if ~isempty(uci), args=[args {'UCIPayload',uci}]; end
                 if isfield(allocation,'ResearchTransport')
                     args=[args {'ResearchTransport',allocation.ResearchTransport}];
                 end

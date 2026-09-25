@@ -15,6 +15,7 @@ function [pdschInd, info, pdsch] = allocREsPDSCH(carrier, cfgOrPdsch, varargin)
 
 opts = sixgr.phy.grid.parsePDSCHAllocationOptions(varargin{:});
 ssbReservation = struct();
+csiimReservation = struct();
 
 if isa(cfgOrPdsch, "nrPDSCHConfig")
     pdsch = cfgOrPdsch;
@@ -23,6 +24,7 @@ else
     pdsch = localReserveCSIRSResources(carrier, pdsch, cfgOrPdsch);
     pdsch = localReserveTRSResources(carrier, pdsch, cfgOrPdsch);
     [pdsch, ssbReservation] = sixgr.phy.grid.reserveSSBPDSCHResources(carrier, pdsch, cfgOrPdsch);
+    [pdsch,csiimReservation] = localReserveCSIIMResources(carrier,pdsch,cfgOrPdsch);
 end
 
 try
@@ -34,6 +36,7 @@ end
 info = struct();
 info.Channel = "PDSCH";
 info.SSBReservation = ssbReservation;
+info.CSIIMReservation = csiimReservation;
 info.IndexBase = opts.IndexBase;
 info.NRE = size(pdschInd, 1);
 info.PRBSet = pdsch.PRBSet;
@@ -64,6 +67,22 @@ info.DMRSRE = info.ResourceAccounting.DMRSRE;
 info.PTRSRE = info.ResourceAccounting.PTRSRE;
 info.ReservedRE = info.ResourceAccounting.ReservedRE;
 
+end
+
+function [pdsch,plan] = localReserveCSIIMResources(carrier,pdsch,cfg)
+plan=sixgr.phy.refsig.csiIMResource(carrier,cfg);
+if ~plan.Scheduled, return; end
+reservedZero=localReferenceREInsidePDSCHAllocation(plan.PhysicalIndices1Based-1,carrier,pdsch);
+if isempty(reservedZero), return; end
+assert(isempty(intersect(reservedZero,double(pdsch.ReservedRE(:)))), ...
+    'sixgr:phy:csiim:ReferenceCollision','CSI-IM overlaps an existing serving reference reservation.');
+localRejectReferenceDMRSCollision(reservedZero,carrier,pdsch,'CSI-IM', ...
+    'sixgr:phy:csiim:DMRSCollision');
+ptrs=nrPDSCHPTRSIndices(carrier,pdsch,'IndexBase','0based');
+plane=12*double(carrier.NSizeGrid)*double(carrier.SymbolsPerSlot);
+assert(isempty(intersect(reservedZero,mod(double(ptrs(:)),plane))), ...
+    'sixgr:phy:csiim:PTRSCollision','CSI-IM cannot puncture PDSCH PT-RS.');
+pdsch.ReservedRE=unique([double(pdsch.ReservedRE(:));reservedZero(:)],'sorted');
 end
 
 function text = localModulationText(raw)

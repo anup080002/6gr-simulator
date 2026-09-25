@@ -1,0 +1,13 @@
+schema_version: 1
+research_class: optional_research_experiment
+scenario: simulator/configs/validation/trs_4tx2rx_white_noise_candidate.yaml
+profile_id: trs_4tx2rx_awgn_waveform_candidate_v1
+# Frozen before physical trials. No tuning to retained scenario IQ.
+seed: 5192429
+noise_episodes: 3000
+signal_episodes: 500
+confidence_level: 0.95
+false_alarm_probability_limit: 0.001
+miss_probability_limit: 0.1
+minimum_noise_extraction_fraction: 0.2
+progress_period_episodes: 100

@@ -2,6 +2,14 @@ function validation = validateSRSConfigStrict(srsCfg)
 %VALIDATESRSCONFIGSTRICT Validate strict SRS invariants.
 
 reasons = strings(0, 1);
+estimator=string(sixgr.util.structGet(srsCfg,'RuntimeChannelEstimator','nr_channel_estimate'));
+if ~isscalar(estimator) || ~any(estimator==["nr_channel_estimate","flat_static_awgn_ls"])
+    reasons(end+1,1)="invalid_runtime_channel_estimator";
+elseif estimator=="flat_static_awgn_ls" && ...
+        (~strcmpi(string(srsCfg.ChannelModel),'AWGN') || ...
+        ~sixgr.channel.IdentityAWGNRuntime.enabled(sixgr.util.structGet(srsCfg,'BaseConfig',struct())))
+    reasons(end+1,1)="flat_estimator_requires_explicit_awgn_operator";
+end
 toolboxMissing = false;
 needed = ["nrCarrierConfig","nrSRSConfig","nrSRS","nrSRSIndices", ...
     "nrOFDMModulate","nrOFDMDemodulate","nrChannelEstimate"];

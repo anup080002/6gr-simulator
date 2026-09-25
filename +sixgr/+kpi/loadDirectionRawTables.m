@@ -15,16 +15,20 @@ raw.UL = table();
 raw.PacketSDU = table();
 raw.ApplicationPackets = table();
 raw.HARQTimeline = table();
+raw.HARQFeedback = table();
 raw.DLGrants = table();
 raw.ULGrants = table();
 raw.SlotTrace = table();
+raw.ScenarioSummary = table();
+raw.RunState = table();
 raw.GridNumRBs = NaN;
 raw.NumResourceCells = NaN;
 raw.SymbolsPerSlot = NaN;
 raw.PrimarySourceReconciliation = table();
 raw.Paths = struct("DL", "", "UL", "", "PacketSDU", "", ...
-    "ApplicationPackets", "", "HARQTimeline", "", ...
-    "DLGrants", "", "ULGrants", "", "SlotTrace", "");
+    "ApplicationPackets", "", "HARQTimeline", "", "HARQFeedback", "", ...
+    "DLGrants", "", "ULGrants", "", "SlotTrace", "", ...
+    "ScenarioSummary", "", "RunState", "");
 
 if isstruct(details)
     rt = sixgr.util.structGet(details, "RawTrials", struct());
@@ -36,6 +40,7 @@ if isstruct(details)
         [raw.PacketSDU, raw.Paths.PacketSDU] = localResolveTable(sixgr.util.structGet(rt, "PacketSDU", table()), "packet_flow/csv/live_packet_sdu_delivery_ledger.csv");
         [raw.ApplicationPackets, raw.Paths.ApplicationPackets] = localResolveTable(sixgr.util.structGet(rt, "ApplicationPackets", table()), "packet_flow/csv/live_application_packet_delivery_ledger.csv");
         [raw.HARQTimeline, raw.Paths.HARQTimeline] = localResolveTable(sixgr.util.structGet(rt, "HARQTimeline", table()), "harq/csv/live_harq_observation_timeline.csv");
+        [raw.HARQFeedback, raw.Paths.HARQFeedback] = localResolveTable(sixgr.util.structGet(rt, "HARQFeedback", table()), "control/csv/gnb_harq_feedback_observations.csv");
         [raw.DLGrants, raw.Paths.DLGrants] = localResolveTable(sixgr.util.structGet(rt, "DLGrants", table()), "packet_flow/csv/live_dl_scheduler_grants.csv");
         [raw.ULGrants, raw.Paths.ULGrants] = localResolveTable(sixgr.util.structGet(rt, "ULGrants", table()), "packet_flow/csv/live_ul_scheduler_grants.csv");
         [raw.SlotTrace, raw.Paths.SlotTrace] = localResolveTable(sixgr.util.structGet(rt, "SlotTrace", table()), "packet_flow/csv/slot_trace.csv");
@@ -84,11 +89,28 @@ if isstruct(details)
             "phy.numerology.activeGridNumRBs", "phy.carrier.NSizeGrid"]);
         raw.NumResourceCells = localFirstFiniteScalar(cfg, [ ...
             "scenario.layout.nCells", "deployment_topology.num_cells"]);
+        if ~isfinite(raw.NumResourceCells)
+            % buildInternalConfig installs site/sector geometry, not nCells.
+            % Count idle cells too; cells observed in grants are not capacity.
+            sites=localFirstFiniteScalar(cfg,"scenario.layout.nSites");
+            sectors=localFirstFiniteScalar(cfg,"scenario.layout.nSectorsPerSite");
+            if isfinite(sites) && sites==fix(sites) && isfinite(sectors) && sectors==fix(sectors)
+                raw.NumResourceCells=sites*sectors;
+            end
+        end
         raw.SymbolsPerSlot = localResolveSymbolsPerSlot(cfg);
     end
 end
 
 if strlength(runFolder) > 0
+    % Terminal absence needs the persisted completion/clock authorities,
+    % never a guessed zero from an empty decoder table alone.
+    for name=["ScenarioSummary","RunState"]
+        if name=="ScenarioSummary", relativePath="reports/csv/scenario_summary.csv";
+        else, relativePath="reports/csv/run_state.csv"; end
+        p=fullfile(runFolder,relativePath);
+        [raw.(name),raw.Paths.(name)]=localResolveTable(p,string(p));
+    end
     if isempty(raw.DL)
         p = localCandidatePath(runFolder, "air_interface/csv/dl_pdsch_trials.csv", "csv/dl_pdsch_trials.csv", ...
             "air_interface/csv/dl_fixed_link_campaign_trials.csv");
@@ -110,6 +132,10 @@ if strlength(runFolder) > 0
     if isempty(raw.HARQTimeline)
         p = localCandidatePath(runFolder, "harq/csv/live_harq_observation_timeline.csv", "reports/csv/live_harq_timeline.csv");
         [raw.HARQTimeline, raw.Paths.HARQTimeline] = localResolveTable(p, string(p));
+    end
+    if isempty(raw.HARQFeedback)
+        p=fullfile(runFolder,"control/csv/gnb_harq_feedback_observations.csv");
+        [raw.HARQFeedback,raw.Paths.HARQFeedback]=localResolveTable(p,string(p));
     end
     if isempty(raw.DLGrants)
         p = localCandidatePath(runFolder, "packet_flow/csv/live_dl_scheduler_grants.csv", "reports/csv/live_dl_scheduler_grants.csv");

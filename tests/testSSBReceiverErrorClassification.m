@@ -41,6 +41,16 @@ noise=complex(randn(stream,size(capture)),randn(stream,size(capture)))/sqrt(2);
 result=sixgr.phy.broadcast.recoverSIB1FromWaveform(noise,cfg,'RecoveryScope','SSB_MIB');
 assert(~result.Crash && ~result.StrictOk && ~result.DecodeAttempted && ...
     result.FailureIdentifier=="sixgr:phy:ia:SSBNotDetected");
+assert(result.PSSDetectionDecisionAvailable && result.PSSDetectionMetricValid);
+assert(isfinite(result.PSSNormalizedMetric) && ...
+    result.PSSNormalizedMetric<=result.PSSDetectionThreshold);
+assert(result.PSSDetectionHypothesisCount>0 && result.DetectionStage=="PSS");
+assert(result.DetectionMetric==result.PSSNormalizedMetric && ...
+    result.DetectionThreshold==result.PSSDetectionThreshold);
+assert(~result.SSSDetectionDecisionAvailable && isnan(result.SSSNormalizedMetric), ...
+    'A PSS miss must not invent an SSS measurement or run the decoder.');
+evidence=sixgr.phy.sync.ssbDetectionEvidence(result);
+assert(evidence.DetectionMetric==result.DetectionMetric);
 fprintf('SSB_RECEIVER_ERROR_CLASSIFICATION_PASS config_capture_rejections=12 outage_cases=2\n');
 ok=true;
 end

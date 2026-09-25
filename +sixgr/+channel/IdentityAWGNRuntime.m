@@ -1,5 +1,5 @@
 classdef IdentityAWGNRuntime
-    % Explicit equal-port identity link on the shared physical sample clock.
+    % Explicit identity or configured rectangular AWGN spatial operator.
     % Noise belongs to SharedWaveformPhysicalRuntime, once per receiver.
     % This is a lab channel, not an antenna propagation or fading model.
     methods (Static)
@@ -8,7 +8,13 @@ classdef IdentityAWGNRuntime
             assert(islogical(value) && isscalar(value), ...
                 'ChannelFactory:InvalidSharedIdentityAWGN', ...
                 'channel.sharedIdentityAWGNEnabled must be a scalar logical.');
-            tf=value;
+            matrix=sixgr.util.structGet(cfg,'channel.awgnSpatialMatrixDL',[]);
+            if ~isempty(matrix)
+                validateattributes(matrix,{'numeric'},{'2d','nonempty','finite'});
+                assert(~value,'ChannelFactory:ConflictingAWGNOperators', ...
+                    'Explicit spatial matrix and identity AWGN are mutually exclusive.');
+            end
+            tf=value || ~isempty(matrix);
             if ~tf, return; end
             assert(upper(string(sixgr.util.structGet(cfg,'channel.model',''))) == "AWGN" && ...
                 logical(sixgr.util.structGet(cfg,'channel.awgnOnly',false)) && ...
@@ -20,12 +26,14 @@ classdef IdentityAWGNRuntime
 
         function tf=isState(state)
             tf=isstruct(state) && isscalar(state) && ...
-                string(sixgr.util.structGet(state,'Meta.IdentityOperatorSource',''))== ...
-                "explicit_identity_AWGN_shared_sample_operator";
+                any(string(sixgr.util.structGet(state,'Meta.IdentityOperatorSource',''))== ...
+                ["explicit_identity_AWGN_shared_sample_operator", ...
+                 "explicit_matrix_AWGN_shared_sample_operator"]);
         end
 
         function contract=physicalContract(cfg)
-            % Identity AWGN executes y=x. Geometry/LOS/delay/Doppler values
+            % Execute y=x for identity, or y=x*H.' for a configured matrix.
+            % Geometry/LOS/delay/Doppler values
             % remain useful runtime reporting metadata, but they cannot
             % change that physical operator and may evolve between TDD
             % directions. Keep every operative AWGN/channel field strict.
@@ -43,8 +51,18 @@ classdef IdentityAWGNRuntime
             assert(sixgr.channel.IdentityAWGNRuntime.enabled(cfg));
             validateattributes(numTx,{'numeric'},{'scalar','integer','finite','positive'});
             validateattributes(numRx,{'numeric'},{'scalar','integer','finite','positive'});
-            assert(numTx==numRx,'ChannelFactory:IdentityAWGNPortMismatch', ...
-                'Identity AWGN requires equal physical TX/RX dimensions; no port padding, summation or array gain.');
+            matrix=sixgr.util.structGet(cfg,'channel.awgnSpatialMatrixDL',[]);
+            fixedMatrix=~isempty(matrix);
+            if fixedMatrix
+                if string(state.Direction)=="UL", matrix=matrix.'; end
+                assert(isequal(size(matrix),[numRx numTx]), ...
+                    'ChannelFactory:AWGNMatrixPortMismatch', ...
+                    'Executed AWGN matrix must match receive-by-transmit physical dimensions.');
+            else
+                assert(numTx==numRx,'ChannelFactory:IdentityAWGNPortMismatch', ...
+                    'Identity AWGN requires equal physical TX/RX dimensions; no port padding, summation or array gain.');
+                matrix=eye(numRx,numTx);
+            end
             fs=sixgr.util.structGet(txInfo,'OFDM.SampleRate',NaN);
             validateattributes(fs,{'numeric'},{'scalar','finite','positive'});
             state.Materialized=true; state.UseFading=false; state.Obj=[];
@@ -77,18 +95,31 @@ classdef IdentityAWGNRuntime
             state.Meta.RuntimeTDDReciprocityDirection=string(state.Direction);
             state.Meta.RuntimeTDDReciprocitySource="identity_operator_equals_its_nonconjugate_transpose";
             state.Meta.RuntimeTDDReciprocityApproximationMode="none_explicit_identity_lab_channel";
+            state.Meta.AWGNSpatialMatrix=matrix;
+            if fixedMatrix
+                state.Meta.IdentityOperatorSource="explicit_matrix_AWGN_shared_sample_operator";
+                state.Meta.ChannelObjectClass="explicit_fixed_matrix_sample_operator";
+                state.Meta.ChannelArrayHandlingStatus="awgn_configured_spatial_matrix_no_array_kernel";
+                state.Meta.ElementPatternChannelApplicability="not_applicable_awgn_fixed_matrix_channel";
+                state.Meta.AntennaChannelConsistencyReason="explicit_configured_rx_by_tx_matrix_no_element_patterns";
+                state.Meta.TransmitElementPatternSource="not_applied_awgn_fixed_matrix_channel";
+                state.Meta.ReceiveElementPatternSource="not_applied_awgn_fixed_matrix_channel";
+                state.Meta.RuntimeTDDReciprocitySource="configured_DL_matrix_UL_nonconjugate_transpose";
+                state.Meta.RuntimeTDDReciprocityApproximationMode="none_explicit_fixed_matrix_lab_channel";
+            end
         end
 
         function reference=reference(state,count)
             assert(sixgr.channel.IdentityAWGNRuntime.isState(state) && ...
-                state.Materialized && ~state.UseFading && isempty(state.Obj) && ...
-                state.NumTxAnt==state.NumRxAnt, ...
+                state.Materialized && ~state.UseFading && isempty(state.Obj), ...
                 'ChannelFactory:InvalidIdentityReference','Require the executed identity operator, never a fading replacement.');
             validateattributes(count,{'numeric'},{'scalar','finite','integer','positive'});
-            n=state.NumTxAnt;
-            % Exact coefficients of y=x, deliberately not labelled NR fading
+            n=state.NumTxAnt; nr=state.NumRxAnt;
+            % Exact coefficients of the executed linear spatial operator,
+            % deliberately not labelled NR fading
             % snapshots or receiver channel estimates. Scoring consumers only.
-            gains=repmat(reshape(eye(n),[1 1 n n]),[count 1 1 1]);
+            matrix=state.Meta.AWGNSpatialMatrix;
+            gains=repmat(reshape(matrix.',[1 1 n nr]),[count 1 1 1]);
             reference=struct('Source',"executed_identity_AWGN_operator", ...
                 'StartSample',state.CurrentSampleIndex, ...
                 'EndSampleExclusive',state.CurrentSampleIndex+count, ...
@@ -96,10 +127,14 @@ classdef IdentityAWGNRuntime
                 'PathFilters',1, ...
                 'SampleTimes_s',(state.CurrentSampleIndex+(0:count-1)')/state.SampleRate_Hz, ...
                 'NormalizeChannelOutputs',false,'NormalizePathGains',false, ...
-                'NumTransmitAntennas',n,'NumReceiveAntennas',n, ...
+                'NumTransmitAntennas',n,'NumReceiveAntennas',nr, ...
                 'StateKey',string(state.StateKey),'AdditionalChannelExecutions',0, ...
                 'ReceiverEstimatorInput',false,'LargeScaleLossApplied',false, ...
                 'PhysicalPortMappingApplied',false,'RFIncluded',false);
+            if state.Meta.IdentityOperatorSource=="explicit_matrix_AWGN_shared_sample_operator"
+                reference.Source="executed_fixed_matrix_AWGN_operator";
+                reference.SpatialMatrix=matrix;
+            end
         end
     end
 end

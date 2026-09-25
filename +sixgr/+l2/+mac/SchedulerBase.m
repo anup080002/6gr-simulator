@@ -831,6 +831,14 @@ classdef (Abstract) SchedulerBase < handle
             amc.Modulation = char(string(modStr));
             amc.TargetCodeRate = double(targetCodeRate);
             amc.NumLayers = double(nLayers);
+            receivedCSI=sixgr.util.structGet(ue,'ReceivedCSIReport',struct());
+            amc.ReceivedCSIRankBound=dir=="DL" && isstruct(receivedCSI) && ...
+                ~isempty(fieldnames(receivedCSI));
+            if amc.ReceivedCSIRankBound
+                assert(isfield(receivedCSI,'RI') && receivedCSI.RI==nLayers, ...
+                    'sixgr:l2:mac:ReceivedCSIRankMismatch', ...
+                    'Received Type-II coefficients require their reported rank within installed capability.');
+            end
             amc.InitialNumLayers = double(requestedLayers);
             amc.ConfiguredLayers = double(rankDecision.ConfiguredLayers);
             amc.RankSelectionPolicy = char(string(rankDecision.Policy));
@@ -1325,6 +1333,13 @@ classdef (Abstract) SchedulerBase < handle
                 sixgr.phy.grant.assertGrantTimingIdentity(grantOut,grantOut.Direction);
             else
                 grantOut = sixgr.l2.mac.rebindHARQRetransmissionTiming(grantOut);
+                if sixgr.phy.grant.isExplicitHARQRetransmission( ...
+                        grantOut,sixgr.util.structGet(grantOut,"PHYGrant",struct()),struct())
+                    % A new attempt must not inherit the previous attempt's
+                    % identifier from the retained TB snapshot. Freeze once
+                    % below using this attempt's newly selected occasion.
+                    grantOut.GrantContextId = "";
+                end
             end
             grantOut = obj.attachCanonicalTimingDecision(grantOut);
             grantOut = obj.finalizeExactPHYFeasibility(grantOut);
@@ -1388,6 +1403,7 @@ classdef (Abstract) SchedulerBase < handle
                     frozenW, size(frozenW,1), nLayers);
             end
             grantOut.PHYGrant = phyGrant;
+            grantOut.GrantContextId = char(string(phyGrant.GrantContextId));
             grantOut.PHYGrantContextId = char(string(phyGrant.GrantContextId));
             grantOut.DMRSPortSet = double(phyGrant.CodingLayout.DMRSPortSet(:).');
             grantOut.DMRSPortSetSource = char(string( ...
@@ -2594,7 +2610,11 @@ if strlength(rawStatus) > 0
 end
 
 maxAgeSlots = localSchedulerMaxCSIAgeSlots(cfg, direction);
-if isfinite(maxAgeSlots) && isfinite(ageSlots) && ageSlots > maxAgeSlots
+if localCSIRecoveryPending(status) || localMeasuredCQIOutOfRange(status)
+    % A received outage/recovery block is not pre-feedback bootstrap, even
+    % when that observation subsequently ages. Keep the typed admission.
+    usable = false;
+elseif isfinite(maxAgeSlots) && isfinite(ageSlots) && ageSlots > maxAgeSlots
     usable = false;
     status = "stale_csi_age_exceeds_configured_limit";
 elseif ~usable && status == "OK"
@@ -2668,11 +2688,14 @@ function amc = localMarkMissingRuntimeCQI(amc, cfg, provenance)
 amc.CausalFeedbackUsable = false;
 amc.CausalFeedbackStatus = char(string(provenance));
 if localSchedulerRequiresMeasuredCQI(cfg) || localBootstrapAdmissionRejected(provenance) || ...
-        localMeasuredCQIOutOfRange(provenance)
+        localMeasuredCQIOutOfRange(provenance) || localCSIRecoveryPending(provenance)
     amc.Mode = "cqi_required_no_runtime_feedback";
     amc.MCSIndex = NaN;
     amc.MCSProfile = sixgr.link.resolveMCSProfile(char(string(amc.MCSTable)), -1);
-    if localMeasuredCQIOutOfRange(provenance)
+    if localCSIRecoveryPending(provenance)
+        amc.MCSSelectionSource = "blocked_cqi_outage_recovery_filter";
+        amc.MCSValueStatus = "unavailable_cqi_outage_recovery_pending";
+    elseif localMeasuredCQIOutOfRange(provenance)
         amc.MCSSelectionSource = "blocked_measured_cqi_zero_out_of_range";
         amc.MCSValueStatus = "unavailable_measured_cqi_zero_out_of_range";
     elseif localBootstrapAdmissionRejected(provenance)
@@ -2691,6 +2714,12 @@ else
     amc.CQIProvenance = char(string(provenance));
     amc.MCSValueStatus = "bootstrap_not_measured_cqi";
 end
+end
+
+function tf = localCSIRecoveryPending(provenance)
+tf = ismember(lower(strtrim(string(provenance))), ...
+    ["cqi_outage_recovery_pending","blocked_cqi_outage_recovery_filter", ...
+     "unavailable_cqi_outage_recovery_pending"]);
 end
 
 function tf = localMeasuredCQIOutOfRange(provenance)
@@ -2720,7 +2749,9 @@ end
 
 function reason = localAMCBlockerReason(amc)
 if localAMCBlocksGrant(amc)
-    if localMeasuredCQIOutOfRange(sixgr.util.structGet(amc, "CausalFeedbackStatus", ""))
+    if localCSIRecoveryPending(sixgr.util.structGet(amc, "CausalFeedbackStatus", ""))
+        reason = "blocked_cqi_outage_recovery_filter";
+    elseif localMeasuredCQIOutOfRange(sixgr.util.structGet(amc, "CausalFeedbackStatus", ""))
         reason = "blocked_measured_cqi_zero_out_of_range";
     else
         reason = "blocked_until_runtime_cqi_feedback";
@@ -2931,11 +2962,34 @@ bestPRBCount = inf;
 robustBest = struct("Valid", false);
 robustBestBits = -inf;
 robustBestPRBCount = inf;
+paddedBest = struct("Valid", false);
+paddedBestBits = inf;
+paddedBestPRBCount = inf;
 minGuardPRB = localSmallPRBWidebandCQIGuardMinPRB(obj.Cfg, rawPRBSet);
 for i = 1:numel(candidateProfiles)
     cand = candidateProfiles(i);
     [bestIdxForCand, bestCand] = localFindLargestQueueFit(obj, cand, rawPRBSet, symAlloc, queueBytes, opt);
     if ~bestCand.Valid
+        % A nonempty queue can be smaller than every legal TB. Adaptive
+        % candidate search needs the same explicit MAC-padding treatment as
+        % the preserved-AMC path above. Keep exact allocation-derived TBS,
+        % rank-bound CSI coefficients and the small-PRB robustness guard.
+        [padIdx, padEval] = localFindSmallestPositiveTB(obj, cand, rawPRBSet, symAlloc, opt);
+        if padEval.Valid && autoSmallPRBGuard && ...
+                ~localSmallPRBWidebandCQIRobustCandidate(cand,rawPRBSet(1:padIdx),minGuardPRB,obj.Cfg)
+            padIdx = max(padIdx,ceil(minGuardPRB));
+            if padIdx <= numel(rawPRBSet)
+                padEval = localEvaluatePositiveCandidate(obj,cand,padIdx,symAlloc,opt);
+            else
+                padEval = localInvalidQueueEval();
+            end
+        end
+        if padEval.Valid && (padEval.TBSBits < paddedBestBits || ...
+                (padEval.TBSBits == paddedBestBits && padIdx < paddedBestPRBCount))
+            paddedBest = localBuildQueueLimitedBest(cand,rawPRBSet(1:padIdx),padEval,queueBytes);
+            paddedBestBits = padEval.TBSBits;
+            paddedBestPRBCount = padIdx;
+        end
         continue;
     end
     [minIdxForCand, minCand] = localFindSmallestSubsetForBits( ...
@@ -2961,6 +3015,9 @@ for i = 1:numel(candidateProfiles)
         robustBestBits = double(chosenCand.TBSBits);
         robustBestPRBCount = numel(prbSubset);
     end
+end
+if ~best.Valid && paddedBest.Valid
+    best = paddedBest;
 end
 if autoSmallPRBGuard && logical(sixgr.util.structGet(robustBest, "Valid", false))
     best = robustBest;
@@ -3149,7 +3206,7 @@ numLayers = max(1, round(double(sixgr.util.structGet(amc, "NumLayers", 1))));
 queueAwareReduction = logical(queueAwareReduction);
 
 layerList = numLayers;
-if queueAwareReduction
+if queueAwareReduction && ~logical(sixgr.util.structGet(amc,'ReceivedCSIRankBound',false))
     layerDecMax = localNonnegativeIntegerConfig(cfg, "phy.linkAdaptation.queueAwareLayerDecrementMax", 1);
     minLayers = max(1, numLayers - layerDecMax);
     layerList = numLayers:-1:minLayers;

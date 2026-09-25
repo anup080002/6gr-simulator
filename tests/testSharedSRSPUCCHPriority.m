@@ -1,0 +1,9 @@
+function ok=testSharedSRSPUCCHPriority()
+% Physical shared CDL/RF/noise execution, not an allocation-only check.
+root=fullfile(pwd,'results','lls','shared_srs_pucch_priority', ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
+ok=testSharedPUCCHFeedbackClock(false,"TDD", ...
+    'simulator/configs/scenarios/lls_srs_pucch_priority_fixture.yaml', ...
+    root,"",true,false,true);
+fprintf('SRS_PUCCH_PRIORITY_EVIDENCE=%s\n',root);
+end

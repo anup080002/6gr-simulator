@@ -40,7 +40,11 @@ state = struct( ...
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
-if ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
+% Identity-AWGN is also an executed multiport runtime channel. Its explicit
+% matrix/sample clock must be materialized just like a fading channel;
+% skipping it leaves continuous SSB acquisition with an empty channel state.
+if sixgr.channel.ChannelFactory.requiresRuntimeChannelState(cfg) || ...
+        ~(awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF")
     ueIdx = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.userContext.UEIndex", 1))));
     servingCell = max(1, round(double(sixgr.util.structGet(cfg, "lls6g.userContext.RuntimeServingCellIndex", ...
         sixgr.util.structGet(cfg, "lls6g.userContext.ServingCell", 1)))));

@@ -13,6 +13,7 @@ classdef CSIMeasurementState
         ChannelEstimateConvention (1,1) string
         NoiseVariance
         InterferenceCovariance
+        InterferenceCovarianceIncludesNoise (1,1) logical
         Provenance (1,1) string
         Digest (1,1) string
     end
@@ -31,6 +32,7 @@ classdef CSIMeasurementState
                 options.ChannelEstimateConvention (1,1) string = "rx_by_tx_by_snapshot"
                 options.NoiseVariance
                 options.InterferenceCovariance = []
+                options.InterferenceCovarianceIncludesNoise (1,1) logical = false
                 options.Provenance (1,1) string = "measured_runtime_reference_signal"
             end
             if isempty(options.ChannelEstimate)
@@ -69,11 +71,17 @@ classdef CSIMeasurementState
             obj.ChannelEstimateConvention = convention;
             obj.NoiseVariance = options.NoiseVariance;
             obj.InterferenceCovariance = options.InterferenceCovariance;
+            obj.InterferenceCovarianceIncludesNoise = options.InterferenceCovarianceIncludesNoise;
             obj.Provenance = options.Provenance;
             obj.Digest = sixgr.phy.mimo.MatrixContract.digest(channelEstimate);
         end
 
         function validateAt(obj, slotValue)
+            if ~(isnumeric(slotValue) && isreal(slotValue) && isscalar(slotValue) && ...
+                    isfinite(slotValue) && slotValue >= 0 && slotValue == fix(slotValue))
+                error("sixgr:mimo:InvalidMeasurementTime", ...
+                    "CSI measurement consumption requires a finite nonnegative integer slot.");
+            end
             age = double(slotValue) - obj.Slot;
             if age < 0 || age > obj.MaxAgeSlots
                 error("sixgr:mimo:StaleMeasurementState", ...

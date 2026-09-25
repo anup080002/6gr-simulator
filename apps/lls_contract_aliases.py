@@ -320,6 +320,8 @@ CONTRACT_CHART_ALIAS_PATHS: dict[str, list[str]] = {
     "BLER vs MCS": ["air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv"],
     "PDCCH map": ["air_interface/csv/pdcch_trials.csv"],
     "aggregation level distribution": ["air_interface/csv/pdcch_trials.csv", "reports/csv/live_pdcch_stage_table.csv"],
+    "PDCCH channel-estimate magnitude": ["control/csv/pdcch_channel_estimates.csv"],
+    "PDCCH channel-estimate phase": ["control/csv/pdcch_channel_estimates.csv"],
     "PDCCH decode success/failure trend if applicable": ["air_interface/csv/pdcch_trials.csv", "reports/csv/live_pdcch_stage_table.csv"],
     "PDCCH DMRS occupancy": ["reports/csv/pdcch6gr_dmrs_locations.csv", "air_interface/csv/pdcch_trials.csv", "reports/csv/live_pdcch_stage_table.csv"],
     "PBCH/SSB map": ["air_interface/csv/pbch_trials.csv"],

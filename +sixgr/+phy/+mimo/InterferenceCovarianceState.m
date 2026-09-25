@@ -115,7 +115,9 @@ classdef InterferenceCovarianceState
                     nSamples, options.MinSamples);
             end
             centered = samples - mean(samples,1);
-            R = (centered' * centered) / max(1,nSamples-1);
+            % Rows store un-conjugated receive vectors. The receiver needs
+            % E[n*n^H], not its conjugate (which reverses spatial phase).
+            R = (centered.' * conj(centered)) / max(1,nSamples-1);
             target = trace(R)/size(R,1) * eye(size(R,1));
             alpha = options.ShrinkageFactor;
             R = (1-alpha)*R + alpha*target;

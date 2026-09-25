@@ -327,6 +327,12 @@ rx.NoiseVarStatus = "unavailable";
 rx.NoiseVarSource = "pdcch_receiver_not_attempted";
 rx.NoiseVarReason = "no_candidate_channel_estimate_attempted";
 rx.ChannelEstimate = [];
+rx.ChannelEstimateSource = "";
+rx.ChannelEstimateMethod = "";
+rx.ChannelEstimateInfo = struct();
+rx.MonitoredDataREIndices = [];
+rx.MonitoredDMRSREIndices = [];
+rx.ReferenceGridSymbolsPerSlot = double(carrier.SymbolsPerSlot);
 rx.RxGrid = rxGrid;
 rx.EqualizedSymbols = complex([]);
 candidateRows = repmat(localEmptyCandidateRow(), 0, 1);
@@ -340,7 +346,7 @@ for c = 1:numel(candSymInd)
 
     % Channel estimate
     if size(rxGrid,2)==double(carrier.SymbolsPerSlot)
-        [hEst, nVarEst] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym);
+        [hEst, nVarEst, channelEstimateInfo] = sixgr.phy.rx.channelEstimate(carrier, rxGrid, dmrsInd, dmrsSym);
     else
         % The index/symbol Toolbox signature requires a whole slot.
         % Its reference-grid signature supports the actual received
@@ -358,6 +364,9 @@ for c = 1:numel(candSymInd)
         prefixIndices=mod(refs,kSub)+1+kSub*refSymbols+kSub*nSymbols*refPorts;
         referenceGrid(prefixIndices)=dmrsSym(:);
         [hEst,nVarEst]=nrChannelEstimate(carrier,rxGrid,referenceGrid);
+        channelEstimateInfo=struct('EngineUsed',"nrChannelEstimate", ...
+            'Method',"LS",'EstimatorUsesTrueChannel',false, ...
+            'EffectiveChannelConvention',"received_prefix_rx_antenna_by_reference_port");
     end
 
     if isnan(noiseVarUsed)
@@ -431,6 +440,11 @@ for c = 1:numel(candSymInd)
     rx.NoiseVarSource = char(string(nVarSource));
     rx.NoiseVarReason = char(string(nVarReason));
     rx.ChannelEstimate = hEst;
+    rx.ChannelEstimateSource = string(channelEstimateInfo.EngineUsed);
+    rx.ChannelEstimateMethod = string(channelEstimateInfo.Method);
+    rx.ChannelEstimateInfo = channelEstimateInfo;
+    rx.MonitoredDataREIndices = symInd;
+    rx.MonitoredDMRSREIndices = dmrsInd;
     rx.EqualizedSymbols = eqSym;
     rx.ReceiverHestSINR_dB = double(candidateSINR_dB);
     rx.ReceiverHestSINRSource = "pdcch_dmrs_hest_noise_variance";

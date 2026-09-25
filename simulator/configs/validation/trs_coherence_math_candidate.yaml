@@ -1,0 +1,16 @@
+# Mathematical component validation, not a physical detector qualification.
+schema_version: 1
+research_class: optional_research_experiment
+profile_id: trs_white_noise_coherence_math_v1
+seed: 5192407
+num_reference_re: 150
+receive_branches: [1, 2, 4]
+noise_episodes_per_branch_count: 10000
+noise_probability_probe: 0.01
+null_count_sigma_limit: 5
+runtime_candidate_probability: 0.001
+timing_hypothesis_count: 7680
+signal_receive_branches: 2
+signal_snr_db: [-10, -5, 0]
+signal_episodes_per_point: 500
+high_snr_detection_probability_min: 0.99

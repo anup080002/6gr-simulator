@@ -85,6 +85,32 @@ catch err
     rejected=true;
 end
 assert(rejected);
+% Normalized-power experiments have no absolute-dBm authority. Retain
+% their actual normalized measurements and select in that same domain.
+relative=pbch;
+relative.PowerReferencePlane=repmat("normalized_fixed_esn0_unit_occupied_re_es",2,1);
+relative.SS_RSRP_dBm(:)=NaN;
+relative.SS_RSRP_dB_re_UnitOccupiedRE_Es=[-9;-5];
+artifacts=sixgr.truth.exportLLSLiveDerivedTables(cfg,fullfile(root,'normalized'), ...
+    struct('PBCH',relative),struct(),struct(),struct());
+T=readtable(artifacts.BeamP1AcquisitionStatsPath,'TextType','string');
+power=T(string(T.Metric)=="P1SS_RSRP_dB_re_UnitOccupiedRE_Es",:);
+selected=T(string(T.Metric)=="P1SelectedSSBBeamIndex",:);
+assert(height(power)==1 && power.MeanValue==-7 && power.SampleCount==2);
+assert(height(selected)==1 && selected.MeanValue==1 && ...
+    selected.ScoreAxis=="SS_RSRP_dB_re_UnitOccupiedRE_Es");
+assert(~any(string(T.Metric)=="P1SS_RSRP_dBm"));
+% Even identical UE/burst identities cannot make unlike power units
+% comparable. Separate the groups by the declared physical reference plane.
+absolute=pbch;
+absolute.PowerReferencePlane=repmat("ue_antenna_connector_received_ssb_grid",2,1);
+absolute.SS_RSRP_dB_re_UnitOccupiedRE_Es=nan(2,1);
+mixed=sixgr.truth.buildBeamMeasurementSummary([absolute;relative],"SSB_DL", ...
+    "mixed_domain_fixture",struct([]),true);
+winners=mixed(mixed.Metric=="P1SelectedSSBBeamIndex",:);
+assert(height(winners)==2 && numel(unique(winners.PowerReferencePlane))==2);
+assert(winners.MeanValue(winners.ScoreAxis=="SS_RSRP_dBm")==0 && ...
+    winners.MeanValue(winners.ScoreAxis=="SS_RSRP_dB_re_UnitOccupiedRE_Es")==1);
 fprintf('PASS testLLSBeamSummaryMeasurementAuthority; fixture artifacts: %s\n',root);
 ok = true;
 end

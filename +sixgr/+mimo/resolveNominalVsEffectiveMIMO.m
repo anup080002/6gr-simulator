@@ -306,6 +306,10 @@ for direction = ["DL","UL"]
         row.ReceiverEstimatedRank = localFirstNum(tr, ["ReceiverEstimatedRank"], NaN);
         row.SpatialChannelRankEstimate = localFirstNum(tr, ...
             ["SpatialChannelRankEstimate","RankEstimate"], NaN);
+        row.MinimumSnapshotRank = localFirstNum(tr, "MinimumSnapshotRank", NaN);
+        row.SpatialSpanRank = localFirstNum(tr, "SpatialSpanRank", NaN);
+        row.SpatialRankDimensionLimit = localFirstNum(tr, "SpatialRankDimensionLimit", NaN);
+        row.RankEstimateSource = localFirstTextTable(tr, "RankEstimateSource", "");
         row.NumRxAntennas = localFirstNum(tr, ["NumRxAntennas","NumRxAnt","RxAntennaCount"], NaN);
         row.NumTxPorts = localFirstNum(tr, ["NumTxPorts","PrecodingNumPorts","TxAntennaPortCount"], NaN);
         row.TxWaveformColumns = localFirstNum(tr, ...
@@ -415,8 +419,16 @@ for direction = ["DL","UL"]
         % the receiver; it does not identify their 3GPP port numbers. Keep
         % identities unavailable unless the primary receiver row carries
         % an explicit measured identity set.
-        measuredDMRSPorts = localParseVector(localFirstTextTable(tr, ...
+        measuredDMRSPorts = localParseDMRSPortVector(localFirstTextTable(tr, ...
             ["MeasuredDMRSPortSet","MeasuredDMRSPorts"], ""));
+        if ~isempty(measuredDMRSPorts) && ...
+                isfinite(row.MeasuredDMRSPortCount) && ...
+                numel(measuredDMRSPorts) ~= row.MeasuredDMRSPortCount
+            error("sixgr:mimo:MeasuredDMRSPortIdentityCountMismatch", ...
+                "Trial %g %s measured DM-RS identity/count mismatch: %d identities versus %.0f measured ports.", ...
+                row.TrialId, direction, numel(measuredDMRSPorts), ...
+                row.MeasuredDMRSPortCount);
+        end
         row.DMRSPorts = localVectorToken(measuredDMRSPorts);
         row.PrecoderId = localFirstTextTable(tr, ["AppliedPrecoderPMI","PMI","ConfiguredPMI"], "");
         row.BeamId = localFirstTextTable(tr, ["AppliedBeamIndexSet","SelectedBeamIndex"], "");
@@ -674,6 +686,13 @@ for i = 1:height(cfgT)
     row.Status = string(localTernary(row.ScenarioObjectivePass, "pass", "fail"));
     if row.ScenarioObjectivePass
         row.FailureReason = "";
+    elseif ~any(strcmp(string(rankT.Direction), direction))
+        % A configuration row is not an executed rank observation. Keep the
+        % objective unproven, without diagnosing a nonexistent bootstrap
+        % grant. Invalid existing trials must still follow the failure path.
+        row.Status = "not_validated";
+        row.FailureReason = "no_runtime_trials";
+        row.RuntimeEvidenceSource = "no_runtime_trials";
     elseif row.MUExecutionRequired && ~row.MUExecutionMatch
         row.FailureReason = "mu_execution_contract_failed:" + string(row.MUExecutionFailureReason);
     elseif row.AdaptivePolicyRequired && row.AdaptiveFeedbackDecisionRowCount == 0
@@ -886,6 +905,12 @@ for i = 1:height(cfgT)
         "pass","fail"));
     rows(i).FailureReason = string(localTernary(rows(i).ExactRuntimeAntennaMatch, ...
         "","runtime_antenna_domain_does_not_match_configured_execution_contract"));
+    if ~rows(i).RuntimePopulated
+        % No waveform is not evidence of the wrong antenna dimension.
+        % Keep this objective unvalidated: never manufacture a spatial pass.
+        rows(i).Status = "not_validated";
+        rows(i).FailureReason = "no_runtime_trials";
+    end
 end
 T = struct2table(rows);
 end
@@ -923,6 +948,11 @@ for i = 1:height(cfgT)
             transmittedLayers >= 1 & measuredCounts >= transmittedLayers);
     rows(i).Status = string(localTernary(ok, "pass", "fail"));
     rows(i).FailureReason = string(localTernary(ok, "", "missing_or_invalid_port_layer_mapping_evidence"));
+    if height(sub) == 0
+        rows(i).Status = "not_validated";
+        rows(i).FailureReason = "no_runtime_trials";
+        rows(i).MappingEvidenceSource = "no_runtime_trials";
+    end
 end
 T = struct2table(rows);
 end
@@ -1160,6 +1190,29 @@ end
 parts = split(regexprep(s, "[,; ]+", "|"), "|");
 vec = str2double(parts);
 vec = vec(isfinite(vec));
+end
+
+function vec = localParseDMRSPortVector(token)
+% The receiver serializes exact port identities with MAT2STR (for example
+% "[0 1]").  Parse the complete token fail-closed; never keep only the
+% numeric subset of a malformed identity string.
+s = strtrim(string(token));
+if strlength(s) == 0
+    vec = [];
+    return;
+end
+s = regexprep(s, "^[\[\(\{]\s*", "");
+s = regexprep(s, "\s*[\]\)\}]$", "");
+parts = split(regexprep(s, "[,;|\s]+", "|"), "|");
+parts = parts(strlength(strtrim(parts)) > 0);
+values = str2double(parts);
+if isempty(values) || any(~isfinite(values)) || ...
+        any(values < 0 | values ~= fix(values)) || ...
+        numel(unique(values)) ~= numel(values)
+    vec = [];
+    return;
+end
+vec = double(values(:).');
 end
 
 function token = localVectorToken(vec)
@@ -1553,6 +1606,8 @@ row = struct("RunId","", "ScenarioName","", "TrialId",NaN, "Direction","", ...
     "ScheduledLayers",NaN, "TransmittedRank",NaN, "TransmittedLayers",NaN, ...
     "ReceiverEstimatedRank",NaN, ...
     "SpatialChannelRankEstimate",NaN, "SpatialChannelTxPorts",NaN, ...
+    "MinimumSnapshotRank",NaN, "SpatialSpanRank",NaN, ...
+    "SpatialRankDimensionLimit",NaN, "RankEstimateSource","", ...
     "SpatialChannelRxAntennas",NaN, "SpatialChannelRankDomain","", ...
     "SpatialChannelRankSource","", ...
     "EffectiveDecodedRank",NaN, "EffectiveDecodedLayers",NaN, ...

@@ -25,6 +25,9 @@ assert(isequaln(cfg.mac,expectedMAC));
 assert(source.get('scheduler.min_prbs_per_grant')==2);
 slotSeconds = 1e-3/(double(cfg.phy.numerology.scs_kHz)/15);
 assert(cfg.phy.carrier.NSizeGrid == 25 && slotSeconds == 1e-3);
+assert(isequal(cfg.phy.pdcch.searchSpace.numCandidates,[4 2 2 1 0]), ...
+    'Shared DL/UL control requires the installed pair of AL4 candidates.');
+assert(cfg.phy.pdcch.blindDecodeCandidates==sum(cfg.phy.pdcch.searchSpace.numCandidates));
 traffic = sixgr.system.TrafficFactory.generate(cfg,1,58,slotSeconds);
 assert(all(traffic.OfferedBitsDL(:) == 100e6*slotSeconds));
 assert(all(traffic.OfferedBitsUL(:) == 100e6*slotSeconds));
@@ -57,6 +60,11 @@ overrides = sweep.get('scenario.sweep.overrides');
 assert(isequal(arrayfun(@(v) v.config.simulation.snr_db,overrides(:)).', ...
     [-30 -20 -10 0 10 20 30 40]));
 assert(sweep.get('traffic.targetRate_Mbps') == 200);
+sweepCandidates=double(sweep.get('control.search_space_num_candidates'));
+assert(isequal(sweepCandidates(:).',[4 2 2 1 0]), ...
+    'The eight-point sweep must inherit the repaired 5 MHz search space; got %s.', ...
+    mat2str(sweepCandidates));
+assert(sweep.get('control.blind_decode_candidates')==sum(sweepCandidates));
 assert(sweep.get('scheduler.min_prbs_per_grant') == 2);
 assert(~sweep.get('pucch_resources.overlap_policy.reserve_configured_pucch_prbs_from_pusch'));
 assert(sweep.get('pucch_resources.overlap_policy.detect_pucch_pusch_overlap') && ...

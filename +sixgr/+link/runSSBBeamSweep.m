@@ -89,7 +89,7 @@ for ssbIdx = 0:(beamCount - 1)
 end
 
 T = struct2table(rows, "AsArray", true);
-[T, selection] = localSelectMeasuredBeam(T);
+[T, selection] = localSelectMeasuredBeam(T,cfg);
 outputPath = string(opt.OutputPath);
 if strlength(strtrim(outputPath)) > 0
     [folder, ~, ~] = fileparts(char(outputPath));
@@ -467,11 +467,18 @@ row.FailureReason = string(sixgr.util.structGet(sib1, "FailureReason", ""));
 row.Notes = string(sixgr.util.structGet(acq, "Notes", ""));
 end
 
-function [T, selection] = localSelectMeasuredBeam(T)
+function [T, selection] = localSelectMeasuredBeam(T,cfg)
+% Select in the configured receiver power domain. Normalized occupied-RE
+% experiments deliberately have no absolute dBm authority; they still have
+% real measured SSB powers and may select a beam from those measurements.
+fixedReference=strcmpi(string(sixgr.util.structGet(cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
+    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+metric="SS_RSRP_dBm";
+if fixedReference, metric="SS_RSRP_dB_re_UnitOccupiedRE_Es"; end
 selection = struct( ...
     "SelectedSSBIndex", NaN, ...
     "SelectedBeamIndex", NaN, ...
-    "SelectionMetric", "SS_RSRP_dBm", ...
+    "SelectionMetric", metric, ...
     "SelectionMetricValue_dB", NaN, ...
     "SelectionSource", ...
         "receiver_measured_targeted_per_beam_ssb_pbch_waveform_trials", ...
@@ -479,10 +486,13 @@ selection = struct( ...
 if ~(istable(T) && ~isempty(T))
     return;
 end
-measured = double(T.SS_RSRP_dBm);
+measured = double(T.(metric));
 eligible = logical(T.DetectionSuccess) & isfinite(measured) & ...
     logical(T.ChannelEstimateAvailable) & logical(T.EqualizationAvailable) & ...
     logical(T.StrictReceiverEvidenceOk);
+if fixedReference
+    eligible=eligible & string(T.PowerReferencePlane)=="normalized_fixed_esn0_unit_occupied_re_es";
+end
 if ~any(eligible)
     T.SelectionMetric(:) = string(selection.SelectionMetric);
     T.SelectionSource(:) = string(selection.SelectionSource);

@@ -4,6 +4,7 @@ function [observation,evidence]=compensateReceivedAGC(raw,segments,receiverID)
 % Division does not undo clipping, quantization, jitter, noise or fading.
 x=raw.readComplete(); first=raw.StartSample; stop=raw.EndSampleExclusive;
 gain=nan(size(x,1),1); coverage=false(size(gain)); enabled=false;
+gainOnlyRF=true;
 for k=1:numel(segments)
     segment=segments{k}; a=max(first,segment.StartSample); b=min(stop,segment.EndSampleExclusive);
     if b<=a, continue; end
@@ -11,6 +12,12 @@ for k=1:numel(segments)
     i=find(string({e.RX.ID})==string(receiverID),1);
     if isempty(i), error('sixgr:phy:rx:AGCReceiverIdentity','Actual RF execution does not identify this receiver.'); end
     r=e.RX(i).Replay;
+    % A recorded inverse AGC gain preserves the original noise law only
+    % when no other configured/applied RX stage can distort those samples.
+    fields={'RFConfiguredStageCount','RFAppliedStageCount','AGCEnabled','AGCApplied'};
+    gainOnlyRF=gainOnlyRF && all(isfield(r,fields)) && ...
+        r.RFConfiguredStageCount==double(r.AGCEnabled) && ...
+        r.RFAppliedStageCount==double(r.AGCApplied);
     if string(r.AGCControlModel)=="disabled"
         g=zeros(b-a,1);
     else
@@ -43,6 +50,7 @@ dispatcher.register('digital_gain_compensated',first,stop);
 done=dispatcher.dispatch(sixgr.phy.waveform.WaveformChunk(y,first),raw.SampleRateHz);
 observation=done.Observation;
 evidence=struct('Applied',enabled,'Source',"actual_receiver_applied_analog_gain_trace_after_ADC", ...
+    'GainOnlyRFExecuted',gainOnlyRF, ...
     'InputPlane',"actual_post_rx_rf_post_adc_samples", ...
     'OutputPlane',"digital_gain_compensated_received_samples_before_fft", ...
     'StartSample',first,'EndSampleExclusive',stop, ...

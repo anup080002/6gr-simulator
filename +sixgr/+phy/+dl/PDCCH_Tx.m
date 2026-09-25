@@ -58,6 +58,11 @@ p.addParameter('AllowRandomDCI', false, @(x) islogical(x) || (isnumeric(x) && is
 p.addParameter('ReservedRECoordinates', zeros(0,2), @isnumeric);
 p.parse(varargin{:});
 opt = p.Results;
+scheduledAL = [];
+if isfield(opt.Grant,'PDCCHAggregationLevel')
+    scheduledAL = sixgr.phy.pdcch.resolveScheduledAggregationLevel(cfg,opt.Grant);
+    cfg = sixgr.util.structSet(cfg,'phy.pdcch.aggregationLevel',scheduledAL);
+end
 % An explicit low-level/unit call historically means "execute PDCCH".  A
 % resolved YAML scenario, however, always installs both booleans and the
 % authority guard below rejects any object/default that disagrees with it.
@@ -128,6 +133,10 @@ else
 end
 
 allocatedCoordinates = zeros(0,2);
+if ~isempty(scheduledAL) && pdcch.AggregationLevel ~= scheduledAL
+    error('sixgr:phy:pdcch:ScheduledAggregationMismatch', ...
+        'Explicit PDCCH object must preserve the scheduled aggregation level.');
+end
 if ~ismember('ReservedRECoordinates', p.UsingDefaults)
     [pdcch, allocatedCoordinates] = ...
         sixgr.phy.pdcch.allocateNonoverlappingCandidate( ...

@@ -44,9 +44,14 @@ elseif endsWith(name, "valuerole")
 elseif endsWith(name, "valuestatus")
     token = "not_emitted_by_active_" + string(scopeToken) + "_runtime";
 elseif endsWith(name, "nareason") || strcmp(name, "nareason") || ...
-        strcmp(name, "unavailablereason")
+        strcmp(name, "unavailablereason") || ...
+        endsWith(name, "failurecode") || endsWith(name, "failurereason")
     % An empty reason is legitimate for a valid measurement. Only its
-    % producer can state why a value is unavailable; never invent a cause.
+    % producer can state why a value is unavailable or why an operation
+    % failed; never invent a cause.  In particular, a successful decoded
+    % DCI/grant binding must retain an empty failure code.  Decorating that
+    % blank with a generic not-applicable token makes the strict binding
+    % gate reinterpret physically proven bindings as failures.
     token = "";
 elseif contains(name, "blocker")
     token = "not_blocked_in_active_" + string(scopeToken) + "_runtime";

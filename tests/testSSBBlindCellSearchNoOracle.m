@@ -58,6 +58,12 @@ catch cause
     rejected=true;
 end
 assert(rejected,'PSS alone must not become a detected cell.');
+result=sixgr.phy.broadcast.recoverSIB1FromWaveform(pssOnly+noise,cfgRx,'RecoveryScope','SSB_MIB');
+assert(result.PSSDetected && ~result.SSSDetected && ~result.DecodeAttempted && ~result.Crash);
+assert(result.PSSDetectionDecisionAvailable && result.SSSDetectionDecisionAvailable);
+assert(result.PSSNormalizedMetric>result.PSSDetectionThreshold && ...
+    result.SSSNormalizedMetric<=result.SSSDetectionThreshold);
+assert(result.DetectionStage=="SSS" && result.DetectionMetric==result.SSSNormalizedMetric);
 fprintf('SSB_BLIND_DETECTION_PASS signal_present_PBCH=1 PSS_only_SSS_rejected=1\n');
 ok = true;
 end

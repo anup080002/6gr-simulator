@@ -55,6 +55,8 @@ decision = struct( ...
     "RankUpdated", false, ...
     "RankUpdateStatus", "not_requested", ...
     "RankUpdateBlockedReason", "", ...
+    "RankIncreaseConfirmationCount", double(adaptationState.RankIncreaseConfirmationCount), ...
+    "RankIncreaseRequiredCount", double(adaptationState.RankIncreaseRequiredCount), ...
     "MCSUpdated", false, ...
     "PMIType", char(string(sixgr.util.structGet(metrics, "PMIType", ""))), ...
     "PMICodebookMode", char(string(sixgr.util.structGet(metrics, "PMICodebookMode", ""))), ...
@@ -65,6 +67,17 @@ decision = struct( ...
     "LinkAdaptationDomainSource", "phy.linkAdaptation.domain", ...
     "ResolvedCQI", double(instantCQI), ...
     "SmoothedCQI", double(adaptationState.SmoothedCQI), ...
+    "CQIObservationCount", double(adaptationState.CQIObservationCount), ...
+    "CQIOutageObservationCount", double(adaptationState.CQIOutageObservationCount), ...
+    "CQIOutageRecoveryFilterApplied", false, ...
+    "CQIOutageRecoveryPending", false, ...
+    "CQIOutageRecoveryResolvedCQI", NaN, ...
+    "CQIOutageRecoveryPositiveCount", double(adaptationState.CQIOutageRecoveryPositiveCount), ...
+    "CQIOutageRecoveryRequiredCount", double(adaptationState.CQIOutageRecoveryRequiredCount), ...
+    "CQIOutageRecoveryCandidate", double(adaptationState.CQIOutageRecoveryCandidate), ...
+    "CQIOutageRecoveryCQITolerance", double(adaptationState.CQIOutageRecoveryCQITolerance), ...
+    "CQIOutageRecoveryFeedbackGapSlots", NaN, ...
+    "CQIOutageRecoveryMaxGapSlots", double(adaptationState.CQIOutageRecoveryMaxGapSlots), ...
     "CQISource", char(cqiSource), ...
     "MCSSelectionSource", char(localResolveMCSSelectionSource(adaptationDomain)), ...
     "MCSValueStatus", "unresolved", ...
@@ -142,7 +155,39 @@ if localPolicyEnabled(policy)
     reportedCQI0IsAuthoritative = string(adaptationDomain) == "cqi" && ...
         isfinite(rawReportedCQI) && rawReportedCQI <= 0;
     if reportedCQI0IsAuthoritative || (isfinite(instantCQI) && double(instantCQI) <= 0)
+        % CQI 0 is not schedulable, but it is still a real receiver
+        % observation.  Retain it in the ILLA temporal state so that the
+        % next positive, possibly CRC-unprotected UCI report cannot
+        % initialize the filter at an arbitrarily high CQI.  This does not
+        % initialize a grant/MCS state and does not update HARQ/OLLA.
+        adaptationState.LastCQI = 0;
+        adaptationState.SmoothedCQI = 0;
+        adaptationState.LastCQIOutOfRange = true;
+        adaptationState.CQIObservationCount = ...
+            double(adaptationState.CQIObservationCount) + 1;
+        adaptationState.CQIOutageObservationCount = ...
+            double(adaptationState.CQIOutageObservationCount) + 1;
+        adaptationState.CQIOutageRecoveryPositiveCount = 0;
+        adaptationState.CQIOutageRecoveryCandidate = NaN;
+        feedbackAbsoluteSlot = double(sixgr.util.structGet( ...
+            metrics, "FeedbackAbsoluteSlot", NaN));
+        if isfinite(feedbackAbsoluteSlot)
+            adaptationState.LastCQIFeedbackAbsoluteSlot = feedbackAbsoluteSlot;
+        end
+        adaptationState.RankIncreaseCandidate = NaN;
+        adaptationState.RankIncreaseConfirmationCount = 0;
+        decision.ResolvedCQI = 0;
+        decision.SmoothedCQI = 0;
+        decision.CQIObservationCount = double(adaptationState.CQIObservationCount);
+        decision.CQIOutageObservationCount = ...
+            double(adaptationState.CQIOutageObservationCount);
+        decision.CQIOutageRecoveryResolvedCQI = 0;
+        decision.CQIOutageRecoveryPositiveCount = 0;
+        decision.MCSIndex = NaN;
+        decision.Modulation = "";
+        decision.TargetCodeRate = NaN;
         decision.Reason = "measured_cqi_zero_out_of_range";
+        decision.MCSSelectionSource = "blocked_measured_cqi_zero_out_of_range";
         decision.MCSValueStatus = "unavailable_measured_cqi_zero_out_of_range";
         decision.CausalFeedbackStatus = "measured_cqi_zero_out_of_range";
         return;
@@ -151,6 +196,12 @@ if localPolicyEnabled(policy)
         instantCQI, instantMCS, instantMod, instantCodeRate, mcsTable, cqiTable, adaptationDomain, ...
         ackKnown, ackObserved, ollaUpdateAuthorized, ollaFeedbackEventType, ...
         resetState, resetReason);
+    if decision.CQIOutageRecoveryPending || ~decision.CausalFeedbackUsable
+        % An RI/PMI/CRI update must not turn a rejected quality decision
+        % into Valid=true below and authorize a new data operating point.
+        % Retain raw received fields and the temporal recovery state only.
+        return;
+    end
     if ~decision.MCSUpdated && ~(isfinite(decision.CQIBasedMCS) || adaptationState.Initialized) && ...
             strlength(string(decision.Reason)) == 0
         decision.Reason = "missing_cqi";
@@ -163,10 +214,40 @@ if localPolicyEnabled(rankPolicy)
     if isfinite(ri)
         maxLayers = localMaxLayers(cfg, direction);
         requestedLayers = max(1, min(maxLayers, round(ri)));
-        if abs(requestedLayers - decision.NumLayers) > 1e-9
+        if requestedLayers < decision.NumLayers
+            % A receiver-requested rank reduction is protective and is
+            % applied immediately. Confirmation is required only for an
+            % increase in the spatial operating point.
+            adaptationState.RankIncreaseCandidate = NaN;
+            adaptationState.RankIncreaseConfirmationCount = 0;
             decision.NumLayers = requestedLayers;
             decision.RankUpdated = true;
             decision.RankUpdateStatus = "requested_from_ri";
+        elseif requestedLayers > decision.NumLayers
+            previousCandidate = double(adaptationState.RankIncreaseCandidate);
+            if isfinite(previousCandidate) && round(previousCandidate) == requestedLayers
+                adaptationState.RankIncreaseConfirmationCount = ...
+                    double(adaptationState.RankIncreaseConfirmationCount) + 1;
+            else
+                adaptationState.RankIncreaseCandidate = double(requestedLayers);
+                adaptationState.RankIncreaseConfirmationCount = 1;
+            end
+            decision.RankIncreaseConfirmationCount = ...
+                double(adaptationState.RankIncreaseConfirmationCount);
+            if adaptationState.RankIncreaseConfirmationCount >= ...
+                    adaptationState.RankIncreaseRequiredCount
+                decision.NumLayers = requestedLayers;
+                decision.RankUpdated = true;
+                decision.RankUpdateStatus = "requested_from_confirmed_ri";
+            else
+                decision.RankUpdateStatus = "pending_increase_confirmation";
+                decision.RankUpdateBlockedReason = ...
+                    "rank_increase_requires_consecutive_received_ri_reports";
+            end
+        else
+            adaptationState.RankIncreaseCandidate = NaN;
+            adaptationState.RankIncreaseConfirmationCount = 0;
+            decision.RankIncreaseConfirmationCount = 0;
         end
     end
 end
@@ -184,6 +265,13 @@ if direction == "DL" && localPolicyEnabled(beamPolicy)
     end
 end
 
+% A PMI accompanying an unconfirmed higher RI belongs to the candidate
+% rank, not the currently executable rank. Hold both parts of the spatial
+% decision until the causal RI confirmation requirement is met.
+if string(decision.RankUpdateStatus) == "pending_increase_confirmation"
+    decision.PMIUpdated = false;
+end
+
 % Rank and precoder form one spatial decision.  Do not apply an RI-only
 % rank transition while retaining an explicit matrix frozen for the old
 % rank.  Without a simultaneous finite PMI there is no standards-backed
@@ -199,6 +287,8 @@ if direction == "DL" && logical(decision.RankUpdated) && ...
         "explicit_precoder_rank_transition_requires_simultaneous_finite_pmi";
 elseif logical(decision.RankUpdated)
     decision.RankUpdateStatus = "ready_to_apply";
+    adaptationState.RankIncreaseCandidate = NaN;
+    adaptationState.RankIncreaseConfirmationCount = 0;
 end
 
 decision.Valid = logical(decision.MCSUpdated || decision.RankUpdated || decision.PMIUpdated || decision.CRIUpdated);
@@ -206,7 +296,11 @@ if decision.Valid
     decision.Reason = "adaptation_scheduled";
 else
     if strlength(decision.Reason) == 0
-        decision.Reason = "no_change";
+        if string(decision.RankUpdateStatus) == "pending_increase_confirmation"
+            decision.Reason = "rank_increase_confirmation_pending";
+        else
+            decision.Reason = "no_change";
+        end
     end
 end
 end
@@ -221,9 +315,36 @@ decision.EffectiveCQISmoothingAlpha = double(effectiveCQIAlpha);
 decision.CSITemporalCorrelationWeight = double(csiTrustWeight);
 decision.CSIAgeSeconds = double(csiAge_s);
 decision.CSICoherenceTimeSeconds = double(csiCoherence_s);
+decision.CausalFeedbackUsable = logical(sixgr.util.structGet(decision, "CausalFeedbackUsable", true));
+if ~decision.CausalFeedbackUsable
+    % Stale or otherwise unusable feedback must not mutate the temporal
+    % CQI filter or any outage-recovery counter.
+    decision.Reason = "stale_or_unusable_csi_feedback";
+    return;
+end
 
+priorMeasuredOutage = adaptationDomain == "cqi" && ...
+    logical(sixgr.util.structGet(adaptationState, "LastCQIOutOfRange", false)) && ...
+    isfinite(double(adaptationState.SmoothedCQI));
+feedbackAbsoluteSlot = double(sixgr.util.structGet( ...
+    metrics, "FeedbackAbsoluteSlot", NaN));
+% Keep the latest causal receiver-delivery clock for every usable CQI
+% observation, not only CQI-0/recovery reports.  A later outage-recovery
+% decision must compare against the preceding real report clock rather
+% than an uninitialized timestamp.
+if ~priorMeasuredOutage && isfinite(feedbackAbsoluteSlot)
+    adaptationState.LastCQIFeedbackAbsoluteSlot = feedbackAbsoluteSlot;
+end
 if adaptationDomain ~= "legacy_mcs" && isfinite(instantCQI)
-    if resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.SmoothedCQI)
+    if priorMeasuredOutage && logical(adaptationState.InnerLoopEnabled)
+        % A measured CQI-0 observation is a valid temporal anchor.  Apply
+        % the configured ILLA smoothing before allowing recovery from
+        % outage.  This is intentionally distinct from the pre-feedback
+        % bootstrap state, which must not invent CQI 0.
+        alpha = double(effectiveCQIAlpha);
+        smoothedCQI = alpha * double(instantCQI) + ...
+            (1 - alpha) * double(adaptationState.SmoothedCQI);
+    elseif resetState || ~adaptationState.Initialized || ~isfinite(adaptationState.SmoothedCQI)
         smoothedCQI = double(instantCQI);
     elseif logical(adaptationState.InnerLoopEnabled)
         alpha = double(effectiveCQIAlpha);
@@ -234,10 +355,78 @@ if adaptationDomain ~= "legacy_mcs" && isfinite(instantCQI)
     adaptationState.SmoothedCQI = double(smoothedCQI);
 end
 decision.SmoothedCQI = double(adaptationState.SmoothedCQI);
-decision.CausalFeedbackUsable = logical(sixgr.util.structGet(decision, "CausalFeedbackUsable", true));
-if ~decision.CausalFeedbackUsable
-    decision.Reason = "stale_or_unusable_csi_feedback";
-    return;
+decision.CQIObservationCount = double(adaptationState.CQIObservationCount) + 1;
+decision.CQIOutageObservationCount = double(adaptationState.CQIOutageObservationCount);
+
+if priorMeasuredOutage
+    decision.CQIOutageRecoveryFilterApplied = true;
+    lastFeedbackAbsoluteSlot = double(sixgr.util.structGet( ...
+        adaptationState, "LastCQIFeedbackAbsoluteSlot", NaN));
+    feedbackGapSlots = NaN;
+    if isfinite(feedbackAbsoluteSlot) && isfinite(lastFeedbackAbsoluteSlot)
+        feedbackGapSlots = feedbackAbsoluteSlot - lastFeedbackAbsoluteSlot;
+    end
+    decision.CQIOutageRecoveryFeedbackGapSlots = feedbackGapSlots;
+
+    candidate = double(sixgr.util.structGet( ...
+        adaptationState, "CQIOutageRecoveryCandidate", NaN));
+    positiveCount = double(adaptationState.CQIOutageRecoveryPositiveCount);
+    gapExceeded = isfinite(feedbackGapSlots) && ...
+        (feedbackGapSlots <= 0 || ...
+        feedbackGapSlots > adaptationState.CQIOutageRecoveryMaxGapSlots);
+    candidateConsistent = isfinite(candidate) && ...
+        abs(double(instantCQI) - candidate) <= ...
+        adaptationState.CQIOutageRecoveryCQITolerance;
+    if gapExceeded || ~candidateConsistent
+        candidate = double(instantCQI);
+        positiveCount = 1;
+    else
+        % Use the lower member of the consistent pair as the scheduling
+        % authority. This prevents the recovery gate itself from creating
+        % an optimistic CQI while retaining only receiver-decoded reports.
+        candidate = min(candidate, double(instantCQI));
+        positiveCount = positiveCount + 1;
+    end
+    adaptationState.CQIOutageRecoveryCandidate = candidate;
+    adaptationState.CQIOutageRecoveryPositiveCount = positiveCount;
+    if isfinite(feedbackAbsoluteSlot)
+        adaptationState.LastCQIFeedbackAbsoluteSlot = feedbackAbsoluteSlot;
+    end
+    decision.CQIOutageRecoveryPositiveCount = ...
+        double(adaptationState.CQIOutageRecoveryPositiveCount);
+    decision.CQIOutageRecoveryCandidate = candidate;
+    recoveryCQI = floor(min(15, max(0, min( ...
+        double(adaptationState.SmoothedCQI), candidate))));
+    decision.CQIOutageRecoveryResolvedCQI = double(recoveryCQI);
+    decision.ResolvedCQI = double(recoveryCQI);
+    if recoveryCQI < 1 || ...
+            adaptationState.CQIOutageRecoveryPositiveCount < ...
+            adaptationState.CQIOutageRecoveryRequiredCount
+        % Continue accumulating real positive observations without issuing
+        % a grant until the filtered CQI leaves the out-of-range state and
+        % enough causal positive reports have been received. This makes the
+        % guard independent of the selected smoothing coefficient.
+        adaptationState.LastCQI = double(instantCQI);
+        adaptationState.LastCQIOutOfRange = true;
+        adaptationState.CQIObservationCount = ...
+            double(adaptationState.CQIObservationCount) + 1;
+        decision.CQIObservationCount = double(adaptationState.CQIObservationCount);
+        decision.CQIOutageRecoveryPending = true;
+        decision.MCSIndex = NaN;
+        decision.Modulation = "";
+        decision.TargetCodeRate = NaN;
+        decision.Reason = "cqi_outage_recovery_pending";
+        decision.MCSSelectionSource = "blocked_cqi_outage_recovery_filter";
+        decision.MCSValueStatus = "unavailable_cqi_outage_recovery_pending";
+        return;
+    end
+    [instantMod, instantCodeRate, instantMCS] = sixgr.link.amcFromCQI( ...
+        recoveryCQI, "", NaN, cfg, direction);
+    decision.MCSSelectionSource = "runtime_cqi_outage_recovery_filter";
+else
+    adaptationState.CQIOutageRecoveryPositiveCount = 0;
+    adaptationState.CQIOutageRecoveryCandidate = NaN;
+    decision.CQIOutageRecoveryPositiveCount = 0;
 end
 
 if isfinite(instantMCS)
@@ -366,7 +555,12 @@ decision.StateInitialized = true;
 decision.StateUpdateCount = double(adaptationState.UpdateCount + 1);
 
 adaptationState.Initialized = true;
-adaptationState.LastCQI = double(decision.ResolvedCQI);
+adaptationState.LastCQI = double(instantCQI);
+adaptationState.LastCQIOutOfRange = false;
+adaptationState.CQIOutageRecoveryPositiveCount = 0;
+adaptationState.CQIOutageRecoveryCandidate = NaN;
+adaptationState.CQIObservationCount = ...
+    double(adaptationState.CQIObservationCount) + 1;
 adaptationState.LastRI = double(decision.RI);
 adaptationState.LastMCSIndex = double(selectedMCS);
 adaptationState.UpdateCount = adaptationState.UpdateCount + 1;
@@ -1316,8 +1510,24 @@ adaptationState = struct( ...
     "OLLAStateAuthority", char(olla.StateAuthority), ...
     "ResetOnRIChange", logical(sixgr.util.structGet(cfg, "phy.linkAdaptation.resetOnRIChange", false)), ...
     "CQIJumpResetThreshold", localResolveCQIJumpResetThreshold(cfg), ...
+    "CQIObservationCount", 0, ...
+    "CQIOutageObservationCount", 0, ...
+    "LastCQIOutOfRange", false, ...
+    "CQIOutageRecoveryPositiveCount", 0, ...
+    "CQIOutageRecoveryRequiredCount", localPositiveIntegerConfig( ...
+        cfg, "phy.linkAdaptation.outageRecoveryPositiveCQIReports", 1), ...
+    "CQIOutageRecoveryCandidate", NaN, ...
+    "CQIOutageRecoveryCQITolerance", localNonnegativeIntegerConfig( ...
+        cfg, "phy.linkAdaptation.outageRecoveryCQITolerance", 0), ...
+    "CQIOutageRecoveryMaxGapSlots", localPositiveIntegerOrInfConfig( ...
+        cfg, "phy.linkAdaptation.outageRecoveryMaxGapSlots", Inf), ...
+    "LastCQIFeedbackAbsoluteSlot", NaN, ...
     "LastCQI", NaN, ...
     "LastRI", NaN, ...
+    "RankIncreaseCandidate", NaN, ...
+    "RankIncreaseConfirmationCount", 0, ...
+    "RankIncreaseRequiredCount", localPositiveIntegerConfig( ...
+        cfg, "phy.linkAdaptation.rankIncreaseConfirmationReports", 1), ...
     "LastMCSIndex", NaN, ...
     "LastInstantaneousMCS", NaN, ...
     "LastInstantaneousModulation", "", ...
@@ -1334,6 +1544,43 @@ prevFields = fieldnames(previousState);
 for i = 1:numel(prevFields)
     adaptationState.(prevFields{i}) = previousState.(prevFields{i});
 end
+% Configuration remains authoritative if a long-lived state object crosses
+% a scenario or configuration epoch.
+adaptationState.CQIOutageRecoveryRequiredCount = localPositiveIntegerConfig( ...
+    cfg, "phy.linkAdaptation.outageRecoveryPositiveCQIReports", 1);
+adaptationState.CQIOutageRecoveryCQITolerance = localNonnegativeIntegerConfig( ...
+    cfg, "phy.linkAdaptation.outageRecoveryCQITolerance", 0);
+adaptationState.CQIOutageRecoveryMaxGapSlots = localPositiveIntegerOrInfConfig( ...
+    cfg, "phy.linkAdaptation.outageRecoveryMaxGapSlots", Inf);
+adaptationState.RankIncreaseRequiredCount = localPositiveIntegerConfig( ...
+    cfg, "phy.linkAdaptation.rankIncreaseConfirmationReports", 1);
+end
+
+function value = localPositiveIntegerConfig(cfg, path, defaultValue)
+raw = double(sixgr.util.structGet(cfg, path, defaultValue));
+if ~(isscalar(raw) && isfinite(raw) && raw >= 1 && raw == fix(raw))
+    error("sixgr:link:LinkAdaptation:InvalidConfirmationCount", ...
+        "%s must be a positive integer; got %s.", char(path), mat2str(raw));
+end
+value = double(raw);
+end
+
+function value = localNonnegativeIntegerConfig(cfg, path, defaultValue)
+raw = double(sixgr.util.structGet(cfg, path, defaultValue));
+if ~(isscalar(raw) && isfinite(raw) && raw >= 0 && raw == fix(raw))
+    error("sixgr:link:LinkAdaptation:InvalidCQITolerance", ...
+        "%s must be a nonnegative integer; got %s.", char(path), mat2str(raw));
+end
+value = double(raw);
+end
+
+function value = localPositiveIntegerOrInfConfig(cfg, path, defaultValue)
+raw = double(sixgr.util.structGet(cfg, path, defaultValue));
+if ~(isscalar(raw) && ((isfinite(raw) && raw >= 1 && raw == fix(raw)) || isinf(raw)))
+    error("sixgr:link:LinkAdaptation:InvalidFeedbackGap", ...
+        "%s must be a positive integer or Inf; got %s.", char(path), mat2str(raw));
+end
+value = double(raw);
 end
 
 function [alpha, source] = localResolveCQISmoothingAlpha(cfg)

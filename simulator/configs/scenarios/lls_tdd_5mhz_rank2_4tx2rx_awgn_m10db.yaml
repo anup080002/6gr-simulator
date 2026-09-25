@@ -1,0 +1,84 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db
+  description: Single -10 dB reference-SNR point, four gNB and two UE physical dimensions, reciprocal fixed-matrix AWGN.
+  purpose: Qualify acquisition and shared-control rank-two operation with two UE receive branches; preserve physical failures.
+  research_class: optional_research_experiment
+
+simulation:
+  snr_db: -10
+
+# Coverage-oriented Type1 common control, signalled in the actual SIB1.
+# The inherited 24-RB/two-symbol CORESET has eight CCEs. Use AL8 rather
+# than the AL4-only 20-dB parent; do not change EPRE or noise to aid decode.
+initial_access:
+  sib1:
+    pdcch_config_common:
+      commonSearchSpaceList:
+        - searchSpaceId: 1
+          controlResourceSetId: 1
+          monitoringSlotPeriodicityAndOffset: {periodicity: sl1, offset: 0}
+          monitoringSymbolsWithinSlot: '10000000000000'
+          nrofCandidates: [0, 0, 0, 1, 0]
+          searchSpaceType: common
+
+mimo:
+  n_tx_ant: 4
+  n_rx_ant: 2
+
+antenna_and_array:
+  ue_num_txrus: 2
+  ue_num_rxrus: 2
+  ue_num_antenna_elements: 2
+
+channels:
+  shared_identity_awgn_enabled: false
+  # H_DL has UE receive rows and gNB transmit columns, row-major below.
+  # [0.8 0 0.6 0; 0 0.6 0 0.8] has two unit singular values, no
+  # implicit gain/normalization. H_UL=H_DL.' on the same TDD sample clock.
+  # This is an explicit lab spatial channel, not a 38.901 array model.
+  # Keep the inherited 0.25 reference EPRE: no rank-dependent noise change.
+  awgn_spatial_matrix_dl_real: [0.8, 0, 0.6, 0, 0, 0.6, 0, 0.8]
+
+control:
+  ul_precoding:
+    num_ports: 2
+    max_rank: 2
+
+pusch:
+  num_antenna_ports: 2
+
+reference_signals:
+  # Joint received-pilot LS, guarded by executed fixed-channel/RF evidence.
+  # Preserve signed noise-debiased CSI power; no configured-SNR oracle.
+  csi_rs_runtime_channel_estimator: flat_static_awgn_ls
+  trs:
+    runtime_channel_estimator: flat_static_awgn_ls
+    # Qualified on independent noise/signal waveform episodes for this
+    # native-clock 4TX/2RX AWGN scope; not a fading/PUCCH qualification.
+    detection_policy: white_noise_projection_v1
+    target_false_alarm_probability: 0.001
+  pusch_dmrs_ports: 2
+  pusch_dmrs:
+    port_set: [0, 1]
+  srs_ports: 2
+  srs:
+    num_ports: 2
+    port_set: [0, 1]
+    # Periodic full-UL occasions: sound before PUCCH symbols 12/13.
+    # At CQI=0 there may be no PUSCH pilot to refresh the receive clock.
+    # Keep the four-slot clock-age guard and actual SRS/PUSCH arbitration;
+    # do not recover timing from an illegally overlapping SRS at symbol 13.
+    symbol_start: 11
+    # Joint received-pilot LS, only for the explicitly executed flat AWGN
+    # operator and an undistorted (or gain-only AGC-compensated) RX plane.
+    runtime_channel_estimator: flat_static_awgn_ls
+
+random_access:
+  num_tx_antennas: 2
+  num_rx_antennas: 4
+
+output:
+  profile: lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db

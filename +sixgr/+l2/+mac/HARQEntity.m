@@ -47,6 +47,7 @@ classdef HARQEntity < handle
         UEList (1,:) double = double.empty(1,0)
         UEProcs = {}                        % {NUE} each is struct array NumProcesses
         DeliveryLedger table = table()
+        TerminalLedger table = table()
     end
 
     properties
@@ -140,6 +141,7 @@ classdef HARQEntity < handle
             obj.UEList = double.empty(1,0);
             obj.UEProcs = {};
             obj.DeliveryLedger = table();
+            obj.TerminalLedger = table();
             obj.Stats = struct('Tx',0,'Retx',0,'Ack',0,'Nack',0,'Dtx',0,'Drop',0, ...
                 'TimeoutDrop',0,'StaleFeedbackIgnored',0,'SoftBufferStore',0, ...
                 'SoftBufferClear',0,'FirstSuccessDelivery',0,'ScheduledUL',0,'ScheduledULDrop',0);
@@ -355,14 +357,16 @@ classdef HARQEntity < handle
             p=procs(pid);
             assert(p.Active && p.AwaitingFeedback && p.ScheduledAttemptCount>1 && ...
                 p.LastScheduledSlot==grant.Slot && p.NDI==grant.HARQ.NDI && ...
-                p.NDIEpoch==grant.HARQ.NDIEpoch && p.RV==grant.HARQ.RV, ...
+                p.NDIEpoch==grant.HARQ.NDIEpoch && p.RV==grant.HARQ.RV && ...
+                string(grant.PHYGrant.GrantContextId)==string(p.LastScheduledGrant.PHYGrant.GrantContextId), ...
                 'sixgr:mac:ScheduledULProcessMismatch','Use the outstanding issued retransmission command.');
             original=p.LastGrant; ctx=p.TBContext;
             if isempty(fieldnames(original)), original=p.LastScheduledGrant; end
             if isempty(fieldnames(ctx)), ctx=p.ScheduledTBContext; end
             h=grant.HARQ; h.HARQRound=p.ScheduledAttemptCount-1;
             retx=struct('HARQ',h,'TBSBytes',p.TBSBytes,'LastGrant',original, ...
-                'TB',p.TB,'TBContext',ctx);
+                'TB',p.TB,'TBContext',ctx, ...
+                'ScheduledGrantContextId',string(p.LastScheduledGrant.PHYGrant.GrantContextId));
         end
 
         function onTx(obj, rnti, harqId0, tbBytes, grant, slot)
@@ -594,6 +598,7 @@ classdef HARQEntity < handle
             if ack
                 % ACK: release process
                 obj.markDeliveryFeedback(rnti, harqId0, true, sourceSlot, feedbackSlot, "");
+                obj.appendTerminalEvent(rnti,harqId0,p,sourceSlot,feedbackSlot,outcome,"observed_ack_release");
                 if ~isempty(fieldnames(procs(pid).SoftBuffer))
                     obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                 end
@@ -614,6 +619,7 @@ classdef HARQEntity < handle
                 % NACK/DTX: if max transmissions reached, drop; else schedule retx
                 maxTx = 1 + obj.MaxRetx;
                 if max(procs(pid).TxCount,procs(pid).ScheduledAttemptCount) >= maxTx
+                    obj.appendTerminalEvent(rnti,harqId0,p,sourceSlot,feedbackSlot,outcome,"retry_limit_release");
                     if ~isempty(fieldnames(procs(pid).SoftBuffer))
                         obj.Stats.SoftBufferClear = obj.Stats.SoftBufferClear + 1;
                     end
@@ -634,6 +640,47 @@ classdef HARQEntity < handle
 
         function ledger = getDeliveryLedger(obj)
             ledger = obj.DeliveryLedger;
+        end
+
+        function lifecycle = getTransmitterLifecycle(obj)
+            % Transmitter feedback is not the data receiver's CRC. Keep
+            % this view usable with actual (possibly corrupted) feedback;
+            % residual BLER must join independent receiver observations.
+            lifecycle = obj.DeliveryLedger;
+            if isempty(lifecycle), return; end
+            state = string(lifecycle.Status);
+            feedbackObserved = state ~= "tx_attempt";
+            feedbackAck = nan(height(lifecycle),1);
+            feedbackAck(feedbackObserved) = double(lifecycle.CrcPass(feedbackObserved));
+            lifecycle(:,{'CrcPass','FirstSuccessDelivery','CountedGoodputBits', ...
+                'FirstSuccessSlot','Status'}) = [];
+            lifecycle.FeedbackObserved = feedbackObserved;
+            lifecycle.FeedbackAck = feedbackAck;
+            lifecycle.TransmitterDisposition = state;
+            lifecycle.TransmitterTerminal = false(height(lifecycle),1);
+            lifecycle.TransmitterTerminalReason = repmat("",height(lifecycle),1);
+            lifecycle.TerminalFeedbackOutcome = repmat("",height(lifecycle),1);
+            lifecycle.TerminalAtSlot = nan(height(lifecycle),1);
+            lifecycle.TerminalFeedbackSourceSlot = nan(height(lifecycle),1);
+            lifecycle.TerminalScheduledAttemptCount = nan(height(lifecycle),1);
+            lifecycle.MaximumScheduledOrActualAttempts = repmat(1+obj.MaxRetx,height(lifecycle),1);
+            for eventIndex=1:height(obj.TerminalLedger)
+                event=obj.TerminalLedger(eventIndex,:);
+                match=lifecycle.RNTI==event.RNTI & ...
+                    lifecycle.HARQProcessId==event.HARQProcessId & ...
+                    lifecycle.TransportBlockId==event.TransportBlockId;
+                index=find(match,1,'last');
+                assert(~isempty(index),'sixgr:mac:HARQTerminalWithoutTransmission');
+                assert(~lifecycle.TransmitterTerminal(index), ...
+                    'sixgr:mac:DuplicateHARQTerminalEvent');
+                lifecycle.TransmitterTerminal(index)=true;
+                lifecycle.TransmitterTerminalReason(index)=event.TerminalReason;
+                lifecycle.TerminalFeedbackOutcome(index)=event.FeedbackOutcome;
+                lifecycle.TerminalAtSlot(index)=event.FeedbackSlot;
+                lifecycle.TerminalFeedbackSourceSlot(index)=event.FeedbackSourceSlot;
+                lifecycle.TerminalScheduledAttemptCount(index)=event.ScheduledAttemptCount;
+            end
+            lifecycle.Source = repmat("transmitter_HARQ_state_not_receiver_CRC",height(lifecycle),1);
         end
 
         function tb = getStoredTB(obj, rnti, harqId0)
@@ -818,12 +865,28 @@ classdef HARQEntity < handle
                 "_ndi" + string(double(p.NDI)) + "_cw" + string(cw) + "_firstSlot" + string(double(p.FirstTxSlot));
         end
 
+        function appendTerminalEvent(obj,rnti,harqId0,p,sourceSlot,feedbackSlot,outcome,reason)
+            % A received grant/feedback occasion need not have a UE TX row.
+            % Capture release before resetting the process, but never count
+            % a scheduled-only procedure as an actual transmitted TB.
+            if p.TxCount==0, return; end
+            event=struct('Direction',string(obj.Direction),'RNTI',double(rnti), ...
+                'HARQProcessId',double(harqId0),'TransportBlockId',string(p.TBIdentity), ...
+                'FeedbackSourceSlot',double(sourceSlot),'FeedbackSlot',double(feedbackSlot), ...
+                'FeedbackOutcome',string(outcome),'TerminalReason',string(reason), ...
+                'ActualTxCount',double(p.TxCount),'ScheduledAttemptCount',double(p.ScheduledAttemptCount));
+            obj.TerminalLedger=[obj.TerminalLedger;struct2table(event,'AsArray',true)];
+        end
+
         function appendDeliveryAttempt(obj, rnti, harqId0, slot, p, grant)
             row = obj.emptyDeliveryLedgerRow();
             row.Direction = string(obj.Direction);
             row.RNTI = double(rnti);
             row.HARQProcessId = double(harqId0);
             row.TransportBlockId = string(p.TBIdentity);
+            row.TBId = string(sixgr.util.structGet(grant,"HARQTBContext.TBId",""));
+            row.PHYGrantContextId = string(sixgr.util.structGet(grant,"PHYGrant.GrantContextId", ...
+                sixgr.util.structGet(grant,"PHYGrantContextId","")));
             row.Codeword = double(sixgr.util.structGet(grant, "Codeword", sixgr.util.structGet(grant, "CodewordIndex", 0)));
             row.NDI = double(p.NDI);
             row.RV = double(p.RV);
@@ -883,7 +946,8 @@ classdef HARQEntity < handle
         function row = emptyDeliveryLedgerRow(obj)
             %#ok<INUSD> obj
             row = struct("Direction","", "RNTI",NaN, "HARQProcessId",NaN, ...
-                "TransportBlockId","", "Codeword",NaN, "NDI",NaN, "RV",NaN, ...
+                "TransportBlockId","", "TBId","", "PHYGrantContextId","", ...
+                "Codeword",NaN, "NDI",NaN, "RV",NaN, ...
                 "AttemptIndex",NaN, "NewDataFlag",false, "RetransmissionFlag",false, ...
                 "ScheduleSlot",NaN, "AttemptSlot",NaN, "FeedbackSlot",NaN, "FirstSuccessSlot",NaN, ...
                 "TBSBits",NaN, "CrcPass",false, "FirstSuccessDelivery",false, ...

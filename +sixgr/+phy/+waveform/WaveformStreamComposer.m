@@ -11,6 +11,7 @@ classdef WaveformStreamComposer < handle
     end
     properties (Access=private)
         Pending = cell(0,1)
+        PendingComponentIDs = strings(0,1)
         ComponentIDs = strings(0,1)
         SampleClass (1,1) string = ""
     end
@@ -81,7 +82,28 @@ classdef WaveformStreamComposer < handle
             end
             obj.SampleClass=string(class(samples));
             obj.Pending{end+1,1}=chunk;
+            obj.PendingComponentIDs(end+1,1)=id;
             obj.ComponentIDs(end+1,1)=id;
+        end
+
+        function receipt=cancelUnemittedComponent(obj,componentID)
+            % UE priority can suppress a queued waveform after its all-zero
+            % prefix passed, but never after ANY nonzero sample was emitted.
+            id=string(componentID);
+            hit=find(obj.PendingComponentIDs==id);
+            assert(isscalar(id) && isscalar(hit), ...
+                'WAVEFORM:UnknownPendingComponent','Cancel one exact pending component.');
+            chunk=obj.Pending{hit};
+            consumed=max(0,min(size(chunk.Samples,1),obj.NextSampleIndex-chunk.StartSample));
+            assert(~any(chunk.Samples(1:consumed,:)~=0,'all'), ...
+                'WAVEFORM:CannotCancelEmittedComponent', ...
+                'Consumed nonzero samples cannot be cancelled, subtracted or rewritten.');
+            receipt=struct('ComponentID',id,'CancelledAtSample',obj.NextSampleIndex, ...
+                'OriginalStartSample',chunk.StartSample,'OriginalEndSampleExclusive',chunk.EndSample+1, ...
+                'OriginalSampleSHA256',chunk.SHA256,'ConsumedPrefixSamples',consumed, ...
+                'EmittedNonzeroSamples',0,'PreviouslyConsumedSamplesChanged',false);
+            obj.Pending(hit)=[]; obj.PendingComponentIDs(hit)=[];
+            % Keep ComponentIDs: cancellation does not permit identity reuse.
         end
 
         function chunk=readThrough(obj,endSampleExclusive)
@@ -114,6 +136,7 @@ classdef WaveformStreamComposer < handle
             % Create the immutable output before committing cursor/queue state.
             chunk=sixgr.phy.waveform.WaveformChunk(samples,first);
             obj.Pending=obj.Pending(keep);
+            obj.PendingComponentIDs=obj.PendingComponentIDs(keep);
             obj.NextSampleIndex=stop;
         end
     end

@@ -590,6 +590,23 @@ cfg = localStructSetIfPresent(cfg, "channel.normalizeChannelOutputs", ...
 cfg.channel.awgnOnly = upper(string(s.channels.model_type)) == "AWGN";
 cfg.channel.sharedIdentityAWGNEnabled = logical(localGetNested( ...
     s, "channels.shared_identity_awgn_enabled", false));
+% Explicit row-major DL matrix (UE RX rows, gNB TX columns). No implicit
+% normalization, receive padding, or gain compensation is permitted.
+matrixReal=localGetNested(s,"channels.awgn_spatial_matrix_dl_real",[]);
+matrixImag=localGetNested(s,"channels.awgn_spatial_matrix_dl_imag",[]);
+if ~isempty(matrixReal)
+    count=double(s.mimo.n_tx_ant)*double(s.mimo.n_rx_ant);
+    assert(~cfg.channel.sharedIdentityAWGNEnabled && numel(matrixReal)==count, ...
+        'sixgr:lls6g:InvalidAWGNSpatialMatrix', ...
+        'Explicit AWGN matrix must match DL RX-by-TX dimensions and cannot enable identity AWGN.');
+    if isempty(matrixImag), matrixImag=zeros(size(matrixReal)); end
+    assert(numel(matrixImag)==count,'sixgr:lls6g:InvalidAWGNSpatialMatrix', ...
+        'Real and imaginary AWGN matrices must have the same number of entries.');
+    cfg.channel.awgnSpatialMatrixDL=reshape(complex(double(matrixReal(:)), ...
+        double(matrixImag(:))),double(s.mimo.n_tx_ant),double(s.mimo.n_rx_ant)).';
+elseif ~isempty(matrixImag)
+    error('sixgr:lls6g:InvalidAWGNSpatialMatrix','AWGN imaginary entries require explicit real entries.');
+end
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
 cfg.channel.pathlossModel = char(string(s.channels.pathloss_model));
@@ -1460,6 +1477,9 @@ if hasPDSCHDMRSPortPool
 end
 
 cfg.phy.csirs.enable = logical(s.reference_signals.csi_rs_enabled);
+cfg = localStructSetIfPresent(cfg, "phy.csirs.runtimeChannelEstimator", ...
+    localGetNested(s, "reference_signals.csi_rs_runtime_channel_estimator", []));
+cfg.phy.csiim = localGetNested(s, "reference_signals.csi_im", struct('enabled',false));
 csiRSPorts = double(localGetNested(s, "reference_signals.csi_rs_ports", ...
     s.reference_signals.pdsch_dmrs_ports));
 cfg.phy.csirs.nPorts = csiRSPorts;
@@ -2090,6 +2110,7 @@ cfg = localStructSetIfPresent(cfg, "phy.srs.fullCarrierSoundingRequired", localG
 cfg = localStructSetIfPresent(cfg, "phy.srs.fullCarrierCoverageToleranceRB", localGetSRSParameter(s, "full_carrier_coverage_tolerance_rb", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.detectionThreshold", localGetSRSParameter(s, "detection_threshold", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.channelNMSEThresholddB", localGetSRSParameter(s, "channel_nmse_threshold_db", []));
+cfg = localStructSetIfPresent(cfg, "phy.srs.runtimeChannelEstimator", localGetSRSParameter(s, "runtime_channel_estimator", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.timingToleranceSamples", localGetSRSParameter(s, "timing_tolerance_samples", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.dciTriggerReferenceId", localGetSRSParameter(s, "dci_trigger_reference_id", []));
 cfg = localStructSetIfPresent(cfg, "phy.srs.activationMACCEReferenceId", localGetSRSParameter(s, "activation_mac_ce_reference_id", []));
@@ -2113,6 +2134,9 @@ if isfinite(trsPeriodSlots) && trsPeriodSlots >= 1
     cfg = sixgr.util.structSet(cfg, "phy.trs.period_slots", double(trsPeriodSlots));
 end
 cfg = localStructSetIfPresent(cfg, "phy.trs.detectionThreshold", localGetNested(s, "reference_signals.trs.detection_threshold", []));
+cfg = localStructSetIfPresent(cfg, "phy.trs.detectionPolicy", localGetNested(s, "reference_signals.trs.detection_policy", []));
+cfg = localStructSetIfPresent(cfg, "phy.trs.runtimeChannelEstimator", localGetNested(s, "reference_signals.trs.runtime_channel_estimator", []));
+cfg = localStructSetIfPresent(cfg, "phy.trs.targetFalseAlarmProbability", localGetNested(s, "reference_signals.trs.target_false_alarm_probability", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.minCoverageRatio", localGetNested(s, "reference_signals.trs.min_coverage_ratio", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.timingToleranceSamples", localGetNested(s, "reference_signals.trs.timing_tolerance_samples", []));
 cfg = localStructSetIfPresent(cfg, "phy.trs.frequencyToleranceHz", localGetNested(s, "reference_signals.trs.frequency_tolerance_hz", []));
@@ -2611,6 +2635,54 @@ end
 if isfinite(cqiSmoothingAlpha) && cqiSmoothingAlpha >= 0 && cqiSmoothingAlpha <= 1
     cfg = sixgr.util.structSet(cfg, "phy.linkAdaptation.cqiSmoothingAlpha", double(cqiSmoothingAlpha));
 end
+outageRecoveryPositiveCQIReports = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.outage_recovery_positive_cqi_reports", NaN));
+if isfinite(outageRecoveryPositiveCQIReports)
+    if outageRecoveryPositiveCQIReports < 1 || ...
+            outageRecoveryPositiveCQIReports ~= fix(outageRecoveryPositiveCQIReports)
+        error("sixgr:lls6g:config:InvalidOutageRecoveryConfirmationCount", ...
+            "link_adaptation.outage_recovery_positive_cqi_reports must be a positive integer.");
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.linkAdaptation.outageRecoveryPositiveCQIReports", ...
+        double(outageRecoveryPositiveCQIReports));
+end
+outageRecoveryCQITolerance = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.outage_recovery_cqi_tolerance", NaN));
+if isfinite(outageRecoveryCQITolerance)
+    if outageRecoveryCQITolerance < 0 || ...
+            outageRecoveryCQITolerance ~= fix(outageRecoveryCQITolerance)
+        error("sixgr:lls6g:config:InvalidOutageRecoveryCQITolerance", ...
+            "link_adaptation.outage_recovery_cqi_tolerance must be a nonnegative integer.");
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.linkAdaptation.outageRecoveryCQITolerance", ...
+        double(outageRecoveryCQITolerance));
+end
+outageRecoveryMaxGapSlots = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.outage_recovery_max_gap_slots", NaN));
+if isfinite(outageRecoveryMaxGapSlots)
+    if outageRecoveryMaxGapSlots < 1 || ...
+            outageRecoveryMaxGapSlots ~= fix(outageRecoveryMaxGapSlots)
+        error("sixgr:lls6g:config:InvalidOutageRecoveryMaxGap", ...
+            "link_adaptation.outage_recovery_max_gap_slots must be a positive integer.");
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.linkAdaptation.outageRecoveryMaxGapSlots", ...
+        double(outageRecoveryMaxGapSlots));
+end
+rankIncreaseConfirmationReports = localNumericScalarOrNaN(localGetNested(s, ...
+    "link_adaptation.rank_increase_confirmation_reports", NaN));
+if isfinite(rankIncreaseConfirmationReports)
+    if rankIncreaseConfirmationReports < 1 || ...
+            rankIncreaseConfirmationReports ~= fix(rankIncreaseConfirmationReports)
+        error("sixgr:lls6g:config:InvalidRankIncreaseConfirmationCount", ...
+            "link_adaptation.rank_increase_confirmation_reports must be a positive integer.");
+    end
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.linkAdaptation.rankIncreaseConfirmationReports", ...
+        double(rankIncreaseConfirmationReports));
+end
 ollaTargetBLER = localNumericScalarOrNaN(localGetNested(s, ...
     "link_adaptation.target_bler", NaN));
 if ~isfinite(ollaTargetBLER)
@@ -2838,6 +2910,7 @@ elseif isstruct(strictControl) && isfield(strictControl,'dci_context')
     cfg.phy.pdcch.KBits=sizes(1);
     cfg.phy.pdcch.payloadSizeSource="installed_RRC_feedback_timing_context";
 end
+sixgr.phy.refsig.validateCSIRSSSBSeparation(cfg);
 end
 
 function cfg = localApplyScenarioAuditExtensions(cfg, s)

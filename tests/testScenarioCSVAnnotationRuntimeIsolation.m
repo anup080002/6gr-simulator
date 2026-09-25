@@ -72,6 +72,18 @@ sixgr.util.csvWriteTable(beamPath, table(3, 'VariableNames', {'Value'}));
 airBefore = fileread(airPath);
 beamBefore = fileread(beamPath);
 
+% Capture-time channel resource bytes are owned by the PHY exporter, just
+% like the primary trial carrying their SHA-256. Preserve binary64 text too.
+channelDir=fullfile(runFolder,"channel_estimation","csv");
+mkdir(channelDir);
+channelPath=fullfile(channelDir,"pdsch_observed.csv");
+channelTable=table(1+eps(1),-pi,"actual_receiver",false, ...
+    'VariableNames',{'HReal','HImag','ChannelEstimateSource','GainOrPhaseFitted'});
+sixgr.util.csvWriteTable(channelPath,channelTable, ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
+channelBefore=fileread(channelPath);
+channelHash=sixgr.phy.waveform.WaveformHash.file(channelPath);
+
 % A generic-sweep point is an independent execution.  Parent annotation
 % and visual verification must not mutate or claim any artifact below it.
 childReportDir = fullfile(runFolder, "sweeps", "point_1", "reports", "csv");
@@ -98,6 +110,9 @@ assert(strcmp(fileread(airPath), airBefore) && ...
     "Waveform plot-source tables must remain byte-for-byte unchanged after their lineage hashes are sealed.");
 assert(strcmp(fileread(childReportPath), childReportBefore), ...
     "Parent annotation must not mutate a child sweep execution.");
+assert(strcmp(fileread(channelPath),channelBefore) && ...
+    sixgr.phy.waveform.WaveformHash.file(channelPath)==channelHash, ...
+    'Annotation must not invalidate independently scored channel resources or their primary-trial hash.');
 assert(summary.SkippedNestedExecutionCount >= 1, ...
     "Child sweep artifacts must be reported as outside the parent execution scope.");
 report = readtable(reportPath, 'VariableNamingRule', 'preserve');
@@ -125,6 +140,11 @@ plotRow = visual.PlotId == "prach_plot";
 assert(nnz(plotRow) == 1 && visual.IntegrityOk(plotRow), ...
     "Final statistical component lineage must verify against annotated source bytes.");
 assert(summary.RefreshedLineageCount == 1);
+
+sixgr.report.annotateScenarioCSVArtifacts(runFolder, ...
+    "scenario_unit", "hash_unit", "waveform_bundle");
+assert(strcmp(fileread(channelPath),channelBefore), ...
+    'Repeated finalization must preserve exact receiver channel-resource bytes.');
 
 % Prove the unchanged runtime file still accepts the next versioned event.
 bus.stageEnd("annotation_guard");

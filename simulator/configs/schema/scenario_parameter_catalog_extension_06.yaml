@@ -263,6 +263,10 @@
       "cqi_jump_reset_threshold": {"required": false, "type": "number", "min": 0},
       "reset_on_mcs_jump": {"required": false, "type": "boolean"},
       "mcs_jump_reset_threshold": {"required": false, "type": "number", "min": 0},
+      "outage_recovery_positive_cqi_reports": {"required": false, "type": "integer", "min": 1},
+      "outage_recovery_cqi_tolerance": {"required": false, "type": "integer", "min": 0, "max": 15},
+      "outage_recovery_max_gap_slots": {"required": false, "type": "integer", "min": 1},
+      "rank_increase_confirmation_reports": {"required": false, "type": "integer", "min": 1},
       "srs_rank_eigen_threshold_db": {"required": false, "type": "number"}
     }},
     "harq": {"parameters": {
@@ -482,9 +486,12 @@
       "slot_numbers": {"required": false, "type": "number_list"},
       "detection_threshold": {"required": false, "type": "number", "min": 0},
       "min_coverage_ratio": {"required": false, "type": "number", "min": 0, "max": 1},
+      "detection_policy": {"required": false, "type": "string", "allowed_values": ["fixed_correlation", "white_noise_projection_v1"]},
+      "target_false_alarm_probability": {"required": false, "type": "number", "min_exclusive": 0, "max": 1},
       "timing_tolerance_samples": {"required": false, "type": "number", "min": 0},
       "frequency_tolerance_hz": {"required": false, "type": "number", "min": 0},
       "channel_nmse_threshold_db": {"required": false, "type": "number"},
+      "runtime_channel_estimator": {"required": false, "type": "string", "allowed_values": ["nr_channel_estimate", "flat_static_awgn_ls"]},
       "low_snr_sweep_db": {"required": false, "type": "number_list"},
       "timing_offset_sweep_samples": {"required": false, "type": "number_list"},
       "frequency_offset_sweep_hz": {"required": false, "type": "number_list"},

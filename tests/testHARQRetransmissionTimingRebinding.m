@@ -1,11 +1,12 @@
-function ok = testHARQRetransmissionTimingRebinding()
+function ok = testHARQRetransmissionTimingRebinding(configPath)
 %TESTHARQRETRANSMISSIONTIMINGREBINDING Guard TDD K1 replay semantics.
 
 setup6GRSimToolkit("Verbose", false);
-repoRoot = pwd;
-scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile(repoRoot, ...
-    "simulator", "configs", "scenarios", ...
-    "webgui_sinr_sweep_64x4_mu_mimo_full.yaml"));
+if nargin<1
+    configPath=fullfile(pwd,"simulator","configs","scenarios", ...
+        "webgui_sinr_sweep_64x4_mu_mimo_full.yaml");
+end
+scenario = sixgr.lls6g.config.loadScenarioConfig(configPath);
 tmp = tempname;
 mkdir(tmp);
 cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>

@@ -42,3 +42,45 @@ def test_subnormal_axis_uses_its_representable_endpoints() -> None:
 def test_invalid_axis_bounds_fail_explicitly() -> None:
     with pytest.raises(ValueError, match="finite ordered"):
         materializer._axis_tick_values(2.0, 1.0)
+
+
+@pytest.mark.parametrize("matrix,label,ticks", [
+    ([[-20.0, -10.0], [-15.0, -5.0]], "Receiver Hest magnitude (dB)", ["-20", "-12.5", "-5"]),
+    ([[-90.0, 0.0], [45.0, 90.0]], "Receiver Hest phase (deg)", ["-90", "0", "90"]),
+    ([[0.0, 0.0], [0.0, 0.0]], "Receiver Hest phase (deg)", ["0"]),
+])
+def test_physical_heatmap_has_signed_scale_and_preserves_zero_measurements(matrix, label, ticks):
+    before = copy.deepcopy(matrix)
+    svg = materializer._render_heatmap_svg(
+        "Measured Hest", "Exact receiver tensor", ["0", "1"], ["2", "3"],
+        matrix, [], "Subcarrier", "Symbol", physical_color_label=label,
+    ).decode()
+    assert matrix == before
+    assert label in svg and "visual_gate=" not in svg
+    assert "every heatmap cell is zero" not in svg
+    for tick in ticks:
+        assert f">{tick}</text>" in svg
+
+
+def test_physical_heatmap_does_not_replace_missing_cells_with_zero():
+    svg = materializer._render_heatmap_svg(
+        "Measured Hest", "Exact receiver tensor", ["0", "1"], ["2", "3"],
+        [[-90.0, None], [0.0, 90.0]], [], "Subcarrier", "Symbol",
+        physical_color_label="Phase (deg)",
+    ).decode()
+    assert 'fill="#e2e8f0"' in svg
+    assert "Grey cells: missing measurement" in svg
+    missing = materializer._render_heatmap_svg(
+        "Measured Hest", "Exact receiver tensor", ["0", "1"], ["2", "3"],
+        [[None, None], [None, None]], [], "Subcarrier", "Symbol",
+        physical_color_label="Phase (deg)",
+    ).decode()
+    assert "No finite physical heatmap measurements" in missing
+
+
+def test_zero_count_heatmap_retains_its_existing_no_activity_semantics():
+    svg = materializer._render_heatmap_svg(
+        "Counts", "Actual events", ["0", "1"], ["2", "3"],
+        [[0.0, 0.0], [0.0, 0.0]], [], "Slot", "PRB",
+    ).decode()
+    assert "all_zero_heatmap_cells" in svg

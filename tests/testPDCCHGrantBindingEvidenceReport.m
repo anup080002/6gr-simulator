@@ -42,6 +42,9 @@ control=localFailingControlBindingTrial();
 control.DCIFieldsHash="hash_dl_1"; control.GrantFieldsHash="hash_dl_1";
 control.GrantBindingOk=true; control.GrantBindingStatus="bound";
 control.GrantBindingFailureCode="";
+control=sixgr.truth.fillBlankCategoricalColumns(control,"pdcch");
+assert(control.GrantBindingFailureCode=="", ...
+    'Runtime decoration must preserve a successful receiver''s empty failure code.');
 sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),control);
 dlPath=fullfile(ctx.Layout.AirInterfaceCSVDir,"dl_pdsch_trials.csv");
 dl=readtable(dlPath,"VariableNamingRule","preserve");

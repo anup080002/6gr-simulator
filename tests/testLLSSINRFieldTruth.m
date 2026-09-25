@@ -3,10 +3,22 @@ function ok = testLLSSINRFieldTruth()
 
 setup6GRSimToolkit("Verbose", false);
 
-scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml");
+scenarioPath = fullfile(fileparts(which('setup6GRSimToolkit')), "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "lls_sinr_field_truth"));
 cfg = localConfigureIsolatedTruthProbe(cfg);
+% This fixed-allocation receiver test has no scheduler to move PDSCH away
+% from SS/PBCH. Retain broadcast enablement and remove its actually reserved
+% PRBs over the three tested slots; never puncture the PDSCH DM-RS.
+reservedPRBs=[];
+for slot1=1:3
+    current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot1,1);
+    carrier=sixgr.phy.grid.makeCarrier(current);
+    reservation=sixgr.phy.frame.ssbPRBSymbolReservation(current,carrier,slot1-1);
+    reservedPRBs=union(reservedPRBs,reservation.CarrierPRBSet);
+end
+cfg.phy.pdsch.prbSet=setdiff(cfg.phy.pdsch.prbSet,reservedPRBs);
+assert(~isempty(cfg.phy.pdsch.prbSet),'The receiver fixture needs a legal data allocation.');
 assert(logical(cfg.phy.pusch.measurements.dmrsResidualPostEqSINRBoundEnabled) && ...
     logical(cfg.phy.pusch.measurements.decisionDirectedPostEqSINRBoundEnabled) && ...
     string(cfg.phy.pusch.measurements.decoderNoiseVarianceMode) == "pre_equalization", ...

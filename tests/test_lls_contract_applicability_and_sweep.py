@@ -1746,16 +1746,25 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
             "Direction", "Slot", "FeedbackDueSlot", "HarqID", "RV", "IsRetransmission",
             "CombinedDecodeOK", "HARQCombiningApplied", "PreviousLLRCount", "CurrentLLRCount",
             "CombinedLLRCount", "LLRCombiningGain_dB", "Goodput_Mbps",
+            "CurrentDecodeOK", "RNTI", "SweepPointIndex", "ConfiguredSNR_dB", "TBId",
         ],
-        [["DL", 16, 19, 0, 0, 0, 1, 0, 0, 32000, 32000, 0, 11.536]],
+        [["DL", 16, 19, 0, 0, 0, 1, 0, 0, 32000, 32000, 0, 11.536,
+          1, 1, 1, 20, "declared-tb"]],
+    )
+    lifecycle = materializer._encode_csv(
+        ["Direction", "RNTI", "TBId", "Codeword", "HARQProcessId", "SweepPointIndex",
+         "ConfiguredSNR_dB", "AttemptIndex", "AttemptSlot", "TransmitterTerminal"],
+        [["DL", 1, "declared-tb", 0, 0, 1, 20, 1, 16, 1]],
     )
     existing = {
         "air_interface/csv/prach_trials.csv": {"artifact_id": 91},
         "air_interface/csv/dl_pdsch_trials.csv": {"artifact_id": 92},
         "air_interface/csv/ul_pusch_trials.csv": {"artifact_id": 93},
         "harq/csv/live_harq_observation_timeline.csv": {"artifact_id": 94},
+        "harq/csv/harq_transmitter_lifecycle.csv": {"artifact_id": 95},
+        "harq/csv/harq_process_timeline.csv": {"artifact_id": 96},
     }
-    payloads = {91: prach, 92: dl, 93: ul, 94: harq}
+    payloads = {91: prach, 92: dl, 93: ul, 94: harq, 95: lifecycle, 96: harq}
     fetch = lambda artifact_id: payloads[artifact_id]
 
     for chart_name in (
@@ -1765,7 +1774,6 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
         "DMRS/PTRS occupancy map",
         "PAPR histogram / CDF",
         "RV usage distribution",
-        "HARQ RTT distribution",
         "residual BLER after HARQ",
         "goodput vs retransmissions",
         "combiner summary",
@@ -1778,6 +1786,13 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
         assert chart["csv_bytes"], chart_name
         assert chart["img_bytes"].startswith(b"<svg"), chart_name
 
+    rtt_chart = materializer._specialized_chart_materialization(
+        "HARQ RTT distribution", existing, fetch, 98
+    )
+    assert rtt_chart["csv_status"] == "unavailable_exact_reason", (
+        "A due-slot offset is not a measured received-feedback RTT."
+    )
+
     rv_chart = materializer._specialized_chart_materialization(  # noqa: SLF001
         "RV usage distribution", existing, fetch, 98
     )
@@ -1786,10 +1801,20 @@ def test_runtime_prach_rs_papr_and_harq_contract_charts_are_exact() -> None:
 
 
 def test_harq_rtt_prefers_canonical_attempt_timeline_and_pucch_zero_format_is_valid() -> None:
-    harq_attempts = materializer._encode_csv(  # noqa: SLF001
-        ["Direction", "Slot", "HARQProcess", "RTT_slots", "RTT_ms"],
-        [["DL", 1, 0, 4, 2.0], ["DL", 2, 1, 4, 2.0]],
-    )
+    clock_rows = [
+        dict(Direction="DL", Slot=slot, HARQProcess=process, RTT_ms=2.7,
+             RTTStatus="measured_independent_usable_feedback_completion",
+             SweepPointIndex=1, ConfiguredSNR_dB=20, UEIndex=1, FeedbackBitIndex=1,
+             DataTransmitSymbolStartSample=start, DataTransmitSymbolEndSampleExclusive=start+400,
+             DataTransmitSampleRateHz=1e6, FeedbackAvailableAtSample=start+2700,
+             FeedbackSampleRateHz=1e6, FeedbackObservationID=f"rx-{process}",
+             PHYGrantContextId=f"grant-{process}", FeedbackTransport="PUCCH",
+             FeedbackObservationAvailable=1, DTX=0, ACK=1, NACK=0,
+             DataTransmitTimingSource="executed_prepared_waveform_origin_and_OFDM_symbol_lengths",
+             ScheduledFeedbackOffset_ms=2)
+        for slot, process, start in [(1, 0, 100), (2, 1, 1100)]
+    ]
+    harq_attempts = materializer._encode_dict_rows(list(clock_rows[0]), clock_rows)
     # Real decoder observations deliberately carry no feedback timing and
     # must not mask the canonical per-attempt HARQ RTT evidence.
     harq_observations = materializer._encode_csv(  # noqa: SLF001
@@ -1814,8 +1839,8 @@ def test_harq_rtt_prefers_canonical_attempt_timeline_and_pucch_zero_format_is_va
     assert rtt_chart is not None
     assert rtt_chart["source_table_path"] == "harq/csv/harq_process_timeline.csv"
     rtt_csv = rtt_chart["csv_bytes"].decode("utf-8")
-    assert "HARQ RTT (ms)" in rtt_csv
-    assert ",2.0,2.0," in rtt_csv
+    assert "Observed usable-feedback RTT (ms)" in rtt_csv
+    assert ",2.7,2," in rtt_csv
 
     pucch_chart = materializer._specialized_chart_materialization(  # noqa: SLF001
         "requested vs resolved format confusion matrix", existing, fetch, 99

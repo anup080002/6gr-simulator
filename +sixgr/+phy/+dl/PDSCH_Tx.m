@@ -1096,6 +1096,14 @@ if ~isempty(isacReservedZeroBased)
         double(isacReservedZeroBased(:))],"sorted");
 end
 reservedZeroBased=union(reservedZeroBased,isacReservedZeroBased,"sorted");
+csiimPlan=sixgr.phy.refsig.csiIMResource(carrier,cfg);
+if csiimPlan.Scheduled
+    csiimReserved=localCalibrationBasePlaneZeroBased(csiimPlan.PhysicalIndices1Based,carrier,pdsch);
+    % Rate matching must already belong to the allocation/frozen grant.
+    assert(all(ismember(csiimReserved,double(pdsch.ReservedRE(:)))), ...
+        'sixgr:phy:csiim:UnreservedTransmission','PDSCH allocation did not reserve configured CSI-IM REs.');
+    reservedZeroBased=union(reservedZeroBased,csiimReserved,'sorted');
+end
 
 transportBlockSizes = opt.TransportBlockSizeOverride;
 transportBlockSizeSource = "nrTBS_from_current_allocation";
@@ -1212,6 +1220,11 @@ canonical = sixgr.pdsch.PDSCHTransmitter( ...
             "sixgr.phy.dl.PDSCH_Tx:shared_slot_cell_common_signal_ownership";
     end
     [canonical,isacEvent]=localMapISACReferenceGrid(canonical,isacReferenceGrid);
+    if csiimPlan.Scheduled
+        csiimGrid=reshape(canonical.Grid,[],size(canonical.Grid,3));
+        assert(all(csiimGrid(csiimPlan.PhysicalIndices1Based,:)==0,'all'), ...
+            'sixgr:phy:csiim:ServingSignalCollision','Serving waveform transmitted energy on configured CSI-IM REs.');
+    end
     csirsEvent.CellCommonSignalOwnershipMode = ...
         char(cellCommonSignalOwnershipMode);
 [tx, info] = localAdaptCanonicalCalibrationTX( ...
@@ -1220,6 +1233,7 @@ canonical = sixgr.pdsch.PDSCHTransmitter( ...
     csirsCfg, csirsEvent, transportBlockSizeSource, ...
     phyGrant, hasPHYGrant, logical(opt.CompactOutput));
 tx.ISACReferenceGrid=isacReferenceGrid;
+tx.CSIIMResource=csiimPlan;
 tx.ISACReferenceEvent=isacEvent;
 info.ISACReferenceEvent=isacEvent;
 if hasPHYGrant

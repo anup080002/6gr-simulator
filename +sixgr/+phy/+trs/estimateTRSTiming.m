@@ -8,10 +8,14 @@ for ii = 1:numel(resources)
     carrier = resources(ii).Carrier;
     attempted = true;
     est = NaN;
+    hypotheses = NaN;
     status = "timing_estimate_unavailable";
     try
         slotWave = localSlotWaveform(rx.Waveform, slotT, ii);
-        est = double(nrTimingEstimate(carrier, slotWave, resources(ii).Indices, resources(ii).Symbols));
+        [est,mag] = nrTimingEstimate(carrier, slotWave, resources(ii).Indices, resources(ii).Symbols, ...
+            'SampleRate',tx.SampleRateHz,'Nfft',tx.OFDM.Nfft);
+        est=double(est);
+        hypotheses=size(mag,1); % Every searched lag, not just the selected peak.
         status = "timing_estimate_available";
     catch ME
         status = "timing_estimate_failed:" + string(ME.identifier);
@@ -25,6 +29,7 @@ for ii = 1:numel(resources)
     rows(ii).TimingTrackingAttempted = logical(attempted);
     rows(ii).TRSTimingEstimateAvailable = logical(available);
     rows(ii).EstimatedTimingOffset_samples = double(est);
+    rows(ii).TimingHypothesisCount = double(hypotheses);
     rows(ii).InjectedTimingOffset_samples = double(rx.InjectedTimingOffset_samples);
     rows(ii).TimingError_samples = double(err);
     rows(ii).TimingTolerance_samples = double(cfg.TimingToleranceSamples);
@@ -64,6 +69,7 @@ function row = localTimingRow()
 row = struct("RunId", "", "ConfigHash", "", "Slot", NaN, ...
     "TimingTrackingAttempted", false, "TRSTimingEstimateAvailable", false, ...
     "EstimatedTimingOffset_samples", NaN, "InjectedTimingOffset_samples", NaN, ...
+    "TimingHypothesisCount", NaN, ...
     "TimingError_samples", NaN, "TimingTolerance_samples", NaN, ...
     "Status", "", "TruthStatus", "");
 end

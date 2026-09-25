@@ -14,6 +14,30 @@ import lls_contract_materializer as m
 import lls_radio_measurement_plots as radio
 
 
+def test_csi_reference_sinr_publication_keeps_its_domain_separate_from_pmi_objective():
+    # The MATLAB publication helper emits these exact field names. A CSI
+    # receiver objective and an L2SM CQI coordinate are not reference SINR.
+    row = {
+        "ConfiguredSNR_dB": "-10",
+        "MeasuredTrialSINR_dB": "-4.75029139663857",
+        "MeasuredTrialSINRSource": "received_reference_RE_power",
+        "MeasuredTrialSINRValueStatus": "OK",
+        "MeasuredTrialSINRValueRole": "received_reference_RE_power_ratio_estimate",
+        "MeasuredTrialSINRMeasurementDomain": "csi_rs_port3000_reference_re_received_plane",
+        "SINR_dB": "-4.94860378887855",
+        "SINRSource": "measured_csi_state_receiver_objective",
+        "SINRMeasurementDomain": "selected_PMI_receiver_objective",
+        "CQIEffectiveSINR_dB": "-2.06795360388242",
+    }
+    result = m._measured_sinr_evidence(row)
+    assert result["value"] == float(row["MeasuredTrialSINR_dB"])
+    assert result["source"] == row["MeasuredTrialSINRSource"]
+    assert result["domain"] == row["MeasuredTrialSINRMeasurementDomain"]
+    assert result["role"] == row["MeasuredTrialSINRValueRole"]
+    missing = dict(row, MeasuredTrialSINR_dB="NaN")
+    assert m._measured_sinr_evidence(missing)["value"] is None
+
+
 def chart(name, sources):
     data = {i: payload for i, payload in enumerate(sources.values(), 1)}
     existing = {path: {"artifact_id": i, "logical_path": path}
@@ -296,7 +320,71 @@ def test_csi_sinr_retains_selected_pmi_objective_domain():
     assert rows[0]["sinr_measurement_domain"] == "csi_rs_selected_pmi_receiver_objective"
     assert rows[0]["sinr_source"] == "measured_csi_state_receiver_objective"
     assert rows[0]["sinr_value_role"] == "measured_csi_receiver_objective_scheduling_input"
-    assert b"CSI scheduling SINR estimate (dB)" in result["img_bytes"]
+    assert b"CSI SINR (dB; distinct measurement domains)" in result["img_bytes"]
+
+
+def test_csi_measurement_reference_and_delivery_are_not_conflated(monkeypatch):
+    feedback = (b"Direction,UEIndex,SourceSlot,CSIReferenceSlot,SourceSlotAuthority,DeliveredSlot,DeliveryStatus,SINR_dB,SINRSource\n"
+                b"DL,1,34,34,configured_CSI_reference_resource_not_UE_measurement_slot,39,delivered_to_runtime_scheduler,NaN,not_reported_in_CSI_payload\n")
+    observations = (b"Direction,UEIndex,Slot,CSIMeasurementSlot,ObservationDeliverySlot,SINR_dB,SINRSource,SINRMeasurementDomain,ReferenceMeasuredSINR_dB,ReferenceMeasuredSINRSource,ReferenceMeasuredSINRDomain,CSIMeasurementID\n"
+                    b"DL,1,32,32,33,22.2,measured_csi_state_receiver_objective,csi_rs_selected_pmi_receiver_objective,19.8,nrChannelEstimate_port3000_reference_RE_power_per_receive_branch,csi_rs_port3000_reference_re_received_plane,measurement-32\n")
+    captured = []
+    original = m._render_multi_series_svg
+    def retain_series(title, subtitle, series, *args, **kwargs):
+        captured.extend(series)
+        return original(title, subtitle, series, *args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", retain_series)
+    result, rows = chart("CSI SINR timeline", {radio.FEEDBACK: feedback, radio.CSI_TRIALS: observations})
+    assert len(rows) == 3
+    assert rows[0]["component_values"] == "[]"
+    assert rows[0]["measurement_slot"] == ""
+    assert rows[0]["csi_reference_slot"] == "34.0" and rows[0]["delivered_slot"] == "39.0"
+    assert rows[0]["value_status"] == "unavailable_in_source"
+    for row in rows[1:]:
+        assert row["measurement_slot"] == "32.0" and row["measurement_available_slot"] == "33.0"
+        assert row["delivered_slot"] == "" and row["report_identity"] == ""
+        assert row["delivery_status"] == "not_a_received_feedback_payload"
+        assert row["measurement_identity"] == "measurement-32"
+    assert rows[1]["sinr_measurement_domain"] != rows[2]["sinr_measurement_domain"]
+    assert len(captured) == 2
+    assert sorted(s["points"] for s in captured) == [[[32.0, 19.8]], [[32.0, 22.2]]]
+    assert radio.CSI_TRIALS in result["source_table_path"]
+
+
+def test_named_pmi_fields_are_preserved_not_decomposed_from_packed_index():
+    payload = (b"Direction,UEIndex,SourceSlot,CSIReferenceSlot,DeliveredSlot,DeliveryStatus,PMI,PMI_I11,PMI_I12,PMI_I13,PMI_I2\n"
+               b"DL,1,34,34,39,delivered_to_runtime_scheduler,30,7,0,1,0\n")
+    result, rows = chart("CSI PMI components timeline", {radio.FEEDBACK: payload})
+    assert rows[0]["reported_value_token"] == "30"
+    assert json.loads(rows[0]["component_fields"]) == ["PMI_I11", "PMI_I12", "PMI_I13", "PMI_I2"]
+    assert json.loads(rows[0]["component_values"]) == [7, 0, 1, 0]
+    assert rows[0]["timing_role"] == "configured reference"
+    assert rows[0]["measurement_slot"] == ""
+    assert b"PMI_I11" in result["img_bytes"]
+
+
+def test_csi_producer_audit_cannot_supply_missing_received_sinr():
+    payload = (b"Direction,UEIndex,SourceSlot,DeliveredSlot,DeliveryStatus,SINR_dB,UEReferenceRecordJSON\n"
+               b'DL,1,34,39,delivered_to_runtime_scheduler,NaN,"{""SINR_dB"":99}"\n')
+    result, _ = chart("CSI SINR timeline", {radio.FEEDBACK: payload})
+    assert result["csv_status"] == "unavailable_exact_reason"
+
+
+def test_csi_observation_series_keep_sweep_points_and_resources_separate(monkeypatch):
+    payload = (b"Direction,UEIndex,CellID,Slot,SNR_dB,ResourceID,SINR_dB,SINRSource\n"
+               b"DL,1,1,32,-30,1,-29,actual_receiver\n"
+               b"DL,1,1,32,20,1,21,actual_receiver\n"
+               b"DL,1,1,32,20,2,22,actual_receiver\n")
+    captured = []
+    original = m._render_multi_series_svg
+    def retain_series(title, subtitle, series, *args, **kwargs):
+        captured.extend(series)
+        return original(title, subtitle, series, *args, **kwargs)
+    monkeypatch.setattr(m, "_render_multi_series_svg", retain_series)
+    _, rows = chart("CSI SINR timeline", {radio.CSI_TRIALS: payload})
+    assert len(rows) == 3 and len(captured) == 3
+    assert all(len(s["points"]) == 1 for s in captured)
+    assert [(r["snr_db"], r["resource_id"]) for r in rows] == [("-30.0", "1"), ("20.0", "1"), ("20.0", "2")]
 
 
 def test_applied_csi_basis_pmi_is_not_replaced_by_equivalent_port_basis_index():

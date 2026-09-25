@@ -32,6 +32,8 @@ classdef RSLAArtifactExporter
             end
             data = readtable(sourcePath,"Delimiter",",", ...
                 "VariableNamingRule","preserve");
+            isEVM = string(contractRow.ImageFile)=="rsla_evm_by_modulation.png";
+            if ~isEVM
             numericSeries = {};
             labels = strings(0,1);
             for index = 1:width(data)
@@ -51,6 +53,7 @@ classdef RSLAArtifactExporter
                 numericSeries{end+1,1} = numericSeries{1}; %#ok<AGROW>
                 labels(end+1,1) = labels(1); %#ok<AGROW>
             end
+            end
             widthPixels = max(1200,double(contractRow.MinimumWidth));
             heightPixels = max(760,double(contractRow.MinimumHeight));
             fig = figure("Visible","off","Color","white","Units","pixels", ...
@@ -58,6 +61,15 @@ classdef RSLAArtifactExporter
             cleanup = onCleanup(@() close(fig));
             ax = axes(fig);
             hold(ax,"on");
+            if isEVM
+                plotted = sixgr.report.plotEVMByModulation(ax,data,"EVMRMSPercent");
+                finitePoints = plotted.FinitePointCount;
+                if plotted.SeriesCount < double(contractRow.MinimumSeries) || ...
+                        finitePoints < double(contractRow.MinimumFinitePoints)
+                    error('RSLA:IncompleteFigureSemantics', ...
+                        'EVM observations do not meet the figure contract; no points were padded.');
+                end
+            else
             colors = lines(requiredSeries);
             finitePoints = 0;
             for index = 1:requiredSeries
@@ -73,13 +85,20 @@ classdef RSLAArtifactExporter
                     "Color",colors(index,:),"DisplayName",labels(index));
                 finitePoints = finitePoints+numel(y);
             end
+            end
             grid(ax,"on");
             box(ax,"on");
             titleText = string(contractRow.ExpectedTitle)+" — production evidence";
+            if isEVM
+                titleText = string(contractRow.ExpectedTitle)+" — component measurement tests";
+            end
             title(ax,titleText,"Interpreter","none");
+            if isEVM, ax.Title.Color = [0 0 0]; end
+            if ~isEVM
             xlabel(ax,string(contractRow.ExpectedXLabel),"Interpreter","none");
             ylabel(ax,string(contractRow.ExpectedYLabel),"Interpreter","none");
-            legend(ax,"Location","best","Interpreter","none");
+            end
+            if ~isEVM, legend(ax,"Location","best","Interpreter","none"); end
             imagePath = fullfile(outputDir,string(contractRow.ImageFile));
             fig.PaperUnits = "inches";
             fig.PaperPosition = [0 0 widthPixels/100 heightPixels/100];
@@ -94,8 +113,8 @@ classdef RSLAArtifactExporter
                     sixgr.phy.rsla.RSLAUtil.fileHash(imagePath), ...
                 "Width",info.Width,"Height",info.Height, ...
                 "Title",titleText, ...
-                "XLabel",string(contractRow.ExpectedXLabel), ...
-                "YLabel",string(contractRow.ExpectedYLabel), ...
+                "XLabel",string(ax.XLabel.String), ...
+                "YLabel",string(ax.YLabel.String), ...
                 "AxesCount",numel(findobj(fig,"Type","axes")), ...
                 "SeriesCount",numel(findobj(ax,"Type","line")), ...
                 "FinitePointCount",finitePoints,"Status","PASS");

@@ -125,6 +125,9 @@ strictCfg.NumRB = double(numRB);
 strictCfg.NID = double(scramblingID);
 strictCfg.DetectionThreshold = double(sixgr.util.structGet(cfg, "phy.trs.detectionThreshold", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.detection_threshold", 0.55)));
+strictCfg.DetectionPolicy = string(sixgr.util.structGet(cfg,"phy.trs.detectionPolicy","fixed_correlation"));
+strictCfg.RuntimeChannelEstimator = string(sixgr.util.structGet(cfg,"phy.trs.runtimeChannelEstimator","nr_channel_estimate"));
+strictCfg.TargetFalseAlarmProbability = double(sixgr.util.structGet(cfg,"phy.trs.targetFalseAlarmProbability",NaN));
 strictCfg.MinCoverageRatio = double(sixgr.util.structGet(cfg, "phy.trs.minCoverageRatio", ...
     sixgr.util.structGet(cfg, "lls6g.reference_signals.trs.min_coverage_ratio", 0.95)));
 strictCfg.TimingToleranceSamples = double(sixgr.util.structGet(cfg, "phy.trs.timingToleranceSamples", ...

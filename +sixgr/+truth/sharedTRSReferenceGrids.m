@@ -62,6 +62,8 @@ for k=1:numel(grids)
         'GainOrPhaseFitted',false,'AdditionalChannelExecutions',0);
     if base.Source=="executed_identity_AWGN_operator"
         evidence{k}.Source="applied_identity_AWGN_operator_TRS_port_reference";
+    elseif base.Source=="executed_fixed_matrix_AWGN_operator"
+        evidence{k}.Source="applied_fixed_matrix_AWGN_operator_TRS_port_reference";
     end
 end
 end

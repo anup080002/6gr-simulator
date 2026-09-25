@@ -256,6 +256,8 @@ sections:
       doppler_hz: {required: true, type: number, min: 0}
       per_sample_fading_enabled: {required: false, type: boolean}
       shared_identity_awgn_enabled: {required: false, type: boolean}
+      awgn_spatial_matrix_dl_real: {required: false, type: number_list, min_items: 1}
+      awgn_spatial_matrix_dl_imag: {required: false, type: number_list, min_items: 1}
       doppler_source_mode: {required: false, type: string, allowed_values: [configured, derive_from_ue_speed]}
       mobility_kmph: {required: true, type: number, min: 0}
       los_enabled: {required: true, type: boolean}
@@ -291,8 +293,10 @@ sections:
       pusch_dmrs_ports: {required: true, type: integer, min: 1}
       pusch_dmrs_num_cdm_groups_without_data: {required: false, type: integer, min: 1, max: 3}
       csi_rs_enabled: {required: true, type: boolean}
+      csi_rs_runtime_channel_estimator: {required: false, type: string, allowed_values: [nr_channel_estimate, flat_static_awgn_ls]}
       csi_rs_scrambling_id: {required: false, type: integer, min: 0}
       csirs_scrambling_id: {required: false, type: integer, min: 0}
+      csi_im: {required: false, type: struct, nested_rule: csi_im_resource}
       srs_enabled: {required: true, type: boolean}
       trs_enabled: {required: true, type: boolean}
       tracking_rs_enabled: {required: false, type: boolean}
@@ -1349,6 +1353,18 @@ sections:
       component_artifact_views: {required: false, type: struct}
       artifact_contract_engine: {required: false, type: struct}
 nested_sections:
+  csi_im_resource:
+    path: reference_signals.csi_im
+    parameters:
+      enabled: {required: true, type: boolean}
+      resource_id: {required: true, type: integer, min: 0, max: 31}
+      pattern: {required: true, type: integer, allowed_numeric_values: [0, 1]}
+      subcarrier: {required: true, type: integer, min: 0, max: 10}
+      symbol: {required: true, type: integer, min: 0, max: 13}
+      starting_rb: {required: true, type: integer, min: 0, max: 274}
+      num_rbs: {required: true, type: integer, min: 24, max: 276}
+      period_slots: {required: true, type: integer, allowed_numeric_values: [4, 5, 8, 10, 16, 20, 32, 40, 64, 80, 160, 320, 640]}
+      offset_slots: {required: true, type: integer, min: 0}
   component_artifact_views:
     path: output.component_artifact_views
     parameters:

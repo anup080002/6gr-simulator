@@ -625,6 +625,13 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     g.RankIndicator = double(plan.NumLayers);
                     g.PMI = double(sixgr.util.structGet(ueStates(k), "PMI", NaN));
                     g.CRI = double(sixgr.util.structGet(ueStates(k), "CRI", NaN));
+                    if upper(string(obj.Direction))=="DL"
+                        g.ReceivedCSIReport = sixgr.util.structGet(ueStates(k), "ReceivedCSIReport", struct());
+                        if ~isempty(fieldnames(g.ReceivedCSIReport))
+                            g.UEIndex=double(sixgr.util.structGet(ueStates(k),'UEIndex',NaN));
+                            g.ServingCell=double(sixgr.util.structGet(ueStates(k),'ServingCell',NaN));
+                        end
+                    end
                     g.MCSIndex = double(plan.MCSIndex);
                     g.DAI = 1;
                     g.SearchSpaceID = ssid;
@@ -1055,6 +1062,7 @@ g.PDCCHCandidateIndex = 0;
 g.RIUsed = NaN;
 g.PMI = NaN;
 g.CRI = NaN;
+g.ReceivedCSIReport = struct();
 g.DAI = 1;
 g.K0 = NaN;
 g.K1 = NaN;

@@ -529,7 +529,9 @@ reference_signals:
   csi_rs_resource_set_id: 0
   csi_rs_resource_ids: [0]
   csi_rs_resource_row_numbers: [3]
-  csi_rs_resource_symbol_locations: [5]
+  # SSB Case A occupies symbols 2:5 and 8:11 in burst slots. Keep the
+  # periodic CSI-RS outside those blocks, including later 20 ms bursts.
+  csi_rs_resource_symbol_locations: [6]
   csi_rs_resource_subcarrier_locations: [0]
   csi_rs_resource_rb_offsets: [0]
   csi_rs_resource_num_rbs: [25]
@@ -2067,6 +2069,16 @@ link_adaptation:
   delta_cqi_policy: none
   delta_mcs_policy: ack_nack_olla
   cqi_smoothing_alpha: 0.5
+  # CQI Part 1 can use the CRC-less short-UCI path. After an explicit CQI-0
+  # outage, require repeated causal positive reports before scheduling or
+  # increasing rank; do not consult the transmitted report as an oracle.
+  outage_recovery_positive_cqi_reports: 2
+  # CRC-less short CSI reports may establish signal presence without bit
+  # integrity. Require consecutive periodic reports (five-slot cadence) to
+  # agree within one CQI step before leaving a measured CQI-0 outage.
+  outage_recovery_cqi_tolerance: 1
+  outage_recovery_max_gap_slots: 5
+  rank_increase_confirmation_reports: 2
   cqi_smoothing_mode: fixed
   olla_step_down: 0.3
   # ACK/NACK OLLA equilibrium: 0.033333.../(0.3+0.033333...)=0.1.

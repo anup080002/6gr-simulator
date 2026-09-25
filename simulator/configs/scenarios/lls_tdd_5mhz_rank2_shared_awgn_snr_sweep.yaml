@@ -1,15 +1,15 @@
 inherits:
-  - ./lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+  - ./lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml
 
 meta:
   scenario_id: lls_tdd_5mhz_rank2_shared_awgn_snr_sweep
   description: >
-    Eight-point configured-SNR diagnostic using the complete 5 MHz TDD
-    shared-clock identity-AWGN runtime with rank adaptation capped at rank
-    two, TS 38.214 MCS tables, ILLA, OLLA, CSI-RS, SRS, DM-RS, HARQ and
-    shared PUCCH/PUSCH feedback. Each SNR point starts with independent link
-    and initial-access state. This is integrated truth evidence, not a
-    statistically qualified BLER publication campaign.
+    Eight-point configured-SNR diagnostic using the complete saturated-load
+    5 MHz TDD shared-clock 4TX/2RX fixed-matrix AWGN runtime with rank
+    adaptation capped at rank two, TS 38.214 MCS tables, ILLA, OLLA,
+    CSI-RS, SRS, DM-RS, HARQ and shared PUCCH/PUSCH feedback. Each SNR point
+    starts with independent link and initial-access state. This is integrated
+    truth evidence, not a statistically qualified BLER publication campaign.
   purpose: >
     Measure the same integrated 5 MHz rank-two runtime at -30, -20, -10, 0,
     10, 20, 30 and 40 dB without carrying causal state between SNR points.

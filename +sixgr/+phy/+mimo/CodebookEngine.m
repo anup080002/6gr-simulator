@@ -55,6 +55,7 @@ classdef CodebookEngine
                 candidates
                 options.NoiseVariance (1,1) double {mustBeNonnegative} = 1
                 options.InterferenceCovariance = []
+                options.InterferenceCovarianceIncludesNoise (1,1) logical = false
                 options.Receiver (1,1) string = "MMSE"
                 options.Objective (1,1) string = "posteq_mutual_information"
             end
@@ -98,7 +99,9 @@ classdef CodebookEngine
                     error("sixgr:mimo:InvalidInterferenceCovariance", ...
                         "Interference covariance is invalid.");
                 end
-                R = R + options.NoiseVariance*eye(nRx);
+                if ~options.InterferenceCovarianceIncludesNoise
+                    R = R + options.NoiseVariance*eye(nRx);
+                end
             end
             if ismatrix(H)
                 H = reshape(H,size(H,1),size(H,2),1);

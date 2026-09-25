@@ -60,6 +60,8 @@ fixedCsv = fullfile(tmp, "air_interface", "csv", "lls_fixed_link_campaign.csv");
 assert(exist(fixedCsv, "file") == 2, ...
     "Fixed-link campaign summary CSV must be exported as a distinct artifact.");
 csvT = readtable(fixedCsv, "VariableNamingRule", "preserve");
+assert(isequal(csvT.Properties.VariableNames, T.Properties.VariableNames), ...
+    "Sweep CSV must retain undefined/all-NaN measurement columns, not prune the contract.");
 assert(isequal(double(csvT.SNR_dB(:)).', snrGrid), ...
     "Fixed-link campaign CSV must preserve the configured SNR vector.");
 
@@ -409,7 +411,8 @@ function cfg = localFixtureConfig()
 % system scenario into a calibration profile after YAML authority has been
 % installed.  This keeps every disabled auxiliary signal and rank alias
 % owned by the source configuration exercised by the test.
-scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "master_sinr_sweep.yaml");
+testRoot = fileparts(fileparts(mfilename("fullpath")));
+scenarioPath = fullfile(testRoot, "simulator", "configs", "scenarios", "master_sinr_sweep.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 scfg = scfg.toStruct();
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tempdir, "fixed_link_campaign_fixture"));

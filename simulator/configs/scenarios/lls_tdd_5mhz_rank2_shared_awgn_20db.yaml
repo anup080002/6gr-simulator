@@ -43,6 +43,12 @@ antenna_and_array:
 # DCI 0_1 exposes the installed rank-two UL capability. Four logical ports
 # remain available for SRS measurement and codebook precoding.
 control:
+  # Two same-UE DCIs (DL assignment and future UL grant) need two monitored
+  # AL4 candidates. The existing 24-RB, two-symbol CORESET has eight CCEs;
+  # one configured AL4 candidate leaves half that capacity unusable here.
+  # Keep AL8 exhaustion physical: only one AL8 candidate fits.
+  search_space_num_candidates: [4, 2, 2, 1, 0]
+  blind_decode_candidates: 9
   ul_precoding:
     num_ports: 4
     max_rank: 2

@@ -95,6 +95,8 @@ metrics = struct( ...
     "RowsWithExpectedDirection", 0, ...
     "RowsWithWrongDirection", 0, ...
     "SourceRowsHash", "empty", ...
+    "NoTransmittedDataProven",false, ...
+    "NoTransmissionEvidenceHash","", "NoTransmissionEvidencePaths","", ...
     "MissingRawData", true, ...
     "SchemaValid", false, ...
     "ProxyRowsExcluded", 0, ...
@@ -131,6 +133,45 @@ metrics = struct( ...
 contribT = localEmptyContributionTable();
 traceT = localEmptyHARQTraceTable();
 if ~(istable(T) && ~isempty(T))
+    absence=sixgr.kpi.proveNoTransmittedData(raw,direction);
+    if absence.Proven
+        duration=absence.DurationSec-double(warmupDurationSec);
+        % Caller-supplied duration must agree with the completed physical
+        % clock; an elapsed host/runtime duration is not radio airtime.
+        if ~(isfinite(duration) && duration>0) || ...
+                (isfinite(measurementWindowSec) && ...
+                abs(measurementWindowSec-absence.DurationSec)>1e-9*max(1,absence.DurationSec))
+            metrics.Status="invalid_duration";
+            metrics.FailureReason="zero_transmission_window_duration_mismatch";
+            return;
+        end
+        metrics.MissingRawData=false;
+        metrics.SchemaValid=true;
+        metrics.NoTransmittedDataProven=true;
+        metrics.NoTransmissionEvidenceHash=absence.SourceHash;
+        paths=strings(0,1);
+        for name=[direction,direction+"Grants","SlotTrace","ScenarioSummary","RunState"]
+            if isfield(sourcePaths,name), paths(end+1)=string(sourcePaths.(name)); end %#ok<AGROW>
+        end
+        % The empty trial table keeps its own identity. The completed-clock
+        % proof is separate evidence, not a replacement hash for PHY rows.
+        metrics.NoTransmissionEvidencePaths=strjoin(paths(strlength(paths)>0),"|");
+        metrics.AggregationDurationSec=duration;
+        metrics.MeasurementWindowSec=duration;
+        metrics.ScheduledResourceExposureSec=0;
+        metrics.DurationSource="completed_slot_trace_and_scenario_slot_duration";
+        metrics.ScheduledBits=0;
+        metrics.DeliveredBits=0;
+        metrics.TBGoodput_Mbps=0;
+        metrics.TBGooDput_Mbps=0;
+        if isfinite(effectiveBandwidthHz) && effectiveBandwidthHz>0
+            metrics.SpectralEfficiency_bpsHz=0;
+        end
+        % Max over trials, scheduled-airtime throughput, error rates and
+        % decoding latency stay NaN: their trial populations are empty.
+        metrics.Status="no_transmitted_data";
+        metrics.FailureReason=absence.Reason;
+    end
     return;
 end
 
@@ -317,9 +358,13 @@ if istable(macLedger) && ~isempty(macLedger)
         if ~protocolEvidenceRejected
             bits = localFirstNumeric(macLedger, ["PayloadBits","DeliveredBits","ApplicationPayloadBits"], NaN(height(macLedger), 1));
             ids = string(macLedger.MACSDUId);
-            [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
+            delivery=sixgr.kpi.packetDeliveryAccounting(macLedger,ids,bits);
             durationSec = localPacketMeasurementWindowSec(macLedger, metrics, measurementWindowSec, warmupDurationSec);
-            metrics.MAC = localFinalizeLayerMetrics(metrics.MAC, macLedger, deliveredBits, duplicateCount, firstCount, durationSec);
+            metrics.MAC = localFinalizeLayerMetrics(metrics.MAC, macLedger, delivery.DeliveredBits, delivery.DuplicateCount, delivery.FirstCount, durationSec);
+            if ~delivery.Valid
+                metrics.MAC.Status="schema_invalid"; metrics.MAC.SchemaValid=false;
+                metrics.MAC.FailureReason=delivery.FailureReason;
+            end
         end
     end
 end
@@ -358,19 +403,23 @@ if istable(appLedger) && ~isempty(appLedger)
                 appIds = string(appLedger.ApplicationPacketId);
                 ids(strlength(strtrim(appIds)) > 0) = appIds(strlength(strtrim(appIds)) > 0);
             end
-            [deliveredBits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, bits, success);
+            delivery=sixgr.kpi.packetDeliveryAccounting(appLedger,ids,bits);
             durationSec = localPacketMeasurementWindowSec(appLedger, metrics, measurementWindowSec, warmupDurationSec);
-            metrics.Application = localFinalizeLayerMetrics(metrics.Application, appLedger, deliveredBits, duplicateCount, firstCount, durationSec);
-            [lat, latencyOk, latencyReason] = localPacketLatencyMs(appLedger, success);
-            if ~latencyOk
+            metrics.Application = localFinalizeLayerMetrics(metrics.Application, appLedger, delivery.DeliveredBits, delivery.DuplicateCount, delivery.FirstCount, durationSec);
+            latency=sixgr.kpi.packetDeliveryLatency(appLedger);
+            if ~delivery.Valid
+                metrics.Application.Status="schema_invalid"; metrics.Application.SchemaValid=false;
+                metrics.Application.FailureReason=delivery.FailureReason;
+            elseif ~latency.Valid
                 metrics.Application.Status = "schema_invalid";
-                metrics.Application.FailureReason = latencyReason;
+                metrics.Application.FailureReason = latency.FailureReason;
                 metrics.Application.SchemaValid = false;
-            elseif ~isempty(lat)
-                metrics.Application.MeanDeliveryLatency_ms = mean(lat, "omitnan");
-                metrics.Application.P95DeliveryLatency_ms = localPercentile(lat, 95);
-                metrics.MeanDeliveryLatency_ms = metrics.Application.MeanDeliveryLatency_ms;
-                metrics.P95DeliveryLatency_ms = metrics.Application.P95DeliveryLatency_ms;
+            else
+                metrics.Application.MeanDeliveryLatency_ms = latency.Mean_ms;
+                metrics.Application.P95DeliveryLatency_ms = latency.P95_ms;
+                metrics.Application.FirstSuccessDeliveryCount = latency.Count;
+                % PHY TB and application packet latency have different
+                % populations, clocks and provenance. Never overwrite PHY.
             end
         end
     end
@@ -380,6 +429,7 @@ end
 function metrics = localAttachHARQAndSchedulerMetrics(raw, sourcePaths, direction, metrics)
 direction = upper(string(direction));
 metrics.HARQ = localHARQMetrics(raw, sourcePaths, direction, metrics);
+metrics.HARQFeedback = localHARQFeedbackMetrics(raw, sourcePaths, direction, metrics);
 metrics.Scheduler = localSchedulerMetrics(raw, sourcePaths, direction, metrics);
 end
 
@@ -395,6 +445,11 @@ layer.FailureReason = "harq_timeline_missing_or_empty";
 
 T = localFilterRawDirectionTable(localRawTable(raw, "HARQTimeline"), direction);
 if isempty(T)
+    if parent.Status=="no_transmitted_data"
+        layer.Status="no_transmitted_data"; layer.MissingRawData=false;
+        layer.SchemaValid=true; layer.FailureReason=parent.FailureReason;
+        layer.RetransmissionAttemptCount=0; layer.TotalAttemptCount=0;
+    end
     return;
 end
 layer.SourceRowCount = height(T);
@@ -403,11 +458,10 @@ layer.MissingRawData = false;
 vars = string(T.Properties.VariableNames);
 hasProcess = any(ismember(["HarqID","HARQProcessId","HARQProcess"], vars));
 hasTime = any(ismember(["EventTimeSec","Slot","CanonicalSlot","FeedbackDueSlot"], vars));
-hasOutcome = any(ismember(["AckNack","CombinedDecodeOK","Ack"], vars));
 hasRetx = any(ismember(["IsRetransmission","RetransmissionFlag","HARQIsRetransmission"], vars));
-if ~(ismember("Direction", vars) && hasProcess && hasTime && hasOutcome && hasRetx)
+if ~(ismember("Direction", vars) && hasProcess && hasTime && hasRetx)
     layer.Status = "schema_invalid";
-    layer.FailureReason = "harq_timeline_missing_direction_process_time_outcome_or_retransmission_fields";
+    layer.FailureReason = "harq_timeline_missing_direction_process_time_or_retransmission_fields";
     return;
 end
 
@@ -424,18 +478,15 @@ if ~any(eligible)
     return;
 end
 E = T(eligible, :);
-[ack, validOutcome] = localHARQAckOutcome(E);
-retx = localFirstLogical(E, ["IsRetransmission","RetransmissionFlag","HARQIsRetransmission"], false(height(E), 1));
-if ~all(validOutcome)
+retx = localFirstNumeric(E, ["IsRetransmission","RetransmissionFlag","HARQIsRetransmission"], NaN(height(E), 1));
+if any(~ismember(retx,[0,1]))
     layer.Status = "schema_invalid";
-    layer.FailureReason = "harq_timeline_contains_invalid_ack_nack_outcomes";
+    layer.FailureReason = "harq_timeline_contains_invalid_retransmission_flags";
     return;
 end
 layer.SourceRowsHash = sixgr.kpi.hashKPISourceRows(E);
 layer.SchemaValid = true;
-layer.NACKCount = sum(~ack);
-layer.ACKNACKEventCount = numel(ack);
-layer.NACKRate = layer.NACKCount / max(layer.ACKNACKEventCount, 1);
+% Receiver CRC describes decoding, not ACK/NACK received by a transmitter.
 layer.RetransmissionAttemptCount = sum(retx);
 layer.TotalAttemptCount = numel(retx);
 layer.RetransmissionRate = layer.RetransmissionAttemptCount / max(layer.TotalAttemptCount, 1);
@@ -443,21 +494,97 @@ layer.Status = "pass";
 layer.FailureReason = "";
 end
 
-function [ack, valid] = localHARQAckOutcome(T)
-n = height(T);
-ack = false(n, 1);
-valid = false(n, 1);
-vars = string(T.Properties.VariableNames);
-if ismember("AckNack", vars)
-    token = upper(strtrim(string(T.AckNack)));
-    valid = token == "ACK" | token == "NACK";
-    ack = token == "ACK";
-elseif ismember("CombinedDecodeOK", vars)
-    ack = logical(T.CombinedDecodeOK);
-    valid = true(n, 1);
-elseif ismember("Ack", vars)
-    ack = logical(T.Ack);
-    valid = true(n, 1);
+function layer=localHARQFeedbackMetrics(raw,sourcePaths,direction,parent)
+layer=localEmptyLayerMetrics(parent,"HARQ_feedback",localSourcePath(sourcePaths,"HARQFeedback"));
+layer.NACKCount=NaN; layer.ACKNACKEventCount=NaN; layer.NACKRate=NaN;
+layer.FeedbackDTXCount=NaN; layer.FeedbackObservedCount=NaN;
+layer.FailureReason="received_harq_feedback_missing_or_empty";
+T=localRawTable(raw,"HARQFeedback");
+if isempty(T)
+    if parent.Status=="no_transmitted_data"
+        layer.Status="no_transmitted_data";
+        layer.MissingRawData=false;
+        layer.SchemaValid=true;
+        layer.NACKCount=0; layer.ACKNACKEventCount=0;
+        layer.FeedbackDTXCount=0; layer.FeedbackObservedCount=0;
+        layer.FailureReason=parent.FailureReason;
+    end
+    return;
+end
+required=["FeedbackForDirection","FeedbackOutcome","ObservedAck","ReceiverUsable", ...
+    "ReceiverVectorLengthMatches","ObservationID","BitIndex","RNTI","SweepPointIndex", ...
+    "AvailableAtSample","ObservationStartSample","ObservationEndSampleExclusive"];
+if ~all(ismember(required,string(T.Properties.VariableNames)))
+    layer.Status="schema_invalid";
+    layer.FailureReason="received_harq_feedback_schema_missing";
+    return;
+end
+directions=upper(strtrim(string(T.FeedbackForDirection)));
+if any(~ismember(directions,["DL","UL"]))
+    layer.Status="schema_invalid"; layer.FailureReason="received_harq_feedback_direction_invalid"; return;
+end
+E=T(directions==direction,:);
+if isempty(E)
+    if parent.Status=="no_transmitted_data"
+        layer.Status="no_transmitted_data"; layer.MissingRawData=false;
+        layer.SchemaValid=true;
+        layer.NACKCount=0; layer.ACKNACKEventCount=0;
+        layer.FeedbackDTXCount=0; layer.FeedbackObservedCount=0;
+        layer.FailureReason=parent.FailureReason;
+    end
+    return;
+end
+layer.MissingRawData=false; layer.SourceRowCount=height(E);
+layer.RowsWithExpectedDirection=height(E);
+for flag=["ProxyUsed","Skipped"]
+    if ismember(flag,string(E.Properties.VariableNames)) && ...
+            any(localFirstNumeric(E,flag,NaN(height(E),1))~=0)
+        layer.Status="schema_invalid"; layer.FailureReason="received_harq_feedback_not_physical_evidence"; return;
+    end
+end
+token=upper(strtrim(string(E.FeedbackOutcome)));
+ack=localFirstNumeric(E,"ObservedAck",NaN(height(E),1));
+usable=localFirstNumeric(E,"ReceiverUsable",NaN(height(E),1));
+widthMatches=localFirstNumeric(E,"ReceiverVectorLengthMatches",NaN(height(E),1));
+known=ismember(token,["ACK","NACK"]);
+if any(~ismember(token,["ACK","NACK","DTX"])) || ...
+        any(~ismember(usable,[0,1])) || any(~ismember(widthMatches,[0,1])) || ...
+        any(usable(known)~=1 | widthMatches(known)~=1) || ...
+        any(~ismember(ack(known),[0,1])) || any(ack(known)~=double(token(known)=="ACK"))
+    layer.Status="schema_invalid"; layer.FailureReason="received_harq_feedback_outcome_invalid"; return;
+end
+keys=string(E.ObservationID);
+if any(ismissing(keys) | strlength(strtrim(keys))==0)
+    layer.Status="schema_invalid"; layer.FailureReason="received_harq_feedback_identity_missing"; return;
+end
+for name=["SweepPointIndex","RNTI","BitIndex"]
+    value=localFirstNumeric(E,name,NaN(height(E),1));
+    if any(~isfinite(value) | value<1 | value~=fix(value))
+        layer.Status="schema_invalid"; layer.FailureReason="received_harq_feedback_identity_invalid"; return;
+    end
+    keys=keys+"|"+name+"="+string(value);
+end
+if numel(unique(keys))~=height(E)
+    layer.Status="schema_invalid"; layer.FailureReason="duplicate_received_harq_feedback_bit"; return;
+end
+start=localFirstNumeric(E,"ObservationStartSample",NaN(height(E),1));
+finish=localFirstNumeric(E,"ObservationEndSampleExclusive",NaN(height(E),1));
+available=localFirstNumeric(E,"AvailableAtSample",NaN(height(E),1));
+if any(~isfinite(start) | ~isfinite(finish) | ~isfinite(available) | ...
+        start<0 | finish<=start | available<finish | ...
+        start~=fix(start) | finish~=fix(finish) | available~=fix(available))
+    layer.Status="schema_invalid"; layer.FailureReason="received_harq_feedback_completion_invalid"; return;
+end
+layer.SourceRowsHash=sixgr.kpi.hashKPISourceRows(E);
+layer.SchemaValid=true;
+layer.EligibleRowCount=nnz(known); layer.ExcludedRowCount=nnz(~known);
+layer.NACKCount=nnz(token=="NACK"); layer.ACKNACKEventCount=nnz(known);
+layer.FeedbackDTXCount=nnz(token=="DTX"); layer.FeedbackObservedCount=height(E);
+if any(known)
+    layer.NACKRate=layer.NACKCount/layer.ACKNACKEventCount;
+    layer.Status="pass"; layer.FailureReason="";
+else
+    layer.Status="no_decoded_ack_nack"; layer.FailureReason="all_received_feedback_is_dtx";
 end
 end
 
@@ -470,6 +597,25 @@ layer.PRBUtilization = NaN;
 layer.FailureReason = "scheduler_grants_or_slot_trace_missing";
 G = localFilterRawDirectionTable(localRawTable(raw, grantField), direction);
 S = localRawTable(raw, "SlotTrace");
+if isempty(G) && parent.Status=="no_transmitted_data"
+    nRB=double(sixgr.util.structGet(raw,"GridNumRBs",NaN));
+    nCells=double(sixgr.util.structGet(raw,"NumResourceCells",NaN));
+    symbols=double(sixgr.util.structGet(raw,"SymbolsPerSlot",NaN));
+    dims=[nRB,nCells,symbols];
+    if numel(dims)~=3 || any(~isfinite(dims) | dims<1 | dims~=fix(dims))
+        layer.Status="schema_invalid";
+        layer.FailureReason="zero_allocation_resource_capacity_unavailable";
+        return;
+    end
+    [available,~,~,~,~,valid,reason]=localAvailablePRBSymbols(S,direction,nRB,nCells,symbols);
+    if ~valid
+        layer.Status="schema_invalid"; layer.FailureReason=reason; return;
+    end
+    layer.MissingRawData=false; layer.SchemaValid=true;
+    layer.AllocatedPRBSymbols=0; layer.AvailablePRBSymbols=available;
+    layer.PRBUtilization=0; layer.Status="pass"; layer.FailureReason="";
+    return;
+end
 if isempty(G) || isempty(S)
     return;
 end
@@ -626,6 +772,7 @@ symStart = double(S.(char(startName)));
 symCount = double(S.(char(countName)));
 if any(~isfinite(slotIndex)) || any(~isfinite(symStart)) || any(~isfinite(symCount)) || ...
         any(symStart < 0) || any(symCount < 0) || ...
+        any(slotIndex~=fix(slotIndex) | symStart~=fix(symStart) | symCount~=fix(symCount)) || ...
         any(symStart + symCount > double(symbolsPerSlot))
     reason = "slot_trace_contains_invalid_slot_or_symbol_partition";
     return;
@@ -658,6 +805,11 @@ end
 function layer = localEmptyLayerMetrics(parent, layerName, sourcePath)
 layer = parent;
 layer.Layer = string(layerName);
+if any(string(layerName)==["MAC","application"])
+    % Absence of PHY grants is not a replacement for a packet ledger.
+    layer.NoTransmittedDataProven=false;
+    layer.NoTransmissionEvidenceHash=""; layer.NoTransmissionEvidencePaths="";
+end
 layer.SourceTablePath = string(sourcePath);
 layer.SourceRowCount = 0;
 layer.EligibleRowCount = 0;
@@ -732,35 +884,6 @@ end
 missing = strjoin(missingNames, ",");
 end
 
-function [bits, duplicateCount, firstCount] = localUniqueDeliveredPayloadBits(ids, payloadBits, success)
-ids = string(ids(:));
-payloadBits = double(payloadBits(:));
-success = logical(success(:));
-n = min([numel(ids), numel(payloadBits), numel(success)]);
-ids = ids(1:n);
-payloadBits = payloadBits(1:n);
-success = success(1:n);
-seen = strings(0, 1);
-bits = 0;
-duplicateCount = 0;
-firstCount = 0;
-for i = 1:n
-    if ~success(i) || ~(isfinite(payloadBits(i)) && payloadBits(i) > 0)
-        continue;
-    end
-    id = strtrim(ids(i));
-    if strlength(id) == 0 || lower(id) == "nan"
-        id = "row_" + string(i);
-    end
-    if any(seen == id)
-        duplicateCount = duplicateCount + 1;
-        continue;
-    end
-    seen(end+1, 1) = id; %#ok<AGROW>
-    bits = bits + payloadBits(i);
-    firstCount = firstCount + 1;
-end
-end
 
 function durationSec = localPacketMeasurementWindowSec(T, parentMetrics, requestedWindowSec, warmupDurationSec)
 durationSec = double(sixgr.util.structGet(parentMetrics, "MeasurementWindowSec", NaN));
@@ -768,60 +891,6 @@ if isfinite(durationSec) && durationSec > 0
     return;
 end
 [durationSec, ~] = localMeasurementWindowSec(T, NaN, "packet_delivery_ledger", requestedWindowSec, warmupDurationSec);
-end
-
-function [lat, ok, failureReason] = localPacketLatencyMs(T, success)
-lat = [];
-ok = true;
-failureReason = "";
-if ~(istable(T) && ~isempty(T))
-    return;
-end
-vars = string(T.Properties.VariableNames);
-precomputed = NaN(height(T), 1);
-if ismember("Latency_ms", vars)
-    precomputed = localOptionalNumeric(T, "Latency_ms", NaN(height(T), 1));
-end
-hasTimes = all(ismember(["EnqueueTime_s","DeliveryTime_s"], vars));
-if hasTimes
-    enqueueTime = localOptionalNumeric(T, "EnqueueTime_s", NaN(height(T), 1));
-    deliveryTime = localOptionalNumeric(T, "DeliveryTime_s", NaN(height(T), 1));
-    vals = (deliveryTime - enqueueTime) * 1e3;
-    bothFinite = isfinite(precomputed) & isfinite(vals);
-    mismatch = logical(success(:)) & bothFinite(:) & abs(precomputed(:) - vals(:)) > 1e-6;
-    if any(mismatch)
-        ok = false;
-        failureReason = "packet_latency_precomputed_mismatch";
-        return;
-    end
-else
-    vals = precomputed;
-end
-
-succ = logical(success(:));
-negative = succ & isfinite(vals(:)) & vals(:) < -1e-9;
-if any(negative)
-    ok = false;
-    failureReason = "negative_successful_packet_latency";
-    return;
-end
-if all(ismember(["EnqueueCanonicalSlot","DeliveryCanonicalSlot"], vars))
-    enqueueSlot = localOptionalNumeric(T, "EnqueueCanonicalSlot", NaN(height(T), 1));
-    deliverySlot = localOptionalNumeric(T, "DeliveryCanonicalSlot", NaN(height(T), 1));
-elseif all(ismember(["EnqueueSlot","DeliverySlot"], vars))
-    enqueueSlot = localOptionalNumeric(T, "EnqueueSlot", NaN(height(T), 1));
-    deliverySlot = localOptionalNumeric(T, "DeliverySlot", NaN(height(T), 1));
-else
-    enqueueSlot = NaN(height(T), 1);
-    deliverySlot = NaN(height(T), 1);
-end
-slotBackwards = succ & isfinite(enqueueSlot(:)) & isfinite(deliverySlot(:)) & deliverySlot(:) < enqueueSlot(:);
-if any(slotBackwards)
-    ok = false;
-    failureReason = "delivery_slot_before_enqueue_slot";
-    return;
-end
-lat = vals(succ & isfinite(vals(:)));
 end
 
 function [bits, duplicateCount, traceT] = localDeduplicateDeliveries(T, direction, runId, scheduledBits, goodBits, crcPass, resourceExposureSec, measurementWindowSec)
@@ -1038,14 +1107,16 @@ defs = [
     localRecon("DL_TB_Delivery_Goodput_Mbps", dl, "TBGoodput_Mbps", "");
     localRecon("UL_SpectralEfficiency_bpsHz", ul, "SpectralEfficiency_bpsHz", "");
     localRecon("DL_SpectralEfficiency_bpsHz", dl, "SpectralEfficiency_bpsHz", "");
-    localRecon("UL_Latency_ms", ul, "MeanDeliveryLatency_ms", "");
-    localRecon("DL_Latency_ms", dl, "MeanDeliveryLatency_ms", "");
+    localRecon("UL_Latency_ms", ul.Application, "MeanDeliveryLatency_ms", "");
+    localRecon("DL_Latency_ms", dl.Application, "MeanDeliveryLatency_ms", "");
+    localRecon("UL_TB_Delivery_Latency_ms", ul, "MeanDeliveryLatency_ms", "");
+    localRecon("DL_TB_Delivery_Latency_ms", dl, "MeanDeliveryLatency_ms", "");
     localRecon("UL_BLER", ul, "BLER", "BLER_UL_min");
     localRecon("DL_BLER", dl, "BLER", "BLER_DL_min");
     localRecon("UL_BER", ul, "BER", "");
     localRecon("DL_BER", dl, "BER", "");
-    localRecon("UL_HARQ_NACK_Rate", ul.HARQ, "NACKRate", "");
-    localRecon("DL_HARQ_NACK_Rate", dl.HARQ, "NACKRate", "");
+    localRecon("UL_HARQ_NACK_Rate", ul.HARQFeedback, "NACKRate", "");
+    localRecon("DL_HARQ_NACK_Rate", dl.HARQFeedback, "NACKRate", "");
     localRecon("UL_Retransmission_Rate", ul.HARQ, "RetransmissionRate", "");
     localRecon("DL_Retransmission_Rate", dl.HARQ, "RetransmissionRate", "");
     localRecon("UL_PRB_Utilization", ul.Scheduler, "PRBUtilization", "");
@@ -1113,9 +1184,14 @@ for i = 1:numel(defs)
     rows(i).P95DeliveryLatency_ms = d.Metrics.P95DeliveryLatency_ms;
     rows(i).SourceTablePaths = d.Metrics.SourceTablePath;
     rows(i).SourceRowCount = d.Metrics.SourceRowCount;
+    rows(i).FeedbackObservedCount=sixgr.util.structGet(d.Metrics,"FeedbackObservedCount",NaN);
+    rows(i).FeedbackDTXCount=sixgr.util.structGet(d.Metrics,"FeedbackDTXCount",NaN);
     rows(i).EligibleRowCount = d.Metrics.EligibleRowCount;
     rows(i).ExcludedRowCount = d.Metrics.ExcludedRowCount;
     rows(i).SourceRowsHash = d.Metrics.SourceRowsHash;
+    rows(i).NoTransmittedDataProven=d.Metrics.NoTransmittedDataProven;
+    rows(i).NoTransmissionEvidenceHash=d.Metrics.NoTransmissionEvidenceHash;
+    rows(i).NoTransmissionEvidencePaths=d.Metrics.NoTransmissionEvidencePaths;
     rows(i).SourceDirection = d.Metrics.Direction;
     rows(i).ProxyRowsExcluded = d.Metrics.ProxyRowsExcluded;
     rows(i).SkippedRowsExcluded = d.Metrics.SkippedRowsExcluded;
@@ -1137,7 +1213,21 @@ for i = 1:numel(defs)
         rows(i).StrictOk = pass && strcmp(d.Metrics.Status, "pass");
         rows(i).Status = string(localTernary(rows(i).StrictOk, "pass", "fail"));
         rows(i).FailureReason = string(localTernary(rows(i).StrictOk, "", d.Metrics.FailureReason));
-        if endsWith(d.KPIName,"_BER") && ~d.Metrics.BERComplete
+        if strcmp(d.Metrics.Status,"no_transmitted_data")
+            % A measured zero total is valid; a zero-denominator decoder
+            % metric remains unavailable and cannot qualify the scenario.
+            rows(i).FormulaExecuted=isfinite(value);
+            rows(i).StrictOk=pass;
+            rows(i).Status=string(localTernary(pass,"pass","unavailable_no_transmissions"));
+            rows(i).FailureReason=string(localTernary(pass,"",d.Metrics.FailureReason));
+        elseif endsWith(d.KPIName,"_Latency_ms") && d.Metrics.Status=="pass" && ...
+                d.Metrics.FirstSuccessDeliveryCount==0 && isnan(value)
+            rows(i).FormulaExecuted=false;
+            rows(i).StrictOk=false;
+            rows(i).ReconciliationPass=false;
+            rows(i).Status="unavailable_no_successful_delivery";
+            rows(i).FailureReason="no_successful_delivery_in_source_population";
+        elseif endsWith(d.KPIName,"_BER") && ~d.Metrics.BERComplete
             % Preserve independently valid throughput/latency evidence.
             % Only BER's completeness gate depends on bit comparisons.
             rows(i).StrictOk=false;
@@ -1312,6 +1402,11 @@ for j = 1:numel(idxs)
         row.Pass = row.Delta <= row.Tolerance;
         row.Status = string(localTernary(row.Pass, "pass", "fail"));
         row.FailureReason = string(localTernary(row.Pass, "", "unit_conversion_mismatch"));
+    elseif recon.NoTransmittedDataProven(i) && ...
+            string(recon.Status(i))=="unavailable_no_transmissions" && ...
+            row.Bits==0 && row.DurationSec==0 && isnan(row.ComputedMbps)
+        row.Status="unavailable_no_transmissions";
+        row.FailureReason="no_scheduled_resource_exposure";
     end
     rows(end+1, 1) = row; %#ok<AGROW>
 end
@@ -1413,6 +1508,8 @@ rows = [localManifestRow(runId, scenarioName, raw, sourcePaths, "UL", true); ...
     featureApplicability.Application); ...
     localManifestRow(runId, scenarioName, raw, sourcePaths, "HARQTimeline", ...
     featureApplicability.HARQ); ...
+    localManifestRow(runId, scenarioName, raw, sourcePaths, "HARQFeedback", ...
+    featureApplicability.HARQ); ...
     localManifestRow(runId, scenarioName, raw, sourcePaths, "ULGrants", ...
     featureApplicability.Scheduler); ...
     localManifestRow(runId, scenarioName, raw, sourcePaths, "DLGrants", ...
@@ -1434,7 +1531,7 @@ if string(direction) == "PacketSDU"
     layer = "MAC";
 elseif string(direction) == "ApplicationPackets"
     layer = "application";
-elseif string(direction) == "HARQTimeline"
+elseif any(string(direction) == ["HARQTimeline","HARQFeedback"])
     layer = "HARQ";
 elseif any(string(direction) == ["ULGrants","DLGrants","SlotTrace"])
     layer = "scheduler";
@@ -1442,15 +1539,17 @@ end
 row = struct("RunId",string(runId), "ScenarioName",string(scenarioName), ...
     "SourceTablePath",string(path), "SourceTableName",string(localSourceName(direction)), ...
     "Direction",string(direction), "Layer",string(layer), "RequiredForObjective",logical(required), ...
-    "Exists",istable(T) && ~isempty(T), "RowCount",height(T), "ColumnCount",width(T), ...
+    "Exists",istable(T) && width(T)>0, "RowCount",height(T), "ColumnCount",width(T), ...
     "FileHash",sixgr.kpi.hashKPISourceRows(T), "SchemaHash","kpi_schema_v1", ...
     "DLSubsetRowCount",0, "DLSubsetRowsHash","empty", ...
     "ULSubsetRowCount",0, "ULSubsetRowsHash","empty", ...
     "ProducerModule","sixgr.kpi.reconstructLLSKPISummaryFromRaw", ...
     "ModifiedTime","", "Status","", "FailureReason","");
-if istable(T) && ~isempty(T) && ismember("Direction", string(T.Properties.VariableNames))
-    dlSubset = localFilterRawDirectionTable(T, "DL");
-    ulSubset = localFilterRawDirectionTable(T, "UL");
+directionField="Direction";
+if direction=="HARQFeedback", directionField="FeedbackForDirection"; end
+if istable(T) && ~isempty(T) && ismember(directionField, string(T.Properties.VariableNames))
+    dlSubset = T(upper(strtrim(string(T.(directionField))))=="DL",:);
+    ulSubset = T(upper(strtrim(string(T.(directionField))))=="UL",:);
     row.DLSubsetRowCount = height(dlSubset);
     row.DLSubsetRowsHash = sixgr.kpi.hashKPISourceRows(dlSubset);
     row.ULSubsetRowCount = height(ulSubset);
@@ -1485,6 +1584,8 @@ if strlength(path) == 0
         path = "packet_flow/csv/live_application_packet_delivery_ledger.csv";
     elseif direction == "HARQTimeline"
         path = "harq/csv/live_harq_observation_timeline.csv";
+    elseif direction == "HARQFeedback"
+        path = "control/csv/gnb_harq_feedback_observations.csv";
     elseif direction == "ULGrants"
         path = "packet_flow/csv/live_ul_scheduler_grants.csv";
     elseif direction == "DLGrants"
@@ -1956,7 +2057,8 @@ elseif contains(kpiName, "Goodput")
 elseif contains(kpiName, "SpectralEfficiency")
     v = metrics.DeliveredBits;
 elseif contains(kpiName, "Latency")
-    v = metrics.MeanDeliveryLatency_ms;
+    v = metrics.MeanDeliveryLatency_ms * metrics.FirstSuccessDeliveryCount;
+    if metrics.FirstSuccessDeliveryCount==0, v=0; end
 elseif contains(kpiName, "BLER")
     v = metrics.CRCFailureCount;
 elseif contains(kpiName, "BER")
@@ -2027,6 +2129,8 @@ elseif direction == "ApplicationPackets"
     name = "application_packet_delivery_ledger";
 elseif direction == "HARQTimeline"
     name = "harq_observation_timeline";
+elseif direction == "HARQFeedback"
+    name = "received_harq_feedback_observations";
 elseif direction == "ULGrants"
     name = "scheduler_ul_grants";
 elseif direction == "DLGrants"
@@ -2080,6 +2184,9 @@ row = struct("RunId","", "ScenarioName","", "KPIName","", "Direction","", "Layer
     "MeanDeliveryLatency_ms",NaN, "P95DeliveryLatency_ms",NaN, ...
     "DurationSource","", "SourceTablePaths","", "SourceRowCount",0, "EligibleRowCount",0, ...
     "ExcludedRowCount",0, "SourceRowsHash","", "SourceDirection","", "ProxyRowsExcluded",0, ...
+    "FeedbackObservedCount",NaN,"FeedbackDTXCount",NaN, ...
+    "NoTransmittedDataProven",false,"NoTransmissionEvidenceHash","", ...
+    "NoTransmissionEvidencePaths","", ...
     "SkippedRowsExcluded",0, "FailedRowsIncluded",true, "HARQDeduplicationApplied",false, ...
     "DuplicateDeliveryCount",0, "MissingRawData",true, "SchemaValid",false, ...
     "Applicable",true, "ApplicabilityReason","", ...

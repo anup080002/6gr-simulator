@@ -76,6 +76,8 @@ out.TrackingEstimateSource = "";
 out.DetectionAttempted = false;
 out.DetectionSuccess = false;
 out.DetectionThreshold = NaN;
+out.TRSDetectionPolicy = "";
+out.TRSDetectionEvidenceJSON = "";
 out.ResourceCoverageRatio = NaN;
 out.MinCoverageRatio = NaN;
 out.TimingTrackingAttempted = false;
@@ -106,6 +108,8 @@ out.MeasuredTrialSINRNAReason = "";
 out.SINRMeasurementDomain = "";
 out.PowerReferencePlane = "";
 out.DesiredPilotPower = NaN;
+out.SignedPilotSINRLinear = NaN;
+out.PilotPowerEvidenceJSON = "";
 out.ResidualPilotPower = NaN;
 out.TRSRuntimeEvidenceUsable = false;
 out.NoiseVariance = NaN;
@@ -249,6 +253,9 @@ try
     out.DetectionAttempted = logical(trial.DetectionAttempted);
     out.DetectionSuccess = logical(trial.DetectionSuccess);
     out.DetectionThreshold = localFirstTableNumber(sixgr.util.structGet(det, "Table", table()), "DetectionThreshold", NaN);
+    out.TRSDetectionPolicy = string(strictCfg.DetectionPolicy);
+    out.TRSDetectionEvidenceJSON = string(jsonencode(table2struct(det.Table)));
+    out.DetectionTable = det.Table;
     out.ResourceCoverageRatio = double(trial.ResourceCoverageRatio);
     out.MinCoverageRatio = localFirstTableNumber(sixgr.util.structGet(det, "Table", table()), "MinCoverageRatio", NaN);
     out.TimingTrackingAttempted = logical(trial.TimingTrackingAttempted);
@@ -274,15 +281,23 @@ try
     out.HestRxPorts = double(sixgr.util.structGet(ch, "HestRxPorts", NaN));
     out.HestTxPorts = double(sixgr.util.structGet(ch, "HestTxPorts", NaN));
     out.MeasuredTrialSINR_dB = double(sixgr.util.structGet(ch, "MeanPilotSINR_dB", NaN));
-    out.MeasuredTrialSINRSource = "unavailable_pilot_fit_is_not_independent_SINR";
+    out.MeasuredTrialSINRSource = string(ch.PilotSINRSource);
     out.MeasuredTrialSINRValueRole = "unavailable";
+    if isfinite(out.MeasuredTrialSINR_dB)
+        out.MeasuredTrialSINRValueRole = "received_pilot_model_based_estimate_not_unbiased_dB";
+    end
     out.MeasuredTrialSINRValueStatus = localAvailableStatus(out.MeasuredTrialSINR_dB);
-    out.SINRMeasurementDomain = "unavailable_pilot_fit_is_not_independent_SINR";
+    if isfinite(out.MeasuredTrialSINR_dB)
+        out.MeasuredTrialSINRValueStatus = "OK_received_pilot_model_estimate";
+    end
+    out.SINRMeasurementDomain = string(ch.SINRMeasurementDomain);
+    out.SignedPilotSINRLinear = ch.SignedPilotSINRLinear;
+    out.PilotPowerEvidenceJSON = string(jsonencode(ch.PilotPowerEvidence));
     out.PowerReferencePlane = "normalized_ofdm_resource_grid_after_receiver_timing_correction";
     out.DesiredPilotPower = double(sixgr.util.structGet(ch, "DesiredPilotPower", NaN));
     out.ResidualPilotPower = double(sixgr.util.structGet(ch, "ResidualPilotPower", NaN));
     if ~isfinite(out.MeasuredTrialSINR_dB)
-        out.MeasuredTrialSINRNAReason = "trs_channel_reconstruction_power_unavailable";
+        out.MeasuredTrialSINRNAReason = "trs_pilot_signed_linear_ratio_nonpositive_or_unavailable";
     end
     out.TRSRuntimeEvidenceUsable = logical(runtimeEvidenceOk);
     out.StrictOk = logical(score.StrictOk);
@@ -427,6 +442,16 @@ physicalDopplerHz = localResolvePhysicalDopplerHz(cfg, replay);
 rx.InjectedDoppler_Hz = double(physicalDopplerHz);
 rx.PhysicalDoppler_Hz = double(physicalDopplerHz);
 rx.FaultMode = "normal";
+rx.ReceivedExecutionEvidence = replay;
+% The candidate's null law applies to the executed shared AWGN samples,
+% not to arbitrary impairment/interference scenarios. No oracle signal,
+% channel estimate, transmitted bits or measured SNR enters its decision.
+rx.WhiteGaussianNoiseModelEstablished = ...
+    (isequal(sixgr.util.structGet(replay,'CompositeReceiverFrontEndApplied',true),false) || ...
+    isequal(sixgr.util.structGet(replay,'ReceiverGainCompensation.GainOnlyRFExecuted',false),true)) && ...
+    strcmpi(string(sixgr.util.structGet(replay,'NoiseOperatingMode','')), ...
+        'standalone_awgn_snr_argument') && ...
+    isfinite(rx.NoiseVariance) && rx.NoiseVariance>0;
 rx.SampleRateHz = double(tx.SampleRateHz);
 rx.GridSlots = tx.GridSlots;
 rx.TruthStatus = "real_lls_evidence";

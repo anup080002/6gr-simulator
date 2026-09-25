@@ -1,0 +1,17 @@
+inherits:
+  - ./lls_pdcch_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_srs_pucch_priority_fixture
+  description: Same-UE SRS suppression by actually prepared HARQ PUCCH.
+  purpose: Physical priority component test with declared access state, not acquisition qualification.
+  research_class: optional_research_experiment
+
+reference_signals:
+  srs_periodicity_slots: 4
+  srs_slot_within_period: 1
+  srs:
+    # SRS in slots 5 and 9. Slot 9 overlaps the actual PUCCH at symbol 13.
+    # The slot-5 received clock remains valid without decoding the dropped SRS.
+    period_offset: 0
+    symbol_start: 13

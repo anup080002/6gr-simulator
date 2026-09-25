@@ -19,7 +19,10 @@ componentMirrorRoots = ["air_interface","beamforming", ...
 % raw/ is the cryptographically indexed, immutable execution snapshot.
 % Finalization and recovery may annotate derived reports repeatedly, but
 % must never rewrite a raw table after raw_evidence_index.csv is sealed.
-immutableRoots = ["runtime", "raw", componentMirrorRoots];
+% Receiver channel resources are immutable measured complex samples. Their
+% exact CSV bytes are hashed in the primary trial at capture time; adding
+% identity columns here invalidates that hash and can round numeric values.
+immutableRoots = ["runtime", "raw", "channel_estimation", componentMirrorRoots];
 
 summary = struct( ...
     "ScannedCount", 0, ...
@@ -51,8 +54,7 @@ for i = 1:numel(files)
     end
 
     try
-        tableValue = readtable(pathValue, 'Delimiter', ',', ...
-            'ReadVariableNames', true, 'VariableNamingRule', 'preserve');
+        tableValue = sixgr.util.csvReadTable(pathValue,'TextType','string');
     catch
         summary.UnreadableCount = summary.UnreadableCount + 1;
         continue;

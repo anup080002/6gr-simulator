@@ -1,4 +1,4 @@
-function ok=testSharedCSIReportClock(mode,withHARQ,staleScalarMetadata,receiveAudit,scenarioFile)
+function ok=testSharedCSIReportClock(mode,withHARQ,staleScalarMetadata,receiveAudit,scenarioFile,reportedCQI,priorOutage,reportedRI)
 % Actual PUCCH IQ/CDL/RF/thermal noise, followed by decoded CSI delivery.
 % Input CSI and DL clock/TAG are declared component inputs. Optional HARQ
 % comes from an actual isolated PDSCH connector, not this shared CDL owner;
@@ -9,6 +9,11 @@ if nargin<2, withHARQ=false; end
 if nargin<3, staleScalarMetadata=false; end
 if nargin<4, receiveAudit=[]; end
 if nargin<5, scenarioFile=""; end
+if nargin<6, reportedCQI=10; end
+if nargin<7, priorOutage=false; end
+if nargin<8, reportedRI=1; end
+assert(ismember(reportedRI,[1 2]) && ~(priorOutage && reportedRI==2));
+assert(isscalar(reportedCQI) && ismember(reportedCQI,[0 10]));
 assert(isempty(receiveAudit) || isa(receiveAudit,'function_handle'));
 file='lls_pdcch_shared_queue_fixture.yaml';
 if string(mode)=="FDD", file='lls_trs_shared_scoring_fdd_fixture.yaml'; end
@@ -16,12 +21,36 @@ if strlength(string(scenarioFile))>0
     assert(string(mode)=="TDD",'The configured-SR shared fixture is TDD.');
     file=char(scenarioFile);
 end
-s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',file));
+if ~isfile(file), file=fullfile('simulator','configs','scenarios',file); end
+s=sixgr.lls6g.config.loadScenarioConfig(file);
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+if reportedRI==2
+    cfg.phy.linkAdaptation.rankIncreaseConfirmationReports=2;
+end
+if priorOutage
+    assert(reportedCQI>0,'Recovery fixture requires a positive physical report.');
+    cfg.phy.linkAdaptation.domain='cqi';
+    cfg.phy.linkAdaptation.innerLoopFlag=true;
+    cfg.phy.linkAdaptation.cqiSmoothingMode='fixed';
+    cfg.phy.linkAdaptation.cqiSmoothingAlpha=.5;
+    cfg.phy.linkAdaptation.outageRecoveryPositiveCQIReports=2;
+    cfg.phy.linkAdaptation.bootstrapCQIMode='conservative';
+end
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
 state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
 state.CurrentServingIdx(:)=1;
+priorSchedulerFeedback=state.LatestDLFeedback;
+if priorOutage
+    % Explicit prior delivered-value fixture; the positive recovery report
+    % below is transported through actual shared PUCCH IQ and completion.
+    report0=struct('CQI',0,'RI',1,'PMI',0,'CRI',0,'SINR_dB',NaN, ...
+        'SourceSlot',0,'DueSlot',0,'DeliveredSlot',0,'ServingCell',1);
+    [state,seedReport]=sixgr.truth.CoupledTruthRuntime.applyDeliveredCSIAdaptationRuntime( ...
+        state,report0,1,'DL',struct());
+    assert(string(seedReport.LinkAdaptationDecisionReason)=="measured_cqi_zero_out_of_range", ...
+        'Prior outage fixture was not installed: %s.',string(seedReport.LinkAdaptationDecisionReason));
+end
 state.TestStaleCSIScalarMetadata=logical(staleScalarMetadata);
 state.TestCSIReceiveAudit=receiveAudit; % Optional read-only retained-IQ diagnostic.
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
@@ -50,6 +79,13 @@ row=table(1,10,18.5,1,2,true,"receiver_post_equalization_sinr", ...
     'VariableNames',{'Slot','WidebandCQI','SINR_dB','RIEstimate','PMI','CRCPass', ...
     'SINRSource','SINRValueRole','SINRValueStatus'});
 row.CRI=0; % Declared CSI component input for the configured single resource.
+if reportedRI==2, row.RIEstimate=2; row.PMI=0; end
+if reportedCQI==0
+    % Declared UE measurement input, not measured by this PUCCH fixture.
+    % The subsequent report bits, RF reception and gNB publication are real.
+    row.WidebandCQI=0;
+    row.SINR_dB=-30;
+end
 assert(cfg.phy.csi.reportConfiguration.NumCSIResources==1);
 for badCRI={NaN,Inf,0.25,[0 0]}
     malformed=row; malformed.CRI=badCRI{1};
@@ -59,6 +95,9 @@ end
 state=sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime(state,1,'DL',row,cfg,table());
 expected=state.PendingCSITable(1,:); due=double(expected.DueSlot);
 assert(expected.RI==row.RIEstimate,'The measured RI alias must survive the runtime producer adapter.');
+if reportedCQI==0
+    assert(expected.CQI==0,'A measured outage must remain serializable as CQI zero.');
+end
 missingRank=removevars(row,'RIEstimate'); rejected=false;
 try
     sixgr.truth.CoupledTruthRuntime.enqueueCSIReportRuntime(state,1,'DL',missingRank,cfg,table());
@@ -131,9 +170,44 @@ assert(report.CQI==expected.CQI && report.RI==expected.RI && report.PMI==expecte
     'test:DecodedCSIFields','Received CQI/RI/PMI=[%g %g %g]; sent=[%g %g %g].', ...
     report.CQI,report.RI,report.PMI,expected.CQI,expected.RI,expected.PMI);
 assert(report.CRI==row.CRI,'Actual CSI delivery must preserve its configured resource identity.');
+if reportedRI==2
+    assert(report.SchedulerSpatialDecisionDeferred && ...
+        report.SchedulerAcceptedRank==1 && ...
+        isequaln(state.LatestDLFeedback,priorSchedulerFeedback), ...
+        'One higher RI must not replace rank/PMI/CQI or refresh the accepted report clock.');
+    fprintf('PHYSICAL_CSI_RANK_CONFIRMATION_HELD_PASS received_RI=2 accepted_rank=1\n');
+else
 assert(state.LatestDLFeedback.Valid && ...
     state.LatestDLFeedback.SchedulerCQIRawCQI==expected.CQI && ...
-    state.LatestDLFeedback.CQI==report.SchedulerResolvedCQI);
+    isequaln(state.LatestDLFeedback.CQI,report.SchedulerResolvedCQI));
+end
+if priorOutage
+    assert(report.CQIOutageRecoveryPending && report.CQIOutageRecoveryResolvedCQI>0 && ...
+        isnan(report.SchedulerResolvedCQI) && isnan(state.LatestDLFeedback.CQI), ...
+        'Decoded CSI recovery: pending=%d candidate=%g scheduler=%g latest=%g count=%g required=%g reason=%s.', ...
+        report.CQIOutageRecoveryPending,report.CQIOutageRecoveryResolvedCQI, ...
+        report.SchedulerResolvedCQI,state.LatestDLFeedback.CQI, ...
+        report.CQIOutageRecoveryPositiveCount,report.CQIOutageRecoveryRequiredCount, ...
+        string(report.LinkAdaptationDecisionReason));
+    [~,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(state,cfg,1,'DL',1);
+    assert(~ue.CausalFeedbackUsable && ...
+        string(ue.CausalFeedbackStatus)=="cqi_outage_recovery_pending", ...
+        'Receiver delivery and scheduler operating-point admission are distinct.');
+    blocked=state.DLSchedulers{1}.buildNewDataGrantPlan(ue,0:23,[2 12],4000);
+    assert(~blocked.Valid && blocked.TBSBits==0 && ...
+        string(blocked.GrantBlocker)=="blocked_cqi_outage_recovery_filter", ...
+        'The actual runtime grant builder must retain the CSI recovery gate.');
+end
+if reportedCQI==0
+    assert(report.CQI==0 && report.SchedulerResolvedCQI==0 && ...
+        isnan(report.MCSIndex) && ...
+        string(report.MCSValueStatus)=="unavailable_measured_cqi_zero_out_of_range");
+    [~,ue]=sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(state,cfg,1,'DL',1);
+    blocked=state.DLSchedulers{1}.buildNewDataGrantPlan(ue,0:23,[2 12],4000);
+    assert(~blocked.Valid && blocked.TBSBits==0 && ...
+        string(blocked.GrantBlocker)=="blocked_measured_cqi_zero_out_of_range", ...
+        'Successfully decoded CQI zero must not reopen new-data bootstrap.');
+end
 assert(isnan(state.LatestDLFeedback.SINR_dB) && isnan(state.LatestDLFeedback.FeedbackCRCPass), ...
     'Actual PUCCH CSI must not publish unreported UE SINR or a source data-TB CRC.');
 assert(strlength(report.UEReferenceRecordJSON)>0 && string(report.SourceSignal)=="received_CSI_UCI");
@@ -198,8 +272,8 @@ for ulSINR=[-15 45]
         isequaln(state.DLLinkAdaptationState,adaptationBefore), ...
         'UL SRS SINR/TPMI must not alter actually decoded DL CSI or its adaptation state.');
 end
-fprintf('SHARED_CSI_REPORT_CLOCK_PASS: %s HARQ=%d CSI bits=%g due=%g delivered=%g.\n', ...
-    mode,withHARQ,report.CSIUCIDecodedBitCount,due,report.DeliveredSlot);
+fprintf('SHARED_CSI_REPORT_CLOCK_PASS: %s HARQ=%d CSI bits=%g CQI=%g due=%g delivered=%g.\n', ...
+    mode,withHARQ,report.CSIUCIDecodedBitCount,report.CQI,due,report.DeliveredSlot);
 ok=true;
 end
 

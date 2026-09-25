@@ -114,13 +114,10 @@ classdef PreparedUplinkControlTransmission
                     'sixgr:link:ProxyULControlStreamForbidden','No proxy/fallback primary control evidence.');
             end
             obj.receiverNoiseMode(context.Replay);
-            if obj.Channel=="PUCCH" && obj.RequestBinding.Assignment.Format==0
-                prior=sixgr.util.structGet(context,'ReceivedULTimingReference',[]);
-                assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
-                    'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...
-                    'Retain an actual prior received gNB UL clock before receiving pilot-free Format 0.');
-                prior.align(obj,context.Observation); % Validate identity, age and actual sample coverage before RX.
-            end
+            % Timing is validated by receivePUCCHObservation against the
+            % actual receiver allocation and completed buffer. Do not align
+            % here using the transmitter's format: the independent gNB
+            % hypothesis can legitimately differ after a missed DCI.
         end
 
         function mode=receiverNoiseMode(obj,replay)

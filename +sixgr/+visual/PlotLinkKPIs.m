@@ -223,41 +223,14 @@ if isempty(TP) || ~all(ismember(["PAPR_dB","CCDF"], string(TP.Properties.Variabl
 end
 figs.PAPR = localMakeFig(opt, sprintf('%s_PAPR_CCDF', opt.FigurePrefix)); %#ok<NASGU>
 ax = axes(figs.PAPR);
-hold(ax, 'on');
-if all(TP.CCDF(isfinite(TP.CCDF))>0), set(ax,'YScale','log'); end
-if ismember("Direction", string(TP.Properties.VariableNames))
-    dirs = unique(string(TP.Direction));
-else
-    dirs = "Aggregate";
-    TP.Direction = repmat("Aggregate", height(TP), 1);
-end
-for i = 1:numel(dirs)
-    maskDir = string(TP.Direction) == dirs(i);
-    x = double(TP.PAPR_dB(maskDir));
-    y = double(TP.CCDF(maskDir));
-    mask = isfinite(x) & isfinite(y);
-    if ~any(mask)
-        continue;
-    end
-    [xSorted, order] = sort(x(mask));
-    ySorted = y(mask);
-    ySorted = ySorted(order);
-    plot(ax, xSorted, ySorted, 'o-', 'LineWidth', 1.25, 'MarkerSize', 4, 'DisplayName', char(dirs(i)));
-    made = true;
-end
+h=sixgr.report.plotPAPRCCDF(ax,TP);
+made=~isempty(h);
 if ~made
     close(figs.PAPR);
     figs.PAPR = [];
     return;
 end
-grid(ax,'on');
-xlabel(ax, 'PAPR_dB', 'Interpreter', 'none');
-ylabel(ax, 'CCDF', 'Interpreter', 'none');
-title(ax, sprintf('%s: PAPR CCDF', opt.FigurePrefix), 'Interpreter', 'none');
 localApplyFiniteXLimits(ax, double(TP.PAPR_dB));
-if numel(dirs) > 1
-    legend(ax, 'Location', 'best');
-end
 end
 
 function [series, names, sourceVars] = localFindNamedSeries(T, candidates, labels)

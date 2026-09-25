@@ -126,15 +126,9 @@ try
     % a delimiter from payload text: LDPC iteration/parity vectors contain
     % tens of thousands of pipe characters and can otherwise be mistaken
     % for an 80k-column pipe-delimited file during persisted refinalization.
-    T = readtable(pathStr, "Delimiter", ",", ...
-        "VariableNamingRule", "preserve", "TextType", "string");
+    T = sixgr.util.csvReadTable(pathStr,"TextType","string");
 catch
-    try
-        T = readtable(pathStr, "Delimiter", ",", ...
-            "VariableNamingRule", "preserve");
-    catch
-        T = table();
-    end
+    T = table();
 end
 end
 

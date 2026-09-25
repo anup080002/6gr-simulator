@@ -1,0 +1,14 @@
+inherits:
+  - ./lls_pdcch_shared_queue_fixture.yaml
+
+meta:
+  scenario_id: lls_pucch_same_slot_srs_fixture
+  description: Buffered PUCCH timing from a completed same-slot SRS with disjoint symbols.
+  purpose: Qualify receive-clock causality; declared access state and no PUSCH execution.
+  research_class: optional_research_experiment
+
+reference_signals:
+  srs:
+    # Full UL slot: SRS symbol 11 precedes PUCCH symbols 12/13. No
+    # superposition of same-UE reference and feedback on the same REs.
+    symbol_start: 11

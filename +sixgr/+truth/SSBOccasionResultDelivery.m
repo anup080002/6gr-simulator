@@ -119,13 +119,22 @@ methods(Static)
     function assertDelivered(state,ue,trial)
         T=sixgr.util.structGet(state,'DeliveredSSBOccasionMeasurements',table());
         assert(~isempty(T),'sixgr:truth:MissingSSBOccasionDelivery','Full tracking burst has no per-occasion delivery evidence.');
-        assert(height(unique(trial(:,{'Slot','SSBIndex'}),'rows'))==height(trial), ...
+        % Delivery is keyed by the independently requested receive window,
+        % not by an identity whose detection may legitimately have failed.
+        assert(ismember('RequestedSSBOccasionIndex',trial.Properties.VariableNames), ...
+            'sixgr:truth:MissingSSBOccasionRequest','Tracking rows need their monitored occasion identity.');
+        id=trial.RequestedSSBOccasionIndex;
+        assert(isnumeric(id) && size(id,2)==1 && all(isfinite(id) & id>=0 & id==fix(id)), ...
+            'sixgr:truth:InvalidSSBOccasionRequest','Tracking occasion identities must be explicit nonnegative integers.');
+        assert(height(unique(trial(:,{'Slot','RequestedSSBOccasionIndex'}),'rows'))==height(trial), ...
             'sixgr:truth:DuplicateSSBOccasion', ...
-            'Full-burst rows must bind distinct observed occasions, not reuse a decoded hypothesis.');
+            'Full-burst rows must bind distinct monitored occasions, not reuse a decoded hypothesis.');
         for k=1:height(trial)
-            hit=T.UEId==ue & T.BurstSlot==trial.Slot(k) & T.ReferenceSignalId==trial.SSBIndex(k);
+            hit=T.UEId==ue & T.BurstSlot==trial.Slot(k) & T.ReferenceSignalId==id(k);
             assert(nnz(hit)==1 && T.AvailableSlot(hit)<=state.CurrentSlot, ...
-                'sixgr:truth:MissingSSBOccasionDelivery','Each tracking candidate requires exactly one prior occasion delivery.');
+                'sixgr:truth:MissingSSBOccasionDelivery', ...
+                'UE %d burst slot %d monitored SSB %d requires exactly one prior occasion delivery (found %d).', ...
+                ue,trial.Slot(k),id(k),nnz(hit));
         end
     end
 

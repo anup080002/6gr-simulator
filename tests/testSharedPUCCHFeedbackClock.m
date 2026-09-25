@@ -1,4 +1,4 @@
-function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,evidenceRoot,feedbackScenarioPath,retainLaterPilot)
+function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,evidenceRoot,feedbackScenarioPath,retainLaterPilot,sameSlotPilot,suppressLaterPilot)
 % Actual PUCCH IQ/CDL/RF/thermal-noise reception and delayed HARQ reducer.
 % Source DL TB/ACK now come from an isolated coded PDSCH connector fixture;
 % that DL is not claimed to pass through this shared CDL owner. TAG and
@@ -7,6 +7,11 @@ function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,e
 if nargin<1, includeLateFeedback=false; end
 if nargin<2, mode="TDD"; end
 if nargin<6, retainLaterPilot=false; end
+if nargin<7, sameSlotPilot=false; end
+if nargin<8, suppressLaterPilot=false; end
+assert(~sameSlotPilot || (retainLaterPilot && ~includeLateFeedback));
+assert(~suppressLaterPilot || (retainLaterPilot && ~sameSlotPilot && ~includeLateFeedback));
+feedbackSlot=9+double(sameSlotPilot);
 assert(any(string(mode)==["TDD","FDD"]),'test:BadDuplexFixture','Use an explicit duplex fixture.');
 lateCount=double(includeLateFeedback);
 validateattributes(lateCount,{'numeric'},{'scalar','integer','>=',0,'<=',2});
@@ -80,9 +85,9 @@ grant=received.HARQ.GrantSnapshot;
 grant.Slot=3;
 grant.RNTI=1;
 grant.ServingCell=1;
-grant.K1=6;
-grant.HARQFeedbackAbsoluteSlot=8;
-grant.TimingDecision=struct('Valid',true,'K1',6,'FeedbackAbsoluteSlot',8);
+grant.K1=feedbackSlot-3;
+grant.HARQFeedbackAbsoluteSlot=feedbackSlot-1;
+grant.TimingDecision=struct('Valid',true,'K1',grant.K1,'FeedbackAbsoluteSlot',feedbackSlot-1);
 grant.PUCCHResourceIndicator=0;
 grant.PUCCHResourceIndicatorSource='decoded_dci_fixture';
 grant.PDCCHGrantFirstCCE=0;
@@ -95,7 +100,7 @@ allocation=state.DLHarq.allocate(1,3,grant.TBSBytes,'NewData',true);
 assert(allocation.HARQ.HarqID==grant.HARQ.HarqID && allocation.HARQ.NDI==grant.HARQ.NDI);
 state.DLHarq.onTx(1,allocation.HARQ.HarqID,uint8(received.HARQ.TransportBlockBits),grant,3);
 row=struct('Direction',"DL",'UEIndex',1,'RNTI',1,'HarqID',allocation.HARQ.HarqID, ...
-    'SourceSlot',3,'DueSlot',9,'Ack',logical(received.TrialTable.CRCPass),'CurrentDecodeOK',true,'CombinedDecodeOK',true, ...
+    'SourceSlot',3,'DueSlot',feedbackSlot,'Ack',logical(received.TrialTable.CRCPass),'CurrentDecodeOK',true,'CombinedDecodeOK',true, ...
     'ServingCell',1,'BaseStationID',1,'TBSBits',grant.TBSBits,'UCIBitCount',1, ...
     'RequestedFormat',0,'ResolvedFormat',0,'PUCCHResourceId',"0", ...
     'PUCCHPRBStart',0,'PUCCHPRBCount',1,'PUCCHSymbolStart',12,'PUCCHNumSymbols',2, ...
@@ -105,6 +110,11 @@ row=struct('Direction',"DL",'UEIndex',1,'RNTI',1,'HarqID',allocation.HARQ.HarqID
     'PUSCHGrantContextId',"",'MultiplexedBitIndex',NaN,'Processed',false);
 row.ComponentCarrier=cfg.phy.frame.DefaultIdentity.ScheduledCCID;
 row.ActiveULBWP=cfg.phy.frame.DefaultIdentity.ULBWPID;
+if sameSlotPilot
+    collision=sixgr.phy.frame.resolveSRSPUCCHCollision(cfg,row,feedbackSlot,1);
+    assert(~collision.Collision && collision.OverlapRECount==0, ...
+        'test:SameSlotPilotCollision','Timing qualification requires nonoverlapping actual SRS/PUCCH resources.');
+end
 for name=string(fieldnames(receiveFields)).', row.(name)=receiveFields.(name); end
 [srsCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
 srsCfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(srsCfg,5);
@@ -115,7 +125,7 @@ owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,
 for slot=1:(10+double(retainLaterPilot))
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
-    if retainLaterPilot && slot==9
+    if retainLaterPilot && slot==9-double(suppressLaterPilot)
         % Prepare before the timing-advanced slot-10 waveform starts.
         pilotSlot=slot+1;
         [laterCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'UL');
@@ -182,7 +192,7 @@ assert(all(state.PendingFeedbackTable.Processed) && all(state.PUCCHGrantTraceTab
     'Pending processed=%s; grant executed=%s.', ...
     mat2str(logical(state.PendingFeedbackTable.Processed).'), ...
     mat2str(logical(state.PUCCHGrantTraceTable.GrantExecutedFlag).'));
-assert(height(state.ControlTrials.PUCCH)==1 && state.ControlTrials.PUCCH.Slot==9);
+assert(height(state.ControlTrials.PUCCH)==1 && state.ControlTrials.PUCCH.Slot==feedbackSlot);
 assert(all(state.PUCCHGrantTraceTable.DTXFlag==state.ControlTrials.PUCCH.DTXFlag), ...
     'Physical receiver DTX must propagate to every logical grant sharing its occasion.');
 assert(all(strlength(string(state.PUCCHGrantTraceTable.DTXReason))==0), ...
@@ -206,7 +216,18 @@ assert(state.ControlTrials.PUCCH.PUCCHDecodeOk, ...
 assert(isfinite(state.ControlTrials.PUCCH.AppliedTimingCorrectionSamples) && ...
     ~state.ControlTrials.PUCCH.UseIdealTimingSync, ...
     'Actual reference-based capture alignment must survive the runtime timing projection.');
-if state.ControlTrials.PUCCH.PUCCHFormat==0
+if sameSlotPilot
+    assert(state.ControlTrials.PUCCH.StrictReceiverEvidenceOk && ...
+        state.ControlTrials.PUCCH.StrictOk && string(state.ControlTrials.PUCCH.Status)=="PASS", ...
+        'test:SharedFormat0HARQExportRejected', ...
+        'Successfully decoded noncoherent HARQ must retain strict export acceptance without invented noise variance.');
+    assert(state.ControlTrials.PUCCH.TimingEstimateUsed && ...
+        string(state.ControlTrials.PUCCH.TimingEstimateSource)== ...
+        "completed_same_slot_received_UL_pilot_alignment");
+    exportedTiming=jsondecode(state.ControlTrials.PUCCH.ReceiverTimingEvidenceJSON);
+    assert(exportedTiming.ReferenceAgeSlots==0 && ...
+        exportedTiming.ReferenceAvailableAtSample<=state.ControlTrials.PUCCH.ObservationEndSampleExclusive);
+elseif state.ControlTrials.PUCCH.PUCCHFormat==0
     assert(isnan(state.ControlTrials.PUCCH.EstimatedTimingOffsetSamples) && ...
         ~state.ControlTrials.PUCCH.TimingEstimateUsed && ...
         string(state.ControlTrials.PUCCH.TimingEstimateSource)== ...
@@ -238,7 +259,50 @@ assert(numel(owner.PUCCHTransmissions)==1 && numel(state.SharedPUCCHTXLedger)==1
 assert(isequaln(state.SharedPUCCHTXLedger,state.TestPUCCHTXLedgerBeforeRX), ...
     'The gNB receiver outcome must not manufacture or rewrite UE transmission evidence.');
 assert(state.TestSRSArtifactVerified,'Actual received SRS must publish independently verifiable channel arrays.');
-if retainLaterPilot
+if sameSlotPilot
+    item=state.TestReceivedPUCCH;
+    [~,~,~,~,capture]=sixgr.truth.sharedObservationEvidence(item.Planes,item.Context.Prepared);
+    history=state.ReceivedULTimingHistory{1}; assert(numel(history)==2);
+    p=item.Context.Prepared; cfgRX=p.ReceiverConfig;
+    % The four-slot clock-expiry guard is unchanged. Five-slot-old evidence
+    % is rejected; the actually completed slot-10 pilot supplies the clock.
+    localReject(@()history{1}.align(p,capture),'sixgr:phy:sync:StaleULTimingReference');
+    localReject(@()history{2}.align(p,capture),'sixgr:phy:sync:FutureULTimingReference');
+    [samples,timing]=history{2}.alignCompletedObservation(cfgRX,capture,feedbackSlot-1);
+    assert(timing.ReferenceAgeSlots==0 && timing.ReferenceAvailableAtSample<=capture.EndSampleExclusive);
+    assert(~isempty(samples) && ~timing.OracleTimingUsed && ~timing.ReceiverZeroPaddingUsed);
+    before=sixgr.truth.selectReceivedULTimingReference(state,1,capture.StartSample);
+    completed=sixgr.truth.selectReceivedULTimingReference(state,1,capture.EndSampleExclusive, ...
+        p.PhysicalTiming.NominalStartSample);
+    assert(isequaln(before,history{1}) && isequaln(completed,history{2}));
+    early=sixgr.phy.waveform.WaveformObservationBuffer(capture.StartSample, ...
+        history{2}.AvailableAtSample-1,capture.SampleRateHz,capture.NumReceiveAntennas);
+    raw=capture.readComplete();
+    early.append(sixgr.phy.waveform.WaveformChunk( ...
+        raw(1:early.EndSampleExclusive-early.StartSample,:),early.StartSample),early.SampleRateHz);
+    localReject(@()history{2}.alignCompletedObservation(cfgRX,early,feedbackSlot-1), ...
+        'sixgr:phy:sync:FutureULTimingReference');
+    fprintf('SAME_SLOT_UL_PILOT_TIMING_PASS stale_prior_rejected=1 early_use_rejected=1 real_HARQ_decoded=1\n');
+elseif suppressLaterPilot
+    assert(numel(owner.SRSSuppressionLedger)==1);
+    proof=owner.SRSSuppressionLedger(1);
+    assert(proof.UE==1 && proof.Decision.DroppedSymbols0Based==13 && ...
+        isempty(proof.Decision.RetainedSymbols0Based) && ...
+        proof.Cancellation.EmittedNonzeroSamples==0 && ...
+        ~proof.Cancellation.PreviouslyConsumedSamplesChanged);
+    assert(numel(state.ReceivedULTimingHistory{1})==1, ...
+        'A suppressed SRS must not publish a new timing reference.');
+    assert(isfield(state,'TestSuppressedSRS') && state.TestSuppressedSRS, ...
+        'The registered physical SRS observation must complete with a suppression disposition.');
+    if isfield(state,'TestPhysicalEvidenceRoot')
+        suppression=proof;
+        save(fullfile(state.TestPhysicalEvidenceRoot,'srs_suppression.mat'),'suppression');
+        writetable(table(string(jsonencode(proof)), ...
+            'VariableNames',{'PhysicalSuppressionProofJSON'}), ...
+            fullfile(state.TestPhysicalEvidenceRoot,'srs_suppression.csv'));
+    end
+    fprintf('SHARED_SRS_PUCCH_PRIORITY_PASS actual_HARQ_decoded=1 suppressed_SRS_timing_not_published=1 consumed_samples_unchanged=1\n');
+elseif retainLaterPilot
     % Replay earlier actual PUCCH after a second actual SRS completed.
     % This isolates callback ordering without fabricating pilot clocks.
     item=state.TestReceivedPUCCH;
@@ -264,8 +328,21 @@ ok=true; disp('SHARED_PUCCH_FEEDBACK_CLOCK_PASS');
 end
 
 function state=localEvents(state,events)
+% Mirror the production completion dependency: all of these observations
+% have arrived at this callback's physical deadline.
+isSRS=string({events.Kind})=="SRS";
+events=[events(isSRS),events(~isSRS)];
 for item=events
-    if item.Kind=="SRS"
+    if item.Kind=="SuppressedSRSObservation"
+        assert(item.Context.SuppressionProof.Cancellation.EmittedNonzeroSamples==0);
+        % These are real completed physical windows, retained even though
+        % this component was cancelled. Never submit them as an SRS trial.
+        assert(numel(item.Planes)==4);
+        for plane=item.Planes
+            assert(~isempty(plane.Observation.readComplete()));
+        end
+        state.TestSuppressedSRS=true;
+    elseif item.Kind=="SRS"
         p=item.Context.Prepared; c=item.Context;
         [~,pre,tx,replay,receiver]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
         [~,channelEvidence,channelReferences]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);

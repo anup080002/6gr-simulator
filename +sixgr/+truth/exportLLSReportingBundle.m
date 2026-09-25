@@ -2421,49 +2421,18 @@ end
 function T = localUCIMultiplexingEfficiencyRows(cat, metric, ctx)
 T = localEmptyMetricTable();
 policy = localConfigString(ctx, ["pusch.uci_multiplexing_mode", "pucch.multiplexing_policy"], "baseline");
-note = "Computed as correctly detected UCI bits over compared UCI bits from actual PUCCH observations; CRC pass is ignored when CRC is not applicable.";
+note = "Bit-weighted complete-payload delivery over actual transmitted PUCCH payloads, including erased and wrong-width receptions. This is not bitwise accuracy or resource efficiency; receiver-only occasions and zero-bit negative SR are excluded. CRC pass alone is not content recovery.";
 T = [T; localMetricTableRow(cat, metric, "UCI", "policy", "config_only", NaN, policy, "", "meta/scenario_config_resolved.json", note)]; %#ok<AGROW>
-if ~(istable(ctx.Tables.PUCCH) && ~isempty(ctx.Tables.PUCCH) && ismember("BitsCompared", string(ctx.Tables.PUCCH.Properties.VariableNames)))
+population = sixgr.truth.summarizePUCCHPayloadDelivery(ctx.Tables.PUCCH);
+if ~population.Available
     return;
 end
-bits = double(ctx.Tables.PUCCH.BitsCompared);
-success = localPUCCHSuccessVector(ctx.Tables.PUCCH);
-mask = isfinite(bits) & isfinite(success) & bits >= 0;
-if ~any(mask)
-    return;
-end
-bits = bits(mask);
-good = bits .* success(mask);
 T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "UCI", "success_ratio", "available", sum(good) / max(sum(bits), eps), "", "fraction", "air_interface/csv/pucch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "UCI", "successful_bits", "available", sum(good), "", "bits", "air_interface/csv/pucch_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "UCI", "transmitted_bits", "available", sum(bits), "", "bits", "air_interface/csv/pucch_trials.csv", note)];
-end
-
-function success = localPUCCHSuccessVector(T)
-n = height(T);
-success = nan(n, 1);
-if ismember("UCIContentMatch", string(T.Properties.VariableNames))
-    % No transmitted payload (for example a negative standalone SR) has
-    % no content-match outcome. Preserve unavailable values for the
-    % caller's finite-evidence denominator; never count them as failures.
-    match = double(T.UCIContentMatch);
-    known = isfinite(match) & (match == 0 | match == 1);
-    success(known) = match(known);
-    return;
-end
-if ismember("CRCOutcome", string(T.Properties.VariableNames))
-    crcOutcome = lower(strtrim(string(T.CRCOutcome)));
-    success(strcmp(crcOutcome, "pass")) = 1;
-    success(strcmp(crcOutcome, "fail")) = 0;
-    return;
-end
-if ismember("CRCPass", string(T.Properties.VariableNames))
-    success = double(T.CRCPass);
-    if ismember("CRCApplicable", string(T.Properties.VariableNames))
-        success(~logical(T.CRCApplicable)) = NaN;
-    end
-end
+    localMetricTableRow(cat, metric, "UCI", "success_ratio", "available", population.BitWeightedDeliveryRatio, "", "fraction", "air_interface/csv/pucch_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "UCI", "successful_bits", "available", population.DeliveredBits, "", "bits", "air_interface/csv/pucch_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "UCI", "transmitted_bits", "available", population.TransmittedBits, "", "bits", "air_interface/csv/pucch_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "UCI", "transmitted_payloads", "available", population.PayloadCount, "", "count", "air_interface/csv/pucch_trials.csv", note); ...
+    localMetricTableRow(cat, metric, "UCI", "failed_payloads", "available", population.FailedPayloadCount, "", "count", "air_interface/csv/pucch_trials.csv", note)];
 end
 
 function T = localSimultaneousPUSCHPUCCHRows(cat, metric, ctx)
@@ -7071,38 +7040,16 @@ end
 
 function localPlotPAPRCCDFOrPlaceholder(pathOut, ctx)
 sixgr.util.ensureFolder(fileparts(pathOut));
-dlPAPR = localFiniteColumn(ctx.Tables.DL, "PAPR_dB");
-ulPAPR = localFiniteColumn(ctx.Tables.UL, "PAPR_dB");
-if ~isempty(dlPAPR) || ~isempty(ulPAPR)
-    paprRows = repmat(struct("Direction", "", "PAPR_dB", NaN, "CCDF", NaN), 0, 1);
-    paprRows = localAppendPAPRCCDFRows(paprRows, dlPAPR, "DL");
-    paprRows = localAppendPAPRCCDFRows(paprRows, ulPAPR, "UL");
-    if ~isempty(paprRows)
-        sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
-        paprT = struct2table(paprRows, "AsArray", true);
-        paprT.CurveConstruction = repmat("empirical_ccdf", height(paprT), 1);
-        paprT.truth_status = repmat("real_lls_evidence", height(paprT), 1);
-        sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "papr_ccdf.csv"), paprT);
-    end
+paprT=sixgr.report.buildPAPRCCDFTable(struct('DL',ctx.Tables.DL,'UL',ctx.Tables.UL));
+if ~isempty(paprT)
+    sixgr.util.ensureFolder(ctx.Layout.ReportCSVDir);
+    paprT.CurveConstruction = repmat("empirical_ccdf", height(paprT), 1);
+    paprT.truth_status = repmat("real_lls_evidence", height(paprT), 1);
+    sixgr.util.csvWriteTable(fullfile(ctx.Layout.ReportCSVDir, "papr_ccdf.csv"), paprT);
     fig = figure("Visible", "off", "Color", "w");
     cleanupObj = onCleanup(@() close(fig)); %#ok<NASGU>
     ax = axes(fig);
-    hold(ax, "on");
-    if ~isempty(dlPAPR)
-        sorted = sort(dlPAPR(:), "descend");
-        semilogy(ax, sorted, max((1:numel(sorted)).' ./ numel(sorted), eps), "b-o", ...
-            "LineWidth", 1.1, "MarkerSize", 4, "DisplayName", "DL");
-    end
-    if ~isempty(ulPAPR)
-        sorted = sort(ulPAPR(:), "descend");
-        semilogy(ax, sorted, max((1:numel(sorted)).' ./ numel(sorted), eps), "r-s", ...
-            "LineWidth", 1.1, "MarkerSize", 4, "DisplayName", "UL");
-    end
-    xlabel(ax, "PAPR (dB)");
-    ylabel(ax, "CCDF P(PAPR > x)");
-    title(ax, "PAPR CCDF");
-    grid(ax, "on");
-    legend(ax, "Location", "best");
+    sixgr.report.plotPAPRCCDF(ax,paprT);
     sixgr.util.exportFigureArtifact(fig, pathOut, "Resolution", 160);
     return;
 end
@@ -7110,20 +7057,6 @@ if ~localShouldEmitPlaceholderArtifacts(ctx)
     return;
 end
 localExportPlaceholderFigure(pathOut, "PAPR CCDF", "No PAPR samples were emitted by the current LLS path.");
-end
-
-function rows = localAppendPAPRCCDFRows(rows, paprVec, direction)
-paprVec = double(paprVec(:));
-paprVec = paprVec(isfinite(paprVec));
-if isempty(paprVec)
-    return;
-end
-sorted = sort(paprVec, "descend");
-n = numel(sorted);
-ccdf = (1:n).' ./ n;
-for k = 1:n
-    rows(end + 1, 1) = struct("Direction", string(direction), "PAPR_dB", double(sorted(k)), "CCDF", double(ccdf(k))); %#ok<AGROW>
-end
 end
 
 function localPlotLatencyCDFOrPlaceholder(pathOut, ctx)

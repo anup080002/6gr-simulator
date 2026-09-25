@@ -156,6 +156,7 @@
     "pdsch_dmrs_ports": 2,
     "pusch_dmrs_ports": 2,
     "csi_rs_enabled": true,
+    "csi_rs_runtime_channel_estimator": "nr_channel_estimate",
     "csi_rs_periodicity_slots": 4,
     "csi_rs_offset_slots": 0,
     "srs_enabled": true,

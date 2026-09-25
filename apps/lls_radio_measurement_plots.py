@@ -7,6 +7,7 @@ grant just because their values happen to agree.
 from __future__ import annotations
 
 import html
+import hashlib
 import json
 import math
 import re
@@ -14,6 +15,7 @@ from collections import defaultdict
 
 TRIALS = ("air_interface/csv/dl_pdsch_trials.csv", "air_interface/csv/ul_pusch_trials.csv")
 FEEDBACK = "air_interface/csv/csi_feedback_reports.csv"
+CSI_TRIALS = "air_interface/csv/csi_rs_trials.csv"
 CONTROL_EVM = {
     "PRACH EVM": ("PRACH", "air_interface/csv/prach_evm_samples.csv"),
     "SSB EVM": ("SSB", "air_interface/csv/ssb_evm_samples.csv"),
@@ -35,6 +37,7 @@ CHARTS = tuple(CONTROL_EVM) + tuple(CSI_FIELDS) + tuple(CSI_POWER_FIELDS) + tupl
 CHART_SOURCES = {name: (path, "air_interface/csv/control_evm_samples.csv")
                  for name, (_, path) in CONTROL_EVM.items()}
 CHART_SOURCES.update({name: (FEEDBACK,) for name in CSI_FIELDS})
+CHART_SOURCES["CSI SINR timeline"] = (FEEDBACK, CSI_TRIALS)
 CHART_SOURCES.update({name: ("air_interface/csv/csi_rs_trials.csv",) for name in CSI_POWER_FIELDS})
 CHART_SOURCES[SSB_POWER_CHART] = ("air_interface/csv/pbch_trials.csv",)
 CHART_SOURCES.update(DATA_POWER_CHARTS)
@@ -231,35 +234,91 @@ def _csi(m, name, existing, fetch, run_id):
     rows, series = [], defaultdict(list)
     for index, row in enumerate(source, 1):
         identity = _identity(m, row, FEEDBACK, index)
-        measured_slot = m._row_float(row, "SourceSlot")
+        source_slot = m._row_float(row, "SourceSlot")
+        reference_slot = m._row_float(row, "CSIReferenceSlot")
+        authority = m._row_text(row, "SourceSlotAuthority")
+        timing_role = "configured reference" if reference_slot is not None or "not_UE_measurement_slot" in authority else "source"
+        plot_slot = reference_slot if reference_slot is not None else source_slot
         delivered_slot = m._row_float(row, "DeliveredSlot")
         values = _numbers(m._row_text(row, field), integers=field != "SINR_dB")
+        components = {f"{field}[{i}]" if len(values) > 1 else field: value for i, value in enumerate(values)}
+        if field == "PMI":
+            named = {key: _numbers(m._row_text(row, key), integers=True)
+                     for key in ("PMI_I11", "PMI_I12", "PMI_I13", "PMI_I2")}
+            # Names come from explicit decoded columns, not packed-index arithmetic.
+            if any(named.values()):
+                if any(len(v) > 1 for v in named.values()):
+                    raise ValueError("Named PMI component must be scalar")
+                components = {key: v[0] for key, v in named.items() if v}
+                values = list(components.values())
         sinr_source = m._row_text(row, "SINRSource") if field == "SINR_dB" else ""
         sinr_domain = m._row_text(row, "SINRMeasurementDomain") if field == "SINR_dB" else ""
         if sinr_source == "measured_csi_state_receiver_objective":
             sinr_domain = "csi_rs_selected_pmi_receiver_objective"
-        record = {**identity, "source_slot": measured_slot, "due_slot": m._row_float(row, "DueSlot"),
+        record = {**identity, "source_slot": source_slot, "due_slot": m._row_float(row, "DueSlot"),
+            "csi_reference_slot": reference_slot, "measurement_slot": None,
+            "measurement_available_slot": None, "timing_role": timing_role,
+            "source_slot_authority": authority, "measurement_identity": "", "snr_db": m._row_float(row, "SNR_dB"),
+            "resource_id": m._row_text(row, "ResourceID"),
             "delivered_slot": delivered_slot, "delivery_status": m._row_text(row, "DeliveryStatus"),
             "report_identity": m._row_text(row, "ReportIdentity"), "source_signal": m._row_text(row, "SourceSignal"),
             "measurement_source": m._row_text(row, "MeasurementSource"), "metric_field": field,
             "sinr_source": sinr_source, "sinr_measurement_domain": sinr_domain,
             "sinr_value_role": m._row_text(row, "SINRValueRole") if field == "SINR_dB" else "",
+            "sinr_value_status": m._row_text(row, "SINRValueStatus") if field == "SINR_dB" else "",
+            "decoded_csi_fields_json": m._row_text(row, "DecodedCSIFieldsJSON"),
+            "component_fields": json.dumps(list(components)),
             "reported_value_token": m._row_text(row, field), "component_values": json.dumps(values),
-            "value_status": "available" if values and measured_slot is not None else "unavailable_in_source"}
+            "value_status": "available" if values and plot_slot is not None else "unavailable_in_source"}
         rows.append(record)
-        if measured_slot is None:
+        if plot_slot is None:
             continue
-        for ci, value in enumerate(values):
-            suffix = f"[{ci}]" if len(values) > 1 else ""
-            label = f"{identity['direction']} U{identity['ue_index']} {field}{suffix}"
-            series[f"{label} measured"].append([measured_slot, value])
+        for component, value in components.items():
+            label = (f"{identity['direction']} U{identity['ue_index']} {component}"
+                     f" C{identity['cell_id']} SNR{record['snr_db']}")
+            series[f"{label} {timing_role}"].append([plot_slot, value])
             if delivered_slot is not None and _delivered(record["delivery_status"]):
-                if delivered_slot < measured_slot:
-                    raise ValueError(f"CSI delivery precedes measurement in {FEEDBACK} row {index}")
+                if delivered_slot < plot_slot:
+                    raise ValueError(f"CSI delivery precedes its source/reference in {FEEDBACK} row {index}")
                 series[f"{label} delivered"].append([delivered_slot, value])
-    return _finish(m, name, run_id, rows, series, "Runtime slot (measurement / delivery)",
-        "CSI scheduling SINR estimate (dB)" if field == "SINR_dB" else f"Reported {field} index",
-        "CSI reports from received reference signals and actual delivery events. Selected-PMI receiver-objective SINR is an estimated scheduling input, not raw CSI-RS SINR or a decoded PDSCH measurement. Pending/censored reports are not scheduler-delivered. PMI vector positions are not invented i1/i2 codebook labels.", [FEEDBACK])
+    sources = [FEEDBACK]
+    if field == "SINR_dB":
+        _, measurements = m._artifact_rows_by_path(existing, fetch, CSI_TRIALS)
+        sources.append(CSI_TRIALS)
+        for index, row in enumerate(measurements, 1):
+            identity = _identity(m, row, CSI_TRIALS, index)
+            measured_slot = m._row_float(row, "CSIMeasurementSlot", "Slot")
+            for metric, label, source_field, domain_field, status_field in (
+                ("SINR_dB", "selected-PMI objective", "SINRSource", "SINRMeasurementDomain", "SINRValueStatus"),
+                ("ReferenceMeasuredSINR_dB", "reference-RE SINR", "ReferenceMeasuredSINRSource",
+                 "ReferenceMeasuredSINRDomain", "ReferenceMeasuredSINRStatus"),
+            ):
+                value = m._row_float(row, metric)
+                if value is None or measured_slot is None:
+                    continue
+                metric_source = m._row_text(row, source_field)
+                if not metric_source:
+                    raise ValueError(f"CSI measurement {metric} has no source in row {index}")
+                record = {**identity, "source_slot": None, "due_slot": None, "csi_reference_slot": None,
+                    "measurement_slot": measured_slot, "measurement_available_slot": m._row_float(row, "ObservationDeliverySlot"),
+                    "timing_role": "UE CSI-RS measurement", "source_slot_authority": "executed_CSI_RS_observation",
+                    "measurement_identity": m._row_text(row, "CSIMeasurementID"), "snr_db": m._row_float(row, "SNR_dB"),
+                    "resource_id": m._row_text(row, "ResourceID"),
+                    "delivered_slot": None, "delivery_status": "not_a_received_feedback_payload",
+                    "report_identity": "", "source_signal": "CSI-RS", "measurement_source": m._row_text(row, "MeasurementSource"),
+                    "metric_field": metric, "sinr_source": metric_source,
+                    "sinr_measurement_domain": m._row_text(row, domain_field),
+                    "sinr_value_role": m._row_text(row, "SINRValueRole") if metric == "SINR_dB" else "reference_RE_measurement",
+                    "sinr_value_status": m._row_text(row, status_field), "decoded_csi_fields_json": "",
+                    "component_fields": json.dumps([metric]), "reported_value_token": "",
+                    "component_values": json.dumps([value]), "value_status": "available"}
+                rows.append(record)
+                scope = (f"DL U{identity['ue_index']} {label} C{identity['cell_id']}"
+                         f" SNR{record['snr_db']} resource={m._row_text(row, 'ResourceID')}")
+                series[scope].append([measured_slot, value])
+    return _finish(m, name, run_id, rows, series, "Runtime slot (UE observation / report reference / delivery)",
+        "CSI SINR (dB; distinct measurement domains)" if field == "SINR_dB" else f"Reported {field} index",
+        "UE CSI-RS observations, configured report-reference slots and gNB delivery events remain distinct. Selected-PMI objective and reference-RE SINR are different measurements; neither is inserted into decoded CSI payloads. Pending reports are not delivered. Named PMI fields are used only when explicitly exported.", sources)
 
 
 def _precoding(m, name, existing, fetch, run_id):
@@ -394,6 +453,65 @@ def _matrix_checks_svg(rows, max_rows):
     return ''.join(parts).encode('utf-8')
 
 
+def _scored_data_channel_nmse(m, row, existing, fetch):
+    """Reconcile the displayed value to independently scored pilot resources."""
+    path = m._row_text(row, "ChannelEstimateResourcesCSV").replace("\\", "/")
+    if not path:
+        return None
+    if not path.startswith("channel_estimation/csv/") or ".." in path.split("/"):
+        raise ValueError("Invalid channel NMSE resource path")
+    source = m._row_text(row, "NMSESource")
+    plane = m._row_text(row, "ChannelEstimateReferencePlane")
+    observation = m._row_text(row, "ChannelObservationID")
+    count = m._row_float(row, "ChannelEstimateComparedValues")
+    value = m._row_float(row, "NMSE_dB")
+    if m._row_text(row, "NMSE_dB").lower() == "-inf":
+        value = -math.inf
+    if (not source or not plane or not observation or count is None or count < 1
+            or count != int(count) or value is None
+            or m._row_flag(row, "ChannelEstimateReferenceUsedByReceiver") is not False):
+        raise ValueError("Incomplete independently scored channel NMSE identity")
+    artifact = existing.get(path)
+    if artifact is None:
+        raise ValueError("Missing scored channel NMSE resources")
+    payload = fetch(int(artifact["artifact_id"]))
+    if hashlib.sha256(payload).hexdigest() != m._row_text(row, "ChannelEstimateResourcesCSVSHA256"):
+        raise ValueError("Channel NMSE resource hash mismatch")
+    _, samples = m._artifact_rows_by_path(existing, fetch, path)
+    if len(samples) != int(count):
+        raise ValueError("Channel NMSE resource count mismatch")
+    error_energy = reference_energy = 0.0
+    coordinates = set()
+    for sample in samples:
+        if (m._row_text(sample, "ChannelObservationID") != observation
+                or m._row_text(sample, "ChannelReferenceSource") != source
+                or m._row_text(sample, "ChannelReferencePlane") != plane
+                or m._row_flag(sample, "ReferenceUsedByReceiver") is not False
+                or m._row_flag(sample, "GainOrPhaseFitted") is not False):
+            raise ValueError("Channel NMSE reference identity mismatch")
+        coordinate = tuple(m._row_float(sample, key) for key in
+            ("SubcarrierIndex0", "SymbolIndex0", "RxBranchIndex0", "ReferencePortIndex0"))
+        if any(v is None or v < 0 or int(v) != v for v in coordinate) or coordinate in coordinates:
+            raise ValueError("Invalid or repeated channel NMSE resource coordinate")
+        coordinates.add(coordinate)
+        values = [m._row_float(sample, key) for key in
+            ("HReal", "HImag", "ReferenceHReal", "ReferenceHImag", "ChannelErrorEnergy", "ReferenceChannelEnergy")]
+        if any(v is None for v in values):
+            raise ValueError("Missing channel NMSE complex values")
+        hr, hi, rr, ri, err, ref = values
+        if not math.isclose(err, (hr-rr)**2+(hi-ri)**2, rel_tol=1e-10, abs_tol=1e-25) or not math.isclose(
+                ref, rr**2+ri**2, rel_tol=1e-10, abs_tol=1e-25):
+            raise ValueError("Channel NMSE energy disagrees with retained complex channels")
+        error_energy += err
+        reference_energy += ref
+    if error_energy < 0 or reference_energy <= 0:
+        raise ValueError("Channel NMSE requires nonnegative error and positive reference energy")
+    independently_reduced = -math.inf if error_energy == 0 else 10*math.log10(error_energy/reference_energy)
+    if not math.isclose(value, independently_reduced, rel_tol=1e-10, abs_tol=1e-9):
+        raise ValueError("Channel NMSE value disagrees with independent pilot energies")
+    return value
+
+
 def _relationships(m, name, existing, fetch, run_id):
     if name == "CSI-RS pilot residual":
         paths = ("air_interface/csv/csi_rs_trials.csv",)
@@ -454,9 +572,13 @@ def _relationships(m, name, existing, fetch, run_id):
                 if (not reference or oracle_available is False or
                         any(token in reference.lower() for token in ("proxy", "fallback", "synthetic", "unavailable"))):
                     y = None  # Generic NMSE_dB can be a pilot fit or noise/gain proxy.
+                if m._row_text(row, "ChannelEstimateResourcesCSV"):
+                    y = _scored_data_channel_nmse(m, row, existing, fetch)
+                    y_field = "NMSE_dB_independently_reconciled_to_complex_pilot_resources"
             record.update({"x_value": x, "x_source_field": x_field, "x_source": x_source,
                 "metric_value": y, "metric_source_field": y_field,
-                "metric_reference_source": m._row_text(row, "NMSEReferenceSource") if name == "NMSE vs SNR / SINR" else "",
+                "metric_reference_source": m._row_text(row, "NMSEReferenceSource", "NMSESource") if name == "NMSE vs SNR / SINR" else "",
+                "metric_reference_plane": m._row_text(row, "ChannelEstimateReferencePlane") if name == "NMSE vs SNR / SINR" else "",
                 "mcs": m._row_text(row, "MCS", "MCSIndex"), "layers": m._row_text(row, "Layers"),
                 "format": m._row_text(row, "Format", "PUCCHFormat"),
                 "crc_pass": m._row_text(row, "CRCPass"),
@@ -476,15 +598,26 @@ def _relationships(m, name, existing, fetch, run_id):
             elif x is not None and y is not None:
                 limit_label = "[limited] " if is_sinr_axis and sinr_evidence["limited"] else ""
                 series[f"{limit_label}{record['direction']} U{record['ue_index']} {y_field}"].append([x, y])
+    linear_nmse_axis = name == "NMSE vs SNR / SINR" and any(r["metric_value"] == -math.inf for r in rows)
+    if linear_nmse_axis:
+        # Show an exact zero in linear units, retaining the original -Inf dB
+        # measurement in CSV. A finite dB floor would invent measurement data.
+        series = defaultdict(list)
+        for r in rows:
+            value = r["metric_value"]
+            r["plotted_nmse_linear"] = None if value is None else 10**(value/10)
+            if r["x_value"] is not None and value is not None:
+                series[f"{r['direction']} U{r['ue_index']} independent channel NMSE"].append(
+                    [r["x_value"], r["plotted_nmse_linear"]])
     notes = {"throughput vs SNR": "Scheduled TB bitrate and Delivered goodput are separate measured series. Actual noise-calibration SNR; no configured-SNR substitution or controlled sweep is claimed.",
              "CSI-RS pilot residual": "Measured residual on channel-estimation pilots. This is neither independent channel NMSE nor CSI-RS EVM.",
-             "NMSE vs SNR / SINR": "An explicit executed true-channel reference and TrueChannelNMSE_dB/OracleNMSE_dB are required. Pilot-fit residuals and noise/gain ratios are not channel-estimation NMSE."}
+             "NMSE vs SNR / SINR": "Independent channel-reference scoring, not pilot-fit residual or noise/gain. Data-channel values reconcile to hashed complex pilot resources. Reference plane retained in CSV; exact zero uses a linear plot axis."}
     note = notes.get(name, "Individual measured block-error outcomes (0/1), not a fitted BLER curve or an independent Monte Carlo sweep. MCS/rank/format retained per trial.")
     limited_count = sum(row.get("x_is_limited", False) and row["value_status"] == "available" for row in rows)
     limit_summary = [f"Limited SINR values: {limited_count}", "Limited values are not raw estimates"] if limited_count else []
     return _finish(m, name, run_id, rows, series,
         "Executed CSI-RS slot" if name == "CSI-RS pilot residual" else "Applied noise-calibration SNR (dB)" if name == "throughput vs SNR" else "Receiver SINR (dB); includes limited values" if limited_count else "Measured SINR (dB)",
-        "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "True-channel NMSE (dB)" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths), extra_summary=limit_summary)
+        "Scheduled TB bitrate / delivered goodput (Mbit/s)" if name == "throughput vs SNR" else "Pilot-fit residual (dB)" if name == "CSI-RS pilot residual" else "Channel NMSE (linear ratio)" if linear_nmse_axis else "Channel NMSE (dB); declared reference plane" if name == "NMSE vs SNR / SINR" else "Observed block error (0/1)", note, list(paths), extra_summary=limit_summary)
 
 
 def _csi_physical_power(m, name, existing, fetch, run_id):

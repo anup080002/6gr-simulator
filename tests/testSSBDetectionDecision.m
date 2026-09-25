@@ -5,8 +5,8 @@ alpha=.01; n=127;
 base=sixgr.phy.sync.normalizedCorrelationDecision(.5,n,1,1,alpha,0);
 assert(abs((1-base.Threshold^2)^(n-1)-alpha)<1e-14);
 many=sixgr.phy.sync.normalizedCorrelationDecision(.5,n,100,4,alpha,0);
-assert(many.Threshold>base.Threshold && ...
-    abs(400*(1-many.Threshold^2)^(n-1)-alpha)<1e-14);
+assert(many.Threshold<many.BranchUnionThreshold && ...
+    abs(100*gammainc(4*(n-1)*many.Threshold^2,4,'upper')-alpha)<1e-14);
 for invalid=[NaN Inf -1 1.1]
     decision=sixgr.phy.sync.normalizedCorrelationDecision(invalid,n,1,1,alpha,0);
     assert(~decision.Detected && ~decision.MetricValid);
@@ -31,5 +31,28 @@ assert(lower<alpha && upper>alpha, ...
     'Nominal alpha %.6g is outside the independent binomial interval [%.6g,%.6g].',alpha,lower,upper);
 fprintf('SSB_CORRELATION_NULL_PASS episodes=%d false_alarms=%d alpha=%g CI999=[%g,%g]\n', ...
     episodes,falseAlarms,alpha,lower,upper);
+% Independent projections with unequal branch powers and phases. This
+% tests the actual RMS and mean-amplitude statistics, not a pooled-energy
+% statistic whose null distribution would require equal branch variance.
+for branches=[2 4]
+    episodes=1000000;
+    gate=sixgr.phy.sync.normalizedCorrelationDecision(.5,n,1,branches,alpha,0);
+    hits=zeros(1,2);
+    for batch=1:100
+        rho=zeros(episodes/100,branches);
+        for branch=1:branches
+            x=(10^(-branch))*exp(1j*branch)*complex( ...
+                randn(stream,n,episodes/100),randn(stream,n,episodes/100));
+            rho(:,branch)=(abs(reference'*x)./sqrt(sum(abs(x).^2,1))).';
+        end
+        hits=hits+[nnz(sqrt(mean(rho.^2,2))>gate.Threshold), ...
+            nnz(mean(rho,2)>gate.Threshold)];
+    end
+    upper=betaincinv(.9995,hits+1,episodes-hits);
+    assert(all(upper<alpha), ...
+        'Independent multi-branch false-alarm upper bound exceeds target.');
+    fprintf('SSB_BRANCH_NULL_PASS branches=%d episodes=%d RMS_FA=%d mean_FA=%d upper999=[%g,%g]\n', ...
+        branches,episodes,hits,upper);
+end
 ok=true;
 end

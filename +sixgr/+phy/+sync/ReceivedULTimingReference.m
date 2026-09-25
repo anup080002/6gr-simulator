@@ -55,26 +55,40 @@ classdef ReceivedULTimingReference
             slot0=double(prepared.RequestBinding.Assignment.DueSlot)-1;
             [samples,evidence]=obj.alignObservation(cfg,observation,slot0);
         end
-        function [samples,evidence]=alignObservation(obj,cfg,observation,absoluteSlot0)
+        function [samples,evidence]=alignCompletedObservation(obj,cfg,observation,absoluteSlot0)
+            % A buffered receiver may use a completed pilot from this same
+            % slot. It may not use a later slot or samples beyond completion.
+            [samples,evidence]=obj.alignObservation(cfg,observation,absoluteSlot0,true);
+        end
+        function [samples,evidence]=alignObservation(obj,cfg,observation,absoluteSlot0,completed)
             % A gNB receive window exists even when the UE transmits nothing.
             % Its clock comes from the scheduled slot and a received pilot;
             % no prepared UE waveform, TA value or TX origin is consumed.
+            if nargin<5, completed=false; end
+            validateattributes(completed,{'logical'},{'scalar'});
             validateattributes(absoluteSlot0,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
             assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && isscalar(observation), ...
                 'sixgr:phy:sync:ULTimingObservationRequired','Supply a complete actual received sample buffer.');
             raw=observation.readComplete();
-            assert(isequaln(obj.Identity,localIdentity(cfg,observation.SampleRateHz)) && ...
+            targetIdentity=localIdentity(cfg,observation.SampleRateHz);
+            assert(isequaln(obj.Identity,targetIdentity) && ...
                 isequaln(obj.TAG,cfg.SharedULTimingContext), ...
                 'sixgr:phy:sync:ULTimingReferenceIdentityMismatch', ...
-                'A prior UL clock cannot cross UE, cell, carrier, BWP, sample clock or received TAG changes.');
-            assert(obj.AvailableAtSample<=observation.StartSample, ...
-                'sixgr:phy:sync:FutureULTimingReference','Use only pilot evidence available before this observation starts.');
+                ['A prior UL clock cannot cross UE, cell, carrier, BWP, sample clock or received TAG changes. ' ...
+                 'PriorIdentity=%s TargetIdentity=%s PriorTAG=%s TargetTAG=%s'], ...
+                jsonencode(obj.Identity),jsonencode(targetIdentity), ...
+                jsonencode(obj.TAG),jsonencode(cfg.SharedULTimingContext));
             maximum=sixgr.util.structGet(cfg,'phy.synchronization.maxReceivedULTimingAgeSlots',NaN);
             validateattributes(maximum,{'numeric'},{'scalar','finite','integer','nonnegative'});
             carrier=sixgr.phy.grid.makeCarrier(cfg);
             carrier.NFrame=floor(absoluteSlot0/double(carrier.SlotsPerFrame));
             carrier.NSlot=mod(absoluteSlot0,double(carrier.SlotsPerFrame));
             nominal=sixgr.phy.frame.slotStartSample(carrier,absoluteSlot0,obj.SampleRateHz);
+            sameSlot=completed && obj.NominalStartSample==nominal && ...
+                obj.AvailableAtSample<=observation.EndSampleExclusive;
+            assert(obj.AvailableAtSample<=observation.StartSample || sameSlot, ...
+                'sixgr:phy:sync:FutureULTimingReference', ...
+                'Require a prior clock, or an explicitly completed same-slot pilot within the buffered observation deadline.');
             slotSamples=obj.SampleRateHz*1e-3*15/double(carrier.SubcarrierSpacing);
             age=(nominal-obj.NominalStartSample)/slotSamples;
             assert(age>=0 && age<=maximum,'sixgr:phy:sync:StaleULTimingReference', ...
@@ -94,6 +108,12 @@ classdef ReceivedULTimingReference
                 'ReferenceArrivalOffsetFromNominalSamples',obj.ArrivalOffsetFromNominalSamples, ...
                 'ReferenceAgeSlots',age,'InputSampleCount',size(raw,1),'DemodulatedSampleCount',count, ...
                 'OracleTimingUsed',false,'ReceiverZeroPaddingUsed',false);
+            if sameSlot
+                evidence.TimingOffsetSamples=offset;
+                evidence.TimingSource="completed_same_slot_received_UL_pilot_alignment";
+                evidence.TimingValueRole="measured_same_slot_pilot_applied_to_buffered_observation";
+                evidence.ReceiverTimingAvailableAtSample=obj.AvailableAtSample;
+            end
         end
     end
 end

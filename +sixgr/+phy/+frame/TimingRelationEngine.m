@@ -603,6 +603,24 @@ aliases={"PRBSet","Modulation",["NumLayers","Layers"],"RNTI", ...
     ["NumAntennaPorts","NumLogicalPorts","PortCount"],["TPMI","PMI"]};
 for k=1:numel(keys)
     value=localOptional(grant,aliases{k},[]);
+    if keys{k}=="NumAntennaPorts"
+        % Replay schemas may retain unknown spatial metadata as NaN. It is
+        % not an antenna-port override: passing it to the allocator drops
+        % the installed codebook dimension and leaves the toolbox default.
+        % Consume the first known grant alias, otherwise retain cfg ports.
+        value=[];
+        for alias=aliases{k}
+            candidate=localOptional(grant,alias,[]);
+            if isempty(candidate) || (isnumeric(candidate) && ...
+                    isscalar(candidate) && isnan(candidate))
+                continue;
+            end
+            validateattributes(candidate,{'numeric'}, ...
+                {'scalar','real','finite','integer','positive'});
+            value=candidate;
+            break;
+        end
+    end
     if ~isempty(value), args=[args,{keys{k},value}]; end %#ok<AGROW>
 end
 prbs=localOptional(grant,"PRBSet",[]);

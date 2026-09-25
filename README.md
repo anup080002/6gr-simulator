@@ -1,5 +1,8 @@
 # SixGR Foundation v2
 
+Current development snapshot: [25 September consolidation and known failures](docs/lls/main_consolidation_20260925.md).
+This checkpoint is not acceptance of the eight-point sweep or full shared-feedback 400 MHz run.
+
 This repository is a MATLAB-based 5G/6G simulator with three closely related uses:
 
 1. link-level PHY execution and diagnostics,
@@ -1328,6 +1331,34 @@ If that still fails:
 - check MATLAB version,
 - check UI support in your installation,
 - try CLI runners first to verify core simulator health.
+
+## Shared eight-point sweep outputs
+
+For a waveform-bundle SNR sweep, use the **parent run folder**, not a single
+`sweeps/<point>` folder, for comparisons across all configured SNR points:
+
+- `reports/csv/sweep_comparison_manifest.csv` maps each source table/plot to its
+  shared output and lists missing completed points separately from unfinished points.
+- `reports/csv/sweep_combined__*.csv` contains exact source rows from completed
+  points, with explicit point, configured SNR, source path and completion status.
+- `reports/image/sweep_combined__*.png` contains SNR-labeled original plot panels;
+  unavailable or unfinished points are identified explicitly, not replaced by curves.
+- `reports/csv/sweep_link_comparison.csv` and
+  `reports/image/sweep_link_comparison.png` provide common-SNR-axis comparisons.
+  Mean per-attempt goodput is **not** whole-run wall-clock throughput.
+
+The WebGUI's realtime **SNR sweep progress** panel lists all points, their slot
+progress, passed/failed completion, ongoing finalization and pending execution.
+These are persisted states, not a guarantee that the MATLAB process is still alive.
+Per-point raw evidence remains intact for diagnosis. Publication of a shared file
+does not turn a failed point into a passing point or fill absent measurements with zero.
+
+The runner exports shared results at sweep completion. To refresh shared files as
+points finish in an already-running sweep, run this separately (it does not start MATLAB):
+
+```cmd
+python scripts\export_lls_sweep.py --run-folder "<parent-run-folder>" --watch
+```
 
 ## Detailed Documentation Pack
 

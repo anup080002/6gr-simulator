@@ -25,6 +25,16 @@ assert(actual.EffectiveGridNoiseInterferenceVariance==0.25 && ...
 assert(isequaln(rx,original),'Stage publication must not change receiver evidence.');
 assert(~isfield(actual,'SuccessFlag') && ~isfield(actual,'CRCPass') && ...
     ~isfield(actual,'UCIExpectedBitVector'),'Do not invent a transmitted reference or pass.');
+% A finite zero detector metric can be valid evidence of DTX. Preserve the
+% actual detector validity flag, not an inferred decode-success flag.
+rx.DetectionMetric=0; rx.DetectionMetricValid=true; rx.DTX=true;
+zeroMetric=sixgr.link.pucchReceiverStageEvidence(rx);
+assert(zeroMetric.DetectionMetricValid && rx.DTX && ...
+    ~isfield(zeroMetric,'SuccessFlag'));
+rx.DetectionMetric=NaN; rx.DetectionMetricValid=false;
+invalidMetric=sixgr.link.pucchReceiverStageEvidence(rx);
+assert(~invalidMetric.DetectionMetricValid);
+rx=original;
 % SR acquisition selects and applies a received-sequence timing candidate;
 % reporting that application does not assert detection or timing lock.
 rx.ReceiveTiming.TimingSource="received_configured_SR_sequence_bounded_search";

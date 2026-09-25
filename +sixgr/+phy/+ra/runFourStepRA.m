@@ -46,6 +46,7 @@ p.addParameter("StopAfterStage", "complete_attempt", @(x)(ischar(x) || isstring(
 p.addParameter("Continuation", struct(), @(x)isstruct(x) && isscalar(x));
 p.addParameter("StageAction", "execute", @(x)(ischar(x) || isstring(x)) && isscalar(string(x)));
 p.addParameter("RARObservationSlot", NaN, @(x)isnumeric(x) && isscalar(x));
+p.addParameter("ContentionObservationSlot", NaN, @(x)isnumeric(x) && isscalar(x));
 p.addParameter("EventTicks", int64(0), @(x)isa(x,'int64') && isscalar(x));
 p.addParameter("ReceiveThroughTime_s", Inf, @(x)isnumeric(x) && isreal(x) && ...
     isscalar(x) && ~isnan(x) && x >= 0);
@@ -54,8 +55,13 @@ opt = p.Results;
 prepareOnly = strcmpi(string(opt.StageAction), "prepare_next_stage");
 receiveRAR = strcmpi(string(opt.StageAction), "receive_rar_observation");
 expireRAR = strcmpi(string(opt.StageAction), "expire_rar_window");
+receiveContention = strcmpi(string(opt.StageAction), "receive_contention_observation");
+startContention = strcmpi(string(opt.StageAction), "start_contention_timer");
+expireContention = strcmpi(string(opt.StageAction), "expire_contention_timer");
+contentionSlot=opt.ContentionObservationSlot;
 rarObservationSlot=opt.RARObservationSlot; eventTicks=opt.EventTicks;
-if ~prepareOnly && ~receiveRAR && ~expireRAR && ~strcmpi(string(opt.StageAction), "execute")
+if ~prepareOnly && ~receiveRAR && ~expireRAR && ~receiveContention && ...
+        ~startContention && ~expireContention && ~strcmpi(string(opt.StageAction), "execute")
     error("sixgr:phy:ra:InvalidRAStageAction", "Unsupported RA stage action.");
 end
 continuation = struct();
@@ -97,7 +103,7 @@ if ~isempty(fieldnames(opt.Continuation))
     end
     dynamicOptions = ["Continuation", "StopAfterStage", "StageAction", "InitialDLChannelState", ...
         "InitialULChannelState", "RuntimeStageWaveforms", "RuntimeSlot", "ReceiveThroughTime_s", ...
-        "RARObservationSlot", "EventTicks"];
+        "RARObservationSlot", "ContentionObservationSlot", "EventTicks"];
     for name = setdiff(string(p.Parameters), [string(p.UsingDefaults), dynamicOptions])
         if ~isequaln(opt.(name), saved.Options.(name))
             error("sixgr:phy:ra:RAContinuationOptionChanged", ...
@@ -150,6 +156,8 @@ if ~isempty(fieldnames(opt.Continuation))
     msg3Tx = saved.Msg3Tx; msg3Rx = saved.Msg3Rx; msg3Decoded = saved.Msg3Decoded;
     ueIdentity = saved.UEIdentity; msg4Tx = saved.Msg4Tx;
     rarReceiver=saved.RARReceiver; rarPreparedTransmission=saved.RARPreparedTransmission;
+    contentionReceiver=sixgr.util.structGet(saved,'ContentionReceiver',[]);
+    contentionPreparedTransmission=sixgr.util.structGet(saved,'ContentionPreparedTransmission',struct());
     if saved.ResumePhase == "prepared"
         reusePreparedStage = nextStage;
         prepared = saved.PreparedContext;
@@ -279,6 +287,7 @@ pdcchInfo = struct(); pdschRx2 = struct(); rarRx = struct(); grantRx = struct();
 msg3Tx = struct(); msg3Rx = struct(); msg3Decoded = struct();
 ueIdentity = ""; msg4Tx = struct();
 rarReceiver=[]; rarPreparedTransmission=struct();
+contentionReceiver=[]; contentionPreparedTransmission=struct();
 if string(runtime.Mode)=="shared_physical_waveform_stream"
     rarReceiver=sixgr.phy.ra.RARReceiveWindow(cfg,raCfg);
 end
@@ -289,6 +298,65 @@ result.NextRuntimeStageSlot = NaN;
 result.PreparedTransmission = struct();
 
 try
+    if startContention || expireContention || receiveContention
+        assert(isa(contentionReceiver,'sixgr.phy.ra.Msg4ReceiveWindow'), ...
+            'sixgr:phy:ra:MissingUEContentionReceiver','Msg3 must arm the independent UE contention receiver.');
+        if startContention
+            contentionReceiver=contentionReceiver.start(eventTicks);
+        elseif expireContention
+            contentionReceiver=contentionReceiver.expire(eventTicks);
+        else
+            physical=runtime.StageWaveforms.ContentionPhysicalExecution;
+            [rawPost,~,~,~,observation]=sixgr.truth.sharedObservationEvidence(physical.Planes);
+            refreshed=localApplyRuntimeReceiverSyncContext(cfg,runtime,"DL");
+            cfgRx=cfg; cfgRx.lls6g.receiverSync=refreshed.lls6g.receiverSync;
+            [contentionReceiver,receivedContention]=contentionReceiver.receive(contentionSlot,observation,cfgRx);
+            if ~isempty(fieldnames(contentionPreparedTransmission)) && ...
+                    contentionPreparedTransmission.AbsoluteSlot==contentionSlot
+                runtime.StageWaveforms.Msg4RxWaveform=rawPost;
+                runtime.StageWaveforms.Msg4PhysicalExecution=struct('Planes',physical.Planes,'Prepared',contentionPreparedTransmission);
+                [~,runtime,stageInfo]=localResolveStageRxWaveform("Msg4","DL",msg4Tx.Waveform,cfg,raCfg,msg4Tx,runtime);
+                result=localAppendRuntimeStage(result,stageInfo,runtime);
+                % Keep failed DCI/TB measurements too; waiting for the UE
+                % timer must not erase the physically executed Msg4 trial.
+                result=localApplyMsg4(result,raCfg,msg3Tx.Msg3, ...
+                    receivedContention.PDCCH,receivedContention.PDSCH,msg4Tx, ...
+                    receivedContention.Message,msg4Tx.Msg4);
+            end
+        end
+        result.ContentionReceiver=contentionReceiver;
+        result.ContentionTimerStartTicks=double(contentionReceiver.Window.StartTicks);
+        result.ContentionTimerExpiryTicksExclusive=double(contentionReceiver.Window.ExpiryTicksExclusive);
+        result.ContentionMonitoringObservations=contentionReceiver.Observations;
+        result.UEContentionEvents=contentionReceiver.MAC.Events;
+        count=height(result.UEContentionEvents);
+        result.UEContentionEvents.RunId=repmat(string(raCfg.RunId),count,1);
+        result.UEContentionEvents.UEId=repmat(double(raCfg.UEId),count,1);
+        result.UEContentionEvents.AttemptId=repmat(double(raCfg.AttemptId),count,1);
+        result.UEContentionEvents.TemporaryCRNTI=repmat(double(raCfg.TempCRNTI),count,1);
+        if any(contentionReceiver.MAC.Status==["armed","waiting"])
+            % Preserve any already prepared gNB stage; monitoring neither
+            % regenerates a waveform nor borrows its transmitted identity.
+            result.RuntimeExecutionState=saved.Result.RuntimeExecutionState;
+            result.NextRuntimeStage=saved.Result.NextRuntimeStage;
+            result.NextRuntimeStageSlot=saved.Result.NextRuntimeStageSlot;
+            result.PreparedTransmission=saved.Result.PreparedTransmission;
+            continuation=saved; continuation.Result=result; continuation.Options=opt;
+            continuation.Runtime=runtime; continuation.ContentionReceiver=contentionReceiver;
+            return;
+        elseif any(contentionReceiver.MAC.Status==["expired","identity_mismatch"])
+            result=localFail(result,"ue_contention_"+contentionReceiver.MAC.Status,"MSG4_CONTENTION_RESOLUTION_RX");
+            result=localFinalize(result,raCfg,events,timerRows,oracleRows,msg1Tx,det, ...
+                msg2Tx,pdcchInfo,pdschRx2,rarRx,msg3Tx,msg3Rx,msg4Tx,opt);
+            return;
+        end
+        msg4PdcchRx=receivedContention.PDCCH; msg4PdschRx=receivedContention.PDSCH;
+        msg4Decoded=receivedContention.Message;
+        raCfg.Msg4Slot=contentionSlot;
+        raCfg.SetupCompleteSlot=contentionSlot+raCfg.TimingSchedule.SetupCompleteK2Slots;
+        msg4TxPayload=sixgr.util.structGet(msg4Tx,'Msg4',struct('PayloadHex',""));
+        nextStage=4;
+    end
     if receiveRAR || expireRAR
         if nextStage~=2 || ~isa(rarReceiver,'sixgr.phy.ra.RARReceiveWindow')
             error('sixgr:phy:ra:RARReceiverNotWaiting','Only a shared-stream UE waiting for Msg2 accepts a RAR event.');
@@ -563,6 +631,10 @@ try
             ~logical(sixgr.util.structGet( ...
             msg3Decoded, "RRCSetupRequestPresent", false))
         result = localFail(result, "msg3_pusch_crc_fail", "MSG3_PUSCH_RX");
+        if string(runtime.Mode)=="shared_physical_waveform_stream"
+            [result,continuation]=captureContinuation(4);
+            return; % gNB failure is not an observation available to the UE.
+        end
         result = localFinalize(result, raCfg, events, timerRows, oracleRows, msg1Tx, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, struct(), opt);
         return;
     end
@@ -576,6 +648,12 @@ try
     end
 
     if nextStage <= 4
+    if ~receiveContention
+    if string(runtime.Mode)=="shared_physical_waveform_stream" && ...
+            ~logical(sixgr.util.structGet(msg3Rx,'Ok',false))
+        [result,continuation]=captureContinuation(4);
+        return; % UE still monitors; no gNB Msg4 is fabricated.
+    end
     if reusePreparedStage ~= 4
     msg4Identity = msg3Decoded.ContentionIdentity;
     if faultMode == "msg4_identity_mismatch"
@@ -622,7 +700,8 @@ try
     [msg4PdcchRx, msg4PdschRx, msg4Decoded] = sixgr.phy.ra.recoverMsg4Waveform(msg4RxWave, cfgMsg4Rx, raCfg, msg4Sched, msg4Tx);
     localProgress(opt, "msg4_rx_done", sprintf("pdcch=%d pdsch=%d", ...
         logical(sixgr.util.structGet(msg4PdcchRx, "Ok", false)), logical(sixgr.util.structGet(msg4PdschRx, "Ok", false))));
-    result = localApplyMsg4(result, raCfg, msg3Decoded, msg4PdcchRx, msg4PdschRx, msg4Tx, msg4Decoded, msg4TxPayload);
+    end
+    result = localApplyMsg4(result, raCfg, msg3Tx.Msg3, msg4PdcchRx, msg4PdschRx, msg4Tx, msg4Decoded, msg4TxPayload);
     rrcSetupDecoded = ~logical(raCfg.RequireRRCSetupComplete) || ...
         (logical(sixgr.util.structGet( ...
         msg4Decoded, "RRCSetupPresent", false)) && ...
@@ -913,10 +992,25 @@ end
                         runtime.ULChannelState.ChannelPadSamples;
                 end
                 if next==2, rarPreparedTransmission=pending.PreparedTransmission; end
+                if next==3 && isempty(contentionReceiver)
+                    contentionReceiver=sixgr.phy.ra.Msg4ReceiveWindow(cfg,raCfg,grantRx, ...
+                        msg3Tx.Msg3.ContentionIdentity,physicalTiming);
+                    % Legacy slot summaries are bounds, not timer clocks.
+                    % The exact UE timer starts after Msg3's last symbol,
+                    % including its received-clock/TA transmit displacement.
+                    slotTicks=idivide(sixgr.phy.frame.AbsoluteTime.TicksPerFrame, ...
+                        int64(contentionReceiver.Window.Numerology.SlotsPerFrame));
+                    raTiming.ContentionExpirySlotExclusive=double(idivide( ...
+                        contentionReceiver.Window.ExpiryTicksExclusive,slotTicks,'ceil'));
+                    pending.ContentionResolutionExpirySlotExclusive=raTiming.ContentionExpirySlotExclusive;
+                elseif next==4
+                    contentionPreparedTransmission=pending.PreparedTransmission;
+                end
             end
         end
         checkpoint = struct("ContractVersion", "ra_stage_continuation_v4", ...
             "RARReceiver",rarReceiver,"RARPreparedTransmission",rarPreparedTransmission, ...
+            "ContentionReceiver",contentionReceiver,"ContentionPreparedTransmission",contentionPreparedTransmission, ...
             "ResumePhase", phase, "PreparedContext", preparedContext, ...
             "InputConfig", inputConfig, "Config", cfg, "Options", opt, "NextStage", next, ...
             "Result", pending, "RAConfig", raCfg, "Timing", raTiming, "Runtime", runtime, ...
@@ -1108,6 +1202,10 @@ result.Events = sixgr.mac.ra.RAEventLog(events);
 result.TimerEvents = struct2table(timerRows(:), "AsArray", true);
 result.OracleGuard = struct2table(oracleRows(:), "AsArray", true);
 result.ArtifactTables = localBuildArtifactTables(result, raCfg, det, msg2Tx, pdcchInfo, pdschRx2, rarRx, msg3Tx, msg3Rx, msg4Tx);
+if isfield(result,'ContentionMonitoringObservations')
+    result.ArtifactTables.contention_monitoring_observations=result.ContentionMonitoringObservations;
+    result.ArtifactTables.ue_contention_events=result.UEContentionEvents;
+end
 result.Msg1Tx = msg1Tx;
 result.ObservedREAllocationTable = localMsg1ObservedAllocation(msg1Tx, raCfg, result);
 result.Msg2Tx = msg2Tx;
@@ -1214,6 +1312,7 @@ fields = { ...
     "RAResponseWindowEndSlot", double(raCfg.RARMonitoringWindow.LastSlot), ...
     "ContentionResolutionExpirySlotExclusive", ...
         double(raCfg.Msg3Slot + raCfg.RAContentionResolutionTimerSlots), ...
+    "ContentionTimerStartTicks", NaN, "ContentionTimerExpiryTicksExclusive", NaN, ...
     "RARWindowExpired", false, "Msg2PDCCHCandidatesAttempted", 0, "Msg2RARNTIDetected", false, ...
     "Msg2DCICrcPass", false, "Msg2DCIFormat", "1_0", "Msg2PDSCHCrcPass", false, ...
     "Msg2PDSCHNumLayers", NaN, "Msg2PDSCHConfiguredNumPorts", NaN, ...
@@ -3134,6 +3233,7 @@ end
 
 function row = localAttemptRow(r)
 names = ["RunId","ScenarioName","CellId","UEId","AttemptId","RAProcedureType","RABindingSource", ...
+    "ContentionTimerStartTicks","ContentionTimerExpiryTicksExclusive","ContentionResolutionExpirySlotExclusive", ...
     "SIB1RACHBindingApplied","SIB1RACHBindingSource","SIB1RACHPayloadHash","SIB1RACHTreeHash", ...
     "RACHConfigHash","PRACHOccasionID","PreambleIndexTx","PreambleIndexDetected","PreambleDetected","CollisionDetected", ...
     "PreambleDetectionThresholdMode","PreambleDetectionThresholdSource", ...

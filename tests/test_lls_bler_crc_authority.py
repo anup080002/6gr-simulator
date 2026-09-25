@@ -162,4 +162,6 @@ def test_configured_sweep_ber_uses_compared_bits_not_mean_trial_ber():
     assert len(actual) == 1 and float(actual[0]["BER"]) == 0.04
     assert float(actual[0]["BitsCompared"]) == 1000
     assert float(actual[0]["BitErrors"]) == 40
-    assert result["source_row_count"] == 2
+    assert result["source_row_count"] == 3
+    assert int(actual[0]["ObservedTrialCount"]) == 2
+    assert int(actual[0]["UnpairedTrialCount"]) == 1

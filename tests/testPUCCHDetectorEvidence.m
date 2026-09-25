@@ -54,15 +54,17 @@ count=0;
 % observation must not rescue an invalid required correlation metric.
 for format=0:1
     for k=1:numel(invalidMetrics)
-        metric=sixgr.phy.pucch.PUCCHDetector.selectMetric(format,false,invalidMetrics{k},99);
+        metric=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+            format,false,invalidMetrics{k},99,1);
         decision=sixgr.phy.pucch.PUCCHDetector.decide(format,metric,0,int8(1));
         assert(decision.DTX && ~decision.DetectionMetricValid);
         count=count+1;
     end
 end
-for format=0:4
+for format=0:1
     for energyRatio=[invalidMetrics {-1}]
-        metric=sixgr.phy.pucch.PUCCHDetector.selectMetric(format,false,1,energyRatio{1});
+        metric=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+            format,false,1,energyRatio{1},1);
         decision=sixgr.phy.pucch.PUCCHDetector.decide(format,metric,0,int8(1));
         assert(decision.DTX && ~decision.DetectionMetricValid);
         count=count+1;
@@ -71,7 +73,8 @@ for format=0:4
         for sequenceMetric=[0 .2 .5 1]
             expected=max(0,(ratio-1)/(ratio+1));
             if format<=1, expected=min(sequenceMetric,expected); end
-            metric=sixgr.phy.pucch.PUCCHDetector.selectMetric(format,false,sequenceMetric,ratio);
+            metric=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+                format,false,sequenceMetric,ratio,1);
             assert(isequal(metric,expected),'Finite-evidence selection must remain unchanged.');
             count=count+1;
         end
@@ -79,17 +82,33 @@ for format=0:4
 end
 % Noncoherent Format 0 does not consume noise/energy as evidence.
 for sequenceMetric=[invalidMetrics {0,.2,1}]
-    metric=sixgr.phy.pucch.PUCCHDetector.selectMetric(0,true,sequenceMetric{1},NaN);
+    metric=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+        0,true,sequenceMetric{1},NaN,1);
     assert(isequaln(metric,sequenceMetric{1}));
     count=count+1;
 end
-% Long-format sequence metrics are not substituted for the existing energy
-% policy by this defect repair; policy qualification is a separate gate.
+% Formats 2--4 with 3--11 bits must use the toolbox normalized correlation
+% statistic and must never be rescued by a strong energy observation.
 for format=2:4
-    metric=sixgr.phy.pucch.PUCCHDetector.selectMetric(format,false,NaN,9);
-    assert(metric==.8);
+    for payloadBits=3:11
+        [metric,source]=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+            format,false,.37,NaN,payloadBits);
+        assert(metric==.37 && source=="toolbox_normalized_sequence_correlation");
+        metric=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+            format,false,NaN,99,payloadBits);
+        assert(isnan(metric),'Energy must not rescue missing short-UCI correlation evidence.');
+        count=count+2;
+    end
+    % At 12 bits and above, nrPUCCHDecode does not define a correlation
+    % metric; CRC validates content and energy provides presence evidence.
+    [metric,source]=sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+        format,false,0,9,12);
+    assert(metric==.8 && source=="normalized_excess_energy_crc_aided");
     count=count+1;
 end
+localReject(@()sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+    2,false,.5,2,-1),'sixgr:phy:pucch:InvalidDetectorPayloadBitCount');
+count=count+1;
 end
 
 function localReject(action,id)

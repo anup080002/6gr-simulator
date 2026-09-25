@@ -14,8 +14,13 @@ args={'TransportBlockBits',bits};
 if isfield(allocation,'ResearchTransport')
     args=[args {'ResearchTransport',allocation.ResearchTransport}];
 end
-if ~isempty(uci) && uci.hasPayload()
-    args=[args {'UCIPayload',uci,'InitialIMCSPerCodeword',assignment.MCS}];
+if ~isempty(uci)
+    % Zero wire bits still carry the received Type-2 DAI procedure identity.
+    % PUSCH_Tx decides whether coding is needed; do not erase that binding.
+    args=[args {'UCIPayload',uci}];
+    if uci.hasPayload()
+        args=[args {'InitialIMCSPerCodeword',assignment.MCS}];
+    end
 end
 [tx,info]=sixgr.phy.ul.PUSCH_Tx(cfg,args{:});
 assert(tx.PrecodeInfo.AuthoritativeDCIDecisionUsed && ...

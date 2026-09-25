@@ -60,6 +60,15 @@ elseif component == "pucch"
     % reception or allow it alone to qualify the PUCCH component.
     strictOk = all(genericOk) && all(identityOk) && all(attemptOk) && ...
         any(rowOk) && coverageOk;
+elseif component == "sib1"
+    % A blind SSB/Type-0 search retains every physical beam candidate and
+    % later serving-SSB tracking occasion.  Alternate candidates may miss
+    % while one candidate decodes MIB/SIB1 completely.  Those receiver
+    % outcomes are performance evidence, not malformed rows.  Qualify SIB1
+    % from at least one complete decode per required UE while still
+    % requiring every retained row to be truth-eligible and identity-bound.
+    strictOk = all(genericOk) && all(identityOk) && ...
+        any(rowOk) && coverageOk;
 else
     strictOk = any(rowOk) && all(rowOk) && coverageOk;
 end
@@ -73,7 +82,7 @@ elseif component == "prach" && ~all(attemptOk)
     failure = "prach_row_not_same_chain_four_step_ra_attempt";
 elseif component == "pucch" && ~all(attemptOk)
     failure = "component_receiver_or_causal_chain_failure";
-elseif ~any(component == ["prach","pucch"]) && ~all(componentOk)
+elseif ~any(component == ["prach","pucch","sib1"]) && ~all(componentOk)
     failure = "component_receiver_or_causal_chain_failure";
 elseif ~coverageOk
     if component == "prach"
