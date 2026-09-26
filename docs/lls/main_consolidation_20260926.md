@@ -506,3 +506,72 @@ Generated artifacts remain local, excluded from GitHub. The physical instrument
 capability remains UNKNOWN. Remaining source integration requires the old
 sweep to finish or explicit approval to stop it; end-to-end qualification is
 still pending afterward.
+
+## Shared-integration v11 preservation checkpoint
+
+Starting main commit: `eb9e84da65b59a75fd3d36d4a2eb6b3311a6b513`.
+One local delivery branch and one Git worktree remain: `main`.
+The older sweep (engine 13768) still reads main; the newer 0 dB execution
+(engine 15484) reads `sixgr_clock_repair_20260926_014701` under local Temp.
+Permission to stop them has been requested, not assumed. Neither runtime
+was changed by this checkpoint. **The runtime merge remains incomplete.**
+
+The standalone [v11 patch](pending_receiver_shared_integration_v11_20260926.patch)
+preserves 45 source/config/test files: 24 existing-file changes and 21 new
+files. SHA-256:
+`7a9139e7bdcd61831edeef1bd9549d4f89fbc55948d8ccd2761669c289812420`.
+Forward applicability against main and reverse applicability against the
+candidate both pass. This is a complete alternative to v10 and earlier
+pending receiver/shared-integration patches, not an incremental patch to
+stack on top of them. Generated artifacts and the snapshot's older README
+are not imported into main.
+
+The source inventory compared 5,516 tracked paths and found exactly 24
+changed tracked files, all covered. The source-directory inventory found
+21 new files, also all covered. All 41 source hashes in the running candidate's
+launch receipt remain unchanged. The four unwired inventory/audit files
+are additional preserved development, not part of that executed revision.
+
+Since v10 preservation, the candidate now calls
+`sixgr.link.bindCSIReportMeasurementAudit` from `runWaveformLinkBundle`.
+The audit distinguishes actual UE measurement slots from configured gNB CSI
+reference slots without feeding transmitter payload state into reception.
+The shared-CSI timing fixture now derives its operating point from its
+configuration instead of pairing physical 60 dB with runtime 12 dB.
+Noise calibration guards remain strict. Nine focused checks passed before
+the integrated 0 dB execution started. The retained earlier 0 dB CSI data
+gave seven exact report/measurement matches and five unassociated measurement
+rows; unassociated rows were not turned into fabricated reports.
+
+Four further files are preserved but **not wired into production**:
+
+- `+sixgr/+mimo/buildAppliedPrecoderInventory.m`
+- `tests/testAppliedPrecoderInventory.m`
+- `tools/applied_precoder_inventory_audit.py`
+- `tests/test_applied_precoder_inventory_audit.py`
+
+Their purpose is to preserve executed matrix identity and digest domain,
+instead of hashing a beam label and calling it a weight-vector identity.
+The ten Python audit tests pass. MATLAB verification, runtime exporter wiring
+and the actual SSB/CSI candidate-beam sweep remain pending. Their inclusion
+does not claim that the running scenario has this export repair.
+
+Evidence retained locally, outside Git:
+
+- `logs/receiver_clock_candidate_20260926/v10b_csi_joint_pdcch_0db.log`
+- `logs/receiver_clock_candidate_20260926/v10b_csi_joint_pdcch_0db_source_receipt.json`
+- `logs/receiver_clock_candidate_20260926/retained_0db_weight_channel_numeric_audit.json`
+
+The active candidate run's results are under its **Temp snapshot** at
+`results/lls/lls_tdd_5mhz_rank2_4tx2rx_awgn_0db/5mhz_4tx2rx_0db_v10b_joint_pdcch_csi_audit_20260926`.
+The runner redirected the attempted external results root to its owning
+repository. Preserve that folder; copy the completed run into main/results
+only after termination, retaining its source receipt and original evidence.
+It is not yet an accepted run.
+
+The README retains exact Windows CMD generation, recorded WebGUI and Keysight
+handoff instructions for **400 MHz bandwidth at 7 GHz**, not 4 GHz. The sealed
+`20260925_v1` package is not modified or qualified by this source checkpoint.
+Hardware capability remains UNKNOWN. Generated IQ/results/logs and both
+recovery stashes are preserved; a GitHub clone does not contain those ignored
+artifacts. No MATLAB process or `testAll` was started and nothing was deleted.
