@@ -5,23 +5,25 @@ launchers and development patches are versioned; generated results, logs and
 instrument IQ remain separate local artifacts. No result or recovery stash is
 removed by source consolidation.
 
-Current status: [26 September consolidation record](docs/lls/main_consolidation_20260926.md#shared-integration-v7-preservation-checkpoint).
+Current status: [26 September consolidation record](docs/lls/main_consolidation_20260926.md#shared-integration-v8-preservation-checkpoint).
 
 | Item | Verified scope and remaining limit |
 |---|---|
 | 400 MHz / 7 GHz rank-2 Keysight package | Digital export/demo package exists. Not a 4 GHz carrier test; not a full physical-control/shared-feedback scenario. Hardware capability remains UNKNOWN. |
 | Installed HARQ probe repair | 12 focused DL/UL cases passed for configured 2x2 and 4x2 AWGN spatial channels. |
 | Earlier isolated receiver candidates | v4 batches passed 15/15 and 20/20 guards; v5 passed 16/16. These results apply to those exact candidate revisions, not to unchanged main. |
-| v6 shared-receiver candidate | Latest nine-test batch stopped after 4 passed, 1 failed and 4 not started. The shared producer-present/removed/absent test passed; the legacy independent-receiver guard failed on missing shared-execution metadata. |
-| v7 pending receiver changes | All 18 changed/new files are preserved in a standalone patch, including the subsequent compatibility correction and receive-only noise audit. Those latest edits are not runtime-verified or installed. |
+| Receiver compatibility and standalone SR | The subsequent candidate batch passed 11/11 focused tests, including actual standalone-SR reception, receiver DM-RS-count evidence and Type-2/shared feedback guards. This does not qualify the full scenario. |
+| v8 pending receiver changes | All 25 changed/new files are preserved in a standalone patch. It includes the receiver fixes, versioned post-decode noise audit and test registrations. Broader checks against the combined source are running; main's receiver is not yet updated. |
 | Full acceptance | Eight-point 5 MHz sweep, detector qualification and full-control 400 MHz acceptance remain open. |
 
 The older sweep is still using main receiver files. They have not been replaced
-under that execution. The [v7 patch](docs/lls/pending_receiver_shared_integration_v7_20260926.patch)
-supersedes the incremental receiver patches for future integration; **do not
-stack them**. It first needs focused validation and a safe stop/completion of
-the old sweep. Preserving edits in Git is not the same as installing or
-qualifying them. `testAll` was not launched for this checkpoint.
+under that execution. The [v8 patch](docs/lls/pending_receiver_shared_integration_v8_20260926.patch)
+supersedes v6/v7 and the incremental receiver patches for future integration;
+**do not stack them**. Main's newer HARQ spatial repair is already retained in
+the validation snapshot. Integration still needs completed final-source checks
+and a safe stop/completion of the old sweep. Preserving edits in Git is not the
+same as installing or qualifying them. `testAll` was not launched for this
+checkpoint.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)

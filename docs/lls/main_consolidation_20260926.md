@@ -350,3 +350,58 @@ sweep, final-source focused validation, then integration without overwriting
 main's newer HARQ repair. Full 5 MHz sweep, detector statistical qualification
 and full-control 400 MHz acceptance remain open. A clean Git status does not
 mean those scientific or integration tasks have passed.
+
+## Shared-integration v8 preservation checkpoint
+
+This checkpoint starts from `0c840c2805e746a2bd61106608b909a12f254908`,
+verified against freshly fetched `origin/main`. There is one branch (`main`)
+and one Git worktree. The older main-source sweep is still live; permission
+to stop it remains outstanding. **This is not a completed runtime merge.**
+
+The complete current candidate is preserved in
+[pending_receiver_shared_integration_v8_20260926.patch](pending_receiver_shared_integration_v8_20260926.patch):
+25 files, 798 insertions and 62 deletions; SHA-256
+`3d8ff259fbda4020bd83b2fae8e00ea22eee3fa413590dbe2e98faedb9df11ad`.
+This is a standalone alternative to v6/v7 and the incremental receiver patches,
+not an additional patch to stack on them. Forward applicability against main
+and reverse applicability against the candidate snapshot pass. All 27 source
+hashes in the current combined-source checkpoint match the snapshot, including
+main's HARQ spatial repair and its regression, now included in that snapshot.
+
+The preceding candidate batch completed **11/11 focused tests with exit zero**:
+receiver stage evidence, standalone SR, observation receiver, independent trial,
+noise audit, observation-model collection, Type-2 layout/runtime plan, shared
+joint receiver and shared receive-only/feedback clocks. The standalone-SR fix
+exports receiver-derived DM-RS counts; it does not weaken the strict gate.
+Historical unversioned IQ remains replayable without invented noise-audit
+evidence. Current audit fields distinguish injected calibration from practical
+receiver estimates and are not estimator inputs.
+
+After that batch, the generic injected-noise source alias was removed and
+main's existing HARQ repair/test registrations were included in the snapshot.
+Therefore those 11 passes are not a claim about every byte of the latest
+combined source. At **05:36 IST on 26 September**, its separate 23-test batch
+has **9 passed, 0 recorded failures, 14 unfinished** (one running). The running
+test is `testLLS_ReferencePoints`. The batch is not `testAll` and is not a full
+5 MHz or 400 MHz scenario. No new MATLAB process was launched by this Git
+preservation checkpoint.
+
+Authoritative local evidence, retained outside Git:
+
+- `logs/receiver_clock_candidate_20260926/joint_receiver_v8_dmrs_sr_guards.log`
+- `logs/receiver_clock_candidate_20260926/joint_receiver_v8_dmrs_sr_receipt.json`
+- `logs/receiver_clock_candidate_20260926/receiver_v8_combined_source_guards.log`
+- `logs/receiver_clock_candidate_20260926/receiver_v8_combined_source_checkpoint.json`
+
+The README retains exact CMD launch, YAML, recorded WebGUI and Keysight handoff
+instructions for **400 MHz bandwidth at 7 GHz**, not a 4 GHz test. The launcher
+passes PowerShell syntax parsing. The sealed `20260925_v1` package is unchanged;
+its manifest identity remains the hash recorded above. Generated results,
+logs, IQ, temporary source snapshots and both recovery stashes are preserved.
+These large artifacts are not included in a GitHub clone. No cleanup deletes
+them and no run is relabeled successful.
+
+Remaining: safely install the candidate after final-source checks; repair the
+separate 0 dB DL/UL PDCCH admission and blocked-observation reporting defects;
+complete detector qualification and integrated 5 MHz/full-control 400 MHz
+acceptance. A clean Git worktree is not evidence that these tasks are complete.
