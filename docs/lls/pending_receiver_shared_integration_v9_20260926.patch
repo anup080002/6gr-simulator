@@ -1,0 +1,2201 @@
+diff --git a/+sixgr/+link/receivePUCCHObservation.m b/+sixgr/+link/receivePUCCHObservation.m
+index 83009447..7e77d7cf 100644
+--- a/+sixgr/+link/receivePUCCHObservation.m
++++ b/+sixgr/+link/receivePUCCHObservation.m
+@@ -1,9 +1,10 @@
+-function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior)
++function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior,execution)
+ % Receive actual PUCCH samples without preparing or inspecting a UE waveform.
+ % ReceptionAssignment is the independent gNB hypothesis API. The legacy
+ % TransmissionAssignment remains explicitly labelled as transmitter-coupled;
+ % accepting it does not qualify an independent shared HARQ codebook.
+ if nargin<5, prior=[]; end
++if nargin<6, execution=struct(); end
+ receiverOnly=isa(assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment');
+ legacy=isa(assignment,'sixgr.phy.pucch.PUCCHTransmissionAssignment');
+ assert(isscalar(assignment) && (receiverOnly || legacy), ...
+@@ -38,7 +39,19 @@ assert(~isempty(policy),'sixgr:link:PUCCHDetectionYAMLAuthorityRequired', ...
+ [threshold,thresholdSource]=sixgr.phy.pucch.resolveDetectionThreshold(assignment,policy);
+ args={'NoiseVariance',NaN,'ChannelProfile',sixgr.channel.resolveConcreteProfile(cfg), ...
+     'DetectionThreshold',threshold};
++jointPolicy=sixgr.util.structGet(cfg,'phy.pucch.format2ShortUCIReceiverPolicy',[]);
++jointModel=struct();
++% This policy owns only the explicitly named short Format-2 domain. Other
++% installed formats/widths retain their own physical decoder and detector.
++count=context.Sequence1Length+context.Sequence2Length;
++jointApplicable=~isempty(jointPolicy) && assignment.Format==2 && count>=3 && count<=11;
++if jointApplicable
++    jointModel=sixgr.phy.rx.collectPUCCHObservationModel(observation,execution);
++    args=[args {'ShortUCIReceiverPolicy',jointPolicy,'ReceivedExecutionEvidence',jointModel}];
++    thresholdSource="yaml.pucch.format2_short_uci_receiver_policy.target_false_alarm_probability_and_received_search_dimensions";
++end
+ timing=[];
++priorRejection="";
+ if assignment.Format==0
+     if isempty(prior) && receiverOnly && context.HARQACKBits==0 && context.SRBits==1 && ...
+             context.CSIPart1Bits==0 && context.CSIPart2Bits==0
+@@ -61,13 +74,45 @@ if assignment.Format==0
+     args=[args {'NoiseVarianceMode','noncoherent_correlation'}];
+ else
+     % Received DM-RS, not injected noise/covariance or TX pilot samples.
+-    % The full actual capture bounds timing search; no padding is allowed.
+-    args=[args {'NoiseVarianceMode','received_dmrs_estimate', ...
+-        'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
++    args=[args {'NoiseVarianceMode','received_dmrs_estimate'}];
++    if ~isempty(prior)
++        assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
++            'sixgr:link:InvalidPUCCHTimingPrior','A timing prior must be a retained received UL pilot clock.');
++        try
++            [raw,timing]=prior.alignCompletedObservation(cfg,observation,slot0);
++        catch cause
++            % These states make an earlier clock inapplicable, not a new
++            % timing measurement. Formats with DM-RS can acquire their own
++            % known pilots. Malformed configuration and other errors stay fatal.
++            inapplicable=["sixgr:phy:sync:StaleULTimingReference", ...
++                "sixgr:phy:sync:ULTimingReferenceIdentityMismatch", ...
++                "sixgr:phy:sync:FutureULTimingReference", ...
++                "sixgr:phy:sync:IncompletePriorAlignedULObservation"];
++            if ~any(string(cause.identifier)==inapplicable), rethrow(cause); end
++            priorRejection=string(cause.identifier);
++        end
++    end
++    if isempty(timing)
++        % Full actual capture bounds acquisition; no padding or TX timing.
++        args=[args {'TimingSearchWindowSamples',[0 size(raw,1)-(stop-first)]}];
++    end
+ end
+ rx=sixgr.phy.pucch.PUCCHReceiver.receive(raw,carrier,assignment,context,args{:});
+ if ~isempty(timing), rx.ReceiveTiming=timing; end
++if assignment.Format>=1
++    rx.ReceiveTiming.PriorClockProvided=~isempty(prior);
++    rx.ReceiveTiming.PriorClockApplied=~isempty(timing);
++    rx.ReceiveTiming.PriorClockRejectionReason=priorRejection;
++end
+ rx.DetectionThresholdSource=thresholdSource;
++if jointApplicable
++    rx.ReceiverObservationModel=jointModel;
++    % Minimal replay input: retain only the same sanitized execution types
++    % and clocks. No injected variance, channel tensor or TX IQ enters it.
++    rx.ReceiverExecutionContext=struct('Segments',{jointModel.ReceiveStreamExecutionSegments}, ...
++        'ReceiverID',jointModel.ReceiverID,'TransmitterID',jointModel.TransmitterID, ...
++        'GainCompensation',jointModel.ReceiverGainCompensation);
++end
+ rx.ReceiverObservationStartSample=observation.StartSample;
+ rx.ReceiverObservationEndSampleExclusive=observation.EndSampleExclusive;
+ rx.ReceiverObservationSampleRateHz=observation.SampleRateHz;
+diff --git a/+sixgr/+phy/+pucch/PUCCHReceiver.m b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+index 40731ec1..c4b65d66 100644
+--- a/+sixgr/+phy/+pucch/PUCCHReceiver.m
++++ b/+sixgr/+phy/+pucch/PUCCHReceiver.m
+@@ -12,6 +12,8 @@ classdef PUCCHReceiver
+             addParameter(p,"ChannelProfile","AWGN",@(x) ischar(x)||isstring(x));
+             addParameter(p,"TimingSearchWindowSamples",[],@(x)isempty(x)||(isnumeric(x)&&numel(x)==2));
+             addParameter(p,"DetectionThreshold",0.2,@(x) isnumeric(x)&&isscalar(x));
++            addParameter(p,"ShortUCIReceiverPolicy",[],@(x) isempty(x)||(isstruct(x)&&isscalar(x)));
++            addParameter(p,"ReceivedExecutionEvidence",struct(),@(x) isstruct(x)&&isscalar(x));
+             addParameter(p,"InterferenceCovariance",[], ...
+                 @(x) isempty(x)||isnumeric(x));
+             addParameter(p,"InterferenceCovarianceSource","", ...
+@@ -62,6 +64,19 @@ classdef PUCCHReceiver
+                 sixgr.phy.pucch.PUCCHResource.validateAllocationCarrier(assignment.Data.AllocationBudget,carrier);
+             end
+             totalA=reportContext.Sequence1Length+reportContext.Sequence2Length;
++            jointPolicy=opt.ShortUCIReceiverPolicy;
++            jointModelEvidence=struct();
++            if ~isempty(jointPolicy)
++                localValidateJointPolicy(jointPolicy);
++                assert(receiveOnly && assignment.Format==2 && totalA>=3 && totalA<=11 && ...
++                    ~(isprop(pucch,'Interlacing') && pucch.Interlacing) && ...
++                    strcmpi(string(opt.ChannelProfile),"AWGN") && estimateNoise && ...
++                    isempty(opt.InterferenceCovariance), ...
++                    'sixgr:phy:pucch:UnsupportedJointShortUCIReceiver', ...
++                    ['The explicit joint policy requires independent non-interlaced Format-2 ' ...
++                     'reception, 3--11 bits and received-reference noise in a flat AWGN observation.']);
++                jointModelEvidence=sixgr.phy.rx.assertFlatStaticAWGNObservation(opt.ReceivedExecutionEvidence);
++            end
+             sixgr.phy.pucch.PUCCHFormatValidator.validateResource( ...
+                 assignment.Resource.Data,totalA,reportContext);
+             assert(~noncoherent || assignment.Format==0, ...
+@@ -204,6 +219,34 @@ classdef PUCCHReceiver
+                 error("sixgr:phy:pucch:UCIDecodeFailed", ...
+                     "PUCCH physical decode failed: %s",ME.message);
+             end
++            demapperEvidence=struct('Source',"toolbox_format_specific_decode", ...
++                'PerREGainAware',false,'PhysicalQualificationPassed',false);
++            varianceRole="scalar_toolbox_decode_argument";
++            if assignment.Format==2 && ~(isprop(pucch,'Interlacing') && pucch.Interlacing)
++                if ~estimateNoise && gridDisturbanceVariance==0
++                    % Preserve the explicitly requested noiseless reference
++                    % endpoint. It is not a finite-noise calibrated likelihood,
++                    % and is never selected for a received DM-RS noise estimate.
++                    result=equalizerInfo.EqualizerResult;
++                    assert(string(opt.NoiseVarianceMode)=="provided" && ...
++                        all(result.OutputNoiseInterferenceCovariance(:)==0), ...
++                        'sixgr:phy:pucch:InvalidNoiselessLikelihoodReference', ...
++                        'A noiseless endpoint requires explicitly zero executed disturbance.');
++                    demapperEvidence.Source="provided_zero_disturbance_toolbox_decode";
++                    demapperEvidence.NoiselessReference=true;
++                    varianceRole="explicit_zero_disturbance_reference_not_finite_noise_likelihood";
++                else
++                    % Keep the public decoder's presence statistic and
++                    % constellation. Decode UCI using y=g*s+z with the actual
++                    % MMSE response/covariance on each RE, not g=1 and mean(v).
++                    [soft{1},demapperEvidence]=sixgr.phy.pucch.demapFormat2EqualizerOutput( ...
++                        carrier,pucch,equalizerInfo.EqualizerResult);
++                    demapperEvidence.PerREGainAware=true;
++                    varianceRole="mean_output_variance_for_detector_only_codeword_uses_per_RE_covariance";
++                end
++            end
++            codewordLLR=zeros(0,1);
++            if assignment.Format>=2, codewordLLR=soft{1}; end
+             if assignment.Format <= 1
+                 decoded = localCellBits(soft);
+                 crcPassed = true;
+@@ -217,7 +260,6 @@ classdef PUCCHReceiver
+                 crcErrors=decodedResult.CodeBlockCRCError;
+                 crcBitCount=decodedResult.Plan.CRCBits;
+             end
+-            decodeLatency_ms = 1e3 .* toc(decodeTic);
+             energyRatio = mean(abs(eq(:)).^2)/max(decodeNoiseVariance,eps);
+             [detectionMetric,detectionMetricSource] = ...
+                 sixgr.phy.pucch.PUCCHDetector.selectMetric( ...
+@@ -225,11 +267,54 @@ classdef PUCCHReceiver
+             decision = sixgr.phy.pucch.PUCCHDetector.decide( ...
+                 assignment.Format,detectionMetric, ...
+                 opt.DetectionThreshold,decoded);
++            shortUCI=struct('Applied',false,'PhysicalQualificationPassed',false);
++            wordAccepted=true;
++            decoderAlgorithm="format_specific_equalized_uci";
++            llrRole="actual_codeword_decoder_input";
++            if ~isempty(jointPolicy)
++                % The one installed resource/schema determines the legal word
++                % set. Count acquisition searches; a causally aligned input
++                % without a local search contributes one timing hypothesis.
++                searches=1;
++                if ~isempty(opt.TimingSearchWindowSamples)
++                    searches=diff(opt.TimingSearchWindowSamples)+1;
++                end
++                shortUCI=sixgr.phy.pucch.decodeFormat2FlatShortUCI( ...
++                    carrier,pucch,grid,totalA,jointPolicy.target_false_alarm_probability,searches);
++                shortUCI.Applied=true;
++                shortUCI.ModelEvidence=jointModelEvidence;
++                shortUCI.Policy=jointPolicy;
++                presence=shortUCI.JointPresenceDecision;
++                assert(isstruct(presence) && isfield(presence,'CorrelationThreshold'), ...
++                    'sixgr:phy:pucch:InvalidJointShortUCIObservation', ...
++                    'The joint receiver must provide its physical presence evidence; no legacy rescue.');
++                decision=sixgr.phy.pucch.PUCCHDetector.decide(assignment.Format, ...
++                    presence.Correlation,presence.CorrelationThreshold,int8([]));
++                assert(decision.Detected==presence.Detected, ...
++                    'sixgr:phy:pucch:JointPresenceDecisionMismatch', ...
++                    'Presence probability and exported metric must describe the same decision.');
++                wordAccepted=shortUCI.UniqueMaximum && isfinite(shortUCI.ConditionalWordPosterior) && ...
++                    shortUCI.ConditionalWordPosterior>=jointPolicy.minimum_word_posterior;
++                shortUCI.WordAccepted=logical(wordAccepted);
++                decoded=shortUCI.Bits;
++                detectionMetricSource="joint_known_DMRS_and_legal_UCI_projection_search_union_bound";
++                decoderAlgorithm="flat_joint_short_uci_v1";
++                % Keep the conventional receiver LLRs for comparison, not as
++                % fabricated evidence of the joint decoder's actual input.
++                llrRole="equalized_receiver_comparison_not_joint_decoder_input";
++                varianceRole="equalized_receiver_comparison_not_joint_decoder_variance";
++            end
++            decodeLatency_ms = 1e3 .* toc(decodeTic);
+             if assignment.Format==1 && reportContext.SRBits==1 && ...
+                     reportContext.HARQACKBits==0 && ~decision.DTX
+                 decoded=int8(1); % Presence on the configured SR resource.
+             end
+-            if decision.DTX
++            receiverUsable=~decision.DTX && wordAccepted;
++            failure=localFailure(decision.DTX);
++            if ~decision.DTX && ~wordAccepted
++                failure="short_uci_word_confidence_below_policy";
++            end
++            if ~receiverUsable
+                 decoded = int8(zeros(0,1));
+             end
+             [sequence1,sequence2] = localSplit(decoded, ...
+@@ -240,13 +325,15 @@ classdef PUCCHReceiver
+             evmApplicable = assignment.Format >= 2;
+             rx = struct( ...
+                 "ReceiveTiming",timing, ...
+-                "ReceiverUsable",~decision.DTX, ...
++                "ReceiverUsable",logical(receiverUsable), ...
+                 "DetectionAttempted",true,"DTX",decision.DTX, ...
+                 "DetectionOutcome",decision.DetectionOutcome, ...
+                 "DetectionMetric",decision.DetectionMetric, ...
+                 "DetectionMetricValid",decision.DetectionMetricValid, ...
+                 "DetectionMetricSource",detectionMetricSource, ...
+                 "ResourceExtractionAvailable",~isempty(eq) && all(isfinite(eq(:))), ...
++                "PUCCHDMRSRECount",numel(dmrs.Indices), ...
++                "PUCCHDMRSRECountSource","receiver_reference_indices_not_transmitter_evidence", ...
+                 "DetectionThreshold",decision.DetectionThreshold, ...
+                 "DecodedSequence1",sequence1, ...
+                 "DecodedSequence2",sequence2, ...
+@@ -261,7 +348,7 @@ classdef PUCCHReceiver
+                     equalizerInfo,channel,format0Noncoherent), ...
+                 "EVMPercent",localEVM(constellation,evmApplicable), ...
+                 "EVMApplicable",logical(evmApplicable), ...
+-                "FailureReason",localFailure(decision.DTX), ...
++                "FailureReason",failure, ...
+                 "ErrorID","","OraclePayloadBitsUsed",false, ...
+                 "AssignmentDigest",assignment.Digest, ...
+                 "ReceiverOnlyAssignment",receiveOnly, ...
+@@ -272,6 +359,10 @@ classdef PUCCHReceiver
+                 "GridNoiseVarianceSource",noiseSource, ...
+                 "GridNoiseVarianceValueRole","receiver_disturbance_variance_for_equalization_and_decode", ...
+                 "DecodeNoiseInterferenceVariance",decodeNoiseVariance, ...
++                "DecodeNoiseInterferenceVarianceRole",varianceRole, ...
++                "UCICodewordLLR",codewordLLR,"DemapperEvidence",demapperEvidence, ...
++                "UCICodewordLLRRole",llrRole,"DecoderAlgorithm",decoderAlgorithm, ...
++                "ShortUCIReceiverEvidence",shortUCI, ...
+                 "NoiseVarianceTransform",noiseTransform, ...
+                 "InterferenceCovariance",rintGrid, ...
+                 "InterferenceCovarianceAvailable",~isempty(rintGrid), ...
+@@ -291,10 +382,25 @@ classdef PUCCHReceiver
+                 "ReceiverPipelineLatency_ms",1e3 .* toc(receiverPipelineTic), ...
+                 "ReceiverStageLatencySource", ...
+                 "matlab_tic_toc_canonical_pucch_receiver_stages");
++            if ~isempty(jointPolicy)
++                rx.GridNoiseVarianceValueRole="received_DMRS_equalizer_comparison_not_joint_decoder_input";
++            end
+         end
+     end
+ end
+ 
++function localValidateJointPolicy(policy)
++id='sixgr:phy:pucch:InvalidJointShortUCIPolicy';
++assert(all(isfield(policy,{'algorithm','target_false_alarm_probability','minimum_word_posterior'})) && ...
++    isscalar(string(policy.algorithm)) && string(policy.algorithm)=="flat_joint_short_uci_v1", ...
++    id,'Supply the explicit supported joint short-UCI algorithm and both probability gates.');
++alpha=policy.target_false_alarm_probability; confidence=policy.minimum_word_posterior;
++assert(isnumeric(alpha) && isreal(alpha) && isscalar(alpha) && isfinite(alpha) && alpha>0 && alpha<1 && ...
++    isnumeric(confidence) && isreal(confidence) && isscalar(confidence) && ...
++    isfinite(confidence) && confidence>0 && confidence<=1, ...
++    id,'False-alarm probability must be in (0,1); minimum word posterior must be in (0,1].');
++end
++
+ function value = localEffectiveScalarVariance(nVar,Rgrid,nRx)
+ value = double(nVar);
+ if isempty(Rgrid)
+diff --git a/+sixgr/+phy/+rx/equalizeMMSE.m b/+sixgr/+phy/+rx/equalizeMMSE.m
+index b1b3efea..b96aa0d3 100644
+--- a/+sixgr/+phy/+rx/equalizeMMSE.m
++++ b/+sixgr/+phy/+rx/equalizeMMSE.m
+@@ -51,7 +51,7 @@ if ~isempty(ind)
+ end
+ 
+ [rxSym, hSym, dims] = localNormalizeInputs(rxSym, hSym);
+-nVarSafe = localSafeNoiseVariance(nVar, rxSym);
++nVarSafe = localSafeNoiseVariance(nVar);
+ if isempty(RIncludesNoise)
+     RIncludesNoise = ~isempty(Rint);
+ end
+@@ -130,16 +130,18 @@ staticChannelBatch = localIsStaticChannel(hSym) && Rmode ~= "per_re";
+ 
+ if nRx == 1 && nTx == 1 && alg ~= "ZF"
+     H = hSym(:, 1, 1);
+-    Rdiag = localSISOCovarianceDiagonal(Rmode, Rstatic, RperRE, nRE, nVar);
++    Rdiag = localSISOCovarianceDiagonal(Rmode, Rstatic, RperRE, nRE, nVar, RIncludesNoise);
+     denom = abs(H).^2 + Rdiag;
+-    W = conj(H) ./ max(denom, eps);
++    W = complex(zeros(size(H)));
++    usable = denom > 0;
++    W(usable) = conj(H(usable)) ./ denom(usable);
+     eqSym(:, 1) = W .* rxSym(:, 1);
+     WH = W .* H;
+     noiseOut = abs(W).^2 .* Rdiag;
+     signal = abs(WH).^2;
+-    gamma = signal ./ max(noiseOut, eps);
++    [gamma, rel] = localPhysicalSINR(signal, noiseOut);
+     sinrLin(:, 1) = gamma;
+-    reliability(:, 1) = gamma ./ max(1 + gamma, eps);
++    reliability(:, 1) = rel;
+     Wout(:, 1, 1) = W;
+     WHout(:, 1, 1) = WH;
+     residualLayerPower(:, 1) = 0;
+@@ -205,12 +207,13 @@ result.EqualizedSymbols = eqSym;
+ result.DemapperReliability = reliability;
+ result.CSI = reliability;
+ result.PostEqSINRLinear = sinrLin;
+-result.PostEqSINRPerRE_dB = 10 .* log10(max(sinrLin, eps));
++result.PostEqSINRPerRE_dB = 10 .* log10(sinrLin);
+ result.PerLayerSINR_dB = localGeometricLayerSINR(sinrLin);
+ result.W = Wout;
+ result.EffectiveResponseWH = WHout;
+ result.ResidualInterLayerPower = residualLayerPower;
+ result.OutputNoiseInterferenceCovariance = outputCov;
++result.NoiseCovarianceRole = "physical_disturbance_excludes_numerical_solve_loading";
+ result.CovarianceIncludesNoise = logical(RIncludesNoise || isempty(Rint));
+ result.CovarianceSource = covarianceSource;
+ result.NoiseAddedExactlyOnce = true;
+@@ -230,7 +233,8 @@ function [eqSym, reliability, sinrLin, Wout, WHout, ...
+         residualLayerPower, outputCov, regularized] = ...
+         localApplyStaticCovariance(rxSym, hSym, R, nRE, nTx, nRx)
+ % Apply one exact static disturbance-covariance factorization to all REs.
+-R = localHermitianPositiveDefinite(R);
++% localStableLeftSolve may stabilize its private solve matrix. Keep R here
++% physical, for W*R*W^H; a well-conditioned covariance needs no loading.
+ allH = reshape(permute(hSym, [2 3 1]), nRx, nTx*nRE);
+ [allRinvH, covarianceRegularized] = localStableLeftSolve(R, allH);
+ 
+@@ -293,7 +297,7 @@ if ismatrix(Rint) && size(Rint, 1) == nRx && size(Rint, 2) == nRx
+     mode = "static";
+     Rstatic = localPrepareCovariance(Rint, nVar, logical(RIncludesNoise));
+     source = localCovarianceSource(RIncludesNoise);
+-elseif ndims(Rint) == 3 && size(Rint, 1) == nRE && size(Rint, 2) == nRx && size(Rint, 3) == nRx
++elseif ndims(Rint) <= 3 && size(Rint, 1) == nRE && size(Rint, 2) == nRx && size(Rint, 3) == nRx
+     mode = "per_re";
+     RperRE = Rint;
+     source = localCovarianceSource(RIncludesNoise);
+@@ -332,21 +336,24 @@ if isempty(R)
+ end
+ R = (R + R') ./ 2;
+ if ~logical(includesNoise)
+-    R = R + max(double(nVar), eps) * eye(size(R, 1));
+-end
+-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+-    R = max(double(nVar), eps) * eye(size(R, 1));
++    R = R + double(nVar) * eye(size(R, 1));
+ end
++assert(all(isfinite(R(:))) && all(real(eig(R))>=-32*eps(norm(R,'fro'))), ...
++    'sixgr:phy:equalizeMMSE:InvalidCovariance', ...
++    'Disturbance covariance must be finite positive semidefinite; no white-noise replacement.');
+ end
+ 
+-function Rdiag = localSISOCovarianceDiagonal(mode, Rstatic, RperRE, nRE, nVar)
++function Rdiag = localSISOCovarianceDiagonal(mode, Rstatic, RperRE, nRE, nVar, includesNoise)
+ switch string(mode)
+     case "white"
+         Rdiag = repmat(double(nVar), nRE, 1);
+     case "static"
+-        Rdiag = repmat(max(real(Rstatic(1, 1)), eps), nRE, 1);
++        Rdiag = repmat(real(Rstatic(1, 1)), nRE, 1);
+     otherwise
+-        Rdiag = max(real(reshape(RperRE(:, 1, 1), [], 1)), eps);
++        Rdiag = zeros(nRE,1);
++        for kk=1:nRE
++            Rdiag(kk) = real(localPrepareCovariance(RperRE(kk,1,1),nVar,includesNoise));
++        end
+ end
+ end
+ 
+@@ -369,7 +376,6 @@ end
+ function [core, regularized] = localEqualizerCore(H, R, alg)
+ regularized = false;
+ H = double(H);
+-R = localHermitianPositiveDefinite(R);
+ if alg == "ZF"
+     A = H' * H;
+     B = H';
+@@ -394,9 +400,10 @@ sinr = NaN(nLayers, 1);
+ interLayer = NaN(nLayers, 1);
+ for layer = 1:nLayers
+     signal = abs(WH(layer, layer)).^2;
+-    interLayer(layer) = max(sum(abs(WH(layer, :)).^2) - signal, 0);
+-    noiseOut = max(real(outCov(layer, layer)), eps);
+-    sinr(layer) = signal ./ max(interLayer(layer) + noiseOut, eps);
++    other = [1:layer-1 layer+1:nLayers];
++    interLayer(layer) = sum(abs(WH(layer, other)).^2);
++    noiseOut = max(real(outCov(layer, layer)), 0);
++    [sinr(layer), reliability(layer,1)] = localPhysicalSINR(signal, interLayer(layer) + noiseOut);
+ end
+ core = struct();
+ core.W = W;
+@@ -404,20 +411,16 @@ core.WH = WH;
+ core.OutputCovariance = outCov;
+ core.ResidualInterLayerPower = interLayer;
+ core.SINRLinear = sinr;
+-core.Reliability = sinr ./ max(1 + sinr, eps);
++core.Reliability = reliability;
+ end
+ 
+-function R = localHermitianPositiveDefinite(R)
+-R = double(R);
+-R = (R + R') ./ 2;
+-if isempty(R)
+-    return;
+-end
+-diagLoad = max(norm(R, "fro") * 1e-12, eps);
+-if any(~isfinite(real(R(:)))) || any(~isfinite(imag(R(:))))
+-    R = eye(size(R, 1));
+-end
+-R = R + diagLoad * eye(size(R, 1));
++function [sinr, reliability] = localPhysicalSINR(signal, disturbance)
++sinr = signal ./ disturbance;
++reliability = signal ./ (signal + disturbance);
++% A zero useful response carries no bit information. Positive signal with
++% exactly zero disturbance retains infinite SINR and unit reliability.
++sinr(signal==0) = 0;
++reliability(signal==0) = 0;
+ end
+ 
+ function [X, regularized] = localStableLeftSolve(A, B)
+@@ -465,20 +468,16 @@ nLayers = size(sinrLin, 2);
+ perLayer = NaN(1, nLayers);
+ for layer = 1:nLayers
+     x = double(sinrLin(:, layer));
+-    x = x(isfinite(x) & x >= 0);
++    x = x(~isnan(x) & x >= 0);
+     if ~isempty(x)
+-        perLayer(layer) = 10 * log10(exp(mean(log(max(x, eps)), "omitnan")));
++        perLayer(layer) = 10/log(10) * mean(log(x));
+     end
+ end
+ end
+ 
+-function nVarSafe = localSafeNoiseVariance(nVar, rxSym)
++function nVarSafe = localSafeNoiseVariance(nVar)
++assert(isnumeric(nVar) && isreal(nVar) && isscalar(nVar) && isfinite(nVar) && nVar>=0, ...
++    'sixgr:phy:equalizeMMSE:InvalidNoiseVariance', ...
++    'Supply explicit finite nonnegative noise variance; no received-power-derived substitute.');
+ nVarSafe = double(nVar);
+-if ~(isscalar(nVarSafe) && isfinite(nVarSafe) && nVarSafe > 0)
+-    p = mean(abs(rxSym(:)).^2 + eps, "omitnan");
+-    if ~(isfinite(p) && p > 0)
+-        p = 1;
+-    end
+-    nVarSafe = 1e-12 * p;
+-end
+ end
+diff --git a/+sixgr/+truth/CoupledTruthRuntime.m b/+sixgr/+truth/CoupledTruthRuntime.m
+index 387e93d9..2553f1c4 100644
+--- a/+sixgr/+truth/CoupledTruthRuntime.m
++++ b/+sixgr/+truth/CoupledTruthRuntime.m
+@@ -1673,11 +1673,14 @@ methods(Static)
+         prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,post.EndSampleExclusive,nominal);
+         [receiver,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
+             post,item.Planes(postIndex).Segments,"gnb_"+mapping.LastGrant.ServingCell+"_rx");
+-        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,receiver,prior);
++        execution=struct('Segments',{item.Planes(postIndex).Segments}, ...
++            'ReceiverID',"gnb_"+mapping.LastGrant.ServingCell+"_rx", ...
++            'TransmitterID',"ue_"+item.UE,'GainCompensation',gain);
++        rx=sixgr.link.receivePUCCHObservation(cfg,h.Assignment,h.Context,receiver,prior,execution);
+         rx.ReceiverGainCompensation=gain;
+         if h.Assignment.Format>=1
+             sixgr.truth.exportIndependentPUCCHObservation( ...
+-                state.RunFolder,cfg,h,item.Planes,rx,receiver);
++                state.RunFolder,cfg,h,item.Planes,rx,receiver,prior);
+         end
+         bits=int8(rx.DecodedFields.HARQACK(:));
+         usable=rx.ReceiverUsable && ~rx.DTX && rx.CRCPassed && numel(bits)==mapping.BitCount;
+@@ -1721,6 +1724,8 @@ methods(Static)
+             'EvidenceClass',"actual_shared_receiver_observation_no_PUCCH_transmission_claim");
+         if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
+         trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
++        trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedControlNoiseAudit( ...
++            cfg,post,item.Planes(postIndex).Segments,"gnb_"+mapping.LastGrant.ServingCell+"_rx",state.CurrentSNR_dB));
+         state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         evidence=sixgr.util.structGet(state,'SharedGNBUCIReceptions',{});
+@@ -1763,6 +1768,10 @@ methods(Static)
+         assert(post.SampleRateHz==owner.SampleRateHz && post.StartSample==pre.StartSample && ...
+             post.EndSampleExclusive==pre.EndSampleExclusive && post.EndSampleExclusive==owner.Events.NextSampleIndex, ...
+             'sixgr:truth:PUCCHReceiveOnlyClockMismatch','Publish only at actual gNB receive completion.');
++        receiveCarrier=sixgr.phy.grid.makeCarrier(c.Config);
++        nominal=sixgr.phy.frame.slotStartSample(receiveCarrier,c.Slot-1,post.SampleRateHz);
++        prior=sixgr.truth.selectReceivedULTimingReference( ...
++            state,item.UE,post.EndSampleExclusive,nominal);
+         if prepared
+             % Preserve physical TX/power and bit-comparison audit from the
+             % retained immutable transmission. It cannot supply the RX schema.
+@@ -1774,6 +1783,7 @@ methods(Static)
+                 'Source',"shared_physical_owner_received_observation", ...
+                 'RuntimeChannelPhysicalTxElements',channel.NumTxAnt,'RuntimeChannelNumRxAntennas',channel.NumRxAnt), ...
+                 'GNBReception',struct('Assignment',h.Assignment,'Context',h.Context));
++            if ~isempty(prior), input.ReceivedULTimingReference=prior; end
+             trial=sixgr.link.runPUCCHWaveformTrial(c.Config,c.Arguments{:},'ReceivedContext',input);
+             assert(isfield(trial,'Receiver'),'sixgr:truth:ConfiguredCSIReceiverFailed', ...
+                 'The canonical receiver failed; no substitute CSI row is permitted.');
+@@ -1788,12 +1798,15 @@ methods(Static)
+         else
+             [receiver,gain]=sixgr.phy.rx.compensateReceivedAGC( ...
+                 post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx");
+-            rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver);
++            execution=struct('Segments',{item.Planes(postIndex).Segments}, ...
++                'ReceiverID',"gnb_"+h.ServingCell+"_rx",'TransmitterID',"ue_"+item.UE, ...
++                'GainCompensation',gain);
++            rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior,execution);
+             rx.ReceiverGainCompensation=gain;
+         end
+         if h.Assignment.Format>=1
+             sixgr.truth.exportIndependentPUCCHObservation( ...
+-                state.RunFolder,c.Config,h,item.Planes,rx,receiver);
++                state.RunFolder,c.Config,h,item.Planes,rx,receiver,prior);
+         end
+         actual=sixgr.truth.normalizeReceivedPUCCHCSI(rx,h.Context,h.CSIReportConfiguration);
+         identity=struct('UEIndex',h.UEIndex,'RNTI',h.RNTI,'TargetSlot',h.TargetSlot, ...
+@@ -1839,6 +1852,8 @@ methods(Static)
+             if rx.CRCApplicable, trial.CRCPass=double(rx.CRCPassed); end
+             trial.ObservationCompletionTime_s=post.EndSampleExclusive/post.SampleRateHz;
+             trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
++            trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedControlNoiseAudit( ...
++                c.Config,post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx",state.CurrentSNR_dB));
+             state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+                 state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         end
+@@ -1879,7 +1894,10 @@ methods(Static)
+         receiveCarrier=sixgr.phy.grid.makeCarrier(c.Config);
+         nominal=sixgr.phy.frame.slotStartSample(receiveCarrier,c.Slot-1,post.SampleRateHz);
+         prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,post.EndSampleExclusive,nominal);
+-        rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior);
++        execution=struct('Segments',{item.Planes(postIndex).Segments}, ...
++            'ReceiverID',"gnb_"+h.ServingCell+"_rx",'TransmitterID',"ue_"+item.UE, ...
++            'GainCompensation',gain);
++        rx=sixgr.link.receivePUCCHObservation(c.Config,h.Assignment,h.Context,receiver,prior,execution);
+         rx.ReceiverGainCompensation=gain;
+         sixgr.truth.exportIndependentPUCCHObservation( ...
+             state.RunFolder,c.Config,h,item.Planes,rx,receiver,prior);
+@@ -1967,6 +1985,8 @@ methods(Static)
+             'SRReceiverDisposition',disposition,'SuccessFlag',prepared && contentMatch==1, ...
+             'ExecutionBackend',"pucch_shared_gnb_SR_reception",'ApproximationMode',"none");
+         trial=sixgr.util.mergeStruct(trial,sixgr.link.pucchReceiverStageEvidence(rx,h.Assignment));
++        trial=sixgr.util.mergeStruct(trial,sixgr.link.receivedControlNoiseAudit( ...
++            c.Config,post,item.Planes(postIndex).Segments,"gnb_"+h.ServingCell+"_rx",state.CurrentSNR_dB));
+         state.ControlTrials.PUCCH=sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+             state.ControlTrials.PUCCH,struct2table(trial,'AsArray',true));
+         if positive
+@@ -8019,8 +8039,11 @@ methods(Static, Access=private)
+         grant.ControlDecodeOk = false;
+         grant.GrantControlState = char(string(reason));
+         grant.ControlEligible = false;
++        grant.GrantValid = false;
++        grant.NegativeExpectedOk = false;
+         resourceDeferred = any(startsWith(lower(strtrim(string(reason))), ...
+-            ["control_blocked_coreset_cce_capacity_exhausted", "control_blocked_no_dl_control_symbols_in_tdd_slot"]));
++            ["control_blocked_coreset_cce_capacity_exhausted", "control_blocked_no_dl_control_symbols_in_tdd_slot", ...
++             "control_blocked_no_nonoverlapping_pdcch_candidate"]));
+         if isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(state.NumUsers)
+             state.LastPDCCHStatus(ueIdx) = string(reason);
+             if ~resourceDeferred
+@@ -13926,6 +13949,12 @@ methods(Static, Access=private)
+         pendingMask = status == "PENDING" | contains(status, "PENDING");
+         failureFlag = (status == "FAIL" | status == "CRASH") | (~decodeSuccess & ~pendingMask & status ~= "" & status ~= "NA");
+         observationAvailable = ~pendingMask & status ~= "CRASH";
++        if signalName == "PDCCH"
++            execution = sixgr.link.pdcchTrialExecutionState(T);
++            observationAvailable = execution.ObservationAvailable;
++            decodeSuccess = decodeSuccess & execution.BindingEligible;
++            T.ControlObservationEvidenceSource = execution.ExecutionEvidenceSource;
++        end
+         if signalName == "CSI-RS"
+             scheduled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                 T, "Scheduled", false(n, 1)));
+@@ -18252,6 +18281,9 @@ methods(Static, Access=private)
+             "CrashMessage", char(string(sixgr.util.structGet(trial, "CrashMessage", ""))), ...
+             "Notes", char(string(sixgr.util.structGet(trial, "Notes", "Active waveform-backed coupled PUCCH feedback observation."))));
+         row = sixgr.truth.bindPUCCHPowerLedger(row,trial);
++        if isfield(trial,'ReceiverNoiseAudit')
++            row=sixgr.util.mergeStruct(row,trial.ReceiverNoiseAudit);
++        end
+         if isfield(trial,'Receiver') && isfield(trial.Receiver,'ChannelEstimationMode')
+             row=sixgr.util.mergeStruct(row,sixgr.link.pucchReceiverStageEvidence(trial.Receiver));
+         end
+diff --git a/+sixgr/+link/runPUCCHWaveformTrial.m b/+sixgr/+link/runPUCCHWaveformTrial.m
+index d8331223..92f97a11 100644
+--- a/+sixgr/+link/runPUCCHWaveformTrial.m
++++ b/+sixgr/+link/runPUCCHWaveformTrial.m
+@@ -190,8 +190,16 @@ trial.AppliedTimingCorrectionSamples = 0;
+ try
+     if received
+         prior=sixgr.util.structGet(receivedContext,'ReceivedULTimingReference',[]);
++        execution=struct();
++        jointPolicy=sixgr.util.structGet(cfgRuntime,'phy.pucch.format2ShortUCIReceiverPolicy',[]);
++        count=context.Sequence1Length+context.Sequence2Length;
++        if ~isempty(jointPolicy) && receiverAssignment.Format==2 && count>=3 && count<=11
++            execution=struct('Segments',{replay.ReceiveStreamExecutionSegments}, ...
++                'ReceiverID',replay.ReceiverID,'TransmitterID',replay.TransmitterID, ...
++                'GainCompensation',replay.ReceiverGainCompensation);
++        end
+         rx=sixgr.link.receivePUCCHObservation(cfgRuntime,receiverAssignment,context, ...
+-            receivedContext.Observation,prior);
++            receivedContext.Observation,prior,execution);
+     else
+         rxArgs = {"NoiseVariance",noiseVariance, ...
+             "NoiseVarianceDomain","sample", ...
+@@ -319,6 +327,9 @@ trial.DTXFlag = logical(rx.DTX);
+ trial.DetectionMetric = rx.DetectionMetric;
+ trial.DetectionThreshold = rx.DetectionThreshold;
+ trial.DetectionThresholdSource = detectionThresholdSource;
++if received
++    trial.DetectionThresholdSource=rx.DetectionThresholdSource;
++end
+ trial.DetectionAttempted = rx.DetectionAttempted;
+ trial.DetectionUsable = rx.ReceiverUsable;
+ trial.ReceiverUsable = rx.ReceiverUsable;
+@@ -336,7 +347,8 @@ trial.PUCCHPRBCount = opt.Assignment.Resource.Data.NumPRBs;
+ trial.PUCCHSymbolStart = opt.Assignment.Resource.Data.StartSymbol;
+ trial.PUCCHNumSymbols = opt.Assignment.Resource.Data.NumSymbols;
+ trial.PUCCHRECount = height(tx.Ownership.Table);
+-trial.PUCCHDMRSRECount = numel(tx.DMRS.Indices);
++trial.TransmitterPUCCHDMRSRECount = numel(tx.DMRS.Indices);
++trial.PUCCHDMRSRECount = rx.PUCCHDMRSRECount;
+ trial.PUCCHGridHash = tx.ResourceOwnershipDigest;
+ trial.PUCCHWaveformHash = tx.WaveformSHA256;
+ trial.ChannelModel = string(channelMeta.Profile);
+@@ -345,6 +357,20 @@ trial.DopplerHz = double(sixgr.util.structGet( ...
+ trial.ConfiguredSNR_dB = double(opt.SNR_dB);
+ trial.AppliedAWGNSNR_dB = double(sixgr.util.structGet( ...
+     replay,"AppliedAWGNSNR_dB",localAWGNSNR(opt)));
++trial.ReceiverNoiseAuditAvailable=false;
++trial.ReceiverNoiseAuditStatus="not_applicable_no_versioned_shared_execution";
++if received && isfield(replay,'ReceiveStreamExecutionSegments') && ...
++        isfield(replay,'ControlNoiseAuditSchemaVersion')
++    % Independent post-decode bookkeeping, never practical RX input.
++    trial.ReceiverNoiseAudit=sixgr.link.receivedControlNoiseAudit( ...
++        cfgRuntime,receivedContext.Observation,replay.ReceiveStreamExecutionSegments, ...
++        replay.ReceiverID,trial.ConfiguredSNR_dB);
++    trial=sixgr.util.mergeStruct(trial,trial.ReceiverNoiseAudit);
++elseif received && isfield(replay,'ReceiveStreamExecutionSegments')
++    % Retained pre-schema captures remain replayable, but no calibrated
++    % audit is claimed or reconstructed from current configuration labels.
++    trial.ReceiverNoiseAuditStatus="unavailable_unversioned_retained_execution";
++end
+ trial.NoiseVarStatus = "OK";
+ trial.NoiseVarSource = string(rx.GridNoiseVarianceSource);
+ trial.NoiseVarReason = "";
+diff --git a/+sixgr/+link/pucchReceiverStageEvidence.m b/+sixgr/+link/pucchReceiverStageEvidence.m
+index 21f87c42..16df782d 100644
+--- a/+sixgr/+link/pucchReceiverStageEvidence.m
++++ b/+sixgr/+link/pucchReceiverStageEvidence.m
+@@ -17,6 +17,18 @@ evidence=struct( ...
+     'EqualizationAttempted',estimated, ...
+     'EqualizationAvailable',~estimated || ...
+         ~isempty(fieldnames(sixgr.util.structGet(rx,'EqualizerInfo',struct()))));
++% Count the receiver's constructed reference resources, including the
++% genuine zero for Format 0. This does not assert that a producer transmitted.
++if isfield(rx,'PUCCHDMRSRECount')
++    count=rx.PUCCHDMRSRECount;
++    assert(isnumeric(count) && isscalar(count) && isreal(count) && ...
++        isfinite(count) && count>=0 && count==fix(count) && ...
++        isfield(rx,'PUCCHDMRSRECountSource') && ...
++        isequal(string(rx.PUCCHDMRSRECountSource),"receiver_reference_indices_not_transmitter_evidence"), ...
++        'sixgr:link:InvalidPUCCHDMRSCount','Require the executed receiver reference count and its source.');
++    evidence.PUCCHDMRSRECount=double(count);
++    evidence.PUCCHDMRSRECountSource=string(rx.PUCCHDMRSRECountSource);
++end
+ % Metric validity is distinct from detection or CRC success: a finite zero
+ % metric can be a valid DTX observation. Copy the executed detector flag;
+ % leave it absent for legacy inputs that contain no such evidence.
+@@ -58,6 +70,24 @@ end
+ if rx.NoncoherentSequenceDetection && isnan(rx.DecodeNoiseInterferenceVariance)
+     evidence.DecodeNoiseVarianceDomain="not_consumed_noncoherent_sequence_detection";
+ end
++% Preserve what the executed decoder actually consumed. Equalizer diagnostics
++% still exist for the joint receiver, but are not its likelihood inputs.
++for name=["DecoderAlgorithm","UCICodewordLLRRole","DecodeNoiseInterferenceVarianceRole","GridNoiseVarianceValueRole"]
++    if isfield(rx,name), evidence.(name)=string(rx.(name)); end
++end
++if isfield(rx,'ShortUCIReceiverEvidence') && rx.ShortUCIReceiverEvidence.Applied
++    joint=rx.ShortUCIReceiverEvidence; presence=joint.JointPresenceDecision;
++    evidence.ShortUCIReceiverApplied=true;
++    evidence.ShortUCIWordConfidencePassed=logical(joint.WordAccepted);
++    evidence.ShortUCIConditionalWordPosterior=joint.ConditionalWordPosterior;
++    evidence.ShortUCIMinimumWordPosterior=joint.Policy.minimum_word_posterior;
++    evidence.ShortUCISearchFalseAlarmBound=presence.SearchFalseAlarmBound;
++    evidence.ShortUCITargetFalseAlarmProbability=presence.TargetFalseAlarmProbability;
++    evidence.ShortUCIHypothesisCount=presence.HypothesisCount;
++    evidence.ShortUCIPhysicalQualificationPassed=logical(joint.PhysicalQualificationPassed);
++    evidence.ShortUCIModel=string(joint.Model);
++    evidence.DecodeNoiseVarianceDomain="equalized_symbol_comparison_only_not_joint_decoder_input";
++end
+ if nargin>1
+     assert(string(rx.AssignmentDigest)==string(assignment.Digest), ...
+         'sixgr:link:PUCCHReceiverEvidenceAssignmentMismatch', ...
+diff --git a/+sixgr/+lls6g/+config/validateScenarioConfig.m b/+sixgr/+lls6g/+config/validateScenarioConfig.m
+index edbb6192..a8bf28c6 100644
+--- a/+sixgr/+lls6g/+config/validateScenarioConfig.m
++++ b/+sixgr/+lls6g/+config/validateScenarioConfig.m
+@@ -214,6 +214,19 @@ if logical(sixgr.util.structGet(cfg,'channels.shared_identity_awgn_enabled',fals
+         'sixgr:lls6g:config:SharedIdentityAWGNRunnerRequired', ...
+         'Shared identity AWGN requires the slot_coupled_truth coordinator, not the ideal-feedback research runner.');
+ end
++jointPUCCH=sixgr.util.structGet(cfg,'pucch.format2_short_uci_receiver_policy',[]);
++if ~isempty(jointPUCCH)
++    assert(jointPUCCH.target_false_alarm_probability>0 && ...
++        jointPUCCH.target_false_alarm_probability<1 && jointPUCCH.minimum_word_posterior>0, ...
++        'sixgr:lls6g:config:InvalidJointShortUCIPolicy', ...
++        'pucch.format2_short_uci_receiver_policy requires false-alarm probability in (0,1) and word posterior in (0,1].');
++    assert(logical(cfg.control.pucch_enabled) && logical(cfg.pucch.enabled) && ...
++        string(cfg.meta.research_class)=="optional_research_experiment" && ...
++        (logical(sixgr.util.structGet(cfg,'channels.shared_identity_awgn_enabled',false)) || ~isempty(matrixReal)), ...
++        'sixgr:lls6g:config:JointShortUCIRequiresExplicitAWGN', ...
++        ['The opt-in short-UCI receiver requires enabled physical PUCCH, an explicit shared ' ...
++         'identity/fixed-matrix AWGN operator and optional_research_experiment classification.']);
++end
+ for signal=["srs","trs","csi_rs"]
+     estimatorPath="reference_signals."+signal+".runtime_channel_estimator";
+     if signal=="csi_rs", estimatorPath="reference_signals.csi_rs_runtime_channel_estimator"; end
+diff --git a/+sixgr/+lls6g/buildInternalConfig.m b/+sixgr/+lls6g/buildInternalConfig.m
+index 9fb42a39..8ac87ba2 100644
+--- a/+sixgr/+lls6g/buildInternalConfig.m
++++ b/+sixgr/+lls6g/buildInternalConfig.m
+@@ -959,6 +959,9 @@ cfg.phy.pdcch.aggregationLevel = double(localResolveDefaultPDCCHAggregationLevel
+ cfg.phy.pdcch.candidateAggregationLevels = double(localGetNested(s, "control.candidate_aggregation_levels", cfg.phy.pdcch.aggregationLevels));
+ cfg.phy.pdcch.aggregationSelectionPolicy = char(string(localGetNested(s, "control.aggregation_selection_policy", "snr_threshold")));
+ cfg.phy.pdcch.schedulerAggregationLevel = double(localGetNested(s, "control.scheduler_aggregation_level", NaN));
++if isfield(s.control,'joint_pdcch_admission_policy')
++    cfg.phy.pdcch.jointAdmissionPolicy = char(lower(string(s.control.joint_pdcch_admission_policy)));
++end
+ cfg.phy.pdcch.dciFormats = cellstr(string(s.control.dci_formats(:)));
+ cfg.phy.pdcch.dciFormat = char(string(localFirstValue(s.control.dci_formats)));
+ cfg.phy.pdcch.operatorControl = s.control;
+@@ -1745,6 +1748,10 @@ for detectorField=detectorFields
+ end
+ end
+ 
++% Explicit opt-in only. Its observation assumptions are checked again at RX.
++cfg=localStructSetIfPresent(cfg,"phy.pucch.format2ShortUCIReceiverPolicy", ...
++    localGetNested(s,"pucch.format2_short_uci_receiver_policy",[]));
++
+ cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
+ cfg.phy.pusch.nLayers = double(ulLayerCount);
+ cfg.phy.pusch.numLayers = double(ulLayerCount);
+diff --git a/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml b/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml
+index 8c3a1fdf..06cd48b3 100644
+--- a/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml
++++ b/simulator/configs/schema/scenario_parameter_catalog_extension_02.yaml
+@@ -81,6 +81,7 @@
+       "rv_sequence": {"required": true, "type": "number_list", "min_items": 1}, "retransmission_policy": {"required": true, "type": "string"}
+     }},
+     "pucch": {"required": true, "parameters": {
++      "format2_short_uci_receiver_policy": {"required": false, "type": "struct", "nested_rule": "pucch_flat_joint_short_uci_policy"},
+       "detection_threshold_format0_one_symbol": {"required": false, "type": "number", "min": 0, "max": 1},
+       "detection_threshold_format0_two_symbols": {"required": false, "type": "number", "min": 0, "max": 1},
+       "detection_threshold_format1": {"required": false, "type": "number", "min": 0, "max": 1},
+@@ -150,6 +151,11 @@
+     }}
+   },
+   "nested_sections": {
++    "pucch_flat_joint_short_uci_policy": {"parameters": {
++      "algorithm": {"required": true, "type": "string", "allowed_values": ["flat_joint_short_uci_v1"]},
++      "target_false_alarm_probability": {"required": true, "type": "number", "min": 0, "max": 1},
++      "minimum_word_posterior": {"required": true, "type": "number", "min": 0, "max": 1}
++    }},
+     "csi_report_configuration": {"parameters": {
+       "report_config_id": {"required": true, "type": "string", "nonempty": true},
+       "epoch": {"required": true, "type": "integer", "min": 0},
+diff --git a/tests/testEqualizerStaticCovarianceBatch.m b/tests/testEqualizerStaticCovarianceBatch.m
+index dc7af9f9..f134e57b 100644
+--- a/tests/testEqualizerStaticCovarianceBatch.m
++++ b/tests/testEqualizerStaticCovarianceBatch.m
+@@ -21,7 +21,8 @@ assert(double(info.UniqueSolveCount) == nRE, ...
+     "A varying channel still requires one exact layer-domain filter per RE.");
+ 
+ Rprepared = (R+R')/2;
+-Rprepared = Rprepared + max(norm(Rprepared,"fro")*1e-12,eps)*eye(nRx);
++% The direct MMSE reference uses physical covariance. Numerical solve
++% loading is neither injected noise nor part of W*Rphysical*W^H.
+ reference = complex(zeros(nRE,nLayers));
+ referenceSINR = zeros(nRE,nLayers);
+ for re = 1:nRE
+diff --git a/tests/testPUCCHFlatJointReceiver.m b/tests/testPUCCHFlatJointReceiver.m
+index 358e763e..cefc1315 100644
+--- a/tests/testPUCCHFlatJointReceiver.m
++++ b/tests/testPUCCHFlatJointReceiver.m
+@@ -68,6 +68,14 @@ for count=reshape(p.payload_bits,1,[])
+                     ~rx.ReceiveTiming.OracleTimingUsed && ~rx.CRCApplicable && rx.UCICRCBitCount==0);
+                 assert(evidence.JointPresenceDecision.HypothesisCount==(diff(window)+1)*2^count && ...
+                     rx.ReceiverUsable==(~rx.DTX && evidence.WordAccepted));
++                stage=sixgr.link.pucchReceiverStageEvidence(rx,assignment);
++                assert(stage.DecoderAlgorithm=="flat_joint_short_uci_v1" && ...
++                    stage.UCICodewordLLRRole=="equalized_receiver_comparison_not_joint_decoder_input" && ...
++                    stage.DecodeNoiseInterferenceVarianceRole=="equalized_receiver_comparison_not_joint_decoder_variance" && ...
++                    stage.DecodeNoiseVarianceDomain=="equalized_symbol_comparison_only_not_joint_decoder_input" && ...
++                    stage.ShortUCIConditionalWordPosterior==evidence.ConditionalWordPosterior && ...
++                    stage.ShortUCIWordConfidencePassed==evidence.WordAccepted && ...
++                    ~stage.ShortUCIPhysicalQualificationPassed);
+                 if rx.ReceiverUsable
+                     assert(isequal(rx.DecodedSequence1,evidence.Bits));
+                 else
+@@ -85,6 +93,8 @@ for count=reshape(p.payload_bits,1,[])
+                     assert(~rejected.DTX && ~rejected.ReceiverUsable && isempty(rejected.DecodedSequence1) && ...
+                         rejected.DetectionOutcome=="detected" && ...
+                         rejected.FailureReason=="short_uci_word_confidence_below_policy");
++                    exported=sixgr.link.pucchReceiverStageEvidence(rejected,assignment);
++                    assert(exported.DetectionOutcome=="detected" && ~exported.ShortUCIWordConfidencePassed);
+                     withheld=withheld+1;
+                 end
+                 row=table(count,prbs,branches,snr,present,rx.DTX,rx.ReceiverUsable, ...
+diff --git a/tests/testSharedPeriodicCSIProducer.m b/tests/testSharedPeriodicCSIProducer.m
+index 1ad44172..608666b8 100644
+--- a/tests/testSharedPeriodicCSIProducer.m
++++ b/tests/testSharedPeriodicCSIProducer.m
+@@ -1,8 +1,9 @@
+-function [ok,state]=testSharedPeriodicCSIProducer(producerMode,withReceivedClock)
++function [ok,state]=testSharedPeriodicCSIProducer(producerMode,withReceivedClock,scenarioPath)
+ % Actual periodic PUCCH and CSI-RS-bearing DL IQ/CDL/RF/thermal noise.
+ % UE CSI values/access timing remain declared component-boundary inputs,
+ % not end-to-end CSI measurement or access qualification.
+ if nargin<2, withReceivedClock=false; end
++if nargin<3, scenarioPath='simulator/configs/scenarios/lls_pdcch_shared_queue_fixture.yaml'; end
+ if nargin==0
+     [ok,state]=testSharedPeriodicCSIProducer("present");
+     [removedOK,removed]=testSharedPeriodicCSIProducer("remove_after_tx");
+@@ -19,13 +20,13 @@ setup6GRSimToolkit('Verbose',false);
+ root=fileparts(fileparts(mfilename('fullpath')));
+ assert(strcmpi(which('sixgr.truth.CoupledTruthRuntime'), ...
+     fullfile(root,'+sixgr','+truth','CoupledTruthRuntime.m')));
+-s=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/lls_pdcch_shared_queue_fixture.yaml');
++s=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+ cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+ cfg.phy.ssb.enable=false; cfg.phy.sib1.enable=false; cfg.phy.trs.enable=false;
+ cfg.phy.csirs.period_slots=5; cfg.phy.csirs.offset_slots=0;
+ multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
+ state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),10);
+-state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,12);
++state=sixgr.truth.CoupledTruthRuntime.startSlot(state,cfg,'DL',1,1,1,10,cfg.channel.snr_dB);
+ state.CurrentServingIdx(:)=1;
+ state.TestCSIProducerMode=producerMode;
+ state.TestCSIWithReceivedClock=logical(withReceivedClock);
+@@ -96,7 +97,7 @@ end
+ queuedReport=table();
+ for slot=1:10
+     [state,~,blocked]=sixgr.truth.CoupledTruthRuntime.startSlotWithQueuedUL( ...
+-        state,cfg,'DL',1,1,slot,10,12,repmat(struct(),0,1),true);
++        state,cfg,'DL',1,1,slot,10,cfg.channel.snr_dB,repmat(struct(),0,1),true);
+     assert(isempty(blocked));
+     if slot<=4, assert(isempty(state.PendingCSITable)); end
+     if ~isempty(state.PendingCSITable) && ~state.PendingCSITable.Processed
+@@ -307,8 +308,10 @@ for item=items
+             prior=sixgr.truth.selectReceivedULTimingReference(state,item.UE,receiverInput.EndSampleExclusive,nominal);
+             assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference'));
+         end
++        execution=struct('Segments',{postPlane.Segments},'ReceiverID',receiverID, ...
++            'TransmitterID',"ue_"+item.UE,'GainCompensation',gain);
+         direct=sixgr.link.receivePUCCHObservation( ...
+-            item.Context.Config,h.Assignment,h.Context,receiverInput,prior);
++            item.Context.Config,h.Assignment,h.Context,receiverInput,prior,execution);
+         if item.Kind=="PUCCHReceiveOnly"
+             tx=find(string({captures.ReceiverID})=="ue_1:tx");
+             assert(isscalar(tx) && all(captures(tx).Samples==0,'all'));
+diff --git a/+sixgr/+phy/+rx/collectPUCCHObservationModel.m b/+sixgr/+phy/+rx/collectPUCCHObservationModel.m
+new file mode 100644
+index 00000000..bb1c8dd6
+--- /dev/null
++++ b/+sixgr/+phy/+rx/collectPUCCHObservationModel.m
+@@ -0,0 +1,71 @@
++function model=collectPUCCHObservationModel(observation,execution)
++% Receiver-only model applicability metadata, never TX payload or channel truth.
++% Keep only executed operator/RF type and clock evidence. This collector does
++% not establish a detector's error rates or the correctness of received timing.
++id='sixgr:phy:rx:MissingPUCCHExecutionContext';
++assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
++    isscalar(observation) && observation.isComplete(),id,'Require the completed actual receive buffer.');
++required={'Segments','ReceiverID','TransmitterID','GainCompensation'};
++assert(isstruct(execution) && isscalar(execution) && all(isfield(execution,required)), ...
++    id,'Supply independently scheduled endpoints, receive segments and actual gain-compensation evidence.');
++rxID=string(execution.ReceiverID); txID=string(execution.TransmitterID);
++assert(isscalar(rxID) && strlength(rxID)>0 && isscalar(txID) && strlength(txID)>0 && ...
++    iscell(execution.Segments) && ~isempty(execution.Segments),id,'Receiver execution context is incomplete.');
++segments=execution.Segments; clean=cell(size(segments)); intervals=zeros(numel(segments),2);
++modes=strings(numel(segments),1);
++for k=1:numel(segments)
++    segment=segments{k};
++    assert(isstruct(segment) && isscalar(segment) && ...
++        all(isfield(segment,{'StartSample','EndSampleExclusive','Execution'})),id,'Missing executed segment clock.');
++    bounds=[segment.StartSample segment.EndSampleExclusive];
++    assert(isnumeric(bounds) && isreal(bounds) && numel(bounds)==2 && ...
++        all(isfinite(bounds) & bounds==fix(bounds) & bounds>=0) && bounds(1)<bounds(2) && ...
++        bounds(2)>observation.StartSample && bounds(1)<observation.EndSampleExclusive, ...
++        id,'Each segment must overlap this actual receiver interval.');
++    intervals(k,:)=bounds;
++    e=segment.Execution;
++    assert(isstruct(e) && isscalar(e) && all(isfield(e,{'RX','TX','Links'})),id,'Missing executed RF/link records.');
++    assert(isstruct(e.RX) && all(isfield(e.RX,{'ID','Replay'})) && ...
++        isstruct(e.TX) && all(isfield(e.TX,{'ID','Replay'})) && ...
++        isstruct(e.Links) && all(isfield(e.Links,{'TX','RX','Replay'})), ...
++        id,'Executed endpoints and links need explicit identity and replay records.');
++    r=e.RX(string({e.RX.ID})==rxID); t=e.TX(string({e.TX.ID})==txID);
++    assert(isscalar(r) && isscalar(t) && isstruct(r.Replay) && isscalar(r.Replay) && ...
++        isfield(r.Replay,'NoiseOperatingMode'), ...
++        id,'Execution must identify the independently scheduled endpoints and receiver noise mode.');
++    noiseMode=string(r.Replay.NoiseOperatingMode);
++    assert(isscalar(noiseMode) && strlength(noiseMode)>0,id,'Receiver noise mode is unavailable.');
++    modes(k)=noiseMode;
++    links=e.Links(string({e.Links.RX})==rxID);
++    selected=struct('TX',{},'RX',{},'Replay',{});
++    for j=1:numel(links)
++        selected(j)=struct('TX',links(j).TX,'RX',links(j).RX, ...
++            'Replay',retain(links(j).Replay,{'RuntimeChannelTimingTruthSource','ChannelFadingApplied'}));
++    end
++    rfFields={'RFConfiguredStageCount','RFAppliedStageCount','AGCEnabled','AGCApplied','NoiseOperatingMode'};
++    clean{k}=struct('StartSample',bounds(1),'EndSampleExclusive',bounds(2), ...
++        'Execution',struct('Links',selected, ...
++        'RX',struct('ID',rxID,'Replay',retain(r.Replay,rfFields)), ...
++        'TX',struct('ID',txID,'Replay',retain(t.Replay,rfFields))));
++end
++assert(intervals(1,1)<=observation.StartSample && intervals(end,2)>=observation.EndSampleExclusive && ...
++    all(intervals(2:end,1)==intervals(1:end-1,2)) && all(modes==modes(1)), ...
++    id,'Actual receive coverage must be contiguous with one declared noise operating mode.');
++model=struct('Source',"actual_receiver_execution_types_and_clocks_only", ...
++    'ReceiverID',rxID,'TransmitterID',txID,'NoiseOperatingMode',modes(1), ...
++    'ReceiveStreamExecutionSegments',{clean}, ...
++    'ReceiverGainCompensation',retain(execution.GainCompensation,{'GainOnlyRFExecuted'}), ...
++    'ObservationStartSample',observation.StartSample, ...
++    'ObservationEndSampleExclusive',observation.EndSampleExclusive, ...
++    'ObservationSampleRateHz',observation.SampleRateHz, ...
++    'PayloadOrChannelCoefficientsRetained',false,'InjectedVarianceRetained',false, ...
++    'PhysicalQualificationPassed',false);
++end
++function out=retain(input,names)
++assert(isstruct(input) && isscalar(input),'sixgr:phy:rx:MissingPUCCHExecutionContext', ...
++    'Execution metadata must be a scalar struct, not a synthesized replacement.');
++out=struct();
++for k=1:numel(names)
++    if isfield(input,names{k}), out.(names{k})=input.(names{k}); end
++end
++end
+diff --git a/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml b/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml
+new file mode 100644
+index 00000000..21a2ecd3
+--- /dev/null
++++ b/simulator/configs/control/pucch_flat_joint_short_uci_candidate.yaml
+@@ -0,0 +1,8 @@
++# Explicit opt-in receiver candidate, not statistical qualification.
++meta:
++  research_class: optional_research_experiment
++pucch:
++  format2_short_uci_receiver_policy:
++    algorithm: flat_joint_short_uci_v1
++    target_false_alarm_probability: 0.01
++    minimum_word_posterior: 0.99
+diff --git a/simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml b/simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml
+new file mode 100644
+index 00000000..af969b93
+--- /dev/null
++++ b/simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml
+@@ -0,0 +1,13 @@
++inherits:
++  - ./lls_pdcch_shared_queue_fixture.yaml
++  - ../channels/shared_identity_awgn.yaml
++  - ../control/pucch_flat_joint_short_uci_candidate.yaml
++
++meta:
++  scenario_id: lls_pucch_flat_joint_shared_fixture
++  description: Physical shared-stream short-UCI receiver integration with explicit white AWGN.
++  purpose: Verify independent receiver wiring and producer absence; not statistical qualification or full access.
++  research_class: optional_research_experiment
++
++simulation:
++  snr_db: 20
+diff --git a/tests/testPUCCHObservationModelCollection.m b/tests/testPUCCHObservationModelCollection.m
+new file mode 100644
+index 00000000..d764d8dd
+--- /dev/null
++++ b/tests/testPUCCHObservationModelCollection.m
+@@ -0,0 +1,52 @@
++function ok=testPUCCHObservationModelCollection()
++% Metadata-contract guard only; physical shared execution has its own test.
++setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false);
++obs=sixgr.phy.waveform.WaveformObservationBuffer(10,30,7680000,2);
++obs.append(sixgr.phy.waveform.WaveformChunk(complex(zeros(20,2)),10),obs.SampleRateHz);
++rf=struct('RFConfiguredStageCount',0,'RFAppliedStageCount',0, ...
++    'AGCEnabled',false,'AGCApplied',false,'NoiseOperatingMode',"standalone_awgn_snr_argument");
++link=struct('TX',"tx",'RX',"rx",'Replay',struct( ...
++    'RuntimeChannelTimingTruthSource',"executed_fixed_matrix_operator_zero_delay", ...
++    'ChannelFadingApplied',false));
++e=struct('RX',struct('ID',"rx",'Replay',rf),'TX',struct('ID',"tx",'Replay',rf),'Links',link);
++segments={struct('StartSample',0,'EndSampleExclusive',20,'Execution',e), ...
++    struct('StartSample',20,'EndSampleExclusive',40,'Execution',e)};
++input=struct('Segments',{segments},'ReceiverID',"rx",'TransmitterID',"tx", ...
++    'GainCompensation',struct('GainOnlyRFExecuted',false));
++actual=sixgr.phy.rx.collectPUCCHObservationModel(obs,input);
++assert(~actual.PayloadOrChannelCoefficientsRetained && ~actual.InjectedVarianceRetained && ...
++    ~actual.PhysicalQualificationPassed && actual.ObservationStartSample==10 && ...
++    actual.ObservationEndSampleExclusive==30);
++sixgr.phy.rx.assertFlatStaticAWGNObservation(actual);
++replay=struct('Segments',{actual.ReceiveStreamExecutionSegments},'ReceiverID',actual.ReceiverID, ...
++    'TransmitterID',actual.TransmitterID,'GainCompensation',actual.ReceiverGainCompensation);
++assert(isequaln(actual,sixgr.phy.rx.collectPUCCHObservationModel(obs,replay)));
++poison=input;
++for k=1:2
++    poison.Segments{k}.Execution.TX.Replay.PayloadBits=int8([1 0 1]);
++    poison.Segments{k}.Execution.TX.Replay.TransmittedWaveform=complex(Inf);
++    poison.Segments{k}.Execution.RX.Replay.InjectedNoiseVariance=NaN;
++    poison.Segments{k}.Execution.RX.Replay.AppliedAWGNSNR_dB=Inf;
++    poison.Segments{k}.Execution.Links.Replay.ChannelCoefficients=complex(NaN);
++end
++poison.GainCompensation.AppliedGainMin_dB=Inf;
++assert(isequaln(actual,sixgr.phy.rx.collectPUCCHObservationModel(obs,poison)), ...
++    'test:PUCCHModelOracleLeak','Payload, coefficients, variance and gain magnitudes must not enter model eligibility.');
++bad=rmfield(input,'Segments'); reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{2}.StartSample=21; reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{1}.EndSampleExclusive=21; reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.ReceiverID="missing"; reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{1}.Execution.RX=struct(); reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++bad=input; bad.Segments{2}.Execution.RX.Replay.NoiseOperatingMode="thermal";
++reject(@()sixgr.phy.rx.collectPUCCHObservationModel(obs,bad));
++incomplete=sixgr.phy.waveform.WaveformObservationBuffer(10,30,obs.SampleRateHz,2);
++reject(@()sixgr.phy.rx.collectPUCCHObservationModel(incomplete,input));
++fprintf('PUCCH_OBSERVATION_MODEL_COLLECTION_PASS oracle_poisoning=1 invalid_context_guards=7 metadata_only=1\n');
++ok=true;
++end
++function reject(f)
++try, f(); catch cause
++    assert(strcmp(cause.identifier,'sixgr:phy:rx:MissingPUCCHExecutionContext')); return;
++end
++error('test:InvalidPUCCHExecutionAccepted','Missing or discontinuous physical execution must not be synthesized.');
++end
+diff --git a/tests/testSharedPUCCHJointReceiver.m b/tests/testSharedPUCCHJointReceiver.m
+new file mode 100644
+index 00000000..a7768611
+--- /dev/null
++++ b/tests/testSharedPUCCHJointReceiver.m
+@@ -0,0 +1,81 @@
++function ok=testSharedPUCCHJointReceiver()
++% Actual shared PUCCH/SRS/CSI-RS execution, with declared UE CSI/access boundary.
++% No statistical qualification claim or injected receiver payload/variance.
++path='simulator/configs/scenarios/lls_pucch_flat_joint_shared_fixture.yaml';
++s=sixgr.lls6g.config.loadScenarioConfig(path);
++cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
++s=s.toStruct();
++assert(isequaln(cfg.phy.pucch.format2ShortUCIReceiverPolicy,s.pucch.format2_short_uci_receiver_policy));
++for change=["zero_alpha","unit_alpha","zero_posterior","wrong_algorithm","missing_probability","no_explicit_channel","baseline_claim"]
++    bad=s;
++    switch change
++        case "zero_alpha", bad.pucch.format2_short_uci_receiver_policy.target_false_alarm_probability=0;
++        case "unit_alpha", bad.pucch.format2_short_uci_receiver_policy.target_false_alarm_probability=1;
++        case "zero_posterior", bad.pucch.format2_short_uci_receiver_policy.minimum_word_posterior=0;
++        case "wrong_algorithm", bad.pucch.format2_short_uci_receiver_policy.algorithm="undefined";
++        case "missing_probability", bad.pucch.format2_short_uci_receiver_policy=rmfield(bad.pucch.format2_short_uci_receiver_policy,'minimum_word_posterior');
++        case "no_explicit_channel", bad.channels.shared_identity_awgn_enabled=false;
++        case "baseline_claim", bad.meta.research_class='baseline_benchmark';
++    end
++    rejected=false;
++    try, sixgr.lls6g.config.validateScenarioConfig(bad); catch cause
++        assert(startsWith(string(cause.identifier),"sixgr:lls6g:")); rejected=true;
++    end
++    assert(rejected,'test:InvalidJointReceiverConfigAccepted','Invalid policy %s was accepted.',change);
++end
++states=cell(3,1); modes=["present","remove_after_tx","absent"];
++for k=1:numel(modes)
++    [passed,state]=testSharedPeriodicCSIProducer(modes(k),true,path); assert(passed);
++    states{k}=state; receipt=state.SharedGNBUCIReceptions{1}; rx=receipt.Receiver;
++    trial=state.ControlTrials.PUCCH;
++    assert(state.CurrentSNR_dB==cfg.channel.snr_dB, ...
++        'test:SharedJointSNRStateMismatch','The fixture slot state must use its actual configured operating point.');
++    assert(trial.ConfiguredSNR_dB==cfg.channel.snr_dB && trial.AppliedAWGNSNR_dB==cfg.channel.snr_dB && ...
++        trial.ReceiverNoiseAuditAvailable && ~trial.ReceiverNoiseAuditEstimatorInput && ...
++        trial.InjectedNoiseVariancePreCompositeFrontEnd>0, ...
++        'test:SharedJointSNRExportMismatch','All producer modes must export the actual fixed-AWGN noise reference.');
++    assert(abs(trial.AWGNReferenceEnergyPerOccupiedRE / ...
++        (trial.InjectedNoiseVariancePreCompositeFrontEnd*trial.SampleToGridNoiseVarianceGain)-10^(cfg.channel.snr_dB/10))<1e-8);
++    assert(rx.DecoderAlgorithm=="flat_joint_short_uci_v1" && rx.ShortUCIReceiverEvidence.Applied && ...
++        rx.ReceiveTiming.PriorClockApplied && ~rx.PreparedTransmitterConsumed && ...
++        ~rx.InjectedNoiseVarianceConsumed && ~rx.InjectedInterferenceCovarianceConsumed && ...
++        ~rx.ReceiverObservationModel.PayloadOrChannelCoefficientsRetained);
++    assert(startsWith(rx.DetectionThresholdSource,"yaml.pucch.format2_short_uci_receiver_policy.") && ...
++        trial.DetectionThresholdSource==rx.DetectionThresholdSource && ...
++        trial.ShortUCIConditionalWordPosterior==rx.ShortUCIReceiverEvidence.ConditionalWordPosterior && ...
++        trial.ShortUCIWordConfidencePassed==rx.ShortUCIReceiverEvidence.WordAccepted && ...
++        ~trial.ShortUCIPhysicalQualificationPassed);
++    assert(trial.DecodeNoiseInterferenceVarianceRole=="equalized_receiver_comparison_not_joint_decoder_variance");
++    assert(trial.GridNoiseVarianceValueRole=="received_DMRS_equalizer_comparison_not_joint_decoder_input");
++    item=state.TestReceivedPUCCHItem;
++    model=rx.ReceiverObservationModel;
++    plane=item.Planes(string({item.Planes.ReceiverID})==model.ReceiverID+":post_rf");
++    actualInput=sixgr.phy.rx.compensateReceivedAGC(plane.Observation,plane.Segments,model.ReceiverID);
++    replay=sixgr.link.receivePUCCHObservation(item.Context.Config,receipt.Assignment,receipt.Context, ...
++        actualInput,state.ReceivedULTimingReferences{1},rx.ReceiverExecutionContext);
++    for field=["DecodedSequence1","DecodedSequence2","DetectionMetric","DetectionThreshold","ReceiverUsable","DTX"]
++        assert(isequaln(rx.(field),replay.(field)),'test:JointReplayMismatch','Retained receiver-only inputs changed %s.',field);
++    end
++    % Roundtrip the primary table, preserving actual confidence and roles.
++    folder=fullfile(state.RunFolder,'joint_receiver_checks'); if ~isfolder(folder), mkdir(folder); end
++    csv=fullfile(folder,'pucch_joint_receiver.csv'); writetable(trial,csv);
++    persisted=readtable(csv,'TextType','string');
++    assert(persisted.DecoderAlgorithm==trial.DecoderAlgorithm && ...
++        abs(persisted.ShortUCIConditionalWordPosterior-trial.ShortUCIConditionalWordPosterior)<1e-12 && ...
++        persisted.ShortUCIPhysicalQualificationPassed==trial.ShortUCIPhysicalQualificationPassed && ...
++        persisted.DecodeNoiseInterferenceVarianceRole==trial.DecodeNoiseInterferenceVarianceRole);
++    if modes(k)~="absent", assert(rx.ReceiverUsable && ~rx.DTX); end
++    % Saved IQ can be replayed with the sanitized model metadata. It does not
++    % preserve a TX payload/H/noise-variance oracle as receiver configuration.
++    serialized=string(jsonencode(rx.ReceiverObservationModel));
++    assert(~contains(serialized,'"InjectedNoiseVariance":') && ...
++        ~contains(serialized,'"ChannelCoefficients":') && ~contains(serialized,'"PayloadBits":'));
++    fprintf('SHARED_JOINT_RECEIVER_CASE mode=%s DTX=%d usable=%d posterior=%.9g threshold=%.9g\n', ...
++        modes(k),rx.DTX,rx.ReceiverUsable,rx.ShortUCIReceiverEvidence.ConditionalWordPosterior,rx.DetectionThreshold);
++end
++a=removevars(states{1}.SharedGNBCSIReportTable,'UEReferenceRecordJSON');
++b=removevars(states{2}.SharedGNBCSIReportTable,'UEReferenceRecordJSON');
++assert(isequaln(a,b),'Removing UE producer state must not change gNB reception.');
++fprintf('SHARED_JOINT_RECEIVER_PASS actual_shared_stream=1 producer_modes=3 detector_qualified=0\n');
++ok=true;
++end
+diff --git a/+sixgr/+link/receivedControlNoiseAudit.m b/+sixgr/+link/receivedControlNoiseAudit.m
+new file mode 100644
+index 00000000..6b14264d
+--- /dev/null
++++ b/+sixgr/+link/receivedControlNoiseAudit.m
+@@ -0,0 +1,96 @@
++function audit=receivedControlNoiseAudit(cfg,observation,segments,receiverID,configuredSNR)
++% Post-decode noise-reference audit for a real receive window, even with no TX.
++% These injected variances are NOT receiver estimates and never decode inputs.
++id='sixgr:link:MissingControlNoiseExecution';
++assert(isa(observation,'sixgr.phy.waveform.WaveformObservationBuffer') && ...
++    isscalar(observation) && observation.isComplete() && iscell(segments) && ~isempty(segments), ...
++    id,'Require the completed receive observation and its executed segments.');
++validateattributes(configuredSNR,{'numeric'},{'scalar','real','finite'});
++assert(isequal(double(configuredSNR),double(cfg.channel.snr_dB)), ...
++    'sixgr:link:ControlNoiseOperatingPointMismatch', ...
++    'Active control operating point must equal the resolved physical configuration.');
++fields={'ControlNoiseAuditSchemaVersion','NoiseOperatingMode','NoiseStreamSeed','InjectedNoiseVariance', ...
++    'InjectedNoiseVarianceDomain','NoiseVarianceSource','AppliedAWGNSNR_dB', ...
++    'AppliedAWGNSNRSource','AppliedAWGNSNRValueRole','RequestedAWGNReferenceSNR_dB', ...
++    'SignalEnergyPerOccupiedRE','AWGNReferenceEnergySource','ReferenceAWGNGridNoiseVariance', ...
++    'ReferenceAWGNSampleNoiseVariance','SampleToGridNoiseVarianceGain', ...
++    'SharedNoiseCalibrationSource','ThermalSampleNoiseBandwidth_Hz','ThermalNoisePSD_mWPerHz'};
++records=struct([]); intervals=zeros(numel(segments),2);
++for k=1:numel(segments)
++    segment=segments{k};
++    assert(isstruct(segment) && isscalar(segment) && ...
++        all(isfield(segment,{'Execution','StartSample','EndSampleExclusive'})) && ...
++        isfield(segment.Execution,'RX'),id,'Require actual receiver execution and clock records.');
++    nodes=segment.Execution.RX;
++    assert(isstruct(nodes) && all(isfield(nodes,{'ID','Replay'})),id,'Missing receiver identities.');
++    node=nodes(string({nodes.ID})==string(receiverID));
++    assert(isscalar(node) && isstruct(node.Replay) && isscalar(node.Replay) && ...
++        all(isfield(node.Replay,fields)),id,'Require each executed noise ledger field; no configuration substitutes.');
++    r=struct();
++    for f=fields, r.(f{1})=node.Replay.(f{1}); end
++    intervals(k,:)=[segment.StartSample segment.EndSampleExclusive];
++    if k==1, records=r; else, records(k)=r; end
++end
++assert(all(isfinite(intervals) & intervals==fix(intervals) & intervals>=0,'all') && ...
++    all(intervals(:,2)>intervals(:,1)) && ...
++    intervals(1,1)<=observation.StartSample && intervals(end,2)>=observation.EndSampleExclusive && ...
++    all(intervals(:,2)>observation.StartSample & intervals(:,1)<observation.EndSampleExclusive) && ...
++    all(intervals(2:end,1)==intervals(1:end-1,2)), ...
++    id,'Noise ledger must cover the same complete receive interval without gaps or overlap.');
++for f=fields
++    values={records.(f{1})};
++    assert(all(cellfun(@(v)isequaln(v,values{1}),values)), ...
++        'sixgr:link:ControlNoiseChangedWithinObservation', ...
++        'Do not flatten time-varying receiver noise-reference field %s.',f{1});
++end
++r=records(1);
++assert(isequal(r.ControlNoiseAuditSchemaVersion,1), ...
++    'sixgr:link:ControlNoiseAuditSchemaMismatch','Only the executed v1 noise-reference schema is supported.');
++variance=double(r.InjectedNoiseVariance);
++assert(isfinite(variance) && isscalar(variance) && isreal(variance) && variance>0 && ...
++    string(r.InjectedNoiseVarianceDomain)=="receiver_sample_waveform_pre_composite_front_end", ...
++    'sixgr:link:ControlNoisePlaneMismatch','Executed injected variance must identify the pre-RF sample plane.');
++mode=string(r.NoiseOperatingMode);
++if mode=="standalone_awgn_snr_argument"
++    gain=double(r.SampleToGridNoiseVarianceGain); energy=double(r.SignalEnergyPerOccupiedRE);
++    assert(isscalar(gain) && isfinite(gain) && gain>0 && ...
++        isscalar(energy) && isfinite(energy) && energy>0, ...
++        'sixgr:link:ControlNoiseCalibrationMismatch','Fixed-reference energy and OFDM variance transform are required.');
++    applied=10*log10(energy/(variance*gain));
++    [expectedEnergy,policy]=sixgr.link.resolveAWGNReferenceEnergy(cfg);
++    assert(abs(applied-configuredSNR)<=1e-10 && abs(applied-r.AppliedAWGNSNR_dB)<=1e-10 && ...
++        abs(applied-r.RequestedAWGNReferenceSNR_dB)<=1e-10 && ...
++        abs(r.ReferenceAWGNGridNoiseVariance-variance*gain)<=1e-10*variance*gain && ...
++        abs(r.ReferenceAWGNSampleNoiseVariance-variance)<=1e-10*variance && ...
++        energy==expectedEnergy && string(r.SharedNoiseCalibrationSource)==policy.CalibrationSource, ...
++        'sixgr:link:ControlNoiseCalibrationMismatch', ...
++        'Applied fixed-AWGN reference must close through executed sample variance, OFDM transform and the active point.');
++elseif mode=="receiver_noise_figure_thermal_noise"
++    thermal=double(r.ThermalSampleNoiseBandwidth_Hz)*double(r.ThermalNoisePSD_mWPerHz);
++    assert(isfinite(thermal) && thermal>0 && abs(thermal-variance)<=1e-10*variance && ...
++        isnan(r.AppliedAWGNSNR_dB), ...
++        'sixgr:link:ControlNoiseCalibrationMismatch','Thermal execution must close as PSD times bandwidth, not a configured SNR.');
++else
++    error('sixgr:link:ControlNoiseModeUnsupported','Unsupported executed noise mode %s.',mode);
++end
++% Do not overwrite a practical receiver's generic variance/source pair.
++% The injected source is retained only with its explicitly scoped value.
++audit=rmfield(r,{'InjectedNoiseVariance','InjectedNoiseVarianceDomain', ...
++    'SignalEnergyPerOccupiedRE','NoiseVarianceSource'});
++audit.ConfiguredSNR_dB=double(configuredSNR);
++audit.ConfiguredSNRSource="resolved_active_operating_point_not_measured_receiver_SINR";
++audit.AWGNReferenceEnergyPerOccupiedRE=r.SignalEnergyPerOccupiedRE;
++audit.AWGNReferenceEnergyValueRole="fixed_reference_not_measured_desired_signal_energy";
++audit.InjectedNoiseVariancePreCompositeFrontEnd=variance;
++audit.InjectedNoiseVariancePreCompositeFrontEndDomain=string(r.InjectedNoiseVarianceDomain);
++audit.InjectedNoiseVariancePreCompositeFrontEndSource=string(r.NoiseVarianceSource);
++audit.ReferenceAWGNGridNoiseVarianceDomain="equivalent_OFDM_grid_of_pre_front_end_injected_noise";
++audit.ReceiverNoiseAuditSource="actual_completed_receiver_execution_segments_no_TX_dependency";
++audit.ReceiverNoiseAuditEstimatorInput=false;
++audit.ReceiverNoiseAuditAvailable=true;
++audit.ReceiverNoiseAuditStatus="executed_reference_calibration_verified";
++audit.ReceiverNoiseAuditStartSample=observation.StartSample;
++audit.ReceiverNoiseAuditEndSampleExclusive=observation.EndSampleExclusive;
++audit.ReceiverNoiseAuditSampleRateHz=observation.SampleRateHz;
++audit.ReceiverNoiseAuditSegmentCount=numel(segments);
++end
+diff --git a/tests/testReceivedControlNoiseAudit.m b/tests/testReceivedControlNoiseAudit.m
+new file mode 100644
+index 00000000..dfb5720d
+--- /dev/null
++++ b/tests/testReceivedControlNoiseAudit.m
+@@ -0,0 +1,114 @@
++function ok=testReceivedControlNoiseAudit()
++% Ledger-contract test. Declared metadata is not physical qualification.
++setup6GRSimToolkit('Verbose',false,'RunToolboxChecks',false);
++cfg=struct('channel',struct('snr_dB',20,'awgnReferenceREEnergy',0.25));
++obs=sixgr.phy.waveform.WaveformObservationBuffer(10,30,7680000,2);
++obs.append(sixgr.phy.waveform.WaveformChunk(complex(zeros(20,2)),10),obs.SampleRateHz);
++for point=[-30 -20 -10 0 10 20 30 40]
++    cfg.channel.snr_dB=point;
++    segments=ledgerFixture(cfg);
++    actual=sixgr.link.receivedControlNoiseAudit(cfg,obs,segments,"rx",point);
++    assert(abs(actual.AppliedAWGNSNR_dB-point)<1e-10 && actual.ConfiguredSNR_dB==point);
++    assert(actual.ReceiverNoiseAuditAvailable && ~actual.ReceiverNoiseAuditEstimatorInput && ...
++        actual.ReceiverNoiseAuditSegmentCount==2);
++    assert(actual.ReceiverNoiseAuditStartSample==10 && actual.ReceiverNoiseAuditEndSampleExclusive==30);
++    assert(abs(actual.AWGNReferenceEnergyPerOccupiedRE / ...
++        (actual.InjectedNoiseVariancePreCompositeFrontEnd*actual.SampleToGridNoiseVarianceGain) / ...
++        10^(point/10)-1)<1e-12);
++end
++cfg.channel.snr_dB=20; segments=ledgerFixture(cfg);
++expected=sixgr.link.receivedControlNoiseAudit(cfg,obs,segments,"rx",20);
++poison=segments;
++for k=1:numel(poison)
++    poison{k}.Execution.TX=struct('PayloadBits',int8([1 0 1]),'Waveform',Inf);
++    poison{k}.Execution.Links=struct('ChannelCoefficients',complex(NaN),'ReceivedPower',Inf);
++end
++assert(isequaln(expected,sixgr.link.receivedControlNoiseAudit(cfg,obs,poison,"rx",20)));
++measured=struct('NoiseVariance',0.123,'GridNoiseVariance',0.456, ...
++    'NoiseVarSource',"received_DMRS",'NoiseVarianceSource',"received_DMRS");
++merged=sixgr.util.mergeStruct(measured,expected);
++assert(merged.NoiseVariance==measured.NoiseVariance && merged.GridNoiseVariance==measured.GridNoiseVariance && ...
++    merged.NoiseVarSource==measured.NoiseVarSource && ...
++    merged.NoiseVarianceSource==measured.NoiseVarianceSource && ~isfield(expected,'NoiseVarianceSource'), ...
++    'Audit must not overwrite practical estimates or their source labels.');
++
++thermal=segments;
++for k=1:numel(thermal)
++    r=thermal{k}.Execution.RX.Replay;
++    r.NoiseOperatingMode="receiver_noise_figure_thermal_noise";
++    r.InjectedNoiseVariance=1e-6;
++    r.NoiseVarianceSource="receiver_thermal_noise_plus_nf_absolute_sqrt_mW";
++    r.ThermalSampleNoiseBandwidth_Hz=1e6; r.ThermalNoisePSD_mWPerHz=1e-12;
++    r.AppliedAWGNSNR_dB=NaN; r.AppliedAWGNSNRSource="not_applicable_thermal_noise";
++    r.RequestedAWGNReferenceSNR_dB=NaN; r.SignalEnergyPerOccupiedRE=NaN;
++    r.AWGNReferenceEnergySource="not_applicable_thermal_noise";
++    r.ReferenceAWGNGridNoiseVariance=NaN; r.ReferenceAWGNSampleNoiseVariance=NaN;
++    r.SampleToGridNoiseVarianceGain=NaN; r.SharedNoiseCalibrationSource="";
++    thermal{k}.Execution.RX.Replay=r;
++end
++t=sixgr.link.receivedControlNoiseAudit(cfg,obs,thermal,"rx",20);
++assert(isnan(t.AppliedAWGNSNR_dB) && t.InjectedNoiseVariancePreCompositeFrontEnd==1e-6);
++
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,segments,"rx",10),"ControlNoiseOperatingPointMismatch");
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,segments,"wrong_rx",20),"MissingControlNoiseExecution");
++bad=segments; bad{2}.StartSample=21;
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"MissingControlNoiseExecution");
++bad=segments; bad{2}.StartSample=19;
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"MissingControlNoiseExecution");
++bad=segments; bad{1}.Execution.RX.Replay=rmfield(bad{1}.Execution.RX.Replay,'InjectedNoiseVariance');
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"MissingControlNoiseExecution");
++bad=segments; bad{1}.Execution.RX=[bad{1}.Execution.RX bad{1}.Execution.RX];
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"MissingControlNoiseExecution");
++bad=segments; bad{2}.Execution.RX.Replay.NoiseStreamSeed=22;
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoiseChangedWithinObservation");
++bad=replaceField(segments,'InjectedNoiseVariance',2*segments{1}.Execution.RX.Replay.InjectedNoiseVariance);
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoiseCalibrationMismatch");
++bad=replaceField(segments,'AppliedAWGNSNR_dB',21);
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoiseCalibrationMismatch");
++bad=replaceField(segments,'InjectedNoiseVariance',-1);
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoisePlaneMismatch");
++bad=replaceField(segments,'InjectedNoiseVarianceDomain',"post_equalizer");
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoisePlaneMismatch");
++bad=replaceField(segments,'NoiseOperatingMode',"unknown");
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoiseModeUnsupported");
++bad=replaceField(thermal,'ThermalNoisePSD_mWPerHz',2e-12);
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoiseCalibrationMismatch");
++bad=segments; bad{1}.Execution.RX.Replay=rmfield(bad{1}.Execution.RX.Replay,'ControlNoiseAuditSchemaVersion');
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"MissingControlNoiseExecution");
++bad=replaceField(segments,'ControlNoiseAuditSchemaVersion',2);
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,obs,bad,"rx",20),"ControlNoiseAuditSchemaMismatch");
++incomplete=sixgr.phy.waveform.WaveformObservationBuffer(10,30,obs.SampleRateHz,2);
++reject(@()sixgr.link.receivedControlNoiseAudit(cfg,incomplete,segments,"rx",20),"MissingControlNoiseExecution");
++fprintf('RECEIVED_CONTROL_NOISE_AUDIT_PASS fixed_points=8 thermal=1 invalid_guards=16 TX_dependency=0 metadata_fixture_only=1\n');
++ok=true;
++end
++
++function segments=ledgerFixture(cfg)
++[energy,policy]=sixgr.link.resolveAWGNReferenceEnergy(cfg);
++gain=64; grid=energy/10^(cfg.channel.snr_dB/10); sample=grid/gain;
++r=struct('ControlNoiseAuditSchemaVersion',1,'NoiseOperatingMode',"standalone_awgn_snr_argument",'NoiseStreamSeed',11, ...
++    'InjectedNoiseVariance',sample,'InjectedNoiseVarianceDomain',"receiver_sample_waveform_pre_composite_front_end", ...
++    'NoiseVarianceSource',policy.NoiseVarianceSource,'AppliedAWGNSNR_dB',cfg.channel.snr_dB, ...
++    'AppliedAWGNSNRSource',"executed_sample_noise_variance_and_occupied_re_energy", ...
++    'AppliedAWGNSNRValueRole',"applied_noise_reference_not_measured_receiver_sinr", ...
++    'RequestedAWGNReferenceSNR_dB',cfg.channel.snr_dB,'SignalEnergyPerOccupiedRE',energy, ...
++    'AWGNReferenceEnergySource',policy.EnergySource,'ReferenceAWGNGridNoiseVariance',grid, ...
++    'ReferenceAWGNSampleNoiseVariance',sample,'SampleToGridNoiseVarianceGain',gain, ...
++    'SharedNoiseCalibrationSource',policy.CalibrationSource, ...
++    'ThermalSampleNoiseBandwidth_Hz',NaN,'ThermalNoisePSD_mWPerHz',NaN);
++execution=struct('RX',struct('ID',"rx",'Replay',r));
++segments={struct('StartSample',0,'EndSampleExclusive',20,'Execution',execution), ...
++    struct('StartSample',20,'EndSampleExclusive',40,'Execution',execution)};
++end
++
++function segments=replaceField(segments,field,value)
++for k=1:numel(segments), segments{k}.Execution.RX.Replay.(field)=value; end
++end
++
++function reject(f,identifier)
++try, f(); catch cause
++    assert(string(cause.identifier)=="sixgr:link:"+identifier, ...
++        'test:WrongAuditRejection','Expected %s, received %s.',identifier,cause.identifier); return;
++end
++error('test:InvalidControlNoiseAccepted','Invalid control-noise evidence was accepted.');
++end
+diff --git a/+sixgr/+truth/SharedWaveformPhysicalRuntime.m b/+sixgr/+truth/SharedWaveformPhysicalRuntime.m
+index 381f98b6..dd381238 100644
+--- a/+sixgr/+truth/SharedWaveformPhysicalRuntime.m
++++ b/+sixgr/+truth/SharedWaveformPhysicalRuntime.m
+@@ -338,6 +338,9 @@ classdef SharedWaveformPhysicalRuntime < handle
+                     outputs(end+1)=struct('ID',node.ID+":pre_rf",'Chunk',preChunk); %#ok<AGROW>
+                     outputs(end+1)=struct('ID',node.ID+":post_rf",'Chunk',actual.Chunk); %#ok<AGROW>
+                     replay=actual.Replay;
++                    % Version the executed noise ledger, not the detector.
++                    % Older retained IQ may lack this audit schema.
++                    replay.ControlNoiseAuditSchemaVersion=1;
+                     replay.InjectedNoiseVariance=node.NoiseVariance;
+                     replay.InjectedNoiseVarianceDomain='receiver_sample_waveform_pre_composite_front_end';
+                     if lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)))== ...
+diff --git a/+sixgr/+truth/sharedObservationEvidence.m b/+sixgr/+truth/sharedObservationEvidence.m
+index 6ec5096b..ea760127 100644
+--- a/+sixgr/+truth/sharedObservationEvidence.m
++++ b/+sixgr/+truth/sharedObservationEvidence.m
+@@ -133,6 +133,13 @@ for name=["InjectedCFO_Hz","InjectedTimingOffset_samples"]
+     values=cellfun(@(r,t)double(r.(name))+double(t.(name)),rx,txReplay);
+     if all(values==values(1)), replay.(name)=values(1); end
+ end
++versioned=cellfun(@(v)isfield(v,'ControlNoiseAuditSchemaVersion'),rx);
++if any(versioned)
++    assert(all(versioned) && all(cellfun(@(v)isequal(v.ControlNoiseAuditSchemaVersion,1),rx)), ...
++        'sixgr:truth:ControlNoiseAuditSchemaMismatch', ...
++        'Do not downgrade a partial, changing or unsupported executed noise ledger to legacy replay.');
++    replay.ControlNoiseAuditSchemaVersion=1;
++end
+ for k=1:numel(linkReplay)
+     replay.ChannelFadingApplied=replay.ChannelFadingApplied || ...
+         logical(sixgr.util.structGet(linkReplay{k},'ChannelFadingApplied',false));
+diff --git a/tests/testPUCCHObservationReceiver.m b/tests/testPUCCHObservationReceiver.m
+index 2f767f2e..0a006f38 100644
+--- a/tests/testPUCCHObservationReceiver.m
++++ b/tests/testPUCCHObservationReceiver.m
+@@ -72,6 +72,9 @@ input=struct('Prepared',p,'Observation',actual,'PhysicalMeasurementObservation',
+     'Channel',channel,'ReceivedULTimingReference',prior);
+ firstTrial=sixgr.link.runPUCCHWaveformTrial(x.item.Context.Config, ...
+     x.item.Context.Arguments{:},'ReceivedContext',input);
++assert(~firstTrial.ReceiverNoiseAuditAvailable && ...
++    firstTrial.ReceiverNoiseAuditStatus=="unavailable_unversioned_retained_execution", ...
++    'Historical IQ must not claim the newer executed noise calibration audit.');
+ input.Replay.SampleNoiseVariance=12345;
+ input.Replay.SampleNoiseVarianceDomain="receiver_sample_waveform_post_composite_front_end";
+ input.Replay.InterferenceCovariance=1e6*eye(observation.NumReceiveAntennas);
+@@ -105,6 +108,8 @@ for format=1:4
+         info.SampleRate,size(waveform.Waveform,2));
+     buffer.append(sixgr.phy.waveform.WaveformChunk(waveform.Waveform,0),info.SampleRate);
+     rx=sixgr.link.receivePUCCHObservation(c,assignment,f.Context,buffer);
++    assert(rx.PUCCHDMRSRECount==numel(waveform.DMRS.Indices) && ...
++        rx.PUCCHDMRSRECountSource=="receiver_reference_indices_not_transmitter_evidence");
+     serialized=sixgr.phy.pucch.UCIReportSerializer.serialize(f.Report);
+     assert(~rx.DTX && rx.CRCPassed && isequal(rx.DecodedSequence1,serialized.Sequence1.Bits) && ...
+         isequal(rx.DecodedSequence2,serialized.Sequence2.Bits));
+diff --git a/tests/testPUCCHReceiverStageEvidence.m b/tests/testPUCCHReceiverStageEvidence.m
+index cecc4205..cea24098 100644
+--- a/tests/testPUCCHReceiverStageEvidence.m
++++ b/tests/testPUCCHReceiverStageEvidence.m
+@@ -13,6 +13,17 @@ rx=struct('ChannelEstimationMode',"dmrs_per_resource_mmse_equalization", ...
+     'NoncoherentSequenceDetection',false);
+ original=rx;
+ actual=sixgr.link.pucchReceiverStageEvidence(rx);
++assert(~isfield(actual,'PUCCHDMRSRECount'),'Do not invent counts for legacy receiver evidence.');
++counted=rx; counted.PUCCHDMRSRECount=0;
++counted.PUCCHDMRSRECountSource="receiver_reference_indices_not_transmitter_evidence";
++assert(sixgr.link.pucchReceiverStageEvidence(counted).PUCCHDMRSRECount==0);
++counted.PUCCHDMRSRECount=24;
++assert(sixgr.link.pucchReceiverStageEvidence(counted).PUCCHDMRSRECount==24);
++counted.PUCCHDMRSRECount=NaN; rejected=false;
++try, sixgr.link.pucchReceiverStageEvidence(counted); catch cause
++    assert(strcmp(cause.identifier,'sixgr:link:InvalidPUCCHDMRSCount')); rejected=true;
++end
++assert(rejected,'Missing receiver DM-RS count must not become a nominal count.');
+ assert(actual.ChannelEstimateAttempted && actual.EqualizationAttempted && ...
+     actual.ChannelEstimateAvailable && actual.EqualizationAvailable && ...
+     ~contains(actual.ChannelEstimateSource,'unit_channel'));
+diff --git a/tests/testSharedStandaloneSRReception.m b/tests/testSharedStandaloneSRReception.m
+index 922d601c..04f1d828 100644
+--- a/tests/testSharedStandaloneSRReception.m
++++ b/tests/testSharedStandaloneSRReception.m
+@@ -66,6 +66,9 @@ for positive=[false true]
+         canonical.SuccessFlag==positive && canonical.DecodeSuccess==positive && ...
+         canonical.ControlObservationAvailable && canonical.FinalizedFlag);
+     assert(canonical.StrictOk==positive && canonical.StrictReceiverEvidenceOk==positive);
++    assert(canonical.PUCCHDMRSRECount==0 && ...
++        canonical.PUCCHDMRSRECountSource=="receiver_reference_indices_not_transmitter_evidence", ...
++        'Format-0 SR must retain the receiver-derived zero DM-RS count.');
+     assert(canonical.TimingEstimateUsed && ...
+         canonical.AppliedTimingCorrectionSamples==rx.ReceiveTiming.AppliedTimingCorrectionSamples);
+     if positive
+diff --git a/tests/testAll.m b/tests/testAll.m
+index 6f48e7b4..afb01a09 100644
+--- a/tests/testAll.m
++++ b/tests/testAll.m
+@@ -120,6 +120,11 @@ tests = { ...
+     @testConfiguredCSITrialDisposition, ...
+     @testIndependentPUCCHObservationCapture, ...
+     @testPUCCHReceiverStageEvidence, ...
++    @testReceivedControlNoiseAudit, ...
++    @testPUCCHObservationModelCollection, ...
++    @testPUCCHFlatJointReceiver, ...
++    @testSharedPUCCHJointReceiver, ...
++    @testPUCCHFormat2ReceiverLikelihood, ...
+     @testPUCCHFeedbackDirection, ...
+     @testSharedPUCCHCodebookBinding, ...
+     @testPUSCHHARQACKBindingPreflight, ...
+@@ -874,6 +879,7 @@ tests = { ...
+     @testCSIRSBranchMeasurementSelection, ...
+     @testCRCApplicabilitySchema, ...
+     @testEqualizerStaticCovarianceBatch, ...
++    @testEqualizerNoiseAuthority, ...
+     @testEqualizerLargeULBatch, ...
+     @testLLSMeasurementSidecarIntegrity, ...
+     @testOrganizeRunResults_E2EArtifactPreservation, ...
+diff --git a/+sixgr/+phy/+pdcch/planJointCandidateAdmission.m b/+sixgr/+phy/+pdcch/planJointCandidateAdmission.m
+new file mode 100644
+index 00000000..6298b665
+--- /dev/null
++++ b/+sixgr/+phy/+pdcch/planJointCandidateAdmission.m
+@@ -0,0 +1,77 @@
++function plan = planJointCandidateAdmission(requests, policy)
++% Joint gNB admission over actual configured PDCCH data and DM-RS resources.
++% TS 38.213 clause 10.1 defines the candidate resources, not direction priority.
++% This policy is a scheduler choice. No DCI bits, decoded UE values or received
++% energy enter the decision. The caller finalizes DAI only after admission.
++policy = lower(strtrim(string(policy)));
++assert(isscalar(policy) && any(policy == ["dl_then_ul","ul_preschedule_first"]), ...
++    'sixgr:phy:pdcch:InvalidJointAdmissionPolicy', ...
++    'Joint admission requires dl_then_ul or ul_preschedule_first.');
++assert(isstruct(requests), 'sixgr:phy:pdcch:InvalidAdmissionRequest', ...
++    'Admission requests must contain installed carrier and monitoring objects.');
++n = numel(requests);
++plan = repmat(struct('Admitted',false,'Reason',"no_nonoverlapping_candidate", ...
++    'Coordinates',zeros(0,2),'ReservedForOtherGrants',zeros(0,2), ...
++    'CandidateIndex',NaN,'AggregationLevel',NaN,'Policy',policy),n,1);
++if n == 0, return; end
++assert(all(isfield(requests,{'ControlSlot','CellID','Direction', ...
++    'Carrier','PDCCH','OccupiedRECoordinates'})), ...
++    'sixgr:phy:pdcch:InvalidAdmissionRequest','Incomplete physical admission context.');
++directions = upper(string({requests.Direction}));
++assert(all(ismember(directions,["DL","UL"])), ...
++    'sixgr:phy:pdcch:InvalidAdmissionRequest','Direction must be DL or UL.');
++for k = 1:n
++    validateattributes(requests(k).ControlSlot,{'numeric'},{'scalar','integer','positive','finite'});
++    validateattributes(requests(k).CellID,{'numeric'},{'scalar','integer','positive','finite'});
++    validateattributes(requests(k).OccupiedRECoordinates,{'numeric'}, ...
++        {'real','finite','integer','nonnegative','2d','ncols',2});
++    assert(isa(requests(k).Carrier,'nrCarrierConfig') && isa(requests(k).PDCCH,'nrPDCCHConfig'), ...
++        'sixgr:phy:pdcch:InvalidAdmissionRequest','Use actual Toolbox resource configurations.');
++end
++first = "DL";
++if policy == "ul_preschedule_first", first = "UL"; end
++order = [find(directions == first), find(directions ~= first)];
++for k = order
++    q = requests(k);
++    occupied = double(q.OccupiedRECoordinates);
++    for j = 1:n
++        if q.ControlSlot ~= requests(j).ControlSlot || q.CellID ~= requests(j).CellID
++            continue;
++        end
++        other = requests(j);
++        assert(q.Carrier.SubcarrierSpacing == other.Carrier.SubcarrierSpacing && ...
++            strcmp(q.Carrier.CyclicPrefix,other.Carrier.CyclicPrefix), ...
++            'sixgr:phy:pdcch:AdmissionNumerologyMismatch', ...
++            'Shared-cell admission requires a common time-frequency coordinate system.');
++        assert(isequal(unique(q.OccupiedRECoordinates,'rows'), ...
++            unique(other.OccupiedRECoordinates,'rows')), ...
++            'sixgr:phy:pdcch:AdmissionReservationMismatch', ...
++            'Same-occasion requests must see the same pre-existing physical reservations.');
++        if plan(j).Admitted, occupied = [occupied;plan(j).Coordinates]; end %#ok<AGROW>
++    end
++    plan(k).AggregationLevel = double(q.PDCCH.AggregationLevel);
++    try
++        [selected,coordinates] = sixgr.phy.pdcch.allocateNonoverlappingCandidate( ...
++            q.Carrier,q.PDCCH,unique(occupied,'rows'));
++    catch exception
++        if ~strcmp(exception.identifier,'sixgr:phy:pdcch:NoFreeCandidate'), rethrow(exception); end
++        continue;
++    end
++    plan(k).Admitted = true;
++    plan(k).Reason = "admitted_configured_candidate";
++    plan(k).Coordinates = coordinates;
++    plan(k).CandidateIndex = double(selected.AllocatedCandidate);
++end
++% Keep reservations separate from the transmitted ledger. During DL-first
++% serialization they prevent stealing a future UL grant's planned resource.
++for k = 1:n
++    for j = 1:n
++        if j ~= k && plan(j).Admitted && ...
++                requests(k).ControlSlot == requests(j).ControlSlot && ...
++                requests(k).CellID == requests(j).CellID
++            plan(k).ReservedForOtherGrants = [plan(k).ReservedForOtherGrants;plan(j).Coordinates];
++        end
++    end
++    plan(k).ReservedForOtherGrants = unique(plan(k).ReservedForOtherGrants,'rows');
++end
++end
+diff --git a/+sixgr/+truth/resolveJointPDCCHAdmission.m b/+sixgr/+truth/resolveJointPDCCHAdmission.m
+new file mode 100644
+index 00000000..f81a8dcf
+--- /dev/null
++++ b/+sixgr/+truth/resolveJointPDCCHAdmission.m
+@@ -0,0 +1,54 @@
++function [dlGrants,ulGrants] = resolveJointPDCCHAdmission(state,cfg,userCfg,dlGrants,ulGrants)
++% Plan physical control resources before either DL or UL DCI is serialized.
++% Does not advance a channel, commit DAI, enqueue IQ or authorize UE reception.
++policy = lower(strtrim(string(sixgr.util.structGet(cfg,'phy.pdcch.jointAdmissionPolicy',""))));
++if strlength(policy) == 0, return; end
++groups = {dlGrants,ulGrants};
++directions = ["DL","UL"];
++requests = repmat(struct('ControlSlot',0,'CellID',0,'Direction',"", ...
++    'Carrier',[],'PDCCH',[],'OccupiedRECoordinates',zeros(0,2)),0,1);
++for directionIndex = 1:2
++    for k = 1:numel(groups{directionIndex})
++        grant = groups{directionIndex}(k);
++        ue = double(grant.UEIndex);
++        validateattributes(ue,{'numeric'},{'scalar','integer','positive','<=',numel(userCfg)});
++        direction = upper(string(grant.Direction));
++        assert(direction == directions(directionIndex), ...
++            'sixgr:truth:JointPDCCHDirectionMismatch','Grant direction disagrees with its scheduling group.');
++        [cfgControl,~] = sixgr.truth.CoupledTruthRuntime.applyUserContext(userCfg{ue},state,ue,direction);
++        slot = sixgr.truth.resolvePDCCHControlSlot(grant,state.CurrentSlot);
++        assert(slot == state.CurrentSlot,'sixgr:truth:JointPDCCHControlSlotMismatch', ...
++            'Admission must use the current DL control slot, not a future UL data slot.');
++        cfgControl.phy.pdcch.aggregationLevel = ...
++            sixgr.phy.pdcch.resolveScheduledAggregationLevel(cfgControl,grant);
++        cfgControl = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfgControl,slot);
++        cfgControl = sixgr.util.structSet(cfgControl,'lls6g.userContext.RuntimeCurrentDirection',"DL");
++        cfgControl = sixgr.util.structSet(cfgControl,'lls6g.userContext.Direction',"DL");
++        cfgControl = sixgr.util.structSet(cfgControl,'lls6g.userContext.RuntimeSignalFamily',"PDCCH");
++        cfgControl = sixgr.util.structSet(cfgControl,'phy.runtimeSignalFamily',"PDCCH");
++        [carrier,~] = sixgr.phy.grid.makeCarrier(cfgControl);
++        [pdcch,~] = sixgr.phy.pdcch.ConnectedPDCCHConfiguration.build(cfgControl,carrier,grant.RNTI,false);
++        [~,occupied] = sixgr.truth.PDCCHSlotResourceLedger.lookup( ...
++            sixgr.util.structGet(state,'PDCCHResourceLedger',struct()),slot,grant.ServingCell,carrier);
++        request = struct('ControlSlot',slot,'CellID',double(grant.ServingCell), ...
++            'Direction',direction,'Carrier',carrier,'PDCCH',pdcch, ...
++            'OccupiedRECoordinates',occupied);
++        requests(end+1,1) = request; %#ok<AGROW>
++    end
++end
++plan = sixgr.phy.pdcch.planJointCandidateAdmission(requests,policy);
++index = 0;
++for directionIndex = 1:2
++    for k = 1:numel(groups{directionIndex})
++        index = index+1;
++        groups{directionIndex}(k).PDCCHAdmissionPolicy = policy;
++        groups{directionIndex}(k).PDCCHAdmissionSelected = plan(index).Admitted;
++        groups{directionIndex}(k).PDCCHAdmissionCoordinates = plan(index).Coordinates;
++        groups{directionIndex}(k).PDCCHAdmissionOtherReservations = plan(index).ReservedForOtherGrants;
++        groups{directionIndex}(k).PDCCHAdmissionControlSlot = requests(index).ControlSlot;
++        groups{directionIndex}(k).PDCCHAdmissionCell = requests(index).CellID;
++        groups{directionIndex}(k).PDCCHPlannedCandidateIndex = plan(index).CandidateIndex;
++    end
++end
++dlGrants = groups{1}; ulGrants = groups{2};
++end
+diff --git a/+sixgr/+link/pdcchTrialExecutionState.m b/+sixgr/+link/pdcchTrialExecutionState.m
+new file mode 100644
+index 00000000..315b99d0
+--- /dev/null
++++ b/+sixgr/+link/pdcchTrialExecutionState.m
+@@ -0,0 +1,39 @@
++function evidence = pdcchTrialExecutionState(T)
++% Separate untransmitted/unexecuted control obligations from failed decoding.
++% Never trust a previously derived ControlObservationAvailable flag: older
++% exports marked NA blocked grants observed merely because a row existed.
++assert(istable(T),'sixgr:link:PDCCHExecutionTableRequired','Expected a PDCCH trial table.');
++n = height(T);
++status = repmat("",n,1);
++if ismember('Status',T.Properties.VariableNames), status = upper(string(T.Status)); end
++observed = status ~= "" & status ~= "NA" & status ~= "CRASH" & ~contains(status,"PENDING");
++source = repmat("legacy_executed_status",n,1);
++if ismember('PDCCHReceiverTrialExecuted',T.Properties.VariableNames)
++    value = double(T.PDCCHReceiverTrialExecuted);
++    assert(all(isnan(value) | value == 0 | value == 1), ...
++        'sixgr:link:InvalidPDCCHExecutionEvidence','Receiver execution evidence must be 0/1 or unavailable.');
++    known = isfinite(value);
++    observed(known) = value(known) == 1;
++    source(known) = "physical_pdcch_receive_completion";
++end
++attempted = observed;
++if ismember('DecodeAttempted',T.Properties.VariableNames)
++    value = double(T.DecodeAttempted);
++    assert(all(isnan(value) | value == 0 | value == 1), ...
++        'sixgr:link:InvalidPDCCHExecutionEvidence','Decode attempted must be 0/1 or unavailable.');
++    known = isfinite(value);
++    attempted(known) = value(known) == 1;
++end
++bindingEligible = observed & attempted;
++precheck = repmat("",n,1);
++precheck(~observed) = "pdcch_receiver_not_executed";
++precheck(observed & ~attempted) = "dci_decode_not_attempted";
++if ismember('FailureReason',T.Properties.VariableNames)
++    reason = string(T.FailureReason);
++    blocked = ~bindingEligible & startsWith(reason,"control_blocked_");
++    precheck(blocked) = reason(blocked);
++end
++evidence = table(observed,attempted,bindingEligible,precheck,source, ...
++    'VariableNames',{'ObservationAvailable','DecodeAttempted','BindingEligible', ...
++    'BindingFailureCode','ExecutionEvidenceSource'});
++end
+diff --git a/simulator/configs/control/pdcch_joint_tdd_admission.yaml b/simulator/configs/control/pdcch_joint_tdd_admission.yaml
+new file mode 100644
+index 00000000..fcf05162
+--- /dev/null
++++ b/simulator/configs/control/pdcch_joint_tdd_admission.yaml
+@@ -0,0 +1,5 @@
++# Explicit gNB scheduling policy, not a normative 3GPP direction preference.
++# Protect a tentative future PUSCH grant at a coincident DL/UL control occasion;
++# preserve configured candidate locations, aggregation levels and PHY decoding.
++control:
++  joint_pdcch_admission_policy: ul_preschedule_first
+diff --git a/tests/testJointPDCCHCandidateAdmission.m b/tests/testJointPDCCHCandidateAdmission.m
+new file mode 100644
+index 00000000..2c78398e
+--- /dev/null
++++ b/tests/testJointPDCCHCandidateAdmission.m
+@@ -0,0 +1,81 @@
++function ok = testJointPDCCHCandidateAdmission()
++% Actual resource mapping and OFDM/decoder checks; not a full scenario claim.
++carrier = nrCarrierConfig('NSizeGrid',24,'NStartGrid',0,'SubcarrierSpacing',15);
++core = nrCORESETConfig('FrequencyResources',ones(1,4),'Duration',2, ...
++    'CCEREGMapping','noninterleaved');
++search = nrSearchSpaceConfig('CORESETID',core.CORESETID, ...
++    'SearchSpaceType','ue','NumCandidates',[8 4 2 1 0]);
++pdcch = nrPDCCHConfig('CORESET',core,'SearchSpace',search,'RNTI',101, ...
++    'AggregationLevel',8,'NSizeBWP',24,'NStartBWP',0);
++q = struct('ControlSlot',34,'CellID',1,'Direction',"DL", ...
++    'Carrier',carrier,'PDCCH',pdcch,'OccupiedRECoordinates',zeros(0,2));
++requests = [q q]; requests(2).Direction = "UL";
++before = requests;
++plan = sixgr.phy.pdcch.planJointCandidateAdmission(requests,"ul_preschedule_first");
++assert(isequal([plan.Admitted],[false true]) && all([plan.AggregationLevel] == 8));
++assert(size(plan(2).Coordinates,1) == 8*6*12);
++legacy = sixgr.phy.pdcch.planJointCandidateAdmission(requests,"dl_then_ul");
++assert(isequal([legacy.Admitted],[true false]));
++assert(isequaln(before,requests),'Admission must not mutate caller configurations.');
++for mapping = ["noninterleaved","interleaved"]
++    for dlAL = [1 2 4 8]
++        for ulAL = [1 2 4 8]
++            requests = before;
++            for k = 1:2, requests(k).PDCCH.CORESET.CCEREGMapping = mapping; end
++            requests(1).PDCCH.AggregationLevel = dlAL;
++            requests(2).PDCCH.AggregationLevel = ulAL;
++            plan = sixgr.phy.pdcch.planJointCandidateAdmission(requests,"ul_preschedule_first");
++            assert(plan(2).Admitted && isequal([plan.AggregationLevel],[dlAL ulAL]));
++            occupied = zeros(0,2); waveform = [];
++            transmitted = cell(1,2); bits = cell(1,2);
++            for k = 1:2
++                if ~plan(k).Admitted, continue; end
++                cfg = struct('phy',struct('carrier',struct('NSizeGrid',24, ...
++                    'SubcarrierSpacing',15,'NStartGrid',0,'NCellID',1)));
++                cfg.phy.pdcch = struct('enable',true,'dmrs',struct('enable',true), ...
++                    'blindSearch',false,'rnti',101);
++                bits{k} = int8(mod((0:31).'+k,2));
++                [tx,info] = sixgr.phy.dl.PDCCH_Tx(cfg,'Carrier',carrier, ...
++                    'PDCCH',requests(k).PDCCH,'RNTI',101,'DCIBits',bits{k}, ...
++                    'ReservedRECoordinates',unique([occupied;plan(k).ReservedForOtherGrants],'rows'));
++                assert(isequal(info.AllocatedRECoordinates,plan(k).Coordinates));
++                assert(isempty(intersect(occupied,info.AllocatedRECoordinates,'rows')));
++                occupied = [occupied;info.AllocatedRECoordinates]; %#ok<AGROW>
++                transmitted{k} = tx;
++                if isempty(waveform), waveform = tx.Waveform; else, waveform = waveform+tx.Waveform; end
++            end
++            for k = 1:2
++                if ~plan(k).Admitted, continue; end
++                rx = sixgr.phy.dl.PDCCH_Rx(waveform,cfg,'Carrier',carrier, ...
++                    'PDCCH',transmitted{k}.PDCCH,'K',32,'NoiseVar',1e-12);
++                assert(rx.Ok && isequal(int8(rx.DCIBits),bits{k}), ...
++                    'Composite decode failed: mapping=%s DL_AL=%d UL_AL=%d direction_index=%d CRC_error=%g.', ...
++                    mapping,dlAL,ulAL,k,double(rx.ErrFlag));
++            end
++        end
++    end
++end
++requests = before; requests(2).CellID = 2;
++plan = sixgr.phy.pdcch.planJointCandidateAdmission(requests,"ul_preschedule_first");
++assert(all([plan.Admitted]),'Separate cells do not share a resource ledger.');
++requests = before; requests(2).ControlSlot = 35;
++plan = sixgr.phy.pdcch.planJointCandidateAdmission(requests,"ul_preschedule_first");
++assert(all([plan.Admitted]),'Separate control slots do not share a resource ledger.');
++requests = before;
++allRE = legacy(1).Coordinates;
++for k = 1:2, requests(k).OccupiedRECoordinates = allRE; end
++plan = sixgr.phy.pdcch.planJointCandidateAdmission(requests,"ul_preschedule_first");
++assert(~any([plan.Admitted]),'Existing transmissions cannot be displaced.');
++localReject(@()sixgr.phy.pdcch.planJointCandidateAdmission(before,"lower_al_to_fit"), ...
++    'sixgr:phy:pdcch:InvalidJointAdmissionPolicy');
++requests = before; requests(2).OccupiedRECoordinates = allRE;
++localReject(@()sixgr.phy.pdcch.planJointCandidateAdmission(requests,"ul_preschedule_first"), ...
++    'sixgr:phy:pdcch:AdmissionReservationMismatch');
++ok = true;
++fprintf('JOINT_PDCCH_ADMISSION_PASS: AL8 contention plus 32 mapped DL/UL composite cases; not full runtime acceptance.\n');
++end
++
++function localReject(call,identifier)
++try, call(); catch exception, assert(strcmp(exception.identifier,identifier),exception.message); return; end
++error('testJointPDCCHCandidateAdmission:MissingRejection','Expected %s.',identifier);
++end
+diff --git a/tests/testJointPDCCHRuntimeAdmission.m b/tests/testJointPDCCHRuntimeAdmission.m
+new file mode 100644
+index 00000000..95529f4b
+--- /dev/null
++++ b/tests/testJointPDCCHRuntimeAdmission.m
+@@ -0,0 +1,57 @@
++function ok = testJointPDCCHRuntimeAdmission()
++% Installed target-scenario control allocation fixture, not a received grant.
++bad = struct('control',struct('joint_pdcch_admission_policy','lower_al_to_fit'));
++rejected = false;
++try, sixgr.lls6g.config.validateScenarioConfig(bad,'AllowPartial',true);
++catch exception, rejected = strcmp(exception.identifier,'sixgr:lls6g:config:BadEnumValue'); end
++assert(rejected,'Malformed admission policy must be rejected by the configuration schema.');
++s = sixgr.lls6g.config.loadScenarioConfig( ...
++    'simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml');
++root = tempname(fullfile(pwd,'logs')); mkdir(root);
++cfg = sixgr.lls6g.buildInternalConfig(s,root);
++assert(string(cfg.phy.pdcch.jointAdmissionPolicy) == "ul_preschedule_first", ...
++    'The scenario must inherit and map the explicit joint admission policy.');
++installed = sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,'1_1');
++rnti = double(installed.Data.RNTIValue);
++multi = struct('Enabled',true,'NumUsers',1,'RNTIStart',rnti,'ExecutionModel','slot_coupled_truth');
++state = sixgr.truth.CoupledTruthRuntime.initialize(cfg,root,multi,struct(),58);
++state.CurrentSlot = 34; state.CurrentFrame = 4; state.CurrentCanonicalSlot = 34;
++state.CurrentServingIdx(:) = 1;
++dl = struct('UEIndex',1,'ServingCell',1,'RNTI',rnti, ...
++    'Direction',"DL",'ControlSlot',34,'ControlAbsoluteSlot',33,'Slot',34, ...
++    'PDCCHAggregationLevel',8);
++ul = dl; ul.Direction = "UL"; ul.Slot = 35;
++[d,u] = sixgr.truth.resolveJointPDCCHAdmission(state,cfg,{cfg},dl,ul);
++assert(~d.PDCCHAdmissionSelected && u.PDCCHAdmissionSelected);
++assert(d.PDCCHAggregationLevel == 8 && u.PDCCHAggregationLevel == 8);
++assert(u.PDCCHAdmissionControlSlot == 34 && u.Slot == 35 && ...
++    size(u.PDCCHAdmissionCoordinates,1) == 576);
++assert(~isfield(state,'PDCCHResourceLedger') || isempty(fieldnames(state.PDCCHResourceLedger)), ...
++    'Planning cannot commit the transmitted-resource ledger.');
++[blocked,~] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
++    state,d,'DL',"control_blocked_no_nonoverlapping_pdcch_candidate");
++assert(isequal(blocked.PDCCHFailureCount,state.PDCCHFailureCount), ...
++    'Pre-transmission candidate exhaustion is not a receiver failure.');
++for name = string(fieldnames(dl)).'
++    assert(isequaln(d.(name),dl.(name)) && isequaln(u.(name),ul.(name)), ...
++        'Admission must not rewrite an existing grant field.');
++end
++dl.DCI.Bits = uint8([1;0;1]); ul.DCI.Bits = uint8([0;1]);
++[poisonDL,poisonUL] = sixgr.truth.resolveJointPDCCHAdmission(state,cfg,{cfg},dl,ul);
++assert(isequal(poisonDL.PDCCHAdmissionCoordinates,d.PDCCHAdmissionCoordinates) && ...
++    isequal(poisonUL.PDCCHAdmissionCoordinates,u.PDCCHAdmissionCoordinates), ...
++    'Admission must not depend on a transmitted payload hypothesis.');
++cfgLegacy = rmfield(cfg.phy.pdcch,'jointAdmissionPolicy');
++unchanged = cfg; unchanged.phy.pdcch = cfgLegacy;
++[d,u] = sixgr.truth.resolveJointPDCCHAdmission(state,unchanged,{unchanged},dl,ul);
++assert(isequaln(d,dl) && isequaln(u,ul),'Absent optional policy must preserve legacy behavior.');
++code = fileread(which('sixgr.truth.runWaveformLinkBundle'));
++joint = strfind(code,'sixgr.truth.resolveJointPDCCHAdmission(');
++enqueue = strfind(code,'[runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH');
++assert(isscalar(joint) && isscalar(enqueue) && joint < enqueue, ...
++    'The production runner must resolve joint admission before DAI finalization/enqueue.');
++assert(contains(code,'sixgr:truth:PDCCHAdmissionExecutionMismatch'), ...
++    'Actual PDCCH preparation must verify the planned physical allocation.');
++fprintf('JOINT_PDCCH_RUNTIME_ADMISSION_PASS target YAML, AL8 UL protection, grant identity; no PHY acceptance claim.\n');
++ok = true;
++end
+diff --git a/tests/testPDCCHExecutionDisposition.m b/tests/testPDCCHExecutionDisposition.m
+new file mode 100644
+index 00000000..f78a5905
+--- /dev/null
++++ b/tests/testPDCCHExecutionDisposition.m
+@@ -0,0 +1,44 @@
++function ok = testPDCCHExecutionDisposition(retainedCSV)
++% Current physical completion flags and legacy blocked-row classification.
++if nargin < 1, retainedCSV = ""; end
++T = table(["NA";"FAIL";"PASS";"PENDING";"FAIL"], ...
++    [0;1;1;0;0],[0;1;1;0;1], ...
++    ["control_blocked_no_nonoverlapping_pdcch_candidate";"crc_failed";"";"";"acquisition_failed"], ...
++    'VariableNames',{'Status','DecodeAttempted','PDCCHReceiverTrialExecuted','FailureReason'});
++T.ControlObservationAvailable = true(height(T),1); % Poison the old derived label.
++E = sixgr.link.pdcchTrialExecutionState(T);
++assert(isequal(E.ObservationAvailable,logical([0;1;1;0;1])));
++assert(isequal(E.BindingEligible,logical([0;1;1;0;0])));
++assert(E.BindingFailureCode(1) == T.FailureReason(1));
++assert(E.BindingFailureCode(2) == "" && E.BindingFailureCode(3) == "");
++assert(E.BindingFailureCode(5) == "dci_decode_not_attempted");
++canonical = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable('PDCCH',T);
++assert(~canonical.ControlObservationAvailable(1) && canonical.ControlObservationAvailable(2), ...
++    'The actual MATLAB canonical exporter must preserve the execution distinction.');
++legacy = removevars(T,'PDCCHReceiverTrialExecuted');
++E = sixgr.link.pdcchTrialExecutionState(legacy);
++assert(~E.ObservationAvailable(1) && ~E.BindingEligible(1));
++assert(E.BindingEligible(2),'A real failed CRC must still reach the CRC/binding checks.');
++bad = T; bad.PDCCHReceiverTrialExecuted(1) = Inf;
++localReject(@()sixgr.link.pdcchTrialExecutionState(bad));
++bad = T; bad.DecodeAttempted(1) = 2;
++localReject(@()sixgr.link.pdcchTrialExecutionState(bad));
++if strlength(string(retainedCSV)) > 0
++    retained = readtable(retainedCSV,'TextType','string');
++    selected = startsWith(string(retained.FailureReason),'control_blocked_');
++    assert(any(selected),'The supplied retained evidence has no blocked grants.');
++    E = sixgr.link.pdcchTrialExecutionState(retained(selected,:));
++    assert(~any(E.ObservationAvailable) && ~any(E.BindingEligible));
++    assert(all(startsWith(E.BindingFailureCode,'control_blocked_')));
++    fprintf('RETAINED_PDCCH_BLOCKED_ROWS_CORRECTED=%d\n',nnz(selected));
++end
++ok = true;
++fprintf('PDCCH_EXECUTION_DISPOSITION_PASS: no receiver execution is not a CRC failure.\n');
++end
++
++function localReject(call)
++try, call(); catch exception
++    assert(strcmp(exception.identifier,'sixgr:link:InvalidPDCCHExecutionEvidence')); return;
++end
++error('testPDCCHExecutionDisposition:MissingRejection','Invalid execution evidence accepted.');
++end
+diff --git a/simulator/configs/schema/scenario_parameter_catalog.yaml b/simulator/configs/schema/scenario_parameter_catalog.yaml
+index 24811b5b..ea108738 100644
+--- a/simulator/configs/schema/scenario_parameter_catalog.yaml
++++ b/simulator/configs/schema/scenario_parameter_catalog.yaml
+@@ -784,6 +784,11 @@ sections:
+         required: false
+         type: string
+         allowed_values: [snr_threshold, configured_scheduler_level, most_robust]
++      joint_pdcch_admission_policy:
++        required: false
++        type: string
++        allowed_values: [dl_then_ul, ul_preschedule_first]
++        description: Explicit gNB DL/UL priority over installed physical PDCCH candidates; no aggregation reduction or receiver bypass.
+       search_space_num_candidates:
+         required: true
+         type: number_list
+diff --git a/+sixgr/+truth/runWaveformLinkBundle.m b/+sixgr/+truth/runWaveformLinkBundle.m
+index ca2a3495..5ff87e9c 100644
+--- a/+sixgr/+truth/runWaveformLinkBundle.m
++++ b/+sixgr/+truth/runWaveformLinkBundle.m
+@@ -3741,6 +3741,8 @@ for sweepIdx = 1:numel(snrGrid)
+                     [runtimeState,dlGrants,plannedSharedUL]=sixgr.truth.planJointHARQPUSCHTiming( ...
+                         runtimeState,userCfg,dlGrants,plannedSharedUL);
+                 end
++                [dlGrants,plannedSharedUL]=sixgr.truth.resolveJointPDCCHAdmission( ...
++                    runtimeState,cfg,userCfg,dlGrants,plannedSharedUL);
+             end
+             [runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH(runtimeState, userCfg, dlGrants, "DL", snrVal);
+             if isfield(runtimeState,'SharedWaveformStream')
+@@ -9351,12 +9353,18 @@ for gi = 1:numel(grants)
+     grant.ControlFrame = controlFrameIdx;
+     rnti = double(sixgr.util.structGet(grant, "RNTI", localUserRNTI(state.MultiUser, ueIdx)));
+     servingCell = double(sixgr.util.structGet(grant, "ServingCell", NaN));
++    preTransmissionBlockReason="";
+     if ~slotDLControlAllowed
++        preTransmissionBlockReason="control_blocked_no_dl_control_symbols_in_tdd_slot";
++    elseif isfield(grant,'PDCCHAdmissionSelected') && ~grant.PDCCHAdmissionSelected
++        preTransmissionBlockReason="control_blocked_no_nonoverlapping_pdcch_candidate";
++    end
++    if strlength(preTransmissionBlockReason)>0
+         [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
+-            state, grant, direction, "control_blocked_no_dl_control_symbols_in_tdd_slot");
++            state, grant, direction, preTransmissionBlockReason);
+         state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
+         pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, NaN, ...
+-            "control_blocked_no_dl_control_symbols_in_tdd_slot");
++            preTransmissionBlockReason);
+         pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction, servingCell);
+         [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
+         state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
+@@ -9379,15 +9387,30 @@ for gi = 1:numel(grants)
+         sixgr.truth.PDCCHSlotResourceLedger.lookup( ...
+         sixgr.util.structGet(state, "PDCCHResourceLedger", struct()), ...
+         controlSlotIdx, servingCell, controlCarrier);
++    if isfield(grant,'PDCCHAdmissionSelected')
++        assert(grant.PDCCHAdmissionSelected && grant.PDCCHAdmissionControlSlot==controlSlotIdx && ...
++            grant.PDCCHAdmissionCell==servingCell, ...
++            'sixgr:truth:PDCCHAdmissionContextMismatch','A planned candidate belongs to one cell/control occasion.');
++        occupiedControlREs=unique([occupiedControlREs;grant.PDCCHAdmissionOtherReservations],'rows');
++    end
+     if isfield(state,'SharedWaveformStream')
+         try
+             prepared=sixgr.link.prepareSharedPDCCHTransmission(cfgControl, ...
+                 'Grant',grant,'RNTI',rnti,'DCIBits',grant.DCI.Bits, ...
+                 'ReservedRECoordinates',occupiedControlREs);
++            if isfield(grant,'PDCCHAdmissionSelected')
++                assert(isequal(prepared.TxInfo.AllocatedRECoordinates,grant.PDCCHAdmissionCoordinates), ...
++                    'sixgr:truth:PDCCHAdmissionExecutionMismatch', ...
++                    'Actual PDCCH preparation must use its independently planned physical candidate.');
++            end
+         catch ME
+             if ~strcmp(ME.identifier,'sixgr:phy:pdcch:NoFreeCandidate')
+                 rethrow(ME);
+             end
++            if isfield(grant,'PDCCHAdmissionSelected')
++                error('sixgr:truth:PDCCHAdmissionExecutionMismatch', ...
++                    'An admitted PDCCH lost its planned resources before transmission: %s',ME.message);
++            end
+             reason="control_blocked_no_nonoverlapping_pdcch_candidate";
+             [state,grant]=sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
+                 state,grant,direction,reason);
+@@ -14692,6 +14715,7 @@ if isfinite(double(nVar)) && double(nVar)>=0
+ end
+ [rx,rxInfo] = sixgr.link.completePDCCHReception(preparedPDCCH,observation, ...
+     "NoiseVariance",noiseVariance);
++r.PDCCHReceiverTrialExecuted = true;
+ if rxInfo.ReceiverConfiguredMonitoring && ~isempty(fieldnames(grantContext))
+     % One shared slot may carry both UL and DL commands for the same UE.
+     % Route by received semantic direction, never by expected TX payload.
+@@ -15287,6 +15311,8 @@ r.ValueStatus = "decoded_dci_missing";
+ r.FailureReason = string(reason);
+ r.TruthStatus = "runtime_pdcch_binding_missing";
+ r.Notes = "Decoded PDCCH/DCI evidence was not available for this scheduled grant.";
++r.PDCCHReceiverTrialExecuted = false;
++r.PDCCHPreTransmissionFinalized = true;
+ T = struct2table(r, "AsArray", true);
+ end
+ 
+@@ -15477,6 +15503,9 @@ controlResourceValid = logical(binding.Ok) && ...
+     double(binding.AggregationLevel) > 0 && ...
+     isfinite(double(binding.CandidateIndex));
+ annotations = {
++    "PDCCHAdmissionPolicy", string(sixgr.util.structGet(grant,"PDCCHAdmissionPolicy",""));
++    "PDCCHAdmissionSelected", double(sixgr.util.structGet(grant,"PDCCHAdmissionSelected",NaN));
++    "PDCCHPlannedCandidateIndex", double(sixgr.util.structGet(grant,"PDCCHPlannedCandidateIndex",NaN));
+     "PDCCHGatingActive", logical(sixgr.util.structGet(grant, "PDCCHGatingActive", false));
+     "GrantControlState", string(sixgr.util.structGet(grant, "GrantControlState", "control_pending"));
+     "ControlDecodeOk", logical(sixgr.util.structGet(grant, "ControlDecodeOk", false));
+@@ -15588,6 +15617,15 @@ if ~(istable(T) && ~isempty(T))
+ end
+ 
+ row = T(end, :);
++execution = sixgr.link.pdcchTrialExecutionState(row);
++if ~execution.BindingEligible
++    binding.Status = "missing_decoded_dci";
++    if localTableLogical(row,"PDCCHPreTransmissionFinalized",false)
++        binding.Status = "blocked_before_transmission";
++    end
++    binding.FailureCode = char(execution.BindingFailureCode);
++    return;
++end
+ decodedPayload = localGrantBindingPayloadFromDecodedRow(row, direction);
+ binding.DCIId = char(localTableText(row, ["DCIId","PayloadHash"], ""));
+ binding.DCIFieldsHash = char(localTableText(row, "DCIFieldsHash", ""));
+diff --git a/+sixgr/+truth/evaluateStrictAnchorStatus.m b/+sixgr/+truth/evaluateStrictAnchorStatus.m
+index 962651b6..70a8b1fc 100644
+--- a/+sixgr/+truth/evaluateStrictAnchorStatus.m
++++ b/+sixgr/+truth/evaluateStrictAnchorStatus.m
+@@ -2375,6 +2375,12 @@ if height(controlRows) > 0 && height(dataRows) > 0
+     [duplicate,controlIndex] = ismember(dataKeys,controlKeys);
+     for dataIndex = find(duplicate).'
+         targetIndex = controlIndex(dataIndex);
++        if controlRows.PreTransmissionFinalized(targetIndex)
++            controlRows.PreTransmissionFinalized(targetIndex) = false;
++            controlRows.BindingStatus(targetIndex) = "failed";
++            controlRows.FailureCode(targetIndex) = "data_executed_after_finalized_control_block";
++            continue;
++        end
+         % Deduplicate counts, never contradictory receiver evidence. A
+         % valid control row cannot rescue a data row that lost its CRC.
+         if string(dataRows.BindingStatus(dataIndex)) ~= "bound"
+@@ -2412,7 +2418,8 @@ if logical(sixgr.util.structGet(requiredDataDirections, "UL", false)) && ...
+     requiredDirections(end+1, 1) = "UL"; %#ok<AGROW>
+ end
+ boundMask = lower(strtrim(string(localColumnOrDefault(rows, "BindingStatus", "")))) == "bound";
+-failingMask = ~boundMask;
++finalizedMask = rows.PreTransmissionFinalized & string(rows.BindingStatus) == "blocked_before_transmission";
++failingMask = ~boundMask & ~finalizedMask;
+ failureReasons = unique(string(localColumnOrDefault(rows(failingMask, :), "FailureCode", "")), "stable");
+ failureReasons = failureReasons(strlength(strtrim(failureReasons)) > 0);
+ if isempty(failureReasons) && any(failingMask)
+@@ -2422,7 +2429,7 @@ rowDirections = upper(strtrim(string(localColumnOrDefault(rows, "Direction", "")
+ directionEvidenceCounts = zeros(numel(requiredDirections), 1);
+ for requiredDirectionIdx = 1:numel(requiredDirections)
+     directionEvidenceCounts(requiredDirectionIdx) = nnz( ...
+-        rowDirections == requiredDirections(requiredDirectionIdx));
++        rowDirections == requiredDirections(requiredDirectionIdx) & ~finalizedMask);
+ end
+ missingRequiredDirections = requiredDirections(directionEvidenceCounts == 0);
+ for missingDirectionIdx = 1:numel(missingRequiredDirections)
+@@ -2437,7 +2444,8 @@ gate.Required = ~isempty(requiredDirections);
+ gate.RequiredDirections = requiredDirections;
+ gate.RequiredDirectionEvidenceCounts = directionEvidenceCounts;
+ gate.MissingRequiredDirections = missingRequiredDirections;
+-gate.RequiredGrantCount = double(height(rows));
++gate.RequiredGrantCount = double(nnz(~finalizedMask));
++gate.BlockedBeforeTransmissionGrantCount = double(nnz(finalizedMask));
+ gate.FailingGrantCount = double(nnz(failingMask));
+ gate.BindingGateOk = ~gate.Required || ...
+     (gate.RequiredGrantCount > 0 && gate.FailingGrantCount == 0 && ...
+@@ -2453,6 +2461,7 @@ gate.Summary = struct( ...
+     "RequiredDirectionEvidenceCounts", directionEvidenceCounts, ...
+     "MissingRequiredDirections", missingRequiredDirections, ...
+     "RequiredGrantCount", double(gate.RequiredGrantCount), ...
++    "BlockedBeforeTransmissionGrantCount", double(gate.BlockedBeforeTransmissionGrantCount), ...
+     "FailingGrantCount", double(gate.FailingGrantCount), ...
+     "BindingGateOk", logical(gate.BindingGateOk), ...
+     "FailureReasons", gate.FailureReasons, ...
+@@ -2474,6 +2483,12 @@ decodedCrcOk = localColumnBoolDefault(T, "DecodedPDCCHCRCOK", false);
+ 
+ for ii = 1:height(T)
+     failures = localSplitBindingFailureCodes(failureCode(ii));
++    if T.PreTransmissionFinalized(ii) && bindingStatus(ii) == "blocked_before_transmission"
++        % The control-row reducer has checked explicit no-RX/no-decode,
++        % final disposition, missing DCI and real tentative-grant identity.
++        % Keep it visible, but it is not a failed physical CRC population.
++        continue;
++    end
+     if strlength(strtrim(grantIds(ii))) == 0
+         failures(end+1, 1) = "grant_id_missing"; %#ok<AGROW>
+     end
+@@ -2481,7 +2496,11 @@ for ii = 1:height(T)
+         failures(end+1, 1) = "decoded_dci_missing"; %#ok<AGROW>
+     end
+     if ~decodedCrcOk(ii)
+-        failures(end+1, 1) = "decoded_dci_crc_failed"; %#ok<AGROW>
++        if T.PDCCHDecodeAttempted(ii) == 0
++            failures(end+1, 1) = "dci_decode_not_attempted"; %#ok<AGROW>
++        else
++            failures(end+1, 1) = "decoded_dci_crc_failed"; %#ok<AGROW>
++        end
+     end
+     if strlength(strtrim(dciHashes(ii))) == 0
+         failures(end+1, 1) = "decoded_dci_fields_hash_missing"; %#ok<AGROW>
+@@ -2569,6 +2588,18 @@ dciFieldsHash = localFirstStringOrNumericAsString(controlT, ["DCIFieldsHash"]);
+ grantFieldsHash = localFirstStringOrNumericAsString(controlT, ["GrantFieldsHash"]);
+ dciId = localFirstStringOrNumericAsString(controlT, ["DCIId", "PayloadHash"]);
+ decodedCrcOk = localColumnBoolDefault(controlT, "DCICrcPass", false);
++finalized = localColumnBoolDefault(controlT,"PDCCHPreTransmissionFinalized",false) & ...
++    localFirstNumericColumn(controlT,"PDCCHReceiverTrialExecuted") == 0 & ...
++    localFirstNumericColumn(controlT,"DecodeAttempted") == 0 & ...
++    localFirstNumericColumn(controlT,"DetectionAttempted") == 0 & ...
++    bindingStatus == "blocked_before_transmission" & ~bindingOk & ~decodedCrcOk & ...
++    ~localColumnBoolDefault(controlT,"GrantValid",false) & ...
++    ~localColumnBoolDefault(controlT,"ControlDecodeOk",false) & ...
++    ~localColumnBoolDefault(controlT,"NegativeExpectedOk",false) & ...
++    strlength(strtrim(localFirstStringColumn(controlT,"PDCCHWaveformHash"))) == 0 & ...
++    startsWith(failureCode,"control_blocked_") & ...
++    strlength(strtrim(grantIds)) > 0 & strlength(strtrim(grantFieldsHash)) > 0 & ...
++    strlength(strtrim(dciId)) == 0 & strlength(strtrim(dciFieldsHash)) == 0;
+ 
+ T = table( ...
+     directions(mask), ...
+@@ -2589,6 +2620,8 @@ T = table( ...
+     decodedCrcOk(mask), ...
+     bindingStatus(mask), ...
+     failureCode(mask), ...
++    finalized(mask), ...
++    localFirstNumericColumn(controlT(mask,:),"DecodeAttempted"), ...
+     'VariableNames', localPDCCHGrantBindingEvidenceVariableNames());
+ end
+ 
+@@ -2671,6 +2704,8 @@ T = table( ...
+     decodedCrcOk(mask), ...
+     bindingStatus(mask), ...
+     failureCode(mask), ...
++    false(nnz(mask),1), ...
++    localFirstNumericColumn(trialT(mask,:),"PDCCHDecodeAttempted"), ...
+     'VariableNames', localPDCCHGrantBindingEvidenceVariableNames());
+ end
+ 
+@@ -2702,14 +2737,14 @@ end
+ 
+ function T = localEmptyPDCCHGrantBindingEvidenceTable()
+ names = localPDCCHGrantBindingEvidenceVariableNames();
+-types = {'string','double','double','double','string','string','double','double','double','double','double','double','string','string','string','logical','string','string'};
++types = {'string','double','double','double','string','string','double','double','double','double','double','double','string','string','string','logical','string','string','logical','double'};
+ T = table('Size', [0 numel(names)], 'VariableTypes', types, 'VariableNames', names);
+ end
+ 
+ function names = localPDCCHGrantBindingEvidenceVariableNames()
+ names = {'Direction','CellId','UeId','CanonicalSlot','GrantId','DCIId','HARQProcessId','RNTI', ...
+     'SearchSpaceId','CORESETId','AggregationLevel','CandidateIndex','DCIFormat','DCIFieldsHash', ...
+-    'GrantFieldsHash','DecodedPDCCHCRCOK','BindingStatus','FailureCode'};
++    'GrantFieldsHash','DecodedPDCCHCRCOK','BindingStatus','FailureCode','PreTransmissionFinalized','PDCCHDecodeAttempted'};
+ end
+ 
+ function T = localStrictAnchorAcceptanceTable(meta, status)
+diff --git a/tests/testPDCCHGrantBindingEvidenceReport.m b/tests/testPDCCHGrantBindingEvidenceReport.m
+index 763a9de0..4e65cd5a 100644
+--- a/tests/testPDCCHGrantBindingEvidenceReport.m
++++ b/tests/testPDCCHGrantBindingEvidenceReport.m
+@@ -95,6 +95,64 @@ assert(any(contains(lower(string(missingULVerdict.Failures)), ...
+     "missing_required_grant_binding_evidence_ul")), ...
+     "The PDCCH binding summary must identify the missing UL direction.");
+ 
++% A finalized resource-admission block has no physical receiver/CRC trial.
++% Retain its row, require real execution in both directions, and reject any
++% data that contradicts the finalized cancellation. These are table fixtures.
++blocked = control;
++blocked.Status = "NA";
++blocked.GrantContextId = "blocked_dl_candidate";
++blocked.LinkedGrantId = blocked.GrantContextId;
++blocked.GrantSlot = dl.Slot(1);
++blocked.DCIId = ""; blocked.DCIFieldsHash = "";
++blocked.GrantFieldsHash = "tentative_grant_fixture_hash";
++blocked.DCICrcPass = false; blocked.GrantBindingOk = false;
++blocked.GrantBindingStatus = "blocked_before_transmission";
++blocked.GrantBindingFailureCode = "control_blocked_no_nonoverlapping_pdcch_candidate";
++blocked.FailureReason = blocked.GrantBindingFailureCode;
++blocked.DecodeAttempted = false; blocked.PDCCHReceiverTrialExecuted = false;
++blocked.DetectionAttempted = false; blocked.NegativeExpectedOk = false;
++blocked.PDCCHWaveformHash = ""; blocked.PDCCHGridHash = ""; blocked.PDCCHResourceHash = "";
++blocked.PDCCHPreTransmissionFinalized = true;
++blocked.GrantValid = false; blocked.StrictOk = false;
++blocked.PDCCHPayloadMatch = false; blocked.PDCCHCausalGrantDecodeOk = false;
++sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),blocked);
++sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
++status=readtable(fullfile(ctx.Layout.ReportCSVDir,"result_status_summary.csv"));
++binding=readtable(fullfile(ctx.Layout.ReportCSVDir,"pdcch_grant_binding_evidence.csv"),'TextType','string');
++row=binding(binding.GrantId==blocked.GrantContextId,:);
++assert(status.PDCCHGrantBindingOk && height(row)==1 && row.PreTransmissionFinalized && ...
++    row.BindingStatus=="blocked_before_transmission" && ~row.DecodedPDCCHCRCOK && ...
++    row.FailureCode==blocked.GrantBindingFailureCode, ...
++    'A genuine finalized admission block must be retained, not relabeled as CRC failure or success.');
++for field=["PDCCHPreTransmissionFinalized","PDCCHReceiverTrialExecuted","DecodeAttempted","DetectionAttempted"]
++    bad=blocked;
++    if field=="PDCCHPreTransmissionFinalized", bad.(field)=false;
++    else, bad.(field)=true; end
++    sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),bad);
++    sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
++    status=readtable(fullfile(ctx.Layout.ReportCSVDir,"result_status_summary.csv"));
++    assert(~status.PDCCHGrantBindingOk,'Incomplete/contradictory cancellation evidence cannot waive binding.');
++end
++sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),blocked);
++contradiction=dl;
++contradiction.GrantContextId=string(contradiction.GrantContextId);
++contradiction.GrantId=string(contradiction.GrantId);
++contradiction.GrantContextId(1)=blocked.GrantContextId;
++contradiction.GrantId(1)=blocked.GrantContextId;
++sixgr.util.csvWriteTable(dlPath,contradiction);
++sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
++binding=readtable(fullfile(ctx.Layout.ReportCSVDir,"pdcch_grant_binding_evidence.csv"),'TextType','string');
++row=binding(binding.GrantId==blocked.GrantContextId,:);
++assert(height(row)==1 && row.BindingStatus=="failed" && ~row.PreTransmissionFinalized && ...
++    contains(row.FailureCode,"data_executed_after_finalized_control_block"));
++sixgr.util.csvWriteTable(dlPath,dl);
++blocked.Direction="UL"; blocked.LinkedPDSCHOrPUSCH="UL";
++sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),blocked);
++ulFile=fullfile(ctx.Layout.AirInterfaceCSVDir,"ul_pusch_trials.csv");
++ul=readtable(ulFile); sixgr.util.csvWriteTable(ulFile,ul([],:));
++verdict=sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
++assert(any(contains(string(verdict.Failures),"missing_required_grant_binding_evidence_ul")), ...
++    'Blocked UL candidates alone cannot qualify UL execution.');
+ ok = true;
+ end
+ 
+diff --git a/simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml b/simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+index 10c68f91..551158ee 100644
+--- a/simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
++++ b/simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml
+@@ -2,6 +2,7 @@ inherits:
+   - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+   - ../mimo/shared_four_port_control.yaml
+   - ../channels/shared_identity_awgn.yaml
++  - ../control/pdcch_joint_tdd_admission.yaml
+ 
+ meta:
+   scenario_id: lls_tdd_5mhz_rank2_shared_awgn_20db

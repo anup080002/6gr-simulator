@@ -5,7 +5,7 @@ launchers and development patches are versioned; generated results, logs and
 instrument IQ remain separate local artifacts. No result or recovery stash is
 removed by source consolidation.
 
-Current status: [26 September consolidation record](docs/lls/main_consolidation_20260926.md#shared-integration-v8-preservation-checkpoint).
+Current status: [26 September consolidation record](docs/lls/main_consolidation_20260926.md#shared-integration-v9-preservation-checkpoint).
 
 | Item | Verified scope and remaining limit |
 |---|---|
@@ -13,12 +13,12 @@ Current status: [26 September consolidation record](docs/lls/main_consolidation_
 | Installed HARQ probe repair | 12 focused DL/UL cases passed for configured 2x2 and 4x2 AWGN spatial channels. |
 | Earlier isolated receiver candidates | v4 batches passed 15/15 and 20/20 guards; v5 passed 16/16. These results apply to those exact candidate revisions, not to unchanged main. |
 | Receiver compatibility and standalone SR | The subsequent candidate batch passed 11/11 focused tests, including actual standalone-SR reception, receiver DM-RS-count evidence and Type-2/shared feedback guards. This does not qualify the full scenario. |
-| v8 pending receiver changes | All 25 changed/new files are preserved in a standalone patch. It includes the receiver fixes, versioned post-decode noise audit and test registrations. Broader checks against the combined source are running; main's receiver is not yet updated. |
+| Pending receiver and PDCCH changes | v8 completed 23/23 focused guards. The newer v9 patch preserves all 37 changed/new source files, including joint PDCCH admission and blocked-trial reporting. Candidate allocation, runtime-admission and reporting checks passed in separate batches; final combined-source regression and integration remain pending. Main's receiver is not yet updated. |
 | Full acceptance | Eight-point 5 MHz sweep, detector qualification and full-control 400 MHz acceptance remain open. |
 
 The older sweep is still using main receiver files. They have not been replaced
-under that execution. The [v8 patch](docs/lls/pending_receiver_shared_integration_v8_20260926.patch)
-supersedes v6/v7 and the incremental receiver patches for future integration;
+under that execution. The [v9 patch](docs/lls/pending_receiver_shared_integration_v9_20260926.patch)
+supersedes v6/v7/v8 and the incremental receiver patches for future integration;
 **do not stack them**. Main's newer HARQ spatial repair is already retained in
 the validation snapshot. Integration still needs completed final-source checks
 and a safe stop/completion of the old sweep. Preserving edits in Git is not the

@@ -401,7 +401,65 @@ logs, IQ, temporary source snapshots and both recovery stashes are preserved.
 These large artifacts are not included in a GitHub clone. No cleanup deletes
 them and no run is relabeled successful.
 
-Remaining: safely install the candidate after final-source checks; repair the
+Remaining at the v8 checkpoint: safely install the candidate after final-source checks; repair the
 separate 0 dB DL/UL PDCCH admission and blocked-observation reporting defects;
 complete detector qualification and integrated 5 MHz/full-control 400 MHz
 acceptance. A clean Git worktree is not evidence that these tasks are complete.
+
+## Shared-integration v9 preservation checkpoint
+
+Starting commit: `4095a8ded5e401f25c5a9cd172f0aaec74a877e8`, matched to freshly
+fetched `origin/main`. There is one local branch (`main`) and one Git worktree.
+The old main-source sweep still has live MATLAB engine 13768. Stop permission
+has been requested; main runtime files have not been replaced underneath it.
+**This delivery preserves the newest edits; it does not complete their runtime merge.**
+
+The standalone [v9 patch](pending_receiver_shared_integration_v9_20260926.patch)
+contains 37 files, 1,313 insertions and 71 deletions. SHA-256:
+`b5245d5771c6b165d8c6f83b8f2df062a04f4d6f06938a2d0aed5867af310925`.
+Forward application against main and reverse application against the candidate
+snapshot both pass. It replaces, rather than stacks on, the older pending
+receiver patches. A normalized-text comparison of tracked source and an
+inventory of new source files found 23 modified and 14 new source files;
+all are represented. Main's newer README is retained, not replaced by the
+snapshot's older README. Existing HARQ spatial repairs remain in main.
+
+The candidate adds configured joint DL/UL PDCCH candidate admission without
+lowering aggregation level or overlapping control resources. At an AL8
+contention occasion, the configured `ul_preschedule_first` scheduler policy
+reserves the feasible UL-control allocation before waveform serialization.
+This is an explicit gNB scheduling policy, not a claimed mandated 3GPP priority.
+Executed receiver trials remain distinct from finalized pre-transmission
+blocks. Blocks do not become CRC successes or satisfy missing UL data evidence.
+
+Validation evidence is revision-specific:
+
+- The v8 combined-source batch completed **23/23 focused tests**, recorded in
+  `logs/receiver_clock_candidate_20260926/receiver_v8_combined_source_receipt.json`.
+  This predates the new PDCCH changes and does not qualify all v9 source.
+- `pdcch_joint_admission_identity_guards.log` records execution-disposition
+  and candidate-admission passes, including 32 mapped composite DL/UL cases.
+  That batch subsequently failed at runtime-adapter structure initialization;
+  the failed batch is retained, not presented as an all-pass run.
+- After that correction, `pdcch_joint_runtime_report_guards.log` records passes
+  for `testJointPDCCHRuntimeAdmission` and
+  `testPDCCHGrantBindingEvidenceReport`. Its MATLAB process is no longer active.
+- This delivery reran the Python lab package tests: **18 passed**, with 13
+  dependency deprecation warnings. Receipt:
+  `logs/consolidation_20260926_v9_lab_package.xml`. The PowerShell launcher also
+  passes syntax parsing. These checks validate packaging, not PHY acceptance.
+
+No MATLAB scenario or `testAll` was launched for this preservation delivery.
+The new PDCCH tests still need registration and final combined-source regression
+before an integrated rerun. Detector statistical qualification, the complete
+5 MHz sweep and full-control 400 MHz acceptance remain open.
+
+The README retains exact Windows CMD commands for the **400 MHz bandwidth /
+7 GHz carrier** experiment, its dedicated YAML, recorded WebGUI and Keysight
+handoff files. It is not a 4 GHz test. The sealed `20260925_v1` package manifest
+still hashes to
+`dbfd394b1b1781461e41f64b8475531931050c2dbdc32f6d95bda3756a67d60b`.
+Physical instrument capability remains UNKNOWN. Generated IQ, results and logs
+are local/ignored, not included by a GitHub clone. Nothing was deleted.
+Both recovery stashes and temporary source/evidence snapshots are retained;
+their older consolidation commits `cd397f33` and `471334ff` are ancestors of main.
