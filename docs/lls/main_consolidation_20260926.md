@@ -463,3 +463,46 @@ Physical instrument capability remains UNKNOWN. Generated IQ, results and logs
 are local/ignored, not included by a GitHub clone. Nothing was deleted.
 Both recovery stashes and temporary source/evidence snapshots are retained;
 their older consolidation commits `cd397f33` and `471334ff` are ancestors of main.
+
+## Shared-integration v10 preservation checkpoint
+
+Starting commit: `7f96e81c99be56c8a487f7088731f686fc592004`, matching freshly
+fetched `origin/main`. One local branch and one worktree remain: `main`.
+The old eight-point sweep still uses main (engine 13768); stopping it has
+been requested, not approved. No active runtime files were replaced.
+**This is preservation, not a completed source integration.**
+
+The [v10 standalone patch](pending_receiver_shared_integration_v10_20260926.patch)
+preserves 40 source/config/test files, 1,631 insertions and 71 deletions.
+SHA-256: `6a45041f628a4b818f0c8cd03446895436982c02767924eafe398f81dbb72e1f`.
+Forward applicability against main and reverse applicability against the
+candidate snapshot pass. Apply this alternative only once; do not stack it
+with previous preserved receiver patches.
+
+The v9 combined-source focused batch has now completed **25/25 passes**.
+The final marker is `V9_COMBINED_COMPLETE 25/25`; its MATLAB engine has exited.
+Evidence: `logs/receiver_clock_candidate_20260926/pdcch_v9_combined_source_guards.log`,
+SHA-256 `18b3f6070e85e1fb6006ce98f108a2dd51c1e4e6691d21250bf7cff11ef17ffb`.
+This includes PDCCH allocation/runtime/reporting, DCI/DAI and scheduler guards,
+config and DL/UL/reference checks, artifact checks, `testE2E_FastVsTruth` and
+`testE2E_TruthPacketSemanticCampaign`. It is not `testAll` or scenario acceptance.
+
+Beyond v9, the patch preserves three PDCCH test registrations and these new,
+**unverified and not runtime-integrated** files:
+
+- `+sixgr/+link/bindCSIReportMeasurementAudit.m`
+- `tests/testCSIReportMeasurementAudit.m`
+- `simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_0db.yaml`
+
+The intended CSI audit distinguishes the UE measurement slot from the gNB's
+configured CSI reference slot. The new helper is not yet called by production
+runtime; its presence is not a claim that CSI exports are fixed.
+
+The README retains the exact CMD generation and recorded-WebGUI commands for
+**400 MHz bandwidth at 7 GHz**, its YAML, result/log locations and Keysight
+handoff mapping. This is not a 4 GHz test. No sealed IQ/results were modified,
+no MATLAB run or `testAll` was launched, and no files/stashes were deleted.
+Generated artifacts remain local, excluded from GitHub. The physical instrument
+capability remains UNKNOWN. Remaining source integration requires the old
+sweep to finish or explicit approval to stop it; end-to-end qualification is
+still pending afterward.
