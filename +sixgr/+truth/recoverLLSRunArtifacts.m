@@ -447,7 +447,7 @@ end
 
 function localRepairOptionalRAEvidenceSchemas(layout)
 % Repair schema-only legacy files without inventing an RA observation.
-names = ["ra_negative_trials", "ra_collision_trials"];
+names = ["ra_negative_trials", "ra_collision_trials", "ra_retry_events"];
 for index = 1:numel(names)
     pathValue = fullfile(layout.ControlCSVDir, names(index) + ".csv");
     needsSchema = exist(pathValue, "file") ~= 2;
@@ -473,8 +473,19 @@ end
 function storeInfo = localActivateRecoveryArtifactStore(runFolder, publicRunFolder, cfg, scfg, runTag, runID)
 storeInfo = struct("Active", false);
 backend = lower(string(sixgr.util.structGet(cfg, "outputs.storageBackend", "filesystem")));
-if backend ~= "mysql_web"
+existingWebRunRequested = isnumeric(runID) && isscalar(runID) && ...
+    isfinite(double(runID)) && double(runID) > 0;
+if backend ~= "mysql_web" && ~existingWebRunRequested
     return;
+end
+% Web launches deliberately keep the immutable scientific scenario YAML
+% independent of deployment, so its persisted output backend can remain
+% "filesystem" even though sim_runs owns the run.  An explicit positive
+% RunID is the recovery caller's publication authority: attach to that
+% existing row and mirror regenerated artifacts without changing any PHY,
+% scheduler, channel, or measurement configuration.
+if existingWebRunRequested
+    cfg = sixgr.util.structSet(cfg, "outputs.storageBackend", "mysql_web");
 end
 storeInfo = sixgr.db.activateArtifactStore(runFolder, cfg, struct( ...
     "ScenarioID", scfg.ScenarioID, ...

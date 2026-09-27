@@ -6,7 +6,7 @@ mkdir(tmp);
 c = onCleanup(@() localCleanup(tmp)); %#ok<NASGU>
 
 scenarioPath = fullfile("simulator", "configs", "scenarios", ...
-    "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml");
+    "lls_tdd_5mhz_rank2_4tx2rx_awgn_0db.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, tmp);
 layout = sixgr.report.resultLayout(tmp);

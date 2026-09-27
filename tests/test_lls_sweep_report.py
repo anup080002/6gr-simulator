@@ -63,6 +63,14 @@ def test_shared_export_retains_empty_table_and_failed_control_rows(tmp_path):
     overview = read_rows(tmp_path / "reports/csv/sweep_link_comparison.csv")
     assert overview[0]["TrialCount"] == "0"
     assert overview[0]["AttemptBLER"] == overview[0]["MeanMeasuredSINR_dB"] == ""
+    assert overview[0]["DataAvailability"] == "source_present_empty"
+    assert len(overview) == 6
+    assert {(r["PointIndex"], r["Direction"], r["DataAvailability"]) for r in overview[2:]} == {
+        ("2", "DL", "not_completed"), ("2", "UL", "not_completed"),
+        ("3", "DL", "not_completed"), ("3", "UL", "not_completed")}
+    bler = read_rows(tmp_path / "reports/csv/sweep_bler_vs_configured_snr.csv")
+    assert len(bler) == 6 and all("AttemptBLER_CI_Low" in row for row in bler)
+    assert not read_rows(tmp_path / "reports/csv/sweep_bler_vs_measured_sinr.csv")
 
 
 def test_union_schema_does_not_fill_missing_fields_with_zero(tmp_path):
@@ -99,7 +107,7 @@ def test_shared_png_contains_original_panels_and_manifest(tmp_path):
 
 def test_all_eight_points_share_one_csv_and_png_without_overwriting_rows(tmp_path):
     from PIL import Image
-    snrs = [-30, -20, -10, 0, 10, 20, 30, 40]
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
     overrides = [dict(label=f"point_{i}", config={"simulation": {"snr_db": snr}})
                  for i, snr in enumerate(snrs, 1)]
     (tmp_path / "meta").mkdir()
@@ -111,7 +119,7 @@ def test_all_eight_points_share_one_csv_and_png_without_overwriting_rows(tmp_pat
         child = tmp_path / "sweeps" / f"point_{i}"
         put_csv(child / "trials.csv", ["Measurement"], [dict(Measurement=snr + 0.125)])
         # One completed point deliberately lacks its image. No substitute data.
-        if i != 4:
+        if i != 5:
             Image.new("RGB", (32, 24), (i * 20, 0, 0)).save(child / "measurement.png")
     receipt = export_sweep(tmp_path)
     assert receipt["Complete"] and receipt["CompletedPoints"] == 8
@@ -123,10 +131,57 @@ def test_all_eight_points_share_one_csv_and_png_without_overwriting_rows(tmp_pat
     combined = read_rows(tmp_path / row["CombinedArtifact"])
     assert [float(r["SweepAggregateConfiguredSNR_dB"]) for r in combined] == snrs
     assert [float(r["Measurement"]) for r in combined] == [s + 0.125 for s in snrs]
+    overview = read_rows(tmp_path / "reports/csv/sweep_link_comparison.csv")
+    assert len(overview) == 16
+    assert {float(r["ConfiguredSNR_dB"]) for r in overview} == set(snrs)
+    assert all(r["DataAvailability"] == "source_missing" for r in overview)
     png = manifest["measurement.png"]
-    assert png["MissingCompletedPoints"] == "4"
+    assert png["MissingCompletedPoints"] == "5"
     with Image.open(tmp_path / png["CombinedArtifact"]) as image:
         assert image.height == 7 * (24 + 48) + 65 + 48
+
+
+def test_standardized_measurements_publish_one_cross_point_csv_and_png(tmp_path):
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
+    overrides = [dict(label=f"point_{i}", config={"simulation": {"snr_db": snr}})
+                 for i, snr in enumerate(snrs, 1)]
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta/scenario_config_resolved.json").write_text(json.dumps({
+        "scenario": {"runner_profile": "generic_sweep", "sweep": {"overrides": overrides}}}))
+    put_csv(tmp_path / "reports/csv/sweep_summary.csv", ["Label", "Ok"],
+            [dict(Label=p["label"], Ok=1) for p in overrides])
+    fields = ["CategoryCode", "CategoryKey", "CategoryName", "MetricKey", "MetricName",
+              "Entity", "Statistic", "Availability", "CountsTowardCoverage",
+              "ValueNumeric", "ValueText", "Unit", "SourceArtifact", "Notes"]
+    for i, snr in enumerate(snrs, 1):
+        rows = [dict(CategoryCode="A", CategoryKey="basic_phy", CategoryName="Basic PHY",
+                     MetricKey="initial_bler", MetricName="Initial BLER", Entity="DL",
+                     Statistic="rate", Availability="observed", CountsTowardCoverage=1,
+                     ValueNumeric=i / 10, ValueText=i / 10, Unit="fraction",
+                     SourceArtifact="air_interface/csv/dl_pdsch_trials.csv", Notes="")]
+        if i == 1:
+            rows.append(dict(CategoryCode="A", CategoryKey="basic_phy", CategoryName="Basic PHY",
+                             MetricKey="configured_only", MetricName="Configured only", Entity="DL",
+                             Statistic="value", Availability="config_only", CountsTowardCoverage=0,
+                             ValueNumeric=7, ValueText=7, Unit="index",
+                             SourceArtifact="meta/scenario_config_resolved.json", Notes="not measured"))
+        put_csv(tmp_path / "sweeps" / f"point_{i}" / "reports/csv/basic_phy_outputs.csv",
+                fields, rows)
+    receipt = export_sweep(tmp_path)
+    assert receipt["StandardizedMeasurementPlotCount"] == 1
+    values = read_rows(tmp_path / "reports/csv/sweep_measurement_values.csv")
+    assert len(values) == 8
+    assert [float(row["ConfiguredSNR_dB"]) for row in values] == snrs
+    assert {row["Availability"] for row in values} == {"observed"}
+    availability = read_rows(tmp_path / "reports/csv/sweep_measurement_availability.csv")
+    assert len(availability) == 9
+    assert any(row["Availability"] == "config_only" for row in availability)
+    manifest, = read_rows(tmp_path / "reports/csv/sweep_measurement_plot_manifest.csv")
+    assert manifest["ObservedPointIndices"] == "1|2|3|4|5|6|7|8"
+    assert manifest["MissingTerminalPointIndices"] == manifest["IncompletePointIndices"] == ""
+    metric_rows = read_rows(tmp_path / manifest["CampaignCSV"])
+    assert len(metric_rows) == 8
+    assert (tmp_path / manifest["CampaignPNG"]).is_file()
 
 
 def test_resolved_no_figures_policy_is_preserved(tmp_path):
@@ -138,6 +193,37 @@ def test_resolved_no_figures_policy_is_preserved(tmp_path):
     export_sweep(tmp_path)
     assert not (tmp_path / "reports/image").exists()
     assert (tmp_path / "reports/csv/sweep_link_comparison.csv").is_file()
+
+
+def test_shared_bler_curves_use_observed_crc_and_separate_phy_populations(tmp_path):
+    overrides = [dict(label="low", config={"simulation": {"snr_db": -10}}),
+                 dict(label="high", config={"simulation": {"snr_db": 10}})]
+    (tmp_path / "meta").mkdir()
+    (tmp_path / "meta/scenario_config_resolved.json").write_text(json.dumps({
+        "scenario": {"runner_profile": "generic_sweep", "sweep": {"overrides": overrides}}}))
+    put_csv(tmp_path / "reports/csv/sweep_summary.csv", ["Label", "Ok"],
+            [dict(Label="low", Ok=1), dict(Label="high", Ok=1)])
+    put_csv(tmp_path / "sweeps/low/air_interface/csv/dl_pdsch_trials.csv",
+            ["CRCPass", "MeasuredTrialSINR_dB", "MCSIndex", "Modulation", "Layers"], [
+                dict(CRCPass=0, MeasuredTrialSINR_dB=-1.2, MCSIndex=0, Modulation="QPSK", Layers=1),
+                dict(CRCPass=1, MeasuredTrialSINR_dB=-1.1, MCSIndex=0, Modulation="QPSK", Layers=1)])
+    put_csv(tmp_path / "sweeps/high/air_interface/csv/dl_pdsch_trials.csv",
+            ["CRCPass", "MeasuredTrialSINR_dB", "MCSIndex", "Modulation", "Layers"], [
+                dict(CRCPass=1, MeasuredTrialSINR_dB=9.2, MCSIndex=10, Modulation="16QAM", Layers=2)])
+    export_sweep(tmp_path)
+    configured = read_rows(tmp_path / "reports/csv/sweep_bler_vs_configured_snr.csv")
+    dl = [row for row in configured if row["Direction"] == "DL"]
+    assert [float(row["AttemptBLER"]) for row in dl] == [0.5, 0.0]
+    assert all(0 <= float(row["AttemptBLER_CI_Low"]) <= float(row["AttemptBLER_CI_High"]) <= 1
+               for row in dl)
+    measured = read_rows(tmp_path / "reports/csv/sweep_bler_vs_measured_sinr.csv")
+    assert len(measured) == 2
+    assert {(row["MCSIndex"], row["Modulation"], row["Rank"], row["TrialCount"]) for row in measured} == {
+        ("0.0", "QPSK", "1.0", "2"), ("10.0", "16QAM", "2.0", "1")}
+    assert all(row["EvidenceClass"] ==
+               "cross_run_observed_crc_and_receiver_post_equalization_sinr" for row in measured)
+    assert (tmp_path / "reports/image/sweep_bler_vs_configured_snr.png").is_file()
+    assert (tmp_path / "reports/image/sweep_bler_vs_measured_sinr.png").is_file()
 
 
 def test_gui_keeps_sweep_in_lite_and_renders_status_table():

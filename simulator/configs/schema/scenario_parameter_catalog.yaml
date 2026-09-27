@@ -258,6 +258,11 @@ sections:
       per_sample_fading_enabled: {required: false, type: boolean}
       shared_identity_awgn_enabled: {required: false, type: boolean}
       awgn_spatial_matrix_dl_real: {required: false, type: number_list, min_items: 1}
+      awgn_beam_failure_recovery_enabled: {required: false, type: boolean}
+      awgn_beam_failure_start_slot: {required: false, type: integer, min: 0}
+      awgn_beam_failure_end_slot_exclusive: {required: false, type: integer, min: 1}
+      awgn_beam_failure_matrix_dl_real: {required: false, type: number_list, min_items: 1}
+      awgn_beam_failure_detection_threshold_db: {required: false, type: number, min: 0}
       awgn_spatial_matrix_dl_imag: {required: false, type: number_list, min_items: 1}
       doppler_source_mode: {required: false, type: string, allowed_values: [configured, derive_from_ue_speed]}
       mobility_kmph: {required: true, type: number, min: 0}
@@ -784,6 +789,11 @@ sections:
         required: false
         type: string
         allowed_values: [snr_threshold, configured_scheduler_level, most_robust]
+      joint_pdcch_admission_policy:
+        required: false
+        type: string
+        allowed_values: [dl_then_ul, ul_preschedule_first]
+        description: Explicit gNB DL/UL priority over installed physical PDCCH candidates; no aggregation reduction or receiver bypass.
       search_space_num_candidates:
         required: true
         type: number_list
@@ -793,6 +803,7 @@ sections:
       pdcch_payload_bits: {required: false, type: integer, min: 1}
       blind_decode_list_length: {required: true, type: integer, min: 1}
       pdcch_strict: {required: false, type: struct}
+      pucch_strict: {required: false, type: struct}
       ul_precoding:
         required: false
         type: struct

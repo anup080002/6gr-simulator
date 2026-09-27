@@ -1,7 +1,6 @@
 function rec=normalizeReceivedSSBPowerReference(rec,cfg)
 % One scale contract for full-burst acquisition and per-occasion tracking.
-fixed=strcmpi(string(sixgr.util.structGet(cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
-    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+fixed=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if ~fixed, return; end
 status=string(sixgr.util.structGet(rec,'SSPhysicalMeasurementStatus',"unavailable"));
 assert(~logical(sixgr.util.structGet(rec,'SSPowerReferenceNormalized',false)) && ...

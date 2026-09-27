@@ -6,8 +6,7 @@ validateattributes(symbols,{'numeric'},{'vector','nonempty','real','finite','int
 assert(ndims(grid)<=3 && nfft>=size(grid,1) && ...
     all(symbols<size(grid,2)) && numel(unique(symbols))==numel(symbols), ...
     'sixgr:truth:InvalidCarrierPowerGrid','Require actual distinct received grid symbols and FFT dimensions.');
-normalized=strcmpi(string(sixgr.util.structGet(cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
-    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+normalized=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if normalized
     measured=double(grid);
 else

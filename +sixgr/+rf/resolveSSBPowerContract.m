@@ -15,6 +15,9 @@ contract = struct('Available',false,'Source',"unconfigured_ssb_power_reference",
     'ReferencePlane',"nominal_pre_rf_aggregate_sss_epre",'ProxyUsed',false, ...
     'FixedSNRNormalizedReference',false,'PhysicalDevicePowerClaim',false, ...
     'PowerReferenceDomain',"unavailable",'ReferenceFullBWPPower_dBm',NaN, ...
+    'NominalConfiguredFullBWPPower_dBm',NaN, ...
+    'NormalizedWaveformEPRE_dB_re_UnitOccupiedRE_Es',NaN, ...
+    'ReferencePowerOffset_dB',NaN, ...
     'OFDMUnitReference',struct());
 if strlength(policy)==0, return; end
 normalization = string(sixgr.util.structGet(cfg,[root 'downlink_power_normalization_policy'], ...
@@ -43,8 +46,8 @@ end
 ctx = sixgr.rf.PowerContext(cfg,'DL');
 nsc = 12*double(carrier.NSizeGrid);
 base = ctx.TotalTxPower_dBm-10*log10(nsc);
-normalized = upper(strtrim(string(sixgr.util.structGet(cfg,'integration.run_mode',""))))=="FIXED_SNR_SWEEP" && ...
-    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+normalized = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+normalizedUnitEPRE_dB = NaN;
 if normalized
     % A deterministic single-RE calibration measures the actual Toolbox
     % IFFT convention; it is not a PHY result or a noise/receiver input.
@@ -55,7 +58,7 @@ if normalized
     useful=double(info.CyclicPrefixLengths(1))+(1:double(info.Nfft));
     unitPower=mean(abs(probe(useful,:)).^2,'all');
     validateattributes(unitPower,{'numeric'},{'scalar','real','finite','positive'});
-    base=10*log10(unitPower);
+    normalizedUnitEPRE_dB=10*log10(unitPower);
     contract.OFDMUnitReference=struct('Source',"deterministic_single_RE_IFFT_useful_sample_power", ...
         'Nfft',double(info.Nfft),'SampleRateHz',double(info.SampleRate), ...
         'UnitREUsefulSamplePower_mW',unitPower,'DevicePowerApplied',false);
@@ -83,7 +86,8 @@ end
 validateattributes(target,{'numeric'},{'scalar','real','finite','integer','>=',-60,'<=',50});
 % This separate correction avoids adding the boost again on repeated config
 % resolution. The authored per-SSB values and normalized precoders survive.
-cfg = sixgr.util.structSet(cfg,'phy.ssb.referencePowerOffset_dB',target-base-powers(1));
+referenceOffset_dB=target-base-powers(1);
+cfg = sixgr.util.structSet(cfg,'phy.ssb.referencePowerOffset_dB',referenceOffset_dB);
 cfg = sixgr.util.structSet(cfg,'rrc.sib1.ss_pbch_block_power_dbm',target);
 contract.Available = true;
 contract.Source = "configured_ssb_sss_epre_and_sib1_common_authority";
@@ -91,14 +95,21 @@ contract.FixedSNRNormalizedReference=normalized;
 contract.PhysicalDevicePowerClaim=~normalized;
 contract.PowerReferenceDomain="configured_device_full_bwp_budget";
 if normalized
-    contract.Source="normalized_unit_grid_sss_sample_reference_and_sib1_common_authority";
-    contract.PowerReferenceDomain="normalized_IFFT_sample_unit_mapping_not_device_budget";
+    contract.Source="nominal_sib1_power_and_normalized_unit_grid_waveform_reference";
+    contract.PowerReferenceDomain="nominal_rrc_power_not_applied_to_normalized_waveform";
 end
 contract.SSPBCHBlockPower_dBm = target;
 contract.FullBWPUnitEPRE_dBm = base;
 contract.SSBRelativePower_dB = target-base;
 contract.NumSubcarriers = nsc;
-contract.ReferenceFullBWPPower_dBm=base+10*log10(nsc);
+contract.ReferencePowerOffset_dB=referenceOffset_dB;
+contract.NominalConfiguredFullBWPPower_dBm=base+10*log10(nsc);
+if normalized
+    contract.NormalizedWaveformEPRE_dB_re_UnitOccupiedRE_Es = ...
+        normalizedUnitEPRE_dB+powers(1)+referenceOffset_dB;
+else
+    contract.ReferenceFullBWPPower_dBm=base+10*log10(nsc);
+end
 if ~normalized, contract.TxPowerBudget_dBm = ctx.TotalTxPower_dBm; end
 cfg = sixgr.util.structSet(cfg,'phy.ssb.powerReferenceContract',contract);
 end

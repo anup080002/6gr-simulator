@@ -186,6 +186,16 @@ classdef SharedWaveformPhysicalRuntime < handle
                         state.ExternalLogicalTxPorts=state.NumTxAnt;
                         state.PhysicalChannelTxElements=state.NumTxAnt;
                         state.Meta.AWGNSpatialMatrix=state.Meta.AWGNSpatialMatrix.';
+                        % The beam-failure episode is an alternate physical
+                        % channel operator on the same reciprocal TDD link.
+                        % Retarget it with the baseline operator; otherwise a
+                        % rectangular DL matrix remains RX-by-TX while the UL
+                        % endpoint expects its nonconjugate transpose.
+                        failureMatrix=sixgr.util.structGet( ...
+                            state,'Meta.BeamFailureSpatialMatrix',[]);
+                        if ~isempty(failureMatrix)
+                            state.Meta.BeamFailureSpatialMatrix=failureMatrix.';
+                        end
                     end
                 end
                 info=struct('OFDM',struct('SampleRate',obj.SampleRateHz));

@@ -2,6 +2,7 @@ inherits:
   - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
   - ../mimo/shared_four_port_control.yaml
   - ../channels/shared_identity_awgn.yaml
+  - ../control/pdcch_joint_tdd_admission.yaml
 
 meta:
   scenario_id: lls_tdd_5mhz_rank2_shared_awgn_20db

@@ -54,7 +54,7 @@ if isstruct(raTables) && ~isempty(fieldnames(raTables))
         % a two-byte file.  A typed zero-row table is schema metadata, not a
         % fabricated observation, so normalize only these two optional
         % interfaces before publishing the immutable completed-run result.
-        if ismember(name, ["ra_negative_trials", "ra_collision_trials"]) && ...
+        if ismember(name, ["ra_negative_trials", "ra_collision_trials", "ra_retry_events"]) && ...
                 height(value) == 0 && width(value) == 0
             value = sixgr.phy.ra.emptyOptionalEvidenceTable(name);
         end

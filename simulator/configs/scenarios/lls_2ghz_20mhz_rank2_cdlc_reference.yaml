@@ -1,0 +1,375 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+  - ../channels/cdl_c.yaml
+
+meta:
+  scenario_id: lls_2ghz_20mhz_rank2_cdlc_reference
+  description: >
+    Strict NR band n39, 1.900 GHz, 20 MHz, mu-0 TDD waveform LLS using
+    concrete CDL-C fading. One UE executes physical SS/PBCH, Type-0/SIB1,
+    four-step RA, PDCCH, PDSCH, PUCCH, PUSCH, CSI-RS, SRS, TRS, DM-RS,
+    PT-RS, HARQ, Type-I PMI/RI/CQI/CRI and adaptive rank up to two.
+  purpose: >
+    Provide the clean controlled-SNR arm for contribution-oriented link
+    evaluation. The n39 carrier keeps the requested 2 GHz-band study aligned
+    with concrete TDD SIB1, PRACH and NR-ARFCN semantics.
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: ran1_style_fr1_tdd_link_evaluation
+  tags: [lls, truth, tdd, fr1, 2ghz, 20mhz, cdl-c, rank-adaptive, shared-control, no-proxy]
+
+scenario:
+  runner_profile: waveform_bundle
+  target_cases: [bundle]
+  notes: >
+    Configured SNR is occupied-RE Es/N0 at the declared waveform reference
+    plane. Receiver SINR, BLER, BER, EVM and throughput are measurements and
+    are not relabelled configured SNR. Pathloss and O2I are excluded from
+    this controlled-SNR arm and belong to the thermal-noise companion.
+
+simulation:
+  link_direction: both
+  n_frames: 10
+  n_slots: 100
+  n_subframes: 100
+  monte_carlo_iterations: 1
+  random_seed: 20260926
+  deterministic_mode: true
+  snr_db: 0
+  noise_operating_mode: standalone_awgn_snr_argument
+  min_duration_s: 0.1
+  snr_sweep_offsets_db: [0]
+
+integration:
+  # A configured-SNR sweep is an occupied-RE Es/N0 experiment. Keep its
+  # sample plane normalized so signal-specific TS 38.213 power-control values
+  # cannot be mixed with noise calibrated from a different full-BWP power.
+  power_reference_mode: normalized_unit_es
+
+canonical_control:
+  integration:
+    power_reference_mode: normalized_unit_es
+    configured_snr_is_link_authority: true
+
+frequency:
+  range_name: FR1
+  band_name: n39_1900mhz_20mhz_tdd
+  center_frequency_hz: 1900000000
+  bandwidth_hz: 20000000
+  bandwidth_options_hz: [20000000]
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  numerology_options_khz: [15]
+  max_mimo_size: 2
+  n_size_grid: 106
+
+global_radio_scope:
+  duplex_mode: TDD
+  carrier_frequency_hz: 1900000000
+  frequency_range_label: FR1
+  channel_bandwidth_hz: 20000000
+  simulation_bandwidth_hz: 20000000
+  occupied_bandwidth_hz: 19080000
+  scs_hz: 15000
+  numerology_mu: 0
+  cp_type: normal
+  sample_rate_hz: 30720000
+  fft_size: 2048
+  ifft_size: 2048
+  oversampling_ratio: 1
+  guard_band_hz: 460000
+
+frame:
+  scs_khz: 15
+  cp_type: normal
+  slot_format: flexible
+  # At mu=0 the 5 ms period is D,D,D,S,U. The S slot owns DL symbols
+  # 0..9, flexible symbols 10..11, and UL symbols 12..13.
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 15
+    Pattern1:
+      PeriodicityMilliseconds: 5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 10
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 2
+
+tdd_timing:
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu0
+  pdcch_to_pdsch_k0: 0
+  pdcch_to_pusch_k2: 1
+  ul_grant_k2: 1
+  dl_harq_feedback_k1: [1, 2, 3, 4, 5, 6, 7, 8]
+  k1_selection_policy: first_valid_configured
+  harq_roundtrip_slots: 8
+  dl_to_ul_guard_time_us: 16.276
+  timing_advance_max_us: 667
+  timing_advance_ticks: 0
+  n1_pdsch_processing_time_symbols: 8
+  n2_pusch_preparation_time_symbols: 10
+
+waveform:
+  dl_waveform: CP-OFDM
+  ul_waveform: CP-OFDM
+  fft_size: 2048
+  sample_rate_hz: 30720000
+  windowing_enabled: false
+  transform_precoding_enabled: false
+
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 300
+  doppler_hz: 5.56
+  doppler_source_mode: configured
+  mobility_kmph: 3
+  los_enabled: false
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  pathloss_model: nrPathLoss
+  shadow_fading_enabled: false
+  shadow_fading_std_db: 6
+  o2i_model: none
+
+mimo:
+  n_tx_ant: 2
+  n_rx_ant: 2
+  n_layers: 1
+  max_dl_layers: 2
+  max_ul_layers: 2
+  rank_adaptation_policy: measured_ri
+  precoder_type: wideband
+  codebook_type: type1
+  reciprocity_mode: TDD
+  beam_sweep_enabled: true
+  beam_count: 4
+  phase07_strict:
+    enabled: true
+    profile_id: fr1_typeI_single_panel_strict
+    specification_profile: 3GPP_R18_MIMO_CSI_V1
+    direction: DL
+    codebook_type: typeI-SinglePanel
+    ports: 2
+    panels: 1
+    n1: 1
+    n2: 1
+    o1: 1
+    o2: 1
+    max_rank: 2
+    rank_domain: [1, 2]
+    receiver: MMSE
+    precoder_prg_size_rbs: 106
+    require_active_tci_state: false
+    measurement_max_age_slots: 8
+    csi_report:
+      report_config_id: csi-report-0
+      epoch: 0
+      codebook_mode: 1
+      report_quantity: cri-RI-PMI-CQI
+      num_csi_resources: 1
+      frequency_granularity: wideband
+
+antenna_and_array:
+  bs_num_txrus: 2
+  bs_num_rxrus: 2
+  bs_num_antenna_elements: 2
+  ue_num_txrus: 2
+  ue_num_rxrus: 2
+  ue_num_antenna_elements: 2
+
+bwp:
+  dl:
+    bwp_id: 0
+    direction: DL
+    n_start_bwp: 0
+    n_size_bwp: 106
+    scs_khz: 15
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 15
+  ul:
+    bwp_id: 0
+    direction: UL
+    n_start_bwp: 0
+    n_size_bwp: 106
+    scs_khz: 15
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 15
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 1900000000
+      band: n39
+      frequency_range: FR1
+      channel_bandwidth_mhz: 20
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 106, scs_khz: 15}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 106, scs_khz: 15}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+
+control:
+  search_space_num_candidates: [4, 2, 2, 1, 0]
+  blind_decode_candidates: 9
+  ul_precoding:
+    num_ports: 2
+    max_rank: 2
+    codebook_subset: fullyAndPartialAndNonCoherent
+    transmission_scheme: codebook
+
+pdsch:
+  execution_profile: scheduler_truth
+  prb_start: 0
+  num_prb: 106
+  start_symbol: 2
+  num_symbols: 12
+  layer_count: 1
+  rank: 1
+  num_antenna_ports: 2
+  link_adaptation_mode: amc
+  amc_policy: baseline
+  precoder_normalization_convention: semi_unitary
+
+pusch:
+  execution_profile: scheduler_truth
+  prb_start: 0
+  num_prb: 106
+  start_symbol: 0
+  num_symbols: 13
+  layer_count: 1
+  num_layers: 1
+  num_antenna_ports: 2
+  mcs_table: qam64_table1
+  modulation: QPSK
+  precoder_normalization_convention: semi_unitary
+
+reference_signals:
+  ssb_enabled: true
+  pbch_enabled: true
+  pdcch_dmrs_enabled: true
+  pdsch_dmrs_ports: 2
+  pdsch_dmrs_config_type: 1
+  pdsch_dmrs_type_a_position: 2
+  pdsch_dmrs_num_cdm_groups_without_data: 1
+  pdsch_dmrs:
+    port_set: [0, 1]
+  pusch_dmrs_ports: 2
+  pusch_dmrs_num_cdm_groups_without_data: 2
+  pusch_dmrs:
+    port_set: [0, 1]
+  csi_rs_enabled: true
+  csi_rs_periodicity_slots: 5
+  csi_rs_offset_slots: 1
+  csi_rs_ports: 2
+  csi_rs_port_count: 2
+  csi_rs_resource_num_rbs: [106]
+  srs_enabled: true
+  srs_ports: 2
+  srs_periodicity_slots: 5
+  srs_slot_within_period: 5
+  srs:
+    num_ports: 2
+    port_set: [0, 1]
+    num_rb: 106
+    expected_rb_start: 0
+    expected_num_rb: 106
+    expected_bandwidth_coverage_percent: 100
+    full_carrier_sounding_required: true
+    full_carrier_coverage_tolerance_rb: 0
+  trs_enabled: true
+  tracking_rs_enabled: true
+  ptrs_enabled: true
+  ptrs_cpe_correction_enabled: true
+  csi_reporting_enabled: true
+  cqi_reporting_enabled: true
+  pmi_reporting_enabled: true
+  ri_reporting_enabled: true
+  cri_reporting_enabled: true
+  csi_feedback_mode: PMI+CQI+RI+CRI
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  csi_acquisition_mode: joint_dl_ul
+  operation_orientation: tdd_reciprocity
+  pmi_codebook_mode: type1_su_mimo
+
+csi_acquisition_and_reporting:
+  dl_csi_enabled: true
+  csi_rs_baseline_flag: true
+  feedback_based_flag: true
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  pmi_codebook_mode: type1_su_mimo
+  cqi_policy: baseline
+  pmi_policy: baseline
+  ri_policy: baseline
+  cri_policy: baseline
+  report_trigger: periodic
+
+link_adaptation:
+  fixed_or_amc: amc
+  operating_point_mode: adaptive
+  inner_loop_flag: true
+  outer_loop_flag: true
+  cqi_source: csi_feedback
+  cqi_table: table1
+  pdsch_link_adaptation_policy: baseline
+  pusch_link_adaptation_policy: baseline
+  rank_adaptation_policy: measured_ri
+  delta_mcs_policy: ack_nack_olla
+  target_bler: 0.1
+
+random_access:
+  carrier_frequency_hz: 1900000000
+  n_size_grid: 106
+  num_rx_antennas: 2
+
+traffic:
+  model: full_buffer
+  transport: UDP
+  flowDirection: BIDIR
+  dlRatio: 0.5
+  ulRatio: 0.5
+  targetRate_Mbps: 1000
+  fullBufferBitsPerTTI: 1000000
+  jitterPct: 0
+  flows:
+    - name: saturated_bidirectional_flow
+      qfi: 9
+      fiveQi: 9
+      protocol: UDP
+      direction: BIDIR
+      packetDelayBudget_ms: 20
+      packetSize_bytes: 512
+      packetInterval_ms: 1
+      rate_Mbps: 1000
+      weight: 1
+      jitterPct: 0
+      burstiness: saturation
+      service_profile: eMBB
+      ue_class: UE_CLASS_EMBB
+      ue_count: 1
+
+output_control:
+  save_raw_waveforms: true
+  save_llrs: true
+  save_channel_snapshots: true
+  save_constellations: true
+  save_debug_events: true
+  impairment_visibility: full
+
+output:
+  profile: lls_2ghz_20mhz_rank2_cdlc_reference
+  phy_signal_diagnostic_fft_length: 2048
+  phy_signal_diagnostic_channel_points: 4096
+  phy_signal_diagnostic_constellation_points: 2048
+  save_csv: true
+  save_mat: true
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: true
+  emit_placeholder_artifacts: false
+  emit_disabled_audit_artifacts: true

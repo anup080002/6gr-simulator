@@ -97,6 +97,37 @@ control = sixgr.truth.evaluateInPathControlEvidence(cfg, raw, ...
 assert(control.StrictOk && ~control.LaunchedSupplementalWaveform && ...
     height(control.SummaryTable) == 2);
 
+% A capacity-blocked command did not create a receiver trial. Retain that
+% disposition in the artifact, but do not count it as a decode failure.
+blockedPDCCH = raw;
+blocked = pdcch;
+blocked.Status(:) = "NA";
+blocked.StrictOk(:) = false;
+blocked.DCICrcPass(:) = false;
+blocked.PDCCHPayloadMatch(:) = false;
+blocked.PDCCHCausalGrantDecodeOk(:) = false;
+blocked.GrantValid(:) = false;
+blocked.PDCCHReceiverTrialExecuted = false;
+blocked.PDCCHPreTransmissionFinalized = true;
+blocked.DecodeAttempted = false;
+blocked.FailureReason = "control_blocked_no_nonoverlapping_pdcch_candidate";
+blockedPDCCH.PDCCH.PDCCHReceiverTrialExecuted = true;
+blockedPDCCH.PDCCH.PDCCHPreTransmissionFinalized = false;
+blockedPDCCH.PDCCH.DecodeAttempted = true;
+blockedPDCCH.PDCCH.FailureReason = "";
+blockedPDCCH.PDCCH = [blockedPDCCH.PDCCH; blocked];
+qualified = sixgr.truth.evaluateInPathComponentEvidence( ...
+    cfg,blockedPDCCH,"pdcch");
+assert(qualified.StrictOk && qualified.EvaluatedReceiverTrialCount==1 && ...
+    qualified.PreTransmissionFinalizedCount==1 && ...
+    height(qualified.ArtifactTables.pdcch_trials)==2, ...
+    'A finalized PDCCH capacity block must remain exported without becoming a decode failure.');
+malformed = blockedPDCCH;
+malformed.PDCCH.PDCCHPreTransmissionFinalized(2) = false;
+rejected = sixgr.truth.evaluateInPathComponentEvidence(cfg,malformed,"pdcch");
+assert(~rejected.StrictOk && contains(rejected.FailureReason, ...
+    "unexecuted_pdcch_row_without_finalized"));
+
 control = sixgr.truth.evaluateInPathControlEvidence(cfg, raw, ...
     "EnablePDCCH",false, "EnablePUCCH",false, "EnablePUSCHUCI",true);
 assert(control.StrictOk && height(control.SummaryTable) == 1 && ...

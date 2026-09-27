@@ -278,8 +278,7 @@ end
 
 function state=localPower(section,cfg,resource)
 p=localRequired(section,["power_control"]);
-fixedReference=strcmpi(string(sixgr.util.structGet(cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
-    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+fixedReference=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if fixedReference
     scs=localRequiredNumber(sixgr.util.structGet(cfg,'phy.carrier',struct()),["SubcarrierSpacing"]);
     mu=log2(scs/15);

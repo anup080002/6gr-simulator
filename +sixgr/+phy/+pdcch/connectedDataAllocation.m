@@ -45,6 +45,10 @@ p.dmrs.maxLength=assignment.DMRSFrontLoadSymbols;
 p.receivedDCIAssignment=assignment;
 if assignment.Direction=="UL"
     p.TPMI=assignment.TPMI; p.PMI=assignment.TPMI;
+    p.PTRSPortSet=double(assignment.PTRSPortSet(:).');
+    p.ptrs.portSet=double(assignment.PTRSPortSet(:).');
+    p.ptrs.receivedDCIAssociation=double(assignment.PTRSDMRSAssociation);
+    p.ptrs.receivedDCIAssignmentDigest=string(assignment.AssignmentDigest);
 end
 cfg.phy.(root)=p;
 carrier=sixgr.phy.grid.makeCarrier(cfg);

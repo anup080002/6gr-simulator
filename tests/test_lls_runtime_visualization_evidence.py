@@ -69,6 +69,28 @@ def test_component_cards_show_verified_visualizations_without_promoting_primary(
     assert next(row for row in cards if row["component_id"] == "csi")["artifact_count"] == 0
 
 
+def test_verified_visualizations_are_public_but_remain_non_primary():
+    import lls_web_dashboard as dashboard
+    artifacts, payloads, *_ = fixture()
+    verified = verified_runtime_visualizations(artifacts, lambda a: payloads[a["logical_path"]])
+    primary = [dict(logical_path="components/pdsch/csv/pdsch_bler.csv",
+        artifact_id=10, artifact_kind="table_csv", byte_size=10,
+        created_utc="2026-09-12T00:00:00Z")]
+    published = dashboard.merge_verified_runtime_visualizations_for_publication(
+        primary, verified
+    )
+    assert len(published) == 3
+    assert published[0] is primary[0]
+    assert all(
+        row.get("evidence_scope") == "verified_runtime_visualization"
+        and row.get("hash_verified") is True
+        for row in published[1:]
+    )
+    assert dashboard.merge_verified_runtime_visualizations_for_publication(
+        primary, artifacts
+    ) == primary, "Unverified rows must never enter public Results/Qualification."
+
+
 def test_legacy_selection_does_not_double_count_verified_visualizations():
     import lls_web_dashboard as dashboard
     artifacts, payloads, *_ = fixture()

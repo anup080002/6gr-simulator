@@ -3741,6 +3741,8 @@ for sweepIdx = 1:numel(snrGrid)
                     [runtimeState,dlGrants,plannedSharedUL]=sixgr.truth.planJointHARQPUSCHTiming( ...
                         runtimeState,userCfg,dlGrants,plannedSharedUL);
                 end
+                [dlGrants,plannedSharedUL]=sixgr.truth.resolveJointPDCCHAdmission( ...
+                    runtimeState,cfg,userCfg,dlGrants,plannedSharedUL);
             end
             [runtimeState, dlGrants, queuedDL] = localQualifyCoupledGrantsWithPDCCH(runtimeState, userCfg, dlGrants, "DL", snrVal);
             if isfield(runtimeState,'SharedWaveformStream')
@@ -9351,12 +9353,18 @@ for gi = 1:numel(grants)
     grant.ControlFrame = controlFrameIdx;
     rnti = double(sixgr.util.structGet(grant, "RNTI", localUserRNTI(state.MultiUser, ueIdx)));
     servingCell = double(sixgr.util.structGet(grant, "ServingCell", NaN));
+    preTransmissionBlockReason="";
     if ~slotDLControlAllowed
+        preTransmissionBlockReason="control_blocked_no_dl_control_symbols_in_tdd_slot";
+    elseif isfield(grant,'PDCCHAdmissionSelected') && ~grant.PDCCHAdmissionSelected
+        preTransmissionBlockReason="control_blocked_no_nonoverlapping_pdcch_candidate";
+    end
+    if strlength(preTransmissionBlockReason)>0
         [state, grant] = sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
-            state, grant, direction, "control_blocked_no_dl_control_symbols_in_tdd_slot");
+            state, grant, direction, preTransmissionBlockReason);
         state = sixgr.truth.CoupledTruthRuntime.cancelUnexecutedHARQGrantRuntime(state, grant, direction);
         pdcchT = localBuildMissingPDCCHGrantBindingTrial(cfgU, NaN, ...
-            "control_blocked_no_dl_control_symbols_in_tdd_slot");
+            preTransmissionBlockReason);
         pdcchT = localAnnotateCoupledControlTrial(pdcchT, controlSlotIdx, controlFrameIdx, ueIdx, rnti, direction, servingCell);
         [pdcchT, grant] = localAnnotateGrantControlTrial(pdcchT, grant, cfgU, direction);
         state.ControlTrials.PDCCH = localAppendCompatTable(state.ControlTrials.PDCCH, pdcchT);
@@ -9379,14 +9387,29 @@ for gi = 1:numel(grants)
         sixgr.truth.PDCCHSlotResourceLedger.lookup( ...
         sixgr.util.structGet(state, "PDCCHResourceLedger", struct()), ...
         controlSlotIdx, servingCell, controlCarrier);
+    if isfield(grant,'PDCCHAdmissionSelected')
+        assert(grant.PDCCHAdmissionSelected && grant.PDCCHAdmissionControlSlot==controlSlotIdx && ...
+            grant.PDCCHAdmissionCell==servingCell, ...
+            'sixgr:truth:PDCCHAdmissionContextMismatch','A planned candidate belongs to one cell/control occasion.');
+        occupiedControlREs=unique([occupiedControlREs;grant.PDCCHAdmissionOtherReservations],'rows');
+    end
     if isfield(state,'SharedWaveformStream')
         try
             prepared=sixgr.link.prepareSharedPDCCHTransmission(cfgControl, ...
                 'Grant',grant,'RNTI',rnti,'DCIBits',grant.DCI.Bits, ...
                 'ReservedRECoordinates',occupiedControlREs);
+            if isfield(grant,'PDCCHAdmissionSelected')
+                assert(isequal(prepared.TxInfo.AllocatedRECoordinates,grant.PDCCHAdmissionCoordinates), ...
+                    'sixgr:truth:PDCCHAdmissionExecutionMismatch', ...
+                    'Actual PDCCH preparation must use its independently planned physical candidate.');
+            end
         catch ME
             if ~strcmp(ME.identifier,'sixgr:phy:pdcch:NoFreeCandidate')
                 rethrow(ME);
+            end
+            if isfield(grant,'PDCCHAdmissionSelected')
+                error('sixgr:truth:PDCCHAdmissionExecutionMismatch', ...
+                    'An admitted PDCCH lost its planned resources before transmission: %s',ME.message);
             end
             reason="control_blocked_no_nonoverlapping_pdcch_candidate";
             [state,grant]=sixgr.truth.CoupledTruthRuntime.blockPDCCHGrantTrial( ...
@@ -10922,6 +10945,8 @@ vars = {'Direction','SNR_dB','Seed','Frame','Slot','MCS','PRBs','Layers','Config
     'DetectionAttempted','DetectionSuccess','DetectionUsable', ...
     'MeasurementAttempted','MeasurementUsable','FailureReason','TimingOffset_samples','TimingAdvance_samples','TimingAdvance_us','TAOutOfRangeFlag','TAOutOfRangeReason','TAMaxValid_samples','TAMaxValid_us','RankEstimate', ...
     'SRSOccupiedPRBCount','SRSCarrierPRBCount','SRSBandwidthFraction','SRSFrequencyPRBStart','SRSFrequencyPRBEnd','SRSBandwidthCoverageStatus', ...
+    'SRS_RSRP_dBm','SRS_RSRP_dB_re_UnitOccupiedRE_Es','SRSRSRPPerReceiveAntenna_dBm','SRSAbsolutePowerStatus', ...
+    'SRSInterPortLeakageMatrixJSON','SRSInterPortLeakageWorst_dB','SRSInterPortLeakageStatus','SRSInterPortLeakageSource', ...
     'ConditionNumber_dB','NumRxAntennas','NumTxPorts','TxWaveformColumns','PhysicalTxAntennas','RxWaveformBranches','PhysicalRxAntennas','TxWaveformDomain','HybridElementDomainApplied', ...
     'SelectedBeamIndex','BestBeamIndex','BeamHit','TopKBeamHit','BeamCandidateCount', ...
     'SelectedBeamGain_dB','BestBeamGain_dB','BeamGainGap_dB', ...
@@ -12086,16 +12111,13 @@ T.SSBBurstSweepScope = repmat("configured_active_ss_burst_set", n, 1);
 T.SelectedBeamFlag = false(n, 1);
 T.SelectedSSBIndex = nan(n, 1);
 T.SelectedBeamIndex = nan(n, 1);
-fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
-    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
-    logical(sixgr.util.structGet(cfg, ...
-    "integration.configured_snr_is_link_authority", false));
-if fixedNormalizedEsN0
-    T.SelectionMetric = repmat( ...
-        "SS_RSRP_dB_re_UnitOccupiedRE_Es", n, 1);
-else
-    T.SelectionMetric = repmat("SS_RSRP_dBm", n, 1);
-end
+% A configured-SNR run can still execute on an absolute calibrated sample
+% plane. Select the beam on the measurement plane actually produced by the
+% receiver, not merely on the fact that configured SNR owns the noise
+% variance. This must match runSSBBeamSweep and the power-contract helpers.
+fixedNormalizedEsN0 = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
+selectionMetric = sixgr.link.resolveSSBSelectionMetric(cfg);
+T.SelectionMetric = repmat(selectionMetric, n, 1);
 T.SelectionMetricValue_dB = nan(n, 1);
 selectionSource = "coupled_receiver_measured_same_channel_origin_ssb_pbch_sweep";
 if sharedCapture
@@ -12105,11 +12127,7 @@ T.SelectionSource = repmat(selectionSource, n, 1);
 T.SelectionStatus = repmat( ...
     "unavailable_no_successful_finite_measurement", n, 1);
 
-if fixedNormalizedEsN0
-    power_dB = double(T.SS_RSRP_dB_re_UnitOccupiedRE_Es);
-else
-    power_dB = double(T.SS_RSRP_dBm);
-end
+power_dB = double(T.(selectionMetric));
 eligible = logical(T.CRCPass) & isfinite(power_dB) & ...
     logical(T.SSBIdentityVerified) & ...
     logical(T.ChannelEstimateAvailable) & logical(T.EqualizationAvailable) & ...
@@ -12670,6 +12688,17 @@ for plan=reshape(plans,1,[])
     assert(isfield(output,'PreparedTransmission'),'sixgr:truth:MissingPreparedData','No retained data waveform was produced.');
     context=struct('Plan',plan,'Job',job,'MultiUser',multiUser,'Config',cfg, ...
         'Key',localSharedGrantControlKey(plan.GrantSnapshot,direction));
+    if upper(string(direction))=="UL" && ...
+            isfield(plan.Cfg.phy.pusch,'priorityIndex')
+        pendingSRS=state.SharedWaveformStream.Pending( ...
+            string({state.SharedWaveformStream.Pending.Kind})=="SRS" & ...
+            [state.SharedWaveformStream.Pending.UE]==plan.UEIndex);
+        for pendingIndex=1:numel(pendingSRS)
+            sixgr.phy.frame.validatePreparedPriorityZeroPUSCHSRS( ...
+                pendingSRS(pendingIndex).Context.Prepared, ...
+                output.PreparedTransmission);
+        end
+    end
     state.SharedWaveformStream.queueData(plan.UEIndex,output.PreparedTransmission,context);
     if isfield(output,'UEHARQState')
         ueBuffers{plan.UEIndex}=output.UEHARQState;
@@ -13180,6 +13209,16 @@ for slot=state.CurrentSlot:state.CanonicalSlotsPerSweepPoint
     output=sixgr.link.runSRSChannelEstimation(cfgSRS,args{:},'PrepareOnly',true);
     assert(isfield(output,'PreparedTransmission'), ...
         'sixgr:truth:SharedSRSPreparationFailed','SRS preparation failed: %s',output.Notes);
+    if isfield(cfgSRS.phy.pusch,'priorityIndex')
+        pendingPUSCH=owner.Pending( ...
+            string({owner.Pending.Kind})=="PUSCH" & ...
+            [owner.Pending.UE]==ue);
+        for pendingIndex=1:numel(pendingPUSCH)
+            sixgr.phy.frame.validatePreparedPriorityZeroPUSCHSRS( ...
+                output.PreparedTransmission, ...
+                pendingPUSCH(pendingIndex).Context.Prepared);
+        end
+    end
     context=struct('Config',cfgSRS,'Slot',slot,'Frame',1+floor((slot-1)*state.SlotDuration_s/.01), ...
         'RNTI',localUserRNTI(state.MultiUser,ue),'ServingCell',state.CurrentServingIdx(ue), ...
         'SNR',snr,'Arguments',{args},'DecisionSlot',state.CurrentSlot);
@@ -14478,7 +14517,7 @@ names = localRAEvidenceTableNames();
 tables = struct();
 for i = 1:numel(names)
     name = names(i);
-    if ismember(name, ["ra_negative_trials", "ra_collision_trials"])
+    if ismember(name, ["ra_negative_trials", "ra_collision_trials", "ra_retry_events"])
         tables.(char(name)) = ...
             sixgr.phy.ra.emptyOptionalEvidenceTable(name);
     else
@@ -14692,6 +14731,7 @@ if isfinite(double(nVar)) && double(nVar)>=0
 end
 [rx,rxInfo] = sixgr.link.completePDCCHReception(preparedPDCCH,observation, ...
     "NoiseVariance",noiseVariance);
+r.PDCCHReceiverTrialExecuted = true;
 if rxInfo.ReceiverConfiguredMonitoring && ~isempty(fieldnames(grantContext))
     % One shared slot may carry both UL and DL commands for the same UE.
     % Route by received semantic direction, never by expected TX payload.
@@ -15283,10 +15323,23 @@ r.ReceiverHestSINRNAReason = string(reason);
 r.MeasuredTrialSINRValueStatus = "not_applicable";
 r.MeasuredTrialSINRNAReason = string(reason);
 r.RuntimeMaterializationStatus = "active_integrated_grant_coupled_pdcch_binding_guard";
-r.ValueStatus = "decoded_dci_missing";
 r.FailureReason = string(reason);
-r.TruthStatus = "runtime_pdcch_binding_missing";
-r.Notes = "Decoded PDCCH/DCI evidence was not available for this scheduled grant.";
+r.PDCCHReceiverTrialExecuted = false;
+r.PDCCHPreTransmissionFinalized = true;
+if string(reason) == "control_blocked_no_nonoverlapping_pdcch_candidate"
+    r.ValueSource = "joint_pdcch_admission_runtime";
+    r.ValueRole = "pretransmission_control_resource_decision";
+    r.ValueStatus = "NOT_AVAILABLE";
+    r.NAReason = string(reason);
+    r.TruthStatus = "runtime_pretransmission_pdcch_admission_disposition";
+    r.RuntimeMaterializationStatus = ...
+        "active_integrated_pdcch_pretransmission_admission_disposition";
+    r.Notes = "Joint PDCCH admission finalized this candidate before transmission; no waveform or receiver trial exists.";
+else
+    r.ValueStatus = "decoded_dci_missing";
+    r.TruthStatus = "runtime_pdcch_binding_missing";
+    r.Notes = "Decoded PDCCH/DCI evidence was not available for this scheduled grant.";
+end
 T = struct2table(r, "AsArray", true);
 end
 
@@ -15477,6 +15530,9 @@ controlResourceValid = logical(binding.Ok) && ...
     double(binding.AggregationLevel) > 0 && ...
     isfinite(double(binding.CandidateIndex));
 annotations = {
+    "PDCCHAdmissionPolicy", string(sixgr.util.structGet(grant,"PDCCHAdmissionPolicy",""));
+    "PDCCHAdmissionSelected", double(sixgr.util.structGet(grant,"PDCCHAdmissionSelected",NaN));
+    "PDCCHPlannedCandidateIndex", double(sixgr.util.structGet(grant,"PDCCHPlannedCandidateIndex",NaN));
     "PDCCHGatingActive", logical(sixgr.util.structGet(grant, "PDCCHGatingActive", false));
     "GrantControlState", string(sixgr.util.structGet(grant, "GrantControlState", "control_pending"));
     "ControlDecodeOk", logical(sixgr.util.structGet(grant, "ControlDecodeOk", false));
@@ -15588,6 +15644,15 @@ if ~(istable(T) && ~isempty(T))
 end
 
 row = T(end, :);
+execution = sixgr.link.pdcchTrialExecutionState(row);
+if ~execution.BindingEligible
+    binding.Status = "missing_decoded_dci";
+    if localTableLogical(row,"PDCCHPreTransmissionFinalized",false)
+        binding.Status = "blocked_before_transmission";
+    end
+    binding.FailureCode = char(execution.BindingFailureCode);
+    return;
+end
 decodedPayload = localGrantBindingPayloadFromDecodedRow(row, direction);
 binding.DCIId = char(localTableText(row, ["DCIId","PayloadHash"], ""));
 binding.DCIFieldsHash = char(localTableText(row, "DCIFieldsHash", ""));
@@ -16390,6 +16455,22 @@ for k = 1:nTrials
             outSRS,"PUSCHToSRSReferenceEnergyRatio",NaN));
         r.PUSCHToSRSReferenceEnergySource = string(sixgr.util.structGet( ...
             outSRS,"PUSCHToSRSReferenceEnergySource",""));
+        r.SRS_RSRP_dBm = double(sixgr.util.structGet(outSRS, ...
+            "SRS_RSRP_dBm",NaN));
+        r.SRS_RSRP_dB_re_UnitOccupiedRE_Es = double(sixgr.util.structGet( ...
+            outSRS,"SRS_RSRP_dB_re_UnitOccupiedRE_Es",NaN));
+        r.SRSRSRPPerReceiveAntenna_dBm = localFormatNumericVector( ...
+            sixgr.util.structGet(outSRS,"SRSRSRPPerReceiveAntenna_dBm",[]));
+        r.SRSAbsolutePowerStatus = string(sixgr.util.structGet( ...
+            outSRS,"SRSAbsolutePowerStatus","not_available"));
+        r.SRSInterPortLeakageMatrixJSON = string(sixgr.util.structGet( ...
+            outSRS,"SRSInterPortLeakageMatrixJSON",""));
+        r.SRSInterPortLeakageWorst_dB = double(sixgr.util.structGet( ...
+            outSRS,"SRSInterPortLeakageWorst_dB",NaN));
+        r.SRSInterPortLeakageStatus = string(sixgr.util.structGet( ...
+            outSRS,"SRSInterPortLeakageStatus","not_available"));
+        r.SRSInterPortLeakageSource = string(sixgr.util.structGet( ...
+            outSRS,"SRSInterPortLeakageSource",""));
         r.SRSOccupiedPRBCount = double(sixgr.util.structGet(outSRS, "SRSOccupiedPRBCount", NaN));
         r.SRSCarrierPRBCount = double(sixgr.util.structGet(outSRS, "SRSCarrierPRBCount", NaN));
         r.SRSBandwidthFraction = double(sixgr.util.structGet(outSRS, "SRSBandwidthFraction", NaN));
@@ -17422,6 +17503,14 @@ row.SRSBandwidthFraction = NaN;
 row.SRSFrequencyPRBStart = NaN;
 row.SRSFrequencyPRBEnd = NaN;
 row.SRSBandwidthCoverageStatus = "";
+row.SRS_RSRP_dBm = NaN;
+row.SRS_RSRP_dB_re_UnitOccupiedRE_Es = NaN;
+row.SRSRSRPPerReceiveAntenna_dBm = "";
+row.SRSAbsolutePowerStatus = "not_attempted";
+row.SRSInterPortLeakageMatrixJSON = "";
+row.SRSInterPortLeakageWorst_dB = NaN;
+row.SRSInterPortLeakageStatus = "not_attempted";
+row.SRSInterPortLeakageSource = "";
 row.ConditionNumber_dB = NaN;
 row.NumRxAntennas = NaN;
 row.NumTxPorts = NaN;
@@ -20879,8 +20968,39 @@ for i = 1:numel(dirs)
     hitRate = mean(beamHit, "omitnan");
     topKRate = mean(topKHit, "omitnan");
     misalignmentRate = mean(double(beamHit < 0.5), "omitnan");
-    failureRate = mean(double(beamGap > 3), "omitnan");
+    failureThreshold_dB = double(sixgr.util.structGet(cfg, ...
+        "channel.awgnBeamFailureDetectionThreshold_dB", 3));
+    failureRate = mean(double(beamGap > failureThreshold_dB), "omitnan");
     overhead = mean(beamCount, "omitnan");
+
+    recoveryEnabled = logical(sixgr.util.structGet(cfg, ...
+        "channel.awgnBeamFailureRecoveryEnabled", false));
+    recoveryLatency = localFiniteColumn( ...
+        eventDirT(eventDirT.RecoveryEventFlag > 0, :), "RecoveryLatency_s");
+    failureIds = localFiniteColumn(eventDirT,"FailureEventID");
+    failureIds = unique(failureIds(isfinite(failureIds)));
+    recoveredIds = localFiniteColumn( ...
+        eventDirT(eventDirT.RecoveryEventFlag > 0,:),"FailureEventID");
+    recoveredIds = unique(recoveredIds(isfinite(recoveredIds)));
+    recoveryFailureProbability = NaN;
+    recoveryFailureAvailability = "not_available";
+    if ~isempty(failureIds)
+        recoveryFailureProbability = 1-numel(intersect(failureIds,recoveredIds))/numel(failureIds);
+        recoveryFailureAvailability = "observed";
+    end
+    if ~recoveryEnabled
+        recoveryAvailability = "disabled";
+        recoveryValue = NaN;
+        recoveryNote = "No physical beam-failure/recovery episode is configured.";
+    elseif isempty(recoveryLatency)
+        recoveryAvailability = "not_available";
+        recoveryValue = NaN;
+        recoveryNote = "A physical beam-failure episode is configured, but no measured failure-to-restored-service event completed in this direction.";
+    else
+        recoveryAvailability = "observed";
+        recoveryValue = mean(recoveryLatency,"omitnan");
+        recoveryNote = "Measured from an observed beam-gain failure trigger to the first subsequent detected successful beam hit; no configured slot duration is reported as an observation.";
+    end
 
     switchingEnabled = logical(sixgr.util.structGet(cfg, ...
         "lls6g.mimo_and_beam_management.beam_switching", ...
@@ -20943,7 +21063,11 @@ for i = 1:numel(dirs)
         localProbeMetricRow("beam_refinement_convergence", dirs(i), "mean_trials_to_first_hit", refinementValue, "", "trials", ...
             refinementNote, refinementAvailability); ...
         localProbeMetricRow("beam_failure_rate", dirs(i), "rate", failureRate, "", "fraction", ...
-            "Measured from runtime trials whose beam gain gap exceeds 3 dB.", "observed"); ...
+            "Measured from runtime trials whose beam gain gap exceeds the configured " + string(failureThreshold_dB) + " dB threshold.", "observed"); ...
+        localProbeMetricRow("beam_recovery_time", dirs(i), "mean_completed_event", recoveryValue, "", "s", ...
+            recoveryNote, recoveryAvailability); ...
+        localProbeMetricRow("beam_recovery_failure_probability", dirs(i), "right_censored_event_rate", recoveryFailureProbability, "", "fraction", ...
+            "Failure events without an observed restored-service completion before the execution boundary are counted as right-censored failures; they are not assigned a synthetic latency.", recoveryFailureAvailability); ...
         localProbeMetricRow("mtrp_beam_selection_gain", dirs(i), "delta_dB", mtrpGain, "", "dB", mtrpNote, mtrpAvailability); ...
         localProbeMetricRow("beam_management_overhead", dirs(i), "mean_beams_evaluated", overhead, "", "beams", ...
             "Average candidate-beam count evaluated per runtime beam-management sample.", "observed")];
@@ -20998,7 +21122,9 @@ for idx = 1:numel(uniqueKeys)
     beamDetected = isfinite(bestBeam);
     selectedDefined = isfinite(selectedBeam);
     misalignmentFlag = isfinite(beamHit) & beamHit < 0.5;
-    failureFlag = isfinite(beamGap) & beamGap > 3;
+    failureThreshold_dB = double(sixgr.util.structGet(cfg, ...
+        "channel.awgnBeamFailureDetectionThreshold_dB", 3));
+    failureFlag = isfinite(beamGap) & beamGap > failureThreshold_dB;
 
     acquisitionFlag = false(n, 1);
     switchFlag = false(n, 1);
@@ -21007,6 +21133,15 @@ for idx = 1:numel(uniqueKeys)
     switchLatency_s = nan(n, 1);
     trialsSinceLastSwitch = nan(n, 1);
     trialsToFirstHit = nan(n, 1);
+    recoveryFlag = false(n,1);
+    recoveryLatencySlots = nan(n,1);
+    recoveryLatency_s = nan(n,1);
+    recoveryLatency_ms = nan(n,1);
+    failureEventId = nan(n,1);
+    failureTriggerSlot = nan(n,1);
+    failureTriggerTime_s = nan(n,1);
+    recoveryCompletionSlot = nan(n,1);
+    recoveryCompletionTime_s = nan(n,1);
     stateBefore = repmat("uninitialized", n, 1);
     stateAfter = repmat("searching", n, 1);
     eventType = repmat("BEAM_SEARCH", n, 1);
@@ -21022,6 +21157,9 @@ for idx = 1:numel(uniqueKeys)
     prevDetected = false;
     lastSwitchSlot = NaN;
     lastSwitchOrdinal = NaN;
+    failureStartSlot = NaN;
+    activeFailureEventId = NaN;
+    nextFailureEventId = 1;
     detectedEventFlag = false(n, 1);
 
     for k = 1:n
@@ -21051,6 +21189,29 @@ for idx = 1:numel(uniqueKeys)
 
         stateBefore(k) = prevState;
         stateAfter(k) = localBeamRuntimeStateName(selectedDefined(k), beamDetected(k), misalignmentFlag(k), failureFlag(k));
+        if failureFlag(k) && ~isfinite(failureStartSlot)
+            failureStartSlot=absSlot(k);
+            activeFailureEventId=nextFailureEventId;
+            nextFailureEventId=nextFailureEventId+1;
+        elseif isfinite(failureStartSlot) && ~failureFlag(k) && ...
+                beamDetected(k) && isfinite(beamHit(k)) && beamHit(k)>0.5
+            recoveryFlag(k)=true;
+            recoveryLatencySlots(k)=absSlot(k)-failureStartSlot;
+            recoveryLatency_s(k)=recoveryLatencySlots(k)*slotDur_s;
+            recoveryLatency_ms(k)=1e3*recoveryLatency_s(k);
+            recoveryCompletionSlot(k)=absSlot(k);
+            recoveryCompletionTime_s(k)=absSlot(k)*slotDur_s;
+            failureEventId(k)=activeFailureEventId;
+            failureTriggerSlot(k)=failureStartSlot;
+            failureTriggerTime_s(k)=failureStartSlot*slotDur_s;
+            failureStartSlot=NaN;
+            activeFailureEventId=NaN;
+        end
+        if isfinite(failureStartSlot)
+            failureEventId(k)=activeFailureEventId;
+            failureTriggerSlot(k)=failureStartSlot;
+            failureTriggerTime_s(k)=failureStartSlot*slotDur_s;
+        end
         eventType(k) = localBeamRuntimeEventLabel(acquisitionFlag(k), switchFlag(k), firstHitFlag(k), ...
             detectedEventFlag(k), misalignmentFlag(k), failureFlag(k), stateAfter(k));
 
@@ -21089,6 +21250,16 @@ for idx = 1:numel(uniqueKeys)
     eventTi.BeamDetectedEventFlag = double(detectedEventFlag);
     eventTi.MisalignmentEventFlag = double(misalignmentFlag);
     eventTi.FailureEventFlag = double(failureFlag);
+    eventTi.RecoveryEventFlag = double(recoveryFlag);
+    eventTi.RecoveryLatencySlots = recoveryLatencySlots;
+    eventTi.RecoveryLatency_s = recoveryLatency_s;
+    eventTi.RecoveryLatency_ms = recoveryLatency_ms;
+    eventTi.FailureEventID = failureEventId;
+    eventTi.FailureTriggerSlot = failureTriggerSlot;
+    eventTi.FailureTriggerTime_s = failureTriggerTime_s;
+    eventTi.RecoveryCompletionSlot = recoveryCompletionSlot;
+    eventTi.RecoveryCompletionTime_s = recoveryCompletionTime_s;
+    eventTi.BeamFailureThreshold_dB = repmat(failureThreshold_dB,n,1);
     eventTi.SwitchLatencySlots = switchLatencySlots;
     eventTi.SwitchLatency_s = switchLatency_s;
     eventTi.TrialsToFirstHit = trialsToFirstHit;

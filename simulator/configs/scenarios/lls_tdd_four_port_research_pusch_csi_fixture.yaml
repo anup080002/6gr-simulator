@@ -14,6 +14,11 @@ modulation_and_mapping:
   high_order_modulation_stress_enabled: true
   ul_mcs_index: 4
   ul_max_modulation: 1024QAM
+link_adaptation:
+  # This bounded test isolates independent CSI publication. Admit the first
+  # measured RI/PMI atomically; two-report hysteresis is covered separately
+  # by testCSIRankConfirmationSchedulerHandoff.
+  rank_increase_confirmation_reports: 1
 pusch:
   mcs_index: 4
   fixed_mcs: 4

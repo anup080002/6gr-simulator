@@ -179,6 +179,47 @@ rx.Carrier = carrier;
 rx.SRS = srs;
 rx.SRSIndices = srsInd;
 rx.SRSSymbols = srsSym;
+rsrp = localMeasureSRSReferencePower(Hest, srsInd, srsSym, ...
+    size(rxGrid,1), size(rxGrid,2), size(rxGrid,3), double(srs.NumSRSPorts));
+rx.SRSRSRPPerPortReceiveBranch_UnitOccupiedRE_Es = rsrp.PerPortReceiveBranch;
+rx.SRSRSRPPerReceiveAntenna_UnitOccupiedRE_Es = rsrp.PerReceiveAntenna;
+rx.SRSRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = rsrp.PerReceiveAntenna_dB;
+rx.SRS_RSRP_dB_re_UnitOccupiedRE_Es = rsrp.Aggregate_dB;
+rx.SRSRSRPSource = rsrp.Source;
+rx.SRSRSRPStatus = rsrp.Status;
+[leakage, leakageStatus] = localMeasureSRSInterPortLeakage( ...
+    Hest, srsInd, srsSym, size(rxGrid,1), size(rxGrid,2), ...
+    size(rxGrid,3), double(srs.NumSRSPorts));
+rx.SRSInterPortLeakageMatrix_dB = leakage;
+rx.SRSInterPortLeakageMatrixJSON = string(jsonencode(leakage));
+rx.SRSInterPortLeakageWorst_dB = localFiniteMaximum(leakage);
+rx.SRSInterPortLeakageStatus = leakageStatus;
+rx.SRSInterPortLeakageSource = ...
+    "received_per_re_srs_channel_estimate_independent_code_projection_not_antenna_crosstalk";
+rx.SRS_RSRP_dBm = NaN;
+rx.SRSRSRPPerReceiveAntenna_dBm = nan(size(rsrp.PerReceiveAntenna));
+rx.SRSAbsolutePowerStatus = "not_available_normalized_or_uncalibrated_sample_plane";
+if ~sixgr.rf.isNormalizedFixedSNRPowerReference(cfg)
+    powerContext = sixgr.util.structGet(cfg,'lls6g.runtimePowerContext',struct());
+    physical = string(sixgr.util.structGet(powerContext, ...
+        'WaveformAmplitudeUnit','')) == "sqrt_mW" && ...
+        logical(sixgr.util.structGet(powerContext,'PhysicalDevicePowerClaim',false)) && ...
+        ~logical(sixgr.util.structGet(opt.ReceivedExecutionEvidence, ...
+        'CompositeReceiverFrontEndApplied',false));
+    if physical
+        nfft = double(ofdmInfo.Nfft);
+        perRxW = double(rsrp.PerReceiveAntenna) ./ (nfft.^2 .* 1000);
+        validPower = isfinite(perRxW) & perRxW > 0;
+        rx.SRSRSRPPerReceiveAntenna_dBm(validPower) = ...
+            10 .* log10(perRxW(validPower)) + 30;
+        if any(validPower)
+            rx.SRS_RSRP_dBm = 10 .* log10(mean(perRxW(validPower))) + 30;
+            rx.SRSAbsolutePowerStatus = "available_calibrated_receiver_grid_sqrt_w";
+            rx.SRSRSRPSource = ...
+                "received_srs_channel_estimate_on_calibrated_sqrt_mw_waveform";
+        end
+    end
+end
 
 info = struct();
 info.CarrierInfo = cinfo;
@@ -190,6 +231,117 @@ info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struc
 info.NoiseVarianceTransform = noiseTransformInfo;
 info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 
+end
+
+function [leakage_dB,status] = localMeasureSRSInterPortLeakage( ...
+        Hest,srsInd,srsSym,K,L,R,P)
+% Receiver-side code projection.  Rows are observing matched filters and
+% columns are emitting SRS ports.  The diagonal is excluded because it is
+% the desired projection, not leakage.  This executes only from the actual
+% SRS reference map and received channel estimate; no channel truth or
+% transmitted payload decision is consulted.
+leakage_dB = nan(P,P);
+status = "not_available_requires_at_least_two_executed_srs_ports";
+if P < 2 || isempty(Hest) || isempty(srsInd) || isempty(srsSym)
+    return;
+end
+[k,l,pidx] = ind2sub([K,L,P],double(srsInd(:)));
+X = complex(zeros(K*L,P));
+X(sub2ind([K*L,P],sub2ind([K,L],k,l),pidx)) = srsSym(:);
+norms = sqrt(sum(abs(X).^2,1));
+if any(~isfinite(norms) | norms<=0), status="not_available_invalid_srs_reference_norm"; return; end
+Q = X ./ norms;
+for sourcePort=1:P
+    selected = pidx==sourcePort;
+    sourceRE = sub2ind([K,L],k(selected),l(selected));
+    contribution = complex(zeros(K*L,R));
+    for r=1:R
+        hidx=sub2ind([K,L,R,P],k(selected),l(selected), ...
+            repmat(r,nnz(selected),1),repmat(sourcePort,nnz(selected),1));
+        values=Hest(hidx);
+        valid=isfinite(values);
+        contribution(sourceRE(valid),r)= ...
+            X(sourceRE(valid),sourcePort).*values(valid);
+    end
+    % Project the independently reconstructed contribution of each emitting
+    % port onto every installed SRS code. Retaining the per-RE channel
+    % estimate is essential: replacing it by one averaged coefficient would
+    % reduce this to ideal reference-code orthogonality and manufacture
+    % unrealistically tiny (~-300 dB) leakage.
+    projections = Q' * contribution;
+    desired = mean(abs(projections(sourcePort,:)).^2,'omitnan');
+    if ~(isfinite(desired) && desired>0), continue; end
+    for observerPort=1:P
+        if observerPort==sourcePort, continue; end
+        undesired=mean(abs(projections(observerPort,:)).^2,'omitnan');
+        if isfinite(undesired) && undesired>=0
+            leakage_dB(observerPort,sourcePort)=10*log10(max(undesired,realmin)/desired);
+        end
+    end
+end
+offDiagonal = leakage_dB(~eye(P));
+if any(isfinite(offDiagonal))
+    status="observed_executed_srs_code_domain_projection";
+else
+    status="not_available_no_finite_off_diagonal_projection";
+end
+end
+
+function value = localFiniteMaximum(x)
+values=double(x(isfinite(x)));
+if isempty(values), value=NaN; else, value=max(values); end
+end
+
+function measurement = localMeasureSRSReferencePower(Hest, srsInd, srsSym, K, L, R, P)
+measurement = struct( ...
+    "PerPortReceiveBranch", NaN(P,R), ...
+    "PerReceiveAntenna", NaN(1,R), ...
+    "PerReceiveAntenna_dB", NaN(1,R), ...
+    "Aggregate_dB", NaN, ...
+    "Source", "unavailable_srs_channel_estimate", ...
+    "Status", "not_available");
+if isempty(Hest) || isempty(srsInd) || isempty(srsSym)
+    return;
+end
+[subcarrier, symbol, port] = ind2sub([K,L,P], double(srsInd(:)));
+reference = srsSym(:);
+if numel(reference) ~= numel(port)
+    return;
+end
+for p = 1:P
+    selected = port == p;
+    if ~any(selected), continue; end
+    ref = reference(selected);
+    for r = 1:R
+        hidx = sub2ind([K,L,R,P], subcarrier(selected), symbol(selected), ...
+            repmat(r,nnz(selected),1), repmat(p,nnz(selected),1));
+        predictedReceivedReference = Hest(hidx) .* ref;
+        powerSamples = abs(predictedReceivedReference).^2;
+        powerSamples = powerSamples(isfinite(powerSamples) & powerSamples >= 0);
+        if ~isempty(powerSamples)
+            measurement.PerPortReceiveBranch(p,r) = mean(powerSamples);
+        end
+    end
+end
+for r = 1:R
+    x = measurement.PerPortReceiveBranch(:,r);
+    x = x(isfinite(x) & x >= 0);
+    if ~isempty(x)
+        measurement.PerReceiveAntenna(r) = mean(x, "omitnan");
+    end
+end
+valid = isfinite(measurement.PerReceiveAntenna) & measurement.PerReceiveAntenna > 0;
+if ~any(valid)
+    measurement.Source = "estimated_srs_channel_has_no_positive_reference_power";
+    return;
+end
+measurement.PerReceiveAntenna_dB(valid) = 10 .* log10(measurement.PerReceiveAntenna(valid));
+% Preserve the linear-power averaging order.  Averaging dB values or taking
+% the strongest branch would introduce an antenna-count/selection bias and
+% would not represent the receiver-observed SRS reference power.
+measurement.Aggregate_dB = 10 .* log10(mean(measurement.PerReceiveAntenna(valid)));
+measurement.Source = "received_srs_channel_estimate_times_known_reference_symbols";
+measurement.Status = "observed";
 end
 
 function [Hest, nVarEst, estInfo] = localEstimateSRSNoHop(carrier, rxGrid, srsInd, srsSym, cdmLengths, avgWindow)

@@ -67,9 +67,26 @@ classdef IdentityAWGNRuntime
             validateattributes(fs,{'numeric'},{'scalar','finite','positive'});
             state.Materialized=true; state.UseFading=false; state.Obj=[];
             state.NumTxAnt=double(numTx); state.NumRxAnt=double(numRx);
-            state.ExternalLogicalTxPorts=double(numTx);
             state.PhysicalChannelTxElements=double(numTx);
-            state.PortToElementMatrix=[]; state.ElementExpansionApplied=false;
+            priorMap=sixgr.util.structGet(state,'PortToElementMatrix',[]);
+            priorExpansion=logical(sixgr.util.structGet( ...
+                state,'ElementExpansionApplied',false));
+            if priorExpansion
+                assert(isnumeric(priorMap) && ismatrix(priorMap) && ...
+                    size(priorMap,1)==numTx && ...
+                    norm(priorMap'*priorMap-eye(size(priorMap,2)),'fro')<= ...
+                    1e-9*max(1,size(priorMap,2)), ...
+                    'ChannelFactory:InvalidIdentityAWGNPortProjection', ...
+                    ['The explicit AWGN operator requires the retained ' ...
+                     'logical-port projection to be dimensionally valid and unit norm.']);
+                state.ExternalLogicalTxPorts=double(size(priorMap,2));
+                state.PortToElementMatrix=priorMap;
+                state.ElementExpansionApplied=true;
+            else
+                state.ExternalLogicalTxPorts=double(numTx);
+                state.PortToElementMatrix=[];
+                state.ElementExpansionApplied=false;
+            end
             state.SampleRate_Hz=double(fs);
             state.CurrentTime_s=state.CurrentSampleIndex/double(fs);
             state.PendingIdleSamples=0;
@@ -96,6 +113,27 @@ classdef IdentityAWGNRuntime
             state.Meta.RuntimeTDDReciprocitySource="identity_operator_equals_its_nonconjugate_transpose";
             state.Meta.RuntimeTDDReciprocityApproximationMode="none_explicit_identity_lab_channel";
             state.Meta.AWGNSpatialMatrix=matrix;
+            state.Meta.AWGNSpatialMatrixBaseline=matrix;
+            state.Meta.BeamFailureRecoveryEpisodeEnabled=logical( ...
+                sixgr.util.structGet(cfg,'channel.awgnBeamFailureRecoveryEnabled',false));
+            state.Meta.BeamFailureStartSlot=double(sixgr.util.structGet( ...
+                cfg,'channel.awgnBeamFailureStartSlot',NaN));
+            state.Meta.BeamFailureEndSlotExclusive=double(sixgr.util.structGet( ...
+                cfg,'channel.awgnBeamFailureEndSlotExclusive',NaN));
+            episodeMatrix=sixgr.util.structGet(cfg,'channel.awgnBeamFailureMatrixDL',[]);
+            if ~isempty(episodeMatrix) && string(state.Direction)=="UL"
+                episodeMatrix=episodeMatrix.';
+            end
+            state.Meta.BeamFailureSpatialMatrix=episodeMatrix;
+            if state.Meta.BeamFailureRecoveryEpisodeEnabled
+                carrier=sixgr.phy.grid.makeCarrier(cfg);
+                state.Meta.BeamFailureStartSample=double( ...
+                    sixgr.phy.frame.slotStartSample(carrier, ...
+                    state.Meta.BeamFailureStartSlot,state.SampleRate_Hz));
+                state.Meta.BeamFailureEndSampleExclusive=double( ...
+                    sixgr.phy.frame.slotStartSample(carrier, ...
+                    state.Meta.BeamFailureEndSlotExclusive,state.SampleRate_Hz));
+            end
             if fixedMatrix
                 state.Meta.IdentityOperatorSource="explicit_matrix_AWGN_shared_sample_operator";
                 state.Meta.ChannelObjectClass="explicit_fixed_matrix_sample_operator";
@@ -109,6 +147,83 @@ classdef IdentityAWGNRuntime
             end
         end
 
+        function segments=matrixSegmentsForInterval(state,count)
+            % Return at most three exact, non-overlapping sample ranges.
+            % A caller is allowed to submit a waveform spanning either
+            % episode boundary; the physical operator changes at the exact
+            % configured sample rather than depending on call chunking.
+            validateattributes(count,{'numeric'},{'scalar','finite','integer','positive'});
+            baseline=state.Meta.AWGNSpatialMatrix;
+            segments=struct('FirstOffset',0,'EndOffsetExclusive',double(count), ...
+                'Matrix',baseline,'EpisodeActive',false);
+            if ~logical(sixgr.util.structGet(state, ...
+                    'Meta.BeamFailureRecoveryEpisodeEnabled',false))
+                return;
+            end
+            episode=sixgr.util.structGet(state,'Meta.BeamFailureSpatialMatrix',[]);
+            assert(~isempty(episode) && isequal(size(episode),size(baseline)), ...
+                'ChannelFactory:InvalidAWGNBeamFailureMatrix', ...
+                'The physical beam-failure matrix must match the active channel direction.');
+            absoluteStart=double(state.CurrentSampleIndex);
+            absoluteEnd=absoluteStart+double(count);
+            failureStart=double(state.Meta.BeamFailureStartSample);
+            failureEnd=double(state.Meta.BeamFailureEndSampleExclusive);
+            activeStart=max(absoluteStart,failureStart);
+            activeEnd=min(absoluteEnd,failureEnd);
+            if activeStart>=activeEnd
+                return;
+            end
+            segments=repmat(segments,0,1);
+            if absoluteStart<activeStart
+                segments(end+1,1)=struct('FirstOffset',0, ... %#ok<AGROW>
+                    'EndOffsetExclusive',activeStart-absoluteStart, ...
+                    'Matrix',baseline,'EpisodeActive',false);
+            end
+            segments(end+1,1)=struct( ... %#ok<AGROW>
+                'FirstOffset',activeStart-absoluteStart, ...
+                'EndOffsetExclusive',activeEnd-absoluteStart, ...
+                'Matrix',episode,'EpisodeActive',true);
+            if activeEnd<absoluteEnd
+                segments(end+1,1)=struct( ... %#ok<AGROW>
+                    'FirstOffset',activeEnd-absoluteStart, ...
+                    'EndOffsetExclusive',double(count), ...
+                    'Matrix',baseline,'EpisodeActive',false);
+            end
+            assert(segments(1).FirstOffset==0 && ...
+                segments(end).EndOffsetExclusive==double(count) && ...
+                all([segments.EndOffsetExclusive]>[segments.FirstOffset]), ...
+                'ChannelFactory:InvalidAWGNBeamFailureSegmentation', ...
+                'Beam-failure sample-domain segmentation must cover the input exactly once.');
+        end
+
+        function [y,episodeActive,segments]=applyInterval(state,x)
+            assert(isnumeric(x) && ismatrix(x) && ~isempty(x) && ...
+                size(x,2)==state.NumTxAnt && all(isfinite(x(:))), ...
+                'ChannelFactory:InvalidIdentityAWGNInput', ...
+                'The AWGN spatial operator requires finite samples on every transmit dimension.');
+            segments=sixgr.channel.IdentityAWGNRuntime.matrixSegmentsForInterval( ...
+                state,size(x,1));
+            y=zeros(size(x,1),state.NumRxAnt,'like',x);
+            for k=1:numel(segments)
+                idx=(segments(k).FirstOffset+1):segments(k).EndOffsetExclusive;
+                y(idx,:)=x(idx,:)*segments(k).Matrix.';
+            end
+            episodeActive=any([segments.EpisodeActive]);
+        end
+
+        function [matrix,episodeActive]=matrixForInterval(state,count)
+            % Compatibility helper for callers that require one matrix.
+            % Mixed intervals must use applyInterval so their physical
+            % sample-domain transition cannot be collapsed or mislabeled.
+            segments=sixgr.channel.IdentityAWGNRuntime.matrixSegmentsForInterval( ...
+                state,count);
+            assert(numel(segments)==1, ...
+                'ChannelFactory:AWGNBeamFailureMixedIntervalRequiresPiecewiseApply', ...
+                'A mixed beam-failure interval requires piecewise sample-domain application.');
+            matrix=segments.Matrix;
+            episodeActive=logical(segments.EpisodeActive);
+        end
+
         function reference=reference(state,count)
             assert(sixgr.channel.IdentityAWGNRuntime.isState(state) && ...
                 state.Materialized && ~state.UseFading && isempty(state.Obj), ...
@@ -119,7 +234,14 @@ classdef IdentityAWGNRuntime
             % deliberately not labelled NR fading
             % snapshots or receiver channel estimates. Scoring consumers only.
             matrix=state.Meta.AWGNSpatialMatrix;
-            gains=repmat(reshape(matrix.',[1 1 n nr]),[count 1 1 1]);
+            segments=sixgr.channel.IdentityAWGNRuntime.matrixSegmentsForInterval( ...
+                state,count);
+            gains=zeros(count,1,n,nr,'like',matrix);
+            for k=1:numel(segments)
+                idx=(segments(k).FirstOffset+1):segments(k).EndOffsetExclusive;
+                gains(idx,:,:,:)=repmat(reshape(segments(k).Matrix.', ...
+                    [1 1 n nr]),[numel(idx) 1 1 1]);
+            end
             reference=struct('Source',"executed_identity_AWGN_operator", ...
                 'StartSample',state.CurrentSampleIndex, ...
                 'EndSampleExclusive',state.CurrentSampleIndex+count, ...
@@ -130,7 +252,9 @@ classdef IdentityAWGNRuntime
                 'NumTransmitAntennas',n,'NumReceiveAntennas',nr, ...
                 'StateKey',string(state.StateKey),'AdditionalChannelExecutions',0, ...
                 'ReceiverEstimatorInput',false,'LargeScaleLossApplied',false, ...
-                'PhysicalPortMappingApplied',false,'RFIncluded',false);
+                'PhysicalPortMappingApplied',false,'RFIncluded',false, ...
+                'BeamFailureRecoveryEpisodeActive',any([segments.EpisodeActive]), ...
+                'BeamFailureRecoverySegmentCount',numel(segments));
             if state.Meta.IdentityOperatorSource=="explicit_matrix_AWGN_shared_sample_operator"
                 reference.Source="executed_fixed_matrix_AWGN_operator";
                 reference.SpatialMatrix=matrix;

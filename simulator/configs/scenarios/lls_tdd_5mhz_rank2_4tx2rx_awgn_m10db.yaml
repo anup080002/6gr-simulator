@@ -10,6 +10,27 @@ meta:
 simulation:
   snr_db: -10
 
+integration:
+  # A fixed-SNR campaign owns an occupied-RE Es/N0 plane, not an absolute
+  # device-power plane. Signal-specific PRACH/PUSCH power control is evaluated
+  # only in the separate thermal-noise/link-budget arm.
+  power_reference_mode: normalized_unit_es
+
+canonical_control:
+  integration:
+    power_reference_mode: normalized_unit_es
+
+link_adaptation:
+  # TS 38.214 CQI 0 remains out of range and blocks new data.  A later
+  # receiver-decoded positive CQI is immediately eligible for the installed
+  # CQI-to-MCS table.  The inherited two-consistent-report recovery filter is
+  # an optional implementation policy, not an NR requirement; with CRC-less
+  # short UCI it can suppress every data attempt and therefore prevent a
+  # physical BLER observation.  UCI bit errors remain visible in the retained
+  # PUCCH evidence and subsequent HARQ/OLLA outcomes—no transmitter truth is
+  # consulted to accept or reject the report.
+  outage_recovery_positive_cqi_reports: 1
+
 # Coverage-oriented Type1 common control, signalled in the actual SIB1.
 # The inherited 24-RB/two-symbol CORESET has eight CCEs. Use AL8 rather
 # than the AL4-only 20-dB parent; do not change EPRE or noise to aid decode.
@@ -33,6 +54,25 @@ antenna_and_array:
   ue_num_rxrus: 2
   ue_num_antenna_elements: 2
 
+pucch:
+  # One logical UCI port is physically transmitted by the first of the two
+  # UE TX dimensions. This explicit unit-norm spatial relation is consumed
+  # by both independent detector episodes and the runtime channel boundary;
+  # no silent port padding or array-gain injection is permitted.
+  spatial_tx_weights_real: [1, 0]
+  # Frozen before the physical qualification campaign. Format-2 short UCI
+  # searches up to 2^11 legal words on the 2-PRB x 2-symbol resource. 0.45
+  # is the predeclared union-bound design point in
+  # validation/pucch_short_uci_null_math.yaml; 0.2 is not valid for this
+  # codebook-search metric and produced detections on noise-only episodes.
+  detection_threshold_format2: 0.45
+
+rf_hardware:
+  # This is an ideal fixed-AWGN LLS, not an RF dynamic-range experiment.
+  # Disabling AGC prevents the receiver from changing the calibrated dBm
+  # plane or clipping low-SNR noise-only observations.
+  agc_enable: false
+
 channels:
   shared_identity_awgn_enabled: false
   # H_DL has UE receive rows and gNB transmit columns, row-major below.
@@ -41,6 +81,17 @@ channels:
   # This is an explicit lab spatial channel, not a 38.901 array model.
   # Keep the inherited 0.25 reference EPRE: no rank-dependent noise change.
   awgn_spatial_matrix_dl_real: [0.8, 0, 0.6, 0, 0, 0.6, 0, 0.8]
+  # Controlled physical beam-failure/recovery episode. The alternate matrix
+  # is applied by the sample-domain channel for complete slots [24,34), not
+  # by the reporter. It moves the dominant subspace to the other TX columns;
+  # CSI/PMI must detect it and subsequent grants must recover causally.
+  awgn_beam_failure_recovery_enabled: true
+  awgn_beam_failure_start_slot: 24
+  awgn_beam_failure_end_slot_exclusive: 34
+  awgn_beam_failure_matrix_dl_real: [0, 0.8, 0, 0.6, 0.6, 0, 0.8, 0]
+  # A recovery time is emitted only after an observed gain-gap failure above
+  # this threshold is followed by a causally measured successful beam hit.
+  awgn_beam_failure_detection_threshold_db: 3
 
 control:
   ul_precoding:
@@ -48,6 +99,14 @@ control:
     max_rank: 2
 
 pusch:
+  # TS 38.214 priority-index 0: SRS is after every PUSCH/DM-RS/PT-RS
+  # symbol. Keep both K2 rows installed in the actual DCI authority.
+  priority_index: 0
+  start_symbol: 0
+  num_symbols: 11
+  time_domain_allocations:
+    - [0, 0, 11, 1]
+    - [1, 0, 11, 2]
   num_antenna_ports: 2
 
 reference_signals:

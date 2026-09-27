@@ -163,6 +163,18 @@ out.SRSBandwidthFraction = NaN;
 out.SRSFrequencyPRBStart = NaN;
 out.SRSFrequencyPRBEnd = NaN;
 out.SRSBandwidthCoverageStatus = "";
+out.SRS_RSRP_dB_re_UnitOccupiedRE_Es = NaN;
+out.SRS_RSRP_dBm = NaN;
+out.SRSRSRPPerReceiveAntenna_dBm = [];
+out.SRSAbsolutePowerStatus = "not_attempted";
+out.SRSInterPortLeakageMatrix_dB = [];
+out.SRSInterPortLeakageMatrixJSON = "";
+out.SRSInterPortLeakageWorst_dB = NaN;
+out.SRSInterPortLeakageStatus = "not_attempted";
+out.SRSInterPortLeakageSource = "";
+out.SRSRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = [];
+out.SRSRSRPSource = "";
+out.SRSRSRPStatus = "not_available";
 out.SpatialSignatureToken = "";
 out.SpatialSignatureSHA256 = "";
 out.SpatialSignatureRows = NaN;
@@ -313,6 +325,21 @@ try
         noiseVarArgs=[noiseVarArgs {"TimingSearchWindowSamples", ...
             prepared.receiverTimingSearchWindow(context.Observation)}];
     end
+    if string(sixgr.util.structGet(cfgSRS, ...
+            'phy.srs.runtimeChannelEstimator','nr_channel_estimate')) == ...
+            "flat_static_awgn_ls"
+        % This estimator obtains disturbance power from the independent
+        % received joint-pilot residual. Injected-noise metadata is channel
+        % execution evidence, not a receiver estimate or decoder input.
+        keepTiming=find(strcmp(string(noiseVarArgs(1:2:end)), ...
+            "TimingSearchWindowSamples"),1);
+        if isempty(keepTiming)
+            noiseVarArgs={};
+        else
+            value=noiseVarArgs{2*keepTiming};
+            noiseVarArgs={"TimingSearchWindowSamples",value};
+        end
+    end
     [rx, rxInfo] = sixgr.phy.ul.SRS_Rx(rxWave, cfgSRS, ...
         "Carrier", tx.Carrier, ...
         "SRS", tx.SRS, ...
@@ -337,6 +364,27 @@ try
     out.NoiseVarSource = char(string(sixgr.util.structGet(rx, "NoiseVarSource", "")));
     out.NoiseVarReason = char(string(sixgr.util.structGet(rx, "NoiseVarReason", "")));
     out.NoiseVarStrictFailure = logical(sixgr.util.structGet(rx, "NoiseVarStrictFailure", false));
+    out.SRS_RSRP_dB_re_UnitOccupiedRE_Es = double(sixgr.util.structGet( ...
+        rx, "SRS_RSRP_dB_re_UnitOccupiedRE_Es", NaN));
+    out.SRS_RSRP_dBm = double(sixgr.util.structGet(rx,"SRS_RSRP_dBm",NaN));
+    out.SRSRSRPPerReceiveAntenna_dBm = double(sixgr.util.structGet( ...
+        rx,"SRSRSRPPerReceiveAntenna_dBm",[]));
+    out.SRSAbsolutePowerStatus = string(sixgr.util.structGet( ...
+        rx,"SRSAbsolutePowerStatus","not_available"));
+    out.SRSInterPortLeakageMatrix_dB = double(sixgr.util.structGet( ...
+        rx,"SRSInterPortLeakageMatrix_dB",[]));
+    out.SRSInterPortLeakageMatrixJSON = string(sixgr.util.structGet( ...
+        rx,"SRSInterPortLeakageMatrixJSON",""));
+    out.SRSInterPortLeakageWorst_dB = double(sixgr.util.structGet( ...
+        rx,"SRSInterPortLeakageWorst_dB",NaN));
+    out.SRSInterPortLeakageStatus = string(sixgr.util.structGet( ...
+        rx,"SRSInterPortLeakageStatus","not_available"));
+    out.SRSInterPortLeakageSource = string(sixgr.util.structGet( ...
+        rx,"SRSInterPortLeakageSource",""));
+    out.SRSRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es = double(sixgr.util.structGet( ...
+        rx, "SRSRSRPPerReceiveAntenna_dB_re_UnitOccupiedRE_Es", []));
+    out.SRSRSRPSource = char(string(sixgr.util.structGet(rx, "SRSRSRPSource", "")));
+    out.SRSRSRPStatus = char(string(sixgr.util.structGet(rx, "SRSRSRPStatus", "not_available")));
     % Receiver estimation and physical injection are different producers.
     % A received-resource estimate is not derived from the injection label.
     out.NoiseVarianceSource = out.NoiseVarSource;
@@ -474,9 +522,8 @@ try
     % both transmitters. No device-power/geometry normalization occurs;
     % the native SRS symbols and unit-energy PUSCH symbols retain their
     % own port/layer mappings. Do not infer this ratio from an SNR label.
-    normalizedReference = upper(string(sixgr.util.structGet( ...
-        cfgSRS,"integration.run_mode",""))) == "FIXED_SNR_SWEEP" && ...
-        logical(sixgr.util.structGet(cfgSRS,"integration.configured_snr_is_link_authority",false));
+    normalizedReference = ...
+        sixgr.rf.isNormalizedFixedSNRPowerReference(cfgSRS);
     if normalizedReference && string(out.NoiseOperatingMode)=="standalone_awgn_snr_argument"
         energyRatio = 1;
         energySource = "normalized_fixed_snr_unit_grid_reference_no_device_power_scaling";

@@ -2550,7 +2550,14 @@ failureCode(~bindingOk & strlength(strtrim(failureCode)) == 0 & strlength(strtri
 % scheduler grant.
 schedulerBindingRow = explicitRequired | strlength(strtrim(grantIds)) > 0;
 linkedDataDirection = ismember(directions, ["DL","UL"]);
-mask = requiredMask & schedulerBindingRow & linkedDataDirection;
+% A scheduler candidate that was conclusively blocked before transmission
+% is a control-resource disposition, not a decoded-DCI/grant binding trial.
+% Exclude only rows whose receiver observation is known not to have run.
+% Observed trials remain in the gate even when decoding was not attempted or
+% failed, so a real receiver failure cannot be hidden by this distinction.
+execution = sixgr.link.pdcchTrialExecutionState(controlT);
+mask = requiredMask & schedulerBindingRow & linkedDataDirection & ...
+    logical(execution.ObservationAvailable);
 if ~any(mask)
     return;
 end

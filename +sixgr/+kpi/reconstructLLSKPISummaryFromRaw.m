@@ -438,6 +438,8 @@ layer = localEmptyLayerMetrics(parent, "HARQ", localSourcePath(sourcePaths, "HAR
 layer.NACKCount = NaN;
 layer.ACKNACKEventCount = NaN;
 layer.NACKRate = NaN;
+layer.FeedbackDTXCount = NaN;
+layer.FeedbackObservedCount = NaN;
 layer.RetransmissionAttemptCount = NaN;
 layer.TotalAttemptCount = NaN;
 layer.RetransmissionRate = NaN;
@@ -449,6 +451,10 @@ if isempty(T)
         layer.Status="no_transmitted_data"; layer.MissingRawData=false;
         layer.SchemaValid=true; layer.FailureReason=parent.FailureReason;
         layer.RetransmissionAttemptCount=0; layer.TotalAttemptCount=0;
+        if direction == "UL"
+            layer.NACKCount=0; layer.ACKNACKEventCount=0;
+            layer.FeedbackDTXCount=0; layer.FeedbackObservedCount=0;
+        end
     end
     return;
 end
@@ -490,6 +496,31 @@ layer.SchemaValid = true;
 layer.RetransmissionAttemptCount = sum(retx);
 layer.TotalAttemptCount = numel(retx);
 layer.RetransmissionRate = layer.RetransmissionAttemptCount / max(layer.TotalAttemptCount, 1);
+if direction == "UL"
+    % NR UL HARQ does not return an ACK/NACK bit from the UE to the gNB.
+    % The authoritative UL decision is the gNB's combined PUSCH decode
+    % outcome for each received HARQ attempt.  Do not source this KPI from
+    % the PUCCH/PUSCH-UCI ledger, which carries DL HARQ-ACK feedback.
+    if ~ismember("CombinedDecodeOK", string(E.Properties.VariableNames))
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "ul_harq_timeline_missing_combined_decode_decision";
+        return;
+    end
+    decision = localFirstNumeric(E, "CombinedDecodeOK", NaN(height(E), 1));
+    if any(~ismember(decision, [0, 1]))
+        layer.Status = "schema_invalid";
+        layer.FailureReason = "ul_harq_timeline_contains_invalid_combined_decode_decision";
+        return;
+    end
+    layer.NACKCount = nnz(decision == 0);
+    layer.ACKNACKEventCount = numel(decision);
+    layer.NACKRate = layer.NACKCount / layer.ACKNACKEventCount;
+    % These compatibility counters mean observed UL HARQ decisions for this
+    % row. DTX is already represented by a failed combined decode decision;
+    % it is not a separately received UCI symbol in the UL direction.
+    layer.FeedbackDTXCount = 0;
+    layer.FeedbackObservedCount = numel(decision);
+end
 layer.Status = "pass";
 layer.FailureReason = "";
 end
@@ -1115,7 +1146,7 @@ defs = [
     localRecon("DL_BLER", dl, "BLER", "BLER_DL_min");
     localRecon("UL_BER", ul, "BER", "");
     localRecon("DL_BER", dl, "BER", "");
-    localRecon("UL_HARQ_NACK_Rate", ul.HARQFeedback, "NACKRate", "");
+    localRecon("UL_HARQ_NACK_Rate", ul.HARQ, "NACKRate", "");
     localRecon("DL_HARQ_NACK_Rate", dl.HARQFeedback, "NACKRate", "");
     localRecon("UL_Retransmission_Rate", ul.HARQ, "RetransmissionRate", "");
     localRecon("DL_Retransmission_Rate", dl.HARQ, "RetransmissionRate", "");
@@ -1269,9 +1300,18 @@ if contains(kpiName, ["HARQ_NACK_Rate","Retransmission_Rate"])
 elseif contains(kpiName, "PRB_Utilization")
     applicable = logical(applicability.Scheduler);
     reason = localTernary(applicable, "scheduler_enabled", "independent_fixed_link_has_no_scheduler");
+elseif ismember(kpiName, ["UL_Latency_ms","DL_Latency_ms"])
+    % These legacy names are application-packet latency, not PHY/TB
+    % delivery latency.  They are meaningful only when the exact
+    % same-waveform application/protocol path is enabled.  Never substitute
+    % decoded-TB timing for an unavailable application delivery.
+    applicable = logical(applicability.Latency) && logical(applicability.Application);
+    reason = localTernary(applicable, "same_waveform_application_packet_timing_required", ...
+        "same_waveform_protocol_stack_disabled");
 elseif contains(kpiName, "Latency")
     applicable = logical(applicability.Latency);
-    reason = localTernary(applicable, "packet_timing_required", "independent_fixed_link_has_no_application_latency");
+    reason = localTernary(applicable, "transport_block_delivery_timing_required", ...
+        "independent_fixed_link_has_no_transport_block_latency");
 elseif contains(kpiName, "MAC_Goodput_Mbps")
     applicable = logical(applicability.MAC);
     reason = localTernary(applicable, "same_waveform_mac_enabled", ...

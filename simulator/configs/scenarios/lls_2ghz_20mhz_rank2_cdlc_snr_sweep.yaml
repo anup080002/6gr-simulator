@@ -1,0 +1,47 @@
+inherits:
+  - ./lls_2ghz_20mhz_rank2_cdlc_reference.yaml
+
+meta:
+  scenario_id: lls_2ghz_20mhz_rank2_cdlc_snr_sweep
+  description: >
+    Eight independent 2.0 GHz evaluation-carrier, 20 MHz, mu-0 TDD CDL-C
+    waveform runs at 40, 30, 20, 10, 0, -10, -20 and -30 dB occupied-RE
+    Es/N0. Each point receives a new deterministic physical channel/noise
+    state and retains failures as outage evidence.
+  purpose: >
+    Produce joint BLER, measured-SINR, EVM, rank, CSI, control, throughput,
+    power and channel-estimation evidence without proxy or cross-point state.
+  research_class: study_item_candidate
+  tags: [lls, truth, tdd, fr1, 2ghz, 20mhz, cdl-c, snr-sweep, shared-control, no-proxy]
+
+scenario:
+  runner_profile: generic_sweep
+  sweep:
+    base_profile: waveform_bundle
+    execution_error_policy: retain_failure_and_continue
+    output_name: lls_2ghz_20mhz_rank2_cdlc_snr_sweep
+    overrides:
+      - {label: snr_40_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_40db},  simulation: {snr_db: 40,  random_seed: 2026092640}, output: {profile: lls_2ghz_20mhz_cdlc_40db}}}
+      - {label: snr_30_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_30db},  simulation: {snr_db: 30,  random_seed: 2026092630}, output: {profile: lls_2ghz_20mhz_cdlc_30db}}}
+      - {label: snr_20_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_20db},  simulation: {snr_db: 20,  random_seed: 2026092620}, output: {profile: lls_2ghz_20mhz_cdlc_20db}}}
+      - {label: snr_10_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_10db},  simulation: {snr_db: 10,  random_seed: 2026092610}, output: {profile: lls_2ghz_20mhz_cdlc_10db}}}
+      - {label: snr_0_db,   config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_0db},   simulation: {snr_db: 0,   random_seed: 2026092600}, output: {profile: lls_2ghz_20mhz_cdlc_0db}}}
+      - {label: snr_m10_db, config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_m10db}, simulation: {snr_db: -10, random_seed: 2026092510}, output: {profile: lls_2ghz_20mhz_cdlc_m10db}}}
+      - {label: snr_m20_db, config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_m20db}, simulation: {snr_db: -20, random_seed: 2026092520}, output: {profile: lls_2ghz_20mhz_cdlc_m20db}}}
+      - {label: snr_m30_db, config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_m30db}, simulation: {snr_db: -30, random_seed: 2026092530}, output: {profile: lls_2ghz_20mhz_cdlc_m30db}}}
+
+simulation:
+  snr_db: 0
+  snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
+    values_db: [0]
+
+output:
+  profile: lls_2ghz_20mhz_rank2_cdlc_snr_sweep

@@ -25,8 +25,9 @@ for budget=[30 33]
     c=cfg; c.lls6g.resolvedConfig.power_and_rf_frontend.bs_tx_power_dbm=budget;
     localVerifyActualWaveform(c,floor(budget-10*log10(300)),true);
 end
-% The production 12 dB scenario remains normalized. Device-budget changes
-% must not change its common declaration or actual normalized SSS EPRE.
+% The production 12 dB scenario remains normalized. SIB1 still carries a
+% standards-range nominal ss-PBCH-BlockPower, but it is not an applied device
+% power or a label for the normalized waveform samples.
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
     'lls_causal_access_to_data_wiring_tdd.yaml'));
 normalized=sixgr.lls6g.buildInternalConfig(s,tempname);
@@ -36,9 +37,12 @@ for budget=[30 33]
     [again,q]=sixgr.rf.resolveSSBPowerContract(bound);
     assert(isequaln(p,q) && isequaln(again,bound));
     carrier=sixgr.phy.grid.makeCarrier(c); info=nrOFDMInfo(carrier);
-    expected=floor(-20*log10(double(info.Nfft)));
+    expected=floor(budget-10*log10(12*double(carrier.NSizeGrid)));
     assert(p.FixedSNRNormalizedReference && ~p.PhysicalDevicePowerClaim && isnan(p.TxPowerBudget_dBm));
     assert(p.SSPBCHBlockPower_dBm==expected && ...
+        isnan(p.ReferenceFullBWPPower_dBm) && ...
+        p.NominalConfiguredFullBWPPower_dBm==budget && ...
+        p.PowerReferenceDomain=="nominal_rrc_power_not_applied_to_normalized_waveform" && ...
         abs(p.OFDMUnitReference.UnitREUsefulSamplePower_mW-1/double(info.Nfft)^2)<1e-14);
     localVerifyActualWaveform(c,expected,false);
 end
@@ -60,8 +64,16 @@ function localVerifyActualWaveform(c,expected,physical)
         % MATLAB OFDM demodulation is the unnormalized FFT. Input is sqrt(mW).
         re=reshape(grid,240*4,[]); re=re(nrSSSIndices,:)/double(sync.Nfft);
         measured=10*log10(mean(sum(abs(double(re)).^2,2)));
-        assert(abs(measured-p.SSPBCHBlockPower_dBm)<1e-6, ...
-            'Actual SSS EPRE %.12g differs from declared %.12g dBm.',measured,p.SSPBCHBlockPower_dBm);
+        if physical
+            assert(abs(measured-p.SSPBCHBlockPower_dBm)<1e-6, ...
+                'Actual SSS EPRE %.12g differs from declared %.12g dBm.',measured,p.SSPBCHBlockPower_dBm);
+        else
+            assert(abs(measured-p.NormalizedWaveformEPRE_dB_re_UnitOccupiedRE_Es)<1e-6 && ...
+                p.PowerReferenceDomain=="nominal_rrc_power_not_applied_to_normalized_waveform", ...
+                ['Normalized SSS EPRE %.12g does not match its relative ' ...
+                 'unit-Es contract %.12g dB.'],measured, ...
+                p.NormalizedWaveformEPRE_dB_re_UnitOccupiedRE_Es);
+        end
     end
     received=sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
         prepared.TransmitSamples,prepared.ReceiverConfig,'CandidateSSBIndex',indices(1));

@@ -172,10 +172,7 @@ o2iComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeO2IComplianc
 losProbabilitySource = string(sixgr.util.structGet(userMeta, "RuntimeLOSProbabilitySource", ""));
 losComplianceStatus = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceStatus", ""));
 losComplianceReason = string(sixgr.util.structGet(userMeta, "RuntimeLOSComplianceReason", ""));
-fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
-    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
-    logical(sixgr.util.structGet(cfg, ...
-    "integration.configured_snr_is_link_authority", false));
+fixedNormalizedEsN0 = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if fixedNormalizedEsN0
     % A configured-Es/N0 LLS has no absolute large-scale link budget.  The
     % identity sample gain is still zero dB internally, but zero must not be

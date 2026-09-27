@@ -1,0 +1,11 @@
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 300
+  # 3 km/h at 2.0 GHz is approximately 5.56 Hz maximum Doppler.
+  doppler_hz: 5.56
+  mobility_kmph: 3
+  los_enabled: false
+  spatial_consistency_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false

@@ -1,0 +1,60 @@
+inherits:
+  - ./lls_2ghz_20mhz_rank2_cdlc_reference.yaml
+
+meta:
+  scenario_id: lls_2ghz_20mhz_rank2_cdlc_o2i_thermal
+  description: >
+    Physical link-budget companion using CDL-C small-scale fading, TR 38.901
+    pathloss and low-loss-building O2I penetration with receiver thermal
+    noise. It is intentionally not a configured-SNR sweep.
+  purpose: Measure absolute received power and O2I/link-budget behavior independently of the fixed-SNR reference.
+  research_class: study_item_candidate
+  tags: [lls, truth, tdd, fr1, 2ghz, 20mhz, cdl-c, o2i, thermal-noise, no-proxy]
+
+simulation:
+  noise_operating_mode: receiver_noise_figure_thermal_noise
+  snr_sweep_offsets_db: [0]
+
+integration:
+  run_mode: GEOMETRY_NETWORK
+  subprofile: connected_network
+  # Absolute dBm, pathloss, O2I and receiver thermal noise belong to this
+  # physical link-budget arm, never to the configured-Es/N0 sweep.
+  power_reference_mode: absolute_calibrated_sqrt_mw
+  configured_snr_is_link_authority: false
+
+canonical_control:
+  launch:
+    scenario_mode: geometry_network
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: true
+  integration:
+    run_mode: GEOMETRY_NETWORK
+    subprofile: connected_network
+    configured_snr_is_link_authority: false
+    power_reference_mode: absolute_calibrated_sqrt_mw
+
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 300
+  doppler_hz: 5.56
+  mobility_kmph: 3
+  los_enabled: false
+  spatial_consistency_enabled: false
+  pathloss_enabled: true
+  pathloss_model: nrPathLoss
+  propagation_scenario: UMa
+  shadow_fading_enabled: true
+  shadow_fading_std_db: 6
+  o2i_model: low
+  o2i_indoor_distance_m: 10
+  o2i_random_component_enabled: true
+  o2i_seed: 20260927
+  o2i_receiver_indoor: true
+  link_tx_position_m: [0, 0, 25]
+  link_rx_position_m: [100, 0, 1.5]
+
+output:
+  profile: lls_2ghz_20mhz_rank2_cdlc_o2i_thermal

@@ -36,6 +36,12 @@ categories:
       - { key: required_snr_target_bler, label: required SNR at target BLER values }
       - { key: outage_probability, label: outage probability }
       - { key: error_floor_region_characterization, label: error-floor region characterization }
+      - { key: initial_transmission_bler, label: initial-transmission BLER }
+      - { key: residual_bler, label: residual BLER after HARQ }
+      - { key: undetected_block_error_probability, label: undetected block-error probability }
+      - { key: signaling_overhead, label: reference and control signaling overhead }
+      - { key: resource_occupancy, label: physical resource occupancy }
+      - { key: service_deadline_failure_probability, label: service deadline-failure probability }
   - code: C
     key: coding_decoder_outputs
     name: Coding/decoder outputs
@@ -67,6 +73,8 @@ categories:
       - { key: modulation_mapping_sensitivity, label: modulation-mapping sensitivity }
       - { key: llr_reliability_imbalance_metrics, label: LLR reliability imbalance metrics }
       - { key: high_order_modulation_robustness_under_impairments, label: high-order modulation robustness under impairments }
+      - { key: aclr, label: adjacent-channel leakage power ratio }
+      - { key: transmit_power, label: measured transmit power }
   - code: E
     key: channel_estimation_tracking_outputs
     name: Channel-estimation / tracking outputs
@@ -83,6 +91,7 @@ categories:
       - { key: mismatch_sensitivity, label: mismatch sensitivity }
       - { key: acquisition_time, label: acquisition observation time }
       - { key: tracking_failure_probability, label: tracking failure probability }
+      - { key: sounding_port_leakage, label: sounding-port leakage }
   - code: F
     key: pdcch_control_outputs
     name: PDCCH/control outputs
@@ -104,6 +113,7 @@ categories:
       - { key: invalid_detection_power_cost, label: invalid detection power cost }
       - { key: puncturing_exclusion_sensitivity, label: puncturing/exclusion sensitivity }
       - { key: mrss_impact_on_control, label: MRSS impact on control }
+      - { key: grant_failure_probability, label: complete scheduling-instruction failure probability }
   - code: G
     key: pdsch_outputs
     name: PDSCH outputs
@@ -134,6 +144,10 @@ categories:
       - { key: power_control_convergence, label: power control convergence }
       - { key: dmrs_estimation_quality, label: DMRS estimation quality }
       - { key: msg3_specific_success_metrics, label: Msg3-specific success metrics }
+      - { key: uci_block_error_rate, label: UCI block-error rate }
+      - { key: nack_to_ack_probability, label: NACK interpreted as ACK probability }
+      - { key: dtx_to_ack_probability, label: DTX interpreted as ACK probability }
+      - { key: uplink_drop_probability, label: dropped uplink-transmission probability }
   - code: I
     key: csi_outputs
     name: CSI outputs
@@ -155,6 +169,14 @@ categories:
       - { key: srs_port_scaling_impact, label: SRS-port scaling impact }
       - { key: reciprocity_mismatch_impact, label: reciprocity mismatch impact }
       - { key: analog_jscc_jscm_robustness_metrics, label: analog / JSCC / JSCM robustness metrics }
+      - { key: csi_rsrp, label: CSI-RSRP }
+      - { key: csi_rsrq, label: CSI-RSRQ }
+      - { key: csi_sinr, label: CSI-SINR }
+      - { key: cqi, label: channel-quality indicator }
+      - { key: pmi, label: precoding-matrix indicator }
+      - { key: ri, label: rank indicator }
+      - { key: cri, label: CSI-RS resource indicator }
+      - { key: csi_age, label: age of channel information at use }
   - code: J
     key: beam_management_outputs
     name: Beam-management outputs
@@ -170,6 +192,8 @@ categories:
       - { key: beam_failure_rate, label: beam failure rate }
       - { key: mtrp_beam_selection_gain, label: mTRP beam-selection gain }
       - { key: beam_management_overhead, label: beam-management overhead }
+      - { key: beam_outage, label: beam service-outage fraction }
+      - { key: beam_recovery_time, label: beam recovery completion time }
   - code: K
     key: initial_access_random_access_outputs
     name: Initial-access / random-access outputs
@@ -193,6 +217,11 @@ categories:
       - { key: msg3_decode_success, label: Msg3 decode success }
       - { key: initial_access_energy, label: initial-access energy }
       - { key: clustering_gain_penalty, label: clustering gain / penalty }
+      - { key: ss_rsrp, label: SS-RSRP }
+      - { key: ss_rsrq, label: SS-RSRQ }
+      - { key: ss_sinr, label: SS-SINR }
+      - { key: wrong_identity_probability, label: wrong-identity detection probability }
+      - { key: access_attempt_count, label: transmission attempts per completed access procedure }
   - code: L
     key: harq_outputs
     name: HARQ outputs
@@ -208,6 +237,8 @@ categories:
       - { key: reliability_percentile, label: reliability percentile }
       - { key: control_miss_induced_harq_penalties, label: control-miss induced HARQ penalties }
       - { key: parity_cb_packet_level_coding_benefits, label: parity-CB / packet-level coding benefits }
+      - { key: feedback_association_error, label: feedback-to-transport-block association error }
+      - { key: retransmission_cost, label: retransmission resource cost }
   - code: M
     key: energy_efficiency_outputs
     name: Energy-efficiency outputs
@@ -227,6 +258,11 @@ categories:
       - { key: throughput_per_watt, label: throughput-per-watt }
       - { key: energy_delay_product, label: energy-delay product }
       - { key: energy_spectral_efficiency_tradeoff, label: energy spectral efficiency trade-off }
+      - { key: total_device_energy, label: total device energy }
+      - { key: cli_rssi, label: cross-link interference RSSI }
+      - { key: srs_rsrp, label: sounding-reference-signal received power }
+      - { key: unused_reserved_resources, label: reserved but unused transmission resources }
+      - { key: configured_grant_state_mismatch, label: configured-grant transmitter/receiver state mismatch }
   - code: N
     key: complexity_implementation_outputs
     name: Complexity / implementation outputs

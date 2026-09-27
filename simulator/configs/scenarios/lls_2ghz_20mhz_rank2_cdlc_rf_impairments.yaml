@@ -1,0 +1,64 @@
+inherits:
+  - ./lls_2ghz_20mhz_rank2_cdlc_reference.yaml
+
+meta:
+  scenario_id: lls_2ghz_20mhz_rank2_cdlc_rf_impairments
+  description: >
+    Explicit RF-impairment treatment arm for the 2.0 GHz / 20 MHz CDL-C
+    reference. Values are declared study assumptions, not 3GPP-mandated RF
+    characteristics or conformance limits.
+  purpose: Quantify the combined receiver-visible impact of a frozen RF impairment profile.
+  research_class: study_item_candidate
+  tags: [lls, truth, fr1, 2ghz, 20mhz, cdl-c, rf-impairments, no-proxy]
+
+impairments:
+  # 0.1 ppm at 2.0 GHz.
+  cfo_hz: 200
+  cfo_enabled: true
+  cfo_correction_enable: true
+  cfo_estimation_method: cyclic_prefix
+  phase_noise_enabled: true
+  phase_noise_model: Lorentzian
+  phase_noise_L0_dBcHz: -100
+  phase_noise_f3dB_Hz: 1000
+  phase_noise_floor_dBcHz: -150
+  iq_imbalance_enabled: true
+  iq_amplitude_imbalance_dB: 0.5
+  iq_phase_imbalance_deg: 1.0
+  iq_imbalance_correction_enable: true
+  pa_nonlinearity_enabled: true
+  pa_model: rapp
+  pa_output_backoff_dB: 8.0
+  pa_smoothness: 2.0
+  adc_quantization_enabled: true
+  dac_quantization_enabled: true
+  adc_quantization_bits: 12
+  dac_quantization_bits: 12
+  timing_offset_samples: 0.25
+  timing_offset_enabled: true
+
+# Keep the endpoint-owned RF chain aligned with the public impairment
+# switches.  A 200 Hz relative CFO is represented by an ideal transmitter
+# reference and a +200 Hz receiver oscillator error; it is not applied a
+# second time as two independent 200 Hz offsets.
+rf_frontend:
+  enabled: true
+  profile_id: rf_impaired_research
+  claim_class: RESEARCH
+  oscillator:
+    tx_error_hz: 0
+    rx_error_hz: 200
+  phase_noise:
+    enabled: true
+    profile_id: lorentzian_study_assumption
+    seed: 20260926
+  iq_and_lo_leakage:
+    enabled: true
+    gain_imbalance_db: 0.5
+    phase_imbalance_deg: 1.0
+    dc_offset_real: 0
+    dc_offset_imag: 0
+    compensation_enabled: true
+
+output:
+  profile: lls_2ghz_20mhz_rank2_cdlc_rf_impairments

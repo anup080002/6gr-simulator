@@ -65,6 +65,7 @@
     }},
     "pusch": {"required": true, "parameters": {
       "enabled": {"required": true, "type": "boolean"}, "waveform": {"required": true, "type": "string"},
+      "priority_index": {"required": false, "type": "integer", "min": 0, "max": 1},
       "transform_precoding": {"required": true, "type": "boolean"}, "tbs_policy": {"required": true, "type": "string"},
       "ulsch_enabled": {"required": true, "type": "boolean"}, "uci_multiplexing_mode": {"required": true, "type": "string"},
       "dmrs_policy": {"required": true, "type": "string"}, "ptrs_policy": {"required": true, "type": "string"},
@@ -87,6 +88,7 @@
       "detection_threshold_format2": {"required": false, "type": "number", "min": 0, "max": 1},
       "detection_threshold_format3": {"required": false, "type": "number", "min": 0, "max": 1},
       "detection_threshold_format4": {"required": false, "type": "number", "min": 0, "max": 1},
+      "spatial_tx_weights_real": {"required": false, "type": "number_list", "min_items": 1},
       "enabled": {"required": true, "type": "boolean"}, "formats": {"required": true, "type": "number_list", "min_items": 1},
       "harq_ack_policy": {"required": true, "type": "string"}, "sr_policy": {"required": true, "type": "string"},
       "csi_policy": {"required": true, "type": "string"}, "multiplexing_policy": {"required": true, "type": "string"},

@@ -127,6 +127,19 @@ catch ME
 end
 assert(threw, "DCI packing must fail closed for infeasible finalized grants.");
 
+missingDataClock = grant;
+dropFields = intersect(fieldnames(missingDataClock), ...
+    {'PHYGrant','DCI','ScheduledAbsoluteSlot'});
+if ~isempty(dropFields)
+    missingDataClock = rmfield(missingDataClock, dropFields);
+end
+missingDataClockFinal = sch.finalizeExactPHYFeasibility(missingDataClock);
+assert(~logical(missingDataClockFinal.Valid) && ...
+    strcmpi(string(missingDataClockFinal.GrantBlocker), ...
+        "missing_or_invalid_scheduled_absolute_slot"), ...
+    ["Executable exact allocation must require the canonical zero-based " + ...
+    "scheduled DATA slot instead of defaulting reference ownership to NSlot=0."]);
+
 invalidSymbols = grant;
 invalidSymbols.SymbolAllocation = [-1 15];
 threw = false;

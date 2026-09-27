@@ -14415,6 +14415,37 @@ def select_primary_result_artifacts(
     }
 
 
+def merge_verified_runtime_visualizations_for_publication(
+    primary_artifacts: list[dict[str, Any]],
+    verified_visualizations: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Expose exact CSV/PNG visualization pairs without upgrading truth scope.
+
+    Component contract artifacts remain the sole primary PHY authority.  A
+    browser-publication receipt plus byte-exact plot lineage independently
+    qualifies derived runtime visualizations for Results/Qualification.  The
+    evidence_scope tag is retained so their presence can never be interpreted
+    as a component pass verdict.
+    """
+    published = list(primary_artifacts)
+    paths = {
+        str(item.get("logical_path") or "").strip().replace("\\", "/")
+        for item in published
+    }
+    for item in verified_visualizations:
+        path = str(item.get("logical_path") or "").strip().replace("\\", "/")
+        if (
+            not path
+            or path in paths
+            or item.get("evidence_scope") != "verified_runtime_visualization"
+            or item.get("hash_verified") is not True
+        ):
+            continue
+        published.append(item)
+        paths.add(path)
+    return published
+
+
 def prefer_canonical_artifacts_over_component_views(
     artifacts: list[dict[str, Any]], manifest_artifact: dict[str, Any] | None
 ) -> list[dict[str, Any]]:
@@ -16707,6 +16738,9 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
                 else fetch_artifact_bytes(int(artifact["artifact_id"])))
     runtime_visualizations = filter_public_artifacts_for_policy(
         verified_runtime_visualizations(artifacts, read_visualization_bytes), feature_policy
+    )
+    public_artifacts = merge_verified_runtime_visualizations_for_publication(
+        public_artifacts, runtime_visualizations
     )
     diagnostic_counts = dict(counts)
     public_counts = summarize_artifacts(public_artifacts)

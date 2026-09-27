@@ -19,6 +19,12 @@ end
 s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
     'lls_causal_access_to_data_wiring_tdd.yaml'));
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+% This assertion exercises TS 38.213 absolute PRACH power control on the
+% separate physical link-budget plane. A configured-SNR campaign must remain
+% normalized and cannot be mutated into this mode.
+cfg.integration.run_mode='GEOMETRY_NETWORK';
+cfg.integration.configured_snr_is_link_authority=false;
+cfg.integration.power_reference_mode='absolute_calibrated_sqrt_mw';
 [p,k]=sixgr.phy.ra.runFourStepRA(cfg,'WriteArtifacts',false,'StageAction','prepare_next_stage');
 assert(k.RAConfig.ResolvedPRACHFormat=="B4" && p.PreambleDelta_dB==3 && ...
     p.PreambleTargetReceivedPower_dBm==p.PreambleReceivedTargetPower_dBm+3);

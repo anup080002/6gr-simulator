@@ -1,0 +1,14 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml
+
+meta:
+  scenario_id: lls_tdd_5mhz_rank2_4tx2rx_awgn_0db
+  description: Single 0 dB verification point for the saturated 5 MHz TDD 4TX/2RX adaptive-rank shared physical runtime.
+  purpose: Verify causal CSI/SRS rank selection, joint PDCCH admission, PUSCH/SRS ordering and terminal artifact closure before the eight-point sweep.
+  research_class: optional_research_experiment
+
+simulation:
+  snr_db: 0
+
+output:
+  profile: lls_tdd_5mhz_rank2_4tx2rx_awgn_0db

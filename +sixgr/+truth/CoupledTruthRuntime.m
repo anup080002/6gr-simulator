@@ -8019,8 +8019,11 @@ methods(Static, Access=private)
         grant.ControlDecodeOk = false;
         grant.GrantControlState = char(string(reason));
         grant.ControlEligible = false;
+        grant.GrantValid = false;
+        grant.NegativeExpectedOk = false;
         resourceDeferred = any(startsWith(lower(strtrim(string(reason))), ...
-            ["control_blocked_coreset_cce_capacity_exhausted", "control_blocked_no_dl_control_symbols_in_tdd_slot"]));
+            ["control_blocked_coreset_cce_capacity_exhausted", "control_blocked_no_dl_control_symbols_in_tdd_slot", ...
+             "control_blocked_no_nonoverlapping_pdcch_candidate"]));
         if isfinite(ueIdx) && ueIdx >= 1 && ueIdx <= double(state.NumUsers)
             state.LastPDCCHStatus(ueIdx) = string(reason);
             if ~resourceDeferred
@@ -13926,6 +13929,12 @@ methods(Static, Access=private)
         pendingMask = status == "PENDING" | contains(status, "PENDING");
         failureFlag = (status == "FAIL" | status == "CRASH") | (~decodeSuccess & ~pendingMask & status ~= "" & status ~= "NA");
         observationAvailable = ~pendingMask & status ~= "CRASH";
+        if signalName == "PDCCH"
+            execution = sixgr.link.pdcchTrialExecutionState(T);
+            observationAvailable = execution.ObservationAvailable;
+            decodeSuccess = decodeSuccess & execution.BindingEligible;
+            T.ControlObservationEvidenceSource = execution.ExecutionEvidenceSource;
+        end
         if signalName == "CSI-RS"
             scheduled = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 T, "Scheduled", false(n, 1)));
@@ -13981,6 +13990,39 @@ methods(Static, Access=private)
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "PlaceholderFlag", false(n, 1));
         T = sixgr.truth.CoupledTruthRuntime.setLogicalColumn(T, "FallbackFlag", false(n, 1));
         T = sixgr.truth.CoupledTruthRuntime.setStringColumn(T, "NAReason", "", false);
+        if signalName == "PDCCH"
+            % A candidate rejected by the joint CCE/REG admission planner
+            % never produced a waveform. Preserve that causal runtime
+            % decision as a finalized non-trial, not as a missing decode.
+            finalized = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "PDCCHPreTransmissionFinalized", false(n, 1)));
+            admissionSelected = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "PDCCHAdmissionSelected", true(n, 1)));
+            grantState = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "GrantControlState", repmat("", n, 1)));
+            blockedRows = find(~observationAvailable & finalized & ~admissionSelected & ...
+                grantState == "control_blocked_no_nonoverlapping_pdcch_candidate");
+            if ~isempty(blockedRows)
+                reason = "control_blocked_no_nonoverlapping_pdcch_candidate";
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "ValueSource", blockedRows, "joint_pdcch_admission_runtime");
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "ValueRole", blockedRows, "pretransmission_control_resource_decision");
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "ValueStatus", blockedRows, "NOT_AVAILABLE");
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "ValueDefinition", blockedRows, ...
+                    "finalized joint PDCCH admission disposition; no waveform or receiver trial exists");
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "NAReason", blockedRows, reason);
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "TruthStatus", blockedRows, ...
+                    "runtime_pretransmission_pdcch_admission_disposition");
+                T = sixgr.truth.CoupledTruthRuntime.setStringValueAt( ...
+                    T, "RuntimeMaterializationStatus", blockedRows, ...
+                    "active_integrated_pdcch_pretransmission_admission_disposition");
+            end
+        end
         T = sixgr.truth.CoupledTruthRuntime.applyRuntimeMetadataColumns(T, meta, signalName);
         directionValues = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T, "Direction", repmat("", n, 1)));
         if ~ismember("Direction", string(T.Properties.VariableNames))

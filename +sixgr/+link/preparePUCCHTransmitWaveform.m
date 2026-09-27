@@ -25,8 +25,7 @@ end
 
 appliedPower_dBm = double(sixgr.util.structGet(tx, ...
     "Power.AppliedPowerdBm",NaN));
-fixedReference=upper(string(sixgr.util.structGet(cfg,'integration.run_mode','')))=="FIXED_SNR_SWEEP" && ...
-    logical(sixgr.util.structGet(cfg,'integration.configured_snr_is_link_authority',false));
+fixedReference=sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 normalizedTX=logical(sixgr.util.structGet(tx,'Power.NormalizedPowerReference',false));
 if normalizedTX && ~fixedReference
     error('sixgr:phy:pucch:PowerOperatingModeMismatch', ...

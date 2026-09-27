@@ -55,6 +55,29 @@ if decoded.Direction=="UL"
     assignment.SRSResourceIndex=f.srs_resource_index0based;
     assignment.SRSResourceSelectionSource=f.srs_resource_selection_source;
     assignment.ULSCHIndicator=f.ul_sch_indicator;
+    assignment.PTRSEnabled=logical(sixgr.util.structGet(cfg, ...
+        'phy.pusch.enablePTRS',false));
+    if assignment.PTRSEnabled
+        if isfield(f,'ptrs_dmrs_port_set')
+            assignment.PTRSPortSet=double(f.ptrs_dmrs_port_set(:).');
+            assignment.PTRSPortSetSource=string(f.ptrs_dmrs_association_source);
+            assignment.PTRSDMRSAssociation=double(f.ptrs_dmrs_association);
+        else
+            [enabled,ports,source]= ...
+                sixgr.phy.grant.resolveScheduledPTRSPortSet( ...
+                cfg,"UL",assignment.DMRSPortSet,struct());
+            assert(enabled && assignment.NumLayers==1, ...
+                'sixgr:phy:pdcch:InvalidPTRSDMRSAssociation', ...
+                'An implicit UL PT-RS association is valid only for rank one.');
+            assignment.PTRSPortSet=double(ports(:).');
+            assignment.PTRSPortSetSource=string(source);
+            assignment.PTRSDMRSAssociation=0;
+        end
+    else
+        assignment.PTRSPortSet=zeros(1,0);
+        assignment.PTRSPortSetSource="yaml_feature_disabled";
+        assignment.PTRSDMRSAssociation=NaN;
+    end
 else
     assignment.K1Slots=f.pdsch_to_harq_feedback_timing_slots;
     assignment.HARQFeedbackAbsoluteSlot=assignment.DataAbsoluteSlot+assignment.K1Slots;

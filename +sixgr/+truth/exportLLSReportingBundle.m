@@ -202,6 +202,8 @@ if ~(istable(ctx.Tables.PRACHCorrelationTrace) && ~isempty(ctx.Tables.PRACHCorre
 end
 ctx.Tables.PDCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pdcch_trials.csv"));
 ctx.Tables.PUCCH = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "pucch_trials.csv"));
+ctx.Tables.CSIRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "csi_rs_trials.csv"));
+ctx.Tables.CSIFeedback = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "csi_feedback_reports.csv"));
 ctx.Tables.SRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "srs_trials.csv"));
 ctx.Tables.TRS = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "trs_trials.csv"));
 ctx.Tables.InitialAccessLifecycle = localReadOptionalTable(fullfile(layout.ControlCSVDir, "initial_access_lifecycle_trace.csv"));
@@ -233,10 +235,19 @@ ctx.Tables.LiveBeamSelectionStats = localReadOptionalTable(fullfile(layout.Repor
 ctx.Tables.HARQPackets = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_packets.csv"));
 ctx.Tables.HARQSummary = localReadOptionalTable(fullfile(layout.HARQCSVDir, "probe_harq_summary.csv"));
 ctx.Tables.HARQTimeline = localReadOptionalTable(fullfile(layout.HARQCSVDir, "harq_process_timeline.csv"));
+ctx.Tables.DLSchedulerGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_dl_scheduler_grants.csv"));
+ctx.Tables.ULSchedulerGrants = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_ul_scheduler_grants.csv"));
 ctx.Tables.ApplicationPackets = localReadOptionalTable(fullfile(layout.PacketFlowCSVDir, "live_application_packet_delivery_ledger.csv"));
 ctx.Tables.KPIReconstruction = localReadOptionalTable(fullfile(layout.ReportCSVDir, "kpi_reconstruction_summary.csv"));
 ctx.Tables.RFEnergy = localReadOptionalTable(fullfile(layout.RFCSVDir, "probe_rf_energy.csv"));
 ctx.Tables.EnergyTimeline = localReadOptionalTable(fullfile(layout.RFCSVDir, "energy_timeline_trace.csv"));
+ctx.Tables.PowerRuntime = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_power_runtime_table.csv"));
+ctx.Tables.EnergyEfficiency = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_energy_efficiency_table.csv"));
+ctx.Tables.ResourceOccupancy = localReadOptionalTable(fullfile(layout.ReportCSVDir, ...
+    "contract__air-interface-frame-slot-symbol-grid__re-occupancy-heatmap.csv"));
+ctx.Tables.ACLR = localReadFirstOptionalTable({ ...
+    fullfile(layout.RFCSVDir, "rf_aclr_measurement.csv"), ...
+    fullfile(layout.ReportCSVDir, "rf_aclr_measurement.csv")});
 ctx.Tables.MultiUser = localReadOptionalTable(fullfile(layout.AirInterfaceCSVDir, "multiuser_user_summary.csv"));
 ctx.Tables.AIMetadata = localReadOptionalTable(fullfile(layout.ReportCSVDir, "ai_benchmark_metadata.csv"));
 ctx.Tables.AIBenchmarks = localReadOptionalTableCollection(fullfile(layout.ReportCSVDir, "ai_*benchmark*.csv"));
@@ -556,6 +567,20 @@ switch key
         T = [T; ...
             localMeasuredErrorFloorRows(cat, metric, ctx.Tables.DLMeasuredSINRBLER, "DL", "air_interface/csv/dl_measured_sinr_bler_curve.csv"); ...
             localMeasuredErrorFloorRows(cat, metric, ctx.Tables.ULMeasuredSINRBLER, "UL", "air_interface/csv/ul_measured_sinr_bler_curve.csv")];
+    case "initial_transmission_bler"
+        T = localHARQInitialBLERRows(cat, metric, ctx.Tables.HARQTimeline);
+    case "residual_bler"
+        T = localHARQResidualBLERRows(cat, metric, ctx.Tables.HARQTimeline);
+    case "undetected_block_error_probability"
+        T = [T; ...
+            localUndetectedBlockErrorRows(cat, metric, ctx.Tables.DL, "DL"); ...
+            localUndetectedBlockErrorRows(cat, metric, ctx.Tables.UL, "UL")];
+    case "signaling_overhead"
+        T = localSignalingOverheadRows(cat, metric, ctx);
+    case "resource_occupancy"
+        T = localResourceOccupancyRows(cat, metric, ctx.Tables.ResourceOccupancy);
+    case "service_deadline_failure_probability"
+        T = localDeadlineFailureRows(cat, metric, ctx.Tables.ApplicationPackets);
 
     case "decoder_iterations"
         T = [T; ...
@@ -633,6 +658,10 @@ switch key
         T = [T; ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.DL, "HighOrderRobustness", "DL", "robustness_index"); ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.UL, "HighOrderRobustness", "UL", "robustness_index")];
+    case "aclr"
+        T = localACLRRows(cat, metric, ctx.Tables.ACLR);
+    case "transmit_power"
+        T = localTransmitPowerRows(cat, metric, ctx);
     case "cb_size_distribution"
         T = [T; ...
             localDistributionRows(cat, metric, ctx.Tables.DL, "CodeBlockLength_bits", "DL", "bits", "air_interface/csv/dl_pdsch_trials.csv"); ...
@@ -699,6 +728,8 @@ switch key
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.PBCH, "TrackingFailureProbability", "PBCH", "fraction"); ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "TrackingFailureProbability", "SRS", "fraction"); ...
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.TRS, "TrackingFailureProbability", "TRS", "fraction")];
+    case "sounding_port_leakage"
+        T = localSoundingPortLeakageRows(cat, metric, ctx.Tables.SRS);
     case "miss_detection_probability"
         T = [T; ...
             localFailureRateRows(cat, metric, ctx.Tables.PDCCH, "PDCCH"); ...
@@ -706,8 +737,10 @@ switch key
             localPrachFailureRateRows(cat, metric, ctx); ...
             localFailureRateRows(cat, metric, ctx.Tables.PBCH, "PBCH")];
     case "false_alarm_probability"
-        T = localIndicatorRateRows(cat, metric, ctx.Tables.PDCCH, "FalseAlarmFlag", "PDCCH", "air_interface/csv/pdcch_trials.csv", ...
-            "Measured from a noise-only PDCCH decode attempt for each runtime trial.");
+        T = [T; ...
+            localExplicitNoSignalFalseAlarmRows(cat, metric, ctx.Tables.PDCCH, "PDCCH", "air_interface/csv/pdcch_trials.csv"); ...
+            localExplicitNoSignalFalseAlarmRows(cat, metric, ctx.Tables.PUCCH, "PUCCH", "air_interface/csv/pucch_trials.csv"); ...
+            localPRACHFalseAlarmRows(cat, metric, ctx)];
     case "blocking_probability"
         T = localIndicatorRateRows(cat, metric, ctx.Tables.PDCCH, "BlockingFlag", "PDCCH", "air_interface/csv/pdcch_trials.csv", ...
             "Measured from actual aggregation-level demand versus configured CORESET CCE capacity.");
@@ -737,6 +770,8 @@ switch key
         T = localPDCCHFeatureMetricRows(cat, metric, ctx, "puncturing_exclusion");
     case "mrss_impact_on_control"
         T = localPDCCHFeatureMetricRows(cat, metric, ctx, "mrss_impact");
+    case "grant_failure_probability"
+        T = localGrantFailureRows(cat, metric, ctx.Tables.PDCCH);
     case "per_layer_bler"
         T = localPerLayerBLERRows(cat, metric, ctx.Tables.DL);
     case "per_codeword_bler"
@@ -781,6 +816,14 @@ switch key
             localNumericTrialSummaryRows(cat, metric, ctx.Tables.SRS, "NMSE_dB", "SRS", "dB")];
     case "msg3_specific_success_metrics"
         T = localMsg3SpecificSuccessRows(cat, metric, ctx);
+    case "uci_block_error_rate"
+        T = localUCIBlockErrorRows(cat, metric, ctx.Tables.PUCCH);
+    case "nack_to_ack_probability"
+        T = localPUCCHConfusionRows(cat, metric, ctx.Tables.PUCCH, "NACK_TO_ACK");
+    case "dtx_to_ack_probability"
+        T = localPUCCHConfusionRows(cat, metric, ctx.Tables.PUCCH, "DTX_TO_ACK");
+    case "uplink_drop_probability"
+        T = localUplinkDropRows(cat, metric, ctx);
     case "cqi_accuracy"
         T = localCQIAccuracyRows(cat, metric, ctx);
     case "pmi_accuracy"
@@ -821,10 +864,31 @@ switch key
         T = localReciprocityMismatchRows(cat, metric, ctx);
     case "analog_jscc_jscm_robustness_metrics"
         T = localAnalogJSCCJSCMRows(cat, metric, ctx);
+    case "csi_rsrp"
+        T = localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, "MeasurementRelativeRSRP_dB", "CSI-RSRP", "dB_re_UnitOccupiedRE_Es");
+    case "csi_rsrq"
+        T = localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, "MeasurementRSRQ_dB", "CSI-RSRQ", "dB");
+    case "csi_sinr"
+        T = localCSIPhysicalMeasurementRows(cat, metric, ctx.Tables.CSIRS, "ReferenceMeasuredSINR_dB", "CSI-SINR", "dB");
+    case "cqi"
+        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "CQI", "CSI-RS", "index", "air_interface/csv/csi_rs_trials.csv");
+    case "pmi"
+        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "PMI", "CSI-RS", "index", "air_interface/csv/csi_rs_trials.csv");
+    case "ri"
+        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "RI", "CSI-RS", "layers", "air_interface/csv/csi_rs_trials.csv");
+    case "cri"
+        T = localDistributionRows(cat, metric, ctx.Tables.CSIRS, "CRI", "CSI-RS", "index", "air_interface/csv/csi_rs_trials.csv");
+    case "csi_age"
+        T = localCustomNumericSummaryRows(cat, metric, ctx.Tables.CSIFeedback, "CSIAgeSeconds", "CSI_feedback", "s", "air_interface/csv/csi_feedback_reports.csv", ...
+            "Age from completed CSI reference-resource observation to causal scheduler delivery/use.");
     case {"beam_detection_probability","beam_index_hit_rate","top_k_beam_hit_rate","beam_switch_latency", ...
             "beam_misalignment_probability","beam_prediction_accuracy","beam_refinement_convergence", ...
             "beam_failure_rate","mtrp_beam_selection_gain","beam_management_overhead"}
         T = localBeamManagementMetricRows(cat, metric, ctx, key);
+    case "beam_outage"
+        T = localBeamOutageRows(cat, metric, ctx);
+    case "beam_recovery_time"
+        T = localBeamRecoveryRows(cat, metric, ctx);
     case "one_shot_ssb_detection_probability"
         T = localPassRateRows(cat, metric, ctx.Tables.PBCH, "PBCH");
     case "cell_id_detection_success"
@@ -865,10 +929,24 @@ switch key
         T = localInitialAccessEnergyRows(cat, metric, ctx);
     case "clustering_gain_penalty"
         T = localClusteringGainPenaltyRows(cat, metric, ctx);
+    case "ss_rsrp"
+        T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SS_RSRP_dB_re_UnitOccupiedRE_Es", "SS-RSRP", "dB_re_UnitOccupiedRE_Es");
+    case "ss_rsrq"
+        T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SSBWindowReferenceRSRQPerReceiveAntenna_dB", "SS-RSRQ", "dB");
+    case "ss_sinr"
+        T = localSSMeasurementRows(cat, metric, ctx.Tables.PBCH, "SS_SINR_dB", "SS-SINR", "dB");
+    case "wrong_identity_probability"
+        T = localWrongIdentityRows(cat, metric, ctx.Tables.PRACH);
+    case "access_attempt_count"
+        T = localAccessAttemptRows(cat, metric, ctx.Tables.PRACH);
     case {"rtt_distribution","retransmission_count_distribution","combining_gain","ack_nack_dtx_distribution", ...
             "feedback_overhead","stop_condition_distribution","latency_percentile","reliability_percentile", ...
             "control_miss_induced_harq_penalties","parity_cb_packet_level_coding_benefits"}
         T = localProbeMetricRows(cat, metric, ctx.Tables.HARQSummary, key, ctx);
+    case "feedback_association_error"
+        T = localFeedbackAssociationRows(cat, metric, ctx.Tables.HARQTimeline);
+    case "retransmission_cost"
+        T = localRetransmissionCostRows(cat, metric, ctx.Tables.HARQTimeline);
     case {"ue_energy_per_successful_bit","ue_energy_per_slot_frame_burst","gnb_energy_per_successful_bit", ...
             "gnb_active_sleep_duty_cycle","rf_chain_active_time","bb_processing_energy", ...
             "pdcch_monitoring_energy_metric","ssb_pbch_common_signal_energy", ...
@@ -876,6 +954,17 @@ switch key
             "race_to_sleep_gains","throughput_per_watt","energy_delay_product", ...
             "energy_spectral_efficiency_tradeoff"}
         T = localProbeMetricRows(cat, metric, ctx.Tables.RFEnergy, key, ctx);
+    case "total_device_energy"
+        T = localTotalDeviceEnergyRows(cat, metric, ctx);
+    case "cli_rssi"
+        T = localConditionalMeasurementRows(cat, metric, ctx, "CLI-RSSI", ...
+            "interference.cross_link.enabled", "Cross-link interference is not enabled; CLI-RSSI is not observable in this single-cell AWGN scenario.");
+    case "srs_rsrp"
+        T = localSRSRSRPRows(cat, metric, ctx.Tables.SRS);
+    case "unused_reserved_resources"
+        T = localConfiguredGrantFeatureRows(cat, metric, ctx, "unused_reserved_resources");
+    case "configured_grant_state_mismatch"
+        T = localConfiguredGrantFeatureRows(cat, metric, ctx, "state_mismatch");
     case "runtime_per_block"
         T = localRuntimePerBlockRows(cat, metric, ctx);
     case "peak_memory"
@@ -1285,6 +1374,55 @@ T = [T; ...
     localMetricTableRow(cat, metric, entity, "sample_count", "available", numel(x), "", "count", source, notes)];
 end
 
+function T = localExplicitNoSignalFalseAlarmRows(cat, metric, trialT, entity, source)
+% A false-alarm denominator is an executed H0 population. Never mix ordinary
+% signal-present runtime rows into it and never turn a missing H0 campaign
+% into an observed zero probability.
+T = localEmptyMetricTable();
+if ~(istable(trialT) && ~isempty(trialT))
+    return;
+end
+vars = string(trialT.Properties.VariableNames);
+if ismember("SignalPresent", vars)
+    present = sixgr.truth.numericMeasurementColumn(trialT.SignalPresent, "SignalPresent");
+    noSignal = isfinite(present) & present == 0;
+elseif ismember("TrialType", vars)
+    kind = lower(strtrim(string(trialT.TrialType)));
+    noSignal = contains(kind,"no_signal") | contains(kind,"noise_only") | ...
+        contains(kind,"false_alarm");
+else
+    return;
+end
+if ~any(noSignal)
+    return;
+end
+if ismember("FalseAlarmFlag", vars)
+    event = sixgr.truth.numericMeasurementColumn(trialT.FalseAlarmFlag, "FalseAlarmFlag");
+elseif ismember("FalseAlarm", vars)
+    event = sixgr.truth.numericMeasurementColumn(trialT.FalseAlarm, "FalseAlarm");
+elseif upper(string(entity)) == "PUCCH" && ismember("DTXFlag", vars)
+    dtx = sixgr.truth.numericMeasurementColumn(trialT.DTXFlag, "DTXFlag");
+    event = 1-dtx;
+elseif upper(string(entity)) == "PDCCH" && ismember("FalseCandidateCount", vars)
+    count = sixgr.truth.numericMeasurementColumn(trialT.FalseCandidateCount, "FalseCandidateCount");
+    event = double(count>0);
+elseif ismember("DetectionSuccess", vars)
+    event = sixgr.truth.numericMeasurementColumn(trialT.DetectionSuccess, "DetectionSuccess");
+else
+    return;
+end
+mask = noSignal & isfinite(event);
+if ~any(mask)
+    return;
+end
+x = event(mask) ~= 0;
+note = "Measured only from explicitly labeled empty/no-signal physical receiver trials; signal-present rows are excluded from both numerator and denominator.";
+T = [T; ...
+    localMetricTableRow(cat, metric, entity, "rate", "available", mean(x), "", "fraction", source, note); ...
+    localMetricTableRow(cat, metric, entity, "count", "available", sum(x), "", "count", source, note); ...
+    localMetricTableRow(cat, metric, entity, "sample_count", "available", numel(x), "", "count", source, note)];
+end
+
 function T = localPerLayerBLERRows(cat, metric, trialT)
 T = localEmptyMetricTable();
 requiredVars = ["Layers","Status"];
@@ -1427,8 +1565,18 @@ T = localEmptyMetricTable();
 if ~(istable(ctx.Tables.PDCCH) && ~isempty(ctx.Tables.PDCCH) && ismember("FalseAlarmFlag", string(ctx.Tables.PDCCH.Properties.VariableNames)))
     return;
 end
+vars = string(ctx.Tables.PDCCH.Properties.VariableNames);
+if ismember("SignalPresent",vars)
+    present = sixgr.truth.numericMeasurementColumn(ctx.Tables.PDCCH.SignalPresent,"SignalPresent");
+    noSignal = isfinite(present) & present==0;
+elseif ismember("TrialType",vars)
+    kind = lower(strtrim(string(ctx.Tables.PDCCH.TrialType)));
+    noSignal = contains(kind,"no_signal") | contains(kind,"noise_only") | contains(kind,"false_alarm");
+else
+    return;
+end
 falseAlarm = double(ctx.Tables.PDCCH.FalseAlarmFlag);
-falseAlarm = falseAlarm(isfinite(falseAlarm));
+falseAlarm = falseAlarm(noSignal & isfinite(falseAlarm));
 if isempty(falseAlarm)
     return;
 end
@@ -1501,6 +1649,483 @@ T = [T; ...
     localMetricTableRow(cat, metric, entity, "max", "available", max(samples), "", unit, sourcePath, "")];
 if ~isempty(T)
     T.Notes(:) = string(notes);
+end
+end
+
+function T = localHARQInitialBLERRows(cat, metric, timeline)
+T = localEmptyMetricTable();
+if ~(istable(timeline) && ~isempty(timeline) && ...
+        all(ismember(["Attempt","CurrentDecodeOK"], string(timeline.Properties.VariableNames))))
+    return;
+end
+attempt = sixgr.truth.numericMeasurementColumn(timeline.Attempt, "Attempt");
+decodeOK = sixgr.truth.numericMeasurementColumn(timeline.CurrentDecodeOK, "CurrentDecodeOK");
+if numel(attempt) ~= height(timeline) || numel(decodeOK) ~= height(timeline)
+    return;
+end
+directions = localDirectionSet(timeline);
+for entity = directions(:).'
+    mask = localDirectionMask(timeline, entity) & attempt == 1 & isfinite(decodeOK);
+    if any(mask)
+        T = [T; localRateWithCounts(cat, metric, entity, "initial_tb_error", ...
+            ~logical(decodeOK(mask)), "harq/csv/harq_process_timeline.csv", ...
+            "Initial BLER uses only HARQ attempt 1; retransmissions are excluded.")]; %#ok<AGROW>
+    end
+end
+end
+
+function T = localHARQResidualBLERRows(cat, metric, timeline)
+T = localEmptyMetricTable();
+required = ["PacketID","Attempt","CombinedDecodeOK"];
+if ~(istable(timeline) && ~isempty(timeline) && all(ismember(required, string(timeline.Properties.VariableNames))))
+    return;
+end
+packet = string(timeline.PacketID);
+attempt = sixgr.truth.numericMeasurementColumn(timeline.Attempt, "Attempt");
+combinedOK = sixgr.truth.numericMeasurementColumn(timeline.CombinedDecodeOK, "CombinedDecodeOK");
+directions = localDirectionSet(timeline);
+for entity = directions(:).'
+    dmask = localDirectionMask(timeline, entity);
+    ids = unique(packet(dmask), "stable");
+    finalError = false(0, 1);
+    for i = 1:numel(ids)
+        rows = find(dmask & packet == ids(i) & isfinite(attempt) & isfinite(combinedOK));
+        if isempty(rows), continue; end
+        [~, k] = max(attempt(rows));
+        finalError(end+1, 1) = ~logical(combinedOK(rows(k))); %#ok<AGROW>
+    end
+    if ~isempty(finalError)
+        T = [T; localRateWithCounts(cat, metric, entity, "final_harq_tb_error", ...
+            finalError, "harq/csv/harq_process_timeline.csv", ...
+            "Residual BLER uses the final observed HARQ attempt for each source-labelled packet.")]; %#ok<AGROW>
+    end
+end
+end
+
+function T = localUndetectedBlockErrorRows(cat, metric, trialT, entity)
+T = localEmptyMetricTable();
+required = ["CRCPass","BitErrors","BitsCompared"];
+if ~(istable(trialT) && ~isempty(trialT) && all(ismember(required, string(trialT.Properties.VariableNames))))
+    return;
+end
+crc = sixgr.truth.numericMeasurementColumn(trialT.CRCPass, "CRCPass");
+bitErrors = sixgr.truth.numericMeasurementColumn(trialT.BitErrors, "BitErrors");
+bits = sixgr.truth.numericMeasurementColumn(trialT.BitsCompared, "BitsCompared");
+mask = isfinite(crc) & isfinite(bitErrors) & isfinite(bits) & bits > 0;
+if any(mask)
+    undetected = logical(crc(mask)) & bitErrors(mask) > 0;
+    T = localRateWithCounts(cat, metric, entity, "crc_pass_with_payload_error", ...
+        undetected, localDefaultSource(entity), ...
+        "An undetected error is counted only when CRC passes while a complete bit comparison reports one or more wrong bits.");
+end
+end
+
+function T = localSignalingOverheadRows(cat, metric, ctx)
+T = localEmptyMetricTable();
+for entry = {ctx.Tables.DL, "DL"; ctx.Tables.UL, "UL"}.'
+    trialT = entry{1}; entity = string(entry{2});
+    T = [T; localCustomNumericSummaryRows(cat, metric, trialT, "RSOverheadFraction", entity + "_reference_signals", "fraction", ...
+        localDefaultSource(entity), "Fraction of allocated RE excluded from data by executed reference-signal mapping.")]; %#ok<AGROW>
+end
+T = [T; localUCIMultiplexingEfficiencyRows(cat, metric, ctx)];
+end
+
+function T = localResourceOccupancyRows(cat, metric, occupancy)
+T = localEmptyMetricTable();
+if ~(istable(occupancy) && ~isempty(occupancy) && ismember("occupancy_value", string(occupancy.Properties.VariableNames)))
+    return;
+end
+x = sixgr.truth.numericMeasurementColumn(occupancy.occupancy_value, "occupancy_value");
+mask = isfinite(x);
+if ~any(mask), return; end
+note = "Exact executed resource-element occupancy from the persisted frame/slot/symbol/RB occupancy dataset; absent resources are not filled with zeros.";
+T = [T; ...
+    localMetricTableRow(cat, metric, "executed_grid", "mean_occupied_re_port_samples_per_rb_symbol", "derived", mean(x(mask)), "", "RE-port samples", "reports/csv/contract__air-interface-frame-slot-symbol-grid__re-occupancy-heatmap.csv", note); ...
+    localMetricTableRow(cat, metric, "executed_grid", "observed_rb_symbol_count", "derived", sum(mask), "", "count", "reports/csv/contract__air-interface-frame-slot-symbol-grid__re-occupancy-heatmap.csv", note)];
+end
+
+function T = localDeadlineFailureRows(cat, metric, packets)
+T = localEmptyMetricTable();
+if ~(istable(packets) && ~isempty(packets)), return; end
+vars = string(packets.Properties.VariableNames);
+if ismember("DeadlineMet", vars)
+    met = sixgr.truth.numericMeasurementColumn(packets.DeadlineMet, "DeadlineMet");
+elseif ismember("DeadlineMissFlag", vars)
+    missed = sixgr.truth.numericMeasurementColumn(packets.DeadlineMissFlag, "DeadlineMissFlag");
+    met = 1 - missed;
+else
+    return;
+end
+mask = isfinite(met);
+if any(mask)
+    T = localRateWithCounts(cat, metric, "application_packets", "deadline_miss", ...
+        ~logical(met(mask)), "packet_flow/csv/live_application_packet_delivery_ledger.csv", ...
+        "Deadline failure is emitted only when the packet ledger carries an explicit deadline outcome.");
+end
+end
+
+function T = localACLRRows(cat, metric, aclr)
+T = localEmptyMetricTable();
+if ~(istable(aclr) && ~isempty(aclr))
+    T = localMetricTableRow(cat, metric, "TX_waveform", "explicit_filter_measurement", ...
+        "not_available", NaN, "", "dB", "rf/csv/rf_aclr_measurement.csv", ...
+        "No explicit assigned/adjacent-band ACLR measurement was executed. " + ...
+        "The native 5 MHz waveform sample rate does not contain two complete adjacent-channel measurement bands; PSD or OOBE data is not relabeled as ACLR.");
+    return;
+end
+for name = ["ACLRLower_dB","ACLRUpper_dB","SumPortACLRLower_dB","SumPortACLRUpper_dB"]
+    T = [T; localCustomNumericSummaryRows(cat, metric, aclr, name, name, "dB", ...
+        "rf/csv/rf_aclr_measurement.csv", ...
+        "ACLR is reported only from an executed explicit assigned/adjacent-band filter measurement.")]; %#ok<AGROW>
+end
+end
+
+function T = localTransmitPowerRows(cat, metric, ctx)
+T = localEmptyMetricTable();
+for entry = {ctx.Tables.DL, "DL"; ctx.Tables.UL, "UL"; ctx.Tables.PUCCH, "PUCCH"}.'
+    trialT = entry{1}; entity = string(entry{2});
+    if istable(trialT) && ~isempty(trialT) && ...
+            ismember("TransmitPowerPhysicalApplicable", string(trialT.Properties.VariableNames))
+        physical = sixgr.truth.numericMeasurementColumn(trialT.TransmitPowerPhysicalApplicable, "TransmitPowerPhysicalApplicable");
+        if numel(physical) == height(trialT) && any(physical ~= 0 & isfinite(physical))
+            physicalRows = trialT(physical ~= 0 & isfinite(physical), :);
+            T = [T; localCustomNumericSummaryRows(cat, metric, physicalRows, "ActualEmittedPower_dBm", entity, "dBm", localDefaultSource(entity), ...
+                "Absolute transmit power is included only when the runtime marks the physical power plane applicable.")]; %#ok<AGROW>
+        end
+    end
+    T = [T; localCustomNumericSummaryRows(cat, metric, trialT, "ActualEmittedPower_dB_re_UnitOccupiedRE_Es", entity + "_normalized", ...
+        "dB_re_UnitOccupiedRE_Es", localDefaultSource(entity), ...
+        "Normalized fixed-Es/N0 transmit power; this is not relabeled as dBm.")]; %#ok<AGROW>
+end
+end
+
+function T = localSoundingPortLeakageRows(cat, metric, srs)
+T = localEmptyMetricTable();
+for field = ["SRSInterPortLeakageWorst_dB","PortLeakage_dB", ...
+        "SoundingPortLeakage_dB","InterPortLeakage_dB"]
+    T = [T; localCustomNumericSummaryRows(cat, metric, srs, field, "SRS", "dB", ...
+        "air_interface/csv/srs_trials.csv", ...
+        "Measured code-domain leakage between independently despread executed SRS ports; this is not relabeled as RF antenna-port crosstalk.")]; %#ok<AGROW>
+end
+if isempty(T)
+    T = localMetricTableRow(cat, metric, "SRS", "inter_port_leakage", ...
+        "not_available", NaN, "", "dB", "air_interface/csv/srs_trials.csv", ...
+        "SRS was executed, but the receiver did not emit an independently measured inter-port leakage value; rank or NMSE is not substituted.");
+end
+end
+
+function T = localGrantFailureRows(cat, metric, pdcch)
+T = localEmptyMetricTable();
+if ~(istable(pdcch) && ~isempty(pdcch)), return; end
+vars = string(pdcch.Properties.VariableNames);
+if ismember("PDCCHCausalGrantDecodeOk", vars)
+    ok = sixgr.truth.numericMeasurementColumn(pdcch.PDCCHCausalGrantDecodeOk, "PDCCHCausalGrantDecodeOk");
+elseif ismember("GrantValid", vars)
+    ok = sixgr.truth.numericMeasurementColumn(pdcch.GrantValid, "GrantValid");
+else
+    return;
+end
+mask = isfinite(ok);
+if any(mask)
+    T = localRateWithCounts(cat, metric, "PDCCH", "complete_grant_failure", ...
+        ~logical(ok(mask)), "air_interface/csv/pdcch_trials.csv", ...
+        "A failure means the complete causal DCI-to-installed-grant instruction was not recovered.");
+end
+end
+
+function T = localUCIBlockErrorRows(cat, metric, pucch)
+T = localEmptyMetricTable();
+if ~(istable(pucch) && ~isempty(pucch)), return; end
+vars = string(pucch.Properties.VariableNames);
+if ismember("UCIContentMatch", vars)
+    ok = sixgr.truth.numericMeasurementColumn(pucch.UCIContentMatch, "UCIContentMatch");
+elseif ismember("PUCCHDecodeOk", vars)
+    ok = sixgr.truth.numericMeasurementColumn(pucch.PUCCHDecodeOk, "PUCCHDecodeOk");
+else
+    return;
+end
+mask = isfinite(ok);
+if any(mask)
+    T = localRateWithCounts(cat, metric, "PUCCH", "uci_block_error", ...
+        ~logical(ok(mask)), "air_interface/csv/pucch_trials.csv", ...
+        "UCI BLER is based on complete independently received payload comparison; CRC-inapplicable short UCI is not treated as unmeasured.");
+end
+end
+
+function T = localPUCCHConfusionRows(cat, metric, pucch, mode)
+T = localEmptyMetricTable();
+if ~(istable(pucch) && ~isempty(pucch)), return; end
+vars = string(pucch.Properties.VariableNames);
+source = "air_interface/csv/pucch_trials.csv";
+switch string(mode)
+    case "NACK_TO_ACK"
+        if ismember("FalseAck", vars) && ismember("ExpectedAck", vars)
+            indicator = sixgr.truth.numericMeasurementColumn(pucch.FalseAck, "FalseAck");
+            expected = sixgr.truth.numericMeasurementColumn(pucch.ExpectedAck, "ExpectedAck");
+            eligible = isfinite(indicator) & isfinite(expected) & expected == 0;
+            label = "nack_to_ack";
+        else
+            return;
+        end
+    case "DTX_TO_ACK"
+        if all(ismember(["DTXFlag","DecodedAck"], vars))
+            dtx = sixgr.truth.numericMeasurementColumn(pucch.DTXFlag, "DTXFlag");
+            decoded = sixgr.truth.numericMeasurementColumn(pucch.DecodedAck, "DecodedAck");
+            eligible = isfinite(dtx) & isfinite(decoded) & dtx ~= 0;
+            indicator = decoded ~= 0;
+            label = "dtx_to_ack";
+        else
+            return;
+        end
+end
+if any(eligible)
+    T = localRateWithCounts(cat, metric, "PUCCH", label, logical(indicator(eligible)), source, ...
+        "The denominator contains only the corresponding transmitted NACK or no-transmission (DTX) episodes.");
+end
+end
+
+function T = localUplinkDropRows(cat, metric, ctx)
+T = localEmptyMetricTable();
+packets = ctx.Tables.ApplicationPackets;
+if ~(istable(packets) && ~isempty(packets) && all(ismember(["Direction","DeliverySuccess"], string(packets.Properties.VariableNames))))
+    return;
+end
+direction = upper(strtrim(string(packets.Direction)));
+ok = sixgr.truth.numericMeasurementColumn(packets.DeliverySuccess, "DeliverySuccess");
+mask = direction == "UL" & isfinite(ok);
+if any(mask)
+    T = localRateWithCounts(cat, metric, "UL_application_packets", "dropped", ...
+        ~logical(ok(mask)), "packet_flow/csv/live_application_packet_delivery_ledger.csv", ...
+        "A drop is counted only from a finalized UL application-packet delivery outcome.");
+end
+end
+
+function T = localCSIPhysicalMeasurementRows(cat, metric, csirs, varName, entity, unit)
+T = localEmptyMetricTable();
+if ~(istable(csirs) && ~isempty(csirs)), return; end
+note = "Receiver measurement on executed CSI-RS resources. Relative power remains referenced to unit occupied-RE Es and is not relabeled as dBm.";
+T = localCustomNumericSummaryRows(cat, metric, csirs, varName, entity, unit, ...
+    "air_interface/csv/csi_rs_trials.csv", note);
+end
+
+function T = localSSMeasurementRows(cat, metric, pbch, varName, entity, unit)
+T = localEmptyMetricTable();
+if ~(istable(pbch) && ~isempty(pbch) && ismember(varName, string(pbch.Properties.VariableNames)))
+    return;
+end
+x = localNumericVectorColumn(pbch.(varName));
+if isempty(x), return; end
+note = "Measured from the received SS/PBCH observation. Normalized power uses the unit occupied-RE Es reference and is not an absolute dBm claim.";
+T = [T; ...
+    localMetricTableRow(cat, metric, entity, "mean", "observed", mean(x, "omitnan"), "", unit, "air_interface/csv/pbch_trials.csv", note); ...
+    localMetricTableRow(cat, metric, entity, "p95", "observed", prctile(x, 95), "", unit, "air_interface/csv/pbch_trials.csv", note); ...
+    localMetricTableRow(cat, metric, entity, "sample_count", "observed", numel(x), "", "count", "air_interface/csv/pbch_trials.csv", note)];
+end
+
+function T = localWrongIdentityRows(cat, metric, prach)
+T = localEmptyMetricTable();
+if ~(istable(prach) && ~isempty(prach)), return; end
+vars = string(prach.Properties.VariableNames);
+if all(ismember(["RequestedPreambleIndex","DetectedPreambleIndex","PreambleDetected"], vars))
+    requested = sixgr.truth.numericMeasurementColumn(prach.RequestedPreambleIndex, "RequestedPreambleIndex");
+    detected = sixgr.truth.numericMeasurementColumn(prach.DetectedPreambleIndex, "DetectedPreambleIndex");
+    present = sixgr.truth.numericMeasurementColumn(prach.PreambleDetected, "PreambleDetected");
+elseif all(ismember(["PreambleIndexTx","PreambleIndexDetected","PreambleDetected"], vars))
+    requested = sixgr.truth.numericMeasurementColumn(prach.PreambleIndexTx, "PreambleIndexTx");
+    detected = sixgr.truth.numericMeasurementColumn(prach.PreambleIndexDetected, "PreambleIndexDetected");
+    present = sixgr.truth.numericMeasurementColumn(prach.PreambleDetected, "PreambleDetected");
+else
+    return;
+end
+mask = isfinite(requested) & isfinite(detected) & isfinite(present) & present ~= 0;
+if any(mask)
+    T = localRateWithCounts(cat, metric, "PRACH", "wrong_preamble_identity", ...
+        detected(mask) ~= requested(mask), "air_interface/csv/prach_trials.csv", ...
+        "Wrong identity is conditioned on a detected preamble and compares the decoded identity with the scheduled transmitted preamble.");
+end
+end
+
+function T = localAccessAttemptRows(cat, metric, prach)
+T = localEmptyMetricTable();
+if ~(istable(prach) && ~isempty(prach)), return; end
+for field = ["PreambleAttemptNumber","RAAttemptId"]
+    if ismember(field, string(prach.Properties.VariableNames))
+        T = localCustomNumericSummaryRows(cat, metric, prach, field, "PRACH", "attempts", ...
+            "air_interface/csv/prach_trials.csv", ...
+            "Attempt count is taken from the causal random-access procedure identity, not reconstructed from row order.");
+        if ~isempty(T), return; end
+    end
+end
+end
+
+function T = localBeamOutageRows(cat, metric, ctx)
+T = localEmptyMetricTable();
+state = ctx.Tables.BeamManagementStateTrace;
+if ~(istable(state) && ~isempty(state) && ismember("BeamFailureFlag", string(state.Properties.VariableNames)))
+    return;
+end
+failure = sixgr.truth.numericMeasurementColumn(state.BeamFailureFlag, "BeamFailureFlag");
+mask = isfinite(failure);
+if any(mask)
+    T = localRateWithCounts(cat, metric, "beam_management", "outage_fraction", ...
+        logical(failure(mask)), "beamforming/csv/beam_management_state_trace.csv", ...
+        "Beam outage is the fraction of observed beam-state epochs explicitly marked failed; disabled blockage is not synthesized as an outage campaign.");
+end
+end
+
+function T = localBeamRecoveryRows(cat, metric, ctx)
+T = localEmptyMetricTable();
+events = ctx.Tables.BeamManagementEventTrace;
+if ~(istable(events) && ~isempty(events)), return; end
+for field = ["RecoveryLatency_s","BeamRecoveryTime_s","SwitchLatency_s"]
+    if ismember(field, string(events.Properties.VariableNames))
+        values = localFiniteColumn(events, field);
+        if isempty(values), continue; end
+        if field == "SwitchLatency_s" && ismember("FailureEventFlag", string(events.Properties.VariableNames))
+            failure = sixgr.truth.numericMeasurementColumn(events.FailureEventFlag, "FailureEventFlag");
+            if numel(failure) == height(events)
+                selected = failure ~= 0 & isfinite(sixgr.truth.numericMeasurementColumn(events.(field), field));
+                values = sixgr.truth.numericMeasurementColumn(events.(field), field);
+                values = values(selected);
+            end
+        end
+        if isempty(values), continue; end
+        T = [T; ...
+            localMetricTableRow(cat, metric, "beam_management", "mean", "observed", mean(values), "", "s", "beamforming/csv/beam_management_event_trace.csv", "Recovery time is emitted only for executed failure-to-recovery events."); ...
+            localMetricTableRow(cat, metric, "beam_management", "sample_count", "observed", numel(values), "", "count", "beamforming/csv/beam_management_event_trace.csv", "Recovery time is emitted only for executed failure-to-recovery events.")];
+        return;
+    end
+end
+end
+
+function T = localFeedbackAssociationRows(cat, metric, timeline)
+T = localEmptyMetricTable();
+if ~(istable(timeline) && ~isempty(timeline)), return; end
+vars = string(timeline.Properties.VariableNames);
+if ~all(ismember(["FeedbackObservationAvailable","FeedbackApplied","FeedbackStaleIgnored"], vars))
+    return;
+end
+available = sixgr.truth.numericMeasurementColumn(timeline.FeedbackObservationAvailable, "FeedbackObservationAvailable");
+applied = sixgr.truth.numericMeasurementColumn(timeline.FeedbackApplied, "FeedbackApplied");
+stale = sixgr.truth.numericMeasurementColumn(timeline.FeedbackStaleIgnored, "FeedbackStaleIgnored");
+mask = isfinite(available) & isfinite(applied) & isfinite(stale) & available ~= 0;
+if any(mask)
+    errorFlag = applied(mask) == 0 & stale(mask) == 0;
+    T = localRateWithCounts(cat, metric, "HARQ", "unassociated_nonstale_feedback", ...
+        errorFlag, "harq/csv/harq_process_timeline.csv", ...
+        "An association error requires an available, non-stale feedback observation that was not applied to its identified transport block.");
+end
+end
+
+function T = localRetransmissionCostRows(cat, metric, timeline)
+T = localEmptyMetricTable();
+required = ["IsRetransmission","TBSize_bits"];
+if ~(istable(timeline) && ~isempty(timeline) && all(ismember(required, string(timeline.Properties.VariableNames))))
+    return;
+end
+retx = sixgr.truth.numericMeasurementColumn(timeline.IsRetransmission, "IsRetransmission");
+bits = sixgr.truth.numericMeasurementColumn(timeline.TBSize_bits, "TBSize_bits");
+mask = isfinite(retx) & isfinite(bits) & bits >= 0;
+if any(mask)
+    cost = sum(bits(mask & retx ~= 0));
+    T = [T; ...
+        localMetricTableRow(cat, metric, "HARQ", "retransmitted_bits", "observed", cost, "", "bits", "harq/csv/harq_process_timeline.csv", "Resource cost is the actual TB-bit volume retransmitted by executed HARQ attempts."); ...
+        localMetricTableRow(cat, metric, "HARQ", "retransmission_attempts", "observed", sum(retx(mask) ~= 0), "", "count", "harq/csv/harq_process_timeline.csv", "Resource cost is the actual TB-bit volume retransmitted by executed HARQ attempts.")];
+end
+end
+
+function T = localTotalDeviceEnergyRows(cat, metric, ctx)
+T = localEmptyMetricTable();
+power = ctx.Tables.PowerRuntime;
+if istable(power) && ~isempty(power) && ismember("cumulative_energy_j", string(power.Properties.VariableNames))
+    x = localFiniteColumn(power, "cumulative_energy_j");
+    if ~isempty(x)
+        T = localMetricTableRow(cat, metric, "runtime", "final_cumulative_energy", "derived", max(x), "", "J", ...
+            "reports/csv/live_power_runtime_table.csv", ...
+            "Total device energy is the final cumulative value from the executed runtime power ledger.");
+    end
+end
+end
+
+function T = localConditionalMeasurementRows(cat, metric, ctx, entity, configPath, disabledNote)
+enabled = localConfigFlag(ctx, configPath, false);
+if enabled
+    T = localMetricTableRow(cat, metric, entity, "measurement", "not_available", NaN, "", "", ...
+        "meta/scenario_config_resolved.json", "Feature is enabled but no executed receiver measurement was exported; this remains a blocking evidence gap.");
+else
+    T = localMetricTableRow(cat, metric, entity, "enabled_flag", "disabled", 0, "", "flag", ...
+        "meta/scenario_config_resolved.json", disabledNote);
+end
+end
+
+function T = localSRSRSRPRows(cat, metric, srs)
+T = localEmptyMetricTable();
+for field = ["SRS_RSRP_dBm","SRS_RSRP_dB_re_UnitOccupiedRE_Es","MeasuredSRSRSRP_dB"]
+    unit = "dB_re_UnitOccupiedRE_Es";
+    if contains(field, "dBm"), unit = "dBm"; end
+    T = [T; localCustomNumericSummaryRows(cat, metric, srs, field, "SRS", unit, ...
+        "air_interface/csv/srs_trials.csv", ...
+        "SRS received power is exported only from a receiver-measured SRS power field with its original reference plane.")]; %#ok<AGROW>
+end
+if isempty(T)
+    T = localMetricTableRow(cat, metric, "SRS", "received_reference_power", ...
+        "not_available", NaN, "", "", "air_interface/csv/srs_trials.csv", ...
+        "The active SRS receiver emits pilot-reconstruction SINR and NMSE but no standards-labelled SRS-RSRP field; those quantities are not substituted.");
+end
+end
+
+function T = localConfiguredGrantFeatureRows(cat, metric, ctx, mode)
+enabled = localConfigFlag(ctx, "scheduler.configured_grant_enabled", false) || ...
+    localConfigFlag(ctx, "configured_grant.enabled", false) || ...
+    localConfigFlag(ctx, "pusch.configured_grant_enabled", false);
+source = "meta/scenario_config_resolved.json";
+if ~enabled
+    T = localMetricTableRow(cat, metric, "configured_grant", "enabled_flag", "disabled", 0, "", "flag", source, ...
+        "Configured grant/SPS is disabled in this dynamic-grant scenario; no zero-valued physical measurement is fabricated.");
+    return;
+end
+T = localMetricTableRow(cat, metric, "configured_grant", string(mode), "not_available", NaN, "", "", source, ...
+    "Configured grant is enabled but no executed state/occupancy measurement reached this reporting bundle.");
+end
+
+function T = localRateWithCounts(cat, metric, entity, statistic, indicator, source, notes)
+indicator = logical(indicator(:));
+T = [ ...
+    localMetricTableRow(cat, metric, entity, statistic + "_rate", "observed", mean(indicator), "", "fraction", source, notes); ...
+    localMetricTableRow(cat, metric, entity, statistic + "_count", "observed", sum(indicator), "", "count", source, notes); ...
+    localMetricTableRow(cat, metric, entity, "sample_count", "observed", numel(indicator), "", "count", source, notes)];
+end
+
+function values = localNumericVectorColumn(raw)
+values = zeros(0, 1);
+if isnumeric(raw) || islogical(raw)
+    values = double(raw(:));
+    values = values(isfinite(values));
+    return;
+end
+for textValue = string(raw(:)).'
+    tokens = regexp(char(textValue), '[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?', 'match');
+    if isempty(tokens), continue; end
+    parsed = str2double(string(tokens));
+    values = [values; parsed(isfinite(parsed)).']; %#ok<AGROW>
+end
+values = values(:);
+end
+
+function entities = localDirectionSet(T)
+if istable(T) && ismember("Direction", string(T.Properties.VariableNames))
+    entities = unique(upper(strtrim(string(T.Direction))), "stable");
+    entities = entities(strlength(entities) > 0 & ~ismissing(entities));
+else
+    entities = "ALL";
+end
+end
+
+function mask = localDirectionMask(T, entity)
+if istable(T) && ismember("Direction", string(T.Properties.VariableNames)) && entity ~= "ALL"
+    mask = upper(strtrim(string(T.Direction))) == entity;
+else
+    mask = true(height(T), 1);
 end
 end
 
@@ -2608,16 +3233,13 @@ if ~(istable(ctx.Tables.PRACH) && ~isempty(ctx.Tables.PRACH))
         "No observed PRACH trials were emitted by this run.");
     return;
 end
-note = "PRACH false alarm is exported from explicit false-alarm flags when present; otherwise the executed targeted-access trials observed zero false alarms.";
-falseAlarm = localFiniteColumn(ctx.Tables.PRACH, "FalseAlarmFlag");
-if isempty(falseAlarm)
-    falseAlarm = zeros(height(ctx.Tables.PRACH), 1);
+T = localExplicitNoSignalFalseAlarmRows(cat, metric, ctx.Tables.PRACH, ...
+    "PRACH", "air_interface/csv/prach_trials.csv");
+if isempty(T)
+    T = localUnavailableMetricRows(cat, metric, "PRACH", "false_alarm", ...
+        "air_interface/csv/prach_trials.csv", ...
+        "No explicitly labeled empty/no-signal PRACH receiver trials were retained; signal-present access trials cannot define false-alarm probability.");
 end
-rate = mean(falseAlarm ~= 0, "omitnan");
-count = sum(falseAlarm ~= 0, "omitnan");
-T = [T; ... %#ok<AGROW>
-    localMetricTableRow(cat, metric, "PRACH", "rate", "available", rate, "", "fraction", "air_interface/csv/prach_trials.csv", note); ...
-    localMetricTableRow(cat, metric, "PRACH", "count", "available", count, "", "count", "air_interface/csv/prach_trials.csv", note)];
 end
 
 function T = localTAErrorRows(cat, metric, ctx)

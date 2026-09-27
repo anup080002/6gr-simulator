@@ -1,9 +1,6 @@
 function obs = normalizeCSIRSPowerReference(obs, cfg)
 % Convert the numerical power reference without changing measurement authority.
-fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
-    cfg, "integration.run_mode", "")), "FIXED_SNR_SWEEP") && ...
-    logical(sixgr.util.structGet(cfg, ...
-    "integration.configured_snr_is_link_authority", false));
+fixedNormalizedEsN0 = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if ~fixedNormalizedEsN0
     return;
 end

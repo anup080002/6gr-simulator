@@ -97,13 +97,17 @@ for rank=[1 2 4]
     fprintf('CONNECTED_FOUR_PORT_UL_PASS rank=%d DCIbits=%d TBS=%d actual_ports=%d\n', ...
         rank,numel(dci.Bits),numel(bits),size(tx.Waveform,2));
 end
-bad=base; bad.phy.pusch.enablePTRS=true;
-try
-    sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'0_1');
-    error('test:MissingRejection','Multilayer PTRS was silently accepted.');
-catch ME
-    assert(string(ME.identifier)=="sixgr:phy:pdcch:ULPrecodingContextMismatch");
-end
+withPTRS=base; withPTRS.phy.pusch.enablePTRS=true;
+ptrsContext=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(withPTRS,'0_1');
+ptrsSchema=sixgr.phy.pdcch.DCISchemaEngine.resolve(ptrsContext);
+assert(ptrsContext.Data.PTRSDMRSAssociationWidth==2 && ...
+    any(string([ptrsSchema.Definitions.Name])=="ptrs_dmrs_association"), ...
+    ['Multilayer UL PT-RS must install the Release-18 two-bit DCI 0_1 ' ...
+     'PT-RS/DM-RS association field.']);
+assert(sixgr.phy.pdcch.ULPTRSDMRSAssociation.encode(0:3,0,2)==0 && ...
+    sixgr.phy.pdcch.ULPTRSDMRSAssociation.encode(0:3,1,2)==1 && ...
+    sixgr.phy.pdcch.ULPTRSDMRSAssociation.decode(1,0:3,2)==1, ...
+    'PT-RS codepoints must identify ordinal scheduled DM-RS ports.');
 ok=true;
 end
 

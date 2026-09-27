@@ -47,17 +47,24 @@ trialRows(end+1, 1) = row; %#ok<AGROW>
     int8(1), 0, highSNR, rnti, runId, scenarioName);
 trialRows(end+1, 1) = row; %#ok<AGROW>
 
+[trialRows, statisticalT] = localRunStatisticalCampaign( ...
+    trialRows, trialId, baseCfg, rnti, runId, scenarioName);
+
 trialT = struct2table(trialRows, "AsArray", true);
 resourceT = localResourceMappingTable(trialT);
 falseAlarmT = trialT(contains(string(trialT.TrialType), "no_signal"), :);
 summaryT = localSummaryTable(runId, scenarioName, trialT);
 
-positiveMask = startsWith(string(trialT.TrialType), "positive");
-negativeMask = logical(trialT.NegativeExpected);
+statisticalMask = logical(trialT.StatisticalTrial);
+positiveMask = startsWith(string(trialT.TrialType), "positive") & ~statisticalMask;
+negativeMask = logical(trialT.NegativeExpected) & ~statisticalMask;
 positiveOk = any(positiveMask) && all(logical(trialT.StrictOk(positiveMask)));
 negativeOk = ~any(negativeMask) || all(logical(trialT.NegativeExpectedOk(negativeMask)));
 noProxySkip = ~any(logical(trialT.ProxyUsed) | logical(trialT.Skipped) | logical(trialT.ToolboxMissing));
-strictOk = positiveOk && negativeOk && noProxySkip && height(resourceT) == height(trialT);
+statisticalEnabled = ~isempty(statisticalT);
+statisticalOk = ~statisticalEnabled || all(logical(statisticalT.Qualified));
+strictOk = positiveOk && negativeOk && statisticalOk && noProxySkip && ...
+    height(resourceT) == height(trialT);
 
 result = struct();
 result.RunId = runId;
@@ -73,6 +80,7 @@ result.ArtifactTables = struct( ...
     "pucch_trials", trialT, ...
     "pucch_resource_mapping", resourceT, ...
     "pucch_false_alarm_trials", falseAlarmT, ...
+    "pucch_detector_statistical_summary", statisticalT, ...
     "pucch_summary", summaryT);
 
 if logical(opt.WriteArtifacts)
@@ -87,7 +95,7 @@ nextTrialId = trialId + 1;
 cfg = sixgr.util.structSet(baseCfg, "phy.rnti", rnti);
 fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected( ...
     fmt,bits,"RNTI",rnti);
-trial = sixgr.link.runPUCCHWaveformTrial(fixture.Carrier, ...
+trial = sixgr.link.runPUCCHWaveformTrial(cfg, ...
     "Assignment",fixture.Assignment, ...
     "Report",fixture.Report, ...
     "ReceiverContext",fixture.Context, ...
@@ -102,7 +110,7 @@ nextTrialId = trialId + 1;
 cfg = sixgr.util.structSet(baseCfg, "phy.rnti", rnti);
 fixture = sixgr.phy.pucch.PUCCHFixtureFactory.connected( ...
     fmt,bits,"RNTI",rnti);
-trial = sixgr.link.runPUCCHWaveformTrial(fixture.Carrier, ...
+trial = sixgr.link.runPUCCHWaveformTrial(cfg, ...
     "Assignment",fixture.Assignment, ...
     "Report",fixture.Report, ...
     "ReceiverContext",fixture.Context, ...
@@ -229,8 +237,12 @@ row.WaveformHash = localComplexHash(wave);
 
 isOk = logical(sixgr.util.structGet(trial, "Ok", false)) && row.UCIContentMatch;
 row.NegativeExpected = logical(negativeExpected);
+row.StatisticalTrial = false;
 if row.NegativeExpected
-    row.NegativeExpectedOk = ~logical(row.DetectionUsable);
+    % ReceiverUsable means the detector produced valid evidence; it does
+    % not mean a signal was declared.  In a no-transmitter episode the
+    % physical false-alarm event is a non-DTX declaration.
+    row.NegativeExpectedOk = logical(row.DTXFlag);
     row.StrictOk = row.NegativeExpectedOk;
 else
     row.NegativeExpectedOk = false;
@@ -296,7 +308,100 @@ cfg = sixgr.util.structSet(cfg, "channel.awgnOnly", true);
 cfg = sixgr.util.structSet(cfg, "channel.doppler_Hz", 0);
 cfg = sixgr.util.structSet(cfg, "run.noiseOperatingMode", "standalone_awgn_snr_argument");
 cfg = sixgr.util.structSet(cfg, "run.interferenceExecutionMode", "none");
-cfg = sixgr.util.structSet(cfg, "phy.pucch.DTXThreshold", 0.8);
+end
+
+function [rows, summary] = localRunStatisticalCampaign(rows, trialId, baseCfg, rnti, runId, scenarioName)
+policy = sixgr.util.structGet(baseCfg, ...
+    "validation.pucchStatisticalQualification", struct());
+enabled = isstruct(policy) && isscalar(policy) && logical( ...
+    sixgr.util.structGet(policy, "enabled", false));
+if ~enabled
+    summary = table();
+    return;
+end
+format = double(sixgr.util.structGet(policy, "format", 2));
+trialCount = double(sixgr.util.structGet(policy, "trials_per_hypothesis", 512));
+confidence = double(sixgr.util.structGet(policy, "confidence_level", 0.95));
+targetFalseAlarm = double(sixgr.util.structGet(policy, ...
+    "target_false_alarm_probability", 0.01));
+targetMissedFeedback = double(sixgr.util.structGet(policy, ...
+    "target_missed_feedback_probability", 0.01));
+signalSNR = double(sixgr.util.structGet(policy, "signal_present_snr_db", 20));
+seedBase = double(sixgr.util.structGet(policy, "seed_base", 731001));
+validateattributes(format,{'numeric'},{'scalar','integer','>=',0,'<=',4});
+validateattributes(trialCount,{'numeric'},{'scalar','integer','>=',1});
+validateattributes(confidence,{'numeric'},{'scalar','>',0,'<',1});
+validateattributes(targetFalseAlarm,{'numeric'},{'scalar','>',0,'<',1});
+validateattributes(targetMissedFeedback,{'numeric'},{'scalar','>',0,'<',1});
+validateattributes(signalSNR,{'numeric'},{'scalar','finite'});
+validateattributes(seedBase,{'numeric'},{'scalar','integer','nonnegative'});
+
+falseAlarms = 0;
+missedFeedback = 0;
+payload = localStatisticalPayload(format);
+for k = 1:trialCount
+    trialId = trialId + 1;
+    [~, noiseRow] = localRunNoSignalTrialWithSeed(trialId, ...
+        "statistical_no_signal_format" + string(format), baseCfg, payload, ...
+        format, signalSNR, rnti, runId, scenarioName, seedBase + k - 1);
+    noiseRow.StatisticalTrial = true;
+    falseAlarms = falseAlarms + ~logical(noiseRow.DTXFlag);
+    rows(end+1,1) = noiseRow; %#ok<AGROW>
+
+    trialId = trialId + 1;
+    [~, signalRow] = localRunPositiveTrialWithSeed(trialId, ...
+        "statistical_signal_present_format" + string(format), baseCfg, payload, ...
+        format, signalSNR, rnti, runId, scenarioName, seedBase + trialCount + k - 1);
+    signalRow.StatisticalTrial = true;
+    missedFeedback = missedFeedback + (logical(signalRow.DTXFlag) || ...
+        ~logical(signalRow.UCIContentMatch));
+    rows(end+1,1) = signalRow; %#ok<AGROW>
+end
+[faLow, faHigh] = sixgr.phy.ul.pusch.analysis.computeClopperPearsonInterval( ...
+    falseAlarms,trialCount,confidence);
+[missLow, missHigh] = sixgr.phy.ul.pusch.analysis.computeClopperPearsonInterval( ...
+    missedFeedback,trialCount,confidence);
+summary = table( ...
+    ["false_alarm_probability";"missed_feedback_probability"], ...
+    repmat(format,2,1), repmat(trialCount,2,1), ...
+    [falseAlarms;missedFeedback], ...
+    [falseAlarms;missedFeedback]/trialCount, ...
+    [faLow;missLow], [faHigh;missHigh], ...
+    [targetFalseAlarm;targetMissedFeedback], repmat(confidence,2,1), ...
+    [faHigh<=targetFalseAlarm;missHigh<=targetMissedFeedback], ...
+    repmat("independent_waveform_episode_fixed_sample_clopper_pearson",2,1), ...
+    'VariableNames',{'Metric','PUCCHFormat','Trials','Events','Probability', ...
+    'CILower','CIUpper','TargetProbability','ConfidenceLevel','Qualified','EvidenceSource'});
+end
+
+function bits = localStatisticalPayload(format)
+if format <= 1
+    bits = int8(1);
+else
+    bits = int8(mod((0:10).',2));
+end
+end
+
+function [nextTrialId,row] = localRunNoSignalTrialWithSeed(trialId,trialType,baseCfg,bits,fmt,snrDb,rnti,runId,scenarioName,seed)
+nextTrialId=trialId+1;
+cfg=sixgr.util.structSet(baseCfg,"phy.rnti",rnti);
+fixture=sixgr.phy.pucch.PUCCHFixtureFactory.connected(fmt,bits,"RNTI",rnti);
+trial=sixgr.link.runPUCCHWaveformTrial(cfg,"Assignment",fixture.Assignment, ...
+    "Report",fixture.Report,"ReceiverContext",fixture.Context, ...
+    "Carrier",fixture.Carrier,"SNR_dB",snrDb,"Seed",seed,"SignalPresent",false);
+trial.Notes="Independent no-signal PUCCH detector probability episode.";
+row=localTrialRowFromTrial(trialId,trialType,runId,scenarioName,cfg,trial,true);
+end
+
+function [nextTrialId,row] = localRunPositiveTrialWithSeed(trialId,trialType,baseCfg,bits,fmt,snrDb,rnti,runId,scenarioName,seed)
+nextTrialId=trialId+1;
+cfg=sixgr.util.structSet(baseCfg,"phy.rnti",rnti);
+fixture=sixgr.phy.pucch.PUCCHFixtureFactory.connected(fmt,bits,"RNTI",rnti);
+trial=sixgr.link.runPUCCHWaveformTrial(cfg,"Assignment",fixture.Assignment, ...
+    "Report",fixture.Report,"ReceiverContext",fixture.Context, ...
+    "Carrier",fixture.Carrier,"SNR_dB",snrDb,"Seed",seed);
+trial.Notes="Independent signal-present PUCCH missed-feedback probability episode.";
+row=localTrialRowFromTrial(trialId,trialType,runId,scenarioName,cfg,trial,false);
 end
 
 function resource = localFindResource(resources, fmt)
@@ -389,7 +494,7 @@ row = struct( ...
     "OCCI", NaN, "SpreadingFactor", NaN, "NID", NaN, "NID0", NaN, "RNTIOnPUCCHObject", NaN, ...
     "PUCCHRECount", NaN, "DMRSRECount", NaN, "GridNonzeroRECount", NaN, ...
     "WaveformSampleCount", NaN, "SampleRateHz", NaN, "GridHash", "", "WaveformHash", "", ...
-    "NegativeExpected", false, "NegativeExpectedOk", false, "StrictOk", false, ...
+    "NegativeExpected", false, "NegativeExpectedOk", false, "StatisticalTrial", false, "StrictOk", false, ...
     "ProxyUsed", false, "Skipped", false, "ToolboxMissing", false, "Crash", false, ...
     "CrashSource", "", "CrashMessage", "", "Status", "FAIL", "Notes", "");
 end

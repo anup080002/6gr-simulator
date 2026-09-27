@@ -18,6 +18,37 @@ end
 
 [tableField, artifactField] = localTableNames(component);
 T = sixgr.util.structGet(rawTrials, tableField, table());
+sourceT = T;
+pdcchPreTransmissionFinalizedCount = 0;
+if component == "pdcch" && istable(T) && ~isempty(T)
+    execution = sixgr.link.pdcchTrialExecutionState(T);
+    notExecuted = ~execution.ObservationAvailable;
+    finalized = localLogicalColumn(T, "PDCCHPreTransmissionFinalized", ...
+        false(height(T), 1));
+    status = upper(localStringColumn(T, "Status", repmat("",height(T),1)));
+    reason = localStringColumn(T, "FailureReason", repmat("",height(T),1));
+    validPreTransmissionDisposition = notExecuted & finalized & status == "NA" & ...
+        startsWith(reason, "control_blocked_");
+    malformed = notExecuted & ~validPreTransmissionDisposition;
+    if any(malformed)
+        result = localResult(component, sourceT, artifactField, false, ...
+            "unexecuted_pdcch_row_without_finalized_blocking_disposition", ...
+            0, nnz(execution.ObservationAvailable), 0);
+        result.EvaluatedReceiverTrialCount = nnz(execution.ObservationAvailable);
+        result.PreTransmissionFinalizedCount = nnz(validPreTransmissionDisposition);
+        result.InPathRuntimeValidationComplete = true;
+        result.ValidationAuthority = ...
+            "sixgr.truth.evaluateInPathComponentEvidence/v1";
+        result.SourceTableSHA256 = sixgr.kpi.hashKPISourceRows(sourceT);
+        return;
+    end
+    pdcchPreTransmissionFinalizedCount = nnz(validPreTransmissionDisposition);
+    % Capacity-blocked grants never produced a waveform or receiver trial.
+    % Keep them in the exported source table, but do not relabel them as
+    % decoder failures. Decode qualification consumes only actual physical
+    % receive completions.
+    T = T(execution.ObservationAvailable,:);
+end
 if component == "pusch_uci" && istable(T) && ~isempty(T)
     % A PUSCH table also contains data-only transmissions. The strict UCI
     % component is limited to rows where the same receiver actually
@@ -106,6 +137,12 @@ result.InPathRuntimeValidationComplete = true;
 result.ValidationAuthority = ...
     "sixgr.truth.evaluateInPathComponentEvidence/v1";
 result.SourceTableSHA256 = sixgr.kpi.hashKPISourceRows(T);
+if component == "pdcch"
+    result.ArtifactTables.(char(artifactField)) = sourceT;
+    result.EvaluatedReceiverTrialCount = height(T);
+    result.PreTransmissionFinalizedCount = pdcchPreTransmissionFinalizedCount;
+    result.SourceTableSHA256 = sixgr.kpi.hashKPISourceRows(sourceT);
+end
 end
 
 function mask = localQuietStandaloneSRMask(T)

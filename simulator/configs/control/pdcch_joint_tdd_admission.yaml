@@ -1,0 +1,5 @@
+# Explicit gNB scheduling policy, not a normative 3GPP direction preference.
+# Protect a tentative future PUSCH grant at a coincident DL/UL control occasion;
+# preserve configured candidate locations, aggregation levels and PHY decoding.
+control:
+  joint_pdcch_admission_policy: ul_preschedule_first

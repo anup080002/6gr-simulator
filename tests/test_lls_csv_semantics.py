@@ -53,6 +53,7 @@ from lls_csv_semantics import (  # noqa: E402
     _audit_chart_lineage,
     _domain_table_applicability,
     _empty_domain_table_is_valid_zero_event,
+    _evaluated_empty_ra_retry_events_is_valid,
     _audit_fixed_snr_reporting_tables,
     _audit_kpi_reporting_tables,
     _clopper_pearson_two_sided,
@@ -1620,6 +1621,76 @@ def test_receiver_sinr_applicability_is_not_signal_detection() -> None:
         check = next(check for check in _audit_control_table("control/csv/srs_trials.csv", list(changed), [changed])
                      if check.check_id == "receiver_sinr_applicability")
         assert not check.passed and reason in check.details
+
+
+def test_pdcch_pretransmission_resource_block_is_valid_nontrial() -> None:
+    blocked = {
+        "FinalizedFlag": "1",
+        "PlaceholderFlag": "0",
+        "FallbackFlag": "0",
+        "TruthStatus": "NOT_APPLICABLE",
+        "SourceClassification": "active_integrated",
+        "PDCCHReceiverTrialExecuted": "0",
+        "PDCCHPreTransmissionFinalized": "1",
+        "PDCCHAdmissionSelected": "0",
+        "GrantControlState": "control_blocked_no_nonoverlapping_pdcch_candidate",
+        "DetectionAttempted": "0",
+        "DecodeAttempted": "0",
+        "MeasurementAttempted": "0",
+        "ValueStatus": "NOT_AVAILABLE",
+        "NAReason": "control_blocked_no_nonoverlapping_pdcch_candidate",
+        "DetectionMetric": "NaN",
+        "MeasuredTrialSINR_dB": "NaN",
+    }
+    checks = _audit_control_table(
+        "air_interface/csv/pdcch_trials.csv", list(blocked), [blocked]
+    )
+    runtime = next(
+        check for check in checks if check.check_id == "runtime_measurement_and_truth"
+    )
+    assert runtime.passed, runtime.details
+
+    # Removing any part of the typed finalized disposition must restore the
+    # finite-measurement requirement; an arbitrary empty PDCCH row is not
+    # allowed to pass as a resource-admission decision.
+    malformed = blocked | {"PDCCHPreTransmissionFinalized": "0"}
+    runtime = next(
+        check for check in _audit_control_table(
+            "air_interface/csv/pdcch_trials.csv", list(malformed), [malformed]
+        )
+        if check.check_id == "runtime_measurement_and_truth"
+    )
+    assert not runtime.passed
+    assert "no_finite_runtime_measurement" in runtime.details
+
+
+def test_ra_retry_zero_event_requires_typed_schema_and_successful_first_attempt(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "run"
+    retry = run_root / "control" / "csv" / "ra_retry_events.csv"
+    retry.parent.mkdir(parents=True)
+    retry.write_text(
+        "RunId,UEId,CompletedAttempt,NextTransmissionCounter,PowerRampingCounter,"
+        "PreambleTransMax,SelectedReference,PreambleTransmissionEndTicks,"
+        "ResponseExpiryTicks,PreambleBackoff_ms,BackoffSource,BackoffSeed,"
+        "UniformDraw,BackoffTicks,EarliestRetryTicks,PreambleTransMaxExhausted,"
+        "Status,Source,ProxyUsed,FallbackUsed,FailurePhase,ContentionResolutionTicks\n",
+        encoding="utf-8",
+    )
+    attempts = run_root / "control" / "csv" / "ra_attempts.csv"
+    attempts.write_text(
+        "RunId,UEId,AttemptId,RACompleted,StrictOk,ProxyUsed,Skipped,FailureReason\n"
+        "ra1,1,1,1,1,0,0,\n",
+        encoding="utf-8",
+    )
+    assert _evaluated_empty_ra_retry_events_is_valid(run_root)
+    attempts.write_text(
+        "RunId,UEId,AttemptId,RACompleted,StrictOk,ProxyUsed,Skipped,FailureReason\n"
+        "ra1,1,2,1,1,0,0,\n",
+        encoding="utf-8",
+    )
+    assert not _evaluated_empty_ra_retry_events_is_valid(run_root)
 
 
 def test_pdcch_component_semantics_require_pdcch_not_data_trials(tmp_path: Path) -> None:

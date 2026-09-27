@@ -1,0 +1,35 @@
+inherits:
+  - ./lls_2ghz_20mhz_rank2_cdlc_rf_impairments.yaml
+
+meta:
+  scenario_id: lls_2ghz_20mhz_rank2_cdlc_rf_snr_sweep
+  description: >
+    Eight independent configured-SNR points for the 2.0 GHz / 20 MHz CDL-C
+    RF-impairment study. Parent-level reports aggregate every point into the
+    same comparison CSVs and PNGs while child folders retain raw evidence.
+  purpose: Produce joint controlled-SNR curves with a frozen CDL-C/RF treatment.
+  research_class: study_item_candidate
+  tags: [lls, truth, fr1, 2ghz, 20mhz, cdl-c, rf-impairments, snr-sweep, no-proxy]
+
+scenario:
+  runner_profile: generic_sweep
+  sweep:
+    base_profile: waveform_bundle
+    execution_error_policy: retain_failure_and_continue
+    output_name: lls_2ghz_20mhz_rank2_cdlc_rf_snr_sweep
+    overrides:
+      - {label: snr_40_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_40db},  simulation: {snr_db: 40,  random_seed: 2026092640}, output: {profile: lls_2ghz_20mhz_cdlc_rf_40db}}}
+      - {label: snr_30_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_30db},  simulation: {snr_db: 30,  random_seed: 2026092630}, output: {profile: lls_2ghz_20mhz_cdlc_rf_30db}}}
+      - {label: snr_20_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_20db},  simulation: {snr_db: 20,  random_seed: 2026092620}, output: {profile: lls_2ghz_20mhz_cdlc_rf_20db}}}
+      - {label: snr_10_db,  config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_10db},  simulation: {snr_db: 10,  random_seed: 2026092610}, output: {profile: lls_2ghz_20mhz_cdlc_rf_10db}}}
+      - {label: snr_0_db,   config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_0db},   simulation: {snr_db: 0,   random_seed: 2026092600}, output: {profile: lls_2ghz_20mhz_cdlc_rf_0db}}}
+      - {label: snr_m10_db, config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_m10db}, simulation: {snr_db: -10, random_seed: 2026092510}, output: {profile: lls_2ghz_20mhz_cdlc_rf_m10db}}}
+      - {label: snr_m20_db, config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_m20db}, simulation: {snr_db: -20, random_seed: 2026092520}, output: {profile: lls_2ghz_20mhz_cdlc_rf_m20db}}}
+      - {label: snr_m30_db, config: {meta: {scenario_id: lls_2ghz_20mhz_cdlc_rf_m30db}, simulation: {snr_db: -30, random_seed: 2026092530}, output: {profile: lls_2ghz_20mhz_cdlc_rf_m30db}}}
+
+simulation:
+  snr_db: 0
+  snr_sweep_offsets_db: [0]
+
+output:
+  profile: lls_2ghz_20mhz_rank2_cdlc_rf_snr_sweep

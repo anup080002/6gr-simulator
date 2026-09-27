@@ -71,6 +71,45 @@ status=readtable(fullfile(ctx.Layout.ReportCSVDir,"result_status_summary.csv"), 
     "VariableNamingRule","preserve");
 assert(status.PDCCHGrantBindingOk,'Consistent complete control/data evidence must pass.');
 
+% A candidate conclusively blocked before PDCCH transmission is an honest
+% scheduler/control-resource disposition.  It must remain visible in the
+% control trial table, but it is not a decoded DCI/grant binding obligation.
+control.PDCCHReceiverTrialExecuted = true(height(control),1);
+control.PDCCHPreTransmissionFinalized = false(height(control),1);
+control.PDCCHAdmissionSelected = true(height(control),1);
+control.GrantControlState = repmat("pdcch_transmitted",height(control),1);
+control.FailureReason = repmat("",height(control),1);
+blocked = control(1,:);
+blocked.GrantContextId = "grant_blocked_before_tx";
+blocked.LinkedGrantId = blocked.GrantContextId;
+blocked.DCIId = "not_applicable_for_active_pdcch_runtime";
+blocked.DCIFieldsHash = "not_applicable_for_active_pdcch_runtime";
+blocked.GrantFieldsHash = "not_applicable_for_active_pdcch_runtime";
+blocked.DCICrcPass = false;
+blocked.GrantBindingOk = false;
+blocked.GrantBindingStatus = "not_applicable";
+blocked.GrantBindingFailureCode = "control_blocked_no_nonoverlapping_pdcch_candidate";
+blocked.PDCCHReceiverTrialExecuted = false;
+blocked.PDCCHPreTransmissionFinalized = true;
+blocked.PDCCHAdmissionSelected = false;
+blocked.GrantControlState = "control_blocked_no_nonoverlapping_pdcch_candidate";
+blocked.FailureReason = blocked.GrantControlState;
+blocked.DecodeAttempted = false;
+blocked.DecodeUsable = false;
+blocked.ReceiverUsable = false;
+blocked.DetectionAttempted = false;
+blocked.DetectionUsable = false;
+sixgr.util.csvWriteTable(fullfile(ctx.Layout.ControlCSVDir,"pdcch_trials.csv"),[control;blocked]);
+sixgr.truth.evaluateLLSRuntimeTruthContract(ctx.RunFolder,scfg,cfg);
+status=readtable(fullfile(ctx.Layout.ReportCSVDir,"result_status_summary.csv"), ...
+    "VariableNamingRule","preserve");
+binding=readtable(fullfile(ctx.Layout.ReportCSVDir,"pdcch_grant_binding_evidence.csv"), ...
+    "VariableNamingRule","preserve");
+assert(~any(string(binding.GrantId)==blocked.GrantContextId), ...
+    'A pre-transmission-blocked PDCCH candidate must not become decoded grant-binding evidence.');
+assert(status.PDCCHGrantBindingOk, ...
+    'A typed pre-transmission disposition must not fail otherwise complete DL/UL grant binding.');
+
 % Presence in only one enabled direction is not complete binding evidence.
 % This catches the former reduction defect where one bound DL row allowed a
 % bidirectional run to report PDCCHGrantBindingOk=true with no UL row.
@@ -160,6 +199,7 @@ T.FallbackFlag = false;
 T.PlaceholderFlag = false;
 T.PDCCHFalseAlarm = false;
 T.PDCCHMissedDetection = false;
+T.PDCCHReceiverTrialExecuted = true;
 T.NegativeExpectedOk = true;
 T.PDCCHBlindSearchEnabled = true;
 T.PDCCHREGMappingAvailable = true;

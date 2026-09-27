@@ -129,6 +129,17 @@ PROVENANCE = ["SweepAggregatePointIndex", "SweepAggregateLabel", "SweepAggregate
               "SweepAggregateSourceCSV", "SweepAggregatePointStatus"]
 
 
+def wilson_interval(failures, trials, z=1.959963984540054):
+    """Two-sided Wilson score interval for an observed binomial population."""
+    if not trials:
+        return "", ""
+    p = failures / trials
+    denominator = 1 + z * z / trials
+    center = (p + z * z / (2 * trials)) / denominator
+    half_width = z * math.sqrt(p * (1 - p) / trials + z * z / (4 * trials * trials)) / denominator
+    return max(0, center - half_width), min(1, center + half_width)
+
+
 def concatenate_csv(destination, sources):
     """Stream exact rows; union schemas, preserve missing cells and row identity."""
     fields = list(PROVENANCE)
@@ -206,30 +217,57 @@ def export_overview(root, progress, *, save_images=True):
               "MeanAttemptGoodput_Mbps": "Goodput_Mbps", "MeanMCSIndex": "MCSIndex",
               "MeanExecutedLayers": "Layers"}
     for point in progress["points"]:
-        if point["status"] not in {"passed", "failed"}:
-            continue
         for direction, filename in (("DL", "dl_pdsch_trials.csv"), ("UL", "ul_pusch_trials.csv")):
             path = Path(point["run_folder"]) / "air_interface/csv" / filename
+            row = dict(PointIndex=point["index"], Label=point["label"],
+                       ConfiguredSNR_dB=point["configured_snr_db"], PointStatus=point["status"],
+                       Direction=direction, DataAvailability="not_completed",
+                       TrialCount="", CRCObservedCount="", FailureCount="", AttemptBLER="",
+                       AttemptBLER_CI_Low="", AttemptBLER_CI_High="",
+                       SourceCSV=f"sweeps/{path.parents[2].name}/air_interface/csv/{filename}")
+            for target in fields:
+                row[target] = ""
+                row[target + "_Count"] = ""
+            if point["status"] not in {"passed", "failed"}:
+                rows.append(row)
+                continue
             if not io_path(path).is_file():
+                row["DataAvailability"] = "source_missing"
+                rows.append(row)
                 continue
             trials = read_rows(path, strict=True)
             crc = [number(r.get("CRCPass")) for r in trials]
             crc = [v for v in crc if v in (0, 1)]
-            row = dict(PointIndex=point["index"], Label=point["label"],
-                       ConfiguredSNR_dB=point["configured_snr_db"], PointStatus=point["status"],
-                       Direction=direction, TrialCount=len(trials), CRCObservedCount=len(crc),
-                       AttemptBLER=(sum(v == 0 for v in crc) / len(crc) if crc else ""),
-                       SourceCSV=f"sweeps/{path.parents[2].name}/air_interface/csv/{filename}")
+            failures = sum(v == 0 for v in crc)
+            ci_low, ci_high = wilson_interval(failures, len(crc))
+            row.update(DataAvailability=("measured_rows_present" if trials else "source_present_empty"),
+                       TrialCount=len(trials), CRCObservedCount=len(crc), FailureCount=failures,
+                       AttemptBLER=(failures / len(crc) if crc else ""),
+                       AttemptBLER_CI_Low=ci_low, AttemptBLER_CI_High=ci_high)
             for target, source in fields.items():
                 values = [number(r.get(source)) for r in trials]
                 values = [v for v in values if v is not None]
                 row[target] = sum(values) / len(values) if values else ""
                 row[target + "_Count"] = len(values)
             rows.append(row)
-    columns = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus", "Direction", "TrialCount",
-               "CRCObservedCount", "AttemptBLER", "SourceCSV"]
+    columns = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus", "Direction",
+               "DataAvailability", "TrialCount", "CRCObservedCount", "FailureCount", "AttemptBLER",
+               "AttemptBLER_CI_Low", "AttemptBLER_CI_High", "SourceCSV"]
     columns += [item for field in fields for item in (field, field + "_Count")]
     write_csv(root / "reports/csv/sweep_link_comparison.csv", columns, rows)
+    bler_columns = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus", "Direction",
+                    "DataAvailability", "CRCObservedCount", "FailureCount", "AttemptBLER",
+                    "AttemptBLER_CI_Low", "AttemptBLER_CI_High", "SourceCSV"]
+    write_csv(root / "reports/csv/sweep_bler_vs_configured_snr.csv", bler_columns,
+              [{field: row.get(field, "") for field in bler_columns} for row in rows])
+    measured_bler_rows = measured_sinr_bler_rows(progress)
+    measured_bler_columns = ["Direction", "MCSIndex", "Modulation", "Rank",
+        "PostEqSINR_dB_BinCenter", "PostEqSINR_dB_BinMin", "PostEqSINR_dB_BinMax",
+        "ObservedSINRMin_dB", "ObservedSINRMax_dB", "TrialCount", "FailureCount", "BLER",
+        "BLER_CI_Low", "BLER_CI_High", "SourcePointIndices", "SourceConfiguredSNR_dB",
+        "SourceCSVSet", "EvidenceClass"]
+    write_csv(root / "reports/csv/sweep_bler_vs_measured_sinr.csv",
+              measured_bler_columns, measured_bler_rows)
     if not save_images:
         return
     fig, axes = plt.subplots(2, 2, figsize=(13, 8), constrained_layout=True)
@@ -258,6 +296,282 @@ def export_overview(root, progress, *, save_images=True):
                  f"{progress['failed']} failed. Missing data are gaps, not zero BLER.")
     atomic_write(root / "reports/image/sweep_link_comparison.png", lambda p: fig.savefig(p, dpi=140))
     plt.close(fig)
+    plot_configured_snr_bler(root, progress, rows)
+    plot_measured_sinr_bler(root, measured_bler_rows)
+
+
+def measured_sinr_bler_rows(progress):
+    """Aggregate only CRC-observed trials on their receiver-measured SINR axis."""
+    groups = {}
+    for point in progress["points"]:
+        if point["status"] not in {"passed", "failed"}:
+            continue
+        for direction, filename in (("DL", "dl_pdsch_trials.csv"), ("UL", "ul_pusch_trials.csv")):
+            path = Path(point["run_folder"]) / "air_interface/csv" / filename
+            if not io_path(path).is_file():
+                continue
+            for row in read_rows(path, strict=True):
+                sinr = number(row.get("MeasuredTrialSINR_dB"))
+                crc = number(row.get("CRCPass"))
+                if sinr is None or crc not in (0, 1):
+                    continue
+                mcs = number(row.get("MCSIndex", row.get("MCS")))
+                rank = number(row.get("Layers", row.get("RankIndicator", row.get("Rank"))))
+                modulation = str(row.get("Modulation", "")).strip() or "unavailable"
+                lower = math.floor(sinr)
+                key = (direction, mcs, modulation, rank, lower)
+                bucket = groups.setdefault(key, dict(sinr=[], crc=[], points=set(), snrs=set(), sources=set()))
+                bucket["sinr"].append(sinr)
+                bucket["crc"].append(crc)
+                bucket["points"].add(point["index"])
+                bucket["snrs"].add(point["configured_snr_db"])
+                bucket["sources"].add(f"sweeps/{Path(point['run_folder']).name}/air_interface/csv/{filename}")
+    rows = []
+    for (direction, mcs, modulation, rank, lower), bucket in sorted(
+            groups.items(), key=lambda item: (item[0][0], item[0][4], str(item[0][1]), item[0][2], str(item[0][3]))):
+        count = len(bucket["crc"])
+        failures = sum(value == 0 for value in bucket["crc"])
+        ci_low, ci_high = wilson_interval(failures, count)
+        rows.append(dict(Direction=direction, MCSIndex="" if mcs is None else mcs,
+            Modulation=modulation, Rank="" if rank is None else rank,
+            PostEqSINR_dB_BinCenter=lower + 0.5, PostEqSINR_dB_BinMin=lower,
+            PostEqSINR_dB_BinMax=lower + 1, ObservedSINRMin_dB=min(bucket["sinr"]),
+            ObservedSINRMax_dB=max(bucket["sinr"]), TrialCount=count, FailureCount=failures,
+            BLER=failures / count, BLER_CI_Low=ci_low, BLER_CI_High=ci_high,
+            SourcePointIndices="|".join(map(str, sorted(bucket["points"]))),
+            SourceConfiguredSNR_dB="|".join(str(value) for value in sorted(bucket["snrs"])),
+            SourceCSVSet="|".join(sorted(bucket["sources"])),
+            EvidenceClass="cross_run_observed_crc_and_receiver_post_equalization_sinr"))
+    return rows
+
+
+def plot_configured_snr_bler(root, progress, rows):
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(9, 5), constrained_layout=True)
+    for direction in ("DL", "UL"):
+        indexed = {row["PointIndex"]: row for row in rows if row["Direction"] == direction}
+        xs = [point["configured_snr_db"] for point in progress["points"]]
+        ys = [number(indexed.get(point["index"], {}).get("AttemptBLER")) for point in progress["points"]]
+        low = [number(indexed.get(point["index"], {}).get("AttemptBLER_CI_Low")) for point in progress["points"]]
+        high = [number(indexed.get(point["index"], {}).get("AttemptBLER_CI_High")) for point in progress["points"]]
+        y = [value if value is not None else math.nan for value in ys]
+        lower_error = [(value - lo) if value is not None and lo is not None else math.nan
+                       for value, lo in zip(ys, low)]
+        upper_error = [(hi - value) if value is not None and hi is not None else math.nan
+                       for value, hi in zip(ys, high)]
+        ax.errorbar(xs, y, yerr=[lower_error, upper_error], marker="o", capsize=3, label=direction)
+    ax.set(xlabel="Configured occupied-RE reference SNR (dB)", ylabel="Initial-attempt BLER",
+           ylim=(-0.03, 1.03), title="Observed initial-attempt BLER vs configured SNR")
+    ax.set_xticks([point["configured_snr_db"] for point in progress["points"]
+                   if point["configured_snr_db"] is not None])
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    ax.text(0.01, 0.01, "Gaps are unavailable populations; bars are 95% Wilson intervals.",
+            transform=ax.transAxes, fontsize=9)
+    atomic_write(root / "reports/image/sweep_bler_vs_configured_snr.png",
+                 lambda path: fig.savefig(path, dpi=140))
+    plt.close(fig)
+
+
+def plot_measured_sinr_bler(root, rows):
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5), constrained_layout=True)
+    for ax, direction in zip(axes, ("DL", "UL")):
+        direction_rows = [row for row in rows if row["Direction"] == direction]
+        series = {}
+        for row in direction_rows:
+            key = (row["MCSIndex"], row["Modulation"], row["Rank"])
+            series.setdefault(key, []).append(row)
+        for key, values in sorted(series.items(), key=lambda item: str(item[0])):
+            values.sort(key=lambda row: row["PostEqSINR_dB_BinCenter"])
+            ax.plot([row["PostEqSINR_dB_BinCenter"] for row in values],
+                    [row["BLER"] for row in values], "o-",
+                    label=f"MCS {key[0]} | {key[1]} | rank {key[2]}")
+        ax.set(xlabel="Receiver post-equalization SINR (dB)", ylabel="Initial-attempt BLER",
+               ylim=(-0.03, 1.03), title=direction)
+        ax.grid(True, alpha=0.25)
+        if series:
+            ax.legend(fontsize=7)
+        else:
+            ax.text(0.5, 0.5, "No CRC-observed trials with measured SINR.",
+                    ha="center", va="center", transform=ax.transAxes)
+    fig.suptitle("BLER vs measured SINR; populations separated by MCS, modulation and rank")
+    atomic_write(root / "reports/image/sweep_bler_vs_measured_sinr.png",
+                 lambda path: fig.savefig(path, dpi=140))
+    plt.close(fig)
+
+
+STANDARD_MEASUREMENT_FIELDS = [
+    "CategoryCode", "CategoryKey", "CategoryName", "MetricKey", "MetricName",
+    "Entity", "Statistic", "Availability", "CountsTowardCoverage",
+    "ValueNumeric", "ValueText", "Unit", "SourceArtifact", "Notes",
+]
+
+
+def _is_true(value):
+    return str(value).strip().lower() in {"1", "true", "yes"}
+
+
+def _metric_slug(category, metric, unit):
+    identity = "\x1f".join((str(category), str(metric), str(unit)))
+    readable = re.sub(r"[^a-z0-9]+", "_", f"{category}_{metric}_{unit}".lower()).strip("_")
+    readable = readable[:90] or "measurement"
+    return f"{readable}__{hashlib.sha256(identity.encode()).hexdigest()[:12]}"
+
+
+def standardized_measurement_rows(progress):
+    """Collect runtime-published scalar measurements without reinterpreting them.
+
+    The child output tables are the scientific owners of metric definitions and
+    populations.  This function only adds sweep provenance.  Configuration-only,
+    unavailable and non-finite rows remain in the availability ledger but are
+    excluded from the measured-value table and plots.
+    """
+    availability_rows = []
+    measured_rows = []
+    for point in progress["points"]:
+        if point["status"] not in {"passed", "failed"}:
+            continue
+        directory = Path(point["run_folder"]) / "reports/csv"
+        if not io_path(directory).is_dir():
+            continue
+        for path in sorted(io_path(directory).glob("*_outputs.csv")):
+            relative = Path(path).relative_to(io_path(Path(point["run_folder"]))).as_posix()
+            try:
+                with path.open(encoding="utf-8-sig", newline="") as handle:
+                    reader = csv.DictReader(handle)
+                    header = reader.fieldnames or []
+                    if not set(STANDARD_MEASUREMENT_FIELDS).issubset(header):
+                        continue
+                    for source_row_index, source in enumerate(reader, 1):
+                        row = {
+                            "PointIndex": point["index"],
+                            "Label": point["label"],
+                            "ConfiguredSNR_dB": point["configured_snr_db"],
+                            "PointStatus": point["status"],
+                            **{field: source.get(field, "") for field in STANDARD_MEASUREMENT_FIELDS},
+                            "SourceOutputTable": f"sweeps/{Path(point['run_folder']).name}/{relative}",
+                            "SourceOutputRow": source_row_index,
+                            "EvidenceClass": "runtime_published_standardized_measurement_row",
+                        }
+                        availability_rows.append(row)
+                        value = number(source.get("ValueNumeric"))
+                        if (str(source.get("Availability", "")).strip().lower() == "observed"
+                                and _is_true(source.get("CountsTowardCoverage"))
+                                and value is not None):
+                            row = dict(row)
+                            row["ValueNumeric"] = value
+                            measured_rows.append(row)
+            except (OSError, csv.Error):
+                raise
+    return availability_rows, measured_rows
+
+
+def _plot_standardized_metric(path, progress, rows, title, unit):
+    import matplotlib.pyplot as plt
+
+    fig, ax = plt.subplots(figsize=(10, 5.8), constrained_layout=True)
+    series = {}
+    for row in rows:
+        key = (str(row.get("Entity", "")).strip() or "all",
+               str(row.get("Statistic", "")).strip() or "value")
+        series.setdefault(key, {}).setdefault(float(row["ConfiguredSNR_dB"]), []).append(
+            float(row["ValueNumeric"]))
+    if len(series) <= 12:
+        for key, by_snr in sorted(series.items(), key=lambda item: str(item[0])):
+            xs = sorted(by_snr)
+            means = [sum(by_snr[x]) / len(by_snr[x]) for x in xs]
+            lows = [min(by_snr[x]) for x in xs]
+            highs = [max(by_snr[x]) for x in xs]
+            label = " | ".join(key)
+            ax.plot(xs, means, "o-", linewidth=1.2, markersize=4, label=label)
+            if any(lo != hi for lo, hi in zip(lows, highs)):
+                ax.fill_between(xs, lows, highs, alpha=0.12)
+    else:
+        # Hundreds of runtime scopes can legitimately share one MetricKey.
+        # Preserve every scalar in the CSV and show their per-SNR population
+        # here; a 100-entry legend would be unreadable and can collapse the
+        # plotting axes on finite-size PNG output.
+        population = {}
+        for by_snr in series.values():
+            for snr, values in by_snr.items():
+                population.setdefault(snr, []).extend(values)
+        xs = sorted(population)
+        for x in xs:
+            ax.scatter([x] * len(population[x]), population[x], s=10,
+                       alpha=0.25, color="tab:blue")
+        means = [sum(population[x]) / len(population[x]) for x in xs]
+        lows = [min(population[x]) for x in xs]
+        highs = [max(population[x]) for x in xs]
+        ax.plot(xs, means, "o-", linewidth=1.5, markersize=5,
+                color="black", label=f"population mean ({len(series)} published series)")
+        ax.fill_between(xs, lows, highs, alpha=0.12, color="tab:blue",
+                        label="population min-max")
+    configured = sorted({point["configured_snr_db"] for point in progress["points"]
+                         if point["configured_snr_db"] is not None})
+    ax.set_xticks(configured)
+    ax.set_xlabel("Configured occupied-RE reference SNR (dB)")
+    ax.set_ylabel(unit or "Published measurement value")
+    ax.set_title(title)
+    ax.grid(True, alpha=0.25)
+    if series:
+        ax.legend(fontsize=7, loc="best")
+    else:
+        ax.text(0.5, 0.5, "No observed runtime-published values.",
+                ha="center", va="center", transform=ax.transAxes)
+    ax.text(0.01, 0.01,
+            "Markers are per-point arithmetic means of matching published rows; shaded range is min-max. "
+            "Exact rows are retained in the companion CSV; missing points are gaps.",
+            transform=ax.transAxes, fontsize=8, va="bottom", wrap=True)
+    atomic_write(path, lambda output: fig.savefig(output, dpi=140))
+    plt.close(fig)
+
+
+def export_standardized_measurement_curves(root, progress, *, save_images=True):
+    """Publish one cross-point CSV/PNG per observed standardized metric."""
+    availability, measured = standardized_measurement_rows(progress)
+    fields = ["PointIndex", "Label", "ConfiguredSNR_dB", "PointStatus",
+              *STANDARD_MEASUREMENT_FIELDS, "SourceOutputTable", "SourceOutputRow",
+              "EvidenceClass"]
+    write_csv(root / "reports/csv/sweep_measurement_availability.csv", fields, availability)
+    write_csv(root / "reports/csv/sweep_measurement_values.csv", fields, measured)
+
+    groups = {}
+    for row in measured:
+        key = (row.get("CategoryKey", ""), row.get("MetricKey", ""), row.get("Unit", ""))
+        groups.setdefault(key, []).append(row)
+    manifest = []
+    terminal = {p["index"] for p in progress["points"] if p["status"] in {"passed", "failed"}}
+    incomplete = {p["index"] for p in progress["points"] if p["status"] not in {"passed", "failed"}}
+    for (category, metric, unit), rows in sorted(groups.items(), key=lambda item: str(item[0])):
+        slug = _metric_slug(category, metric, unit)
+        metric_csv = f"reports/csv/sweep_metrics/{slug}.csv"
+        metric_png = f"reports/image/sweep_metrics/{slug}.png"
+        write_csv(root / metric_csv, fields, rows)
+        observed_points = {int(row["PointIndex"]) for row in rows}
+        title = str(rows[0].get("MetricName", "")).strip() or str(metric).replace("_", " ")
+        if save_images:
+            _plot_standardized_metric(root / metric_png, progress, rows, title, unit)
+        manifest.append({
+            "CategoryKey": category,
+            "MetricKey": metric,
+            "MetricName": title,
+            "Unit": unit,
+            "ObservedRowCount": len(rows),
+            "ObservedPointIndices": "|".join(map(str, sorted(observed_points))),
+            "MissingTerminalPointIndices": "|".join(map(str, sorted(terminal - observed_points))),
+            "IncompletePointIndices": "|".join(map(str, sorted(incomplete))),
+            "SeriesCount": len({(row.get("Entity", ""), row.get("Statistic", "")) for row in rows}),
+            "CampaignCSV": metric_csv,
+            "CampaignPNG": metric_png if save_images else "",
+            "EvidenceClass": "cross_run_runtime_published_observed_measurements",
+        })
+    manifest_fields = ["CategoryKey", "MetricKey", "MetricName", "Unit",
+                       "ObservedRowCount", "ObservedPointIndices",
+                       "MissingTerminalPointIndices", "IncompletePointIndices",
+                       "SeriesCount", "CampaignCSV", "CampaignPNG", "EvidenceClass"]
+    write_csv(root / "reports/csv/sweep_measurement_plot_manifest.csv", manifest_fields, manifest)
+    return manifest
 
 
 def export_sweep(folder):
@@ -327,9 +641,12 @@ def export_sweep(folder):
               "NotCompletedPoints", "SourceSignature", "Status", "Error", "EvidenceClass"]
     write_csv(receipt_path, fields, manifest)
     export_overview(root, progress, save_images=save_images)
+    measurement_manifest = export_standardized_measurement_curves(
+        root, progress, save_images=save_images)
     receipt = dict(UpdatedUTC=datetime.now(timezone.utc).isoformat(),
                    CompletedPoints=progress["completed"], TotalPoints=progress["total"],
                    ArtifactCount=len(manifest), FailedArtifacts=sum(r["Status"] == "failed" for r in manifest),
+                   StandardizedMeasurementPlotCount=len(measurement_manifest),
                    Complete=progress["completed"] == progress["total"],
                    Note="Comparative publication only; failed PHY points remain failed. Pending/active points are not measured zeros.")
     atomic_write(root / "reports/sweep_comparison_receipt.json", lambda p: p.write_text(json.dumps(receipt, indent=2), encoding="utf-8"))

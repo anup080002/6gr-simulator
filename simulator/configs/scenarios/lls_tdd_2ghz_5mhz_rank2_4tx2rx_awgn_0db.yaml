@@ -1,0 +1,66 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_4tx2rx_awgn_0db.yaml
+
+meta:
+  scenario_id: lls_tdd_2ghz_5mhz_rank2_4tx2rx_awgn_0db
+  description: >
+    Single n39 1.900 GHz, 5 MHz, mu-0 TDD verification point at 0 dB occupied-RE
+    Es/N0 using the complete 4TX/2RX adaptive-rank shared physical runtime.
+  purpose: >
+    Verify acquisition, causal CSI/SRS rank selection, joint PDCCH admission,
+    PUSCH/SRS ordering, measurement publication and terminal artifact closure
+    before launching the independent eight-point campaign.
+  research_class: optional_research_experiment
+  tags: [lls, truth, tdd, 2ghz, 5mhz, saturated, adaptive-rank, shared-control, no-proxy]
+
+# Align every frequency-bearing runtime authority to concrete NR band n39.
+# This prevents the SIB1 decoder from deriving an FDD PRACH table while the
+# physical frame executes TDD.
+frequency:
+  band_name: n39_1900mhz_5mhz_tdd
+  center_frequency_hz: 1900000000
+  bandwidth_hz: 5000000
+  bandwidth_options_hz: [5000000]
+  duplex_mode: TDD
+  numerology_options_khz: [15]
+  n_size_grid: 25
+
+global_radio_scope:
+  duplex_mode: TDD
+  carrier_frequency_hz: 1900000000
+  channel_bandwidth_hz: 5000000
+  simulation_bandwidth_hz: 5000000
+  occupied_bandwidth_hz: 4500000
+  scs_hz: 15000
+  numerology_mu: 0
+  sample_rate_hz: 7680000
+  fft_size: 512
+  ifft_size: 512
+
+random_access:
+  frequency_range: FR1
+  duplex_mode: TDD
+  carrier_frequency_hz: 1900000000
+  carrier_scs_khz: 15
+  n_size_grid: 25
+
+bwp:
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 1900000000
+      band: n39
+      frequency_range: FR1
+      channel_bandwidth_mhz: 5
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 25, scs_khz: 15}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 25, scs_khz: 15}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+
+simulation:
+  snr_db: 0
+
+output:
+  profile: lls_tdd_2ghz_5mhz_rank2_4tx2rx_awgn_0db

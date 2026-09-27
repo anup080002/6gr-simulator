@@ -55,10 +55,7 @@ if ~commonUsable
     measurement.Status="no_available_decoded_sib1_power";
     measurement.Blocker="selected_cell_requires_received_sib1_power_at_current_epoch_and_knowledge_slot";
 end
-fixedNormalizedEsN0 = strcmpi(string(sixgr.util.structGet( ...
-    cfg,'integration.run_mode','')),'FIXED_SNR_SWEEP') && ...
-    logical(sixgr.util.structGet(cfg, ...
-    'integration.configured_snr_is_link_authority',false));
+fixedNormalizedEsN0 = sixgr.rf.isNormalizedFixedSNRPowerReference(cfg);
 if fixedNormalizedEsN0
     % Unit-RE Es/N0 execution has no applied absolute device/link budget.
     % In particular, a numerical SSB reference minus a normalized fading

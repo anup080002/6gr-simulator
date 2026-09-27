@@ -47,6 +47,27 @@ for i = 1:numel(names)
         "KPI %s has an incorrect runtime-evidence value.", names(i));
     assert(string(row.RunId) == "run-kpi-1", "Every KPI row must carry the authoritative run identity.");
 end
+ulNack = out.ReconstructionSummary(out.ReconstructionSummary.KPIName=="UL_HARQ_NACK_Rate",:);
+dlNack = out.ReconstructionSummary(out.ReconstructionSummary.KPIName=="DL_HARQ_NACK_Rate",:);
+assert(string(ulNack.SourceTablePaths)=="harq/csv/live_harq_observation_timeline.csv", ...
+    "UL HARQ decisions must come from the gNB combined-PUSCH decode timeline.");
+assert(string(dlNack.SourceTablePaths)=="control/csv/gnb_harq_feedback_observations.csv", ...
+    "DL HARQ decisions must come from independently received UE feedback.");
+
+% Poisoning UL-labelled received-UCI rows cannot alter the gNB's UL PUSCH
+% decode decisions.  Those UCI rows are not a physical NR UL-HARQ source.
+poisoned = raw;
+ulFeedback = upper(string(poisoned.HARQFeedback.FeedbackForDirection))=="UL";
+poisoned.HARQFeedback.FeedbackOutcome(ulFeedback)="ACK";
+poisoned.HARQFeedback.ObservedAck(ulFeedback)=1;
+poisonedOut = sixgr.kpi.reconstructLLSKPISummaryFromRaw(poisoned, ...
+    "RunId", "run-kpi-poisoned", "ScenarioName", "kpi_event_fixture", ...
+    "StrictMode", true, "MeasurementWindowSec", 0.002, ...
+    "EffectiveBandwidthHz", 1e6, "SourcePaths", raw.Paths);
+poisonedUL = poisonedOut.ReconstructionSummary( ...
+    poisonedOut.ReconstructionSummary.KPIName=="UL_HARQ_NACK_Rate",:);
+assert(logical(poisonedUL.StrictOk) && abs(double(poisonedUL.Value)-1/3)<1e-12, ...
+    "UL HARQ KPI must be independent of UE feedback payload rows.");
 
 binding = out.ObjectiveBinding(ismember(string(out.ObjectiveBinding.KPIName), names), :);
 assert(height(binding) == 6 && all(logical(binding.MandatoryInScenarioObjective)), ...

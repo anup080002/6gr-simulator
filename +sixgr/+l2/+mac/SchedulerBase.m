@@ -2479,8 +2479,6 @@ switch fmt
             fields.cbg_transmission_information = localClampDCIValue( ...
                 sixgr.util.structGet(grant, "CBGTI", 0), ...
                 dciContext.Data.CBGTransmissionWidth);
-            fields.ptrs_dmrs_association = localClampDCIValue( ...
-                sixgr.util.structGet(grant, "PTRSDMRSAssociation", 0), 2);
         end
 end
 fields = sixgr.phy.pdcch.completeDCIFields(fields, dciContext);
@@ -3698,6 +3696,19 @@ if numel(symAlloc) ~= 2 || ~isreal(symAlloc) || any(~isfinite(symAlloc)) || ...
 end
 if symAlloc(1) < 0 || symAlloc(2) < 1 || (symAlloc(1) + symAlloc(2)) > round(double(obj.SymbolsPerSlot))
     reason = "symbol_allocation_out_of_slot";
+    return;
+end
+
+% Executable resource accounting is occasion-specific: reference-signal
+% ownership and TDD direction are evaluated on the scheduled DATA slot, not
+% on an implicit carrier slot or on the DCI/control slot.  Production grants
+% obtain this zero-based clock from attachCanonicalTimingDecision.  Reject a
+% caller that bypasses that stage before entering toolbox allocation code so
+% the failure remains typed and cannot silently use NSlot=0.
+dataSlot0 = double(sixgr.util.structGet(grant, "ScheduledAbsoluteSlot", NaN));
+if ~(isscalar(dataSlot0) && isfinite(dataSlot0) && dataSlot0 >= 0 && ...
+        dataSlot0 == fix(dataSlot0))
+    reason = "missing_or_invalid_scheduled_absolute_slot";
     return;
 end
 

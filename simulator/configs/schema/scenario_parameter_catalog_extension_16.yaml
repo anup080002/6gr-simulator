@@ -25,5 +25,9 @@ sections:
         allowed_values: [FULL_EVIDENCE, PRODUCTION_SUMMARY]
       configuration_epoch: {required: false, type: integer, min: 1}
       configured_snr_is_link_authority: {required: false, type: boolean}
+      power_reference_mode:
+        required: false
+        type: string
+        allowed_values: [normalized_unit_es, absolute_calibrated_sqrt_mw]
       common_pipeline_required: {required: false, type: boolean}
       measured_sinr_required: {required: false, type: boolean}

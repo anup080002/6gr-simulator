@@ -67,6 +67,29 @@ def test_peer_direction_cannot_change_denominator():
     assert not audit._received_harq_kpi_failures(summary,rows+[peer])
 
 
+def test_ul_nack_rate_uses_gnb_combined_pusch_decode_decisions():
+    rows = [
+        dict(Direction="UL", CombinedDecodeOK=value, TBId=f"ul-tb-{index}",
+             Slot=index, HarqID=0, ProxyUsed=0, Skipped=0)
+        for index, value in enumerate([1, 0, 1], 1)
+    ]
+    summary = dict(
+        Direction="UL", NumeratorValue=1, DenominatorValue=3, Value=1/3,
+        FeedbackObservedCount=3, FeedbackDTXCount=0, SourceRowCount=3,
+        EligibleRowCount=3, ExcludedRowCount=0,
+    )
+    assert not audit._ul_harq_decision_kpi_failures(summary, rows)
+
+    # A received-UCI payload is irrelevant to the UL decision population.
+    for row in rows:
+        row.update(FeedbackOutcome="ACK", ObservedAck=1)
+    assert not audit._ul_harq_decision_kpi_failures(summary, rows)
+
+    rows[0]["CombinedDecodeOK"] = "unknown"
+    assert "ul_harq_combined_decode_decision_invalid" in \
+        audit._ul_harq_decision_kpi_failures(summary, rows)
+
+
 def test_received_ledger_is_wired_to_manifest_and_reconstruction(tmp_path):
     def write(path, rows):
         target=tmp_path/path; target.parent.mkdir(parents=True,exist_ok=True)

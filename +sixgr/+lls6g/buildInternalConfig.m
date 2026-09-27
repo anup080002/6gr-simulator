@@ -149,6 +149,13 @@ if isstruct(integrationConfig) && isscalar(integrationConfig) && ...
         error("sixgr:integration:MeasuredSINRRequired", ...
             "Phase-16 execution requires measured receiver SINR.");
     end
+    if ~isfield(integrationConfig,"power_reference_mode")
+        integrationConfig.power_reference_mode = "normalized_unit_es";
+    end
+    % Resolve and validate the independent sample-unit authority before any
+    % transmitter or receiver constructs a physical power context.
+    probe = struct("integration",integrationConfig);
+    sixgr.rf.fixedSNRPowerReferenceMode(probe);
     cfg.integration = integrationConfig;
     cfg.integration.planning = planning.toStruct();
 end
@@ -607,6 +614,39 @@ if ~isempty(matrixReal)
 elseif ~isempty(matrixImag)
     error('sixgr:lls6g:InvalidAWGNSpatialMatrix','AWGN imaginary entries require explicit real entries.');
 end
+episodeEnabled=logical(localGetNested(s, ...
+    "channels.awgn_beam_failure_recovery_enabled",false));
+cfg.channel.awgnBeamFailureRecoveryEnabled=episodeEnabled;
+if episodeEnabled
+    startSlot=double(localRequireNested(s, ...
+        "channels.awgn_beam_failure_start_slot", ...
+        "channels.awgn_beam_failure_start_slot"));
+    endSlot=double(localRequireNested(s, ...
+        "channels.awgn_beam_failure_end_slot_exclusive", ...
+        "channels.awgn_beam_failure_end_slot_exclusive"));
+    episodeReal=double(localRequireNested(s, ...
+        "channels.awgn_beam_failure_matrix_dl_real", ...
+        "channels.awgn_beam_failure_matrix_dl_real"));
+    assert(startSlot>=0 && startSlot==fix(startSlot) && ...
+        endSlot>startSlot && endSlot==fix(endSlot), ...
+        'sixgr:channel:InvalidAWGNBeamFailureInterval', ...
+        'AWGN beam-failure episode requires integer [start,end) slots.');
+    assert(numel(episodeReal)==cfg.channel.nTxAnt*cfg.channel.nRxAnt, ...
+        'sixgr:channel:InvalidAWGNBeamFailureMatrix', ...
+        'Beam-failure DL matrix must have nRxAnt*nTxAnt entries.');
+    cfg.channel.awgnBeamFailureStartSlot=startSlot;
+    cfg.channel.awgnBeamFailureEndSlotExclusive=endSlot;
+    cfg.channel.awgnBeamFailureMatrixDL=reshape(episodeReal, ...
+        cfg.channel.nTxAnt,cfg.channel.nRxAnt).';
+    failureThreshold=double(localRequireNested(s, ...
+        "channels.awgn_beam_failure_detection_threshold_db", ...
+        "channels.awgn_beam_failure_detection_threshold_db"));
+    assert(isscalar(failureThreshold) && isreal(failureThreshold) && ...
+        isfinite(failureThreshold) && failureThreshold>=0, ...
+        'sixgr:channel:InvalidAWGNBeamFailureDetectionThreshold', ...
+        'Beam-failure detection threshold must be a finite nonnegative dB value.');
+    cfg.channel.awgnBeamFailureDetectionThreshold_dB=failureThreshold;
+end
 cfg.channel.propagationScenario = char(propagationScenario);
 cfg.channel.pathloss.model = char(string(s.channels.pathloss_model));
 cfg.channel.pathlossModel = char(string(s.channels.pathloss_model));
@@ -655,6 +695,16 @@ cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", ...
 cfg = localStructSetIfPresent(cfg, "channel.o2i.custom_dB", localGetNested(s, "channels.o2i_loss_db", []));
 cfg = localStructSetIfPresent(cfg, "channel.o2i.indoorDistance_m", ...
     localGetNested(s, "channels.o2i_indoor_distance_m", []));
+cfg = localStructSetIfPresent(cfg, "channel.o2i.randomComponentEnabled", ...
+    localGetNested(s, "channels.o2i_random_component_enabled", []));
+cfg = localStructSetIfPresent(cfg, "channel.o2i.seed", ...
+    localGetNested(s, "channels.o2i_seed", []));
+cfg = localStructSetIfPresent(cfg, "channel.o2i.receiverIndoor", ...
+    localGetNested(s, "channels.o2i_receiver_indoor", []));
+cfg = localStructSetIfPresent(cfg, "channel.txPosition_m", ...
+    localGetNested(s, "channels.link_tx_position_m", []));
+cfg = localStructSetIfPresent(cfg, "channel.rxPosition_m", ...
+    localGetNested(s, "channels.link_rx_position_m", []));
 if isstruct(phase10) && ~isempty(fieldnames(phase10)) && ...
         logical(localGetNested(phase10, "enabled", false))
     phase10O2I = char(string(localGetNested(phase10, "o2i.profile", o2iModel)));
@@ -959,6 +1009,9 @@ cfg.phy.pdcch.aggregationLevel = double(localResolveDefaultPDCCHAggregationLevel
 cfg.phy.pdcch.candidateAggregationLevels = double(localGetNested(s, "control.candidate_aggregation_levels", cfg.phy.pdcch.aggregationLevels));
 cfg.phy.pdcch.aggregationSelectionPolicy = char(string(localGetNested(s, "control.aggregation_selection_policy", "snr_threshold")));
 cfg.phy.pdcch.schedulerAggregationLevel = double(localGetNested(s, "control.scheduler_aggregation_level", NaN));
+if isfield(s.control,'joint_pdcch_admission_policy')
+    cfg.phy.pdcch.jointAdmissionPolicy = char(lower(string(s.control.joint_pdcch_admission_policy)));
+end
 cfg.phy.pdcch.dciFormats = cellstr(string(s.control.dci_formats(:)));
 cfg.phy.pdcch.dciFormat = char(string(localFirstValue(s.control.dci_formats)));
 cfg.phy.pdcch.operatorControl = s.control;
@@ -1044,6 +1097,12 @@ if isstruct(strictControl) && isfield(strictControl, "dci_context")
     cfg.phy.pdcch.dciPayloadBits = payloadSizes(1);
     cfg.phy.pdcch.KBits = payloadSizes(1);
     cfg.phy.pdcch.payloadSizeSource = "contextual_release18_schema";
+end
+pucchStrictControl = localGetNested(s, "control.pucch_strict", struct());
+if isstruct(pucchStrictControl) && isscalar(pucchStrictControl)
+    cfg = sixgr.util.structSet(cfg, ...
+        "validation.pucchStatisticalQualification", ...
+        localGetNested(pucchStrictControl, "statistical_qualification", struct()));
 end
 
 cfg.ctrl6gr.enable = logical(localGetNested(s, "control.pdcch6gr.enable_6gr_pdcch", false));
@@ -1743,6 +1802,18 @@ for detectorField=detectorFields
         'pucch.%s must be a finite scalar in [0,1], inherited or explicitly configured.',detectorField);
     cfg.phy.pucch.receiverDetectionThresholds.(detectorField)=double(threshold);
 end
+end
+pucchSpatialWeights = double(localGetNested(s, ...
+    "pucch.spatial_tx_weights_real", []));
+if ~isempty(pucchSpatialWeights)
+    pucchSpatialWeights = pucchSpatialWeights(:);
+    assert(all(isfinite(pucchSpatialWeights)) && ...
+        abs(sum(abs(pucchSpatialWeights).^2)-1)<=1e-9, ...
+        'sixgr:lls6g:config:InvalidPUCCHSpatialWeights', ...
+        'pucch.spatial_tx_weights_real must define one finite unit-norm physical TX vector.');
+    cfg.phy.pucch.spatialTxWeights = pucchSpatialWeights;
+    cfg.phy.pucch.spatialTxWeightsSource = ...
+        "yaml.pucch.spatial_tx_weights_real";
 end
 
 cfg.phy.pusch.enable = any(ismember(targetCases, localCatalogStringList(catalog.value_maps.target_case_groups.pusch_enable)));
@@ -2840,6 +2911,11 @@ end
 cfg = sixgr.config.normalizeConfig(cfg);
 [cfg, ~, frameEngine] = sixgr.config.validateConfig(cfg);
 cfg = localApplyFrameStructureEngine(cfg, frameEngine);
+if isfield(cfg.phy.pusch, 'priorityIndex') && ...
+        logical(sixgr.util.structGet(cfg, 'phy.pusch.enable', false)) && ...
+        logical(sixgr.util.structGet(cfg, 'phy.srs.enable', false))
+    sixgr.phy.frame.assertConfiguredPriorityZeroPUSCHSRSOrder(cfg);
+end
 % normalizeConfig/validateConfig may derive a generic diagnostic class from
 % adaptive PHY knobs.  Reapply the explicit source field directly so that
 % the operator-owned execution contract survives that derivation.
@@ -3571,6 +3647,21 @@ if section == "pdsch"
     cfg = localCopyRuntimeField(cfg, s, "pdsch.xoh_pdsch", targetBase + ".XOverhead");
 else
     cfg = localApplyPUSCHDetailSurface(cfg, s, targetBase);
+    [priorityIndex, hasPriorityIndex] = ...
+        localTryGetNestedStrict(s, "pusch.priority_index");
+    if hasPriorityIndex
+        priorityIndex = double(priorityIndex);
+        if ~(isscalar(priorityIndex) && isfinite(priorityIndex) && ...
+                priorityIndex == fix(priorityIndex) && any(priorityIndex == [0 1]))
+            error("sixgr:lls6g:config:InvalidPUSCHPriorityIndex", ...
+                "pusch.priority_index must be the integer 0 or 1.");
+        end
+        cfg = sixgr.util.structSet(cfg, ...
+            targetBase + ".priorityIndex", priorityIndex);
+        cfg = sixgr.util.structSet(cfg, ...
+            targetBase + ".priorityIndexSource", ...
+            "yaml.pusch.priority_index");
+    end
     cfg = localCopyRuntimeField(cfg, s, "pusch.intra_slot_frequency_hopping", targetBase + ".intraSlotFrequencyHopping");
     cfg = localCopyRuntimeField(cfg, s, "pusch.inter_slot_frequency_hopping", targetBase + ".interSlotFrequencyHopping");
     cfg = localCopyRuntimeField(cfg, s, "pusch.transform_precoding", targetBase + ".transformPrecoding");

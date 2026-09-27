@@ -1159,7 +1159,30 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
             "PostEqEVM",
             "NMSEChannelEst",
         )
-        if not any(_number(row, name) is not None for name in measured_fields if name in header):
+        # A joint PDCCH admission decision can finalize a candidate before
+        # transmission when no non-overlapping CCE/REG+DM-RS placement exists.
+        # Such a row is runtime truth, but it has no received waveform and
+        # therefore cannot honestly contain a detector/channel measurement.
+        # Keep executed receiver trials strict and exempt only the fully typed
+        # pre-transmission disposition; this must never become a generic
+        # zero-attempt/fallback escape hatch for other control channels.
+        pdcch_pretransmission_nontrial = (
+            "pdcch" in path.lower()
+            and _boolean(row, "PDCCHReceiverTrialExecuted") is False
+            and _boolean(row, "PDCCHPreTransmissionFinalized") is True
+            and _boolean(row, "PDCCHAdmissionSelected") is False
+            and _text(row, "GrantControlState").lower()
+            == "control_blocked_no_nonoverlapping_pdcch_candidate"
+            and _boolean(row, "DetectionAttempted") is False
+            and _boolean(row, "DecodeAttempted") is False
+            and _boolean(row, "MeasurementAttempted") is False
+            and _text(row, "ValueStatus").upper() == "NOT_AVAILABLE"
+            and _text(row, "NAReason")
+            == "control_blocked_no_nonoverlapping_pdcch_candidate"
+        )
+        if (not pdcch_pretransmission_nontrial
+                and not any(_number(row, name) is not None
+                            for name in measured_fields if name in header)):
             failures.append(f"row={index}:no_finite_runtime_measurement")
     checks.append(_check("control_runtime", path, "runtime_measurement_and_truth", rows, failures))
     if "pucch" in path.lower() and any(name in header for name in ("BitsCompared", "BitErrors")):
@@ -6454,6 +6477,8 @@ def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bo
         "reports/csv/unavailable_plot_card_registry.csv",
     }:
         return True
+    if relative == "control/csv/ra_retry_events.csv":
+        return _evaluated_empty_ra_retry_events_is_valid(run_root)
     if relative == "reports/csv/truth_contract_failures.csv":
         return _evaluated_empty_truth_contract_failures_is_valid(run_root)
     if relative in {
@@ -6462,6 +6487,44 @@ def _empty_domain_table_is_valid_zero_event(relative: str, run_root: Path) -> bo
     }:
         return _evaluated_empty_issue_registry_is_valid(relative, run_root)
     return False
+
+
+def _evaluated_empty_ra_retry_events_is_valid(run_root: Path) -> bool:
+    """Accept zero retries only from a complete first-attempt RA outcome."""
+
+    retry_header, retry_rows = _read_rows(
+        run_root / "control/csv/ra_retry_events.csv"
+    )
+    required = {
+        "RunId", "UEId", "CompletedAttempt", "NextTransmissionCounter",
+        "PowerRampingCounter", "PreambleTransMax", "SelectedReference",
+        "PreambleTransmissionEndTicks", "ResponseExpiryTicks",
+        "PreambleBackoff_ms", "BackoffSource", "BackoffSeed", "UniformDraw",
+        "BackoffTicks", "EarliestRetryTicks", "PreambleTransMaxExhausted",
+        "Status", "Source", "ProxyUsed", "FallbackUsed", "FailurePhase",
+        "ContentionResolutionTicks",
+    }
+    if retry_rows or not required.issubset(set(retry_header)):
+        return False
+    attempt_header, attempts = _read_rows(run_root / "control/csv/ra_attempts.csv")
+    if not attempt_header or not attempts:
+        return False
+    ue_attempts: dict[str, list[dict[str, str]]] = {}
+    for row in attempts:
+        ue = _text(row, "UEId")
+        attempt = _number(row, "AttemptId")
+        if (
+            not ue
+            or attempt != 1
+            or _boolean(row, "RACompleted") is not True
+            or _boolean(row, "StrictOk") is not True
+            or _boolean(row, "ProxyUsed") is not False
+            or _boolean(row, "Skipped") is not False
+            or bool(_text(row, "FailureReason"))
+        ):
+            return False
+        ue_attempts.setdefault(ue, []).append(row)
+    return bool(ue_attempts) and all(len(rows) == 1 for rows in ue_attempts.values())
 
 
 def _evaluated_empty_truth_contract_failures_is_valid(run_root: Path) -> bool:
@@ -8067,6 +8130,56 @@ def _received_harq_kpi_failures(row, observations):
     return failures
 
 
+def _ul_harq_decision_kpi_failures(row, observations):
+    """Recount UL HARQ decisions from gNB PUSCH combined-decode evidence.
+
+    NR does not carry UL HARQ-ACK from the UE to the gNB.  The gNB's PUSCH
+    decoder decision is therefore the physical authority for an UL NACK-rate
+    KPI; the received-UCI ledger is authoritative only for DL HARQ-ACK.
+    """
+    selected = [item for item in observations
+                if _text(item, "Direction").upper() == "UL"]
+    failures = []
+    keys, decisions = set(), []
+    for item in selected:
+        decision = _boolean(item, "CombinedDecodeOK")
+        if decision is None:
+            return ["ul_harq_combined_decode_decision_invalid"]
+        if any(name in item and _boolean(item, name) is not False
+               for name in ("ProxyUsed", "Skipped")):
+            return ["ul_harq_decision_not_physical"]
+        tb_id = _text(item, "TBId")
+        slot = _number(item, "Slot")
+        process = _number(item, "HarqID")
+        if (not tb_id or not _whole(slot, 0) or not _whole(process, 0)):
+            return ["ul_harq_decision_identity_invalid"]
+        key = (tb_id, slot, process)
+        if key in keys:
+            return ["duplicate_ul_harq_decision"]
+        keys.add(key)
+        decisions.append(decision)
+    nack = sum(not value for value in decisions)
+    count = len(decisions)
+    expected = {
+        "NumeratorValue": nack,
+        "DenominatorValue": count,
+        "FeedbackDTXCount": 0,
+        "FeedbackObservedCount": count,
+        "SourceRowCount": count,
+        "EligibleRowCount": count,
+        "ExcludedRowCount": 0,
+    }
+    for name, value in expected.items():
+        if not _close(_number(row, name), float(value), atol=0):
+            failures.append(name + "_not_ul_gnb_decode_decision_population")
+    if count:
+        if not _close(_number(row, "Value"), nack / count, atol=2e-12):
+            failures.append("ul_nack_rate_not_gnb_decode_decision_ratio")
+    elif _number(row, "Value") is not None:
+        failures.append("ul_nack_rate_requires_gnb_decode_decision_population")
+    return failures
+
+
 def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     """Reconcile KPI registries, source manifests, formulas, and bindings."""
 
@@ -8239,9 +8352,22 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
                 reconstruction_failures.append(prefix + ":source_count_or_hash_manifest_mismatch")
         elif source_relative and _run_relative_path(run_root, source_relative) is None:
             reconstruction_failures.append(prefix + ":source_path_not_run_relative")
-        if name.endswith("_HARQ_NACK_Rate") and applicable is True:
+        if name == "UL_HARQ_NACK_Rate" and applicable is True:
+            if _text(manifest_row, "Direction") != "HARQTimeline":
+                reconstruction_failures.append(
+                    prefix + ":ul_nack_rate_requires_gnb_harq_timeline_source"
+                )
+            else:
+                _columns, timeline_rows = manifest_sources.get("HARQTimeline", ([], []))
+                reconstruction_failures.extend(
+                    prefix + ":" + failure for failure in
+                    _ul_harq_decision_kpi_failures(row, timeline_rows)
+                )
+        elif name == "DL_HARQ_NACK_Rate" and applicable is True:
             if _text(manifest_row, "Direction") != "HARQFeedback":
-                reconstruction_failures.append(prefix + ":nack_rate_requires_received_feedback_source")
+                reconstruction_failures.append(
+                    prefix + ":dl_nack_rate_requires_received_feedback_source"
+                )
             else:
                 _columns, feedback_rows = manifest_sources.get("HARQFeedback", ([], []))
                 reconstruction_failures.extend(prefix + ":" + failure for failure in

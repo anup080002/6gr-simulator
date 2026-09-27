@@ -397,6 +397,18 @@ if priorMeasuredOutage
     decision.CQIOutageRecoveryCandidate = candidate;
     recoveryCQI = floor(min(15, max(0, min( ...
         double(adaptationState.SmoothedCQI), candidate))));
+    % CQI zero is the reported out-of-range codepoint, not a generic
+    % fractional smoothing bin.  Once the configured number of actual
+    % positive receiver reports has been observed, do not manufacture a
+    % new CQI-0 outage merely because conservative ILLA smoothing produces
+    % a value in (0,1).  Retain the lowest positive operating point instead
+    % (CQI 1, normally MCS 0); higher recovered CQIs remain bounded by both
+    % the smoothed state and the receiver-decoded candidate.
+    if adaptationState.CQIOutageRecoveryPositiveCount >= ...
+            adaptationState.CQIOutageRecoveryRequiredCount && ...
+            isfinite(candidate) && candidate >= 1
+        recoveryCQI = max(1, recoveryCQI);
+    end
     decision.CQIOutageRecoveryResolvedCQI = double(recoveryCQI);
     decision.ResolvedCQI = double(recoveryCQI);
     if recoveryCQI < 1 || ...
