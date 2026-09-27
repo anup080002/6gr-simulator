@@ -5,28 +5,23 @@ launchers and development patches are versioned; generated results, logs and
 instrument IQ remain separate local artifacts. No result or recovery stash is
 removed by source consolidation.
 
-Current status: [26 September consolidation record](docs/lls/main_consolidation_20260926.md#shared-integration-v11-preservation-checkpoint).
+Current status: the 27 September 2026 TDD integration is on `main`. The
+5 MHz n39 and 20 MHz n39/CDL-C YAMLs, shared-control/runtime changes, result
+publication changes and focused tests are versioned in one codebase.
 
 | Item | Verified scope and remaining limit |
 |---|---|
 | 400 MHz / 7 GHz rank-2 Keysight package | Digital export/demo package exists. Not a 4 GHz carrier test; not a full physical-control/shared-feedback scenario. Hardware capability remains UNKNOWN. |
-| Installed HARQ probe repair | 12 focused DL/UL cases passed for configured 2x2 and 4x2 AWGN spatial channels. |
-| Earlier isolated receiver candidates | v4 batches passed 15/15 and 20/20 guards; v5 passed 16/16. These results apply to those exact candidate revisions, not to unchanged main. |
-| Receiver compatibility and standalone SR | The subsequent candidate batch passed 11/11 focused tests, including actual standalone-SR reception, receiver DM-RS-count evidence and Type-2/shared feedback guards. This does not qualify the full scenario. |
-| Pending receiver, PDCCH and CSI changes | The v9 candidate completed 25/25 combined focused guards. The later candidate wired the CSI measurement/report audit into runtime and passed nine focused checks; its integrated 0 dB run is still in progress. The v11 recovery patch preserves 45 changed/new files, including four unwired beam-inventory helper/test files. Main's receiver is not yet updated; full scenario acceptance remains open. |
-| Full acceptance | Eight-point 5 MHz sweep, detector qualification and full-control 400 MHz acceptance remain open. |
+| Consolidated source | Receiver, PDCCH, CSI/SRS, power-authority, reporting and WebGUI edits are committed together on `main`; generated results remain outside Git. |
+| TDD scenario integration | The current 5 MHz and 20 MHz scenarios resolve as TDD; the 20 MHz carrier is n39 at 1.900 GHz, 15 kHz SCS, 106 PRBs, FFT 2048 and 30.72 MSa/s. |
+| Configured-SNR power authority | Fixed-SNR sweeps use normalized occupied-RE Es/N0. Absolute dBm, pathloss, O2I and thermal noise are isolated in a separate physical link-budget arm. |
+| Focused validation | The 20 MHz TDD configuration suite passed 10/10 checks. The five-MHz eight-point noise-isolation check passed all points. |
+| Full acceptance | The complete `testAll` run was stopped at operator request and is not claimed as passed. Eight-point end-to-end scenario acceptance, detector qualification and full-control 400 MHz acceptance remain open. |
 
-At this checkpoint, the older sweep still uses main receiver files and the
-0 dB diagnostic uses a separate source snapshot. Neither runtime has been
-replaced underneath its execution. The [v11 patch](docs/lls/pending_receiver_shared_integration_v11_20260926.patch)
-supersedes the earlier pending receiver/shared-integration patches;
-**do not stack them**. Main's newer HARQ spatial repair is retained in the
-validation snapshot. The CSI audit is integrated in that snapshot, not yet
-main. The new beam-inventory helper is not wired into either runtime; only
-its ten Python audit tests have passed, with MATLAB verification pending.
-Source consolidation requires safe completion or an approved stop of the
-active runs. Preserving edits in Git is not the same as installing or
-qualifying them. No MATLAB run or `testAll` was launched by this checkpoint.
+Historical recovery patches remain evidence only; do not apply them on top of
+current `main`. A committed implementation is not automatically a qualified
+scenario result. Use the commands below and retain the generated logs and
+artifacts for the exact checked-out commit.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)
@@ -193,6 +188,148 @@ Use this table as the quick decision guide.
 | Use older compatibility path | `SixGR_Simulator` | Deprecated wrapper; forwards to the full campaign |
 
 ## Quick Start Commands
+
+### Current TDD command catalog: 5 MHz, 20 MHz, 400 MHz and testAll
+
+The commands in this section are for **Windows Command Prompt (`cmd.exe`)**.
+Do not paste PowerShell `&`, backticks, arrays or line continuations directly
+into Command Prompt. Commands were checked against the runner signature and
+the YAML paths on `main`. Change each run tag or log filename before repeating
+a run so an earlier result is not confused with a new experiment.
+
+First enter the repository and optionally launch the live WebGUI in a second
+Command Prompt window:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\apps\start_lls_web_dashboard.ps1" -Port 62906
+```
+
+Open `http://127.0.0.1:62906/`. The WebGUI is a separate process; starting a
+batch run does not automatically start it. All direct commands below save
+scenario artifacts below `results/lls/<scenario_id>/<run_tag>/` and the MATLAB
+console log below `logs/`.
+
+#### 5 MHz TDD commands
+
+| Purpose | YAML |
+|---|---|
+| n39/1.900 GHz, 5 MHz, 4TX/2RX adaptive-rank, 0 dB focused point | `simulator/configs/scenarios/lls_tdd_2ghz_5mhz_rank2_4tx2rx_awgn_0db.yaml` |
+| 5 MHz shared physical control/feedback, saturated traffic, 20 dB | `simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml` |
+| n39/1.900 GHz, saturated eight-point sweep `[40,30,20,10,0,-10,-20,-30]` dB | `simulator/configs/scenarios/lls_tdd_2ghz_5mhz_rank2_shared_awgn_snr_sweep_saturated.yaml` |
+| Historical 12 dB four-port diagnostic | `simulator/configs/scenarios/lls_tdd_5mhz_four_port_shared_awgn_12db.yaml` |
+
+Additional 5 MHz YAMLs are retained for comparison or focused diagnostics:
+`lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml`,
+`lls_tdd_5mhz_rank2_4tx2rx_awgn_0db.yaml`,
+`lls_tdd_5mhz_rank2_shared_awgn_20db.yaml`,
+`lls_tdd_5mhz_rank2_shared_awgn_snr_sweep.yaml`,
+`lls_tdd_5mhz_rank2_shared_awgn_snr_sweep_saturated.yaml` and
+`lls_tdd_5mhz_outage_publication_fixture.yaml`. The last file is a publication
+fixture, not an operator acceptance scenario.
+
+Run the 0 dB focused point:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\5mhz_n39_0db_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_2ghz_5mhz_rank2_4tx2rx_awgn_0db.yaml','results','5mhz_n39_0db_manual_01'); disp(out); assert(out.Ok,'5 MHz 0 dB run failed; preserve results and log.');"
+```
+
+Run the saturated 20 dB point:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\5mhz_rank2_20db_saturated_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db_saturated.yaml','results','5mhz_rank2_20db_saturated_manual_01'); disp(out); assert(out.Ok,'5 MHz 20 dB run failed; preserve results and log.');"
+```
+
+Run the complete eight-point 5 MHz sweep:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\5mhz_n39_8point_sweep_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_tdd_2ghz_5mhz_rank2_shared_awgn_snr_sweep_saturated.yaml','results','5mhz_n39_8point_sweep_manual_01'); disp(out); assert(out.Ok,'5 MHz eight-point sweep failed; preserve parent and child artifacts.');"
+```
+
+The sweep retains per-point raw child evidence and publishes joint parent-level
+CSV/PNG comparisons. It must not copy configured SNR into measured-SINR fields.
+
+#### 20 MHz n39 TDD CDL-C commands
+
+These are TDD scenarios. The reference carrier is NR band n39 at 1.900 GHz,
+20 MHz bandwidth, 15 kHz SCS, 106 PRBs, normal CP, FFT 2048 and 30.72 MSa/s.
+The configured-SNR studies and the physical O2I/thermal link-budget study are
+separate by design.
+
+| Purpose | YAML |
+|---|---|
+| Clean CDL-C configured-SNR reference at 0 dB | `simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_reference.yaml` |
+| Clean CDL-C eight-point configured-SNR sweep | `simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_snr_sweep.yaml` |
+| CDL-C with declared RF impairments, single reference point | `simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_rf_impairments.yaml` |
+| CDL-C/RF-impairment eight-point sweep | `simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_rf_snr_sweep.yaml` |
+| Absolute-power CDL-C/O2I/pathloss/thermal-noise link budget; not an SNR sweep | `simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_o2i_thermal.yaml` |
+
+Run the clean 0 dB reference:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\20mhz_n39_cdlc_0db_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_reference.yaml','results','20mhz_n39_cdlc_0db_manual_01'); disp(out); assert(out.Ok,'20 MHz reference run failed; preserve results and log.');"
+```
+
+Run the clean eight-point sweep:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\20mhz_n39_cdlc_8point_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_snr_sweep.yaml','results','20mhz_n39_cdlc_8point_manual_01'); disp(out); assert(out.Ok,'20 MHz CDL-C sweep failed; preserve parent and child artifacts.');"
+```
+
+Run the RF-impairment point or its eight-point sweep:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\20mhz_n39_cdlc_rf_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_rf_impairments.yaml','results','20mhz_n39_cdlc_rf_manual_01'); disp(out); assert(out.Ok,'20 MHz RF-impairment run failed.');"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\20mhz_n39_cdlc_rf_8point_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_rf_snr_sweep.yaml','results','20mhz_n39_cdlc_rf_8point_manual_01'); disp(out); assert(out.Ok,'20 MHz RF-impairment sweep failed.');"
+```
+
+Run the separate absolute-power O2I/thermal link-budget case:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\20mhz_n39_cdlc_o2i_thermal_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_2ghz_20mhz_rank2_cdlc_o2i_thermal.yaml','results','20mhz_n39_cdlc_o2i_thermal_manual_01'); disp(out); assert(out.Ok,'20 MHz O2I/thermal run failed.');"
+```
+
+#### 400 MHz commands
+
+| Purpose | YAML or launcher |
+|---|---|
+| Rank-2 Keysight/VXG/VSA package | `lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml` through `scripts/run_vxg_vsa_demo.ps1` |
+| Fixed rate-0.82 DL/UL IQ capture | `lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml` |
+| Four-layer/64-element CDL-C study | `lls_7ghz_400mhz_4layer_64gnb_4ue_30db.yaml` |
+| Calibrated four-port adaptive DL-heavy study | `lls_7ghz_400mhz_adaptive_dl5_ul2_30db.yaml` plus its calibration YAMLs |
+
+Use the dedicated launcher for the rank-2 Keysight/VXG/VSA digital package:
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\run_vxg_vsa_demo.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -Config "simulator/configs/scenarios/lls_7ghz_400mhz_rank2_1024qam_vxg_vsa.yaml"
+```
+
+Run the fixed rate-0.82, 30 dB, DL/UL 1024-QAM IQ scenario directly:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\400mhz_7ghz_rate082_iq_manual_01.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/lls_7ghz_400mhz_1024qam_tdd_30db_rate082_iq.yaml','results','400mhz_7ghz_rate082_iq_manual_01'); disp(out); assert(out.Ok,'400 MHz rate-0.82 IQ run failed.');"
+```
+
+The adaptive DL-heavy scenario is
+`simulator/configs/scenarios/lls_7ghz_400mhz_adaptive_dl5_ul2_30db.yaml`.
+It requires its version-matched calibration files; use the complete calibrated
+command block in [Exact command: measured 400 MHz four-layer adaptive run](#exact-command-measured-400-mhz-four-layer-adaptive-run), not an uncalibrated direct launch.
+
+#### testAll command
+
+The supported server launcher requires a clean Git checkout, creates a unique
+`logs/testall_*` folder, writes terminal JSON/CSV/MATLAB logs and creates a ZIP
+bundle. From Command Prompt:
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\run_server_testall.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -PreflightOnly
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File ".\scripts\run_server_testall.ps1" -MatlabExe "C:\Program Files\MATLAB\R2026a\bin\matlab.exe"
+```
+
+The first line is environment preflight only. The second line runs `testAll`.
+Do not call the second line a pass unless its `summary.json` says `passed`, the
+launcher exits with code zero, and the source commit/worktree identity remains
+unchanged throughout execution.
 
 ### 400 MHz / 7 GHz rank-2 Keysight waveform demonstration
 
