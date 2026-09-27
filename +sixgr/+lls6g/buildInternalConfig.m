@@ -601,6 +601,26 @@ cfg.channel.sharedIdentityAWGNEnabled = logical(localGetNested( ...
 % normalization, receive padding, or gain compensation is permitted.
 matrixReal=localGetNested(s,"channels.awgn_spatial_matrix_dl_real",[]);
 matrixImag=localGetNested(s,"channels.awgn_spatial_matrix_dl_imag",[]);
+matrixPolicy=lower(strtrim(string(localGetNested(s, ...
+    "channels.awgn_spatial_matrix_policy",""))));
+if strlength(matrixPolicy)>0 && (~isempty(matrixReal) || ~isempty(matrixImag))
+    error('sixgr:lls6g:ConflictingAWGNSpatialMatrixAuthority', ...
+        ['channels.awgn_spatial_matrix_policy and explicit real/imaginary ' ...
+         'matrix entries are mutually exclusive.']);
+end
+if matrixPolicy=="semiunitary_dft_rows"
+    assert(~cfg.channel.sharedIdentityAWGNEnabled, ...
+        'sixgr:lls6g:ConflictingAWGNSpatialMatrixAuthority', ...
+        'A generated semiunitary AWGN matrix cannot also enable identity AWGN.');
+    numTx=double(s.mimo.n_tx_ant);
+    numRx=double(s.mimo.n_rx_ant);
+    assert(numRx<=numTx,'sixgr:lls6g:InvalidAWGNSpatialMatrixPolicy', ...
+        'semiunitary_dft_rows requires DL receive dimensions <= transmit dimensions.');
+    [rowIndex,columnIndex]=ndgrid(0:numRx-1,0:numTx-1);
+    cfg.channel.awgnSpatialMatrixDL=exp(-1j*2*pi*rowIndex.*columnIndex/numTx)/sqrt(numTx);
+    cfg.channel.awgnSpatialMatrixPolicy=char(matrixPolicy);
+    cfg.channel.awgnSpatialMatrixSource="yaml_policy_semiunitary_dft_rows";
+end
 if ~isempty(matrixReal)
     count=double(s.mimo.n_tx_ant)*double(s.mimo.n_rx_ant);
     assert(~cfg.channel.sharedIdentityAWGNEnabled && numel(matrixReal)==count, ...
@@ -1018,6 +1038,8 @@ cfg.phy.pdcch.operatorControl = s.control;
 cfg.phy.pdcch.configuredPayloadBits = double(localGetNested(s, "control.pdcch_payload_bits", NaN));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.blindDecodeCandidates", double(s.control.blind_decode_candidates));
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.duration", double(s.control.coreset_duration));
+cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.rbStart", double( ...
+    localGetNested(s, "control.coreset_rb_start", 0)));
 coresetFrequencyPolicy = lower(string(localGetNested(s, ...
     "control.coreset_frequency_resource_policy", "explicit_bitmap")));
 configuredCORESETBitmap = double(s.control.coreset_frequency_resources(:).');
@@ -1052,6 +1074,15 @@ cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.configuredFrequencyResources"
     configuredCORESETBitmap);
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResources", ...
     resolvedCORESETBitmap);
+enabledCORESETRBs = 6 * nnz(resolvedCORESETBitmap);
+if double(sixgr.util.structGet(cfg, "phy.pdcch.coreset.rbStart", 0)) + ...
+        enabledCORESETRBs > double(cfg.phy.carrier.NSizeGrid)
+    error("sixgr:lls6g:CORESETPlacementOutsideBWP", ...
+        ["Configured CORESET start RB %d plus %d enabled RBs exceeds " + ...
+         "the active %d-RB BWP."], ...
+        double(cfg.phy.pdcch.coreset.rbStart), enabledCORESETRBs, ...
+        double(cfg.phy.carrier.NSizeGrid));
+end
 cfg = sixgr.util.structSet(cfg, "phy.pdcch.coreset.frequencyResourcesSource", ...
     coresetBitmapSource);
 configuredSearchSpaceCandidates = double( ...
@@ -3386,6 +3417,7 @@ cfg = localApplyAuxiliaryPHYKnobs(cfg, s);
 % num_antenna_ports aliases to overwrite the strict port tuple after it had
 % already been validated.
 cfg = localApplyPhase07MIMOConfig(cfg,s);
+cfg = localApplyRuntimeBeamManagementConfig(cfg,s);
 qclPolicy = localGetNested(s,"mimo.qcl_tci",struct());
 cfg = sixgr.util.structSet(cfg,"phy.pdsch.qclTCI",qclPolicy);
 if logical(sixgr.util.structGet(qclPolicy,"enabled",false))
@@ -5864,10 +5896,16 @@ cfg.channel.nTxAnt = double(bsCount);
 cfg.channel.nRxAnt = double(ueCount);
 cfg.phy.nTxAnt = double(bsCount);
 cfg.phy.nRxAnt = double(ueCount);
+bsArrayRows = double(localGetNested(s, "antenna_and_array.bs_array_rows", NaN));
+bsArrayColumns = double(localGetNested(s, "antenna_and_array.bs_array_columns", NaN));
+ueArrayRows = double(localGetNested(s, "antenna_and_array.ue_array_rows", NaN));
+ueArrayColumns = double(localGetNested(s, "antenna_and_array.ue_array_columns", NaN));
 cfg = sixgr.util.structSet(cfg, "phy.bsArray", ...
-    localResolveArrayShape(bsGeom, bsCount, polToken, bsPanelCount, "BS"));
+    localResolveArrayShape(bsGeom, bsCount, polToken, bsPanelCount, "BS", ...
+    bsArrayRows, bsArrayColumns));
 cfg = sixgr.util.structSet(cfg, "phy.ueArray", ...
-    localResolveArrayShape(ueGeom, ueCount, polToken, uePanelCount, "UE"));
+    localResolveArrayShape(ueGeom, ueCount, polToken, uePanelCount, "UE", ...
+    ueArrayRows, ueArrayColumns));
 
 cfg = sixgr.util.structSet(cfg, "antenna.bs.geometry", char(lower(strtrim(bsGeom))));
 cfg = sixgr.util.structSet(cfg, "antenna.bs.spacingLambda", ...
@@ -6168,6 +6206,8 @@ end
 nRows = shape(1);
 nColumns = shape(2);
 spatialElements = nRows * nColumns;
+polarizationCount = shape(3);
+panelReplicaCount = prod(shape(4:end));
 physicalElements = prod(shape);
 configuredElements = double(localGetNested(spec, "physical_element_count", NaN));
 if ~(isscalar(configuredElements) && isfinite(configuredElements) && configuredElements == physicalElements)
@@ -6178,7 +6218,24 @@ end
 nResources = double(sixgr.util.structGet(cfg, "phy.csirs.numResources", NaN));
 nPorts = double(sixgr.util.structGet(cfg, "phy.csirs.nPorts", NaN));
 resourceIDs = double(sixgr.util.structGet(cfg, "phy.csirs.resourceIDs", []));
+beamGridRows = double(localGetNested(spec, "beam_grid_rows", nRows));
+beamGridColumns = double(localGetNested(spec, "beam_grid_columns", nColumns));
+if ~(isscalar(beamGridRows) && isfinite(beamGridRows) && ...
+        beamGridRows >= nRows && beamGridRows == round(beamGridRows) && ...
+        isscalar(beamGridColumns) && isfinite(beamGridColumns) && ...
+        beamGridColumns >= nColumns && beamGridColumns == round(beamGridColumns))
+    error("sixgr:lls6g:config:InvalidCSIRSPrecoderBeamGrid", ...
+        ["CSI-RS DFT-URA beam_grid_rows and beam_grid_columns must be " + ...
+         "integer grid sizes no smaller than the physical %dx%d URA."], ...
+        nRows, nColumns);
+end
+
+numSpatialBeams = beamGridRows * beamGridColumns;
 beamIndices = zeros(nResources, nPorts);
+polarizationIndices = NaN(nResources, nPorts);
+panelIndices = NaN(nResources, nPorts);
+hasExplicitPolarizationIndices = false;
+hasExplicitPanelIndices = false;
 for portOrdinal = 1:nPorts
     portPath = "beam_indices_port_" + string(portOrdinal - 1);
     portIndices = double(localGetNested(spec, portPath, []));
@@ -6187,6 +6244,41 @@ for portOrdinal = 1:nPorts
             "%s must contain one DFT-URA beam index per CSI-RS resource.", char(portPath));
     end
     beamIndices(:, portOrdinal) = portIndices(:);
+    polarizationPath = "polarization_indices_port_" + string(portOrdinal - 1);
+    rawPolarizationIndices = localGetNested(spec, polarizationPath, []);
+    if ~isempty(rawPolarizationIndices)
+        portPolarizationIndices = double(rawPolarizationIndices);
+        if ~(isvector(portPolarizationIndices) && ...
+                numel(portPolarizationIndices) == nResources)
+            error("sixgr:lls6g:config:InvalidCSIRSPolarizationIndices", ...
+                "%s must contain one polarization index per CSI-RS resource.", ...
+                char(polarizationPath));
+        end
+        polarizationIndices(:, portOrdinal) = portPolarizationIndices(:);
+        hasExplicitPolarizationIndices = true;
+    end
+    panelPath = "panel_indices_port_" + string(portOrdinal - 1);
+    rawPanelIndices = localGetNested(spec, panelPath, []);
+    if ~isempty(rawPanelIndices)
+        portPanelIndices = double(rawPanelIndices);
+        if ~(isvector(portPanelIndices) && numel(portPanelIndices) == nResources)
+            error("sixgr:lls6g:config:InvalidCSIRSPanelIndices", ...
+                "%s must contain one panel index per CSI-RS resource.", ...
+                char(panelPath));
+        end
+        panelIndices(:, portOrdinal) = portPanelIndices(:);
+        hasExplicitPanelIndices = true;
+    end
+end
+if hasExplicitPolarizationIndices && any(isnan(polarizationIndices(:)))
+    error("sixgr:lls6g:config:IncompleteCSIRSPolarizationIndices", ...
+        ["When any CSI-RS port supplies polarization indices, every port " + ...
+         "must supply one index per resource."]);
+end
+if hasExplicitPanelIndices && any(isnan(panelIndices(:)))
+    error("sixgr:lls6g:config:IncompleteCSIRSPanelIndices", ...
+        ["When any CSI-RS port supplies panel indices, every port " + ...
+         "must supply one index per resource."]);
 end
 if ~(isscalar(nResources) && isfinite(nResources) && nResources >= 1 && ...
         nResources == round(nResources) && isscalar(nPorts) && isfinite(nPorts) && ...
@@ -6202,21 +6294,59 @@ if ~(isvector(resourceIDs) && numel(resourceIDs) == nResources && ...
 end
 if ~isequal(size(beamIndices), [nResources nPorts]) || ...
         any(~isfinite(beamIndices(:))) || any(beamIndices(:) < 0) || ...
-        any(beamIndices(:) >= spatialElements) || any(beamIndices(:) ~= round(beamIndices(:)))
+        any(beamIndices(:) >= numSpatialBeams) || any(beamIndices(:) ~= round(beamIndices(:)))
     error("sixgr:lls6g:config:InvalidCSIRSBeamIndices", ...
         "CSI-RS beam-index vectors must form NumResources-by-NumPorts zero-based DFT-URA indices in [0,%d].", ...
-        spatialElements - 1);
+        numSpatialBeams - 1);
+end
+if hasExplicitPolarizationIndices && ...
+        (any(~isfinite(polarizationIndices(:))) || ...
+         any(polarizationIndices(:) < 0) || ...
+         any(polarizationIndices(:) >= polarizationCount) || ...
+         any(polarizationIndices(:) ~= round(polarizationIndices(:))))
+    error("sixgr:lls6g:config:InvalidCSIRSPolarizationIndices", ...
+        ["CSI-RS polarization indices must be zero-based integers in " + ...
+         "[0,%d] for the configured array."], polarizationCount - 1);
+end
+if hasExplicitPanelIndices && ...
+        (any(~isfinite(panelIndices(:))) || ...
+         any(panelIndices(:) < 0) || ...
+         any(panelIndices(:) >= panelReplicaCount) || ...
+         any(panelIndices(:) ~= round(panelIndices(:))))
+    error("sixgr:lls6g:config:InvalidCSIRSPanelIndices", ...
+        ["CSI-RS panel indices must be zero-based integers in " + ...
+         "[0,%d] for the configured array."], panelReplicaCount - 1);
 end
 spatialCodebook = sixgr.rf.AntennaArrayFactory.dftCodebookURA( ...
-    nRows, nColumns, nRows, nColumns);
-replicaCount = physicalElements / spatialElements;
+    nRows, nColumns, beamGridRows, beamGridColumns);
 matrices = complex(zeros(physicalElements, nPorts, nResources));
 digests = strings(nResources, 1);
 for resourceOrdinal = 1:nResources
     W = complex(zeros(physicalElements, nPorts));
     for portOrdinal = 1:nPorts
         spatialBeam = spatialCodebook(:, beamIndices(resourceOrdinal, portOrdinal) + 1);
-        fullBeam = repmat(spatialBeam, replicaCount, 1) / sqrt(replicaCount);
+        if hasExplicitPolarizationIndices
+            polarizationBasis = zeros(polarizationCount, 1);
+            polarizationBasis(polarizationIndices(resourceOrdinal, portOrdinal) + 1) = 1;
+            polarizedBeam = kron(polarizationBasis, spatialBeam);
+            if hasExplicitPanelIndices
+                panelBasis = zeros(panelReplicaCount, 1);
+                panelBasis(panelIndices(resourceOrdinal, portOrdinal) + 1) = 1;
+                fullBeam = kron(panelBasis, polarizedBeam);
+            else
+                fullBeam = repmat(polarizedBeam, panelReplicaCount, 1) / ...
+                    sqrt(panelReplicaCount);
+            end
+        elseif hasExplicitPanelIndices
+            panelBasis = zeros(panelReplicaCount, 1);
+            panelBasis(panelIndices(resourceOrdinal, portOrdinal) + 1) = 1;
+            unpolarizedBeam = repmat(spatialBeam, polarizationCount, 1) / ...
+                sqrt(polarizationCount);
+            fullBeam = kron(panelBasis, unpolarizedBeam);
+        else
+            replicaCount = physicalElements / spatialElements;
+            fullBeam = repmat(spatialBeam, replicaCount, 1) / sqrt(replicaCount);
+        end
         W(:, portOrdinal) = fullBeam / norm(fullBeam);
     end
     gram = W' * W;
@@ -6231,6 +6361,18 @@ end
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderMatrices", matrices);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderDigests", digests);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderBeamIndices", beamIndices);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderBeamGrid", ...
+    [beamGridRows beamGridColumns]);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderBeamGridRows", beamGridRows);
+cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderBeamGridColumns", beamGridColumns);
+if hasExplicitPolarizationIndices
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.csirs.precoderPolarizationIndices", polarizationIndices);
+end
+if hasExplicitPanelIndices
+    cfg = sixgr.util.structSet(cfg, ...
+        "phy.csirs.precoderPanelIndices", panelIndices);
+end
 for portOrdinal = 1:nPorts
     cfg = sixgr.util.structSet(cfg, ...
         "phy.csirs.precoderBeamIndicesPort" + string(portOrdinal - 1), ...
@@ -6238,6 +6380,68 @@ for portOrdinal = 1:nPorts
 end
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderCodebookType", codebookType);
 cfg = sixgr.util.structSet(cfg, "phy.csirs.precoderPhysicalElementCount", physicalElements);
+end
+
+function cfg = localApplyRuntimeBeamManagementConfig(cfg,s)
+section = localGetNested(s,"mimo_and_beam_management",struct());
+if ~(isstruct(section) && isscalar(section) && ~isempty(fieldnames(section)))
+    return;
+end
+enabled = logical(localGetNested(section,"runtime_state_machine_enabled",false));
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.runtimeStateMachineEnabled",enabled);
+if ~enabled
+    return;
+end
+authority = lower(strtrim(string(localGetNested(section, ...
+    "tci_activation_authority",""))));
+if authority ~= "decoded_pdcch_tci_codepoint"
+    error("sixgr:lls6g:config:InvalidBeamTCIActivationAuthority", ...
+        ["Enabled runtime beam management requires " + ...
+         "tci_activation_authority=decoded_pdcch_tci_codepoint."]);
+end
+geometryOracleForbidden = logical(localGetNested(section, ...
+    "geometry_oracle_forbidden",true));
+if ~geometryOracleForbidden
+    error("sixgr:lls6g:config:BeamGeometryOracleForbidden", ...
+        "Strict runtime beam selection cannot authorize a geometry oracle.");
+end
+if logical(localGetNested(section,"beam_failure_recovery_enabled",false))
+    error("sixgr:lls6g:config:UnsupportedPhysicalBeamFailureRecovery", ...
+        ["Physical beam-failure recovery is not implemented in the coupled " + ...
+         "runtime; keep beam_failure_recovery_enabled=false."]);
+end
+ssbMap = double(localGetNested(section,"ssb_to_initial_csi_resource_ids",[]));
+tciStates = double(localGetNested(section,"csi_rs_resource_to_tci_state_ids",[]));
+tciCodepoints = double(localGetNested(section,"csi_rs_resource_to_tci_codepoints",[]));
+nSSB = double(sixgr.util.structGet(cfg,"phy.ssb.nBeams",NaN));
+nCSI = double(sixgr.util.structGet(cfg,"phy.csirs.numResources",NaN));
+if ~(isvector(ssbMap) && numel(ssbMap)==nSSB && all(isfinite(ssbMap)) && ...
+        all(ssbMap==fix(ssbMap)) && all(ssbMap>=0) && all(ssbMap<nCSI))
+    error("sixgr:lls6g:config:InvalidSSBToCSIResourceMap", ...
+        "ssb_to_initial_csi_resource_ids must map every active SSB beam to a configured CSI-RS resource.");
+end
+if ~(isvector(tciStates) && numel(tciStates)==nCSI && ...
+        all(isfinite(tciStates)) && all(tciStates==fix(tciStates)) && ...
+        all(tciStates>=0) && all(tciStates<=127) && ...
+        numel(unique(tciStates))==nCSI)
+    error("sixgr:lls6g:config:InvalidCSIResourceTCIStateMap", ...
+        "csi_rs_resource_to_tci_state_ids must contain one unique state in [0,127] per CSI-RS resource.");
+end
+if ~(isvector(tciCodepoints) && numel(tciCodepoints)==nCSI && ...
+        all(isfinite(tciCodepoints)) && all(tciCodepoints==fix(tciCodepoints)) && ...
+        all(tciCodepoints>=0) && all(tciCodepoints<=7) && ...
+        numel(unique(tciCodepoints))==nCSI)
+    error("sixgr:lls6g:config:InvalidCSIResourceTCICodepointMap", ...
+        "csi_rs_resource_to_tci_codepoints must contain one unique three-bit codepoint per CSI-RS resource.");
+end
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.requireReceivedTCIForData", ...
+    logical(localGetNested(section,"require_received_tci_for_data",true)));
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.tciActivationAuthority",char(authority));
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.geometryOracleForbidden",true);
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.ssbToInitialCSIResourceIDs",reshape(ssbMap,1,[]));
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.csiResourceToTCIStateIDs",reshape(tciStates,1,[]));
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.csiResourceToTCICodepoints",reshape(tciCodepoints,1,[]));
+cfg = sixgr.util.structSet(cfg,"phy.beamManagement.beamFailureRecoveryEnabled",false);
 end
 
 function cfg = localApplySSBPrecoderCodebook(cfg, s)
@@ -6327,13 +6531,19 @@ cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderBeamGridColumns", beamGridColum
 cfg = sixgr.util.structSet(cfg, "phy.ssb.precoderPhysicalElementCount", physicalElements);
 end
 
-function shape = localResolveArrayShape(geometryToken, totalElements, polarizationToken, panelCount, roleLabel)
+function shape = localResolveArrayShape(geometryToken, totalElements, polarizationToken, panelCount, roleLabel, explicitRows, explicitColumns)
 totalElements = max(1, round(double(totalElements)));
 if nargin < 4 || isempty(panelCount)
     panelCount = 1;
 end
 if nargin < 5 || strlength(strtrim(string(roleLabel))) == 0
     roleLabel = "array";
+end
+if nargin < 6 || isempty(explicitRows)
+    explicitRows = NaN;
+end
+if nargin < 7 || isempty(explicitColumns)
+    explicitColumns = NaN;
 end
 panelCount = max(1, round(double(panelCount)));
 polCount = 1;
@@ -6354,16 +6564,32 @@ if mod(totalElements, factorCount) ~= 0
 end
 spatialElements = totalElements / factorCount;
 geom = lower(strtrim(char(string(geometryToken))));
-switch geom
-    case {"ura","upa","planar","rectangular"}
-        nRow = max(1, floor(sqrt(double(spatialElements))));
-        while nRow > 1 && mod(spatialElements, nRow) ~= 0
-            nRow = nRow - 1;
-        end
-        nCol = max(1, round(spatialElements / max(nRow, 1)));
-    otherwise
-        nRow = 1;
-        nCol = spatialElements;
+hasExplicitShape = isfinite(explicitRows) || isfinite(explicitColumns);
+if hasExplicitShape
+    if ~(isscalar(explicitRows) && isfinite(explicitRows) && ...
+            explicitRows >= 1 && explicitRows == round(explicitRows) && ...
+            isscalar(explicitColumns) && isfinite(explicitColumns) && ...
+            explicitColumns >= 1 && explicitColumns == round(explicitColumns) && ...
+            explicitRows * explicitColumns == spatialElements)
+        error("sixgr:lls6g:InvalidExplicitAntennaArrayShape", ...
+            ["%s explicit array rows/columns must be positive integers " + ...
+             "whose product equals %d spatial locations after polarization " + ...
+             "and panel factorization."], char(string(roleLabel)), spatialElements);
+    end
+    nRow = explicitRows;
+    nCol = explicitColumns;
+else
+    switch geom
+        case {"ura","upa","planar","rectangular"}
+            nRow = max(1, floor(sqrt(double(spatialElements))));
+            while nRow > 1 && mod(spatialElements, nRow) ~= 0
+                nRow = nRow - 1;
+            end
+            nCol = max(1, round(spatialElements / max(nRow, 1)));
+        otherwise
+            nRow = 1;
+            nCol = spatialElements;
+    end
 end
 % The 5-D shape is [rows, columns, polarizations, panelRows, panelCols].
 % Its product is exactly the operator-configured total element count.

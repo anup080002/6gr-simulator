@@ -20776,7 +20776,14 @@ end
 [stateTraceT, eventTraceT] = localBuildBeamManagementRuntimeTraceTables(T, cfg);
 if ~isempty(stateTraceT)
     statePath = fullfile(layout.BeamformingCSVDir, "beam_management_state_trace.csv");
-    sixgr.util.csvWriteTable(statePath, stateTraceT);
+    % The coupled runtime owns the causal P1/P2/decoded-TCI state trace.
+    % Preserve it when present; a post-hoc table derived from data trials
+    % must not overwrite receiver/control evidence with reconstructed rows.
+    if exist(statePath, "file") == 2
+        stateTraceT = sixgr.util.csvReadTable(statePath);
+    else
+        sixgr.util.csvWriteTable(statePath, stateTraceT);
+    end
     artifacts.StateTraceCSV = statePath;
     artifacts.StateTraceTable = stateTraceT;
 end

@@ -1,0 +1,12 @@
+inherits:
+  - ./h4_100_common_connected.yaml
+  - ../channels/ran1_4ghz_f1_tdla30.yaml
+
+meta:
+  scenario_id: h4_100_tdla30_connected_adaptive
+  description: H4 4 GHz/100 MHz TDL-A 30 ns connected adaptive waveform with causal CSI/SRS, ILLA, OLLA and HARQ.
+  tags: [lls, truth, h4, 100mhz, tdl-a, adaptive, harq, illa, olla, no_proxy]
+
+output:
+  profile: h4_100_tdla30_connected_adaptive
+

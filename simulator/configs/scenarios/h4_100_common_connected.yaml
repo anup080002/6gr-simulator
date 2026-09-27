@@ -1,0 +1,430 @@
+inherits:
+  - ./lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml
+  - ../bands/h4_100_4ghz_tdd.yaml
+  - ../mimo/ran1_h4_64txru_4rx.yaml
+  - ../control/pdcch_joint_tdd_admission.yaml
+
+meta:
+  scenario_id: h4_100_common_connected
+  description: Common 4 GHz 100 MHz H4 TDD connected-waveform contract with four active SSB beams, eight CSI-RS/data beam states, receiver-derived CRI/RI/PMI/CQI, and rank up to four in both directions.
+  purpose: YAML-owned H4 waveform family base; executable children select A0, TDL-A/30 ns or CDL-C/100 ns.
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  scenario_group: h4_100_ran1_link_evaluation
+  tags: [lls, truth, tdd, fr1, 4ghz, 100mhz, h4, beam_management, adaptive_rank, no_proxy]
+
+scenario:
+  runner_profile: waveform_bundle
+  target_cases: [bundle]
+
+run_control:
+  total_slots: 200
+  total_time_ms: 100
+
+simulation:
+  link_direction: both
+  n_frames: 10
+  n_slots: 200
+  n_subframes: 100
+  monte_carlo_iterations: 1
+  random_seed: 20260927
+  deterministic_mode: true
+  snr_db: 20
+  noise_operating_mode: standalone_awgn_snr_argument
+  min_duration_s: 0.1
+  snr_sweep_offsets_db: [0]
+
+integration:
+  power_reference_mode: normalized_unit_es
+
+canonical_control:
+  integration:
+    power_reference_mode: normalized_unit_es
+    configured_snr_is_link_authority: true
+  mimo:
+    n_layers: 1
+    max_dl_layers: 4
+    max_ul_layers: 4
+  pdsch:
+    layer_count: 1
+    rank: 1
+
+bwp:
+  dl:
+    bwp_id: 0
+    direction: DL
+    n_start_bwp: 0
+    n_size_bwp: 273
+    scs_khz: 30
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 30
+  ul:
+    bwp_id: 0
+    direction: UL
+    n_start_bwp: 0
+    n_size_bwp: 273
+    scs_khz: 30
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 30
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 4000000000
+      band: H4
+      frequency_range: FR1
+      channel_bandwidth_mhz: 100
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 273, scs_khz: 30}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 273, scs_khz: 30}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+
+tdd_timing:
+  capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
+  pdcch_to_pdsch_k0: 0
+  pdcch_to_pusch_k2: 1
+  ul_grant_k2: 1
+  dl_harq_feedback_k1: [1, 2, 3, 4, 5, 6, 7, 8]
+  k1_selection_policy: first_valid_configured
+  harq_roundtrip_slots: 8
+  dl_to_ul_guard_time_us: 8.138
+  timing_advance_max_us: 667
+  timing_advance_ticks: 0
+  n1_pdsch_processing_time_symbols: 8
+  n2_pusch_preparation_time_symbols: 10
+
+initial_access:
+  enabled: true
+  profile: fr1_four_step_ra_rrc_connection_strict_r18
+  band_context: H4
+  spectrum: unpaired
+  random_access_procedure: four_step_contention_based
+  require_explicit_ssb_bitmap: true
+  ssb:
+    enabled: true
+    case: Case B
+    scs_khz: 30
+    lmax: 8
+    beam_count: 4
+    periodicity_ms: 20
+    positions_in_burst: '11110000'
+    per_ssb_power_db: [0, 0, 0, 0, 0, 0, 0, 0]
+    precoder_ids: [dft_ura_beam_0, dft_ura_beam_8, dft_ura_beam_16, dft_ura_beam_24, dft_ura_beam_32, dft_ura_beam_40, dft_ura_beam_48, dft_ura_beam_56]
+    precoder_codebook:
+      enabled: true
+      type: dft_ura
+      physical_element_count: 64
+      beam_grid_rows: 8
+      beam_grid_columns: 8
+      beam_indices: [0, 8, 16, 24, 32, 40, 48, 56]
+    waveform_domain: physical_element_domain
+    n_crb_ssb: 253
+    k_ssb: 0
+    selected_ssb_index: 0
+    observation_subframes: 40
+  mib:
+    enabled: true
+  sib1:
+    enabled: true
+    decode_from_waveform_required: true
+    observation_subframes: 40
+  rrc:
+    require_setup_complete: true
+
+control:
+  pdcch_enabled: true
+  blind_search_enabled: true
+  pucch_enabled: true
+  coreset_frequency_resource_policy: explicit_bitmap
+  coreset_frequency_resources: [1, 1, 1, 1, 1, 1, 1, 1]
+  coreset_rb_start: 112
+  coreset_duration: 2
+  aggregation_levels: [1, 2, 4, 8, 16]
+  candidate_aggregation_levels: [1, 2, 4, 8, 16]
+  scheduler_aggregation_level: 4
+  aggregation_selection_policy: configured_scheduler_level
+  search_space_num_candidates: [8, 4, 2, 1, 1]
+  blind_decode_candidates: 16
+pdsch:
+  execution_profile: scheduler_truth
+  prb_start: 0
+  num_prb: 273
+  start_symbol: 2
+  num_symbols: 12
+  time_domain_allocations:
+    - [0, 2, 12, 0]
+    - [1, 2, 8, 0]
+  layer_count: 1
+  rank: 1
+  num_antenna_ports: 8
+  link_adaptation_mode: amc
+  amc_policy: baseline
+  precoder_normalization_convention: unit_frobenius
+
+pusch:
+  execution_profile: scheduler_truth
+  priority_index: 0
+  prb_start: 0
+  num_prb: 273
+  start_symbol: 0
+  num_symbols: 11
+  time_domain_allocations:
+    - [0, 0, 11, 1]
+    - [1, 0, 11, 2]
+  layer_count: 1
+  num_layers: 1
+  num_antenna_ports: 4
+  mcs_table: qam64_table1
+  modulation: QPSK
+  precoder_normalization_convention: unit_frobenius
+
+reference_signals:
+  ssb_enabled: true
+  ssb_case: Case B
+  ssb_scs_khz: 30
+  ssb_lmax: 8
+  ssb_beam_count: 4
+  ssb_periodicity_ms: 20
+  pbch_enabled: true
+  pdcch_dmrs_enabled: true
+  pdsch_dmrs_config_type: 1
+  pdsch_dmrs_type_a_position: 2
+  pdsch_dmrs_max_length: 1
+  pdsch_dmrs_additional_positions: 2
+  pdsch_dmrs_num_cdm_groups_without_data: 1
+  pdsch_dmrs_ports: 4
+  pdsch_dmrs:
+    port_set: [0, 1, 2, 3]
+  pusch_dmrs_config_type: 1
+  pusch_dmrs_type_a_position: 2
+  pusch_dmrs_max_length: 1
+  pusch_dmrs_additional_positions: 2
+  pusch_dmrs_num_cdm_groups_without_data: 2
+  pusch_dmrs_ports: 4
+  pusch_dmrs:
+    port_set: [0, 1, 2, 3]
+  csi_rs_enabled: true
+  csi_rs_periodicity_slots: 20
+  csi_rs_offset_slots: 2
+  csi_rs_ports: 8
+  csi_rs_port_count: 8
+  csi_rs_num_resources: 8
+  csi_rs_resource_set_id: 0
+  csi_rs_resource_ids: [0, 1, 2, 3, 4, 5, 6, 7]
+  csi_rs_resource_row_numbers: [6, 6, 6, 6, 6, 6, 6, 6]
+  csi_rs_resource_symbol_locations: [3, 4, 5, 6, 7, 8, 9, 10]
+  csi_rs_resource_subcarrier_locations: [0, 0, 0, 0, 0, 0, 0, 0]
+  csi_rs_resource_rb_offsets: [0, 0, 0, 0, 0, 0, 0, 0]
+  csi_rs_resource_num_rbs: [273, 273, 273, 273, 273, 273, 273, 273]
+  csi_rs_precoder_codebook:
+    enabled: true
+    type: dft_ura
+    physical_element_count: 64
+    beam_grid_rows: 8
+    beam_grid_columns: 8
+    beam_indices_port_0: [0, 8, 16, 24, 32, 40, 48, 56]
+    beam_indices_port_1: [0, 8, 16, 24, 32, 40, 48, 56]
+    beam_indices_port_2: [2, 10, 18, 26, 34, 42, 50, 58]
+    beam_indices_port_3: [2, 10, 18, 26, 34, 42, 50, 58]
+    beam_indices_port_4: [0, 8, 16, 24, 32, 40, 48, 56]
+    beam_indices_port_5: [0, 8, 16, 24, 32, 40, 48, 56]
+    beam_indices_port_6: [2, 10, 18, 26, 34, 42, 50, 58]
+    beam_indices_port_7: [2, 10, 18, 26, 34, 42, 50, 58]
+    polarization_indices_port_0: [0, 0, 0, 0, 0, 0, 0, 0]
+    polarization_indices_port_1: [1, 1, 1, 1, 1, 1, 1, 1]
+    polarization_indices_port_2: [0, 0, 0, 0, 0, 0, 0, 0]
+    polarization_indices_port_3: [1, 1, 1, 1, 1, 1, 1, 1]
+    polarization_indices_port_4: [0, 0, 0, 0, 0, 0, 0, 0]
+    polarization_indices_port_5: [1, 1, 1, 1, 1, 1, 1, 1]
+    polarization_indices_port_6: [0, 0, 0, 0, 0, 0, 0, 0]
+    polarization_indices_port_7: [1, 1, 1, 1, 1, 1, 1, 1]
+    # Logical ports 0..3 are carried by panel 0 and ports 4..7 by panel 1.
+    # Panel identity is therefore physical evidence, not an exporter label.
+    panel_indices_port_0: [0, 0, 0, 0, 0, 0, 0, 0]
+    panel_indices_port_1: [0, 0, 0, 0, 0, 0, 0, 0]
+    panel_indices_port_2: [0, 0, 0, 0, 0, 0, 0, 0]
+    panel_indices_port_3: [0, 0, 0, 0, 0, 0, 0, 0]
+    panel_indices_port_4: [1, 1, 1, 1, 1, 1, 1, 1]
+    panel_indices_port_5: [1, 1, 1, 1, 1, 1, 1, 1]
+    panel_indices_port_6: [1, 1, 1, 1, 1, 1, 1, 1]
+    panel_indices_port_7: [1, 1, 1, 1, 1, 1, 1, 1]
+  srs_enabled: true
+  srs_ports: 4
+  srs_periodicity_slots: 5
+  srs_slot_within_period: 5
+  srs:
+    enabled: true
+    resource_type: periodic
+    resource_set_usage: codebook
+    period_offset: 4
+    symbol_start: 11
+    num_srs_symbols: 1
+    repetition_factor: 1
+    comb_number: 2
+    comb_offset: 0
+    cyclic_shift: 0
+    sequence_id: 1
+    group_or_sequence_hopping: neither
+    frequency_position: 0
+    n_rrc: 0
+    enable_start_rb_hopping: false
+    frequency_scaling_factor: 1
+    start_rb_index: 0
+    b_hop: 0
+    num_rb: 273
+    expected_rb_start: 0
+    expected_num_rb: 273
+    expected_bandwidth_coverage_percent: 99.6
+    full_carrier_sounding_required: true
+    full_carrier_coverage_tolerance_rb: 1
+    num_ports: 4
+    port_set: [0, 1, 2, 3]
+  trs_enabled: true
+  trs_periodicity_slots: 20
+  trs:
+    enabled: true
+    period_offset: 6
+    burst_length_slots: 2
+    num_ports: 1
+    row_number: 1
+    symbol_locations: [4, 8]
+    subcarrier_location: 0
+    rb_offset: 0
+    num_rb: 273
+  tracking_rs_enabled: true
+  ptrs_enabled: true
+  ptrs_cpe_correction_enabled: true
+  csi_reporting_enabled: true
+  cqi_reporting_enabled: true
+  pmi_reporting_enabled: true
+  ri_reporting_enabled: true
+  cri_reporting_enabled: true
+  csi_feedback_mode: PMI+CQI+RI+CRI
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  csi_acquisition_mode: joint_dl_ul
+  operation_orientation: tdd_reciprocity
+  pmi_codebook_mode: type1_su_mimo
+  csi_report_periodicity_slots: 20
+  csi_reporting_delay_slots: 4
+
+csi_acquisition_and_reporting:
+  dl_csi_enabled: true
+  csi_rs_baseline_flag: true
+  feedback_based_flag: true
+  channel_state_information_mode: PMI+CQI+RI+CRI
+  pmi_codebook_mode: type1_su_mimo
+  cqi_policy: baseline
+  pmi_policy: measured_receiver_codebook_search
+  ri_policy: measured_receiver_rank_search
+  cri_policy: measured_receiver_resource_search
+  report_trigger: periodic
+  report_configuration:
+    report_config_id: h4-csi-report-0
+    epoch: 0
+    n1: 2
+    n2: 1
+    o1: 4
+    o2: 1
+    panels: 2
+    codebook_mode: 1
+    report_quantity: cri-RI-PMI-CQI
+    number_of_beams: 8
+    frequency_granularity: wideband
+    uci_channel: PUCCH
+    num_subbands: 1
+    phase_alphabet_size: 4
+
+mimo_and_beam_management:
+  beam_sweeping: true
+  beam_refinement: true
+  beam_switching: true
+  beam_tracking: true
+  beam_prediction: false
+  rank_set: [1, 2, 4]
+  codebook_family: typeI-MultiPanel
+  reciprocity_mode: TDD
+  ssb_beam_count: 4
+  csi_rs_beam_count: 8
+  data_beam_count: 8
+  selection_authority: received_ssb_and_csirs_measurements
+  geometry_oracle_forbidden: true
+  runtime_state_machine_enabled: true
+  require_received_tci_for_data: true
+  tci_activation_authority: decoded_pdcch_tci_codepoint
+  # The four measured SSB candidates seed four coarse CSI/data states. A
+  # later independently received CRI may select any of the eight states.
+  ssb_to_initial_csi_resource_ids: [0, 2, 4, 6]
+  csi_rs_resource_to_tci_state_ids: [16, 17, 18, 19, 20, 21, 22, 23]
+  csi_rs_resource_to_tci_codepoints: [0, 1, 2, 3, 4, 5, 6, 7]
+  # Physical BFR is intentionally not claimed until BFD, candidate-beam
+  # measurement, BFR PRACH and response reception execute in this runtime.
+  beam_failure_recovery_enabled: false
+
+link_adaptation:
+  fixed_or_amc: amc
+  operating_point_mode: adaptive
+  inner_loop_flag: true
+  outer_loop_flag: true
+  cqi_source: csi_feedback
+  cqi_table: table1
+  pdsch_link_adaptation_policy: baseline
+  pusch_link_adaptation_policy: baseline
+  rank_adaptation_policy: measured_ri
+  delta_mcs_policy: ack_nack_olla
+  target_bler: 0.1
+
+harq:
+  enabled: true
+  process_count: 16
+  max_retx: 3
+  rv_sequence: [0, 2, 3, 1]
+  k2: 1
+
+traffic:
+  model: full_buffer
+  transport: UDP
+  flowDirection: BIDIR
+  dlRatio: 0.6
+  ulRatio: 0.4
+  targetRate_Mbps: 10000
+  fullBufferBitsPerTTI: 10000000
+  jitterPct: 0
+
+random_access:
+  enabled: true
+  carrier_frequency_hz: 4000000000
+  n_size_grid: 273
+  num_tx_antennas: 4
+  num_rx_antennas: 64
+  four_step_ra_required: true
+  msg4_contention_resolution_required: true
+  msg3_enabled: true
+  common_downlink_beam_source: selected_ssb_beam
+
+output_control:
+  save_raw_waveforms: true
+  save_llrs: true
+  save_channel_snapshots: true
+  save_constellations: true
+  save_debug_events: true
+  impairment_visibility: full
+
+output:
+  profile: h4_100_common_connected
+  phy_signal_diagnostic_waveform_samples: 4096
+  phy_signal_diagnostic_fft_length: 4096
+  phy_signal_diagnostic_channel_points: 4096
+  phy_signal_diagnostic_constellation_points: 2048
+  save_csv: true
+  save_mat: true
+  save_figures: true
+  save_png: true
+  save_yaml_snapshot: true
+  save_json_snapshot: true
+  organize_by_block: true
+  generate_summary_plots: true
+  emit_placeholder_artifacts: false
+  emit_disabled_audit_artifacts: true

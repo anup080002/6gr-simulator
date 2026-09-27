@@ -1,0 +1,46 @@
+inherits:
+  - ./h4_100_common_connected.yaml
+
+meta:
+  scenario_id: h4_100_fixed_mcs_common
+  description: Common H4 fixed-MCS/rank policy; executable children select exactly one physical channel.
+  tags: [lls, truth, h4, 100mhz, fixed_mcs, no_proxy]
+
+simulation:
+  harq_diagnostics_enabled: false
+
+link_adaptation:
+  fixed_or_amc: fixed
+  operating_point_mode: fixed
+  inner_loop_flag: false
+  outer_loop_flag: false
+  # Schema-complete source identity; fixed mode does not consume CQI.
+  cqi_source: csi_feedback
+  rank_adaptation_policy: fixed_configured_rank
+  delta_mcs_policy: none
+
+harq:
+  enabled: false
+
+pdsch:
+  link_adaptation_mode: fixed
+  mcs_table: qam64_table1
+  fixed_mcs: 10
+  modulation: 16QAM
+  layer_count: 1
+  rank: 1
+
+pusch:
+  mcs_table: qam64_table1
+  mcs_index: 10
+  fixed_mcs: 10
+  modulation: 16QAM
+  layer_count: 1
+  num_layers: 1
+
+modulation:
+  dl_modulation_order: 4
+  ul_modulation_order: 4
+  dl_mcs_index: 10
+  ul_mcs_index: 10
+

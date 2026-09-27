@@ -1,0 +1,15 @@
+inherits:
+  - ./h4_100_fixed_mcs_common.yaml
+  - ../channels/ran1_4ghz_a0_awgn.yaml
+
+meta:
+  scenario_id: h4_100_a0_fixed_mcs
+  description: H4 4 GHz/100 MHz A0 calibration waveform with fixed MCS/rank authority and a normalized 64-to-4 semiunitary AWGN operator.
+  tags: [lls, truth, h4, 100mhz, awgn, fixed_mcs, no_proxy]
+
+channels:
+  shared_identity_awgn_enabled: false
+  awgn_spatial_matrix_policy: semiunitary_dft_rows
+
+output:
+  profile: h4_100_a0_fixed_mcs

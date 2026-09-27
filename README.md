@@ -17,11 +17,59 @@ publication changes and focused tests are versioned in one codebase.
 | Configured-SNR power authority | Fixed-SNR sweeps use normalized occupied-RE Es/N0. Absolute dBm, pathloss, O2I and thermal noise are isolated in a separate physical link-budget arm. |
 | Focused validation | The 20 MHz TDD configuration suite passed 10/10 checks. The five-MHz eight-point noise-isolation check passed all points. |
 | Full acceptance | The complete `testAll` run was stopped at operator request and is not claimed as passed. Eight-point end-to-end scenario acceptance, detector qualification and full-control 400 MHz acceptance remain open. |
+| H4 / 4 GHz / 100 MHz TDD | A dedicated one-UE family now resolves 273 RB at 30 kHz, a 10/2/2 special slot, a two-panel 64-TXRU gNB, a four-chain UE, four active SSB beams, eight CSI-RS/data beam states, and rank capability 1/2/4 in both directions. Focused config/runtime tests pass; complete waveform qualification is not yet claimed. |
 
 Historical recovery patches remain evidence only; do not apply them on top of
 current `main`. A committed implementation is not automatically a qualified
 scenario result. Use the commands below and retain the generated logs and
 artifacts for the exact checked-out commit.
+
+### H4 4 GHz / 100 MHz TDD scenario family
+
+These files are independent of the older 100-UE/19-site system scenario and
+the older `lls_3gpp_4ghz_100mhz_longrun.yaml`:
+
+- `h4_100_a0_fixed_mcs.yaml`: normalized AWGN calibration arm.
+- `h4_100_tdla30_fixed_mcs.yaml`: TDL-A, 30 ns fixed operating point.
+- `h4_100_cdlc100_fixed_mcs.yaml`: CDL-C, 100 ns fixed operating point.
+- `h4_100_tdla30_connected_adaptive.yaml`: connected adaptive TDL-A.
+- `h4_100_cdlc100_connected_adaptive.yaml`: connected adaptive CDL-C.
+- `h4_100_cold_access_beam_sweep.yaml`: measured SSB/Type-0/SIB1/PRACH path.
+- `h4_100_beam_refinement_tci.yaml`: measured P1/P2 and decoded-TCI binding.
+- `h4_100_cdlc100_connected_impaired.yaml`: separate frozen RF-impairment
+  treatment arm; its RF values are research assumptions, not 3GPP limits.
+
+The gNB physical shape is 4×4 spatial positions × H/V × two panels = 64
+elements/TXRUs. The UE is **four-chain 4×4 MIMO capability**, implemented as
+1×2 spatial positions × H/V = four elements with four independent TX and RX
+chains. Eight DL CSI/PDSCH logical ports are distinct from the four scheduled
+layers; the UE exposes four PUSCH/SRS ports and maximum UL rank four.
+
+Run the focused H4 configuration and causal beam-state guards from Windows
+Command Prompt:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -batch "setup6GRSimToolkit('Verbose',false); assert(testH41004x4MIMOConfig); assert(testH4BeamManagementRuntimeBinding);"
+```
+
+Run one H4 waveform scenario (replace the YAML basename with another member
+of the family when required):
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_beam_refinement_tci.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_beam_refinement_tci.yaml','results','h4_100_beam_refinement_tci'); disp(out); assert(out.Ok,'H4 run failed; inspect retained evidence.');"
+```
+
+Start the WebGUI separately from PowerShell so it remains visible while the
+MATLAB process runs:
+
+```powershell
+cd 'C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main'
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\apps\start_lls_web_dashboard.ps1
+```
+
+Beam-failure recovery remains unavailable: the family does not claim BFR
+until physical BFD, candidate-beam measurement, BFR PRACH and response
+reception are implemented and qualified.
 
 For the dedicated **7 GHz / 400 MHz rank-2 VXG/VSA data-channel experiment**, see
 [the quick-start commands and measured results below](#400-mhz--7-ghz-rank-2-keysight-waveform-demonstration)

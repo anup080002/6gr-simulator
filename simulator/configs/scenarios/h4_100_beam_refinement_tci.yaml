@@ -1,0 +1,24 @@
+inherits:
+  - ./h4_100_cdlc100_connected_adaptive.yaml
+
+meta:
+  scenario_id: h4_100_beam_refinement_tci
+  description: >
+    H4 connected P1/P2 beam-management case. Measured SSB identity seeds a
+    coarse beam; independently received CSI-RS CRI selects one of eight
+    states, and only a decoded PDCCH TCI codepoint authorizes data-beam use.
+  tags: [lls, truth, h4, 100mhz, cdl-c, beam_refinement, tci, qcl, no_proxy]
+
+mimo_and_beam_management:
+  beam_sweeping: true
+  beam_refinement: true
+  beam_switching: true
+  beam_tracking: true
+  runtime_state_machine_enabled: true
+  require_received_tci_for_data: true
+  tci_activation_authority: decoded_pdcch_tci_codepoint
+  beam_failure_recovery_enabled: false
+
+output:
+  profile: h4_100_beam_refinement_tci
+

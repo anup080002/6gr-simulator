@@ -1,0 +1,15 @@
+inherits:
+  - ./h4_100_common_connected.yaml
+  - ../channels/ran1_4ghz_f2_cdlc100.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_adaptive
+  description: H4 4 GHz/100 MHz CDL-C 100 ns connected adaptive waveform with the two-panel H/V array, causal CSI/SRS, ILLA, OLLA and HARQ.
+  tags: [lls, truth, h4, 100mhz, cdl-c, adaptive, beam_management, harq, no_proxy]
+
+antenna_and_array:
+  require_element_pattern_in_channel: true
+
+output:
+  profile: h4_100_cdlc100_connected_adaptive
+

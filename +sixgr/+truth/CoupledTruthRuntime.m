@@ -326,6 +326,23 @@ methods(Static)
         state.SelectedSSBMeasurement_dBByUE = nan(nUsers, 1);
         state.SelectedSSBSelectionSourceByUE = repmat("", nUsers, 1);
         state.SelectedSSBSelectionSlotByUE = nan(nUsers, 1);
+        state.BeamManagementRuntimeEnabled = logical(sixgr.util.structGet( ...
+            cfgMob, "phy.beamManagement.runtimeStateMachineEnabled", false));
+        state.BeamManagementMachines = cell(nUsers, 1);
+        if state.BeamManagementRuntimeEnabled
+            for ueIdx = 1:nUsers
+                state.BeamManagementMachines{ueIdx} = ...
+                    sixgr.phy.beam.BeamManagementStateMachine("IDLE");
+            end
+        end
+        state.BeamManagementStateTraceTable = table();
+        state.PendingBeamCRIByUE = nan(nUsers, 1);
+        state.PendingTCIStateIDByUE = nan(nUsers, 1);
+        state.PendingTCICodepointByUE = nan(nUsers, 1);
+        state.PendingBeamSourceByUE = repmat("", nUsers, 1);
+        state.ActiveTCIStateIDByUE = nan(nUsers, 1);
+        state.ActiveTCICodepointByUE = nan(nUsers, 1);
+        state.AppliedDataBeamCRIByUE = nan(nUsers, 1);
         % Receiver-owned SIB1 evidence is retained per UE so that a later
         % PRACH occasion consumes the exact decoded rach-ConfigCommon from
         % the preceding PBCH/SIB1 waveform trial.  This is deliberately an
@@ -496,6 +513,20 @@ methods(Static)
             sixgr.truth.CoupledTruthRuntime.emptyLatestFeedbackRow(), nUsers, 1);
         state.DLLinkAdaptationState = cell(nUsers, 1);
         state.ULLinkAdaptationState = cell(nUsers, 1);
+        if logical(sixgr.util.structGet(state, "BeamManagementRuntimeEnabled", false))
+            state.BeamManagementMachines = cell(nUsers, 1);
+            for ueIdx = 1:nUsers
+                state.BeamManagementMachines{ueIdx} = ...
+                    sixgr.phy.beam.BeamManagementStateMachine("IDLE");
+            end
+            state.PendingBeamCRIByUE = nan(nUsers, 1);
+            state.PendingTCIStateIDByUE = nan(nUsers, 1);
+            state.PendingTCICodepointByUE = nan(nUsers, 1);
+            state.PendingBeamSourceByUE = repmat("", nUsers, 1);
+            state.ActiveTCIStateIDByUE = nan(nUsers, 1);
+            state.ActiveTCICodepointByUE = nan(nUsers, 1);
+            state.AppliedDataBeamCRIByUE = nan(nUsers, 1);
+        end
 
         accessPolicy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
             "run.snrSweepInitialAccessStatePolicy", "continuous_runtime"))));
@@ -2649,7 +2680,50 @@ methods(Static, Access=private)
             if isfinite(double(sixgr.util.structGet(feedback, "PMI", NaN)))
                 cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.PMI", double(feedback.PMI));
             end
-            if isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
+            runtimeBeamEnabled = logical(sixgr.util.structGet(state, ...
+                "BeamManagementRuntimeEnabled", false));
+            if runtimeBeamEnabled
+                desiredCRI = sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+                    state, "PendingBeamCRIByUE", ueIdx, NaN);
+                desiredTCIState = sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+                    state, "PendingTCIStateIDByUE", ueIdx, NaN);
+                desiredTCICodepoint = sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+                    state, "PendingTCICodepointByUE", ueIdx, NaN);
+                if ~isfinite(desiredCRI)
+                    desiredCRI = sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+                        state, "AppliedDataBeamCRIByUE", ueIdx, NaN);
+                    desiredTCIState = sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+                        state, "ActiveTCIStateIDByUE", ueIdx, NaN);
+                    desiredTCICodepoint = sixgr.truth.CoupledTruthRuntime.numericStateAt( ...
+                        state, "ActiveTCICodepointByUE", ueIdx, NaN);
+                end
+                if isfinite(desiredCRI) && isfinite(desiredTCIState) && ...
+                        isfinite(desiredTCICodepoint)
+                    cfgU = sixgr.util.structSet(cfgU, ...
+                        "phy.beamManagement.selectedCRI", double(desiredCRI));
+                    cfgU = sixgr.util.structSet(cfgU, ...
+                        "phy.csi.selectedCRI", double(desiredCRI));
+                    qcl = struct("enabled",true, ...
+                        "state_id",double(desiredTCIState), ...
+                        "codepoint",double(desiredTCICodepoint), ...
+                        "configuration_epoch",0, ...
+                        "activation_absolute_slot0",max(0,double(state.CurrentSlot)-1), ...
+                        "source_resource_id",double(desiredCRI), ...
+                        "source_max_age_slots",double(sixgr.util.structGet( ...
+                            cfgU,"phy.mimo.measurementMaxAgeSlots",20)), ...
+                        "timing_search_radius_samples",4, ...
+                        "initialization_source", ...
+                            "runtime_received_measurement_and_decoded_tci");
+                    cfgU = sixgr.util.structSet(cfgU,"phy.pdsch.qclTCI",qcl);
+                    cfgU = sixgr.util.structSet(cfgU, ...
+                        "phy.pdsch.activeTCIStateID",double(desiredTCIState));
+                    userMeta.RuntimeDesiredBeamCRI = double(desiredCRI);
+                    userMeta.RuntimeDesiredTCIStateID = double(desiredTCIState);
+                    userMeta.RuntimeDesiredTCICodepoint = double(desiredTCICodepoint);
+                    userMeta.RuntimeBeamSelectionAuthority = ...
+                        "receiver_measurement_then_decoded_PDCCH_TCI";
+                end
+            elseif isfinite(double(sixgr.util.structGet(feedback, "CRI", NaN)))
                 cfgU = sixgr.util.structSet(cfgU, "phy.beamManagement.selectedCRI", double(feedback.CRI));
                 cfgU = sixgr.util.structSet(cfgU, "phy.csi.selectedCRI", double(feedback.CRI));
             end
@@ -3682,6 +3756,15 @@ methods(Static, Access=private)
             state.RunState = sixgr.truth.CoupledTruthRuntime.refreshRunState(state);
             state.RunFolder = string(runFolder);
             return;
+        end
+
+        beamStateT = sixgr.util.structGet(state, ...
+            "BeamManagementStateTraceTable", table());
+        if istable(beamStateT) && ~isempty(beamStateT)
+            sixgr.util.ensureFolder(layout.BeamformingCSVDir);
+            sixgr.util.csvWriteTable(fullfile(layout.BeamformingCSVDir, ...
+                "beam_management_state_trace.csv"), beamStateT, ...
+                "PreserveSchema", true, "RoundTripNumericText", true);
         end
 
         % Keep control-plane trials on both canonical browser-owned
@@ -6321,6 +6404,9 @@ methods(Static, Access=private)
                 state.SelectedSSBMeasurement_dBByUE(ueIdx) = double(selectedMeasurement_dB);
                 state.SelectedSSBSelectionSourceByUE(ueIdx) = string(selectionSource);
                 state.SelectedSSBSelectionSlotByUE(ueIdx) = double(slotIdx);
+                state = sixgr.truth.CoupledTruthRuntime.stageMeasuredSSBBeamRuntime( ...
+                    state, ueIdx, selectedSSBIndex, selectedMeasurement_dB, ...
+                    "PBCH_receiver_selection:" + selectionSource);
             end
             for measurementOrdinal = 1:height(trialT)
                 measurementRow = trialT(measurementOrdinal, :);
@@ -7925,6 +8011,191 @@ methods(Static, Access=private)
         state.ReceiverTrackingStateByCell(servingCell) = tracked;
     end
 
+end
+
+methods(Static)
+    function state = stageMeasuredSSBBeamRuntime(state, ueIdx, selectedSSBIndex, ...
+            measuredRSRP, sourceEvidence)
+        if ~logical(sixgr.util.structGet(state, ...
+                "BeamManagementRuntimeEnabled", false))
+            return;
+        end
+        machine = state.BeamManagementMachines{ueIdx};
+        if machine.State ~= "IDLE"
+            return;
+        end
+        ssbMap = double(sixgr.util.structGet(state.CfgMobility, ...
+            "phy.beamManagement.ssbToInitialCSIResourceIDs", []));
+        ssbOrdinal = round(double(selectedSSBIndex)) + 1;
+        if ~(isfinite(selectedSSBIndex) && selectedSSBIndex == fix(selectedSSBIndex) && ...
+                ssbOrdinal >= 1 && ssbOrdinal <= numel(ssbMap))
+            error("sixgr:truth:MeasuredSSBOutsideBeamMap", ...
+                "The measured SSB index cannot be mapped to an installed initial CSI/data beam.");
+        end
+        initialCRI = double(ssbMap(ssbOrdinal));
+        [tciState, tciCodepoint] = ...
+            sixgr.truth.CoupledTruthRuntime.beamTCIMappingForCRI( ...
+            state.CfgMobility, initialCRI);
+        resourceID = "SSB-" + string(selectedSSBIndex);
+        state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+            state, ueIdx, "AUTO_EVENT_FOR_P1_MEASURING", resourceID, ...
+            measuredRSRP, NaN, NaN, sourceEvidence);
+        state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+            state, ueIdx, "AUTO_EVENT_FOR_P1_REPORTED", resourceID, ...
+            measuredRSRP, NaN, NaN, sourceEvidence);
+        state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+            state, ueIdx, "AUTO_EVENT_FOR_TCI_PENDING", resourceID, ...
+            measuredRSRP, NaN, NaN, sourceEvidence);
+        state.PendingBeamCRIByUE(ueIdx) = initialCRI;
+        state.PendingTCIStateIDByUE(ueIdx) = tciState;
+        state.PendingTCICodepointByUE(ueIdx) = tciCodepoint;
+        state.PendingBeamSourceByUE(ueIdx) = "P1_SSB";
+    end
+
+    function state = stageReceivedCSIBeamRuntime(state, report)
+        if ~logical(sixgr.util.structGet(state, ...
+                "BeamManagementRuntimeEnabled", false)) || ...
+                upper(string(report.Direction)) ~= "DL"
+            return;
+        end
+        assert(isequal(sixgr.util.structGet(report,"CSIUCIDecodeOk",false),true) && ...
+            string(sixgr.util.structGet(report,"SourceSignal","")) == "received_CSI_UCI", ...
+            "sixgr:truth:BeamRefinementRequiresReceivedCSI", ...
+            "P2 beam refinement requires independently decoded CSI UCI.");
+        ueIdx = double(report.UEIndex);
+        cri = double(report.CRI);
+        [tciState, tciCodepoint] = ...
+            sixgr.truth.CoupledTruthRuntime.beamTCIMappingForCRI( ...
+            state.CfgMobility, cri);
+        machine = state.BeamManagementMachines{ueIdx};
+        if machine.State == "DATA_ACTIVE" && ...
+                isequal(double(state.AppliedDataBeamCRIByUE(ueIdx)),cri)
+            return;
+        end
+        if any(machine.State == ["TCI_ACTIVE","DATA_ACTIVE"])
+            state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+                state, ueIdx, "AUTO_EVENT_FOR_P2_REFINING", ...
+                "CSI-RS-" + string(cri), NaN, NaN, NaN, ...
+                "received_CSI_UCI:" + string(report.ReportIdentity));
+            machine = state.BeamManagementMachines{ueIdx};
+        end
+        % If the initial SSB-selected TCI has not yet been decoded, retain
+        % this report in the normal CSI table and wait for the next periodic
+        % report. Never reorder a later CSI observation ahead of P1 control.
+        if machine.State ~= "P2_REFINING"
+            return;
+        end
+        state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+            state, ueIdx, "AUTO_EVENT_FOR_TCI_PENDING", ...
+            "CSI-RS-" + string(cri), NaN, NaN, NaN, ...
+            "received_CSI_UCI:" + string(report.ReportIdentity));
+        state.PendingBeamCRIByUE(ueIdx) = cri;
+        state.PendingTCIStateIDByUE(ueIdx) = tciState;
+        state.PendingTCICodepointByUE(ueIdx) = tciCodepoint;
+        state.PendingBeamSourceByUE(ueIdx) = "P2_CSI_RS";
+    end
+
+    function [state, ok, reason] = applyDecodedTCIBeamRuntime(state, ueIdx, pdcchRow)
+        ok = true;
+        reason = "not_required";
+        if ~logical(sixgr.util.structGet(state, ...
+                "BeamManagementRuntimeEnabled", false))
+            return;
+        end
+        requireReceived = logical(sixgr.util.structGet(state.CfgMobility, ...
+            "phy.beamManagement.requireReceivedTCIForData", false));
+        decodedCodepoint = sixgr.truth.CoupledTruthRuntime.rowFirstFinite( ...
+            pdcchRow, ["DecodedDCITCICodepoint","ReceivedTCICodepoint"], NaN);
+        pendingCodepoint = double(state.PendingTCICodepointByUE(ueIdx));
+        machine = state.BeamManagementMachines{ueIdx};
+        if machine.State == "TCI_PENDING"
+            if ~(isfinite(decodedCodepoint) && decodedCodepoint == pendingCodepoint)
+                ok = ~requireReceived;
+                reason = "decoded_tci_missing_or_not_pending_state";
+                return;
+            end
+            pendingCRI = double(state.PendingBeamCRIByUE(ueIdx));
+            pendingState = double(state.PendingTCIStateIDByUE(ueIdx));
+            source = string(state.PendingBeamSourceByUE(ueIdx));
+            resourceID = "CSI-RS-" + string(pendingCRI);
+            if source == "P1_SSB"
+                resourceID = "SSB-seeded-CSI-RS-" + string(pendingCRI);
+            end
+            state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+                state, ueIdx, "AUTO_EVENT_FOR_TCI_ACTIVE", resourceID, ...
+                NaN, NaN, pendingState, ...
+                "decoded_PDCCH_TCI_codepoint_" + string(decodedCodepoint));
+            state.ActiveTCIStateIDByUE(ueIdx) = pendingState;
+            state.ActiveTCICodepointByUE(ueIdx) = pendingCodepoint;
+            if source == "P1_SSB"
+                state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+                    state, ueIdx, "AUTO_EVENT_FOR_P2_REFINING", resourceID, ...
+                    NaN, NaN, NaN, "decoded_coarse_SSB_TCI_then_P2");
+            else
+                state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+                    state, ueIdx, "AUTO_EVENT_FOR_DATA_ACTIVE", resourceID, ...
+                    NaN, NaN, pendingState, "decoded_refined_CSI_RS_TCI");
+                state.AppliedDataBeamCRIByUE(ueIdx) = pendingCRI;
+                state.PendingBeamCRIByUE(ueIdx) = NaN;
+                state.PendingTCIStateIDByUE(ueIdx) = NaN;
+                state.PendingTCICodepointByUE(ueIdx) = NaN;
+                state.PendingBeamSourceByUE(ueIdx) = "";
+            end
+            reason = "decoded_tci_matches_pending_measured_beam";
+            return;
+        end
+        activeCodepoint = double(state.ActiveTCICodepointByUE(ueIdx));
+        if requireReceived && machine.State == "DATA_ACTIVE" && ...
+                ~(isfinite(decodedCodepoint) && decodedCodepoint == activeCodepoint)
+            ok = false;
+            reason = "decoded_tci_does_not_match_active_data_beam";
+        else
+            reason = "decoded_tci_matches_existing_state";
+        end
+    end
+
+    function state = transitionBeamManagementRuntime(state, ueIdx, event, ...
+            resourceID, measuredRSRP, measuredSINR, activatedTCIState, sourceEvidence)
+        machine = state.BeamManagementMachines{ueIdx};
+        row = machine.transition(string(event), ...
+            MeasuredResourceID=string(resourceID), ...
+            MeasuredRSRPDBM=double(measuredRSRP), ...
+            MeasuredSINRDB=double(measuredSINR), ...
+            ActivatedTCIState=double(activatedTCIState), ...
+            GeometryOracleUsed=false);
+        row.UEIndex = repmat(double(ueIdx),height(row),1);
+        row.Slot = repmat(double(state.CurrentSlot),height(row),1);
+        row.SweepPointIndex = repmat(double(sixgr.util.structGet( ...
+            state,"SweepPointIndex",1)),height(row),1);
+        row.ConfiguredSNR_dB = repmat(double(sixgr.util.structGet( ...
+            state,"CurrentSNR_dB",NaN)),height(row),1);
+        row.SourceEvidence = repmat(string(sourceEvidence),height(row),1);
+        row.SelectionAuthority = repmat( ...
+            "receiver_measurement_and_decoded_control",height(row),1);
+        state.BeamManagementStateTraceTable = ...
+            sixgr.truth.CoupledTruthRuntime.appendCompatTable( ...
+            state.BeamManagementStateTraceTable,row);
+    end
+
+    function [stateID, codepoint] = beamTCIMappingForCRI(cfg, cri)
+        states = double(sixgr.util.structGet(cfg, ...
+            "phy.beamManagement.csiResourceToTCIStateIDs", []));
+        codepoints = double(sixgr.util.structGet(cfg, ...
+            "phy.beamManagement.csiResourceToTCICodepoints", []));
+        ordinal = round(double(cri)) + 1;
+        if ~(isfinite(cri) && cri == fix(cri) && ordinal >= 1 && ...
+                ordinal <= numel(states) && ordinal <= numel(codepoints))
+            error("sixgr:truth:CSIResourceOutsideTCIMapping", ...
+                "Received CRI=%g has no installed TCI state/codepoint mapping.",cri);
+        end
+        stateID = states(ordinal);
+        codepoint = codepoints(ordinal);
+    end
+
+end
+
+methods(Static, Access=private)
+
     function [state, grant, allowExecution] = applyPDCCHGrantTrialImpl(state, grant, direction, trialT)
         direction = upper(string(direction));
         ueIdx = double(sixgr.util.structGet(grant, "UEIndex", NaN));
@@ -7960,6 +8231,19 @@ methods(Static, Access=private)
         regMapping = sixgr.truth.CoupledTruthRuntime.rowLogical(pdcchRow, "PDCCHREGMappingAvailable", false);
         grantValid = sixgr.truth.CoupledTruthRuntime.rowLogical(pdcchRow, "GrantValid", pdcchOk);
         negativeExpectedOk = sixgr.truth.CoupledTruthRuntime.rowLogical(pdcchRow, "NegativeExpectedOk", false);
+        if direction == "DL" && pdcchOk && bindingOk && ...
+                logical(sixgr.util.structGet(state, ...
+                "BeamManagementRuntimeEnabled", false))
+            [state, tciSelectionOk, tciSelectionReason] = ...
+                sixgr.truth.CoupledTruthRuntime.applyDecodedTCIBeamRuntime( ...
+                state, ueIdx, pdcchRow);
+            if ~tciSelectionOk
+                pdcchOk = false;
+                grantValid = false;
+                pdcchReason = "pdcch_tci_binding_failed:" + ...
+                    string(tciSelectionReason);
+            end
+        end
         ok = ~gatingActive || pdcchOk;
         controlSlot=NaN;
         if ok
@@ -10765,6 +11049,8 @@ methods(Static, Access=private)
             state.LatestULFeedback(ueIdx) = latest;
         else
             state.LatestDLFeedback(ueIdx) = latest;
+            state = sixgr.truth.CoupledTruthRuntime. ...
+                stageReceivedCSIBeamRuntime(state, report);
         end
     end
 

@@ -1,0 +1,52 @@
+inherits:
+  - ./h4_100_tdla30_connected_adaptive.yaml
+
+meta:
+  scenario_id: h4_100_cold_access_beam_sweep
+  description: >
+    H4 cold-start waveform case. Four physical Case-B SSB candidates are
+    received independently before Type-0 PDCCH/SIB1, four-step PRACH and
+    RRC-connected scheduling. Beam choice is receiver evidence only.
+  tags: [lls, truth, h4, 100mhz, cold_access, ssb_beam_sweep, prach, no_proxy]
+
+initial_access:
+  enabled: true
+  mib:
+    enabled: true
+    pdcch_config_sib1: 0
+    dmrs_type_a_position: 2
+  type0:
+    monitoring_occasion_ordinal: 1
+    note17_band: false
+  sib1:
+    enabled: true
+    decode_from_waveform_required: true
+    observation_subframes: 40
+
+random_access_evidence:
+  four_step_ra_required: true
+  msg1_prach_required: true
+  msg2_rar_pdcch_pdsch_required: true
+  msg3_pusch_required: true
+  msg4_contention_resolution_required: true
+  ra_rnti_decode_required: true
+  rar_mac_ce_decode_required: true
+  timing_advance_required: true
+  contention_resolution_identity_required: true
+  require_runtime_stage_waveforms: true
+  allow_runtime_stage_waveform_composition: true
+  false_alarm_test_enabled: false
+  missed_detection_test_enabled: false
+
+control_gating:
+  pbch_required: true
+  prach_required: true
+  pdcch_required: true
+  srs_required: true
+  srs_max_age_slots: 5
+  trs_required: true
+  trs_max_age_slots: 20
+
+output:
+  profile: h4_100_cold_access_beam_sweep
+

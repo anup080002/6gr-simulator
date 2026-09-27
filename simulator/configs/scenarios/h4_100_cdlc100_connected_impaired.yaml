@@ -1,0 +1,58 @@
+inherits:
+  - ./h4_100_cdlc100_connected_adaptive.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_impaired
+  description: >
+    H4 CDL-C connected impairment treatment arm. These frozen RF values are
+    research assumptions, not 3GPP conformance limits. The clean CDL-C and
+    AWGN calibration references remain separate scenarios.
+  tags: [lls, truth, h4, 100mhz, cdl-c, rf_impairments, no_proxy]
+
+impairments:
+  # 0.1 ppm at 4 GHz. The relative 400 Hz offset is applied once.
+  cfo_hz: 400
+  cfo_enabled: true
+  cfo_correction_enable: true
+  cfo_estimation_method: cyclic_prefix
+  phase_noise_enabled: true
+  phase_noise_model: Lorentzian
+  phase_noise_L0_dBcHz: -100
+  phase_noise_f3dB_Hz: 1000
+  phase_noise_floor_dBcHz: -150
+  iq_imbalance_enabled: true
+  iq_amplitude_imbalance_dB: 0.5
+  iq_phase_imbalance_deg: 1.0
+  iq_imbalance_correction_enable: true
+  pa_nonlinearity_enabled: true
+  pa_model: rapp
+  pa_output_backoff_dB: 8.0
+  pa_smoothness: 2.0
+  adc_quantization_enabled: true
+  dac_quantization_enabled: true
+  adc_quantization_bits: 12
+  dac_quantization_bits: 12
+  timing_offset_samples: 0.25
+  timing_offset_enabled: true
+
+rf_frontend:
+  enabled: true
+  profile_id: rf_impaired_research
+  claim_class: RESEARCH
+  oscillator:
+    tx_error_hz: 0
+    rx_error_hz: 400
+  phase_noise:
+    enabled: true
+    profile_id: lorentzian_study_assumption
+    seed: 20260927
+  iq_and_lo_leakage:
+    enabled: true
+    gain_imbalance_db: 0.5
+    phase_imbalance_deg: 1.0
+    dc_offset_real: 0
+    dc_offset_imag: 0
+    compensation_enabled: true
+
+output:
+  profile: h4_100_cdlc100_connected_impaired
