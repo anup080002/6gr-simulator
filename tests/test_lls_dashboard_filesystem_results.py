@@ -148,6 +148,13 @@ def test_dashboard_discovers_generic_sweep_parent_during_child_preflight(
     assert status["status_authority"] == (
         "generic_sweep_resolved_config_and_materialized_child"
     )
+    completed = dict(row)
+    completed["run_id"] = row["run_id"] + 1
+    completed["status_text"] = "completed"
+    completed["status_json"] = json.dumps({"run_completion": "completed"})
+    assert dash.order_run_rows_for_display(
+        [completed, row], prefer_active=True
+    )[0]["status_text"] == "initializing"
 
 
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:

@@ -5402,7 +5402,10 @@ def _run_status_rank(row: dict[str, Any], *, prefer_active: bool) -> int:
     token = _effective_run_status(row)
     if not token:
         return 0
-    if any(key in token for key in ("queued", "launching", "running", "finalizing", "retry")):
+    if any(
+        key in token
+        for key in ("queued", "launching", "initializing", "running", "finalizing", "retry")
+    ):
         return 6 if prefer_active else 2
     if token == "completed":
         return 5 if not prefer_active else 4
