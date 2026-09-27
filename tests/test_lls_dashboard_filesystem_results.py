@@ -110,6 +110,46 @@ def test_dashboard_discovers_sweep_points_before_and_after_parent_completion(
     assert set(dash._filesystem_run_folders()) == {parent, child}
 
 
+def test_dashboard_discovers_generic_sweep_parent_during_child_preflight(
+    tmp_path, monkeypatch
+) -> None:
+    results = tmp_path / "results"
+    parent = results / "lls" / "h4_sweep" / "run_01"
+    meta = parent / "meta"
+    child = parent / "sweeps" / "snr_40_db"
+    meta.mkdir(parents=True)
+    child.mkdir(parents=True)
+    (meta / "scenario_config_identity.json").write_text(
+        json.dumps({"ScenarioID": "h4_sweep", "GeneratedUTC": "2026-09-27T00:00:00Z"}),
+        encoding="utf-8",
+    )
+    (meta / "scenario_config_resolved.json").write_text(
+        json.dumps({
+            "meta": {"scenario_id": "h4_sweep"},
+            "scenario": {
+                "runner_profile": "generic_sweep",
+                "sweep": {
+                    "overrides": [
+                        {"label": "snr_40_db", "config": {"simulation": {"snr_db": 40}}}
+                    ]
+                },
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dash, "_dashboard_result_roots", lambda: [results])
+
+    assert dash._filesystem_run_folders() == [parent]
+    row = dash.filesystem_run_row_from_folder(parent)
+    assert row is not None
+    assert row["status_text"] == "initializing"
+    status = dash._status_payload(row)
+    assert status["stage"] == "generic_sweep_child_preflight"
+    assert status["status_authority"] == (
+        "generic_sweep_resolved_config_and_materialized_child"
+    )
+
+
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
     packed_vector = "|".join("0" for _ in range(70000))
     raw = ("TrialID,MeasuredLDPCParityCheckVector,CRCPass\n"

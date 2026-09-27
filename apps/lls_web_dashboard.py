@@ -4805,6 +4805,30 @@ def _is_nested_execution_artifact(run_folder: Path, candidate: Path) -> bool:
     return bool(relative.parts and relative.parts[0].lower() == "sweeps")
 
 
+def _is_generic_sweep_parent_preflight(run_dir: Path) -> bool:
+    """Recognize an executing sweep parent before its first live-stage row."""
+
+    identity_path = _windows_extended_path(
+        run_dir / "meta" / "scenario_config_identity.json"
+    )
+    resolved_path = _windows_extended_path(
+        run_dir / "meta" / "scenario_config_resolved.json"
+    )
+    sweep_dir = _windows_extended_path(run_dir / "sweeps")
+    if not (identity_path.is_file() and resolved_path.is_file() and sweep_dir.is_dir()):
+        return False
+    resolved = _read_json_file(resolved_path)
+    if str(path_get(resolved, "scenario.runner_profile", "")).strip().lower() != "generic_sweep":
+        return False
+    try:
+        # A materialized child directory is execution evidence. The parent
+        # remains labelled initializing until live or terminal authority is
+        # persisted; configuration alone never becomes a claimed run.
+        return any(entry.is_dir() for entry in sweep_dir.iterdir())
+    except OSError:
+        return False
+
+
 def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
     """Return true only for a folder with a recognized atomic run authority."""
     def is_file(relative_path: Path) -> bool:
@@ -4830,6 +4854,7 @@ def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
                 or is_file(Path("meta") / "scenario_config_resolved.json")
             )
         )
+        or _is_generic_sweep_parent_preflight(run_dir)
     )
 
 
@@ -4931,6 +4956,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     compact_validity_rows = _read_csv_records(compact_validity_path)
     compact_manifest_rows = _read_csv_records(compact_manifest_path)
     compact_resolved_config = _read_json_file(compact_config_path)
+    generic_sweep_preflight = _is_generic_sweep_parent_preflight(run_folder)
     compact_lls_run = bool(
         compact_provenance
         and compact_summary
@@ -4947,6 +4973,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         and not component_qualification_manifest
         and not compact_lls_run
         and not (live_stage and (config_identity or resolved_config))
+        and not generic_sweep_preflight
     ):
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
@@ -5029,6 +5056,8 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         # canonical interim authority, so expose it as active instead of
         # hiding the run from /runs and /realtime until finalization.
         run_completion = "running"
+    if not run_completion and generic_sweep_preflight:
+        run_completion = "initializing"
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
@@ -5123,7 +5152,14 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     status_payload: dict[str, Any] = {
         "status": run_completion,
         "run_completion": run_completion,
-        "stage": str(live_stage.get("Stage") or "filesystem_result_folder"),
+        "stage": str(
+            live_stage.get("Stage")
+            or (
+                "generic_sweep_child_preflight"
+                if generic_sweep_preflight
+                else "filesystem_result_folder"
+            )
+        ),
         "status_authority": (
             "run_provenance_and_result_validity"
             if compact_lls_run
@@ -5132,7 +5168,15 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             else (
                 summary.get("StatusAuthority")
                 or manifest.get("StatusAuthority")
-                or ("live_stage_status" if live_stage else "filesystem_scenario_summary")
+                or (
+                    "live_stage_status"
+                    if live_stage
+                    else (
+                        "generic_sweep_resolved_config_and_materialized_child"
+                        if generic_sweep_preflight
+                        else "filesystem_scenario_summary"
+                    )
+                )
             )
         ),
         "result_ok": result_ok,
@@ -5197,7 +5241,10 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             or recovery.get("SourceInventorySHA256")
             or ""
         ),
-        "current_stage": str(live_stage.get("Stage") or ""),
+        "current_stage": str(
+            live_stage.get("Stage")
+            or ("generic_sweep_child_preflight" if generic_sweep_preflight else "")
+        ),
         "current_snr_db": _int_value(
             live_stage.get("CurrentSNR_dB")
             or compact_summary.get("SNRdB")
