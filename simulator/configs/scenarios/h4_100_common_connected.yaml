@@ -37,6 +37,35 @@ simulation:
 integration:
   power_reference_mode: normalized_unit_es
 
+system:
+  scheduler:
+    # Grant TBS is calculated from the materialized allocation with nrTBS.
+    # No fast-NRE approximation is permitted in this H4 family.
+    tbsMode: faithful
+    fastNREApprox: false
+
+power_and_rf_frontend:
+  bs_tx_power_dbm: 30
+  ue_tx_power_dbm: 23
+  downlink_power_normalization_policy: fixed_epre_over_configured_bwp
+  uplink_power_normalization_policy: active_ofdm_total_power
+  ssb_power_reference_policy: quantized_full_bwp_epre
+  ue_noise_figure_db: 7
+  noise_figure: 5
+  rx_gain_control: agc
+  dac_resolution_bits: 12
+  adc_resolution_bits: 12
+  pa_model: ideal
+  pa_nonlinearity_model: none
+  cfr_enabled: false
+  dpd_enabled: false
+  iq_imbalance: none
+  dc_offset: none
+  lo_phase_noise_model: none
+  cfo_model: none
+  drift_rate_model: none
+  saturation_model: none
+
 canonical_control:
   integration:
     power_reference_mode: normalized_unit_es
