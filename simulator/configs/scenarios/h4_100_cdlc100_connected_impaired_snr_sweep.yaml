@@ -92,4 +92,10 @@ scenario:
 
 output:
   profile: h4_100_cdlc100_connected_impaired_snr_sweep
-
+  # MATLAB's call-graph profiler is diagnostic instrumentation, not a PHY
+  # measurement. Keeping it active across eight 200-slot, 100 MHz waveform
+  # children consumes multi-gigabyte call history before slot zero. The
+  # simulator's bounded runtime timing/complexity evidence remains enabled.
+  profiler_enabled: false
+  profiler_top_functions: 160
+  profiler_top_edges: 320
