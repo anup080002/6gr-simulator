@@ -1,0 +1,95 @@
+inherits:
+  - ./h4_100_cdlc100_connected_impaired.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_impaired_snr_sweep
+  description: >
+    Eight independent H4 4.0 GHz, 100 MHz, mu-1 TDD CDL-C/100 ns
+    connected-waveform executions at 40, 30, 20, 10, 0, -10, -20 and
+    -30 dB configured occupied-RE Es/N0. The four-chain UE, 64-TXRU
+    two-panel gNB, measured Type-I multi-panel CSI codebook, causal beam/TCI
+    state, ILLA, OLLA, HARQ and the frozen RF-impairment treatment are
+    rebuilt for every point. Child truth artifacts remain immutable; the
+    parent publishes provenance-labelled joint CSV and PNG comparisons.
+  purpose: >
+    Evaluate the complete impaired H4 connected LLS chain without carrying
+    HARQ, link-adaptation, beam, channel, noise, access or traffic state
+    between configured-SNR operating points.
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  tags: [lls, truth, tdd, fr1, h4, 4ghz, 100mhz, cdl-c, adaptive_rank, beam_management, illa, olla, harq, rf_impairments, configured_snr_sweep, no_proxy]
+
+canonical_control:
+  launch:
+    scenario_mode: isolated_fixed_snr_points
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: false
+
+# The parent only orchestrates complete fixed-SNR child waveform runs. The
+# child receiver/channel is constructed after its override is installed.
+simulation:
+  snr_db: 20
+  random_seed: 20260927
+  snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
+    values_db: [0]
+
+scenario:
+  runner_profile: generic_sweep
+  sweep:
+    base_profile: waveform_bundle
+    execution_error_policy: retain_failure_and_continue
+    output_name: h4_100_cdlc100_connected_impaired_snr_sweep
+    overrides:
+      - label: snr_40_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_40db}
+          simulation: {snr_db: 40, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_40db}
+      - label: snr_30_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_30db}
+          simulation: {snr_db: 30, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_30db}
+      - label: snr_20_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_20db}
+          simulation: {snr_db: 20, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_20db}
+      - label: snr_10_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_10db}
+          simulation: {snr_db: 10, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_10db}
+      - label: snr_0_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_0db}
+          simulation: {snr_db: 0, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_0db}
+      - label: snr_m10_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_m10db}
+          simulation: {snr_db: -10, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_m10db}
+      - label: snr_m20_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_m20db}
+          simulation: {snr_db: -20, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_m20db}
+      - label: snr_m30_db
+        config:
+          meta: {scenario_id: h4_100_cdlc100_connected_impaired_m30db}
+          simulation: {snr_db: -30, random_seed: 20260927}
+          output: {profile: h4_100_cdlc100_connected_impaired_m30db}
+
+output:
+  profile: h4_100_cdlc100_connected_impaired_snr_sweep
+

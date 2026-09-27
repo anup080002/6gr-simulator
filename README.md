@@ -38,6 +38,10 @@ the older `lls_3gpp_4ghz_100mhz_longrun.yaml`:
 - `h4_100_beam_refinement_tci.yaml`: measured P1/P2 and decoded-TCI binding.
 - `h4_100_cdlc100_connected_impaired.yaml`: separate frozen RF-impairment
   treatment arm; its RF values are research assumptions, not 3GPP limits.
+- `h4_100_cdlc100_connected_impaired_snr_sweep.yaml`: eight independent
+  impaired CDL-C points at `40, 30, 20, 10, 0, -10, -20, -30 dB`, with
+  four-chain UE state rebuilt at every point and joint campaign CSV/PNG
+  publication under the parent run folder.
 
 The gNB physical shape is 4×4 spatial positions × H/V × two panels = 64
 elements/TXRUs. The UE is **four-chain 4×4 MIMO capability**, implemented as
@@ -57,6 +61,14 @@ of the family when required):
 
 ```bat
 cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_beam_refinement_tci.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_beam_refinement_tci.yaml','results','h4_100_beam_refinement_tci'); disp(out); assert(out.Ok,'H4 run failed; inspect retained evidence.');"
+```
+
+Run the complete eight-point impaired H4 sweep. Every child retains its own
+truth artifacts under `sweeps/`; consolidated all-point CSVs and PNGs are
+written under the parent run's `reports/csv` and `reports/image` folders:
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\h4_100_cdlc100_connected_impaired_snr_sweep.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_single('simulator/configs/scenarios/h4_100_cdlc100_connected_impaired_snr_sweep.yaml','results','h4_100_cdlc100_connected_impaired_snr_sweep'); disp(out); fprintf('RUN_FOLDER=%s\n',char(out.RunFolder)); assert(out.Ok,'H4 eight-point sweep failed; inspect retained child and parent evidence.');"
 ```
 
 Start the WebGUI separately from PowerShell so it remains visible while the
