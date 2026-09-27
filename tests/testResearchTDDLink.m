@@ -29,7 +29,10 @@ for d=["DL","UL"]
         assert(all(tx.Waveform(clock.StartSample(k)+1:clock.StopSampleExclusive(k),:)==0,'all'));
     end
 end
-iq=readtable(fullfile(out.RunFolder,'waveform','iq_manifest.csv'));
+% Absolute Windows paths contain repeated backslashes; MATLAB delimiter
+% inference can mistake those for a delimiter. The manifest contract is CSV.
+iq=readtable(fullfile(out.RunFolder,'waveform','iq_manifest.csv'), ...
+    'Delimiter',',','ReadVariableNames',true,'VariableNamingRule','preserve');
 assert(height(iq)==8 && all(iq.ClippedComponents==0));
 assert(all(iq.QuantizationMaxError<=.5/32767+eps));
 assert(isfile(fullfile(out.RunFolder,'reports','image','tdd_goodput.png')));

@@ -1,0 +1,48 @@
+frequency:
+  range_name: FR1
+  band_name: h4_100_4ghz_research_tdd
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 100000000
+  bandwidth_options_hz: [100000000]
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  numerology_options_khz: [30]
+  max_mimo_size: 4
+  n_size_grid: 273
+global_radio_scope:
+  duplex_mode: TDD
+  carrier_frequency_hz: 4000000000
+  frequency_range_label: FR1
+  channel_bandwidth_hz: 100000000
+  simulation_bandwidth_hz: 100000000
+  occupied_bandwidth_hz: 98280000
+  scs_hz: 30000
+  numerology_mu: 1
+  cp_type: normal
+  sample_rate_hz: 122880000
+  fft_size: 4096
+  ifft_size: 4096
+  oversampling_ratio: 1
+  guard_band_hz: 860000
+  center_frequency_offset_hz: 0
+  spectrum_sharing_mode: none
+  multi_carrier_mode: single_carrier
+  ca_mode: disabled
+  tn_ntn_mode: tn
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: flexible
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 10
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 2
+waveform:
+  fft_size: 4096
+  sample_rate_hz: 122880000
+

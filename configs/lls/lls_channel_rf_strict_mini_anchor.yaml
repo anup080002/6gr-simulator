@@ -69,6 +69,9 @@ simulation:
   snr_sweep_offsets_db: [0]
   noise_operating_mode: receiver_noise_figure_thermal_noise
 
+integration:
+  power_reference_mode: absolute_calibrated_sqrt_mw
+
 frequency:
   range_name: FR1
   center_frequency_hz: 2140000000

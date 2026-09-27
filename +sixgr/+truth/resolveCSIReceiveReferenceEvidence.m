@@ -21,11 +21,19 @@ assert(ismember('CSIReferenceSlot',calendar.Properties.VariableNames), ...
 first=sixgr.util.structGet(state,'SweepPointStartSlot',1);
 validateattributes(first,{'numeric'},{'scalar','real','finite','integer','positive'});
 owner=sixgr.util.structGet(state,'SharedWaveformStream',[]);
+ledger=sixgr.util.structGet(state,'SharedDataTXLedger',{});
+if isempty(owner)
+    assert(isempty(ledger), ...
+        'sixgr:truth:CSIReferenceTXOwnerRequired', ...
+        'A retained TX requires its actual physical owner.');
+    % No physical owner and no retained TX ledger is conclusive absence,
+    % not evidence for a configured CSI receive obligation.
+    return;
+end
 assert(isa(owner,'sixgr.truth.CoupledWaveformStream') && isscalar(owner), ...
     'sixgr:truth:CSIReferenceTXOwnerRequired','A retained TX requires its actual physical owner.');
 records=owner.DataTransmissions;
 csirsRecords=owner.CSIRSTransmissions;
-ledger=sixgr.util.structGet(state,'SharedDataTXLedger',{});
 carrier=sixgr.phy.grid.makeCarrier(cfg);
 
 rows=cell(0,1);

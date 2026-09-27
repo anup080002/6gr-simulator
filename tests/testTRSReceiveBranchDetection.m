@@ -21,6 +21,10 @@ cfg = sixgr.lls6g.buildInternalConfig(s,tempname);
 p = sixgr.link.prepareTRSTransmission(cfg,-10,'RuntimeSlot', ...
     double(cfg.phy.trs.slotNumbers(1))+1);
 tx = p.Tx; strict = p.StrictConfig;
+% This synthetic branch-permutation unit fixture has no executed shared
+% channel/RF ledger. Exercise the general received-grid estimator instead
+% of claiming eligibility for the flat-AWGN shortcut.
+strict.RuntimeChannelEstimator = "nr_channel_estimate";
 wave = tx.Waveform;
 assert(size(wave,2)==1,'TRS has one logical reference port.');
 gains = [0 1;1 0;1 -1;1 1i];

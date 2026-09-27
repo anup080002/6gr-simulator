@@ -12,7 +12,7 @@ cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
 % Production binds this at the runner front door; this direct component
 % invocation must retain an equally explicit continuous-IQ output root.
 cfg.run.rootRunFolder=fullfile(outputRoot,'physical_clock_capture');
-saved=load('docs/lls/evidence_20260913/received_dl_harq_calendar_02/attempt_3.mat'); a=saved.a;
+saved=load('docs/lls/evidence_20260913/received_dl_harq_calendar_03/attempt_3.mat'); a=saved.a;
 multi=struct('Enabled',true,'NumUsers',1,'RNTIStart',1,'ExecutionModel','slot_coupled_truth');
 state=sixgr.truth.CoupledTruthRuntime.initialize(cfg,tempname,multi,struct(),a.DataAbsoluteSlot+2);
 state.CurrentSlot=1; state.CurrentFrame=1; state.CurrentCanonicalSlot=1;

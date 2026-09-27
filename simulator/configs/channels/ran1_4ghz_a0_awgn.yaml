@@ -1,0 +1,11 @@
+channels:
+  model_type: AWGN
+  profile: AWGN
+  shared_identity_awgn_enabled: false
+  doppler_hz: 0
+  doppler_source_mode: configured
+  mobility_kmph: 0
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  o2i_model: none
+

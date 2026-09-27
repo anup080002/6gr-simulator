@@ -1,0 +1,39 @@
+inherits:
+  - ./lls_4ghz_20mhz_4tx2rx_awgn_reference.yaml
+
+meta:
+  scenario_id: lls_4ghz_20mhz_4tx2rx_awgn_snr_sweep
+  description: >
+    Eight independent 4.000 GHz C4_20 AWGN integration-smoke points. The
+    configured axis is occupied-reference-RE Es/N0; receiver SINR remains a
+    measured output. Seed 1001 is paired across all points in this smoke tier.
+  purpose: Validate fixed-frequency binding, legal grid execution and joint exports before qualification budgets.
+  research_class: optional_research_experiment
+  tags: [lls, truth, tdd, 4ghz, 20mhz, configured-snr-sweep, no-proxy]
+
+scenario:
+  runner_profile: generic_sweep
+  sweep:
+    base_profile: waveform_bundle
+    execution_error_policy: retain_failure_and_continue
+    output_name: lls_4ghz_20mhz_4tx2rx_awgn_snr_sweep
+    overrides:
+      - {label: snr_m30_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_m30db}, simulation: {snr_db: -30, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_m30db}}}
+      - {label: snr_m20_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_m20db}, simulation: {snr_db: -20, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_m20db}}}
+      - {label: snr_m10_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_m10db}, simulation: {snr_db: -10, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_m10db}}}
+      - {label: snr_0_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_0db}, simulation: {snr_db: 0, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_0db}}}
+      - {label: snr_10_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_10db}, simulation: {snr_db: 10, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_10db}}}
+      - {label: snr_20_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_20db}, simulation: {snr_db: 20, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_20db}}}
+      - {label: snr_30_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_30db}, simulation: {snr_db: 30, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_30db}}}
+      - {label: snr_40_db, config: {meta: {scenario_id: lls_4ghz_20mhz_awgn_40db}, simulation: {snr_db: 40, random_seed: 1001}, output: {profile: lls_4ghz_20mhz_awgn_40db}}}
+
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: false
+    state_policy: independent_link_state_per_point
+    initial_access_state_policy: independent_per_point
+    values_db: [0]
+
+output:
+  profile: lls_4ghz_20mhz_4tx2rx_awgn_snr_sweep
+

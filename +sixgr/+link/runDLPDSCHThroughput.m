@@ -3337,6 +3337,10 @@ row.HestTxPorts = double(sixgr.util.structGet(rxObs, "HestTxPorts", NaN));
 row.SINRMeasurementDomain = string(sixgr.util.structGet(rxObs, "SINRMeasurementDomain", ...
     "csi_rs_resource_selective_channel_estimate"));
 row.ReferenceMeasuredSINRDomain = row.SINRMeasurementDomain;
+publication = sixgr.link.csiReferenceSINRPublication(rxObs, row.SNR_dB);
+for publicationField = string(fieldnames(publication)).'
+    row.(publicationField) = publication.(publicationField);
+end
 row.PowerReferencePlane = string(sixgr.util.structGet(rxObs, "PowerReferencePlane", ...
     "normalized_ofdm_resource_grid_after_receiver_synchronization"));
 row.CQI = double(sixgr.util.structGet(metrics, "CQI", NaN));
@@ -3754,6 +3758,10 @@ row = struct( ...
     "RxRuntimeObservationStatus", "", "RuntimeBlocker", "", "RuntimeEvidenceSource", "", ...
     "RuntimeEventObserved", false, "SourceArtifact", "", "SourceTable", "");
 row = sixgr.report.bindTransmitPowerEvidence(row, struct());
+publication = sixgr.link.csiReferenceSINRPublication(struct(), NaN);
+for publicationField = string(fieldnames(publication)).'
+    row.(publicationField) = publication.(publicationField);
+end
 end
 
 function cellID = localCarrierCellID(carrier)

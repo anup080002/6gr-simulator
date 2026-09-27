@@ -1,0 +1,12 @@
+channels:
+  model_type: CDL
+  profile: CDL-C
+  delay_spread_ns: 100
+  doppler_hz: 11.118803
+  doppler_source_mode: configured
+  mobility_kmph: 3
+  los_enabled: false
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  o2i_model: none
+

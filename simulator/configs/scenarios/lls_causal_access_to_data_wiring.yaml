@@ -693,7 +693,7 @@ reference_signals:
   srs_slot_within_period: 4
   trs_periodicity_slots: 4
   csi_rs_periodicity_slots: 4
-  csi_rs_offset_slots: 1
+  csi_rs_offset_slots: 2
   pdsch_dmrs:
     enabled: true
     purpose: "pdsch_demodulation"
@@ -5953,6 +5953,10 @@ pucch_resources:
   enabled: true
   profile: "nr_rel18_pucch_strict"
   configuration_epoch: 1
+  format2:
+    simultaneous_harq_ack_csi: true
+    # TS 38.331 PUCCH-FormatConfig authority for the selected CSI resource.
+    max_code_rate: 0.35
   resource_sets:
     -
       id: 0

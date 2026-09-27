@@ -204,6 +204,7 @@ cfg.phy.mib = struct( ...
     "intraFreqReselection", false);
 cfg.phy.pbch = struct("enable", true);
 cfg.phy.sib1 = struct("coreset0Index", 0, "searchSpaceZero", 0);
+cfg.phy.synchronization = localSynchronizationDetectorPolicy();
 end
 
 function cfg = localCaseConfig(row)
@@ -263,6 +264,14 @@ cfg.phy.mib = struct( ...
     "cellBarred", false, ...
     "intraFreqReselection", false);
 cfg.phy.sib1 = struct("coreset0Index", 0, "searchSpaceZero", 0);
+cfg.phy.synchronization = localSynchronizationDetectorPolicy();
+end
+
+function detector = localSynchronizationDetectorPolicy()
+detector = struct( ...
+    "ssbDetectorTargetFalseAlarmProbability", 1e-3, ...
+    "pssDetectionThreshold", 0, ...
+    "sssHypothesisTestThreshold", 0);
 end
 
 function localAssertError(fcn, expectedID)

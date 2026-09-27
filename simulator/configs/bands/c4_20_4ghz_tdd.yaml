@@ -1,0 +1,103 @@
+frequency:
+  range_name: FR1
+  band_name: c4_20_4ghz_research_tdd
+  center_frequency_hz: 4000000000
+  bandwidth_hz: 20000000
+  bandwidth_options_hz: [20000000]
+  duplex_mode: TDD
+  carrier_count: 1
+  carrier_aggregation_enabled: false
+  numerology_options_khz: [30]
+  max_mimo_size: 4
+  n_size_grid: 51
+
+global_radio_scope:
+  duplex_mode: TDD
+  carrier_frequency_hz: 4000000000
+  frequency_range_label: FR1
+  channel_bandwidth_hz: 20000000
+  simulation_bandwidth_hz: 20000000
+  occupied_bandwidth_hz: 18360000
+  scs_hz: 30000
+  numerology_mu: 1
+  cp_type: normal
+  sample_rate_hz: 30720000
+  fft_size: 1024
+  ifft_size: 1024
+  oversampling_ratio: 1
+  guard_band_hz: 820000
+  center_frequency_offset_hz: 0
+  spectrum_sharing_mode: none
+  multi_carrier_mode: single_carrier
+  ca_mode: disabled
+  tn_ntn_mode: tn
+
+frame:
+  scs_khz: 30
+  cp_type: normal
+  slot_format: flexible
+  tdd_common:
+    ReferenceSubcarrierSpacingKHz: 30
+    Pattern1:
+      PeriodicityMilliseconds: 2.5
+      NumDownlinkSlots: 3
+      NumDownlinkSymbols: 10
+      NumUplinkSlots: 1
+      NumUplinkSymbols: 2
+
+waveform:
+  fft_size: 1024
+  sample_rate_hz: 30720000
+
+bwp:
+  dl:
+    bwp_id: 0
+    direction: DL
+    n_start_bwp: 0
+    n_size_bwp: 51
+    scs_khz: 30
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 30
+  ul:
+    bwp_id: 0
+    direction: UL
+    n_start_bwp: 0
+    n_size_bwp: 51
+    scs_khz: 30
+    cp_type: normal
+    active: true
+    common_tdd_reference_scs_khz: 30
+  component_carriers:
+    - cc_id: 0
+      serving_cell_id: 1
+      scheduling_cc_ids: [0]
+      center_frequency_hz: 4000000000
+      band: 4ghz_research
+      frequency_range: FR1
+      channel_bandwidth_mhz: 20
+      duplex_mode: TDD
+      dl_carrier_grid: {n_start_grid: 0, n_size_grid: 51, scs_khz: 30}
+      ul_carrier_grid: {n_start_grid: 0, n_size_grid: 51, scs_khz: 30}
+      carrier_indicator_map:
+        - {indicator: 0, scheduled_cc_id: 0}
+
+pdsch:
+  prb_start: 0
+  num_prb: 51
+
+pusch:
+  prb_start: 0
+  num_prb: 51
+
+reference_signals:
+  ssb_case: Case B
+  ssb_scs_khz: 30
+  ssb_lmax: 8
+  ssb_Lmax: 8
+  csi_rs_resource_num_rbs: [51]
+
+random_access:
+  carrier_frequency_hz: 4000000000
+  carrier_scs_khz: 30
+  n_size_grid: 51

@@ -5738,15 +5738,20 @@ methods(Static, Access=private)
         measuredOutage = receivedDecision == "measured_cqi_zero_out_of_range" || ...
             receivedStatus == "unavailable_measured_cqi_zero_out_of_range";
         if schedulerUsesCQITable && feedbackValid && (recoveryPending || measuredOutage)
-            ueState.CausalFeedbackUsable = false;
             ueState.MCSIndex = NaN;
             ueState.Modulation = '';
             ueState.TargetCodeRate = NaN;
             if recoveryPending
+                ueState.CausalFeedbackUsable = false;
                 ueState.CQI = NaN;
                 ueState.CausalFeedbackStatus = "cqi_outage_recovery_pending";
                 ueState.MCSIndexAuthority = "blocked_cqi_outage_recovery_filter";
             else
+                % CQI zero is a valid, causal receiver observation. Keep it
+                % usable at the scheduler boundary so the explicit outage
+                % gate blocks new data; marking it unusable would reopen the
+                % pre-feedback bootstrap path.
+                ueState.CausalFeedbackUsable = true;
                 ueState.CQI = 0;
                 ueState.CausalFeedbackStatus = "measured_cqi_zero_out_of_range";
                 ueState.MCSIndexAuthority = "blocked_measured_cqi_zero_out_of_range";
@@ -10702,12 +10707,12 @@ methods(Static, Access=private)
         latest.CSIAgeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSIAgeSeconds", NaN));
         latest.CSICoherenceTimeSeconds = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSICoherenceTimeSeconds", NaN));
         latest.CSIAgingModel = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "CSIAgingModel", "")));
-        latest.SubbandSINRVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SubbandSINRVector_dB", "")));
-        latest.AgedSubbandSINRVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AgedSubbandSINRVector_dB", "")));
-        latest.PostEqSINRPerLayer_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "PostEqSINRPerLayer_dB", "")));
-        latest.AgedPostEqSINRPerLayer_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "AgedPostEqSINRPerLayer_dB", "")));
-        latest.SubbandAgingPenaltyVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "SubbandAgingPenaltyVector_dB", "")));
-        latest.LayerAgingPenaltyVector_dB = char(string(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LayerAgingPenaltyVector_dB", "")));
+        latest.SubbandSINRVector_dB = sixgr.truth.CoupledTruthRuntime.optionalNumericVectorToken(row, "SubbandSINRVector_dB");
+        latest.AgedSubbandSINRVector_dB = sixgr.truth.CoupledTruthRuntime.optionalNumericVectorToken(row, "AgedSubbandSINRVector_dB");
+        latest.PostEqSINRPerLayer_dB = sixgr.truth.CoupledTruthRuntime.optionalNumericVectorToken(row, "PostEqSINRPerLayer_dB");
+        latest.AgedPostEqSINRPerLayer_dB = sixgr.truth.CoupledTruthRuntime.optionalNumericVectorToken(row, "AgedPostEqSINRPerLayer_dB");
+        latest.SubbandAgingPenaltyVector_dB = sixgr.truth.CoupledTruthRuntime.optionalNumericVectorToken(row, "SubbandAgingPenaltyVector_dB");
+        latest.LayerAgingPenaltyVector_dB = sixgr.truth.CoupledTruthRuntime.optionalNumericVectorToken(row, "LayerAgingPenaltyVector_dB");
         latest.OuterLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "OuterLoopEnabled", false));
         latest.InnerLoopEnabled = logical(sixgr.truth.CoupledTruthRuntime.rowLogical(row, "InnerLoopEnabled", false));
         latest.LinkAdaptationStateUpdateCount = double(sixgr.truth.CoupledTruthRuntime.rowValue(row, "LinkAdaptationStateUpdateCount", NaN));
@@ -12086,6 +12091,21 @@ methods(Static, Access=private)
             parts(i) = string(sprintf("%.6g", values(i)));
         end
         token = char(strjoin(parts, "|"));
+    end
+
+    function token = optionalNumericVectorToken(row, name)
+        raw = sixgr.truth.CoupledTruthRuntime.rowValue(row, name, "");
+        if isnumeric(raw) || islogical(raw)
+            token = char(string(sixgr.truth.CoupledTruthRuntime.numericVectorToken(raw)));
+            return;
+        end
+        tokenText = strtrim(string(raw));
+        if ismissing(tokenText) || any(strcmpi(tokenText, ["", "nan", "<missing>", "[]"]))
+            token = '';
+            return;
+        end
+        values = sixgr.truth.CoupledTruthRuntime.parseNumericVector(tokenText);
+        token = char(string(sixgr.truth.CoupledTruthRuntime.numericVectorToken(values)));
     end
 
     function source = appendSourceToken(source, token)
@@ -18592,7 +18612,6 @@ methods(Static, Access=private)
             % not a noise-variance/equalizer decoder. Preserve its unavailable
             % variance; require the actual noncoherent receiver evidence.
             format0Noncoherent = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T,"PUCCHFormat",nan(n,1))) == 0 & ...
-                isfinite(dmrsCount) & dmrsCount == 0 & ...
                 double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T,"NoncoherentSequenceDetection",nan(n,1))) == 1 & ...
                 string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T,"DecodeNoiseVarianceDomain",repmat("",n,1))) == "not_consumed_noncoherent_sequence_detection" & ...
                 double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault(T,"DetectionMetricValid",nan(n,1))) == 1 & ...

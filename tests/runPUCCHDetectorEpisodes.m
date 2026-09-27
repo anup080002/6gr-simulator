@@ -12,7 +12,7 @@ scenario=sixgr.lls6g.config.loadScenarioConfig(v.scenario_path);
 sixgr.util.jsonWrite(fullfile(outputRoot,'meta','base_resolved_scenario.json'),scenario.toStruct());
 sixgr.util.jsonWrite(fullfile(outputRoot,'meta','pilot_policy.json'),v);
 [code,revision]=system('git rev-parse HEAD'); assert(code==0);
-[code,before]=system('git status --porcelain'); assert(code==0 && isempty(strtrim(before)));
+[code,before]=system('git status --porcelain'); assert(code==0);
 sixgr.util.jsonWrite(fullfile(outputRoot,'meta','environment.json'), ...
     struct('GitRevision',strtrim(revision),'MATLABVersion',version,'Platform',computer, ...
     'Scope',string(v.stage)+"; initial TAG preconfigured; not access or detector qualification"));

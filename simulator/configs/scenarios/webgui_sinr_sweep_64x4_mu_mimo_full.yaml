@@ -296,7 +296,9 @@ canonical_control:
     # Explicit RRC-style periodic resource authority; never inferred from
     # the number of CSI-RS beams/resources.
     csi_rs_periodicity_slots: 5
-    csi_rs_offset_slots: 0
+    # The enabled first four Case-B candidates occupy slots 0 and 1. Start
+    # periodic CSI-RS at the next DL slot, within the five-slot calendar.
+    csi_rs_offset_slots: 2
     srs_enabled: true
     trs_enabled: true
     tracking_rs_enabled: true
@@ -844,6 +846,9 @@ pdsch:
 
 pusch:
   execution_profile: scheduler_truth
+  # Full-slot PUSCH may overlap the terminal SRS occasion. Priority 1 lets
+  # the declared first-measurement collision policy resolve that overlap.
+  priority_index: 1
   prb_start: 0
   num_prb: 273
   layer_count: 2

@@ -1,0 +1,11 @@
+channels:
+  model_type: TDL
+  profile: TDL-A
+  delay_spread_ns: 30
+  doppler_hz: 11.118803
+  doppler_source_mode: configured
+  mobility_kmph: 3
+  pathloss_enabled: false
+  shadow_fading_enabled: false
+  o2i_model: none
+

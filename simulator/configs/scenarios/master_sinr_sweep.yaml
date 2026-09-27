@@ -246,6 +246,7 @@ canonical_control:
     trace_profile: FULL_EVIDENCE
     configuration_epoch: 1
     configured_snr_is_link_authority: true
+    power_reference_mode: normalized_unit_es
     common_pipeline_required: true
     measured_sinr_required: true
   channel:
@@ -2147,6 +2148,7 @@ pdsch:
   decoder_noise_variance_mode: post_equalization
 pusch:
   enabled: true
+  priority_index: 0
   execution_profile: phy_calibration
   waveform: CP-OFDM
   tbs_policy: allocation_based_exact_38214

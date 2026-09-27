@@ -4,7 +4,7 @@ function ok=testReceivedDLRetainedACK(outputRoot)
 if nargin<1, outputRoot=tempname; end
 assert(~isfolder(outputRoot),'test:EvidenceAlreadyExists','Preserve previous evidence.');
 setup6GRSimToolkit('Verbose',false);
-root=fullfile('docs','lls','evidence_20260913','received_dl_harq');
+root=fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03');
 s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
 installed=sixgr.lls6g.buildInternalConfig(s,tempname);

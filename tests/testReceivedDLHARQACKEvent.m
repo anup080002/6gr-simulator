@@ -10,7 +10,7 @@ installed=sixgr.lls6g.buildInternalConfig(s,tempname);
 % Pre-calendar-repair captures have different RE/rate-matching maps. Keep
 % that historical evidence unchanged; use the separately generated current
 % calendar fixture, never pad/crop/reinterpret its symbols to fit a new map.
-sourceRoot=fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_02');
+sourceRoot=fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03');
 mkdir(outputRoot); fprintf('RECEIVED_DL_HARQ_EVENT_OUTPUT=%s\n',outputRoot);
 rows=table();
 for k=1:4

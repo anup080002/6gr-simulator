@@ -2,7 +2,7 @@ function ok=testDLCRCScoringSeparation()
 % Actual saved receiver verdicts must be invariant to scoring-reference bits.
 setup6GRSimToolkit('Verbose',false);
 for k=[1 2 4]
-    saved=load(fullfile('docs','lls','evidence_20260913','received_dl_harq',sprintf('attempt_%d.mat',k)));
+    saved=load(fullfile('docs','lls','evidence_20260913','received_dl_harq_calendar_03',sprintf('attempt_%d.mat',k)));
     [crc,errors,count]=sixgr.link.scoreReceivedDLTransportBlock(saved.rx,saved.bits);
     [changedCRC,changedErrors,changedCount]=sixgr.link.scoreReceivedDLTransportBlock(saved.rx,1-saved.bits);
     assert(crc==saved.rx.CRCPass && changedCRC==crc && count==numel(saved.bits) && ...

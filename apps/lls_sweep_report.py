@@ -13,6 +13,7 @@ import math
 import os
 from pathlib import Path
 import re
+import shutil
 import tempfile
 from datetime import datetime, timezone
 
@@ -294,7 +295,7 @@ def export_overview(root, progress, *, save_images=True):
                     ha="center", va="center", transform=ax.transAxes, fontsize=10, wrap=True)
     fig.suptitle(f"Sweep comparison: {progress['completed']}/{progress['total']} points finished, "
                  f"{progress['failed']} failed. Missing data are gaps, not zero BLER.")
-    atomic_write(root / "reports/image/sweep_link_comparison.png", lambda p: fig.savefig(p, dpi=140))
+    atomic_write(root / "reports/image/sweep_link_comparison.png", lambda p: fig.savefig(p, dpi=300))
     plt.close(fig)
     plot_configured_snr_bler(root, progress, rows)
     plot_measured_sinr_bler(root, measured_bler_rows)
@@ -369,7 +370,7 @@ def plot_configured_snr_bler(root, progress, rows):
     ax.text(0.01, 0.01, "Gaps are unavailable populations; bars are 95% Wilson intervals.",
             transform=ax.transAxes, fontsize=9)
     atomic_write(root / "reports/image/sweep_bler_vs_configured_snr.png",
-                 lambda path: fig.savefig(path, dpi=140))
+                 lambda path: fig.savefig(path, dpi=300))
     plt.close(fig)
 
 
@@ -397,7 +398,7 @@ def plot_measured_sinr_bler(root, rows):
                     ha="center", va="center", transform=ax.transAxes)
     fig.suptitle("BLER vs measured SINR; populations separated by MCS, modulation and rank")
     atomic_write(root / "reports/image/sweep_bler_vs_measured_sinr.png",
-                 lambda path: fig.savefig(path, dpi=140))
+                 lambda path: fig.savefig(path, dpi=300))
     plt.close(fig)
 
 
@@ -523,7 +524,7 @@ def _plot_standardized_metric(path, progress, rows, title, unit):
             "Markers are per-point arithmetic means of matching published rows; shaded range is min-max. "
             "Exact rows are retained in the companion CSV; missing points are gaps.",
             transform=ax.transAxes, fontsize=8, va="bottom", wrap=True)
-    atomic_write(path, lambda output: fig.savefig(output, dpi=140))
+    atomic_write(path, lambda output: fig.savefig(output, dpi=300))
     plt.close(fig)
 
 
@@ -572,6 +573,131 @@ def export_standardized_measurement_curves(root, progress, *, save_images=True):
                        "SeriesCount", "CampaignCSV", "CampaignPNG", "EvidenceClass"]
     write_csv(root / "reports/csv/sweep_measurement_plot_manifest.csv", manifest_fields, manifest)
     return manifest
+
+
+def _annotate_parent_csv_frequency(root, center_frequency_hz):
+    """Add the resolved carrier to every mutable parent campaign CSV."""
+    for path in sorted((root / "reports/csv").rglob("*.csv")):
+        rows = read_rows(path, strict=True)
+        with path.open(encoding="utf-8-sig", newline="") as handle:
+            fields = next(csv.reader(handle), [])
+        if "CenterFrequencyHz" not in fields:
+            fields = ["CenterFrequencyHz", *fields]
+        for row in rows:
+            row["CenterFrequencyHz"] = center_frequency_hz
+        write_csv(path, fields, rows)
+
+
+def _write_common_campaign_exports(root, progress, config, measurement_manifest, *, save_images=True):
+    """Publish stable campaign-level names without inventing unavailable data."""
+    out_csv = root / "reports/csv"
+    out_image = root / "reports/image"
+    center_frequency_hz = config.get("frequency", {}).get("center_frequency_hz", "")
+
+    point_fields = list(progress["points"][0]) if progress["points"] else ["index"]
+    write_csv(out_csv / "point_status.csv", ["CenterFrequencyHz", *point_fields], [
+        {"CenterFrequencyHz": center_frequency_hz, **point} for point in progress["points"]
+    ])
+
+    _, measured = standardized_measurement_rows(progress)
+    metric_fields = ["CenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
+                     "PointStatus", *STANDARD_MEASUREMENT_FIELDS, "SourceOutputTable",
+                     "SourceOutputRow", "EvidenceClass"]
+    write_csv(out_csv / "metrics_long.csv", metric_fields, [
+        {"CenterFrequencyHz": center_frequency_hz, **row} for row in measured
+    ])
+
+    # These aliases preserve the existing scientifically defined populations.
+    # Attempt CRC failure is all observed attempts, not initial-TB or residual BLER.
+    aliases = [
+        (out_csv / "sweep_bler_vs_configured_snr.csv",
+         out_csv / "attempt_crc_failure_fraction.csv"),
+        (out_image / "sweep_bler_vs_configured_snr.png",
+         out_image / "attempt_crc_failure_fraction.png"),
+    ]
+    for source, destination in aliases:
+        if io_path(source).is_file():
+            atomic_write(destination, lambda target, source=source: shutil.copyfile(source, target))
+
+    # Calibration rows retain both configured and receiver-measured axes.
+    comparison = read_rows(out_csv / "sweep_link_comparison.csv")
+    calibration_fields = ["CenterFrequencyHz", "PointIndex", "Label", "ConfiguredSNR_dB",
+                          "PointStatus", "Direction", "DataAvailability",
+                          "MeanMeasuredSINR_dB", "MeanMeasuredSINR_dB_Count", "SourceCSV"]
+    write_csv(out_csv / "sinr_calibration.csv", calibration_fields, [
+        {field: (center_frequency_hz if field == "CenterFrequencyHz" else row.get(field, ""))
+         for field in calibration_fields} for row in comparison
+    ])
+    if save_images:
+        _plot_sinr_calibration(out_image / "sinr_calibration.png", progress, comparison)
+
+    required = [
+        "campaign_manifest.json", "resolved_parameter_table.csv", "capability_coverage.csv",
+        "point_status.csv", "metrics_long.csv", "sinr_calibration.csv", "sinr_calibration.png",
+        "initial_tb_bler.csv", "initial_tb_bler.png", "attempt_crc_failure_fraction.csv",
+        "attempt_crc_failure_fraction.png", "residual_tb_failure_rate.csv",
+        "residual_tb_failure_rate.png", "goodput.csv", "goodput.png",
+        "spectral_efficiency.csv", "spectral_efficiency.png", "rank_mcs_distribution.csv",
+        "rank_mcs_distribution.png", "channel_estimation_nmse.csv",
+        "channel_estimation_nmse.png", "evm.csv", "evm.png", "harq.csv", "harq.png",
+        "control_feedback_errors.csv", "control_feedback_errors.png", "access_detection.csv",
+        "access_detection.png", "rf_impairments.csv", "rf_impairments.png",
+        "rs_measurements.csv", "rs_measurements.png", "beam_csi_overhead.csv",
+        "beam_csi_overhead.png", "cb_pusch_multiuser.csv", "cb_pusch_multiuser.png",
+        "sls_ue_throughput_cdf.csv", "sls_ue_throughput_cdf.png", "energy_latency.csv",
+        "energy_latency.png",
+    ]
+    status_rows = []
+    for name in required:
+        candidates = [root / "reports/csv" / name, root / "reports/image" / name,
+                      root / "reports" / name, root / "meta" / name]
+        found = next((candidate for candidate in candidates if io_path(candidate).is_file()), None)
+        status_rows.append({
+            "Artifact": name,
+            "Status": "available" if found else "unavailable",
+            "Path": found.relative_to(root).as_posix() if found else "",
+            "Reason": "" if found else "No execution-backed campaign reducer for this population in the current Stage-0 study; no placeholder was emitted.",
+        })
+    write_csv(out_csv / "campaign_artifact_status.csv",
+              ["Artifact", "Status", "Path", "Reason"], status_rows)
+    manifest = {
+        "CampaignID": config.get("meta", {}).get("scenario_id", ""),
+        "CenterFrequencyHz": center_frequency_hz,
+        "PrimaryTargetValues_dB": [point.get("configured_snr_db") for point in progress["points"]],
+        "PointCount": len(progress["points"]),
+        "CompletedPointCount": progress["completed"],
+        "FailedPointCount": progress["failed"],
+        "EvidenceMode": "cross_run_execution_backed_truth_only",
+        "StandardizedMeasurementPlotCount": len(measurement_manifest),
+        "ScopeBoundary": "terrestrial_single_carrier_tdd_fixed_4ghz_stage0",
+    }
+    atomic_write(root / "reports/campaign_manifest.json",
+                 lambda path: path.write_text(json.dumps(manifest, indent=2), encoding="utf-8"))
+
+
+def _plot_sinr_calibration(path, progress, rows):
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(figsize=(9, 5.5), constrained_layout=True)
+    for direction in ("DL", "UL"):
+        selected = [row for row in rows if row.get("Direction") == direction]
+        xs = [number(row.get("ConfiguredSNR_dB")) for row in selected]
+        ys = [number(row.get("MeanMeasuredSINR_dB")) for row in selected]
+        pairs = [(x, y) for x, y in zip(xs, ys) if x is not None and y is not None]
+        if pairs:
+            ax.plot([pair[0] for pair in pairs], [pair[1] for pair in pairs], "o-", label=direction)
+    configured = [point["configured_snr_db"] for point in progress["points"]
+                  if point["configured_snr_db"] is not None]
+    if configured:
+        ax.plot(configured, configured, "--", color="black", alpha=0.5,
+                label="configured-axis identity reference")
+        ax.set_xticks(sorted(set(configured)))
+    ax.set(xlabel="Configured occupied-RE reference SNR (dB)",
+           ylabel="Mean receiver-measured SINR (dB)",
+           title="Configured reference SNR versus measured receiver SINR")
+    ax.grid(True, alpha=0.25)
+    ax.legend()
+    atomic_write(path, lambda output: fig.savefig(output, dpi=300))
+    plt.close(fig)
 
 
 def export_sweep(folder):
@@ -643,6 +769,10 @@ def export_sweep(folder):
     export_overview(root, progress, save_images=save_images)
     measurement_manifest = export_standardized_measurement_curves(
         root, progress, save_images=save_images)
+    _write_common_campaign_exports(root, progress, config, measurement_manifest,
+                                   save_images=save_images)
+    _annotate_parent_csv_frequency(
+        root, config.get("frequency", {}).get("center_frequency_hz", ""))
     receipt = dict(UpdatedUTC=datetime.now(timezone.utc).isoformat(),
                    CompletedPoints=progress["completed"], TotalPoints=progress["total"],
                    ArtifactCount=len(manifest), FailedArtifacts=sum(r["Status"] == "failed" for r in manifest),

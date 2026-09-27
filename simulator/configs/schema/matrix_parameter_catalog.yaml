@@ -20,6 +20,14 @@ sections:
       save_combined_summary: {required: true, type: boolean}
       result_profile: {required: false, type: string, allowed_values: [standard, research_rate_comparison]}
       maximum_observed_bler: {required: false, type: number, min: 0, max: 1}
+      required_center_frequency_hz: {required: false, type: number, min: 1}
+      required_duplex_mode: {required: false, type: string, allowed_values: [TDD, FDD]}
+      require_single_carrier: {required: false, type: boolean}
+      forbid_carrier_aggregation: {required: false, type: boolean}
+      forbid_frequency_sweep: {required: false, type: boolean}
+      forbid_ntn: {required: false, type: boolean}
+      forbid_isac: {required: false, type: boolean}
+      capability_coverage_file: {required: false, type: string, nonempty: true}
   scenarios:
     required: true
     parameters: {}

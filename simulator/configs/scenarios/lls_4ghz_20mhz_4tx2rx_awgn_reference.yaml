@@ -1,0 +1,113 @@
+inherits:
+  - ./lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml
+  - ../bands/c4_20_4ghz_tdd.yaml
+  - ../channels/ran1_4ghz_a0_awgn.yaml
+  - ../mimo/ran1_lab_4tx2rx.yaml
+
+meta:
+  scenario_id: lls_4ghz_20mhz_4tx2rx_awgn_reference
+  description: >
+    Fixed-frequency 4.000 GHz, 20 MHz, 30 kHz SCS, 51-RB TDD integration
+    reference with an explicit full-row-rank 4TX/2RX AWGN lab operator.
+  purpose: Stage-0 waveform and campaign-binding smoke reference.
+  research_class: optional_research_experiment
+  maturity_tag: experimental
+  scenario_group: ran1_126bis_4ghz_only
+  tags: [lls, truth, tdd, 4ghz, 20mhz, awgn, 4tx2rx, no-proxy]
+
+run_control:
+  total_slots: 58
+  total_time_ms: 29
+
+simulation:
+  n_slots: 58
+  n_subframes: 29
+  min_duration_s: 0.029
+  snr_db: 0
+  random_seed: 1001
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+  snr_sweep_offsets_db: [0]
+
+integration:
+  power_reference_mode: normalized_unit_es
+
+canonical_control:
+  integration:
+    power_reference_mode: normalized_unit_es
+    configured_snr_is_link_authority: true
+
+# Repeat the dimensional authority in the leaf so alias normalization cannot
+# restore the inherited four-receive lab defaults.
+mimo:
+  n_tx_ant: 4
+  n_rx_ant: 2
+  n_layers: 1
+  max_dl_layers: 2
+  max_ul_layers: 2
+  rank_adaptation_policy: measured_ri
+
+antenna_and_array:
+  bs_num_txrus: 4
+  bs_num_rxrus: 4
+  bs_num_antenna_elements: 4
+  ue_num_txrus: 2
+  ue_num_rxrus: 2
+  ue_num_antenna_elements: 2
+
+# Two unit-norm receive rows define a deterministic rank-two lab operator.
+# It is not a TR 38.901 geometry/element-pattern model.
+channels:
+  awgn_spatial_matrix_dl_real: [0.8, 0, 0.6, 0, 0, 0.6, 0, 0.8]
+  awgn_beam_failure_recovery_enabled: false
+
+initial_access:
+  ssb:
+    enabled: true
+    case: Case B
+    scs_khz: 30
+    lmax: 8
+    beam_count: 8
+    periodicity_ms: 20
+    positions_in_burst: '11111111'
+    per_ssb_power_db: [0, 0, 0, 0, 0, 0, 0, 0]
+    precoder_ids: [dft_ura_beam_0, dft_ura_beam_1, dft_ura_beam_2, dft_ura_beam_3, dft_ura_beam_4, dft_ura_beam_5, dft_ura_beam_6, dft_ura_beam_7]
+    precoder_codebook:
+      enabled: true
+      type: dft_ura
+      physical_element_count: 4
+      beam_grid_rows: 1
+      beam_grid_columns: 8
+      beam_indices: [0, 1, 2, 3, 4, 5, 6, 7]
+  sib1:
+    pdcch_config_common:
+      commonControlResourceSet:
+        controlResourceSetId: 1
+        frequencyDomainResources: '111111110000000000000000000000000000000000000'
+        duration: 2
+        cce_REG_MappingType: nonInterleaved
+        precoderGranularity: sameAsREG-bundle
+
+reference_signals:
+  csi_rs_periodicity_slots: 20
+  csi_rs_offset_slots: 5
+  csi_report_periodicity_slots: 20
+  srs_periodicity_slots: 5
+  srs_slot_within_period: 5
+  srs:
+    num_ports: 2
+    port_set: [0, 1]
+    num_rb: 24
+    expected_rb_start: 0
+    expected_num_rb: 24
+    expected_bandwidth_coverage_percent: 47.0588235294
+    full_carrier_sounding_required: false
+    full_carrier_coverage_tolerance_rb: 0
+
+output:
+  profile: lls_4ghz_20mhz_4tx2rx_awgn_reference
+  save_csv: true
+  save_mat: true
+  save_figures: true
+  save_png: true
+  emit_placeholder_artifacts: false

@@ -1,0 +1,26 @@
+AgendaItem,Study,Required,ExecutionStatus,RuntimeOwner,Profile,Reason
+10.1,MRSS coexistence,true,blocked_not_in_stage0,not_bound,C4_20,Requires actual NR coexistence interferer and sharing scheduler
+10.2.1,Waveform and FDSS,true,blocked_not_in_stage0,not_bound,C4_20,Requires matched CP-OFDM DFT-s-OFDM FDSS and PA cases
+10.3.1,Coding,true,blocked_not_in_stage0,not_bound,H4_100,Requires matched coding and decoder-budget matrix
+10.3.2,Modulation and joint coding,true,blocked_not_in_stage0,not_bound,H4_100,Requires matched modulation mapping LLR and efficiency study
+10.4.1,Idle inactive operation,true,blocked_not_in_stage0,not_bound,H4_100,Requires state and monitoring procedure runtime
+10.4.2,Connected bandwidth operation,true,blocked_not_in_stage0,not_bound,H4_100,Requires switching control and CSI-aging runtime
+10.5.1.1,Synchronization and beam acquisition,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,Stage0 exercises existing access path but lacks full detector budget
+10.5.1.2,PRACH and RACH,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,Stage0 exercises physical PRACH but not 200 episodes per seed
+10.5.1.3,Initial common bandwidth,true,partial_stage0_existing_runtime,sixgr.phy.frame,C4_20,Legal 51-RB grid and 48-RB CORESET configured; qualification pending
+10.5.2.1,PDCCH,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,Physical PDCCH active; blind-detection qualification pending
+10.5.2.2,PDSCH,true,executable_stage0,sixgr.phy.dl.PDSCH_Tx|sixgr.phy.dl.PDSCH_Rx,C4_20,Actual waveform decode CRC and measurements enabled
+10.5.2.3,PUSCH PUCCH UCI,true,executable_stage0,sixgr.phy.ul.PUSCH_Tx|sixgr.phy.ul.PUCCH_Tx,C4_20,Actual shared feedback path enabled
+10.5.3.1,DL CSI and codebook,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,Four CSI ports with DL rank domain capped at two for LAB_4x2
+10.5.3.2,UL CSI and SRS,true,partial_stage0_existing_runtime,sixgr.phy.ul.SRS_Rx,C4_20,Two SRS ports configured; leakage estimator qualification pending
+10.5.3.3,Tracking and joint CSI,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,TRS DMRS CSI-RS SRS enabled in inherited runtime
+10.5.3.4,Beam management,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,Lab fixed matrix is not geometry beam evidence
+10.5.4.1,DCI and scheduling,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,Actual DCI and grants active; qualification pending
+10.5.4.2,SPS and configured grant,true,blocked_not_in_stage0,not_bound,H4_100,Requires procedure-specific state and traffic matrix
+10.5.4.3,HARQ and CBG,true,partial_stage0_existing_runtime,sixgr.truth.CoupledTruthRuntime,C4_20,HARQ active; requested H4_100 CBG matrix not yet executable
+10.5.4.4,Overlapping UL,true,blocked_not_in_stage0,not_bound,H4_100,Requires dedicated overlap capability and power-policy cases
+10.5.5,CB-PUSCH and CLI,true,blocked_not_in_stage0,not_bound,C4_20,Requires simultaneous one-stream UE waveforms and MMSE-IRC
+10.6.1.1,DL WUS waveform,true,blocked_missing_runtime_owner,not_implemented,H4_100,No dedicated WUS waveform and detector verified
+10.6.1.2,DL WUS states,true,blocked_missing_runtime_owner,not_implemented,H4_100,No dedicated WUS state machine verified
+10.6.2,UL WUS,true,blocked_missing_runtime_owner,not_implemented,H4_100,No dedicated UL WUS waveform procedure verified
+10.6.3,Other WUS functions,true,blocked_missing_runtime_owner,not_implemented,H4_100,No dedicated WUS coexistence recovery runtime verified

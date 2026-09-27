@@ -214,6 +214,7 @@ canonical_control:
     trace_profile: FULL_EVIDENCE
     configuration_epoch: 1
     configured_snr_is_link_authority: false
+    power_reference_mode: absolute_calibrated_sqrt_mw
     common_pipeline_required: true
     measured_sinr_required: true
   channel:
@@ -584,7 +585,9 @@ canonical_control:
     # PHY mapper, scheduler and receiver cannot silently choose different
     # occasions when carrier/BWP settings change.
     csi_rs_periodicity_slots: 20
-    csi_rs_offset_slots: 1
+    # Case-B/Lmax-8 SSB candidates occupy the first four 30 kHz slots.
+    # Slot 5 is the first subsequent DL slot in the configured TDD pattern.
+    csi_rs_offset_slots: 5
     srs_enabled: true
     trs_enabled: true
     tracking_rs_enabled: true
@@ -2045,6 +2048,9 @@ pdsch:
   decoder_noise_variance_mode: post_equalization
 pusch:
   enabled: true
+  # Priority 1 permits the configured terminal-symbol SRS occasion to take
+  # precedence over an otherwise full-slot PUSCH allocation (TS 38.214).
+  priority_index: 1
   execution_profile: scheduler_truth
   waveform: CP-OFDM
   tbs_policy: allocation_based_exact_38214

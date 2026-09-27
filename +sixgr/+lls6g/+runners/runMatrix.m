@@ -13,6 +13,8 @@ setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 matrixCfg = sixgr.lls6g.config.readConfigFile(configPath);
 sixgr.lls6g.config.validateScenarioConfig(matrixCfg, ...
     "Kind", "matrix", "AllowPartial", false, "Context", configPath);
+campaignBindingT = sixgr.lls6g.config.validateMatrixCampaignConstraints( ...
+    matrixCfg, string(configPath));
 if string(sixgr.util.structGet(matrixCfg,'execution.result_profile','standard')) == "research_rate_comparison"
     out=sixgr.lls6g.runners.runResearchRateMatrix(matrixCfg,configPath,outputDir,runTag);
     return;
@@ -27,6 +29,11 @@ sixgr.util.ensureFolder(layout.MetaDir);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(fullfile(matrixRoot, "runs"));
 localWriteMatrixSnapshots(layout, configPath, matrixCfg);
+sixgr.util.csvWriteTable(fullfile(layout.MetaDir, "parameter_bindings.csv"), ...
+    campaignBindingT, "PreserveSchema", true);
+sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "parameter_bindings.csv"), ...
+    campaignBindingT, "PreserveSchema", true);
+localCopyCapabilityCoverage(layout, matrixCfg, configPath);
 
 scenarioList = string(matrixCfg.scenarios(:));
 repeatCount = max(1, round(double(matrixCfg.execution.repeat_count)));
@@ -45,6 +52,7 @@ if requestedParallelJobs > 1 && ~parallelAvailable
     parallelUnavailableWarningIssued = true;
     parallelUnavailableReason = "parallel_computing_toolbox_license_unavailable";
 end
+
 rows = repmat(struct("ScenarioID","", "ConfigPath","", "Repeat", NaN, "RunFolder","", "Ok", false), 0, 1);
 executionMode = "sequential";
 if requestedParallelJobs > 1 && parallelAvailable && repeatCount == 1 && ~stopOnFailure && numel(scenarioList) > 1
@@ -161,6 +169,24 @@ sixgr.util.jsonWrite(fullfile(layout.MetaDir, "matrix_config_resolved.json"), ma
 sixgr.lls6g.config.writeYAML(fullfile(layout.MetaDir, "matrix_config_resolved.yaml"), matrixCfg);
 srcT = table(localPortablePath(configPath), 'VariableNames', {'SourceConfigFile'});
 sixgr.util.csvWriteTable(fullfile(layout.MetaDir, "matrix_source_chain.csv"), srcT);
+end
+
+function localCopyCapabilityCoverage(layout, matrixCfg, matrixConfigPath)
+coveragePath = string(sixgr.util.structGet(matrixCfg, ...
+    "execution.capability_coverage_file", ""));
+if strlength(strtrim(coveragePath)) == 0
+    return;
+end
+if exist(char(coveragePath), "file") ~= 2
+    coveragePath = string(fullfile(fileparts(char(string(matrixConfigPath))), ...
+        char(coveragePath)));
+end
+if exist(char(coveragePath), "file") ~= 2
+    error("sixgr:lls6g:runner:CapabilityCoverageNotFound", ...
+        "Capability coverage file '%s' does not exist.", coveragePath);
+end
+copyfile(char(coveragePath), fullfile(layout.ReportCSVDir, ...
+    "capability_coverage.csv"));
 end
 
 function [codeVersion, detail] = localDetectCodeVersion()

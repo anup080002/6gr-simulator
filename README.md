@@ -1669,6 +1669,33 @@ These are persisted states, not a guarantee that the MATLAB process is still ali
 Per-point raw evidence remains intact for diagnosis. Publication of a shared file
 does not turn a failed point into a passing point or fill absent measurements with zero.
 
+### Fixed 4.000 GHz terrestrial campaign
+
+The RAN1#126bis research campaign front door is:
+
+```cmd
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main" && if not exist "logs" mkdir "logs" && "C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\ran1_126bis_4ghz_only.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_6g_phy_lls_matrix('simulator/configs/campaigns/ran1_126bis_4ghz_only.yaml','results/ran1_126bis_4ghz_only','qualification_4ghz_v1'); disp(out); assert(out.Ok,'One or more 4 GHz campaign cases failed; inspect retained point evidence.');"
+```
+
+The matrix enforces the resolved physical scope before creating child runs:
+
+- exactly 4.000 GHz for all carrier-frequency bindings;
+- terrestrial single-carrier TDD only;
+- no carrier aggregation or carrier-frequency sweep;
+- no NTN or ISAC/sensing execution.
+
+The current executable matrix is deliberately Stage 0: C4_20 (20 MHz,
+30 kHz SCS, 51 RB, FFT 1024, 30.72 MS/s), a 4TX/2RX full-row-rank AWGN lab
+operator, and targets `[-30,-20,-10,0,10,20,30,40]` dB. The campaign coverage
+CSV retains later H4_100 and agenda studies as explicit blocked/partial items;
+Stage-0 success must not be described as complete 25-item or 3GPP acceptance.
+
+At matrix preflight, the runner writes `parameter_bindings.csv` and copies
+`capability_coverage.csv`. The sweep parent publishes `point_status.csv`,
+`metrics_long.csv`, `sinr_calibration.csv/.png`, and
+`attempt_crc_failure_fraction.csv/.png`. Unsupported populations are listed in
+`campaign_artifact_status.csv`; no empty or synthetic measurement rows are added.
+
 The runner exports shared results at sweep completion. To refresh shared files as
 points finish in an already-running sweep, run this separately (it does not start MATLAB):
 

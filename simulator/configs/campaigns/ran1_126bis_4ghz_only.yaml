@@ -1,0 +1,26 @@
+meta:
+  matrix_id: ran1_126bis_4ghz_only
+  description: >
+    Fixed 4.000 GHz terrestrial single-carrier TDD campaign. This executable
+    revision contains Stage 0 only; later agenda studies remain explicit in
+    capability_coverage.csv until their physical runtime owners pass gates.
+  owner: sixgr
+  version: "0.1.0"
+
+execution:
+  stop_on_failure: false
+  max_parallel_jobs: 1
+  repeat_count: 1
+  save_combined_summary: true
+  required_center_frequency_hz: 4000000000
+  required_duplex_mode: TDD
+  require_single_carrier: true
+  forbid_carrier_aggregation: true
+  forbid_frequency_sweep: true
+  forbid_ntn: true
+  forbid_isac: true
+  capability_coverage_file: ran1_126bis_4ghz_only_capability_coverage.csv
+
+scenarios:
+  - simulator/configs/scenarios/lls_4ghz_20mhz_4tx2rx_awgn_snr_sweep.yaml
+
