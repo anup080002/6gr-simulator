@@ -983,6 +983,17 @@ classdef CoupledWaveformStream < handle
             % contributions. Symbol boundaries preserve TDD guard intervals.
             for symbol=0:symbols-1
                 if obj.Events.NextSampleIndex>=stop, break; end
+                % A same-direction region may have been consumed in one
+                % batch through several OFDM symbols (and through the TDD
+                % guard interval).  A decision at that region boundary can
+                % also retarget the reciprocal link before control returns
+                % here.  Never revisit the direction associated with a
+                % symbol whose complete sample interval is already in the
+                % past: doing so can reverse the link a second time without
+                % any newly consumed guard samples.
+                if obj.Events.NextSampleIndex>=boundaries(symbol+2)
+                    continue;
+                end
                 inDL=symbol>=dl(1) && symbol<sum(dl);
                 inUL=symbol>=ul(1) && symbol<sum(ul);
                 if xor(inDL,inUL)
