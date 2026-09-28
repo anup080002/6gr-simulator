@@ -14,6 +14,15 @@ scfg.reference_signals.cqi_reporting_enabled = false;
 scfg.reference_signals.pmi_reporting_enabled = false;
 scfg.reference_signals.ri_reporting_enabled = false;
 scfg.reference_signals.cri_reporting_enabled = false;
+% This component deliberately changes the inherited geometry/link-budget
+% scenario into an occupied-RE fixed-Es/N0 receiver qualification.  Change
+% the power authority at the scenario boundary before normalization; keeping
+% the master's absolute sqrt(mW) plane while declaring configured SNR as link
+% authority is physically inconsistent and must continue to fail closed.
+scfg.integration.power_reference_mode = "normalized_unit_es";
+scfg.canonical_control.integration.power_reference_mode = "normalized_unit_es";
+scfg.canonical_control.integration.configured_snr_is_link_authority = true;
+scfg.simulation.noise_operating_mode = "standalone_awgn_snr_argument";
 cfg = sixgr.lls6g.buildInternalConfig(scfg, tempname);
 
 cfg.channel.model = "AWGN";

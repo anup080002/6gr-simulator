@@ -4,6 +4,7 @@ import json
 import hashlib
 import os
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -155,6 +156,46 @@ def test_dashboard_discovers_generic_sweep_parent_during_child_preflight(
     assert dash.order_run_rows_for_display(
         [completed, row], prefer_active=True
     )[0]["status_text"] == "initializing"
+
+
+def test_dashboard_marks_abandoned_generic_sweep_preflight_stale(
+    tmp_path, monkeypatch
+) -> None:
+    results = tmp_path / "results"
+    parent = results / "lls" / "h4_sweep" / "run_01"
+    meta = parent / "meta"
+    child = parent / "sweeps" / "snr_40_db"
+    meta.mkdir(parents=True)
+    child.mkdir(parents=True)
+    identity = meta / "scenario_config_identity.json"
+    resolved = meta / "scenario_config_resolved.json"
+    identity.write_text(
+        json.dumps({"ScenarioID": "h4_sweep", "GeneratedUTC": "2026-09-27T00:00:00Z"}),
+        encoding="utf-8",
+    )
+    resolved.write_text(
+        json.dumps({
+            "meta": {"scenario_id": "h4_sweep"},
+            "scenario": {"runner_profile": "generic_sweep", "sweep": {"overrides": []}},
+        }),
+        encoding="utf-8",
+    )
+    stale_time = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=dash.STALE_RUNNING_MINUTES + 1)
+    ).timestamp()
+    for path in (parent, meta, child, identity, resolved):
+        os.utime(path, (stale_time, stale_time))
+    monkeypatch.setattr(dash, "_dashboard_result_roots", lambda: [results])
+    monkeypatch.setattr(dash, "local_run_process_active", lambda _row: False)
+
+    row = dash.filesystem_run_row_from_folder(parent)
+    assert row is not None
+    assert row["status_text"] == "aborted_stale_no_run_process"
+    status = dash._status_payload(row)
+    assert status["stage"] == "generic_sweep_preflight_stale"
+    assert status["status_authority"] == "dashboard_process_and_artifact_staleness"
+    assert status["last_updated_utc"]
 
 
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:

@@ -5130,6 +5130,23 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             run_folder,
         ]
     )
+    generic_sweep_preflight_stale = False
+    if generic_sweep_preflight and run_completion == "initializing" and updated_utc:
+        try:
+            last_update = datetime.fromisoformat(updated_utc.replace("Z", "+00:00"))
+        except ValueError:
+            last_update = None
+        if (
+            last_update is not None
+            and last_update < datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MINUTES)
+            and not local_run_process_active({"run_tag": run_folder.name})
+        ):
+            # A materialized child proves that preflight began, but it does not
+            # prove the MATLAB process is still alive.  Do not leave an
+            # interrupted filesystem-only sweep labelled "initializing"
+            # indefinitely after its run-specific process and heartbeat vanish.
+            run_completion = "aborted_stale_no_run_process"
+            generic_sweep_preflight_stale = True
     generated_utc = str(
         manifest.get("GeneratedUTC")
         or qualification.get("StartUTC")
@@ -5155,9 +5172,13 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "stage": str(
             live_stage.get("Stage")
             or (
-                "generic_sweep_child_preflight"
-                if generic_sweep_preflight
-                else "filesystem_result_folder"
+                "generic_sweep_preflight_stale"
+                if generic_sweep_preflight_stale
+                else (
+                    "generic_sweep_child_preflight"
+                    if generic_sweep_preflight
+                    else "filesystem_result_folder"
+                )
             )
         ),
         "status_authority": (
@@ -5172,9 +5193,13 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
                     "live_stage_status"
                     if live_stage
                     else (
-                        "generic_sweep_resolved_config_and_materialized_child"
-                        if generic_sweep_preflight
-                        else "filesystem_scenario_summary"
+                        "dashboard_process_and_artifact_staleness"
+                        if generic_sweep_preflight_stale
+                        else (
+                            "generic_sweep_resolved_config_and_materialized_child"
+                            if generic_sweep_preflight
+                            else "filesystem_scenario_summary"
+                        )
                     )
                 )
             )
@@ -5252,6 +5277,17 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "current_slot": _int_value(live_stage.get("CurrentSlot")),
         "total_slots": _int_value(live_stage.get("TotalSlots")),
     }
+    if generic_sweep_preflight_stale:
+        status_payload.update(
+            {
+                "reason": (
+                    "The generic sweep materialized a child preflight folder, "
+                    "but no matching MATLAB process or fresh filesystem heartbeat remains."
+                ),
+                "stale_running_minutes": STALE_RUNNING_MINUTES,
+                "last_updated_utc": updated_utc,
+            }
+        )
     return {
         "run_id": run_id,
         "run_uuid": f"filesystem-{run_id}",
@@ -9408,6 +9444,37 @@ def phy_grid_slot_value(row: dict[str, Any]) -> int | None:
     return int(round(slot))
 
 
+def phy_grid_occurrence_slots(row: dict[str, Any]) -> list[int]:
+    """Return explicit zero/one-based source slots for an allocation row.
+
+    Exact periodic planning rows persist one coordinate template plus a
+    complete pipe-delimited occurrence list.  Never infer missing periods
+    from a count or from neighboring rows.
+    """
+    raw = first_present_value(row, ["occurrence_slots", "OccurrenceSlots"], "")
+    text = str(raw or "").strip()
+    if not text:
+        slot = phy_grid_slot_value(row)
+        return [] if slot is None else [slot]
+    values: list[int] = []
+    for token in text.split("|"):
+        token = token.strip()
+        numeric = coerce_numeric(token)
+        if numeric is None or not math.isfinite(float(numeric)):
+            return []
+        value = int(round(float(numeric)))
+        if value < 0 or abs(float(numeric) - value) > 1e-9:
+            return []
+        if value not in values:
+            values.append(value)
+    declared = first_present_number(
+        row, ["occurrence_count", "OccurrenceCount"], math.nan
+    )
+    if math.isfinite(declared) and int(round(declared)) != len(values):
+        return []
+    return values
+
+
 def phy_grid_component_channel(row: dict[str, Any], fallback: str) -> str:
     """Map an exact producer component to a stable resource-grid lane."""
     component = str(first_present_value(row, ["component", "Component"], "") or "").strip().upper()
@@ -9892,6 +9959,8 @@ def build_phy_event(
         "port_count": first_present_value(row, ["port_count", "PortCount", "NumPorts"], ""),
         "layer_index": first_present_value(row, ["layer_index", "LayerIndex"], ""),
         "layer_count": first_present_value(row, ["layer_count", "LayerCount", "Layers", "Rank"], ""),
+        "allocation_id": first_present_value(row, ["allocation_id", "AllocationID"], ""),
+        "occurrence_count": first_present_value(row, ["occurrence_count", "OccurrenceCount"], 1),
         "cell_id": first_present_value(row, ["cell_id", "CellID", "ServingCell"], ""),
         "evidence_scope": evidence_scope,
         "coordinate_precision": coordinate_precision,
@@ -10114,10 +10183,10 @@ def build_phy_grid_payload(
     ]
     trace_slots = [int(x) for x in trace_slots if x is not None]
     raw_slots = trace_slots or [
-        phy_grid_slot_value(row)
+        slot
         for rows in table_rows.values()
         for row in rows
-        if phy_grid_slot_value(row) is not None
+        for slot in phy_grid_occurrence_slots(row)
     ]
     raw_slots = [int(x) for x in raw_slots if x is not None]
     one_based_slots = bool(raw_slots and min(raw_slots) >= 1)
@@ -10185,8 +10254,12 @@ def build_phy_grid_payload(
             continue
         spec = channel_specs.get(table_key) or dict(PHY_GRID_EXTRA_TABLES.get(table_key, {}).get("spec") or {})
         selected_path = str(table_meta.get(table_key, {}).get("selected_logical_path") or "")
-        table_slots = [phy_grid_slot_value(row) for row in rows]
-        table_slots = [int(value) for value in table_slots if value is not None]
+        occurrence_cache: dict[str, list[int]] = {}
+        table_slots = [
+            int(value)
+            for row in rows
+            for value in phy_grid_occurrence_slots(row)
+        ]
         slot_offset = 0
         if trace_slots and table_slots:
             trace_base = min(trace_slots)
@@ -10197,17 +10270,32 @@ def build_phy_grid_payload(
             event_ue = phy_grid_ue_value(row)
             if selected_ue and event_ue and event_ue != selected_ue:
                 continue
-            event = build_phy_event(
-                row,
-                table_key,
-                spec,
-                selected_path,
-                nrb,
-                slot_offset=slot_offset,
-            )
-            if event is None or int(event["slot"]) not in slot_set:
-                continue
-            events.append(event)
+            occurrence_text = str(first_present_value(
+                row, ["occurrence_slots", "OccurrenceSlots"], ""
+            ) or "")
+            occurrence_key = occurrence_text or f"__single__{phy_grid_slot_value(row)}"
+            if occurrence_key not in occurrence_cache:
+                occurrence_cache[occurrence_key] = phy_grid_occurrence_slots(row)
+            for occurrence_slot in occurrence_cache[occurrence_key]:
+                if occurrence_slot + slot_offset not in slot_set:
+                    continue
+                event_row = row
+                if phy_grid_slot_value(row) != occurrence_slot:
+                    event_row = dict(row)
+                    event_row["absolute_slot"] = occurrence_slot
+                event = build_phy_event(
+                    event_row,
+                    table_key,
+                    spec,
+                    selected_path,
+                    nrb,
+                    slot_offset=slot_offset,
+                )
+                if event is None:
+                    continue
+                if occurrence_text:
+                    event["source_note"] += ";exact_periodic_template_occurrence"
+                events.append(event)
 
     lane_order = [
         "PSS", "SSS", "SSB/PBCH", "PBCH-DMRS", "PDCCH", "PDCCH-DMRS", "CSI-RS", "TRS", "DL Grant", "PDSCH", "PDSCH-DMRS", "PDSCH-PTRS",

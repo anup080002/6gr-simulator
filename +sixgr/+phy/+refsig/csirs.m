@@ -147,11 +147,13 @@ resourceIDs = localRequiredResourceVector(cfg, 'phy.csirs.resourceIDs', numResou
     'sixgr:phy:csirs:MissingResourceIDs');
 rowNumbers = localRequiredResourceVector(cfg, 'phy.csirs.rowNumbers', numResources, ...
     'sixgr:phy:csirs:MissingRowNumbers');
-symbolLocations = localRequiredResourceVector(cfg, ...
+symbolLocations = localRequiredResourcePlacements(cfg, ...
     'phy.csirs.symbolLocationsByResource', numResources, ...
+    rowNumbers, @localDefaultSymbolLocations, ...
     'sixgr:phy:csirs:MissingSymbolLocations');
-subcarrierLocations = localRequiredResourceVector(cfg, ...
+subcarrierLocations = localRequiredResourcePlacements(cfg, ...
     'phy.csirs.subcarrierLocationsByResource', numResources, ...
+    rowNumbers, @localDefaultSubcarrierLocations, ...
     'sixgr:phy:csirs:MissingSubcarrierLocations');
 rbOffsets = localRequiredResourceVector(cfg, 'phy.csirs.rbOffsetsByResource', ...
     numResources, 'sixgr:phy:csirs:MissingRBOffsets');
@@ -176,8 +178,8 @@ for ordinal = 1:numResources
     cfgResource = cfg;
     cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.resourceID', resourceIDs(ordinal));
     cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.rowNumber', rowNumbers(ordinal));
-    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.symbolLocations', symbolLocations(ordinal));
-    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.subcarrierLocations', subcarrierLocations(ordinal));
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.symbolLocations', symbolLocations{ordinal});
+    cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.subcarrierLocations', subcarrierLocations{ordinal});
     cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.rbOffset', rbOffsets(ordinal));
     cfgResource = sixgr.util.structSet(cfgResource, 'phy.csirs.numRB', numRBs(ordinal));
     resourceConfig = localBuildFromCfg(carrier, cfgResource);
@@ -237,8 +239,10 @@ info.RowNumber = rowNumbers(:).';
 info.NumCSIRSPorts = resources(1).NumPorts;
 info.RBOffset = rbOffsets(:).';
 info.NumRB = numRBs(:).';
-info.SymbolLocations = symbolLocations(:).';
-info.SubcarrierLocations = subcarrierLocations(:).';
+info.SymbolLocations = horzcat(symbolLocations{:});
+info.SubcarrierLocations = horzcat(subcarrierLocations{:});
+info.SymbolLocationsByResource = symbolLocations(:).';
+info.SubcarrierLocationsByResource = subcarrierLocations(:).';
 info.Density = "one";
 info.CDMType = "FD-CDM2";
 info.CDMLengths = resources(1).CDMLengths;
@@ -267,6 +271,54 @@ if ~(isvector(values) && numel(values) == count && all(isfinite(values)))
     error(identifier, '%s must contain one finite value per CSI-RS resource.', path);
 end
 values = values(:).';
+end
+
+function placements = localRequiredResourcePlacements(cfg, path, count, ...
+        rowNumbers, defaultResolver, identifier)
+% A CSI-RS row defines the number of k_i/l_i placement values carried by
+% each resource. Preserve the schema's flat YAML number list, but partition
+% it using the configured TS 38.211 row rather than assuming one scalar per
+% resource.
+raw = sixgr.util.structGet(cfg, path, []);
+requiredCounts = arrayfun(@(row)numel(defaultResolver(row)), rowNumbers);
+if iscell(raw)
+    if numel(raw) ~= count
+        error(identifier, ...
+            '%s must contain one placement vector per CSI-RS resource.', path);
+    end
+    placements = cell(1, count);
+    for ordinal = 1:count
+        values = double(raw{ordinal});
+        if ~(isvector(values) && numel(values) == requiredCounts(ordinal) && ...
+                all(isfinite(values)))
+            error(identifier, ...
+                ['%s resource %d (CSI-RS row %g) requires exactly %d ' ...
+                 'finite placement values.'], path, ordinal, ...
+                rowNumbers(ordinal), requiredCounts(ordinal));
+        end
+        placements{ordinal} = values(:).';
+    end
+    return;
+end
+flat = double(raw);
+if ~(isvector(flat) && all(isfinite(flat)))
+    error(identifier, '%s must be a finite numeric placement list.', path);
+end
+flat = flat(:).';
+expectedCount = sum(requiredCounts);
+if numel(flat) ~= expectedCount
+    error(identifier, ...
+        ['%s contains %d values, but the configured CSI-RS rows require ' ...
+         '%d values across %d resources.'], ...
+        path, numel(flat), expectedCount, count);
+end
+placements = cell(1, count);
+cursor = 1;
+for ordinal = 1:count
+    width = requiredCounts(ordinal);
+    placements{ordinal} = flat(cursor:(cursor + width - 1));
+    cursor = cursor + width;
+end
 end
 
 function resource = localEmptyResourceEvidence()

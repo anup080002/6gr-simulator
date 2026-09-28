@@ -473,6 +473,11 @@ references=sixgr.util.structGet(reception,'ScoringChannelReferences',{});
 if ~isempty(references) && ch.EstimateAvailable
     [referenceGrids,referenceEvidence]=sixgr.truth.sharedTRSReferenceGrids(prepared,references,replay,det);
     ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
+elseif ch.EstimateAvailable && isfield(reception,'DesiredReferenceObservation') && ...
+        isa(reception.DesiredReferenceObservation,'sixgr.phy.waveform.WaveformObservationBuffer')
+    [referenceGrids,referenceEvidence]=sixgr.truth.sharedTRSScoringWaveformReference( ...
+        prepared,reception.DesiredReferenceObservation,timing,det,ch);
+    ch=sixgr.phy.trs.scoreTRSChannelEstimates(ch,referenceGrids,referenceEvidence);
 end
 tracking = sixgr.phy.trs.trackTRSOverTime(det, timing, freq, ch, strictCfg,reception.Observation);
 score = sixgr.phy.trs.scoreTRSDetection(strictCfg, rx, det, timing, freq, ch, tracking, ...

@@ -10,12 +10,29 @@ ip = inputParser;
 ip.addRequired("cfg", @(x)isstruct(x) || isobject(x));
 ip.addParameter("TargetChannels", strings(0, 1), ...
     @(x)ischar(x) || isstring(x) || iscellstr(x));
+ip.addParameter("ReusePeriodicCoordinateTemplates", true, ...
+    @(x)islogical(x) && isscalar(x));
 ip.parse(cfg, varargin{:});
 targetChannels = upper(strtrim(string(ip.Results.TargetChannels)));
 targetChannels = targetChannels(:);
 targetChannels = targetChannels(strlength(targetChannels) > 0);
-isTargetedStudy = ~isempty(targetChannels);
-isSelected = @(name) ~isTargetedStudy || any(targetChannels == upper(string(name)));
+if isempty(targetChannels)
+    % Make the default full-stack selection explicit.  Keeping an empty
+    % string array inside repeated anonymous membership checks is both less
+    % readable and release-sensitive; the public meaning remains "all".
+    targetChannels = ["SSB_PBCH";"TYPE0_PDCCH";"SIB1_PDSCH";"PDCCH"; ...
+        "PDSCH";"CSI_RS";"TRS";"PRACH";"PUCCH";"PUSCH";"SRS"];
+end
+isSelected = @(name) any(targetChannels == upper(string(name)));
+reusePeriodicTemplates = logical(ip.Results.ReusePeriodicCoordinateTemplates);
+plannedAllocationEncoding = lower(strtrim(string(sixgr.util.structGet( ...
+    cfg, "outputs.plannedAllocationEncoding", "expanded_per_slot"))));
+assert(isscalar(plannedAllocationEncoding) && any(plannedAllocationEncoding == ...
+    ["expanded_per_slot", "exact_periodic_templates"]), ...
+    "sixgr:truth:InvalidPlannedAllocationEncoding", ...
+    ["outputs.plannedAllocationEncoding must be expanded_per_slot or " ...
+     "exact_periodic_templates."]);
+compactPeriodicOutput = plannedAllocationEncoding == "exact_periodic_templates";
 
 carrier = sixgr.phy.grid.makeCarrier(cfg);
 frame = sixgr.phy.FrameStructureEngine(cfg);
@@ -62,28 +79,29 @@ pdcchEnabled = isSelected("PDCCH") && ...
 [rows, checks] = localAttempt(rows, checks, "PDCCH", "DL", ...
     pdcchEnabled, "RRC_SearchSpace_CORESET_and_DCI", ...
     "buildPDCCHConfigFromScenario+nrPDCCHResources", ...
-    @() localPDCCH(cfg, totalSlots, frame));
+    @() localPDCCH(cfg, totalSlots, frame, compactPeriodicOutput));
 
 pdschEnabled = isSelected("PDSCH") && ...
     logical(sixgr.util.structGet(cfg, "phy.pdsch.enable", true));
 [rows, checks] = localAttempt(rows, checks, "PDSCH", "DL", ...
     pdschEnabled, "configured_RRC_BWP_resource_pool_not_scheduler_grant", ...
     "allocREsPDSCH+nrPDSCHIndices", ...
-    @() localPDSCH(cfg, carrier, totalSlots, frame));
+    @() localPDSCH(cfg, carrier, totalSlots, frame, reusePeriodicTemplates, ...
+    compactPeriodicOutput));
 
 csirsEnabled = isSelected("CSI_RS") && ...
     logical(sixgr.util.structGet(cfg, "phy.csirs.enable", false));
 [rows, checks] = localAttempt(rows, checks, "CSI_RS", "DL", ...
     csirsEnabled, "RRC_CSI_RS_resource_configuration", ...
     "sixgr.phy.refsig.csirs+nrCSIRSIndices", ...
-    @() localCSIRS(cfg, carrier, totalSlots, frame));
+    @() localCSIRS(cfg, carrier, totalSlots, frame, compactPeriodicOutput));
 
 trsEnabled = isSelected("TRS") && ...
     logical(sixgr.util.structGet(cfg, "phy.trs.enable", false));
 [rows, checks] = localAttempt(rows, checks, "TRS", "DL", ...
     trsEnabled, "RRC_NZP_CSI_RS_TRS_resource_configuration", ...
     "buildTRSConfigFromScenario+nrCSIRSIndices", ...
-    @() localTRS(cfg, totalSlots, frame));
+    @() localTRS(cfg, totalSlots, frame, compactPeriodicOutput));
 
 prachEnabled = isSelected("PRACH") && ...
     logical(sixgr.util.structGet(cfg, "phy.prach.enable", false));
@@ -104,14 +122,15 @@ puschEnabled = isSelected("PUSCH") && ...
 [rows, checks] = localAttempt(rows, checks, "PUSCH", "UL", ...
     puschEnabled, "configured_RRC_UL_BWP_resource_pool_not_scheduler_grant", ...
     "allocREsPUSCH+nrPUSCHIndices", ...
-    @() localPUSCH(cfg, carrier, totalSlots, frame));
+    @() localPUSCH(cfg, carrier, totalSlots, frame, reusePeriodicTemplates, ...
+    compactPeriodicOutput));
 
 srsEnabled = isSelected("SRS") && ...
     logical(sixgr.util.structGet(cfg, "phy.srs.enable", false));
 [rows, checks] = localAttempt(rows, checks, "SRS", "UL", ...
     srsEnabled, "RRC_SRS_resource_configuration", ...
     "buildSRSConfigFromScenario+nrSRSIndices", ...
-    @() localSRS(cfg, carrier, totalSlots, frame));
+    @() localSRS(cfg, carrier, totalSlots, frame, compactPeriodicOutput));
 
 if isempty(rows)
     T = struct2table(repmat(localEmptyRow(), 0, 1), "AsArray", true);
@@ -249,8 +268,10 @@ out = localPayload(rows,size(materialized.ActualCoordinates0Based,1), ...
     "SI-RNTI DCI and SIB1 PDSCH resolve on the same slot");
 end
 
-function out = localPDCCH(cfg,totalSlots,frame)
+function out = localPDCCH(cfg,totalSlots,frame,compactPeriodicOutput)
 rows = repmat(localEmptyRow(),0,1); count = 0;
+cache = containers.Map('KeyType','char','ValueType','any');
+keyOrder = cell(0,1);
 [carrier,~]=sixgr.phy.grid.makeCarrier(cfg);
 connected=isfield(sixgr.util.structGet(cfg,"phy.pdcch.operatorControl",struct()), ...
     'connected_monitoring');
@@ -284,66 +305,303 @@ for slot0 = 0:(totalSlots-1)
     end
     materialized = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePDCCH(c,pdcch,"AbsoluteSlot",slot0);
-    rows = [rows; localResultRows(materialized,slot0,"PDCCH",1,1, ...
+    slotRows = localResultRows(materialized,slot0,"PDCCH",1,1, ...
         "RRC_SearchSpace_CORESET_and_DCI", ...
-        resolver)]; %#ok<AGROW>
+        resolver);
+    if compactPeriodicOutput
+        [cache,keyOrder] = localAccumulatePeriodicRows( ...
+            cache,keyOrder,slotRows,slot0);
+    else
+        rows = [rows; slotRows]; %#ok<AGROW>
+    end
     count = count + size(materialized.ActualCoordinates0Based,1);
 end
 if count == 0, error("sixgr:truth:NoPDCCHOccasion","No legal PDCCH occasion resolved."); end
+if compactPeriodicOutput
+    rows = localEmitPeriodicRows(cache,keyOrder,"PDCCH");
+end
 out = localPayload(rows,count,"dedicated PDCCH monitoring occasions resolved");
 end
 
-function out = localPDSCH(cfg,carrier,totalSlots,frame)
-rows = repmat(localEmptyRow(),0,1); count = 0; blockedSlots = 0;
+function out = localPDSCH(cfg,carrier,totalSlots,frame,reusePeriodicTemplates,compactPeriodicOutput)
+rowParts = cell(totalSlots,1); partCount = 0;
+count = 0; blockedSlots = 0;
+cache = containers.Map('KeyType','char','ValueType','any');
+keyOrder = cell(0,1);
+cacheEnabled = reusePeriodicTemplates || compactPeriodicOutput;
+symbolAllocation = double(sixgr.util.structGet(cfg, ...
+    "phy.pdsch.symbolAllocation", []));
+if numel(symbolAllocation) ~= 2
+    error("sixgr:truth:MissingPDSCHSymbolAllocation", ...
+        "Exact PDSCH planning requires phy.pdsch.symbolAllocation.");
+end
 for slot0 = 0:(totalSlots-1)
+    if ~frame.IsDLAllocation(slot0,symbolAllocation), continue; end
     actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
     c=sixgr.phy.grid.makeCarrier(actual);
     pdsch=sixgr.phy.grid.pdschConfigFromConfig(c,actual);
-    if ~frame.IsDLAllocation(slot0,double(pdsch.SymbolAllocation)), continue; end
     reservation=sixgr.phy.frame.ssbPRBSymbolReservation(actual,c,slot0);
+    key = localPDSCHCoordinateTemplateKey(actual,c,slot0,reservation);
+    if cacheEnabled && isKey(cache,key)
+        cached = cache(key);
+        if cached.Blocked
+            blockedSlots = blockedSlots + 1;
+            continue;
+        end
+        count = count + sum([cached.Rows.re_count]);
+        if compactPeriodicOutput
+            cached.Slots(end+1) = slot0;
+            cache(key) = cached;
+        else
+            slotRows = localRetargetPeriodicRows(cached.Rows,slot0,"PDSCH");
+            partCount = partCount + 1;
+            rowParts{partCount} = slotRows;
+        end
+        continue;
+    end
     available=sixgr.phy.grid.pdschPRBsWithoutReservedDMRS(c,pdsch,reservation.ReservedCarrierRE0);
-    if isempty(available), blockedSlots=blockedSlots+1; continue; end
+    if isempty(available)
+        blockedSlots=blockedSlots+1;
+        if cacheEnabled
+            cache(key)=struct("Rows",repmat(localEmptyRow(),0,1), ...
+                "Blocked",true,"Slots",zeros(1,0));
+            keyOrder{end+1,1}=key; %#ok<AGROW>
+        end
+        continue;
+    end
     % The pool can contain multiple islands. It is not a DCI/grant: actual
     % scheduling still enforces contiguous chunks, queue and capability limits.
     [~,~,pdsch]=sixgr.phy.grid.allocREsPDSCH(c,actual,'PRBSet',available);
     m = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePDSCH(c,pdsch,"AbsoluteSlot",slot0);
-    rows = [rows; localResultRows(m,slot0,"PDSCH",1, ...
+    slotRows = localResultRows(m,slot0,"PDSCH",1, ...
         double(pdsch.NumLayers),"configured_RRC_BWP_resource_pool_not_scheduler_grant", ...
-        "allocREsPDSCH+nrPDSCHIndices")]; %#ok<AGROW>
-    count = count + size(m.ActualCoordinates0Based,1);
+        "allocREsPDSCH+nrPDSCHIndices");
+    count = count + sum([slotRows.re_count]);
+    if cacheEnabled
+        cache(key)=struct("Rows",slotRows,"Blocked",false,"Slots",slot0);
+        keyOrder{end+1,1}=key; %#ok<AGROW>
+    end
+    if ~compactPeriodicOutput
+        partCount = partCount + 1;
+        rowParts{partCount} = slotRows;
+    end
 end
 if count == 0, error("sixgr:truth:NoPDSCHOccasion","No legal PDSCH occasion resolved."); end
-out = localPayload(rows,count,sprintf( ...
+if compactPeriodicOutput
+    for keyIndex = 1:numel(keyOrder)
+        key = keyOrder{keyIndex};
+        cached = cache(key);
+        if cached.Blocked, continue; end
+        partCount = partCount + 1;
+        rowParts{partCount} = localPeriodicTemplateRows( ...
+            cached.Rows,cached.Slots,"PDSCH",key);
+    end
+end
+rows = vertcat(rowParts{1:partCount});
+detail = string(sprintf( ...
     'Per-occasion PDSCH resource pools resolved; %d DL occasions have no SSB-safe PRBs. Not executed grants.',blockedSlots));
+if compactPeriodicOutput
+    detail = detail + " Exact coordinates are stored once per periodic template with explicit occurrence slots.";
+end
+out = localPayload(rows,count,detail);
 end
 
-function out = localPUSCH(cfg,carrier,totalSlots,frame)
-rows = repmat(localEmptyRow(),0,1); count = 0;
+function out = localPUSCH(cfg,carrier,totalSlots,frame,reusePeriodicTemplates,compactPeriodicOutput)
+rowParts = cell(totalSlots,1); partCount = 0; count = 0;
+cache = containers.Map('KeyType','char','ValueType','any');
+keyOrder = cell(0,1);
+cacheEnabled = reusePeriodicTemplates || compactPeriodicOutput;
+symbolAllocation = double(sixgr.util.structGet(cfg, ...
+    "phy.pusch.symbolAllocation", []));
+if numel(symbolAllocation) ~= 2
+    error("sixgr:truth:MissingPUSCHSymbolAllocation", ...
+        "Exact PUSCH planning requires phy.pusch.symbolAllocation.");
+end
 for slot0 = 0:(totalSlots-1)
+    if ~frame.IsULAllocation(slot0,symbolAllocation), continue; end
+    % nrPUSCHIndices resource coordinates are invariant to NSlot/NFrame;
+    % only scrambling/reference symbol values change with the clock. This
+    % table records coordinates, not generated symbol values.
+    key = 'static_pusch_coordinate_geometry';
+    if cacheEnabled && isKey(cache,key)
+        cached = cache(key);
+        count = count + sum([cached.Rows.re_count]);
+        if compactPeriodicOutput
+            cached.Slots(end+1) = slot0;
+            cache(key) = cached;
+        else
+            slotRows = localRetargetPeriodicRows(cached.Rows,slot0,"PUSCH");
+            partCount = partCount + 1;
+            rowParts{partCount} = slotRows;
+        end
+        continue;
+    end
     actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
     c=sixgr.phy.grid.makeCarrier(actual);
     [~,~,pusch]=sixgr.phy.grid.allocPUSCHTransport(c,actual);
-    if ~frame.IsULAllocation(slot0,double(pusch.SymbolAllocation)), continue; end
     m = sixgr.phy.frame.ChannelAllocationMaterializer. ...
         materializePUSCH(c,pusch,"AbsoluteSlot",slot0);
-    rows = [rows; localResultRows(m,slot0,"PUSCH",1, ...
+    slotRows = localResultRows(m,slot0,"PUSCH",1, ...
         double(pusch.NumLayers),"configured_RRC_UL_BWP_resource_pool_not_scheduler_grant", ...
-        "allocREsPUSCH+nrPUSCHIndices")]; %#ok<AGROW>
-    count = count + size(m.ActualCoordinates0Based,1);
+        "allocREsPUSCH+nrPUSCHIndices");
+    count = count + sum([slotRows.re_count]);
+    if cacheEnabled
+        cache(key)=struct("Rows",slotRows,"Slots",slot0);
+        keyOrder{end+1,1}=key; %#ok<AGROW>
+    end
+    if ~compactPeriodicOutput
+        partCount = partCount + 1;
+        rowParts{partCount} = slotRows;
+    end
 end
 if count == 0, error("sixgr:truth:NoPUSCHOccasion","No legal PUSCH occasion resolved."); end
-out = localPayload(rows,count,"PUSCH data, DM-RS and PT-RS resolved");
+if compactPeriodicOutput
+    for keyIndex = 1:numel(keyOrder)
+        key = keyOrder{keyIndex};
+        cached = cache(key);
+        partCount = partCount + 1;
+        rowParts{partCount} = localPeriodicTemplateRows( ...
+            cached.Rows,cached.Slots,"PUSCH",key);
+    end
+end
+rows = vertcat(rowParts{1:partCount});
+detail = "PUSCH data, DM-RS and PT-RS resolved";
+if compactPeriodicOutput
+    detail = detail + "; exact coordinates are stored once with explicit occurrence slots";
+end
+out = localPayload(rows,count,detail);
 end
 
-function out = localCSIRS(cfg,carrier,totalSlots,frame)
+function key = localPDSCHCoordinateTemplateKey(cfg,carrier,slot0,reservation)
+% Exact coordinate ownership changes only when one of the installed
+% reference reservations changes. NSlot/NFrame alter sequences, not RE
+% positions, and therefore are deliberately absent from this coordinate
+% table key.
+[csirsScheduled,~] = sixgr.phy.refsig.csirsOccasion(cfg,slot0);
+trsScheduled = sixgr.truth.isActiveTRSOccasion(cfg,slot0+1);
+csiimScheduled = false;
+if logical(sixgr.util.structGet(cfg,'phy.csiim.enabled',false))
+    csiim = sixgr.phy.refsig.csiIMResource(carrier,cfg);
+    csiimScheduled = logical(csiim.Scheduled);
+end
+reserved = double(sixgr.util.structGet(reservation, ...
+    'ReservedCarrierRE0',zeros(0,1)));
+if isempty(reserved)
+    ssbDigest = "none";
+else
+    encoded = sprintf('%.0f,',reserved(:));
+    ssbDigest = sixgr.util.sha256Hex(uint8(unicode2native(encoded,'UTF-8')));
+end
+key = char("ssb="+ssbDigest+"|csirs="+string(double(csirsScheduled))+ ...
+    "|trs="+string(double(trsScheduled))+ ...
+    "|csiim="+string(double(csiimScheduled)));
+end
+
+function rows = localRetargetPeriodicRows(template,slot0,channel)
+rows = template;
+allocationID = lower(string(channel))+"_slot_"+string(slot0);
+for rowIndex = 1:numel(rows)
+    rows(rowIndex).absolute_slot = slot0;
+    rows(rowIndex).sfn = NaN;
+    rows(rowIndex).slot_within_frame = NaN;
+    rows(rowIndex).allocation_id = allocationID;
+    rows(rowIndex).occurrence_slots = string(slot0);
+    rows(rowIndex).occurrence_count = 1;
+end
+end
+
+function [cache,keyOrder] = localAccumulatePeriodicRows(cache,keyOrder,slotRows,slot0,varargin)
+identity = "";
+if nargin >= 5, identity = string(varargin{1}); end
+key = char(identity+"|"+string(localCoordinateRowsKey(slotRows)));
+if isKey(cache,key)
+    entry = cache(key);
+    entry.Slots(end+1) = slot0;
+    cache(key) = entry;
+else
+    cache(key) = struct("Rows",slotRows,"Slots",slot0);
+    keyOrder{end+1,1} = key; %#ok<AGROW>
+end
+end
+
+function rows = localEmitPeriodicRows(cache,keyOrder,channel)
+parts = cell(numel(keyOrder),1);
+for keyIndex = 1:numel(keyOrder)
+    key = keyOrder{keyIndex};
+    entry = cache(key);
+    parts{keyIndex} = localPeriodicTemplateRows( ...
+        entry.Rows,entry.Slots,channel,key);
+end
+if isempty(parts)
+    rows = repmat(localEmptyRow(),0,1);
+else
+    rows = vertcat(parts{:});
+end
+end
+
+function key = localCoordinateRowsKey(rows)
+% Hash only exact coordinate/ownership content. Absolute time and allocation
+% IDs are represented separately by the explicit occurrence list.
+tokens = strings(numel(rows),1);
+for rowIndex = 1:numel(rows)
+    row = rows(rowIndex);
+    values = [ ...
+        string(row.direction),string(row.channel),string(row.component), ...
+        string(row.subcarrier_start),string(row.subcarrier_count), ...
+        string(row.symbol_index),string(row.port_index),string(row.re_count), ...
+        string(row.cell_id),string(row.ue_id),string(row.layer_count), ...
+        string(row.authority),string(row.resolver),string(row.grid_domain), ...
+        string(row.grid_subcarrier_spacing_hz), ...
+        string(row.grid_subcarrier_count),string(row.grid_symbol_count)];
+    values(ismissing(values)) = "<missing>";
+    tokens(rowIndex) = strjoin(values,"|");
+end
+tokens(ismissing(tokens)) = "<missing_row>";
+encoded = unicode2native(char(join(tokens,newline)),'UTF-8');
+key = char(sixgr.util.sha256Hex(uint8(encoded)));
+end
+
+function rows = localPeriodicTemplateRows(template,slots,channel,key)
+% Keep exact contiguous-RE coordinates while removing only redundant copies.
+% occurrence_slots is the complete zero-based slot identity set; consumers
+% can reconstruct the expanded table without guessing periodicity.
+slots = unique(double(slots(:).'),"stable");
+assert(~isempty(slots) && all(isfinite(slots)) && ...
+    all(slots >= 0) && all(slots == fix(slots)), ...
+    "sixgr:truth:InvalidPeriodicAllocationOccurrences", ...
+    "Periodic allocation templates require explicit finite zero-based slots.");
+rows = template;
+slotText = join(string(slots),"|");
+encodedKey = unicode2native(char(string(key)),'UTF-8');
+digest = string(sixgr.util.sha256Hex(uint8(encodedKey)));
+allocationID = lower(string(channel))+"_periodic_template_"+extractBetween(digest,1,16);
+for rowIndex = 1:numel(rows)
+    rows(rowIndex).absolute_slot = slots(1);
+    rows(rowIndex).sfn = NaN;
+    rows(rowIndex).slot_within_frame = NaN;
+    rows(rowIndex).allocation_id = allocationID;
+    rows(rowIndex).occurrence_slots = slotText;
+    rows(rowIndex).occurrence_count = numel(slots);
+    rows(rowIndex).coordinate_precision = "exact_periodic_contiguous_re_run";
+    rows(rowIndex).evidence_scope = ...
+        "planned_config_periodic_template_not_runtime_observation";
+end
+end
+
+function out = localCSIRS(cfg,carrier,totalSlots,frame,compactPeriodicOutput)
 rows = repmat(localEmptyRow(),0,1); count=0;
+cache = containers.Map('KeyType','char','ValueType','any');
+keyOrder = cell(0,1);
 for slot0=0:(totalSlots-1)
     if ~frame.IsDLSlot(slot0), continue; end
     cfgSlot=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
+    [scheduled,~]=sixgr.phy.refsig.csirsOccasion(cfgSlot,slot0);
+    if ~scheduled, continue; end
     c=localCarrierAtSlot(carrier,slot0);
     [~,~,info,primary]=sixgr.phy.refsig.csirs(c,cfgSlot);
-    if ~info.Scheduled, continue; end
+    assert(info.Scheduled,"sixgr:truth:CSIRSCalendarResolutionMismatch", ...
+        "The CSI-RS calendar and physical CSI-RS resolver disagree for slot %d.",slot0);
     configs={primary};
     if isfield(info,"Resources") && ~isempty(info.Resources)
         configs=cell(numel(info.Resources),1);
@@ -352,32 +610,54 @@ for slot0=0:(totalSlots-1)
     for i=1:numel(configs)
         m=sixgr.phy.frame.ChannelAllocationMaterializer.materializeReferenceSignal( ...
             c,"CSI_RS",configs{i},"AbsoluteSlot",slot0);
-        rows=[rows;localResultRows(m,slot0,"CSI_RS",1,NaN, ...
+        slotRows=localResultRows(m,slot0,"CSI_RS",1,NaN, ...
             "RRC_CSI_RS_resource_configuration", ...
-            "sixgr.phy.refsig.csirs+nrCSIRSIndices")]; %#ok<AGROW>
+            "sixgr.phy.refsig.csirs+nrCSIRSIndices");
+        if compactPeriodicOutput
+            [cache,keyOrder]=localAccumulatePeriodicRows( ...
+                cache,keyOrder,slotRows,slot0, ...
+                "csi_rs_resource_"+string(i));
+        else
+            rows=[rows;slotRows]; %#ok<AGROW>
+        end
         count=count+size(m.ActualCoordinates0Based,1);
     end
 end
 if count==0,error("sixgr:truth:NoCSIRSOccasion","No CSI-RS RE resolved in run window.");end
+if compactPeriodicOutput
+    rows=localEmitPeriodicRows(cache,keyOrder,"CSI_RS");
+end
 out=localPayload(rows,count,"CSI-RS resources resolved");
 end
 
-function out = localTRS(cfg,totalSlots,frame)
+function out = localTRS(cfg,totalSlots,frame,compactPeriodicOutput)
 strict=sixgr.phy.trs.buildTRSConfigFromScenario(cfg);
 rows=repmat(localEmptyRow(),0,1);count=0;
+cache = containers.Map('KeyType','char','ValueType','any');
+keyOrder = cell(0,1);
 for slot0=0:totalSlots-1
     if ~sixgr.truth.isActiveTRSOccasion(cfg,slot0+1),continue;end
     c=localCarrierAtSlot(strict.ToolboxCarrier,slot0);
     for resourceIndex=1:numel(strict.ToolboxResources)
     m=sixgr.phy.frame.ChannelAllocationMaterializer.materializeReferenceSignal( ...
         c,"CSI_RS",strict.ToolboxResources{resourceIndex},"AbsoluteSlot",slot0);
-    rows=[rows;localResultRows(m,slot0,"TRS",1,NaN, ...
+    slotRows=localResultRows(m,slot0,"TRS",1,NaN, ...
         "RRC_NZP_CSI_RS_TRS_resource_configuration", ...
-        "buildTRSConfigFromScenario+nrCSIRSIndices")]; %#ok<AGROW>
+        "buildTRSConfigFromScenario+nrCSIRSIndices");
+    if compactPeriodicOutput
+        [cache,keyOrder]=localAccumulatePeriodicRows( ...
+            cache,keyOrder,slotRows,slot0, ...
+            "trs_resource_"+string(resourceIndex));
+    else
+        rows=[rows;slotRows]; %#ok<AGROW>
+    end
     count=count+size(m.ActualCoordinates0Based,1);
     end
 end
 if count==0,error("sixgr:truth:NoTRSOccasion","No TRS RE resolved in run window.");end
+if compactPeriodicOutput
+    rows=localEmitPeriodicRows(cache,keyOrder,"TRS");
+end
 out=localPayload(rows,count,"TRS resources resolved");
 end
 
@@ -435,22 +715,33 @@ end
 out=localPayload(rows,count,"all configured PUCCH resources resolved");
 end
 
-function out = localSRS(cfg,carrier,totalSlots,frame)
+function out = localSRS(cfg,carrier,totalSlots,frame,compactPeriodicOutput)
 srsStrict=sixgr.phy.srs.buildSRSConfigFromScenario(cfg);
 srs=srsStrict.ToolboxSRS;
 period=double(srs.SRSPeriod(1));offset=double(srs.SRSPeriod(2));
 rows=repmat(localEmptyRow(),0,1);count=0;
+cache = containers.Map('KeyType','char','ValueType','any');
+keyOrder = cell(0,1);
 for slot0=0:(totalSlots-1)
     if mod(slot0-offset,period)~=0 || ~frame.IsULSlot(slot0),continue;end
     c=localCarrierAtSlot(carrier,slot0);
     m=sixgr.phy.frame.ChannelAllocationMaterializer.materializeReferenceSignal( ...
         c,"SRS",srs,"AbsoluteSlot",slot0);
-    rows=[rows;localResultRows(m,slot0,"SRS",1,NaN, ...
+    slotRows=localResultRows(m,slot0,"SRS",1,NaN, ...
         "RRC_SRS_resource_configuration", ...
-        "buildSRSConfigFromScenario+nrSRSIndices")]; %#ok<AGROW>
+        "buildSRSConfigFromScenario+nrSRSIndices");
+    if compactPeriodicOutput
+        [cache,keyOrder]=localAccumulatePeriodicRows( ...
+            cache,keyOrder,slotRows,slot0);
+    else
+        rows=[rows;slotRows]; %#ok<AGROW>
+    end
     count=count+size(m.ActualCoordinates0Based,1);
 end
 if count==0,error("sixgr:truth:NoSRSOccasion","No SRS RE resolved in run window.");end
+if compactPeriodicOutput
+    rows=localEmitPeriodicRows(cache,keyOrder,"SRS");
+end
 out=localPayload(rows,count,"SRS resources resolved");
 end
 
@@ -533,6 +824,7 @@ for k=1:size(keys,1)
         r.symbol_index=keys(k,1);r.port_index=keys(k,2);r.re_count=numel(run);
         r.cell_id=cellID;r.ue_id=1;r.layer_count=layerCount;
         r.authority=authority;r.resolver=resolver;r.allocation_id=id;
+        r.occurrence_slots=string(slot0);r.occurrence_count=1;
         rows(end+1,1)=r; %#ok<AGROW>
     end
 end
@@ -590,7 +882,8 @@ row=struct("absolute_slot",NaN,"sfn",NaN,"slot_within_frame",NaN, ...
     "subcarrier_start",NaN,"subcarrier_count",NaN,"symbol_index",NaN, ...
     "port_index",NaN,"re_count",NaN,"cell_id",NaN,"ue_id",NaN, ...
     "layer_count",NaN,"authority","","resolver","", ...
-    "allocation_id","","coordinate_precision","exact_contiguous_re_run", ...
+    "allocation_id","","occurrence_slots","","occurrence_count",NaN, ...
+    "coordinate_precision","exact_contiguous_re_run", ...
     "evidence_scope","planned_config_not_runtime_observation", ...
     "grid_domain","carrier_cp_ofdm", "grid_subcarrier_spacing_hz",NaN, ...
     "grid_subcarrier_count",NaN,"grid_symbol_count",NaN);

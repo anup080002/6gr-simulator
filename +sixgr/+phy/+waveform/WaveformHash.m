@@ -9,8 +9,8 @@ classdef WaveformHash
                 value = uint8(value(:));
             end
             md = javaMethod("getInstance","java.security.MessageDigest","SHA-256");
-            md.update(value);
-            digest = lower(string(reshape(dec2hex(typecast(md.digest(),"uint8"),2).',1,[])));
+            sixgr.phy.waveform.WaveformHash.updateDigest(md,value);
+            digest = sixgr.phy.waveform.WaveformHash.finishDigest(md);
         end
 
         function digest = file(path)
@@ -34,14 +34,45 @@ classdef WaveformHash
         end
 
         function digest = numeric(value)
+            % Preserve the historical hash byte stream exactly:
+            %   uint64 element count, all real double bytes, all imaginary
+            %   double bytes.  Feed bounded pieces to Java instead of
+            %   materializing a second waveform-sized byte array or passing
+            %   an array larger than the Java bridge limit.  This is
+            %   required for long 100 MHz element-domain observations.
             value = value(:);
-            realValue = real(double(value));
-            imaginaryValue = imag(double(value));
             countBytes = typecast(uint64(numel(value)),"uint8");
-            realBytes = typecast(realValue,"uint8");
-            imaginaryBytes = typecast(imaginaryValue,"uint8");
-            payload = [countBytes(:); realBytes(:); imaginaryBytes(:)];
-            digest = sixgr.phy.waveform.WaveformHash.bytes(payload);
+            md = javaMethod("getInstance","java.security.MessageDigest","SHA-256");
+            sixgr.phy.waveform.WaveformHash.updateDigest(md,countBytes);
+            elementsPerChunk = 262144; % 2 MiB after conversion to double bytes.
+            count = numel(value);
+            for first = 1:elementsPerChunk:count
+                last = min(count,first+elementsPerChunk-1);
+                bytes = typecast(real(double(value(first:last))),"uint8");
+                sixgr.phy.waveform.WaveformHash.updateDigest(md,bytes);
+            end
+            for first = 1:elementsPerChunk:count
+                last = min(count,first+elementsPerChunk-1);
+                bytes = typecast(imag(double(value(first:last))),"uint8");
+                sixgr.phy.waveform.WaveformHash.updateDigest(md,bytes);
+            end
+            digest = sixgr.phy.waveform.WaveformHash.finishDigest(md);
+        end
+    end
+
+    methods (Static, Access=private)
+        function updateDigest(md,value)
+            value = uint8(value(:));
+            bytesPerChunk = 8*1024*1024;
+            for first = 1:bytesPerChunk:numel(value)
+                last = min(numel(value),first+bytesPerChunk-1);
+                md.update(value(first:last));
+            end
+        end
+
+        function digest = finishDigest(md)
+            digest = lower(string(reshape( ...
+                dec2hex(typecast(md.digest(),"uint8"),2).',1,[])));
         end
     end
 end

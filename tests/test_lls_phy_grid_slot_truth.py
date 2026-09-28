@@ -409,3 +409,74 @@ def test_runtime_observed_re_rows_are_not_displaced_by_planned_payload_limit(
     assert live_grid["returned_event_count"] == 0
     assert live_grid["truncated_event_count"] == 3
     assert live_grid["time_frequency_cells"] == grid["time_frequency_cells"]
+
+
+def test_exact_periodic_planned_rows_expand_only_explicit_occurrences(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace_rows = [_trace_row(slot, "D", grants=1) for slot in range(1, 6)]
+    planned_rows = [
+        {
+            "absolute_slot": 0,
+            "occurrence_slots": "0|2|4",
+            "occurrence_count": 3,
+            "direction": "DL",
+            "channel": "PDSCH",
+            "component": "PDSCH_DATA",
+            "subcarrier_start": 120,
+            "subcarrier_count": 12,
+            "symbol_index": 3,
+            "port_index": 0,
+            "re_count": 12,
+            "allocation_id": "pdsch_periodic_template_deadbeef",
+            "coordinate_precision": "exact_periodic_contiguous_re_run",
+            "evidence_scope": "planned_config_periodic_template_not_runtime_observation",
+        }
+    ]
+    run_row = {
+        "run_id": 81,
+        "run_tag": "periodic-grid",
+        "scenario_id": "periodic-grid",
+        "status_text": "running",
+        "status_json": "{}",
+        "config_json": json.dumps(
+            {
+                "resolved_runtime_view": {"active_grid_num_rbs": 25},
+                "frame_timing": {"symbols_per_slot": 14},
+            }
+        ),
+        "updated_utc": "2026-09-27T00:00:00Z",
+    }
+    monkeypatch.setattr(dash, "fetch_run", lambda _run_id: run_row)
+    monkeypatch.setattr(dash, "fetch_artifacts", lambda _run_id: [])
+    monkeypatch.setattr(dash, "merge_db_and_filesystem_artifacts", lambda _artifacts, _run: [])
+
+    def select_rows(_artifacts, logical_path, **_kwargs):
+        selected = []
+        if logical_path == "reports/csv/slot_trace.csv":
+            selected = trace_rows
+        elif logical_path == "components/frame_grid/csv/planned_re_allocation.csv":
+            selected = planned_rows
+        return selected, {
+            "selected_logical_path": logical_path,
+            "canonical_logical_path": logical_path,
+            "selection_status": "selected" if selected else "unavailable",
+            "selected_artifact_id": None,
+        }
+
+    monkeypatch.setattr(dash, "select_canonical_csv_rows", select_rows)
+    dash.PHY_GRID_PAYLOAD_CACHE.clear()
+    grid = dash.build_phy_grid_payload(81, slot_limit=5)["grid"]
+
+    assert grid["event_count"] == 3
+    assert [event["slot"] for event in grid["events"]] == [1, 3, 5]
+    assert all(event["source_slot"] in {0, 2, 4} for event in grid["events"])
+    assert all(event["occurrence_count"] == 3 for event in grid["events"])
+    assert all(
+        event["coordinate_precision"] == "exact_periodic_contiguous_re_run"
+        for event in grid["events"]
+    )
+    assert all(
+        "exact_periodic_template_occurrence" in event["source_note"]
+        for event in grid["events"]
+    )

@@ -1,0 +1,35 @@
+inherits:
+  - ./h4_100_cdlc100_connected_impaired.yaml
+
+meta:
+  scenario_id: h4_100_cdlc100_connected_impaired_40db_gate
+  description: >
+    Dedicated 40 dB configured occupied-RE Es/N0 runtime gate for the exact
+    H4 4.0 GHz, 100 MHz, 64-TXRU/four-chain CDL-C connected impaired child.
+    This is the first child of the eight-point campaign, isolated so a common
+    runtime defect can be repaired before launching every sweep point.
+  purpose: Dedicated full-chain preflight of the eight-point H4 campaign.
+  research_class: study_item_candidate
+  maturity_tag: experimental
+  tags: [lls, truth, tdd, fr1, h4, 4ghz, 100mhz, cdl-c, 40db, runtime_gate, no_proxy]
+
+canonical_control:
+  launch:
+    scenario_mode: isolated_fixed_snr_point
+    sweep_enabled: false
+    fixed_link_campaign_enabled: false
+    geometry_enabled: false
+
+simulation:
+  snr_db: 40
+  random_seed: 20260927
+  snr_sweep_offsets_db: [0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+
+scenario:
+  runner_profile: waveform_bundle
+
+output:
+  profile: h4_100_cdlc100_connected_impaired_40db_gate
+  profiler_enabled: false

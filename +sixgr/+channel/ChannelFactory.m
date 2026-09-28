@@ -725,6 +725,17 @@ classdef ChannelFactory
                 opt.TransmitAntennaRuntime, opt.TransmitAntennaMeta, externalTx);
             txRuntimeForChannel = opt.TransmitAntennaRuntime;
             txMetaForChannel = opt.TransmitAntennaMeta;
+            chunkSamples = double(sixgr.util.structGet(cfg, ...
+                "channel.runtimeElementExpansionChunkSamples", 4096));
+            if ~(isscalar(chunkSamples) && isfinite(chunkSamples) ...
+                    && chunkSamples >= 1 && chunkSamples == fix(chunkSamples))
+                error("ChannelFactory:InvalidElementExpansionChunkSamples", ...
+                    "channel.runtimeElementExpansionChunkSamples must be a positive integer.");
+            end
+            % This bound applies to any physical element-domain channel
+            % input, whether the port-to-element map is executed here or
+            % the upstream waveform is already materialized at TXRU count.
+            state.ElementExpansionChunkSamples = double(chunkSamples);
             if expandToElements
                 numTx = size(portToElement, 1);
                 [txRuntimeForChannel, txMetaForChannel] = ...
@@ -736,14 +747,6 @@ classdef ChannelFactory
                 state.ElementExpansionApplied = true;
                 state.ElementExpansionMatrixSHA256 = char( ...
                     sixgr.phy.mimo.MatrixContract.digest(portToElement));
-                chunkSamples = double(sixgr.util.structGet(cfg, ...
-                    "channel.runtimeElementExpansionChunkSamples", 4096));
-                if ~(isscalar(chunkSamples) && isfinite(chunkSamples) ...
-                        && chunkSamples >= 1 && chunkSamples == fix(chunkSamples))
-                    error("ChannelFactory:InvalidElementExpansionChunkSamples", ...
-                        "channel.runtimeElementExpansionChunkSamples must be a positive integer.");
-                end
-                state.ElementExpansionChunkSamples = double(chunkSamples);
             else
                 state.ExternalLogicalTxPorts = double(numTx);
                 state.PhysicalChannelTxElements = double(numTx);
@@ -1030,6 +1033,7 @@ classdef ChannelFactory
                 "RuntimeChannelPathGainPreviewTruncated", false, ...
                 "RuntimeChannelPathGainCaptureRequested", false, ...
                 "RuntimeChannelPathGainCapturePolicy", "not_requested", ...
+                "RuntimeChannelPathGainCaptureScope", "not_requested", ...
                 "RuntimeChannelPathGainCaptureSatisfied", false);
             if ~(isstruct(state) && isfield(state, "ContractVersion"))
                 return;
@@ -1235,6 +1239,10 @@ classdef ChannelFactory
                 capturePathGains = true;
                 replay.RuntimeChannelPathGainCaptureRequested = true;
                 replay.RuntimeChannelPathGainCapturePolicy = "explicit_same_execution_full_channel_reference";
+                replay.RuntimeChannelPathGainCaptureScope = "complete_executed_physical_interval";
+            elseif capturePathGains && continuousOutput
+                replay.RuntimeChannelPathGainCaptureScope = ...
+                    "first_executed_sample_exact_bounded_diagnostic";
             end
             % Advance the authoritative channel object by exactly the real
             % waveform samples.  Alignment needs a bounded causal tail after
@@ -1273,7 +1281,25 @@ classdef ChannelFactory
                     state, xChannel, capturePathGains);
             elseif capturePathGains && continuousOutput
                 % The shared clock cannot retry a stateful channel call.
-                [yHead, pathGains, sampleTimes] = state.Obj(xChannel);
+                % A path-gain tensor scales as
+                % Ns-by-Npath-by-Nray/element-by-Ntx for CDL.  Requesting
+                % diagnostic output for an entire 100 MHz, 64-element slot
+                % can allocate tens of gigabytes even though the persisted
+                % evidence budget is only a few thousand elements.  Capture
+                % one exact temporal slice from the SAME persistent call,
+                % then continue the remaining samples through the same
+                % object with waveform output only.  nrCDL/nrTDL streaming
+                % is chunk invariant; no clone, replay, interpolation or
+                % receiver oracle is introduced.
+                [yFirst, pathGains, sampleTimes] = state.Obj(xChannel(1,:));
+                if size(xChannel,1)>1
+                    yRest=sixgr.channel.ChannelFactory. ...
+                        localApplyProjectedContinuousChannel( ...
+                        state,xChannel(2:end,:));
+                    yHead=[yFirst;yRest];
+                else
+                    yHead=yFirst;
+                end
             elseif capturePathGains
                 try
                     [yHead, pathGains, sampleTimes] = state.Obj(xChannel);
@@ -1288,7 +1314,12 @@ classdef ChannelFactory
                     end
                 end
             else
-                yHead = state.Obj(xChannel);
+                if continuousOutput
+                    yHead=sixgr.channel.ChannelFactory. ...
+                        localApplyProjectedContinuousChannel(state,xChannel);
+                else
+                    yHead = state.Obj(xChannel);
+                end
                 pathGains = [];
                 sampleTimes = [];
             end
@@ -1576,6 +1607,24 @@ classdef ChannelFactory
             runtimeMeta.NumWaveformColumns = double(physicalElements);
             runtimeMeta.WaveformDomain = "element";
             runtimeMeta.PortToElementExpansionEnabled = true;
+        end
+
+        function yRaw=localApplyProjectedContinuousChannel(state,xPhysical)
+            % Bound the backend's internal Ns-by-path/ray-by-array tensor.
+            % Every chunk advances the same persistent System object; this
+            % is exact stream partitioning, not independent realization,
+            % replay, approximation or scalar channel substitution.
+            chunkSamples=max(1,round(double(sixgr.util.structGet( ...
+                state,"ElementExpansionChunkSamples",4096))));
+            nRows=size(xPhysical,1);
+            nChunks=ceil(nRows/chunkSamples);
+            parts=cell(nChunks,1);
+            for chunkIndex=1:nChunks
+                firstRow=(chunkIndex-1)*chunkSamples+1;
+                lastRow=min(nRows,chunkIndex*chunkSamples);
+                parts{chunkIndex}=state.Obj(xPhysical(firstRow:lastRow,:));
+            end
+            yRaw=vertcat(parts{:});
         end
 
         function [yRaw, pathGains, sampleTimes] = ...

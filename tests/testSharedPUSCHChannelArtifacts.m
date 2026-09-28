@@ -105,6 +105,7 @@ if independentCompletion && withCSI
         cfg.phy.csi.reportOffsetSlots) && sixgr.truth.periodicCSIReferenceSlot(cfg,10)==6);
 end
 state.TestPUSCHRows=table();
+[lateCSIProducerSlot,~]=localLateCSIProducerSlot(cfg,10);
 [state,owner]=sixgr.truth.CoupledWaveformStream.initialize(state,cfg,{cfg});
 if receivedAuthority
     % Retain the real large-scale/serving-cell state created by the normal
@@ -163,7 +164,7 @@ for slot=1:lastSlot
     if independentSharedHARQ && slot==6
         state=localQueueSharedCSISource(state,cfg,slot,true);
     end
-    if withCSI && ~independentCompletion && slot==10-state.CSIFeedbackSlots
+    if withCSI && ~independentCompletion && slot==lateCSIProducerSlot
         state=localQueueSharedCSISource(state,cfg,slot);
     end
     if withHARQ && slot==11, localQueueSRS(state,cfg,15); end
@@ -1309,6 +1310,26 @@ assert(sixgr.phy.waveform.WaveformHash.file(replay)==archive.ResourcesCSVSHA256,
     'The MAT archive must reproduce the original resource CSV bytes, not merely its aggregate NMSE.');
 fprintf('CHANNEL_RESOURCE_ARCHIVE_ROUNDTRIP_PASS channel=%s values=%d\n', ...
     archive.Resources.Channel(1),height(archive.Resources));
+end
+
+function [producerSlot,referenceSlot]=localLateCSIProducerSlot(cfg,reportSlot)
+% A periodic report's CSI reference resource is not the link-adaptation
+% feedback delay.  Select the newest actually configured CSI-RS occasion
+% that is no later than the TS 38.214 reference-resource boundary.
+referenceSlot=sixgr.truth.periodicCSIReferenceSlot(cfg,reportSlot);
+assert(isfinite(referenceSlot) && referenceSlot>=1, ...
+    'test:MissingCSIReferenceResource','A causal CSI reference resource is required.');
+producerSlot=NaN;
+for candidate=referenceSlot:-1:1
+    [scheduled,~]=sixgr.phy.refsig.csirsOccasion(cfg,candidate-1);
+    if scheduled
+        producerSlot=candidate;
+        break;
+    end
+end
+assert(isfinite(producerSlot), ...
+    'test:MissingCSIRSProducerOccasion', ...
+    'No configured CSI-RS occasion exists before the report reference resource.');
 end
 
 function localVerifyCSI(state)

@@ -1370,6 +1370,11 @@ sections:
       profiler_enabled: {required: false, type: boolean}
       profiler_top_functions: {required: false, type: integer, min: 1}
       profiler_top_edges: {required: false, type: integer, min: 1}
+      planned_allocation_encoding:
+        required: false
+        type: string
+        allowed_values: [expanded_per_slot, exact_periodic_templates]
+        description: Preserve exact RE coordinates either once per slot or as exact periodic templates with explicit occurrence-slot identities.
       save_yaml_snapshot: {required: true, type: boolean}
       save_json_snapshot: {required: true, type: boolean}
       organize_by_block: {required: true, type: boolean}

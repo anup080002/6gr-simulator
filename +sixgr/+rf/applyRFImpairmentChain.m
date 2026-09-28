@@ -3,7 +3,7 @@ function out = applyRFImpairmentChain(x, cfg, varargin)
 % Keep this file ASCII-only.
 %
 % Declared order:
-%   Tx: IQ -> element analog RF -> PA -> phase noise -> CFO -> sample timing -> sample clock
+%   Tx: DAC -> IQ -> element analog RF -> PA -> phase noise -> CFO -> sample timing -> sample clock
 %   Rx: sample timing -> LO/CFO -> phase noise -> IQ -> element analog RF -> sample clock -> AGC -> ADC
 
 p = inputParser;
@@ -56,6 +56,7 @@ beforeHash = localWaveformHash(y);
 stageRows = repmat(localStageRowTemplate(), 0, 1);
 stageOrder = strings(0, 1);
 if chain.IncludeTx
+    [y, stageRows] = localApplyDACStage(y, chain.TxDAC, "tx_dac", "tx", stageRows, stream);
     [y, stageRows] = localApplyIQStage(y, chain.TxIQ, "tx_iq", "tx", stageRows);
     [y, stageRows] = localApplyElementRFStage(y, chain.TxElementRF, cfg, "tx_element_rf", "tx", stageRows,stream);
     [y, stageRows] = localApplyPAStage(y, chain.TxPA, cfg, "tx_pa", "tx", stageRows,stream);
@@ -63,7 +64,7 @@ if chain.IncludeTx
     [y, stageRows] = localApplyCFOStage(y, chain.TxCFO, "tx_cfo", "tx", stageRows,stream);
     [y, stageRows] = localApplyTimingStage(y, chain.TxTiming, "tx_timing", "tx", stageRows,stream);
     [y, stageRows] = localApplySampleClockOffsetStage(y, chain.TxSampleClockOffset, "tx_sample_clock_offset", "tx", stageRows);
-    stageOrder = [stageOrder; "tx_iq"; "tx_element_rf"; "tx_pa"; "tx_phase_noise"; "tx_cfo"; "tx_timing"; "tx_sample_clock_offset"]; %#ok<AGROW>
+    stageOrder = [stageOrder; "tx_dac"; "tx_iq"; "tx_element_rf"; "tx_pa"; "tx_phase_noise"; "tx_cfo"; "tx_timing"; "tx_sample_clock_offset"]; %#ok<AGROW>
 end
 if chain.IncludeRx
     [y, stageRows] = localApplyTimingStage(y, chain.RxTiming, "rx_timing", "rx", stageRows,stream);
@@ -157,7 +158,8 @@ out.Row = struct( ...
     "TimingOffsetSamplesApplied", double(replay.InjectedTimingOffset_samples), ...
     "SampleClockOffsetEnabled", logical(replay.SampleClockOffsetEnabled), ...
     "SampleClockOffsetPpm", double(replay.SampleClockOffsetPpm), ...
-    "QuantizationEnabled", logical(replay.ADCQuantizationApplied), ...
+    "QuantizationEnabled", logical(replay.DACQuantizationApplied || replay.ADCQuantizationApplied), ...
+    "DACQuantizationEnabled", logical(replay.DACQuantizationApplied), ...
     "ADCBits", double(replay.ADCBits), ...
     "DACBits", double(replay.DACBits), ...
     "WaveformBeforeHash", string(beforeHash), ...
@@ -198,6 +200,7 @@ chain.TxElementRF = localResolveElementRFConfig(cfg, "tx", direction, legacyToTx
 chain.RxElementRF = localResolveElementRFConfig(cfg, "rx", direction, legacyToRx);
 chain.TxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "tx", legacyToTx);
 chain.RxSampleClockOffset = localResolveSampleClockOffsetConfig(cfg, "rx", legacyToRx);
+chain.TxDAC = localResolveDACConfig(cfg, fs);
 chain.TxPA = localResolvePAConfig(cfg, logical(applyPA));
 chain.RxAGC = localResolveAGCConfig(cfg, logical(applyADC));
 chain.RxADC = localResolveADCConfig(cfg, logical(applyADC));
@@ -319,6 +322,44 @@ pn = sixgr.rf.PhaseNoiseModel(cfgStage, fs, seed);
 cfgPN = struct("Enabled", logical(enabled), "Model", pn, "Seed", double(seed), ...
     "Backend", string(pn.Backend), "TruthClassification", string(pn.TruthClassification), ...
     "ApproximationReason", string(pn.ApproximationReason), "Endpoint", char(endpoint));
+end
+
+function cfgDAC = localResolveDACConfig(cfg, fs)
+raw = sixgr.util.structGet(cfg, "rf.frontend.dac", struct());
+enabled = false;
+if isstruct(raw) && isscalar(raw)
+    enabled = logical(sixgr.util.structGet(raw, "enabled", false));
+end
+bits = double(sixgr.util.structGet(raw, "bits", ...
+    sixgr.util.structGet(cfg, "rf.dacBits", ...
+    sixgr.util.structGet(cfg, "phy.impairments.dacQuantizationBits", NaN))));
+fullScale = double(sixgr.util.structGet(raw, "full_scale", NaN));
+convention = string(sixgr.util.structGet(raw, "convention", ""));
+profileID = string(sixgr.util.structGet(raw, "profile_id", ""));
+version = string(sixgr.util.structGet(raw, "version", ""));
+ditherEnabled = logical(sixgr.util.structGet(raw, "dither_enabled", false));
+ditherRMS = double(sixgr.util.structGet(raw, "dither_rms", 0));
+apertureJitter = double(sixgr.util.structGet(raw, "aperture_jitter_seconds", 0));
+if enabled
+    if ~(isscalar(bits) && isfinite(bits) && bits == fix(bits) && bits >= 2 && bits <= 24 && ...
+            isscalar(fullScale) && isfinite(fullScale) && fullScale > 0 && ...
+            isscalar(convention) && any(convention == ["signed_midtread","signed_midrise"]) && ...
+            strlength(strtrim(profileID)) > 0 && strlength(strtrim(version)) > 0 && ...
+            isscalar(ditherRMS) && isfinite(ditherRMS) && ditherRMS >= 0 && ...
+            isscalar(apertureJitter) && isfinite(apertureJitter) && apertureJitter >= 0)
+        error("RF:DACProfileMissing", ...
+            "Enabled DAC execution requires an explicit versioned bit-depth, full-scale, convention, dither and jitter profile.");
+    end
+    if ~ditherEnabled && ditherRMS ~= 0
+        error("RF:DACProfileMissing", ...
+            "A disabled DAC dither stage must declare dither_rms=0.");
+    end
+end
+cfgDAC = struct("Enabled", enabled, "Bits", bits, ...
+    "FullScale", fullScale, "Convention", convention, ...
+    "DitherEnabled", ditherEnabled, "DitherRMS", ditherRMS, ...
+    "ApertureJitter_s", apertureJitter, "ProfileID", profileID, ...
+    "Version", version, "SampleRate_Hz", double(fs));
 end
 
 function cfgPA = localResolvePAConfig(cfg, applyPA)
@@ -568,6 +609,37 @@ end
 rows(end + 1, 1) = row;
 end
 
+function [y, rows] = localApplyDACStage(x, stageCfg, stageName, endpoint, rows, stream)
+if stageCfg.Enabled
+    if isempty(stream)
+        seed = 1;
+        result = sixgr.rf.runtime.DACModel.convert(x, struct( ...
+            "Bits",stageCfg.Bits,"FullScale",stageCfg.FullScale, ...
+            "Convention",stageCfg.Convention,"DitherRMS",stageCfg.DitherRMS, ...
+            "ApertureJitter_s",stageCfg.ApertureJitter_s, ...
+            "ProfileID",stageCfg.ProfileID,"Version",stageCfg.Version), ...
+            stageCfg.SampleRate_Hz, seed);
+    else
+        result = stream.applyDAC(x);
+    end
+    y = result.Output;
+    [~, row] = localApplyGenericStage(x, true, stageName, endpoint, @(z)y);
+    row.ErrorVariance = double(result.ErrorVariance);
+else
+    y = x;
+    [~, row] = localApplyGenericStage(x, false, stageName, endpoint, @(z)z);
+end
+row.Parameter1Name = "dac_bits";
+row.Parameter1Value = double(stageCfg.Bits);
+row.Parameter2Name = "full_scale";
+row.Parameter2Value = double(stageCfg.FullScale);
+row.Parameter3Name = "clipping_ratio";
+row.Parameter3Value = localADCClippingRatio(x, stageCfg.FullScale);
+row.Status = localTernary(stageCfg.Enabled && row.Applied, ...
+    "applied_complex_dac_quantization", row.Status);
+rows(end + 1, 1) = row;
+end
+
 function [y, rows] = localApplyPAStage(x, stageCfg, cfg, stageName, endpoint, rows,stream)
 fn = @(z) localApplyPAWithConfig(z, cfg);
 if ~isempty(stream), fn=@(z)stream.applyPA(z); end
@@ -763,6 +835,7 @@ paRows = rows(stageNames == "tx_pa");
 cfoRows = rows(contains(stageNames, "cfo"));
 timingRows = rows(contains(stageNames, "timing"));
 adcRows = rows(stageNames == "rx_adc");
+dacRows = rows(stageNames == "tx_dac");
 agcRows = rows(stageNames == "rx_agc");
 sampleClockRows = rows(contains(stageNames, "sample_clock_offset"));
 elementRows = rows(contains(stageNames, "element_rf"));
@@ -859,7 +932,11 @@ replay = struct( ...
     "ADCFullScale", double(chain.RxADC.FullScale), ...
     "ADCClippingRatio", localSumRowParameter(adcRows, "clipping_ratio"), ...
     "ADCQuantizationErrorVariance", localLastFiniteRowValue(adcRows, "ErrorVariance"), ...
-    "DACBits", double(chain.RxADC.DACBits), ...
+    "DACQuantizationApplied", ~isempty(dacRows) && any([dacRows.Applied]), ...
+    "DACBits", double(chain.TxDAC.Bits), ...
+    "DACFullScale", double(chain.TxDAC.FullScale), ...
+    "DACClippingRatio", localSumRowParameter(dacRows, "clipping_ratio"), ...
+    "DACQuantizationErrorVariance", localLastFiniteRowValue(dacRows, "ErrorVariance"), ...
     "SampleClockOffsetTxPpm", double(chain.SampleClockOffset.TxPPM), ...
     "SampleClockOffsetRxPpm", double(chain.SampleClockOffset.RxPPM));
 end

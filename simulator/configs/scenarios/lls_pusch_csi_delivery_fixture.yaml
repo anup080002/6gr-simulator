@@ -8,4 +8,9 @@ meta:
   research_class: optional_research_experiment
 
 link_adaptation:
-  feedback_delay_slots: 3
+  # The actual CSI-RS producer is one-based slot 3 (absolute slot 2), the
+  # newest configured occasion before the slot-10 report's reference-resource
+  # boundary.  This component intentionally defers that received measurement
+  # seven slots so its UCI shares the scheduled slot-10 PUSCH.  Producer
+  # selection must never be inferred as `report slot - feedback delay`.
+  feedback_delay_slots: 7

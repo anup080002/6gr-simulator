@@ -1,9 +1,18 @@
-function T=exportSharedDataChannelEstimate(root,T,snapshot,prepared,captures,replays,projection)
+function T=exportSharedDataChannelEstimate(root,T,snapshot,prepared,referenceSource,referenceEvidence,varargin)
 % Post-reception publication only; never changes decoded bits or feedback.
 assert(istable(T) && height(T)==1 && isfolder(root) && ...
     ismember('ChannelObservationID',T.Properties.VariableNames), ...
     'sixgr:truth:PUSCHChannelExportIdentity','One actual received trial and its captured channel identity are required.');
-[reference,evidence]=sixgr.truth.sharedDataChannelReference(snapshot,prepared,captures,replays,projection);
+if isa(referenceSource,'sixgr.phy.waveform.WaveformObservationBuffer')
+    [reference,evidence]=sixgr.truth.sharedDataScoringWaveformReference( ...
+        snapshot,prepared,referenceSource,referenceEvidence);
+else
+    assert(numel(varargin)==1, ...
+        'sixgr:truth:MissingDataChannelProjection', ...
+        'Legacy coefficient scoring requires the executed waveform-to-element projection.');
+    [reference,evidence]=sixgr.truth.sharedDataChannelReference( ...
+        snapshot,prepared,referenceSource,referenceEvidence,varargin{1});
+end
 channel="PUSCH"; if prepared.Direction=="DL", channel="PDSCH"; end
 context=struct('Channel',channel,'Slot',double(T.Slot), ...
     'UEIndex',double(T.UEIndex),'ConfiguredSNR_dB',double(T.ConfiguredSNR_dB), ...
@@ -12,7 +21,7 @@ context=struct('Channel',channel,'Slot',double(T.Slot), ...
 [resources,score]=sixgr.report.buildReceiverChannelEstimateTable( ...
     snapshot,reference,snapshot.PilotIndices,context);
 resources.ChannelObservationID=repmat(string(T.ChannelObservationID),height(resources),1);
-resources.ReferenceRFImpairmentsIncluded=false(height(resources),1);
+resources.ReferenceRFImpairmentsIncluded=repmat(logical(evidence.RFImpairmentsIncluded),height(resources),1);
 % Preserve the exact scored complex reference as well as Hest. The compact
 % snapshot and aggregate score alone cannot reconstruct the reference REs.
 % This is post-reception archival evidence, never receiver estimator input.
@@ -44,7 +53,7 @@ T.ChannelEstimateResourcesCSVSHA256=sixgr.phy.waveform.WaveformHash.file(csvPath
 T.ChannelEstimateMATFile=string(matRelative);
 T.ChannelEstimateMATFileSHA256=sixgr.phy.waveform.WaveformHash.file(matPath);
 T.ChannelEstimateReferencePlane=evidence.ReferencePlane;
-T.ChannelEstimateReferenceRFImpairmentsIncluded=false;
+T.ChannelEstimateReferenceRFImpairmentsIncluded=logical(evidence.RFImpairmentsIncluded);
 T.ChannelEstimateReferenceUsedByReceiver=false;
 T.ChannelEstimateComparedValues=score.ComparedComplexValueCount;
 end

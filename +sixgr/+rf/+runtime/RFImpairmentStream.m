@@ -20,6 +20,7 @@ classdef RFImpairmentStream < handle
         AGC
         ADCState struct = struct()
         ADCProfile struct = struct()
+        DACProfile struct = struct()
         PAProfile struct = struct()
         PAState = []
         DelayState = []
@@ -128,6 +129,12 @@ classdef RFImpairmentStream < handle
             [result,obj.ADCState]=sixgr.rf.runtime.ADCModel.quantize(x,obj.ADCProfile,obj.ADCState);
         end
 
+        function result=applyDAC(obj,x)
+            obj.assertApplying();
+            result=sixgr.rf.runtime.DACModel.convert(x,obj.DACProfile, ...
+                obj.SampleRateHz,double(obj.DACProfile.Seed));
+        end
+
         function y=applyPA(obj,x)
             obj.assertApplying();
             if lower(string(obj.PAProfile.Model))=="memory_polynomial"
@@ -183,8 +190,22 @@ classdef RFImpairmentStream < handle
                     end
                 end
             end
-            if c.IncludeTx && logical(sixgr.util.structGet(obj.Configuration,'rf.frontend.dac.enabled',false))
-                error('RF:StreamingDACNotIntegrated','The ordered impairment chain has no retained DAC stage; do not label DAC bit metadata as execution.');
+            if c.IncludeTx && c.TxDAC.Enabled
+                if c.TxDAC.DitherEnabled || c.TxDAC.DitherRMS~=0 || ...
+                        c.TxDAC.ApertureJitter_s~=0
+                    error('RF:StreamingDACRandomStateRequired', ...
+                        ['Retained DAC dither/jitter needs a persistent sample-indexed random state. ' ...
+                         'Use the qualified deterministic quantizer profile for this runtime.']);
+                end
+                obj.DACProfile=struct('Bits',c.TxDAC.Bits, ...
+                    'FullScale',c.TxDAC.FullScale, ...
+                    'Convention',c.TxDAC.Convention, ...
+                    'DitherRMS',c.TxDAC.DitherRMS, ...
+                    'ApertureJitter_s',c.TxDAC.ApertureJitter_s, ...
+                    'ProfileID',c.TxDAC.ProfileID, ...
+                    'Version',c.TxDAC.Version, ...
+                    'Seed',double(sixgr.util.structGet( ...
+                    obj.Configuration,'run.seed',1)));
             end
             if c.IncludeRx && c.RxAGC.Enabled
                 raw=sixgr.util.structGet(obj.Configuration,'rf.frontend.receiver.agc.stream_profile',struct());

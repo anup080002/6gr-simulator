@@ -32,6 +32,36 @@ for direction=["DL","UL"]
   end
 end
 assert(isequal(saved,rng),'Canonical oscillators must not consume the global RNG.');
+% The retained deterministic DAC quantizer is sample-local and therefore
+% invariant to chunk boundaries. Stochastic dither/jitter is rejected until
+% a persistent sample-indexed DAC random stream is qualified.
+dacCfg=struct();
+dacCfg.run.seed=101;
+dacCfg.rf.frontend.dac=struct('enabled',true, ...
+    'profile_id','unit_retained_dac','version','1','bits',12, ...
+    'full_scale',1,'convention','signed_midtread', ...
+    'dither_enabled',false,'dither_rms',0,'aperture_jitter_seconds',0);
+dacWhole=sixgr.rf.runtime.RFImpairmentStream( ...
+    dacCfg,'tx','DL',fs,2,origin,epoch,false);
+dacSplit=sixgr.rf.runtime.RFImpairmentStream( ...
+    dacCfg,'tx','DL',fs,2,origin,epoch,false);
+dacExpected=dacWhole.apply( ...
+    sixgr.phy.waveform.WaveformChunk(x,origin),epoch);
+dacActual=zeros(size(x),'like',x); first=0;
+for last=[17 257 1024]
+    out=dacSplit.apply(sixgr.phy.waveform.WaveformChunk( ...
+        x(first+1:last,:),origin+first),epoch);
+    dacActual(first+1:last,:)=out.Waveform; first=last;
+end
+assert(isequal(dacActual,dacExpected.Waveform) && ...
+    dacExpected.Replay.DACQuantizationApplied, ...
+    'Retained deterministic DAC execution changed with partition boundaries.');
+stochastic=dacCfg;
+stochastic.rf.frontend.dac.dither_enabled=true;
+stochastic.rf.frontend.dac.dither_rms=1e-6;
+localError(@()sixgr.rf.runtime.RFImpairmentStream( ...
+    stochastic,'tx','DL',fs,2,origin,epoch,false), ...
+    'RF:StreamingDACRandomStateRequired');
 % A one-order, three-tap profile has three memory columns, not three orders.
 c=cfg; c.rf.pa.enable=true;
 c.rf.frontend.pa.coefficients=[1 .25 -.125];

@@ -9,16 +9,22 @@ s=sixgr.lls6g.config.loadScenarioConfig( ...
     'simulator/configs/scenarios/lls_tdd_5mhz_rank2_4tx2rx_awgn_m10db.yaml');
 sc=s.toStruct(); sc.reference_signals.csi_rs_runtime_channel_estimator='flat_static_awgn_ls';
 if withCSIIM
-    % Explicit calibration resource outside this occasion's SSB/DM-RS.
-    % The production allocator must mute it; the test never zeros TX REs.
+    % Explicit calibration resource on the same period-5/offset-2
+    % measurement occasion as the inherited CSI-RS.  CSI-IM is an
+    % independently configured received-interference resource; enabling it
+    % must not make it present on an unrelated slot.
     sc.reference_signals.csi_im=struct('enabled',true,'resource_id',0,'pattern',1, ...
         'subcarrier',4,'symbol',13,'starting_rb',0,'num_rbs',24, ...
-        'period_slots',5,'offset_slots',1);
+        'period_slots',5,'offset_slots',2);
 end
 sixgr.lls6g.config.validateScenarioConfig(sc);
 cfg=sixgr.lls6g.buildInternalConfig(sc,tempname);
 assert(string(cfg.phy.csirs.runtimeChannelEstimator)=="flat_static_awgn_ls");
-cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,2);
+% The inherited CSI-RS calendar is period 5, zero-based offset 2.  Runtime
+% slots are one based, so slot 3 is the first real CSI-RS occasion.  Never
+% turn resource enablement into an every-slot transmission merely to make a
+% component fixture produce pilots.
+cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,3);
 cfg.channel.snr_dB=snr;
 % This CSI occasion also carries SSB. Use a legal two-symbol allocation
 % after its burst, rather than bypassing the production SSB/DM-RS guard.

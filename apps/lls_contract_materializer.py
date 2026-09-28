@@ -2667,6 +2667,24 @@ def _row_float(row: dict[str, str], *names: str) -> float | None:
     return _coerce_float(value)
 
 
+def _row_directivity_db(row: dict[str, str], *names: str) -> float | None:
+    """Parse logarithmic directivity, retaining an exact zero-power null.
+
+    ``-Inf dBi`` is the mathematically correct logarithmic representation of
+    zero linear directivity.  NaN and +Inf still mean corrupt evidence.
+    """
+    value = _row_value(row, *names)
+    if value in (None, ""):
+        return None
+    try:
+        number = float(value)
+    except Exception:
+        return None
+    if math.isnan(number) or number == math.inf:
+        return None
+    return number
+
+
 def _row_quality_axis_value(row: dict[str, str], *, allow_receiver_hest: bool = False) -> tuple[float | None, str]:
     """Return the best runtime-quality x-axis value.
 
@@ -7285,7 +7303,7 @@ def _runtime_antenna_radiation_chart(
         == "actual_CoupledTruthRuntime_phased_NRRectangularPanelArray"
         and _row_float(row, "Azimuth_deg") is not None
         and _row_float(row, "Elevation_deg") is not None
-        and _row_float(row, "Directivity_dBi") is not None
+        and _row_directivity_db(row, "Directivity_dBi") is not None
     ]
     if exact_rows:
         node_keys = sorted({
@@ -7302,14 +7320,26 @@ def _runtime_antenna_radiation_chart(
         elevations = sorted({float(_row_float(row, "Elevation_deg")) for row in raster_rows})
         sample_map = {
             (float(_row_float(row, "Elevation_deg")), float(_row_float(row, "Azimuth_deg"))):
-            float(_row_float(row, "Directivity_dBi"))
+            float(_row_directivity_db(row, "Directivity_dBi"))
             for row in raster_rows
         }
         directivity_values = list(sample_map.values())
-        min_directivity = min(directivity_values)
+        finite_directivity = [value for value in directivity_values if math.isfinite(value)]
+        if not finite_directivity:
+            return None
+        exact_null_count = sum(value == -math.inf for value in directivity_values)
+        # The CSV retains exact -Inf values.  SVG rasterizers require finite
+        # colors, so place exact nulls 3 dB below the lowest finite sample and
+        # report that visualization-only floor explicitly.
+        null_visualization_floor = min(finite_directivity) - 3.0
+        displayed_sample_map = {
+            key: (null_visualization_floor if value == -math.inf else value)
+            for key, value in sample_map.items()
+        }
+        min_directivity = min(displayed_sample_map.values())
         color_offset = -min_directivity + 1e-9 if min_directivity <= 0 else 0.0
         matrix = [
-            [sample_map[(elevation, azimuth)] + color_offset for azimuth in azimuths]
+            [displayed_sample_map[(elevation, azimuth)] + color_offset for azimuth in azimuths]
             for elevation in elevations
         ]
         csv_rows = []
@@ -7361,6 +7391,8 @@ def _runtime_antenna_radiation_chart(
                     f"array={_row_text(raster_rows[0], 'ArrayClass')}",
                     f"element={_row_text(raster_rows[0], 'ElementClass')}",
                     f"all_runtime_rows_in_csv={len(csv_rows)}",
+                    f"exact_null_count={exact_null_count}",
+                    f"null_visualization_floor_dbi={null_visualization_floor:.6g}",
                     f"color_offset={color_offset:.6g}",
                     f"source={sample_path}",
                     "selected_beam_taper=not_applied_separate_evidence",
@@ -7373,7 +7405,7 @@ def _runtime_antenna_radiation_chart(
             "source_table_path": sample_path,
             "source_row_count": len(csv_rows),
             "source_mapping_status": "exact",
-            "note": "The raster selects one declared runtime node; the CSV retains all BS/UE samples. Directivity color offset is visualization-only and explicitly reported.",
+            "note": "The raster selects one declared runtime node; the CSV retains all BS/UE samples including exact -Inf dBi nulls. The null floor and directivity color offset are visualization-only and explicitly reported.",
         }
 
     cfg = _select_runtime_antenna_config(existing, fetch_artifact_bytes)

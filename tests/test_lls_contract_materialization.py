@@ -1652,9 +1652,13 @@ def test_runtime_antenna_pattern_uses_actual_sampled_array_object() -> None:
     rows = []
     for elevation in (-5, 5):
         for azimuth in (-10, 10):
+            directivity = (
+                "-Inf" if (elevation, azimuth) == (-5, -10)
+                else 8.0 - abs(azimuth) / 10.0 - abs(elevation) / 5.0
+            )
             rows.append([
                 "BS", 1, 1, "", 3.5e9, azimuth, elevation,
-                8.0 - abs(azimuth) / 10.0 - abs(elevation) / 5.0,
+                directivity,
                 "phased.NRRectangularPanelArray", "phased.NRAntennaElement",
                 "3gpp_nr_element", 0, 0, 0,
                 "local_array_coordinate_frame_before_runtime_orientation",
@@ -1678,9 +1682,12 @@ def test_runtime_antenna_pattern_uses_actual_sampled_array_object() -> None:
     assert "directivity_dbi" in csv_header
     assert {row["pattern_sha256"] for row in csv_rows} == {"abc123"}
     assert {row["truth_status"] for row in csv_rows} == {"real_runtime_object_evidence"}
+    assert sum(row["directivity_dbi"] == "-Inf" for row in csv_rows) == 1
     svg = chart["img_bytes"].decode("utf-8")
     assert "actual phased.NRRectangularPanelArray" in svg
     assert "selected_beam_taper=not_applied" in svg
+    assert "exact_null_count=1" in svg
+    assert "null_visualization_floor_dbi=" in svg
 
 
 def test_cqi_mcs_single_runtime_state_is_labelled_operating_point() -> None:

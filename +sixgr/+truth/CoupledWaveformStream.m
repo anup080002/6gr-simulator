@@ -329,8 +329,6 @@ classdef CoupledWaveformStream < handle
             end
             if prepared.Channel=="SRS"
                 context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
-                obj.Physical.requestLinkChannelReference(obj.Events,link.ID,rx, ...
-                    prepared.ReceiveStartSample,prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
                 obj.Events.observe(context.DesiredReferencePlane,id,prepared.ReceiveStartSample, ...
                     prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
             end
@@ -544,15 +542,6 @@ classdef CoupledWaveformStream < handle
             % independent sample-domain power accounting. Never pass this
             % noiseless plane to channel estimation or decoding.
             context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
-            if (logical(ch.UseFading) || sixgr.channel.IdentityAWGNRuntime.isState(ch)) && logical(sixgr.util.structGet( ...
-                    prepared.ReceiverConfig,'outputs.phySignalDiagnosticEnabled',false))
-                % Capture this actual receive interval, including its tail,
-                % on the retained channel's one execution. Never reuse the
-                % automatic first-interval preview as this grant's channel.
-                obj.Physical.requestLinkChannelReference(obj.Events,link.ID,rx, ...
-                    prepared.ReceiveStartSample, ...
-                    prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
-            end
             obj.Events.observe(context.DesiredReferencePlane,id,prepared.ReceiveStartSample, ...
                 prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
             obj.Events.observe(tx+":tx",id,prepared.StartSample,prepared.EndSampleExclusive);
@@ -879,7 +868,6 @@ classdef CoupledWaveformStream < handle
             if kind=="TRS"
                 rx="ue_"+ue+"_rx";
                 context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
-                obj.Physical.requestLinkChannelReference(obj.Events,link.ID,rx,first,first+prepared.NumSamples);
                 obj.Events.observe(context.DesiredReferencePlane,id,first,first+prepared.NumSamples);
             end
             obj.Pending(end+1)=struct('ID',id,'Kind',string(kind),'UE',ue, ...
@@ -988,6 +976,8 @@ classdef CoupledWaveformStream < handle
             boundaries=min([first first+cumsum(lengths)],stop);
             [~,~,~,partition]=sixgr.truth.CoupledTruthRuntime.resolveSlotPartition(cfg,state.CurrentSlot);
             dl=double(partition.DLSymbolAllocation); ul=double(partition.ULSymbolAllocation);
+            duplexMode=upper(strtrim(string(sixgr.util.structGet( ...
+                partition,'DuplexMode',''))));
             completed=struct('Kind',{},'UE',{},'Context',{},'Planes',{});
             % A slot is committed only after every producer has prepared its
             % contributions. Symbol boundaries preserve TDD guard intervals.
@@ -999,17 +989,26 @@ classdef CoupledWaveformStream < handle
                     direction="DL"; if inUL, direction="UL"; end
                     obj.retarget(direction);
                 end
-                while obj.Events.NextSampleIndex<boundaries(symbol+2)
+                % The physical channel/RF/noise owners are retained stream
+                % processors and are exactly chunk invariant.  Do not split
+                % a same-direction TDD region at every OFDM symbol: the
+                % event runtime below already stops at every observation or
+                % decision deadline.  Keep the DL-to-UL boundary explicit
+                % (including its guard symbols) so reciprocal retargeting
+                % still occurs at the first authorized symbol.
+                regionStop=localPhysicalDirectionRegionStop( ...
+                    symbol,boundaries,dl,ul,duplexMode);
+                while obj.Events.NextSampleIndex<regionStop
                     % A received DCI or HARQ result can change contributions
                     % after a boundary inside this symbol. Committing the
                     % entire symbol first falsely locks that future interval.
-                    next=obj.Events.nextEventSample(boundaries(symbol+2));
+                    next=obj.Events.nextEventSample(regionStop);
                     for node=obj.Nodes
                         if ~endsWith(node.ID,"_rx")
                             obj.Events.commitTransmissionsThrough(node.ID,next);
                         end
                     end
-                    event=obj.Events.advanceUntilEvent(boundaries(symbol+2));
+                    event=obj.Events.advanceUntilEvent(regionStop);
                     for item=event.Completed
                         k=find(string({obj.Pending.ID})==item.ID,1);
                         if isempty(k), error('sixgr:truth:UnknownSharedObservation','No prepared receiver owns this completion.'); end
@@ -1264,6 +1263,44 @@ classdef CoupledWaveformStream < handle
             end
         end
     end
+end
+
+function stop=localPhysicalDirectionRegionStop(symbol,boundaries,dl,ul,duplexMode)
+% Batch only contiguous TDD samples that keep the same physical direction.
+% Observation and decision boundaries are still enforced by
+% WaveformEventRuntime.nextEventSample inside the caller.
+stop=boundaries(symbol+2);
+if duplexMode~="TDD"
+    return;
+end
+inDL=symbol>=dl(1) && symbol<sum(dl);
+inUL=symbol>=ul(1) && symbol<sum(ul);
+if ~xor(inDL,inUL)
+    return;
+end
+direction="DL";
+if inUL
+    direction="UL";
+end
+numSymbols=numel(boundaries)-1;
+for nextSymbol=symbol+1:numSymbols-1
+    nextDL=nextSymbol>=dl(1) && nextSymbol<sum(dl);
+    nextUL=nextSymbol>=ul(1) && nextSymbol<sum(ul);
+    if xor(nextDL,nextUL)
+        nextDirection="DL";
+        if nextUL
+            nextDirection="UL";
+        end
+        if nextDirection~=direction
+            % Stop at the beginning of the opposite-direction symbol.  Any
+            % intervening guard symbols remain actual zero-input samples on
+            % the outgoing reciprocal channel, as before.
+            stop=boundaries(nextSymbol+1);
+            return;
+        end
+    end
+    stop=boundaries(nextSymbol+2);
+end
 end
 
 function count=localExpectedSharedPlaneCount(pending)

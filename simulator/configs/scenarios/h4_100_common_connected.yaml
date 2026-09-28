@@ -6,7 +6,7 @@ inherits:
 
 meta:
   scenario_id: h4_100_common_connected
-  description: Common 4 GHz 100 MHz H4 TDD connected-waveform contract with four active SSB beams, eight CSI-RS/data beam states, receiver-derived CRI/RI/PMI/CQI, and rank up to four in both directions.
+  description: Common 4 GHz 100 MHz H4 TDD connected-waveform contract with four active SSB beams, eight CSI-RS/data beam states, a four-port Type-I Single-Panel CSI wire mapped across the physical dual-panel array, receiver-derived CRI/RI/PMI/CQI, and rank up to four in both directions.
   purpose: YAML-owned H4 waveform family base; executable children select A0, TDL-A/30 ns or CDL-C/100 ns.
   research_class: study_item_candidate
   maturity_tag: experimental
@@ -33,6 +33,22 @@ simulation:
   noise_operating_mode: standalone_awgn_snr_argument
   min_duration_s: 0.1
   snr_sweep_offsets_db: [0]
+
+# The inherited short 15-kHz fixture uses sl5 without an additional UE
+# capability.  H4 changes the UL BWP to 30 kHz, where the installed
+# TS 38.331 Release-18 catalog marks sl5 as an additional periodicity.
+# Retain the same special-slot PUCCH resource (symbols 12:13, offset 3), but
+# declare the UE capability explicitly rather than inheriting an invalid
+# numerology-dependent assumption.
+pucch_resources:
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 3
+      priority_index: 0
+      additional_periodicity_capability: true
 
 integration:
   power_reference_mode: normalized_unit_es
@@ -102,7 +118,7 @@ bwp:
       serving_cell_id: 1
       scheduling_cc_ids: [0]
       center_frequency_hz: 4000000000
-      band: H4
+      band: n77
       frequency_range: FR1
       channel_bandwidth_mhz: 100
       duplex_mode: TDD
@@ -114,21 +130,25 @@ bwp:
 tdd_timing:
   capability_profile_id: 38.214-v18.8.0-cap1-dmrs-pos0-mu1
   pdcch_to_pdsch_k0: 0
-  pdcch_to_pusch_k2: 1
-  ul_grant_k2: 1
+  # Pattern1 is D,D,D,S(10D/2G/2U),U. A full-slot PUSCH starting at
+  # symbol 0 is first legal from the period's initial DL control slot at
+  # K2=4 and also satisfies the capability-1 N2 preparation interval.
+  pdcch_to_pusch_k2: 4
+  ul_grant_k2: 4
   dl_harq_feedback_k1: [1, 2, 3, 4, 5, 6, 7, 8]
   k1_selection_policy: first_valid_configured
   harq_roundtrip_slots: 8
   dl_to_ul_guard_time_us: 8.138
   timing_advance_max_us: 667
   timing_advance_ticks: 0
-  n1_pdsch_processing_time_symbols: 8
-  n2_pusch_preparation_time_symbols: 10
+  # TS 38.214 V18.8.0 capability-1, mu=1, DM-RS additional position 0.
+  n1_pdsch_processing_time_symbols: 10
+  n2_pusch_preparation_time_symbols: 12
 
 initial_access:
   enabled: true
   profile: fr1_four_step_ra_rrc_connection_strict_r18
-  band_context: H4
+  band_context: n77
   spectrum: unpaired
   random_access_procedure: four_step_contention_based
   require_explicit_ssb_bitmap: true
@@ -153,13 +173,25 @@ initial_access:
     n_crb_ssb: 253
     k_ssb: 0
     selected_ssb_index: 0
-    observation_subframes: 40
+    # All four active Case-B candidates occupy absolute slots 0--1.  The
+    # MIB Type-0 search-space index below resolves its first monitoring
+    # occasion to absolute slot 0, a fixed-DL slot in D,D,D,S,U.  The
+    # alternative inherited index 2 resolves to slot 4, which is fixed UL
+    # and is therefore illegal for Type-0 PDCCH/SIB1 in this TDD pattern.
+    # Candidates 0--3 and the causal slot-0 SIB1 are all inside subframe
+    # zero. A 1 ms capture therefore contains the complete configured
+    # active SS-burst-set and SIB1. Longer
+    # connected tracking is provided by the 100 ms scenario timeline; it
+    # must not inflate the initial acquisition waveform itself.
+    observation_subframes: 1
   mib:
     enabled: true
+    pdcch_config_sib1: 0
+    dmrs_type_a_position: 2
   sib1:
     enabled: true
     decode_from_waveform_required: true
-    observation_subframes: 40
+    observation_subframes: 1
   rrc:
     require_setup_complete: true
 
@@ -188,7 +220,7 @@ pdsch:
     - [1, 2, 8, 0]
   layer_count: 1
   rank: 1
-  num_antenna_ports: 8
+  num_antenna_ports: 4
   link_adaptation_mode: amc
   amc_policy: baseline
   precoder_normalization_convention: unit_frobenius
@@ -201,8 +233,8 @@ pusch:
   start_symbol: 0
   num_symbols: 11
   time_domain_allocations:
-    - [0, 0, 11, 1]
-    - [1, 0, 11, 2]
+    - [0, 0, 11, 4]
+    - [1, 0, 11, 4]
   layer_count: 1
   num_layers: 1
   num_antenna_ports: 4
@@ -238,13 +270,17 @@ reference_signals:
   csi_rs_enabled: true
   csi_rs_periodicity_slots: 20
   csi_rs_offset_slots: 2
-  csi_rs_ports: 8
-  csi_rs_port_count: 8
+  csi_rs_ports: 4
+  csi_rs_port_count: 4
   csi_rs_num_resources: 8
   csi_rs_resource_set_id: 0
   csi_rs_resource_ids: [0, 1, 2, 3, 4, 5, 6, 7]
-  csi_rs_resource_row_numbers: [6, 6, 6, 6, 6, 6, 6, 6]
-  csi_rs_resource_symbol_locations: [3, 4, 5, 6, 7, 8, 9, 10]
+  csi_rs_resource_row_numbers: [4, 4, 4, 4, 4, 4, 4, 4]
+  # Eight non-DMRS symbols in the full DL slot. PDSCH data is rate-matched
+  # around these resources; row-6 CSI-RS is never placed on active DMRS.
+  csi_rs_resource_symbol_locations: [3, 4, 5, 6, 8, 9, 10, 12]
+  # TS 38.211 row 4 carries four logical CSI-RS ports with FD-CDM2 and one
+  # configured k0 per resource. The resources are disjoint in OFDM symbol.
   csi_rs_resource_subcarrier_locations: [0, 0, 0, 0, 0, 0, 0, 0]
   csi_rs_resource_rb_offsets: [0, 0, 0, 0, 0, 0, 0, 0]
   csi_rs_resource_num_rbs: [273, 273, 273, 273, 273, 273, 273, 273]
@@ -258,28 +294,15 @@ reference_signals:
     beam_indices_port_1: [0, 8, 16, 24, 32, 40, 48, 56]
     beam_indices_port_2: [2, 10, 18, 26, 34, 42, 50, 58]
     beam_indices_port_3: [2, 10, 18, 26, 34, 42, 50, 58]
-    beam_indices_port_4: [0, 8, 16, 24, 32, 40, 48, 56]
-    beam_indices_port_5: [0, 8, 16, 24, 32, 40, 48, 56]
-    beam_indices_port_6: [2, 10, 18, 26, 34, 42, 50, 58]
-    beam_indices_port_7: [2, 10, 18, 26, 34, 42, 50, 58]
     polarization_indices_port_0: [0, 0, 0, 0, 0, 0, 0, 0]
     polarization_indices_port_1: [1, 1, 1, 1, 1, 1, 1, 1]
     polarization_indices_port_2: [0, 0, 0, 0, 0, 0, 0, 0]
     polarization_indices_port_3: [1, 1, 1, 1, 1, 1, 1, 1]
-    polarization_indices_port_4: [0, 0, 0, 0, 0, 0, 0, 0]
-    polarization_indices_port_5: [1, 1, 1, 1, 1, 1, 1, 1]
-    polarization_indices_port_6: [0, 0, 0, 0, 0, 0, 0, 0]
-    polarization_indices_port_7: [1, 1, 1, 1, 1, 1, 1, 1]
-    # Logical ports 0..3 are carried by panel 0 and ports 4..7 by panel 1.
-    # Panel identity is therefore physical evidence, not an exporter label.
-    panel_indices_port_0: [0, 0, 0, 0, 0, 0, 0, 0]
-    panel_indices_port_1: [0, 0, 0, 0, 0, 0, 0, 0]
-    panel_indices_port_2: [0, 0, 0, 0, 0, 0, 0, 0]
-    panel_indices_port_3: [0, 0, 0, 0, 0, 0, 0, 0]
-    panel_indices_port_4: [1, 1, 1, 1, 1, 1, 1, 1]
-    panel_indices_port_5: [1, 1, 1, 1, 1, 1, 1, 1]
-    panel_indices_port_6: [1, 1, 1, 1, 1, 1, 1, 1]
-    panel_indices_port_7: [1, 1, 1, 1, 1, 1, 1, 1]
+    # No per-port panel index is supplied intentionally. The physical
+    # precoder builder therefore distributes every logical port coherently
+    # over both panels (1/sqrt(2) per panel) while keeping H/V polarization
+    # explicit. The physical antenna remains dual-panel; only the reported
+    # UE CSI codebook is Single-Panel.
   srs_enabled: true
   srs_ports: 4
   srs_periodicity_slots: 5
@@ -357,7 +380,7 @@ csi_acquisition_and_reporting:
     n2: 1
     o1: 4
     o2: 1
-    panels: 2
+    panels: 1
     codebook_mode: 1
     report_quantity: cri-RI-PMI-CQI
     number_of_beams: 8
@@ -373,7 +396,7 @@ mimo_and_beam_management:
   beam_tracking: true
   beam_prediction: false
   rank_set: [1, 2, 4]
-  codebook_family: typeI-MultiPanel
+  codebook_family: typeI-SinglePanel
   reciprocity_mode: TDD
   ssb_beam_count: 4
   csi_rs_beam_count: 8
@@ -410,7 +433,7 @@ harq:
   process_count: 16
   max_retx: 3
   rv_sequence: [0, 2, 3, 1]
-  k2: 1
+  k2: 4
 
 traffic:
   model: full_buffer
@@ -425,7 +448,13 @@ traffic:
 random_access:
   enabled: true
   carrier_frequency_hz: 4000000000
+  # PRACH is resolved on the H4 carrier clock.  Do not inherit the 15-kHz
+  # carrier clock or 58-slot observation extent from the small-bandwidth
+  # causal-wiring fixture: this carrier uses mu=1 throughout.
+  carrier_scs_khz: 30
   n_size_grid: 273
+  num_slots: 200
+  num_subframes: 100
   num_tx_antennas: 4
   num_rx_antennas: 64
   four_step_ra_required: true
@@ -443,6 +472,10 @@ output_control:
 
 output:
   profile: h4_100_common_connected
+  # A 200-slot, 273-RB run repeats a small set of exact allocation maps.
+  # Persist each exact contiguous-RE template once and list every slot where
+  # it applies; this changes storage only, never coordinates or RE counts.
+  planned_allocation_encoding: exact_periodic_templates
   phy_signal_diagnostic_waveform_samples: 4096
   phy_signal_diagnostic_fft_length: 4096
   phy_signal_diagnostic_channel_points: 4096

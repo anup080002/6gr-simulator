@@ -7,6 +7,12 @@ scenario = sixgr.lls6g.config.loadScenarioConfig(fullfile(pwd, ...
     "webgui_sinr_sweep_64x4_mu_mimo_repair_slice.yaml"));
 cfg = sixgr.lls6g.buildInternalConfig(scenario, tempdir);
 carrier = sixgr.phy.grid.makeCarrier(cfg);
+% The configured periodic CSI-RS calendar is 5:2. Exercise its real
+% scheduled occasion instead of treating enablement as an every-slot
+% transmission.
+carrier.NFrame = 0;
+carrier.NSlot = 2;
+cfg = sixgr.util.structSet(cfg, "lls6g.runtime.AbsoluteSlotIndex0", 2);
 
 [indices, symbols, info] = sixgr.phy.refsig.csirs(carrier, cfg);
 assert(double(cfg.phy.csirs.nPorts) == 2 && ...

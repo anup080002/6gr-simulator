@@ -16,10 +16,7 @@ impairments:
   cfo_correction_enable: true
   cfo_estimation_method: cyclic_prefix
   phase_noise_enabled: true
-  phase_noise_model: Lorentzian
-  phase_noise_L0_dBcHz: -100
-  phase_noise_f3dB_Hz: 1000
-  phase_noise_floor_dBcHz: -150
+  phase_noise_model: explicit_mask
   iq_imbalance_enabled: true
   iq_amplitude_imbalance_dB: 0.5
   iq_phase_imbalance_deg: 1.0
@@ -32,7 +29,10 @@ impairments:
   dac_quantization_enabled: true
   adc_quantization_bits: 12
   dac_quantization_bits: 12
-  timing_offset_samples: 0.25
+  # The retained RF stream currently qualifies causal integer delay state.
+  # One sample at 122.88 MSa/s is an 8.138 ns timing error. A fractional
+  # delay is not claimed until its retained clock bridge is qualified.
+  timing_offset_samples: 1
   timing_offset_enabled: true
 
 rf_frontend:
@@ -44,7 +44,13 @@ rf_frontend:
     rx_error_hz: 400
   phase_noise:
     enabled: true
-    profile_id: lorentzian_study_assumption
+    # Frozen FR1 oscillator study mask. This is a research assumption, not
+    # a 3GPP transmitter conformance mask.
+    profile_id: OSC_FR1_A_H4_STUDY
+    version: 1.0.0
+    mask_offsets_hz: [1000, 10000, 100000, 1000000, 10000000]
+    mask_levels_dbchz: [-85, -95, -110, -130, -145]
+    lo_correlation: 1.0
     seed: 20260927
   iq_and_lo_leakage:
     enabled: true
@@ -53,6 +59,41 @@ rf_frontend:
     dc_offset_real: 0
     dc_offset_imag: 0
     compensation_enabled: true
+  pa:
+    enabled: true
+    profile_id: RAPP_H4_BOUNDED_V1
+    version: 1.0.0
+    model: rapp
+    # A fixed-SNR sweep has no absolute-voltage/device-power authority.
+    # The retained PA therefore operates on normalized complex-baseband
+    # full scale and is reported as a research impairment, never dBm truth.
+    reference_domain: normalized_complex_baseband_full_scale
+    input_backoff_db: 8
+    saturation_amplitude: 1
+    smoothness: 2
+    coefficient_provenance: h4_bounded_research_assumption_v1
+    power_restoration_allowed: false
+  dac:
+    enabled: true
+    profile_id: DAC_H4_12BIT_V1
+    version: 1.0.0
+    bits: 12
+    full_scale: 1.0
+    convention: signed_midtread
+    dither_enabled: false
+    dither_rms: 0
+    aperture_jitter_seconds: 0
+  receiver:
+    adc:
+      enabled: true
+      profile_id: ADC_H4_12BIT_V1
+      version: 1.0.0
+      bits: 12
+      full_scale: 1.0
+      convention: signed_midtread
+      dither_enabled: false
+      dither_rms: 0
+      aperture_jitter_seconds: 0
 
 output:
   profile: h4_100_cdlc100_connected_impaired

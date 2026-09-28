@@ -72,16 +72,23 @@ for ii = 1:numel(entries)
             mat2str(size(directivity)));
     end
     directivity = double(directivity);
-    if any(~isfinite(directivity(:)))
+    % pattern(...,"Type","directivity") is logarithmic.  An exact array
+    % null has zero linear power and is therefore represented as -Inf dBi;
+    % that is valid physical evidence, not a failed evaluation.  NaN and
+    % +Inf remain invalid.  Preserve -Inf in the truth CSV so downstream
+    % consumers can distinguish an exact null from a finite plotting floor.
+    if any(isnan(directivity(:)) | directivity(:)==Inf)
         error("sixgr:truth:RuntimeAntennaPatternNonfinite", ...
-            "Actual runtime antenna returned nonfinite directivity samples.");
+            "Actual runtime antenna returned NaN or positive-infinite directivity samples.");
     end
     sha = sixgr.util.sha256Hex(typecast(directivity(:), "uint8"));
     elementObject = sixgr.util.structGet(antenna, "ElementObj", []);
-    if isempty(elementObject) || ~isa(elementObject, "phased.NRAntennaElement")
+    supportedElement = ~isempty(elementObject) && ( ...
+        isa(elementObject, "phased.NRAntennaElement") || ...
+        isa(elementObject, "phased.IsotropicAntennaElement"));
+    if ~supportedElement
         error("sixgr:truth:RuntimeAntennaElementObjectUnavailable", ...
-            ["Antenna pattern sampling requires the actual " ...
-             "phased.NRAntennaElement installed in the runtime array."]);
+            "Antenna pattern sampling requires the actual supported phased element installed in the runtime array.");
     end
     boresight = double(sixgr.util.structGet( ...
         antenna, "BoresightAzElSlant_deg", [NaN NaN NaN]));

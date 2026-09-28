@@ -141,7 +141,7 @@
       "max_simultaneous_ue_ul": {"required": false, "type": "integer", "min": 1},
       "beam_management_enable": {"required": false, "type": "boolean"},
       "beam_codebook_type": {"required": false, "type": "string"},
-      "codebook_type": {"required": false, "type": "string", "allowed_values": ["type1", "typei-multipanel", "type2", "etype2", "noncodebook", "type1_su_mimo", "type2_mu_mimo", "etype2_candidate"]},
+      "codebook_type": {"required": false, "type": "string", "allowed_values": ["type1", "typei-singlepanel", "typei-multipanel", "type2", "etype2", "noncodebook", "type1_su_mimo", "type2_mu_mimo", "etype2_candidate"]},
       "beam_codebook_size_dl": {"required": false, "type": "integer", "min": 1},
       "beam_update_period_ms": {"required": false, "type": "number", "min": 0},
       "digital_precoder_family": {"required": false, "type": "string"},

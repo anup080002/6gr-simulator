@@ -244,11 +244,18 @@ end
 function band = localBandNumber(cfg)
 raw = string(sixgr.util.structGet(cfg, "frequency.band_name", ...
     sixgr.util.structGet(cfg, "initial_access.band_context", "n78")));
-token = regexp(char(raw), '\d+', 'match', 'once');
-band = str2double(token);
+% freqBandIndicatorNR is not an internal study-profile label. Extracting
+% the first digits from names such as h4_100_4ghz silently claimed band n4
+% and selected the wrong TS 38.211 PRACH table. Require the complete token.
+token = regexp(char(lower(strtrim(raw))), '^n(\d+)$', 'tokens', 'once');
+if isempty(token)
+    band = NaN;
+else
+    band = str2double(token{1});
+end
 if ~(isfinite(band) && band >= 1 && band <= 1024)
     error("sixgr:rrc:asn1:UnsupportedBand", ...
-        "A concrete NR band such as n78 is required for SIB1.");
+        "A complete concrete NR band token such as n77 is required for SIB1; got '%s'.", raw);
 end
 end
 

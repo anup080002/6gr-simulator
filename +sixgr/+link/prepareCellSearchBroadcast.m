@@ -37,13 +37,17 @@ if useRuntimeChannel
             txInfo.OFDM = nrOFDMInfo(tx.Carrier);
             % Bind fixed-EPRE normalization to the exact composite
             % waveform that carries SS/PBCH and SI-RNTI SIB1.  The
-            % grid is recovered from the unscaled generated
-            % waveform on the same carrier; it is not regenerated
-            % from YAML or inferred from planned allocations.
-            txInfo.PortGrid = nrOFDMDemodulate( ...
-                tx.Carrier, tx.Waveform);
+            % active-symbol grid is assembled from the retained production
+            % transmitter grids and their executed spatial mappings.  Do
+            % not demodulate the full 40 ms x 64-element waveform: that
+            % creates another multi-gigabyte array solely to measure EPRE.
+            % The compact grid contains every and only active absolute
+            % symbols and retains those symbol identities for reconciliation
+            % with sample-domain activity below.
+            [txInfo.PortGrid,txInfo.PortGridAbsoluteSymbolIndices] = ...
+                localExactCompositeActivePortGrid(tx);
             txInfo.PowerNormalizationGridSource = ...
-                "exact_composite_ssb_pbch_sib1_waveform_demodulation";
+                "exact_producer_ssb_pbch_sib1_active_port_grids";
         end
     catch exception
         policy = lower(strtrim(string(sixgr.util.structGet(cfg, ...
@@ -54,9 +58,9 @@ if useRuntimeChannel
                 "full_bwp_reference_epre", "fixed_full_bwp_epre"])
             wrapped = MException( ...
                 "sixgr:link:BroadcastPowerNormalizationGridUnavailable", ...
-                ["The exact SS/PBCH/SIB1 composite resource grid " ...
-                 "could not be recovered for configured fixed-EPRE " ...
-                 "normalization: %s"], exception.message);
+                "The exact SS/PBCH/SIB1 composite resource grid " + ...
+                "could not be recovered for configured fixed-EPRE " + ...
+                "normalization: %s", exception.message);
             wrapped = addCause(wrapped, exception);
             throwAsCaller(wrapped);
         end
@@ -79,6 +83,71 @@ prepared = struct("ExecutionStage", "broadcast_waveform_prepared_not_decoded", .
     "RuntimeChannelDeferred", useRuntimeChannel, ...
     "RFExecutionDeferred", ~logical(sixgr.util.structGet(powerContext,"PAApplied",false)), ...
     "PAExecutionDeferred", logical(sixgr.util.structGet(powerContext,"PAExecutionDeferred",false)));
+end
+
+function [grid,absoluteSymbols0] = localExactCompositeActivePortGrid(tx)
+carrier=tx.Carrier;
+nSubcarriers=12*double(carrier.NSizeGrid);
+nPorts=size(tx.Waveform,2);
+symbolsPerSlot=double(carrier.SymbolsPerSlot);
+
+ssbGrid=sixgr.util.structGet(tx, ...
+    "SSBWaveInfo.SSBComposite.TransmitPortResourceGrid",[]);
+if isempty(ssbGrid) || size(ssbGrid,1)~=240 || size(ssbGrid,3)~=nPorts
+    error("sixgr:link:MissingBroadcastSSBPortGrid", ...
+        "The production SSB transmitter did not retain its exact physical-port grid.");
+end
+ssbSCS=double(sixgr.util.structGet(tx,"SSBInfo.SSBTiming.SSBSubcarrierSpacingKHz",NaN));
+if ~(isscalar(ssbSCS) && isfinite(ssbSCS) && ...
+        abs(ssbSCS-double(carrier.SubcarrierSpacing))<1e-12)
+    error("sixgr:link:MixedNumerologyBroadcastPowerGridUnsupported", ...
+        "Exact compact broadcast power normalization requires equal SSB and initial-BWP numerology.");
+end
+validation=sixgr.util.structGet(tx,"SSBInfo.SSBGridValidation",struct());
+lowHz=double(sixgr.util.structGet(validation,"SSBLowOffsetFromPointAHz",NaN));
+carrierLowHz=double(sixgr.util.structGet(validation,"CarrierLowOffsetFromPointAHz",NaN));
+start0=(lowHz-carrierLowHz)/(1000*ssbSCS);
+if ~(isscalar(start0) && isfinite(start0) && start0>=0 && ...
+        abs(start0-round(start0))<1e-9 && round(start0)+240<=nSubcarriers)
+    error("sixgr:link:BroadcastSSBPowerGridAlignmentMismatch", ...
+        "The retained SSB physical-port grid is not aligned to the initial DL BWP.");
+end
+start1=round(start0)+1;
+ssbActive=find(reshape(any(any(ssbGrid~=0,1),3),[],1));
+
+siGrid=sixgr.util.structGet(tx,"SIB1Grid",[]);
+mapping=sixgr.util.structGet(tx,"SIB1SpatialMapping",struct());
+row=sixgr.util.structGet(mapping,"PrecoderMatrix",[]);
+if isempty(siGrid) || size(siGrid,1)~=nSubcarriers || size(siGrid,3)~=1 || ...
+        ~logical(sixgr.util.structGet(mapping,"MatrixAppliedHere",false)) || ...
+        ~isrow(row) || numel(row)~=nPorts || any(~isfinite(row))
+    error("sixgr:link:MissingBroadcastSIB1PortGrid", ...
+        "The production SIB1 transmitter did not retain its exact logical grid and executed spatial map.");
+end
+siActive=find(reshape(any(any(siGrid~=0,1),3),[],1));
+siAbsolute0=double(tx.SIB1AbsoluteSlot)*symbolsPerSlot+(siActive-1);
+absoluteSymbols0=unique([double(ssbActive-1);siAbsolute0(:)],"sorted");
+if isempty(absoluteSymbols0)
+    error("sixgr:link:EmptyBroadcastPowerGrid", ...
+        "The retained SS/PBCH/SIB1 producer grids contain no transmitted REs.");
+end
+
+grid=complex(zeros(nSubcarriers,numel(absoluteSymbols0),nPorts,"like",ssbGrid));
+for ordinal=1:numel(ssbActive)
+    destination=find(absoluteSymbols0==ssbActive(ordinal)-1,1);
+    grid(start1:start1+239,destination,:)= ...
+        grid(start1:start1+239,destination,:)+ssbGrid(:,ssbActive(ordinal),:);
+end
+for ordinal=1:numel(siActive)
+    destination=find(absoluteSymbols0==siAbsolute0(ordinal),1);
+    physical=reshape(siGrid(:,siActive(ordinal),1),nSubcarriers,1)* ...
+        cast(row,"like",siGrid);
+    grid(:,destination,:)=grid(:,destination,:)+reshape(physical,nSubcarriers,1,nPorts);
+end
+if any(~isfinite(grid),"all") || any(~any(grid~=0,[1 3]))
+    error("sixgr:link:InvalidBroadcastPowerGrid", ...
+        "Every compact broadcast power-grid symbol must contain finite transmitted REs.");
+end
 end
 
 function cfgOut = localSanitizeSIB1PrecodingConfig(cfgIn)

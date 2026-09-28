@@ -7,9 +7,11 @@ arguments
     replay (1,1) struct
     channelState (1,1) struct
     options.ScoringChannelReferences cell = {}
+    options.DesiredReferenceObservation = []
 end
 reception=struct("Prepared",prepared,"Observation",observation, ...
     "Replay",replay,"ChannelState",channelState, ...
-    "ScoringChannelReferences",{options.ScoringChannelReferences});
+    "ScoringChannelReferences",{options.ScoringChannelReferences}, ...
+    "DesiredReferenceObservation",options.DesiredReferenceObservation);
 out=sixgr.link.runTRSTracking(prepared.ReceiverConfig,"ReceivedContext",reception);
 end

@@ -7,7 +7,8 @@ meta:
     Eight independent H4 4.0 GHz, 100 MHz, mu-1 TDD CDL-C/100 ns
     connected-waveform executions at 40, 30, 20, 10, 0, -10, -20 and
     -30 dB configured occupied-RE Es/N0. The four-chain UE, 64-TXRU
-    two-panel gNB, measured Type-I multi-panel CSI codebook, causal beam/TCI
+    two-panel gNB, measured four-port Type-I Single-Panel CSI wire mapped
+    across the physical dual-panel precoder, causal beam/TCI
     state, ILLA, OLLA, HARQ and the frozen RF-impairment treatment are
     rebuilt for every point. Child truth artifacts remain immutable; the
     parent publishes provenance-labelled joint CSV and PNG comparisons.

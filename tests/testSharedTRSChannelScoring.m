@@ -55,33 +55,30 @@ for slot=1:runtimeSlot+1
         p=item.Context.Prepared;
         [~,~,~,replay,observation]=sixgr.truth.sharedObservationEvidence(item.Planes);
         replay.PowerContext=p.PowerContext;
-        [~,scoringEvidence,captures]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,item.Context.DesiredReferencePlane);
-        assert(scoringEvidence.ChannelReferenceCoverageComplete && ...
-            numel(captures)==nnz(scoringEvidence.LinkActive) && ...
-            size(scoringEvidence.ChannelReferenceInactiveIntervals,1)==nnz(~scoringEvidence.LinkActive), ...
-            'Every active direction needs real coefficients; reversed TDD intervals stay explicitly excluded.');
+        [desiredReference,scoringEvidence,captures]=sixgr.truth.sharedLinkScoringObservation( ...
+            item.Planes,p,item.Context.DesiredReferencePlane);
+        assert(isempty(captures) && ~scoringEvidence.ChannelReferenceCoverageComplete && ...
+            desiredReference.isComplete() && any(scoringEvidence.LinkActive), ...
+            ['Scoring must retain the exact executed desired-link waveform ' ...
+             'without requesting a full per-sample path-gain tensor.']);
         before=owner.Events.NextSampleIndex;
         ch=owner.directionalChannelState(1,"DL");
-        out=sixgr.link.completeTRSReception(p,observation,replay,ch,'ScoringChannelReferences',captures);
+        out=sixgr.link.completeTRSReception(p,observation,replay,ch, ...
+            'DesiredReferenceObservation',desiredReference);
         assert(~out.Crash,'%s',out.FailureReason);
         assert(out.Ok && out.NMSEScoringAvailable && out.NMSE_dB<=p.StrictConfig.ChannelNMSEThresholddB, ...
             'Actual independent NMSE=%g; %s',out.NMSE_dB,out.FailureReason);
         assert(out.ChannelNMSEComparedComplexValues== ...
             sum(p.Tx.SlotTable.NRE)*observation.NumReceiveAntennas);
         assert(isnan(out.QCLAccuracy) && isnan(out.MeasuredTrialSINR_dB));
-        assert(out.ChannelNMSEReferenceIncludesRFImpairments==0);
+        assert(out.ChannelNMSEReferenceIncludesRFImpairments==1);
         absent=sixgr.link.completeTRSReception(p,observation,replay,ch);
         assert(~absent.Ok && ~absent.NMSEScoringAvailable && isnan(absent.NMSE_dB));
         assert(absent.DetectionMetric==out.DetectionMetric && absent.EstimatedCFO_Hz==out.EstimatedCFO_Hz);
         assert(absent.TRSRuntimeEvidenceUsable && ~absent.StrictOk);
-        % Changing scoring truth must not change a practical measurement.
-        altered=captures;
-        for k=1:numel(altered), altered{k}.Reference.PathGains=2*altered{k}.Reference.PathGains; end
-        scored=sixgr.link.completeTRSReception(p,observation,replay,ch,'ScoringChannelReferences',altered);
-        assert(~scored.Crash && scored.NMSE_dB>out.NMSE_dB+5);
-        assert(scored.TRSRuntimeEvidenceUsable && ~scored.Ok && ~scored.StrictOk, ...
-            'Scoring must fail qualification without modifying receiver usability.');
-        assert(scored.DetectionMetric==out.DetectionMetric && scored.EstimatedCFO_Hz==out.EstimatedCFO_Hz);
+        assert(out.ChannelNMSEComparedComplexValues>0 && ...
+            contains(string(out.NMSEReferenceSource),'same_executed_desired_link_waveform'), ...
+            'TRS NMSE must be scored from same-execution IQ, not regenerated channel coefficients.');
         assert(owner.Events.NextSampleIndex==before);
         assert(out.TrackingTable.ProducerSlot==max(p.Tx.SlotTable.Slot));
         samplesPerSlot=p.SampleRateHz*1e-3/(double(p.StrictConfig.ToolboxCarrier.SubcarrierSpacing)/15);

@@ -6,6 +6,25 @@ scenario=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', .
 cfg=sixgr.lls6g.buildInternalConfig(scenario,tempname);
 [rows,checks]=sixgr.truth.buildPlannedREAllocation(cfg,'TargetChannels',["PDSCH","PUSCH"]);
 sixgr.truth.assertAllocationPreflight(checks);
+[uncachedRows,uncachedChecks]=sixgr.truth.buildPlannedREAllocation(cfg, ...
+    'TargetChannels',["PDSCH","PUSCH"], ...
+    'ReusePeriodicCoordinateTemplates',false);
+assert(isequaln(rows,uncachedRows) && isequaln(checks,uncachedChecks), ...
+    'Periodic coordinate reuse must equal uncached exact planning.');
+compactCfg=sixgr.util.structSet(cfg, ...
+    'outputs.plannedAllocationEncoding','exact_periodic_templates');
+[compactRows,compactChecks]=sixgr.truth.buildPlannedREAllocation(compactCfg, ...
+    'TargetChannels',["PDSCH","PUSCH"]);
+sixgr.truth.assertAllocationPreflight(compactChecks);
+assert(height(compactRows)<height(rows), ...
+    'Periodic templates must remove repeated rows from the persisted plan.');
+assert(sum(double(compactRows.re_count).*double(compactRows.occurrence_count)) == ...
+    sum(double(rows.re_count)), ...
+    'Compact and expanded planned allocations must describe the same total RE count.');
+expandedCompact=localExpandPeriodicTemplates(compactRows);
+assert(isequaln(localComparable(expandedCompact),localComparable(rows)), ...
+    ['Expanding every explicit periodic-template occurrence must reproduce ' ...
+     'the exact per-slot PDSCH/PUSCH coordinates.']);
 dl=rows(rows.channel=="PDSCH",:); ul=rows(rows.channel=="PUSCH",:);
 assert(~isempty(dl) && ~isempty(ul));
 assert(all(dl.authority=="configured_RRC_BWP_resource_pool_not_scheduler_grant"));
@@ -47,4 +66,26 @@ assert(~badChecks.resolved(badChecks.feature=="PDSCH"));
 assert(badChecks.error_id(badChecks.feature=="PDSCH")=="sixgr:truth:NoPDSCHOccasion");
 ok=true;
 disp('PDSCH_OCCASION_PREFLIGHT_PASS: actual per-slot reservations, no fake grants, all-blocked rejection.');
+end
+
+function expanded=localExpandPeriodicTemplates(compact)
+parts=cell(height(compact),1);
+for rowIndex=1:height(compact)
+    slots=str2double(split(string(compact.occurrence_slots(rowIndex)),"|"));
+    assert(all(isfinite(slots)) && numel(slots)==compact.occurrence_count(rowIndex));
+    part=compact(repmat(rowIndex,numel(slots),1),:);
+    part.absolute_slot=slots(:);
+    part.occurrence_slots=string(slots(:));
+    part.occurrence_count=ones(numel(slots),1);
+    parts{rowIndex}=part;
+end
+expanded=vertcat(parts{:});
+end
+
+function comparable=localComparable(rows)
+variables=["absolute_slot","direction","channel","component", ...
+    "subcarrier_start","subcarrier_count","symbol_index","port_index", ...
+    "re_count","cell_id","ue_id","layer_count","grid_domain", ...
+    "grid_subcarrier_spacing_hz","grid_subcarrier_count","grid_symbol_count"];
+comparable=sortrows(rows(:,variables),variables);
 end

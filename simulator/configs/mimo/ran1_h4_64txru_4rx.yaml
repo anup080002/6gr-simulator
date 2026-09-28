@@ -15,12 +15,17 @@ mimo:
   panel_count: 2
   phase07_strict:
     enabled: true
-    profile_id: fr1_typeI_multi_panel_strict
+    # The two physical panels remain part of the 64-element array and every
+    # logical CSI/data port is distributed over both panels by the physical
+    # precoder.  The UE-facing CSI wire format is the repository-qualified
+    # four-port Type-I Single-Panel codebook.  Do not label it Multi-Panel:
+    # that report serializer is not yet qualified as TS 38.212 UCI.
+    profile_id: fr1_typeI_single_panel_strict
     specification_profile: 3GPP_R18_MIMO_CSI_V1
     direction: DL
-    codebook_type: typeI-MultiPanel
-    ports: 8
-    panels: 2
+    codebook_type: typeI-SinglePanel
+    ports: 4
+    panels: 1
     n1: 2
     n2: 1
     o1: 4
@@ -89,25 +94,28 @@ antenna_and_array:
   ue_boresight_azimuth_deg: 180
   ue_boresight_elevation_deg: 0
   ue_boresight_slant_deg: 0
-  bs_element_model: isotropic
-  ue_element_model: isotropic
+  # Install the actual TR 38.901 element pattern on both channel endpoints.
+  # H/V polarization remains represented by the two ElementSet entries at
+  # 0 and 90 degrees; it is not inferred from an isotropic element label.
+  bs_element_model: 3gpp_tr38901
+  ue_element_model: 3gpp_tr38901
   bs_element_frequency_min_hz: 3900000000
   bs_element_frequency_max_hz: 4100000000
   ue_element_frequency_min_hz: 3900000000
   ue_element_frequency_max_hz: 4100000000
-  bs_element_azimuth_hpbw_deg: 180
-  bs_element_elevation_hpbw_deg: 180
-  ue_element_azimuth_hpbw_deg: 180
-  ue_element_elevation_hpbw_deg: 180
+  bs_element_azimuth_hpbw_deg: 65
+  bs_element_elevation_hpbw_deg: 65
+  ue_element_azimuth_hpbw_deg: 65
+  ue_element_elevation_hpbw_deg: 65
   bs_element_azimuth_sidelobe_attenuation_db: 30
   bs_element_elevation_sidelobe_attenuation_db: 30
   ue_element_azimuth_sidelobe_attenuation_db: 30
   ue_element_elevation_sidelobe_attenuation_db: 30
   bs_element_maximum_attenuation_db: 30
   ue_element_maximum_attenuation_db: 30
-  bs_element_maximum_gain_dbi: 1
-  ue_element_maximum_gain_dbi: 1
-  require_element_pattern_in_channel: false
+  bs_element_maximum_gain_dbi: 8
+  ue_element_maximum_gain_dbi: 8
+  require_element_pattern_in_channel: true
   require_spatial_dependency_contract: true
   cross_pol_ratio: 0
   calibration_model: ideal_calibrated
@@ -129,7 +137,7 @@ control:
 pdsch:
   layer_count: 1
   rank: 1
-  num_antenna_ports: 8
+  num_antenna_ports: 4
   precoder_normalization_convention: unit_frobenius
 
 pusch:
@@ -149,5 +157,5 @@ reference_signals:
   srs:
     num_ports: 4
     port_set: [0, 1, 2, 3]
-  csi_rs_ports: 8
-  csi_rs_port_count: 8
+  csi_rs_ports: 4
+  csi_rs_port_count: 4

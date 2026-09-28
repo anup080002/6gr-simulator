@@ -12905,7 +12905,7 @@ res.TrialTable=sixgr.truth.bindSharedRFExecutionEvidence(res.TrialTable,item.Pla
 if logical(sixgr.util.structGet(job.Cfg,'outputs.phySignalDiagnosticEnabled',false)) && ...
         (logical(job.ReceivedContext.ChannelState.UseFading) || ...
         sixgr.channel.IdentityAWGNRuntime.isState(job.ReceivedContext.ChannelState))
-    [res.TrialTable,channelDiagnosticContext,channelCaptures,channelReplays]=sixgr.truth.exportSharedChannelObservation( ...
+    [res.TrialTable,channelDiagnosticContext,scoringObservation,scoringEvidence]=sixgr.truth.exportSharedScoringWaveformObservation( ...
         sixgr.util.structGet(c.Config,'run.rootRunFolder',""),res.TrialTable, ...
         item.Planes,p,c.DesiredReferencePlane);
     if any(job.Direction==["DL","UL"])
@@ -12914,7 +12914,7 @@ if logical(sixgr.util.structGet(job.Cfg,'outputs.phySignalDiagnosticEnabled',fal
                 ~isempty(res.ChannelEstimateSnapshots{1})
             res.TrialTable=sixgr.truth.exportSharedDataChannelEstimate( ...
                 sixgr.util.structGet(c.Config,'run.rootRunFolder',""),res.TrialTable, ...
-                res.ChannelEstimateSnapshots{1},p,channelCaptures,channelReplays,c.WaveformToElementMatrix);
+                res.ChannelEstimateSnapshots{1},p,scoringObservation,scoringEvidence);
         end
         % The immutable files retain the pilot evidence. Do not accumulate
         % full-band receiver captures in the long-lived runtime state.
@@ -13142,8 +13142,9 @@ for item=received
         end
         state=sixgr.truth.BroadcastResultDelivery.enqueue(state,item.UE,trial,recovery,context.TrackingOnly);
     elseif item.Kind=="TRS"
-        [~,~,references]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,context.DesiredReferencePlane);
-        output=sixgr.link.completeTRSReception(p,post,replay,ch,'ScoringChannelReferences',references);
+        [desiredReference]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,context.DesiredReferencePlane);
+        output=sixgr.link.completeTRSReception(p,post,replay,ch, ...
+            'DesiredReferenceObservation',desiredReference);
         if output.Crash
             % A receiver exception has no measured result to publish. Keep
             % its cause visible instead of failing later on absent clocks.
@@ -13239,11 +13240,9 @@ if isfield(ch,'Obj') && isobject(ch.Obj) && isprop(ch.Obj,'DelayProfile') && rep
 end
 input=struct('Prepared',p,'Observation',receiver,'PhysicalMeasurementObservation',pre, ...
     'TransmitterObservation',tx,'Replay',replay,'ChannelState',ch);
-[~,referenceEvidence,channelReferences]=sixgr.truth.sharedLinkScoringObservation( ...
+[desiredReference,referenceEvidence]=sixgr.truth.sharedLinkScoringObservation( ...
     item.Planes,p,c.DesiredReferencePlane);
-assert(~isempty(channelReferences),'sixgr:truth:MissingAppliedSRSChannelReference', ...
-    'The requested SRS channel reference must come from actual serving-link execution.');
-input.ScoringChannelReferences=channelReferences;
+input.DesiredReferenceObservation=desiredReference;
 % This is the actual composite link waveform, not a per-port channel
 % matrix. Do not feed it into the legacy branch-averaged pilot-ratio NMSE
 % helper and misrepresent that number as full channel-estimator accuracy.
@@ -13271,8 +13270,8 @@ trial.DesiredLinkScoringScope=referenceEvidence.Scope;
 trial.DesiredLinkScoringLinkID=referenceEvidence.LinkID;
 trial.DesiredLinkScoringAdditionalChannelExecutions=referenceEvidence.AdditionalChannelExecutions;
 trial.DesiredLinkScoringChannelMatrixReference=referenceEvidence.ChannelMatrixReference;
-trial.AppliedChannelReferenceSegmentCount=numel(channelReferences);
-trial.AppliedChannelReferenceSource=string(channelReferences{1}.Reference.Source);
+trial.AppliedChannelReferenceSegmentCount=0;
+trial.AppliedChannelReferenceSource="same_executed_desired_link_waveform_post_decode_SRS_pilot_reference";
 trial.AppliedChannelReferenceUsedByReceiver=false;
 trial=sixgr.truth.bindSharedSRSNMSEEvidence(trial,output);
 trial.ReceivedRARTimingAdvanceCommand=c.Config.SharedULTimingContext.ReceivedRARTiming.Command;
@@ -13286,7 +13285,7 @@ trial.ObservationDeliverySource="not_yet_delivered_to_scheduler";
 % SRS receiver has completed. Scoring captures are not receiver estimates.
 if logical(sixgr.util.structGet(c.Config,'outputs.phySignalDiagnosticEnabled',false)) && ...
         (logical(ch.UseFading) || sixgr.channel.IdentityAWGNRuntime.isState(ch))
-    trial=sixgr.truth.exportSharedChannelObservation( ...
+    trial=sixgr.truth.exportSharedScoringWaveformObservation( ...
         c.Config.run.rootRunFolder,trial,item.Planes,p,c.DesiredReferencePlane);
 end
 state.ControlTrials.SRS=localAppendCompatTable(state.ControlTrials.SRS,trial);

@@ -1,6 +1,8 @@
 frequency:
   range_name: FR1
-  band_name: h4_100_4ghz_research_tdd
+  # 4.000 GHz is inside the standardized n77 TDD range. Keep H4 as the
+  # evaluation-profile name; SIB1 requires a concrete NR band identity.
+  band_name: n77
   center_frequency_hz: 4000000000
   bandwidth_hz: 100000000
   bandwidth_options_hz: [100000000]
@@ -45,4 +47,3 @@ frame:
 waveform:
   fft_size: 4096
   sample_rate_hz: 122880000
-

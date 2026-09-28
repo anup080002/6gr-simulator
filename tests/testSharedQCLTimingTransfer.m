@@ -17,6 +17,17 @@ observation=sixgr.phy.waveform.WaveformObservationBuffer(1000,2000,1e6,1);
 [window,evidence]=sixgr.phy.rx.applyQCLTimingTransfer(cfg,grant,observation,1000,[0 20]);
 assert(isequal(window,[3 11]) && evidence.TCIStateID==17 && evidence.TCICodepoint==0 && ...
     evidence.QCLTimingPriorUsed && isnan(evidence.QCLDMRSDelayResidual_samples));
+splitPolicy=policy;
+splitPolicy.timing_source_resource_id=100;
+splitPolicy.spatial_source_resource_id=3;
+splitPolicy.qcl_types=["A","D"];
+splitCfg=sixgr.util.structSet(cfg,'phy.pdsch.qclTCI',splitPolicy);
+[splitWindow,splitEvidence]=sixgr.phy.rx.applyQCLTimingTransfer( ...
+    splitCfg,grant,observation,1000,[0 20]);
+assert(isequal(splitWindow,window) && ...
+    splitEvidence.QCLSourceResourceID==100, ...
+    ["Type-D spatial CSI-RS identity must not replace the independently " ...
+     "received Type-A TRS timing source."]);
 for field=["UEIndex","ServingCellIndex","SourceResourceID","SampleRateHz"]
     bad=source; bad.(field)=bad.(field)+1;
     mutated=sixgr.util.structSet(cfg,'lls6g.userContext.QCLTimingReference',bad);
