@@ -1826,8 +1826,23 @@ classdef (Abstract) SchedulerBase < handle
             grantOut.Valid = logical(sixgr.util.structGet(grantOut, "Valid", true));
         end
 
-        function dci = buildDCIBitfield(obj, grant)
+        function dci = buildDCIBitfield(obj, grant, activeCfg)
             % buildDCIBitfield Build NR-style DCI intent fields for a grant.
+            %
+            % The scheduler object retains the installed cell template, but
+            % connected execution can bind a measured per-UE TCI/QCL state
+            % before an assignment is serialized.  In that case the caller
+            % must supply the exact active configuration used by the PDCCH
+            % transmitter and receiver.  This is not a fallback or a DCI
+            % rebuild at the receiver: the returned bits remain the single
+            % authored scheduling decision.
+            if nargin < 3 || isempty(activeCfg)
+                activeCfg = obj.Cfg;
+            end
+            if ~(isstruct(activeCfg) && isscalar(activeCfg))
+                error("sixgr:SchedulerBase:InvalidActiveDCIConfig", ...
+                    "DCI authoring requires one active runtime configuration structure.");
+            end
             dci = struct("Format", "", "Bits", uint8([]), "Hex", "", ...
                 "FieldMap", struct(), "FieldValues", struct(), ...
                 "RIV", 0, "RBStart", 0, "RBLength", 0, ...
@@ -1914,14 +1929,14 @@ classdef (Abstract) SchedulerBase < handle
                 error("sixgr:SchedulerBase:MissingSymbolAllocation", ...
                     "DCI packing requires an explicit two-value SymbolAllocation.");
             end
-            fmt = localResolveDCIFormat(obj.Cfg, grant, direction);
+            fmt = localResolveDCIFormat(activeCfg, grant, direction);
             sliv = localTimeDomainAssignIndex( ...
                 symbolAllocation, obj.SymbolsPerSlot);
             sixgr.phy.grant.assertGrantTimingIdentity(grant,obj.Direction);
             [dciContext, tdaIndex, dciContextSource] = ...
                 sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant( ...
-                obj.Cfg, grant, fmt);
-            dciFields = localBuildSupportedDCIFields(obj.Cfg, grant, direction, fmt, riv, tdaIndex, ...
+                activeCfg, grant, fmt);
+            dciFields = localBuildSupportedDCIFields(activeCfg, grant, direction, fmt, riv, tdaIndex, ...
                 rbStart, rbLen, mcs, ndi, rv, harqId, dai, k1, k2, dciContext);
             dciPayload = sixgr.phy.pdcch.encodeDCIPayload(dciFields, fmt, dciContext);
             fmap = localDCIFieldMapFromTable(dciPayload.FieldTable);

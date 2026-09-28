@@ -4,7 +4,9 @@ setup6GRSimToolkit('Verbose', false);
 s = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_causal_access_to_data_wiring_tdd.yaml'));
 cfg = sixgr.lls6g.buildInternalConfig(s, tempname);
-grant = sixgr.link.resolveWaveformGrant(cfg, 'DL', 0);
+% Use a legal connected-data DL occasion. Absolute slot 0 carries SS/PBCH
+% in this fixture and therefore cannot also claim its excluded DM-RS REs.
+grant = sixgr.link.resolveWaveformGrant(cfg, 'DL', 2);
 assert(grant.Valid && grant.PHYGrant.IsFrozen && grant.DCI.BitExactPDCCHPayload);
 cfg = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg, double(grant.ScheduledAbsoluteSlot)+1);
 % Intentionally no successful PDCCH reception has occurred.

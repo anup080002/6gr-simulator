@@ -37,9 +37,13 @@ context = sixgr.phy.pdcch.DCIContext(dci.ContextData);
 active = sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant(cfg, grant, format);
 if context.Digest ~= active.Digest || ...
         string(sixgr.util.structGet(dci, 'ContextDigest', "")) ~= context.Digest
+    changed = localContextDifferenceSummary(context.Data, active.Data);
     error('sixgr:pdsch:StaleAuthoredSchedulerDCIContext', ...
-        'Authored DCI must use the active RNTI/BWP/TDRA/configuration epoch.');
+        ['Authored DCI must use the active RNTI/BWP/TDRA/configuration ' ...
+         'epoch and installed TCI/QCL state. Differing fields: %s.'], ...
+        char(changed));
 end
+
 authored = sixgr.phy.pdcch.decodeDCIPayload(bits, format, context);
 if string(sixgr.util.structGet(dci, 'PayloadHash', "")) ~= authored.PayloadHash
     error('sixgr:pdsch:AuthoredSchedulerDCIPayloadMismatch', ...
@@ -96,6 +100,23 @@ request.SearchSpaceId = double(context.Data.SearchSpaceID);
 request.CORESETId = double(context.Data.CORESETID);
 request.PDCCHAbsoluteSlot = timing.PDCCHAbsoluteSlot;
 request.K0 = timing.K0;
+end
+
+function summary = localContextDifferenceSummary(authored, active)
+names = union(string(fieldnames(authored)), string(fieldnames(active)), 'stable');
+different = strings(0, 1);
+for ii = 1:numel(names)
+    name = char(names(ii));
+    if ~isfield(authored, name) || ~isfield(active, name) || ...
+            ~isequaln(authored.(name), active.(name))
+        different(end + 1, 1) = string(name); %#ok<AGROW>
+    end
+end
+if isempty(different)
+    summary = "digest_or_serialized_context_identity";
+else
+    summary = strjoin(different, ",");
+end
 end
 
 function localEqual(actual, expected, name)

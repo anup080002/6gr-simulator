@@ -3184,7 +3184,28 @@ methods(Static, Access=private)
                 end
                 grantedUsers(end + 1, 1) = double(ueIdx); %#ok<AGROW>
                 nGrant = nGrant + 1;
-                grant.DCI = scheduler.buildDCIBitfield(grant);
+                % Author connected DCI from the same causal per-UE
+                % configuration that will be installed at the PDCCH/PDSCH
+                % boundary.  The scheduler handle owns a cell-level
+                % template; it cannot know that received SSB/CSI evidence
+                % has selected a different pending TCI codepoint.  Using
+                % the template here serialized stale state 17/codepoint 0
+                % while the transmitter correctly installed measured state
+                % 18/codepoint 2.  Preserve one immutable authored payload,
+                % but bind it to the current installed RNTI/BWP/TDRA/TCI
+                % context before packing.
+                [activeDCICfg, state] = ...
+                    sixgr.truth.CoupledTruthRuntime.applyUserContext( ...
+                    cfg, state, ueIdx, direction);
+                if isfield(state, "SharedWaveformStream")
+                    activeDCICfg = sixgr.truth.bindSharedDataOccasion( ...
+                        activeDCICfg, grant.Slot, grant.Frame, ...
+                        state.SharedWaveformStream.SampleRateHz);
+                else
+                    activeDCICfg = sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+                        activeDCICfg, grant.Slot, grant.Frame);
+                end
+                grant.DCI = scheduler.buildDCIBitfield(grant, activeDCICfg);
                 grant.PBCHGatingActive = logical(sixgr.util.structGet(state.ControlGating, "PBCHRequired", false));
                 grant.PRACHGatingActive = logical(sixgr.util.structGet(state.ControlGating, "PRACHRequired", false));
                 grant.PDCCHGatingActive = logical(sixgr.util.structGet(state.ControlGating, "PDCCHRequired", false));
