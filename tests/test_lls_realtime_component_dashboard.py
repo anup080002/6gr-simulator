@@ -19,6 +19,97 @@ def test_ul_preview_keeps_codebook_ports_distinct_from_spatial_beams() -> None:
     assert "AppliedCodebookPortIndexSet" not in dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS["dl_trials"])
 
 
+def test_access_and_beam_previews_retain_exact_runtime_identity() -> None:
+    msg1 = dashboard.summarize_procedure_preview_rows(
+        "msg1_detection",
+        [{
+            "UEId": 1,
+            "Slot": 9,
+            "AssociatedSSBIndex": 1,
+            "RootSequenceIndex": 7,
+            "PreambleIndexTx": 11,
+            "PreambleIndexDetected": 11,
+            "FrequencyEstimationEnabled": 1,
+            "FrequencyEstimate_Hz": -125.0,
+            "FrequencyEstimateValid": 1,
+            "RawTimingEstimate_samples": 1258,
+            "TimingOffsetSamples": 22,
+            "TimingAdvanceCommand": 1,
+            "RARNTI": 127,
+            "Status": "OK",
+        }],
+    )
+    assert msg1 == [{
+        "UE": 1,
+        "Slot": 9,
+        "Associated SSB beam": 1,
+        "Root sequence index (RSI)": 7,
+        "TX preamble": 11,
+        "Detected preamble": 11,
+        "Frequency estimate enabled": 1,
+        "Detected frequency offset Hz": -125.0,
+        "Frequency estimate valid": 1,
+        "Raw timing samples": 1258,
+        "Propagation timing samples": 22,
+        "RAR TA command": 1,
+        "RA-RNTI": 127,
+        "Status": "OK",
+    }]
+    beam = dashboard.summarize_procedure_preview_rows(
+        "beam_state",
+        [{
+            "EventSequence": 4,
+            "UEIndex": 1,
+            "Slot": 28,
+            "FromState": "P2_MEASURING",
+            "Event": "TCI_ACTIVATED",
+            "ToState": "ACTIVE",
+            "MeasuredResourceID": "CSI-RS-3",
+            "ActivatedTCIState": 3,
+            "GeometryOracleUsed": 0,
+            "SelectionAuthority": "receiver_measurement_and_decoded_control",
+        }],
+    )
+    assert beam[0]["Measured RS/beam"] == "CSI-RS-3"
+    assert beam[0]["Activated TCI state"] == 3
+    assert beam[0]["Geometry oracle used"] == 0
+
+
+def test_qcl_tci_and_srs_angle_labels_do_not_upgrade_model_metadata() -> None:
+    dl = dashboard.summarize_data_trial_preview_rows(
+        "dl_trials",
+        [{
+            "Slot": 31,
+            "UEID": 1,
+            "QCLStatus": "bound_received_reference_timing_prior",
+            "QCLType": "A",
+            "QCLSourceRS": "NZP-CSI-RS/TRS",
+            "QCLSourceResourceID": 3000,
+            "QCLTimingPriorUsed": 1,
+            "TCIStateID": 3,
+            "TCICodepoint": 1,
+            "TCIStatus": "received_codepoint_bound_to_preconfigured_state",
+        }],
+    )[0]
+    assert dl["QCL source RS"] == "NZP-CSI-RS/TRS"
+    assert dl["TCI state ID"] == 3
+    angles = dashboard.summarize_procedure_preview_rows(
+        "channel_angles",
+        [{
+            "Direction": "UL",
+            "TapIndex": 1,
+            "AzimuthDeparture_deg": -46.6,
+            "ZenithDeparture_deg": 97.2,
+            "AzimuthArrival_deg": -101.0,
+            "ZenithArrival_deg": 87.6,
+            "AngleCoordinateFrame": "3gpp_tr38901_global_coordinate_system",
+            "Source": "sixgr.channel.ChannelFactory.info.model_profile_metadata_not_in_path_realization",
+        }],
+    )[0]
+    assert angles["AoD azimuth deg"] == -46.6
+    assert "model_profile_metadata" in angles["Source"]
+
+
 def artifact(path: str, mime_type: str = "text/csv", artifact_id: int = 1) -> dict:
     return {
         "artifact_id": artifact_id,
