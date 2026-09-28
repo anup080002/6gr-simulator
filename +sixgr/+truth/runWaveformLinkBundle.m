@@ -8679,8 +8679,18 @@ if trsEnabled && slotDLAllowed
     % observation. Do not retransmit that complete window at each member.
     shouldAttemptTRS = trsWindow.ObservationStarts;
 end
-prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && ...
-    sixgr.truth.isActivePRACHOccasion(cfg, slotIdx);
+    sharedWaveformRA = isfield(state,'SharedWaveformStream');
+    if sharedWaveformRA
+        % Enqueue the complete canonical PRACH OFDM buffer one carrier slot
+        % before its nominal origin. Received SSB phase/common UL timing can
+        % advance the actual UE TX origin slightly across that boundary.
+        % This is a scheduling horizon only; IQ remains on its exact clock.
+        prachSignalOpportunityThisSlot = prachEnabled && ...
+            sixgr.truth.isPRACHWaveformPreparationSlot(cfg,slotIdx);
+    else
+        prachSignalOpportunityThisSlot = prachEnabled && slotULAllowed && ...
+            sixgr.truth.isActivePRACHOccasion(cfg, slotIdx);
+    end
 prachOccasionActiveThisSlot = prachRequired && prachSignalOpportunityThisSlot;
 [ssbOccasionActiveThisSlot, ssbOccasion] = ...
     sixgr.truth.isActiveSSBOccasion(cfg, slotIdx);
