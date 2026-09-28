@@ -1064,6 +1064,26 @@ function [startTime, endTime, physicalTiming] = localStageSampleInterval(cfg, ra
 fs = localStageSampleRate(localStageTxInfo(tx), tx);
 physicalTiming=struct();
 startTime = localStageSlotStartTime(cfg, localStageSlot(raCfg, name));
+name = string(name);
+if any(name == ["Msg2","Msg4"])
+    % Msg2/Msg4 are transmitted on the gNB radio-frame clock but observed
+    % by the UE on the received DL clock recovered from SSB/PBCH.  The
+    % independent RAR/contention receive windows already retain that exact
+    % clock displacement.  Validate the supplied physical observation
+    % against the same displacement instead of the unshifted TX origin.
+    % This is a clock binding only; it neither moves the transmitted IQ nor
+    % permits an arbitrary containing/fabricated observation window.
+    window = sixgr.util.structGet(raCfg, "RARMonitoringWindow", struct());
+    clockOffsetTicks = sixgr.util.structGet(window, "ClockOffsetTicks", int64(0));
+    tc = double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond) / fs;
+    if tc ~= fix(tc) || ~isa(clockOffsetTicks, 'int64') || ...
+            ~isscalar(clockOffsetTicks) || rem(clockOffsetTicks, int64(tc)) ~= 0
+        error("sixgr:phy:ra:InvalidRADLObservationClock", ...
+            "Stage %s requires an exactly representable received-DL clock offset.", name);
+    end
+    startTime = startTime + double(clockOffsetTicks) / ...
+        double(sixgr.phy.frame.AbsoluteTime.TicksPerSecond);
+end
 if string(name)=="Msg1"
     % nrPRACHOFDMModulate returns one PRACH-slot waveform, including its
     % internal OffsetLength. Its origin is not necessarily a carrier-slot
