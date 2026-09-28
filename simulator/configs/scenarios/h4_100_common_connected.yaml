@@ -457,6 +457,15 @@ random_access:
   num_subframes: 100
   num_tx_antennas: 4
   num_rx_antennas: 64
+  # Configuration index 157 is the FR1-unpaired B4 row from TS 38.211
+  # Table 6.3.3.2-3. On this 30-kHz carrier its first canonical occasion is
+  # carrier slot 9, symbol 0 (zero-based). The inherited 15-kHz fixture uses
+  # carrier slot 4, symbol 7 and is invalid after changing to mu=1.
+  occasion:
+    frame: 0
+    slot: 9
+    symbol: 0
+    frequency_index: 0
   four_step_ra_required: true
   msg4_contention_resolution_required: true
   msg3_enabled: true
