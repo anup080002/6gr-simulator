@@ -75,6 +75,38 @@ def test_access_and_beam_previews_retain_exact_runtime_identity() -> None:
     assert beam[0]["Geometry oracle used"] == 0
 
 
+def test_ssb_sync_preview_separates_injection_estimate_correction_and_residual() -> None:
+    labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS["pbch_trials"])
+    assert labels["InjectedCFO_Hz"] == "Configured / injected CFO (Hz)"
+    assert labels["EstimatedCFO_PreCorrection_Hz"] == "Estimated CFO (Hz)"
+    assert labels["CFOEstimateAvailability"] == "CFO estimate availability"
+    assert labels["SIB1CFOCorrectionApplied_Hz"] == "Applied CFO correction (Hz)"
+    assert labels["ResidualCFO_PostCorrection_Hz"] == "Residual CFO (Hz)"
+    assert labels["ResidualCFOMeasurementStatus"] == "Residual CFO status"
+    assert labels["AppliedTimingCorrection_samples"] == "Applied timing correction (samples)"
+
+
+def test_waveform_quality_previews_expose_evm_nmse_and_receiver_plane() -> None:
+    for key in ("pbch_trials", "pdcch_trials", "pucch_trials", "srs_trials", "trs_trials"):
+        labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS[key])
+        assert "EVM_rms" in labels
+        assert "NMSE_dB" in labels
+    for key in ("dl_trials", "ul_trials"):
+        labels = dict(dashboard.DATA_TRIAL_PREVIEW_COLUMNS[key])
+        assert labels["EVM_rms"] == "EVM rms"
+        assert labels["NMSE_dB"] == "NMSE dB"
+        assert labels["ChannelEstimateAvailable"] == "Channel estimate available"
+        assert labels["EqualizationAvailable"] == "Equalization available"
+
+
+def test_beam_power_preview_keeps_absolute_and_normalized_units_distinct() -> None:
+    labels = dict(dashboard.PROCEDURE_PREVIEW_COLUMNS["beam_state"])
+    assert labels["MeasuredRSRPDBM"] == "Legacy RSRP column (unit not inferred)"
+    assert labels["MeasuredRSRPDBReUnitOccupiedREEs"] == "Measured SS-RSRP (dB re unit Es)"
+    assert labels["MeasuredPowerUnit"] == "Measured power unit"
+    assert labels["PowerReferencePlane"] == "Power reference plane"
+
+
 def test_qcl_tci_and_srs_angle_labels_do_not_upgrade_model_metadata() -> None:
     dl = dashboard.summarize_data_trial_preview_rows(
         "dl_trials",

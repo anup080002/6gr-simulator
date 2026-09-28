@@ -13,6 +13,11 @@ mimo:
   beam_sweep_enabled: true
   beam_count: 8
   panel_count: 2
+  # Executable authority consumed by buildInternalConfig and the PDSCH
+  # grant freezer.  Keep this aligned with the physical-array declaration
+  # below: received CRI selects a 64x4 CSI-RS/data beam basis and PMI maps
+  # layers inside that basis.
+  hybrid_beamforming_flag: true
   phase07_strict:
     enabled: true
     # The two physical panels remain part of the 64-element array and every

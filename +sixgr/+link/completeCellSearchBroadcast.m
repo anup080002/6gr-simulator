@@ -327,6 +327,11 @@ out.PSSCorrelationVectors = double(sixgr.util.structGet(rec, "PSSCorrelationVect
 out.SSSSequenceHypotheses = double(sixgr.util.structGet(rec, "SSSSequenceHypotheses", NaN));
 out.PBCHDMRSHypothesesTested = double(sixgr.util.structGet(rec, "PBCHDMRSHypothesesTested", NaN));
 out.PBCHNoiseVar = double(sixgr.util.structGet(rec, "PBCHNoiseVar", NaN));
+out.EVM_rms = double(sixgr.util.structGet(rec, "EVM_rms", NaN));
+out.EVMReferenceSource = string(sixgr.util.structGet( ...
+    rec, "EVMReferenceSource", ""));
+out.EVMValueStatus = string(sixgr.util.structGet( ...
+    rec, "EVMValueStatus", "NOT_AVAILABLE"));
 out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(rec, "PreEqualizationNoiseVariance", NaN));
 out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceDomain", ""));
 out.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet(rec, "PreEqualizationNoiseVarianceSource", ""));
@@ -362,11 +367,24 @@ out.SIB1PDSCHStrictReceiverEvidenceOk = logical(sixgr.util.structGet(rec, "SIB1P
 out.FreqOffsetEstimate_Hz = double(rec.FrequencyOffsetHz);
 out.EstimatedCFO_PreCorrection_Hz = double(rec.FrequencyOffsetHz);
 out.CFOEstimateSource = "SSB_Rx_pss_cp_synchronization_on_received_samples";
+out.CFOEstimateAvailability = string(sixgr.util.structGet( ...
+    rec, "CFOEstimateAvailability", "missing"));
+out.CFOValueStatus = string(sixgr.util.structGet( ...
+    rec, "CFOValueStatus", "NOT_AVAILABLE"));
+out.CFOEstimatorDetail = string(sixgr.util.structGet( ...
+    rec, "CFOEstimatorDetail", ""));
 out.TrueCFO_Hz = double(sixgr.util.structGet( ...
     out,"RuntimeChannelReplay.InjectedCFO_Hz",NaN));
 out.InjectedCFO_Hz = out.TrueCFO_Hz;
 out.CFOError_Hz = out.FreqOffsetEstimate_Hz - out.TrueCFO_Hz;
 out.CFOErrorSource = "receiver_estimate_minus_injected_cfo_audit";
+if out.CFOEstimateAvailability == "available" && isfinite(out.TrueCFO_Hz)
+    out.CFOErrorDefinition = "receiver_estimate_minus_injected_cfo_audit";
+    out.CFOValueStatus = "MEASURED_WITH_INDEPENDENT_SIMULATION_SCORING";
+else
+    out.CFOError_Hz = NaN;
+    out.CFOErrorDefinition = "not_available_without_cfo_estimate";
+end
 out.SIB1CFOCorrectionApplied_Hz = double(rec.SIB1CFOCorrectionApplied_Hz);
 out.SIB1CFOCorrectionSource = string(rec.SIB1CFOCorrectionSource);
 out.ResidualCFO_PostCorrection_Hz = NaN;

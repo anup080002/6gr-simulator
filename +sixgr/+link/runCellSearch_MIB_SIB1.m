@@ -340,6 +340,11 @@ try
     out.SSSSequenceHypotheses = double(sixgr.util.structGet(sync, "SSSInfo.SearchSpaceSize", NaN));
     out.PBCHDMRSHypothesesTested = double(numel(sixgr.util.structGet(pbchInfo, "PerCandidate", struct([]))));
     out.PBCHNoiseVar = double(sixgr.util.structGet(pb, "NoiseVar", NaN));
+    out.EVM_rms = double(sixgr.util.structGet(pb, "EVM_rms", NaN));
+    out.EVMReferenceSource = string(sixgr.util.structGet( ...
+        pb, "EVMReferenceSource", ""));
+    out.EVMValueStatus = string(sixgr.util.structGet( ...
+        pb, "EVMValueStatus", "NOT_AVAILABLE"));
     out.PreEqualizationNoiseVariance = double(sixgr.util.structGet(pb, "PreEqualizationNoiseVariance", NaN));
     out.PreEqualizationNoiseVarianceDomain = string(sixgr.util.structGet(pb, "PreEqualizationNoiseVarianceDomain", ""));
     out.PreEqualizationNoiseVarianceSource = string(sixgr.util.structGet(pb, "PreEqualizationNoiseVarianceSource", ""));

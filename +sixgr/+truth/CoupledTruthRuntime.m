@@ -8186,6 +8186,22 @@ methods(Static)
             MeasuredSINRDB=double(measuredSINR), ...
             ActivatedTCIState=double(activatedTCIState), ...
             GeometryOracleUsed=false);
+        normalizedPowerPlane = sixgr.rf.isNormalizedFixedSNRPowerReference( ...
+            state.CfgMobility);
+        row.MeasuredRSRPDBReUnitOccupiedREEs = nan(height(row), 1);
+        row.MeasuredPowerUnit = repmat("unavailable", height(row), 1);
+        row.PowerReferencePlane = repmat("unavailable", height(row), 1);
+        if normalizedPowerPlane
+            row.MeasuredRSRPDBReUnitOccupiedREEs(:) = double(measuredRSRP);
+            row.MeasuredRSRPDBM(:) = NaN;
+            row.MeasuredPowerUnit(:) = "dB_re_UnitOccupiedRE_Es";
+            row.PowerReferencePlane(:) = ...
+                "normalized_fixed_esn0_unit_occupied_re_es";
+        elseif isfinite(double(measuredRSRP))
+            row.MeasuredPowerUnit(:) = "dBm";
+            row.PowerReferencePlane(:) = ...
+                "absolute_calibrated_receiver_measurement";
+        end
         row.UEIndex = repmat(double(ueIdx),height(row),1);
         row.Slot = repmat(double(state.CurrentSlot),height(row),1);
         row.SweepPointIndex = repmat(double(sixgr.util.structGet( ...
