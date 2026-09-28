@@ -99,6 +99,13 @@ def test_waveform_quality_previews_expose_evm_nmse_and_receiver_plane() -> None:
         assert labels["EqualizationAvailable"] == "Equalization available"
 
 
+def test_trs_preview_separates_scheduler_tracking_and_qualification() -> None:
+    labels = dict(dashboard.CONTROL_TRIAL_PREVIEW_COLUMNS["trs_trials"])
+    assert labels["TrackingEligibility"] == "Scheduler usable"
+    assert labels["TRSValidityState"] == "Tracking state"
+    assert labels["StrictOk"] == "Qualification pass"
+
+
 def test_beam_power_preview_keeps_absolute_and_normalized_units_distinct() -> None:
     labels = dict(dashboard.PROCEDURE_PREVIEW_COLUMNS["beam_state"])
     assert labels["MeasuredRSRPDBM"] == "Legacy RSRP column (unit not inferred)"
@@ -269,6 +276,8 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
                 "SINRMeasurementDomain": "csi_rs_resource_selective_channel_estimate",
                 "PhysicalMeasurementStatus": "available",
                 "MeasurementSource": "nrCSIRSMeasurements_runtime_received_grid",
+                "MeasurementPowerUnit": "dB_re_unit_occupied_RE_Es",
+                "PowerReferencePlane": "normalized_fixed_snr_occupied_re",
             }
         ],
         "ssb": [
@@ -323,6 +332,8 @@ def test_ue_status_keeps_serving_ss_and_csi_measurements_distinct() -> None:
     assert ue["pbch_dmrs_sinr_db"] == 9.25
     assert ue["csi_rsrp_dbm"] == -86.25
     assert ue["csi_rsrp_relative_db"] == 23.0
+    assert ue["csi_power_unit"] == "dB_re_unit_occupied_RE_Es"
+    assert ue["csi_power_reference_plane"] == "normalized_fixed_snr_occupied_re"
     assert ue["csi_sinr_db"] == 11.75
     assert ue["ue_phr_db"] == 13.5
     assert ue["pathloss_paths"][0]["pathloss_db"] == 104.0
@@ -353,6 +364,53 @@ def test_runtime_log_component_annotation_preserves_original_message() -> None:
     assert rows[0]["component"] == "pdcch"
     assert rows[0]["message_text"] == source[0]["message_text"]
     assert "component" not in source[0]
+
+
+def test_ra_stage_preview_exposes_zero_and_one_based_slot_coordinates() -> None:
+    rows = dashboard.summarize_procedure_preview_rows(
+        "ra_stage_waveforms",
+        [{"UEId": 1, "StageName": "Msg1", "StageSlot": 9}],
+    )
+    assert rows == [{
+        "UE": 1,
+        "Stage": "Msg1",
+        "Absolute slot (0-based)": 9,
+        "Runtime slot (1-based)": 10,
+    }]
+
+
+def test_large_header_only_csv_does_not_advance_live_stage() -> None:
+    artifacts = [artifact("air_interface/csv/ul_pusch_trials.csv", artifact_id=91)]
+    artifacts[0]["byte_size"] = 50_000
+    original = dashboard.load_small_csv_rows
+    try:
+        dashboard.load_small_csv_rows = lambda *_args, **_kwargs: []
+        stage = dashboard.infer_effective_live_stage({"Stage": "pre_raw_sweep"}, artifacts)
+        assert stage["Stage"] == "pre_raw_sweep"
+        assert stage["ULTrialsReady"] == 0
+
+        dashboard.load_small_csv_rows = lambda *_args, **_kwargs: [{"Slot": 1}]
+        stage = dashboard.infer_effective_live_stage({"Stage": "pre_raw_sweep"}, artifacts)
+        assert stage["Stage"] == "ul_raw_trials_streaming"
+        assert stage["ULTrialsReady"] == 1
+    finally:
+        dashboard.load_small_csv_rows = original
+
+
+def test_artifact_content_version_changes_for_stable_id_in_place_update(tmp_path: Path) -> None:
+    run_folder = tmp_path / "run"
+    live_path = run_folder / "reports" / "csv" / "live_control_gating_state.csv"
+    live_path.parent.mkdir(parents=True)
+    live_path.write_text("Slot,State\n1,old\n", encoding="utf-8")
+    row = artifact("reports/csv/live_control_gating_state.csv", artifact_id=77)
+    row["filesystem_path"] = str(live_path)
+    row["byte_size"] = live_path.stat().st_size
+    run = {"run_folder": str(run_folder)}
+    first = dashboard.artifact_content_version([row], run)
+
+    live_path.write_text("Slot,State\n2,new\n", encoding="utf-8")
+    second = dashboard.artifact_content_version([row], run)
+    assert first != second
 
 
 def test_data_preview_retains_crc_and_measured_beam_fields() -> None:

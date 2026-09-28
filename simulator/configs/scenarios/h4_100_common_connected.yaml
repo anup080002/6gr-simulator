@@ -21,6 +21,17 @@ run_control:
   total_slots: 200
   total_time_ms: 100
 
+# Directional connected-mode admission for the H4 family.  DL CSI is owned
+# by received CSI-RS/report state, so UL sounding must not globally block DL
+# scheduling.  Strict codebook/multi-layer UL still requires causal SRS in
+# CoupledTruthRuntime even when this legacy all-directions switch is false.
+# TRS remains a shared receiver/scheduler prerequisite and its freshness
+# lifetime covers the complete configured 20-slot resource cadence.
+control_gating:
+  srs_required: false
+  trs_required: true
+  trs_max_age_slots: 20
+
 simulation:
   link_direction: both
   n_frames: 10

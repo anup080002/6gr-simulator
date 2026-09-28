@@ -392,11 +392,22 @@ out.ResidualCFOMeasurementStatus = "unavailable_no_post_correction_residual_esti
 out.TimingOffset_samples = double(rec.TimingOffset);
 out.SSBTimingSearchGuardSamples = double(rec.SSBTimingSearchGuardSamples);
 out.SSBTimingSearchGuardSource = string(rec.SSBTimingSearchGuardSource);
-out.RawTimingEstimate_samples = double(rec.TimingOffset);
-out.EstimatedTimingOffset_PreCorrection_samples = double(rec.TimingOffset);
-out.TrueTimingOffset_samples = NaN;
+out.RawTimingEstimate_samples = double(sixgr.util.structGet( ...
+    rec, "RawTimingEstimate_samples", rec.TimingOffset));
+out.EstimatedTimingOffset_PreCorrection_samples = out.RawTimingEstimate_samples;
+out.AppliedTimingCorrection_samples = double(sixgr.util.structGet( ...
+    rec, "AppliedTimingCorrection_samples", NaN));
+out.TimingEstimateApplicationPolicy = string(sixgr.util.structGet( ...
+    rec, "TimingEstimateApplicationPolicy", ""));
+out.TimingEstimateWasClipped = logical(sixgr.util.structGet( ...
+    rec, "TimingEstimateWasClipped", false));
+out.InjectedTimingOffset_samples = double(sixgr.util.structGet( ...
+    out, "RuntimeChannelReplay.InjectedTimingOffset_samples", NaN));
+out.TrueTimingOffset_samples = out.InjectedTimingOffset_samples;
 out.TimingError_samples = NaN;
-out.TimingEstimateStatus = "estimated_ssb_position_no_injected_timing_reference";
+out.ResidualTimingError_PostCorrection_samples = NaN;
+out.TimingEstimateStatus = string(sixgr.util.structGet( ...
+    rec, "TimingEstimateStatus", "estimated_ssb_position"));
 out.Notes = "Strict SIB1 waveform path: " + string(rec.Status) + ...
     "; DCI=" + string(rec.DCIPayloadHex) + ...
     "; SIB1TreeEqual=" + string(logical(rec.SIB1TreeEqual));

@@ -190,7 +190,9 @@ simulation:
 
 frequency:
   range_name: FR1
-  band_name: n40_2350mhz_5mhz_tdd
+  # SIB1 ASN.1 carries the concrete NR operating-band identity. Descriptive
+  # scenario labels belong in meta/tags, not in frequency.band_name.
+  band_name: n40
   center_frequency_hz: 2350000000
   bandwidth_hz: 5000000
   bandwidth_options_hz: [5000000]
