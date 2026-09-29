@@ -59,6 +59,12 @@ rf_frontend:
     dc_offset_real: 0
     dc_offset_imag: 0
     compensation_enabled: true
+  timing_and_sample_clock:
+    # Receiver-clock timing error. The coupled RF runtime deliberately does
+    # not inherit the legacy global impairment value, so declare the owning
+    # endpoint explicitly. Apply this once at the UE RX, never at both TX/RX.
+    initial_timing_offset_samples: 1
+    sco_ppm: 0
   pa:
     enabled: true
     profile_id: RAPP_H4_BOUNDED_V1
