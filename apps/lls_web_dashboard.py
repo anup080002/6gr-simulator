@@ -14149,7 +14149,18 @@ def infer_effective_live_stage(stage: dict[str, Any], artifacts: list[dict[str, 
     }
     harq_stage_names = {"harq_ready", "beam_ready", "rf_ready", "final_bundle_ready", "bundle_complete"}
     beam_stage_names = {"beam_ready", "rf_ready", "final_bundle_ready", "bundle_complete"}
-    if current_stage in early_stage_names and has_ul:
+    if current_stage in early_stage_names:
+        # Preserve the publisher's raw value for diagnosis, but never present a
+        # raw-data streaming stage unless at least one corresponding CSV record
+        # was actually parsed.  The MATLAB live publisher historically emitted
+        # dl_ul_raw_trials_streaming during pre-schedule control processing.
+        stage["SourceStage"] = str(
+            stage.get("CurrentStage") or stage.get("StageName") or stage.get("Stage") or ""
+        )
+    if current_stage in early_stage_names and has_dl and has_ul:
+        stage["Stage"] = "dl_ul_raw_trials_streaming"
+        stage["Notes"] = "DL PDSCH and UL PUSCH raw trial rows are streaming live from the database."
+    elif current_stage in early_stage_names and has_ul:
         stage["Stage"] = "ul_raw_trials_streaming"
         stage["Notes"] = "UL PUSCH raw trial rows are streaming live from the database."
     elif current_stage in early_stage_names and has_dl:
@@ -14158,6 +14169,9 @@ def infer_effective_live_stage(stage: dict[str, Any], artifacts: list[dict[str, 
     elif current_stage in early_stage_names and has_control:
         stage["Stage"] = "control_trials_ready"
         stage["Notes"] = "Control-plane raw trial rows are available live in the database."
+    elif current_stage in early_stage_names:
+        stage["Stage"] = "control_access_pending"
+        stage["Notes"] = "No completed control or data trial row is available yet."
     stage["ControlReady"] = 1 if has_control else 0
     stage["DLTrialsReady"] = 1 if has_dl else 0
     stage["ULTrialsReady"] = 1 if has_ul else 0

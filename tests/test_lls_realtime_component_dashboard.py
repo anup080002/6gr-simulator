@@ -386,13 +386,32 @@ def test_large_header_only_csv_does_not_advance_live_stage() -> None:
     try:
         dashboard.load_small_csv_rows = lambda *_args, **_kwargs: []
         stage = dashboard.infer_effective_live_stage({"Stage": "pre_raw_sweep"}, artifacts)
-        assert stage["Stage"] == "pre_raw_sweep"
+        assert stage["Stage"] == "control_access_pending"
+        assert stage["SourceStage"] == "pre_raw_sweep"
         assert stage["ULTrialsReady"] == 0
 
         dashboard.load_small_csv_rows = lambda *_args, **_kwargs: [{"Slot": 1}]
         stage = dashboard.infer_effective_live_stage({"Stage": "pre_raw_sweep"}, artifacts)
         assert stage["Stage"] == "ul_raw_trials_streaming"
         assert stage["ULTrialsReady"] == 1
+    finally:
+        dashboard.load_small_csv_rows = original
+
+
+def test_publisher_raw_streaming_label_requires_parsed_trial_rows() -> None:
+    artifacts = [artifact("air_interface/csv/ul_pusch_trials.csv", artifact_id=92)]
+    artifacts[0]["byte_size"] = 50_000
+    original = dashboard.load_small_csv_rows
+    try:
+        dashboard.load_small_csv_rows = lambda *_args, **_kwargs: []
+        stage = dashboard.infer_effective_live_stage(
+            {"Stage": "dl_ul_raw_trials_streaming", "DLTrialRows": 0, "ULTrialRows": 0},
+            artifacts,
+        )
+        assert stage["Stage"] == "control_access_pending"
+        assert stage["SourceStage"] == "dl_ul_raw_trials_streaming"
+        assert stage["DLTrialsReady"] == 0
+        assert stage["ULTrialsReady"] == 0
     finally:
         dashboard.load_small_csv_rows = original
 
