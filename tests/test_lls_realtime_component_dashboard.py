@@ -416,6 +416,26 @@ def test_publisher_raw_streaming_label_requires_parsed_trial_rows() -> None:
         dashboard.load_small_csv_rows = original
 
 
+def test_blank_runtime_truth_flags_do_not_become_negative_claims() -> None:
+    truth = dashboard.infer_runtime_truth_modes(
+        {},
+        [
+            {
+                "ChannelUsesSameRuntimeAntennaAssumptions": "",
+                "InterferenceUsesSameRuntimeAntennaAssumptions": "",
+                "InterferencePathUsesSameArrayAssumptions": "",
+                "TRSInfluencedDecision": "",
+                "ParallelExecutionActive": "",
+            }
+        ],
+    )
+    assert "channel_uses_same_runtime_antenna_assumptions" not in truth
+    assert "interference_uses_same_runtime_antenna_assumptions" not in truth
+    assert "interference_path_uses_same_array_assumptions" not in truth
+    assert "trs_influenced_decision" not in truth
+    assert "parallel_execution_active" not in truth
+
+
 def test_artifact_content_version_changes_for_stable_id_in_place_update(tmp_path: Path) -> None:
     run_folder = tmp_path / "run"
     live_path = run_folder / "reports" / "csv" / "live_control_gating_state.csv"

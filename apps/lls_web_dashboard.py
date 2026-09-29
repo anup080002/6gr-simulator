@@ -13336,8 +13336,9 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 "proxy_phy_active": "ProxyPHYActive",
                 "fallback_used": "FallbackUsed",
             }.items():
-                if row.get(row_key) is not None:
-                    truth_modes[key] = is_truthy_value(row.get(row_key))
+                parsed_flag = _truthy_value(row.get(row_key))
+                if parsed_flag is not None:
+                    truth_modes[key] = parsed_flag
             if row.get("ExecutionModel") and not truth_modes.get("execution_model"):
                 truth_modes["execution_model"] = str(row.get("ExecutionModel") or "")
             for key, row_key in {
@@ -13357,8 +13358,9 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
                 "srs_gating_active": "SRSGatingActive",
                 "trs_gating_active": "TRSGatingActive",
             }.items():
-                if row.get(row_key) is not None:
-                    truth_modes[key] = is_truthy_value(row.get(row_key))
+                parsed_flag = _truthy_value(row.get(row_key))
+                if parsed_flag is not None:
+                    truth_modes[key] = parsed_flag
             for key, row_key in {
                 "trs_runtime_consumer": "TRSRuntimeConsumer",
                 "trs_influence_definition": "TRSInfluenceDefinition",
@@ -13393,19 +13395,23 @@ def infer_runtime_truth_modes(config: dict[str, Any], operating_mode: list[dict[
             }.items():
                 if row.get(row_key):
                     truth_modes[key] = str(row.get(row_key) or "")
-            if row.get("TrafficFlowResolvedFlag") is not None:
-                truth_modes["traffic_flow_resolved_flag"] = is_truthy_value(row.get("TrafficFlowResolvedFlag"))
-            if row.get("TRSInfluencedDecision") is not None:
-                truth_modes["trs_influenced_decision"] = is_truthy_value(row.get("TRSInfluencedDecision"))
+            traffic_resolved = _truthy_value(row.get("TrafficFlowResolvedFlag"))
+            if traffic_resolved is not None:
+                truth_modes["traffic_flow_resolved_flag"] = traffic_resolved
+            trs_influenced = _truthy_value(row.get("TRSInfluencedDecision"))
+            if trs_influenced is not None:
+                truth_modes["trs_influenced_decision"] = trs_influenced
             for key, row_key in {
                 "channel_uses_same_runtime_antenna_assumptions": "ChannelUsesSameRuntimeAntennaAssumptions",
                 "interference_uses_same_runtime_antenna_assumptions": "InterferenceUsesSameRuntimeAntennaAssumptions",
                 "interference_path_uses_same_array_assumptions": "InterferencePathUsesSameArrayAssumptions",
             }.items():
-                if row.get(row_key) is not None:
-                    truth_modes[key] = is_truthy_value(row.get(row_key))
-            if row.get("ParallelExecutionActive") is not None:
-                truth_modes["parallel_execution_active"] = is_truthy_value(row.get("ParallelExecutionActive"))
+                parsed_flag = _truthy_value(row.get(row_key))
+                if parsed_flag is not None:
+                    truth_modes[key] = parsed_flag
+            parallel_active = _truthy_value(row.get("ParallelExecutionActive"))
+            if parallel_active is not None:
+                truth_modes["parallel_execution_active"] = parallel_active
             if row.get("EffectiveWorkers") is not None:
                 truth_modes["effective_workers"] = coerce_numeric(row.get("EffectiveWorkers"))
             if row.get("ConfiguredBatchSizeLinks") is not None:
@@ -13759,7 +13765,7 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
                 "Mobility is enabled in the exported LLS layout context. Geometry/map artifacts reflect the configured deployment and mobility settings."
             )
     if stage:
-        stage_name = str(stage.get("CurrentStage") or stage.get("StageName") or stage.get("Stage") or "").strip()
+        stage_name = str(stage.get("Stage") or stage.get("CurrentStage") or stage.get("StageName") or "").strip()
         stage_note = str(stage.get("Notes") or "").strip()
         if stage_name:
             notes.append(
@@ -13783,14 +13789,18 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
                 f"The active resolved scenario profile is '{requested_profile or 'n/a'}' with layout type '{requested_layout_type or 'n/a'}'."
             )
     if truth_modes.get("interference_mode"):
-        interference_mode = str(truth_modes["interference_mode"])
+        interference_mode = str(truth_modes["interference_mode"]).strip()
+        if interference_mode.lower() == "none":
+            interference_note = "No inter-cell or inter-UE interferer is configured for this one-link run."
+        elif any(token in interference_mode for token in ("abstract_large_scale", "waveform_overlap_large_scale", "explicit_activity_power_sum")):
+            interference_note = "This run used a removed non-waveform interference shortcut. Current no-proxy LLS validation rejects this mode before MATLAB runtime."
+        elif interference_mode in {"full_per_link_channel_waveform_sum", "independent_waveform_and_channel"}:
+            interference_note = "Each configured interferer uses its own grant-specific PHY waveform and victim-link channel realization before sample-domain summation."
+        else:
+            interference_note = "The exact execution semantics are reported by the retained runtime operating-mode evidence."
         notes.append(
             f"Interference mode: {interference_mode}. "
-            + (
-                "This run used a removed non-waveform interference shortcut. Current no-proxy LLS validation rejects this mode before MATLAB runtime."
-                if any(token in interference_mode for token in ("abstract_large_scale", "waveform_overlap_large_scale", "explicit_activity_power_sum"))
-                else "This run is using full per-link channel-waveform interferer summation: each overlapping interferer is rebuilt through its real grant-specific PHY Tx path and its own victim-link fading channel realization before sample-domain summation."
-            )
+            + interference_note
         )
     if truth_modes.get("channel_array_handling_status"):
         status = str(truth_modes["channel_array_handling_status"]).strip().lower()
@@ -13854,13 +13864,16 @@ def extract_runtime_context(run_row: dict[str, Any], artifacts: list[dict[str, A
         )
     if truth_modes.get("control_integration_mode"):
         control_mode = str(truth_modes["control_integration_mode"])
+        control_mode_lower = control_mode.strip().lower()
+        if control_mode_lower.endswith("_gated"):
+            control_note = "PBCH, PRACH, PDCCH, reference-signal and tracking outcomes gate persistent slot-runtime scheduling state as configured."
+        elif control_mode_lower.startswith("disabled"):
+            control_note = "Control/access gating is disabled for this execution mode."
+        else:
+            control_note = "No stronger causal scheduling-gate claim is made beyond the retained runtime operating-mode evidence."
         notes.append(
             f"Control/access integration mode: {control_mode}. "
-            + (
-                "PBCH, PRACH, PDCCH, and SRS outcomes are now consumed by persistent slot-runtime state before data scheduling/execution."
-                if "runtime_control_access_state_gated" in control_mode
-                else "Control outputs are still not gating the active data path."
-            )
+            + control_note
         )
     if truth_modes.get("pucch_mode"):
         pucch_mode = str(truth_modes["pucch_mode"]).strip().lower()
@@ -22699,7 +22712,7 @@ function renderRuntimeContext(runtimeContext) {{
   if (runtimeContext?.scenario_profile) pills.push(`<span class="pill">Profile: ${{resultEsc(runtimeContext.scenario_profile)}}</span>`);
   if (runtimeContext?.layout_type) pills.push(`<span class="pill">Layout: ${{resultEsc(runtimeContext.layout_type)}}</span>`);
   if (runtimeContext?.actual_site_spacing_m !== undefined && runtimeContext?.actual_site_spacing_m !== null) pills.push(`<span class="pill">Observed Site Spacing: ${{resultEsc(Number(runtimeContext.actual_site_spacing_m).toFixed(1))}} m</span>`);
-  if (stage.CurrentStage || stage.StageName || stage.Stage) pills.push(`<span class="pill">Stage: ${{resultEsc(stage.CurrentStage || stage.StageName || stage.Stage)}}</span>`);
+  if (stage.Stage || stage.CurrentStage || stage.StageName) pills.push(`<span class="pill">Stage: ${{resultEsc(stage.Stage || stage.CurrentStage || stage.StageName)}}</span>`);
   if (deployment.MobilityEnabled !== undefined) {{
     const mob = String(deployment.MobilityEnabled).toLowerCase();
     pills.push(`<span class="pill">Mobility: ${{mob === '1' || mob === 'true' ? 'On' : 'Off'}}</span>`);
@@ -23243,8 +23256,8 @@ function renderTableTabs(tables, data) {{
     const emptyText = RESULT_SECTION === 'all'
       ? 'No table artifacts have reached MySQL yet.'
       : `No tables are currently published for ${{resultEsc(RESULT_SECTION.toUpperCase())}}.`;
-    const stageText = stage.CurrentStage || stage.StageName || stage.Stage
-      ? `<div class="warning" style="margin-top:12px;">Current live stage: ${{resultEsc(stage.CurrentStage || stage.StageName || stage.Stage)}}${{stage.Notes ? ` | ${{resultEsc(stage.Notes)}}` : ''}}</div>`
+    const stageText = stage.Stage || stage.CurrentStage || stage.StageName
+      ? `<div class="warning" style="margin-top:12px;">Current live stage: ${{resultEsc(stage.Stage || stage.CurrentStage || stage.StageName)}}${{stage.Notes ? ` | ${{resultEsc(stage.Notes)}}` : ''}}</div>`
       : '';
     const sectionText = nonEmptySections
       ? `<div class="mini-note" style="margin-top:10px;">Currently populated sections: ${{resultEsc(nonEmptySections)}}</div>`
