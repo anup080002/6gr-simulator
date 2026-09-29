@@ -109,13 +109,37 @@ for ii = 1:numel(names)
     name = char(names(ii));
     if ~isfield(authored, name) || ~isfield(active, name) || ...
             ~isequaln(authored.(name), active.(name))
-        different(end + 1, 1) = string(name); %#ok<AGROW>
+        authoredValue = "<missing>";
+        activeValue = "<missing>";
+        if isfield(authored, name)
+            authoredValue = localDiagnosticValue(authored.(name));
+        end
+        if isfield(active, name)
+            activeValue = localDiagnosticValue(active.(name));
+        end
+        different(end + 1, 1) = string(name) + ...
+            "[authored=" + authoredValue + ",active=" + activeValue + "]"; %#ok<AGROW>
     end
 end
 if isempty(different)
     summary = "digest_or_serialized_context_identity";
 else
     summary = strjoin(different, ",");
+end
+end
+
+function value = localDiagnosticValue(raw)
+% Keep strict-context failures actionable without dumping large policy
+% structures or payloads into runtime logs.
+if ischar(raw) || (isstring(raw) && isscalar(raw))
+    value = "'" + string(raw) + "'";
+elseif (isnumeric(raw) || islogical(raw)) && isscalar(raw)
+    value = string(mat2str(raw));
+elseif isempty(raw)
+    value = "[]";
+else
+    value = "<" + string(class(raw)) + ":" + ...
+        strjoin(string(size(raw)), "x") + ">";
 end
 end
 

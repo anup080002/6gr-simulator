@@ -89,6 +89,11 @@ allowed = containers.Map('KeyType','char','ValueType','char');
 allowed('IDLE|AUTO_EVENT_FOR_P1_MEASURING') = 'P1_MEASURING';
 allowed('P1_MEASURING|AUTO_EVENT_FOR_P1_REPORTED') = 'P1_REPORTED';
 allowed('P1_REPORTED|AUTO_EVENT_FOR_TCI_PENDING') = 'TCI_PENDING';
+% A TCI command has not been transmitted while the state is pending.  A
+% newer, independently received CSI-RS report may therefore replace the
+% pending candidate before the first DCI is authored.  This is not an
+% activation and does not skip the decoded-control gate.
+allowed('TCI_PENDING|AUTO_EVENT_FOR_PENDING_TCI_REPLACED') = 'TCI_PENDING';
 allowed('TCI_PENDING|AUTO_EVENT_FOR_TCI_ACTIVE') = 'TCI_ACTIVE';
 allowed('TCI_ACTIVE|AUTO_EVENT_FOR_DATA_ACTIVE') = 'DATA_ACTIVE';
 allowed('TCI_ACTIVE|AUTO_EVENT_FOR_P2_REFINING') = 'P2_REFINING';

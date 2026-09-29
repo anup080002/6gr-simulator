@@ -52,6 +52,40 @@ bound = sixgr.pdsch.bindSchedulerPDSCHTransmitContext( ...
     grant.PHYGrant);
 assert(double(bound.ConfigurationEpoch) == ...
     double(grant.DCI.ContextData.ConfigurationEpoch));
+
+% Exact retained-run transition: the delivered CSI report selected CRI 1
+% before the first connected DCI.  CRI 1 maps to state 17/codepoint 1, so
+% both the frozen PDSCH precoder and its authored TCI indication must be
+% produced from that same active configuration.
+refinedCfg = cfg;
+refinedCfg.phy.beamManagement.selectedCRI = 1;
+refinedCfg.phy.csi.selectedCRI = 1;
+refinedQCL = refinedCfg.phy.pdsch.qclTCI;
+refinedQCL.state_id = 17;
+refinedQCL.codepoint = 1;
+refinedQCL.activation_absolute_slot0 = 20;
+refinedQCL.spatial_source_resource_id = 1;
+refinedQCL.spatial_source_reference_signal = 'NZP-CSI-RS';
+refinedQCL.initialization_source = ...
+    'runtime_received_measurement_and_decoded_tci';
+refinedCfg.phy.pdsch.qclTCI = refinedQCL;
+refinedCfg.phy.pdsch.activeTCIStateID = 17;
+refinedGrant = sixgr.link.resolveWaveformGrant(refinedCfg, 'DL', 21);
+refinedCfg = sixgr.phy.grid.applyRuntimeCarrierTimeline( ...
+    refinedCfg, double(refinedGrant.ScheduledAbsoluteSlot) + 1);
+refinedGrant.DCI = scheduler.buildDCIBitfield(refinedGrant, refinedCfg);
+refinedDecoded = sixgr.phy.pdcch.decodeDCIPayload( ...
+    refinedGrant.DCI.Bits, refinedGrant.DCI.Format, ...
+    refinedGrant.DCI.ContextData);
+assert(double(refinedGrant.DCI.ContextData.ActiveTCIStateID) == 17 && ...
+    double(refinedDecoded.Fields.transmission_configuration_indication) == 1);
+[refinedTX, ~] = sixgr.phy.dl.PDSCH_Tx(refinedCfg, ...
+    'PHYGrant',refinedGrant.PHYGrant, ...
+    'SchedulerGrantContext',refinedGrant, ...
+    'CompactOutput',true);
+assert(~isempty(refinedTX.Waveform) && ...
+    double(refinedTX.Assignment.get('NumLayers')) == ...
+        double(refinedGrant.NumLayers));
 ok = true;
 disp('PASS testH4RuntimeTCIDCIAuthority: measured TCI context owns authored DCI.');
 end

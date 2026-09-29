@@ -8116,6 +8116,35 @@ methods(Static)
                 isequal(double(state.AppliedDataBeamCRIByUE(ueIdx)),cri)
             return;
         end
+        if machine.State == "TCI_PENDING"
+            % No TCI command has been decoded yet, so the pending P1
+            % (SSB-seeded) candidate is not active data-beam authority.  A
+            % successfully decoded, causally delivered CSI report may
+            % replace that pending candidate before the first connected
+            % DCI is authored.  Keeping the old P1 state while allowing the
+            % scheduler to consume this report's CRI/PMI produced an
+            % impossible grant: CRI 1 precoding with TCI state 18 for CRI
+            % 2.  Retain the decoded-control gate; only the candidate being
+            % signalled is replaced here.
+            priorCRI = double(state.PendingBeamCRIByUE(ueIdx));
+            priorState = double(state.PendingTCIStateIDByUE(ueIdx));
+            priorCodepoint = double(state.PendingTCICodepointByUE(ueIdx));
+            if isequal(priorCRI, cri) && isequal(priorState, tciState) && ...
+                    isequal(priorCodepoint, tciCodepoint) && ...
+                    string(state.PendingBeamSourceByUE(ueIdx)) == "P2_CSI_RS"
+                return;
+            end
+            state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
+                state, ueIdx, "AUTO_EVENT_FOR_PENDING_TCI_REPLACED", ...
+                "CSI-RS-" + string(cri), NaN, NaN, NaN, ...
+                "received_CSI_UCI_replaced_untransmitted_pending_TCI:" + ...
+                    string(report.ReportIdentity));
+            state.PendingBeamCRIByUE(ueIdx) = cri;
+            state.PendingTCIStateIDByUE(ueIdx) = tciState;
+            state.PendingTCICodepointByUE(ueIdx) = tciCodepoint;
+            state.PendingBeamSourceByUE(ueIdx) = "P2_CSI_RS";
+            return;
+        end
         if any(machine.State == ["TCI_ACTIVE","DATA_ACTIVE"])
             state = sixgr.truth.CoupledTruthRuntime.transitionBeamManagementRuntime( ...
                 state, ueIdx, "AUTO_EVENT_FOR_P2_REFINING", ...
@@ -8123,9 +8152,8 @@ methods(Static)
                 "received_CSI_UCI:" + string(report.ReportIdentity));
             machine = state.BeamManagementMachines{ueIdx};
         end
-        % If the initial SSB-selected TCI has not yet been decoded, retain
-        % this report in the normal CSI table and wait for the next periodic
-        % report. Never reorder a later CSI observation ahead of P1 control.
+        % P1 has already been activated before this branch.  The normal P2
+        % transition now stages a new pending TCI command.
         if machine.State ~= "P2_REFINING"
             return;
         end
