@@ -2198,14 +2198,7 @@ end
 end
 
 function rootRunFolder = localNormalizeBundleRootRunFolder(runFolder)
-runFolder = char(string(runFolder));
-[~, leaf] = fileparts(runFolder);
-domainLeaves = {"air_interface","beamforming","control","harq","meta","reports","rf"};
-if any(strcmpi(leaf, domainLeaves))
-    rootRunFolder = fileparts(runFolder);
-else
-    rootRunFolder = runFolder;
-end
+rootRunFolder = sixgr.truth.normalizeWaveformBundleRootRunFolder(runFolder);
 end
 
 function localPublishWaveformBundleRuntimeStatus(status)

@@ -64,7 +64,7 @@ runFolder = fileparts(airInterfaceFolder);
 dlFile = fullfile(airInterfaceFolder, "csv", "dl_pdsch_trials.csv");
 ulFile = fullfile(airInterfaceFolder, "csv", "ul_pusch_trials.csv");
 harqFile = fullfile(runFolder, "harq", "csv", "live_harq_observation_timeline.csv");
-stageFile = fullfile(airInterfaceFolder, "reports", "csv", "live_stage_status.csv");
+stageFile = fullfile(runFolder, "reports", "csv", "live_stage_status.csv");
 
 assert(exist(dlFile, "file") == 2, "Coupled-truth HARQ roundtrip must write DL trials.");
 assert(exist(ulFile, "file") == 2, "Coupled-truth HARQ roundtrip must write UL trials.");
