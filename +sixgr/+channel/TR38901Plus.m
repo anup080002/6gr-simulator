@@ -214,6 +214,7 @@ classdef TR38901Plus < handle
             opt.O2ILoss_dB = [];
             opt.IndoorRx = false;
             opt.IndoorDistance_m = [];
+            opt.O2IModelPerReceiver = strings(0,1);
             opt.PathlossEnabled = obj.PathlossEnabled;
             opt.ShadowFadingEnabled = obj.ShadowFadingEnabled;
             opt.LOSEnabled = obj.LOSEnabled;
@@ -238,6 +239,8 @@ classdef TR38901Plus < handle
                         opt.IndoorRx = logical(val);
                     case {"indoordistance_m","dindoor_m","dindoor"}
                         opt.IndoorDistance_m = double(val);
+                    case {"o2imodelperreceiver","o2imodels"}
+                        opt.O2IModelPerReceiver = string(val);
                     case "pathlossenabled"
                         opt.PathlossEnabled = logical(val);
                     case "shadowfadingenabled"
@@ -341,9 +344,24 @@ classdef TR38901Plus < handle
                     dIn = repmat(dIn,1,N);
                 end
                 o2iStatus = struct();
+                receiverModels = reshape(string(opt.O2IModelPerReceiver), 1, []);
+                if isempty(receiverModels)
+                    receiverModels = repmat(string(obj.O2IModel), 1, N);
+                elseif numel(receiverModels) ~= N
+                    error("TR38901Plus:pathloss:BadO2IModelVector", ...
+                        "O2IModelPerReceiver must have one entry per receiver.");
+                end
+                unspecified = ismissing(receiverModels) | ...
+                    strlength(strtrim(receiverModels)) == 0;
+                receiverModels(unspecified) = string(obj.O2IModel);
                 for k = 1:N
                     if indoor(k)
-                        if lower(strtrim(obj.O2IModel)) == "custom"
+                        receiverModel = lower(strtrim(receiverModels(k)));
+                        if ~ismember(receiverModel, ["none","off","low","high","custom"])
+                            error("TR38901Plus:pathloss:BadO2IModelVector", ...
+                                "Indoor receiver %d requires none/off, low, high or custom O2I model.", k);
+                        end
+                        if receiverModel == "custom"
                             if obj.ChannelComplianceMode == "strict_38901"
                                 error("TR38901Plus:StrictO2IBlocked", ...
                                     "Strict 38.901 mode does not allow custom O2I loss for indoor receivers without explicit runtime O2I metadata.");
@@ -354,13 +372,13 @@ classdef TR38901Plus < handle
                                 "ComplianceStatus", "configured_custom_o2i_loss_not_strict_38901", ...
                                 "Reason", "custom configured o2i loss is caller supplied and not a strict tr38901 building penetration model");
                         else
-                            [o2i(k), o2iStatus] = sixgr.channel.O2ILoss(obj.Fc_Hz, obj.O2IModel, ...
+                            [o2i(k), o2iStatus] = sixgr.channel.O2ILoss(obj.Fc_Hz, receiverModel, ...
                                 "IndoorDistance_m", dIn(k), "Stream", obj.Stream);
                             if obj.ChannelComplianceMode == "strict_38901" && ...
                                     ~logical(sixgr.util.structGet(o2iStatus, "StrictSupported", false))
                                 error("TR38901Plus:StrictO2IBlocked", ...
                                     "Strict 38.901 mode requires O2I model 'low' or 'high'; got '%s'.", ...
-                                    char(obj.O2IModel));
+                                    char(receiverModel));
                             end
                         end
                     end
@@ -402,6 +420,7 @@ classdef TR38901Plus < handle
             ex.d3d_m = d3d(:);
             ex.los = los(:);
             ex.o2i_dB = o2i(:);
+            ex.o2iModelPerReceiver = reshape(string(opt.O2IModelPerReceiver), [], 1);
             ex.oxygenAbsorption_dB = oxygenAbsorption_dB(:);
             ex.shadow_dB = sf(:);
             ex.base_dB = plBase(:);
@@ -444,6 +463,14 @@ classdef TR38901Plus < handle
             K = size(uePos, 1);
             txPos = repmat(bsPos(cellIdx, :).', 1, K);
             rxPos = uePos.';
+            receiverModels=string(sixgr.util.structGet(geometryState, ...
+                "O2IModelPerReceiver",strings(K,1)));
+            if isequal(size(receiverModels),[K size(bsPos,1)])
+                receiverModels=receiverModels(:,cellIdx);
+            elseif ~isequal(size(receiverModels),[K 1])
+                error('TR38901Plus:pathlossFromGeometryState:BadO2IModelShape', ...
+                    'Geometry O2I models must be receiver-by-cell or one shared receiver column.');
+            end
             passthrough = {};
             if mod(numel(varargin), 2) ~= 0
                 error("TR38901Plus:pathlossFromGeometryState:BadNV", ...
@@ -462,6 +489,7 @@ classdef TR38901Plus < handle
                 "Scenario", string(sixgr.util.structGet(geometryState, "PropagationScenario", obj.Scenario)), ...
                 "IndoorRx", reshape(logical(geometryState.IndoorRx(:, cellIdx)), 1, []), ...
                 "IndoorDistance_m", reshape(double(geometryState.IndoorDistance_m(:, cellIdx)), 1, []), ...
+                "O2IModelPerReceiver", reshape(receiverModels, 1, []), ...
                 "PathlossEnabled", logical(sixgr.util.structGet(geometryState, "PathlossEnabled", obj.PathlossEnabled)), ...
                 "ShadowFadingEnabled", logical(sixgr.util.structGet(geometryState, "ShadowFadingEnabled", obj.ShadowFadingEnabled)), ...
                 "LOSEnabled", logical(sixgr.util.structGet(geometryState, "LOSEnabled", obj.LOSEnabled)), ...

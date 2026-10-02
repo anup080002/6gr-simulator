@@ -46,6 +46,7 @@ except Exception as exc:  # pragma: no cover - exercised by import-shim regressi
 import yaml
 
 import lls_output_contract as output_contract
+import sixgr_sls_dashboard as sls_dashboard
 import lls_contract_materializer as contract_materializer
 from lls_sweep_report import observe_sweep
 from lls_runtime_visualization_evidence import verified_runtime_visualizations
@@ -291,7 +292,7 @@ OUTPUT_PERSISTENCE_OPTIONS = ["both", "database", "results_folder"]
 FILESYSTEM_RUN_ID_BASE = 9_000_000_000
 FILESYSTEM_RUN_ID_LIMIT = 9_900_000_000
 FILESYSTEM_ARTIFACT_ID_BASE = 9_000_000_000_000
-BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS", "E2E"]
+BROWSER_EXECUTION_MODE_OPTIONS = ["LLS", "SLS"]
 BROWSER_EXECUTION_MODE_LABELS = {
     "LLS": "LLS",
     "SLS": "SLS",
@@ -299,7 +300,7 @@ BROWSER_EXECUTION_MODE_LABELS = {
 }
 BROWSER_EXECUTION_MODE_NOTES = {
     "LLS": "Browser launch is fully wired for the truthful LLS coupled-truth path in this dashboard.",
-    "SLS": "SLS is separated from LLS here, but browser launch for the system-level runner is not enabled from this page in this pass.",
+    "SLS": "Native system configuration via run_sixgr; calibrated network estimates stay separate from waveform truth. Qualified calibration is required.",
     "E2E": "E2E is separated from LLS here, but browser launch for the packet-stack flow is not enabled from this page in this pass.",
 }
 FULLY_WIRED_BROWSER_EXECUTION_MODE = "LLS"
@@ -2898,11 +2899,16 @@ def resolve_home_group(path: str) -> str:
 
 def classify_browser_field_support(path: str) -> tuple[str, str]:
     normalized = str(path or "").strip().lower()
+    if normalized.startswith("sls.config."):
+        return (
+            "configured",
+            "Passed to the native SLS configuration without LLS alias conversion. Applicability depends on the selected backend and enabled producer; an editable field is not proof of execution or scientific qualification.",
+        )
     if normalized == "run_control.execution_mode":
         return (
             "active",
             "This top-level browser selector is serialized into the authoritative payload and routes the backend launch path. "
-            "In this pass, only LLS is fully launchable from /run; SLS, End-to-end, and Test all stay explicitly separated and blocked from accidental LLS execution.",
+            "LLS and SLS use separate configuration contracts and engines through run_sixgr; an SLS request cannot accidentally execute as LLS. Study qualification is independent of mode selection.",
         )
     if normalized in {
         "mobility.ue_speed_kmh",
@@ -3645,6 +3651,11 @@ def expand_singlefile_canonical_control(payload: dict[str, Any], new_defaults: d
 def canonicalize_browser_config_payload(payload: dict[str, Any], keep_legacy_aliases: bool = False) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return payload
+    if str(path_get(payload, "run_control.execution_mode", "")).upper() == "SLS" or "sls" in payload:
+        resolved = copy.deepcopy(payload)
+        for key in BROWSER_GENERATED_TOP_LEVEL_KEYS:
+            resolved.pop(key, None)
+        return resolved
     resolved = copy.deepcopy(payload)
     for key in BROWSER_GENERATED_TOP_LEVEL_KEYS:
         resolved.pop(key, None)
@@ -3887,17 +3898,25 @@ def output_persistence_surface(config_payload: dict[str, Any]) -> dict[str, Any]
 def load_resolved_config_payload(rel_path: str) -> tuple[dict[str, Any], list[str]]:
     scenario_path = resolve_scenario_path(rel_path)
 
-    def _resolve_tree(config_path: Path, chain: list[str]) -> tuple[dict[str, Any], list[str]]:
+    def _resolve_tree(config_path: Path, chain: list[str], ancestors: tuple[Path, ...] = ()) -> tuple[dict[str, Any], list[str]]:
+        config_path = config_path.resolve()
+        if config_path in ancestors:
+            raise ValueError(f"Configuration inheritance cycle: {config_path}")
         raw = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
         if not isinstance(raw, dict):
             raise ValueError(f"Config '{config_path}' must decode to a mapping.")
+        if isinstance(raw.get("sls"), dict) and "config_files" in raw["sls"]:
+            references = raw["sls"]["config_files"]
+            if isinstance(references, str):
+                references = [references]
+            raw["sls"]["config_files"] = [str(resolve_catalog_reference(config_path, str(ref))) for ref in references]
         inherits = raw.get("inherits", [])
         if isinstance(inherits, str):
             inherits = [inherits]
         merged: dict[str, Any] = {}
         for inherit_ref in inherits:
             parent_path = resolve_catalog_reference(config_path, str(inherit_ref))
-            parent_payload, chain = _resolve_tree(parent_path, chain)
+            parent_payload, chain = _resolve_tree(parent_path, chain, (*ancestors, config_path))
             merged = merge_config_dict(merged, parent_payload)
         raw_no_inherits = dict(raw)
         raw_no_inherits.pop("inherits", None)
@@ -3906,6 +3925,16 @@ def load_resolved_config_payload(rel_path: str) -> tuple[dict[str, Any], list[st
         return merged, chain
 
     payload, chain = _resolve_tree(scenario_path, [])
+    if str(path_get(payload, "run_control.execution_mode", "")).upper() == "SLS":
+        core_path = REPO_ROOT / "simulator/configs/schema/core_parameter_catalog.yaml"
+        core = yaml.safe_load(core_path.read_text(encoding="utf-8"))
+        native = sls_dashboard.native_catalog_defaults(core["parameters"])
+        for reference in path_get(payload, "sls.config_files", []):
+            fragment_path = resolve_catalog_reference(scenario_path, str(reference))
+            fragment, chain = _resolve_tree(fragment_path, chain)
+            native = merge_config_dict(native, fragment)
+        path_set(payload, "sls.config", merge_config_dict(native, path_get(payload, "sls.config", {})))
+        return canonicalize_browser_config_payload(payload), chain
     return apply_output_persistence_defaults(canonicalize_browser_config_payload(payload)), chain
 
 
@@ -4276,6 +4305,26 @@ def scenario_waveform_bundle_runtime_readiness(config_payload: dict[str, Any]) -
 
 
 def scenario_launch_contract(config_payload: dict[str, Any], scenario_name: str) -> dict[str, Any]:
+    mode = str(path_get(config_payload, "run_control.execution_mode", "LLS")).upper()
+    if mode == "SLS":
+        native = path_get(config_payload, "sls.config", {})
+        allowed, reason = sls_dashboard.launch_readiness(native if isinstance(native, dict) else {})
+        extra = set(config_payload) - {"meta", "run_control", "sls", "inherits"}
+        if extra:
+            allowed, reason = False, "SLS parameters must be under sls.config, not unused LLS root fields: " + ", ".join(sorted(extra))
+        return {
+            "scenario": scenario_name, "scenario_id": path_get(config_payload, "meta.scenario_id", ""),
+            "scenario_group": "system_level", "runner_profile": "system_level",
+            "claims_waveform_truth": False, "launch_allowed": allowed,
+            "launch_contract": "native_sls_configuration", "presentation_label": "SLS network simulation",
+            "launch_reason": reason,
+            "catalog_label": scenario_name, "tags": ["SLS"], "runtime_truth_ready": False,
+            "runtime_truth_reason": "SLS backend classification is explicit, not inferred waveform truth.",
+            "execution_model": "system_level", "user_count": path_get(native, "scenario.ue.nUE", 0),
+            "requested_total_slots": path_get(native, "run.numTTI", 0),
+        }
+    if mode != "LLS" or "sls" in config_payload:
+        raise ValueError("Select matching LLS/SLS YAML and run_control.execution_mode; modes are not interchangeable labels.")
     runner_profile = str(path_get(config_payload, "scenario.runner_profile", "") or "").strip()
     runner_profile_token = runner_profile.lower()
     scenario_id = str(path_get(config_payload, "meta.scenario_id", "") or "").strip()
@@ -4832,12 +4881,34 @@ def _is_generic_sweep_parent_preflight(run_dir: Path) -> bool:
         return False
 
 
+def _is_active_waveform_preflight(run_dir: Path) -> bool:
+    """Recognize a real waveform run while exact allocation is initializing.
+
+    Resolved configuration snapshots prove that normalization reached the run
+    folder, but they are not execution evidence by themselves.  Require the
+    exact run tag in a currently active MATLAB command line so abandoned or
+    copied config-only folders remain hidden.
+    """
+
+    identity_path = _windows_extended_path(
+        run_dir / "meta" / "scenario_config_identity.json"
+    )
+    resolved_path = _windows_extended_path(
+        run_dir / "meta" / "scenario_config_resolved.json"
+    )
+    if not (identity_path.is_file() and resolved_path.is_file()):
+        return False
+    return local_run_process_active({"run_tag": run_dir.name})
+
+
 def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
     """Return true only for a folder with a recognized atomic run authority."""
     def is_file(relative_path: Path) -> bool:
         return _windows_extended_path(run_dir / relative_path).is_file()
 
     return (
+        is_file(Path("meta") / "simulation_run.json")
+        or
         is_file(Path("meta") / "scenario_manifest.json")
         or is_file(Path("reports") / "csv" / "scenario_summary.csv")
         or is_file(Path("artifact_generation") / "component_qualification_manifest.csv")
@@ -4851,19 +4922,26 @@ def _is_discoverable_filesystem_run_folder(run_dir: Path) -> bool:
             and is_file(Path("truth_contract.csv"))
         )
         or (
-            is_file(Path("air_interface") / "reports" / "csv" / "live_stage_status.csv")
+            (
+                is_file(Path("reports") / "csv" / "live_stage_status.csv")
+                or is_file(Path("air_interface") / "reports" / "csv" / "live_stage_status.csv")
+            )
             and (
                 is_file(Path("meta") / "scenario_config_identity.json")
                 or is_file(Path("meta") / "scenario_config_resolved.json")
             )
         )
         or _is_generic_sweep_parent_preflight(run_dir)
+        or _is_active_waveform_preflight(run_dir)
     )
 
 
 def _filesystem_run_folders() -> list[Path]:
     folders: list[Path] = []
     for root in _dashboard_result_roots():
+        sls_root = root / "sls"
+        if sls_root.is_dir():
+            folders.extend(path.parent.parent for path in sls_root.glob("*/*/meta/simulation_run.json"))
         lls_root = root / "lls"
         if not lls_root.is_dir():
             continue
@@ -4902,6 +4980,15 @@ def _filesystem_run_folders() -> list[Path]:
 def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     if not _windows_extended_path(run_folder).is_dir():
         return None
+    if (run_folder / "meta/simulation_run.json").is_file():
+        row = sls_dashboard.run_row(run_folder, _filesystem_run_id_for_folder(run_folder))
+        if row and row["status_text"] in {"running", "initializing"}:
+            receipt = json.loads(row["status_json"])
+            pid = int(receipt.get("MatlabPID") or 0)
+            if pid > 0 and not process_command_line_for_pid(pid):
+                row["status_text"] = "process_unobserved"
+                row["observed_process_state"] = "recorded_matlab_pid_not_observed_no_completion_claim"
+        return row
     manifest_path = run_folder / "meta" / "scenario_manifest.json"
     summary_path = run_folder / "reports" / "csv" / "scenario_summary.csv"
     qualification_path = (
@@ -4924,12 +5011,21 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         / "artifact_generation"
         / "component_qualification_summary.csv"
     )
-    live_stage_path = (
+    live_stage_candidates = (
+        run_folder / "reports" / "csv" / "live_stage_status.csv",
         run_folder
         / "air_interface"
         / "reports"
         / "csv"
-        / "live_stage_status.csv"
+        / "live_stage_status.csv",
+    )
+    live_stage_path = next(
+        (
+            candidate
+            for candidate in live_stage_candidates
+            if _windows_extended_path(candidate).is_file()
+        ),
+        live_stage_candidates[0],
     )
     config_identity_path = run_folder / "meta" / "scenario_config_identity.json"
     config_json_path = run_folder / "meta" / "scenario_config_resolved.json"
@@ -4960,6 +5056,10 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
     compact_manifest_rows = _read_csv_records(compact_manifest_path)
     compact_resolved_config = _read_json_file(compact_config_path)
     generic_sweep_preflight = _is_generic_sweep_parent_preflight(run_folder)
+    active_waveform_preflight = (
+        not generic_sweep_preflight
+        and _is_active_waveform_preflight(run_folder)
+    )
     compact_lls_run = bool(
         compact_provenance
         and compact_summary
@@ -4977,6 +5077,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         and not compact_lls_run
         and not (live_stage and (config_identity or resolved_config))
         and not generic_sweep_preflight
+        and not active_waveform_preflight
     ):
         return None
     run_id = _filesystem_run_id_for_folder(run_folder)
@@ -5061,6 +5162,8 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         run_completion = "running"
     if not run_completion and generic_sweep_preflight:
         run_completion = "initializing"
+    if not run_completion and active_waveform_preflight:
+        run_completion = "initializing"
     if not run_completion:
         completed = _truthy_value(summary.get("RunCompleted") or manifest.get("RunCompleted"))
         run_completion = "completed" if completed is True else "results_folder"
@@ -5134,6 +5237,7 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         ]
     )
     generic_sweep_preflight_stale = False
+    live_stage_stale = False
     if generic_sweep_preflight and run_completion == "initializing" and updated_utc:
         try:
             last_update = datetime.fromisoformat(updated_utc.replace("Z", "+00:00"))
@@ -5150,6 +5254,23 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
             # indefinitely after its run-specific process and heartbeat vanish.
             run_completion = "aborted_stale_no_run_process"
             generic_sweep_preflight_stale = True
+    if live_stage and run_completion == "running" and updated_utc:
+        try:
+            last_update = datetime.fromisoformat(updated_utc.replace("Z", "+00:00"))
+        except ValueError:
+            last_update = None
+        if (
+            last_update is not None
+            and last_update < datetime.now(timezone.utc) - timedelta(minutes=STALE_RUNNING_MINUTES)
+            and not local_run_process_active({"run_tag": run_folder.name})
+        ):
+            # A retained live-stage row proves that waveform execution started,
+            # but it is not a permanent running-status authority.  Once both
+            # the run-specific process and filesystem heartbeat disappear,
+            # expose the interruption honestly so an obsolete run cannot hide
+            # the newest retained result in the WebGUI live-run selector.
+            run_completion = "aborted_stale_no_run_process"
+            live_stage_stale = True
     generated_utc = str(
         manifest.get("GeneratedUTC")
         or qualification.get("StartUTC")
@@ -5173,14 +5294,22 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "status": run_completion,
         "run_completion": run_completion,
         "stage": str(
-            live_stage.get("Stage")
-            or (
-                "generic_sweep_preflight_stale"
-                if generic_sweep_preflight_stale
-                else (
-                    "generic_sweep_child_preflight"
-                    if generic_sweep_preflight
-                    else "filesystem_result_folder"
+            "live_stage_stale"
+            if live_stage_stale
+            else (
+                live_stage.get("Stage")
+                or (
+                    "generic_sweep_preflight_stale"
+                    if generic_sweep_preflight_stale
+                    else (
+                        "generic_sweep_child_preflight"
+                        if generic_sweep_preflight
+                        else (
+                            "waveform_bundle_preflight"
+                            if active_waveform_preflight
+                            else "filesystem_result_folder"
+                        )
+                    )
                 )
             )
         ),
@@ -5193,15 +5322,23 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
                 summary.get("StatusAuthority")
                 or manifest.get("StatusAuthority")
                 or (
-                    "live_stage_status"
-                    if live_stage
+                    "dashboard_process_and_artifact_staleness"
+                    if live_stage_stale
                     else (
-                        "dashboard_process_and_artifact_staleness"
-                        if generic_sweep_preflight_stale
+                        "live_stage_status"
+                        if live_stage
                         else (
-                            "generic_sweep_resolved_config_and_materialized_child"
-                            if generic_sweep_preflight
-                            else "filesystem_scenario_summary"
+                            "dashboard_process_and_artifact_staleness"
+                            if generic_sweep_preflight_stale
+                            else (
+                                "generic_sweep_resolved_config_and_materialized_child"
+                                if generic_sweep_preflight
+                                else (
+                                    "resolved_config_and_active_run_process"
+                                    if active_waveform_preflight
+                                    else "filesystem_scenario_summary"
+                                )
+                            )
                         )
                     )
                 )
@@ -5280,12 +5417,17 @@ def filesystem_run_row_from_folder(run_folder: Path) -> dict[str, Any] | None:
         "current_slot": _int_value(live_stage.get("CurrentSlot")),
         "total_slots": _int_value(live_stage.get("TotalSlots")),
     }
-    if generic_sweep_preflight_stale:
+    if generic_sweep_preflight_stale or live_stage_stale:
         status_payload.update(
             {
                 "reason": (
-                    "The generic sweep materialized a child preflight folder, "
-                    "but no matching MATLAB process or fresh filesystem heartbeat remains."
+                    "The retained live-stage row has no matching MATLAB process "
+                    "or fresh filesystem heartbeat."
+                    if live_stage_stale
+                    else (
+                        "The generic sweep materialized a child preflight folder, "
+                        "but no matching MATLAB process or fresh filesystem heartbeat remains."
+                    )
                 ),
                 "stale_running_minutes": STALE_RUNNING_MINUTES,
                 "last_updated_utc": updated_utc,
@@ -6131,6 +6273,12 @@ def normalize_run_yaml(raw_text: str, scenario_name: str | None = None) -> str:
         raw_payload_for_overlay = copy.deepcopy(payload)
     payload = _coerce_scalar_strings(payload)
     payload = canonicalize_browser_config_payload(payload, keep_legacy_aliases=True)
+    if str(path_get(payload, "run_control.execution_mode", "")).upper() == "SLS":
+        if scenario_name:
+            payload = build_runtime_overlay_payload(str(scenario_name), payload, raw_payload_for_overlay)
+        # Native SLS outputs are configured in sls.config.outputs. LLS aliases
+        # and MYSQL environment defaults must not overwrite their authority.
+        return yaml.safe_dump(payload, sort_keys=False, allow_unicode=False)
     requested_output_cfg = copy.deepcopy(payload.get("output") if isinstance(payload.get("output"), dict) else {})
     requested_output_control_cfg = copy.deepcopy(
         payload.get("output_control") if isinstance(payload.get("output_control"), dict) else {}
@@ -6335,7 +6483,7 @@ def _launch_run_from_yaml_locked(scenario_name: str, yaml_text: str, run_tag: st
         "setup6GRSimToolkit('Verbose',false); "
         "fprintf('[sixgr-webgui] Execution policy: license_safe_serial "
         f"({WEBGUI_EXECUTION_WORKERS} worker, parallel pool disabled).\\n'); "
-        f"run_6g_phy_lls_single('{matlab_literal(rel_runtime_path)}','results','{matlab_literal(token)}');"
+        f"run_sixgr('{matlab_literal(rel_runtime_path)}','results','{matlab_literal(token)}');"
     )
     creationflags = 0
     if os.name == "nt":
@@ -7274,7 +7422,24 @@ def build_browser_alias_lookup() -> dict[str, list[str]]:
     return lookup
 
 
+@lru_cache(maxsize=1)
+def native_sls_parameter_catalog() -> dict[str, Any]:
+    path = REPO_ROOT / "simulator/configs/schema/core_parameter_catalog.yaml"
+    return yaml.safe_load(path.read_text(encoding="utf-8"))["parameters"]
+
+
+def native_sls_parameter_spec(path: str) -> dict[str, Any]:
+    if not path.startswith("sls.config."):
+        return {}
+    spec = path_get(native_sls_parameter_catalog(), path.removeprefix("sls.config."), {})
+    return spec if isinstance(spec, dict) else {}
+
+
 def field_options_for_path(path: str, value: Any) -> list[str] | None:
+    if path.startswith("sls.config."):
+        options = native_sls_parameter_spec(path).get("allowed_values")
+        # No suffix/leaf guessing from unrelated LLS fields for native SLS.
+        return [str(option) for option in options] if options else None
     normalized = path.lower()
     if isinstance(value, bool):
         return ["true", "false"]
@@ -7380,6 +7545,11 @@ def flatten_config_fields(value: Any, prefix: str = "") -> list[dict[str, Any]]:
         entry.update({"kind": "text", "value": value, "options": field_options_for_path(prefix, value)})
     else:
         entry.update({"kind": "json", "value": json.dumps(value, ensure_ascii=False), "options": None})
+    native_type = native_sls_parameter_spec(prefix).get("value_type")
+    if native_type == "number":
+        entry["kind"] = "float"
+    elif native_type == "integer":
+        entry["kind"] = "int"
     entry["search_text"] = build_field_search_text(prefix, label, entry["value"], entry.get("options")) + " " + support_state + " " + support_note.lower()
     fields.append(entry)
     return fields
@@ -7435,8 +7605,8 @@ def infer_browser_truth_modes(config_payload: dict[str, Any]) -> dict[str, str]:
     ).strip()
     if not noise_mode:
         noise_mode = "receiver_noise_figure_thermal_noise"
-    entrypoint = "run_6g_phy_lls_single" if browser_mode == "LLS" else "not_wired_from_browser_dashboard"
-    browser_control_plane = "authoritative_runtime_yaml_overlay" if browser_mode == "LLS" else "selector_separated_not_launched_here"
+    entrypoint = "run_sixgr"
+    browser_control_plane = "authoritative_runtime_yaml_overlay"
     return {
         "browser_execution_mode": browser_mode,
         "browser_execution_mode_label": BROWSER_EXECUTION_MODE_LABELS.get(browser_mode, browser_mode),
@@ -8098,6 +8268,18 @@ def build_plot_browser_payload(run_id: int) -> dict[str, Any]:
     run_row = fetch_run(run_id)
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
+    if sls_dashboard.is_sls_run(run_row):
+        artifacts = filesystem_artifacts_for_run(run_row)
+        tables = [a for a in artifacts if str(a.get("logical_path", "")).endswith(".csv")
+                  and sls_dashboard.chartable_csv(Path(run_row["run_folder"]) / a["logical_path"])]
+        images = [a for a in artifacts if str(a.get("logical_path", "")).lower().endswith((".png", ".svg"))]
+        items, nc, ni = _build_legacy_plot_browser_items(tables, images)
+        items, buckets = bucketize_plot_browser_items(items)
+        return {"run_id": run_id, "mode": "sls_persisted_network_evidence", "items": items,
+                "canonical_items": items, "raw_items": items, "buckets": buckets,
+                "canonical_buckets": buckets, "raw_buckets": buckets, "interactive_count": nc,
+                "image_count": ni, "total_count": len(items), "unavailable_count": 0,
+                "raw_total_count": len(items), "suppressed_raw_count": 0}
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
@@ -8259,6 +8441,15 @@ def build_table_browser_payload(run_id: int) -> dict[str, Any]:
     run_row = fetch_run(run_id)
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
+    if sls_dashboard.is_sls_run(run_row):
+        artifacts = filesystem_artifacts_for_run(run_row)
+        items = [build_artifact_descriptor(a) for a in artifacts
+                 if str(a.get("logical_path", "")).endswith(".csv")]
+        items, buckets = bucketize_table_browser_items(items)
+        return {"run_id": run_id, "items": items, "buckets": buckets,
+                "table_count": len(items), "raw_table_count": len(items),
+                "suppressed_duplicate_count": 0, "source": "persisted_sls_network_tables",
+                "artifact_version": artifact_content_version(artifacts, run_row)}
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
@@ -10974,7 +11165,11 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("BitErrors", "Bit errors"),
         ("BitsCompared", "Bits"),
         ("EVM_rms", "EVM rms"),
-        ("NMSE_dB", "NMSE dB"),
+        ("NMSE_dB", "Qualified NMSE dB"),
+        ("RawChannelNMSE_dB", "Raw plane NMSE dB"),
+        ("ChannelNMSEQualificationMode", "NMSE qualification mode"),
+        ("ChannelNMSEPhaseAligned", "Common LO phase aligned"),
+        ("ChannelNMSECommonPhaseRotation_rad", "Common LO phase (rad)"),
         ("NMSEScoringAvailable", "NMSE scoring available"),
         ("NMSEReferenceSource", "NMSE reference source"),
         ("ChannelEstimateAvailable", "Channel estimate available"),
@@ -11101,7 +11296,10 @@ CONTROL_TRIAL_PREVIEW_COLUMNS: dict[str, list[tuple[str, str]]] = {
         ("TimingOffset_samples", "Timing off"),
         ("EstimatedTimingOffset_samples", "Timing estimate (samples)"),
         ("AppliedTimingCorrection_samples", "Applied timing correction (samples)"),
-        ("SRSReceiveTimingOffset_samples", "SRS receive timing (samples)"),
+        ("SRSReceiveTimingOffset_samples", "SRS residual timing (samples)"),
+        ("SRSCaptureExtractionOffset_samples", "SRS capture extraction (samples)"),
+        ("SRSExpectedCaptureOffset_samples", "Expected capture center offset (samples)"),
+        ("SRSExpectedReceiveCenterSample", "Expected receive center sample"),
         ("SRSAppliedTimingCorrection_samples", "SRS timing correction (samples)"),
         ("SRSReceiveTimingSource", "SRS timing source"),
         ("InjectedCFO_Hz", "Injected CFO (Hz)"),
@@ -17220,6 +17418,10 @@ def build_lite_live_payload(run_id: int) -> dict[str, Any]:
     run_row = fetch_run(run_id)
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
+    if sls_dashboard.is_sls_run(run_row):
+        payload = sls_dashboard.live_payload(run_row, filesystem_artifacts_for_run(run_row))
+        payload["logs_recent"] = filesystem_log_rows(run_row)
+        return payload
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
@@ -17340,6 +17542,10 @@ def build_live_payload(run_id: int, *, lite: bool = False) -> dict[str, Any]:
     run_row = fetch_run(run_id)
     if run_row is None:
         raise KeyError(f"Run {run_id} was not found.")
+    if sls_dashboard.is_sls_run(run_row):
+        payload = sls_dashboard.live_payload(run_row, filesystem_artifacts_for_run(run_row))
+        payload["logs_recent"] = filesystem_log_rows(run_row)
+        return payload
     inserted_logs = sync_runtime_log_for_run(run_row)
     if inserted_logs:
         run_row = fetch_run(run_id) or run_row
@@ -17932,7 +18138,7 @@ def build_compact_access_page(title: str, subtitle: str, body: str) -> bytes:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{html.escape(title)} | 6G Link-Level Simulator</title>
+  <title>{html.escape(title)} | SixGR LLS / SLS Simulator</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23087a70'/%3E%3Ctext x='32' y='40' text-anchor='middle' font-family='Arial' font-size='25' font-weight='700' fill='white'%3E6G%3C/text%3E%3C/svg%3E">
   {product_frontend_style()}
   <style>
@@ -17947,7 +18153,7 @@ def build_compact_access_page(title: str, subtitle: str, body: str) -> bytes:
     <aside class="sidebar">
       <div class="brand">
         <div class="brand-mark">6G</div>
-        <div><h1>6G Link-Level<br>Simulator</h1></div>
+        <div><h1>SixGR LLS / SLS<br>Simulator</h1></div>
       </div>
     </aside>
     <section class="workspace">
@@ -18041,7 +18247,7 @@ def build_profile_page(user_profile: dict[str, Any]) -> bytes:
       <section class="panel">
         <h3>Session Scope</h3>
         <ul>
-          <li>Launch and monitor LLS runs from the browser.</li>
+          <li>Launch and monitor YAML-configured LLS or SLS runs from the browser.</li>
           <li>Inspect realtime DB tables, analytics, images, logs, and maps.</li>
           <li>Read the code-grounded implementation documentation.</li>
         </ul>
@@ -18551,6 +18757,12 @@ def product_field_records(config_payload: dict[str, Any]) -> list[dict[str, Any]
         path = str(field.get("path") or "")
         value = field.get("value")
         domain = product_field_domain(path)
+        if path.startswith("sls.config."):
+            native_path = path.removeprefix("sls.config.")
+            domain = {"run": "run_control", "outputs": "run_control", "scenario": "geometry",
+                      "channel": "antenna_air", "rf": "antenna_air", "phy": "l1_phy",
+                      "traffic": "traffic", "mac": "mac_scheduler", "system": "mac_scheduler"}.get(
+                          native_path.split(".")[0], "scenario")
         taxonomy = parameter_taxonomy_entry(path)
         binding = build_matrix_binding_payload(path)
         feature_family = binding.get("feature_family") or taxonomy.get("feature_family", "Uncategorized")
@@ -18577,7 +18789,7 @@ def product_field_records(config_payload: dict[str, Any]) -> list[dict[str, Any]
                 "role": field.get("support_state") or "active",
                 "support_note": field.get("support_note") or "",
                 "binding": binding,
-                "internal_cfg_path": binding.get("internal_cfg_path", ""),
+                "internal_cfg_path": path.removeprefix("sls.config.") if path.startswith("sls.config.") else binding.get("internal_cfg_path", ""),
                 "runtime_object_path": binding.get("runtime_object_path", ""),
                 "matlab_consumer_functions": binding.get("matlab_consumer_functions", []),
                 "evidence_artifact": binding.get("evidence_artifact", ""),
@@ -18762,10 +18974,11 @@ def build_product_frontend_page(
         "parameters",
     }
     product_data = {
-        "title": "6G Link-Level Simulator",
+        "title": "SixGR LLS / SLS Simulator",
         "page": page,
         "nav": [{"id": item[0], "label": item[1], "href": item[2]} for item in PRODUCT_NAV],
-        "modes": ["LLS"],
+        "modes": BROWSER_EXECUTION_MODE_OPTIONS,
+        "launchable_modes": BROWSER_EXECUTION_MODE_OPTIONS,
         "mode_labels": BROWSER_EXECUTION_MODE_LABELS,
         "mode_notes": BROWSER_EXECUTION_MODE_NOTES,
         "fully_wired_mode": FULLY_WIRED_BROWSER_EXECUTION_MODE,
@@ -18936,7 +19149,8 @@ window.addEventListener('DOMContentLoaded', function () {
   state.phyGrid = null;
   state.phyGridLoading = false;
   state.backendLoading = false;
-  const wired = root.fully_wired_mode || 'LLS';
+  const modeIsWired = () => ['LLS', 'SLS'].includes(state.mode);
+  state.resultMode = query.get('result_mode') || 'all';
   const esc = (v) => String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const get = (obj, path, fallback) => String(path || '').split('.').filter(Boolean).reduce((node, key) => node && typeof node === 'object' && key in node ? node[key] : undefined, obj) ?? fallback;
   const set = (obj, path, value) => { const parts = String(path || '').split('.').filter(Boolean); let node = obj; parts.slice(0,-1).forEach(k => { if (!node[k] || typeof node[k] !== 'object' || Array.isArray(node[k])) node[k] = {}; node = node[k]; }); if (parts.length) node[parts[parts.length - 1]] = value; };
@@ -18981,6 +19195,7 @@ window.addEventListener('DOMContentLoaded', function () {
     return ['both','database','results_folder'].includes(normalized) ? normalized : 'both';
   }
   function applyOutputPersistenceMode() {
+    if (state.mode === 'SLS') return 'results_folder';
     if (!state.config || typeof state.config !== 'object') state.config = {};
     const current = normalizeOutputPersistenceMode(get(state.config, 'output.persistence_mode', get(state.config, 'output_control.output_persistence_mode', (root.output_persistence || {}).requested_mode || 'both')));
     set(state.config, 'output.persistence_mode', current);
@@ -18993,6 +19208,7 @@ window.addEventListener('DOMContentLoaded', function () {
     return current;
   }
   function outputPersistencePanel() {
+    if (state.mode === 'SLS') return '<section class="panel"><h3>SLS Output Persistence</h3><p>Filesystem: results/sls/&lt;scenario_id&gt;/&lt;run_tag&gt;. Configure CSV, MAT and figures in sls.config.outputs. Execution completion is separate from statistical study acceptance.</p></section>';
     const summary = root.output_persistence || {};
     const current = state.configLoaded ? normalizeOutputPersistenceMode(get(state.config, 'output.persistence_mode', summary.requested_mode || 'both')) : normalizeOutputPersistenceMode(summary.requested_mode || 'both');
     const options = (summary.options || ['both','database','results_folder']).map(mode => `<option value="${esc(mode)}"${mode === current ? ' selected' : ''}>${esc(mode.replace(/_/g, ' '))}</option>`).join('');
@@ -19062,6 +19278,14 @@ window.addEventListener('DOMContentLoaded', function () {
     return {ready:true, reason:'Waveform bundle dispatch is not blocked by the current browser launch contract.'};
   }
   function scenarioLaunchContract() {
+    if (state.mode === 'SLS') {
+      const native = state.config.sls?.config || {};
+      const p = native.system?.linkAbstraction || {};
+      const backend = native.system?.phyBackend;
+      const allowed = native.run?.mode === 'system' && native.run?.useConfigFragments === false && ['waveform','calibrated_link_abstraction'].includes(backend) && !p.allowDevelopmentFixtures && (backend !== 'calibrated_link_abstraction' || (p.calibrationFile && String(p.calibrationSHA256 || '').length === 64));
+      return {launchAllowed: !!allowed, launchContract: 'native_sls_configuration', presentationLabel: 'SLS network simulation', launchReason: allowed ? 'MATLAB verifies configuration and calibration content before execution.' : 'Select valid native SLS YAML and bind qualified calibration; test fixtures are forbidden.'};
+    }
+    if (get(state.config, 'sls', null)) return {launchAllowed: false, launchReason: 'SLS configuration cannot execute as LLS.'};
     const runnerProfile = String(state.configLoaded ? get(state.config, 'scenario.runner_profile', '') : (((root.scenario_contract || {}).runner_profile) || ((root.config_overview || {}).runner_profile) || '')).trim();
     const runnerProfileToken = runnerProfile.toLowerCase();
     const claimsWaveformTruth = scenarioClaimsWaveformTruth();
@@ -19162,7 +19386,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function scenarioModeCards() {
     const selected = currentScenarioMode();
-    return `<div class="scenario-mode-grid">${(root.scenario_modes || []).map(item => {
+    return `<label>Simulation mode<select id="simulationModeSelect">${['LLS','SLS'].map(mode => `<option value="${mode}"${state.mode === mode ? ' selected' : ''}>${mode}</option>`).join('')}</select></label><p class="mini-note">Choose a matching YAML. SLS native parameters are under sls.config; calibration and runtime guards remain active.</p><div class="scenario-mode-grid">${(root.scenario_modes || []).map(item => {
       const active = selected && selected.id === item.id;
       const icon = item.id === 'sinr_sweep' ? 'SNR' : (item.id === 'geometry_based' ? 'GEO' : 'QUAL');
       return `<button type="button" class="scenario-mode-card ${active ? 'active' : ''}" data-scenario-mode="${esc(item.id)}" data-scenario="${esc(item.scenario)}" aria-pressed="${active ? 'true' : 'false'}"><span class="mode-icon">${icon}</span><span><span class="badge">${esc(item.badge || '')}</span><h4>${esc(item.label)}</h4><p>${esc(item.summary || '')}</p></span><span class="mode-check">✓</span></button>`;
@@ -19214,7 +19438,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function pagePrefersActiveRun(pageId) { return String(pageId || state.page || '') === 'realtime'; }
   function currentPreferredRunId(runRows, pageId) {
-    const ordered = sortedRuns(runRows || state.runs || [], pagePrefersActiveRun(pageId));
+    const ordered = sortedRuns((runRows || state.runs || []).filter(matchesResultMode), pagePrefersActiveRun(pageId));
     return String(((ordered[0] || {}).run_id || ''));
   }
   function runsDigest(rows) {
@@ -19237,7 +19461,7 @@ window.addEventListener('DOMContentLoaded', function () {
   }
   function runSelectOptions(selected, options) {
     const opts = options || {};
-    const ordered = sortedRuns(state.runs || [], opts.preferActive !== false);
+    const ordered = sortedRuns((state.runs || []).filter(matchesResultMode), opts.preferActive !== false);
     const rows = opts.runningOnly ? ordered.filter(isActiveRun) : ordered;
     if (!rows.length) return '<option value="">No runs available</option>';
     return rows.map(run => {
@@ -19248,7 +19472,9 @@ window.addEventListener('DOMContentLoaded', function () {
       return `<option value="${esc(run.run_id)}"${String(run.run_id) === String(selected || '') ? ' selected' : ''}>${esc(label)}</option>`;
     }).join('');
   }
-  function pageRunSelector(selectId, label, options) { const opts = options || {}; const selected = selectedRunId(); const note = opts.note ? `<p class="mini-note">${esc(opts.note)}</p>` : ''; return `<div class="toolbar"><label>${esc(label || 'Run')}<select id="${esc(selectId)}" data-run-selector="true">${runSelectOptions(selected, opts)}</select></label>${opts.showRunningBadge ? `<span class="badge ${((state.runs || []).some(isActiveRun)) ? 'good' : 'warn'}">${esc(((state.runs || []).filter(isActiveRun).length))} active runs</span>` : ''}</div>${note}`; }
+  function matchesResultMode(run) { return state.resultMode === 'all' || (run.execution_mode || (run.bucket === 'sls' ? 'SLS' : 'LLS')) === state.resultMode; }
+  function resultModeSelector() { return `<label>Result mode<select data-result-mode="true">${['all','LLS','SLS'].map(mode => `<option value="${mode}"${state.resultMode === mode ? ' selected' : ''}>${mode === 'all' ? 'All modes' : mode}</option>`).join('')}</select></label>`; }
+  function pageRunSelector(selectId, label, options) { const opts = options || {}; const selected = selectedRunId(); const note = opts.note ? `<p class="mini-note">${esc(opts.note)}</p>` : ''; return `<div class="toolbar">${resultModeSelector()}<label>${esc(label || 'Run')}<select id="${esc(selectId)}" data-run-selector="true">${runSelectOptions(selected, opts)}</select></label>${opts.showRunningBadge ? `<span class="badge ${((state.runs || []).some(isActiveRun)) ? 'good' : 'warn'}">${esc(((state.runs || []).filter(isActiveRun).length))} active runs</span>` : ''}</div>${note}`; }
   function navigateWithRun(runId) { const url = new URL(window.location.href); if (runId) url.searchParams.set('run_id', runId); else url.searchParams.delete('run_id'); window.location.href = `${url.pathname}${url.search}`; }
   function evidenceTokens(value) { return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').split(/\\s+/).filter(token => token && token.length > 2 && !['the','and','for','with','from','into','over','time','chart','plot','view','views','analytics','runtime','live','graph'].includes(token)); }
   function tokenOverlapScore(left, right) { const rightSet = new Set(right || []); return (left || []).reduce((score, token) => score + (rightSet.has(token) ? 1 : 0), 0); }
@@ -19463,13 +19689,13 @@ window.addEventListener('DOMContentLoaded', function () {
     const contract = scenarioLaunchContract();
     const runButton = document.getElementById('runScenarioBtn');
     if (runButton) {
-      runButton.disabled = !state.configLoaded || state.mode !== wired || !contract.launchAllowed;
+      runButton.disabled = !state.configLoaded || !modeIsWired() || !contract.launchAllowed;
       runButton.textContent = state.configLoading ? 'Loading…' : 'Run';
     }
     updateRunPayload();
   }
   function title(t, s) { document.getElementById('pageTitle').textContent = t; document.getElementById('pageSubtitle').textContent = s; }
-  function home() { title(root.title, 'Clickable workflow, current scenario, warnings, recent runs, and configuration readiness.'); const cards = (root.architecture || []).map(b => `<article class="tile" data-block="${esc(b.id)}"><span class="badge">${esc(b.domain)}</span><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join(''); const fieldCount = Number(root.field_count || state.fields.length || 0); const overview = root.config_overview || {}; const contract = scenarioLaunchContract(); main.innerHTML = `<div class="grid four"><div class="tile metric"><h4>Mode</h4><div class="value">${esc(state.mode)}</div><p>${state.mode === wired && contract.launchAllowed ? 'Launch enabled' : 'Configure only'}</p></div><div class="tile metric"><h4>Launch Contract</h4><div class="value">${esc(contract.launchContract || 'unavailable')}</div><p>${esc(contract.presentationLabel || 'Runtime label pending')}</p></div><div class="tile metric"><h4>Config JSON</h4><div class="value">${state.configLoaded ? 'Ready' : 'Lazy'}</div><p>${state.configLoaded ? 'Loaded in browser memory' : 'Loaded on demand for edit pages and downloads'}</p></div><div class="tile metric"><h4>Latest Run</h4><div class="value">${esc((root.backend || {}).latest_run_id || 'none')}</div><p>${(root.backend || {}).latest_run_id ? 'Run-wise config download is available from Recent Runs.' : 'Result selector'}</p></div></div>${outputPersistencePanel()}<section class="panel"><h3>Architecture Workflow</h3><p class="subtle">Click a block to configure that subsystem.</p><div class="workflow">${cards}</div></section><div class="split"><section class="panel"><h3>Recent Runs</h3><div id="homeRecentRuns">${rows(state.runs.slice(0,10), 'No persisted runs are available yet.', {className:'page-table', scrollKey:'home-recent-runs'})}</div></section><section class="panel"><h3>Current Scenario Summary</h3>${objectTable({Scenario: root.scenario, Mode: state.mode, RunnerProfile: state.configLoaded ? get(state.config, 'scenario.runner_profile', overview.runner_profile || 'unavailable') : (overview.runner_profile || 'loading'), Presentation: contract.presentationLabel || overview.presentation_label || 'loading', LaunchAllowed: contract.launchAllowed, Carrier: state.configLoaded ? get(state.config, 'frequency.center_frequency_hz', get(state.config, 'global_radio_scope.carrier_frequency_hz', overview.carrier_hz || 'unavailable')) : (overview.carrier_hz || 'loading'), Bandwidth: state.configLoaded ? get(state.config, 'frequency.bandwidth_hz', get(state.config, 'global_radio_scope.channel_bandwidth_hz', overview.bandwidth_hz || 'unavailable')) : (overview.bandwidth_hz || 'loading'), Channel: state.configLoaded ? get(state.config, 'channels.profile', get(state.config, 'channel_model.scenario_label', overview.channel_profile || 'unavailable')) : (overview.channel_profile || 'loading'), UEs: overview.num_ues || 'unavailable', Slots: overview.total_slots || 'unavailable', OutputPersistence: state.configLoaded ? get(state.config, 'output.persistence_mode', (root.output_persistence || {}).requested_mode || 'both') : ((root.output_persistence || {}).requested_mode || 'loading')}, '')}<h3 style="margin-top:16px;">Warnings / Completeness</h3>${warnings()}</section></div>`; }
+  function home() { title(root.title, 'Clickable workflow, current scenario, warnings, recent runs, and configuration readiness.'); const cards = (root.architecture || []).map(b => `<article class="tile" data-block="${esc(b.id)}"><span class="badge">${esc(b.domain)}</span><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join(''); const fieldCount = Number(root.field_count || state.fields.length || 0); const overview = root.config_overview || {}; const contract = scenarioLaunchContract(); main.innerHTML = `<div class="grid four"><div class="tile metric"><h4>Mode</h4><div class="value">${esc(state.mode)}</div><p>${modeIsWired() && contract.launchAllowed ? 'Launch enabled' : 'Configure only'}</p></div><div class="tile metric"><h4>Launch Contract</h4><div class="value">${esc(contract.launchContract || 'unavailable')}</div><p>${esc(contract.presentationLabel || 'Runtime label pending')}</p></div><div class="tile metric"><h4>Config JSON</h4><div class="value">${state.configLoaded ? 'Ready' : 'Lazy'}</div><p>${state.configLoaded ? 'Loaded in browser memory' : 'Loaded on demand for edit pages and downloads'}</p></div><div class="tile metric"><h4>Latest Run</h4><div class="value">${esc((root.backend || {}).latest_run_id || 'none')}</div><p>${(root.backend || {}).latest_run_id ? 'Run-wise config download is available from Recent Runs.' : 'Result selector'}</p></div></div>${outputPersistencePanel()}<section class="panel"><h3>Architecture Workflow</h3><p class="subtle">Click a block to configure that subsystem.</p><div class="workflow">${cards}</div></section><div class="split"><section class="panel"><h3>Recent Runs</h3><div id="homeRecentRuns">${rows(state.runs.slice(0,10), 'No persisted runs are available yet.', {className:'page-table', scrollKey:'home-recent-runs'})}</div></section><section class="panel"><h3>Current Scenario Summary</h3>${objectTable({Scenario: root.scenario, Mode: state.mode, RunnerProfile: state.configLoaded ? get(state.config, 'scenario.runner_profile', overview.runner_profile || 'unavailable') : (overview.runner_profile || 'loading'), Presentation: contract.presentationLabel || overview.presentation_label || 'loading', LaunchAllowed: contract.launchAllowed, Carrier: state.configLoaded ? get(state.config, 'frequency.center_frequency_hz', get(state.config, 'global_radio_scope.carrier_frequency_hz', overview.carrier_hz || 'unavailable')) : (overview.carrier_hz || 'loading'), Bandwidth: state.configLoaded ? get(state.config, 'frequency.bandwidth_hz', get(state.config, 'global_radio_scope.channel_bandwidth_hz', overview.bandwidth_hz || 'unavailable')) : (overview.bandwidth_hz || 'loading'), Channel: state.configLoaded ? get(state.config, 'channels.profile', get(state.config, 'channel_model.scenario_label', overview.channel_profile || 'unavailable')) : (overview.channel_profile || 'loading'), UEs: overview.num_ues || 'unavailable', Slots: overview.total_slots || 'unavailable', OutputPersistence: state.configLoaded ? get(state.config, 'output.persistence_mode', (root.output_persistence || {}).requested_mode || 'both') : ((root.output_persistence || {}).requested_mode || 'loading')}, '')}<h3 style="margin-top:16px;">Warnings / Completeness</h3>${warnings()}</section></div>`; }
   function warnings() { const w = []; const contract = scenarioLaunchContract(); if (!(root.backend || {}).matlab_available) w.push(`MATLAB unavailable: ${(root.backend || {}).matlab_reason || 'set SIXGR_MATLAB_EXE or add MATLAB to PATH'}`); if ((root.backend || {}).mysql_status !== 'connected') w.push(`MySQL unavailable; results-folder mode remains available. ${(root.backend || {}).mysql_reason || ''}`.trim()); if (!contract.launchAllowed) w.push(contract.launchReason || 'Selected scenario is blocked.'); if (!w.length) w.push('Ready to run.'); return w.map(x => `<div class="stream-item ${/ready/i.test(x) ? '' : 'log-warn'}">${esc(x)}</div>`).join(''); }
   function domain(name) { const spec = (root.domains || {})[name] || {title:name}; title(spec.title || name, 'Traditional controls plus block-driven editing share the same browser config model.'); const bs = (root.architecture || []).filter(b => b.domain === name); if (!state.configLoaded || !state.fieldsLoaded) { ensureConfigLoaded(true); ensureFieldsLoaded(true); main.innerHTML = `<div class="split"><section class="panel"><h3>${esc(spec.title || name)}</h3>${unavailable('This page is loading the resolved scenario config and field catalog. Controls will appear automatically once that payload arrives.')}</section><section class="panel"><h3>Blocks</h3><div class="grid">${bs.map(b => `<article class="tile" data-block="${esc(b.id)}"><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join('') || unavailable('No workflow blocks map to this page.')}</div></section></div>`; return; } const fs = state.fields.filter(f => f.domain === name); main.innerHTML = `<div class="split"><section class="panel"><h3>${esc(spec.title || name)}</h3><p class="subtle">${fs.length} exposed parameters on this page.</p><div class="form-grid">${fs.map(f => `<div class="param-editor"><label>${esc(f.label || f.path)}</label>${inputFor(f)}<span class="small mono">${esc(f.path)}</span></div>`).join('') || unavailable('No browser-exposed parameters map to this page.')}</div></section><section class="panel"><h3>Blocks</h3><div class="grid">${bs.map(b => `<article class="tile" data-block="${esc(b.id)}"><h4>${esc(b.title)}</h4><p>${esc(b.summary)}</p></article>`).join('') || unavailable('No workflow blocks map to this page.')}</div></section></div>`; }
   function geometry() { domain('geometry'); main.insertAdjacentHTML('beforeend', '<section class="panel"><h3>OpenStreetMap Deployment View</h3><p class="subtle">Sites, sectors, UEs, hotspots, serving view, coverage overlays, and mobility paths use canonical map payloads when available. Dragging a site writes deployment_topology.site_overrides into the browser config.</p><div id="geometryMap" class="map-box"></div></section>'); setTimeout(map, 0); }
@@ -20775,7 +21001,7 @@ window.addEventListener('DOMContentLoaded', function () {
     updateBulkDeleteState();
     document.querySelectorAll('[data-run-selector="true"]').forEach(select => {
       const selected = selectorState.get(select.id) || select.value || selectedRunId();
-      const runningOnly = select.id === 'realtimeRunSelect';
+      const runningOnly = false;
       select.innerHTML = runSelectOptions(selected, {runningOnly, preferActive: runningOnly});
       if (selected) select.value = String(selected);
     });
@@ -20965,7 +21191,7 @@ window.addEventListener('DOMContentLoaded', function () {
     ].map(([value,label]) => `<option value="${value}"${mode === value ? ' selected' : ''}>${label}</option>`).join('');
     const recentRows = recent.map(run => `<tr><td><strong>Run ${esc(run.run_id)}</strong><br><span class="small">${esc(run.run_tag || run.scenario_id || '')}</span></td><td><span class="status-pill ${runStatusClass(run)}">${esc(run.status_text || '')}</span></td><td><a class="button-link" href="/plots?run_id=${esc(run.run_id)}">Results</a></td></tr>`).join('');
     const runTag = esc((document.getElementById('runTagInput') || {}).value || '');
-    const canLaunch = state.mode === wired && contract.launchAllowed;
+    const canLaunch = modeIsWired() && contract.launchAllowed;
     main.innerHTML = `
       <section class="panel">
         <div class="run-history-header"><div><h3>Simulation mode</h3><p class="subtle">Select one master YAML workflow. Uploaded YAML remains editable and runs through the same validated LLS path.</p></div><span class="badge good">LLS execution</span></div>
@@ -21004,6 +21230,11 @@ window.addEventListener('DOMContentLoaded', function () {
   function liveWorkspace() {
     title('Live', 'Run status and current measurements.');
     const live = state.live;
+    if (live && live.execution_mode === 'SLS') {
+      const sls = live.sls || {};
+      main.innerHTML = `${liveTabs('realtime')}<section class="panel"><h3>SLS network execution</h3>${pageRunSelector('realtimeRunSelect','Run',{runningOnly:false})}<p>${esc(sls.scope)}</p><p>${esc(sls.measurement_notice)}</p>${objectTable(sls.receipt || {}, '')}${objectTable(sls.progress || {}, '')}</section>${Object.entries(sls.evidence || {}).map(([name, item]) => `<section class="panel"><h3>${esc(name)}</h3><p class="mini-note">${esc(item.source)} — first 100 retained rows</p>${rows(item.rows || [], 'No retained rows yet; no values are inferred.')}</section>`).join('')}`;
+      return;
+    }
     if (!live) {
       main.innerHTML = `${liveTabs('realtime')}<section class="panel">${pageRunSelector('realtimeRunSelect', 'Run', {runningOnly:false})}<div class="chart-empty">Select a run or wait for the active run to appear.</div></section>`;
       return;
@@ -21099,6 +21330,12 @@ window.addEventListener('DOMContentLoaded', function () {
     return map[section] || ['full_stack_'];
   }
   function qualificationWorkspace() {
+    if ((state.live || {}).execution_mode === 'SLS') {
+      const sls = state.live.sls || {};
+      title('SLS qualification', 'Retained network qualification metadata, separate from waveform acceptance.');
+      main.innerHTML = `<section class="panel">${pageRunSelector('qualificationRunSelect','Run',{runningOnly:false})}<h3>SLS qualification</h3><p>Execution completion is not study acceptance. Unknown or missing qualifications are not passes.</p>${objectTable(sls.receipt || {}, '')}${objectTable(sls.qualification || {}, 'No retained system run manifest yet.')}<h3>Output audit</h3>${objectTable(sls.output_audit || {}, 'No retained output audit yet.')}</section>`;
+      return;
+    }
     title('Qualification', 'One immutable WebGUI run · 31 physical child subcases · fail-closed evidence');
     const live = state.live || {};
     const qualification = live.full_stack_qualification || {};
@@ -21383,7 +21620,7 @@ window.addEventListener('DOMContentLoaded', function () {
     }
     if (target.id === 'loadConfigJsonBtn') document.getElementById('configJsonFileInput').click();
     if (target.id === 'newScenarioBtn') { state.page = 'scenario'; render({preserveScroll:false}); ensureConfigLoaded(true); ensureFieldsLoaded(true); if (msg) { msg.textContent = 'New scenario draft is active in the browser. Run Scenario and Download Config JSON will use the edited config model.'; msg.classList.remove('hidden'); } }
-    if (target.id === 'validateBtn' || target.id === 'validateWorkspaceBtn') { ensureConfigLoaded(false).then(() => { const contract = scenarioLaunchContract(); if (msg) { msg.textContent = state.mode !== wired ? `${state.mode} is configurable here, but only LLS is launch-enabled from /run in this pass.` : (contract.launchAllowed ? `Configuration is ready. ${contract.presentationLabel || contract.launchContract}. MATLAB performs the final schema validation when the run starts.` : `Configuration needs attention: ${contract.launchReason || 'selected scenario is blocked.'}`); msg.classList.remove('hidden'); } }); }
+    if (target.id === 'validateBtn' || target.id === 'validateWorkspaceBtn') { ensureConfigLoaded(false).then(() => { const contract = scenarioLaunchContract(); if (msg) { msg.textContent = !modeIsWired() ? `${state.mode} is configurable here, but only LLS/SLS are launch-enabled from /run in this pass.` : (contract.launchAllowed ? `Configuration is ready. ${contract.presentationLabel || contract.launchContract}. MATLAB performs the final schema validation when the run starts.` : `Configuration needs attention: ${contract.launchReason || 'selected scenario is blocked.'}`); msg.classList.remove('hidden'); } }); }
     if (target.id === 'saveScenarioBtn') { ensureConfigLoaded(false).then(() => { storage.set('sixgr_product_config', JSON.stringify({scenario:root.scenario, config:state.config})); if (msg) { msg.textContent = 'Draft saved.'; msg.classList.remove('hidden'); } }); }
     if (target.id === 'downloadConfigBtn') { const runId = selectedRunId(); if (runId) { window.location.href = `/run-config/download?run_id=${encodeURIComponent(runId)}&format=json`; if (msg) { msg.textContent = `Downloading run-wise config evidence bundle for run ${runId}.`; msg.classList.remove('hidden'); } } else { ensureConfigLoaded(false).then(() => { updateRunPayload(); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([JSON.stringify(state.config, null, 2)], {type:'application/json'})); a.download = 'sixgr_final_config_draft.json'; a.click(); if (msg) { msg.textContent = 'No run_id is available yet, so the current browser draft config JSON was downloaded.'; msg.classList.remove('hidden'); } }); } }
     const tableLoadMore = target.closest('[data-table-load-more]');
@@ -21396,6 +21633,10 @@ window.addEventListener('DOMContentLoaded', function () {
   document.addEventListener('change', e => {
     const target = eventElement(e.target);
     if (!target) return;
+    if (target.id === 'simulationModeSelect') { state.mode = target.value; set(state.config, 'run_control.execution_mode', state.mode); updateRunPayload(); render(); return; }
+    if (target.matches('[data-result-mode="true"]')) {
+      const url = new URL(window.location.href); url.searchParams.set('result_mode', target.value); url.searchParams.delete('run_id'); window.location.href = `${url.pathname}${url.search}`; return;
+    }
     if (isInteractiveElement(target)) markUserInteracting(30000);
     if (target.id === 'scenarioFileInput') {
       const form = document.getElementById('scenarioUploadForm');
@@ -21471,7 +21712,7 @@ window.addEventListener('DOMContentLoaded', function () {
   document.addEventListener('scroll', e => { if (isInteractiveElement(e.target)) markUserInteracting(30000); }, true);
   document.addEventListener('keydown', e => { if (isInteractiveElement(e.target)) markUserInteracting(30000); }, true);
   const runForm = document.getElementById('runForm');
-  if (runForm) runForm.addEventListener('submit', e => { updateRunPayload(); const contract = scenarioLaunchContract(); if (state.mode !== wired || !contract.launchAllowed) { e.preventDefault(); alert(state.mode !== wired ? `${state.mode} is not launch-enabled from /run in this pass. Switch to LLS.` : (contract.launchReason || 'Selected scenario is blocked by the browser launch contract.')); } });
+  if (runForm) runForm.addEventListener('submit', e => { updateRunPayload(); const contract = scenarioLaunchContract(); if (!modeIsWired() || !contract.launchAllowed) { e.preventDefault(); alert(!modeIsWired() ? `${state.mode} is not launch-enabled from /run in this pass. Select a matching LLS or SLS YAML.` : (contract.launchReason || 'Selected scenario is blocked by the browser launch contract.')); } });
   render({preserveScroll:false});
   if (pageNeedsConfigModel(state.page) && !state.configLoaded) window.setTimeout(() => { ensureConfigLoaded(true); }, 0);
   if (pageNeedsFieldCatalog(state.page)) window.setTimeout(() => { ensureFieldsLoaded(true); }, 0);
@@ -21561,6 +21802,13 @@ function ensureExecutionMode() {{
   return mode;
 }}
 function currentScenarioLaunchContract() {{
+    if (ensureExecutionMode() === 'SLS') {{
+      const native = CONFIG_STATE.sls?.config || {{}};
+      const p = native.system?.linkAbstraction || {{}};
+      const backend = native.system?.phyBackend;
+      const allowed = native.run?.mode === 'system' && native.run?.useConfigFragments === false && ['waveform','calibrated_link_abstraction'].includes(backend) && !p.allowDevelopmentFixtures && (backend !== 'calibrated_link_abstraction' || (p.calibrationFile && String(p.calibrationSHA256 || '').length === 64));
+      return {{launchAllowed: !!allowed, launchContract: 'native_sls_configuration', presentationLabel: 'SLS network simulation', launchReason: allowed ? 'MATLAB verifies configuration and calibration content before execution.' : 'Select valid native SLS YAML and bind qualified calibration; test fixtures are forbidden.'}};
+    }}
   const meta = (typeof CONFIG_STATE.meta === 'object' && CONFIG_STATE.meta !== null) ? CONFIG_STATE.meta : {{}};
   const scenario = (typeof CONFIG_STATE.scenario === 'object' && CONFIG_STATE.scenario !== null) ? CONFIG_STATE.scenario : {{}};
   const runnerProfile = String(scenario.runner_profile || INITIAL_SCENARIO_CONTRACT.runner_profile || '').trim();
@@ -21702,17 +21950,17 @@ function applyExecutionModeUI() {{
   const badge = document.getElementById('executionModeBadge');
   if (badge) badge.textContent = `Browser Mode: ${{mode.replaceAll('_', ' ')}}`;
   const note = document.getElementById('executionModeNote');
-  if (note) note.textContent = mode === FULLY_WIRED_EXECUTION_MODE ? (contract.launchReason || '') : (EXECUTION_MODE_NOTES[mode] || '');
+  if (note) note.textContent = ['LLS','SLS'].includes(mode) ? (contract.launchReason || '') : (EXECUTION_MODE_NOTES[mode] || '');
   const runButton = document.getElementById('runScenarioButton');
   if (runButton) {{
-    const enabled = mode === FULLY_WIRED_EXECUTION_MODE && !!contract.launchAllowed;
+    const enabled = ['LLS','SLS'].includes(mode) && !!contract.launchAllowed;
     runButton.disabled = !enabled;
-    runButton.textContent = enabled ? 'Run Scenario' : (mode !== FULLY_WIRED_EXECUTION_MODE ? `Run blocked for ${{mode.replaceAll('_', ' ')}}` : 'Run blocked by scenario contract');
-    runButton.title = enabled ? `Launch the real browser-owned LLS run via ${{contract.presentationLabel || 'the configured runner'}}.` : (mode !== FULLY_WIRED_EXECUTION_MODE ? (EXECUTION_MODE_NOTES[mode] || '') : (contract.launchReason || 'Selected scenario is blocked.'));
+    runButton.textContent = enabled ? 'Run Scenario' : (!['LLS','SLS'].includes(mode) ? `Run blocked for ${{mode.replaceAll('_', ' ')}}` : 'Run blocked by scenario contract');
+    runButton.title = enabled ? `Launch the browser-owned ${{mode}} run via ${{contract.presentationLabel || 'the configured runner'}}.` : (!['LLS','SLS'].includes(mode) ? (EXECUTION_MODE_NOTES[mode] || '') : (contract.launchReason || 'Selected scenario is blocked.'));
   }}
   const blocker = document.getElementById('executionModeBlocker');
   if (blocker) {{
-    const blockerText = mode !== FULLY_WIRED_EXECUTION_MODE ? (EXECUTION_MODE_NOTES[mode] || '') : (contract.launchAllowed ? '' : (contract.launchReason || ''));
+    const blockerText = !['LLS','SLS'].includes(mode) ? (EXECUTION_MODE_NOTES[mode] || '') : (contract.launchAllowed ? '' : (contract.launchReason || ''));
     blocker.classList.toggle('hidden', !blockerText);
     blocker.textContent = blockerText;
   }}
@@ -21732,9 +21980,9 @@ if (runForm) {{
     const contract = currentScenarioLaunchContract();
     const mode = String(CONFIG_STATE.run_control?.execution_mode || 'LLS').trim().toUpperCase();
     document.getElementById('config_json').value = JSON.stringify(CONFIG_STATE);
-    if (mode !== FULLY_WIRED_EXECUTION_MODE || !contract.launchAllowed) {{
+    if (!['LLS','SLS'].includes(mode) || !contract.launchAllowed) {{
       event.preventDefault();
-      window.alert(mode !== FULLY_WIRED_EXECUTION_MODE ? (EXECUTION_MODE_NOTES[mode] || 'Run is blocked for this execution mode.') : (contract.launchReason || 'Selected scenario is blocked.'));
+      window.alert(!['LLS','SLS'].includes(mode) ? (EXECUTION_MODE_NOTES[mode] || 'Run is blocked for this execution mode.') : (contract.launchReason || 'Selected scenario is blocked.'));
     }}
   }});
 }}
@@ -25547,7 +25795,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     raw_payload, _ = load_resolved_config_payload(str(scenario_name))
                     yaml_text = yaml.safe_dump(raw_payload, sort_keys=False, allow_unicode=False)
                 requested_payload = canonicalize_browser_config_payload(raw_payload)
-            if requested_mode != FULLY_WIRED_BROWSER_EXECUTION_MODE:
+            if requested_mode not in BROWSER_EXECUTION_MODE_OPTIONS:
                 raise ValueError(
                     f"Execution mode {BROWSER_EXECUTION_MODE_LABELS.get(requested_mode, requested_mode)!r} is intentionally separated from the LLS browser run path and is not launchable from /run in this pass."
                 )

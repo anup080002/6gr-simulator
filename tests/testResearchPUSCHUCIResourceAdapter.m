@@ -7,6 +7,7 @@ rng(20260918,'twister');
 profiles=[25 15;264 120]; lengths=[0 0 0;1 7 0;2 7 20;7 20 7;20 0 0];
 mods=["QPSK","16QAM","64QAM","256QAM","1024QAM"];
 count=0;
+for ptrsEnabled=[false true]
 for profile=1:2
  for layers=[2 4]
     p=nrPUSCHConfig('NSizeBWP',profiles(profile,1),'NStartBWP',0, ...
@@ -14,6 +15,9 @@ for profile=1:2
         'TransmissionScheme','nonCodebook','SymbolAllocation',[0 14]);
     p.DMRS.DMRSPortSet=0:layers-1;
     p.DMRS.NumCDMGroupsWithoutData=2;
+    p.EnablePTRS=ptrsEnabled;
+    p.PTRS.TimeDensity=1; p.PTRS.FrequencyDensity=2;
+    p.PTRS.REOffset='00'; p.PTRS.PTRSPortSet=0;
     carrier=nrCarrierConfig('NSizeGrid',profiles(profile,1), ...
         'SubcarrierSpacing',profiles(profile,2));
     [~,allocation]=nrPUSCHIndices(carrier,p);
@@ -52,6 +56,7 @@ for profile=1:2
     end
  end
 end
+end
 bad=p; bad.TransformPrecoding=true;
 reject(@()sixgr.phy.research.PUSCHUCIResourceAdapter.resolve(s,bad,.5,tbs,[1 7 0],"1024QAM"), ...
     'sixgr:research:UnsupportedUCIGeometry');
@@ -59,7 +64,7 @@ badPolicy=s; badPolicy.meta.research_class='baseline_benchmark';
 reject(@()sixgr.phy.research.PUSCHUCIResourceAdapter.resolve(badPolicy,p,.5,tbs,[1 7 0],"1024QAM"), ...
     'sixgr:research:ExplicitUCIAdapterRequired');
 ok=true;
-fprintf('RESEARCH_PUSCH_UCI_RESOURCE_ADAPTER_PASS cases=%d native_differential=80 experimental_Qm10=20 bandwidths=5MHz,400MHz physical_integration=0\n',count);
+fprintf('RESEARCH_PUSCH_UCI_RESOURCE_ADAPTER_PASS cases=%d PTRS=off,on bandwidths=5MHz,400MHz physical_integration=0\n',count);
 end
 
 function coded=encode(n,g,modulation)

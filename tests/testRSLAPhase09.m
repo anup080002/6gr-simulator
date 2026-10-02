@@ -242,7 +242,10 @@ localTokenEvidence(testCase,"rsla_effective_sinr_trials","Method","EESM");
 end
 
 function testMIESMMapping(testCase)
-result = sixgr.phy.rsla.MIESMMapper.map([-3 -1 2 5],1.2, ...
+% Numerical lookup fixture only; not measured/calibrated PHY evidence.
+lookup=struct('SINRGrid_dB',[-20 0 20],'MutualInformation_bitsPerSymbol',[.01 .5 1.9], ...
+    'ModulationOrder',4,'BetaLinear',1.2);
+result = sixgr.phy.rsla.MIESMMapper.map([-3 -1 2 5],lookup, ...
     "RSLA-MIESM-TEST");
 verifyTrue(testCase,isfinite(result.EffectiveSINRDb));
 verifyEqual(testCase,result.Method,"MIESM");

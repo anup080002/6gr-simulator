@@ -13,6 +13,7 @@ classdef PhaseNoiseProcess < handle
         PoleCoefficients double
         ComponentWeights double
         ComponentState double
+        SpectralFilter
     end
 
     methods
@@ -27,6 +28,10 @@ classdef PhaseNoiseProcess < handle
             obj.StateEpoch=stateEpoch;
             correlationState=sixgr.rf.runtime.PhaseNoiseCorrelationState. ...
                 factor(chainCount,double(obj.Profile.LOCorrelation)); %#ok<NASGU>
+            if string(sixgr.util.structGet(obj.Profile,'SynthesisMethod','ar1_mask_fit'))=="spectral_fir"
+                obj.SpectralFilter=sixgr.rf.runtime.SpectralPhaseNoiseFilter(obj.Profile,chainCount);
+                return;
+            end
             [obj.PoleCoefficients,obj.ComponentWeights]= ...
                 sixgr.rf.runtime.PhaseNoiseProcess. ...
                 designMaskComponents(obj.Profile);
@@ -54,6 +59,9 @@ classdef PhaseNoiseProcess < handle
             rho=double(obj.Profile.LOCorrelation);
             phase=zeros(n,chains);
             nextState=zeros(size(obj.ComponentState));
+            if ~isempty(obj.SpectralFilter)
+                phase=obj.SpectralFilter.apply(n,chains);
+            end
             for component=1:numel(obj.PoleCoefficients)
                 % MATLAB fills columns first: draw chains-by-time, then
                 % transpose, so every sample owns the same random values
@@ -91,6 +99,8 @@ classdef PhaseNoiseProcess < handle
                 "MaskOffsets_Hz",obj.Profile.MaskOffsets_Hz, ...
                 "MaskLevels_dBcHz",obj.Profile.MaskLevels_dBcHz, ...
                 "MaskComponentCount",numel(obj.PoleCoefficients), ...
+                "SynthesisMethod",string(sixgr.util.structGet(obj.Profile,'SynthesisMethod','ar1_mask_fit')), ...
+                "FIRLength",double(sixgr.util.structGet(obj.Profile,'FIRLength',0)), ...
                 "StateEpoch",obj.StateEpoch);
         end
     end
@@ -158,6 +168,10 @@ classdef PhaseNoiseProcess < handle
                     any(offsets>=double(profile.SampleRate_Hz)/2)
                 error("RF:PhaseNoiseMaskMissing", ...
                     "Phase-noise PSD evaluation offsets are invalid.");
+            end
+            if string(sixgr.util.structGet(profile,'SynthesisMethod','ar1_mask_fit'))=="spectral_fir"
+                levels_dBcHz=sixgr.rf.runtime.SpectralPhaseNoiseFilter.evaluatePSD(profile,offsets);
+                return;
             end
             [poles,weights]=sixgr.rf.runtime.PhaseNoiseProcess. ...
                 designMaskComponents(profile);

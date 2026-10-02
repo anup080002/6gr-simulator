@@ -25,6 +25,7 @@ ip.addParameter("RV",[],@(x) isempty(x) || (isnumeric(x) && isvector(x) && all(x
 ip.addParameter("HARQSoftBuffer",[],@(x) isempty(x) || isnumeric(x) || isstruct(x) || iscell(x));
 ip.addParameter("HARQSoftBufferLayout",struct(),@(x) isempty(x) || isstruct(x) || iscell(x));
 ip.addParameter("CaptureDiagnostic",true,@(x) (islogical(x) || isnumeric(x)) && isscalar(x));
+ip.addParameter("RandomSeeds",struct(),@(x) isstruct(x) && isscalar(x));
 ip.addParameter("ISACReferenceGrid",[],@(x) isempty(x) || isnumeric(x));
 ip.parse(varargin{:});
 runtime = ip.Results;
@@ -38,6 +39,8 @@ noiseSeed = sixgr.lls.deterministicSeed(llsCfg.simulation.masterSeed, ...
     randomnessKey, snrIndex, trialIndex, "awgn");
 channelSeed = sixgr.lls.deterministicSeed(llsCfg.channel.seed, ...
     randomnessKey, snrIndex, trialIndex, "channel");
+[bitSeed,noiseSeed,channelSeed]=sixgr.calibration.resolveExplicitSeeds( ...
+    runtime.RandomSeeds,bitSeed,noiseSeed,channelSeed);
 
 phyCfg.phy.carrier.NSlot = mod(trialIndex-1, ...
     10 * round(double(phyCfg.phy.carrier.SubcarrierSpacing)/15));

@@ -1,0 +1,311 @@
+schema_version: sixgr.ran1.ai_10_3_2_modulation/v1
+
+study:
+  id: ai_10_3_2_modulation
+  agenda_item: 10.3.2
+  topic: MCS design / FWA uplink 1024QAM / MCS representation
+  generation_label: 6GR
+  taxonomy: study_item_candidate
+  strict: true
+  prohibit_fallback: true
+  # SLS primary estimates are now permitted only with qualified LLS calibration.
+  # Waveform-truth tables must still never contain abstraction rows.
+  prohibit_uncalibrated_primary_results: true
+  prohibit_approximate_tbs: true
+  tdoc_editing_enabled: false
+
+carrier:
+  frequency_hz: 7000000000
+  bandwidth_hz: 100000000
+  scs_khz: 30
+  sensitivity_bandwidth_hz: 20000000
+  sensitivity_is_separate: true
+
+statistics:
+  coarse_snr_db: [-10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45]
+  coarse_step_db: 1
+  refinement_step_db: 0.1
+  minimum_transport_blocks_per_point: 2000
+  minimum_errors_per_point: 200
+  maximum_transport_blocks_per_point: 100000
+  confidence_level: 0.95
+  preserve_censored_points: true
+  zero_error_reporting: upper_confidence_bound
+
+lls:
+  pairing_base_seed: 103210000
+  execution:
+    base_config_path: sixgr.config.defaultConfig
+    grid_prbs: 273
+    cell_id: 1
+    rnti: 1
+    tpmi: 0
+    dmrs_type_a_position: 2
+    dmrs_additional_position: 1
+    dmrs_cdm_groups_without_data: 2
+    rf_branch: pn7_ptrs_compensated
+    research_transport_policy_path: simulator/configs/coding/research_pusch_uci.yaml
+    awgn_spatial_policy: unit_column_dft
+    awgn_reference_re_energy: 1
+    tx_power_normalization: constant_total_configured_grid_re_energy
+    normalized_total_ue_grid_re_energy: 1
+    transport_blocks_per_invocation: 32
+    channel_profiles: [AWGN, CDL-A, CDL-B, CDL-C]
+    entry_ids: [B27, H0, H1, H2, H3]
+    ranks: [1, 2, 4]
+  exact_tbs_required: true
+  practical_channel_estimation_main: true
+  perfect_csi_upper_bound_only: true
+  primary_equalizer: LMMSE
+  interference_equalizer: MMSE-IRC
+  demapper: max-log
+  constant_total_ue_power_across_ranks: true
+  channels:
+    - {profile: AWGN, delay_spread_ns: 0, role: primary}
+    - {profile: CDL-A, delay_spread_ns: 100, role: primary}
+    - {profile: CDL-B, delay_spread_ns: 30, role: primary}
+    - {profile: CDL-C, delay_spread_ns: 300, role: primary}
+    - {profile: TDL-A, delay_spread_ns: 30, role: source_comparison_only}
+    - {profile: TDL-D, delay_spread_ns: 30, role: source_comparison_only}
+  mobility:
+    fwa_speed_kmh: 0.3
+    doppler_source: carrier_frequency_times_radial_speed_over_c
+    derived_doppler_hz: 1.94579055532255
+    high_doppler_sensitivity_hz: 200
+  antenna_cases:
+    - {id: simo_1x4_r1, tx_chains: 1, rx_chains: 4, ranks: [1]}
+    - {id: mimo_2x4_r1_r2, tx_chains: 2, rx_chains: 4, ranks: [1, 2]}
+    - {id: mimo_4x4_r1_r4, tx_chains: 4, rx_chains: 4, ranks: [1, 2, 3, 4]}
+  ldpc:
+    maximum_iterations: 50
+    early_termination: true
+    log_base_graph: true
+    log_lifting_size: true
+    log_code_blocks: true
+    log_filler_bits: true
+    log_rate_matching: true
+    log_decoder_iterations: true
+  reference_pusch:
+    allocation_type: type_A
+    start_symbol: 0
+    number_of_symbols: 14
+    dmrs_symbols: [2, 11]
+  fixed_mcs:
+    harq_enabled: false
+    illa_enabled: false
+    olla_enabled: false
+  adaptive:
+    harq_enabled: true
+    illa_enabled: true
+    olla_enabled: true
+
+harq:
+  processes: 16
+  maximum_total_transmissions: 4
+  rv_sequence: [0, 2, 3, 1]
+  immutable_tb_context: true
+  log_payload_identity: true
+  calibration:
+    # Separate from fixed-MCS F1. Reuses one TB/mother-code buffer and stops
+    # on the first CRC pass. These are sensitivity histories, not full SLS
+    # SINR-grid coverage and not an automatically accepted BLER package.
+    channel_evolution: independent_attempt_realizations
+    feedback_assumption: ideal_error_free_delayed_control
+    snr_histories_db: [[-10, -10, -10, -10], [10, 10, 10, 10], [30, 30, 30, 30]]
+    fit_episodes_per_history: 2000
+    validation_episodes_per_history: 2000
+    episodes_per_invocation: 4
+    seed_base: 103240000
+
+link_adaptation:
+  reset_state_per_snr_point: true
+  log_entry_identity: true
+  log_cqi_ri_pmi: true
+  log_olla_offset_db: true
+  measured_sinr_only: true
+
+rf:
+  # Explicit normalized-power sensitivities, not normative oscillator masks.
+  # Keep each RF branch in a separate calibration run/threshold group.
+  waveform_branches:
+    - id: pn7_ptrs_compensated
+      modulation: any
+      tx_evm_percent: 0
+      rx_evm_percent: 0
+      residual_normalized_cfo: 0
+      requested_tx_power_dbm: 31
+      power_class_max_dbm: 31
+      mpr_db: 0
+      phase_noise_enabled: true
+      phase_noise_profile_path: simulator/configs/rf/phase_noise_nr_inspired_7ghz.yaml
+      power_plane: normalized_reference_relative_cap
+      classification: assumed_NR_inspired_scaled_oscillator_not_hardware_qualified
+      ptrs: {enabled: true, compensation_enabled: true, time_density: 1, frequency_density: 2, re_offset: '00', port_set: [0]}
+    - id: pn7_ptrs_uncompensated
+      modulation: any
+      tx_evm_percent: 0
+      rx_evm_percent: 0
+      residual_normalized_cfo: 0
+      requested_tx_power_dbm: 31
+      power_class_max_dbm: 31
+      mpr_db: 0
+      phase_noise_enabled: true
+      phase_noise_profile_path: simulator/configs/rf/phase_noise_nr_inspired_7ghz.yaml
+      power_plane: normalized_reference_relative_cap
+      classification: assumed_NR_inspired_scaled_oscillator_not_hardware_qualified
+      ptrs: {enabled: true, compensation_enabled: false, time_density: 1, frequency_density: 2, re_offset: '00', port_set: [0]}
+    - id: pn_off_ptrs_reference
+      modulation: any
+      tx_evm_percent: 0
+      rx_evm_percent: 0
+      residual_normalized_cfo: 0
+      requested_tx_power_dbm: 31
+      power_class_max_dbm: 31
+      mpr_db: 0
+      phase_noise_enabled: false
+      power_plane: normalized_reference_relative_cap
+      classification: ideal_oscillator_equal_PTRS_overhead_reference
+      ptrs: {enabled: true, compensation_enabled: false, time_density: 1, frequency_density: 2, re_offset: '00', port_set: [0]}
+    - {id: qam256_evm_mpr, modulation: 256QAM, tx_evm_percent: 3.5, rx_evm_percent: 2.3, residual_normalized_cfo: 0, requested_tx_power_dbm: 31, power_class_max_dbm: 31, mpr_db: 6.5, phase_noise_enabled: false, power_plane: normalized_reference_relative_cap, classification: 6GR_explicit_study_assumption}
+    - {id: qam1024_evm_mpr, modulation: 1024QAM, tx_evm_percent: 2.8, rx_evm_percent: 2.3, residual_normalized_cfo: 0, requested_tx_power_dbm: 31, power_class_max_dbm: 31, mpr_db: 8.0, phase_noise_enabled: false, power_plane: normalized_reference_relative_cap, classification: 6GR_explicit_study_assumption}
+    - {id: cfo_0p005, modulation: any, tx_evm_percent: 0, rx_evm_percent: 0, residual_normalized_cfo: 0.005, requested_tx_power_dbm: 31, power_class_max_dbm: 31, mpr_db: 0, phase_noise_enabled: false, power_plane: normalized_reference_relative_cap, classification: 6GR_explicit_study_assumption}
+    - {id: cfo_0p01, modulation: any, tx_evm_percent: 0, rx_evm_percent: 0, residual_normalized_cfo: 0.01, requested_tx_power_dbm: 31, power_class_max_dbm: 31, mpr_db: 0, phase_noise_enabled: false, power_plane: normalized_reference_relative_cap, classification: 6GR_explicit_study_assumption}
+  additive_evm:
+    tx_injection_plane: post_ofdm_precoding_pre_channel
+    rx_injection_plane: post_channel_pre_receiver
+    covariance: independent_chains
+    reference_power: clean_signal_per_chain
+    tx_power_cap_includes_distortion: true
+    classification: 6GR_explicit_study_assumption
+  component_qualification:
+    sample_rate_hz: 122880000
+    sample_count: 65536
+    seed: 103277
+    chains: [1, 2, 4]
+    evm_relative_tolerance: 0.025
+    power_tolerance_db: 0.000000001
+    cfo_tolerance_hz: 0.0000001
+  ideal_debug_enabled: true
+  additive_evm_enabled: true
+  mpr_power_cap_enabled: true
+  mpr_applied_as_transmit_power_cap: true
+  allow_mpr_as_sinr_subtraction: false
+  prevent_evm_phase_noise_double_count: true
+  phase_noise_sensitivity_enabled: true
+  residual_normalized_cfo: [0, 0.005, 0.01]
+  evm_cases:
+    - {id: qam256_3p5_2p3, modulation: 256QAM, tx_percent: 3.5, rx_percent: 2.3}
+    - {id: qam256_3p5_2p5, modulation: 256QAM, tx_percent: 3.5, rx_percent: 2.5}
+    - {id: qam1024_2p8_2p3, modulation: 1024QAM, tx_percent: 2.8, rx_percent: 2.3}
+    - {id: qam1024_2p8_2p8, modulation: 1024QAM, tx_percent: 2.8, rx_percent: 2.8}
+    - {id: qam1024_3p0_2p5, modulation: 1024QAM, tx_percent: 3.0, rx_percent: 2.5}
+  mpr_cases:
+    - {modulation: 256QAM, mpr_db: 6.5}
+    - {modulation: 1024QAM, mpr_db: 8.0}
+
+representations:
+  option_a_enabled: true
+  option_b_enabled: true
+  option_c_enabled: true
+  option_d_enabled: true
+  option_e_enabled: true
+  option_a_index_width_bits: 5
+  option_b_transition_delay_slots: 4
+  option_b_state_timeout_slots: 40
+
+sls:
+  execution:
+    architecture: calibrated_link_abstraction
+    resource_reservation_policy_path: simulator/configs/system/resource_reservations.yaml
+    result_classification: calibrated_sls_estimate_not_waveform_truth
+    effective_sinr_method: calibrated_eesm
+    calibration_policy: exact_profile_allocation_rank_rf_match
+    missing_calibration_policy: reject
+    out_of_range_policy: reject
+    harq_policy: measured_conditional_retransmission_calibration
+    spatial_sinr_policy: per_resource_lmmse_with_explicit_interference_covariance
+    waveform_calibration_required: true
+    allow_uncalibrated_beta: false
+    allow_truth_export: false
+  scenarios: [UMa, UMi-Street-Canyon]
+  deployments:
+    - {id: UMa, inter_site_distance_m: 500}
+    - {id: UMi-Street-Canyon, inter_site_distance_m: 200}
+  fwa_populations: [Profile-1, Profile-3]
+  fwa_population_definitions:
+    - {id: Profile-1, indoor_fraction: 0.8, indoor_low_loss_fraction: 0.5, rooftop_floor_min: 4, rooftop_floor_max: 8, floor_height_m: 3.0, indoor_cpe_height_m: 1.5, rooftop_height_offset_m: 1.5}
+    - {id: Profile-3, indoor_fraction: 0.0, indoor_low_loss_fraction: 0.5, rooftop_floor_min: 4, rooftop_floor_max: 8, floor_height_m: 3.0, indoor_cpe_height_m: 1.5, rooftop_height_offset_m: 1.5}
+  sites: 7
+  sectors_per_site: 3
+  cells: 21
+  ues_per_cell: 10
+  ue_count_assumption_source: 6GR_explicit_study_assumption_not_normative_3gpp_requirement
+  wrap_around: true
+  independent_paired_drops: 30
+  pairing:
+    base_seed: 103200000
+    stochastic_components: [geometry, shadow, traffic, antenna_orientation, scheduler, propagation]
+  comparators:
+    - {id: S0, representation: baseline_256qam, max_rank: 4}
+    - {id: S1, representation: invariant_map_fwa_ul_1024qam, max_rank: 4}
+    - {id: S2, representation: table_switching_profile, max_rank: 4}
+    - {id: S3, representation: overlapping_mcs_candidate, max_rank: 4}
+    - {id: S4, representation: invariant_map_fwa_ul_1024qam, max_rank: 2}
+    - {id: S5, representation: invariant_map_fwa_ul_1024qam, max_rank: 4}
+  freeze_packet_arrivals_across_comparators: true
+  bootstrap_over_independent_drops: true
+  traffic_model: FTP3
+  ftp3:
+    definition: fixed_file_continuous_time_poisson_arrivals
+    file_size_bytes: 500000
+    direction: UL
+    arrival_assignment: uniform_over_configured_ues
+    arrival_rate_policy: calibrate_once_on_S0_then_freeze_for_all_comparators
+    freeze_arrival_ledger: true
+    primary_file_upt_definition: completed_file_bits_over_arrival_to_completion_seconds
+    incomplete_files: retain_right_censored_and_dropped_separately
+    calibration:
+      initial_arrival_rate_per_cell_s: 1
+      maximum_arrival_rate_per_cell_s: 10000
+      bracket_expansion_factor: 2
+      maximum_iterations: 24
+      tolerance_percentage_points: 2
+      minimum_independent_drops: 30
+      warmup_tti: 2000
+  target_resource_utilization_percent: [20, 50, 70]
+  ue_tx_chain_cases:
+    - {id: ue_2tx, tx_chains: 2}
+    - {id: ue_4tx, tx_chains: 4}
+  ue_power_cases:
+    - {id: main_31dbm, tx_power_dbm: 31, role: main}
+    - {id: sensitivity_35dbm, tx_power_dbm: 35, role: sensitivity}
+  spatial_modes:
+    - {id: mu_mimo_main, mu_mimo_enabled: true, ul_mu_mimo_enabled: true, role: main}
+    - {id: su_mimo_ablation, mu_mimo_enabled: false, ul_mu_mimo_enabled: false, role: ablation}
+  rank_policy:
+    mode: adaptive
+    initial_rank: 1
+    physical_port_cap_required: true
+    constant_total_ue_power_across_ranks: true
+  adaptive_selection:
+    calibration_required: true
+    calibration_source: measured_fixed_mcs_lls_first_transmission_bler
+    target_first_transmission_bler: 0.1
+    required_calibration_ranks: [1, 2, 4]
+    uncalibrated_policy: reject_sls_execution
+  initial_access:
+    type0:
+      monitoring_occasion_ordinal: 1
+    sib1:
+      pdsch: {prb_start: 0, num_prb: 24, symbol_start: 2, num_symbols: 12, mcs: 0, rv: 0}
+
+outputs:
+  root: results/ai_10_3_2_modulation
+  save_csv: true
+  save_png: true
+  png_dpi: 300
+  require_plot_csv_identity: true
+  save_resolved_config: true
+  save_git_commit: true
+  save_seed: true
+  save_environment: true

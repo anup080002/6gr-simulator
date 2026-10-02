@@ -3,7 +3,32 @@ function ok = testSLSOutputCatalog()
 
 setup6GRSimToolkit("Verbose", false);
 
-cfg = sixgr.config.defaultConfig();
+% An output test still needs a legal installed PHY configuration. Generic
+% defaults do not carry Type-0/SIB1 timing or received-control identities.
+% Use an explicitly already-connected fixture; acquisition is tested apart.
+scenario = sixgr.lls6g.config.loadScenarioConfig( ...
+    'simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml');
+scenario = scenario.toStruct();
+scenario.reference_signals.ssb_enabled=false;
+scenario.initial_access.ssb.enabled=false;
+scenario.reference_signals.pbch_enabled=false;
+scenario.initial_access.mib.enabled=false;
+scenario.mimo.beam_sweep_enabled=false;
+scenario.reference_signals.trs_enabled=false;
+scenario.reference_signals.tracking_rs_enabled=false;
+scenario.reference_signals.srs_enabled=false;
+scenario.control.pucch_enabled=false;
+scenario.phy.sib1.enable=false;
+scenario.initial_access.sib1.enabled=false;
+scenario.mimo.qcl_tci.enabled=false;
+scenario.control.connected_dci.tci_present=false;
+scenario.channels.pathloss_enabled=false;
+scenario.channels.shadow_fading_enabled=false;
+scenario.channels.los_enabled=false;
+cfg = sixgr.lls6g.buildInternalConfig(scenario,tempname);
+cfg.phy.ssb.enable=false; cfg.phy.sib1.enable=false;
+cfg.phy.trs.enable=false; cfg.phy.srs.enable=false; cfg.phy.pucch.enable=false;
+cfg.channel.pathlossEnabled=false; cfg.channel.shadowFadingEnabled=false; cfg.channel.losEnabled=false;
 cfg.run.shortRun = true;
 cfg.run.strictMode = false;
 cfg.run.useMex = false;
@@ -19,10 +44,7 @@ cfg.scenario.layout.nSectorsPerSite = 1;
 cfg.scenario.layout.wrapAround = false;
 cfg.scenario.ue.nUE = 4;
 cfg.scenario.nUE = 4;
-cfg.scenario.bs.nTxAnt = 1;
-cfg.scenario.bs.nRxAnt = 1;
-cfg.scenario.ue.nTxAnt = 1;
-cfg.scenario.ue.nRxAnt = 1;
+% Preserve the installed antenna/port dimensions of the selected fixture.
 
 cfg.channel.awgnOnly = true;
 cfg.channel.model = "AWGN";
@@ -51,6 +73,8 @@ res = sixgr.system.SystemLevelRunner.run(ctx, struct( ...
     "PHYBackend", "waveform"));
 
 assert(res.Ok, "System run failed while generating the SLS output catalog.");
+assert(isempty(res.Errors), "Export or persistence failures must not be hidden by runtime status.");
+assert(~isempty(res.Details.SchedulerGrants), "Export qualification requires actual granted trials.");
 assert(isfield(res, "OutputCatalog") && isstruct(res.OutputCatalog), "Missing SLS output catalog metadata.");
 
 mustExist = { ...
@@ -79,6 +103,7 @@ mustExist = { ...
     fullfile(runFolder, "tables", "trps.csv"), ...
     fullfile(runFolder, "tables", "ues.csv"), ...
     fullfile(runFolder, "traces", "system_time_series.csv"), ...
+    fullfile(runFolder, "traces", "system_resource_opportunities.csv"), ...
     fullfile(runFolder, "traces", "ue_trajectories.parquet"), ...
     fullfile(runFolder, "maps", "system_topology_snapshot.csv"), ...
     fullfile(runFolder, "maps", "site_layout.png"), ...

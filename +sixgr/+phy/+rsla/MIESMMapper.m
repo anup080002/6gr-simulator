@@ -1,28 +1,52 @@
 classdef MIESMMapper
-    %MIESMMAPPER Calibrated bounded MI transform/inverse mapping.
+    %MIESMMAPPER Modulation-specific tabulated MI transform/inverse mapping.
+    % A scalar exponential transform is EESM, not mutual information. The
+    % caller must supply a retained MI lookup; this class invents no curve.
 
     methods (Static)
-        function result = map(sinrPerREDb,scaleLinear,datasetID)
-            if nargin<3 || strlength(string(datasetID))==0 || ...
-                    ~(isscalar(scaleLinear)&&isfinite(scaleLinear)&&scaleLinear>0)
+        function result = map(sinrPerREDb,lookup,datasetID)
+            if nargin<3 || ~isscalar(string(datasetID)) || strlength(string(datasetID))==0
                 error("RSLA:MissingEffectiveSINRCalibration", ...
                     "MIESM requires an exact profile-keyed calibrated mapping.");
             end
+            sixgr.phy.rsla.MIESMMapper.validateLookup(lookup);
             values = double(sinrPerREDb(:));
             if isempty(values) || any(~isfinite(values))
                 error("RSLA:MissingMeasuredInput", ...
-                    "MIESM requires finite receiver-derived per-RE SINR.");
+                    "MIESM requires finite explicitly sourced per-resource SINR.");
             end
-            gamma = 10.^(values/10);
-            information = 1-exp(-gamma/double(scaleLinear));
-            meanInformation = min(max(mean(information),0),1-eps);
-            effectiveLinear = -double(scaleLinear)*log(1-meanInformation);
+            shiftDb=10*log10(double(lookup.BetaLinear));
+            axis=double(lookup.SINRGrid_dB(:));
+            mi=double(lookup.MutualInformation_bitsPerSymbol(:));
+            query=values-shiftDb;
+            assert(all(query>=axis(1) & query<=axis(end)), ...
+                'RSLA:MIOutsideCalibration','SINR exceeds the retained MI interval; no clipping/extrapolation is allowed.');
+            information=interp1(axis,mi,query,'linear');
+            meanInformation=mean(information);
+            effectiveDb=interp1(mi,axis,meanInformation,'linear')+shiftDb;
+            effectiveLinear=10^(effectiveDb/10);
             result = struct("Method","MIESM", ...
                 "EffectiveSINRLinear",effectiveLinear, ...
-                "EffectiveSINRDb",10*log10(effectiveLinear), ...
-                "ParameterValue",scaleLinear,"DatasetID",string(datasetID), ...
+                "EffectiveSINRDb",effectiveDb, ...
+                "ParameterValue",lookup.BetaLinear,"DatasetID",string(datasetID), ...
                 "MeanMutualInformation",meanInformation, ...
+                "MutualInformationUnits","bits_per_modulation_symbol", ...
+                "ModulationOrder",lookup.ModulationOrder, ...
+                "LookupSHA256",sixgr.phy.rsla.RSLAUtil.hash(lookup), ...
                 "InputSHA256",sixgr.phy.rsla.RSLAUtil.hash(values));
+        end
+        function validateLookup(lookup)
+            assert(isstruct(lookup) && isscalar(lookup) && ...
+                all(isfield(lookup,{'SINRGrid_dB','MutualInformation_bitsPerSymbol','ModulationOrder','BetaLinear'})), ...
+                'RSLA:MissingEffectiveSINRCalibration','A scalar scale cannot define a modulation-specific MI curve.');
+            validateattributes(lookup.BetaLinear,{'numeric'},{'real','scalar','finite','positive'});
+            validateattributes(lookup.ModulationOrder,{'numeric'},{'real','scalar','integer','>=',2,'finite'});
+            qm=log2(double(lookup.ModulationOrder));
+            x=double(lookup.SINRGrid_dB(:)); y=double(lookup.MutualInformation_bitsPerSymbol(:));
+            assert(qm==fix(qm) && numel(x)>=2 && numel(x)==numel(y) && ...
+                all(isfinite(x)) && all(isfinite(y)) && all(diff(x)>0) && all(diff(y)>0) && ...
+                all(y>=0 & y<=qm), ...
+                'RSLA:InvalidMILookup','Retain strictly invertible modulation-specific MI values in [0,log2(M)]; no invented saturation endpoints.');
         end
     end
 end

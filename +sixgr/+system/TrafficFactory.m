@@ -3,7 +3,7 @@ classdef TrafficFactory
 % Flow-aware traffic generation for system and E2E simulations.
 %
 % Supports:
-%   - Model families: fullBuffer, xr, genai, mmtc, mixed, traceReplay
+%   - Model families: fullBuffer, ftp3, xr, genai, mmtc, mixed, traceReplay
 %   - Transport: UDP/TCP (or mixed via per-flow setting)
 %   - Direction: DL / UL / BIDIR
 %   - QoS hints: 5QI/QFI + packet delay budget (PDB)
@@ -15,7 +15,22 @@ classdef TrafficFactory
 %   traffic.FlowTable      table with configured QoS flows
 
     methods(Static)
-        function traffic = generate(cfg, nUE, nTTI, tti_s)
+        function traffic = generate(cfg, nUE, nTTI, tti_s, varargin)
+            numCells = 1;
+            if mod(numel(varargin), 2) ~= 0
+                error("sixgr:traffic:BadFactoryOptions", ...
+                    "TrafficFactory options must be name/value pairs.");
+            end
+            for optIdx = 1:2:numel(varargin)
+                switch lower(string(varargin{optIdx}))
+                    case "numcells"
+                        numCells = double(varargin{optIdx + 1});
+                    otherwise
+                        error("sixgr:traffic:UnknownFactoryOption", ...
+                            "Unknown TrafficFactory option: %s", ...
+                            string(varargin{optIdx}));
+                end
+            end
             protocolEnabled = logical(sixgr.util.structGet( ...
                 cfg,"protocol.enabled",false));
             protocolTrafficEnabled = logical(sixgr.util.structGet( ...
@@ -27,6 +42,11 @@ classdef TrafficFactory
                 return;
             end
             model = lower(strtrim(string(sixgr.util.structGet(cfg, "traffic.model", "fullBuffer"))));
+            if model == "ftp3"
+                traffic = sixgr.system.Traffic_FTP3( ...
+                    cfg, nUE, nTTI, tti_s, numCells);
+                return;
+            end
             if any(model == ["tracereplay","trace_replay","trace"])
                 traffic = localGenerateTraceReplayTraffic(cfg, nUE, nTTI, tti_s);
                 return;

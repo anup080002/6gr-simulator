@@ -331,6 +331,12 @@ classdef CoupledWaveformStream < handle
                 context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
                 obj.Events.observe(context.DesiredReferencePlane,id,prepared.ReceiveStartSample, ...
                     prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
+                % Retain coefficients from the same physical execution and
+                % receive window for SRS measurement qualification. These
+                % references are audit evidence, never receiver estimates.
+                obj.Physical.requestLinkChannelReference(obj.Events,link.ID,rx, ...
+                    prepared.ReceiveStartSample, ...
+                    prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
             end
             context.Prepared=prepared;
             if isempty(armed)
@@ -502,10 +508,16 @@ classdef CoupledWaveformStream < handle
             assert(~duplicate, ...
                 'sixgr:truth:DuplicatePendingData', ...
                 'The same immutable data transmission cannot be queued twice.');
-            array=sixgr.rf.AntennaArrayFactory.build(prepared.ReceiverConfig,role, ...
-                'signal',lower(family),'numPorts',size(prepared.Tx.Waveform,2));
-            projection=cast(array.PortToElementMatrix,'like',prepared.Tx.Waveform);
-            samples=prepared.Tx.Waveform*projection.';
+            % The frozen transmitter can emit either logical NR ports or
+            % already-precoded physical element IQ.  Never infer that
+            % domain from the column count: a 64-element hybrid PDSCH has
+            % 64 waveform columns but only four logical ports.  Treating
+            % those columns as 64 ports applies the RF map twice and also
+            % makes a valid 64x4 frozen matrix look dimensionally invalid.
+            [samples,projection,mappingEvidence]= ...
+                sixgr.truth.mapDataWaveformToPhysicalElements( ...
+                prepared.Tx.Waveform,prepared.ReceiverConfig, ...
+                prepared.RequestBinding.PHYGrant,role,lower(family));
             node=obj.Nodes(string({obj.Nodes.ID})==tx);
             assert(size(samples,2)==node.NumAntennas && ...
                 size(samples,2)==prepared.NumPhysicalTransmitAntennas && ...
@@ -532,6 +544,7 @@ classdef CoupledWaveformStream < handle
             % Retain the exact applied mapping, including its execution
             % precision. Rebuilding an array later is not applied evidence.
             context.WaveformToElementMatrix=projection;
+            context.WaveformToElementMappingEvidence=mappingEvidence;
             context.FirstActiveSample=firstActive;
             context.Prepared=prepared;
             boundary=id+"_tx_committed";
@@ -542,8 +555,17 @@ classdef CoupledWaveformStream < handle
             % independent sample-domain power accounting. Never pass this
             % noiseless plane to channel estimation or decoding.
             context.DesiredReferencePlane=obj.Physical.registerLinkScoringPlane(obj.Events,link.ID,rx);
-            obj.Events.observe(context.DesiredReferencePlane,id,prepared.ReceiveStartSample, ...
-                prepared.ReceiveEndSampleExclusive+double(ch.ChannelPadSamples));
+            receiveObservationStop=prepared.ReceiveEndSampleExclusive+ ...
+                double(ch.ChannelPadSamples);
+            obj.Events.observe(context.DesiredReferencePlane,id, ...
+                prepared.ReceiveStartSample,receiveObservationStop);
+            % Capture the coefficients from this same channel execution and
+            % exact observation interval.  Merely registering the scoring
+            % plane retains noiseless desired-link samples but cannot prove
+            % the per-sample fading/channel-estimation reference used by
+            % scientific validation.
+            obj.Physical.requestLinkChannelReference(obj.Events,link.ID,rx, ...
+                prepared.ReceiveStartSample,receiveObservationStop);
             obj.Events.observe(tx+":tx",id,prepared.StartSample,prepared.EndSampleExclusive);
             for plane=[rx+":pre_rf",rx+":post_rf"]
                 obj.Events.observe(plane,id,prepared.ReceiveStartSample, ...

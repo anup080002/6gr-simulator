@@ -1,0 +1,7 @@
+# Configured ownership, not proof of transmission or successful reception.
+system:
+  resourceReservations:
+    enabled: true
+    commonChannelCalendarEnabled: true
+    researchClass: study_item_candidate
+    allocationPolicy: whole_PRB_exclusion_over_fixed_grant_symbol_span

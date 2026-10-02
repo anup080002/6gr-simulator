@@ -407,7 +407,7 @@
       "occupied_bandwidth_mhz": {"required": false, "type": "number", "min": 0}
     }},
     "traffic": {"parameters": {
-      "model": {"required": false, "type": "string", "allowed_values": ["fullBuffer", "full_buffer", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
+      "model": {"required": false, "type": "string", "allowed_values": ["fullBuffer", "full_buffer", "ftp3", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
       "flow_direction": {"required": false, "type": "string"},
       "dl_load_fraction": {"required": false, "type": "number", "min": 0, "max": 1},
       "ul_load_fraction": {"required": false, "type": "number", "min": 0, "max": 1},
@@ -415,6 +415,9 @@
       "packet_delay_budget_ms": {"required": false, "type": "number", "min": 0},
       "target_rate_mbps": {"required": false, "type": "number", "min": 0},
       "packet_size_bytes": {"required": false, "type": "integer", "min": 1}
+      ,"ftp3_file_size_bytes": {"required": false, "type": "integer", "min": 1}
+      ,"ftp3_arrival_rate_per_cell_s": {"required": false, "type": "number", "min": 0}
+      ,"ftp3_direction": {"required": false, "type": "string", "allowed_values": ["UL", "DL"]}
     }},
     "csi_acquisition_and_reporting": {"parameters": {
       "dl_csi_mode": {"required": false, "type": "string"},

@@ -1,0 +1,24 @@
+# TR 38.803 section 6.1.10 multipole-zero shape at 29.55 GHz,
+# extrapolated by 20*log10(fc/29.55 GHz). NOT a specified 7 GHz oscillator.
+# Shape reference: https://www.mathworks.com/help/rf/ug/model-rf-impairments-in-5g-downlink-waveform.html
+profile_id: nr_inspired_7ghz_assumed_v1
+version: '1'
+research_class: optional_research_experiment
+classification: assumed_NR_inspired_scaled_oscillator_not_hardware_qualified
+source: TR_38_803_6_1_10_29p55GHz_shape_extrapolated_to_7GHz
+carrier_frequency_hz: 7000000000
+reference_frequency_hz: 29550000000
+zero_frequencies_hz: [3000, 550000, 280000000]
+pole_frequencies_hz: [1, 1600000, 30000000]
+zero_exponents: [2.37, 2.7, 2.53]
+pole_exponents: [3.3, 3.3, 1]
+reference_psd_dbchz: 32
+# Below 10 kHz use a flat PSD continuation, not an unbounded extrapolation.
+# This explicit study assumption bounds slow oscillator wander.
+minimum_offset_hz: 10000
+mask_point_count: 80
+upper_nyquist_fraction: 0.99
+synthesis_method: spectral_fir
+fir_length: 131072
+lo_correlation: 1
+physical_instrument_capability_verified: UNKNOWN

@@ -88,6 +88,26 @@ if strcmp(trafficModel, 'tracereplay')
             'traffic.model=''traceReplay'' requires traffic.trace.offeredBitsDL/UL or traffic.trace.file.');
     end
 end
+if strcmp(trafficModel, 'ftp3')
+    ftp3 = sixgr.util.structGet(cfg, 'traffic.ftp3', struct());
+    fileSizeBytes = double(sixgr.util.structGet(ftp3, 'fileSizeBytes', NaN));
+    arrivalRatePerCell_s = double(sixgr.util.structGet(ftp3, 'arrivalRatePerCell_s', NaN));
+    direction = upper(string(sixgr.util.structGet(ftp3, 'direction', '')));
+    if ~(isscalar(fileSizeBytes) && isfinite(fileSizeBytes) && ...
+            fileSizeBytes == fix(fileSizeBytes) && fileSizeBytes > 0)
+        error('sixgr:config:BadFTP3FileSize', ...
+            'traffic.ftp3.fileSizeBytes must be a positive integer.');
+    end
+    if ~(isscalar(arrivalRatePerCell_s) && isfinite(arrivalRatePerCell_s) && ...
+            arrivalRatePerCell_s >= 0)
+        error('sixgr:config:BadFTP3ArrivalRate', ...
+            'traffic.ftp3.arrivalRatePerCell_s must be finite and non-negative.');
+    end
+    if ~ismember(direction, ["UL","DL"])
+        error('sixgr:config:BadFTP3Direction', ...
+            'traffic.ftp3.direction must be UL or DL.');
+    end
+end
 
 flows = sixgr.util.structGet(cfg, 'traffic.flows', []);
 if ~isempty(flows)

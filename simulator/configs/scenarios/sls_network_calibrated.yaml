@@ -1,0 +1,39 @@
+# Generic native SLS request, not an agenda-specific campaign.
+# TEMPLATE: set calibrationFile/SHA256 to accepted waveform-derived data
+# matching the carrier, allocation, MCS, rank, receiver and RF configuration.
+meta:
+  scenario_id: sls_network_calibrated
+  research_class: study_item_candidate
+  description: Generic TDD network SLS with explicitly calibrated link abstraction
+run_control:
+  execution_mode: SLS
+sls:
+  config_files: [../system/calibrated_link_abstraction.yaml]
+  config:
+    run:
+      mode: system
+      useConfigFragments: false
+      seed: 1032001
+      numTTI: 200
+      shortRun: false
+      strictMode: true
+    system:
+      phyBackend: calibrated_link_abstraction
+      linkAbstraction:
+        calibrationFile: ''
+        calibrationSHA256: ''
+        spatialProviderClass: sixgr.system.abstraction.NetworkSpatialGrantProvider
+        requiredRFProfileID: ideal_rf_no_impairments
+        allowDevelopmentFixtures: false
+        networkSpatial:
+          bsPorts: 4
+          uePorts: 4
+          rfProfileID: ideal_rf_no_impairments
+    outputs:
+      saveCSV: true
+      saveMAT: true
+      saveFigures: true
+      saveFIG: true
+      exportSLSOutputCatalog: true
+      detailedSystemTrace: true
+      liveProgressEverySlots: 1

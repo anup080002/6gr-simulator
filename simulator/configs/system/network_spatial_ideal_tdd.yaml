@@ -1,0 +1,11 @@
+# Internal-config overlay, merged AFTER calibrated_link_abstraction.yaml.
+# Requires concrete NR TDL/CDL, configured periodic SRS and matching port counts.
+# NOT a runnable study case: calibrationFile/SHA256 must still be supplied.
+# It does not enable or qualify the separate 7 GHz phase-noise/RF study branch.
+system:
+  linkAbstraction:
+    spatialProviderClass: sixgr.system.abstraction.NetworkSpatialGrantProvider
+    requiredRFProfileID: ideal_rf_no_impairments
+    spatialFeedback:
+      enabled: true
+      estimationAssumption: ideal_delayed_channel_estimate

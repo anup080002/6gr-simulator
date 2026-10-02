@@ -86,6 +86,31 @@ cfgOut = sixgr.util.structSet(cfgOut, "channel.nTxAnt", numWaveformColumns);
 cfgOut = sixgr.util.structSet(cfgOut, "channel.nRxAnt", numRxAntennas);
 
 if direction == "DL"
+    frozenTCI = sixgr.util.structGet(phyGrant, ...
+        "ConfigurationAuthority.DLQCLTCIBinding", struct());
+    if logical(sixgr.util.structGet(frozenTCI, "Available", false))
+        frozenQCL = sixgr.util.structGet(frozenTCI, "QCL", struct());
+        if ~(isstruct(frozenQCL) && isscalar(frozenQCL) && ...
+                ~isempty(fieldnames(frozenQCL)))
+            error("sixgr:phy:grant:MissingFrozenDLQCLTCIState", ...
+                "Frozen DL QCL/TCI binding does not contain its installed QCL state.");
+        end
+        checkCfg = cfgOut;
+        checkCfg = sixgr.util.structSet(checkCfg, ...
+            "phy.pdsch.qclTCI", frozenQCL);
+        checkCfg = sixgr.util.structSet(checkCfg, ...
+            "phy.pdsch.activeTCIStateID", double(frozenTCI.ActiveTCIStateID));
+        verifiedTCI = sixgr.phy.grant.resolveDLQCLTCIBinding(checkCfg);
+        if string(verifiedTCI.Digest) ~= string(sixgr.util.structGet( ...
+                frozenTCI, "Digest", ""))
+            error("sixgr:phy:grant:FrozenDLQCLTCIDigestMismatch", ...
+                "Frozen DL QCL/TCI payload does not match its immutable digest.");
+        end
+        cfgOut = sixgr.util.structSet(cfgOut, ...
+            "phy.pdsch.qclTCI", frozenQCL);
+        cfgOut = sixgr.util.structSet(cfgOut, ...
+            "phy.pdsch.activeTCIStateID", double(frozenTCI.ActiveTCIStateID));
+    end
     logicalMatrix = sixgr.util.structGet(prec, "MatrixLogicalPorts", prec.Matrix);
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.numPorts", numLogicalPorts);
     cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.nPorts", numLogicalPorts);

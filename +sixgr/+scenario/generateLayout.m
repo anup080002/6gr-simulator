@@ -68,8 +68,23 @@ layout.sites.pos_m = sitePos;
 layout.sites.id = (1:nSites).';
 layout.lattice = struct();
 layout.lattice.vectors_m = zeros(0,2);
+layout.lattice.translationVectors_m = zeros(0,2);
+layout.TranslationVectors_m = zeros(0,2);
 if contains(lower(string(prof.layoutType)), "hex")
     layout.lattice.vectors_m = [prof.isd_m 0; 0.5 * prof.isd_m (sqrt(3)/2) * prof.isd_m];
+end
+translationVectors_m = double(sixgr.util.structGet(prof, ...
+    "wraparoundTranslationVectors_m", []));
+if ~isempty(translationVectors_m)
+    if ~isequal(size(translationVectors_m), [2 2]) || ...
+            any(~isfinite(translationVectors_m), "all") || ...
+            abs(det(translationVectors_m)) <= ...
+            eps(max(1, max(abs(translationVectors_m), [], "all")))^2
+        error("sixgr:scenario:InvalidClusterTranslationVectors", ...
+            "Configured wrap-around translation vectors must be a finite nonsingular 2x2 matrix.");
+    end
+    layout.lattice.translationVectors_m = translationVectors_m;
+    layout.TranslationVectors_m = translationVectors_m;
 end
 
 % Sectorization: create TRxP per sector (co-located at site)

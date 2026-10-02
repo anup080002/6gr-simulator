@@ -124,10 +124,15 @@ for item=items
     if item.Kind=="SRS"
         p=item.Context.Prepared; c=item.Context;
         [~,pre,tx,replay,received]=sixgr.truth.sharedObservationEvidence(item.Planes,p);
-        [~,~,references]=sixgr.truth.sharedLinkScoringObservation(item.Planes,p,c.DesiredReferencePlane);
+        [desired,~,references]=sixgr.truth.sharedLinkScoringObservation( ...
+            item.Planes,p,c.DesiredReferencePlane);
         input=struct('Prepared',p,'Observation',received,'PhysicalMeasurementObservation',pre, ...
-            'TransmitterObservation',tx,'Replay',replay,'ScoringChannelReferences',{references}, ...
+            'TransmitterObservation',tx,'Replay',replay, ...
+            'DesiredReferenceObservation',desired, ...
             'ChannelState',state.SharedWaveformStream.directionalChannelState(1,'UL'));
+        if ~isempty(references)
+            input.ScoringChannelReferences=references;
+        end
         output=sixgr.link.runSRSChannelEstimation(c.Config,c.Arguments{:},'ReceivedContext',input);
         % Export the independent score from this actual received SRS. The
         % practical estimator has already run without the scoring reference.

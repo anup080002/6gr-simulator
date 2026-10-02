@@ -120,6 +120,18 @@ catch primaryCause
     end
 end
 end
+[nullRENoise, nullRENoiseInfo] = localEstimateSRSNullREDisturbance( ...
+    rxGrid, srsInd, double(srs.NumSRSPorts));
+if estimator=="nr_channel_estimate" && isfinite(nullRENoise) && nullRENoise>=0
+    % nrChannelEstimate's residual is a channel-estimator diagnostic.  On a
+    % frequency-selective multiport SRS it can contain interpolation/CDM
+    % modelling error and must not be relabelled as receiver noise.  The
+    % unoccupied comb REs in the same SRS symbols are an independent,
+    % practical receiver observation of noise plus ICI/interference.
+    estInfo.ChannelEstimatorResidualNoiseVariance = double(nVarEst);
+    estInfo.NullREDisturbance = nullRENoiseInfo;
+    nVarEst = nullRENoise;
+end
 noiseCandidate = opt.NoiseVar;
 noiseSource = "runtime_metadata";
 noiseTransformInfo = struct( ...
@@ -133,6 +145,10 @@ configuredNoiseTransformInfo = struct( ...
 if isempty(noiseCandidate)
     noiseCandidate = nVarEst;
     noiseSource = "runtime_channel_estimate";
+    if estimator=="nr_channel_estimate" && ...
+            string(sixgr.util.structGet(nullRENoiseInfo,"Status",""))=="available"
+        noiseSource = "received_srs_inband_null_re_disturbance";
+    end
     if estimator=="flat_static_awgn_ls"
         noiseSource="received_flat_static_awgn_joint_ls_residual_dof_corrected";
     end
@@ -231,6 +247,50 @@ info.OFDMNoiseTransform = sixgr.util.structGet(ofdmInfo, "NoiseTransform", struc
 info.NoiseVarianceTransform = noiseTransformInfo;
 info.ConfiguredNoiseVarianceTransform = configuredNoiseTransformInfo;
 
+end
+
+function [noiseVariance,info] = localEstimateSRSNullREDisturbance(rxGrid,srsInd,numPorts)
+% Estimate effective disturbance on receiver-observed, unoccupied comb REs.
+% SRS_Rx owns an SRS-only physical reception.  Any energy on these same-
+% symbol, same-band null REs is therefore noise, ICI, or interference; it is
+% not inferred from injected noise metadata or channel truth.
+noiseVariance = NaN;
+info = struct("Status","not_available_no_inband_null_re", ...
+    "Source","received_srs_inband_null_re_disturbance", ...
+    "SampleCount",0,"SymbolCount",0,"ReceiveBranchCount",size(rxGrid,3), ...
+    "PerSymbolVariance",zeros(0,1));
+if isempty(rxGrid) || isempty(srsInd)
+    return;
+end
+K=size(rxGrid,1); L=size(rxGrid,2);
+[subcarrier,symbol,~]=ind2sub([K,L,max(1,round(numPorts))],double(srsInd(:)));
+symbols=unique(symbol(:),"stable");
+energy=0; count=0; perSymbol=nan(numel(symbols),1);
+for ii=1:numel(symbols)
+    sym=symbols(ii);
+    occupied=unique(subcarrier(symbol==sym));
+    if isempty(occupied), continue; end
+    inBand=(min(occupied):max(occupied)).';
+    nullRE=setdiff(inBand,occupied,"stable");
+    if isempty(nullRE), continue; end
+    samples=rxGrid(nullRE,sym,:);
+    values=abs(samples(:)).^2;
+    values=values(isfinite(values) & values>=0);
+    if isempty(values), continue; end
+    perSymbol(ii)=mean(values);
+    energy=energy+sum(values);
+    count=count+numel(values);
+end
+if count<=0, return; end
+noiseVariance=energy/count;
+if ~(isfinite(noiseVariance) && noiseVariance>=0)
+    noiseVariance=NaN;
+    return;
+end
+info.Status="available";
+info.SampleCount=count;
+info.SymbolCount=nnz(isfinite(perSymbol));
+info.PerSymbolVariance=perSymbol(isfinite(perSymbol));
 end
 
 function [leakage_dB,status] = localMeasureSRSInterPortLeakage( ...

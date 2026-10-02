@@ -1,0 +1,69 @@
+# Internal-config fragment. Calibration and spatial producer must be supplied
+# by the campaign; empty paths never select a synthetic/default BLER curve.
+system:
+  phyBackend: calibrated_link_abstraction
+  linkAbstraction:
+    researchClass: study_item_candidate
+    calibrationFile: ''
+    calibrationSHA256: ''
+    spatialProviderClass: ''
+    requiredRFProfileID: '' # Study case binds its resolved RF + compensation fingerprint.
+    receiverType: lmmse # lmmse | zf; each requires matching calibration
+    effectiveSINRMethod: calibrated_eesm # calibrated_eesm | calibrated_miesm
+    allowDevelopmentFixtures: false
+    minimumCalibrationTrials: 2000
+    minimumCalibrationErrors: 200
+    minimumValidationTrials: 2000
+    calibrationConfidenceLevel: 0.95
+    maximumCalibrationWilsonHalfWidth: 0.025
+    maximumValidationAbsoluteBLERError: 0.02
+    outOfRangePolicy: reject
+    harqPolicy: conditional_error_given_prior_failures
+    resultClassification: calibrated_sls_estimate_not_waveform_truth
+    spatialFeedback:
+      enabled: false # Enable only with a provider of causal SRS model observations.
+      maximumAgeSlots: 20
+      allowedRanks: [1, 2, 4]
+      selectionObjective: mean_sum_log2_one_plus_layer_sinr
+      sourceClassification: modeled_srs_not_waveform_measurement
+      estimationAssumption: ideal_delayed_channel_estimate
+    dlFeedback:
+      enabled: false
+      maximumAgeSlots: 20
+      deliveryDelaySlots: 1
+      allowedRanks: [1, 2]
+      codebook: typeI-SinglePanel
+      panel: {Ports: 4, N1: 2, N2: 1, O1: 4, O2: 1, CodebookMode: 1}
+      selectionObjective: mean_sum_log2_one_plus_layer_sinr
+      disturbanceAssumption: thermal_noise_only
+      estimationAssumption: ideal_delayed_channel_estimate
+      sourceClassification: modeled_csi_not_waveform_measurement
+    dynamicPUCCH:
+      enabled: false
+      transportPolicy: dedicated_pucch_no_pusch_multiplexing
+      # Alternative: causal_native_pusch_multiplexing with
+      # phy.pucch.uciOnPUSCHEnabled=true. One same-cell HARQ/CSI occasion,
+      # known at the UL control slot, on native NR data-bearing PUSCH.
+      # Late obligation changes fail closed; standalone SR stays on PUCCH.
+      deliveryAssumption: ideal_error_free_delayed_control
+    networkSpatial:
+      # Frequency-domain SLS only. signal_rate preserves the dense reference;
+      # static_exact uses native TDL auto / CDL SampleDensity=64 ONLY at zero
+      # Doppler. Moving-channel numerical equivalence is not qualified. Changing
+      # this changes ChannelProfileID and requires matching calibration.
+      channelResponseSampling: signal_rate # signal_rate | static_exact
+      # Explicit baseline policy; not a qualification of the study RF branch.
+      dlAntennaBasis: direct_ports # direct_ports | configured_csirs_elements
+      # In configured_csirs_elements, bsPorts is the physical channel/TXRU
+      # dimension. phy.csirs.precoderMatrices supplies one semi-unitary
+      # physical-by-logical-port matrix per zero-based CRI; no scalar gain.
+      bsPorts: 64
+      uePorts: 4
+      noiseDensity_dBmHz: -174
+      powerPolicy: equal_psd_per_active_transmitter_split_overlapping_dl_grants
+      rfProfileID: ideal_rf_no_impairments
+      resultClassification: modeled_frequency_selective_network_not_waveform
+      srsDeliveryDelaySlots: 1
+      soundingRankReference: full_carrier_pusch_thermal_noise_only
+      sinrResourcePopulation: allocated_prb_symbol_footprint_including_pilots
+      interferencePopulation: scheduled_shared_data_grants_only

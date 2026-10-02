@@ -36,6 +36,15 @@ simulation:
   reference_sweep_enabled: false
   adaptive_sweep_enabled: false
 
+# Full-horizon 64-gNB-port plus four-UE-port complex-double IQ is retained by
+# the dedicated 40 dB gate/instrument run. At 122.88 MSa/s for 100 ms it is
+# 12.45 GiB per operating point and would consume 99.61 GiB for this campaign.
+# Sweep children still retain actual per-grant raw IQ, LLRs, constellations,
+# channel snapshots, CSV and PNG evidence through output_control below; only
+# the redundant every-sample/every-port stream is disabled here.
+run_control:
+  continuous_raw_iq_capture_enable: false
+
 sweeps_and_matrix:
   snr_sweep:
     enabled: false

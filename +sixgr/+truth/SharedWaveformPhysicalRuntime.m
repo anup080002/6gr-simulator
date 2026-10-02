@@ -14,7 +14,7 @@ classdef SharedWaveformPhysicalRuntime < handle
         Busy (1,1) logical = false
         Started (1,1) logical = false
         Transmitters = struct('ID',{},'RF',{})
-        Receivers = struct('ID',{},'RF',{},'NoiseVariance',{},'NoiseSeed',{},'NoiseState',{},'NoiseReplay',{})
+        Receivers = struct('ID',{},'RF',{},'NoiseVariance',{},'NoiseSeed',{},'NoiseState',{},'NoiseReplay',{},'AdditiveEVM',{},'EVMState',{})
         Links = struct('ID',{},'TX',{},'RX',{},'State',{},'Config',{},'LossReplay',{},'TrailingIdleSamples',{})
         ScoringPlanes = struct('ID',{},'LinkID',{},'RX',{})
         ChannelReferenceRequests = struct('LinkID',{},'RX',{},'Start',{},'End',{})
@@ -85,8 +85,19 @@ classdef SharedWaveformPhysicalRuntime < handle
                     'RequestedAWGNReferenceSNR_dB',NaN)));
             digest=sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(identity),'UTF-8')));
             noiseSeed=hex2dec(extractBefore(digest,9));
+            evm=sixgr.util.structGet(cfg,'rf.rx.additiveEVMStudy',struct('enabled',false));
+            if logical(evm.enabled)
+                assert(all(isfield(evm,["percent","seed","reference","normalization","observationSamples"])) && ...
+                    string(evm.reference)=="pre_receiver_noise_physical_signal_per_chain" && ...
+                    string(evm.normalization)=="complete_observation_mean", ...
+                    'RF:AdditiveEVMReference','Declare the physical pre-noise signal reference for receiver EVM.');
+                validateattributes(evm.percent,{'numeric'},{'scalar','real','finite','positive'});
+                validateattributes(evm.seed,{'numeric'},{'scalar','real','integer','nonnegative','<=',2^32-1});
+                validateattributes(evm.observationSamples,{'numeric'},{'scalar','real','integer','positive','finite'});
+            end
             obj.Receivers(end+1)=struct('ID',id,'RF',rf,'NoiseVariance',variance, ...
-                'NoiseSeed',noiseSeed,'NoiseState',struct(),'NoiseReplay',ledger);
+                'NoiseSeed',noiseSeed,'NoiseState',struct(),'NoiseReplay',ledger, ...
+                'AdditiveEVM',evm,'EVMState',struct());
         end
 
         function addLink(obj,id,txID,rxID,state,cfg)
@@ -340,7 +351,35 @@ classdef SharedWaveformPhysicalRuntime < handle
                 end
                 for k=1:numel(obj.Receivers)
                     node=obj.Receivers(k);
-                    [pre,noiseState]=sixgr.link.addRuntimeComplexNoise(sums{k}, ...
+                    signal=sums{k}; evmReplay=struct('ConfiguredPercent',0, ...
+                        'MeasuredPercent',0,'ReferencePowerPerChain',[], ...
+                        'ReferenceSource',"disabled",'Seed',NaN);
+                    if logical(node.AdditiveEVM.enabled)
+                        assert(isempty(fieldnames(node.EVMState)) && ...
+                            stop-first==node.AdditiveEVM.observationSamples, ...
+                            'RF:AdditiveEVMObservationPartition', ...
+                            ['Block-mean EVM requires one complete declared observation. ' ...
+                             'Partitioned streaming needs an explicit fixed-reference distortion contract.']);
+                        % Distortion is a forward physical model of the
+                        % actual received signal. Neither its variance nor
+                        % the clean reference is given to the decoder.
+                        powerPerChain=mean(abs(double(signal)).^2,1);
+                        [innovations,evmState]=sixgr.link.addRuntimeComplexNoise( ...
+                            zeros(size(signal),'like',signal),1,node.AdditiveEVM.seed,first,node.EVMState);
+                        obj.Receivers(k).EVMState=evmState;
+                        distortion=innovations.*cast(sqrt(powerPerChain)* ...
+                            double(node.AdditiveEVM.percent)/100,'like',signal);
+                        signal=signal+distortion;
+                        measured=NaN;
+                        if sum(powerPerChain)>0
+                            measured=100*sqrt(mean(sum(abs(double(distortion)).^2,2))/sum(powerPerChain));
+                        end
+                        evmReplay=struct('ConfiguredPercent',double(node.AdditiveEVM.percent), ...
+                            'MeasuredPercent',measured,'ReferencePowerPerChain',powerPerChain, ...
+                            'ReferenceSource',"actual_physical_sum_before_receiver_noise", ...
+                            'Seed',double(node.AdditiveEVM.seed));
+                    end
+                    [pre,noiseState]=sixgr.link.addRuntimeComplexNoise(signal, ...
                         node.NoiseVariance,node.NoiseSeed,first,node.NoiseState);
                     obj.Receivers(k).NoiseState=noiseState;
                     preChunk=sixgr.phy.waveform.WaveformChunk(pre,first);
@@ -348,6 +387,7 @@ classdef SharedWaveformPhysicalRuntime < handle
                     outputs(end+1)=struct('ID',node.ID+":pre_rf",'Chunk',preChunk); %#ok<AGROW>
                     outputs(end+1)=struct('ID',node.ID+":post_rf",'Chunk',actual.Chunk); %#ok<AGROW>
                     replay=actual.Replay;
+                    replay.AdditiveReceiverEVM=evmReplay;
                     replay.InjectedNoiseVariance=node.NoiseVariance;
                     replay.InjectedNoiseVarianceDomain='receiver_sample_waveform_pre_composite_front_end';
                     if lower(strtrim(string(node.NoiseReplay.NoiseOperatingMode)))== ...

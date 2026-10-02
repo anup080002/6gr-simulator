@@ -108,7 +108,7 @@
       "waveform": {"required": false, "type": "struct", "nested_rule": "system_waveform_object"}
     }},
     "traffic": {"required": false, "parameters": {
-      "model": {"required": true, "type": "string", "allowed_values": ["fullBuffer", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
+      "model": {"required": true, "type": "string", "allowed_values": ["fullBuffer", "ftp3", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
       "transport": {"required": true, "type": "string", "allowed_values": ["UDP", "TCP", "MIXED"]},
       "flowDirection": {"required": true, "type": "string", "allowed_values": ["DL", "UL", "BIDIR"]},
       "dlRatio": {"required": true, "type": "number", "min": 0, "max": 1},
@@ -119,6 +119,7 @@
       "targetRate_Mbps": {"required": true, "type": "number", "min": 0},
       "jitterPct": {"required": true, "type": "number", "min": 0},
       "fullBufferBitsPerTTI": {"required": true, "type": "integer", "min": 1},
+      "ftp3": {"required": false, "type": "struct", "nested_rule": "traffic_ftp3_object"},
       "tcp": {"required": true, "type": "struct", "nested_rule": "traffic_tcp_object"},
       "qos": {"required": true, "type": "struct", "nested_rule": "traffic_qos_object"},
       "flows": {"required": false, "type": "struct_array", "item_nested_rule": "traffic_flow_object"},
@@ -692,6 +693,12 @@
       "lossProb": {"required": true, "type": "number", "min": 0, "max": 1},
       "lossBackoff": {"required": true, "type": "number", "min": 0, "max": 1},
       "minRateFloor": {"required": true, "type": "number", "min": 0}
+    }},
+    "traffic_ftp3_object": {"parameters": {
+      "fileSizeBytes": {"required": true, "type": "integer", "min": 1},
+      "arrivalRatePerCell_s": {"required": true, "type": "number", "min": 0},
+      "direction": {"required": true, "type": "string", "allowed_values": ["UL", "DL"]},
+      "seed": {"required": true, "type": "integer", "min": 0}
     }},
     "traffic_qos_object": {"parameters": {
       "enable5QI": {"required": true, "type": "boolean"},

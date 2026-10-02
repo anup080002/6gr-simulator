@@ -823,6 +823,11 @@ end
 end
 
 function key = localHARQSoftBufferKey(dir, grant, transportBlockSize)
+identity=string(sixgr.util.structGet(grant,"TransportBlockIdentity",""));
+if strlength(identity)>0
+    key=char(upper(string(dir))+"|tb="+identity+"|tbs="+string(transportBlockSize));
+    return;
+end
 rnti = double(sixgr.util.structGet(grant, "RNTI", sixgr.util.structGet(grant, "UEID", NaN)));
 harq = sixgr.util.structGet(grant, "HARQ", struct());
 harqId = double(sixgr.util.structGet(grant, "HarqID", sixgr.util.structGet(harq, "HarqID", 0)));
@@ -837,7 +842,8 @@ end
 function tf = localGrantIsRetransmission(grant)
 rv = localGrantRV(grant);
 reason = lower(string(sixgr.util.structGet(grant, "GrantReason", "")));
-tf = logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
+tf = logical(sixgr.util.structGet(grant, "HARQ.IsRetransmission", false)) || ...
+    logical(sixgr.util.structGet(grant, "IsRetransmission", false)) || ...
     contains(reason, "retx") || contains(reason, "retrans") || ...
     (isfinite(rv) && round(double(rv)) ~= 0);
 end
@@ -854,34 +860,8 @@ end
 end
 
 function varargout = localHARQSoftBufferCache(action, key, value)
-persistent cacheMap
-if isempty(cacheMap)
-    cacheMap = containers.Map('KeyType', 'char', 'ValueType', 'any');
-end
-
-rawKey = char(string(key));
-switch lower(string(action))
-    case "get"
-        if isKey(cacheMap, rawKey)
-            varargout = {true, cacheMap(rawKey)};
-        else
-            varargout = {false, []};
-        end
-    case "set"
-        cacheMap(rawKey) = value;
-        varargout = {};
-    case "clear"
-        if isKey(cacheMap, rawKey)
-            remove(cacheMap, rawKey);
-        end
-        varargout = {};
-    case "reset"
-        remove(cacheMap, keys(cacheMap));
-        varargout = {};
-    otherwise
-        error("sixgr:system:WaveformReplay:BadHARQSoftBufferAction", ...
-            "Unknown HARQ soft-buffer cache action '%s'.", char(string(action)));
-end
+if nargin<3, value=[]; end
+[varargout{1:nargout}]=sixgr.system.waveform.harqSoftBufferCache(action,key,value);
 end
 
 function [bitErrors, bitsCompared, rawBER] = localMeasuredTransportBlockBER(tx, rx)

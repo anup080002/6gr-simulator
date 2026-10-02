@@ -1,6 +1,11 @@
 function out = exportSystemLevelCanonicalArtifacts(runFolder, scfg, cfg, systemOut)
 %EXPORTSYSTEMLEVELCANONICALARTIFACTS Bridge system-level LLS results into canonical browser-owned artifacts.
 
+assert(string(sixgr.util.structGet(systemOut,'Details.ExecutionBackend',''))~= ...
+    "CALIBRATED_LINK_ABSTRACTION", ...
+    'sixgr:truth:AbstractSLSNotWaveformTrials', ...
+    'Calibrated SLS estimates belong in the SLS catalog, not canonical received-waveform trial tables.');
+
 layout = sixgr.report.resultLayout(runFolder);
 sixgr.util.ensureFolder(layout.ReportCSVDir);
 sixgr.util.ensureFolder(layout.AirInterfaceCSVDir);
@@ -55,6 +60,33 @@ sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir, "dl_cqi_feedback_timeline
     cqiFeedbackDLT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir, "ul_cqi_feedback_timeline.csv"), ...
     cqiFeedbackULT, "PreserveSchema", true);
+trafficArrivalT = sixgr.util.structGet(details, "TrafficArrivalEvents", table());
+if ~istable(trafficArrivalT)
+    trafficArrivalT = table();
+end
+sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir, ...
+    "traffic_arrival_trace.csv"), trafficArrivalT, "PreserveSchema", true);
+fileFields=["FTP3Files","FTP3DeliveryEvents","FTP3UserMetrics"];
+fileNames=["ftp3_file_lifecycle.csv","ftp3_delivery_events.csv","ftp3_user_metrics.csv"];
+for fileIndex=1:numel(fileFields)
+    if isfield(details,fileFields(fileIndex))
+        fileTable=details.(fileFields(fileIndex));
+        if ~istable(fileTable)
+            error("sixgr:truth:FTP3FileExportSchema", ...
+                "Observed FTP3 field %s must be a table.",fileFields(fileIndex));
+        end
+        sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir,fileNames(fileIndex)), ...
+            fileTable,"PreserveSchema",true);
+    end
+end
+resourceOpportunityT = sixgr.util.structGet(details, "ResourceOpportunityTable", table());
+assert(istable(resourceOpportunityT), ...
+    'sixgr:truth:InvalidResourceOpportunityTable', ...
+    'System resource opportunities must be a table from the executed scheduler calendar.');
+if width(resourceOpportunityT)>0
+    sixgr.util.csvWriteTable(fullfile(layout.SystemCSVDir, ...
+        "system_resource_opportunities.csv"), resourceOpportunityT, "PreserveSchema", true);
+end
 
 dlRaw = localBuildDirectionalRawTrialTable(dlGrantT, "DL", scfg, cfg, details, tti_s, slotsPerFrame);
 ulRaw = localBuildDirectionalRawTrialTable(ulGrantT, "UL", scfg, cfg, details, tti_s, slotsPerFrame);
@@ -212,6 +244,12 @@ T = table( ...
     'InterferenceMode','Status','PHYDecisionRole','PHYDecisionStatus','PHYDecisionSource','PHYDecisionReason', ...
     'WaveformReplayExecuted','WaveformReplayReused','WaveformReplayKey'});
 T = localAppendSystemGrantReplayEvidence(T, grantT);
+% Preserve the executed file/TB binding through this intermediate table.
+% Raw-trial goodput must not lose first-success delivery provenance and then
+% fall back to CRC-passed transport-block bits (which may include padding).
+T.TransportBlockIdentity = localStringColumn(grantT,"TransportBlockIdentity","");
+T.ApplicationPayloadBits = localNumericColumn(grantT,"ApplicationPayloadBits",NaN);
+T.UniqueDeliveredApplicationBits = localNumericColumn(grantT,"UniqueDeliveredApplicationBits",NaN);
 end
 
 function T = localBuildDirectionalRawTrialTable(grantT, direction, scfg, cfg, details, tti_s, slotsPerFrame)
@@ -254,6 +292,13 @@ observation_ms = repmat(double(tti_s) * 1e3, n, 1);
 offeredBits = tbsBits;
 goodBits = zeros(n, 1);
 goodBits(ack & isfinite(tbsBits)) = double(tbsBits(ack & isfinite(tbsBits)));
+decodedTBBits=goodBits;
+applicationBits=localNumericColumn(grantT,"UniqueDeliveredApplicationBits",NaN);
+hasApplicationEvidence=isfinite(applicationBits);
+assert(all(applicationBits(hasApplicationEvidence)>=0 & ...
+    applicationBits(hasApplicationEvidence)<=decodedTBBits(hasApplicationEvidence)), ...
+    'sixgr:truth:InvalidApplicationGoodput','Unique delivered payload exceeds successfully decoded TB bits.');
+goodBits(hasApplicationEvidence)=applicationBits(hasApplicationEvidence);
 offeredThroughputMbps = offeredBits ./ observation_ms ./ 1e3;
 goodputMbps = goodBits ./ observation_ms ./ 1e3;
 
@@ -607,6 +652,12 @@ T.InterferenceUsesSameRuntimeAntennaAssumptions = false(n, 1);
 T.InterferencePathUsesSameArrayAssumptions = false(n, 1);
 T.OfferedBits = offeredBits;
 T.GoodBits = goodBits;
+T.TransportBlockIdentity=localStringColumn(grantT,"TransportBlockIdentity","");
+T.ApplicationPayloadBits=localNumericColumn(grantT,"ApplicationPayloadBits",NaN);
+T.DecodedTransportBlockBits=decodedTBBits;
+T.UniqueDeliveredApplicationBits=applicationBits;
+T.GoodputDefinition=repmat("crc_pass_TB_bits_including_padding_not_unique_application_delivery",n,1);
+T.GoodputDefinition(hasApplicationEvidence)="unique_first_success_application_payload_excluding_padding";
 T.OfferedThroughput_Mbps = offeredThroughputMbps;
 T.Goodput_Mbps = goodputMbps;
 T.AirInterfaceObservation_ms = observation_ms;

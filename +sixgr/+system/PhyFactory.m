@@ -24,12 +24,16 @@ classdef PhyFactory
                 phy = sixgr.system.WaveformPHY(cfg, params, "Seed", seed, "StrictMode", strictMode);
                 return;
             end
+            if strcmp(phyBackend, "calibrated_link_abstraction")
+                phy=sixgr.system.CalibratedLinkPHY(cfg,params,seed);
+                return;
+            end
             if any(string(phyBackend) == ["abstract","lut","bler_lut","bler_db","proxy","lls_calibrated_link2system"])
                 error("sixgr:system:ProxyBackendRemoved", ...
                     "System PHY backend '%s' was removed from active runtime. Use system.phyBackend='waveform' so grants are decoded through WaveformPHY.", phyBackend);
             end
             error("sixgr:system:UnsupportedPHYBackend", ...
-                "Unsupported system PHY backend '%s'. Use 'waveform'.", phyBackend);
+                "Unsupported system PHY backend '%s'. Use 'waveform' or explicitly calibrated 'calibrated_link_abstraction'.", phyBackend);
         end
     end
 end

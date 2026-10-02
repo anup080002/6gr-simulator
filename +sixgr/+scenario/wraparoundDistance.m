@@ -4,16 +4,22 @@ function [dist_m, dxy_m] = wraparoundDistance(uePos_m, bsPos_m, area_m, varargin
 %   dist_m = sixgr.scenario.wraparoundDistance(uePos_m, bsPos_m, area_m)
 %   dist_m = sixgr.scenario.wraparoundDistance(..., "Mode", mode)
 %   dist_m = sixgr.scenario.wraparoundDistance(..., "Mode", "hex_lattice_min_image", "ISD_m", isd_m)
+%   dist_m = sixgr.scenario.wraparoundDistance(..., "Mode", "hex_cluster_min_image", ...
+%       "TranslationVectors_m", translationVectors_m)
 %
 % Modes:
 %   rectangular_torus     legacy rectangular wrap-around on [W H]
 %   hex_lattice_min_image nearest-image search using the hex lattice basis
+%   hex_cluster_min_image nearest-image search using an explicit finite-
+%                         cluster translation basis
 %   disabled              no wrap-around; plain Euclidean distance
 
 ip = inputParser;
 ip.addParameter("Mode", "rectangular_torus", @(x) ischar(x) || isstring(x));
 ip.addParameter("ISD_m", NaN, @(x) isnumeric(x) && isscalar(x));
 ip.addParameter("ImageRadius", 2, @(x) isnumeric(x) && isscalar(x) && x >= 1);
+ip.addParameter("TranslationVectors_m", [], @(x) isnumeric(x) && ...
+    (isempty(x) || isequal(size(x), [2 2])));
 ip.parse(varargin{:});
 opt = ip.Results;
 
@@ -43,13 +49,28 @@ switch mode
         dx = ueXY(:,1) - bsXY(:,1).';
         dy = ueXY(:,2) - bsXY(:,2).';
     case {"hex_lattice_min_image", "hex", "hex_grid"}
-        isd_m = double(opt.ISD_m);
-        if ~(isfinite(isd_m) && isd_m > 0)
-            error("sixgr:scenario:BadHexISD", ...
-                "Hex wrap-around requires a positive ISD_m.");
+        if ~isempty(opt.TranslationVectors_m)
+            [dx, dy] = localTranslationNearestImage(ueXY, bsXY, ...
+                double(opt.TranslationVectors_m), K, N, ...
+                max(1, round(double(opt.ImageRadius))));
+        else
+            isd_m = double(opt.ISD_m);
+            if ~(isfinite(isd_m) && isd_m > 0)
+                error("sixgr:scenario:BadHexISD", ...
+                    "Hex wrap-around requires a positive ISD_m.");
+            end
+            imageRadius = max(1, round(double(opt.ImageRadius)));
+            [dx, dy] = localHexNearestImage(ueXY, bsXY, isd_m, K, N, imageRadius);
         end
-        imageRadius = max(1, round(double(opt.ImageRadius)));
-        [dx, dy] = localHexNearestImage(ueXY, bsXY, isd_m, K, N, imageRadius);
+    case {"hex_cluster_min_image", "finite_hex_cluster_minimum_image", ...
+            "explicit_translation_min_image"}
+        if isempty(opt.TranslationVectors_m)
+            error("sixgr:scenario:MissingClusterTranslationVectors", ...
+                "Finite-cluster hex wrap-around requires an explicit 2x2 TranslationVectors_m basis.");
+        end
+        [dx, dy] = localTranslationNearestImage(ueXY, bsXY, ...
+            double(opt.TranslationVectors_m), K, N, ...
+            max(1, round(double(opt.ImageRadius))));
     otherwise
         error("sixgr:scenario:UnknownWraparoundMode", ...
             "Unknown wrap-around mode: %s", mode);
@@ -60,6 +81,39 @@ if nargout > 1
     dxy_m = zeros(K, N, 2);
     dxy_m(:,:,1) = dx;
     dxy_m(:,:,2) = dy;
+end
+end
+
+function [bestDx, bestDy] = localTranslationNearestImage( ...
+    ueXY, bsXY, translationVectors_m, K, N, imageRadius)
+if any(~isfinite(translationVectors_m), "all") || ...
+        abs(det(translationVectors_m)) <= ...
+        eps(max(1, max(abs(translationVectors_m), [], "all")))^2
+    error("sixgr:scenario:InvalidClusterTranslationVectors", ...
+        "TranslationVectors_m must be a finite nonsingular 2x2 basis.");
+end
+
+bestDist2 = inf(K, N);
+bestDx = zeros(K, N);
+bestDy = zeros(K, N);
+for u = 1:K
+    for b = 1:N
+        delta = ueXY(u,:) - bsXY(b,:);
+        nearestCoordinates = round(delta / translationVectors_m);
+        for ia = -imageRadius:imageRadius
+            for ib = -imageRadius:imageRadius
+                imageShift = (nearestCoordinates + [ia ib]) * ...
+                    translationVectors_m;
+                candidate = delta - imageShift;
+                candidateDist2 = sum(candidate.^2);
+                if candidateDist2 < bestDist2(u,b)
+                    bestDist2(u,b) = candidateDist2;
+                    bestDx(u,b) = candidate(1);
+                    bestDy(u,b) = candidate(2);
+                end
+            end
+        end
+    end
 end
 end
 

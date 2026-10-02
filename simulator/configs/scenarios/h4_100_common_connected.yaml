@@ -210,6 +210,10 @@ control:
   pdcch_enabled: true
   blind_search_enabled: true
   pucch_enabled: true
+  # Connected-mode scheduling monitors the Release-18 UE-specific DL and UL
+  # formats. Keep the bidirectional installed list explicit in the H4 owner
+  # instead of inheriting a broadcast-only DCI 1_0 descriptor.
+  dci_formats: ["0_1", "1_1"]
   coreset_frequency_resource_policy: explicit_bitmap
   coreset_frequency_resources: [1, 1, 1, 1, 1, 1, 1, 1]
   coreset_rb_start: 112
@@ -220,6 +224,20 @@ control:
   aggregation_selection_policy: configured_scheduler_level
   search_space_num_candidates: [8, 4, 2, 1, 1]
   blind_decode_candidates: 16
+
+pdcch:
+  # Keep the schema-level descriptor aligned with control.dci_formats. Type-0
+  # broadcast still derives DCI 1_0 locally from MIB/SIB1; these fields own
+  # connected C-RNTI monitoring only.
+  dci_families: ["0_1", "1_1"]
+  dci_format_dl: "1_1"
+  dci_format_ul: "0_1"
+
+prach:
+  # Format B4 is a short-preamble (L_RA=139) format. The executable format
+  # and configuration index are inherited from the H4 RA profile.
+  long_short_preamble_mode: short
+
 pdsch:
   execution_profile: scheduler_truth
   prb_start: 0
@@ -295,6 +313,14 @@ reference_signals:
   csi_rs_resource_subcarrier_locations: [0, 0, 0, 0, 0, 0, 0, 0]
   csi_rs_resource_rb_offsets: [0, 0, 0, 0, 0, 0, 0, 0]
   csi_rs_resource_num_rbs: [273, 273, 273, 273, 273, 273, 273, 273]
+  nzp_csi_rs:
+    # This descriptive RS object is exported beside the executable resource
+    # arrays below. At mu=1, 20 slots are 10 ms; both representations must
+    # describe the same four-port periodic NZP CSI-RS obligation.
+    periodicity: "10ms"
+    periodicity_slots: 20
+    num_ports: 4
+    port_set: [0, 1, 2, 3]
   csi_rs_precoder_codebook:
     enabled: true
     type: dft_ura
@@ -349,6 +375,8 @@ reference_signals:
   trs_periodicity_slots: 20
   trs:
     enabled: true
+    periodicity: "20"
+    periodicity_slots: 20
     period_offset: 6
     burst_length_slots: 2
     num_ports: 1
@@ -384,6 +412,18 @@ csi_acquisition_and_reporting:
   ri_policy: measured_receiver_rank_search
   cri_policy: measured_receiver_resource_search
   report_trigger: periodic
+  # At mu=1 the 20-slot period is 10 ms. CSI-RS is sent at zero-based
+  # offset 2. For periodic CSI, TS 38.214 section 5.2.2.5 places the H4
+  # reference window before the report; zero-based offset 13 is the first
+  # D,D,D,S(10D/2G/2U),U special slot whose PUCCH symbols 12:13 are UL and
+  # whose reference window can contain the completed offset-2 CSI-RS.
+  # Do not inherit the old five-slot/offset-3 short-fixture calendar: that
+  # would request CSI one slot after CSI-RS, before its causal report wire
+  # can be prepared, and would create four obligations per H4 CSI-RS period.
+  report_periodicity: 10ms
+  csi_report_periodicity_slots: 20
+  csi_report_offset_slots: 13
+  csi_reporting_delay_slots: 4
   report_configuration:
     report_config_id: h4-csi-report-0
     epoch: 0

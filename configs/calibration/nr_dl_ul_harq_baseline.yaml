@@ -1,0 +1,45 @@
+schema: sixgr.link_calibration_campaign/v1
+campaign_id: nr_dl_ul_qpsk_harq_population_design_pilot
+research_class: baseline_benchmark
+# This is a first physical key, NOT coverage for every MCS/rank/bandwidth.
+# Inherit the existing production waveform adapters; no new decoder model.
+cases:
+  - id: dl_qpsk_r1_24prb
+    config: ../lls/pdsch_reference.yaml
+    overrides:
+      pdsch: {mcsTable: qam64_table1, mcsIndex: 4, targetCodeRate: 0.30078125}
+      receiver: {channelEstimation: practical, useMexLDPC: false}
+  - id: ul_qpsk_r1_24prb
+    config: ../lls/pusch_reference.yaml
+    overrides:
+      pusch: {mcsTable: qam64_table1, mcsIndex: 4, targetCodeRate: 0.30078125}
+      receiver: {channelEstimation: practical, useMexLDPC: false}
+reference_channel: {model: AWGN, delaySpreadSeconds: 0, velocityKmph: 0}
+target_channel: {model: TDL-A, delaySpreadSeconds: 0.00000003, velocityKmph: 0}
+# Independent reference envelope; target fading points do not move with it.
+# These are pilot domains, not a qualified coverage claim.
+reference_snr_axis_db: [-24, -18, -12, -6, 0, 6, 12, 18]
+target_snr_axis_db: [-6, 0, 6]
+rv_sequence: [0, 2]
+channel_evolution: independent_attempt_realizations
+feedback_assumption: ideal_error_free_delayed_control
+receiver_assumption: practical_dmrs_known_noise_ideal_timing
+sinr_feature: applied_channel_per_data_re_pre_combining
+# Design-pilot roles have 100 starts/history; held-out roles have one smoke
+# episode/history. Qualifying validation needs a fresh frozen campaign.
+populations: {reference: 100, reference_validation: 1, fit: 100, validation: 1}
+episodes_per_invocation: 292
+seed_base: 220261002
+population_planning:
+  minimum_pilot_starts: 100
+  maximum_starting_episodes_per_history: 1000000
+  reach_confidence: 0.95
+qualification:
+  minimum_conditional_trials: 2000
+  confidence_level: 0.95
+  maximum_wilson_half_width: 0.025
+  maximum_validation_absolute_bler_error: 0.02
+  beta_linear_bounds: [0.01, 100]
+  beta_log_grid_count: 81
+  minimum_beta_objective_contrast: 0.000001
+  required_directions: [DL, UL]

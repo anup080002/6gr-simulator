@@ -7,6 +7,8 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "apps"))
@@ -158,6 +160,52 @@ def test_dashboard_discovers_generic_sweep_parent_during_child_preflight(
     )[0]["status_text"] == "initializing"
 
 
+def test_dashboard_discovers_active_waveform_preflight_only_with_exact_process(
+    tmp_path, monkeypatch
+) -> None:
+    results = tmp_path / "results"
+    run_folder = results / "lls" / "h4_gate" / "active_run"
+    meta = run_folder / "meta"
+    meta.mkdir(parents=True)
+    (meta / "scenario_config_identity.json").write_text(
+        json.dumps(
+            {"ScenarioID": "h4_gate", "GeneratedUTC": "2026-09-29T00:00:00Z"}
+        ),
+        encoding="utf-8",
+    )
+    (meta / "scenario_config_resolved.json").write_text(
+        json.dumps(
+            {
+                "meta": {"scenario_id": "h4_gate"},
+                "scenario": {"runner_profile": "waveform_bundle"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(dash, "_dashboard_result_roots", lambda: [results])
+    monkeypatch.setattr(dash, "local_run_process_active", lambda row: False)
+
+    assert dash._filesystem_run_folders() == []
+    assert dash.filesystem_run_row_from_folder(run_folder) is None
+
+    observed: list[str] = []
+
+    def exact_process(row):
+        observed.append(str(row.get("run_tag") or ""))
+        return row.get("run_tag") == "active_run"
+
+    monkeypatch.setattr(dash, "local_run_process_active", exact_process)
+    assert dash._filesystem_run_folders() == [run_folder]
+    row = dash.filesystem_run_row_from_folder(run_folder)
+    assert row is not None
+    assert observed and set(observed) == {"active_run"}
+    assert row["scenario_id"] == "h4_gate"
+    assert row["status_text"] == "initializing"
+    status = dash._status_payload(row)
+    assert status["stage"] == "waveform_bundle_preflight"
+    assert status["status_authority"] == "resolved_config_and_active_run_process"
+
+
 def test_dashboard_marks_abandoned_generic_sweep_preflight_stale(
     tmp_path, monkeypatch
 ) -> None:
@@ -198,6 +246,50 @@ def test_dashboard_marks_abandoned_generic_sweep_preflight_stale(
     assert status["last_updated_utc"]
 
 
+def test_dashboard_marks_abandoned_live_stage_run_stale(
+    tmp_path, monkeypatch
+) -> None:
+    run_folder = tmp_path / "results" / "lls" / "h4_gate" / "abandoned_run"
+    meta = run_folder / "meta"
+    live_dir = run_folder / "air_interface" / "reports" / "csv"
+    meta.mkdir(parents=True)
+    live_dir.mkdir(parents=True)
+    identity = meta / "scenario_config_identity.json"
+    resolved = meta / "scenario_config_resolved.json"
+    live = live_dir / "live_stage_status.csv"
+    identity.write_text(
+        json.dumps({"ScenarioID": "h4_gate", "GeneratedUTC": "2026-09-29T00:00:00Z"}),
+        encoding="utf-8",
+    )
+    resolved.write_text(
+        json.dumps({
+            "meta": {"scenario_id": "h4_gate"},
+            "scenario": {"runner_profile": "waveform_bundle"},
+        }),
+        encoding="utf-8",
+    )
+    live.write_text(
+        "Stage,CurrentSNR_dB,CurrentSlot,TotalSlots,RunCompletion,Notes\n"
+        "dl_ul_raw_trials_streaming,40,17,200,0.085,interrupted\n",
+        encoding="utf-8",
+    )
+    stale_time = (
+        datetime.now(timezone.utc)
+        - timedelta(minutes=dash.STALE_RUNNING_MINUTES + 1)
+    ).timestamp()
+    for path in (run_folder, meta, live_dir, identity, resolved, live):
+        os.utime(path, (stale_time, stale_time))
+    monkeypatch.setattr(dash, "local_run_process_active", lambda _row: False)
+
+    row = dash.filesystem_run_row_from_folder(run_folder)
+    assert row is not None
+    assert row["status_text"] == "aborted_stale_no_run_process"
+    status = dash._status_payload(row)
+    assert status["stage"] == "live_stage_stale"
+    assert status["status_authority"] == "dashboard_process_and_artifact_staleness"
+    assert status["last_updated_utc"]
+
+
 def test_dashboard_csv_parser_accepts_large_exact_phy_vector() -> None:
     packed_vector = "|".join("0" for _ in range(70000))
     raw = ("TrialID,MeasuredLDPCParityCheckVector,CRCPass\n"
@@ -227,13 +319,17 @@ def test_dashboard_preserves_sweep_execution_failure_without_phy_rows() -> None:
     assert not {'BLER', 'ThroughputMbps', 'CRCPass'}.intersection(header)
 
 
+@pytest.mark.parametrize(
+    "live_relative_dir",
+    (Path("reports") / "csv", Path("air_interface") / "reports" / "csv"),
+)
 def test_dashboard_discovers_active_filesystem_run_before_terminal_manifest(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, live_relative_dir
 ) -> None:
     results_root = tmp_path / "results"
     run_folder = results_root / "lls" / "active_scenario" / "active_run"
     (run_folder / "meta").mkdir(parents=True)
-    live_dir = run_folder / "air_interface" / "reports" / "csv"
+    live_dir = run_folder / live_relative_dir
     live_dir.mkdir(parents=True)
     (run_folder / "meta" / "scenario_config_identity.json").write_text(
         json.dumps(

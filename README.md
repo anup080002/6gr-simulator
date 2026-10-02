@@ -1,5 +1,223 @@
 # SixGR Foundation v2
 
+## Current SLS delivery status (2 October 2026)
+
+The repository provides YAML-selected LLS and SLS entry points, a network SLS
+runner, calibration collection, causal CSI/SRS feedback, resource accounting,
+and source-labelled exports. **This is not yet an accepted 21-cell study
+result.** The production SLS template intentionally has no calibration file
+or SHA256. The retained DL/UL SISO calibration is a population-design pilot:
+292 episodes were collected in v5, 0/336 conditional audit rows qualified, and
+the current v6 design has not been executed. Its SISO/ideal-RF key also cannot
+validate the 4-by-4 network template. Statistical BLER/HARQ coverage, S0 load
+calibration, integrated RF/array qualification and paired confidence intervals
+remain open. Do not fill the empty calibration fields with a test fixture or
+interpret an SLS execution receipt as primary-study acceptance.
+
+Use the calibration command below to collect the next *pilot* increment. To
+run SLS after an independently accepted, matching calibration exists, set
+`sls.config.system.linkAbstraction.calibrationFile` and
+`calibrationSHA256` in
+`simulator/configs/scenarios/sls_network_calibrated.yaml`, then use the SLS
+command in [YAML-selected LLS and SLS](#yaml-selected-lls-and-sls). Until those
+fields and the matching physical coverage are supplied, that SLS command is
+expected to fail closed; there is no honest "all scenarios ready" command.
+
+## Generic DL/UL BLER and HARQ calibration
+
+`run_link_calibration(configPath, outputRoot, runTag)` uses the existing
+production PDSCH/PUSCH waveform adapters, independently of any agenda item.
+The initial configuration is
+`configs/calibration/nr_dl_ul_harq_baseline.yaml`: 4 GHz, 20 MHz carrier,
+24 allocated PRBs, SISO QPSK / NR table-1 MCS 4 (308/1024), AWGN reference
+and TDL-A/30 ns target, RV `[0,2]`. It explicitly uses practical DMRS channel
+estimation, toolbox LDPC (custom MEX disabled), known noise variance, ideal timing and independent channel
+realizations between attempts. These assumptions do not qualify RF-impaired,
+multi-layer or correlated-channel HARQ cases.
+
+Windows Command Prompt, from the repository root:
+
+```bat
+if not exist "logs" mkdir "logs"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\link_calibration_20261002_v6_01.log" -batch "setup6GRSimToolkit('Verbose',false); receipt=run_link_calibration('configs/calibration/nr_dl_ul_harq_baseline.yaml','results/calibration','nr_dl_ul_20261002_v6'); disp(receipt);"
+```
+
+One invocation collects at most 292 new episodes and resumes the same tag
+without rerunning committed episodes. Use a new launcher log filename when
+resuming. Changed scientific configuration, source or MATLAB/toolbox versions
+require a new tag; observations from different execution versions are not pooled.
+The configured population-design pilot contains 14,746 episodes across two
+directions, four independent roles and their Cartesian SNR histories. The
+reference and fading-fit roles have 100 starts/history; the independent
+held-out roles have one smoke episode/history and **cannot** qualify validation.
+It is **not** a statistically accepted calibration. The four roles are reference
+AWGN, independent reference-validation AWGN, fading fit and held-out fading
+validation. The first invocation collects one starting TB per case/role/history.
+Do not interpret the invocation budget as statistical sufficiency or loop
+unattended before inspecting `population_feasibility.csv` and the
+conditional-population audit. The feasibility file is a deterministic upper
+bound from frozen starting TBs, **not observed trials**. Under the current
+0.02 independent-AWGN BLER-difference policy, identical 95% Wilson intervals
+at BLER 0.5 require at least **9,600 trials in each independent reference
+cohort** even before allowing for sampling differences. The 100-start pilot
+cannot qualify any conditional cell under its frozen population, even if
+every eligible retransmission occurs. A separate fixed-population expansion
+is required after an independent pilot; validation samples must not be reused
+to choose that plan.
+
+Reference and target coverage are now independent YAML fields:
+`reference_snr_axis_db: [-24,-18,-12,-6,0,6,12,18]` and
+`target_snr_axis_db: [-6,0,6]`. Widening the AWGN envelope no longer moves
+the fading operating points. This is a pilot envelope, not a guarantee for
+every fading realization or a qualified dense HARQ reference surface.
+`reference_domain_audit.csv` checks actual fit-only per-RE features over the
+declared beta bounds without consulting held-out outcomes or extrapolating.
+
+`conditional_population_plan.csv` uses only reference/fit pilot episodes,
+not validation CRCs. It estimates preceding-failure reachability with
+one-sided exact binomial bounds and simultaneous Bonferroni protection,
+then solves for a **fixed** fresh starting population. Reference cohorts use
+the independent-pair planning floor rather than the generic 2,000-trial
+minimum. This floor is necessary at the BLER transition, not a guarantee that
+two random cohorts will pass the 0.02 bound. Zero observed preceding
+failures, fewer than 100 pilot starts, or a requirement exceeding the declared
+budget remain unsupported. No retransmission is forced after a successful CRC.
+The plan is advisory: it does not top up a validation cohort until it passes.
+Freeze accepted quotas in a new YAML/new run with independent seeds, using
+`starting_population_overrides` entries with `case_id`, `role`,
+`history_index` (MATLAB Cartesian order), and `starting_tbs`. Unlisted cells
+use `populations`; fit and validation quotas are independently declared.
+Actual conditional counts and confidence checks still decide acceptance.
+Do not launch the entire provisional population until these pilot checks
+establish feasible coverage and storage/runtime requirements.
+
+The run retains source snapshots/hashes and `campaign.mat`, lossless physical
+episodes with checksums, `receipt.json`, `conditional_population_audit.csv`
+and `fitting_status.json`. Future episodes use lossless MATLAB v7 storage; an
+exact load-and-compare probe reduced one episode from 1,095,096 to 33,511
+bytes. `reference_validation` supplies a second physical AWGN population.
+The numerical EESM fitter uses only fit CRCs to
+select beta, validates each held-out history group, and rejects reused seeds,
+unidentifiable beta and reference-domain extrapolation. Confidence and beta
+search settings are implementation/study policy, not prescribed 3GPP values.
+Collection completion and fitted reports do **not** install a production SLS
+calibration: matching network-provider/allocation/RF keys and the complete
+required coverage matrix must still be established.
+An SLS curve may mark unobserved conditional grid cells unsupported. Its
+runtime interpolation checks all required grid corners and rejects missing
+coverage. Accepted curve cells still require real waveform counts, retained
+independent AWGN validation and fit/held-out checks. First HARQ attempts are
+recorded with `PriorAttemptsFailed=false`; later attempts require actual prior
+CRC failures. Production source CSV rows must resolve to retained, checksum
+protected decoder episodes and agree on SNR history, MCS, rank, TBS, ports,
+channel, ideal-RF branch, equalizer, CRC and seeds. The current 4-by-4 SLS network template cannot use
+the SISO pilot as its production calibration.
+
+The first 2026-10-02 pilot (`nr_dl_ul_20261002_v2`) retained 54 episodes / 76
+physical attempts. None of its 72 conditional cells meets the population
+gate; five fitting attempts are outside the initial reference domain for
+every permitted beta. **Do not loop that pilot grid into a production
+calibration.** Reference-domain coverage and conditional HARQ population
+design need revision, with fresh independent validation populations.
+The dedicated regression also exposed inherited SSB exclusions in the
+standalone DL builder; the builder now disables that untransmitted broadcast
+signal for data-only calibration. Its unchanged baseline regression passes
+after this fix. The UL builder also forwards its configured MCS-table identity.
+The post-fix pilot (`nr_dl_ul_20261002_v3`) completed 54 episodes / 75 attempts;
+its population and reference-domain gaps remain, and no production calibration
+was installed. Earlier pilot files remain unchanged and unqualified; different
+source revisions are not pooled. Physical feedback timing, access and
+throughput are not qualified by this transport-block collector.
+
+The separated-grid pilot (`nr_dl_ul_20261002_v4`) completed **164 episodes /
+250 physical attempts** on 2026-10-02. Its 29 fit-role attempts are all inside
+the widened reference domain across the declared beta bounds. **0/192
+conditional cells qualify statistically**; the wider grid increases the
+number of reference cells. All 146 second-attempt population-plan entries
+still need more independent pilot starts. These are distinct new-seed data,
+not relabeled or pooled v3 observations. Four dedicated calibration checks
+pass; this is not acceptance of all SLS configurations or the full regression
+suite. The current SLS package loader also needs validated curve-tensor and
+physical-key binding from the fitted collection before production installation.
+
+The later v5 source revision retained **292 independent episodes / 440 physical
+attempts**. Its 26 observed target-fit attempts stayed inside the widened
+reference domain, but 0/336 role-specific conditional audit rows qualified.
+It is preserved under `results/calibration/nr_dl_ul_20261002_v5` as an
+unqualified pilot. The population-feasibility correction changed source
+identity, so do not append current-code episodes to v5; use the v6 tag above.
+
+## YAML-selected LLS and SLS
+
+`run_sixgr(configPath, outputDir, runTag)` is the shared entry point. Existing
+`run_6g_phy_lls_single` commands remain supported. Execution scope and PHY
+backend are separate: SLS can use waveform replay or explicitly calibrated
+link abstraction; selecting SLS does not make modeled metrics waveform truth.
+
+| Control | LLS | SLS |
+|---|---|---|
+| YAML mode | `run_control.execution_mode: LLS` (legacy default) | `run_control.execution_mode: SLS` |
+| Configuration | Existing ScenarioConfig YAML/inheritance | `sls.config` native configuration, plus explicit `sls.config_files` |
+| Engine | Existing config-driven LLS runner | `sixgr.system.SystemLevelRunner` |
+| Backend | Existing scenario-selected PHY execution | Explicit `system.phyBackend`: `waveform` or `calibrated_link_abstraction` |
+| WebGUI | Existing PHY live panels and artifacts | Network progress, KPIs, UE/load/file metrics and modeled CSI/SRS/UCI tables |
+| Results root | `results/lls/<scenario>/<tag>` | `results/sls/<scenario>/<tag>` |
+
+Select a matching YAML in Configure; its fields are editable in Parameters.
+LLS/SLS is also selectable in Configure. Changing the selector alone does not
+convert an LLS configuration to SLS. Live and Results have an **All modes / LLS /
+SLS** filter. SLS discovery uses its own durable run receipt and does not invoke
+the LLS terminal materializer or manufacture missing waveform plots.
+
+Generic SLS template: `simulator/configs/scenarios/sls_network_calibrated.yaml`.
+This is **not a ready/qualified study**: its calibration path and SHA256 are
+deliberately empty. Bind accepted waveform-derived calibration matching the
+configured link keys before execution. Test-only calibration is rejected by
+the public front door. Native fragments resolve in declared order, followed by
+`sls.config`; scenario-name-derived presets and implicit local fragments are
+not loaded. Default native parameters come from
+`simulator/configs/schema/core_parameter_catalog.yaml` and may be overridden
+under `sls.config`.
+
+Windows **Command Prompt** (only after binding/validating a production SLS
+calibration matching every configured key; the YAML as shipped fails closed):
+
+```bat
+cd /d "C:\Users\anup0\OneDrive\Documents\Simulator\6GR Simulator_v2_clean_main"
+if not exist "logs" mkdir "logs"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\sls_network_v1.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_sixgr('simulator/configs/scenarios/sls_network_calibrated.yaml','results','sls_network_v1'); disp(out); assert(out.Ok);"
+```
+
+Use a fresh tag for every SLS run; an existing folder is never overwritten.
+To use the shared front door for an existing LLS scenario:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\lls_5mhz_v1.log" -batch "setup6GRSimToolkit('Verbose',false); out=run_sixgr('simulator/configs/scenarios/lls_tdd_5mhz_rank2_shared_awgn_20db.yaml','results','lls_5mhz_v1'); disp(out); assert(out.Ok);"
+```
+
+Start/restart the WebGUI separately to load updated Python code:
+
+```bat
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "apps\start_lls_web_dashboard.ps1"
+```
+
+SLS output flags are `sls.config.outputs.saveCSV`, `saveMAT`, `saveFigures`,
+`saveFIG`, `detailedSystemTrace` and `exportSLSOutputCatalog`. Retained outputs
+include `meta/simulation_run.json`, input/config snapshots, `logs/run.log`,
+`summaries`, `tables`, `traces`, `maps`, `plots` and the original `csv`/`image`
+artifacts. These cover network KPIs, scheduler grants/TBS, HARQ, resource
+reservations/opportunities, interference, mobility, loads and FTP3 delivery
+when those producers execute. No universal set of CSV/PNG filenames constitutes
+3GPP qualification. Missing measurements are not synthesized to populate plots.
+
+**Remaining scientific acceptance work:** conditional BLER/HARQ populations and
+held-out validation, DL/UL calibration coverage, S0 utilization calibration,
+RF-aware network/common-control interference, mobile beam/TCI and array
+qualification, broader physical UCI qualification and paired 21-cell confidence
+intervals. `ExecutionOk` and `PrimaryStudyAccepted` remain separate; the generic
+runner does not certify those studies. No `testAll` or production campaign is
+launched by the mode-dispatch tests.
+
 Delivery branch: **`main`**, with one Git worktree. Source, scenario YAMLs,
 launchers and development patches are versioned; generated results, logs and
 instrument IQ remain separate local artifacts. No result or recovery stash is
@@ -23,6 +241,215 @@ Historical recovery patches remain evidence only; do not apply them on top of
 current `main`. A committed implementation is not automatically a qualified
 scenario result. Use the commands below and retain the generated logs and
 artifacts for the exact checked-out commit.
+
+### AI 10.3.2: assumed 7 GHz phase noise and SLS readiness
+
+The working study configuration is `configs/tdoc/ai_10_3_2_modulation/study.yaml`.
+Its F1 waveform calibration now selects `lls.execution.rf_branch: pn7_ptrs_compensated`.
+This is an **assumed research oscillator**, not a measured hardware mask or a
+normative 7 GHz requirement. The explicit profile is
+`simulator/configs/rf/phase_noise_nr_inspired_7ghz.yaml`: the TR 38.803 multipole-zero
+shape at 29.55 GHz is frequency-scaled to 7 GHz. The 10 kHz low-offset cutoff with
+flat continuation, common TX LO across chains, ideal RX LO, and FIR synthesis
+resolution are disclosed assumptions. Parameters follow the
+[MathWorks TR 38.803 modeling reference](https://www.mathworks.com/help/rf/ug/model-rf-impairments-in-5g-downlink-waveform.html).
+
+| F1 RF branch | Phase noise | Transmitted PT-RS | Receiver phase tracking |
+|---|---|---|---|
+| `pn7_ptrs_compensated` | Enabled in transmitted samples; CPE and ICI | Enabled | Measured PT-RS CPE correction |
+| `pn7_ptrs_uncompensated` | Same assumed profile and seed | Same allocation | Disabled |
+| `pn_off_ptrs_reference` | Disabled | Same allocation | Disabled |
+| `ideal_debug` | Disabled | Disabled | Disabled; separate overhead-free reference |
+
+Select the branch in the YAML; keep separate calibration run tags. Never reuse
+the ideal-reference thresholds for an impaired branch. The oscillator retains
+state across waveform chunks, and the receiver does not receive its phase trace.
+PT-RS correction does not remove all ICI and need not improve every realization.
+UL 1024-QAM remains explicitly labelled as a research transport extension.
+
+Dedicated checks from a Windows Command Prompt already at the repository root:
+
+```bat
+if not exist "logs" mkdir "logs"
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\sls_phase_noise_checks.log" -batch "setup6GRSimToolkit('Verbose',false); testNRInspiredPhaseNoise; testRAN1AI1032PhaseNoisePTRS(25,[1 2 4]); testRAN1AI1032PhaseNoisePTRS(273,1);"
+```
+
+Retained component/paired-waveform evidence is under
+`logs/nr_inspired_phase_noise_20261001/`. These checks are not statistical BLER
+calibration or an accepted 21-cell SLS campaign. Dynamic PUCCH obligations,
+production spatial/interference/feedback integration, calibrated BLER/HARQ,
+measured S0 offered-load calibration, exact array qualification and paired-drop
+confidence intervals remain acceptance gates. Hardware qualification is UNKNOWN.
+No full `testAll` or network campaign is launched by the command above.
+
+The selected SLS feedback assumption is **ideal delayed CSI/SRS**, not
+waveform-measured feedback. The UL modeled-SRS consumer now binds delivered
+observations to scheduler rank/TPMI/SRI and the frozen grant. Its CP-OFDM
+codebook search uses constant total power and an explicitly configured
+sum-log-rate objective; that selection objective is not a mandated 3GPP rule.
+Spatial validity does not make missing/stale CQI valid. Source, availability,
+control and data slots are exported in `csv/system_modeled_spatial_feedback.csv`
+with `WaveformBacked=false`. The policy is in
+`simulator/configs/system/calibrated_link_abstraction.yaml`; it remains disabled
+by default until the campaign supplies its production channel/interference
+observation provider. `NetworkSpatialGrantProvider` now supplies NR TDL/CDL
+frequency-domain channels, reciprocal UL/DL link ownership, actual-grant overlap
+covariance and calendar-bound ideal SRS. Select it with the internal-config
+overlay `simulator/configs/system/network_spatial_ideal_tdd.yaml` after the
+calibrated-abstraction fragment. This is an **ideal-RF port-domain baseline**,
+not acceptance of the impaired 64-TXRU study: RF/array qualification remains
+false. It rejects overlapping opposite-direction cross-links, which need
+additional BS-to-BS/UE-to-UE channels. The configured equal-PSD rule, allocated
+PRB/symbol footprint (including pilots), and noise-only full-band sounding rank
+reference are explicit model assumptions requiring matching calibration.
+Interference currently covers scheduled shared-data grants; common/control
+signal interference is not yet included or qualified. Resource reservation
+alone must not be presented as execution of those interferers.
+
+`networkSpatial.channelResponseSampling` is `signal_rate` by default. The
+explicit zero-Doppler-only `static_exact` alternative uses native TDL `PathGainSampleRate=auto`
+or CDL `SampleDensity=64` for frequency-domain **SLS model** responses, avoiding
+sample-rate path-gain tensors at large array dimensions. It retains per-RE
+frequency/time responses and changes the channel calibration identity. It
+does not change the waveform PHY or qualify RF, polarization, or mobility.
+`testSLSNetworkChannelSampling` requires numerical equality against dense static
+sampling and rejects moving channels. A moving-channel comparison failed; this
+option is not an equivalent mobility path. `testSLSMultiBeamMapping(true)`
+exercises all eight CSI resources at 273 PRBs with Doppler explicitly zero.
+This frequency-domain provider requires the R2024b-or-later 5G Toolbox
+`ChannelResponseOutput` interface; it is not currently an R2023b SLS backend.
+
+The original UL integration test uses a labelled numerical spatial fixture
+and is not a study-result command:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\sls_spatial_feedback_checks.log" -batch "setup6GRSimToolkit('Verbose',false); testSLSCausalSpatialFeedback; testSystemFTP3CalibratedDelivery('UL');"
+```
+
+Physical HARQ calibration collection is separate from first-transmission F1.
+`study.yaml` → `harq.calibration` configures complete SNR histories, independent
+fit/validation episode counts, seed base and invocation budget. The executor
+keeps the same TB and position-aware mother-code soft buffer across RVs, stops
+at the first CRC pass, and records only actually executed conditional attempts.
+Its explicit channel assumption is **independent attempt realizations**, with
+ideal delayed control; it does not qualify correlated-channel HARQ or UCI.
+
+From the repository root in Windows Command Prompt, this bounded command can
+be repeated with the same tag to resume. It executes physical waveforms:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -wait -logfile "logs\sls_harq_collection.log" -batch "setup6GRSimToolkit('Verbose',false); receipt=sixgr.studies.ran1ai1032.runHARQCalibrationCampaign('configs/tdoc/ai_10_3_2_modulation/study.yaml','results/ai_10_3_2_modulation','harq_waveform_v1'); disp(receipt);"
+```
+
+Outputs are under `results/ai_10_3_2_modulation/harq_waveform_v1/harq/`:
+per-case/history `fit_attempts.csv`, `validation_attempts.csv`, atomic MAT
+checkpoints, input/source identity and a receipt. Interrupted CSV publication
+is rebuilt from the checkpoint. Scientific/source changes require a new tag.
+The default three diagonal SNR histories are **not** complete SLS calibration
+coverage. Independent effective-SINR fitting, conditional population/error
+gates, full RV-history coverage and SLS-key matching remain required before
+packaging; collection completion never sets `PrimaryStudyAccepted=true`.
+
+The network-provider integration check uses actual NR fading and configured
+SRS, but still uses a **test-only BLER curve**, not accepted LLS calibration:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\sls_network_checks.log" -batch "setup6GRSimToolkit('Verbose',false); testSLSNetworkSpatialProvider; testSystemNetworkSpatialDelivery;"
+```
+
+Its run folder contains `csv/system_modeled_spatial_feedback.csv` and
+`csv/system_network_spatial_evidence.csv`. The latter records resource count,
+per-RE transmit/noise power, overlapping interferers, inter-layer output power,
+modeled SINR, profile identities and qualification flags. No received-waveform
+measurement is fabricated, and `PrimaryResultEligible` remains false.
+
+DL CSI integration is configured separately with
+`system.linkAbstraction.dlFeedback.enabled`. It uses actual configured CSI-RS
+resource coordinates, the periodic CSI reference/report calendar, ideal delayed
+delivery, and the existing NR Type-I codebooks. Rank selection uses the declared
+sum-log-rate study objective. CQI uses the installed mapping; enabling this path
+does **not** qualify its calibration. `networkSpatial.dlAntennaBasis: direct_ports`
+requires CSI, PDSCH and channel ports to agree. The optional
+`configured_csirs_elements` mode uses the existing YAML-resolved
+`phy.csirs.precoderMatrices`: one semi-unitary physical-TXRU-by-CSI-port matrix
+per CRI. It supports the configured 64-TXRU/four-logical-port/eight-beam mapping
+without substituting a scalar array gain. Enable the existing element-domain
+PDSCH/hybrid mapping too. The calendar retains an explicit zero-based CSI
+resource index, and the frozen data matrix is `B_CRI * W_PMI`. Candidates from
+one report occasion are compared across their actual sweep source slots;
+availability and maximum age still apply. RF/array qualification is separate.
+New grants retain the report's rank and precoder, and retransmissions retain the
+original binding. Modeled reports never become `ReceivedCSIReport` waveform evidence.
+
+`system.linkAbstraction.dynamicPUCCH.enabled` creates receive obligations from
+scheduled DL K1/PRI, configured SR calendars and causally available CSI references.
+The default policy is `dedicated_pucch_no_pusch_multiplexing`, with explicitly
+ideal error-free delayed control. Set `phy.pucch.uciOnPUSCHEnabled=false`; the
+scheduler excludes same-UE PUSCH on these feedback occasions. Installed PUCCH
+resource selection, capacity and TDD checks remain active. Unsupported overlaps
+and collisions fail rather than silently discard obligations. This does not
+qualify physical UCI decoding, missed DCI or MU control multiplexing.
+
+The opt-in `causal_native_pusch_multiplexing` policy requires
+`phy.pucch.uciOnPUSCHEnabled=true`. It binds one same-cell HARQ/CSI obligation
+known at the control slot to a symbol-overlapping, future native NR PUSCH.
+The issued grant retains its native coded-bit/RE UCI plan and exact digest;
+data-only BLER calibration cannot be reused for that allocation. SR is not
+added as a PUSCH payload bit or claimed as delivered. Standalone SR and
+multiple unsupported obligations keep dedicated PUCCH. Late changes to an
+issued obligation fail closed rather than mutate its allocation. This is a
+conservative ideal-control SLS subset, not physical missed-DCI qualification.
+Completion requires the selected PUSCH to execute, and CSI/HARQ consumers
+require the modeled transport completion. Ideal-control completion is
+independent of the modeled UL-SCH CRC outcome and is labelled explicitly.
+
+Dedicated software checks (test-only BLER calibration, not a study campaign):
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\sls_dl_csi_pucch_checks.log" -batch "setup6GRSimToolkit('Verbose',false); testSLSDLCSIFeedback; testSLSDynamicPUCCH; testSystemNetworkDLCSI;"
+```
+
+Additional exports are `csv/system_modeled_dl_csi.csv` and
+`csv/system_dynamic_pucch_obligations.csv`, plus
+`csv/system_dynamic_uci_completions.csv`. They retain zero-based causal clocks,
+field counts, context digests and model/qualification labels, not fabricated RF
+trial rows. Both features remain opt-in until the selected study supplies its
+matching calibration and passes its integrated acceptance checks.
+
+`sixgr.phy.ul.pusch.planUCIResources` computes native NR single-codeword
+HARQ/CSI-on-PUSCH coded-bit budgets, puncturing and exact RE coordinates.
+Its output is resource-accounting evidence, **not a physical UCI trial**.
+The native single-codeword data-PUSCH transmitter (without configured-grant
+UCI) also checks this plan against its actual encoder budget and retains it
+as `NativeUCIResourcePlan`. Other existing transport variants retain their
+own handling; this is not a qualification of those branches.
+The calibrated backend includes an attached `SLSUCIAllocation` in its physical
+allocation key, preventing data-only BLER-curve reuse. Automatic selection is
+limited to the policy described above; a transport label alone never releases
+PUCCH reservations. The native waveform receiver check uses separately built
+receive context/schema, not expected transmitted UCI bits. Passing a few
+identity-channel cases is not statistical UCI qualification.
+
+`sixgr.system.abstraction.buildCalibrationFromTrials(spec, policy, outputFile)`
+packages retained waveform fit/held-out CSV populations into the backend MAT
+schema. `spec` supplies physically keyed curve templates (including fitted
+beta/MI mappings and SINR-history axes) and source-file hashes. Counts are
+derived from raw rows, never filled in. Incomplete populations, reused trial
+identities, changed files, development fixtures or failed statistical gates
+prevent publication. This packager does not execute the missing waveform
+campaign or turn an F1 first-transmission curve into HARQ calibration.
+
+Additional dedicated checks (not `testAll` or a qualified study command):
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\sls_mapping_uci_calibration_checks.log" -batch "setup6GRSimToolkit('Verbose',false); testSLSMultiBeamMapping; testSLSNativePUSCHUCIResources; testSLSNativePUSCHUCITransmission; testSLSResourceReservations; testSLSCalibrationSourceIntegrity; testSystemNetworkDLCSI;"
+```
+
+Automatic SLS transport integration and separate waveform receiver checks:
+
+```bat
+"C:\Program Files\MATLAB\R2026a\bin\matlab.exe" -logfile "logs\sls_automatic_uci_checks.log" -batch "setup6GRSimToolkit('Verbose',false); testSLSNativePUSCHUCIReception; testSystemAutomaticPUSCHUCI;"
+```
 
 ### H4 4 GHz / 100 MHz TDD scenario family
 

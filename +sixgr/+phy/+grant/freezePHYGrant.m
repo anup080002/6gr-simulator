@@ -206,6 +206,13 @@ configurationAuthority = struct( ...
     "RuntimeOperatingAuthoritySHA256", char(runtimeAuthorityDigest), ...
     "SourceConfigSHA256", char(string(sixgr.util.structGet(cfg, "meta.configHash", ""))), ...
     "Source", char(localRuntimeAuthoritySource(cfg)));
+if direction == "DL"
+    % QCL/TCI is part of the scheduled PDSCH execution authority.  Keeping
+    % it only in a mutable per-UE cfg allowed the authored DCI and the
+    % eventual transmitter hydration to observe different beam states.
+    configurationAuthority.DLQCLTCIBinding = ...
+        sixgr.phy.grant.resolveDLQCLTCIBinding(cfg);
+end
 
 phyGrant = struct( ...
     "ContractVersion", "PHYGrant/v1", ...
@@ -310,6 +317,22 @@ if strlength(frozenAuthorityDigest) > 0 && strlength(runtimeAuthorityDigest) > 0
         ['Frozen %s grant configuration authority %s differs from the current ' ...
         'runtime operating authority %s; grant regeneration during replay is forbidden.'], ...
         char(direction), char(frozenAuthorityDigest), char(runtimeAuthorityDigest));
+end
+if upper(string(direction)) == "DL"
+    frozenTCI = sixgr.util.structGet(existing, ...
+        "ConfigurationAuthority.DLQCLTCIBinding", struct());
+    requestedTCI = sixgr.phy.grant.resolveDLQCLTCIBinding(cfg);
+    frozenAvailable = logical(sixgr.util.structGet( ...
+        frozenTCI, "Available", false));
+    requestedAvailable = logical(sixgr.util.structGet( ...
+        requestedTCI, "Available", false));
+    if frozenAvailable ~= requestedAvailable
+        return;
+    end
+    if frozenAvailable && string(sixgr.util.structGet( ...
+            frozenTCI, "Digest", "")) ~= string(requestedTCI.Digest)
+        return;
+    end
 end
 
 harqContext = sixgr.util.structGet(opt, "HARQContext", struct());
@@ -602,6 +625,11 @@ secondHop = double(secondHop);
 end
 
 function [ant, prec] = localResolveAntennaAndPrecoding(cfg, grant, direction, numLayers, numCodewords)
+if direction=="DL" && isfield(grant,'ModeledCSIFeedback') && ~isempty(fieldnames(grant.ModeledCSIFeedback))
+    sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(cfg,grant);
+    assert(isequal(double(grant.PrecodingMatrixLogicalPorts),double(grant.ModeledCSIFeedback.MatrixPorts)), ...
+        'sixgr:abstraction:DLCSIBinding','Grant precoder differs from the causal CSI decision.');
+end
 isUL = direction == "UL";
 matrixLogicalPorts = [];
 elementDomainApplied = false;
@@ -782,6 +810,21 @@ else
         end
     elseif ~isempty(wLogicalRaw)
         matrixLogicalPorts = localNormalizeDLMatrix(wLogicalRaw, logicalPorts, numLayers);
+        if isfield(grant,'ModeledCSIFeedback') && ...
+                string(sixgr.util.structGet(cfg,'system.linkAbstraction.networkSpatial.dlAntennaBasis','direct_ports'))=="configured_csirs_elements"
+            assert(localDLHybridElementDomainEnabled(cfg), ...
+                'sixgr:abstraction:DLCSIPortBasis','Physical CSI beam composition requires explicit element-domain PDSCH precoding.');
+            [matrixLogicalPorts,basis]=localComposeDLPMIWithCSIRSPortBasis( ...
+                cfg,grant,matrixLogicalPorts,numElements,logicalPorts,numLayers);
+            dlPMIMeta.CSIRSPortBasisApplied=basis.Applied;
+            dlPMIMeta.CSIResourceIndex=basis.CSIResourceIndex;
+            dlPMIMeta.CSIRSPortToElementMatrix=basis.CSIRSPortToElementMatrix;
+            dlPMIMeta.CSIRSPortToElementMatrixSHA256=basis.CSIRSPortToElementMatrixSHA256;
+            dlPMIMeta.ComposedElementMatrix=basis.ComposedElementMatrix;
+            dlPMIMeta.ComposedElementMatrixSHA256=basis.ComposedElementMatrixSHA256;
+            dlPMIMeta.PMICodebookMatrixCSIPorts=matrixLogicalPorts;
+            dlPMIMeta.PMICodebookMatrixCSIPortsSHA256=sixgr.phy.mimo.MatrixContract.digest(matrixLogicalPorts);
+        end
         inputMatrixUsed = true;
     elseif isfinite(matrixPortCount) && round(double(matrixPortCount)) == logicalPorts
         matrixLogicalPorts = localNormalizeDLMatrix(wRaw, logicalPorts, numLayers);
@@ -913,10 +956,14 @@ if isUL
             grant, "SRSCausalMeasurementId", "")));
         prec.SRSMeasurementSlot = double(sixgr.util.structGet( ...
             grant, "LastSuccessfulSRSSlot", NaN));
+        prec.ModeledSRSFeedback=sixgr.util.structGet(grant,'ModeledSRSFeedback',struct());
+        prec.ModeledSRSDecisionUsed=~isempty(fieldnames(prec.ModeledSRSFeedback));
     end
 else
     prec.PMI = double(dlPMIMeta.PMI);
     prec.ReceivedCSIReport = sixgr.util.structGet(grant, "ReceivedCSIReport", struct());
+    prec.ModeledCSIFeedback=sixgr.util.structGet(grant,'ModeledCSIFeedback',struct());
+    prec.ModeledCSIDecisionUsed=~isempty(fieldnames(prec.ModeledCSIFeedback));
     prec.PMIType = char(string(dlPMIMeta.PMIType));
     prec.CodebookMode = char(string(dlPMIMeta.CodebookMode));
     prec.BeamIndices = double(dlPMIMeta.BeamIndices);
@@ -934,6 +981,10 @@ end
 end
 
 function localValidateULSRSCodebookAuthority(cfg, grant, nLayers, nPorts, tpmi)
+if isfield(grant,'ModeledSRSFeedback') && ~isempty(fieldnames(grant.ModeledSRSFeedback))
+    sixgr.system.abstraction.CausalSpatialFeedbackBuffer.validateGrant(cfg,grant,nLayers,nPorts,tpmi);
+    return;
+end
 if ~(isscalar(tpmi) && isfinite(tpmi) && tpmi >= 0 && tpmi == round(tpmi))
     error("sixgr:phy:grant:MissingULTPMI", ...
         "Codebook PUSCH requires a finite non-negative integer TPMI in the scheduled grant.");

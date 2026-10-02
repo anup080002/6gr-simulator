@@ -10092,6 +10092,11 @@ if writeRawTablesNow
 end
 
 rootRunFolder = fileparts(char(string(runFolder)));
+% Always publish the compact control/access/tracking snapshot.  Heavy live
+% tables remain cadence-gated below; making them the only runtime mirror
+% left WebGUI UE/TRS/SRS state one slot behind completed PHY evidence.
+runtimeState = sixgr.truth.CoupledTruthRuntime.writeLiveStateTables( ...
+    runtimeState, rootRunFolder);
 if localShouldMirrorCoupledRuntimeTables(cfg, opt, meta, refreshHeavyArtifacts, writeRawTablesNow)
     runtimeState = localWriteCoupledRuntimeTables(runtimeState, rootRunFolder);
 end
@@ -13279,7 +13284,8 @@ trial.ObservationCoverageSource="complete_contiguous_received_sample_buffer";
 trial.TransmitStartSample=p.StartSample;
 trial.TransmitEndSampleExclusive=p.EndSampleExclusive;
 trial.TransmitPreparationDecisionSlot=c.DecisionSlot;
-trial=sixgr.truth.bindReceivedSRSTimingEvidence(trial,output.ReceiveTiming);
+trial=sixgr.truth.bindReceivedSRSTimingEvidence( ...
+    trial,output.ReceiveTiming,p.PhysicalTiming);
 trial.ReceiverGainCompensationApplied=replay.ReceiverGainCompensation.Applied;
 trial.DesiredLinkScoringAvailable=true;
 trial.DesiredLinkScoringSource=referenceEvidence.Source;
@@ -16333,6 +16339,14 @@ for k = 1:nTrials
         chState = sixgr.util.structGet(outSRS, "ChannelState", chState);
         ok = logical(sixgr.util.structGet(outSRS, "Ok", false)) && ~logical(sixgr.util.structGet(outSRS, "Skipped", false));
         r.NMSE_dB = double(sixgr.util.structGet(outSRS, "NMSE_dB", NaN));
+        r.RawChannelNMSE_dB = double(sixgr.util.structGet( ...
+            outSRS, "RawChannelNMSE_dB", NaN));
+        r.ChannelNMSEPhaseAligned = logical(sixgr.util.structGet( ...
+            outSRS, "ChannelNMSEPhaseAligned", false));
+        r.ChannelNMSECommonPhaseRotation_rad = double(sixgr.util.structGet( ...
+            outSRS, "ChannelNMSECommonPhaseRotation_rad", NaN));
+        r.ChannelNMSEQualificationMode = string(sixgr.util.structGet( ...
+            outSRS, "ChannelNMSEQualificationMode", "raw_complex_plane_aligned"));
         r.NMSEReferenceSource = string(sixgr.util.structGet(outSRS, "NMSEReferenceSource", ""));
         r.TrueChannelOracleAvailable = logical(sixgr.util.structGet(outSRS, "TrueChannelOracleAvailable", false));
         r.TrueChannelNMSE_dB = double(sixgr.util.structGet(outSRS, "TrueChannelNMSE_dB", r.NMSE_dB));
@@ -16857,6 +16871,11 @@ row.EVM_rms = NaN;
 row.EVMReferenceSource = "";
 row.EVMValueStatus = "NOT_AVAILABLE";
 row.NMSE_dB = NaN;
+row.RawChannelNMSE_dB = NaN;
+row.ChannelNMSEGainFitted = false;
+row.ChannelNMSEPhaseAligned = false;
+row.ChannelNMSECommonPhaseRotation_rad = NaN;
+row.ChannelNMSEQualificationMode = "unavailable";
 row.NMSEScoringAvailable = false;
 row.ChannelNMSEComparedComplexValues = 0;
 row.ChannelNMSEReferencePlane = "unavailable";

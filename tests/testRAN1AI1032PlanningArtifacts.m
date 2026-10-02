@@ -1,0 +1,26 @@
+function ok = testRAN1AI1032PlanningArtifacts()
+%TESTRAN1AI1032PLANNINGARTIFACTS Plans must remain separate from KPI truth.
+
+setup6GRSimToolkit("Verbose", false);
+cfg = sixgr.studies.ran1ai1032.loadStudyConfig();
+folder = string(tempname);
+mkdir(folder);
+cleanup = onCleanup(@() rmdir(folder, "s")); %#ok<NASGU>
+out = sixgr.studies.ran1ai1032.writeCampaignPlanningArtifacts(cfg, folder);
+assert(out.Ok && out.ExecutionStatus == "planned_not_executed" && ...
+    all(out.Manifest.ExecutionStatus == "planned_not_executed") && ...
+    ~any(out.Manifest.PrimaryResultEligible), ...
+    "Planning artifacts must never be promoted to primary result evidence.");
+assert(all(arrayfun(@(p) exist(p, "file") == 2, ...
+    string(struct2cell(out.Paths)))), ...
+    "Every declared planning artifact must exist.");
+
+pointPlan = readtable(out.Paths.LLSPoints, "TextType", "string", ...
+    "VariableNamingRule", "preserve");
+oneCase = pointPlan.CaseID(1);
+rows = pointPlan.CaseID == oneCase;
+assert(height(pointPlan(rows,:)) == 56 && ...
+    numel(unique(pointPlan.OutputGroupID(rows))) == 1, ...
+    "One physical curve must retain all 56 coarse SNR points in one output group.");
+ok = true;
+end

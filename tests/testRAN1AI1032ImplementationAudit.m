@@ -1,0 +1,36 @@
+function ok = testRAN1AI1032ImplementationAudit()
+%TESTRAN1AI1032IMPLEMENTATIONAUDIT Audit must fail closed on open study gaps.
+
+setup6GRSimToolkit("Verbose", false);
+repoRoot = string(fileparts(fileparts(mfilename("fullpath"))));
+tmp = string(tempname);
+mkdir(tmp);
+cleanup = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+auditPath = fullfile(tmp, "implementation_audit.md");
+
+out = sixgr.studies.ran1ai1032.writeImplementationAudit(repoRoot, auditPath);
+assert(out.Ok && exist(auditPath, "file") == 2, ...
+    "Implementation audit must be written.");
+assert(~out.OverallPass, ...
+    "Audit must remain fail-closed while mandatory campaign branches are partial.");
+
+T = struct2table(out.AuditTable);
+ftp = T.Item == "FTP3 traffic";
+assert(nnz(ftp) == 1 && T.Status(ftp) == "PARTIAL", ...
+    "Implemented FTP3 must remain partial until paired campaign qualification.");
+assert(any(T.Item == "Exact TBS and resource accounting" & T.Status == "PASS"), ...
+    "Exact TBS focused evidence must remain visible.");
+assert(any(T.Item == "Finite seven-site hex wrap-around runtime binding" & ...
+    T.Status == "PASS"), ...
+    "The explicit finite-cluster geometry runtime binding must remain visible.");
+
+text = string(fileread(auditPath));
+assert(contains(text, "Overall mandatory implementation gate: **FAIL**") && ...
+    contains(text, "Licensed Vienna SLS reference boundary") && ...
+    contains(text, "blocked_pending_lls_adaptive_calibration") && ...
+    contains(text, "NOT A VALID REFERENCE") && ...
+    ~contains(text, "| **|"), ...
+    "Audit must expose its gate and external-reference limitations.");
+
+ok = true;
+end

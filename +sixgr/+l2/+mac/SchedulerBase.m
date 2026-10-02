@@ -839,6 +839,15 @@ classdef (Abstract) SchedulerBase < handle
                     'sixgr:l2:mac:ReceivedCSIRankMismatch', ...
                     'Received Type-II coefficients require their reported rank within installed capability.');
             end
+            modeledCSI=sixgr.util.structGet(ue,'ModeledCSIFeedback',struct());
+            if dir=="DL" && isstruct(modeledCSI) && ~isempty(fieldnames(modeledCSI))
+                assert(modeledCSI.RI==nLayers,'sixgr:abstraction:DLCSIRank','AMC changed the selected modeled CSI rank.');
+                amc.ReceivedCSIRankBound=true; % prevent queue-driven rank changes; authority stays modeled
+                if string(amc.Mode)=="cqi_table"
+                    amc.MCSValueStatus="modeled_cqi_mapped_not_waveform_measurement";
+                    amc.CQIProvenance="modeled_csi_not_waveform_measurement";
+                end
+            end
             amc.InitialNumLayers = double(requestedLayers);
             amc.ConfiguredLayers = double(rankDecision.ConfiguredLayers);
             amc.RankSelectionPolicy = char(string(rankDecision.Policy));
@@ -1306,6 +1315,7 @@ classdef (Abstract) SchedulerBase < handle
             % Freeze the final scheduler grant dimensional contract once.
             options=inputParser;
             options.addParameter('TimingAlreadySelected',false,@(x)islogical(x)&&isscalar(x));
+            options.addParameter('ActiveConfig',struct(),@(x)isstruct(x)&&isscalar(x));
             options.parse(varargin{:});
             grantOut = grantIn;
             if nargin < 2 || ~(isstruct(grantOut) && ~isempty(fieldnames(grantOut)))
@@ -1349,7 +1359,14 @@ classdef (Abstract) SchedulerBase < handle
                 grantOut.PHYGrantContextId = "";
                 return;
             end
-            cfgForFreeze = obj.Cfg;
+            cfgForFreeze = options.Results.ActiveConfig;
+            if isempty(fieldnames(cfgForFreeze))
+                cfgForFreeze = obj.Cfg;
+            end
+            activeDLTCI = struct();
+            if upper(string(grantOut.Direction)) == "DL"
+                activeDLTCI = sixgr.phy.grant.resolveDLQCLTCIBinding(cfgForFreeze);
+            end
             priorPHYGrant = sixgr.util.structGet(grantOut, "PHYGrant", struct());
             isRetransmission = logical(sixgr.util.structGet(grantOut, ...
                 "IsRetransmission", sixgr.util.structGet(grantOut, ...
@@ -1371,6 +1388,17 @@ classdef (Abstract) SchedulerBase < handle
                     priorPHYGrant, "scheduler_harq_replay_refreeze");
                 cfgForFreeze = sixgr.phy.grant.applyPHYGrantToConfig( ...
                     cfgForFreeze, priorPHYGrant);
+                if logical(sixgr.util.structGet(activeDLTCI, "Available", false))
+                    % Preserve the current received-beam/TCI authority while
+                    % replaying the first transmission's frozen spatial
+                    % matrix.  The spatial architecture and current TCI
+                    % indication are independent parts of the new occasion.
+                    cfgForFreeze = sixgr.util.structSet(cfgForFreeze, ...
+                        "phy.pdsch.qclTCI", activeDLTCI.QCL);
+                    cfgForFreeze = sixgr.util.structSet(cfgForFreeze, ...
+                        "phy.pdsch.activeTCIStateID", ...
+                        double(activeDLTCI.ActiveTCIStateID));
+                end
             end
             grantSeed = grantOut;
             if isfield(grantSeed, "PHYGrant")
@@ -1420,6 +1448,15 @@ classdef (Abstract) SchedulerBase < handle
             % manufactures a measurement identity or upgrades unusable SRS.
             grantOut = grantIn;
             if upper(string(obj.Direction)) ~= "UL"
+                modeled=sixgr.util.structGet(ueState,'ModeledCSIFeedback',struct());
+                if isstruct(modeled) && ~isempty(fieldnames(modeled)) && ...
+                        ~sixgr.phy.grant.isExplicitHARQRetransmission(grantOut)
+                    grantOut.ModeledCSIFeedback=modeled;
+                    grantOut.ServingCell=modeled.ServingCell; grantOut.UEIndex=modeled.UEIndex;
+                    grantOut.PMI=modeled.PMI; grantOut.CRI=modeled.CRI;
+                    grantOut.PrecodingMatrixLogicalPorts=modeled.MatrixPorts;
+                    grantOut.PrecoderSource="modeled_csi_not_waveform_measurement";
+                end
                 return;
             end
             if nargin < 3 || ~(isstruct(ueState) && isscalar(ueState))
@@ -1442,6 +1479,14 @@ classdef (Abstract) SchedulerBase < handle
                 ueState, "SRSCausalStatus", "")));
             grantOut.SRSMeasurementAuthoritySource = ...
                 "scheduler_ue_state_causal_srs";
+            modeled=sixgr.util.structGet(ueState,'ModeledSRSFeedback',struct());
+            if isfield(grantOut,'ModeledSRSFeedback')
+                grantOut.ModeledSRSFeedback=struct();
+            end
+            if isstruct(modeled) && ~isempty(fieldnames(modeled))
+                grantOut.ModeledSRSFeedback=modeled;
+                grantOut.SRSMeasurementAuthoritySource="modeled_srs_not_waveform_measurement";
+            end
             tpmi = double(sixgr.util.structGet(ueState, "TPMI", ...
                 sixgr.util.structGet(ueState, "PMI", NaN)));
             if isscalar(tpmi) && isfinite(tpmi)

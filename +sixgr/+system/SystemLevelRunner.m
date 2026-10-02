@@ -35,6 +35,14 @@ classdef SystemLevelRunner
                                sixgr.util.structGet(cfg, "outputs.detailedSystemTrace", false)));
             bw_Hz = double(canonicalFrame.BandwidthHz);
             seed = double(sixgr.util.structGet(cfg, "run.seed", 1));
+            [seedBundle, pairedSeedBundleActive] = ...
+                localResolvePairedSeedBundle(params, seed);
+            restoreCallerRNG = [];
+            if pairedSeedBundleActive
+                callerRNGState = rng;
+                restoreCallerRNG = onCleanup( ...
+                    @() rng(callerRNGState)); %#ok<NASGU>
+            end
 
             out = struct();
             out.Ok = true;
@@ -48,8 +56,46 @@ classdef SystemLevelRunner
                 'SchedulerResourceSourceArtifact',"csv/system_scheduler_resource_exclusions.csv");
 
             try
+                if pairedSeedBundleActive
+                    rng(seedBundle.GeometrySeed, "twister");
+                end
                 layout = sixgr.scenario.generateLayout(cfg);
                 ue = sixgr.scenario.dropUEs(cfg, layout);
+                % Population membership is an immutable paired-drop input.
+                % Bind it immediately after the geometric UE drop, before
+                % any channel, association, traffic, or scheduling state is
+                % constructed.
+                fwaPopulation = sixgr.util.structGet(params, ...
+                    "FWAPopulationTable", table());
+                fwaPopulationSpec = sixgr.util.structGet(params, ...
+                    "FWAPopulationSpec", []);
+                if isempty(fwaPopulation) && ~isempty(fwaPopulationSpec)
+                    if ~(isstruct(fwaPopulationSpec) && isscalar(fwaPopulationSpec) && ...
+                            all(isfield(fwaPopulationSpec, ...
+                            ["ProfileID","PopulationSeed","ExpectedUECount"])))
+                        error("sixgr:system:InvalidFWAPopulationSpec", ...
+                            "FWAPopulationSpec requires ProfileID, PopulationSeed and ExpectedUECount.");
+                    end
+                    if double(fwaPopulationSpec.ExpectedUECount) ~= double(ue.K)
+                        error("sixgr:system:FWAPopulationUECountMismatch", ...
+                            "FWAPopulationSpec expected %d UEs but the configured drop created %d.", ...
+                            double(fwaPopulationSpec.ExpectedUECount), double(ue.K));
+                    end
+                    fwaPopulation = sixgr.studies.ran1ai1032.buildFWAPopulation( ...
+                        cfg, string(fwaPopulationSpec.ProfileID), double(ue.K), ...
+                        double(fwaPopulationSpec.PopulationSeed));
+                end
+                if ~isempty(fwaPopulation)
+                    ue = sixgr.studies.ran1ai1032.applyFWAPopulation( ...
+                        ue, fwaPopulation);
+                end
+                if pairedSeedBundleActive
+                    ue = localBindSeededAntennaOrientation( ...
+                        ue, seedBundle.AntennaOrientationSeed);
+                    % Any legacy/global random draw below this boundary is
+                    % part of propagation/PHY execution, never geometry.
+                    rng(seedBundle.PropagationSeed, "twister");
+                end
             catch ME
                 out.Ok = false;
                 out.Errors(end+1,1) = "Scenario generation failed: " + string(ME.message);
@@ -68,9 +114,23 @@ classdef SystemLevelRunner
                 "pos_m", sixgr.util.structGet(ue, "pos_m", zeros(K,3)), ...
                 "indoor", logical(sixgr.util.structGet(ue, "indoor", false(K,1))), ...
                 "speed_kmh", double(sixgr.util.structGet(ue, "speed_kmh", zeros(K,1))), ...
-                "heading_deg", double(sixgr.util.structGet(ue, "heading_deg", zeros(K,1))));
+                "heading_deg", double(sixgr.util.structGet(ue, "heading_deg", zeros(K,1))), ...
+                "antenna_orientation_deg", double(sixgr.util.structGet( ...
+                    ue, "antenna_orientation_deg", NaN(K,3))), ...
+                "fwa_population_profile", string(sixgr.util.structGet( ...
+                    ue, "fwa_population_profile", strings(K,1))), ...
+                "fwa_population_class", string(sixgr.util.structGet( ...
+                    ue, "fwa_population_class", strings(K,1))), ...
+                "o2i_model", string(sixgr.util.structGet( ...
+                    ue, "o2i_model", strings(K,1))), ...
+                "population_table", sixgr.util.structGet( ...
+                    ue, "population_table", table()));
 
-            traffic = localBuildTraffic(cfg, params, K, nTTI, tti_s);
+            nCells = size(layout.bs.pos_m, 1);
+            trafficCfg = localBindTrafficSeed( ...
+                cfg, seedBundle, pairedSeedBundleActive);
+            traffic = localBuildTraffic( ...
+                trafficCfg, params, K, nTTI, tti_s, nCells);
 
             pphy = params;
             proxyParamNames = intersect(fieldnames(pphy), {'BLERDB'; 'BLERLUT'});
@@ -79,9 +139,20 @@ classdef SystemLevelRunner
             end
             pphy.PHYBackend = sixgr.util.structGet(params, "PHYBackend", ...
                 sixgr.util.structGet(cfg, "system.phyBackend", "waveform"));
-            phy = sixgr.system.PhyFactory.create(cfg, pphy, "Seed", seed + 31);
+            phy = sixgr.system.PhyFactory.create(cfg, pphy, "Seed", ...
+                localSeedForComponent(seedBundle, pairedSeedBundleActive, ...
+                "PropagationSeed", seed + 31));
             [phyBackendLabel, phyModeLabel, waveformBacked, proxyPHYActive, fallbackUsed] = localDescribeSystemPHY(phy);
-            plModel = sixgr.channel.TR38901Plus(cfg, "Seed", seed + 17);
+            calibratedBacked=isa(phy,'sixgr.system.CalibratedLinkPHY');
+            transportBlocks=sixgr.system.SystemTransportBlockState(seed+1032,waveformBacked);
+            transportCleanup=onCleanup(@()delete(transportBlocks)); %#ok<NASGU>
+            fileLedger=[];
+            if (waveformBacked || calibratedBacked) && strcmpi(string(traffic.Model),"FTP3")
+                fileLedger=sixgr.system.FTP3FileLedger(traffic.EventTable,tti_s,K);
+            end
+            plModel = sixgr.channel.TR38901Plus(cfg, "Seed", ...
+                localSeedForComponent(seedBundle, pairedSeedBundleActive, ...
+                "ShadowSeed", seed + 17));
 
             queueBitsDL = zeros(K,1);
             queueBitsUL = zeros(K,1);
@@ -153,12 +224,13 @@ classdef SystemLevelRunner
             tcrDL = min(max(double(sixgr.util.structGet(cfg, "phy.pdsch.codeRate", 0.5)), 0.05), 0.95);
             tcrUL = min(max(double(sixgr.util.structGet(cfg, "phy.pusch.codeRate", 0.5)), 0.05), 0.95);
 
-            nCells = size(layout.bs.pos_m, 1);
             schedDLCells = cell(nCells,1);
             schedULCells = cell(nCells,1);
             for c = 1:nCells
-                schedDLCells{c} = localCreateScheduler(cfg, scheduler, "DL", log);
-                schedULCells{c} = localCreateScheduler(cfg, scheduler, "UL", log);
+                schedDLCells{c} = localCreateScheduler(cfg, scheduler, ...
+                    "DL", log, seedBundle, pairedSeedBundleActive, c, K);
+                schedULCells{c} = localCreateScheduler(cfg, scheduler, ...
+                    "UL", log, seedBundle, pairedSeedBundleActive, c, K);
             end
 
             % Mobility-control closed loop: measurement -> beam update ->
@@ -221,6 +293,26 @@ classdef SystemLevelRunner
             grantTraceCap = max(2048, round(nTTI * max(K, 1) * 4));
             grantTrace = localInitGrantTrace(grantTraceCap);
             grantTraceCount = 0;
+            resourceOpportunityRows = cell(nTTI, 2);
+            reservationEvidenceRows=cell(nTTI,2);
+            reservationCapacityRows=cell(nTTI,2);
+            useResourceReservations=logical(sixgr.util.structGet(cfg,"system.resourceReservations.enabled",false));
+            dynamicPUCCH=[];
+            dynamicFeedback=cell(nTTI,nCells);
+            if logical(sixgr.util.structGet(cfg,'system.linkAbstraction.dynamicPUCCH.enabled',false))
+                assert(calibratedBacked && useResourceReservations,'sixgr:system:DynamicPUCCHPolicy', ...
+                    'Dynamic SLS obligations require calibrated abstraction and resource reservations.');
+                dynamicPUCCH=sixgr.system.SLSDynamicPUCCH(cfg);
+                phy.bindDynamicUCI(dynamicPUCCH);
+                params.DynamicPUCCH=dynamicPUCCH;
+                params.DynamicPHY=phy;
+            end
+            commonChannelCalendar=struct();
+            if useResourceReservations && logical(sixgr.util.structGet(cfg, ...
+                    "system.resourceReservations.commonChannelCalendarEnabled",false))
+                commonChannelCalendar=sixgr.system.buildSLSCommonChannelCalendar(cfg,nTTI);
+                params.CommonChannelAllocations=commonChannelCalendar.Allocations;
+            end
 
             cellLoadTrace = localInitCellLoadTrace(nTTI * nCells);
             interferenceTrace = localInitInterferenceTrace(nTTI * K);
@@ -262,7 +354,11 @@ classdef SystemLevelRunner
             interfMargin_dB = double(sixgr.util.structGet(cfg, "channel.interferenceMargin_dB", 3));
             nRB = double(canonicalFrame.NRB);
             if legacySINRMode
-                [fastFading_dB, interfVar_dB] = localBuildChannelVariationTraces(cfg, nTTI, K, tti_s, seed);
+                propagationSeed = localSeedForComponent(seedBundle, ...
+                    pairedSeedBundleActive, "PropagationSeed", seed);
+                [fastFading_dB, interfVar_dB] = ...
+                    localBuildChannelVariationTraces( ...
+                    cfg, nTTI, K, tti_s, propagationSeed);
             else
                 fastFading_dB = zeros(nTTI, K);
                 interfVar_dB = zeros(nTTI, K);
@@ -573,8 +669,52 @@ classdef SystemLevelRunner
                     localSlotBudgetSupportsExecutableDataGrants(cfg, "DL", dlBudget);
                 slotULDataSchedulable = slotUL && ...
                     localSlotBudgetSupportsExecutableDataGrants(cfg, "UL", ulBudget);
+                % Persist independent opportunities for every cell, including
+                % idle cells. MU users share a PRB-symbol rather than adding
+                % resource capacity. Symbol budgets already exclude GP and
+                % the opposite TDD direction.
+                resourceOpportunityRows{t,1} = sixgr.system.buildResourceOpportunityTable( ...
+                    t,nCells,"DL",dlBudget,slotDLDataSchedulable);
+                resourceOpportunityRows{t,2} = sixgr.system.buildResourceOpportunityTable( ...
+                    t,nCells,"UL",ulBudget,slotULDataSchedulable);
                 [ulControlSchedulable, ulSchedulingTargetTTI, ulSchedulingBudget] = ...
                     localResolveULControlOpportunity(cfg, t, nTTI, nRB, slotDL);
+                if useResourceReservations
+                    params.DynamicServingCells=servingIdx;
+                    % Only actually issued future grants can carry an UCI
+                    % transport binding. Caller-supplied labels are not an
+                    % alternative scheduling authority.
+                    issuedSets=pendingULGrantsBySlot(t:end);
+                    issuedSets=issuedSets(~cellfun(@isempty,issuedSets));
+                    params.IssuedPUSCHGrants=cell(0,1);
+                    for issuedSetIndex=1:numel(issuedSets)
+                        % Do not union schemas/add default fields: retain
+                        % each immutable grant's original digest.
+                        params.IssuedPUSCHGrants=[params.IssuedPUSCHGrants; ...
+                            num2cell(issuedSets{issuedSetIndex}(:))]; %#ok<AGROW>
+                    end
+                    dlReservations=cell(nCells,1); ulReservations=cell(nCells,1);
+                    dlOpportunity=cell(nCells,1); ulOpportunity=cell(nCells,1);
+                    dlEvidence=cell(nCells,1); ulEvidence=cell(nCells,1);
+                    dlCapacity=cell(nCells,1); ulCapacity=cell(nCells,1);
+                    for reservationCell=1:nCells
+                        rc=localSLSReservationContext(params,reservationCell,t-1);
+                        dlReservations{reservationCell}=sixgr.system.resolveSLSResourceReservations(cfg,t,"DL",dlBudget,rc);
+                        ulReservations{reservationCell}=sixgr.system.resolveSLSResourceReservations(cfg,t,"UL",ulBudget,rc);
+                        dlOpportunity{reservationCell}=sixgr.system.buildResourceOpportunityTable(t,1,"DL",dlReservations{reservationCell}.Budget,slotDLDataSchedulable);
+                        ulOpportunity{reservationCell}=sixgr.system.buildResourceOpportunityTable(t,1,"UL",ulReservations{reservationCell}.Budget,slotULDataSchedulable);
+                        dlEvidence{reservationCell}=dlReservations{reservationCell}.Evidence;
+                        ulEvidence{reservationCell}=ulReservations{reservationCell}.Evidence;
+                        dlCapacity{reservationCell}=localSLSReservationCapacity(dlReservations{reservationCell},"DL");
+                        ulCapacity{reservationCell}=localSLSReservationCapacity(ulReservations{reservationCell},"UL");
+                    end
+                    resourceOpportunityRows{t,1}=vertcat(dlOpportunity{:});
+                    resourceOpportunityRows{t,2}=vertcat(ulOpportunity{:});
+                    reservationEvidenceRows{t,1}=vertcat(dlEvidence{:});
+                    reservationEvidenceRows{t,2}=vertcat(ulEvidence{:});
+                    reservationCapacityRows{t,1}=vertcat(dlCapacity{:});
+                    reservationCapacityRows{t,2}=vertcat(ulCapacity{:});
+                end
 
                 [beamEventTrace, beamEventCount] = localAppendBeamEvents( ...
                     beamEventTrace, beamEventCount, t, tti_s, servingIdx, ...
@@ -586,6 +726,7 @@ classdef SystemLevelRunner
 
                 queueBitsDL = queueBitsDL + traffic.OfferedBitsDL(t,:).';
                 queueBitsUL = queueBitsUL + traffic.OfferedBitsUL(t,:).';
+                if ~isempty(fileLedger), fileLedger.advance(t); end
                 queueBitsDL_Start = queueBitsDL;
                 queueBitsUL_Start = queueBitsUL;
                 offeredCellDL = accumarray(servingIdx, traffic.OfferedBitsDL(t,:).', [nCells, 1], @sum, 0);
@@ -685,6 +826,19 @@ classdef SystemLevelRunner
                     ueStateDLAll, cqiFeedbackDL, previewCQIDLVec, t, cfg, "DL");
                 [ueStateULAll, cqiULVec] = localApplySystemCQIFeedbackToUEState( ...
                     ueStateULAll, cqiFeedbackUL, previewCQIULVec, t, cfg, "UL");
+                if calibratedBacked
+                    targetSlot0=t-1;
+                    ueStateDLAll=phy.advanceDLCSIFeedback(ueStateDLAll,struct( ...
+                        'AbsoluteSlot0',t-1,'ServingCells',servingIdx,'LargeScaleState',largeScaleState, ...
+                        'CommonChannelAllocations',sixgr.util.structGet(params,'CommonChannelAllocations',table())),t-1);
+                    if logical(sixgr.util.structGet(cfg,'system.linkAbstraction.dlFeedback.enabled',false))
+                        cqiDLVec=[ueStateDLAll.CQI].';
+                    end
+                    if ulControlSchedulable, targetSlot0=ulSchedulingTargetTTI-1; end
+                    ueStateULAll=phy.advanceULSpatialFeedback(ueStateULAll,struct( ...
+                        'AbsoluteSlot0',t-1,'ServingCells',servingIdx, ...
+                        'LargeScaleState',largeScaleState,'PowerState',schedPowerState),targetSlot0);
+                end
                 if t == 1
                     localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
                         slotLabel, activeUECount(t), nCells, 0, ...
@@ -713,6 +867,9 @@ classdef SystemLevelRunner
                     for ii = 1:numel(activeDL)
                         k = activeDL(ii);
                         ueStateDLAll(k).DLBufferBytes = dlBufBytes(ii);
+                        if ~isempty(fileLedger)
+                            ueStateDLAll(k).DLBufferBytes=floor(fileLedger.unallocatedBits(k,"DL")/8);
+                        end
                         ueStateDLAll(k).CQI = cqiDLVec(k);
                         ueStateDLAll(k).HeadOfLineDelay_ms = 0;
                     end
@@ -723,6 +880,9 @@ classdef SystemLevelRunner
                     for ii = 1:numel(activeULForScheduling)
                         k = activeULForScheduling(ii);
                         ueStateULAll(k).ULBufferBytes = ulBufBytes(ii);
+                        if ~isempty(fileLedger)
+                            ueStateULAll(k).ULBufferBytes=floor(fileLedger.unallocatedBits(k,"UL")/8);
+                        end
                         ueStateULAll(k).CQI = cqiULVec(k);
                         ueStateULAll(k).HeadOfLineDelay_ms = 0;
                     end
@@ -736,6 +896,9 @@ classdef SystemLevelRunner
                     for ci = 1:numel(activeCellsDL)
                         cellId = activeCellsDL(ci);
                         ueCell = ueByCellDL{cellId};
+                        if calibratedBacked && logical(sixgr.util.structGet(cfg,'system.linkAbstraction.dlFeedback.enabled',false))
+                            ueCell=ueCell([ueStateDLAll(ueCell).ModeledCSICausalUsable]);
+                        end
                         if isempty(ueCell)
                             continue;
                         end
@@ -749,7 +912,15 @@ classdef SystemLevelRunner
                         ueStateDL = ueStateDLAll(ueCell);
                         schedCellTimer = tic;
                         try
-                            [gCell, schedulerInfo] = schedDLCells{cellId}.schedule(t-1, ueStateDL, dlBudget);
+                            budgetForCell=dlBudget;
+                            if useResourceReservations
+                                budgetForCell=dlReservations{cellId}.Budget;
+                                if budgetForCell.NPRB==0, continue; end
+                            end
+                            [gCell, schedulerInfo] = schedDLCells{cellId}.schedule(t-1, ueStateDL, budgetForCell);
+                            if useResourceReservations
+                                sixgr.system.assertSLSGrantsRespectReservations(gCell,dlReservations{cellId});
+                            end
                             schedulerDecisionState.CurrentSlot=t;
                             schedulerDecisionState.CurrentFrame=1+floor((t-1)/double(schedDLCells{cellId}.Carrier.SlotsPerFrame));
                             schedulerDecisionState=sixgr.truth.CoupledTruthRuntime.recordSchedulerDecisionRuntime( ...
@@ -791,6 +962,9 @@ classdef SystemLevelRunner
                     end
                 end
 
+                if ~isempty(dynamicPUCCH)
+                    dynamicPUCCH.appendDL(grantsDL,grantCellDL,t-1);
+                end
                 if ulControlSchedulable
                     activeCellsUL = find(activeCellUL > 0).';
                     grantSetsUL = cell(numel(activeCellsUL), 1);
@@ -799,6 +973,36 @@ classdef SystemLevelRunner
                     for ci = 1:numel(activeCellsUL)
                         cellId = activeCellsUL(ci);
                         ueCell = ueByCellUL{cellId};
+                        if ~isempty(dynamicPUCCH)
+                            pendingUCI=dynamicPUCCH.snapshot(t-1,ulSchedulingTargetTTI-1,servingIdx,phy.DLCSIReferences);
+                            if ~isempty(pendingUCI)
+                                same=pendingUCI([pendingUCI.CellID]==cellId);
+                                if dynamicPUCCH.multiplexingEnabled()
+                                    % A single HARQ/CSI occasion may move to an
+                                    % overlapping future PUSCH. Keep SR-only or
+                                    % multiple obligations on dedicated PUCCH.
+                                    blocked=false(size(same));
+                                    for oi=1:numel(same)
+                                        a=double(ulSchedulingBudget.SymbolAllocation);
+                                        blocked(oi)=same(oi).HARQBits+same(oi).CSIPart1Bits+same(oi).CSIPart2Bits==0 || ...
+                                            nnz([same.UEIndex]==same(oi).UEIndex)~=1 || ...
+                                            ~any(same(oi).Coordinates0Based(:,2)>=a(1) & same(oi).Coordinates0Based(:,2)<sum(a));
+                                    end
+                                    same=same(blocked);
+                                end
+                                busy=[same.UEIndex];
+                                ueCell=setdiff(ueCell,busy,'stable');
+                            end
+                        end
+                        if calibratedBacked && logical(sixgr.util.structGet(cfg, ...
+                                'system.linkAbstraction.spatialFeedback.enabled',false))
+                            % Applies to new grants AND HARQ retries. Keep
+                            % queued data/process state intact until a usable
+                            % modeled report exists for the target slot.
+                            usable=arrayfun(@(k) logical(sixgr.util.structGet( ...
+                                ueStateULAll(k),'ModeledSRSCausalUsable',false)),ueCell);
+                            ueCell=ueCell(usable);
+                        end
                         if isempty(ueCell)
                             continue;
                         end
@@ -812,8 +1016,21 @@ classdef SystemLevelRunner
                         ueStateUL = ueStateULAll(ueCell);
                         schedCellTimer = tic;
                         try
+                            budgetForCell=ulSchedulingBudget;
+                            if useResourceReservations
+                                plannedULReservation=sixgr.system.resolveSLSResourceReservations(cfg,ulSchedulingTargetTTI,"UL", ...
+                                    ulSchedulingBudget,localSLSReservationContext(params,cellId,t-1,ulSchedulingTargetTTI-1));
+                                budgetForCell=plannedULReservation.Budget;
+                                if budgetForCell.NPRB==0, continue; end
+                            end
                             [gCell, schedulerInfo] = schedULCells{cellId}.schedule( ...
-                                t-1, ueStateUL, ulSchedulingBudget);
+                                t-1, ueStateUL, budgetForCell);
+                            if useResourceReservations
+                                sixgr.system.assertSLSGrantsRespectReservations(gCell,plannedULReservation);
+                            end
+                            if ~isempty(dynamicPUCCH)
+                                gCell=dynamicPUCCH.bindPUSCH(gCell,cellId,t-1,servingIdx,phy.DLCSIReferences);
+                            end
                             schedulerDecisionState.CurrentSlot=t;
                             schedulerDecisionState.CurrentFrame=1+floor((t-1)/double(schedULCells{cellId}.Carrier.SlotsPerFrame));
                             schedulerDecisionState=sixgr.truth.CoupledTruthRuntime.recordSchedulerDecisionRuntime( ...
@@ -869,6 +1086,23 @@ classdef SystemLevelRunner
                         servedBitsTotalDL + servedBitsTotalUL, ...
                         droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
                         "system_level_lls_slot1_scheduler_ready");
+                end
+
+                if useResourceReservations
+                    % K2 grants were frozen on an earlier control occasion.
+                    % Recheck against CURRENT obligations before power/PHY or
+                    % throughput accounting; never mutate a frozen grant/TB.
+                    sixgr.system.assertSLSExecutingULReservations( ...
+                        grantsUL,grantCellUL,ulReservations,t-1);
+                    if ~isempty(dynamicPUCCH) && ~isempty(grantsUL)
+                        dueUCI=dynamicPUCCH.snapshot(t-1,t-1,servingIdx,phy.DLCSIReferences);
+                        for k=1:numel(grantsUL)
+                            assert(isempty(dueUCI) || ~any([dueUCI.UEIndex]==grantsUL(k).RNTI & ...
+                                [dueUCI.CellID]==grantCellUL(k) & string({dueUCI.Transport})=="PUCCH"), ...
+                                'sixgr:system:DedicatedPUCCHPUSCHCollision', ...
+                                'A frozen same-UE PUSCH cannot execute alongside dedicated PUCCH; reschedule control/data before execution.');
+                        end
+                    end
                 end
 
                 if ~isempty(grantCellDL)
@@ -1034,9 +1268,31 @@ classdef SystemLevelRunner
                             droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
                             "system_level_lls_slot1_first_dl_replay_started");
                     end
+                    if waveformBacked || calibratedBacked
+                        [ctxDL,retiredTB]=transportBlocks.bind(ctxDL);
+                        if ~isempty(fileLedger)
+                            retiredBits=0;
+                            if strlength(retiredTB)>0, retiredBits=fileLedger.abandon(retiredTB,t); end
+                            queueBitsDL(u)=queueBitsDL(u)-retiredBits;
+                            droppedBitsTotalDL=droppedBitsTotalDL+retiredBits;
+                            droppedPerUE_DL(u)=droppedPerUE_DL(u)+retiredBits;
+                            fileBinding=fileLedger.bind(ctxDL.TransportBlockIdentity,u,"DL",tbsBits,t,ctxDL.IsRetransmission);
+                            ctxDL.ApplicationPayloadBits=fileBinding.PayloadBits;
+                        end
+                    end
+                    if calibratedBacked
+                        phy.setSlotContext(struct('TTI',t,'GrantsDL',grantsDL,'GrantsUL',grantsUL, ...
+                            'GrantCellsDL',grantCellDL,'GrantCellsUL',grantCellUL, ...
+                            'LargeScaleState',largeScaleState,'PowerState',finalPowerState));
+                    end
                     [okDL, blerDL] = phy.decode(ctxDL);
                     replayDL = localLastPHYReplay(phy);
+                    replayDL.UniqueDeliveredApplicationBits=NaN;
+                    if ~isempty(fileLedger), replayDL.UniqueDeliveredApplicationBits=0; end
                     replayTbsDL = localReplayTransportBlockSize(replayDL, tbsBits);
+                    if ~isempty(fileLedger) && replayTbsDL~=tbsBits
+                        error('sixgr:system:FileGrantTBSMismatch','DL waveform TBS differs from pre-transmission file binding.');
+                    end
                     decisionUnavailableDL = localPHYDecisionUnavailable(replayDL);
                     if t == 1 && gi == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
@@ -1056,6 +1312,8 @@ classdef SystemLevelRunner
                         decodeUnavailableCountDL = decodeUnavailableCountDL + 1;
                     elseif okDL
                         servedDL = min(queueBitsDL(u), replayTbsDL);
+                        if ~isempty(fileLedger), servedDL=fileLedger.complete(ctxDL.TransportBlockIdentity,t); end
+                        if ~isempty(fileLedger), replayDL.UniqueDeliveredApplicationBits=servedDL; end
                         queueBitsDL(u) = queueBitsDL(u) - servedDL;
                         servedBitsTotalDL = servedBitsTotalDL + servedDL;
                         servedBitsTTI_DL(t) = servedBitsTTI_DL(t) + servedDL;
@@ -1079,6 +1337,13 @@ classdef SystemLevelRunner
                             "RV", double(sixgr.util.structGet(fbHarqDL, "RV", NaN)), ...
                             "NDI", double(sixgr.util.structGet(fbHarqDL, "NDI", NaN)), ...
                             "IsRetransmission", logical(sixgr.util.structGet(fbHarqDL, "IsRetransmission", false)));
+                        if ~isempty(dynamicPUCCH)
+                            due=g.HARQFeedbackAbsoluteSlot+1;
+                            fb.SourceSlot=g.ScheduledAbsoluteSlot;
+                            if due>size(dynamicFeedback,1), dynamicFeedback{due,nCells}=[]; end
+                            dynamicFeedback{due,cellId}=[dynamicFeedback{due,cellId} fb];
+                            continue; % no immediate ideal ACK before its reserved PUCCH occasion
+                        end
                         fbIdx = fbDLWriteIdx(cellId) + 1;
                         if ~isempty(fbDLByCell{cellId}) && fbIdx <= numel(fbDLByCell{cellId})
                             fbDLByCell{cellId}(fbIdx) = fb;
@@ -1167,9 +1432,31 @@ classdef SystemLevelRunner
                             droppedBitsTotalDL + droppedBitsTotalUL, overflowEvents, ...
                             "system_level_lls_slot1_first_ul_replay_started");
                     end
+                    if waveformBacked || calibratedBacked
+                        [ctxUL,retiredTB]=transportBlocks.bind(ctxUL);
+                        if ~isempty(fileLedger)
+                            retiredBits=0;
+                            if strlength(retiredTB)>0, retiredBits=fileLedger.abandon(retiredTB,t); end
+                            queueBitsUL(u)=queueBitsUL(u)-retiredBits;
+                            droppedBitsTotalUL=droppedBitsTotalUL+retiredBits;
+                            droppedPerUE_UL(u)=droppedPerUE_UL(u)+retiredBits;
+                            fileBinding=fileLedger.bind(ctxUL.TransportBlockIdentity,u,"UL",tbsBits,t,ctxUL.IsRetransmission);
+                            ctxUL.ApplicationPayloadBits=fileBinding.PayloadBits;
+                        end
+                    end
+                    if calibratedBacked
+                        phy.setSlotContext(struct('TTI',t,'GrantsDL',grantsDL,'GrantsUL',grantsUL, ...
+                            'GrantCellsDL',grantCellDL,'GrantCellsUL',grantCellUL, ...
+                            'LargeScaleState',largeScaleState,'PowerState',finalPowerState));
+                    end
                     [okUL, blerUL] = phy.decode(ctxUL);
                     replayUL = localLastPHYReplay(phy);
+                    replayUL.UniqueDeliveredApplicationBits=NaN;
+                    if ~isempty(fileLedger), replayUL.UniqueDeliveredApplicationBits=0; end
                     replayTbsUL = localReplayTransportBlockSize(replayUL, tbsBits);
+                    if ~isempty(fileLedger) && replayTbsUL~=tbsBits
+                        error('sixgr:system:FileGrantTBSMismatch','UL waveform TBS differs from pre-transmission file binding.');
+                    end
                     decisionUnavailableUL = localPHYDecisionUnavailable(replayUL);
                     if t == 1 && gi == 1
                         localEmitLiveProgress(cfg, log, runTimer, 0, nTTI, tti_s, ...
@@ -1189,6 +1476,8 @@ classdef SystemLevelRunner
                         decodeUnavailableCountUL = decodeUnavailableCountUL + 1;
                     elseif okUL
                         servedUL = min(queueBitsUL(u), replayTbsUL);
+                        if ~isempty(fileLedger), servedUL=fileLedger.complete(ctxUL.TransportBlockIdentity,t); end
+                        if ~isempty(fileLedger), replayUL.UniqueDeliveredApplicationBits=servedUL; end
                         queueBitsUL(u) = queueBitsUL(u) - servedUL;
                         servedBitsTotalUL = servedBitsTotalUL + servedUL;
                         servedBitsTTI_UL(t) = servedBitsTTI_UL(t) + servedUL;
@@ -1220,7 +1509,16 @@ classdef SystemLevelRunner
                     end
                 end
 
+                harqDroppedDL=zeros(K,1); harqDroppedUL=zeros(K,1);
+                if ~isempty(dynamicPUCCH)
+                    dynamicPUCCH.completeSlot(t-1,servingIdx,phy.DLCSIReferences, ...
+                        params.IssuedPUSCHGrants,grantsUL);
+                end
                 for c = 1:nCells
+                    if ~isempty(dynamicPUCCH) && ~isempty(dynamicFeedback{t,c})
+                        dynamicPUCCH.requireHARQCompletion(dynamicFeedback{t,c},c,t-1);
+                        schedDLCells{c}.updateAfterRx(dynamicFeedback{t,c});
+                    end
                     if ~isempty(fbDLByCell{c})
                         nFb = fbDLWriteIdx(c);
                         if nFb > 0
@@ -1235,10 +1533,42 @@ classdef SystemLevelRunner
                     end
                 end
 
+                if ~isempty(fileLedger)
+                    for dropCell=1:nCells
+                        for dropDirection=["DL","UL"]
+                            scheduler=schedDLCells{dropCell};
+                            if dropDirection=="UL", scheduler=schedULCells{dropCell}; end
+                            if isempty(scheduler.HARQ), continue; end
+                            drops=transportBlocks.terminalDrops(dropDirection,dropCell,scheduler.HARQ.getDeliveryLedger(),t);
+                            for dropIndex=1:numel(drops)
+                                du=drops(dropIndex).UEID;
+                                bits=fileLedger.abandon(drops(dropIndex).ID,t);
+                                sixgr.system.waveform.harqSoftBufferCache("clear", ...
+                                    dropDirection+"|tb="+drops(dropIndex).ID+"|tbs="+string(drops(dropIndex).TBSBits));
+                                if dropDirection=="DL", harqDroppedDL(du)=harqDroppedDL(du)+bits;
+                                else, harqDroppedUL(du)=harqDroppedUL(du)+bits; end
+                            end
+                        end
+                    end
+                end
+
+                queueBitsDL=queueBitsDL-harqDroppedDL; queueBitsUL=queueBitsUL-harqDroppedUL;
+                droppedBitsTotalDL=droppedBitsTotalDL+sum(harqDroppedDL);
+                droppedBitsTotalUL=droppedBitsTotalUL+sum(harqDroppedUL);
+                droppedBitsTTI_DL(t)=droppedBitsTTI_DL(t)+sum(harqDroppedDL);
+                droppedBitsTTI_UL(t)=droppedBitsTTI_UL(t)+sum(harqDroppedUL);
+                droppedPerUE_DL=droppedPerUE_DL+harqDroppedDL;
+                droppedPerUE_UL=droppedPerUE_UL+harqDroppedUL;
                 overflowDL = max(queueBitsDL - qMaxBits, 0);
                 overflowUL = max(queueBitsUL - qMaxBits, 0);
-                droppedCellDL = accumarray(servingIdx, overflowDL, [nCells, 1], @sum, 0);
-                droppedCellUL = accumarray(servingIdx, overflowUL, [nCells, 1], @sum, 0);
+                if ~isempty(fileLedger)
+                    for fileUE=1:K
+                        fileLedger.dropTail(fileUE,"DL",overflowDL(fileUE),t);
+                        fileLedger.dropTail(fileUE,"UL",overflowUL(fileUE),t);
+                    end
+                end
+                droppedCellDL = accumarray(servingIdx, overflowDL+harqDroppedDL, [nCells, 1], @sum, 0);
+                droppedCellUL = accumarray(servingIdx, overflowUL+harqDroppedUL, [nCells, 1], @sum, 0);
                 if any(overflowDL > 0) || any(overflowUL > 0)
                     ovDL = sum(overflowDL);
                     ovUL = sum(overflowUL);
@@ -1475,6 +1805,23 @@ classdef SystemLevelRunner
                                   'ExecutionBackend','PHYMode','WaveformBacked', ...
                                   'WaveformPHYActive','ProxyPHYActive','FallbackUsed'});
             out.KPITable = kpi;
+            if calibratedBacked
+                out.KPITable.SourceClassification=repmat( ...
+                    "calibrated_sls_estimate_not_waveform_truth",height(out.KPITable),1);
+                out.KPITable.CalibrationQualified=repmat(phy.CalibrationQualified,height(out.KPITable),1);
+                out.KPITable.PrimaryResultEligible=false(height(out.KPITable),1);
+                % Existing SINR histories are large-scale link budgets, not
+                % the spatial effective SINRs actually used by the decoder.
+                out.KPITable.SINRMetricDefinition="large_scale_link_budget_not_decoding_effective_sinr";
+                out.KPITable.MeanModeledEffectiveSINR_DL_dB=localMeanNoNan( ...
+                    schedulerGrants.ModeledEffectiveSINR_dB(schedulerGrants.Direction=="DL"));
+                out.KPITable.MeanModeledEffectiveSINR_UL_dB=localMeanNoNan( ...
+                    schedulerGrants.ModeledEffectiveSINR_dB(schedulerGrants.Direction=="UL"));
+                out.KPITable.ModeledEffectiveSINRAggregation="arithmetic_dB_mean_over_executed_grants";
+                if ~phy.CalibrationQualified
+                    out.KPITable.SourceClassification(:)="development_fixture_not_study_result";
+                end
+            end
 
             out.Details = struct();
             out.Details.ExecutionBackend = string(phyBackendLabel);
@@ -1483,8 +1830,16 @@ classdef SystemLevelRunner
             out.Details.WaveformPHYActive = logical(waveformBacked);
             out.Details.ProxyPHYActive = logical(proxyPHYActive);
             out.Details.FallbackUsed = logical(fallbackUsed);
-            if waveformBacked && isprop(phy, "LastReplay")
+            if (waveformBacked || calibratedBacked) && isprop(phy, "LastReplay")
                 out.Details.LastPHYReplay = phy.LastReplay;
+            end
+            if calibratedBacked
+                out.Details.SourceClassification=out.KPITable.SourceClassification(1);
+                out.Details.CalibrationQualified=phy.CalibrationQualified;
+                out.Details.CalibrationID=phy.CalibrationID;
+                out.Details.CalibrationSHA256=phy.CalibrationSHA256;
+                out.Details.PrimaryResultEligible=false; % Campaign-level acceptance is separate.
+                out.Details.SINRMetricDefinition=out.KPITable.SINRMetricDefinition;
             end
             out.Details.ScheduledUE_DL = scheduledUE_DL;
             out.Details.ScheduledUE_UL = scheduledUE_UL;
@@ -1539,11 +1894,30 @@ classdef SystemLevelRunner
             out.Details.BLER_DL = blerHistDL;
             out.Details.BLER_UL = blerHistUL;
             out.Details.TrafficModel = traffic.Model;
+            out.Details.TrafficModelSource = traffic.ModelSource;
             out.Details.TrafficClass = traffic.UserClass;
             out.Details.TrafficTransport = sixgr.util.structGet(traffic, "Transport", "UDP");
             out.Details.TrafficTransportSemanticClass = sixgr.util.structGet(traffic, "TransportSemanticClass", "");
             out.Details.TrafficTransportTruthLabel = sixgr.util.structGet(traffic, "TransportTruthLabel", "");
             out.Details.TrafficTransportApproximationReason = sixgr.util.structGet(traffic, "TransportApproximationReason", "");
+            out.Details.TrafficArrivalEvents = sixgr.util.structGet(traffic, "EventTable", table());
+            if ~isempty(fileLedger)
+                fileSnapshot=fileLedger.snapshot(nTTI);
+                out.Details.FTP3Files=fileSnapshot.Files;
+                out.Details.FTP3DeliveryEvents=fileSnapshot.DeliveryEvents;
+                out.Details.FTP3UserMetrics=fileSnapshot.UserSummary;
+                out.Details.FTP3DeliverySource=fileSnapshot.Source;
+                out.Details.FTP3DeliverySemantics=fileSnapshot.TransportSemantics;
+            end
+            out.Details.TrafficArrivalStreamID = sixgr.util.structGet(traffic, "ArrivalStreamID", "");
+            out.Details.TrafficArrivalRatePerCell_s = double(sixgr.util.structGet( ...
+                traffic, "ArrivalRatePerCell_s", NaN));
+            out.Details.TrafficDefinitionSource = sixgr.util.structGet(traffic, "DefinitionSource", "");
+            out.Details.TrafficDeterministic = logical(sixgr.util.structGet(traffic, "Deterministic", false));
+            out.Details.PairedSeedBundleActive = pairedSeedBundleActive;
+            out.Details.SeedBundle = seedBundle;
+            out.Details.FWAPopulationTable = sixgr.util.structGet( ...
+                ueInitial, "population_table", table());
             out.Details.FlowDirection = sixgr.util.structGet(traffic, "FlowDirection", "BIDIR");
             out.Details.PacketDelayBudget_ms = sixgr.util.structGet(traffic, "PacketDelayBudget_ms", NaN);
             out.Details.FlowTable = sixgr.util.structGet(traffic, "FlowTable", table());
@@ -1588,6 +1962,29 @@ classdef SystemLevelRunner
             out.Details.HandoverEvents = hoEvents;
             out.Details.BeamEvents = beamEvents;
             out.Details.SchedulerGrants = schedulerGrants;
+            if calibratedBacked
+                out.Details.ModeledSpatialFeedback=phy.SpatialFeedbackTrace;
+                out.Details.ModeledDLCSI=phy.DLCSITrace;
+                out.Details.DynamicPUCCHObligations=table();
+                out.Details.DynamicUCICompletions=table();
+                if ~isempty(dynamicPUCCH)
+                    out.Details.DynamicPUCCHObligations=dynamicPUCCH.Trace;
+                    out.Details.DynamicUCICompletions=dynamicPUCCH.CompletionTrace;
+                end
+                out.Details.NetworkSpatialEvidence=phy.NetworkSpatialTrace;
+            end
+            opportunityTables = resourceOpportunityRows(cellfun(@istable,resourceOpportunityRows));
+            if useResourceReservations
+                reservationTables=reservationEvidenceRows(cellfun(@istable,reservationEvidenceRows));
+                out.Details.ResourceReservationTable=vertcat(reservationTables{:});
+                out.Details.CommonChannelReservationCalendar=commonChannelCalendar;
+                capacityTables=reservationCapacityRows(cellfun(@istable,reservationCapacityRows));
+                out.Details.ResourceReservationCapacityTable=vertcat(capacityTables{:});
+                out.Details.ResourceReservationPolicy="whole_PRB_exclusion_over_fixed_grant_symbol_span";
+            end
+            out.Details.ResourceOpportunityTable = vertcat(opportunityTables{:});
+            out.Details.ResourceUtilizationDefinition = ...
+                "union_executed_PRB_symbols_over_independent_scheduler_budget_PRB_symbols";
             out.Details.HARQProcesses = harqProcesses;
             out.Details.SchedulerDecisions=schedulerDecisionState.SchedulerDecisionTable;
             out.Details.SchedulerResourceExclusions=schedulerDecisionState.SchedulerResourceExclusionTable;
@@ -1683,7 +2080,41 @@ classdef SystemLevelRunner
 
                 csvSched = fullfile(ctx.RunFolder, "csv", "system_scheduler_grants.csv");
                 sixgr.util.csvWriteTable(csvSched, schedulerGrants);
+                csvOpportunities = fullfile(ctx.RunFolder,"csv","system_resource_opportunities.csv");
+                sixgr.util.csvWriteTable(csvOpportunities,out.Details.ResourceOpportunityTable,"PreserveSchema",true);
+                if useResourceReservations
+                    sixgr.util.csvWriteTable(fullfile(ctx.RunFolder,"csv","system_resource_reservations.csv"), ...
+                        out.Details.ResourceReservationTable,"PreserveSchema",true);
+                    sixgr.util.csvWriteTable(fullfile(ctx.RunFolder,"csv","system_resource_reservation_capacity.csv"), ...
+                        out.Details.ResourceReservationCapacityTable,"PreserveSchema",true);
+                end
+                out.Artifacts.csv{end+1} = csvOpportunities;
                 out.Artifacts.csv{end+1} = csvSched;
+                if calibratedBacked && ~isempty(out.Details.ModeledDLCSI)
+                    file=fullfile(ctx.RunFolder,'csv','system_modeled_dl_csi.csv');
+                    sixgr.util.csvWriteTable(file,out.Details.ModeledDLCSI,'PreserveSchema',true);
+                    out.Artifacts.csv{end+1}=file;
+                end
+                if calibratedBacked && ~isempty(out.Details.DynamicPUCCHObligations)
+                    file=fullfile(ctx.RunFolder,'csv','system_dynamic_pucch_obligations.csv');
+                    sixgr.util.csvWriteTable(file,out.Details.DynamicPUCCHObligations,'PreserveSchema',true);
+                    out.Artifacts.csv{end+1}=file;
+                end
+                if calibratedBacked && ~isempty(out.Details.DynamicUCICompletions)
+                    file=fullfile(ctx.RunFolder,'csv','system_dynamic_uci_completions.csv');
+                    sixgr.util.csvWriteTable(file,out.Details.DynamicUCICompletions,'PreserveSchema',true);
+                    out.Artifacts.csv{end+1}=file;
+                end
+                if calibratedBacked && ~isempty(out.Details.ModeledSpatialFeedback)
+                    file=fullfile(ctx.RunFolder,'csv','system_modeled_spatial_feedback.csv');
+                    sixgr.util.csvWriteTable(file,out.Details.ModeledSpatialFeedback,'PreserveSchema',true);
+                    out.Artifacts.csv{end+1}=file;
+                end
+                if calibratedBacked && ~isempty(out.Details.NetworkSpatialEvidence)
+                    file=fullfile(ctx.RunFolder,'csv','system_network_spatial_evidence.csv');
+                    sixgr.util.csvWriteTable(file,out.Details.NetworkSpatialEvidence,'PreserveSchema',true);
+                    out.Artifacts.csv{end+1}=file;
+                end
                 if ~isempty(out.Details.SchedulerDecisions)
                     csvDecisions=fullfile(ctx.RunFolder,"csv","system_scheduler_decisions.csv");
                     sixgr.util.csvWriteTable(csvDecisions,out.Details.SchedulerDecisions);
@@ -1723,6 +2154,7 @@ classdef SystemLevelRunner
                         detailedTrace, posXHist, posYHist, figRes, scatterCap);
                     out.Artifacts.fig = figFiles;
                 catch MEf
+                    out.Ok = false;
                     out.Errors(end+1,1) = "Figure export failed: " + string(MEf.message);
                 end
             end
@@ -1732,6 +2164,7 @@ classdef SystemLevelRunner
                 localWriteReplayScript(mFile, nTTI, tti_s, detailedTrace);
                 out.Artifacts.m{end+1} = mFile;
             catch MEm
+                out.Ok = false;
                 out.Errors(end+1,1) = "Replay script write failed: " + string(MEm.message);
             end
             localEmitLiveProgress(cfg, log, runTimer, nTTI, nTTI, tti_s, ...
@@ -1759,6 +2192,7 @@ classdef SystemLevelRunner
                     out.OutputCatalog = sixgr.report.exportSLSOutputCatalog( ...
                         ctx.RunFolder, cfg, out, runtimeSummary, environmentSummary);
                 catch MEcat
+                    out.Ok = false;
                     out.Errors(end+1,1) = "SLS output catalog export failed: " + ...
                         string(getReport(MEcat, "extended", "hyperlinks", "off"));
                 end
@@ -1769,7 +2203,9 @@ classdef SystemLevelRunner
                     "outputs.exportSLSOutputCatalog=false";
             end
 
-            log.info("SystemLevelRunner completed: throughput=" + string(round(throughput_Mbps,3)) + " Mbps");
+            out.RuntimeSummary = localBuildRuntimeSummary(startedUTC, runTimer, ctx.RunFolder, out.Errors);
+            log.info("SystemLevelRunner completed: ok=" + string(out.Ok) + ...
+                " throughput=" + string(round(throughput_Mbps,3)) + " Mbps");
         end
     end
 end
@@ -2014,9 +2450,22 @@ sets = {lhs(:), rhs(:)};
 out = localVertcatGrantSets(sets, 2);
 end
 
-function sched = localCreateScheduler(cfg, schedulerName, direction, log)
+function sched = localCreateScheduler(cfg, schedulerName, direction, log, ...
+    seedBundle, pairedSeedBundleActive, cellId, nUE)
 if nargin < 4
     log = [];
+end
+if nargin < 5 || isempty(seedBundle)
+    seedBundle = struct();
+end
+if nargin < 6
+    pairedSeedBundleActive = false;
+end
+if nargin < 7
+    cellId = 1;
+end
+if nargin < 8
+    nUE = 1;
 end
 dir = upper(char(string(direction)));
 sch = lower(char(string(schedulerName)));
@@ -2025,6 +2474,16 @@ if contains(sch, "pf")
 else
     sched = sixgr.l2.mac.SchedulerRR( ...
         cfg, "Direction", dir, "Logger", log);
+end
+if pairedSeedBundleActive && isa(sched, "sixgr.l2.mac.SchedulerRR")
+    % Round-robin has one genuinely stochastic campaign choice: the
+    % initial cyclic cursor.  Resolve it from a component-local stream so
+    % scheduler pairing is independent of geometry and propagation draws.
+    directionOffset = double(strcmpi(dir, "UL"));
+    streamSeed = localNormalizeSeed(double(seedBundle.SchedulerSeed) + ...
+        2 * (double(cellId) - 1) + directionOffset);
+    stream = RandStream("mt19937ar", "Seed", streamSeed);
+    sched.NextUE = randi(stream, max(1, round(double(nUE))));
 end
 end
 
@@ -2874,7 +3333,92 @@ end
 tableName = char(lower(string(token)));
 end
 
-function traffic = localBuildTraffic(cfg, params, nUE, nTTI, tti_s)
+function [bundle, active] = localResolvePairedSeedBundle(params, baseSeed)
+value = sixgr.util.structGet(params, "SeedBundle", []);
+active = ~isempty(value);
+if ~active
+    bundle = struct( ...
+        "GeometrySeed", localNormalizeSeed(baseSeed), ...
+        "ShadowSeed", localNormalizeSeed(baseSeed + 17), ...
+        "TrafficSeed", localNormalizeSeed(baseSeed + 7303), ...
+        "AntennaOrientationSeed", localNormalizeSeed(baseSeed + 23), ...
+        "SchedulerSeed", localNormalizeSeed(baseSeed + 29), ...
+        "PropagationSeed", localNormalizeSeed(baseSeed + 31));
+    return;
+end
+if istable(value)
+    if height(value) ~= 1
+        error("sixgr:system:SeedBundleRowCount", ...
+            "params.SeedBundle must be a scalar struct or one-row table.");
+    end
+    value = table2struct(value);
+end
+if ~(isstruct(value) && isscalar(value))
+    error("sixgr:system:InvalidSeedBundle", ...
+        "params.SeedBundle must be a scalar struct or one-row table.");
+end
+required = ["GeometrySeed","ShadowSeed","TrafficSeed", ...
+    "AntennaOrientationSeed","SchedulerSeed","PropagationSeed"];
+for name = required
+    if ~isfield(value, name)
+        error("sixgr:system:IncompleteSeedBundle", ...
+            "params.SeedBundle is missing required field %s.", name);
+    end
+    raw = double(value.(name));
+    if ~(isscalar(raw) && isfinite(raw) && raw >= 0 && raw == fix(raw) && ...
+            raw <= (2^32 - 1))
+        error("sixgr:system:InvalidSeedBundleValue", ...
+            "params.SeedBundle.%s must be an integer in [0, 2^32-1].", name);
+    end
+    bundle.(name) = localNormalizeSeed(raw);
+end
+end
+
+function seed = localNormalizeSeed(value)
+seed = mod(round(double(value)), 2^32 - 1);
+if seed < 0
+    seed = seed + (2^32 - 1);
+end
+end
+
+function value = localSeedForComponent(bundle, active, field, fallback)
+if active
+    value = double(bundle.(field));
+else
+    value = double(fallback);
+end
+end
+
+function cfg = localBindTrafficSeed(cfg, bundle, active)
+if ~active
+    return;
+end
+if ~isfield(cfg, "traffic") || ~isstruct(cfg.traffic)
+    cfg.traffic = struct();
+end
+if ~isfield(cfg.traffic, "ftp3") || ~isstruct(cfg.traffic.ftp3)
+    cfg.traffic.ftp3 = struct();
+end
+cfg.traffic.ftp3.seed = double(bundle.TrafficSeed);
+end
+
+function ue = localBindSeededAntennaOrientation(ue, seed)
+nUE = double(sixgr.util.structGet(ue, "K", 0));
+if nUE <= 0
+    return;
+end
+stream = RandStream("mt19937ar", "Seed", localNormalizeSeed(seed));
+% FWA CPE yaw is randomized around the vertical axis.  Elevation and
+% slant remain explicit zero references unless a later antenna model
+% applies a configured mechanical/electrical offset.
+azimuthDeg = 360 .* rand(stream, nUE, 1);
+ue.antenna_orientation_deg = [azimuthDeg, zeros(nUE, 2)];
+ue.antenna_orientation_source = repmat( ...
+    "paired_seed_uniform_cpe_yaw", nUE, 1);
+ue.antenna_orientation_seed = repmat(double(seed), nUE, 1);
+end
+
+function traffic = localBuildTraffic(cfg, params, nUE, nTTI, tti_s, nCells)
 customOffered = sixgr.util.structGet(params, "OfferedBits", []);
 customOfferedDL = sixgr.util.structGet(params, "OfferedBitsDL", []);
 customOfferedUL = sixgr.util.structGet(params, "OfferedBitsUL", []);
@@ -2882,7 +3426,8 @@ trafficClass = sixgr.util.structGet(params, "TrafficClass", []);
 scaleVec = sixgr.util.structGet(params, "UETrafficScale", []);
 
 if isempty(customOffered) && isempty(customOfferedDL) && isempty(customOfferedUL)
-    t = sixgr.system.TrafficFactory.generate(cfg, nUE, nTTI, tti_s);
+    t = sixgr.system.TrafficFactory.generate(cfg, nUE, nTTI, tti_s, ...
+        "NumCells", nCells);
     offered = localExpandTrafficMatrix(sixgr.util.structGet(t, "OfferedBits", []), nTTI, nUE, "TrafficFactory.OfferedBits");
     offeredDL = localExpandTrafficMatrix(sixgr.util.structGet(t, "OfferedBitsDL", []), nTTI, nUE, "TrafficFactory.OfferedBitsDL");
     offeredUL = localExpandTrafficMatrix(sixgr.util.structGet(t, "OfferedBitsUL", []), nTTI, nUE, "TrafficFactory.OfferedBitsUL");
@@ -2897,12 +3442,22 @@ if isempty(customOffered) && isempty(customOfferedDL) && isempty(customOfferedUL
     end
     offered = offeredDL + offeredUL;
     model = string(t.Model);
+    modelSource = string(sixgr.util.structGet(t, "ModelSource", ""));
     transport = string(sixgr.util.structGet(t, "Transport", sixgr.util.structGet(cfg, "traffic.transport", "UDP")));
     flowDirection = string(sixgr.util.structGet(t, "FlowDirection", sixgr.util.structGet(cfg, "traffic.flowDirection", "BIDIR")));
     packetDelayBudget_ms = double(sixgr.util.structGet(t, "PacketDelayBudget_ms", ...
         sixgr.util.structGet(cfg, "traffic.packetDelayBudget_ms", ...
         sixgr.util.structGet(cfg, "traffic.qos.latencyBudget_ms", 50))));
     flowTable = sixgr.util.structGet(t, "FlowTable", table());
+    eventTable = sixgr.util.structGet(t, "EventTable", table());
+    arrivalStreamID = string(sixgr.util.structGet(t, "ArrivalStreamID", ""));
+    arrivalRatePerCell_s = double(sixgr.util.structGet(t, ...
+        "ArrivalRatePerCell_s", NaN));
+    definitionSource = string(sixgr.util.structGet(t, "DefinitionSource", ""));
+    deterministicTraffic = logical(sixgr.util.structGet(t, "Deterministic", false));
+    transportSemanticClass = string(sixgr.util.structGet(t, "TransportSemanticClass", ""));
+    transportTruthLabel = string(sixgr.util.structGet(t, "TransportTruthLabel", ""));
+    transportApproximationReason = string(sixgr.util.structGet(t, "TransportApproximationReason", ""));
 else
     if ~isempty(customOffered)
         offered = localExpandTrafficMatrix(double(customOffered), nTTI, nUE, "OfferedBits");
@@ -2944,6 +3499,7 @@ else
     offered = offeredDL + offeredUL;
 
     model = string(sixgr.util.structGet(params, "TrafficModel", "custom"));
+    modelSource = "caller_supplied_offered_bits";
     transport = string(sixgr.util.structGet(params, "TrafficTransport", ...
         sixgr.util.structGet(cfg, "traffic.transport", "UDP")));
     flowDirection = string(sixgr.util.structGet(params, "TrafficFlowDirection", ...
@@ -2952,6 +3508,14 @@ else
         sixgr.util.structGet(cfg, "traffic.packetDelayBudget_ms", ...
         sixgr.util.structGet(cfg, "traffic.qos.latencyBudget_ms", 50))));
     flowTable = table();
+    eventTable = table();
+    arrivalStreamID = "";
+    arrivalRatePerCell_s = NaN;
+    definitionSource = "custom_offered_bits";
+    deterministicTraffic = true;
+    transportSemanticClass = "custom_offered_bits";
+    transportTruthLabel = "caller_supplied_offered_load";
+    transportApproximationReason = "";
 end
 
 if isempty(trafficClass)
@@ -2996,9 +3560,14 @@ end
 offeredDL = max(0, round(offeredDL .* scaleVec(:).'));
 offeredUL = max(0, round(offeredUL .* scaleVec(:).'));
 offered = offeredDL + offeredUL;
+if lower(strtrim(model)) == "ftp3" && any(abs(scaleVec - 1) > 0)
+    error("sixgr:system:FTP3TrafficScalingForbidden", ...
+        "FTP3 comparator traffic must replay its exact file-arrival ledger; UETrafficScale is not allowed.");
+end
 
 traffic = struct();
 traffic.Model = model;
+traffic.ModelSource = modelSource;
 traffic.OfferedBits = offered;
 traffic.OfferedBitsDL = offeredDL;
 traffic.OfferedBitsUL = offeredUL;
@@ -3009,6 +3578,14 @@ traffic.Transport = upper(string(transport));
 traffic.FlowDirection = upper(string(flowDirection));
 traffic.PacketDelayBudget_ms = packetDelayBudget_ms;
 traffic.FlowTable = flowTable;
+traffic.EventTable = eventTable;
+traffic.ArrivalStreamID = arrivalStreamID;
+traffic.ArrivalRatePerCell_s = arrivalRatePerCell_s;
+traffic.DefinitionSource = definitionSource;
+traffic.Deterministic = deterministicTraffic;
+traffic.TransportSemanticClass = transportSemanticClass;
+traffic.TransportTruthLabel = transportTruthLabel;
+traffic.TransportApproximationReason = transportApproximationReason;
 end
 
 function bits = localExpandTrafficMatrix(bitsIn, nTTI, nUE, label)
@@ -3172,6 +3749,7 @@ trace.SlotDirection = strings(cap,1);
 trace.CellID = zeros(cap,1);
 trace.UE = zeros(cap,1);
 trace.PRBStart = NaN(cap,1);
+trace.PRBSet = strings(cap,1);
 trace.PRBCount = zeros(cap,1);
 trace.SymbolStart = zeros(cap,1);
 trace.NumSymbols = zeros(cap,1);
@@ -3250,6 +3828,16 @@ trace.PHYDecisionReason = strings(cap,1);
 trace.WaveformReplayExecuted = false(cap,1);
 trace.WaveformReplayReused = false(cap,1);
 trace.WaveformReplayKey = strings(cap,1);
+trace.TransportBlockIdentity = strings(cap,1);
+for field=["CalibrationID","CalibrationSHA256","CalibrationCurveID", ...
+        "ModelObservationID","SourceClassification","HARQSINRHistory_dB","HARQRVHistory", ...
+        "ReceiverType","EffectiveSINRMethod","EffectiveSINRMappingSHA256"]
+    trace.(field)=strings(cap,1);
+end
+trace.ModeledEffectiveSINR_dB=NaN(cap,1);
+trace.CalibrationQualified=false(cap,1);
+trace.UniqueDeliveredApplicationBits = NaN(cap,1);
+trace.ApplicationPayloadBits = NaN(cap,1);
 trace.ReceiverHestSINR_dB = NaN(cap,1);
 trace.ReceiverHestSINRSource = strings(cap,1);
 trace.ReceiverHestSINRValueRole = strings(cap,1);
@@ -3453,6 +4041,7 @@ trace.SlotDirection(i) = string(slotLabel);
 trace.CellID(i) = double(cellId);
 trace.UE(i) = double(sixgr.util.structGet(grant, "RNTI", NaN));
 trace.PRBStart(i) = double(prbStart);
+trace.PRBSet(i) = string(jsonencode(prbSet(:).'));
 trace.PRBCount(i) = double(prbCount);
 trace.SymbolStart(i) = double(symAlloc(1));
 trace.NumSymbols(i) = double(symAlloc(2));
@@ -3530,13 +4119,26 @@ trace.HeadOfLineDelay_ms(i) = double(sixgr.util.structGet(grant, "HeadOfLineDela
 trace.BufferBytesBefore(i) = double(sixgr.util.structGet(grant, "BufferBytesBefore", NaN));
 trace.BufferBytesAfter(i) = double(sixgr.util.structGet(grant, "BufferBytesAfter", NaN));
 trace.GrantReason(i) = string(sixgr.util.structGet(grant, "GrantReason", ""));
-trace.PHYDecisionRole(i) = string(sixgr.util.structGet(replay, "PHYDecisionRole", "measured"));
-trace.PHYDecisionStatus(i) = string(sixgr.util.structGet(replay, "PHYDecisionStatus", "OK"));
-trace.PHYDecisionSource(i) = string(sixgr.util.structGet(replay, "PHYDecisionSource", "sixgr.system.waveform.replayGrant"));
-trace.PHYDecisionReason(i) = string(sixgr.util.structGet(replay, "PHYDecisionReason", "waveform_replay_executed"));
-trace.WaveformReplayExecuted(i) = logical(sixgr.util.structGet(replay, "WaveformReplayExecuted", true));
+% Missing receiver evidence must not acquire measured/successful provenance.
+trace.PHYDecisionRole(i) = string(sixgr.util.structGet(replay, "PHYDecisionRole", "unavailable"));
+trace.PHYDecisionStatus(i) = string(sixgr.util.structGet(replay, "PHYDecisionStatus", "UNAVAILABLE"));
+trace.PHYDecisionSource(i) = string(sixgr.util.structGet(replay, "PHYDecisionSource", ""));
+trace.PHYDecisionReason(i) = string(sixgr.util.structGet(replay, "PHYDecisionReason", "missing_receiver_execution_evidence"));
+trace.WaveformReplayExecuted(i) = logical(sixgr.util.structGet(replay, "WaveformReplayExecuted", false));
 trace.WaveformReplayReused(i) = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
 trace.WaveformReplayKey(i) = string(sixgr.util.structGet(replay, "WaveformReplayKey", ""));
+trace.TransportBlockIdentity(i)=string(sixgr.util.structGet(replay,"TransportBlockIdentity",""));
+for field=["CalibrationID","CalibrationSHA256","CalibrationCurveID","ModelObservationID","SourceClassification", ...
+        "ReceiverType","EffectiveSINRMethod","EffectiveSINRMappingSHA256"]
+    trace.(field)(i)=string(sixgr.util.structGet(replay,field,""));
+end
+for field=["HARQSINRHistory_dB","HARQRVHistory"]
+    trace.(field)(i)=localFormatNumericVector(sixgr.util.structGet(replay,field,[]));
+end
+trace.ModeledEffectiveSINR_dB(i)=double(sixgr.util.structGet(replay,'ModeledEffectiveSINR_dB',NaN));
+trace.CalibrationQualified(i)=logical(sixgr.util.structGet(replay,'CalibrationQualified',false));
+trace.UniqueDeliveredApplicationBits(i)=double(sixgr.util.structGet(replay,"UniqueDeliveredApplicationBits",NaN));
+trace.ApplicationPayloadBits(i)=double(sixgr.util.structGet(replay,"ApplicationPayloadBits",NaN));
 trace.ReceiverHestSINR_dB(i) = double(sixgr.util.structGet(replay, "ReceiverHestSINR_dB", NaN));
 trace.ReceiverHestSINRSource(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRSource", ""));
 trace.ReceiverHestSINRValueRole(i) = string(sixgr.util.structGet(replay, "ReceiverHestSINRValueRole", ""));
@@ -3558,7 +4160,7 @@ trace.StrictReceiverEvidenceOk(i) = logical(sixgr.util.structGet(replay, "Strict
 trace.StrictOk(i) = logical(sixgr.util.structGet(replay, "StrictOk", false));
 trace.TruthStatus(i) = string(sixgr.util.structGet(replay, "TruthStatus", ""));
 trace.ExecutionBackend(i) = string(sixgr.util.structGet(replay, "ExecutionBackend", ""));
-trace.ApproximationMode(i) = string(sixgr.util.structGet(replay, "ApproximationMode", "none"));
+trace.ApproximationMode(i) = string(sixgr.util.structGet(replay, "ApproximationMode", "unknown"));
 trace.DecoderIterations(i) = double(sixgr.util.structGet(replay, "DecoderIterations", NaN));
 trace = localAssignMeasuredPHYEvidenceTrace(trace, i, replay);
 trace.ChannelEstimateAvailable(i) = logical(sixgr.util.structGet(replay, "ChannelEstimateAvailable", false));
@@ -3704,7 +4306,18 @@ T = localAttachGrantTraceEvidenceColumns(T, trace, idx);
 end
 
 function T = localAttachGrantTraceEvidenceColumns(T, trace, idx)
+T.TransportBlockIdentity=trace.TransportBlockIdentity(idx);
+for field=["CalibrationID","CalibrationSHA256","CalibrationCurveID", ...
+        "ModelObservationID","SourceClassification","HARQSINRHistory_dB","HARQRVHistory", ...
+        "ReceiverType","EffectiveSINRMethod","EffectiveSINRMappingSHA256"]
+    T.(field)=trace.(field)(idx);
+end
+T.ModeledEffectiveSINR_dB=trace.ModeledEffectiveSINR_dB(idx);
+T.CalibrationQualified=trace.CalibrationQualified(idx);
+T.UniqueDeliveredApplicationBits=trace.UniqueDeliveredApplicationBits(idx);
+T.ApplicationPayloadBits=trace.ApplicationPayloadBits(idx);
 n = height(T);
+T.PRBSet = localTraceString(trace, "PRBSet", idx, n, "");
 T.AMCMode = localTraceString(trace, "AMCMode", idx, n, "");
 T.MCSTable = localTraceString(trace, "MCSTable", idx, n, "");
 T.CQITable = localTraceString(trace, "CQITable", idx, n, "");
@@ -4309,6 +4922,10 @@ if isa(phy, "sixgr.system.WaveformPHY")
     else
         phyModeLabel = "GRANT_CRC_WAVEFORM_REPLAY_EXPERIMENTAL";
     end
+elseif isa(phy,"sixgr.system.CalibratedLinkPHY")
+    backendLabel=phy.ExecutionBackend;
+    phyModeLabel=phy.PHYMode;
+    waveformBacked=false; proxyPHYActive=true; fallbackUsed=false;
 end
 end
 
@@ -4598,6 +5215,9 @@ elapsed_s = double(toc(runTimer));
 completion = min(1, max(0, double(slotIdx) / max(double(totalSlots), 1)));
 simTime_ms = 1e3 * double(tti_s) * double(slotIdx);
 stageText = char(string(stageName));
+if string(sixgr.util.structGet(cfg,'run.executionMode','')) == "SLS"
+    stageText = strrep(stageText,'system_level_lls','sls_network');
+end
 slotText = char(string(slotLabel));
 nowUTC = localUTCStamp();
 
@@ -4804,6 +5424,9 @@ try
     payload.ResultOk = false;
     payload.MatlabPID = feature("getpid");
     payload.Source = "sixgr.system.SystemLevelRunner";
+    payload.ExecutionMode = string(sixgr.util.structGet(cfg,'run.executionMode','LLS'));
+    payload.ExecutionBackend = string(sixgr.util.structGet(cfg,'system.phyBackend','waveform'));
+    payload.PrimaryStudyAccepted = false;
     sixgr.util.jsonWrite(fullfile(runFolder, "RUNNING.status.json"), payload);
 
     row = table( ...
@@ -4887,4 +5510,47 @@ end
 function txt = localUTCStamp()
 dt = datetime("now", "TimeZone", "UTC", "Format", "yyyy-MM-dd HH:mm:ss");
 txt = char(replace(string(dt), " ", "T") + "Z");
+end
+
+function context=localSLSReservationContext(params,cellID,asOfSlot0,targetSlot0)
+if nargin<4, targetSlot0=asOfSlot0; end
+obligations=sixgr.util.structGet(params,'ResourceReservationObligations',struct([]));
+if ~isempty(obligations)
+    assert(isstruct(obligations) && isfield(obligations,'KnownAtAbsoluteSlot0'), ...
+        'sixgr:system:ReservationObligationSchema','Reservation events need an explicit availability clock.');
+    known=[obligations.KnownAtAbsoluteSlot0];
+    assert(numel(known)==numel(obligations) && all(isfinite(known)) && ...
+        all(known>=0 & known==fix(known)), ...
+        'sixgr:system:ReservationObligationSchema','Availability clocks must be finite nonnegative absolute slots.');
+    % Replay an event ledger causally. Future events are not visible to a
+    % K2 scheduler; execution rechecks when those events actually arrive.
+    obligations=obligations(known<=asOfSlot0);
+end
+context=struct('CellID',cellID,'AsOfAbsoluteSlot0',asOfSlot0, ...
+    'PUCCHObligationsComplete',logical(sixgr.util.structGet(params,'PUCCHObligationsComplete',false)), ...
+    'SRSObligationsComplete',logical(sixgr.util.structGet(params,'SRSObligationsComplete',false)), ...
+    'Obligations',obligations, ...
+    'IssuedPUSCHGrants',{sixgr.util.structGet(params,'IssuedPUSCHGrants',struct([]))}, ...
+    'CommonChannelAllocations',sixgr.util.structGet(params,'CommonChannelAllocations',table()));
+if isfield(params,'DynamicPUCCH')
+    generated=params.DynamicPUCCH.snapshot(asOfSlot0,targetSlot0,params.DynamicServingCells,params.DynamicPHY.DLCSIReferences);
+    if isempty(context.Obligations)
+        context.Obligations=generated;
+    elseif ~isempty(generated)
+        names=union(fieldnames(context.Obligations),fieldnames(generated));
+        for k=1:numel(names)
+            if ~isfield(context.Obligations,names{k}), [context.Obligations.(names{k})]=deal([]); end
+            if ~isfield(generated,names{k}), [generated.(names{k})]=deal([]); end
+        end
+        context.Obligations=[context.Obligations(:);orderfields(generated(:),context.Obligations)];
+    end
+    context.PUCCHObligationsComplete=true;
+end
+end
+
+function T=localSLSReservationCapacity(r,direction)
+T=table(r.DataAbsoluteSlot0+1,r.CellID,string(direction),r.InitialOpportunityCount, ...
+    r.ExactOpportunityCount,r.SchedulerOpportunityCount,r.OpportunityConservatismCount, ...
+    'VariableNames',{'TTI','CellID','Direction','InitialPRBSymbols','ExactUnreservedPRBSymbols', ...
+    'SchedulerEligiblePRBSymbols','ConservativeExclusionPRBSymbols'});
 end

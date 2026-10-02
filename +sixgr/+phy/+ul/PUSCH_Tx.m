@@ -223,6 +223,15 @@ if isempty(initialIMCS)
 end
 [dataBitBudgetG, uciInfo] = localResolvePUSCHUCIBitBudget( ...
     transport, targetCodeRate, trBlkSize, G, uciPayload, initialIMCS);
+uciInfo.NativeResourcePlan=struct();
+if uciPayload.hasPayload() && isa(transport,'nrPUSCHConfig') && nCodewords==1 && ...
+        trBlkSize>0 && isempty(uciPayload.ConfiguredGrantUCI)
+    lengths=[numel(uciPayload.HARQACK) numel(uciPayload.CSIPart1) numel(uciPayload.CSIPart2)];
+    plan=sixgr.phy.ul.pusch.planUCIResources(carrier,transport,targetCodeRate,trBlkSize,lengths);
+    assert(plan.GULSCH==dataBitBudgetG && plan.G==G, ...
+        'sixgr:pusch:UCIResourcePlan','Native UCI resource plan differs from the actual UL-SCH encoder budget.');
+    uciInfo.NativeResourcePlan=plan;
+end
 codingLayouts = localResolveTxCodingLayouts( ...
     phyGrant, hasPHYGrant, trBlkSize, targetCodeRate, rv, transport, dataBitBudgetG);
 codingLayout = codingLayouts{1};
@@ -482,6 +491,7 @@ tx.NumWaveformColumns = double(size(txWaveform, 2));
 tx.UEPhysicalTxAntennas = double(uePhysicalTxAnt);
 tx.SymbolDomainInfo = puschDomainInfo;
 tx.UCIOnPUSCHApplied = logical(uciInfo.UCIOnPUSCHApplied);
+tx.NativeUCIResourcePlan = uciInfo.NativeResourcePlan;
 tx.HARQACKBitCount = double(uciInfo.HARQACKBitCount);
 tx.HARQACKBits = int8(uciPayload.HARQACK(:));
 tx.CSIPart1Bits = int8(uciPayload.CSIPart1(:));
@@ -1752,7 +1762,9 @@ if ~isempty(researchTransport)
     if strcmpi(pusch.TransmissionScheme,'codebook')
         puschSym=puschSym*prec.MatrixNR;
     end
-    ptrsSym=[];
+    % Native PT-RS geometry/sequence is independent of research data Qm.
+    % nrPUSCHPTRS includes the native codebook projection when configured.
+    ptrsSym=nrPUSCHPTRS(carrier,pusch);
     puschSymInfo.Source="experimental_explicit_Qm_native_geometry_and_precoder";
     puschSymInfo.StandardNR=false;
     return;

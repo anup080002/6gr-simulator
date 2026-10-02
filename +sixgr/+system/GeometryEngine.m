@@ -39,6 +39,15 @@ methods(Static)
         state.PathlossEnabled = logical(sixgr.util.structGet(cfg, "channel.pathlossEnabled", false));
         state.ShadowFadingEnabled = logical(sixgr.util.structGet(cfg, "channel.shadowFadingEnabled", false));
         state.LOSEnabled = logical(sixgr.util.structGet(cfg, "channel.losEnabled", false));
+        state.WraparoundEnabled = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
+        state.WraparoundMode = string(sixgr.util.structGet(layout, "wraparoundMode", "disabled"));
+        state.WraparoundTranslationVectors_m = ...
+            sixgr.system.GeometryEngine.wraparoundTranslationVectors(layout);
+        if isempty(state.WraparoundTranslationVectors_m)
+            state.WraparoundGeometrySource = "legacy_mode_without_explicit_cluster_basis";
+        else
+            state.WraparoundGeometrySource = "explicit_layout_cluster_translation_basis";
+        end
 
         [d2d, dxy] = sixgr.system.GeometryEngine.distanceAndDelta(uePos, layout);
         dz = uePos(:,3) - bsPos(:,3).';
@@ -51,6 +60,22 @@ methods(Static)
 
         indoorUE = sixgr.system.GeometryEngine.columnLogical(sixgr.util.structGet(ue, "indoor", false(K,1)), K, "ue.indoor");
         state.IndoorRx = repmat(indoorUE, 1, nCells);
+        o2iModel = string(sixgr.util.structGet(ue, "o2i_model", ...
+            repmat("", K, 1)));
+        o2iModel = reshape(o2iModel, [], 1);
+        if numel(o2iModel) ~= K || any(~ismember(lower(o2iModel), ...
+                ["","low","high","not_applicable_outdoor"]))
+            error("sixgr:system:GeometryEngine:BadO2IModelVector", ...
+                "ue.o2i_model must contain one low/high/outdoor token per UE.");
+        end
+        hasExplicitO2IModels = any(strlength(strtrim(o2iModel)) > 0);
+        if hasExplicitO2IModels && ...
+                (any(indoorUE & ~ismember(lower(o2iModel), ["low","high"])) || ...
+                any(~indoorUE & ismember(lower(o2iModel), ["low","high"])))
+            error("sixgr:system:GeometryEngine:O2IPopulationMismatch", ...
+                "Per-UE O2I models must be low/high only for indoor receivers.");
+        end
+        state.O2IModelPerReceiver = repmat(o2iModel, 1, nCells);
         state.IndoorDistance_m = sixgr.system.GeometryEngine.resolveIndoorDistance(cfg, opt.IndoorDistance_m, indoorUE, K, nCells);
         state.LOSProbability = sixgr.system.GeometryEngine.resolveLOSProbability(cfg, state);
 
@@ -124,13 +149,35 @@ methods(Static)
             end
         end
         if wrapEn && wrapMode ~= "disabled"
-            [d2d, dxy] = sixgr.scenario.wraparoundDistance(uePos, bsPos, area_m, "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));
+            translationVectors_m = sixgr.system.GeometryEngine.wraparoundTranslationVectors(layout);
+            [d2d, dxy] = sixgr.scenario.wraparoundDistance(uePos, bsPos, area_m, ...
+                "Mode", wrapMode, ...
+                "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)), ...
+                "TranslationVectors_m", translationVectors_m);
             return;
         end
         dx = uePos(:,1) - bsPos(:,1).'; dy = uePos(:,2) - bsPos(:,2).';
         d2d = sqrt(dx.^2 + dy.^2);
         dxy = zeros(size(dx,1), size(dx,2), 2);
         dxy(:,:,1) = dx; dxy(:,:,2) = dy;
+    end
+
+    function translationVectors_m = wraparoundTranslationVectors(layout)
+        translationVectors_m = double(sixgr.util.structGet(layout, ...
+            "TranslationVectors_m", sixgr.util.structGet(layout, ...
+            "wraparoundTranslationVectors_m", sixgr.util.structGet(layout, ...
+            "lattice.translationVectors_m", []))));
+        if isempty(translationVectors_m)
+            translationVectors_m = zeros(0,2);
+            return;
+        end
+        if ~isequal(size(translationVectors_m), [2 2]) || ...
+                any(~isfinite(translationVectors_m), "all") || ...
+                abs(det(translationVectors_m)) <= ...
+                eps(max(1, max(abs(translationVectors_m), [], "all")))^2
+            error("sixgr:system:GeometryEngine:InvalidWraparoundTranslationVectors", ...
+                "Layout wrap-around translation vectors must be a finite nonsingular 2x2 matrix.");
+        end
     end
 
     function velocity = resolveUEVelocity(ue, K)

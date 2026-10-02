@@ -64,6 +64,10 @@ classdef WaveformPHY < handle
                 end
             end
             obj.Stream = RandStream("mt19937ar", "Seed", seed);
+            % The paired propagation seed must reach the actual channel
+            % factory as well as the random sample stream.
+            obj.Cfg.run.seed=seed;
+            obj.Cfg.channel.seed=seed;
         end
 
         function bler = mapBLER(obj, in)
@@ -80,6 +84,9 @@ classdef WaveformPHY < handle
 
     methods(Access = private)
         function replay = localReplay(obj, ctx)
+            callerStream=RandStream.getGlobalStream();
+            restoreStream=onCleanup(@()RandStream.setGlobalStream(callerStream)); %#ok<NASGU>
+            RandStream.setGlobalStream(obj.Stream);
             if ~isstruct(ctx) || ~isfield(ctx, "Grant") || isempty(ctx.Grant)
                 error("sixgr:system:WaveformPHY:MissingGrant", ...
                     "WaveformPHY requires ctx.Grant to replay real system grants.");
@@ -102,7 +109,7 @@ classdef WaveformPHY < handle
             cfgReplay = obj.localReplayConfig(ctx);
             replay = sixgr.system.waveform.replayGrant(cfgReplay, ...
                 sixgr.util.structGet(ctx, "Direction", "DL"), ...
-                grantReplay, [], ...
+                grantReplay, sixgr.util.structGet(ctx, "TransportBlockBits", []), ...
                 double(sixgr.util.structGet(ctx, "SINR_dB", NaN)), ...
                 "InputFormat", "bits", ...
                 "StrictMode", obj.StrictMode, ...
@@ -127,6 +134,9 @@ classdef WaveformPHY < handle
             replay.WaveformReplayExecuted = logical(sixgr.util.structGet(replay, "WaveformReplayExecuted", true));
             replay.WaveformReplayReused = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
             replay.WaveformReplayKey = obj.localReplayKey(ctx);
+            replay.TransportBlockIdentity = string(sixgr.util.structGet(ctx, "TransportBlockIdentity", ""));
+            replay.ApplicationPayloadBits = double(sixgr.util.structGet(ctx, "ApplicationPayloadBits", NaN));
+            replay.PropagationSeed = double(obj.Cfg.run.seed);
             obj.LastReplay = replay;
         end
 

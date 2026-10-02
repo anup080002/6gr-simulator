@@ -14,6 +14,11 @@ cfg.run.useMex = logical(llsCfg.receiver.useMexLDPC);
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
+% This standalone transport-block family has no broadcast waveform. Do not
+% inherit the system-level SSB burst: its periodic exclusions would change
+% PDSCH G/TBS across trials without any corresponding transmitted SS/PBCH.
+% Connected/access scenarios use their own configuration builder instead.
+cfg.phy.ssb.enable = false;
 
 cfg.channel.model = char(string(llsCfg.channel.model));
 cfg.channel.awgnOnly = strcmpi(string(llsCfg.channel.model), "AWGN");
@@ -63,6 +68,7 @@ if link == "PUSCH"
     cfg.phy.pusch.modulation = char(string(linkCfg.modulation));
     cfg.phy.pusch.codeRate = double(linkCfg.targetCodeRate);
     cfg.phy.pusch.mcsIndex = double(linkCfg.mcsIndex);
+    cfg.phy.pusch.mcsTable = char(string(linkCfg.mcsTable));
     cfg.phy.pusch.numLayers = double(linkCfg.numberLayers);
     cfg.phy.pusch.nLayers = double(linkCfg.numberLayers);
     cfg.phy.pusch.numAntennaPorts = double(linkCfg.numberAntennaPorts);

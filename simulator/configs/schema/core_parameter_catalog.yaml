@@ -80,7 +80,7 @@
       }
     },
     "traffic": {
-      "model": {"value_type": "string", "default": "fullBuffer", "allowed_values": ["fullBuffer", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
+      "model": {"value_type": "string", "default": "fullBuffer", "allowed_values": ["fullBuffer", "ftp3", "xr", "genai", "mmtc", "mixed", "traceReplay"]},
       "transport": {"value_type": "string", "default": "UDP", "allowed_values": ["UDP", "TCP", "MIXED"]},
       "flowDirection": {"value_type": "string", "default": "BIDIR", "allowed_values": ["DL", "UL", "BIDIR"]},
       "dlRatio": {"value_type": "number", "default": 0.8, "min": 0, "max": 1},
@@ -91,6 +91,12 @@
       "targetRate_Mbps": {"value_type": "number", "default": 50, "min": 0},
       "jitterPct": {"value_type": "number", "default": 0.1, "min": 0},
       "fullBufferBitsPerTTI": {"value_type": "integer", "default": 100000, "min": 1},
+      "ftp3": {
+        "fileSizeBytes": {"value_type": "integer", "default": 500000, "min": 1},
+        "arrivalRatePerCell_s": {"value_type": "number", "default": 0, "min": 0},
+        "direction": {"value_type": "string", "default": "UL", "allowed_values": ["UL", "DL"]},
+        "seed": {"value_type": "integer", "default": 7304, "min": 0}
+      },
       "tcp": {
         "initCwnd_packets": {"value_type": "integer", "default": 10, "min": 1},
         "maxCwnd_packets": {"value_type": "integer", "default": 256, "min": 1},
@@ -185,7 +191,7 @@
       "tti_s": {"value_type": "number_vector", "default": [], "min": 0},
       "queueMaxBits": {"value_type": "number", "default": 50000000, "min": 0},
       "ulSinrOffset_dB": {"value_type": "number", "default": -1},
-      "phyBackend": {"value_type": "string", "default": "waveform", "allowed_values": ["waveform"]},
+      "phyBackend": {"value_type": "string", "default": "waveform", "allowed_values": ["waveform", "calibrated_link_abstraction"]},
       "mobility": {
         "updatePeriod_slots": {"value_type": "number_vector", "default": [], "min": 0}
       },
@@ -407,7 +413,7 @@
         "NumAntennaPorts": {"value_type": "integer", "default": 1, "allowed_values": [1, 2, 4, 8]},
         "rv": {"value_type": "integer", "default": 0, "allowed_values": [0, 1, 2, 3]},
         "xOverhead": {"value_type": "integer", "default": 0, "min": 0},
-        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3", "experimental_square_qam_v1"]},
+        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3", "experimental_square_qam_v1", "experimental_6gr_ai1032_option_a"]},
         "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "transformPrecoding": {"value_type": "boolean", "default": true},
         "dmrs": {

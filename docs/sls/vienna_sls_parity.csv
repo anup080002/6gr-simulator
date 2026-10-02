@@ -1,0 +1,62 @@
+FeatureID,Area,Feature,ViennaReference,SixGRSurface,CurrentState,RequiredClosure
+V01,Execution,Monte Carlo independent drops,+simulation/LocalSimulation.m,+sixgr/+studies/+ran1ai1032/buildPairedDropPlan.m,partial,Execute paired network drops and confidence intervals
+V02,Execution,Parallel chunks with reproducible state,+simulation/ParallelSimulation.m,+sixgr/+system/SystemLevelRunner.m,unverified,Prove sequential and parallel reproducibility including HARQ and queues
+V03,Execution,Lite simplified simulation,+simulation,+sixgr/+system/CalibratedLinkPHY.m,not_equivalent,Expose separately labelled simplified mode only with matched acceptance definition
+V04,Network,Heterogeneous macro pico femto tiers,+networkElements/+bs,+sixgr/+scenario/ScenarioFactory.m,unverified,Verify simultaneous tier-specific powers heights arrays and scheduling
+V05,Network,Multiple user classes and mobility,+networkElements/+ue,+sixgr/+scenario/dropUEs.m,partial,Verify joint pedestrian vehicular indoor and FWA populations in network runtime
+V06,Network,Remote radio heads and distributed antennas,+networkElements/+bs,+sixgr/+system/GeometryEngine.m,unverified,Verify BS ownership and per-radio propagation and power
+V07,Geometry,Three-dimensional positions,+networkGeometry,+sixgr/+system/GeometryEngine.m,partial,Matched Vienna coordinate and distance cases including heights
+V08,Geometry,Hexagonal grid,+networkGeometry/HexagonalGrid.m,+sixgr/+scenario/generateLayout.m,partial,Matched reference coordinates and border treatment
+V09,Geometry,Gaussian clusters,+networkGeometry/GaussCluster.m,+sixgr/+scenario/generateLayout.m,not_wired,Implement explicit seeded Gaussian cluster placement and runtime selection
+V10,Geometry,Uniform clusters,+networkGeometry/UniformCluster.m,+sixgr/+scenario/generateLayout.m,not_wired,Implement explicit seeded disk cluster placement and runtime selection
+V11,Geometry,Uniform Poisson point process,+networkGeometry/UniformDistribution.m,+sixgr/+scenario/generateLayout.m,not_wired,Distinguish Poisson node count from fixed-count uniform placement
+V12,Geometry,Manhattan grid,+networkGeometry/ManhattanGrid.m,+sixgr/+scenario/generateLayout.m,not_wired,Implement configured streets and block geometry
+V13,Geometry,Predefined positions,+networkGeometry/PredefinedPositions.m,+sixgr/+scenario/ScenarioFactory.m,unverified,Verify supplied identities and coordinates survive normalization
+V14,Geometry,User trajectories,+parameters/+user,+sixgr/+scenario/+mobility,partial,Matched positions velocities clocks and boundary rules
+V15,Interference,Continuous-user interference region,+parameters/+setting/Interference.m,+sixgr/+system/GeometryEngine.m,not_equivalent,Explicit outer-region interferers are not the hexagonal wrap-around model
+V16,Interference,Independent-user interference region,+parameters/+setting/Interference.m,+sixgr/+system/GeometryEngine.m,not_equivalent,Implement outer-region population and activity separately from measured ROI
+V17,Association,Maximum received power,+parameters/+setting/CellAssociationStrategy.m,+sixgr/+system/SystemLevelRunner.m,partial,Matched association with fixed powers and losses
+V18,Association,Maximum preliminary SINR,+parameters/+setting/CellAssociationStrategy.m,+sixgr/+system/SystemLevelRunner.m,unverified,Verify configured association metric and noise definition
+V19,Blockage,Rectangular buildings,+blockages/RectangularBuilding.m,+sixgr/+system/GeometryEngine.m,unverified,Trace segment intersections and applied penetration loss
+V20,Blockage,Walls with arbitrary orientation,+blockages/Wall.m,+sixgr/+system/GeometryEngine.m,unverified,Implement or qualify physical intersection and multiple-wall loss accounting
+V21,Blockage,Random buildings and Manhattan city,+blockages/ManhattanCity.m,+sixgr/+system/GeometryEngine.m,unverified,Bind generated buildings to LOS and attenuation decisions
+V22,Propagation,Spatially correlated shadow maps,+shadowing/ShadowFadingMapLinearFiltering.m,+sixgr/+channel/TR38901Plus.m,unverified,Validate spatial covariance and moving-UE continuity not just marginal lognormal draws
+V23,Propagation,Fixed pathloss,+macroscopicPathlossModel/Fixed.m,+sixgr/+channel/TR38901Plus.m,unverified,Explicit non-standard reference branch with unit and power closure
+V24,Propagation,Free-space pathloss,+macroscopicPathlossModel/FreeSpace.m,+sixgr/+channel/TR38901Plus.m,unverified,Match exponent distance and frequency conventions
+V25,Propagation,Legacy indoor pathloss,+macroscopicPathlossModel/Indoor.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Separate legacy model from NR indoor and preserve applicability limits
+V26,Propagation,Legacy rural pathloss,+macroscopicPathlossModel/Rural.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Separate legacy model from TR38901 RMa
+V27,Propagation,Legacy suburban macro pathloss,+macroscopicPathlossModel/SuburbanMacro.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Do not extrapolate legacy frequency and distance applicability to 7 GHz
+V28,Propagation,Legacy UMa pathloss,+macroscopicPathlossModel/UMa.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Keep COST-Hata reference separate from NR UMa
+V29,Propagation,Legacy UMi pathloss,+macroscopicPathlossModel/UMi.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Keep COST231 reference separate from NR UMi
+V30,Propagation,TR36873 UMa3D,+macroscopicPathlossModel/UMa3D.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Implement versioned reference branch and compare within valid ranges
+V31,Propagation,TR36873 UMi3D,+macroscopicPathlossModel/UMi3D.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Implement versioned reference branch and compare within valid ranges
+V32,Propagation,Legacy urban pathloss,+macroscopicPathlossModel/Urban.m,+sixgr/+channel/TR38901Plus.m,not_equivalent,Explicit legacy branch with reference equations and valid-domain checks
+V33,Propagation,Per-link indoor outdoor LOS NLOS selection,+parameters/+indoorDecision,+sixgr/+system/GeometryEngine.m,partial,Multicell O2I repair added; qualify per-link selection and obstruction rules
+V34,Antenna,Omnidirectional pattern,+networkElements/+bs/+antennas/Omnidirectional.m,+sixgr/+rf/AntennaArrayFactory.m,partial,Verify applied gain once and matched total radiated power
+V35,Antenna,Three-sector pattern,+networkElements/+bs/+antennas/ThreeSector.m,+sixgr/+rf/AntennaArrayFactory.m,unverified,Compare installed legacy pattern and NR pattern as distinct profiles
+V36,Antenna,Six-sector pattern,+networkElements/+bs/+antennas/SixSector.m,+sixgr/+rf/AntennaArrayFactory.m,unverified,Compare angular masks and sector orientation at runtime
+V37,Antenna,Berger pattern,+networkElements/+bs/+antennas/ThreeSectorBerger.m,+sixgr/+rf/AntennaArrayFactory.m,unverified,Explicit reference pattern branch rather than substituting generic sector gain
+V38,Small-scale,AWGN,+smallScaleFading/ChannelFactory.m,+sixgr/+channel/ChannelFactory.m,partial,Match SISO reference and separately qualify MIMO normalization
+V39,Small-scale,Hilly Terrain,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch with impulse-response checks
+V40,Small-scale,Pedestrian A,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V41,Small-scale,Pedestrian B,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V42,Small-scale,Rural Area,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V43,Small-scale,Rayleigh,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,unverified,Match flat-fading statistics and temporal correlation
+V44,Small-scale,Typical Urban,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V45,Small-scale,Vehicular A,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V46,Small-scale,Vehicular B,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V47,Small-scale,Extended Pedestrian B,+parameters/+setting/ChannelModel.m,+sixgr/+channel/ChannelFactory.m,not_wired,Versioned legacy PDP and Doppler branch
+V48,Small-scale,Pregenerated channel traces,+smallScaleFading/PDPcontainer.m,+sixgr/+system/+abstraction/SpatialGrantProvider.m,not_wired,Per-link resource-time trace producer with paired identities
+V49,Receiver,Zero-forcing per-resource SINR,+linkQualityModel/LinkQualityModel.m,+sixgr/+system/+abstraction/evaluateSpatialSINR.m,focused_component_verified,testSLSAbstractionSpatialSINR passes; production network producer and matched Vienna run remain
+V50,Receiver,Desired interlayer external interference decomposition,+linkQualityModel/LinkQualityModel.m,+sixgr/+system/+abstraction/evaluateSpatialSINR.m,partial,Kernel tested; complete grant-overlap covariance production across network
+V51,Link abstraction,Mutual-information effective SINR,+tools/MiesmAverager.m,+sixgr/+phy/+rsla/MIESMMapper.m,external_component_verified,12 installed-Vienna comparisons pass with maximum error 8.88178419700125e-16 dB in logs/vienna_miesm_reference_20261001; NR waveform calibration and full network mapping remain
+V52,Link abstraction,BLER table and sampled TB success,+linkPerformanceModel/BlerCurves.m,+sixgr/+system/CalibratedLinkPHY.m,partial,Exact allocation rank RF mapping and held-out waveform populations required
+V53,Feedback,LTE-A CQI and delayed feedback,+feedback/LTEDLFeedback.m,+sixgr/+system/SystemLevelRunner.m,not_equivalent,Keep LTE reference mode separate; wire causal calibrated NR feedback
+V54,Precoding,LTE codebook and rank selection,+precoders/LTEDLPrecoder.m,+sixgr/+system/+abstraction/SpatialGrantProvider.m,not_wired,Do not substitute NR codebook while claiming LTE reference parity
+V55,Precoding,Random precoder,+precoders/RandomPrecoder.m,+sixgr/+system/+abstraction/SpatialGrantProvider.m,not_wired,Explicit seeded normalized reference precoder; not adaptive CSI selection
+V56,Scheduler,Per-cell Round Robin,+scheduler/RoundRobinScheduler.m,+sixgr/+l2/+mac/SchedulerRR.m,partial,Match configured allocation and tie ordering under controlled arrivals
+V57,Scheduler,Per-resource Best CQI,+scheduler/BestCQIScheduler.m,+sixgr/+l2/+mac/SchedulerPolicy.m,not_wired,Implement frequency-selective CQI selection and explicit reproducible ties; PF is not equivalent
+V58,Grid,Configurable symbol intervals and SCS,+parameters/+resourceGrid,+sixgr/+phy/+frame,partial,Validate resource-time grids and reservation ownership in network execution
+V59,Results,SNR and SINR empirical CDF,+simulation/+postprocessing,+sixgr/+report/exportSLSOutputCatalog.m,partial,Publish executed modeled-SINR population separately from large-scale budget and waveform measurements
+V60,Results,Average user throughput empirical CDF,+simulation/+postprocessing,+sixgr/+report/exportSLSOutputCatalog.m,partial,Compare matched duration dropped censored and first-success payload populations
+V61,Results,Per-BS and per-user successful transmission metrics,+simulation/+results,+sixgr/+system/SystemLevelRunner.m,partial,Full calibrated network run and retained calibrated-estimate provenance required

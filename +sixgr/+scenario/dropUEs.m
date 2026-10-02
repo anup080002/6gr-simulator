@@ -327,7 +327,9 @@ end
 wrapEnabled = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
 if wrapEnabled && wrapMode ~= "disabled"
     d = sixgr.scenario.wraparoundDistance(xy, layout.bs.pos_m, layout.area_m, ...
-        "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));
+        "Mode", wrapMode, ...
+        "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)), ...
+        "TranslationVectors_m", localWraparoundTranslationVectors(layout));
 else
     dx = xy(:,1) - layout.bs.pos_m(:,1).';
     dy = xy(:,2) - layout.bs.pos_m(:,2).';
@@ -476,16 +478,32 @@ xy = double(posXY(:).');
 xy = xy(1:2);
 wrapMode = string(sixgr.util.structGet(layout, "wraparoundMode", ""));
 wrapEnabled = logical(sixgr.util.structGet(layout, "wraparoundEnabled", false));
+if strlength(strtrim(wrapMode)) == 0
+    if contains(lower(string(sixgr.util.structGet(layout, "layoutType", ""))), "hex")
+        wrapMode = "hex_lattice_min_image";
+    else
+        wrapMode = "rectangular_torus";
+    end
+end
 if wrapEnabled && strlength(strtrim(wrapMode)) > 0 && wrapMode ~= "disabled"
     distanceCells = sixgr.scenario.wraparoundDistance([xy 0], bsPos, ...
         double(sixgr.util.structGet(layout, "area_m", [0 0])), ...
-        "Mode", wrapMode, "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)));
+        "Mode", wrapMode, ...
+        "ISD_m", double(sixgr.util.structGet(layout, "isd_m", NaN)), ...
+        "TranslationVectors_m", localWraparoundTranslationVectors(layout));
 else
     dx = xy(1) - bsPos(:,1).';
     dy = xy(2) - bsPos(:,2).';
     distanceCells = sqrt(dx.^2 + dy.^2);
 end
 distance_m = min(double(distanceCells(:)));
+end
+
+function translationVectors_m = localWraparoundTranslationVectors(layout)
+translationVectors_m = double(sixgr.util.structGet(layout, ...
+    "TranslationVectors_m", sixgr.util.structGet(layout, ...
+    "wraparoundTranslationVectors_m", sixgr.util.structGet(layout, ...
+    "lattice.translationVectors_m", []))));
 end
 
 function idx = localDiscreteSample(p, N)

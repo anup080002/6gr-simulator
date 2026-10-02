@@ -99,13 +99,14 @@ def main() -> None:
             for phrase in clutter:
                 assert phrase not in page, f"{page_id} still exposes legacy clutter: {phrase}"
             assert data[page_id]["nav"] == expected_nav_payload
-            assert data[page_id]["modes"] == ["LLS"], (
-                f"{page_id} must expose only LLS in the browser launch UI"
+            assert data[page_id]["modes"] == ["LLS", "SLS"], (
+                f"{page_id} must expose distinct LLS and SLS modes"
             )
 
         home_page = pages["home"]
         home_data = data["home"]
-        assert home_data["title"] == "6G Link-Level Simulator"
+        assert home_data["title"] == "SixGR LLS / SLS Simulator"
+        assert home_data["launchable_modes"] == ["LLS", "SLS"]
         assert home_data["initial_mode"] == "LLS"
         assert home_data["fully_wired_mode"] == "LLS"
         assert home_data["config_loaded"] is False
@@ -221,7 +222,7 @@ def main() -> None:
         assert "restoreScrollState" in realtime_page
         assert "function eventElement(target)" in realtime_page
         assert "payload_version" in realtime_page
-        assert "Each PHY/procedure channel has its own six-column view" in realtime_page
+        assert "Each PHY/procedure channel has a channel-specific view" in realtime_page
         assert "live.runtime_context || live.realtime" in realtime_page
         assert "live.logs_recent || live.logs" in realtime_page
         assert "realtimeComponentPanel()" in realtime_page
@@ -242,22 +243,22 @@ def main() -> None:
         assert realtime_page.index("${realtimeComponentPanel()}") < realtime_page.index("Full runtime stage audit record")
         assert "${realtimeComponentPanel()}\n      ${realtimeLogPanel()}\n      ${realtimeUEStatusPanel()}" in realtime_page
         for channel_title in (
-            "SSB / PBCH",
-            "PRACH / RACH",
-            "Acquisition / Initial Access",
+            "SSB / PBCH synchronization",
+            "PRACH / RACH detection",
+            "Acquisition / Initial Access summary",
             "Beam / Precoding",
-            "PDCCH / DCI",
-            "PUCCH / UCI",
-            "PDSCH / DL-SCH",
-            "PUSCH / UL-SCH",
-            "CSI / CSI-RS / CQI",
-            "SRS",
-            "TRS / Tracking",
+            "Connected-mode PDCCH / DCI blind detection (RA PDCCH is shown above)",
+            "Connected-mode PUCCH / UCI detection and DTX",
+            "Connected-mode PDSCH / DL-SCH (RA Msg2/Msg4 are shown above)",
+            "Connected-mode PUSCH / UL-SCH (RA Msg3 is shown above)",
+            "CSI / CSI-RS measurements",
+            "SRS channel / spatial-rank evidence",
+            "TRS scheduler usability / tracking / qualification",
             "Traffic / Goodput",
         ):
             assert f"title:'{channel_title}'" in realtime_page
-        assert "columns:['Slot','UE','MCS','Modulation','Measured SINR dB','CRC pass']" in realtime_page
-        assert "columns:['Slot','UE','Direction','Applied beam','Applied PMI','Quality dB']" in realtime_page
+        assert "columns:['Slot','UE','MCS','Modulation','MCS mode','MCS source','LA applied','Scheduler CQI used','LA MCS','Measured SINR dB','CRC pass']" in realtime_page
+        assert "columns:['Slot','UE','Direction','Beamforming applied','Explicit weights applied','Application stage','Applied beam','Requested PMI/TPMI','PMI request source','Applied PMI/TPMI','Applied PMI status','Precoder match','Precoder SHA','Applied beam gain dB','Best measured beam','Best beam gain dB','Beam gap dB']" in realtime_page
 
         phy_grid_page = pages["phy_grid"]
         assert "Symbols / slot" in phy_grid_page

@@ -153,6 +153,27 @@ classdef AntennaArrayFactory
 
             [pos, polIndex, panelIndex] = sixgr.rf.AntennaArrayFactory.localExpandPositionsForPolarizationAndPanels( ...
                 pos, nRow, nCol, nPol, panelRows, panelCols, d);
+            elementPositionSource = "numeric_geometry_no_phased_array";
+            if havePhased && ~isempty(arrObj)
+                % The installed System object owns the physical element
+                % order used by steering vectors, pattern(), and the
+                % waveform-to-element projection.  A hand-expanded panel
+                % geometry is not allowed to redefine that order: in
+                % particular, NRRectangularPanelArray applies panel-row
+                % spacing on its vertical axis and uses its own within-panel
+                % row ordering.  Retain the numeric construction only as the
+                % explicit no-toolbox fallback.
+                installedPositions = double(getElementPosition(arrObj).');
+                expectedElementCount = nRow * nCol * nPol * panelRows * panelCols;
+                if ~isequal(size(installedPositions), [expectedElementCount 3]) || ...
+                        any(~isfinite(installedPositions(:)))
+                    error("AntennaArrayFactory:InstalledElementPositionContract", ...
+                        "Installed %s NR panel returned element positions with size %s; expected [%d 3] finite coordinates.", ...
+                        upper(char(roleL)), mat2str(size(installedPositions)), expectedElementCount);
+                end
+                pos = installedPositions;
+                elementPositionSource = "phased_NRRectangularPanelArray_getElementPosition";
+            end
 
             arr = struct();
             arr.Role = char(roleL);
@@ -169,6 +190,8 @@ classdef AntennaArrayFactory
             arr.ElementSpacing_m = d;
             arr.ElementSpacing_lambda = spacingLambda;
             arr.ElementPositions_m = pos;           % [Nant x 3]
+            arr.ElementPositionSource = char(elementPositionSource);
+            arr.ElementOrderingSource = char(elementPositionSource);
             arr.PolarizationModel = char(polModel);
             arr.PolarizationAngles_deg = double(polAngles(:).');
             arr.CrossPolarizationPowerRatio_dB = double(xprDb);

@@ -28,7 +28,13 @@ classdef PhaseNoiseProfile
                 sixgr.rf.runtime.oracle.PhaseNoisePSDOracle. ...
                 integratedVariance(offsets,levels);
             profile.RMSPhase_rad=sqrt(profile.IntegratedVariance_rad2);
-            profile.Claim="runtime_calibrated_mask_model";
+            method=string(sixgr.util.structGet(profile,'SynthesisMethod','ar1_mask_fit'));
+            assert(ismember(method,["ar1_mask_fit","spectral_fir"]), ...
+                'RF:PhaseNoiseSynthesisMethod','Unknown explicit phase-noise synthesis method.');
+            if method=="spectral_fir"
+                assert(isfield(profile,'FIRLength'),'RF:PhaseNoiseFIRLength','Configure FIRLength.');
+            end
+            profile.Claim=string(sixgr.util.structGet(profile,'Classification','runtime_calibrated_mask_model'));
         end
 
         function variance=integratedVariance(offsets,levels)

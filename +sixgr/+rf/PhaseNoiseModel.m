@@ -89,7 +89,7 @@ classdef PhaseNoiseModel < handle
                 obj.UseCommObj = false;
                 obj.Obj = [];
                 obj.Backend = "sixgr_rf_runtime_phase_noise_process";
-                obj.TruthClassification = "runtime_calibrated_mask_model";
+                obj.TruthClassification = string(obj.RuntimeProfile.Claim);
                 obj.ApproximationReason = "";
                 return;
             end
@@ -246,6 +246,10 @@ classdef PhaseNoiseModel < handle
                 "LOCorrelation",double(sixgr.util.structGet( ...
                 raw,"lo_correlation",NaN)), ...
                 "Seed",double(sixgr.util.structGet(raw,"seed",NaN)));
+            profile.SynthesisMethod=string(sixgr.util.structGet(raw,'synthesis_method','ar1_mask_fit'));
+            profile.FIRLength=double(sixgr.util.structGet(raw,'fir_length',NaN));
+            profile.Classification=string(sixgr.util.structGet(raw,'classification','runtime_calibrated_mask_model'));
+            profile.Source=string(sixgr.util.structGet(raw,'source','explicit_installed_mask'));
             profile = sixgr.rf.runtime.PhaseNoiseProfile.validate(profile);
             canonical = true;
         end

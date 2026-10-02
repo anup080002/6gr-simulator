@@ -51,6 +51,22 @@ if string(sixgr.util.structGet(dci, 'PayloadHash', "")) ~= authored.PayloadHash
 end
 fields = authored.Fields;
 timing = sixgr.pdsch.resolveSchedulerPDSCHTiming(grant, absoluteSlot);
+frozenTCI = sixgr.util.structGet(phyGrant, ...
+    'ConfigurationAuthority.DLQCLTCIBinding', struct());
+if logical(sixgr.util.structGet(frozenTCI, 'Available', false))
+    % The same immutable QCL/TCI binding must own both the DCI indication
+    % and the PDSCH execution.  Matching the mutable cfg alone is
+    % insufficient because a stale frozen grant can otherwise survive
+    % until waveform materialization.
+    localEqual(context.Data.ActiveTCIStateID, ...
+        sixgr.util.structGet(frozenTCI, 'ActiveTCIStateID', NaN), ...
+        'frozen active TCI state');
+    if isfield(fields, 'transmission_configuration_indication')
+        localEqual(fields.transmission_configuration_indication, ...
+            sixgr.util.structGet(frozenTCI, 'TCICodepoint', NaN), ...
+            'frozen TCI codepoint');
+    end
+end
 % The current contextual DCI schema has one TB's MCS/NDI/RV. Do not silently
 % duplicate those values across two codewords to claim unsupported signaling.
 if request.NumCodewords ~= 1
