@@ -16,6 +16,7 @@ classdef SystemTransportBlockState < handle
         end
         function [ctx,previous]=bind(obj,ctx)
             g=ctx.Grant; h=sixgr.util.structGet(g,'HARQ',struct());
+            ueIndex=sixgr.system.resolveGrantUEIndex(g);
             retx=logical(sixgr.util.structGet(h,'IsRetransmission', ...
                 sixgr.util.structGet(g,'IsRetransmission',false)));
             pid=double(sixgr.util.structGet(h,'HarqID',NaN));
@@ -27,8 +28,8 @@ classdef SystemTransportBlockState < handle
                     error('sixgr:system:MissingTransportBlock','Retransmission has no first-transmission payload.');
                 end
                 b=obj.Processes(key);
-                if b.TBSBits~=ctx.TBSBits || ~isequaln(b.NDI,sixgr.util.structGet(h,'NDI',NaN))
-                    error('sixgr:system:TransportBlockMutation','Retransmission changed TBS or NDI.');
+                if b.TBSBits~=ctx.TBSBits || b.UEIndex~=ueIndex || ~isequaln(b.NDI,sixgr.util.structGet(h,'NDI',NaN))
+                    error('sixgr:system:TransportBlockMutation','Retransmission changed UE ownership, TBS or NDI.');
                 end
             else
                 if isKey(obj.Processes,key)
@@ -37,7 +38,7 @@ classdef SystemTransportBlockState < handle
                 end
                 obj.Sequence=obj.Sequence+1;
                 b=struct('ID',obj.Namespace+"/"+string(obj.Sequence), ...
-                    'TBSBits',ctx.TBSBits,'NDI',sixgr.util.structGet(h,'NDI',NaN), ...
+                    'TBSBits',ctx.TBSBits,'UEIndex',ueIndex,'NDI',sixgr.util.structGet(h,'NDI',NaN), ...
                     'FirstTTI',double(sixgr.util.structGet(ctx,'TTI',1)), ...
                     'Bits',int8([]));
                 if obj.MaterializeBits
@@ -75,7 +76,7 @@ classdef SystemTransportBlockState < handle
                 b=obj.Processes(key);
                 assert(b.FirstTTI==ledger.ScheduleSlot(n)+1 && b.LastTTI==tti, ...
                     'sixgr:system:DroppedTBIdentity','HARQ drop refers to another TB generation.');
-                dropped(end+1)=struct('ID',b.ID,'UEID',double(ledger.RNTI(n)),'TBSBits',b.TBSBits); %#ok<AGROW>
+                dropped(end+1)=struct('ID',b.ID,'UEID',b.UEIndex,'TBSBits',b.TBSBits); %#ok<AGROW>
             end
         end
     end

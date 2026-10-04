@@ -6,6 +6,9 @@ function [beamIdx, beamGain_dB, evidence] = selectBestBeamPerLink(uePos, bsPos, 
 % system studies. It is not an admissible decision oracle for a strict
 % waveform profile. Strict callers must provide a K-by-B-by-Nbeam measured
 % RSRP/SINR tensor through the Measurements option.
+% Selected absolute power/SINR is retained in evidence.SelectedMeasurement.
+% It is not an antenna gain: without an independent un-beamformed reference,
+% the measured-input branch returns NaN for beamGain_dB.
 
 ip = inputParser;
 ip.addParameter("Measurements", [], @(x) isempty(x) || isnumeric(x));
@@ -29,16 +32,20 @@ if ~isempty(opt.Measurements)
     if ismatrix(measured) && B == 1 && isequal(size(measured),[K nBeams])
         measured = reshape(measured,[K 1 nBeams]);
     end
-    if ~isequal(size(measured),[K B nBeams])
+    % MATLAB omits trailing singleton dimensions from size(A). A single
+    % measured beam is still a valid K-by-B-by-1 tensor.
+    if size(measured,1)~=K || size(measured,2)~=B || ...
+            size(measured,3)~=nBeams || ndims(measured)>3
         error("sixgr:mimo:BeamReportMismatch", ...
             "Measured beam tensor must be K-by-B-by-Nbeam (%d-by-%d-by-%d).", ...
             K,B,nBeams);
     end
-    if any(~isfinite(measured(:)))
+    if ~isreal(measured) || any(~isfinite(measured(:)))
         error("sixgr:mimo:MissingMeasurementState", ...
             "Strict beam decisions require finite receiver measurements.");
     end
-    [beamGain_dB,beamIdx] = max(measured,[],3);
+    [selectedMeasurement,beamIdx] = max(measured,[],3);
+    beamGain_dB = NaN(K,B);
     resourceIDs = opt.MeasurementResourceIDs;
     if isempty(resourceIDs)
         resourceIDs = string(0:nBeams-1);
@@ -51,6 +58,9 @@ if ~isempty(opt.Measurements)
         "SelectionSource","measured_reference_signal", ...
         "MeasurementMetric",string(opt.Metric), ...
         "MeasurementResourceIDs",string(resourceIDs(:)), ...
+        "SelectedMeasurement",selectedMeasurement, ...
+        "SelectedMeasurementResourceIDs",reshape(string(resourceIDs(beamIdx(:))),K,B), ...
+        "BeamGainStatus","unavailable_no_independent_gain_reference", ...
         "GeometryOracleUsed",false, ...
         "Strict",logical(opt.Strict));
     return;

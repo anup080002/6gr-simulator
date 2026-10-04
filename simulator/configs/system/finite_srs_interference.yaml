@@ -1,0 +1,15 @@
+# Explicit ideal-RF SLS extension, not received-pilot or complete-network truth.
+# Periodic SRS is generated from the installed native resource configuration
+# for each connected UE, frozen at slot commit, and propagated coherently.
+# SSB/PDCCH/CSI-RS/PUCCH/DMRS emissions still need their own runtime producers.
+system:
+  linkAbstraction:
+    dlFeedback:
+      disturbanceAssumption: finite_committed_shared_data
+    networkSpatial:
+      sinrPredictorModel: finite_committed_shared_data
+      sinrResourcePopulation: native_shared_channel_data_re
+      interferencePopulation: scheduled_shared_data_and_srs
+      soundingRankReference: full_carrier_pusch_finite_shared_data_interference
+      srsPowerPolicy: configured_ue_total_power_per_srs_symbol
+      srsPhaseAssumption: native_sequence_phase_at_committed_epoch

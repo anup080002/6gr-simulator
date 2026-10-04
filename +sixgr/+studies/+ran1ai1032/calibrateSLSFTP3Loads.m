@@ -53,14 +53,10 @@ for g=1:numel(groupKeys)
             try
                 result=executeS0(request);
                 save(fullfile(folder,"runtime_result.mat"),"result","-v7.3");
-                localValidateResult(result,group(d,:),rate);
-                baseConfigHashes(d)=string(result.Details.LoadCalibrationBaseConfigSHA256);
-                if result.Details.WaveformBacked
-                    backendLabels(d)="waveform";
-                else
-                    backendLabels(d)=string(result.Details.ExecutionBackend);
-                    calibrationHashes(d)=string(result.Details.CalibrationSHA256);
-                end
+                identity=localValidateResult(result,group(d,:),rate);
+                baseConfigHashes(d)=identity.BaseConfigSHA256;
+                backendLabels(d)=identity.PHYExecutionMode;
+                calibrationHashes(d)=identity.CalibrationSHA256;
                 measured=sixgr.studies.ran1ai1032.measureSLSResourceUtilization( ...
                     result.Details.SchedulerGrants,result.Details.ResourceOpportunityTable, ...
                     "UL",policy.warmup_tti+1);
@@ -157,37 +153,29 @@ if p.initial_arrival_rate_per_cell_s<=0 || p.maximum_arrival_rate_per_cell_s<p.i
 end
 end
 
-function localValidateResult(r,c,rate)
-if ~isstruct(r) || ~isfield(r,"Ok") || ~r.Ok || ~isfield(r,"Details")
-    error("sixgr:ran1ai1032:LoadCalibrationRunFailed","S0 runner did not complete successfully.");
+function identity=localValidateResult(r,c,rate)
+if ~isstruct(r) || ~isscalar(r) || ~isfield(r,'Ok') || ~isequal(r.Ok,true) || ...
+        ~isfield(r,'Details')
+    error('sixgr:ran1ai1032:LoadCalibrationRunFailed', ...
+        'S0 runner did not complete successfully.');
 end
-d=r.Details;
-fields=["WaveformBacked","ProxyPHYActive","FallbackUsed","SeedBundle", ...
-    "SchedulerGrants","ResourceOpportunityTable","TrafficArrivalEvents","TrafficModel", ...
-    "TrafficArrivalRatePerCell_s","LoadCalibrationBaseConfigSHA256","DecodeUnavailableUL"];
-waveform=logical(sixgr.util.structGet(d,'WaveformBacked',false)) && ...
-    ~logical(sixgr.util.structGet(d,'ProxyPHYActive',true));
-abstract=string(sixgr.util.structGet(d,'ExecutionBackend',''))=="CALIBRATED_LINK_ABSTRACTION" && ...
-    ~logical(sixgr.util.structGet(d,'WaveformBacked',true)) && ...
-    logical(sixgr.util.structGet(d,'ProxyPHYActive',false)) && ...
-    logical(sixgr.util.structGet(d,'CalibrationQualified',false)) && ...
-    string(sixgr.util.structGet(d,'SourceClassification',''))=="calibrated_sls_estimate_not_waveform_truth" && ...
-    strlength(string(sixgr.util.structGet(d,'CalibrationSHA256','')))==64;
+architecture="waveform";
 if ismember('PlannedExecutionArchitecture',c.Properties.VariableNames)
-    if string(c.PlannedExecutionArchitecture)=="calibrated_link_abstraction", waveform=false;
-    else, abstract=false; end
-else
-    abstract=false; % Legacy receipts cannot silently change their PHY definition.
+    architecture=string(c.PlannedExecutionArchitecture);
 end
-if ~all(isfield(d,fields)) || ~(waveform || abstract) || d.FallbackUsed || ...
-        lower(string(d.TrafficModel))~="ftp3" || ...
-        ~isequal(double(d.TrafficArrivalRatePerCell_s),double(rate)) || ...
-        strlength(string(d.LoadCalibrationBaseConfigSHA256))~=64 || ...
-        any(~isfinite(double(d.DecodeUnavailableUL))) || any(double(d.DecodeUnavailableUL)~=0) || ...
-        ~isequaln(d.SeedBundle,c.ExecutionParameters{1}.SeedBundle) || ...
-        ~istable(d.TrafficArrivalEvents)
-    error("sixgr:ran1ai1032:LoadCalibrationEvidence", ...
-        "S0 calibration requires the planned waveform or qualified calibrated backend, frozen seeds, FTP3 arrivals and exact resource evidence.");
+expected=struct('ArrivalRatePerCell_s',rate, ...
+    'SeedBundle',c.ExecutionParameters{1}.SeedBundle, ...
+    'PlannedExecutionArchitecture',architecture);
+try
+    identity=sixgr.system.validateS0LoadIteration(r,expected);
+catch ME
+    if strcmp(ME.identifier,'sixgr:system:S0LoadRunFailed')
+        error('sixgr:ran1ai1032:LoadCalibrationRunFailed','%s',ME.message);
+    end
+    if startsWith(string(ME.identifier),'sixgr:system:S0Load')
+        error('sixgr:ran1ai1032:LoadCalibrationEvidence','%s',ME.message);
+    end
+    rethrow(ME)
 end
 end
 

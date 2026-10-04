@@ -1,0 +1,19 @@
+# Applied to the existing bounded SLS network-feedback test before config build.
+# Real scheduling/reservations, development BLER curves, ideal delayed control.
+meta:
+  research_class: optional_research_experiment
+pusch:
+  start_symbol: 0
+  num_symbols: 12
+  time_domain_allocations:
+    - [0, 0, 12, 1]
+    - [1, 0, 12, 2]
+pucch_resources:
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 4
+      priority_index: 0
+      additional_periodicity_capability: false

@@ -53,9 +53,32 @@ assert(isscalar(id) && ~isempty(regexp(char(id),'^[A-Za-z0-9][A-Za-z0-9_.-]*$','
 % declared its fragments; do not silently apply a second scenario preset.
 cfg=sixgr.util.mergeStruct(sixgr.config.defaultConfig(),native);
 cfg=sixgr.config.normalizeConfig(cfg);
+% YAML sequences have no row/column meaning. Preserve their order and values
+% while binding the explicit CSI request to the typed MATLAB wire contract.
+% Do not sort or remove duplicates: those are invalid requested rank sets.
+ranks=sixgr.util.structGet(cfg,'phy.csi.reportConfiguration.AllowedRanks',[]);
+if ~isempty(ranks)
+    assert(isnumeric(ranks) && isvector(ranks), ...
+        'sixgr:mimo:InvalidRI','CSI AllowedRanks must be a numeric vector.');
+    cfg.phy.csi.reportConfiguration.AllowedRanks=double(ranks(:).');
+end
 request.Config=sixgr.config.validateConfig(cfg);
+% Native SLS uses the same canonical carrier/BWP identities as LLS. Feedback
+% calendars must not depend on a previous LLS builder having installed them.
+request.Config=sixgr.phy.frame.FrameRuntimeStateBuilder.attachTimingContext(request.Config);
 request.Config.meta.scenarioID = char(id);
 root=fileparts(fileparts(fileparts(mfilename('fullpath'))));
+if logical(sixgr.util.structGet(cfg,'validation.pucch_resources.enabled',false))
+    % The protocol capability catalog is the same authority used by LLS.
+    % A native SLS request must not replace it with an arbitrary period list.
+    srPath=fullfile(root,'simulator','configs','control','scheduling_request_periods_r18.yaml');
+    srCatalog=sixgr.lls6g.config.readConfigFile(srPath);
+    existing=sixgr.util.structGet(cfg,'phy.pucch.srPeriodCatalog',[]);
+    assert(isempty(existing) || isequaln(existing,srCatalog), ...
+        'sixgr:simulation:SRPeriodCatalog','SLS SR periods must use the installed protocol catalog.');
+    request.Config.phy.pucch.srPeriodCatalog=srCatalog;
+    files(end+1,1)=string(srPath);
+end
 files(end+1,1)=string(fullfile(root,'simulator','configs','schema','core_parameter_catalog.yaml'));
 request.SourceFiles = unique(files,'stable');
 end

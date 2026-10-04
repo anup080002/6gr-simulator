@@ -484,6 +484,37 @@ if ~any(eligible)
     return;
 end
 E = T(eligible, :);
+% A decoded frame is not, by itself, an identified HARQ attempt. Require
+% the actual TB/process/slot binding before publishing attempt populations.
+% In particular, default NaN process IDs must not yield an accepted rate.
+process = localFirstNumeric(E, ["HarqID","HARQProcessId","HARQProcess"], NaN(height(E), 1));
+slot = localFirstNumeric(E, ["Slot","CanonicalSlot"], NaN(height(E), 1));
+if ~ismember("TBId", vars)
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "harq_timeline_missing_transport_block_identity";
+    return;
+end
+tb = strtrim(string(E.TBId));
+if any(ismissing(tb) | ismember(lower(tb), ["","nan","<missing>"])) || ...
+        any(~isfinite(process) | process < 0 | process ~= fix(process)) || ...
+        any(~isfinite(slot) | slot < 0 | slot ~= fix(slot))
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "harq_timeline_invalid_attempt_identity";
+    return;
+end
+identity = table(tb, process, slot);
+% Reused process/TB labels in another UE, cell or sweep point are distinct
+% observations, not duplicates. Retain the available execution scope.
+for name = ["SweepPointIndex","BaseStationID","UEIndex","RNTI"]
+    if ismember(name, vars)
+        identity.(name) = string(E.(name));
+    end
+end
+if height(unique(identity, 'rows')) ~= height(identity)
+    layer.Status = "schema_invalid";
+    layer.FailureReason = "harq_timeline_duplicate_attempt_identity";
+    return;
+end
 retx = localFirstNumeric(E, ["IsRetransmission","RetransmissionFlag","HARQIsRetransmission"], NaN(height(E), 1));
 if any(~ismember(retx,[0,1]))
     layer.Status = "schema_invalid";
@@ -1280,8 +1311,15 @@ function applicability = localResolveFeatureApplicability(input)
 % direct callers must provide all registry evidence. Production exporters
 % pass the resolved configuration explicitly.
 applicability = struct("HARQ",true,"Scheduler",true,"Latency",true, ...
-    "MAC",true,"Application",true);
+    "MAC",true,"Application",true,"ExecutionScope","");
 if isempty(input), return; end
+scope = string(sixgr.util.structGet(input,"ExecutionScope",""));
+if ~isscalar(scope) || ismissing(scope) || ...
+        ~ismember(scope,["","independent_waveform_attempts"])
+    error("sixgr:kpi:InvalidFeatureApplicability", ...
+        "Unknown FeatureApplicability.ExecutionScope.");
+end
+applicability.ExecutionScope = scope;
 for name = ["HARQ","Scheduler","Latency","MAC","Application"]
     raw = sixgr.util.structGet(input, name, applicability.(char(name)));
     if ~((islogical(raw) || isnumeric(raw)) && isscalar(raw) && isfinite(double(raw)))
@@ -1323,6 +1361,17 @@ elseif contains(kpiName, "Application_Goodput_Mbps")
 else
     applicable = true;
     reason = "always_applicable_raw_phy_kpi";
+end
+if ~applicable && applicability.ExecutionScope == "independent_waveform_attempts"
+    if contains(kpiName,["HARQ_NACK_Rate","Retransmission_Rate"])
+        reason = "independent_waveform_attempts_no_connected_harq_lifecycle";
+    elseif contains(kpiName,"PRB_Utilization")
+        reason = "independent_waveform_attempts_no_scheduler";
+    elseif contains(kpiName,"Latency")
+        reason = "independent_waveform_attempts_no_delivery_clock";
+    else
+        reason = "independent_waveform_attempts_no_protocol_delivery";
+    end
 end
 end
 

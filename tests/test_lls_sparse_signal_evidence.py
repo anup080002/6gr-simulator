@@ -65,6 +65,40 @@ class SparseSignalEvidence(unittest.TestCase):
         self.assertEqual([float(row["occasion_slot"]) for row in rows], [5, 5])
         self.assertTrue(all(row["detection_threshold"] == "" for row in rows))
 
+    def test_isolated_ssb_clocks_keep_independent_trials_and_no_invented_ue(self):
+        fields, values = self.observation_rows()
+        fields += ["SourceClassification", "Seed", "Frame", "Slot", "ConfiguredSNR_dB"]
+        for index, row in enumerate(values):
+            row[fields.index("UEID")] = ""
+            row[fields.index("BaseStationID")] = ""
+            row[fields.index("ObservationStartSample")] = 0
+            row[fields.index("ObservationEndSampleExclusive")] = 38400
+            row[fields.index("ObservationCompletionTime_s")] = .005
+            row[fields.index("ObservationCoverageSource")] = "actual_complete_pbch_receiver_input_sample_extent"
+            row += ["isolated_component_waveform", 17 + index % 2, 1 + index % 2, 1 + index % 2, 18 if index < 2 else 30]
+        result, rows = chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv", fields, values)
+        self.assertEqual([int(row["capture_ordinal"]) for row in rows], [1, 2, 3])
+        self.assertTrue(all(row["ue_id"] == "" and row["cell_id"] == "" for row in rows))
+        self.assertTrue(all(row["evidence_scope"] == "component_anchor" for row in rows))
+        self.assertTrue(all(float(row["end_time_ms"]) == 5 for row in rows))
+        self.assertIn(b"not a connected UE timeline", result["img_bytes"])
+        self.assertEqual(result["csv_status"], "specialized_component_ssb_reception_timing_dataset")
+        self.assertEqual(result["image_status"], "generated_specialized_component_summary_svg")
+        for field, bad in (("Seed", "NaN"), ("ObservationCoverageSource", "planned_capture"),
+                           ("ObservationEndSampleExclusive", 0), ("ProxyUsed", 1)):
+            broken = [list(row) for row in values]
+            broken[0][fields.index(field)] = bad
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, "SSB reception"):
+                chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv", fields, broken)
+        promoted_fields = fields + ["SameScenarioInPathEligible"]
+        with self.assertRaisesRegex(ValueError, "explicitly isolated"):
+            chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv",
+                  promoted_fields, [list(row) + [1] for row in values])
+        mixed = [list(row) for row in values]
+        mixed[0][fields.index("SourceClassification")] = "active_integrated"
+        with self.assertRaisesRegex(ValueError, "cannot mix"):
+            chart("SSB occasion timeline", "air_interface/csv/pbch_trials.csv", fields, mixed)
+
     def test_actual_single_prach_peak_threshold_comparison_retained(self):
         result, rows = chart("PRACH peak search timeline", "air_interface/csv/prach_trials.csv",
                              ["Slot", "DetectionMetric", "DetectionThreshold"], [[5, .87, .3]])

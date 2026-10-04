@@ -12,7 +12,7 @@ assert(isfinite(slot0),'Fixture needs a full UL slot after the issuance occasion
 context=struct('CellID',1,'AsOfAbsoluteSlot0',0,'PUCCHObligationsComplete',true);
 early=sixgr.system.resolveSLSResourceReservations(cfg,slot0+1,"UL",budget,context);
 grant=struct('PRBSet',1,'SymbolAllocation',[0 14],'ScheduledAbsoluteSlot',slot0, ...
-    'ControlAbsoluteSlot',0,'TBSBits',1000);
+    'ControlAbsoluteSlot',0,'TBSBits',1000,'Direction',"UL");
 sixgr.system.assertSLSGrantsRespectReservations(grant,early);
 context.AsOfAbsoluteSlot0=slot0;
 current=sixgr.system.resolveSLSResourceReservations(cfg,slot0+1,"UL",budget,context);
@@ -33,6 +33,28 @@ reject(@()sixgr.system.assertSLSExecutingULReservations(grant,2,{current},slot0)
 reject(@()sixgr.system.assertSLSExecutingULReservations(grant,1,{current},slot0+1), ...
     'sixgr:system:ReservationExecutionClock');
 sixgr.system.assertSLSExecutingULReservations(struct([]),[],{current},slot0);
+% The same frozen-allocation guard applies to future K0 PDSCH grants.
+for s=2:39
+    partition=sixgr.util.resolveTDDSlotPartition(cfg,s);
+    if isequal(double(partition.DLSymbolAllocation),[0 14]), slot0=s; break; end
+end
+context=struct('CellID',1,'AsOfAbsoluteSlot0',slot0,'PUCCHObligationsComplete',true);
+current=sixgr.system.resolveSLSResourceReservations(cfg,slot0+1,"DL",budget,context);
+grant.Direction="DL"; grant.ScheduledAbsoluteSlot=slot0;
+sixgr.system.assertSLSExecutingReservations(grant,1,{current},slot0,"DL");
+reject(@()sixgr.system.assertSLSExecutingReservations(grant,1,{current},slot0-1,"DL"), ...
+    'sixgr:system:ReservationExecutionClock');
+reject(@()sixgr.system.assertSLSExecutingReservations(grant,1,{current},slot0,"UL"), ...
+    'sixgr:system:ReservationGrantDirection');
+context.Obligations=struct('ResourceID',"late_dl_control",'CellID',1,'UEIndex',1, ...
+    'Direction',"DL",'AbsoluteSlot0',slot0,'KnownAtAbsoluteSlot0',1,'Channel',"PDCCH", ...
+    'Coordinates0Based',[12 3 0],'EvidenceKind',"scheduled_receive_obligation", ...
+    'Source',"explicit_test_obligation_not_physical_reception",'Transport',"PDCCH");
+late=sixgr.system.resolveSLSResourceReservations(cfg,slot0+1,"DL",budget,context);
+frozen=grant;
+reject(@()sixgr.system.assertSLSExecutingReservations(grant,1,{late},slot0,"DL"), ...
+    'sixgr:system:ReservedResourceCollision');
+assert(isequaln(grant,frozen),'Late DL reservations cannot rewrite a frozen grant.');
 ok=true; fprintf('SLS_EXECUTING_UL_RESERVATIONS_PASS\n');
 end
 function reject(fn,id)

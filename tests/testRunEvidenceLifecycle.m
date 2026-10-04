@@ -111,6 +111,38 @@ assert(localSHA(pointerPath)==pointerHash, ...
     'Functional-only completion must not advance or rewrite the qualified pointer.');
 attemptManifest3 = jsondecode(fileread(fullfile(attempt3.AttemptRoot,'attempt_manifest.json')));
 assert(string(attemptManifest3.Status)=="PASS" && ~attemptManifest3.PublicationQualified);
+% An explicitly disabled optional artifact contract is not a functional
+% failure, but must never qualify or advance the publication pointer.
+attempt4 = sixgr.runtime.RunEvidenceLifecycle.beginFinalization(runFolder, ...
+    struct("ExecutionID", "execution_lifecycle_001"));
+disabledManifest = fullfile(attempt4.OutputsRoot,'artifact_manifest.json');
+disabled = evidence;
+disabled.FinalizationID = attempt4.FinalizationID;
+disabled.AttemptID = attempt4.AttemptID;
+disabled.ArtifactContractStatus = "DISABLED_BY_YAML";
+disabled.ArtifactContractRequired = false;
+disabled.ArtifactContractExecuted = false;
+for badCase = 1:5
+    bad = disabled;
+    switch badCase
+        case 1, bad.ArtifactContractRequired = true;
+        case 2, bad.ArtifactContractExecuted = true;
+        case 3, bad = rmfield(bad,'ArtifactContractRequired');
+        case 4, bad.ArtifactContractStatus = "NOT_EVALUATED";
+        case 5, bad.ArtifactContractRequiredFailureCount = 1;
+    end
+    sixgr.util.jsonWrite(disabledManifest,bad);
+    try
+        sixgr.runtime.RunEvidenceLifecycle.completeUnpublished(attempt4,disabledManifest);
+        error('testRunEvidenceLifecycle:ExpectedDisabledFailure','Invalid disabled contract accepted.');
+    catch ME
+        assert(strcmp(ME.identifier,'sixgr:runtime:FunctionalCompletionEvidenceInvalid'));
+    end
+end
+sixgr.util.jsonWrite(disabledManifest,disabled);
+terminal4 = sixgr.runtime.RunEvidenceLifecycle.completeUnpublished(attempt4,disabledManifest);
+assert(string(terminal4.Status)=="PASS" && ~terminal4.PublicationQualified && ...
+    ~terminal4.Published && localSHA(pointerPath)==pointerHash);
 assert(localSHA(rawManifest) == rawHashBefore && localSHA(patchPath) == patchHashBefore, ...
     "Finalization attempts must not mutate raw execution evidence.");
 ok = true;

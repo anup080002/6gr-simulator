@@ -10,6 +10,14 @@ cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
 cfg.mac.scheduler.type = "pf";
+% Install test-owned broadcast and receiver DCI timing configuration. The
+% production default must not invent these missing values as a fallback.
+control=sixgr.lls6g.config.readConfigFile(fullfile('simulator','configs', ...
+    'fixtures','scheduler_feedback_timing.yaml'));
+cfg.phy.pucch.dlDataToULACK=control.tdd.dl_data_to_ul_ack;
+cfg.initial_access.type0.monitoring_occasion_ordinal=control.tdd.monitoring_occasion_ordinal;
+cfg.initial_access.sib1.pdsch=control.tdd.sib1_pdsch;
+assert(strcmpi(cfg.phy.duplex.mode,'TDD'),'Preserve the original TDD test domain.');
 
 % Force mobility and aggressive HO so events happen in regression runtime.
 % This is a causal control-loop regression, not a mobility-statistics
@@ -39,7 +47,12 @@ cfg.system.phyBackend = "waveform";
 cfg = sixgr.config.normalizeConfig(cfg);
 sixgr.config.validateConfig(cfg);
 
-ctx = sixgr.core.SimContext(cfg);
+outputRoot=fullfile(pwd,'results','sls','mobility_control_loop', ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
+mkdir(outputRoot);
+fprintf('MOBILITY_CONTROL_EVIDENCE_ROOT=%s\n',outputRoot);
+save(fullfile(outputRoot,'test_configuration.mat'),'cfg','control','numTTI','nUE');
+ctx = sixgr.core.SimContext(cfg,'RunFolder',outputRoot);
 
 offeredDL = repmat(5500, numTTI, nUE);
 offeredUL = repmat(3000, numTTI, nUE);
@@ -48,6 +61,7 @@ res = sixgr.system.SystemLevelRunner.run(ctx, struct( ...
     "TTI_s", 0.25, ...
     "OfferedBitsDL", offeredDL, ...
     "OfferedBitsUL", offeredUL));
+save(fullfile(outputRoot,'test_output.mat'),'res','-v7.3');
 
 assert(res.Ok, "SystemLevelRunner failed in mobility-control regression.");
 assert(isfield(res, "Details"), "Missing Details output.");

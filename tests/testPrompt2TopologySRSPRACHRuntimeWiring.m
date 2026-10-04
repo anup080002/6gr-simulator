@@ -25,6 +25,8 @@ tmp = tempname;
 mkdir(tmp);
 cleanup = onCleanup(@() localCleanupTempFolder(tmp)); %#ok<NASGU>
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+assert(string(cfg.channel.o2i.model) == "low", ...
+    "The phase-10 LOW_LOSS override must use the canonical low O2I model before geometry execution.");
 
 layout = sixgr.scenario.generateLayout(cfg, cfg.scenario.name);
 assert(isequal(double(layout.bs.cellId(:).'), [1 2]), ...
@@ -74,6 +76,10 @@ assert(numel(grantsSlot12) == 1 && double(grantsSlot12(1).ServingCell) == 2, ...
     "Second conservative-bootstrap full-reuse DL slot must protect the other cell's first decode. Got %s. State %s.", ...
     localGrantSummary(grantsSlot12), localStateSummary(state));
 state.CurrentSlot = 21;
+% This occasion crosses the first radio-frame boundary at 30 kHz SCS.
+% Keep the fixture's one-based frame/absolute-slot pair physically consistent.
+carrier = sixgr.phy.grid.makeCarrier(cfg);
+state.CurrentFrame = 1 + floor((state.CurrentSlot - 1) / carrier.SlotsPerFrame);
 state = localMarkControlSuccessAtCurrentSlot(state);
 state.DLDecodeSuccessCountByUE(:) = 1;
 [~, grantsSlot13] = sixgr.truth.CoupledTruthRuntime.scheduleDirection(state, cfg, "DL");

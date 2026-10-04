@@ -10,8 +10,57 @@ end
 localCheckCarrier("normal", 30, 24, 84101);
 localCheckCarrier("extended", 60, 24, 84102);
 localCheckExplicitFFT();
+localCheckSRSAnchor();
 localAssertNoProductionDependencyOnConformanceNoise();
 ok = true;
+end
+
+function localCheckSRSAnchor()
+% Sparse SRS occupancy must not alter the occupied-RE SNR axis. Generate
+% and demodulate independently with native Toolbox functions.
+for nrb=[24 273]
+    carrier=nrCarrierConfig('NSizeGrid',nrb,'SubcarrierSpacing',30);
+    srs=nrSRSConfig;
+    indices=nrSRSIndices(carrier,srs);
+    symbols=nrSRS(carrier,srs);
+    for energy=[1 .25]
+        grid=nrResourceGrid(carrier);
+        grid(indices)=sqrt(energy)*symbols;
+        [waveform,info]=nrOFDMModulate(carrier,grid,'Windowing',0);
+        tx=struct('Waveform',waveform,'OFDMInfo',info, ...
+            'GridSlots',struct('Slot',0,'Symbols',grid(indices), ...
+                'Grid',grid,'Indices',indices));
+        cfg=struct('HighSNRdB',20,'Seed',84104,'ToolboxCarrier',carrier, ...
+            'ExpectedSlotSet',0,'ChannelModel',"TDL-C");
+        received=sixgr.phy.srs.applySRSChannel(tx,cfg);
+        referenceVariance=energy*10^(-cfg.HighSNRdB/10);
+        observed=nrOFDMDemodulate(carrier,received.RxWaveform-waveform);
+        errorDb=10*log10(mean(abs(observed(:)).^2)/referenceVariance);
+        assert(abs(errorDb)<.25, ...
+            'SRS anchor occupied-RE noise differs by %.4f dB at %d PRB.',errorDb,nrb);
+        assert(abs(received.NoiseVariance-referenceVariance/info.Nfft)<1e-13);
+        assert(abs(received.GridNoiseVariance-referenceVariance)<1e-13 && ...
+            received.NoiseReference.SNRReferencePlane=="occupied_resource_grid_re_pre_equalization");
+        empty=sixgr.phy.srs.applySRSChannel(tx,cfg,'FaultMode','no_signal');
+        assert(empty.NoiseVariance==received.NoiseVariance && ...
+            max(abs(empty.RxWaveform(:)-(received.RxWaveform(:)-waveform(:))))<1e-12, ...
+            'The no-signal trial must retain the same physical reference-noise population.');
+        assert(received.ChannelModel=="AWGN" && ...
+            received.ConfiguredChannelModel=="TDL-C" && ~received.ChannelFadingApplied, ...
+            'An isolated AWGN anchor must not claim the configured fading channel was executed.');
+        % A high-SNR sample isolates the symbol fault itself. The actual
+        % detector negative gate is tested separately, without threshold
+        % tuning. Native demodulation verifies per-RE energy conservation.
+        corrupt=sixgr.phy.srs.applySRSChannel(tx,cfg, ...
+            'FaultMode','corrupted_symbols','SNRdB',100);
+        corruptGrid=nrOFDMDemodulate(carrier,corrupt.RxWaveform);
+        assert(max(abs(abs(corruptGrid(indices))-abs(grid(indices))))<1e-3 && ...
+            norm(corruptGrid(indices)-grid(indices))>.1*norm(grid(indices)), ...
+            'The fault must corrupt the occupied sequence while preserving its RE power.');
+        assert(corrupt.FaultModel=="independent_uniform_phase_per_occupied_srs_re_v1");
+        fprintf('SRS_ANCHOR_NOISE nrb=%d Es=%.3g error_dB=%.9g\n',nrb,energy,errorDb);
+    end
+end
 end
 
 function localCheckExplicitFFT()

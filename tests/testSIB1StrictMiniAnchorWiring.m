@@ -47,5 +47,28 @@ policyNoGate = sixgr.lls6g.runners.resolveStrictSupplementalEvidencePolicy(scfgN
 assert(~logical(policyNoGate.EnableSIB1), ...
     "Bundle-only target cases must not run SIB1 strict evidence unless SIB1/PBCH is required or targeted.");
 
+% The report-richness bundle executes SSB/PBCH, not a disabled SIB1 chain.
+cfgBroadcast = sixgr.util.structSet(cfgNoGate, "phy.sib1.enable", false);
+cfgBroadcast = sixgr.util.structSet(cfgBroadcast, "phy.pbch.enable", true);
+cfgBroadcast = sixgr.util.structSet(cfgBroadcast, "phy.ssb.enable", true);
+cfgBroadcast = sixgr.util.structSet(cfgBroadcast, "validation.objectives", "pbch_strict_validation");
+scfgBroadcast = sixgr.util.structSet(scfgNoGate, "scenario.target_cases", {'bundle','pbch','ssb'});
+policyBroadcast = sixgr.lls6g.runners.resolveStrictSupplementalEvidencePolicy(scfgBroadcast, cfgBroadcast);
+assert(~policyBroadcast.EnableSIB1 && ~policyBroadcast.SIB1ConfiguredEnabled, ...
+    "PBCH/SSB-only evidence must not imply execution of disabled SIB1.");
+
+% Required or explicitly requested SIB1 must not disappear when disabled.
+scfgExplicit = sixgr.util.structSet(scfgBroadcast, "scenario.target_cases", {'sib1'});
+policyExplicit = sixgr.lls6g.runners.resolveStrictSupplementalEvidencePolicy(scfgExplicit, cfgBroadcast);
+assert(policyExplicit.EnableSIB1 && policyExplicit.SIB1ExplicitlyRequested, ...
+    "Explicit disabled SIB1 must reach the producer's configuration failure.");
+cfgRequired = sixgr.util.structSet(cfgBroadcast, "validation.sib1_and_initial_access.sib1_required", true);
+policyRequired = sixgr.lls6g.runners.resolveStrictSupplementalEvidencePolicy(scfgBroadcast, cfgRequired);
+assert(policyRequired.EnableSIB1 && policyRequired.SIB1Required, ...
+    "Required disabled SIB1 must not be silently skipped.");
+cfgEnabled = sixgr.util.structSet(cfgBroadcast, "phy.sib1.enable", true);
+policyEnabled = sixgr.lls6g.runners.resolveStrictSupplementalEvidencePolicy(scfgBroadcast, cfgEnabled);
+assert(policyEnabled.EnableSIB1, "Enabled broadcast SIB1 evidence must remain selected.");
+
 ok = true;
 end

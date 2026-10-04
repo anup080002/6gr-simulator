@@ -23,6 +23,26 @@ assert(canonical.ValueStatus(1)=="NOT_AVAILABLE" && ...
     canonical.TruthStatus(1)=="runtime_pretransmission_pdcch_admission_disposition", ...
     'A finalized admission block must be a typed pre-transmission non-trial.');
 legacy = removevars(T,'PDCCHReceiverTrialExecuted');
+% Executed trials need not have joint-admission metadata. Unknown values
+% must survive publication, without becoming either admission or rejection.
+nullable = T;
+nullable.PDCCHPreTransmissionFinalized = double(nullable.PDCCHPreTransmissionFinalized);
+nullable.PDCCHAdmissionSelected = double(nullable.PDCCHAdmissionSelected);
+nullable.PDCCHPreTransmissionFinalized(2:5) = NaN;
+nullable.PDCCHAdmissionSelected(2:5) = NaN;
+nullable.PDCCHPreTransmissionFinalized(4) = 1;
+nullable.GrantControlState(4) = "control_blocked_no_nonoverlapping_pdcch_candidate";
+published = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable('PDCCH',nullable);
+assert(isequal(published.ControlObservationAvailable,canonical.ControlObservationAvailable));
+assert(all(isnan(published.PDCCHAdmissionSelected(2:5))));
+assert(published.TruthStatus(1)=="runtime_pretransmission_pdcch_admission_disposition");
+assert(published.TruthStatus(4)~="runtime_pretransmission_pdcch_admission_disposition", ...
+    'An unknown admission must not be classified as a finalized rejection.');
+nullable.PDCCHPreTransmissionFinalized(4) = NaN;
+nullable.PDCCHAdmissionSelected(4) = 0;
+published = sixgr.truth.CoupledTruthRuntime.canonicalizePersistedControlReferenceTable('PDCCH',nullable);
+assert(published.TruthStatus(4)~="runtime_pretransmission_pdcch_admission_disposition", ...
+    'An unfinalized rejection must not become a finalized non-trial.');
 E = sixgr.link.pdcchTrialExecutionState(legacy);
 assert(~E.ObservationAvailable(1) && ~E.BindingEligible(1));
 assert(E.BindingEligible(2),'A real failed CRC must still reach the CRC/binding checks.');

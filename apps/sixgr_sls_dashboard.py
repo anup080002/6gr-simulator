@@ -5,6 +5,7 @@ import csv
 import hashlib
 import json
 import math
+from collections import deque
 from pathlib import Path
 
 
@@ -46,16 +47,20 @@ def read_json(path: Path) -> dict:
         return {}
 
 
-def read_rows(path: Path, limit: int = 100) -> list[dict]:
+def read_rows(path: Path, limit: int = 100, *, latest: bool = False) -> list[dict]:
+    if limit <= 0:
+        return []
     try:
         with path.open(encoding="utf-8-sig", newline="") as handle:
-            rows = []
+            # Parse complete CSV records (including quoted newlines). A
+            # byte-tail/splitlines shortcut can corrupt receiver evidence.
+            rows = deque(maxlen=limit) if latest else []
             for row in csv.DictReader(handle):
                 if any(str(value or "").strip() for value in row.values()):
                     rows.append(row)
-                if len(rows) >= limit:
+                if not latest and len(rows) >= limit:
                     break
-            return rows
+            return list(rows)
     except (OSError, csv.Error, UnicodeError):
         return []
 
@@ -122,17 +127,66 @@ def live_payload(row: dict, artifacts: list[dict]) -> dict:
         "Load": "traces/system_cell_load.csv",
         "File completion": "traces/ftp3_user_metrics.csv",
         "UCI obligations (modeled control)": "csv/system_dynamic_pucch_obligations.csv",
+        "Native PUCCH transmissions (TX audit, not reception)": "csv/system_native_pucch_emission_audit.csv",
+        "UCI transport completions (ideal delayed control)": "csv/system_dynamic_uci_completions.csv",
+        "HARQ decisions (modeled, not waveform CRC)": "csv/system_modeled_harq_payload_decisions.csv",
         "CSI (modeled feedback)": "csv/system_modeled_dl_csi.csv",
         "SRS (modeled feedback)": "csv/system_modeled_spatial_feedback.csv",
+        "Network interference (modeled, not RF measurement)": "csv/system_network_spatial_evidence.csv",
+        "Feedback capture / completion clock": "csv/system_modeled_feedback_capture.csv",
+        "Unfinished reference receptions (pending/censored)": "csv/system_censored_reference_feedback.csv",
     }
-    evidence = {name: {"source": path, "rows": read_rows(folder / path)} for name, path in selected.items()}
-    version = hashlib.sha256(json.dumps([receipt, progress, artifacts, evidence], sort_keys=True, default=str).encode()).hexdigest()
+    snapshot = read_json(folder / "live/sls_evidence.json")
+    snapshot_keys = {
+        "csv/system_modeled_dl_csi.csv": "DLCSI",
+        "csv/system_modeled_spatial_feedback.csv": "SRS",
+        "csv/system_network_spatial_evidence.csv": "NetworkSpatial",
+        "csv/system_modeled_feedback_capture.csv": "FeedbackCapture",
+        "csv/system_censored_reference_feedback.csv": "PendingReference",
+        "csv/system_dynamic_pucch_obligations.csv": "UCIObligations",
+        "csv/system_native_pucch_emission_audit.csv": "PUCCHEmissions",
+        "csv/system_dynamic_uci_completions.csv": "UCICompletions",
+        "csv/system_modeled_harq_payload_decisions.csv": "HARQDecisions",
+    }
+    snapshot_valid = (snapshot.get("Schema") == "sixgr.sls_live_evidence/v1"
+                      and isinstance(receipt.get("ExecutionID"), str)
+                      and bool(receipt["ExecutionID"].strip())
+                      and snapshot.get("ExecutionID") == receipt["ExecutionID"]
+                      and snapshot.get("WaveformBacked") is False
+                      and snapshot.get("PrimaryStudyAccepted") is False
+                      and snapshot.get("SourceClassification") == "retained_calibrated_sls_runtime_rows_not_final_results"
+                      and isinstance(snapshot.get("Evidence"), dict))
+    evidence = {}
+    for name, path in selected.items():
+        latest = not path.startswith("summaries/")
+        evidence[name] = {"source": path, "rows": read_rows(folder / path, latest=latest),
+                          "row_selection": "latest" if latest else "first", "row_limit": 100}
+        # Full primary CSVs take precedence once published. Until then show
+        # an explicitly identified bounded runtime snapshot, not an invented
+        # final CSV or a substituted waveform measurement.
+        if not (folder / path).is_file() and snapshot_valid and path in snapshot_keys:
+            key = snapshot_keys[path]
+            entry = snapshot["Evidence"].get(key, {})
+            rows = entry.get("Rows") if isinstance(entry, dict) else None
+            if (isinstance(rows, list) and len(rows) <= 100
+                    and all(isinstance(record, dict) for record in rows)
+                    and entry.get("RetainedRows") == len(rows)):
+                evidence[name] = {"source": f"live/sls_evidence.json#Evidence.{key}",
+                                  "rows": rows, "row_selection": "latest", "row_limit": 100,
+                                  "evidence_scope": "bounded_live_checkpoint_not_final_results",
+                                  "committed_through_absolute_slot0": snapshot.get("CommittedThroughAbsoluteSlot0"),
+                                  "total_retained_history_rows": entry.get("TotalRows")}
+    qualification = read_json(folder / "manifests/system_run_manifest.json")
+    output_audit = read_json(folder / "manifests/cross_check_report.json")
+    version = hashlib.sha256(json.dumps(
+        [receipt, progress, artifacts, evidence, qualification, output_audit],
+        sort_keys=True, default=str).encode()).hexdigest()
     return {
         "run": row, "execution_mode": "SLS", "version": version, "payload_version": version, "artifact_version": version,
         "runtime_context": {"stage": progress}, "summary": receipt,
         "sls": {"receipt": receipt, "progress": progress, "evidence": evidence,
-                "qualification": read_json(folder / "manifests/system_run_manifest.json"),
-                "output_audit": read_json(folder / "manifests/cross_check_report.json"),
+                "qualification": qualification,
+                "output_audit": output_audit,
                 "scope": "Network execution evidence; execution completion does not certify a study.",
                 "measurement_notice": "Calibrated abstraction is not waveform CRC/EVM or physical UCI measurement."},
         "tables_all": tables, "images": images, "images_all": images, "artifacts": artifacts,

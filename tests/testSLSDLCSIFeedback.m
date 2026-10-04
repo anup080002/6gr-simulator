@@ -32,7 +32,63 @@ bad=g; bad.ControlAbsoluteSlot=3;
 reject(@()sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(cfg,bad),'sixgr:abstraction:DLCSIBinding');
 waveform=cfg; waveform.system.phyBackend='waveform';
 reject(@()sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(waveform,g),'sixgr:abstraction:DLCSIBinding');
+resolved=sixgr.system.PhyFactory.resolveConfig(waveform, ...
+    struct('PHYBackend','calibrated_link_abstraction'));
+sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(resolved,g);
+assert(strcmp(waveform.system.phyBackend,'waveform'),'Do not mutate caller configuration.');
+reject(@()sixgr.system.PhyFactory.resolveConfig(cfg,struct('PHYBackend','lut')), ...
+    'sixgr:system:ProxyBackendRemoved');
+reject(@()sixgr.system.PhyFactory.resolveConfig(cfg,struct('PHYBackend',["waveform","calibrated_link_abstraction"])), ...
+    'sixgr:system:UnsupportedPHYBackend');
+% A runtime backend override must not leave modeled-feedback authority in
+% the physical executor's configuration.
+phy=sixgr.system.PhyFactory.create(cfg,struct('PHYBackend','waveform'));
+assert(strcmpi(string(phy.Cfg.system.phyBackend),'waveform'), ...
+    'test:WaveformBackendAuthority','Waveform executor retained abstraction authority.');
+reject(@()phy.decode(struct('Grant',g,'Direction','DL')), ...
+    'sixgr:system:WaveformReplay:ModeledFeedback');
+reject(@()sixgr.system.waveform.replayGrant(cfg,'DL',g,[],20), ...
+    'sixgr:system:WaveformReplay:ModeledFeedback');
+frozen=struct('PHYGrant',struct('PrecodingState', ...
+    struct('ModeledCSIFeedback',new,'ModeledCSIDecisionUsed',true)));
+phy.LongRunAuditEnabled=true; phy.LongRunAuditPeriodSlots=10;
+reject(@()phy.decode(struct('Grant',frozen,'Direction','DL','TTI',2)), ...
+    'sixgr:system:WaveformReplay:ModeledFeedback');
+sixgr.system.waveform.assertPhysicalFeedbackAuthority(struct('ModeledCSIFeedback',struct()));
 assert(isempty(q.select(1,2,4,5)) && isempty(q.select(1,1,11,11)));
+% Native-emission provenance must survive rank/PMI selection and binding.
+% This declared identity fixture tests the consumer; it is not PHY evidence.
+emitted=cfg;
+emitted.system.linkAbstraction.networkSpatial.interferencePopulation='scheduled_shared_data_and_srs_and_csirs';
+emitted.phy.csirs.resourceIDs=7;
+eq=sixgr.system.abstraction.CausalDLCSIFeedback(emitted);
+reject(@()eq.append(o,2),'sixgr:abstraction:DLCSIEmissionBinding');
+o.ReferenceResourceID=7;
+o.ReferenceEmissionSHA256=string(sixgr.util.sha256Hex(uint8('explicit_emission_binding_test_fixture')));
+eq.append(o,2); er=eq.select(1,1,4,5);
+assert(er.ReferenceResourceID==7 && er.ReferenceEmissionSHA256==o.ReferenceEmissionSHA256);
+er.RNTI=1;
+er.BindingSHA256=string(sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(sixgr.util.jsonSafeValue(er)),'UTF-8'))));
+eg=g; eg.ModeledCSIFeedback=er;
+sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(emitted,eg);
+bad=o; bad.ObservationID="wrong_native_resource"; bad.ReferenceResourceID=19;
+reject(@()eq.append(bad,2),'sixgr:abstraction:DLCSIEmissionBinding');
+bad=eg; bad.ModeledCSIFeedback=rmfield(er,'ReferenceEmissionSHA256');
+reject(@()sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(emitted,bad), ...
+    'sixgr:abstraction:DLCSIEmissionBinding');
+% Adding PDCCH/SSB must not disable the CSI emission identity guard.
+extended=emitted;
+extended.system.linkAbstraction.networkSpatial.interferencePopulation='scheduled_shared_data_and_srs_and_csirs_and_pdcch';
+for withSSB=[false true]
+    extended.system.linkAbstraction.networkSpatial.ssbInterferenceEnabled=withSSB;
+    eq=sixgr.system.abstraction.CausalDLCSIFeedback(extended);
+    missing=rmfield(o,'ReferenceEmissionSHA256');
+    reject(@()eq.append(missing,2),'sixgr:abstraction:DLCSIEmissionBinding');
+    eq.append(o,2);
+    sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(extended,eg);
+    reject(@()sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(extended,bad), ...
+        'sixgr:abstraction:DLCSIEmissionBinding');
+end
 fprintf('SLS_DL_CSI_CAUSAL_CODEBOOK_PASS\n'); ok=true;
 end
 function reject(fn,id)

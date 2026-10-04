@@ -3,23 +3,28 @@ function ok = testLLSScenarioStatusPropagation()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+runTag = "status_" + string(datetime('now','Format','yyyyMMdd_HHmmss_SSS'));
+tmp = fullfile(pwd,'results','lls','status_propagation',char(runTag));
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+fprintf('STATUS_PROPAGATION_EVIDENCE_ROOT=%s\n',tmp);
 
-baseScenario = fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml");
-scenarioPath = fullfile(tmp, "status_failure.yaml");
-fid = fopen(scenarioPath, "w");
-fprintf(fid, "%s", ['{' ...
-    '"inherits":["' strrep(baseScenario, '\', '\\') '"],' ...
-    '"meta":{"scenario_id":"lls_status_propagation_failure","description":"status propagation regression","version":"1","owner":"test","maturity_tag":"smoke"},' ...
-    '"simulation":{"n_frames":4,"n_slots":4,"monte_carlo_iterations":2,"random_seed":11,"snr_db":-10},' ...
-    '"modulation":{"mcs_table":"qam256_table2","dl_modulation_order":8,"ul_modulation_order":8,"dl_mcs_index":27,"ul_mcs_index":27},' ...
-    '"link_adaptation":{"fixed_or_amc":"fixed","pdsch_link_adaptation_policy":"fixed","pusch_link_adaptation_policy":"fixed"},' ...
-    '"output":{"save_figures":false,"save_png":false,"save_mat":true,"phy_signal_diagnostic_enabled":false}}']);
-fclose(fid);
+scenarioPath = fullfile(pwd,"simulator","configs","fixtures", ...
+    "lls_status_propagation.yaml");
 
-out = run_6g_phy_lls_single(scenarioPath, tmp, "status");
+% This fixture executes isolated physical trials, not received connected
+% grants. The scenario itself must declare that execution authority.
+resolved = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+cfg = sixgr.lls6g.buildInternalConfig(resolved,tmp);
+assert(string(cfg.phy.pdsch.executionProfile)=="phy_calibration" && ...
+    string(cfg.phy.pusch.executionProfile)=="phy_calibration", ...
+    'Independent component trials require explicit calibration profiles.');
+assert(cfg.run.totalSlots==4 && ~cfg.run.useParallel, ...
+    'The four-slot status regression must not inherit an eighty-slot parallel campaign.');
+assert(logical(cfg.phy.prach.enable) && ...
+    ~any(ismember(lower(string(resolved.get("scenario.target_cases",{}))), ...
+    ["prach","ra","random_access"])), ...
+    'Retain primary PRACH reception without requesting its independent qualification campaign.');
+out = run_6g_phy_lls_single(scenarioPath, tmp, runTag);
 assert(~logical(out.Ok), "Regression scenario must fail so status propagation can be checked.");
 
 runFolder = char(string(out.RunFolder));
@@ -50,6 +55,11 @@ logText = string(fileread(runLog));
 assert(isfield(S, "ScenarioStatus"), "Scenario MAT must include ScenarioStatus.");
 assert(isfield(S, "Result") && isfield(S.Result, "Link"), "Scenario MAT must include nested link result.");
 assert(isfield(L, "details"), "Link MAT must expose the detailed link result payload.");
+assert(isfield(L.details, "FixedLinkCampaign") && ...
+    ~logical(L.details.FixedLinkCampaign.Enabled), ...
+    "A disabled fixed-link campaign must remain disabled despite reference diagnostics.");
+assert(~isfolder(fullfile(runFolder,"component_anchors","prach")), ...
+    "The bounded status regression must not execute a separate PRACH qualification anchor.");
 
 scenarioOk = logical(S.Result.Ok);
 linkNestedOk = logical(S.Result.Link.Result.Ok);

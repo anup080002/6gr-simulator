@@ -7,6 +7,7 @@ assert(r.FeedbackObservedCount==3 && r.FeedbackDTXCount==1 && r.ExcludedRowCount
 % Poisoning decoder CRCs cannot change the independently received result.
 raw.HARQTimeline=table(["DL";"DL";"DL"],[1;2;3],[0;0;0],[0;1;1],[0;0;0], ...
     'VariableNames',{'Direction','Slot','HarqID','IsRetransmission','CombinedDecodeOK'});
+raw.HARQTimeline.TBId=repmat("dl_tb_1",3,1);
 r2=row(raw); assert(r2.Value==r.Value && r2.DenominatorValue==r.DenominatorValue);
 raw.HARQTimeline.CombinedDecodeOK(:)=NaN;
 r2=row(raw); assert(r2.Value==r.Value);

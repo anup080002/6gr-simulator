@@ -22,6 +22,12 @@ qcl = sixgr.util.structGet(cfg, "phy.pdsch.qclTCI", struct());
 if ~(isstruct(qcl) && isscalar(qcl) && ~isempty(fieldnames(qcl)))
     return;
 end
+% YAML inheritance can retain state/codepoint fields under an explicitly
+% disabled policy. They are not installed authority while disabled. Match
+% the connected-DCI resolver rather than freezing a stale inherited state.
+if isfield(qcl, 'enabled') && isequal(qcl.enabled, false)
+    return;
+end
 
 stateID = double(sixgr.util.structGet(qcl, "state_id", NaN));
 codepoint = double(sixgr.util.structGet(qcl, "codepoint", NaN));
@@ -31,13 +37,13 @@ if ~(localNonnegativeInteger(stateID) && ...
         localNonnegativeInteger(codepoint) && ...
         localNonnegativeInteger(activeStateID))
     error("sixgr:phy:grant:MalformedDLQCLTCIBinding", ...
-        ["Installed DL QCL/TCI authority requires finite nonnegative integer " ...
-         "state_id, codepoint, and activeTCIStateID values."]);
+        ['Installed DL QCL/TCI authority requires finite nonnegative integer ' ...
+         'state_id, codepoint, and activeTCIStateID values.']);
 end
 if activeStateID ~= stateID
     error("sixgr:phy:grant:InconsistentDLQCLTCIState", ...
-        ["phy.pdsch.activeTCIStateID=%d differs from the installed " ...
-         "phy.pdsch.qclTCI.state_id=%d."], activeStateID, stateID);
+        ['phy.pdsch.activeTCIStateID=%d differs from the installed ' ...
+         'phy.pdsch.qclTCI.state_id=%d.'], activeStateID, stateID);
 end
 
 binding.Available = true;

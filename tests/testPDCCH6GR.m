@@ -1,5 +1,8 @@
-function ok = testPDCCH6GR()
+function ok = testPDCCH6GR(retainedRunFolder)
 %TESTPDCCH6GR Short focused regression suite for the 6GR PDCCH study path.
+% An explicit retained folder reruns component and artifact assertions without
+% repeating PHY execution/publication. Such a result is a retained-run recheck,
+% not fresh final-source scenario acceptance.
 
 setup6GRSimToolkit("Verbose", false);
 
@@ -9,7 +12,12 @@ testCRCAndPayloadScramblingToggles();
 testDMRSDoesNotCollideWithPayload();
 testBlindDetectionHighSNRAndSNRSanity();
 testInterSlotRepetitionNoWorseThanNone();
-testRunnerIntegrationArtifacts();
+if nargin < 1
+    testRunnerIntegrationArtifacts();
+else
+    fprintf('PDCCH_RETAINED_RUN_RECHECK=%s\n',string(retainedRunFolder));
+    testRunnerIntegrationArtifacts(retainedRunFolder);
+end
 
 ok = true;
 end
@@ -96,10 +104,13 @@ assert(double(repRow.DetectionProbability) >= double(noneRow.DetectionProbabilit
     "Inter-slot repetition should not underperform no repetition in the static AWGN sanity case.");
 end
 
-function testRunnerIntegrationArtifacts()
-tmp = tempname;
+function testRunnerIntegrationArtifacts(retainedRunFolder)
+% Keep runner artifacts even if publication/coverage assertions fail.
+if nargin < 1
+tmp = fullfile(pwd, "results", "lls", "pdcch6gr_regression", ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(tmp);
-cleanupObj = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+fprintf('PDCCH6GR_REGRESSION_RUN_FOLDER=%s\n',tmp);
 
 repoRoot = fileparts(fileparts(mfilename("fullpath")));
 baseScenario = strrep(fullfile(repoRoot, "simulator", "configs", "scenarios", "pdcch_6gr_study.yaml"), "\", "/");
@@ -110,14 +121,38 @@ scenarioCfg.meta = struct( ...
     "scenario_id", "pdcch6gr_runner_smoke", ...
     "description", "Short 6GR PDCCH runner integration smoke.");
 scenarioCfg.simulation = struct("monte_carlo_iterations", 1, "snr_db", 20);
+% This focused runner check must not create a second worker pool alongside
+% an existing diagnostic. Keep the same physical cases and assertions.
+scenarioCfg.run_control = struct("num_workers",1,"auto_start_parallel_pool",false);
 localWriteJSON(scenarioPath, scenarioCfg);
 
 out = sixgr.lls6g.runners.runSingle(scenarioPath, tmp, "pdcch6gr_runner_smoke");
 assert(logical(out.Ok), "6GR PDCCH runner integration smoke must complete successfully.");
 runFolder = char(out.RunFolder);
+else
+    runFolder = char(string(retainedRunFolder));
+    summary = readtable(fullfile(runFolder,"reports","csv","scenario_summary.csv"));
+    assert(height(summary)==1 && logical(summary.Ok) && logical(summary.ResultOk), ...
+        'Retained evidence must come from a completed successful runner.');
+end
+terminal = jsondecode(fileread(fullfile(runFolder, "finalization", "attempt_001", "terminal_status.json")));
+assert(string(terminal.Status)=="PASS", ...
+    "A successful returned result must agree with functional finalization.");
+for probabilitySlug=["p-fa","far","p-md","p-d"]
+    stem="contract__detection-control-analytics__"+probabilitySlug;
+    assert(isfile(fullfile(runFolder,"analytics","csv",stem+".csv")) && ...
+        isfile(fullfile(runFolder,"analytics","image",stem+".png")), ...
+        'Executed H0/H1 probabilities must publish exact CSV/PNG evidence, including zero/one observations.');
+end
 assert(exist(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"), "file") == 2, ...
     "Runner must export canonical air_interface/csv/pdcch_trials.csv.");
 pdcchT = readtable(fullfile(runFolder, "air_interface", "csv", "pdcch_trials.csv"));
+assert(any(pdcchT.SignalPresent==0) && any(pdcchT.SignalPresent==1), ...
+    'The runner must execute independent H0 and H1 receiver populations.');
+assert(all(pdcchT.TXGridEnergy(pdcchT.SignalPresent==0)==0), ...
+    'Noise-only rows must not contain transmitted PDCCH or DMRS energy.');
+assert(all(string(pdcchT.ScenarioID)=="pdcch6gr_runner_smoke"), ...
+    "Primary PDCCH rows must carry the actual runner scenario identity.");
 assert(all(ismember([1 2 4 8 16], unique(double(pdcchT.AggregationLevel)).')), ...
     "PDCCH blind-decode runner must exercise aggregation levels 1, 2, 4, 8, and 16.");
 assert(any(double(pdcchT.BlindDecodeCount) > 1), ...
@@ -139,15 +174,37 @@ for i = 1:numel(requiredObserved)
     assert(any(logical(pdcchOut.CountsTowardCoverage(mask))), ...
         "PDCCH control metric '%s' must count toward category-F coverage.", requiredObserved(i));
 end
+faDenominator = string(pdcchOut.MetricKey)=="false_alarm_probability" & ...
+    string(pdcchOut.Statistic)=="sample_count" & string(pdcchOut.Entity)=="PDCCH";
+assert(any(faDenominator) && ...
+    all(pdcchOut.ValueNumeric(faDenominator)==sum(pdcchT.SignalPresent==0)), ...
+    'Published false-alarm denominators must equal the executed H0 population.');
 coverage = readtable(fullfile(runFolder, "reports", "csv", "lls_output_spec_coverage.csv"), ...
     "VariableNamingRule", "preserve");
 catF = coverage(string(coverage.CategoryCode) == "F", :);
-assert(height(catF) == 16, "Category F must retain all 16 cataloged PDCCH/control metrics.");
+catalog = sixgr.lls6g.config.readConfigFile(fullfile(pwd,"simulator","configs", ...
+    "defaults","lls_result_output_catalog.yaml"));
+categories = catalog.categories;
+if iscell(categories), categories = [categories{:}]; end
+category = categories(string({categories.code})=="F");
+assert(isscalar(category),'The output catalog must contain exactly one category F.');
+metrics = category.metrics;
+if iscell(metrics), metrics = [metrics{:}]; end
+expectedKeys = string({metrics.key}).';
+assert(height(catF)==numel(expectedKeys) && ...
+    isequal(sort(string(catF.MetricKey)),sort(expectedKeys)), ...
+    'Category F must retain every cataloged metric exactly once, without extras.');
 coveredF = sum(logical(catF.CountsTowardCoverage));
 assert(coveredF >= 11, ...
-    "Category F must cover at least the 11 runtime-backed PDCCH/control metrics; observed %d/16.", coveredF);
+    "Category F must cover at least the 11 runtime-backed PDCCH/control metrics; observed %d/%d.", coveredF,height(catF));
 assert(exist(fullfile(runFolder, "reports", "csv", "pdcch6gr_per_candidate_results.csv"), "file") == 2, ...
     "Runner must export the detailed per-candidate results.");
+candidateT = readtable(fullfile(runFolder, "reports", "csv", "pdcch6gr_per_candidate_results.csv"));
+assert(ismember("ComponentScenarioID", string(candidateT.Properties.VariableNames)), ...
+    "Component case identity must be retained separately from execution identity.");
+assert(all(startsWith(string(candidateT.ComponentScenarioID), "pdcch6gr_")) && ...
+    all(string(candidateT.ScenarioID)=="pdcch6gr_runner_smoke"), ...
+    "Auxiliary rows must retain both producer-local and outer scenario identities.");
 end
 
 function cfg = localBaseCfg()

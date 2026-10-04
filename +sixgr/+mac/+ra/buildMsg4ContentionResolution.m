@@ -8,6 +8,11 @@ p.addParameter("TransactionID", 0, @(x)isnumeric(x) && isscalar(x) && ...
 p.addParameter("SRB1LCID", 1, @(x)isnumeric(x) && isscalar(x) && ...
     isfinite(x) && x >= 1 && x <= 32 && x == fix(x));
 p.parse(varargin{:});
+% Validate before uint16 conversion; saturation must never change the
+% configured identity while the returned metadata retains the old value.
+% TS 38.321 V18.6.0 Table 7.1-1 excludes FFF3..FFFF from C-RNTI.
+validateattributes(p.Results.FinalCRNTI,{'numeric'}, ...
+    {'scalar','real','finite','integer','>=',1,'<=',65522});
 idBytes = localNormalizeIdentity(contentionIdentity);
 payload = uint8([2; idBytes(:); localUInt16Bytes(uint16(p.Results.FinalCRNTI))]);
 if logical(p.Results.RRCSetup)

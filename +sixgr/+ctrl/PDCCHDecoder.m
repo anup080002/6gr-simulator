@@ -1,16 +1,35 @@
-function dec = PDCCHDecoder(eqSymbols, noiseVar, payloadMeta, ctrlCfg, context)
+function dec = PDCCHDecoder(eqSymbols, noiseVar, ~, ctrlCfg, context)
 %PDCCHDecoder Demap, descramble, decode, and CRC-check one candidate.
 
 if nargin < 5
     context = struct();
 end
 
-[llr, demodInfo] = sixgr.phy.mod.demodulateLLR(eqSymbols(:), ctrlCfg.Modulation, max(noiseVar, eps));
+if isscalar(noiseVar)
+    [llr, demodInfo] = sixgr.phy.mod.demodulateLLR(eqSymbols(:), ctrlCfg.Modulation, max(noiseVar, eps));
+else
+    assert(upper(string(ctrlCfg.Modulation))=="QPSK" && ...
+        numel(noiseVar)==numel(eqSymbols) && all(isfinite(noiseVar(:)) & noiseVar(:)>0), ...
+        'sixgr:ctrl:PDCCHDecoder:NoiseDimensions', ...
+        'Per-RE PDCCH variance must match every QPSK symbol.');
+    % QPSK bit LLRs are exactly inverse-proportional to complex noise variance.
+    [llr, demodInfo] = sixgr.phy.mod.demodulateLLR(eqSymbols(:),ctrlCfg.Modulation,1);
+    llr = llr ./ repelem(double(noiseVar(:)),2);
+    demodInfo.NoiseVarianceSource="per_resource_post_equalization";
+end
 scr = sixgr.ctrl.PayloadScrambler(int8(zeros(numel(llr),1)), ctrlCfg, context);
 if scr.Enabled
     llr = llr .* (1 - 2 * double(scr.Sequence(:)));
 end
 
+% Resolve the receive hypothesis from installed payload/CRC configuration
+% and THIS candidate's demapped capacity, never the transmitter's metadata.
+K = double(ctrlCfg.PayloadLengthBits) + localCRCLength(ctrlCfg.CRCPolynomial);
+E = numel(llr);
+mother = nrPolarEncode(zeros(K,1,'int8'),E,9,false);
+payloadMeta = struct('KWithCRC',K,'PolarEncodedLength',numel(mother), ...
+    'RateMatchedLength',E,'ListLength',ctrlCfg.PolarListLength, ...
+    'PayloadRECount',numel(eqSymbols));
 localValidatePDCCHPolarInputs(llr, payloadMeta, ctrlCfg);
 
 [rateRecovered, rrInfo] = sixgr.phy.phycode.rateRecoverPolar(llr, payloadMeta.KWithCRC, payloadMeta.PolarEncodedLength, false, "NMax", 9);
@@ -30,6 +49,8 @@ dec.DecodingMetric = mean(abs(llr));
 dec.DemodInfo = demodInfo;
 dec.RateRecoverInfo = rrInfo;
 dec.PolarInfo = polarInfo;
+dec.ReceiveHypothesis = payloadMeta;
+dec.ReceiveHypothesisSource = "installed_payload_crc_and_candidate_capacity";
 end
 
 function localValidatePDCCHPolarInputs(llr, payloadMeta, ctrlCfg)

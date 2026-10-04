@@ -5,6 +5,8 @@ function ok = testRAN1AI1032FTP3LoadCalibration()
 op=localResources([1;1;2],[1;2;1],{[0 2];[0 2];[0 2]},[0;0;0],[2;2;2]);
 gr=localResources([1;1;1],[1;1;2],{0;0;2},[0;0;0],[2;2;1]);
 u=sixgr.studies.ran1ai1032.measureSLSResourceUtilization(gr,op,"UL",1);
+core=sixgr.system.measureResourceUtilization(gr,op,"UL",1);
+assert(isequaln(core,u),"The study entrypoint must preserve the core SLS resource definition.");
 assert(u.AvailablePRBSymbols==12 && u.OccupiedPRBSymbols==3 && u.RUPercent==25, ...
     "Overlapping MU grants must occupy resources once; idle cell opportunities remain.");
 late=sixgr.studies.ran1ai1032.measureSLSResourceUtilization(gr,op,"UL",2);
@@ -89,6 +91,12 @@ d.WaveformBacked=false; d.ProxyPHYActive=true;
 d.ExecutionBackend="CALIBRATED_LINK_ABSTRACTION";
 d.SourceClassification="calibrated_sls_estimate_not_waveform_truth";
 d.CalibrationQualified=true; d.CalibrationSHA256=string(repmat('a',1,64));
+d.SchedulerGrants.PHYDecisionRole(:)="calibrated_sls_estimate";
+d.SchedulerGrants.WaveformReplayExecuted(:)=false;
+d.SchedulerGrants.CalibrationQualified(:)=true;
+d.SchedulerGrants.CalibrationSHA256(:)=d.CalibrationSHA256;
+d.SchedulerGrants.CalibrationKeySHA256(:)=d.CalibrationSHA256;
+d.SchedulerGrants.SourceClassification(:)=d.SourceClassification;
 d.LoadCalibrationBaseConfigSHA256=string(sixgr.util.sha256Hex( ...
     uint8(unicode2native(jsonencode(localAbstractBase()),'UTF-8'))));
 out.Details=d;
@@ -103,21 +111,45 @@ end
 function out=localChangedCalibration(request)
 out=localCalibrated(request);
 if request.Iteration>1, out.Details.CalibrationSHA256=string(repmat('b',1,64)); end
+if request.Iteration>1
+    out.Details.SchedulerGrants.CalibrationSHA256(:)=out.Details.CalibrationSHA256;
+end
 end
 
 function out=localExecute(request)
 n=round(2*request.ArrivalRatePerCell_s);
 op=localResources(1,1,{0:7},0,1);
 gr=localResources(1,1,{0:n-1},0,1);
+gr.TBSBits=32;
+gr.PHYDecisionRole="measured";
+gr.PHYDecisionStatus="OK";
+gr.WaveformReplayExecuted=true;
+gr.CalibrationQualified=false;
+gr.CalibrationSHA256="";
+gr.CalibrationKeySHA256="";
+gr.SourceClassification="";
+op.Source="executed_slot_scheduler_budget_independent_of_grants";
 d=struct("WaveformBacked",true,"ProxyPHYActive",false,"FallbackUsed",false, ...
     "SeedBundle",request.Case.ExecutionParameters{1}.SeedBundle, ...
     "SchedulerGrants",gr,"ResourceOpportunityTable",op, ...
-    "TrafficArrivalEvents",table(1,'VariableNames',{'FixtureArrival'}),"TrafficModel","ftp3", ...
+    "TrafficArrivalEvents",localArrivals(), ...
+    "TrafficArrivalStreamID","fixture_ftp3_stream", ...
+    "TrafficDefinitionSource", ...
+        "configured_fixed_file_continuous_time_poisson_ftp3", ...
+    "TrafficDeterministic",true,"TrafficModel","ftp3", ...
     "TrafficArrivalRatePerCell_s",request.ArrivalRatePerCell_s, ...
     "DecodeUnavailableUL",0, ...
     "LoadCalibrationBaseConfigSHA256",string(sixgr.util.sha256Hex( ...
     uint8(unicode2native(jsonencode(struct("Fixture",true)),"UTF-8")))));
 out=struct("Ok",true,"Details",d);
+end
+
+function T=localArrivals()
+T=table("fixture_arrival_1",1,0.01,1,100,800,"UL",1, ...
+    "fixture_ftp3_stream","fixed_file_continuous_time_poisson", ...
+    'VariableNames',{'ArrivalID','ArrivalTTI','ArrivalTime_s','UEID', ...
+    'FileSizeBytes','OfferedBits','Direction','Seed','ArrivalStreamID', ...
+    'ArrivalProcess'});
 end
 
 function out=localProxy(request)

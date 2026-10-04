@@ -67,7 +67,13 @@ prb = floor((subcarrier-1)/12);
 subcarrierInPRB = mod(subcarrier-1,12);
 slot = repmat(double(carrier.NSlot),numel(indices),1);
 format = repmat(assignment.Format,numel(indices),1);
-hop = double(prb ~= assignment.Resource.Data.StartPRB);
+% Hop identity is a time partition, not a comparison with the first PRB:
+% multi-PRB resources and equal-frequency hops must remain unambiguous.
+d=assignment.Resource.Data;
+hop=zeros(numel(indices),1);
+if d.IntraSlotHopping
+    hop=double(symbol-1>=d.StartSymbol+floor(d.NumSymbols/2));
+end
 repetition = zeros(numel(indices),1);
 REOwner = repmat(string(owner),numel(indices),1);
 resourceID = repmat(assignment.Resource.ID,numel(indices),1);

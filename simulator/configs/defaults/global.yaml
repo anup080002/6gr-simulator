@@ -345,6 +345,7 @@
     "carrier_scs_khz": 30,
     "n_size_grid": 273,
     "configuration_index": 87,
+    "prach_format": "A2",
     "subcarrier_spacing_khz": 15,
     "sequence_index": 1,
     "logical_root_sequence_index": 1,

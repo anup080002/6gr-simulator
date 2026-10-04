@@ -52,6 +52,22 @@ standaloneSummary = readtable(fullfile(layout.ReportCSVDir, ...
     "truth_contract_summary.csv"), "VariableNamingRule", "preserve");
 assert(~logical(standaloneSummary.PDCCHStrictOk(1)), ...
     "An explicitly requested standalone PDCCH study must require its standalone artifacts.");
+% A component study inherits connected-control feature defaults, but that
+% does not request a standalone qualification campaign. Keep its own
+% missing artifact failures visible; do not invent strict-trial evidence.
+studyScfg = sixgr.util.structSet(scfg, "scenario.runner_profile", "ctrl6gr_pdcch_study");
+studyScfg = sixgr.util.structSet(studyScfg, "scenario.target_cases", "pdcch");
+studyVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(tmp, studyScfg, cfg);
+studyFailures = strjoin(string(studyVerdict.Failures), "|");
+assert(~contains(studyFailures, "missing_required_artifact:control/csv/pdcch_config_strict.csv"), ...
+    'An inferred objective must not turn a component study into a strict campaign.');
+assert(contains(studyFailures, "pdcch6gr_per_candidate_results.csv"), ...
+    'The component study must still require its real candidate artifacts.');
+explicitStudy = sixgr.util.structSet(studyScfg, "validation.objectives", "pdcch_strict_validation");
+explicitVerdict = sixgr.truth.evaluateLLSRuntimeTruthContract(tmp, explicitStudy, cfg);
+assert(contains(strjoin(string(explicitVerdict.Failures), "|"), ...
+    "missing_required_artifact:control/csv/pdcch_config_strict.csv"), ...
+    'An explicitly requested strict campaign must retain its qualification gate.');
 ok = true;
 end
 

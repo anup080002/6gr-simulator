@@ -12,6 +12,29 @@ import lls_contract_materializer as m
 
 @pytest.mark.parametrize("name", ["Tx waveform", "Rx waveform", "magnitude vs sample",
                                  "phase vs sample", "power vs sample"])
+def test_joint_sweep_waveforms_preserve_snr_and_antenna_identity(name):
+    source = "reports/csv/live_waveform_preview.csv"
+    snrs = [40, 30, 20, 10, 0, -10, -20, -30]
+    rows = [dict(Time_s=i / 30.72e6, SampleIndex=i+1, SNR_dB=snr,
+                 TxReal=branch, TxImag=2, TxMagnitude=(branch**2+4)**.5,
+                 RxReal=branch+.1, RxImag=-1, RxMagnitude=((branch+.1)**2+1)**.5,
+                 Direction="DL", Frame=1, Slot=1, UEIndex=ue, RNTI=100+ue,
+                 TxAntennaIndex=branch, RxAntennaIndex=branch)
+            for snr in snrs for ue in (1, 2) for branch in (1, 2) for i in range(3)]
+    payload = m._encode_dict_rows(list(rows[0]), rows)
+    result = m._specialized_chart_materialization(name, {source: {"artifact_id": 1}}, lambda _: payload, 7)
+    actual = list(csv.DictReader(io.StringIO(result["csv_bytes"].decode("utf-8-sig"))))
+    assert "SNR_dB" in actual[0], "The plotted CSV dropped the sweep axis."
+    assert {float(r["SNR_dB"]) for r in actual} == set(snrs)
+    for trace in {r["series_name"] for r in actual}:
+        points = [r for r in actual if r["series_name"] == trace]
+        assert len(points) == 3, "A trace must not join sweep points, UEs or antenna branches."
+        assert len({(r["SNR_dB"], r["UEIndex"], r["TxAntennaIndex"]) for r in points}) == 1
+    assert len(actual) == len(rows)*2
+
+
+@pytest.mark.parametrize("name", ["Tx waveform", "Rx waveform", "magnitude vs sample",
+                                 "phase vs sample", "power vs sample"])
 def test_broadcast_branches_and_observations_remain_separate(name):
     source = "reports/csv/live_waveform_preview.csv"
     rows = [dict(Time_s=slot * .001 + i * 1e-6, SampleIndex=i+1,

@@ -13,7 +13,7 @@ if ~isscalar(component) || strlength(component) == 0
     error("sixgr:lls6g:StrictComponentNameRequired", ...
         "Strict component execution requires one component name.");
 end
-allowedComponents = ["prach","pdcch","srs","trs","sib1","channel_rf"];
+allowedComponents = ["prach","pdcch","pucch","srs","trs","sib1","channel_rf"];
 if ~ismember(component, allowedComponents)
     error("sixgr:lls6g:UnsupportedStrictComponent", ...
         "Unsupported strict in-path component %s.", component);

@@ -4780,7 +4780,8 @@ for i = 1:height(trials)
     rows(i).frame = localNumericTableValue(row, "Frame", NaN);
     rows(i).slot = localNumericTableValue(row, "Slot", NaN);
     rows(i).direction = string(direction);
-    rows(i).ue_id = localFirstNumericTableValue(row, ["UEID", "UEIndex", "UE", "RNTI"], NaN);
+    % RNTI identifies the radio context, not its one-based UE index.
+    rows(i).ue_id = localFirstNumericTableValue(row, ["UEID", "UEIndex", "UE"], NaN);
     rows(i).rnti = localNumericTableValue(row, "RNTI", NaN);
     rows(i).cell_id = localFirstNumericTableValue(row, ["CellID", "ServingCell"], NaN);
     rows(i).configured_beam_selection_strategy = localTextTableValue(row, "ConfiguredBeamSelectionStrategy", "");

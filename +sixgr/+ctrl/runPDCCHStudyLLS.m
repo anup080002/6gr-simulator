@@ -31,11 +31,16 @@ allMRSS = table();
 pointRows = repmat(struct("ScenarioID","", "TrialIndex", NaN, "SNRdB", NaN, "AggregationLevel", NaN, ...
     "CORESETDuration", NaN, "MappingType","", "RepetitionMode","", "FrequencyAllocationMode","", ...
     "MRSSMode","", "DCIErrorRate", NaN, "DetectionProbability", NaN, "MissProbability", NaN, ...
-    "FalseAlarmProbability", NaN, "AverageCandidatesMonitored", NaN, "AverageNMSE", NaN, "AverageOps", NaN), 0, 1);
+    "FalseAlarmProbability", NaN, "AverageCandidatesMonitored", NaN, "AverageNMSE", NaN, "AverageOps", NaN, ...
+    "SignalPresentTrialCount",0,"NoiseOnlyTrialCount",0,"FalseAlarmCount",0, ...
+    "MissedDetectionCount",0,"StatisticalQualification","not_evaluated_population_only", ...
+    "ConfidenceLevel",NaN,"FalseAlarmCILower",NaN,"FalseAlarmCIUpper",NaN, ...
+    "MissCILower",NaN,"MissCIUpper",NaN), 0, 1);
 
 firstPointArtifacts = struct();
 haveArtifacts = false;
 trialCounter = 0;
+observationStream = RandStream('Threefry','Seed',double(baseCfg.Seed));
 for p = 1:numel(scenarioPoints)
     point = scenarioPoints(p);
     if opts.Verbose
@@ -59,28 +64,52 @@ for p = 1:numel(scenarioPoints)
         allMRSS = [allMRSS; overlapT]; %#ok<AGROW>
     end
 
-    for trialIdx = 1:point.NumTrials
+    noiseTrials = double(sixgr.util.structGet(point, 'NoiseOnlyTrials', baseCfg.NoiseOnlyTrialsPerPoint));
+    validateattributes(point.NumTrials, {'numeric'}, {'scalar','finite','integer','nonnegative','<=',1000000});
+    validateattributes(noiseTrials, {'numeric'}, {'scalar','finite','integer','nonnegative','<=',1000000});
+    for trialIdx = 1:(point.NumTrials + noiseTrials)
         trialCounter = trialCounter + 1;
-        trialSeed = double(baseCfg.Seed + 1000 * (p - 1) + trialIdx);
-        payload = sixgr.ctrl.ControlPayloadBuilder(pointCfg, "Seed", trialSeed);
-
-        [targetCandidate, hashTrace, candidateTrace, truthPayloadMeta, txGrid4D, txRuntime] = ...
-            localRunSingleTransmit(pointCfg, regTable, reTable, cceMap, payload, trialSeed);
-        rxGrid4D = localPassChannel(pointCfg, txGrid4D, txRuntime);
+        signalPresent = trialIdx <= point.NumTrials;
+        populationIndex = trialIdx - double(~signalPresent)*point.NumTrials;
+        % Separate H0/H1 substreams: changing H0 count cannot change H1 IQ.
+        substream = 2^32*(p-1) + 2*populationIndex - double(signalPresent);
+        observationStream.Substream = substream;
+        trialSeed = mod(double(baseCfg.Seed) + substream, 2^32);
+        if signalPresent
+            payload = sixgr.ctrl.ControlPayloadBuilder(pointCfg, "PayloadBits", ...
+                int8(randi(observationStream,[0 1],pointCfg.PayloadLengthBits,1)));
+            [targetCandidate, hashTrace, candidateTrace, truthPayloadMeta, txGrid4D, txRuntime] = ...
+                localRunSingleTransmit(pointCfg, regTable, reTable, cceMap, payload, trialSeed);
+        else
+            % No payload or DMRS producer. Apply the same configured noise
+            % plane and run the same blind receiver on this empty grid.
+            payload = struct('InformationBits',int8([]));
+            targetCandidate = struct(); truthPayloadMeta = struct();
+            hashTrace = table(); candidateTrace = table();
+            txGrid4D = complex(zeros(12*pointCfg.NSizeGrid, pointCfg.SymbolsPerSlot, ...
+                pointCfg.NTx, pointCfg.NSlotGrid));
+            txRuntime = struct('NoiseVar',localNoiseVariance(pointCfg.SNRdB), ...
+                'RepetitionCount',pointCfg.RepetitionCount);
+        end
+        rxGrid4D = localPassChannel(pointCfg, txGrid4D, txRuntime, observationStream);
         rxTruth = struct();
+        rxTruth.SignalPresent = signalPresent;
         rxTruth.TargetCandidate = targetCandidate;
         rxTruth.BaseSlot = 1;
         rxTruth.PayloadBits = payload.InformationBits;
         rxTruth.PayloadMeta = truthPayloadMeta;
         rxTruth.NoiseVar = txRuntime.NoiseVar;
         rxTruth.RepetitionCount = txRuntime.RepetitionCount;
+        receiverTimer = tic;
         rxOut = sixgr.ctrl.PDCCHStudyReceiver(rxGrid4D, pointCfg, regTable, reTable, cceMap, rxTruth);
+        receiverElapsed_ms = 1000*toc(receiverTimer);
 
         candT = rxOut.PerCandidateResults;
         slotT = rxOut.PerSlotResults;
         if ~isempty(candT)
             candT.ScenarioID = repmat(string(point.ScenarioID), height(candT), 1);
             candT.TrialIndex = repmat(trialCounter, height(candT), 1);
+            candT.SignalPresent = repmat(signalPresent, height(candT), 1);
             candT.SNRdB = repmat(point.SNRdB, height(candT), 1);
             candT.CORESETDuration = repmat(point.CORESETDuration, height(candT), 1);
             candT.MappingType = repmat(string(point.MappingType), height(candT), 1);
@@ -92,6 +121,13 @@ for p = 1:numel(scenarioPoints)
         if ~isempty(slotT)
             slotT.ScenarioID = repmat(string(point.ScenarioID), height(slotT), 1);
             slotT.TrialIndex = repmat(trialCounter, height(slotT), 1);
+            slotT.SignalPresent = repmat(signalPresent, height(slotT), 1);
+            slotT.RandomSubstream = repmat(substream, height(slotT), 1);
+            slotT.TXGridEnergy = repmat(sum(abs(txGrid4D(:)).^2),height(slotT),1);
+            slotT.RXGridEnergy = repmat(sum(abs(rxGrid4D(:)).^2),height(slotT),1);
+            slotT.ReceiverComputeTime_ms = repmat(receiverElapsed_ms,height(slotT),1);
+            slotT.NoiseVariance = repmat(txRuntime.NoiseVar,height(slotT),1);
+            slotT.ChannelModel = repmat(string(pointCfg.ChannelModel),height(slotT),1);
             slotT.SNRdB = repmat(point.SNRdB, height(slotT), 1);
             slotT.AggregationLevel = repmat(point.AggregationLevel, height(slotT), 1);
             slotT.CORESETDuration = repmat(point.CORESETDuration, height(slotT), 1);
@@ -123,7 +159,7 @@ for p = 1:numel(scenarioPoints)
     else
         pointSlot = table();
     end
-    pointMetrics = sixgr.ctrl.PDCCHMetrics(pointCand, pointSlot);
+    pointMetrics = sixgr.ctrl.PDCCHMetrics(pointCand, pointSlot,baseCfg.PopulationConfidenceLevel);
     pointRows(end+1,1) = struct( ... %#ok<AGROW>
         "ScenarioID", char(string(point.ScenarioID)), ...
         "TrialIndex", p, ...
@@ -140,7 +176,17 @@ for p = 1:numel(scenarioPoints)
         "FalseAlarmProbability", localScalar(pointMetrics.Summary, "FalseAlarmProbability"), ...
         "AverageCandidatesMonitored", localScalar(pointMetrics.Summary, "AverageCandidatesMonitored"), ...
         "AverageNMSE", localScalar(pointMetrics.ComplexitySummary, "AverageNMSE"), ...
-        "AverageOps", localScalar(pointMetrics.Summary, "AverageOps"));
+        "AverageOps", localScalar(pointMetrics.Summary, "AverageOps"), ...
+        "SignalPresentTrialCount",localScalar(pointMetrics.Summary,"SignalPresentTrialCount"), ...
+        "NoiseOnlyTrialCount",localScalar(pointMetrics.Summary,"NoiseOnlyTrialCount"), ...
+        "FalseAlarmCount",localScalar(pointMetrics.Summary,"FalseAlarmCount"), ...
+        "MissedDetectionCount",localScalar(pointMetrics.Summary,"MissedDetectionCount"), ...
+        "StatisticalQualification","not_evaluated_population_only", ...
+        "ConfidenceLevel",baseCfg.PopulationConfidenceLevel, ...
+        "FalseAlarmCILower",localScalar(pointMetrics.Summary,"FalseAlarmCILower"), ...
+        "FalseAlarmCIUpper",localScalar(pointMetrics.Summary,"FalseAlarmCIUpper"), ...
+        "MissCILower",localScalar(pointMetrics.Summary,"MissCILower"), ...
+        "MissCIUpper",localScalar(pointMetrics.Summary,"MissCIUpper"));
 end
 
 summaryByScenario = struct2table(pointRows);
@@ -212,7 +258,7 @@ for i = 1:numPoints
     points(i).REGBundleSize = s.REGBundleSizes(J(i));
     points(i).NumREGPerCCE = s.NumREGPerCCE(K(i));
     points(i).MRSSMode = s.MRSSModes(L(i));
-    points(i).NumTrials = 1;
+    points(i).NumTrials = cfg.SignalPresentTrialsPerPoint;
 end
 end
 
@@ -275,7 +321,8 @@ scr = sixgr.ctrl.PayloadScrambler(codedBits, cfg, struct("SlotNumber", 1, "Searc
 modOut = sixgr.ctrl.PDCCHModulator(scr.Bits, cfg);
 mapOut = sixgr.ctrl.PDCCHGridMapper(cfg, resources, modOut.Symbols, dmrs, "NumSlots", cfg.NSlotGrid);
 
-txGrid4D = localApplyTransmitDiversity(mapOut.Grid, cfg, trialSeed, bundleFromRET(resources.RETable));
+txGrid4D = sixgr.ctrl.applyPDCCHStudyTransmitDiversity( ...
+    mapOut.Grid, cfg, trialSeed, resources.RETable);
 dmrsTrace = dmrs.Locations;
 payloadMeta = struct("KWithCRC", Kcrc, "ListLength", 8, ...
     "PolarEncodedLength", numel(codedRaw), ...
@@ -283,45 +330,6 @@ payloadMeta = struct("KWithCRC", Kcrc, "ListLength", 8, ...
     "AggregationLevel", targetCandidate.AggregationLevel, ...
     "PayloadRECount", height(payloadT));
 runtime = struct("NoiseVar", localNoiseVariance(cfg.SNRdB), "RepetitionCount", resources.RepetitionCount);
-end
-
-function outGrid = localApplyTransmitDiversity(inGrid, cfg, trialSeed, bundleIndex)
-outGrid = inGrid;
-if ~logical(cfg.EnableTransmitDiversity) || cfg.NTx <= 1
-    return;
-end
-if strcmpi(cfg.DiversityMode, "nontransparent_stub")
-    error("sixgr:ctrl:runPDCCHStudyLLS:NonTransparentStub", ...
-        "nontransparent_stub is declared as a future-study hook and is not decodable yet.");
-end
-
-[nSC, nSym, ~, nSlots] = size(inGrid);
-outGrid = complex(zeros(nSC, nSym, cfg.NTx, nSlots));
-if strcmpi(cfg.PrecoderGranularity, "reg_bundle")
-    s = rng;
-    cleanup = onCleanup(@() rng(s)); %#ok<NASGU>
-    rng(trialSeed, "twister");
-    phases = exp(1j * (pi/2) * randi([0 3], max(bundleIndex), cfg.NTx));
-    for sl = 1:nSlots
-        for sc = 1:nSC
-            for sy = 1:nSym
-                if inGrid(sc, sy, 1, sl) ~= 0
-                    b = max(1, bundleIndex(sc, sy));
-                    outGrid(sc, sy, :, sl) = inGrid(sc, sy, 1, sl) .* reshape(phases(b,:), 1, 1, []);
-                end
-            end
-        end
-    end
-else
-    w = ones(1, cfg.NTx) / sqrt(cfg.NTx);
-    for tx = 1:cfg.NTx
-        outGrid(:,:,tx,:) = inGrid(:,:,1,:) * w(tx);
-    end
-end
-end
-
-function bundleIndex = bundleFromRET(reTable)
-bundleIndex = ones(max(reTable.Subcarrier)+1, max(reTable.Symbol)+1);
 end
 
 function resources = localCandidateResources(cand, regTable, reTable, cceMap, ctrlCfg)
@@ -337,10 +345,10 @@ resources = struct("RETable", ret, "REGTable", regTable(ismember(regTable.REGInd
 resources = sixgr.ctrl.PDCCHRepeater(ctrlCfg, resources);
 end
 
-function rxGrid4D = localPassChannel(cfg, txGrid4D, txRuntime)
+function rxGrid4D = localPassChannel(cfg, txGrid4D, txRuntime, stream)
 noiseVar = txRuntime.NoiseVar;
 if strcmpi(cfg.WaveformMode, "full_ofdm") && strcmpi(cfg.ChannelModel, "AWGN")
-    rxGrid4D = localAddGridNoise(txGrid4D, noiseVar, cfg.NRx);
+    rxGrid4D = localAddGridNoise(txGrid4D, noiseVar, cfg.NRx, stream);
     return;
 end
 
@@ -348,19 +356,19 @@ end
 % study runner: apply an equivalent channel directly on the occupied grid.
 % This preserves DMRS-based estimation and blind monitoring while avoiding
 % silently pretending to have full time-domain fading support in this path.
-rxGrid4D = localEquivalentChannel(txGrid4D, cfg, noiseVar);
+rxGrid4D = localEquivalentChannel(txGrid4D, cfg, noiseVar, stream);
 end
 
-function rxGrid4D = localAddGridNoise(txGrid4D, noiseVar, nRx)
+function rxGrid4D = localAddGridNoise(txGrid4D, noiseVar, nRx, stream)
 [nSC, nSym, ~, nSlots] = size(txGrid4D);
 rxGrid4D = complex(zeros(nSC, nSym, nRx, nSlots));
 txCombined = sum(txGrid4D, 3);
 for rx = 1:nRx
-    rxGrid4D(:,:,rx,:) = txCombined + sqrt(noiseVar/2) * (randn(nSC, nSym, 1, nSlots) + 1j * randn(nSC, nSym, 1, nSlots));
+    rxGrid4D(:,:,rx,:) = txCombined + sqrt(noiseVar/2) * (randn(stream,nSC, nSym, 1, nSlots) + 1j * randn(stream,nSC, nSym, 1, nSlots));
 end
 end
 
-function rxGrid4D = localEquivalentChannel(txGrid4D, cfg, noiseVar)
+function rxGrid4D = localEquivalentChannel(txGrid4D, cfg, noiseVar, stream)
 [nSC, nSym, ~, nSlots] = size(txGrid4D);
 rxGrid4D = complex(zeros(nSC, nSym, cfg.NRx, nSlots));
 txCombined = sum(txGrid4D, 3);
@@ -368,12 +376,12 @@ for sl = 1:nSlots
     for rx = 1:cfg.NRx
         switch upper(string(cfg.ChannelModel))
             case {"TDL-A","TDL-C","CDL-C","TDL","CDL"}
-                h = (randn(1,1) + 1j * randn(1,1)) / sqrt(2);
+                h = (randn(stream,1,1) + 1j * randn(stream,1,1)) / sqrt(2);
             otherwise
                 h = 1;
         end
         rxGrid4D(:,:,rx,sl) = txCombined(:,:,1,sl) * h + sqrt(noiseVar/2) * ...
-            (randn(nSC, nSym) + 1j * randn(nSC, nSym));
+            (randn(stream,nSC, nSym) + 1j * randn(stream,nSC, nSym));
     end
 end
 end
@@ -450,6 +458,20 @@ for metricIdx = 1:numel(metricFields)
     fieldName = metricFields(metricIdx);
     T.("mean_" + fieldName) = metricMeans(:, metricIdx);
 end
+% Pool counts, not unweighted point probabilities when populations differ.
+countFields = ["SignalPresentTrialCount","NoiseOnlyTrialCount", ...
+    "FalseAlarmCount","MissedDetectionCount"];
+for fieldName = countFields
+    T.(fieldName) = zeros(height(T),1);
+    for idx = 1:height(T)
+        T.(fieldName)(idx) = sum(summaryByScenario.(fieldName)(groupKeys==idx));
+    end
+end
+T.mean_FalseAlarmProbability = T.FalseAlarmCount ./ T.NoiseOnlyTrialCount;
+T.mean_MissProbability = T.MissedDetectionCount ./ T.SignalPresentTrialCount;
+T.mean_DCIErrorRate = T.mean_MissProbability;
+T.mean_DetectionProbability = 1-T.mean_MissProbability;
+T.StatisticalQualification = repmat("not_evaluated_population_only",height(T),1);
 end
 
 function T = localComplexitySummary(perCand, perSlot)
@@ -518,7 +540,23 @@ trialT = table();
 resultLabels = localResultLabel(perSlot);
 passMask = resultLabels == "TRUE_DETECTION";
 trialT.Status = repmat("FAIL", n, 1);
-trialT.Status(passMask) = "PASS";
+trialT.Status(passMask | resultLabels == "CORRECT_REJECTION") = "PASS";
+trialT.SignalPresent = logical(perSlot.SignalPresent);
+trialT.TrialType = repmat("signal_present",n,1);
+trialT.TrialType(~trialT.SignalPresent) = "noise_only";
+trialT.TrialIndex = double(perSlot.TrialIndex);
+trialT.SNRdB = double(perSlot.SNRdB);
+trialT.ConfiguredSNR_dB = double(perSlot.SNRdB);
+trialT.RandomSeed = repmat(cfg.Seed,n,1);
+trialT.RandomSubstream = double(perSlot.RandomSubstream);
+trialT.TXGridEnergy = double(perSlot.TXGridEnergy);
+trialT.RXGridEnergy = double(perSlot.RXGridEnergy);
+trialT.NoiseVariance = double(perSlot.NoiseVariance);
+trialT.ExecutionBackend = repmat("coded_resource_grid_receiver",n,1);
+trialT.ApproximationMode = repmat("none_awgn_grid",n,1);
+trialT.ApproximationMode(upper(string(perSlot.ChannelModel))~="AWGN") = ...
+    "equivalent_scalar_fading_study_approximation";
+trialT.StatisticalQualification = repmat("not_evaluated_population_only",n,1);
 trialT.Frame = ones(n,1);
 trialT.Slot = (1:n).';
 trialT.UE = ones(n,1);
@@ -526,22 +564,26 @@ trialT.CORESETID = repmat(cfg.CORESET.CORESETID, n, 1);
 trialT.SearchSpaceID = ones(n,1);
 trialT.AggregationLevel = double(perSlot.AggregationLevel);
 trialT.BlindDecodeCount = double(perSlot.total_blind_decodes);
-trialT.CRCPass = double(passMask);
-trialT.DCICrcPass = logical(passMask);
+trialT.CRCPass = double(perSlot.crc_pass);
+trialT.DCICrcPass = logical(perSlot.crc_pass);
 trialT.PDCCHPayloadMatch = logical(passMask);
+trialT.MissedDetectionFlag = logical(perSlot.miss_detection);
+trialT.FalsePositiveWrongCandidate = logical(perSlot.false_positive_wrong_candidate);
 trialT.FalseAlarmFlag = logical(perSlot.false_alarm);
 trialT.BlockingFlag = logical(perSlot.ambiguous_multiple_pass);
 trialT.DCISize_bits = repmat(cfg.PayloadLengthBits, n, 1);
 availableCCECount = localAvailableCCECount(cfg);
 trialT.AvailableCCECount = repmat(availableCCECount, n, 1);
-trialT.UsedCCECount = double(perSlot.AggregationLevel);
+trialT.UsedCCECount = double(perSlot.AggregationLevel).*double(trialT.SignalPresent);
 trialT.NonOverlappedCCEUsage = min(1, trialT.UsedCCECount ./ max(trialT.AvailableCCECount, 1));
 trialT.ControlCapacityUtilization = trialT.NonOverlappedCCEUsage;
 trialT.CORESETUtilization = trialT.NonOverlappedCCEUsage;
-trialT.ControlLatency_ms = max(0.01, double(perSlot.decode_latency_proxy_ops) * 1e-3);
+trialT.ControlLatency_ms = double(perSlot.ReceiverComputeTime_ms);
 trialT.ComputeLatency_ms = trialT.ControlLatency_ms;
-trialT.AirInterfaceTTI_ms = repmat(0.5, n, 1);
-trialT.ProcedureDelay_ms = trialT.ControlLatency_ms;
+trialT.ControlLatencySource = repmat("measured_receiver_wall_clock_not_air_interface_delay",n,1);
+trialT.AirInterfaceTTI_ms = repmat(10/cfg.SlotsPerFrame, n, 1);
+trialT.ProcedureDelay_ms = NaN(n,1);
+trialT.DecodeComplexityProxyOps = double(perSlot.decode_latency_proxy_ops);
 trialT.MappingType = string(perSlot.MappingType);
 trialT.FrequencyAllocationMode = string(perSlot.FrequencyAllocationMode);
 trialT.RepetitionMode = string(perSlot.RepetitionMode);
@@ -549,16 +591,25 @@ trialT.RepetitionCount = repmat(cfg.RepetitionCount, n, 1);
 trialT.Result = string(resultLabels);
 trialT.Notes = repmat("6GR PDCCH study framework", n, 1);
 
-if ~isempty(perCand)
-    trialT.EstimatedSINR_dB = repmat(mean(double(perCand.estimated_sinr_db), "omitnan"), n, 1);
-    trialT.PostEqEVM = repmat(mean(double(perCand.post_eq_evm), "omitnan"), n, 1);
-    trialT.NMSEChannelEst = repmat(mean(double(perCand.nmse_channel_est), "omitnan"), n, 1);
-    trialT.DecodingMetric = repmat(mean(double(perCand.decoding_metric), "omitnan"), n, 1);
-else
-    trialT.EstimatedSINR_dB = NaN(n,1);
-    trialT.PostEqEVM = NaN(n,1);
-    trialT.NMSEChannelEst = NaN(n,1);
-    trialT.DecodingMetric = NaN(n,1);
+trialT.EstimatedSINR_dB = NaN(n,1);
+trialT.PostEqEVM = NaN(n,1);
+trialT.NMSEChannelEst = NaN(n,1);
+trialT.NMSEChannelEstSource = repmat("unavailable_without_independent_channel_reference",n,1);
+trialT.PilotReconstructionResidualRatio = NaN(n,1);
+trialT.DecodingMetric = NaN(n,1);
+trialT.PostEqEVMSource = repmat("decision_directed_nearest_qpsk_not_transmit_reference",n,1);
+for rowIndex = 1:n
+    if isempty(perCand), continue; end
+    candidates = perCand(perCand.TrialIndex == perSlot.TrialIndex(rowIndex),:);
+    trialT.DecodingMetric(rowIndex) = mean(double(candidates.decoding_metric),'omitnan');
+    target = candidates(candidates.target_candidate_for_scoring,:);
+    if trialT.SignalPresent(rowIndex) && ~isempty(target)
+        trialT.EstimatedSINR_dB(rowIndex) = mean(double(target.estimated_sinr_db),'omitnan');
+        trialT.PostEqEVM(rowIndex) = mean(double(target.post_eq_evm),'omitnan');
+        trialT.NMSEChannelEst(rowIndex) = mean(double(target.nmse_channel_est),'omitnan');
+        trialT.PilotReconstructionResidualRatio(rowIndex) = ...
+            mean(double(target.pilot_reconstruction_residual_ratio),'omitnan');
+    end
 end
 end
 
@@ -568,6 +619,8 @@ labels = repmat("MISS", n, 1);
 labels(logical(slotT.true_detection)) = "TRUE_DETECTION";
 labels(logical(slotT.false_positive_wrong_candidate)) = "FALSE_POSITIVE_WRONG_CANDIDATE";
 labels(logical(slotT.ambiguous_multiple_pass)) = "AMBIGUOUS";
+labels(logical(slotT.correct_rejection)) = "CORRECT_REJECTION";
+labels(logical(slotT.false_alarm)) = "FALSE_ALARM";
 end
 
 function nCCE = localAvailableCCECount(cfg)
@@ -634,6 +687,9 @@ function localSaveLinePlot(T, xName, yName, fileName, outDir, ttl)
 if isempty(T) || ~localHasVars(T, [string(xName), string(yName)])
     return;
 end
+if ~any(isfinite(double(T.(xName))) & isfinite(double(T.(yName))))
+    return; % No observed curve: do not publish a blank image as evidence.
+end
 f = figure("Visible", "off");
 plot(T.(xName), T.(yName), "-o", "LineWidth", 1.5);
 grid on;
@@ -648,6 +704,9 @@ function localSaveCategoryPlot(T, xName, yName, fileName, outDir, ttl)
 if isempty(T) || ~localHasVars(T, [string(xName), string(yName)])
     return;
 end
+if ~any(isfinite(double(T.(yName))))
+    return;
+end
 f = figure("Visible", "off");
 bar(categorical(string(T.(xName))), T.(yName));
 grid on;
@@ -660,6 +719,9 @@ end
 
 function localSaveHeatmap(T, xName, yName, zName, fileName, outDir, ttl)
 if isempty(T) || ~localHasVars(T, [string(xName), string(yName), string(zName)])
+    return;
+end
+if ~any(isfinite(double(T.(zName))))
     return;
 end
 ux = unique(string(T.(xName)));

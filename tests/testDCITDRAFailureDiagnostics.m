@@ -1,5 +1,8 @@
 function ok = testDCITDRAFailureDiagnostics()
 cfg = struct(); cfg.phy.carrier.NSizeGrid = 24;
+% TDRA tests still construct a real DCI context: declare its receiver clock.
+% Production code must not infer PUCCH numerology from an absent UL context.
+cfg.phy.carrier.SubcarrierSpacing = 30;
 cfg.phy.pdsch.timeDomainAllocations = [0 2 10 0];
 cfg.phy.pusch.timeDomainAllocations = [0 0 10 1];
 for direction = ["DL","UL"]
@@ -41,6 +44,14 @@ for direction = ["DL","UL"]
     localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant(cfg,wrong,fmt), ...
         'sixgr:phy:pdcch:grant_tdra_timing_mismatch');
 end
+probe=struct('Direction',"DL",'RNTI',1,'SymbolAllocation',[2 10],'K0',0);
+bad=cfg; bad.phy.carrier=rmfield(bad.phy.carrier,'SubcarrierSpacing');
+localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant(bad,probe,"1_0"), ...
+    'sixgr:phy:pdcch:InvalidFeedbackTimingValue');
+separateUL=cfg; separateUL.phy.bwp.ul=struct('NStartBWP',0,'NSizeBWP',24,'SCSKHz',15);
+[context,~]=sixgr.phy.pdcch.DCIContextFactory.fromScheduledGrant(separateUL,probe,"1_0");
+assert(context.Data.PUCCHSubcarrierSpacingKHz==15, ...
+    'PUCCH timing must follow the explicit UL BWP, not the 30 kHz DL carrier.');
 ok = true;
 fprintf('PASS testDCITDRAFailureDiagnostics: DL K0/UL K2 row selection and typed allocation/timing failures.\n');
 end

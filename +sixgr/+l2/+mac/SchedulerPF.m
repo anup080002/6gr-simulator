@@ -666,6 +666,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     continue;
                 end
                 actualGroupSize = numel(groupGrants);
+                validGroupOrd = groupOrd(groupValid);
                 isActualMUGroup = logical(muEnabled && actualGroupSize > 1);
                 if isActualMUGroup
                     localAssertSharedMUResources(groupGrants);
@@ -679,7 +680,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                             actualGroupSize);
                     end
                     [compatibleMUDesign, ~, ~, muSpatialDesign] = localMUMIMOCompatible( ...
-                        ueStates(ueIdx(groupOrd(1))), ueStates(ueIdx(groupOrd(2))), ...
+                        ueStates(ueIdx(validGroupOrd(1))), ueStates(ueIdx(validGroupOrd(2))), ...
                         obj.Cfg, obj.Direction, slot);
                     if ~compatibleMUDesign
                         error("sixgr:l2:mac:MUMIMOSpatialDesignInvalidated", ...
@@ -688,6 +689,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                     end
                 end
                 finalizedGroupGrants = repmat(tmpl, 0, 1);
+                groupBlocker = "";
                 for gg = 1:actualGroupSize
                     g = groupGrants(gg);
                     g.GrantReason = char(localTernary(isActualMUGroup, ...
@@ -706,7 +708,7 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         g.MUMIMOPairingMetricSource = "not_applicable_single_user";
                         g.MUMIMOPairingEvidenceSource = "no_mu_pair_transmitted";
                     end
-                    stateIndex = ueIdx(groupOrd(gg));
+                    stateIndex = ueIdx(validGroupOrd(gg));
                     g = obj.attachULSRSAuthorityToGrant(g, ueStates(stateIndex));
                     g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(stateIndex));
                     [g.DMRSPortSet, g.DMRSPortSetSource] = ...
@@ -716,10 +718,29 @@ classdef SchedulerPF < sixgr.l2.mac.SchedulerBase
                         sprintf("%s %s RNTI=%d", class(obj), char(g.GrantReason), round(g.RNTI)));
                     g.TBSBytes = g.TBSBits / 8;
                     g = obj.freezePHYGrantForGrant(g);
-                    g.DCI = obj.buildDCIBitfield(g);
+                    if ~g.ExactPHYFeasible && string(g.ExactPHYInfeasibilityReason) == ...
+                            "initial_dl_code_rate_exceeds_actual_capacity"
+                        groupBlocker = string(g.ExactPHYInfeasibilityReason);
+                        break;
+                    end
                     finalizedGroupGrants = localAppendGrant(finalizedGroupGrants, g);
                 end
+                if strlength(groupBlocker) > 0
+                    % Reject the whole spatial group before issuing any DCI.
+                    % Keeping one MU member would retain the wrong joint
+                    % precoder/power allocation. Resources remain available.
+                    obj.cancelUnissuedNewDataGrants(groupGrants);
+                    for gg = 1:actualGroupSize
+                        candidateRows = localMarkCandidateRejected(candidateRows, ...
+                            double(groupGrants(gg).RNTI), groupBlocker);
+                    end
+                    usedOrd(ismember(ord, validGroupOrd)) = true;
+                    continue;
+                end
                 groupGrants = finalizedGroupGrants;
+                for gg = 1:actualGroupSize
+                    groupGrants(gg).DCI = obj.buildDCIBitfield(groupGrants(gg));
+                end
                 cursor = chunkStart + max(1, numel(prbSetForGroup));
                 usedOrd(ii) = true;
                 usedOrd(ismember(ord, groupOrd(groupValid))) = true;

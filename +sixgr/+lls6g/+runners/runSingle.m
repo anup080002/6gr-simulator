@@ -139,6 +139,22 @@ function result = localRunWaveformBundleScenario(cfg, scfg, runFolder, execution
 if nargin < 4 || ~isstruct(executionOptions)
     executionOptions = struct();
 end
+% Reject contradictory evidence ownership before expensive waveform work.
+controlPolicy = sixgr.lls6g.runners.resolveStrictControlEvidencePolicy(scfg,cfg);
+% A requested supplemental PRACH campaign must have its explicit population
+% design before any expensive data waveform is executed. Connected access
+% alone does not require statistical qualification: in-path PRACH without a
+% requested campaign continues to use its actual runtime receiver evidence.
+if localShouldRunStrictPRACHEvidence(scfg,cfg)
+    prachPolicy = sixgr.lls6g.runners.resolveStrictComponentExecutionPolicy( ...
+        scfg,cfg,"prach",runFolder);
+    if ~prachPolicy.SameScenarioInPathEligible || ...
+            localShouldRunPRACHStatisticalCampaign(scfg,cfg)
+        sixgr.phy.prach.buildPRACHConfigFromScenario(cfg, ...
+            "RunFolder",prachPolicy.ArtifactRoot, ...
+            "ScenarioName",string(scfg.ScenarioID));
+    end
+end
 opt = struct();
 numerology = localResolveConfigNumerology(cfg);
 slotDuration_s = double(numerology.SlotDurationSeconds);
@@ -173,15 +189,9 @@ end
 opt.LinkAdaptiveSweepEnabled = ~receiverNoiseMode;
 opt.LinkAdaptiveSweepStep_dB = 2;
 opt.LinkAdaptiveSweepMaxPoints = ternaryDouble(receiverNoiseMode, 1, 12);
-snrSweepEnabled = logical(scfg.get("sweeps_and_matrix.snr_sweep.enabled", false));
-referenceSweepEnabled = logical(sixgr.util.structGet(cfg, ...
-    "run.referenceSweepEnabled", false));
-fixedLinkEnabledDefault = referenceSweepEnabled && ...
-    ((~receiverNoiseMode) || ...
-    (snrSweepEnabled && numel(unique(controlledSNRGrid)) >= 2));
 defaultFixedTrials = max(1, opt.LinkSweepTrialsPerSNR);
 fixedLinkCampaignCfg = localResolveFixedLinkCampaignRuntimeConfig(scfg, cfg, controlledSNRGrid, ...
-    fixedLinkEnabledDefault, defaultFixedTrials, totalSlots);
+    defaultFixedTrials, totalSlots);
 opt.LinkFixedLinkCampaignConfig = fixedLinkCampaignCfg;
 opt.LinkFixedLinkCampaignEnabled = logical(sixgr.util.structGet( ...
     fixedLinkCampaignCfg, "Enabled", sixgr.util.structGet( ...
@@ -283,13 +293,10 @@ if logical(sixgr.util.structGet(link, "ProfileStoppedEarly", false))
         "FailureReason", "profile_debug_stop_before_supplemental_validators", "SummaryTable", table());
     return;
 end
-if localShouldRunStrictControlEvidence(scfg, cfg)
-    localDBLog("INFO", "Evaluating strict control evidence from active slot-runtime rows; no supplemental waveform launched.");
-    strictControl = sixgr.truth.evaluateInPathControlEvidence(cfg, ...
-        sixgr.util.structGet(link, "RawTrials", struct()), ...
-        "EnablePDCCH", localStrictControlTargetEnabled(scfg, cfg, "pdcch"), ...
-        "EnablePUCCH", localStrictControlTargetEnabled(scfg, cfg, "pucch"), ...
-        "EnablePUSCHUCI", localStrictControlTargetEnabled(scfg, cfg, "pusch_uci"));
+if controlPolicy.ShouldRun
+    localDBLog("INFO", "Evaluating configured control evidence scope from executed rows; no supplemental waveform launched.");
+    strictControl = sixgr.truth.evaluateConfiguredControlEvidence(cfg, ...
+        sixgr.util.structGet(link, "RawTrials", struct()),controlPolicy);
     localDBLog("INFO", "Strict waveform-backed control evidence finished: ok=%d", ...
         double(logical(sixgr.util.structGet(strictControl, "Ok", false))));
     link.KPITable = localAppendStrictControlKPI(link.KPITable, strictControl);
@@ -991,6 +998,12 @@ if istable(strictSummaryT) && ~isempty(strictSummaryT)
     strictCases = "strict_" + lower(string(strictSummaryT.SignalFamily)) + "_waveform_control";
     strictNotes = string(strictSummaryT.FailureReason);
     strictNotes(strlength(strtrim(strictNotes)) == 0) = "strict waveform-backed control evidence completed";
+    if ismember("EvidenceScope",string(strictSummaryT.Properties.VariableNames))
+        scope=string(strictSummaryT.EvidenceScope);
+        component=scope=="component_anchor";
+        strictCases(component)="strict_"+lower(string(strictSummaryT.SignalFamily(component)))+"_component_waveform";
+        strictNotes=strictNotes+"; evidence_scope="+scope;
+    end
     strictKPI = table(strictCases(:), logical(strictSummaryT.StrictOk(:)), false(height(strictSummaryT), 1), strictNotes(:), ...
         'VariableNames', {'Case','Ok','Skipped','Notes'});
     kpitable = [kpitable; strictKPI];
@@ -2578,8 +2591,7 @@ if ~isempty(scenarioColumn)
         error("sixgr:lls6g:PDCCHStudyIdentityCollision", ...
             "PDCCH study table contains both ScenarioID and ComponentScenarioID.");
     end
-    T.Properties.VariableNames{char(scenarioColumn(1))} = ...
-        "ComponentScenarioID";
+    T = renamevars(T, scenarioColumn(1), "ComponentScenarioID");
 end
 T = localBindCanonicalRuntimeIdentity(T, identity, ...
     "same_execution_campaign");
@@ -3501,8 +3513,8 @@ try
     end
     if ~terminalArtifactConverged
         error("sixgr:lls6g:TerminalArtifactFixedPointFailed", "%s", ...
-            ["Terminal status and exact plot-source hashes did not " ...
-            "converge within three publication passes."]);
+            "Terminal status and exact plot-source hashes did not " + ...
+            "converge within three publication passes.");
     end
     truthGatedCompletionPublished = true;
     hydration = localHydratePublicRunFolderIfNeeded(runFolder, publicRunFolder);
@@ -3708,6 +3720,10 @@ attemptManifest = struct( ...
         scenarioStatus, "ResultOk", false)), ...
     "ArtifactContractStatus", string(sixgr.util.structGet( ...
     artifactContractResult, "Status", "NOT_EVALUATED")), ...
+    "ArtifactContractRequired", logical(sixgr.util.structGet( ...
+        scenarioStatus, "ArtifactContractRequired", true)), ...
+    "ArtifactContractExecuted", logical(sixgr.util.structGet( ...
+        scenarioStatus, "ArtifactContractExecuted", true)), ...
     "ArtifactContractRequiredFailureCount", double(sixgr.util.structGet( ...
     artifactContractResult, "RequiredFailureCount", 0)), ...
     "PublicationQualified", qualified, ...
@@ -3720,7 +3736,8 @@ if qualified
     lifecycle.Terminal = sixgr.runtime.RunEvidenceLifecycle.publish( ...
         attempt, attemptManifestPath);
     lifecycle.Published = true;
-elseif attemptManifest.ResultOk && attemptManifest.ArtifactContractStatus == "PASS" && ...
+elseif attemptManifest.ResultOk && logical(sixgr.util.structGet( ...
+        scenarioStatus, "ArtifactContractGateOk", false)) && ...
         attemptManifest.ArtifactContractRequiredFailureCount == 0
     lifecycle.Terminal = sixgr.runtime.RunEvidenceLifecycle.completeUnpublished( ...
         attempt, attemptManifestPath);
@@ -7482,13 +7499,14 @@ if isempty(entries)
 end
 end
 
-function fixedCfg = localResolveFixedLinkCampaignRuntimeConfig(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots)
+function fixedCfg = localResolveFixedLinkCampaignRuntimeConfig(scfg, cfg, controlledSNRGrid, defaultFixedTrials, totalSlots)
 validationCfg = sixgr.util.structGet(cfg, "validation.fixed_link_campaign", struct());
-if isstruct(validationCfg) && logical(sixgr.util.structGet(validationCfg, "enabled", false))
+[useValidation, enabled] = sixgr.lls6g.runners.resolveFixedLinkCampaignAuthority(cfg);
+if useValidation
     fixedCfg = localBuildFixedLinkCampaignConfigFromValidation(cfg, validationCfg);
     return;
 end
-fixedCfg = localBuildFixedLinkCampaignConfigFromLegacy(scfg, cfg, controlledSNRGrid, fixedLinkEnabledDefault, defaultFixedTrials, totalSlots);
+fixedCfg = localBuildFixedLinkCampaignConfigFromLegacy(scfg, cfg, controlledSNRGrid, enabled, defaultFixedTrials, totalSlots);
 end
 
 function fixedCfg = localBuildFixedLinkCampaignConfigFromValidation(cfg, validationCfg)

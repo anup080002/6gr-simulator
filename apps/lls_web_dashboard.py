@@ -21232,7 +21232,7 @@ window.addEventListener('DOMContentLoaded', function () {
     const live = state.live;
     if (live && live.execution_mode === 'SLS') {
       const sls = live.sls || {};
-      main.innerHTML = `${liveTabs('realtime')}<section class="panel"><h3>SLS network execution</h3>${pageRunSelector('realtimeRunSelect','Run',{runningOnly:false})}<p>${esc(sls.scope)}</p><p>${esc(sls.measurement_notice)}</p>${objectTable(sls.receipt || {}, '')}${objectTable(sls.progress || {}, '')}</section>${Object.entries(sls.evidence || {}).map(([name, item]) => `<section class="panel"><h3>${esc(name)}</h3><p class="mini-note">${esc(item.source)} — first 100 retained rows</p>${rows(item.rows || [], 'No retained rows yet; no values are inferred.')}</section>`).join('')}`;
+      main.innerHTML = `${liveTabs('realtime')}<section class="panel"><h3>SLS network execution</h3>${pageRunSelector('realtimeRunSelect','Run',{runningOnly:false})}<p>${esc(sls.scope)}</p><p>${esc(sls.measurement_notice)}</p>${objectTable(sls.receipt || {}, '')}${objectTable(sls.progress || {}, '')}</section>${Object.entries(sls.evidence || {}).map(([name, item]) => `<section class="panel"><h3>${esc(name)}</h3><p class="mini-note">${esc(item.source)} — ${esc(item.row_selection || 'first')} ${esc(item.row_limit || 100)} retained rows</p>${rows(item.rows || [], 'No retained rows yet; no values are inferred.')}</section>`).join('')}`;
       return;
     }
     if (!live) {

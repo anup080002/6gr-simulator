@@ -54,6 +54,32 @@ queuedPlan = sixgr.truth.CoupledTruthRuntime.futureULPlanningView(queued,5);
 [~,ue] = sixgr.truth.CoupledTruthRuntime.buildSchedulerUEStateRuntime(queuedPlan,cfg,1,'UL',1);
 assert(ue.ULBufferBytes==10,'Only the 80 already-arrived bits belong in this queue view.');
 
+% Optional SRS still obeys required access. A future resource calendar may
+% not promote a provisional RAR into a completed RRC/access procedure.
+srsCfg=cfg;
+srsCfg.phy.srs.slotWithinPeriod1Based=1;
+srsPlan=plan;
+srsPlan.SRSSlotPeriod=1;
+srsPlan.LastSRSSlotByUE(:)=NaN;
+srsPlan.ControlGating.SRSRequired=false;
+srsPlan.ControlGating.PRACHRequired=true;
+srsPlan.AccessState(:)="not_attempted";
+srsPlan.LastSuccessfulPRACHSlotByUE(:)=NaN;
+assert(~sixgr.truth.coupledSRSAttemptDue(srsPlan,srsCfg,5,1), ...
+    'Optional SRS must not run over an unfinished required access procedure.');
+srsPlan.AccessState(:)="succeeded";
+srsPlan.LastSuccessfulPRACHSlotByUE(:)=4;
+assert(~sixgr.truth.coupledSRSAttemptDue(srsPlan,srsCfg,5,1), ...
+    'Future access completion is not known at the grant decision.');
+srsPlan.LastSuccessfulPRACHSlotByUE(:)=1;
+assert(sixgr.truth.coupledSRSAttemptDue(srsPlan,srsCfg,5,1), ...
+    'SRS must resume on its configured occasion after causal access completion.');
+srsPlan.ControlGating.PRACHRequired=false;
+srsPlan.AccessState(:)="not_required";
+srsPlan.LastSuccessfulPRACHSlotByUE(:)=NaN;
+assert(sixgr.truth.coupledSRSAttemptDue(srsPlan,srsCfg,5,1), ...
+    'An explicitly access-free component scenario must retain its SRS occasions.');
+
 % Freshness at the future data slot is distinct from availability at the
 % current grant decision. Newer not-yet-delivered measurements cannot win.
 plan.ReferenceSignalMeasurementTable = table(["SRS";"SRS"],["UE";"UE"], ...

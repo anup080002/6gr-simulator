@@ -3,6 +3,13 @@ function ok = testBinomialSequentialQualification()
 
 setup6GRSimToolkit("Verbose", false);
 
+for n = [1 3 69 3000]
+    zero = sixgr.validation.BinomialIntervalEngine.wilson(0,n,0.95);
+    allEvents = sixgr.validation.BinomialIntervalEngine.wilson(n,n,0.95);
+    assert(zero.Lower == 0 && zero.Upper > 0 && allEvents.Upper == 1);
+    assert(abs(zero.Upper-(1-allEvents.Lower)) < 8*eps);
+end
+
 common = {"ConfidenceLevel",0.95,"MinimumTrials",300, ...
     "MaximumTrials",3000,"MinimumEvents",0,"CIWidthTarget",0.01, ...
     "LookIndex",1,"PlannedLooks",10,"MetricName","false_alarm_probability"};

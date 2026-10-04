@@ -1,0 +1,103 @@
+# NR-derived calibrated-SLS configuration template; NOT a qualified result.
+# Supply a waveform-derived calibrationFile and matching calibrationSHA256
+# before running. Ideal delayed CSI/SRS and control delivery are modeled.
+inherits: sls_network_calibrated.yaml
+meta:
+  scenario_id: sls_nr_tdd_21cell_connected
+  research_class: study_item_candidate
+  description: 4 GHz 100 MHz 21-cell TDD connected SLS with causal modeled feedback
+sls:
+  config_files:
+    - ../system/calibrated_link_abstraction.yaml
+    - ../system/network_spatial_ideal_tdd.yaml
+    - ../system/resource_reservations.yaml
+    - ../system/connected_causal_feedback_tdd.yaml
+  config:
+    run:
+      numTTI: 200
+      seed: 210001
+      strictMode: true
+    scenario:
+      layout:
+        nSites: 7
+        nSectorsPerSite: 3
+        wrapAround: true
+      bs:
+        nTxAnt: 4
+        nRxAnt: 4
+      ue:
+        nUE: 210
+        nTxAnt: 4
+        nRxAnt: 4
+    channel:
+      type: TR38901
+      nTxAnt: 4
+      nRxAnt: 4
+      fc_Hz: 4000000000
+      bandwidth_Hz: 100000000
+      fading:
+        enable: true
+        model: TDL
+        profile: TDL-A
+        delaySpread_s: 0.00000003
+    phy:
+      nTxAnt: 4
+      nRxAnt: 4
+      waveform:
+        ul: CP-OFDM
+      carrier:
+        SubcarrierSpacing: 30
+        NSizeGrid: 273
+      pdsch:
+        nLayers: 4
+      pusch:
+        nLayers: 4
+        NumAntennaPorts: 4
+        transformPrecoding: false
+        dmrs:
+          # Capability pool, not a fixed four-layer assignment. Each frozen
+          # grant resolves exactly one logical DM-RS port per scheduled layer.
+          availablePortSet: [0, 1, 2, 3]
+      srs:
+        # Native table bandwidth is 272 RB, not an invented 273-RB SRS.
+        CSRS: 63
+        BSRS: 0
+        BHop: 0
+        bandwidthRB: 272
+        expectedNumRB: 272
+        coverageRequirement: configured_band
+      csirs:
+        numRB: 272
+        rbOffset: 0
+        # Direct-port sounding is independent of scheduled PDSCH rank.
+        # Do not push four CSI-RS ports through a two-layer data precoder.
+        precoderMatrices:
+          - [1, 0, 0, 0]
+          - [0, 1, 0, 0]
+          - [0, 0, 1, 0]
+          - [0, 0, 0, 1]
+    system:
+      sinrModel: explicit_activity_power_sum
+      linkAbstraction:
+        calibrationFile: ''
+        calibrationSHA256: ''
+        dynamicPUCCH:
+          resourceBinding:
+            # Simulator admission policy, not a prescribed 3GPP allocator.
+            # Each UE receives the complete five-PRB resource bundle in its
+            # serving cell/BWP. Outstanding grants protect old bindings.
+            mode: per_cell_frequency_pool
+            firstPRB: 0
+            stridePRB: 5
+            capacityPerCell: 54
+        spatialProviderClass: sixgr.system.abstraction.NetworkSpatialGrantProvider
+        requiredRFProfileID: ideal_rf_no_impairments
+        networkSpatial:
+          bsPorts: 4
+          uePorts: 4
+          dlAntennaBasis: direct_ports
+          rfProfileID: ideal_rf_no_impairments
+          # Per-layer SINR samples use native data REs, not pilot/reserved REs.
+          # Shared-data interference only; reference/control interference and
+          # RF/array qualification remain separate acceptance requirements.
+          sinrResourcePopulation: native_shared_channel_data_re

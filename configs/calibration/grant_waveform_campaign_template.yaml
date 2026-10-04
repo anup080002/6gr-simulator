@@ -1,0 +1,40 @@
+# Allocation-template example, NOT a ready or qualified study dataset.
+# Replace both manifest paths, hashes and episode IDs with sealed manifests
+# from the intended exact DL/UL grant/configuration families. No outcome or
+# population is imported from those files: every listed start executes anew.
+# One column per frozen HARQ attempt; this example assumes RV=[0,2,3].
+# Starting TB counts are NOT conditional retry counts. Qualification still
+# requires adequate actual preceding failures and independent validation.
+schema: sixgr.grant_calibration_campaign/v1
+campaign_id: exact_grant_waveform_collection
+research_class: baseline_benchmark
+seed_base: 180000000
+channel_evolution: persistent_link_absolute_slot
+episodes_per_invocation: 2
+collections:
+  - id: awgn_reference
+    template_manifest: ../../results/calibration/grant_templates/awgn/campaign.mat
+    template_manifest_sha256: REPLACE_WITH_ACTUAL_SHA256
+    template_episode_id: REPLACE_WITH_ACTUAL_EPISODE_ID
+    snr_histories_db:
+      - [-10, -10, -10]
+      - [0, 0, 0]
+      - [10, 10, 10]
+      - [20, 20, 20]
+      - [30, 30, 30]
+      - [40, 40, 40]
+    fit_starts_per_history: 2000
+    validation_starts_per_history: 2000
+  - id: fading_target
+    template_manifest: ../../results/calibration/grant_templates/fading/campaign.mat
+    template_manifest_sha256: REPLACE_WITH_ACTUAL_SHA256
+    template_episode_id: REPLACE_WITH_ACTUAL_EPISODE_ID
+    snr_histories_db:
+      - [-10, -10, -10]
+      - [0, 0, 0]
+      - [10, 10, 10]
+      - [20, 20, 20]
+      - [30, 30, 30]
+      - [40, 40, 40]
+    fit_starts_per_history: 2000
+    validation_starts_per_history: 2000

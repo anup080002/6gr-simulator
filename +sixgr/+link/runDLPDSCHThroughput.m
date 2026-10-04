@@ -225,6 +225,10 @@ trialHARQProcess = NaN(numFrames,1);
 trialHARQRound = NaN(numFrames,1);
 trialHARQNDI = NaN(numFrames,1);
 trialHARQIsRetransmission = false(numFrames,1);
+trialHARQCurrentDecodeOK = NaN(numFrames,1);
+trialHARQCombinedDecodeOK = NaN(numFrames,1);
+trialHARQCombiningApplied = NaN(numFrames,1);
+trialHARQLLRCombiningGain = NaN(numFrames,1);
 trialHARQNDIEpoch = NaN(numFrames,1);
 trialHARQTBId = strings(numFrames,1);
 trialOriginalTBSBits = NaN(numFrames,1);
@@ -254,6 +258,7 @@ trialEVMEnergies = NaN(numFrames,3);
 trialEVMStatus = strings(numFrames,1);
 trialEVMDomain = strings(numFrames,1);
 trialNMSE = NaN(numFrames,1);
+trialIndependentChannelScore = cell(numFrames,1);
 trialDet = NaN(numFrames,1);
 trialSINR = NaN(numFrames,1);
 trialMeasuredTrialSINR = NaN(numFrames,1);
@@ -730,11 +735,11 @@ for n = 1:numFrames
         else
             [cfgDyn, laState, laApplyEvent] = sixgr.link.updateLinkAdaptationState(cfgDyn, laState, "DL", trialSlot(n), "Phase", "before");
             cfgFrame = cfgDyn;
-            trialLAApplied(n) = logical(laApplyEvent.Applied);
+            trialLAApplied(n) = logical(laApplyEvent.DecisionInEffect);
             trialLAFeedbackDelaySlots(n) = double(laApplyEvent.ConfiguredFeedbackDelaySlots);
             trialLAFeedbackDelaySource(n) = string(laApplyEvent.FeedbackDelaySource);
             trialLAFeedbackDelayStatus(n) = string(laApplyEvent.FeedbackDelayStatus);
-            if logical(laApplyEvent.Applied)
+            if logical(laApplyEvent.DecisionInEffect)
                 appliedDecision = laApplyEvent.Decision;
                 trialLAAppliedSourceSlot(n) = double(laApplyEvent.FeedbackSourceSlot);
                 trialLAAppliedAgeSlots(n) = double(laApplyEvent.FeedbackAgeSlots);
@@ -769,6 +774,10 @@ for n = 1:numFrames
         trialActualMCSSelectionMode(n) = string(localResolveActualMCSSelectionMode(cfgFrame, "DL"));
         trialSchedulerGrantMCSSelectionMode(n) = string(sixgr.util.structGet(grantSnapshotOverride, "AMCMode", ""));
         trialMCSValueStatus(n) = string(sixgr.util.structGet(grantSnapshotOverride, "MCSValueStatus", ""));
+        if ~isRetransmission && ~schedulerDrivenGrant && laApplyEvent.BootstrapInEffect
+            trialActualMCSSelectionMode(n)="configured_initial_mcs";
+            trialMCSValueStatus(n)="bootstrap_not_measured_cqi";
+        end
         grantCQIUsed = double(sixgr.util.structGet(grantSnapshotOverride, "CQIUsed", NaN));
         grantRawCQIDerivedMCS = localFirstFiniteScalar( ...
             sixgr.util.structGet(grantSnapshotOverride, "RawCQIDerivedMCS", NaN));
@@ -863,9 +872,9 @@ for n = 1:numFrames
         trialCarrierNFrame(n) = double(tx.Carrier.NFrame);
         trialSFN(n) = mod(trialCarrierNFrame(n), 1024);
         localAssertExecutedCarrierTimeline(cfgFrame, tx.Carrier, "DL");
-        observedUEIndex = double(sixgr.util.structGet(grantSnapshotOverride, ...
-            "UEIndex", sixgr.util.structGet(cfgFrame, ...
-            "lls6g.userContext.UEIndex", NaN)));
+        executedIdentity = sixgr.link.bindExecutedDataIdentity( ...
+            grantSnapshotOverride,tx,cfgFrame,"DL");
+        observedUEIndex = executedIdentity.UEIndex;
         observedBaseStationID = double(sixgr.util.structGet( ...
             grantSnapshotOverride, "BaseStationID", ...
             sixgr.util.structGet(cfgFrame, ...
@@ -1062,7 +1071,7 @@ for n = 1:numFrames
         trialGrantWorkerSafe(n) = logical(sixgr.util.structGet(grantSnapshot, "GrantWorkerSafe", false));
         trialGrantSharedStateCommitMode(n) = string(sixgr.util.structGet(grantSnapshot, "GrantSharedStateCommitMode", ""));
         trialUEIndex(n) = double(sixgr.util.structGet(grantSnapshot, "UEIndex", NaN));
-        trialRNTI(n) = double(sixgr.util.structGet(grantSnapshot, "RNTI", sixgr.util.structGet(cfgFrame, "phy.rnti", NaN)));
+        trialRNTI(n) = grantSnapshot.RNTI;
         trialBaseStationID(n) = double(sixgr.util.structGet(grantSnapshot, "BaseStationID", ...
             sixgr.util.structGet(cfgFrame, "lls6g.userContext.RuntimeServingCell", NaN)));
         prbSetSnapshot = double(sixgr.util.structGet(grantSnapshot, "PRBSet", []));
@@ -1164,7 +1173,7 @@ for n = 1:numFrames
                 p.Results.ReceivedContext.PhysicalMeasurementObservation.readComplete();
             replay = p.Results.ReceivedContext.Replay;
         else
-            [rxWave, replay, chState, physicalMeasurementWaveform] = ...
+            [rxWave, replay, chState, physicalMeasurementWaveform, desiredScoringWaveform] = ...
                 localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, ...
                 cfgFrame, tx, txInfo, interferenceBundle, ...
                 captureDiagnosticPathGains);
@@ -1303,6 +1312,10 @@ for n = 1:numFrames
         replay = localFinalizeImpairmentReplay(replay, cfgFrame, rx, tx, txInfo, useIdealTimingSync);
         waveformChunks{n} = sixgr.link.buildWaveformPreviewTable("DL", snr_dB, trialFrame(n), trialSlot(n), ...
             tx.Waveform, rxWave, localResolveSampleRate(tx, txInfo));
+        previewCount=height(waveformChunks{n});
+        waveformChunks{n}.UEIndex=repmat(executedIdentity.UEIndex,previewCount,1);
+        waveformChunks{n}.RNTI=repmat(executedIdentity.RNTI,previewCount,1);
+        waveformChunks{n}.BaseStationID=repmat(observedBaseStationID,previewCount,1);
 
         trialTiming(n) = double(sixgr.util.structGet(replay, "EstimatedTimingOffset_PreCorrection_samples", ...
             sixgr.util.structGet(rx, "RawTimingEstimate_samples", ...
@@ -1865,16 +1878,6 @@ for n = 1:numFrames
         end
         if istable(constT) && ~isempty(constT)
             nConst = height(constT);
-            snrLineage_dB = NaN;
-            if isfinite(double(trialAppliedNoiseSNR(n)))
-                snrLineage_dB = double(trialAppliedNoiseSNR(n));
-            elseif isfinite(double(trialAppliedAWGNSNR(n)))
-                snrLineage_dB = double(trialAppliedAWGNSNR(n));
-            elseif isfinite(double(trialConfiguredSNR(n)))
-                snrLineage_dB = double(trialConfiguredSNR(n));
-            elseif isfinite(double(snr_dB))
-                snrLineage_dB = double(snr_dB);
-            end
             constT.Frame = repmat(double(trialFrame(n)), height(constT), 1);
             constT.Slot = repmat(double(trialSlot(n)), height(constT), 1);
             constT.SFN = repmat(trialSFN(n), nConst, 1);
@@ -1888,13 +1891,14 @@ for n = 1:numFrames
             constT.ServingCell = repmat(double(sixgr.util.structGet(grantSnapshot, ...
                 "ServingCell", sixgr.util.structGet(cfgFrame, ...
                 "lls6g.userContext.RuntimeServingCell", NaN))), nConst, 1);
-            if ismember("SNR_dB", string(constT.Properties.VariableNames))
-                sampleSNR = double(constT.SNR_dB);
-                sampleSNR(~isfinite(sampleSNR)) = snrLineage_dB;
-                constT.SNR_dB = sampleSNR;
-            else
-                constT.SNR_dB = repmat(snrLineage_dB, nConst, 1);
-            end
+            % The trial owns the sweep coordinate. The modulation tracker
+            % may have seen the base config, whose finite SNR is stale at
+            % another sweep point. Sample-domain noise SNR and occupied-RE
+            % AWGN SNR are separate planes, not substitute sweep labels.
+            constT.ConfiguredSNR_dB = repmat(double(trialConfiguredSNR(n)), nConst, 1);
+            constT.AppliedAWGNSNR_dB = repmat(double(trialAppliedAWGNSNR(n)), nConst, 1);
+            constT.AppliedNoiseSNR_dB = repmat(double(trialAppliedNoiseSNR(n)), nConst, 1);
+            constT.SNR_dB = constT.ConfiguredSNR_dB;
             constT.TBId = repmat(double(n), nConst, 1);
             constT.MCSIndex = repmat(double(trialMCS(n)), nConst, 1);
             constT.MCS = repmat(double(trialMCS(n)), nConst, 1);
@@ -2068,6 +2072,12 @@ for n = 1:numFrames
             end
         end
         finalDecodeOK = logical(combinedDecodeOK);
+        % Retain this receiver attempt, not only the final loop iteration's
+        % lastHARQ struct. Frames which never reach decoding remain unknown.
+        trialHARQCurrentDecodeOK(n) = double(currentDecodeOK);
+        trialHARQCombinedDecodeOK(n) = double(finalDecodeOK);
+        trialHARQCombiningApplied(n) = double(harqCombining.CombiningApplied);
+        trialHARQLLRCombiningGain(n) = double(harqCombining.LLRCombiningGain_dB);
         trialBitErr(n) = double(finalBe);
         trialBitTot(n) = double(finalBitsCompared);
         bitErr = bitErr + double(finalBe);
@@ -2140,6 +2150,13 @@ for n = 1:numFrames
             "HARQTBContext", sixgr.util.structGet(harqContext, "TransportBlockContext", struct()), ...
             "HARQContextStatus", char(string(sixgr.util.structGet(harqContext, "HARQContextStatus", ""))), ...
             "Context", harqContext);
+        if ~receivedCompletion && logical(sixgr.util.structGet(cfgFrame,'outputs.phySignalDiagnosticEnabled',false))
+            scoreContext=struct('Slot',trialSlot(n),'UEIndex',trialUEIndex(n), ...
+                'ConfiguredSNR_dB',trialConfiguredSNR(n),'Frame',trialFrame(n), ...
+                'Seed',trialSeed(n),'RNTI',trialRNTI(n));
+            trialIndependentChannelScore{n}=sixgr.link.scoreIsolatedDataChannelEstimate( ...
+                rx,desiredScoringWaveform,cfgFrame,"DL",scoreContext);
+        end
     catch ME
         if prepareOnly || receivedCompletion
             rethrow(ME); % A broken stage cannot become a received CRC-failure row.
@@ -2439,6 +2456,7 @@ end
         T.PilotReconstructionResidualRatio_dB=T.NMSE_dB;
         T.NMSE_dB=NaN(height(T),1);
         T.NMSESource=repmat("unavailable_without_independent_channel_reference",height(T),1);
+        T=sixgr.link.bindDataChannelScoreRows(T,trialIndependentChannelScore(idx));
         T.QCLMeasurementStatus = repmat("not_measured_requires_QCL_TCI_binding_evidence",stopIdx,1);
         qclTable=struct2table(trialQCLRuntime(idx));
         for qclName=string(qclTable.Properties.VariableNames)
@@ -2593,6 +2611,10 @@ end
         T.HARQNDI = trialHARQNDI(idx);
         T.IsRetransmission = trialHARQIsRetransmission(idx);
         T.HARQIsRetransmission = trialHARQIsRetransmission(idx);
+        T.HARQCurrentDecodeOK = trialHARQCurrentDecodeOK(idx);
+        T.HARQCombinedDecodeOK = trialHARQCombinedDecodeOK(idx);
+        T.HARQCombiningApplied = trialHARQCombiningApplied(idx);
+        T.HARQLLRCombiningGain_dB = trialHARQLLRCombiningGain(idx);
         T.NDIEpoch = trialHARQNDIEpoch(idx);
         T.TBId = trialHARQTBId(idx);
         T.OriginalTBSBits = trialOriginalTBSBits(idx);
@@ -3868,6 +3890,7 @@ values(actualMode == "scheduler_grant") = "scheduler_grant";
 values(actualMode == "cqi_driven") = "cqi_link_adaptation";
 values(actualMode == "cqi_table") = "cqi_link_adaptation";
 values(actualMode == "configured_fixed") = "configured_fixed_mcs";
+values(actualMode == "configured_initial_mcs") = "configured_initial_mcs";
 values(actualMode == "feedback_cqi_derived_reference") = "feedback_cqi_derived_reference";
 values(actualMode == "bootstrap_large_scale_preview_cqi_lab_default") = "bootstrap_large_scale_preview_cqi_lab_default";
 values(actualMode == "bootstrap_cqi_conservative_lab_default") = "bootstrap_cqi_conservative_lab_default";
@@ -4740,7 +4763,7 @@ if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object")
 end
 end
 
-function [y, replay, state, physicalMeasurementWaveform] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle, captureDiagnosticPathGains)
+function [y, replay, state, physicalMeasurementWaveform, desiredWaveform] = localApplyChannelAndAwgn(x, snr_dB, state, cfg, tx, txInfo, interferenceBundle, captureDiagnosticPathGains)
 if nargin < 8
     captureDiagnosticPathGains = false;
 end
@@ -5558,6 +5581,10 @@ T.NDI = zeros(0,1);
 T.HARQNDI = zeros(0,1);
 T.IsRetransmission = false(0,1);
 T.HARQIsRetransmission = false(0,1);
+T.HARQCurrentDecodeOK = zeros(0,1);
+T.HARQCombinedDecodeOK = zeros(0,1);
+T.HARQCombiningApplied = zeros(0,1);
+T.HARQLLRCombiningGain_dB = zeros(0,1);
 T.NDIEpoch = zeros(0,1);
 T.TBId = strings(0,1);
 T.OriginalTBSBits = zeros(0,1);
@@ -6083,6 +6110,9 @@ existingSource = strtrim(string(localOptionalColumn(T, "MCSSelectionSource", "")
 existingStatus = strtrim(string(localOptionalColumn(T, "MCSValueStatus", "")));
 source(strlength(existingSource) > 0) = existingSource(strlength(existingSource) > 0);
 status(strlength(existingStatus) > 0) = existingStatus(strlength(existingStatus) > 0);
+initialMask=string(localOptionalColumn(T,"ActualMCSSelectionMode",""))=="configured_initial_mcs";
+source(initialMask)="configured_initial_mcs";
+status(initialMask)="bootstrap_not_measured_cqi";
 if fixedByConfiguration
     % A fixed calibration point cannot truthfully inherit the generic CQI
     % default carried by an undecorated trial row.  Its operating point is
@@ -7643,6 +7673,7 @@ if isstruct(txPHYGrant) && ~isempty(fieldnames(txPHYGrant))
     grant.PHYGrant = txPHYGrant;
     grant.PHYGrantContextId = char(string(txPHYGrant.GrantContextId));
 end
+grant = sixgr.link.bindExecutedDataIdentity(grant,tx,cfg,"DL");
 grant = sixgr.link.finalizeHARQGrantSpatialSnapshot(grant, "DL");
 grant = sixgr.link.bindExecutedHARQClock(grant,tx.Carrier,slotIdx);
 if ~(isfield(grant, "GrantContextId") && strlength(strtrim(string(grant.GrantContextId))) > 0)

@@ -20,6 +20,10 @@ classdef BinomialIntervalEngine
                         z^2/(4*n^2))/denominator;
                     lowerBound = max(0,center-halfWidth);
                     upperBound = min(1,center+halfWidth);
+                    % Exact Wilson endpoints at the boundaries avoid
+                    % cancellation excluding an observed 0 or 1 by an ulp.
+                    if k == 0, lowerBound = 0; end
+                    if k == n, upperBound = 1; end
                     sidedness = "TWO_SIDED";
                 case "CLOPPER_PEARSON_TWO_SIDED"
                     center = estimate;

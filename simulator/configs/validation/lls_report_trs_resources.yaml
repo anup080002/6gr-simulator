@@ -1,0 +1,18 @@
+# Complete tracking resource set for the report tests' 273-PRB parent BWP.
+# The inherited DDDUU pattern makes absolute slots 1 and 2 downlink slots.
+# Four density-three, one-port resources; no detector threshold relaxation.
+reference_signals:
+  trs_enabled: true
+  tracking_rs_enabled: true
+  trs:
+    enabled: true
+    baseline_or_candidate_tag: baseline_benchmark
+    slot_numbers: [1, 2]
+    burst_length_slots: 2
+    num_ports: 1
+    row_number: 1
+    symbol_locations: [6, 10]
+    subcarrier_location: 0
+    rb_offset: 0
+    # TS 38.214: min(52, active DL BWP size), or the entire DL BWP.
+    num_rb: 52

@@ -658,8 +658,9 @@ if localIsSRSOnlyScenario(scfg, cfg) || localIsTRSOnlyScenario(scfg, cfg) || ...
     tf = false;
     return;
 end
-runnerProfile = lower(strtrim(string(localScenarioGet(scfg, cfg, "scenario.runner_profile", ""))));
-strictProfile = runnerProfile == "pdcch_strict_validation" || localScenarioHasObjective(scfg, cfg, "pdcch_strict_validation");
+% A builder-derived control-gating objective is not an explicit request
+% to execute the standalone negative-trial qualification campaign.
+strictProfile = localPDCCHStandaloneStrictRequired(scfg, cfg);
 if localIsPDCCHOnlyScenario(scfg, cfg) && ~strictProfile
     tf = false;
     return;

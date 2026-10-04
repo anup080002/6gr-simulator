@@ -1,0 +1,11 @@
+# Optional research extension: merge after finite_pdcch_interference.yaml.
+# Native SSB finite propagation is implemented but qualification is pending.
+# All timing, bitmap, per-beam power and physical precoders use phy.ssb.
+# Supply networkSpatial.ssbCellIDs explicitly, one PCI per transmitting cell.
+system:
+  linkAbstraction:
+    networkSpatial:
+      ssbInterferenceEnabled: true
+      ssbPowerPolicy: configured_bs_full_carrier_psd_with_ssb_offsets
+      ssbPhaseAssumption: native_sequence_phase_at_committed_epoch
+      ssbBeamPolicy: configured_ssb_physical_precoders

@@ -15,18 +15,26 @@ sib1Targets = ["sib1", "pbch", "ssb", "cell_search", "initial_access", "broadcas
 sib1Objectives = ["cell_search_mib_sib1", "sib1_strict_validation", ...
     "pbch_strict_validation", "initial_access_strict_validation"];
 
-sib1Enabled = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false)) || ...
-    logical(sixgr.util.structGet(cfg, "phy.pbch.enable", false)) || ...
-    logical(sixgr.util.structGet(cfg, "phy.ssb.enable", false));
+% SSB/PBCH reception does not itself execute a SIB1 PDSCH. In particular,
+% isolated broadcast-component bundles may intentionally disable SIB1.
+sib1Enabled = logical(sixgr.util.structGet(cfg, "phy.sib1.enable", false));
 sib1Required = localSIB1Required(scfg, cfg);
 sib1Targeted = any(ismember(targetCases, sib1Targets));
 sib1Objective = any(ismember(objectives, sib1Objectives));
+explicitSIB1 = any(targetCases == "sib1") || ...
+    any(ismember(objectives, ["cell_search_mib_sib1", "sib1_strict_validation", ...
+    "initial_access_strict_validation"])) || any(targetCases == "initial_access");
 
 policy = struct();
 policy.TargetCases = targetCases(:);
 policy.ValidationObjectives = objectives(:);
 policy.SIB1Required = logical(sib1Required);
-policy.EnableSIB1 = sib1Enabled && (sib1Targeted || sib1Objective || sib1Required);
+policy.SIB1ConfiguredEnabled = sib1Enabled;
+policy.SIB1ExplicitlyRequested = explicitSIB1;
+% Explicit obligations must still reach the producer's disabled/configuration
+% error. Never turn an inconsistent required-SIB1 configuration into a skip.
+policy.EnableSIB1 = sib1Required || explicitSIB1 || ...
+    (sib1Enabled && (sib1Targeted || sib1Objective));
 
 reasons = strings(0, 1);
 if logical(policy.EnableSIB1)

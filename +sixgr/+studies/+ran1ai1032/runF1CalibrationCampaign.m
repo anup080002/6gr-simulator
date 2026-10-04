@@ -15,18 +15,32 @@ budget=double(e.transport_blocks_per_invocation);
 validateattributes(budget,{'numeric'},{'scalar','integer','positive','finite'});
 plan=sixgr.studies.ran1ai1032.buildLLSCasePlan(study);
 C=plan.CasePlan;
+comparator=sixgr.studies.ran1ai1032.MCSCatalog.correctedComparator(e.representation_id);
+available=string(comparator.entry_id(comparator.entry_kind=="regular"));
 selected=C.ExperimentID=="F1" & ismember(C.EntryID,string(e.entry_ids)) & ...
+    ismember(C.EntryID,available) & ...
     ismember(C.ChannelProfile,string(e.channel_profiles)) & ismember(C.Rank,double(e.ranks));
 if isfield(e,'antenna_case_ids') && ~isempty(e.antenna_case_ids)
     selected=selected & ismember(C.AntennaCaseID,string(e.antenna_case_ids));
 end
 C=C(selected,:);
 assert(~isempty(C),'sixgr:ran1ai1032:F1Selection','F1 selection contains no physical cases.');
+C.RepresentationID=repmat(upper(string(e.representation_id)),height(C),1);
+C.MCSTable=repmat(string(e.mcs_table),height(C),1);
 folder=fullfile(outputRoot,runTag,'f1');
 if ~isfolder(folder), mkdir(folder); end
 scientific=study;
 scientific.lls.execution=rmfield(scientific.lls.execution,'transport_blocks_per_invocation');
 sourceFiles=["+sixgr/+studies/+ran1ai1032/buildF1RuntimeConfig.m", ...
+    "+sixgr/+studies/+ran1ai1032/loadStudyConfig.m", ...
+    "+sixgr/+studies/+ran1ai1032/validateStudyConfig.m", ...
+    "+sixgr/+studies/+ran1ai1032/saveStudyInputProvenance.m", ...
+    "+sixgr/+studies/+ran1ai1032/buildLLSCasePlan.m", ...
+    "+sixgr/+studies/+ran1ai1032/MCSCatalog.m", ...
+    "+sixgr/+phy/+research/resolveExperimentalMCSTable.m", ...
+    "+sixgr/+phy/+research/configuredPUSCHTransport.m", ...
+    "+sixgr/+phy/+pdcch/resolveConnectedMCS.m", ...
+    "+sixgr/+link/resolveMCSProfile.m", ...
     "+sixgr/+studies/+ran1ai1032/runF1CalibrationCampaign.m", ...
     "+sixgr/+studies/+ran1ai1032/executeF1PUSCHTrial.m", ...
     "+sixgr/+studies/+ran1ai1032/resolveF1RFBranch.m", ...
@@ -52,6 +66,9 @@ if isfield(branch,'phase_noise_profile_path')
 end
 sourceHashes=strings(size(sourceFiles));
 for si=1:numel(sourceFiles), sourceHashes(si)=sixgr.csi.studyFileSHA256(sourceFiles(si)); end
+% Preserve raw YAML hashes in provenance, but exclude the resumable work
+% budget from the scientific identity. The resolved scientific config and
+% executable source hashes still make a physical-policy change fail closed.
 identity=string(sixgr.util.sha256Hex(uint8(unicode2native( ...
     jsonencode(scientific)+join(sourceHashes,''),'UTF-8'))));
 metadataPath=fullfile(folder,'campaign_identity.mat');
@@ -62,7 +79,7 @@ if isfile(metadataPath)
 else
     environment=struct('MATLABVersion',version,'Toolboxes',ver,'Provenance',provenance);
     save(metadataPath,'identity','study','environment','sourceFiles','sourceHashes','branch');
-    copyfile(studyPath,fullfile(folder,'input_study.yaml'));
+    sixgr.studies.ran1ai1032.saveStudyInputProvenance(study,provenance,folder);
     if isfield(branch,'phase_noise_profile_path')
         copyfile(branch.phase_noise_profile_path,fullfile(folder,'input_phase_noise_profile.yaml'));
     end
@@ -77,14 +94,19 @@ for ci=1:height(C)
     if isfile(casePath)
         loaded=load(casePath,'state'); state=loaded.state;
         assert(state.Identity==identity,'sixgr:ran1ai1032:F1ResumeIdentity','Case identity differs.');
-        if ~isempty(state.Trials)
+        if isfield(state,'TrialCount')
+            state=localRecoverTrials(state,cf,c,study.lls.pairing_base_seed);
+        elseif ~isempty(state.Trials)
+            % Migrate an earlier full-table checkpoint without discarding
+            % its committed trials.  The CSV may have lagged that MAT.
             active=state.Points(state.PointOrdinal,:);
             writetable(state.Trials,fullfile(cf,localPointName(active.InputSNRdB)+"_trials.csv"));
+            localCheckpoint(casePath,state);
         end
     else
         points=plan.PointPlan(plan.PointPlan.CaseID==c.CaseID,:);
         state=struct('Identity',identity,'Points',points,'PointOrdinal',1, ...
-            'RefinementAdded',false,'Curve',table(),'Trials',table());
+            'RefinementAdded',false,'Curve',table(),'Trials',table(),'TrialCount',0);
     end
     while state.PointOrdinal<=height(state.Points) && executed<budget
         p=state.Points(state.PointOrdinal,:);
@@ -126,17 +148,19 @@ for ci=1:height(C)
             row=T(:,intersect(wanted,string(T.Properties.VariableNames),'stable'));
             row.TrialOrdinal=trialID;
             row.CaseID=c.CaseID; row.EntryID=c.EntryID;
+            row.RepresentationID=c.RepresentationID; row.MCSTable=c.MCSTable;
             row.SourceClassification="executed_phy_truth";
             row.RFBranch=string(e.rf_branch);
             row.PowerPlane=string(cfg.meta.f1PowerPlane);
+            pointCSV=fullfile(cf,localPointName(p.InputSNRdB)+"_trials.csv");
+            % The append-only executed-trial CSV is the durable journal.
+            % Write it before advancing the compact checkpoint; a crash
+            % between the two is recovered from its validated extra row.
+            if n==0, writetable(row,pointCSV);
+            else, writetable(row,pointCSV,'WriteMode','append','WriteVariableNames',false); end
             state.Trials=[state.Trials;row]; %#ok<AGROW>
             n=height(state.Trials); executed=executed+1;
             localCheckpoint(casePath,state);
-            pointCSV=fullfile(cf,localPointName(p.InputSNRdB)+"_trials.csv");
-            % CSV is a materialization of the committed MAT, so interrupted
-            % appends can always be repaired by the next invocation.
-            if n==1 || trialID==1, writetable(state.Trials,pointCSV);
-            else, writetable(row,pointCSV,'WriteMode','append','WriteVariableNames',false); end
             errors=sum(~logical(state.Trials.CRCPass));
             fprintf('F1_PROGRESS case=%s reference_snr_db=%g TB=%d errors=%d invocation=%d/%d\n', ...
                 c.CaseID,p.InputSNRdB,n,errors,executed,budget);
@@ -152,7 +176,7 @@ for ci=1:height(C)
         capped=current.TransportBlockCount>=double(study.statistics.maximum_transport_blocks_per_point);
         if reached || capped
             state.Curve=[state.Curve;current]; %#ok<AGROW>
-            state.Trials=table(); state.PointOrdinal=state.PointOrdinal+1;
+            state.Trials=state.Trials([],:); state.PointOrdinal=state.PointOrdinal+1;
         end
         if state.PointOrdinal>height(state.Points) && ~state.RefinementAdded
             state=localRefine(state,study);
@@ -170,12 +194,13 @@ for ci=1:height(C)
     summary=state.Curve;
     if ~isempty(state.Trials)
         p=state.Points(state.PointOrdinal,:);
-        writetable(state.Trials,fullfile(cf,localPointName(p.InputSNRdB)+"_trials.csv"));
+        assert(isfile(fullfile(cf,localPointName(p.InputSNRdB)+"_trials.csv")), ...
+            'sixgr:ran1ai1032:F1JournalMissing','The committed physical-trial journal is missing.');
         summary=[summary;localSummary(state.Trials,c,p,study)]; %#ok<AGROW>
     end
     if ~isempty(summary)
         writetable(sortrows(summary,'ConfiguredSNR_dB'),fullfile(cf,'all_snr_curve.csv'));
-        localMergeTrialCSVs(cf);
+        if caseComplete, localMergeTrialCSVs(cf); end
     end
     summaries=[summaries;summary]; %#ok<AGROW>
 end
@@ -248,13 +273,15 @@ lookAlpha=alpha/maxN;
 lo=0; hi=1;
 if k>0, lo=betaincinv(lookAlpha/2,k,n-k+1); end
 if k<n, hi=betaincinv(1-lookAlpha/2,k+1,n-k); end
-s=table(c.CaseID,c.EntryID,c.ChannelProfile,c.DelaySpread_ns,c.AntennaCaseID, ...
+s=table(c.CaseID,c.EntryID,c.RepresentationID,c.MCSTable, ...
+    c.ChannelProfile,c.DelaySpread_ns,c.AntennaCaseID, ...
     c.TxChains,c.RxChains,c.Rank,c.Qm,c.TargetCodeRateX1024,p.InputSNRdB,n,k, ...
     k/n,lo,hi,n>=minN && k>=minE,n>=maxN && (n<minN || k<minE), ...
     mean(double(T.MeasuredSINR_dB),'omitnan'),string(T.RFBranch(1)),string(T.RFProfileID(1)), ...
     string(T.PowerPlane(1)),string(T.ExecutionBackend(1)), ...
     "executed_phy_truth","BONFERRONI_BOUNDED_PER_TB_CLOPPER_PEARSON", ...
-    'VariableNames',{'CaseID','EntryID','ChannelProfile','DelaySpread_ns', ...
+    'VariableNames',{'CaseID','EntryID','RepresentationID','MCSTable', ...
+    'ChannelProfile','DelaySpread_ns', ...
     'AntennaCaseID','TxChains','RxChains','Rank','Qm','TargetCodeRateX1024', ...
     'ConfiguredSNR_dB','TransportBlockCount','ErrorCount','BLER','BLER_CI_Low', ...
     'BLER_CI_High','StatisticsComplete','Censored','MeanMeasuredSINR_dB', ...
@@ -287,8 +314,64 @@ function name=localPointName(snrDB)
 name="snr_"+replace(replace(compose('%.4f',snrDB),'-','minus_'),'.','p');
 end
 function localCheckpoint(path,state)
+% Keep the typed table schema, not the growing population.  Rewriting all
+% prior rows after each TB made a capped 100,000-TB point quadratic in I/O.
+state.TrialCount=height(state.Trials);
+state.Trials=state.Trials([],:);
 temporary=path+".partial.mat"; save(temporary,'state','-v7.3');
 [ok,msg]=movefile(temporary,path,'f'); assert(ok,'sixgr:ran1ai1032:F1Checkpoint','%s',msg);
+end
+function state=localRecoverTrials(state,folder,c,pairingBaseSeed)
+count=double(state.TrialCount);
+assert(isfinite(count) && count>=0 && count==fix(count), ...
+    'sixgr:ran1ai1032:F1JournalCorrupt','Checkpoint trial count is invalid.');
+if count==0 && state.PointOrdinal>height(state.Points), return; end
+assert(state.PointOrdinal<=height(state.Points), ...
+    'sixgr:ran1ai1032:F1JournalCorrupt','Checkpoint points and trial count disagree.');
+p=state.Points(state.PointOrdinal,:);
+path=fullfile(folder,localPointName(p.InputSNRdB)+"_trials.csv");
+if count==0 && ~isfile(path), return; end
+assert(isfile(path),'sixgr:ran1ai1032:F1JournalMissing', ...
+    'The physical-trial journal required by the checkpoint is missing.');
+try
+    rows=readtable(path,'TextType','string');
+catch ME
+    error('sixgr:ran1ai1032:F1JournalCorrupt', ...
+        'The physical-trial journal cannot be parsed: %s',ME.message);
+end
+template=state.Trials;
+names=string(template.Properties.VariableNames);
+assert(~isempty(names) && isequal(string(rows.Properties.VariableNames),names) && ...
+    height(rows)>=count, 'sixgr:ran1ai1032:F1JournalCorrupt', ...
+    'Physical-trial journal schema or row count disagrees with its checkpoint.');
+for name=names
+    field=char(name);
+    if isstring(template.(field)), rows.(field)=string(rows.(field));
+    elseif islogical(template.(field)), rows.(field)=logical(rows.(field));
+    elseif isnumeric(template.(field)), rows.(field)=cast(rows.(field),class(template.(field)));
+    else
+        error('sixgr:ran1ai1032:F1JournalCorrupt', ...
+            'Unsupported physical-trial journal field type: %s.',field);
+    end
+end
+n=height(rows);
+assert(isequal(double(rows.TrialOrdinal(:)),(1:n)') && ...
+    all(string(rows.CaseID)==string(c.CaseID)) && ...
+    all(string(rows.EntryID)==string(c.EntryID)) && ...
+    all(abs(double(rows.ConfiguredSNR_dB)-double(p.InputSNRdB))<1e-10) && ...
+    all(abs(double(rows.AppliedAWGNSNR_dB)-double(p.InputSNRdB))<1e-10) && ...
+    all(string(rows.SourceClassification)=="executed_phy_truth") && ...
+    all(contains(string(rows.ExecutionBackend),"waveform")), ...
+    'sixgr:ran1ai1032:F1JournalCorrupt', ...
+    'Physical-trial journal has gaps, changed identity or non-PHY rows.');
+for k=1:n
+    assert(double(rows.Seed(k))==localSeed(c.ComparisonPairKey,p.InputSNRdB,k, ...
+        pairingBaseSeed), ...
+        'sixgr:ran1ai1032:F1JournalCorrupt', ...
+        'Physical-trial journal seed sequence changed.');
+end
+state.Trials=rows;
+state.TrialCount=n;
 end
 function localPlot(T,path,dpi)
 T=sortrows(T,'ConfiguredSNR_dB');

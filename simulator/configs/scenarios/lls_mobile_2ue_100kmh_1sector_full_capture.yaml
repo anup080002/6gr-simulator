@@ -848,8 +848,11 @@ reference_signals:
   csi_rs_cdm_type: FD-CDM2
   csi_rs_density: 1
   csi_rs_periodicity_ms: 5
+  # Canonical runtime calendar: 30 kHz gives 0.5 ms slots. Offset 6 is
+  # a full DL slot in DDDSU and avoids the eight-beam SS/PBCH burst.
+  csi_rs_periodicity_slots: 10
+  csi_rs_offset_slots: 6
   csi_rs_power_offset_dB: 0.0
-  csi_rs_slot_offset: [6, 11, 16]
   srs_enabled: true
   trs_enabled: true
   tracking_rs_enabled: true
@@ -921,6 +924,9 @@ csi_acquisition_and_reporting:
   ul_csi_mode: srs_reciprocity
   csi_report_type: periodic
   csi_report_periodicity_slots: 5
+  # Report on the full UL slot of DDDSU, independently of CSI-RS offset 6.
+  # An occasion still needs a completed causal reference resource.
+  csi_report_offset_slots: 4
   csi_reporting_delay_slots: 4
   pmilayour: rank_adaptive
   max_feedback_overhead_pct: 5.0
@@ -1077,7 +1083,8 @@ random_access:
 
 initial_access:
   type0:
-    monitoring_occasion_ordinal: 2
+    # n0,n0+1 per 20-ms period: ordinal 3 preserves the next-period n0.
+    monitoring_occasion_ordinal: 3
   sib1:
     enabled: true
     pdsch:

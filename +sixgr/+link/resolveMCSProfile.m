@@ -19,7 +19,7 @@ function profile = resolveMCSProfile(mcsTable, mcsIndex)
 % Their codepoints are lab policy, not standardized MCS or SINR calibration.
 
 tableToken = lower(strtrim(string(mcsTable)));
-idx = round(double(mcsIndex));
+idx = double(mcsIndex);
 
 profile = struct( ...
     "Valid", false, ...
@@ -30,7 +30,7 @@ profile = struct( ...
     "TargetCodeRate", NaN, ...
     "SpectralEfficiency", NaN);
 
-if ~(isscalar(idx) && isfinite(idx) && idx >= 0)
+if ~(isscalar(idx) && isfinite(idx) && idx >= 0 && idx == fix(idx))
     return;
 end
 

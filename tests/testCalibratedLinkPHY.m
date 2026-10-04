@@ -41,6 +41,32 @@ phy.setSlotContext(slot); [ack,p]=phy.decode(ctx); %#ok<ASGLU>
 assert(abs(p-.4)<1e-12 && isequal(phy.LastReplay.HARQSINRHistory_dB,[0 0]));
 assert(isequal(phy.LastReplay.HARQRVHistory,[0 2]));
 assert(phy.LastReplay.HARQHistoryMappingBetaLinear==2);
+assert(isequal(phy.LastReplay.HARQSlotOffsets0,[0 1]));
+% A moving-channel calibration for one retry gap must not be used at a
+% different gap merely because the RV history and coding identity match.
+% Counts below remain explicitly numerical fixtures, never physical data.
+clockCalibration=calibration;
+clockCalibration.Curves(1).HARQSlotOffsets0=0;
+clockCalibration.Curves(2).HARQSlotOffsets0=[0 4];
+clockFile=fullfile(folder,'clock_fixture.mat');
+localSaveCalibration(clockFile,clockCalibration);
+clockCfg=cfg; clockCfg.system.linkAbstraction.calibrationFile=clockFile;
+clockCfg.system.linkAbstraction.calibrationSHA256=sixgr.csi.studyFileSHA256(clockFile);
+clockPHY=sixgr.system.PhyFactory.create(clockCfg,params,'Seed',99);
+clockCtx=ctx; clockCtx.TTI=10; clockCtx.IsRetransmission=false;
+clockCtx.Grant.HARQ.RV=0; clockSlot=slot; clockSlot.TTI=10;
+clockPHY.setSlotContext(clockSlot); [clockAck,~]=clockPHY.decode(clockCtx); assert(~clockAck);
+clockCtx.TTI=11; clockCtx.IsRetransmission=true; clockCtx.Grant.HARQ.RV=2;
+clockSlot.TTI=11; clockPHY.setSlotContext(clockSlot);
+localReject(@()clockPHY.decode(clockCtx),'sixgr:abstraction:CalibrationCoverage');
+clockCtx.TTI=14; clockSlot.TTI=14; clockPHY.setSlotContext(clockSlot);
+[~,clockBLER]=clockPHY.decode(clockCtx);
+assert(abs(clockBLER-.4)<1e-12 && isequal(clockPHY.LastReplay.HARQSlotOffsets0,[0 4]));
+for offsets={[0 0],[1 4],[0 1.5],0,[0 NaN]}
+    badClock=clockCalibration.Curves(2); badClock.HARQSlotOffsets0=offsets{1};
+    localReject(@()sixgr.system.abstraction.validateBLERCurve(badClock,cfg.system.linkAbstraction), ...
+        'sixgr:abstraction:CalibrationHistoryClock');
+end
 feature={{[.1;10],[.2;8]}};
 mapped=sixgr.system.abstraction.mapHARQHistory(feature{1},second);
 assert(abs(mapped(1)-10*log10(sixgr.util.eesmLinear([.1;10],2)))<1e-12 && ...
@@ -113,6 +139,9 @@ localReject(@()sixgr.system.abstraction.validateBLERCurve(badCurve,cfg.system.li
     'sixgr:abstraction:CalibrationSchema');
 % Keep fixture evidence for debugging under the named log, not study CSVs.
 ok=true; fprintf('CALIBRATED_LINK_PHY_PASS fixture_only=1\n');
+end
+function localSaveCalibration(file,calibration)
+save(file,'calibration');
 end
 function localReject(fn,id)
 try, fn(); catch ME, assert(strcmp(ME.identifier,id),'Expected %s, got %s: %s',id,ME.identifier,ME.message); return; end

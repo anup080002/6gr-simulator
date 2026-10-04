@@ -1,0 +1,13 @@
+# Merge after finite_srs_csirs_interference.yaml. Optional research extension,
+# not qualified physical control reception. This generates actual coded DCI
+# and DM-RS for issued grants; ideal delayed control delivery stays explicit.
+# The caller must supply one scrambling ID and one unit-norm beam column per
+# cell: networkSpatial.pdcchScramblingIDs and pdcchPrecoderMatrices.
+# No default beam, cell identity or dummy DCI is invented.
+system:
+  linkAbstraction:
+    networkSpatial:
+      interferencePopulation: scheduled_shared_data_and_srs_and_csirs_and_pdcch
+      pdcchPowerPolicy: configured_bs_full_carrier_psd_per_occupied_re
+      pdcchPhaseAssumption: native_sequence_phase_at_committed_epoch
+      pdcchBeamPolicy: configured_fixed_cell_beam

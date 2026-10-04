@@ -153,5 +153,43 @@ catch ME
 end
 assert(threwBadBackend, "validateConfig must reject unknown system.phyBackend values.");
 
+cfgSINR = sixgr.config.defaultConfig();
+cfgSINR.system.sinrModel = "explicit_activity_power_sum";
+cfgSINR = sixgr.config.normalizeConfig(cfgSINR);
+sixgr.config.validateConfig(cfgSINR);
+cfgSINR.system.sinrModel = "unrecognized_sinr_policy";
+threwBadSINR = false;
+try
+    sixgr.config.validateConfig(cfgSINR);
+catch ME
+    threwBadSINR = strcmp(ME.identifier, 'sixgr:config:BadEnum');
+    assert(contains(string(ME.message), "system.sinrModel"), ...
+        "Unknown SLS SINR policies must identify the rejected field.");
+end
+assert(threwBadSINR, "validateConfig must reject unknown SLS SINR policies.");
+cfgBadChannelPolicy = sixgr.config.defaultConfig();
+cfgBadChannelPolicy.channel.interferenceModel = "unrecognized_sinr_policy";
+cfgBadChannelPolicy = sixgr.config.normalizeConfig(cfgBadChannelPolicy);
+threwBadChannelPolicy = false;
+try
+    sixgr.config.validateConfig(cfgBadChannelPolicy);
+catch ME
+    threwBadChannelPolicy = strcmp(ME.identifier, 'sixgr:config:BadEnum');
+    assert(contains(string(ME.message), "channel.interferenceModel"), ...
+        "Unknown legacy SINR policy aliases must identify the rejected field.");
+end
+assert(threwBadChannelPolicy, "validateConfig must reject unknown channel interference models.");
+cfgConflictingSINR = sixgr.config.defaultConfig();
+cfgConflictingSINR.system.sinrModel = "explicit_activity_power_sum";
+cfgConflictingSINR.channel.interferenceModel = "legacy_margin_calibration";
+cfgConflictingSINR = sixgr.config.normalizeConfig(cfgConflictingSINR);
+threwConflictingSINR = false;
+try
+    sixgr.config.validateConfig(cfgConflictingSINR);
+catch ME
+    threwConflictingSINR = strcmp(ME.identifier, 'sixgr:config:ConflictingSINRModels');
+end
+assert(threwConflictingSINR, "Conflicting SLS SINR policies must reject before execution.");
+
 ok = true;
 end

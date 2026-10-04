@@ -8,6 +8,19 @@ cfg = sixgr.truth.prepareValidationConfig(cfg, struct("SaveFigures", false, "Lin
 
 assert(double(cfg.phy.carrier.NSizeGrid) >= 48, ...
     "Truth validation config must allocate enough carrier bandwidth for the default PDCCH BWP.");
+prachCfg = sixgr.rach.PRACHConfig(cfg);
+assert(abs(prachCfg.MaxDopplerHz-cfg.channel.dopplerHz)<1e-10, ...
+    'The PRACH component must share the explicit profile Doppler, not an SLS speed range.');
+for badSpeed = {[3 30],NaN,-1}
+    invalidCfg = cfg;
+    invalidCfg.prach_lls.Speed_kmh = badSpeed{1};
+    try
+        sixgr.rach.PRACHConfig(invalidCfg);
+        error('test:ExpectedInvalidSpeed','Invalid selected link speed must fail.');
+    catch exception
+        assert(string(exception.identifier)=="sixgr:rach:PRACHConfig:UnresolvedLinkSpeed");
+    end
+end
 
 [tx, ~] = sixgr.phy.dl.PDCCH_Tx(cfg, "K", 64);
 [rxWave, nVar] = localAddAwgn(tx.Waveform, 30);
@@ -19,7 +32,7 @@ assert(logical(rx.Ok) && be == 0 && bt > 0, ...
     "Truth validation PDCCH control case must decode cleanly without crashes.");
 
 prach = sixgr.link.runPRACHDetection(cfg, "SNR_dB", 100);
-assert(logical(prach.Ok), "Truth validation PRACH case must complete cleanly.");
+assert(logical(prach.Ok), "Truth validation PRACH case must complete cleanly: %s",string(prach.Notes));
 assert(~logical(prach.Skipped), "Truth validation PRACH case must not be reported as skipped.");
 assert(logical(sixgr.util.structGet(prach, "Detected", false)), ...
     "Truth validation PRACH case must produce a real detection at high SNR.");

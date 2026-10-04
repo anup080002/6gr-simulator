@@ -23,7 +23,7 @@ if isempty(T)
 end
 
 targetBLER = double(cfg.sls.adaptive_selection.target_first_transmission_bler);
-expected = sixgr.studies.ran1ai1032.MCSCatalog.optionA();
+expected = sixgr.studies.ran1ai1032.MCSCatalog.alt3Extended();
 h = expected(ismember(expected.entry_id, ["H0";"H1";"H2";"H3"]), :);
 requiredRanks = double(cfg.sls.adaptive_selection.required_calibration_ranks(:));
 groupFields=["SourceChannel","DelaySpread_ns","AntennaCaseID", ...

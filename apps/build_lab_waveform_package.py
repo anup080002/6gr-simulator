@@ -156,6 +156,20 @@ def export_port(x, directory, stem, scale, fs, fc, span, description="Digital re
     normalized = x / scale
     pair = np.column_stack((normalized.real, normalized.imag))
     require(np.max(np.abs(pair)) <= 1, "Playback clipping")
+    # VXG recognizes IQ-prefixed data and the exact scalar name SampleRate.
+    # Keep descriptive strings out of this instrument file: the archival
+    # MAT above is not an instrument import contract. Use the same common
+    # scale as WIQ/VSA, preserving relative amplitude/phase across ports.
+    path = directory / f"{stem}_vsg.mat"
+    payload = dict(IQData=np.asarray(normalized, dtype=np.complex128)[:, None], SampleRate=fs)
+    savemat(path, payload, do_compression=False)
+    back = loadmat(path)
+    require(set(k for k in back if not k.startswith("__")) == set(payload), "VSG MAT fields differ")
+    require(np.array_equal(back["IQData"].ravel(), normalized) and
+            back["SampleRate"].item() == fs, "VSG MAT samples or clock differ")
+    receipt.append(dict(Path=str(path), Kind="vsg_mat", ExactReadback=True,
+                        SampleRateField="SampleRate", IQField="IQData"))
+    del back
     codes = np.rint(pair * 32767).astype("<i2")
     path = directory / f"{stem}.wiq"; codes.tofile(path)
     back = np.fromfile(path, dtype="<i2").reshape(-1, 2)
@@ -428,7 +442,9 @@ def package(root):
         SampleRateHz=fs,SamplesPerPort=samples,CoherentTxChannelsRequired=layers,CoherentRxChannelsRequired=layers,
         VSAInputSpanHz=fs/p["vsa_sample_rate_to_span_ratio"],
         VSAInputSpanNote="384 MHz complex analysis span preserves native 491.52 MSa/s ratio; not the nominal 400 MHz RF bandwidth",
-        Format="WIQ signed int16 little-endian IQ; CSV/MAT raw float64; VSA commonly normalized complex64",
+        Format="WIQ signed int16 little-endian IQ; CSV/MAT raw float64; VSG commonly normalized complex128; VSA commonly normalized complex64",
+        VSGMATImport="Use *_vsg.mat (IQData + SampleRate), not the archival raw *.mat",
+        WIQImport="Signed int16 little-endian interleaved IQ; explicitly set playback sample rate to SampleRateHz",
         Normalization="one common scale across both ports, separately per endpoint/profile",
         DigitalRelativePortAmplitudePhasePreserved=True,
         NoResampling=True,NoPadding=True,NoTruncation=True,NoRepeatedFrame=True,
@@ -437,7 +453,8 @@ def package(root):
         HardwarePreflightRequired=["*IDN?", "*OPT?", "frequency range", "bandwidth per channel", "native sample-rate playback",
                                    "memory per channel", "coherent simultaneous two-channel TX and RX", "analysis software/1024-QAM/custom OFDM support"],
         References=["https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/data_header.htm",
-                    "https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/inputspan.htm"],Files=receipts)
+                    "https://helpfiles.keysight.com/csg/89600B/Webhelp/Subsystems/sharing/content/inputspan.htm",
+                    "https://helpfiles.keysight.com/csg/m9484/Content/GPSS/Creating%20and%20Downloading%20Waveforms.htm"],Files=receipts)
     write_json(root/"keysight/instrument_handoff.json",handoff)
     shutil.copy2(Path(__file__).resolve().parents[1]/"docs/lls/vxg_vsa_rank2_runbook.md",root/"keysight/hardware_checklist_and_runbook.md")
     shutil.copy2(Path(__file__).with_name("physical_measurement.schema.json"),root/"keysight/physical_measurement.schema.json")

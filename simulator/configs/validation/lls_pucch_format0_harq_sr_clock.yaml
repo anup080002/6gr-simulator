@@ -1,0 +1,17 @@
+# Physical shared SRS/PUCCH component; not an access or detector campaign.
+inherits:
+  - ./lls_pucch_feedback_clock_connected.yaml
+meta:
+  scenario_id: lls_pucch_format0_harq_sr_clock
+  research_class: optional_research_experiment
+  description: Two Type-2 HARQ bits and configured SR on the original Format-0 resource
+pucch_resources:
+  sr_resource_ids: [0]
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 3
+      priority_index: 0
+      additional_periodicity_capability: false

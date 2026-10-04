@@ -1046,19 +1046,19 @@ canonical_control:
       - 0
       - 0
       precoder_ids:
-      - identity
-      - identity
-      - identity
-      - identity
-      - identity
-      - identity
-      - identity
-      - identity
+      - dft_ura_beam_0
+      - dft_ura_beam_1
+      - dft_ura_beam_2
+      - dft_ura_beam_3
+      - dft_ura_beam_4
+      - dft_ura_beam_5
+      - dft_ura_beam_6
+      - dft_ura_beam_7
       precoder_codebook:
-        enabled: false
+        enabled: true
         type: dft_ura
-        physical_element_count: 1
-        beam_indices: [0]
+        physical_element_count: 64
+        beam_indices: [0, 1, 2, 3, 4, 5, 6, 7]
       waveform_domain: physical_element_domain
       k_ssb: 0
       n_crb_ssb: 0
@@ -1071,7 +1071,8 @@ canonical_control:
     type0:
       si_rnti: 65535
       dci_format: '1_0'
-      monitoring_occasion_ordinal: 2
+      # n0,n0+1 per 20-ms period: ordinal 3 preserves the next-period n0.
+      monitoring_occasion_ordinal: 3
       note17_band: false
     sib1:
       enabled: true
@@ -1202,7 +1203,11 @@ canonical_control:
       rar_processing_delay_slots: 1
       msg3_k2_slots: 1
       msg4_processing_delay_slots: 1
-      setup_complete_k2_slots: 1
+      # Msg4 occupies symbols 2..13 and therefore cannot use the mixed
+      # slot (12 DL / 1 guard / 1 UL). The final full DL slot is followed
+      # by that mixed slot, then the full UL slot required by SRB1.
+      # This configures allocation timing; it does not qualify an on-air grant.
+      setup_complete_k2_slots: 2
     dci_payload_bits: 32
     # Explicit TC-RNTI DCI 1_0 field authority; payload size is derived by
     # the codec, not by the legacy dci_payload_bits compatibility field.
@@ -1223,7 +1228,8 @@ canonical_control:
       target_code_rate: 0.1171875
       rv: 0
       n_layers: 1
-      ptrs_enabled: true
+      # Common RA-RNTI PDSCH has no dedicated PT-RS configuration.
+      ptrs_enabled: false
       ptrs_port_set: [0]
       ptrs_time_density: 1
       ptrs_frequency_density: 2
@@ -1254,7 +1260,8 @@ canonical_control:
       target_code_rate: 0.1171875
       rv: 0
       n_layers: 1
-      ptrs_enabled: true
+      # TC-RNTI common Msg4 uses the independently decoded common PDSCH.
+      ptrs_enabled: false
       ptrs_port_set: [0]
       ptrs_time_density: 1
       ptrs_frequency_density: 2
@@ -2007,7 +2014,8 @@ pdsch:
   prb_start: 0
   num_prb: 273
   layer_count: 2
-  num_antenna_ports: 2
+  # Four CSI logical ports support two scheduled layers; DMRS remains per layer.
+  num_antenna_ports: 4
   transmission_scheme: codebook
   codebook_type: type1
   pmi: 0
@@ -2465,6 +2473,17 @@ rf_frontend:
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 pucch_resources:
+  # Isolated coding diagnostics are not connected HARQ/CSI feedback.
+  component_probe:
+    enabled: false
+    evidence_scope: isolated_known_payload_not_causal_feedback
+    ue_id: 1
+    rnti: 1
+    serving_cell: 0
+    first_slot_zero_based: 3
+    period_slots: 5
+    csi_part1_bit_count: 20
+    csi_part2_bit_count: 0
   enabled: true
   profile: nr_rel18_pucch_strict
   configuration_epoch: 1

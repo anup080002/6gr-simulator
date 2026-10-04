@@ -10,7 +10,7 @@ cfg.phy.pdcch.dmrs.enable = true;
 cfg.channel.bandwidth_Hz = 20e6;
 cfg.phy.channelBandwidth_Hz = 20e6;
 cfg.phy.carrier.NSizeGrid = 51;
-cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",3);
 cfg.initial_access.sib1.pdsch = struct("prb_start",0, ...
     "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0);
 scfg = struct("meta", struct("tags", ["truth","no-proxy"]), "scenario", struct("honesty_mode", "strict"));

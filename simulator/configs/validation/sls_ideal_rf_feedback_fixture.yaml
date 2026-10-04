@@ -1,0 +1,32 @@
+# Configuration-only ideal-RF arm for causal-feedback software integration.
+# Not RF qualification or accepted link calibration. Keep disabled consumers
+# present so runtime feature-authority validation still verifies the arm.
+impairments:
+  cfo_enabled: false
+  cfo_correction_enable: false
+  phase_noise_enabled: false
+  iq_imbalance_enabled: false
+  iq_imbalance_correction_enable: false
+  pa_nonlinearity_enabled: false
+  timing_offset_enabled: false
+  adc_quantization_enabled: false
+  dac_quantization_enabled: false
+rf_hardware:
+  agc_enable: false
+rf_frontend:
+  enabled: false
+  receiver:
+    agc:
+      enabled: false
+    adc:
+      enabled: false
+  iq_and_lo_leakage:
+    enabled: false
+    compensation_enabled: false
+  phase_noise:
+    enabled: false
+  ul_power_control:
+    enabled: false
+    open_loop_enabled: false
+    closed_loop_enabled: false
+    phr_report_enabled: false

@@ -947,7 +947,10 @@ initial_access:
     enabled: true
     # Keep SIB1 in the standards-derived Type-0 DL occasion at slot 2,
     # outside the slot-0/1 four-beam SS/PBCH burst and inside a TDD DL slot.
-    pdcch_config_sib1: 2
+    # Table 13-1 index 1: 24 RB, offset 2. SSB common RB 2 therefore
+    # anchors CORESET0 at RB 0 inside this 25-RB carrier. Index 0 would
+    # extend beyond the carrier. Keep SearchSpaceZero=2 (DL slot 2).
+    pdcch_config_sib1: 18
     dmrs_type_a_position: 2
   type0:
     monitoring_occasion_ordinal: 1

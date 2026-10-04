@@ -190,6 +190,52 @@ assert(all(double(rankAdaptiveOut.RankLayerTrials.ConfiguredRank) == 1) && ...
     "Initial rank and maximum supported rank must remain separate export fields.");
 
 bootstrapOnlyRaw = adaptiveRaw;
+% Current receiver CQI and newly queued decisions are not the provenance of
+% the already transmitted TB. A held causal decision remains usable.
+heldRaw=adaptiveRaw;
+for direction=["DL","UL"]
+    heldRaw.(direction).LinkAdaptationScheduled(:)=false;
+    heldRaw.(direction).WidebandCQI(:)=NaN;
+    heldRaw.(direction).CQIDerivedMCS(:)=NaN;
+end
+heldOut=sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,heldRaw,"StrictMode",true);
+assert(heldOut.StrictOk && all(heldOut.RankLayerTrials.AdaptiveFeedbackDecisionObserved));
+futureRaw=adaptiveRaw;
+futureRaw.DL.LinkAdaptationAppliedFeedbackSourceSlot=futureRaw.DL.Slot;
+futureOut=sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,futureRaw,"StrictMode",true);
+assert(~futureOut.StrictOk && any(contains(futureOut.RankLayerTrials.AdaptivePolicyFailureReason, ...
+    "adaptive_applied_feedback_clock_invalid")));
+wrongDecision=adaptiveRaw;
+wrongDecision.DL.AppliedLinkAdaptationMCS(:)=0;
+wrongOut=sixgr.mimo.resolveNominalVsEffectiveMIMO(adaptiveCfg,wrongDecision,"StrictMode",true);
+assert(~wrongOut.StrictOk && any(contains(wrongOut.RankLayerTrials.AdaptivePolicyFailureReason, ...
+    "adaptive_applied_decision_mcs_mismatch")));
+
+bootstrapCfg=adaptiveCfg;
+bootstrapCfg.phy.pdsch.mcsTable="qam64_table1";
+bootstrapCfg.phy.pusch.mcsTable="qam256_table2";
+mixedRaw=adaptiveRaw;
+for direction=["DL","UL"]
+    mixedRaw.(direction)=localSetInitialOperatingPoint(mixedRaw.(direction),1);
+end
+mixedOut=sixgr.mimo.resolveNominalVsEffectiveMIMO(bootstrapCfg,mixedRaw,"StrictMode",true);
+assert(mixedOut.StrictOk && all(mixedOut.RankLayerTrials.AdaptivePolicyMatch) && ...
+    all(mixedOut.ConfiguredVsEffective.AdaptiveFeedbackDecisionRowCount==1), ...
+    'Bootstrap may conform without counting as a measured adaptive decision.');
+assert(mixedOut.MIMOConfigStrict.ConfiguredMCSTable(mixedOut.MIMOConfigStrict.Direction=="UL")=="qam256_table2", ...
+    'UL MCS-table provenance must not be copied from DL.');
+initialOnly=mixedRaw;
+for direction=["DL","UL"]
+    initialOnly.(direction)=localSetInitialOperatingPoint(initialOnly.(direction),2);
+end
+initialOut=sixgr.mimo.resolveNominalVsEffectiveMIMO(bootstrapCfg,initialOnly,"StrictMode",true);
+assert(~initialOut.StrictOk && all(initialOut.RankLayerTrials.AdaptivePolicyMatch) && ...
+    all(initialOut.ConfiguredVsEffective.AdaptiveFeedbackDecisionRowCount==0), ...
+    'Correct bootstrap execution alone must not qualify the adaptive campaign.');
+badInitial=mixedRaw; badInitial.DL.MCS(1)=10; badInitial.DL.ScheduledMCS(1)=10;
+badInitialOut=sixgr.mimo.resolveNominalVsEffectiveMIMO(bootstrapCfg,badInitial,"StrictMode",true);
+assert(~badInitialOut.StrictOk && any(contains(badInitialOut.RankLayerTrials.AdaptivePolicyFailureReason, ...
+    "configured_bootstrap_execution_mismatch")));
 bootstrapOnlyRaw.DL.MCSValueStatus(:) = ...
     "yaml_mu_mimo_first_data_bootstrap_pending_data_feedback";
 bootstrapOnlyRaw.UL.MCSValueStatus(:) = ...
@@ -435,10 +481,35 @@ T.ModulationAuthority = repmat("cqi_link_adaptation", n, 1);
 T.AppliedOperatingPointSource = repmat("cqi_link_adaptation", n, 1);
 T.LinkAdaptationScheduled = true(n, 1);
 T.LinkAdaptationApplied = true(n, 1);
+% Explicit causal fields for this algebraic export fixture, not measured
+% waveform performance. Source precedes execution by one configured slot.
+T.LinkAdaptationAppliedFeedbackSourceSlot=T.Slot-1;
+T.LinkAdaptationAppliedFeedbackAgeSlots=ones(n,1);
+T.LinkAdaptationFeedbackDelaySlots=ones(n,1);
+T.AppliedLinkAdaptationMCS=T.MCS;
+T.AppliedLinkAdaptationResolvedCQI=repmat(8,n,1);
+T.AppliedLinkAdaptationCQIBasedMCS=T.MCS;
 T.WidebandCQI = repmat(8, n, 1);
 T.CQIDerivedMCS = T.MCS;
 T.MCSValueStatus = repmat("measured_feedback_adapted", n, 1);
 T.GrantContextId = "grant_" + string((1:n).');
+end
+
+function T=localSetInitialOperatingPoint(T,index)
+T.MCS(index)=1; T.ScheduledMCS(index)=1;
+T.Modulation(index)="QPSK"; T.ScheduledModulation(index)="QPSK";
+T.ActualMCSSelectionMode(index)="configured_initial_mcs";
+T.MCSSelectionSource(index)="configured_initial_mcs";
+T.AppliedOperatingPointSource(index)="configured_initial_mcs";
+T.MCSAuthority(index)="configured_initial_mcs";
+T.ModulationAuthority(index)="configured_initial_mcs";
+T.MCSValueStatus(index)="bootstrap_not_measured_cqi";
+T.LinkAdaptationApplied(index)=false;
+T.LinkAdaptationAppliedFeedbackSourceSlot(index)=NaN;
+T.LinkAdaptationAppliedFeedbackAgeSlots(index)=NaN;
+T.AppliedLinkAdaptationMCS(index)=NaN;
+T.AppliedLinkAdaptationResolvedCQI(index)=NaN;
+T.AppliedLinkAdaptationCQIBasedMCS(index)=NaN;
 end
 
 function T = localAddMUExecutionEvidence(T, groupId)

@@ -7,16 +7,19 @@ previousScratch = string(getenv("SIXGR_REGRESSION_SCRATCH_ROOT"));
 scratchRoot = previousScratch;
 ownsScratchRoot = strlength(strtrim(scratchRoot)) == 0;
 if ownsScratchRoot
-    scratchRoot = string(tempname);
+    scratchRoot = string(fullfile(pwd,'results','lls','multiuser_beamforming', ...
+        char(datetime('now','Format','yyyyMMdd_HHmmss_SSS'))));
     mkdir(scratchRoot);
     setenv("SIXGR_REGRESSION_SCRATCH_ROOT", scratchRoot);
 elseif ~isfolder(scratchRoot)
     mkdir(scratchRoot);
 end
-scratchCleanup = onCleanup(@() localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)); %#ok<NASGU>
+scratchCleanup = onCleanup(@() setenv("SIXGR_REGRESSION_SCRATCH_ROOT",previousScratch)); %#ok<NASGU>
 tmp = localScratchChild(scratchRoot, "u", ownsScratchRoot);
 mkdir(tmp);
-c = onCleanup(@() localRemoveFolder(tmp)); %#ok<NASGU>
+% Preserve received samples, resolved configuration and terminal diagnostics
+% on failure as well as success. Only restore the caller's environment.
+fprintf('MULTIUSER_BEAMFORMING_EVIDENCE_ROOT=%s\n',tmp);
 
 baseScenario = fullfile(pwd, "simulator", "configs", "scenarios", ...
     "lls_mimo4x4_multiuser_beamformed_cdl_d_fdd_validation.yaml");
@@ -332,24 +335,11 @@ parts = parts(~cellfun(@isempty, parts));
 values = str2double(parts);
 end
 
-function localRestoreScratch(previousScratch, scratchRoot, ownsScratchRoot)
-setenv("SIXGR_REGRESSION_SCRATCH_ROOT", previousScratch);
-if ownsScratchRoot
-    localRemoveFolder(scratchRoot);
-end
-end
-
 function pathValue = localScratchChild(scratchRoot, prefix, ownsScratchRoot)
 if ownsScratchRoot
     pathValue = fullfile(scratchRoot, prefix);
 else
     token = char(java.util.UUID.randomUUID());
     pathValue = fullfile(scratchRoot, prefix + string(token(1:8)));
-end
-end
-
-function localRemoveFolder(pathValue)
-if isfolder(pathValue)
-    rmdir(pathValue, "s");
 end
 end

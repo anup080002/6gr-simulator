@@ -262,7 +262,46 @@ if needsPortView
         ant, meta, signalPortCount, portViewSource);
     [ant, meta] = localApplyConfiguredSignalProjection( ...
         cfg, ant, meta, direction, endpoint, signalPortCount);
+elseif portViewSource == "ssb_pbch_physical_element_waveform_already_precoded"
+    [ant, meta] = localAlreadyPrecodedElementView(ant, meta, signalPortCount, portViewSource);
 end
+end
+
+function [ant, meta] = localAlreadyPrecodedElementView(ant, meta, count, source)
+% SSB_Tx has already mapped its logical common-channel port to elements.
+% Specialize only the waveform interface: retain geometry, polarization,
+% RF-chain capability and configured logical-port/precoder identities.
+% The caller separately checks the configured SSB physical element count.
+objects = {ant, meta};
+for k = 1:numel(objects)
+    obj = objects{k};
+    if ~(isstruct(obj) && isscalar(obj) && ~isempty(fieldnames(obj)))
+        continue;
+    end
+    for name = ["NumElements", "Nant"]
+        if isfield(obj, name)
+            value = obj.(name);
+            if ~(isnumeric(value) && isreal(value) && isscalar(value) && ...
+                    isfinite(value) && value == count)
+                error("sixgr:link:SSBRuntimeElementCountMismatch", ...
+                    "The retained runtime array %s must match all %d already-precoded SSB columns.", ...
+                    name, count);
+            end
+        end
+    end
+    if isfield(obj, 'ElementPositions_m') && ~isempty(obj.ElementPositions_m) && ...
+            size(obj.ElementPositions_m, 1) ~= count
+        error("sixgr:link:SSBRuntimeElementCountMismatch", ...
+            "Retain exactly one runtime element position per already-precoded SSB column.");
+    end
+    obj.NumWaveformColumns = double(count);
+    obj.WaveformDomain = "element";
+    obj.WaveformDomainSource = source;
+    obj.PortToElementExpansionEnabled = false;
+    objects{k} = obj;
+end
+ant = objects{1};
+meta = objects{2};
 end
 
 function [ant, meta] = localApplyConfiguredSignalProjection( ...

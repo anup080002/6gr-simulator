@@ -53,6 +53,7 @@ classdef CausalDLCSIFeedback < handle
             validateattributes([now o.SourceAbsoluteSlot0 o.AvailableAbsoluteSlot0],{'numeric'}, ...
                 {'integer','nonnegative','finite','numel',3});
             validateattributes([o.UEIndex o.ServingCell],{'numeric'},{'integer','positive','finite','numel',2});
+            localValidateReferenceEmission(obj.Cfg,o,'sixgr:abstraction:DLCSIEmissionBinding');
             digest=localHash(o);
             for k=1:numel(obj.Records)
                 if obj.Records{k}.ObservationID==string(o.ObservationID)
@@ -63,7 +64,7 @@ classdef CausalDLCSIFeedback < handle
             H=o.ChannelEstimate;
             assert(size(H,2)==p.panel.Ports,'sixgr:abstraction:DLCSIPortBasis', ...
                 'CSI logical ports must match the explicit channel basis; no TXRU-to-port identity shortcut.');
-            best=-Inf; selected=struct();
+            best=-Inf; selected=struct(); selectedLayerSINR=[];
             for r=p.allowedRanks(:).'
                 if r>size(H,1), continue; end
                 req=p.panel; req.Rank=r;
@@ -84,6 +85,7 @@ classdef CausalDLCSIFeedback < handle
                     value=mean(sum(log2(1+s.SINRLinear),2));
                     if value>best
                         best=value;
+                        selectedLayerSINR=s.SINRLinear;
                         selected=struct('RI',r,'PMI',double(indices(n)),'CRI',o.CRI, ...
                             'MatrixPorts',W,'NumPorts',size(H,2),'ObjectiveValue',value, ...
                             'ModeledSINR_dB',10*log10(expm1(mean(log1p(s.SINRLinear),'all'))));
@@ -93,6 +95,11 @@ classdef CausalDLCSIFeedback < handle
             assert(isfinite(best),'sixgr:abstraction:DLCSIRank','No supported observable rank.');
             cq=sixgr.link.resolveWidebandCQI(selected.ModeledSINR_dB,obj.Cfg,"DL");
             selected.CQI=cq.WidebandCQI;
+            if selected.RI<=4
+                [selected.LI,selected.LayerIndicatorEvidence]=sixgr.phy.mimo.selectCSILayerIndicator( ...
+                    selectedLayerSINR,selected.CQI);
+                selected.LayerIndicatorEvidence.SourceClassification="modeled_layer_sinr_not_waveform_measurement";
+            end
             selected.CQIQualification="configured_mapping_not_statistically_qualified_here";
             selected.ReportAbsoluteSlot0=sixgr.util.structGet(o,'ReportAbsoluteSlot0',o.SourceAbsoluteSlot0);
             B=sixgr.util.structGet(o,'PortToElementMatrix',eye(size(H,2)));
@@ -107,9 +114,106 @@ classdef CausalDLCSIFeedback < handle
                 selected.(f)=o.(f);
             end
             selected.ObservationDigest=digest;
+            for f=["CompletionAbsoluteSlot0","PublicationAbsoluteSlot0","ReferenceAvailableAtSlot0", ...
+                    "DisturbanceAssumption","ReferenceCompletionEvidence", ...
+                    "ReferenceResourceID","ReferenceEmissionSHA256","ModeledPowerReference","RNTI"]
+                if isfield(o,f), selected.(f)=o.(f); end
+            end
             selected.EstimationAssumption=string(p.estimationAssumption);
+            selected.CapturedAtAbsoluteSlot0=now;
             selected.WaveformBacked=false;
             obj.Records{end+1}=selected;
+        end
+        function reference=powerReferenceAtSlotStart(obj,ue,cellID,now)
+            % UE-side pathloss knowledge is not gated by gNB CSI delivery.
+            % Conversely it cannot use an observation completed this slot.
+            validateattributes([ue cellID],{'numeric'},{'numel',2,'integer','positive','finite'});
+            validateattributes(now,{'numeric'},{'scalar','integer','nonnegative','finite'});
+            p=obj.Cfg.system.linkAbstraction.dynamicPUCCH.powerReference;
+            assert(p.enabled,'sixgr:abstraction:PowerReferencePolicy','Enable the explicit modeled reference.');
+            reference=struct('Available',false,'Status',"no_causal_configured_power_reference");
+            selected=[];
+            for k=1:numel(obj.Records)
+                x=obj.Records{k};
+                if x.UEIndex~=ue || x.ServingCell~=cellID || ...
+                    ~isfield(x,'ModeledPowerReference') || isempty(x.ModeledPowerReference) || ...
+                    ~isfield(x,'ReferenceAvailableAtSlot0') || x.ReferenceAvailableAtSlot0>now || ...
+                    x.CapturedAtAbsoluteSlot0>=now || ...
+                    (isfield(x,'CompletionAbsoluteSlot0') && x.CompletionAbsoluteSlot0>=now) || ...
+                    now-x.SourceAbsoluteSlot0>p.maximumAgeSlots
+                    continue;
+                end
+                r=x.ModeledPowerReference;
+                assert(r.SHA256==localHash(rmfield(r,'SHA256')) && ...
+                    r.ExecutionID==string(obj.Cfg.run.executionID) && r.UEIndex==ue && ...
+                    r.ServingCell==cellID && r.RNTI==x.RNTI && r.SourceAbsoluteSlot0==x.SourceAbsoluteSlot0 && ...
+                    r.ReferenceEmissionSHA256==x.ReferenceEmissionSHA256 && ...
+                    r.ReferenceSignalID==p.referenceSignalID && r.ReferenceSignalType==string(p.referenceSignalType) && ...
+                    r.PathlossReferenceRSID==p.pathlossReferenceRSID && ...
+                    r.FilterCoefficient==p.filterCoefficient && r.ReceivePolicy==string(p.receivePolicy) && ...
+                    r.SourceClassification==string(p.sourceClassification) && ~r.WaveformMeasured, ...
+                    'sixgr:abstraction:PowerReferenceIdentity','Power reference must retain its configured source, identity and population.');
+                if isempty(selected) || x.SourceAbsoluteSlot0>selected.SourceAbsoluteSlot0, selected=x; end
+            end
+            if isempty(selected), return; end
+            reference=selected.ModeledPowerReference;
+            reference.ObservationID=selected.ObservationID;
+            reference.ObservationDigest=selected.ObservationDigest;
+            reference.ReferenceAvailableAtSlot0=selected.ReferenceAvailableAtSlot0;
+            reference.CapturedAtAbsoluteSlot0=selected.CapturedAtAbsoluteSlot0;
+            reference.KnownAtAbsoluteSlot0=now;
+            reference.AgeSlots=now-selected.SourceAbsoluteSlot0;
+            reference.Available=true;
+            reference.Status="causal_ideal_modeled_reference_not_waveform_measurement";
+            reference.BindingSHA256=localHash(reference);
+        end
+        function payload=reportForTransmission(obj,ue,cellID,reportSlot,now)
+            % UE-side modeled report values before ideal transport delivery.
+            % This does not make CSI available early to the gNB scheduler.
+            validateattributes([ue cellID],{'numeric'},{'vector','numel',2,'integer','positive','finite'});
+            validateattributes([reportSlot now],{'numeric'},{'vector','numel',2,'integer','nonnegative','finite'});
+            assert(now<=reportSlot,'sixgr:abstraction:DLCSIReportClock','Do not backdate a CSI waveform payload.');
+            payload=struct('Available',false,'Part1Bits',zeros(0,1,'int8'),'Part2Bits',zeros(0,1,'int8'), ...
+                'SelectedFeedback',struct(),'EncodedReport',struct(), ...
+                'Status',"no_completed_reference_for_report",'WaveformBacked',false,'PhysicalDecodeQualified',false);
+            eligible=cell(0,1);
+            for k=1:numel(obj.Records)
+                x=obj.Records{k};
+                if x.UEIndex~=ue || x.ServingCell~=cellID || x.ReportAbsoluteSlot0~=reportSlot || ...
+                    ~isfield(x,'ReferenceAvailableAtSlot0') || x.ReferenceAvailableAtSlot0>now || ...
+                    x.CapturedAtAbsoluteSlot0>=now || ...
+                    reportSlot-x.SourceAbsoluteSlot0>obj.Cfg.system.linkAbstraction.dlFeedback.maximumAgeSlots
+                    continue;
+                end
+                assert(x.ReferenceAvailableAtSlot0>x.SourceAbsoluteSlot0 && ...
+                    x.AvailableAbsoluteSlot0>reportSlot && ...
+                    (~isfield(x,'CompletionAbsoluteSlot0') || x.CompletionAbsoluteSlot0<now), ...
+                    'sixgr:abstraction:DLCSIReportClock','Reference completion must precede report generation and delivery.');
+                eligible{end+1}=x; %#ok<AGROW>
+            end
+            selected=[];
+            for k=1:numel(eligible)
+                x=eligible{k};
+                superseded=any(cellfun(@(y)y.CRI==x.CRI && y.SourceAbsoluteSlot0>x.SourceAbsoluteSlot0,eligible));
+                if superseded, continue; end
+                if isempty(selected) || x.ObjectiveValue>selected.ObjectiveValue, selected=x; end
+            end
+            if isempty(selected), return; end
+            localValidateReferenceEmission(obj.Cfg,selected,'sixgr:abstraction:DLCSIEmissionBinding');
+            request=obj.Cfg.phy.csi.reportConfiguration; request.Rank=selected.RI;
+            typed=sixgr.phy.mimo.CSIReportConfiguration(request,obj.Cfg.phy.csi.reportConfigurationEpoch);
+            values=struct('CRI',selected.CRI,'RI',selected.RI,'CQI_CW0',selected.CQI,'PMI',selected.PMI);
+            if isfield(selected,'LI'), values.LI=selected.LI; end
+            if request.Ports>2
+                [W,components]=sixgr.phy.mimo.TypeISinglePanelCodebook.matrix(request,selected.PMI);
+                assert(norm(W/norm(W,'fro')-selected.MatrixPorts,'fro')<1e-12, ...
+                    'sixgr:abstraction:DLCSIReportIdentity','Report PMI must retain the selected physical port matrix.');
+                for field=string(fieldnames(components)).', values.(field)=components.(field); end
+            end
+            encoded=typed.build(values);
+            payload.Available=true; payload.Status="causal_modeled_csi_payload_available";
+            payload.Part1Bits=encoded.Part1Bits; payload.Part2Bits=encoded.Part2Bits;
+            payload.SelectedFeedback=selected; payload.EncodedReport=encoded;
         end
         function r=select(obj,ue,cellID,now,target)
             assert(now<=target,'sixgr:abstraction:DLCSIClock','No future knowledge.');
@@ -137,6 +241,7 @@ classdef CausalDLCSIFeedback < handle
     methods (Static)
         function validateGrant(cfg,g)
             r=g.ModeledCSIFeedback;
+            localValidateReferenceEmission(cfg,r,'sixgr:abstraction:DLCSIEmissionBinding');
             replay=sixgr.phy.grant.isExplicitHARQRetransmission(g);
             assert(strcmpi(string(cfg.system.phyBackend),'calibrated_link_abstraction') && ...
                 cfg.system.linkAbstraction.dlFeedback.enabled && ~r.WaveformBacked && ...
@@ -162,6 +267,21 @@ classdef CausalDLCSIFeedback < handle
             end
         end
     end
+end
+function localValidateReferenceEmission(cfg,o,id)
+population=string(sixgr.util.structGet(cfg,'system.linkAbstraction.networkSpatial.interferencePopulation',''));
+if ~any(population==["scheduled_shared_data_and_srs_and_csirs", ...
+        "scheduled_shared_data_and_srs_and_csirs_and_pdcch"]), return; end
+assert(all(isfield(o,{'CRI','ReferenceResourceID','ReferenceEmissionSHA256'})) && ...
+    isnumeric(o.CRI) && isscalar(o.CRI) && isfinite(o.CRI) && o.CRI>=0 && o.CRI==fix(o.CRI), ...
+    id,'Native CSI-RS feedback must retain the emitted resource identity and digest.');
+ids=double(sixgr.util.structGet(cfg,'phy.csirs.resourceIDs',[]));
+if isempty(ids), ids=double(sixgr.util.structGet(cfg,'phy.csirs.resourceID',NaN)); end
+assert(o.CRI<numel(ids) && isfinite(ids(o.CRI+1)) && ...
+    isequal(double(o.ReferenceResourceID),ids(o.CRI+1)) && ...
+    isscalar(string(o.ReferenceEmissionSHA256)) && ...
+    ~isempty(regexp(char(o.ReferenceEmissionSHA256),'^[0-9a-fA-F]{64}$','once')), ...
+    id,'Selected CRI must bind its configured native CSI-RS resource and retained emission digest.');
 end
 function h=localHash(v)
 h=string(sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(sixgr.util.jsonSafeValue(v)),'UTF-8'))));

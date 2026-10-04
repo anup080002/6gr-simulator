@@ -1832,5 +1832,25 @@ def test_pdcch_component_charts_use_exact_study_evidence() -> None:
         assert rows[0]["probability"] == first_value
 
 
+def test_pdcch_zero_one_single_point_plots_are_observations_not_placeholders():
+    path = "reports/csv/pdcch6gr_summary_by_snr.csv"
+    existing = {path: {"artifact_id": 1, "logical_path": path}}
+    payload = (
+        "SNRdB,mean_FalseAlarmProbability,mean_MissProbability,mean_DetectionProbability\n"
+        "20,0,0,1\n"
+    ).encode()
+    for name, value in (("P_FA", "0.0"), ("FAR", "0.0"), ("P_MD", "0.0"), ("P_D", "1.0")):
+        result = materializer._specialized_chart_materialization(name, existing, lambda _: payload, 5)
+        assert result is not None
+        assert result["uniform_runtime_evidence_is_valid"]
+        assert b"visual_gate=" not in result["img_bytes"]
+        assert b"Evidence shape: measured scalar" in result["img_bytes"]
+        _, rows = materializer._decode_csv_dicts(result["csv_bytes"])
+        assert len(rows) == 1 and float(rows[0]["probability"]) == float(value)
+        assert float(rows[0]["snr_db"]) == 20
+        png = materializer._rasterize_contract_png(result["img_bytes"], source_mime_type="image/svg+xml")
+        assert not materializer._png_low_information_reason(png)
+
+
 if __name__ == "__main__":
     main()

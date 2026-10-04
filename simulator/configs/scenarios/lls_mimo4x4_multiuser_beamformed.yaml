@@ -257,7 +257,7 @@
     "type0": {
       "si_rnti": 65535,
       "dci_format": "1_0",
-      "monitoring_occasion_ordinal": 2,
+      "monitoring_occasion_ordinal": 3,
       "note17_band": false
     },
     "sib1": {

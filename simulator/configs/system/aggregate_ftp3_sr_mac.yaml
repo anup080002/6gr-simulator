@@ -1,0 +1,21 @@
+# Optional modeled SR procedure overlay for the existing aggregate FTP3 SLS.
+# It does NOT model received BSR scheduling or waveform-decoded SR.
+# The declared whole-TB application budget matches the existing FTP3 service
+# model; this branch does not claim MAC CE/subheader overhead qualification.
+system:
+  linkAbstraction:
+    dynamicPUCCH:
+      schedulingRequestMAC:
+        enabled: true
+        researchClass: optional_research_experiment
+        bufferModel: single_logical_channel_unallocated_ftp3
+        schedulerBufferKnowledge: ideal_instantaneous_unallocated_buffer
+        grantPayloadAccounting: whole_tb_application_budget_no_mac_ce
+        # UE implementation policy for ordinary traffic SR, not a mandated
+        # 3GPP preference and not beam-failure/LBT recovery prioritization.
+        positiveSRSelection: lowest_scheduling_request_resource_id
+        trafficSchedulingRequestID: 0
+        procedures:
+          - SchedulingRequestID: 0
+            ProhibitTimerSlots: 4
+            MaxTransmissions: 64

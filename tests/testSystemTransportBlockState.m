@@ -9,11 +9,14 @@ sixgr.system.waveform.harqSoftBufferCache("clear",key);
 [hit,~]=sixgr.system.waveform.harqSoftBufferCache("get",key); assert(~hit);
 s=sixgr.system.SystemTransportBlockState(17);
 c=struct('Direction',"UL",'ServingCellID',1,'TBSBits',80, ...
-    'Grant',struct('RNTI',1,'HARQ',struct('HarqID',0,'NDI',1,'IsRetransmission',false)));
+    'Grant',struct('RNTI',4660,'UEIndex',1,'HARQ',struct('HarqID',0,'NDI',1,'IsRetransmission',false)));
 [a,old]=s.bind(c); assert(strlength(old)==0 && numel(a.TransportBlockBits)==80);
 c.Grant.HARQ.IsRetransmission=true;
 [b,old]=s.bind(c); assert(strlength(old)==0);
 assert(a.TransportBlockIdentity==b.TransportBlockIdentity && isequal(a.TransportBlockBits,b.TransportBlockBits));
+wrongOwner=c; wrongOwner.Grant.UEIndex=2;
+try, s.bind(wrongOwner); error('test:ExpectedError','A retransmission must retain internal UE ownership.');
+catch ME, assert(strcmp(ME.identifier,'sixgr:system:TransportBlockMutation')); end
 c.TBSBits=88;
 try, s.bind(c); error('test:ExpectedError','Missing immutable TBS guard.');
 catch ME, assert(strcmp(ME.identifier,'sixgr:system:TransportBlockMutation')); end
@@ -24,7 +27,7 @@ sixgr.system.waveform.harqSoftBufferCache("set",oldKey,[1 2 3]);
 [hit,~]=sixgr.system.waveform.harqSoftBufferCache("get",oldKey); assert(~hit);
 s2=sixgr.system.SystemTransportBlockState(17); [e,~]=s2.bind(c);
 assert(isequal(e.TransportBlockBits,a.TransportBlockBits) && e.TransportBlockIdentity~=a.TransportBlockIdentity);
-L=table("max_retx_drop",0,1,0,0,'VariableNames', ...
+L=table("max_retx_drop",0,4660,0,0,'VariableNames', ...
     {'Status','AttemptSlot','RNTI','HARQProcessId','ScheduleSlot'});
 drops=s.terminalDrops("UL",1,L,1);
 assert(numel(drops)==1 && drops.ID==d.TransportBlockIdentity && drops.UEID==1);

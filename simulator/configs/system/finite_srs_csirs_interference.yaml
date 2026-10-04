@@ -1,0 +1,21 @@
+# Optional NR-derived, ideal-RF modeled network extension. Not received CSI.
+# Merge after calibrated_link_abstraction.yaml. The scenario must additionally
+# set networkSpatial.csirsScramblingIDs (one actual NID per cell, 0..1023)
+# and phy.csirs.precoderMatrices (the same physical beam basis used for CSI).
+# Reserved resources alone do not emit. Native CSI-RS is generated on due
+# occasions, committed once, and propagated through the finite channel.
+# SSB/PDCCH/PUCCH and shared-channel DMRS populations remain unqualified.
+system:
+  linkAbstraction:
+    dlFeedback:
+      disturbanceAssumption: finite_committed_shared_data
+    networkSpatial:
+      sinrPredictorModel: finite_committed_shared_data
+      sinrResourcePopulation: native_shared_channel_data_re
+      interferencePopulation: scheduled_shared_data_and_srs_and_csirs
+      dlAntennaBasis: configured_csirs_elements
+      soundingRankReference: full_carrier_pusch_finite_shared_data_interference
+      srsPowerPolicy: configured_ue_total_power_per_srs_symbol
+      srsPhaseAssumption: native_sequence_phase_at_committed_epoch
+      csirsPowerPolicy: configured_bs_full_carrier_psd_per_occupied_re
+      csirsPhaseAssumption: native_sequence_phase_at_committed_epoch

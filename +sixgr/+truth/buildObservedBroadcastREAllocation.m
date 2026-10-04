@@ -74,12 +74,7 @@ for channel=["PDCCH","PDSCH"]
         original.PDCCHIndices=original.PDCCHInd;
         original.DMRSIndices=original.DMRSInd;
     end
-    if mapping.MatrixAppliedHere
-        assert(size(original.Grid,3)==1 && numel(mapping.PrecoderMatrix)==size(prepared.TransmitSamples,2), ...
-            'sixgr:truth:SIB1GridPortMismatch','SIB1 must use its actual associated-SSB mapping.');
-        mapped.Grid=reshape(original.Grid(:)*mapping.PrecoderMatrix, ...
-            size(original.Grid,1),size(original.Grid,2),numel(mapping.PrecoderMatrix));
-    end
+    mapped.Grid=sixgr.link.broadcastSIB1WaveformPortGrid(tx,original.Grid);
     % Materialize channel components from the retained executed logical TX,
     % then project their exact RE indices onto the actual waveform ports.
     source=sixgr.truth.buildObservedREAllocation(original,'Channel',channel,'Direction','DL', ...

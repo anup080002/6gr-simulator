@@ -1,7 +1,9 @@
 function ok=testSharedPUCCHFeedbackClock(includeLateFeedback,mode,scenarioPath,evidenceRoot,feedbackScenarioPath,retainLaterPilot,sameSlotPilot,suppressLaterPilot)
 % Actual PUCCH IQ/CDL/RF/thermal-noise reception and delayed HARQ reducer.
 % Source DL TB/ACK now come from an isolated coded PDSCH connector fixture;
-% that DL is not claimed to pass through this shared CDL owner. TAG and
+% ACK decisions use that isolated receiver, not the shared DL capture. The
+% same coded TB is also transmitted by the owner to establish independent
+% gNB feedback expectations through the production TX commit path. TAG and
 % pathloss remain declared component inputs, NOT measured access. SRS and PUCCH execute here;
 % the pilot-free PUCCH clock must come from that actual earlier SRS receiver.
 if nargin<1, includeLateFeedback=false; end
@@ -16,14 +18,17 @@ assert(any(string(mode)==["TDD","FDD"]),'test:BadDuplexFixture','Use an explicit
 lateCount=double(includeLateFeedback);
 validateattributes(lateCount,{'numeric'},{'scalar','integer','>=',0,'<=',2});
 setup6GRSimToolkit('Verbose',false);
-fixture='lls_pdcch_shared_queue_fixture.yaml';
-if string(mode)=="FDD", fixture='lls_trs_shared_scoring_fdd_fixture.yaml'; end
+fixture=fullfile('simulator','configs','validation','lls_pucch_feedback_clock_connected.yaml');
+if string(mode)=="FDD"
+    fixture=fullfile('simulator','configs','scenarios','lls_trs_shared_scoring_fdd_fixture.yaml');
+end
 if nargin>=3 && strlength(string(scenarioPath))>0
     s=sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 else
-    s=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios',fixture));
+    s=sixgr.lls6g.config.loadScenarioConfig(fixture);
 end
 cfg=sixgr.lls6g.buildInternalConfig(s,tempname);
+sixgr.truth.validateSharedDCIConfiguration(cfg);
 feedbackCfg=cfg; feedbackScenario=s.Data;
 if nargin>=5 && strlength(string(feedbackScenarioPath))>0
     feedbackSource=sixgr.lls6g.config.loadScenarioConfig(feedbackScenarioPath);
@@ -76,29 +81,35 @@ measurement=table(0,fixturePathloss,"SSB-0","analytic_component_pathloss_selecto
 state=sixgr.truth.CoupledTruthRuntime.publishReferenceSignalMeasurementRuntime( ...
     state,'SSB','UE',1,measurement,'ProducerSlot',1,'AvailableSlot',1,'Valid',true, ...
     'Direction','DL','SourceSignal','SSB','MeasurementSource','analytic_component_selector_fixture');
-[received,receiveFields]=receivedDLFeedbackFixture(feedbackCfg,3,0,1e-13);
+% Bind the serving array and UE identity through the same production entry
+% used for scheduled data, before freezing the physical transmission.
+[feedbackCfg,~]=sixgr.truth.CoupledTruthRuntime.applyUserContext(feedbackCfg,state,1,'DL');
+[received,receiveFields,receivedAssignment,sourcePrepared]=receivedDLFeedbackFixture( ...
+    feedbackCfg,3,0,1e-13,feedbackSlot,0);
 assert(received.TrialTable.CRCPass==1);
 grant=received.HARQ.GrantSnapshot;
 % A decoded DL DCI fixes the future K1/PRI occasion before the PDSCH ACK
 % value exists.  Reserve that physical observation now, then bind the
 % measured ACK below after its receiver result becomes available.
-grant.Slot=3;
-grant.RNTI=1;
+assert(grant.Slot==3 && grant.RNTI==1 && grant.K1==feedbackSlot-3 && ...
+    grant.HARQFeedbackAbsoluteSlot==feedbackSlot-1 && ...
+    receivedAssignment.K1Slots==grant.K1);
 grant.ServingCell=1;
-grant.K1=feedbackSlot-3;
-grant.HARQFeedbackAbsoluteSlot=feedbackSlot-1;
-grant.TimingDecision=struct('Valid',true,'K1',grant.K1,'FeedbackAbsoluteSlot',feedbackSlot-1);
-grant.PUCCHResourceIndicator=0;
-grant.PUCCHResourceIndicatorSource='decoded_dci_fixture';
-grant.PDCCHGrantFirstCCE=0;
-grant.PDCCHGrantNumCCE=4;
+grant.PUCCHResourceIndicator=receivedAssignment.PUCCHResourceIndicator;
+% Dedicated small resource sets use PRI directly; no measured CCE identity
+% is supplied by this connector. Do not fabricate it for larger-set rules.
+grant.PDCCHGrantFirstCCE=NaN;
+grant.PDCCHGrantNumCCE=NaN;
 state=sixgr.truth.CoupledTruthRuntime. ...
     armSharedDLHARQOccasionFromGrantRuntime(state,grant,1);
 assert(numel(state.SharedArmedPUCCHOccasions)==1, ...
     'Decoded DCI must reserve the complete future PUCCH observation before PDSCH decoding.');
 allocation=state.DLHarq.allocate(1,3,grant.TBSBytes,'NewData',true);
 assert(allocation.HARQ.HarqID==grant.HARQ.HarqID && allocation.HARQ.NDI==grant.HARQ.NDI);
-state.DLHarq.onTx(1,allocation.HARQ.HarqID,uint8(received.HARQ.TransportBlockBits),grant,3);
+owner.queueData(1,sourcePrepared,struct('Purpose',"shared_DL_TX_with_isolated_ACK_receiver"));
+state.DLQueueBits(1)=state.DLQueueBits(1)+grant.TBSBits;
+state.TestDLReceives=0;
+lateSources=cell(lateCount,1);
 row=struct('Direction',"DL",'UEIndex',1,'RNTI',1,'HarqID',allocation.HARQ.HarqID, ...
     'SourceSlot',3,'DueSlot',feedbackSlot,'Ack',logical(received.TrialTable.CRCPass),'CurrentDecodeOK',true,'CombinedDecodeOK',true, ...
     'ServingCell',1,'BaseStationID',1,'TBSBits',grant.TBSBits,'UCIBitCount',1, ...
@@ -125,6 +136,22 @@ owner.queueUplinkControl(1,prepared.PreparedTransmission,struct('Config',srsCfg,
 for slot=1:(10+double(retainLaterPilot))
     state.CurrentSlot=slot; state.CurrentCanonicalSlot=slot;
     state.CurrentFrame=floor((slot-1)/state.SlotsPerFrame)+1;
+    if includeLateFeedback && slot>=6 && slot<=5+lateCount
+        % Execute the actual source transmission on time; hold only its
+        % isolated receiver result until the deliberate late-publication step.
+        lateIndex=slot-5;
+        variance=1e-13; if mod(lateIndex,2)==1, variance=1e-4; end
+        [lateOut,lateTiming,lateAssignment,latePrepared]=receivedDLFeedbackFixture( ...
+            feedbackCfg,slot,lateIndex,variance,feedbackSlot,lateIndex);
+        lateGrant=lateOut.HARQ.GrantSnapshot;
+        allocated=state.DLHarq.allocate(1,slot,lateGrant.TBSBytes,'NewData',true);
+        assert(allocated.HARQ.HarqID==lateGrant.HARQ.HarqID && ...
+            allocated.HARQ.NDI==lateGrant.HARQ.NDI);
+        owner.queueData(1,latePrepared,struct('Purpose',"shared_DL_TX_with_isolated_ACK_receiver"));
+        state.DLQueueBits(1)=state.DLQueueBits(1)+lateGrant.TBSBits;
+        lateSources{lateIndex}=struct('Output',lateOut,'Timing',lateTiming, ...
+            'Assignment',lateAssignment,'Allocation',allocated);
+    end
     if retainLaterPilot && slot==9-double(suppressLaterPilot)
         % Prepare before the timing-advanced slot-10 waveform starts.
         pilotSlot=slot+1;
@@ -138,6 +165,7 @@ for slot=1:(10+double(retainLaterPilot))
     end
     if slot==5
         assert(row.DataDecodeAvailableAtSample<=owner.Events.NextSampleIndex);
+        state=localCommitReceivedSource(state,feedbackCfg,received,receivedAssignment);
         state.PendingFeedbackTable=struct2table(row);
         state=sixgr.truth.CoupledTruthRuntime.schedulePUCCHGrantRuntime(state,state.PendingFeedbackTable);
         state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
@@ -153,12 +181,13 @@ for slot=1:(10+double(retainLaterPilot))
         assert(owner.Events.NextSampleIndex>owner.Pending(hit).Context.PhysicalTiming.TransmitStartSample);
         for lateIndex=1:lateCount
         sourceSlot=5+lateIndex;
-        variance=1e-13; if mod(lateIndex,2)==1, variance=1e-4; end
-        [received2,receiveFields2]=receivedDLFeedbackFixture(feedbackCfg,sourceSlot,lateIndex,variance);
+        source=lateSources{lateIndex};
+        received2=source.Output; receiveFields2=source.Timing; assignment2=source.Assignment;
         grant2=received2.HARQ.GrantSnapshot;
-        allocation2=state.DLHarq.allocate(1,sourceSlot,grant2.TBSBytes,'NewData',true);
+        state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime(state,grant2,1);
+        state=localCommitReceivedSource(state,feedbackCfg,received2,assignment2);
+        allocation2=source.Allocation;
         assert(allocation2.HARQ.HarqID==grant2.HARQ.HarqID && allocation2.HARQ.NDI==grant2.HARQ.NDI);
-        state.DLHarq.onTx(1,allocation2.HARQ.HarqID,uint8(received2.HARQ.TransportBlockBits),grant2,sourceSlot);
         late=row; late.SourceSlot=sourceSlot; late.HarqID=allocation2.HARQ.HarqID;
         late.TBSBits=grant2.TBSBits;
         late.Ack=logical(received2.TrialTable.CRCPass);
@@ -187,6 +216,8 @@ for slot=1:(10+double(retainLaterPilot))
     [state,~]=owner.advanceSlot(state,cfg,@localEvents);
 end
 assert(state.TestPUCCHPrepared && state.TestPUCCHReceived);
+assert(numel(state.SharedDataTXLedger)==1+lateCount && state.TestDLReceives==1+lateCount, ...
+    'Independent gNB obligations must be backed by actual shared DL transmissions.');
 assert(all(state.PendingFeedbackTable.Processed) && all(state.PUCCHGrantTraceTable.GrantExecutedFlag), ...
     'test:SharedPUCCHFeedbackNotCommitted', ...
     'Pending processed=%s; grant executed=%s.', ...
@@ -327,13 +358,41 @@ end
 ok=true; disp('SHARED_PUCCH_FEEDBACK_CLOCK_PASS');
 end
 
+function state=localCommitReceivedSource(state,cfg,out,assignment)
+% Import an actual isolated decoder transition at this shared boundary.
+% This is not a claim of source PDCCH/PDSCH reception by the shared owner.
+now=state.SharedWaveformStream.Events.NextSampleIndex;
+assert(out.HARQ.ReceivedTimingEvidence.ResultAvailableAtSample<=now);
+control=struct('Key',"isolated_received_dl:"+string(assignment.AssignmentDigest), ...
+    'Grant',out.HARQ.GrantSnapshot,'Allowed',true,'ReceivedAssignment',assignment, ...
+    'AvailableAtSample',now,'Source',"isolated_coded_DL_component_import");
+controls=sixgr.util.structGet(state,'SharedReceivedGrantControls',{});
+controls{end+1}=control;
+state.SharedReceivedGrantControls=controls;
+[state,~]=sixgr.truth.commitReceivedDLHARQACKEvent( ...
+    state,cfg,control,out.ReceivedHARQDecision,out.ReceivedHARQState,now);
+end
+
 function state=localEvents(state,events)
 % Mirror the production completion dependency: all of these observations
 % have arrived at this callback's physical deadline.
 isSRS=string({events.Kind})=="SRS";
 events=[events(isSRS),events(~isSRS)];
 for item=events
-    if item.Kind=="SuppressedSRSObservation"
+    if item.Kind=="DataTX"
+        state=sixgr.truth.commitSharedDataTransmission(state,item);
+        transmitted=state.SharedDataTXLedger{end};
+        state=sixgr.truth.CoupledTruthRuntime.armSharedDLHARQOccasionFromGrantRuntime( ...
+            state,transmitted.Grant,item.UE);
+    elseif item.Kind=="PDSCH"
+        % This capture is deliberately not the ACK source: the component's
+        % isolated receiver decision is imported explicitly at its deadline.
+        state.TestDLReceives=state.TestDLReceives+1;
+        if isfield(state,'TestPhysicalEvidenceRoot')
+            save(fullfile(state.TestPhysicalEvidenceRoot, ...
+                sprintf('unconsumed_shared_pdsch_%d.mat',state.TestDLReceives)),'item');
+        end
+    elseif item.Kind=="SuppressedSRSObservation"
         assert(item.Context.SuppressionProof.Cancellation.EmittedNonzeroSamples==0);
         % These are real completed physical windows, retained even though
         % this component was cancelled. Never submit them as an SRS trial.
@@ -375,6 +434,7 @@ for item=events
         end
         measuredClock=sixgr.truth.retainReceivedSRSTimingReference(p,receiver,output);
         assert(isa(measuredClock,'sixgr.phy.sync.ReceivedULTimingReference'));
+        assertBufferedPriorULTiming(measuredClock,p.ReceiverConfig);
         % The capture and practical receiver evidence are identical. Only
         % independent qualification/scoring changes; it must not control
         % which received clock a later pilot-free PUCCH is allowed to use.
@@ -488,6 +548,11 @@ for item=events
             height(item.Context.FeedbackRows),height(state.PUCCHGrantTraceTable));
         assert(all(~state.PendingFeedbackTable.Processed),'No feedback may be applied before actual RX completion.');
         if height(state.PendingFeedbackTable)<=2
+            assert(item.Context.GNBReception.Assignment.Format==0 && ...
+                item.Context.GNBReception.Context.CSIPart1Bits==0 && ...
+                item.Context.GNBReception.Context.CSIPart2Bits==0, ...
+                'test:HARQClockFixtureScope', ...
+                'The pilot-free HARQ clock check requires its configured HARQ-only Format-0 occasion.');
             missing=rmfield(state,{'ReceivedULTimingReferences','ReceivedULTimingHistory'});
             localReject(@()sixgr.truth.CoupledTruthRuntime.completeSharedPUCCHFeedbackRuntime(missing,item), ...
                 'sixgr:phy:pucch:PUCCHTimingReferenceRequired');

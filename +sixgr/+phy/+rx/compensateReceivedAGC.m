@@ -5,6 +5,7 @@ function [observation,evidence]=compensateReceivedAGC(raw,segments,receiverID)
 x=raw.readComplete(); first=raw.StartSample; stop=raw.EndSampleExclusive;
 gain=nan(size(x,1),1); coverage=false(size(gain)); enabled=false;
 gainOnlyRF=true;
+blockGainUsed=false; decisionCausal=true;
 for k=1:numel(segments)
     segment=segments{k}; a=max(first,segment.StartSample); b=min(stop,segment.EndSampleExclusive);
     if b<=a, continue; end
@@ -12,6 +13,7 @@ for k=1:numel(segments)
     i=find(string({e.RX.ID})==string(receiverID),1);
     if isempty(i), error('sixgr:phy:rx:AGCReceiverIdentity','Actual RF execution does not identify this receiver.'); end
     r=e.RX(i).Replay;
+    decisionCausal=decisionCausal && logical(sixgr.util.structGet(r,'AGCDecisionCausal',false));
     % A recorded inverse AGC gain preserves the original noise law only
     % when no other configured/applied RX stage can distort those samples.
     fields={'RFConfiguredStageCount','RFAppliedStageCount','AGCEnabled','AGCApplied'};
@@ -20,6 +22,17 @@ for k=1:numel(segments)
         r.RFAppliedStageCount==double(r.AGCApplied);
     if string(r.AGCControlModel)=="disabled"
         g=zeros(b-a,1);
+    elseif string(r.AGCControlModel)=="noncausal_same_block_rms" && ...
+            string(sixgr.util.structGet(r,'RFProcessingMode',''))=="independent_block"
+        % Standalone RF executes ONE recorded constant gain for the block.
+        % This is not a stream trace and must not be labelled causal AGC.
+        gDB=sixgr.util.structGet(r,'AGCGain_dB',NaN);
+        assert(isnumeric(gDB) && isscalar(gDB) && isreal(gDB) && isfinite(gDB) && ...
+            ~logical(sixgr.util.structGet(r,'AGCGainIsTimeVarying',false)), ...
+            'sixgr:phy:rx:ActualAGCTraceRequired', ...
+            'Independent-block compensation requires the actual constant applied gain.');
+        enabled=true; blockGainUsed=true;
+        g=repmat(double(gDB),b-a,1);
     else
         enabled=true;
         trace=sixgr.util.structGet(r,'AGCStreamTrace',struct());
@@ -56,4 +69,8 @@ evidence=struct('Applied',enabled,'Source',"actual_receiver_applied_analog_gain_
     'StartSample',first,'EndSampleExclusive',stop, ...
     'ClippingReconstructed',false,'QuantizationRemoved',false, ...
     'AppliedGainMin_dB',min(gain),'AppliedGainMax_dB',max(gain));
+evidence.AGCDecisionCausal=decisionCausal;
+if blockGainUsed
+    evidence.Source="actual_receiver_recorded_block_gain_after_ADC";
+end
 end

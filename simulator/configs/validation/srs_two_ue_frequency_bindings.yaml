@@ -1,0 +1,19 @@
+# Explicit installed resource assignments, not an automatic pilot allocator.
+# Component/integration fixture only; does not claim RF or SLS qualification.
+phy:
+  srs:
+    ueResourceBindings:
+      - ue_index: 1
+        rnti: 4660
+        serving_cell_id: 1
+        resource_id: 0
+        comb_offset: 0
+        cyclic_shift: 0
+        sequence_id: 1
+      - ue_index: 2
+        rnti: 4661
+        serving_cell_id: 1
+        resource_id: 1
+        comb_offset: 1
+        cyclic_shift: 0
+        sequence_id: 1

@@ -2,6 +2,39 @@ classdef WaveformHash
     %WAVEFORMHASH Stable SHA-256 helpers for waveform provenance.
 
     methods (Static)
+        function digest = runtimeArray(value)
+            % Preserve ChannelFactory's historical array serialization:
+            % class header, uint64 dimensions, real doubles, imaginary doubles.
+            % A fading path-gain array can exceed the Java array limit; never
+            % assemble a second, whole-array byte representation here.
+            md = javaMethod("getInstance","java.security.MessageDigest","SHA-256");
+            header = uint8(char("runtime_array:" + string(class(value)) + ":"));
+            dims = reshape(typecast(uint64(size(value)),"uint8"),[],1);
+            sixgr.phy.waveform.WaveformHash.updateDigest(md,header);
+            sixgr.phy.waveform.WaveformHash.updateDigest(md,dims);
+            if ~isempty(value)
+                if isnumeric(value) || islogical(value)
+                    elementsPerChunk = 262144;
+                    for component = 1:2
+                        for first = 1:elementsPerChunk:numel(value)
+                            last = min(numel(value),first+elementsPerChunk-1);
+                            piece = value(first:last);
+                            if component == 1
+                                bytes = typecast(double(real(piece(:))),"uint8");
+                            else
+                                bytes = typecast(double(imag(piece(:))),"uint8");
+                            end
+                            sixgr.phy.waveform.WaveformHash.updateDigest(md,bytes);
+                        end
+                    end
+                else
+                    bytes = uint8(unicode2native(char(string(class(value))),"UTF-8"));
+                    sixgr.phy.waveform.WaveformHash.updateDigest(md,bytes);
+                end
+            end
+            digest = sixgr.phy.waveform.WaveformHash.finishDigest(md);
+        end
+
         function digest = bytes(value)
             if isstring(value) || ischar(value)
                 value = uint8(unicode2native(char(value),"UTF-8"));
@@ -66,7 +99,7 @@ classdef WaveformHash
             bytesPerChunk = 8*1024*1024;
             for first = 1:bytesPerChunk:numel(value)
                 last = min(numel(value),first+bytesPerChunk-1);
-                md.update(value(first:last));
+                md.update(typecast(value(first:last),"int8"));
             end
         end
 

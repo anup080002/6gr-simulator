@@ -1,5 +1,7 @@
 function T = buildWaveformPreviewTable(direction, snr_dB, frameIdx, slotIdx, txWave, rxWave, sampleRateHz, varargin)
-%BUILDWAVEFORMPREVIEWTABLE Build a compact per-TTI waveform preview table.
+%BUILDWAVEFORMPREVIEWTABLE Retain indexed samples from every TX/RX column.
+% This is a sparse display preview, not a resampled waveform for spectral
+% analysis. Matching TX/RX column numbers do not imply a one-to-one RF path.
 
 p = inputParser;
 p.addParameter("MaxSamples", 256, @(x) isnumeric(x) && isscalar(x) && x >= 16);
@@ -10,18 +12,35 @@ T = table();
 if isempty(txWave) && isempty(rxWave)
     return;
 end
+validateattributes(txWave,{'numeric'},{'2d'},mfilename,'txWave');
+validateattributes(rxWave,{'numeric'},{'2d'},mfilename,'rxWave');
+chunks=cell(max(size(txWave,2),size(rxWave,2)),1);
+for branch=1:numel(chunks)
+    tx=[]; rx=[]; txIndex=NaN; rxIndex=NaN;
+    if branch<=size(txWave,2), tx=txWave(:,branch); txIndex=branch; end
+    if branch<=size(rxWave,2), rx=rxWave(:,branch); rxIndex=branch; end
+    row=localBranchPreview(direction,snr_dB,frameIdx,slotIdx,tx,rx,sampleRateHz,maxSamples);
+    row.TxAntennaIndex=repmat(txIndex,height(row),1);
+    row.RxAntennaIndex=repmat(rxIndex,height(row),1);
+    row.ObservationSampleRateHz=repmat(double(sampleRateHz),height(row),1);
+    chunks{branch}=row;
+end
+T=vertcat(chunks{:});
+end
 
-txVec = localColumnizeWaveform(txWave);
-rxVec = localColumnizeWaveform(rxWave);
+function T=localBranchPreview(direction,snr_dB,frameIdx,slotIdx,txWave,rxWave,sampleRateHz,maxSamples)
+T=table();
+txVec = txWave(:);
+rxVec = rxWave(:);
 L = max(numel(txVec), numel(rxVec));
 if L < 1
     return;
 end
 if numel(txVec) < L
-    txVec(end+1:L, 1) = complex(nan); %#ok<AGROW>
+    txVec(end+1:L, 1) = complex(nan,nan); %#ok<AGROW>
 end
 if numel(rxVec) < L
-    rxVec(end+1:L, 1) = complex(nan); %#ok<AGROW>
+    rxVec(end+1:L, 1) = complex(nan,nan); %#ok<AGROW>
 end
 
 if L > maxSamples
@@ -56,15 +75,4 @@ T = table( ...
     'VariableNames', { ...
     'Direction','SNR_dB','Frame','Slot','SampleIndex','Time_s', ...
     'TxReal','TxImag','TxMagnitude','RxReal','RxImag','RxMagnitude'});
-end
-
-function x = localColumnizeWaveform(x)
-if isempty(x)
-    x = complex([]);
-    return;
-end
-if ismatrix(x)
-    x = x(:, 1);
-end
-x = x(:);
 end

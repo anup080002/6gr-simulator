@@ -663,11 +663,14 @@ timingTolUs = max(2 * samplePeriodUs, 0.25);
 end
 
 function fdHz = localSpeedToDopplerHz(speedKmh, carrierFrequencyHz)
-c_mps = 299792458;
-fdHz = max(0, double(speedKmh)) / 3.6 * max(0, double(carrierFrequencyHz)) / c_mps;
-if ~(isfinite(fdHz) && fdHz >= 0)
-    fdHz = 0;
+if ~(isnumeric(speedKmh) && isscalar(speedKmh) && isreal(speedKmh) && ...
+        isfinite(speedKmh) && speedKmh >= 0)
+    error('sixgr:rach:PRACHConfig:UnresolvedLinkSpeed', ...
+        'PRACH requires one finite nonnegative UE speed, not a mobility range. Bind the selected link speed explicitly.');
 end
+validateattributes(carrierFrequencyHz,{'numeric'},{'scalar','real','finite','positive'});
+c_mps = 299792458;
+fdHz = double(speedKmh) / 3.6 * double(carrierFrequencyHz) / c_mps;
 end
 
 function numSymbols = localResolveZCDPENumSymbols(cfg, baseCfg)

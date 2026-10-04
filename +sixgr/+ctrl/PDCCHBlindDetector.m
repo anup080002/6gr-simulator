@@ -10,6 +10,7 @@ searchSpaces = localPrioritizeSearchSpaces(searchSpaces);
 maxCandPerSlot = localMaxPDCCHCandidatesPerSlot(ctrlCfg);
 validCandidatesDecoded = 0;
 candidateOverflowCount = 0;
+signalPresent = logical(sixgr.util.structGet(truth,'SignalPresent',true));
 
 for ssIdx = 1:numel(searchSpaces)
     searchSpace = searchSpaces(ssIdx);
@@ -43,58 +44,68 @@ for ssIdx = 1:numel(searchSpaces)
         basePayloadPerCopy = sum(payloadT.CopyIndex == 1);
         combinedSym = complex(zeros(basePayloadPerCopy, 1));
         combinedCSI = zeros(size(combinedSym));
+        combinedNoiseNumerator = zeros(size(combinedSym));
         copyMetrics = zeros(resources.RepetitionCount, 1);
         nmsePerCopy = NaN(resources.RepetitionCount,1);
+        residualPerCopy = NaN(resources.RepetitionCount,1);
         evmPerCopy = NaN(resources.RepetitionCount,1);
         sinrPerCopy = NaN(resources.RepetitionCount,1);
-        nVarPerCopy = NaN(resources.RepetitionCount,1);
 
         for copyIdx = 1:resources.RepetitionCount
             copyPayload = payloadT(payloadT.CopyIndex == copyIdx, :);
             copyRx = localExtractCopySymbols(rxGrid4D, copyPayload);
-            est = sixgr.ctrl.PDCCHChannelEstimator(rxGrid4D, dmrs, [], copyIdx, []);
-            nVarEst = localEstimateNoiseFromResidual(est.Residual);
+            est = sixgr.ctrl.PDCCHChannelEstimator(rxGrid4D, dmrs, ctrlCfg, copyIdx, [],copyPayload);
+            nVarEst = est.NoiseVar;
+            if upper(string(ctrlCfg.ChannelModel))=="AWGN"
+                nVarEst = localEstimateNoiseFromResidual(est.Residual);
+            end
             if ~(isfinite(nVarEst) && nVarEst > 0)
                 nVarEst = localEstimateNoiseFromUnusedRE(rxGrid4D, resources.RETable, copyIdx);
             end
             if ~(isfinite(nVarEst) && nVarEst > 0)
                 nVarEst = localConservativeNoiseFloor(copyRx);
             end
-            nVarPerCopy(copyIdx) = nVarEst;
-            eq = sixgr.ctrl.PDCCHEqualizer(copyRx, est.HMean, nVarEst, ctrlCfg.EqualizerType);
+            eq = sixgr.ctrl.PDCCHEqualizer(copyRx, est.HData, nVarEst, ctrlCfg.EqualizerType);
             nmsePerCopy(copyIdx) = est.NMSE;
+            residualPerCopy(copyIdx) = est.PilotReconstructionResidualRatio;
             evmPerCopy(copyIdx) = eq.PostEqEVM;
             sinrPerCopy(copyIdx) = eq.EstimatedSINR_dB;
             copyMetrics(copyIdx) = mean(eq.CSI);
             combinedSym = combinedSym + eq.Symbols(:) .* eq.CSI(:);
             combinedCSI = combinedCSI + eq.CSI(:);
+            combinedNoiseNumerator = combinedNoiseNumerator + ...
+                eq.CSI(:).^2 .* eq.PostEqualizationNoiseVariance(:);
         end
         reliableCSI = combinedCSI > 1e-6;
         tmpCombined = complex(zeros(size(combinedSym)));
         tmpCombined(reliableCSI) = combinedSym(reliableCSI) ./ combinedCSI(reliableCSI);
         combinedSym = tmpCombined;
-        combinedNoiseVar = mean(nVarPerCopy(isfinite(nVarPerCopy) & nVarPerCopy > 0), "omitnan");
-        if ~(isfinite(combinedNoiseVar) && combinedNoiseVar > 0)
-            combinedNoiseVar = localConservativeNoiseFloor(combinedSym);
-        end
+        combinedNoiseVar = combinedNoiseNumerator ./ max(combinedCSI.^2,realmin);
+        % An unobservable RE contributes a zero LLR, never invented signal.
+        combinedNoiseVar(~reliableCSI)=1;
         context = struct("SlotNumber", truth.BaseSlot, "SearchSpaceID", cand.SearchSpaceID);
-        dec = sixgr.ctrl.PDCCHDecoder(combinedSym, combinedNoiseVar, truth.PayloadMeta, ctrlCfg, context);
+        dec = sixgr.ctrl.PDCCHDecoder(combinedSym, combinedNoiseVar, struct(), ctrlCfg, context);
         row = localEmptyCandidateRow(cand, searchSpace, ctrlCfg);
         row.candidate_detected = logical(dec.CRCPass);
         row.crc_pass = logical(dec.CRCPass);
         row.estimated_sinr_db = mean(sinrPerCopy, "omitnan");
+        row.estimated_sinr_source = string(eq.EstimatedSINRSource);
         row.post_eq_evm = mean(evmPerCopy, "omitnan");
         row.nmse_channel_est = mean(nmsePerCopy, "omitnan");
+        row.pilot_reconstruction_residual_ratio = mean(residualPerCopy,"omitnan");
+        row.channel_estimate_source = string(est.ChannelEstimateSource);
+        row.llr_noise_source = "propagated_received_noise_after_equalization_and_repetition";
         row.decoding_metric = dec.DecodingMetric;
         row.repetition_combined_metric = mean(copyMetrics, "omitnan");
         row.repetition_index = 0;
-        row.decoded_payload_match = isequal(dec.DecodedBits(:), truth.PayloadBits(:));
+        row.decoded_payload_match = signalPresent && isequal(dec.DecodedBits(:), truth.PayloadBits(:));
         if row.crc_pass
             passIdx(end+1) = numel(allCandRows) + 1; %#ok<AGROW>
         end
-        if cand.StartCCE == truth.TargetCandidate.StartCCE && cand.AggregationLevel == truth.TargetCandidate.AggregationLevel && ...
+        if signalPresent && cand.StartCCE == truth.TargetCandidate.StartCCE && cand.AggregationLevel == truth.TargetCandidate.AggregationLevel && ...
                 cand.SearchSpaceID == truth.TargetCandidate.SearchSpaceID
             targetIdx = numel(allCandRows) + 1;
+            row.target_candidate_for_scoring = true;
         end
         allCandRows{end+1,1} = row; %#ok<AGROW>
     end
@@ -116,6 +127,8 @@ slotResult = struct();
 slotResult.true_detection = false;
 slotResult.miss_detection = false;
 slotResult.false_alarm = false;
+slotResult.correct_rejection = false;
+slotResult.crc_pass = ~isempty(passIdx);
 slotResult.false_positive_wrong_candidate = false;
 slotResult.ambiguous_multiple_pass = false;
 slotResult.monitored_candidates_count = height(candidateTable);
@@ -131,7 +144,10 @@ else
     slotResult.decode_latency_proxy_ops = sum(candidateTable.AL .* 6, "omitnan");
 end
 
-if isempty(candidateTable) || isempty(passIdx)
+if ~signalPresent
+    slotResult.false_alarm = ~isempty(passIdx);
+    slotResult.correct_rejection = isempty(passIdx);
+elseif isempty(candidateTable) || isempty(passIdx)
     slotResult.miss_detection = true;
 elseif numel(passIdx) == 1 && ~isnan(targetIdx) && passIdx(1) == targetIdx && candidateTable.decoded_payload_match(targetIdx)
     slotResult.true_detection = true;
@@ -139,8 +155,8 @@ elseif numel(passIdx) >= 1 && ~isnan(targetIdx) && any(passIdx == targetIdx)
     slotResult.ambiguous_multiple_pass = true;
 else
     slotResult.false_positive_wrong_candidate = true;
-    slotResult.false_alarm = true;
 end
+if signalPresent, slotResult.miss_detection = ~slotResult.true_detection; end
 
 slotRows{1,1} = slotResult;
 out = struct();
@@ -152,10 +168,15 @@ end
 function row = localEmptyCandidateRow(cand, searchSpace, ctrlCfg)
 row = struct( ...
     "candidate_detected", false, ...
+    "target_candidate_for_scoring", false, ...
     "crc_pass", false, ...
     "estimated_sinr_db", NaN, ...
+    "estimated_sinr_source", "unavailable", ...
     "post_eq_evm", NaN, ...
     "nmse_channel_est", NaN, ...
+    "pilot_reconstruction_residual_ratio", NaN, ...
+    "channel_estimate_source", "unavailable", ...
+    "llr_noise_source", "unavailable", ...
     "decoding_metric", NaN, ...
     "start_cce", cand.StartCCE, ...
     "AL", cand.AggregationLevel, ...
@@ -237,7 +258,7 @@ if isempty(levels)
 end
 end
 
-function resources = localCandidateResources(cand, regTable, reTable, cceMap, ctrlCfg, truth)
+function resources = localCandidateResources(cand, regTable, reTable, cceMap, ctrlCfg, ~)
 regList = [];
 for cce = cand.StartCCE:(cand.StartCCE + cand.AggregationLevel - 1)
     row = cceMap(cceMap.CCEIndex == cce, :);
@@ -254,7 +275,7 @@ ret.CopyIndex = ones(height(ret),1);
 resources = struct();
 resources.RETable = ret;
 resources.REGTable = regTable(ismember(regTable.REGIndex, regList), :);
-resources.RepetitionCount = max(1, truth.RepetitionCount);
+resources.RepetitionCount = max(1, ctrlCfg.RepetitionCount);
 resources = sixgr.ctrl.PDCCHRepeater(ctrlCfg, resources);
 end
 

@@ -35,6 +35,10 @@ for i = 1:numel(sel)
         "CopyIndex", double(candidateRETable.CopyIndex(idx)));
 end
 locT = struct2table(locRows);
+if ismember('REGIndex',candidateRETable.Properties.VariableNames)
+    % Receiver-known candidate mapping, not transmitted phase weights.
+    locT.REGIndex = double(candidateRETable.REGIndex(dmrsMask));
+end
 
 nID = round(double(sixgr.util.structGet(ctrlCfg, "DMRSScramblingID", ctrlCfg.CellID)));
 nID = mod(nID, 65536);

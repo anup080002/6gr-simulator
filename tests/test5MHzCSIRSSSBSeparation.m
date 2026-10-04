@@ -1,5 +1,5 @@
 function ok=test5MHzCSIRSSSBSeparation()
-% Actual inherited TDD configurations, plus the retained symbol-5 defect.
+% Actual inherited TDD calendars, plus an explicitly colliding old occasion.
 setup6GRSimToolkit('Verbose',false);
 scenarios=["lls_tdd_5mhz_rank2_shared_awgn_20db", ...
     "lls_tdd_5mhz_rank2_shared_awgn_20db_saturated", ...
@@ -11,11 +11,13 @@ for name=scenarios
     cfg=sixgr.lls6g.buildInternalConfig(scenario,tempname);
     before=rng;
     evidence=sixgr.phy.refsig.validateCSIRSSSBSeparation(cfg);
+    assert(cfg.phy.csirs.period_slots==5 && cfg.phy.csirs.offset_slots==2);
     assert(isequal(before,rng) && evidence.Applicable && ...
-        evidence.CycleSlots==20 && evidence.CheckedOccasions==1);
+        evidence.CycleSlots==20 && evidence.CheckedOccasions==0, ...
+        'Scenario %s RNGPreserved=%d calendar=%s',name,isequal(before,rng),jsonencode(evidence));
     assert(isequal(cfg.phy.csirs.symbolLocationsByResource,6));
     % The same installed calendar must cover later repetitions too.
-    for slot0=[1 21 41]
+    for slot0=[2 7 12 17 22 42]
         current=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot0+1);
         carrier=sixgr.phy.grid.makeCarrier(current);
         indices=sixgr.phy.refsig.csirs(carrier,current);
@@ -24,6 +26,9 @@ for name=scenarios
         assert(~isempty(indices) && isempty(intersect(occupied,reserved.ReservedCarrierRE0)));
     end
     invalid=scenario.toStruct();
+    % Moving back into an SS/PBCH slot and onto symbol 5 must still fail.
+    % Symbol 5 alone is not an overlap when the current calendar is disjoint.
+    invalid.reference_signals.csi_rs_offset_slots=1;
     invalid.reference_signals.csi_rs_resource_symbol_locations=5;
     rejected=false;
     try
@@ -34,7 +39,7 @@ for name=scenarios
         rejected=true;
     end
     assert(rejected,'The retained CSI-RS/SSB collision must fail before execution.');
-    fprintf('CSI_SSB_SEPARATION_PASS scenario=%s period=%d guarded_old_symbol=5 valid_symbol=6\n', ...
+    fprintf('CSI_SSB_SEPARATION_PASS scenario=%s cycle=%d configured_period=5 configured_offset=2 rejected_offset=1 rejected_symbol=5\n', ...
         name,evidence.CycleSlots);
 end
 ok=true;

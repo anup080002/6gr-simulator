@@ -521,6 +521,13 @@ random_access:
   msg4_contention_resolution_required: true
   msg3_enabled: true
   common_downlink_beam_source: selected_ssb_beam
+  # NCRBSSB=253 at the 15-kHz Point-A reference gives common RB 126
+  # at 30 kHz. CORESET0 index 0 has zero offset and 24 RB. RAR/Msg4
+  # frequency assignments are relative to that recovered reference.
+  msg2_pdsch:
+    prb_start: 126
+  msg4_pdsch:
+    prb_start: 126
 
 output_control:
   save_raw_waveforms: true

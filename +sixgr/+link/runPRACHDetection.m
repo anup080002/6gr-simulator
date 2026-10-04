@@ -115,6 +115,9 @@ out.InjectedTimingOffset_samples = NaN;
 out.ChannelModelApplied = "";
 out.ChannelFadingApplied = false;
 out.Notes = "";
+out.ErrorIdentifier = "";
+out.ErrorMessage = "";
+out.ErrorReport = "";
 out.CorrelationTraceTable = table();
 out.ObservedREAllocationTable = table();
 
@@ -303,6 +306,9 @@ try
 catch ME
     out.Ok = false;
     out.Notes = "Failure: " + string(ME.message);
+    out.ErrorIdentifier = string(ME.identifier);
+    out.ErrorMessage = string(ME.message);
+    out.ErrorReport = string(sixgr.util.formatExceptionDiagnostic(ME));
     if ~isempty(log)
         log.warn("runPRACHDetection failed: " + string(ME.message));
     end

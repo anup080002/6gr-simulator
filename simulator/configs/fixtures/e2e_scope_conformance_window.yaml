@@ -1,0 +1,4 @@
+research_class: baseline_benchmark
+description: Physical access plus a connected UL window; not a statistical performance campaign.
+duration_s: 0.08
+max_slots: 80

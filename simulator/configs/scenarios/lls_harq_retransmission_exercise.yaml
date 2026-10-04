@@ -15,7 +15,7 @@
   ],
   "meta": {
     "scenario_id": "lls_harq_retransmission_exercise",
-    "description": "Waveform-truth HARQ exercise preset calibrated so first attempts can fail while soft-combined retransmissions recover with real decode outcomes.",
+    "description": "Waveform-truth HARQ exercise across explicit stressed and high-SNR points; retransmissions and recovery must follow real decode outcomes.",
     "version": "1.0.0",
     "owner": "codex",
     "maturity_tag": "regression",
@@ -38,7 +38,7 @@
     "deterministic_mode": true,
     "snr_db": 4,
     "min_duration_s": 0.004,
-    "snr_sweep_offsets_db": [0]
+    "snr_sweep_offsets_db": [-16, -12, -8, 0]
   },
   "channels": {
     "model_type": "TDL",

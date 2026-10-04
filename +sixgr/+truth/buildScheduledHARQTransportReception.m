@@ -55,14 +55,23 @@ if ~isempty(srCalendar)
     srOverlap=sixgr.truth.resolveConfiguredSROverlap(srCalendar,targetSlot,windows,0);
     srBits=srOverlap.EncodedBitCount;
 end
-assert(~(isempty(report) && mapping.BitCount<=2 && srBits>0), ...
-    'sixgr:truth:UnresolvedSRPUCCHReceiveHypothesis', ...
-    'Short HARQ/SR resource hypotheses require separate receiver qualification.');
+shortHARQ=isempty(report) && mapping.BitCount<=2;
+if shortHARQ && srBits>0
+    % TS 38.213 9.2.5.1: Format-0 SR changes the sequence, not the
+    % HARQ-selected PRB resource. Its sign is decoded, never borrowed from UE.
+    assert(resource.Data.Format==0 && srBits==1 && srOverlap.OpportunityCount==1, ...
+        'sixgr:truth:UnresolvedSRPUCCHReceiveHypothesis', ...
+        'Short HARQ/SR reception supports one configured SR opportunity on Format 0; other resource hypotheses remain unresolved.');
+end
 context=sixgr.truth.buildConfiguredPUCCHReceiveContext(struct( ...
     'ObservationID',string(observationID),'ConfigurationEpoch',mapping.ConfigurationEpoch, ...
     'HARQBitCount',mapping.BitCount,'SRBitCount',srBits,'PriorityIndex',0, ...
     'CSIReportConfigID',reportID,'CSIConfigurationEpoch',reportEpoch),report);
-resource=localResource(context.Sequence1Length+context.Sequence2Length,rrc,mapping,packed);
+resourceBitCount=context.Sequence1Length+context.Sequence2Length;
+if shortHARQ
+    resourceBitCount=mapping.BitCount;
+end
+resource=localResource(resourceBitCount,rrc,mapping,packed);
 transport=struct(); overlapping=cell(0,1);
 if uciOnPUSCH
     [overlapping,transport]=sixgr.truth.findScheduledPUSCHOverlap(state,cfg,ue,targetSlot, ...

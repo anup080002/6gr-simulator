@@ -12,6 +12,11 @@ cfg.run.scenario = "UMi";
 cfg.system.phyBackend = "waveform";
 cfg.system.handover.enable = false;
 cfg.system.beam.enable = false;
+% This isolates scheduled shared-data interference.  The generic defaults
+% enable SSB/SIB1, whose Type-0 occasion and common-PDSCH allocation are
+% intentionally not part of this two-cell muting fixture.
+cfg.phy.ssb.enable = false;
+cfg.phy.sib1.enable = false;
 cfg.outputs.saveCSV = false;
 cfg.outputs.saveMAT = false;
 cfg.outputs.saveFigures = false;
@@ -55,6 +60,7 @@ cfg.phy.pusch.nLayers = 1;
 cfg.phy.pusch.symbolAllocation = [0 14];
 cfg.phy.pdcch.symbolAllocation = [0 2];
 cfg.phy.pucch.symbolAllocation = [0 2];
+cfg.phy.pucch.dlDataToULACK = 2;
 cfg.phy.tddTiming = struct( ...
     "allowedK0", 1, ...
     "pdcchToPDSCHK0", 1, ...

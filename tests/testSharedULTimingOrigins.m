@@ -22,6 +22,18 @@ for mode=["TDD","FDD"]
         'A gNB observation window must not track an oracle UE transmit phase.');
     localReject(@()sixgr.phy.ra.sharedULStageTiming(cfg,.02,7.68e6,7680,1), ...
         'sixgr:phy:ra:SharedULOriginOffSampleClock');
+    % Full-slot Msg4 reception ends at the next nominal slot boundary.
+    % The common UL advance must not move its dependent SRB1 transmission
+    % before those control samples exist (the retained failure was 100 samples).
+    dependent=cfg;
+    dependent.SharedULTimingContext.DLReference.DLPhaseOffsetSamples=0;
+    dependent.SharedULTimingContext.ControlAvailableAtTicks=int64(153600)*int64(256);
+    dependent.SharedULTimingContext.ControlAvailabilitySource="received_RRCSetup_observation_completion";
+    localReject(@()sixgr.phy.ra.sharedULStageTiming(dependent,.02,7.68e6,7680,0), ...
+        'sixgr:phy:ra:ULBeforeControlAvailability');
+    causal=sixgr.phy.ra.sharedULStageTiming(dependent,.021,7.68e6,7680,0);
+    assert(causal.TransmitStartSample==161180 && ...
+        causal.ControlAvailableAtTicks==dependent.SharedULTimingContext.ControlAvailableAtTicks);
 end
 ok=true; disp('SHARED_UL_TIMING_ORIGINS_PASS: distinct TX/RX clocks, received offset/TA, no cropped samples.');
 end

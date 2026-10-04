@@ -1,0 +1,132 @@
+# Modeled, ideal-delayed CSI/SRS feedback for calibrated SLS only.
+# This is not physical pilot reception or an error-free RF qualification.
+# Merge after calibrated_link_abstraction.yaml and network_spatial_ideal_tdd.yaml.
+system:
+  linkAbstraction:
+    spatialFeedback:
+      enabled: true
+      maximumAgeSlots: 40
+      estimationAssumption: ideal_delayed_channel_estimate
+      sourceClassification: modeled_srs_not_waveform_measurement
+    dlFeedback:
+      enabled: true
+      maximumAgeSlots: 40
+      estimationAssumption: ideal_delayed_channel_estimate
+      sourceClassification: modeled_csi_not_waveform_measurement
+      allowedRanks: [1, 2, 4]
+    dynamicPUCCH:
+      enabled: true
+      transportPolicy: causal_native_pusch_multiplexing
+      deliveryAssumption: ideal_error_free_delayed_control
+phy:
+  csirs:
+    enable: true
+    nPorts: 4
+    # Explicit baseline choices for the 30-kHz, ten-slot TDD pattern.
+    # Physical generation and common-channel reservations share this clock.
+    period_slots: 20
+    offset_slots: 1
+    rowNumber: 4
+    symbolLocations: 5
+    subcarrierLocations: 0
+    density: one
+    cdmType: FD-CDM2
+    numResources: 1
+    resourceID: 0
+    resourceSetID: 0
+  srs:
+    enable: true
+    nPorts: 4
+    period_slots: 20
+    period_offset: 9
+    SymbolStart: 13
+    NumSRSSymbols: 1
+  csi:
+    enable: true
+    reportCQI: true
+    reportPMI: true
+    reportRI: true
+    reportCRI: true
+    reportCSI: true
+    reportTrigger: periodic
+    reportPeriodicitySlots: 20
+    reportOffsetSlots: 9
+    reportConfigurationEpoch: 1
+    reportConfiguration:
+      ReportConfigID: sls_wideband_type1_4port
+      Epoch: 1
+      CodebookType: typeI-SinglePanel
+      CodebookMode: 1
+      N1: 2
+      N2: 1
+      O1: 4
+      O2: 1
+      Panels: 1
+      Ports: 4
+      Rank: 1
+      MaxRank: 4
+      AllowedRanks: [1, 2, 4]
+      ReportQuantity: cri-RI-PMI-CQI
+      NumCSIResources: 1
+      FrequencyGranularity: wideband
+      UCIChannel: PUCCH
+  pucch:
+    enable: true
+    uciOnPUSCHEnabled: true
+    dlDataToULACK: [1, 2, 3, 4, 5, 6, 7, 8]
+
+# Installed resource geometry for ideal-delayed modeled UCI. This does not
+# qualify physical reception or allocate independent resources to every UE.
+# Multi-UE per-cell resource binding still requires collision-free admission.
+validation:
+  pucch_resources:
+    enabled: true
+    profile: nr_rel18_pucch_strict
+    configuration_epoch: 1
+    format2: {simultaneous_harq_ack_csi: true, max_code_rate: 0.35}
+    resource_sets:
+      - {id: 0, max_payload_bits: 2, resource_ids: [0]}
+      - {id: 1, max_payload_bits: 1706, resource_ids: [10]}
+    resources:
+      - id: 0
+        format: 0
+        starting_prb: 0
+        nrof_prbs: 1
+        starting_symbol: 10
+        nrof_symbols: 2
+        intra_slot_hopping: false
+        second_hop_start_prb: []
+        initial_cyclic_shift: 0
+        occ_length: 1
+        occ_index: 0
+        additional_dmrs: false
+        pi2_bpsk: false
+        nid: 1
+        hopping_id: 1
+      - id: 10
+        format: 2
+        starting_prb: 1
+        nrof_prbs: 4
+        starting_symbol: 10
+        nrof_symbols: 2
+        intra_slot_hopping: false
+        second_hop_start_prb: []
+        initial_cyclic_shift: 0
+        occ_length: 2
+        occ_index: 0
+        additional_dmrs: false
+        pi2_bpsk: false
+        nid: 1
+        hopping_id: 1
+    dl_data_to_ul_ack: [1, 2, 3, 4, 5, 6, 7, 8]
+    sr_resource_ids: [0]
+    csi_resource_ids: [10]
+    sps_pucch_an_resource_ids: []
+    scheduling_request_resources:
+      - scheduling_request_resource_id: 1
+        scheduling_request_id: 0
+        resource_id: 0
+        periodicity_slots: 20
+        offset_slots: 9
+        priority_index: 0
+        additional_periodicity_capability: false

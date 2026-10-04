@@ -2,3 +2,18 @@
 # Test authoring only; production must not use this as a missing-list fallback.
 fixture_kind: scheduler_timing_test_not_runtime_default
 dl_data_to_ul_ack: [2]
+
+# Explicit TDD test installation; do not substitute the FDD-only [2] list
+# or switch a TDD test's duplex mode to make control scheduling succeed.
+tdd:
+  research_class: baseline_benchmark
+  dl_data_to_ul_ack: [1, 2, 3, 4, 5, 6, 7, 8]
+  monitoring_occasion_ordinal: 1
+  sib1_pdsch:
+    prb_start: 0
+    num_prb: 24
+    symbol_start: 2
+    num_symbols: 12
+    mcs: 0
+    rv: 0
+  resource_deferral_k0: 1

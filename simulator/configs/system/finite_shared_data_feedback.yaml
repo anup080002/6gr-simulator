@@ -1,0 +1,9 @@
+# Internal overlay for the ideal-delayed SLS model, not physical CSI/UCI.
+# Common/control/RS interferers and cross-link propagation remain unqualified.
+# Install only with matching calibration and verified receive completion.
+system:
+  linkAbstraction:
+    dlFeedback:
+      disturbanceAssumption: finite_committed_shared_data
+    networkSpatial:
+      soundingRankReference: full_carrier_pusch_finite_shared_data_interference

@@ -71,6 +71,10 @@ def test_operator_masters_have_complete_identical_parameter_surfaces() -> None:
     fixed = _load_master(SNR_SWEEP_SCENARIO)
     geometry = _load_master(GEOMETRY_SCENARIO)
     assert _schema_paths(fixed) == _schema_paths(geometry)
+    for master in (fixed, geometry):
+        probe = master["pucch_resources"]["component_probe"]
+        assert probe["enabled"] is False
+        assert probe["evidence_scope"] == "isolated_known_payload_not_causal_feedback"
 
     fixed_overrides = [
         row["path"] for row in fixed["canonical_control"]["runtime_overrides"]
@@ -126,6 +130,15 @@ def test_webgui_snr_sweep_metadata_and_label() -> None:
     assert "SNR" in label or "SINR" in label
     assert "AWGN" in label
     assert "1 UE" in label
+
+
+def test_component_probe_policy_survives_browser_roundtrip() -> None:
+    for name in (SNR_SWEEP_SCENARIO, GEOMETRY_SCENARIO):
+        authored = _load_master(name)
+        expected = authored["pucch_resources"]["component_probe"].copy()
+        resolved = dash.canonicalize_browser_config_payload(authored, keep_legacy_aliases=True)
+        assert resolved["pucch_resources"]["component_probe"] == expected
+        assert authored["pucch_resources"]["component_probe"] == expected
 
 
 def test_webgui_blocks_geometry_flags_in_sinr_master_payload() -> None:

@@ -56,8 +56,10 @@ assert(localGateStatus(gateT, "FixedSNRSweepAudit") == "PASS", ...
     "A complete fixed sweep fixture must pass the fixed sweep audit acceptance row.");
 assert(localGateStatus(gateT, "ULCurveNonEmpty") == "PASS", ...
     "A complete fixed sweep fixture must pass the UL curve acceptance row.");
+referenceGate=gateT(string(gateT.GateName)=="ReferenceComparisonPresent",:);
 assert(localGateStatus(gateT, "ReferenceComparisonPresent") == "PASS", ...
-    "A statistically qualified independent FRC campaign must satisfy the fixed-link reference gate.");
+    "Independent FRC fixture rejected: FailureCode=%s; Details=%s", ...
+    strjoin(string(referenceGate.FailureCode),";"),strjoin(string(referenceGate.Details),";"));
 
 qualificationPath = fullfile(runFolder, "reports", "csv", ...
     "frc_reference_qualification.csv");
@@ -70,7 +72,7 @@ frcDiagnostic.Pass(:) = false;
 frcDiagnostic.StatisticallyQualified(:) = false;
 frcDiagnostic.OneSidedReferencePass(:) = false;
 frcDiagnostic.Profile(:) = "diagnostic";
-sixgr.util.csvWriteTable(diagnosticPath, frcDiagnostic);
+sixgr.util.csvWriteTable(diagnosticPath, frcDiagnostic, "PreserveSchema", true);
 delete(qualificationPath);
 sixgr.analytics.evaluatePublicationReadinessGates(cfg, runFolder);
 diagnosticGateT = readtable(gatePath, "VariableNamingRule", ...
@@ -85,7 +87,7 @@ assert(nnz(diagnosticRow) == 1 && ...
     ["Fixed-link publication acceptance must disclose an inspected " ...
     "diagnostic FRC campaign without accepting it as qualification."]);
 delete(diagnosticPath);
-sixgr.util.csvWriteTable(qualificationPath, frcQualification);
+sixgr.util.csvWriteTable(qualificationPath, frcQualification, "PreserveSchema", true);
 
 ulCurvePath = fullfile(runFolder, "reports", "csv", "ul_fixed_snr_bler_curve.csv");
 ulCurveT = readtable(ulCurvePath, "VariableNamingRule", "preserve", "TextType", "string");
@@ -327,7 +329,13 @@ frcRow = struct( ...
     "SourceStateSHA256", string(repmat('d', 1, 64)));
 frc = struct2table(frcRow, "AsArray", true);
 sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, ...
-    "frc_reference_qualification.csv"), frc);
+    "frc_reference_qualification.csv"), frc, "PreserveSchema", true);
+% Match the production FRC publisher: blank failure identifiers mean no
+% failure, but dropping that required column invalidates the v6 contract.
+persisted=readtable(fullfile(layout.ReportCSVDir,"frc_reference_qualification.csv"), ...
+    "VariableNamingRule","preserve","TextType","string");
+assert(isequal(string(persisted.Properties.VariableNames),string(frc.Properties.VariableNames)), ...
+    'The FRC acceptance fixture must preserve the complete production CSV schema.');
 end
 
 function cfg = localGeometryCfg()

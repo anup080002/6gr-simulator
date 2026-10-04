@@ -952,7 +952,12 @@ else
 end
 useFading = logical(sixgr.util.structGet(channelReplay, "ChannelFadingApplied", false));
 if ~useFading
-    y = localApplyTrackingDoppler(x, sampleRateHz, injectedDopplerHz);
+    % Non-fading does not imply an identity spatial channel. ChannelFactory
+    % has already applied the configured port matrix (possibly rectangular)
+    % and produced receiver-domain samples. Preserve that executed mapping
+    % when applying the optional tracking rotation; restarting from x would
+    % erase its gain and replace RX branches with TX ports.
+    y = localApplyTrackingDoppler(y, sampleRateHz, injectedDopplerHz);
 end
 
 referenceWaveform = y;

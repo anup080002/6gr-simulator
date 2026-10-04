@@ -16,6 +16,10 @@ for i=1:height(C)
     T=r.TrialTable;
     assert(height(T)==1 && T.CRCPass && T.BitErrors==0);
     assert(T.ChannelEstimateAvailable && T.EqualizationAvailable);
+    assert(T.MCS==32 && cfg.phy.pusch.mcsIndex==32 && ...
+        string(cfg.phy.pusch.mcsTable)=="experimental_6gr_ai1032_alt3", ...
+        'sixgr:ran1ai1032:F1WrongMCS', ...
+        'Corrected H0 must execute at six-bit codepoint 32, not legacy Option-A index 28.');
     assert(T.NumRxAntennas==4 && T.NumTxPorts==4 && T.Layers==C.Rank(i));
     assert(abs(T.AppliedAWGNSNR_dB-40)<1e-10 && T.TBSize_bits==T.BitsCompared);
     assert(T.MeasuredTrialSINRSource~="configured_snr");

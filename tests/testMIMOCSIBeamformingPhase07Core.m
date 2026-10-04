@@ -198,9 +198,36 @@ measurements = permute([-92 -84 -88;-91 -89 -81],[1 3 2]);
     "Measurements",measurements,"Strict",true, ...
     "MeasurementResourceIDs",["SSB0","SSB1","SSB2"]);
 verifyEqual(testCase,beam,[2;3]);
-verifyEqual(testCase,gain,[-84;-81]);
+verifyTrue(testCase,all(isnan(gain(:))));
+verifyEqual(testCase,evidence.SelectedMeasurement,[-84;-81]);
+verifyEqual(testCase,evidence.SelectedMeasurementResourceIDs,["SSB1";"SSB2"]);
+verifyEqual(testCase,evidence.BeamGainStatus,"unavailable_no_independent_gain_reference");
 verifyFalse(testCase,evidence.GeometryOracleUsed);
 verifyEqual(testCase,evidence.SelectionSource,"measured_reference_signal");
+end
+
+function testMeasuredSingleBeamAndSINRUnits(testCase)
+% Single-beam K-by-B arrays have no third dimension in MATLAB's size().
+measurements=[-92 -84;-91 -89];
+[beam,gain,evidence]=sixgr.system.selectBestBeamPerLink( ...
+    [10 0;20 0],[0 0;30 0],[0 0],1,120,18, ...
+    "Measurements",measurements,"Strict",true,"MeasurementResourceIDs","CSI0");
+verifyEqual(testCase,beam,ones(2));
+verifyTrue(testCase,all(isnan(gain(:))));
+verifyEqual(testCase,evidence.SelectedMeasurement,measurements);
+verifyEqual(testCase,evidence.SelectedMeasurementResourceIDs,repmat("CSI0",2,2));
+% dB SINR is also not a dB antenna gain. Geometry and maxGain must not
+% supply an invented gain in the receiver-measurement branch.
+[beam,gain,evidence]=sixgr.system.selectBestBeamPerLink( ...
+    [10 0],[0 0],0,2,120,99,"Measurements",[-5 3], ...
+    "Strict",true,"Metric","SINR_dB");
+verifyEqual(testCase,beam,2);
+verifyTrue(testCase,isnan(gain));
+verifyEqual(testCase,evidence.SelectedMeasurement,3);
+verifyEqual(testCase,evidence.MeasurementMetric,"SINR_dB");
+verifyError(testCase,@()sixgr.system.selectBestBeamPerLink( ...
+    [10 0],[0 0],0,1,120,18,"Measurements",ones(1,1,1,2), ...
+    "Strict",true),'sixgr:mimo:BeamReportMismatch');
 end
 
 function testStrictBeamGeometryRejected(testCase)

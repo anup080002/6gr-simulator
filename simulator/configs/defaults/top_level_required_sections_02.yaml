@@ -60,8 +60,8 @@
     "resource_policy": "baseline", "repetition_policy": "none", "beam_policy": "fixed", "power_control": "baseline"
   },
   "prach": {
-    "enabled": true, "sequence_family": "zadoff_chu_baseline", "root_sequence_pool": [1], "long_short_preamble_mode": "long",
-    "preamble_count_per_ro": 64, "supports_gt64_preambles": false, "format_set": ["A1"], "resource_configuration_mode": "table_based",
+    "enabled": true, "sequence_family": "zadoff_chu_baseline", "root_sequence_pool": [1], "long_short_preamble_mode": "short",
+    "preamble_count_per_ro": 64, "supports_gt64_preambles": false, "format_set": ["A2"], "resource_configuration_mode": "table_based",
     "table_based_or_parameter_based": "table_based", "ro_definition": "baseline", "ssb_ro_mapping": "one_to_one_baseline", "mapping_cycle": "baseline",
     "association_period": "baseline", "association_pattern_period": "baseline", "one_to_one_mapping_flag": true, "unsymmetric_mapping_flag": false,
     "repetition_policy": "none", "same_beam_repeat_flag": true, "different_beam_repeat_flag": false, "beam_pairing_assumption": "same_beam",

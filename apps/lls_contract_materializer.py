@@ -6198,12 +6198,14 @@ def _pdcch_detection_probability_chart_materialization(
         return None
     points.sort(key=lambda point: point[0])
     dataset = {
-        "mode": "line" if len(points) > 1 else "bar",
+        "mode": "line" if len({point[0] for point in points}) >= 3 else "bar",
         "x_label": "SNR (dB)" if _row_float(records[0], "SNRdB") is not None else "Operating point",
-        "y_label": chart_name,
+        "y_label": f"{chart_name} (observed probability)",
         "points": points,
-        "evidence_shape_policy": "observed_probability_points",
+        "evidence_shape_policy": "measured_scalar" if len(points) == 1 else "operating_point",
         "sample_count": len(records),
+        "y_axis_min": 0.0,
+        "y_axis_max": 1.0,
     }
     return {
         "csv_bytes": _encode_dict_rows(
@@ -6220,7 +6222,8 @@ def _pdcch_detection_probability_chart_materialization(
         "image_status": "generated_specialized_runtime_summary_svg",
         "source_table_path": source_path,
         "source_row_count": len(records),
-        "note": "Probability values are copied from persisted PDCCH waveform-study aggregates; no curve interpolation is performed.",
+        "uniform_runtime_evidence_is_valid": True,
+        "note": "Observed probabilities, including exact zero/one outcomes, are copied from persisted PDCCH populations. A single point is not a sweep or statistical qualification; no curve interpolation is performed.",
     }
 
 
@@ -6232,6 +6235,14 @@ def _ssb_reception_timeline_chart(chart_name, existing, fetch_artifact_bytes, ru
     ])
     if not records:
         return None
+    component_rows = [
+        _row_text(record, "EvidenceScope") == "component_anchor"
+        or _row_text(record, "SourceClassification") == "isolated_component_waveform"
+        for record in records
+    ]
+    if any(component_rows) and not all(component_rows):
+        raise ValueError("SSB reception timeline cannot mix component and connected sample clocks")
+    component_mode = all(component_rows)
     captures = {}
     rows = []
     for index, record in enumerate(records, 1):
@@ -6241,13 +6252,25 @@ def _ssb_reception_timeline_chart(chart_name, existing, fetch_artifact_bytes, ru
         completion = _row_float(record, "ObservationCompletionTime_s")
         ue = _row_float(record, "UEID")
         cell = _row_float(record, "BaseStationID")
-        numeric = (start, stop, rate, completion, ue, cell)
+        numeric = (start, stop, rate, completion)
         if (any(value is None or not math.isfinite(value) for value in numeric)
                 or start < 0 or stop <= start or rate <= 0
-                or any(value != int(value) for value in (start, stop, ue, cell))
-                or ue < 1 or cell < 1
-                or not math.isclose(completion, stop / rate, rel_tol=1e-10, abs_tol=1e-12)
-                or _row_text(record, "ObservationCoverageSource") != "complete_contiguous_received_sample_buffer"):
+                or any(value != int(value) for value in (start, stop))
+                or not math.isclose(completion, stop / rate, rel_tol=1e-10, abs_tol=1e-12)):
+            raise ValueError("SSB reception timeline requires an actual complete, identity-bound sample clock")
+        trial_identity = ()
+        if component_mode:
+            if (_row_text(record, "EvidenceScope") == "in_path"
+                    or _row_float(record, "SameScenarioInPathEligible") == 1
+                    or _row_text(record, "ObservationCoverageSource") != "actual_complete_pbch_receiver_input_sample_extent"):
+                raise ValueError("SSB reception component clock must remain explicitly isolated")
+            trial_identity = tuple(_row_float(record, name) for name in ("Seed", "Frame", "Slot"))
+            if any(value is None or not math.isfinite(value) or value < 0 or value != int(value)
+                   for value in trial_identity):
+                raise ValueError("SSB reception component capture requires its actual seed/frame/slot identity")
+        elif (any(value is None or not math.isfinite(value) or value < 1 or value != int(value)
+                  for value in (ue, cell))
+              or _row_text(record, "ObservationCoverageSource") != "complete_contiguous_received_sample_buffer"):
             raise ValueError("SSB reception timeline requires an actual complete, identity-bound sample clock")
         if any(_row_float(record, flag) != 0 for flag in ("ProxyUsed", "FallbackFlag", "PlaceholderFlag")):
             raise ValueError("SSB reception timeline cannot use proxy, fallback or placeholder evidence")
@@ -6257,31 +6280,39 @@ def _ssb_reception_timeline_chart(chart_name, existing, fetch_artifact_bytes, ru
             raise ValueError("SSB reception timeline requires explicit receiver outcome flags")
         sweep = _row_float(record, "SweepPointIndex")
         configured_snr = _row_float(record, "ConfiguredSNR_dB", "SNR_dB")
-        key = (ue, cell, start, stop, rate, sweep, configured_snr)
+        key = (ue, cell, start, stop, rate, sweep, configured_snr) + trial_identity
         if key not in captures:
             captures[key] = len(captures) + 1
         rows.append(dict(
             run_id=run_id, chart_name=chart_name, source_row=index,
             capture_ordinal=captures[key], ue_id=ue, cell_id=cell,
+            evidence_scope="component_anchor" if component_mode else "in_path",
+            observation_clock_domain="independent_component_capture" if component_mode else "connected_received_sample_clock",
+            trial_seed=trial_identity[0] if component_mode else None,
+            trial_frame=trial_identity[1] if component_mode else None,
+            trial_slot=trial_identity[2] if component_mode else None,
             sweep_point_index=sweep, configured_snr_db=configured_snr,
             observation_start_sample=start, observation_end_sample_exclusive=stop,
             sample_rate_hz=rate, start_time_ms=1000 * start / rate,
             end_time_ms=1000 * completion, pss_detected=flags["PSSDetected"],
             sss_detected=flags["SSSDetected"], bch_crc_pass=flags["BCHCrcPass"],
             crash=flags["Crash"], source_table_logical_path=source_path))
-    series = [dict(name=f"Capture {ordinal}: UE {int(key[0])}, cell {int(key[1])}",
+    series = [dict(name=(f"Component capture {ordinal}: seed {int(key[7])}, SNR {key[6]} dB" if component_mode
+                        else f"Capture {ordinal}: UE {int(key[0])}, cell {int(key[1])}"),
                    points=[[1000 * key[2] / key[4], ordinal], [1000 * key[3] / key[4], ordinal]])
               for key, ordinal in captures.items()]
     return {
         "csv_bytes": _encode_dict_rows(list(rows[0]), rows),
         "img_bytes": _render_multi_series_svg(
-            chart_name, "Actual SS/PBCH receive windows; not decoded beam identities or individual SSB symbol boundaries.",
+            chart_name, ("Independent component SS/PBCH receive windows; not a connected UE timeline." if component_mode
+                         else "Actual SS/PBCH receive windows; not decoded beam identities or individual SSB symbol boundaries."),
             series, [f"Receiver rows={len(rows)}", f"Distinct captures={len(captures)}",
                      "Candidate trials sharing a capture retain separate CSV rows."],
-            x_label="Received sample-clock time (ms)", y_label="Capture ordinal (not beam index)",
+            x_label="Local component sample-clock time (ms)" if component_mode else "Received sample-clock time (ms)",
+            y_label="Capture ordinal (not beam index)",
             evidence_shape_policy="observed_timeline"),
-        "csv_status": "specialized_runtime_ssb_reception_timing_dataset",
-        "image_status": "generated_specialized_runtime_summary_svg",
+        "csv_status": "specialized_component_ssb_reception_timing_dataset" if component_mode else "specialized_runtime_ssb_reception_timing_dataset",
+        "image_status": "generated_specialized_component_summary_svg" if component_mode else "generated_specialized_runtime_summary_svg",
         "source_table_path": source_path,
         "source_row_count": len(records),
         "note": "Each segment is a completed received sample interval, not a configured or recovered SSB identity. Source rows and outcomes are preserved without averaging candidates.",
@@ -12571,8 +12602,9 @@ def _specialized_chart_materialization(
                         ("Tx power", "TxPower", lambda row: (_row_float(row, "TxMagnitude") or 0.0) ** 2 if _row_float(row, "TxMagnitude") is not None else None),
                         ("Rx power", "RxPower", lambda row: (_row_float(row, "RxMagnitude") or 0.0) ** 2 if _row_float(row, "RxMagnitude") is not None else None),
                     ]
-                preview_identity = ("ObservationKind", "Direction", "Frame", "Slot", "UEIndex",
-                                    "ServingCell", "TxAntennaIndex", "RxAntennaIndex", "TxPlane",
+                preview_identity = ("ObservationKind", "Direction", "SweepPointIndex",
+                                    "ConfiguredSNR_dB", "SNR_dB", "Frame", "Slot", "UEIndex", "RNTI",
+                                    "BaseStationID", "ServingCell", "TxAntennaIndex", "RxAntennaIndex", "TxPlane",
                                     "RxPlane", "Source", "EvidenceScope", "ObservationStartSample",
                                     "ObservationEndSampleExclusive", "ObservationSampleRateHz")
                 identity_fields = [key for key in preview_identity if any(key in row for row in records)]
@@ -12585,6 +12617,14 @@ def _specialized_chart_materialization(
                     kind = fields.get("ObservationKind", "").replace("broadcast_window", "broadcast")
                     label = " ".join(value for value in (
                         kind, fields.get("Direction", ""),
+                        "point=" + fields["SweepPointIndex"] if fields.get("SweepPointIndex") else "",
+                        "SNR=" + fields["ConfiguredSNR_dB"] + "dB" if fields.get("ConfiguredSNR_dB") else
+                        "SNR=" + fields["SNR_dB"] + "dB" if fields.get("SNR_dB") else "",
+                        "UE=" + fields["UEIndex"] if fields.get("UEIndex") else "",
+                        "RNTI=" + fields["RNTI"] if fields.get("RNTI") else "",
+                        "cell=" + fields["BaseStationID"] if fields.get("BaseStationID") else
+                        "cell=" + fields["ServingCell"] if fields.get("ServingCell") else "",
+                        "f" + fields["Frame"] if fields.get("Frame") else "",
                         "s" + fields["Slot"] if fields.get("Slot") else "",
                         "T" + fields["TxAntennaIndex"] if fields.get("TxAntennaIndex") else "",
                         "R" + fields["RxAntennaIndex"] if fields.get("RxAntennaIndex") else "") if value)

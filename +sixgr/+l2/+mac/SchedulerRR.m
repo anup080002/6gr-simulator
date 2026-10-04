@@ -53,6 +53,7 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
             info.SchedulerClass = string(class(obj));
             info.HARQDeferrals = table();
             info.ResourceExclusions = table();
+            info.PHYFeasibilityRejections = table();
             nPRBAvail = numel(prbAvail);
             info.NPRBAvail = nPRBAvail;
             ssid = obj.SearchSpaceID;
@@ -275,7 +276,6 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                     continue;
                 end
                 prbSet = double(plan.PRBSet(:).');
-                cursor = chunkStart + numel(prbSet);
                 servedBytes = double(plan.TBSBytes);
 
                 % HARQ allocation (new data)
@@ -403,8 +403,17 @@ classdef SchedulerRR < sixgr.l2.mac.SchedulerBase
                 g = obj.attachULSRSAuthorityToGrant(g, ueStates(k));
                 g = sixgr.l2.mac.attachReceivedULTimingAuthority(g,ueStates(k));
                 g = obj.freezePHYGrantForGrant(g);
+                if ~g.ExactPHYFeasible && string(g.ExactPHYInfeasibilityReason) == ...
+                        "initial_dl_code_rate_exceeds_actual_capacity"
+                    obj.cancelUnissuedNewDataGrants(g);
+                    info.PHYFeasibilityRejections = [info.PHYFeasibilityRejections; ...
+                        table(double(slot), double(rnti), string(g.ExactPHYInfeasibilityReason), ...
+                        'VariableNames', {'Slot','RNTI','RejectionReason'})];
+                    continue;
+                end
                 g.DCI = obj.buildDCIBitfield(g);
 
+                cursor = chunkStart + numel(prbSet);
                 grants = localAppendGrant(grants, g);
                 nGrant = numel(grants);
                 if controlBudgetActive

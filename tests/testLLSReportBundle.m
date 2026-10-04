@@ -3,15 +3,18 @@ function ok = testLLSReportBundle()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+runTag = "report_bundle_" + string(datetime('now','Format','yyyyMMdd_HHmmss_SSS'));
+tmp = fullfile(pwd,'results','lls','report_bundle_regression',char(runTag));
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+fprintf('REPORT_BUNDLE_EVIDENCE_ROOT=%s\n',tmp);
 
 baseScenario = fullfile(pwd, "simulator", "configs", "scenarios", "lls_100mhz_tdlc_bidirectional_truth.yaml");
+trsResources = fullfile(pwd, "simulator", "configs", "validation", "lls_report_trs_resources.yaml");
+trsBWP = fullfile(pwd, "simulator", "configs", "validation", "lls_report_trs_24prb.yaml");
 scenarioPath = fullfile(tmp, "lls_report_bundle.yaml");
 fid = fopen(scenarioPath, "w");
 fprintf(fid, "%s", ['{' ...
-    '"inherits":["' strrep(baseScenario, '\', '\\') '"],' ...
+    '"inherits":["' strrep(baseScenario, '\', '\\') '","' strrep(trsResources, '\', '\\') '","' strrep(trsBWP, '\', '\\') '"],' ...
     '"meta":{"scenario_id":"lls_report_bundle","description":"report bundle smoke","version":"1","owner":"test","maturity_tag":"smoke"},' ...
     '"simulation":{"n_frames":1,"n_slots":20,"monte_carlo_iterations":1,"snr_db":20,"snr_sweep_offsets_db":[0],"reference_sweep_enabled":false,"adaptive_sweep_enabled":false,"random_seed":19},' ...
     '"run_control":{"total_frames":1,"total_slots":20,"warmup_slots":0,"measurement_slots":20,"total_time_ms":10,"warmup_time_ms":0,"measurement_time_ms":10,"num_workers":1,"auto_start_parallel_pool":false},' ...
@@ -32,13 +35,17 @@ fprintf(fid, "%s", ['{' ...
 fclose(fid);
 
 fprintf("START testLLSReportBundle compact 24-PRB truth scenario.\n");
+resolved = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+cfg = sixgr.lls6g.buildInternalConfig(resolved,tmp);
+assert(cfg.run.totalSlots==20 && ~cfg.run.useParallel, ...
+    'The report-bundle regression must retain its explicit twenty-slot serial workload.');
+resolvedValues = resolved.toStruct();
+save(fullfile(tmp,'test_configuration.mat'),'cfg','resolvedValues','scenarioPath');
 scenarioTimer = tic;
-[~, uniqueLeaf] = fileparts(tempname);
-runTag = "report_bundle_" + string(uniqueLeaf);
-out = run_6g_phy_lls_single(scenarioPath, "results", runTag);
+out = run_6g_phy_lls_single(scenarioPath, tmp, runTag);
 fprintf("REPORT_BUNDLE_SCENARIO_SECONDS=%.3f\n", toc(scenarioTimer));
+save(fullfile(tmp,'test_output.mat'),'out','-v7.3');
 runFolder = char(string(out.RunFolder));
-runCleanup = onCleanup(@() localRemoveTestRunFolder(runFolder)); %#ok<NASGU>
 assert(out.Ok, "Waveform bundle report smoke should complete.");
 runLog = fullfile(runFolder, "air_interface", "logs", "run.log");
 referenceSweepPath = fullfile(runFolder, "air_interface", "csv", "lls_reference_snr_sweep.csv");
@@ -935,12 +942,4 @@ end
 img = double(img);
 colorMask = abs(img(:,:,1) - img(:,:,2)) > 1 | abs(img(:,:,2) - img(:,:,3)) > 1;
 tf = nnz(colorMask) > 250;
-end
-
-function localRemoveTestRunFolder(pathIn)
-pathIn = char(string(pathIn));
-expectedParent = char(fullfile(pwd, "results", "lls", "lls_report_bundle"));
-if isfolder(pathIn) && startsWith(lower(pathIn), lower(expectedParent + string(filesep)))
-    rmdir(pathIn, "s");
-end
 end

@@ -82,6 +82,12 @@ if isfinite(candidateIndices(candidateOrdinal))
 end
 rec = sixgr.phy.broadcast.recoverSIB1FromWaveform( ...
     observation, receiverCfg, receiverArgs{:},'PhysicalMeasurementObservation',physicalObservation);
+if logical(options.UseRuntimeChannel) && rec.BCHCrcPass && rec.MIBDecoded && rec.SSBIdentityVerified
+    % Publish the received clock for shared and standalone runtime callers.
+    % Only implementation filter delay is removed, never injected path delay.
+    rec.ReceivedDLTimingReference=sixgr.phy.frame.receivedDLTimingReference( ...
+        receiverCfg,rec,observation,out.RuntimeDLChannelState.ChannelTrimSamples);
+end
 rec.SignalledSSPBCHBlockPower_dBm = NaN;
 rec.SSPBCHBlockPowerSource = "unavailable_decoded_sib1";
 rec.SSSTxPowerDeltaFromSignalled_dB = NaN;

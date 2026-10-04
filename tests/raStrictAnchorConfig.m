@@ -41,7 +41,14 @@ cfg.phy.pdcch.dmrs.enable = true;
 cfg.phy.pdsch.enable = true;
 cfg.phy.pusch.enable = true;
 cfg.phy.prach.enable = true;
-cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
+% This access fixture authors common PDSCH allocations at carrier RB 0.
+% Place the SSB at Point A so CORESET0 index 0/5 and its Msg4 frequency
+% reference also start at RB 0. A centred SSB would instead anchor them at
+% RB 15 on this 51-RB carrier; that needs different authored allocations.
+cfg.phy.ssb.NCRBSSB = 0;
+cfg.phy.ssb.KSSB = 0;
+% Ordered monitoring is [n0,n0+1,next n0,next n0+1]. Preserve slot 40.
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",3);
 cfg.initial_access.sib1.pdcch_config_common=struct("commonControlResourceSet",struct( ...
     "controlResourceSetId",1,"frequencyDomainResources",char("1111"+string(repmat('0',1,41))), ...
     "duration",2,"cce_REG_MappingType","nonInterleaved","precoderGranularity","sameAsREG-bundle"), ...

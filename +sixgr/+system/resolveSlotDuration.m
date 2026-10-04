@@ -1,0 +1,23 @@
+function duration = resolveSlotDuration(cfg, params)
+%RESOLVESLOTDURATION One system iteration executes one canonical PHY slot.
+% Both supported backends advance grant/feedback absolute-slot indices by
+% one per iteration. A coarser mobility update cadence must not change that
+% physical clock or the throughput denominator.
+if nargin < 2, params = struct(); end
+duration = sixgr.time.slotDurationSec(cfg);
+configured = sixgr.util.structGet(params,"TTI_s", ...
+    sixgr.util.structGet(cfg,"system.tti_s",[]));
+if isempty(configured), return; end
+if ~(isnumeric(configured) && isreal(configured) && isscalar(configured) && ...
+        isfinite(configured) && configured > 0)
+    error("sixgr:system:InvalidTTIDuration", ...
+        "Configured TTI_s must be a positive finite numeric scalar in seconds.");
+end
+if abs(double(configured)-duration) > 8*eps(duration)
+    error("sixgr:system:TTIClockMismatch", ...
+        "TTI_s=%g conflicts with the canonical PHY slot duration %g seconds. " + ...
+        "SystemLevelRunner executes one absolute slot per iteration. " + ...
+        "Use scenario.mobility.updatePeriod_s for slower mobility updates " + ...
+        "and simulation duration/NumTTI for longer runs.",double(configured),duration);
+end
+end

@@ -85,20 +85,23 @@ artifacts.CoverageSnapshotPath = fullfile(layout.ReportCSVDir, "live_coverage_sn
 flushEvery = max(1, min(5, round(numSlots / 4)));
 
 for slotIdx = 1:numSlots
-    if slotIdx > 1 && mobilityEnable && mod(slotIdx - 2, mobilityUpdateSlots) == 0
+    % Match the canonical zero-based observation clock. At slot zero the
+    % dropped geometry has not moved; refresh only after an elapsed cadence.
+    mobilityAdvanced = slotIdx > 1 && mobilityEnable && mod(slotIdx - 1, mobilityUpdateSlots) == 0;
+    if mobilityAdvanced
         [ue, mobModel] = sixgr.scenario.mobility.updatePositions(ue, cfgMob, slotDur_s * mobilityUpdateSlots, mobModel);
     elseif slotIdx == 1 && mobilityEnable
         [ue, mobModel] = sixgr.scenario.mobility.updatePositions(ue, cfgMob, 0, mobModel);
     end
 
-    doBeamUpdate = slotIdx == 1 || mod(slotIdx - 2, beamUpdateSlots) == 0;
+    doBeamUpdate = slotIdx == 1 || mod(slotIdx - 1, beamUpdateSlots) == 0;
     if doBeamUpdate
         [beamIdx, beamGain_dB] = sixgr.system.selectBestBeamPerLink( ...
             ue.pos_m, layoutStruct.bs.pos_m, layoutStruct.bs.azim_deg, ...
             nBeams, beamSpanDeg, beamMaxGain_dB);
     end
 
-    doPropagationUpdate = slotIdx == 1 || doBeamUpdate || mod(slotIdx - 2, largeScaleUpdateSlots) == 0;
+    doPropagationUpdate = slotIdx == 1 || mobilityAdvanced || doBeamUpdate || mod(slotIdx - 1, largeScaleUpdateSlots) == 0;
     reusePropagation = ~isempty(fieldnames(largeScaleState)) && ~doPropagationUpdate;
     largeScaleState = sixgr.system.buildLargeScaleStateCache( ...
         cfgLargeScale, layoutStruct, ue, beamIdx, beamGain_dB, plModel, ...

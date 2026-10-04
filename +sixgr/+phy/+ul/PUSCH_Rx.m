@@ -3273,22 +3273,10 @@ if ~isempty(configuredValue) && logical(configuredValue) ~= runtimeValue
 end
 end
 
-function xOverhead = localResolvePUSCHXOverhead(pusch, cfg)
+function xOverhead = localResolvePUSCHXOverhead(~, cfg)
+% TS 38.214 6.1.4.2: waveform choice does not override configured N_oh.
 xOverhead = double(sixgr.util.structGet(cfg, 'phy.pusch.xOverhead', ...
     sixgr.util.structGet(cfg, 'phy.pusch.XOverhead', 0)));
-try
-    tpEnabled = logical(pusch.TransformPrecoding);
-catch
-    tpEnabled = false;
-end
-try
-    modToken = upper(strrep(char(string(pusch.Modulation)), ' ', ''));
-catch
-    modToken = "";
-end
-if tpEnabled || strcmp(modToken, 'PI/2-BPSK') || strcmp(modToken, 'PI2-BPSK')
-    xOverhead = max(double(xOverhead), 6);
-end
 xOverhead = max(0, round(double(xOverhead)));
 end
 

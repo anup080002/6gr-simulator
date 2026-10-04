@@ -1283,10 +1283,32 @@ classdef (Abstract) SchedulerBase < handle
                 probe.ControlSymbolAllocation=budget.ControlSymbolAllocation;
             end
             timing=sixgr.phy.frame.TimingRelationEngine.resolveProductionGrant(obj.Cfg,probe);
-            assert(timing.Valid,'sixgr:SchedulerBase:TimingDecisionRejected', ...
-                'SSB resource selection requires legal canonical timing: %s',timing.Diagnostic);
-            actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Cfg,double(timing.DataAbsoluteSlot)+1);
             before=double(available(:).');
+            % A configured timing candidate can legitimately be unavailable
+            % at this TDD occasion. Do not issue it, move it to another slot,
+            % or treat a DL/UL/guard-symbol collision as an execution crash.
+            % Missing configuration and other timing errors still fail below.
+            physicalRejections=["target_hits_fixed_opposite_direction", ...
+                "target_hits_guard_symbols","target_hits_unused_symbols"];
+            deferredReasons=["data_timing_rejected:"+physicalRejections, ...
+                "harq_ack_timing_rejected:"+physicalRejections];
+            if ~timing.Valid && any(string(timing.ReasonCode)==deferredReasons)
+                available=zeros(1,0);
+                target=double(sixgr.util.structGet(timing, ...
+                    'DataDecision.TargetAbsoluteSlot',timing.DataAbsoluteSlot));
+                evidence=table(double(slot),double(timing.ControlAbsoluteSlot), ...
+                    target,string(obj.Direction),string(jsonencode(before)), ...
+                    string(jsonencode(before)),string(jsonencode(available)), ...
+                    "common_dl_resource_timing_deferral:"+string(timing.ReasonCode), ...
+                    'VariableNames',{'Slot','ControlAbsoluteSlot0', ...
+                    'DataAbsoluteSlot0','Direction','InputPRBSetJSON', ...
+                    'ExcludedPRBSetJSON','AvailablePRBSetJSON','Reason'});
+                return;
+            end
+            assert(timing.Valid,'sixgr:SchedulerBase:TimingDecisionRejected', ...
+                'SSB resource selection requires legal canonical timing: %s (%s)', ...
+                timing.ReasonCode,timing.Diagnostic);
+            actual=sixgr.phy.grid.applyRuntimeCarrierTimeline(obj.Cfg,double(timing.DataAbsoluteSlot)+1);
             if isempty(before), return; end
             plan=sixgr.phy.frame.CommonDLResourcePlan(actual);
             excluded=zeros(1,0); owners=strings(0,1);
@@ -1309,6 +1331,23 @@ classdef (Abstract) SchedulerBase < handle
                 string(jsonencode(available)),reason, ...
                 'VariableNames',{'Slot','ControlAbsoluteSlot0','DataAbsoluteSlot0', ...
                 'Direction','InputPRBSetJSON','ExcludedPRBSetJSON','AvailablePRBSetJSON','Reason'});
+        end
+
+        function cancelUnissuedNewDataGrants(obj, grants)
+            % Roll back proposals rejected before DCI construction. Never
+            % use this for issued control or a stored retransmission.
+            if isempty(obj.HARQ), return; end
+            for index = 1:numel(grants)
+                grant = grants(index);
+                harq = sixgr.util.structGet(grant, 'HARQ', struct());
+                pid = sixgr.util.structGet(harq, 'HarqID', []);
+                if isempty(pid), continue; end
+                if logical(sixgr.util.structGet(harq, 'IsRetransmission', false)) || ...
+                        ~obj.HARQ.cancelTentativeTx(grant.RNTI, pid, 'DCINotIssued', true)
+                    error('sixgr:SchedulerBase:UnissuedHARQRollbackFailed', ...
+                        'Cannot release an unissued new-data proposal for RNTI=%d.', grant.RNTI);
+                end
+            end
         end
 
         function grantOut = freezePHYGrantForGrant(obj, grantIn, varargin)
@@ -1692,6 +1731,11 @@ classdef (Abstract) SchedulerBase < handle
                 resourceRoot + ".dmrs.portSet", double(scheduledDMRSPorts(:).'));
             cfgExact = sixgr.util.structSet(cfgExact, ...
                 resourceRoot + ".dmrs.DMRSPortSet", double(scheduledDMRSPorts(:).'));
+            % The shared PHY factories intentionally prioritize the installed
+            % capability pool over legacy portSet aliases. Finalized grant
+            % ownership must use the explicit scheduled-port authority.
+            cfgExact = sixgr.util.structSet(cfgExact, ...
+                resourceRoot + ".dmrs.scheduledPortSet", double(scheduledDMRSPorts(:).'));
             cfgExact = sixgr.util.structSet(cfgExact, ...
                 resourceRoot + ".enablePTRS", logical(scheduledPTRSEnabled));
             cfgExact = sixgr.util.structSet(cfgExact, ...
@@ -1719,11 +1763,12 @@ classdef (Abstract) SchedulerBase < handle
                     "Modulation",modStr,"NumLayers",nLayers, ...
                     "RNTI",double(grantOut.RNTI)};
                 if upper(string(grantOut.Direction)) == "DL"
-                    [~,actualInfo] = sixgr.phy.grid.allocREsPDSCH( ...
+                    [~,actualInfo,actualChannel] = sixgr.phy.grid.allocREsPDSCH( ...
                         actualCarrier,cfgActual,actualArgs{:});
                 else
                     [~,actualInfo,actualPUSCH] = sixgr.phy.grid.allocPUSCHTransport( ...
                         actualCarrier,cfgActual,actualArgs{:});
+                    actualChannel=actualPUSCH;
                     timing=sixgr.util.structGet(grantOut,'TimingDecision.DataDecision',struct());
                     if isfield(timing,'ProcessingBudget')
                         finalBudget=sixgr.phy.frame.puschPreparationProcessingTime( ...
@@ -1734,9 +1779,18 @@ classdef (Abstract) SchedulerBase < handle
                             'Final PUSCH allocation changed the preparation budget after canonical timing selection.');
                     end
                 end
+                actualDMRSPorts=double(actualChannel.DMRS.DMRSPortSet(:).');
+                assert(isequal(actualDMRSPorts,double(scheduledDMRSPorts(:).')), ...
+                    'sixgr:SchedulerBase:ScheduledDMRSIdentityMismatch', ...
+                    'Exact resource accounting changed the scheduled DM-RS port identities.');
+                exactInfo.ScheduledDMRSPortSet=double(scheduledDMRSPorts(:).');
+                exactInfo.ActualResourceDMRSPortSet=actualDMRSPorts;
                 assert(actualInfo.NREPerPRB == exactNRE, ...
                     'sixgr:SchedulerBase:NominalNREMismatch', ...
-                    'Actual allocation and nominal TBS must agree on 38.214 N_RE.');
+                    ['Actual allocation and nominal TBS must agree on 38.214 N_RE: ' ...
+                    'actual=%g nominal=%g slot0=%g layers=%g ports=%s PRBs=%s symbols=%s.'], ...
+                    actualInfo.NREPerPRB,exactNRE,dataSlot0,nLayers, ...
+                    mat2str(actualDMRSPorts),mat2str(prbSet),mat2str(symAlloc));
                 assert(actualInfo.G > 0, ...
                     'sixgr:SchedulerBase:EmptyRateMatchedAllocation', ...
                     'The actual scheduled allocation has no coded data capacity.');
@@ -2300,12 +2354,8 @@ if upper(string(direction)) == "UL"
     if ~explicit
         xOverhead = 0;
     end
-    modToken = upper(strtrim(string(sixgr.util.structGet(cfg, "phy.pusch.modulation", ""))));
-    tpEnabled = logical(sixgr.util.structGet(cfg, "phy.pusch.transformPrecoding", false)) || ...
-        strcmp(modToken, "PI/2-BPSK") || strcmp(modToken, "PI2-BPSK");
-    if tpEnabled
-        xOverhead = max(double(xOverhead), 6);
-    end
+    % TS 38.214 6.1.4.2: N_oh is the configured xOverhead (zero
+    % when absent). Transform precoding does not configure extra overhead.
 else
     [xOverhead, explicit] = localFirstFiniteScalarWithPresence( ...
         sixgr.util.structGet(cfg, "phy.pdsch.xOverhead", []), ...
@@ -3559,10 +3609,17 @@ if ~isempty(carrier) && isobject(carrier)
     end
 end
 try
-    token = char(jsonencode(scope));
-catch
-    token = sprintf('%s|NGrid=%g|Symbols=%g', upper(char(string(direction))), ...
-        double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", NaN)), double(symbolsPerSlot));
+    % Complex beam/precoder matrices are normal PHY configuration values.
+    % Raw jsonencode rejects them. The old catch then discarded the entire
+    % DM-RS/channel scope, aliasing (among others) one- and two-CDM-group
+    % allocations to one cached TBS. Preserve real/imaginary values and all
+    % resource fields; an unrepresentable identity must never share a key.
+    token = ['exact_resource_scope_v2|' char(jsonencode(sixgr.util.jsonSafeValue(scope)))];
+catch cause
+    failure = MException('sixgr:SchedulerBase:CacheIdentityUnavailable', ...
+        'Cannot serialize the exact %s resource configuration for TBS/NRE caching.', ...
+        char(string(direction)));
+    throw(addCause(failure,cause));
 end
 end
 

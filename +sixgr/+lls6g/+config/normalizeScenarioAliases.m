@@ -324,7 +324,7 @@ end
 function cfg = localEnforceDuplexIsolation(cfg, authored)
 mode = upper(strtrim(string(sixgr.util.structGet(cfg, ...
     "frequency.duplex_mode", ""))));
-if ~any(mode == ["FDD", "TDD"])
+if ~isscalar(mode) || ismissing(mode) || ~any(mode == ["FDD", "TDD"])
     error("sixgr:lls6g:config:InvalidDuplexMode", ...
         "frequency.duplex_mode must resolve to FDD or TDD.");
 end
@@ -345,7 +345,8 @@ for path = aliasPaths.'
     if isfield(authored, key) && authored.(key) && ...
             isfield(authored, valueKey)
         leafMode = upper(strtrim(string(authored.(valueKey))));
-        if ~any(leafMode == ["FDD", "TDD"]) || leafMode ~= mode
+        if ~isscalar(leafMode) || ismissing(leafMode) || ...
+                ~any(leafMode == ["FDD", "TDD"]) || leafMode ~= mode
             error("sixgr:phy:frame:DuplexAuthorityMismatch", ...
                 "Leaf YAML duplex authority %s=%s conflicts with " + ...
                 "frequency.duplex_mode=%s.", path, leafMode, mode);
@@ -1181,39 +1182,58 @@ end
 end
 
 function cfg = localApplyCanonicalTopology(cfg, control)
-sites = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_sites", []), 1);
-sectors = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_sectors_per_site", []), NaN);
-cells = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_cells", []), NaN);
-if ~isfinite(sectors)
-    if isfinite(cells)
-        sectors = max(1, ceil(cells / max(1, sites)));
-    else
-        sectors = 1;
+% Canonical controls are partial overrides, not a second set of defaults.
+% An integration/logging section cannot replace an authored UE population.
+topology=sixgr.util.structGet(control,"topology",struct());
+assert(isstruct(topology) && isscalar(topology), ...
+    'sixgr:lls6g:config:InvalidCanonicalTopology','canonical_control.topology must be a scalar mapping.');
+for field=["num_sites","num_sectors_per_site","num_cells","num_trps","num_ues"]
+    if isfield(topology,field)
+        raw=topology.(field);
+        assert(isnumeric(raw) && isreal(raw) && isscalar(raw) && ...
+            isfinite(raw) && raw>=1 && raw==fix(raw), ...
+            'sixgr:lls6g:config:InvalidCanonicalTopology', ...
+            'canonical_control.topology.%s must be a finite positive integer scalar.',field);
     end
 end
-if ~isfinite(cells)
-    cells = max(1, sites * sectors);
+derived=cell(0,2);
+existingSectors=sixgr.util.structGet(cfg,"deployment_topology.num_sectors_per_site", ...
+    sixgr.util.structGet(cfg,"scenario.layout.nSectorsPerSite",1));
+sectors=existingSectors;
+if any(isfield(topology,{'num_sites','num_sectors_per_site','num_cells'}))
+    sites=sixgr.util.structGet(topology,"num_sites", ...
+        sixgr.util.structGet(cfg,"deployment_topology.num_sites", ...
+        sixgr.util.structGet(cfg,"scenario.layout.nSites",1)));
+    sectors=sixgr.util.structGet(topology,"num_sectors_per_site",existingSectors);
+    if isfield(topology,'num_cells') && ~isfield(topology,'num_sectors_per_site')
+        sectors=ceil(double(topology.num_cells)/double(sites));
+    end
+    cells=sixgr.util.structGet(topology,"num_cells",double(sites)*double(sectors));
+    derived=[derived; {
+        "deployment_topology.num_sites", sites
+        "deployment_topology.num_base_stations", sites
+        "deployment_topology.num_sectors_per_site", sectors
+        "deployment_topology.num_cells", cells
+        "scenario.layout.nSites", sites
+        "scenario.layout.nSectorsPerSite", sectors
+        "scenario.layout.nCells", cells}];
 end
-trps = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_trps", []), cells);
-ues = localCanonicalPositiveInt(sixgr.util.structGet(control, "topology.num_ues", []), 1);
-azimuths = localCanonicalSectorAzimuths(control, sectors);
-
-derived = {
-    "deployment_topology.num_sites", sites
-    "deployment_topology.num_base_stations", sites
-    "deployment_topology.num_sectors_per_site", sectors
-    "deployment_topology.num_cells", cells
-    "deployment_topology.num_trps", trps
-    "deployment_topology.num_ues", ues
-    "deployment_topology.sector_azimuth_offsets_deg", azimuths
-    "deployment_topology.sector_azimuths_deg", azimuths
-    "scenario.layout.nSites", sites
-    "scenario.layout.nSectorsPerSite", sectors
-    "scenario.layout.nCells", cells
-    "scenario.sectorization.azimOffsets_deg", azimuths
-    "scenario.ue.nUE", ues
-    "users.n_users", ues
-    };
+if isfield(topology,'num_trps')
+    derived=[derived; {"deployment_topology.num_trps",topology.num_trps}];
+end
+if isfield(topology,'num_ues')
+    derived=[derived; {
+        "deployment_topology.num_ues",topology.num_ues
+        "scenario.ue.nUE",topology.num_ues
+        "users.n_users",topology.num_ues}];
+end
+if isfield(topology,'sector_azimuth_offsets_deg') || ~isequaln(sectors,existingSectors)
+    azimuths=localCanonicalSectorAzimuths(control,sectors);
+    derived=[derived; {
+        "deployment_topology.sector_azimuth_offsets_deg",azimuths
+        "deployment_topology.sector_azimuths_deg",azimuths
+        "scenario.sectorization.azimOffsets_deg",azimuths}];
+end
 for i = 1:size(derived, 1)
     cfg = sixgr.util.structSet(cfg, derived{i,1}, derived{i,2});
 end
@@ -1245,18 +1265,6 @@ mappings = {
     };
 for i = 1:size(mappings, 1)
     cfg = localSetCanonicalValue(cfg, control, mappings{i,1}, mappings{i,2}, "identity");
-end
-end
-
-function value = localCanonicalPositiveInt(raw, defaultValue)
-value = defaultValue;
-if isempty(raw) || ~(isnumeric(raw) || islogical(raw))
-    return;
-end
-raw = double(raw(:));
-raw = raw(isfinite(raw));
-if ~isempty(raw)
-    value = max(1, round(raw(1)));
 end
 end
 
@@ -1646,6 +1654,12 @@ if newAuthoritative && ~oldAuthoritative
     cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
 elseif oldAuthoritative && ~newAuthoritative
     cfg = sixgr.util.structSet(cfg, newPath, oldToNew);
+elseif newMissing && ~oldMissing
+    % An absent alias differs from its catalog default, but that does not
+    % make absence an override of the populated side of a partial config.
+    cfg = sixgr.util.structSet(cfg, newPath, oldToNew);
+elseif oldMissing && ~newMissing
+    cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
 elseif newDiff && (oldMissing || ~oldDiff)
     cfg = sixgr.util.structSet(cfg, oldPath, newToOld);
 elseif oldDiff && (newMissing || ~newDiff)
@@ -2085,29 +2099,37 @@ items = names(enabled);
 end
 
 function cfg = localNewDefaults()
-persistent cached
-if isempty(cached)
-    cached = struct();
-    paths = localNewDefaultsPaths();
+persistent cached cachedContent
+paths = localNewDefaultsPaths();
+content = arrayfun(@(path)fileread(path), paths, 'UniformOutput', false);
+if isempty(cached) || ~isequal(content, cachedContent)
+    candidate = struct();
     for i = 1:numel(paths)
         raw = sixgr.lls6g.config.readConfigFile(paths(i));
         if isfield(raw, "inherits")
             raw = rmfield(raw, "inherits");
         end
-        cached = sixgr.util.mergeStruct(cached, raw);
+        candidate = sixgr.util.mergeStruct(candidate, raw);
     end
+    % Publish only after every layer parses. File content is authority even
+    % when an editor or sync tool preserves file length and modification time.
+    cached = candidate;
+    cachedContent = content;
 end
 cfg = cached;
 end
 
 function cfg = localLegacyDefaults()
-persistent cached
-if isempty(cached)
-    raw = sixgr.lls6g.config.readConfigFile(localLegacyDefaultsPath());
+persistent cached cachedContent
+path = localLegacyDefaultsPath();
+content = fileread(path);
+if isempty(cached) || ~isequal(content, cachedContent)
+    raw = sixgr.lls6g.config.readConfigFile(path);
     if isfield(raw, "inherits")
         raw = rmfield(raw, "inherits");
     end
     cached = raw;
+    cachedContent = content;
 end
 cfg = cached;
 end

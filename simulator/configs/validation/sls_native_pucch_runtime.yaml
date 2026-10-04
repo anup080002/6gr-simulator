@@ -1,0 +1,26 @@
+# Declared integration fixture; no accepted BLER/RF/array results.
+# Four physical dimensions and one configured single-stream PUCCH vector.
+integration:
+  run_mode: LINK_BUDGET
+  configured_snr_is_link_authority: false
+  power_reference_mode: absolute_calibrated_sqrt_mw
+channel:
+  pathlossEnabled: true
+scenario:
+  bs:
+    txPower_dBm: 30
+  ue:
+    txPower_dBm: 23
+system:
+  linkAbstraction:
+    networkSpatial:
+      csirsScramblingIDs: [11]
+    dynamicPUCCH:
+      spatialVectorCatalog:
+        - SpatialRelationID: 1
+          ReferenceSignalType: SSB
+          ReferenceSignalID: 0
+          BeamID: 0
+          ConfigurationEpoch: 1
+          PrecoderReal: [1, 0, 0, 0]
+          PrecoderImag: [0, 0, 0, 0]

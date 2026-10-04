@@ -2,7 +2,7 @@ function ok=testRAN1AI1032F1ThresholdExtraction()
 % Formula fixture only: no fixture row is written as calibration evidence.
 study=sixgr.studies.ran1ai1032.loadStudyConfig();
 CaseID=repmat("fixture_H0_AWGN_r1",2,1); EntryID=repmat("H0",2,1);
-a=sixgr.studies.ran1ai1032.MCSCatalog.optionA(); a=a(a.entry_id=="H0",:);
+a=sixgr.studies.ran1ai1032.MCSCatalog.alt3Extended(); a=a(a.entry_id=="H0",:);
 ChannelProfile=repmat("AWGN",2,1); DelaySpread_ns=zeros(2,1);
 AntennaCaseID=repmat("fixture_4x4",2,1); Rank=ones(2,1);
 TxChains=4*ones(2,1); RxChains=TxChains; Qm=10*ones(2,1);

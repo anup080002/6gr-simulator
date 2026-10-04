@@ -82,7 +82,9 @@ classdef DCIParser
             fmt = string(data.DCIFormat);
             if startsWith(fmt, "0_")
                 if isfield(data,'ExperimentalULMCSTable')
-                    assert(any(data.ExperimentalULMCSTable.Rows(:,1)==fields.mcs), ...
+                    regular=data.ExperimentalULMCSTable.Rows(:,1);
+                    reserved=data.ExperimentalULMCSTable.ReservedRows(:,1);
+                    assert(any([regular;reserved]==fields.mcs), ...
                         'sixgr:phy:pdcch:field_out_of_range','Unconfigured experimental MCS codepoint.');
                 end
                 nBWP = double(data.ActiveULBWPSize);

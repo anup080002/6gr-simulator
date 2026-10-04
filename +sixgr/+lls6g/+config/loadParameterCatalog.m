@@ -6,22 +6,42 @@ if nargin < 1 || strlength(string(kind)) == 0
 end
 kind = lower(string(kind));
 
-persistent scenarioCatalog matrixCatalog
+persistent scenarioCatalog matrixCatalog scenarioSources matrixSources
 
 switch kind
     case "scenario"
-        if isempty(scenarioCatalog)
+        sources = localCatalogSources("scenario");
+        if isempty(scenarioCatalog) || ~isequal(sources,scenarioSources)
             scenarioCatalog = localLoadMergedCatalog("scenario");
+            scenarioSources = sources;
         end
         catalog = scenarioCatalog;
     case "matrix"
-        if isempty(matrixCatalog)
+        sources = localCatalogSources("matrix");
+        if isempty(matrixCatalog) || ~isequal(sources,matrixSources)
             matrixCatalog = localLoadMergedCatalog("matrix");
+            matrixSources = sources;
         end
         catalog = matrixCatalog;
     otherwise
         error("sixgr:lls6g:config:UnknownCatalogKind", ...
             "Unsupported parameter catalog kind '%s'.", string(kind));
+end
+end
+
+function sources = localCatalogSources(kind)
+% A MATLAB/WebGUI process can outlive a schema edit. Compare actual bytes,
+% including optional-overlay presence, rather than only timestamps/lengths.
+% Parsing/merging stays cached; unchanged catalogs retain identical policy.
+paths = [string(localCatalogPath(kind));localCatalogOverlayPaths(kind)];
+sources = cell(numel(paths),2);
+for k=1:numel(paths)
+    sources{k,1}=paths(k);
+    if k==1 || isfile(paths(k))
+        sources{k,2}=fileread(paths(k));
+    else
+        sources{k,2}=[];
+    end
 end
 end
 

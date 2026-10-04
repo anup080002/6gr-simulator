@@ -31,6 +31,19 @@ for field=["PDCCHObservationStartSample","PDCCHObservationEndSampleExclusive", .
         "PDCCHDemodulatedSymbols","PDCCHReceivePaddingApplied"]
     assert(contains(complete,"r."+field+" =") && contains(source,"row."+field+" ="));
 end
+% The runtime assigns completion rows into a preallocated struct array.
+% A producer-only field used to throw heterogeneousStrucAssignment after
+% physical PDCCH reception, masking the actual receiver outcome.
+template=localBody(source,'function row = localMakeLinkTrialRow(', ...
+    'function outcome = ternaryPUCCHCRCOutcome(');
+produced=regexp(complete,'\br\.([A-Za-z]\w*)\s*=','tokens');
+declared=regexp(template,'\brow\.([A-Za-z]\w*)\s*=','tokens');
+produced=unique(string([produced{:}])); declared=unique(string([declared{:}]));
+assert(all(ismember(produced,declared)), ...
+    'PDCCH completion fields missing from preallocated schema: %s', ...
+    strjoin(setdiff(produced,declared),', '));
+assert(contains(template,'row.PDCCHReceiverTrialExecuted = false;') && ...
+    contains(complete,'r.PDCCHReceiverTrialExecuted = true;'));
 ok=true;
 disp('PDCCH_RUNTIME_RECEPTION_INTEGRITY_STRUCTURE_PASS');
 end

@@ -1,0 +1,10 @@
+# Executed-PHY sizing only. Four TBs cannot qualify a BLER curve.
+inherits: [study.yaml]
+lls:
+  execution:
+    transport_blocks_per_invocation: 4
+    channel_profiles: [AWGN]
+    entry_ids: [B27]
+    ranks: [1]
+    antenna_case_ids: [simo_1x4_r1]
+    rf_branch: pn_off_ptrs_reference

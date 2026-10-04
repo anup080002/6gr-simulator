@@ -58,6 +58,7 @@ measured=raw;
 for direction=["DL","UL"]
     measured.(direction).EVM_rms=[0.1;0.2;0.3];
     measured.(direction).NMSE_dB=[-20;-21;-22];
+    measured.(direction).NMSESource=repmat("independent_applied_channel_reference",3,1);
     measured.(direction).LLRMeanAbs=[4;5;6];
 end
 aggregateOnly=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,measured,'StrictMode',true);
@@ -67,6 +68,25 @@ assert(all(isnan(aggregateOnly.LayerMetrics.EVMdB)) && ...
     all(isfinite(aggregateOnly.LayerMetrics.TrialEVMdB)) && ...
     all(isfinite(aggregateOnly.LayerMetrics.TrialChannelEstimateNMSEdB)) && ...
     all(isfinite(aggregateOnly.LayerMetrics.TrialLLRMeanAbs)));
+% Availability belongs to the recorded trial, not the nominal table schema.
+absent=measured;
+for direction=["DL","UL"]
+    absent.(direction).NMSE_dB(:)=NaN;
+    absent.(direction).NMSESource(:)="unavailable_without_independent_channel_reference";
+    absent.(direction).LLRMeanAbs(:)=NaN;
+end
+missing=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,absent,'StrictMode',true);
+assert(all(missing.LayerMetrics.ChannelEstimateNMSEStatus=="unavailable_no_trial_measurement") && ...
+    all(missing.LayerMetrics.LLRStatus=="unavailable_no_trial_measurement"), ...
+    'test:MIMOTrialAvailability','Missing aggregates must not claim trial-aggregate availability.');
+assert(all(missing.LayerMetrics.TrialChannelEstimateNMSESource== ...
+    "unavailable_without_independent_channel_reference") && ...
+    all(isnan(missing.LayerMetrics.TrialChannelEstimateNMSEdB)));
+exact=measured; exact.DL.NMSE_dB(1)=-Inf;
+exact=sixgr.mimo.resolveNominalVsEffectiveMIMO(cfg,exact,'StrictMode',true);
+assert(exact.LayerMetrics.TrialChannelEstimateNMSEdB(1)==-Inf && ...
+    exact.LayerMetrics.ChannelEstimateNMSEStatus(1)=="unavailable_trial_aggregate_only", ...
+    'Exact zero NMSE is an available trial measurement, not a missing value.');
 for direction=["DL","UL"]
     measured.(direction).EVMPerLayer_rms=["0";"0.05|0.2";"0.1|0.2|0.3|0.4"];
     measured.(direction).EVMPerLayerSource=repmat( ...

@@ -4677,11 +4677,11 @@ initial_access:
     observation_subframes: 5
   mib:
     enabled: true
-    # CORESET0 index 0 / SearchSpace0 index 2 resolves the first Type-0
-    # monitoring occasion to absolute slot 2 for this 15 kHz profile.  The
-    # previous value 0 resolved slot 0 and caused the SIB1 PDSCH allocation
-    # to overwrite the four-beam SS/PBCH burst in the first two slots.
-    pdcch_config_sib1: 2
+    # CORESET0 index 1 uses the two-RB offset from the SSB common RB,
+    # placing its 24 RBs at [0,24) inside the 25-RB initial DL BWP.
+    # Index 0 would incorrectly require [2,26). SearchSpace0 index 2
+    # retains monitoring from absolute slot 2, after the SS/PBCH burst.
+    pdcch_config_sib1: 18
     dmrs_type_a_position: 2
   type0:
     monitoring_occasion_ordinal: 1
@@ -4828,7 +4828,9 @@ random_access:
     rar_processing_delay_slots: 1
     msg3_k2_slots: 1
     msg4_processing_delay_slots: 1
-    setup_complete_k2_slots: 1
+    # Full-slot Msg4 must finish before TA-advanced SRB1 waveform preparation.
+    # This is the scenario's processing budget, not a universal NR K2 minimum.
+    setup_complete_k2_slots: 2
   msg2_pdsch:
     prb_start: 0
     num_prb: 24
@@ -6004,6 +6006,16 @@ pucch_resources:
     resource_id: 0
     k1_slots: 4
   sr_resource_ids: 0
+  # Explicit configured SR opportunity, not a positive UE MAC request.
+  # Offsets are zero-based slots; descendants may override this calendar.
+  scheduling_request_resources:
+    - scheduling_request_resource_id: 1
+      scheduling_request_id: 0
+      resource_id: 0
+      periodicity_slots: 5
+      offset_slots: 3
+      priority_index: 0
+      additional_periodicity_capability: false
   csi_resource_ids: 10
   sps_pucch_an_resource_ids: 0
   overlap_policy:

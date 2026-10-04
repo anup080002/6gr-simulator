@@ -95,7 +95,7 @@ ssbGrid=sixgr.util.structGet(tx, ...
     "SSBWaveInfo.SSBComposite.TransmitPortResourceGrid",[]);
 if isempty(ssbGrid) || size(ssbGrid,1)~=240 || size(ssbGrid,3)~=nPorts
     error("sixgr:link:MissingBroadcastSSBPortGrid", ...
-        "The production SSB transmitter did not retain its exact physical-port grid.");
+        "The production SSB transmitter did not retain its exact waveform-port grid.");
 end
 ssbSCS=double(sixgr.util.structGet(tx,"SSBInfo.SSBTiming.SSBSubcarrierSpacingKHz",NaN));
 if ~(isscalar(ssbSCS) && isfinite(ssbSCS) && ...
@@ -115,15 +115,10 @@ end
 start1=round(start0)+1;
 ssbActive=find(reshape(any(any(ssbGrid~=0,1),3),[],1));
 
-siGrid=sixgr.util.structGet(tx,"SIB1Grid",[]);
-mapping=sixgr.util.structGet(tx,"SIB1SpatialMapping",struct());
-row=sixgr.util.structGet(mapping,"PrecoderMatrix",[]);
-if isempty(siGrid) || size(siGrid,1)~=nSubcarriers || size(siGrid,3)~=1 || ...
-        ~logical(sixgr.util.structGet(mapping,"MatrixAppliedHere",false)) || ...
-        ~isrow(row) || numel(row)~=nPorts || any(~isfinite(row))
-    error("sixgr:link:MissingBroadcastSIB1PortGrid", ...
-        "The production SIB1 transmitter did not retain its exact logical grid and executed spatial map.");
-end
+% Use the same emitted domain as the SSB grid and waveform. A logical
+% waveform has no locally applied physical matrix; its measured port grid
+% is still exact and must not be rejected or expanded into element ports.
+siGrid=sixgr.link.broadcastSIB1WaveformPortGrid(tx);
 siActive=find(reshape(any(any(siGrid~=0,1),3),[],1));
 siAbsolute0=double(tx.SIB1AbsoluteSlot)*symbolsPerSlot+(siActive-1);
 absoluteSymbols0=unique([double(ssbActive-1);siAbsolute0(:)],"sorted");
@@ -140,9 +135,7 @@ for ordinal=1:numel(ssbActive)
 end
 for ordinal=1:numel(siActive)
     destination=find(absoluteSymbols0==siAbsolute0(ordinal),1);
-    physical=reshape(siGrid(:,siActive(ordinal),1),nSubcarriers,1)* ...
-        cast(row,"like",siGrid);
-    grid(:,destination,:)=grid(:,destination,:)+reshape(physical,nSubcarriers,1,nPorts);
+    grid(:,destination,:)=grid(:,destination,:)+siGrid(:,siActive(ordinal),:);
 end
 if any(~isfinite(grid),"all") || any(~any(grid~=0,[1 3]))
     error("sixgr:link:InvalidBroadcastPowerGrid", ...

@@ -1,0 +1,20 @@
+# Compose with a finite native-SRS (or broader) population. Enabling this
+# requires an explicit generated PUCCH population on EVERY committed slot.
+# An absent producer is an error, not an empty/silent transmission occasion.
+# The normal SLS runner additionally requires native CSI-RS, the explicit
+# modeled_csirs_power_reference policy, and a MAC SR owner where SR is
+# configured. It exports csv/system_native_pucch_emission_audit.csv with
+# separate native-transmitted, owned-negative-SR and PUSCH-replacement rows.
+# This does not turn ideal UCI delivery into physically decoded feedback.
+system:
+  linkAbstraction:
+    dynamicPUCCH:
+      # No default antenna/beam fallback. Install entries containing
+      # SpatialRelationID, ReferenceSignalType, ReferenceSignalID, BeamID,
+      # ConfigurationEpoch, PrecoderReal and PrecoderImag (one value per UE
+      # physical TX dimension). Vectors must already have unit norm.
+      spatialVectorCatalog: []
+    networkSpatial:
+      pucchInterferenceEnabled: true
+      pucchPowerPolicy: typed_PUCCH_power_control_active_symbol_mean
+      pucchPhaseAssumption: native_sequence_phase_at_committed_epoch

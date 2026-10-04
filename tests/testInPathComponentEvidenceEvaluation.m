@@ -178,6 +178,40 @@ bad.SRS.ProxyUsed(1) = true;
 result = sixgr.truth.evaluateInPathComponentEvidence(cfg, bad, "srs");
 assert(~result.StrictOk && contains(result.FailureReason, "proxy_placeholder"));
 
+% Successful isolated physical trials are not active-runtime reception,
+% even when a publisher has bound the current scenario/hash to their rows.
+for field = ["SourceClassification","EvidenceScope","SameScenarioInPathEligible"]
+    isolated = raw;
+    if field == "SameScenarioInPathEligible"
+        isolated.PUCCH.(field) = false;
+    elseif field == "EvidenceScope"
+        isolated.PUCCH.(field) = "component_anchor";
+    else
+        isolated.PUCCH.(field) = "isolated_component_waveform";
+    end
+    result = sixgr.truth.evaluateInPathComponentEvidence(cfg,isolated,"pucch");
+    assert(~result.StrictOk && ~result.SameScenarioInPathEligible && ...
+        result.FailureReason == "component_scope_not_eligible_for_in_path", ...
+        'Do not qualify isolated component reception as in-path evidence.');
+    assert(isequaln(result.ArtifactTables.pucch_trials,isolated.PUCCH), ...
+        'Retain the original evidence rather than relabeling or discarding it.');
+end
+
+% Fresh standalone rows may belong to this run without being in its
+% connected control chain. Exercise the actual producer binding, not just a
+% hand-written scope flag, and keep physical receiver fields unchanged.
+componentCfg = struct('run',struct('runTag',"component_fixture", ...
+    'executionID',"component_fixture_execution",'scenarioID',"component_fixture_scenario"), ...
+    'meta',struct('configHash',string(repmat('a',1,64))));
+componentRows = sixgr.truth.bindComponentExecutionIdentity(pucch,componentCfg,"PUCCH");
+assert(componentRows.RunID==componentCfg.run.runTag && ...
+    componentRows.ExecutionID==componentCfg.run.executionID && ...
+    isequaln(componentRows(:,pucch.Properties.VariableNames),pucch));
+componentResult = sixgr.truth.evaluateInPathComponentEvidence( ...
+    componentCfg,struct('PUCCH',componentRows),"pucch");
+assert(~componentResult.StrictOk && ...
+    componentResult.FailureReason=="component_scope_not_eligible_for_in_path");
+
 missingUser = raw;
 missingUser.PRACH = missingUser.PRACH(1,:);
 result = sixgr.truth.evaluateInPathComponentEvidence(cfg, missingUser, "prach");
@@ -233,5 +267,8 @@ rrcRaw.PRACH.RRCSetupCompleteDecoded(2) = false;
 result = sixgr.truth.evaluateInPathComponentEvidence(cfgRRC, rrcRaw, "prach");
 assert(~result.StrictOk && contains(result.FailureReason, "runtime_successful_entity_coverage_1_of_2"), ...
     "Missing required RRCSetupComplete decode must fail the in-path PRACH gate.");
+% Exercise the explicit component route alongside the unchanged in-path
+% negative gate. This is a metadata/receiver-contract guard, not new PHY data.
+assert(testComponentControlEvidenceScope());
 ok = true;
 end

@@ -1,0 +1,7 @@
+inherits: [study.yaml]
+lls:
+  execution:
+    representation_id: C0
+    representation_role: comparator
+    mcs_table: experimental_6gr_ai1032_c0_baseline
+    entry_ids: [B27]

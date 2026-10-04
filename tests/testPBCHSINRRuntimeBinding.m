@@ -1,6 +1,9 @@
 function ok = testPBCHSINRRuntimeBinding()
 % Actual receiver values survive the runtime/export adapter unchanged.
 setup6GRSimToolkit('Verbose',false);
+collectorSource=fileread(which('sixgr.truth.runWaveformLinkBundle'));
+assert(~contains(collectorSource,'r.DetectionMetric = 1;'), ...
+    'A successful PBCH CRC must not replace the measured detector correlation by one.');
 assert(exist('nrWaveformGenerator','file')==2, ...
     'The actual PBCH waveform backend is required for this regression.');
 cfg = sixgr.config.defaultConfig();

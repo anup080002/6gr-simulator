@@ -29,6 +29,11 @@ cfg.channel.fading.enable = true;
 cfg.channel.fading.model = "TDL";
 cfg.channel.fading.profile = "TDL-C";
 cfg.channel.fading.maxDoppler_Hz = cfg.channel.dopplerHz;
+% This component validation profile has one explicit Doppler operating
+% point. The SLS mobility range [vMin vMax] is not a selected UE speed.
+% Bind PRACH to the same Doppler instead of passing that range into a
+% single-link waveform configuration (or silently selecting an endpoint).
+cfg.prach_lls.Speed_kmh = cfg.channel.dopplerHz * 299792458 * 3.6 / double(cfg.channel.fc_Hz);
 
 trafficModel = lower(strtrim(char(string(sixgr.util.structGet(opt, "E2ETrafficModel", "traceReplay")))));
 if ~strcmp(trafficModel, "tracereplay")

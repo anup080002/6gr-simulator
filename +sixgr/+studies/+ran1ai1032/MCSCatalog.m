@@ -40,6 +40,89 @@ classdef MCSCatalog
             sixgr.studies.ran1ai1032.MCSCatalog.assertInvariantMap(T, 5);
         end
 
+        function T = alt3Extended()
+            % Corrected contribution: preserve all 32 baseline meanings,
+            % then add four regular Qm=10 entries and one stored-TBS meaning.
+            entries = [sixgr.studies.ran1ai1032.MCSCatalog.baseline256(); ...
+                sixgr.studies.ran1ai1032.MCSCatalog.highOrderCandidates()];
+            regular = sixgr.studies.ran1ai1032.MCSEntry.toTable(entries);
+            regular.indication_index = [(0:27)';(32:35)'];
+            regular.indication_width_bits = repmat(6,height(regular),1);
+            regular.entry_kind = repmat("regular",height(regular),1);
+            regular.representation = repmat("C3_alt3_baseline_preserving_6bit",height(regular),1);
+            reserved = regular(1:5,:);
+            reserved.entry_id = ["R_QPSK";"R_16QAM";"R_64QAM";"R_256QAM";"R_1024QAM"];
+            reserved.Qm = [2;4;6;8;10];
+            reserved.target_code_rate_x1024(:) = NaN;
+            reserved.target_code_rate(:) = NaN;
+            reserved.nominal_spectral_efficiency(:) = NaN;
+            reserved.eligibility(:) = "existing_harq_tb_context_required";
+            reserved.new_TB_allowed(:) = false;
+            reserved.retransmission_allowed(:) = true;
+            reserved.reference_origin(:) = "6GR_RAN1_AI_10_3_2_candidate_stored_TBS";
+            reserved.indication_index = [28;29;30;31;36];
+            reserved.entry_kind(:) = "stored_tbs";
+            T = sortrows([regular;reserved],"indication_index");
+            sixgr.studies.ran1ai1032.MCSCatalog.assertInvariantMap(T,6);
+            assert(height(T)==37 && isequal(T.indication_index,(0:36)'), ...
+                'sixgr:ran1ai1032:Alt3IndexContinuity', ...
+                'Corrected Alt-3 must assign exactly indices 0--36.');
+        end
+
+        function [T,tableName] = correctedComparator(id)
+            % The installed YAML table owns local codepoints.  The
+            % canonical physical-pair IDs below prevent a compact map from
+            % silently relabeling a deleted low-SE baseline entry.
+            switch upper(string(id))
+                case "C0", tableName="experimental_6gr_ai1032_c0_baseline";
+                case "C1", tableName="experimental_6gr_ai1032_c1_compact";
+                case "C2A", tableName="experimental_6gr_ai1032_c2a_regular";
+                case "C3", tableName="experimental_6gr_ai1032_alt3";
+                case "C4", tableName="experimental_6gr_ai1032_c4_width_only";
+                case "C5", tableName="experimental_6gr_ai1032_c5_direct";
+                otherwise
+                    error('sixgr:ran1ai1032:UnsupportedComparator', ...
+                        'No installed physical MCS map exists for comparator %s.',id);
+            end
+            definition=sixgr.phy.research.resolveExperimentalMCSTable(tableName);
+            assert(~isempty(definition), ...
+                'sixgr:ran1ai1032:MissingComparatorTable', ...
+                'Comparator %s has no installed YAML MCS table.',id);
+            canonical=sixgr.studies.ran1ai1032.MCSCatalog.alt3Extended();
+            regular=canonical(canonical.entry_kind=="regular",:);
+            reserved=canonical(canonical.entry_kind=="stored_tbs",:);
+            T=canonical([],:);
+            for k=1:size(definition.Rows,1)
+                index=definition.Rows(k,1); qm=definition.Rows(k,2);
+                rate=definition.RatesX1024(k);
+                match=regular.Qm==qm & ...
+                    abs(regular.target_code_rate_x1024-rate)<1e-10;
+                assert(nnz(match)==1, ...
+                    'sixgr:ran1ai1032:ComparatorPairIdentity', ...
+                    'Comparator %s index %d lacks a unique B/H physical pair.',id,index);
+                row=regular(match,:);
+                row.indication_index=index;
+                row.indication_width_bits=definition.IndexWidthBits;
+                row.representation=upper(string(id));
+                T=[T;row]; %#ok<AGROW>
+            end
+            for k=1:size(definition.ReservedRows,1)
+                index=definition.ReservedRows(k,1); qm=definition.ReservedRows(k,2);
+                match=reserved.Qm==qm;
+                assert(nnz(match)==1, ...
+                    'sixgr:ran1ai1032:ComparatorStoredTBSIdentity', ...
+                    'Comparator %s index %d has no unique stored-TBS Qm.',id,index);
+                row=reserved(match,:);
+                row.indication_index=index;
+                row.indication_width_bits=definition.IndexWidthBits;
+                row.representation=upper(string(id));
+                T=[T;row]; %#ok<AGROW>
+            end
+            T=sortrows(T,'indication_index');
+            sixgr.studies.ran1ai1032.MCSCatalog.assertInvariantMap( ...
+                T,definition.IndexWidthBits);
+        end
+
         function T = optionB()
             baseline = sixgr.studies.ran1ai1032.MCSEntry.toTable( ...
                 sixgr.studies.ran1ai1032.MCSCatalog.baseline256());

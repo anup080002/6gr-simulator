@@ -1,0 +1,39 @@
+schema: sixgr.link_calibration_campaign/v1
+campaign_id: nr_dl_ul_rank2_feature_smoke_only
+research_class: baseline_benchmark
+# This is a bounded feature-integration smoke, not a BLER/HARQ population
+# and not a network-grant-bound calibration package.
+cases:
+  - id: dl_qpsk_rank2_24prb_feature
+    config: ../lls/pdsch_cdlc_rank2_perfect_regression.yaml
+    overrides:
+      channel: {model: AWGN, delaySpreadSeconds: 0, velocityKmph: 0}
+      receiver: {channelEstimation: practical, equalizer: MMSE, useMexLDPC: false}
+      pdsch: {mcsTable: qam64_table1, mcsIndex: 4, targetCodeRate: 0.30078125}
+  - id: ul_qpsk_rank2_24prb_feature
+    config: ../lls/pusch_cdlc_rank2_perfect_smoke.yaml
+    overrides:
+      channel: {model: AWGN, delaySpreadSeconds: 0, velocityKmph: 0}
+      receiver: {channelEstimation: practical, equalizer: MMSE, useMexLDPC: false}
+      pusch: {mcsTable: qam64_table1, mcsIndex: 4, targetCodeRate: 0.30078125}
+reference_channel: {model: AWGN, delaySpreadSeconds: 0, velocityKmph: 0}
+target_channel: {model: TDL-A, delaySpreadSeconds: 0.00000003, velocityKmph: 0}
+reference_snr_axis_db: [20, 25]
+target_snr_axis_db: [20, 25]
+rv_sequence: [0]
+channel_evolution: independent_attempt_realizations
+feedback_assumption: ideal_error_free_delayed_control
+receiver_assumption: practical_dmrs_known_noise_ideal_timing
+sinr_feature: applied_channel_per_data_re_per_layer_lmmse_not_receiver_measurement
+populations: {reference: 1, reference_validation: 1, fit: 1, validation: 1}
+episodes_per_invocation: 4
+seed_base: 220261202
+qualification:
+  minimum_conditional_trials: 2000
+  confidence_level: 0.95
+  maximum_wilson_half_width: 0.025
+  maximum_validation_absolute_bler_error: 0.02
+  beta_linear_bounds: [0.01, 100]
+  beta_log_grid_count: 81
+  minimum_beta_objective_contrast: 0.000001
+  required_directions: [DL, UL]

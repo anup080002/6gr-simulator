@@ -11,8 +11,8 @@ for suffix = ["_tdd", ""]
     if suffix == "_tdd"
         assert(isequal(slots,[6 9 12 14]),"The configured five-slot TDD pattern must produce legal RA allocations.");
     else
-        assert(frame.DuplexMode == "FDD" && isequal(slots,[3 6 9 10]), ...
-            'RAR must avoid SIB1 slot 2; Msg4 must avoid TRS slots 7/8.');
+        assert(frame.DuplexMode == "FDD" && isequal(slots,[3 6 9 11]), ...
+            'RAR must avoid SIB1 slot 2; Msg4 must avoid TRS slots 7/8; SRB1 retains a processing slot before TA advancement.');
     end
     assert(frame.IsDLAllocation(ra.Msg2Slot,[ra.Msg2PDSCH.SymbolStart ra.Msg2PDSCH.NumSymbols]));
     assert(ra.TimingSchedule.CommonPDSCHReservationsValidated);
@@ -23,6 +23,12 @@ for suffix = ["_tdd", ""]
     assert(frame.IsDLAllocation(ra.Msg4Slot,[ra.Msg4PDSCH.SymbolStart ra.Msg4PDSCH.NumSymbols]));
     assert(frame.IsULAllocation(ra.SetupCompleteSlot,[ra.SetupCompletePUSCH.SymbolStart ra.SetupCompletePUSCH.NumSymbols]));
     grant = sixgr.mac.ra.buildRARULGrant(ra);
+    receivedSchedule=sixgr.phy.ra.scheduleMsg2RAR(ra);
+    received=sixgr.phy.ra.bindReceivedRARTiming(cfg,ra,grant,receivedSchedule);
+    assert(received.TimingSchedule.CommonPDSCHReservationsValidated && ...
+        received.Msg4Slot==ra.Msg4Slot && ownership.checkPDSCH(received.Msg4PDSCH,received.Msg4Slot), ...
+        'test:ReceivedRARLostReservations', ...
+        'Received RAR timing must preserve SSB/SIB1/TRS ownership for the subsequent Msg4.');
     assert(ra.Msg3Slot == ra.Msg2Slot + grant.K2 + grant.Msg3AdditionalDelaySlots);
     assert(sixgr.phy.ra.resolveMsg3SlotFromRAR(ra,grant) == ra.Msg3Slot);
     wrong = ra; wrong.Msg3Slot = ra.Msg3Slot + 1;

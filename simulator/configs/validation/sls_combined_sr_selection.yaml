@@ -1,0 +1,24 @@
+# Internal-config component fixture: two ordinary traffic SR procedures.
+# This does not model BFR, LBT recovery or physical UCI reception.
+system:
+  linkAbstraction:
+    dynamicPUCCH:
+      schedulingRequestMAC:
+        positiveSRSelection: lowest_scheduling_request_resource_id
+validation:
+  pucch_resources:
+    scheduling_request_resources:
+      - scheduling_request_resource_id: 2
+        scheduling_request_id: 1
+        resource_id: 0
+        periodicity_slots: 20
+        offset_slots: 9
+        priority_index: 0
+        additional_periodicity_capability: false
+      - scheduling_request_resource_id: 1
+        scheduling_request_id: 0
+        resource_id: 0
+        periodicity_slots: 20
+        offset_slots: 9
+        priority_index: 0
+        additional_periodicity_capability: false

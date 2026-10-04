@@ -3,7 +3,7 @@ function ok = testRAN1AI1032AdaptiveCalibrationGate()
 
 setup6GRSimToolkit("Verbose", false);
 cfg = sixgr.studies.ran1ai1032.loadStudyConfig();
-h = sixgr.studies.ran1ai1032.MCSCatalog.optionA();
+h = sixgr.studies.ran1ai1032.MCSCatalog.alt3Extended();
 h = h(ismember(h.entry_id, ["H0";"H1";"H2";"H3"]), :);
 ranks = double(cfg.sls.adaptive_selection.required_calibration_ranks(:));
 n = height(h) * numel(ranks);

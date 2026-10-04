@@ -1,0 +1,14 @@
+# Declared component-test vector, not a measured/qualified antenna pattern.
+system:
+  linkAbstraction:
+    networkSpatial:
+      uePorts: 2
+    dynamicPUCCH:
+      spatialVectorCatalog:
+        - SpatialRelationID: 1
+          ReferenceSignalType: SSB
+          ReferenceSignalID: 0
+          BeamID: 0
+          ConfigurationEpoch: 1
+          PrecoderReal: [0.7071067811865475, 0]
+          PrecoderImag: [0, 0.7071067811865475]

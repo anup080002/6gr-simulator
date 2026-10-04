@@ -1,5 +1,10 @@
 {
   "control": {
+    "pdcch6gr_populations": {
+      "signal_present_trials_per_point": 1,
+      "noise_only_trials_per_point": 1,
+      "confidence_level": 0.95
+    },
     "pdcch6gr": {
       "enable_6gr_pdcch": true,
       "rnti": 4660,

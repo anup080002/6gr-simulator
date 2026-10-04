@@ -98,7 +98,32 @@ for caseIndex=[1 3]
             'unavailable_requires_received_reference_estimation';
         estimated=runner(cfg,args{:},'ReceivedContext',estimatedContext);
         assert(isfinite(estimated.NoiseVariance) && estimated.NoiseVariance>0 && ...
-            string(estimated.NoiseVarianceSource)=="runtime_channel_estimate");
+            string(estimated.NoiseVarianceSource)=="received_srs_inband_null_re_disturbance");
+        % The current receiver observes the vacant comb REs, not the
+        % interpolation residual of nrChannelEstimate. Independently check
+        % that physical sample population; a provenance-label change alone
+        % cannot satisfy this assertion.
+        first=estimated.ReceiveTiming.AppliedTimingCorrectionSamples;
+        count=estimated.ReceiveTiming.DemodulatedSampleCount;
+        measuredGrid=sixgr.phy.waveform.ofdmDemodulate( ...
+            p.Tx.Carrier,y(first+(1:count),:));
+        K=size(measuredGrid,1); L=size(measuredGrid,2);
+        [subcarrier,symbol,~]=ind2sub([K,L,double(p.Tx.SRS.NumSRSPorts)], ...
+            double(p.Tx.SRSIndices(:)));
+        nullMask=false(K,L);
+        for sym=reshape(unique(symbol),1,[])
+            occupied=unique(subcarrier(symbol==sym));
+            nullMask(min(occupied):max(occupied),sym)=true;
+            nullMask(occupied,sym)=false;
+        end
+        received=reshape(measuredGrid,K*L,[]);
+        samples=received(nullMask(:),:);
+        assert(~isempty(samples) && all(isfinite(samples(:))));
+        measuredDisturbance=mean(abs(samples(:)).^2);
+        assert(abs(estimated.NoiseVariance-measuredDisturbance)<=1e-12*measuredDisturbance, ...
+            'SRS noise must equal the independently observed in-band vacant-comb energy.');
+        assert(abs(10*log10(measuredDisturbance/expected))<3, ...
+            'The isolated AWGN comb measurement must remain within 3 dB of injected grid noise.');
         assert(string(estimated.NoiseVarianceDomain)=="resource_grid_pre_equalization");
         assert(string(estimated.InjectedSampleNoiseVarianceSource)==string(replay.NoiseVarianceSource), ...
             'Keep physical injection provenance separate from the received estimator source.');

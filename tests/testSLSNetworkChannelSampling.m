@@ -1,5 +1,34 @@
 function ok=testSLSNetworkChannelSampling()
 % Exact static response comparison. Moving-channel adaptive sampling rejected.
+request=sixgr.config.loadSimulationRequest( ...
+    'simulator/configs/scenarios/sls_nr_tdd_21cell_connected.yaml');
+public=request.Config;
+savedChannel=public.channel;
+for direction=["DL","UL"]
+    built=sixgr.system.abstraction.createNetworkSpatialChannel(public,122880000,direction,9123);
+    assert(isa(built.Object,'nrTDLChannel') && strcmp(built.Object.DelayProfile,'TDL-A'));
+    assert(abs(built.Object.DelaySpread-30e-9)<1e-18);
+    assert(built.Object.NumTransmitAntennas==4 && built.Object.NumReceiveAntennas==4);
+    assert(isequaln(public.channel,savedChannel),'Fading selection must not overwrite large-scale configuration.');
+end
+for variant=1:5
+    bad=public;
+    switch variant
+        case 1, bad.channel.fading.profile='TDL';
+        case 2, bad.channel.fading=rmfield(bad.channel.fading,'profile');
+        case 3, bad.channel.fading.model='CDL';
+        case 4, bad.channel.fading.enable=false;
+        case 5, bad.channel.tdlProfile='TDL-C';
+    end
+    rejected=false;
+    try
+        sixgr.system.abstraction.createNetworkSpatialChannel(bad,122880000,"DL",9123);
+    catch cause
+        assert(strcmp(cause.identifier,'sixgr:abstraction:NetworkFadingProfile'),'%s',cause.message);
+        rejected=true;
+    end
+    assert(rejected,'Missing, disabled or contradictory fading must not become a default channel.');
+end
 sc=sixgr.lls6g.config.loadScenarioConfig('simulator/configs/scenarios/h4_100_tdla30_connected_adaptive.yaml');
 cfg=sixgr.lls6g.buildInternalConfig(sc,tempname);
 f=sixgr.lls6g.config.readConfigFile('simulator/configs/system/calibrated_link_abstraction.yaml');

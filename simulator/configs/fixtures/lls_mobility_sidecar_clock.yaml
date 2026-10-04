@@ -1,0 +1,37 @@
+meta:
+  research_class: baseline_benchmark
+  description: Model-derived mobility-clock regression; not receiver or beam qualification.
+run:
+  seed: 31
+  numFrames: 1
+scenario:
+  name: UMa
+  nUE: 1
+  layout:
+    nSites: 1
+    nSectorsPerSite: 1
+  ue:
+    nUE: 1
+    indoorFraction: 0
+  mobility:
+    enable: true
+    model: straightLine
+    speed_kmh: [36, 36]
+    userPaths:
+      - ue_id: 1
+        initial_position_m: [100, 100, 1.5]
+        speed_kmh: 36
+        initial_heading_deg: 0
+system:
+  mobility:
+    updatePeriod_slots: 3
+  largeScaleUpdatePeriod_slots: 7
+  beam:
+    updatePeriod_slots: 5
+channel:
+  model: AWGN
+  awgnOnly: true
+  fading:
+    enable: false
+outputs:
+  storageBackend: filesystem

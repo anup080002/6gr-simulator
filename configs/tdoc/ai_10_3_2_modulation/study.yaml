@@ -6,6 +6,7 @@ study:
   topic: MCS design / FWA uplink 1024QAM / MCS representation
   generation_label: 6GR
   taxonomy: study_item_candidate
+  primary_representation: C3_alt3_baseline_preserving_6bit
   strict: true
   prohibit_fallback: true
   # SLS primary estimates are now permitted only with qualified LLS calibration.
@@ -36,6 +37,9 @@ lls:
   pairing_base_seed: 103210000
   execution:
     base_config_path: sixgr.config.defaultConfig
+    representation_id: C3
+    representation_role: primary
+    mcs_table: experimental_6gr_ai1032_alt3
     grid_prbs: 273
     cell_id: 1
     rnti: 1
@@ -247,11 +251,11 @@ sls:
     stochastic_components: [geometry, shadow, traffic, antenna_orientation, scheduler, propagation]
   comparators:
     - {id: S0, representation: baseline_256qam, max_rank: 4}
-    - {id: S1, representation: invariant_map_fwa_ul_1024qam, max_rank: 4}
+    - {id: S1, representation: C3_alt3_baseline_preserving_6bit, max_rank: 4}
     - {id: S2, representation: table_switching_profile, max_rank: 4}
     - {id: S3, representation: overlapping_mcs_candidate, max_rank: 4}
-    - {id: S4, representation: invariant_map_fwa_ul_1024qam, max_rank: 2}
-    - {id: S5, representation: invariant_map_fwa_ul_1024qam, max_rank: 4}
+    - {id: S4, representation: C3_alt3_baseline_preserving_6bit, max_rank: 2}
+    - {id: S5, representation: C3_alt3_baseline_preserving_6bit, max_rank: 4}
   freeze_packet_arrivals_across_comparators: true
   bootstrap_over_independent_drops: true
   traffic_model: FTP3

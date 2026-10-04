@@ -3,6 +3,7 @@ function hex = sha256Hex(data)
 
 bytes = localBytes(data);
 digest = [];
+failures = {};
 
 if usejava("jvm")
     try
@@ -11,10 +12,15 @@ if usejava("jvm")
         % for source evidence containing octets above 127 on newer MATLAB
         % releases.  Preserve all bits and pass the corresponding int8
         % representation to MessageDigest.
-        javaBytes = typecast(uint8(bytes(:)), "int8");
-        md.update(javaBytes);
+        bytesPerChunk = 8*1024*1024;
+        for first = 1:bytesPerChunk:numel(bytes)
+            last = min(numel(bytes),first+bytesPerChunk-1);
+            javaBytes = typecast(uint8(bytes(first:last)), "int8");
+            md.update(javaBytes);
+        end
         digest = typecast(int8(md.digest()), "uint8");
-    catch
+    catch cause
+        failures{end+1} = cause;
         digest = [];
     end
 end
@@ -23,14 +29,19 @@ if isempty(digest) && ispc
     try
         alg = System.Security.Cryptography.SHA256.Create();
         digest = uint8(alg.ComputeHash(bytes(:).'));
-    catch
+    catch cause
+        failures{end+1} = cause;
         digest = [];
     end
 end
 
 if isempty(digest)
-    error("sixgr:util:SHA256Unavailable", ...
-        "Real SHA-256 hashing requires Java or Windows .NET cryptography support.");
+    failure = MException("sixgr:util:SHA256Unavailable", ...
+        "Real SHA-256 hashing failed for %d bytes; Java or Windows .NET cryptography is required.",numel(bytes));
+    for index = 1:numel(failures)
+        failure = addCause(failure,failures{index});
+    end
+    throw(failure);
 end
 
 hex = lower(string(reshape(dec2hex(uint8(digest), 2).', 1, [])));

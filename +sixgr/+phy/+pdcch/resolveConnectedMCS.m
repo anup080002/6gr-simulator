@@ -1,8 +1,10 @@
 function profile=resolveConnectedMCS(root,index)
 % CP-OFDM connected table semantics, including modulation-only HARQ entries.
 % A reserved target code rate is not a valid new-TB MCS and is never guessed.
-validateattributes(index,{'double'},{'scalar','integer','>=',0,'<=',31});
 definition=sixgr.phy.research.resolveExperimentalMCSTable(root.mcsTable);
+maximumIndex=31;
+if ~isempty(definition), maximumIndex=2^double(definition.IndexWidthBits)-1; end
+validateattributes(index,{'double'},{'scalar','integer','>=',0,'<=',maximumIndex});
 if ~isempty(definition)
     assert(isequaln(sixgr.util.structGet(root,'experimentalMCSTable',[]),definition), ...
         'sixgr:research:MCSTableContextMismatch', ...
@@ -11,6 +13,17 @@ end
 profile=sixgr.link.resolveMCSProfile(root.mcsTable,index);
 profile.RequiresHARQHistory=false;
 if profile.Valid, return; end
+if ~isempty(definition)
+    row=definition.ReservedRows(definition.ReservedRows(:,1)==index,:);
+    assert(size(row,1)==1,'sixgr:phy:pdcch:field_out_of_range', ...
+        'Unassigned experimental MCS codepoint.');
+    profile.Qm=row(2);
+    profile.Modulation=char(localModulationFromQm(row(2)));
+    profile.RequiresHARQHistory=true;
+    profile.StandardNR=false;
+    profile.ResearchClass=definition.ResearchClass;
+    return;
+end
 assert(~logical(sixgr.util.structGet(root,'transformPrecoding',false)), ...
     'sixgr:phy:pdcch:ConnectedTransformMCSUnqualified', ...
     'Transform-precoded connected HARQ requires its own MCS table qualification.');
@@ -28,4 +41,16 @@ profile.Modulation=modulations(hit);
 profile.Qm=qm(hit);
 profile.RequiresHARQHistory=true;
 % Valid remains false: there is no target code rate/new-TB size in this row.
+end
+
+function modulation=localModulationFromQm(qm)
+switch double(qm)
+    case 2, modulation="QPSK";
+    case 4, modulation="16QAM";
+    case 6, modulation="64QAM";
+    case 8, modulation="256QAM";
+    case 10, modulation="1024QAM";
+    otherwise
+        error('sixgr:phy:pdcch:field_out_of_range','Unsupported reserved MCS modulation order.');
+end
 end

@@ -31,48 +31,11 @@ for j=1:size(F,3)
         'sixgr:abstraction:PrecoderPower', ...
         'Precoder Frobenius norm must be one; do not multiply total power by rank.');
 end
-desired=zeros(nres,layers); interLayer=desired; external=desired;
+effective=complex(zeros(nr,layers,nres));
 for k=1:nres
-    covariance=R(:,:,min(k,size(R,3)));
-    scale=norm(covariance,'fro');
-    assert(scale>0 && norm(covariance-covariance','fro')<=1e-10*scale, ...
-        'sixgr:abstraction:Covariance','Noise/interference covariance must be Hermitian positive definite.');
-    [~,notPositive]=chol(covariance);
-    assert(notPositive==0,'sixgr:abstraction:Covariance', ...
-        'Noise/interference covariance must be positive definite; no hidden diagonal loading is applied.');
-    G=H(:,:,k)*F(:,:,min(k,size(F,3)))*sqrt(power(min(k,numel(power))));
-    % Solves rather than matrix inversion. No scalar grid-channel surrogate.
-    if receiverType=="lmmse"
-        W=(G*G'+covariance)\G;
-    else
-        % QR implements the full-column-rank pseudoinverse without forming
-        % normal equations (which square the condition number). Do not
-        % silently change to MMSE or drop layers on a singular ZF grant.
-        assert(rank(G)==layers,'sixgr:abstraction:ZFRankDeficient', ...
-            'Issued layers are not independently observable by the configured ZF receiver.');
-        [Q,U]=qr(G,0);
-        W=Q/U';
-    end
-    response=W'*G;
-    desired(k,:)=abs(diag(response)).^2;
-    offDiagonal=response;
-    offDiagonal(1:layers+1:end)=0;
-    interLayer(k,:)=sum(abs(offDiagonal).^2,2).';
-    external(k,:)=real(diag(W'*covariance*W)).';
+    effective(:,:,k)=H(:,:,k)*F(:,:,min(k,size(F,3)))*sqrt(power(min(k,numel(power))));
 end
-denominator=interLayer+external;
-sinr=zeros(size(desired)); nonzero=denominator>0;
-sinr(nonzero)=desired(nonzero)./denominator(nonzero);
-% A zero channel produces the zero filter and zero SINR, not 0/0 or a
-% fabricated positive estimate. Do not floor -Inf dB in the exported value.
-assert(all(isfinite(sinr),'all') && all(external>=0,'all'), ...
-    'sixgr:abstraction:SpatialNumerics','Nonfinite SINR or negative covariance power.');
-out=struct('SINRLinear',sinr,'SINR_dB',10*log10(sinr), ...
-    'DesiredOutputPower',desired,'InterLayerInterferencePower',interLayer, ...
-    'ExternalNoiseInterferencePower',external, ...
-    'ExecutionBackend',"calibrated_link_abstraction", ...
-    'Source',"modeled_per_resource_channel_"+receiverType, ...
-    'ReceiverType',receiverType, ...
-    'SourceClassification',"sls_spatial_estimate_not_waveform_measurement", ...
-    'WaveformBacked',false,'CalibrationApplied',false);
+out=sixgr.system.abstraction.evaluateEffectiveSpatialSINR(effective,R,receiverType);
+% Retain the existing factored-channel public evidence identity.
+out.Source="modeled_per_resource_channel_"+receiverType;
 end

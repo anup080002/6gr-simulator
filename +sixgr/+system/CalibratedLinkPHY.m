@@ -14,6 +14,8 @@ classdef CalibratedLinkPHY < handle
         NetworkSpatialTrace table = table()
         DLCSITrace table = table()
         DLCSIReferences struct = struct([])
+        FeedbackCaptureTrace table = table()
+        PUCCHEmissionTrace table = table()
     end
     properties (Access=private)
         Cfg struct
@@ -27,6 +29,7 @@ classdef CalibratedLinkPHY < handle
         SpatialFeedbackBuffer = []
         DLCSIBuffer = []
         DynamicUCI = []
+        LastFeedbackCaptureTTI (1,1) double = 0
     end
     methods
         function obj=CalibratedLinkPHY(cfg,params,seed)
@@ -68,13 +71,16 @@ classdef CalibratedLinkPHY < handle
             assert(isfield(loaded,'calibration'),'sixgr:abstraction:CalibrationSchema','Missing calibration variable.');
             data=loaded.calibration;
             assert(all(isfield(data,{'Schema','CalibrationID','SourceClassification','Curves'})) && ...
-                string(data.Schema)=="sixgr.calibrated_sls_link/v1" && ~isempty(data.Curves), ...
+                any(string(data.Schema)==["sixgr.calibrated_sls_link/v1","sixgr.grant_calibrated_sls_link/v1"]) && ~isempty(data.Curves), ...
                 'sixgr:abstraction:CalibrationSchema','Missing versioned calibrated curve population.');
             fixture=string(data.SourceClassification)=="development_fixture_not_physical_calibration";
             assert((fixture && p.allowDevelopmentFixtures) || ...
                 string(data.SourceClassification)=="executed_waveform_calibration", ...
                 'sixgr:abstraction:CalibrationSource','Only waveform-derived calibration is permitted outside explicit development fixtures.');
-            if ~fixture
+            if string(data.Schema)=="sixgr.grant_calibrated_sls_link/v1"
+                assert(~fixture,'sixgr:abstraction:CalibrationSource','Grant-backed packages cannot contain development fixtures.');
+                sixgr.system.abstraction.validateGrantCalibrationPackage(data,p.calibrationFile,p);
+            elseif ~fixture
                 sixgr.system.abstraction.validateCalibrationSources(data,p.calibrationFile);
             end
             obj.CalibrationID=string(data.CalibrationID);
@@ -94,6 +100,9 @@ classdef CalibratedLinkPHY < handle
                         'Production BLER curves require an installed MCS table and index.');
                 end
                 ids(k)=string(jsonencode(c.Key))+"|"+string(jsonencode(c.RVSequence));
+                if isfield(c,'HARQSlotOffsets0')
+                    ids(k)=ids(k)+"|"+string(jsonencode(c.HARQSlotOffsets0));
+                end
             end
             assert(numel(unique(ids))==numel(ids),'sixgr:abstraction:DuplicateCalibration', ...
                 'Multiple curves cannot own the same physical key and RV history.');
@@ -122,17 +131,183 @@ classdef CalibratedLinkPHY < handle
         function bindDynamicUCI(obj,ledger)
             assert(isa(ledger,'sixgr.system.SLSDynamicPUCCH'),'sixgr:abstraction:UCIClock','Require the runtime UCI ledger.');
             obj.DynamicUCI=ledger;
+            if ismethod(obj.Provider,'bindUCIResources'), obj.Provider.bindUCIResources(ledger); end
         end
-        function ueStates=advanceDLCSIFeedback(obj,ueStates,state,target)
-            if isempty(obj.DLCSIBuffer), return; end
-            observations=obj.Provider.observeCSI(state);
-            for k=1:numel(observations)
-                o=observations(k); obj.DLCSIBuffer.append(o,state.AbsoluteSlot0);
+        function captureCommittedSpatialFeedback(obj)
+            % Observe only after the actual scheduled population is frozen.
+            % Pre-scheduling selection must not ask a producer to evaluate
+            % current-slot interference against an unfinished population.
+            if isempty(obj.DLCSIBuffer) && isempty(obj.SpatialFeedbackBuffer), return; end
+            state=obj.SlotContext;
+            assert(all(isfield(state,{'TTI','AbsoluteSlot0','ServingCells', ...
+                'GrantsDL','GrantsUL','GrantCellsDL','GrantCellsUL','LargeScaleState'})) && ...
+                state.AbsoluteSlot0==state.TTI-1 && state.TTI==obj.LastFeedbackCaptureTTI+1, ...
+                'sixgr:abstraction:FeedbackCaptureClock', ...
+                'Capture once per committed slot, in order, including idle slots; never from a scheduler preview.');
+            csi=struct([]); srs=struct([]);
+            if ~isempty(obj.DLCSIBuffer), csi=obj.Provider.observeCSI(state); end
+            if ~isempty(obj.SpatialFeedbackBuffer), srs=obj.Provider.observeSRS(state); end
+            for k=1:numel(csi)
+                o=csi(k);
+                sixgr.system.abstraction.validateFeedbackCompletionClock(o,state.AbsoluteSlot0);
+                obj.DLCSIBuffer.append(o,state.AbsoluteSlot0);
                 ref=struct('UEIndex',o.UEIndex,'ServingCell',o.ServingCell, ...
                     'SourceAbsoluteSlot0',o.SourceAbsoluteSlot0,'ReportAbsoluteSlot0',o.ReportAbsoluteSlot0, ...
                     'ReferenceAvailableAtSlot0',o.ReferenceAvailableAtSlot0);
                 obj.DLCSIReferences=[obj.DLCSIReferences ref];
             end
+            for k=1:numel(srs)
+                o=srs(k);
+                sixgr.system.abstraction.validateFeedbackCompletionClock(o,state.AbsoluteSlot0);
+                sixgr.system.abstraction.CausalSpatialFeedbackBuffer.validateReferenceEmission(obj.Cfg,o);
+                assert(string(o.ExecutionID)==string(obj.Cfg.run.executionID), ...
+                    'sixgr:abstraction:FeedbackIdentity','The SRS producer belongs to another execution.');
+                assert(strcmpi(string(o.ReceiverType),string(obj.Cfg.system.linkAbstraction.receiverType)), ...
+                    'sixgr:abstraction:FeedbackReceiver','Rank selection must use the configured receive algorithm.');
+                obj.SpatialFeedbackBuffer.append(o,state.AbsoluteSlot0);
+            end
+            obj.LastFeedbackCaptureTTI=state.TTI;
+            row=table(state.TTI,state.AbsoluteSlot0,numel(state.GrantsDL),numel(state.GrantsUL), ...
+                numel(csi),numel(srs),"after_committed_scheduled_population",false, ...
+                'VariableNames',{'TTI','CaptureAbsoluteSlot0','CommittedDLGrants','CommittedULGrants', ...
+                'CSIObservations','SRSObservations','CapturePhase','WaveformBacked'});
+            row.DeferredCSICompletions=sum(arrayfun(@(o)o.SourceAbsoluteSlot0<state.AbsoluteSlot0,csi));
+            row.DeferredSRSCompletions=sum(arrayfun(@(o)o.SourceAbsoluteSlot0<state.AbsoluteSlot0,srs));
+            obj.FeedbackCaptureTrace=[obj.FeedbackCaptureTrace;row];
+        end
+        function pending=pendingReferenceFeedback(obj)
+            pending=table();
+            if ismethod(obj.Provider,'referenceFeedbackPending')
+                pending=obj.Provider.referenceFeedbackPending();
+            end
+        end
+        function payload=csiPayloadAtSlotStart(obj,ue,cellID,reportSlot,now)
+            assert(~isempty(obj.DLCSIBuffer),'sixgr:abstraction:DLCSIReportDisabled', ...
+                'CSI waveform payloads require the configured causal modeled CSI producer.');
+            payload=obj.DLCSIBuffer.reportForTransmission(ue,cellID,reportSlot,now);
+        end
+        function reference=pucchPowerReferenceAtSlotStart(obj,ue,cellID,now)
+            assert(~isempty(obj.DLCSIBuffer),'sixgr:abstraction:PowerReferencePolicy', ...
+                'Native PUCCH modeled power requires the causal CSI reference producer.');
+            reference=obj.DLCSIBuffer.powerReferenceAtSlotStart(ue,cellID,now);
+        end
+        function prepared=preparePUCCHAtSlotStart(obj,obligation,now)
+            assert(~isempty(obj.DynamicUCI),'sixgr:abstraction:MissingUCILedger', ...
+                'Bind the production UCI ledger before preparing modeled feedback.');
+            csi=struct();
+            if obligation.Transport=="PUCCH" && obligation.CSIPart1Bits+obligation.CSIPart2Bits>0
+                csi=obj.csiPayloadAtSlotStart(obligation.UEIndex,obligation.CellID, ...
+                    obligation.AbsoluteSlot0,now);
+            end
+            prepared=obj.DynamicUCI.preparePUCCHAtSlotStart(obligation,now,csi);
+        end
+        function [prepared,emission,tx]=generatePUCCHAtSlotStart(obj,obligation,now)
+            assert(~isempty(obj.DynamicUCI),'sixgr:abstraction:MissingUCILedger', ...
+                'Bind the production UCI ledger before generating modeled-control symbols.');
+            csi=struct();
+            if obligation.Transport=="PUCCH" && obligation.CSIPart1Bits+obligation.CSIPart2Bits>0
+                csi=obj.csiPayloadAtSlotStart(obligation.UEIndex,obligation.CellID, ...
+                    obligation.AbsoluteSlot0,now);
+            end
+            reference=struct();
+            if obligation.Transport=="PUCCH" && logical(sixgr.util.structGet(obj.Cfg, ...
+                    'system.linkAbstraction.dynamicPUCCH.powerReference.enabled',false))
+                reference=obj.pucchPowerReferenceAtSlotStart(obligation.UEIndex,obligation.CellID,now);
+            end
+            [prepared,emission,tx]=obj.DynamicUCI.generatePUCCHAtSlotStart( ...
+                obligation,now,csi,reference);
+        end
+        function state=materializeUCIPopulation(obj,state,issued)
+            % Called after transport/grant selection and BEFORE committing
+            % this slot. No current-slot received samples or ACKs exist yet.
+            assert(~isempty(obj.DynamicUCI) && state.TTI==state.AbsoluteSlot0+1 && ...
+                state.AbsoluteSlot0==obj.LastFeedbackCaptureTTI, ...
+                'sixgr:abstraction:PUCCHPopulationClock','Generate once against prior completed feedback and the current final grant population.');
+            now=state.AbsoluteSlot0;
+            due=obj.DynamicUCI.snapshot(now,now,state.ServingCells,obj.DLCSIReferences);
+            obj.DynamicUCI.assertPUSCHExecution(state.GrantsUL,state.GrantCellsUL,due,now);
+            emissions=struct([]); audit=table();
+            for k=1:numel(due)
+                o=due(k); digest=""; native=false; replacement="";
+                srKnown=o.SRBits==0; positiveSR=NaN;
+                if srKnown, positiveSR=0; end
+                if o.Transport=="PUSCH"
+                    sixgr.system.validateSLSPUSCHUCIReservation(o, ...
+                        struct('AsOfAbsoluteSlot0',now,'IssuedPUSCHGrants',{issued}));
+                    hashes=cellfun(@localGrantDigest,num2cell(state.GrantsUL),'UniformOutput',false);
+                    assert(nnz(string(hashes)==o.PUSCHGrantSHA256)==1, ...
+                        'sixgr:system:SLSUCINotExecuted','A selected but absent PUSCH cannot replace a PUCCH emission.');
+                    replacement=o.PUSCHGrantSHA256;
+                    disposition="validated_PUSCH_transport_no_PUCCH_emission";
+                else
+                    [prepared,e]=obj.generatePUCCHAtSlotStart(o,now);
+                    assert(prepared.Available,'sixgr:abstraction:PUCCHMissingProducer', ...
+                        'Obligation %s has no causal payload producer: %s.',o.ResourceID,prepared.Status);
+                    if o.SRBits>0
+                        srKnown=prepared.SREvidence.Available;
+                        positiveSR=numel(prepared.SREvidence.PositiveSchedulingRequestIDs);
+                    end
+                    if isempty(e)
+                        assert(prepared.Status=="negative_SR_no_transmission" && ...
+                            o.HARQBits+o.CSIPart1Bits+o.CSIPart2Bits==0 && o.SRBits>0, ...
+                            'sixgr:abstraction:PUCCHMissingProducer','Only an owned negative standalone SR is silent.');
+                        disposition="owned_negative_SR_no_transmission";
+                    else
+                        assert(isscalar(e),'sixgr:abstraction:PUCCHEmissionPopulation','One obligation must produce one actual PUCCH emission.');
+                        digest=e.SHA256; native=true; disposition="native_PUCCH_transmitted_modeled_control";
+                        emissions=[emissions e]; %#ok<AGROW>
+                    end
+                end
+                row=table(string(o.ResourceID),now,o.UEIndex,o.RNTI,o.CellID,string(o.Transport), ...
+                    o.HARQBits,o.SRBits,o.CSIPart1Bits,o.CSIPart2Bits,disposition,native,digest,replacement,false, ...
+                    "modeled_SLS_ideal_delayed_control", ...
+                    'VariableNames',{'ObligationID','AbsoluteSlot0','UEIndex','RNTI','CellID','Transport', ...
+                    'HARQBits','SRBits','CSIPart1Bits','CSIPart2Bits','Disposition','NativeWaveformExecuted', ...
+                    'EmissionSHA256','ReplacementPUSCHGrantSHA256','PhysicalReceptionQualified','SourceClassification'});
+                row.SRPayloadKnown=srKnown; row.PositiveSRCount=positiveSR;
+                audit=[audit;row]; %#ok<AGROW>
+            end
+            state.UCIEmissionObligations=due;
+            state.PUCCHEmissions=emissions;
+            state.PUCCHEmissionAudit=audit;
+        end
+        function snapshot=publishLiveEvidence(obj,runFolder)
+            % A bounded view of retained model rows, not a new measurement
+            % or a replacement for the final full-history primary CSVs.
+            limit=100;
+            names=["DLCSI","SRS","NetworkSpatial","FeedbackCapture","PendingReference", ...
+                "UCIObligations","UCICompletions","HARQDecisions","PUCCHEmissions"];
+            tables={obj.DLCSITrace,obj.SpatialFeedbackTrace,obj.NetworkSpatialTrace, ...
+                obj.FeedbackCaptureTrace,obj.pendingReferenceFeedback(),table(),table(),table(),obj.PUCCHEmissionTrace};
+            if ~isempty(obj.DynamicUCI)
+                tables{6}=obj.DynamicUCI.Trace;
+                tables{7}=obj.DynamicUCI.CompletionTrace;
+                tables{8}=obj.DynamicUCI.HARQDecisionTrace;
+            end
+            entries=struct();
+            for k=1:numel(names)
+                t=tables{k}; count=height(t);
+                rows=cell(1,min(count,limit));
+                if count>0
+                    records=table2struct(t(max(1,count-limit+1):count,:));
+                    for r=1:numel(records), rows{r}=records(r); end
+                end
+                entries.(names(k))=struct('Rows',{rows}, ...
+                    'TotalRows',count,'RetainedRows',min(count,limit),'Truncated',count>limit);
+            end
+            snapshot=struct('Schema',"sixgr.sls_live_evidence/v1", ...
+                'ExecutionID',string(obj.Cfg.run.executionID), ...
+                'CommittedThroughAbsoluteSlot0',obj.SlotContext.TTI-1, ...
+                'RowLimit',limit,'Evidence',entries,'WaveformBacked',false, ...
+                'CalibrationQualified',obj.CalibrationQualified,'PrimaryStudyAccepted',false, ...
+                'SourceClassification',"retained_calibrated_sls_runtime_rows_not_final_results");
+            text=jsonencode(sixgr.util.jsonSafeValue(snapshot));
+            sixgr.runtime.RuntimeArtifactTransaction.writeTextAtomic(runFolder, ...
+                'live/sls_evidence.json',text,'ProducerStage','sls_network_progress', ...
+                'ProducerBlock','CalibratedLinkPHY');
+        end
+        function ueStates=advanceDLCSIFeedback(obj,ueStates,state,target)
+            if isempty(obj.DLCSIBuffer), return; end
             for k=1:numel(ueStates)
                 ueStates(k).ModeledCSIFeedback=struct(); ueStates(k).ModeledCSICausalUsable=false;
                 r=obj.DLCSIBuffer.select(k,state.ServingCells(k),state.AbsoluteSlot0,target);
@@ -163,20 +338,14 @@ classdef CalibratedLinkPHY < handle
                     'SourceAbsoluteSlot0','AvailableAbsoluteSlot0','RI','PMI','CRI','CQI','ModeledSINR_dB', ...
                     'BindingSHA256','SourceClassification','CQIQualification','WaveformBacked', ...
                     'PhysicalTransmitDimensions','CSILogicalPorts','PortBasisSHA256'});
+                row.ReferenceResourceID=double(sixgr.util.structGet(r,'ReferenceResourceID',NaN));
+                row.ReferenceEmissionSHA256=string(sixgr.util.structGet(r,'ReferenceEmissionSHA256',""));
+                row.ReferenceEmissionBound=isfield(r,'ReferenceResourceID') && isfield(r,'ReferenceEmissionSHA256');
                 obj.DLCSITrace=[obj.DLCSITrace;row];
             end
         end
         function ueStates=advanceULSpatialFeedback(obj,ueStates,state,targetSlot0)
             if isempty(obj.SpatialFeedbackBuffer), return; end
-            observations=obj.Provider.observeSRS(state);
-            for k=1:numel(observations)
-                o=observations(k);
-                assert(string(o.ExecutionID)==string(obj.Cfg.run.executionID), ...
-                    'sixgr:abstraction:FeedbackIdentity','The SRS producer belongs to another execution.');
-                assert(strcmpi(string(o.ReceiverType),string(obj.Cfg.system.linkAbstraction.receiverType)), ...
-                    'sixgr:abstraction:FeedbackReceiver','Rank selection must use the configured receive algorithm.');
-                obj.SpatialFeedbackBuffer.append(o,state.AbsoluteSlot0);
-            end
             for k=1:numel(ueStates)
                 ueStates(k).ModeledSRSFeedback=struct();
                 ueStates(k).ModeledSRSCausalUsable=false;
@@ -203,19 +372,40 @@ classdef CalibratedLinkPHY < handle
                     'VariableNames',{'UEIndex','ServingCell','ControlAbsoluteSlot0','DataAbsoluteSlot0', ...
                     'SourceAbsoluteSlot0','AvailableAbsoluteSlot0','AgeSlots','RI','TPMI','SRI', ...
                     'ObservationID','BindingSHA256','EstimationAssumption','SourceClassification','WaveformBacked','RankReferenceAssumption'});
+                row.ReferenceResourceID=double(sixgr.util.structGet(r,'ReferenceResourceID',NaN));
+                row.ReferenceEmissionSHA256=string(sixgr.util.structGet(r,'ReferenceEmissionSHA256',""));
+                row.ReferenceRNTI=double(sixgr.util.structGet(r,'ReferenceRNTI',NaN));
+                row.ReferenceEmissionBound=isfield(r,'ReferenceResourceID') && ...
+                    isfield(r,'ReferenceEmissionSHA256') && isfield(r,'ReferenceRNTI');
                 obj.SpatialFeedbackTrace=[obj.SpatialFeedbackTrace;row];
             end
         end
         function setSlotContext(obj,state)
             assert(all(isfield(state,{'TTI','GrantsDL','GrantsUL','GrantCellsDL','GrantCellsUL'})), ...
                 'sixgr:abstraction:SlotContext','Provide the current complete scheduled-grant population.');
+            if ismethod(obj.Provider,'commitSlotPopulation')
+                obj.Provider.commitSlotPopulation(state);
+            end
+            if isfield(state,'PUCCHEmissionAudit') && ...
+                    (~isfield(obj.SlotContext,'TTI') || state.TTI>obj.SlotContext.TTI)
+                obj.PUCCHEmissionTrace=[obj.PUCCHEmissionTrace;state.PUCCHEmissionAudit];
+            end
             obj.SlotContext=state;
         end
         function [ok,bler]=decode(obj,ctx)
             assert(isfield(ctx,'TransportBlockIdentity') && strlength(string(ctx.TransportBlockIdentity))>0 && ...
-                isfield(ctx,'IsRetransmission') && isfield(obj.SlotContext,'TTI') && obj.SlotContext.TTI==ctx.TTI, ...
-                'sixgr:abstraction:GrantIdentity','Bind immutable TB identity and current scheduled slot before abstraction.');
-            observation=obj.Provider.evaluate(ctx,obj.SlotContext);
+                isfield(ctx,'IsRetransmission') && isfield(obj.SlotContext,'TTI') && obj.SlotContext.TTI>=ctx.TTI, ...
+                'sixgr:abstraction:GrantIdentity','Bind immutable TB identity and a committed scheduled slot before abstraction.');
+            state=obj.SlotContext;
+            if sixgr.system.abstraction.resolveNetworkSINRModel(obj.Cfg)=="finite_committed_shared_data"
+                [available,~,state]=obj.Provider.receptionAvailability(ctx);
+                assert(available,'sixgr:abstraction:ReceiveWindowNotAvailable', ...
+                    'No decode/ACK decision exists before all required receive samples are committed.');
+            else
+                assert(state.TTI==ctx.TTI,'sixgr:abstraction:GrantIdentity', ...
+                    'The synchronous diagonal receiver requires the current scheduled slot.');
+            end
+            observation=obj.Provider.evaluate(ctx,state);
             if string(ctx.Direction)=="DL" && ~isempty(obj.DLCSIBuffer)
                 sixgr.system.abstraction.CausalDLCSIFeedback.validateGrant(obj.Cfg,ctx.Grant);
                 r=ctx.Grant.ModeledCSIFeedback;
@@ -245,11 +435,27 @@ classdef CalibratedLinkPHY < handle
             assert(strlength(requiredRF)==0 || string(observation.RFProfileID)==requiredRF, ...
                 'sixgr:abstraction:RFProfileMismatch', ...
                 'Spatial producer RF/compensation identity differs from the selected study branch.');
-            spatial=sixgr.system.abstraction.evaluateSpatialSINR(observation.Channel, ...
-                observation.Precoder,observation.TotalTransmitPower,observation.ExternalCovariance,obj.ReceiverType);
+            predictorModel=sixgr.system.abstraction.resolveNetworkSINRModel(obj.Cfg);
+            declaredModel=string(sixgr.util.structGet(observation,'SINRPredictorModel','diagonal_nominal_fft'));
+            assert(declaredModel==predictorModel,'sixgr:abstraction:NetworkSINRModel', ...
+                'Spatial observation and configured calibration predictor disagree.');
+            if predictorModel=="finite_committed_shared_data"
+                assert(isfield(observation,'FiniteWindow') && observation.ResidualISIICIIncluded && ...
+                    observation.FiniteWindow.ReceiveWindow.ObservationTTI==ctx.TTI && ...
+                    isequal(observation.FiniteWindow.Coordinates0Based,observation.Coordinates0Based), ...
+                    'sixgr:abstraction:FiniteSpatialEvidence','Require the exact committed grant receive window.');
+                sixgr.system.abstraction.validateFiniteInterferencePopulation(obj.Cfg,observation);
+                spatial=sixgr.system.abstraction.evaluateFiniteOFDMSpatialSINR( ...
+                    observation.FiniteWindow.DesiredObservation,observation.FiniteWindow.ExternalCovariance,obj.ReceiverType);
+            else
+                spatial=sixgr.system.abstraction.evaluateSpatialSINR(observation.Channel, ...
+                    observation.Precoder,observation.TotalTransmitPower,observation.ExternalCovariance,obj.ReceiverType);
+            end
             assert(size(spatial.SINRLinear,2)==ctx.NumLayers, ...
                 'sixgr:abstraction:GrantRank','Spatial producer changed issued grant rank.');
             key=sixgr.system.CalibratedLinkPHY.calibrationKey(ctx,observation,obj.ReceiverType,obj.EffectiveSINRMethod);
+            keyJSON=string(jsonencode(key));
+            keySHA256=string(sixgr.util.sha256Hex(uint8(unicode2native(keyJSON,'UTF-8'))));
             processKey=char(join([string(ctx.Direction),string(ctx.ServingCellID), ...
                 string(ctx.Grant.RNTI),string(sixgr.util.structGet(ctx.Grant,'HARQ.HarqID',NaN))],'|'));
             rv=double(sixgr.util.structGet(ctx.Grant,'HARQ.RV',0));
@@ -261,20 +467,25 @@ classdef CalibratedLinkPHY < handle
             else
                 h=struct('TBID',string(ctx.TransportBlockIdentity),'Key',key, ...
                     'RVs',[],'SINR',[],'SINRResourceHistory',{{}}, ...
-                    'BetaLinear',NaN,'MappingSHA256',"",'Ack',false,'TTI',ctx.TTI);
+                    'BetaLinear',NaN,'MappingSHA256',"",'Ack',false,'TTI',ctx.TTI,'TTIHistory',[]);
                 if isKey(obj.Processes,processKey)
                     old=obj.Processes(processKey);
                     assert(old.TBID~=h.TBID,'sixgr:abstraction:DuplicateTB','A new transmission must have a new TB identity.');
                 end
             end
             rvs=[h.RVs rv]; matched=[];
+            ttiHistory=[h.TTIHistory ctx.TTI]; slotOffsets=ttiHistory-ttiHistory(1);
             for k=1:numel(obj.Curves)
-                if isequaln(obj.Curves(k).Key,key) && isequal(double(obj.Curves(k).RVSequence(:).'),rvs)
+                historyMatches=~isfield(obj.Curves(k),'HARQSlotOffsets0') || ...
+                    isequal(double(obj.Curves(k).HARQSlotOffsets0(:).'),slotOffsets);
+                if historyMatches && isequaln(obj.Curves(k).Key,key) && isequal(double(obj.Curves(k).RVSequence(:).'),rvs)
                     matched=k; break;
                 end
             end
             assert(~isempty(matched),'sixgr:abstraction:CalibrationCoverage', ...
-                'No exact calibration for this grant/profile/allocation and RV history; no first-TX or rank fallback is used.');
+                ['No exact calibration for this grant/profile/allocation, RV and slot-gap history; ' ...
+                 'no first-TX or rank fallback is used. KeySHA256=%s KeyJSON=%s HARQSlotOffsets0=%s'], ...
+                keySHA256,keyJSON,jsonencode(slotOffsets));
             curve=obj.Curves(matched);
             mapping=struct('Method',obj.EffectiveSINRMethod,'BetaLinear',curve.BetaLinear);
             if obj.EffectiveSINRMethod=="calibrated_miesm", mapping.MILookup=curve.MILookup; end
@@ -299,11 +510,13 @@ classdef CalibratedLinkPHY < handle
             end
             assert(isfinite(bler) && bler>=0 && bler<=1,'sixgr:abstraction:InvalidBLER','Invalid calibrated probability.');
             ok=rand(obj.Stream)>=bler;
-            h.RVs=rvs; h.SINR=history; h.SINRResourceHistory=resourceHistory;
+            h.RVs=rvs; h.SINR=history; h.SINRResourceHistory=resourceHistory; h.TTIHistory=ttiHistory;
             h.BetaLinear=curve.BetaLinear; h.MappingSHA256=mappingSHA; h.Ack=ok; h.TTI=ctx.TTI;
             obj.Processes(processKey)=h;
             obj.LastReplay=struct('Ok',ok,'BLER',bler,'TransportBlockSize',ctx.TBSBits, ...
                 'TransportBlockIdentity',string(ctx.TransportBlockIdentity), ...
+                'TransmissionAbsoluteSlot0',ctx.TTI-1, ...
+                'ReceiveCompletionAbsoluteSlot0',obj.SlotContext.TTI-1, ...
                 'ApplicationPayloadBits',sixgr.util.structGet(ctx,'ApplicationPayloadBits',NaN), ...
                 'ExecutionBackend',obj.ExecutionBackend,'PHYMode',obj.PHYMode, ...
                 'PHYDecisionRole',"calibrated_sls_estimate",'PHYDecisionStatus',"OK", ...
@@ -313,12 +526,16 @@ classdef CalibratedLinkPHY < handle
                 'ChannelEstimateAvailable',false,'EqualizationAvailable',false, ...
                 'CalibrationID',obj.CalibrationID,'CalibrationSHA256',obj.CalibrationSHA256, ...
                 'CalibrationQualified',obj.CalibrationQualified,'CalibrationCurveID',string(curve.CurveID), ...
+                'CalibrationKeySHA256',keySHA256, ...
                 'ModeledEffectiveSINR_dB',history(end),'ModeledSINRPerResourceLayer_dB',spatial.SINR_dB, ...
                 'ModeledInterLayerInterferencePower',spatial.InterLayerInterferencePower, ...
+                'SINRPredictorModel',predictorModel, ...
+                'ResidualISIICIIncluded',logical(sixgr.util.structGet(observation,'ResidualISIICIIncluded',false)), ...
                 'ReceiverType',obj.ReceiverType, ...
                 'EffectiveSINRMethod',obj.EffectiveSINRMethod,'EffectiveSINRMappingSHA256',mappingSHA, ...
                 'ModelObservationID',string(observation.ModelObservationID), ...
                 'HARQSINRHistory_dB',history,'HARQRVHistory',rvs, ...
+                'HARQSlotOffsets0',slotOffsets, ...
                 'HARQHistoryMappingBetaLinear',curve.BetaLinear, ...
                 'SourceClassification',"calibrated_sls_estimate_not_waveform_truth");
             if ~obj.CalibrationQualified
@@ -334,12 +551,38 @@ classdef CalibratedLinkPHY < handle
                     string(observation.ChannelProfileID),string(observation.RFProfileID), ...
                     logical(observation.ArrayQualified),logical(observation.RFQualified), ...
                     logical(observation.CommonControlInterferenceQualified),false, ...
-                    string(obj.LastReplay.SourceClassification), ...
+                    string(obj.LastReplay.SourceClassification),predictorModel, ...
+                    logical(sixgr.util.structGet(observation,'ResidualISIICIIncluded',false)),obj.SlotContext.TTI-1, ...
                     'VariableNames',{'AbsoluteSlot0','Direction','RNTI','ServingCell','Rank','ResourceCount', ...
                     'MeanTxPowerPerRE_W','NoisePowerPerRE_W','MeanActiveInterferersPerRE','MaxActiveInterferersPerRE', ...
                     'MeanInterLayerOutputPower','ModeledEffectiveSINR_dB','PowerPlane','ResourcePopulation','InterferencePopulation', ...
-                    'ChannelProfileID','RFProfileID','ArrayQualified','RFQualified','CommonControlInterferenceQualified','WaveformBacked','SourceClassification'});
+                    'ChannelProfileID','RFProfileID','ArrayQualified','RFQualified','CommonControlInterferenceQualified','WaveformBacked','SourceClassification', ...
+                    'SINRPredictorModel','ResidualISIICIIncluded','ReceiveCompletionAbsoluteSlot0'});
+                row.UEIndex=sixgr.system.resolveGrantUEIndex(ctx.Grant);
+                row.SRSInterferenceIncluded=logical(sixgr.util.structGet(observation,'SRSInterferenceIncluded',false));
+                row.SRSEmissionCount=double(sixgr.util.structGet(observation,'SRSEmissionCount',0));
+                row.CSIRSInterferenceIncluded=logical(sixgr.util.structGet(observation,'CSIRSInterferenceIncluded',false));
+                row.CSIRSEmissionCount=double(sixgr.util.structGet(observation,'CSIRSEmissionCount',0));
+                row.PDCCHInterferenceIncluded=logical(sixgr.util.structGet(observation,'PDCCHInterferenceIncluded',false));
+                row.PDCCHEmissionCount=double(sixgr.util.structGet(observation,'PDCCHEmissionCount',0));
+                row.SSBInterferenceIncluded=logical(sixgr.util.structGet(observation,'SSBInterferenceIncluded',false));
+                row.SSBEmissionCount=double(sixgr.util.structGet(observation,'SSBEmissionCount',0));
+                row.PUCCHInterferenceIncluded=logical(sixgr.util.structGet(observation,'PUCCHInterferenceIncluded',false));
+                row.PUCCHEmissionCount=double(sixgr.util.structGet(observation,'PUCCHEmissionCount',0));
+                row.ReferenceSignalInterferenceQualified=logical(sixgr.util.structGet( ...
+                    observation,'ReferenceSignalInterferenceQualified',false));
                 obj.NetworkSpatialTrace=[obj.NetworkSpatialTrace;row];
+            end
+        end
+        function available=isReceptionReady(obj,ctx)
+            assert(isfield(obj.SlotContext,'TTI') && ctx.TTI<=obj.SlotContext.TTI, ...
+                'sixgr:abstraction:GrantIdentity','A reception cannot precede its committed transmission.');
+            if sixgr.system.abstraction.resolveNetworkSINRModel(obj.Cfg)=="finite_committed_shared_data"
+                available=obj.Provider.receptionAvailability(ctx);
+            else
+                assert(ctx.TTI==obj.SlotContext.TTI,'sixgr:abstraction:GrantIdentity', ...
+                    'Only the finite receiver supports deferred slot completion.');
+                available=true;
             end
         end
     end
@@ -361,6 +604,21 @@ classdef CalibratedLinkPHY < handle
                 'DMRS',sixgr.util.structGet(g,'DMRS',struct()), ...
                 'FrozenCoding',sixgr.util.structGet(g,'PHYGrant.CodingLayout',struct()), ...
                 'FrozenResources',sixgr.util.structGet(g,'PHYGrant.ResourceAllocation',struct()));
+            exactDataPopulation=string(sixgr.util.structGet(o,'ResourcePopulation',''))== ...
+                "native_shared_channel_data_re";
+            if exactDataPopulation || isfield(o,'DataREAllocationIdentity') || isfield(o,'DataREAllocationSHA256')
+                assert(all(isfield(o,{'DataREAllocationIdentity','DataREAllocationSHA256'})) && ...
+                    strcmpi(string(o.DataREAllocationSHA256),string(sixgr.util.sha256Hex( ...
+                    uint8(unicode2native(jsonencode(o.DataREAllocationIdentity),'UTF-8'))))), ...
+                    'sixgr:abstraction:DataREAllocationIdentity', ...
+                    'Native resource population needs a matching content digest.');
+                assert(string(o.DataREAllocationIdentity.Schema)=="sixgr.scheduled_data_re_identity/v1" && ...
+                    o.DataREAllocationIdentity.NumLayers==ctx.NumLayers && ...
+                    o.DataREAllocationIdentity.SubcarrierSpacing==ctx.SCS_kHz, ...
+                    'sixgr:abstraction:DataREAllocationIdentity', ...
+                    'Native population rank/numerology differs from the executed grant.');
+                allocation.NativeDataRE=o.DataREAllocationIdentity;
+            end
             uci=sixgr.util.structGet(g,'SLSUCIAllocation',struct());
             if ~isempty(fieldnames(uci))
                 assert(isfield(uci,'Schema') && string(uci.Schema)=="sixgr.native_pusch_uci_resources/v1" && ...
@@ -388,4 +646,7 @@ classdef CalibratedLinkPHY < handle
                 'AllocationSHA256',string(sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(allocation),'UTF-8')))));
         end
     end
+end
+function h=localGrantDigest(g)
+h=string(sixgr.util.sha256Hex(uint8(unicode2native(jsonencode(sixgr.util.jsonSafeValue(g)),'UTF-8'))));
 end

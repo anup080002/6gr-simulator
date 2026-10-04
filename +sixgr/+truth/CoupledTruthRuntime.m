@@ -2500,6 +2500,20 @@ methods(Static, Access=private)
         if ueIdx < 1 || ueIdx > numel(state.CurrentServingIdx)
             return;
         end
+        % Feedback callbacks start from CfgMobility, whereas data producers
+        % also pass through localPrepareUserCfg. Bind the same installed UE
+        % identity here for BOTH directions before constructing DCI/UCI
+        % contexts. Never copy an event digest or infer identity from bits.
+        rntiStart = double(sixgr.util.structGet(state, "MultiUser.RNTIStart", NaN));
+        assert(isscalar(rntiStart) && isreal(rntiStart) && ...
+            isfinite(rntiStart) && rntiStart == fix(rntiStart) && ...
+            rntiStart >= 1 && isscalar(ueIdx) && isfinite(ueIdx) && ...
+            ueIdx == fix(ueIdx) && rntiStart + double(ueIdx) - 1 <= 65535, ...
+            'sixgr:truth:InvalidRuntimeUEIdentity', ...
+            'Bind a valid configured UE RNTI; do not round or clamp protocol identity.');
+        runtimeRNTI = rntiStart + double(ueIdx) - 1;
+        cfgU = sixgr.util.structSet(cfgU, "phy.pdsch.RNTI", runtimeRNTI);
+        cfgU = sixgr.util.structSet(cfgU, "phy.pusch.RNTI", runtimeRNTI);
         largeScaleReady = isfield(state, 'LargeScaleState') && isstruct(state.LargeScaleState) && ...
             isfield(state.LargeScaleState, 'd2d_m') && isfield(state.LargeScaleState, 'PropagationDelay_s') && ...
             isfield(state.LargeScaleState, 'Doppler_Hz');
@@ -2521,6 +2535,8 @@ methods(Static, Access=private)
             cfgU=rmfield(cfgU,'SharedULTimingContext');
         end
         userMeta = sixgr.util.structGet(cfgU, "lls6g.userContext", struct());
+        userMeta.UEIndex = double(ueIdx);
+        userMeta.RNTI = runtimeRNTI;
         userMeta.RuntimeServingCell = servingCell;
         % Receiver reference identity uses the runtime layout index, not
         % the PCI, deployment CellID, or RRC serving-cell index. Rebind it
@@ -2632,7 +2648,12 @@ methods(Static, Access=private)
         userMeta.RuntimeInterferenceMode = char(interferenceMode);
         userMeta.RuntimeCurrentSlot = double(state.CurrentSlot);
         userMeta.RuntimeCurrentDirection = upper(string(direction));
-        userMeta.RuntimeSlotStartTime_s = max(0, double(state.CurrentSlot) - 1) * double(state.SlotDuration_s);
+        timingSpec=sixgr.phy.frame.NumerologyCatalog.resolve( ...
+            double(cfgU.phy.carrier.SubcarrierSpacing),string(cfgU.phy.carrier.CyclicPrefix), ...
+            'generic_waveform_test','');
+        slotStart=sixgr.phy.frame.AbsoluteTime.fromAbsoluteSlotSymbol( ...
+            max(0,double(state.CurrentSlot)-1),0,timingSpec);
+        userMeta.RuntimeSlotStartTime_s = slotStart.seconds();
         if ueIdx <= size(state.UE.pos_m, 1)
             userMeta.RuntimeUEPosition_m = reshape(double(state.UE.pos_m(ueIdx, :)), 1, []);
         end
@@ -3956,8 +3977,11 @@ methods(Static, Access=private)
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_coverage_snapshot.csv"), state.CoverageSnapshotTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_user_performance_snapshot.csv"), state.UserPerformanceTable);
         sixgr.util.csvWriteTable(fullfile(layout.ReportCSVDir, "live_coverage_layer.csv"), state.CoverageLayerTable);
-        sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "live_harq_observation_summary.csv"), state.HARQSummaryTable);
-        sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "live_harq_observation_timeline.csv"), state.HARQTimelineTable);
+        % Process/feedback state is not a projection of receiver trials.
+        % The observation filenames belong to exportLLSLiveDerivedTables;
+        % a later live-state refresh must never overwrite their schema/CRC.
+        sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "runtime_harq_process_summary.csv"), state.HARQSummaryTable, 'PreserveSchema', true);
+        sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, "runtime_harq_process_timeline.csv"), state.HARQTimelineTable, 'PreserveSchema', true);
         protocolT=sixgr.util.structGet(state,'SharedDLProtocolDecisionTable',table());
         if ~isempty(protocolT)
             sixgr.util.csvWriteTable(fullfile(layout.HARQCSVDir, ...
@@ -14389,6 +14413,10 @@ methods(Static, Access=private)
         end
         signalName = upper(strtrim(string(signalName)));
         n = height(T);
+        inputClassification = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+            T, "SourceClassification", repmat("",n,1)));
+        isolatedComponent = ismember(inputClassification, ...
+            ["isolated_component_waveform","standalone_diagnostic"]);
         meta = sixgr.truth.CoupledTruthRuntime.runtimeExportMetadata(state);
         [classification, materialization, gatingEffect, consumer] = ...
             sixgr.truth.CoupledTruthRuntime.controlReferenceTruthTokens(signalName);
@@ -14473,13 +14501,16 @@ methods(Static, Access=private)
             % A candidate rejected by the joint CCE/REG admission planner
             % never produced a waveform. Preserve that causal runtime
             % decision as a finalized non-trial, not as a missing decode.
-            finalized = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
-                T, "PDCCHPreTransmissionFinalized", false(n, 1)));
-            admissionSelected = logical(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
-                T, "PDCCHAdmissionSelected", true(n, 1)));
+            % Admission fields are nullable on physical trials. Only an
+            % explicit finalized rejection establishes a pre-TX non-trial;
+            % preserve unknown metadata instead of casting NaN to logical.
+            finalized = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "PDCCHPreTransmissionFinalized", nan(n, 1)));
+            admissionSelected = double(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
+                T, "PDCCHAdmissionSelected", nan(n, 1)));
             grantState = string(sixgr.truth.CoupledTruthRuntime.tableColumnOrDefault( ...
                 T, "GrantControlState", repmat("", n, 1)));
-            blockedRows = find(~observationAvailable & finalized & ~admissionSelected & ...
+            blockedRows = find(~observationAvailable & finalized == 1 & admissionSelected == 0 & ...
                 grantState == "control_blocked_no_nonoverlapping_pdcch_candidate");
             if ~isempty(blockedRows)
                 reason = "control_blocked_no_nonoverlapping_pdcch_candidate";
@@ -14551,6 +14582,19 @@ methods(Static, Access=private)
                 T.TRSCFOEstimateAvailable = repmat(logical(trsCtx.TRSCFOEstimateAvailable), n, 1);
             end
             T = sixgr.truth.CoupledTruthRuntime.setNumericColumn(T, "TRSEstimatedCFO_Hz", repmat(double(trsCtx.TRSEstimatedCFO_Hz), n, 1), false);
+        end
+        % A physical component receiver is not evidence of participation in
+        % the connected scheduler/control state machine. Canonicalization
+        % must not upgrade its explicitly isolated source classification.
+        if any(isolatedComponent)
+            T.SourceClassification(isolatedComponent) = inputClassification(isolatedComponent);
+            T.RuntimeMaterializationStatus(isolatedComponent) = "isolated_component_waveform_evidence";
+            T.ControlGatingEffect(isolatedComponent) = "none_isolated_component";
+            T.RuntimeStateConsumer(isolatedComponent) = "none_isolated_component";
+            T.RuntimeConsumer(isolatedComponent) = "none_isolated_component";
+            T.ValueRole(isolatedComponent) = "isolated_control_reference_receiver_evidence";
+            T.ValueDefinition(isolatedComponent) = ...
+                "isolated physical component observation; not connected scheduler or feedback evidence";
         end
         T = sixgr.truth.CoupledTruthRuntime.fillBlankCategoricalColumns(T, lower(strrep(char(signalName), "-", "_")));
     end

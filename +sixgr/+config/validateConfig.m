@@ -27,6 +27,13 @@ req = { ...
 localRequire(cfg, req);
 cCore = sixgr.config.loadCoreCatalog();
 localValidateCatalogFields(cfg, sixgr.util.structGet(cCore, 'parameters', struct()), '');
+systemSINRModel = string(sixgr.util.structGet(cfg, 'system.sinrModel', ''));
+channelInterferenceModel = string(sixgr.util.structGet(cfg, 'channel.interferenceModel', ''));
+if strlength(systemSINRModel) > 0 && strlength(channelInterferenceModel) > 0 && ...
+        ~strcmpi(strtrim(systemSINRModel), strtrim(channelInterferenceModel))
+    error('sixgr:config:ConflictingSINRModels', ...
+        'system.sinrModel and channel.interferenceModel must agree when both are configured.');
+end
 if startsWith(string(sixgr.util.structGet(cfg,'phy.pusch.mcsTable','')),"experimental_")
     definition=sixgr.phy.research.resolveExperimentalMCSTable(cfg.phy.pusch.mcsTable);
     policy=sixgr.util.structGet(cfg,'lls6g.resolvedConfig',struct());

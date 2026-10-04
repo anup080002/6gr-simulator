@@ -1,18 +1,28 @@
 function ok = testRADownlinkPowerScaling()
 %TESTRADOWNLINKPOWERSCALING Msg2/Msg4 RA DL control uses gNB amplitude units.
-tmp = tempname;
+tmp = tempname(fullfile(pwd,'logs'));
 mkdir(tmp);
-c = onCleanup(@() localCleanupTempFolder(tmp)); %#ok<NASGU>
+fprintf('RA_POWER_SCALING_EVIDENCE=%s\n',tmp);
 
 scenarioPath = fullfile("simulator", "configs", "scenarios", "master_geometry_based.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
 cfg = sixgr.lls6g.buildInternalConfig(scfg, fullfile(tmp, "run"));
+% This probe starts at RA, not cell search. Supply an explicitly labelled
+% component-fixture SSB association using the configured physical mapping;
+% never invent a measured beam selection inside the production RA path.
+cfg.random_access.associated_ssb_index=0;
+cfg.random_access.associated_ssb_selection_source="component_fixture_not_measured_selection";
+cfg.phy.ssb.runtimeSSBIndex=0;
+selection=sixgr.phy.ia.SSBBurstPlan.selectedPrecoderFromConfig(cfg,0);
+assert(selection.NumTransmitAntennas==cfg.runtime.antenna.gnb.NumPhysicalElements);
 
 res = sixgr.phy.ra.runFourStepRA(cfg, ...
     "RunFolder", fullfile(tmp, "ra"), ...
     "RunId", "ra_dl_power_scaling_probe", ...
     "WriteArtifacts", true);
-assert(logical(res.StrictOk), "Four-step RA must complete in the downlink power scaling probe.");
+save(fullfile(tmp,'ra_power_probe.mat'),'res','cfg');
+assert(logical(res.StrictOk), ...
+    "Four-step RA must complete in the downlink power scaling probe: %s",res.FailureReason);
 assert(isfinite(double(res.DownlinkTxPower_dBm)) && double(res.DownlinkTxPower_dBm) > 0, ...
     "RA downlink gNB transmit power must resolve from scenario config.");
 assert(isfinite(double(res.Msg2TxAmplitudeScale)) && double(res.Msg2TxAmplitudeScale) > 1, ...
@@ -36,13 +46,4 @@ assert(isfinite(double(msg4.Msg4TxPower_dBm(1))) && ...
     "Msg4 artifact must publish gNB downlink power scaling.");
 
 ok = true;
-end
-
-function localCleanupTempFolder(pathIn)
-if exist(pathIn, "dir") == 7
-    try
-        rmdir(pathIn, "s");
-    catch
-    end
-end
 end

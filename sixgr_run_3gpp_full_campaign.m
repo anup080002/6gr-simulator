@@ -3845,11 +3845,13 @@ end
 
 riDL = max(1, min(4, double(sixgr.util.structGet(cfgE, "phy.pdsch.numLayers", 1))));
 riUL = max(1, min(4, double(sixgr.util.structGet(cfgE, "phy.pusch.numLayers", 1))));
-ueStatesDL = repmat(struct("RNTI",0,"DLBufferBytes",0,"CQI",1,"RI",riDL), nUE, 1);
-ueStatesUL = repmat(struct("RNTI",0,"ULBufferBytes",0,"CQI",1,"RI",riUL), nUE, 1);
+ueStatesDL = repmat(struct("RNTI",0,"UEIndex",0,"DLBufferBytes",0,"CQI",1,"RI",riDL), nUE, 1);
+ueStatesUL = repmat(struct("RNTI",0,"UEIndex",0,"ULBufferBytes",0,"CQI",1,"RI",riUL), nUE, 1);
 for u = 1:nUE
     ueStatesDL(u).RNTI = u;
     ueStatesUL(u).RNTI = u;
+    ueStatesDL(u).UEIndex = u;
+    ueStatesUL(u).UEIndex = u;
 end
 
 harqDL = sixgr.l2.mac.HARQEntity(cfgE, "Direction", "DL");
@@ -3869,14 +3871,31 @@ else
     schedUL = sixgr.l2.mac.SchedulerPF(cfgE, "Direction", "UL", "HARQ", harqUL);
 end
 
-[attachOK, attachSlots, attachMsgCount, attachRNTI, attachTraceRows] = ...
-    localRunRRCAttachProcedure(cfgE, snr_dB);
-if strictValidation && ~attachOK
+receivedAccessResults={};
+% Validation verbosity cannot change ownership of a truth-mode UE identity.
+% Even non-strict truth requests require independently decoded access.
+if strcmp(airModeReq,"truth")
+    [attachOK,attachSlots,attachMsgCount,attachRNTI,attachTraceRows,receivedAccessResults]= ...
+        localRunE2EReceivedAttach(cfgE,snr_dB,nUE);
+else
+    [attachOK, attachSlots, attachMsgCount, attachRNTI, attachTraceRows] = ...
+        localRunRRCAttachProcedure(cfgE, snr_dB);
+end
+if (strictValidation || strcmp(airModeReq,"truth")) && ~attachOK
     error("sixgr:e2e:AttachFailedStrict", ...
         "Strict validation requires successful attach before data scheduling. %s", ...
         localStrictAttachFailureSummary(attachTraceRows));
 end
 if logical(attachOK) && isfinite(double(attachSlots))
+    if strcmp(airModeReq,"truth")
+        % Preserve actual receiver evidence before rejecting an inadequate
+        % campaign horizon. Never clamp away the fact that access completed
+        % outside the data run and then qualify an empty offered population.
+        sixgr.util.matSave(fullfile(runFolder,'mat','e2e_received_access_horizon.mat'), ...
+            struct('Receipts',{receivedAccessResults},'AttachSlots',attachSlots, ...
+            'RequestedNumSlots',nSlots,'SlotDuration_s',slotDur_s));
+        sixgr.truth.requirePostAttachWindow(nSlots,double(attachSlots));
+    end
     attachGateSlots = min(nSlots, max(0, round(double(attachSlots))));
 else
     attachGateSlots = nSlots;
@@ -3942,7 +3961,7 @@ coupledTruth = localInitE2ESystemCouplingContext();
 if strcmp(airModeReq, "truth")
     coupledTruth = localRunE2ESystemCoupling( ...
         cfgE, runFolder, traffic, nSlots, slotDur_s, nUE, nRB, ...
-        attachGateSlots, opt, flowDirCfg);
+        attachGateSlots, opt, flowDirCfg,receivedAccessResults);
     [appSDUChunkBytes, chunkInfo.Source] = localCapE2EAppChunkForCoupledTruth( ...
         appSDUChunkBytes, chunkInfo.Source, coupledTruth);
 end
@@ -4057,6 +4076,10 @@ for t = 1:nSlots
             end
         end
     end
+    if ~coupledTruth.Enabled
+        grantsDL = sixgr.system.bindGrantUEIdentity(grantsDL,ueStatesDL,1);
+        grantsUL = sixgr.system.bindGrantUEIdentity(grantsUL,ueStatesUL,1);
+    end
     grantCountDL(t) = numel(grantsDL);
     grantCountUL(t) = numel(grantsUL);
     grantCount(t) = grantCountDL(t) + grantCountUL(t);
@@ -4081,7 +4104,7 @@ for t = 1:nSlots
 
     for g = 1:numel(grantsDL)
         gr = grantsDL(g);
-        u = max(1, min(nUE, round(double(gr.RNTI))));
+        u = sixgr.system.resolveGrantUEIndex(gr,nUE);
         queueBefore = max(0, queueBytesDL_UE(u));
         [grantTBSBits, ~] = sixgr.util.resolveGrantTBSBits(gr, ...
             sprintf("E2E DL slot=%d grant=%d RNTI=%d", round(t), round(g), round(u)));
@@ -4113,7 +4136,7 @@ for t = 1:nSlots
         grantReason = string(sixgr.util.structGet(gr, "GrantReason", ""));
 
         if isRetx
-            macPdu = harqDL.getStoredTB(u, harqId);
+            macPdu = harqDL.getStoredTB(gr.RNTI, harqId);
             if isempty(macPdu)
                 sduList = rlcDLTx{u}.buildMACSDUs(localMacPayloadBudget(tbsBytes));
                 ceList = struct([]);
@@ -4129,7 +4152,7 @@ for t = 1:nSlots
         ioDL_MAC_TBOut(t) = ioDL_MAC_TBOut(t) + numel(macPdu);
 
         try
-            harqDL.onTx(u, harqId, macPdu, gr, t-1);
+            harqDL.onTx(gr.RNTI, harqId, macPdu, gr, t-1);
         catch
         end
 
@@ -4144,12 +4167,12 @@ for t = 1:nSlots
         virtPktQ_DL{u} = localMarkVirtualPacketTx(virtPktQ_DL{u}, numel(macPdu), t, pid, ack);
 
         try
-            harqDL.onFeedback(u, harqId, ack);
+            harqDL.onFeedback(gr.RNTI, harqId, ack);
         catch
         end
 
         nFbDL = nFbDL + 1;
-        feedbackDL(nFbDL) = struct("RNTI", u, "TBSBits", grantTBSBits, "Ack", ack);
+        feedbackDL(nFbDL) = struct("RNTI", gr.RNTI, "TBSBits", grantTBSBits, "Ack", ack);
 
         if ack
             ackCountDL(t) = ackCountDL(t) + 1;
@@ -4236,6 +4259,7 @@ for t = 1:nSlots
         tr.Direction = "DL";
         tr.CellID = double(sixgr.util.structGet(gr, "CellID", 1));
         tr.UE = u;
+        tr.RNTI = gr.RNTI;
         tr.FlowID = u;
         tr.BearerID = lcidData;
         tr.QFI = qfi;
@@ -4265,7 +4289,7 @@ for t = 1:nSlots
 
     for g = 1:numel(grantsUL)
         gr = grantsUL(g);
-        u = max(1, min(nUE, round(double(gr.RNTI))));
+        u = sixgr.system.resolveGrantUEIndex(gr,nUE);
         queueBefore = max(0, queueBytesUL_UE(u));
         [grantTBSBits, ~] = sixgr.util.resolveGrantTBSBits(gr, ...
             sprintf("E2E UL slot=%d grant=%d RNTI=%d", round(t), round(g), round(u)));
@@ -4297,7 +4321,7 @@ for t = 1:nSlots
         grantReason = string(sixgr.util.structGet(gr, "GrantReason", ""));
 
         if isRetx
-            macPdu = harqUL.getStoredTB(u, harqId);
+            macPdu = harqUL.getStoredTB(gr.RNTI, harqId);
             if isempty(macPdu)
                 sduList = rlcULTx{u}.buildMACSDUs(localMacPayloadBudget(tbsBytes));
                 ceList = struct([]);
@@ -4323,7 +4347,7 @@ for t = 1:nSlots
         ioUL_MAC_TBOut(t) = ioUL_MAC_TBOut(t) + numel(macPdu);
 
         try
-            harqUL.onTx(u, harqId, macPdu, gr, t-1);
+            harqUL.onTx(gr.RNTI, harqId, macPdu, gr, t-1);
         catch
         end
 
@@ -4338,12 +4362,12 @@ for t = 1:nSlots
         virtPktQ_UL{u} = localMarkVirtualPacketTx(virtPktQ_UL{u}, numel(macPdu), t, pid, ack);
 
         try
-            harqUL.onFeedback(u, harqId, ack);
+            harqUL.onFeedback(gr.RNTI, harqId, ack);
         catch
         end
 
         nFbUL = nFbUL + 1;
-        feedbackUL(nFbUL) = struct("RNTI", u, "TBSBits", grantTBSBits, "Ack", ack);
+        feedbackUL(nFbUL) = struct("RNTI", gr.RNTI, "TBSBits", grantTBSBits, "Ack", ack);
 
         if ack
             ackCountUL(t) = ackCountUL(t) + 1;
@@ -4430,6 +4454,7 @@ for t = 1:nSlots
         tr.Direction = "UL";
         tr.CellID = double(sixgr.util.structGet(gr, "CellID", 1));
         tr.UE = u;
+        tr.RNTI = gr.RNTI;
         tr.FlowID = u;
         tr.BearerID = lcidData;
         tr.QFI = qfi;
@@ -4794,6 +4819,10 @@ out.ResultIntegrityTable = resultIntegrityTable;
 out.SystemCoupled = logical(coupledTruth.Enabled);
 out.CouplingMode = string(coupledTruth.CouplingMode);
 out.CouplingNotes = string(coupledTruth.Notes);
+out.ReceivedAccessBindings=sixgr.util.structGet(coupledTruth.Result, ...
+    'Details.ReceivedAccessBindings',table());
+out.ReceivedULAccess=sixgr.util.structGet(coupledTruth.Result,'Details.ReceivedULAccess',{});
+out.ReceivedULAccessTable=sixgr.util.structGet(coupledTruth.Result,'Details.ReceivedULAccessTable',table());
 out.AppSDUChunkBytes = double(appSDUChunkBytes);
 out.AppSDUChunkSource = string(chunkInfo.Source);
 out.CoupledSystemMeta = rmfield(coupledTruth, {'GrantsDLBySlot','GrantsULBySlot','Result'});
@@ -6237,6 +6266,7 @@ if isempty(rowTemplate)
     rowTemplate.Direction = "";
     rowTemplate.CellID = NaN;
     rowTemplate.UE = NaN;
+    rowTemplate.RNTI = NaN;
     rowTemplate.FlowID = NaN;
     rowTemplate.BearerID = NaN;
     rowTemplate.QFI = NaN;
@@ -6322,11 +6352,11 @@ end
 
 function [schedulerTrace, harqTrace] = localBuildE2EGrantTraceTables(rows)
 schedulerCols = { ...
-    'Slot','Time_s','Direction','CellID','UE','FlowID','BearerID','QFI','GrantIndex', ...
+    'Slot','Time_s','Direction','CellID','UE','RNTI','FlowID','BearerID','QFI','GrantIndex', ...
     'NumPRB','TBSBytes','CQIUsed','MCSIndex','NumLayers','TargetCodeRate', ...
     'QueueBytesBefore','QueueBytesAfter','HARQProcess','IsRetransmission','GrantReason'};
 harqCols = { ...
-    'Slot','Time_s','Direction','CellID','UE','FlowID','HARQProcess','GrantIndex', ...
+    'Slot','Time_s','Direction','CellID','UE','RNTI','FlowID','HARQProcess','GrantIndex', ...
     'RetxDepthBefore','RetxDepthAfter','AttemptCount','IsRetransmission', ...
     'Ack','CRCResult','BLER','AirMode','Note','TBSBytes'};
 if istable(rows)
@@ -7911,12 +7941,16 @@ catch
 end
 end
 
-function [ok, slots, msgCount, rnti, attachRows] = localRunStrictFourStepRAAttach( ...
-        cfg, cellId, ueId, slotDur_s, runtimeNoiseSNR_dB)
+function [ok,slots,msgCount,rnti,attachRows,receipt] = localRunStrictFourStepRAAttach( ...
+        cfg,cellId,ueId,slotDur_s,runtimeNoiseSNR_dB,ueIndex,numUsers,startRuntimeSlot)
+if nargin<6, ueIndex=1; end
+if nargin<7, numUsers=1; end
+if nargin<8, startRuntimeSlot=1; end
+receipt=struct();
 ok = false;
 slots = NaN;
 msgCount = 0;
-rnti = 1;
+rnti = NaN;
 attachRows = repmat(struct("Slot",NaN,"Time_s",NaN,"Direction","","Event","","Message","", ...
     "UE",NaN,"CellID",NaN,"TempCRNTI",NaN,"Success",false,"Cause",""), 0, 1);
 try
@@ -7924,18 +7958,42 @@ try
     % physical antenna and thermal-noise context as the coupled data path.
     % Calling the RA waveform chain with a bare config leaves receive power
     % undefined and is correctly rejected by the physical noise boundary.
-    multiUser = struct("Enabled", true, "NumUsers", 1, ...
-        "RNTIStart", max(1, round(double(ueId))), ...
+    multiUser = struct("Enabled", true, "NumUsers", numUsers, ...
+        "RNTIStart", ueId-ueIndex+1, ...
         "ExecutionModel", "slot_coupled_truth");
     traceDL = sixgr.util.structGet(cfg, "traffic.trace.offeredBitsDL", []);
     traceUL = sixgr.util.structGet(cfg, "traffic.trace.offeredBitsUL", []);
     runtimeFrameCount = max([1, size(traceDL, 1), size(traceUL, 1)]);
     runtimeState = sixgr.truth.CoupledTruthRuntime.initialize( ...
         cfg, tempname, multiUser, struct(), runtimeFrameCount);
-    runtimeState.CurrentSlot = 2;
+    % All UE receivers observe the same origin-zero broadcast transmission.
+    % Serial access admission delays PRACH, not the encoded SSB/SFN timeline.
+    runtimeState.CurrentSlot = 1;
     runtimeState.CurrentServingIdx(:) = 1;
+    [cfgBroadcast, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContext( ...
+        cfg, runtimeState, ueIndex, "DL");
+    cfgBroadcast.channel.snr_dB = double(runtimeNoiseSNR_dB);
+    [runtimeState, dlState] = ...
+        sixgr.truth.CoupledTruthRuntime.acquireRuntimeChannelStateForControl( ...
+        runtimeState, cfgBroadcast, ueIndex, "DL");
+    broadcast = sixgr.link.runCellSearch_MIB_SIB1(cfgBroadcast, ...
+        "UseRuntimeChannel", true, "InitialDLChannelState", dlState, ...
+        "CandidateSSBIndices", 0:(double(cfgBroadcast.phy.ssb.Lmax)-1), ...
+        "RuntimeSlot", 0, "WriteArtifacts", false);
+    candidateResults=sixgr.util.structGet(broadcast,'CandidateResults',{broadcast});
+    acceptedCandidate=find(cellfun(@(r)logical(r.Ok),candidateResults),1);
+    if ~isempty(acceptedCandidate), broadcast=candidateResults{acceptedCandidate}; end
+    if ~broadcast.Ok
+        error('sixgr:truth:E2EBroadcastAcquisitionFailed', ...
+            'Physical broadcast acquisition failed: %s',string(broadcast.FailureReason));
+    end
+    [~, sib1Recovery, raStartSlot] = ...
+        sixgr.truth.bindReceivedBroadcastForRA(cfgBroadcast,broadcast);
+    raStartSlot=max(raStartSlot,startRuntimeSlot);
+    runtimeState.CurrentSlot = raStartSlot;
     [cfgRA, ~] = sixgr.truth.CoupledTruthRuntime.applyUserContext( ...
-        cfg, runtimeState, 1, "UL");
+        cfg, runtimeState, ueIndex, "UL");
+    cfgRA = sixgr.truth.bindReceivedBroadcastForRA(cfgRA,broadcast);
     cellId = double(sixgr.util.structGet(cfgRA, ...
         "lls6g.userContext.RuntimeServingNCellID", ...
         sixgr.util.structGet(cfgRA, "phy.carrier.NCellID", cellId)));
@@ -7945,29 +8003,76 @@ try
         "UEId", ueId, ...
         "CellId", cellId, ...
         "AttemptId", 1, ...
+        "RuntimeSlot", raStartSlot, ...
+        "SIB1Recovery", sib1Recovery, "RequireDecodedSIB1", true, ...
+        "InitialDLChannelState", broadcast.RuntimeDLChannelState, ...
         "RuntimeIntegrationMode", "coupled_truth_runtime", ...
         "UseRuntimeChannel", true, ...
         "RuntimeNoiseSNR_dB", double(runtimeNoiseSNR_dB), ...
         "WriteArtifacts", false);
     ok = logical(sixgr.util.structGet(raResult, "RACompleted", false)) && ...
         logical(sixgr.util.structGet(raResult, "StrictOk", false));
-    rnti = double(sixgr.util.structGet(raResult, "FinalCRNTI", ...
-        sixgr.util.structGet(raResult, "TemporaryCRNTI", 1)));
-    if ~(isfinite(rnti) && rnti >= 1)
-        rnti = 1;
-    end
-    slots = max(0, round(double(sixgr.util.structGet(raResult, "Msg4ScheduledSlot", NaN))));
-    if ~isfinite(slots)
-        slots = max(0, round(double(sixgr.util.structGet(raResult, "Msg3ScheduledSlot", 0))) + 1);
+    rnti = NaN;
+    if ok
+        identity=sixgr.mac.ra.receivedMsg4Identity(raResult.DecodedMsg4, ...
+            raResult.Msg4PDCCHCrcPass,raResult.Msg4PDSCHCrcPass, ...
+            string(raResult.Msg3ContentionIdentity));
+        rnti=identity.RNTI;
+        [~,slots]=sixgr.truth.resolveRAAttachCompletion(raResult,cfgRA);
+        % Retain received state, not channel handles or regenerated TX IQ.
+        fields={'RACompleted','StrictOk','RequireRRCSetupComplete','Msg4ScheduledSlot', ...
+            'SetupCompleteScheduledSlot','RRCSetupCompleteCRC','RRCSetupCompleteDecoded', ...
+            'RRCConnected','DecodedMsg4','Msg4PDCCHCrcPass','Msg4PDSCHCrcPass', ...
+            'Msg3ContentionIdentity','UEId','CellId','RuntimeStageRows','DecodedRAR', ...
+            'Msg2ScheduledSlot','Msg2DCICrcPass','Msg2PDSCHCrcPass','RAPIDMatches', ...
+            'RARULGrantValid','RARWindowExpired','RARReceiverContext'};
+        retained=struct();
+        for j=1:numel(fields), retained.(fields{j})=raResult.(fields{j}); end
+        receipt=struct('UEIndex',ueIndex,'ServingCellIndex',runtimeState.CurrentServingIdx(ueIndex), ...
+            'Result',retained,'DecodedSIB1',sib1Recovery, ...
+            'ExecutionScope',"serial_per_ue_access_stage_composer_not_shared_network_interference");
     end
     events = sixgr.util.structGet(raResult, "Events", table());
     attachRows = localBuildStrictRAAttachRows(events, raResult, ueId, cellId, slotDur_s, rnti, ok);
     msgCount = localStrictRAMessageCount(events);
 catch ME
+    % Preserve the receiver/configuration root cause and stack in the caller's
+    % retained log; the event's Cause remains the stable identifier.
+    fprintf(2,'%s\n',getReport(ME,'extended','hyperlinks','off'));
+    ok=false;
+    slots=NaN;
+    rnti=NaN;
     attachRows(end+1,1) = struct("Slot",NaN,"Time_s",NaN,"Direction","CTRL","Event","ATTACH_EXCEPTION", ...
         "Message","StrictFourStepRA","UE",ueId,"CellID",cellId,"TempCRNTI",NaN, ...
         "Success",false,"Cause",string(ME.identifier));
 end
+end
+
+function [ok,slots,msgCount,rnti,rows,receipts]=localRunE2EReceivedAttach(cfg,snr,nUE)
+% Explicit serial access warm-up; every UE executes independent reception.
+% Later grant replay is not claimed to preserve a continuous access channel.
+receipts=cell(nUE,1); rows=[]; msgCount=0; slots=0; ok=true; rnti=NaN;
+firstUE=double(sixgr.util.structGet(cfg,'scenario.ue.startId',1));
+firstTemp=double(sixgr.util.structGet(cfg,'random_access.temp_crnti',NaN));
+firstFinal=double(sixgr.util.structGet(cfg,'random_access.final_crnti',firstTemp));
+validateattributes([firstTemp firstFinal firstTemp+nUE-1 firstFinal+nUE-1], ...
+    {'numeric'},{'real','finite','integer','>=',1,'<=',65522});
+for ue=1:nUE
+    cfgUE=cfg;
+    % gNB allocation policy derived from the configured base, not a UE
+    % identity input: only subsequently decoded Msg4 may bind the scheduler.
+    cfgUE.random_access.temp_crnti=firstTemp+ue-1;
+    cfgUE.random_access.final_crnti=firstFinal+ue-1;
+    [accepted,completed,count,received,trace,receipt]=localRunStrictFourStepRAAttach( ...
+        cfgUE,double(cfg.phy.carrier.NCellID),firstUE+ue-1, ...
+        localSlotDuration(cfg),snr,ue,nUE,slots+1);
+    if isempty(rows), rows=trace; else, rows=[rows;trace]; end %#ok<AGROW>
+    msgCount=msgCount+count;
+    if ~accepted, ok=false; slots=NaN; return; end
+    receipts{ue}=receipt; slots=completed;
+    if nUE==1, rnti=received; end % A scalar is not a multi-UE identity map.
+end
+sixgr.system.resolveReceivedAccessBindings(cfg,receipts,nUE);
 end
 
 function rows = localBuildStrictRAAttachRows(events, raResult, ueId, cellId, slotDur_s, rnti, ok)
@@ -7979,11 +8084,9 @@ if ~(istable(events) && ~isempty(events))
         "Success",false,"Cause","missing_ra_event_log");
     return;
 end
+absoluteSlots=sixgr.truth.resolveRAEventAbsoluteSlots(events,slotDur_s);
 for i = 1:height(events)
-    slot = double(events.Slot(i));
-    if ~isfinite(slot)
-        slot = i - 1;
-    end
+    slot = absoluteSlots(i);
     failure = "";
     if ismember("FailureReason", string(events.Properties.VariableNames))
         failure = string(events.FailureReason(i));
@@ -8000,7 +8103,7 @@ for i = 1:height(events)
         "Success",logical(success),"Cause",failure); %#ok<AGROW>
 end
 if ok
-    finalSlot = double(sixgr.util.structGet(raResult, "Msg4ScheduledSlot", rows(end).Slot));
+    finalSlot = sixgr.truth.resolveRAAttachCompletion(raResult);
     rows(end+1,1) = struct("Slot",finalSlot,"Time_s",finalSlot * double(slotDur_s),"Direction","CTRL", ...
         "Event","ATTACH_CONNECTED","Message","RRC_CONNECTED","UE",ueId,"CellID",cellId, ...
         "TempCRNTI",rnti,"Success",true,"Cause",""); %#ok<AGROW>
@@ -8078,7 +8181,7 @@ ctx.GrantsDLBySlot = {};
 ctx.GrantsULBySlot = {};
 end
 
-function ctx = localRunE2ESystemCoupling(cfgE, runFolder, traffic, nSlots, slotDur_s, nUE, nRB, attachGateSlots, opt, flowDirCfg)
+function ctx = localRunE2ESystemCoupling(cfgE, runFolder, traffic, nSlots, slotDur_s, nUE, nRB, attachGateSlots, opt, flowDirCfg,receivedAccessResults)
 ctx = localInitE2ESystemCouplingContext();
 
 offeredDL = localExpandTrafficBits(sixgr.util.structGet(traffic, "OfferedBitsDL", zeros(nSlots, nUE)), nSlots, nUE, "E2ECoupledOfferedBitsDL");
@@ -8108,11 +8211,13 @@ cfgS.system.phyBackend = "waveform";
 cfgS.scenario.ue.nUE = nUE;
 cfgS.scenario.nUE = nUE;
 
-tmpRun = tempname;
-sixgr.util.ensureDir(tmpRun);
-cleanupTmp = onCleanup(@() localSafeRemoveDir(tmpRun)); %#ok<NASGU>
-
-ctxSys = sixgr.core.SimContext(cfgS, "RunFolder", tmpRun);
+% Retain the production replay boundary on failure as well as success.
+% Temporary cleanup previously erased the watchdog's diagnostic MAT while
+% leaving a log pointing at a nonexistent file. This is diagnostic evidence,
+% not a primary outcome or a substitute for completed packet exports.
+couplingRun = fullfile(runFolder, 'diagnostics', 'system_coupling');
+sixgr.util.ensureDir(couplingRun);
+ctxSys = sixgr.core.SimContext(cfgS, "RunFolder", couplingRun);
 ctxSys.Logger.EchoToConsole = false;
 
 params = struct();
@@ -8129,6 +8234,7 @@ params.TrafficTransport = string(sixgr.util.structGet(traffic, "Transport", sixg
 params.TrafficFlowDirection = string(sixgr.util.structGet(traffic, "FlowDirection", sixgr.util.structGet(cfgS, "traffic.flowDirection", "BIDIR")));
 params.PacketDelayBudget_ms = double(sixgr.util.structGet(traffic, "PacketDelayBudget_ms", sixgr.util.structGet(cfgS, "traffic.packetDelayBudget_ms", 50)));
 params.PHYBackend = "waveform";
+if ~isempty(receivedAccessResults), params.ReceivedAccessResults=receivedAccessResults; end
 params.NoProxyTruthContract = localNoProxyTruthContractEnabled(cfgS, opt);
 params.WaveformCompactPHYIO = logical(sixgr.util.structGet(opt, "E2ETruthCompactPHYIO", true));
 params.WaveformFastAWGNPath = logical(sixgr.util.structGet(opt, "E2ETruthFastAWGNPath", false));
@@ -8147,6 +8253,19 @@ if ~logical(sixgr.util.structGet(res, "Ok", false))
 end
 
 details = sixgr.util.structGet(res, "Details", struct());
+accessBindings=sixgr.util.structGet(details,'ReceivedAccessBindings',table());
+sixgr.util.csvWriteTable(fullfile(runFolder,'csv','e2e_received_access_bindings.csv'),accessBindings);
+timingTable=sixgr.util.structGet(details,'ReceivedULAccessTable',table());
+if ~isempty(timingTable)
+    % Infinity is a decoded timeAlignmentTimer value, not missing evidence.
+    sixgr.util.csvWriteTable(fullfile(runFolder,'csv','e2e_received_ul_timing.csv'), ...
+        timingTable,'PreserveSchema',true);
+end
+if ~isempty(receivedAccessResults)
+    sixgr.util.matSave(fullfile(runFolder,'mat','e2e_received_access_results.mat'), ...
+        struct('Receipts',{receivedAccessResults},'Bindings',accessBindings, ...
+        'ReceivedULAccess',{sixgr.util.structGet(details,'ReceivedULAccess',{})}));
+end
 waveformBacked = logical(sixgr.util.structGet(details, "WaveformBacked", false));
 if ~waveformBacked
     error("sixgr:e2e:SystemCouplingBackend", ...
@@ -8168,67 +8287,7 @@ ctx.GrantsULBySlot = grantsULBySlot;
 end
 
 function [grantsDLBySlot, grantsULBySlot] = localBuildCoupledE2EGrantSlots(grantTable, nSlots, nRB)
-grantsDLBySlot = repmat({struct([])}, nSlots, 1);
-grantsULBySlot = repmat({struct([])}, nSlots, 1);
-if ~(istable(grantTable) && ~isempty(grantTable))
-    return;
-end
-
-for i = 1:height(grantTable)
-    row = grantTable(i,:);
-    slotIdx = max(1, min(nSlots, round(double(row.TTI(1)))));
-    g = struct();
-    g.RNTI = double(row.UE(1));
-    g.CellID = double(row.CellID(1));
-    g.NPRB = max(1, round(double(row.PRBCount(1))));
-    g.PRBStart = double(row.PRBStart(1));
-    if isfinite(g.PRBStart)
-        g.PRBSet = g.PRBStart + (0:(g.NPRB-1));
-    else
-        g.PRBSet = [];
-    end
-    g.SymbolAllocation = [double(row.SymbolStart(1)) double(row.NumSymbols(1))];
-    g.TBSBits = double(row.TBSBits(1));
-    g.TBSBytes = ceil(max(g.TBSBits, 0) / 8);
-    g.CQIUsed = double(row.CQIUsed(1));
-    g.MCSIndex = double(row.MCSIndex(1));
-    g.NumLayers = max(1, round(double(row.NumLayers(1))));
-    g.TargetCodeRate = double(row.TargetCodeRate(1));
-    g.HeadOfLineDelay_ms = double(row.HeadOfLineDelay_ms(1));
-    g.BufferBytesBefore = double(row.BufferBytesBefore(1));
-    g.BufferBytesAfter = double(row.BufferBytesAfter(1));
-    g.GrantReason = string(row.GrantReason(1));
-    g.SearchSpaceID = double(row.SearchSpaceID(1));
-    g.CORESETID = double(row.CORESETID(1));
-    g.BWPId = double(row.BWPId(1));
-    g.DAI = double(row.DAI(1));
-    g.K1 = double(row.K1(1));
-    g.K2 = double(row.K2(1));
-    g.HARQ = struct( ...
-        "HarqID", double(row.HarqID(1)), ...
-        "RV", double(row.RV(1)), ...
-        "NDI", double(row.NDI(1)), ...
-        "IsRetransmission", logical(row.IsRetransmission(1)));
-    g.CoupledAck = logical(row.Ack(1));
-    g.CoupledBLER = double(row.BLER(1));
-    g.CoupledSINR_dB = double(row.SINR_dB(1));
-    g.CoupledSource = "system_waveform_grant_trace";
-
-    dirTag = upper(string(row.Direction(1)));
-    if dirTag == "DL"
-        if isempty(grantsDLBySlot{slotIdx})
-            grantsDLBySlot{slotIdx} = g;
-        else
-            grantsDLBySlot{slotIdx}(end+1,1) = g; %#ok<AGROW>
-        end
-    elseif dirTag == "UL"
-        if isempty(grantsULBySlot{slotIdx})
-            grantsULBySlot{slotIdx} = g;
-        else
-            grantsULBySlot{slotIdx}(end+1,1) = g; %#ok<AGROW>
-        end
-    end
-end
+[grantsDLBySlot, grantsULBySlot] = sixgr.truth.projectSystemGrantTraceForE2E(grantTable,nSlots,nRB);
 end
 
 function airRes = localCoupledGrantAirResult(grant, coupledTruth)

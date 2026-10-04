@@ -421,6 +421,7 @@
       "interference_measurement_policy": {"required": true, "type": "string"}
     }},
     "pucch_resources": {"required": false, "parameters": {
+      "component_probe": {"required": false, "type": "struct", "nested_rule": "pucch_component_probe_object"},
       "enabled": {"required": false, "type": "boolean"},
       "profile": {"required": false, "type": "string"},
       "configuration_epoch": {"required": false, "type": "integer", "min": 0},
@@ -507,6 +508,17 @@
     }}
   },
   "nested_sections": {
+    "pucch_component_probe_object": {"parameters": {
+      "enabled": {"required": true, "type": "boolean"},
+      "evidence_scope": {"required": true, "type": "string", "allowed_values": ["isolated_known_payload_not_causal_feedback"]},
+      "ue_id": {"required": true, "type": "integer", "min": 1},
+      "rnti": {"required": true, "type": "integer", "min": 1, "max": 65519},
+      "serving_cell": {"required": true, "type": "integer", "min": 0},
+      "first_slot_zero_based": {"required": true, "type": "integer", "min": 0},
+      "period_slots": {"required": true, "type": "integer", "min": 1},
+      "csi_part1_bit_count": {"required": true, "type": "integer", "min": 1},
+      "csi_part2_bit_count": {"required": true, "type": "integer", "min": 0}
+    }},
     "system_scheduler_object": {"parameters": {
       "type": {"required": true, "type": "string", "allowed_values": ["PF", "RR", "MAX_CQI", "LATENCY_AWARE_PF", "ENERGY_AWARE_PF"]},
       "maxActiveUEsPerSlot": {"required": true, "type": "integer", "min": 1},

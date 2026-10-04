@@ -36,6 +36,7 @@ configuredCP = string(sixgr.util.structGet(phy, "carrier.CyclicPrefix", "normal"
 numerology = localResolveNumerology(configuredSCS, configuredMu, configuredCP);
 cfg.Numerology = double(numerology.Mu);
 cfg.SlotsPerFrame = double(numerology.SlotsPerFrame);
+cfg.SymbolsPerSlot = double(numerology.SymbolsPerSlot);
 configuredSlotsPerFrame = double(sixgr.util.structGet(ctrl, "SlotsPerFrame", NaN));
 if isfinite(configuredSlotsPerFrame) && ...
         configuredSlotsPerFrame ~= cfg.SlotsPerFrame
@@ -75,6 +76,18 @@ cfg.PrecoderGranularity = char(string(sixgr.util.structGet(ctrl, "PrecoderGranul
 cfg.OutputDir = char(string(sixgr.util.structGet(ctrl, "OutputDir", opts.RunFolder)));
 cfg.Seed = double(sixgr.util.structGet(ctrl, "Seed", sixgr.util.structGet(fullCfg, "run.seed", 1)));
 cfg.PayloadLengthBits = max(1, round(double(sixgr.util.structGet(ctrl, "PayloadLengthBits", sixgr.util.structGet(phy, "pdcch.dciPayloadBits", 64)))));
+cfg.PolarListLength = double(sixgr.util.structGet(ctrl, "PolarListLength", 8));
+cfg.SignalPresentTrialsPerPoint = double(sixgr.util.structGet(ctrl, "SignalPresentTrialsPerPoint", 1));
+cfg.NoiseOnlyTrialsPerPoint = double(sixgr.util.structGet(ctrl, "NoiseOnlyTrialsPerPoint", 0));
+cfg.PopulationConfidenceLevel = double(sixgr.util.structGet(ctrl,"PopulationConfidenceLevel",0.95));
+validateattributes(cfg.PopulationConfidenceLevel, {'double'}, {'scalar','finite','>',0,'<',1});
+validateattributes(cfg.PolarListLength, {'double'}, {'scalar','finite','integer','positive'});
+for populationCount = [cfg.SignalPresentTrialsPerPoint cfg.NoiseOnlyTrialsPerPoint]
+    validateattributes(populationCount, {'double'}, {'scalar','finite','integer','nonnegative','<=',1000000});
+end
+assert(cfg.SignalPresentTrialsPerPoint + cfg.NoiseOnlyTrialsPerPoint > 0, ...
+    'sixgr:ctrl:ControlChannelConfig:EmptyPopulations', ...
+    'Configure at least one signal-present or noise-only receiver observation.');
 cfg.Modulation = char(string(sixgr.util.structGet(ctrl, "Modulation", "QPSK")));
 cfg.CRCPolynomial = char(string(sixgr.util.structGet(ctrl, "CRCPolynomial", "24C")));
 cfg.CRCScramblingEnabled = logical(sixgr.util.structGet(ctrl, "CRCScramblingEnabled", true));

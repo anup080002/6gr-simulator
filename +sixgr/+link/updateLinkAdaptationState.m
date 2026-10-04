@@ -21,6 +21,9 @@ state = localUpgradeState(state, cfgIn);
 cfgOut = state.CurrentConfig;
 event = struct( ...
     "Applied", false, ...
+    "DecisionInEffect", false, ...
+    "BootstrapInEffect", logical(sixgr.util.structGet(state,"BootstrapConfigured",false)) && ...
+        double(state.LastAppliedFrame)==0, ...
     "Scheduled", false, ...
     "Frame", double(frameIdx), ...
     "Slot", double(frameIdx), ...
@@ -35,6 +38,9 @@ event = struct( ...
     "Direction", char(direction), ...
     "Decision", struct(), ...
     "Reason", "");
+if ~isempty(fieldnames(sixgr.util.structGet(state,"ActiveDecision",struct())))
+    event.BootstrapInEffect=false;
+end
 
 switch phase
     case "before"
@@ -51,8 +57,11 @@ switch phase
                 state.Pending(1:applyIdx) = [];
                 state.CurrentConfig = sixgr.link.applyLinkAdaptationDecision(state.CurrentConfig, direction, decision);
                 state.LastAppliedFrame = double(frameIdx);
+                state.ActiveDecision = pendingDecision;
                 cfgOut = state.CurrentConfig;
                 event.Applied = true;
+                event.DecisionInEffect = true;
+                event.BootstrapInEffect = false;
                 event.ApplyFrame = double(frameIdx);
                 event.ApplySlot = double(frameIdx);
                 event.FeedbackSourceSlot = double(pendingDecision.SourceSlot);
@@ -64,6 +73,26 @@ switch phase
         end
         cfgOut = state.CurrentConfig;
         event.Reason = "no_pending_decision";
+        % No new decision is an event property, not an operating-point
+        % property. The retained configuration still uses the last applied
+        % causal decision until a later decision actually replaces it.
+        active = sixgr.util.structGet(state, "ActiveDecision", struct());
+        if isstruct(active) && isscalar(active) && ~isempty(fieldnames(active))
+            sourceSlot = double(active.SourceSlot);
+            appliedSlot = double(state.LastAppliedFrame);
+            assert(isscalar(sourceSlot) && isfinite(sourceSlot) && ...
+                isscalar(appliedSlot) && isfinite(appliedSlot) && ...
+                sourceSlot <= appliedSlot && appliedSlot <= double(frameIdx) && ...
+                strcmpi(string(state.Direction),direction), ...
+                'sixgr:link:LinkAdaptation:InvalidRetainedDecision', ...
+                'Retained adaptation must have causal source/application slots and the same direction.');
+            event.DecisionInEffect = true;
+            event.ApplyFrame = appliedSlot;
+            event.ApplySlot = appliedSlot;
+            event.FeedbackSourceSlot = sourceSlot;
+            event.FeedbackAgeSlots = double(frameIdx)-sourceSlot;
+            event.Decision = active.Decision;
+        end
     case "after"
         if ~state.Enabled
             event.Reason = "link_adaptation_disabled";
@@ -123,7 +152,30 @@ state.DelayStatus = char(delay.Status);
 state.Pending = repmat(struct("ApplyFrame", NaN, "SourceSlot", NaN, "Decision", struct()), 0, 1);
 state.LastObservedFrame = 0;
 state.LastAppliedFrame = 0;
+state.ActiveDecision = struct();
 state.CurrentConfig = cfg;
+state.BootstrapConfigured = false;
+% Initial MCS is an actual pre-feedback operating point, not metadata for
+% the report. Never apply it to a fixed-MCS calibration or a resumed state.
+if direction=="DL", family="pdsch"; policyField="dlPolicy";
+else, family="pusch"; policyField="ulPolicy"; end
+policy=lower(string(sixgr.util.structGet(cfg,"phy.linkAdaptation."+policyField,"fixed")));
+initial=sixgr.util.structGet(cfg,"phy.linkAdaptation.initialMCSIndex",[]);
+if state.Enabled && localModeEnabled(policy) && ~isempty(initial)
+    initial=double(initial);
+    maximum=double(sixgr.util.structGet(cfg,"phy.linkAdaptation.maximumMCSIndex",Inf));
+    assert(isscalar(initial) && isfinite(initial) && initial>=0 && initial==fix(initial) && ...
+        isscalar(maximum) && ~isnan(maximum) && initial<=maximum, ...
+        'sixgr:link:LinkAdaptation:InvalidInitialMCS', ...
+        'The configured initial MCS must be a nonnegative integer within the configured ceiling.');
+    profile=sixgr.link.resolveMCSProfile(sixgr.link.resolveConfiguredMCSTable(cfg,direction),initial);
+    assert(profile.Valid,'sixgr:link:LinkAdaptation:InvalidInitialMCS', ...
+        'The configured initial MCS must be a usable entry in the direction-specific MCS table.');
+    state.CurrentConfig=sixgr.util.structSet(state.CurrentConfig,"phy."+family+".mcsIndex",initial);
+    state.CurrentConfig=sixgr.util.structSet(state.CurrentConfig,"phy."+family+".modulation",char(profile.Modulation));
+    state.CurrentConfig=sixgr.util.structSet(state.CurrentConfig,"phy."+family+".codeRate",double(profile.TargetCodeRate));
+    state.BootstrapConfigured=true;
+end
 state.RuntimeDecisionState = struct();
 end
 
@@ -161,7 +213,8 @@ end
 
 function tf = localModeEnabled(mode)
 mode = lower(string(mode));
-tf = ~(mode == "" || ismember(mode, ["disabled","none","off","false","fixed"]));
+tf = ~(mode == "" || ismember(mode, ...
+    ["disabled","none","off","false","fixed","fixed_mcs","configured_fixed"]));
 end
 
 function tf = localFrameEligible(frameIdx, periodFrames)

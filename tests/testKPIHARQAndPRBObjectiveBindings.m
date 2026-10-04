@@ -69,6 +69,37 @@ poisonedUL = poisonedOut.ReconstructionSummary( ...
 assert(logical(poisonedUL.StrictOk) && abs(double(poisonedUL.Value)-1/3)<1e-12, ...
     "UL HARQ KPI must be independent of UE feedback payload rows.");
 
+% Missing identities/default process values and repeated rows must not
+% produce accepted populations, even when all decision bits are present.
+for defect = ["missing_tb", "blank_tb", "nan_process", "fractional_slot", "duplicate"]
+    bad = raw;
+    switch defect
+        case "missing_tb"
+            bad.HARQTimeline(:,"TBId")=[];
+        case "blank_tb"
+            bad.HARQTimeline.TBId(1)="";
+        case "nan_process"
+            bad.HARQTimeline.HarqID(1)=NaN;
+        case "fractional_slot"
+            bad.HARQTimeline.Slot(1)=1.5;
+        case "duplicate"
+            bad.HARQTimeline=[bad.HARQTimeline;bad.HARQTimeline(1,:)];
+    end
+    badOut=sixgr.kpi.reconstructLLSKPISummaryFromRaw(bad);
+    badRows=badOut.ReconstructionSummary(ismember(badOut.ReconstructionSummary.KPIName, ...
+        ["UL_HARQ_NACK_Rate","UL_Retransmission_Rate"]),:);
+    assert(all(~badRows.StrictOk) && all(isnan(badRows.Value)), ...
+        "Invalid HARQ identity must fail without publishing a rate: %s", defect);
+end
+scoped=raw;
+extra=raw.HARQTimeline;
+extra.SweepPointIndex(:)=2;
+scoped.HARQTimeline=[raw.HARQTimeline;extra];
+scopedOut=sixgr.kpi.reconstructLLSKPISummaryFromRaw(scoped);
+scopedRow=scopedOut.ReconstructionSummary(scopedOut.ReconstructionSummary.KPIName=="UL_HARQ_NACK_Rate",:);
+assert(scopedRow.StrictOk && scopedRow.DenominatorValue==6 && abs(scopedRow.Value-1/3)<1e-12, ...
+    "Distinct sweep points must retain their own HARQ attempt populations.");
+
 binding = out.ObjectiveBinding(ismember(string(out.ObjectiveBinding.KPIName), names), :);
 assert(height(binding) == 6 && all(logical(binding.MandatoryInScenarioObjective)), ...
     "HARQ and scheduler utilization rows must be mandatory strict bindings.");
@@ -121,11 +152,12 @@ end
 function T = localHARQTimeline()
 T = table( ...
     ["UL"; "UL"; "UL"; "DL"; "DL"; "DL"], ...
-    [0; 0; 1; 0; 0; 1], [1; 2; 2; 1; 1; 2], ...
+    [0; 0; 1; 0; 0; 1], [1; 2; 2; 1; 2; 2], ...
     [true; false; true; true; false; true], ...
     [false; true; false; false; true; false], ...
     [0; 2; 0; 0; 2; 0], [1; 1; 1; 1; 1; 1], ...
     'VariableNames', {'Direction','HarqID','Slot','CombinedDecodeOK','IsRetransmission','RV','SweepPointIndex'});
+T.TBId=["ul_tb_1";"ul_tb_1";"ul_tb_2";"dl_tb_1";"dl_tb_1";"dl_tb_2"];
 end
 
 function T=localFeedbackRows()

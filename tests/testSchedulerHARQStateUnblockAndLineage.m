@@ -139,8 +139,17 @@ if isfield(cfg.phy, "frame")
 end
 cfg = sixgr.phy.frame.FrameRuntimeStateBuilder.attachTimingContext(cfg);
 nSizeGrid = double(sixgr.util.structGet(cfg, "phy.carrier.NSizeGrid", 273));
-cfg.phy.bwp.dl = struct("NStartBWP", 0, "NSizeBWP", nSizeGrid);
-cfg.phy.bwp.ul = struct("NStartBWP", 0, "NSizeBWP", nSizeGrid);
+% Publish the clock from the installed BWP, not just its frequency extent.
+% The DCI receiver must not infer PUCCH numerology from the DL allocation.
+cc = cfg.phy.frame.ComponentCarriers;
+assert(isscalar(cc),'This scheduler fixture declares one component carrier.');
+for direction = ["DL","UL"]
+    active = cc.BWPs(string({cc.BWPs.Direction})==direction & ...
+        [cc.BWPs.BWPID]==cc.("Active"+direction+"BWPID"));
+    assert(isscalar(active),'Require the installed active BWP.');
+    cfg.phy.bwp.(lower(direction)) = struct("NStartBWP",0,"NSizeBWP",nSizeGrid, ...
+        "SCSKHz",active.SCSKHz);
+end
 
 multiUser = struct("Enabled", true, "NumUsers", 2, "RNTIStart", 501, ...
     "ExecutionModel", "slot_coupled_truth");

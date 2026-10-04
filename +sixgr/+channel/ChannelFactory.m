@@ -1446,6 +1446,11 @@ classdef ChannelFactory
             % Byte-exact digest used for executed waveform/path-gain
             % lineage.  Size and class are included to avoid equal byte
             % streams from different array interpretations colliding.
+            if usejava("jvm")
+                hash = char(sixgr.phy.waveform.WaveformHash.runtimeArray(value));
+                return;
+            end
+            % Retain the exact .NET-compatible path when Java is absent.
             header = uint8(char("runtime_array:" + string(class(value)) + ":"));
             dims = reshape(typecast(uint64(size(value)), "uint8"), [], 1);
             if isempty(value)

@@ -1,0 +1,19 @@
+# Optional ideal-delayed SLS reference, NOT a waveform RSRP measurement.
+# Compose with native CSI-RS emission and causal DL CSI feedback. fc0 means
+# no temporal smoothing; no hidden averaging/initialization or static PL.
+system:
+  linkAbstraction:
+    dynamicPUCCH:
+      powerReference:
+        enabled: true
+        researchClass: optional_research_experiment
+        referenceSignalType: CSI-RS
+        referenceSignalID: 0
+        # Configured PUCCH pathloss-reference list index, distinct from the
+        # CSI-RS resource identity above and from the spatial-relation ID.
+        pathlossReferenceRSID: 1
+        antennaPort: 3000
+        receivePolicy: strongest_physical_receive_branch
+        filterCoefficient: 0
+        maximumAgeSlots: 40
+        sourceClassification: modeled_ideal_csirs_power_not_waveform_measurement

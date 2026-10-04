@@ -11,6 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO_ROOT / "tools"))
 
 from lls_csv_semantics import (  # noqa: E402
+    _adaptive_policy_expectation,
     audit_run,
     _audit_control_table,
     _audit_derived_link_table,
@@ -56,6 +57,7 @@ from lls_csv_semantics import (  # noqa: E402
     _evaluated_empty_ra_retry_events_is_valid,
     _audit_fixed_snr_reporting_tables,
     _audit_kpi_reporting_tables,
+    _ul_harq_decision_kpi_failures,
     _clopper_pearson_two_sided,
     PHASE7_GATE_NAMES,
     PHASE7_PHASE_MEMBERS,
@@ -164,6 +166,65 @@ def test_dynamic_tdd_reciprocity_requires_shared_state_and_executed_path_angles(
     assert "reciprocal_swap_mismatch" in failed[
         "executed_path_AoA_AoD_reciprocity_and_power"
     ]
+
+
+def test_dynamic_tdd_independent_calibration_does_not_claim_reciprocity(tmp_path: Path) -> None:
+    config = {
+        "frequency": {"duplex_mode": "TDD"},
+        "channels": {"model_type": "TDL", "profile": "TDL-C", "doppler_hz": 30},
+        "users": {"execution_model": "independent_link_sweep"},
+        "pdsch": {"execution_profile": "phy_calibration"},
+        "pusch": {"execution_profile": "phy_calibration"},
+        "output": {"phy_signal_diagnostic_enabled": True},
+    }
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+    rows = {
+        direction: [{
+            "ExecutionProfile": "phy_calibration",
+            "ExecutionTaxonomy": "isolated_phy_calibration",
+            "ExecutionBackend": backend,
+        }]
+        for direction, backend in {
+            "DL": "legacy_pdsch_calibration_facades",
+            "UL": "canonical_pusch_waveform_chain",
+        }.items()
+    }
+    checks = _audit_dynamic_tdd_runtime_channel_reciprocity(tmp_path, rows)
+    assert len(checks) == 2
+    assert checks[0].passed and checks[0].check_id == "independent_calibration_execution_scope"
+    assert not checks[1].required and not checks[1].evaluated and not checks[1].passed
+    assert "connected_reciprocity_not_executed_or_qualified" in checks[1].details
+
+    # Configuration cannot turn an unknown or connected producer into an
+    # isolated one. Each row, including a minority row, must agree.
+    for field, value in (
+        ("ExecutionProfile", "scheduler_truth"),
+        ("ExecutionTaxonomy", ""),
+        ("ExecutionBackend", "scheduler_grant_waveform_chain"),
+        ("SameScenarioInPathEligible", "1"),
+        ("RuntimeChannelReciprocityExact", "1"),
+    ):
+        poisoned = {direction: [dict(row) for row in values] for direction, values in rows.items()}
+        poisoned["UL"].append(dict(poisoned["UL"][0], **{field: value}))
+        failed = _audit_dynamic_tdd_runtime_channel_reciprocity(tmp_path, poisoned)
+        assert any(check.required and not check.passed for check in failed), field
+
+    # Neither missing data nor labels alone can waive the connected guard.
+    empty = _audit_dynamic_tdd_runtime_channel_reciprocity(tmp_path, {"DL": [], "UL": []})
+    assert any(check.required and not check.passed for check in empty)
+    for section, field, value in (
+        ("users", "execution_model", "slot_coupled_truth"),
+        ("pdsch", "execution_profile", "scheduler_truth"),
+        ("pusch", "execution_profile", ""),
+    ):
+        modified = json.loads(json.dumps(config))
+        modified[section][field] = value
+        config_path.write_text(json.dumps(modified), encoding="utf-8")
+        failed = _audit_dynamic_tdd_runtime_channel_reciprocity(tmp_path, rows)
+        assert any(check.required and not check.passed for check in failed)
+        assert all(check.check_id != "independent_calibration_execution_scope" for check in failed)
 
 
 def test_chart_lineage_accepts_explicit_measured_operating_point(
@@ -527,6 +588,79 @@ def test_optional_runtime_tables_follow_resolved_feature_applicability(
         ) == (True, True)
 
 
+def test_independent_waveform_kpi_scope_requires_resolved_ownership(tmp_path: Path) -> None:
+    row = {"KPIName": "DL_HARQ_NACK_Rate", "Direction": "DL",
+           "Applicable": "0", "ApplicabilityReason":
+           "independent_waveform_attempts_no_connected_harq_lifecycle"}
+    relative = "reports/csv/kpi_reconstruction_summary.csv"
+    config_path = tmp_path / "meta/scenario_config_resolved.json"
+    config_path.parent.mkdir(parents=True)
+    valid = {"scenario": {"runner_profile": "waveform_bundle"},
+             "users": {"execution_model": "independent_link_sweep"},
+             "pdsch": {"execution_profile": "phy_calibration"},
+             "pusch": {"execution_profile": "phy_calibration"}}
+    for variant in ("missing", "connected", "system", "missing_profile", "independent", "phy_waiver"):
+        config = json.loads(json.dumps(valid))
+        evidence = dict(row)
+        if variant == "missing":
+            config = {}
+        elif variant == "connected":
+            config["users"]["execution_model"] = "slot_coupled_truth"
+        elif variant == "system":
+            config["scenario"]["runner_profile"] = "system_level_lls"
+        elif variant == "missing_profile":
+            del config["pusch"]
+        elif variant == "phy_waiver":
+            evidence["KPIName"] = "DL_BLER"
+        config_path.write_text(json.dumps(config), encoding="utf-8")
+        _write_rows(tmp_path / relative, [evidence])
+        check = next(c for c in _audit_kpi_reporting_tables(tmp_path)
+                     if c.artifact_path == relative)
+        # These deliberately minimal rows fail other schema checks. Isolate
+        # only the new config-to-applicability authority invariant here.
+        rejected = "independent_waveform_scope_not_configured" in check.details
+        assert rejected == (variant != "independent"), (variant, check.details)
+
+
+def test_disabled_causal_audit_requires_identity_bound_producer_receipt(tmp_path: Path) -> None:
+    relatives = ("reports/csv/causal_phy_chain_audit.csv",
+                 "reports/csv/causal_phy_parameter_authority.csv")
+    summary = {"RunID": tmp_path.name, "ConfigHash": "a" * 64}
+    receipt = {"RunID": tmp_path.name, "ConfigHash": "a" * 64,
+               "Enabled": "0", "Required": "0", "Pass": "1",
+               "Status": "DISABLED_BY_YAML", "FailureReason": "",
+               "StageCount": "0", "RequiredStageFailureCount": "0",
+               "DisabledExecutionFailureCount": "0", "ParameterBindingFailureCount": "0"}
+    gate_path = tmp_path / "reports/csv/causal_phy_chain_gate.csv"
+    for relative in relatives:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("RunID,ConfigHash,Status\n", encoding="utf-8")
+        assert _domain_table_applicability(relative, tmp_path, summary, {}) == (True, True)
+    _write_rows(gate_path, [receipt])
+    for relative in relatives:
+        assert _domain_table_applicability(relative, tmp_path, summary, {}) == (False, False)
+        # Scenario summary normally omits RunID; the run folder is the
+        # producer's default identity, not a freely supplied receipt alias.
+        assert _domain_table_applicability(
+            relative, tmp_path, {"ConfigHash": "a" * 64}, {}) == (False, False)
+        for field in ("enabled", "required"):
+            configured = {"validation": {"causal_phy_chain_audit": {field: True}}}
+            assert _domain_table_applicability(relative, tmp_path, summary, configured) == (True, True)
+    for field, bad in (("RunID", "wrong"), ("ConfigHash", "wrong"),
+                       ("Enabled", "1"), ("Required", "1"), ("Pass", "0"),
+                       ("Status", "PASS"), ("FailureReason", "failed"),
+                       ("StageCount", "1"), ("ParameterBindingFailureCount", "1")):
+        _write_rows(gate_path, [{**receipt, field: bad}])
+        assert all(_domain_table_applicability(r, tmp_path, summary, {}) == (True, True)
+                   for r in relatives)
+    _write_rows(gate_path, [receipt])
+    _write_rows(tmp_path / relatives[0], [{"RunID": tmp_path.name, "ConfigHash": "wrong", "Status": "PASS"}])
+    checks = _audit_domain_runtime_tables(tmp_path, summary)
+    assert any(c.artifact_path == relatives[0] and c.required and c.failure_count
+               for c in checks)
+
+
 def test_geometry_plot_lineage_is_required_only_when_governed_raster_exists(
     tmp_path: Path,
 ) -> None:
@@ -769,6 +903,52 @@ def _mimo_source_and_rank_row() -> tuple[dict[str, str], dict[str, str]]:
     return raw, row
 
 
+def test_adaptive_policy_uses_applied_feedback_not_current_measurement() -> None:
+    _, row = _mimo_source_and_rank_row()
+    row.update({
+        "AdaptiveMode": "1", "ConfiguredMCSSelectionPolicy": "cqi_table",
+        "ActualMCSSelectionMode": "cqi_driven", "MCSSelectionSource": "cqi_link_adaptation",
+        "MCSAuthority": "cqi_link_adaptation", "ModulationAuthority": "cqi_link_adaptation",
+        "AppliedOperatingPointSource": "cqi_link_adaptation", "AdaptationEvidenceId": "retained_decision",
+        "LinkAdaptationApplied": "1", "LinkAdaptationScheduled": "0",
+        "Slot": "7", "AppliedFeedbackSourceSlot": "3", "AppliedFeedbackAgeSlots": "4",
+        "ConfiguredFeedbackDelaySlots": "2", "AppliedDecisionMCS": "10",
+        "AppliedDecisionCQI": "8", "AppliedDecisionCQIBasedMCS": "10",
+        "WidebandCQI": "NaN", "CQIDerivedMCS": "NaN",
+    })
+    assert _adaptive_policy_expectation(row) == (True, "")
+    for changes, failure in [
+        ({"LinkAdaptationApplied": "0", "LinkAdaptationScheduled": "1"}, "adaptive_applied_decision_missing"),
+        ({"AppliedFeedbackSourceSlot": "7"}, "adaptive_applied_feedback_clock_invalid"),
+        ({"AppliedFeedbackSourceSlot": "8"}, "adaptive_applied_feedback_clock_invalid"),
+        ({"AppliedFeedbackAgeSlots": "1"}, "adaptive_applied_feedback_clock_invalid"),
+        ({"ConfiguredFeedbackDelaySlots": "5"}, "adaptive_applied_feedback_clock_invalid"),
+        ({"AppliedDecisionMCS": "9"}, "adaptive_applied_decision_mcs_mismatch"),
+        ({"AppliedDecisionCQI": "NaN", "WidebandCQI": "15"}, "cqi_policy_runtime_measurement_lineage_missing"),
+    ]:
+        passed, reason = _adaptive_policy_expectation(dict(row, **changes))
+        assert not passed and failure in reason
+
+
+def test_adaptive_bootstrap_has_no_feedback_and_requires_own_mcs_reference() -> None:
+    _, row = _mimo_source_and_rank_row()
+    row.update({"AdaptiveMode": "1", "ConfiguredMCSSelectionPolicy": "cqi_table",
+                "ConfiguredMCSTable": "qam64_table1", "MCSValueStatus": "bootstrap_not_measured_cqi"})
+    for field in ("ActualMCSSelectionMode", "MCSSelectionSource", "MCSAuthority",
+                  "ModulationAuthority", "AppliedOperatingPointSource"):
+        row[field] = "configured_initial_mcs"
+    refs = [{"Direction": "DL", "MCSTable": "qam64_table1", "MCSIndex": "10", "Modulation": "16QAM"}]
+    assert _adaptive_policy_expectation(row, refs) == (True, "")
+    assert _adaptive_policy_expectation(dict(row, LinkAdaptationScheduled="1"), refs) == (True, "")
+    for changes in ({"LinkAdaptationApplied": "1"}, {"AppliedDecisionMCS": "10"},
+                    {"AppliedFeedbackSourceSlot": "0"}, {"MCSAuthority": "link_adaptation_mode_reference"},
+                    {"ScheduledMCS": "9"}, {"TransmittedModulation": "QPSK"}, {"Direction": "UL"}):
+        passed, reason = _adaptive_policy_expectation(dict(row, **changes), refs)
+        assert not passed and "configured_bootstrap_execution_mismatch" in reason
+    for missing_or_ambiguous in ([], refs + refs):
+        assert not _adaptive_policy_expectation(row, missing_or_ambiguous)[0]
+
+
 def test_mimo_rank_semantics_keep_crc_failure_separate_from_execution() -> None:
     raw, row = _mimo_source_and_rank_row()
     checks = _audit_mimo_rank_layer_table(
@@ -989,6 +1169,54 @@ def test_mimo_layer_metrics_preserve_unavailable_layer_scope_and_zero_evm() -> N
                          ("LLRStatus", ""), ("TrialLLRMeanAbs", "NaN"),
                          ("DecodeMetricScope", "per_layer_crc")]:
         assert any(not check.passed for check in audit(dict(layer, **{field: value})))
+
+
+def test_mimo_missing_trial_measurement_requires_primary_source_evidence() -> None:
+    raw, rank = _mimo_source_and_rank_row()
+    raw.update(NMSE_dB="NaN", NMSESource="unavailable_without_independent_channel_reference",
+               LLRMeanAbs="5")
+    layer = {
+        "RunId": "run-1", "TrialId": "1", "CellId": "1", "UEId": "3",
+        "Direction": "DL", "Slot": "2", "LayerIndex": "1", "CodewordIndex": "1",
+        "DMRSPort": "0", "PostEqSINRdB": "8.5", "EVMdB": "-20",
+        "ChannelEstimateNMSEdB": "NaN", "LLRMeanAbs": "NaN",
+        "ChannelEstimateNMSEStatus": "unavailable_no_trial_measurement",
+        "LLRStatus": "unavailable_trial_aggregate_only",
+        "TrialChannelEstimateNMSEdB": "NaN", "TrialLLRMeanAbs": "5",
+        "TrialChannelEstimateNMSESource": raw["NMSESource"],
+        "TrialLLRMeanAbsSource": "",
+        "DecodeCrcPass": "0", "BER": "0.1", "BLERContribution": "1", "Status": "pass",
+    }
+
+    def audit(row, source=raw):
+        return _audit_mimo_layer_metrics_table(
+            "beamforming/csv/mimo_layer_metrics.csv", list(row), [row], [rank], {"DL": [source]})
+
+    assert all(check.passed for check in audit(layer))
+    for field, value in [
+        ("ChannelEstimateNMSEStatus", "unavailable_trial_aggregate_only"),
+        ("TrialChannelEstimateNMSEdB", "-30"),
+        ("TrialChannelEstimateNMSESource", "invented_reason"),
+        ("ChannelEstimateNMSEdB", "-30"),
+        ("ChannelEstimateNMSEdB", "-Inf"),
+        ("TrialLLRMeanAbs", "6"),
+    ]:
+        assert any(not check.passed for check in audit(dict(layer, **{field: value})))
+    assert any(not check.passed for check in audit(layer, dict(raw, NMSE_dB="-30")))
+    assert any(not check.passed for check in audit(layer, dict(raw, NMSE_dB="invalid")))
+    assert any(not check.passed for check in _audit_mimo_layer_metrics_table(
+        "beamforming/csv/mimo_layer_metrics.csv", list(layer), [layer], [rank]))
+    for value in ["-30", "-Inf"]:
+        measured = dict(layer, TrialChannelEstimateNMSEdB=value,
+                        ChannelEstimateNMSEStatus="unavailable_trial_aggregate_only",
+                        TrialChannelEstimateNMSESource="independent_applied_channel_reference")
+        source = dict(raw, NMSE_dB=value, NMSESource=measured["TrialChannelEstimateNMSESource"])
+        assert all(check.passed for check in audit(measured, source))
+        assert any(not check.passed for check in audit(
+            dict(measured, TrialChannelEstimateNMSEdB="-29"), source))
+    missing_llr = dict(layer, TrialLLRMeanAbs="NaN", LLRStatus="unavailable_no_trial_measurement")
+    assert all(check.passed for check in audit(missing_llr, dict(raw, LLRMeanAbs="NaN")))
+    assert any(not check.passed for check in audit(missing_llr))
 
 
 def test_mimo_summary_accepts_causal_bootstrap_before_complete_shared_mu_group() -> None:
@@ -1227,6 +1455,20 @@ def _beam_primary_and_output() -> tuple[dict[str, str], dict[str, str]]:
         "derived_flag": "0", "active_flag": "1",
     }
     return raw, output
+
+
+def test_beam_export_never_infers_ue_index_from_rnti() -> None:
+    raw, output = _beam_primary_and_output()
+    for field in ("UEID", "UEIndex", "UE"):
+        raw.pop(field, None)
+    raw["RNTI"] = output["rnti"] = "181"
+    output["ue_id"] = "NaN"
+    def audit(row):
+        return _audit_beam_precoder_table(
+            "beamforming/csv/beam_precoder_table.csv", list(row), [row], {"DL": [raw], "UL": []})
+    assert all(check.passed for check in audit(output))
+    assert any(not check.passed and "ue_id_not_primary_source" in check.details
+               for check in audit(dict(output, ue_id="181")))
 
 
 def _beam_aggregate_rows() -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
@@ -1664,6 +1906,36 @@ def test_pdcch_pretransmission_resource_block_is_valid_nontrial() -> None:
     assert "no_finite_runtime_measurement" in runtime.details
 
 
+def test_pdcch_noise_only_requires_real_receiver_evidence() -> None:
+    row = {
+        "SignalPresent": "0", "TrialType": "noise_only", "TXGridEnergy": "0",
+        "RXGridEnergy": "714.94", "NoiseVariance": "0.01", "BlindDecodeCount": "4",
+        "DecodingMetric": "0.4", "DCICrcPass": "0", "FalseAlarmFlag": "0",
+        "Status": "PASS", "EstimatedSINR_dB": "NaN", "PostEqEVM": "NaN",
+        "NMSEChannelEst": "NaN",
+    }
+
+    def audit(value):
+        return next(check for check in _audit_control_table(
+            "air_interface/csv/pdcch_trials.csv", list(value), [value])
+            if check.check_id == "runtime_measurement_and_truth")
+
+    assert audit(row).passed
+    # A false alarm is valid failed evidence, not an artifact-format failure.
+    assert audit(row | {"DCICrcPass": "1", "FalseAlarmFlag": "1", "Status": "FAIL"}).passed
+    for bad in (
+        {"TXGridEnergy": "1"}, {"TXGridEnergy": "NaN"}, {"RXGridEnergy": "NaN"},
+        {"NoiseVariance": "0"}, {"BlindDecodeCount": "0"}, {"DecodingMetric": "NaN"},
+        {"DCICrcPass": "1"}, {"Status": "FAIL"}, {"EstimatedSINR_dB": "0"},
+        {"SignalPresent": "1"}, {"TrialType": "unknown"},
+    ):
+        assert not audit(row | bad).passed, bad
+    wrong_channel = next(check for check in _audit_control_table(
+        "air_interface/csv/pucch_trials.csv", list(row), [row])
+        if check.check_id == "runtime_measurement_and_truth")
+    assert not wrong_channel.passed
+
+
 def test_ra_retry_zero_event_requires_typed_schema_and_successful_first_attempt(
     tmp_path: Path,
 ) -> None:
@@ -1818,6 +2090,27 @@ def test_prach_component_semantics_require_identity_but_not_full_link_outputs(
 def _mu_check(direction: str, row: dict[str, str]):
     checks = _audit_link_table("trial.csv", list(row), [row], direction, 1)
     return next(check for check in checks if check.check_id == "mu_mimo_receiver_execution")
+
+
+def test_joint_sweep_trial_identity_includes_configured_not_measured_snr() -> None:
+    for direction in ("DL", "UL"):
+        base = {"Direction": direction, "Frame": "1", "Slot": "1",
+                "UEID": "1", "HARQRound": "1", "ExecutionID": "same-execution",
+                "ConfiguredSNR_dB": "18", "SNR_dB": "18"}
+
+        def unique_check(rows):
+            return next(check for check in _audit_link_table(
+                "trial.csv", list(rows[0]), rows, direction, len(rows))
+                if check.check_id == "unique_trial_primary_key")
+
+        assert unique_check([base, base | {"ConfiguredSNR_dB": "30", "SNR_dB": "30"}]).passed
+        assert not unique_check([base, dict(base)]).passed
+        assert not unique_check([base, base | {"ConfiguredSNR_dB": "18.0"}]).passed
+        assert not unique_check([base, base | {"MeasuredSINR_dB": "29.8"}]).passed
+        # Legacy explicit SNR column is an operating-point alias, not a
+        # request to reconstruct a missing point from receiver measurements.
+        legacy = {key: value for key, value in base.items() if key != "ConfiguredSNR_dB"}
+        assert unique_check([legacy, legacy | {"SNR_dB": "30"}]).passed
 
 
 def _transport_check(row: dict[str, str]):
@@ -2122,6 +2415,46 @@ def test_harq_observation_contract_recomputes_timeline_and_summary(
     )
     assert not summary_check.passed
     assert "CRCFailRate_mismatch" in summary_check.details
+
+
+def test_harq_projection_preserves_sweep_order_and_decoder_identity(tmp_path: Path) -> None:
+    base = dict(SNR_dB="20", Frame="1", Slot="2", CRCPass="1", Status="PASS", Crash="0",
+                GoodBits="1000", OfferedBits="1000", Goodput_Mbps="1",
+                ReceiverHestSINR_dB="19", RankIndicator="1", TBId="tb1", UEIndex="1",
+                RNTI="100", BaseStationID="1", SweepPointIndex="1", HarqID="0", RV="0",
+                HARQCurrentDecodeOK="0", HARQCombinedDecodeOK="1", HARQIsRetransmission="1")
+    raw = [base, dict(base, SNR_dB="-10", SweepPointIndex="2", BaseStationID="2"),
+           dict(base, SweepPointIndex="3")]
+    timeline = [dict(row, Direction="UL", TraceSource="ul_raw_link_trials",
+                     CurrentDecodeOK=row["HARQCurrentDecodeOK"],
+                     CombinedDecodeOK=row["HARQCombinedDecodeOK"],
+                     IsRetransmission=row["HARQIsRetransmission"],
+                     Notes="Actual frame-level DL/UL decode outcome for live HARQ visibility.") for row in raw]
+
+    def check(rows):
+        _write_rows(tmp_path / "harq/csv/live_harq_observation_timeline.csv", rows)
+        return next(c for c in _audit_harq_observation_tables(tmp_path, {"UL": raw})
+                    if c.check_id == "ordered_observations_reconcile_primary_link_trials")
+
+    assert check(timeline).passed
+    assert not check([timeline[0], timeline[2], timeline[1]]).passed
+    for field, value in [("BaseStationID", "2"), ("SweepPointIndex", "2"), ("TBId", "another_tb"),
+                         ("UEIndex", "2"), ("RNTI", "101"), ("HarqID", "1"),
+                         ("CurrentDecodeOK", "1"), ("CombinedDecodeOK", "0"),
+                         ("IsRetransmission", "0")]:
+        assert not check([dict(timeline[0], **{field: value}), *timeline[1:]]).passed, field
+
+
+def test_ul_harq_decision_uniqueness_preserves_execution_scope() -> None:
+    first = dict(Direction="UL", TBId="local_tb", Slot="2", HarqID="0", CombinedDecodeOK="1",
+                 SweepPointIndex="1", BaseStationID="1", UEIndex="1", RNTI="100")
+    kpi = dict(NumeratorValue="1", DenominatorValue="2", FeedbackDTXCount="0",
+               FeedbackObservedCount="2", SourceRowCount="2", EligibleRowCount="2",
+               ExcludedRowCount="0", Value="0.5")
+    for field in ("SweepPointIndex", "BaseStationID", "UEIndex", "RNTI"):
+        second = dict(first, **{field: "2", "CombinedDecodeOK": "0"})
+        assert _ul_harq_decision_kpi_failures(kpi, [first, second]) == [], field
+        assert "duplicate_ul_harq_decision" in _ul_harq_decision_kpi_failures(kpi, [first, first])
 
 
 def test_terminal_status_reduction_rejects_stale_visual_failure(tmp_path: Path) -> None:
@@ -2630,6 +2963,23 @@ def test_metric_output_contract_accepts_observed_and_unavailable_rows(
     checks = _audit_metric_output_tables(tmp_path)
     assert checks
     assert all(check.passed for check in checks), [check.details for check in checks]
+
+
+def test_unexercised_metric_remains_outside_measured_coverage(tmp_path: Path) -> None:
+    row = {
+        "CategoryCode": "H", "CategoryKey": "harq_outputs", "CategoryName": "HARQ outputs",
+        "MetricKey": "combining_gain", "MetricName": "Combining gain", "Entity": "DL",
+        "Statistic": "mean", "Availability": "not_exercised", "CountsTowardCoverage": "0",
+        "ValueNumeric": "NaN", "ValueText": "not_exercised_no_retransmissions_observed",
+        "Unit": "dB", "SourceArtifact": "", "Notes": "No physical retry population.",
+    }
+    path = tmp_path / "reports/csv/harq_outputs.csv"
+    _write_rows(path, [row])
+    checks = _audit_metric_output_tables(tmp_path)
+    assert checks and all(check.passed for check in checks)
+    _write_rows(path, [dict(row, CountsTowardCoverage="1")])
+    checks = _audit_metric_output_tables(tmp_path)
+    assert any(not check.passed and "coverage_availability_mismatch" in check.details for check in checks)
 
 
 def test_metric_output_contract_rejects_false_coverage_and_missing_lineage(

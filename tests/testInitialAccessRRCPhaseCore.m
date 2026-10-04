@@ -100,6 +100,40 @@ verifyEqual(testCase, decodedComplete.PayloadHash, ...
     complete.PayloadHash);
 end
 
+function testSetupCompleteUsesItsOwnReceivedIdentity(testCase)
+prefix = "CELL_SELECTED|MSG3_RRC_SETUP_REQUEST_OK|MSG4_RRC_SETUP_OK|";
+args = {"ExpectedTransactionID",2,"ReceivedTransactionID",2, ...
+    "UEIdentity","UE-7","ReceivedUEIdentity","UE-7", ...
+    "SRB1InstalledBeforeSetupComplete",true};
+for transaction = [NaN 0 2]
+    for identity = ["" "UE-WRONG" "UE-7"]
+        actual = sixgr.phy.ia.RRCConnectionEstablishmentStateMachine.evaluate( ...
+            args{:}, "EventSequence",prefix+"RRC_SETUP_COMPLETE_OK", ...
+            "SetupCompleteTransactionID",transaction, ...
+            "SetupCompleteUEIdentity",identity);
+        expected = transaction==2 && identity=="UE-7";
+        verifyEqual(testCase,actual.RRCConnected,expected);
+        verifyEqual(testCase,actual.Trace.GNBStateAfter(3),"WAIT_SETUP_COMPLETE");
+        verifyTrue(testCase,actual.SetupCompleteIdentityEvidenceProvided);
+        if ~expected
+            verifyEqual(testCase,actual.ErrorIdentifier, ...
+                "sixgr:phy:ia:RRCSetupCompleteFailure");
+            verifyEqual(testCase,actual.FailureEventOrdinal,4);
+        end
+    end
+end
+for terminal = ["UL_DCCH_CRC_FAIL" "T300_EXPIRE"]
+    actual = sixgr.phy.ia.RRCConnectionEstablishmentStateMachine.evaluate( ...
+        args{:}, "EventSequence",prefix+terminal, ...
+        "SetupCompleteTransactionID",NaN,"SetupCompleteUEIdentity","");
+    verifyFalse(testCase,actual.RRCConnected);
+    verifyTrue(testCase,isnan(actual.SetupCompleteTransactionID));
+    verifyEqual(testCase,actual.Trace.GNBStateAfter(3),"WAIT_SETUP_COMPLETE");
+    verifyEqual(testCase,actual.ErrorIdentifier,"sixgr:phy:ia:RRCSetupCompleteFailure");
+    verifyEqual(testCase,actual.FailureEventOrdinal,4);
+end
+end
+
 function value = localBool(token)
 if islogical(token)
     value = token;

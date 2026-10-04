@@ -29,6 +29,9 @@ classdef WaveformPHY < handle
             end
 
             obj.Cfg = cfg;
+            % The executor, not a stale caller configuration, owns its mode.
+            % PHYBackend overrides may select waveform from an SLS config.
+            obj.Cfg.system.phyBackend = 'waveform';
             obj.StrictMode = logical(sixgr.util.structGet(params, "StrictMode", ...
                 sixgr.util.structGet(cfg, "run.strictMode", false)));
             obj.CompactPHYIO = logical(sixgr.util.structGet(params, "WaveformCompactPHYIO", ...
@@ -92,6 +95,8 @@ classdef WaveformPHY < handle
                     "WaveformPHY requires ctx.Grant to replay real system grants.");
             end
 
+            sixgr.system.waveform.assertPhysicalFeedbackAuthority(ctx.Grant);
+
             if obj.localShouldDeferReplay(ctx)
                 replay = obj.localDeferredReplay(ctx);
                 obj.LastReplay = replay;
@@ -99,12 +104,6 @@ classdef WaveformPHY < handle
             end
 
             grantReplay = ctx.Grant;
-            if isfield(grantReplay, "TBSBits")
-                grantReplay = rmfield(grantReplay, "TBSBits");
-            end
-            if isfield(grantReplay, "TBSBytes")
-                grantReplay = rmfield(grantReplay, "TBSBytes");
-            end
 
             cfgReplay = obj.localReplayConfig(ctx);
             replay = sixgr.system.waveform.replayGrant(cfgReplay, ...

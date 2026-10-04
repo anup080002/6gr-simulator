@@ -1,7 +1,9 @@
-function [out,timing,receivedAssignment]=receivedDLFeedbackFixture(cfg,slot,process,noiseVariance)
+function [out,timing,receivedAssignment,prepared]=receivedDLFeedbackFixture(cfg,slot,process,noiseVariance,feedbackSlot,counterDAI)
 % Actual coded PDSCH and clean decoded DCI through an isolated connector.
 % The caller's PUCCH can use a shared CDL owner; this source fixture does
 % NOT claim its isolated DL samples passed through that owner or access.
+if nargin<5, feedbackSlot=[]; end
+if nargin<6, counterDAI=[]; end
 cfg.channel.model='AWGN'; cfg.channel.fading.enabled=false; cfg.channel.fading.type='AWGN';
 cfg=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
 carrier=sixgr.phy.grid.makeCarrier(cfg); info=nrOFDMInfo(carrier);
@@ -9,6 +11,22 @@ cfg=sixgr.truth.bindSharedDataOccasion(cfg,slot,floor((slot-1)/carrier.SlotsPerF
 frame=floor((slot-1)/carrier.SlotsPerFrame)+1;
 grant=sixgr.link.resolveWaveformGrant(cfg,'DL',frame,'Slot',slot, ...
     'SFN',carrier.NFrame,'ControlAbsoluteSlot',slot-1,'HARQProcess',process);
+if ~isempty(feedbackSlot)
+    % Select timing BEFORE packing DCI or freezing the physical request.
+    validateattributes(feedbackSlot,{'numeric'},{'scalar','integer','finite','>',slot});
+    validateattributes(counterDAI,{'numeric'},{'scalar','integer','>=',0,'<=',3});
+    % This optional connected-feedback fixture needs a frozen serving-cell
+    % identity, not an alias added to a copied grant after transmission.
+    grant.ServingCell=grant.BaseStationID;
+    grant.K1=feedbackSlot-slot;
+    grant.DAI=counterDAI;
+    scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','DL');
+    grant=scheduler.attachCanonicalTimingDecision(grant);
+    grant.DCI=scheduler.buildDCIBitfield(grant);
+    grant.PHYGrant=sixgr.phy.grant.freezePHYGrant(cfg,'DL',grant, ...
+        'Slot',slot,'Frame',frame,'HARQContext',grant.HARQ);
+    grant.PHYGrantContextId=char(string(grant.PHYGrant.GrantContextId));
+end
 assert(grant.Frame==frame && grant.Slot==slot);
 assert(grant.Valid && grant.ExactPHYFeasible);
 control=sixgr.link.preparePDCCHTransmission(cfg,'Grant',grant,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits));
@@ -23,6 +41,11 @@ if connected
     assert(receivedAssignment.ControlAbsoluteSlot==slot-1 && ...
         receivedAssignment.DataAbsoluteSlot==slot-1 && ...
         receivedAssignment.HARQProcess==process);
+    if ~isempty(feedbackSlot)
+        assert(receivedAssignment.HARQFeedbackAbsoluteSlot==feedbackSlot-1 && ...
+            receivedAssignment.K1Slots==feedbackSlot-slot && ...
+            receivedAssignment.Fields.dai==counterDAI);
+    end
 else
     [rx,~]=sixgr.phy.dl.PDCCH_Rx(control.TransmitSamples,cfg,'Carrier',control.Tx.Carrier, ...
         'PDCCH',control.Tx.PDCCH,'RNTI',grant.RNTI,'K',numel(grant.DCI.Bits), ...
@@ -38,6 +61,7 @@ context=struct('GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'PrepareOnly',tru
 job=sixgr.truth.buildGrantPHYJob(cfg,'DL',cfg.channel.snr_dB,frame,[],context);
 job.StartSlotIndex=slot;
 result=sixgr.truth.executeGrantPHYJob(job); p=result.Result.PreparedTransmission;
+prepared=p;
 array=sixgr.rf.AntennaArrayFactory.build(cfg,'bs','signal','pdsch','numPorts',size(p.Tx.Waveform,2));
 x=p.Tx.Waveform*cast(array.PortToElementMatrix.','like',p.Tx.Waveform);
 numRx=grant.PHYGrant.AntennaArchitecture.NumRxAntennas;

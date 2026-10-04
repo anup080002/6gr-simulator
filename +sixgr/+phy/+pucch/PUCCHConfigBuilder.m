@@ -28,6 +28,16 @@ classdef PUCCHConfigBuilder
                 'Plan',plan,'ReceiverContext',sixgr.phy.pucch.UCIReportContext.fromReport(plan.TransmittedReport));
         end
         function out=planCSI(cfg,ueData,part1,part2,frame)
+            % Validate the CSI report/BWP binding through the SAME authority
+            % used by the independent scheduler before constructing the RRC
+            % list. Otherwise generic list validation masks a malformed CSI
+            % binding with MATLAB:expectedInteger and the two entrypoints
+            % disagree on the rejected configuration. No payload value is
+            % consulted to choose this resource.
+            section=sixgr.util.structGet(cfg,'validation.pucch_resources',struct());
+            if isstruct(section) && isscalar(section) && isfield(section,'csi_resource_ids')
+                sixgr.phy.pucch.resolveConfiguredCSIResourceID(section.csi_resource_ids);
+            end
             out=localPlan(cfg,ueData,int8([]),part1,part2,frame,false);
         end
         function out=planCombined(cfg,ueData,harq,part1,part2,frame)
@@ -207,6 +217,28 @@ resources=repmat(localResourcePrototype(),numel(resourcesIn),1);
 for i=1:numel(resourcesIn)
     resources(i)=localResource(resourcesIn(i),double(ueData.RNTI));
 end
+% Resource PRBs are BWP-relative. Preserve the installed BWP in the
+% immutable resource; the native mapper owns conversion to carrier REs.
+frame=sixgr.util.structGet(cfg,'phy.frame',struct());
+if isfield(frame,'ComponentCarriers')
+    carriers=frame.ComponentCarriers;
+    cc=carriers([carriers.CCID]==ueData.ComponentCarrier);
+    assert(isscalar(cc),'sixgr:phy:pucch:InvalidBWP','Select one installed PUCCH carrier.');
+    bwp=cc.BWPs([cc.BWPs.BWPID]==ueData.ActiveULBWP & upper(string({cc.BWPs.Direction}))=="UL");
+    assert(isscalar(bwp),'sixgr:phy:pucch:InvalidBWP','Select one installed PUCCH UL BWP.');
+    carrier=sixgr.util.structGet(cfg,'phy.carrier',struct());
+    assert(bwp.NStartBWP>=carrier.NStartGrid && ...
+        bwp.NStartBWP+bwp.NSizeBWP<=carrier.NStartGrid+carrier.NSizeGrid, ...
+        'sixgr:phy:pucch:InvalidBWP','PUCCH BWP must fit the executed carrier grid.');
+    for i=1:numel(resources)
+        resources(i).NStartBWP=double(bwp.NStartBWP);
+        resources(i).NSizeBWP=double(bwp.NSizeBWP);
+        d=resources(i); starts=d.StartPRB;
+        if d.IntraSlotHopping, starts=[starts d.SecondHopStartPRB]; end
+        assert(all(starts>=0 & starts+d.NumPRBs<=d.NSizeBWP), ...
+            'sixgr:phy:pucch:InvalidPRBAllocation','Configured PUCCH resource exceeds its installed BWP.');
+    end
+end
 assert(~isfield(section,'simultaneous_harq_ack_csi'), ...
     'sixgr:phy:pucch:InvalidMultiplexingPermission', ...
     'Install simultaneous_harq_ack_csi in format2, format3 or format4, not globally.');
@@ -237,13 +269,13 @@ rrc=sixgr.phy.pucch.PUCCHRRCContext(struct( ...
     "ConfigurationEpoch",epoch,"ResourceSets",sets, ...
     "Resources",resources,"DLDataToULACK", ...
     localRequired(section,["dl_data_to_ul_ack"]), ...
-    "SRResources",localInstalledSRResources(section), ...
+    "SRResources",localInstalledResourceIDs(section,'sr_resource_ids'), ...
     "SchedulingRequestResources",sixgr.util.structGet(section,'scheduling_request_resources',struct([])), ...
-    "CSIResources",localRequired(section,["csi_resource_ids"]), ...
+    "CSIResources",localInstalledResourceIDs(section,'csi_resource_ids'), ...
     "FormatConfigurations",policies, ...
     "CarrierConfiguration",grid, ...
-    "SPSPUCCHANResources",localRequired( ...
-    section,["sps_pucch_an_resource_ids"])));
+    "SPSPUCCHANResources",localInstalledResourceIDs( ...
+    section,'sps_pucch_an_resource_ids')));
 end
 
 function d=localResource(input,rnti)
@@ -432,16 +464,19 @@ state=sixgr.phy.pucch.PUCCHSpatialRelationState(struct( ...
     "AppliedBeamID",localRequiredNumber(p,["applied_beam_id"])));
 end
 
-function value=localInstalledSRResources(section)
-% An explicitly empty installed list means no SR resource. Missing YAML
+function value=localInstalledResourceIDs(section,name)
+% An explicitly empty installed list means no resource for that procedure.
+% In particular, a dynamically scheduled UE need not have DL SPS installed
+% (TS 38.331 SPS-Config / PUCCH-Config). Do not invent an SPS resource.
+% Missing YAML
 % authority is different from an empty list and must still fail validation.
-assert(isfield(section,'sr_resource_ids'), ...
-    'sixgr:phy:pucch:StaleConfiguration','Strict PUCCH configuration is missing sr_resource_ids.');
-value=section.sr_resource_ids;
+assert(isfield(section,name), ...
+    'sixgr:phy:pucch:StaleConfiguration','Strict PUCCH configuration is missing %s.',name);
+value=section.(name);
 if isempty(value) && (isnumeric(value) || iscell(value)), value=[]; end
 validateattributes(value,{'numeric'},{'real','finite','integer','nonnegative'});
 assert(isempty(value) || isvector(value),'sixgr:phy:pucch:InvalidResourceIndicator', ...
-    'Installed SR resource IDs must be a vector or an explicitly empty list.');
+    'Installed %s must be a vector or an explicitly empty list.',name);
 end
 
 function value=localRequired(input,names)

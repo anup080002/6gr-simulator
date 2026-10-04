@@ -1,0 +1,68 @@
+# Real full-band episode benchmark for the PUBLIC native SLS configuration.
+# Four independent starts establish execution/time/storage only. They cannot
+# meet production BLER/HARQ population gates or qualify a network result.
+# Retry opportunities retain the original TB; execution stops on CRC success.
+schema: sixgr.grant_calibration_campaign/v1
+campaign_id: nr_100mhz_public_grant_benchmark
+research_class: baseline_benchmark
+seed_base: 240000000
+channel_evolution: persistent_link_absolute_slot
+episodes_per_invocation: 4
+evidence_storage: lossless_path_gains_xor_v1
+collections:
+  - id: dl_rank2_tdla30
+    scenario_config: ../../simulator/configs/scenarios/sls_nr_tdd_21cell_connected.yaml
+    allocation:
+      direction: DL
+      rnti: 73
+      ue_index: 1
+      serving_cell: 1
+      prb_set: all_carrier
+      symbol_allocation: [2, 10]
+      mcs_table: qam64_table1
+      mcs_index: 1
+      rank: 2
+      precoder_real:
+        - [0.7071067811865475, 0]
+        - [0, 0.7071067811865475]
+        - [0, 0]
+        - [0, 0]
+      precoder_imag:
+        - [0, 0]
+        - [0, 0]
+        - [0, 0]
+        - [0, 0]
+      rv_sequence: [0, 2, 3]
+      absolute_slots: [1, 21, 41]
+      control_assumption: ideal_issued_grant
+    snr_histories_db: [40, 40, 40]
+    fit_starts_per_history: 1
+    validation_starts_per_history: 1
+  - id: ul_rank2_tdla30
+    scenario_config: ../../simulator/configs/scenarios/sls_nr_tdd_21cell_connected.yaml
+    allocation:
+      direction: UL
+      rnti: 73
+      ue_index: 1
+      serving_cell: 1
+      prb_set: all_carrier
+      symbol_allocation: [2, 10]
+      mcs_table: qam64_table1
+      mcs_index: 1
+      rank: 2
+      precoder_real:
+        - [0.7071067811865475, 0]
+        - [0, 0.7071067811865475]
+        - [0, 0]
+        - [0, 0]
+      precoder_imag:
+        - [0, 0]
+        - [0, 0]
+        - [0, 0]
+        - [0, 0]
+      rv_sequence: [0, 2, 3]
+      absolute_slots: [7, 27, 47]
+      control_assumption: ideal_issued_grant
+    snr_histories_db: [40, 40, 40]
+    fit_starts_per_history: 1
+    validation_starts_per_history: 1

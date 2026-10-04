@@ -19,15 +19,24 @@ artifacts.ChannelEstimationTracePath = fullfile(layout.ReportCSVDir, "live_chann
 artifacts.ChannelStateTracePath = fullfile(layout.ReportCSVDir, "live_channel_state_tti.csv");
 artifacts.StageTracePath = fullfile(layout.ReportCSVDir, "live_tx_rx_stage_trace.csv");
 
-waveformT = localTailTable(sixgr.util.structGet(meta, "WaveformPreviewTable", table()), 4096);
-moddemT = localBuildModulationDemodTable(localTailTable(trialT, 2048), localTailTable(constellationT, 4096));
-channelEstT = localBuildChannelEstimationTable(localTailTable(trialT, 2048));
-channelStateT = localBuildChannelStateTable(localTailTable(trialT, 2048));
-stageTraceT = localBuildTxRxStageTraceTable(localTailTable(trialT, 2048));
+waveformT = sixgr.util.structGet(meta, "WaveformPreviewTable", table());
+% Live previews are bounded; a final snapshot must not silently discard
+% earlier sweep points or users. This retains measured rows, never fills gaps.
+if ~logical(sixgr.util.structGet(meta, "FinalSnapshot", false))
+    waveformT = localTailTable(waveformT, 4096);
+    trialT = localTailTable(trialT, 2048);
+    constellationT = localTailTable(constellationT, 4096);
+end
+moddemT = localBuildModulationDemodTable(trialT, constellationT);
+channelEstT = localBuildChannelEstimationTable(trialT);
+channelStateT = localBuildChannelStateTable(trialT);
+stageTraceT = localBuildTxRxStageTraceTable(trialT);
 
-sixgr.util.csvWriteTable(artifacts.WaveformPreviewPath, waveformT,'RoundTripNumericText',true);
+sixgr.util.csvWriteTable(artifacts.WaveformPreviewPath, waveformT, ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
 sixgr.util.csvWriteTable(artifacts.ModulationTracePath, moddemT);
-sixgr.util.csvWriteTable(artifacts.ChannelEstimationTracePath, channelEstT);
+sixgr.util.csvWriteTable(artifacts.ChannelEstimationTracePath, channelEstT, ...
+    'PreserveSchema',true,'RoundTripNumericText',true);
 sixgr.util.csvWriteTable(artifacts.ChannelStateTracePath, channelStateT);
 sixgr.util.csvWriteTable(artifacts.StageTracePath, stageTraceT);
 
@@ -84,7 +93,12 @@ fields = [ ...
     "ReceiverHestSINR_dB","ReceiverHestSINRSource","PostEqSINR_dB","PostEqSINRSource", ...
     "MeasuredTrialSINR_dB","MeasuredTrialSINRSource","SINRMeasurementDomain","PowerReferencePlane","DopplerHz","UEID","UEIndex","RNTI", ...
     "BaseStationID","Frame","Slot","AllocatedPRBCount","PRBStart","MCSIndex","Layers","Rank", ...
-    "NMSE_dB","DetectionMetric","ChannelGain_dB","NoiseVariance","TimingOffset_samples","TimingEstimateUsed","UseIdealTimingSync","RankEstimate","ConditionNumber_dB", ...
+    "NMSE_dB","NMSESource","ChannelEstimateCaptureStatus","ChannelEstimateReferencePlane", ...
+    "ChannelEstimateReferenceUsedByReceiver","ChannelEstimateComparedValues", ...
+    "ChannelEstimateResourcesCSV","ChannelEstimateResourcesCSVSHA256", ...
+    "ChannelEstimateMATFile","ChannelEstimateMATFileSHA256", ...
+    "PilotReconstructionResidualRatio_dB", ...
+    "DetectionMetric","ChannelGain_dB","NoiseVariance","TimingOffset_samples","TimingEstimateUsed","UseIdealTimingSync","RankEstimate","ConditionNumber_dB", ...
     "EstimatedDopplerHz","PhaseTrackingError_deg","QCLAccuracy","Status"];
 T = localEnsureNonEmpty(localProjectTable(trialT, fields), fields);
 if isempty(T)
@@ -92,17 +106,25 @@ if isempty(T)
     T.NMSEInterpretation = strings(0, 1);
     return;
 end
-T.NMSEDefinition = repmat("pilot_residual_over_aligned_pilot_power", height(T), 1);
-T.NMSEInterpretation = repmat("nmse_db_is_10log10(error_power/reference_pilot_power)", height(T), 1);
+% A pilot-reconstruction residual is not independent channel-estimate NMSE.
+% Preserve the receiver/scorer's reference identity instead of relabeling
+% every numeric value using the old residual definition.
+T.NMSEDefinition = repmat("unavailable_reference_definition_not_recorded", height(T), 1);
+T.NMSEInterpretation = repmat("unavailable_independent_channel_reference", height(T), 1);
 nmse = nan(height(T), 1);
 try
     nmse = double(T.NMSE_dB);
 catch
 end
-posMask = isfinite(nmse) & nmse > 0;
-negMask = isfinite(nmse) & nmse <= 0;
-T.NMSEInterpretation(posMask) = "positive_nmse_db_can_occur_when_estimation_error_exceeds_reference_pilot_power";
-T.NMSEInterpretation(negMask) = "negative_nmse_db_means_estimation_error_is_below_reference_pilot_power";
+observed = isfinite(nmse) | (isinf(nmse) & nmse < 0);
+T.NMSEInterpretation(observed) = "unverified_channel_reference_provenance";
+scored = observed & string(T.ChannelEstimateCaptureStatus)=="measured_and_independently_scored_after_reception" & ...
+    ~ismissing(string(T.NMSESource)) & strlength(string(T.NMSESource))>0 & string(T.NMSESource)~="NaN" & ...
+    ~ismissing(string(T.ChannelEstimateReferencePlane)) & strlength(string(T.ChannelEstimateReferencePlane))>0 & ...
+    string(T.ChannelEstimateReferencePlane)~="NaN" & ...
+    double(T.ChannelEstimateReferenceUsedByReceiver)==0 & double(T.ChannelEstimateComparedValues)>0;
+T.NMSEDefinition(scored) = "10log10(sum_abs_Hest_minus_Href_squared_over_sum_abs_Href_squared)";
+T.NMSEInterpretation(scored) = "independent_post_decode_channel_error_on_retained_reference_resources_not_pilot_reconstruction_residual";
 T = sixgr.truth.canonicalizeLLSLiveSignalChainTable("channel_estimation", T);
 end
 
@@ -339,6 +361,13 @@ end
 
 function col = localDefaultColumn(nRows, fieldName)
 name = lower(char(string(fieldName)));
+if any(strcmp(name,["nmsesource","channelestimatecapturestatus", ...
+        "channelestimatereferenceplane","channelestimateresourcescsv", ...
+        "channelestimateresourcescsvsha256","channelestimatematfile", ...
+        "channelestimatematfilesha256"]))
+    col = strings(nRows,1);
+    return;
+end
     if any(strcmp(name, ["posteqsinrsource","posteqsinrvaluerole","posteqsinrvaluestatus","posteqsinrnareason","posteqsinrperlayer_db","evmproxysinrsource","evmproxysinrvaluerole","evmproxysinrvaluestatus","evmproxysinrnareason"]))
         col = strings(nRows, 1);
     elseif any(strcmp(name, ["direction","modulation","cqiderivedmodulation","status","channelmodel","nmsedefinition","nmseinterpretation","interferencemode","interferencepowersource","configuredsnrsource","snrvaluerole","systemlevelsinrsource","systemlevelsinrvaluerole","systemlevelsinrvaluestatus","systemlevelsinrdefinition","receiverhestsinrsource","receiverhestsinrvaluerole","receiverhestsinrvaluestatus","receiverhestsinrnareason","decodertruthproxysinrsource","decodertruthproxysinrvaluerole","decodertruthproxysinrvaluestatus","decodertruthproxysinrnareason","sinrvaluerole","sinrsource","sinrvaluestatus","sinrvaluedefinition","dopplersourcemode","dopplervaluerole","measuredtrialsinrsource","measuredtrialsinrvaluerole","measuredtrialsinrvaluestatus","measuredtrialsinrnareason","largescalesinrsource","largescalesinrvaluerole","servingrsrpsource","csi_rsrpsource","appliedlargescalegainsource","iqimbalancemodel","iqimbalancemeasurementsource","iqimbalancemeasurementstatus","txchainkernel","rxchainkernel","stageevidencesource","grantcontrolstate","rawtrialtracesource","configuredbeamselectionstrategy","beamselectionstrategy","beamselectionauthority","beamselectionpolicytype","selectedbeamvaluerole","selectedbeamvaluestatus","selectedbeamnareason","requestedbeamindexset","requestedbeamvaluerole","requestedbeamvaluestatus","requestedbeamnareason","precodersource","requestedprecodersource","appliedprecodersource","precodingmode","precodingapplicationstage","appliedbeamindexset","appliedbeamvaluerole","appliedbeamvaluestatus","appliedbeamnareason","appliedprecodervaluerole","appliedprecodervaluestatus","appliedprecodernareason","explicitprecoderreplaystatus","explicitprecoderreplayblocker","appliedprecoderpmitype","appliedprecodercodebookmode","requestedvsappliedprecoderpmimatchstatus","interfererprecodersourceset","interfererprecodingmodeset","interfererbeamindexsetsummary","grantcontextid","grantsharedstatecommitmode","mcsauthority","modulationauthority","grantoperatingpointsource","appliedoperatingpointsource","cfoestimateavailability","cfoerrordefinition","cfovaluestatus","timingestimateavailability","timingerrordefinition","timingvaluestatus","timingestimateapplicationpolicy","timingestimatestatus","largescalesinrvaluestatus","largescalesinrnareason","primarytruthvaluestatus","secondaryfieldgapreason","rowlifecyclestate","nareason","runuuid","runtag","scenarioid","runnerprofile","confighash","sourceartifact","sourcetable","artifactclass","semanticstate","bsantennaarrayclass","bsantennaelementclass","bsantennaarraytype","bsantennapolarization","ueantennaarrayclass","ueantennaelementclass","ueantennaarraytype","ueantennapolarization","antennaconfigsource","runtimeantennaobjectsource","antennaruntimeobjectvaluerole","antennaruntimeobjectvaluestatus","antennaruntimeobjectnareason","channelarraymodel","channelobjectsource","channelobjectclass","channelarrayhandlingstatus","channelarrayhandlingblocker","channelgeometrycouplinglevel","geometryadaptertype","geometryadaptersource","geometryadapterlimitation","geometryadapterportmapping","channelarrayvaluerole","channelarrayvaluestatus","interferencechannelobjectsource","interferencechannelobjectclass","interferencechannelarrayhandlingstatus","interferencechannelarrayhandlingblocker","interferencechannelarrayvaluerole","interferencechannelarrayvaluestatus","todsource","toasource","toaestimatesource","channeldelaysource","antennageometrysource","antennaevidencesource","sameflowevidencesource","runtimetracesource"]))

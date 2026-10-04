@@ -5,12 +5,14 @@ cfg=sixgr.util.mergeStruct(cfg,sixgr.lls6g.config.readConfigFile('simulator/conf
 cfg.phy.pucch.uciOnPUSCHEnabled=false;
 cfg.phy.csi.reportCSI=false; cfg.system.linkAbstraction.dynamicPUCCH.enabled=true;
 ledger=sixgr.system.SLSDynamicPUCCH(cfg);
+ledger.configureUEIdentities(4660);
 % Empty HARQ still reserves independently configured SR occasions.
 seen=0;
 for slot=0:19
     o=ledger.snapshot(slot,slot,1,struct([]));
     if isempty(o), continue; end
     assert(all([o.HARQBits]==0) && all([o.SRBits]==1));
+    assert(all([o.UEIndex]==1) && all([o.RNTI]==4660));
     assert(all(string({o.EvidenceKind})=="scheduled_receive_obligation"));
     partition=sixgr.util.resolveTDDSlotPartition(cfg,slot);
     budget=struct('PRBSet',0:cfg.phy.carrier.NSizeGrid-1,'SymbolAllocation',partition.ULSymbolAllocation);

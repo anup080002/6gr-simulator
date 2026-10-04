@@ -195,6 +195,7 @@ METRIC_OUTPUT_AVAILABILITY = {
     "disabled",
     "not_available",
     "not_supported",
+    "not_exercised",
 }
 DOMAIN_RUNTIME_PREFIXES = (
     "air_interface/csv/",
@@ -868,8 +869,14 @@ def _audit_link_table(
                 _text(row, "ExecutionID"),
             )
         else:
+            # A joint waveform sweep restarts its local slot/seed timeline
+            # at each configured SNR point. The requested operating point is
+            # part of trial identity; a measured SINR is not. Normalize the
+            # numeric spelling so e.g. 18 and 18.0 cannot evade duplicates.
+            point_snr = _number(row, "ConfiguredSNR_dB", "SNR_dB")
             key = (
                 _text(row, "Direction"),
+                "" if point_snr is None else format(point_snr, ".17g"),
                 _text(row, "Frame"),
                 _text(row, "Slot"),
                 _text(row, "UEID", "UEIndex"),
@@ -1180,7 +1187,39 @@ def _audit_control_table(path: str, header: list[str], rows: list[dict[str, str]
             and _text(row, "NAReason")
             == "control_blocked_no_nonoverlapping_pdcch_candidate"
         )
-        if (not pdcch_pretransmission_nontrial
+        # H0 has no target signal: do not demand fabricated signal SINR/EVM.
+        # Instead require the executed empty TX grid, actual noisy capture,
+        # attempted blind decodes and their CRC/false-alarm disposition.
+        pdcch_noise_trial = (
+            "pdcch" in path.lower()
+            and _boolean(row, "SignalPresent") is False
+            and _text(row, "TrialType").lower() == "noise_only"
+        )
+        noise_failures = []
+        if pdcch_noise_trial:
+            if _number(row, "TXGridEnergy") != 0:
+                noise_failures.append("noise_only_has_transmit_energy_or_missing_proof")
+            for name in ("RXGridEnergy", "NoiseVariance"):
+                value = _number(row, name)
+                if value is None or value <= 0:
+                    noise_failures.append(f"noise_only_missing_positive_{name}")
+            if not _whole(_number(row, "BlindDecodeCount"), 1):
+                noise_failures.append("noise_only_without_blind_decode")
+            metric = _number(row, "DecodingMetric")
+            if metric is None or metric < 0:
+                noise_failures.append("noise_only_missing_receiver_metric")
+            false_alarm = _boolean(row, "FalseAlarmFlag")
+            crc = _boolean(row, "DCICrcPass")
+            if false_alarm is None or crc is None or false_alarm != crc:
+                noise_failures.append("noise_only_crc_false_alarm_disagreement")
+            elif _text(row, "Status").upper() != ("FAIL" if false_alarm else "PASS"):
+                noise_failures.append("noise_only_status_false_alarm_disagreement")
+            if any(_number(row, name) is not None
+                   for name in ("EstimatedSINR_dB", "PostEqEVM", "NMSEChannelEst")):
+                noise_failures.append("noise_only_claims_target_signal_measurement")
+            failures.extend(f"row={index}:{issue}" for issue in noise_failures)
+        verified_noise_trial = pdcch_noise_trial and not noise_failures
+        if (not pdcch_pretransmission_nontrial and not verified_noise_trial
                 and not any(_number(row, name) is not None
                             for name in measured_fields if name in header)):
             failures.append(f"row={index}:no_finite_runtime_measurement")
@@ -1607,7 +1646,9 @@ def _audit_component_bler_outputs(
     return checks
 
 
-def _adaptive_policy_expectation(row: dict[str, str]) -> tuple[bool, str]:
+def _adaptive_policy_expectation(
+    row: dict[str, str], mcs_reference_rows: list[dict[str, str]] | None = None,
+) -> tuple[bool, str]:
     if _boolean(row, "AdaptiveMode") is not True:
         return True, "not_applicable_fixed_operating_point"
     reasons: list[str] = []
@@ -1621,11 +1662,6 @@ def _adaptive_policy_expectation(row: dict[str, str]) -> tuple[bool, str]:
     ]
     if not policy or policy in {"fixed", "configured_fixed", "disabled", "off", "none"}:
         reasons.append("adaptive_policy_not_configured")
-    if not (
-        _boolean(row, "LinkAdaptationScheduled") is True
-        and _boolean(row, "LinkAdaptationApplied") is True
-    ):
-        reasons.append("adaptive_schedule_or_apply_evidence_missing")
     scheduled_mcs = _number(row, "ScheduledMCS")
     transmitted_mcs = _number(row, "TransmittedMCS")
     if not _close(scheduled_mcs, transmitted_mcs, atol=0):
@@ -1646,6 +1682,41 @@ def _adaptive_policy_expectation(row: dict[str, str]) -> tuple[bool, str]:
         != _text(row, "TransmittedModulation").upper()
     ):
         reasons.append("scheduled_transmitted_modulation_mismatch")
+    # A post-TB measurement/queued decision cannot select this same TB.
+    # Bootstrap has no applied feedback; a previously applied decision may
+    # remain in effect even when no new decision is scheduled after this TB.
+    if lineage[0] == "configured_initial_mcs":
+        initial = _number(row, "ConfiguredInitialMCS")
+        reference = [item for item in (mcs_reference_rows or [])
+                     if _text(item, "Direction").upper() == _text(row, "Direction").upper()
+                     and _text(item, "MCSTable") == _text(row, "ConfiguredMCSTable")
+                     and _number(item, "MCSIndex") == initial]
+        if (
+            _boolean(row, "LinkAdaptationApplied") is not False
+            or any(_number(row, key) is not None for key in (
+                "AppliedFeedbackSourceSlot", "AppliedFeedbackAgeSlots",
+                "AppliedDecisionCQI", "AppliedDecisionCQIBasedMCS", "AppliedDecisionMCS"))
+            or any(value != "configured_initial_mcs" for value in lineage)
+            or _text(row, "MCSValueStatus") != "bootstrap_not_measured_cqi"
+            or initial is None or scheduled_mcs != initial
+            or len(reference) != 1
+            or not _text(reference[0], "Modulation")
+            or _text(reference[0], "Modulation").upper() != _text(row, "TransmittedModulation").upper()
+        ):
+            reasons.append("configured_bootstrap_execution_mismatch")
+        reasons = list(dict.fromkeys(reasons))
+        return not reasons, "|".join(reasons)
+    if _boolean(row, "LinkAdaptationApplied") is not True:
+        reasons.append("adaptive_applied_decision_missing")
+    slot = _number(row, "Slot")
+    source = _number(row, "AppliedFeedbackSourceSlot")
+    age = _number(row, "AppliedFeedbackAgeSlots")
+    delay = _number(row, "ConfiguredFeedbackDelaySlots")
+    if not (_whole(slot, 0) and _whole(source, 0) and source < slot
+            and age == slot - source and _whole(delay, 0) and age >= delay):
+        reasons.append("adaptive_applied_feedback_clock_invalid")
+    if not _close(_number(row, "AppliedDecisionMCS"), transmitted_mcs, atol=0):
+        reasons.append("adaptive_applied_decision_mcs_mismatch")
     if not _text(row, "AdaptationEvidenceId") or not any(lineage):
         reasons.append("adaptive_decision_lineage_missing")
     forbidden = (
@@ -1657,8 +1728,8 @@ def _adaptive_policy_expectation(row: dict[str, str]) -> tuple[bool, str]:
     if (
         ("cqi" in policy or policy in {"amc", "adaptive"})
         and not (
-            _number(row, "WidebandCQI") is not None
-            and _number(row, "CQIDerivedMCS") is not None
+            _number(row, "AppliedDecisionCQI") is not None
+            and _number(row, "AppliedDecisionCQIBasedMCS") is not None
             and any("cqi" in value for value in lineage)
         )
     ):
@@ -1674,6 +1745,7 @@ def _audit_mimo_rank_layer_table(
     header: list[str],
     rows: list[dict[str, str]],
     link_rows: dict[str, list[dict[str, str]]],
+    mcs_reference_rows: list[dict[str, str]] | None = None,
 ) -> list[AuditCheck]:
     required_columns = {
         "RunId", "ScenarioName", "TrialId", "Direction", "CellId", "UEId",
@@ -1901,7 +1973,13 @@ def _audit_mimo_rank_layer_table(
                     or _close(_number(row, "TransmittedMCS"), _number(row, "ConfiguredMCS"), atol=0)
                 )
             )
-            adaptive_match, adaptive_reason = _adaptive_policy_expectation(row)
+            adaptive_match, adaptive_reason = _adaptive_policy_expectation(row, mcs_reference_rows)
+            decision_status = _text(row, "MCSValueStatus").lower()
+            decision_observed = bool(adaptive and adaptive_match
+                                     and _boolean(row, "LinkAdaptationApplied") is True
+                                     and decision_status and not any(token in decision_status for token in (
+                                         "bootstrap", "pending_data_feedback", "missing", "unavailable",
+                                         "rejected", "error")))
             operating_contract = operating_match if not adaptive else adaptive_match
             mu_required = _boolean(row, "MUExecutionRequired") is True
             mu_match = _boolean(row, "MUExecutionMatch")
@@ -1927,6 +2005,7 @@ def _audit_mimo_rank_layer_table(
                 "AdaptivePolicyRequired": adaptive,
                 "AdaptivePolicyMatch": adaptive_match,
                 "AdaptivePolicyConformance": adaptive_match,
+                "AdaptiveFeedbackDecisionObserved": decision_observed,
                 "OperatingPointContractMatch": operating_contract,
                 "MUExecutionMatch": expected_mu_match,
                 "ExactConfiguredMatch": exact_spatial_match and operating_match,
@@ -2029,7 +2108,8 @@ def _audit_mimo_rank_layer_output(
     if not header and not rows:
         return []
     return _audit_mimo_rank_layer_table(
-        MIMO_RANK_LAYER_TABLE, header, rows, link_rows
+        MIMO_RANK_LAYER_TABLE, header, rows, link_rows,
+        _read_rows(run_root / "reports/csv/mcs_table_reference.csv")[1],
     )
 
 
@@ -2507,11 +2587,26 @@ def _audit_mimo_per_trial_companion(
     return checks
 
 
+def _mimo_aggregate_value(row: dict[str, str], field: str) -> tuple[float | None, bool]:
+    """Keep absent values distinct from invalid tokens and exact zero NMSE."""
+    text = _text(row, field)
+    if not text:
+        return None, True
+    try:
+        value = float(text)
+    except ValueError:
+        return None, False
+    if "NMSE" in field:
+        return value, math.isfinite(value) or value == -math.inf
+    return value, math.isfinite(value) and value >= 0
+
+
 def _audit_mimo_layer_metrics_table(
     path: str,
     header: list[str],
     rows: list[dict[str, str]],
     rank_rows: list[dict[str, str]],
+    link_rows: dict[str, list[dict[str, str]]] | None = None,
 ) -> list[AuditCheck]:
     required = {
         "RunId", "TrialId", "CellId", "UEId", "Direction", "Slot",
@@ -2528,7 +2623,13 @@ def _audit_mimo_layer_metrics_table(
     if len(rows) != expected_count:
         failures.append(f"layer_row_count_mismatch:{len(rows)}!={expected_count}")
     offset = 0
+    source_offsets: dict[str, int] = {}
     for rank_index, rank in enumerate(rank_rows, start=1):
+        direction = _text(rank, "Direction").upper()
+        source_index = source_offsets.get(direction, 0)
+        source_offsets[direction] = source_index + 1
+        sources = (link_rows or {}).get(direction, [])
+        raw = sources[source_index] if source_index < len(sources) else None
         layers = int(_number(rank, "TransmittedLayers") or 0)
         measured_ports = [
             token.strip() for token in _text(rank, "DMRSPorts").split("|")
@@ -2581,9 +2682,29 @@ def _audit_mimo_layer_metrics_table(
                     # A trial aggregate is retained explicitly, never copied
                     # into a layer measurement. This validates scope, not
                     # qualification of an unavailable per-layer quantity.
-                    if (_text(row, scope_status) != "unavailable_trial_aggregate_only"
-                            or _number(row, field) is not None
-                            or _number(row, "Trial" + field) is None):
+                    trial_value, valid = _mimo_aggregate_value(row, "Trial" + field)
+                    expected_status = ("unavailable_no_trial_measurement" if trial_value is None
+                                       else "unavailable_trial_aggregate_only")
+                    scope_valid = (valid and not _text(row, field)
+                                   and _text(row, scope_status) == expected_status)
+                    if link_rows is not None:
+                        raw_field = "NMSE_dB" if field == "ChannelEstimateNMSEdB" else field
+                        raw_source = "NMSESource" if field == "ChannelEstimateNMSEdB" else "LLRMeanAbsSource"
+                        expected_value, raw_valid = _mimo_aggregate_value(raw or {}, raw_field)
+                        # The ordered primary trial is the authority, including
+                        # its absence reason. Never accept a manufactured
+                        # aggregate or copy one into a per-layer column.
+                        values_equal = trial_value == expected_value or (
+                            trial_value is not None and expected_value is not None
+                            and math.isclose(trial_value, expected_value, abs_tol=1e-8))
+                        scope_valid = (scope_valid and raw is not None and raw_valid and values_equal
+                                       and _text(row, "Trial" + field.replace("dB", "") + "Source")
+                                       == _text(raw or {}, raw_source))
+                    elif trial_value is None:
+                        # Legacy aggregate-only audits cannot establish missing
+                        # evidence without the corresponding primary trial.
+                        scope_valid = False
+                    if not scope_valid:
                         failures.append(prefix + f":{field}_trial_scope_invalid")
                     continue
                 if field == "EVMdB" and "EVMrms" in header:
@@ -2733,7 +2854,7 @@ def _audit_beam_precoder_table(
         failures.append(f"row_count_mismatch:{len(rows)}!={len(sources)}")
     numeric_mapping = {
         "frame": ("Frame",), "slot": ("Slot",),
-        "ue_id": ("UEID", "UEIndex", "UE", "RNTI"), "rnti": ("RNTI",),
+        "ue_id": ("UEID", "UEIndex", "UE"), "rnti": ("RNTI",),
         "cell_id": ("CellID", "ServingCell"),
         "selected_beam_index": ("SelectedBeamIndex",),
         "best_beam_index": ("BestBeamIndex",), "beam_hit": ("BeamHit",),
@@ -3468,7 +3589,7 @@ def _audit_mimo_companion_outputs(
             ))
         elif relative.endswith("mimo_layer_metrics.csv"):
             checks.extend(_audit_mimo_layer_metrics_table(
-                relative, header, rows, rank_rows
+                relative, header, rows, rank_rows, link_rows
             ))
         elif relative.endswith("beam_codebook.csv"):
             checks.extend(_audit_mimo_beam_codebook_table(
@@ -3599,17 +3720,9 @@ def _audit_harq_observation_tables(
     )]
     expected: list[tuple[str, dict[str, str]]] = []
     for direction in ("DL", "UL"):
-        source = link_rows.get(direction, [])
-        snr_order: list[float | None] = []
-        for row in source:
-            snr = _number(row, "SNR_dB")
-            if snr not in snr_order:
-                snr_order.append(snr)
-        for snr in snr_order:
-            expected.extend(
-                (direction, row) for row in source
-                if _optional_number_equal(_number(row, "SNR_dB"), snr, atol=1e-9)
-            )
+        # This table is a projection of primary attempts, not an SNR-grouped
+        # summary. Repeated SNRs may belong to different sweep occurrences.
+        expected.extend((direction, row) for row in link_rows.get(direction, []))
     failures: list[str] = []
     if len(timeline_rows) != len(expected):
         failures.append(f"row_count_mismatch:{len(timeline_rows)}!={len(expected)}")
@@ -3622,6 +3735,13 @@ def _audit_harq_observation_tables(
         "WidebandCQI": ("WidebandCQI",), "CQIDerivedMCS": ("CQIDerivedMCS",),
         "CQIDerivedTargetCodeRate": ("CQIDerivedTargetCodeRate",),
         "PMI": ("PMI",), "CRI": ("CRI",), "RankIndicator": ("RankIndicator",),
+        "SweepPointIndex": ("SweepPointIndex",), "BaseStationID": ("BaseStationID",),
+        "UEIndex": ("UEIndex",), "RNTI": ("RNTI",), "HarqID": ("HarqID",), "RV": ("RV",),
+        "CurrentDecodeOK": ("CurrentDecodeOK", "HARQCurrentDecodeOK"),
+        "CombinedDecodeOK": ("CombinedDecodeOK", "HARQCombinedDecodeOK"),
+        "IsRetransmission": ("IsRetransmission", "HARQIsRetransmission"),
+        "HARQCombiningApplied": ("HARQCombiningApplied",),
+        "LLRCombiningGain_dB": ("LLRCombiningGain_dB", "HARQLLRCombiningGain_dB"),
     }
     for index, (row, expected_item) in enumerate(zip(timeline_rows, expected), start=1):
         direction, source = expected_item
@@ -3631,12 +3751,17 @@ def _audit_harq_observation_tables(
         if _text(row, "TraceSource") != direction.lower() + "_raw_link_trials":
             failures.append(prefix + ":TraceSource_invalid")
         for target, aliases in numeric_fields.items():
-            if target not in timeline_header and _number(source, *aliases) is None:
+            # An explicitly unknown primary value must not be replaced by a
+            # finite lower-priority alias. Mirror the MATLAB producer policy.
+            primary_name = next((name for name in aliases if name in source), "")
+            expected_number = _number(source, primary_name)
+            if target not in timeline_header and not primary_name:
                 continue
-            if not _optional_number_equal(_number(row, target), _number(source, *aliases), atol=1e-9):
+            if target not in timeline_header or not _optional_number_equal(
+                    _number(row, target), expected_number, atol=1e-9):
                 failures.append(prefix + f":{target}_not_primary_source")
-        for field in ("Status", "CQIDerivedModulation"):
-            if field in timeline_header and _text(row, field) != _text(source, field):
+        for field in ("Status", "CQIDerivedModulation", "TBId"):
+            if (field in timeline_header or field in source) and _text(row, field) != _text(source, field):
                 failures.append(prefix + f":{field}_not_primary_source")
         if _text(row, "Notes") != "Actual frame-level DL/UL decode outcome for live HARQ visibility.":
             failures.append(prefix + ":Notes_invalid")
@@ -5729,6 +5854,56 @@ def _audit_dynamic_tdd_runtime_channel_reciprocity(
         return []
 
     rows = [row for direction in ("DL", "UL") for row in link_rows.get(direction, [])]
+    # Independently executed calibration links do not share a connected
+    # DL/UL fading timeline. Require both installed configuration and actual
+    # producer taxonomy before declaring that particular audit inapplicable;
+    # a missing channel key, by itself, is never an exemption.
+    users = resolved.get("users", {})
+    independent_calibration = (
+        isinstance(users, dict)
+        and users.get("execution_model") == "independent_link_sweep"
+        and all(
+            isinstance(resolved.get(channel), dict)
+            and resolved[channel].get("execution_profile") == "phy_calibration"
+            for channel in ("pdsch", "pusch")
+        )
+    )
+    if independent_calibration and rows:
+        scope_failures = []
+        expected_backends = {
+            "DL": "legacy_pdsch_calibration_facades",
+            "UL": "canonical_pusch_waveform_chain",
+        }
+        for direction in ("DL", "UL"):
+            for index, row in enumerate(link_rows.get(direction, []), start=1):
+                if (
+                    _text(row, "ExecutionProfile") != "phy_calibration"
+                    or _text(row, "ExecutionTaxonomy") != "isolated_phy_calibration"
+                    or _text(row, "ExecutionBackend") != expected_backends[direction]
+                    or _boolean(row, "SameScenarioInPathEligible") is True
+                    or _boolean(row, "RuntimeChannelReciprocityExact") is True
+                ):
+                    scope_failures.append(f"{direction}:row={index}:calibration_execution_scope_mismatch")
+        scope_check = _check(
+            "runtime_channel_reciprocity",
+            "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv",
+            "independent_calibration_execution_scope",
+            rows,
+            scope_failures,
+        )
+        if scope_failures:
+            return [scope_check]
+        not_applicable = _check(
+            "runtime_channel_reciprocity",
+            "air_interface/csv/dl_pdsch_trials.csv|air_interface/csv/ul_pusch_trials.csv",
+            "dynamic_TDD_shared_exact_fading_state",
+            rows, [], required=False, evaluated=False,
+        )
+        not_applicable.details = (
+            "not_applicable_independent_phy_calibration;"
+            "connected_reciprocity_not_executed_or_qualified"
+        )
+        return [scope_check, not_applicable]
     provenance_failures: list[str] = []
     state_keys: set[str] = set()
     seeds: set[int] = set()
@@ -6680,6 +6855,44 @@ def _domain_table_applicability(
     the owning feature is explicitly disabled. Unknown tables remain
     required and fail closed.
     """
+
+    if relative in {
+        "reports/csv/causal_phy_chain_audit.csv",
+        "reports/csv/causal_phy_parameter_authority.csv",
+    }:
+        # The MATLAB producer writes typed empty tables when this optional
+        # audit is disabled. Require its explicit, identity-bound receipt;
+        # missing rows alone must never disable a requested causal audit.
+        _header, observed = _read_rows(run_root / relative)
+        _gate_header, gates = _read_rows(
+            run_root / "reports/csv/causal_phy_chain_gate.csv"
+        )
+        configured = _nested_value(
+            resolved_config, "validation.causal_phy_chain_audit", {}
+        )
+        requested = isinstance(configured, dict) and any(
+            _truthy_config(configured, field) for field in ("enabled", "required")
+        )
+        if not observed and not requested and len(gates) == 1:
+            gate = gates[0]
+            expected_run = _text(scenario_summary, "RunID", "RunId") or run_root.name
+            identity_matches = (
+                _text(gate, "RunID") == expected_run
+                and bool(_text(gate, "ConfigHash"))
+                and _text(gate, "ConfigHash") == _text(scenario_summary, "ConfigHash")
+            )
+            if (identity_matches
+                    and _boolean(gate, "Enabled") is False
+                    and _boolean(gate, "Required") is False
+                    and _boolean(gate, "Pass") is True
+                    and _text(gate, "Status") == "DISABLED_BY_YAML"
+                    and not _text(gate, "FailureReason")
+                    and all(_number(gate, field) == 0 for field in (
+                        "StageCount", "RequiredStageFailureCount",
+                        "DisabledExecutionFailureCount", "ParameterBindingFailureCount",
+                    ))):
+                return False, False
+        return True, True
 
     if relative == "reports/csv/geometry_plot_lineage.csv":
         # This is a lineage ledger for producer-owned geometry rasters, not
@@ -8153,7 +8366,9 @@ def _ul_harq_decision_kpi_failures(row, observations):
         process = _number(item, "HarqID")
         if (not tb_id or not _whole(slot, 0) or not _whole(process, 0)):
             return ["ul_harq_decision_identity_invalid"]
-        key = (tb_id, slot, process)
+        scope = tuple(_number(item, field) for field in
+                      ("SweepPointIndex", "BaseStationID", "UEIndex", "RNTI"))
+        key = (tb_id, slot, process, scope)
         if key in keys:
             return ["duplicate_ul_harq_decision"]
         keys.add(key)
@@ -8178,6 +8393,42 @@ def _ul_harq_decision_kpi_failures(row, observations):
     elif _number(row, "Value") is not None:
         failures.append("ul_nack_rate_requires_gnb_decode_decision_population")
     return failures
+
+
+def _independent_waveform_kpi_scope_valid(row: dict[str, str], config: dict[str, Any]) -> bool:
+    """Validate the exporter's scope reason against resolved execution policy.
+
+    An absent runtime table never establishes independence. In particular,
+    waveform_bundle also owns connected runs, so the runner name alone is
+    insufficient. This exemption never applies to BLER/BER/PHY throughput.
+    """
+    reason = _text(row, "ApplicabilityReason")
+    if not reason.startswith("independent_waveform_attempts_"):
+        return True
+    expected_policy = {
+        "scenario.runner_profile": "waveform_bundle",
+        "users.execution_model": "independent_link_sweep",
+        "pdsch.execution_profile": "phy_calibration",
+        "pusch.execution_profile": "phy_calibration",
+    }
+    if any(str(_nested_value(config, key, "")).strip().lower() != value
+           for key, value in expected_policy.items()):
+        return False
+    name = _text(row, "KPIName")
+    suffixes = {
+        "_HARQ_NACK_Rate": "no_connected_harq_lifecycle",
+        "_Retransmission_Rate": "no_connected_harq_lifecycle",
+        "_PRB_Utilization": "no_scheduler",
+        "_Latency_ms": "no_delivery_clock",
+        "_TB_Delivery_Latency_ms": "no_delivery_clock",
+        "_MAC_Goodput_Mbps": "no_protocol_delivery",
+        "_Application_Goodput_Mbps": "no_protocol_delivery",
+    }
+    expected = next(("independent_waveform_attempts_" + value
+                     for suffix, value in suffixes.items()
+                     if name in {"DL" + suffix, "UL" + suffix}), None)
+    return (expected is not None and reason == expected
+            and _boolean(row, "Applicable") is False)
 
 
 def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
@@ -8300,6 +8551,7 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
     ))
 
     reconstruction_header, reconstruction_rows = _read_rows(run_root / reconstruction_rel)
+    resolved_config = _load_resolved_config(run_root)
     reconstruction_failures: list[str] = []
     reconstruction_required = {
         "KPIName", "Direction", "FormulaId", "FormulaVersion", "Value",
@@ -8329,6 +8581,8 @@ def _audit_kpi_reporting_tables(run_root: Path) -> list[AuditCheck]:
             reconstruction_failures.append(prefix + ":formula_id_mismatch")
         direction = _text(row, "Direction")
         applicable = _boolean(row, "Applicable")
+        if not _independent_waveform_kpi_scope_valid(row, resolved_config):
+            reconstruction_failures.append(prefix + ":independent_waveform_scope_not_configured")
         source_relative = _text(row, "SourceTablePaths").replace("\\", "/")
         manifest_row = next((
             item for item in manifest_rows

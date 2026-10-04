@@ -69,7 +69,7 @@ for i = 1:size(csvSpecs, 1)
     % generic CSV writer otherwise prunes those all-missing/all-empty
     % columns before the later sanitizer has a chance to preserve them.
     sixgr.util.csvWriteTable(csvSpecs{i, 1}, csvSpecs{i, 2}, ...
-        "PreserveSchema", true);
+        "PreserveSchema", true, "RoundTripNumericText", true);
     artifacts.csv{end+1} = csvSpecs{i, 1}; %#ok<AGROW>
 end
 jsonPath = fullfile(layout.ReportDir, "json", "mimo_toolbox_capabilities.json");

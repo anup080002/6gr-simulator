@@ -23,15 +23,20 @@ end
 period=double(sixgr.util.structGet(timing,'PeriodCarrierSlots',NaN));
 subframesPerPRACHSlot=double(sixgr.util.structGet( ...
     timing,'SubframesPerPRACHSlot',NaN));
-carrier=sixgr.phy.grid.makeCarrier(cfg);
-slotsPerSubframe=double(carrier.SlotsPerSubframe);
-starts=double(occasions.PRACHSlot(:))*subframesPerPRACHSlot*slotsPerSubframe;
+% The resolver has already mapped each PRACH-clock occasion, including
+% fractional short-preamble origins, onto the carrier sample/slot clock.
+% Recomputing PRACHSlot*duration can yield a fractional carrier-slot value
+% even though the received waveform has an exact containing AbsoluteSlot.
+prachSlots=double(occasions.PRACHSlot(:));
+starts=double(occasions.AbsoluteSlot(:));
 if ~(isscalar(period) && isfinite(period) && period>=1 && period==fix(period) && ...
         isscalar(subframesPerPRACHSlot) && isfinite(subframesPerPRACHSlot) && ...
-        subframesPerPRACHSlot>0 && all(isfinite(starts)) && ...
-        all(starts>=0) && all(starts==fix(starts)))
+        subframesPerPRACHSlot>0 && all(isfinite(prachSlots)) && ...
+        all(prachSlots>=0) && all(prachSlots==fix(prachSlots)) && ...
+        all(isfinite(starts)) && all(starts>=0) && ...
+        all(starts<period) && all(starts==fix(starts)))
     error('sixgr:truth:InvalidPRACHWaveformTimingAuthority', ...
-        'Canonical PRACH waveform origins must map exactly to carrier slots.');
+        'Canonical PRACH occasions must have valid resolved carrier slots.');
 end
 % One full carrier-slot planning horizon covers the bounded received-clock
 % phase/common N_TA offset without rewriting an already committed interval.

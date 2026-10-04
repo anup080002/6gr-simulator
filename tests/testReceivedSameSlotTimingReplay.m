@@ -11,7 +11,7 @@ buffer.append(sixgr.phy.waveform.WaveformChunk(c.RXAfterDigitalGainCompensation,
 reference=sixgr.truth.retainReceivedSRSTimingReference(p,buffer,c.ReceivedResult);
 assert(isa(reference,'sixgr.phy.sync.ReceivedULTimingReference'));
 carrier=sixgr.phy.grid.makeCarrier(cfg);
-slot0=round(reference.NominalStartSample/(fs*1e-3*15/carrier.SubcarrierSpacing));
+slot0=sixgr.phy.frame.slotIndexFromStartSample(carrier,reference.NominalStartSample,fs);
 reject(@()reference.alignObservation(cfg,buffer,slot0),'sixgr:phy:sync:FutureULTimingReference');
 [samples,evidence]=reference.alignCompletedObservation(cfg,buffer,slot0);
 assert(evidence.ReferenceAgeSlots==0 && evidence.ReferenceAvailableAtSample==buffer.EndSampleExclusive);

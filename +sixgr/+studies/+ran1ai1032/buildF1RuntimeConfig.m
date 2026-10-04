@@ -84,11 +84,16 @@ if cfg.channel.awgnOnly
     assert(norm(H'*H-eye(nt),'fro')<1e-10, ...
         'sixgr:ran1ai1032:F1SpatialPower','AWGN channel must conserve total power.');
 end
-tableA=sixgr.studies.ran1ai1032.MCSCatalog.optionA();
-entry=tableA(tableA.entry_id==string(caseRow.EntryID),:);
-assert(height(entry)==1,'sixgr:ran1ai1032:F1Entry','Unknown immutable F1 entry.');
+comparator=sixgr.studies.ran1ai1032.MCSCatalog.correctedComparator(e.representation_id);
+entry=comparator(comparator.entry_id==string(caseRow.EntryID),:);
+assert(height(entry)==1 && entry.entry_kind=="regular", ...
+    'sixgr:ran1ai1032:F1Entry','F1 requires one regular entry in its configured comparator.');
+assert(entry.Qm==caseRow.Qm && ...
+    abs(entry.target_code_rate_x1024-caseRow.TargetCodeRateX1024)<1e-10, ...
+    'sixgr:ran1ai1032:F1EntryIdentity', ...
+    'The comparator local index changed the selected B/H physical pair.');
 cfg.phy.pusch.enable=true;
-cfg.phy.pusch.mcsTable='experimental_6gr_ai1032_option_a';
+cfg.phy.pusch.mcsTable=char(e.mcs_table);
 cfg.phy.pusch.experimentalMCSTable=sixgr.phy.research.resolveExperimentalMCSTable(cfg.phy.pusch.mcsTable);
 cfg.phy.pusch.researchTransportPolicy=sixgr.lls6g.config.readConfigFile(string(e.research_transport_policy_path));
 assert(string(cfg.phy.pusch.researchTransportPolicy.meta.research_class)== ...
@@ -136,6 +141,7 @@ cfg.outputs.rawIQCaptureEnabled=false; cfg.outputs.saveRawWaveforms=false;
 cfg.lls6g.users.enabled=false; cfg.lls6g.users.n_users=1;
 cfg.lls6g.users.beam_selection_strategy='fixed_first_beam';
 cfg.meta.f1StudyCaseID=char(caseRow.CaseID);
+cfg.meta.f1RepresentationID=char(string(e.representation_id));
 cfg.meta.f1RFBranch=char(e.rf_branch);
 cfg.meta.f1PowerPlane='normalized_total_UE_power_occupied_RE_reference';
 branch=sixgr.studies.ran1ai1032.resolveF1RFBranch(study,cfg.phy.pusch.modulation);

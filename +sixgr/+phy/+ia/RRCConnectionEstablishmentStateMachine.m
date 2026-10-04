@@ -14,10 +14,18 @@ classdef RRCConnectionEstablishmentStateMachine
                 NaN, @localTransactionID);
             addParameter(p, "UEIdentity", "", @localTextScalar);
             addParameter(p, "ReceivedUEIdentity", "", @localTextScalar);
+            % Msg4 reception and UL SetupComplete are separate observations.
+            % A CRC-failed UL message has no decoded transaction/identity.
+            addParameter(p, "SetupCompleteTransactionID", ...
+                NaN, @localOptionalTransactionID);
+            addParameter(p, "SetupCompleteUEIdentity", "", @localTextScalar);
             addParameter(p, "SRB1InstalledBeforeSetupComplete", ...
                 false, @localLogicalScalar);
             parse(p, varargin{:});
             opt = p.Results;
+            opt.SetupCompleteIdentityEvidenceProvided = ...
+                ~ismember("SetupCompleteTransactionID", string(p.UsingDefaults)) || ...
+                ~ismember("SetupCompleteUEIdentity", string(p.UsingDefaults));
 
             events = split(string(opt.EventSequence), "|");
             events = upper(strtrim(events(:)));
@@ -71,6 +79,10 @@ classdef RRCConnectionEstablishmentStateMachine
                 "UEIdentity", string(opt.UEIdentity), ...
                 "ReceivedUEIdentity", ...
                     string(opt.ReceivedUEIdentity), ...
+                "SetupCompleteTransactionID", double(opt.SetupCompleteTransactionID), ...
+                "SetupCompleteUEIdentity", string(opt.SetupCompleteUEIdentity), ...
+                "SetupCompleteIdentityEvidenceProvided", ...
+                    logical(opt.SetupCompleteIdentityEvidenceProvided), ...
                 "SRB1InstalledBeforeSetupComplete", ...
                     logical(opt.SRB1InstalledBeforeSetupComplete), ...
                 "FinalUEState", ueState, ...
@@ -137,6 +149,11 @@ switch event
             errorID = "sixgr:phy:ia:InvalidRRCStateTransition";
         elseif ~logical(opt.SRB1InstalledBeforeSetupComplete)
             errorID = "sixgr:phy:ia:RRCSetupCompleteFailure";
+        elseif opt.SetupCompleteIdentityEvidenceProvided && ...
+                (~isfinite(opt.SetupCompleteTransactionID) || ...
+                opt.SetupCompleteTransactionID ~= opt.ReceivedTransactionID || ...
+                string(opt.SetupCompleteUEIdentity) ~= string(opt.ReceivedUEIdentity))
+            errorID = "sixgr:phy:ia:RRCSetupCompleteFailure";
         else
             ue = "CONNECTED";
             gnb = "CONNECTED";
@@ -156,6 +173,8 @@ switch event
     case {"WRONG_IDENTITY", "WRONG_TRANSACTION", "T300_EXPIRE"}
         if ue == "WAIT_RRC_SETUP"
             errorID = "sixgr:phy:ia:RRCSetupFailure";
+        elseif ue == "WAIT_SETUP_COMPLETE"
+            errorID = "sixgr:phy:ia:RRCSetupCompleteFailure";
         else
             errorID = "sixgr:phy:ia:InvalidRRCStateTransition";
         end
@@ -196,4 +215,9 @@ end
 
 function tf = localLogicalScalar(value)
 tf = (islogical(value) || isnumeric(value)) && isscalar(value);
+end
+
+function tf = localOptionalTransactionID(value)
+tf = localTransactionID(value) || ...
+    (isnumeric(value) && isreal(value) && isscalar(value) && isnan(value));
 end

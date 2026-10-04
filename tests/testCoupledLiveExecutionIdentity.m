@@ -43,7 +43,24 @@ for profile=["lls_causal_access_to_data_wiring_tdd.yaml","lls_causal_access_to_d
     state.ControlTrials.PBCH=row;
     state.ControlTrials.SRS=row;
     state.ControlTrials.TRS=row;
+    % Writer-order contract only: these sentinel rows are metadata fixtures,
+    % not physical receiver evidence. A live refresh must not change them.
+    layout=sixgr.report.resultLayout(root);
+    observationPaths=fullfile(layout.HARQCSVDir, ...
+        ["live_harq_observation_summary.csv","live_harq_observation_timeline.csv"]);
+    observationBytes=cell(1,2);
+    for k=1:2
+        sixgr.util.csvWriteTable(observationPaths(k),row,'PreserveSchema',true);
+        observationBytes{k}=fileread(observationPaths(k));
+    end
     state=sixgr.truth.CoupledTruthRuntime.writeTables(state,root);
+    for k=1:2
+        assert(strcmp(observationBytes{k},fileread(observationPaths(k))), ...
+            'Live HARQ process publication must not overwrite receiver observations.');
+    end
+    assert(isfile(fullfile(layout.HARQCSVDir,'runtime_harq_process_summary.csv')) && ...
+        isfile(fullfile(layout.HARQCSVDir,'runtime_harq_process_timeline.csv')), ...
+        'Process-state evidence requires its own persisted artifacts.');
     for signal=["pbch","srs","trs"]
         T=readtable(fullfile(root,'air_interface','csv',signal+"_trials.csv"), ...
             'TextType','string','VariableNamingRule','preserve', ...

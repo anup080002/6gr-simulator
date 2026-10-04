@@ -79,6 +79,67 @@ assert(all(isnan(double(noAxisTimelineT.SNR_dB))), ...
     "Unavailable configured SNR must remain explicit NaN in system-level HARQ observations.");
 assert(isequal(double(noAxisTimelineT.CRCPass), [double(dlRaw.CRCPass); double(ulRaw.CRCPass)]), ...
     "Missing fixed-link SNR metadata must not alter primary HARQ decoder outcomes.");
+assert(all(isnan(noAxisTimelineT.SweepPointIndex)), ...
+    'Unavailable sweep identity must not be inferred from SNR or row order.');
+
+% Interleaved point observations must preserve identity and source order.
+% Repeated SNR values do not imply the same physical sweep occurrence.
+dlSweep=dlRaw([1 2 1],:);
+dlSweep.SNR_dB=[20;-10;20];
+dlSweep.SweepPointIndex=[4;7;8];
+ulSweep=ulRaw;
+ulSweep.SweepPointIndex=3;
+sweepArtifacts=sixgr.truth.exportLLSLiveDerivedTables(cfg,tmp, ...
+    struct('DL',dlSweep,'UL',ulSweep),struct(),struct(),struct());
+sweepTimeline=sweepArtifacts.HARQ.TimelineTable;
+assert(isequal(sweepTimeline.SweepPointIndex,[4;7;8;3]) && ...
+    isequal(sweepTimeline.SNR_dB,[20;-10;20;10]) && ...
+    isequal(sweepTimeline.CRCPass,[dlSweep.CRCPass;ulSweep.CRCPass]), ...
+    'HARQ sweep projection must retain every source row, identity and CRC in order.');
+persisted=readtable(sweepArtifacts.LiveHARQTimelinePath,'VariableNamingRule','preserve');
+assert(isequal(persisted.SweepPointIndex,sweepTimeline.SweepPointIndex));
+
+% Cell-local RNTI/process/TB labels may be reused in another serving cell.
+% Dropping the cell identity merges distinct physical attempt populations.
+cellScoped=ulRaw([1 1],:);
+cellScoped.BaseStationID=[1;2];
+cellScoped.TBId=repmat("cell_local_tb",2,1);
+cellScoped.HarqID=zeros(2,1);
+cellScoped.SweepPointIndex=ones(2,1);
+cellArtifacts=sixgr.truth.exportLLSLiveDerivedTables(cfg,tmp, ...
+    struct('DL',table(),'UL',cellScoped),struct(),struct(),struct());
+assert(ismember("BaseStationID",string(cellArtifacts.HARQ.TimelineTable.Properties.VariableNames)) && ...
+    isequal(cellArtifacts.HARQ.TimelineTable.BaseStationID,[1;2]), ...
+    'test:HARQCellIdentityLost','The production HARQ projection must preserve its serving-cell scope.');
+persisted=readtable(cellArtifacts.LiveHARQTimelinePath,'VariableNamingRule','preserve');
+assert(isequal(persisted.BaseStationID,cellScoped.BaseStationID));
+
+% Unknown decisions must survive export; a passing generic CRC is not
+% authority for either a current-attempt or a combined HARQ decision.
+unknown=dlRaw([1 2 1],:);
+unknown.CRCPass(:)=1;
+unknown.HARQCurrentDecodeOK=NaN(3,1);
+unknown.HARQCombinedDecodeOK=[NaN;0;1];
+unknown.HARQIsRetransmission=[NaN;0;1];
+unknownArtifacts=sixgr.truth.exportLLSLiveDerivedTables(cfg,tmp, ...
+    struct('DL',unknown,'UL',table()),struct(),struct(),struct());
+unknownT=unknownArtifacts.HARQ.TimelineTable;
+assert(all(isnan(unknownT.CurrentDecodeOK)) && ...
+    isequaln(unknownT.CombinedDecodeOK,[NaN;0;1]) && ...
+    isequaln(unknownT.IsRetransmission,[NaN;0;1]) && ...
+    all(isnan(unknownT.HARQCombiningApplied)), ...
+    'Unknown HARQ outcomes must not become successful or failed boolean decisions.');
+persisted=readtable(unknownArtifacts.LiveHARQTimelinePath,'VariableNamingRule','preserve');
+assert(isequaln(persisted.CombinedDecodeOK,[NaN;0;1]) && ...
+    all(isnan(persisted.CurrentDecodeOK)), ...
+    'CSV serialization must preserve unavailable HARQ outcomes.');
+missing=removevars(unknown,["HARQCurrentDecodeOK","HARQCombinedDecodeOK","HARQIsRetransmission"]);
+missingArtifacts=sixgr.truth.exportLLSLiveDerivedTables(cfg,tmp, ...
+    struct('DL',missing,'UL',table()),struct(),struct(),struct());
+missingT=missingArtifacts.HARQ.TimelineTable;
+assert(all(isnan(missingT.CurrentDecodeOK)) && all(isnan(missingT.CombinedDecodeOK)) && ...
+    all(isnan(missingT.IsRetransmission)), ...
+    'Missing HARQ fields must remain unknown despite passing generic CRCs.');
 
 ok = true;
 end

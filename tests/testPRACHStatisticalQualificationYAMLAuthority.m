@@ -76,7 +76,46 @@ for ii = 1:numel(scenarioNames)
     end
 end
 
+% These artifact/PHY scenarios previously requested the strict PRACH
+% campaign but failed only after waveform execution because its population
+% design was absent. Verify inheritance and the real strict builder without
+% launching a detector campaign or claiming statistical qualification.
+paths = [fullfile(scenarioRoot,"lls_100mhz_tdlc_bidirectional_truth.yaml"), ...
+    fullfile(pwd,"simulator","configs","fixtures","lls_result_richness.yaml")];
+for scenarioPath = paths
+    scenario = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
+    internal = sixgr.lls6g.buildInternalConfig(scenario,tmp);
+    strict = sixgr.phy.prach.buildPRACHConfigFromScenario(internal, ...
+        "RunFolder",tmp,"ScenarioName",scenario.ScenarioID);
+    design = strict.StatisticalQualification;
+    assert(design.Enabled && design.MinimumTrials==3000 && ...
+        design.MaximumTrials==12000 && design.DetectionMinimumTrials==300 && ...
+        design.DetectionMaximumTrials==2000);
+    assert(design.TargetProbability==0.001 && design.DetectionTargetProbability==0.01);
+    assert(isequal(design.DetectionRequiredSNRdB(:),[6;12]));
+    bad=internal;
+    bad.random_access=rmfield(bad.random_access,'statistical_qualification');
+    localExpectConfigFailure(bad,"sixgr:phy:prach:MissingStatisticalQualificationConfig");
+    bad=internal;
+    bad.random_access.statistical_qualification.enabled=false;
+    localExpectConfigFailure(bad,"sixgr:phy:prach:StatisticalQualificationDisabled");
+    bad=internal;
+    bad.random_access.statistical_qualification.planned_looks=1;
+    localExpectConfigFailure(bad,"sixgr:phy:prach:InvalidStatisticalQualification");
+end
+
 ok = true;
+end
+
+function localExpectConfigFailure(cfg,identifier)
+try
+    sixgr.phy.prach.buildPRACHConfigFromScenario(cfg);
+catch ME
+    assert(string(ME.identifier)==identifier,'%s',ME.message);
+    return;
+end
+error('testPRACHStatisticalQualificationYAMLAuthority:ExpectedFailure', ...
+    'Malformed statistical design must remain rejected.');
 end
 
 function localCleanup(path)

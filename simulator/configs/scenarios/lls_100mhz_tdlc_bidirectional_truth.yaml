@@ -11,6 +11,7 @@
     "../control/pdcch_baseline.yaml",
     "../control/harq_baseline.yaml",
     "../control/ra_baseline.yaml",
+    "../validation/prach_statistical_qualification.yaml",
     "../ai_ml/disabled.yaml"
   ],
   "meta": {
@@ -25,7 +26,7 @@
   "scenario": {
     "runner_profile": "waveform_bundle",
     "target_cases": ["bundle", "dl", "ul", "pdsch", "pusch", "pdcch", "pucch", "pbch", "ssb", "prach", "csi_rs", "srs", "dmrs", "harq"],
-    "notes": "True link-level only. Multi-cell topology, UE placement, network RSRP/SINR mobility traces, and traffic-coupled scheduling are outside LLS scope in this repo.",
+    "notes": "Isolated waveform component/calibration bundle, not decoded-grant connected execution. Multi-cell topology, UE placement, network RSRP/SINR mobility traces, and traffic-coupled scheduling are outside this bundle's scope.",
     "expected_outputs": [
       "air_interface/csv/lls_kpi_summary.csv",
       "air_interface/csv/lls_measured_sinr_summary.csv",
@@ -349,6 +350,7 @@
     }
   },
   "pdsch": {
+    "execution_profile": "phy_calibration",
     "mapping_type": "A",
     "prb_start": 0,
     "num_prb": 24,
@@ -373,6 +375,7 @@
     "mcs_band_allows_1024qam": false
   },
   "pusch": {
+    "execution_profile": "phy_calibration",
     "mapping_type": "A",
     "prb_start": 0,
     "num_prb": 24,
@@ -388,6 +391,9 @@
     "dmrs_residual_post_eq_sinr_bound_enabled": true,
     "decision_directed_post_eq_sinr_bound_enabled": true,
     "decoder_noise_variance_mode": "pre_equalization"
+  },
+  "rf_frontend": {
+    "configuration_epoch": 1
   },
   "pdcch": {
     "start_symbol": 0,
@@ -438,10 +444,25 @@
     "trs_max_age_slots": 0,
     "pre_attach_ues_before_measurement": true
   },
+  "pucch": {
+    "spatial_tx_weights_real": [1, 0]
+  },
   "pucch_resources": {
     "enabled": true,
     "profile": "nr_rel18_pucch_strict",
     "configuration_epoch": 1,
+    "component_probe": {
+      "enabled": true,
+      "evidence_scope": "isolated_known_payload_not_causal_feedback",
+      "ue_id": 1,
+      "rnti": 1,
+      "serving_cell": 0,
+      "first_slot_zero_based": 3,
+      "period_slots": 5,
+      "csi_part1_bit_count": 20,
+      "csi_part2_bit_count": 0
+    },
+    "format2": {"max_code_rate": 0.35, "simultaneous_harq_ack_csi": false},
     "resource_sets": [
       {"id": 0, "max_payload_bits": 2, "resource_ids": [0]},
       {"id": 1, "max_payload_bits": 1706, "resource_ids": [10]}
@@ -468,7 +489,7 @@
         "id": 10,
         "format": 2,
         "starting_prb": 4,
-        "nrof_prbs": 2,
+        "nrof_prbs": 3,
         "starting_symbol": 12,
         "nrof_symbols": 2,
         "intra_slot_hopping": false,
@@ -601,6 +622,13 @@
     "flops": true,
     "memory_mb": true,
     "energy_per_bit": true
+  },
+  "validation": {
+    "strict_component_evidence": {
+      "enabled": true,
+      "execution_scope": "component_anchor",
+      "required_components": ["pdcch", "pucch"]
+    }
   },
   "logging": {
     "level": "info",

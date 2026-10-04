@@ -36,10 +36,15 @@ system:
       panel: {Ports: 4, N1: 2, N2: 1, O1: 4, O2: 1, CodebookMode: 1}
       selectionObjective: mean_sum_log2_one_plus_layer_sinr
       disturbanceAssumption: thermal_noise_only
+      # Optional finite_committed_shared_data: actual committed shared-data
+      # covariance at CSI-RS observation REs, including finite-filter leakage.
+      # Not full common/control/RS interference or physical CSI qualification.
       estimationAssumption: ideal_delayed_channel_estimate
       sourceClassification: modeled_csi_not_waveform_measurement
     dynamicPUCCH:
       enabled: false
+      resourceBinding:
+        mode: shared_configured_resources
       transportPolicy: dedicated_pucch_no_pusch_multiplexing
       # Alternative: causal_native_pusch_multiplexing with
       # phy.pucch.uciOnPUSCHEnabled=true. One same-cell HARQ/CSI occasion,
@@ -47,6 +52,10 @@ system:
       # Late obligation changes fail closed; standalone SR stays on PUCCH.
       deliveryAssumption: ideal_error_free_delayed_control
     networkSpatial:
+      # Numerical predictor is part of the calibration recipe. The finite
+      # reference requires committed receive-window history; never silently
+      # substitute the diagonal model when that history is unavailable.
+      sinrPredictorModel: diagonal_nominal_fft # finite_committed_shared_data
       # Frequency-domain SLS only. signal_rate preserves the dense reference;
       # static_exact uses native TDL auto / CDL SampleDensity=64 ONLY at zero
       # Doppler. Moving-channel numerical equivalence is not qualified. Changing
@@ -65,5 +74,8 @@ system:
       resultClassification: modeled_frequency_selective_network_not_waveform
       srsDeliveryDelaySlots: 1
       soundingRankReference: full_carrier_pusch_thermal_noise_only
+      # Optional full_carrier_pusch_finite_shared_data_interference retains
+      # the full-carrier PUSCH power hypothesis but uses committed finite
+      # shared-data disturbance at SRS REs. Completion may need a later slot.
       sinrResourcePopulation: allocated_prb_symbol_footprint_including_pilots
       interferencePopulation: scheduled_shared_data_grants_only

@@ -28,11 +28,19 @@ state.CurrentFrame = 1;
 state.CurrentSlot = 1;
 state.CurrentSNR_dB = 20;
 outs = cell(2, 1);
+evidenceFolder=tempname(fullfile(pwd,'logs'));
+mkdir(evidenceFolder);
 for ueIdx = 1:2
     [cfgRuntime, state] = sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg, state, ueIdx, "DL"); %#ok<ASGLU>
-    out = sixgr.link.runTRSTracking(cfgRuntime, "SNR_dB", 20);
+    [out,capture] = sixgr.link.runTRSTracking(cfgRuntime, "SNR_dB", 20);
+    save(fullfile(evidenceFolder,sprintf('trs_ue_%d.mat',ueIdx)),'out','cfgRuntime');
+    fprintf('TRS_RUNTIME_GATING_EVIDENCE ue=%d folder=%s\n',ueIdx,evidenceFolder);
     assert(logical(out.Ok) && logical(out.DetectionSuccess) && logical(out.TRSRuntimeEvidenceUsable), ...
-        "Coupled runtime TRS context must produce usable strict receiver evidence for UE %d.", ueIdx);
+        "Coupled runtime TRS context must produce usable strict receiver evidence for UE %d. " + ...
+         "FailureReason=%s Notes=%s detected=%d timing=%d frequency=%d channel=%d strict=%d", ...
+        ueIdx,localDiagnosticText(out.FailureReason),localDiagnosticText(out.Notes),logical(out.DetectionSuccess), ...
+        logical(out.TRSTimingEstimateUsable),logical(out.TRSCFOEstimateUsable), ...
+        logical(out.TRSChannelEstimateAvailable),logical(out.StrictOk));
     assert(isfinite(double(out.DetectionMetric)) && double(out.ResourceCoverageRatio) >= double(out.MinCoverageRatio), ...
         "TRS detection metrics must satisfy the configured resource coverage gate for UE %d.", ueIdx);
     assert(logical(out.TRSTimingEstimateAvailable) && logical(out.TRSCFOEstimateAvailable) && ...
@@ -41,10 +49,21 @@ for ueIdx = 1:2
     assert(logical(out.ResourceExtractionAttempted) && logical(out.ResourceExtractionAvailable) && ...
         logical(out.ChannelEstimateAttempted) && logical(out.ChannelEstimateAvailable), ...
         "TRS runtime evidence must preserve the actual reference-RE extraction and channel-estimation stages for UE %d.", ueIdx);
-    assert(isfinite(double(out.MeasuredTrialSINR_dB)) && ...
-        strcmpi(string(out.SINRMeasurementDomain), "trs_pilot_re_channel_reconstruction_residual") && ...
+    % An interpolated fading-channel pilot-fit residual is not an
+    % independent SINR estimator. Keep its diagnostic separate from NMSE.
+    assert(isnan(double(out.MeasuredTrialSINR_dB)) && ...
+        string(out.SINRMeasurementDomain)=="unavailable_pilot_fit_is_not_independent_SINR" && ...
+        all(isfinite(out.ChannelEstimationTable.PilotFitSignalToResidual_dB)) && ...
         strlength(strtrim(string(out.HestDimensions))) > 0, ...
-        "TRS runtime evidence must expose measured pilot-domain SINR and per-resource channel-estimate dimensions for UE %d.", ueIdx);
+        "Fading TRS must distinguish fit diagnostics from independent SINR for UE %d.", ueIdx);
+    gain=capture.Replay.ReceiverGainCompensation;
+    assert(gain.Applied && ~gain.AGCDecisionCausal && ...
+        gain.Source=="actual_receiver_recorded_block_gain_after_ADC");
+    raw=capture.RawObservation.readComplete();
+    calibrated=capture.Observation.readComplete();
+    expected=raw/10^(gain.AppliedGainMin_dB/20);
+    assert(norm(calibrated-expected,'fro')<=1e-12*max(norm(expected,'fro'),eps), ...
+        'Digital compensation must use actual applied AGC controls, not fitted channel gains.');
     outs{ueIdx} = out;
 end
 out = outs{1};
@@ -80,4 +99,11 @@ assert(ismember("UsedOracleFields", string(trsRow.Properties.VariableNames)) && 
     "Canonical TRS rows must keep UsedOracleFields blank when no oracle fields were used.");
 
 ok = true;
+end
+
+function text=localDiagnosticText(value)
+% A missing diagnostic value must not hide the physical assertion failure.
+value=string(value);
+value(ismissing(value))="<missing>";
+text=char(join(value(:),"|"));
 end

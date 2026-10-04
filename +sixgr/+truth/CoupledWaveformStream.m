@@ -42,6 +42,16 @@ classdef CoupledWaveformStream < handle
                 error('sixgr:truth:SharedStreamOriginRequired', ...
                     'Initialize the physical owner at the first canonical slot, not at a later observation.');
             end
+            % Validate every UE before materializing any RF/channel owner.
+            % Otherwise legacy grant construction can run through access and
+            % fail only at the first independently scheduled HARQ occasion.
+            for ue=1:numel(userCfg)
+                sixgr.truth.validateSharedDCIConfiguration(userCfg{ue});
+            end
+            sixgr.truth.validateCoupledNoisePowerAuthority(cfg);
+            for ue=1:numel(userCfg)
+                sixgr.truth.validateCoupledNoisePowerAuthority(userCfg{ue});
+            end
             obj=sixgr.truth.CoupledWaveformStream();
             % Intra-cell and MU-MIMO interference are represented by the
             % shared serving-link composite. Inter-cell interference still

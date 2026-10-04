@@ -23,12 +23,17 @@ for caseIndex = reshape(caseIndices,1,[])
     direction = directions(caseIndex);
     withUCI = caseIndex>=3;
     cfg = base;
-    if caseIndex==4 && string(mode)=="TDD"
+    if caseIndex==4
         % Independent gNB identity requires an installed connected-DCI
         % schema. The older stage-only fixture has no connected_dci policy;
         % do not reconstruct receiver configuration from its TX grant.
-        connected=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator', ...
-            'configs','scenarios','lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml'));
+        connectedPath=fullfile('simulator','configs','scenarios', ...
+            'lls_causal_access_to_data_wiring_tdd_short_continuous_iq.yaml');
+        if string(mode)=="FDD"
+            connectedPath=fullfile('simulator','configs','validation', ...
+                'lls_fdd_staged_data_connected_dci.yaml');
+        end
+        connected=sixgr.lls6g.config.loadScenarioConfig(connectedPath);
         cfg=sixgr.lls6g.buildInternalConfig(connected,tempname);
         cfg.channel.model='AWGN';
         cfg.channel.fading.enabled=false;
@@ -97,8 +102,12 @@ for caseIndex = reshape(caseIndices,1,[])
         % Dynamic UL transmission needs an actually decoded control waveform.
         grant = localReceiveControl(cfg,grant);
     end
+    % Deliberately differ from the base YAML label. The shared observation
+    % below has independently applied sample noise; neither that measured
+    % ratio nor the base label may replace this requested point in exports.
+    declaredPoint=double(cfg.channel.snr_dB)-12;
     args = {'NumFrames',1,'StartSlotIndex',slot,'StartFrameIndex',frame, ...
-        'GrantSnapshot',grant,'PHYGrant',grant.PHYGrant};
+        'GrantSnapshot',grant,'PHYGrant',grant.PHYGrant,'SNR_dB',declaredPoint};
     if withUCI
         % Known codec-test HARQ bits, not invented feedback from a DL run.
         uci = sixgr.phy.ul.pusch.PUSCHUCIPayload('HARQACK',int8([1;0]));
@@ -277,6 +286,9 @@ for caseIndex = reshape(caseIndices,1,[])
     assert(height(completed.TrialTable)==1 && ...
         completed.TrialTable.CRCPass==1 && ...
         completed.ExecutionStage=="received_shared_stream_completed");
+    assert(completed.TrialTable.ConfiguredSNR_dB==declaredPoint && ...
+        abs(completed.TrialTable.AppliedNoiseSNR_dB-declaredPoint)>1, ...
+        'The fixture must distinguish its declared point from the actual sample-noise ratio.');
     verifyReceivedConstellationCapture(completed,cfg,1);
     % Scaling only the physical measurement observation must scale reported
     % energy in its declared units, independently of the digital/AGC receiver waveform.
@@ -555,8 +567,10 @@ end
 
 function out=localJob(cfg,direction,varargin)
 context=struct(varargin{:});
-job=sixgr.truth.buildGrantPHYJob(cfg,direction,cfg.channel.snr_dB, ...
+job=sixgr.truth.buildGrantPHYJob(cfg,direction,context.SNR_dB, ...
     context.StartFrameIndex,[],context);
+assert(job.SNR_dB==context.SNR_dB, ...
+    'The staged job must execute the requested trial point, not the base YAML value.');
 assert(job.StartSlotIndex==context.StartSlotIndex && ...
     job.GrantSnapshot.Slot==context.StartSlotIndex && ...
     job.GrantSnapshot.Frame==context.StartFrameIndex, ...

@@ -1,5 +1,7 @@
-function replay = replayGrant(cfgIn, direction, grant, payloadIn, snr_dB, varargin)
+function [replay, diagnostic] = replayGrant(cfgIn, direction, grant, payloadIn, snr_dB, varargin)
 %REPLAYGRANT Replay one system grant through waveform PHY TX/channel/RX.
+% The optional second output retains actual grant/Tx/Rx/channel evidence for
+% calibration. It does not qualify a curve or supply channel truth to Rx.
 
 ip = inputParser;
 ip.addParameter("InputFormat", "bits", @(x)ischar(x)||isstring(x));
@@ -10,8 +12,19 @@ ip.addParameter("AdaptiveLDPC", true, @(x)islogical(x)||(isnumeric(x)&&isscalar(
 ip.addParameter("LDPCMaxIterations", 0, @(x)isnumeric(x)&&isscalar(x)&&x>=0);
 ip.addParameter("UseGPU", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
 ip.addParameter("ControlOnly", false, @(x)islogical(x)||(isnumeric(x)&&isscalar(x)));
+ip.addParameter("NoiseSeed", [], @localValidReplaySeed);
+ip.addParameter("ControlNoiseSeed", [], @localValidReplaySeed);
+ip.addParameter("ChannelSeed", [], @localValidReplaySeed);
+ip.addParameter("ChannelInitialTime_s", [], @(x)isempty(x)||(isnumeric(x)&&isscalar(x)&&isfinite(x)&&x>=0));
+ip.addParameter("ControlChannelInitialTime_s", [], @(x)isempty(x)||(isnumeric(x)&&isscalar(x)&&isfinite(x)&&x>=0));
 ip.parse(varargin{:});
 opt = ip.Results;
+sixgr.system.waveform.assertPhysicalFeedbackAuthority(grant);
+captureDiagnostic = nargout > 1;
+diagnostic = struct();
+assert(~captureDiagnostic || ~logical(opt.CompactPHYIO), ...
+    'sixgr:system:WaveformReplay:CalibrationCaptureNeedsFullPHY', ...
+    'Calibration capture requires CompactPHYIO=false to preserve executed layer evidence.');
 
 if nargin < 4
     payloadIn = [];
@@ -28,6 +41,17 @@ replay = struct( ...
     "ExecutionBackend", "WAVEFORM_GRANT_REPLAY", ...
     "PHYMode", "CRC_WAVEFORM_REPLAY", ...
     "TransportBlockSize", NaN, ...
+    "TransmittedRNTI", NaN, ...
+    "TransmittedCarrierNSlot", NaN, ...
+    "TransmittedCarrierNFrame", NaN, ...
+    "TransmittedPRBSet", [], ...
+    "TransmittedSymbolAllocation", [], ...
+    "TransmittedNumLayers", NaN, ...
+    "TransmittedModulation", strings(0,1), ...
+    "TransmittedTransportBlockBits", NaN, ...
+    "TransmittedTransportBlockSizes", [], ...
+    "TransmittedTransportBlockSHA256", "", ...
+    "TransmittedRV", NaN, ...
     "CRCPass", NaN, ...
     "CRCError", NaN, ...
     "BitErrors", NaN, ...
@@ -90,6 +114,18 @@ replay = struct( ...
     "ServingRxPower_dBm", NaN, ...
     "ThermalNoisePower_dBm", NaN, ...
     "NoisePowerSource", "unavailable", ...
+    "AWGNReferencePlane", "unavailable", ...
+    "AWGNReferenceSymbolPlane", "unavailable", ...
+    "AWGNSignalEnergyPerOccupiedRE", NaN, ...
+    "AWGNGridNoiseVariance", NaN, ...
+    "AWGNSampleNoiseVariance", NaN, ...
+    "AWGNSampleToGridNoiseGain", NaN, ...
+    "AWGNNoiseSource", "unavailable", ...
+    "AWGNNoiseSeedApplied", false, ...
+    "AWGNNoiseSeed", NaN, ...
+    "ReplayChannelSeed", NaN, ...
+    "ReplayChannelSeedApplied", false, ...
+    "ReplaySampleRateHz", NaN, ...
     "PhaseNoiseConfigured", false, ...
     "PhaseNoiseApplied", false, ...
     "PhaseNoiseRMS_rad", NaN, ...
@@ -168,7 +204,19 @@ replay = struct( ...
     "PDCCHFalseAlarm", false, ...
     "PDCCHControlEvidenceSource", "", ...
     "PDCCHLogicalTxPorts", NaN, ...
-    "PDCCHObservedRxBranches", NaN);
+    "PDCCHObservedRxBranches", NaN, ...
+    "PDCCHAWGNReferencePlane", "unavailable", ...
+    "PDCCHAWGNSignalEnergyPerOccupiedRE", NaN, ...
+    "PDCCHAWGNGridNoiseVariance", NaN, ...
+    "PDCCHAWGNSampleNoiseVariance", NaN, ...
+    "PDCCHAWGNNoiseSeedApplied", false, ...
+    "PDCCHAWGNNoiseSeed", NaN, ...
+    "PDCCHReplayChannelSeed", NaN, ...
+    "PDCCHReplayChannelSeedApplied", false, ...
+    "PDCCHReplayChannelInitialTime_s", NaN, ...
+    "PDCCHReplaySampleRateHz", NaN, ...
+    "PDCCHTransmittedCarrierNSlot", NaN, ...
+    "PDCCHTransmittedCarrierNFrame", NaN);
 replay.BoundGrant = struct();
 replay = localAppendMeasuredPHYEvidence(replay, sixgr.link.emptyMeasuredPHYEvidenceRow());
 
@@ -179,7 +227,7 @@ try
     replay.EffectiveRxAntennas = double(sixgr.util.structGet(cfgReplay, "channel.nRxAnt", NaN));
 
     replay = localReplayPDCCHGrantBinding( ...
-        replay, cfgReplay, dir, grant, snr_dB);
+        replay, cfgReplay, dir, grant, snr_dB, opt);
     if replay.PDCCHGrantBindingRequired && ...
             ~replay.PDCCHGrantBindingOk
         replay = localMarkReplayUnavailable(replay, ...
@@ -201,13 +249,19 @@ try
         return;
     end
 
+    % The issued data clock, not the bootstrap carrier clock, owns DM-RS,
+    % hopping and occasion-dependent resource mapping for this attempt.
+    cfgReplay = localBindReplaySlot(cfgReplay, grant, 'ScheduledAbsoluteSlot');
+    dataChannelTime_s=sixgr.system.waveform.resolveReplayChannelTime( ...
+        cfgReplay,grant,'ScheduledAbsoluteSlot',opt.ChannelInitialTime_s);
     if dir == "UL"
         tmpl = localResolveReplayTemplate(cfgReplay, "UL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "UL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
+        replay = localAttachTransmittedTransportEvidence(replay, tx, grant, cfgReplay);
         [harqKey, harqPriorLLR, harqPriorLayout, harqIsRetx] = localResolveHARQSoftBuffer("UL", grant, tx.TransportBlockSize);
-        chState = localInitChannelState(cfgReplay, tx, txInfo);
-        [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
+        chState = localInitChannelState(cfgReplay, tx, txInfo, opt.ChannelSeed, captureDiagnostic, dataChannelTime_s);
+        [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, tx, opt.NoiseSeed);
         [rxWave, nVar, chState] = localApplyReceiverIQImbalanceCompensation(rxWave, nVar, chState, cfgReplay);
         fastAWGNPath = logical(opt.FastAWGNPath) && localAllowsFastAWGN(cfgReplay, grant, chState);
         [rx, rxInfo] = sixgr.phy.ul.PUSCH_Rx(rxWave, cfgReplay, ...
@@ -230,9 +284,10 @@ try
         tmpl = localResolveReplayTemplate(cfgReplay, "DL", grant, isempty(payloadIn));
         [tx, txInfo, txTemplateReused] = localResolveReplayTx(cfgReplay, "DL", tmpl, payloadIn, opt);
         replay.TransportBlockSize = double(tx.TransportBlockSize);
+        replay = localAttachTransmittedTransportEvidence(replay, tx, grant, cfgReplay);
         [harqKey, harqPriorLLR, harqPriorLayout, harqIsRetx] = localResolveHARQSoftBuffer("DL", grant, tx.TransportBlockSize);
-        chState = localInitChannelState(cfgReplay, tx, txInfo);
-        [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState);
+        chState = localInitChannelState(cfgReplay, tx, txInfo, opt.ChannelSeed, captureDiagnostic, dataChannelTime_s);
+        [rxWave, nVar, chState] = localApplyChannelAndAwgn(tx.Waveform, snr_dB, chState, tx, opt.NoiseSeed);
         [rxWave, nVar, chState] = localApplyReceiverIQImbalanceCompensation(rxWave, nVar, chState, cfgReplay);
         fastAWGNPath = logical(opt.FastAWGNPath) && localAllowsFastAWGN(cfgReplay, grant, chState);
         [rx, rxInfo] = sixgr.phy.dl.PDSCH_Rx(rxWave, cfgReplay, ...
@@ -267,6 +322,11 @@ try
     replay = localUpdateHARQSoftBuffer( ...
         replay, dir, rx, harqKey, harqPriorLLR, harqIsRetx);
     replay = localAttachImpairmentEvidence(replay, chState);
+    replay = localAttachAWGNEvidence(replay, chState);
+    replay.ReplayChannelSeed = double(chState.ChannelSeed);
+    replay.ReplayChannelInitialTime_s = double(chState.ChannelInitialTime_s);
+    replay.ReplayChannelSeedApplied = logical(chState.UseFading);
+    replay.ReplaySampleRateHz = double(chState.SampleRateHz);
     replay.DecoderIterations = double(sixgr.util.structGet(rx, "DecoderIterations", NaN));
     if ~isfinite(replay.DecoderIterations) && isfield(rx, "ActiveIterations") && ~isempty(rx.ActiveIterations)
         replay.DecoderIterations = mean(double(rx.ActiveIterations(:)), "omitnan");
@@ -288,6 +348,14 @@ try
     replay.PHYDecisionReason = "waveform_replay_executed";
     replay.WaveformReplayExecuted = true;
     replay.WaveformReplayReused = logical(sixgr.util.structGet(replay, "WaveformReplayReused", false));
+    if captureDiagnostic
+        diagnostic = sixgr.system.waveform.captureGrantCalibrationEvidence( ...
+            cfgReplay, replay.BoundGrant, tx, rx, chState, opt, rxInfo);
+        if string(sixgr.util.structGet(cfgIn,'system.linkAbstraction.spatialProviderClass',''))== ...
+                "sixgr.system.abstraction.NetworkSpatialGrantProvider"
+            diagnostic=sixgr.system.waveform.bindCalibrationReceiverIdentity(diagnostic,cfgIn);
+        end
+    end
 catch ME
     if strcmp(string(ME.identifier), "sixgr:system:WaveformReplay:MissingExactNRE")
         replay = localMarkReplayUnavailable(replay, ...
@@ -325,7 +393,7 @@ end
 end
 
 function replay = localReplayPDCCHGrantBinding( ...
-        replay, cfg, direction, grant, snr_dB)
+        replay, cfg, direction, grant, snr_dB, opt)
 % Execute the scheduled DCI through the physical PDCCH waveform chain.
 required = logical(sixgr.control.isPDCCHGrantBindingRequired( ...
     cfg, direction)) || logical(sixgr.util.structGet( ...
@@ -377,11 +445,16 @@ try
         "phy.pdcch.coreset.id", double(sixgr.util.structGet( ...
         grant, "CORESETID", ...
         sixgr.util.structGet(cfg, "phy.pdcch.coreset.id", NaN))));
+    cfgControl = localBindReplaySlot(cfgControl, grant, 'ControlAbsoluteSlot');
     [tx, txInfo] = sixgr.phy.dl.PDCCH_Tx(cfgControl, ...
         "Grant", grant, "RNTI", rnti, "NumTxAnt", 1);
-    controlState = localInitChannelState(cfgControl, tx, txInfo);
+    replay.PDCCHTransmittedCarrierNSlot = double(tx.Carrier.NSlot);
+    replay.PDCCHTransmittedCarrierNFrame = double(tx.Carrier.NFrame);
+    controlChannelTime_s=sixgr.system.waveform.resolveReplayChannelTime( ...
+        cfgControl,grant,'ControlAbsoluteSlot',opt.ControlChannelInitialTime_s);
+    controlState = localInitChannelState(cfgControl, tx, txInfo, opt.ChannelSeed,false,controlChannelTime_s);
     [rxWave, nVar, controlState] = localApplyChannelAndAwgn( ...
-        tx.Waveform, snr_dB, controlState);
+        tx.Waveform, snr_dB, controlState, tx, opt.ControlNoiseSeed);
     [rxWave, nVar, controlState] = ...
         localApplyReceiverIQImbalanceCompensation( ...
         rxWave, nVar, controlState, cfgControl); %#ok<ASGLU>
@@ -402,6 +475,18 @@ catch ME
 end
 
 replay.PDCCHWaveformExecuted = true;
+controlNoise = controlState.NoiseProvenance;
+replay.PDCCHAWGNReferencePlane = string(controlNoise.SNRReferencePlane);
+replay.PDCCHAWGNSignalEnergyPerOccupiedRE = ...
+    double(controlNoise.SignalEnergyPerOccupiedRE);
+replay.PDCCHAWGNGridNoiseVariance = double(controlNoise.GridNoiseVariance);
+replay.PDCCHAWGNSampleNoiseVariance = double(controlNoise.SampleNoiseVariance);
+replay.PDCCHAWGNNoiseSeedApplied = logical(controlNoise.SeedApplied);
+replay.PDCCHAWGNNoiseSeed = double(controlNoise.Seed);
+replay.PDCCHReplayChannelSeed = double(controlState.ChannelSeed);
+replay.PDCCHReplayChannelSeedApplied = logical(controlState.UseFading);
+replay.PDCCHReplayChannelInitialTime_s = double(controlState.ChannelInitialTime_s);
+replay.PDCCHReplaySampleRateHz = double(controlState.SampleRateHz);
 replay.PDCCHLogicalTxPorts = size(tx.Waveform, 2);
 replay.PDCCHObservedRxBranches = size(rxWave, 2);
 replay.PDCCHControlEvidenceSource = ...
@@ -899,8 +984,12 @@ if ~isempty(payloadIn)
     return;
 end
 
-tmpl = localNormalizePayloadlessReplayTemplate(dir, tmpl);
 tbBits = localPayloadlessTransportBits(double(tmpl.TransportBlockSize));
+if strlength(string(sixgr.util.structGet(tmpl, ...
+        "FrozenGrantContextId", ""))) == 0
+    [tx, txInfo] = localBuildReplayTx(cfgReplay, dir, tmpl, tbBits, opt);
+    return;
+end
 cacheKey = localReplayTxCacheKey(dir, tmpl);
 [hit, cached] = localReplayTxTemplateCache("get", cacheKey);
 if hit
@@ -918,6 +1007,14 @@ function tmpl = localResolveReplayTemplate(cfgReplay, dir, grant, allowCache)
 if nargin < 4
     allowCache = false;
 end
+% A non-frozen scheduler grant has no complete immutable configuration
+% digest. Its PRB/symbol summary is insufficient to key DM-RS, PT-RS,
+% scrambling and coding decisions, so always rebuild that template.
+phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+allowCache = logical(allowCache) && ...
+    logical(sixgr.util.structGet(phyGrant, "IsFrozen", false)) && ...
+    strlength(string(sixgr.util.structGet(phyGrant, ...
+        "GrantContextId", ""))) > 0;
 
 if allowCache
     cacheKey = localReplayTemplateCacheKey(cfgReplay, dir, grant);
@@ -936,44 +1033,6 @@ end
 
 if allowCache
     localReplayGrantTemplateCache("set", cacheKey, tmpl);
-end
-end
-
-function tmpl = localNormalizePayloadlessReplayTemplate(dir, tmpl)
-fieldName = "PDSCH";
-if strcmpi(char(string(dir)), "UL")
-    fieldName = "PUSCH";
-end
-if ~isfield(tmpl, fieldName)
-    return;
-end
-channelCfg = tmpl.(fieldName);
-channelCfg = localNormalizePayloadlessChannelIdentity(channelCfg);
-tmpl.(fieldName) = channelCfg;
-end
-
-function channelCfg = localNormalizePayloadlessChannelIdentity(channelCfg)
-if isempty(channelCfg) || ~isobject(channelCfg)
-    return;
-end
-identityFields = {
-    "RNTI", 1; ...
-    "NID", 1; ...
-    "NIDNSCID", 1; ...
-    "NSCID", 0; ...
-    "NRSID", 1; ...
-    "DMRSNID", 1 ...
-    };
-for i = 1:size(identityFields, 1)
-    name = char(identityFields{i, 1});
-    value = identityFields{i, 2};
-    if isprop(channelCfg, name)
-        try
-            channelCfg.(name) = value;
-        catch
-            % Keep runtime object value if the property is read-only in this release.
-        end
-    end
 end
 end
 
@@ -1017,6 +1076,79 @@ end
 function bits = localPayloadlessTransportBits(expectedBits)
 expectedBits = max(0, round(double(expectedBits)));
 bits = int8(zeros(expectedBits, 1));
+end
+
+function replay = localAttachAWGNEvidence(replay, state)
+noise = sixgr.util.structGet(state, "NoiseProvenance", struct());
+assert(isstruct(noise) && isfield(noise, "SNRReferencePlane") && ...
+    string(noise.SNRReferencePlane) == "occupied_resource_grid_re_pre_equalization", ...
+    "sixgr:system:WaveformReplay:MissingAWGNProvenance", ...
+    "Waveform replay must retain the applied occupied-RE AWGN calibration.");
+replay.AWGNReferencePlane = string(noise.SNRReferencePlane);
+replay.AWGNReferenceSymbolPlane = string(noise.ReferenceSymbolPlane);
+replay.AWGNSignalEnergyPerOccupiedRE = double(noise.SignalEnergyPerOccupiedRE);
+replay.AWGNTransmittedSignalEnergyPerOccupiedRE = double(noise.TransmittedSignalEnergyPerOccupiedRE);
+replay.AWGNAppliedLargeScalePowerGain = double(noise.AppliedLargeScalePowerGain);
+replay.AWGNGridNoiseVariance = double(noise.GridNoiseVariance);
+replay.AWGNSampleNoiseVariance = double(noise.SampleNoiseVariance);
+replay.AWGNSampleToGridNoiseGain = double(noise.SampleToGridNoiseVarianceGain);
+replay.AWGNNoiseSource = string(noise.Source);
+replay.AWGNNoiseSeedApplied = logical(noise.SeedApplied);
+replay.AWGNNoiseSeed = double(noise.Seed);
+end
+
+function replay = localAttachTransmittedTransportEvidence(replay, tx, grant, cfgReplay)
+bits = sixgr.util.structGet(tx, "TransportBlock", []);
+sizeBits = double(sixgr.util.structGet(tx, "TransportBlockSize", NaN));
+rv = double(sixgr.util.structGet(tx, "RV", NaN));
+channelCfg = sixgr.util.structGet(tx, "PDSCH", ...
+    sixgr.util.structGet(tx, "PUSCH", []));
+transmittedRNTI = double(localObjectValue(channelCfg, "RNTI", NaN));
+grantRNTI = double(sixgr.util.structGet(grant, "RNTI", NaN));
+transmittedPRBSet = double(localObjectValue(channelCfg, "PRBSet", []));
+transmittedSymbols = double(localObjectValue(channelCfg, "SymbolAllocation", []));
+transmittedLayers = double(localObjectValue(channelCfg, "NumLayers", NaN));
+transmittedModulation = upper(string(localObjectValue(channelCfg, "Modulation", "")));
+grantModulation = upper(string(sixgr.util.structGet(grant, "Modulation", "")));
+grantRV = double(sixgr.util.structGet(grant, "RVPerCodeword", []));
+if isempty(grantRV), grantRV = localGrantRV(grant); end
+if isscalar(rv) && numel(sizeBits) > 1
+    rv = repmat(rv, 1, numel(sizeBits));
+end
+if isscalar(grantRV), grantRV = repmat(grantRV, size(rv)); end
+assert(isnumeric(bits) && isvector(bits) && ~isempty(bits) && ...
+    all(ismember(double(bits(:)), [0 1])) && ...
+    isvector(sizeBits) && ~isempty(sizeBits) && ...
+    all(isfinite(sizeBits) & sizeBits > 0 & sizeBits == fix(sizeBits)) && ...
+    numel(bits) == sum(sizeBits) && ...
+    isvector(rv) && numel(rv) == numel(sizeBits) && ...
+    isequal(reshape(rv,1,[]), reshape(grantRV,1,[])), ...
+    "sixgr:system:WaveformReplay:TransmittedTBIdentity", ...
+    "The executed transmitter TB length or RV differs from the frozen grant.");
+assert(isscalar(transmittedRNTI) && isfinite(transmittedRNTI) && ...
+    transmittedRNTI == grantRNTI, ...
+    "sixgr:system:WaveformReplay:TransmittedRNTIMismatch", ...
+    "The executed PDSCH/PUSCH scrambling RNTI differs from the scheduled grant.");
+assert(isequal(sort(transmittedPRBSet(:).'), ...
+        sort(localReplayPRBSet(cfgReplay, grant))) && ...
+    isequal(transmittedSymbols(:).', localReplaySymbolAllocation(grant)) && ...
+    isscalar(transmittedLayers) && transmittedLayers == ...
+        double(sixgr.util.structGet(grant, "NumLayers", NaN)) && ...
+    isequal(transmittedModulation(:).', grantModulation(:).'), ...
+    "sixgr:system:WaveformReplay:ExecutedGrantAllocationMismatch", ...
+    "Executed PDSCH/PUSCH PRBs, symbols, layers or modulation differ from the scheduled grant.");
+replay.TransmittedRNTI = transmittedRNTI;
+replay.TransmittedCarrierNSlot = double(tx.Carrier.NSlot);
+replay.TransmittedCarrierNFrame = double(tx.Carrier.NFrame);
+replay.TransmittedPRBSet = transmittedPRBSet(:).';
+replay.TransmittedSymbolAllocation = transmittedSymbols(:).';
+replay.TransmittedNumLayers = transmittedLayers;
+replay.TransmittedModulation = transmittedModulation(:).';
+replay.TransmittedTransportBlockBits = double(numel(bits));
+replay.TransmittedTransportBlockSizes = reshape(sizeBits, 1, []);
+replay.TransmittedTransportBlockSHA256 = ...
+    string(sixgr.util.sha256Hex(uint8(bits(:))));
+replay.TransmittedRV = reshape(rv, 1, []);
 end
 
 function replay = localAttachWaveformEvidence(replay, dir, tx, txInfo, rx, rxInfo)
@@ -1375,9 +1507,33 @@ end
 token = strjoin(parts, "|");
 end
 
+function cfg = localBindReplaySlot(cfg, grant, field)
+% Legacy component grants without an absolute clock keep their configured
+% carrier. Grant-bound calibration requires explicit ScheduledAbsoluteSlot.
+if ~isfield(grant,field), return; end
+slot=double(grant.(field));
+assert(isscalar(slot) && isfinite(slot) && slot>=0 && slot==fix(slot), ...
+    'sixgr:system:WaveformReplay:InvalidAbsoluteSlot', ...
+    '%s must be a finite nonnegative zero-based absolute slot.',field);
+carrier=sixgr.phy.grid.makeCarrier(cfg);
+cfg.phy.carrier.NSlot=mod(slot,carrier.SlotsPerFrame);
+cfg.phy.carrier.NFrame=mod(floor(slot/carrier.SlotsPerFrame),1024);
+end
+
 function cfgOut = localBuildReplayConfig(cfgIn, dir, grant)
 cfgOut = cfgIn;
+cfgOut.system.phyBackend = 'waveform';
 cfgOut.phy.rx.useFastChannelEstMex = false;
+grantRNTI = double(sixgr.util.structGet(grant, "RNTI", NaN));
+assert(isscalar(grantRNTI) && isfinite(grantRNTI) && ...
+    grantRNTI == fix(grantRNTI) && grantRNTI >= 0 && grantRNTI <= 65535, ...
+    "sixgr:system:WaveformReplay:MissingGrantRNTI", ...
+    "Exact waveform replay requires the scheduled grant's 16-bit RNTI.");
+if dir == "UL"
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pusch.RNTI", grantRNTI);
+else
+    cfgOut = sixgr.util.structSet(cfgOut, "phy.pdsch.RNTI", grantRNTI);
+end
 
 % A scheduler grant is not merely an allocation hint.  When it carries an
 % immutable PHYGrant, replay that exact coding/spatial authority before any
@@ -1400,6 +1556,21 @@ if isstruct(phyGrant) && ~isempty(fieldnames(phyGrant)) && ...
     else
         cfgOut = sixgr.phy.grant.applyPHYGrantToConfig(cfgOut, phyGrant);
     end
+end
+
+% Preserve the scheduled TBS overhead even for grants without a frozen
+% PHYGrant. A conflicting top-level value cannot replace frozen authority.
+if isfield(grant, "XOverhead") && ~isempty(grant.XOverhead)
+    xOverhead = double(grant.XOverhead);
+    assert(isscalar(xOverhead) && ismember(xOverhead, [0 6 12 18]), ...
+        "sixgr:system:WaveformReplay:InvalidXOverhead", ...
+        "Grant XOverhead must be 0, 6, 12, or 18 RE per PRB.");
+    frozenOverhead = sixgr.util.structGet(phyGrant, "CodingLayout.XOverhead", []);
+    assert(isempty(frozenOverhead) || isequal(double(frozenOverhead), xOverhead), ...
+        "sixgr:system:WaveformReplay:FrozenXOverheadMismatch", ...
+        "Grant XOverhead differs from its frozen coding layout.");
+    if dir == "UL", root = "phy.pusch"; else, root = "phy.pdsch"; end
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".xOverhead", xOverhead);
 end
 
 numLayers = max(1, round(double(sixgr.util.structGet(grant, "NumLayers", 1))));
@@ -1564,29 +1735,33 @@ end
 end
 
 function bits = localNormalizeTransportBits(payloadIn, expectedBits, inputFormat)
-expectedBits = max(0, round(double(expectedBits)));
-if expectedBits == 0
-    bits = int8(zeros(0,1));
-    return;
-end
-
-if isempty(payloadIn)
-    bits = int8(randi([0 1], expectedBits, 1));
-    return;
-end
+assert(isscalar(expectedBits) && isfinite(expectedBits) && ...
+    expectedBits == fix(expectedBits) && expectedBits > 0, ...
+    "sixgr:system:WaveformReplay:InvalidTransportBlockSize", ...
+    "The grant's exact transport-block size must be a positive integer.");
 
 fmt = lower(char(string(inputFormat)));
 if strcmp(fmt, "bytes")
+    assert(isnumeric(payloadIn) && isreal(payloadIn) && ...
+        all(isfinite(payloadIn(:))) && all(payloadIn(:) == fix(payloadIn(:))) && ...
+        all(payloadIn(:) >= 0 & payloadIn(:) <= 255), ...
+        "sixgr:system:WaveformReplay:InvalidPayloadBytes", ...
+        "Explicit transport-block bytes must be integers in [0,255].");
     bits = sixgr.l2.mac.TBAssembler.bytesToBits(uint8(payloadIn(:)));
+elseif strcmp(fmt, "bits")
+    assert((isnumeric(payloadIn) || islogical(payloadIn)) && ...
+        isreal(payloadIn) && all(ismember(double(payloadIn(:)), [0 1])), ...
+        "sixgr:system:WaveformReplay:InvalidPayloadBits", ...
+        "Explicit transport-block bits must contain only zeros and ones.");
+    bits = int8(payloadIn(:));
 else
-    bits = int8(payloadIn(:) ~= 0);
+    error("sixgr:system:WaveformReplay:InvalidInputFormat", ...
+        "InputFormat must be 'bits' or 'bytes'.");
 end
-
-if numel(bits) < expectedBits
-    bits(end+1:expectedBits,1) = 0;
-elseif numel(bits) > expectedBits
-    bits = bits(1:expectedBits);
-end
+assert(numel(bits) == expectedBits, ...
+    "sixgr:system:WaveformReplay:PayloadTBSMismatch", ...
+    "Explicit transport block has %d bits; the executed allocation requires %d. MAC padding must precede waveform replay.", ...
+    numel(bits), expectedBits);
 bits = int8(bits(:));
 end
 
@@ -1782,9 +1957,9 @@ else
 end
 try
     key = char(jsonencode(signature));
-catch
-    key = sprintf("%s|TBS=%g|RV=%g|Rate=%.6f", signature.Direction, ...
-        signature.TransportBlockSize, signature.RV, signature.TargetCodeRate);
+catch ME
+    error("sixgr:system:WaveformReplay:UnserializableTXCacheIdentity", ...
+        "Exact transmitter cache identity cannot be serialized: %s", ME.message);
 end
 end
 
@@ -1792,6 +1967,13 @@ function key = localReplayTemplateCacheKey(cfgReplay, dir, grant)
 signature = struct();
 signature.Direction = upper(char(string(dir)));
 signature.ChannelModel = char(string(localResolveChannelToken(cfgReplay)));
+signature.RNTI = double(sixgr.util.structGet(grant, "RNTI", NaN));
+signature.NCellID = double(sixgr.util.structGet(cfgReplay, "phy.carrier.NCellID", NaN));
+if signature.Direction == "UL"
+    signature.ScramblingNID = double(sixgr.util.structGet(cfgReplay, "phy.pusch.NID", NaN));
+else
+    signature.ScramblingNID = double(sixgr.util.structGet(cfgReplay, "phy.pdsch.NID", NaN));
+end
 signature.TxAntennas = double(sixgr.util.structGet(cfgReplay, "channel.nTxAnt", NaN));
 signature.RxAntennas = double(sixgr.util.structGet(cfgReplay, "channel.nRxAnt", NaN));
 signature.NSizeGrid = double(sixgr.util.structGet(cfgReplay, "phy.carrier.NSizeGrid", NaN));
@@ -1804,6 +1986,7 @@ signature.NumLayers = double(sixgr.util.structGet(grant, "NumLayers", NaN));
 signature.RV = double(localGrantRV(grant));
 signature.TargetCodeRate = round(double(sixgr.util.structGet(grant, "TargetCodeRate", NaN)) * 1e6) / 1e6;
 phyGrant = sixgr.util.structGet(grant, "PHYGrant", struct());
+signature.FrozenCodingLayout = sixgr.util.structGet(phyGrant, "CodingLayout", struct());
 signature.FrozenGrantContextId = char(string(sixgr.util.structGet( ...
     phyGrant, "GrantContextId", "")));
 signature.FrozenPrecoderSHA256 = char(string(sixgr.util.structGet( ...
@@ -1812,11 +1995,9 @@ signature.FrozenRuntimeAuthoritySHA256 = char(string(sixgr.util.structGet( ...
     phyGrant, "ConfigurationAuthority.RuntimeOperatingAuthoritySHA256", "")));
 try
     key = char(jsonencode(signature));
-catch
-    key = sprintf("%s|ch=%s|tx=%g|rx=%g|grid=%g|start=%g|layers=%g|rv=%g", ...
-        signature.Direction, signature.ChannelModel, signature.TxAntennas, ...
-        signature.RxAntennas, signature.NSizeGrid, signature.NStartGrid, ...
-        signature.NumLayers, signature.RV);
+catch ME
+    error("sixgr:system:WaveformReplay:UnserializableTemplateCacheIdentity", ...
+        "Exact grant-template cache identity cannot be serialized: %s", ME.message);
 end
 end
 
@@ -2061,15 +2242,47 @@ elseif strlength(mapType) == 0
 end
 end
 
-function state = localInitChannelState(cfg, tx, txInfo)
+function state = localInitChannelState(cfg, tx, txInfo, channelSeed, captureDiagnostic, initialTime)
+if nargin < 5, captureDiagnostic = false; end
+if nargin < 6, initialTime = 0; end
+if isempty(channelSeed)
+    channelSeed = sixgr.util.structGet(cfg, "run.seed", 1);
+end
+assert(localValidReplaySeed(channelSeed) && ~isempty(channelSeed), ...
+    "sixgr:system:WaveformReplay:ChannelSeed", ...
+    "The resolved channel seed must be a nonnegative uint32-compatible integer.");
 state = struct("Initialized", true, "UseFading", false, "Obj", [], ...
     "ChannelPadSamples", 0, "ChannelTrimSamples", 0, ...
     "Cfg", cfg, "SampleRateHz", localResolveSampleRate(tx, txInfo), ...
-    "ImpairmentReplay", struct());
+    "OFDMInfo", localReplayOFDMInfo(tx, txInfo), ...
+    "ImpairmentReplay", struct(), "NoiseProvenance", struct(), ...
+    "ChannelSeed", double(channelSeed), "ChannelInitialTime_s", double(initialTime), ...
+    "CaptureDiagnostic", logical(captureDiagnostic), ...
+    "ChannelMetadata", struct(), "PathGains", [], "PathFilters", [], "ChannelSampleTimes", []);
 
 modelRaw = upper(string(sixgr.util.structGet(cfg, "channel.model", "AWGN")));
 awgnOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", false));
 if awgnOnly || modelRaw == "AWGN" || modelRaw == "NONE" || modelRaw == "OFF"
+    if captureDiagnostic && string(sixgr.util.structGet(cfg, ...
+            'system.linkAbstraction.spatialProviderClass',''))== ...
+            "sixgr.system.abstraction.NetworkSpatialGrantProvider"
+        numTx=size(tx.Waveform,2);
+        numRx=double(cfg.channel.nRxAnt);
+        assert(modelRaw=="AWGN" && numTx==numRx, ...
+            'sixgr:calibration:AWGNReferenceDimensions', ...
+            'The calibration reference must execute explicit equal-dimension identity AWGN.');
+        % localApplyChannelAndAwgn executes y=x in this branch. Retain that
+        % actual identity, never the fading target profile used for fitting.
+        identity=struct('Schema',"sixgr.executed_awgn_reference_channel/v1", ...
+            'NativeClass',"identity_sample_channel", ...
+            'NativeProperties',struct('DelayProfile',"AWGN", ...
+                'SampleRate',state.SampleRateHz,'TransferMatrix',eye(numTx)), ...
+            'TxPorts',numTx,'RxPorts',numRx);
+        identity.SHA256=string(sixgr.util.sha256Hex(uint8(unicode2native( ...
+            jsonencode(sixgr.util.jsonSafeValue(identity)),'UTF-8'))));
+        identity.ProfileID="AWGN_"+identity.SHA256;
+        state.ChannelMetadata.CalibrationChannelIdentity=identity;
+    end
     return;
 end
 
@@ -2083,13 +2296,33 @@ numTx = max(1, size(tx.Waveform, 2));
 numRx = max(1, round(double(sixgr.util.structGet(cfgCh, "channel.nRxAnt", ...
     sixgr.util.structGet(cfgCh, "phy.nRxAnt", 1)))));
 
-ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
-    "Model", cfgCh.channel.model, ...
-    "SampleRate", fs, ...
-    "NumTxAnt", numTx, ...
-    "NumRxAnt", numRx, ...
-    "Seed", sixgr.util.structGet(cfgCh, "run.seed", 1));
+networkRecipe=string(sixgr.util.structGet(cfgCh,'system.linkAbstraction.spatialProviderClass',''))== ...
+    "sixgr.system.abstraction.NetworkSpatialGrantProvider";
+if networkRecipe
+    direction="DL";
+    if isfield(tx,'PUSCH'), direction="UL"; end
+    ch=sixgr.system.abstraction.createNetworkSpatialChannel(cfgCh,fs,direction,double(channelSeed));
+    assert(ch.Meta.NumTxAnt==numTx && ch.Meta.NumRxAnt==numRx, ...
+        'sixgr:system:WaveformReplay:NetworkChannelDimensions', ...
+        'Executed waveform dimensions differ from the calibrated network channel endpoints.');
+else
+    ch = sixgr.channel.ChannelFactory.create(cfgCh, ...
+        "Model", cfgCh.channel.model, ...
+        "SampleRate", fs, ...
+        "NumTxAnt", numTx, ...
+        "NumRxAnt", numRx, ...
+        "Seed", double(channelSeed));
+end
+if captureDiagnostic && networkRecipe
+    ch.Meta.CalibrationChannelIdentity= ...
+        sixgr.system.abstraction.networkChannelCalibrationIdentity(cfgCh,ch.Object);
+end
+state.ChannelMetadata = ch.Meta;
 if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object") && ~isempty(ch.Object)
+    assert(isprop(ch.Object,'InitialTime') || initialTime==0, ...
+        'sixgr:system:WaveformReplay:ChannelInitialTime', ...
+        'This fading channel cannot execute the requested absolute-time realization.');
+    if isprop(ch.Object,'InitialTime'), ch.Object.InitialTime=double(initialTime); end
     state.UseFading = true;
     state.Obj = ch.Object;
     [padSamples, trimSamples] = localResolveChannelDelaySamples(ch.Object, fs);
@@ -2098,7 +2331,7 @@ if logical(sixgr.util.structGet(ch, "IsFading", false)) && isfield(ch, "Object")
 end
 end
 
-function [y, nVar, state] = localApplyChannelAndAwgn(x, snr_dB, state)
+function [y, nVar, state] = localApplyChannelAndAwgn(x, snr_dB, state, tx, noiseSeed)
 y = x;
 if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) && ...
         isfield(state, "Obj") && ~isempty(state.Obj)
@@ -2112,10 +2345,18 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
     if padSamples > 0
         xIn = [x; zeros(padSamples, size(x,2), "like", x)];
     end
-    try
-        yRaw = state.Obj(xIn);
-    catch
-        [yRaw, ~] = state.Obj(xIn);
+    if state.CaptureDiagnostic
+        assert(isa(state.Obj,'nrTDLChannel') || isa(state.Obj,'nrCDLChannel'), ...
+            'sixgr:system:WaveformReplay:CalibrationChannelEvidence', ...
+            'Retained propagation evidence requires native TDL/CDL path gains.');
+        [yRaw,state.PathGains,state.ChannelSampleTimes] = state.Obj(xIn);
+        state.PathFilters = getPathFilters(state.Obj);
+    else
+        try
+            yRaw = state.Obj(xIn);
+        catch
+            [yRaw, ~] = state.Obj(xIn);
+        end
     end
     if trimSamples > 0 && size(yRaw,1) >= (trimSamples + size(x,1))
         y = yRaw(1+trimSamples:trimSamples+size(x,1), :);
@@ -2129,7 +2370,80 @@ if isstruct(state) && logical(sixgr.util.structGet(state, "UseFading", false)) &
     end
 end
 [y, state] = localApplyReplayImpairments(y, state);
-[y, nVar] = localAddAwgn(y, snr_dB);
+% The SLS caller supplies receive SINR after its large-scale link budget.
+% Samples already carry the corresponding attenuation/gains. Refer noise
+% to that same amplitude plane, otherwise pathloss is counted a second time.
+% Use the executed deterministic gain, never measured faded sample power:
+% small-scale fades and RF distortion must remain in the decoded outcome.
+[txEnergy,referenceSymbolPlane] = localReplayOccupiedREEnergy(tx);
+amplitudeGain = double(state.ImpairmentReplay.AppliedLargeScaleAmplitudeGain);
+assert(isscalar(amplitudeGain) && isfinite(amplitudeGain) && amplitudeGain > 0, ...
+    "sixgr:system:WaveformReplay:InvalidAppliedLargeScaleGain", ...
+    "Noise calibration requires the finite positive gain applied to these samples.");
+powerGain = amplitudeGain^2;
+[y, noise] = sixgr.phy.waveform.addOccupiedREAWGN(y, tx.Carrier, snr_dB, ...
+    "Seed", noiseSeed, ...
+    "SignalEnergyPerOccupiedRE", txEnergy * powerGain, ...
+    "OFDMOptions", localReplayOFDMOptions(state, tx.Carrier));
+noise.TransmittedSignalEnergyPerOccupiedRE = txEnergy;
+noise.AppliedLargeScalePowerGain = powerGain;
+noise.ReferenceSymbolPlane = referenceSymbolPlane;
+noise.SignalEnergySource = referenceSymbolPlane+"_times_applied_large_scale_power_gain";
+nVar = double(noise.SampleNoiseVariance);
+state.NoiseProvenance = noise;
+end
+
+function info = localReplayOFDMInfo(tx, txInfo)
+info = sixgr.util.structGet(tx, "OFDMInfo", struct());
+if ~isstruct(info) || isempty(fieldnames(info))
+    info = sixgr.util.structGet(tx, "OFDM", struct());
+end
+if ~isstruct(info) || isempty(fieldnames(info))
+    info = sixgr.util.structGet(txInfo, "OFDM", struct());
+end
+if ~isstruct(info) || isempty(fieldnames(info))
+    error("sixgr:system:WaveformReplay:MissingExecutedOFDMInfo", ...
+        "Waveform replay requires the transmitter's executed OFDM metadata; carrier defaults cannot prove its sample rate or windowing.");
+end
+end
+
+function [energy,plane] = localReplayOccupiedREEnergy(tx)
+plane="mean_preprecoding_layer_symbol_energy";
+if isfield(tx, "PDSCHSymbolsForEvidence")
+    symbols = tx.PDSCHSymbolsForEvidence;
+elseif isfield(tx, "PUSCHSymbolsForEvidence")
+    % Use the same layer-symbol Es/N0 convention as DL. Averaging UL port
+    % symbols after unit-Frobenius precoding divides the noise by rank and
+    % gives a spurious 10*log10(rank) UL advantage over matched DL grants.
+    symbols = tx.PUSCHSymbolsForEvidence;
+elseif isfield(tx, "Grid")
+    grid = tx.Grid;
+    symbols = grid(grid ~= 0);
+    plane="mean_nonzero_control_grid_symbol_energy";
+else
+    error("sixgr:system:WaveformReplay:MissingOccupiedREEnergy", ...
+        "Waveform replay needs executed occupied-RE symbols to apply the configured Es/N0.");
+end
+energy = mean(abs(double(symbols(:))).^2);
+assert(isscalar(energy) && isfinite(energy) && energy > 0, ...
+    "sixgr:system:WaveformReplay:InvalidOccupiedREEnergy", ...
+    "Executed occupied-RE symbols have no finite positive energy.");
+end
+
+function args = localReplayOFDMOptions(state, carrier)
+info = state.OFDMInfo;
+nfft = double(sixgr.util.structGet(info, "Nfft", NaN));
+sampleRate = double(sixgr.util.structGet(info, "SampleRate", NaN));
+windowing = double(sixgr.util.structGet(info, "Windowing", ...
+    sixgr.util.structGet(info, "OFDMWindowingSamples", NaN)));
+scsHz = double(carrier.SubcarrierSpacing)*1e3;
+assert(isscalar(nfft) && isfinite(nfft) && nfft == fix(nfft) && nfft > 0 && ...
+    isscalar(sampleRate) && isfinite(sampleRate) && sampleRate > 0 && ...
+    abs(sampleRate-nfft*scsHz) <= 1e-9*sampleRate && ...
+    isscalar(windowing) && isfinite(windowing) && windowing >= 0, ...
+    "sixgr:system:WaveformReplay:OFDMNoiseContract", ...
+    "Executed OFDM Nfft, sample rate and windowing are required for occupied-RE noise calibration.");
+args = {"Nfft", nfft, "Windowing", windowing};
 end
 
 function symbolAllocation = localReplaySymbolAllocation(grant)
@@ -2162,14 +2476,6 @@ end
 state.ImpairmentReplay = imp;
 end
 
-function [y, nVar] = localAddAwgn(x, snr_dB)
-snrLin = 10.^(double(snr_dB)/10);
-sigPow = mean(abs(x(:)).^2);
-nVar = sigPow / max(snrLin, eps);
-n = sqrt(nVar/2) * (randn(size(x)) + 1i*randn(size(x)));
-y = x + n;
-end
-
 function tf = localAllowsFastAWGN(cfg, grant, chState)
 if logical(sixgr.util.structGet(chState, "UseFading", false))
     tf = false;
@@ -2191,26 +2497,11 @@ token = string(sixgr.channel.resolveConcreteProfile(cfg));
 end
 
 function fs = localResolveSampleRate(tx, txInfo)
-fs = [];
-if nargin >= 2 && isstruct(txInfo)
-    fs = sixgr.util.structGet(txInfo, "OFDM.SampleRate", []);
-end
-if isempty(fs) && isstruct(tx)
-    carrier = sixgr.util.structGet(tx, "Carrier", []);
-    if ~isempty(carrier)
-        try
-            ofdmInfo = nrOFDMInfo(carrier);
-            fs = double(sixgr.util.structGet(ofdmInfo, "SampleRate", []));
-        catch
-            fs = [];
-        end
-    end
-end
-if isempty(fs) || ~isfinite(double(fs)) || double(fs) <= 0
-    fs = 30.72e6;
-else
-    fs = double(fs);
-end
+info = localReplayOFDMInfo(tx, txInfo);
+fs = double(sixgr.util.structGet(info, "SampleRate", NaN));
+assert(isscalar(fs) && isfinite(fs) && fs > 0, ...
+    "sixgr:system:WaveformReplay:MissingSampleRate", ...
+    "Waveform replay requires the executed OFDM sample rate; no fixed-rate fallback is allowed.");
 end
 
 function [padSamples, trimSamples] = localResolveChannelDelaySamples(chObj, fs)
@@ -2257,4 +2548,10 @@ end
 % cap is allowed only through the explicit LDPCMaxIterations input above.
 maxIter = cfgMaxIter;
 maxIter = max(1, round(maxIter));
+end
+
+function valid = localValidReplaySeed(seed)
+valid = isempty(seed) || (isnumeric(seed) && isreal(seed) && ...
+    isscalar(seed) && isfinite(seed) && seed == fix(seed) && ...
+    seed >= 0 && seed <= 2^32-1);
 end

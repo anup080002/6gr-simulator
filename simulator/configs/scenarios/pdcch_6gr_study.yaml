@@ -29,5 +29,8 @@
     "link_direction": "dl",
     "snr_db": 20,
     "monte_carlo_iterations": 2
+  },
+  "mimo": {
+    "reciprocity_mode": "TDD"
   }
 }

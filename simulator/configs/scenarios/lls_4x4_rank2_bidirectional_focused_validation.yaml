@@ -124,7 +124,13 @@
     "phr_report_enable": false
   },
   "rf_frontend": {
-    "enabled": false
+    "enabled": false,
+    "ul_power_control": {
+      "enabled": false,
+      "open_loop_enabled": false,
+      "closed_loop_enabled": false,
+      "phr_report_enabled": false
+    }
   },
   "channels": {
     "pathloss_enabled": false,

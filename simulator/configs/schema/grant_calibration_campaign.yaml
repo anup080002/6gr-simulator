@@ -1,0 +1,54 @@
+schema: sixgr.grant_calibration_campaign_catalog/v1
+campaign_schema: sixgr.grant_calibration_campaign/v1
+research_classes:
+  - baseline_benchmark
+  - agreed_starting_point
+  - study_item_candidate
+  - optional_research_experiment
+channel_evolution:
+  - persistent_link_absolute_slot
+  - independent_attempt_realizations
+required_fields:
+  - schema
+  - campaign_id
+  - research_class
+  - seed_base
+  - channel_evolution
+  - episodes_per_invocation
+  - collections
+collection_fields:
+  - id
+  - template_manifest
+  - template_manifest_sha256
+  - template_episode_id
+  - snr_histories_db
+  - fit_starts_per_history
+  - validation_starts_per_history
+roles: [fit, validation]
+optional_fields: [evidence_storage]
+evidence_storage_modes: [raw, lossless_path_gains_xor_v1]
+evidence_storage_default: raw
+allocation_collection_fields:
+  - id
+  - scenario_config
+  - allocation
+  - snr_histories_db
+  - fit_starts_per_history
+  - validation_starts_per_history
+allocation_fields:
+  - direction
+  - rnti
+  - ue_index
+  - serving_cell
+  - prb_set
+  - symbol_allocation
+  - mcs_table
+  - mcs_index
+  - rank
+  - precoder_real
+  - precoder_imag
+  - rv_sequence
+  - absolute_slots
+  - control_assumption
+allocation_control_assumption: ideal_issued_grant
+allocation_full_carrier_prbs: all_carrier

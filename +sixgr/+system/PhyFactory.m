@@ -3,10 +3,30 @@ classdef PhyFactory
 % Build system-level PHY backend from config/params.
 
     methods(Static)
+        function cfg = resolveConfig(cfg, params)
+            % Internal runner overrides must reach scheduler and PHY alike.
+            % This does not install calibration or enable modeled feedback.
+            if nargin < 2, params = struct(); end
+            backend = lower(string(sixgr.util.structGet(params, "PHYBackend", ...
+                sixgr.util.structGet(cfg, "system.phyBackend", "waveform"))));
+            if ~isscalar(backend) || ismissing(backend) || ...
+                    ~any(backend == ["waveform","calibrated_link_abstraction"])
+                if isscalar(backend) && ~ismissing(backend) && ...
+                        any(backend == ["abstract","lut","bler_lut","bler_db","proxy","lls_calibrated_link2system"])
+                    error("sixgr:system:ProxyBackendRemoved", ...
+                        "System PHY backend '%s' was removed. Use waveform or explicitly calibrated_link_abstraction.", backend);
+                end
+                error("sixgr:system:UnsupportedPHYBackend", ...
+                    "system.phyBackend / PHYBackend must select waveform or calibrated_link_abstraction.");
+            end
+            cfg.system.phyBackend = char(backend);
+        end
+
         function phy = create(cfg, params, varargin)
             if nargin < 2 || isempty(params)
                 params = struct();
             end
+            cfg = sixgr.system.PhyFactory.resolveConfig(cfg,params);
             seed = double(sixgr.util.structGet(cfg, "run.seed", 1)) + 31;
             if ~isempty(varargin)
                 for i = 1:2:numel(varargin)
@@ -17,8 +37,7 @@ classdef PhyFactory
                 end
             end
 
-            phyBackend = lower(char(string(sixgr.util.structGet(params, "PHYBackend", ...
-                sixgr.util.structGet(cfg, "system.phyBackend", "waveform")))));
+            phyBackend = cfg.system.phyBackend;
             if strcmp(phyBackend, "waveform")
                 strictMode = logical(sixgr.util.structGet(cfg, "run.strictMode", false));
                 phy = sixgr.system.WaveformPHY(cfg, params, "Seed", seed, "StrictMode", strictMode);
@@ -28,12 +47,6 @@ classdef PhyFactory
                 phy=sixgr.system.CalibratedLinkPHY(cfg,params,seed);
                 return;
             end
-            if any(string(phyBackend) == ["abstract","lut","bler_lut","bler_db","proxy","lls_calibrated_link2system"])
-                error("sixgr:system:ProxyBackendRemoved", ...
-                    "System PHY backend '%s' was removed from active runtime. Use system.phyBackend='waveform' so grants are decoded through WaveformPHY.", phyBackend);
-            end
-            error("sixgr:system:UnsupportedPHYBackend", ...
-                "Unsupported system PHY backend '%s'. Use 'waveform' or explicitly calibrated 'calibrated_link_abstraction'.", phyBackend);
         end
     end
 end

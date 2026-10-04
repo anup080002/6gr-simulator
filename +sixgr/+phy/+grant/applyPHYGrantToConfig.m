@@ -48,6 +48,13 @@ cfgOut = sixgr.util.structSet(cfgOut, root + ".modulation", char(string(cl.Modul
 if isfinite(double(cl.TargetCodeRate)) && double(cl.TargetCodeRate) > 0
     cfgOut = sixgr.util.structSet(cfgOut, root + ".codeRate", double(cl.TargetCodeRate));
 end
+if isfield(cl, "XOverhead")
+    xOverhead = double(cl.XOverhead);
+    assert(isscalar(xOverhead) && ismember(xOverhead, [0 6 12 18]), ...
+        "sixgr:phy:grant:InvalidFrozenXOverhead", ...
+        "Frozen grant XOverhead must be 0, 6, 12, or 18 RE per PRB.");
+    cfgOut = sixgr.util.structSet(cfgOut, root + ".xOverhead", xOverhead);
+end
 if isfinite(double(cl.MCSIndex))
     cfgOut = sixgr.util.structSet(cfgOut, root + ".mcsIndex", double(cl.MCSIndex));
 end

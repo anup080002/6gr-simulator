@@ -192,6 +192,20 @@
       "queueMaxBits": {"value_type": "number", "default": 50000000, "min": 0},
       "ulSinrOffset_dB": {"value_type": "number", "default": -1},
       "phyBackend": {"value_type": "string", "default": "waveform", "allowed_values": ["waveform", "calibrated_link_abstraction"]},
+      "sinrModel": {"value_type": "string", "allowed_values": ["explicit_activity_power_sum", "legacy_margin_calibration"]},
+      "linkAbstraction": {
+        "networkSpatial": {
+          "sinrPredictorModel": {"value_type": "string", "default": "diagonal_nominal_fft", "allowed_values": ["diagonal_nominal_fft", "finite_committed_shared_data"]}
+        },
+        "dynamicPUCCH": {
+          "resourceBinding": {
+            "mode": {"value_type": "string", "allowed_values": ["shared_configured_resources", "per_cell_frequency_pool"]},
+            "firstPRB": {"value_type": "integer", "min": 0},
+            "stridePRB": {"value_type": "integer", "min": 1},
+            "capacityPerCell": {"value_type": "integer", "min": 1}
+          }
+        }
+      },
       "mobility": {
         "updatePeriod_slots": {"value_type": "number_vector", "default": [], "min": 0}
       },
@@ -232,6 +246,7 @@
       "awgnOnly": {"value_type": "boolean"},
       "awgnReferenceREEnergy": {"value_type": "number", "default": 1, "min_exclusive": 0},
       "sharedIdentityAWGNEnabled": {"value_type": "boolean"},
+      "interferenceModel": {"value_type": "string", "allowed_values": ["explicit_activity_power_sum", "legacy_margin_calibration"]},
       "pathloss": {
         "model": {"value_type": "string", "default": "nrPathLoss", "allowed_values": ["nrPathLoss", "CI", "ABG", "custom", "freeSpace", "none"]}
       },
@@ -413,7 +428,7 @@
         "NumAntennaPorts": {"value_type": "integer", "default": 1, "allowed_values": [1, 2, 4, 8]},
         "rv": {"value_type": "integer", "default": 0, "allowed_values": [0, 1, 2, 3]},
         "xOverhead": {"value_type": "integer", "default": 0, "min": 0},
-        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3", "experimental_square_qam_v1", "experimental_6gr_ai1032_option_a"]},
+        "mcsTable": {"value_type": "string", "default": "qam256_table2", "allowed_values": ["qam64_table1", "qam256_table2", "qam64LowSE_table3", "experimental_square_qam_v1", "experimental_6gr_ai1032_option_a", "experimental_6gr_ai1032_alt3"]},
         "cqiTable": {"value_type": "string", "default": "table1", "allowed_values": ["table1", "table2"]},
         "transformPrecoding": {"value_type": "boolean", "default": true},
         "dmrs": {

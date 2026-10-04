@@ -1,0 +1,33 @@
+# Internal-config overlay for production network/feedback integration tests.
+# Numerical BLER fixture only: never install this as study calibration.
+scenario:
+  geometry:
+    deployment: hex_grid
+  layout:
+    nSites: 2
+    nSectorsPerSite: 1
+    interSiteDistance_m: 500
+    wrapAround: false
+  nUE: 2
+  bs:
+    txPower_dBm: 30
+  ue:
+    nUE: 2
+    txPower_dBm: 23
+    indoorFraction: 0
+    distribution:
+      min_bs_dist_m: 10
+  mobility:
+    userPaths:
+      - ue_id: 1
+        initial_position_m: [50, 0, 1.5]
+        speed_kmh: 0
+        initial_heading_deg: 0
+      - ue_id: 2
+        initial_position_m: [450, 0, 1.5]
+        speed_kmh: 0
+        initial_heading_deg: 0
+channel:
+  pathlossEnabled: true
+  shadowFadingEnabled: false
+  losEnabled: false

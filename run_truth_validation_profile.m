@@ -28,6 +28,7 @@ opt = ip.Results;
 setup6GRSimToolkit("Verbose", logical(opt.Verbose), "RunToolboxChecks", logical(opt.SetupToolboxChecks));
 cfg = localLoadConfig(opt.ConfigFile);
 cfg = sixgr.truth.prepareValidationConfig(cfg, opt);
+settings = sixgr.truth.buildValidationSettings(opt, cfg);
 truthSlotBudget = max(round(double(opt.E2EMaxSlots)), localRequiredTruthSlots(cfg, double(opt.E2EDuration_s)));
 
 baseRep = sixgr_run_3gpp_full_campaign(cfg, ...
@@ -98,7 +99,6 @@ artifactCheck = sixgr.report.verifyCampaignArtifacts(runFolder, baseRep.Summary,
     "ModuleContext", artifactCtx, ...
     "StrictMode", true);
 
-settings = localBuildSettings(opt, cfg);
 summary = localBuildSummary(runFolder, baseRep, link, artifactCheck, scan, supplementalScan, settings, supplementalRoot, supplementalRelativeRoot);
 localAnnotateBaseArtifacts(layout, supplementalRoot, supplementalRelativeRoot);
 
@@ -168,33 +168,6 @@ if builtin("isstruct", cfgFile) && isscalar(cfgFile)
 else
     cfg = sixgr_loadConfig(char(string(cfgFile)));
 end
-end
-
-function settings = localBuildSettings(opt, cfg)
-settings = struct();
-settings.ConfigFile = char(string(opt.ConfigFile));
-settings.UseFastLinkModel = false;
-settings.UseMexAcceleration = false;
-settings.UseParallelAcceleration = false;
-settings.StrictMode = true;
-settings.NoProxyTruthContract = true;
-settings.OnlyE2EBaseRun = true;
-settings.IncludeSystem = false;
-settings.IncludeSystemSINRSurface = false;
-settings.IncludeCalibrationArtifacts = false;
-settings.E2EAirModel = "truth";
-settings.E2ETruthFastAWGNPath = false;
-settings.RequestedChannelModel = "TDL-C";
-settings.NormalizedChannelModel = string(sixgr.util.structGet(cfg, "channel.model", ""));
-settings.TDLProfile = string(sixgr.util.structGet(cfg, "channel.tdlProfile", ""));
-settings.ChannelAWGNOnly = logical(sixgr.util.structGet(cfg, "channel.awgnOnly", true));
-settings.LinkSNR_dB = double(opt.LinkSNR_dB);
-settings.LinkMaxSimFrames = round(double(opt.LinkMaxSimFrames));
-settings.E2EMaxSlots = round(double(opt.E2EMaxSlots));
-settings.E2EUECount = round(double(opt.E2EUECount));
-settings.E2ETrafficModel = string(opt.E2ETrafficModel);
-settings.SaveFigures = logical(opt.SaveFigures);
-settings.GenerateCampaignPlots = logical(opt.GenerateCampaignPlots);
 end
 
 function summary = localBuildSummary(runFolder, baseRep, link, artifactCheck, scan, supplementalScan, settings, supplementalRoot, supplementalRelativeRoot)

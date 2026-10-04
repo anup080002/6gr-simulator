@@ -2,6 +2,43 @@ classdef DCIContextFactory
     %DCICONTEXTFACTORY Build strict contexts from operator-owned control config.
 
     methods (Static)
+        function supported = supportsSymbolAllocation(cfg, direction, allocation)
+            % Pre-scheduler feasibility, not DCI construction. A clipped TDD
+            % window is not automatically an installed TDRA row. Final grant
+            % packing still checks the selected format and actual K0/K2.
+            direction=upper(string(direction));
+            assert(isscalar(direction) && any(direction==["DL","UL"]), ...
+                'sixgr:phy:pdcch:InvalidDirection','Choose DL or UL.');
+            validateattributes(allocation,{'numeric'},{'real','finite','integer','numel',2,'nonnegative'});
+            control=sixgr.util.structGet(cfg,'phy.pdcch.operatorControl',struct());
+            strict=sixgr.util.structGet(control,'pdcch_strict',struct());
+            installed=isfield(control,'connected_dci') || ...
+                (isfield(strict,'dci_context') && ~isempty(strict.dci_context));
+            if ~installed
+                % The YAML-derived path uses the SAME active-list resolver
+                % as fromScheduledGrant, not a table inferred from this budget.
+                defaults=sixgr.phy.pdcch.DCIContext.defaultDLAllocations();
+                if direction=="UL", defaults=sixgr.phy.pdcch.DCIContext.defaultULAllocations(); end
+                rows=localActiveTDRA(cfg,struct('Direction',direction),direction,defaults);
+                supported=any(rows(:,2)==allocation(1) & rows(:,3)==allocation(2));
+                return;
+            end
+            formats=string(sixgr.util.structGet(control,'dci_formats',strings(0,1)));
+            assert(~isempty(formats),'sixgr:phy:pdcch:missing_dci_context', ...
+                'Allocation feasibility requires independently installed monitored DCI formats.');
+            prefix="1_";
+            field='DLTimeDomainAllocations';
+            if direction=="UL", prefix="0_"; field='ULTimeDomainAllocations'; end
+            supported=false;
+            for k=1:numel(formats)
+                fmt=sixgr.phy.pdcch.normalizeDCIFormat(formats(k));
+                if ~startsWith(fmt,prefix), continue; end
+                context=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(cfg,fmt);
+                rows=context.Data.(field);
+                supported=supported || any(rows(:,2)==allocation(1) & rows(:,3)==allocation(2));
+            end
+        end
+
         function context = fromRuntimeConfig(cfg, dciFormat)
             control = sixgr.util.structGet(cfg, "phy.pdcch.operatorControl", []);
             if isstruct(control) && isfield(control,'connected_dci')

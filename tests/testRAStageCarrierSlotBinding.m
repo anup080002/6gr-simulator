@@ -43,7 +43,12 @@ cfg.random_access.msg3_pusch.transform_precoding = false;
 cfg.random_access.setup_complete_pusch.transform_precoding = false;
 ra = sixgr.mac.ra.RAConfig(cfg);
 ra.Msg2Slot = 11;
-ra.Msg3Slot = 23;
+grant = sixgr.mac.ra.buildRARULGrant(ra);
+% Msg3 is fixed by the signalled default-A row and numerology-dependent
+% additional delay, not an independently chosen frame-crossing slot.
+assert(grant.K2 == 1 && grant.Msg3AdditionalDelaySlots == 3);
+ra.Msg3Slot = ra.Msg2Slot + grant.K2 + grant.Msg3AdditionalDelaySlots;
+assert(ra.Msg3Slot == 15);
 ra.Msg4Slot = 30;
 ra.SetupCompleteSlot = 32;
 frame=sixgr.phy.FrameStructureEngine(cfg,'FrameCoreOnly',true);
@@ -56,7 +61,6 @@ assert(frame.IsDLAllocation(ra.Msg2Slot,[ra.Msg2PDSCH.SymbolStart ra.Msg2PDSCH.N
     frame.IsDLAllocation(ra.Msg4Slot,[ra.Msg4PDSCH.SymbolStart ra.Msg4PDSCH.NumSymbols]));
 assert(frame.IsULAllocation(ra.Msg3Slot,[ra.Msg3PUSCH.SymbolStart ra.Msg3PUSCH.NumSymbols]) && ...
     frame.IsULAllocation(ra.SetupCompleteSlot,[ra.SetupCompletePUSCH.SymbolStart ra.SetupCompletePUSCH.NumSymbols]));
-grant = sixgr.mac.ra.buildRARULGrant(ra);
 rar = sixgr.mac.ra.encodeMACRAR("RAPID", ra.PreambleIndex, ...
     "TimingAdvanceCommand", 0, "TemporaryCRNTI", ra.TempCRNTI, "ULGrant", grant);
 [tx2, sched2] = sixgr.phy.ra.generateMsg2RARWaveform(cfg, ra, rar);
@@ -66,12 +70,21 @@ assert(rx2.Ok && decodedRAR.ULGrant.MCS == grant.MCS, ...
     "RAR PDCCH and PDSCH receivers must use the transmitted slot's sequences.");
 
 msg3 = sixgr.mac.ra.buildMsg3Payload("UEId", 1);
+invalidRA = ra;
+invalidRA.Msg3Slot = 23;
+rejected = false;
+try
+    sixgr.phy.ra.generateMsg3PUSCHWaveform(cfg, invalidRA, decodedRAR.ULGrant, msg3);
+catch err
+    rejected = string(err.identifier) == "sixgr:phy:ra:DecodedRARSlotMismatch";
+end
+assert(rejected, "A private Msg3 slot contradicting decoded RAR timing must be rejected.");
 [tx3, pusch] = sixgr.phy.ra.generateMsg3PUSCHWaveform(cfg, ra, decodedRAR.ULGrant, msg3);
 localCheckCarrier(tx3.Carrier, ra.Msg3Slot);
 % Independent Toolbox sequence at the scheduled slot: a mutually wrong Tx/Rx
 % pair can pass CRC, so round-trip decoding alone cannot prove this repair.
 expectedCarrier = nrCarrierConfig("NCellID", ra.NCellID, ...
-    "NSizeGrid", ra.NSizeGrid, "SubcarrierSpacing", 30, "NFrame", 1, "NSlot", 3);
+    "NSizeGrid", ra.NSizeGrid, "SubcarrierSpacing", 30, "NFrame", 0, "NSlot", 15);
 expectedDMRS = nrPUSCHDMRS(expectedCarrier, pusch);
 assert(isequal(tx3.DMRSNativeSymbols, expectedDMRS), ...
     "Msg3 must generate the actual scheduled-slot DM-RS sequence.");

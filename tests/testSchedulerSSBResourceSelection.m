@@ -57,5 +57,60 @@ for kind=["RR","PF"]
         assert(contains(sibInfo.ResourceExclusions.Reason,"SIB1_PDSCH_and_Type0_PDCCH"));
     end
 end
+localAssertTDDTimingDeferral(cfg,ue,budget);
 ok=true;
+end
+
+function localAssertTDDTimingDeferral(cfg,ue,budget)
+% Select an actual configured DL-control/UL-data boundary with K0=1.
+% The candidate is rejected, not shifted or silently issued in the UL slot.
+fixture=sixgr.lls6g.config.readConfigFile(fullfile('simulator','configs', ...
+    'fixtures','scheduler_feedback_timing.yaml'));
+k0=double(fixture.tdd.resource_deferral_k0);
+cfg.phy.schedulingTiming.allowedK0=k0;
+cfg.phy.schedulingTiming.pdcchToPDSCHK0=k0;
+cfg.phy.frameStructure=rmfield(cfg.phy.frameStructure,'TimingContext');
+cfg=sixgr.phy.frame.FrameRuntimeStateBuilder.attachTimingContext(cfg);
+assert(cfg.phy.frameStructure.TimingContext.Policy.SelectedK0==k0);
+boundary=NaN;
+for slot0=20:39
+    source=sixgr.util.resolveTDDSlotPartition(cfg,slot0);
+    target=sixgr.util.resolveTDDSlotPartition(cfg,slot0+k0);
+    if source.DLSymbolAllocation(2)>=2 && target.ULSymbolAllocation(2)==14
+        boundary=slot0; break;
+    end
+end
+assert(isfinite(boundary),'The TDD fixture must contain the intended DL-to-UL boundary.');
+budget.ControlAbsoluteSlot=boundary;
+for kind=["RR","PF"]
+    harq=sixgr.l2.mac.HARQEntity(cfg,'Direction','DL');
+    if kind=="RR"
+        scheduler=sixgr.l2.mac.SchedulerRR(cfg,'Direction','DL','HARQ',harq);
+    else
+        scheduler=sixgr.l2.mac.SchedulerPF(cfg,'Direction','DL','HARQ',harq);
+    end
+    before=harq.Stats;
+    [grants,info]=scheduler.schedule(boundary,ue,budget);
+    assert(isempty(grants),'No PDSCH/DCI may be issued in the rejected TDD data occasion.');
+    assert(isequaln(harq.Stats,before) && isempty(harq.getDeliveryLedger()), ...
+        'A rejected candidate must not allocate a TB, synthesize feedback or consume HARQ state.');
+    assert(height(info.ResourceExclusions)==1 && ...
+        info.ResourceExclusions.ControlAbsoluteSlot0==boundary && ...
+        info.ResourceExclusions.DataAbsoluteSlot0==boundary+k0 && ...
+        info.ResourceExclusions.Reason== ...
+        "common_dl_resource_timing_deferral:data_timing_rejected:target_hits_fixed_opposite_direction" && ...
+        isempty(jsondecode(info.ResourceExclusions.AvailablePRBSetJSON)), ...
+        'Retain the exact rejected candidate and reason; do not hide it as successful scheduling.');
+    % Corrupt the already-installed context, not the configured TDD pattern.
+    % The new physical-deferral branch must not rescue missing authority.
+    scheduler.Cfg.phy.frameStructure=rmfield(scheduler.Cfg.phy.frameStructure,'TimingContext');
+    rejected=false;
+    try
+        scheduler.schedule(boundary,ue,budget);
+    catch cause
+        rejected=strcmp(cause.identifier,'sixgr:SchedulerBase:TimingDecisionRejected') && ...
+            contains(cause.message,'frame_timing_context_not_attached');
+    end
+    assert(rejected,'Missing timing context must still raise a diagnostic execution error.');
+end
 end

@@ -208,6 +208,10 @@ try
         return;
     end
     mib = sixgr.phy.broadcast.decodeMIBTransportBlock(pbch.TransportBlock);
+    % The SSB index is carried by the PBCH/DM-RS hypothesis, not by the
+    % 24-bit MIB payload. Never let Type-0 derivation fall back to the TX
+    % configuration's selected beam after an independent PBCH decode.
+    mib.SSBIndex=double(result.ObservedSSBOccasionIndex);
     result.MIBSystemFrameNumber = 16*double(mib.SystemFrameNumberMSB6) + result.MIBSFN4LSBValue;
     result.SSBMIBComplete=true;
     if result.RecoveryScope=="SSB_MIB"

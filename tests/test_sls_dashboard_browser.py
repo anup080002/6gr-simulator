@@ -17,8 +17,22 @@ def test_sls_live_and_result_mode_selectors(tmp_path, monkeypatch):
     (tmp_path / "meta").mkdir()
     (tmp_path / "meta/simulation_run.json").write_text(json.dumps({
         "Schema": "sixgr.simulation_run/v1", "ExecutionMode": "SLS", "Status": "completed",
+        "ExecutionID": "browser_fixture_execution",
         "ScenarioID": "browser_fixture", "RunTag": "fixture_not_study", "PrimaryStudyAccepted": False}))
     row = run_row(tmp_path, 9000000011)
+    (tmp_path / "live").mkdir()
+    (tmp_path / "live/sls_evidence.json").write_text(json.dumps({
+        "Schema": "sixgr.sls_live_evidence/v1", "WaveformBacked": False,
+        "ExecutionID": "browser_fixture_execution",
+        "PrimaryStudyAccepted": False, "CommittedThroughAbsoluteSlot0": 102,
+        "SourceClassification": "retained_calibrated_sls_runtime_rows_not_final_results",
+        "Evidence": {"NetworkSpatial": {"Rows": [{"AbsoluteSlot0": 102, "CSIRSEmissionCount": 4}],
+                                       "RetainedRows": 1, "TotalRows": 1},
+                     "PUCCHEmissions": {"Rows": [{"ObligationID": "browser_uci_102",
+                                                   "NativeWaveformExecuted": True,
+                                                   "PhysicalReceptionQualified": False,
+                                                   "EmissionSHA256": "a" * 64}],
+                                        "RetainedRows": 1, "TotalRows": 1}}}))
     live = live_payload(row, [])
     pages = {"/realtime": dash.build_product_frontend_page("realtime", scenario).decode(),
              "/plots": dash.build_product_frontend_page("plots", scenario).decode()}
@@ -48,6 +62,14 @@ def test_sls_live_and_result_mode_selectors(tmp_path, monkeypatch):
         page.get_by_role("heading", name="SLS network execution", exact=True).wait_for(timeout=15000)
         assert page.locator('[data-result-mode="true"] option').all_text_contents() == ["All modes", "LLS", "SLS"]
         assert page.get_by_text("PrimaryStudyAccepted", exact=True).count() == 1
+        page.get_by_role("heading", name="Network interference (modeled, not RF measurement)", exact=True).wait_for()
+        assert page.get_by_text("CSIRSEmissionCount", exact=True).count() == 1
+        assert "latest 100 retained rows" in page.locator("main").inner_text()
+        assert "live/sls_evidence.json#Evidence.NetworkSpatial" in page.locator("main").inner_text()
+        page.get_by_role("heading", name="Native PUCCH transmissions (TX audit, not reception)", exact=True).wait_for()
+        assert page.get_by_text("PhysicalReceptionQualified", exact=True).count() == 1
+        assert "live/sls_evidence.json#Evidence.PUCCHEmissions" in page.locator("main").inner_text()
+        assert "browser_uci_102" in page.locator("main").inner_text()
         page.goto("http://sixgr.test/plots?run_id=9000000011")
         page.locator('[data-result-mode="true"]').wait_for()
         page.locator('[data-result-mode="true"]').select_option("SLS")

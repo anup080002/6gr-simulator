@@ -1093,7 +1093,8 @@ canonical_control:
     type0:
       si_rnti: 65535
       dci_format: '1_0'
-      monitoring_occasion_ordinal: 2
+      # n0,n0+1 per 20-ms period: ordinal 3 preserves the next-period n0.
+      monitoring_occasion_ordinal: 3
       note17_band: false
     sib1:
       enabled: false
@@ -2562,6 +2563,17 @@ rf_frontend:
     srs: {p0_dbm: -80, alpha: 0.8, delta_tf_db: 0, pcmax_dbm: 23}
     prach: {p0_dbm: -100, alpha: 1.0, delta_tf_db: 0, pcmax_dbm: 23}
 pucch_resources:
+  # Isolated coding diagnostics are not connected HARQ/CSI feedback.
+  component_probe:
+    enabled: false
+    evidence_scope: isolated_known_payload_not_causal_feedback
+    ue_id: 1
+    rnti: 1
+    serving_cell: 0
+    first_slot_zero_based: 3
+    period_slots: 5
+    csi_part1_bit_count: 20
+    csi_part2_bit_count: 0
   enabled: false
   profile: nr_rel18_pucch_strict
   configuration_epoch: 1

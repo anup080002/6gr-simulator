@@ -15,7 +15,7 @@ paired = sixgr.studies.ran1ai1032.buildPairedDropPlan(cfg);
 base = paired.Plan;
 sls = cfg.sls;
 reservationPolicy=sixgr.lls6g.config.readConfigFile(string(sls.execution.resource_reservation_policy_path));
-entries=sixgr.studies.ran1ai1032.MCSCatalog.optionA();
+entries=sixgr.studies.ran1ai1032.MCSCatalog.alt3Extended();
 entryIDs=string(cfg.lls.execution.entry_ids);
 firstEntry=entries(entries.entry_id==entryIDs(1),:);
 rfBranch=sixgr.studies.ran1ai1032.resolveF1RFBranch(cfg,string(2^double(firstEntry.Qm))+"QAM");

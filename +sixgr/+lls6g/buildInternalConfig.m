@@ -729,7 +729,7 @@ cfg = localStructSetIfPresent(cfg, "channel.rxPosition_m", ...
     localGetNested(s, "channels.link_rx_position_m", []));
 if isstruct(phase10) && ~isempty(fieldnames(phase10)) && ...
         logical(localGetNested(phase10, "enabled", false))
-    phase10O2I = char(string(localGetNested(phase10, "o2i.profile", o2iModel)));
+    phase10O2I = localResolveO2IModel(localGetNested(phase10, "o2i.profile", o2iModel));
     cfg = sixgr.util.structSet(cfg, "channel.o2i.model", phase10O2I);
     cfg = sixgr.util.structSet(cfg, "channel.o2i.enabled", ...
         logical(localGetNested(phase10, "o2i.enabled", false)));
@@ -1185,6 +1185,13 @@ cfg.ctrl6gr.StudyMappingTypes = cellstr(string(localGetNested(s, "control.pdcch6
 cfg.ctrl6gr.StudyFrequencyAllocationModes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.frequency_allocation_modes", ["contiguous","noncontiguous"])));
 cfg.ctrl6gr.StudyRepetitionModes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.repetition_modes", ["none","intra_slot","inter_slot"])));
 cfg.ctrl6gr.StudySNRdB = double(localGetNested(s, "control.pdcch6gr.study.snr_db", cfg.ctrl6gr.SNRdB));
+cfg.ctrl6gr.SignalPresentTrialsPerPoint = double(localGetNested(s, ...
+    "control.pdcch6gr_populations.signal_present_trials_per_point", 1));
+cfg.ctrl6gr.NoiseOnlyTrialsPerPoint = double(localGetNested(s, ...
+    "control.pdcch6gr_populations.noise_only_trials_per_point", 0));
+cfg.ctrl6gr.PolarListLength = double(s.control.blind_decode_list_length);
+cfg.ctrl6gr.PopulationConfidenceLevel = double(localGetNested(s, ...
+    "control.pdcch6gr_populations.confidence_level", 0.95));
 cfg.ctrl6gr.StudyChannelModels = cellstr(string(localGetNested(s, "control.pdcch6gr.study.channel_models", [string(cfg.ctrl6gr.ChannelModel)])));
 cfg.ctrl6gr.StudySearchSpaceTypes = cellstr(string(localGetNested(s, "control.pdcch6gr.study.search_space_types", ["CSS","USS"])));
 cfg.ctrl6gr.StudyDMRSVariants = cellstr(string(localGetNested(s, "control.pdcch6gr.study.dmrs_variants", ["single_port_density_3_per_rb"])));
@@ -3673,6 +3680,13 @@ cfg = localApplyDataChannelFrequencyAllocation(cfg, s, section, targetBase);
     localTryGetNestedStrict(s, section + ".time_domain_allocations");
 if hasTimeDomainAllocations
     rows = double(timeDomainAllocations);
+    % JSON has no row-vector type: a singleton [index,start,length,K]
+    % record becomes 4x1 after jsondecode of the immutable run snapshot.
+    % Recover only that unambiguous shape; never reshape multi-record or
+    % malformed lists, and leave the resolved source/hash unchanged.
+    if isvector(rows) && numel(rows)==4
+        rows=reshape(rows,1,4);
+    end
     symbolsPerSlot = double(sixgr.util.structGet(cfg, ...
         "phy.numerology.symbolsPerSlot", 14));
     if ~(ismatrix(rows) && ~isempty(rows) && size(rows, 2) == 4 && ...

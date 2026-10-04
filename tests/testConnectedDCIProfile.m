@@ -41,6 +41,41 @@ for context={ul,dl}
     assert(isequal(sort(sizes.UniqueMonitoredSizes),[37 43]));
 end
 assert(isequal(sort(cfg.phy.pdcch.dciPayloadSizesByFormat(:)),[37;43]));
+% Disabled TCI/QCL has no state identity; it must neither dereference a
+% missing state_id nor invent state zero. A preconfigured QCL state may
+% remain installed even when the optional DCI indication is absent.
+noTCI=cfg; noTCI.phy.pdcch.operatorControl.connected_dci.tci_present=false;
+c=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(noTCI,'1_1');
+assert(c.Data.ActiveTCIStateID==cfg.phy.pdsch.qclTCI.state_id);
+binding=sixgr.phy.grant.resolveDLQCLTCIBinding(noTCI);
+assert(binding.Available && binding.ActiveTCIStateID==c.Data.ActiveTCIStateID, ...
+    'An enabled installed QCL state remains authoritative without a DCI indication.');
+% Disabling an inherited policy must agree at DCI and frozen-grant boundaries,
+% even though YAML retained the parent's state ID, codepoint and sources.
+disabledInherited=noTCI; disabledInherited.phy.pdsch.qclTCI.enabled=false;
+disabledContext=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(disabledInherited,'1_1');
+disabledBinding=sixgr.phy.grant.resolveDLQCLTCIBinding(disabledInherited);
+assert(isnan(disabledContext.Data.ActiveTCIStateID) && ...
+    ~disabledBinding.Available && isnan(disabledBinding.ActiveTCIStateID) && ...
+    strlength(string(disabledBinding.Digest))==0);
+bad=noTCI; bad.phy.pdsch.activeTCIStateID=bad.phy.pdsch.qclTCI.state_id+1;
+localReject(@()sixgr.phy.grant.resolveDLQCLTCIBinding(bad), ...
+    'sixgr:phy:grant:InconsistentDLQCLTCIState');
+noTCI.phy.pdsch.qclTCI=struct('enabled',false);
+c=sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(noTCI,'1_1');
+assert(~c.Data.TCIPresent && c.Data.TCIWidth==0 && isnan(c.Data.ActiveTCIStateID));
+binding=sixgr.phy.grant.resolveDLQCLTCIBinding(noTCI);
+assert(~binding.Available && isnan(binding.ActiveTCIStateID));
+noTCISchema=sixgr.phy.pdcch.DCISchemaEngine.resolve(c);
+assert(~any([noTCISchema.Definitions.Name]=="transmission_configuration_indication"));
+bad=noTCI; bad.phy.pdcch.operatorControl.connected_dci.tci_present=true;
+localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'1_1'), ...
+    'sixgr:phy:pdcch:ConnectedTCIMismatch');
+bad=noTCI; bad.phy.pdsch.qclTCI.enabled=true;
+localReject(@()sixgr.phy.pdcch.DCIContextFactory.fromRuntimeConfig(bad,'1_1'), ...
+    'sixgr:phy:pdcch:ConnectedTCIMismatch');
+localReject(@()sixgr.phy.grant.resolveDLQCLTCIBinding(bad), ...
+    'sixgr:phy:grant:MalformedDLQCLTCIBinding');
 % The new DL selector reaches actual sequence generation, not only DCI/YAML.
 carrier=sixgr.phy.grid.makeCarrier(cfg);
 p0=sixgr.phy.grid.pdschConfigFromConfig(carrier,cfg);

@@ -35,7 +35,7 @@ cfg.phy.carrier.SubcarrierSpacing_kHz = 30;
 cfg.phy.carrier.NSizeGrid = 51;
 cfg.phy.channelBandwidth_MHz = 20;
 cfg.frequency.bandwidth_hz = 20e6;
-cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",2);
+cfg.initial_access.type0 = struct("monitoring_occasion_ordinal",3);
 cfg.initial_access.sib1.pdsch = struct("prb_start",0, ...
     "num_prb",24,"symbol_start",2,"num_symbols",12,"mcs",0,"rv",0);
 cfg.phy.sib1.coreset0Index = 0;

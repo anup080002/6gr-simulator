@@ -1,5 +1,7 @@
 inherits:
-  - ./lls_pdcch_shared_queue_fixture.yaml
+  # Install the same independently configured DL/UL DCI used by the other
+  # physical feedback-clock cases; the legacy queue fixture lacks it.
+  - ../validation/lls_pucch_feedback_clock_connected.yaml
 
 meta:
   scenario_id: lls_pucch_same_slot_srs_fixture

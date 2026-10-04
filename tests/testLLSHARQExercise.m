@@ -3,9 +3,11 @@ function ok = testLLSHARQExercise()
 
 setup6GRSimToolkit("Verbose", false);
 
-tmp = tempname;
+% Preserve real failed/recovered packet evidence for failure reconciliation.
+tmp = fullfile(pwd, "results", "lls", "harq_exercise", ...
+    char(datetime('now','Format','yyyyMMdd_HHmmss_SSS')));
 mkdir(tmp);
-c = onCleanup(@() rmdir(tmp, "s")); %#ok<NASGU>
+fprintf('HARQ_EXERCISE_RUN_FOLDER=%s\n',tmp);
 
 scenarioPath = fullfile(pwd, "simulator", "configs", "scenarios", "lls_harq_retransmission_exercise.yaml");
 scfg = sixgr.lls6g.config.loadScenarioConfig(scenarioPath);
@@ -86,6 +88,9 @@ function localAssertHARQTimingReachesScheduler(scfg, tmp)
 data = scfg.toStruct();
 data = sixgr.util.structSet(data, "meta.scenario_id", "HARQ_TIMING_REGRESSION");
 data = sixgr.util.structSet(data, "harq.feedback_timing_slots", 2);
+% A selected K1 must also exist in the installed DCI candidate list. Keep
+% the rejection check below; changing a scalar alone is not an RRC update.
+data = sixgr.util.structSet(data, "tdd_timing.dl_harq_feedback_k1", 2);
 data = sixgr.util.structSet(data, "harq.k2", 3);
 data = sixgr.util.structSet(data, "tdd_timing.ul_grant_k2", 3);
 data = sixgr.util.structSet(data, "tdd_timing.pdcch_to_pusch_k2", 3);
@@ -94,6 +99,21 @@ scfgTiming = sixgr.lls6g.config.ScenarioConfig(data, ...
     "ConfigPath", scfg.ConfigPath, ...
     "ConfigHash", "harq_timing_regression");
 cfgTiming = sixgr.lls6g.buildInternalConfig(scfgTiming, fullfile(tmp, "timing_run"));
+
+invalidData = sixgr.util.structSet(data, "tdd_timing.dl_harq_feedback_k1", 4);
+invalidScenario = sixgr.lls6g.config.ScenarioConfig(invalidData, ...
+    "SourceFiles", scfg.SourceFiles, "ConfigPath", scfg.ConfigPath, ...
+    "ConfigHash", "harq_timing_invalid_candidate_regression");
+rejected = false;
+try
+    sixgr.lls6g.buildInternalConfig(invalidScenario, fullfile(tmp, "invalid_timing"));
+catch timingError
+    assert(string(timingError.identifier) == ...
+        "sixgr:lls6g:config:SelectedK1OutsideCandidateSet", ...
+        'Unexpected failure for an uninstalled K1: %s', timingError.message);
+    rejected = true;
+end
+assert(rejected, 'A selected K1 outside the installed candidate set must fail.');
 
 assert(double(sixgr.util.structGet(cfgTiming, "phy.harq.feedbackTimingSlots", NaN)) == 2, ...
     "HARQ feedback_timing_slots must reach cfg.phy.harq.feedbackTimingSlots.");
@@ -106,13 +126,20 @@ assert(double(sixgr.util.structGet(cfgTiming, "mac.harq.k2", NaN)) == 3 && ...
 
 ueDL = struct("RNTI", 101, "DLBufferBytes", 4096, "ULBufferBytes", 0, "CQI", 10, "RI", 1);
 ueUL = struct("RNTI", 102, "DLBufferBytes", 0, "ULBufferBytes", 4096, "CQI", 10, "RI", 1);
-budget = struct("NPRB", 24, "SymbolAllocation", [2 10]);
+% Slot 0 + K1=2 is DL-only in this TDD pattern. Slot 4 has a legal
+% feedback occasion at 6 and UL data at 7 for K2=3. Use installed TDRA.
+budgetDL = struct("NPRB", 24, "ControlSymbolAllocation", [0 2], ...
+    "SymbolAllocation", cfgTiming.phy.pdsch.symbolAllocation);
+budgetUL = struct("NPRB", 24, "ControlSymbolAllocation", [0 2], ...
+    "SymbolAllocation", cfgTiming.phy.pusch.symbolAllocation);
 schDL = sixgr.l2.mac.SchedulerPF(cfgTiming, "Direction", "DL");
 schUL = sixgr.l2.mac.SchedulerPF(cfgTiming, "Direction", "UL");
-dlGrant = schDL.schedule(0, ueDL, budget);
-ulGrant = schUL.schedule(0, ueUL, budget);
-assert(~isempty(dlGrant) && all([dlGrant.K1] == 2) && all([dlGrant.K2] == 3), ...
-    "DL scheduler grants must carry configured HARQ K1/K2 timing.");
-assert(~isempty(ulGrant) && all([ulGrant.K1] == 2) && all([ulGrant.K2] == 3), ...
-    "UL scheduler grants must carry configured HARQ K1/K2 timing.");
+dlGrant = schDL.schedule(4, ueDL, budgetDL);
+ulGrant = schUL.schedule(4, ueUL, budgetUL);
+assert(~isempty(dlGrant) && all([dlGrant.K1] == 2) && all(isnan([dlGrant.K2])) && ...
+    all([dlGrant.HARQFeedbackAbsoluteSlot] == 6), ...
+    "DL grants must carry configured K1 and its actual ACK slot; UL K2 is not applicable.");
+assert(~isempty(ulGrant) && all(isnan([ulGrant.K1])) && all([ulGrant.K2] == 3) && ...
+    all([ulGrant.ScheduledAbsoluteSlot] == 7), ...
+    "UL grants must carry configured K2 and its actual data slot; DL K1 is not applicable.");
 end

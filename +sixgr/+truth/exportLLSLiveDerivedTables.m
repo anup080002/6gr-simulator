@@ -147,7 +147,9 @@ sixgr.util.csvWriteTable(artifacts.ErrorRateSummaryPath, errorRateT);
 sixgr.util.csvWriteTable(artifacts.FERSummaryPath, errorRateT);
 sixgr.util.csvWriteTable(artifacts.FERSummaryReportPath, errorRateT);
 sixgr.util.csvWriteTable(artifacts.LiveHARQSummaryPath, harqSummaryT);
-sixgr.util.csvWriteTable(artifacts.LiveHARQTimelinePath, harqTimelineT);
+% All-unavailable identity/decision columns are part of this declared
+% evidence schema; pruning them hides why a HARQ KPI cannot be accepted.
+sixgr.util.csvWriteTable(artifacts.LiveHARQTimelinePath, harqTimelineT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.AntennaConfigResolvedPath, antennaConfigT);
 sixgr.util.csvWriteTable(artifacts.AntennaRuntimeEvidencePath, antennaRuntimeT);
 sixgr.util.csvWriteTable(artifacts.ChannelArrayConsistencyPath, arrayConsistencyT);
@@ -1834,10 +1836,10 @@ timelineVars = {'Direction','TraceSource','SNR_dB','Frame','Slot','CRCPass','Sta
     'GoodBits','OfferedBits','Goodput_Mbps','ReceiverHestSINR_dB','DecoderTruthProxySINR_dB','MeasuredSINR_dB', ...
     'WidebandCQI','CQIDerivedMCS','CQIDerivedModulation','CQIDerivedTargetCodeRate','PMI','CRI','RankIndicator', ...
     'TBId','UEIndex','RNTI','HarqID','RV','IsRetransmission','CurrentDecodeOK','CombinedDecodeOK', ...
-    'HARQCombiningApplied','LLRCombiningGain_dB','Notes'};
+    'HARQCombiningApplied','LLRCombiningGain_dB','SweepPointIndex','BaseStationID','Notes'};
 timelineTypes = {'string','string','double','double','double','double','string','double', ...
     'double','double','double','double','double','double','double','double','string','double','double','double', ...
-    'double','string','double','double','double','double','logical','logical','logical','logical','double','string'};
+    'double','string','double','double','double','double','double','double','double','double','double','double','double','string'};
 timelineT = table('Size', [0, numel(timelineVars)], 'VariableTypes', timelineTypes, 'VariableNames', timelineVars);
 
 pairList = [ ...
@@ -1850,28 +1852,10 @@ for pairIdx = 1:numel(pairList)
         continue;
     end
     sourceT = localEnsureHARQSourceVars(sourceT);
-    sourceSNR = double(sourceT.SNR_dB);
-    snrList = unique(sourceSNR(isfinite(sourceSNR)), "stable");
-    if any(~isfinite(sourceSNR))
-        % Collapse unavailable/non-finite metadata to one explicit group.
-        % MATLAB releases differ in how repeated NaN values are handled by
-        % unique(...,"stable"), so construct this group deterministically.
-        snrList(end+1, 1) = NaN; %#ok<AGROW>
-    end
-    for s = 1:numel(snrList)
-        if ~isfinite(snrList(s))
-            % System-level truth rows do not necessarily own a configured
-            % fixed-link SNR axis.  Preserve those real observations as an
-            % explicit unavailable-SNR group; do not substitute measured
-            % SINR (a different physical quantity) or discard the rows.
-            mask = ~isfinite(sourceSNR);
-        else
-            mask = abs(sourceSNR - snrList(s)) < 1e-9;
-        end
-        slice = sourceT(mask, :);
-        if isempty(slice)
-            continue;
-        end
+    % This is an ordered observation projection, not a grouped summary.
+    % Preserve interleaved/repeated sweep points and unavailable SNR rows
+    % exactly as emitted by each directional receiver.
+    slice = sourceT;
         timelineSlice = table( ...
             repmat(string(pair.Direction), height(slice), 1), ...
             repmat(string(lower(pair.Direction) + "_raw_link_trials"), height(slice), 1), ...
@@ -1899,15 +1883,16 @@ for pairIdx = 1:numel(pairList)
             double(slice.RNTI), ...
             double(slice.HarqID), ...
             double(slice.RV), ...
-            logical(slice.IsRetransmission), ...
-            logical(slice.CurrentDecodeOK), ...
-            logical(slice.CombinedDecodeOK), ...
-            logical(slice.HARQCombiningApplied), ...
+            double(slice.IsRetransmission), ...
+            double(slice.CurrentDecodeOK), ...
+            double(slice.CombinedDecodeOK), ...
+            double(slice.HARQCombiningApplied), ...
             double(slice.LLRCombiningGain_dB), ...
+            double(slice.SweepPointIndex), ...
+            double(slice.BaseStationID), ...
             repmat("Actual frame-level DL/UL decode outcome for live HARQ visibility.", height(slice), 1), ...
             'VariableNames', timelineVars);
         timelineT = [timelineT; timelineSlice]; %#ok<AGROW>
-    end
 end
 
 summaryT = localBuildHARQObservationSummaryFromTimeline(timelineT);
@@ -2093,20 +2078,21 @@ end
 vars = string(T.Properties.VariableNames);
 if ~ismember("CurrentDecodeOK", vars)
     if ismember("HARQCurrentDecodeOK", vars)
-        T.CurrentDecodeOK = logical(T.HARQCurrentDecodeOK);
-    elseif ismember("CRCPass", vars)
-        T.CurrentDecodeOK = logical(T.CRCPass);
+        T.CurrentDecodeOK = double(T.HARQCurrentDecodeOK);
     end
 end
 vars = string(T.Properties.VariableNames);
 if ~ismember("CombinedDecodeOK", vars)
     if ismember("HARQCombinedDecodeOK", vars)
-        T.CombinedDecodeOK = logical(T.HARQCombinedDecodeOK);
-    elseif ismember("CurrentDecodeOK", vars)
-        T.CombinedDecodeOK = logical(T.CurrentDecodeOK);
-    elseif ismember("CRCPass", vars)
-        T.CombinedDecodeOK = logical(T.CRCPass);
+        T.CombinedDecodeOK = double(T.HARQCombinedDecodeOK);
     end
+end
+% Retain unavailable outcomes as NaN. A generic CRC does not establish
+% whether an isolated or combined HARQ decode was executed; nor does a
+% current-attempt decision establish a combined decision. In particular,
+% logical(NaN) must never manufacture a successful observation.
+if ~ismember("IsRetransmission", vars) && ismember("HARQIsRetransmission", vars)
+    T.IsRetransmission = double(T.HARQIsRetransmission);
 end
 vars = string(T.Properties.VariableNames);
 if ~ismember("LLRCombiningGain_dB", vars) && ismember("HARQLLRCombiningGain_dB", vars)
@@ -2134,10 +2120,12 @@ end
     "RNTI", NaN, ...
     "HarqID", NaN, ...
     "RV", NaN, ...
-    "IsRetransmission", false, ...
-    "CurrentDecodeOK", false, ...
-    "CombinedDecodeOK", false, ...
-    "HARQCombiningApplied", false, ...
+    "IsRetransmission", NaN, ...
+    "CurrentDecodeOK", NaN, ...
+    "CombinedDecodeOK", NaN, ...
+    "HARQCombiningApplied", NaN, ...
+    "SweepPointIndex", NaN, ...
+    "BaseStationID", NaN, ...
     "LLRCombiningGain_dB", NaN);
 vars = string(T.Properties.VariableNames);
 names = fieldnames(required);
@@ -3508,7 +3496,9 @@ if ~any(mask)
     return;
 end
 vals = double(harqTimelineT.CombinedDecodeOK(mask));
-vals = vals(isfinite(vals));
+% Only actual binary decisions enter the denominator. Nonfinite and
+% malformed values remain in the raw evidence, not invented ACK/NACKs.
+vals = vals(ismember(vals, [0 1]));
 if isempty(vals)
     return;
 end

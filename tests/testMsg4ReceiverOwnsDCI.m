@@ -7,6 +7,13 @@ for mode = reshape(string(modes),1,[])
     sc=sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs','scenarios', ...
         "lls_causal_access_to_data_wiring"+suffix+".yaml"));
     cfg=sixgr.config.normalizeConfig(sixgr.lls6g.buildInternalConfig(sc,tempname));
+    % Component common-PDSCH allocations are authored from carrier RB 0.
+    % On the 25-RB FDD fixture, centred SSB starts at RB 2 and CORESET0
+    % [2,26) is illegal. Explicitly place this fixture's SSB at Point A;
+    % do not relax the production CORESET/BWP bounds validator.
+    if mode=="FDD"
+        cfg.phy.ssb.NCRBSSB=0; cfg.phy.ssb.KSSB=0;
+    end
     cfg.random_access.associated_ssb_index=cfg.phy.ssb.runtimeSSBIndex;
     cfg.random_access.associated_ssb_selection_source="configured_Msg4_component_reference_not_measured_selection";
     ra = sixgr.mac.ra.RAConfig(cfg);
@@ -17,6 +24,7 @@ for mode = reshape(string(modes),1,[])
     % Neither the TX schedule/grid/length nor authored PDSCH can tell this
     % receiver which data allocation or TBS was actually transmitted.
     rxRA = ra; rxRA.Msg4PDSCH=struct();
+    rxRA.FinalCRNTI=ra.FinalCRNTI+1; % Poison intended identity, not received bytes.
     [control,rx,decoded] = sixgr.phy.ra.recoverMsg4Waveform(tx.Waveform,cfg,rxRA,struct(),struct());
     assert(control.CausalGrantDecodeOk && rx.Ok && decoded.ContentionIdentity==msg3.ContentionIdentity);
     assert(isequal(control.DCIBits,sched.DCIBits) && ...
@@ -25,6 +33,11 @@ for mode = reshape(string(modes),1,[])
         rx.RecoveredSchedule.PUCCHResourceIndicator==ra.Msg4DCI.pucch_resource_indicator && ...
         ~rx.RecoveredSchedule.FeedbackTransmissionQualified);
     assert(decoded.EncodingProfile=="legacy_bounded_not_NR_MAC_RRC");
+    receivedIdentity=sixgr.mac.ra.receivedMsg4Identity(decoded, ...
+        control.CausalGrantDecodeOk,rx.Ok,msg3.ContentionIdentity);
+    assert(receivedIdentity.RNTI==ra.FinalCRNTI && receivedIdentity.RNTI~=rxRA.FinalCRNTI && ...
+        receivedIdentity.Source=="decoded_msg4_payload_after_contention_match" && ...
+        ~receivedIdentity.MACRRCStandardsQualified);
     assert(tx.PDCCHInfo.CommonControlEvidence.Source=="scenario_common_control_pending_sib1");
     fields=sixgr.phy.ra.commonDCIFieldEvidence(struct('RunId',"Msg4_component",'UEId',1), ...
         ra.Msg4Slot,ra.TempCRNTI,tx,rx,"Msg4");

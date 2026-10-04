@@ -41,15 +41,15 @@ classdef PreparedDataTransmission
                     'sixgr:link:MissingPreparedULTiming','UL preparation requires the validated scheduling time relation.');
             end
             slot0 = sixgr.util.structGet(rxCfg,'lls6g.runtime.AbsoluteSlotIndex0',NaN);
-            scs = double(tx.Carrier.SubcarrierSpacing);
-            startTime = double(slot0)*1e-3*15/scs;
+            validateattributes(slot0,{'numeric'},{'scalar','real','finite','integer','nonnegative'});
+            sampleOrigin = sixgr.phy.frame.slotStartSample(tx.Carrier,slot0,fs);
+            startTime = sampleOrigin/double(fs);
             declaredTime = sixgr.util.structGet(rxCfg,'lls6g.userContext.RuntimeSlotStartTime_s',startTime);
             validateattributes(startTime,{'numeric'},{'scalar','real','finite','nonnegative'});
             assert(isscalar(declaredTime) && isfinite(declaredTime) && ...
                 abs(double(declaredTime)-startTime)*double(fs) < 1e-6, ...
                 'sixgr:link:DataPreparationClockMismatch', ...
                 'Declared runtime time and the frozen carrier slot must agree.');
-            sampleOrigin = startTime*double(fs);
             assert(abs(sampleOrigin-round(sampleOrigin)) < 1e-6, ...
                 'sixgr:link:DataPreparationClockMismatch','Slot origin must lie on the shared sample clock.');
             obj.InputConfig = cfg;

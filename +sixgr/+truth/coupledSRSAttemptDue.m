@@ -15,7 +15,12 @@ if isfinite(lastAttempt) && lastAttempt>knowledge
         "An SRS attempt after the decision slot is not available to its planner.");
 end
 due = ~isfinite(lastAttempt) || lastAttempt==0 || slotIdx-lastAttempt>=period;
-if logical(sixgr.util.structGet(state.ControlGating,"SRSRequired",false))
+% SRSRequired controls admission of data using a measured SRS; it does not
+% waive the scenario's independently required access procedure. Otherwise
+% optional SRS can be prequeued over Msg3/SetupComplete using provisional
+% RAR timing before connected access is available to the planner.
+if logical(sixgr.util.structGet(state.ControlGating,"SRSRequired",false)) || ...
+        logical(sixgr.util.structGet(state.ControlGating,"PRACHRequired",false))
     lastAccess = state.LastSuccessfulPRACHSlotByUE(ueIdx);
     due = due && state.AccessState(ueIdx)=="succeeded" && ...
         isfinite(lastAccess) && lastAccess<=knowledge && slotIdx>lastAccess;

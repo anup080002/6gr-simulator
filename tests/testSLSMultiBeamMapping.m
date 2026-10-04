@@ -67,6 +67,28 @@ if fullBand
     cfg.system.linkAbstraction.networkSpatial.channelResponseSampling='static_exact';
     cfg.channel.doppler_Hz=0; cfg.channel.fading.maxDoppler_Hz=0;
 end
+% This fixture deliberately resizes the carrier. Its installed RRC BWPs
+% must describe that SAME carrier, not the original 273-PRB H4 snapshot.
+% Production PUCCH bounds checks remain strict; never clamp a resource.
+id=cfg.phy.frame.DefaultIdentity;
+cc=find([cfg.phy.frame.ComponentCarriers.CCID]==id.ScheduledCCID);
+assert(isscalar(cc));
+ue=struct('UEID',1,'RNTI',1,'ServingCell',1,'PUCCHCell',1, ...
+    'ComponentCarrier',id.ScheduledCCID,'ActiveULBWP',id.ULBWPID);
+if ~fullBand
+    reject(@()sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue), ...
+        'sixgr:phy:pucch:InvalidBWP');
+end
+for direction=["DL","UL"]
+    bwps=cfg.phy.frame.ComponentCarriers(cc).BWPs;
+    bwpID=id.(direction+"BWPID");
+    index=find([bwps.BWPID]==bwpID & upper(string({bwps.Direction}))==direction);
+    assert(isscalar(index));
+    cfg.phy.frame.ComponentCarriers(cc).BWPs(index).NStartBWP=cfg.phy.carrier.NStartGrid;
+    cfg.phy.frame.ComponentCarriers(cc).BWPs(index).NSizeBWP=cfg.phy.carrier.NSizeGrid;
+end
+rrc=sixgr.phy.pucch.PUCCHConfigBuilder.receiverConfiguration(cfg,ue);
+assert(all(arrayfun(@(x)x.Data.NSizeBWP==cfg.phy.carrier.NSizeGrid,rrc.Resources)));
 planning=cfg; planning.run.totalSlots=26;
 planning.outputs.plannedAllocationEncoding='exact_periodic_templates';
 calendar=sixgr.truth.buildPlannedREAllocation(planning,'TargetChannels',"CSI_RS");
@@ -75,7 +97,7 @@ fullProvider=sixgr.system.abstraction.NetworkSpatialGrantProvider(cfg);
 observed=struct([]);
 large=struct('Pathloss_dB',80,'TxPower_dBm',30);
 for slot=0:25
-    st=struct('AbsoluteSlot0',slot,'ServingCells',1,'LargeScaleState',large,'CommonChannelAllocations',calendar);
+    st=struct('AbsoluteSlot0',slot,'ServingCells',1,'RNTIByUE',1,'LargeScaleState',large,'CommonChannelAllocations',calendar);
     rows=fullProvider.observeCSI(st); observed=[observed rows]; %#ok<AGROW>
     if ~isempty(observed) && numel(unique([observed.CRI]))==8, break; end
 end

@@ -740,11 +740,14 @@ classdef HARQEntity < handle
             obj.UEProcs{ui} = procs;
         end
 
-        function cancelled = cancelTentativeTx(obj, rnti, harqId0)
+        function cancelled = cancelTentativeTx(obj, rnti, harqId0, varargin)
             % cancelTentativeTx Release a new-data HARQ reservation that never
             % reached PHY transmission, e.g. a scheduler grant blocked by
             % PDCCH decode/gating. Retransmission state and transmitted
             % awaiting-feedback processes are intentionally left untouched.
+            options = inputParser;
+            options.addParameter('DCINotIssued', false, @(x)islogical(x)&&isscalar(x));
+            options.parse(varargin{:});
             cancelled = false;
             rnti = double(rnti);
             pid = double(harqId0) + 1;
@@ -755,6 +758,17 @@ classdef HARQEntity < handle
             p = procs(pid);
             if logical(p.Active) && ~logical(p.AwaitingFeedback) && ...
                     ~logical(p.NeedsRetx) && double(p.TxCount) == 0
+                if options.Results.DCINotIssued
+                    % A rejected scheduler proposal never toggled the
+                    % receiver's NDI. Roll back only a never-issued command;
+                    % cancellation after control delivery keeps its identity.
+                    if p.ScheduledAttemptCount ~= 0 || strlength(p.LastScheduledCommandID) > 0
+                        error('sixgr:HARQEntity:CannotRollbackIssuedNDI', ...
+                            'Cannot roll back NDI for an issued HARQ command.');
+                    end
+                    p.NDI = ~p.NDI;
+                    p.NDIEpoch = p.NDIEpoch - 1;
+                end
                 procs(pid) = obj.resetProc(p);
                 obj.UEProcs{ui} = procs;
                 cancelled = true;

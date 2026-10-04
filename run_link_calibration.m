@@ -60,6 +60,9 @@ for episodeIndex=1:max(cellfun(@max,counts),[],'all')
                 receipt.CurrentHistory=hi; localJSON(folder,receipt);
                 try
                     episode=sixgr.calibration.executeEpisode(cfg,histories{role}(hi,:),rv,seeds,identity);
+                    assert(all(string({episode.Attempts.SINRSource})==string(p.sinr_feature)), ...
+                        'sixgr:calibration:FeatureIdentity', ...
+                        'Executed per-RE feature differs from the frozen campaign sinr_feature.');
                 catch ME
                     receipt.Status="failed"; receipt.ErrorIdentifier=string(ME.identifier);
                     receipt.ErrorMessage=string(ME.message); localJSON(folder,receipt); rethrow(ME)

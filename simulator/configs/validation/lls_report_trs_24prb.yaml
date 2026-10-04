@@ -1,0 +1,10 @@
+# Apply after lls_report_trs_resources.yaml for the compact report test.
+# Retain the parent carrier; the active BWP and tracking coverage are 24 RB.
+bwp:
+  dl:
+    n_size_bwp: 24
+  ul:
+    n_size_bwp: 24
+reference_signals:
+  trs:
+    num_rb: 24

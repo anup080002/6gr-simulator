@@ -1,0 +1,57 @@
+# Artifact/measurement regression, not statistical link qualification.
+inherits:
+  - ../scenarios/lls_100mhz_tdlc_bidirectional_truth.yaml
+  - ../validation/lls_report_trs_resources.yaml
+meta:
+  scenario_id: lls_richness_smoke
+  description: Four-slot two-point waveform report-richness regression
+  version: "1"
+  owner: test
+  maturity_tag: smoke
+  research_class: baseline_benchmark
+scenario:
+  # Keep bundle PRACH measurements, but do not launch the independent
+  # multi-thousand-trial PRACH qualification anchor from an artifact test.
+  target_cases: [bundle, dl, ul, pdsch, pusch, pdcch, pucch, pbch, ssb, csi_rs, srs, trs, dmrs, harq]
+simulation:
+  n_frames: 1
+  n_slots: 4
+  monte_carlo_iterations: 2
+  snr_db: 30
+  snr_sweep_offsets_db: [-12, 0]
+  reference_sweep_enabled: false
+  adaptive_sweep_enabled: false
+  random_seed: 17
+run_control:
+  # A partial-frame diagnostic is specified by slots, not a full-frame count.
+  total_slots: 4
+  warmup_slots: 0
+  measurement_slots: 4
+  total_time_ms: 2
+  warmup_time_ms: 0
+  measurement_time_ms: 2
+  num_workers: 1
+  auto_start_parallel_pool: false
+sweeps_and_matrix:
+  snr_sweep:
+    enabled: true
+    values_db: [18, 30]
+pdsch:
+  execution_profile: phy_calibration
+channels:
+  doppler_hz: 30
+reference_signals:
+  trs_enabled: true
+impairments:
+  # Values alone do not enable an impairment. Keep the intended nonzero
+  # report diagnostic explicit instead of inheriting disabled parent gates.
+  cfo_enabled: true
+  cfo_model: fixed
+  cfo_hz: 40
+  timing_offset_enabled: true
+  timing_offset_model: fixed
+  timing_offset_samples: 16
+output:
+  profile: lls_richness_smoke
+  save_figures: true
+  save_mat: false

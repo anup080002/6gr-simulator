@@ -65,6 +65,27 @@ if ~(istable(T) && ~isempty(T))
     return;
 end
 
+% An independently executed component remains useful PHY evidence, but it
+% does not prove reception in the active connected-runtime chain. In
+% particular, attaching this scenario's identity must not promote it.
+inPathScope = true(height(T),1);
+for field = ["EvidenceScope","SourceClassification","RuntimeConsumer"]
+    values = lower(strtrim(localStringColumn(T,field,repmat("",height(T),1))));
+    inPathScope = inPathScope & ~contains(values,"component_anchor") & ...
+        ~contains(values,"isolated_component") & ~contains(values,"none_isolated");
+end
+if ismember("SameScenarioInPathEligible",string(T.Properties.VariableNames))
+    inPathScope = inPathScope & localLogicalColumn(T, ...
+        "SameScenarioInPathEligible",false(height(T),1));
+end
+if ~all(inPathScope)
+    result = localResult(component,T,artifactField,false, ...
+        "component_scope_not_eligible_for_in_path",0,height(T),0);
+    result.SameScenarioInPathEligible = false;
+    result.RuntimeEvidenceSource = "rejected_non_in_path_evidence";
+    return;
+end
+
 genericOk = localGenericTruthMask(T);
 identityOk = localRuntimeIdentityMask(T, cfg);
 componentOk = localComponentMask(component, T, cfg);

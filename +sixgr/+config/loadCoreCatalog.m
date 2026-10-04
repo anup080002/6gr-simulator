@@ -1,15 +1,17 @@
 function catalog = loadCoreCatalog()
 %LOADCORECATALOG Load YAML-backed core config defaults and validation policy.
 
-persistent cachedCatalog
-
-if ~isempty(cachedCatalog)
-    catalog = cachedCatalog;
-    return;
-end
+persistent cachedCatalog cachedRaw
 
 catalogPath = localCatalogPath();
 raw = fileread(catalogPath);
+% A long-lived MATLAB/WebGUI session must not keep validating new YAML
+% against a catalog loaded before an edit.  The file is small; compare its
+% content on each call and only repeat parsing when the policy changed.
+if ~isempty(cachedCatalog) && isequal(raw,cachedRaw)
+    catalog = cachedCatalog;
+    return;
+end
 
 try
     catalog = jsondecode(raw);
@@ -28,6 +30,7 @@ if ~(isstruct(catalog) && isscalar(catalog) && isfield(catalog, "parameters"))
 end
 
 cachedCatalog = catalog;
+cachedRaw = raw;
 end
 
 function p = localCatalogPath()
