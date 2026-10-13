@@ -14,10 +14,14 @@ end
 cfg = sixgr.lls6g.buildInternalConfig(scfg,tempname);
 positiveRow=table();
 if isempty(rows)
-    positive = sixgr.link.runSRSChannelEstimation(cfg,'SNR_dB',20,'SlotIndex',25);
-    assert(positive.CQI>0 && isfinite(positive.MCSIndex));
-    positive.Slot=25; positive.ServingCell=1;
-    positiveRow=struct2table(positive,'AsArray',true);
+    confirmations=double(cfg.phy.linkAdaptation.rankIncreaseConfirmationReports);
+    period=double(cfg.phy.srs.period_slots);
+    for observedSlot=25-period*(confirmations-1):period:25
+        positive = sixgr.link.runSRSChannelEstimation(cfg,'SNR_dB',20,'SlotIndex',observedSlot);
+        assert(positive.CQI>0 && isfinite(positive.MCSIndex));
+        positive.Slot=observedSlot; positive.ServingCell=1;
+        positiveRow=[positiveRow;struct2table(positive,'AsArray',true)]; %#ok<AGROW>
+    end
     out = sixgr.link.runSRSChannelEstimation(cfg,'SNR_dB',-10,'SlotIndex',30);
     assert(out.ConfiguredSNR_dB==-10 && out.AppliedAWGNSNR_dB==-10);
     assert(out.CQI==0 && isnan(out.MCSIndex) && ...
@@ -37,8 +41,14 @@ state.CurrentServingIdx(:)=1;
 state.CurrentFrame=1;
 state.ULQueueBits(:)=1e6;
 if ~isempty(positiveRow)
-    state.CurrentSlot=25; state.CurrentCanonicalSlot=25;
-    state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,positiveRow);
+    for k=1:height(positiveRow)
+        state.CurrentSlot=positiveRow.Slot(k); state.CurrentCanonicalSlot=positiveRow.Slot(k);
+        state=sixgr.truth.CoupledTruthRuntime.applySRSTrial(state,1,positiveRow(k,:));
+        if k==1 && confirmations>1 && positiveRow.EstimatedRI(k)>cfg.phy.pusch.numLayers
+            assert(~state.LatestULFeedback(1).Valid, ...
+                'The positive precondition must acquire rank through separate confirming SRS reports.');
+        end
+    end
     assert(state.LatestULFeedback(1).Valid && state.LatestULFeedback(1).CQI>0);
 end
 for k=1:height(rows)

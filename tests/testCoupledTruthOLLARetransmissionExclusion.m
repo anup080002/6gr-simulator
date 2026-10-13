@@ -4,6 +4,10 @@ function ok = testCoupledTruthOLLARetransmissionExclusion()
 setup6GRSimToolkit("Verbose", false, "RunToolboxChecks", false);
 
 cfg = sixgr.config.defaultConfig();
+% This ownership test supplies rank-one CSI/SRS, not the catalog's
+% fixed rank-four waveform. Keep the independent rank-mismatch guard.
+cfg.phy.pdsch.numLayers = 1; cfg.phy.pdsch.nLayers = 1;
+cfg.phy.pusch.numLayers = 1; cfg.phy.pusch.nLayers = 1;
 cfg.phy.linkAdaptation.mode = "amc";
 cfg.phy.linkAdaptation.dlPolicy = "baseline";
 cfg.phy.linkAdaptation.ulPolicy = "baseline";

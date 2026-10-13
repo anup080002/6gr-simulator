@@ -59,16 +59,18 @@ feedbackByReport=cell(confirmationCount,1);
 adaptationByReport=cell(confirmationCount,1);
 recorded=0;
 for slot=1:lastSlot
+    [slotCfg,timeline]=sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,slot);
     state=sixgr.truth.CoupledTruthRuntime.beginSlot( ...
-        state,cfg,cfg,1,'DL',1,1,slot,200,40);
+        state,slotCfg,slotCfg,1,'DL',1,1,slot,200,40);
     state=sixgr.truth.CoupledTruthRuntime.armSharedPUCCHFeedbackRuntime(state);
     if mod(slot-1,reportPeriod)==5
         [dl,state]=sixgr.truth.CoupledTruthRuntime.applyUserContext(cfg,state,1,'DL');
         dl=sixgr.phy.grid.applyRuntimeCarrierTimeline(dl,slot);
-        [state,queued]=sixgr.truth.queueSharedPeriodicCSIRS(state,dl,1,slot,1,1,1,40);
+        [state,queued]=sixgr.truth.queueSharedPeriodicCSIRS( ...
+            state,dl,1,slot,timeline.FrameIndexOneBased,1,1,40);
         assert(queued,'H4 must transmit its configured offset-5 CSI-RS.');
     end
-    [state,~]=owner.advanceSlot(state,cfg,@complete);
+    [state,~]=owner.advanceSlot(state,slotCfg,@complete);
     count=height(sixgr.util.structGet(state,'SharedGNBCSIReportTable',table()));
     if count>recorded
         assert(count==recorded+1 && count<=confirmationCount);

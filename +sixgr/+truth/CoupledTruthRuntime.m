@@ -7448,6 +7448,13 @@ methods(Static, Access=private)
             srsReport.DeliveredSlot = double(availableSlot);
             [state, srsReport] = sixgr.truth.CoupledTruthRuntime. ...
                 applyLinkAdaptationToCSIReport(state, srsReport, ueIdx, "UL", row);
+            if srsReport.SchedulerSpatialDecisionDeferred
+                % Quality and TPMI belong to the measured candidate rank.
+                % Retain the confirmation state, but do not install that
+                % candidate or refresh the age of the previous decision.
+                % The raw SRS observation remains in its receiver table.
+                return;
+            end
             if isfinite(double(srsReport.MCSIndex)) && double(srsReport.MCSIndex) >= 0
                 mcsIndex = double(srsReport.MCSIndex);
                 targetCodeRate = double(srsReport.TargetCodeRate);
@@ -7457,11 +7464,11 @@ methods(Static, Access=private)
         end
         protectDataMCS = ~srsDataMCSUsable || ...
             sixgr.truth.CoupledTruthRuntime.shouldPreserveRecentULDataMCS( ...
-            latest, schedMCSIndex, availableSlot, state.CfgMobility);
+            latest, schedMCSIndex, availableSlot, state.CfgMobility, ri, tpmi);
         % PendingCSITable contains reports that have not reached their
         % consumer. Their values must not select or suppress an active MCS.
         % ILLA may observe new SRS, but a retained PUSCH decision keeps its
-        % own metadata atomically. RI/TPMI below have separate SRS authority.
+        % own metadata atomically only for the same RI/TPMI operating point.
         if (~protectDataMCS || srsDataOutOfRange) && ...
                 (srsDataMCSUsable || srsDataOutOfRange)
             latest = sixgr.truth.CoupledTruthRuntime. ...
@@ -7775,13 +7782,24 @@ methods(Static, Access=private)
         end
     end
 
-    function tf = shouldPreserveRecentULDataMCS(latest, srsMCSIndex, slotIdx, cfg)
+    function tf = shouldPreserveRecentULDataMCS(latest, srsMCSIndex, slotIdx, cfg, srsRI, srsTPMI)
         tf = false;
         if ~(isstruct(latest) && logical(sixgr.util.structGet(latest, "Valid", false)))
             return;
         end
         sourceSignal = upper(strtrim(string(sixgr.util.structGet(latest, "FeedbackSourceSignal", ""))));
         if ~any(sourceSignal == ["UL_CSI_REPORT", "PUSCH", "UL_PUSCH"])
+            return;
+        end
+        % PUSCH quality is conditional on the transmitted layers/precoder.
+        % A fresh timestamp alone cannot make it quality for a different
+        % SRS spatial decision. Missing identity is not proof of a match.
+        latestRI = double(sixgr.util.structGet(latest, "RI", NaN));
+        latestTPMI = double(sixgr.util.structGet(latest, "PMI", NaN));
+        if ~(isscalar(srsRI) && isreal(srsRI) && isfinite(srsRI) && ...
+                srsRI>=1 && srsRI==fix(srsRI) && isequal(latestRI,double(srsRI)) && ...
+                isscalar(srsTPMI) && isreal(srsTPMI) && isfinite(srsTPMI) && ...
+                srsTPMI>=0 && srsTPMI==fix(srsTPMI) && isequal(latestTPMI,double(srsTPMI)))
             return;
         end
         latestMCS = double(sixgr.util.structGet(latest, "MCSIndex", NaN));
@@ -11572,16 +11590,19 @@ methods(Static, Access=private)
             sixgr.truth.CoupledTruthRuntime.rowValue(row, "HARQRV", NaN)));
 
         decisionCfg = state.CfgMobility;
-        if upper(string(direction))=="DL"
-            % Shared runtime keeps per-UE operating state, not a mutable
-            % global scenario. Compare new RI with the last accepted rank,
-            % so a confirmed rank does not require re-confirmation forever.
-            acceptedRank = double(sixgr.util.structGet(previousState, ...
-                "SchedulerAcceptedRank", NaN));
-            if isfinite(acceptedRank)
-                decisionCfg.phy.pdsch.numLayers = acceptedRank;
-                decisionCfg.phy.pdsch.nLayers = acceptedRank;
-            end
+        % Both directions keep per-UE operating state, not a mutable global
+        % scenario. Compare new RI with the last accepted rank, so a
+        % confirmed rank does not require re-confirmation forever.
+        acceptedRank = double(sixgr.util.structGet(previousState, ...
+            "SchedulerAcceptedRank", NaN));
+        if direction=="DL"
+            dataChannel = 'pdsch';
+        else
+            dataChannel = 'pusch';
+        end
+        if isfinite(acceptedRank)
+            decisionCfg.phy.(dataChannel).numLayers = acceptedRank;
+            decisionCfg.phy.(dataChannel).nLayers = acceptedRank;
         end
         try
             [decision, nextState] = sixgr.link.computeLinkAdaptationDecision( ...
@@ -11599,19 +11620,16 @@ methods(Static, Access=private)
         report.RankIncreaseConfirmationCount = double(decision.RankIncreaseConfirmationCount);
         report.RankIncreaseRequiredCount = double(decision.RankIncreaseRequiredCount);
         report.SchedulerSpatialDecisionDeferred = ...
-            report.RankUpdateStatus=="held_fixed_rank_feedback_mismatch" || ...
-            (upper(string(direction))=="DL" && ...
-            any(report.RankUpdateStatus==["pending_increase_confirmation","held_missing_atomic_pmi"]));
-        if upper(string(direction))=="DL"
-            if ~isfinite(acceptedRank)
-                acceptedRank = double(decision.NumLayers);
-            end
-            if decision.Valid && ~report.SchedulerSpatialDecisionDeferred
-                acceptedRank = double(decision.NumLayers);
-            end
-            nextState.SchedulerAcceptedRank = acceptedRank;
-            report.SchedulerAcceptedRank = acceptedRank;
+            any(report.RankUpdateStatus==["held_fixed_rank_feedback_mismatch", ...
+            "pending_increase_confirmation","held_missing_atomic_pmi"]);
+        if ~isfinite(acceptedRank)
+            acceptedRank = double(decision.NumLayers);
         end
+        if decision.Valid && ~report.SchedulerSpatialDecisionDeferred
+            acceptedRank = double(decision.NumLayers);
+        end
+        nextState.SchedulerAcceptedRank = acceptedRank;
+        report.SchedulerAcceptedRank = acceptedRank;
         state = sixgr.truth.CoupledTruthRuntime.setLinkAdaptationStateForUE(state, direction, ueIdx, nextState);
 
         report.LinkAdaptationDecisionReason = char(string(sixgr.util.structGet(decision, "Reason", "")));

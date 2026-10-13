@@ -5,17 +5,30 @@ scfg = sixgr.lls6g.config.loadScenarioConfig(fullfile('simulator','configs', ...
     'scenarios','lls_tdd_5mhz_rank2_shared_awgn_20db.yaml'));
 cfg = sixgr.lls6g.buildInternalConfig(scfg,tempname);
 slot = 30;
-out = sixgr.link.runSRSChannelEstimation(cfg,'SNR_dB',20,'SlotIndex',slot);
+state = localState(cfg);
+confirmations = double(cfg.phy.linkAdaptation.rankIncreaseConfirmationReports);
+period = double(cfg.phy.srs.period_slots);
+for observedSlot = slot-period*(confirmations-1):period:slot
+    % Independent waveform/noise execution for each real report occasion.
+    % Do not replay one report to manufacture the confirmation population.
+    out = sixgr.link.runSRSChannelEstimation(cfg,'SNR_dB',20,'SlotIndex',observedSlot);
+    out.ServingCell = 1;
+    beforeFinal = state;
+    state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...
+        state,1,out,observedSlot);
+    if observedSlot==slot-period*(confirmations-1) && confirmations>1 && ...
+            out.EstimatedRI>cfg.phy.pusch.numLayers
+        assert(~state.LatestULFeedback(1).Valid && ...
+            state.ULLinkAdaptationState{1}.RankIncreaseConfirmationCount==1, ...
+            'One measured higher-rank SRS must not bypass configured confirmation.');
+    end
+end
 assert(out.Ok && string(out.PredictedPUSCHPostEqSINRValueStatus)=="PASS", ...
     'Actual 5 MHz SRS must produce an independently measured PUSCH prediction.');
 assert(out.PredictedPUSCHPostEqSINRCalibrationOffset_dB==0 && ...
     out.PUSCHToSRSReferenceEnergyRatio==1 && ...
     out.PredictedPUSCHReferenceSignalPower>0 && out.PredictedPUSCHDisturbancePower>0, ...
     'The waveform prediction must preserve native rank power, without a post-MMSE shift.');
-out.ServingCell = 1;
-state = localState(cfg);
-state = sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...
-    state,1,out,slot);
 fb = state.LatestULFeedback(1);
 assert(fb.Valid && isfinite(fb.MCSIndex) && fb.InnerLoopEnabled && fb.OuterLoopEnabled, ...
     'Measured SRS must reach the real UL ILLA/OLLA state.');
@@ -35,7 +48,7 @@ prior=fb; prior.FeedbackSourceSignal='PUSCH'; prior.FeedbackCRCPass=1;
 prior.SourceSlot=29; prior.Slot=29; prior.DeliveredSlot=29;
 prior.MCSIndex=0; prior.CQI=1; prior.SmoothedCQI=1.25;
 prior.CQIBasedMCS=0.5; prior.InstantaneousCQIMCS=0;
-prior.RI=1; prior.PMI=NaN;
+prior.RI=fb.RI; prior.PMI=fb.PMI;
 protected.LatestULFeedback(1)=prior;
 preserved=sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...
     protected,1,out,slot);
@@ -50,6 +63,29 @@ assert(preserved.ULLinkAdaptationState{1}.CQIObservationCount== ...
     protected.ULLinkAdaptationState{1}.CQIObservationCount+1 && ...
     preserved.ULLinkAdaptationState{1}.OLLAUpdateCount== ...
     protected.ULLinkAdaptationState{1}.OLLAUpdateCount);
+% A fresh PUSCH quality result is conditional on its transmitted spatial
+% operating point. It cannot become quality for a different SRS RI/TPMI.
+for changed = ["rank","precoder"]
+    different=protected;
+    if changed=="rank"
+        assert(out.EstimatedRI==2,'Retain a physical rank-two observation for this regression.');
+        different.LatestULFeedback(1).RI=1;
+    else
+        codebook=sixgr.phy.ul.puschCodebookCatalog(out.EstimatedRI,4,false);
+        alternative=codebook.ValidTPMISet(codebook.ValidTPMISet~=out.EstimatedTPMI);
+        assert(~isempty(alternative));
+        different.LatestULFeedback(1).PMI=alternative(1);
+    end
+    replaced=sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...
+        different,1,out,slot);
+    current=replaced.LatestULFeedback(1);
+    assert(current.SourceSlot==slot && current.DeliveredSlot==slot && ...
+        string(current.FeedbackSourceSignal)=="SRS" && isfinite(current.MCSIndex) && ...
+        current.MCSIndex==current.LinkAdaptationMCSIndex && ...
+        current.RI==out.EstimatedRI && current.PMI==out.EstimatedTPMI, ...
+        'sixgr:test:CrossSpatialQualityReuse', ...
+        'PUSCH quality from a different %s cannot override received SRS quality.',changed);
+end
 % PUSCH preference must not outlive the scheduler's configured age limit.
 expired=protected; expired.CfgMobility.phy.linkAdaptation.ulMaxCSIAgeSlots=5;
 expired.LatestULFeedback(1).SourceSlot=24; expired.LatestULFeedback(1).Slot=24;
@@ -59,7 +95,7 @@ assert(replaced.LatestULFeedback(1).SourceSlot==slot && ...
     string(replaced.LatestULFeedback(1).FeedbackSourceSignal)=="SRS", ...
     'Expired PUSCH feedback must not suppress newer eligible SRS.');
 % Not-yet-delivered data feedback cannot suppress a completed SRS report.
-pending=localState(cfg);
+pending=beforeFinal;
 pending.PendingCSITable=table("UL",1,29,31,28,1,false, ...
     'VariableNames',{'Direction','UEIndex','SourceSlot','DueSlot','MCSIndex','CRCPass','Processed'});
 received=sixgr.truth.CoupledTruthRuntime.updateLatestULFeedbackFromSRSTrialRuntime( ...

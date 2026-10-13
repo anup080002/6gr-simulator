@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import math
 from pathlib import Path
 
 
@@ -8,6 +9,30 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps"))
 
 import lls_web_dashboard as dashboard  # noqa: E402
+
+
+def test_csi_preview_separates_reference_slot_decoded_rank_and_scheduler_admission() -> None:
+    source = dict(UEIndex=1, RNTI=1, SourceSlot=9, CSIReferenceSlot=9, DueSlot=19, DeliveredSlot=19,
+                  SourceSlotAuthority="configured_CSI_reference_resource_not_UE_measurement_slot",
+                  RI=2, PMI=20, CRI=0, CQI=14, CSIUCIDecodeOk=1,
+                  SchedulerAcceptedRank=1, SchedulerSpatialDecisionDeferred=1,
+                  RankIncreaseConfirmationCount=1, RankIncreaseRequiredCount=2,
+                  RankUpdateStatus="pending_increase_confirmation", Processed=1,
+                  SINR_dB="NaN", SINRSource="not_reported_in_CSI_payload",
+                  MCSIndex="NaN", UEReferenceRecordJSON='{"SourceSlot":6,"SINR_dB":22}')
+    preview = dashboard.summarize_procedure_preview_rows("csi_report", [source])[0]
+    assert preview["CSI reference-resource slot"] == 9
+    assert preview["Reference-slot authority"] == source["SourceSlotAuthority"]
+    assert preview["RI"] == 2 and preview["Scheduler rank"] == 1
+    assert preview["Spatial decision held"] == 1 and preview["Processed"] == 1
+    assert preview["Rank confirmations"] == 1 and preview["Required confirmations"] == 2
+    assert preview["SINR wire status"] == "not_reported_in_CSI_payload"
+    assert "CSI-RS source slot" not in preview
+    for field in ("Selected MCS", "CSI SINR dB"):
+        value = dashboard.coerce_numeric(preview.get(field))
+        assert value is None or not math.isfinite(value)
+    poisoned = dict(source, UEReferenceRecordJSON='{"SourceSlot":999,"SINR_dB":999,"RI":4}')
+    assert dashboard.summarize_procedure_preview_rows("csi_report", [poisoned])[0] == preview
 
 
 def test_data_cfo_preview_separates_receiver_measurement_from_simulation_reference() -> None:

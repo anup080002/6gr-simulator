@@ -23,6 +23,23 @@ assert(double(evidence.AbsoluteSlotIndex0) == 27 && ...
 assert(double(frozenCarrier.NSlot) == 0 && double(frozenCarrier.NFrame) == 0, ...
     "Runtime materialization must not mutate the frozen carrier object.");
 
+% CSI-RS occasions in successive H4 reporting periods cross a radio frame.
+% Never reuse frame 1 merely because the component started in that frame.
+for absoluteSlot = [6 20 21 26 39 40 41]
+    [timed, clock] = sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg, absoluteSlot);
+    frame = floor((absoluteSlot-1)/20)+1;
+    assert(clock.FrameIndexOneBased==frame && clock.CarrierSlotIndex0==mod(absoluteSlot-1,20));
+    same = sixgr.phy.grid.applyRuntimeCarrierTimeline(timed, absoluteSlot, frame);
+    assert(isequaln(timed,same));
+end
+threw = false;
+try
+    sixgr.phy.grid.applyRuntimeCarrierTimeline(cfg,26,1);
+catch ME
+    threw = strcmp(ME.identifier,"sixgr:grid:RuntimeFrameSlotMismatch");
+end
+assert(threw,'An inconsistent explicit frame must remain a production error.');
+
 badFrozen = nrCarrierConfig;
 badFrozen.NCellID = frozenCarrier.NCellID;
 badFrozen.SubcarrierSpacing = frozenCarrier.SubcarrierSpacing;

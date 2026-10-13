@@ -1,6 +1,6 @@
 # SixGR Foundation v2
 
-## Current LLS commands and acceptance status (13 October 2026)
+## Current LLS commands and acceptance status (14 October 2026)
 
 These commands are for **Windows Command Prompt (`cmd.exe`)**, not PowerShell.
 They document the executable entry points; they are **not a claim that every
@@ -28,8 +28,11 @@ The retained H4 DL row matches its transmitted sample clock without modifying
 that failed run. Data-beam selection is exported separately from actual P2
 refinement events. These are focused receiver/reporting checks, **not full
 scenario, beam-refinement, detector-statistics or calibration acceptance**.
-The earlier two-report H4 component stopped after its first decoded CSI report
-on the SR stale-clock defect; its full physical rerun remains required.
+The latest completed two-report H4 component decoded its first CSI/SR PUCCH
+at slot 19 (15/15 bits), then stopped at slot 26 because the test supplied
+frame 1 instead of frame 2. The test now binds the canonical carrier clock;
+the production frame-mismatch rejection remains tested and unchanged. The
+two-report physical rerun remains required.
 
 The beam-publication follow-up passes **264 affected Python tests**, including
 the CSV/plot semantic checks. The WebGUI materializer no longer truncates the
@@ -39,9 +42,23 @@ point, execution, direction, UE, cell and source in the same chart/CSV.
 Configured TCI/QCL values are exported separately from runtime observations;
 zero is retained as a valid ID. The tests inspect the rendered series and PNG
 conversion. This is publication verification, **not physical P2 refinement or
-complete-scenario acceptance**. A newly identified UL rank-confirmation bypass
-in the SRS-to-scheduler consumer is still under repair; do not treat the H4
-adaptive UL path as qualified yet.
+complete-scenario acceptance**.
+
+The UL SRS-to-scheduler consumer now honors the configured rank-confirmation
+hold, retains the prior decision's age while held, and remembers accepted
+rank per UE. Fresh PUSCH quality can be retained only for matching RI/TPMI;
+it cannot become quality for a different SRS spatial decision. **Eight
+affected MATLAB tests pass**, including independently executed confirming
+SRS occasions, measured CQI-zero outage, OLLA ownership and frozen grants.
+The two-report policy is a configured receiver/scheduler policy, not a claim
+that 3GPP mandates exactly two reports.
+
+CSI public exports and WebGUI distinguish decoded RI from accepted rank,
+confirmation counters and reference-resource timing. UE-private SINR is not
+presented as received CSI-UCI. The six-test rank/export batch and **79 Python
+checks pass** (two MATLAB tests overlap the eight above). These results do
+not establish full 100 MHz connected UL/DL, beam refinement, statistical
+qualification or final publication acceptance.
 
 ### Command Prompt setup and optional WebGUI
 
