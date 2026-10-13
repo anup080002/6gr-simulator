@@ -4,6 +4,8 @@ function rx=receivePUCCHObservation(cfg,assignment,context,observation,prior)
 % TransmissionAssignment remains explicitly labelled as transmitter-coupled;
 % accepting it does not qualify an independent shared HARQ codebook.
 if nargin<5, prior=[]; end
+assert(isempty(prior) || (isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior)), ...
+    'sixgr:link:InvalidPUCCHTimingPrior','An optional timing prior must be an actual received UL reference.');
 receiverOnly=isa(assignment,'sixgr.phy.pucch.PUCCHReceptionAssignment');
 legacy=isa(assignment,'sixgr.phy.pucch.PUCCHTransmissionAssignment');
 assert(isscalar(assignment) && (receiverOnly || legacy), ...
@@ -40,18 +42,36 @@ args={'NoiseVariance',NaN,'ChannelProfile',sixgr.channel.resolveConcreteProfile(
     'DetectionThreshold',threshold};
 timing=[];
 if assignment.Format==0
-    if isempty(prior) && receiverOnly && context.HARQACKBits==0 && context.SRBits==1 && ...
+    if receiverOnly && context.HARQACKBits==0 && context.SRBits==1 && ...
             context.CSIPart1Bits==0 && context.CSIPart2Bits==0
         % Standalone positive SR has one receiver-known sequence (m_cs=0).
         % Acquisition never uses the UE pending bit or a prepared waveform.
         % Noise-only episodes use the same bounded search and detector.
+        % A retained clock must not change this known-sequence receiver or
+        % make an otherwise observable SR occasion depend on its freshness.
+        % HARQ-bearing Format 0 below still requires a fresh measured prior.
         pucch=assignment.Resource.toolboxConfig();
         indices=nrPUCCHIndices(carrier,pucch);
         symbols=nrPUCCH(carrier,pucch,{int8([]),int8(1)});
-        [raw,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
-            carrier,raw,indices,symbols,[0 size(raw,1)-(stop-first)]);
-        timing.TimingSource="received_configured_SR_sequence_bounded_search";
-        timing.TimingValueRole="candidate_alignment_not_proof_of_SR_detection";
+        if ~any(raw(:))
+            % Exactly silent captured samples have no timing peak. Run the
+            % detector on actual zeros, without claiming timing acquisition,
+            % inventing noise, or renewing a received-clock reference.
+            timing=struct('TimingOffsetSamples',NaN,'AppliedTimingCorrectionSamples',NaN, ...
+                'TimingSource',"unavailable_zero_received_energy", ...
+                'TimingValueRole',"no_timing_measurement_zero_received_energy", ...
+                'InputSampleCount',size(raw,1),'DemodulatedSampleCount',stop-first, ...
+                'OracleTimingUsed',false,'ReceiverZeroPaddingUsed',false);
+            raw=raw(1:stop-first,:);
+        else
+            [raw,timing]=sixgr.phy.sync.alignULReferenceObservation( ...
+                carrier,raw,indices,symbols,[0 size(raw,1)-(stop-first)]);
+            timing.TimingSource="received_configured_SR_sequence_bounded_search";
+            timing.TimingValueRole="candidate_alignment_not_proof_of_SR_detection";
+        end
+        timing.PriorClockProvided=~isempty(prior);
+        timing.PriorClockApplied=false;
+        timing.PriorClockDisposition="not_used_current_configured_SR_sequence_acquisition";
     else
         assert(isa(prior,'sixgr.phy.sync.ReceivedULTimingReference') && isscalar(prior), ...
             'sixgr:phy:pucch:PUCCHTimingReferenceRequired', ...

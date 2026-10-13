@@ -28,6 +28,13 @@ for positive=[false true]
         'TimeAlignmentExpirySampleExclusive',round(.02*fs))};
     state.UECommonCellConfigurationByUE={decodedSSBPowerCodecFixture(cfg,0,1,1)};
     state.UECommonCellConfigurationByUE{1}.InitialULBWP.SubcarrierSpacing_kHz=carrier.SubcarrierSpacing;
+    % This test starts at a declared connected boundary. A TAG/clock alone
+    % must not bypass the production access/RRC admission requirement.
+    assert(~sixgr.truth.CoupledRadioIdentity.connectedReady(state,1));
+    state.AccessState(1)="succeeded";
+    scope=struct('AccessExecuted',false,'ScenarioAccepted',false, ...
+        'Source',"declared_preconnected_component_boundary_not_received_access");
+    assert(sixgr.truth.CoupledRadioIdentity.connectedReady(state,1));
     states=state.UEConfiguredSRProcedures{1,1}; assert(isscalar(states));
     d=states.Data; d.PendingPositiveSR=positive;
     state.UEConfiguredSRProcedures{1,1}=sixgr.phy.pucch.SchedulingRequestState(d);
@@ -55,7 +62,7 @@ for positive=[false true]
         ~rx.ReceiveTiming.OracleTimingUsed && ~rx.ReceiveTiming.ReceiverZeroPaddingUsed);
     writetable(rows,fullfile(folder,'SR_received.csv'));
     writetable(state.ControlTrials.PUCCH,fullfile(folder,'pucch_trials.csv'));
-    save(fullfile(folder,'SR_physical_episode.mat'),'cfg','rows','rx','positive');
+    save(fullfile(folder,'SR_physical_episode.mat'),'cfg','rows','rx','positive','scope');
     assert(rows.PositiveSRDetected==positive, ...
         'test:StandaloneSRDetectionMismatch','Retained actual SR/noise episode did not meet its expected decision: %s.',folder);
     assert(all(state.PUCCHFailureCount==0),'Negative standalone SR is not a missing HARQ/CSI failure.');

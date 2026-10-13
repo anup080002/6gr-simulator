@@ -40,6 +40,7 @@ artifacts.ChannelEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_chann
 artifacts.RankEstimationStatsPath = fullfile(layout.ReportCSVDir, "live_rank_estimation_stats.csv");
 artifacts.BeamSelectionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv");
 artifacts.BeamP1AcquisitionStatsPath = fullfile(layout.ReportCSVDir, "live_beam_p1_acquisition_stats.csv");
+artifacts.DataBeamSelectionStatsPath = fullfile(layout.ReportCSVDir, "live_data_beam_selection_stats.csv");
 artifacts.BeamP2RefinementStatsPath = fullfile(layout.ReportCSVDir, "live_beam_p2_refinement_stats.csv");
 artifacts.BeamProcedureStatsPath = fullfile(layout.ReportCSVDir, "live_beam_management_procedure_stats.csv");
 artifacts.CSIFeedbackStatsPath = fullfile(layout.ReportCSVDir, "live_csi_feedback_stats.csv");
@@ -63,7 +64,7 @@ artifacts.ChannelImpulseResponsePath = fullfile(layout.ReportCSVDir, "channel_im
 
 channelT = localBuildChannelStatsTable(dlT, ulT, srsT, trsT);
 rankT = localBuildRankStatsTable(dlT, ulT);
-[beamT, beamP1T, beamP2T] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder);
+[beamT, beamP1T, beamP2T, dataBeamT] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder);
 csiT = localBuildCSIStatsTable(dlT, ulT);
 csirsT = localBuildCSIRSStatsTable(csirsRuntimeT, srsT, trsT);
 csirsT = sixgr.truth.canonicalizeLLSLiveSignalChainTable("csirs_stats", csirsT);
@@ -134,6 +135,7 @@ sixgr.util.csvWriteTable(artifacts.ChannelEstimationStatsPath, channelT);
 sixgr.util.csvWriteTable(artifacts.RankEstimationStatsPath, rankT);
 sixgr.util.csvWriteTable(artifacts.BeamSelectionStatsPath, beamT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.BeamP1AcquisitionStatsPath, beamP1T, "PreserveSchema", true);
+sixgr.util.csvWriteTable(artifacts.DataBeamSelectionStatsPath, dataBeamT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.BeamP2RefinementStatsPath, beamP2T, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.BeamProcedureStatsPath, beamT, "PreserveSchema", true);
 sixgr.util.csvWriteTable(artifacts.CSIFeedbackStatsPath, csiT);
@@ -163,6 +165,7 @@ artifacts.ChannelEstimationStats = channelT;
 artifacts.RankEstimationStats = rankT;
 artifacts.BeamSelectionStats = beamT;
 artifacts.BeamP1AcquisitionStats = beamP1T;
+artifacts.DataBeamSelectionStats = dataBeamT;
 artifacts.BeamP2RefinementStats = beamP2T;
 artifacts.BeamProcedureStats = beamT;
 artifacts.CSIFeedbackStats = csiT;
@@ -248,7 +251,7 @@ if isempty(T)
 end
 end
 
-function [T, p1T, p2T] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder)
+function [T, p1T, p2T, dataT] = localBuildBeamStatsTable(dlT, ulT, pbchT, runFolder)
 if nargin < 3 || ~(istable(pbchT))
     pbchT = table();
 end
@@ -256,8 +259,8 @@ if nargin < 4
     runFolder = "";
 end
 p1T = localBuildP1BeamAcquisitionStats(pbchT, runFolder);
-p2T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder);
-T = localVertcat({p1T, p2T});
+[dataT, p2T] = localBuildRuntimeBeamStats(dlT, ulT, runFolder);
+T = localVertcat({p1T, dataT, p2T});
 if isempty(T)
     T = localEmptyBeamSummaryTable();
 end
@@ -280,7 +283,12 @@ if isempty(T)
 end
 end
 
-function T = localBuildP2BeamRefinementStats(dlT, ulT, runFolder)
+function [dataT, p2T] = localBuildRuntimeBeamStats(dlT, ulT, runFolder)
+% Applying a data precoder is not proof of a CSI-RS refinement procedure,
+% convergence, a beam switch, or recovery. Keep actual state/event evidence
+% separate, even when both populations belong to the same physical run.
+dataT = localEmptyBeamSummaryTable();
+p2T = localEmptyBeamSummaryTable();
 beamMetricFields = ["SelectedBeamIndex","BestBeamIndex","BeamHit","TopKBeamHit","BeamCandidateCount", ...
     "SelectedBeamGain_dB","BestBeamGain_dB","BeamGainGap_dB","PMI","CRI"];
 authorityDL = dlT;
@@ -296,7 +304,7 @@ if isempty(rawBeamT)
         localRawBeamSummary(persistedDL, "DL", beamMetricFields, localRuntimeTrialSource(persistedDL, "DL", true)), ...
         localRawBeamSummary(persistedUL, "UL", beamMetricFields, localRuntimeTrialSource(persistedUL, "UL", true))});
 end
-rawBeamT = localAnnotateBeamSummaryTable(rawBeamT, "P2_runtime_beam_refinement", "PDSCH_PUSCH_GRANT");
+rawBeamT = localAnnotateBeamSummaryTable(rawBeamT, "runtime_data_beam_selection", "PDSCH_PUSCH_GRANT");
 % A fixed-link execution can legitimately contain no beam measurements.
 % Do not demand a beam-summary identity when no primary or auxiliary beam
 % observation exists. This is an empty result, not successful refinement.
@@ -312,26 +320,24 @@ if isempty(rawBeamT)
         end
     end
     if ~hasAuxiliaryEvidence
-        T = localEmptyBeamSummaryTable();
         return;
     end
 end
 [authorityRunID, authorityExecutionID] = localBeamAuthorityIdentity(authorityDL, authorityUL);
 
-parts = { ...
+dataT = localVertcat({ ...
     rawBeamT, ...
     localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "probe_beam_mimo.csv", authorityRunID, authorityExecutionID), "beamforming/csv/probe_beam_mimo.csv"), ...
-        "P2_runtime_beam_refinement", "PDSCH_PUSCH_PROBE"), ...
+        "runtime_data_beam_selection", "PDSCH_PUSCH_PROBE"), ...
     localAnnotateBeamSummaryTable(localBuildRuntimeBeamArtifactStats(localReadBeamArtifactTable(runFolder, "beam_precoder_table.csv", authorityRunID, authorityExecutionID), "beamforming/csv/beam_precoder_table.csv"), ...
-        "P2_runtime_beam_refinement", "PDSCH_PUSCH_PRECODER"), ...
+        "runtime_data_beam_selection", "PDSCH_PUSCH_PRECODER")});
+p2T = localVertcat({ ...
     localAnnotateBeamSummaryTable(localBuildBeamStateTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_state_trace.csv", authorityRunID, authorityExecutionID)), ...
         "P2_runtime_beam_state_tracking", "BEAM_STATE_TRACE"), ...
     localAnnotateBeamSummaryTable(localBuildBeamEventTraceStats(localReadBeamArtifactTable(runFolder, "beam_management_event_trace.csv", authorityRunID, authorityExecutionID)), ...
-        "P2_runtime_beam_event_tracking", "BEAM_EVENT_TRACE")};
-T = localVertcat(parts);
-if isempty(T)
-    T = localEmptyBeamSummaryTable();
-end
+        "P2_runtime_beam_event_tracking", "BEAM_EVENT_TRACE")});
+if isempty(dataT), dataT = localEmptyBeamSummaryTable(); end
+if isempty(p2T), p2T = localEmptyBeamSummaryTable(); end
 end
 
 function T = localAnnotateBeamSummaryTable(T, procedure, sourceFamily)
@@ -548,19 +554,19 @@ if ~(istable(sourceT) && ~isempty(sourceT))
     return;
 end
 specs = [ ...
-    localBeamMetricSpec("P2SelectedBeamIndex", ["SelectedBeamIndex","selected_beam_index"]); ...
-    localBeamMetricSpec("P2BestBeamIndex", ["BestBeamIndex","best_beam_index"]); ...
-    localBeamMetricSpec("P2BeamHitRate", ["BeamHit","beam_hit"]); ...
-    localBeamMetricSpec("P2TopKBeamHitRate", ["TopKBeamHit","top_k_beam_hit"]); ...
-    localBeamMetricSpec("P2BeamCandidateCount", ["BeamCandidateCount","beam_candidate_count"]); ...
-    localBeamMetricSpec("P2SelectedBeamGain_dB", ["SelectedBeamGain_dB","selected_beam_gain_db"]); ...
-    localBeamMetricSpec("P2BestBeamGain_dB", ["BestBeamGain_dB","best_beam_gain_db"]); ...
-    localBeamMetricSpec("P2BeamGainGap_dB", ["BeamGainGap_dB","beam_gain_gap_db"]); ...
-    localBeamMetricSpec("P2BeamformingAppliedRate", ["BeamformingApplied","beamforming_applied"]); ...
-    localBeamMetricSpec("P2PrecodingActiveRate", ["PrecodingActive","precoding_active"]); ...
-    localBeamMetricSpec("P2PrecodingNumLayers", ["PrecodingNumLayers","precoding_num_layers"]); ...
-    localBeamMetricSpec("P2PrecodingNumPorts", ["PrecodingNumPorts","precoding_num_ports"])];
-T = localBuildBeamSummaryRows(sourceT, "", string(traceSource), specs, "measured_runtime_beam_refinement");
+    localBeamMetricSpec("DataSelectedBeamIndex", ["SelectedBeamIndex","selected_beam_index"]); ...
+    localBeamMetricSpec("DataBestBeamIndex", ["BestBeamIndex","best_beam_index"]); ...
+    localBeamMetricSpec("DataBeamHitRate", ["BeamHit","beam_hit"]); ...
+    localBeamMetricSpec("DataTopKBeamHitRate", ["TopKBeamHit","top_k_beam_hit"]); ...
+    localBeamMetricSpec("DataBeamCandidateCount", ["BeamCandidateCount","beam_candidate_count"]); ...
+    localBeamMetricSpec("DataSelectedBeamGain_dB", ["SelectedBeamGain_dB","selected_beam_gain_db"]); ...
+    localBeamMetricSpec("DataBestBeamGain_dB", ["BestBeamGain_dB","best_beam_gain_db"]); ...
+    localBeamMetricSpec("DataBeamGainGap_dB", ["BeamGainGap_dB","beam_gain_gap_db"]); ...
+    localBeamMetricSpec("DataBeamformingAppliedRate", ["BeamformingApplied","beamforming_applied"]); ...
+    localBeamMetricSpec("DataPrecodingActiveRate", ["PrecodingActive","precoding_active"]); ...
+    localBeamMetricSpec("DataPrecodingNumLayers", ["PrecodingNumLayers","precoding_num_layers"]); ...
+    localBeamMetricSpec("DataPrecodingNumPorts", ["PrecodingNumPorts","precoding_num_ports"])];
+T = localBuildBeamSummaryRows(sourceT, "", string(traceSource), specs, "measured_runtime_data_beam_selection");
 if isempty(T)
     T = localEmptySummaryTable();
 end
@@ -727,14 +733,9 @@ end
 
 function T = localBuildSymbolThroughputTable(cfg, dlT, ulT)
 symbolsPerSlot = localResolveSymbolsPerSlot(cfg);
-totalSlots = localResolveSymbolThroughputSlotCount(cfg, dlT, ulT);
-slotDuration_s = localResolveSlotDurationSeconds(cfg, totalSlots);
-symbolDuration_s = slotDuration_s / max(1, symbolsPerSlot);
-nSymbols = max(0, totalSlots * symbolsPerSlot);
-
-absIdx0 = (0:nSymbols-1).';
-slotIdx = floor(absIdx0 ./ max(1, symbolsPerSlot));
-symbolInSlot = mod(absIdx0, max(1, symbolsPerSlot));
+[clock,dlSlot0,ulSlot0] = sixgr.truth.resolveLLSSymbolClock(cfg,dlT,ulT);
+symbolDuration_s = clock.SymbolDuration_s;
+nSymbols = height(clock);
 
 scheduledDL = zeros(nSymbols, 1);
 scheduledUL = zeros(nSymbols, 1);
@@ -750,9 +751,9 @@ cqiDLCount = zeros(nSymbols, 1);
 cqiULCount = zeros(nSymbols, 1);
 
 [scheduledDL, goodDL, grantDL, mcsDL, cqiDLSum, cqiDLCount] = ...
-    localAccumulateSymbolThroughput(dlT, scheduledDL, goodDL, grantDL, mcsDL, cqiDLSum, cqiDLCount, symbolsPerSlot, "DL");
+    localAccumulateSymbolThroughput(dlT, dlSlot0, scheduledDL, goodDL, grantDL, mcsDL, cqiDLSum, cqiDLCount, symbolsPerSlot, "DL");
 [scheduledUL, goodUL, grantUL, mcsUL, cqiULSum, cqiULCount] = ...
-    localAccumulateSymbolThroughput(ulT, scheduledUL, goodUL, grantUL, mcsUL, cqiULSum, cqiULCount, symbolsPerSlot, "UL");
+    localAccumulateSymbolThroughput(ulT, ulSlot0, scheduledUL, goodUL, grantUL, mcsUL, cqiULSum, cqiULCount, symbolsPerSlot, "UL");
 
 meanDLCQI = nan(nSymbols, 1);
 dlMask = cqiDLCount > 0;
@@ -761,14 +762,24 @@ meanULCQI = nan(nSymbols, 1);
 ulMask = cqiULCount > 0;
 meanULCQI(ulMask) = cqiULSum(ulMask) ./ cqiULCount(ulMask);
 
+observed = (grantDL + grantUL)>0;
+% A planned symbol without a received grant row is not evidence of idle
+% execution or zero throughput. In particular do not turn the unexecuted
+% tail of a failed run into successful zero-valued measurements.
+scheduledDL(~observed)=NaN; scheduledUL(~observed)=NaN;
+goodDL(~observed)=NaN; goodUL(~observed)=NaN;
 scheduledTotal = scheduledDL + scheduledUL;
 goodTotal = goodDL + goodUL;
-source = repmat("configured_symbol_time_axis_no_grant", nSymbols, 1);
-source((grantDL + grantUL) > 0) = "derived_from_real_grant_trial_symbol_allocation";
+source = repmat("configured_symbol_time_axis_no_observed_grant", nSymbols, 1);
+source(observed) = "derived_from_real_grant_trial_symbol_allocation";
+role = repmat("axis_only_no_execution_claim",nSymbols,1);
+role(observed) = "TB_bits_uniformly_apportioned_over_allocation_not_symbolwise_decoding";
+status = repmat("unavailable_no_observed_grant",nSymbols,1);
+status(observed) = "derived_observed_grant_allocation";
 
 T = table( ...
-    absIdx0, slotIdx, symbolInSlot, ...
-    double(absIdx0) .* symbolDuration_s, repmat(symbolDuration_s, nSymbols, 1), ...
+    clock.AbsoluteSymbolIndex, clock.Slot, clock.SymbolInSlot, ...
+    clock.SymbolStartTime_s, symbolDuration_s, ...
     scheduledDL, scheduledUL, scheduledTotal, ...
     goodDL, goodUL, goodTotal, ...
     scheduledDL ./ symbolDuration_s ./ 1e6, ...
@@ -779,8 +790,7 @@ T = table( ...
     goodTotal ./ symbolDuration_s ./ 1e6, ...
     grantDL, grantUL, grantDL + grantUL, ...
     mcsDL, mcsUL, meanDLCQI, meanULCQI, ...
-    source, repmat("symbol_throughput_from_actual_grant_symbol_allocation", nSymbols, 1), ...
-    repmat("OK", nSymbols, 1), ...
+    source, role, status, ...
     'VariableNames', {'AbsoluteSymbolIndex','Slot','SymbolInSlot','SymbolStartTime_s','SymbolDuration_s', ...
     'ScheduledDLBits','ScheduledULBits','ScheduledTotalBits', ...
     'GoodDLBits','GoodULBits','GoodTotalBits', ...
@@ -789,16 +799,17 @@ T = table( ...
     'DLGrantCount','ULGrantCount','TotalGrantCount', ...
     'MaxDLMCS','MaxULMCS','MeanDLCQI','MeanULCQI', ...
     'ValueSource','ValueRole','ValueStatus'});
+T.SlotIndexBase=clock.SlotIndexBase;
+T.SymbolTimePlane=clock.SymbolTimePlane;
 end
 
 function [scheduledBits, goodBits, grantCount, maxMCS, cqiSum, cqiCount] = ...
-    localAccumulateSymbolThroughput(T, scheduledBits, goodBits, grantCount, maxMCS, cqiSum, cqiCount, symbolsPerSlot, direction)
+    localAccumulateSymbolThroughput(T, slotVals, scheduledBits, goodBits, grantCount, maxMCS, cqiSum, cqiCount, symbolsPerSlot, direction)
 if ~(istable(T) && ~isempty(T))
     return;
 end
 nOut = numel(scheduledBits);
-slotVals = localOptionalNumericColumn(T, "Slot", NaN);
-symbolStartVals = localOptionalNumericColumn(T, "SymbolStart", 0);
+symbolStartVals = localOptionalNumericColumn(T, "SymbolStart", NaN);
 numSymbolVals = localOptionalNumericColumn(T, "NumSymbols", NaN);
     tbsVals = localOptionalNumericColumn(T, "TBSBits", NaN);
     % The canonical raw link-trial schema names the transport-block field
@@ -808,9 +819,7 @@ numSymbolVals = localOptionalNumericColumn(T, "NumSymbols", NaN);
     rawTBSVals = localOptionalNumericColumn(T, "TBSize_bits", NaN);
     tbsMissing = ~isfinite(tbsVals) & isfinite(rawTBSVals);
     tbsVals(tbsMissing) = rawTBSVals(tbsMissing);
-offeredVals = localOptionalNumericColumn(T, "OfferedBits", NaN);
 goodVals = localOptionalNumericColumn(T, "GoodBits", NaN);
-crcVals = localOptionalNumericColumn(T, "CRCPass", NaN);
 mcsVals = localOptionalNumericColumn(T, "MCSIndex", NaN);
 mcsFallback = localOptionalNumericColumn(T, "MCS", NaN);
 mcsMissing = ~isfinite(mcsVals) & isfinite(mcsFallback);
@@ -829,39 +838,31 @@ for r = 1:height(T)
     if ~(rowDirection(r) == upper(string(direction)))
         continue;
     end
-    slot = round(double(slotVals(r)));
+    scheduled = double(tbsVals(r));
+    if ~isfinite(scheduled) || scheduled<=0
+        continue; % Offered traffic or absent TBS does not establish a grant.
+    end
+    slot = double(slotVals(r));
     if ~(isfinite(slot) && slot >= 0)
         continue;
     end
-    sym0 = round(double(symbolStartVals(r)));
-    nSym = round(double(numSymbolVals(r)));
-    if ~(isfinite(sym0) && isfinite(nSym) && nSym >= 1)
-        sym0 = 0;
-        nSym = symbolsPerSlot;
+    sym0 = double(symbolStartVals(r));
+    nSym = double(numSymbolVals(r));
+    if ~isfinite(sym0) || ~isfinite(nSym)
+        continue; % Unknown allocation cannot be replaced by a full slot.
     end
+    assert(sym0==fix(sym0) && sym0>=0 && nSym==fix(nSym) && ...
+        nSym>=1 && sym0+nSym<=symbolsPerSlot && scheduled==fix(scheduled), ...
+        'sixgr:truth:InvalidSymbolThroughputAllocation', ...
+        'Use a real integer TBS and its complete, legal symbol allocation.');
     symList = sym0:(sym0 + nSym - 1);
-    symList = symList(symList >= 0 & symList < symbolsPerSlot);
-    if isempty(symList)
-        continue;
-    end
     idx = slot * symbolsPerSlot + symList(:) + 1;
-    idx = idx(idx >= 1 & idx <= nOut);
-    if isempty(idx)
-        continue;
-    end
-    coveredSymbols = max(1, numel(idx));
-    scheduled = double(tbsVals(r));
-    if ~(isfinite(scheduled) && scheduled >= 0)
-        scheduled = double(offeredVals(r));
-    end
-    if ~(isfinite(scheduled) && scheduled >= 0)
-        scheduled = 0;
-    end
+    assert(all(idx>=1 & idx<=nOut),'sixgr:truth:SymbolThroughputClockTruncation', ...
+        'The physical time axis must contain every observed allocation.');
+    coveredSymbols = numel(idx);
     delivered = double(goodVals(r));
-    if ~(isfinite(delivered) && delivered >= 0)
-        crcPass = isfinite(double(crcVals(r))) && double(crcVals(r)) ~= 0;
-        delivered = scheduled * double(crcPass);
-    end
+    assert(isnan(delivered) || (isfinite(delivered) && delivered>=0 && delivered<=scheduled), ...
+        'sixgr:truth:InvalidSymbolThroughputGoodBits','Retain actual received GoodBits or unavailable NaN.');
     scheduledBits(idx) = scheduledBits(idx) + scheduled / coveredSymbols;
     goodBits(idx) = goodBits(idx) + delivered / coveredSymbols;
     grantCount(idx) = grantCount(idx) + 1;
@@ -890,52 +891,6 @@ if isfinite(configured) && configured ~= symbolsPerSlot
         "Configured SymbolsPerSlot=%g conflicts with canonical value %g.", ...
         configured, symbolsPerSlot);
 end
-end
-
-function totalSlots = localResolveSymbolThroughputSlotCount(cfg, dlT, ulT)
-totalSlots = double(sixgr.util.structGet(cfg, "run.totalSlots", ...
-    sixgr.util.structGet(cfg, "run_control.total_slots", ...
-    sixgr.util.structGet(cfg, "simulation.n_slots", NaN))));
-observed = [];
-for T = {dlT, ulT}
-    Ti = T{1};
-    if istable(Ti) && ismember("Slot", string(Ti.Properties.VariableNames)) && ~isempty(Ti)
-        vals = localOptionalNumericColumn(Ti, "Slot", NaN);
-        observed = [observed; vals(isfinite(vals))]; %#ok<AGROW>
-    end
-end
-if isempty(observed)
-    if ~(isfinite(totalSlots) && totalSlots >= 1)
-        totalSlots = 0;
-    end
-else
-    % In an independent SINR sweep the configured slot budget is per
-    % operating point, while the coupled runtime emits a monotonically
-    % increasing absolute Slot over the complete campaign.  Never truncate
-    % measured grants merely because their absolute slot exceeds the
-    % per-point budget.  Extending the axis to the observed maximum retains
-    % explicit idle symbols and makes scheduled/good-bit conservation exact.
-    observedSlots = max(observed) + 1;
-    if ~(isfinite(totalSlots) && totalSlots >= 1)
-        totalSlots = observedSlots;
-    else
-        totalSlots = max(totalSlots, observedSlots);
-    end
-end
-totalSlots = max(0, round(totalSlots));
-end
-
-function slotDuration_s = localResolveSlotDurationSeconds(cfg, totalSlots)
-slotDuration_ms = double(sixgr.util.structGet(cfg, "phy.numerology.slotDuration_ms", NaN));
-if ~(isfinite(slotDuration_ms) && slotDuration_ms > 0)
-    totalTime_ms = double(sixgr.util.structGet(cfg, "run_control.total_time_ms", NaN));
-    if isfinite(totalTime_ms) && totalTime_ms > 0 && totalSlots > 0
-        slotDuration_ms = totalTime_ms / max(1, totalSlots);
-    else
-        slotDuration_ms = 0.5;
-    end
-end
-slotDuration_s = slotDuration_ms / 1e3;
 end
 
 function T = localBuildCSIRSStatsTable(csirsRuntimeT, srsT, trsT)

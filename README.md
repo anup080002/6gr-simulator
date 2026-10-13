@@ -11,11 +11,25 @@ The latest complete-scenario attempt for 4 GHz / 100 MHz TDD stopped at slot
 43/200 with a channel-diagnostic memory failure. The bounded channel-export
 repair, receiver timing/noise/scoring repairs, H4 TRS receiver and causal-audit
 checks have focused passing evidence. Full connected DL/UL, two-report physical
-CSI-to-scheduler confirmation, beam-refinement reporting, symbol-clock exports
-and final CSV/PNG publication still require closure. The 5 MHz scenarios and
+CSI-to-scheduler confirmation, actual beam-refinement execution and final
+CSV/PNG publication still require closure. The 5 MHz scenarios and
 historical 400 MHz benchmarks are not substitutes for that acceptance.
 No full `testAll` is launched by the commands below. Current repair verification
 is limited to affected tests at the operator's request. SLS remains on hold.
+
+The latest follow-up has **13 affected tests passing**: standalone SR acquires
+its current receiver-known sequence even when an optional retained UL clock
+has expired; HARQ-bearing format-0 still requires a fresh measured clock.
+Zero-energy SR remains DTX with timing unavailable. Capture replay retains
+exact samples and verifies the Windows short-path readback checksum. Symbol
+exports now use the NR CP-specific clock, explicitly declare their slot base,
+and leave unobserved symbols unavailable instead of recording measured zeros.
+The retained H4 DL row matches its transmitted sample clock without modifying
+that failed run. Data-beam selection is exported separately from actual P2
+refinement events. These are focused receiver/reporting checks, **not full
+scenario, beam-refinement, detector-statistics or calibration acceptance**.
+The earlier two-report H4 component stopped after its first decoded CSI report
+on the SR stale-clock defect; its full physical rerun remains required.
 
 ### Command Prompt setup and optional WebGUI
 

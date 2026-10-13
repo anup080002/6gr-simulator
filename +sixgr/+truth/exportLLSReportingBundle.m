@@ -231,6 +231,7 @@ ctx.Tables.SSBBeamSweep = localReadFirstOptionalTable({ ...
     fullfile(layout.ControlCSVDir, "ssb_pbch_sib1_beam_sweep.csv"), ...
     fullfile(layout.AirInterfaceCSVDir, "ssb_pbch_sib1_beam_sweep.csv")});
 ctx.Tables.LiveBeamP1AcquisitionStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_p1_acquisition_stats.csv"));
+ctx.Tables.LiveDataBeamSelectionStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_data_beam_selection_stats.csv"));
 ctx.Tables.LiveBeamP2RefinementStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_p2_refinement_stats.csv"));
 ctx.Tables.LiveBeamProcedureStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_management_procedure_stats.csv"));
 ctx.Tables.LiveBeamSelectionStats = localReadOptionalTable(fullfile(layout.ReportCSVDir, "live_beam_selection_stats.csv"));
@@ -4183,10 +4184,12 @@ end
 end
 
 function T = localBeamManagementMetricRows(cat, metric, ctx, metricKey)
-% Prefer measured P1/P2 beam artifacts before falling back to legacy probe summaries.
+% Data-precoder observations remain separate from physical P1/P2 procedures.
 T = localVertcatTables({ ...
     localBeamManagementRowsFromLiveStats(cat, metric, ...
         sixgr.util.structGet(ctx.Tables, "LiveBeamP1AcquisitionStats", table()), metricKey), ...
+    localBeamManagementRowsFromLiveStats(cat, metric, ...
+        sixgr.util.structGet(ctx.Tables, "LiveDataBeamSelectionStats", table()), metricKey), ...
     localBeamManagementRowsFromLiveStats(cat, metric, ...
         sixgr.util.structGet(ctx.Tables, "LiveBeamP2RefinementStats", table()), metricKey)});
 if ~localMetricRowsHaveEntity(T, "ssb_p1_acquisition")
@@ -4370,9 +4373,9 @@ switch string(metricKey)
         specs(end+1) = localBeamManagementLiveMetricSpec("P1PBCHDetectionRate", "ssb_p1_acquisition", "p1_pbch_detection_rate", "fraction", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv");
         specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamDetectedRate", "runtime_p2_beam_state", "p2_detected_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
     case "beam_index_hit_rate"
-        specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamHitRate", "runtime_p2_beam_refinement", "p2_selected_equals_best_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("DataBeamHitRate", "runtime_data_beam_selection", "data_selected_equals_best_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
     case "top_k_beam_hit_rate"
-        specs(end+1) = localBeamManagementLiveMetricSpec("P2TopKBeamHitRate", "runtime_p2_beam_refinement", "p2_top_k_hit_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("DataTopKBeamHitRate", "runtime_data_beam_selection", "data_top_k_hit_rate", "fraction", "beamforming/csv/beam_precoder_table.csv");
     case "beam_switch_latency"
         specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatencySlots", "runtime_p2_beam_event", "p2_switch_latency_slots", "slots", "beamforming/csv/beam_management_event_trace.csv");
         specs(end+1) = localBeamManagementLiveMetricSpec("P2SwitchLatency_s", "runtime_p2_beam_event", "p2_switch_latency_s", "s", "beamforming/csv/beam_management_event_trace.csv");
@@ -4387,7 +4390,7 @@ switch string(metricKey)
         specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamFailureRate", "runtime_p2_beam_state", "p2_failure_rate", "fraction", "beamforming/csv/beam_management_state_trace.csv");
     case "beam_management_overhead"
         specs(end+1) = localBeamManagementLiveMetricSpec("P1SSBSweptBeamCount", "ssb_p1_acquisition", "p1_swept_beam_count", "count", "beamforming/csv/ssb_pbch_sib1_beam_sweep.csv");
-        specs(end+1) = localBeamManagementLiveMetricSpec("P2BeamCandidateCount", "runtime_p2_beam_refinement", "p2_candidate_beam_count", "count", "beamforming/csv/beam_precoder_table.csv");
+        specs(end+1) = localBeamManagementLiveMetricSpec("DataBeamCandidateCount", "runtime_data_beam_selection", "data_candidate_beam_count", "count", "beamforming/csv/beam_precoder_table.csv");
 end
 end
 
