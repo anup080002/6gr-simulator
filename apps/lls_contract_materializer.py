@@ -1839,6 +1839,7 @@ def _render_multi_series_svg(
     show_all_series: bool = False,
     pad_constant_axes: bool = False,
     y_bounds: tuple[float, float] | None = None,
+    max_points_per_series: int | None = MAX_PREVIEW_ROWS,
 ) -> bytes:
     width = 1280
     height = 720
@@ -1877,7 +1878,9 @@ def _render_multi_series_svg(
         ]
         if not raw_points:
             continue
-        sampled = _downsample_points([[x_val, y_val] for x_val, y_val in raw_points], MAX_PREVIEW_ROWS)
+        sampled = ([[x_val, y_val] for x_val, y_val in raw_points]
+                   if max_points_per_series is None else
+                   _downsample_points([[x_val, y_val] for x_val, y_val in raw_points], max_points_per_series))
         sampled_pairs = [(float(point[0]), float(point[1])) for point in sampled]
         prepared.append(
             {
@@ -2360,7 +2363,7 @@ def _scope_token_for_logical_path(logical_path: str) -> str:
 
 
 def _nonblank_text(value: Any) -> bool:
-    text = str(value or "").strip()
+    text = "" if value is None else str(value).strip()
     return text not in {"", "NaN", "nan", "<missing>", "missing"}
 
 
@@ -2758,7 +2761,9 @@ def _percentile(sorted_vals: list[float], fraction: float) -> float:
 def _row_text(row: dict[str, str], *names: str) -> str:
     value = _row_value(row, *names)
     if value is not None:
-        text = str(value or "").strip()
+        # JSON/configuration values may be numeric zero or false, unlike CSV
+        # strings. Both are observations, not missing values (e.g. TCI ID 0).
+        text = str(value).strip()
         if text:
             return text
     return ""
@@ -4382,15 +4387,25 @@ def _specialized_live_report_table(
         qcl_cfg = config_payload.get("qcl", {}) if isinstance(config_payload.get("qcl"), dict) else {}
         near_field_cfg = config_payload.get("near_field", {}) if isinstance(config_payload.get("near_field"), dict) else {}
         for logical_path, source_rows in selected_sources:
-            for row in source_rows[:1024]:
+            # This CSV is a persisted evidence table, not a paginated UI preview.
+            # Truncating it discards later sweep points. Configuration is retained
+            # in separate columns and must never fill missing executed TCI/QCL.
+            for row in source_rows:
                 qcl_accuracy = _row_text(row, "QCLAccuracy")
-                tci_value = _row_text(row, "TCIState", "TCIStateID") or str(tci_cfg.get("state_id") or "")
+                tci_value = _row_text(row, "TCIState", "TCIStateID")
                 rows.append({
                     "run_id": run_id,
+                    "source_run_id": _row_text(row, "RunID"),
+                    "source_execution_id": _row_text(row, "ExecutionID"),
+                    "configured_snr_db": _row_text(row, "ConfiguredSNR_dB"),
+                    "sweep_point_index": _row_text(row, "SweepPointIndex"),
+                    "beam_management_procedure": "runtime_data_beam_selection",
                     "direction": _row_text(row, "Direction"),
                     "frame": _row_text(row, "Frame", "SFN"),
                     "slot": _row_text(row, "Slot"),
-                    "ue_id": _row_text(row, "UEID", "UEIndex", "RNTI"),
+                    "ue_id": next((str(row[key]).strip() for key in ("ue_id", "UEID", "UEIndex", "UE")
+                                   if key in row and _nonblank_text(row[key])), ""),
+                    "rnti": _row_text(row, "RNTI"),
                     "cell_id": _row_text(row, "BaseStationID", "ServingCell", "CellID"),
                     "selected_beam_index": _row_text(row, "SelectedBeamIndex"),
                     "best_beam_index": _row_text(row, "BestBeamIndex"),
@@ -4410,16 +4425,23 @@ def _specialized_live_report_table(
                     "applied_precoder_pmi_type": _row_text(row, "AppliedPrecoderPMIType"),
                     "applied_precoder_codebook_mode": _row_text(row, "AppliedPrecoderCodebookMode"),
                     "qcl_accuracy": qcl_accuracy,
-                    "qcl_type": _row_text(row, "QCLType", "QCLTypes") or str(qcl_cfg.get("type") or qcl_cfg.get("types") or ""),
-                    "qcl_source_rs": _row_text(row, "QCLSourceRS") or str(qcl_cfg.get("source_rs") or ""),
+                    "qcl_type": _row_text(row, "QCLType", "QCLTypes"),
+                    "qcl_source_rs": _row_text(row, "QCLSourceRS"),
                     "qcl_status": _row_text(row, "QCLStatus") or ("runtime_qcl_accuracy_measured" if qcl_accuracy else "not_materialized_in_active_truth_path"),
                     "tci_state_id": tci_value,
-                    "unified_tci_state_id": _row_text(row, "UnifiedTCIStateID") or str(tci_cfg.get("unified_state_id") or ""),
-                    "tci_validity_timer_slots": _row_text(row, "TCIValidityTimerSlots") or str(tci_cfg.get("validity_timer_slots") or ""),
-                    "tci_status": _row_text(row, "TCIStatus") or ("configured_or_runtime_field_present" if (tci_cfg or tci_value) else "not_materialized_in_active_truth_path"),
-                    "fraunhofer_boundary_m": _row_text(row, "FraunhoferBoundary_m") or str(near_field_cfg.get("fraunhofer_boundary_m") or ""),
-                    "near_field_focal_point_m": _row_text(row, "NearFieldFocalPoint_m", "FocalPoint_m") or str(near_field_cfg.get("focal_point_m") or ""),
-                    "near_field_status": _row_text(row, "NearFieldStatus") or ("configured" if near_field_cfg else "not_materialized_in_active_truth_path"),
+                    "unified_tci_state_id": _row_text(row, "UnifiedTCIStateID"),
+                    "tci_validity_timer_slots": _row_text(row, "TCIValidityTimerSlots"),
+                    "tci_status": _row_text(row, "TCIStatus") or ("runtime_field_present_activation_unverified" if tci_value else "not_materialized_in_active_truth_path"),
+                    "fraunhofer_boundary_m": _row_text(row, "FraunhoferBoundary_m"),
+                    "near_field_focal_point_m": _row_text(row, "NearFieldFocalPoint_m", "FocalPoint_m"),
+                    "near_field_status": _row_text(row, "NearFieldStatus") or "not_materialized_in_active_truth_path",
+                    "configured_tci_state_id": _row_text(tci_cfg, "state_id"),
+                    "configured_unified_tci_state_id": _row_text(tci_cfg, "unified_state_id"),
+                    "configured_tci_validity_timer_slots": _row_text(tci_cfg, "validity_timer_slots"),
+                    "configured_qcl_type": _row_text(qcl_cfg, "type", "types"),
+                    "configured_qcl_source_rs": _row_text(qcl_cfg, "source_rs"),
+                    "configured_fraunhofer_boundary_m": _row_text(near_field_cfg, "fraunhofer_boundary_m"),
+                    "configured_near_field_focal_point_m": _row_text(near_field_cfg, "focal_point_m"),
                     "source_artifact": logical_path,
                     "value_status": "runtime_beamforming_and_precoder_evidence",
                 })
@@ -4427,7 +4449,7 @@ def _specialized_live_report_table(
             return {
                 "data": _encode_rows_from_dicts(rows),
                 "status": "specialized_runtime_beam_selection_table",
-                "note": "Beam table is derived from runtime beam/precoder rows and includes explicit TCI/QCL/near-field status fields without fabricating unavailable behavior.",
+                "note": "All source beam/precoder rows are retained with sweep/execution identity. Configured TCI/QCL/near-field values are separate from runtime evidence; data-beam selection does not establish P2 refinement or TCI activation.",
                 "source_logical_path": "|".join(path for path, source_rows in selected_sources if source_rows),
                 "source_row_count": len(rows),
             }
@@ -5739,44 +5761,65 @@ def _beam_mimo_chart_materialization(
     flat_rows = [(source_path, row) for source_path, rows in source_rows for row in rows]
     csv_rows: list[dict[str, Any]] = []
     if chart_key in {"selected vs best beam timeline", "beam id timeline", "beam pair timeline"}:
-        points: list[list[float]] = []
-        for idx, (source_path, row) in enumerate(flat_rows, start=1):
+        series_points: dict[tuple[str, ...], list[list[float]]] = defaultdict(list)
+        for source_path, row in flat_rows:
+            if any(_row_flag(row, flag) is True for flag in ("ProxyUsed", "FallbackFlag", "PlaceholderFlag", "Skipped")):
+                continue
             selected = _row_float(row, "SelectedBeamIndex", "selected_beam_index", "BeamIndex")
             best = _row_float(row, "BestBeamIndex", "best_beam_index")
             slot = _row_float(row, "Slot")
-            if slot is None:
-                slot = float(idx)
-            if selected is None:
+            # A row number is not an observed radio slot. Do not join separate
+            # SNR points, UEs, directions or execution/alias sources into one line.
+            if slot is None or selected is None:
                 continue
-            points.append([float(slot), float(selected)])
-            csv_rows.append(
-                {
+            identity = {
+                "source_run_id": _row_text(row, "RunID"),
+                "source_execution_id": _row_text(row, "ExecutionID"),
+                "sweep_point_index": _row_text(row, "SweepPointIndex"),
+                "configured_snr_db": _row_text(row, "ConfiguredSNR_dB"),
+                "direction": _row_text(row, "Direction") or (
+                    "DL" if source_path.endswith("/dl_pdsch_trials.csv") else
+                    "UL" if source_path.endswith("/ul_pusch_trials.csv") else ""),
+                "ue_id": next((str(row[key]).strip() for key in ("ue_id", "UEID", "UEIndex", "UE")
+                               if key in row and _nonblank_text(row[key])), ""),
+                "cell_id": _row_text(row, "ServingCell", "BaseStationID", "CellID"),
+                "source_table_logical_path": source_path,
+            }
+            for field, value in (("selected", selected), ("best", best)):
+                if value is not None:
+                    series_points[(*identity.values(), field)].append([float(slot), float(value)])
+            csv_rows.append({
                     "run_id": run_id,
                     "chart_name": chart_name,
+                    **identity,
                     "slot": slot,
                     "selected_beam_index": selected,
                     "best_beam_index": best,
-                    "source_table_logical_path": source_path,
-                }
-            )
+                    "beam_management_procedure": "runtime_data_beam_selection",
+                })
         if not csv_rows:
             return None
-        dataset = {
-            "mode": "line",
-            "x_label": "Slot/sample",
-            "y_label": "Selected beam index",
-            "points": points[:MAX_PREVIEW_ROWS],
-            "evidence_shape_policy": "observed_timeline",
-            "sample_count": len(csv_rows),
-        }
+        series = []
+        for series_index, (key, points) in enumerate(series_points.items(), 1):
+            source_run, execution, point, snr, direction, ue, cell, source_path, field = key
+            label = f"#{series_index} P{point or '?'} {snr or '?'}dB {direction} U{ue or '?'} C{cell or '?'} {field}"
+            series.append(dict(name=label, points=sorted(points),
+                               dasharray="" if field == "selected" else "8 5"))
         return {
-            "csv_bytes": _encode_dict_rows(["run_id", "chart_name", "slot", "selected_beam_index", "best_beam_index", "source_table_logical_path"], csv_rows),
-            "img_bytes": _render_svg_plot(chart_name, "Selected beam timeline from runtime beam/precoder rows.", dataset, [f"rows={len(csv_rows)}"]),
+            "csv_bytes": _encode_rows_from_dicts(csv_rows),
+            "img_bytes": _render_multi_series_svg(chart_name,
+                "Selected/best beam observations; separate sweep points, UEs and executions in one plot.",
+                series, [f"source records={len(csv_rows)}", f"series={len(series)}",
+                         "All observed slots plotted; no prefix truncation.",
+                         "Data-beam selection is not P2 refinement."],
+                x_label="Observed slot (source numbering)", y_label="Beam index",
+                evidence_shape_policy="observed_timeline", show_all_series=True,
+                max_points_per_series=None),
             "csv_status": "specialized_runtime_beam_dataset",
             "image_status": "generated_specialized_runtime_summary_svg",
             "source_table_path": "|".join(sorted({row["source_table_logical_path"] for row in csv_rows})),
             "source_row_count": len(csv_rows),
-            "note": "Beam timeline uses exported selected/best beam indices only.",
+            "note": "All observed selected/best beam indices are plotted and retained in one CSV. Series do not cross sweep/execution, direction, UE, cell or source boundaries; these are source records, not independent refinement trials.",
         }
     if chart_key in {"selected vs best beam gap", "beam gain gap histogram"}:
         values: list[float] = []

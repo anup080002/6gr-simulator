@@ -31,6 +31,18 @@ scenario, beam-refinement, detector-statistics or calibration acceptance**.
 The earlier two-report H4 component stopped after its first decoded CSI report
 on the SR stale-clock defect; its full physical rerun remains required.
 
+The beam-publication follow-up passes **264 affected Python tests**, including
+the CSV/plot semantic checks. The WebGUI materializer no longer truncates the
+beam table at 1,024 rows or the beam timeline to its first 180 observations.
+Selected and best-beam series retain every observed slot, separated by sweep
+point, execution, direction, UE, cell and source in the same chart/CSV.
+Configured TCI/QCL values are exported separately from runtime observations;
+zero is retained as a valid ID. The tests inspect the rendered series and PNG
+conversion. This is publication verification, **not physical P2 refinement or
+complete-scenario acceptance**. A newly identified UL rank-confirmation bypass
+in the SRS-to-scheduler consumer is still under repair; do not treat the H4
+adaptive UL path as qualified yet.
+
 ### Command Prompt setup and optional WebGUI
 
 Run these two setup lines first (the separate `if` line also works when `logs`
